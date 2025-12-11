@@ -1,0 +1,37 @@
+# Julia package artifacts
+Manifest.toml
+
+# Internal development docs
+/internal/design/
+
+# Build artifacts
+/build/
+/deps/build.log
+/deps/deps.jl
+
+# Documentation build
+/docs/build/
+/docs/site/
+
+# Test artifacts
+/test/Manifest.toml
+*.cov
+*.mem
+
+# IDE and editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Coverage
+/coverage/
+lcov.info

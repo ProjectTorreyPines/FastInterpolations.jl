@@ -169,41 +169,6 @@ For natural cubic spline:
 end
 
 """
-    find_interval(x::AbstractVector{T}, x_query::T) where {T<:AbstractFloat}
-
-Find interval index i such that x[i] <= x_query < x[i+1].
-
-Uses binary search for O(log n) complexity.
-
-# Returns
-- Index i in [1, length(x)-1]
-"""
-@inline function find_interval(x::AbstractVector{T}, x_query::T) where {T<:AbstractFloat}
-    n = length(x)
-
-    # Handle boundary cases
-    if x_query <= x[1]
-        return 1
-    elseif x_query >= x[n]
-        return n - 1
-    end
-
-    # Binary search
-    left = 1
-    right = n
-    @inbounds while right - left > 1
-        mid = (left + right) >> 1  # Fast division by 2
-        if x[mid] <= x_query
-            left = mid
-        else
-            right = mid
-        end
-    end
-
-    return left
-end
-
-"""
     cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T},
                   y::AbstractVector{T}, x_query::AbstractVector{T}) where {T<:AbstractFloat}
 
@@ -396,11 +361,11 @@ This is the hot path for broadcast fusion - must be allocation-free and inlined!
     z::AbstractVector{T},
     xi::T
 ) where {T<:AbstractFloat}
-    idx = find_interval(x, xi)
+    idx, x0, x1 = _find_interval_with_bounds(x, xi)
 
     # Cubic spline formula using pre-computed z coefficients
-    dt1 = xi - x[idx]
-    dt2 = x[idx+1] - xi
+    dt1 = xi - x0
+    dt2 = x1 - xi
     h_i = h[idx+1]
 
     @inbounds begin

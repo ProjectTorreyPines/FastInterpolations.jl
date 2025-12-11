@@ -120,7 +120,7 @@ value = linear_interp(x_int, y_int, 5.5)  # Returns Float64 (not Int)
     xi::FT,
     extrap::Val
 )::FT where {FT<:AbstractFloat}
-    idx, x0, x1 = _find_idx(x, xi)
+    idx, x0, x1 = _find_interval_with_bounds(x, xi)
     α = _compute_alpha(x0, x1, xi, extrap)
     @inbounds return y[idx] * (one(FT) - α) + y[idx + 1] * α
 end
@@ -152,58 +152,8 @@ end
 # ========================================
 # Helper functions (2-step dispatch pattern)
 # ========================================
-# Step 1: _find_idx - Dispatches on grid type (Range O(1) vs Vector O(log n))
+# Step 1: _find_interval_with_bounds (from utils.jl) - Dispatches on grid type (Range O(1) vs Vector O(log n))
 # Step 2: _compute_alpha - Dispatches on extrapolation (constant clamps, extension doesn't)
-
-# Find interpolation index - O(1) for AbstractRange (direct indexing)
-@inline function _find_idx(
-    x::AbstractRange{FT},
-    xi::FT
-) where {FT<:AbstractFloat}
-    n = length(x)
-    x_min = first(x)
-    dx = Base.step(x)
-
-    # epsilon handles floating point errors (e.g., 1.999999 should map to index 2, not 1)
-    idx = clamp(floor(Int, (xi - x_min) / dx + 1 + 10*eps(FT)), 1, n - 1)
-
-    # Direct calculation to avoid expensive TwicePrecision indexing
-    x0 = x_min + (idx - 1) * dx
-    x1 = x0 + dx
-    return idx, x0, x1
-end
-
-# Find interpolation index - O(log n) for AbstractVector (binary search)
-@inline function _find_idx(
-    x::AbstractVector{FT},
-    xi::FT
-) where {FT<:AbstractFloat}
-    n = length(x)
-
-    # Find interval using binary search
-    @inbounds begin
-        if xi <= x[1]
-            idx = 1
-        elseif xi >= x[end]
-            idx = n - 1
-        else
-            lo, hi = 1, n
-            while hi - lo > 1
-                mid = (lo + hi) >> 1
-                if x[mid] <= xi
-                    lo = mid
-                else
-                    hi = mid
-                end
-            end
-            idx = lo
-        end
-    end
-
-    # Return idx and boundary values for alpha calculation
-    @inbounds x0, x1 = x[idx], x[idx + 1]
-    return idx, x0, x1
-end
 
 # Compute alpha with constant extrapolation (clamp to [0, 1])
 @inline function _compute_alpha(

@@ -3,6 +3,9 @@ module FastInterpolations
 import LinearAlgebra
 using LinearAlgebra: Tridiagonal, lu, ldiv!
 
+# Shared internal utilities
+include("utils.jl")
+
 # Linear interpolation
 include("linear_interp.jl")
 

@@ -1,0 +1,304 @@
+@testset "Cubic Spline Auto-Cache" begin
+    # Clear cache before tests
+    clear_cubic_cache!()
+
+    @testset "Basic auto-cache reuse" begin
+        x = collect(range(0.0, 1.0, 51))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        y3 = exp.(-x)
+        x_query = [0.25, 0.5, 0.75]
+
+        clear_cubic_cache!()
+
+        # First call - cache miss
+        result1 = cubic_interp(x, y1, x_query)
+        stats1 = cubic_cache_stats()
+        @test stats1.misses == 1
+        @test stats1.hits == 0
+        @test stats1.size == 1
+
+        # Second call with same x - cache hit
+        result2 = cubic_interp(x, y2, x_query)
+        stats2 = cubic_cache_stats()
+        @test stats2.misses == 1
+        @test stats2.hits == 1
+        @test stats2.size == 1
+
+        # Third call with same x - another cache hit
+        result3 = cubic_interp(x, y3, x_query)
+        stats3 = cubic_cache_stats()
+        @test stats3.misses == 1
+        @test stats3.hits == 2
+        @test stats3.size == 1
+        @test stats3.efficiency == 66.7  # 2 hits / 3 total = 66.7%
+
+        # Results should be different (different y values)
+        @test result1 != result2
+        @test result2 != result3
+        @test result1 != result3
+
+        # But all should be finite and reasonable
+        @test all(isfinite, result1)
+        @test all(isfinite, result2)
+        @test all(isfinite, result3)
+    end
+
+    @testset "Multiple x-grids" begin
+        clear_cubic_cache!()
+
+        # Create 3 different x-grids
+        x1 = collect(range(0.0, 1.0, 51))
+        x2 = collect(range(0.0, 2.0, 51))
+        x3 = collect(range(0.0, 3.0, 51))
+
+        y = sin.(2π .* x1)
+        x_query = [0.25, 0.5, 0.75]
+
+        # First grid - miss
+        cubic_interp(x1, y, x_query)
+        stats1 = cubic_cache_stats()
+        @test stats1.size == 1
+        @test stats1.misses == 1
+
+        # Second grid - miss
+        cubic_interp(x2, y, x_query)
+        stats2 = cubic_cache_stats()
+        @test stats2.size == 2
+        @test stats2.misses == 2
+
+        # Third grid - miss
+        cubic_interp(x3, y, x_query)
+        stats3 = cubic_cache_stats()
+        @test stats3.size == 3
+        @test stats3.misses == 3
+
+        # Reuse first grid - hit
+        cubic_interp(x1, y, x_query)
+        stats4 = cubic_cache_stats()
+        @test stats4.size == 3
+        @test stats4.hits == 1
+        @test stats4.misses == 3
+    end
+
+    @testset "Cache size limit and LRU eviction" begin
+        clear_cubic_cache!()
+        set_cubic_cache_size!(3)  # Small cache for testing
+
+        # Create 4 different x-grids (exceeds cache size)
+        grids = [collect(range(0.0, Float64(i), 51)) for i in 1:4]
+        y = ones(51)
+        x_query = [0.25]
+
+        # Fill cache to limit (3 grids)
+        for i in 1:3
+            cubic_interp(grids[i], y, x_query)
+        end
+        stats = cubic_cache_stats()
+        @test stats.size == 3
+        @test stats.misses == 3
+
+        # Add 4th grid - should evict oldest
+        cubic_interp(grids[4], y, x_query)
+        stats = cubic_cache_stats()
+        @test stats.size == 3  # Still at limit
+        @test stats.evictions == 1
+
+        # Reset cache size to default
+        set_cubic_cache_size!(16)
+    end
+
+    @testset "autocache parameter control" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        x_query = [0.25, 0.5]
+
+        # With autocache=true (default)
+        result1 = cubic_interp(x, y, x_query)
+        stats1 = cubic_cache_stats()
+        @test stats1.size == 1
+        @test stats1.misses == 1
+
+        # Another call with autocache=true - should hit
+        result2 = cubic_interp(x, y, x_query; autocache=true)
+        stats2 = cubic_cache_stats()
+        @test stats2.hits == 1
+        @test stats2.size == 1
+
+        # With autocache=false - should not affect cache
+        result3 = cubic_interp(x, y, x_query; autocache=false)
+        stats3 = cubic_cache_stats()
+        @test stats3.hits == 1  # No new hits
+        @test stats3.misses == 1  # No new misses
+        @test stats3.size == 1  # Cache size unchanged
+
+        # Results should be identical
+        @test result1 ≈ result2
+        @test result2 ≈ result3
+    end
+
+    @testset "Manual cache control" begin
+        clear_cubic_cache!()
+
+        # Test get/set cache size
+        @test get_cubic_cache_size() == 16  # Default
+        set_cubic_cache_size!(32)
+        @test get_cubic_cache_size() == 32
+        set_cubic_cache_size!(16)  # Reset
+
+        # Test clear
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        cubic_interp(x, y, [0.5])
+        stats_before = cubic_cache_stats()
+        @test stats_before.size > 0
+
+        clear_cubic_cache!()
+        stats_after = cubic_cache_stats()
+        @test stats_after.size == 0
+        @test stats_after.hits == 0
+        @test stats_after.misses == 0
+        @test stats_after.evictions == 0
+    end
+
+    @testset "Hash collision handling (stress test)" begin
+        clear_cubic_cache!()
+
+        # Create many similar grids to increase collision probability
+        n_grids = 50
+        grids = [collect(range(0.0, 1.0, 51)) .+ (i * 1e-10) for i in 1:n_grids]
+        y = ones(51)
+        x_query = [0.5]
+
+        # All should cache successfully
+        for grid in grids
+            cubic_interp(grid, y, x_query)
+        end
+
+        stats = cubic_cache_stats()
+        # With default cache size of 16, we should have evictions
+        @test stats.size <= 16
+        @test stats.misses >= n_grids
+        @test stats.evictions >= (n_grids - 16)
+    end
+
+    @testset "Scalar query point with autocache" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        # Scalar query with autocache
+        result1 = cubic_interp(x, y, 0.5)
+        stats1 = cubic_cache_stats()
+        @test stats1.size == 1
+        @test stats1.misses == 1
+
+        # Another scalar query - cache hit
+        result2 = cubic_interp(x, y, 0.75)
+        stats2 = cubic_cache_stats()
+        @test stats2.hits == 1
+
+        # Disable autocache for scalar query
+        result3 = cubic_interp(x, y, 0.25; autocache=false)
+        stats3 = cubic_cache_stats()
+        @test stats3.hits == 1  # No new hits
+
+        @test isa(result1, Float64)
+        @test isa(result2, Float64)
+        @test isa(result3, Float64)
+    end
+
+    @testset "Statistics accuracy" begin
+        clear_cubic_cache!()
+
+        # Create multiple grids and track stats
+        grids = [collect(range(0.0, Float64(i), 51)) for i in 1:5]
+        x_query = [0.25, 0.5, 0.75]
+
+        # First pass - all misses
+        for (i, x) in enumerate(grids)
+            y = sin.(2π .* x)
+            result = cubic_interp(x, y, x_query)
+            stats = cubic_cache_stats()
+            @test stats.misses == i
+            @test stats.hits == 0
+        end
+
+        # Second pass - all hits
+        for (i, x) in enumerate(grids)
+            y = cos.(π .* x)
+            result = cubic_interp(x, y, x_query)
+            stats = cubic_cache_stats()
+            @test stats.hits == i
+            @test stats.misses == 5  # Should stay at 5
+        end
+
+        final_stats = cubic_cache_stats()
+        @test final_stats.efficiency > 40.0  # 5 hits / 10 total = 50%
+    end
+
+    @testset "Correctness under heavy reuse" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 1.0, 51))
+        x_query = [0.2, 0.4, 0.6, 0.8]
+
+        # Generate 20 different y functions
+        for k in 1:20
+            y = @. sin(k * 2π * x) + 0.5 * cos(k * 4π * x)
+
+            result = cubic_interp(x, y, x_query)
+
+            # Verify all results are finite
+            @test all(isfinite, result)
+        end
+
+        # Verify cache was used (19 hits after first miss)
+        stats = cubic_cache_stats()
+        @test stats.misses == 1
+        @test stats.hits == 19
+    end
+
+    @testset "Auto-cache with Integer inputs" begin
+        clear_cubic_cache!()
+
+        x_int = 0:10
+        y_int = [sin(2π * i / 10) for i in x_int]
+        x_query_float = [2.5, 5.5, 7.3]
+
+        # First call with integer inputs (should create cache)
+        result1 = cubic_interp(x_int, y_int, x_query_float)
+        stats1 = cubic_cache_stats()
+        @test stats1.misses == 1
+
+        # Second call with same integer x (should reuse cache)
+        y_int2 = [cos(2π * i / 10) for i in x_int]
+        result2 = cubic_interp(x_int, y_int2, x_query_float)
+        stats2 = cubic_cache_stats()
+        @test stats2.hits == 1
+
+        # Verify results are correct
+        @test all(isfinite, result1)
+        @test all(isfinite, result2)
+        @test result1 != result2
+    end
+
+    @testset "Autocache=false with Integer inputs" begin
+        clear_cubic_cache!()
+
+        x_int = 0:10
+        y_int = [sin(2π * i / 10) for i in x_int]
+        x_query_float = [2.5, 5.5, 7.3]
+
+        result = cubic_interp(x_int, y_int, x_query_float; autocache=false)
+        @test result isa Vector{Float64}
+
+        # Cache should not be populated
+        stats = cubic_cache_stats()
+        @test stats.misses == 0
+        @test stats.hits == 0
+    end
+end

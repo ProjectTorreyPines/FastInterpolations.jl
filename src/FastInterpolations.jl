@@ -1,5 +1,6 @@
 module FastInterpolations
 
+import LinearAlgebra
 using LinearAlgebra: Tridiagonal, lu, ldiv!
 
 # Linear interpolation

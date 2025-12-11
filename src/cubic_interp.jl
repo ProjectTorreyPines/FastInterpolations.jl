@@ -493,9 +493,17 @@ cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T},
              x_query::T) where {T<:AbstractFloat} =
     cubic_interp_scalar(cache, y, x_query)
 
-cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
-             x_query::T; autocache::Bool=true) where {T<:AbstractFloat} =
-    cubic_interp_scalar(autocache ? get_cubic_cache(x) : CubicSplineCache(x), y, x_query)
+# Scalar query with autocache option
+function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
+                      x_query::T; autocache::Bool=true) where {T<:AbstractFloat}
+    if autocache
+        cache::CubicSplineCache{T} = get_cubic_cache(x)
+        return cubic_interp_scalar(cache, y, x_query)
+    else
+        cache = CubicSplineCache(x)
+        return cubic_interp_scalar(cache, y, x_query)
+    end
+end
 
 # ========================================
 # Callable Interpolator for Broadcast Fusion

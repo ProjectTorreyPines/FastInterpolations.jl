@@ -6,9 +6,10 @@ Transparently reuses LU factorization for repeated x-grids.
 
 # Implementation Details
 
-- True LRU eviction with timestamp-based ordering
-- Per-bucket size limit to prevent hash collision DoS
-- Type-parametric buckets for Float32/Float64 compatibility
+- Zero-allocation cache hit via 2-pass lookup (objectid → isequal)
+- Ring buffer eviction for O(1) cache replacement
+- Self-healing: updates objectid on content match for future fast-path hits
+- Type-parametric entries for Float32/Float64 compatibility
 - Defensive x-grid copying in CubicSplineCache constructor
 - Thread-safe with ReentrantLock on cache access
 """
@@ -17,22 +18,42 @@ Transparently reuses LU factorization for repeated x-grids.
 # Cache Infrastructure
 # ===============================================================
 
-# Cache handle for LRU tracking
-struct CacheHandle{T<:AbstractFloat}
-    cache::CubicSplineCache{T}
-    timestamp::UInt64
-    hash::UInt64
+# Concrete LU factorization types (for zero-allocation cache lookup)
+# The LU type is always: LU{T, Tridiagonal{T, Vector{T}}, Vector{Int64}}
+const _LU_Type_F64 = LinearAlgebra.LU{Float64, LinearAlgebra.Tridiagonal{Float64, Vector{Float64}}, Vector{Int64}}
+const _LU_Type_F32 = LinearAlgebra.LU{Float32, LinearAlgebra.Tridiagonal{Float32, Vector{Float32}}, Vector{Int64}}
+
+# Concrete CubicSplineCache types (fully specified for type stability)
+const _CubicSplineCache_F64 = CubicSplineCache{Float64, _LU_Type_F64}
+const _CubicSplineCache_F32 = CubicSplineCache{Float32, _LU_Type_F32}
+
+# Mutable cache entry for self-healing objectid updates
+# Uses concrete spline types to avoid boxing (32 bytes → 0 bytes)
+mutable struct CacheEntryF64
+    id::UInt                       # objectid(x) - Fast Path lookup
+    x::Vector{Float64}             # Original x - Slow Path lookup
+    spline::_CubicSplineCache_F64  # Concrete type for zero-allocation
 end
 
-# Global cache store: hash -> Vector{CacheHandle}
-const _CUBIC_CACHE_STORE = Dict{UInt64, Vector{CacheHandle}}()
-const _CACHE_LOCK = ReentrantLock()
-const _CACHE_SIZE_REF = Ref{Int}(16)  # Max total caches across all buckets
-const _MAX_BUCKET_SIZE = 4  # Cap per-bucket to prevent collision DoS
-const _TIMESTAMP_COUNTER = Ref{UInt64}(0)
+mutable struct CacheEntryF32
+    id::UInt
+    x::Vector{Float32}
+    spline::_CubicSplineCache_F32
+end
 
-# Statistics
-const _CACHE_STATS = Ref((hits=0, misses=0, evictions=0, collisions=0))
+# Global cache stores: Type-stable vectors for each supported float type
+# Separate vectors avoid type instability during iteration (critical for zero-allocation)
+const _CUBIC_CACHE_STORE_F64 = Vector{CacheEntryF64}()
+const _CUBIC_CACHE_STORE_F32 = Vector{CacheEntryF32}()
+const _CACHE_LOCK = ReentrantLock()
+const _CACHE_SIZE_REF = Ref{Int}(16)  # Max cache entries (shared across all types)
+const _RING_IDX_F64 = Ref{Int}(1)     # Ring buffer pointer for Float64
+const _RING_IDX_F32 = Ref{Int}(1)     # Ring buffer pointer for Float32
+
+# Statistics (individual Refs to avoid NamedTuple allocation on update)
+const _CACHE_HITS = Ref{Int}(0)
+const _CACHE_MISSES = Ref{Int}(0)
+const _CACHE_EVICTIONS = Ref{Int}(0)
 
 # ===============================================================
 # Public API
@@ -41,10 +62,10 @@ const _CACHE_STATS = Ref((hits=0, misses=0, evictions=0, collisions=0))
 """
     set_cubic_cache_size!(n::Int)
 
-Set maximum number of cached x-grids across all hash buckets.
+Set maximum number of cached x-grids.
 
 # Arguments
-- `n::Int`: Maximum total cache entries (default: 16)
+- `n::Int`: Maximum cache entries (default: 16)
 
 # Example
 ```julia
@@ -77,10 +98,17 @@ clear_cubic_cache!()
 ```
 """
 function clear_cubic_cache!()
-    lock(_CACHE_LOCK) do
-        empty!(_CUBIC_CACHE_STORE)
-        _TIMESTAMP_COUNTER[] = 0
-        _CACHE_STATS[] = (hits=0, misses=0, evictions=0, collisions=0)
+    lock(_CACHE_LOCK)
+    try
+        empty!(_CUBIC_CACHE_STORE_F64)
+        empty!(_CUBIC_CACHE_STORE_F32)
+        _RING_IDX_F64[] = 1
+        _RING_IDX_F32[] = 1
+        _CACHE_HITS[] = 0
+        _CACHE_MISSES[] = 0
+        _CACHE_EVICTIONS[] = 0
+    finally
+        unlock(_CACHE_LOCK)
     end
     return nothing
 end
@@ -88,7 +116,7 @@ end
 """
     cubic_cache_stats()
 
-Return cache hit/miss/collision statistics for debugging.
+Return cache hit/miss statistics for debugging.
 
 # Returns
 - `NamedTuple`: (hits, misses, evictions, collisions, size, efficiency)
@@ -97,22 +125,29 @@ Return cache hit/miss/collision statistics for debugging.
 ```julia
 stats = cubic_cache_stats()
 println("Cache efficiency: \$(stats.efficiency)%")
-println("Hash collisions: \$(stats.collisions)")
 ```
 """
 function cubic_cache_stats()
-    stats = _CACHE_STATS[]
-    total_size = lock(_CACHE_LOCK) do
-        sum(length(bucket) for bucket in values(_CUBIC_CACHE_STORE); init=0)
+    hits = _CACHE_HITS[]
+    misses = _CACHE_MISSES[]
+    evictions = _CACHE_EVICTIONS[]
+
+    local total_size
+    lock(_CACHE_LOCK)
+    try
+        total_size = length(_CUBIC_CACHE_STORE_F64) + length(_CUBIC_CACHE_STORE_F32)
+    finally
+        unlock(_CACHE_LOCK)
     end
-    total = stats.hits + stats.misses
-    efficiency = total > 0 ? round(100 * stats.hits / total, digits=1) : 0.0
+
+    total = hits + misses
+    efficiency = total > 0 ? round(100 * hits / total, digits=1) : 0.0
 
     return (
-        hits = stats.hits,
-        misses = stats.misses,
-        evictions = stats.evictions,
-        collisions = stats.collisions,
+        hits = hits,
+        misses = misses,
+        evictions = evictions,
+        collisions = 0,  # No longer tracked (no hash buckets)
         size = total_size,
         efficiency = efficiency
     )
@@ -122,170 +157,147 @@ end
 # Internal Cache Management
 # ===============================================================
 
-"""
-    count_total_caches()
+# Type-specific cache accessors (for type stability)
+@inline _get_cache_store(::Type{Float64}) = _CUBIC_CACHE_STORE_F64
+@inline _get_cache_store(::Type{Float32}) = _CUBIC_CACHE_STORE_F32
+@inline _get_ring_idx(::Type{Float64}) = _RING_IDX_F64
+@inline _get_ring_idx(::Type{Float32}) = _RING_IDX_F32
 
-Count total number of caches across all buckets.
+"""
+    add_to_cache_f64!(entry::CacheEntryF64)
+
+Add Float64 entry to cache with ring buffer eviction.
+O(1) eviction by overwriting oldest slot.
 Must be called within lock.
 """
-function count_total_caches()
-    return sum(length(bucket) for bucket in values(_CUBIC_CACHE_STORE); init=0)
-end
+function add_to_cache_f64!(entry::CacheEntryF64)
+    store = _CUBIC_CACHE_STORE_F64
+    ring_idx = _RING_IDX_F64
+    max_size = _CACHE_SIZE_REF[]
 
-"""
-    find_oldest_cache()
-
-Find (hash, index) of oldest cache by timestamp for LRU eviction.
-Must be called within lock.
-
-Returns (hash, index, timestamp) or nothing if cache is empty.
-"""
-function find_oldest_cache()
-    oldest_hash = UInt64(0)
-    oldest_idx = 0
-    oldest_ts = typemax(UInt64)
-
-    for (hash, bucket) in _CUBIC_CACHE_STORE
-        for (idx, handle) in enumerate(bucket)
-            if handle.timestamp < oldest_ts
-                oldest_ts = handle.timestamp
-                oldest_hash = hash
-                oldest_idx = idx
-            end
-        end
+    if length(store) < max_size
+        push!(store, entry)
+    else
+        idx = ring_idx[]
+        store[idx] = entry
+        ring_idx[] = (idx % max_size) + 1
+        _CACHE_EVICTIONS[] += 1
     end
-
-    return oldest_idx > 0 ? (oldest_hash, oldest_idx, oldest_ts) : nothing
 end
 
 """
-    evict_oldest_cache!()
+    add_to_cache_f32!(entry::CacheEntryF32)
 
-Evict the oldest cache entry by timestamp (true LRU).
-Must be called within lock.
+Add Float32 entry to cache with ring buffer eviction.
 """
-function evict_oldest_cache!()
-    result = find_oldest_cache()
-    if result !== nothing
-        hash, idx, _ = result
-        bucket = _CUBIC_CACHE_STORE[hash]
-        deleteat!(bucket, idx)
+function add_to_cache_f32!(entry::CacheEntryF32)
+    store = _CUBIC_CACHE_STORE_F32
+    ring_idx = _RING_IDX_F32
+    max_size = _CACHE_SIZE_REF[]
 
-        # Remove bucket if empty
-        if isempty(bucket)
-            delete!(_CUBIC_CACHE_STORE, hash)
-        end
-
-        # Update stats
-        stats = _CACHE_STATS[]
-        _CACHE_STATS[] = (hits=stats.hits,
-                         misses=stats.misses,
-                         evictions=stats.evictions + 1,
-                         collisions=stats.collisions)
+    if length(store) < max_size
+        push!(store, entry)
+    else
+        idx = ring_idx[]
+        store[idx] = entry
+        ring_idx[] = (idx % max_size) + 1
+        _CACHE_EVICTIONS[] += 1
     end
 end
 
 """
     get_cubic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
 
-Internal: Lookup or create cache for x-grid with true LRU eviction.
+Internal: Lookup or create cache for x-grid with zero-allocation hit.
 
 Thread-safe with ReentrantLock. Returns existing cache if x matches
-(using hash + isequal verification), otherwise creates new cache.
+(using 2-pass lookup: objectid → isequal), otherwise creates new cache.
 
 # Implementation Details
 
-- **Hash collision handling**: Bucket array with isequal() verification
-- **True LRU eviction**: Timestamp-based tracking across all caches
-- **Per-bucket cap**: Limits bucket size to prevent DoS from collisions
-- **Type safety**: Parametric buckets handle Float32/Float64/BigFloat
+- **Pass 1 (Fast Path)**: objectid(x) comparison - O(1), zero allocation
+- **Pass 2 (Slow Path)**: isequal(x, entry.x) - O(N), zero allocation
+- **Self-Healing**: Updates entry.id on Pass 2 hit for future fast-path
+- **Ring Buffer**: O(1) eviction by circular index overwrite
+- **Type-stable**: Separate stores for Float64/Float32 avoid boxing
 - **Defensive copy**: x is copied via collect() in CubicSplineCache constructor
-
-# Collision Mitigation
-
-- Per-bucket size capped at $_MAX_BUCKET_SIZE entries
-- Global cache size limits total entries across all buckets
-- Oldest cache evicted by timestamp when limits exceeded
 """
-function get_cubic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
-    x_hash = hash(x, UInt(0))
+function get_cubic_cache(x::AbstractVector{Float64})
+    id = objectid(x)
+    store = _CUBIC_CACHE_STORE_F64
 
-    lock(_CACHE_LOCK) do
-        # Check if hash bucket exists
-        if haskey(_CUBIC_CACHE_STORE, x_hash)
-            bucket = _CUBIC_CACHE_STORE[x_hash]
-
-            # Search bucket for matching x (handle hash collisions)
-            for (i, handle) in enumerate(bucket)
-                if isequal(handle.cache.x, x)
-                    # Cache hit! Update timestamp for LRU
-                    _TIMESTAMP_COUNTER[] += 1
-                    new_handle = CacheHandle(handle.cache, _TIMESTAMP_COUNTER[], x_hash)
-                    bucket[i] = new_handle
-
-                    # Update stats
-                    stats = _CACHE_STATS[]
-                    _CACHE_STATS[] = (hits=stats.hits + 1,
-                                     misses=stats.misses,
-                                     evictions=stats.evictions,
-                                     collisions=stats.collisions)
-
-                    return handle.cache
-                end
+    lock(_CACHE_LOCK)
+    try
+        # [Pass 1] Identity Check (Ultra Fast Path)
+        # O(K) where K ≤ 16, just integer comparison
+        @inbounds for entry in store
+            if entry.id === id
+                _CACHE_HITS[] += 1
+                return entry.spline
             end
-
-            # Hash collision - track for statistics
-            stats = _CACHE_STATS[]
-            _CACHE_STATS[] = (hits=stats.hits,
-                             misses=stats.misses + 1,
-                             evictions=stats.evictions,
-                             collisions=stats.collisions + 1)
-
-            # Check per-bucket size limit before adding
-            if length(bucket) >= _MAX_BUCKET_SIZE
-                # Remove oldest from this bucket
-                oldest_idx = argmin([h.timestamp for h in bucket])
-                deleteat!(bucket, oldest_idx)
-
-                stats = _CACHE_STATS[]
-                _CACHE_STATS[] = (hits=stats.hits,
-                                 misses=stats.misses,
-                                 evictions=stats.evictions + 1,
-                                 collisions=stats.collisions)
-            end
-
-            # Add new cache to bucket
-            _TIMESTAMP_COUNTER[] += 1
-            new_cache = CubicSplineCache(x)  # Defensive copy via collect(x)
-            handle = CacheHandle(new_cache, _TIMESTAMP_COUNTER[], x_hash)
-            push!(bucket, handle)
-
-            # Check global size limit
-            if count_total_caches() > _CACHE_SIZE_REF[]
-                evict_oldest_cache!()
-            end
-
-            return new_cache
-        else
-            # Cache miss - new hash bucket
-            stats = _CACHE_STATS[]
-            _CACHE_STATS[] = (hits=stats.hits,
-                             misses=stats.misses + 1,
-                             evictions=stats.evictions,
-                             collisions=stats.collisions)
-
-            # Check global size limit before creating new bucket
-            if count_total_caches() >= _CACHE_SIZE_REF[]
-                evict_oldest_cache!()
-            end
-
-            # Create new cache and bucket
-            _TIMESTAMP_COUNTER[] += 1
-            new_cache = CubicSplineCache(x)  # Defensive copy via collect(x)
-            handle = CacheHandle(new_cache, _TIMESTAMP_COUNTER[], x_hash)
-            _CUBIC_CACHE_STORE[x_hash] = [handle]
-
-            return new_cache
         end
+
+        # [Pass 2] Equality Check (Slow Path)
+        # O(K×N) where K ≤ 16, N = length(x)
+        @inbounds for entry in store
+            if isequal(entry.x, x)
+                # Self-Healing: Update ID for next call to hit Pass 1
+                entry.id = id
+                _CACHE_HITS[] += 1
+                return entry.spline
+            end
+        end
+
+        # [Cache Miss] Create and register new cache
+        _CACHE_MISSES[] += 1
+        new_spline = CubicSplineCache(x)  # Defensive copy via collect(x)
+        new_entry = CacheEntryF64(id, collect(x), new_spline)
+        add_to_cache_f64!(new_entry)
+
+        return new_spline
+    finally
+        unlock(_CACHE_LOCK)
     end
+end
+
+function get_cubic_cache(x::AbstractVector{Float32})
+    id = objectid(x)
+    store = _CUBIC_CACHE_STORE_F32
+
+    lock(_CACHE_LOCK)
+    try
+        # [Pass 1] Identity Check (Ultra Fast Path)
+        @inbounds for entry in store
+            if entry.id === id
+                _CACHE_HITS[] += 1
+                return entry.spline
+            end
+        end
+
+        # [Pass 2] Equality Check (Slow Path)
+        @inbounds for entry in store
+            if isequal(entry.x, x)
+                entry.id = id
+                _CACHE_HITS[] += 1
+                return entry.spline
+            end
+        end
+
+        # [Cache Miss]
+        _CACHE_MISSES[] += 1
+        new_spline = CubicSplineCache(x)
+        new_entry = CacheEntryF32(id, collect(x), new_spline)
+        add_to_cache_f32!(new_entry)
+
+        return new_spline
+    finally
+        unlock(_CACHE_LOCK)
+    end
+end
+
+# Fallback for other AbstractFloat types (non-optimized path)
+function get_cubic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
+    # Convert to Float64 for unsupported types
+    x_f64 = convert(Vector{Float64}, x)
+    return get_cubic_cache(x_f64)
 end

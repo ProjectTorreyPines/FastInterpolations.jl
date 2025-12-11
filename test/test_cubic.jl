@@ -169,6 +169,21 @@
         @test alloc_with_cache < alloc_without_cache
     end
 
+    @testset "Zero-allocation - In-place with cache" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        x_query = [0.25, 0.5, 0.75]
+        output = similar(x_query)
+        cache = CubicSplineCache(x)
+
+        # Warmup
+        cubic_interp!(output, cache, y, x_query)
+
+        # In-place with explicit cache - MUST be zero allocation
+        allocs = @allocated cubic_interp!(output, cache, y, x_query)
+        @test allocs == 0
+    end
+
     @testset "One-shot Convenience Function" begin
         x = collect(range(0.0, 1.0, 21))
         y = @. exp(-x) * sin(4π * x)

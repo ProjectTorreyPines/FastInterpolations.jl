@@ -140,18 +140,38 @@
         @test isfinite(val_right)
     end
 
-    @testset "Allocation efficiency" begin
+    @testset "Zero-allocation - Scalar call" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        xi = 0.55
+
+        # Create callable (pre-computes z coefficients)
+        itp = cubic_interp(x, y; autocache=false)
+
+        # Warmup
+        _ = itp(xi)
+
+        # Scalar call - MUST be zero allocation (uses pre-computed z)
+        allocs = @allocated itp(xi)
+        @test allocs == 0
+
+        # Different query point - still zero allocation
+        allocs = @allocated itp(0.75)
+        @test allocs == 0
+    end
+
+    @testset "Allocation efficiency - Vector call" begin
         x_test = collect(range(0.0, 1.0, 101))
         y_test = sin.(2π .* x_test)
         x_query_test = collect(range(0.1, 0.9, 20))
 
-        # IMAS callable: construct once, evaluate multiple times
+        # Create callable (pre-computes z coefficients)
         itp_test = cubic_interp(x_test, y_test; autocache=false)
 
         # Warmup
         _ = itp_test(x_query_test)
 
-        # Measure allocations for evaluation
+        # Vector call allocates output array only
         allocs = @allocated itp_test(x_query_test)
 
         # Should be relatively small (just output array allocation)

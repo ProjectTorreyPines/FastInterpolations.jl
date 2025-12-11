@@ -14,5 +14,6 @@ else
         include("test_cubic.jl")
         include("test_cubic_autocache.jl")
         include("test_cubic_callable.jl")
+        include("test_allocation.jl")
     end
 end

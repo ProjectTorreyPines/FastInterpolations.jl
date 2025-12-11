@@ -420,11 +420,23 @@ end
     linear_interp(itp.x, itp.y, T(xi), itp.extrap)
 end
 
-# Vector call - delegates to 3-argument version
-function (itp::LinearInterpCallable{T,X,Y})(xi::AbstractVector) where {T<:AbstractFloat, X, Y}
-    # Extract extrapolation symbol from Val type parameter
-    extrap_sym = typeof(itp.extrap).parameters[1]
-    return linear_interp(itp.x, itp.y, xi; extrapolation=extrap_sym)
+# Vector call - optimized to avoid type reflection
+function (itp::LinearInterpCallable{T,X,Y})(xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
+    output = Vector{T}(undef, length(xi))
+    xi_typed = S === T ? xi : T.(xi)
+    @inbounds for i in eachindex(xi, output)
+        output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.extrap)
+    end
+    return output
+end
+
+# Optimized path when xi element type matches T (zero conversion)
+function (itp::LinearInterpCallable{T,X,Y})(xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
+    output = Vector{T}(undef, length(xi))
+    @inbounds for i in eachindex(xi, output)
+        output[i] = linear_interp(itp.x, itp.y, xi[i], itp.extrap)
+    end
+    return output
 end
 
 # ========================================
@@ -479,6 +491,16 @@ function linear_interp(
     return LinearInterpCallable(x, y; extrapolation)
 end
 
+# ========================================
+# Type Conversion Helpers
+# ========================================
+
+# Convert to float type while preserving Range structure (O(1) index lookup)
+# FT.(x) would convert Range to Vector, losing O(1) optimization
+_to_float(x::AbstractRange, ::Type{FT}) where {FT<:AbstractFloat} =
+    range(FT(first(x)), FT(last(x)), length(x))
+_to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat} = FT.(x)
+
 # Real wrapper for 2-argument form (allows different container types)
 function linear_interp(
     x::X,
@@ -487,5 +509,5 @@ function linear_interp(
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
     T = promote_type(TX, TY)
     FT = float(T)
-    return LinearInterpCallable(FT.(x), FT.(y); extrapolation)
+    return LinearInterpCallable(_to_float(x, FT), FT.(y); extrapolation)
 end

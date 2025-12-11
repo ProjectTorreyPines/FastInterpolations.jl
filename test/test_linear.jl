@@ -474,3 +474,77 @@ end
         @test result_const[2] ≈ y_int[end]
     end
 end
+
+@testset "Linear Interpolation - Range Preservation (O(1) Path)" begin
+    # Test that LinearInterpCallable preserves AbstractRange structure
+    # This enables O(1) index lookup vs O(log n) binary search
+
+    @testset "Range input → Range stored (O(1) path)" begin
+        x_range = 0.0:0.1:1.0  # StepRangeLen{Float64}
+        y = sin.(x_range)
+
+        itp = linear_interp(x_range, y)
+
+        # CRITICAL: x must remain AbstractRange for O(1) lookup
+        @test itp.x isa AbstractRange
+        @test itp.x isa StepRangeLen{Float64}
+
+        # Verify correctness
+        @test itp(0.5) ≈ sin(0.5) atol=0.01
+    end
+
+    @testset "Vector input → Vector stored (O(log n) path)" begin
+        x_vec = collect(0.0:0.1:1.0)  # Vector{Float64}
+        y = sin.(x_vec)
+
+        itp = linear_interp(x_vec, y)
+
+        # Vector should remain Vector
+        @test itp.x isa Vector{Float64}
+        @test !(itp.x isa AbstractRange)
+
+        # Verify correctness
+        @test itp(0.5) ≈ sin(0.5) atol=0.01
+    end
+
+    @testset "Integer Range → Float64 Range preserved" begin
+        x_int = 0:10  # UnitRange{Int}
+        y_int = [i^2 for i in x_int]
+
+        itp = linear_interp(x_int, y_int)
+
+        # Integer Range should be converted to Float64 Range (not Vector!)
+        @test itp.x isa AbstractRange
+        @test eltype(itp.x) == Float64
+
+        # Verify correctness
+        @test itp(5.5) ≈ 25.0 + 0.5 * (36.0 - 25.0)
+    end
+
+    @testset "Float32 Range preserved" begin
+        x_f32 = range(Float32(0.0), Float32(1.0), 11)  # StepRangeLen{Float32}
+        y_f32 = sin.(x_f32)
+
+        itp = linear_interp(x_f32, y_f32)
+
+        # Float32 Range should be preserved
+        @test itp.x isa AbstractRange
+        @test eltype(itp.x) == Float32
+
+        # Verify correctness
+        @test itp(Float32(0.5)) ≈ sin(Float32(0.5)) atol=0.01f0
+    end
+
+    @testset "Mixed types: Range x + Vector y → Range preserved" begin
+        x_range = 0.0:0.1:1.0
+        y_vec = collect(sin.(x_range))  # Explicitly Vector
+
+        itp = linear_interp(x_range, y_vec)
+
+        # x should remain Range even if y is Vector
+        @test itp.x isa AbstractRange
+
+        # Verify correctness
+        @test itp(0.5) ≈ sin(0.5) atol=0.01
+    end
+end

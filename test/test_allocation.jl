@@ -97,7 +97,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
 
-        # Create callable interpolator (pre-computes z coefficients)
+        # Create callable interpolant (pre-computes z coefficients)
         itp = cubic_interp(x, y; autocache=false)
 
         # Warmup

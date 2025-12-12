@@ -219,7 +219,7 @@ end
         y = sin.(x)
 
         itp = linear_interp(x, y)
-        @test itp isa LinearInterpCallable
+        @test itp isa LinearInterpolant
 
         # Test scalar call
         val = itp(0.5)
@@ -349,7 +349,7 @@ end
         x_f64 = 0.0:0.1:1.0
         y_f64 = sin.(x_f64)
         itp_f64 = @inferred linear_interp(x_f64, y_f64)
-        @test itp_f64 isa LinearInterpCallable{Float64}
+        @test itp_f64 isa LinearInterpolant{Float64}
 
         val_f64 = @inferred itp_f64(0.5)
         @test val_f64 isa Float64
@@ -358,7 +358,7 @@ end
         x_f32 = range(Float32(0.0), Float32(1.0), length=11)
         y_f32 = sin.(x_f32)
         itp_f32 = @inferred linear_interp(x_f32, y_f32)
-        @test itp_f32 isa LinearInterpCallable{Float32}
+        @test itp_f32 isa LinearInterpolant{Float32}
 
         val_f32 = @inferred itp_f32(Float32(0.5))
         @test val_f32 isa Float32
@@ -369,7 +369,7 @@ end
         y_int = [i^2 for i in x_int]
 
         itp = linear_interp(x_int, y_int)
-        @test itp isa LinearInterpCallable{Float64}
+        @test itp isa LinearInterpolant{Float64}
 
         val = itp(5.5)
         @test val isa Float64
@@ -476,7 +476,7 @@ end
 end
 
 @testset "Linear Interpolation - Range Preservation (O(1) Path)" begin
-    # Test that LinearInterpCallable preserves AbstractRange structure
+    # Test that LinearInterpolant preserves AbstractRange structure
     # This enables O(1) index lookup vs O(log n) binary search
 
     @testset "Range input → Range stored (O(1) path)" begin
@@ -572,7 +572,7 @@ end
         @test val ≈ 5.5^2 atol=1
     end
 
-    @testset "LinearInterpCallable in-place methods" begin
+    @testset "LinearInterpolant in-place methods" begin
         x = range(0.0, 1.0, 51)
         y = Float64.(sin.(2π .* x))
         itp = linear_interp(x, y)
@@ -591,7 +591,7 @@ end
         @test length(output2) == 3
     end
 
-    @testset "LinearInterpCallable vector with type conversion" begin
+    @testset "LinearInterpolant vector with type conversion" begin
         x = range(0.0, 1.0, 51)
         y = Float64.(sin.(2π .* x))
         itp = linear_interp(x, y)

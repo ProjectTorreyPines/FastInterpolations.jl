@@ -1,6 +1,6 @@
 # ALLOC_THRESHOLD is defined in runtests.jl
 
-@testset "CubicInterpCallable" begin
+@testset "CubicInterpolant" begin
     # Setup
     x = collect(range(0.0, 1.0, 11))
     y = sin.(2π .* x)
@@ -9,11 +9,11 @@
     # Reference: 3-argument form
     ref = cubic_interp(x, y, x_query)
 
-    # Create callable interpolator
+    # Create callable interpolant
     itp = cubic_interp(x, y)
 
     @testset "Type and structure" begin
-        @test itp isa CubicInterpCallable
+        @test itp isa CubicInterpolant
         @test itp.cache isa CubicSplineCache
         @test itp.y === y
         @test length(itp.cache.x) == length(x)
@@ -342,7 +342,7 @@ end
         @test cubic_interp(cache_range, y, [0.5])[1] ≈ cubic_interp(cache_vec, y, [0.5])[1]
     end
 
-    @testset "CubicInterpCallable Real scalar wrapper" begin
+    @testset "CubicInterpolant Real scalar wrapper" begin
         x = range(0.0, 1.0, 51)
         y = Float64.(sin.(2π .* x))
         itp = cubic_interp(x, y)
@@ -356,7 +356,7 @@ end
         @test val_f32 ≈ sin(2π * 0.5) atol=1e-6
     end
 
-    @testset "CubicInterpCallable vector with type conversion" begin
+    @testset "CubicInterpolant vector with type conversion" begin
         x = range(0.0, 1.0, 51)
         y = Float64.(sin.(2π .* x))
         itp = cubic_interp(x, y)
@@ -372,7 +372,7 @@ end
         @test length(result_int) == 2
     end
 
-    @testset "CubicInterpCallable in-place methods" begin
+    @testset "CubicInterpolant in-place methods" begin
         x = range(0.0, 1.0, 51)
         y = Float64.(sin.(2π .* x))
         itp = cubic_interp(x, y)

@@ -419,7 +419,7 @@ end
 
 Scalar cubic spline evaluation (solves system once, evaluates once).
 
-For repeated evaluations at different query points with same y, use CubicInterpCallable
+For repeated evaluations at different query points with same y, use CubicInterpolant
 instead, which pre-computes z coefficients once and reuses them for all evaluations.
 
 # Arguments
@@ -432,7 +432,7 @@ instead, which pre-computes z coefficients once and reuses them for all evaluati
 
 # Note
 This function solves the tridiagonal system for each call. If you need to evaluate
-at multiple points with the same y, create a CubicInterpCallable instead:
+at multiple points with the same y, create a CubicInterpolant instead:
 ```julia
 itp = cubic_interp(x, y)  # Solve once
 vals = itp.(query_points)  # Reuse z for all points
@@ -480,9 +480,9 @@ end
 # ========================================
 
 """
-    CubicInterpCallable{T,C,Y,Z}
+    CubicInterpolant{T,C,Y,Z}
 
-Lightweight callable interpolator for broadcast fusion optimization.
+Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `cubic_interp(x, y)` (2-argument form).
 
 # Fields
@@ -512,12 +512,12 @@ val = itp(0.5)
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Optimal for multiple evaluations with same x-grid and y-values
 """
-struct CubicInterpCallable{T<:AbstractFloat,C<:CubicSplineCache{T},Y<:AbstractVector{T},Z<:AbstractVector{T}}
+struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},Y<:AbstractVector{T},Z<:AbstractVector{T}}
     cache::C
     y::Y
     z::Z  # Pre-computed second derivative coefficients
 
-    function CubicInterpCallable(
+    function CubicInterpolant(
         cache::C,
         y::Y,
         z::Z
@@ -530,17 +530,17 @@ end
 
 # Scalar call - hot path (inlined for broadcast fusion)
 # CRITICAL: Uses pre-computed z coefficients -> TRUE zero-allocation!
-@inline function (itp::CubicInterpCallable{T})(xi::T) where {T<:AbstractFloat}
+@inline function (itp::CubicInterpolant{T})(xi::T) where {T<:AbstractFloat}
     _eval_cubic_at_point(itp.cache.x, itp.y, itp.cache.h, itp.z, xi)
 end
 
 # Real scalar wrapper for convenience
-@inline function (itp::CubicInterpCallable{T})(xi::S) where {T<:AbstractFloat, S<:Real}
+@inline function (itp::CubicInterpolant{T})(xi::S) where {T<:AbstractFloat, S<:Real}
     _eval_cubic_at_point(itp.cache.x, itp.y, itp.cache.h, itp.z, T(xi))
 end
 
 # Vector call - uses pre-computed z coefficients (no redundant system solve!)
-function (itp::CubicInterpCallable{T})(xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
+function (itp::CubicInterpolant{T})(xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
     xi_typed = S === T ? xi : T.(xi)
     output = Vector{T}(undef, length(xi_typed))
     @inbounds for (k, xq) in enumerate(xi_typed)
@@ -550,7 +550,7 @@ function (itp::CubicInterpCallable{T})(xi::AbstractVector{S}) where {T<:Abstract
 end
 
 # Optimized path when xi element type matches T (zero conversion)
-function (itp::CubicInterpCallable{T})(xi::AbstractVector{T}) where {T<:AbstractFloat}
+function (itp::CubicInterpolant{T})(xi::AbstractVector{T}) where {T<:AbstractFloat}
     output = Vector{T}(undef, length(xi))
     @inbounds for (k, xq) in enumerate(xi)
         output[k] = _eval_cubic_at_point(itp.cache.x, itp.y, itp.cache.h, itp.z, xq)
@@ -559,7 +559,7 @@ function (itp::CubicInterpCallable{T})(xi::AbstractVector{T}) where {T<:Abstract
 end
 
 # In-place vector call - zero allocation
-function (itp::CubicInterpCallable{T})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat}
+function (itp::CubicInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat}
     @assert length(output) == length(xi) "output length must match xi length"
     @inbounds for (k, xq) in enumerate(xi)
         output[k] = _eval_cubic_at_point(itp.cache.x, itp.y, itp.cache.h, itp.z, xq)
@@ -568,7 +568,7 @@ function (itp::CubicInterpCallable{T})(output::AbstractVector{T}, xi::AbstractVe
 end
 
 # In-place with type conversion
-function (itp::CubicInterpCallable{T})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
+function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     @inbounds for (k, xq) in enumerate(xi)
         output[k] = _eval_cubic_at_point(itp.cache.x, itp.y, itp.cache.h, itp.z, T(xq))
@@ -581,9 +581,9 @@ end
 # ========================================
 
 """
-    cubic_interp(x, y; autocache=true) -> CubicInterpCallable
+    cubic_interp(x, y; autocache=true) -> CubicInterpolant
 
-Create a callable interpolator for broadcast fusion and reuse.
+Create a callable interpolant for broadcast fusion and reuse.
 
 Pre-computes second derivative coefficients z ONCE at construction time,
 enabling true zero-allocation scalar evaluations in broadcast operations.
@@ -594,7 +594,7 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 - `autocache::Bool`: Use automatic cache lookup (default: true)
 
 # Returns
-`CubicInterpCallable` object that can be:
+`CubicInterpolant` object that can be:
 - Called with scalar: `itp(0.5)` (zero-allocation!)
 - Broadcasted: `itp.(rho)` or `@. coef * itp(rho)` (zero-allocation per call!)
 - Reused multiple times without re-creating
@@ -635,7 +635,7 @@ function cubic_interp(
     _solve_cubic_system!(cache.z_workspace, cache.d_workspace, cache, y)
     z = copy(cache.z_workspace)  # Allocate separate storage for callable
 
-    return CubicInterpCallable(cache, y, z)
+    return CubicInterpolant(cache, y, z)
 end
 
 # Real wrapper for 2-argument form
@@ -655,7 +655,7 @@ function cubic_interp(
     _solve_cubic_system!(cache.z_workspace, cache.d_workspace, cache, y_float)
     z = copy(cache.z_workspace)  # Allocate separate storage for callable
 
-    return CubicInterpCallable(cache, y_float, z)
+    return CubicInterpolant(cache, y_float, z)
 end
 
 # ============================================================================

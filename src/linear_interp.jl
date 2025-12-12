@@ -321,9 +321,9 @@ end
 # ========================================
 
 """
-    LinearInterpCallable{T,X,Y}
+    LinearInterpolant{T,X,Y}
 
-Lightweight callable interpolator for broadcast fusion optimization.
+Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `linear_interp(x, y)` (2-argument form).
 
 # Fields
@@ -344,12 +344,12 @@ vals1 = itp.(query_points1)
 vals2 = @. compute(itp(query_points2))
 ```
 """
-struct LinearInterpCallable{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector{T}}
+struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector{T}}
     x::X
     y::Y
     extrap::Val
 
-    function LinearInterpCallable(
+    function LinearInterpolant(
         x::X,
         y::Y;
         extrapolation::Symbol=:extension
@@ -361,17 +361,17 @@ struct LinearInterpCallable{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVec
 end
 
 # Scalar call - hot path (inlined for broadcast fusion)
-@inline function (itp::LinearInterpCallable{T})(xi::T) where {T<:AbstractFloat}
+@inline function (itp::LinearInterpolant{T})(xi::T) where {T<:AbstractFloat}
     linear_interp(itp.x, itp.y, xi, itp.extrap)
 end
 
 # Real scalar wrapper for convenience
-@inline function (itp::LinearInterpCallable{T})(xi::S) where {T<:AbstractFloat, S<:Real}
+@inline function (itp::LinearInterpolant{T})(xi::S) where {T<:AbstractFloat, S<:Real}
     linear_interp(itp.x, itp.y, T(xi), itp.extrap)
 end
 
 # Vector call - optimized to avoid type reflection
-function (itp::LinearInterpCallable{T,X,Y})(xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
+function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
     output = Vector{T}(undef, length(xi))
     xi_typed = S === T ? xi : T.(xi)
     @inbounds for i in eachindex(xi, output)
@@ -381,7 +381,7 @@ function (itp::LinearInterpCallable{T,X,Y})(xi::AbstractVector{S}) where {T<:Abs
 end
 
 # Optimized path when xi element type matches T (zero conversion)
-function (itp::LinearInterpCallable{T,X,Y})(xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
+function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
     output = Vector{T}(undef, length(xi))
     @inbounds for i in eachindex(xi, output)
         output[i] = linear_interp(itp.x, itp.y, xi[i], itp.extrap)
@@ -390,7 +390,7 @@ function (itp::LinearInterpCallable{T,X,Y})(xi::AbstractVector{T}) where {T<:Abs
 end
 
 # In-place vector call - zero allocation
-function (itp::LinearInterpCallable{T,X,Y})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
+function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
     @assert length(output) == length(xi) "output length must match xi length"
     @inbounds for i in eachindex(xi, output)
         output[i] = linear_interp(itp.x, itp.y, xi[i], itp.extrap)
@@ -399,7 +399,7 @@ function (itp::LinearInterpCallable{T,X,Y})(output::AbstractVector{T}, xi::Abstr
 end
 
 # In-place with type conversion
-function (itp::LinearInterpCallable{T,X,Y})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
+function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     @inbounds for i in eachindex(xi, output)
         output[i] = linear_interp(itp.x, itp.y, T(xi[i]), itp.extrap)
@@ -412,9 +412,9 @@ end
 # ========================================
 
 """
-    linear_interp(x, y; extrapolation=:extension) -> LinearInterpCallable
+    linear_interp(x, y; extrapolation=:extension) -> LinearInterpolant
 
-Create a callable interpolator for broadcast fusion and reuse.
+Create a callable interpolant for broadcast fusion and reuse.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (must be sorted)
@@ -422,7 +422,7 @@ Create a callable interpolator for broadcast fusion and reuse.
 - `extrapolation::Symbol`: `:extension` (default) or `:constant`
 
 # Returns
-`LinearInterpCallable` object that can be:
+`LinearInterpolant` object that can be:
 - Called with scalar: `itp(0.5)`
 - Broadcasted: `itp.(rho)` or `@. coef * itp(rho)`
 - Reused multiple times without re-creating
@@ -456,7 +456,7 @@ function linear_interp(
     y::AbstractVector{T};
     extrapolation::Symbol=:extension
 ) where {T<:AbstractFloat}
-    return LinearInterpCallable(x, y; extrapolation)
+    return LinearInterpolant(x, y; extrapolation)
 end
 
 # Real wrapper for 2-argument form (allows different container types)
@@ -468,5 +468,5 @@ function linear_interp(
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
     T = promote_type(TX, TY)
     FT = float(T)
-    return LinearInterpCallable(_to_float(x, FT), FT.(y); extrapolation)
+    return LinearInterpolant(_to_float(x, FT), FT.(y); extrapolation)
 end

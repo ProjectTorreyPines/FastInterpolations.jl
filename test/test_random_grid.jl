@@ -55,7 +55,7 @@
         @testset "Callable interface" begin
             itp = linear_interp(x_random, y)
 
-            @test itp isa LinearInterpCallable
+            @test itp isa LinearInterpolant
             @test itp.x isa Vector{Float64}  # Random grid stored as Vector
 
             x_min, x_max = extrema(x_random)
@@ -114,7 +114,7 @@
         @testset "Callable interface" begin
             itp = cubic_interp(x_random, y; autocache=false)
 
-            @test itp isa CubicInterpCallable
+            @test itp isa CubicInterpolant
             @test itp.cache.x isa Vector{Float64}  # Random grid stored as Vector
 
             x_min, x_max = extrema(x_random)

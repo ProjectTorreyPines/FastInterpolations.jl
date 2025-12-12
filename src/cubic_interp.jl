@@ -539,9 +539,23 @@ end
     _eval_cubic_at_point(itp.cache.x, itp.y, itp.cache.h, itp.z, T(xi))
 end
 
-# Vector call - delegates to 3-argument version
-function (itp::CubicInterpCallable{T})(xi::AbstractVector) where {T<:AbstractFloat}
-    cubic_interp(itp.cache, itp.y, xi)
+# Vector call - uses pre-computed z coefficients (no redundant system solve!)
+function (itp::CubicInterpCallable{T})(xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
+    xi_typed = S === T ? xi : T.(xi)
+    output = Vector{T}(undef, length(xi_typed))
+    @inbounds for (k, xq) in enumerate(xi_typed)
+        output[k] = _eval_cubic_at_point(itp.cache.x, itp.y, itp.cache.h, itp.z, xq)
+    end
+    return output
+end
+
+# Optimized path when xi element type matches T (zero conversion)
+function (itp::CubicInterpCallable{T})(xi::AbstractVector{T}) where {T<:AbstractFloat}
+    output = Vector{T}(undef, length(xi))
+    @inbounds for (k, xq) in enumerate(xi)
+        output[k] = _eval_cubic_at_point(itp.cache.x, itp.y, itp.cache.h, itp.z, xq)
+    end
+    return output
 end
 
 # ========================================

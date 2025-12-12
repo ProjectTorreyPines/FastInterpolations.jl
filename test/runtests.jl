@@ -1,5 +1,6 @@
 using Test
 using FastInterpolations
+using Random
 
 # Check if specific test files are requested via ARGS
 if !isempty(ARGS)
@@ -15,5 +16,6 @@ else
         include("test_cubic_autocache.jl")
         include("test_cubic_callable.jl")
         include("test_allocation.jl")
+        include("test_random_grid.jl")
     end
 end

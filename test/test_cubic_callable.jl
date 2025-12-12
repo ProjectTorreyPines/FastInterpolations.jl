@@ -230,16 +230,15 @@ end
         @test result[1] ≈ sin(2π * 0.5) atol=0.01
     end
 
-    @testset "Range input via autocache → entry stores Range, spline uses Vector" begin
+    @testset "Range input via autocache → Range preserved for O(1) lookup" begin
         clear_cubic_cache!()
         x_range = range(0.0, 1.0, 11)
         y = sin.(2π .* collect(x_range))
 
-        # Autocache design trade-off:
-        # - entry.x: Stores original Range for O(1) isequal in Slow Path
-        # - spline.x: Uses Vector for type stability (zero-allocation cache hit requirement)
+        # Range-preserving cache: Range is kept as Range for O(1) index lookup!
+        # This provides significant performance benefit over Vector (binary search)
         itp = cubic_interp(x_range, y; autocache=true)
-        @test itp.cache.x isa Vector{Float64}  # spline uses Vector for type stability
+        @test itp.cache.x isa StepRangeLen  # Range preserved for O(1) index calculation
 
         # Verify correctness
         @test itp(0.5) ≈ sin(2π * 0.5) atol=0.01

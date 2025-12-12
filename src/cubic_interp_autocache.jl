@@ -23,34 +23,74 @@ Transparently reuses LU factorization for repeated x-grids.
 const _LU_Type_F64 = LinearAlgebra.LU{Float64, LinearAlgebra.Tridiagonal{Float64, Vector{Float64}}, Vector{Int64}}
 const _LU_Type_F32 = LinearAlgebra.LU{Float32, LinearAlgebra.Tridiagonal{Float32, Vector{Float32}}, Vector{Int64}}
 
-# Concrete CubicSplineCache types (spline.x is always Vector for type stability)
+# StepRangeLen concrete types (from `range(a, b, n)`)
+# These are the canonical Range types we optimize for
+const _StepRangeLen_F64 = StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
+const _StepRangeLen_F32 = StepRangeLen{Float32, Float64, Float64, Int64}
+
+# Concrete CubicSplineCache types for Vector-based caches
 # Using concrete types ensures zero-allocation on cache hit
-const _CubicSplineCache_F64 = CubicSplineCache{Float64, Vector{Float64}, _LU_Type_F64}
-const _CubicSplineCache_F32 = CubicSplineCache{Float32, Vector{Float32}, _LU_Type_F32}
+const _CubicSplineCache_Vec_F64 = CubicSplineCache{Float64, Vector{Float64}, _LU_Type_F64}
+const _CubicSplineCache_Vec_F32 = CubicSplineCache{Float32, Vector{Float32}, _LU_Type_F32}
 
-# Mutable cache entry for self-healing objectid updates
-# - entry.x: Original type (Range or Vector) for efficient isequal (O(1) for Range)
-# - entry.spline: Always uses Vector for type stability (zero-allocation requirement)
-mutable struct CacheEntryF64
+# Concrete CubicSplineCache types for Range-based caches (O(1) index lookup!)
+const _CubicSplineCache_Range_F64 = CubicSplineCache{Float64, _StepRangeLen_F64, _LU_Type_F64}
+const _CubicSplineCache_Range_F32 = CubicSplineCache{Float32, _StepRangeLen_F32, _LU_Type_F32}
+
+# ═══════════════════════════════════════════════════════════════════════
+# Cache Entries - Separate for Vector and Range to maintain type stability
+# ═══════════════════════════════════════════════════════════════════════
+
+# Vector-based cache entries (O(log n) binary search during interpolation)
+mutable struct CacheEntryVecF64
     id::UInt                          # objectid(x) - Fast Path lookup
-    x::AbstractVector{Float64}        # Original x (Range or Vector) - Slow Path O(1)/O(N) isequal
-    spline::_CubicSplineCache_F64     # Concrete type for zero-allocation cache hit
+    x::Vector{Float64}                # Concrete Vector type
+    spline::_CubicSplineCache_Vec_F64 # Concrete spline type for zero-allocation
 end
 
-mutable struct CacheEntryF32
+mutable struct CacheEntryVecF32
     id::UInt
-    x::AbstractVector{Float32}
-    spline::_CubicSplineCache_F32
+    x::Vector{Float32}
+    spline::_CubicSplineCache_Vec_F32
 end
 
-# Global cache stores: Type-stable vectors for each supported float type
-# Separate vectors avoid type instability during iteration (critical for zero-allocation)
-const _CUBIC_CACHE_STORE_F64 = Vector{CacheEntryF64}()
-const _CUBIC_CACHE_STORE_F32 = Vector{CacheEntryF32}()
+# Range-based cache entries (O(1) direct index calculation during interpolation!)
+mutable struct CacheEntryRangeF64
+    id::UInt                            # objectid(x) - Fast Path lookup
+    x::_StepRangeLen_F64                # Concrete Range type
+    spline::_CubicSplineCache_Range_F64 # Range-based spline for O(1) lookup
+end
+
+mutable struct CacheEntryRangeF32
+    id::UInt
+    x::_StepRangeLen_F32
+    spline::_CubicSplineCache_Range_F32
+end
+
+# ═══════════════════════════════════════════════════════════════════════
+# Global Cache Stores
+# ═══════════════════════════════════════════════════════════════════════
+# Separate stores for Vector and Range to maintain type stability
+# Type-stable vectors avoid boxing during iteration (critical for zero-allocation)
+
+# Vector-based stores (for non-uniform grids)
+const _CUBIC_CACHE_STORE_VEC_F64 = Vector{CacheEntryVecF64}()
+const _CUBIC_CACHE_STORE_VEC_F32 = Vector{CacheEntryVecF32}()
+
+# Range-based stores (for uniform grids - O(1) index lookup!)
+const _CUBIC_CACHE_STORE_RANGE_F64 = Vector{CacheEntryRangeF64}()
+const _CUBIC_CACHE_STORE_RANGE_F32 = Vector{CacheEntryRangeF32}()
+
 const _CACHE_LOCK = ReentrantLock()
-const _CACHE_SIZE_REF = Ref{Int}(16)  # Max cache entries (shared across all types)
-const _RING_IDX_F64 = Ref{Int}(1)     # Ring buffer pointer for Float64
-const _RING_IDX_F32 = Ref{Int}(1)     # Ring buffer pointer for Float32
+const _CACHE_SIZE_REF = Ref{Int}(16)  # Max cache entries per store
+
+# Ring buffer pointers for Vector stores
+const _RING_IDX_VEC_F64 = Ref{Int}(1)
+const _RING_IDX_VEC_F32 = Ref{Int}(1)
+
+# Ring buffer pointers for Range stores
+const _RING_IDX_RANGE_F64 = Ref{Int}(1)
+const _RING_IDX_RANGE_F32 = Ref{Int}(1)
 
 # Statistics (individual Refs to avoid NamedTuple allocation on update)
 const _CACHE_HITS = Ref{Int}(0)
@@ -102,10 +142,19 @@ clear_cubic_cache!()
 function clear_cubic_cache!()
     lock(_CACHE_LOCK)
     try
-        empty!(_CUBIC_CACHE_STORE_F64)
-        empty!(_CUBIC_CACHE_STORE_F32)
-        _RING_IDX_F64[] = 1
-        _RING_IDX_F32[] = 1
+        # Clear Vector stores
+        empty!(_CUBIC_CACHE_STORE_VEC_F64)
+        empty!(_CUBIC_CACHE_STORE_VEC_F32)
+        _RING_IDX_VEC_F64[] = 1
+        _RING_IDX_VEC_F32[] = 1
+
+        # Clear Range stores
+        empty!(_CUBIC_CACHE_STORE_RANGE_F64)
+        empty!(_CUBIC_CACHE_STORE_RANGE_F32)
+        _RING_IDX_RANGE_F64[] = 1
+        _RING_IDX_RANGE_F32[] = 1
+
+        # Reset statistics
         _CACHE_HITS[] = 0
         _CACHE_MISSES[] = 0
         _CACHE_EVICTIONS[] = 0
@@ -134,10 +183,11 @@ function cubic_cache_stats()
     misses = _CACHE_MISSES[]
     evictions = _CACHE_EVICTIONS[]
 
-    local total_size
+    local vec_size, range_size
     lock(_CACHE_LOCK)
     try
-        total_size = length(_CUBIC_CACHE_STORE_F64) + length(_CUBIC_CACHE_STORE_F32)
+        vec_size = length(_CUBIC_CACHE_STORE_VEC_F64) + length(_CUBIC_CACHE_STORE_VEC_F32)
+        range_size = length(_CUBIC_CACHE_STORE_RANGE_F64) + length(_CUBIC_CACHE_STORE_RANGE_F32)
     finally
         unlock(_CACHE_LOCK)
     end
@@ -149,8 +199,9 @@ function cubic_cache_stats()
         hits = hits,
         misses = misses,
         evictions = evictions,
-        collisions = 0,  # No longer tracked (no hash buckets)
-        size = total_size,
+        vec_size = vec_size,
+        range_size = range_size,
+        size = vec_size + range_size,
         efficiency = efficiency
     )
 end
@@ -159,22 +210,17 @@ end
 # Internal Cache Management
 # ===============================================================
 
-# Type-specific cache accessors (for type stability)
-@inline _get_cache_store(::Type{Float64}) = _CUBIC_CACHE_STORE_F64
-@inline _get_cache_store(::Type{Float32}) = _CUBIC_CACHE_STORE_F32
-@inline _get_ring_idx(::Type{Float64}) = _RING_IDX_F64
-@inline _get_ring_idx(::Type{Float32}) = _RING_IDX_F32
+# ─────────────────────────────────────────────────────────────────
+# Vector Cache Helpers
+# ─────────────────────────────────────────────────────────────────
 
 """
-    add_to_cache_f64!(entry::CacheEntryF64)
-
-Add Float64 entry to cache with ring buffer eviction.
-O(1) eviction by overwriting oldest slot.
+Add Float64 Vector entry to cache with ring buffer eviction.
 Must be called within lock.
 """
-function add_to_cache_f64!(entry::CacheEntryF64)
-    store = _CUBIC_CACHE_STORE_F64
-    ring_idx = _RING_IDX_F64
+function add_to_cache_vec_f64!(entry::CacheEntryVecF64)
+    store = _CUBIC_CACHE_STORE_VEC_F64
+    ring_idx = _RING_IDX_VEC_F64
     max_size = _CACHE_SIZE_REF[]
 
     if length(store) < max_size
@@ -188,13 +234,34 @@ function add_to_cache_f64!(entry::CacheEntryF64)
 end
 
 """
-    add_to_cache_f32!(entry::CacheEntryF32)
-
-Add Float32 entry to cache with ring buffer eviction.
+Add Float32 Vector entry to cache with ring buffer eviction.
 """
-function add_to_cache_f32!(entry::CacheEntryF32)
-    store = _CUBIC_CACHE_STORE_F32
-    ring_idx = _RING_IDX_F32
+function add_to_cache_vec_f32!(entry::CacheEntryVecF32)
+    store = _CUBIC_CACHE_STORE_VEC_F32
+    ring_idx = _RING_IDX_VEC_F32
+    max_size = _CACHE_SIZE_REF[]
+
+    if length(store) < max_size
+        push!(store, entry)
+    else
+        idx = ring_idx[]
+        store[idx] = entry
+        ring_idx[] = (idx % max_size) + 1
+        _CACHE_EVICTIONS[] += 1
+    end
+end
+
+# ─────────────────────────────────────────────────────────────────
+# Range Cache Helpers
+# ─────────────────────────────────────────────────────────────────
+
+"""
+Add Float64 Range entry to cache with ring buffer eviction.
+Must be called within lock.
+"""
+function add_to_cache_range_f64!(entry::CacheEntryRangeF64)
+    store = _CUBIC_CACHE_STORE_RANGE_F64
+    ring_idx = _RING_IDX_RANGE_F64
     max_size = _CACHE_SIZE_REF[]
 
     if length(store) < max_size
@@ -208,33 +275,49 @@ function add_to_cache_f32!(entry::CacheEntryF32)
 end
 
 """
-    get_cubic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
-
-Internal: Lookup or create cache for x-grid with zero-allocation hit.
-
-Thread-safe with ReentrantLock. Returns existing cache if x matches
-(using 2-pass lookup: objectid → isequal), otherwise creates new cache.
-
-# Implementation Details
-
-- **Pass 1 (Fast Path)**: objectid(x) comparison - O(1), zero allocation
-  - Range inputs benefit from Julia's interning (same params → same objectid)
-- **Pass 2 (Slow Path)**: isequal(x, entry.x) - O(1) for Range, O(N) for Vector
-  - Range: compares start/step/length only
-  - Vector: element-by-element comparison
-- **Self-Healing**: Updates entry.id on Pass 2 hit for future fast-path
-- **Ring Buffer**: O(1) eviction by circular index overwrite
-- **Type-stable**: Separate stores for Float64/Float32 avoid boxing
-- **Memory-efficient**: entry.x stores original type (Range is lightweight)
+Add Float32 Range entry to cache with ring buffer eviction.
 """
-function get_cubic_cache(x::AbstractVector{Float64})
+function add_to_cache_range_f32!(entry::CacheEntryRangeF32)
+    store = _CUBIC_CACHE_STORE_RANGE_F32
+    ring_idx = _RING_IDX_RANGE_F32
+    max_size = _CACHE_SIZE_REF[]
+
+    if length(store) < max_size
+        push!(store, entry)
+    else
+        idx = ring_idx[]
+        store[idx] = entry
+        ring_idx[] = (idx % max_size) + 1
+        _CACHE_EVICTIONS[] += 1
+    end
+end
+
+# ═══════════════════════════════════════════════════════════════════════
+# get_cubic_cache - Dispatches to Range or Vector stores
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Type dispatch hierarchy:
+#   - _StepRangeLen_F64 → Range store (O(1) index lookup preserved!)
+#   - Vector{Float64} → Vector store (O(log n) binary search)
+#   - AbstractRange → normalized to _StepRangeLen → Range store
+#   - AbstractVector → collected to Vector → Vector store
+
+# ─────────────────────────────────────────────────────────────────
+# Range-specific methods (O(1) index lookup preserved!)
+# ─────────────────────────────────────────────────────────────────
+
+"""
+    get_cubic_cache(x::_StepRangeLen_F64)
+
+Lookup/create cache for StepRangeLen grid. Preserves Range type for O(1) index lookup.
+"""
+function get_cubic_cache(x::_StepRangeLen_F64)
     id = objectid(x)
-    store = _CUBIC_CACHE_STORE_F64
+    store = _CUBIC_CACHE_STORE_RANGE_F64
 
     lock(_CACHE_LOCK)
     try
-        # [Pass 1] Identity Check (Ultra Fast Path)
-        # O(K) where K ≤ 16, just integer comparison
+        # [Pass 1] Identity Check - O(1)
         @inbounds for entry in store
             if entry.id === id
                 _CACHE_HITS[] += 1
@@ -242,28 +325,20 @@ function get_cubic_cache(x::AbstractVector{Float64})
             end
         end
 
-        # [Pass 2] Equality Check (Slow Path)
-        # O(K) for Range (compares start/step/length), O(K×N) for Vector
+        # [Pass 2] Equality Check - O(1) for Range (compares start/step/length)
         @inbounds for entry in store
-            if isequal(entry.x, x)
-                # Self-Healing: Update ID for next call to hit Pass 1
+            if entry.x == x
                 entry.id = id
                 _CACHE_HITS[] += 1
                 return entry.spline
             end
         end
 
-        # [Cache Miss] Create and register new cache
+        # [Cache Miss] Create Range-based cache (preserves O(1) lookup!)
         _CACHE_MISSES[] += 1
-        # Spline uses Vector for type stability (ensures zero-allocation cache hits)
-        # Type instability from abstract X parameter would cause boxing on every access
-        x_vec = x isa Vector{Float64} ? x : collect(x)
-        new_spline = CubicSplineCache(x_vec)
-        # Store ORIGINAL x (Range or Vector) for efficient lookup
-        # - Range: O(1) isequal, memory-efficient (just start/step/length)
-        # - Vector: O(N) isequal, stores full array
-        new_entry = CacheEntryF64(id, x, new_spline)
-        add_to_cache_f64!(new_entry)
+        new_spline = CubicSplineCache(x)  # x stays as Range!
+        new_entry = CacheEntryRangeF64(id, x, new_spline)
+        add_to_cache_range_f64!(new_entry)
 
         return new_spline
     finally
@@ -271,13 +346,12 @@ function get_cubic_cache(x::AbstractVector{Float64})
     end
 end
 
-function get_cubic_cache(x::AbstractVector{Float32})
+function get_cubic_cache(x::_StepRangeLen_F32)
     id = objectid(x)
-    store = _CUBIC_CACHE_STORE_F32
+    store = _CUBIC_CACHE_STORE_RANGE_F32
 
     lock(_CACHE_LOCK)
     try
-        # [Pass 1] Identity Check (Ultra Fast Path)
         @inbounds for entry in store
             if entry.id === id
                 _CACHE_HITS[] += 1
@@ -285,8 +359,61 @@ function get_cubic_cache(x::AbstractVector{Float32})
             end
         end
 
-        # [Pass 2] Equality Check (Slow Path)
-        # O(K) for Range (compares start/step/length), O(K×N) for Vector
+        @inbounds for entry in store
+            if entry.x == x
+                entry.id = id
+                _CACHE_HITS[] += 1
+                return entry.spline
+            end
+        end
+
+        _CACHE_MISSES[] += 1
+        new_spline = CubicSplineCache(x)
+        new_entry = CacheEntryRangeF32(id, x, new_spline)
+        add_to_cache_range_f32!(new_entry)
+
+        return new_spline
+    finally
+        unlock(_CACHE_LOCK)
+    end
+end
+
+# AbstractRange fallback: normalize to canonical StepRangeLen
+function get_cubic_cache(x::AbstractRange{Float64})
+    # Convert to canonical StepRangeLen{Float64, TwicePrecision, TwicePrecision, Int64}
+    x_range = range(first(x), last(x), length(x))
+    return get_cubic_cache(x_range)
+end
+
+function get_cubic_cache(x::AbstractRange{Float32})
+    x_range = range(first(x), last(x), length(x))
+    return get_cubic_cache(x_range)
+end
+
+# ─────────────────────────────────────────────────────────────────
+# Vector-specific methods (O(log n) binary search)
+# ─────────────────────────────────────────────────────────────────
+
+"""
+    get_cubic_cache(x::Vector{Float64})
+
+Lookup/create cache for Vector grid. Uses binary search for interval lookup.
+"""
+function get_cubic_cache(x::Vector{Float64})
+    id = objectid(x)
+    store = _CUBIC_CACHE_STORE_VEC_F64
+
+    lock(_CACHE_LOCK)
+    try
+        # [Pass 1] Identity Check - O(K)
+        @inbounds for entry in store
+            if entry.id === id
+                _CACHE_HITS[] += 1
+                return entry.spline
+            end
+        end
+
+        # [Pass 2] Equality Check - O(K×N)
         @inbounds for entry in store
             if isequal(entry.x, x)
                 entry.id = id
@@ -297,12 +424,41 @@ function get_cubic_cache(x::AbstractVector{Float32})
 
         # [Cache Miss]
         _CACHE_MISSES[] += 1
-        # Spline uses Vector for type stability (ensures zero-allocation cache hits)
-        x_vec = x isa Vector{Float32} ? x : collect(x)
-        new_spline = CubicSplineCache(x_vec)
-        # Store ORIGINAL x (Range or Vector) for efficient lookup
-        new_entry = CacheEntryF32(id, x, new_spline)
-        add_to_cache_f32!(new_entry)
+        new_spline = CubicSplineCache(x)
+        new_entry = CacheEntryVecF64(id, x, new_spline)
+        add_to_cache_vec_f64!(new_entry)
+
+        return new_spline
+    finally
+        unlock(_CACHE_LOCK)
+    end
+end
+
+function get_cubic_cache(x::Vector{Float32})
+    id = objectid(x)
+    store = _CUBIC_CACHE_STORE_VEC_F32
+
+    lock(_CACHE_LOCK)
+    try
+        @inbounds for entry in store
+            if entry.id === id
+                _CACHE_HITS[] += 1
+                return entry.spline
+            end
+        end
+
+        @inbounds for entry in store
+            if isequal(entry.x, x)
+                entry.id = id
+                _CACHE_HITS[] += 1
+                return entry.spline
+            end
+        end
+
+        _CACHE_MISSES[] += 1
+        new_spline = CubicSplineCache(x)
+        new_entry = CacheEntryVecF32(id, x, new_spline)
+        add_to_cache_vec_f32!(new_entry)
 
         return new_spline
     finally

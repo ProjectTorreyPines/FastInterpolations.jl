@@ -4,9 +4,9 @@ A high-performance 1D interpolation package for Julia, optimized for speed and m
 
 ## Features
 
-- **Fast**: Optimized algorithms outperform other packages
-- **Zero-allocation**: Auto-managed caching eliminates allocations on hot paths
-- **Simple API**: Single function call for common use cases
+- 🚀 **Fast**: Optimized algorithms outperform other packages
+- ✅ **Zero-allocation**: Auto-managed caching eliminates allocations on hot paths
+- 🎯 **Simple API**: One-shot function call — no intermediate objects
 
 ## Installation
 `FastInterpolations` is registered with [FuseRegistry](https://github.com/ProjectTorreyPines/FuseRegistry.jl/):
@@ -19,11 +19,12 @@ Pkg.add("FastInterpolations")
 ```
 
 ## Quick Start
+Supports **linear** and **cubic spline** interpolation. Works with `Range` or `Vector` grids (`Range` recommended for best performance).
 
 ```julia
 using FastInterpolations
 
-x = range(0.0, 10.0, 100)
+x = range(0.0, 10.0, 100)  # or Vector: x = collect(range(...))
 y = sin.(x)
 
 # Interpolate at a point
@@ -47,7 +48,8 @@ end
 
 ## API Reference
 
-1. One-shot (construction + evaluation)
+### One-shot (construction + evaluation)
+
 | Function | Description |
 |----------|-------------|
 | `linear_interp(x, y, xq)` | Linear interpolation at point(s) `xq` |
@@ -55,11 +57,12 @@ end
 | `cubic_interp(x, y, xq)` | Cubic spline interpolation at point(s) `xq` |
 | `cubic_interp!(out, x, y, xq)` | In-place cubic spline interpolation |
 
-2. Create and re-use interpolator
+### Re-usable interpolant
+
 | Function | Description |
 |----------|-------------|
-| `itp = linear_interp(x, y)` | Create linear interpolator |
-| `itp = cubic_interp(x, y)` | Create cubic spline interpolator |
+| `itp = linear_interp(x, y)` | Create linear interpolant |
+| `itp = cubic_interp(x, y)` | Create cubic spline interpolant |
 | `itp(xq)` | Evaluate at point(s) `xq` |
 | `itp(out, xq)` | Evaluate at `xq`, store result in `out` |
 

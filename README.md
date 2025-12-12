@@ -40,7 +40,7 @@ linear_interp(x, y, xq)
 cubic_interp(x, y, xq)
 
 # In-place interpolation for maximum performance and zero-allocation
-out = zeros(N_query)
+out = similar(xq) 
 for step in 1:1000
     y = compute_new_values(step) # evolving y over time
 

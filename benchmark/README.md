@@ -9,6 +9,17 @@ cd benchmark
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
+## Configuration
+
+The benchmark duration is set to `DEFAULT_BENCH_SECONDS = 0.5` in `simple_benchmarks.jl` for faster iteration. For more accurate results, increase this value to 5 or higher:
+
+```julia
+# In simple_benchmarks.jl, line 39
+const DEFAULT_BENCH_SECONDS = 5.0  # More accurate results
+```
+
+Note: The result plots below were generated with `DEFAULT_BENCH_SECONDS = 5.0` or higher.
+
 ## Usage
 
 ```julia

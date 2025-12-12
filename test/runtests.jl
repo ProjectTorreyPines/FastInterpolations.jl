@@ -20,4 +20,5 @@ else
     include("test_cubic_callable.jl")
     include("test_allocation.jl")
     include("test_random_grid.jl")
+    include("test_packages_comparison.jl")
 end

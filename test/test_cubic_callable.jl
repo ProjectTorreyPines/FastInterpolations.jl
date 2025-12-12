@@ -1,3 +1,5 @@
+# ALLOC_THRESHOLD is defined in runtests.jl
+
 @testset "CubicInterpCallable" begin
     # Setup
     x = collect(range(0.0, 1.0, 11))
@@ -151,13 +153,13 @@
         # Warmup
         _ = itp(xi)
 
-        # Scalar call - MUST be zero allocation (uses pre-computed z)
+        # Scalar call - zero allocation on 1.12+ (uses pre-computed z)
         allocs = @allocated itp(xi)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
 
         # Different query point - still zero allocation
         allocs = @allocated itp(0.75)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Allocation efficiency - Vector call" begin

@@ -1,3 +1,5 @@
+# ALLOC_THRESHOLD is defined in runtests.jl
+
 @testset "Random Grid (Non-uniform Spacing)" begin
     # Random grids require binary search O(log n) - tests the non-uniform path
 
@@ -77,7 +79,7 @@
 
             itp(xi)  # warmup
             allocs = @allocated itp(xi)
-            @test allocs == 0
+            @test allocs <= ALLOC_THRESHOLD
         end
     end
 
@@ -130,7 +132,7 @@
 
             itp(xi)  # warmup
             allocs = @allocated itp(xi)
-            @test allocs == 0
+            @test allocs <= ALLOC_THRESHOLD
         end
 
         @testset "Cache reuse with random grid" begin

@@ -2,6 +2,10 @@ using Test
 using FastInterpolations
 using Random
 
+# Julia 1.12+ achieves true zero-allocation via improved escape analysis.
+# Older versions have small runtime overhead from mutable struct field access.
+const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 64
+
 # Check if specific test files are requested via ARGS
 if !isempty(ARGS)
     for testfile in ARGS

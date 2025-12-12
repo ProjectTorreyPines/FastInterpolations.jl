@@ -64,9 +64,9 @@ end
     x_targets::AbstractVector{FT};
     extrapolation::Symbol=:extension
 ) where {FT<:AbstractFloat}
-    # @assert length(y) == length(x) "x and y must have same length"
-    # @assert length(output) == length(x_targets) "output must match x_targets length"
-    # @assert extrapolation in (:constant, :extension) "extrapolation must be :constant or :extension"
+    @assert length(y) == length(x) "x and y must have same length"
+    @assert length(output) == length(x_targets) "output must match x_targets length"
+    @assert extrapolation in (:constant, :extension) "extrapolation must be :constant or :extension"
 
     extrap_val = Val(extrapolation)  # Create Val once outside loop
     # Calls optimized scalar version with Val dispatch

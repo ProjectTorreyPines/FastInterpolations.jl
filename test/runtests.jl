@@ -14,12 +14,10 @@ if !isempty(ARGS)
     end
 else
     # Default behavior: run all tests
-    @testset "FastInterpolations.jl" begin
-        include("test_linear.jl")
-        include("test_cubic.jl")
-        include("test_cubic_autocache.jl")
-        include("test_cubic_callable.jl")
-        include("test_allocation.jl")
-        include("test_random_grid.jl")
-    end
+    include("test_linear.jl")
+    include("test_cubic.jl")
+    include("test_cubic_autocache.jl")
+    include("test_cubic_callable.jl")
+    include("test_allocation.jl")
+    include("test_random_grid.jl")
 end

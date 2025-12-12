@@ -558,6 +558,24 @@ function (itp::CubicInterpCallable{T})(xi::AbstractVector{T}) where {T<:Abstract
     return output
 end
 
+# In-place vector call - zero allocation
+function (itp::CubicInterpCallable{T})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat}
+    @assert length(output) == length(xi) "output length must match xi length"
+    @inbounds for (k, xq) in enumerate(xi)
+        output[k] = _eval_cubic_at_point(itp.cache.x, itp.y, itp.cache.h, itp.z, xq)
+    end
+    return output
+end
+
+# In-place with type conversion
+function (itp::CubicInterpCallable{T})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
+    @assert length(output) == length(xi) "output length must match xi length"
+    @inbounds for (k, xq) in enumerate(xi)
+        output[k] = _eval_cubic_at_point(itp.cache.x, itp.y, itp.cache.h, itp.z, T(xq))
+    end
+    return output
+end
+
 # ========================================
 # 2-Argument Form: Return Callable
 # ========================================

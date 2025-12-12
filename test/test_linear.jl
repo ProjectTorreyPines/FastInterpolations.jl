@@ -547,4 +547,58 @@ end
         # Verify correctness
         @test itp(0.5) ≈ sin(0.5) atol=0.01
     end
+
+    @testset "linear_interp! AbstractVector Real wrappers" begin
+        # Test with Integer Vector
+        x = collect(0:10)
+        y = x.^2
+        x_query = [2.5, 5.5, 7.5]
+        output = zeros(3)
+
+        linear_interp!(output, x, y, x_query)
+        @test output[1] ≈ 2.5^2 atol=1
+        @test output[2] ≈ 5.5^2 atol=1
+
+        # Test with constant extrapolation
+        linear_interp!(output, x, y, x_query; extrapolation=:constant)
+        @test length(output) == 3
+    end
+
+    @testset "linear_interp scalar AbstractVector Real wrapper" begin
+        x = collect(0:10)
+        y = x.^2
+
+        val = linear_interp(x, y, 5.5)
+        @test val ≈ 5.5^2 atol=1
+    end
+
+    @testset "LinearInterpCallable in-place methods" begin
+        x = range(0.0, 1.0, 51)
+        y = Float64.(sin.(2π .* x))
+        itp = linear_interp(x, y)
+
+        x_query = [0.25, 0.5, 0.75]
+        output = zeros(3)
+
+        # Test in-place with matching types
+        itp(output, x_query)
+        @test length(output) == 3
+
+        # Test in-place with type conversion
+        x_query_f32 = Float32[0.25, 0.5, 0.75]
+        output2 = zeros(3)
+        itp(output2, x_query_f32)
+        @test length(output2) == 3
+    end
+
+    @testset "LinearInterpCallable vector with type conversion" begin
+        x = range(0.0, 1.0, 51)
+        y = Float64.(sin.(2π .* x))
+        itp = linear_interp(x, y)
+
+        # Test with Float32 vector
+        x_query_f32 = Float32[0.25, 0.5, 0.75]
+        result = itp(x_query_f32)
+        @test length(result) == 3
+    end
 end

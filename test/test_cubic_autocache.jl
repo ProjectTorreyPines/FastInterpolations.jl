@@ -301,4 +301,102 @@
         @test stats.misses == 0
         @test stats.hits == 0
     end
+
+    @testset "AbstractRange fallback paths" begin
+        clear_cubic_cache!()
+
+        # Test with UnitRange (not StepRangeLen)
+        x_unitrange = 1:51
+        y = sin.(2π .* collect(x_unitrange) ./ 51)
+
+        # This should trigger the AbstractRange{Float64} fallback
+        result = cubic_interp(Float64.(x_unitrange), Float64.(y), 25.0)
+        @test !isnan(result)
+    end
+
+    @testset "Float32 cache operations" begin
+        clear_cubic_cache!()
+        old_size = get_cubic_cache_size()
+        set_cubic_cache_size!(2)  # Small cache for testing
+
+        y = Float32.(ones(51))
+
+        # Fill cache with Float32 Range grids
+        x1_range = range(Float32(0), Float32(1), 51)
+        x2_range = range(Float32(0), Float32(2), 51)
+        x3_range = range(Float32(0), Float32(3), 51)
+
+        cubic_interp(x1_range, y, Float32(0.5))
+        cubic_interp(x2_range, y, Float32(0.5))
+        cubic_interp(x3_range, y, Float32(0.5))  # Should trigger eviction
+
+        # Fill cache with Float32 Vector grids
+        x1_vec = Float32.(collect(range(0.0, 1.0, 51)))
+        x2_vec = Float32.(collect(range(0.0, 2.0, 51)))
+        x3_vec = Float32.(collect(range(0.0, 3.0, 51)))
+
+        cubic_interp(x1_vec, y, Float32(0.5))
+        cubic_interp(x2_vec, y, Float32(0.5))
+        cubic_interp(x3_vec, y, Float32(0.5))  # Should trigger eviction
+
+        set_cubic_cache_size!(old_size)
+    end
+
+    @testset "Float32 self-healing path" begin
+        clear_cubic_cache!()
+
+        x1 = Float32.(collect(range(0.0, 1.0, 51)))
+        y = Float32.(sin.(2π .* x1))
+
+        # Prime cache
+        cubic_interp(x1, y, Float32(0.5))
+
+        # Create equal but different object
+        x2 = Float32.(collect(range(0.0, 1.0, 51)))
+        @test x1 == x2
+        @test objectid(x1) != objectid(x2)
+
+        # This should trigger Pass 2 (equality check) for Float32
+        cubic_interp(x2, y, Float32(0.5))
+
+        stats = cubic_cache_stats()
+        @test stats.misses == 1  # Only first call is a miss
+    end
+
+    @testset "Range eviction paths" begin
+        clear_cubic_cache!()
+        old_size = get_cubic_cache_size()
+        set_cubic_cache_size!(2)
+
+        y = ones(51)
+
+        # Test Float64 Range eviction
+        grids = [range(0.0, Float64(i), 51) for i in 1:4]
+        for grid in grids
+            cubic_interp(grid, y, 0.5)
+        end
+
+        stats = cubic_cache_stats()
+        @test stats.evictions >= 2  # At least 2 evictions for 4 grids in size-2 cache
+
+        set_cubic_cache_size!(old_size)
+    end
+
+    @testset "Range cache hit" begin
+        clear_cubic_cache!()
+
+        x = range(0.0, 1.0, 51)
+        y = sin.(2π .* collect(x))
+
+        # Prime cache
+        cubic_interp(x, y, 0.5)
+
+        # Second call should hit cache (same objectid for Range)
+        cubic_interp(x, y, 0.5)
+
+        stats = cubic_cache_stats()
+        # Should have 1 miss (first call) and 1 hit (second call)
+        @test stats.misses == 1
+        @test stats.hits >= 1
+    end
 end

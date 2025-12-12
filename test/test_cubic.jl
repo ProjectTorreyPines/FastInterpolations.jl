@@ -317,4 +317,57 @@ end
         result_ref = cubic_interp(x_float, y_float, x_extrap)
         @test result == result_ref
     end
+
+    @testset "cubic_interp! with autocache (x, y, x_query)" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        x_query = [0.25, 0.5, 0.75]
+        output = similar(x_query)
+
+        clear_cubic_cache!()
+
+        # Test autocache=true path (default)
+        cubic_interp!(output, x, y, x_query)
+        @test output ≈ sin.(2π .* x_query) atol=1e-6
+
+        # Test autocache=false path
+        cubic_interp!(output, x, y, x_query; autocache=false)
+        @test output ≈ sin.(2π .* x_query) atol=1e-6
+
+        # Test with Range
+        x_range = range(0.0, 1.0, 51)
+        y_range = sin.(2π .* x_range)
+        cubic_interp!(output, x_range, y_range, x_query)
+        @test output ≈ sin.(2π .* x_query) atol=1e-6
+    end
+
+    @testset "cubic_interp! Real type wrappers" begin
+        # Integer inputs
+        x = 0:10
+        y = collect(x).^2
+        x_query = [2.5, 5.5, 7.5]
+        output = zeros(3)
+
+        # In-place vector query with Real types
+        cubic_interp!(output, x, y, x_query)
+        @test length(output) == 3
+
+        # Scalar query with Real types
+        output_scalar = zeros(1)
+        cubic_interp!(output_scalar, x, y, 5.5)
+        @test length(output_scalar) == 1
+    end
+
+    @testset "_to_float Vector path" begin
+        # This tests _to_float for Vector conversion
+        x_int = collect(0:10)
+        y_int = x_int.^2
+
+        # This should use _to_float for Vector conversion
+        itp = cubic_interp(x_int, y_int)
+        @test itp(5.0) ≈ 25.0 atol=1
+
+        itp_lin = linear_interp(x_int, y_int)
+        @test itp_lin(5.0) ≈ 25.0 atol=1
+    end
 end

@@ -341,4 +341,53 @@ end
         y = sin.(2π .* x_vec)
         @test cubic_interp(cache_range, y, [0.5])[1] ≈ cubic_interp(cache_vec, y, [0.5])[1]
     end
+
+    @testset "CubicInterpCallable Real scalar wrapper" begin
+        x = range(0.0, 1.0, 51)
+        y = Float64.(sin.(2π .* x))
+        itp = cubic_interp(x, y)
+
+        # Test with Int scalar (converts to Float64)
+        val_int = itp(1)  # Int input
+        @test val_int ≈ sin(2π * 1.0) atol=1e-6
+
+        # Test with Float32 scalar
+        val_f32 = itp(Float32(0.5))
+        @test val_f32 ≈ sin(2π * 0.5) atol=1e-6
+    end
+
+    @testset "CubicInterpCallable vector with type conversion" begin
+        x = range(0.0, 1.0, 51)
+        y = Float64.(sin.(2π .* x))
+        itp = cubic_interp(x, y)
+
+        # Test with Float32 vector (type conversion)
+        x_query_f32 = Float32[0.25, 0.5, 0.75]
+        result = itp(x_query_f32)
+        @test result ≈ sin.(2π .* x_query_f32) atol=1e-5
+
+        # Test with Int vector
+        x_query_int = [0, 1]  # Int inputs
+        result_int = itp(Float64.(x_query_int))  # Manual conversion needed for Int
+        @test length(result_int) == 2
+    end
+
+    @testset "CubicInterpCallable in-place methods" begin
+        x = range(0.0, 1.0, 51)
+        y = Float64.(sin.(2π .* x))
+        itp = cubic_interp(x, y)
+
+        x_query = [0.25, 0.5, 0.75]
+        output = zeros(3)
+
+        # Test in-place with matching types
+        itp(output, x_query)
+        @test output ≈ sin.(2π .* x_query) atol=1e-6
+
+        # Test in-place with type conversion (Float32 input)
+        x_query_f32 = Float32[0.25, 0.5, 0.75]
+        output2 = zeros(3)
+        itp(output2, x_query_f32)
+        @test output2 ≈ sin.(2π .* x_query_f32) atol=1e-5
+    end
 end

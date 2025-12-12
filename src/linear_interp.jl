@@ -389,6 +389,24 @@ function (itp::LinearInterpCallable{T,X,Y})(xi::AbstractVector{T}) where {T<:Abs
     return output
 end
 
+# In-place vector call - zero allocation
+function (itp::LinearInterpCallable{T,X,Y})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
+    @assert length(output) == length(xi) "output length must match xi length"
+    @inbounds for i in eachindex(xi, output)
+        output[i] = linear_interp(itp.x, itp.y, xi[i], itp.extrap)
+    end
+    return output
+end
+
+# In-place with type conversion
+function (itp::LinearInterpCallable{T,X,Y})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
+    @assert length(output) == length(xi) "output length must match xi length"
+    @inbounds for i in eachindex(xi, output)
+        output[i] = linear_interp(itp.x, itp.y, T(xi[i]), itp.extrap)
+    end
+    return output
+end
+
 # ========================================
 # 2-Argument Form: Return Callable
 # ========================================

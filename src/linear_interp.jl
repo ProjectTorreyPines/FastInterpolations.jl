@@ -441,17 +441,8 @@ function linear_interp(
     return LinearInterpCallable(x, y; extrapolation)
 end
 
-# ========================================
-# Type Conversion Helpers
-# ========================================
-
-# Convert to float type while preserving Range structure (O(1) index lookup)
-# FT.(x) would convert Range to Vector, losing O(1) optimization
-_to_float(x::AbstractRange, ::Type{FT}) where {FT<:AbstractFloat} =
-    range(FT(first(x)), FT(last(x)), length(x))
-_to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat} = FT.(x)
-
 # Real wrapper for 2-argument form (allows different container types)
+# Uses _to_float from utils.jl to preserve Range structure
 function linear_interp(
     x::X,
     y::Y;

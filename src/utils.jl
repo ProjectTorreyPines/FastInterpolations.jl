@@ -67,3 +67,23 @@ Returns `(idx, x0, x1)` where:
     @inbounds x0, x1 = x[idx], x[idx + 1]
     return idx, x0, x1
 end
+
+# ========================================
+# Type Conversion Helpers
+# ========================================
+
+"""
+    _to_float(x::AbstractRange, ::Type{FT}) where {FT<:AbstractFloat}
+
+Convert a Range to a float type while preserving Range structure for O(1) index lookup.
+Using `FT.(x)` would convert Range to Vector, losing the O(1) optimization.
+"""
+_to_float(x::AbstractRange, ::Type{FT}) where {FT<:AbstractFloat} =
+    range(FT(first(x)), FT(last(x)), length(x))
+
+"""
+    _to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat}
+
+Convert a Vector to a float type (element-wise broadcast).
+"""
+_to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat} = FT.(x)

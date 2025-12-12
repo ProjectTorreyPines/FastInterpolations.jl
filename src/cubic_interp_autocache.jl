@@ -23,21 +23,23 @@ Transparently reuses LU factorization for repeated x-grids.
 const _LU_Type_F64 = LinearAlgebra.LU{Float64, LinearAlgebra.Tridiagonal{Float64, Vector{Float64}}, Vector{Int64}}
 const _LU_Type_F32 = LinearAlgebra.LU{Float32, LinearAlgebra.Tridiagonal{Float32, Vector{Float32}}, Vector{Int64}}
 
-# Concrete CubicSplineCache types (fully specified for type stability)
-const _CubicSplineCache_F64 = CubicSplineCache{Float64, _LU_Type_F64}
-const _CubicSplineCache_F32 = CubicSplineCache{Float32, _LU_Type_F32}
+# Concrete CubicSplineCache types (spline.x is always Vector for type stability)
+# Using concrete types ensures zero-allocation on cache hit
+const _CubicSplineCache_F64 = CubicSplineCache{Float64, Vector{Float64}, _LU_Type_F64}
+const _CubicSplineCache_F32 = CubicSplineCache{Float32, Vector{Float32}, _LU_Type_F32}
 
 # Mutable cache entry for self-healing objectid updates
-# Uses concrete spline types to avoid boxing (32 bytes → 0 bytes)
+# - entry.x: Original type (Range or Vector) for efficient isequal (O(1) for Range)
+# - entry.spline: Always uses Vector for type stability (zero-allocation requirement)
 mutable struct CacheEntryF64
-    id::UInt                       # objectid(x) - Fast Path lookup
-    x::Vector{Float64}             # Original x - Slow Path lookup
-    spline::_CubicSplineCache_F64  # Concrete type for zero-allocation
+    id::UInt                          # objectid(x) - Fast Path lookup
+    x::AbstractVector{Float64}        # Original x (Range or Vector) - Slow Path O(1)/O(N) isequal
+    spline::_CubicSplineCache_F64     # Concrete type for zero-allocation cache hit
 end
 
 mutable struct CacheEntryF32
     id::UInt
-    x::Vector{Float32}
+    x::AbstractVector{Float32}
     spline::_CubicSplineCache_F32
 end
 
@@ -216,11 +218,14 @@ Thread-safe with ReentrantLock. Returns existing cache if x matches
 # Implementation Details
 
 - **Pass 1 (Fast Path)**: objectid(x) comparison - O(1), zero allocation
-- **Pass 2 (Slow Path)**: isequal(x, entry.x) - O(N), zero allocation
+  - Range inputs benefit from Julia's interning (same params → same objectid)
+- **Pass 2 (Slow Path)**: isequal(x, entry.x) - O(1) for Range, O(N) for Vector
+  - Range: compares start/step/length only
+  - Vector: element-by-element comparison
 - **Self-Healing**: Updates entry.id on Pass 2 hit for future fast-path
 - **Ring Buffer**: O(1) eviction by circular index overwrite
 - **Type-stable**: Separate stores for Float64/Float32 avoid boxing
-- **Defensive copy**: x is copied via collect() in CubicSplineCache constructor
+- **Memory-efficient**: entry.x stores original type (Range is lightweight)
 """
 function get_cubic_cache(x::AbstractVector{Float64})
     id = objectid(x)
@@ -238,7 +243,7 @@ function get_cubic_cache(x::AbstractVector{Float64})
         end
 
         # [Pass 2] Equality Check (Slow Path)
-        # O(K×N) where K ≤ 16, N = length(x)
+        # O(K) for Range (compares start/step/length), O(K×N) for Vector
         @inbounds for entry in store
             if isequal(entry.x, x)
                 # Self-Healing: Update ID for next call to hit Pass 1
@@ -250,8 +255,14 @@ function get_cubic_cache(x::AbstractVector{Float64})
 
         # [Cache Miss] Create and register new cache
         _CACHE_MISSES[] += 1
-        new_spline = CubicSplineCache(x)  # Defensive copy via collect(x)
-        new_entry = CacheEntryF64(id, collect(x), new_spline)
+        # Spline uses Vector for type stability (ensures zero-allocation cache hits)
+        # Type instability from abstract X parameter would cause boxing on every access
+        x_vec = x isa Vector{Float64} ? x : collect(x)
+        new_spline = CubicSplineCache(x_vec)
+        # Store ORIGINAL x (Range or Vector) for efficient lookup
+        # - Range: O(1) isequal, memory-efficient (just start/step/length)
+        # - Vector: O(N) isequal, stores full array
+        new_entry = CacheEntryF64(id, x, new_spline)
         add_to_cache_f64!(new_entry)
 
         return new_spline
@@ -275,6 +286,7 @@ function get_cubic_cache(x::AbstractVector{Float32})
         end
 
         # [Pass 2] Equality Check (Slow Path)
+        # O(K) for Range (compares start/step/length), O(K×N) for Vector
         @inbounds for entry in store
             if isequal(entry.x, x)
                 entry.id = id
@@ -285,8 +297,11 @@ function get_cubic_cache(x::AbstractVector{Float32})
 
         # [Cache Miss]
         _CACHE_MISSES[] += 1
-        new_spline = CubicSplineCache(x)
-        new_entry = CacheEntryF32(id, collect(x), new_spline)
+        # Spline uses Vector for type stability (ensures zero-allocation cache hits)
+        x_vec = x isa Vector{Float32} ? x : collect(x)
+        new_spline = CubicSplineCache(x_vec)
+        # Store ORIGINAL x (Range or Vector) for efficient lookup
+        new_entry = CacheEntryF32(id, x, new_spline)
         add_to_cache_f32!(new_entry)
 
         return new_spline

@@ -43,12 +43,12 @@ Key optimization: A can be LU-factorized once and reused for different y.
 # LinearAlgebra imported in main module
 
 """
-    CubicSplineCache{T}
+    CubicSplineCache{T,X,F}
 
 Cache structure for cubic spline interpolation with reusable LU factorization.
 
 # Fields
-- `x::Vector{T}`: Grid points (immutable after construction)
+- `x::X`: Grid points (immutable after construction, can be Range or Vector)
 - `h::Vector{T}`: Grid spacing h[i] = x[i+1] - x[i]
 - `lu_factor`: LU factorization of tridiagonal matrix A
 - `d_workspace::Vector{T}`: Workspace for RHS vector computation
@@ -58,9 +58,11 @@ Cache structure for cubic spline interpolation with reusable LU factorization.
 The LU factorization depends ONLY on x geometry and can be reused for:
 - Different y vectors (varying function values)
 - Different x_query vectors (varying query points)
+
+When x is an AbstractRange, O(1) index lookup is used instead of O(log n) binary search.
 """
-struct CubicSplineCache{T<:AbstractFloat,F}
-    x::Vector{T}
+struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F}
+    x::X
     h::Vector{T}
     lu_factor::F
     d_workspace::Vector{T}
@@ -75,16 +77,19 @@ Construct a cubic spline cache for grid points `x`.
 Pre-computes and factorizes the tridiagonal matrix that depends only on x geometry.
 This factorization can be reused for interpolating different y vectors.
 
+When `x` is an AbstractRange, the Range structure is preserved for O(1) index lookup
+during evaluation. When `x` is a Vector, O(log n) binary search is used.
+
 # Arguments
 - `x::AbstractVector{T}`: Grid points (must be sorted, length >= 3)
 
 # Returns
-- `CubicSplineCache{T}`: Reusable cache structure
+- `CubicSplineCache{T,X,F}`: Reusable cache structure
 
 # Example
 ```julia
-x = range(0.0, 1.0, 51)
-cache = CubicSplineCache(collect(x))
+x = range(0.0, 1.0, 51)  # Range preserved for O(1) lookup
+cache = CubicSplineCache(x)
 
 # Reuse for multiple y vectors
 y1 = sin.(x)
@@ -135,7 +140,7 @@ function CubicSplineCache(x::AbstractVector{T}) where {T<:AbstractFloat}
     d_workspace = Vector{T}(undef, n + 1)
     z_workspace = Vector{T}(undef, n + 1)
 
-    return CubicSplineCache(collect(x), h[1:n+1], lu_factor, d_workspace, z_workspace)
+    return CubicSplineCache(x, h[1:n+1], lu_factor, d_workspace, z_workspace)
 end
 
 """
@@ -602,6 +607,7 @@ function cubic_interp(
 end
 
 # Real wrapper for 2-argument form
+# Uses _to_float from utils.jl to preserve Range structure for O(1) lookup
 function cubic_interp(
     x::X,
     y::Y;
@@ -609,7 +615,8 @@ function cubic_interp(
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
     T = promote_type(TX, TY)
     FT = float(T)
-    cache = autocache ? get_cubic_cache(FT.(x)) : CubicSplineCache(FT.(x))
+    x_float = _to_float(x, FT)  # Preserves Range structure
+    cache = autocache ? get_cubic_cache(x_float) : CubicSplineCache(x_float)
     y_float = FT.(y)
 
     # Pre-compute z coefficients (solve system once, then copy for storage)
@@ -630,6 +637,7 @@ end
 # ========================================
 
 # Allocating version - vector query
+# Uses _to_float to preserve Range structure for O(1) lookup
 function cubic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY},
@@ -637,7 +645,7 @@ function cubic_interp(
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp(FT.(x), FT.(y), FT.(x_query); autocache)
+    return cubic_interp(_to_float(x, FT), FT.(y), FT.(x_query); autocache)
 end
 
 # Allocating version - scalar query
@@ -648,7 +656,7 @@ function cubic_interp(
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp(FT.(x), FT.(y), FT(x_query); autocache)
+    return cubic_interp(_to_float(x, FT), FT.(y), FT(x_query); autocache)
 end
 
 # In-place version - vector query
@@ -660,7 +668,7 @@ function cubic_interp!(
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp!(output, FT.(x), FT.(y), FT.(x_query); autocache)
+    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT.(x_query); autocache)
 end
 
 # In-place version - scalar query
@@ -672,5 +680,5 @@ function cubic_interp!(
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp!(output, FT.(x), FT.(y), FT(x_query); autocache)
+    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT(x_query); autocache)
 end

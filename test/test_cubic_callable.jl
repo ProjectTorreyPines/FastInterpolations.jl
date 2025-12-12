@@ -211,3 +211,133 @@
         @test stats.hits == 4
     end
 end
+
+@testset "Cubic Interpolation - Range/Vector Input Handling" begin
+    # CubicSplineCache now preserves Range structure for O(1) index lookup
+    # This testset documents behavior for both input types
+
+    @testset "Range input → Range preserved in direct cache" begin
+        x_range = range(0.0, 1.0, 11)  # StepRangeLen{Float64}
+        y = sin.(2π .* collect(x_range))
+
+        # Direct CubicSplineCache preserves Range for O(1) lookup
+        cache = CubicSplineCache(x_range)
+        @test cache.x isa AbstractRange
+        @test cache.x === x_range  # Same object preserved
+
+        # Verify correctness
+        result = cubic_interp(cache, y, [0.5])
+        @test result[1] ≈ sin(2π * 0.5) atol=0.01
+    end
+
+    @testset "Range input via autocache → entry stores Range, spline uses Vector" begin
+        clear_cubic_cache!()
+        x_range = range(0.0, 1.0, 11)
+        y = sin.(2π .* collect(x_range))
+
+        # Autocache design trade-off:
+        # - entry.x: Stores original Range for O(1) isequal in Slow Path
+        # - spline.x: Uses Vector for type stability (zero-allocation cache hit requirement)
+        itp = cubic_interp(x_range, y; autocache=true)
+        @test itp.cache.x isa Vector{Float64}  # spline uses Vector for type stability
+
+        # Verify correctness
+        @test itp(0.5) ≈ sin(2π * 0.5) atol=0.01
+
+        # Verify cache hit works with same Range (Julia interns Ranges)
+        clear_cubic_cache!()
+        cubic_interp(x_range, y; autocache=true)  # First call: miss
+        cubic_interp(range(0.0, 1.0, 11), y; autocache=true)  # Same params → same objectid → hit!
+        stats = cubic_cache_stats()
+        @test stats.misses == 1
+        @test stats.hits == 1  # Range interning enables fast path hit
+    end
+
+    @testset "Vector input → stored as Vector" begin
+        x_vec = collect(range(0.0, 1.0, 11))  # Vector{Float64}
+        y = sin.(2π .* x_vec)
+
+        itp = cubic_interp(x_vec, y; autocache=false)
+
+        # Vector remains Vector
+        @test itp.cache.x isa Vector{Float64}
+
+        # Verify correctness
+        @test itp(0.5) ≈ sin(2π * 0.5) atol=0.01
+    end
+
+    @testset "Integer Range → Float64 Range conversion" begin
+        x_int = 0:10  # UnitRange{Int}
+        y_int = [sin(2π * i / 10) for i in x_int]
+
+        # Direct cache preserves Range structure
+        cache = CubicSplineCache(range(0.0, 10.0, 11))
+        @test cache.x isa AbstractRange
+
+        # Via cubic_interp with autocache=false
+        itp = cubic_interp(x_int, y_int; autocache=false)
+        @test itp.cache.x isa AbstractRange  # Range preserved via _to_float
+        @test eltype(itp.cache.x) == Float64
+
+        # Verify correctness
+        @test itp(5.0) ≈ sin(2π * 0.5) atol=0.01
+    end
+
+    @testset "Float32 Range → Float32 Range conversion" begin
+        x_f32 = range(Float32(0.0), Float32(1.0), 11)
+        y_f32 = sin.(Float32(2π) .* collect(x_f32))
+
+        # Direct cache preserves Range
+        cache = CubicSplineCache(x_f32)
+        @test cache.x isa AbstractRange
+        @test eltype(cache.x) == Float32
+
+        # Via cubic_interp with autocache=false
+        itp = cubic_interp(x_f32, y_f32; autocache=false)
+        @test itp.cache.x isa AbstractRange  # Range preserved
+        @test eltype(itp.cache.x) == Float32
+
+        # Verify correctness
+        @test itp(Float32(0.5)) ≈ sin(Float32(2π) * Float32(0.5)) atol=0.01f0
+    end
+
+    @testset "Range vs Vector produce nearly identical results" begin
+        # Same mathematical grid, different Julia types
+        x_range = range(0.0, 1.0, 51)
+        x_vec = collect(x_range)
+        y = sin.(2π .* x_vec)
+
+        itp_range = cubic_interp(x_range, y; autocache=false)
+        itp_vec = cubic_interp(x_vec, y; autocache=false)
+
+        # Query points
+        xi_test = [0.1, 0.25, 0.5, 0.75, 0.9]
+
+        # Results should be nearly identical (tiny FP differences due to O(1) vs O(log n) lookup)
+        for xi in xi_test
+            @test itp_range(xi) ≈ itp_vec(xi) rtol=1e-14
+        end
+
+        # Vectorized evaluation
+        @test all(itp_range.(xi_test) .≈ itp_vec.(xi_test))
+    end
+
+    @testset "CubicSplineCache type parametrization" begin
+        x_range = range(0.0, 1.0, 21)
+        x_vec = collect(x_range)
+
+        # Range input → parametric type with Range
+        cache_range = CubicSplineCache(x_range)
+        @test cache_range.x isa AbstractRange
+        @test typeof(cache_range).parameters[2] <: AbstractRange
+
+        # Vector input → parametric type with Vector
+        cache_vec = CubicSplineCache(x_vec)
+        @test cache_vec.x isa Vector{Float64}
+        @test typeof(cache_vec).parameters[2] == Vector{Float64}
+
+        # Both produce correct results
+        y = sin.(2π .* x_vec)
+        @test cubic_interp(cache_range, y, [0.5])[1] ≈ cubic_interp(cache_vec, y, [0.5])[1]
+    end
+end

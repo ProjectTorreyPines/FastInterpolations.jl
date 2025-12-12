@@ -10,7 +10,6 @@ Transparently reuses LU factorization for repeated x-grids.
 - Ring buffer eviction for O(1) cache replacement
 - Self-healing: updates objectid on content match for future fast-path hits
 - Type-parametric entries for Float32/Float64 compatibility
-- Defensive x-grid copying in CubicSplineCache constructor
 - Thread-safe with ReentrantLock on cache access
 """
 
@@ -170,13 +169,7 @@ end
 Return cache hit/miss statistics for debugging.
 
 # Returns
-- `NamedTuple`: (hits, misses, evictions, collisions, size, efficiency)
-
-# Example
-```julia
-stats = cubic_cache_stats()
-println("Cache efficiency: \$(stats.efficiency)%")
-```
+`NamedTuple` with fields: `hits`, `misses`, `evictions`, `vec_size`, `range_size`, `size`, `efficiency`
 """
 function cubic_cache_stats()
     hits = _CACHE_HITS[]

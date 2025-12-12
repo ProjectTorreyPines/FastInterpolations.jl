@@ -265,19 +265,8 @@ With autocache=true, repeated calls with same x-grid reuse cached LU factorizati
 
 # Example
 ```julia
-# Automatic caching (no user management needed)
-for field in [:volume, :area, :surface, :psi]
-    y = getfield(data, field)
-    result = cubic_interp(x, y, x_query)  # Auto-cached!
-end
-# First call creates cache, next 3 reuse it
-
-# Disable auto-cache for one-shot usage
-result = cubic_interp(x, y, x_query; autocache=false)
-
-# Explicit cache for deterministic performance
-cache = CubicSplineCache(x)
-result = cubic_interp(cache, y, x_query)
+result = cubic_interp(x, y, x_query)              # Auto-cached (default)
+result = cubic_interp(x, y, x_query; autocache=false)  # One-shot, no caching
 ```
 """
 function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
@@ -310,19 +299,7 @@ for the same x-grid across multiple calls. This gives you **zero-allocation + au
 # Example
 ```julia
 output = Vector{Float64}(undef, length(x_query))
-
-# Auto-cache enabled (default)
-for y_i in [y1, y2, y3, ...]
-    cubic_interp!(output, x, y_i, x_query)  # Zero-allocation + auto-cached!
-    # use output...
-end
-
-# Disable auto-cache for one-shot usage
-cubic_interp!(output, x, y, x_query; autocache=false)
-
-# Explicit cache for maximum control
-cache = CubicSplineCache(x)
-cubic_interp!(output, cache, y, x_query)
+cubic_interp!(output, x, y, x_query)  # Auto-cached (default)
 ```
 """
 function cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T},
@@ -599,30 +576,18 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 - Broadcasted: `itp.(rho)` or `@. coef * itp(rho)` (zero-allocation per call!)
 - Reused multiple times without re-creating
 
-# Examples
+# Example
 ```julia
-# Create once, reuse multiple times
-itp = cubic_interp(x_data, y_data)  # Solves system once, stores z
-
-# Scalar call (zero-allocation, just arithmetic!)
-val = itp(0.5)
-
-# Broadcast (zero-allocation per call!)
-vals = itp.(query_points)
-
-# Fused broadcast (optimal - no intermediate arrays, no allocations!)
-result = @. coefficient * itp(rho) * ne / Te^2
-
-# Compare with 3-argument form (returns array immediately)
-vals_direct = cubic_interp(x_data, y_data, query_points)
+itp = cubic_interp(x, y)           # Pre-computes z coefficients
+val = itp(0.5)                      # Scalar (zero-allocation)
+vals = itp.(query_points)           # Broadcast
+result = @. coef * itp(rho) * ne    # Fused broadcast
 ```
 
 # Performance Notes
-- Construction: Solves tridiagonal system ONCE -> stores z coefficients
-- Scalar calls: Just arithmetic with pre-computed z (true zero-allocation!)
-- Broadcast fusion: Each call is zero-allocation -> perfect fusion
-- Best for: Repeated evaluations with same (x, y) at different query points
-- 3-argument form: Best for single immediate use, no reuse needed
+- Construction: Solves system ONCE, stores z coefficients
+- Scalar calls: Zero-allocation (just arithmetic with pre-computed z)
+- Best for repeated evaluations with same (x, y)
 """
 function cubic_interp(
     x::AbstractVector{T},

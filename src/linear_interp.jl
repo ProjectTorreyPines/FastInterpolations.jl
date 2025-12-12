@@ -446,10 +446,8 @@ vals_direct = linear_interp(x_data, y_data, query_points)
 ```
 
 # Performance Notes
-- 2-argument: Returns lightweight callable (~48 bytes on 64-bit)
-- Best for: Reuse, broadcast fusion in complex expressions
-- 3-argument: Returns array, best for single immediate use
-- Callable eliminates closure overhead (4x faster than anonymous functions)
+- Returns lightweight callable (~48 bytes), best for reuse and broadcast fusion
+- 3-argument form returns array immediately, best for single use
 """
 function linear_interp(
     x::AbstractVector{T},

@@ -27,14 +27,21 @@ const _LU_Type_F32 = LinearAlgebra.LU{Float32, LinearAlgebra.Tridiagonal{Float32
 const _StepRangeLen_F64 = StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
 const _StepRangeLen_F32 = StepRangeLen{Float32, Float64, Float64, Int64}
 
-# Concrete CubicSplineCache types for Vector-based caches
+# Concrete CubicSplineCache types for Vector-based caches (Natural BC)
 # Using concrete types ensures zero-allocation on cache hit
-const _CubicSplineCache_Vec_F64 = CubicSplineCache{Float64, Vector{Float64}, _LU_Type_F64}
-const _CubicSplineCache_Vec_F32 = CubicSplineCache{Float32, Vector{Float32}, _LU_Type_F32}
+# 4th type parameter: Nothing for natural BC
+const _CubicSplineCache_Vec_F64 = CubicSplineCache{Float64, Vector{Float64}, _LU_Type_F64, Nothing}
+const _CubicSplineCache_Vec_F32 = CubicSplineCache{Float32, Vector{Float32}, _LU_Type_F32, Nothing}
 
-# Concrete CubicSplineCache types for Range-based caches (O(1) index lookup!)
-const _CubicSplineCache_Range_F64 = CubicSplineCache{Float64, _StepRangeLen_F64, _LU_Type_F64}
-const _CubicSplineCache_Range_F32 = CubicSplineCache{Float32, _StepRangeLen_F32, _LU_Type_F32}
+# Concrete CubicSplineCache types for Range-based caches (O(1) index lookup!, Natural BC)
+const _CubicSplineCache_Range_F64 = CubicSplineCache{Float64, _StepRangeLen_F64, _LU_Type_F64, Nothing}
+const _CubicSplineCache_Range_F32 = CubicSplineCache{Float32, _StepRangeLen_F32, _LU_Type_F32, Nothing}
+
+# Concrete CubicSplineCache types for Periodic BC
+const _CubicSplineCache_Vec_F64_Periodic = CubicSplineCache{Float64, Vector{Float64}, _LU_Type_F64, PeriodicData{Float64}}
+const _CubicSplineCache_Vec_F32_Periodic = CubicSplineCache{Float32, Vector{Float32}, _LU_Type_F32, PeriodicData{Float32}}
+const _CubicSplineCache_Range_F64_Periodic = CubicSplineCache{Float64, _StepRangeLen_F64, _LU_Type_F64, PeriodicData{Float64}}
+const _CubicSplineCache_Range_F32_Periodic = CubicSplineCache{Float32, _StepRangeLen_F32, _LU_Type_F32, PeriodicData{Float32}}
 
 # ═══════════════════════════════════════════════════════════════════════
 # Cache Entries - Separate for Vector and Range to maintain type stability

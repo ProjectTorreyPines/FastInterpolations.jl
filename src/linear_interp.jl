@@ -40,13 +40,16 @@ function linear_interp!(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
+    bc::Symbol=:none,
     extrapolation::Symbol=:extension
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
+    @assert bc in (:none, :periodic) "bc must be :none or :periodic"
     @assert extrapolation in (:constant, :extension) "extrapolation must be :constant or :extension"
 
-    extrap_val = Val(extrapolation)  # Create Val once outside loop
+    # Create Val once outside loop
+    extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
 
     # Calls optimized scalar version with Val dispatch - zero runtime branches
     @inbounds for i in eachindex(x_targets, output)
@@ -62,13 +65,16 @@ end
     x::AbstractRange{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
+    bc::Symbol=:none,
     extrapolation::Symbol=:extension
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
+    @assert bc in (:none, :periodic) "bc must be :none or :periodic"
     @assert extrapolation in (:constant, :extension) "extrapolation must be :constant or :extension"
 
-    extrap_val = Val(extrapolation)  # Create Val once outside loop
+    extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
+
     # Calls optimized scalar version with Val dispatch
     @inbounds for i in eachindex(output)
         output[i] = linear_interp(x, y, x_targets[i], extrap_val)
@@ -130,11 +136,19 @@ end
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     xi::FT;
+    bc::Symbol=:none,
     extrapolation::Symbol=:extension
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
+    @boundscheck bc in (:none, :periodic) || throw(ArgumentError("bc must be :none or :periodic"))
     @boundscheck extrapolation in (:constant, :extension) || throw(ArgumentError("extrapolation must be :constant or :extension"))
-    return linear_interp(x, y, xi, Val(extrapolation))
+
+    # Periodic BC ignores extrapolation
+    if bc == :periodic
+        return linear_interp(x, y, xi, Val(:periodic))
+    else
+        return linear_interp(x, y, xi, Val(extrapolation))
+    end
 end
 
 # Specific method for AbstractRange{FT} (resolves ambiguity with Real wrappers)
@@ -142,11 +156,18 @@ end
     x::AbstractRange{FT},
     y::AbstractVector{FT},
     xi::FT;
+    bc::Symbol=:none,
     extrapolation::Symbol=:extension
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
+    @boundscheck bc in (:none, :periodic) || throw(ArgumentError("bc must be :none or :periodic"))
     @boundscheck extrapolation in (:constant, :extension) || throw(ArgumentError("extrapolation must be :constant or :extension"))
-    return linear_interp(x, y, xi, Val(extrapolation))
+
+    if bc == :periodic
+        return linear_interp(x, y, xi, Val(:periodic))
+    else
+        return linear_interp(x, y, xi, Val(extrapolation))
+    end
 end
 
 # ========================================
@@ -176,6 +197,32 @@ end
     return (xi - x0) / (x1 - x0)
 end
 
+# ========================================
+# Periodic BC support
+# ========================================
+
+"""
+    linear_interp(x, y, xi, ::Val{:periodic})
+
+Linear interpolation with periodic boundary condition.
+Wraps xi to domain [x[1], x[end]) before interpolation.
+"""
+@inline function linear_interp(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    xi::FT,
+    ::Val{:periodic}
+)::FT where {FT<:AbstractFloat}
+    # Wrap to domain
+    period = x[end] - x[1]
+    xi_wrapped = _wrap_to_domain(xi, first(x), period)
+
+    # Find interval and interpolate (using extension alpha since we're in domain)
+    idx, x0, x1 = _find_interval_with_bounds(x, xi_wrapped)
+    α = _compute_alpha(x0, x1, xi_wrapped, Val(:extension))
+    @inbounds return y[idx] * (one(FT) - α) + y[idx + 1] * α
+end
+
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                        GENERIC WRAPPERS - CONVENIENCE                     ║
 # ║              Auto-promote Real types to Float (type conversion)           ║
@@ -187,14 +234,17 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, x_targets; extrapolation=:extension)
+    linear_interp(x, y, x_targets; bc=:none, extrapolation=:extension)
 
 Linear interpolation with automatic dispatch (allocating version):
 - For `AbstractRange` x: O(1) direct indexing
 - For general `AbstractVector` x: O(log n) binary search
 
 # Arguments
+- `bc::Symbol`: `:none` (default) or `:periodic` (wraps to domain)
 - `extrapolation::Symbol`: `:extension` (default, linear extrapolation) or `:constant`
+
+When `bc=:periodic`, `extrapolation` is ignored and coordinates are wrapped to domain.
 
 # Returns
 - Always returns a floating-point vector (Integer inputs auto-promoted to Float)
@@ -205,6 +255,7 @@ rho = 0.0:0.01:1.0  # Uniform grid → fast O(1) path
 y = sin.(rho)
 result = linear_interp(rho, y, [0.55, 0.77])  # linear extrapolation (default)
 result = linear_interp(rho, y, [-0.1, 1.2]; extrapolation=:constant)  # constant extrapolation
+result = linear_interp(rho, y, [1.5, 2.5]; bc=:periodic)  # periodic wrapping
 
 # Integer inputs auto-promoted to Float
 x_int = 0:10
@@ -216,11 +267,12 @@ function linear_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
+    bc::Symbol=:none,
     extrapolation::Symbol=:extension
 ) where {T<:Real, S<:Real}
     FT = float(T)
     output = Vector{FT}(undef, length(x_targets))
-    linear_interp!(output, x, y, x_targets; extrapolation)
+    linear_interp!(output, x, y, x_targets; bc, extrapolation)
     return output
 end
 
@@ -234,16 +286,18 @@ function linear_interp!(
     x::AbstractRange{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
+    bc::Symbol=:none,
     extrapolation::Symbol=:extension
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
+    @assert bc in (:none, :periodic) "bc must be :none or :periodic"
     @assert extrapolation in (:constant, :extension) "extrapolation must be :constant or :extension"
 
     FT = float(T)
     x_float = range(FT(first(x)), FT(last(x)), length(x))
     y_float = FT.(y)  # Allocate once
-    extrap_val = Val(extrapolation)  # Create Val once outside loop
+    extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
 
     # Call optimized scalar version for each point (with Val dispatch)
     @inbounds for i in eachindex(x_targets, output)
@@ -259,16 +313,18 @@ function linear_interp!(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
+    bc::Symbol=:none,
     extrapolation::Symbol=:extension
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
+    @assert bc in (:none, :periodic) "bc must be :none or :periodic"
     @assert extrapolation in (:constant, :extension) "extrapolation must be :constant or :extension"
 
     FT = float(T)
     x_float = FT.(x)  # Allocate once
     y_float = FT.(y)  # Allocate once
-    extrap_val = Val(extrapolation)  # Create Val once outside loop
+    extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
 
     # Call optimized scalar version for each point (with Val dispatch)
     @inbounds for i in eachindex(x_targets, output)
@@ -287,21 +343,23 @@ end
     x::AbstractRange{T},
     y::AbstractVector{T},
     xi::S;
+    bc::Symbol=:none,
     extrapolation::Symbol=:extension
 ) where {T<:Real, S<:Real}
     FT = float(T)
     x_float = range(FT(first(x)), FT(last(x)), length(x))
-    return linear_interp(x_float, FT.(y), FT(xi); extrapolation)
+    return linear_interp(x_float, FT.(y), FT(xi); bc, extrapolation)
 end
 
 function linear_interp(
     x::AbstractRange{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
+    bc::Symbol=:none,
     extrapolation::Symbol=:extension
 ) where {T<:Real, S<:Real}
     output = Vector{float(T)}(undef, length(x_targets))
-    return linear_interp!(output, x, y, x_targets; extrapolation)
+    return linear_interp!(output, x, y, x_targets; bc, extrapolation)
 end
 
 
@@ -310,10 +368,11 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     xi::S;
+    bc::Symbol=:none,
     extrapolation::Symbol=:extension
 ) where {T<:Real, S<:Real}
     FT = float(T)
-    return linear_interp(FT.(x), FT.(y), FT(xi); extrapolation)
+    return linear_interp(FT.(x), FT.(y), FT(xi); bc, extrapolation)
 end
 
 # ========================================
@@ -329,7 +388,7 @@ Returned by `linear_interp(x, y)` (2-argument form).
 # Fields
 - `x::X`: x-coordinates (sorted)
 - `y::Y`: y-values
-- `extrap::Val`: Extrapolation method (Val(:extension) or Val(:constant))
+- `mode::Val`: Evaluation mode (Val(:extension), Val(:constant), or Val(:periodic))
 
 # Usage
 ```julia
@@ -342,32 +401,41 @@ result = @. coef * itp(rho) * other_terms
 # Reuse interpolator multiple times
 vals1 = itp.(query_points1)
 vals2 = @. compute(itp(query_points2))
+
+# Periodic BC
+itp_periodic = linear_interp(x, y; bc=:periodic)
+val = itp_periodic(2.5)  # wraps to domain
 ```
 """
 struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector{T}}
     x::X
     y::Y
-    extrap::Val
+    mode::Val  # Evaluation mode: :extension, :constant, or :periodic
 
     function LinearInterpolant(
         x::X,
         y::Y;
+        bc::Symbol=:none,
         extrapolation::Symbol=:extension
     ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
         @assert length(x) == length(y) "x and y must have same length"
+        @assert bc in (:none, :periodic) "bc must be :none or :periodic"
         @assert extrapolation in (:constant, :extension) "extrapolation must be :constant or :extension"
-        new{T,X,Y}(x, y, Val(extrapolation))
+
+        # Periodic BC overrides extrapolation
+        mode = bc == :periodic ? Val(:periodic) : Val(extrapolation)
+        new{T,X,Y}(x, y, mode)
     end
 end
 
 # Scalar call - hot path (inlined for broadcast fusion)
 @inline function (itp::LinearInterpolant{T})(xi::T) where {T<:AbstractFloat}
-    linear_interp(itp.x, itp.y, xi, itp.extrap)
+    linear_interp(itp.x, itp.y, xi, itp.mode)
 end
 
 # Real scalar wrapper for convenience
 @inline function (itp::LinearInterpolant{T})(xi::S) where {T<:AbstractFloat, S<:Real}
-    linear_interp(itp.x, itp.y, T(xi), itp.extrap)
+    linear_interp(itp.x, itp.y, T(xi), itp.mode)
 end
 
 # Vector call - optimized to avoid type reflection
@@ -375,7 +443,7 @@ function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{S}) where {T<:Abstra
     output = Vector{T}(undef, length(xi))
     xi_typed = S === T ? xi : T.(xi)
     @inbounds for i in eachindex(xi, output)
-        output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.extrap)
+        output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode)
     end
     return output
 end
@@ -384,7 +452,7 @@ end
 function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
     output = Vector{T}(undef, length(xi))
     @inbounds for i in eachindex(xi, output)
-        output[i] = linear_interp(itp.x, itp.y, xi[i], itp.extrap)
+        output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode)
     end
     return output
 end
@@ -393,7 +461,7 @@ end
 function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
     @assert length(output) == length(xi) "output length must match xi length"
     @inbounds for i in eachindex(xi, output)
-        output[i] = linear_interp(itp.x, itp.y, xi[i], itp.extrap)
+        output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode)
     end
     return output
 end
@@ -402,7 +470,7 @@ end
 function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     @inbounds for i in eachindex(xi, output)
-        output[i] = linear_interp(itp.x, itp.y, T(xi[i]), itp.extrap)
+        output[i] = linear_interp(itp.x, itp.y, T(xi[i]), itp.mode)
     end
     return output
 end
@@ -412,14 +480,17 @@ end
 # ========================================
 
 """
-    linear_interp(x, y; extrapolation=:extension) -> LinearInterpolant
+    linear_interp(x, y; bc=:none, extrapolation=:extension) -> LinearInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values
+- `bc::Symbol`: `:none` (default) or `:periodic` (wraps to domain)
 - `extrapolation::Symbol`: `:extension` (default) or `:constant`
+
+When `bc=:periodic`, `extrapolation` is ignored and coordinates are wrapped to domain.
 
 # Returns
 `LinearInterpolant` object that can be:
@@ -441,6 +512,10 @@ vals = itp.(query_points)
 # Fused broadcast (optimal - no intermediate arrays)
 result = @. coefficient * itp(rho) * ne / Te^2
 
+# Periodic BC
+itp_periodic = linear_interp(x_data, y_data; bc=:periodic)
+val_periodic = itp_periodic(2.5)  # wraps to domain
+
 # Compare with 3-argument form (returns array immediately)
 vals_direct = linear_interp(x_data, y_data, query_points)
 ```
@@ -452,9 +527,10 @@ vals_direct = linear_interp(x_data, y_data, query_points)
 function linear_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
+    bc::Symbol=:none,
     extrapolation::Symbol=:extension
 ) where {T<:AbstractFloat}
-    return LinearInterpolant(x, y; extrapolation)
+    return LinearInterpolant(x, y; bc, extrapolation)
 end
 
 # Real wrapper for 2-argument form (allows different container types)
@@ -462,9 +538,10 @@ end
 function linear_interp(
     x::X,
     y::Y;
+    bc::Symbol=:none,
     extrapolation::Symbol=:extension
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
     T = promote_type(TX, TY)
     FT = float(T)
-    return LinearInterpolant(_to_float(x, FT), FT.(y); extrapolation)
+    return LinearInterpolant(_to_float(x, FT), FT.(y); bc, extrapolation)
 end

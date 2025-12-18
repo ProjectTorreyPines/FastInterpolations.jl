@@ -87,3 +87,17 @@ _to_float(x::AbstractRange, ::Type{FT}) where {FT<:AbstractFloat} =
 Convert a Vector to a float type (element-wise broadcast).
 """
 _to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat} = FT.(x)
+
+# ========================================
+# Periodic Boundary Helpers
+# ========================================
+
+"""
+    _wrap_to_domain(xi::FT, x_min::FT, period::FT) where {FT<:AbstractFloat}
+
+Wrap a query point `xi` to the domain [x_min, x_min + period).
+Used for periodic boundary conditions.
+"""
+@inline function _wrap_to_domain(xi::FT, x_min::FT, period::FT) where {FT<:AbstractFloat}
+    return x_min + mod(xi - x_min, period)
+end

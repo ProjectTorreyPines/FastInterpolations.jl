@@ -53,14 +53,25 @@ function linear_interp!(
     # Validate periodic endpoints
     bc == :periodic && _check_periodic_endpoints(y)
 
-    # Create Val once outside loop
-    extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
+    # Direct branching to Val literals for type stability
+    if bc === :periodic
+        return _linear_interp_loop!(output, x, y, x_targets, Val(:periodic))
+    elseif extrapolation === :none
+        return _linear_interp_loop!(output, x, y, x_targets, Val(:none))
+    elseif extrapolation === :constant
+        return _linear_interp_loop!(output, x, y, x_targets, Val(:constant))
+    elseif extrapolation === :extension
+        return _linear_interp_loop!(output, x, y, x_targets, Val(:extension))
+    else
+        throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
+    end
+end
 
-    # Calls optimized scalar version with Val dispatch - zero runtime branches
+# Internal loop with Val dispatch (type-stable)
+@inline function _linear_interp_loop!(output, x, y, x_targets, extrap_val::Val)
     @inbounds for i in eachindex(x_targets, output)
         output[i] = linear_interp(x, y, x_targets[i], extrap_val)
     end
-
     return output
 end
 
@@ -81,14 +92,18 @@ end
     # Validate periodic endpoints
     bc == :periodic && _check_periodic_endpoints(y)
 
-    extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
-
-    # Calls optimized scalar version with Val dispatch
-    @inbounds for i in eachindex(output)
-        output[i] = linear_interp(x, y, x_targets[i], extrap_val)
+    # Direct branching to Val literals for type stability
+    if bc === :periodic
+        return _linear_interp_loop!(output, x, y, x_targets, Val(:periodic))
+    elseif extrapolation === :none
+        return _linear_interp_loop!(output, x, y, x_targets, Val(:none))
+    elseif extrapolation === :constant
+        return _linear_interp_loop!(output, x, y, x_targets, Val(:constant))
+    elseif extrapolation === :extension
+        return _linear_interp_loop!(output, x, y, x_targets, Val(:extension))
+    else
+        throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
     end
-
-    return output
 end
 
 # ========================================
@@ -157,11 +172,17 @@ end
     # Validate periodic endpoints
     bc == :periodic && _check_periodic_endpoints(y)
 
-    # Periodic BC ignores extrapolation
-    if bc == :periodic
+    # Direct branching to Val literals for type stability
+    if bc === :periodic
         return linear_interp(x, y, xi, Val(:periodic))
+    elseif extrapolation === :none
+        return linear_interp(x, y, xi, Val(:none))
+    elseif extrapolation === :constant
+        return linear_interp(x, y, xi, Val(:constant))
+    elseif extrapolation === :extension
+        return linear_interp(x, y, xi, Val(:extension))
     else
-        return linear_interp(x, y, xi, Val(extrapolation))
+        throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
     end
 end
 
@@ -180,10 +201,17 @@ end
     # Validate periodic endpoints
     bc == :periodic && _check_periodic_endpoints(y)
 
-    if bc == :periodic
+    # Direct branching to Val literals for type stability
+    if bc === :periodic
         return linear_interp(x, y, xi, Val(:periodic))
+    elseif extrapolation === :none
+        return linear_interp(x, y, xi, Val(:none))
+    elseif extrapolation === :constant
+        return linear_interp(x, y, xi, Val(:constant))
+    elseif extrapolation === :extension
+        return linear_interp(x, y, xi, Val(:extension))
     else
-        return linear_interp(x, y, xi, Val(extrapolation))
+        throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
     end
 end
 
@@ -309,6 +337,15 @@ end
 # Vector interpolation - Real wrappers (in-place)
 # ========================================
 
+# Internal helper for Real wrappers with domain check (type-stable)
+@inline function _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, extrap_val::Val, check_domain::Bool)
+    check_domain && _check_domain(x_float, x_targets_float, extrap_val)
+    @inbounds for i in eachindex(x_targets_float, output)
+        output[i] = linear_interp(x_float, y_float, x_targets_float[i], extrap_val)
+    end
+    return output
+end
+
 # Wrapper for AbstractRange with Real types (requires conversion)
 function linear_interp!(
     output::AbstractVector,
@@ -326,22 +363,23 @@ function linear_interp!(
     FT = float(T)
     x_float = range(FT(first(x)), FT(last(x)), length(x))
     y_float = FT.(y)  # Allocate once
+    x_targets_float = FT.(x_targets)
 
     # Validate periodic endpoints
     bc == :periodic && _check_periodic_endpoints(y_float)
 
-    extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
-
-    # Vector-level domain check (skipped for periodic/extension/constant)
-    x_targets_float = FT.(x_targets)
-    bc != :periodic && _check_domain(x_float, x_targets_float, extrap_val)
-
-    # Call optimized scalar version for each point (@inbounds skips scalar _check_domain)
-    @inbounds for i in eachindex(x_targets_float, output)
-        output[i] = linear_interp(x_float, y_float, x_targets_float[i], extrap_val)
+    # Direct branching to Val literals for type stability
+    if bc === :periodic
+        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:periodic), false)
+    elseif extrapolation === :none
+        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:none), true)
+    elseif extrapolation === :constant
+        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:constant), true)
+    elseif extrapolation === :extension
+        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:extension), true)
+    else
+        throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
     end
-
-    return output
 end
 
 # Wrapper for AbstractVector with Real types (requires conversion)
@@ -361,22 +399,23 @@ function linear_interp!(
     FT = float(T)
     x_float = FT.(x)  # Allocate once
     y_float = FT.(y)  # Allocate once
+    x_targets_float = FT.(x_targets)
 
     # Validate periodic endpoints
     bc == :periodic && _check_periodic_endpoints(y_float)
 
-    extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
-
-    # Vector-level domain check (skipped for periodic/extension/constant)
-    x_targets_float = FT.(x_targets)
-    bc != :periodic && _check_domain(x_float, x_targets_float, extrap_val)
-
-    # Call optimized scalar version for each point (@inbounds skips scalar _check_domain)
-    @inbounds for i in eachindex(x_targets_float, output)
-        output[i] = linear_interp(x_float, y_float, x_targets_float[i], extrap_val)
+    # Direct branching to Val literals for type stability
+    if bc === :periodic
+        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:periodic), false)
+    elseif extrapolation === :none
+        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:none), true)
+    elseif extrapolation === :constant
+        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:constant), true)
+    elseif extrapolation === :extension
+        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:extension), true)
+    else
+        throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
     end
-
-    return output
 end
 
 # ========================================
@@ -474,9 +513,18 @@ struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector
         # Validate periodic endpoints (once at construction, zero runtime overhead)
         bc == :periodic && _check_periodic_endpoints(y)
 
-        # Periodic BC overrides extrapolation
-        mode = bc == :periodic ? Val(:periodic) : Val(extrapolation)
-        new{T,X,Y}(x, y, mode)
+        # Direct branching to Val literals for type stability
+        if bc === :periodic
+            new{T,X,Y}(x, y, Val(:periodic))
+        elseif extrapolation === :none
+            new{T,X,Y}(x, y, Val(:none))
+        elseif extrapolation === :constant
+            new{T,X,Y}(x, y, Val(:constant))
+        elseif extrapolation === :extension
+            new{T,X,Y}(x, y, Val(:extension))
+        else
+            throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
+        end
     end
 end
 

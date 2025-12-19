@@ -682,4 +682,191 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         @test allocs == 0
     end
 
+    # =========================================================================
+    # Runtime Symbol Keyword API Tests
+    # =========================================================================
+    # These tests verify that passing symbols as runtime variables (not literals)
+    # doesn't cause extra allocations. This validates the Val pattern refactoring
+    # from Val(symbol_var) to direct branching with Val literals.
+
+    @testset "Runtime symbol: linear_interp scalar" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        # Simulate user code passing runtime symbol
+        function with_runtime_extrapolation(mode::Symbol)
+            linear_interp(x, y, 0.5; extrapolation=mode)
+        end
+
+        function with_runtime_bc(bc_mode::Symbol)
+            linear_interp(x, y, 0.5; bc=bc_mode)
+        end
+
+        # Warmup
+        with_runtime_extrapolation(:extension)
+        with_runtime_extrapolation(:extension)
+        with_runtime_bc(:periodic)
+        with_runtime_bc(:periodic)
+
+        # Runtime extrapolation symbol - zero allocation on 1.12+
+        allocs = @allocated with_runtime_extrapolation(:extension)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated with_runtime_extrapolation(:constant)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Runtime bc symbol - zero allocation on 1.12+
+        allocs = @allocated with_runtime_bc(:periodic)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Runtime symbol: linear_interp! in-place" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        x_query = [0.25, 0.5, 0.75]
+        output = similar(x_query)
+
+        function inplace_runtime_extrapolation!(out, mode::Symbol)
+            linear_interp!(out, x, y, x_query; extrapolation=mode)
+        end
+
+        function inplace_runtime_bc!(out, bc_mode::Symbol)
+            linear_interp!(out, x, y, x_query; bc=bc_mode)
+        end
+
+        # Warmup
+        inplace_runtime_extrapolation!(output, :extension)
+        inplace_runtime_extrapolation!(output, :extension)
+        inplace_runtime_bc!(output, :periodic)
+        inplace_runtime_bc!(output, :periodic)
+
+        # Runtime extrapolation - MUST be zero allocation
+        allocs = @allocated inplace_runtime_extrapolation!(output, :extension)
+        @test allocs == 0
+
+        allocs = @allocated inplace_runtime_extrapolation!(output, :constant)
+        @test allocs == 0
+
+        # Runtime bc - MUST be zero allocation
+        allocs = @allocated inplace_runtime_bc!(output, :periodic)
+        @test allocs == 0
+    end
+
+    @testset "Runtime symbol: cubic_interp scalar" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        clear_cubic_cache!()
+
+        # Prime cache
+        cubic_interp(x, y, 0.5)
+
+        function cubic_runtime_extrapolation(mode::Symbol)
+            cubic_interp(x, y, 0.5; extrapolation=mode)
+        end
+
+        # Warmup
+        cubic_runtime_extrapolation(:extension)
+        cubic_runtime_extrapolation(:extension)
+
+        # Runtime extrapolation - zero allocation on 1.12+
+        allocs = @allocated cubic_runtime_extrapolation(:extension)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated cubic_runtime_extrapolation(:constant)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Runtime symbol: cubic_interp! in-place" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        x_query = [0.25, 0.5, 0.75]
+        output = similar(x_query)
+
+        clear_cubic_cache!()
+
+        function cubic_inplace_runtime_extrapolation!(out, mode::Symbol)
+            cubic_interp!(out, x, y, x_query; extrapolation=mode)
+        end
+
+        # Warmup (primes autocache)
+        cubic_inplace_runtime_extrapolation!(output, :extension)
+        cubic_inplace_runtime_extrapolation!(output, :extension)
+
+        # Runtime extrapolation - MUST be zero allocation
+        allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :extension)
+        @test allocs == 0
+
+        allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :constant)
+        @test allocs == 0
+    end
+
+    @testset "Runtime symbol: get_cubic_cache" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 1.0, 51))
+
+        # Prime cache for both BC types
+        get_cubic_cache(x; bc=:natural)
+        get_cubic_cache(x; bc=:periodic)
+
+        # Runtime symbol version (simulating user code passing runtime variable)
+        function cache_runtime_bc(bc_mode::Symbol)
+            get_cubic_cache(x; bc=bc_mode)
+        end
+
+        # Extended warmup for JIT stabilization (important for inner functions)
+        for _ in 1:10
+            cache_runtime_bc(:natural)
+            cache_runtime_bc(:periodic)
+        end
+
+        # Measure runtime symbol version
+        allocs_natural = @allocated cache_runtime_bc(:natural)
+        allocs_periodic = @allocated cache_runtime_bc(:periodic)
+
+        # The 64/96 bytes comes from cache lookup (lock + objectid check), not Val pattern.
+        # Key test: repeated calls should be consistent (no growing allocation).
+        allocs_natural2 = @allocated cache_runtime_bc(:natural)
+        allocs_periodic2 = @allocated cache_runtime_bc(:periodic)
+
+        # Same allocation on repeated calls = no leak from Val pattern
+        @test allocs_natural == allocs_natural2
+        @test allocs_periodic == allocs_periodic2
+
+        # Reasonable budget (cache lookup overhead)
+        @test allocs_natural <= 128    # Natural BC cache hit
+        @test allocs_periodic <= 128   # Periodic BC cache hit
+    end
+
+    @testset "Runtime symbol: LinearInterpolant construction" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        function itp_runtime_extrapolation(mode::Symbol)
+            LinearInterpolant(x, y; extrapolation=mode)
+        end
+
+        function itp_runtime_bc(bc_mode::Symbol)
+            LinearInterpolant(x, y; bc=bc_mode)
+        end
+
+        # Warmup
+        itp_runtime_extrapolation(:extension)
+        itp_runtime_extrapolation(:extension)
+        itp_runtime_bc(:periodic)
+        itp_runtime_bc(:periodic)
+
+        # Construction allocates the struct itself, but no extra from Val pattern
+        # Just verify it's reasonably small (struct + references only)
+        allocs_ext = @allocated itp_runtime_extrapolation(:extension)
+        allocs_const = @allocated itp_runtime_extrapolation(:constant)
+        allocs_periodic = @allocated itp_runtime_bc(:periodic)
+
+        # All modes should have same allocation (no extra from runtime symbol)
+        @test allocs_ext == allocs_const
+        @test allocs_ext == allocs_periodic
+        @test allocs_ext <= 64  # Struct is small
+    end
+
 end

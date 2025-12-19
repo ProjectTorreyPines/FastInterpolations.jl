@@ -283,7 +283,11 @@ cache = get_cubic_cache(x; bc=:periodic)      # Periodic BC
 ```
 """
 # Keyword convenience API (for users)
-get_cubic_cache(x; bc::Symbol=:natural) = get_cubic_cache(x, Val(bc))
+@inline function get_cubic_cache(x; bc::Symbol=:natural)
+    bc === :natural  && return get_cubic_cache(x, Val(:natural))
+    bc === :periodic && return get_cubic_cache(x, Val(:periodic))
+    throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
+end
 
 # ═══════════════════════════════════════════════════════════════════════
 # Val-based API (type-stable, for internal use and advanced users)

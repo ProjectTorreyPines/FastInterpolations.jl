@@ -47,24 +47,13 @@ function linear_interp!(
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
-    @assert bc in (:none, :periodic) "bc must be :none or :periodic"
-    @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
 
     # Validate periodic endpoints
     bc == :periodic && _check_periodic_endpoints(y)
 
-    # Direct branching to Val literals for type stability
-    if bc === :periodic
-        return _linear_interp_loop!(output, x, y, x_targets, Val(:periodic))
-    elseif extrapolation === :none
-        return _linear_interp_loop!(output, x, y, x_targets, Val(:none))
-    elseif extrapolation === :constant
-        return _linear_interp_loop!(output, x, y, x_targets, Val(:constant))
-    elseif extrapolation === :extension
-        return _linear_interp_loop!(output, x, y, x_targets, Val(:extension))
-    else
-        throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
-    end
+    # Convert to Val via utility (validates and returns Val literal)
+    mode_val = _to_linear_mode_val(bc, extrapolation)
+    return _linear_interp_loop!(output, x, y, x_targets, mode_val)
 end
 
 # Internal loop with Val dispatch (type-stable)
@@ -86,24 +75,13 @@ end
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
-    @assert bc in (:none, :periodic) "bc must be :none or :periodic"
-    @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
 
     # Validate periodic endpoints
     bc == :periodic && _check_periodic_endpoints(y)
 
-    # Direct branching to Val literals for type stability
-    if bc === :periodic
-        return _linear_interp_loop!(output, x, y, x_targets, Val(:periodic))
-    elseif extrapolation === :none
-        return _linear_interp_loop!(output, x, y, x_targets, Val(:none))
-    elseif extrapolation === :constant
-        return _linear_interp_loop!(output, x, y, x_targets, Val(:constant))
-    elseif extrapolation === :extension
-        return _linear_interp_loop!(output, x, y, x_targets, Val(:extension))
-    else
-        throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
-    end
+    # Convert to Val via utility (validates and returns Val literal)
+    mode_val = _to_linear_mode_val(bc, extrapolation)
+    return _linear_interp_loop!(output, x, y, x_targets, mode_val)
 end
 
 # ========================================
@@ -166,24 +144,13 @@ end
     extrapolation::Symbol=:none
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
-    @boundscheck bc in (:none, :periodic) || throw(ArgumentError("bc must be :none or :periodic"))
-    @boundscheck extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
 
     # Validate periodic endpoints
     bc == :periodic && _check_periodic_endpoints(y)
 
-    # Direct branching to Val literals for type stability
-    if bc === :periodic
-        return linear_interp(x, y, xi, Val(:periodic))
-    elseif extrapolation === :none
-        return linear_interp(x, y, xi, Val(:none))
-    elseif extrapolation === :constant
-        return linear_interp(x, y, xi, Val(:constant))
-    elseif extrapolation === :extension
-        return linear_interp(x, y, xi, Val(:extension))
-    else
-        throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
-    end
+    # Convert to Val via utility (validates and returns Val literal)
+    mode_val = _to_linear_mode_val(bc, extrapolation)
+    return linear_interp(x, y, xi, mode_val)
 end
 
 # Specific method for AbstractRange{FT} (resolves ambiguity with Real wrappers)
@@ -195,24 +162,13 @@ end
     extrapolation::Symbol=:none
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
-    @boundscheck bc in (:none, :periodic) || throw(ArgumentError("bc must be :none or :periodic"))
-    @boundscheck extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
 
     # Validate periodic endpoints
     bc == :periodic && _check_periodic_endpoints(y)
 
-    # Direct branching to Val literals for type stability
-    if bc === :periodic
-        return linear_interp(x, y, xi, Val(:periodic))
-    elseif extrapolation === :none
-        return linear_interp(x, y, xi, Val(:none))
-    elseif extrapolation === :constant
-        return linear_interp(x, y, xi, Val(:constant))
-    elseif extrapolation === :extension
-        return linear_interp(x, y, xi, Val(:extension))
-    else
-        throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
-    end
+    # Convert to Val via utility (validates and returns Val literal)
+    mode_val = _to_linear_mode_val(bc, extrapolation)
+    return linear_interp(x, y, xi, mode_val)
 end
 
 # ========================================
@@ -357,8 +313,6 @@ function linear_interp!(
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
-    @assert bc in (:none, :periodic) "bc must be :none or :periodic"
-    @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
 
     FT = float(T)
     x_float = range(FT(first(x)), FT(last(x)), length(x))
@@ -368,18 +322,9 @@ function linear_interp!(
     # Validate periodic endpoints
     bc == :periodic && _check_periodic_endpoints(y_float)
 
-    # Direct branching to Val literals for type stability
-    if bc === :periodic
-        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:periodic), false)
-    elseif extrapolation === :none
-        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:none), true)
-    elseif extrapolation === :constant
-        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:constant), true)
-    elseif extrapolation === :extension
-        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:extension), true)
-    else
-        throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
-    end
+    # Convert to Val via utility (validates and returns Val literal)
+    mode_val = _to_linear_mode_val(bc, extrapolation)
+    return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, mode_val, bc !== :periodic)
 end
 
 # Wrapper for AbstractVector with Real types (requires conversion)
@@ -393,8 +338,6 @@ function linear_interp!(
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
-    @assert bc in (:none, :periodic) "bc must be :none or :periodic"
-    @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
 
     FT = float(T)
     x_float = FT.(x)  # Allocate once
@@ -404,18 +347,9 @@ function linear_interp!(
     # Validate periodic endpoints
     bc == :periodic && _check_periodic_endpoints(y_float)
 
-    # Direct branching to Val literals for type stability
-    if bc === :periodic
-        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:periodic), false)
-    elseif extrapolation === :none
-        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:none), true)
-    elseif extrapolation === :constant
-        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:constant), true)
-    elseif extrapolation === :extension
-        return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, Val(:extension), true)
-    else
-        throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
-    end
+    # Convert to Val via utility (validates and returns Val literal)
+    mode_val = _to_linear_mode_val(bc, extrapolation)
+    return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, mode_val, bc !== :periodic)
 end
 
 # ========================================
@@ -507,24 +441,13 @@ struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector
         extrapolation::Symbol=:none
     ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
         @assert length(x) == length(y) "x and y must have same length"
-        @assert bc in (:none, :periodic) "bc must be :none or :periodic"
-        @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
 
         # Validate periodic endpoints (once at construction, zero runtime overhead)
         bc == :periodic && _check_periodic_endpoints(y)
 
-        # Direct branching to Val literals for type stability
-        if bc === :periodic
-            new{T,X,Y}(x, y, Val(:periodic))
-        elseif extrapolation === :none
-            new{T,X,Y}(x, y, Val(:none))
-        elseif extrapolation === :constant
-            new{T,X,Y}(x, y, Val(:constant))
-        elseif extrapolation === :extension
-            new{T,X,Y}(x, y, Val(:extension))
-        else
-            throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
-        end
+        # Convert to Val via utility (validates and returns Val literal)
+        mode_val = _to_linear_mode_val(bc, extrapolation)
+        new{T,X,Y}(x, y, mode_val)
     end
 end
 

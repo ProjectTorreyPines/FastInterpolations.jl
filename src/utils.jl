@@ -182,3 +182,75 @@ end
 No-op vector domain check for extrapolation modes other than `:none`.
 """
 @inline _check_domain(::AbstractVector{FT}, ::AbstractVector{FT}, ::Val) where {FT<:AbstractFloat} = nothing
+
+# ========================================
+# Val Conversion Utilities (Type-Stable)
+# ========================================
+#
+# These utilities convert Symbol keywords to Val literals for type stability.
+# IMPORTANT: They return Val(:literal), NOT Val(symbol_variable).
+# This ensures zero-allocation when the compiler can inline and constant-fold.
+
+"""
+    _to_linear_mode_val(bc::Symbol, extrapolation::Symbol) -> Val
+
+Convert linear interpolation mode symbols to Val literal.
+Periodic BC overrides extrapolation mode.
+
+Returns one of: `Val(:periodic)`, `Val(:none)`, `Val(:constant)`, `Val(:extension)`
+
+Throws `ArgumentError` for invalid symbols.
+"""
+@inline function _to_linear_mode_val(bc::Symbol, extrapolation::Symbol)
+    bc === :periodic      && return Val(:periodic)
+    extrapolation === :none      && return Val(:none)
+    extrapolation === :constant  && return Val(:constant)
+    extrapolation === :extension && return Val(:extension)
+    throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
+end
+
+"""
+    _to_extrapolation_val(extrapolation::Symbol) -> Val
+
+Convert extrapolation symbol to Val literal.
+
+Returns one of: `Val(:none)`, `Val(:constant)`, `Val(:extension)`
+
+Throws `ArgumentError` for invalid symbol.
+"""
+@inline function _to_extrapolation_val(extrapolation::Symbol)
+    extrapolation === :none      && return Val(:none)
+    extrapolation === :constant  && return Val(:constant)
+    extrapolation === :extension && return Val(:extension)
+    throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
+end
+
+"""
+    _to_bc_val(bc::Symbol) -> Val
+
+Convert boundary condition symbol to Val literal for cubic interpolation.
+
+Returns one of: `Val(:natural)`, `Val(:periodic)`
+
+Throws `ArgumentError` for invalid symbol.
+"""
+@inline function _to_bc_val(bc::Symbol)
+    bc === :natural  && return Val(:natural)
+    bc === :periodic && return Val(:periodic)
+    throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
+end
+
+"""
+    _to_linear_bc_val(bc::Symbol) -> Val
+
+Convert boundary condition symbol to Val literal for linear interpolation.
+
+Returns one of: `Val(:none)`, `Val(:periodic)`
+
+Throws `ArgumentError` for invalid symbol.
+"""
+@inline function _to_linear_bc_val(bc::Symbol)
+    bc === :none     && return Val(:none)
+    bc === :periodic && return Val(:periodic)
+    throw(ArgumentError("bc must be :none or :periodic, got :$bc"))
+end

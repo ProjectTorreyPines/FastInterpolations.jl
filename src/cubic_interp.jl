@@ -460,11 +460,9 @@ function cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T,X,F,
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
 
-    # Direct branching to Val literals for type stability
-    extrapolation === :none      && return _cubic_interp_impl!(output, cache, y, x_query, Val(:none))
-    extrapolation === :constant  && return _cubic_interp_impl!(output, cache, y, x_query, Val(:constant))
-    extrapolation === :extension && return _cubic_interp_impl!(output, cache, y, x_query, Val(:extension))
-    throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
+    # Convert to Val via utility (validates and returns Val literal)
+    extrap_val = _to_extrapolation_val(extrapolation)
+    return _cubic_interp_impl!(output, cache, y, x_query, extrap_val)
 end
 
 # Internal implementation with Val dispatch (type-stable)
@@ -801,11 +799,9 @@ vals = itp.(query_points)  # Reuse z for all points
     # Solve for z coefficients (reuses cache workspaces)
     z = _solve_cubic_system!(cache.z_workspace, cache.d_workspace, cache, y)
 
-    # Direct branching to Val literals for type stability
-    extrapolation === :none      && return _eval_cubic_with_extrap(cache.x, y, cache.h, z, x_query, Val(:none))
-    extrapolation === :constant  && return _eval_cubic_with_extrap(cache.x, y, cache.h, z, x_query, Val(:constant))
-    extrapolation === :extension && return _eval_cubic_with_extrap(cache.x, y, cache.h, z, x_query, Val(:extension))
-    throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
+    # Convert to Val via utility (validates and returns Val literal)
+    extrap_val = _to_extrapolation_val(extrapolation)
+    return _eval_cubic_with_extrap(cache.x, y, cache.h, z, x_query, extrap_val)
 end
 
 # Periodic BC dispatch for scalar evaluation (extrapolation ignored)
@@ -1046,8 +1042,8 @@ function cubic_interp(
     extrapolation::Symbol=:none,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
-    bc in (:natural, :periodic) || throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
-    extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
+    # Validate bc (throws if invalid)
+    _to_bc_val(bc)
 
     if bc == :periodic
         _check_periodic_endpoints(y)
@@ -1061,11 +1057,9 @@ function cubic_interp(
     _solve_for_interpolant!(cache, y)
     z = copy(cache.z_workspace)  # Allocate separate storage for callable
 
-    # Direct branching to Val literals for type stability
-    extrapolation === :none      && return CubicInterpolant(cache, y, z, Val(:none))
-    extrapolation === :constant  && return CubicInterpolant(cache, y, z, Val(:constant))
-    extrapolation === :extension && return CubicInterpolant(cache, y, z, Val(:extension))
-    error("unreachable")  # validation already done above
+    # Convert to Val via utility (validates and returns Val literal)
+    extrap_val = _to_extrapolation_val(extrapolation)
+    return CubicInterpolant(cache, y, z, extrap_val)
 end
 
 # Helper to solve z coefficients with BC dispatch (used by CubicInterpolant construction)
@@ -1104,14 +1098,12 @@ function cubic_interp(
     y::AbstractVector{T};
     extrapolation::Symbol=:none
 ) where {T<:AbstractFloat}
-    extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
     _solve_for_interpolant!(cache, y)
     z = copy(cache.z_workspace)
-    # Direct branching to Val literals for type stability
-    extrapolation === :none      && return CubicInterpolant(cache, y, z, Val(:none))
-    extrapolation === :constant  && return CubicInterpolant(cache, y, z, Val(:constant))
-    extrapolation === :extension && return CubicInterpolant(cache, y, z, Val(:extension))
-    error("unreachable")  # validation already done above
+
+    # Convert to Val via utility (validates and returns Val literal)
+    extrap_val = _to_extrapolation_val(extrapolation)
+    return CubicInterpolant(cache, y, z, extrap_val)
 end
 
 # Real wrapper for 2-argument form
@@ -1123,8 +1115,9 @@ function cubic_interp(
     extrapolation::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
-    bc in (:natural, :periodic) || throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
-    extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
+    # Validate bc (throws if invalid)
+    _to_bc_val(bc)
+
     T = promote_type(TX, TY)
     FT = float(T)
     x_float = _to_float(x, FT)  # Preserves Range structure
@@ -1140,11 +1133,9 @@ function cubic_interp(
     _solve_for_interpolant!(cache, y_float)
     z = copy(cache.z_workspace)  # Allocate separate storage for callable
 
-    # Direct branching to Val literals for type stability
-    extrapolation === :none      && return CubicInterpolant(cache, y_float, z, Val(:none))
-    extrapolation === :constant  && return CubicInterpolant(cache, y_float, z, Val(:constant))
-    extrapolation === :extension && return CubicInterpolant(cache, y_float, z, Val(:extension))
-    error("unreachable")  # validation already done above
+    # Convert to Val via utility (validates and returns Val literal)
+    extrap_val = _to_extrapolation_val(extrapolation)
+    return CubicInterpolant(cache, y_float, z, extrap_val)
 end
 
 # ============================================================================

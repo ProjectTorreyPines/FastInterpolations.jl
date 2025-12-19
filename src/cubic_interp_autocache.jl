@@ -17,10 +17,6 @@ Transparently reuses LU factorization for repeated x-grids.
 # Cache Infrastructure - Type Aliases
 # ===============================================================
 
-# Concrete LU factorization types (for zero-allocation cache lookup)
-const _LU_Type_F64 = LinearAlgebra.LU{Float64, LinearAlgebra.Tridiagonal{Float64, Vector{Float64}}, Vector{Int64}}
-const _LU_Type_F32 = LinearAlgebra.LU{Float32, LinearAlgebra.Tridiagonal{Float32, Vector{Float32}}, Vector{Int64}}
-
 # StepRangeLen concrete types (from `range(a, b, n)`)
 const _StepRangeLen_F64 = StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
 const _StepRangeLen_F32 = StepRangeLen{Float32, Float64, Float64, Int64}
@@ -265,131 +261,56 @@ end
     _lookup_or_insert!(bank.store_f32, bank.ring_f32, x, E32, BCVal())
 
 # ═══════════════════════════════════════════════════════════════════════
-# Public API: get_cubic_cache (Natural BC)
+# Public API: get_cubic_cache(x; bc=:natural)
 # ═══════════════════════════════════════════════════════════════════════
 
 """
-    get_cubic_cache(x)
+    get_cubic_cache(x; bc::Symbol=:natural)
 
-Get or create a cached CubicSplineCache with natural BC for the given x-grid.
+Get or create a cached CubicSplineCache for the given x-grid.
 
 # Arguments
 - `x`: X-grid (Vector or Range)
+- `bc`: Boundary condition - `:natural` (default) or `:periodic`
 
 # Returns
 Cached `CubicSplineCache` for zero-allocation repeated interpolation.
+
+# Examples
+```julia
+cache = get_cubic_cache(x)                    # Natural BC
+cache = get_cubic_cache(x; bc=:periodic)      # Periodic BC
+```
 """
-function get_cubic_cache(x::Vector{Float64})
-    lock(_CACHE_LOCK)
-    try
-        return _get_cache(x, _BANK_VEC_NATURAL)
-    finally
-        unlock(_CACHE_LOCK)
-    end
-end
-
-function get_cubic_cache(x::Vector{Float32})
-    lock(_CACHE_LOCK)
-    try
-        return _get_cache(x, _BANK_VEC_NATURAL)
-    finally
-        unlock(_CACHE_LOCK)
-    end
-end
-
-function get_cubic_cache(x::_StepRangeLen_F64)
-    lock(_CACHE_LOCK)
-    try
-        return _get_cache(x, _BANK_RANGE_NATURAL)
-    finally
-        unlock(_CACHE_LOCK)
-    end
-end
-
-function get_cubic_cache(x::_StepRangeLen_F32)
-    lock(_CACHE_LOCK)
-    try
-        return _get_cache(x, _BANK_RANGE_NATURAL)
-    finally
-        unlock(_CACHE_LOCK)
-    end
-end
-
-# AbstractRange fallback: normalize to canonical StepRangeLen
-function get_cubic_cache(x::AbstractRange{Float64})
-    return get_cubic_cache(range(first(x), last(x), length(x)))
-end
-
-function get_cubic_cache(x::AbstractRange{Float32})
-    return get_cubic_cache(range(first(x), last(x), length(x)))
-end
-
-# AbstractVector fallback: convert to Float64 Vector
-function get_cubic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
-    return get_cubic_cache(convert(Vector{Float64}, x))
-end
+# Keyword convenience API (for users)
+get_cubic_cache(x; bc::Symbol=:natural) = get_cubic_cache(x, Val(bc))
 
 # ═══════════════════════════════════════════════════════════════════════
-# Public API: get_cubic_cache_periodic (Periodic BC)
+# Val-based API (type-stable, for internal use and advanced users)
 # ═══════════════════════════════════════════════════════════════════════
 
-"""
-    get_cubic_cache_periodic(x)
+# Vector dispatch
+get_cubic_cache(x::Vector{T}, ::Val{:natural}) where T<:AbstractFloat =
+    _get_cubic_cache_impl(x, _BANK_VEC_NATURAL)
+get_cubic_cache(x::Vector{T}, ::Val{:periodic}) where T<:AbstractFloat =
+    _get_cubic_cache_impl(x, _BANK_VEC_PERIODIC)
 
-Get or create a cached CubicSplineCache with periodic BC for the given x-grid.
+# Range dispatch (normalize to canonical StepRangeLen)
+get_cubic_cache(x::AbstractRange{T}, ::Val{:natural}) where T<:AbstractFloat =
+    _get_cubic_cache_impl(range(first(x), last(x), length(x)), _BANK_RANGE_NATURAL)
+get_cubic_cache(x::AbstractRange{T}, ::Val{:periodic}) where T<:AbstractFloat =
+    _get_cubic_cache_impl(range(first(x), last(x), length(x)), _BANK_RANGE_PERIODIC)
 
-# Arguments
-- `x`: X-grid (Vector or Range)
+# AbstractVector fallback: convert to Float64
+get_cubic_cache(x::AbstractVector{T}, bcval::Val) where T<:AbstractFloat =
+    get_cubic_cache(convert(Vector{Float64}, x), bcval)
 
-# Returns
-Cached `CubicSplineCache` with periodic BC for zero-allocation repeated interpolation.
-"""
-function get_cubic_cache_periodic(x::Vector{Float64})
+# Implementation with lock
+@inline function _get_cubic_cache_impl(x, bank)
     lock(_CACHE_LOCK)
     try
-        return _get_cache(x, _BANK_VEC_PERIODIC)
+        return _get_cache(x, bank)
     finally
         unlock(_CACHE_LOCK)
     end
-end
-
-function get_cubic_cache_periodic(x::Vector{Float32})
-    lock(_CACHE_LOCK)
-    try
-        return _get_cache(x, _BANK_VEC_PERIODIC)
-    finally
-        unlock(_CACHE_LOCK)
-    end
-end
-
-function get_cubic_cache_periodic(x::_StepRangeLen_F64)
-    lock(_CACHE_LOCK)
-    try
-        return _get_cache(x, _BANK_RANGE_PERIODIC)
-    finally
-        unlock(_CACHE_LOCK)
-    end
-end
-
-function get_cubic_cache_periodic(x::_StepRangeLen_F32)
-    lock(_CACHE_LOCK)
-    try
-        return _get_cache(x, _BANK_RANGE_PERIODIC)
-    finally
-        unlock(_CACHE_LOCK)
-    end
-end
-
-# AbstractRange fallback
-function get_cubic_cache_periodic(x::AbstractRange{Float64})
-    return get_cubic_cache_periodic(range(first(x), last(x), length(x)))
-end
-
-function get_cubic_cache_periodic(x::AbstractRange{Float32})
-    return get_cubic_cache_periodic(range(first(x), last(x), length(x)))
-end
-
-# AbstractVector fallback
-function get_cubic_cache_periodic(x::AbstractVector{T}) where {T<:AbstractFloat}
-    return get_cubic_cache_periodic(convert(Vector{Float64}, x))
 end

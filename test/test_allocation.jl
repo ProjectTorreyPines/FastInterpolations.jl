@@ -93,6 +93,26 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         @test allocs == 0
     end
 
+    @testset "Zero-allocation: In-place with autocache" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        x_query = [0.25, 0.5, 0.75]
+        output = similar(x_query)
+
+        clear_cubic_cache!()
+
+        # Prime autocache
+        cubic_interp!(output, x, y, x_query)
+
+        # Warmup
+        cubic_interp!(output, x, y, x_query)
+        cubic_interp!(output, x, y, x_query)
+
+        # In-place with autocache - MUST be zero allocation
+        allocs = @allocated cubic_interp!(output, x, y, x_query)
+        @test allocs == 0
+    end
+
     @testset "Zero-allocation: Callable scalar call" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
@@ -486,6 +506,192 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
 
         allocs = @allocated cubic_interp(x, y, 1.1; extrapolation=:extension)
         @test allocs <= ALLOC_THRESHOLD
+    end
+
+    # =========================================================================
+    # Linear Interpolation Allocation Tests
+    # =========================================================================
+    # Linear interpolation has no cache (O(1) or O(log n) lookup per point)
+
+    @testset "Zero-allocation: linear_interp! in-place" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        x_query = [0.25, 0.5, 0.75]
+        output = similar(x_query)
+
+        # Warmup
+        linear_interp!(output, x, y, x_query)
+        linear_interp!(output, x, y, x_query)
+
+        # In-place linear interpolation - MUST be zero allocation
+        allocs = @allocated linear_interp!(output, x, y, x_query)
+        @test allocs == 0
+    end
+
+    @testset "Zero-allocation: LinearInterpolant callable" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        # Create callable
+        itp = LinearInterpolant(x, y)
+
+        # Warmup
+        itp(0.5)
+        itp(0.5)
+
+        # Scalar call - zero allocation on 1.12+
+        allocs = @allocated itp(0.5)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated itp(0.25)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    # =========================================================================
+    # Periodic BC Allocation Tests
+    # =========================================================================
+    # NOTE: Periodic BC does NOT use autocache yet - creates new cache every call.
+    # These tests document current behavior and track when periodic autocache is implemented.
+
+    @testset "Periodic BC: CubicInterpolant callable is zero-allocation" begin
+        # Periodic data (y[1] ≈ y[end])
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+
+        # Create callable via cubic_interp (computes z coefficients)
+        itp = cubic_interp(x, y; bc=:periodic, autocache=false)
+
+        # Warmup
+        itp(1.0)
+        itp(1.0)
+
+        # Scalar call on pre-constructed callable - zero allocation on 1.12+
+        allocs = @allocated itp(1.0)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Different query points
+        allocs = @allocated itp(3.0)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Query outside domain (wraps to domain)
+        allocs = @allocated itp(7.0)  # 7.0 > 2π
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Periodic BC: cubic_interp with explicit cache is zero-allocation" begin
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+        x_query = [0.5, 1.0, 1.5]
+        output = similar(x_query)
+
+        # Create explicit periodic cache
+        cache = CubicSplineCache(x; bc=:periodic)
+
+        # Warmup
+        cubic_interp!(output, cache, y, x_query)
+        cubic_interp!(output, cache, y, x_query)
+
+        # In-place with explicit cache - MUST be zero allocation
+        allocs = @allocated cubic_interp!(output, cache, y, x_query)
+        @test allocs == 0
+    end
+
+    @testset "Periodic BC: autocache NOT YET IMPLEMENTED - documents current allocation" begin
+        # This test documents that periodic BC functional API currently allocates
+        # because autocache for periodic is not implemented.
+        # When periodic autocache is added, this test should be updated to verify zero-allocation.
+
+        # Use in-place version for accurate measurement (excludes output allocation)
+        x_periodic = collect(range(0.0, 2π, 101))
+        y_periodic = sin.(x_periodic)
+        x_query = [1.0]
+        output = similar(x_query)
+
+        clear_cubic_cache!()
+
+        # Warmup JIT - periodic
+        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
+        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
+
+        # Natural BC with autocache for comparison (in-place)
+        x_natural = collect(range(0.0, 1.0, 101))
+        y_natural = sin.(2π .* x_natural)
+        x_query_nat = [0.5]
+        output_nat = similar(x_query_nat)
+        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)  # Prime autocache
+        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)  # Warmup
+        natural_allocs = @allocated cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)
+
+        # Periodic BC allocation (creates new cache each call - NO autocache)
+        periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
+
+        # Document: periodic allocates significantly more than natural (autocache hit)
+        # Natural BC: 0 bytes (autocache hit, in-place)
+        # Periodic BC: ~13,000+ bytes (new cache creation every call)
+        @test natural_allocs == 0  # Natural uses autocache, in-place = zero alloc
+
+        # Periodic SHOULD allocate significantly more (no autocache yet)
+        # This is a "known limitation" test - when periodic autocache is implemented,
+        # change this to: @test periodic_allocs == 0
+        @test periodic_allocs > 5000  # Expect cache creation (~13KB)
+
+        # Print diagnostic info for visibility
+        @info "Periodic BC autocache status (in-place)" natural_allocs periodic_allocs
+    end
+
+    @testset "Periodic BC: LinearInterpolant callable is zero-allocation" begin
+        # Periodic data
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+
+        # Create callable
+        itp = LinearInterpolant(x, y; bc=:periodic)
+
+        # Warmup
+        itp(1.0)
+        itp(1.0)
+
+        # Scalar call - zero allocation on 1.12+
+        allocs = @allocated itp(1.0)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Query outside domain (wraps)
+        allocs = @allocated itp(7.0)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Periodic BC: linear_interp functional API is zero-allocation" begin
+        # Linear periodic doesn't need cache, so it should be zero-alloc
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+
+        # Warmup
+        linear_interp(x, y, 1.0; bc=:periodic)
+        linear_interp(x, y, 1.0; bc=:periodic)
+
+        # Linear interpolation is simple - should be zero-allocation
+        allocs = @allocated linear_interp(x, y, 1.0; bc=:periodic)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Outside domain
+        allocs = @allocated linear_interp(x, y, 7.0; bc=:periodic)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Periodic BC: linear_interp! in-place is zero-allocation" begin
+        # Linear periodic in-place - most accurate zero-alloc test
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+        x_query = [1.0, 3.0, 7.0]  # includes out-of-domain (7.0 > 2π)
+        output = similar(x_query)
+
+        # Warmup
+        linear_interp!(output, x, y, x_query; bc=:periodic)
+        linear_interp!(output, x, y, x_query; bc=:periodic)
+
+        # In-place linear periodic - MUST be zero allocation
+        allocs = @allocated linear_interp!(output, x, y, x_query; bc=:periodic)
+        @test allocs == 0
     end
 
 end

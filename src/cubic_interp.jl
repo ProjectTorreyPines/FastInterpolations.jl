@@ -53,6 +53,7 @@ Pre-computed data for Sherman-Morrison periodic spline solver.
 
 # Fields
 - `q::Vector{T}`: Pre-computed A'^{-1} * u vector for Sherman-Morrison formula
+- `y_temp::Vector{T}`: Workspace for intermediate solution (for zero-allocation ldiv!)
 - `period::T`: Period T = x[end] - x[1]
 
 # Notes
@@ -62,6 +63,7 @@ where q = A'^{-1} * u is pre-computed and reused for different y vectors.
 """
 struct PeriodicData{T<:AbstractFloat}
     q::Vector{T}       # Pre-computed A'^{-1} * u
+    y_temp::Vector{T}  # Workspace for ldiv! (zero-allocation solver)
     period::T          # x[end] - x[1]
 end
 
@@ -272,8 +274,9 @@ function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
     # Allocate workspaces (n+1 for z to include z[n+1] = z[1])
     d_workspace = Vector{T}(undef, n)
     z_workspace = Vector{T}(undef, n + 1)
+    y_temp_workspace = Vector{T}(undef, n)  # For zero-allocation ldiv!
 
-    bc_data = PeriodicData(q, period)
+    bc_data = PeriodicData(q, y_temp_workspace, period)
 
     return CubicSplineCache(x, h[1:n+1], lu_factor, d_workspace, z_workspace, bc_data)
 end
@@ -370,8 +373,9 @@ Reference to z_workspace containing [z[1], ..., z[n], z[n+1]] where z[n+1] = z[1
     # Step 1: Compute RHS vector d (length n)
     compute_rhs_periodic!(d_workspace, y, cache.h)
 
-    # Step 2: Solve A' * y_temp = d using cached LU factorization
-    y_temp = cache.lu_factor \ d_workspace  # Allocates, but only n elements
+    # Step 2: Solve A' * y_temp = d using cached LU factorization (ZERO-ALLOCATION)
+    y_temp = cache.bc_data.y_temp
+    ldiv!(y_temp, cache.lu_factor, d_workspace)
 
     # Step 3: Apply Sherman-Morrison correction
     # z = y_temp - (v^T * y_temp) / (1 + v^T * q) * q

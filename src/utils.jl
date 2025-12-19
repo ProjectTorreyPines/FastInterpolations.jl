@@ -192,7 +192,7 @@ No-op vector domain check for extrapolation modes other than `:none`.
 # This ensures zero-allocation when the compiler can inline and constant-fold.
 
 """
-    _to_linear_mode_val(bc::Symbol, extrapolation::Symbol) -> Val
+    _to_linear_mode_val(bc::Symbol, extrap::Symbol) -> Val
 
 Convert linear interpolation mode symbols to Val literal.
 Periodic BC overrides extrapolation mode.
@@ -201,16 +201,16 @@ Returns one of: `Val(:periodic)`, `Val(:none)`, `Val(:constant)`, `Val(:extensio
 
 Throws `ArgumentError` for invalid symbols.
 """
-@inline function _to_linear_mode_val(bc::Symbol, extrapolation::Symbol)
+@inline function _to_linear_mode_val(bc::Symbol, extrap::Symbol)
     bc === :periodic      && return Val(:periodic)
-    extrapolation === :none      && return Val(:none)
-    extrapolation === :constant  && return Val(:constant)
-    extrapolation === :extension && return Val(:extension)
-    throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
+    extrap === :none      && return Val(:none)
+    extrap === :constant  && return Val(:constant)
+    extrap === :extension && return Val(:extension)
+    throw(ArgumentError("`extrap` must be :none, :constant, or :extension, got :$extrap"))
 end
 
 """
-    _to_extrapolation_val(extrapolation::Symbol) -> Val
+    _to_extrapolation_val(extrap::Symbol) -> Val
 
 Convert extrapolation symbol to Val literal.
 
@@ -218,11 +218,11 @@ Returns one of: `Val(:none)`, `Val(:constant)`, `Val(:extension)`
 
 Throws `ArgumentError` for invalid symbol.
 """
-@inline function _to_extrapolation_val(extrapolation::Symbol)
-    extrapolation === :none      && return Val(:none)
-    extrapolation === :constant  && return Val(:constant)
-    extrapolation === :extension && return Val(:extension)
-    throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
+@inline function _to_extrapolation_val(extrap::Symbol)
+    extrap === :none      && return Val(:none)
+    extrap === :constant  && return Val(:constant)
+    extrap === :extension && return Val(:extension)
+    throw(ArgumentError("`extrap` must be :none, :constant, or :extension, got :$extrap"))
 end
 
 """

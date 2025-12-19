@@ -107,8 +107,8 @@ const APPROX_REL_TOLERANCCE = 1e-15
                     # Use linear function for predictable extrapolation
                     y = target_f.(x)
 
-                    # FastInterpolations (explicit extrapolation=:extension)
-                    result_fast = linear_interp(x, y, xq_with_extrap; extrapolation=:extension)
+                    # FastInterpolations (explicit extrap=:extension)
+                    result_fast = linear_interp(x, y, xq_with_extrap; extrap=:extension)
 
                     # DataInterpolations.jl with extrapolation
                     itp = DI.LinearInterpolation(y, x; extrapolation=DI.ExtrapolationType.Extension)
@@ -169,8 +169,8 @@ const APPROX_REL_TOLERANCCE = 1e-15
                 @testset "Grid: $grid_name" begin
                     y = target_f.(x)
 
-                    # FastInterpolations (explicit extrapolation=:extension)
-                    result_fast = cubic_interp(x, y, xq_with_extrap; extrapolation=:extension)
+                    # FastInterpolations (explicit extrap=:extension)
+                    result_fast = cubic_interp(x, y, xq_with_extrap; extrap=:extension)
 
                     # DataInterpolations.jl with extrapolation
                     itp = DI.CubicSpline(y, x; extrapolation=DI.ExtrapolationType.Extension)

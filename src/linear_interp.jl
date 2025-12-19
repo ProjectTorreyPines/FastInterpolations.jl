@@ -9,7 +9,7 @@
 # ========================================
 
 """
-    linear_interp!(output, x, y, x_targets; bc=:none, extrapolation=:none)
+    linear_interp!(output, x, y, x_targets; bc=:none, extrap=:none)
 
 Zero-allocation linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -18,7 +18,7 @@ Zero-allocation linear interpolation with automatic dispatch:
 # Arguments
 - `output`: Pre-allocated output vector (must be floating-point type)
 - `bc::Symbol`: `:none` (default) or `:periodic` (wraps to domain)
-- `extrapolation::Symbol`: `:none` (default, throws DomainError), `:constant`, or `:extension`
+- `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, or `:extension`
 
 # Example
 ```julia
@@ -26,8 +26,8 @@ rho = 0.0:0.01:1.0  # Uniform grid → fast O(1) path
 y = sin.(rho)
 out = Vector{Float64}(undef, 2)
 linear_interp!(out, rho, y, [0.55, 0.77])  # throws error if outside domain
-linear_interp!(out, rho, y, [-0.1, 1.2]; extrapolation=:extension)  # linear extrapolation
-linear_interp!(out, rho, y, [-0.1, 1.2]; extrapolation=:constant)  # clamp to boundary values
+linear_interp!(out, rho, y, [-0.1, 1.2]; extrap=:extension)  # linear extrapolation
+linear_interp!(out, rho, y, [-0.1, 1.2]; extrap=:constant)  # clamp to boundary values
 ```
 
 # Implementation Note
@@ -43,7 +43,7 @@ function linear_interp!(
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
     bc::Symbol=:none,
-    extrapolation::Symbol=:none
+    extrap::Symbol=:none
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -52,7 +52,7 @@ function linear_interp!(
     bc == :periodic && _check_periodic_endpoints(y)
 
     # Convert to Val via utility (validates and returns Val literal)
-    mode_val = _to_linear_mode_val(bc, extrapolation)
+    mode_val = _to_linear_mode_val(bc, extrap)
     return _linear_interp_loop!(output, x, y, x_targets, mode_val)
 end
 
@@ -71,7 +71,7 @@ end
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
     bc::Symbol=:none,
-    extrapolation::Symbol=:none
+    extrap::Symbol=:none
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -80,7 +80,7 @@ end
     bc == :periodic && _check_periodic_endpoints(y)
 
     # Convert to Val via utility (validates and returns Val literal)
-    mode_val = _to_linear_mode_val(bc, extrapolation)
+    mode_val = _to_linear_mode_val(bc, extrap)
     return _linear_interp_loop!(output, x, y, x_targets, mode_val)
 end
 
@@ -89,7 +89,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xi::Real; bc=:none, extrapolation=:none) -> AbstractFloat
+    linear_interp(x, y, xi::Real; bc=:none, extrap=:none) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -98,7 +98,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 # Arguments
 - `xi::Real`: Single interpolation point
 - `bc::Symbol`: `:none` (default) or `:periodic` (wraps to domain)
-- `extrapolation::Symbol`: `:none` (default, throws DomainError), `:constant`, or `:extension`
+- `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, or `:extension`
 
 # Returns
 - Always returns a floating-point type (Integer inputs auto-promoted to Float)
@@ -141,7 +141,7 @@ end
     y::AbstractVector{FT},
     xi::FT;
     bc::Symbol=:none,
-    extrapolation::Symbol=:none
+    extrap::Symbol=:none
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
@@ -149,7 +149,7 @@ end
     bc == :periodic && _check_periodic_endpoints(y)
 
     # Convert to Val via utility (validates and returns Val literal)
-    mode_val = _to_linear_mode_val(bc, extrapolation)
+    mode_val = _to_linear_mode_val(bc, extrap)
     return linear_interp(x, y, xi, mode_val)
 end
 
@@ -159,7 +159,7 @@ end
     y::AbstractVector{FT},
     xi::FT;
     bc::Symbol=:none,
-    extrapolation::Symbol=:none
+    extrap::Symbol=:none
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
@@ -167,7 +167,7 @@ end
     bc == :periodic && _check_periodic_endpoints(y)
 
     # Convert to Val via utility (validates and returns Val literal)
-    mode_val = _to_linear_mode_val(bc, extrapolation)
+    mode_val = _to_linear_mode_val(bc, extrap)
     return linear_interp(x, y, xi, mode_val)
 end
 
@@ -246,7 +246,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, x_targets; bc=:none, extrapolation=:none)
+    linear_interp(x, y, x_targets; bc=:none, extrap=:none)
 
 Linear interpolation with automatic dispatch (allocating version):
 - For `AbstractRange` x: O(1) direct indexing
@@ -254,7 +254,7 @@ Linear interpolation with automatic dispatch (allocating version):
 
 # Arguments
 - `bc::Symbol`: `:none` (default) or `:periodic` (wraps to domain)
-- `extrapolation::Symbol`: `:none` (default, throws DomainError), `:constant`, or `:extension`
+- `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, or `:extension`
 
 When `bc=:periodic`, `extrapolation` is ignored and coordinates are wrapped to domain.
 
@@ -266,8 +266,8 @@ When `bc=:periodic`, `extrapolation` is ignored and coordinates are wrapped to d
 rho = 0.0:0.01:1.0  # Uniform grid → fast O(1) path
 y = sin.(rho)
 result = linear_interp(rho, y, [0.55, 0.77])  # throws error if outside domain
-result = linear_interp(rho, y, [-0.1, 1.2]; extrapolation=:extension)  # linear extrapolation
-result = linear_interp(rho, y, [-0.1, 1.2]; extrapolation=:constant)  # clamp to boundary values
+result = linear_interp(rho, y, [-0.1, 1.2]; extrap=:extension)  # linear extrap
+result = linear_interp(rho, y, [-0.1, 1.2]; extrap=:constant)  # clamp to boundary values
 result = linear_interp(rho, y, [1.5, 2.5]; bc=:periodic)  # periodic wrapping
 
 # Integer inputs auto-promoted to Float
@@ -281,11 +281,11 @@ function linear_interp(
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
     bc::Symbol=:none,
-    extrapolation::Symbol=:none
+    extrap::Symbol=:none
 ) where {T<:Real, S<:Real}
     FT = float(T)
     output = Vector{FT}(undef, length(x_targets))
-    linear_interp!(output, x, y, x_targets; bc, extrapolation)
+    linear_interp!(output, x, y, x_targets; bc, extrap)
     return output
 end
 
@@ -309,7 +309,7 @@ function linear_interp!(
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
     bc::Symbol=:none,
-    extrapolation::Symbol=:none
+    extrap::Symbol=:none
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -323,7 +323,7 @@ function linear_interp!(
     bc == :periodic && _check_periodic_endpoints(y_float)
 
     # Convert to Val via utility (validates and returns Val literal)
-    mode_val = _to_linear_mode_val(bc, extrapolation)
+    mode_val = _to_linear_mode_val(bc, extrap)
     return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, mode_val, bc !== :periodic)
 end
 
@@ -334,7 +334,7 @@ function linear_interp!(
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
     bc::Symbol=:none,
-    extrapolation::Symbol=:none
+    extrap::Symbol=:none
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -348,7 +348,7 @@ function linear_interp!(
     bc == :periodic && _check_periodic_endpoints(y_float)
 
     # Convert to Val via utility (validates and returns Val literal)
-    mode_val = _to_linear_mode_val(bc, extrapolation)
+    mode_val = _to_linear_mode_val(bc, extrap)
     return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, mode_val, bc !== :periodic)
 end
 
@@ -362,11 +362,11 @@ end
     y::AbstractVector{T},
     xi::S;
     bc::Symbol=:none,
-    extrapolation::Symbol=:none
+    extrap::Symbol=:none
 ) where {T<:Real, S<:Real}
     FT = float(T)
     x_float = range(FT(first(x)), FT(last(x)), length(x))
-    return linear_interp(x_float, FT.(y), FT(xi); bc, extrapolation)
+    return linear_interp(x_float, FT.(y), FT(xi); bc, extrap)
 end
 
 function linear_interp(
@@ -374,10 +374,10 @@ function linear_interp(
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
     bc::Symbol=:none,
-    extrapolation::Symbol=:none
+    extrap::Symbol=:none
 ) where {T<:Real, S<:Real}
     output = Vector{float(T)}(undef, length(x_targets))
-    return linear_interp!(output, x, y, x_targets; bc, extrapolation)
+    return linear_interp!(output, x, y, x_targets; bc, extrap)
 end
 
 
@@ -387,10 +387,10 @@ end
     y::AbstractVector{T},
     xi::S;
     bc::Symbol=:none,
-    extrapolation::Symbol=:none
+    extrap::Symbol=:none
 ) where {T<:Real, S<:Real}
     FT = float(T)
-    return linear_interp(FT.(x), FT.(y), FT(xi); bc, extrapolation)
+    return linear_interp(FT.(x), FT.(y), FT(xi); bc, extrap)
 end
 
 # ========================================
@@ -411,7 +411,7 @@ Returned by `linear_interp(x, y)` (2-argument form).
 # Usage
 ```julia
 # Create interpolator (minimal allocation)
-itp = linear_interp(x, y)  # default extrapolation=:none (throws error if outside domain)
+itp = linear_interp(x, y)  # default extrap=:none (throws error if outside domain)
 
 # Use in broadcast (fused, no intermediate arrays)
 result = @. coef * itp(rho) * other_terms
@@ -421,10 +421,10 @@ vals1 = itp.(query_points1)
 vals2 = @. compute(itp(query_points2))
 
 # Extrapolation options
-itp_ext = linear_interp(x, y; extrapolation=:extension)  # linear extrapolation
-itp_const = linear_interp(x, y; extrapolation=:constant)  # clamp to boundary values
+itp_ext = linear_interp(x, y; extrap=:extension)  # linear extrap
+itp_const = linear_interp(x, y; extrap=:constant)  # clamp to boundary values
 
-# Periodic BC (overrides extrapolation)
+# Periodic BC (overrides extrap)
 itp_periodic = linear_interp(x, y; bc=:periodic)
 val = itp_periodic(2.5)  # wraps to domain
 ```
@@ -438,7 +438,7 @@ struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector
         x::X,
         y::Y;
         bc::Symbol=:none,
-        extrapolation::Symbol=:none
+        extrap::Symbol=:none
     ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
         @assert length(x) == length(y) "x and y must have same length"
 
@@ -446,7 +446,7 @@ struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector
         bc == :periodic && _check_periodic_endpoints(y)
 
         # Convert to Val via utility (validates and returns Val literal)
-        mode_val = _to_linear_mode_val(bc, extrapolation)
+        mode_val = _to_linear_mode_val(bc, extrap)
         new{T,X,Y}(x, y, mode_val)
     end
 end
@@ -508,7 +508,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y; bc=:none, extrapolation=:none) -> LinearInterpolant
+    linear_interp(x, y; bc=:none, extrap=:none) -> LinearInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -516,7 +516,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values
 - `bc::Symbol`: `:none` (default) or `:periodic` (wraps to domain)
-- `extrapolation::Symbol`: `:none` (default, throws DomainError), `:constant`, or `:extension`
+- `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, or `:extension`
 
 When `bc=:periodic`, `extrapolation` is ignored and coordinates are wrapped to domain.
 
@@ -556,9 +556,9 @@ function linear_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
     bc::Symbol=:none,
-    extrapolation::Symbol=:none
+    extrap::Symbol=:none
 ) where {T<:AbstractFloat}
-    return LinearInterpolant(x, y; bc, extrapolation)
+    return LinearInterpolant(x, y; bc, extrap)
 end
 
 # Real wrapper for 2-argument form (allows different container types)
@@ -567,9 +567,9 @@ function linear_interp(
     x::X,
     y::Y;
     bc::Symbol=:none,
-    extrapolation::Symbol=:none
+    extrap::Symbol=:none
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
     T = promote_type(TX, TY)
     FT = float(T)
-    return LinearInterpolant(_to_float(x, FT), FT.(y); bc, extrapolation)
+    return LinearInterpolant(_to_float(x, FT), FT.(y); bc, extrap)
 end

@@ -50,8 +50,8 @@ function demo_linear_extrapolation()
     xq = range(-1.0, 5.0, 200)
 
     # Different extrapolation methods
-    y_extension = linear_interp(x, y, collect(xq); extrapolation=:extension)
-    y_constant = linear_interp(x, y, collect(xq); extrapolation=:constant)
+    y_extension = linear_interp(x, y, collect(xq); extrap=:extension)
+    y_constant = linear_interp(x, y, collect(xq); extrap=:constant)
 
     # Create plot
     p = plot(title="Linear Interpolation: Extrapolation Methods",
@@ -77,10 +77,10 @@ function demo_linear_extrapolation()
 
     Usage:
         # Extension (default) - continues slope at boundaries
-        linear_interp(x, y, xq; extrapolation=:extension)
+        linear_interp(x, y, xq; extrap=:extension)
 
         # Constant - clamps to boundary values
-        linear_interp(x, y, xq; extrapolation=:constant)
+        linear_interp(x, y, xq; extrap=:constant)
     """)
 
     return p
@@ -110,7 +110,7 @@ function demo_linear_periodic()
 
     # Periodic BC vs Extension extrapolation
     y_periodic = linear_interp(collect(x), collect(y), collect(xq); bc=:periodic)
-    y_extension = linear_interp(collect(x), collect(y), collect(xq); extrapolation=:extension)
+    y_extension = linear_interp(collect(x), collect(y), collect(xq); extrap=:extension)
 
     # True sin function for reference
     y_true = sin.(xq)
@@ -176,8 +176,8 @@ function demo_cubic_bc()
     xq = range(-π, 3π, 400)
 
     # Different boundary conditions
-    y_natural = cubic_interp(x, y, xq; bc=:natural, extrapolation=:extension)
-    y_periodic = cubic_interp(x, y, xq; bc=:periodic, extrapolation=:extension)
+    y_natural = cubic_interp(x, y, xq; bc=:natural, extrap=:extension)
+    y_periodic = cubic_interp(x, y, xq; bc=:periodic, extrap=:extension)
 
     # True sin function
     y_true = sin.(xq)

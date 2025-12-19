@@ -131,12 +131,12 @@
             @test val == ref_val
         end
 
-        # Extrapolation (requires extrapolation=:extension)
-        itp_extrap = cubic_interp(x, y; autocache=false, extrapolation=:extension)
+        # Extrapolation (requires extrap=:extension)
+        itp_extrap = cubic_interp(x, y; autocache=false, extrap=:extension)
         val_left = itp_extrap(-0.1)
         val_right = itp_extrap(1.1)
-        ref_left = cubic_interp(x, y, -0.1; autocache=false, extrapolation=:extension)
-        ref_right = cubic_interp(x, y, 1.1; autocache=false, extrapolation=:extension)
+        ref_left = cubic_interp(x, y, -0.1; autocache=false, extrap=:extension)
+        ref_right = cubic_interp(x, y, 1.1; autocache=false, extrap=:extension)
         @test val_left == ref_left
         @test val_right == ref_right
         @test isfinite(val_left)

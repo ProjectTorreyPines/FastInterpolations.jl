@@ -43,11 +43,11 @@
             x_extrap = [x_min - 1.0, x_max + 1.0]
 
             # Extension extrapolation (explicit mode)
-            result_ext = linear_interp(x_random, y, x_extrap; extrapolation=:extension)
+            result_ext = linear_interp(x_random, y, x_extrap; extrap=:extension)
             @test all(isfinite, result_ext)
 
             # Constant extrapolation
-            result_const = linear_interp(x_random, y, x_extrap; extrapolation=:constant)
+            result_const = linear_interp(x_random, y, x_extrap; extrap=:constant)
             @test result_const[1] ≈ y[1]
             @test result_const[2] ≈ y[end]
         end

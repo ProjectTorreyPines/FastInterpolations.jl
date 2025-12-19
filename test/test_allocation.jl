@@ -497,14 +497,14 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         cubic_interp(x, y, 0.5)
 
         # Warmup with extrapolation (explicit :extension mode)
-        cubic_interp(x, y, -0.1; extrapolation=:extension)
-        cubic_interp(x, y, 1.1; extrapolation=:extension)
+        cubic_interp(x, y, -0.1; extrap=:extension)
+        cubic_interp(x, y, 1.1; extrap=:extension)
 
         # Extrapolation should still be zero-allocation on 1.12+
-        allocs = @allocated cubic_interp(x, y, -0.1; extrapolation=:extension)
+        allocs = @allocated cubic_interp(x, y, -0.1; extrap=:extension)
         @test allocs <= ALLOC_THRESHOLD
 
-        allocs = @allocated cubic_interp(x, y, 1.1; extrapolation=:extension)
+        allocs = @allocated cubic_interp(x, y, 1.1; extrap=:extension)
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -695,7 +695,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
 
         # Simulate user code passing runtime symbol
         function with_runtime_extrapolation(mode::Symbol)
-            linear_interp(x, y, 0.5; extrapolation=mode)
+            linear_interp(x, y, 0.5; extrap=mode)
         end
 
         function with_runtime_bc(bc_mode::Symbol)
@@ -727,7 +727,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         output = similar(x_query)
 
         function inplace_runtime_extrapolation!(out, mode::Symbol)
-            linear_interp!(out, x, y, x_query; extrapolation=mode)
+            linear_interp!(out, x, y, x_query; extrap=mode)
         end
 
         function inplace_runtime_bc!(out, bc_mode::Symbol)
@@ -762,7 +762,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         cubic_interp(x, y, 0.5)
 
         function cubic_runtime_extrapolation(mode::Symbol)
-            cubic_interp(x, y, 0.5; extrapolation=mode)
+            cubic_interp(x, y, 0.5; extrap=mode)
         end
 
         # Warmup
@@ -786,7 +786,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         clear_cubic_cache!()
 
         function cubic_inplace_runtime_extrapolation!(out, mode::Symbol)
-            cubic_interp!(out, x, y, x_query; extrapolation=mode)
+            cubic_interp!(out, x, y, x_query; extrap=mode)
         end
 
         # Warmup (primes autocache)
@@ -844,7 +844,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         y = sin.(2π .* x)
 
         function itp_runtime_extrapolation(mode::Symbol)
-            LinearInterpolant(x, y; extrapolation=mode)
+            LinearInterpolant(x, y; extrap=mode)
         end
 
         function itp_runtime_bc(bc_mode::Symbol)

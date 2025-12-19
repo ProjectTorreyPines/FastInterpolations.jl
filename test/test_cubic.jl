@@ -77,7 +77,7 @@
         x_query_small = [-0.5, 0.25, 0.75, 1.5]
 
         cache_small = CubicSplineCache(x_small)
-        result = cubic_interp(cache_small, y_small, x_query_small; extrapolation=:extension)
+        result = cubic_interp(cache_small, y_small, x_query_small; extrap=:extension)
         @test all(isfinite, result)
 
         # Query at grid points (should return close to exact values)
@@ -103,8 +103,8 @@
         @test_throws DomainError cubic_interp(x, y, 1.1)
 
         # Explicit :none also throws
-        @test_throws DomainError cubic_interp(x, y, -0.5; extrapolation=:none)
-        @test_throws DomainError cubic_interp(x, y, 1.5; extrapolation=:none)
+        @test_throws DomainError cubic_interp(x, y, -0.5; extrap=:none)
+        @test_throws DomainError cubic_interp(x, y, 1.5; extrap=:none)
 
         # Vector query - first out-of-domain point throws
         @test_throws DomainError cubic_interp(x, y, [-0.1, 0.5])
@@ -143,25 +143,25 @@
         y = sin.(2π .* x)
 
         # Left boundary - returns y[1]
-        result_left = cubic_interp(x, y, -0.5; extrapolation=:constant)
+        result_left = cubic_interp(x, y, -0.5; extrap=:constant)
         @test result_left ≈ y[1]
 
         # Right boundary - returns y[end]
-        result_right = cubic_interp(x, y, 1.5; extrapolation=:constant)
+        result_right = cubic_interp(x, y, 1.5; extrap=:constant)
         @test result_right ≈ y[end]
 
         # Vector query
-        result = cubic_interp(x, y, [-0.5, 0.5, 1.5]; extrapolation=:constant)
+        result = cubic_interp(x, y, [-0.5, 0.5, 1.5]; extrap=:constant)
         @test result[1] ≈ y[1]
         @test result[3] ≈ y[end]
 
         # With cache
         cache = CubicSplineCache(x)
-        @test cubic_interp(cache, y, -0.5; extrapolation=:constant) ≈ y[1]
-        @test cubic_interp(cache, y, 1.5; extrapolation=:constant) ≈ y[end]
+        @test cubic_interp(cache, y, -0.5; extrap=:constant) ≈ y[1]
+        @test cubic_interp(cache, y, 1.5; extrap=:constant) ≈ y[end]
 
         # Callable interpolant with :constant
-        itp = cubic_interp(x, y; extrapolation=:constant)
+        itp = cubic_interp(x, y; extrap=:constant)
         @test itp(-0.5) ≈ y[1]
         @test itp(1.5) ≈ y[end]
     end
@@ -379,14 +379,14 @@ end
         y_int = [sin(2π * i / 10) for i in x_int]
         x_extrap = [-1.0, 11.0]
 
-        result = cubic_interp(x_int, y_int, x_extrap; extrapolation=:extension)
+        result = cubic_interp(x_int, y_int, x_extrap; extrap=:extension)
         @test result isa Vector{Float64}
         @test all(isfinite, result)
 
         x_float = collect(Float64.(x_int))
         y_float = Float64.(y_int)
 
-        result_ref = cubic_interp(x_float, y_float, x_extrap; extrapolation=:extension)
+        result_ref = cubic_interp(x_float, y_float, x_extrap; extrap=:extension)
         @test result == result_ref
     end
 

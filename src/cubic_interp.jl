@@ -545,8 +545,12 @@ result = cubic_interp(x, y, x_query; autocache=false)  # One-shot, no caching
 ```
 """
 function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
-                      x_query::AbstractVector{T}; autocache::Bool=true) where {T<:AbstractFloat}
-    if autocache
+                      x_query::AbstractVector{T}; bc::Symbol=:natural, autocache::Bool=true) where {T<:AbstractFloat}
+    if bc == :periodic
+        # Periodic BC: create periodic cache (autocache not yet supported for periodic)
+        cache = CubicSplineCache(x; bc=:periodic)
+        return cubic_interp(cache, y, x_query)
+    elseif autocache
         cache = get_cubic_cache(x)
         return cubic_interp(cache, y, x_query)
     else
@@ -578,8 +582,11 @@ cubic_interp!(output, x, y, x_query)  # Auto-cached (default)
 ```
 """
 function cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T},
-                       x_query::AbstractVector{T}; autocache::Bool=true) where {T<:AbstractFloat}
-    if autocache
+                       x_query::AbstractVector{T}; bc::Symbol=:natural, autocache::Bool=true) where {T<:AbstractFloat}
+    if bc == :periodic
+        cache = CubicSplineCache(x; bc=:periodic)
+        return cubic_interp!(output, cache, y, x_query)
+    elseif autocache
         cache = get_cubic_cache(x)
         return cubic_interp!(output, cache, y, x_query)
     else
@@ -719,8 +726,8 @@ cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T},
     cubic_interp!(output, cache, y, [x_query])
 
 cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T},
-              x_query::T; autocache::Bool=true) where {T<:AbstractFloat} =
-    cubic_interp!(output, x, y, [x_query]; autocache=autocache)
+              x_query::T; bc::Symbol=:natural, autocache::Bool=true) where {T<:AbstractFloat} =
+    cubic_interp!(output, x, y, [x_query]; bc=bc, autocache=autocache)
 
 # CRITICAL: Zero-allocation scalar path for broadcast fusion
 cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T},
@@ -729,8 +736,11 @@ cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T},
 
 # Scalar query with autocache option
 function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
-                      x_query::T; autocache::Bool=true) where {T<:AbstractFloat}
-    if autocache
+                      x_query::T; bc::Symbol=:natural, autocache::Bool=true) where {T<:AbstractFloat}
+    if bc == :periodic
+        cache = CubicSplineCache(x; bc=:periodic)
+        return cubic_interp_scalar(cache, y, x_query)
+    elseif autocache
         cache::CubicSplineCache{T} = get_cubic_cache(x)
         return cubic_interp_scalar(cache, y, x_query)
     else
@@ -901,9 +911,14 @@ result = @. coef * itp(rho) * ne    # Fused broadcast
 function cubic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
+    bc::Symbol=:natural,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
-    cache = autocache ? get_cubic_cache(x) : CubicSplineCache(x)
+    if bc == :periodic
+        cache = CubicSplineCache(x; bc=:periodic)
+    else
+        cache = autocache ? get_cubic_cache(x) : CubicSplineCache(x)
+    end
 
     # Pre-compute z coefficients (solve system once, then copy for storage)
     # Dispatches based on BC type (natural vs periodic)
@@ -957,12 +972,17 @@ end
 function cubic_interp(
     x::X,
     y::Y;
+    bc::Symbol=:natural,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
     T = promote_type(TX, TY)
     FT = float(T)
     x_float = _to_float(x, FT)  # Preserves Range structure
-    cache = autocache ? get_cubic_cache(x_float) : CubicSplineCache(x_float)
+    if bc == :periodic
+        cache = CubicSplineCache(x_float; bc=:periodic)
+    else
+        cache = autocache ? get_cubic_cache(x_float) : CubicSplineCache(x_float)
+    end
     y_float = FT.(y)
 
     # Pre-compute z coefficients (solve system once, then copy for storage)
@@ -988,10 +1008,11 @@ function cubic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY},
     x_query::AbstractVector{TQ};
+    bc::Symbol=:natural,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp(_to_float(x, FT), FT.(y), FT.(x_query); autocache)
+    return cubic_interp(_to_float(x, FT), FT.(y), FT.(x_query); bc=bc, autocache=autocache)
 end
 
 # Allocating version - scalar query
@@ -999,10 +1020,11 @@ function cubic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY},
     x_query::TQ;
+    bc::Symbol=:natural,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp(_to_float(x, FT), FT.(y), FT(x_query); autocache)
+    return cubic_interp(_to_float(x, FT), FT.(y), FT(x_query); bc=bc, autocache=autocache)
 end
 
 # In-place version - vector query
@@ -1011,10 +1033,11 @@ function cubic_interp!(
     x::AbstractVector{TX},
     y::AbstractVector{TY},
     x_query::AbstractVector{TQ};
+    bc::Symbol=:natural,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT.(x_query); autocache)
+    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT.(x_query); bc=bc, autocache=autocache)
 end
 
 # In-place version - scalar query
@@ -1023,8 +1046,9 @@ function cubic_interp!(
     x::AbstractVector{TX},
     y::AbstractVector{TY},
     x_query::TQ;
+    bc::Symbol=:natural,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT(x_query); autocache)
+    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT(x_query); bc=bc, autocache=autocache)
 end

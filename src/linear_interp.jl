@@ -50,6 +50,9 @@ function linear_interp!(
     @assert bc in (:none, :periodic) "bc must be :none or :periodic"
     @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
 
+    # Validate periodic endpoints
+    bc == :periodic && _check_periodic_endpoints(y)
+
     # Create Val once outside loop
     extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
 
@@ -74,6 +77,9 @@ end
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert bc in (:none, :periodic) "bc must be :none or :periodic"
     @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
+
+    # Validate periodic endpoints
+    bc == :periodic && _check_periodic_endpoints(y)
 
     extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
 
@@ -148,6 +154,9 @@ end
     @boundscheck bc in (:none, :periodic) || throw(ArgumentError("bc must be :none or :periodic"))
     @boundscheck extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
 
+    # Validate periodic endpoints
+    bc == :periodic && _check_periodic_endpoints(y)
+
     # Periodic BC ignores extrapolation
     if bc == :periodic
         return linear_interp(x, y, xi, Val(:periodic))
@@ -167,6 +176,9 @@ end
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck bc in (:none, :periodic) || throw(ArgumentError("bc must be :none or :periodic"))
     @boundscheck extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
+
+    # Validate periodic endpoints
+    bc == :periodic && _check_periodic_endpoints(y)
 
     if bc == :periodic
         return linear_interp(x, y, xi, Val(:periodic))
@@ -314,6 +326,10 @@ function linear_interp!(
     FT = float(T)
     x_float = range(FT(first(x)), FT(last(x)), length(x))
     y_float = FT.(y)  # Allocate once
+
+    # Validate periodic endpoints
+    bc == :periodic && _check_periodic_endpoints(y_float)
+
     extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
 
     # Vector-level domain check (skipped for periodic/extension/constant)
@@ -345,6 +361,10 @@ function linear_interp!(
     FT = float(T)
     x_float = FT.(x)  # Allocate once
     y_float = FT.(y)  # Allocate once
+
+    # Validate periodic endpoints
+    bc == :periodic && _check_periodic_endpoints(y_float)
+
     extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
 
     # Vector-level domain check (skipped for periodic/extension/constant)
@@ -450,6 +470,9 @@ struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector
         @assert length(x) == length(y) "x and y must have same length"
         @assert bc in (:none, :periodic) "bc must be :none or :periodic"
         @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
+
+        # Validate periodic endpoints (once at construction, zero runtime overhead)
+        bc == :periodic && _check_periodic_endpoints(y)
 
         # Periodic BC overrides extrapolation
         mode = bc == :periodic ? Val(:periodic) : Val(extrapolation)

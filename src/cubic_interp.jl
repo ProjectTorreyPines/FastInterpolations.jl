@@ -569,6 +569,8 @@ function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
     extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
 
     if bc == :periodic
+        # Validate periodic endpoints (once, zero runtime overhead)
+        _check_periodic_endpoints(y)
         # Periodic BC: create periodic cache (autocache not yet supported for periodic)
         cache = CubicSplineCache(x; bc=:periodic)
         return cubic_interp(cache, y, x_query; extrapolation=extrapolation)
@@ -611,6 +613,7 @@ function cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::Abstr
     extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
 
     if bc == :periodic
+        _check_periodic_endpoints(y)
         cache = CubicSplineCache(x; bc=:periodic)
         return cubic_interp!(output, cache, y, x_query; extrapolation=extrapolation)
     elseif autocache
@@ -825,6 +828,7 @@ function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
     extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
 
     if bc == :periodic
+        _check_periodic_endpoints(y)
         cache = CubicSplineCache(x; bc=:periodic)
         return cubic_interp_scalar(cache, y, x_query; extrapolation=extrapolation)
     elseif autocache
@@ -1032,6 +1036,7 @@ function cubic_interp(
     extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
 
     if bc == :periodic
+        _check_periodic_endpoints(y)
         cache = CubicSplineCache(x; bc=:periodic)
     else
         cache = autocache ? get_cubic_cache(x) : CubicSplineCache(x)
@@ -1100,12 +1105,13 @@ function cubic_interp(
     T = promote_type(TX, TY)
     FT = float(T)
     x_float = _to_float(x, FT)  # Preserves Range structure
+    y_float = FT.(y)
     if bc == :periodic
+        _check_periodic_endpoints(y_float)
         cache = CubicSplineCache(x_float; bc=:periodic)
     else
         cache = autocache ? get_cubic_cache(x_float) : CubicSplineCache(x_float)
     end
-    y_float = FT.(y)
 
     # Pre-compute z coefficients (solve system once, then copy for storage)
     _solve_for_interpolant!(cache, y_float)

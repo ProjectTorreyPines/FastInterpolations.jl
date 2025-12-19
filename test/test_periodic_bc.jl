@@ -241,4 +241,106 @@ using FastInterpolations
         @test result1[1] ≈ result2[1] atol=1e-10
     end
 
+    @testset "_check_periodic_endpoints validation" begin
+        x = range(0.0, 2π, 101)
+
+        @testset "Valid periodic data (Float64)" begin
+            # sin(0) = sin(2π) = 0 (within tolerance)
+            y_sin = sin.(x)
+            @test y_sin[1] ≈ y_sin[end] atol=1e-12  # Confirm endpoints match
+
+            # Should not throw - valid periodic data
+            @test linear_interp(x, y_sin, 0.5; bc=:periodic) isa Float64
+            @test cubic_interp(x, y_sin, 0.5; bc=:periodic) isa Float64
+
+            # cos(0) = cos(2π) = 1
+            y_cos = cos.(x)
+            @test linear_interp(x, y_cos, 0.5; bc=:periodic) isa Float64
+
+            # Exactly equal endpoints
+            y_exact = collect(sin.(x))
+            y_exact[end] = y_exact[1]  # Force exact equality
+            @test linear_interp(x, y_exact, 0.5; bc=:periodic) isa Float64
+        end
+
+        @testset "Valid periodic data (Float32)" begin
+            x_f32 = range(0.0f0, 2f0*Float32(π), 101)
+            y_f32 = sin.(x_f32)
+
+            # Float32 tolerance is 1e-6
+            @test abs(y_f32[1] - y_f32[end]) < 1f-6
+
+            # Should not throw
+            @test linear_interp(x_f32, y_f32, 0.5f0; bc=:periodic) isa Float32
+            @test cubic_interp(x_f32, y_f32, 0.5f0; bc=:periodic) isa Float32
+        end
+
+        @testset "Invalid periodic data - endpoints differ" begin
+            # Non-periodic data: y[1] != y[end]
+            y_invalid = collect(x)  # Linear function: y[1] = 0, y[end] = 2π
+
+            @test abs(y_invalid[1] - y_invalid[end]) > 1e-12  # Confirm mismatch
+
+            # Should throw ArgumentError
+            @test_throws ArgumentError linear_interp(x, y_invalid, 0.5; bc=:periodic)
+            @test_throws ArgumentError cubic_interp(x, y_invalid, 0.5; bc=:periodic)
+
+            # LinearInterpolant constructor should throw
+            @test_throws ArgumentError LinearInterpolant(collect(x), y_invalid; bc=:periodic)
+
+            # CubicSplineCache with periodic BC checks in cubic_interp, not cache
+            # but cubic_interp callable form should throw
+            @test_throws ArgumentError cubic_interp(collect(x), y_invalid; bc=:periodic)
+        end
+
+        @testset "Edge case - just outside tolerance (Float64)" begin
+            # Create data where endpoints differ by more than 1e-12
+            y_edge = sin.(x) |> collect
+            y_edge[end] = y_edge[1] + 1e-11  # Just outside 1e-12 tolerance
+
+            @test abs(y_edge[1] - y_edge[end]) > 1e-12
+            @test_throws ArgumentError linear_interp(x, y_edge, 0.5; bc=:periodic)
+        end
+
+        @testset "Edge case - just within tolerance (Float64)" begin
+            y_edge = sin.(x) |> collect
+            y_edge[end] = y_edge[1] + 1e-13  # Within 1e-12 tolerance
+
+            @test abs(y_edge[1] - y_edge[end]) < 1e-12
+            @test linear_interp(x, y_edge, 0.5; bc=:periodic) isa Float64
+        end
+
+        @testset "Edge case - Float32 tolerance boundary" begin
+            x_f32 = range(0.0f0, 2f0*Float32(π), 101)
+
+            # Just outside Float32 tolerance (1e-6)
+            y_outside = sin.(x_f32) |> collect
+            y_outside[end] = y_outside[1] + 1f-5  # > 1e-6
+
+            @test_throws ArgumentError linear_interp(x_f32, y_outside, 0.5f0; bc=:periodic)
+
+            # Just within Float32 tolerance
+            y_within = sin.(x_f32) |> collect
+            y_within[end] = y_within[1] + 1f-7  # < 1e-6
+
+            @test linear_interp(x_f32, y_within, 0.5f0; bc=:periodic) isa Float32
+        end
+
+        @testset "Error message contains useful info" begin
+            y_invalid = collect(x)
+
+            try
+                linear_interp(x, y_invalid, 0.5; bc=:periodic)
+                @test false  # Should not reach here
+            catch e
+                @test e isa ArgumentError
+                msg = e.msg
+                @test occursin("Periodic BC", msg)
+                @test occursin("y[1]", msg)
+                @test occursin("y[end]", msg)
+                @test occursin("diff", msg)
+            end
+        end
+    end
+
 end

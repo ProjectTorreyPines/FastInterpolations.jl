@@ -176,8 +176,8 @@ function demo_cubic_bc()
     xq = range(-π, 3π, 400)
 
     # Different boundary conditions
-    y_natural = cubic_interp(collect(x), collect(y), collect(xq); bc=:natural)
-    y_periodic = cubic_interp(collect(x), collect(y), collect(xq); bc=:periodic)
+    y_natural = cubic_interp(x, y, xq; bc=:natural, extrapolation=:extension)
+    y_periodic = cubic_interp(x, y, xq; bc=:periodic, extrapolation=:extension)
 
     # True sin function
     y_true = sin.(xq)

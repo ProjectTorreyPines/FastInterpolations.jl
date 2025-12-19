@@ -476,15 +476,15 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         clear_cubic_cache!()
         cubic_interp(x, y, 0.5)
 
-        # Warmup with extrapolation
-        cubic_interp(x, y, -0.1)
-        cubic_interp(x, y, 1.1)
+        # Warmup with extrapolation (explicit :extension mode)
+        cubic_interp(x, y, -0.1; extrapolation=:extension)
+        cubic_interp(x, y, 1.1; extrapolation=:extension)
 
         # Extrapolation should still be zero-allocation on 1.12+
-        allocs = @allocated cubic_interp(x, y, -0.1)
+        allocs = @allocated cubic_interp(x, y, -0.1; extrapolation=:extension)
         @test allocs <= ALLOC_THRESHOLD
 
-        allocs = @allocated cubic_interp(x, y, 1.1)
+        allocs = @allocated cubic_interp(x, y, 1.1; extrapolation=:extension)
         @test allocs <= ALLOC_THRESHOLD
     end
 

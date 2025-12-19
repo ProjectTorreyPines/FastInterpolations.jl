@@ -71,13 +71,13 @@
     end
 
     @testset "Edge Cases" begin
-        # Minimal grid
+        # Minimal grid (with extrapolation outside domain)
         x_small = [0.0, 0.5, 1.0]
         y_small = [1.0, 2.0, 1.5]
         x_query_small = [-0.5, 0.25, 0.75, 1.5]
 
         cache_small = CubicSplineCache(x_small)
-        result = cubic_interp(cache_small, y_small, x_query_small)
+        result = cubic_interp(cache_small, y_small, x_query_small; extrapolation=:extension)
         @test all(isfinite, result)
 
         # Query at grid points (should return close to exact values)
@@ -307,14 +307,14 @@ end
         y_int = [sin(2π * i / 10) for i in x_int]
         x_extrap = [-1.0, 11.0]
 
-        result = cubic_interp(x_int, y_int, x_extrap)
+        result = cubic_interp(x_int, y_int, x_extrap; extrapolation=:extension)
         @test result isa Vector{Float64}
         @test all(isfinite, result)
 
         x_float = collect(Float64.(x_int))
         y_float = Float64.(y_int)
 
-        result_ref = cubic_interp(x_float, y_float, x_extrap)
+        result_ref = cubic_interp(x_float, y_float, x_extrap; extrapolation=:extension)
         @test result == result_ref
     end
 

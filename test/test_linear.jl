@@ -22,7 +22,7 @@
         y = 2.0 .* collect(x) .+ 1.0  # Linear function y = 2x + 1
         x_targets = [-0.2, -0.1, 1.1, 1.2]
 
-        result = linear_interp(x, y, x_targets)
+        result = linear_interp(x, y, x_targets; extrapolation=:extension)
 
         # Verify linear extrapolation works correctly
         # For y = 2x + 1, extrapolated values should follow the same line
@@ -72,7 +72,7 @@
         y = 2x .+ 1
         x_targets = [-0.25, 1.5]
 
-        result = linear_interp(x, y, x_targets)
+        result = linear_interp(x, y, x_targets; extrapolation=:extension)
 
         # Verify linear extrapolation
         @test result[1] ≈ 2.0 * (-0.25) + 1.0
@@ -96,7 +96,8 @@
         y = collect(x).^2
         x_targets = [0.0, 0.3, 0.5, 0.7, 1.0]
 
-        result = linear_interp(x, y, x_targets)
+        # Use :extension to allow boundary evaluation (1.0 may need slight extension)
+        result = linear_interp(x, y, x_targets; extrapolation=:extension)
 
         # Exact matches should give exact values
         @test result[1] ≈ 0.0^2
@@ -287,7 +288,8 @@ end
         x = 0.0:0.1:1.0
         y = sin.(x)
 
-        itp = linear_interp(x, y)
+        # Use :extension to handle floating point boundary issues
+        itp = linear_interp(x, y; extrapolation=:extension)
 
         rho1 = [0.25, 0.5]
         rho2 = [0.75, 0.85]
@@ -297,9 +299,9 @@ end
         result2 = itp.(rho2)
         result3 = itp(rho3)
 
-        @test result1 == linear_interp(x, y, rho1)
-        @test result2 == linear_interp(x, y, rho2)
-        @test result3 == linear_interp(x, y, rho3)
+        @test result1 == linear_interp(x, y, rho1; extrapolation=:extension)
+        @test result2 == linear_interp(x, y, rho2; extrapolation=:extension)
+        @test result3 == linear_interp(x, y, rho3; extrapolation=:extension)
     end
 
     @testset "Extrapolation :extension" begin
@@ -307,13 +309,13 @@ end
         y = 2.0 .* x .+ 1.0
         x_targets = [-0.25, 1.5]
 
-        itp = linear_interp(x, y)
+        itp = linear_interp(x, y; extrapolation=:extension)
 
         result = itp.(x_targets)
         @test result[1] ≈ 2.0 * (-0.25) + 1.0
         @test result[2] ≈ 2.0 * 1.5 + 1.0
 
-        expected = linear_interp(x, y, x_targets)
+        expected = linear_interp(x, y, x_targets; extrapolation=:extension)
         @test result == expected
     end
 
@@ -464,7 +466,7 @@ end
         y_int = [2*i + 1 for i in x_int]
 
         x_targets = [-1.0, 6.0]
-        result_ext = linear_interp(x_int, y_int, x_targets)
+        result_ext = linear_interp(x_int, y_int, x_targets; extrapolation=:extension)
         @test result_ext isa Vector{Float64}
         @test result_ext[1] ≈ 2.0 * (-1.0) + 1.0
         @test result_ext[2] ≈ 2.0 * 6.0 + 1.0

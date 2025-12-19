@@ -35,3 +35,6 @@ Thumbs.db
 # Coverage
 /coverage/
 lcov.info
+
+# Generated example plots
+/examples/*.png

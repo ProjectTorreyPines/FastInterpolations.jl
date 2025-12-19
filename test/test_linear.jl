@@ -91,6 +91,41 @@
         @test result[2] == y[end]
     end
 
+    @testset "Extrapolation :none - DomainError" begin
+        x = [0.0, 0.5, 1.0]
+        y = [1.0, 3.0, 5.0]
+
+        # Default extrapolation is :none, should throw DomainError
+        @test_throws DomainError linear_interp(x, y, -0.1)
+        @test_throws DomainError linear_interp(x, y, 1.1)
+
+        # Explicit :none also throws
+        @test_throws DomainError linear_interp(x, y, -0.5; extrapolation=:none)
+        @test_throws DomainError linear_interp(x, y, 1.5; extrapolation=:none)
+
+        # Vector query - first out-of-domain point throws
+        @test_throws DomainError linear_interp(x, y, [-0.1, 0.5])
+        @test_throws DomainError linear_interp(x, y, [0.5, 1.1])
+
+        # In-place version also throws
+        output = zeros(1)
+        @test_throws DomainError linear_interp!(output, x, y, [-0.1])
+        @test_throws DomainError linear_interp!(output, x, y, [1.1])
+
+        # Callable interpolant (default :none)
+        itp = linear_interp(x, y)
+        @test_throws DomainError itp(-0.1)
+        @test_throws DomainError itp(1.1)
+
+        # Interior points should work fine
+        @test linear_interp(x, y, 0.25) ≈ 2.0
+        @test linear_interp(x, y, 0.75) ≈ 4.0
+
+        # Boundary points should work
+        @test linear_interp(x, y, 0.0) ≈ 1.0
+        @test linear_interp(x, y, 1.0) ≈ 5.0
+    end
+
     @testset "Edge cases - Exact matches at grid points" begin
         x = 0.0:0.1:1.0
         y = collect(x).^2

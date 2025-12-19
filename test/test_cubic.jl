@@ -94,6 +94,78 @@
         @test result_boundary ≈ [y[1], y[end]]
     end
 
+    @testset "Extrapolation :none - DomainError" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = sin.(2π .* x)
+
+        # Default extrapolation is :none, should throw DomainError
+        @test_throws DomainError cubic_interp(x, y, -0.1)
+        @test_throws DomainError cubic_interp(x, y, 1.1)
+
+        # Explicit :none also throws
+        @test_throws DomainError cubic_interp(x, y, -0.5; extrapolation=:none)
+        @test_throws DomainError cubic_interp(x, y, 1.5; extrapolation=:none)
+
+        # Vector query - first out-of-domain point throws
+        @test_throws DomainError cubic_interp(x, y, [-0.1, 0.5])
+        @test_throws DomainError cubic_interp(x, y, [0.5, 1.1])
+
+        # With cache - also throws
+        cache = CubicSplineCache(x)
+        @test_throws DomainError cubic_interp(cache, y, -0.1)
+        @test_throws DomainError cubic_interp(cache, y, 1.1)
+        @test_throws DomainError cubic_interp(cache, y, [-0.1])
+        @test_throws DomainError cubic_interp(cache, y, [1.1])
+
+        # In-place version also throws
+        output = zeros(1)
+        @test_throws DomainError cubic_interp!(output, x, y, [-0.1])
+        @test_throws DomainError cubic_interp!(output, x, y, [1.1])
+        @test_throws DomainError cubic_interp!(output, cache, y, [-0.1])
+        @test_throws DomainError cubic_interp!(output, cache, y, [1.1])
+
+        # Callable interpolant (default :none)
+        itp = cubic_interp(x, y)
+        @test_throws DomainError itp(-0.1)
+        @test_throws DomainError itp(1.1)
+
+        # Interior points should work fine
+        @test isfinite(cubic_interp(x, y, 0.25))
+        @test isfinite(cubic_interp(x, y, 0.75))
+
+        # Boundary points should work
+        @test cubic_interp(x, y, 0.0) ≈ y[1]
+        @test cubic_interp(x, y, 1.0) ≈ y[end]
+    end
+
+    @testset "Extrapolation :constant" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = sin.(2π .* x)
+
+        # Left boundary - returns y[1]
+        result_left = cubic_interp(x, y, -0.5; extrapolation=:constant)
+        @test result_left ≈ y[1]
+
+        # Right boundary - returns y[end]
+        result_right = cubic_interp(x, y, 1.5; extrapolation=:constant)
+        @test result_right ≈ y[end]
+
+        # Vector query
+        result = cubic_interp(x, y, [-0.5, 0.5, 1.5]; extrapolation=:constant)
+        @test result[1] ≈ y[1]
+        @test result[3] ≈ y[end]
+
+        # With cache
+        cache = CubicSplineCache(x)
+        @test cubic_interp(cache, y, -0.5; extrapolation=:constant) ≈ y[1]
+        @test cubic_interp(cache, y, 1.5; extrapolation=:constant) ≈ y[end]
+
+        # Callable interpolant with :constant
+        itp = cubic_interp(x, y; extrapolation=:constant)
+        @test itp(-0.5) ≈ y[1]
+        @test itp(1.5) ≈ y[end]
+    end
+
     @testset "Scalar Query Points" begin
         x = collect(range(0.0, 2.0, 21))
         y = @. exp(-x) * cos(3 * x)

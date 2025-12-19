@@ -129,6 +129,8 @@ value = linear_interp(x_int, y_int, 5.5)  # Returns Float64 (not Int)
     xi::FT,
     extrap::Val
 )::FT where {FT<:AbstractFloat}
+    # Domain check for :none extrapolation (before interval search)
+    _check_domain(xi, x[1], x[end], extrap)
     idx, x0, x1 = _find_interval_with_bounds(x, xi)
     α = _compute_alpha(x0, x1, xi, extrap)
     @inbounds return y[idx] * (one(FT) - α) + y[idx + 1] * α
@@ -176,19 +178,27 @@ end
 # ========================================
 # Helper functions (2-step dispatch pattern)
 # ========================================
-# Step 1: _find_interval_with_bounds (from utils.jl) - Dispatches on grid type (Range O(1) vs Vector O(log n))
-# Step 2: _compute_alpha - Dispatches on extrapolation (constant clamps, extension doesn't)
+# Step 1: _check_domain - Early domain validation for :none extrapolation
+# Step 2: _find_interval_with_bounds (from utils.jl) - Dispatches on grid type (Range O(1) vs Vector O(log n))
+# Step 3: _compute_alpha - Dispatches on extrapolation (constant clamps, extension doesn't)
 
-# Compute alpha with :none extrapolation (throws DomainError if outside [0, 1])
+# Domain check: :none extrapolation throws DomainError if outside domain
+@inline function _check_domain(xi::FT, x_min::FT, x_max::FT, ::Val{:none}) where {FT<:AbstractFloat}
+    (xi < x_min || xi > x_max) && throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
+    return nothing
+end
+
+# Domain check: other extrapolation modes (no-op)
+@inline _check_domain(::FT, ::FT, ::FT, ::Val) where {FT<:AbstractFloat} = nothing
+
+# Compute alpha with :none extrapolation (domain already checked)
 @inline function _compute_alpha(
     x0::FT,
     x1::FT,
     xi::FT,
     ::Val{:none}
 ) where {FT<:AbstractFloat}
-    α = (xi - x0) / (x1 - x0)
-    (α < zero(FT) || α > one(FT)) && throw(DomainError(xi, "query point outside interpolation domain [$x0, $x1]"))
-    return α
+    return (xi - x0) / (x1 - x0)
 end
 
 # Compute alpha with constant extrapolation (clamp to [0, 1])

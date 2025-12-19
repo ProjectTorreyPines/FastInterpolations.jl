@@ -571,8 +571,7 @@ function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
     if bc == :periodic
         # Validate periodic endpoints (once, zero runtime overhead)
         _check_periodic_endpoints(y)
-        # Periodic BC: create periodic cache (autocache not yet supported for periodic)
-        cache = CubicSplineCache(x; bc=:periodic)
+        cache = autocache ? get_cubic_cache_periodic(x) : CubicSplineCache(x; bc=:periodic)
         return cubic_interp(cache, y, x_query; extrapolation=extrapolation)
     elseif autocache
         cache = get_cubic_cache(x)
@@ -614,7 +613,7 @@ function cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::Abstr
 
     if bc == :periodic
         _check_periodic_endpoints(y)
-        cache = CubicSplineCache(x; bc=:periodic)
+        cache = autocache ? get_cubic_cache_periodic(x) : CubicSplineCache(x; bc=:periodic)
         return cubic_interp!(output, cache, y, x_query; extrapolation=extrapolation)
     elseif autocache
         cache = get_cubic_cache(x)
@@ -829,7 +828,7 @@ function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
 
     if bc == :periodic
         _check_periodic_endpoints(y)
-        cache = CubicSplineCache(x; bc=:periodic)
+        cache = autocache ? get_cubic_cache_periodic(x) : CubicSplineCache(x; bc=:periodic)
         return cubic_interp_scalar(cache, y, x_query; extrapolation=extrapolation)
     elseif autocache
         cache::CubicSplineCache{T} = get_cubic_cache(x)
@@ -1037,7 +1036,7 @@ function cubic_interp(
 
     if bc == :periodic
         _check_periodic_endpoints(y)
-        cache = CubicSplineCache(x; bc=:periodic)
+        cache = autocache ? get_cubic_cache_periodic(x) : CubicSplineCache(x; bc=:periodic)
     else
         cache = autocache ? get_cubic_cache(x) : CubicSplineCache(x)
     end
@@ -1108,7 +1107,7 @@ function cubic_interp(
     y_float = FT.(y)
     if bc == :periodic
         _check_periodic_endpoints(y_float)
-        cache = CubicSplineCache(x_float; bc=:periodic)
+        cache = autocache ? get_cubic_cache_periodic(x_float) : CubicSplineCache(x_float; bc=:periodic)
     else
         cache = autocache ? get_cubic_cache(x_float) : CubicSplineCache(x_float)
     end

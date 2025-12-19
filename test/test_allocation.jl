@@ -550,8 +550,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
     # =========================================================================
     # Periodic BC Allocation Tests
     # =========================================================================
-    # NOTE: Periodic BC does NOT use autocache yet - creates new cache every call.
-    # These tests document current behavior and track when periodic autocache is implemented.
+    # Periodic BC now uses autocache for zero-allocation repeated interpolation.
 
     @testset "Periodic BC: CubicInterpolant callable is zero-allocation" begin
         # Periodic data (y[1] ≈ y[end])
@@ -596,10 +595,8 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         @test allocs == 0
     end
 
-    @testset "Periodic BC: autocache NOT YET IMPLEMENTED - documents current allocation" begin
-        # This test documents that periodic BC functional API currently allocates
-        # because autocache for periodic is not implemented.
-        # When periodic autocache is added, this test should be updated to verify zero-allocation.
+    @testset "Periodic BC: autocache achieves zero-allocation" begin
+        # Periodic BC now uses autocache for zero-allocation repeated interpolation.
 
         # Use in-place version for accurate measurement (excludes output allocation)
         x_periodic = collect(range(0.0, 2π, 101))
@@ -609,7 +606,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
 
         clear_cubic_cache!()
 
-        # Warmup JIT - periodic
+        # Prime periodic autocache
         cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
         cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
 
@@ -622,21 +619,12 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)  # Warmup
         natural_allocs = @allocated cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)
 
-        # Periodic BC allocation (creates new cache each call - NO autocache)
+        # Periodic BC with autocache (cache hit - zero allocation)
         periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
 
-        # Document: periodic allocates significantly more than natural (autocache hit)
-        # Natural BC: 0 bytes (autocache hit, in-place)
-        # Periodic BC: ~13,000+ bytes (new cache creation every call)
-        @test natural_allocs == 0  # Natural uses autocache, in-place = zero alloc
-
-        # Periodic SHOULD allocate significantly more (no autocache yet)
-        # This is a "known limitation" test - when periodic autocache is implemented,
-        # change this to: @test periodic_allocs == 0
-        @test periodic_allocs > 5000  # Expect cache creation (~13KB)
-
-        # Print diagnostic info for visibility
-        @info "Periodic BC autocache status (in-place)" natural_allocs periodic_allocs
+        # Both natural and periodic BC should be zero-allocation with autocache
+        @test natural_allocs == 0
+        @test periodic_allocs == 0
     end
 
     @testset "Periodic BC: LinearInterpolant callable is zero-allocation" begin

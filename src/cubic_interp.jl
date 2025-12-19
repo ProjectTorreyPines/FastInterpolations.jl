@@ -462,10 +462,13 @@ function cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T,X,F,
 
     extrap = Val(extrapolation)
 
+    # Vector-level domain check (skipped for extension/constant via no-op dispatch)
+    _check_domain(cache.x, x_query, extrap)
+
     # Step 1: Solve for z coefficients (solves system ONCE for all query points)
     z = _solve_cubic_system!(cache.z_workspace, cache.d_workspace, cache, y)
 
-    # Step 2: Evaluate at all query points using pre-computed z with extrapolation
+    # Step 2: Evaluate at all query points (@inbounds skips scalar _check_domain)
     @inbounds for (k, xq) in enumerate(x_query)
         output[k] = _eval_cubic_with_extrap(cache.x, y, cache.h, z, xq, extrap)
     end
@@ -673,6 +676,7 @@ end
     _eval_cubic_with_extrap(x, y, h, z, xi, ::Val{:none})
 
 Evaluate cubic spline with no extrapolation - throws DomainError if outside domain.
+Uses shared `_check_domain` from utils.jl.
 """
 @inline function _eval_cubic_with_extrap(
     x::AbstractVector{T},
@@ -682,7 +686,7 @@ Evaluate cubic spline with no extrapolation - throws DomainError if outside doma
     xi::T,
     ::Val{:none}
 ) where {T<:AbstractFloat}
-    (xi < first(x) || xi > last(x)) && throw(DomainError(xi, "query point outside interpolation domain [$(first(x)), $(last(x))]"))
+    _check_domain(x, xi, Val(:none))
     return _eval_cubic_at_point(x, y, h, z, xi)
 end
 
@@ -931,8 +935,11 @@ end
 end
 
 # Vector call - uses pre-computed z coefficients (no redundant system solve!)
+# Domain check dispatches on extrap: :none checks, others are no-op
+# Periodic BC wraps coordinates in _eval_with_bc, so no domain error possible
 function (itp::CubicInterpolant{T})(xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
     xi_typed = S === T ? xi : T.(xi)
+    _check_domain(itp.cache.x, xi_typed, itp.extrap)
     output = Vector{T}(undef, length(xi_typed))
     @inbounds for (k, xq) in enumerate(xi_typed)
         output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq, itp.extrap)
@@ -942,6 +949,7 @@ end
 
 # Optimized path when xi element type matches T (zero conversion)
 function (itp::CubicInterpolant{T})(xi::AbstractVector{T}) where {T<:AbstractFloat}
+    _check_domain(itp.cache.x, xi, itp.extrap)
     output = Vector{T}(undef, length(xi))
     @inbounds for (k, xq) in enumerate(xi)
         output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq, itp.extrap)
@@ -952,6 +960,7 @@ end
 # In-place vector call - zero allocation
 function (itp::CubicInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat}
     @assert length(output) == length(xi) "output length must match xi length"
+    _check_domain(itp.cache.x, xi, itp.extrap)
     @inbounds for (k, xq) in enumerate(xi)
         output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq, itp.extrap)
     end
@@ -961,8 +970,10 @@ end
 # In-place with type conversion
 function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
-    @inbounds for (k, xq) in enumerate(xi)
-        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, T(xq), itp.extrap)
+    xi_typed = T.(xi)
+    _check_domain(itp.cache.x, xi_typed, itp.extrap)
+    @inbounds for (k, xq) in enumerate(xi_typed)
+        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq, itp.extrap)
     end
     return output
 end

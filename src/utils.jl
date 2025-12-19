@@ -101,3 +101,52 @@ Used for periodic boundary conditions.
 @inline function _wrap_to_domain(xi::FT, x_min::FT, period::FT) where {FT<:AbstractFloat}
     return x_min + mod(xi - x_min, period)
 end
+
+# ========================================
+# Domain Validation Helpers
+# ========================================
+
+"""
+    _check_domain(x, xi::T, ::Val{:none}) where {T<:AbstractFloat}
+
+Check if scalar query point is within domain for `:none` extrapolation mode.
+Throws `DomainError` if `xi` is outside `[first(x), last(x)]`.
+
+Uses `@boundscheck` so it's skipped in `@inbounds` blocks for vector paths
+that do a single upfront check via the vector dispatch.
+"""
+@inline function _check_domain( x::AbstractVector{FT}, xi::FT, ::Val{:none}) where {FT<:AbstractFloat}
+    x_min, x_max = first(x), last(x)
+    @boundscheck (xi < x_min || xi > x_max) && throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
+    return nothing
+end
+
+"""
+    _check_domain(x, xi::T, ::Val) where {T<:AbstractFloat}
+
+No-op domain check for extrapolation modes other than `:none`.
+"""
+@inline _check_domain(::AbstractVector{FT}, ::FT, ::Val) where {FT<:AbstractFloat} = nothing
+
+"""
+    _check_domain(x, xi::AbstractVector{T}, ::Val{:none}) where {T<:AbstractFloat}
+
+Vector-level domain check using extrema (one pass over xi).
+Called once before vector loop, then scalar `_check_domain` is skipped via `@inbounds`.
+"""
+@inline function _check_domain( x::AbstractVector{FT}, xi::AbstractVector{FT}, ::Val{:none}) where {FT<:AbstractFloat}
+    x_min, x_max = first(x), last(x)
+    xq_min, xq_max = extrema(xi)
+    (xq_min < x_min || xq_max > x_max) && throw(DomainError(
+        xq_min < x_min ? xq_min : xq_max,
+        "query point outside interpolation domain [$x_min, $x_max]"
+    ))
+    return nothing
+end
+
+"""
+    _check_domain(x, xi::AbstractVector{T}, ::Val) where {T<:AbstractFloat}
+
+No-op vector domain check for extrapolation modes other than `:none`.
+"""
+@inline _check_domain(::AbstractVector{FT}, ::AbstractVector{FT}, ::Val) where {FT<:AbstractFloat} = nothing

@@ -130,7 +130,7 @@ value = linear_interp(x_int, y_int, 5.5)  # Returns Float64 (not Int)
     extrap::Val
 )::FT where {FT<:AbstractFloat}
     # Domain check for :none extrapolation (before interval search)
-    _check_domain(xi, x[1], x[end], extrap)
+    _check_domain(x, xi, extrap)
     idx, x0, x1 = _find_interval_with_bounds(x, xi)
     α = _compute_alpha(x0, x1, xi, extrap)
     @inbounds return y[idx] * (one(FT) - α) + y[idx + 1] * α
@@ -178,18 +178,9 @@ end
 # ========================================
 # Helper functions (2-step dispatch pattern)
 # ========================================
-# Step 1: _check_domain - Early domain validation for :none extrapolation
+# Step 1: _check_domain (from utils.jl) - Early domain validation for :none extrapolation
 # Step 2: _find_interval_with_bounds (from utils.jl) - Dispatches on grid type (Range O(1) vs Vector O(log n))
 # Step 3: _compute_alpha - Dispatches on extrapolation (constant clamps, extension doesn't)
-
-# Domain check: :none extrapolation throws DomainError if outside domain
-@inline function _check_domain(xi::FT, x_min::FT, x_max::FT, ::Val{:none}) where {FT<:AbstractFloat}
-    (xi < x_min || xi > x_max) && throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
-    return nothing
-end
-
-# Domain check: other extrapolation modes (no-op)
-@inline _check_domain(::FT, ::FT, ::FT, ::Val) where {FT<:AbstractFloat} = nothing
 
 # Compute alpha with :none extrapolation (domain already checked)
 @inline function _compute_alpha(
@@ -230,7 +221,7 @@ end
     linear_interp(x, y, xi, ::Val{:periodic})
 
 Linear interpolation with periodic boundary condition.
-Wraps xi to domain [x[1], x[end]) before interpolation.
+Wraps xi to domain [first(x), last(x)) before interpolation.
 """
 @inline function linear_interp(
     x::AbstractVector{FT},
@@ -239,7 +230,7 @@ Wraps xi to domain [x[1], x[end]) before interpolation.
     ::Val{:periodic}
 )::FT where {FT<:AbstractFloat}
     # Wrap to domain
-    period = x[end] - x[1]
+    period = last(x) - first(x)
     xi_wrapped = _wrap_to_domain(xi, first(x), period)
 
     # Find interval and interpolate (using extension alpha since we're in domain)
@@ -325,9 +316,13 @@ function linear_interp!(
     y_float = FT.(y)  # Allocate once
     extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
 
-    # Call optimized scalar version for each point (with Val dispatch)
-    @inbounds for i in eachindex(x_targets, output)
-        output[i] = linear_interp(x_float, y_float, FT(x_targets[i]), extrap_val)
+    # Vector-level domain check (skipped for periodic/extension/constant)
+    x_targets_float = FT.(x_targets)
+    bc != :periodic && _check_domain(x_float, x_targets_float, extrap_val)
+
+    # Call optimized scalar version for each point (@inbounds skips scalar _check_domain)
+    @inbounds for i in eachindex(x_targets_float, output)
+        output[i] = linear_interp(x_float, y_float, x_targets_float[i], extrap_val)
     end
 
     return output
@@ -352,9 +347,13 @@ function linear_interp!(
     y_float = FT.(y)  # Allocate once
     extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
 
-    # Call optimized scalar version for each point (with Val dispatch)
-    @inbounds for i in eachindex(x_targets, output)
-        output[i] = linear_interp(x_float, y_float, FT(x_targets[i]), extrap_val)
+    # Vector-level domain check (skipped for periodic/extension/constant)
+    x_targets_float = FT.(x_targets)
+    bc != :periodic && _check_domain(x_float, x_targets_float, extrap_val)
+
+    # Call optimized scalar version for each point (@inbounds skips scalar _check_domain)
+    @inbounds for i in eachindex(x_targets_float, output)
+        output[i] = linear_interp(x_float, y_float, x_targets_float[i], extrap_val)
     end
 
     return output
@@ -470,9 +469,10 @@ end
 
 # Vector call - optimized to avoid type reflection
 function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
-    output = Vector{T}(undef, length(xi))
     xi_typed = S === T ? xi : T.(xi)
-    @inbounds for i in eachindex(xi, output)
+    _check_domain(itp.x, xi_typed, itp.mode)
+    output = Vector{T}(undef, length(xi_typed))
+    @inbounds for i in eachindex(xi_typed, output)
         output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode)
     end
     return output
@@ -480,6 +480,7 @@ end
 
 # Optimized path when xi element type matches T (zero conversion)
 function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
+    _check_domain(itp.x, xi, itp.mode)
     output = Vector{T}(undef, length(xi))
     @inbounds for i in eachindex(xi, output)
         output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode)
@@ -490,6 +491,7 @@ end
 # In-place vector call - zero allocation
 function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
     @assert length(output) == length(xi) "output length must match xi length"
+    _check_domain(itp.x, xi, itp.mode)
     @inbounds for i in eachindex(xi, output)
         output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode)
     end
@@ -499,8 +501,10 @@ end
 # In-place with type conversion
 function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
-    @inbounds for i in eachindex(xi, output)
-        output[i] = linear_interp(itp.x, itp.y, T(xi[i]), itp.mode)
+    xi_typed = T.(xi)
+    _check_domain(itp.x, xi_typed, itp.mode)
+    @inbounds for i in eachindex(xi_typed, output)
+        output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode)
     end
     return output
 end

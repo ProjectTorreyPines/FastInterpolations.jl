@@ -289,21 +289,23 @@ get_cubic_cache(x; bc::Symbol=:natural) = get_cubic_cache(x, Val(bc))
 # Val-based API (type-stable, for internal use and advanced users)
 # ═══════════════════════════════════════════════════════════════════════
 
-# Vector dispatch
-get_cubic_cache(x::Vector{T}, ::Val{:natural}) where T<:AbstractFloat =
-    _get_cubic_cache_impl(x, _BANK_VEC_NATURAL)
-get_cubic_cache(x::Vector{T}, ::Val{:periodic}) where T<:AbstractFloat =
-    _get_cubic_cache_impl(x, _BANK_VEC_PERIODIC)
+# Vector dispatch (accepts AbstractVector, collects if needed)
+get_cubic_cache(x::AbstractVector{T}, ::Val{:natural}) where T<:Union{Float64,Float32} =
+    _get_cubic_cache_impl(x isa Vector ? x : collect(x), _BANK_VEC_NATURAL)
+get_cubic_cache(x::AbstractVector{T}, ::Val{:periodic}) where T<:Union{Float64,Float32} =
+    _get_cubic_cache_impl(x isa Vector ? x : collect(x), _BANK_VEC_PERIODIC)
 
 # Range dispatch (normalize to canonical StepRangeLen)
-get_cubic_cache(x::AbstractRange{T}, ::Val{:natural}) where T<:AbstractFloat =
+get_cubic_cache(x::AbstractRange{T}, ::Val{:natural}) where T<:Union{Float64,Float32} =
     _get_cubic_cache_impl(range(first(x), last(x), length(x)), _BANK_RANGE_NATURAL)
-get_cubic_cache(x::AbstractRange{T}, ::Val{:periodic}) where T<:AbstractFloat =
+get_cubic_cache(x::AbstractRange{T}, ::Val{:periodic}) where T<:Union{Float64,Float32} =
     _get_cubic_cache_impl(range(first(x), last(x), length(x)), _BANK_RANGE_PERIODIC)
 
-# AbstractVector fallback: convert to Float64
-get_cubic_cache(x::AbstractVector{T}, bcval::Val) where T<:AbstractFloat =
-    get_cubic_cache(convert(Vector{Float64}, x), bcval)
+# Fallback: other Real types → convert to Float64
+get_cubic_cache(x::AbstractVector{<:Real}, bcval::Val) =
+    get_cubic_cache(Vector{Float64}(x), bcval)
+get_cubic_cache(x::AbstractRange{<:Real}, bcval::Val) =
+    get_cubic_cache(range(Float64(first(x)), Float64(last(x)), length(x)), bcval)
 
 # Implementation with lock
 @inline function _get_cubic_cache_impl(x, bank)

@@ -399,4 +399,94 @@
         @test stats.misses == 1
         @test stats.hits >= 1
     end
+
+    # =========================================================================
+    # AbstractVector API Compatibility Tests
+    # =========================================================================
+
+    @testset "get_cubic_cache accepts AbstractVector (views, SubArrays)" begin
+        clear_cubic_cache!()
+
+        x_full = collect(range(0.0, 1.0, 101))
+        y_full = sin.(2π .* x_full)
+
+        # SubArray (view) should work
+        x_view = @view x_full[1:51]
+        y_view = @view y_full[1:51]
+
+        cache = get_cubic_cache(x_view, Val(:natural))
+        @test cache isa CubicSplineCache
+
+        # Cache should store collected Vector, not the view
+        result = cubic_interp(collect(x_view), collect(y_view), 0.5)
+        @test isfinite(result)
+
+        stats = cubic_cache_stats()
+        @test stats.misses == 1
+    end
+
+    @testset "get_cubic_cache accepts Float32 views" begin
+        clear_cubic_cache!()
+
+        x_full = Float32.(collect(range(0.0, 1.0, 101)))
+        x_view = @view x_full[1:51]
+
+        cache = get_cubic_cache(x_view, Val(:natural))
+        @test cache isa CubicSplineCache{Float32}
+    end
+
+    @testset "get_cubic_cache fallback for other Real types" begin
+        clear_cubic_cache!()
+
+        # Integer range → should convert to Float64
+        x_int = 0:10
+        cache_int = get_cubic_cache(x_int, Val(:natural))
+        @test cache_int isa CubicSplineCache{Float64}
+
+        # Float16 vector → should convert to Float64
+        x_f16 = Float16.(collect(range(0.0, 1.0, 11)))
+        cache_f16 = get_cubic_cache(x_f16, Val(:natural))
+        @test cache_f16 isa CubicSplineCache{Float64}
+    end
+
+    @testset "get_cubic_cache keyword API" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 1.0, 51))
+
+        # Keyword API should work
+        cache1 = get_cubic_cache(x)  # default bc=:natural
+        cache2 = get_cubic_cache(x; bc=:natural)
+        cache3 = get_cubic_cache(x; bc=:periodic)
+
+        @test cache1 isa CubicSplineCache
+        @test cache2 isa CubicSplineCache
+        @test cache3 isa CubicSplineCache
+
+        # Natural and periodic caches should be different types
+        @test typeof(cache1) == typeof(cache2)
+        @test typeof(cache1) != typeof(cache3)
+    end
+
+    @testset "get_cubic_cache Val API (type-stable path)" begin
+        clear_cubic_cache!()
+
+        x64 = collect(range(0.0, 1.0, 51))
+        x32 = Float32.(x64)
+        x_range = range(0.0, 1.0, 51)
+
+        # All input types should work with Val API
+        c1 = get_cubic_cache(x64, Val(:natural))
+        c2 = get_cubic_cache(x32, Val(:natural))
+        c3 = get_cubic_cache(x_range, Val(:natural))
+        c4 = get_cubic_cache(x64, Val(:periodic))
+
+        @test c1 isa CubicSplineCache{Float64}
+        @test c2 isa CubicSplineCache{Float32}
+        @test c3 isa CubicSplineCache{Float64}  # Range normalizes to Float64
+        @test c4 isa CubicSplineCache{Float64}
+
+        # Periodic cache should have PeriodicData BC
+        @test c4.bc_data !== nothing
+    end
 end

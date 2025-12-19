@@ -436,7 +436,7 @@ end
 
 """
     cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T},
-                  y::AbstractVector{T}, x_query::AbstractVector{T}) where {T<:AbstractFloat}
+                  y::AbstractVector{T}, x_query::AbstractVector{T}; extrapolation=:none) where {T<:AbstractFloat}
 
 In-place cubic spline interpolation using cached LU factorization.
 
@@ -447,6 +447,7 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
 - `cache::CubicSplineCache{T}`: Pre-computed cache with LU factorization
 - `y::AbstractVector{T}`: Function values at grid points (length must match cache.x)
 - `x_query::AbstractVector{T}`: Query points where interpolation is evaluated
+- `extrapolation::Symbol=:none`: Extrapolation mode (`:none`, `:constant`, `:extension`)
 
 # Notes
 - Zero allocations after cache construction
@@ -455,31 +456,33 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
 - Pattern: Solve system once -> evaluate at all query points
 """
 function cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T,X,F,Nothing},
-                       y::AbstractVector{T}, x_query::AbstractVector{T}) where {T<:AbstractFloat, X, F}
+                       y::AbstractVector{T}, x_query::AbstractVector{T}; extrapolation::Symbol=:none) where {T<:AbstractFloat, X, F}
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
+
+    extrap = Val(extrapolation)
 
     # Step 1: Solve for z coefficients (solves system ONCE for all query points)
     z = _solve_cubic_system!(cache.z_workspace, cache.d_workspace, cache, y)
 
-    # Step 2: Evaluate at all query points using pre-computed z
+    # Step 2: Evaluate at all query points using pre-computed z with extrapolation
     @inbounds for (k, xq) in enumerate(x_query)
-        output[k] = _eval_cubic_at_point(cache.x, y, cache.h, z, xq)
+        output[k] = _eval_cubic_with_extrap(cache.x, y, cache.h, z, xq, extrap)
     end
 
     return output
 end
 
-# Periodic BC dispatch
+# Periodic BC dispatch (extrapolation ignored - coordinates are wrapped)
 function cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T,X,F,PeriodicData{T}},
-                       y::AbstractVector{T}, x_query::AbstractVector{T}) where {T<:AbstractFloat, X, F}
+                       y::AbstractVector{T}, x_query::AbstractVector{T}; extrapolation::Symbol=:none) where {T<:AbstractFloat, X, F}
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
 
     # Step 1: Solve for z coefficients using Sherman-Morrison
     z = _solve_cubic_system_periodic!(cache.z_workspace, cache.d_workspace, cache, y)
 
-    # Step 2: Evaluate at all query points with coordinate wrapping
+    # Step 2: Evaluate at all query points with coordinate wrapping (extrapolation ignored)
     period = cache.bc_data.period
     @inbounds for (k, xq) in enumerate(x_query)
         output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.h, z, xq, period)
@@ -490,7 +493,7 @@ end
 
 """
     cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T},
-                 x_query::AbstractVector{T}) where {T<:AbstractFloat}
+                 x_query::AbstractVector{T}; extrapolation=:none) where {T<:AbstractFloat}
 
 Allocating version of cubic spline interpolation using cached LU factorization.
 
@@ -498,6 +501,7 @@ Allocating version of cubic spline interpolation using cached LU factorization.
 - `cache::CubicSplineCache{T}`: Pre-computed cache with LU factorization
 - `y::AbstractVector{T}`: Function values at grid points
 - `x_query::AbstractVector{T}`: Query points
+- `extrapolation::Symbol=:none`: Extrapolation mode (`:none`, `:constant`, `:extension`)
 
 # Returns
 - `Vector{T}`: Interpolated values at x_query points
@@ -510,15 +514,15 @@ result = cubic_interp(cache, y, [0.25, 0.5, 0.75])
 ```
 """
 function cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T},
-                      x_query::AbstractVector{T}) where {T<:AbstractFloat}
+                      x_query::AbstractVector{T}; extrapolation::Symbol=:none) where {T<:AbstractFloat}
     output = Vector{T}(undef, length(x_query))
-    cubic_interp!(output, cache, y, x_query)
+    cubic_interp!(output, cache, y, x_query; extrapolation=extrapolation)
     return output
 end
 
 """
     cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
-                 x_query::AbstractVector{T}; autocache::Bool=true) where {T<:AbstractFloat}
+                 x_query::AbstractVector{T}; bc=:natural, extrapolation=:none, autocache=true) where {T<:AbstractFloat}
 
 Cubic spline interpolation with optional automatic caching.
 
@@ -532,10 +536,18 @@ With `autocache=false`, constructs cache, computes interpolation, and discards c
 - `x::AbstractVector{T}`: Grid points
 - `y::AbstractVector{T}`: Function values at grid points
 - `x_query::AbstractVector{T}`: Query points
+- `bc::Symbol=:natural`: Boundary condition (`:natural` or `:periodic`)
+- `extrapolation::Symbol=:none`: Extrapolation mode (`:none`, `:constant`, `:extension`)
 - `autocache::Bool=true`: Enable transparent cache reuse (default: true)
 
 # Returns
 - `Vector{T}`: Interpolated values at x_query points
+
+# Extrapolation Modes
+- `:none` (default): Throws DomainError if query point is outside domain
+- `:constant`: Returns boundary values (y[1] or y[end]) outside domain
+- `:extension`: Extends boundary polynomial outside domain
+- For `bc=:periodic`: extrapolation is ignored (coordinates are always wrapped)
 
 # Performance
 With autocache=true, repeated calls with same x-grid reuse cached LU factorization:
@@ -546,26 +558,29 @@ With autocache=true, repeated calls with same x-grid reuse cached LU factorizati
 ```julia
 result = cubic_interp(x, y, x_query)              # Auto-cached (default)
 result = cubic_interp(x, y, x_query; autocache=false)  # One-shot, no caching
+result = cubic_interp(x, y, x_query; extrapolation=:extension)  # Extend beyond domain
 ```
 """
 function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
-                      x_query::AbstractVector{T}; bc::Symbol=:natural, autocache::Bool=true) where {T<:AbstractFloat}
+                      x_query::AbstractVector{T}; bc::Symbol=:natural, extrapolation::Symbol=:none, autocache::Bool=true) where {T<:AbstractFloat}
+    extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
+
     if bc == :periodic
         # Periodic BC: create periodic cache (autocache not yet supported for periodic)
         cache = CubicSplineCache(x; bc=:periodic)
-        return cubic_interp(cache, y, x_query)
+        return cubic_interp(cache, y, x_query; extrapolation=extrapolation)
     elseif autocache
         cache = get_cubic_cache(x)
-        return cubic_interp(cache, y, x_query)
+        return cubic_interp(cache, y, x_query; extrapolation=extrapolation)
     else
         cache = CubicSplineCache(x)
-        return cubic_interp(cache, y, x_query)
+        return cubic_interp(cache, y, x_query; extrapolation=extrapolation)
     end
 end
 
 """
     cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T},
-                  x_query::AbstractVector{T}; autocache::Bool=true) where {T<:AbstractFloat}
+                  x_query::AbstractVector{T}; bc=:natural, extrapolation=:none, autocache=true) where {T<:AbstractFloat}
 
 In-place cubic spline interpolation with optional automatic caching.
 
@@ -577,25 +592,30 @@ for the same x-grid across multiple calls. This gives you **zero-allocation + au
 - `x::AbstractVector{T}`: Grid points
 - `y::AbstractVector{T}`: Function values at grid points
 - `x_query::AbstractVector{T}`: Query points
+- `bc::Symbol=:natural`: Boundary condition (`:natural` or `:periodic`)
+- `extrapolation::Symbol=:none`: Extrapolation mode (`:none`, `:constant`, `:extension`)
 - `autocache::Bool=true`: Enable transparent cache reuse (default: true)
 
 # Example
 ```julia
 output = Vector{Float64}(undef, length(x_query))
 cubic_interp!(output, x, y, x_query)  # Auto-cached (default)
+cubic_interp!(output, x, y, x_query; extrapolation=:extension)  # Extend beyond domain
 ```
 """
 function cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T},
-                       x_query::AbstractVector{T}; bc::Symbol=:natural, autocache::Bool=true) where {T<:AbstractFloat}
+                       x_query::AbstractVector{T}; bc::Symbol=:natural, extrapolation::Symbol=:none, autocache::Bool=true) where {T<:AbstractFloat}
+    extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
+
     if bc == :periodic
         cache = CubicSplineCache(x; bc=:periodic)
-        return cubic_interp!(output, cache, y, x_query)
+        return cubic_interp!(output, cache, y, x_query; extrapolation=extrapolation)
     elseif autocache
         cache = get_cubic_cache(x)
-        return cubic_interp!(output, cache, y, x_query)
+        return cubic_interp!(output, cache, y, x_query; extrapolation=extrapolation)
     else
         cache = CubicSplineCache(x)
-        return cubic_interp!(output, cache, y, x_query)
+        return cubic_interp!(output, cache, y, x_query; extrapolation=extrapolation)
     end
 end
 
@@ -645,6 +665,62 @@ This is the hot path for broadcast fusion - must be allocation-free and inlined!
     return I + C + D
 end
 
+# ========================================
+# Extrapolation-aware evaluation functions
+# ========================================
+
+"""
+    _eval_cubic_with_extrap(x, y, h, z, xi, ::Val{:none})
+
+Evaluate cubic spline with no extrapolation - throws DomainError if outside domain.
+"""
+@inline function _eval_cubic_with_extrap(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    ::Val{:none}
+) where {T<:AbstractFloat}
+    (xi < first(x) || xi > last(x)) && throw(DomainError(xi, "query point outside interpolation domain [$(first(x)), $(last(x))]"))
+    return _eval_cubic_at_point(x, y, h, z, xi)
+end
+
+"""
+    _eval_cubic_with_extrap(x, y, h, z, xi, ::Val{:constant})
+
+Evaluate cubic spline with constant extrapolation - returns boundary values outside domain.
+"""
+@inline function _eval_cubic_with_extrap(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    ::Val{:constant}
+) where {T<:AbstractFloat}
+    xi < first(x) && return @inbounds y[1]
+    xi > last(x) && return @inbounds y[end]
+    return _eval_cubic_at_point(x, y, h, z, xi)
+end
+
+"""
+    _eval_cubic_with_extrap(x, y, h, z, xi, ::Val{:extension})
+
+Evaluate cubic spline with extension extrapolation - extends boundary polynomial outside domain.
+This is the default behavior (same as _eval_cubic_at_point).
+"""
+@inline function _eval_cubic_with_extrap(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    ::Val{:extension}
+) where {T<:AbstractFloat}
+    return _eval_cubic_at_point(x, y, h, z, xi)
+end
+
 """
     _solve_cubic_system!(z_workspace, d_workspace, cache, y)
 
@@ -678,7 +754,7 @@ end
 
 """
     cubic_interp_scalar(cache::CubicSplineCache{T}, y::AbstractVector{T},
-                        x_query::T) where {T<:AbstractFloat}
+                        x_query::T; extrapolation=:none) where {T<:AbstractFloat}
 
 Scalar cubic spline evaluation (solves system once, evaluates once).
 
@@ -689,6 +765,7 @@ instead, which pre-computes z coefficients once and reuses them for all evaluati
 - `cache::CubicSplineCache{T}`: Pre-computed cache with LU factorization
 - `y::AbstractVector{T}`: Function values at grid points
 - `x_query::T`: Single query point (scalar)
+- `extrapolation::Symbol=:none`: Extrapolation mode (`:none`, `:constant`, `:extension`)
 
 # Returns
 - `T`: Interpolated value at x_query
@@ -702,54 +779,56 @@ vals = itp.(query_points)  # Reuse z for all points
 ```
 """
 @inline function cubic_interp_scalar(cache::CubicSplineCache{T,X,F,Nothing}, y::AbstractVector{T},
-                                      x_query::T) where {T<:AbstractFloat, X, F}
+                                      x_query::T; extrapolation::Symbol=:none) where {T<:AbstractFloat, X, F}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
     # Solve for z coefficients (reuses cache workspaces)
     z = _solve_cubic_system!(cache.z_workspace, cache.d_workspace, cache, y)
 
-    # Evaluate at query point using z
-    return _eval_cubic_at_point(cache.x, y, cache.h, z, x_query)
+    # Evaluate at query point using z with extrapolation
+    return _eval_cubic_with_extrap(cache.x, y, cache.h, z, x_query, Val(extrapolation))
 end
 
-# Periodic BC dispatch for scalar evaluation
+# Periodic BC dispatch for scalar evaluation (extrapolation ignored)
 @inline function cubic_interp_scalar(cache::CubicSplineCache{T,X,F,PeriodicData{T}}, y::AbstractVector{T},
-                                      x_query::T) where {T<:AbstractFloat, X, F}
+                                      x_query::T; extrapolation::Symbol=:none) where {T<:AbstractFloat, X, F}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
     # Solve for z coefficients using Sherman-Morrison
     z = _solve_cubic_system_periodic!(cache.z_workspace, cache.d_workspace, cache, y)
 
-    # Evaluate at query point with coordinate wrapping
+    # Evaluate at query point with coordinate wrapping (extrapolation ignored)
     return _eval_cubic_at_point_periodic(cache.x, y, cache.h, z, x_query, cache.bc_data.period)
 end
 
 # Scalar query point convenience methods
 cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T},
-              y::AbstractVector{T}, x_query::T) where {T<:AbstractFloat} =
-    cubic_interp!(output, cache, y, [x_query])
+              y::AbstractVector{T}, x_query::T; extrapolation::Symbol=:none) where {T<:AbstractFloat} =
+    cubic_interp!(output, cache, y, [x_query]; extrapolation=extrapolation)
 
 cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T},
-              x_query::T; bc::Symbol=:natural, autocache::Bool=true) where {T<:AbstractFloat} =
-    cubic_interp!(output, x, y, [x_query]; bc=bc, autocache=autocache)
+              x_query::T; bc::Symbol=:natural, extrapolation::Symbol=:none, autocache::Bool=true) where {T<:AbstractFloat} =
+    cubic_interp!(output, x, y, [x_query]; bc=bc, extrapolation=extrapolation, autocache=autocache)
 
 # CRITICAL: Zero-allocation scalar path for broadcast fusion
 cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T},
-             x_query::T) where {T<:AbstractFloat} =
-    cubic_interp_scalar(cache, y, x_query)
+             x_query::T; extrapolation::Symbol=:none) where {T<:AbstractFloat} =
+    cubic_interp_scalar(cache, y, x_query; extrapolation=extrapolation)
 
 # Scalar query with autocache option
 function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
-                      x_query::T; bc::Symbol=:natural, autocache::Bool=true) where {T<:AbstractFloat}
+                      x_query::T; bc::Symbol=:natural, extrapolation::Symbol=:none, autocache::Bool=true) where {T<:AbstractFloat}
+    extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
+
     if bc == :periodic
         cache = CubicSplineCache(x; bc=:periodic)
-        return cubic_interp_scalar(cache, y, x_query)
+        return cubic_interp_scalar(cache, y, x_query; extrapolation=extrapolation)
     elseif autocache
         cache::CubicSplineCache{T} = get_cubic_cache(x)
-        return cubic_interp_scalar(cache, y, x_query)
+        return cubic_interp_scalar(cache, y, x_query; extrapolation=extrapolation)
     else
         cache = CubicSplineCache(x)
-        return cubic_interp_scalar(cache, y, x_query)
+        return cubic_interp_scalar(cache, y, x_query; extrapolation=extrapolation)
     end
 end
 
@@ -758,28 +837,32 @@ end
 # ========================================
 
 # Helper for BC-aware evaluation (used by CubicInterpolant)
+# Natural BC with extrapolation
 @inline function _eval_with_bc(
     cache::CubicSplineCache{T,X,F,Nothing},
     y::AbstractVector{T},
     h::AbstractVector{T},
     z::AbstractVector{T},
-    xi::T
+    xi::T,
+    extrap::Val
 ) where {T<:AbstractFloat, X, F}
-    _eval_cubic_at_point(cache.x, y, h, z, xi)
+    _eval_cubic_with_extrap(cache.x, y, h, z, xi, extrap)
 end
 
+# Periodic BC ignores extrapolation (coordinates are wrapped)
 @inline function _eval_with_bc(
     cache::CubicSplineCache{T,X,F,PeriodicData{T}},
     y::AbstractVector{T},
     h::AbstractVector{T},
     z::AbstractVector{T},
-    xi::T
+    xi::T,
+    ::Val  # extrapolation ignored for periodic
 ) where {T<:AbstractFloat, X, F}
     _eval_cubic_at_point_periodic(cache.x, y, h, z, xi, cache.bc_data.period)
 end
 
 """
-    CubicInterpolant{T,C,Y,Z}
+    CubicInterpolant{T,C,Y,Z,E}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `cubic_interp(x, y)` (2-argument form).
@@ -788,6 +871,7 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 - `cache::C`: Pre-computed CubicSplineCache (LU factorization)
 - `y::Y`: y-values (function values at grid points)
 - `z::Z`: Pre-computed second derivative coefficients (solves system once!)
+- `extrap::E`: Extrapolation mode (Val{:none}, Val{:constant}, Val{:extension})
 
 # Usage
 ```julia
@@ -805,25 +889,32 @@ vals2 = @. compute(itp(query_points2))
 val = itp(0.5)
 ```
 
+# Extrapolation Modes
+- `:none` (default): Throws DomainError if query point is outside domain
+- `:constant`: Returns boundary values (y[1] or y[end]) outside domain
+- `:extension`: Extends boundary polynomial outside domain
+
 # Performance Notes
 - System solved ONCE at construction -> z coefficients pre-computed
 - Each scalar call just evaluates cubic polynomial (zero-allocation!)
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Optimal for multiple evaluations with same x-grid and y-values
 """
-struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},Y<:AbstractVector{T},Z<:AbstractVector{T}}
+struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},Y<:AbstractVector{T},Z<:AbstractVector{T},E<:Val}
     cache::C
     y::Y
     z::Z  # Pre-computed second derivative coefficients
+    extrap::E  # Extrapolation mode
 
     function CubicInterpolant(
         cache::C,
         y::Y,
-        z::Z
-    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, Y<:AbstractVector{T}, Z<:AbstractVector{T}}
+        z::Z,
+        extrap::E
+    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, Y<:AbstractVector{T}, Z<:AbstractVector{T}, E<:Val}
         @assert length(cache.x) == length(y) "cache grid and y must have same length"
         @assert length(cache.x) == length(z) "z coefficients must match grid length"
-        new{T,C,Y,Z}(cache, y, z)
+        new{T,C,Y,Z,E}(cache, y, z, extrap)
     end
 end
 
@@ -831,12 +922,12 @@ end
 # CRITICAL: Uses pre-computed z coefficients -> TRUE zero-allocation!
 # Uses _eval_with_bc for BC-aware dispatch (natural vs periodic)
 @inline function (itp::CubicInterpolant{T})(xi::T) where {T<:AbstractFloat}
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi)
+    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap)
 end
 
 # Real scalar wrapper for convenience
 @inline function (itp::CubicInterpolant{T})(xi::S) where {T<:AbstractFloat, S<:Real}
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, T(xi))
+    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, T(xi), itp.extrap)
 end
 
 # Vector call - uses pre-computed z coefficients (no redundant system solve!)
@@ -844,7 +935,7 @@ function (itp::CubicInterpolant{T})(xi::AbstractVector{S}) where {T<:AbstractFlo
     xi_typed = S === T ? xi : T.(xi)
     output = Vector{T}(undef, length(xi_typed))
     @inbounds for (k, xq) in enumerate(xi_typed)
-        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq)
+        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq, itp.extrap)
     end
     return output
 end
@@ -853,7 +944,7 @@ end
 function (itp::CubicInterpolant{T})(xi::AbstractVector{T}) where {T<:AbstractFloat}
     output = Vector{T}(undef, length(xi))
     @inbounds for (k, xq) in enumerate(xi)
-        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq)
+        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq, itp.extrap)
     end
     return output
 end
@@ -862,7 +953,7 @@ end
 function (itp::CubicInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat}
     @assert length(output) == length(xi) "output length must match xi length"
     @inbounds for (k, xq) in enumerate(xi)
-        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq)
+        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq, itp.extrap)
     end
     return output
 end
@@ -871,7 +962,7 @@ end
 function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     @inbounds for (k, xq) in enumerate(xi)
-        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, T(xq))
+        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, T(xq), itp.extrap)
     end
     return output
 end
@@ -881,7 +972,7 @@ end
 # ========================================
 
 """
-    cubic_interp(x, y; autocache=true) -> CubicInterpolant
+    cubic_interp(x, y; bc=:natural, extrapolation=:none, autocache=true) -> CubicInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -891,13 +982,21 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 # Arguments
 - `x::AbstractVector`: Grid points (must be sorted, length >= 3)
 - `y::AbstractVector`: Function values at grid points
-- `autocache::Bool`: Use automatic cache lookup (default: true)
+- `bc::Symbol=:natural`: Boundary condition (`:natural` or `:periodic`)
+- `extrapolation::Symbol=:none`: Extrapolation mode (`:none`, `:constant`, `:extension`)
+- `autocache::Bool=true`: Use automatic cache lookup (default: true)
 
 # Returns
 `CubicInterpolant` object that can be:
 - Called with scalar: `itp(0.5)` (zero-allocation!)
 - Broadcasted: `itp.(rho)` or `@. coef * itp(rho)` (zero-allocation per call!)
 - Reused multiple times without re-creating
+
+# Extrapolation Modes
+- `:none` (default): Throws DomainError if query point is outside domain
+- `:constant`: Returns boundary values (y[1] or y[end]) outside domain
+- `:extension`: Extends boundary polynomial outside domain
+- For `bc=:periodic`: extrapolation is ignored (coordinates are always wrapped)
 
 # Example
 ```julia
@@ -916,8 +1015,11 @@ function cubic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
     bc::Symbol=:natural,
+    extrapolation::Symbol=:none,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
+    extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
+
     if bc == :periodic
         cache = CubicSplineCache(x; bc=:periodic)
     else
@@ -929,7 +1031,7 @@ function cubic_interp(
     _solve_for_interpolant!(cache, y)
     z = copy(cache.z_workspace)  # Allocate separate storage for callable
 
-    return CubicInterpolant(cache, y, z)
+    return CubicInterpolant(cache, y, z, Val(extrapolation))
 end
 
 # Helper to solve z coefficients with BC dispatch (used by CubicInterpolant construction)
@@ -942,7 +1044,7 @@ end
 end
 
 """
-    cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T}) -> CubicInterpolant
+    cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T}; extrapolation=:none) -> CubicInterpolant
 
 Create a callable interpolant from a pre-built cache.
 
@@ -951,6 +1053,7 @@ Useful when you want to create a periodic cache explicitly and reuse it with dif
 # Arguments
 - `cache::CubicSplineCache{T}`: Pre-computed cache (can be natural or periodic)
 - `y::AbstractVector{T}`: Function values at grid points
+- `extrapolation::Symbol=:none`: Extrapolation mode (`:none`, `:constant`, `:extension`)
 
 # Returns
 `CubicInterpolant` object that can be called with scalar or vector arguments.
@@ -964,11 +1067,13 @@ val = itp(0.5)  # Zero-allocation scalar call
 """
 function cubic_interp(
     cache::CubicSplineCache{T},
-    y::AbstractVector{T}
+    y::AbstractVector{T};
+    extrapolation::Symbol=:none
 ) where {T<:AbstractFloat}
+    extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
     _solve_for_interpolant!(cache, y)
     z = copy(cache.z_workspace)
-    return CubicInterpolant(cache, y, z)
+    return CubicInterpolant(cache, y, z, Val(extrapolation))
 end
 
 # Real wrapper for 2-argument form
@@ -977,8 +1082,10 @@ function cubic_interp(
     x::X,
     y::Y;
     bc::Symbol=:natural,
+    extrapolation::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
+    extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension, got :$extrapolation"))
     T = promote_type(TX, TY)
     FT = float(T)
     x_float = _to_float(x, FT)  # Preserves Range structure
@@ -993,7 +1100,7 @@ function cubic_interp(
     _solve_for_interpolant!(cache, y_float)
     z = copy(cache.z_workspace)  # Allocate separate storage for callable
 
-    return CubicInterpolant(cache, y_float, z)
+    return CubicInterpolant(cache, y_float, z, Val(extrapolation))
 end
 
 # ============================================================================
@@ -1013,10 +1120,11 @@ function cubic_interp(
     y::AbstractVector{TY},
     x_query::AbstractVector{TQ};
     bc::Symbol=:natural,
+    extrapolation::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp(_to_float(x, FT), FT.(y), FT.(x_query); bc=bc, autocache=autocache)
+    return cubic_interp(_to_float(x, FT), FT.(y), FT.(x_query); bc=bc, extrapolation=extrapolation, autocache=autocache)
 end
 
 # Allocating version - scalar query
@@ -1025,10 +1133,11 @@ function cubic_interp(
     y::AbstractVector{TY},
     x_query::TQ;
     bc::Symbol=:natural,
+    extrapolation::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp(_to_float(x, FT), FT.(y), FT(x_query); bc=bc, autocache=autocache)
+    return cubic_interp(_to_float(x, FT), FT.(y), FT(x_query); bc=bc, extrapolation=extrapolation, autocache=autocache)
 end
 
 # In-place version - vector query
@@ -1038,10 +1147,11 @@ function cubic_interp!(
     y::AbstractVector{TY},
     x_query::AbstractVector{TQ};
     bc::Symbol=:natural,
+    extrapolation::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT.(x_query); bc=bc, autocache=autocache)
+    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT.(x_query); bc=bc, extrapolation=extrapolation, autocache=autocache)
 end
 
 # In-place version - scalar query
@@ -1051,8 +1161,9 @@ function cubic_interp!(
     y::AbstractVector{TY},
     x_query::TQ;
     bc::Symbol=:natural,
+    extrapolation::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT(x_query); bc=bc, autocache=autocache)
+    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT(x_query); bc=bc, extrapolation=extrapolation, autocache=autocache)
 end

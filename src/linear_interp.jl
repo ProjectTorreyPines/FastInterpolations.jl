@@ -9,7 +9,7 @@
 # ========================================
 
 """
-    linear_interp!(output, x, y, x_targets; extrapolation=:extension)
+    linear_interp!(output, x, y, x_targets; bc=:none, extrapolation=:none)
 
 Zero-allocation linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -17,15 +17,17 @@ Zero-allocation linear interpolation with automatic dispatch:
 
 # Arguments
 - `output`: Pre-allocated output vector (must be floating-point type)
-- `extrapolation::Symbol`: `:extension` (default, linear extrapolation) or `:constant`
+- `bc::Symbol`: `:none` (default) or `:periodic` (wraps to domain)
+- `extrapolation::Symbol`: `:none` (default, throws DomainError), `:constant`, or `:extension`
 
 # Example
 ```julia
 rho = 0.0:0.01:1.0  # Uniform grid → fast O(1) path
 y = sin.(rho)
 out = Vector{Float64}(undef, 2)
-linear_interp!(out, rho, y, [0.55, 0.77])  # linear extrapolation (default)
-linear_interp!(out, rho, y, [-0.1, 1.2]; extrapolation=:constant)  # constant extrapolation
+linear_interp!(out, rho, y, [0.55, 0.77])  # throws error if outside domain
+linear_interp!(out, rho, y, [-0.1, 1.2]; extrapolation=:extension)  # linear extrapolation
+linear_interp!(out, rho, y, [-0.1, 1.2]; extrapolation=:constant)  # clamp to boundary values
 ```
 
 # Implementation Note
@@ -41,12 +43,12 @@ function linear_interp!(
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
     bc::Symbol=:none,
-    extrapolation::Symbol=:extension
+    extrapolation::Symbol=:none
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert bc in (:none, :periodic) "bc must be :none or :periodic"
-    @assert extrapolation in (:constant, :extension) "extrapolation must be :constant or :extension"
+    @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
 
     # Create Val once outside loop
     extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
@@ -66,12 +68,12 @@ end
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
     bc::Symbol=:none,
-    extrapolation::Symbol=:extension
+    extrapolation::Symbol=:none
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert bc in (:none, :periodic) "bc must be :none or :periodic"
-    @assert extrapolation in (:constant, :extension) "extrapolation must be :constant or :extension"
+    @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
 
     extrap_val = bc == :periodic ? Val(:periodic) : Val(extrapolation)
 
@@ -88,7 +90,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xi::Real; extrapolation=:extension) -> AbstractFloat
+    linear_interp(x, y, xi::Real; bc=:none, extrapolation=:none) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -96,7 +98,8 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 
 # Arguments
 - `xi::Real`: Single interpolation point
-- `extrapolation::Symbol`: `:extension` (default, linear extrapolation) or `:constant`
+- `bc::Symbol`: `:none` (default) or `:periodic` (wraps to domain)
+- `extrapolation::Symbol`: `:none` (default, throws DomainError), `:constant`, or `:extension`
 
 # Returns
 - Always returns a floating-point type (Integer inputs auto-promoted to Float)
@@ -137,11 +140,11 @@ end
     y::AbstractVector{FT},
     xi::FT;
     bc::Symbol=:none,
-    extrapolation::Symbol=:extension
+    extrapolation::Symbol=:none
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck bc in (:none, :periodic) || throw(ArgumentError("bc must be :none or :periodic"))
-    @boundscheck extrapolation in (:constant, :extension) || throw(ArgumentError("extrapolation must be :constant or :extension"))
+    @boundscheck extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
 
     # Periodic BC ignores extrapolation
     if bc == :periodic
@@ -157,11 +160,11 @@ end
     y::AbstractVector{FT},
     xi::FT;
     bc::Symbol=:none,
-    extrapolation::Symbol=:extension
+    extrapolation::Symbol=:none
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck bc in (:none, :periodic) || throw(ArgumentError("bc must be :none or :periodic"))
-    @boundscheck extrapolation in (:constant, :extension) || throw(ArgumentError("extrapolation must be :constant or :extension"))
+    @boundscheck extrapolation in (:none, :constant, :extension) || throw(ArgumentError("extrapolation must be :none, :constant, or :extension"))
 
     if bc == :periodic
         return linear_interp(x, y, xi, Val(:periodic))
@@ -175,6 +178,18 @@ end
 # ========================================
 # Step 1: _find_interval_with_bounds (from utils.jl) - Dispatches on grid type (Range O(1) vs Vector O(log n))
 # Step 2: _compute_alpha - Dispatches on extrapolation (constant clamps, extension doesn't)
+
+# Compute alpha with :none extrapolation (throws DomainError if outside [0, 1])
+@inline function _compute_alpha(
+    x0::FT,
+    x1::FT,
+    xi::FT,
+    ::Val{:none}
+) where {FT<:AbstractFloat}
+    α = (xi - x0) / (x1 - x0)
+    (α < zero(FT) || α > one(FT)) && throw(DomainError(xi, "query point outside interpolation domain [$x0, $x1]"))
+    return α
+end
 
 # Compute alpha with constant extrapolation (clamp to [0, 1])
 @inline function _compute_alpha(
@@ -234,7 +249,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, x_targets; bc=:none, extrapolation=:extension)
+    linear_interp(x, y, x_targets; bc=:none, extrapolation=:none)
 
 Linear interpolation with automatic dispatch (allocating version):
 - For `AbstractRange` x: O(1) direct indexing
@@ -242,7 +257,7 @@ Linear interpolation with automatic dispatch (allocating version):
 
 # Arguments
 - `bc::Symbol`: `:none` (default) or `:periodic` (wraps to domain)
-- `extrapolation::Symbol`: `:extension` (default, linear extrapolation) or `:constant`
+- `extrapolation::Symbol`: `:none` (default, throws DomainError), `:constant`, or `:extension`
 
 When `bc=:periodic`, `extrapolation` is ignored and coordinates are wrapped to domain.
 
@@ -253,8 +268,9 @@ When `bc=:periodic`, `extrapolation` is ignored and coordinates are wrapped to d
 ```julia
 rho = 0.0:0.01:1.0  # Uniform grid → fast O(1) path
 y = sin.(rho)
-result = linear_interp(rho, y, [0.55, 0.77])  # linear extrapolation (default)
-result = linear_interp(rho, y, [-0.1, 1.2]; extrapolation=:constant)  # constant extrapolation
+result = linear_interp(rho, y, [0.55, 0.77])  # throws error if outside domain
+result = linear_interp(rho, y, [-0.1, 1.2]; extrapolation=:extension)  # linear extrapolation
+result = linear_interp(rho, y, [-0.1, 1.2]; extrapolation=:constant)  # clamp to boundary values
 result = linear_interp(rho, y, [1.5, 2.5]; bc=:periodic)  # periodic wrapping
 
 # Integer inputs auto-promoted to Float
@@ -268,7 +284,7 @@ function linear_interp(
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
     bc::Symbol=:none,
-    extrapolation::Symbol=:extension
+    extrapolation::Symbol=:none
 ) where {T<:Real, S<:Real}
     FT = float(T)
     output = Vector{FT}(undef, length(x_targets))
@@ -287,12 +303,12 @@ function linear_interp!(
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
     bc::Symbol=:none,
-    extrapolation::Symbol=:extension
+    extrapolation::Symbol=:none
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert bc in (:none, :periodic) "bc must be :none or :periodic"
-    @assert extrapolation in (:constant, :extension) "extrapolation must be :constant or :extension"
+    @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
 
     FT = float(T)
     x_float = range(FT(first(x)), FT(last(x)), length(x))
@@ -314,12 +330,12 @@ function linear_interp!(
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
     bc::Symbol=:none,
-    extrapolation::Symbol=:extension
+    extrapolation::Symbol=:none
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert bc in (:none, :periodic) "bc must be :none or :periodic"
-    @assert extrapolation in (:constant, :extension) "extrapolation must be :constant or :extension"
+    @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
 
     FT = float(T)
     x_float = FT.(x)  # Allocate once
@@ -344,7 +360,7 @@ end
     y::AbstractVector{T},
     xi::S;
     bc::Symbol=:none,
-    extrapolation::Symbol=:extension
+    extrapolation::Symbol=:none
 ) where {T<:Real, S<:Real}
     FT = float(T)
     x_float = range(FT(first(x)), FT(last(x)), length(x))
@@ -356,7 +372,7 @@ function linear_interp(
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
     bc::Symbol=:none,
-    extrapolation::Symbol=:extension
+    extrapolation::Symbol=:none
 ) where {T<:Real, S<:Real}
     output = Vector{float(T)}(undef, length(x_targets))
     return linear_interp!(output, x, y, x_targets; bc, extrapolation)
@@ -369,7 +385,7 @@ end
     y::AbstractVector{T},
     xi::S;
     bc::Symbol=:none,
-    extrapolation::Symbol=:extension
+    extrapolation::Symbol=:none
 ) where {T<:Real, S<:Real}
     FT = float(T)
     return linear_interp(FT.(x), FT.(y), FT(xi); bc, extrapolation)
@@ -388,12 +404,12 @@ Returned by `linear_interp(x, y)` (2-argument form).
 # Fields
 - `x::X`: x-coordinates (sorted)
 - `y::Y`: y-values
-- `mode::Val`: Evaluation mode (Val(:extension), Val(:constant), or Val(:periodic))
+- `mode::Val`: Evaluation mode (Val(:none), Val(:extension), Val(:constant), or Val(:periodic))
 
 # Usage
 ```julia
 # Create interpolator (minimal allocation)
-itp = linear_interp(x, y)
+itp = linear_interp(x, y)  # default extrapolation=:none (throws error if outside domain)
 
 # Use in broadcast (fused, no intermediate arrays)
 result = @. coef * itp(rho) * other_terms
@@ -402,7 +418,11 @@ result = @. coef * itp(rho) * other_terms
 vals1 = itp.(query_points1)
 vals2 = @. compute(itp(query_points2))
 
-# Periodic BC
+# Extrapolation options
+itp_ext = linear_interp(x, y; extrapolation=:extension)  # linear extrapolation
+itp_const = linear_interp(x, y; extrapolation=:constant)  # clamp to boundary values
+
+# Periodic BC (overrides extrapolation)
 itp_periodic = linear_interp(x, y; bc=:periodic)
 val = itp_periodic(2.5)  # wraps to domain
 ```
@@ -410,17 +430,17 @@ val = itp_periodic(2.5)  # wraps to domain
 struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector{T}}
     x::X
     y::Y
-    mode::Val  # Evaluation mode: :extension, :constant, or :periodic
+    mode::Val  # Evaluation mode: :none, :extension, :constant, or :periodic
 
     function LinearInterpolant(
         x::X,
         y::Y;
         bc::Symbol=:none,
-        extrapolation::Symbol=:extension
+        extrapolation::Symbol=:none
     ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
         @assert length(x) == length(y) "x and y must have same length"
         @assert bc in (:none, :periodic) "bc must be :none or :periodic"
-        @assert extrapolation in (:constant, :extension) "extrapolation must be :constant or :extension"
+        @assert extrapolation in (:none, :constant, :extension) "extrapolation must be :none, :constant, or :extension"
 
         # Periodic BC overrides extrapolation
         mode = bc == :periodic ? Val(:periodic) : Val(extrapolation)
@@ -480,7 +500,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y; bc=:none, extrapolation=:extension) -> LinearInterpolant
+    linear_interp(x, y; bc=:none, extrapolation=:none) -> LinearInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -488,7 +508,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values
 - `bc::Symbol`: `:none` (default) or `:periodic` (wraps to domain)
-- `extrapolation::Symbol`: `:extension` (default) or `:constant`
+- `extrapolation::Symbol`: `:none` (default, throws DomainError), `:constant`, or `:extension`
 
 When `bc=:periodic`, `extrapolation` is ignored and coordinates are wrapped to domain.
 
@@ -528,7 +548,7 @@ function linear_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
     bc::Symbol=:none,
-    extrapolation::Symbol=:extension
+    extrapolation::Symbol=:none
 ) where {T<:AbstractFloat}
     return LinearInterpolant(x, y; bc, extrapolation)
 end
@@ -539,7 +559,7 @@ function linear_interp(
     x::X,
     y::Y;
     bc::Symbol=:none,
-    extrapolation::Symbol=:extension
+    extrapolation::Symbol=:none
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
     T = promote_type(TX, TY)
     FT = float(T)

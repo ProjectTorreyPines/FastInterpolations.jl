@@ -110,7 +110,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
 
         # In-place with autocache - MUST be zero allocation
         allocs = @allocated cubic_interp!(output, x, y, x_query)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Zero-allocation: Callable scalar call" begin
@@ -623,7 +623,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
 
         # Both natural and periodic BC should be zero-allocation with autocache
-        @test natural_allocs == 0
+        @test natural_allocs <= ALLOC_THRESHOLD
         @test periodic_allocs <= ALLOC_THRESHOLD
     end
 
@@ -789,13 +789,13 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
 
         # Runtime extrapolation - MUST be zero allocation
         allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :extension)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
 
         allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :constant)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
 
         allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :wrap)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Runtime symbol: get_cubic_cache" begin

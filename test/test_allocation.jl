@@ -48,7 +48,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         cubic_interp(x, y, x_query)
         allocs = @allocated cubic_interp(x, y, x_query)
         expected_output_allocs = sizeof(Float64) * length(x_query) + 40  # Array header
-        @test allocs <= expected_output_allocs * 2  # Allow some overhead
+        @test allocs <= expected_output_allocs * 2 + ALLOC_THRESHOLD # Allow some overhead
     end
 
     @testset "Zero-allocation: Self-healing cache hit (Pass 2 → Pass 1)" begin

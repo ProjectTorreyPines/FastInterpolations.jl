@@ -415,9 +415,10 @@ struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector
     ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
         @assert length(x) == length(y) "x and y must have same length"
 
-        # Convert to Val via utility (validates and returns Val literal)
-        extrap_val = _to_extrapolation_val(extrap)
-        new{T,X,Y}(x, y, extrap_val)
+        # Manual dispatch to avoid union-splitting with 4 Val types
+        @_dispatch_extrap extrap => ev begin
+            return new{T,X,Y}(x, y, ev)
+        end
     end
 end
 

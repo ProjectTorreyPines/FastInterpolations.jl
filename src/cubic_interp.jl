@@ -1059,9 +1059,10 @@ function cubic_interp(
     _solve_for_interpolant!(cache, y)
     z = copy(cache.z_workspace)  # Allocate separate storage for callable
 
-    # Convert to Val via utility (validates and returns Val literal)
-    extrap_val = _to_extrapolation_val(extrap)
-    return CubicInterpolant(cache, y, z, extrap_val)
+    # Manual dispatch to avoid union-splitting with 4 Val types
+    @_dispatch_extrap extrap => ev begin
+        return CubicInterpolant(cache, y, z, ev)
+    end
 end
 
 # Helper to solve z coefficients with BC dispatch (used by CubicInterpolant construction)
@@ -1103,9 +1104,10 @@ function cubic_interp(
     _solve_for_interpolant!(cache, y)
     z = copy(cache.z_workspace)
 
-    # Convert to Val via utility (validates and returns Val literal)
-    extrap_val = _to_extrapolation_val(extrap)
-    return CubicInterpolant(cache, y, z, extrap_val)
+    # Manual dispatch to avoid union-splitting with 4 Val types
+    @_dispatch_extrap extrap => ev begin
+        return CubicInterpolant(cache, y, z, ev)
+    end
 end
 
 # Real wrapper for 2-argument form
@@ -1135,9 +1137,10 @@ function cubic_interp(
     _solve_for_interpolant!(cache, y_float)
     z = copy(cache.z_workspace)  # Allocate separate storage for callable
 
-    # Convert to Val via utility (validates and returns Val literal)
-    extrap_val = _to_extrapolation_val(extrap)
-    return CubicInterpolant(cache, y_float, z, extrap_val)
+    # Manual dispatch to avoid union-splitting with 4 Val types
+    @_dispatch_extrap extrap => ev begin
+        return CubicInterpolant(cache, y_float, z, ev)
+    end
 end
 
 # ============================================================================

@@ -574,7 +574,7 @@ result = cubic_interp(x, y, x_query; extrap=:extension)  # Extend beyond domain
 function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
                       x_query::AbstractVector{T}; bc::Symbol=:natural, extrap::Symbol=:none, autocache::Bool=true) where {T<:AbstractFloat}
     bc in (:natural, :periodic) || throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
-    extrap in (:none, :constant, :extension) || throw(ArgumentError("`extrap` must be :none, :constant, or :extension, got :$extrap"))
+    extrap in (:none, :constant, :extension, :wrap) || throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
 
     if bc == :periodic
         # Validate periodic endpoints (once, zero runtime overhead)
@@ -618,7 +618,7 @@ cubic_interp!(output, x, y, x_query; extrap=:extension)  # Extend beyond domain
 @inline function cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T},
                        x_query::AbstractVector{T}; bc::Symbol=:natural, extrap::Symbol=:none, autocache::Bool=true) where {T<:AbstractFloat}
     bc in (:natural, :periodic) || throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
-    extrap in (:none, :constant, :extension) || throw(ArgumentError("`extrap` must be :none, :constant, or :extension, got :$extrap"))
+    extrap in (:none, :constant, :extension, :wrap) || throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
 
     if bc == :periodic
         _check_periodic_endpoints(y)
@@ -737,6 +737,32 @@ This is the default behavior (same as _eval_cubic_at_point).
 end
 
 """
+    _eval_cubic_with_extrap(x, y, h, z, xi, ::Val{:wrap})
+
+Evaluate cubic spline with coordinate wrapping.
+Wraps xi to domain [first(x), last(x)) before evaluation.
+
+Unlike bc=:periodic which uses periodic spline coefficients,
+this uses natural BC coefficients but wraps the query coordinate.
+Useful for sawtooth/triangle wave patterns where y[1] != y[end].
+"""
+@inline function _eval_cubic_with_extrap(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    ::Val{:wrap}
+) where {T<:AbstractFloat}
+    # Wrap to domain [first(x), last(x))
+    period = last(x) - first(x)
+    xi_wrapped = _wrap_to_domain(xi, first(x), period)
+
+    # Evaluate at wrapped coordinate using natural BC spline
+    return _eval_cubic_at_point(x, y, h, z, xi_wrapped)
+end
+
+"""
     _solve_cubic_system!(z_workspace, d_workspace, cache, y)
 
 Solve tridiagonal system A * z = d for second derivative coefficients (natural BC).
@@ -836,7 +862,7 @@ cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T},
 function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
                       x_query::T; bc::Symbol=:natural, extrap::Symbol=:none, autocache::Bool=true) where {T<:AbstractFloat}
     bc in (:natural, :periodic) || throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
-    extrap in (:none, :constant, :extension) || throw(ArgumentError("`extrap` must be :none, :constant, or :extension, got :$extrap"))
+    extrap in (:none, :constant, :extension, :wrap) || throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
 
     if bc == :periodic
         _check_periodic_endpoints(y)

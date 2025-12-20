@@ -6,6 +6,7 @@ using Random
 # Older versions have small runtime overhead from mutable struct field access.
 # Note: 4-way Val dispatch (extrap modes) increases overhead on older Julia (~160 bytes).
 const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 192
+# const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 64
 
 # Check if specific test files are requested via ARGS
 if !isempty(ARGS)

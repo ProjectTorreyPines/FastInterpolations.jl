@@ -67,6 +67,122 @@ using FastInterpolations
         end
     end
 
+    @testset "Cubic Natural BC with Wrap Extrapolation" begin
+        # bc=:natural uses natural BC coefficients, but extrap=:wrap wraps coordinates
+        # Unlike bc=:periodic, this does NOT check y[1] ≈ y[end]
+
+        N = 101
+        x = range(0.0, 2π, N)
+        y_sin = sin.(x)
+
+        @testset "Basic wrapping with natural BC" begin
+            # Interior point
+            @test cubic_interp(x, y_sin, π/4; bc=:natural, extrap=:wrap) ≈ sin(π/4) atol=1e-4
+
+            # Outside domain - should wrap
+            val_in = cubic_interp(x, y_sin, 0.5; bc=:natural, extrap=:wrap)
+            val_wrapped = cubic_interp(x, y_sin, 2π + 0.5; bc=:natural, extrap=:wrap)
+            @test val_in ≈ val_wrapped atol=1e-10
+
+            # Negative - should wrap
+            val_neg = cubic_interp(x, y_sin, -0.5; bc=:natural, extrap=:wrap)
+            val_equiv = cubic_interp(x, y_sin, 2π - 0.5; bc=:natural, extrap=:wrap)
+            @test val_neg ≈ val_equiv atol=1e-10
+
+            # Multiple periods
+            @test cubic_interp(x, y_sin, 4π + 1.0; bc=:natural, extrap=:wrap) ≈ cubic_interp(x, y_sin, 1.0; bc=:natural, extrap=:wrap) atol=1e-10
+        end
+
+        @testset "Vector and in-place interface" begin
+            x_query = [0.5, 2π + 0.5, -0.5, 4π + 1.0]
+            result = cubic_interp(x, y_sin, x_query; bc=:natural, extrap=:wrap)
+
+            @test result[1] ≈ sin(0.5) atol=1e-4
+            @test result[2] ≈ result[1] atol=1e-10  # 2π + 0.5 wraps to 0.5
+
+            # In-place
+            cache = CubicSplineCache(x; bc=:natural)
+            out = similar(result)
+            cubic_interp!(out, cache, collect(y_sin), x_query; extrap=:wrap)
+            @test out ≈ result atol=1e-10
+        end
+
+        @testset "CubicInterpolant with wrap extrap" begin
+            itp = cubic_interp(x, y_sin; bc=:natural, extrap=:wrap)
+
+            # Test scalar calls
+            @test itp(π/4) ≈ sin(π/4) atol=1e-4
+            @test itp(2π + 0.5) ≈ itp(0.5) atol=1e-10
+
+            # Test vector calls
+            vals = itp.([0.5, 2π + 0.5, -0.5])
+            @test vals[1] ≈ vals[2] atol=1e-10
+        end
+
+        @testset "Sawtooth/triangle wave pattern (y[1] != y[end])" begin
+            # Linear ramp: y[1] = 0, y[end] = 2π (NOT equal)
+            # This is the key use case for bc=:natural + extrap=:wrap
+            x_ramp = range(0.0, 1.0, 51)
+            y_ramp = collect(x_ramp)  # [0, 0.02, ..., 1.0]
+
+            @test y_ramp[1] != y_ramp[end]  # Confirm endpoints differ
+
+            # Should NOT throw (unlike bc=:periodic which requires y[1] ≈ y[end])
+            itp = cubic_interp(x_ramp, y_ramp; bc=:natural, extrap=:wrap)
+
+            # Test wrap behavior
+            @test itp(0.5) ≈ 0.5 atol=1e-4
+            @test itp(1.5) ≈ itp(0.5) atol=1e-10  # 1.5 wraps to 0.5
+            @test itp(-0.5) ≈ itp(0.5) atol=1e-10  # -0.5 wraps to 0.5
+
+            # At boundary: discontinuity expected (wraps from ~1 to ~0)
+            ε = 1e-10
+            val_before = itp(1.0 - ε)
+            val_after = itp(1.0 + ε)  # wraps to ε
+
+            @test val_before ≈ 1.0 atol=1e-3  # Just before end
+            @test val_after ≈ 0.0 atol=1e-3   # Wraps to beginning
+        end
+
+        @testset "Comparison: bc=:natural+wrap vs bc=:periodic" begin
+            # For truly periodic functions (sin), both give similar results
+            # but they use DIFFERENT spline coefficients (different BC)
+
+            # Create interpolants with different BCs
+            itp_nat = cubic_interp(x, y_sin; bc=:natural, extrap=:wrap)
+            itp_per = cubic_interp(x, y_sin; bc=:periodic)
+
+            # Interior values are similar for periodic functions
+            @test itp_nat(π/2) ≈ itp_per(π/2) atol=1e-3
+            @test itp_nat(π) ≈ itp_per(π) atol=1e-3
+
+            # Wrap behavior is the same
+            @test itp_nat(2π + 0.5) ≈ itp_per(2π + 0.5) atol=1e-3
+
+            # However, at boundaries the second derivatives differ:
+            # - natural BC forces S''(x₁) = S''(xₙ) = 0
+            # - periodic BC forces S''(x₁) = S''(xₙ) and continuity
+            # For sin(x), natural BC happens to be close, but they're computed differently
+        end
+
+        @testset "bc=:periodic ignores extrap parameter" begin
+            # When bc=:periodic, extrap is ignored (always wraps)
+            cache = CubicSplineCache(x; bc=:periodic)
+
+            # All extrap values should give the same result
+            itp_none = cubic_interp(cache, collect(y_sin); extrap=:none)
+            itp_const = cubic_interp(cache, collect(y_sin); extrap=:constant)
+            itp_ext = cubic_interp(cache, collect(y_sin); extrap=:extension)
+            itp_wrap = cubic_interp(cache, collect(y_sin); extrap=:wrap)
+
+            # Test outside domain - all should wrap
+            xi_outside = 2π + 0.5
+            @test itp_none(xi_outside) ≈ itp_wrap(xi_outside) atol=1e-10
+            @test itp_const(xi_outside) ≈ itp_wrap(xi_outside) atol=1e-10
+            @test itp_ext(xi_outside) ≈ itp_wrap(xi_outside) atol=1e-10
+        end
+    end
+
     @testset "Cubic Periodic BC" begin
         # Periodic function: sin on [0, 2π]
         N = 101

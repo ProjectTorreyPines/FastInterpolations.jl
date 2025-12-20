@@ -757,9 +757,10 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
             cubic_interp(x, y, 0.5; extrap=mode)
         end
 
-        # Warmup
-        cubic_runtime_extrapolation(:extension)
-        cubic_runtime_extrapolation(:extension)
+        # Warmup ALL extrap modes (each mode = separate JIT path due to @_dispatch_extrap)
+        for mode in (:none, :constant, :extension, :wrap)
+            cubic_runtime_extrapolation(mode)
+        end
 
         # Runtime extrapolation - zero allocation on 1.12+
         allocs = @allocated cubic_runtime_extrapolation(:extension)
@@ -781,15 +782,19 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
             cubic_interp!(out, x, y, x_query; extrap=mode)
         end
 
-        # Warmup (primes autocache)
-        cubic_inplace_runtime_extrapolation!(output, :extension)
-        cubic_inplace_runtime_extrapolation!(output, :extension)
+        # Warmup ALL extrap modes (each mode = separate JIT path due to @_dispatch_extrap)
+        for mode in (:none, :constant, :extension, :wrap)
+            cubic_inplace_runtime_extrapolation!(output, mode)
+        end
 
         # Runtime extrapolation - MUST be zero allocation
         allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :extension)
         @test allocs == 0
 
         allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :constant)
+        @test allocs == 0
+
+        allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :wrap)
         @test allocs == 0
     end
 
@@ -839,11 +844,11 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
             LinearInterpolant(x, y; extrap=mode)
         end
 
-        # Warmup
-        itp_runtime_extrapolation(:extension)
-        itp_runtime_extrapolation(:extension)
-        itp_runtime_extrapolation(:wrap)
-        itp_runtime_extrapolation(:wrap)
+        # Warmup ALL extrap modes (each mode = separate JIT path due to @_dispatch_extrap)
+        for mode in (:none, :constant, :extension, :wrap)
+            itp_runtime_extrapolation(mode)
+            itp_runtime_extrapolation(mode)
+        end
 
         # Construction allocates the struct itself, but no extra from Val pattern
         # Just verify it's reasonably small (struct + references only)

@@ -3,7 +3,7 @@ using FastInterpolations
 
 @testset "Periodic BC Tests" begin
 
-    @testset "Linear Periodic BC" begin
+    @testset "Linear Wrap Extrapolation" begin
         # Periodic function: sin on [0, 2π]
         N = 101
         x = range(0.0, 2π, N)
@@ -11,23 +11,23 @@ using FastInterpolations
 
         @testset "Basic wrapping" begin
             # Interior point
-            @test linear_interp(x, y, π/4; bc=:periodic) ≈ sin(π/4) atol=1e-3
+            @test linear_interp(x, y, π/4; extrap=:wrap) ≈ sin(π/4) atol=1e-3
 
             # Outside domain - should wrap
             # xi = 2π + 0.5 wraps to 0.5
-            @test linear_interp(x, y, 2π + 0.5; bc=:periodic) ≈ linear_interp(x, y, 0.5; bc=:periodic) atol=1e-10
+            @test linear_interp(x, y, 2π + 0.5; extrap=:wrap) ≈ linear_interp(x, y, 0.5; extrap=:wrap) atol=1e-10
 
             # Negative - should wrap
             # xi = -0.5 wraps to 2π - 0.5
-            @test linear_interp(x, y, -0.5; bc=:periodic) ≈ linear_interp(x, y, 2π - 0.5; bc=:periodic) atol=1e-10
+            @test linear_interp(x, y, -0.5; extrap=:wrap) ≈ linear_interp(x, y, 2π - 0.5; extrap=:wrap) atol=1e-10
 
             # Multiple periods
-            @test linear_interp(x, y, 4π + 1.0; bc=:periodic) ≈ linear_interp(x, y, 1.0; bc=:periodic) atol=1e-10
+            @test linear_interp(x, y, 4π + 1.0; extrap=:wrap) ≈ linear_interp(x, y, 1.0; extrap=:wrap) atol=1e-10
         end
 
         @testset "Vector interface" begin
             x_query = [0.5, 2π + 0.5, -0.5, 4π + 1.0]
-            result = linear_interp(x, y, x_query; bc=:periodic)
+            result = linear_interp(x, y, x_query; extrap=:wrap)
 
             @test result[1] ≈ sin(0.5) atol=1e-3
             @test result[2] ≈ sin(0.5) atol=1e-3  # 2π + 0.5 wraps to 0.5
@@ -37,14 +37,14 @@ using FastInterpolations
         @testset "In-place interface" begin
             out = Vector{Float64}(undef, 3)
             x_query = [0.5, 2π + 0.5, -0.5]
-            linear_interp!(out, x, y, x_query; bc=:periodic)
+            linear_interp!(out, x, y, x_query; extrap=:wrap)
 
             @test out[1] ≈ sin(0.5) atol=1e-3
             @test out[2] ≈ out[1] atol=1e-10  # Wrapped to same position
         end
 
-        @testset "LinearInterpolant with periodic BC" begin
-            itp = linear_interp(x, y; bc=:periodic)
+        @testset "LinearInterpolant with wrap extrap" begin
+            itp = linear_interp(x, y; extrap=:wrap)
 
             # Test scalar calls
             @test itp(0.5) ≈ sin(0.5) atol=1e-3
@@ -58,8 +58,8 @@ using FastInterpolations
         @testset "Continuity at boundary" begin
             # Check values just before and after boundary
             ε = 1e-6
-            val_before = linear_interp(x, y, 2π - ε; bc=:periodic)
-            val_after = linear_interp(x, y, 0.0 + ε; bc=:periodic)
+            val_before = linear_interp(x, y, 2π - ε; extrap=:wrap)
+            val_after = linear_interp(x, y, 0.0 + ε; extrap=:wrap)
 
             # For sin, both should be close to 0
             @test abs(val_before) < 1e-3
@@ -231,8 +231,8 @@ using FastInterpolations
         x_base = sort([0.0, 0.3, 0.7, 1.2, 1.8, 2π])  # Non-uniform
         y_base = sin.(x_base)
 
-        # Linear periodic should still work
-        @test linear_interp(x_base, y_base, 2π + 0.5; bc=:periodic) ≈ linear_interp(x_base, y_base, 0.5; bc=:periodic) atol=1e-10
+        # Linear wrap should still work
+        @test linear_interp(x_base, y_base, 2π + 0.5; extrap=:wrap) ≈ linear_interp(x_base, y_base, 0.5; extrap=:wrap) atol=1e-10
 
         # Cubic periodic should work with Vector grid
         cache = CubicSplineCache(collect(x_base); bc=:periodic)
@@ -241,7 +241,9 @@ using FastInterpolations
         @test result1[1] ≈ result2[1] atol=1e-10
     end
 
-    @testset "_check_periodic_endpoints validation" begin
+    @testset "_check_periodic_endpoints validation (Cubic only)" begin
+        # NOTE: Linear interpolation with extrap=:wrap does NOT check endpoints!
+        # Only cubic bc=:periodic checks that y[1] ≈ y[end]
         x = range(0.0, 2π, 101)
 
         @testset "Valid periodic data (Float64)" begin
@@ -249,18 +251,20 @@ using FastInterpolations
             y_sin = sin.(x)
             @test y_sin[1] ≈ y_sin[end] atol=1e-12  # Confirm endpoints match
 
-            # Should not throw - valid periodic data
-            @test linear_interp(x, y_sin, 0.5; bc=:periodic) isa Float64
+            # Linear wrap works regardless of endpoint matching
+            @test linear_interp(x, y_sin, 0.5; extrap=:wrap) isa Float64
+
+            # Cubic bc=:periodic should not throw for valid periodic data
             @test cubic_interp(x, y_sin, 0.5; bc=:periodic) isa Float64
 
             # cos(0) = cos(2π) = 1
             y_cos = cos.(x)
-            @test linear_interp(x, y_cos, 0.5; bc=:periodic) isa Float64
+            @test linear_interp(x, y_cos, 0.5; extrap=:wrap) isa Float64
 
             # Exactly equal endpoints
             y_exact = collect(sin.(x))
             y_exact[end] = y_exact[1]  # Force exact equality
-            @test linear_interp(x, y_exact, 0.5; bc=:periodic) isa Float64
+            @test linear_interp(x, y_exact, 0.5; extrap=:wrap) isa Float64
         end
 
         @testset "Valid periodic data (Float32)" begin
@@ -271,66 +275,61 @@ using FastInterpolations
             @test abs(y_f32[1] - y_f32[end]) < 1f-6
 
             # Should not throw
-            @test linear_interp(x_f32, y_f32, 0.5f0; bc=:periodic) isa Float32
+            @test linear_interp(x_f32, y_f32, 0.5f0; extrap=:wrap) isa Float32
             @test cubic_interp(x_f32, y_f32, 0.5f0; bc=:periodic) isa Float32
         end
 
-        @testset "Invalid periodic data - endpoints differ" begin
-            # Non-periodic data: y[1] != y[end]
+        @testset "Non-matching endpoints - Cubic bc=:periodic throws, Linear wrap works" begin
+            # Non-periodic data: y[1] != y[end] (sawtooth wave use case)
             y_invalid = collect(x)  # Linear function: y[1] = 0, y[end] = 2π
 
             @test abs(y_invalid[1] - y_invalid[end]) > 1e-12  # Confirm mismatch
 
-            # Should throw ArgumentError
-            @test_throws ArgumentError linear_interp(x, y_invalid, 0.5; bc=:periodic)
+            # Linear wrap does NOT check endpoints - works fine (sawtooth pattern)
+            @test linear_interp(x, y_invalid, 0.5; extrap=:wrap) isa Float64
+            @test LinearInterpolant(collect(x), y_invalid; extrap=:wrap) isa LinearInterpolant
+
+            # Cubic bc=:periodic DOES check endpoints - throws ArgumentError
             @test_throws ArgumentError cubic_interp(x, y_invalid, 0.5; bc=:periodic)
-
-            # LinearInterpolant constructor should throw
-            @test_throws ArgumentError LinearInterpolant(collect(x), y_invalid; bc=:periodic)
-
-            # CubicSplineCache with periodic BC checks in cubic_interp, not cache
-            # but cubic_interp callable form should throw
             @test_throws ArgumentError cubic_interp(collect(x), y_invalid; bc=:periodic)
         end
 
-        @testset "Edge case - just outside tolerance (Float64)" begin
+        @testset "Cubic bc=:periodic edge cases" begin
             # Create data where endpoints differ by more than 1e-12
             y_edge = sin.(x) |> collect
             y_edge[end] = y_edge[1] + 1e-11  # Just outside 1e-12 tolerance
 
             @test abs(y_edge[1] - y_edge[end]) > 1e-12
-            @test_throws ArgumentError linear_interp(x, y_edge, 0.5; bc=:periodic)
+            @test_throws ArgumentError cubic_interp(x, y_edge, 0.5; bc=:periodic)
+
+            # Just within tolerance
+            y_edge2 = sin.(x) |> collect
+            y_edge2[end] = y_edge2[1] + 1e-13  # Within 1e-12 tolerance
+            @test abs(y_edge2[1] - y_edge2[end]) < 1e-12
+            @test cubic_interp(x, y_edge2, 0.5; bc=:periodic) isa Float64
         end
 
-        @testset "Edge case - just within tolerance (Float64)" begin
-            y_edge = sin.(x) |> collect
-            y_edge[end] = y_edge[1] + 1e-13  # Within 1e-12 tolerance
-
-            @test abs(y_edge[1] - y_edge[end]) < 1e-12
-            @test linear_interp(x, y_edge, 0.5; bc=:periodic) isa Float64
-        end
-
-        @testset "Edge case - Float32 tolerance boundary" begin
+        @testset "Cubic bc=:periodic Float32 tolerance boundary" begin
             x_f32 = range(0.0f0, 2f0*Float32(π), 101)
 
             # Just outside Float32 tolerance (1e-6)
             y_outside = sin.(x_f32) |> collect
             y_outside[end] = y_outside[1] + 1f-5  # > 1e-6
 
-            @test_throws ArgumentError linear_interp(x_f32, y_outside, 0.5f0; bc=:periodic)
+            @test_throws ArgumentError cubic_interp(x_f32, y_outside, 0.5f0; bc=:periodic)
 
             # Just within Float32 tolerance
             y_within = sin.(x_f32) |> collect
             y_within[end] = y_within[1] + 1f-7  # < 1e-6
 
-            @test linear_interp(x_f32, y_within, 0.5f0; bc=:periodic) isa Float32
+            @test cubic_interp(x_f32, y_within, 0.5f0; bc=:periodic) isa Float32
         end
 
-        @testset "Error message contains useful info" begin
+        @testset "Cubic bc=:periodic error message contains useful info" begin
             y_invalid = collect(x)
 
             try
-                linear_interp(x, y_invalid, 0.5; bc=:periodic)
+                cubic_interp(x, y_invalid, 0.5; bc=:periodic)
                 @test false  # Should not reach here
             catch e
                 @test e isa ArgumentError

@@ -10,12 +10,16 @@ include("utils.jl")
 include("linear_interp.jl")
 
 # Cubic spline interpolation
-include("cubic_interp.jl")
-include("cubic_interp_autocache.jl")
+include("cubic_types.jl")      # Type definitions (PeriodicData, CubicSplineCache, CubicInterpolant)
+include("cubic_solver.jl")     # Cache builders and system solvers
+include("cubic_eval.jl")       # Evaluation functions
+include("cubic_interp.jl")     # Public API
+include("cubic_autocache.jl")
 
 # Exports
 export linear_interp, linear_interp!, LinearInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!, cubic_cache_stats
+export get_cubic_cache
 
 end # module

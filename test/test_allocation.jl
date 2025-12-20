@@ -48,7 +48,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         cubic_interp(x, y, x_query)
         allocs = @allocated cubic_interp(x, y, x_query)
         expected_output_allocs = sizeof(Float64) * length(x_query) + 40  # Array header
-        @test allocs <= expected_output_allocs * 2  # Allow some overhead
+        @test allocs <= expected_output_allocs * 2 + ALLOC_THRESHOLD # Allow some overhead
     end
 
     @testset "Zero-allocation: Self-healing cache hit (Pass 2 → Pass 1)" begin
@@ -91,6 +91,26 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         # In-place with cache - MUST be zero allocation
         allocs = @allocated cubic_interp!(output, cache, y, x_query)
         @test allocs == 0
+    end
+
+    @testset "Zero-allocation: In-place with autocache" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        x_query = [0.25, 0.5, 0.75]
+        output = similar(x_query)
+
+        clear_cubic_cache!()
+
+        # Prime autocache
+        cubic_interp!(output, x, y, x_query)
+
+        # Warmup
+        cubic_interp!(output, x, y, x_query)
+        cubic_interp!(output, x, y, x_query)
+
+        # In-place with autocache - MUST be zero allocation
+        allocs = @allocated cubic_interp!(output, x, y, x_query)
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Zero-allocation: Callable scalar call" begin
@@ -476,16 +496,370 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         clear_cubic_cache!()
         cubic_interp(x, y, 0.5)
 
-        # Warmup with extrapolation
-        cubic_interp(x, y, -0.1)
-        cubic_interp(x, y, 1.1)
+        # Warmup with extrapolation (explicit :extension mode)
+        cubic_interp(x, y, -0.1; extrap=:extension)
+        cubic_interp(x, y, 1.1; extrap=:extension)
 
         # Extrapolation should still be zero-allocation on 1.12+
-        allocs = @allocated cubic_interp(x, y, -0.1)
+        allocs = @allocated cubic_interp(x, y, -0.1; extrap=:extension)
         @test allocs <= ALLOC_THRESHOLD
 
-        allocs = @allocated cubic_interp(x, y, 1.1)
+        allocs = @allocated cubic_interp(x, y, 1.1; extrap=:extension)
         @test allocs <= ALLOC_THRESHOLD
+    end
+
+    # =========================================================================
+    # Linear Interpolation Allocation Tests
+    # =========================================================================
+    # Linear interpolation has no cache (O(1) or O(log n) lookup per point)
+
+    @testset "Zero-allocation: linear_interp! in-place" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        x_query = [0.25, 0.5, 0.75]
+        output = similar(x_query)
+
+        # Warmup
+        linear_interp!(output, x, y, x_query)
+        linear_interp!(output, x, y, x_query)
+
+        # In-place linear interpolation - MUST be zero allocation
+        allocs = @allocated linear_interp!(output, x, y, x_query)
+        @test allocs == 0
+    end
+
+    @testset "Zero-allocation: LinearInterpolant callable" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        # Create callable
+        itp = LinearInterpolant(x, y)
+
+        # Warmup
+        itp(0.5)
+        itp(0.5)
+
+        # Scalar call - zero allocation on 1.12+
+        allocs = @allocated itp(0.5)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated itp(0.25)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    # =========================================================================
+    # Periodic BC Allocation Tests
+    # =========================================================================
+    # Periodic BC now uses autocache for zero-allocation repeated interpolation.
+
+    @testset "Periodic BC: CubicInterpolant callable is zero-allocation" begin
+        # Periodic data (y[1] ≈ y[end])
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+
+        # Create callable via cubic_interp (computes z coefficients)
+        itp = cubic_interp(x, y; bc=:periodic, autocache=false)
+
+        # Warmup
+        itp(1.0)
+        itp(1.0)
+
+        # Scalar call on pre-constructed callable - zero allocation on 1.12+
+        allocs = @allocated itp(1.0)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Different query points
+        allocs = @allocated itp(3.0)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Query outside domain (wraps to domain)
+        allocs = @allocated itp(7.0)  # 7.0 > 2π
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Periodic BC: cubic_interp with explicit cache is zero-allocation" begin
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+        x_query = [0.5, 1.0, 1.5]
+        output = similar(x_query)
+
+        # Create explicit periodic cache
+        cache = CubicSplineCache(x; bc=:periodic)
+
+        # Warmup
+        cubic_interp!(output, cache, y, x_query)
+        cubic_interp!(output, cache, y, x_query)
+
+        # In-place with explicit cache - MUST be zero allocation
+        allocs = @allocated cubic_interp!(output, cache, y, x_query)
+        @test allocs == 0
+    end
+
+    @testset "Periodic BC: autocache achieves zero-allocation" begin
+        # Periodic BC now uses autocache for zero-allocation repeated interpolation.
+
+        # Use in-place version for accurate measurement (excludes output allocation)
+        x_periodic = collect(range(0.0, 2π, 101))
+        y_periodic = sin.(x_periodic)
+        x_query = [1.0]
+        output = similar(x_query)
+
+        clear_cubic_cache!()
+
+        # Prime periodic autocache
+        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
+        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
+
+        # Natural BC with autocache for comparison (in-place)
+        x_natural = collect(range(0.0, 1.0, 101))
+        y_natural = sin.(2π .* x_natural)
+        x_query_nat = [0.5]
+        output_nat = similar(x_query_nat)
+        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)  # Prime autocache
+        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)  # Warmup
+        natural_allocs = @allocated cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)
+
+        # Periodic BC with autocache (cache hit - zero allocation)
+        periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
+
+        # Both natural and periodic BC should be zero-allocation with autocache
+        @test natural_allocs <= ALLOC_THRESHOLD
+        @test periodic_allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Wrap extrap: LinearInterpolant callable is zero-allocation" begin
+        # Wrap data
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+
+        # Create callable
+        itp = LinearInterpolant(x, y; extrap=:wrap)
+
+        # Warmup
+        itp(1.0)
+        itp(1.0)
+
+        # Scalar call - zero allocation on 1.12+
+        allocs = @allocated itp(1.0)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Query outside domain (wraps)
+        allocs = @allocated itp(7.0)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Wrap extrap: linear_interp functional API is zero-allocation" begin
+        # Linear wrap doesn't need cache, so it should be zero-alloc
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+
+        # Warmup
+        linear_interp(x, y, 1.0; extrap=:wrap)
+        linear_interp(x, y, 1.0; extrap=:wrap)
+
+        # Linear interpolation is simple - should be zero-allocation
+        allocs = @allocated linear_interp(x, y, 1.0; extrap=:wrap)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Outside domain
+        allocs = @allocated linear_interp(x, y, 7.0; extrap=:wrap)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Wrap extrap: linear_interp! in-place is zero-allocation" begin
+        # Linear wrap in-place - most accurate zero-alloc test
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+        x_query = [1.0, 3.0, 7.0]  # includes out-of-domain (7.0 > 2π)
+        output = similar(x_query)
+
+        # Warmup
+        linear_interp!(output, x, y, x_query; extrap=:wrap)
+        linear_interp!(output, x, y, x_query; extrap=:wrap)
+
+        # In-place linear wrap - MUST be zero allocation
+        allocs = @allocated linear_interp!(output, x, y, x_query; extrap=:wrap)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    # =========================================================================
+    # Runtime Symbol Keyword API Tests
+    # =========================================================================
+    # These tests verify that passing symbols as runtime variables (not literals)
+    # doesn't cause extra allocations. This validates the Val pattern refactoring
+    # from Val(symbol_var) to direct branching with Val literals.
+
+    @testset "Runtime symbol: linear_interp scalar" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        # Simulate user code passing runtime symbol
+        function with_runtime_extrapolation(mode::Symbol)
+            linear_interp(x, y, 0.5; extrap=mode)
+        end
+
+        # Warmup
+        with_runtime_extrapolation(:extension)
+        with_runtime_extrapolation(:extension)
+        with_runtime_extrapolation(:wrap)
+        with_runtime_extrapolation(:wrap)
+
+        # Runtime extrapolation symbol - zero allocation on 1.12+
+        allocs = @allocated with_runtime_extrapolation(:extension)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated with_runtime_extrapolation(:constant)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Runtime wrap extrap - zero allocation on 1.12+
+        allocs = @allocated with_runtime_extrapolation(:wrap)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Runtime symbol: linear_interp! in-place" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        x_query = [0.25, 0.5, 0.75]
+        output = similar(x_query)
+
+        function inplace_runtime_extrapolation!(out, mode::Symbol)
+            linear_interp!(out, x, y, x_query; extrap=mode)
+        end
+
+        # Warmup
+        inplace_runtime_extrapolation!(output, :extension)
+        inplace_runtime_extrapolation!(output, :extension)
+        inplace_runtime_extrapolation!(output, :wrap)
+        inplace_runtime_extrapolation!(output, :wrap)
+
+        # Runtime extrapolation - MUST be zero allocation
+        allocs = @allocated inplace_runtime_extrapolation!(output, :extension)
+        @test allocs == 0
+
+        allocs = @allocated inplace_runtime_extrapolation!(output, :constant)
+        @test allocs == 0
+
+        # Runtime wrap - MUST be zero allocation
+        allocs = @allocated inplace_runtime_extrapolation!(output, :wrap)
+        @test allocs == 0
+    end
+
+    @testset "Runtime symbol: cubic_interp scalar" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        clear_cubic_cache!()
+
+        # Prime cache
+        cubic_interp(x, y, 0.5)
+
+        function cubic_runtime_extrapolation(mode::Symbol)
+            cubic_interp(x, y, 0.5; extrap=mode)
+        end
+
+        # Warmup ALL extrap modes (each mode = separate JIT path due to @_dispatch_extrap)
+        for mode in (:none, :constant, :extension, :wrap)
+            cubic_runtime_extrapolation(mode)
+        end
+
+        # Runtime extrapolation - zero allocation on 1.12+
+        allocs = @allocated cubic_runtime_extrapolation(:extension)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated cubic_runtime_extrapolation(:constant)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Runtime symbol: cubic_interp! in-place" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        x_query = [0.25, 0.5, 0.75]
+        output = similar(x_query)
+
+        clear_cubic_cache!()
+
+        function cubic_inplace_runtime_extrapolation!(out, mode::Symbol)
+            cubic_interp!(out, x, y, x_query; extrap=mode)
+        end
+
+        # Warmup ALL extrap modes (each mode = separate JIT path due to @_dispatch_extrap)
+        for mode in (:none, :constant, :extension, :wrap)
+            cubic_inplace_runtime_extrapolation!(output, mode)
+        end
+
+        # Runtime extrapolation - MUST be zero allocation
+        allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :extension)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :constant)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :wrap)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Runtime symbol: get_cubic_cache" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 1.0, 51))
+
+        # Prime cache for both BC types
+        get_cubic_cache(x; bc=:natural)
+        get_cubic_cache(x; bc=:periodic)
+
+        # Runtime symbol version (simulating user code passing runtime variable)
+        function cache_runtime_bc(bc_mode::Symbol)
+            get_cubic_cache(x; bc=bc_mode)
+        end
+
+        # Extended warmup for JIT stabilization (important for inner functions)
+        for _ in 1:10
+            cache_runtime_bc(:natural)
+            cache_runtime_bc(:periodic)
+        end
+
+        # Measure runtime symbol version
+        allocs_natural = @allocated cache_runtime_bc(:natural)
+        allocs_periodic = @allocated cache_runtime_bc(:periodic)
+
+        # The 64/96 bytes comes from cache lookup (lock + objectid check), not Val pattern.
+        # Key test: repeated calls should be consistent (no growing allocation).
+        allocs_natural2 = @allocated cache_runtime_bc(:natural)
+        allocs_periodic2 = @allocated cache_runtime_bc(:periodic)
+
+        # Same allocation on repeated calls = no leak from Val pattern
+        @test allocs_natural == allocs_natural2
+        @test allocs_periodic == allocs_periodic2
+
+        # Reasonable budget (cache lookup overhead)
+        @test allocs_natural <= 128    # Natural BC cache hit
+        @test allocs_periodic <= 128   # Periodic BC cache hit
+    end
+
+    @testset "Runtime symbol: LinearInterpolant construction" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        function itp_runtime_extrapolation(mode::Symbol)
+            LinearInterpolant(x, y; extrap=mode)
+        end
+
+        # Warmup ALL extrap modes (each mode = separate JIT path due to @_dispatch_extrap)
+        for mode in (:none, :constant, :extension, :wrap)
+            itp_runtime_extrapolation(mode)
+            itp_runtime_extrapolation(mode)
+        end
+
+        # Construction allocates the struct itself, but no extra from Val pattern
+        # Just verify it's reasonably small (struct + references only)
+        allocs_ext = @allocated itp_runtime_extrapolation(:extension)
+        allocs_const = @allocated itp_runtime_extrapolation(:constant)
+        allocs_wrap = @allocated itp_runtime_extrapolation(:wrap)
+
+        # All modes should have same allocation (no extra from runtime symbol)
+        @test allocs_ext == allocs_const
+        @test allocs_ext == allocs_wrap
+        @test allocs_ext <= ALLOC_THRESHOLD + 64  # Struct (~48 bytes) + dispatch overhead
     end
 
 end

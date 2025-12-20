@@ -455,47 +455,32 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
 - Thread-safe if different caches/workspaces are used per thread
 - Pattern: Solve system once -> evaluate at all query points
 """
-@inline function cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T,X,F,Nothing},
-                       y::AbstractVector{T}, x_query::AbstractVector{T}; extrap::Symbol=:none) where {T<:AbstractFloat, X, F}
+# Unified cubic_interp! for all BC types (Natural and Periodic)
+# Uses _solve_system!, _check_domain_if_needed, and _eval_with_bc for dispatch
+@inline function cubic_interp!(
+    output::AbstractVector{T},
+    cache::CubicSplineCache{T,X,F,BC},
+    y::AbstractVector{T},
+    x_query::AbstractVector{T};
+    extrap::Symbol=:none
+) where {T<:AbstractFloat, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
+
+    # Step 1: Solve for z coefficients (dispatches on BC type)
+    z = _solve_system!(cache, y)
 
     # Manual dispatch to avoid union-splitting with 4 Val types
     @_dispatch_extrap extrap => ev begin
-        _cubic_interp_impl!(output, cache, y, x_query, ev)
-    end
-end
+        # CRITICAL: Vector-level domain check before loop (Natural BC only)
+        # Periodic BC skips this (always wraps, never out of domain)
+        _check_domain_if_needed(cache, x_query, ev)
 
-# Internal implementation with Val dispatch (type-stable)
-@inline function _cubic_interp_impl!(output::AbstractVector{T}, cache::CubicSplineCache{T,X,F,Nothing},
-                                     y::AbstractVector{T}, x_query::AbstractVector{T}, extrap::Val) where {T<:AbstractFloat, X, F}
-    # Vector-level domain check (skipped for extension/constant via no-op dispatch)
-    _check_domain(cache.x, x_query, extrap)
-
-    # Step 1: Solve for z coefficients (solves system ONCE for all query points)
-    z = _solve_cubic_system!(cache.z_workspace, cache.d_workspace, cache, y)
-
-    # Step 2: Evaluate at all query points (@inbounds skips scalar _check_domain)
-    @inbounds for (k, xq) in enumerate(x_query)
-        output[k] = _eval_cubic_with_extrap(cache.x, y, cache.h, z, xq, extrap)
-    end
-
-    return output
-end
-
-# Periodic BC dispatch (extrapolation ignored - coordinates are wrapped)
-@inline function cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T,X,F,PeriodicData{T}},
-                       y::AbstractVector{T}, x_query::AbstractVector{T}; extrap::Symbol=:none) where {T<:AbstractFloat, X, F}
-    @assert length(y) == length(cache.x) "y length must match cache grid"
-    @assert length(output) == length(x_query) "output length must match x_query"
-
-    # Step 1: Solve for z coefficients using Sherman-Morrison
-    z = _solve_cubic_system_periodic!(cache.z_workspace, cache.d_workspace, cache, y)
-
-    # Step 2: Evaluate at all query points with coordinate wrapping (extrapolation ignored)
-    period = cache.bc_data.period
-    @inbounds for (k, xq) in enumerate(x_query)
-        output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.h, z, xq, period)
+        # Step 2: Evaluate at all query points
+        # @inbounds is safe because domain was checked above
+        @inbounds for (k, xq) in enumerate(x_query)
+            output[k] = _eval_with_bc(cache, y, cache.h, z, xq, ev)
+        end
     end
 
     return output
@@ -793,6 +778,61 @@ Uses pre-computed LU factorization from cache. Modifies workspaces in-place.
     return z_workspace
 end
 
+# ========================================
+# Unified System Solver Entry Point
+# ========================================
+
+"""
+    _solve_system!(cache::CubicSplineCache, y) -> z_workspace
+
+Unified entry point for solving cubic spline system.
+Dispatches to appropriate solver based on cache BC type.
+
+Returns the z_workspace containing second derivative coefficients.
+"""
+@inline function _solve_system!(
+    cache::CubicSplineCache{T,X,F,Nothing},
+    y::AbstractVector{T}
+) where {T<:AbstractFloat, X, F}
+    _solve_cubic_system!(cache.z_workspace, cache.d_workspace, cache, y)
+end
+
+@inline function _solve_system!(
+    cache::CubicSplineCache{T,X,F,PeriodicData{T}},
+    y::AbstractVector{T}
+) where {T<:AbstractFloat, X, F}
+    _solve_cubic_system_periodic!(cache.z_workspace, cache.d_workspace, cache, y)
+end
+
+# ========================================
+# BC-Aware Domain Check Helper
+# ========================================
+
+"""
+    _check_domain_if_needed(cache, x_query, extrap_val)
+
+Conditionally check domain based on BC type.
+- Natural BC: Check domain (throws DomainError for extrap=:none)
+- Periodic BC: Skip (always wraps, never out of domain)
+
+Called before vector loops to enable @inbounds optimization.
+"""
+@inline function _check_domain_if_needed(
+    cache::CubicSplineCache{T,X,F,Nothing},
+    x_query::AbstractVector{T},
+    extrap_val::Val
+) where {T<:AbstractFloat, X, F}
+    _check_domain(cache.x, x_query, extrap_val)
+end
+
+@inline function _check_domain_if_needed(
+    cache::CubicSplineCache{T,X,F,PeriodicData{T}},
+    ::AbstractVector{T},
+    ::Val
+) where {T<:AbstractFloat, X, F}
+    nothing  # Periodic BC always wraps - no domain check needed
+end
+
 """
     cubic_interp_scalar(cache::CubicSplineCache{T}, y::AbstractVector{T},
                         x_query::T; extrap=:none) where {T<:AbstractFloat}
@@ -819,39 +859,62 @@ itp = cubic_interp(x, y)  # Solve once
 vals = itp.(query_points)  # Reuse z for all points
 ```
 """
-@inline function cubic_interp_scalar(cache::CubicSplineCache{T,X,F,Nothing}, y::AbstractVector{T},
-                                      x_query::T; extrap::Symbol=:none) where {T<:AbstractFloat, X, F}
+# Unified cubic_interp_scalar for all BC types (Natural and Periodic)
+@inline function cubic_interp_scalar(
+    cache::CubicSplineCache{T,X,F,BC},
+    y::AbstractVector{T},
+    x_query::T;
+    extrap::Symbol=:none
+) where {T<:AbstractFloat, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
-    # Solve for z coefficients (reuses cache workspaces)
-    z = _solve_cubic_system!(cache.z_workspace, cache.d_workspace, cache, y)
+    # Solve for z coefficients (dispatches on BC type)
+    z = _solve_system!(cache, y)
 
     # Manual dispatch to avoid union-splitting with 4 Val types
     @_dispatch_extrap extrap => ev begin
-        _eval_cubic_with_extrap(cache.x, y, cache.h, z, x_query, ev)
+        _eval_with_bc(cache, y, cache.h, z, x_query, ev)
     end
 end
 
-# Periodic BC dispatch for scalar evaluation (extrapolation ignored)
-@inline function cubic_interp_scalar(cache::CubicSplineCache{T,X,F,PeriodicData{T}}, y::AbstractVector{T},
-                                      x_query::T; extrap::Symbol=:none) where {T<:AbstractFloat, X, F}
-    @assert length(y) == length(cache.x) "y length must match cache grid"
-
-    # Solve for z coefficients using Sherman-Morrison
-    z = _solve_cubic_system_periodic!(cache.z_workspace, cache.d_workspace, cache, y)
-
-    # Evaluate at query point with coordinate wrapping (extrapolation ignored)
-    return _eval_cubic_at_point_periodic(cache.x, y, cache.h, z, x_query, cache.bc_data.period)
+# Scalar query point convenience methods (zero-allocation - no [x_query] wrapping)
+@inline function cubic_interp!(
+    output::AbstractVector{T},
+    cache::CubicSplineCache{T,X,F,BC},
+    y::AbstractVector{T},
+    x_query::T;
+    extrap::Symbol=:none
+) where {T<:AbstractFloat, X, F, BC}
+    @assert length(output) >= 1 "output must have at least 1 element"
+    output[1] = cubic_interp_scalar(cache, y, x_query; extrap=extrap)
+    return output
 end
 
-# Scalar query point convenience methods
-cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T},
-              y::AbstractVector{T}, x_query::T; extrap::Symbol=:none) where {T<:AbstractFloat} =
-    cubic_interp!(output, cache, y, [x_query]; extrap=extrap)
+@inline function cubic_interp!(
+    output::AbstractVector{T},
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    x_query::T;
+    bc::Symbol=:natural,
+    extrap::Symbol=:none,
+    autocache::Bool=true
+) where {T<:AbstractFloat}
+    @assert length(output) >= 1 "output must have at least 1 element"
+    _validate_bc(bc)
+    _validate_extrap(extrap)
 
-cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T},
-              x_query::T; bc::Symbol=:natural, extrap::Symbol=:none, autocache::Bool=true) where {T<:AbstractFloat} =
-    cubic_interp!(output, x, y, [x_query]; bc=bc, extrap=extrap, autocache=autocache)
+    if bc == :periodic
+        _check_periodic_endpoints(y)
+        cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
+    elseif autocache
+        cache = get_cubic_cache(x, Val(:natural))
+    else
+        cache = CubicSplineCache(x)
+    end
+
+    output[1] = cubic_interp_scalar(cache, y, x_query; extrap=extrap)
+    return output
+end
 
 # CRITICAL: Zero-allocation scalar path for broadcast fusion
 cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T},
@@ -1081,23 +1144,13 @@ function cubic_interp(
     end
 
     # Pre-compute z coefficients (solve system once, then copy for storage)
-    # Dispatches based on BC type (natural vs periodic)
-    _solve_for_interpolant!(cache, y)
+    _solve_system!(cache, y)
     z = copy(cache.z_workspace)  # Allocate separate storage for callable
 
     # Manual dispatch to avoid union-splitting with 4 Val types
     @_dispatch_extrap extrap => ev begin
         return CubicInterpolant(cache, y, z, ev)
     end
-end
-
-# Helper to solve z coefficients with BC dispatch (used by CubicInterpolant construction)
-@inline function _solve_for_interpolant!(cache::CubicSplineCache{T,X,F,Nothing}, y::AbstractVector{T}) where {T, X, F}
-    _solve_cubic_system!(cache.z_workspace, cache.d_workspace, cache, y)
-end
-
-@inline function _solve_for_interpolant!(cache::CubicSplineCache{T,X,F,PeriodicData{T}}, y::AbstractVector{T}) where {T, X, F}
-    _solve_cubic_system_periodic!(cache.z_workspace, cache.d_workspace, cache, y)
 end
 
 """
@@ -1127,7 +1180,7 @@ function cubic_interp(
     y::AbstractVector{T};
     extrap::Symbol=:none
 ) where {T<:AbstractFloat}
-    _solve_for_interpolant!(cache, y)
+    _solve_system!(cache, y)
     z = copy(cache.z_workspace)
 
     # Manual dispatch to avoid union-splitting with 4 Val types
@@ -1160,7 +1213,7 @@ function cubic_interp(
     end
 
     # Pre-compute z coefficients (solve system once, then copy for storage)
-    _solve_for_interpolant!(cache, y_float)
+    _solve_system!(cache, y_float)
     z = copy(cache.z_workspace)  # Allocate separate storage for callable
 
     # Manual dispatch to avoid union-splitting with 4 Val types

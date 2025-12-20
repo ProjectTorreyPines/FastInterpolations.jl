@@ -93,13 +93,21 @@ _to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat} = FT.(x)
 # ========================================
 
 """
-    _wrap_to_domain(xi::FT, x_min::FT, period::FT) where {FT<:AbstractFloat}
+    _wrap_to_domain(xi::FT, x_min::FT, x_max::FT) where {FT<:AbstractFloat}
 
-Wrap a query point `xi` to the domain [x_min, x_min + period).
-Used for periodic boundary conditions.
+Wrap a query point `xi` to the domain [x_min, x_max).
+Used for periodic boundary conditions and extrap=:wrap.
+
+Optimized: skips expensive `mod()` when xi is already in domain.
 """
-@inline function _wrap_to_domain(xi::FT, x_min::FT, period::FT) where {FT<:AbstractFloat}
-    return x_min + mod(xi - x_min, period)
+@inline function _wrap_to_domain(xi::FT, x_min::FT, x_max::FT) where {FT<:AbstractFloat}
+    # Single-branch check: outside domain → slow path
+    if xi < x_min || xi >= x_max
+        period = x_max - x_min
+        return x_min + mod(xi - x_min, period)
+    end
+    # Fast path: already in domain (most common case)
+    return xi
 end
 
 # ========================================

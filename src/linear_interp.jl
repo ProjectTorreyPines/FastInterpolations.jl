@@ -61,6 +61,56 @@ end
     return output
 end
 
+# Optimized loop for :wrap - uses 2-stage strategy
+# Stage 1: Check if ALL queries are inside domain (cheap: ~150ns for 1000 elements)
+# Stage 2: If all inside, use extension path (no wrap needed); otherwise per-element wrap
+@inline function _linear_interp_loop!(
+    output::AbstractVector{FT},
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    x_targets::AbstractVector{FT},
+    ::Val{:wrap}
+) where {FT<:AbstractFloat}
+    x_min, x_max = first(x), last(x)
+    qmin, qmax = minimum(x_targets), maximum(x_targets)
+
+    if qmin >= x_min && qmax < x_max
+        # Fast path: all queries inside domain - use extension (no wrap overhead)
+        @inbounds for i in eachindex(x_targets, output)
+            output[i] = linear_interp(x, y, x_targets[i], Val(:extension))
+        end
+    else
+        # Slow path: some queries outside - per-element wrap
+        @inbounds for i in eachindex(x_targets, output)
+            output[i] = linear_interp(x, y, x_targets[i], Val(:wrap))
+        end
+    end
+    return output
+end
+
+# Same optimization for AbstractRange (O(1) indexing path)
+@inline function _linear_interp_loop!(
+    output::AbstractVector{FT},
+    x::AbstractRange{FT},
+    y::AbstractVector{FT},
+    x_targets::AbstractVector{FT},
+    ::Val{:wrap}
+) where {FT<:AbstractFloat}
+    x_min, x_max = first(x), last(x)
+    qmin, qmax = minimum(x_targets), maximum(x_targets)
+
+    if qmin >= x_min && qmax < x_max
+        @inbounds for i in eachindex(x_targets, output)
+            output[i] = linear_interp(x, y, x_targets[i], Val(:extension))
+        end
+    else
+        @inbounds for i in eachindex(x_targets, output)
+            output[i] = linear_interp(x, y, x_targets[i], Val(:wrap))
+        end
+    end
+    return output
+end
+
 # Specific method for AbstractRange{FT} (resolves ambiguity with Real wrappers)
 @inline function linear_interp!(
     output::AbstractVector{FT},
@@ -214,9 +264,8 @@ Useful for periodic data where y[1] may or may not equal y[end].
     xi::FT,
     ::Val{:wrap}
 )::FT where {FT<:AbstractFloat}
-    # Wrap to domain
-    period = last(x) - first(x)
-    xi_wrapped = _wrap_to_domain(xi, first(x), period)
+    # Wrap to domain - optimized to skip mod if in-bounds
+    xi_wrapped = _wrap_to_domain(xi, first(x), last(x))
 
     # Find interval and interpolate (using extension alpha since we're in domain)
     idx, x0, x1 = _find_interval_with_bounds(x, xi_wrapped)

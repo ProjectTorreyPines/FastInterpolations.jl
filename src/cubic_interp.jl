@@ -414,8 +414,8 @@ Wraps query point to domain [x[1], x[1] + period) before evaluation.
     xi::T,
     period::T
 ) where {T<:AbstractFloat}
-    # Wrap xi to domain [x[1], x[1] + period)
-    xi_wrapped = _wrap_to_domain(xi, first(x), period)
+    # Wrap xi to domain [x[1], x[1] + period) - optimized to skip mod if in-bounds
+    xi_wrapped = _wrap_to_domain(xi, first(x), first(x) + period)
 
     # Find interval and evaluate (same as natural spline)
     idx, x0, x1 = _find_interval_with_bounds(x, xi_wrapped)
@@ -477,13 +477,81 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
         _check_domain_if_needed(cache, x_query, ev)
 
         # Step 2: Evaluate at all query points
-        # @inbounds is safe because domain was checked above
-        @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_with_bc(cache, y, cache.h, z, xq, ev)
-        end
+        # Optimization for :wrap - check if all queries are inside domain first
+        # If all inside, skip per-element wrap (use extension path instead)
+        _cubic_vector_loop!(output, cache, y, z, x_query, ev)
     end
 
     return output
+end
+
+# Default vector loop (for :none, :constant, :extension)
+@inline function _cubic_vector_loop!(
+    output::AbstractVector{T},
+    cache::CubicSplineCache{T,X,F,BC},
+    y::AbstractVector{T},
+    z::AbstractVector{T},
+    x_query::AbstractVector{T},
+    ev::Val
+) where {T<:AbstractFloat, X, F, BC}
+    @inbounds for (k, xq) in enumerate(x_query)
+        output[k] = _eval_with_bc(cache, y, cache.h, z, xq, ev)
+    end
+end
+
+# Optimized vector loop for :wrap - uses 2-stage strategy
+# Stage 1: Check if ALL queries are inside domain (cheap: ~150ns for 1000 elements)
+# Stage 2: If all inside, use extension path (no wrap needed); otherwise per-element wrap
+@inline function _cubic_vector_loop!(
+    output::AbstractVector{T},
+    cache::CubicSplineCache{T,X,F,Nothing},  # Natural BC only
+    y::AbstractVector{T},
+    z::AbstractVector{T},
+    x_query::AbstractVector{T},
+    ::Val{:wrap}
+) where {T<:AbstractFloat, X, F}
+    x_min, x_max = first(cache.x), last(cache.x)
+    qmin, qmax = minimum(x_query), maximum(x_query)
+
+    if qmin >= x_min && qmax < x_max
+        # Fast path: all queries inside domain - no wrap needed
+        @inbounds for (k, xq) in enumerate(x_query)
+            output[k] = _eval_cubic_at_point(cache.x, y, cache.h, z, xq)
+        end
+    else
+        # Slow path: some queries outside - per-element wrap
+        @inbounds for (k, xq) in enumerate(x_query)
+            output[k] = _eval_cubic_with_extrap(cache.x, y, cache.h, z, xq, Val(:wrap))
+        end
+    end
+end
+
+# Optimized vector loop for Periodic BC - uses 2-stage strategy
+# extrap parameter is ignored for periodic (always wraps)
+@inline function _cubic_vector_loop!(
+    output::AbstractVector{T},
+    cache::CubicSplineCache{T,X,F,PeriodicData{T}},
+    y::AbstractVector{T},
+    z::AbstractVector{T},
+    x_query::AbstractVector{T},
+    ::Val  # extrap ignored for periodic
+) where {T<:AbstractFloat, X, F}
+    x_min = first(cache.x)
+    x_max = x_min + cache.bc_data.period
+    qmin, qmax = minimum(x_query), maximum(x_query)
+
+    if qmin >= x_min && qmax < x_max
+        # Fast path: all queries inside domain - no wrap needed
+        @inbounds for (k, xq) in enumerate(x_query)
+            output[k] = _eval_cubic_at_point(cache.x, y, cache.h, z, xq)
+        end
+    else
+        # Slow path: some queries outside - per-element wrap
+        period = cache.bc_data.period
+        @inbounds for (k, xq) in enumerate(x_query)
+            output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.h, z, xq, period)
+        end
+    end
 end
 
 """
@@ -739,9 +807,8 @@ Useful for sawtooth/triangle wave patterns where y[1] != y[end].
     xi::T,
     ::Val{:wrap}
 ) where {T<:AbstractFloat}
-    # Wrap to domain [first(x), last(x))
-    period = last(x) - first(x)
-    xi_wrapped = _wrap_to_domain(xi, first(x), period)
+    # Wrap to domain [first(x), last(x)) - optimized to skip mod if in-bounds
+    xi_wrapped = _wrap_to_domain(xi, first(x), last(x))
 
     # Evaluate at wrapped coordinate using natural BC spline
     return _eval_cubic_at_point(x, y, h, z, xi_wrapped)
@@ -1039,35 +1106,29 @@ end
 end
 
 # Vector call - uses pre-computed z coefficients (no redundant system solve!)
-# Domain check dispatches on extrap: :none checks, others are no-op
-# Periodic BC wraps coordinates in _eval_with_bc, so no domain error possible
+# Domain check dispatches on BC: Natural checks, Periodic skips (always wraps)
+# Uses _cubic_vector_loop! for 2-stage :wrap optimization
 function (itp::CubicInterpolant{T})(xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
     xi_typed = S === T ? xi : T.(xi)
-    _check_domain(itp.cache.x, xi_typed, itp.extrap)
+    _check_domain_if_needed(itp.cache, xi_typed, itp.extrap)
     output = Vector{T}(undef, length(xi_typed))
-    @inbounds for (k, xq) in enumerate(xi_typed)
-        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq, itp.extrap)
-    end
+    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap)
     return output
 end
 
 # Optimized path when xi element type matches T (zero conversion)
 function (itp::CubicInterpolant{T})(xi::AbstractVector{T}) where {T<:AbstractFloat}
-    _check_domain(itp.cache.x, xi, itp.extrap)
+    _check_domain_if_needed(itp.cache, xi, itp.extrap)
     output = Vector{T}(undef, length(xi))
-    @inbounds for (k, xq) in enumerate(xi)
-        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq, itp.extrap)
-    end
+    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap)
     return output
 end
 
 # In-place vector call - zero allocation
 function (itp::CubicInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat}
     @assert length(output) == length(xi) "output length must match xi length"
-    _check_domain(itp.cache.x, xi, itp.extrap)
-    @inbounds for (k, xq) in enumerate(xi)
-        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq, itp.extrap)
-    end
+    _check_domain_if_needed(itp.cache, xi, itp.extrap)
+    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap)
     return output
 end
 
@@ -1075,10 +1136,8 @@ end
 function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     xi_typed = T.(xi)
-    _check_domain(itp.cache.x, xi_typed, itp.extrap)
-    @inbounds for (k, xq) in enumerate(xi_typed)
-        output[k] = _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xq, itp.extrap)
-    end
+    _check_domain_if_needed(itp.cache, xi_typed, itp.extrap)
+    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap)
     return output
 end
 

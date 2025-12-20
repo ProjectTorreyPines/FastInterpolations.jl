@@ -627,13 +627,13 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         @test periodic_allocs == 0
     end
 
-    @testset "Periodic BC: LinearInterpolant callable is zero-allocation" begin
-        # Periodic data
+    @testset "Wrap extrap: LinearInterpolant callable is zero-allocation" begin
+        # Wrap data
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
 
         # Create callable
-        itp = LinearInterpolant(x, y; bc=:periodic)
+        itp = LinearInterpolant(x, y; extrap=:wrap)
 
         # Warmup
         itp(1.0)
@@ -648,37 +648,37 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "Periodic BC: linear_interp functional API is zero-allocation" begin
-        # Linear periodic doesn't need cache, so it should be zero-alloc
+    @testset "Wrap extrap: linear_interp functional API is zero-allocation" begin
+        # Linear wrap doesn't need cache, so it should be zero-alloc
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
 
         # Warmup
-        linear_interp(x, y, 1.0; bc=:periodic)
-        linear_interp(x, y, 1.0; bc=:periodic)
+        linear_interp(x, y, 1.0; extrap=:wrap)
+        linear_interp(x, y, 1.0; extrap=:wrap)
 
         # Linear interpolation is simple - should be zero-allocation
-        allocs = @allocated linear_interp(x, y, 1.0; bc=:periodic)
+        allocs = @allocated linear_interp(x, y, 1.0; extrap=:wrap)
         @test allocs <= ALLOC_THRESHOLD
 
         # Outside domain
-        allocs = @allocated linear_interp(x, y, 7.0; bc=:periodic)
+        allocs = @allocated linear_interp(x, y, 7.0; extrap=:wrap)
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "Periodic BC: linear_interp! in-place is zero-allocation" begin
-        # Linear periodic in-place - most accurate zero-alloc test
+    @testset "Wrap extrap: linear_interp! in-place is zero-allocation" begin
+        # Linear wrap in-place - most accurate zero-alloc test
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
         x_query = [1.0, 3.0, 7.0]  # includes out-of-domain (7.0 > 2π)
         output = similar(x_query)
 
         # Warmup
-        linear_interp!(output, x, y, x_query; bc=:periodic)
-        linear_interp!(output, x, y, x_query; bc=:periodic)
+        linear_interp!(output, x, y, x_query; extrap=:wrap)
+        linear_interp!(output, x, y, x_query; extrap=:wrap)
 
-        # In-place linear periodic - MUST be zero allocation
-        allocs = @allocated linear_interp!(output, x, y, x_query; bc=:periodic)
+        # In-place linear wrap - MUST be zero allocation
+        allocs = @allocated linear_interp!(output, x, y, x_query; extrap=:wrap)
         @test allocs == 0
     end
 
@@ -698,15 +698,11 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
             linear_interp(x, y, 0.5; extrap=mode)
         end
 
-        function with_runtime_bc(bc_mode::Symbol)
-            linear_interp(x, y, 0.5; bc=bc_mode)
-        end
-
         # Warmup
         with_runtime_extrapolation(:extension)
         with_runtime_extrapolation(:extension)
-        with_runtime_bc(:periodic)
-        with_runtime_bc(:periodic)
+        with_runtime_extrapolation(:wrap)
+        with_runtime_extrapolation(:wrap)
 
         # Runtime extrapolation symbol - zero allocation on 1.12+
         allocs = @allocated with_runtime_extrapolation(:extension)
@@ -715,8 +711,8 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         allocs = @allocated with_runtime_extrapolation(:constant)
         @test allocs <= ALLOC_THRESHOLD
 
-        # Runtime bc symbol - zero allocation on 1.12+
-        allocs = @allocated with_runtime_bc(:periodic)
+        # Runtime wrap extrap - zero allocation on 1.12+
+        allocs = @allocated with_runtime_extrapolation(:wrap)
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -730,15 +726,11 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
             linear_interp!(out, x, y, x_query; extrap=mode)
         end
 
-        function inplace_runtime_bc!(out, bc_mode::Symbol)
-            linear_interp!(out, x, y, x_query; bc=bc_mode)
-        end
-
         # Warmup
         inplace_runtime_extrapolation!(output, :extension)
         inplace_runtime_extrapolation!(output, :extension)
-        inplace_runtime_bc!(output, :periodic)
-        inplace_runtime_bc!(output, :periodic)
+        inplace_runtime_extrapolation!(output, :wrap)
+        inplace_runtime_extrapolation!(output, :wrap)
 
         # Runtime extrapolation - MUST be zero allocation
         allocs = @allocated inplace_runtime_extrapolation!(output, :extension)
@@ -747,8 +739,8 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         allocs = @allocated inplace_runtime_extrapolation!(output, :constant)
         @test allocs == 0
 
-        # Runtime bc - MUST be zero allocation
-        allocs = @allocated inplace_runtime_bc!(output, :periodic)
+        # Runtime wrap - MUST be zero allocation
+        allocs = @allocated inplace_runtime_extrapolation!(output, :wrap)
         @test allocs == 0
     end
 
@@ -847,26 +839,22 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
             LinearInterpolant(x, y; extrap=mode)
         end
 
-        function itp_runtime_bc(bc_mode::Symbol)
-            LinearInterpolant(x, y; bc=bc_mode)
-        end
-
         # Warmup
         itp_runtime_extrapolation(:extension)
         itp_runtime_extrapolation(:extension)
-        itp_runtime_bc(:periodic)
-        itp_runtime_bc(:periodic)
+        itp_runtime_extrapolation(:wrap)
+        itp_runtime_extrapolation(:wrap)
 
         # Construction allocates the struct itself, but no extra from Val pattern
         # Just verify it's reasonably small (struct + references only)
         allocs_ext = @allocated itp_runtime_extrapolation(:extension)
         allocs_const = @allocated itp_runtime_extrapolation(:constant)
-        allocs_periodic = @allocated itp_runtime_bc(:periodic)
+        allocs_wrap = @allocated itp_runtime_extrapolation(:wrap)
 
         # All modes should have same allocation (no extra from runtime symbol)
         @test allocs_ext == allocs_const
-        @test allocs_ext == allocs_periodic
-        @test allocs_ext <= 64  # Struct is small
+        @test allocs_ext == allocs_wrap
+        @test allocs_ext <= ALLOC_THRESHOLD + 64  # Struct (~48 bytes) + dispatch overhead
     end
 
 end

@@ -207,7 +207,7 @@ For cyclic tridiagonal system A_cyc = A' + u * v^T, pre-computes:
 - LU factorization of modified tridiagonal A'
 - Vector q = A'^{-1} * u for Sherman-Morrison formula
 
-# Endpoint Convention (끝점 포함)
+# Endpoint Convention
 User provides N points where y[1] ≈ y[N]. Period T = x[N] - x[1].
 Internally uses N-1 intervals, with z[N] = z[1] for periodicity.
 """
@@ -455,14 +455,15 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
 - Thread-safe if different caches/workspaces are used per thread
 - Pattern: Solve system once -> evaluate at all query points
 """
-function cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T,X,F,Nothing},
+@inline function cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T,X,F,Nothing},
                        y::AbstractVector{T}, x_query::AbstractVector{T}; extrap::Symbol=:none) where {T<:AbstractFloat, X, F}
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
 
-    # Convert to Val via utility (validates and returns Val literal)
-    extrap_val = _to_extrapolation_val(extrap)
-    return _cubic_interp_impl!(output, cache, y, x_query, extrap_val)
+    # Manual dispatch to avoid union-splitting with 4 Val types
+    @_dispatch_extrap extrap => ev begin
+        _cubic_interp_impl!(output, cache, y, x_query, ev)
+    end
 end
 
 # Internal implementation with Val dispatch (type-stable)
@@ -483,7 +484,7 @@ end
 end
 
 # Periodic BC dispatch (extrapolation ignored - coordinates are wrapped)
-function cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T,X,F,PeriodicData{T}},
+@inline function cubic_interp!(output::AbstractVector{T}, cache::CubicSplineCache{T,X,F,PeriodicData{T}},
                        y::AbstractVector{T}, x_query::AbstractVector{T}; extrap::Symbol=:none) where {T<:AbstractFloat, X, F}
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
@@ -614,7 +615,7 @@ cubic_interp!(output, x, y, x_query)  # Auto-cached (default)
 cubic_interp!(output, x, y, x_query; extrap=:extension)  # Extend beyond domain
 ```
 """
-function cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T},
+@inline function cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T},
                        x_query::AbstractVector{T}; bc::Symbol=:natural, extrap::Symbol=:none, autocache::Bool=true) where {T<:AbstractFloat}
     bc in (:natural, :periodic) || throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
     extrap in (:none, :constant, :extension) || throw(ArgumentError("`extrap` must be :none, :constant, or :extension, got :$extrap"))
@@ -799,9 +800,10 @@ vals = itp.(query_points)  # Reuse z for all points
     # Solve for z coefficients (reuses cache workspaces)
     z = _solve_cubic_system!(cache.z_workspace, cache.d_workspace, cache, y)
 
-    # Convert to Val via utility (validates and returns Val literal)
-    extrap_val = _to_extrapolation_val(extrap)
-    return _eval_cubic_with_extrap(cache.x, y, cache.h, z, x_query, extrap_val)
+    # Manual dispatch to avoid union-splitting with 4 Val types
+    @_dispatch_extrap extrap => ev begin
+        _eval_cubic_with_extrap(cache.x, y, cache.h, z, x_query, ev)
+    end
 end
 
 # Periodic BC dispatch for scalar evaluation (extrapolation ignored)
@@ -1176,7 +1178,7 @@ function cubic_interp(
 end
 
 # In-place version - vector query
-function cubic_interp!(
+@inline function cubic_interp!(
     output::AbstractVector,
     x::AbstractVector{TX},
     y::AbstractVector{TY},
@@ -1190,7 +1192,7 @@ function cubic_interp!(
 end
 
 # In-place version - scalar query
-function cubic_interp!(
+@inline function cubic_interp!(
     output::AbstractVector,
     x::AbstractVector{TX},
     y::AbstractVector{TY},

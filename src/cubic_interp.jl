@@ -138,7 +138,7 @@ result2 = cubic_interp(cache, y2, [0.25, 0.75])
 ```
 """
 function CubicSplineCache(x::AbstractVector{T}; bc::Symbol=:natural) where {T<:AbstractFloat}
-    bc in (:natural, :periodic) || throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
+    _validate_bc(bc)
 
     if bc == :periodic
         return _build_periodic_cache(x)
@@ -573,8 +573,8 @@ result = cubic_interp(x, y, x_query; extrap=:extension)  # Extend beyond domain
 """
 function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
                       x_query::AbstractVector{T}; bc::Symbol=:natural, extrap::Symbol=:none, autocache::Bool=true) where {T<:AbstractFloat}
-    bc in (:natural, :periodic) || throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
-    extrap in (:none, :constant, :extension, :wrap) || throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
+    _validate_bc(bc)
+    _validate_extrap(extrap)
 
     if bc == :periodic
         # Validate periodic endpoints (once, zero runtime overhead)
@@ -617,8 +617,8 @@ cubic_interp!(output, x, y, x_query; extrap=:extension)  # Extend beyond domain
 """
 @inline function cubic_interp!(output::AbstractVector{T}, x::AbstractVector{T}, y::AbstractVector{T},
                        x_query::AbstractVector{T}; bc::Symbol=:natural, extrap::Symbol=:none, autocache::Bool=true) where {T<:AbstractFloat}
-    bc in (:natural, :periodic) || throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
-    extrap in (:none, :constant, :extension, :wrap) || throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
+    _validate_bc(bc)
+    _validate_extrap(extrap)
 
     if bc == :periodic
         _check_periodic_endpoints(y)
@@ -861,8 +861,8 @@ cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T},
 # Scalar query with autocache option
 function cubic_interp(x::AbstractVector{T}, y::AbstractVector{T},
                       x_query::T; bc::Symbol=:natural, extrap::Symbol=:none, autocache::Bool=true) where {T<:AbstractFloat}
-    bc in (:natural, :periodic) || throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
-    extrap in (:none, :constant, :extension, :wrap) || throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
+    _validate_bc(bc)
+    _validate_extrap(extrap)
 
     if bc == :periodic
         _check_periodic_endpoints(y)
@@ -1071,7 +1071,7 @@ function cubic_interp(
     autocache::Bool=true
 ) where {T<:AbstractFloat}
     # Validate bc (throws if invalid)
-    _to_bc_val(bc)
+    _validate_bc(bc)
 
     if bc == :periodic
         _check_periodic_endpoints(y)
@@ -1146,7 +1146,7 @@ function cubic_interp(
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
     # Validate bc (throws if invalid)
-    _to_bc_val(bc)
+    _validate_bc(bc)
 
     T = promote_type(TX, TY)
     FT = float(T)

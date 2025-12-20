@@ -184,42 +184,34 @@ No-op vector domain check for extrapolation modes other than `:none`.
 @inline _check_domain(::AbstractVector{FT}, ::AbstractVector{FT}, ::Val) where {FT<:AbstractFloat} = nothing
 
 # ========================================
-# Val Conversion Utilities (Type-Stable)
+# Validation Utilities
 # ========================================
 #
-# These utilities convert Symbol keywords to Val literals for type stability.
-# IMPORTANT: They return Val(:literal), NOT Val(symbol_variable).
-# This ensures zero-allocation when the compiler can inline and constant-fold.
+# Centralized validation for keyword arguments.
+# @inline ensures zero overhead - compiler inlines the check.
 
 """
-    _to_extrapolation_val(extrap::Symbol) -> Val
+    _validate_extrap(extrap::Symbol) -> Nothing
 
-Convert extrapolation symbol to Val literal.
+Validate extrapolation mode symbol. Throws `ArgumentError` if invalid.
 
-Returns one of: `Val(:none)`, `Val(:constant)`, `Val(:extension)`, `Val(:wrap)`
-
-Throws `ArgumentError` for invalid symbol.
+Valid options: `:none`, `:constant`, `:extension`, `:wrap`
 """
-@inline function _to_extrapolation_val(extrap::Symbol)
-    extrap === :none      && return Val(:none)
-    extrap === :constant  && return Val(:constant)
-    extrap === :extension && return Val(:extension)
-    extrap === :wrap      && return Val(:wrap)
+@inline function _validate_extrap(extrap::Symbol)
+    extrap in (:none, :constant, :extension, :wrap) && return nothing
     throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
 end
 
 """
-    _to_bc_val(bc::Symbol) -> Val
+    _validate_bc(bc::Symbol) -> Nothing
 
-Convert boundary condition symbol to Val literal for cubic interpolation.
+Validate boundary condition symbol for cubic interpolation.
+Throws `ArgumentError` if invalid.
 
-Returns one of: `Val(:natural)`, `Val(:periodic)`
-
-Throws `ArgumentError` for invalid symbol.
+Valid options: `:natural`, `:periodic`
 """
-@inline function _to_bc_val(bc::Symbol)
-    bc === :natural  && return Val(:natural)
-    bc === :periodic && return Val(:periodic)
+@inline function _validate_bc(bc::Symbol)
+    bc in (:natural, :periodic) && return nothing
     throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
 end
 

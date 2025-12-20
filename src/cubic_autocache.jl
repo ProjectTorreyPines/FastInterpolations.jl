@@ -1,5 +1,5 @@
 """
-    cubic_interp_autocache.jl
+    cubic_autocache.jl
 
 Automatic caching layer for cubic spline interpolation.
 Transparently reuses LU factorization for repeated x-grids.

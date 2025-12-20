@@ -14,7 +14,7 @@ include("cubic_types.jl")      # Type definitions (PeriodicData, CubicSplineCach
 include("cubic_solver.jl")     # Cache builders and system solvers
 include("cubic_eval.jl")       # Evaluation functions
 include("cubic_interp.jl")     # Public API
-include("cubic_interp_autocache.jl")
+include("cubic_autocache.jl")
 
 # Exports
 export linear_interp, linear_interp!, LinearInterpolant

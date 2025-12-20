@@ -192,29 +192,11 @@ No-op vector domain check for extrapolation modes other than `:none`.
 # This ensures zero-allocation when the compiler can inline and constant-fold.
 
 """
-    _to_linear_mode_val(bc::Symbol, extrap::Symbol) -> Val
-
-Convert linear interpolation mode symbols to Val literal.
-Periodic BC overrides extrapolation mode.
-
-Returns one of: `Val(:periodic)`, `Val(:none)`, `Val(:constant)`, `Val(:extension)`
-
-Throws `ArgumentError` for invalid symbols.
-"""
-@inline function _to_linear_mode_val(bc::Symbol, extrap::Symbol)
-    bc === :periodic      && return Val(:periodic)
-    extrap === :none      && return Val(:none)
-    extrap === :constant  && return Val(:constant)
-    extrap === :extension && return Val(:extension)
-    throw(ArgumentError("`extrap` must be :none, :constant, or :extension, got :$extrap"))
-end
-
-"""
     _to_extrapolation_val(extrap::Symbol) -> Val
 
 Convert extrapolation symbol to Val literal.
 
-Returns one of: `Val(:none)`, `Val(:constant)`, `Val(:extension)`
+Returns one of: `Val(:none)`, `Val(:constant)`, `Val(:extension)`, `Val(:wrap)`
 
 Throws `ArgumentError` for invalid symbol.
 """
@@ -222,7 +204,8 @@ Throws `ArgumentError` for invalid symbol.
     extrap === :none      && return Val(:none)
     extrap === :constant  && return Val(:constant)
     extrap === :extension && return Val(:extension)
-    throw(ArgumentError("`extrap` must be :none, :constant, or :extension, got :$extrap"))
+    extrap === :wrap      && return Val(:wrap)
+    throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
 end
 
 """
@@ -240,17 +223,66 @@ Throws `ArgumentError` for invalid symbol.
     throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
 end
 
+# ========================================
+# Dispatch Macros (Zero-Allocation Branching)
+# ========================================
+#
+# These macros expand to manual if-elseif blocks that avoid union-splitting issues.
+# Each branch calls with a concrete Val(:literal), ensuring zero-allocation dispatch.
+
 """
-    _to_linear_bc_val(bc::Symbol) -> Val
+    @_dispatch_extrap sym => varname body
 
-Convert boundary condition symbol to Val literal for linear interpolation.
+Dispatch on runtime extrapolation symbol, executing body with concrete Val type.
 
-Returns one of: `Val(:none)`, `Val(:periodic)`
+# Arguments
+- `sym => varname`: Pair of symbol variable and binding name for Val type
+- `body`: Expression to execute with `varname` bound to concrete Val
 
-Throws `ArgumentError` for invalid symbol.
-"""
-@inline function _to_linear_bc_val(bc::Symbol)
-    bc === :none     && return Val(:none)
-    bc === :periodic && return Val(:periodic)
-    throw(ArgumentError("bc must be :none or :periodic, got :$bc"))
+# Example
+```julia
+@_dispatch_extrap extrap => ev begin
+    _cubic_interp_impl!(output, cache, y, x_query, ev)
 end
+```
+
+Expands to:
+```julia
+let _mode = extrap
+    if _mode === :none
+        ev = Val(:none)
+        _cubic_interp_impl!(output, cache, y, x_query, ev)
+    elseif _mode === :constant
+        ...
+    end
+end
+```
+"""
+macro _dispatch_extrap(pair, body)
+    # Parse pair: extrap => ev becomes Expr(:call, :(=>), :extrap, :ev)
+    pair.head === :call && pair.args[1] === :(=>) ||
+        error("@_dispatch_extrap expects `sym => varname`, got: $pair")
+    sym = pair.args[2]
+    varname = pair.args[3]
+    evs = esc(varname)
+    quote
+        let _mode = $(esc(sym))
+            if _mode === :none
+                $evs = Val(:none)
+                $(esc(body))
+            elseif _mode === :constant
+                $evs = Val(:constant)
+                $(esc(body))
+            elseif _mode === :extension
+                $evs = Val(:extension)
+                $(esc(body))
+            elseif _mode === :wrap
+                $evs = Val(:wrap)
+                $(esc(body))
+            else
+                throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$_mode"))
+            end
+        end
+    end
+end
+

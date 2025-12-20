@@ -47,9 +47,10 @@ function linear_interp!(
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    # Convert to Val via utility (validates and returns Val literal)
-    extrap_val = _to_extrapolation_val(extrap)
-    return _linear_interp_loop!(output, x, y, x_targets, extrap_val)
+    # Manual dispatch to avoid union-splitting with 4 Val types
+    @_dispatch_extrap extrap => ev begin
+        _linear_interp_loop!(output, x, y, x_targets, ev)
+    end
 end
 
 # Internal loop with Val dispatch (type-stable)
@@ -71,9 +72,10 @@ end
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    # Convert to Val via utility (validates and returns Val literal)
-    extrap_val = _to_extrapolation_val(extrap)
-    return _linear_interp_loop!(output, x, y, x_targets, extrap_val)
+    # Manual dispatch to avoid union-splitting with 4 Val types
+    @_dispatch_extrap extrap => ev begin
+        _linear_interp_loop!(output, x, y, x_targets, ev)
+    end
 end
 
 # ========================================
@@ -136,9 +138,10 @@ end
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    # Convert to Val via utility (validates and returns Val literal)
-    extrap_val = _to_extrapolation_val(extrap)
-    return linear_interp(x, y, xi, extrap_val)
+    # Manual dispatch to avoid union-splitting with 4 Val types
+    @_dispatch_extrap extrap => ev begin
+        linear_interp(x, y, xi, ev)
+    end
 end
 
 # Specific method for AbstractRange{FT} (resolves ambiguity with Real wrappers)
@@ -150,9 +153,10 @@ end
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    # Convert to Val via utility (validates and returns Val literal)
-    extrap_val = _to_extrapolation_val(extrap)
-    return linear_interp(x, y, xi, extrap_val)
+    # Manual dispatch to avoid union-splitting with 4 Val types
+    @_dispatch_extrap extrap => ev begin
+        linear_interp(x, y, xi, ev)
+    end
 end
 
 # ========================================
@@ -299,9 +303,10 @@ function linear_interp!(
     y_float = FT.(y)  # Allocate once
     x_targets_float = FT.(x_targets)
 
-    # Convert to Val via utility (validates and returns Val literal)
-    extrap_val = _to_extrapolation_val(extrap)
-    return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, extrap_val)
+    # Manual dispatch to avoid union-splitting with 4 Val types
+    @_dispatch_extrap extrap => ev begin
+        _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, ev)
+    end
 end
 
 # Wrapper for AbstractVector with Real types (requires conversion)
@@ -320,9 +325,10 @@ function linear_interp!(
     y_float = FT.(y)  # Allocate once
     x_targets_float = FT.(x_targets)
 
-    # Convert to Val via utility (validates and returns Val literal)
-    extrap_val = _to_extrapolation_val(extrap)
-    return _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, extrap_val)
+    # Manual dispatch to avoid union-splitting with 4 Val types
+    @_dispatch_extrap extrap => ev begin
+        _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, ev)
+    end
 end
 
 # ========================================

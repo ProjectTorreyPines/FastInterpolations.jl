@@ -456,7 +456,7 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
 - Pattern: Solve system once -> evaluate at all query points
 """
 # Unified cubic_interp! for all BC types (Natural and Periodic)
-# Uses _solve_system!, _check_domain_if_needed, and _eval_with_bc for dispatch
+# Uses _solve_system!, _check_domain, and _eval_with_bc for dispatch
 @inline function cubic_interp!(
     output::AbstractVector{T},
     cache::CubicSplineCache{T,X,F,BC},
@@ -474,7 +474,7 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
     @_dispatch_extrap extrap => ev begin
         # CRITICAL: Vector-level domain check before loop (Natural BC only)
         # Periodic BC skips this (always wraps, never out of domain)
-        _check_domain_if_needed(cache, x_query, ev)
+        _check_domain(cache, x_query, ev)
 
         # Step 2: Evaluate at all query points
         # Optimization for :wrap - check if all queries are inside domain first
@@ -872,19 +872,11 @@ end
 end
 
 # ========================================
-# BC-Aware Domain Check Helper
+# BC-Aware Domain Check (cache dispatch)
 # ========================================
 
-"""
-    _check_domain_if_needed(cache, x_query, extrap_val)
-
-Conditionally check domain based on BC type.
-- Natural BC: Check domain (throws DomainError for extrap=:none)
-- Periodic BC: Skip (always wraps, never out of domain)
-
-Called before vector loops to enable @inbounds optimization.
-"""
-@inline function _check_domain_if_needed(
+# Natural BC: delegate to base _check_domain
+@inline function _check_domain(
     cache::CubicSplineCache{T,X,F,Nothing},
     x_query::AbstractVector{T},
     extrap_val::Val
@@ -892,12 +884,13 @@ Called before vector loops to enable @inbounds optimization.
     _check_domain(cache.x, x_query, extrap_val)
 end
 
-@inline function _check_domain_if_needed(
-    cache::CubicSplineCache{T,X,F,PeriodicData{T}},
+# Periodic BC: no-op (always wraps, never out of domain)
+@inline function _check_domain(
+    ::CubicSplineCache{T,X,F,PeriodicData{T}},
     ::AbstractVector{T},
     ::Val
 ) where {T<:AbstractFloat, X, F}
-    nothing  # Periodic BC always wraps - no domain check needed
+    nothing
 end
 
 """
@@ -1110,7 +1103,7 @@ end
 # Uses _cubic_vector_loop! for 2-stage :wrap optimization
 function (itp::CubicInterpolant{T})(xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
     xi_typed = S === T ? xi : T.(xi)
-    _check_domain_if_needed(itp.cache, xi_typed, itp.extrap)
+    _check_domain(itp.cache, xi_typed, itp.extrap)
     output = Vector{T}(undef, length(xi_typed))
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap)
     return output
@@ -1118,7 +1111,7 @@ end
 
 # Optimized path when xi element type matches T (zero conversion)
 function (itp::CubicInterpolant{T})(xi::AbstractVector{T}) where {T<:AbstractFloat}
-    _check_domain_if_needed(itp.cache, xi, itp.extrap)
+    _check_domain(itp.cache, xi, itp.extrap)
     output = Vector{T}(undef, length(xi))
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap)
     return output
@@ -1127,7 +1120,7 @@ end
 # In-place vector call - zero allocation
 function (itp::CubicInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat}
     @assert length(output) == length(xi) "output length must match xi length"
-    _check_domain_if_needed(itp.cache, xi, itp.extrap)
+    _check_domain(itp.cache, xi, itp.extrap)
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap)
     return output
 end
@@ -1136,7 +1129,7 @@ end
 function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     xi_typed = T.(xi)
-    _check_domain_if_needed(itp.cache, xi_typed, itp.extrap)
+    _check_domain(itp.cache, xi_typed, itp.extrap)
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap)
     return output
 end

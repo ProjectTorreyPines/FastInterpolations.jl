@@ -30,11 +30,12 @@ default(
 #=
 ## 1. Linear Interpolation: Extrapolation Methods
 
-When `bc=:none` (default), the `extrapolation` parameter controls
-out-of-domain behavior:
+The `extrap` parameter controls out-of-domain behavior:
 
-- `:extension` (default): Extends the boundary segments linearly
+- `:none` (default): Throws DomainError for out-of-domain queries
+- `:extension`: Extends the boundary segments linearly
 - `:constant`: Returns boundary values outside the domain
+- `:wrap`: Wraps coordinates to the domain (for periodic patterns)
 =#
 
 function demo_linear_extrapolation()
@@ -87,17 +88,17 @@ function demo_linear_extrapolation()
 end
 
 #=
-## 2. Linear Interpolation: Periodic Boundary Condition
+## 2. Linear Interpolation: Wrap Extrapolation
 
-When `bc=:periodic`, the function wraps query points to the domain [x[1], x[end]).
+When `extrap=:wrap`, the function wraps query points to the domain [x[1], x[end]).
 This is useful for periodic functions like sin, cos, or any cyclic data.
 
-Note: For periodic BC, ensure y[1] ≈ y[end] for smooth results.
+Note: For smooth wrapping, ensure y[1] ≈ y[end].
 =#
 
-function demo_linear_periodic()
+function demo_linear_wrap()
     println("\n" * "="^60)
-    println("2. Linear Interpolation: Periodic BC")
+    println("2. Linear Interpolation: Wrap Extrapolation")
     println("="^60)
 
     # Periodic data: one complete sine wave
@@ -108,15 +109,15 @@ function demo_linear_periodic()
     # Query points extending beyond the domain
     xq = range(-π, 3π, 300)
 
-    # Periodic BC vs Extension extrapolation
-    y_periodic = linear_interp(collect(x), collect(y), collect(xq); bc=:periodic)
+    # Wrap vs Extension extrapolation
+    y_wrap = linear_interp(collect(x), collect(y), collect(xq); extrap=:wrap)
     y_extension = linear_interp(collect(x), collect(y), collect(xq); extrap=:extension)
 
     # True sin function for reference
     y_true = sin.(xq)
 
     # Create plot
-    p = plot(title="Linear Interpolation: Periodic BC vs Extension",
+    p = plot(title="Linear Interpolation: Wrap vs Extension",
              xlabel="x", ylabel="y")
 
     # Shade extrapolation regions
@@ -125,8 +126,8 @@ function demo_linear_periodic()
 
     # Plot results
     plot!(p, xq, y_true, label="sin(x) reference", color=:lightgray, linewidth=3)
-    plot!(p, xq, y_periodic, label="bc=:periodic", color=:blue)
-    plot!(p, xq, y_extension, label="extrapolation=:extension",
+    plot!(p, xq, y_wrap, label="extrap=:wrap", color=:blue)
+    plot!(p, xq, y_extension, label="extrap=:extension",
           color=:red, linestyle=:dash)
 
     # Mark the domain
@@ -135,16 +136,16 @@ function demo_linear_periodic()
     # Original data points
     scatter!(p, x, y, label="data points", color=:black, markersize=5)
 
-    savefig(p, joinpath(@__DIR__, "linear_periodic.png"))
-    println("Saved: examples/linear_periodic.png")
+    savefig(p, joinpath(@__DIR__, "linear_wrap.png"))
+    println("Saved: examples/linear_wrap.png")
 
     println("""
 
     Usage:
-        # Periodic BC - wraps x to [x[1], x[end]) before interpolation
-        linear_interp(x, y, xq; bc=:periodic)
+        # Wrap extrapolation - wraps x to [x[1], x[end]) before interpolation
+        linear_interp(x, y, xq; extrap=:wrap)
 
-    Note: Ensure y[1] ≈ y[end] for smooth periodic interpolation.
+    Note: Ensure y[1] ≈ y[end] for smooth wrapping behavior.
     """)
 
     return p
@@ -241,9 +242,9 @@ function demo_c2_continuity()
     # Fine query grid for derivatives
     xq = range(-0.5, 2π + 0.5, 500)
 
-    # Interpolate with both BC types
-    y_natural = cubic_interp(collect(x), collect(y), collect(xq); bc=:natural)
-    y_periodic = cubic_interp(collect(x), collect(y), collect(xq); bc=:periodic)
+    # Interpolate with both BC types (use extrap=:extension to query outside domain)
+    y_natural = cubic_interp(collect(x), collect(y), collect(xq); bc=:natural, extrap=:extension)
+    y_periodic = cubic_interp(collect(x), collect(y), collect(xq); bc=:periodic)  # bc=:periodic always wraps
 
     # Numerical second derivative (curvature)
     function numerical_second_deriv(xq, yq)
@@ -316,12 +317,12 @@ function demo_callable()
     x = range(0.0, 2π, 51)
     y = sin.(x)
 
-    # Create interpolants (with different BC)
-    linear_natural = LinearInterpolant(collect(x), collect(y))
-    linear_periodic = LinearInterpolant(collect(x), collect(y); bc=:periodic)
+    # Create interpolants (with different extrapolation modes)
+    linear_ext = LinearInterpolant(collect(x), collect(y); extrap=:extension)
+    linear_wrap = LinearInterpolant(collect(x), collect(y); extrap=:wrap)
 
-    cubic_natural = cubic_interp(collect(x), collect(y))  # Returns CubicInterpolant
-    cubic_periodic = cubic_interp(collect(x), collect(y); bc=:periodic)
+    cubic_natural = cubic_interp(collect(x), collect(y); extrap=:extension)  # Returns CubicInterpolant
+    cubic_periodic = cubic_interp(collect(x), collect(y); bc=:periodic)  # bc=:periodic always wraps
 
     # Query at various points
     test_points = [-0.5, 0.5, π, 2π + 0.5]
@@ -329,12 +330,12 @@ function demo_callable()
     println("\nEvaluation at test points:")
     println("-"^60)
     println("  x\t\tLinear\t\tLinear\t\tCubic\t\tCubic")
-    println("  \t\t(natural)\t(periodic)\t(natural)\t(periodic)")
+    println("  \t\t(ext)\t\t(wrap)\t\t(natural)\t(periodic)")
     println("-"^60)
 
     for xi in test_points
-        v1 = linear_natural(xi)
-        v2 = linear_periodic(xi)
+        v1 = linear_ext(xi)
+        v2 = linear_wrap(xi)
         v3 = cubic_natural(xi)
         v4 = cubic_periodic(xi)
         println("  $(round(xi, digits=2))\t\t$(round(v1, digits=4))\t\t$(round(v2, digits=4))\t\t$(round(v3, digits=4))\t\t$(round(v4, digits=4))")
@@ -344,7 +345,7 @@ function demo_callable()
 
     Usage:
         # Create once
-        itp = LinearInterpolant(x, y; bc=:periodic)
+        itp = LinearInterpolant(x, y; extrap=:wrap)
         itp = cubic_interp(x, y; bc=:periodic)
 
         # Call multiple times (zero-allocation for scalar queries)
@@ -421,7 +422,7 @@ function main()
     println("="^60)
 
     demo_linear_extrapolation()
-    demo_linear_periodic()
+    demo_linear_wrap()
     demo_cubic_bc()
     demo_c2_continuity()
     demo_callable()

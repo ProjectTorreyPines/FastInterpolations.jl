@@ -443,3 +443,84 @@ end
         @test itp_lin(5.0) ≈ 25.0 atol=1
     end
 end
+
+@testset "Cubic Spline - Uncovered Paths" begin
+
+    @testset "cubic_interp! with cache and scalar query" begin
+        # Lines 154-164: cubic_interp!(output, cache, y, x_query::T)
+        x = collect(range(0.0, 1.0, 21))
+        y = sin.(2π .* x)
+        cache = CubicSplineCache(x)
+        output = zeros(1)
+
+        cubic_interp!(output, cache, y, 0.5)
+        @test output[1] ≈ sin(π) atol=1e-6
+
+        # Test with different extrap modes
+        cubic_interp!(output, cache, y, 0.25; extrap=:none)
+        @test isfinite(output[1])
+
+        cubic_interp!(output, cache, y, -0.1; extrap=:constant)
+        @test output[1] ≈ y[1]
+
+        cubic_interp!(output, cache, y, 1.1; extrap=:extension)
+        @test isfinite(output[1])
+    end
+
+    @testset "cubic_interp! with x,y,scalar and bc=:periodic" begin
+        # Lines 179-182: bc=:periodic branch in scalar cubic_interp!
+        x = collect(range(0.0, 2π, 21))
+        y = sin.(x)
+        y[end] = y[1]  # Ensure periodic
+        output = zeros(1)
+
+        cubic_interp!(output, x, y, π; bc=:periodic)
+        @test output[1] ≈ 0.0 atol=0.1
+
+        # Test with autocache=false
+        cubic_interp!(output, x, y, π; bc=:periodic, autocache=false)
+        @test output[1] ≈ 0.0 atol=0.1
+    end
+
+    @testset "cubic_interp! with x,y,scalar and autocache=false" begin
+        # Line 186: autocache=false branch
+        x = collect(range(0.0, 1.0, 21))
+        y = sin.(2π .* x)
+        output = zeros(1)
+
+        cubic_interp!(output, x, y, 0.5; autocache=false)
+        @test output[1] ≈ sin(π) atol=1e-6
+    end
+
+    @testset "cubic_interp with vector query and bc=:periodic" begin
+        # Lines 250-254: bc=:periodic in allocating vector API
+        x = collect(range(0.0, 2π, 31))
+        y = sin.(x)
+        y[end] = y[1]  # Ensure periodic
+        x_query = [π/2, π, 3π/2]
+
+        result = cubic_interp(x, y, x_query; bc=:periodic)
+        @test result[1] ≈ 1.0 atol=0.1  # sin(π/2) ≈ 1
+        @test result[2] ≈ 0.0 atol=0.1  # sin(π) ≈ 0
+        @test result[3] ≈ -1.0 atol=0.1  # sin(3π/2) ≈ -1
+
+        # Test with autocache=false
+        result2 = cubic_interp(x, y, x_query; bc=:periodic, autocache=false)
+        @test result2 ≈ result
+    end
+
+    @testset "Real wrapper 2-arg form with bc=:periodic" begin
+        # Lines 424-427: bc=:periodic in Real wrapper 2-arg form
+        x_int = 0:20
+        y_int = [sin(2π * i / 20) for i in x_int]
+        # y_int[end] ≈ y_int[1] (both ≈ 0)
+
+        itp = cubic_interp(x_int, y_int; bc=:periodic)
+        @test itp isa CubicInterpolant
+        @test itp(5.0) ≈ sin(π/2) atol=0.1  # sin(2π*5/20) = sin(π/2)
+
+        # Also test autocache=false path
+        itp2 = cubic_interp(x_int, y_int; bc=:periodic, autocache=false)
+        @test itp2(5.0) ≈ itp(5.0) atol=1e-10
+    end
+end

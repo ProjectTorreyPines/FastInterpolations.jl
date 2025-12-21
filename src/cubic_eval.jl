@@ -140,46 +140,6 @@ end
 end
 
 # ========================================
-# BC-Aware Domain Check
-# ========================================
-
-"Domain check for Natural BC (vector) - delegates to base _check_domain."
-@inline function _check_domain(
-    cache::CubicSplineCache{T,X,F,Nothing},
-    x_query::AbstractVector{T},
-    extrap_val::Val
-) where {T<:AbstractFloat, X, F}
-    _check_domain(cache.x, x_query, extrap_val)
-end
-
-"Domain check for Periodic BC (vector) - no-op (always wraps)."
-@inline function _check_domain(
-    ::CubicSplineCache{T,X,F,PeriodicData{T}},
-    ::AbstractVector{T},
-    ::Val
-) where {T<:AbstractFloat, X, F}
-    nothing
-end
-
-"Domain check for Natural BC (scalar) - delegates to base _check_domain."
-@inline function _check_domain(
-    cache::CubicSplineCache{T,X,F,Nothing},
-    xi::T,
-    extrap_val::Val
-) where {T<:AbstractFloat, X, F}
-    _check_domain(cache.x, xi, extrap_val)
-end
-
-"Domain check for Periodic BC (scalar) - no-op (always wraps)."
-@inline function _check_domain(
-    ::CubicSplineCache{T,X,F,PeriodicData{T}},
-    ::T,
-    ::Val
-) where {T<:AbstractFloat, X, F}
-    nothing
-end
-
-# ========================================
 # Vector Loop Functions
 # ========================================
 
@@ -192,7 +152,7 @@ end
     x_query::AbstractVector{T},
     ev::Val
 ) where {T<:AbstractFloat, X, F, BC}
-    _check_domain(cache, x_query, ev)
+    @boundscheck _check_domain(cache.x, x_query, ev)
     @inbounds for (k, xq) in enumerate(x_query)
         output[k] = _eval_with_bc(cache, y, cache.h, z, xq, ev)
     end
@@ -266,7 +226,7 @@ end
     z = _solve_system!(cache, y)
 
     @_dispatch_extrap extrap => ev begin
-        _check_domain(cache.x, x_query, ev)
+        @boundscheck _check_domain(cache.x, x_query, ev)
         _eval_with_bc(cache, y, cache.h, z, x_query, ev)
     end
 end

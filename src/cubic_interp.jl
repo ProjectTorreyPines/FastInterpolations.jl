@@ -299,14 +299,14 @@ end
 
 # Scalar call - hot path (zero-allocation)
 @inline function (itp::CubicInterpolant{T})(xi::T) where {T<:AbstractFloat}
-    @boundscheck _check_domain(itp.cache, xi, itp.extrap)
+    @boundscheck _check_domain(itp.cache.x, xi, itp.extrap)
     _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap)
 end
 
 # Real scalar wrapper
 @inline function (itp::CubicInterpolant{T})(xi::S) where {T<:AbstractFloat, S<:Real}
     xi_t = T(xi)
-    @boundscheck _check_domain(itp.cache, xi_t, itp.extrap)
+    @boundscheck _check_domain(itp.cache.x, xi_t, itp.extrap)
     _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi_t, itp.extrap)
 end
 
@@ -395,6 +395,11 @@ function cubic_interp(
 ) where {T<:AbstractFloat}
     _solve_system!(cache, y)
     z = copy(cache.z_workspace)
+
+    if cache.bc_data isa PeriodicData
+        _check_periodic_endpoints(y)
+        extrap = :wrap  # override extrap for periodic
+    end
 
     @_dispatch_extrap extrap => ev begin
         return CubicInterpolant(cache, y, z, ev)

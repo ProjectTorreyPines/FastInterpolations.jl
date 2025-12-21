@@ -49,12 +49,20 @@ function linear_interp!(
 
     # Manual dispatch to avoid union-splitting with 4 Val types
     @_dispatch_extrap extrap => ev begin
+        _check_domain(x, x_targets, ev)
         _linear_interp_loop!(output, x, y, x_targets, ev)
     end
 end
 
 # Internal loop with Val dispatch (type-stable)
-@inline function _linear_interp_loop!(output, x, y, x_targets, extrap_val::Val)
+@inline function _linear_interp_loop!(
+    output::AbstractVector{FT}, 
+    x::AbstractVector{FT}, 
+    y::AbstractVector{FT}, 
+    x_targets::AbstractVector{FT}, 
+    extrap_val::Val
+) where {FT<:AbstractFloat}
+    # @boundscheck _check_domain(x, x_targets, extrap_val)
     @inbounds for i in eachindex(x_targets, output)
         output[i] = linear_interp(x, y, x_targets[i], extrap_val)
     end
@@ -124,6 +132,7 @@ end
 
     # Manual dispatch to avoid union-splitting with 4 Val types
     @_dispatch_extrap extrap => ev begin
+        @boundscheck _check_domain(x, x_targets, ev)
         _linear_interp_loop!(output, x, y, x_targets, ev)
     end
 end
@@ -173,7 +182,7 @@ value = linear_interp(x_int, y_int, 5.5)  # Returns Float64 (not Int)
     extrap::Val
 )::FT where {FT<:AbstractFloat}
     # Domain check for :none extrapolation (before interval search)
-    _check_domain(x, xi, extrap)
+    @boundscheck _check_domain(x, xi, extrap)
     idx, x0, x1 = _find_interval_with_bounds(x, xi)
     α = _compute_alpha(x0, x1, xi, extrap)
     @inbounds return y[idx] * (one(FT) - α) + y[idx + 1] * α

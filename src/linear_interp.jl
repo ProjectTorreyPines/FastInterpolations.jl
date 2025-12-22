@@ -62,7 +62,6 @@ end
     x_targets::AbstractVector{FT}, 
     extrap_val::Val
 ) where {FT<:AbstractFloat}
-    # @boundscheck _check_domain(x, x_targets, extrap_val)
     @inbounds for i in eachindex(x_targets, output)
         output[i] = linear_interp(x, y, x_targets[i], extrap_val)
     end

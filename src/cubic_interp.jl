@@ -113,7 +113,6 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
     z = _solve_system!(cache, y)
 
     @_dispatch_extrap extrap => ev begin
-        _check_domain(cache, x_query, ev)
         _cubic_vector_loop!(output, cache, y, z, x_query, ev)
     end
 
@@ -139,6 +138,7 @@ In-place cubic spline interpolation with optional automatic caching.
 
     if bc == :periodic
         _check_periodic_endpoints(y)
+        extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
         return cubic_interp!(output, cache, y, x_query; extrap=extrap)
     elseif autocache
@@ -178,6 +178,7 @@ end
 
     if bc == :periodic
         _check_periodic_endpoints(y)
+        extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
     elseif autocache
         cache = get_cubic_cache(x, Val(:natural))
@@ -248,6 +249,7 @@ function cubic_interp(
 
     if bc == :periodic
         _check_periodic_endpoints(y)
+        extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
         return cubic_interp(cache, y, x_query; extrap=extrap)
     elseif autocache
@@ -277,6 +279,7 @@ function cubic_interp(
 
     if bc == :periodic
         _check_periodic_endpoints(y)
+        extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
         return cubic_interp_scalar(cache, y, x_query; extrap=extrap)
     elseif autocache
@@ -296,25 +299,26 @@ end
 
 # Scalar call - hot path (zero-allocation)
 @inline function (itp::CubicInterpolant{T})(xi::T) where {T<:AbstractFloat}
+    @boundscheck _check_domain(itp.cache.x, xi, itp.extrap)
     _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap)
 end
 
 # Real scalar wrapper
 @inline function (itp::CubicInterpolant{T})(xi::S) where {T<:AbstractFloat, S<:Real}
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, T(xi), itp.extrap)
+    xi_t = T(xi)
+    @boundscheck _check_domain(itp.cache.x, xi_t, itp.extrap)
+    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi_t, itp.extrap)
 end
 
 # Vector call
 function (itp::CubicInterpolant{T})(xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
     xi_typed = S === T ? xi : T.(xi)
-    _check_domain(itp.cache, xi_typed, itp.extrap)
     output = Vector{T}(undef, length(xi_typed))
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap)
     return output
 end
 
 function (itp::CubicInterpolant{T})(xi::AbstractVector{T}) where {T<:AbstractFloat}
-    _check_domain(itp.cache, xi, itp.extrap)
     output = Vector{T}(undef, length(xi))
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap)
     return output
@@ -323,7 +327,6 @@ end
 # In-place vector call
 function (itp::CubicInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat}
     @assert length(output) == length(xi) "output length must match xi length"
-    _check_domain(itp.cache, xi, itp.extrap)
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap)
     return output
 end
@@ -331,7 +334,6 @@ end
 function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     xi_typed = T.(xi)
-    _check_domain(itp.cache, xi_typed, itp.extrap)
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap)
     return output
 end
@@ -367,6 +369,7 @@ function cubic_interp(
 
     if bc == :periodic
         _check_periodic_endpoints(y)
+        extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
     else
         cache = autocache ? get_cubic_cache(x, Val(:natural)) : CubicSplineCache(x)
@@ -393,6 +396,11 @@ function cubic_interp(
     _solve_system!(cache, y)
     z = copy(cache.z_workspace)
 
+    if cache.bc_data isa PeriodicData
+        _check_periodic_endpoints(y)
+        extrap = :wrap  # override extrap for periodic
+    end
+
     @_dispatch_extrap extrap => ev begin
         return CubicInterpolant(cache, y, z, ev)
     end
@@ -415,6 +423,7 @@ function cubic_interp(
 
     if bc == :periodic
         _check_periodic_endpoints(y_float)
+        extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x_float, Val(:periodic)) : CubicSplineCache(x_float; bc=:periodic)
     else
         cache = autocache ? get_cubic_cache(x_float, Val(:natural)) : CubicSplineCache(x_float)

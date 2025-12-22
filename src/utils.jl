@@ -155,7 +155,7 @@ that do a single upfront check via the vector dispatch.
 """
 @inline function _check_domain(x::AbstractVector{FT}, xi::FT, ::Val{:none}) where {FT<:AbstractFloat}
     x_min, x_max = first(x), last(x)
-    @boundscheck (xi < x_min || xi > x_max) && throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
+    (xi < x_min || xi > x_max) && throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
     return nothing
 end
 

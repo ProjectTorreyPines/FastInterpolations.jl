@@ -49,12 +49,19 @@ function linear_interp!(
 
     # Manual dispatch to avoid union-splitting with 4 Val types
     @_dispatch_extrap extrap => ev begin
+        @boundscheck _check_domain(x, x_targets, ev)
         _linear_interp_loop!(output, x, y, x_targets, ev)
     end
 end
 
 # Internal loop with Val dispatch (type-stable)
-@inline function _linear_interp_loop!(output, x, y, x_targets, extrap_val::Val)
+@inline function _linear_interp_loop!(
+    output::AbstractVector{FT}, 
+    x::AbstractVector{FT}, 
+    y::AbstractVector{FT}, 
+    x_targets::AbstractVector{FT}, 
+    extrap_val::Val
+) where {FT<:AbstractFloat}
     @inbounds for i in eachindex(x_targets, output)
         output[i] = linear_interp(x, y, x_targets[i], extrap_val)
     end
@@ -124,6 +131,7 @@ end
 
     # Manual dispatch to avoid union-splitting with 4 Val types
     @_dispatch_extrap extrap => ev begin
+        @boundscheck _check_domain(x, x_targets, ev)
         _linear_interp_loop!(output, x, y, x_targets, ev)
     end
 end
@@ -173,7 +181,7 @@ value = linear_interp(x_int, y_int, 5.5)  # Returns Float64 (not Int)
     extrap::Val
 )::FT where {FT<:AbstractFloat}
     # Domain check for :none extrapolation (before interval search)
-    _check_domain(x, xi, extrap)
+    @boundscheck _check_domain(x, xi, extrap)
     idx, x0, x1 = _find_interval_with_bounds(x, xi)
     α = _compute_alpha(x0, x1, xi, extrap)
     @inbounds return y[idx] * (one(FT) - α) + y[idx + 1] * α
@@ -329,7 +337,7 @@ end
 
 # Internal helper for Real wrappers (type-stable)
 @inline function _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, extrap_val::Val)
-    _check_domain(x_float, x_targets_float, extrap_val)
+    @boundscheck _check_domain(x_float, x_targets_float, extrap_val)
     @inbounds for i in eachindex(x_targets_float, output)
         output[i] = linear_interp(x_float, y_float, x_targets_float[i], extrap_val)
     end
@@ -484,7 +492,7 @@ end
 # Vector call - optimized to avoid type reflection
 function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
     xi_typed = S === T ? xi : T.(xi)
-    _check_domain(itp.x, xi_typed, itp.mode)
+    @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
     output = Vector{T}(undef, length(xi_typed))
     @inbounds for i in eachindex(xi_typed, output)
         output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode)
@@ -494,7 +502,7 @@ end
 
 # Optimized path when xi element type matches T (zero conversion)
 function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
-    _check_domain(itp.x, xi, itp.mode)
+    @boundscheck _check_domain(itp.x, xi, itp.mode)
     output = Vector{T}(undef, length(xi))
     @inbounds for i in eachindex(xi, output)
         output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode)
@@ -505,7 +513,7 @@ end
 # In-place vector call - zero allocation
 function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
     @assert length(output) == length(xi) "output length must match xi length"
-    _check_domain(itp.x, xi, itp.mode)
+    @boundscheck _check_domain(itp.x, xi, itp.mode)
     @inbounds for i in eachindex(xi, output)
         output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode)
     end
@@ -516,7 +524,7 @@ end
 function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     xi_typed = T.(xi)
-    _check_domain(itp.x, xi_typed, itp.mode)
+    @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
     @inbounds for i in eachindex(xi_typed, output)
         output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode)
     end

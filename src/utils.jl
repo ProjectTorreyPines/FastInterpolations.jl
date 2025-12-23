@@ -223,9 +223,10 @@ Valid options: `:natural`, `:periodic`, `:clamped`
     throw(ArgumentError("bc must be :natural, :periodic, or :clamped, got :$bc"))
 end
 
-# Accept AbstractBC and Tuple{AbstractBC, AbstractBC} as valid BC specifications
-@inline _validate_bc(::AbstractBC) = nothing
-@inline _validate_bc(::Tuple{<:AbstractBC, <:AbstractBC}) = nothing
+# Accept BC types: PointBC, BCPair, PeriodicBC
+@inline _validate_bc(::PointBC) = nothing
+@inline _validate_bc(::BCPair) = nothing
+@inline _validate_bc(::PeriodicBC) = nothing
 
 # ========================================
 # Dispatch Macros (Zero-Allocation Branching)

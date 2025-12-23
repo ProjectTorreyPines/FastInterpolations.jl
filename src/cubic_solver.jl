@@ -115,7 +115,7 @@ function _build_derivative_bc_cache(
     x::AbstractVector{T},
     left_bc::L,
     right_bc::R
-) where {T<:AbstractFloat, L<:AbstractBC{T}, R<:AbstractBC{T}}
+) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     n = length(x) - 1
 
     # Compute grid spacing h[i] = x[i+1] - x[i]
@@ -149,7 +149,7 @@ function _build_derivative_bc_cache(
     d_workspace = Vector{T}(undef, n + 1)
     z_workspace = Vector{T}(undef, n + 1)
 
-    bc_data = DerivativeBCData(left_bc, right_bc)
+    bc_data = BCPair(left_bc, right_bc)
 
     return CubicSplineCache(x, h[1:n+1], lu_factor, d_workspace, z_workspace, bc_data)
 end
@@ -199,8 +199,8 @@ Compute RHS vector for generic derivative BC system in-place.
 """
 @inline function compute_rhs!(
     d::AbstractVector{T}, y::AbstractVector{T}, h::AbstractVector{T},
-    bc_data::DerivativeBCData{T,L,R}
-) where {T<:AbstractFloat, L<:AbstractBC{T}, R<:AbstractBC{T}}
+    bc_data::BCPair{T,L,R}
+) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     n = length(y) - 1
     _compute_rhs_first!(d, bc_data.left, y, h)
     @inbounds for i in 2:n
@@ -280,9 +280,9 @@ end
 
 "Solve cubic spline system (Generic Derivative BC)."
 @inline function _solve_system!(
-    cache::CubicSplineCache{T,X,F,DerivativeBCData{T,L,R}},
+    cache::CubicSplineCache{T,X,F,BCPair{T,L,R}},
     y::AbstractVector{T}
-) where {T<:AbstractFloat, X, F, L<:AbstractBC{T}, R<:AbstractBC{T}}
+) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}}
     compute_rhs!(cache.d_workspace, y, cache.h, cache.bc_data)
     ldiv!(cache.z_workspace, cache.lu_factor, cache.d_workspace)
     return cache.z_workspace
@@ -293,11 +293,11 @@ Solve cubic spline system with BC value override (for time-varying BC).
 The BC types must match the cache BC types - only values can differ.
 """
 @inline function _solve_system!(
-    cache::CubicSplineCache{T,X,F,DerivativeBCData{T,L,R}},
+    cache::CubicSplineCache{T,X,F,BCPair{T,L,R}},
     y::AbstractVector{T},
     bc::Tuple{L,R}  # Must match cache BC types!
-) where {T<:AbstractFloat, X, F, L<:AbstractBC{T}, R<:AbstractBC{T}}
-    effective_bc = DerivativeBCData(bc[1], bc[2])
+) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}}
+    effective_bc = BCPair(bc[1], bc[2])
     compute_rhs!(cache.d_workspace, y, cache.h, effective_bc)
     ldiv!(cache.z_workspace, cache.lu_factor, cache.d_workspace)
     return cache.z_workspace

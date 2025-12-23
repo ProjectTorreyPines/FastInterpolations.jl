@@ -15,6 +15,97 @@ const ATOL = 1e-14
 @testset "Generic Boundary Conditions" begin
 
     # ========================================
+    # Type Hierarchy Tests
+    # ========================================
+    @testset "BC Type Hierarchy" begin
+        # PointBC is abstract parent of D1, D2
+        @test D1{Float64} <: FastInterpolations.PointBC{Float64}
+        @test D2{Float64} <: FastInterpolations.PointBC{Float64}
+        @test D1{Float32} <: FastInterpolations.PointBC{Float32}
+        @test D2{Float32} <: FastInterpolations.PointBC{Float32}
+
+        # PointBC <: AbstractBC
+        @test FastInterpolations.PointBC{Float64} <: AbstractBC{Float64}
+
+        # BCPair <: AbstractBC
+        @test BCPair{Float64, D1{Float64}, D2{Float64}} <: AbstractBC{Float64}
+
+        # PeriodicBC <: AbstractBC
+        @test PeriodicBC{Float64} <: AbstractBC{Float64}
+        @test PeriodicBC{Float32} <: AbstractBC{Float32}
+    end
+
+    @testset "BCPair Construction" begin
+        # Direct construction
+        bc_pair = BCPair(D1(0.5), D2(1.0))
+        @test bc_pair isa BCPair{Float64, D1{Float64}, D2{Float64}}
+        @test bc_pair.left.val == 0.5
+        @test bc_pair.right.val == 1.0
+
+        # Tuple constructor
+        bc_from_tuple = BCPair((D1(0.5), D2(1.0)))
+        @test bc_from_tuple isa BCPair{Float64, D1{Float64}, D2{Float64}}
+        @test bc_from_tuple.left.val == bc_pair.left.val
+        @test bc_from_tuple.right.val == bc_pair.right.val
+
+        # Float32
+        bc_f32 = BCPair(D1(0.5f0), D2(1.0f0))
+        @test bc_f32 isa BCPair{Float32, D1{Float32}, D2{Float32}}
+    end
+
+    @testset "PeriodicBC Construction" begin
+        # Default (Float64)
+        pbc = PeriodicBC()
+        @test pbc isa PeriodicBC{Float64}
+
+        # Explicit Float64
+        pbc64 = PeriodicBC{Float64}()
+        @test pbc64 isa PeriodicBC{Float64}
+
+        # Float32
+        pbc32 = PeriodicBC{Float32}()
+        @test pbc32 isa PeriodicBC{Float32}
+    end
+
+    @testset "PeriodicBC in cubic_interp" begin
+        x = range(0.0, 2π, 51)
+        y = sin.(x)  # sin is periodic with period 2π
+
+        # Using PeriodicBC type should work like :periodic symbol
+        result_symbol = cubic_interp(x, y, π/4; bc=:periodic)
+        result_type = cubic_interp(x, y, π/4; bc=PeriodicBC())
+        @test result_symbol ≈ result_type rtol=RTOL atol=ATOL
+
+        # Vector query
+        xi = [π/4, π/2, 3π/4]
+        result_symbol_vec = cubic_interp(x, y, xi; bc=:periodic)
+        result_type_vec = cubic_interp(x, y, xi; bc=PeriodicBC())
+        @test result_symbol_vec ≈ result_type_vec rtol=RTOL atol=ATOL
+
+        # CubicInterpolant (2-arg form)
+        itp_symbol = cubic_interp(x, y; bc=:periodic)
+        itp_type = cubic_interp(x, y; bc=PeriodicBC())
+        @test itp_symbol(π/3) ≈ itp_type(π/3) rtol=RTOL atol=ATOL
+
+        # In-place version
+        output1 = zeros(3)
+        output2 = zeros(3)
+        cubic_interp!(output1, collect(x), collect(y), xi; bc=:periodic)
+        cubic_interp!(output2, collect(x), collect(y), xi; bc=PeriodicBC())
+        @test output1 ≈ output2 rtol=RTOL atol=ATOL
+    end
+
+    @testset "Type Aliases" begin
+        # NaturalBCPair
+        natural = BCPair(D2(0.0), D2(0.0))
+        @test natural isa FastInterpolations.NaturalBCPair{Float64}
+
+        # ClampedBCPair
+        clamped = BCPair(D1(0.0), D1(0.0))
+        @test clamped isa FastInterpolations.ClampedBCPair{Float64}
+    end
+
+    # ========================================
     # Basic Functionality Tests
     # ========================================
     @testset "Basic BC Type Construction" begin
@@ -38,22 +129,22 @@ const ATOL = 1e-14
 
         # :natural == D2(0), D2(0)
         r_natural = cubic_interp(x, y, xi; bc=:natural)
-        r_d2_zero = cubic_interp(x, y, xi; bc=(D2(0.0), D2(0.0)))
+        r_d2_zero = cubic_interp(x, y, xi; bc=BCPair(D2(0.0), D2(0.0)))
         @test r_natural ≈ r_d2_zero rtol=RTOL atol=ATOL
 
         # :clamped == D1(0), D1(0)
         r_clamped = cubic_interp(x, y, xi; bc=:clamped)
-        r_d1_zero = cubic_interp(x, y, xi; bc=(D1(0.0), D1(0.0)))
+        r_d1_zero = cubic_interp(x, y, xi; bc=BCPair(D1(0.0), D1(0.0)))
         @test r_clamped ≈ r_d1_zero rtol=RTOL atol=ATOL
 
         # Single D1/D2 should apply to both ends
         r_single_d1 = cubic_interp(x, y, xi; bc=D1(0.5))
-        r_tuple_d1 = cubic_interp(x, y, xi; bc=(D1(0.5), D1(0.5)))
-        @test r_single_d1 ≈ r_tuple_d1 rtol=RTOL atol=ATOL
+        r_bcpair_d1 = cubic_interp(x, y, xi; bc=BCPair(D1(0.5), D1(0.5)))
+        @test r_single_d1 ≈ r_bcpair_d1 rtol=RTOL atol=ATOL
 
         r_single_d2 = cubic_interp(x, y, xi; bc=D2(1.0))
-        r_tuple_d2 = cubic_interp(x, y, xi; bc=(D2(1.0), D2(1.0)))
-        @test r_single_d2 ≈ r_tuple_d2 rtol=RTOL atol=ATOL
+        r_bcpair_d2 = cubic_interp(x, y, xi; bc=BCPair(D2(1.0), D2(1.0)))
+        @test r_single_d2 ≈ r_bcpair_d2 rtol=RTOL atol=ATOL
     end
 
     @testset "Different BC Values Give Different Results" begin
@@ -73,8 +164,8 @@ const ATOL = 1e-14
         @test r3 != r4
 
         # Mixed BC
-        r5 = cubic_interp(x, y, xi; bc=(D1(0.0), D2(0.0)))
-        r6 = cubic_interp(x, y, xi; bc=(D1(5.0), D2(0.0)))
+        r5 = cubic_interp(x, y, xi; bc=BCPair(D1(0.0), D2(0.0)))
+        r6 = cubic_interp(x, y, xi; bc=BCPair(D1(5.0), D2(0.0)))
         @test r5 != r6
     end
 
@@ -100,7 +191,7 @@ const ATOL = 1e-14
 
         @testset "D2, D2 (second derivative BC)" begin
             # Provide exact second derivatives at both ends
-            bc = (D2(f_double_prime), D2(f_double_prime))
+            bc = BCPair(D2(f_double_prime), D2(f_double_prime))
             result = cubic_interp(x, y, xi; bc=bc)
             expected = f.(xi)
             @test result ≈ expected rtol=RTOL atol=ATOL
@@ -109,7 +200,7 @@ const ATOL = 1e-14
         @testset "D1, D1 (first derivative BC)" begin
             # Provide exact first derivatives at endpoints
             x0, xn = first(x), last(x)
-            bc = (D1(f_prime(x0)), D1(f_prime(xn)))
+            bc = BCPair(D1(f_prime(x0)), D1(f_prime(xn)))
             result = cubic_interp(x, y, xi; bc=bc)
             expected = f.(xi)
             @test result ≈ expected rtol=RTOL atol=ATOL
@@ -117,7 +208,7 @@ const ATOL = 1e-14
 
         @testset "D1, D2 (mixed BC)" begin
             x0, xn = first(x), last(x)
-            bc = (D1(f_prime(x0)), D2(f_double_prime))
+            bc = BCPair(D1(f_prime(x0)), D2(f_double_prime))
             result = cubic_interp(x, y, xi; bc=bc)
             expected = f.(xi)
             @test result ≈ expected rtol=RTOL atol=ATOL
@@ -125,7 +216,7 @@ const ATOL = 1e-14
 
         @testset "D2, D1 (mixed BC reversed)" begin
             x0, xn = first(x), last(x)
-            bc = (D2(f_double_prime), D1(f_prime(xn)))
+            bc = BCPair(D2(f_double_prime), D1(f_prime(xn)))
             result = cubic_interp(x, y, xi; bc=bc)
             expected = f.(xi)
             @test result ≈ expected rtol=RTOL atol=ATOL
@@ -148,21 +239,21 @@ const ATOL = 1e-14
         xi = [-0.7, 0.0, 0.5, 1.3, 1.9]
 
         @testset "D1, D1 (first derivative BC)" begin
-            bc = (D1(f_prime(x0)), D1(f_prime(xn)))
+            bc = BCPair(D1(f_prime(x0)), D1(f_prime(xn)))
             result = cubic_interp(x, y, xi; bc=bc)
             expected = f.(xi)
             @test result ≈ expected rtol=RTOL atol=ATOL
         end
 
         @testset "D2, D2 (second derivative BC)" begin
-            bc = (D2(f_double_prime(x0)), D2(f_double_prime(xn)))
+            bc = BCPair(D2(f_double_prime(x0)), D2(f_double_prime(xn)))
             result = cubic_interp(x, y, xi; bc=bc)
             expected = f.(xi)
             @test result ≈ expected rtol=RTOL atol=ATOL
         end
 
         @testset "D1, D2 (mixed BC)" begin
-            bc = (D1(f_prime(x0)), D2(f_double_prime(xn)))
+            bc = BCPair(D1(f_prime(x0)), D2(f_double_prime(xn)))
             result = cubic_interp(x, y, xi; bc=bc)
             expected = f.(xi)
             @test result ≈ expected rtol=RTOL atol=ATOL
@@ -182,9 +273,9 @@ const ATOL = 1e-14
 
         @test cubic_interp(x, y, xi; bc=:natural) ≈ expected rtol=RTOL atol=ATOL
         @test cubic_interp(x, y, xi; bc=:clamped) ≈ expected rtol=RTOL atol=ATOL
-        @test cubic_interp(x, y, xi; bc=(D1(slope), D1(slope))) ≈ expected rtol=RTOL atol=ATOL
-        @test cubic_interp(x, y, xi; bc=(D2(0.0), D2(0.0))) ≈ expected rtol=RTOL atol=ATOL
-        @test cubic_interp(x, y, xi; bc=(D1(slope), D2(0.0))) ≈ expected rtol=RTOL atol=ATOL
+        @test cubic_interp(x, y, xi; bc=BCPair(D1(slope), D1(slope))) ≈ expected rtol=RTOL atol=ATOL
+        @test cubic_interp(x, y, xi; bc=BCPair(D2(0.0), D2(0.0))) ≈ expected rtol=RTOL atol=ATOL
+        @test cubic_interp(x, y, xi; bc=BCPair(D1(slope), D2(0.0))) ≈ expected rtol=RTOL atol=ATOL
     end
 
     # ========================================
@@ -200,8 +291,8 @@ const ATOL = 1e-14
         result_d1 = cubic_interp(cache_d1, y, 0.5)
         @test isfinite(result_d1)
 
-        # Create cache with tuple BC
-        cache_mixed = CubicSplineCache(x; bc=(D1(1.0), D2(0.0)))
+        # Create cache with BCPair
+        cache_mixed = CubicSplineCache(x; bc=BCPair(D1(1.0), D2(0.0)))
         @test cache_mixed isa CubicSplineCache
         result_mixed = cubic_interp(cache_mixed, y, 0.5)
         @test isfinite(result_mixed)
@@ -226,7 +317,7 @@ const ATOL = 1e-14
         @test isfinite(itp_d1(0.5))
 
         # Create interpolant with mixed BC
-        itp_mixed = cubic_interp(x, y; bc=(D1(π), D2(0.0)))
+        itp_mixed = cubic_interp(x, y; bc=BCPair(D1(π), D2(0.0)))
         @test itp_mixed isa CubicInterpolant
         @test isfinite(itp_mixed(0.5))
 
@@ -245,7 +336,7 @@ const ATOL = 1e-14
         y = sin.(π .* x)
 
         # D1/D2 with Float32
-        result = cubic_interp(x, y, 0.5f0; bc=(D1(0.0f0), D2(0.0f0)))
+        result = cubic_interp(x, y, 0.5f0; bc=BCPair(D1(0.0f0), D2(0.0f0)))
         @test result isa Float32
         @test isfinite(result)
 
@@ -266,7 +357,7 @@ const ATOL = 1e-14
         @test cubic_interp(x, y, 1.0; bc=D1(0.0)) ≈ y[end] rtol=RTOL atol=ATOL
 
         # Vector query
-        result = cubic_interp(x, y, [0.25, 0.5, 0.75]; bc=(D1(0.5), D2(-1.0)))
+        result = cubic_interp(x, y, [0.25, 0.5, 0.75]; bc=BCPair(D1(0.5), D2(-1.0)))
         @test length(result) == 3
         @test all(isfinite, result)
 

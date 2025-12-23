@@ -39,11 +39,11 @@ mutable struct CacheEntryRange{T<:AbstractFloat, BC, R<:AbstractRange{T}}
     spline::CubicSplineCache{T, R, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, BC}
 end
 
-# Type aliases for Natural BC (using DerivativeBCData with D2(0) at both ends)
-const CacheEntryVecF64 = CacheEntryVec{Float64, NaturalBCData{Float64}}
-const CacheEntryVecF32 = CacheEntryVec{Float32, NaturalBCData{Float32}}
-const CacheEntryRangeF64 = CacheEntryRange{Float64, NaturalBCData{Float64}, _StepRangeLen_F64}
-const CacheEntryRangeF32 = CacheEntryRange{Float32, NaturalBCData{Float32}, _StepRangeLen_F32}
+# Type aliases for Natural BC (using BCPair with D2(0) at both ends)
+const CacheEntryVecF64 = CacheEntryVec{Float64, NaturalBCPair{Float64}}
+const CacheEntryVecF32 = CacheEntryVec{Float32, NaturalBCPair{Float32}}
+const CacheEntryRangeF64 = CacheEntryRange{Float64, NaturalBCPair{Float64}, _StepRangeLen_F64}
+const CacheEntryRangeF32 = CacheEntryRange{Float32, NaturalBCPair{Float32}, _StepRangeLen_F32}
 
 # Type aliases for Periodic BC
 const CacheEntryVecF64Periodic = CacheEntryVec{Float64, PeriodicData{Float64}}

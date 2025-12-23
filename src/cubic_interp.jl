@@ -60,16 +60,17 @@ This factorization can be reused for interpolating different y vectors.
 - `bc`: Boundary condition specification:
   - `Symbol`: `:natural`, `:clamped`, or `:periodic`
   - `D1(val)` or `D2(val)`: Symmetric BC (same at both ends)
-  - `(D1(v1), D2(v2))`: Asymmetric BC tuple
+  - `BCPair(D1(v1), D2(v2))`: Asymmetric BC pair
+  - `PeriodicBC()`: Periodic boundary condition
 
 # Example
 ```julia
 x = range(0.0, 1.0, 51)
-cache = CubicSplineCache(x)                         # Natural BC (default)
-cache = CubicSplineCache(x; bc=:clamped)            # Zero slope at both ends
-cache = CubicSplineCache(x; bc=D1(0.5))             # Slope=0.5 at both ends
-cache = CubicSplineCache(x; bc=(D1(0.5), D2(0)))    # Mixed: slope left, natural right
-cache_periodic = CubicSplineCache(x; bc=:periodic)  # Periodic BC
+cache = CubicSplineCache(x)                              # Natural BC (default)
+cache = CubicSplineCache(x; bc=:clamped)                 # Zero slope at both ends
+cache = CubicSplineCache(x; bc=D1(0.5))                  # Slope=0.5 at both ends
+cache = CubicSplineCache(x; bc=BCPair(D1(0.5), D2(0)))   # Mixed: slope left, natural right
+cache_periodic = CubicSplineCache(x; bc=:periodic)       # Periodic BC
 
 # Reuse for multiple y vectors
 y1 = sin.(x)
@@ -82,21 +83,20 @@ function CubicSplineCache(x::AbstractVector{T}; bc=:natural) where {T<:AbstractF
     _validate_bc(bc)
 
     # Periodic BC uses separate Sherman-Morrison path
-    if bc === :periodic
+    if bc === :periodic || bc isa PeriodicBC
         return _build_periodic_cache(x)
     end
 
-    # Normalize BC to (left, right) tuple
+    # Normalize BC to BCPair or PeriodicBC
     bc_normalized = _normalize_bc(bc, T)
 
-    # Safety check for periodic from _normalize_bc
-    if bc_normalized === :periodic
+    # Check for PeriodicBC from normalization
+    if bc_normalized isa PeriodicBC
         return _build_periodic_cache(x)
     end
 
-    # All non-periodic BC use unified DerivativeBCData path
-    left_bc, right_bc = bc_normalized
-    return _build_derivative_bc_cache(x, left_bc, right_bc)
+    # All non-periodic BC use unified BCPair path
+    return _build_derivative_bc_cache(x, bc_normalized.left, bc_normalized.right)
 end
 
 # ========================================
@@ -153,7 +153,7 @@ In-place cubic spline interpolation with optional automatic caching.
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    if bc === :periodic
+    if bc === :periodic || bc isa PeriodicBC
         _check_periodic_endpoints(y)
         extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
@@ -195,7 +195,7 @@ end
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    if bc === :periodic
+    if bc === :periodic || bc isa PeriodicBC
         _check_periodic_endpoints(y)
         extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
@@ -268,7 +268,7 @@ function cubic_interp(
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    if bc === :periodic
+    if bc === :periodic || bc isa PeriodicBC
         _check_periodic_endpoints(y)
         extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
@@ -300,7 +300,7 @@ function cubic_interp(
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    if bc === :periodic
+    if bc === :periodic || bc isa PeriodicBC
         _check_periodic_endpoints(y)
         extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
@@ -392,7 +392,7 @@ function cubic_interp(
 ) where {T<:AbstractFloat}
     _validate_bc(bc)
 
-    if bc === :periodic
+    if bc === :periodic || bc isa PeriodicBC
         _check_periodic_endpoints(y)
         extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
@@ -450,7 +450,7 @@ function cubic_interp(
     x_float = _to_float(x, FT)
     y_float = FT.(y)
 
-    if bc == :periodic
+    if bc === :periodic || bc isa PeriodicBC
         _check_periodic_endpoints(y_float)
         extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x_float, Val(:periodic)) : CubicSplineCache(x_float; bc=:periodic)

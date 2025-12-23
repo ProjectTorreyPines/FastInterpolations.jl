@@ -5,7 +5,7 @@
 # Separated from cubic_interp.jl for clarity.
 # Include order: utils.jl → bc_types.jl → cubic_types.jl → cubic_solver.jl → cubic_interp.jl
 
-# Boundary condition types (AbstractBC, D1, D2, DerivativeBCData) are defined in bc_types.jl
+# Boundary condition types (AbstractBC, PointBC, D1, D2, BCPair, PeriodicBC) are defined in bc_types.jl
 
 """
     PeriodicData{T}
@@ -37,7 +37,7 @@ Cache structure for cubic spline interpolation with reusable LU factorization.
 - `T`: Float type (Float32 or Float64)
 - `X`: Grid type (Vector{T} or AbstractRange{T})
 - `F`: LU factorization type
-- `BC`: Boundary condition data type (Nothing for natural, PeriodicData{T} for periodic)
+- `BC`: Boundary condition data type (BCPair{T,L,R} for derivative BC, PeriodicData{T} for periodic)
 
 # Fields
 - `x::X`: Grid points (immutable after construction, can be Range or Vector)
@@ -45,7 +45,7 @@ Cache structure for cubic spline interpolation with reusable LU factorization.
 - `lu_factor::F`: LU factorization of tridiagonal matrix A
 - `d_workspace::Vector{T}`: Workspace for RHS vector computation
 - `z_workspace::Vector{T}`: Workspace for solution vector
-- `bc_data::BC`: Boundary condition data (Nothing for natural, PeriodicData for periodic)
+- `bc_data::BC`: Boundary condition data (BCPair for derivative BC, PeriodicData for periodic)
 
 # Notes
 The LU factorization depends ONLY on x geometry and can be reused for:

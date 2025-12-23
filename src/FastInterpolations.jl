@@ -26,6 +26,6 @@ export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!, cubic_ca
 export get_cubic_cache
 
 # Boundary condition types
-export AbstractBC, D1, D2, DerivativeBCData
+export AbstractBC, PointBC, D1, D2, BCPair, PeriodicBC
 
 end # module

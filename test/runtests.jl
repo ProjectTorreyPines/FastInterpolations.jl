@@ -22,5 +22,6 @@ else
     include("test_allocation.jl")
     include("test_random_grid.jl")
     include("test_periodic_bc.jl")
+    include("test_generic_bc.jl")
     include("test_packages_comparison.jl")
 end

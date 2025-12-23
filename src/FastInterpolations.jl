@@ -25,4 +25,7 @@ export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!, cubic_cache_stats
 export get_cubic_cache
 
+# Boundary condition types
+export AbstractBC, D1, D2, DerivativeBCData
+
 end # module

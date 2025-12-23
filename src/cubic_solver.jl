@@ -2,50 +2,53 @@
 # Cubic Spline System Builders and Solvers
 # ========================================
 # Internal functions for building cache and solving tridiagonal systems.
-# Include order: cubic_types.jl → cubic_solver.jl → cubic_eval.jl → cubic_interp.jl
+# Include order: bc_types.jl → cubic_types.jl → cubic_solver.jl → cubic_eval.jl → cubic_interp.jl
 
-"Build cache for natural cubic spline (z[1] = z[n+1] = 0)."
-function _build_natural_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
-    n = length(x) - 1
+# BC types and normalization functions are defined in bc_types.jl
 
-    # Compute grid spacing h[i] = x[i+1] - x[i]
-    # h is padded: [0, h1, h2, ..., hn, 0]
-    h = Vector{T}(undef, n + 2)
-    h[1] = zero(T)
-    h[end] = zero(T)
-    @inbounds for i in 1:n
-        h[i+1] = x[i+1] - x[i]
-    end
+# ========================================
+# Row Builders for Generic BC (Type Dispatch)
+# ========================================
 
-    # Build tridiagonal matrix A
-    dl = Vector{T}(undef, n)       # Lower diagonal
-    d_diag = Vector{T}(undef, n+1) # Main diagonal
-    du = Vector{T}(undef, n)       # Upper diagonal
-
-    # First and last rows: z[1] = 0 and z[n+1] = 0 (natural boundary)
+# First row - D2 (second derivative specified): z[1] = bc.val
+@inline function _set_first_row!(
+    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::D2{T}, ::AbstractVector{T}
+) where {T<:AbstractFloat}
     d_diag[1] = one(T)
     du[1] = zero(T)
+    return nothing
+end
 
-    # Interior rows
-    @inbounds for i in 2:n
-        dl[i-1] = h[i]
-        d_diag[i] = 2 * (h[i] + h[i+1])
-        du[i] = h[i+1]
-    end
+# First row - D1 (first derivative specified): 2h₁z₁ + h₁z₂ = 6[(y₂-y₁)/h₁ - S'(x₁)]
+@inline function _set_first_row!(
+    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::D1{T}, h::AbstractVector{T}
+) where {T<:AbstractFloat}
+    d_diag[1] = 2 * h[2]
+    du[1] = h[2]
+    return nothing
+end
 
-    # Last row
+# Last row - D2 (second derivative specified): z[n+1] = bc.val
+@inline function _set_last_row!(
+    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::D2{T}, ::AbstractVector{T}, n::Int
+) where {T<:AbstractFloat}
     dl[n] = zero(T)
     d_diag[n+1] = one(T)
-
-    tA = Tridiagonal(dl, d_diag, du)
-    lu_factor = lu(tA)
-
-    # Allocate workspaces
-    d_workspace = Vector{T}(undef, n + 1)
-    z_workspace = Vector{T}(undef, n + 1)
-
-    return CubicSplineCache(x, h[1:n+1], lu_factor, d_workspace, z_workspace, nothing)
+    return nothing
 end
+
+# Last row - D1 (first derivative specified): hₙzₙ + 2hₙzₙ₊₁ = 6[S'(xₙ₊₁) - (yₙ₊₁-yₙ)/hₙ]
+@inline function _set_last_row!(
+    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::D1{T}, h::AbstractVector{T}, n::Int
+) where {T<:AbstractFloat}
+    dl[n] = h[n+1]
+    d_diag[n+1] = 2 * h[n+1]
+    return nothing
+end
+
+# ========================================
+# Cache Builders
+# ========================================
 
 "Build cache for periodic cubic spline using Sherman-Morrison formula."
 function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
@@ -104,20 +107,112 @@ function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
     return CubicSplineCache(x, h[1:n+1], lu_factor, d_workspace, z_workspace, bc_data)
 end
 
+"""
+Build cache for generic derivative BC (D1/D2 combinations).
+Uses type dispatch for zero-overhead specialization.
+"""
+function _build_derivative_bc_cache(
+    x::AbstractVector{T},
+    left_bc::L,
+    right_bc::R
+) where {T<:AbstractFloat, L<:AbstractBC{T}, R<:AbstractBC{T}}
+    n = length(x) - 1
+
+    # Compute grid spacing h[i] = x[i+1] - x[i]
+    h = Vector{T}(undef, n + 2)
+    h[1] = zero(T)
+    h[end] = zero(T)
+    @inbounds for i in 1:n
+        h[i+1] = x[i+1] - x[i]
+    end
+
+    # Build tridiagonal matrix A
+    dl = Vector{T}(undef, n)       # Lower diagonal
+    d_diag = Vector{T}(undef, n+1) # Main diagonal
+    du = Vector{T}(undef, n)       # Upper diagonal
+
+    # First and last rows depend on BC type (type dispatch)
+    _set_first_row!(d_diag, du, left_bc, h)
+    _set_last_row!(dl, d_diag, right_bc, h, n)
+
+    # Interior rows (same for all BC types)
+    @inbounds for i in 2:n
+        dl[i-1] = h[i]
+        d_diag[i] = 2 * (h[i] + h[i+1])
+        du[i] = h[i+1]
+    end
+
+    tA = Tridiagonal(dl, d_diag, du)
+    lu_factor = lu(tA)
+
+    # Allocate workspaces
+    d_workspace = Vector{T}(undef, n + 1)
+    z_workspace = Vector{T}(undef, n + 1)
+
+    bc_data = DerivativeBCData(left_bc, right_bc)
+
+    return CubicSplineCache(x, h[1:n+1], lu_factor, d_workspace, z_workspace, bc_data)
+end
+
 # ========================================
 # RHS Computation
 # ========================================
 
-"Compute RHS vector d for natural cubic spline system in-place."
-@inline function compute_rhs!(d::Vector{T}, y::AbstractVector{T}, h::Vector{T}) where {T}
-    n = length(y) - 1
-    d[1] = zero(T)
-    d[n+1] = zero(T)
-    @inbounds for i in 2:n
-        d[i] = 6 * (y[i+1] - y[i]) / h[i+1] - 6 * (y[i] - y[i-1]) / h[i]
-    end
+# ----------------------------------------
+# RHS helpers for generic BC (type dispatch)
+# ----------------------------------------
+
+# First element - D2: d[1] = bc.val (second derivative value)
+@inline function _compute_rhs_first!(
+    d::AbstractVector{T}, bc::D2{T}, ::AbstractVector{T}, ::AbstractVector{T}
+) where {T<:AbstractFloat}
+    d[1] = bc.val
     return nothing
 end
+
+# First element - D1: d[1] = 6[(y₂-y₁)/h₁ - S'(x₁)]
+@inline function _compute_rhs_first!(
+    d::AbstractVector{T}, bc::D1{T}, y::AbstractVector{T}, h::AbstractVector{T}
+) where {T<:AbstractFloat}
+    d[1] = 6 * ((y[2] - y[1]) / h[2] - bc.val)
+    return nothing
+end
+
+# Last element - D2: d[n+1] = bc.val (second derivative value)
+@inline function _compute_rhs_last!(
+    d::AbstractVector{T}, bc::D2{T}, ::AbstractVector{T}, ::AbstractVector{T}, n::Int
+) where {T<:AbstractFloat}
+    d[n+1] = bc.val
+    return nothing
+end
+
+# Last element - D1: d[n+1] = 6[S'(xₙ₊₁) - (yₙ₊₁-yₙ)/hₙ]
+@inline function _compute_rhs_last!(
+    d::AbstractVector{T}, bc::D1{T}, y::AbstractVector{T}, h::AbstractVector{T}, n::Int
+) where {T<:AbstractFloat}
+    d[n+1] = 6 * (bc.val - (y[n+1] - y[n]) / h[n+1])
+    return nothing
+end
+
+"""
+Compute RHS vector for generic derivative BC system in-place.
+"""
+@inline function compute_rhs!(
+    d::AbstractVector{T}, y::AbstractVector{T}, h::AbstractVector{T},
+    bc_data::DerivativeBCData{T,L,R}
+) where {T<:AbstractFloat, L<:AbstractBC{T}, R<:AbstractBC{T}}
+    n = length(y) - 1
+    _compute_rhs_first!(d, bc_data.left, y, h)
+    @inbounds for i in 2:n
+        d[i] = 6 * ((y[i+1] - y[i]) / h[i+1] - (y[i] - y[i-1]) / h[i])
+    end
+    _compute_rhs_last!(d, bc_data.right, y, h, n)
+    return nothing
+end
+
+# ----------------------------------------
+# Periodic RHS function
+# ----------------------------------------
 
 "Compute RHS vector d for periodic cubic spline system in-place."
 @inline function compute_rhs_periodic!(d::Vector{T}, y::AbstractVector{T}, h::Vector{T}) where {T}
@@ -138,18 +233,6 @@ end
 # ========================================
 # System Solvers
 # ========================================
-
-"Solve tridiagonal system for natural BC using pre-computed LU factorization."
-@inline function _solve_cubic_system!(
-    z_workspace::Vector{T},
-    d_workspace::Vector{T},
-    cache::CubicSplineCache{T,X,F,Nothing},
-    y::AbstractVector{T}
-) where {T<:AbstractFloat, X, F}
-    compute_rhs!(d_workspace, y, cache.h)
-    ldiv!(z_workspace, cache.lu_factor, d_workspace)
-    return z_workspace
-end
 
 "Solve periodic cyclic tridiagonal system using Sherman-Morrison formula."
 @inline function _solve_cubic_system_periodic!(
@@ -187,18 +270,35 @@ end
 # Unified System Solver Entry Point
 # ========================================
 
-"Solve cubic spline system (Natural BC)."
-@inline function _solve_system!(
-    cache::CubicSplineCache{T,X,F,Nothing},
-    y::AbstractVector{T}
-) where {T<:AbstractFloat, X, F}
-    _solve_cubic_system!(cache.z_workspace, cache.d_workspace, cache, y)
-end
-
 "Solve cubic spline system (Periodic BC)."
 @inline function _solve_system!(
     cache::CubicSplineCache{T,X,F,PeriodicData{T}},
     y::AbstractVector{T}
 ) where {T<:AbstractFloat, X, F}
     _solve_cubic_system_periodic!(cache.z_workspace, cache.d_workspace, cache, y)
+end
+
+"Solve cubic spline system (Generic Derivative BC)."
+@inline function _solve_system!(
+    cache::CubicSplineCache{T,X,F,DerivativeBCData{T,L,R}},
+    y::AbstractVector{T}
+) where {T<:AbstractFloat, X, F, L<:AbstractBC{T}, R<:AbstractBC{T}}
+    compute_rhs!(cache.d_workspace, y, cache.h, cache.bc_data)
+    ldiv!(cache.z_workspace, cache.lu_factor, cache.d_workspace)
+    return cache.z_workspace
+end
+
+"""
+Solve cubic spline system with BC value override (for time-varying BC).
+The BC types must match the cache BC types - only values can differ.
+"""
+@inline function _solve_system!(
+    cache::CubicSplineCache{T,X,F,DerivativeBCData{T,L,R}},
+    y::AbstractVector{T},
+    bc::Tuple{L,R}  # Must match cache BC types!
+) where {T<:AbstractFloat, X, F, L<:AbstractBC{T}, R<:AbstractBC{T}}
+    effective_bc = DerivativeBCData(bc[1], bc[2])
+    compute_rhs!(cache.d_workspace, y, cache.h, effective_bc)
+    ldiv!(cache.z_workspace, cache.lu_factor, cache.d_workspace)
+    return cache.z_workspace
 end

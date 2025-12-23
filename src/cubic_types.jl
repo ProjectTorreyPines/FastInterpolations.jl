@@ -3,7 +3,9 @@
 # ========================================
 # Structs for cubic spline interpolation.
 # Separated from cubic_interp.jl for clarity.
-# Include order: utils.jl → cubic_types.jl → cubic_interp.jl
+# Include order: utils.jl → bc_types.jl → cubic_types.jl → cubic_solver.jl → cubic_interp.jl
+
+# Boundary condition types (AbstractBC, D1, D2, DerivativeBCData) are defined in bc_types.jl
 
 """
     PeriodicData{T}

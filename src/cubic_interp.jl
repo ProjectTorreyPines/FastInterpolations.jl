@@ -48,7 +48,7 @@ Key optimization: A can be LU-factorized once and reused for different y.
 # ========================================
 
 """
-    CubicSplineCache(x::AbstractVector{T}; bc::Symbol=:natural) where {T<:AbstractFloat}
+    CubicSplineCache(x::AbstractVector{T}; bc=:natural) where {T<:AbstractFloat}
 
 Construct a cubic spline cache for grid points `x`.
 
@@ -57,12 +57,18 @@ This factorization can be reused for interpolating different y vectors.
 
 # Arguments
 - `x::AbstractVector{T}`: Grid points (must be sorted, length >= 3)
-- `bc::Symbol=:natural`: Boundary condition (`:natural` or `:periodic`)
+- `bc`: Boundary condition specification:
+  - `Symbol`: `:natural`, `:clamped`, or `:periodic`
+  - `D1(val)` or `D2(val)`: Symmetric BC (same at both ends)
+  - `(D1(v1), D2(v2))`: Asymmetric BC tuple
 
 # Example
 ```julia
 x = range(0.0, 1.0, 51)
-cache = CubicSplineCache(x)                    # Natural BC (default)
+cache = CubicSplineCache(x)                         # Natural BC (default)
+cache = CubicSplineCache(x; bc=:clamped)            # Zero slope at both ends
+cache = CubicSplineCache(x; bc=D1(0.5))             # Slope=0.5 at both ends
+cache = CubicSplineCache(x; bc=(D1(0.5), D2(0)))    # Mixed: slope left, natural right
 cache_periodic = CubicSplineCache(x; bc=:periodic)  # Periodic BC
 
 # Reuse for multiple y vectors
@@ -72,14 +78,25 @@ result1 = cubic_interp(cache, y1, [0.25, 0.75])
 result2 = cubic_interp(cache, y2, [0.25, 0.75])
 ```
 """
-function CubicSplineCache(x::AbstractVector{T}; bc::Symbol=:natural) where {T<:AbstractFloat}
+function CubicSplineCache(x::AbstractVector{T}; bc=:natural) where {T<:AbstractFloat}
     _validate_bc(bc)
 
-    if bc == :periodic
+    # Periodic BC uses separate Sherman-Morrison path
+    if bc === :periodic
         return _build_periodic_cache(x)
-    else
-        return _build_natural_cache(x)
     end
+
+    # Normalize BC to (left, right) tuple
+    bc_normalized = _normalize_bc(bc, T)
+
+    # Safety check for periodic from _normalize_bc
+    if bc_normalized === :periodic
+        return _build_periodic_cache(x)
+    end
+
+    # All non-periodic BC use unified DerivativeBCData path
+    left_bc, right_bc = bc_normalized
+    return _build_derivative_bc_cache(x, left_bc, right_bc)
 end
 
 # ========================================
@@ -129,23 +146,25 @@ In-place cubic spline interpolation with optional automatic caching.
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_query::AbstractVector{T};
-    bc::Symbol=:natural,
+    bc=:natural,
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    if bc == :periodic
+    if bc === :periodic
         _check_periodic_endpoints(y)
         extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
         return cubic_interp!(output, cache, y, x_query; extrap=extrap)
-    elseif autocache
+    elseif bc === :natural && autocache
+        # Only use autocache for :natural symbol
         cache = get_cubic_cache(x, Val(:natural))
         return cubic_interp!(output, cache, y, x_query; extrap=extrap)
     else
-        cache = CubicSplineCache(x)
+        # D1/D2 tuples, :clamped, or autocache=false: create fresh cache
+        cache = CubicSplineCache(x; bc=bc)
         return cubic_interp!(output, cache, y, x_query; extrap=extrap)
     end
 end
@@ -168,7 +187,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_query::T;
-    bc::Symbol=:natural,
+    bc=:natural,
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
@@ -176,14 +195,16 @@ end
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    if bc == :periodic
+    if bc === :periodic
         _check_periodic_endpoints(y)
         extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
-    elseif autocache
+    elseif bc === :natural && autocache
+        # Only use autocache for :natural symbol
         cache = get_cubic_cache(x, Val(:natural))
     else
-        cache = CubicSplineCache(x)
+        # D1/D2 tuples, :clamped, or autocache=false: create fresh cache
+        cache = CubicSplineCache(x; bc=bc)
     end
 
     output[1] = cubic_interp_scalar(cache, y, x_query; extrap=extrap)
@@ -240,23 +261,25 @@ function cubic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_query::AbstractVector{T};
-    bc::Symbol=:natural,
+    bc=:natural,
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    if bc == :periodic
+    if bc === :periodic
         _check_periodic_endpoints(y)
         extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
         return cubic_interp(cache, y, x_query; extrap=extrap)
-    elseif autocache
+    elseif bc === :natural && autocache
+        # Only use autocache for :natural symbol
         cache = get_cubic_cache(x, Val(:natural))
         return cubic_interp(cache, y, x_query; extrap=extrap)
     else
-        cache = CubicSplineCache(x)
+        # D1/D2 tuples, :clamped, or autocache=false: create fresh cache
+        cache = CubicSplineCache(x; bc=bc)
         return cubic_interp(cache, y, x_query; extrap=extrap)
     end
 end
@@ -270,23 +293,25 @@ function cubic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_query::T;
-    bc::Symbol=:natural,
+    bc=:natural,
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    if bc == :periodic
+    if bc === :periodic
         _check_periodic_endpoints(y)
         extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
         return cubic_interp_scalar(cache, y, x_query; extrap=extrap)
-    elseif autocache
+    elseif bc === :natural && autocache
+        # Only use autocache for :natural symbol
         cache::CubicSplineCache{T} = get_cubic_cache(x, Val(:natural))
         return cubic_interp_scalar(cache, y, x_query; extrap=extrap)
     else
-        cache = CubicSplineCache(x)
+        # D1/D2 tuples, :clamped, or autocache=false: create fresh cache
+        cache = CubicSplineCache(x; bc=bc)
         return cubic_interp_scalar(cache, y, x_query; extrap=extrap)
     end
 end
@@ -361,18 +386,22 @@ result = @. coef * itp(rho) * ne    # Fused broadcast
 function cubic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
-    bc::Symbol=:natural,
+    bc=:natural,
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
     _validate_bc(bc)
 
-    if bc == :periodic
+    if bc === :periodic
         _check_periodic_endpoints(y)
         extrap = :wrap  # override extrap for periodic
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
+    elseif bc === :natural && autocache
+        # Only use autocache for :natural symbol
+        cache = get_cubic_cache(x, Val(:natural))
     else
-        cache = autocache ? get_cubic_cache(x, Val(:natural)) : CubicSplineCache(x)
+        # D1/D2 tuples, :clamped, or autocache=false: create fresh cache
+        cache = CubicSplineCache(x; bc=bc)
     end
 
     _solve_system!(cache, y)
@@ -410,7 +439,7 @@ end
 function cubic_interp(
     x::X,
     y::Y;
-    bc::Symbol=:natural,
+    bc=:natural,
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
@@ -446,7 +475,7 @@ function cubic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY},
     x_query::AbstractVector{TQ};
-    bc::Symbol=:natural,
+    bc=:natural,
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
@@ -459,7 +488,7 @@ function cubic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY},
     x_query::TQ;
-    bc::Symbol=:natural,
+    bc=:natural,
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
@@ -473,7 +502,7 @@ end
     x::AbstractVector{TX},
     y::AbstractVector{TY},
     x_query::AbstractVector{TQ};
-    bc::Symbol=:natural,
+    bc=:natural,
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
@@ -487,7 +516,7 @@ end
     x::AbstractVector{TX},
     y::AbstractVector{TY},
     x_query::TQ;
-    bc::Symbol=:natural,
+    bc=:natural,
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}

@@ -139,6 +139,18 @@ end
     _eval_cubic_at_point_periodic(cache.x, y, h, z, xi, cache.bc_data.period)
 end
 
+"Evaluate with BC-aware dispatch (Generic Derivative BC - uses standard evaluation)."
+@inline function _eval_with_bc(
+    cache::CubicSplineCache{T,X,F,DerivativeBCData{T,L,R}},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    extrap::Val
+) where {T<:AbstractFloat, X, F, L<:AbstractBC{T}, R<:AbstractBC{T}}
+    _eval_cubic_with_extrap(cache.x, y, h, z, xi, extrap)
+end
+
 # ========================================
 # Vector Loop Functions
 # ========================================

@@ -6,6 +6,9 @@ using LinearAlgebra: Tridiagonal, lu, ldiv!
 # Shared internal utilities
 include("utils.jl")
 
+# Boundary condition types (used by multiple interpolation methods)
+include("bc_types.jl")
+
 # Linear interpolation
 include("linear_interp.jl")
 

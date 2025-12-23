@@ -3,11 +3,11 @@ module FastInterpolations
 import LinearAlgebra
 using LinearAlgebra: Tridiagonal, lu, ldiv!
 
+# Boundary condition types (must be first - used by utils.jl)
+include("bc_types.jl")
+
 # Shared internal utilities
 include("utils.jl")
-
-# Boundary condition types (used by multiple interpolation methods)
-include("bc_types.jl")
 
 # Linear interpolation
 include("linear_interp.jl")

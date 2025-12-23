@@ -216,12 +216,16 @@ end
 Validate boundary condition symbol for cubic interpolation.
 Throws `ArgumentError` if invalid.
 
-Valid options: `:natural`, `:periodic`
+Valid options: `:natural`, `:periodic`, `:clamped`
 """
 @inline function _validate_bc(bc::Symbol)
-    bc in (:natural, :periodic) && return nothing
-    throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
+    bc in (:natural, :periodic, :clamped) && return nothing
+    throw(ArgumentError("bc must be :natural, :periodic, or :clamped, got :$bc"))
 end
+
+# Accept AbstractBC and Tuple{AbstractBC, AbstractBC} as valid BC specifications
+@inline _validate_bc(::AbstractBC) = nothing
+@inline _validate_bc(::Tuple{<:AbstractBC, <:AbstractBC}) = nothing
 
 # ========================================
 # Dispatch Macros (Zero-Allocation Branching)

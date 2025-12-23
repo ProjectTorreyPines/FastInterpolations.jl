@@ -75,13 +75,7 @@ end
 const NaturalBCData{T} = DerivativeBCData{T, D2{T}, D2{T}}
 const ClampedBCData{T} = DerivativeBCData{T, D1{T}, D1{T}}
 
-# ========================================
-# BC Validation and Normalization
-# ========================================
 
-# Accept AbstractBC and Tuple{AbstractBC, AbstractBC} as valid BC specifications
-@inline _validate_bc(::AbstractBC) = nothing
-@inline _validate_bc(::Tuple{<:AbstractBC, <:AbstractBC}) = nothing
 
 """
     _normalize_bc(bc::Symbol, ::Type{T}) -> Tuple{AbstractBC, AbstractBC} | :periodic

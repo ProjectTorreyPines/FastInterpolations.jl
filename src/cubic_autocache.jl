@@ -6,80 +6,84 @@ Transparently reuses LU factorization for repeated x-grids.
 
 # Implementation Details
 
+- Fully parametric `CacheBank{T, L, R, X}` - supports any BC type combination
 - Zero-allocation cache hit via 2-pass lookup (objectid → isequal)
 - Ring buffer eviction for O(1) cache replacement
 - Self-healing: updates objectid on content match for future fast-path hits
-- CacheBank structure for logical grouping with type-stable concrete stores
+- Dynamic bank creation via IdDict keyed by type
 - Thread-safe with ReentrantLock on cache access
 """
 
 # ===============================================================
-# Cache Infrastructure - Type Aliases
+# Parametric Cache Types
 # ===============================================================
 
-# StepRangeLen concrete types (from `range(a, b, n)`)
-const _StepRangeLen_F64 = StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
-const _StepRangeLen_F32 = StepRangeLen{Float32, Float64, Float64, Int64}
+"""
+    CacheEntry{T, L, R, X}
 
-# ═══════════════════════════════════════════════════════════════════════
-# Cache Entries - Parametric types for both Natural and Periodic BC
-# ═══════════════════════════════════════════════════════════════════════
+A single cache entry storing an x-grid and its associated CubicSplineCache.
 
-# Vector-based cache entries (O(log n) binary search during interpolation)
-mutable struct CacheEntryVec{T<:AbstractFloat, BC}
+# Type Parameters
+- `T`: Float type (Float32 or Float64)
+- `L`: Left boundary condition type (D1{T} or D2{T})
+- `R`: Right boundary condition type (D1{T} or D2{T})
+- `X`: Grid type (Vector{T} or StepRangeLen)
+"""
+mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
     id::UInt
-    x::Vector{T}
-    spline::CubicSplineCache{T, Vector{T}, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, BC}
+    x::X
+    cache::CubicSplineCache{T, X, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, BCPair{T,L,R}}
 end
 
-# Range-based cache entries (O(1) direct index calculation during interpolation!)
-mutable struct CacheEntryRange{T<:AbstractFloat, BC, R<:AbstractRange{T}}
+"""
+    CacheBank{T, L, R, X}
+
+A cache bank holding entries for a specific (T, L, R, X) type combination.
+
+# Type Parameters
+- `T`: Float type
+- `L`: Left BC type
+- `R`: Right BC type
+- `X`: Grid type
+"""
+mutable struct CacheBank{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+    store::Vector{CacheEntry{T, L, R, X}}
+    ring::Base.RefValue{Int}
+end
+
+CacheBank{T,L,R,X}() where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}} =
+    CacheBank{T,L,R,X}(CacheEntry{T,L,R,X}[], Ref(1))
+
+"""
+    PeriodicCacheEntry{T, X}
+
+Cache entry for periodic BC (uses PeriodicData instead of BCPair).
+"""
+mutable struct PeriodicCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}}
     id::UInt
-    x::R
-    spline::CubicSplineCache{T, R, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, BC}
+    x::X
+    cache::CubicSplineCache{T, X, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, PeriodicData{T}}
 end
 
-# Type aliases for Natural BC (using BCPair with D2(0) at both ends)
-const CacheEntryVecF64 = CacheEntryVec{Float64, NaturalBCPair{Float64}}
-const CacheEntryVecF32 = CacheEntryVec{Float32, NaturalBCPair{Float32}}
-const CacheEntryRangeF64 = CacheEntryRange{Float64, NaturalBCPair{Float64}, _StepRangeLen_F64}
-const CacheEntryRangeF32 = CacheEntryRange{Float32, NaturalBCPair{Float32}, _StepRangeLen_F32}
+"""
+    PeriodicCacheBank{T, X}
 
-# Type aliases for Periodic BC
-const CacheEntryVecF64Periodic = CacheEntryVec{Float64, PeriodicData{Float64}}
-const CacheEntryVecF32Periodic = CacheEntryVec{Float32, PeriodicData{Float32}}
-const CacheEntryRangeF64Periodic = CacheEntryRange{Float64, PeriodicData{Float64}, _StepRangeLen_F64}
-const CacheEntryRangeF32Periodic = CacheEntryRange{Float32, PeriodicData{Float32}, _StepRangeLen_F32}
-
-# ═══════════════════════════════════════════════════════════════════════
-# CacheBank - Logical grouping of F64/F32 stores with concrete types
-# ═══════════════════════════════════════════════════════════════════════
-#
-# Each bank holds F64 and F32 stores for a specific (GridKind × BC) combination.
-# Internal stores remain concrete vectors for type stability.
-# BCVal is a compile-time token (Val{:natural} or Val{:periodic}).
-
-mutable struct CacheBank{E64, E32, BCVal}
-    store_f64::Vector{E64}
-    store_f32::Vector{E32}
-    ring_f64::Base.RefValue{Int}
-    ring_f32::Base.RefValue{Int}
+Cache bank for periodic BC.
+"""
+mutable struct PeriodicCacheBank{T<:AbstractFloat, X<:AbstractVector{T}}
+    store::Vector{PeriodicCacheEntry{T, X}}
+    ring::Base.RefValue{Int}
 end
 
-# 4 Banks: (Vec × Natural), (Vec × Periodic), (Range × Natural), (Range × Periodic)
-const _BANK_VEC_NATURAL = CacheBank{CacheEntryVecF64, CacheEntryVecF32, Val{:natural}}(
-    Vector{CacheEntryVecF64}(), Vector{CacheEntryVecF32}(), Ref(1), Ref(1)
-)
-const _BANK_VEC_PERIODIC = CacheBank{CacheEntryVecF64Periodic, CacheEntryVecF32Periodic, Val{:periodic}}(
-    Vector{CacheEntryVecF64Periodic}(), Vector{CacheEntryVecF32Periodic}(), Ref(1), Ref(1)
-)
-const _BANK_RANGE_NATURAL = CacheBank{CacheEntryRangeF64, CacheEntryRangeF32, Val{:natural}}(
-    Vector{CacheEntryRangeF64}(), Vector{CacheEntryRangeF32}(), Ref(1), Ref(1)
-)
-const _BANK_RANGE_PERIODIC = CacheBank{CacheEntryRangeF64Periodic, CacheEntryRangeF32Periodic, Val{:periodic}}(
-    Vector{CacheEntryRangeF64Periodic}(), Vector{CacheEntryRangeF32Periodic}(), Ref(1), Ref(1)
-)
+PeriodicCacheBank{T,X}() where {T<:AbstractFloat, X<:AbstractVector{T}} =
+    PeriodicCacheBank{T,X}(PeriodicCacheEntry{T,X}[], Ref(1))
 
+# ===============================================================
+# Bank Registry (Dynamic/Lazy)
+# ===============================================================
+
+const _DERIVATIVE_BANK_REGISTRY = IdDict{DataType, Any}()
+const _PERIODIC_BANK_REGISTRY = IdDict{DataType, Any}()
 const _CACHE_LOCK = ReentrantLock()
 const _CACHE_SIZE_REF = Ref{Int}(16)
 
@@ -119,21 +123,12 @@ get_cubic_cache_size() = _CACHE_SIZE_REF[]
 Clear all cached x-grids.
 """
 function clear_cubic_cache!()
-    lock(_CACHE_LOCK)
-    try
-        # Clear all 4 banks
-        for bank in (_BANK_VEC_NATURAL, _BANK_VEC_PERIODIC, _BANK_RANGE_NATURAL, _BANK_RANGE_PERIODIC)
-            empty!(bank.store_f64)
-            empty!(bank.store_f32)
-            bank.ring_f64[] = 1
-            bank.ring_f32[] = 1
-        end
-        # Reset statistics
+    lock(_CACHE_LOCK) do
+        empty!(_DERIVATIVE_BANK_REGISTRY)
+        empty!(_PERIODIC_BANK_REGISTRY)
         _CACHE_HITS[] = 0
         _CACHE_MISSES[] = 0
         _CACHE_EVICTIONS[] = 0
-    finally
-        unlock(_CACHE_LOCK)
     end
     return nothing
 end
@@ -144,22 +139,19 @@ end
 Return cache hit/miss statistics.
 
 # Returns
-`NamedTuple` with fields: `hits`, `misses`, `evictions`, `vec_size`, `range_size`, `size`, `efficiency`
+`NamedTuple` with fields: `hits`, `misses`, `evictions`, `bank_count`, `efficiency`
 """
 function cubic_cache_stats()
     hits = _CACHE_HITS[]
     misses = _CACHE_MISSES[]
     evictions = _CACHE_EVICTIONS[]
 
-    local vec_size, range_size
-    lock(_CACHE_LOCK)
-    try
-        vec_size = length(_BANK_VEC_NATURAL.store_f64) + length(_BANK_VEC_NATURAL.store_f32) +
-                   length(_BANK_VEC_PERIODIC.store_f64) + length(_BANK_VEC_PERIODIC.store_f32)
-        range_size = length(_BANK_RANGE_NATURAL.store_f64) + length(_BANK_RANGE_NATURAL.store_f32) +
-                     length(_BANK_RANGE_PERIODIC.store_f64) + length(_BANK_RANGE_PERIODIC.store_f32)
-    finally
-        unlock(_CACHE_LOCK)
+    local derivative_count, periodic_count, total_entries
+    lock(_CACHE_LOCK) do
+        derivative_count = length(_DERIVATIVE_BANK_REGISTRY)
+        periodic_count = length(_PERIODIC_BANK_REGISTRY)
+        total_entries = sum(length(bank.store) for bank in values(_DERIVATIVE_BANK_REGISTRY); init=0) +
+                        sum(length(bank.store) for bank in values(_PERIODIC_BANK_REGISTRY); init=0)
     end
 
     total = hits + misses
@@ -169,28 +161,61 @@ function cubic_cache_stats()
         hits = hits,
         misses = misses,
         evictions = evictions,
-        vec_size = vec_size,
-        range_size = range_size,
-        size = vec_size + range_size,
+        derivative_banks = derivative_count,
+        periodic_banks = periodic_count,
+        total_entries = total_entries,
         efficiency = efficiency
     )
 end
 
 # ===============================================================
-# Internal: BC-specific cache creation (Type-Stable)
-# ===============================================================
-# Direct builder calls bypass symbol dispatch for type stability.
-
-@inline _build_cache(x::AbstractVector{T}, ::Val{:natural}) where {T<:AbstractFloat} =
-    _build_derivative_bc_cache(x, D2(zero(T)), D2(zero(T)))
-@inline _build_cache(x::AbstractVector{T}, ::Val{:periodic}) where {T<:AbstractFloat} =
-    _build_periodic_cache(x)
-
-# ===============================================================
-# Internal: Generic ring buffer add
+# Internal: Bank Retrieval (Lock-free Read Path)
 # ===============================================================
 
-@inline function _add_to_cache!(store::Vector{E}, ring::Base.RefValue{Int}, entry::E) where E
+"""
+Get or create a derivative BC cache bank for the given (T, L, R, X) combination.
+Uses lock-free read for fast path, lock only for first creation.
+"""
+@inline function _get_derivative_bank(::X, ::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+    BankType = CacheBank{T,L,R,X}
+
+    # Fast path: lock-free read
+    bank = get(_DERIVATIVE_BANK_REGISTRY, BankType, nothing)
+    bank !== nothing && return bank::BankType
+
+    # Slow path: lock for first creation
+    lock(_CACHE_LOCK) do
+        if !haskey(_DERIVATIVE_BANK_REGISTRY, BankType)
+            _DERIVATIVE_BANK_REGISTRY[BankType] = CacheBank{T,L,R,X}()
+        end
+    end
+    return _DERIVATIVE_BANK_REGISTRY[BankType]::BankType
+end
+
+"""
+Get or create a periodic BC cache bank for the given (T, X) combination.
+"""
+@inline function _get_periodic_bank(::X) where {T<:AbstractFloat, X<:AbstractVector{T}}
+    BankType = PeriodicCacheBank{T,X}
+
+    # Fast path: lock-free read
+    bank = get(_PERIODIC_BANK_REGISTRY, BankType, nothing)
+    bank !== nothing && return bank::BankType
+
+    # Slow path: lock for first creation
+    lock(_CACHE_LOCK) do
+        if !haskey(_PERIODIC_BANK_REGISTRY, BankType)
+            _PERIODIC_BANK_REGISTRY[BankType] = PeriodicCacheBank{T,X}()
+        end
+    end
+    return _PERIODIC_BANK_REGISTRY[BankType]::BankType
+end
+
+# ===============================================================
+# Internal: Ring Buffer Add
+# ===============================================================
+
+@inline function _add_to_ring!(store::Vector{E}, ring::Base.RefValue{Int}, entry::E) where E
     max_size = _CACHE_SIZE_REF[]
     if length(store) < max_size
         push!(store, entry)
@@ -204,24 +229,49 @@ end
 end
 
 # ===============================================================
-# Internal: Generic lookup/insert core
+# Internal: Lookup/Insert (Unified - No Vec/Range Branching)
 # ===============================================================
-#
-# Type-stable because:
-# - store::Vector{E} has concrete element type E
-# - E determines spline return type via its field type
-# - All dispatch is compile-time via BCVal
 
-@inline function _lookup_or_insert!(
-    store::Vector{E}, ring::Base.RefValue{Int}, x, ::Type{E}, bcval::BCVal
-) where {E, BCVal}
-    id = objectid(x)
-
-    # [Pass 1] Identity Check - O(1) per entry
+"""
+Lock-free Pass 1 identity check (hot path, zero-allocation).
+Returns cache on hit, nothing on miss.
+"""
+@inline function _pass1_identity_check(store::Vector{CacheEntry{T,L,R,X}}, id::UInt) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
     @inbounds for entry in store
         if entry.id === id
             _CACHE_HITS[] += 1
-            return entry.spline
+            return entry.cache
+        end
+    end
+    return nothing
+end
+
+"""
+Lock-free Pass 1 identity check for periodic bank.
+"""
+@inline function _pass1_identity_check(store::Vector{PeriodicCacheEntry{T,X}}, id::UInt) where {T<:AbstractFloat, X<:AbstractVector{T}}
+    @inbounds for entry in store
+        if entry.id === id
+            _CACHE_HITS[] += 1
+            return entry.cache
+        end
+    end
+    return nothing
+end
+
+"""
+Lookup or insert into a derivative BC cache bank (requires lock held).
+Called only when Pass 1 misses.
+"""
+@inline function _lookup_or_insert_locked!(bank::CacheBank{T,L,R,X}, x::X, id::UInt) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+    store = bank.store
+    ring = bank.ring
+
+    # [Pass 1 re-check] May have been inserted by another thread
+    @inbounds for entry in store
+        if entry.id === id
+            _CACHE_HITS[] += 1
+            return entry.cache
         end
     end
 
@@ -230,96 +280,243 @@ end
         if isequal(entry.x, x)
             entry.id = id  # Self-healing
             _CACHE_HITS[] += 1
-            return entry.spline
+            return entry.cache
+        end
+    end
+
+    # [Cache Miss] Create new entry
+    # L and R are already concrete types like D2{Float64}, just call as constructor
+    _CACHE_MISSES[] += 1
+    new_cache = _build_derivative_bc_cache(x, L(zero(T)), R(zero(T)))
+    new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
+    _add_to_ring!(store, ring, new_entry)
+
+    return new_cache
+end
+
+"""
+Lookup or insert into a periodic BC cache bank (requires lock held).
+Called only when Pass 1 misses.
+"""
+@inline function _lookup_or_insert_locked!(bank::PeriodicCacheBank{T,X}, x::X, id::UInt) where {T<:AbstractFloat, X<:AbstractVector{T}}
+    store = bank.store
+    ring = bank.ring
+
+    # [Pass 1 re-check] May have been inserted by another thread
+    @inbounds for entry in store
+        if entry.id === id
+            _CACHE_HITS[] += 1
+            return entry.cache
+        end
+    end
+
+    # [Pass 2] Equality Check
+    @inbounds for entry in store
+        if isequal(entry.x, x)
+            entry.id = id  # Self-healing
+            _CACHE_HITS[] += 1
+            return entry.cache
         end
     end
 
     # [Cache Miss] Create new entry
     _CACHE_MISSES[] += 1
-    new_spline = _build_cache(x, bcval)
-    new_entry = E(id, x, new_spline)
-    _add_to_cache!(store, ring, new_entry)
+    new_cache = _build_periodic_cache(x)
+    new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
+    _add_to_ring!(store, ring, new_entry)
 
-    return new_spline
+    return new_cache
 end
 
-# ═══════════════════════════════════════════════════════════════════════
-# Thin Wrappers: Store selection at compile time
-# ═══════════════════════════════════════════════════════════════════════
-
-# Vector F64
-@inline _get_cache(x::Vector{Float64}, bank::CacheBank{E64,E32,BCVal}) where {E64,E32,BCVal} =
-    _lookup_or_insert!(bank.store_f64, bank.ring_f64, x, E64, BCVal())
-
-# Vector F32
-@inline _get_cache(x::Vector{Float32}, bank::CacheBank{E64,E32,BCVal}) where {E64,E32,BCVal} =
-    _lookup_or_insert!(bank.store_f32, bank.ring_f32, x, E32, BCVal())
-
-# Range F64
-@inline _get_cache(x::_StepRangeLen_F64, bank::CacheBank{E64,E32,BCVal}) where {E64,E32,BCVal} =
-    _lookup_or_insert!(bank.store_f64, bank.ring_f64, x, E64, BCVal())
-
-# Range F32
-@inline _get_cache(x::_StepRangeLen_F32, bank::CacheBank{E64,E32,BCVal}) where {E64,E32,BCVal} =
-    _lookup_or_insert!(bank.store_f32, bank.ring_f32, x, E32, BCVal())
-
-# ═══════════════════════════════════════════════════════════════════════
-# Public API: get_cubic_cache(x; bc=:natural)
-# ═══════════════════════════════════════════════════════════════════════
+# ===============================================================
+# Public API: get_cubic_cache
+# ===============================================================
 
 """
-    get_cubic_cache(x; bc::Symbol=:natural)
+    get_cubic_cache(x; bc=:natural)
 
 Get or create a cached CubicSplineCache for the given x-grid.
 
+Supports ALL BCPair combinations, not just :natural/:periodic symbols.
+Same BC **type** with different **values** shares the same cached LU factorization.
+
 # Arguments
 - `x`: X-grid (Vector or Range)
-- `bc`: Boundary condition - `:natural` (default) or `:periodic`
+- `bc`: Boundary condition specification:
+  - `Symbol`: `:natural`, `:clamped`, `:periodic`
+  - `D1(val)` or `D2(val)`: Symmetric BC (same at both ends)
+  - `BCPair(D1(v1), D2(v2))`: Asymmetric BC pair
+  - `PeriodicBC()`: Periodic boundary condition
 
 # Returns
 Cached `CubicSplineCache` for zero-allocation repeated interpolation.
 
 # Examples
 ```julia
-cache = get_cubic_cache(x)                    # Natural BC
-cache = get_cubic_cache(x; bc=:periodic)      # Periodic BC
+cache = get_cubic_cache(x)                              # Natural BC
+cache = get_cubic_cache(x; bc=:clamped)                 # Clamped BC
+cache = get_cubic_cache(x; bc=:periodic)                # Periodic BC
+cache = get_cubic_cache(x; bc=BCPair(D1(0.5), D2(0)))   # Mixed BC
 ```
 """
-# Keyword convenience API (for users)
-@inline function get_cubic_cache(x; bc::Symbol=:natural)
-    bc === :natural  && return get_cubic_cache(x, Val(:natural))
-    bc === :periodic && return get_cubic_cache(x, Val(:periodic))
-    throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
+@inline function get_cubic_cache(x; bc::Union{Symbol,AbstractBC}=:natural)
+    # Handle periodic BC
+    if bc === :periodic || bc isa PeriodicBC
+        return _get_periodic_cache_impl(x)
+    end
+
+    # Determine float type (convert Int to Float64)
+    T = eltype(x)
+    FT = T <: AbstractFloat ? T : Float64
+
+    # Normalize BC to BCPair
+    bc_pair = _normalize_bc(bc, FT)
+
+    # Get bank and lookup
+    return _get_derivative_cache_impl(x, bc_pair)
 end
 
-# ═══════════════════════════════════════════════════════════════════════
-# Val-based API (type-stable, for internal use and advanced users)
-# ═══════════════════════════════════════════════════════════════════════
+# ===============================================================
+# Type-Stable Direct API (bypasses Union for zero-allocation)
+# ===============================================================
 
-# Vector dispatch (accepts AbstractVector, collects if needed)
-get_cubic_cache(x::AbstractVector{T}, ::Val{:natural}) where T<:Union{Float64,Float32} =
-    _get_cubic_cache_impl(x isa Vector ? x : collect(x), _BANK_VEC_NATURAL)
-get_cubic_cache(x::AbstractVector{T}, ::Val{:periodic}) where T<:Union{Float64,Float32} =
-    _get_cubic_cache_impl(x isa Vector ? x : collect(x), _BANK_VEC_PERIODIC)
+# Val-based API - direct path, no Union
+@inline function get_cubic_cache(x, ::Val{:natural})
+    T = eltype(x)
+    FT = T <: AbstractFloat ? T : Float64
+    bc_pair = BCPair(D2(zero(FT)), D2(zero(FT)))
+    return _get_derivative_cache_impl(x, bc_pair)
+end
 
-# Range dispatch (normalize to canonical StepRangeLen)
-get_cubic_cache(x::AbstractRange{T}, ::Val{:natural}) where T<:Union{Float64,Float32} =
-    _get_cubic_cache_impl(range(first(x), last(x), length(x)), _BANK_RANGE_NATURAL)
-get_cubic_cache(x::AbstractRange{T}, ::Val{:periodic}) where T<:Union{Float64,Float32} =
-    _get_cubic_cache_impl(range(first(x), last(x), length(x)), _BANK_RANGE_PERIODIC)
+@inline function get_cubic_cache(x, ::Val{:periodic})
+    return _get_periodic_cache_impl(x)
+end
 
-# Fallback: other Real types → convert to Float64
-get_cubic_cache(x::AbstractVector{<:Real}, bcval::Val) =
-    get_cubic_cache(Vector{Float64}(x), bcval)
-get_cubic_cache(x::AbstractRange{<:Real}, bcval::Val) =
-    get_cubic_cache(range(Float64(first(x)), Float64(last(x)), length(x)), bcval)
+# BCPair direct API - type stable (used by cubic_interp! for non-symbol BCs)
+@inline function get_cubic_cache(x, bc::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+    return _get_derivative_cache_impl(x, bc)
+end
 
-# Implementation with lock
-@inline function _get_cubic_cache_impl(x, bank)
+# PointBC convenience - convert to symmetric BCPair
+@inline function get_cubic_cache(x, bc::PointBC)
+    T = eltype(x)
+    FT = T <: AbstractFloat ? T : Float64
+    bc_t = _promote_pointbc(bc, FT)
+    bc_pair = BCPair(bc_t, bc_t)
+    return _get_derivative_cache_impl(x, bc_pair)
+end
+
+# ===============================================================
+# Internal: Cache Implementation with Locking
+# ===============================================================
+
+# StepRangeLen concrete types (from `range(a, b, n)`)
+const _StepRangeLen_F64 = StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
+const _StepRangeLen_F32 = StepRangeLen{Float32, Float64, Float64, Int64}
+
+"""
+Internal implementation for derivative BC cache lookup.
+Normalizes grid type and applies locking only when needed.
+"""
+@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+    # Normalize to concrete grid type
+    x_normalized = x isa Vector ? x : collect(x)
+
+    # Get bank (lock-free for existing banks)
+    bank = _get_derivative_bank(x_normalized, bc_pair)
+    id = objectid(x_normalized)
+
+    # [Pass 1] Lock-free identity check (hot path, zero-allocation)
+    result = _pass1_identity_check(bank.store, id)
+    result !== nothing && return result
+
+    # [Pass 2 + Insert] Requires lock
     lock(_CACHE_LOCK)
     try
-        return _get_cache(x, bank)
+        return _lookup_or_insert_locked!(bank, x_normalized, id)
     finally
         unlock(_CACHE_LOCK)
     end
+end
+
+@inline function _get_derivative_cache_impl(x::AbstractRange{T}, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+    # Normalize to canonical StepRangeLen
+    x_normalized = range(first(x), last(x), length(x))
+
+    # Get bank (lock-free for existing banks)
+    bank = _get_derivative_bank(x_normalized, bc_pair)
+    id = objectid(x_normalized)
+
+    # [Pass 1] Lock-free identity check (hot path, zero-allocation)
+    result = _pass1_identity_check(bank.store, id)
+    result !== nothing && return result
+
+    # [Pass 2 + Insert] Requires lock
+    lock(_CACHE_LOCK)
+    try
+        return _lookup_or_insert_locked!(bank, x_normalized, id)
+    finally
+        unlock(_CACHE_LOCK)
+    end
+end
+
+# Fallback: other Real types → convert to Float64
+@inline function _get_derivative_cache_impl(x::AbstractVector{<:Real}, bc_pair::BCPair)
+    x_float = Vector{Float64}(x)
+    bc_float = _normalize_bc(bc_pair, Float64)
+    _get_derivative_cache_impl(x_float, bc_float)
+end
+
+@inline function _get_derivative_cache_impl(x::AbstractRange{<:Real}, bc_pair::BCPair)
+    x_float = range(Float64(first(x)), Float64(last(x)), length(x))
+    bc_float = _normalize_bc(bc_pair, Float64)
+    _get_derivative_cache_impl(x_float, bc_float)
+end
+
+"""
+Internal implementation for periodic BC cache lookup.
+"""
+@inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T<:Union{Float64,Float32}}
+    x_normalized = x isa Vector ? x : collect(x)
+    bank = _get_periodic_bank(x_normalized)
+    id = objectid(x_normalized)
+
+    # [Pass 1] Lock-free identity check (hot path, zero-allocation)
+    result = _pass1_identity_check(bank.store, id)
+    result !== nothing && return result
+
+    # [Pass 2 + Insert] Requires lock
+    lock(_CACHE_LOCK)
+    try
+        return _lookup_or_insert_locked!(bank, x_normalized, id)
+    finally
+        unlock(_CACHE_LOCK)
+    end
+end
+
+@inline function _get_periodic_cache_impl(x::AbstractRange{T}) where {T<:Union{Float64,Float32}}
+    x_normalized = range(first(x), last(x), length(x))
+    bank = _get_periodic_bank(x_normalized)
+    id = objectid(x_normalized)
+
+    # [Pass 1] Lock-free identity check (hot path, zero-allocation)
+    result = _pass1_identity_check(bank.store, id)
+    result !== nothing && return result
+
+    # [Pass 2 + Insert] Requires lock
+    lock(_CACHE_LOCK)
+    try
+        return _lookup_or_insert_locked!(bank, x_normalized, id)
+    finally
+        unlock(_CACHE_LOCK)
+    end
+end
+
+# Fallback: other Real types → convert to Float64
+@inline function _get_periodic_cache_impl(x::AbstractVector{<:Real})
+    _get_periodic_cache_impl(Vector{Float64}(x))
+end
+
+@inline function _get_periodic_cache_impl(x::AbstractRange{<:Real})
+    _get_periodic_cache_impl(range(Float64(first(x)), Float64(last(x)), length(x)))
 end

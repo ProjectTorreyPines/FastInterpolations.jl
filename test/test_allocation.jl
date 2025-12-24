@@ -211,7 +211,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         end
 
         stats = cubic_cache_stats()
-        @test stats.size == 4
+        @test stats.total_entries == 4
         @test stats.evictions == 0
 
         # Add 5th grid - triggers ring buffer eviction
@@ -265,7 +265,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         @test cubic_cache_stats().evictions == 4
 
         # Size stays at limit
-        @test cubic_cache_stats().size == 3
+        @test cubic_cache_stats().total_entries == 3
 
         set_cubic_cache_size!(old_size)
     end

@@ -16,21 +16,21 @@
         stats1 = cubic_cache_stats()
         @test stats1.misses == 1
         @test stats1.hits == 0
-        @test stats1.size == 1
+        @test stats1.total_entries == 1
 
         # Second call with same x - cache hit
         result2 = cubic_interp(x, y2, x_query)
         stats2 = cubic_cache_stats()
         @test stats2.misses == 1
         @test stats2.hits == 1
-        @test stats2.size == 1
+        @test stats2.total_entries == 1
 
         # Third call with same x - another cache hit
         result3 = cubic_interp(x, y3, x_query)
         stats3 = cubic_cache_stats()
         @test stats3.misses == 1
         @test stats3.hits == 2
-        @test stats3.size == 1
+        @test stats3.total_entries == 1
         @test stats3.efficiency == 66.7  # 2 hits / 3 total = 66.7%
 
         # Results should be different (different y values)
@@ -58,25 +58,25 @@
         # First grid - miss
         cubic_interp(x1, y, x_query)
         stats1 = cubic_cache_stats()
-        @test stats1.size == 1
+        @test stats1.total_entries == 1
         @test stats1.misses == 1
 
         # Second grid - miss
         cubic_interp(x2, y, x_query)
         stats2 = cubic_cache_stats()
-        @test stats2.size == 2
+        @test stats2.total_entries == 2
         @test stats2.misses == 2
 
         # Third grid - miss
         cubic_interp(x3, y, x_query)
         stats3 = cubic_cache_stats()
-        @test stats3.size == 3
+        @test stats3.total_entries == 3
         @test stats3.misses == 3
 
         # Reuse first grid - hit
         cubic_interp(x1, y, x_query)
         stats4 = cubic_cache_stats()
-        @test stats4.size == 3
+        @test stats4.total_entries == 3
         @test stats4.hits == 1
         @test stats4.misses == 3
     end
@@ -95,13 +95,13 @@
             cubic_interp(grids[i], y, x_query)
         end
         stats = cubic_cache_stats()
-        @test stats.size == 3
+        @test stats.total_entries == 3
         @test stats.misses == 3
 
         # Add 4th grid - should evict oldest
         cubic_interp(grids[4], y, x_query)
         stats = cubic_cache_stats()
-        @test stats.size == 3  # Still at limit
+        @test stats.total_entries == 3  # Still at limit
         @test stats.evictions == 1
 
         # Reset cache size to default
@@ -118,21 +118,21 @@
         # With autocache=true (default)
         result1 = cubic_interp(x, y, x_query)
         stats1 = cubic_cache_stats()
-        @test stats1.size == 1
+        @test stats1.total_entries == 1
         @test stats1.misses == 1
 
         # Another call with autocache=true - should hit
         result2 = cubic_interp(x, y, x_query; autocache=true)
         stats2 = cubic_cache_stats()
         @test stats2.hits == 1
-        @test stats2.size == 1
+        @test stats2.total_entries == 1
 
         # With autocache=false - should not affect cache
         result3 = cubic_interp(x, y, x_query; autocache=false)
         stats3 = cubic_cache_stats()
         @test stats3.hits == 1  # No new hits
         @test stats3.misses == 1  # No new misses
-        @test stats3.size == 1  # Cache size unchanged
+        @test stats3.total_entries == 1  # Cache size unchanged
 
         # Results should be identical
         @test result1 ≈ result2
@@ -153,11 +153,11 @@
         y = sin.(2π .* x)
         cubic_interp(x, y, [0.5])
         stats_before = cubic_cache_stats()
-        @test stats_before.size > 0
+        @test stats_before.total_entries > 0
 
         clear_cubic_cache!()
         stats_after = cubic_cache_stats()
-        @test stats_after.size == 0
+        @test stats_after.total_entries == 0
         @test stats_after.hits == 0
         @test stats_after.misses == 0
         @test stats_after.evictions == 0
@@ -179,7 +179,7 @@
 
         stats = cubic_cache_stats()
         # With default cache size of 16, we should have evictions
-        @test stats.size <= 16
+        @test stats.total_entries <= 16
         @test stats.misses >= n_grids
         @test stats.evictions >= (n_grids - 16)
     end
@@ -193,7 +193,7 @@
         # Scalar query with autocache
         result1 = cubic_interp(x, y, 0.5)
         stats1 = cubic_cache_stats()
-        @test stats1.size == 1
+        @test stats1.total_entries == 1
         @test stats1.misses == 1
 
         # Another scalar query - cache hit
@@ -443,10 +443,10 @@
         cache_int = get_cubic_cache(x_int, Val(:natural))
         @test cache_int isa CubicSplineCache{Float64}
 
-        # Float16 vector → should convert to Float64
+        # Float16 vector → kept as Float16 (native AbstractFloat)
         x_f16 = Float16.(collect(range(0.0, 1.0, 11)))
         cache_f16 = get_cubic_cache(x_f16, Val(:natural))
-        @test cache_f16 isa CubicSplineCache{Float64}
+        @test cache_f16 isa CubicSplineCache{Float16}
     end
 
     @testset "get_cubic_cache keyword API" begin

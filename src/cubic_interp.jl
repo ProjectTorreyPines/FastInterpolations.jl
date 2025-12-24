@@ -131,6 +131,105 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
     return output
 end
 
+# ========================================
+# Core Fallback Functions (Type-Stable Dispatch)
+# ========================================
+#
+# These are the two core implementations that all Symbol-based APIs
+# dispatch to after normalizing BC to concrete types.
+#
+# Key insight: LU factorization depends only on BC **types** (D1 vs D2),
+# not BC **values**. So autocache stores by (x, L_type, R_type),
+# and we apply actual BC values at solve time via _solve_system!(cache, y, bc_tuple).
+
+"""
+Core implementation for BCPair boundary conditions (vector output).
+Uses autocache with BC value override.
+"""
+@inline function _cubic_interp_bcpair!(
+    output::AbstractVector{T},
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    x_query::AbstractVector{T},
+    bc::BCPair{T,L,R},
+    extrap::Symbol,
+    autocache::Bool
+) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+    @assert length(y) == length(x) "y length must match x"
+    @assert length(output) == length(x_query) "output length must match x_query"
+
+    if autocache
+        cache = get_cubic_cache(x, bc)
+        # Apply BC values at solve time (LU cached, RHS uses actual values)
+        z = _solve_system!(cache, y, (bc.left, bc.right))
+        @_dispatch_extrap extrap => ev begin
+            _cubic_vector_loop!(output, cache, y, z, x_query, ev)
+        end
+    else
+        cache = CubicSplineCache(x; bc=bc)
+        cubic_interp!(output, cache, y, x_query; extrap=extrap)
+    end
+
+    return output
+end
+
+"""
+Core implementation for BCPair boundary conditions (scalar query).
+Uses autocache with BC value override.
+"""
+@inline function _cubic_interp_bcpair_scalar(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    x_query::T,
+    bc::BCPair{T,L,R},
+    extrap::Symbol,
+    autocache::Bool
+) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+    if autocache
+        cache = get_cubic_cache(x, bc)
+        z = _solve_system!(cache, y, (bc.left, bc.right))
+        @_dispatch_extrap extrap => ev begin
+            _check_domain(cache.x, x_query, ev)
+            return _eval_with_bc(cache, y, cache.h, z, x_query, ev)
+        end
+    else
+        cache = CubicSplineCache(x; bc=bc)
+        return cubic_interp_scalar(cache, y, x_query; extrap=extrap)
+    end
+end
+
+"""
+Core implementation for PeriodicBC boundary conditions (vector output).
+"""
+@inline function _cubic_interp_periodic!(
+    output::AbstractVector{T},
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    x_query::AbstractVector{T},
+    autocache::Bool
+) where {T<:AbstractFloat}
+    @assert length(y) == length(x) "y length must match x"
+    @assert length(output) == length(x_query) "output length must match x_query"
+
+    _check_periodic_endpoints(y)
+    cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
+    return cubic_interp!(output, cache, y, x_query; extrap=:wrap)
+end
+
+"""
+Core implementation for PeriodicBC boundary conditions (scalar query).
+"""
+@inline function _cubic_interp_periodic_scalar(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    x_query::T,
+    autocache::Bool
+) where {T<:AbstractFloat}
+    _check_periodic_endpoints(y)
+    cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
+    return cubic_interp_scalar(cache, y, x_query; extrap=:wrap)
+end
+
 """
     cubic_interp!(output, x, y, x_query; bc=:natural, extrap=:none, autocache=true)
 
@@ -150,20 +249,14 @@ In-place cubic spline interpolation with optional automatic caching.
 
     # Periodic BC: both :periodic symbol and PeriodicBC type
     if bc === :periodic || bc isa PeriodicBC
-        _check_periodic_endpoints(y)
-        extrap = :wrap  # override extrap for periodic
-        cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
-        return cubic_interp!(output, cache, y, x_query; extrap=extrap)
-    # Autocache only for :natural symbol (not BCPair/PointBC variants)
-    elseif bc === :natural && autocache
-        cache = get_cubic_cache(x, Val(:natural))
-        return cubic_interp!(output, cache, y, x_query; extrap=extrap)
-    else
-        # :clamped, PointBC, BCPair, or autocache=false: create fresh cache
-        cache = CubicSplineCache(x; bc=bc)
-        return cubic_interp!(output, cache, y, x_query; extrap=extrap)
+        return _cubic_interp_periodic!(output, x, y, x_query, autocache)
     end
+
+    # Normalize to BCPair and dispatch to core
+    bc_pair = _normalize_bc(bc, T)
+    return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache)
 end
+
 
 # Scalar query - zero allocation
 @inline function cubic_interp!(
@@ -191,20 +284,13 @@ end
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    # Periodic BC: both :periodic symbol and PeriodicBC type
     if bc === :periodic || bc isa PeriodicBC
-        _check_periodic_endpoints(y)
-        extrap = :wrap  # override extrap for periodic
-        cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
-    # Autocache only for :natural symbol (not BCPair/PointBC variants)
-    elseif bc === :natural && autocache
-        cache = get_cubic_cache(x, Val(:natural))
+        output[1] = _cubic_interp_periodic_scalar(x, y, x_query, autocache)
     else
-        # :clamped, PointBC, BCPair, or autocache=false: create fresh cache
-        cache = CubicSplineCache(x; bc=bc)
+        bc_pair = _normalize_bc(bc, T)
+        output[1] = _cubic_interp_bcpair_scalar(x, y, x_query, bc_pair, extrap, autocache)
     end
 
-    output[1] = cubic_interp_scalar(cache, y, x_query; extrap=extrap)
     return output
 end
 
@@ -265,21 +351,14 @@ function cubic_interp(
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    # Periodic BC: both :periodic symbol and PeriodicBC type
+    output = Vector{T}(undef, length(x_query))
+
     if bc === :periodic || bc isa PeriodicBC
-        _check_periodic_endpoints(y)
-        extrap = :wrap  # override extrap for periodic
-        cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
-        return cubic_interp(cache, y, x_query; extrap=extrap)
-    # Autocache only for :natural symbol (not BCPair/PointBC variants)
-    elseif bc === :natural && autocache
-        cache = get_cubic_cache(x, Val(:natural))
-        return cubic_interp(cache, y, x_query; extrap=extrap)
-    else
-        # :clamped, PointBC, BCPair, or autocache=false: create fresh cache
-        cache = CubicSplineCache(x; bc=bc)
-        return cubic_interp(cache, y, x_query; extrap=extrap)
+        return _cubic_interp_periodic!(output, x, y, x_query, autocache)
     end
+
+    bc_pair = _normalize_bc(bc, T)
+    return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache)
 end
 
 # Scalar query - zero allocation
@@ -298,21 +377,12 @@ function cubic_interp(
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    # Periodic BC: both :periodic symbol and PeriodicBC type
     if bc === :periodic || bc isa PeriodicBC
-        _check_periodic_endpoints(y)
-        extrap = :wrap  # override extrap for periodic
-        cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
-        return cubic_interp_scalar(cache, y, x_query; extrap=extrap)
-    # Autocache only for :natural symbol (not BCPair/PointBC variants)
-    elseif bc === :natural && autocache
-        cache::CubicSplineCache{T} = get_cubic_cache(x, Val(:natural))
-        return cubic_interp_scalar(cache, y, x_query; extrap=extrap)
-    else
-        # :clamped, PointBC, BCPair, or autocache=false: create fresh cache
-        cache = CubicSplineCache(x; bc=bc)
-        return cubic_interp_scalar(cache, y, x_query; extrap=extrap)
+        return _cubic_interp_periodic_scalar(x, y, x_query, autocache)
     end
+
+    bc_pair = _normalize_bc(bc, T)
+    return _cubic_interp_bcpair_scalar(x, y, x_query, bc_pair, extrap, autocache)
 end
 
 # ========================================
@@ -391,20 +461,22 @@ function cubic_interp(
 ) where {T<:AbstractFloat}
     _validate_bc(bc)
 
-    # Periodic BC: both :periodic symbol and PeriodicBC type
     if bc === :periodic || bc isa PeriodicBC
         _check_periodic_endpoints(y)
-        extrap = :wrap  # override extrap for periodic
+        extrap = :wrap
         cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
-    # Autocache only for :natural symbol (not BCPair/PointBC variants)
-    elseif bc === :natural && autocache
-        cache = get_cubic_cache(x, Val(:natural))
+        _solve_system!(cache, y)
     else
-        # :clamped, PointBC, BCPair, or autocache=false: create fresh cache
-        cache = CubicSplineCache(x; bc=bc)
+        bc_pair = _normalize_bc(bc, T)
+        if autocache
+            cache = get_cubic_cache(x, bc_pair)
+            _solve_system!(cache, y, (bc_pair.left, bc_pair.right))
+        else
+            cache = CubicSplineCache(x; bc=bc_pair)
+            _solve_system!(cache, y)
+        end
     end
 
-    _solve_system!(cache, y)
     z = copy(cache.z_workspace)
 
     @_dispatch_extrap extrap => ev begin
@@ -450,20 +522,22 @@ function cubic_interp(
     x_float = _to_float(x, FT)
     y_float = FT.(y)
 
-    # Periodic BC: both :periodic symbol and PeriodicBC type
     if bc === :periodic || bc isa PeriodicBC
         _check_periodic_endpoints(y_float)
-        extrap = :wrap  # override extrap for periodic
+        extrap = :wrap
         cache = autocache ? get_cubic_cache(x_float, Val(:periodic)) : CubicSplineCache(x_float; bc=:periodic)
-    # Autocache only for :natural symbol (not BCPair/PointBC variants)
-    elseif bc === :natural && autocache
-        cache = get_cubic_cache(x_float, Val(:natural))
+        _solve_system!(cache, y_float)
     else
-        # :clamped, PointBC, BCPair, or autocache=false: create fresh cache
-        cache = CubicSplineCache(x_float; bc=bc)
+        bc_pair = _normalize_bc(bc, FT)
+        if autocache
+            cache = get_cubic_cache(x_float, bc_pair)
+            _solve_system!(cache, y_float, (bc_pair.left, bc_pair.right))
+        else
+            cache = CubicSplineCache(x_float; bc=bc_pair)
+            _solve_system!(cache, y_float)
+        end
     end
 
-    _solve_system!(cache, y_float)
     z = copy(cache.z_workspace)
 
     @_dispatch_extrap extrap => ev begin

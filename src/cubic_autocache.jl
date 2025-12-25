@@ -183,11 +183,14 @@ Uses lock-free read for fast path, lock only for first creation.
     bank = get(_DERIVATIVE_BANK_REGISTRY, BankType, nothing)
     bank !== nothing && return bank::BankType
 
-    # Slow path: lock for first creation
-    lock(_CACHE_LOCK) do
+    # Slow path: lock for first creation (try-finally to avoid closure allocation)
+    lock(_CACHE_LOCK)
+    try
         if !haskey(_DERIVATIVE_BANK_REGISTRY, BankType)
             _DERIVATIVE_BANK_REGISTRY[BankType] = CacheBank{T,L,R,X}()
         end
+    finally
+        unlock(_CACHE_LOCK)
     end
     return _DERIVATIVE_BANK_REGISTRY[BankType]::BankType
 end
@@ -202,11 +205,14 @@ Get or create a periodic BC cache bank for the given (T, X) combination.
     bank = get(_PERIODIC_BANK_REGISTRY, BankType, nothing)
     bank !== nothing && return bank::BankType
 
-    # Slow path: lock for first creation
-    lock(_CACHE_LOCK) do
+    # Slow path: lock for first creation (try-finally to avoid closure allocation)
+    lock(_CACHE_LOCK)
+    try
         if !haskey(_PERIODIC_BANK_REGISTRY, BankType)
             _PERIODIC_BANK_REGISTRY[BankType] = PeriodicCacheBank{T,X}()
         end
+    finally
+        unlock(_CACHE_LOCK)
     end
     return _PERIODIC_BANK_REGISTRY[BankType]::BankType
 end
@@ -229,45 +235,19 @@ end
 end
 
 # ===============================================================
-# Internal: Lookup/Insert (Unified - No Vec/Range Branching)
+# Internal: Lookup/Insert (Unified)
 # ===============================================================
 
 """
-Lock-free Pass 1 identity check (hot path, zero-allocation).
-Returns cache on hit, nothing on miss.
+Lookup or insert into a derivative BC cache bank.
+2-pass lookup: identity check (fast) → equality check (slower) → insert.
 """
-@inline function _pass1_identity_check(store::Vector{CacheEntry{T,L,R,X}}, id::UInt) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
-    @inbounds for entry in store
-        if entry.id === id
-            _CACHE_HITS[] += 1
-            return entry.cache
-        end
-    end
-    return nothing
-end
-
-"""
-Lock-free Pass 1 identity check for periodic bank.
-"""
-@inline function _pass1_identity_check(store::Vector{PeriodicCacheEntry{T,X}}, id::UInt) where {T<:AbstractFloat, X<:AbstractVector{T}}
-    @inbounds for entry in store
-        if entry.id === id
-            _CACHE_HITS[] += 1
-            return entry.cache
-        end
-    end
-    return nothing
-end
-
-"""
-Lookup or insert into a derivative BC cache bank (requires lock held).
-Called only when Pass 1 misses.
-"""
-@inline function _lookup_or_insert_locked!(bank::CacheBank{T,L,R,X}, x::X, id::UInt) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+@inline function _lookup_or_insert!(bank::CacheBank{T,L,R,X}, x::X) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
     store = bank.store
     ring = bank.ring
+    id = objectid(x)
 
-    # [Pass 1 re-check] May have been inserted by another thread
+    # [Pass 1] Identity check (fast path)
     @inbounds for entry in store
         if entry.id === id
             _CACHE_HITS[] += 1
@@ -275,17 +255,16 @@ Called only when Pass 1 misses.
         end
     end
 
-    # [Pass 2] Equality Check - O(1) for Range, O(N) for Vector
+    # [Pass 2] Equality check - O(1) for Range, O(N) for Vector
     @inbounds for entry in store
         if isequal(entry.x, x)
-            entry.id = id  # Self-healing
+            entry.id = id  # Self-healing for future fast-path hits
             _CACHE_HITS[] += 1
             return entry.cache
         end
     end
 
     # [Cache Miss] Create new entry
-    # L and R are already concrete types like D2{Float64}, just call as constructor
     _CACHE_MISSES[] += 1
     new_cache = _build_derivative_bc_cache(x, L(zero(T)), R(zero(T)))
     new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
@@ -295,14 +274,14 @@ Called only when Pass 1 misses.
 end
 
 """
-Lookup or insert into a periodic BC cache bank (requires lock held).
-Called only when Pass 1 misses.
+Lookup or insert into a periodic BC cache bank.
 """
-@inline function _lookup_or_insert_locked!(bank::PeriodicCacheBank{T,X}, x::X, id::UInt) where {T<:AbstractFloat, X<:AbstractVector{T}}
+@inline function _lookup_or_insert!(bank::PeriodicCacheBank{T,X}, x::X) where {T<:AbstractFloat, X<:AbstractVector{T}}
     store = bank.store
     ring = bank.ring
+    id = objectid(x)
 
-    # [Pass 1 re-check] May have been inserted by another thread
+    # [Pass 1] Identity check (fast path)
     @inbounds for entry in store
         if entry.id === id
             _CACHE_HITS[] += 1
@@ -310,7 +289,7 @@ Called only when Pass 1 misses.
         end
     end
 
-    # [Pass 2] Equality Check
+    # [Pass 2] Equality check
     @inbounds for entry in store
         if isequal(entry.x, x)
             entry.id = id  # Self-healing
@@ -416,48 +395,18 @@ const _StepRangeLen_F32 = StepRangeLen{Float32, Float64, Float64, Int64}
 
 """
 Internal implementation for derivative BC cache lookup.
-Normalizes grid type and applies locking only when needed.
 """
 @inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
-    # Normalize to concrete grid type
     x_normalized = x isa Vector ? x : collect(x)
-
-    # Get bank (lock-free for existing banks)
     bank = _get_derivative_bank(x_normalized, bc_pair)
-    id = objectid(x_normalized)
-
-    # [Pass 1] Lock-free identity check (hot path, zero-allocation)
-    result = _pass1_identity_check(bank.store, id)
-    result !== nothing && return result
-
-    # [Pass 2 + Insert] Requires lock
-    lock(_CACHE_LOCK)
-    try
-        return _lookup_or_insert_locked!(bank, x_normalized, id)
-    finally
-        unlock(_CACHE_LOCK)
-    end
+    return _lookup_or_insert!(bank, x_normalized)
 end
 
 @inline function _get_derivative_cache_impl(x::AbstractRange{T}, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
-    # Normalize to canonical StepRangeLen
-    x_normalized = range(first(x), last(x), length(x))
-
-    # Get bank (lock-free for existing banks)
+    # Skip normalization if already StepRangeLen from range(a, b, n)
+    x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
     bank = _get_derivative_bank(x_normalized, bc_pair)
-    id = objectid(x_normalized)
-
-    # [Pass 1] Lock-free identity check (hot path, zero-allocation)
-    result = _pass1_identity_check(bank.store, id)
-    result !== nothing && return result
-
-    # [Pass 2 + Insert] Requires lock
-    lock(_CACHE_LOCK)
-    try
-        return _lookup_or_insert_locked!(bank, x_normalized, id)
-    finally
-        unlock(_CACHE_LOCK)
-    end
+    return _lookup_or_insert!(bank, x_normalized)
 end
 
 # Fallback: other Real types → convert to Float64
@@ -479,37 +428,14 @@ Internal implementation for periodic BC cache lookup.
 @inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T<:Union{Float64,Float32}}
     x_normalized = x isa Vector ? x : collect(x)
     bank = _get_periodic_bank(x_normalized)
-    id = objectid(x_normalized)
-
-    # [Pass 1] Lock-free identity check (hot path, zero-allocation)
-    result = _pass1_identity_check(bank.store, id)
-    result !== nothing && return result
-
-    # [Pass 2 + Insert] Requires lock
-    lock(_CACHE_LOCK)
-    try
-        return _lookup_or_insert_locked!(bank, x_normalized, id)
-    finally
-        unlock(_CACHE_LOCK)
-    end
+    return _lookup_or_insert!(bank, x_normalized)
 end
 
 @inline function _get_periodic_cache_impl(x::AbstractRange{T}) where {T<:Union{Float64,Float32}}
-    x_normalized = range(first(x), last(x), length(x))
+    # Skip normalization if already StepRangeLen from range(a, b, n)
+    x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
     bank = _get_periodic_bank(x_normalized)
-    id = objectid(x_normalized)
-
-    # [Pass 1] Lock-free identity check (hot path, zero-allocation)
-    result = _pass1_identity_check(bank.store, id)
-    result !== nothing && return result
-
-    # [Pass 2 + Insert] Requires lock
-    lock(_CACHE_LOCK)
-    try
-        return _lookup_or_insert_locked!(bank, x_normalized, id)
-    finally
-        unlock(_CACHE_LOCK)
-    end
+    return _lookup_or_insert!(bank, x_normalized)
 end
 
 # Fallback: other Real types → convert to Float64

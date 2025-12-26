@@ -67,16 +67,6 @@ const ATOL = 1e-14
         @test pbc32 isa PeriodicBC{Float32}
     end
 
-    @testset "Type Aliases" begin
-        # NaturalBCPair
-        natural = BCPair(D2(0.0), D2(0.0))
-        @test natural isa FastInterpolations.NaturalBCPair{Float64}
-
-        # ClampedBCPair
-        clamped = BCPair(D1(0.0), D1(0.0))
-        @test clamped isa FastInterpolations.ClampedBCPair{Float64}
-    end
-
     # ========================================
     # Basic Functionality Tests
     # ========================================

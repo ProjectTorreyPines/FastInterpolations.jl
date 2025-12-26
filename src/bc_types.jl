@@ -99,9 +99,6 @@ end
 BCPair(t::Tuple{L, R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}} =
     BCPair{T,L,R}(t[1], t[2])
 
-# Type aliases for common BC combinations
-const NaturalBCPair{T} = BCPair{T, D2{T}, D2{T}}
-const ClampedBCPair{T} = BCPair{T, D1{T}, D1{T}}
 
 """
     PeriodicBC{T<:AbstractFloat} <: AbstractBC{T}

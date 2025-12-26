@@ -18,10 +18,11 @@ else
     include("test_linear.jl")
     include("test_cubic.jl")
     include("test_cubic_autocache.jl")
-    include("test_cubic_callable.jl")
+    include("test_cubic_interpolant.jl")
     include("test_allocation.jl")
     include("test_random_grid.jl")
     include("test_periodic_bc.jl")
     include("test_generic_bc.jl")
+    include("test_type_stability.jl")
     include("test_packages_comparison.jl")
 end

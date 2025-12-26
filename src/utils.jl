@@ -210,23 +210,12 @@ Valid options: `:none`, `:constant`, `:extension`, `:wrap`
     throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
 end
 
-"""
-    _validate_bc(bc::Symbol) -> Nothing
-
-Validate boundary condition symbol for cubic interpolation.
-Throws `ArgumentError` if invalid.
-
-Valid options: `:natural`, `:periodic`, `:clamped`
-"""
-@inline function _validate_bc(bc::Symbol)
-    bc in (:natural, :periodic, :clamped) && return nothing
-    throw(ArgumentError("bc must be :natural, :periodic, or :clamped, got :$bc"))
-end
-
-# Accept BC types: PointBC, BCPair, PeriodicBC
+# Accept BC types: all AbstractBC subtypes
+@inline _validate_bc(::NaturalBC) = nothing
+@inline _validate_bc(::ClampedBC) = nothing
+@inline _validate_bc(::PeriodicBC) = nothing
 @inline _validate_bc(::PointBC) = nothing
 @inline _validate_bc(::BCPair) = nothing
-@inline _validate_bc(::PeriodicBC) = nothing
 
 # ========================================
 # Dispatch Macros (Zero-Allocation Branching)

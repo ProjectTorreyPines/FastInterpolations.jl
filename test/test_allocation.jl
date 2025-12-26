@@ -558,7 +558,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         y = sin.(x)
 
         # Create callable via cubic_interp (computes z coefficients)
-        itp = cubic_interp(x, y; bc=:periodic, autocache=false)
+        itp = cubic_interp(x, y; bc=PeriodicBC(), autocache=false)
 
         # Warmup
         itp(1.0)
@@ -584,7 +584,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         output = similar(x_query)
 
         # Create explicit periodic cache
-        cache = CubicSplineCache(x; bc=:periodic)
+        cache = CubicSplineCache(x; bc=PeriodicBC())
 
         # Warmup
         cubic_interp!(output, cache, y, x_query)
@@ -606,21 +606,21 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
 
         clear_cubic_cache!()
 
-        # Prime periodic autocache
-        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
-        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
+        # Prime periodic autocache (using typed BC API)
+        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
+        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
 
         # Natural BC with autocache for comparison (in-place)
         x_natural = collect(range(0.0, 1.0, 101))
         y_natural = sin.(2π .* x_natural)
         x_query_nat = [0.5]
         output_nat = similar(x_query_nat)
-        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)  # Prime autocache
-        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)  # Warmup
-        natural_allocs = @allocated cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)
+        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=NaturalBC())  # Prime autocache
+        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=NaturalBC())  # Warmup
+        natural_allocs = @allocated cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=NaturalBC())
 
         # Periodic BC with autocache (cache hit - zero allocation)
-        periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
+        periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
 
         # Both natural and periodic BC should be zero-allocation with autocache
         @test natural_allocs <= ALLOC_THRESHOLD
@@ -803,31 +803,34 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
 
         x = collect(range(0.0, 1.0, 51))
 
-        # Prime cache for both BC types
-        get_cubic_cache(x; bc=:natural)
-        get_cubic_cache(x; bc=:periodic)
+        # Prime cache for both BC types (using typed BC API)
+        get_cubic_cache(x, NaturalBC())
+        get_cubic_cache(x, PeriodicBC())
 
-        # Runtime symbol version (simulating user code passing runtime variable)
-        function cache_runtime_bc(bc_mode::Symbol)
-            get_cubic_cache(x; bc=bc_mode)
+        # Runtime BC type version (simulating user code passing runtime variable)
+        function cache_runtime_bc_natural()
+            get_cubic_cache(x, NaturalBC())
+        end
+        function cache_runtime_bc_periodic()
+            get_cubic_cache(x, PeriodicBC())
         end
 
         # Extended warmup for JIT stabilization (important for inner functions)
         for _ in 1:10
-            cache_runtime_bc(:natural)
-            cache_runtime_bc(:periodic)
+            cache_runtime_bc_natural()
+            cache_runtime_bc_periodic()
         end
 
-        # Measure runtime symbol version
-        allocs_natural = @allocated cache_runtime_bc(:natural)
-        allocs_periodic = @allocated cache_runtime_bc(:periodic)
+        # Measure typed BC version
+        allocs_natural = @allocated cache_runtime_bc_natural()
+        allocs_periodic = @allocated cache_runtime_bc_periodic()
 
-        # The 64/96 bytes comes from cache lookup (lock + objectid check), not Val pattern.
+        # The 64/96 bytes comes from cache lookup (lock + objectid check).
         # Key test: repeated calls should be consistent (no growing allocation).
-        allocs_natural2 = @allocated cache_runtime_bc(:natural)
-        allocs_periodic2 = @allocated cache_runtime_bc(:periodic)
+        allocs_natural2 = @allocated cache_runtime_bc_natural()
+        allocs_periodic2 = @allocated cache_runtime_bc_periodic()
 
-        # Same allocation on repeated calls = no leak from Val pattern
+        # Same allocation on repeated calls = no leak
         @test allocs_natural == allocs_natural2
         @test allocs_periodic == allocs_periodic2
 

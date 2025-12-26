@@ -312,35 +312,36 @@ end
 # ===============================================================
 
 """
-    get_cubic_cache(x; bc=:natural)
+    get_cubic_cache(x; bc=NaturalBC())
 
 Get or create a cached CubicSplineCache for the given x-grid.
 
-Supports ALL BCPair combinations, not just :natural/:periodic symbols.
+Supports ALL BCPair combinations, not just NaturalBC/PeriodicBC.
 Same BC **type** with different **values** shares the same cached LU factorization.
 
 # Arguments
 - `x`: X-grid (Vector or Range)
 - `bc`: Boundary condition specification:
-  - `Symbol`: `:natural`, `:clamped`, `:periodic`
+  - `NaturalBC()`: Natural BC (default)
+  - `ClampedBC()`: Clamped BC
+  - `PeriodicBC()`: Periodic boundary condition
   - `D1(val)` or `D2(val)`: Symmetric BC (same at both ends)
   - `BCPair(D1(v1), D2(v2))`: Asymmetric BC pair
-  - `PeriodicBC()`: Periodic boundary condition
 
 # Returns
 Cached `CubicSplineCache` for zero-allocation repeated interpolation.
 
 # Examples
 ```julia
-cache = get_cubic_cache(x)                              # Natural BC
-cache = get_cubic_cache(x; bc=:clamped)                 # Clamped BC
-cache = get_cubic_cache(x; bc=:periodic)                # Periodic BC
+cache = get_cubic_cache(x)                              # Natural BC (default)
+cache = get_cubic_cache(x; bc=ClampedBC())              # Clamped BC
+cache = get_cubic_cache(x; bc=PeriodicBC())             # Periodic BC
 cache = get_cubic_cache(x; bc=BCPair(D1(0.5), D2(0)))   # Mixed BC
 ```
 """
-@inline function get_cubic_cache(x; bc::Union{Symbol,AbstractBC}=:natural)
+@inline function get_cubic_cache(x; bc::AbstractBC=NaturalBC())
     # Handle periodic BC
-    if bc === :periodic || bc isa PeriodicBC
+    if _is_periodic_bc(bc)
         return _get_periodic_cache_impl(x)
     end
 
@@ -359,15 +360,22 @@ end
 # Type-Stable Direct API (bypasses Union for zero-allocation)
 # ===============================================================
 
-# Val-based API - direct path, no Union
-@inline function get_cubic_cache(x, ::Val{:natural})
+# Typed BC API - direct path, no Union (recommended)
+@inline function get_cubic_cache(x, ::NaturalBC)
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_pair = BCPair(D2(zero(FT)), D2(zero(FT)))
     return _get_derivative_cache_impl(x, bc_pair)
 end
 
-@inline function get_cubic_cache(x, ::Val{:periodic})
+@inline function get_cubic_cache(x, ::ClampedBC)
+    T = eltype(x)
+    FT = T <: AbstractFloat ? T : Float64
+    bc_pair = BCPair(D1(zero(FT)), D1(zero(FT)))
+    return _get_derivative_cache_impl(x, bc_pair)
+end
+
+@inline function get_cubic_cache(x, ::PeriodicBC)
     return _get_periodic_cache_impl(x)
 end
 

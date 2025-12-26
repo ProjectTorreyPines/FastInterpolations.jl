@@ -55,8 +55,8 @@ The LU factorization depends ONLY on x geometry and can be reused for:
 When x is an AbstractRange, O(1) index lookup is used instead of O(log n) binary search.
 
 # Boundary Conditions
-- `bc=:natural` (default): Natural spline with z[1] = z[n+1] = 0
-- `bc=:periodic`: Periodic spline with C2 continuity at boundaries
+- `bc=NaturalBC()` (default): Natural spline with z[1] = z[n+1] = 0
+- `bc=PeriodicBC()`: Periodic spline with C2 continuity at boundaries
 """
 struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC}
     x::X

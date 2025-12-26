@@ -115,7 +115,7 @@ end
 # ========================================
 
 """
-    cubic_interp(x, y; bc=:natural, extrap=:none, autocache=true) -> CubicInterpolant
+    cubic_interp(x, y; bc=NaturalBC(), extrap=:none, autocache=true) -> CubicInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -130,31 +130,7 @@ vals = itp.(query_points)           # Broadcast
 result = @. coef * itp(rho) * ne    # Fused broadcast
 ```
 """
-# Internal implementation - takes Symbol bc
-# All paths inlined for optimal performance (matches master structure)
-@inline function _cubic_interp_impl(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    bc::Symbol,
-    extrap::Symbol,
-    autocache::Bool
-) where {T<:AbstractFloat}
-    _validate_bc(bc)
-
-    if bc === :periodic
-        return _build_interpolant_periodic(x, y, autocache)
-    elseif bc === :natural
-        bc_pair = BCPair(D2(zero(T)), D2(zero(T)))
-        return _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache)
-    elseif bc === :clamped
-        bc_pair = BCPair(D1(zero(T)), D1(zero(T)))
-        return _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache)
-    else
-        throw(ArgumentError("Unknown BC symbol: $bc"))
-    end
-end
-
-# Internal implementation - takes AbstractBC
+# Internal implementation - takes AbstractBC only (type-stable)
 @inline function _cubic_interp_impl(
     x::AbstractVector{T},
     y::AbstractVector{T},
@@ -170,11 +146,11 @@ end
     end
 end
 
-# Public API - dispatches to specialized internal implementations
+# Public API - AbstractBC only (type-stable)
 function cubic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
-    bc::Union{Symbol,AbstractBC}=:natural,
+    bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
@@ -208,7 +184,7 @@ end
 function cubic_interp(
     x::X,
     y::Y;
-    bc::Union{Symbol,AbstractBC}=:natural,
+    bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}

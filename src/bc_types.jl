@@ -10,7 +10,9 @@
 #   │   ├── D1{T}            # First derivative
 #   │   └── D2{T}            # Second derivative
 #   ├── BCPair{T,L,R}        # Both endpoints
-#   └── PeriodicBC{T}        # Periodic BC
+#   ├── PeriodicBC{T}        # Periodic BC
+#   ├── NaturalBC{T}         # Natural BC (zero curvature at ends)
+#   └── ClampedBC{T}         # Clamped BC (zero slope at ends)
 
 """
     AbstractBC{T<:AbstractFloat}
@@ -18,9 +20,11 @@
 Abstract base type for all boundary condition specifications.
 
 # Subtypes
+- `NaturalBC{T}`: Natural BC (zero curvature at both ends) - default
+- `ClampedBC{T}`: Clamped BC (zero slope at both ends)
+- `PeriodicBC{T}`: Periodic boundary condition
 - `PointBC{T}`: Single-point derivative conditions (D1, D2)
 - `BCPair{T,L,R}`: Pair of left/right boundary conditions
-- `PeriodicBC{T}`: Periodic boundary condition
 """
 abstract type AbstractBC{T<:AbstractFloat} end
 
@@ -110,12 +114,46 @@ solver with `PeriodicData{T}` for the cache.
 # Example
 ```julia
 cache = CubicSplineCache(x; bc=PeriodicBC())
-cache = CubicSplineCache(x; bc=:periodic)  # Symbol also works
 ```
 """
 struct PeriodicBC{T<:AbstractFloat} <: AbstractBC{T} end
 PeriodicBC() = PeriodicBC{Float64}()
 PeriodicBC{T}(::PeriodicBC) where {T<:AbstractFloat} = PeriodicBC{T}()
+
+"""
+    NaturalBC{T<:AbstractFloat} <: AbstractBC{T}
+
+Natural boundary condition: S''(endpoints) = 0 (zero curvature at both ends).
+Equivalent to `BCPair(D2(0), D2(0))`.
+
+This is the default BC for cubic spline interpolation.
+
+# Example
+```julia
+itp = cubic_interp(x, y; bc=NaturalBC())  # Default
+itp = cubic_interp(x, y)                   # Same as above
+```
+"""
+struct NaturalBC{T<:AbstractFloat} <: AbstractBC{T} end
+NaturalBC() = NaturalBC{Float64}()
+NaturalBC{T}(::NaturalBC) where {T<:AbstractFloat} = NaturalBC{T}()
+
+"""
+    ClampedBC{T<:AbstractFloat} <: AbstractBC{T}
+
+Clamped boundary condition: S'(endpoints) = 0 (zero slope at both ends).
+Equivalent to `BCPair(D1(0), D1(0))`.
+
+Also known as "complete" spline with zero derivative.
+
+# Example
+```julia
+itp = cubic_interp(x, y; bc=ClampedBC())
+```
+"""
+struct ClampedBC{T<:AbstractFloat} <: AbstractBC{T} end
+ClampedBC() = ClampedBC{Float64}()
+ClampedBC{T}(::ClampedBC) where {T<:AbstractFloat} = ClampedBC{T}()
 
 
 # ========================================
@@ -138,12 +176,13 @@ Extensible: add methods for new PointBC subtypes.
 # ========================================
 
 """
-    _normalize_bc(bc, ::Type{T}) -> BCPair{T} | PeriodicBC{T}
+    _normalize_bc(bc::AbstractBC, ::Type{T}) -> BCPair{T} | PeriodicBC{T}
 
 Convert BC specification to normalized form for cache construction.
 
 # Accepted Input Types
-- `Symbol`: `:natural`, `:clamped`, `:periodic`
+- `NaturalBC`: Natural BC (zero curvature) - default
+- `ClampedBC`: Clamped BC (zero slope)
 - `PeriodicBC`: Periodic boundary condition
 - `BCPair`: Left/right BC pair (passed through)
 - `PointBC` (D1/D2): Single BC applied symmetrically to both ends
@@ -151,18 +190,14 @@ Convert BC specification to normalized form for cache construction.
 # Returns
 - `BCPair{T}`: For derivative BCs
 - `PeriodicBC{T}`: For periodic BC
-
-# Symbol Mapping
-- `:natural` → `BCPair(D2(0), D2(0))` - zero second derivative at both ends
-- `:clamped` → `BCPair(D1(0), D1(0))` - zero first derivative (flat) at both ends
-- `:periodic` → `PeriodicBC{T}()`
 """
-@inline function _normalize_bc(bc::Symbol, ::Type{T}) where {T<:AbstractFloat}
-    bc === :natural  && return BCPair(D2(zero(T)), D2(zero(T)))
-    bc === :clamped  && return BCPair(D1(zero(T)), D1(zero(T)))
-    bc === :periodic && return PeriodicBC{T}()
-    throw(ArgumentError("Unknown BC symbol: $bc. Valid options: :natural, :clamped, :periodic"))
-end
+# NaturalBC → BCPair(D2(0), D2(0))
+@inline _normalize_bc(::NaturalBC, ::Type{T}) where {T<:AbstractFloat} =
+    BCPair(D2(zero(T)), D2(zero(T)))
+
+# ClampedBC → BCPair(D1(0), D1(0))
+@inline _normalize_bc(::ClampedBC, ::Type{T}) where {T<:AbstractFloat} =
+    BCPair(D1(zero(T)), D1(zero(T)))
 
 # PeriodicBC passthrough with type promotion
 @inline _normalize_bc(::PeriodicBC, ::Type{T}) where {T<:AbstractFloat} = PeriodicBC{T}()
@@ -187,3 +222,19 @@ end
     bc_t = _promote_pointbc(bc, T)
     return BCPair(bc_t, bc_t)
 end
+
+
+# ========================================
+# BC Type Predicates
+# ========================================
+
+"""
+    _is_periodic_bc(bc::AbstractBC) -> Bool
+
+Check if a boundary condition is periodic.
+"""
+@inline _is_periodic_bc(::PeriodicBC) = true
+@inline _is_periodic_bc(::NaturalBC) = false
+@inline _is_periodic_bc(::ClampedBC) = false
+@inline _is_periodic_bc(::BCPair) = false
+@inline _is_periodic_bc(::PointBC) = false

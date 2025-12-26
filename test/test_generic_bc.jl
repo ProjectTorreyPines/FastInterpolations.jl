@@ -67,34 +67,6 @@ const ATOL = 1e-14
         @test pbc32 isa PeriodicBC{Float32}
     end
 
-    @testset "PeriodicBC in cubic_interp" begin
-        x = range(0.0, 2π, 51)
-        y = sin.(x)  # sin is periodic with period 2π
-
-        # Using PeriodicBC type should work like :periodic symbol
-        result_symbol = cubic_interp(x, y, π/4; bc=:periodic)
-        result_type = cubic_interp(x, y, π/4; bc=PeriodicBC())
-        @test result_symbol ≈ result_type rtol=RTOL atol=ATOL
-
-        # Vector query
-        xi = [π/4, π/2, 3π/4]
-        result_symbol_vec = cubic_interp(x, y, xi; bc=:periodic)
-        result_type_vec = cubic_interp(x, y, xi; bc=PeriodicBC())
-        @test result_symbol_vec ≈ result_type_vec rtol=RTOL atol=ATOL
-
-        # CubicInterpolant (2-arg form)
-        itp_symbol = cubic_interp(x, y; bc=:periodic)
-        itp_type = cubic_interp(x, y; bc=PeriodicBC())
-        @test itp_symbol(π/3) ≈ itp_type(π/3) rtol=RTOL atol=ATOL
-
-        # In-place version
-        output1 = zeros(3)
-        output2 = zeros(3)
-        cubic_interp!(output1, collect(x), collect(y), xi; bc=:periodic)
-        cubic_interp!(output2, collect(x), collect(y), xi; bc=PeriodicBC())
-        @test output1 ≈ output2 rtol=RTOL atol=ATOL
-    end
-
     @testset "Type Aliases" begin
         # NaturalBCPair
         natural = BCPair(D2(0.0), D2(0.0))
@@ -122,18 +94,18 @@ const ATOL = 1e-14
         @test D2(1).val == 1.0
     end
 
-    @testset "BC Symbol Equivalence" begin
+    @testset "BC Type Equivalence" begin
         x = range(0.0, 1.0, 11)
         y = sin.(π .* x)
         xi = 0.5
 
-        # :natural == D2(0), D2(0)
-        r_natural = cubic_interp(x, y, xi; bc=:natural)
+        # NaturalBC() == D2(0), D2(0)
+        r_natural = cubic_interp(x, y, xi; bc=NaturalBC())
         r_d2_zero = cubic_interp(x, y, xi; bc=BCPair(D2(0.0), D2(0.0)))
         @test r_natural ≈ r_d2_zero rtol=RTOL atol=ATOL
 
-        # :clamped == D1(0), D1(0)
-        r_clamped = cubic_interp(x, y, xi; bc=:clamped)
+        # ClampedBC() == D1(0), D1(0)
+        r_clamped = cubic_interp(x, y, xi; bc=ClampedBC())
         r_d1_zero = cubic_interp(x, y, xi; bc=BCPair(D1(0.0), D1(0.0)))
         @test r_clamped ≈ r_d1_zero rtol=RTOL atol=ATOL
 
@@ -271,8 +243,8 @@ const ATOL = 1e-14
         xi = [0.3, 1.5, 2.7]
         expected = g.(xi)
 
-        @test cubic_interp(x, y, xi; bc=:natural) ≈ expected rtol=RTOL atol=ATOL
-        @test cubic_interp(x, y, xi; bc=:clamped) ≈ expected rtol=RTOL atol=ATOL
+        @test cubic_interp(x, y, xi; bc=NaturalBC()) ≈ expected rtol=RTOL atol=ATOL
+        @test cubic_interp(x, y, xi; bc=ClampedBC()) ≈ expected rtol=RTOL atol=ATOL
         @test cubic_interp(x, y, xi; bc=BCPair(D1(slope), D1(slope))) ≈ expected rtol=RTOL atol=ATOL
         @test cubic_interp(x, y, xi; bc=BCPair(D2(0.0), D2(0.0))) ≈ expected rtol=RTOL atol=ATOL
         @test cubic_interp(x, y, xi; bc=BCPair(D1(slope), D2(0.0))) ≈ expected rtol=RTOL atol=ATOL

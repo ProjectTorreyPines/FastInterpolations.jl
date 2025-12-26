@@ -414,7 +414,7 @@
         x_view = @view x_full[1:51]
         y_view = @view y_full[1:51]
 
-        cache = get_cubic_cache(x_view, Val(:natural))
+        cache = get_cubic_cache(x_view, NaturalBC())
         @test cache isa CubicSplineCache
 
         # Cache should store collected Vector, not the view
@@ -431,7 +431,7 @@
         x_full = Float32.(collect(range(0.0, 1.0, 101)))
         x_view = @view x_full[1:51]
 
-        cache = get_cubic_cache(x_view, Val(:natural))
+        cache = get_cubic_cache(x_view, NaturalBC())
         @test cache isa CubicSplineCache{Float32}
     end
 
@@ -440,12 +440,12 @@
 
         # Integer range → should convert to Float64
         x_int = 0:10
-        cache_int = get_cubic_cache(x_int, Val(:natural))
+        cache_int = get_cubic_cache(x_int, NaturalBC())
         @test cache_int isa CubicSplineCache{Float64}
 
         # Float16 vector → kept as Float16 (native AbstractFloat)
         x_f16 = Float16.(collect(range(0.0, 1.0, 11)))
-        cache_f16 = get_cubic_cache(x_f16, Val(:natural))
+        cache_f16 = get_cubic_cache(x_f16, NaturalBC())
         @test cache_f16 isa CubicSplineCache{Float16}
     end
 
@@ -455,9 +455,9 @@
         x = collect(range(0.0, 1.0, 51))
 
         # Keyword API should work
-        cache1 = get_cubic_cache(x)  # default bc=:natural
-        cache2 = get_cubic_cache(x; bc=:natural)
-        cache3 = get_cubic_cache(x; bc=:periodic)
+        cache1 = get_cubic_cache(x)  # default bc=NaturalBC()
+        cache2 = get_cubic_cache(x; bc=NaturalBC())
+        cache3 = get_cubic_cache(x; bc=PeriodicBC())
 
         @test cache1 isa CubicSplineCache
         @test cache2 isa CubicSplineCache
@@ -468,7 +468,7 @@
         @test typeof(cache1) != typeof(cache3)
     end
 
-    @testset "get_cubic_cache Val API (type-stable path)" begin
+    @testset "get_cubic_cache typed BC API (type-stable path)" begin
         clear_cubic_cache!()
 
         x64 = collect(range(0.0, 1.0, 51))
@@ -476,10 +476,10 @@
         x_range = range(0.0, 1.0, 51)
 
         # All input types should work with Val API
-        c1 = get_cubic_cache(x64, Val(:natural))
-        c2 = get_cubic_cache(x32, Val(:natural))
-        c3 = get_cubic_cache(x_range, Val(:natural))
-        c4 = get_cubic_cache(x64, Val(:periodic))
+        c1 = get_cubic_cache(x64, NaturalBC())
+        c2 = get_cubic_cache(x32, NaturalBC())
+        c3 = get_cubic_cache(x_range, NaturalBC())
+        c4 = get_cubic_cache(x64, PeriodicBC())
 
         @test c1 isa CubicSplineCache{Float64}
         @test c2 isa CubicSplineCache{Float32}

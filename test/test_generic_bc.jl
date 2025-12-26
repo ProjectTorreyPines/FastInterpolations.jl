@@ -68,6 +68,91 @@ const ATOL = 1e-14
     end
 
     # ========================================
+    # Type Conversion Constructors (Coverage)
+    # ========================================
+    @testset "BC Type Conversion Constructors" begin
+        # D1{T}(bc::D1) - convert D1{Float64} → D1{Float32}
+        d1_f64 = D1(0.5)
+        d1_f32 = D1{Float32}(d1_f64)
+        @test d1_f32 isa D1{Float32}
+        @test d1_f32.val == Float32(0.5)
+
+        # D2{T}(bc::D2) - convert D2{Float64} → D2{Float32}
+        d2_f64 = D2(1.5)
+        d2_f32 = D2{Float32}(d2_f64)
+        @test d2_f32 isa D2{Float32}
+        @test d2_f32.val == Float32(1.5)
+
+        # PeriodicBC{T}(::PeriodicBC)
+        pbc_f64 = PeriodicBC()
+        pbc_f32 = PeriodicBC{Float32}(pbc_f64)
+        @test pbc_f32 isa PeriodicBC{Float32}
+
+        # NaturalBC{T}(::NaturalBC)
+        nat_f64 = NaturalBC()
+        nat_f32 = NaturalBC{Float32}(nat_f64)
+        @test nat_f32 isa NaturalBC{Float32}
+
+        # ClampedBC{T}(::ClampedBC)
+        clamp_f64 = ClampedBC()
+        clamp_f32 = ClampedBC{Float32}(clamp_f64)
+        @test clamp_f32 isa ClampedBC{Float32}
+    end
+
+    # ========================================
+    # BC Normalization (Coverage)
+    # ========================================
+    @testset "_normalize_bc Coverage" begin
+        # Note: PeriodicBC is handled via _is_periodic_bc() before _normalize_bc is called.
+        # No _normalize_bc(::PeriodicBC, T) method exists (dead code was removed).
+
+        # BCPair with type promotion (Float64 BC → Float32 target)
+        bc_f64 = BCPair(D1(0.5), D2(1.0))  # Float64
+        bc_promoted = FastInterpolations._normalize_bc(bc_f64, Float32)
+        @test bc_promoted isa BCPair{Float32, D1{Float32}, D2{Float32}}
+        @test bc_promoted.left.val == Float32(0.5)
+        @test bc_promoted.right.val == Float32(1.0)
+
+        # PointBC with type promotion
+        d1_f64 = D1(0.25)  # Float64
+        bc_from_d1 = FastInterpolations._normalize_bc(d1_f64, Float32)
+        @test bc_from_d1 isa BCPair{Float32, D1{Float32}, D1{Float32}}
+        @test bc_from_d1.left.val == Float32(0.25)
+        @test bc_from_d1.right.val == Float32(0.25)
+
+        d2_f64 = D2(0.75)  # Float64
+        bc_from_d2 = FastInterpolations._normalize_bc(d2_f64, Float32)
+        @test bc_from_d2 isa BCPair{Float32, D2{Float32}, D2{Float32}}
+    end
+
+    # ========================================
+    # _is_periodic_bc Predicate (Coverage)
+    # ========================================
+    @testset "_is_periodic_bc Predicate" begin
+        @test FastInterpolations._is_periodic_bc(PeriodicBC()) == true
+        @test FastInterpolations._is_periodic_bc(NaturalBC()) == false
+        @test FastInterpolations._is_periodic_bc(ClampedBC()) == false
+        @test FastInterpolations._is_periodic_bc(BCPair(D1(0.0), D2(0.0))) == false
+        @test FastInterpolations._is_periodic_bc(D1(0.0)) == false
+        @test FastInterpolations._is_periodic_bc(D2(0.0)) == false
+    end
+
+    # ========================================
+    # _promote_pointbc Helper (Coverage)
+    # ========================================
+    @testset "_promote_pointbc Helper" begin
+        # D1 promotion
+        d1_promoted = FastInterpolations._promote_pointbc(D1(0.5), Float32)
+        @test d1_promoted isa D1{Float32}
+        @test d1_promoted.val == Float32(0.5)
+
+        # D2 promotion
+        d2_promoted = FastInterpolations._promote_pointbc(D2(1.5), Float32)
+        @test d2_promoted isa D2{Float32}
+        @test d2_promoted.val == Float32(1.5)
+    end
+
+    # ========================================
     # Basic Functionality Tests
     # ========================================
     @testset "Basic BC Type Construction" begin

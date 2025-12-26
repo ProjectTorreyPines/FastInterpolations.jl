@@ -489,4 +489,112 @@
         # Periodic cache should have PeriodicData BC
         @test c4.bc_data !== nothing
     end
+
+    # =========================================================================
+    # Coverage Tests for Uncovered Paths
+    # =========================================================================
+
+    @testset "get_cubic_cache with ClampedBC (typed API)" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 1.0, 51))
+
+        # ClampedBC typed API - previously uncovered
+        cache = get_cubic_cache(x, ClampedBC())
+        @test cache isa CubicSplineCache{Float64}
+
+        # Cache should be created with BCPair(D1(0), D1(0))
+        @test cache.bc_data isa BCPair{Float64, D1{Float64}, D1{Float64}}
+
+        # Should work for Float32 as well
+        x32 = Float32.(x)
+        cache32 = get_cubic_cache(x32, ClampedBC())
+        @test cache32 isa CubicSplineCache{Float32}
+        @test cache32.bc_data isa BCPair{Float32, D1{Float32}, D1{Float32}}
+
+        # Range input
+        x_range = range(0.0, 1.0, 51)
+        cache_range = get_cubic_cache(x_range, ClampedBC())
+        @test cache_range isa CubicSplineCache{Float64}
+    end
+
+    @testset "get_cubic_cache with PointBC (convenience API)" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 1.0, 51))
+
+        # D1 PointBC - applies symmetrically to both ends
+        # Note: Cache stores BC *type* not *values* (values only affect RHS, not LU)
+        cache_d1 = get_cubic_cache(x, D1(0.5))
+        @test cache_d1 isa CubicSplineCache{Float64}
+        @test cache_d1.bc_data isa BCPair{Float64, D1{Float64}, D1{Float64}}
+        # BC values are always zero in cache (LU factorization is type-independent)
+        @test cache_d1.bc_data.left.val == 0.0
+        @test cache_d1.bc_data.right.val == 0.0
+
+        # D2 PointBC - applies symmetrically to both ends
+        cache_d2 = get_cubic_cache(x, D2(1.0))
+        @test cache_d2 isa CubicSplineCache{Float64}
+        @test cache_d2.bc_data isa BCPair{Float64, D2{Float64}, D2{Float64}}
+        # BC values are always zero in cache
+        @test cache_d2.bc_data.left.val == 0.0
+        @test cache_d2.bc_data.right.val == 0.0
+
+        # Float32 with PointBC
+        x32 = Float32.(x)
+        cache_d1_32 = get_cubic_cache(x32, D1(Float32(0.5)))
+        @test cache_d1_32 isa CubicSplineCache{Float32}
+    end
+
+    @testset "Int Vector fallback paths" begin
+        clear_cubic_cache!()
+
+        # Integer Vector with BCPair - should convert to Float64
+        x_int = collect(0:10)
+        cache = get_cubic_cache(x_int, BCPair(D1(0.0), D2(0.0)))
+        @test cache isa CubicSplineCache{Float64}
+
+        # Integer Vector with periodic BC - should convert to Float64
+        clear_cubic_cache!()
+        cache_periodic = get_cubic_cache(x_int, PeriodicBC())
+        @test cache_periodic isa CubicSplineCache{Float64}
+
+        # Integer Range with periodic BC - should convert to Float64
+        clear_cubic_cache!()
+        x_int_range = 0:10
+        cache_periodic_range = get_cubic_cache(x_int_range, PeriodicBC())
+        @test cache_periodic_range isa CubicSplineCache{Float64}
+    end
+
+    @testset "Periodic cache self-healing path" begin
+        clear_cubic_cache!()
+
+        # Create first grid and cache
+        x1 = collect(range(0.0, 2π, 51))
+        y = sin.(x1)
+        cubic_interp(x1, y, 0.5; bc=PeriodicBC())
+
+        stats1 = cubic_cache_stats()
+        @test stats1.misses == 1
+        @test stats1.hits == 0
+
+        # Create equal but different object (different objectid)
+        x2 = collect(range(0.0, 2π, 51))
+        @test x1 == x2
+        @test objectid(x1) != objectid(x2)
+
+        # This should trigger Pass 2 (equality check) and self-healing
+        # The cache entry's id should be updated to x2's objectid
+        cubic_interp(x2, y, 0.5; bc=PeriodicBC())
+
+        stats2 = cubic_cache_stats()
+        @test stats2.misses == 1  # Still 1 miss
+        @test stats2.hits == 1    # Should be a hit via equality check
+
+        # Now x2 should trigger Pass 1 (identity check) due to self-healing
+        cubic_interp(x2, y, 0.5; bc=PeriodicBC())
+
+        stats3 = cubic_cache_stats()
+        @test stats3.hits == 2  # Another hit, this time via identity
+    end
 end

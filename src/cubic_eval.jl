@@ -115,18 +115,6 @@ end
 # BC-Aware Evaluation Helper
 # ========================================
 
-"Evaluate with BC-aware dispatch (Natural BC)."
-@inline function _eval_with_bc(
-    cache::CubicSplineCache{T,X,F,Nothing},
-    y::AbstractVector{T},
-    h::AbstractVector{T},
-    z::AbstractVector{T},
-    xi::T,
-    extrap::Val
-) where {T<:AbstractFloat, X, F}
-    _eval_cubic_with_extrap(cache.x, y, h, z, xi, extrap)
-end
-
 "Evaluate with BC-aware dispatch (Periodic BC - ignores extrapolation)."
 @inline function _eval_with_bc(
     cache::CubicSplineCache{T,X,F,PeriodicData{T}},
@@ -167,31 +155,6 @@ end
     @boundscheck _check_domain(cache.x, x_query, ev)
     @inbounds for (k, xq) in enumerate(x_query)
         output[k] = _eval_with_bc(cache, y, cache.h, z, xq, ev)
-    end
-end
-
-"Optimized vector loop for :wrap (Natural BC) - uses 2-stage strategy."
-@inline function _cubic_vector_loop!(
-    output::AbstractVector{T},
-    cache::CubicSplineCache{T,X,F,Nothing},
-    y::AbstractVector{T},
-    z::AbstractVector{T},
-    x_query::AbstractVector{T},
-    ::Val{:wrap}
-) where {T<:AbstractFloat, X, F}
-    x_min, x_max = first(cache.x), last(cache.x)
-    qmin, qmax = minimum(x_query), maximum(x_query)
-
-    if qmin >= x_min && qmax < x_max
-        # Fast path: all queries inside domain
-        @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_cubic_at_point(cache.x, y, cache.h, z, xq)
-        end
-    else
-        # Slow path: per-element wrap
-        @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_cubic_with_extrap(cache.x, y, cache.h, z, xq, Val(:wrap))
-        end
     end
 end
 

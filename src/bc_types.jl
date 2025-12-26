@@ -173,31 +173,27 @@ Extensible: add methods for new PointBC subtypes.
 # ========================================
 
 """
-    _normalize_bc(bc::AbstractBC, ::Type{T}) -> BCPair{T} | PeriodicBC{T}
+    _normalize_bc(bc::AbstractBC, ::Type{T}) -> BCPair{T}
 
-Convert BC specification to normalized form for cache construction.
+Convert BC specification to normalized BCPair form for cache construction.
+
+Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
+`_normalize_bc` is called. This function only handles derivative BCs.
 
 # Accepted Input Types
-- `NaturalBC`: Natural BC (zero curvature) - default
-- `ClampedBC`: Clamped BC (zero slope)
-- `PeriodicBC`: Periodic boundary condition
-- `BCPair`: Left/right BC pair (passed through)
+- `NaturalBC`: Natural BC (zero curvature) → BCPair(D2(0), D2(0))
+- `ClampedBC`: Clamped BC (zero slope) → BCPair(D1(0), D1(0))
+- `BCPair`: Left/right BC pair (passed through with type promotion)
 - `PointBC` (D1/D2): Single BC applied symmetrically to both ends
 
 # Returns
-- `BCPair{T}`: For derivative BCs
-- `PeriodicBC{T}`: For periodic BC
+- `BCPair{T}`: Normalized boundary condition pair
 """
 # NaturalBC → BCPair(D2(0), D2(0))
-@inline _normalize_bc(::NaturalBC, ::Type{T}) where {T<:AbstractFloat} =
-    BCPair(D2(zero(T)), D2(zero(T)))
+@inline _normalize_bc(::NaturalBC, ::Type{T}) where {T<:AbstractFloat} = BCPair(D2(zero(T)), D2(zero(T)))
 
 # ClampedBC → BCPair(D1(0), D1(0))
-@inline _normalize_bc(::ClampedBC, ::Type{T}) where {T<:AbstractFloat} =
-    BCPair(D1(zero(T)), D1(zero(T)))
-
-# PeriodicBC passthrough with type promotion
-@inline _normalize_bc(::PeriodicBC, ::Type{T}) where {T<:AbstractFloat} = PeriodicBC{T}()
+@inline _normalize_bc(::ClampedBC, ::Type{T}) where {T<:AbstractFloat} = BCPair(D1(zero(T)), D1(zero(T)))
 
 # BCPair passthrough (already normalized)
 @inline _normalize_bc(bc::BCPair{T}, ::Type{T}) where {T<:AbstractFloat} = bc

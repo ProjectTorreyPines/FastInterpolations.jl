@@ -118,7 +118,10 @@ struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T}}
     ) where {T<:AbstractFloat, C<:CubicSplineCache{T}}
         @assert length(cache.x) == length(y) "cache grid and y must have same length"
         @assert length(cache.x) == length(z) "z coefficients must match grid length"
-        # Convert to Vector{T} for consistent type (y, z are always copied anyway)
+        # Always copy to ensure immutability: once constructed, the interpolant
+        # owns its data and always returns identical results for the same query.
+        # Without copying, external modifications to y or cache reuse could
+        # silently corrupt results.
         new{T,C}(cache, Vector{T}(y), Vector{T}(z), extrap)
     end
 end

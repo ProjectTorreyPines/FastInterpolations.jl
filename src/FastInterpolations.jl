@@ -13,11 +13,12 @@ include("utils.jl")
 include("linear_interp.jl")
 
 # Cubic spline interpolation
-include("cubic_types.jl")      # Type definitions (PeriodicData, CubicSplineCache, CubicInterpolant)
-include("cubic_solver.jl")     # Cache builders and system solvers
-include("cubic_eval.jl")       # Evaluation functions
-include("cubic_interp.jl")     # Public API
-include("cubic_autocache.jl")
+include("cubic_types.jl")       # Type definitions (PeriodicData, CubicSplineCache, CubicInterpolant)
+include("cubic_solver.jl")      # Cache builders and system solvers
+include("cubic_eval.jl")        # Evaluation functions
+include("cubic_autocache.jl")   # Ring buffer cache for reusing LU factorizations
+include("cubic_interp.jl")      # 4-arg API, helper functions
+include("cubic_interpolant.jl") # 2-arg API, CubicInterpolant callable
 
 # Exports
 export linear_interp, linear_interp!, LinearInterpolant

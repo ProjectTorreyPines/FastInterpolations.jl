@@ -68,6 +68,19 @@ end
 # using the cache helpers from cubic_interp.jl.
 
 """
+    _symbol_to_extrap_val(extrap::Symbol) -> Val
+
+Convert extrapolation symbol to Val type for storage in CubicInterpolant.
+"""
+@inline function _symbol_to_extrap_val(extrap::Symbol)
+    extrap === :none && return Val(:none)
+    extrap === :constant && return Val(:constant)
+    extrap === :extension && return Val(:extension)
+    extrap === :wrap && return Val(:wrap)
+    throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
+end
+
+"""
     _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache) -> CubicInterpolant
 
 Build a CubicInterpolant for BCPair boundary conditions.
@@ -81,11 +94,9 @@ Uses `_get_cache_and_solve!` for unified cache handling.
     autocache::Bool
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     cache = _get_cache_and_solve!(x, y, bc_pair, autocache)
-    z = copy(cache.z_workspace)
-
-    @_dispatch_extrap extrap => ev begin
-        return CubicInterpolant(cache, y, z, ev)
-    end
+    ev = _symbol_to_extrap_val(extrap)
+    # Pass z_workspace directly - constructor will copy
+    return CubicInterpolant(cache, y, cache.z_workspace, ev)
 end
 
 """
@@ -102,12 +113,8 @@ Periodic BC always uses :wrap extrapolation.
 ) where {T<:AbstractFloat}
     _check_periodic_endpoints(y)
     cache = _get_cache_and_solve_periodic!(x, y, autocache)
-    z = copy(cache.z_workspace)
-
-    # Periodic BC always uses :wrap extrapolation
-    @_dispatch_extrap :wrap => ev begin
-        return CubicInterpolant(cache, y, z, ev)
-    end
+    # Pass z_workspace directly - constructor will copy
+    return CubicInterpolant(cache, y, cache.z_workspace, Val(:wrap))
 end
 
 # ========================================
@@ -168,16 +175,15 @@ function cubic_interp(
     extrap::Symbol=:none
 ) where {T<:AbstractFloat}
     _solve_system!(cache, y)
-    z = copy(cache.z_workspace)
+    # Pass z_workspace directly - constructor will copy
 
     if cache.bc_data isa PeriodicData
         _check_periodic_endpoints(y)
-        extrap = :wrap  # override extrap for periodic
+        return CubicInterpolant(cache, y, cache.z_workspace, Val(:wrap))
     end
 
-    @_dispatch_extrap extrap => ev begin
-        return CubicInterpolant(cache, y, z, ev)
-    end
+    ev = _symbol_to_extrap_val(extrap)
+    return CubicInterpolant(cache, y, cache.z_workspace, ev)
 end
 
 # Real wrapper for 2-argument form

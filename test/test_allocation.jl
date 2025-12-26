@@ -329,8 +329,8 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         # Callable creation with autocache - only allocates z vector
         allocs = @allocated cubic_interp(x, y2)
 
-        # Should only allocate z copy (~400 bytes for 51 elements) + callable struct
-        @test allocs < 1_000  # 1 KB budget (z vector + minor overhead)
+        # Should only allocate y + z copies (~800 bytes for 51 elements each) + callable struct
+        @test allocs < 1_500  # 2 KB budget (y + z vectors + minor overhead)
     end
 
     # =========================================================================

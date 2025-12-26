@@ -68,16 +68,28 @@ struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC}
 end
 
 """
-    CubicInterpolant{T,C,Y,Z,E}
+    ExtrapVal
+
+Union type for extrapolation mode values.
+Using concrete Union enables Julia's union-splitting optimization.
+"""
+const ExtrapVal = Union{Val{:none}, Val{:constant}, Val{:extension}, Val{:wrap}}
+
+"""
+    CubicInterpolant{T,C}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `cubic_interp(x, y)` (2-argument form).
 
+# Type Parameters
+- `T`: Float type (Float32 or Float64)
+- `C`: CubicSplineCache type (preserves grid type info for O(1) vs O(log n) lookup)
+
 # Fields
 - `cache::C`: Pre-computed CubicSplineCache (LU factorization)
-- `y::Y`: y-values (function values at grid points)
-- `z::Z`: Pre-computed second derivative coefficients (solves system once!)
-- `extrap::E`: Extrapolation mode (Val{:none}, Val{:constant}, Val{:extension}, Val{:wrap})
+- `y::Vector{T}`: y-values (function values at grid points)
+- `z::Vector{T}`: Pre-computed second derivative coefficients (solves system once!)
+- `extrap::ExtrapVal`: Extrapolation mode (union-split for efficient dispatch)
 
 # Usage
 ```julia
@@ -90,21 +102,23 @@ val = itp(0.5)                              # scalar (zero-allocation)
 - System solved ONCE at construction -> z coefficients pre-computed
 - Each scalar call just evaluates cubic polynomial (zero-allocation!)
 - Broadcast operations are perfectly fused (no intermediate arrays)
+- Extrapolation mode uses union-splitting for near-zero overhead dispatch
 """
-struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},Y<:AbstractVector{T},Z<:AbstractVector{T},E<:Val}
+struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T}}
     cache::C
-    y::Y
-    z::Z  # Pre-computed second derivative coefficients
-    extrap::E  # Extrapolation mode
+    y::Vector{T}
+    z::Vector{T}  # Pre-computed second derivative coefficients
+    extrap::ExtrapVal  # Extrapolation mode (concrete union for union-splitting)
 
     function CubicInterpolant(
         cache::C,
-        y::Y,
-        z::Z,
-        extrap::E
-    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, Y<:AbstractVector{T}, Z<:AbstractVector{T}, E<:Val}
+        y::AbstractVector{T},
+        z::AbstractVector{T},
+        extrap::ExtrapVal
+    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}}
         @assert length(cache.x) == length(y) "cache grid and y must have same length"
         @assert length(cache.x) == length(z) "z coefficients must match grid length"
-        new{T,C,Y,Z,E}(cache, y, z, extrap)
+        # Convert to Vector{T} for consistent type (y, z are always copied anyway)
+        new{T,C}(cache, Vector{T}(y), Vector{T}(z), extrap)
     end
 end

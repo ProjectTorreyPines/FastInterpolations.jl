@@ -467,18 +467,18 @@ end
         @test isfinite(output[1])
     end
 
-    @testset "cubic_interp! with x,y,scalar and bc=:periodic" begin
-        # Lines 179-182: bc=:periodic branch in scalar cubic_interp!
+    @testset "cubic_interp! with x,y,scalar and bc=PeriodicBC()" begin
+        # Lines 179-182: bc=PeriodicBC() branch in scalar cubic_interp!
         x = collect(range(0.0, 2π, 21))
         y = sin.(x)
         y[end] = y[1]  # Ensure periodic
         output = zeros(1)
 
-        cubic_interp!(output, x, y, π; bc=:periodic)
+        cubic_interp!(output, x, y, π; bc=PeriodicBC())
         @test output[1] ≈ 0.0 atol=0.1
 
         # Test with autocache=false
-        cubic_interp!(output, x, y, π; bc=:periodic, autocache=false)
+        cubic_interp!(output, x, y, π; bc=PeriodicBC(), autocache=false)
         @test output[1] ≈ 0.0 atol=0.1
     end
 
@@ -492,35 +492,35 @@ end
         @test output[1] ≈ sin(π) atol=1e-6
     end
 
-    @testset "cubic_interp with vector query and bc=:periodic" begin
-        # Lines 250-254: bc=:periodic in allocating vector API
+    @testset "cubic_interp with vector query and bc=PeriodicBC()" begin
+        # Lines 250-254: bc=PeriodicBC() in allocating vector API
         x = collect(range(0.0, 2π, 31))
         y = sin.(x)
         y[end] = y[1]  # Ensure periodic
         x_query = [π/2, π, 3π/2]
 
-        result = cubic_interp(x, y, x_query; bc=:periodic)
+        result = cubic_interp(x, y, x_query; bc=PeriodicBC())
         @test result[1] ≈ 1.0 atol=0.1  # sin(π/2) ≈ 1
         @test result[2] ≈ 0.0 atol=0.1  # sin(π) ≈ 0
         @test result[3] ≈ -1.0 atol=0.1  # sin(3π/2) ≈ -1
 
         # Test with autocache=false
-        result2 = cubic_interp(x, y, x_query; bc=:periodic, autocache=false)
+        result2 = cubic_interp(x, y, x_query; bc=PeriodicBC(), autocache=false)
         @test result2 ≈ result
     end
 
-    @testset "Real wrapper 2-arg form with bc=:periodic" begin
-        # Lines 424-427: bc=:periodic in Real wrapper 2-arg form
+    @testset "Real wrapper 2-arg form with bc=PeriodicBC()" begin
+        # Lines 424-427: bc=PeriodicBC() in Real wrapper 2-arg form
         x_int = 0:20
         y_int = [sin(2π * i / 20) for i in x_int]
         # y_int[end] ≈ y_int[1] (both ≈ 0)
 
-        itp = cubic_interp(x_int, y_int; bc=:periodic)
+        itp = cubic_interp(x_int, y_int; bc=PeriodicBC())
         @test itp isa CubicInterpolant
         @test itp(5.0) ≈ sin(π/2) atol=0.1  # sin(2π*5/20) = sin(π/2)
 
         # Also test autocache=false path
-        itp2 = cubic_interp(x_int, y_int; bc=:periodic, autocache=false)
+        itp2 = cubic_interp(x_int, y_int; bc=PeriodicBC(), autocache=false)
         @test itp2(5.0) ≈ itp(5.0) atol=1e-10
     end
 end

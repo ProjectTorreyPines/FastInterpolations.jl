@@ -15,7 +15,7 @@
     @testset "Type and structure" begin
         @test itp isa CubicInterpolant
         @test itp.cache isa CubicSplineCache
-        @test itp.y === y
+        @test itp.y == y  # Values equal (copy is made internally)
         @test length(itp.cache.x) == length(x)
     end
 

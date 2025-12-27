@@ -1,3 +1,6 @@
+# Import internal function for testing
+import FastInterpolations: _get_cubic_cache
+
 @testset "Cubic Spline Auto-Cache" begin
     # Clear cache before tests
     clear_cubic_cache!()
@@ -16,21 +19,21 @@
         stats1 = cubic_cache_stats()
         @test stats1.misses == 1
         @test stats1.hits == 0
-        @test stats1.size == 1
+        @test stats1.total_entries == 1
 
         # Second call with same x - cache hit
         result2 = cubic_interp(x, y2, x_query)
         stats2 = cubic_cache_stats()
         @test stats2.misses == 1
         @test stats2.hits == 1
-        @test stats2.size == 1
+        @test stats2.total_entries == 1
 
         # Third call with same x - another cache hit
         result3 = cubic_interp(x, y3, x_query)
         stats3 = cubic_cache_stats()
         @test stats3.misses == 1
         @test stats3.hits == 2
-        @test stats3.size == 1
+        @test stats3.total_entries == 1
         @test stats3.efficiency == 66.7  # 2 hits / 3 total = 66.7%
 
         # Results should be different (different y values)
@@ -58,25 +61,25 @@
         # First grid - miss
         cubic_interp(x1, y, x_query)
         stats1 = cubic_cache_stats()
-        @test stats1.size == 1
+        @test stats1.total_entries == 1
         @test stats1.misses == 1
 
         # Second grid - miss
         cubic_interp(x2, y, x_query)
         stats2 = cubic_cache_stats()
-        @test stats2.size == 2
+        @test stats2.total_entries == 2
         @test stats2.misses == 2
 
         # Third grid - miss
         cubic_interp(x3, y, x_query)
         stats3 = cubic_cache_stats()
-        @test stats3.size == 3
+        @test stats3.total_entries == 3
         @test stats3.misses == 3
 
         # Reuse first grid - hit
         cubic_interp(x1, y, x_query)
         stats4 = cubic_cache_stats()
-        @test stats4.size == 3
+        @test stats4.total_entries == 3
         @test stats4.hits == 1
         @test stats4.misses == 3
     end
@@ -95,13 +98,13 @@
             cubic_interp(grids[i], y, x_query)
         end
         stats = cubic_cache_stats()
-        @test stats.size == 3
+        @test stats.total_entries == 3
         @test stats.misses == 3
 
         # Add 4th grid - should evict oldest
         cubic_interp(grids[4], y, x_query)
         stats = cubic_cache_stats()
-        @test stats.size == 3  # Still at limit
+        @test stats.total_entries == 3  # Still at limit
         @test stats.evictions == 1
 
         # Reset cache size to default
@@ -118,21 +121,21 @@
         # With autocache=true (default)
         result1 = cubic_interp(x, y, x_query)
         stats1 = cubic_cache_stats()
-        @test stats1.size == 1
+        @test stats1.total_entries == 1
         @test stats1.misses == 1
 
         # Another call with autocache=true - should hit
         result2 = cubic_interp(x, y, x_query; autocache=true)
         stats2 = cubic_cache_stats()
         @test stats2.hits == 1
-        @test stats2.size == 1
+        @test stats2.total_entries == 1
 
         # With autocache=false - should not affect cache
         result3 = cubic_interp(x, y, x_query; autocache=false)
         stats3 = cubic_cache_stats()
         @test stats3.hits == 1  # No new hits
         @test stats3.misses == 1  # No new misses
-        @test stats3.size == 1  # Cache size unchanged
+        @test stats3.total_entries == 1  # Cache size unchanged
 
         # Results should be identical
         @test result1 ≈ result2
@@ -153,11 +156,11 @@
         y = sin.(2π .* x)
         cubic_interp(x, y, [0.5])
         stats_before = cubic_cache_stats()
-        @test stats_before.size > 0
+        @test stats_before.total_entries > 0
 
         clear_cubic_cache!()
         stats_after = cubic_cache_stats()
-        @test stats_after.size == 0
+        @test stats_after.total_entries == 0
         @test stats_after.hits == 0
         @test stats_after.misses == 0
         @test stats_after.evictions == 0
@@ -179,7 +182,7 @@
 
         stats = cubic_cache_stats()
         # With default cache size of 16, we should have evictions
-        @test stats.size <= 16
+        @test stats.total_entries <= 16
         @test stats.misses >= n_grids
         @test stats.evictions >= (n_grids - 16)
     end
@@ -193,7 +196,7 @@
         # Scalar query with autocache
         result1 = cubic_interp(x, y, 0.5)
         stats1 = cubic_cache_stats()
-        @test stats1.size == 1
+        @test stats1.total_entries == 1
         @test stats1.misses == 1
 
         # Another scalar query - cache hit
@@ -404,7 +407,7 @@
     # AbstractVector API Compatibility Tests
     # =========================================================================
 
-    @testset "get_cubic_cache accepts AbstractVector (views, SubArrays)" begin
+    @testset "_get_cubic_cache accepts AbstractVector (views, SubArrays)" begin
         clear_cubic_cache!()
 
         x_full = collect(range(0.0, 1.0, 101))
@@ -414,7 +417,7 @@
         x_view = @view x_full[1:51]
         y_view = @view y_full[1:51]
 
-        cache = get_cubic_cache(x_view, Val(:natural))
+        cache = _get_cubic_cache(x_view, NaturalBC())
         @test cache isa CubicSplineCache
 
         # Cache should store collected Vector, not the view
@@ -425,39 +428,39 @@
         @test stats.misses == 1
     end
 
-    @testset "get_cubic_cache accepts Float32 views" begin
+    @testset "_get_cubic_cache accepts Float32 views" begin
         clear_cubic_cache!()
 
         x_full = Float32.(collect(range(0.0, 1.0, 101)))
         x_view = @view x_full[1:51]
 
-        cache = get_cubic_cache(x_view, Val(:natural))
+        cache = _get_cubic_cache(x_view, NaturalBC())
         @test cache isa CubicSplineCache{Float32}
     end
 
-    @testset "get_cubic_cache fallback for other Real types" begin
+    @testset "_get_cubic_cache fallback for other Real types" begin
         clear_cubic_cache!()
 
         # Integer range → should convert to Float64
         x_int = 0:10
-        cache_int = get_cubic_cache(x_int, Val(:natural))
+        cache_int = _get_cubic_cache(x_int, NaturalBC())
         @test cache_int isa CubicSplineCache{Float64}
 
-        # Float16 vector → should convert to Float64
+        # Float16 vector → kept as Float16 (native AbstractFloat)
         x_f16 = Float16.(collect(range(0.0, 1.0, 11)))
-        cache_f16 = get_cubic_cache(x_f16, Val(:natural))
-        @test cache_f16 isa CubicSplineCache{Float64}
+        cache_f16 = _get_cubic_cache(x_f16, NaturalBC())
+        @test cache_f16 isa CubicSplineCache{Float16}
     end
 
-    @testset "get_cubic_cache keyword API" begin
+    @testset "_get_cubic_cache keyword API" begin
         clear_cubic_cache!()
 
         x = collect(range(0.0, 1.0, 51))
 
         # Keyword API should work
-        cache1 = get_cubic_cache(x)  # default bc=:natural
-        cache2 = get_cubic_cache(x; bc=:natural)
-        cache3 = get_cubic_cache(x; bc=:periodic)
+        cache1 = _get_cubic_cache(x)  # default bc=NaturalBC()
+        cache2 = _get_cubic_cache(x; bc=NaturalBC())
+        cache3 = _get_cubic_cache(x; bc=PeriodicBC())
 
         @test cache1 isa CubicSplineCache
         @test cache2 isa CubicSplineCache
@@ -468,7 +471,7 @@
         @test typeof(cache1) != typeof(cache3)
     end
 
-    @testset "get_cubic_cache Val API (type-stable path)" begin
+    @testset "_get_cubic_cache typed BC API (type-stable path)" begin
         clear_cubic_cache!()
 
         x64 = collect(range(0.0, 1.0, 51))
@@ -476,10 +479,10 @@
         x_range = range(0.0, 1.0, 51)
 
         # All input types should work with Val API
-        c1 = get_cubic_cache(x64, Val(:natural))
-        c2 = get_cubic_cache(x32, Val(:natural))
-        c3 = get_cubic_cache(x_range, Val(:natural))
-        c4 = get_cubic_cache(x64, Val(:periodic))
+        c1 = _get_cubic_cache(x64, NaturalBC())
+        c2 = _get_cubic_cache(x32, NaturalBC())
+        c3 = _get_cubic_cache(x_range, NaturalBC())
+        c4 = _get_cubic_cache(x64, PeriodicBC())
 
         @test c1 isa CubicSplineCache{Float64}
         @test c2 isa CubicSplineCache{Float32}
@@ -488,5 +491,114 @@
 
         # Periodic cache should have PeriodicData BC
         @test c4.bc_data !== nothing
+    end
+
+    # =========================================================================
+    # Coverage Tests for Uncovered Paths
+    # =========================================================================
+
+    @testset "_get_cubic_cache with ClampedBC (typed API)" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 1.0, 51))
+
+        # ClampedBC typed API - previously uncovered
+        cache = _get_cubic_cache(x, ClampedBC())
+        @test cache isa CubicSplineCache{Float64}
+
+        # Cache should be created with BCPair(D1(0), D1(0))
+        @test cache.bc_data isa BCPair{Float64, D1{Float64}, D1{Float64}}
+
+        # Should work for Float32 as well
+        x32 = Float32.(x)
+        cache32 = _get_cubic_cache(x32, ClampedBC())
+        @test cache32 isa CubicSplineCache{Float32}
+        @test cache32.bc_data isa BCPair{Float32, D1{Float32}, D1{Float32}}
+
+        # Range input
+        x_range = range(0.0, 1.0, 51)
+        cache_range = _get_cubic_cache(x_range, ClampedBC())
+        @test cache_range isa CubicSplineCache{Float64}
+    end
+
+    @testset "_get_cubic_cache with PointBC (convenience API)" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 1.0, 51))
+
+        # D1 PointBC - applies symmetrically to both ends
+        # Note: LU factorization depends only on BC TYPE, not values.
+        # Cache stores values from first caller, but values are applied at solve time.
+        cache_d1 = _get_cubic_cache(x, D1(0.5))
+        @test cache_d1 isa CubicSplineCache{Float64}
+        @test cache_d1.bc_data isa BCPair{Float64, D1{Float64}, D1{Float64}}
+        # On cache miss, actual BC values from request are stored
+        @test cache_d1.bc_data.left.val == 0.5
+        @test cache_d1.bc_data.right.val == 0.5
+
+        # D2 PointBC - applies symmetrically to both ends
+        cache_d2 = _get_cubic_cache(x, D2(1.0))
+        @test cache_d2 isa CubicSplineCache{Float64}
+        @test cache_d2.bc_data isa BCPair{Float64, D2{Float64}, D2{Float64}}
+        # On cache miss, actual BC values from request are stored
+        @test cache_d2.bc_data.left.val == 1.0
+        @test cache_d2.bc_data.right.val == 1.0
+
+        # Float32 with PointBC
+        x32 = Float32.(x)
+        cache_d1_32 = _get_cubic_cache(x32, D1(Float32(0.5)))
+        @test cache_d1_32 isa CubicSplineCache{Float32}
+    end
+
+    @testset "Int Vector fallback paths" begin
+        clear_cubic_cache!()
+
+        # Integer Vector with BCPair - should convert to Float64
+        x_int = collect(0:10)
+        cache = _get_cubic_cache(x_int, BCPair(D1(0.0), D2(0.0)))
+        @test cache isa CubicSplineCache{Float64}
+
+        # Integer Vector with periodic BC - should convert to Float64
+        clear_cubic_cache!()
+        cache_periodic = _get_cubic_cache(x_int, PeriodicBC())
+        @test cache_periodic isa CubicSplineCache{Float64}
+
+        # Integer Range with periodic BC - should convert to Float64
+        clear_cubic_cache!()
+        x_int_range = 0:10
+        cache_periodic_range = _get_cubic_cache(x_int_range, PeriodicBC())
+        @test cache_periodic_range isa CubicSplineCache{Float64}
+    end
+
+    @testset "Periodic cache self-healing path" begin
+        clear_cubic_cache!()
+
+        # Create first grid and cache
+        x1 = collect(range(0.0, 2π, 51))
+        y = sin.(x1)
+        cubic_interp(x1, y, 0.5; bc=PeriodicBC())
+
+        stats1 = cubic_cache_stats()
+        @test stats1.misses == 1
+        @test stats1.hits == 0
+
+        # Create equal but different object (different objectid)
+        x2 = collect(range(0.0, 2π, 51))
+        @test x1 == x2
+        @test objectid(x1) != objectid(x2)
+
+        # This should trigger Pass 2 (equality check) and self-healing
+        # The cache entry's id should be updated to x2's objectid
+        cubic_interp(x2, y, 0.5; bc=PeriodicBC())
+
+        stats2 = cubic_cache_stats()
+        @test stats2.misses == 1  # Still 1 miss
+        @test stats2.hits == 1    # Should be a hit via equality check
+
+        # Now x2 should trigger Pass 1 (identity check) due to self-healing
+        cubic_interp(x2, y, 0.5; bc=PeriodicBC())
+
+        stats3 = cubic_cache_stats()
+        @test stats3.hits == 2  # Another hit, this time via identity
     end
 end

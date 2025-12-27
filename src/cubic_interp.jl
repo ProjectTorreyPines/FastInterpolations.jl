@@ -48,7 +48,7 @@ Key optimization: A can be LU-factorized once and reused for different y.
 # ========================================
 
 """
-    CubicSplineCache(x::AbstractVector{T}; bc::Symbol=:natural) where {T<:AbstractFloat}
+    CubicSplineCache(x::AbstractVector{T}; bc=NaturalBC()) where {T<:AbstractFloat}
 
 Construct a cubic spline cache for grid points `x`.
 
@@ -57,13 +57,21 @@ This factorization can be reused for interpolating different y vectors.
 
 # Arguments
 - `x::AbstractVector{T}`: Grid points (must be sorted, length >= 3)
-- `bc::Symbol=:natural`: Boundary condition (`:natural` or `:periodic`)
+- `bc`: Boundary condition specification:
+  - `NaturalBC()`: Zero curvature at both ends (default)
+  - `ClampedBC()`: Zero slope at both ends
+  - `PeriodicBC()`: Periodic boundary condition
+  - `D1(val)` or `D2(val)`: Symmetric BC (same at both ends)
+  - `BCPair(D1(v1), D2(v2))`: Asymmetric BC pair
 
 # Example
 ```julia
 x = range(0.0, 1.0, 51)
-cache = CubicSplineCache(x)                    # Natural BC (default)
-cache_periodic = CubicSplineCache(x; bc=:periodic)  # Periodic BC
+cache = CubicSplineCache(x)                              # Natural BC (default)
+cache = CubicSplineCache(x; bc=ClampedBC())              # Zero slope at both ends
+cache = CubicSplineCache(x; bc=D1(0.5))                  # Slope=0.5 at both ends
+cache = CubicSplineCache(x; bc=BCPair(D1(0.5), D2(0)))   # Mixed: slope left, natural right
+cache_periodic = CubicSplineCache(x; bc=PeriodicBC())    # Periodic BC
 
 # Reuse for multiple y vectors
 y1 = sin.(x)
@@ -72,14 +80,58 @@ result1 = cubic_interp(cache, y1, [0.25, 0.75])
 result2 = cubic_interp(cache, y2, [0.25, 0.75])
 ```
 """
-function CubicSplineCache(x::AbstractVector{T}; bc::Symbol=:natural) where {T<:AbstractFloat}
+function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC=NaturalBC()) where {T<:AbstractFloat}
     _validate_bc(bc)
 
-    if bc == :periodic
+    # Periodic BC
+    if _is_periodic_bc(bc)
         return _build_periodic_cache(x)
-    else
-        return _build_natural_cache(x)
     end
+
+    # Normalize BC to BCPair (NaturalBC/ClampedBC → BCPair, PointBC → symmetric BCPair)
+    bc_normalized = _normalize_bc(bc, T)
+
+    # All non-periodic BC use unified BCPair path
+    return _build_derivative_bc_cache(x, bc_normalized.left, bc_normalized.right)
+end
+
+# ========================================
+# Helper Functions
+# ========================================
+
+# Note: _is_periodic_bc is defined in bc_types.jl
+
+"""
+    _get_cache_and_solve!(x, y, bc_pair, autocache) -> CubicSplineCache
+
+Common helper for BCPair: creates cache (with optional autocache) and solves system.
+Eliminates duplication across 4-arg and 2-arg paths.
+"""
+@inline function _get_cache_and_solve!(
+    x::AbstractVector{T}, y::AbstractVector{T},
+    bc_pair::BCPair{T,L,R}, autocache::Bool
+) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+    if autocache
+        cache = _get_cubic_cache(x, bc_pair)
+        _solve_system!(cache, y, bc_pair)
+    else
+        cache = CubicSplineCache(x; bc=bc_pair)
+        _solve_system!(cache, y, cache.bc_data)
+    end
+    return cache
+end
+
+"""
+    _get_cache_and_solve_periodic!(x, y, autocache) -> CubicSplineCache
+
+Common helper for PeriodicBC: creates cache (with optional autocache) and solves system.
+"""
+@inline function _get_cache_and_solve_periodic!(
+    x::AbstractVector{T}, y::AbstractVector{T}, autocache::Bool
+) where {T<:AbstractFloat}
+    cache = autocache ? _get_cubic_cache(x, PeriodicBC{T}()) : CubicSplineCache(x; bc=PeriodicBC())
+    _solve_system!(cache, y, cache.bc_data)
+    return cache
 end
 
 # ========================================
@@ -110,7 +162,44 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
 
-    z = _solve_system!(cache, y)
+    z = _solve_system!(cache, y, cache.bc_data)
+
+    @_dispatch_extrap extrap => ev begin
+        _cubic_vector_loop!(output, cache, y, z, x_query, ev)
+    end
+
+    return output
+end
+
+# ========================================
+# Core Fallback Functions (Type-Stable Dispatch)
+# ========================================
+#
+# These are the two core implementations that all Symbol-based APIs
+# dispatch to after normalizing BC to concrete types.
+#
+# Key insight: LU factorization depends only on BC **types** (D1 vs D2),
+# not BC **values**. So autocache stores by (x, L_type, R_type),
+# and we apply actual BC values at solve time via _solve_system!(cache, y, bc_tuple).
+
+"""
+Core implementation for BCPair boundary conditions (vector output).
+Uses `_get_cache_and_solve!` helper for unified autocache handling.
+"""
+@inline function _cubic_interp_bcpair!(
+    output::AbstractVector{T},
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    x_query::AbstractVector{T},
+    bc::BCPair{T,L,R},
+    extrap::Symbol,
+    autocache::Bool
+) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+    @assert length(y) == length(x) "y length must match x"
+    @assert length(output) == length(x_query) "output length must match x_query"
+
+    cache = _get_cache_and_solve!(x, y, bc, autocache)
+    z = cache.z_workspace
 
     @_dispatch_extrap extrap => ev begin
         _cubic_vector_loop!(output, cache, y, z, x_query, ev)
@@ -120,7 +209,75 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
 end
 
 """
-    cubic_interp!(output, x, y, x_query; bc=:natural, extrap=:none, autocache=true)
+Core implementation for BCPair boundary conditions (scalar query).
+Uses `_get_cache_and_solve!` helper for unified autocache handling.
+"""
+@inline function _cubic_interp_bcpair_scalar(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    x_query::T,
+    bc::BCPair{T,L,R},
+    extrap::Symbol,
+    autocache::Bool
+) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+    cache = _get_cache_and_solve!(x, y, bc, autocache)
+    z = cache.z_workspace
+
+    @_dispatch_extrap extrap => ev begin
+        _check_domain(cache.x, x_query, ev)
+        return _eval_with_bc(cache, y, cache.h, z, x_query, ev)
+    end
+end
+
+"""
+Core implementation for PeriodicBC boundary conditions (vector output).
+Uses `_get_cache_and_solve_periodic!` helper for unified autocache handling.
+"""
+@inline function _cubic_interp_periodic!(
+    output::AbstractVector{T},
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    x_query::AbstractVector{T},
+    autocache::Bool
+) where {T<:AbstractFloat}
+    @assert length(y) == length(x) "y length must match x"
+    @assert length(output) == length(x_query) "output length must match x_query"
+
+    _check_periodic_endpoints(y)
+    cache = _get_cache_and_solve_periodic!(x, y, autocache)
+    z = cache.z_workspace
+
+    # Periodic BC always uses :wrap extrapolation
+    @_dispatch_extrap :wrap => ev begin
+        _cubic_vector_loop!(output, cache, y, z, x_query, ev)
+    end
+
+    return output
+end
+
+"""
+Core implementation for PeriodicBC boundary conditions (scalar query).
+Uses `_get_cache_and_solve_periodic!` helper for unified autocache handling.
+"""
+@inline function _cubic_interp_periodic_scalar(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    x_query::T,
+    autocache::Bool
+) where {T<:AbstractFloat}
+    _check_periodic_endpoints(y)
+    cache = _get_cache_and_solve_periodic!(x, y, autocache)
+    z = cache.z_workspace
+
+    # Periodic BC always uses :wrap extrapolation
+    @_dispatch_extrap :wrap => ev begin
+        _check_domain(cache.x, x_query, ev)
+        return _eval_with_bc(cache, y, cache.h, z, x_query, ev)
+    end
+end
+
+"""
+    cubic_interp!(output, x, y, x_query; bc=NaturalBC(), extrap=:none, autocache=true)
 
 In-place cubic spline interpolation with optional automatic caching.
 """
@@ -129,26 +286,23 @@ In-place cubic spline interpolation with optional automatic caching.
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_query::AbstractVector{T};
-    bc::Symbol=:natural,
+    bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    if bc == :periodic
-        _check_periodic_endpoints(y)
-        extrap = :wrap  # override extrap for periodic
-        cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
-        return cubic_interp!(output, cache, y, x_query; extrap=extrap)
-    elseif autocache
-        cache = get_cubic_cache(x, Val(:natural))
-        return cubic_interp!(output, cache, y, x_query; extrap=extrap)
-    else
-        cache = CubicSplineCache(x)
-        return cubic_interp!(output, cache, y, x_query; extrap=extrap)
+    # Periodic BC
+    if _is_periodic_bc(bc)
+        return _cubic_interp_periodic!(output, x, y, x_query, autocache)
     end
+
+    # Normalize to BCPair and dispatch to core
+    bc_pair = _normalize_bc(bc, T)
+    return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache)
 end
+
 
 # Scalar query - zero allocation
 @inline function cubic_interp!(
@@ -168,25 +322,22 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_query::T;
-    bc::Symbol=:natural,
+    bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
     @assert length(output) >= 1 "output must have at least 1 element"
+
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    if bc == :periodic
-        _check_periodic_endpoints(y)
-        extrap = :wrap  # override extrap for periodic
-        cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
-    elseif autocache
-        cache = get_cubic_cache(x, Val(:natural))
+    if _is_periodic_bc(bc)
+        output[1] = _cubic_interp_periodic_scalar(x, y, x_query, autocache)
     else
-        cache = CubicSplineCache(x)
+        bc_pair = _normalize_bc(bc, T)
+        output[1] = _cubic_interp_bcpair_scalar(x, y, x_query, bc_pair, extrap, autocache)
     end
 
-    output[1] = cubic_interp_scalar(cache, y, x_query; extrap=extrap)
     return output
 end
 
@@ -218,7 +369,7 @@ function cubic_interp(
 end
 
 """
-    cubic_interp(x, y, x_query; bc=:natural, extrap=:none, autocache=true) -> Vector{T}
+    cubic_interp(x, y, x_query; bc=NaturalBC(), extrap=:none, autocache=true) -> Vector{T}
 
 Cubic spline interpolation with optional automatic caching.
 
@@ -227,7 +378,7 @@ Cubic spline interpolation with optional automatic caching.
 - `:constant`: Returns boundary values outside domain
 - `:extension`: Extends boundary polynomial outside domain
 - `:wrap`: Wraps coordinates to domain (for sawtooth/triangle patterns)
-- For `bc=:periodic`: extrapolation is ignored (coordinates are always wrapped)
+- For `bc=PeriodicBC()`: extrapolation is ignored (coordinates are always wrapped)
 
 # Example
 ```julia
@@ -240,25 +391,21 @@ function cubic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_query::AbstractVector{T};
-    bc::Symbol=:natural,
+    bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    if bc == :periodic
-        _check_periodic_endpoints(y)
-        extrap = :wrap  # override extrap for periodic
-        cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
-        return cubic_interp(cache, y, x_query; extrap=extrap)
-    elseif autocache
-        cache = get_cubic_cache(x, Val(:natural))
-        return cubic_interp(cache, y, x_query; extrap=extrap)
-    else
-        cache = CubicSplineCache(x)
-        return cubic_interp(cache, y, x_query; extrap=extrap)
+    output = Vector{T}(undef, length(x_query))
+
+    if _is_periodic_bc(bc)
+        return _cubic_interp_periodic!(output, x, y, x_query, autocache)
     end
+
+    bc_pair = _normalize_bc(bc, T)
+    return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache)
 end
 
 # Scalar query - zero allocation
@@ -270,183 +417,32 @@ function cubic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_query::T;
-    bc::Symbol=:natural,
+    bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {T<:AbstractFloat}
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    if bc == :periodic
-        _check_periodic_endpoints(y)
-        extrap = :wrap  # override extrap for periodic
-        cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
-        return cubic_interp_scalar(cache, y, x_query; extrap=extrap)
-    elseif autocache
-        cache::CubicSplineCache{T} = get_cubic_cache(x, Val(:natural))
-        return cubic_interp_scalar(cache, y, x_query; extrap=extrap)
-    else
-        cache = CubicSplineCache(x)
-        return cubic_interp_scalar(cache, y, x_query; extrap=extrap)
-    end
-end
-
-# ========================================
-# CubicInterpolant Callable Methods
-# ========================================
-
-# CubicInterpolant struct defined in cubic_types.jl
-
-# Scalar call - hot path (zero-allocation)
-@inline function (itp::CubicInterpolant{T})(xi::T) where {T<:AbstractFloat}
-    @boundscheck _check_domain(itp.cache.x, xi, itp.extrap)
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap)
-end
-
-# Real scalar wrapper
-@inline function (itp::CubicInterpolant{T})(xi::S) where {T<:AbstractFloat, S<:Real}
-    xi_t = T(xi)
-    @boundscheck _check_domain(itp.cache.x, xi_t, itp.extrap)
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi_t, itp.extrap)
-end
-
-# Vector call
-function (itp::CubicInterpolant{T})(xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
-    xi_typed = S === T ? xi : T.(xi)
-    output = Vector{T}(undef, length(xi_typed))
-    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap)
-    return output
-end
-
-function (itp::CubicInterpolant{T})(xi::AbstractVector{T}) where {T<:AbstractFloat}
-    output = Vector{T}(undef, length(xi))
-    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap)
-    return output
-end
-
-# In-place vector call
-function (itp::CubicInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat}
-    @assert length(output) == length(xi) "output length must match xi length"
-    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap)
-    return output
-end
-
-function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
-    @assert length(output) == length(xi) "output length must match xi length"
-    xi_typed = T.(xi)
-    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap)
-    return output
-end
-
-# ========================================
-# 2-Argument Form: Return CubicInterpolant
-# ========================================
-
-"""
-    cubic_interp(x, y; bc=:natural, extrap=:none, autocache=true) -> CubicInterpolant
-
-Create a callable interpolant for broadcast fusion and reuse.
-
-Pre-computes second derivative coefficients z ONCE at construction time,
-enabling true zero-allocation scalar evaluations in broadcast operations.
-
-# Example
-```julia
-itp = cubic_interp(x, y)           # Pre-computes z coefficients
-val = itp(0.5)                      # Scalar (zero-allocation)
-vals = itp.(query_points)           # Broadcast
-result = @. coef * itp(rho) * ne    # Fused broadcast
-```
-"""
-function cubic_interp(
-    x::AbstractVector{T},
-    y::AbstractVector{T};
-    bc::Symbol=:natural,
-    extrap::Symbol=:none,
-    autocache::Bool=true
-) where {T<:AbstractFloat}
-    _validate_bc(bc)
-
-    if bc == :periodic
-        _check_periodic_endpoints(y)
-        extrap = :wrap  # override extrap for periodic
-        cache = autocache ? get_cubic_cache(x, Val(:periodic)) : CubicSplineCache(x; bc=:periodic)
-    else
-        cache = autocache ? get_cubic_cache(x, Val(:natural)) : CubicSplineCache(x)
+    if _is_periodic_bc(bc)
+        return _cubic_interp_periodic_scalar(x, y, x_query, autocache)
     end
 
-    _solve_system!(cache, y)
-    z = copy(cache.z_workspace)
-
-    @_dispatch_extrap extrap => ev begin
-        return CubicInterpolant(cache, y, z, ev)
-    end
-end
-
-"""
-    cubic_interp(cache, y; extrap=:none) -> CubicInterpolant
-
-Create a callable interpolant from a pre-built cache.
-"""
-function cubic_interp(
-    cache::CubicSplineCache{T},
-    y::AbstractVector{T};
-    extrap::Symbol=:none
-) where {T<:AbstractFloat}
-    _solve_system!(cache, y)
-    z = copy(cache.z_workspace)
-
-    if cache.bc_data isa PeriodicData
-        _check_periodic_endpoints(y)
-        extrap = :wrap  # override extrap for periodic
-    end
-
-    @_dispatch_extrap extrap => ev begin
-        return CubicInterpolant(cache, y, z, ev)
-    end
-end
-
-# Real wrapper for 2-argument form
-function cubic_interp(
-    x::X,
-    y::Y;
-    bc::Symbol=:natural,
-    extrap::Symbol=:none,
-    autocache::Bool=true
-) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
-    _validate_bc(bc)
-
-    T = promote_type(TX, TY)
-    FT = float(T)
-    x_float = _to_float(x, FT)
-    y_float = FT.(y)
-
-    if bc == :periodic
-        _check_periodic_endpoints(y_float)
-        extrap = :wrap  # override extrap for periodic
-        cache = autocache ? get_cubic_cache(x_float, Val(:periodic)) : CubicSplineCache(x_float; bc=:periodic)
-    else
-        cache = autocache ? get_cubic_cache(x_float, Val(:natural)) : CubicSplineCache(x_float)
-    end
-
-    _solve_system!(cache, y_float)
-    z = copy(cache.z_workspace)
-
-    @_dispatch_extrap extrap => ev begin
-        return CubicInterpolant(cache, y_float, z, ev)
-    end
+    bc_pair = _normalize_bc(bc, T)
+    return _cubic_interp_bcpair_scalar(x, y, x_query, bc_pair, extrap, autocache)
 end
 
 # ========================================
 # Generic Real Type Wrappers
 # ========================================
+# Note: CubicInterpolant callable methods and 2-arg form are in cubic_interpolant.jl
 
 # Allocating - vector query
 function cubic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY},
     x_query::AbstractVector{TQ};
-    bc::Symbol=:natural,
+    bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
@@ -459,7 +455,7 @@ function cubic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY},
     x_query::TQ;
-    bc::Symbol=:natural,
+    bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
@@ -473,7 +469,7 @@ end
     x::AbstractVector{TX},
     y::AbstractVector{TY},
     x_query::AbstractVector{TQ};
-    bc::Symbol=:natural,
+    bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}
@@ -487,7 +483,7 @@ end
     x::AbstractVector{TX},
     y::AbstractVector{TY},
     x_query::TQ;
-    bc::Symbol=:natural,
+    bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, TQ<:Real}

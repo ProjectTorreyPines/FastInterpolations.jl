@@ -98,7 +98,7 @@ function benchmark_construction(; n_grid::Int=100, use_range::Bool=false, interp
             results[:Interpolations] = NaN
         end
 
-        b = @benchmark DataInterpolations.CubicSpline($y, $x; extrapolation=ExtrapolationType.Extension)
+        b = @benchmark DataInterpolations.CubicSpline($y, $x)
         results[:DataInterp] = median(b.times)
     else
         b = @benchmark linear_interp($x, $y)
@@ -111,7 +111,7 @@ function benchmark_construction(; n_grid::Int=100, use_range::Bool=false, interp
         end
         results[:Interpolations] = median(b.times)
 
-        b = @benchmark DataInterpolations.LinearInterpolation($y, $x; extrapolation=ExtrapolationType.Extension)
+        b = @benchmark DataInterpolations.LinearInterpolation($y, $x)
         results[:DataInterp] = median(b.times)
     end
 
@@ -151,7 +151,7 @@ function benchmark_evaluation(; n_grid::Int=100, n_query::Int=1000, use_range::B
     if interp_type == :cubic
         clear_cubic_cache!()
         itp_fast = cubic_interp(x, y; autocache=false)
-        itp_data = DataInterpolations.CubicSpline(y, x; extrapolation=ExtrapolationType.Extension)
+        itp_data = DataInterpolations.CubicSpline(y, x)
 
         b = @benchmark $itp_fast($xi_vec)
         results[:FastInterp] = median(b.times)
@@ -168,7 +168,7 @@ function benchmark_evaluation(; n_grid::Int=100, n_query::Int=1000, use_range::B
         results[:DataInterp] = median(b.times)
     else
         itp_fast = linear_interp(x, y)
-        itp_data = DataInterpolations.LinearInterpolation(y, x; extrapolation=ExtrapolationType.Extension)
+        itp_data = DataInterpolations.LinearInterpolation(y, x)
 
         if use_range
             itp_interp = Interpolations.linear_interpolation(x, y)
@@ -232,7 +232,7 @@ function benchmark_oneshot(; n_grid::Int=100, n_query::Int=1000, use_range::Bool
             results[:Interpolations] = (time_ns=NaN, alloc_bytes=0)
         end
 
-        b = @benchmark DataInterpolations.CubicSpline($y, $x; extrapolation=ExtrapolationType.Extension)($xi_vec)
+        b = @benchmark DataInterpolations.CubicSpline($y, $x)($xi_vec)
         results[:DataInterp] = (time_ns=median(b.times), alloc_bytes=Int(b.memory))
     else
         b = @benchmark linear_interp($x, $y, $xi_vec)
@@ -245,7 +245,7 @@ function benchmark_oneshot(; n_grid::Int=100, n_query::Int=1000, use_range::Bool
         end
         results[:Interpolations] = (time_ns=median(b.times), alloc_bytes=Int(b.memory))
 
-        b = @benchmark DataInterpolations.LinearInterpolation($y, $x; extrapolation=ExtrapolationType.Extension)($xi_vec)
+        b = @benchmark DataInterpolations.LinearInterpolation($y, $x)($xi_vec)
         results[:DataInterp] = (time_ns=median(b.times), alloc_bytes=Int(b.memory))
     end
 
@@ -305,7 +305,7 @@ function benchmark_allocation(; n_grid::Int=100, use_range::Bool=false)
     end
 
     # DataInterpolations.jl
-    itp_data = DataInterpolations.CubicSpline(y, x; extrapolation=ExtrapolationType.Extension)
+    itp_data = DataInterpolations.CubicSpline(y, x)
     itp_data(xi_scalar)
     alloc_data_scalar = @allocated itp_data(xi_scalar)
     itp_data(xi_vec)
@@ -490,7 +490,7 @@ function benchmark_scaling(; verbose::Bool=true)
         alloc_itp = Int(b.memory)
 
         # DataInterpolations.jl
-        b = @benchmark DataInterpolations.CubicSpline($y, $x; extrapolation=ExtrapolationType.Extension)
+        b = @benchmark DataInterpolations.CubicSpline($y, $x)
         t_di = ns_to_sec(median(b.times))
         alloc_di = Int(b.memory)
 
@@ -520,7 +520,7 @@ function benchmark_scaling(; verbose::Bool=true)
     clear_cubic_cache!()
     itp_fast = cubic_interp(x, y; autocache=false)
     itp_itp = Interpolations.cubic_spline_interpolation(x, y)
-    itp_di = DataInterpolations.CubicSpline(y, x; extrapolation=ExtrapolationType.Extension)
+    itp_di = DataInterpolations.CubicSpline(y, x)
 
     eval_rows = []
     for nq in query_sizes
@@ -571,7 +571,7 @@ function benchmark_scaling(; verbose::Bool=true)
         alloc_itp = Int(b.memory)
 
         # DataInterpolations.jl (construct + evaluate each time)
-        b = @benchmark DataInterpolations.CubicSpline($y, $x; extrapolation=ExtrapolationType.Extension)($xi)
+        b = @benchmark DataInterpolations.CubicSpline($y, $x)($xi)
         t_di = ns_to_sec(median(b.times))
         alloc_di = Int(b.memory)
 

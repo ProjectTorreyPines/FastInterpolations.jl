@@ -15,6 +15,9 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
 
 # ALLOC_THRESHOLD is defined in runtests.jl
 
+# Import internal function for testing
+import FastInterpolations: _get_cubic_cache
+
 @testset "Allocation Tests" begin
 
     # =========================================================================
@@ -211,7 +214,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         end
 
         stats = cubic_cache_stats()
-        @test stats.size == 4
+        @test stats.total_entries == 4
         @test stats.evictions == 0
 
         # Add 5th grid - triggers ring buffer eviction
@@ -265,7 +268,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         @test cubic_cache_stats().evictions == 4
 
         # Size stays at limit
-        @test cubic_cache_stats().size == 3
+        @test cubic_cache_stats().total_entries == 3
 
         set_cubic_cache_size!(old_size)
     end
@@ -329,8 +332,8 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         # Callable creation with autocache - only allocates z vector
         allocs = @allocated cubic_interp(x, y2)
 
-        # Should only allocate z copy (~400 bytes for 51 elements) + callable struct
-        @test allocs < 1_000  # 1 KB budget (z vector + minor overhead)
+        # Should only allocate y + z copies (~800 bytes for 51 elements each) + callable struct
+        @test allocs < 1_500  # 2 KB budget (y + z vectors + minor overhead)
     end
 
     # =========================================================================
@@ -558,7 +561,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         y = sin.(x)
 
         # Create callable via cubic_interp (computes z coefficients)
-        itp = cubic_interp(x, y; bc=:periodic, autocache=false)
+        itp = cubic_interp(x, y; bc=PeriodicBC(), autocache=false)
 
         # Warmup
         itp(1.0)
@@ -584,7 +587,7 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         output = similar(x_query)
 
         # Create explicit periodic cache
-        cache = CubicSplineCache(x; bc=:periodic)
+        cache = CubicSplineCache(x; bc=PeriodicBC())
 
         # Warmup
         cubic_interp!(output, cache, y, x_query)
@@ -606,21 +609,21 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
 
         clear_cubic_cache!()
 
-        # Prime periodic autocache
-        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
-        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
+        # Prime periodic autocache (using typed BC API)
+        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
+        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
 
         # Natural BC with autocache for comparison (in-place)
         x_natural = collect(range(0.0, 1.0, 101))
         y_natural = sin.(2π .* x_natural)
         x_query_nat = [0.5]
         output_nat = similar(x_query_nat)
-        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)  # Prime autocache
-        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)  # Warmup
-        natural_allocs = @allocated cubic_interp!(output_nat, x_natural, y_natural, x_query_nat)
+        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=NaturalBC())  # Prime autocache
+        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=NaturalBC())  # Warmup
+        natural_allocs = @allocated cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=NaturalBC())
 
         # Periodic BC with autocache (cache hit - zero allocation)
-        periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc=:periodic)
+        periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
 
         # Both natural and periodic BC should be zero-allocation with autocache
         @test natural_allocs <= ALLOC_THRESHOLD
@@ -798,36 +801,39 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "Runtime symbol: get_cubic_cache" begin
+    @testset "Runtime symbol: _get_cubic_cache" begin
         clear_cubic_cache!()
 
         x = collect(range(0.0, 1.0, 51))
 
-        # Prime cache for both BC types
-        get_cubic_cache(x; bc=:natural)
-        get_cubic_cache(x; bc=:periodic)
+        # Prime cache for both BC types (using typed BC API)
+        _get_cubic_cache(x, NaturalBC())
+        _get_cubic_cache(x, PeriodicBC())
 
-        # Runtime symbol version (simulating user code passing runtime variable)
-        function cache_runtime_bc(bc_mode::Symbol)
-            get_cubic_cache(x; bc=bc_mode)
+        # Runtime BC type version (simulating user code passing runtime variable)
+        function cache_runtime_bc_natural()
+            _get_cubic_cache(x, NaturalBC())
+        end
+        function cache_runtime_bc_periodic()
+            _get_cubic_cache(x, PeriodicBC())
         end
 
         # Extended warmup for JIT stabilization (important for inner functions)
         for _ in 1:10
-            cache_runtime_bc(:natural)
-            cache_runtime_bc(:periodic)
+            cache_runtime_bc_natural()
+            cache_runtime_bc_periodic()
         end
 
-        # Measure runtime symbol version
-        allocs_natural = @allocated cache_runtime_bc(:natural)
-        allocs_periodic = @allocated cache_runtime_bc(:periodic)
+        # Measure typed BC version
+        allocs_natural = @allocated cache_runtime_bc_natural()
+        allocs_periodic = @allocated cache_runtime_bc_periodic()
 
-        # The 64/96 bytes comes from cache lookup (lock + objectid check), not Val pattern.
+        # The 64/96 bytes comes from cache lookup (lock + objectid check).
         # Key test: repeated calls should be consistent (no growing allocation).
-        allocs_natural2 = @allocated cache_runtime_bc(:natural)
-        allocs_periodic2 = @allocated cache_runtime_bc(:periodic)
+        allocs_natural2 = @allocated cache_runtime_bc_natural()
+        allocs_periodic2 = @allocated cache_runtime_bc_periodic()
 
-        # Same allocation on repeated calls = no leak from Val pattern
+        # Same allocation on repeated calls = no leak
         @test allocs_natural == allocs_natural2
         @test allocs_periodic == allocs_periodic2
 
@@ -860,6 +866,186 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         @test allocs_ext == allocs_const
         @test allocs_ext == allocs_wrap
         @test allocs_ext <= ALLOC_THRESHOLD + 64  # Struct (~48 bytes) + dispatch overhead
+    end
+
+    # =========================================================================
+    # Dynamic BCPair Values in Loop Tests
+    # =========================================================================
+    # These tests verify that when BCPair derivative VALUES change dynamically
+    # in a loop, the cache is still hit (same BC TYPE combination) and
+    # zero-allocation is maintained.
+
+    @testset "Dynamic BCPair values: scalar query zero-allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        xi = 0.5
+
+        clear_cubic_cache!()
+
+        # Function simulating dynamic BC values in a loop
+        function interp_with_dynamic_bc(left_curv::Float64, right_slope::Float64)
+            cubic_interp(x, y, xi; bc=BCPair(D2(left_curv), D1(right_slope)))
+        end
+
+        # Prime cache (first call creates cache entry for D2-D1 type combination)
+        interp_with_dynamic_bc(0.0, 0.0)
+
+        # Warmup with varying values
+        for i in 1:10
+            interp_with_dynamic_bc(Float64(i) * 0.1, Float64(i) * 0.05)
+        end
+
+        # Test: different BC values but same BC TYPE should hit cache
+        allocs = @allocated interp_with_dynamic_bc(0.5, 0.25)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated interp_with_dynamic_bc(1.0, -0.5)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated interp_with_dynamic_bc(-0.3, 0.8)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Verify cache was reused (only 1 miss for the initial prime)
+        stats = cubic_cache_stats()
+        @test stats.misses == 1
+    end
+
+    @testset "Dynamic BCPair values: in-place vector zero-allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        x_query = [0.25, 0.5, 0.75]
+        output = similar(x_query)
+
+        clear_cubic_cache!()
+
+        # Function simulating dynamic BC values in a loop (in-place version)
+        function interp_inplace_dynamic_bc!(out, left_curv::Float64, right_slope::Float64)
+            cubic_interp!(out, x, y, x_query; bc=BCPair(D2(left_curv), D1(right_slope)))
+        end
+
+        # Prime cache
+        interp_inplace_dynamic_bc!(output, 0.0, 0.0)
+
+        # Warmup with varying values
+        for i in 1:10
+            interp_inplace_dynamic_bc!(output, Float64(i) * 0.1, Float64(i) * 0.05)
+        end
+
+        # In-place with dynamic BC values - MUST be zero allocation
+        allocs = @allocated interp_inplace_dynamic_bc!(output, 0.5, 0.25)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated interp_inplace_dynamic_bc!(output, 1.0, -0.5)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Dynamic BCPair values: loop accumulation zero-allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        xi = 0.5
+
+        clear_cubic_cache!()
+
+        # Realistic use case: accumulating results in a loop with varying BC
+        function accumulate_with_varying_bc(n::Int)
+            result = 0.0
+            for i in 1:n
+                left_curv = sin(Float64(i) * 0.1)
+                right_slope = cos(Float64(i) * 0.1)
+                result += cubic_interp(x, y, xi; bc=BCPair(D2(left_curv), D1(right_slope)))
+            end
+            return result
+        end
+
+        # Warmup
+        accumulate_with_varying_bc(10)
+        accumulate_with_varying_bc(10)
+
+        # Loop with 100 iterations - should be ~zero allocation per iteration
+        allocs = @allocated accumulate_with_varying_bc(100)
+        # Allow small overhead per iteration (should be ≤ threshold * iterations in worst case)
+        # But ideally much less due to cache hits
+        @test allocs <= ALLOC_THRESHOLD * 100
+    end
+
+    @testset "Dynamic BCPair values: symmetric D2-D2 type" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        xi = 0.5
+
+        clear_cubic_cache!()
+
+        # Symmetric BC: D2 at both ends with different values
+        function interp_symmetric_d2(left_curv::Float64, right_curv::Float64)
+            cubic_interp(x, y, xi; bc=BCPair(D2(left_curv), D2(right_curv)))
+        end
+
+        # Prime cache
+        interp_symmetric_d2(0.0, 0.0)
+
+        # Warmup
+        for i in 1:10
+            interp_symmetric_d2(Float64(i) * 0.1, Float64(i) * 0.2)
+        end
+
+        # Different values, same type combination
+        allocs = @allocated interp_symmetric_d2(0.5, 1.0)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated interp_symmetric_d2(-0.3, 0.8)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Dynamic BCPair values: symmetric D1-D1 type (ClampedBC equivalent)" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        xi = 0.5
+
+        clear_cubic_cache!()
+
+        # Symmetric BC: D1 at both ends with different values
+        function interp_symmetric_d1(left_slope::Float64, right_slope::Float64)
+            cubic_interp(x, y, xi; bc=BCPair(D1(left_slope), D1(right_slope)))
+        end
+
+        # Prime cache
+        interp_symmetric_d1(0.0, 0.0)
+
+        # Warmup
+        for i in 1:10
+            interp_symmetric_d1(Float64(i) * 0.1, Float64(i) * -0.1)
+        end
+
+        # Different values, same type combination
+        allocs = @allocated interp_symmetric_d1(0.5, -0.5)
+        @test allocs <= ALLOC_THRESHOLD
+
+        allocs = @allocated interp_symmetric_d1(1.0, 0.0)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Dynamic BCPair values: Float32 type" begin
+        x = Float32.(collect(range(0.0, 1.0, 51)))
+        y = Float32.(sin.(2π .* x))
+        xi = Float32(0.5)
+
+        clear_cubic_cache!()
+
+        function interp_f32_dynamic_bc(left_curv::Float32, right_slope::Float32)
+            cubic_interp(x, y, xi; bc=BCPair(D2(left_curv), D1(right_slope)))
+        end
+
+        # Prime cache
+        interp_f32_dynamic_bc(Float32(0.0), Float32(0.0))
+
+        # Warmup
+        for i in 1:10
+            interp_f32_dynamic_bc(Float32(i) * 0.1f0, Float32(i) * 0.05f0)
+        end
+
+        # Float32 with dynamic BC values
+        allocs = @allocated interp_f32_dynamic_bc(Float32(0.5), Float32(0.25))
+        @test allocs <= ALLOC_THRESHOLD
     end
 
 end

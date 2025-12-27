@@ -9,6 +9,14 @@ Returns `(idx, x0, x1)` where:
 - `idx`: interval index in [1, length(x)-1]
 - `x0`: left boundary value x[idx]
 - `x1`: right boundary value x[idx+1]
+
+# Preconditions (caller must ensure)
+- `xi` must be validated by `_check_domain` (in [x_min, x_max] or wrapped)
+- `step(x) > 0` (ascending grid assumed)
+- `xi` must not be NaN/Inf (undefined behavior; caller's responsibility)
+
+Uses `unsafe_trunc` for ~40% faster index calculation. Safety is guaranteed by
+the preconditions and the final `clamp` which handles floating-point edge cases.
 """
 @inline function _find_interval_with_bounds(
     x::AbstractRange{FT},
@@ -18,8 +26,8 @@ Returns `(idx, x0, x1)` where:
     x_min = first(x)
     dx = Base.step(x)
 
-    # epsilon handles floating point errors (e.g., 1.999999 should map to index 2, not 1)
-    idx = clamp(floor(Int, (xi - x_min) / dx + 1 + 10*eps(FT)), 1, n - 1)
+    # +10*eps prevents 1.999... → 1 rounding error; clamp handles edge cases
+    idx = clamp(unsafe_trunc(Int, (xi - x_min) / dx + 1 + 10*eps(FT)), 1, n - 1)
 
     # Direct calculation to avoid expensive TwicePrecision indexing
     x0 = x_min + (idx - 1) * dx
@@ -210,18 +218,12 @@ Valid options: `:none`, `:constant`, `:extension`, `:wrap`
     throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
 end
 
-"""
-    _validate_bc(bc::Symbol) -> Nothing
-
-Validate boundary condition symbol for cubic interpolation.
-Throws `ArgumentError` if invalid.
-
-Valid options: `:natural`, `:periodic`
-"""
-@inline function _validate_bc(bc::Symbol)
-    bc in (:natural, :periodic) && return nothing
-    throw(ArgumentError("bc must be :natural or :periodic, got :$bc"))
-end
+# Accept BC types: all AbstractBC subtypes
+@inline _validate_bc(::NaturalBC) = nothing
+@inline _validate_bc(::ClampedBC) = nothing
+@inline _validate_bc(::PeriodicBC) = nothing
+@inline _validate_bc(::PointBC) = nothing
+@inline _validate_bc(::BCPair) = nothing
 
 # ========================================
 # Dispatch Macros (Zero-Allocation Branching)

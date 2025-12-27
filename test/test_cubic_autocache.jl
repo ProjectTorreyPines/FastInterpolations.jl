@@ -1,3 +1,6 @@
+# Import internal function for testing
+import FastInterpolations: _get_cubic_cache
+
 @testset "Cubic Spline Auto-Cache" begin
     # Clear cache before tests
     clear_cubic_cache!()
@@ -404,7 +407,7 @@
     # AbstractVector API Compatibility Tests
     # =========================================================================
 
-    @testset "get_cubic_cache accepts AbstractVector (views, SubArrays)" begin
+    @testset "_get_cubic_cache accepts AbstractVector (views, SubArrays)" begin
         clear_cubic_cache!()
 
         x_full = collect(range(0.0, 1.0, 101))
@@ -414,7 +417,7 @@
         x_view = @view x_full[1:51]
         y_view = @view y_full[1:51]
 
-        cache = get_cubic_cache(x_view, NaturalBC())
+        cache = _get_cubic_cache(x_view, NaturalBC())
         @test cache isa CubicSplineCache
 
         # Cache should store collected Vector, not the view
@@ -425,39 +428,39 @@
         @test stats.misses == 1
     end
 
-    @testset "get_cubic_cache accepts Float32 views" begin
+    @testset "_get_cubic_cache accepts Float32 views" begin
         clear_cubic_cache!()
 
         x_full = Float32.(collect(range(0.0, 1.0, 101)))
         x_view = @view x_full[1:51]
 
-        cache = get_cubic_cache(x_view, NaturalBC())
+        cache = _get_cubic_cache(x_view, NaturalBC())
         @test cache isa CubicSplineCache{Float32}
     end
 
-    @testset "get_cubic_cache fallback for other Real types" begin
+    @testset "_get_cubic_cache fallback for other Real types" begin
         clear_cubic_cache!()
 
         # Integer range → should convert to Float64
         x_int = 0:10
-        cache_int = get_cubic_cache(x_int, NaturalBC())
+        cache_int = _get_cubic_cache(x_int, NaturalBC())
         @test cache_int isa CubicSplineCache{Float64}
 
         # Float16 vector → kept as Float16 (native AbstractFloat)
         x_f16 = Float16.(collect(range(0.0, 1.0, 11)))
-        cache_f16 = get_cubic_cache(x_f16, NaturalBC())
+        cache_f16 = _get_cubic_cache(x_f16, NaturalBC())
         @test cache_f16 isa CubicSplineCache{Float16}
     end
 
-    @testset "get_cubic_cache keyword API" begin
+    @testset "_get_cubic_cache keyword API" begin
         clear_cubic_cache!()
 
         x = collect(range(0.0, 1.0, 51))
 
         # Keyword API should work
-        cache1 = get_cubic_cache(x)  # default bc=NaturalBC()
-        cache2 = get_cubic_cache(x; bc=NaturalBC())
-        cache3 = get_cubic_cache(x; bc=PeriodicBC())
+        cache1 = _get_cubic_cache(x)  # default bc=NaturalBC()
+        cache2 = _get_cubic_cache(x; bc=NaturalBC())
+        cache3 = _get_cubic_cache(x; bc=PeriodicBC())
 
         @test cache1 isa CubicSplineCache
         @test cache2 isa CubicSplineCache
@@ -468,7 +471,7 @@
         @test typeof(cache1) != typeof(cache3)
     end
 
-    @testset "get_cubic_cache typed BC API (type-stable path)" begin
+    @testset "_get_cubic_cache typed BC API (type-stable path)" begin
         clear_cubic_cache!()
 
         x64 = collect(range(0.0, 1.0, 51))
@@ -476,10 +479,10 @@
         x_range = range(0.0, 1.0, 51)
 
         # All input types should work with Val API
-        c1 = get_cubic_cache(x64, NaturalBC())
-        c2 = get_cubic_cache(x32, NaturalBC())
-        c3 = get_cubic_cache(x_range, NaturalBC())
-        c4 = get_cubic_cache(x64, PeriodicBC())
+        c1 = _get_cubic_cache(x64, NaturalBC())
+        c2 = _get_cubic_cache(x32, NaturalBC())
+        c3 = _get_cubic_cache(x_range, NaturalBC())
+        c4 = _get_cubic_cache(x64, PeriodicBC())
 
         @test c1 isa CubicSplineCache{Float64}
         @test c2 isa CubicSplineCache{Float32}
@@ -494,13 +497,13 @@
     # Coverage Tests for Uncovered Paths
     # =========================================================================
 
-    @testset "get_cubic_cache with ClampedBC (typed API)" begin
+    @testset "_get_cubic_cache with ClampedBC (typed API)" begin
         clear_cubic_cache!()
 
         x = collect(range(0.0, 1.0, 51))
 
         # ClampedBC typed API - previously uncovered
-        cache = get_cubic_cache(x, ClampedBC())
+        cache = _get_cubic_cache(x, ClampedBC())
         @test cache isa CubicSplineCache{Float64}
 
         # Cache should be created with BCPair(D1(0), D1(0))
@@ -508,41 +511,42 @@
 
         # Should work for Float32 as well
         x32 = Float32.(x)
-        cache32 = get_cubic_cache(x32, ClampedBC())
+        cache32 = _get_cubic_cache(x32, ClampedBC())
         @test cache32 isa CubicSplineCache{Float32}
         @test cache32.bc_data isa BCPair{Float32, D1{Float32}, D1{Float32}}
 
         # Range input
         x_range = range(0.0, 1.0, 51)
-        cache_range = get_cubic_cache(x_range, ClampedBC())
+        cache_range = _get_cubic_cache(x_range, ClampedBC())
         @test cache_range isa CubicSplineCache{Float64}
     end
 
-    @testset "get_cubic_cache with PointBC (convenience API)" begin
+    @testset "_get_cubic_cache with PointBC (convenience API)" begin
         clear_cubic_cache!()
 
         x = collect(range(0.0, 1.0, 51))
 
         # D1 PointBC - applies symmetrically to both ends
-        # Note: Cache stores BC *type* not *values* (values only affect RHS, not LU)
-        cache_d1 = get_cubic_cache(x, D1(0.5))
+        # Note: LU factorization depends only on BC TYPE, not values.
+        # Cache stores values from first caller, but values are applied at solve time.
+        cache_d1 = _get_cubic_cache(x, D1(0.5))
         @test cache_d1 isa CubicSplineCache{Float64}
         @test cache_d1.bc_data isa BCPair{Float64, D1{Float64}, D1{Float64}}
-        # BC values are always zero in cache (LU factorization is type-independent)
-        @test cache_d1.bc_data.left.val == 0.0
-        @test cache_d1.bc_data.right.val == 0.0
+        # On cache miss, actual BC values from request are stored
+        @test cache_d1.bc_data.left.val == 0.5
+        @test cache_d1.bc_data.right.val == 0.5
 
         # D2 PointBC - applies symmetrically to both ends
-        cache_d2 = get_cubic_cache(x, D2(1.0))
+        cache_d2 = _get_cubic_cache(x, D2(1.0))
         @test cache_d2 isa CubicSplineCache{Float64}
         @test cache_d2.bc_data isa BCPair{Float64, D2{Float64}, D2{Float64}}
-        # BC values are always zero in cache
-        @test cache_d2.bc_data.left.val == 0.0
-        @test cache_d2.bc_data.right.val == 0.0
+        # On cache miss, actual BC values from request are stored
+        @test cache_d2.bc_data.left.val == 1.0
+        @test cache_d2.bc_data.right.val == 1.0
 
         # Float32 with PointBC
         x32 = Float32.(x)
-        cache_d1_32 = get_cubic_cache(x32, D1(Float32(0.5)))
+        cache_d1_32 = _get_cubic_cache(x32, D1(Float32(0.5)))
         @test cache_d1_32 isa CubicSplineCache{Float32}
     end
 
@@ -551,18 +555,18 @@
 
         # Integer Vector with BCPair - should convert to Float64
         x_int = collect(0:10)
-        cache = get_cubic_cache(x_int, BCPair(D1(0.0), D2(0.0)))
+        cache = _get_cubic_cache(x_int, BCPair(D1(0.0), D2(0.0)))
         @test cache isa CubicSplineCache{Float64}
 
         # Integer Vector with periodic BC - should convert to Float64
         clear_cubic_cache!()
-        cache_periodic = get_cubic_cache(x_int, PeriodicBC())
+        cache_periodic = _get_cubic_cache(x_int, PeriodicBC())
         @test cache_periodic isa CubicSplineCache{Float64}
 
         # Integer Range with periodic BC - should convert to Float64
         clear_cubic_cache!()
         x_int_range = 0:10
-        cache_periodic_range = get_cubic_cache(x_int_range, PeriodicBC())
+        cache_periodic_range = _get_cubic_cache(x_int_range, PeriodicBC())
         @test cache_periodic_range isa CubicSplineCache{Float64}
     end
 

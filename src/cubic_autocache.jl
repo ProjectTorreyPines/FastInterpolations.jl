@@ -244,8 +244,12 @@ end
 """
 Lookup or insert into a derivative BC cache bank.
 2-pass lookup: identity check (fast) → equality check (slower) → insert.
+
+On cache miss, creates entry with the provided `bc_pair` values. This ensures
+the cache has meaningful bc_data for edge cases, though callers should still
+use 3-arg `_solve_system!` for dynamic BC values.
 """
-@inline function _lookup_or_insert!(bank::CacheBank{T,L,R,X}, x::X) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+@inline function _lookup_or_insert!(bank::CacheBank{T,L,R,X}, x::X, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
     store = bank.store
     ring = bank.ring
     id = objectid(x)
@@ -267,17 +271,12 @@ Lookup or insert into a derivative BC cache bank.
         end
     end
 
-    # [Cache Miss] Create new entry
-    # NOTE: BC values are set to zero(T) as placeholders. The cache is keyed by BC *type* only
-    # because LU factorization depends only on matrix structure (x-grid + BC type), not BC values.
-    #
-    # Actual BC values are applied at solve time via:
-    #   _solve_system!(cache, y, (left_bc, right_bc))  # 3-arg overload in cubic_solver.jl
-    # which computes RHS with the passed BC values, not cache.bc_data.
-    #
-    # See: cubic_interp.jl:_get_cache_and_solve! for the call site.
+    # [Cache Miss] Create new entry with the provided BC values.
+    # Cache is keyed by BC *type* only (LU factorization depends on matrix structure).
+    # On cache hit, bc_data may differ from caller's BC values, so callers should
+    # use 3-arg _solve_system!(cache, y, bc_tuple) to apply their actual BC values.
     _CACHE_MISSES[] += 1
-    new_cache = _build_derivative_bc_cache(x, L(zero(T)), R(zero(T)))
+    new_cache = _build_derivative_bc_cache(x, bc_pair.left, bc_pair.right)
     new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
     _add_to_ring!(store, ring, new_entry)
 
@@ -319,46 +318,31 @@ Lookup or insert into a periodic BC cache bank.
 end
 
 # ===============================================================
-# Public API: get_cubic_cache
+# Internal API: _get_cubic_cache
 # ===============================================================
 
 """
-    get_cubic_cache(x; bc=NaturalBC())
+    _get_cubic_cache(x; bc=NaturalBC()) -> CubicSplineCache  [Internal]
 
 Get or create a cached CubicSplineCache for the given x-grid.
 
-Supports ALL BCPair combinations, not just NaturalBC/PeriodicBC.
+# Warning: Internal API
+This is an internal function. For interpolation, use the full API:
+- `cubic_interp(x, y; bc=...)` - applies BC values correctly at solve time
+
+Direct use of cached results with `cubic_interp(cache, y)` may give incorrect
+results if BC values differ between cache creation and solve time (cache is
+keyed by BC *type* only, not values). See `_solve_system!` 3-arg overload.
 
 # Cache Sharing Behavior
-
-**IMPORTANT**: Cache is keyed by BC *type*, not BC *values*.
+Cache is keyed by BC *type*, not BC *values*.
 `BCPair(D1(0.0), D2(0.0))` and `BCPair(D1(1.0), D2(2.0))` share the same cache
-because they have the same type signature `BCPair{Float64, D1{Float64}, D2{Float64}}`.
+because they have the same type signature.
 
-This works because the LU factorization depends only on the tridiagonal matrix structure
-(determined by x-grid and BC type), not the RHS values (determined by y-data and BC values).
-
-# Arguments
-- `x`: X-grid (Vector or Range)
-- `bc`: Boundary condition specification:
-  - `NaturalBC()`: Natural BC (default)
-  - `ClampedBC()`: Clamped BC
-  - `PeriodicBC()`: Periodic boundary condition
-  - `D1(val)` or `D2(val)`: Symmetric BC (same at both ends)
-  - `BCPair(D1(v1), D2(v2))`: Asymmetric BC pair
-
-# Returns
-Cached `CubicSplineCache` for zero-allocation repeated interpolation.
-
-# Examples
-```julia
-cache = get_cubic_cache(x)                              # Natural BC (default)
-cache = get_cubic_cache(x; bc=ClampedBC())              # Clamped BC
-cache = get_cubic_cache(x; bc=PeriodicBC())             # Periodic BC
-cache = get_cubic_cache(x; bc=BCPair(D1(0.5), D2(0)))   # Mixed BC
-```
+LU factorization depends only on matrix structure (x-grid + BC type),
+not RHS values (y-data + BC values).
 """
-@inline function get_cubic_cache(x; bc::AbstractBC=NaturalBC())
+@inline function _get_cubic_cache(x; bc::AbstractBC=NaturalBC())
     # Handle periodic BC
     if _is_periodic_bc(bc)
         return _get_periodic_cache_impl(x)
@@ -376,35 +360,35 @@ cache = get_cubic_cache(x; bc=BCPair(D1(0.5), D2(0)))   # Mixed BC
 end
 
 # ===============================================================
-# Type-Stable Direct API (bypasses Union for zero-allocation)
+# Type-Stable Direct API (Internal - bypasses Union for zero-allocation)
 # ===============================================================
 
-# Typed BC API - direct path, no Union (recommended)
-@inline function get_cubic_cache(x, ::NaturalBC)
+# Typed BC API - direct path, no Union
+@inline function _get_cubic_cache(x, ::NaturalBC)
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_pair = BCPair(D2(zero(FT)), D2(zero(FT)))
     return _get_derivative_cache_impl(x, bc_pair)
 end
 
-@inline function get_cubic_cache(x, ::ClampedBC)
+@inline function _get_cubic_cache(x, ::ClampedBC)
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_pair = BCPair(D1(zero(FT)), D1(zero(FT)))
     return _get_derivative_cache_impl(x, bc_pair)
 end
 
-@inline function get_cubic_cache(x, ::PeriodicBC)
+@inline function _get_cubic_cache(x, ::PeriodicBC)
     return _get_periodic_cache_impl(x)
 end
 
-# BCPair direct API - type stable (used by cubic_interp! for non-symbol BCs)
-@inline function get_cubic_cache(x, bc::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+# BCPair direct API - type stable (used by internal paths)
+@inline function _get_cubic_cache(x, bc::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     return _get_derivative_cache_impl(x, bc)
 end
 
 # PointBC convenience - convert to symmetric BCPair
-@inline function get_cubic_cache(x, bc::PointBC)
+@inline function _get_cubic_cache(x, bc::PointBC)
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_t = _promote_pointbc(bc, FT)
@@ -426,7 +410,7 @@ Internal implementation for derivative BC cache lookup.
 @inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     x_normalized = x isa Vector ? x : collect(x)
     bank = _get_derivative_bank(x_normalized, bc_pair)
-    return _lookup_or_insert!(bank, x_normalized)
+    return _lookup_or_insert!(bank, x_normalized, bc_pair)
 end
 
 @inline function _get_derivative_cache_impl(x::AbstractRange{T}, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
@@ -434,7 +418,7 @@ end
     # LinRange and other Range types are converted (minor overhead on first call).
     x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
     bank = _get_derivative_bank(x_normalized, bc_pair)
-    return _lookup_or_insert!(bank, x_normalized)
+    return _lookup_or_insert!(bank, x_normalized, bc_pair)
 end
 
 # Fallback: other Real types → convert to Float64

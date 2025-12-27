@@ -277,43 +277,30 @@ end
 # Unified System Solver Entry Point
 # ========================================
 #
-# Two overloads for derivative BC:
-#   _solve_system!(cache, y)           → uses cache.bc_data (for manually built caches)
-#   _solve_system!(cache, y, bc_tuple) → uses passed BC values (for autocache)
+# All callers must explicitly pass bc_data:
+#   _solve_system!(cache, y, cache.bc_data)
 #
-# The 3-arg version enables cache reuse with different BC values.
-# See cubic_autocache.jl for why caches store placeholder zeros.
+# This enables cache reuse with different BC values at solve time.
 
-"Solve cubic spline system (Periodic BC). No BC values needed."
+"Solve cubic spline system (Periodic BC). bc_data ignored, for API consistency."
 @inline function _solve_system!(
     cache::CubicSplineCache{T,X,F,PeriodicData{T}},
-    y::AbstractVector{T}
+    y::AbstractVector{T},
+    ::PeriodicData{T}  # Unused, for API consistency with BCPair version
 ) where {T<:AbstractFloat, X, F}
     _solve_cubic_system_periodic!(cache.z_workspace, cache.d_workspace, cache, y)
 end
 
-"Solve cubic spline system using cache.bc_data for BC values."
-@inline function _solve_system!(
-    cache::CubicSplineCache{T,X,F,BCPair{T,L,R}},
-    y::AbstractVector{T}
-) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}}
-    compute_rhs!(cache.d_workspace, y, cache.h, cache.bc_data)
-    ldiv!(cache.z_workspace, cache.lu_factor, cache.d_workspace)
-    return cache.z_workspace
-end
-
 """
-Solve cubic spline system with explicit BC values (ignores cache.bc_data).
-Used by autocache path where cache stores placeholder zeros but actual BC values
-are passed at solve time. BC types must match cache BC types.
+Solve cubic spline system with explicit BC values.
+BC types must match cache BC types.
 """
 @inline function _solve_system!(
     cache::CubicSplineCache{T,X,F,BCPair{T,L,R}},
     y::AbstractVector{T},
-    bc::Tuple{L,R}  # Must match cache BC types!
+    bc_pair::BCPair{T,L,R}
 ) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}}
-    effective_bc = BCPair(bc[1], bc[2])
-    compute_rhs!(cache.d_workspace, y, cache.h, effective_bc)
+    compute_rhs!(cache.d_workspace, y, cache.h, bc_pair)
     ldiv!(cache.z_workspace, cache.lu_factor, cache.d_workspace)
     return cache.z_workspace
 end

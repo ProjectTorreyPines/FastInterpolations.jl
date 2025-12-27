@@ -15,6 +15,9 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
 
 # ALLOC_THRESHOLD is defined in runtests.jl
 
+# Import internal function for testing
+import FastInterpolations: _get_cubic_cache
+
 @testset "Allocation Tests" begin
 
     # =========================================================================
@@ -798,21 +801,21 @@ from mutable struct field access. Older versions may show ~16-64 bytes allocatio
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "Runtime symbol: get_cubic_cache" begin
+    @testset "Runtime symbol: _get_cubic_cache" begin
         clear_cubic_cache!()
 
         x = collect(range(0.0, 1.0, 51))
 
         # Prime cache for both BC types (using typed BC API)
-        get_cubic_cache(x, NaturalBC())
-        get_cubic_cache(x, PeriodicBC())
+        _get_cubic_cache(x, NaturalBC())
+        _get_cubic_cache(x, PeriodicBC())
 
         # Runtime BC type version (simulating user code passing runtime variable)
         function cache_runtime_bc_natural()
-            get_cubic_cache(x, NaturalBC())
+            _get_cubic_cache(x, NaturalBC())
         end
         function cache_runtime_bc_periodic()
-            get_cubic_cache(x, PeriodicBC())
+            _get_cubic_cache(x, PeriodicBC())
         end
 
         # Extended warmup for JIT stabilization (important for inner functions)

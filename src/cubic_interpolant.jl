@@ -182,7 +182,7 @@ function cubic_interp(
     y::AbstractVector{T};
     extrap::Symbol=:none
 ) where {T<:AbstractFloat}
-    _solve_system!(cache, y)
+    _solve_system!(cache, y, cache.bc_data)
     # Pass z_workspace directly - constructor will copy
 
     if cache.bc_data isa PeriodicData

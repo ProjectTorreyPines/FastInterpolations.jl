@@ -198,7 +198,7 @@ end
 ) where {T<:AbstractFloat, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
-    z = _solve_system!(cache, y)
+    z = _solve_system!(cache, y, cache.bc_data)
 
     @_dispatch_extrap extrap => ev begin
         @boundscheck _check_domain(cache.x, x_query, ev)

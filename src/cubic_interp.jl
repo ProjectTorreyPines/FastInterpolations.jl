@@ -112,11 +112,11 @@ Eliminates duplication across 4-arg and 2-arg paths.
     bc_pair::BCPair{T,L,R}, autocache::Bool
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     if autocache
-        cache = get_cubic_cache(x, bc_pair)
-        _solve_system!(cache, y, (bc_pair.left, bc_pair.right))
+        cache = _get_cubic_cache(x, bc_pair)
+        _solve_system!(cache, y, bc_pair)
     else
         cache = CubicSplineCache(x; bc=bc_pair)
-        _solve_system!(cache, y)
+        _solve_system!(cache, y, cache.bc_data)
     end
     return cache
 end
@@ -129,8 +129,8 @@ Common helper for PeriodicBC: creates cache (with optional autocache) and solves
 @inline function _get_cache_and_solve_periodic!(
     x::AbstractVector{T}, y::AbstractVector{T}, autocache::Bool
 ) where {T<:AbstractFloat}
-    cache = autocache ? get_cubic_cache(x, PeriodicBC{T}()) : CubicSplineCache(x; bc=PeriodicBC())
-    _solve_system!(cache, y)
+    cache = autocache ? _get_cubic_cache(x, PeriodicBC{T}()) : CubicSplineCache(x; bc=PeriodicBC())
+    _solve_system!(cache, y, cache.bc_data)
     return cache
 end
 
@@ -162,7 +162,7 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
 
-    z = _solve_system!(cache, y)
+    z = _solve_system!(cache, y, cache.bc_data)
 
     @_dispatch_extrap extrap => ev begin
         _cubic_vector_loop!(output, cache, y, z, x_query, ev)

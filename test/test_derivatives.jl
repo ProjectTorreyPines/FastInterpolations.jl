@@ -14,11 +14,11 @@ using FastInterpolations: _eval_cubic_at_point, _eval_cubic_with_extrap, _get_cu
 # Julia version-aware threshold (1.12+ has improved allocation tracking)
 const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
 
-@testset "Derivatives" begin
+# ========================================
+# Group 1: Core Types and Dispatch
+# ========================================
+@testset "Derivative Core" begin
 
-    # ========================================
-    # Phase 1: EvalOp Types
-    # ========================================
     @testset "EvalOp types" begin
         @test EvalValue() isa AbstractEvalOp
         @test EvalDeriv1() isa AbstractEvalOp
@@ -35,9 +35,6 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
         @test fieldcount(EvalDeriv2) == 0
     end
 
-    # ========================================
-    # Phase 1: @_dispatch_order Macro
-    # ========================================
     @testset "@_dispatch_order macro" begin
         # order=0 → EvalValue
         result0 = @_dispatch_order 0 => op begin
@@ -100,9 +97,13 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
         @test @inferred(test_dispatch(0)) === 1.0
     end
 
-    # ========================================
-    # Phase 2: Linear Kernels
-    # ========================================
+end # Derivative Core
+
+# ========================================
+# Group 2: Kernel Functions
+# ========================================
+@testset "Derivative Kernels" begin
+
     @testset "Linear kernels" begin
         # Test case: L(x) = 1 + 2x on [0, 1]
         # y0 = L(0) = 1, y1 = L(1) = 3
@@ -149,9 +150,6 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
         end
     end
 
-    # ========================================
-    # Phase 2: Cubic Kernels
-    # ========================================
     @testset "Cubic kernels" begin
         # Test with known quadratic: f(x) = x² on [0, 1]
         # f(0) = 0, f(1) = 1, f'(x) = 2x, f''(x) = 2
@@ -227,9 +225,13 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
         end
     end
 
-    # ========================================
-    # Phase 3: Cubic Internal Wrappers
-    # ========================================
+end # Derivative Kernels
+
+# ========================================
+# Group 3: Cubic Derivative API
+# ========================================
+@testset "Cubic Derivatives" begin
+
     @testset "Cubic internal functions with op" begin
         # Test with quadratic f(x) = x² on [0, 2] with step 0.5
         x = collect(0.0:0.5:2.0)
@@ -289,9 +291,6 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
         end
     end
 
-    # ========================================
-    # Phase 4: Cubic Public API with order parameter
-    # ========================================
     @testset "Cubic public API with order" begin
 
         @testset "Polynomial exactness" begin
@@ -381,27 +380,6 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
         end
     end
 
-    @testset "Cubic allocation with order" begin
-        x = collect(0.0:0.1:1.0)
-        cache = CubicSplineCache(x; bc=BCPair(D2(2.0), D2(2.0)))
-        y = x .^ 2
-        xi = 0.5
-
-        # Warm-up
-        cubic_interp(cache, y, xi; order=0)
-        cubic_interp(cache, y, xi; order=1)
-        cubic_interp(cache, y, xi; order=2)
-
-        # Check allocations (scalar query should be zero-allocation)
-        alloc0 = @allocated cubic_interp(cache, y, xi; order=0)
-        alloc1 = @allocated cubic_interp(cache, y, xi; order=1)
-        alloc2 = @allocated cubic_interp(cache, y, xi; order=2)
-
-        @test alloc0 == 0
-        @test alloc1 == 0
-        @test alloc2 == 0
-    end
-
     @testset "Cubic extrapolation with order" begin
         x = collect(0.0:0.25:1.0)
         y = x .^ 2
@@ -462,224 +440,104 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
             derivs2 = derivative2(itp, x_query)
             @test all(d ≈ 2.0 for d in derivs2)
         end
+    end
 
-        @testset "Derivative allocation" begin
-            # Warm-up
-            derivative(itp, 0.5)
-            derivative2(itp, 0.5)
+    @testset "CubicInterpolant order keyword" begin
+        x = collect(0.0:0.1:1.0)
+        y = x .^ 2
+        bc = BCPair(D2(2.0), D2(2.0))
+        itp = cubic_interp(x, y; bc=bc)
 
-            alloc1 = @allocated derivative(itp, 0.5)
-            alloc2 = @allocated derivative2(itp, 0.5)
+        @testset "order=0 matches default call" begin
+            @test itp(0.5) ≈ itp(0.5; order=0)
+            @test itp(0.25) ≈ itp(0.25; order=0)
+            @test itp(0.75) ≈ itp(0.75; order=0)
+        end
 
-            @test alloc1 == 0
-            @test alloc2 == 0
+        @testset "order=1 matches existing derivative function" begin
+            @test itp(0.5; order=1) ≈ derivative(itp, 0.5)
+            @test itp(0.0; order=1) ≈ derivative(itp, 0.0)
+            @test itp(1.0; order=1) ≈ derivative(itp, 1.0)
+        end
+
+        @testset "order=2 matches existing derivative2 function" begin
+            @test itp(0.5; order=2) ≈ derivative2(itp, 0.5)
+            @test itp(0.0; order=2) ≈ derivative2(itp, 0.0)
+            @test itp(1.0; order=2) ≈ derivative2(itp, 1.0)
+        end
+
+        @testset "Real input works with order keyword" begin
+            # Integer input should work
+            @test itp(1; order=0) ≈ itp(1.0; order=0)
+            @test itp(1; order=1) ≈ itp(1.0; order=1)
+            @test itp(1; order=2) ≈ itp(1.0; order=2)
+
+            # Float32 input should work
+            @test itp(0.5f0; order=1) ≈ itp(0.5; order=1)
+        end
+
+        @testset "Type stability with order keyword" begin
+            @test @inferred(itp(0.5; order=0)) isa Float64
+            @test @inferred(itp(0.5; order=1)) isa Float64
+            @test @inferred(itp(0.5; order=2)) isa Float64
+        end
+
+        @testset "Polynomial exactness" begin
+            # f(x) = x², f'(x) = 2x, f''(x) = 2
+            @test itp(0.5; order=0) ≈ 0.25 atol=1e-10
+            @test itp(0.5; order=1) ≈ 1.0 atol=1e-10
+            @test itp(0.5; order=2) ≈ 2.0 atol=1e-10
         end
     end
 
-    # ========================================
-    # Phase 4+: Rigorous Allocation Tests
-    # ========================================
-    # Following test_allocation.jl patterns for maximum rigor
+    @testset "CubicInterpolant order keyword - different BCs" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(x)
 
-    @testset "Rigorous derivative allocation tests" begin
-        # Function-wrapped tests for type stability
-        function test_derivative_alloc(itp, xi::T) where {T}
-            derivative(itp, xi)
-        end
+        bc_types = [
+            NaturalBC(),
+            ClampedBC(),
+            BCPair(D1(1.0), D1(cos(1.0))),
+        ]
 
-        function test_derivative2_alloc(itp, xi::T) where {T}
-            derivative2(itp, xi)
-        end
+        for bc in bc_types
+            itp = cubic_interp(x, y; bc=bc)
 
-        function test_order_alloc(cache, y, xi, order::Int)
-            cubic_interp(cache, y, xi; order=order)
-        end
+            # Should work without errors
+            @test itp(0.5; order=0) isa Float64
+            @test itp(0.5; order=1) isa Float64
+            @test itp(0.5; order=2) isa Float64
 
-        @testset "Function-wrapped CubicInterpolant derivatives" begin
-            x = collect(range(0.0, 1.0, 51))
-            y = x .^ 2
-            itp = cubic_interp(x, y)
-
-            # Multiple warmup iterations
-            for _ in 1:5
-                test_derivative_alloc(itp, 0.5)
-                test_derivative2_alloc(itp, 0.5)
-            end
-
-            # Test at multiple query points
-            for xi in [0.1, 0.25, 0.5, 0.75, 0.9]
-                alloc1 = @allocated test_derivative_alloc(itp, xi)
-                alloc2 = @allocated test_derivative2_alloc(itp, xi)
-
-                @test alloc1 <= DERIV_ALLOC_THRESHOLD
-                @test alloc2 <= DERIV_ALLOC_THRESHOLD
-            end
-        end
-
-        @testset "Function-wrapped cubic_interp with order" begin
-            x = collect(range(0.0, 1.0, 51))
-            cache = CubicSplineCache(x)
-            y = x .^ 3
-
-            # Multiple warmup
-            for _ in 1:5
-                test_order_alloc(cache, y, 0.5, 0)
-                test_order_alloc(cache, y, 0.5, 1)
-                test_order_alloc(cache, y, 0.5, 2)
-            end
-
-            # All orders should be zero-allocation
-            for order in 0:2
-                for xi in [0.25, 0.5, 0.75]
-                    allocs = @allocated test_order_alloc(cache, y, xi, order)
-                    @test allocs <= DERIV_ALLOC_THRESHOLD
-                end
-            end
-        end
-
-        @testset "Derivative stress test - repeated calls" begin
-            x = collect(range(0.0, 1.0, 51))
-            y = sin.(2π .* x)
-            itp = cubic_interp(x, y)
-
-            # Warmup
-            for _ in 1:10
-                derivative(itp, 0.5)
-                derivative2(itp, 0.5)
-            end
-
-            # 100 repeated calls should all be zero-allocation
-            total_alloc1 = 0
-            total_alloc2 = 0
-            for _ in 1:100
-                total_alloc1 += @allocated derivative(itp, 0.5)
-                total_alloc2 += @allocated derivative2(itp, 0.5)
-            end
-
-            @test total_alloc1 <= DERIV_ALLOC_THRESHOLD * 100
-            @test total_alloc2 <= DERIV_ALLOC_THRESHOLD * 100
-        end
-
-        @testset "Derivative with different query points" begin
-            x = collect(range(0.0, 1.0, 51))
-            y = x .^ 2
-            itp = cubic_interp(x, y)
-
-            # Query at many different points - should all be zero-allocation
-            query_points = range(0.01, 0.99, 20)
-
-            # Warmup at all points
-            for xi in query_points
-                derivative(itp, xi)
-                derivative2(itp, xi)
-            end
-
-            # All should be zero-allocation
-            for xi in query_points
-                alloc1 = @allocated derivative(itp, xi)
-                alloc2 = @allocated derivative2(itp, xi)
-                @test alloc1 <= DERIV_ALLOC_THRESHOLD
-                @test alloc2 <= DERIV_ALLOC_THRESHOLD
-            end
-        end
-
-        @testset "Float32 derivative allocation" begin
-            x = Float32.(collect(range(0.0f0, 1.0f0, 51)))
-            y = x .^ 2
-            itp = cubic_interp(x, y)
-
-            # Warmup
-            for _ in 1:5
-                derivative(itp, 0.5f0)
-                derivative2(itp, 0.5f0)
-            end
-
-            alloc1 = @allocated derivative(itp, 0.5f0)
-            alloc2 = @allocated derivative2(itp, 0.5f0)
-
-            @test alloc1 <= DERIV_ALLOC_THRESHOLD
-            @test alloc2 <= DERIV_ALLOC_THRESHOLD
-        end
-
-        @testset "Derivative with different BCs allocation" begin
-            x = collect(range(0.0, 1.0, 51))
-            y = x .^ 2
-
-            bc_types = [
-                NaturalBC(),
-                ClampedBC(),
-                BCPair(D1(1.0), D1(1.0)),
-                BCPair(D2(2.0), D2(0.0)),
-            ]
-
-            for bc in bc_types
-                itp = cubic_interp(x, y; bc=bc)
-
-                # Warmup
-                derivative(itp, 0.5)
-                derivative2(itp, 0.5)
-                derivative(itp, 0.5)
-                derivative2(itp, 0.5)
-
-                alloc1 = @allocated derivative(itp, 0.5)
-                alloc2 = @allocated derivative2(itp, 0.5)
-
-                @test alloc1 <= DERIV_ALLOC_THRESHOLD
-                @test alloc2 <= DERIV_ALLOC_THRESHOLD
-            end
-        end
-
-        @testset "Derivative with extrapolation modes allocation" begin
-            x = collect(range(0.0, 1.0, 51))
-            y = x .^ 2
-
-            for extrap in [:none, :constant, :extension]
-                itp = cubic_interp(x, y; extrap=extrap)
-
-                # Warmup
-                derivative(itp, 0.5)
-                derivative2(itp, 0.5)
-                derivative(itp, 0.5)
-                derivative2(itp, 0.5)
-
-                alloc1 = @allocated derivative(itp, 0.5)
-                alloc2 = @allocated derivative2(itp, 0.5)
-
-                @test alloc1 <= DERIV_ALLOC_THRESHOLD
-                @test alloc2 <= DERIV_ALLOC_THRESHOLD
-            end
-        end
-
-        @testset "Periodic BC derivative allocation" begin
-            x = collect(range(0.0, 2π, 101))
-            y = sin.(x)
-            y[end] = y[1]  # Ensure periodic
-            itp = cubic_interp(x, y; bc=PeriodicBC())
-
-            # Warmup
-            for _ in 1:5
-                derivative(itp, 1.0)
-                derivative2(itp, 1.0)
-            end
-
-            alloc1 = @allocated derivative(itp, 1.0)
-            alloc2 = @allocated derivative2(itp, 1.0)
-
-            @test alloc1 <= DERIV_ALLOC_THRESHOLD
-            @test alloc2 <= DERIV_ALLOC_THRESHOLD
-
-            # Query outside domain (wraps)
-            alloc1_wrap = @allocated derivative(itp, 7.0)
-            alloc2_wrap = @allocated derivative2(itp, 7.0)
-
-            @test alloc1_wrap <= DERIV_ALLOC_THRESHOLD
-            @test alloc2_wrap <= DERIV_ALLOC_THRESHOLD
+            # order=1 should match derivative
+            @test itp(0.5; order=1) ≈ derivative(itp, 0.5)
         end
     end
 
-    # ========================================
-    # Phase 5: Linear API with order parameter
-    # ========================================
+    @testset "CubicInterpolant order keyword - Periodic BC" begin
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+        y[end] = y[1]
+        itp = cubic_interp(x, y; bc=PeriodicBC())
+
+        # Should work with periodic BC
+        @test itp(1.0; order=0) isa Float64
+        @test itp(1.0; order=1) isa Float64
+        @test itp(1.0; order=2) isa Float64
+
+        # order=1 should match derivative
+        @test itp(1.0; order=1) ≈ derivative(itp, 1.0)
+
+        # Wrap around domain
+        @test itp(7.0; order=1) ≈ derivative(itp, 7.0)
+    end
+
+end # Cubic Derivatives
+
+# ========================================
+# Group 4: Linear Derivative API
+# ========================================
+@testset "Linear Derivatives" begin
+
     @testset "Linear public API with order" begin
 
         @testset "Constant slope segments" begin
@@ -804,26 +662,6 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
         end
     end
 
-    @testset "Linear allocation with order" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x .^ 2
-        xi = 0.5
-
-        # Warm-up
-        linear_interp(x, y, xi; order=0)
-        linear_interp(x, y, xi; order=1)
-        linear_interp(x, y, xi; order=2)
-
-        # Check allocations (scalar query should be zero-allocation)
-        alloc0 = @allocated linear_interp(x, y, xi; order=0)
-        alloc1 = @allocated linear_interp(x, y, xi; order=1)
-        alloc2 = @allocated linear_interp(x, y, xi; order=2)
-
-        @test alloc0 <= DERIV_ALLOC_THRESHOLD
-        @test alloc1 <= DERIV_ALLOC_THRESHOLD
-        @test alloc2 <= DERIV_ALLOC_THRESHOLD
-    end
-
     @testset "LinearInterpolant derivative methods" begin
         x = [0.0, 1.0, 3.0]
         y = [0.0, 2.0, 4.0]  # slopes: 2.0, 1.0
@@ -855,18 +693,6 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
             derivs2 = derivative2(itp, x_query)
             @test all(d ≈ 0.0 for d in derivs2)
         end
-
-        @testset "Derivative allocation" begin
-            # Warm-up
-            derivative(itp, 0.5)
-            derivative2(itp, 0.5)
-
-            alloc1 = @allocated derivative(itp, 0.5)
-            alloc2 = @allocated derivative2(itp, 0.5)
-
-            @test alloc1 == 0
-            @test alloc2 == 0
-        end
     end
 
     @testset "Linear Range optimization with order" begin
@@ -880,9 +706,12 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
         @test linear_interp(x, y, xi; order=2) ≈ 0.0
     end
 
-    # ========================================
-    # Phase 6: Comprehensive Testing & Polish
-    # ========================================
+end # Linear Derivatives
+
+# ========================================
+# Group 5: Periodic and Boundary Behavior
+# ========================================
+@testset "Derivative Boundary Behavior" begin
 
     @testset "Periodic BC derivative continuity" begin
         # Test that derivatives are continuous at the wrap point
@@ -1002,174 +831,483 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
         end
     end
 
-    @testset "Comprehensive type stability" begin
-        @testset "Cubic derivative type inference" begin
-            x = collect(0.0:0.1:1.0)
+end # Derivative Boundary Behavior
+
+# ========================================
+# Group 6: Type Stability
+# ========================================
+@testset "Derivative Type Stability" begin
+
+    @testset "Cubic derivative type inference" begin
+        x = collect(0.0:0.1:1.0)
+        y = x .^ 2
+        itp = cubic_interp(x, y)
+
+        # Scalar queries
+        @test @inferred(derivative(itp, 0.5)) isa Float64
+        @test @inferred(derivative2(itp, 0.5)) isa Float64
+
+        # With different input type (converts)
+        @test @inferred(derivative(itp, 0.5f0)) isa Float64
+        @test @inferred(derivative2(itp, 0.5f0)) isa Float64
+
+        # Vector queries
+        x_query = [0.25, 0.5, 0.75]
+        @test @inferred(derivative(itp, x_query)) isa Vector{Float64}
+        @test @inferred(derivative2(itp, x_query)) isa Vector{Float64}
+    end
+
+    @testset "Linear derivative type inference" begin
+        x = [0.0, 1.0, 2.0]
+        y = [0.0, 1.0, 4.0]
+        itp = linear_interp(x, y)
+
+        # Scalar queries
+        @test @inferred(derivative(itp, 0.5)) isa Float64
+        @test @inferred(derivative2(itp, 0.5)) isa Float64
+
+        # With different input type
+        @test @inferred(derivative(itp, 0.5f0)) isa Float64
+        @test @inferred(derivative2(itp, 0.5f0)) isa Float64
+
+        # Vector queries
+        x_query = [0.25, 0.5, 1.5]
+        @test @inferred(derivative(itp, x_query)) isa Vector{Float64}
+        @test @inferred(derivative2(itp, x_query)) isa Vector{Float64}
+    end
+
+    @testset "Float32 type preservation" begin
+        x = Float32.(collect(0.0f0:0.1f0:1.0f0))
+        y = x .^ 2
+
+        # Cubic
+        itp_cubic = cubic_interp(x, y)
+        @test @inferred(derivative(itp_cubic, 0.5f0)) isa Float32
+        @test @inferred(derivative2(itp_cubic, 0.5f0)) isa Float32
+
+        # Linear
+        itp_linear = linear_interp(x, y)
+        @test @inferred(derivative(itp_linear, 0.5f0)) isa Float32
+        @test @inferred(derivative2(itp_linear, 0.5f0)) isa Float32
+    end
+
+    @testset "Order parameter type inference" begin
+        x = collect(0.0:0.1:1.0)
+        y = x .^ 2
+
+        # Cubic with order
+        @test @inferred(cubic_interp(x, y, 0.5; order=0)) isa Float64
+        @test @inferred(cubic_interp(x, y, 0.5; order=1)) isa Float64
+        @test @inferred(cubic_interp(x, y, 0.5; order=2)) isa Float64
+
+        # Linear with order
+        @test @inferred(linear_interp(x, y, 0.5; order=0)) isa Float64
+        @test @inferred(linear_interp(x, y, 0.5; order=1)) isa Float64
+        @test @inferred(linear_interp(x, y, 0.5; order=2)) isa Float64
+    end
+
+    @testset "Cache-based type inference" begin
+        x = collect(0.0:0.1:1.0)
+        cache = CubicSplineCache(x)
+        y = x .^ 2
+
+        @test @inferred(cubic_interp(cache, y, 0.5; order=0)) isa Float64
+        @test @inferred(cubic_interp(cache, y, 0.5; order=1)) isa Float64
+        @test @inferred(cubic_interp(cache, y, 0.5; order=2)) isa Float64
+    end
+
+end # Derivative Type Stability
+
+# ========================================
+# Group 7: Edge Cases
+# ========================================
+@testset "Derivative Edge Cases" begin
+
+    @testset "Very small grid (minimum size)" begin
+        # Minimum for cubic: 3 points (can we still get derivatives?)
+        x = [0.0, 0.5, 1.0]
+        y = x .^ 2
+        itp = cubic_interp(x, y)
+
+        # Should work without errors
+        @test derivative(itp, 0.25) isa Float64
+        @test derivative2(itp, 0.25) isa Float64
+
+        # Linear minimum: 2 points
+        x_lin = [0.0, 1.0]
+        y_lin = [0.0, 2.0]
+        itp_lin = linear_interp(x_lin, y_lin)
+
+        @test derivative(itp_lin, 0.5) ≈ 2.0  # slope
+        @test derivative2(itp_lin, 0.5) ≈ 0.0  # always zero
+    end
+
+    @testset "Query at domain boundaries" begin
+        x = collect(0.0:0.1:1.0)
+        y = x .^ 2
+        itp = cubic_interp(x, y)
+
+        # Exactly at left boundary
+        @test derivative(itp, 0.0) isa Float64
+        @test derivative2(itp, 0.0) isa Float64
+
+        # Exactly at right boundary
+        @test derivative(itp, 1.0) isa Float64
+        @test derivative2(itp, 1.0) isa Float64
+    end
+
+    @testset "Constant function" begin
+        x = collect(0.0:0.1:1.0)
+        y = ones(length(x)) * 5.0  # f(x) = 5
+
+        itp_cubic = cubic_interp(x, y)
+        @test derivative(itp_cubic, 0.5) ≈ 0.0 atol=1e-10
+        @test derivative2(itp_cubic, 0.5) ≈ 0.0 atol=1e-10
+
+        itp_linear = linear_interp(x, y)
+        @test derivative(itp_linear, 0.5) ≈ 0.0 atol=1e-10
+        @test derivative2(itp_linear, 0.5) ≈ 0.0 atol=1e-10
+    end
+
+    @testset "Linear function" begin
+        x = collect(0.0:0.1:1.0)
+        y = 2.0 .* x .+ 3.0  # f(x) = 2x + 3
+
+        # Cubic should reproduce linear exactly
+        itp_cubic = cubic_interp(x, y)
+        @test derivative(itp_cubic, 0.5) ≈ 2.0 atol=1e-10
+        @test derivative2(itp_cubic, 0.5) ≈ 0.0 atol=1e-10
+
+        # Linear should be exact
+        itp_linear = linear_interp(x, y)
+        @test derivative(itp_linear, 0.5) ≈ 2.0 atol=1e-10
+        @test derivative2(itp_linear, 0.5) ≈ 0.0 atol=1e-10
+    end
+
+    @testset "Non-uniform grid" begin
+        # Non-uniform spacing
+        x = [0.0, 0.1, 0.15, 0.5, 0.9, 1.0]
+        y = x .^ 2
+        itp = cubic_interp(x, y)
+
+        # Should still work reasonably
+        @test derivative(itp, 0.5) ≈ 1.0 atol=0.1  # f'(0.5) = 2*0.5 = 1
+        @test derivative2(itp, 0.5) ≈ 2.0 atol=0.2  # f''(x) = 2
+    end
+
+    @testset "Large grid" begin
+        x = collect(range(0.0, 10.0, 1001))
+        y = sin.(x)
+        itp = cubic_interp(x, y)
+
+        # Should handle large grids efficiently
+        @test derivative(itp, 5.0) ≈ cos(5.0) atol=1e-3
+        @test derivative2(itp, 5.0) ≈ -sin(5.0) atol=1e-3
+
+        # Allocation should still be zero
+        derivative(itp, 5.0)
+        alloc = @allocated derivative(itp, 5.0)
+        @test alloc <= DERIV_ALLOC_THRESHOLD
+    end
+
+end # Derivative Edge Cases
+
+# ========================================
+# Group 8: Allocation Tests
+# ========================================
+@testset "Derivative Allocations" begin
+
+    @testset "Cubic allocation with order" begin
+        x = collect(0.0:0.1:1.0)
+        cache = CubicSplineCache(x; bc=BCPair(D2(2.0), D2(2.0)))
+        y = x .^ 2
+        xi = 0.5
+
+        # Warm-up
+        cubic_interp(cache, y, xi; order=0)
+        cubic_interp(cache, y, xi; order=1)
+        cubic_interp(cache, y, xi; order=2)
+
+        # Check allocations (scalar query should be zero-allocation)
+        alloc0 = @allocated cubic_interp(cache, y, xi; order=0)
+        alloc1 = @allocated cubic_interp(cache, y, xi; order=1)
+        alloc2 = @allocated cubic_interp(cache, y, xi; order=2)
+
+        @test alloc0 == 0
+        @test alloc1 == 0
+        @test alloc2 == 0
+    end
+
+    @testset "CubicInterpolant derivative allocation" begin
+        x = collect(0.0:0.1:1.0)
+        y = x .^ 2
+        bc = BCPair(D2(2.0), D2(2.0))
+        itp = cubic_interp(x, y; bc=bc)
+
+        # Warm-up
+        derivative(itp, 0.5)
+        derivative2(itp, 0.5)
+
+        alloc1 = @allocated derivative(itp, 0.5)
+        alloc2 = @allocated derivative2(itp, 0.5)
+
+        @test alloc1 == 0
+        @test alloc2 == 0
+    end
+
+    @testset "CubicInterpolant order keyword allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x .^ 2
+        itp = cubic_interp(x, y)
+
+        # Warmup
+        for _ in 1:5
+            itp(0.5; order=0)
+            itp(0.5; order=1)
+            itp(0.5; order=2)
+        end
+
+        @test @allocated(itp(0.5; order=0)) <= DERIV_ALLOC_THRESHOLD
+        @test @allocated(itp(0.5; order=1)) <= DERIV_ALLOC_THRESHOLD
+        @test @allocated(itp(0.5; order=2)) <= DERIV_ALLOC_THRESHOLD
+    end
+
+    @testset "Linear allocation with order" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x .^ 2
+        xi = 0.5
+
+        # Warm-up
+        linear_interp(x, y, xi; order=0)
+        linear_interp(x, y, xi; order=1)
+        linear_interp(x, y, xi; order=2)
+
+        # Check allocations (scalar query should be zero-allocation)
+        alloc0 = @allocated linear_interp(x, y, xi; order=0)
+        alloc1 = @allocated linear_interp(x, y, xi; order=1)
+        alloc2 = @allocated linear_interp(x, y, xi; order=2)
+
+        @test alloc0 <= DERIV_ALLOC_THRESHOLD
+        @test alloc1 <= DERIV_ALLOC_THRESHOLD
+        @test alloc2 <= DERIV_ALLOC_THRESHOLD
+    end
+
+    @testset "LinearInterpolant derivative allocation" begin
+        x = [0.0, 1.0, 3.0]
+        y = [0.0, 2.0, 4.0]
+        itp = linear_interp(x, y)
+
+        # Warm-up
+        derivative(itp, 0.5)
+        derivative2(itp, 0.5)
+
+        alloc1 = @allocated derivative(itp, 0.5)
+        alloc2 = @allocated derivative2(itp, 0.5)
+
+        @test alloc1 == 0
+        @test alloc2 == 0
+    end
+
+    @testset "Function-wrapped allocation tests" begin
+        # Function-wrapped tests for type stability
+        function test_derivative_alloc(itp, xi::T) where {T}
+            derivative(itp, xi)
+        end
+
+        function test_derivative2_alloc(itp, xi::T) where {T}
+            derivative2(itp, xi)
+        end
+
+        function test_order_alloc(cache, y, xi, order::Int)
+            cubic_interp(cache, y, xi; order=order)
+        end
+
+        @testset "Function-wrapped CubicInterpolant derivatives" begin
+            x = collect(range(0.0, 1.0, 51))
             y = x .^ 2
             itp = cubic_interp(x, y)
 
-            # Scalar queries
-            @test @inferred(derivative(itp, 0.5)) isa Float64
-            @test @inferred(derivative2(itp, 0.5)) isa Float64
+            # Multiple warmup iterations
+            for _ in 1:5
+                test_derivative_alloc(itp, 0.5)
+                test_derivative2_alloc(itp, 0.5)
+            end
 
-            # With different input type (converts)
-            @test @inferred(derivative(itp, 0.5f0)) isa Float64
-            @test @inferred(derivative2(itp, 0.5f0)) isa Float64
+            # Test at multiple query points
+            for xi in [0.1, 0.25, 0.5, 0.75, 0.9]
+                alloc1 = @allocated test_derivative_alloc(itp, xi)
+                alloc2 = @allocated test_derivative2_alloc(itp, xi)
 
-            # Vector queries
-            x_query = [0.25, 0.5, 0.75]
-            @test @inferred(derivative(itp, x_query)) isa Vector{Float64}
-            @test @inferred(derivative2(itp, x_query)) isa Vector{Float64}
+                @test alloc1 <= DERIV_ALLOC_THRESHOLD
+                @test alloc2 <= DERIV_ALLOC_THRESHOLD
+            end
         end
 
-        @testset "Linear derivative type inference" begin
-            x = [0.0, 1.0, 2.0]
-            y = [0.0, 1.0, 4.0]
-            itp = linear_interp(x, y)
-
-            # Scalar queries
-            @test @inferred(derivative(itp, 0.5)) isa Float64
-            @test @inferred(derivative2(itp, 0.5)) isa Float64
-
-            # With different input type
-            @test @inferred(derivative(itp, 0.5f0)) isa Float64
-            @test @inferred(derivative2(itp, 0.5f0)) isa Float64
-
-            # Vector queries
-            x_query = [0.25, 0.5, 1.5]
-            @test @inferred(derivative(itp, x_query)) isa Vector{Float64}
-            @test @inferred(derivative2(itp, x_query)) isa Vector{Float64}
-        end
-
-        @testset "Float32 type preservation" begin
-            x = Float32.(collect(0.0f0:0.1f0:1.0f0))
-            y = x .^ 2
-
-            # Cubic
-            itp_cubic = cubic_interp(x, y)
-            @test @inferred(derivative(itp_cubic, 0.5f0)) isa Float32
-            @test @inferred(derivative2(itp_cubic, 0.5f0)) isa Float32
-
-            # Linear
-            itp_linear = linear_interp(x, y)
-            @test @inferred(derivative(itp_linear, 0.5f0)) isa Float32
-            @test @inferred(derivative2(itp_linear, 0.5f0)) isa Float32
-        end
-
-        @testset "Order parameter type inference" begin
-            x = collect(0.0:0.1:1.0)
-            y = x .^ 2
-
-            # Cubic with order
-            @test @inferred(cubic_interp(x, y, 0.5; order=0)) isa Float64
-            @test @inferred(cubic_interp(x, y, 0.5; order=1)) isa Float64
-            @test @inferred(cubic_interp(x, y, 0.5; order=2)) isa Float64
-
-            # Linear with order
-            @test @inferred(linear_interp(x, y, 0.5; order=0)) isa Float64
-            @test @inferred(linear_interp(x, y, 0.5; order=1)) isa Float64
-            @test @inferred(linear_interp(x, y, 0.5; order=2)) isa Float64
-        end
-
-        @testset "Cache-based type inference" begin
-            x = collect(0.0:0.1:1.0)
+        @testset "Function-wrapped cubic_interp with order" begin
+            x = collect(range(0.0, 1.0, 51))
             cache = CubicSplineCache(x)
-            y = x .^ 2
+            y = x .^ 3
 
-            @test @inferred(cubic_interp(cache, y, 0.5; order=0)) isa Float64
-            @test @inferred(cubic_interp(cache, y, 0.5; order=1)) isa Float64
-            @test @inferred(cubic_interp(cache, y, 0.5; order=2)) isa Float64
+            # Multiple warmup
+            for _ in 1:5
+                test_order_alloc(cache, y, 0.5, 0)
+                test_order_alloc(cache, y, 0.5, 1)
+                test_order_alloc(cache, y, 0.5, 2)
+            end
+
+            # All orders should be zero-allocation
+            for order in 0:2
+                for xi in [0.25, 0.5, 0.75]
+                    allocs = @allocated test_order_alloc(cache, y, xi, order)
+                    @test allocs <= DERIV_ALLOC_THRESHOLD
+                end
+            end
         end
     end
 
-    @testset "Comprehensive allocation tests" begin
-        @testset "All cubic paths zero-allocation" begin
-            # Test all combinations of BC, extrap, and order
-            x = collect(range(0.0, 1.0, 51))
-            y = x .^ 2
+    @testset "Derivative stress test - repeated calls" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y)
 
-            bc_types = [
-                (NaturalBC(), "Natural"),
-                (ClampedBC(), "Clamped"),
-                (BCPair(D1(0.5), D1(1.5)), "D1-D1"),
-                (BCPair(D2(2.0), D2(2.0)), "D2-D2"),
-                (BCPair(D1(0.5), D2(2.0)), "D1-D2"),
-            ]
-
-            extrap_modes = [:none, :constant, :extension]
-
-            for (bc, bc_name) in bc_types
-                for extrap in extrap_modes
-                    for order in 0:2
-                        itp = cubic_interp(x, y; bc=bc, extrap=extrap)
-
-                        # Warmup
-                        for _ in 1:3
-                            if order == 0
-                                itp(0.5)
-                            elseif order == 1
-                                derivative(itp, 0.5)
-                            else
-                                derivative2(itp, 0.5)
-                            end
-                        end
-
-                        # Measure
-                        if order == 0
-                            alloc = @allocated itp(0.5)
-                        elseif order == 1
-                            alloc = @allocated derivative(itp, 0.5)
-                        else
-                            alloc = @allocated derivative2(itp, 0.5)
-                        end
-
-                        @test alloc <= DERIV_ALLOC_THRESHOLD
-                    end
-                end
-            end
+        # Warmup
+        for _ in 1:10
+            derivative(itp, 0.5)
+            derivative2(itp, 0.5)
         end
 
-        @testset "Periodic BC all orders zero-allocation" begin
-            x = collect(range(0.0, 2π, 101))
-            y = sin.(x)
-            y[end] = y[1]
-            itp = cubic_interp(x, y; bc=PeriodicBC())
-
-            for order in 0:2
-                # Warmup
-                for _ in 1:3
-                    if order == 0
-                        itp(1.0)
-                    elseif order == 1
-                        derivative(itp, 1.0)
-                    else
-                        derivative2(itp, 1.0)
-                    end
-                end
-
-                # Measure
-                if order == 0
-                    alloc = @allocated itp(1.0)
-                elseif order == 1
-                    alloc = @allocated derivative(itp, 1.0)
-                else
-                    alloc = @allocated derivative2(itp, 1.0)
-                end
-
-                @test alloc <= DERIV_ALLOC_THRESHOLD
-            end
+        # 100 repeated calls should all be zero-allocation
+        total_alloc1 = 0
+        total_alloc2 = 0
+        for _ in 1:100
+            total_alloc1 += @allocated derivative(itp, 0.5)
+            total_alloc2 += @allocated derivative2(itp, 0.5)
         end
 
-        @testset "All linear paths zero-allocation" begin
-            x = collect(range(0.0, 1.0, 51))
-            y = x .^ 2
+        @test total_alloc1 <= DERIV_ALLOC_THRESHOLD * 100
+        @test total_alloc2 <= DERIV_ALLOC_THRESHOLD * 100
+    end
 
-            extrap_modes = [:none, :constant, :extension, :wrap]
+    @testset "Float32 derivative allocation" begin
+        x = Float32.(collect(range(0.0f0, 1.0f0, 51)))
+        y = x .^ 2
+        itp = cubic_interp(x, y)
 
+        # Warmup
+        for _ in 1:5
+            derivative(itp, 0.5f0)
+            derivative2(itp, 0.5f0)
+        end
+
+        alloc1 = @allocated derivative(itp, 0.5f0)
+        alloc2 = @allocated derivative2(itp, 0.5f0)
+
+        @test alloc1 <= DERIV_ALLOC_THRESHOLD
+        @test alloc2 <= DERIV_ALLOC_THRESHOLD
+    end
+
+    @testset "Derivative with different BCs allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x .^ 2
+
+        bc_types = [
+            NaturalBC(),
+            ClampedBC(),
+            BCPair(D1(1.0), D1(1.0)),
+            BCPair(D2(2.0), D2(0.0)),
+        ]
+
+        for bc in bc_types
+            itp = cubic_interp(x, y; bc=bc)
+
+            # Warmup
+            derivative(itp, 0.5)
+            derivative2(itp, 0.5)
+            derivative(itp, 0.5)
+            derivative2(itp, 0.5)
+
+            alloc1 = @allocated derivative(itp, 0.5)
+            alloc2 = @allocated derivative2(itp, 0.5)
+
+            @test alloc1 <= DERIV_ALLOC_THRESHOLD
+            @test alloc2 <= DERIV_ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "Derivative with extrapolation modes allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x .^ 2
+
+        for extrap in [:none, :constant, :extension]
+            itp = cubic_interp(x, y; extrap=extrap)
+
+            # Warmup
+            derivative(itp, 0.5)
+            derivative2(itp, 0.5)
+            derivative(itp, 0.5)
+            derivative2(itp, 0.5)
+
+            alloc1 = @allocated derivative(itp, 0.5)
+            alloc2 = @allocated derivative2(itp, 0.5)
+
+            @test alloc1 <= DERIV_ALLOC_THRESHOLD
+            @test alloc2 <= DERIV_ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "Periodic BC derivative allocation" begin
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+        y[end] = y[1]  # Ensure periodic
+        itp = cubic_interp(x, y; bc=PeriodicBC())
+
+        # Warmup
+        for _ in 1:5
+            derivative(itp, 1.0)
+            derivative2(itp, 1.0)
+        end
+
+        alloc1 = @allocated derivative(itp, 1.0)
+        alloc2 = @allocated derivative2(itp, 1.0)
+
+        @test alloc1 <= DERIV_ALLOC_THRESHOLD
+        @test alloc2 <= DERIV_ALLOC_THRESHOLD
+
+        # Query outside domain (wraps)
+        alloc1_wrap = @allocated derivative(itp, 7.0)
+        alloc2_wrap = @allocated derivative2(itp, 7.0)
+
+        @test alloc1_wrap <= DERIV_ALLOC_THRESHOLD
+        @test alloc2_wrap <= DERIV_ALLOC_THRESHOLD
+    end
+
+end # Derivative Allocations
+
+# ========================================
+# Group 9: Comprehensive Path Coverage
+# ========================================
+@testset "Derivative Comprehensive Coverage" begin
+
+    @testset "All cubic paths zero-allocation" begin
+        # Test all combinations of BC, extrap, and order
+        x = collect(range(0.0, 1.0, 51))
+        y = x .^ 2
+
+        bc_types = [
+            (NaturalBC(), "Natural"),
+            (ClampedBC(), "Clamped"),
+            (BCPair(D1(0.5), D1(1.5)), "D1-D1"),
+            (BCPair(D2(2.0), D2(2.0)), "D2-D2"),
+            (BCPair(D1(0.5), D2(2.0)), "D1-D2"),
+        ]
+
+        extrap_modes = [:none, :constant, :extension]
+
+        for (bc, bc_name) in bc_types
             for extrap in extrap_modes
-                itp = linear_interp(x, y; extrap=extrap)
-
                 for order in 0:2
+                    itp = cubic_interp(x, y; bc=bc, extrap=extrap)
+
                     # Warmup
                     for _ in 1:3
                         if order == 0
@@ -1194,144 +1332,121 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
                 end
             end
         end
-
-        @testset "Linear Range path zero-allocation" begin
-            x = 0.0:0.02:1.0
-            y = collect(x) .^ 2
-
-            for extrap in [:none, :extension]
-                itp = linear_interp(x, y; extrap=extrap)
-
-                # Warmup
-                for _ in 1:3
-                    itp(0.5)
-                    derivative(itp, 0.5)
-                    derivative2(itp, 0.5)
-                end
-
-                alloc0 = @allocated itp(0.5)
-                alloc1 = @allocated derivative(itp, 0.5)
-                alloc2 = @allocated derivative2(itp, 0.5)
-
-                @test alloc0 <= DERIV_ALLOC_THRESHOLD
-                @test alloc1 <= DERIV_ALLOC_THRESHOLD
-                @test alloc2 <= DERIV_ALLOC_THRESHOLD
-            end
-        end
-
-        @testset "Cache-based cubic all orders" begin
-            x = collect(range(0.0, 1.0, 51))
-
-            bc_types = [
-                CubicSplineCache(x),
-                CubicSplineCache(x; bc=ClampedBC()),
-                CubicSplineCache(x; bc=BCPair(D2(2.0), D2(2.0))),
-                CubicSplineCache(x; bc=PeriodicBC()),
-            ]
-
-            y = x .^ 2
-
-            for cache in bc_types
-                for order in 0:2
-                    # Warmup
-                    for _ in 1:3
-                        cubic_interp(cache, y, 0.5; order=order)
-                    end
-
-                    alloc = @allocated cubic_interp(cache, y, 0.5; order=order)
-                    @test alloc <= DERIV_ALLOC_THRESHOLD
-                end
-            end
-        end
     end
 
-    @testset "Edge cases and robustness" begin
-        @testset "Very small grid (minimum size)" begin
-            # Minimum for cubic: 3 points (can we still get derivatives?)
-            x = [0.0, 0.5, 1.0]
-            y = x .^ 2
-            itp = cubic_interp(x, y)
+    @testset "Periodic BC all orders zero-allocation" begin
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+        y[end] = y[1]
+        itp = cubic_interp(x, y; bc=PeriodicBC())
 
-            # Should work without errors
-            @test derivative(itp, 0.25) isa Float64
-            @test derivative2(itp, 0.25) isa Float64
+        for order in 0:2
+            # Warmup
+            for _ in 1:3
+                if order == 0
+                    itp(1.0)
+                elseif order == 1
+                    derivative(itp, 1.0)
+                else
+                    derivative2(itp, 1.0)
+                end
+            end
 
-            # Linear minimum: 2 points
-            x_lin = [0.0, 1.0]
-            y_lin = [0.0, 2.0]
-            itp_lin = linear_interp(x_lin, y_lin)
+            # Measure
+            if order == 0
+                alloc = @allocated itp(1.0)
+            elseif order == 1
+                alloc = @allocated derivative(itp, 1.0)
+            else
+                alloc = @allocated derivative2(itp, 1.0)
+            end
 
-            @test derivative(itp_lin, 0.5) ≈ 2.0  # slope
-            @test derivative2(itp_lin, 0.5) ≈ 0.0  # always zero
-        end
-
-        @testset "Query at domain boundaries" begin
-            x = collect(0.0:0.1:1.0)
-            y = x .^ 2
-            itp = cubic_interp(x, y)
-
-            # Exactly at left boundary
-            @test derivative(itp, 0.0) isa Float64
-            @test derivative2(itp, 0.0) isa Float64
-
-            # Exactly at right boundary
-            @test derivative(itp, 1.0) isa Float64
-            @test derivative2(itp, 1.0) isa Float64
-        end
-
-        @testset "Constant function" begin
-            x = collect(0.0:0.1:1.0)
-            y = ones(length(x)) * 5.0  # f(x) = 5
-
-            itp_cubic = cubic_interp(x, y)
-            @test derivative(itp_cubic, 0.5) ≈ 0.0 atol=1e-10
-            @test derivative2(itp_cubic, 0.5) ≈ 0.0 atol=1e-10
-
-            itp_linear = linear_interp(x, y)
-            @test derivative(itp_linear, 0.5) ≈ 0.0 atol=1e-10
-            @test derivative2(itp_linear, 0.5) ≈ 0.0 atol=1e-10
-        end
-
-        @testset "Linear function" begin
-            x = collect(0.0:0.1:1.0)
-            y = 2.0 .* x .+ 3.0  # f(x) = 2x + 3
-
-            # Cubic should reproduce linear exactly
-            itp_cubic = cubic_interp(x, y)
-            @test derivative(itp_cubic, 0.5) ≈ 2.0 atol=1e-10
-            @test derivative2(itp_cubic, 0.5) ≈ 0.0 atol=1e-10
-
-            # Linear should be exact
-            itp_linear = linear_interp(x, y)
-            @test derivative(itp_linear, 0.5) ≈ 2.0 atol=1e-10
-            @test derivative2(itp_linear, 0.5) ≈ 0.0 atol=1e-10
-        end
-
-        @testset "Non-uniform grid" begin
-            # Non-uniform spacing
-            x = [0.0, 0.1, 0.15, 0.5, 0.9, 1.0]
-            y = x .^ 2
-            itp = cubic_interp(x, y)
-
-            # Should still work reasonably
-            @test derivative(itp, 0.5) ≈ 1.0 atol=0.1  # f'(0.5) = 2*0.5 = 1
-            @test derivative2(itp, 0.5) ≈ 2.0 atol=0.2  # f''(x) = 2
-        end
-
-        @testset "Large grid" begin
-            x = collect(range(0.0, 10.0, 1001))
-            y = sin.(x)
-            itp = cubic_interp(x, y)
-
-            # Should handle large grids efficiently
-            @test derivative(itp, 5.0) ≈ cos(5.0) atol=1e-3
-            @test derivative2(itp, 5.0) ≈ -sin(5.0) atol=1e-3
-
-            # Allocation should still be zero
-            derivative(itp, 5.0)
-            alloc = @allocated derivative(itp, 5.0)
             @test alloc <= DERIV_ALLOC_THRESHOLD
         end
     end
 
-end # @testset "Derivatives"
+    @testset "All linear paths zero-allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x .^ 2
+
+        extrap_modes = [:none, :constant, :extension, :wrap]
+
+        for extrap in extrap_modes
+            itp = linear_interp(x, y; extrap=extrap)
+
+            for order in 0:2
+                # Warmup
+                for _ in 1:3
+                    if order == 0
+                        itp(0.5)
+                    elseif order == 1
+                        derivative(itp, 0.5)
+                    else
+                        derivative2(itp, 0.5)
+                    end
+                end
+
+                # Measure
+                if order == 0
+                    alloc = @allocated itp(0.5)
+                elseif order == 1
+                    alloc = @allocated derivative(itp, 0.5)
+                else
+                    alloc = @allocated derivative2(itp, 0.5)
+                end
+
+                @test alloc <= DERIV_ALLOC_THRESHOLD
+            end
+        end
+    end
+
+    @testset "Linear Range path zero-allocation" begin
+        x = 0.0:0.02:1.0
+        y = collect(x) .^ 2
+
+        for extrap in [:none, :extension]
+            itp = linear_interp(x, y; extrap=extrap)
+
+            # Warmup
+            for _ in 1:3
+                itp(0.5)
+                derivative(itp, 0.5)
+                derivative2(itp, 0.5)
+            end
+
+            alloc0 = @allocated itp(0.5)
+            alloc1 = @allocated derivative(itp, 0.5)
+            alloc2 = @allocated derivative2(itp, 0.5)
+
+            @test alloc0 <= DERIV_ALLOC_THRESHOLD
+            @test alloc1 <= DERIV_ALLOC_THRESHOLD
+            @test alloc2 <= DERIV_ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "Cache-based cubic all orders" begin
+        x = collect(range(0.0, 1.0, 51))
+
+        bc_types = [
+            CubicSplineCache(x),
+            CubicSplineCache(x; bc=ClampedBC()),
+            CubicSplineCache(x; bc=BCPair(D2(2.0), D2(2.0))),
+            CubicSplineCache(x; bc=PeriodicBC()),
+        ]
+
+        y = x .^ 2
+
+        for cache in bc_types
+            for order in 0:2
+                # Warmup
+                for _ in 1:3
+                    cubic_interp(cache, y, 0.5; order=order)
+                end
+
+                alloc = @allocated cubic_interp(cache, y, 0.5; order=order)
+                @test alloc <= DERIV_ALLOC_THRESHOLD
+            end
+        end
+    end
+
+end # Derivative Comprehensive Coverage

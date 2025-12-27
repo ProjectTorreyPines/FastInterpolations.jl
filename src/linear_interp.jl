@@ -48,7 +48,7 @@ function linear_interp!(
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    @_dispatch_order order op begin
+    @_dispatch_order order => op begin
         @_dispatch_extrap extrap => ev begin
             @boundscheck _check_domain(x, x_targets, ev)
             _linear_interp_loop!(output, x, y, x_targets, ev, op)
@@ -146,7 +146,7 @@ end
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    @_dispatch_order order op begin
+    @_dispatch_order order => op begin
         @_dispatch_extrap extrap => ev begin
             @boundscheck _check_domain(x, x_targets, ev)
             _linear_interp_loop!(output, x, y, x_targets, ev, op)
@@ -356,7 +356,7 @@ end
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    @_dispatch_order order op begin
+    @_dispatch_order order => op begin
         @_dispatch_extrap extrap => ev begin
             linear_interp(x, y, xi, ev, op)
         end
@@ -373,7 +373,7 @@ end
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    @_dispatch_order order op begin
+    @_dispatch_order order => op begin
         @_dispatch_extrap extrap => ev begin
             linear_interp(x, y, xi, ev, op)
         end
@@ -530,7 +530,7 @@ function linear_interp!(
     y_float = FT.(y)  # Allocate once
     x_targets_float = FT.(x_targets)
 
-    @_dispatch_order order op begin
+    @_dispatch_order order => op begin
         @_dispatch_extrap extrap => ev begin
             _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, ev, op)
         end
@@ -554,7 +554,7 @@ function linear_interp!(
     y_float = FT.(y)  # Allocate once
     x_targets_float = FT.(x_targets)
 
-    @_dispatch_order order op begin
+    @_dispatch_order order => op begin
         @_dispatch_extrap extrap => ev begin
             _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, ev, op)
         end

@@ -289,7 +289,7 @@ macro _dispatch_extrap(pair, body)
 end
 
 """
-    @_dispatch_order order_expr op_sym body
+    @_dispatch_order order => op body
 
 Dispatch on runtime order integer, executing body with concrete AbstractEvalOp type.
 
@@ -297,13 +297,12 @@ Converts `order::Int` (0, 1, 2) to compile-time constant `EvalValue()`, `EvalDer
 or `EvalDeriv2()`. This creates a function barrier ensuring type stability downstream.
 
 # Arguments
-- `order_expr`: Expression evaluating to order (0=value, 1=first derivative, 2=second derivative)
-- `op_sym`: Symbol to bind the concrete EvalOp type
-- `body`: Expression to execute with `op_sym` bound to concrete type
+- `order => op`: Pair of order expression and symbol to bind the concrete EvalOp type
+- `body`: Expression to execute with `op` bound to concrete type
 
 # Example
 ```julia
-@_dispatch_order order op begin
+@_dispatch_order order => op begin
     _cubic_interp_impl(x, y, xi, op; extrap=extrap)
 end
 ```
@@ -324,7 +323,12 @@ let _order = order
 end
 ```
 """
-macro _dispatch_order(order_expr, op_sym, body)
+macro _dispatch_order(pair, body)
+    # Parse pair: order => op becomes Expr(:call, :(=>), :order, :op)
+    pair.head === :call && pair.args[1] === :(=>) ||
+        error("@_dispatch_order expects `order => op`, got: $pair")
+    order_expr = pair.args[2]
+    op_sym = pair.args[3]
     ord_var = gensym(:order)
     quote
         local $(ord_var) = $(esc(order_expr))

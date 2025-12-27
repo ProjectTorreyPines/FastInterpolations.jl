@@ -77,7 +77,7 @@ Both dispatches happen together at the entry point:
 
 ```julia
 # src/linear_interp.jl, src/cubic_eval.jl
-@_dispatch_order order op begin
+@_dispatch_order order => op begin
     @_dispatch_extrap extrap => ev begin
         # Both op and ev are now concrete types
         _eval_with_bc(cache, y, h, z, xi, ev, op)
@@ -91,7 +91,7 @@ end
 
 ```julia
 # src/cubic_interp.jl - entry point
-@_dispatch_order order op begin
+@_dispatch_order order => op begin
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic!(output, x, y, x_query, autocache, op)
     end
@@ -113,7 +113,7 @@ end
 ┌─────────────────────────────────────────────────────────────────┐
 │  Public API                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  @_dispatch_order order op begin                            ││
+│  │  @_dispatch_order order => op begin                         ││
 │  │      # order::Int → EvalValue()/EvalDeriv1()/EvalDeriv2()   ││
 │  │                                                             ││
 │  │      @_dispatch_extrap extrap => ev begin  ← often nested   ││
@@ -201,7 +201,12 @@ const ExtrapVal = Union{Val{:none}, Val{:constant}, Val{:extension}, Val{:wrap}}
 Converts `order::Int` to compile-time constant:
 
 ```julia
-macro _dispatch_order(order_expr, op_sym, body)
+macro _dispatch_order(pair, body)
+    # Parse pair: order => op becomes Expr(:call, :(=>), :order, :op)
+    pair.head === :call && pair.args[1] === :(=>) ||
+        error("@_dispatch_order expects `order => op`, got: $pair")
+    order_expr = pair.args[2]
+    op_sym = pair.args[3]
     ord_var = gensym(:order)
     quote
         local $(ord_var) = $(esc(order_expr))
@@ -226,7 +231,7 @@ end
 
 **Usage:**
 ```julia
-@_dispatch_order order op begin
+@_dispatch_order order => op begin
     _cubic_interp_impl(..., op)
 end
 ```
@@ -463,7 +468,7 @@ end
 cubic_interp(x, y, xi; order=1, extrap=:constant)
 
 # Expands to:
-@_dispatch_order 1 op begin          # op = EvalDeriv1() (concrete!)
+@_dispatch_order 1 => op begin       # op = EvalDeriv1() (concrete!)
     _cubic_interp_impl(x, y, xi, op; extrap=:constant, ...)
 end
 

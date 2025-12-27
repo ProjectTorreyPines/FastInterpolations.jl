@@ -338,7 +338,7 @@ end
 
     z = _solve_system!(cache, y, cache.bc_data)
 
-    @_dispatch_order order op begin
+    @_dispatch_order order => op begin
         @_dispatch_extrap extrap => ev begin
             @boundscheck _check_domain(cache.x, x_query, ev)
             _eval_with_bc(cache, y, cache.h, z, x_query, ev, op)

@@ -40,28 +40,28 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
     # ========================================
     @testset "@_dispatch_order macro" begin
         # order=0 → EvalValue
-        result0 = @_dispatch_order 0 op begin
+        result0 = @_dispatch_order 0 => op begin
             typeof(op)
         end
         @test result0 === EvalValue
 
         # order=1 → EvalDeriv1
-        result1 = @_dispatch_order 1 op begin
+        result1 = @_dispatch_order 1 => op begin
             typeof(op)
         end
         @test result1 === EvalDeriv1
 
         # order=2 → EvalDeriv2
-        result2 = @_dispatch_order 2 op begin
+        result2 = @_dispatch_order 2 => op begin
             typeof(op)
         end
         @test result2 === EvalDeriv2
 
         # Invalid order throws ArgumentError
-        @test_throws ArgumentError @_dispatch_order 3 op begin
+        @test_throws ArgumentError @_dispatch_order 3 => op begin
             nothing
         end
-        @test_throws ArgumentError @_dispatch_order -1 op begin
+        @test_throws ArgumentError @_dispatch_order -1 => op begin
             nothing
         end
     end
@@ -69,7 +69,7 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
     @testset "@_dispatch_order with runtime variable" begin
         # Test that macro works with runtime-determined order
         for order in 0:2
-            result = @_dispatch_order order op begin
+            result = @_dispatch_order order => op begin
                 op
             end
             if order == 0
@@ -85,7 +85,7 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
     @testset "@_dispatch_order type stability" begin
         # The dispatched function should maintain type stability
         function test_dispatch(order::Int)
-            @_dispatch_order order op begin
+            @_dispatch_order order => op begin
                 # Return something that depends on op type
                 op isa EvalValue ? 1.0 :
                 op isa EvalDeriv1 ? 2.0 : 3.0

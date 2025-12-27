@@ -166,7 +166,7 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
 
     z = _solve_system!(cache, y, cache.bc_data)
 
-    @_dispatch_order order op begin
+    @_dispatch_order order => op begin
         @_dispatch_extrap extrap => ev begin
             _cubic_vector_loop!(output, cache, y, z, x_query, ev, op)
         end
@@ -302,7 +302,7 @@ In-place cubic spline interpolation with optional automatic caching.
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    @_dispatch_order order op begin
+    @_dispatch_order order => op begin
         # Periodic BC
         if _is_periodic_bc(bc)
             return _cubic_interp_periodic!(output, x, y, x_query, autocache, op)
@@ -344,7 +344,7 @@ end
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    @_dispatch_order order op begin
+    @_dispatch_order order => op begin
         if _is_periodic_bc(bc)
             output[1] = _cubic_interp_periodic_scalar(x, y, x_query, autocache, op)
         else
@@ -424,7 +424,7 @@ function cubic_interp(
 
     output = Vector{T}(undef, length(x_query))
 
-    @_dispatch_order order op begin
+    @_dispatch_order order => op begin
         if _is_periodic_bc(bc)
             return _cubic_interp_periodic!(output, x, y, x_query, autocache, op)
         end
@@ -451,7 +451,7 @@ function cubic_interp(
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    @_dispatch_order order op begin
+    @_dispatch_order order => op begin
         if _is_periodic_bc(bc)
             return _cubic_interp_periodic_scalar(x, y, x_query, autocache, op)
         end

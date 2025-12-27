@@ -4,7 +4,7 @@
 **Design Document**: [design/analytical_derivatives.md](../../design/analytical_derivatives.md)
 **Created**: 2025-12-26
 **Last Updated**: 2025-12-26
-**Status**: Phase 1 Complete
+**Status**: Phase 2 Complete
 
 ---
 
@@ -120,7 +120,7 @@ rm src/ops.jl test/test_derivatives.jl
 ### Tasks
 
 #### RED: Write failing tests first
-- [ ] Add linear kernel tests
+- [x] Add linear kernel tests
   ```julia
   @testset "Linear kernels" begin
       # L(x) = 1 + 2x on [0, 1], h=1, y0=1, y1=3
@@ -131,30 +131,30 @@ rm src/ops.jl test/test_derivatives.jl
       @test _linear_kernel(EvalDeriv2(), y0, y1, h, dt1) ≈ 0.0
   end
   ```
-- [ ] Add cubic kernel tests with known polynomial
+- [x] Add cubic kernel tests with known polynomial (quadratic & cubic exactness)
 
 #### GREEN: Implement to make tests pass
-- [ ] Create `src/linear_kernels.jl`
-  - [ ] `_linear_kernel(::EvalValue, y0, y1, h, dt1)` - linear interpolation
-  - [ ] `_linear_kernel(::EvalDeriv1, y0, y1, h, dt1)` - constant slope
-  - [ ] `_linear_kernel(::EvalDeriv2, y0, y1, h, dt1)` - always zero
-- [ ] Create `src/cubic_kernels.jl`
-  - [ ] `_cubic_kernel(::EvalValue, z_i, z_ip1, y_i, y_ip1, h_i, dt1, dt2)`
-  - [ ] `_cubic_kernel(::EvalDeriv1, ...)` - first derivative formula
-  - [ ] `_cubic_kernel(::EvalDeriv2, ...)` - linear interpolation of z
-- [ ] Update `src/FastInterpolations.jl`
-  - [ ] Add `include("linear_kernels.jl")` after ops.jl
-  - [ ] Add `include("cubic_kernels.jl")` after linear_kernels.jl
+- [x] Create `src/linear_kernels.jl`
+  - [x] `_linear_kernel(::EvalValue, y0, y1, h, dt1)` - linear interpolation
+  - [x] `_linear_kernel(::EvalDeriv1, y0, y1, h, dt1)` - constant slope
+  - [x] `_linear_kernel(::EvalDeriv2, y0, y1, h, dt1)` - always zero
+- [x] Create `src/cubic_kernels.jl`
+  - [x] `_cubic_kernel(::EvalValue, z_i, z_ip1, y_i, y_ip1, h_i, dt1, dt2)`
+  - [x] `_cubic_kernel(::EvalDeriv1, ...)` - first derivative formula
+  - [x] `_cubic_kernel(::EvalDeriv2, ...)` - linear interpolation of z
+- [x] Update `src/FastInterpolations.jl`
+  - [x] Add `include("linear_kernels.jl")` after ops.jl
+  - [x] Add `include("cubic_kernels.jl")` after linear_kernels.jl
 
 #### REFACTOR: Clean up
-- [ ] Add `@inline` annotations to all kernel functions
-- [ ] Verify type parameter pattern used throughout
+- [x] Add `@inline` annotations to all kernel functions
+- [x] Verify type parameter pattern used throughout
 
 ### Quality Gate
-- [ ] All kernel tests pass: `julia --project -e 'using Pkg; Pkg.test(test_args=["test_derivatives.jl"])'`
-- [ ] `@code_warntype _linear_kernel(EvalDeriv1(), 1.0, 2.0, 1.0, 0.5)` shows no red
-- [ ] `@code_warntype _cubic_kernel(EvalDeriv1(), 0.0, 0.0, 1.0, 2.0, 1.0, 0.5, 0.5)` shows no red
-- [ ] `julia --project -e 'using Pkg; Pkg.test()'` - full test suite passes (no regressions)
+- [x] All kernel tests pass: `julia --project -e 'using Pkg; Pkg.test(test_args=["test_derivatives.jl"])'` (53 tests)
+- [x] `@code_warntype _linear_kernel(EvalDeriv1(), 1.0, 2.0, 1.0, 0.5)` shows no red (type stable)
+- [x] `@code_warntype _cubic_kernel(EvalDeriv1(), 0.0, 0.0, 1.0, 2.0, 1.0, 0.5, 0.5)` shows no red (type stable)
+- [x] `julia --project -e 'using Pkg; Pkg.test()'` - full test suite passes (1102 tests)
 
 ### Rollback
 ```bash
@@ -392,7 +392,7 @@ git checkout .
 | Phase | Status | Started | Completed |
 |-------|--------|---------|-----------|
 | 1. Foundation | ✅ Complete | 2025-12-26 | 2025-12-26 |
-| 2. Kernel Files | Pending | - | - |
+| 2. Kernel Files | ✅ Complete | 2025-12-26 | 2025-12-26 |
 | 3. Cubic Wrappers | Pending | - | - |
 | 4. Cubic Public API | Pending | - | - |
 | 5. Linear API | Pending | - | - |
@@ -413,6 +413,18 @@ git checkout .
   - Runtime variable dispatch tests
   - Type stability verification with `@inferred`
 - All 21 tests pass
+
+### Phase 2 (2025-12-26)
+- Kernel files were pre-implemented during design phase:
+  - `src/linear_kernels.jl`: `_linear_kernel` for Value/Deriv1/Deriv2
+  - `src/cubic_kernels.jl`: `_cubic_kernel` for Value/Deriv1/Deriv2
+- Added comprehensive kernel tests:
+  - Linear: value interpolation, constant slope, zero 2nd derivative
+  - Cubic: quadratic exactness (f(x)=x²), cubic exactness (f(x)=x³)
+  - Type stability tests with `@inferred`
+  - Float32 preservation tests
+- All kernels have `@inline` annotations
+- 53 total derivative tests pass (21 Phase 1 + 32 Phase 2)
 
 ---
 

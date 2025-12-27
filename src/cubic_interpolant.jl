@@ -21,16 +21,17 @@
 # CubicInterpolant struct defined in cubic_types.jl
 
 # Scalar call - hot path (zero-allocation)
-@inline function (itp::CubicInterpolant{T})(xi::T) where {T<:AbstractFloat}
+# Supports order keyword for derivative evaluation
+@inline function (itp::CubicInterpolant{T})(xi::T; order::Int=0) where {T<:AbstractFloat}
     @boundscheck _check_domain(itp.cache.x, xi, itp.extrap)
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap)
+    @_dispatch_order order => op begin
+        _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap, op)
+    end
 end
 
-# Real scalar wrapper
-@inline function (itp::CubicInterpolant{T})(xi::S) where {T<:AbstractFloat, S<:Real}
-    xi_t = T(xi)
-    @boundscheck _check_domain(itp.cache.x, xi_t, itp.extrap)
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi_t, itp.extrap)
+# Real scalar wrapper - delegates to T method with order keyword
+@inline function (itp::CubicInterpolant{T})(xi::S; order::Int=0) where {T<:AbstractFloat, S<:Real}
+    itp(T(xi); order=order)
 end
 
 # Vector call
@@ -70,24 +71,17 @@ end
 
 Compute the first derivative of the interpolant at point `xi`.
 
-Zero-allocation for scalar queries.
+Zero-allocation for scalar queries. Equivalent to `itp(xi; order=1)`.
 
 # Example
 ```julia
 itp = cubic_interp(x, y)
 slope = derivative(itp, 0.5)
+# or equivalently:
+slope = itp(0.5; order=1)
 ```
 """
-@inline function derivative(itp::CubicInterpolant{T}, xi::T) where {T<:AbstractFloat}
-    @boundscheck _check_domain(itp.cache.x, xi, itp.extrap)
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap, EvalDeriv1())
-end
-
-@inline function derivative(itp::CubicInterpolant{T}, xi::S) where {T<:AbstractFloat, S<:Real}
-    xi_t = T(xi)
-    @boundscheck _check_domain(itp.cache.x, xi_t, itp.extrap)
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi_t, itp.extrap, EvalDeriv1())
-end
+@inline derivative(itp::CubicInterpolant, xi::Real) = itp(xi; order=1)
 
 """
     derivative(itp::CubicInterpolant, xi::AbstractVector) -> Vector{T}
@@ -106,24 +100,17 @@ end
 
 Compute the second derivative of the interpolant at point `xi`.
 
-Zero-allocation for scalar queries.
+Zero-allocation for scalar queries. Equivalent to `itp(xi; order=2)`.
 
 # Example
 ```julia
 itp = cubic_interp(x, y)
 curvature = derivative2(itp, 0.5)
+# or equivalently:
+curvature = itp(0.5; order=2)
 ```
 """
-@inline function derivative2(itp::CubicInterpolant{T}, xi::T) where {T<:AbstractFloat}
-    @boundscheck _check_domain(itp.cache.x, xi, itp.extrap)
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap, EvalDeriv2())
-end
-
-@inline function derivative2(itp::CubicInterpolant{T}, xi::S) where {T<:AbstractFloat, S<:Real}
-    xi_t = T(xi)
-    @boundscheck _check_domain(itp.cache.x, xi_t, itp.extrap)
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi_t, itp.extrap, EvalDeriv2())
-end
+@inline derivative2(itp::CubicInterpolant, xi::Real) = itp(xi; order=2)
 
 """
     derivative2(itp::CubicInterpolant, xi::AbstractVector) -> Vector{T}

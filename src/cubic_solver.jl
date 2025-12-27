@@ -256,11 +256,14 @@ end
     vTq = α * (q[1] + q[n])
 
     denom = one(T) + vTq
-    if abs(denom) < eps(T)
+    # Use sqrt(eps) for numerical stability: catches near-degenerate cases
+    # where division would cause significant precision loss (~1e-8 for Float64)
+    tol = sqrt(eps(T))
+    if abs(denom) < tol
         throw(DomainError(denom,
             "Sherman-Morrison formula failed: denominator (1 + v'q) ≈ 0.\n" *
-            "  denom = $denom, α = $α, q[1] = $(q[1]), q[n] = $(q[n])\n" *
-            "  This usually indicates a degenerate periodic grid."))
+            "  denom = $denom (tol = $tol), α = $α, q[1] = $(q[1]), q[n] = $(q[n])\n" *
+            "  This usually indicates a degenerate or ill-conditioned periodic grid."))
     end
     factor = vTy / denom
 

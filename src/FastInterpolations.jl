@@ -24,7 +24,6 @@ include("cubic_interpolant.jl") # 2-arg API, CubicInterpolant callable
 export linear_interp, linear_interp!, LinearInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!, cubic_cache_stats
-export get_cubic_cache
 
 # Boundary condition types
 export AbstractBC, PointBC, D1, D2, BCPair

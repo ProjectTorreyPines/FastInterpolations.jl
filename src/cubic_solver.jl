@@ -255,7 +255,14 @@ end
     vTy = α * (y_temp[1] + y_temp[n])
     vTq = α * (q[1] + q[n])
 
-    factor = vTy / (one(T) + vTq)
+    denom = one(T) + vTq
+    if abs(denom) < eps(T)
+        throw(DomainError(denom,
+            "Sherman-Morrison formula failed: denominator (1 + v'q) ≈ 0.\n" *
+            "  denom = $denom, α = $α, q[1] = $(q[1]), q[n] = $(q[n])\n" *
+            "  This usually indicates a degenerate periodic grid."))
+    end
+    factor = vTy / denom
 
     @inbounds for i in 1:n
         z_workspace[i] = y_temp[i] - factor * q[i]

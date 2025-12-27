@@ -3,11 +3,18 @@ module FastInterpolations
 import LinearAlgebra
 using LinearAlgebra: Tridiagonal, lu, ldiv!
 
-# Boundary condition types (must be first - used by utils.jl)
+# Operation types (must be first - used by all interp files)
+include("ops.jl")
+
+# Boundary condition types
 include("bc_types.jl")
 
 # Shared internal utilities
 include("utils.jl")
+
+# Kernel functions (pure math, no dependencies)
+include("linear_kernels.jl")
+include("cubic_kernels.jl")
 
 # Linear interpolation
 include("linear_interp.jl")
@@ -28,5 +35,12 @@ export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!, cubic_ca
 # Boundary condition types
 export AbstractBC, PointBC, D1, D2, BCPair
 export NaturalBC, ClampedBC, PeriodicBC
+
+# Evaluation operation types (for advanced use)
+export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+
+# Derivative functions (to be added in Phase 4-5)
+# export derivative, derivative2
+# export cubic_derivative, cubic_derivative2, linear_derivative
 
 end # module

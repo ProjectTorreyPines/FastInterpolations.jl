@@ -67,13 +67,7 @@ struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC}
     bc_data::BC
 end
 
-"""
-    ExtrapVal
-
-Union type for extrapolation mode values.
-Using concrete Union enables Julia's union-splitting optimization.
-"""
-const ExtrapVal = Union{Val{:none}, Val{:constant}, Val{:extension}, Val{:wrap}}
+# ExtrapVal is defined in ops.jl (shared between linear and cubic)
 
 """
     CubicInterpolant{T,C}

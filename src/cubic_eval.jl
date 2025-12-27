@@ -8,6 +8,7 @@
 # Core Evaluation Functions
 # ========================================
 
+# Backward-compatible wrapper (default to EvalValue)
 "Evaluate natural cubic spline at a single point using pre-computed z coefficients."
 @inline function _eval_cubic_at_point(
     x::AbstractVector{T},
@@ -16,6 +17,18 @@
     z::AbstractVector{T},
     xi::T
 ) where {T<:AbstractFloat}
+    _eval_cubic_at_point(x, y, h, z, xi, EvalValue())
+end
+
+"Evaluate natural cubic spline at a single point with operation dispatch."
+@inline function _eval_cubic_at_point(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    op::O
+) where {T<:AbstractFloat, O<:AbstractEvalOp}
     idx, x0, x1 = _find_interval_with_bounds(x, xi)
 
     dt1 = xi - x0
@@ -23,14 +36,16 @@
     h_i = h[idx+1]
 
     @inbounds begin
-        I = (z[idx] * dt2^3 + z[idx+1] * dt1^3) / (6 * h_i)
-        C = (y[idx+1] / h_i - z[idx+1] * h_i / 6) * dt1
-        D = (y[idx] / h_i - z[idx] * h_i / 6) * dt2
+        z_i = z[idx]
+        z_ip1 = z[idx+1]
+        y_i = y[idx]
+        y_ip1 = y[idx+1]
     end
 
-    return I + C + D
+    return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, dt1, dt2)
 end
 
+# Backward-compatible wrapper for periodic (default to EvalValue)
 "Evaluate periodic cubic spline at a single point (wraps coordinates)."
 @inline function _eval_cubic_at_point_periodic(
     x::AbstractVector{T},
@@ -40,6 +55,19 @@ end
     xi::T,
     period::T
 ) where {T<:AbstractFloat}
+    _eval_cubic_at_point_periodic(x, y, h, z, xi, period, EvalValue())
+end
+
+"Evaluate periodic cubic spline at a single point with operation dispatch."
+@inline function _eval_cubic_at_point_periodic(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    period::T,
+    op::O
+) where {T<:AbstractFloat, O<:AbstractEvalOp}
     xi_wrapped = _wrap_to_domain(xi, first(x), first(x) + period)
     idx, x0, x1 = _find_interval_with_bounds(x, xi_wrapped)
 
@@ -48,18 +76,27 @@ end
     h_i = h[idx+1]
 
     @inbounds begin
-        I = (z[idx] * dt2^3 + z[idx+1] * dt1^3) / (6 * h_i)
-        C = (y[idx+1] / h_i - z[idx+1] * h_i / 6) * dt1
-        D = (y[idx] / h_i - z[idx] * h_i / 6) * dt2
+        z_i = z[idx]
+        z_ip1 = z[idx+1]
+        y_i = y[idx]
+        y_ip1 = y[idx+1]
     end
 
-    return I + C + D
+    return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, dt1, dt2)
 end
 
 # ========================================
 # Extrapolation-aware Evaluation
 # ========================================
 
+# Helper: result for constant extrapolation outside domain
+# For value: return boundary y
+# For derivatives: return zero (constant function has no slope/curvature)
+@inline _constant_extrap_result(::EvalValue, y_boundary::T) where {T} = y_boundary
+@inline _constant_extrap_result(::EvalDeriv1, ::T) where {T} = zero(T)
+@inline _constant_extrap_result(::EvalDeriv2, ::T) where {T} = zero(T)
+
+# Backward-compatible wrappers (default to EvalValue)
 "Evaluate with no extrapolation - throws DomainError if outside domain."
 @inline function _eval_cubic_with_extrap(
     x::AbstractVector{T},
@@ -67,9 +104,21 @@ end
     h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
-    ::Val{:none}
+    ev::Val{:none}
 ) where {T<:AbstractFloat}
-    return _eval_cubic_at_point(x, y, h, z, xi)
+    _eval_cubic_with_extrap(x, y, h, z, xi, ev, EvalValue())
+end
+
+@inline function _eval_cubic_with_extrap(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    ::Val{:none},
+    op::O
+) where {T<:AbstractFloat, O<:AbstractEvalOp}
+    return _eval_cubic_at_point(x, y, h, z, xi, op)
 end
 
 "Evaluate with constant extrapolation - returns boundary values outside domain."
@@ -79,11 +128,23 @@ end
     h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
-    ::Val{:constant}
+    ev::Val{:constant}
 ) where {T<:AbstractFloat}
-    xi < first(x) && return @inbounds y[1]
-    xi > last(x) && return @inbounds y[end]
-    return _eval_cubic_at_point(x, y, h, z, xi)
+    _eval_cubic_with_extrap(x, y, h, z, xi, ev, EvalValue())
+end
+
+@inline function _eval_cubic_with_extrap(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    ::Val{:constant},
+    op::O
+) where {T<:AbstractFloat, O<:AbstractEvalOp}
+    xi < first(x) && return _constant_extrap_result(op, @inbounds y[1])
+    xi > last(x) && return _constant_extrap_result(op, @inbounds y[end])
+    return _eval_cubic_at_point(x, y, h, z, xi, op)
 end
 
 "Evaluate with extension extrapolation - extends boundary polynomial."
@@ -93,9 +154,21 @@ end
     h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
-    ::Val{:extension}
+    ev::Val{:extension}
 ) where {T<:AbstractFloat}
-    return _eval_cubic_at_point(x, y, h, z, xi)
+    _eval_cubic_with_extrap(x, y, h, z, xi, ev, EvalValue())
+end
+
+@inline function _eval_cubic_with_extrap(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    ::Val{:extension},
+    op::O
+) where {T<:AbstractFloat, O<:AbstractEvalOp}
+    return _eval_cubic_at_point(x, y, h, z, xi, op)
 end
 
 "Evaluate with coordinate wrapping (for natural BC with wrap extrapolation)."
@@ -105,10 +178,22 @@ end
     h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
-    ::Val{:wrap}
+    ev::Val{:wrap}
 ) where {T<:AbstractFloat}
+    _eval_cubic_with_extrap(x, y, h, z, xi, ev, EvalValue())
+end
+
+@inline function _eval_cubic_with_extrap(
+    x::AbstractVector{T},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    ::Val{:wrap},
+    op::O
+) where {T<:AbstractFloat, O<:AbstractEvalOp}
     xi_wrapped = _wrap_to_domain(xi, first(x), last(x))
-    return _eval_cubic_at_point(x, y, h, z, xi_wrapped)
+    return _eval_cubic_at_point(x, y, h, z, xi_wrapped, op)
 end
 
 # ========================================

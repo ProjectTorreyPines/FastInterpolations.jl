@@ -39,8 +39,7 @@ export NaturalBC, ClampedBC, PeriodicBC
 # Evaluation operation types (for advanced use)
 export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
 
-# Derivative functions (to be added in Phase 4-5)
-# export derivative, derivative2
-# export cubic_derivative, cubic_derivative2, linear_derivative
+# Derivative functions for interpolants
+export derivative, derivative2
 
 end # module

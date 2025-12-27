@@ -200,19 +200,32 @@ end
 # BC-Aware Evaluation Helper
 # ========================================
 
-"Evaluate with BC-aware dispatch (Periodic BC - ignores extrapolation)."
+"Evaluate with BC-aware dispatch (Periodic BC - ignores extrapolation) - backward compat."
 @inline function _eval_with_bc(
     cache::CubicSplineCache{T,X,F,PeriodicData{T}},
     y::AbstractVector{T},
     h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
-    ::Val  # extrapolation ignored for periodic
+    ev::Val  # extrapolation ignored for periodic
 ) where {T<:AbstractFloat, X, F}
-    _eval_cubic_at_point_periodic(cache.x, y, h, z, xi, cache.bc_data.period)
+    _eval_with_bc(cache, y, h, z, xi, ev, EvalValue())
 end
 
-"Evaluate with BC-aware dispatch (Generic Derivative BC - uses standard evaluation)."
+"Evaluate with BC-aware dispatch (Periodic BC) with op."
+@inline function _eval_with_bc(
+    cache::CubicSplineCache{T,X,F,PeriodicData{T}},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    ::Val,  # extrapolation ignored for periodic
+    op::O
+) where {T<:AbstractFloat, X, F, O<:AbstractEvalOp}
+    _eval_cubic_at_point_periodic(cache.x, y, h, z, xi, cache.bc_data.period, op)
+end
+
+"Evaluate with BC-aware dispatch (Generic Derivative BC) - backward compat."
 @inline function _eval_with_bc(
     cache::CubicSplineCache{T,X,F,BCPair{T,L,R}},
     y::AbstractVector{T},
@@ -221,14 +234,27 @@ end
     xi::T,
     extrap::Val
 ) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}}
-    _eval_cubic_with_extrap(cache.x, y, h, z, xi, extrap)
+    _eval_with_bc(cache, y, h, z, xi, extrap, EvalValue())
+end
+
+"Evaluate with BC-aware dispatch (Generic Derivative BC) with op."
+@inline function _eval_with_bc(
+    cache::CubicSplineCache{T,X,F,BCPair{T,L,R}},
+    y::AbstractVector{T},
+    h::AbstractVector{T},
+    z::AbstractVector{T},
+    xi::T,
+    extrap::Val,
+    op::O
+) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}, O<:AbstractEvalOp}
+    _eval_cubic_with_extrap(cache.x, y, h, z, xi, extrap, op)
 end
 
 # ========================================
 # Vector Loop Functions
 # ========================================
 
-"Default vector loop (for :none, :constant, :extension)."
+"Default vector loop (for :none, :constant, :extension) - backward compatible."
 @inline function _cubic_vector_loop!(
     output::AbstractVector{T},
     cache::CubicSplineCache{T,X,F,BC},
@@ -237,21 +263,47 @@ end
     x_query::AbstractVector{T},
     ev::Val
 ) where {T<:AbstractFloat, X, F, BC}
+    _cubic_vector_loop!(output, cache, y, z, x_query, ev, EvalValue())
+end
+
+"Default vector loop with op parameter (for :none, :constant, :extension)."
+@inline function _cubic_vector_loop!(
+    output::AbstractVector{T},
+    cache::CubicSplineCache{T,X,F,BC},
+    y::AbstractVector{T},
+    z::AbstractVector{T},
+    x_query::AbstractVector{T},
+    ev::Val,
+    op::O
+) where {T<:AbstractFloat, X, F, BC, O<:AbstractEvalOp}
     @boundscheck _check_domain(cache.x, x_query, ev)
     @inbounds for (k, xq) in enumerate(x_query)
-        output[k] = _eval_with_bc(cache, y, cache.h, z, xq, ev)
+        output[k] = _eval_with_bc(cache, y, cache.h, z, xq, ev, op)
     end
 end
 
-"Optimized vector loop for Periodic BC - uses 2-stage strategy."
+"Optimized vector loop for Periodic BC - backward compat."
 @inline function _cubic_vector_loop!(
     output::AbstractVector{T},
     cache::CubicSplineCache{T,X,F,PeriodicData{T}},
     y::AbstractVector{T},
     z::AbstractVector{T},
     x_query::AbstractVector{T},
-    ::Val  # extrap ignored for periodic
+    ev::Val  # extrap ignored for periodic
 ) where {T<:AbstractFloat, X, F}
+    _cubic_vector_loop!(output, cache, y, z, x_query, ev, EvalValue())
+end
+
+"Optimized vector loop for Periodic BC with op - uses 2-stage strategy."
+@inline function _cubic_vector_loop!(
+    output::AbstractVector{T},
+    cache::CubicSplineCache{T,X,F,PeriodicData{T}},
+    y::AbstractVector{T},
+    z::AbstractVector{T},
+    x_query::AbstractVector{T},
+    ::Val,  # extrap ignored for periodic
+    op::O
+) where {T<:AbstractFloat, X, F, O<:AbstractEvalOp}
     x_min = first(cache.x)
     x_max = x_min + cache.bc_data.period
     qmin, qmax = minimum(x_query), maximum(x_query)
@@ -259,13 +311,13 @@ end
     if qmin >= x_min && qmax < x_max
         # Fast path: all queries inside domain
         @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_cubic_at_point(cache.x, y, cache.h, z, xq)
+            output[k] = _eval_cubic_at_point(cache.x, y, cache.h, z, xq, op)
         end
     else
         # Slow path: per-element wrap
         period = cache.bc_data.period
         @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.h, z, xq, period)
+            output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.h, z, xq, period, op)
         end
     end
 end
@@ -279,14 +331,17 @@ end
     cache::CubicSplineCache{T,X,F,BC},
     y::AbstractVector{T},
     x_query::T;
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    order::Int=0
 ) where {T<:AbstractFloat, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
     z = _solve_system!(cache, y, cache.bc_data)
 
-    @_dispatch_extrap extrap => ev begin
-        @boundscheck _check_domain(cache.x, x_query, ev)
-        _eval_with_bc(cache, y, cache.h, z, x_query, ev)
+    @_dispatch_order order op begin
+        @_dispatch_extrap extrap => ev begin
+            @boundscheck _check_domain(cache.x, x_query, ev)
+            _eval_with_bc(cache, y, cache.h, z, x_query, ev, op)
+        end
     end
 end

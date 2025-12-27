@@ -62,6 +62,82 @@ function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S
 end
 
 # ========================================
+# Derivative Functions for CubicInterpolant
+# ========================================
+
+"""
+    derivative(itp::CubicInterpolant, xi) -> T
+
+Compute the first derivative of the interpolant at point `xi`.
+
+Zero-allocation for scalar queries.
+
+# Example
+```julia
+itp = cubic_interp(x, y)
+slope = derivative(itp, 0.5)
+```
+"""
+@inline function derivative(itp::CubicInterpolant{T}, xi::T) where {T<:AbstractFloat}
+    @boundscheck _check_domain(itp.cache.x, xi, itp.extrap)
+    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap, EvalDeriv1())
+end
+
+@inline function derivative(itp::CubicInterpolant{T}, xi::S) where {T<:AbstractFloat, S<:Real}
+    xi_t = T(xi)
+    @boundscheck _check_domain(itp.cache.x, xi_t, itp.extrap)
+    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi_t, itp.extrap, EvalDeriv1())
+end
+
+"""
+    derivative(itp::CubicInterpolant, xi::AbstractVector) -> Vector{T}
+
+Compute the first derivative at multiple points.
+"""
+function derivative(itp::CubicInterpolant{T}, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
+    xi_typed = S === T ? xi : T.(xi)
+    output = Vector{T}(undef, length(xi_typed))
+    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap, EvalDeriv1())
+    return output
+end
+
+"""
+    derivative2(itp::CubicInterpolant, xi) -> T
+
+Compute the second derivative of the interpolant at point `xi`.
+
+Zero-allocation for scalar queries.
+
+# Example
+```julia
+itp = cubic_interp(x, y)
+curvature = derivative2(itp, 0.5)
+```
+"""
+@inline function derivative2(itp::CubicInterpolant{T}, xi::T) where {T<:AbstractFloat}
+    @boundscheck _check_domain(itp.cache.x, xi, itp.extrap)
+    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap, EvalDeriv2())
+end
+
+@inline function derivative2(itp::CubicInterpolant{T}, xi::S) where {T<:AbstractFloat, S<:Real}
+    xi_t = T(xi)
+    @boundscheck _check_domain(itp.cache.x, xi_t, itp.extrap)
+    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi_t, itp.extrap, EvalDeriv2())
+end
+
+"""
+    derivative2(itp::CubicInterpolant, xi::AbstractVector) -> Vector{T}
+
+Compute the second derivative at multiple points.
+"""
+function derivative2(itp::CubicInterpolant{T}, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
+    xi_typed = S === T ? xi : T.(xi)
+    output = Vector{T}(undef, length(xi_typed))
+    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap, EvalDeriv2())
+    return output
+end
+
+# ========================================
 # Internal Build Helpers
 # ========================================
 # These helpers unify the interpolant construction logic,

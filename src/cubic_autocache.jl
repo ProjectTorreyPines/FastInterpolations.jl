@@ -82,12 +82,15 @@ PeriodicCacheBank{T,X}() where {T<:AbstractFloat, X<:AbstractVector{T}} =
 # Bank Registry (Dynamic/Lazy)
 # ===============================================================
 
+# NOTE: Value type is `Any` because banks are created dynamically for each
+# (T, L, R, X) combination at runtime. Type-stable access is ensured by
+# the typed getter functions (_get_derivative_bank, _get_periodic_bank).
 const _DERIVATIVE_BANK_REGISTRY = IdDict{DataType, Any}()
 const _PERIODIC_BANK_REGISTRY = IdDict{DataType, Any}()
 const _CACHE_LOCK = ReentrantLock()
 const _CACHE_SIZE_REF = Ref{Int}(16)
 
-# Statistics
+# Statistics (non-atomic, for debugging only - may be inaccurate under multithreading)
 const _CACHE_HITS = Ref{Int}(0)
 const _CACHE_MISSES = Ref{Int}(0)
 const _CACHE_EVICTIONS = Ref{Int}(0)
@@ -265,6 +268,14 @@ Lookup or insert into a derivative BC cache bank.
     end
 
     # [Cache Miss] Create new entry
+    # NOTE: BC values are set to zero(T) as placeholders. The cache is keyed by BC *type* only
+    # because LU factorization depends only on matrix structure (x-grid + BC type), not BC values.
+    #
+    # Actual BC values are applied at solve time via:
+    #   _solve_system!(cache, y, (left_bc, right_bc))  # 3-arg overload in cubic_solver.jl
+    # which computes RHS with the passed BC values, not cache.bc_data.
+    #
+    # See: cubic_interp.jl:_get_cache_and_solve! for the call site.
     _CACHE_MISSES[] += 1
     new_cache = _build_derivative_bc_cache(x, L(zero(T)), R(zero(T)))
     new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
@@ -317,7 +328,15 @@ end
 Get or create a cached CubicSplineCache for the given x-grid.
 
 Supports ALL BCPair combinations, not just NaturalBC/PeriodicBC.
-Same BC **type** with different **values** shares the same cached LU factorization.
+
+# Cache Sharing Behavior
+
+**IMPORTANT**: Cache is keyed by BC *type*, not BC *values*.
+`BCPair(D1(0.0), D2(0.0))` and `BCPair(D1(1.0), D2(2.0))` share the same cache
+because they have the same type signature `BCPair{Float64, D1{Float64}, D2{Float64}}`.
+
+This works because the LU factorization depends only on the tridiagonal matrix structure
+(determined by x-grid and BC type), not the RHS values (determined by y-data and BC values).
 
 # Arguments
 - `x`: X-grid (Vector or Range)
@@ -411,7 +430,8 @@ Internal implementation for derivative BC cache lookup.
 end
 
 @inline function _get_derivative_cache_impl(x::AbstractRange{T}, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
-    # Skip normalization if already StepRangeLen from range(a, b, n)
+    # Normalize to StepRangeLen for consistent cache key type.
+    # LinRange and other Range types are converted (minor overhead on first call).
     x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
     bank = _get_derivative_bank(x_normalized, bc_pair)
     return _lookup_or_insert!(bank, x_normalized)
@@ -440,7 +460,8 @@ Internal implementation for periodic BC cache lookup.
 end
 
 @inline function _get_periodic_cache_impl(x::AbstractRange{T}) where {T<:Union{Float64,Float32}}
-    # Skip normalization if already StepRangeLen from range(a, b, n)
+    # Normalize to StepRangeLen for consistent cache key type.
+    # LinRange and other Range types are converted (minor overhead on first call).
     x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
     bank = _get_periodic_bank(x_normalized)
     return _lookup_or_insert!(bank, x_normalized)

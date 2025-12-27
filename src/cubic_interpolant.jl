@@ -168,6 +168,14 @@ end
     cubic_interp(cache, y; extrap=:none) -> CubicInterpolant
 
 Create a callable interpolant from a pre-built cache.
+
+# Note on BC Values
+Uses `cache.bc_data` for boundary condition values. This is correct when:
+- Cache was built via `CubicSplineCache(x; bc=...)` with actual BC values
+- BC is NaturalBC/ClampedBC/PeriodicBC (values are always zero)
+
+**Warning**: Caches from `get_cubic_cache` contain placeholder zeros in `bc_data`.
+For non-zero BC values, use the full API: `cubic_interp(x, y; bc=D1(val))`.
 """
 function cubic_interp(
     cache::CubicSplineCache{T},

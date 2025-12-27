@@ -276,8 +276,15 @@ end
 # ========================================
 # Unified System Solver Entry Point
 # ========================================
+#
+# Two overloads for derivative BC:
+#   _solve_system!(cache, y)           → uses cache.bc_data (for manually built caches)
+#   _solve_system!(cache, y, bc_tuple) → uses passed BC values (for autocache)
+#
+# The 3-arg version enables cache reuse with different BC values.
+# See cubic_autocache.jl for why caches store placeholder zeros.
 
-"Solve cubic spline system (Periodic BC)."
+"Solve cubic spline system (Periodic BC). No BC values needed."
 @inline function _solve_system!(
     cache::CubicSplineCache{T,X,F,PeriodicData{T}},
     y::AbstractVector{T}
@@ -285,7 +292,7 @@ end
     _solve_cubic_system_periodic!(cache.z_workspace, cache.d_workspace, cache, y)
 end
 
-"Solve cubic spline system (Generic Derivative BC)."
+"Solve cubic spline system using cache.bc_data for BC values."
 @inline function _solve_system!(
     cache::CubicSplineCache{T,X,F,BCPair{T,L,R}},
     y::AbstractVector{T}
@@ -296,8 +303,9 @@ end
 end
 
 """
-Solve cubic spline system with BC value override (for time-varying BC).
-The BC types must match the cache BC types - only values can differ.
+Solve cubic spline system with explicit BC values (ignores cache.bc_data).
+Used by autocache path where cache stores placeholder zeros but actual BC values
+are passed at solve time. BC types must match cache BC types.
 """
 @inline function _solve_system!(
     cache::CubicSplineCache{T,X,F,BCPair{T,L,R}},

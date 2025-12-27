@@ -8,18 +8,6 @@
 # Core Evaluation Functions
 # ========================================
 
-# Backward-compatible wrapper (default to EvalValue)
-"Evaluate natural cubic spline at a single point using pre-computed z coefficients."
-@inline function _eval_cubic_at_point(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    h::AbstractVector{T},
-    z::AbstractVector{T},
-    xi::T
-) where {T<:AbstractFloat}
-    _eval_cubic_at_point(x, y, h, z, xi, EvalValue())
-end
-
 "Evaluate natural cubic spline at a single point with operation dispatch."
 @inline function _eval_cubic_at_point(
     x::AbstractVector{T},
@@ -43,19 +31,6 @@ end
     end
 
     return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, dt1, dt2)
-end
-
-# Backward-compatible wrapper for periodic (default to EvalValue)
-"Evaluate periodic cubic spline at a single point (wraps coordinates)."
-@inline function _eval_cubic_at_point_periodic(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    h::AbstractVector{T},
-    z::AbstractVector{T},
-    xi::T,
-    period::T
-) where {T<:AbstractFloat}
-    _eval_cubic_at_point_periodic(x, y, h, z, xi, period, EvalValue())
 end
 
 "Evaluate periodic cubic spline at a single point with operation dispatch."
@@ -96,19 +71,7 @@ end
 @inline _constant_extrap_result(::EvalDeriv1, ::T) where {T} = zero(T)
 @inline _constant_extrap_result(::EvalDeriv2, ::T) where {T} = zero(T)
 
-# Backward-compatible wrappers (default to EvalValue)
 "Evaluate with no extrapolation - throws DomainError if outside domain."
-@inline function _eval_cubic_with_extrap(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    h::AbstractVector{T},
-    z::AbstractVector{T},
-    xi::T,
-    ev::Val{:none}
-) where {T<:AbstractFloat}
-    _eval_cubic_with_extrap(x, y, h, z, xi, ev, EvalValue())
-end
-
 @inline function _eval_cubic_with_extrap(
     x::AbstractVector{T},
     y::AbstractVector{T},
@@ -122,17 +85,6 @@ end
 end
 
 "Evaluate with constant extrapolation - returns boundary values outside domain."
-@inline function _eval_cubic_with_extrap(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    h::AbstractVector{T},
-    z::AbstractVector{T},
-    xi::T,
-    ev::Val{:constant}
-) where {T<:AbstractFloat}
-    _eval_cubic_with_extrap(x, y, h, z, xi, ev, EvalValue())
-end
-
 @inline function _eval_cubic_with_extrap(
     x::AbstractVector{T},
     y::AbstractVector{T},
@@ -154,17 +106,6 @@ end
     h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
-    ev::Val{:extension}
-) where {T<:AbstractFloat}
-    _eval_cubic_with_extrap(x, y, h, z, xi, ev, EvalValue())
-end
-
-@inline function _eval_cubic_with_extrap(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    h::AbstractVector{T},
-    z::AbstractVector{T},
-    xi::T,
     ::Val{:extension},
     op::O
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
@@ -172,17 +113,6 @@ end
 end
 
 "Evaluate with coordinate wrapping (for natural BC with wrap extrapolation)."
-@inline function _eval_cubic_with_extrap(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    h::AbstractVector{T},
-    z::AbstractVector{T},
-    xi::T,
-    ev::Val{:wrap}
-) where {T<:AbstractFloat}
-    _eval_cubic_with_extrap(x, y, h, z, xi, ev, EvalValue())
-end
-
 @inline function _eval_cubic_with_extrap(
     x::AbstractVector{T},
     y::AbstractVector{T},

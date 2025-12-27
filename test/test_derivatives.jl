@@ -253,13 +253,6 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
             @test deriv2 ≈ 2.0 atol=0.1
         end
 
-        @testset "_eval_cubic_at_point backward compatibility" begin
-            # Without op parameter should still work (returns value)
-            val_old = _eval_cubic_at_point(x, y, cache.h, z, 1.0)
-            val_new = _eval_cubic_at_point(x, y, cache.h, z, 1.0, EvalValue())
-            @test val_old ≈ val_new atol=1e-14
-        end
-
         @testset "_eval_cubic_with_extrap with op" begin
             # Test constant extrapolation with derivatives
             # Outside left boundary: should return 0 for derivatives

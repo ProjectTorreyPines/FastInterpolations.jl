@@ -4,7 +4,7 @@
 **Design Document**: [design/analytical_derivatives.md](../../design/analytical_derivatives.md)
 **Created**: 2025-12-26
 **Last Updated**: 2025-12-26
-**Status**: Phase 2 Complete
+**Status**: Phase 3 Complete
 
 ---
 
@@ -176,7 +176,7 @@ rm src/linear_kernels.jl src/cubic_kernels.jl
 ### Tasks
 
 #### RED: Write failing tests first
-- [ ] Add tests for `_eval_cubic_at_point` with op
+- [x] Add tests for `_eval_cubic_at_point` with op
   ```julia
   @testset "Cubic internal functions with op" begin
       x = collect(0.0:0.5:2.0)
@@ -195,23 +195,23 @@ rm src/linear_kernels.jl src/cubic_kernels.jl
   ```
 
 #### GREEN: Implement to make tests pass
-- [ ] Update `src/cubic_eval.jl`
-  - [ ] Add wrapper: `_eval_cubic_at_point(x,y,h,z,xi) = _eval_cubic_at_point(x,y,h,z,xi,EvalValue())`
-  - [ ] Add full impl: `_eval_cubic_at_point(..., op::O) where {O<:AbstractEvalOp}`
-  - [ ] Replace inline math with `_cubic_kernel(op, ...)` call
-  - [ ] Same pattern for `_eval_cubic_at_point_periodic`
-  - [ ] Add `_constant_extrap_result(op, y_boundary)` helper
-  - [ ] Update `_eval_cubic_with_extrap` functions to accept and use op
-  - [ ] Add wrappers for `_eval_with_bc` and `_cubic_vector_loop!`
+- [x] Update `src/cubic_eval.jl`
+  - [x] Add wrapper: `_eval_cubic_at_point(x,y,h,z,xi) = _eval_cubic_at_point(x,y,h,z,xi,EvalValue())`
+  - [x] Add full impl: `_eval_cubic_at_point(..., op::O) where {O<:AbstractEvalOp}`
+  - [x] Replace inline math with `_cubic_kernel(op, ...)` call
+  - [x] Same pattern for `_eval_cubic_at_point_periodic`
+  - [x] Add `_constant_extrap_result(op, y_boundary)` helper
+  - [x] Update `_eval_cubic_with_extrap` functions to accept and use op
+  - [x] Add wrappers for `_eval_with_bc` and `_cubic_vector_loop!`
 
 #### REFACTOR: Clean up
-- [ ] Verify all existing tests still pass (backward compat)
-- [ ] Ensure consistent type parameter pattern
+- [x] Verify all existing tests still pass (backward compat)
+- [x] Ensure consistent type parameter pattern
 
 ### Quality Gate
-- [ ] Derivative tests pass: `julia --project -e 'using Pkg; Pkg.test(test_args=["test_derivatives.jl"])'`
-- [ ] No type instability warnings (`@code_warntype`)
-- [ ] `julia --project -e 'using Pkg; Pkg.test()'` - full test suite passes (no regressions)
+- [x] Derivative tests pass: `julia --project -e 'using Pkg; Pkg.test(test_args=["test_derivatives.jl"])'` (69 tests)
+- [x] No type instability warnings (`@code_warntype`)
+- [x] `julia --project -e 'using Pkg; Pkg.test()'` - full test suite passes (1118 tests, no regressions)
 
 ### Rollback
 ```bash
@@ -393,7 +393,7 @@ git checkout .
 |-------|--------|---------|-----------|
 | 1. Foundation | ✅ Complete | 2025-12-26 | 2025-12-26 |
 | 2. Kernel Files | ✅ Complete | 2025-12-26 | 2025-12-26 |
-| 3. Cubic Wrappers | Pending | - | - |
+| 3. Cubic Wrappers | ✅ Complete | 2025-12-26 | 2025-12-26 |
 | 4. Cubic Public API | Pending | - | - |
 | 5. Linear API | Pending | - | - |
 | 6. Testing & Polish | Pending | - | - |
@@ -425,6 +425,23 @@ git checkout .
   - Float32 preservation tests
 - All kernels have `@inline` annotations
 - 53 total derivative tests pass (21 Phase 1 + 32 Phase 2)
+
+### Phase 3 (2025-12-26)
+- Implemented backward-compatible wrappers in `src/cubic_eval.jl`:
+  - `_eval_cubic_at_point` with 5 and 6-arg forms (op defaults to EvalValue())
+  - `_eval_cubic_at_point_periodic` with 6 and 7-arg forms
+  - All `_eval_cubic_with_extrap` variants for :none, :constant, :extension, :wrap
+  - Added `_constant_extrap_result(op, y_boundary)` helper for constant extrapolation
+- All internal functions now use `_cubic_kernel(op, ...)` for evaluation
+- Pattern: wrapper → full impl with `op::O where {O<:AbstractEvalOp}` → kernel
+- Added 16 Phase 3 tests:
+  - `_eval_cubic_at_point` with op (value, deriv1, deriv2)
+  - Backward compatibility verification
+  - `_eval_cubic_with_extrap` with constant/extension modes
+  - Type stability tests with `@inferred`
+  - Derivative at multiple points
+- 69 total derivative tests pass (21 Phase 1 + 32 Phase 2 + 16 Phase 3)
+- Full test suite: 1118 tests pass with no regressions
 
 ---
 

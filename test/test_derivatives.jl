@@ -12,7 +12,7 @@ using FastInterpolations: @_dispatch_order, _linear_kernel, _cubic_kernel
 using FastInterpolations: _eval_cubic_at_point, _eval_cubic_with_extrap, _get_cubic_cache, _solve_system!
 
 # Julia version-aware threshold (1.12+ has improved allocation tracking)
-const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12.0-DEV" ? 0 : 64
+const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 64
 
 # ========================================
 # Group 1: Core Types and Dispatch
@@ -449,31 +449,31 @@ end # Derivative Kernels
         itp = cubic_interp(x, y; bc=bc)
 
         @testset "order=0 matches default call" begin
-            @test itp(0.5) ≈ itp(0.5; order=0)
-            @test itp(0.25) ≈ itp(0.25; order=0)
-            @test itp(0.75) ≈ itp(0.75; order=0)
+            @test itp(0.5) == itp(0.5; order=0)
+            @test itp(0.25) == itp(0.25; order=0)
+            @test itp(0.75) == itp(0.75; order=0)
         end
 
         @testset "order=1 matches existing derivative function" begin
-            @test itp(0.5; order=1) ≈ derivative(itp, 0.5)
-            @test itp(0.0; order=1) ≈ derivative(itp, 0.0)
-            @test itp(1.0; order=1) ≈ derivative(itp, 1.0)
+            @test itp(0.5; order=1) == derivative(itp, 0.5)
+            @test itp(0.0; order=1) == derivative(itp, 0.0)
+            @test itp(1.0; order=1) == derivative(itp, 1.0)
         end
 
         @testset "order=2 matches existing derivative2 function" begin
-            @test itp(0.5; order=2) ≈ derivative2(itp, 0.5)
-            @test itp(0.0; order=2) ≈ derivative2(itp, 0.0)
-            @test itp(1.0; order=2) ≈ derivative2(itp, 1.0)
+            @test itp(0.5; order=2) == derivative2(itp, 0.5)
+            @test itp(0.0; order=2) == derivative2(itp, 0.0)
+            @test itp(1.0; order=2) == derivative2(itp, 1.0)
         end
 
         @testset "Real input works with order keyword" begin
-            # Integer input should work
-            @test itp(1; order=0) ≈ itp(1.0; order=0)
-            @test itp(1; order=1) ≈ itp(1.0; order=1)
-            @test itp(1; order=2) ≈ itp(1.0; order=2)
+            # Integer input should work (exact equality - same code path after conversion)
+            @test itp(1; order=0) == itp(1.0; order=0)
+            @test itp(1; order=1) == itp(1.0; order=1)
+            @test itp(1; order=2) == itp(1.0; order=2)
 
-            # Float32 input should work
-            @test itp(0.5f0; order=1) ≈ itp(0.5; order=1)
+            # Float32 input should work (exact equality - 0.5f0 converts exactly to 0.5)
+            @test itp(0.5f0; order=1) == itp(0.5; order=1)
         end
 
         @testset "Type stability with order keyword" begin

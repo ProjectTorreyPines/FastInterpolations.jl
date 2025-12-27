@@ -97,10 +97,12 @@ Add `order` parameter (0=value, 1=derivative, 2=second derivative) to all public
 - [x] `julia --project -e 'using FastInterpolations'` succeeds
 - [x] `julia --project -e 'using Pkg; Pkg.test(test_args=["test_derivatives.jl"])'` passes (21 tests)
 - [x] Types are documented with docstrings
+- [x] Add `include("test_derivatives.jl")` to `test/runtests.jl`
+- [x] `julia --project -e 'using Pkg; Pkg.test()'` - full test suite passes (1070 tests)
 
 ### Rollback
 ```bash
-git checkout src/FastInterpolations.jl src/utils.jl
+git checkout src/FastInterpolations.jl src/utils.jl test/runtests.jl
 rm src/ops.jl test/test_derivatives.jl
 ```
 
@@ -149,9 +151,10 @@ rm src/ops.jl test/test_derivatives.jl
 - [ ] Verify type parameter pattern used throughout
 
 ### Quality Gate
-- [ ] All kernel tests pass
+- [ ] All kernel tests pass: `julia --project -e 'using Pkg; Pkg.test(test_args=["test_derivatives.jl"])'`
 - [ ] `@code_warntype _linear_kernel(EvalDeriv1(), 1.0, 2.0, 1.0, 0.5)` shows no red
 - [ ] `@code_warntype _cubic_kernel(EvalDeriv1(), 0.0, 0.0, 1.0, 2.0, 1.0, 0.5, 0.5)` shows no red
+- [ ] `julia --project -e 'using Pkg; Pkg.test()'` - full test suite passes (no regressions)
 
 ### Rollback
 ```bash
@@ -206,9 +209,9 @@ rm src/linear_kernels.jl src/cubic_kernels.jl
 - [ ] Ensure consistent type parameter pattern
 
 ### Quality Gate
-- [ ] `julia --project -e 'using Pkg; Pkg.test()'` - all existing tests pass
-- [ ] New internal function tests pass
-- [ ] No type instability warnings
+- [ ] Derivative tests pass: `julia --project -e 'using Pkg; Pkg.test(test_args=["test_derivatives.jl"])'`
+- [ ] No type instability warnings (`@code_warntype`)
+- [ ] `julia --project -e 'using Pkg; Pkg.test()'` - full test suite passes (no regressions)
 
 ### Rollback
 ```bash
@@ -263,10 +266,10 @@ git checkout src/cubic_eval.jl
 - [ ] Verify backward compatibility (no order arg = value)
 
 ### Quality Gate
-- [ ] All polynomial exactness tests pass
+- [ ] Derivative tests pass: `julia --project -e 'using Pkg; Pkg.test(test_args=["test_derivatives.jl"])'`
 - [ ] `@allocated cubic_interp(cache, y, 0.5; order=1) <= ALLOC_THRESHOLD`
 - [ ] `@allocated cubic_interp(cache, y, 0.5; order=2) <= ALLOC_THRESHOLD`
-- [ ] Existing tests still pass
+- [ ] `julia --project -e 'using Pkg; Pkg.test()'` - full test suite passes (no regressions)
 
 ### Rollback
 ```bash
@@ -321,9 +324,10 @@ git checkout src/cubic_interp.jl src/cubic_interpolant.jl src/FastInterpolations
 - [ ] Verify all extrap modes work correctly
 
 ### Quality Gate
-- [ ] All linear derivative tests pass
+- [ ] Derivative tests pass: `julia --project -e 'using Pkg; Pkg.test(test_args=["test_derivatives.jl"])'`
 - [ ] Extrapolation edge cases work correctly
-- [ ] Zero allocation for scalar queries
+- [ ] `@allocated linear_interp(x, y, 0.5; order=1) <= ALLOC_THRESHOLD`
+- [ ] `julia --project -e 'using Pkg; Pkg.test()'` - full test suite passes (no regressions)
 
 ### Rollback
 ```bash
@@ -371,10 +375,10 @@ git checkout src/linear_interp.jl src/FastInterpolations.jl
 - [ ] Check allocation targets met
 
 ### Quality Gate
-- [ ] All tests pass (existing + new)
-- [ ] Type stability verified for all public APIs
-- [ ] Allocation thresholds met
-- [ ] No warnings during test run
+- [ ] Derivative tests pass: `julia --project -e 'using Pkg; Pkg.test(test_args=["test_derivatives.jl"])'`
+- [ ] Type stability verified for all public APIs (`@inferred`)
+- [ ] Allocation thresholds met for all derivative orders
+- [ ] `julia --project -e 'using Pkg; Pkg.test()'` - full test suite passes (no warnings)
 
 ### Rollback
 ```bash

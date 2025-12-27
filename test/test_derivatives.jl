@@ -9,6 +9,7 @@ using FastInterpolations
 
 # Import internal types/macros for testing
 using FastInterpolations: @_dispatch_order, _linear_kernel, _cubic_kernel
+using FastInterpolations: _eval_cubic_at_point, _eval_cubic_with_extrap, _get_cubic_cache, _solve_system!
 
 @testset "Derivatives" begin
 
@@ -220,6 +221,75 @@ using FastInterpolations: @_dispatch_order, _linear_kernel, _cubic_kernel
             @test _cubic_kernel(EvalValue(), z0_cubic, z1_cubic, y0_cubic, y1_cubic, h, dt1, dt2) ≈ 0.125 atol=1e-10
             @test _cubic_kernel(EvalDeriv1(), z0_cubic, z1_cubic, y0_cubic, y1_cubic, h, dt1, dt2) ≈ 0.75 atol=1e-10
             @test _cubic_kernel(EvalDeriv2(), z0_cubic, z1_cubic, y0_cubic, y1_cubic, h, dt1, dt2) ≈ 3.0 atol=1e-10
+        end
+    end
+
+    # ========================================
+    # Phase 3: Cubic Internal Wrappers
+    # ========================================
+    @testset "Cubic internal functions with op" begin
+        # Test with quadratic f(x) = x² on [0, 2] with step 0.5
+        x = collect(0.0:0.5:2.0)
+        y = x .^ 2  # [0, 0.25, 1, 2.25, 4]
+
+        # Use D2 BC with f''(x) = 2 for exact quadratic representation
+        cache = _get_cubic_cache(x, BCPair(D2(2.0), D2(2.0)))
+        z = _solve_system!(cache, y, cache.bc_data)
+
+        @testset "_eval_cubic_at_point with op" begin
+            # Value at midpoint x=1.0: f(1) = 1.0
+            val = _eval_cubic_at_point(x, y, cache.h, z, 1.0, EvalValue())
+            @test val ≈ 1.0 atol=1e-10
+
+            # First derivative at x=1.0: f'(x) = 2x, so f'(1) = 2.0
+            deriv1 = _eval_cubic_at_point(x, y, cache.h, z, 1.0, EvalDeriv1())
+            @test deriv1 ≈ 2.0 atol=0.1  # Spline approximation
+
+            # Second derivative: f''(x) = 2.0
+            deriv2 = _eval_cubic_at_point(x, y, cache.h, z, 1.0, EvalDeriv2())
+            @test deriv2 ≈ 2.0 atol=0.1
+        end
+
+        @testset "_eval_cubic_at_point backward compatibility" begin
+            # Without op parameter should still work (returns value)
+            val_old = _eval_cubic_at_point(x, y, cache.h, z, 1.0)
+            val_new = _eval_cubic_at_point(x, y, cache.h, z, 1.0, EvalValue())
+            @test val_old ≈ val_new atol=1e-14
+        end
+
+        @testset "_eval_cubic_with_extrap with op" begin
+            # Test constant extrapolation with derivatives
+            # Outside left boundary: should return 0 for derivatives
+            left_val = _eval_cubic_with_extrap(x, y, cache.h, z, -0.5, Val(:constant), EvalValue())
+            @test left_val ≈ y[1]  # y[1] = 0.0
+
+            left_deriv1 = _eval_cubic_with_extrap(x, y, cache.h, z, -0.5, Val(:constant), EvalDeriv1())
+            @test left_deriv1 === 0.0  # Constant extrap → derivative = 0
+
+            left_deriv2 = _eval_cubic_with_extrap(x, y, cache.h, z, -0.5, Val(:constant), EvalDeriv2())
+            @test left_deriv2 === 0.0
+
+            # Inside domain: should use normal evaluation
+            mid_deriv1 = _eval_cubic_with_extrap(x, y, cache.h, z, 1.0, Val(:constant), EvalDeriv1())
+            @test mid_deriv1 ≈ 2.0 atol=0.1
+
+            # Extension extrapolation: use boundary polynomial
+            ext_deriv1 = _eval_cubic_with_extrap(x, y, cache.h, z, -0.5, Val(:extension), EvalDeriv1())
+            @test ext_deriv1 isa Float64  # Should not throw
+        end
+
+        @testset "Type stability with op" begin
+            @test @inferred(_eval_cubic_at_point(x, y, cache.h, z, 1.0, EvalValue())) isa Float64
+            @test @inferred(_eval_cubic_at_point(x, y, cache.h, z, 1.0, EvalDeriv1())) isa Float64
+            @test @inferred(_eval_cubic_at_point(x, y, cache.h, z, 1.0, EvalDeriv2())) isa Float64
+        end
+
+        @testset "Derivative at different points" begin
+            # f'(0) = 0, f'(0.5) = 1, f'(1) = 2, f'(1.5) = 3, f'(2) = 4
+            for (xi, expected_deriv) in [(0.0, 0.0), (0.5, 1.0), (1.5, 3.0), (2.0, 4.0)]
+                deriv = _eval_cubic_at_point(x, y, cache.h, z, xi, EvalDeriv1())
+                @test deriv ≈ expected_deriv atol=0.15
+            end
         end
     end
 

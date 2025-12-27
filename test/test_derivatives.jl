@@ -293,4 +293,191 @@ using FastInterpolations: _eval_cubic_at_point, _eval_cubic_with_extrap, _get_cu
         end
     end
 
+    # ========================================
+    # Phase 4: Cubic Public API with order parameter
+    # ========================================
+    @testset "Cubic public API with order" begin
+
+        @testset "Polynomial exactness" begin
+            # Quadratic f(x) = x² with exact D2 BC
+            x = collect(0.0:0.1:1.0)
+            y = x .^ 2
+            bc = BCPair(D2(2.0), D2(2.0))  # f''(x) = 2
+            xi = 0.5
+
+            # Value: f(0.5) = 0.25
+            @test cubic_interp(x, y, xi; bc=bc, order=0) ≈ 0.25 atol=1e-10
+
+            # First derivative: f'(0.5) = 2*0.5 = 1.0
+            @test cubic_interp(x, y, xi; bc=bc, order=1) ≈ 1.0 atol=1e-10
+
+            # Second derivative: f''(x) = 2.0
+            @test cubic_interp(x, y, xi; bc=bc, order=2) ≈ 2.0 atol=1e-10
+        end
+
+        @testset "Cubic polynomial exactness" begin
+            # Cubic f(x) = x³ with exact D2 BC
+            x = collect(0.0:0.1:1.0)
+            y = x .^ 3
+            bc = BCPair(D2(0.0), D2(6.0))  # f''(0)=0, f''(1)=6
+            xi = 0.5
+
+            # Value: f(0.5) = 0.125
+            @test cubic_interp(x, y, xi; bc=bc, order=0) ≈ 0.125 atol=1e-10
+
+            # First derivative: f'(0.5) = 3*(0.5)² = 0.75
+            @test cubic_interp(x, y, xi; bc=bc, order=1) ≈ 0.75 atol=1e-10
+
+            # Second derivative: f''(0.5) = 6*0.5 = 3.0
+            @test cubic_interp(x, y, xi; bc=bc, order=2) ≈ 3.0 atol=1e-10
+        end
+
+        @testset "Backward compatibility (no order arg)" begin
+            x = collect(0.0:0.2:1.0)
+            y = sin.(x)
+            xi = 0.5
+
+            # Without order parameter should work as before
+            val_old = cubic_interp(x, y, xi)
+            val_new = cubic_interp(x, y, xi; order=0)
+            @test val_old ≈ val_new atol=1e-14
+        end
+
+        @testset "Vector query with order" begin
+            x = collect(0.0:0.1:1.0)
+            y = x .^ 2
+            bc = BCPair(D2(2.0), D2(2.0))
+            x_query = [0.25, 0.5, 0.75]
+
+            # Values
+            vals = cubic_interp(x, y, x_query; bc=bc, order=0)
+            @test vals ≈ x_query .^ 2 atol=1e-10
+
+            # First derivatives: f'(x) = 2x
+            derivs = cubic_interp(x, y, x_query; bc=bc, order=1)
+            @test derivs ≈ 2.0 .* x_query atol=1e-10
+
+            # Second derivatives: f''(x) = 2
+            derivs2 = cubic_interp(x, y, x_query; bc=bc, order=2)
+            @test all(d ≈ 2.0 for d in derivs2)
+        end
+
+        @testset "Cache-based with order" begin
+            x = collect(0.0:0.1:1.0)
+            cache = CubicSplineCache(x; bc=BCPair(D2(2.0), D2(2.0)))
+            y = x .^ 2
+            xi = 0.5
+
+            @test cubic_interp(cache, y, xi; order=0) ≈ 0.25 atol=1e-10
+            @test cubic_interp(cache, y, xi; order=1) ≈ 1.0 atol=1e-10
+            @test cubic_interp(cache, y, xi; order=2) ≈ 2.0 atol=1e-10
+        end
+
+        @testset "Type stability with order" begin
+            x = collect(0.0:0.1:1.0)
+            y = x .^ 2
+            bc = BCPair(D2(2.0), D2(2.0))
+            xi = 0.5
+
+            @test @inferred(cubic_interp(x, y, xi; bc=bc, order=0)) isa Float64
+            @test @inferred(cubic_interp(x, y, xi; bc=bc, order=1)) isa Float64
+            @test @inferred(cubic_interp(x, y, xi; bc=bc, order=2)) isa Float64
+        end
+    end
+
+    @testset "Cubic allocation with order" begin
+        x = collect(0.0:0.1:1.0)
+        cache = CubicSplineCache(x; bc=BCPair(D2(2.0), D2(2.0)))
+        y = x .^ 2
+        xi = 0.5
+
+        # Warm-up
+        cubic_interp(cache, y, xi; order=0)
+        cubic_interp(cache, y, xi; order=1)
+        cubic_interp(cache, y, xi; order=2)
+
+        # Check allocations (scalar query should be zero-allocation)
+        alloc0 = @allocated cubic_interp(cache, y, xi; order=0)
+        alloc1 = @allocated cubic_interp(cache, y, xi; order=1)
+        alloc2 = @allocated cubic_interp(cache, y, xi; order=2)
+
+        @test alloc0 == 0
+        @test alloc1 == 0
+        @test alloc2 == 0
+    end
+
+    @testset "Cubic extrapolation with order" begin
+        x = collect(0.0:0.25:1.0)
+        y = x .^ 2
+        bc = BCPair(D2(2.0), D2(2.0))
+
+        @testset "Constant extrapolation" begin
+            # Left boundary constant extrap: returns y[1] for value, 0 for derivatives
+            @test cubic_interp(x, y, -0.5; bc=bc, extrap=:constant, order=0) ≈ 0.0
+            @test cubic_interp(x, y, -0.5; bc=bc, extrap=:constant, order=1) ≈ 0.0
+            @test cubic_interp(x, y, -0.5; bc=bc, extrap=:constant, order=2) ≈ 0.0
+
+            # Right boundary
+            @test cubic_interp(x, y, 1.5; bc=bc, extrap=:constant, order=0) ≈ 1.0
+            @test cubic_interp(x, y, 1.5; bc=bc, extrap=:constant, order=1) ≈ 0.0
+            @test cubic_interp(x, y, 1.5; bc=bc, extrap=:constant, order=2) ≈ 0.0
+        end
+
+        @testset "Extension extrapolation" begin
+            # Extension: continue boundary polynomial
+            # For x², extension should give approximately correct derivatives
+            val = cubic_interp(x, y, 1.5; bc=bc, extrap=:extension, order=0)
+            @test val ≈ 2.25 atol=0.1  # (1.5)² ≈ 2.25
+
+            deriv1 = cubic_interp(x, y, 1.5; bc=bc, extrap=:extension, order=1)
+            @test deriv1 ≈ 3.0 atol=0.2  # 2*1.5 ≈ 3.0
+
+            deriv2 = cubic_interp(x, y, 1.5; bc=bc, extrap=:extension, order=2)
+            @test deriv2 ≈ 2.0 atol=0.1  # f''(x) = 2
+        end
+    end
+
+    @testset "CubicInterpolant derivative methods" begin
+        x = collect(0.0:0.1:1.0)
+        y = x .^ 2
+        bc = BCPair(D2(2.0), D2(2.0))
+        itp = cubic_interp(x, y; bc=bc)
+
+        @testset "derivative scalar" begin
+            @test derivative(itp, 0.5) ≈ 1.0 atol=1e-10
+            @test derivative(itp, 0.0) ≈ 0.0 atol=1e-10
+            @test derivative(itp, 1.0) ≈ 2.0 atol=1e-10
+        end
+
+        @testset "derivative2 scalar" begin
+            @test derivative2(itp, 0.5) ≈ 2.0 atol=1e-10
+            @test derivative2(itp, 0.0) ≈ 2.0 atol=1e-10
+            @test derivative2(itp, 1.0) ≈ 2.0 atol=1e-10
+        end
+
+        @testset "derivative vector" begin
+            x_query = [0.25, 0.5, 0.75]
+            derivs = derivative(itp, x_query)
+            @test derivs ≈ 2.0 .* x_query atol=1e-10
+        end
+
+        @testset "derivative2 vector" begin
+            x_query = [0.25, 0.5, 0.75]
+            derivs2 = derivative2(itp, x_query)
+            @test all(d ≈ 2.0 for d in derivs2)
+        end
+
+        @testset "Derivative allocation" begin
+            # Warm-up
+            derivative(itp, 0.5)
+            derivative2(itp, 0.5)
+
+            alloc1 = @allocated derivative(itp, 0.5)
+            alloc2 = @allocated derivative2(itp, 0.5)
+
+            @test alloc1 == 0
+            @test alloc2 == 0
+        end
+    end
+
 end # @testset "Derivatives"

@@ -288,3 +288,61 @@ macro _dispatch_extrap(pair, body)
     end
 end
 
+"""
+    @_dispatch_order order_expr op_sym body
+
+Dispatch on runtime order integer, executing body with concrete AbstractEvalOp type.
+
+Converts `order::Int` (0, 1, 2) to compile-time constant `EvalValue()`, `EvalDeriv1()`,
+or `EvalDeriv2()`. This creates a function barrier ensuring type stability downstream.
+
+# Arguments
+- `order_expr`: Expression evaluating to order (0=value, 1=first derivative, 2=second derivative)
+- `op_sym`: Symbol to bind the concrete EvalOp type
+- `body`: Expression to execute with `op_sym` bound to concrete type
+
+# Example
+```julia
+@_dispatch_order order op begin
+    _cubic_interp_impl(x, y, xi, op; extrap=extrap)
+end
+```
+
+Expands to:
+```julia
+let _order = order
+    if _order == 0
+        let op = EvalValue()
+            _cubic_interp_impl(x, y, xi, op; extrap=extrap)
+        end
+    elseif _order == 1
+        let op = EvalDeriv1()
+            ...
+        end
+    ...
+    end
+end
+```
+"""
+macro _dispatch_order(order_expr, op_sym, body)
+    ord_var = gensym(:order)
+    quote
+        local $(ord_var) = $(esc(order_expr))
+        if $(ord_var) == 0
+            let $(esc(op_sym)) = EvalValue()
+                $(esc(body))
+            end
+        elseif $(ord_var) == 1
+            let $(esc(op_sym)) = EvalDeriv1()
+                $(esc(body))
+            end
+        elseif $(ord_var) == 2
+            let $(esc(op_sym)) = EvalDeriv2()
+                $(esc(body))
+            end
+        else
+            throw(ArgumentError("order must be 0, 1, or 2; got $($(ord_var))"))
+        end
+    end
+end
+

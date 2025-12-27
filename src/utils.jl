@@ -9,6 +9,14 @@ Returns `(idx, x0, x1)` where:
 - `idx`: interval index in [1, length(x)-1]
 - `x0`: left boundary value x[idx]
 - `x1`: right boundary value x[idx+1]
+
+# Preconditions (caller must ensure)
+- `xi` must be validated by `_check_domain` (in [x_min, x_max] or wrapped)
+- `step(x) > 0` (ascending grid assumed)
+- `xi` must not be NaN/Inf (undefined behavior; caller's responsibility)
+
+Uses `unsafe_trunc` for ~40% faster index calculation. Safety is guaranteed by
+the preconditions and the final `clamp` which handles floating-point edge cases.
 """
 @inline function _find_interval_with_bounds(
     x::AbstractRange{FT},
@@ -18,10 +26,7 @@ Returns `(idx, x0, x1)` where:
     x_min = first(x)
     dx = Base.step(x)
 
-    # epsilon handles floating point errors (e.g., 1.999999 should map to index 2, not 1)
-    # unsafe_trunc is ~40% faster than floor(Int, ...) and safe here since:
-    # 1. xi is validated by _check_domain before reaching this point
-    # 2. clamp handles any edge cases from floating point arithmetic
+    # +10*eps prevents 1.999... → 1 rounding error; clamp handles edge cases
     idx = clamp(unsafe_trunc(Int, (xi - x_min) / dx + 1 + 10*eps(FT)), 1, n - 1)
 
     # Direct calculation to avoid expensive TwicePrecision indexing

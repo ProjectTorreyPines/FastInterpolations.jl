@@ -42,30 +42,44 @@ function linear_interp!(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    order::Int=0
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    # Manual dispatch to avoid union-splitting with 4 Val types
-    @_dispatch_extrap extrap => ev begin
-        @boundscheck _check_domain(x, x_targets, ev)
-        _linear_interp_loop!(output, x, y, x_targets, ev)
+    @_dispatch_order order op begin
+        @_dispatch_extrap extrap => ev begin
+            @boundscheck _check_domain(x, x_targets, ev)
+            _linear_interp_loop!(output, x, y, x_targets, ev, op)
+        end
     end
 end
 
 # Internal loop with Val dispatch (type-stable)
 @inline function _linear_interp_loop!(
-    output::AbstractVector{FT}, 
-    x::AbstractVector{FT}, 
-    y::AbstractVector{FT}, 
-    x_targets::AbstractVector{FT}, 
-    extrap_val::Val
-) where {FT<:AbstractFloat}
+    output::AbstractVector{FT},
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    x_targets::AbstractVector{FT},
+    extrap_val::Val,
+    op::O
+) where {FT<:AbstractFloat, O<:AbstractEvalOp}
     @inbounds for i in eachindex(x_targets, output)
-        output[i] = linear_interp(x, y, x_targets[i], extrap_val)
+        output[i] = linear_interp(x, y, x_targets[i], extrap_val, op)
     end
     return output
+end
+
+# Backward-compatible wrapper (defaults to EvalValue)
+@inline function _linear_interp_loop!(
+    output::AbstractVector{FT},
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    x_targets::AbstractVector{FT},
+    extrap_val::Val
+) where {FT<:AbstractFloat}
+    _linear_interp_loop!(output, x, y, x_targets, extrap_val, EvalValue())
 end
 
 # Optimized loop for :wrap - uses 2-stage strategy
@@ -76,20 +90,21 @@ end
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT},
-    ::Val{:wrap}
-) where {FT<:AbstractFloat}
+    ::Val{:wrap},
+    op::O
+) where {FT<:AbstractFloat, O<:AbstractEvalOp}
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
     if qmin >= x_min && qmax < x_max
         # Fast path: all queries inside domain - use extension (no wrap overhead)
         @inbounds for i in eachindex(x_targets, output)
-            output[i] = linear_interp(x, y, x_targets[i], Val(:extension))
+            output[i] = linear_interp(x, y, x_targets[i], Val(:extension), op)
         end
     else
         # Slow path: some queries outside - per-element wrap
         @inbounds for i in eachindex(x_targets, output)
-            output[i] = linear_interp(x, y, x_targets[i], Val(:wrap))
+            output[i] = linear_interp(x, y, x_targets[i], Val(:wrap), op)
         end
     end
     return output
@@ -101,18 +116,19 @@ end
     x::AbstractRange{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT},
-    ::Val{:wrap}
-) where {FT<:AbstractFloat}
+    ::Val{:wrap},
+    op::O
+) where {FT<:AbstractFloat, O<:AbstractEvalOp}
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
     if qmin >= x_min && qmax < x_max
         @inbounds for i in eachindex(x_targets, output)
-            output[i] = linear_interp(x, y, x_targets[i], Val(:extension))
+            output[i] = linear_interp(x, y, x_targets[i], Val(:extension), op)
         end
     else
         @inbounds for i in eachindex(x_targets, output)
-            output[i] = linear_interp(x, y, x_targets[i], Val(:wrap))
+            output[i] = linear_interp(x, y, x_targets[i], Val(:wrap), op)
         end
     end
     return output
@@ -124,15 +140,17 @@ end
     x::AbstractRange{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    order::Int=0
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    # Manual dispatch to avoid union-splitting with 4 Val types
-    @_dispatch_extrap extrap => ev begin
-        @boundscheck _check_domain(x, x_targets, ev)
-        _linear_interp_loop!(output, x, y, x_targets, ev)
+    @_dispatch_order order op begin
+        @_dispatch_extrap extrap => ev begin
+            @boundscheck _check_domain(x, x_targets, ev)
+            _linear_interp_loop!(output, x, y, x_targets, ev, op)
+        end
     end
 end
 
@@ -173,6 +191,136 @@ value = linear_interp(x_int, y_int, 5.5)  # Returns Float64 (not Int)
 - Uses Val dispatch for extrapolation to eliminate runtime branches
 """
 
+# ========================================
+# Internal evaluation with op parameter
+# ========================================
+
+"""
+    _linear_eval_at_point(x, y, xi, extrap, op) -> FT
+
+Core linear interpolation evaluation using kernel function.
+Supports value (EvalValue), first derivative (EvalDeriv1), and second derivative (EvalDeriv2).
+"""
+@inline function _linear_eval_at_point(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    xi::FT,
+    extrap::Val,
+    op::O
+)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
+    @boundscheck _check_domain(x, xi, extrap)
+    idx, x0, x1 = _find_interval_with_bounds(x, xi)
+    h = x1 - x0
+    dt1 = xi - x0
+    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], h, dt1)
+end
+
+# Backward-compatible wrapper (defaults to value)
+@inline function _linear_eval_at_point(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    xi::FT,
+    extrap::Val
+)::FT where {FT<:AbstractFloat}
+    _linear_eval_at_point(x, y, xi, extrap, EvalValue())
+end
+
+"""
+    _linear_eval_constant_extrap(y, is_left, op) -> FT
+
+Handle constant extrapolation: returns boundary value for EvalValue, zero for derivatives.
+"""
+@inline function _linear_eval_constant_extrap(
+    y::AbstractVector{FT},
+    is_left::Bool,
+    ::EvalValue
+)::FT where {FT<:AbstractFloat}
+    @inbounds return is_left ? y[1] : y[end]
+end
+
+@inline function _linear_eval_constant_extrap(
+    ::AbstractVector{FT},
+    ::Bool,
+    ::EvalDeriv1
+)::FT where {FT<:AbstractFloat}
+    return zero(FT)
+end
+
+@inline function _linear_eval_constant_extrap(
+    ::AbstractVector{FT},
+    ::Bool,
+    ::EvalDeriv2
+)::FT where {FT<:AbstractFloat}
+    return zero(FT)
+end
+
+"""
+    _linear_with_extrap(x, y, xi, extrap, op) -> FT
+
+Linear interpolation with extrapolation handling and op parameter.
+"""
+@inline function _linear_with_extrap(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    xi::FT,
+    ::Val{:none},
+    op::O
+)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
+    _linear_eval_at_point(x, y, xi, Val(:none), op)
+end
+
+@inline function _linear_with_extrap(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    xi::FT,
+    ::Val{:extension},
+    op::O
+)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
+    _linear_eval_at_point(x, y, xi, Val(:extension), op)
+end
+
+@inline function _linear_with_extrap(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    xi::FT,
+    ::Val{:constant},
+    op::O
+)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
+    x_min, x_max = first(x), last(x)
+    if xi < x_min
+        return _linear_eval_constant_extrap(y, true, op)
+    elseif xi > x_max
+        return _linear_eval_constant_extrap(y, false, op)
+    else
+        return _linear_eval_at_point(x, y, xi, Val(:extension), op)
+    end
+end
+
+@inline function _linear_with_extrap(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    xi::FT,
+    ::Val{:wrap},
+    op::O
+)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
+    xi_wrapped = _wrap_to_domain(xi, first(x), last(x))
+    _linear_eval_at_point(x, y, xi_wrapped, Val(:extension), op)
+end
+
+# Backward-compatible wrapper (defaults to EvalValue)
+@inline function _linear_with_extrap(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    xi::FT,
+    extrap::Val
+)::FT where {FT<:AbstractFloat}
+    _linear_with_extrap(x, y, xi, extrap, EvalValue())
+end
+
+# ========================================
+# Core implementation with Val dispatch
+# ========================================
+
 # Core implementation with Val dispatch (compile-time specialization)
 @inline function linear_interp(
     x::AbstractVector{FT},
@@ -187,18 +335,31 @@ value = linear_interp(x_int, y_int, 5.5)  # Returns Float64 (not Int)
     @inbounds return y[idx] * (one(FT) - α) + y[idx + 1] * α
 end
 
+# Core implementation with Val + op dispatch
+@inline function linear_interp(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    xi::FT,
+    extrap::Val,
+    op::O
+)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
+    _linear_with_extrap(x, y, xi, extrap, op)
+end
+
 # Public API - Symbol dispatch (converts to Val)
 @inline function linear_interp(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     xi::FT;
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    order::Int=0
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    # Manual dispatch to avoid union-splitting with 4 Val types
-    @_dispatch_extrap extrap => ev begin
-        linear_interp(x, y, xi, ev)
+    @_dispatch_order order op begin
+        @_dispatch_extrap extrap => ev begin
+            linear_interp(x, y, xi, ev, op)
+        end
     end
 end
 
@@ -207,13 +368,15 @@ end
     x::AbstractRange{FT},
     y::AbstractVector{FT},
     xi::FT;
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    order::Int=0
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    # Manual dispatch to avoid union-splitting with 4 Val types
-    @_dispatch_extrap extrap => ev begin
-        linear_interp(x, y, xi, ev)
+    @_dispatch_order order op begin
+        @_dispatch_extrap extrap => ev begin
+            linear_interp(x, y, xi, ev, op)
+        end
     end
 end
 
@@ -323,11 +486,12 @@ function linear_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    order::Int=0
 ) where {T<:Real, S<:Real}
     FT = float(T)
     output = Vector{FT}(undef, length(x_targets))
-    linear_interp!(output, x, y, x_targets; extrap)
+    linear_interp!(output, x, y, x_targets; extrap, order)
     return output
 end
 
@@ -336,12 +500,17 @@ end
 # ========================================
 
 # Internal helper for Real wrappers (type-stable)
-@inline function _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, extrap_val::Val)
+@inline function _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, extrap_val::Val, op::O) where {O<:AbstractEvalOp}
     @boundscheck _check_domain(x_float, x_targets_float, extrap_val)
     @inbounds for i in eachindex(x_targets_float, output)
-        output[i] = linear_interp(x_float, y_float, x_targets_float[i], extrap_val)
+        output[i] = linear_interp(x_float, y_float, x_targets_float[i], extrap_val, op)
     end
     return output
+end
+
+# Backward-compatible wrapper
+@inline function _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, extrap_val::Val)
+    _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, extrap_val, EvalValue())
 end
 
 # Wrapper for AbstractRange with Real types (requires conversion)
@@ -350,7 +519,8 @@ function linear_interp!(
     x::AbstractRange{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    order::Int=0
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -360,9 +530,10 @@ function linear_interp!(
     y_float = FT.(y)  # Allocate once
     x_targets_float = FT.(x_targets)
 
-    # Manual dispatch to avoid union-splitting with 4 Val types
-    @_dispatch_extrap extrap => ev begin
-        _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, ev)
+    @_dispatch_order order op begin
+        @_dispatch_extrap extrap => ev begin
+            _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, ev, op)
+        end
     end
 end
 
@@ -372,7 +543,8 @@ function linear_interp!(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    order::Int=0
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -382,9 +554,10 @@ function linear_interp!(
     y_float = FT.(y)  # Allocate once
     x_targets_float = FT.(x_targets)
 
-    # Manual dispatch to avoid union-splitting with 4 Val types
-    @_dispatch_extrap extrap => ev begin
-        _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, ev)
+    @_dispatch_order order op begin
+        @_dispatch_extrap extrap => ev begin
+            _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, ev, op)
+        end
     end
 end
 
@@ -397,21 +570,23 @@ end
     x::AbstractRange{T},
     y::AbstractVector{T},
     xi::S;
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    order::Int=0
 ) where {T<:Real, S<:Real}
     FT = float(T)
     x_float = range(FT(first(x)), FT(last(x)), length(x))
-    return linear_interp(x_float, FT.(y), FT(xi); extrap)
+    return linear_interp(x_float, FT.(y), FT(xi); extrap, order)
 end
 
 function linear_interp(
     x::AbstractRange{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    order::Int=0
 ) where {T<:Real, S<:Real}
     output = Vector{float(T)}(undef, length(x_targets))
-    return linear_interp!(output, x, y, x_targets; extrap)
+    return linear_interp!(output, x, y, x_targets; extrap, order)
 end
 
 
@@ -420,10 +595,11 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     xi::S;
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    order::Int=0
 ) where {T<:Real, S<:Real}
     FT = float(T)
-    return linear_interp(FT.(x), FT.(y), FT(xi); extrap)
+    return linear_interp(FT.(x), FT.(y), FT(xi); extrap, order)
 end
 
 # ========================================
@@ -463,7 +639,7 @@ val = itp_wrap(2.5)  # wraps to domain
 struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector{T}}
     x::X
     y::Y
-    mode::Val  # Evaluation mode: :none, :extension, :constant, or :wrap
+    mode::ExtrapVal  # Evaluation mode (concrete union for union-splitting)
 
     function LinearInterpolant(
         x::X,
@@ -527,6 +703,88 @@ function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xi::AbstractVec
     @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
     @inbounds for i in eachindex(xi_typed, output)
         output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode)
+    end
+    return output
+end
+
+# ========================================
+# Derivative Functions for LinearInterpolant
+# ========================================
+
+"""
+    derivative(itp::LinearInterpolant, xi) -> T
+
+Compute the first derivative (slope) of the linear interpolant at point `xi`.
+
+Zero-allocation for scalar queries. Returns the constant slope of the segment containing `xi`.
+
+# Example
+```julia
+itp = linear_interp(x, y)
+slope = derivative(itp, 0.5)
+```
+"""
+@inline function derivative(itp::LinearInterpolant{T}, xi::T) where {T<:AbstractFloat}
+    @boundscheck _check_domain(itp.x, xi, itp.mode)
+    _linear_with_extrap(itp.x, itp.y, xi, itp.mode, EvalDeriv1())
+end
+
+@inline function derivative(itp::LinearInterpolant{T}, xi::S) where {T<:AbstractFloat, S<:Real}
+    xi_t = T(xi)
+    @boundscheck _check_domain(itp.x, xi_t, itp.mode)
+    _linear_with_extrap(itp.x, itp.y, xi_t, itp.mode, EvalDeriv1())
+end
+
+"""
+    derivative(itp::LinearInterpolant, xi::AbstractVector) -> Vector{T}
+
+Compute the first derivative at multiple points.
+"""
+function derivative(itp::LinearInterpolant{T}, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
+    xi_typed = S === T ? xi : T.(xi)
+    output = Vector{T}(undef, length(xi_typed))
+    @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
+    @inbounds for i in eachindex(xi_typed, output)
+        output[i] = _linear_with_extrap(itp.x, itp.y, xi_typed[i], itp.mode, EvalDeriv1())
+    end
+    return output
+end
+
+"""
+    derivative2(itp::LinearInterpolant, xi) -> T
+
+Compute the second derivative of the linear interpolant at point `xi`.
+
+Always returns zero (linear functions have no curvature).
+
+# Example
+```julia
+itp = linear_interp(x, y)
+curvature = derivative2(itp, 0.5)  # Always 0.0
+```
+"""
+@inline function derivative2(itp::LinearInterpolant{T}, xi::T) where {T<:AbstractFloat}
+    @boundscheck _check_domain(itp.x, xi, itp.mode)
+    _linear_with_extrap(itp.x, itp.y, xi, itp.mode, EvalDeriv2())
+end
+
+@inline function derivative2(itp::LinearInterpolant{T}, xi::S) where {T<:AbstractFloat, S<:Real}
+    xi_t = T(xi)
+    @boundscheck _check_domain(itp.x, xi_t, itp.mode)
+    _linear_with_extrap(itp.x, itp.y, xi_t, itp.mode, EvalDeriv2())
+end
+
+"""
+    derivative2(itp::LinearInterpolant, xi::AbstractVector) -> Vector{T}
+
+Compute the second derivative at multiple points (always zero for linear).
+"""
+function derivative2(itp::LinearInterpolant{T}, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
+    xi_typed = S === T ? xi : T.(xi)
+    output = Vector{T}(undef, length(xi_typed))
+    @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
+    @inbounds for i in eachindex(xi_typed, output)
+        output[i] = _linear_with_extrap(itp.x, itp.y, xi_typed[i], itp.mode, EvalDeriv2())
     end
     return output
 end

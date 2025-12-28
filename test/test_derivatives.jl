@@ -411,33 +411,33 @@ end # Derivative Kernels
         end
     end
 
-    @testset "CubicInterpolant derivative methods" begin
+    @testset "CubicInterpolant itp(xi; order=N) API" begin
         x = collect(0.0:0.1:1.0)
         y = x .^ 2
         bc = BCPair(D2(2.0), D2(2.0))
         itp = cubic_interp(x, y; bc=bc)
 
-        @testset "derivative scalar" begin
-            @test derivative(itp, 0.5) ≈ 1.0 atol=1e-10
-            @test derivative(itp, 0.0) ≈ 0.0 atol=1e-10
-            @test derivative(itp, 1.0) ≈ 2.0 atol=1e-10
+        @testset "order=1 scalar" begin
+            @test itp(0.5; order=1) ≈ 1.0 atol=1e-10
+            @test itp(0.0; order=1) ≈ 0.0 atol=1e-10
+            @test itp(1.0; order=1) ≈ 2.0 atol=1e-10
         end
 
-        @testset "derivative2 scalar" begin
-            @test derivative2(itp, 0.5) ≈ 2.0 atol=1e-10
-            @test derivative2(itp, 0.0) ≈ 2.0 atol=1e-10
-            @test derivative2(itp, 1.0) ≈ 2.0 atol=1e-10
+        @testset "order=2 scalar" begin
+            @test itp(0.5; order=2) ≈ 2.0 atol=1e-10
+            @test itp(0.0; order=2) ≈ 2.0 atol=1e-10
+            @test itp(1.0; order=2) ≈ 2.0 atol=1e-10
         end
 
-        @testset "derivative vector" begin
+        @testset "order=1 vector" begin
             x_query = [0.25, 0.5, 0.75]
-            derivs = derivative(itp, x_query)
+            derivs = itp(x_query; order=1)
             @test derivs ≈ 2.0 .* x_query atol=1e-10
         end
 
-        @testset "derivative2 vector" begin
+        @testset "order=2 vector" begin
             x_query = [0.25, 0.5, 0.75]
-            derivs2 = derivative2(itp, x_query)
+            derivs2 = itp(x_query; order=2)
             @test all(d ≈ 2.0 for d in derivs2)
         end
     end
@@ -454,16 +454,18 @@ end # Derivative Kernels
             @test itp(0.75) == itp(0.75; order=0)
         end
 
-        @testset "order=1 matches existing derivative function" begin
-            @test itp(0.5; order=1) == derivative(itp, 0.5)
-            @test itp(0.0; order=1) == derivative(itp, 0.0)
-            @test itp(1.0; order=1) == derivative(itp, 1.0)
+        @testset "order=1 returns first derivative" begin
+            # f(x) = x², f'(x) = 2x
+            @test itp(0.5; order=1) ≈ 1.0 atol=1e-10
+            @test itp(0.0; order=1) ≈ 0.0 atol=1e-10
+            @test itp(1.0; order=1) ≈ 2.0 atol=1e-10
         end
 
-        @testset "order=2 matches existing derivative2 function" begin
-            @test itp(0.5; order=2) == derivative2(itp, 0.5)
-            @test itp(0.0; order=2) == derivative2(itp, 0.0)
-            @test itp(1.0; order=2) == derivative2(itp, 1.0)
+        @testset "order=2 returns second derivative" begin
+            # f(x) = x², f''(x) = 2
+            @test itp(0.5; order=2) ≈ 2.0 atol=1e-10
+            @test itp(0.0; order=2) ≈ 2.0 atol=1e-10
+            @test itp(1.0; order=2) ≈ 2.0 atol=1e-10
         end
 
         @testset "Real input works with order keyword" begin
@@ -508,8 +510,8 @@ end # Derivative Kernels
             @test itp(0.5; order=1) isa Float64
             @test itp(0.5; order=2) isa Float64
 
-            # order=1 should match derivative
-            @test itp(0.5; order=1) ≈ derivative(itp, 0.5)
+            # order=1 gives first derivative (approximately cos(0.5) for sin)
+            @test itp(0.5; order=1) ≈ cos(0.5) atol=0.01
         end
     end
 
@@ -524,11 +526,11 @@ end # Derivative Kernels
         @test itp(1.0; order=1) isa Float64
         @test itp(1.0; order=2) isa Float64
 
-        # order=1 should match derivative
-        @test itp(1.0; order=1) ≈ derivative(itp, 1.0)
+        # order=1 gives first derivative (cos(1.0) for sin)
+        @test itp(1.0; order=1) ≈ cos(1.0) atol=0.01
 
-        # Wrap around domain
-        @test itp(7.0; order=1) ≈ derivative(itp, 7.0)
+        # Wrap around domain works
+        @test itp(7.0; order=1) ≈ cos(7.0 - 2π) atol=0.01
     end
 
 end # Cubic Derivatives
@@ -662,35 +664,35 @@ end # Cubic Derivatives
         end
     end
 
-    @testset "LinearInterpolant derivative methods" begin
+    @testset "LinearInterpolant itp(xi; order=N) API" begin
         x = [0.0, 1.0, 3.0]
         y = [0.0, 2.0, 4.0]  # slopes: 2.0, 1.0
         itp = linear_interp(x, y)
 
-        @testset "derivative scalar" begin
-            @test derivative(itp, 0.5) ≈ 2.0   # first segment
-            @test derivative(itp, 2.0) ≈ 1.0   # second segment
-            @test derivative(itp, 0.0) ≈ 2.0   # left boundary
+        @testset "order=1 scalar" begin
+            @test itp(0.5; order=1) ≈ 2.0   # first segment
+            @test itp(2.0; order=1) ≈ 1.0   # second segment
+            @test itp(0.0; order=1) ≈ 2.0   # left boundary
         end
 
-        @testset "derivative2 scalar" begin
+        @testset "order=2 scalar" begin
             # Always zero for linear
-            @test derivative2(itp, 0.5) ≈ 0.0
-            @test derivative2(itp, 2.0) ≈ 0.0
+            @test itp(0.5; order=2) ≈ 0.0
+            @test itp(2.0; order=2) ≈ 0.0
         end
 
-        @testset "derivative vector" begin
+        @testset "order=1 vector" begin
             x_query = [0.25, 0.75, 1.5, 2.5]
-            derivs = derivative(itp, x_query)
+            derivs = itp(x_query; order=1)
             @test derivs[1] ≈ 2.0
             @test derivs[2] ≈ 2.0
             @test derivs[3] ≈ 1.0
             @test derivs[4] ≈ 1.0
         end
 
-        @testset "derivative2 vector" begin
+        @testset "order=2 vector" begin
             x_query = [0.25, 0.75, 1.5, 2.5]
-            derivs2 = derivative2(itp, x_query)
+            derivs2 = itp(x_query; order=2)
             @test all(d ≈ 0.0 for d in derivs2)
         end
     end
@@ -723,16 +725,19 @@ end # Cubic Derivatives
             @test litp(1.5) == litp(1.5; order=0)
         end
 
-        @testset "order=1 matches existing derivative function" begin
-            @test litp(0.5; order=1) == derivative(litp, 0.5)
-            @test litp(0.25; order=1) == derivative(litp, 0.25)
-            @test litp(1.5; order=1) == derivative(litp, 1.5)
+        @testset "order=1 returns correct slopes" begin
+            # Interval [0,1]: slope = (2-0)/(1-0) = 2.0
+            @test litp(0.5; order=1) ≈ 2.0
+            @test litp(0.25; order=1) ≈ 2.0
+            # Interval [1,2]: slope = (6-2)/(2-1) = 4.0
+            @test litp(1.5; order=1) ≈ 4.0
         end
 
-        @testset "order=2 matches existing derivative2 function" begin
-            @test litp(0.5; order=2) == derivative2(litp, 0.5)
-            @test litp(1.0; order=2) == derivative2(litp, 1.0)
-            @test litp(1.5; order=2) == derivative2(litp, 1.5)
+        @testset "order=2 returns zero" begin
+            # Linear interpolation has no curvature
+            @test litp(0.5; order=2) === 0.0
+            @test litp(1.0; order=2) === 0.0
+            @test litp(1.5; order=2) === 0.0
         end
 
         @testset "order=1 returns correct slopes" begin
@@ -805,36 +810,36 @@ end # Linear Derivatives
 
         @testset "First derivative continuity at boundaries" begin
             # Derivative at left boundary should match derivative at right boundary
-            d_left = derivative(itp, ε)
-            d_right = derivative(itp, 2π - ε)
+            d_left = itp(ε; order=1)
+            d_right = itp(2π - ε; order=1)
 
             # For sin(x), d/dx = cos(x), so cos(0) ≈ cos(2π) ≈ 1
             @test d_left ≈ d_right atol=1e-4
 
-            # Also test using order parameter
-            d_left_order = cubic_interp(x, y, ε; bc=PeriodicBC(), order=1)
-            d_right_order = cubic_interp(x, y, 2π - ε; bc=PeriodicBC(), order=1)
-            @test d_left_order ≈ d_right_order atol=1e-4
+            # Also test using 4-arg API
+            d_left_4arg = cubic_interp(x, y, ε; bc=PeriodicBC(), order=1)
+            d_right_4arg = cubic_interp(x, y, 2π - ε; bc=PeriodicBC(), order=1)
+            @test d_left_4arg ≈ d_right_4arg atol=1e-4
         end
 
         @testset "Second derivative continuity at boundaries" begin
-            d2_left = derivative2(itp, ε)
-            d2_right = derivative2(itp, 2π - ε)
+            d2_left = itp(ε; order=2)
+            d2_right = itp(2π - ε; order=2)
 
             # For sin(x), d²/dx² = -sin(x), so -sin(0) ≈ -sin(2π) ≈ 0
             @test d2_left ≈ d2_right atol=1e-4
 
-            # Also test using order parameter
-            d2_left_order = cubic_interp(x, y, ε; bc=PeriodicBC(), order=2)
-            d2_right_order = cubic_interp(x, y, 2π - ε; bc=PeriodicBC(), order=2)
-            @test d2_left_order ≈ d2_right_order atol=1e-4
+            # Also test using 4-arg API
+            d2_left_4arg = cubic_interp(x, y, ε; bc=PeriodicBC(), order=2)
+            d2_right_4arg = cubic_interp(x, y, 2π - ε; bc=PeriodicBC(), order=2)
+            @test d2_left_4arg ≈ d2_right_4arg atol=1e-4
         end
 
         @testset "Derivative at wrap point" begin
             # Test querying exactly at 0 and 2π (they should be equivalent)
-            d_at_zero = derivative(itp, 0.0)
+            d_at_zero = itp(0.0; order=1)
             # Query outside domain wraps to inside
-            d_at_2pi_plus = derivative(itp, 2π + ε)
+            d_at_2pi_plus = itp(2π + ε; order=1)
 
             @test d_at_zero ≈ d_at_2pi_plus atol=1e-4
         end
@@ -847,13 +852,13 @@ end # Linear Derivatives
 
             # At x = π/2: cos(π/2) = 0, cos'(π/2) = -sin(π/2) = -1, cos''(π/2) = -cos(π/2) = 0
             @test itp_cos(π/2) ≈ 0.0 atol=1e-3
-            @test derivative(itp_cos, π/2) ≈ -1.0 atol=1e-2
-            @test derivative2(itp_cos, π/2) ≈ 0.0 atol=1e-2
+            @test itp_cos(π/2; order=1) ≈ -1.0 atol=1e-2
+            @test itp_cos(π/2; order=2) ≈ 0.0 atol=1e-2
 
             # At x = π: cos(π) = -1, cos'(π) = 0, cos''(π) = 1
             @test itp_cos(π) ≈ -1.0 atol=1e-3
-            @test derivative(itp_cos, π) ≈ 0.0 atol=1e-2
-            @test derivative2(itp_cos, π) ≈ 1.0 atol=1e-2
+            @test itp_cos(π; order=1) ≈ 0.0 atol=1e-2
+            @test itp_cos(π; order=2) ≈ 1.0 atol=1e-2
         end
     end
 
@@ -867,16 +872,16 @@ end # Linear Derivatives
             itp = cubic_interp(x, y; bc=bc)
 
             # At interior knot (x=0.5), derivative should be well-defined
-            @test derivative(itp, 0.5) ≈ 1.0 atol=1e-10  # f'(0.5) = 2*0.5 = 1
+            @test itp(0.5; order=1) ≈ 1.0 atol=1e-10  # f'(0.5) = 2*0.5 = 1
 
             # At boundaries
-            @test derivative(itp, 0.0) ≈ 0.0 atol=1e-10  # f'(0) = 0
-            @test derivative(itp, 1.0) ≈ 2.0 atol=1e-10  # f'(1) = 2
+            @test itp(0.0; order=1) ≈ 0.0 atol=1e-10  # f'(0) = 0
+            @test itp(1.0; order=1) ≈ 2.0 atol=1e-10  # f'(1) = 2
 
             # Second derivative should be constant (=2) for quadratic
-            @test derivative2(itp, 0.0) ≈ 2.0 atol=1e-10
-            @test derivative2(itp, 0.5) ≈ 2.0 atol=1e-10
-            @test derivative2(itp, 1.0) ≈ 2.0 atol=1e-10
+            @test itp(0.0; order=2) ≈ 2.0 atol=1e-10
+            @test itp(0.5; order=2) ≈ 2.0 atol=1e-10
+            @test itp(1.0; order=2) ≈ 2.0 atol=1e-10
         end
 
         @testset "Linear at knot points" begin
@@ -885,12 +890,12 @@ end # Linear Derivatives
             itp = linear_interp(x, y)
 
             # At interior knots, derivative uses the right segment
-            @test derivative(itp, 1.0) ≈ 3.0  # slope of [1,2] segment
-            @test derivative(itp, 2.0) ≈ 5.0  # slope of [2,3] segment
+            @test itp(1.0; order=1) ≈ 3.0  # slope of [1,2] segment
+            @test itp(2.0; order=1) ≈ 5.0  # slope of [2,3] segment
 
             # At boundaries
-            @test derivative(itp, 0.0) ≈ 1.0  # slope of first segment
-            @test derivative(itp, 3.0) ≈ 5.0  # slope of last segment (at right boundary)
+            @test itp(0.0; order=1) ≈ 1.0  # slope of first segment
+            @test itp(3.0; order=1) ≈ 5.0  # slope of last segment (at right boundary)
         end
 
         @testset "Derivative consistency across knots" begin
@@ -902,9 +907,9 @@ end # Linear Derivatives
 
             ε = 1e-8
             # At x=1: f'(1) = 3*1² = 3
-            d_before = derivative(itp, 1.0 - ε)
-            d_after = derivative(itp, 1.0 + ε)
-            d_at = derivative(itp, 1.0)
+            d_before = itp(1.0 - ε; order=1)
+            d_after = itp(1.0 + ε; order=1)
+            d_at = itp(1.0; order=1)
 
             # All should be approximately equal (C1 continuity)
             @test d_before ≈ d_at atol=1e-4
@@ -925,17 +930,17 @@ end # Derivative Boundary Behavior
         itp = cubic_interp(x, y)
 
         # Scalar queries
-        @test @inferred(derivative(itp, 0.5)) isa Float64
-        @test @inferred(derivative2(itp, 0.5)) isa Float64
+        @test @inferred(itp(0.5; order=1)) isa Float64
+        @test @inferred(itp(0.5; order=2)) isa Float64
 
         # With different input type (converts)
-        @test @inferred(derivative(itp, 0.5f0)) isa Float64
-        @test @inferred(derivative2(itp, 0.5f0)) isa Float64
+        @test @inferred(itp(0.5f0; order=1)) isa Float64
+        @test @inferred(itp(0.5f0; order=2)) isa Float64
 
         # Vector queries
         x_query = [0.25, 0.5, 0.75]
-        @test @inferred(derivative(itp, x_query)) isa Vector{Float64}
-        @test @inferred(derivative2(itp, x_query)) isa Vector{Float64}
+        @test @inferred(itp(x_query; order=1)) isa Vector{Float64}
+        @test @inferred(itp(x_query; order=2)) isa Vector{Float64}
     end
 
     @testset "Linear derivative type inference" begin
@@ -944,17 +949,17 @@ end # Derivative Boundary Behavior
         itp = linear_interp(x, y)
 
         # Scalar queries
-        @test @inferred(derivative(itp, 0.5)) isa Float64
-        @test @inferred(derivative2(itp, 0.5)) isa Float64
+        @test @inferred(itp(0.5; order=1)) isa Float64
+        @test @inferred(itp(0.5; order=2)) isa Float64
 
         # With different input type
-        @test @inferred(derivative(itp, 0.5f0)) isa Float64
-        @test @inferred(derivative2(itp, 0.5f0)) isa Float64
+        @test @inferred(itp(0.5f0; order=1)) isa Float64
+        @test @inferred(itp(0.5f0; order=2)) isa Float64
 
         # Vector queries
         x_query = [0.25, 0.5, 1.5]
-        @test @inferred(derivative(itp, x_query)) isa Vector{Float64}
-        @test @inferred(derivative2(itp, x_query)) isa Vector{Float64}
+        @test @inferred(itp(x_query; order=1)) isa Vector{Float64}
+        @test @inferred(itp(x_query; order=2)) isa Vector{Float64}
     end
 
     @testset "Float32 type preservation" begin
@@ -963,13 +968,13 @@ end # Derivative Boundary Behavior
 
         # Cubic
         itp_cubic = cubic_interp(x, y)
-        @test @inferred(derivative(itp_cubic, 0.5f0)) isa Float32
-        @test @inferred(derivative2(itp_cubic, 0.5f0)) isa Float32
+        @test @inferred(itp_cubic(0.5f0; order=1)) isa Float32
+        @test @inferred(itp_cubic(0.5f0; order=2)) isa Float32
 
         # Linear
         itp_linear = linear_interp(x, y)
-        @test @inferred(derivative(itp_linear, 0.5f0)) isa Float32
-        @test @inferred(derivative2(itp_linear, 0.5f0)) isa Float32
+        @test @inferred(itp_linear(0.5f0; order=1)) isa Float32
+        @test @inferred(itp_linear(0.5f0; order=2)) isa Float32
     end
 
     @testset "Order parameter type inference" begin
@@ -1011,16 +1016,16 @@ end # Derivative Type Stability
         itp = cubic_interp(x, y)
 
         # Should work without errors
-        @test derivative(itp, 0.25) isa Float64
-        @test derivative2(itp, 0.25) isa Float64
+        @test itp(0.25; order=1) isa Float64
+        @test itp(0.25; order=2) isa Float64
 
         # Linear minimum: 2 points
         x_lin = [0.0, 1.0]
         y_lin = [0.0, 2.0]
         itp_lin = linear_interp(x_lin, y_lin)
 
-        @test derivative(itp_lin, 0.5) ≈ 2.0  # slope
-        @test derivative2(itp_lin, 0.5) ≈ 0.0  # always zero
+        @test itp_lin(0.5; order=1) ≈ 2.0  # slope
+        @test itp_lin(0.5; order=2) ≈ 0.0  # always zero
     end
 
     @testset "Query at domain boundaries" begin
@@ -1029,12 +1034,12 @@ end # Derivative Type Stability
         itp = cubic_interp(x, y)
 
         # Exactly at left boundary
-        @test derivative(itp, 0.0) isa Float64
-        @test derivative2(itp, 0.0) isa Float64
+        @test itp(0.0; order=1) isa Float64
+        @test itp(0.0; order=2) isa Float64
 
         # Exactly at right boundary
-        @test derivative(itp, 1.0) isa Float64
-        @test derivative2(itp, 1.0) isa Float64
+        @test itp(1.0; order=1) isa Float64
+        @test itp(1.0; order=2) isa Float64
     end
 
     @testset "Constant function" begin
@@ -1042,12 +1047,12 @@ end # Derivative Type Stability
         y = ones(length(x)) * 5.0  # f(x) = 5
 
         itp_cubic = cubic_interp(x, y)
-        @test derivative(itp_cubic, 0.5) ≈ 0.0 atol=1e-10
-        @test derivative2(itp_cubic, 0.5) ≈ 0.0 atol=1e-10
+        @test itp_cubic(0.5; order=1) ≈ 0.0 atol=1e-10
+        @test itp_cubic(0.5; order=2) ≈ 0.0 atol=1e-10
 
         itp_linear = linear_interp(x, y)
-        @test derivative(itp_linear, 0.5) ≈ 0.0 atol=1e-10
-        @test derivative2(itp_linear, 0.5) ≈ 0.0 atol=1e-10
+        @test itp_linear(0.5; order=1) ≈ 0.0 atol=1e-10
+        @test itp_linear(0.5; order=2) ≈ 0.0 atol=1e-10
     end
 
     @testset "Linear function" begin
@@ -1056,13 +1061,13 @@ end # Derivative Type Stability
 
         # Cubic should reproduce linear exactly
         itp_cubic = cubic_interp(x, y)
-        @test derivative(itp_cubic, 0.5) ≈ 2.0 atol=1e-10
-        @test derivative2(itp_cubic, 0.5) ≈ 0.0 atol=1e-10
+        @test itp_cubic(0.5; order=1) ≈ 2.0 atol=1e-10
+        @test itp_cubic(0.5; order=2) ≈ 0.0 atol=1e-10
 
         # Linear should be exact
         itp_linear = linear_interp(x, y)
-        @test derivative(itp_linear, 0.5) ≈ 2.0 atol=1e-10
-        @test derivative2(itp_linear, 0.5) ≈ 0.0 atol=1e-10
+        @test itp_linear(0.5; order=1) ≈ 2.0 atol=1e-10
+        @test itp_linear(0.5; order=2) ≈ 0.0 atol=1e-10
     end
 
     @testset "Non-uniform grid" begin
@@ -1072,8 +1077,8 @@ end # Derivative Type Stability
         itp = cubic_interp(x, y)
 
         # Should still work reasonably
-        @test derivative(itp, 0.5) ≈ 1.0 atol=0.1  # f'(0.5) = 2*0.5 = 1
-        @test derivative2(itp, 0.5) ≈ 2.0 atol=0.2  # f''(x) = 2
+        @test itp(0.5; order=1) ≈ 1.0 atol=0.1  # f'(0.5) = 2*0.5 = 1
+        @test itp(0.5; order=2) ≈ 2.0 atol=0.2  # f''(x) = 2
     end
 
     @testset "Large grid" begin
@@ -1082,12 +1087,12 @@ end # Derivative Type Stability
         itp = cubic_interp(x, y)
 
         # Should handle large grids efficiently
-        @test derivative(itp, 5.0) ≈ cos(5.0) atol=1e-3
-        @test derivative2(itp, 5.0) ≈ -sin(5.0) atol=1e-3
+        @test itp(5.0; order=1) ≈ cos(5.0) atol=1e-3
+        @test itp(5.0; order=2) ≈ -sin(5.0) atol=1e-3
 
         # Allocation should still be zero
-        derivative(itp, 5.0)
-        alloc = @allocated derivative(itp, 5.0)
+        itp(5.0; order=1)
+        alloc = @allocated itp(5.0; order=1)
         @test alloc <= DERIV_ALLOC_THRESHOLD
     end
 
@@ -1119,18 +1124,18 @@ end # Derivative Edge Cases
         @test alloc2 == 0
     end
 
-    @testset "CubicInterpolant derivative allocation" begin
+    @testset "CubicInterpolant order keyword allocation" begin
         x = collect(0.0:0.1:1.0)
         y = x .^ 2
         bc = BCPair(D2(2.0), D2(2.0))
         itp = cubic_interp(x, y; bc=bc)
 
         # Warm-up
-        derivative(itp, 0.5)
-        derivative2(itp, 0.5)
+        itp(0.5; order=1)
+        itp(0.5; order=2)
 
-        alloc1 = @allocated derivative(itp, 0.5)
-        alloc2 = @allocated derivative2(itp, 0.5)
+        alloc1 = @allocated itp(0.5; order=1)
+        alloc2 = @allocated itp(0.5; order=2)
 
         @test alloc1 == 0
         @test alloc2 == 0
@@ -1173,17 +1178,17 @@ end # Derivative Edge Cases
         @test alloc2 <= DERIV_ALLOC_THRESHOLD
     end
 
-    @testset "LinearInterpolant derivative allocation" begin
+    @testset "LinearInterpolant order keyword allocation" begin
         x = [0.0, 1.0, 3.0]
         y = [0.0, 2.0, 4.0]
         itp = linear_interp(x, y)
 
         # Warm-up
-        derivative(itp, 0.5)
-        derivative2(itp, 0.5)
+        itp(0.5; order=1)
+        itp(0.5; order=2)
 
-        alloc1 = @allocated derivative(itp, 0.5)
-        alloc2 = @allocated derivative2(itp, 0.5)
+        alloc1 = @allocated itp(0.5; order=1)
+        alloc2 = @allocated itp(0.5; order=2)
 
         @test alloc1 == 0
         @test alloc2 == 0
@@ -1208,12 +1213,12 @@ end # Derivative Edge Cases
 
     @testset "Function-wrapped allocation tests" begin
         # Function-wrapped tests for type stability
-        function test_derivative_alloc(itp, xi::T) where {T}
-            derivative(itp, xi)
+        function test_deriv1_alloc(itp, xi::T) where {T}
+            itp(xi; order=1)
         end
 
-        function test_derivative2_alloc(itp, xi::T) where {T}
-            derivative2(itp, xi)
+        function test_deriv2_alloc(itp, xi::T) where {T}
+            itp(xi; order=2)
         end
 
         function test_order_alloc(cache, y, xi, order::Int)
@@ -1227,14 +1232,14 @@ end # Derivative Edge Cases
 
             # Multiple warmup iterations
             for _ in 1:5
-                test_derivative_alloc(itp, 0.5)
-                test_derivative2_alloc(itp, 0.5)
+                test_deriv1_alloc(itp, 0.5)
+                test_deriv2_alloc(itp, 0.5)
             end
 
             # Test at multiple query points
             for xi in [0.1, 0.25, 0.5, 0.75, 0.9]
-                alloc1 = @allocated test_derivative_alloc(itp, xi)
-                alloc2 = @allocated test_derivative2_alloc(itp, xi)
+                alloc1 = @allocated test_deriv1_alloc(itp, xi)
+                alloc2 = @allocated test_deriv2_alloc(itp, xi)
 
                 @test alloc1 <= DERIV_ALLOC_THRESHOLD
                 @test alloc2 <= DERIV_ALLOC_THRESHOLD
@@ -1270,16 +1275,16 @@ end # Derivative Edge Cases
 
         # Warmup
         for _ in 1:10
-            derivative(itp, 0.5)
-            derivative2(itp, 0.5)
+            itp(0.5; order=1)
+            itp(0.5; order=2)
         end
 
         # 100 repeated calls should all be zero-allocation
         total_alloc1 = 0
         total_alloc2 = 0
         for _ in 1:100
-            total_alloc1 += @allocated derivative(itp, 0.5)
-            total_alloc2 += @allocated derivative2(itp, 0.5)
+            total_alloc1 += @allocated itp(0.5; order=1)
+            total_alloc2 += @allocated itp(0.5; order=2)
         end
 
         @test total_alloc1 <= DERIV_ALLOC_THRESHOLD * 100
@@ -1293,12 +1298,12 @@ end # Derivative Edge Cases
 
         # Warmup
         for _ in 1:5
-            derivative(itp, 0.5f0)
-            derivative2(itp, 0.5f0)
+            itp(0.5f0; order=1)
+            itp(0.5f0; order=2)
         end
 
-        alloc1 = @allocated derivative(itp, 0.5f0)
-        alloc2 = @allocated derivative2(itp, 0.5f0)
+        alloc1 = @allocated itp(0.5f0; order=1)
+        alloc2 = @allocated itp(0.5f0; order=2)
 
         @test alloc1 <= DERIV_ALLOC_THRESHOLD
         @test alloc2 <= DERIV_ALLOC_THRESHOLD
@@ -1319,13 +1324,13 @@ end # Derivative Edge Cases
             itp = cubic_interp(x, y; bc=bc)
 
             # Warmup
-            derivative(itp, 0.5)
-            derivative2(itp, 0.5)
-            derivative(itp, 0.5)
-            derivative2(itp, 0.5)
+            itp(0.5; order=1)
+            itp(0.5; order=2)
+            itp(0.5; order=1)
+            itp(0.5; order=2)
 
-            alloc1 = @allocated derivative(itp, 0.5)
-            alloc2 = @allocated derivative2(itp, 0.5)
+            alloc1 = @allocated itp(0.5; order=1)
+            alloc2 = @allocated itp(0.5; order=2)
 
             @test alloc1 <= DERIV_ALLOC_THRESHOLD
             @test alloc2 <= DERIV_ALLOC_THRESHOLD
@@ -1340,13 +1345,13 @@ end # Derivative Edge Cases
             itp = cubic_interp(x, y; extrap=extrap)
 
             # Warmup
-            derivative(itp, 0.5)
-            derivative2(itp, 0.5)
-            derivative(itp, 0.5)
-            derivative2(itp, 0.5)
+            itp(0.5; order=1)
+            itp(0.5; order=2)
+            itp(0.5; order=1)
+            itp(0.5; order=2)
 
-            alloc1 = @allocated derivative(itp, 0.5)
-            alloc2 = @allocated derivative2(itp, 0.5)
+            alloc1 = @allocated itp(0.5; order=1)
+            alloc2 = @allocated itp(0.5; order=2)
 
             @test alloc1 <= DERIV_ALLOC_THRESHOLD
             @test alloc2 <= DERIV_ALLOC_THRESHOLD
@@ -1361,19 +1366,19 @@ end # Derivative Edge Cases
 
         # Warmup
         for _ in 1:5
-            derivative(itp, 1.0)
-            derivative2(itp, 1.0)
+            itp(1.0; order=1)
+            itp(1.0; order=2)
         end
 
-        alloc1 = @allocated derivative(itp, 1.0)
-        alloc2 = @allocated derivative2(itp, 1.0)
+        alloc1 = @allocated itp(1.0; order=1)
+        alloc2 = @allocated itp(1.0; order=2)
 
         @test alloc1 <= DERIV_ALLOC_THRESHOLD
         @test alloc2 <= DERIV_ALLOC_THRESHOLD
 
         # Query outside domain (wraps)
-        alloc1_wrap = @allocated derivative(itp, 7.0)
-        alloc2_wrap = @allocated derivative2(itp, 7.0)
+        alloc1_wrap = @allocated itp(7.0; order=1)
+        alloc2_wrap = @allocated itp(7.0; order=2)
 
         @test alloc1_wrap <= DERIV_ALLOC_THRESHOLD
         @test alloc2_wrap <= DERIV_ALLOC_THRESHOLD
@@ -1408,23 +1413,11 @@ end # Derivative Allocations
 
                     # Warmup
                     for _ in 1:3
-                        if order == 0
-                            itp(0.5)
-                        elseif order == 1
-                            derivative(itp, 0.5)
-                        else
-                            derivative2(itp, 0.5)
-                        end
+                        itp(0.5; order=order)
                     end
 
                     # Measure
-                    if order == 0
-                        alloc = @allocated itp(0.5)
-                    elseif order == 1
-                        alloc = @allocated derivative(itp, 0.5)
-                    else
-                        alloc = @allocated derivative2(itp, 0.5)
-                    end
+                    alloc = @allocated itp(0.5; order=order)
 
                     @test alloc <= DERIV_ALLOC_THRESHOLD
                 end
@@ -1441,23 +1434,11 @@ end # Derivative Allocations
         for order in 0:2
             # Warmup
             for _ in 1:3
-                if order == 0
-                    itp(1.0)
-                elseif order == 1
-                    derivative(itp, 1.0)
-                else
-                    derivative2(itp, 1.0)
-                end
+                itp(1.0; order=order)
             end
 
             # Measure
-            if order == 0
-                alloc = @allocated itp(1.0)
-            elseif order == 1
-                alloc = @allocated derivative(itp, 1.0)
-            else
-                alloc = @allocated derivative2(itp, 1.0)
-            end
+            alloc = @allocated itp(1.0; order=order)
 
             @test alloc <= DERIV_ALLOC_THRESHOLD
         end
@@ -1475,23 +1456,11 @@ end # Derivative Allocations
             for order in 0:2
                 # Warmup
                 for _ in 1:3
-                    if order == 0
-                        itp(0.5)
-                    elseif order == 1
-                        derivative(itp, 0.5)
-                    else
-                        derivative2(itp, 0.5)
-                    end
+                    itp(0.5; order=order)
                 end
 
                 # Measure
-                if order == 0
-                    alloc = @allocated itp(0.5)
-                elseif order == 1
-                    alloc = @allocated derivative(itp, 0.5)
-                else
-                    alloc = @allocated derivative2(itp, 0.5)
-                end
+                alloc = @allocated itp(0.5; order=order)
 
                 @test alloc <= DERIV_ALLOC_THRESHOLD
             end
@@ -1507,14 +1476,14 @@ end # Derivative Allocations
 
             # Warmup
             for _ in 1:3
-                itp(0.5)
-                derivative(itp, 0.5)
-                derivative2(itp, 0.5)
+                itp(0.5; order=0)
+                itp(0.5; order=1)
+                itp(0.5; order=2)
             end
 
-            alloc0 = @allocated itp(0.5)
-            alloc1 = @allocated derivative(itp, 0.5)
-            alloc2 = @allocated derivative2(itp, 0.5)
+            alloc0 = @allocated itp(0.5; order=0)
+            alloc1 = @allocated itp(0.5; order=1)
+            alloc2 = @allocated itp(0.5; order=2)
 
             @test alloc0 <= DERIV_ALLOC_THRESHOLD
             @test alloc1 <= DERIV_ALLOC_THRESHOLD

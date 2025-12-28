@@ -9,7 +9,7 @@ Adds 1st derivative (slope) and 2nd derivative (curvature) computation to `FastI
 **Goals:**
 - **Zero-allocation** and **type stability**
 - **Consistent API** for `linear_interp` and `cubic_interp`
-- Support `order` parameter across all API variants (allocating, in-place, cache-based, interpolant)
+- Support `deriv` parameter across all API variants (allocating, in-place, cache-based, interpolant)
 
 ---
 
@@ -69,7 +69,7 @@ $$
 
 ### 3.1. Dispatch Hierarchy (Core Design)
 
-**`order` and `extrap` are runtime values that must be converted to compile-time constants for type stability. Each is dispatched exactly once per call chain.**
+**`deriv` and `extrap` are runtime values that must be converted to compile-time constants for type stability. Each is dispatched exactly once per call chain.**
 
 **Pattern A: Nested dispatch at public API** (most common)
 
@@ -77,7 +77,7 @@ Both dispatches happen together at the entry point:
 
 ```julia
 # src/linear_interp.jl, src/cubic_eval.jl
-@_dispatch_order order => op begin
+@_dispatch_deriv deriv => op begin
     @_dispatch_extrap extrap => ev begin
         # Both op and ev are now concrete types
         _eval_with_bc(cache, y, h, z, xi, ev, op)
@@ -87,11 +87,11 @@ end
 
 **Pattern B: Separated dispatch** (for complex routing)
 
-`@_dispatch_order` at entry, `@_dispatch_extrap` deeper in call chain:
+`@_dispatch_deriv` at entry, `@_dispatch_extrap` deeper in call chain:
 
 ```julia
 # src/cubic_interp.jl - entry point
-@_dispatch_order order => op begin
+@_dispatch_deriv deriv => op begin
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic!(output, x, y, x_query, autocache, op)
     end
@@ -113,8 +113,8 @@ end
 ┌─────────────────────────────────────────────────────────────────┐
 │  Public API                                                     │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │  @_dispatch_order order => op begin                         ││
-│  │      # order::Int → EvalValue()/EvalDeriv1()/EvalDeriv2()   ││
+│  │  @_dispatch_deriv deriv => op begin                         ││
+│  │      # deriv::Int → EvalValue()/EvalDeriv1()/EvalDeriv2()   ││
 │  │                                                             ││
 │  │      @_dispatch_extrap extrap => ev begin  ← often nested   ││
 │  │          # extrap::Symbol → Val{:none}/Val{:constant}/...   ││
@@ -134,7 +134,7 @@ end
 
 **Key Principles:**
 1. Each dispatch macro converts runtime value to compile-time constant **once per call chain**
-2. Nesting is fine - Julia compiles all combinations (3 orders × 4 extrap modes = 12 specializations)
+2. Nesting is fine - Julia compiles all combinations (3 deriv values × 4 extrap modes = 12 specializations)
 3. Internal functions receive concrete types via type parameter `op::O where {O<:AbstractEvalOp}`
 
 ### 3.2. Module Structure
@@ -198,32 +198,32 @@ const ExtrapVal = Union{Val{:none}, Val{:constant}, Val{:extension}, Val{:wrap}}
 
 ### 3.4. Dispatch Macro (`src/utils.jl`)
 
-Converts `order::Int` to compile-time constant:
+Converts `deriv::Int` to compile-time constant:
 
 ```julia
-macro _dispatch_order(pair, body)
-    # Parse pair: order => op becomes Expr(:call, :(=>), :order, :op)
+macro _dispatch_deriv(pair, body)
+    # Parse pair: deriv => op becomes Expr(:call, :(=>), :deriv, :op)
     pair.head === :call && pair.args[1] === :(=>) ||
-        error("@_dispatch_order expects `order => op`, got: $pair")
-    order_expr = pair.args[2]
+        error("@_dispatch_deriv expects `deriv => op`, got: $pair")
+    deriv_expr = pair.args[2]
     op_sym = pair.args[3]
-    ord_var = gensym(:order)
+    deriv_var = gensym(:deriv)
     quote
-        local $(ord_var) = $(esc(order_expr))
-        if $(ord_var) == 0
+        local $(deriv_var) = $(esc(deriv_expr))
+        if $(deriv_var) == 0
             let $(esc(op_sym)) = EvalValue()
                 $(esc(body))
             end
-        elseif $(ord_var) == 1
+        elseif $(deriv_var) == 1
             let $(esc(op_sym)) = EvalDeriv1()
                 $(esc(body))
             end
-        elseif $(ord_var) == 2
+        elseif $(deriv_var) == 2
             let $(esc(op_sym)) = EvalDeriv2()
                 $(esc(body))
             end
         else
-            throw(ArgumentError("order must be 0, 1, or 2; got $($(ord_var))"))
+            throw(ArgumentError("deriv must be 0, 1, or 2; got $($(deriv_var))"))
         end
     end
 end
@@ -231,7 +231,7 @@ end
 
 **Usage:**
 ```julia
-@_dispatch_order order => op begin
+@_dispatch_deriv deriv => op begin
     _cubic_interp_impl(..., op)
 end
 ```
@@ -446,9 +446,9 @@ end
 
 ### 5.1. API Coverage Matrix
 
-`order` parameter supported across **all API variants**:
+`deriv` parameter supported across **all API variants**:
 
-| API | Scalar | Vector | `order` Support |
+| API | Scalar | Vector | `deriv` Support |
 |-----|--------|--------|-----------------|
 | `linear_interp(x, y, xi)` | Yes | Yes | ✅ |
 | `linear_interp!(out, x, y, xi)` | Yes | Yes | ✅ |
@@ -461,14 +461,14 @@ end
 
 ### 5.2. Example Call Flow
 
-**Cubic spline with order=1:**
+**Cubic spline with deriv=1:**
 
 ```julia
 # User calls:
-cubic_interp(x, y, xi; order=1, extrap=:constant)
+cubic_interp(x, y, xi; deriv=1, extrap=:constant)
 
 # Expands to:
-@_dispatch_order 1 => op begin       # op = EvalDeriv1() (concrete!)
+@_dispatch_deriv 1 => op begin       # op = EvalDeriv1() (concrete!)
     _cubic_interp_impl(x, y, xi, op; extrap=:constant, ...)
 end
 
@@ -539,9 +539,9 @@ end
     bc = BCPair(D2(2.0), D2(2.0))
     xi = 0.5
 
-    @test cubic_interp(x, y, xi; bc=bc, order=0) ≈ xi^2 atol=1e-10
-    @test cubic_interp(x, y, xi; bc=bc, order=1) ≈ 2*xi atol=1e-10
-    @test cubic_interp(x, y, xi; bc=bc, order=2) ≈ 2.0 atol=1e-10
+    @test cubic_interp(x, y, xi; bc=bc, deriv=0) ≈ xi^2 atol=1e-10
+    @test cubic_interp(x, y, xi; bc=bc, deriv=1) ≈ 2*xi atol=1e-10
+    @test cubic_interp(x, y, xi; bc=bc, deriv=2) ≈ 2.0 atol=1e-10
 end
 
 @testset "Polynomial exactness - cubic" begin
@@ -553,9 +553,9 @@ end
     bc = BCPair(D2(0.0), D2(6.0))
     xi = 0.5
 
-    @test cubic_interp(x, y, xi; bc=bc, order=0) ≈ xi^3 atol=1e-10
-    @test cubic_interp(x, y, xi; bc=bc, order=1) ≈ 3*xi^2 atol=1e-10
-    @test cubic_interp(x, y, xi; bc=bc, order=2) ≈ 6*xi atol=1e-10
+    @test cubic_interp(x, y, xi; bc=bc, deriv=0) ≈ xi^3 atol=1e-10
+    @test cubic_interp(x, y, xi; bc=bc, deriv=1) ≈ 3*xi^2 atol=1e-10
+    @test cubic_interp(x, y, xi; bc=bc, deriv=2) ≈ 6*xi atol=1e-10
 end
 ```
 
@@ -570,12 +570,12 @@ end
     y = rand(11)
 
     # Warm up (JIT compilation)
-    cubic_interp(cache, y, 0.5; order=1)
-    cubic_interp(cache, y, 0.5; order=2)
+    cubic_interp(cache, y, 0.5; deriv=1)
+    cubic_interp(cache, y, 0.5; deriv=2)
 
     # Test using shared threshold
-    @test @allocated(cubic_interp(cache, y, 0.5; order=1)) <= ALLOC_THRESHOLD
-    @test @allocated(cubic_interp(cache, y, 0.5; order=2)) <= ALLOC_THRESHOLD
+    @test @allocated(cubic_interp(cache, y, 0.5; deriv=1)) <= ALLOC_THRESHOLD
+    @test @allocated(cubic_interp(cache, y, 0.5; deriv=2)) <= ALLOC_THRESHOLD
 end
 ```
 
@@ -587,18 +587,18 @@ end
     y = x.^2  # f(x) = x², f'(x) = 2x
 
     # Outside domain: derivative = 0 (constant extrapolation)
-    @test cubic_interp(x, y, -1.0; extrap=:constant, order=1) ≈ 0.0
-    @test cubic_interp(x, y, 3.0; extrap=:constant, order=1) ≈ 0.0
+    @test cubic_interp(x, y, -1.0; extrap=:constant, deriv=1) ≈ 0.0
+    @test cubic_interp(x, y, 3.0; extrap=:constant, deriv=1) ≈ 0.0
 
     # At boundary points: normal evaluation (right-continuous)
-    d_at_0 = cubic_interp(x, y, 0.0; order=1)
-    d_at_2 = cubic_interp(x, y, 2.0; order=1)
-    @test d_at_0 ≈ cubic_interp(x, y, 0.0; extrap=:constant, order=1)
-    @test d_at_2 ≈ cubic_interp(x, y, 2.0; extrap=:constant, order=1)
+    d_at_0 = cubic_interp(x, y, 0.0; deriv=1)
+    d_at_2 = cubic_interp(x, y, 2.0; deriv=1)
+    @test d_at_0 ≈ cubic_interp(x, y, 0.0; extrap=:constant, deriv=1)
+    @test d_at_2 ≈ cubic_interp(x, y, 2.0; extrap=:constant, deriv=1)
 
     # 2nd derivative also 0 outside domain
-    @test cubic_interp(x, y, -1.0; extrap=:constant, order=2) ≈ 0.0
-    @test cubic_interp(x, y, 3.0; extrap=:constant, order=2) ≈ 0.0
+    @test cubic_interp(x, y, -1.0; extrap=:constant, deriv=2) ≈ 0.0
+    @test cubic_interp(x, y, 3.0; extrap=:constant, deriv=2) ≈ 0.0
 end
 ```
 
@@ -612,13 +612,13 @@ end
 
     # Derivative should be continuous across boundary
     ε = 1e-6
-    d_left = cubic_interp(x, y, 2π - ε; bc=PeriodicBC(), order=1)
-    d_right = cubic_interp(x, y, ε; bc=PeriodicBC(), order=1)
+    d_left = cubic_interp(x, y, 2π - ε; bc=PeriodicBC(), deriv=1)
+    d_right = cubic_interp(x, y, ε; bc=PeriodicBC(), deriv=1)
     @test d_left ≈ d_right atol=1e-4
 
     # 2nd derivative also continuous
-    d2_left = cubic_interp(x, y, 2π - ε; bc=PeriodicBC(), order=2)
-    d2_right = cubic_interp(x, y, ε; bc=PeriodicBC(), order=2)
+    d2_left = cubic_interp(x, y, 2π - ε; bc=PeriodicBC(), deriv=2)
+    d2_right = cubic_interp(x, y, ε; bc=PeriodicBC(), deriv=2)
     @test d2_left ≈ d2_right atol=1e-3
 end
 ```
@@ -627,9 +627,9 @@ end
 
 ## 7. FAQ
 
-**Q: Is there overhead from nested `order` and `extrap` dispatch?**
+**Q: Is there overhead from nested `deriv` and `extrap` dispatch?**
 
-A: Minimal. Julia compiles specialized versions for all combinations (3 orders × 4 extrap modes = 12). The dispatch macros convert runtime values to compile-time constants at the entry point, so all downstream code is fully specialized. Nesting them together or separating them doesn't affect runtime performance.
+A: Minimal. Julia compiles specialized versions for all combinations (3 deriv values × 4 extrap modes = 12). The dispatch macros convert runtime values to compile-time constants at the entry point, so all downstream code is fully specialized. Nesting them together or separating them doesn't affect runtime performance.
 
 **Q: Why `op::O where {O<:AbstractEvalOp}` instead of `op::AbstractEvalOp`?**
 

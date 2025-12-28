@@ -5,7 +5,7 @@
 # This file contains:
 # - DerivativeView struct for derivative evaluation
 # - Factory functions for CubicInterpolant and LinearInterpolant
-# - Callable methods delegating to parent's order keyword
+# - Callable methods delegating to parent's deriv keyword
 #
 # The wrapper enables:
 # - Broadcast: derivative(itp).(xs)
@@ -112,12 +112,12 @@ d2 = derivative2(litp)
 
 # First derivative view - scalar call only (broadcast-friendly)
 @inline function (d::DerivativeView{1, ITP})(xi::Real) where {ITP}
-    d.parent(xi; order=1)
+    d.parent(xi; deriv=1)
 end
 
 # Second derivative view - scalar call only (broadcast-friendly)
 @inline function (d::DerivativeView{2, ITP})(xi::Real) where {ITP}
-    d.parent(xi; order=2)
+    d.parent(xi; deriv=2)
 end
 
 # Note: Vector methods are intentionally NOT defined.

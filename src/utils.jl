@@ -289,32 +289,32 @@ macro _dispatch_extrap(pair, body)
 end
 
 """
-    @_dispatch_order order => op body
+    @_dispatch_deriv deriv => op body
 
-Dispatch on runtime order integer, executing body with concrete AbstractEvalOp type.
+Dispatch on runtime deriv integer, executing body with concrete AbstractEvalOp type.
 
-Converts `order::Int` (0, 1, 2) to compile-time constant `EvalValue()`, `EvalDeriv1()`,
+Converts `deriv::Int` (0, 1, 2) to compile-time constant `EvalValue()`, `EvalDeriv1()`,
 or `EvalDeriv2()`. This creates a function barrier ensuring type stability downstream.
 
 # Arguments
-- `order => op`: Pair of order expression and symbol to bind the concrete EvalOp type
+- `deriv => op`: Pair of deriv expression and symbol to bind the concrete EvalOp type
 - `body`: Expression to execute with `op` bound to concrete type
 
 # Example
 ```julia
-@_dispatch_order order => op begin
+@_dispatch_deriv deriv => op begin
     _cubic_interp_impl(x, y, xi, op; extrap=extrap)
 end
 ```
 
 Expands to:
 ```julia
-let _order = order
-    if _order == 0
+let _deriv = deriv
+    if _deriv == 0
         let op = EvalValue()
             _cubic_interp_impl(x, y, xi, op; extrap=extrap)
         end
-    elseif _order == 1
+    elseif _deriv == 1
         let op = EvalDeriv1()
             ...
         end
@@ -323,29 +323,29 @@ let _order = order
 end
 ```
 """
-macro _dispatch_order(pair, body)
-    # Parse pair: order => op becomes Expr(:call, :(=>), :order, :op)
+macro _dispatch_deriv(pair, body)
+    # Parse pair: deriv => op becomes Expr(:call, :(=>), :deriv, :op)
     pair.head === :call && pair.args[1] === :(=>) ||
-        error("@_dispatch_order expects `order => op`, got: $pair")
-    order_expr = pair.args[2]
+        error("@_dispatch_deriv expects `deriv => op`, got: $pair")
+    deriv_expr = pair.args[2]
     op_sym = pair.args[3]
-    ord_var = gensym(:order)
+    deriv_var = gensym(:deriv)
     quote
-        local $(ord_var) = $(esc(order_expr))
-        if $(ord_var) == 0
+        local $(deriv_var) = $(esc(deriv_expr))
+        if $(deriv_var) == 0
             let $(esc(op_sym)) = EvalValue()
                 $(esc(body))
             end
-        elseif $(ord_var) == 1
+        elseif $(deriv_var) == 1
             let $(esc(op_sym)) = EvalDeriv1()
                 $(esc(body))
             end
-        elseif $(ord_var) == 2
+        elseif $(deriv_var) == 2
             let $(esc(op_sym)) = EvalDeriv2()
                 $(esc(body))
             end
         else
-            throw(ArgumentError("order must be 0, 1, or 2; got $($(ord_var))"))
+            throw(ArgumentError("deriv must be 0, 1, or 2; got $($(deriv_var))"))
         end
     end
 end

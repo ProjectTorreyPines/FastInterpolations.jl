@@ -21,50 +21,50 @@
 # CubicInterpolant struct defined in cubic_types.jl
 
 # Scalar call - hot path (zero-allocation)
-# Supports order keyword for derivative evaluation
-@inline function (itp::CubicInterpolant{T})(xi::T; order::Int=0) where {T<:AbstractFloat}
+# Supports deriv keyword for derivative evaluation
+@inline function (itp::CubicInterpolant{T})(xi::T; deriv::Int=0) where {T<:AbstractFloat}
     @boundscheck _check_domain(itp.cache.x, xi, itp.extrap)
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap, op)
     end
 end
 
-# Real scalar wrapper - delegates to T method with order keyword
-@inline function (itp::CubicInterpolant{T})(xi::S; order::Int=0) where {T<:AbstractFloat, S<:Real}
-    itp(T(xi); order=order)
+# Real scalar wrapper - delegates to T method with deriv keyword
+@inline function (itp::CubicInterpolant{T})(xi::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+    itp(T(xi); deriv=deriv)
 end
 
-# Vector call with order keyword support
-function (itp::CubicInterpolant{T})(xi::AbstractVector{S}; order::Int=0) where {T<:AbstractFloat, S<:Real}
+# Vector call with deriv keyword support
+function (itp::CubicInterpolant{T})(xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
     xi_typed = S === T ? xi : T.(xi)
     output = Vector{T}(undef, length(xi_typed))
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap, op)
     end
     return output
 end
 
-function (itp::CubicInterpolant{T})(xi::AbstractVector{T}; order::Int=0) where {T<:AbstractFloat}
+function (itp::CubicInterpolant{T})(xi::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat}
     output = Vector{T}(undef, length(xi))
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap, op)
     end
     return output
 end
 
-# In-place vector call with order keyword support
-function (itp::CubicInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}; order::Int=0) where {T<:AbstractFloat}
+# In-place vector call with deriv keyword support
+function (itp::CubicInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat}
     @assert length(output) == length(xi) "output length must match xi length"
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap, op)
     end
     return output
 end
 
-function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}; order::Int=0) where {T<:AbstractFloat, S<:Real}
+function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     xi_typed = T.(xi)
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap, op)
     end
     return output

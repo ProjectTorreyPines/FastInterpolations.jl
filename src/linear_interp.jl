@@ -43,12 +43,12 @@ function linear_interp!(
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             @boundscheck _check_domain(x, x_targets, ev)
             _linear_interp_loop!(output, x, y, x_targets, ev, op)
@@ -141,12 +141,12 @@ end
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             @boundscheck _check_domain(x, x_targets, ev)
             _linear_interp_loop!(output, x, y, x_targets, ev, op)
@@ -352,11 +352,11 @@ end
     y::AbstractVector{FT},
     xi::FT;
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             linear_interp(x, y, xi, ev, op)
         end
@@ -369,11 +369,11 @@ end
     y::AbstractVector{FT},
     xi::FT;
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             linear_interp(x, y, xi, ev, op)
         end
@@ -487,11 +487,11 @@ function linear_interp(
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:Real, S<:Real}
     FT = float(T)
     output = Vector{FT}(undef, length(x_targets))
-    linear_interp!(output, x, y, x_targets; extrap, order)
+    linear_interp!(output, x, y, x_targets; extrap, deriv)
     return output
 end
 
@@ -520,7 +520,7 @@ function linear_interp!(
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -530,7 +530,7 @@ function linear_interp!(
     y_float = FT.(y)  # Allocate once
     x_targets_float = FT.(x_targets)
 
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, ev, op)
         end
@@ -544,7 +544,7 @@ function linear_interp!(
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -554,7 +554,7 @@ function linear_interp!(
     y_float = FT.(y)  # Allocate once
     x_targets_float = FT.(x_targets)
 
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, ev, op)
         end
@@ -571,11 +571,11 @@ end
     y::AbstractVector{T},
     xi::S;
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:Real, S<:Real}
     FT = float(T)
     x_float = range(FT(first(x)), FT(last(x)), length(x))
-    return linear_interp(x_float, FT.(y), FT(xi); extrap, order)
+    return linear_interp(x_float, FT.(y), FT(xi); extrap, deriv)
 end
 
 function linear_interp(
@@ -583,10 +583,10 @@ function linear_interp(
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:Real, S<:Real}
     output = Vector{float(T)}(undef, length(x_targets))
-    return linear_interp!(output, x, y, x_targets; extrap, order)
+    return linear_interp!(output, x, y, x_targets; extrap, deriv)
 end
 
 
@@ -596,10 +596,10 @@ end
     y::AbstractVector{T},
     xi::S;
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:Real, S<:Real}
     FT = float(T)
-    return linear_interp(FT.(x), FT.(y), FT(xi); extrap, order)
+    return linear_interp(FT.(x), FT.(y), FT(xi); extrap, deriv)
 end
 
 # ========================================
@@ -656,25 +656,25 @@ struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector
 end
 
 # Scalar call - hot path (inlined for broadcast fusion)
-# Supports order keyword for derivative evaluation
-@inline function (itp::LinearInterpolant{T})(xi::T; order::Int=0) where {T<:AbstractFloat}
+# Supports deriv keyword for derivative evaluation
+@inline function (itp::LinearInterpolant{T})(xi::T; deriv::Int=0) where {T<:AbstractFloat}
     @boundscheck _check_domain(itp.x, xi, itp.mode)
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         _linear_with_extrap(itp.x, itp.y, xi, itp.mode, op)
     end
 end
 
-# Real scalar wrapper - delegates to T method with order keyword
-@inline function (itp::LinearInterpolant{T})(xi::S; order::Int=0) where {T<:AbstractFloat, S<:Real}
-    itp(T(xi); order=order)
+# Real scalar wrapper - delegates to T method with deriv keyword
+@inline function (itp::LinearInterpolant{T})(xi::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+    itp(T(xi); deriv=deriv)
 end
 
-# Vector call with order keyword support
-function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{S}; order::Int=0) where {T<:AbstractFloat, X, Y, S<:Real}
+# Vector call with deriv keyword support
+function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, X, Y, S<:Real}
     xi_typed = S === T ? xi : T.(xi)
     @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
     output = Vector{T}(undef, length(xi_typed))
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi_typed, output)
             output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode, op)
         end
@@ -683,10 +683,10 @@ function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{S}; order::Int=0) wh
 end
 
 # Optimized path when xi element type matches T (zero conversion)
-function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{T}; order::Int=0) where {T<:AbstractFloat, X, Y}
+function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat, X, Y}
     @boundscheck _check_domain(itp.x, xi, itp.mode)
     output = Vector{T}(undef, length(xi))
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi, output)
             output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode, op)
         end
@@ -694,11 +694,11 @@ function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{T}; order::Int=0) wh
     return output
 end
 
-# In-place vector call with order keyword support - zero allocation
-function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xi::AbstractVector{T}; order::Int=0) where {T<:AbstractFloat, X, Y}
+# In-place vector call with deriv keyword support - zero allocation
+function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xi::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat, X, Y}
     @assert length(output) == length(xi) "output length must match xi length"
     @boundscheck _check_domain(itp.x, xi, itp.mode)
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi, output)
             output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode, op)
         end
@@ -706,12 +706,12 @@ function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xi::Abstract
     return output
 end
 
-# In-place with type conversion and order keyword
-function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xi::AbstractVector{S}; order::Int=0) where {T<:AbstractFloat, X, Y, S<:Real}
+# In-place with type conversion and deriv keyword
+function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, X, Y, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     xi_typed = T.(xi)
     @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi_typed, output)
             output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode, op)
         end

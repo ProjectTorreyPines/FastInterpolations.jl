@@ -139,7 +139,7 @@ end
 # ========================================
 
 """
-    cubic_interp!(output, cache, y, x_query; extrap=:none, order=0)
+    cubic_interp!(output, cache, y, x_query; extrap=:none, deriv=0)
 
 In-place cubic spline interpolation using cached LU factorization.
 
@@ -151,7 +151,7 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
 - `y::AbstractVector{T}`: Function values at grid points
 - `x_query::AbstractVector{T}`: Query points
 - `extrap::Symbol=:none`: Extrapolation mode (`:none`, `:constant`, `:extension`, `:wrap`)
-- `order::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
+- `deriv::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 """
 @inline function cubic_interp!(
     output::AbstractVector{T},
@@ -159,14 +159,14 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
     y::AbstractVector{T},
     x_query::AbstractVector{T};
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:AbstractFloat, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
 
     z = _solve_system!(cache, y, cache.bc_data)
 
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             _cubic_vector_loop!(output, cache, y, z, x_query, ev, op)
         end
@@ -285,7 +285,7 @@ Uses `_get_cache_and_solve_periodic!` helper for unified autocache handling.
 end
 
 """
-    cubic_interp!(output, x, y, x_query; bc=NaturalBC(), extrap=:none, autocache=true, order=0)
+    cubic_interp!(output, x, y, x_query; bc=NaturalBC(), extrap=:none, autocache=true, deriv=0)
 
 In-place cubic spline interpolation with optional automatic caching.
 """
@@ -297,12 +297,12 @@ In-place cubic spline interpolation with optional automatic caching.
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:AbstractFloat}
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         # Periodic BC
         if _is_periodic_bc(bc)
             return _cubic_interp_periodic!(output, x, y, x_query, autocache, op)
@@ -322,10 +322,10 @@ end
     y::AbstractVector{T},
     x_query::T;
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:AbstractFloat, X, F, BC}
     @assert length(output) >= 1 "output must have at least 1 element"
-    output[1] = cubic_interp_scalar(cache, y, x_query; extrap=extrap, order=order)
+    output[1] = cubic_interp_scalar(cache, y, x_query; extrap=extrap, deriv=deriv)
     return output
 end
 
@@ -337,14 +337,14 @@ end
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:AbstractFloat}
     @assert length(output) >= 1 "output must have at least 1 element"
 
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         if _is_periodic_bc(bc)
             output[1] = _cubic_interp_periodic_scalar(x, y, x_query, autocache, op)
         else
@@ -361,19 +361,19 @@ end
 # ========================================
 
 """
-    cubic_interp(cache, y, x_query; extrap=:none, order=0) -> Vector{T}
+    cubic_interp(cache, y, x_query; extrap=:none, deriv=0) -> Vector{T}
 
 Allocating version of cubic spline interpolation using cached LU factorization.
 
 # Arguments
-- `order::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
+- `deriv::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 
 # Example
 ```julia
 cache = CubicSplineCache(collect(range(0.0, 1.0, 51)))
 y = sin.(cache.x)
 result = cubic_interp(cache, y, [0.25, 0.5, 0.75])
-derivs = cubic_interp(cache, y, [0.25, 0.5, 0.75]; order=1)  # First derivative
+derivs = cubic_interp(cache, y, [0.25, 0.5, 0.75]; deriv=1)  # First derivative
 ```
 """
 function cubic_interp(
@@ -381,20 +381,20 @@ function cubic_interp(
     y::AbstractVector{T},
     x_query::AbstractVector{T};
     extrap::Symbol=:none,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:AbstractFloat}
     output = Vector{T}(undef, length(x_query))
-    cubic_interp!(output, cache, y, x_query; extrap=extrap, order=order)
+    cubic_interp!(output, cache, y, x_query; extrap=extrap, deriv=deriv)
     return output
 end
 
 """
-    cubic_interp(x, y, x_query; bc=NaturalBC(), extrap=:none, autocache=true, order=0) -> Vector{T}
+    cubic_interp(x, y, x_query; bc=NaturalBC(), extrap=:none, autocache=true, deriv=0) -> Vector{T}
 
 Cubic spline interpolation with optional automatic caching.
 
 # Arguments
-- `order::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
+- `deriv::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 
 # Extrapolation Modes
 - `:none` (default): Throws DomainError if query point is outside domain
@@ -406,7 +406,7 @@ Cubic spline interpolation with optional automatic caching.
 # Example
 ```julia
 result = cubic_interp(x, y, x_query)                     # Auto-cached (default)
-derivs = cubic_interp(x, y, x_query; order=1)            # First derivative
+derivs = cubic_interp(x, y, x_query; deriv=1)            # First derivative
 result = cubic_interp(x, y, x_query; extrap=:extension)  # Extend beyond domain
 ```
 """
@@ -417,14 +417,14 @@ function cubic_interp(
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:AbstractFloat}
     _validate_bc(bc)
     _validate_extrap(extrap)
 
     output = Vector{T}(undef, length(x_query))
 
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         if _is_periodic_bc(bc)
             return _cubic_interp_periodic!(output, x, y, x_query, autocache, op)
         end
@@ -436,8 +436,8 @@ end
 
 # Scalar query - zero allocation
 cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T},
-             x_query::T; extrap::Symbol=:none, order::Int=0) where {T<:AbstractFloat} =
-    cubic_interp_scalar(cache, y, x_query; extrap=extrap, order=order)
+             x_query::T; extrap::Symbol=:none, deriv::Int=0) where {T<:AbstractFloat} =
+    cubic_interp_scalar(cache, y, x_query; extrap=extrap, deriv=deriv)
 
 function cubic_interp(
     x::AbstractVector{T},
@@ -446,12 +446,12 @@ function cubic_interp(
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    order::Int=0
+    deriv::Int=0
 ) where {T<:AbstractFloat}
     _validate_bc(bc)
     _validate_extrap(extrap)
 
-    @_dispatch_order order => op begin
+    @_dispatch_deriv deriv => op begin
         if _is_periodic_bc(bc)
             return _cubic_interp_periodic_scalar(x, y, x_query, autocache, op)
         end
@@ -474,10 +474,10 @@ function cubic_interp(
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    order::Int=0
+    deriv::Int=0
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp(_to_float(x, FT), FT.(y), FT.(x_query); bc=bc, extrap=extrap, autocache=autocache, order=order)
+    return cubic_interp(_to_float(x, FT), FT.(y), FT.(x_query); bc=bc, extrap=extrap, autocache=autocache, deriv=deriv)
 end
 
 # Allocating - scalar query
@@ -488,10 +488,10 @@ function cubic_interp(
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    order::Int=0
+    deriv::Int=0
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp(_to_float(x, FT), FT.(y), FT(x_query); bc=bc, extrap=extrap, autocache=autocache, order=order)
+    return cubic_interp(_to_float(x, FT), FT.(y), FT(x_query); bc=bc, extrap=extrap, autocache=autocache, deriv=deriv)
 end
 
 # In-place - vector query
@@ -503,10 +503,10 @@ end
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    order::Int=0
+    deriv::Int=0
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT.(x_query); bc=bc, extrap=extrap, autocache=autocache, order=order)
+    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT.(x_query); bc=bc, extrap=extrap, autocache=autocache, deriv=deriv)
 end
 
 # In-place - scalar query
@@ -518,8 +518,8 @@ end
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    order::Int=0
+    deriv::Int=0
 ) where {TX<:Real, TY<:Real, TQ<:Real}
     FT = float(promote_type(TX, TY, TQ))
-    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT(x_query); bc=bc, extrap=extrap, autocache=autocache, order=order)
+    return cubic_interp!(output, _to_float(x, FT), FT.(y), FT(x_query); bc=bc, extrap=extrap, autocache=autocache, deriv=deriv)
 end

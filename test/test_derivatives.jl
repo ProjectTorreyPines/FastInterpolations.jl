@@ -10,6 +10,7 @@ using FastInterpolations
 # Import internal types/macros for testing
 using FastInterpolations: @_dispatch_deriv, _linear_kernel, _cubic_kernel
 using FastInterpolations: _eval_cubic_at_point, _eval_cubic_with_extrap, _get_cubic_cache, _solve_system!
+using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
 
 # Julia version-aware threshold (1.12+ has improved allocation tracking)
 const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 64
@@ -1557,8 +1558,8 @@ end # Derivative Comprehensive Coverage
         itp = cubic_interp(x, y)
 
         # Factory functions return DerivativeView
-        d1 = derivative(itp)
-        d2 = derivative2(itp)
+        d1 = deriv1(itp)
+        d2 = deriv2(itp)
 
         @test d1 isa FastInterpolations.DerivativeView
         @test d2 isa FastInterpolations.DerivativeView
@@ -1586,8 +1587,8 @@ end # Derivative Comprehensive Coverage
         y = [0.0, 2.0, 6.0]  # slopes: 2.0, 4.0
         litp = linear_interp(x, y)
 
-        d1 = derivative(litp)
-        d2 = derivative2(litp)
+        d1 = deriv1(litp)
+        d2 = deriv2(litp)
 
         @test d1 isa FastInterpolations.DerivativeView
         @test d2 isa FastInterpolations.DerivativeView
@@ -1610,7 +1611,7 @@ end # Derivative Comprehensive Coverage
         x = collect(0.0:0.1:2.0)
         y = x .^ 2
         itp = cubic_interp(x, y)
-        d1 = derivative(itp)
+        d1 = deriv1(itp)
 
         # Broadcast works
         xs = [0.25, 0.5, 0.75, 1.0]
@@ -1629,11 +1630,11 @@ end # Derivative Comprehensive Coverage
         itp = cubic_interp(x, y)
 
         # Warmup
-        d1 = derivative(itp)
+        d1 = deriv1(itp)
         d1(0.5)
 
         # Wrapper creation should be cheap (struct with single field)
-        @test @allocated(derivative(itp)) == 0
+        @test @allocated(deriv1(itp)) == 0
 
         # Scalar call should be zero-allocation
         @test @allocated(d1(0.5)) <= DERIV_ALLOC_THRESHOLD
@@ -1646,8 +1647,8 @@ end # Derivative Comprehensive Coverage
         # Non-periodic BCs work with regular sin data
         for bc in [NaturalBC(), ClampedBC()]
             itp = cubic_interp(x, y; bc=bc)
-            d1 = derivative(itp)
-            d2 = derivative2(itp)
+            d1 = deriv1(itp)
+            d2 = deriv2(itp)
 
             @testset "BC=$(typeof(bc).name.name)" begin
                 # Should be callable
@@ -1666,8 +1667,8 @@ end # Derivative Comprehensive Coverage
             y_periodic = sin.(x_periodic)  # sin(0) = sin(2π) = 0
 
             itp = cubic_interp(x_periodic, y_periodic; bc=PeriodicBC())
-            d1 = derivative(itp)
-            d2 = derivative2(itp)
+            d1 = deriv1(itp)
+            d2 = deriv2(itp)
 
             # Should be callable
             @test d1(π/4) isa Float64

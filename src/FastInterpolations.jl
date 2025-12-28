@@ -39,10 +39,7 @@ export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!, cubic_ca
 export AbstractBC, PointBC, Deriv1, Deriv2, BCPair
 export NaturalBC, ClampedBC, PeriodicBC
 
-# Evaluation operation types (for advanced use)
-export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
-
-# Derivative functions for interpolants
-export derivative, derivative2
+# Derivative view functions for interpolants
+export deriv1, deriv2
 
 end # module

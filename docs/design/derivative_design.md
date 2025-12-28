@@ -452,12 +452,12 @@ end
 |-----|--------|--------|-----------------|
 | `linear_interp(x, y, xi)` | Yes | Yes | ✅ |
 | `linear_interp!(out, x, y, xi)` | Yes | Yes | ✅ |
-| `LinearInterpolant(x, y)(xi)` | Yes | Yes | via `derivative()` |
+| `LinearInterpolant(x, y)(xi)` | Yes | Yes | via `deriv1()` |
 | `cubic_interp(x, y, xi)` | Yes | Yes | ✅ |
 | `cubic_interp!(out, x, y, xi)` | Yes | Yes | ✅ |
 | `cubic_interp(cache, y, xi)` | Yes | Yes | ✅ |
 | `cubic_interp!(out, cache, y, xi)` | Yes | Yes | ✅ |
-| `CubicInterpolant(x, y)(xi)` | Yes | Yes | via `derivative()` |
+| `CubicInterpolant(x, y)(xi)` | Yes | Yes | via `deriv1()` |
 
 ### 5.2. Example Call Flow
 
@@ -485,39 +485,21 @@ _cubic_kernel(EvalDeriv1(), z_i, z_ip1, y_i, y_ip1, h_i, dt1, dt2)
 
 ### 5.3. Interpolant Object APIs
 
-Interpolant objects use `derivative()` function for derivative computation:
+Interpolant objects use `deriv1()` and `deriv2()` wrapper functions for derivative computation:
 
-> **Ecosystem Note**: `derivative` matches Julia ecosystem conventions (Interpolations.jl, DataInterpolations.jl). `gradient` is for multi-dimensional/vector functions; `derivative` is standard for 1D scalar functions.
+> **Naming Note**: `deriv1`/`deriv2` naming matches BC types `Deriv1`/`Deriv2` for consistency, and avoids collision with `derivative` in other packages (Interpolations.jl, DataInterpolations.jl).
 
 ```julia
-# CubicInterpolant
-"""
-    derivative(itp::CubicInterpolant, x)
+# Factory functions return DerivativeView wrapper
+deriv1(itp::CubicInterpolant) = DerivativeView{1, typeof(itp)}(itp)
+deriv2(itp::CubicInterpolant) = DerivativeView{2, typeof(itp)}(itp)
+deriv1(itp::LinearInterpolant) = DerivativeView{1, typeof(itp)}(itp)
+deriv2(itp::LinearInterpolant) = DerivativeView{2, typeof(itp)}(itp)
 
-Compute first derivative at point x using pre-computed z coefficients.
-Zero-allocation for scalar x.
-"""
-function derivative(itp::CubicInterpolant{T}, xi::T) where {T}
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap, EvalDeriv1())
-end
-
-"""
-    derivative2(itp::CubicInterpolant, x)
-
-Compute second derivative at point x.
-"""
-function derivative2(itp::CubicInterpolant{T}, xi::T) where {T}
-    _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap, EvalDeriv2())
-end
-
-# LinearInterpolant
-function derivative(itp::LinearInterpolant{T}, xi::T) where {T}
-    _linear_with_extrap(itp.x, itp.y, xi, itp.mode, EvalDeriv1())
-end
-
-function derivative2(itp::LinearInterpolant{T}, ::T) where {T}
-    zero(T)  # Always zero for linear (Dirac delta at knots ignored)
-end
+# DerivativeView is callable and broadcast-friendly
+d1 = deriv1(itp)
+d1(0.5)        # Scalar evaluation
+d1.(xs)        # Broadcast over vector
 ```
 
 ---

@@ -55,13 +55,21 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
         end
         @test result2 === EvalDeriv2
 
-        # Invalid deriv throws ArgumentError
+        # Invalid deriv throws ArgumentError (macro-level)
         @test_throws ArgumentError @_dispatch_deriv 3 => op begin
-            nothing
+            typeof(op)
         end
         @test_throws ArgumentError @_dispatch_deriv -1 => op begin
-            nothing
+            typeof(op)
         end
+
+        # Invalid deriv throws ArgumentError (public API - for coverage)
+        x = [0.0, 0.5, 1.0]
+        y = [0.0, 0.25, 1.0]
+        @test_throws ArgumentError cubic_interp(x, y, 0.5; deriv=3)
+        @test_throws ArgumentError cubic_interp(x, y, 0.5; deriv=-1)
+        @test_throws ArgumentError linear_interp(x, y, 0.5; deriv=3)
+        @test_throws ArgumentError linear_interp(x, y, 0.5; deriv=-1)
     end
 
     @testset "@_dispatch_deriv with runtime variable" begin

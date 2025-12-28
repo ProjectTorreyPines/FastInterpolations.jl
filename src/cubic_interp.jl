@@ -61,16 +61,16 @@ This factorization can be reused for interpolating different y vectors.
   - `NaturalBC()`: Zero curvature at both ends (default)
   - `ClampedBC()`: Zero slope at both ends
   - `PeriodicBC()`: Periodic boundary condition
-  - `D1(val)` or `D2(val)`: Symmetric BC (same at both ends)
-  - `BCPair(D1(v1), D2(v2))`: Asymmetric BC pair
+  - `Deriv1(val)` or `Deriv2(val)`: Symmetric BC (same at both ends)
+  - `BCPair(Deriv1(v1), Deriv2(v2))`: Asymmetric BC pair
 
 # Example
 ```julia
 x = range(0.0, 1.0, 51)
 cache = CubicSplineCache(x)                              # Natural BC (default)
 cache = CubicSplineCache(x; bc=ClampedBC())              # Zero slope at both ends
-cache = CubicSplineCache(x; bc=D1(0.5))                  # Slope=0.5 at both ends
-cache = CubicSplineCache(x; bc=BCPair(D1(0.5), D2(0)))   # Mixed: slope left, natural right
+cache = CubicSplineCache(x; bc=Deriv1(0.5))                  # Slope=0.5 at both ends
+cache = CubicSplineCache(x; bc=BCPair(Deriv1(0.5), Deriv2(0)))   # Mixed: slope left, natural right
 cache_periodic = CubicSplineCache(x; bc=PeriodicBC())    # Periodic BC
 
 # Reuse for multiple y vectors
@@ -182,7 +182,7 @@ end
 # These are the two core implementations that all Symbol-based APIs
 # dispatch to after normalizing BC to concrete types.
 #
-# Key insight: LU factorization depends only on BC **types** (D1 vs D2),
+# Key insight: LU factorization depends only on BC **types** (Deriv1 vs Deriv2),
 # not BC **values**. So autocache stores by (x, L_type, R_type),
 # and we apply actual BC values at solve time via _solve_system!(cache, y, bc_tuple).
 

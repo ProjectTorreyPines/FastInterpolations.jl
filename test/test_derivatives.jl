@@ -237,8 +237,8 @@ end # Derivative Kernels
         x = collect(0.0:0.5:2.0)
         y = x .^ 2  # [0, 0.25, 1, 2.25, 4]
 
-        # Use D2 BC with f''(x) = 2 for exact quadratic representation
-        cache = _get_cubic_cache(x, BCPair(D2(2.0), D2(2.0)))
+        # Use Deriv2 BC with f''(x) = 2 for exact quadratic representation
+        cache = _get_cubic_cache(x, BCPair(Deriv2(2.0), Deriv2(2.0)))
         z = _solve_system!(cache, y, cache.bc_data)
 
         @testset "_eval_cubic_at_point with op" begin
@@ -294,10 +294,10 @@ end # Derivative Kernels
     @testset "Cubic public API with deriv" begin
 
         @testset "Polynomial exactness" begin
-            # Quadratic f(x) = x² with exact D2 BC
+            # Quadratic f(x) = x² with exact Deriv2 BC
             x = collect(0.0:0.1:1.0)
             y = x .^ 2
-            bc = BCPair(D2(2.0), D2(2.0))  # f''(x) = 2
+            bc = BCPair(Deriv2(2.0), Deriv2(2.0))  # f''(x) = 2
             xi = 0.5
 
             # Value: f(0.5) = 0.25
@@ -311,10 +311,10 @@ end # Derivative Kernels
         end
 
         @testset "Cubic polynomial exactness" begin
-            # Cubic f(x) = x³ with exact D2 BC
+            # Cubic f(x) = x³ with exact Deriv2 BC
             x = collect(0.0:0.1:1.0)
             y = x .^ 3
-            bc = BCPair(D2(0.0), D2(6.0))  # f''(0)=0, f''(1)=6
+            bc = BCPair(Deriv2(0.0), Deriv2(6.0))  # f''(0)=0, f''(1)=6
             xi = 0.5
 
             # Value: f(0.5) = 0.125
@@ -341,7 +341,7 @@ end # Derivative Kernels
         @testset "Vector query with deriv" begin
             x = collect(0.0:0.1:1.0)
             y = x .^ 2
-            bc = BCPair(D2(2.0), D2(2.0))
+            bc = BCPair(Deriv2(2.0), Deriv2(2.0))
             x_query = [0.25, 0.5, 0.75]
 
             # Values
@@ -359,7 +359,7 @@ end # Derivative Kernels
 
         @testset "Cache-based with deriv" begin
             x = collect(0.0:0.1:1.0)
-            cache = CubicSplineCache(x; bc=BCPair(D2(2.0), D2(2.0)))
+            cache = CubicSplineCache(x; bc=BCPair(Deriv2(2.0), Deriv2(2.0)))
             y = x .^ 2
             xi = 0.5
 
@@ -371,7 +371,7 @@ end # Derivative Kernels
         @testset "Type stability with deriv" begin
             x = collect(0.0:0.1:1.0)
             y = x .^ 2
-            bc = BCPair(D2(2.0), D2(2.0))
+            bc = BCPair(Deriv2(2.0), Deriv2(2.0))
             xi = 0.5
 
             @test @inferred(cubic_interp(x, y, xi; bc=bc, deriv=0)) isa Float64
@@ -383,7 +383,7 @@ end # Derivative Kernels
     @testset "Cubic extrapolation with deriv" begin
         x = collect(0.0:0.25:1.0)
         y = x .^ 2
-        bc = BCPair(D2(2.0), D2(2.0))
+        bc = BCPair(Deriv2(2.0), Deriv2(2.0))
 
         @testset "Constant extrapolation" begin
             # Left boundary constant extrap: returns y[1] for value, 0 for derivatives
@@ -414,7 +414,7 @@ end # Derivative Kernels
     @testset "CubicInterpolant itp(xi; deriv=N) API" begin
         x = collect(0.0:0.1:1.0)
         y = x .^ 2
-        bc = BCPair(D2(2.0), D2(2.0))
+        bc = BCPair(Deriv2(2.0), Deriv2(2.0))
         itp = cubic_interp(x, y; bc=bc)
 
         @testset "deriv=1 scalar" begin
@@ -459,7 +459,7 @@ end # Derivative Kernels
     @testset "CubicInterpolant deriv keyword" begin
         x = collect(0.0:0.1:1.0)
         y = x .^ 2
-        bc = BCPair(D2(2.0), D2(2.0))
+        bc = BCPair(Deriv2(2.0), Deriv2(2.0))
         itp = cubic_interp(x, y; bc=bc)
 
         @testset "deriv=0 matches default call" begin
@@ -513,7 +513,7 @@ end # Derivative Kernels
         bc_types = [
             NaturalBC(),
             ClampedBC(),
-            BCPair(D1(1.0), D1(cos(1.0))),
+            BCPair(Deriv1(1.0), Deriv1(cos(1.0))),
         ]
 
         for bc in bc_types
@@ -899,7 +899,7 @@ end # Linear Derivatives
         @testset "Cubic at knot points" begin
             x = collect(0.0:0.25:1.0)
             y = x .^ 2
-            bc = BCPair(D2(2.0), D2(2.0))
+            bc = BCPair(Deriv2(2.0), Deriv2(2.0))
             itp = cubic_interp(x, y; bc=bc)
 
             # At interior knot (x=0.5), derivative should be well-defined
@@ -933,7 +933,7 @@ end # Linear Derivatives
             # Test that querying just before and after a knot gives expected values
             x = collect(0.0:0.5:2.0)
             y = x .^ 3
-            bc = BCPair(D2(0.0), D2(12.0))  # f''(0)=0, f''(2)=12 for x³
+            bc = BCPair(Deriv2(0.0), Deriv2(12.0))  # f''(0)=0, f''(2)=12 for x³
             itp = cubic_interp(x, y; bc=bc)
 
             ε = 1e-8
@@ -1133,7 +1133,7 @@ end # Derivative Edge Cases
 
     @testset "Cubic allocation with deriv" begin
         x = collect(0.0:0.1:1.0)
-        cache = CubicSplineCache(x; bc=BCPair(D2(2.0), D2(2.0)))
+        cache = CubicSplineCache(x; bc=BCPair(Deriv2(2.0), Deriv2(2.0)))
         y = x .^ 2
         xi = 0.5
 
@@ -1155,7 +1155,7 @@ end # Derivative Edge Cases
     @testset "CubicInterpolant deriv keyword allocation" begin
         x = collect(0.0:0.1:1.0)
         y = x .^ 2
-        bc = BCPair(D2(2.0), D2(2.0))
+        bc = BCPair(Deriv2(2.0), Deriv2(2.0))
         itp = cubic_interp(x, y; bc=bc)
 
         # Warm-up
@@ -1344,8 +1344,8 @@ end # Derivative Edge Cases
         bc_types = [
             NaturalBC(),
             ClampedBC(),
-            BCPair(D1(1.0), D1(1.0)),
-            BCPair(D2(2.0), D2(0.0)),
+            BCPair(Deriv1(1.0), Deriv1(1.0)),
+            BCPair(Deriv2(2.0), Deriv2(0.0)),
         ]
 
         for bc in bc_types
@@ -1427,9 +1427,9 @@ end # Derivative Allocations
         bc_types = [
             (NaturalBC(), "Natural"),
             (ClampedBC(), "Clamped"),
-            (BCPair(D1(0.5), D1(1.5)), "D1-D1"),
-            (BCPair(D2(2.0), D2(2.0)), "D2-D2"),
-            (BCPair(D1(0.5), D2(2.0)), "D1-D2"),
+            (BCPair(Deriv1(0.5), Deriv1(1.5)), "Deriv1-Deriv1"),
+            (BCPair(Deriv2(2.0), Deriv2(2.0)), "Deriv2-Deriv2"),
+            (BCPair(Deriv1(0.5), Deriv2(2.0)), "Deriv1-Deriv2"),
         ]
 
         extrap_modes = [:none, :constant, :extension]
@@ -1525,7 +1525,7 @@ end # Derivative Allocations
         bc_types = [
             CubicSplineCache(x),
             CubicSplineCache(x; bc=ClampedBC()),
-            CubicSplineCache(x; bc=BCPair(D2(2.0), D2(2.0))),
+            CubicSplineCache(x; bc=BCPair(Deriv2(2.0), Deriv2(2.0))),
             CubicSplineCache(x; bc=PeriodicBC()),
         ]
 

@@ -506,14 +506,14 @@ import FastInterpolations: _get_cubic_cache
         cache = _get_cubic_cache(x, ClampedBC())
         @test cache isa CubicSplineCache{Float64}
 
-        # Cache should be created with BCPair(D1(0), D1(0))
-        @test cache.bc_data isa BCPair{Float64, D1{Float64}, D1{Float64}}
+        # Cache should be created with BCPair(Deriv1(0), Deriv1(0))
+        @test cache.bc_data isa BCPair{Float64, Deriv1{Float64}, Deriv1{Float64}}
 
         # Should work for Float32 as well
         x32 = Float32.(x)
         cache32 = _get_cubic_cache(x32, ClampedBC())
         @test cache32 isa CubicSplineCache{Float32}
-        @test cache32.bc_data isa BCPair{Float32, D1{Float32}, D1{Float32}}
+        @test cache32.bc_data isa BCPair{Float32, Deriv1{Float32}, Deriv1{Float32}}
 
         # Range input
         x_range = range(0.0, 1.0, 51)
@@ -526,27 +526,27 @@ import FastInterpolations: _get_cubic_cache
 
         x = collect(range(0.0, 1.0, 51))
 
-        # D1 PointBC - applies symmetrically to both ends
+        # Deriv1 PointBC - applies symmetrically to both ends
         # Note: LU factorization depends only on BC TYPE, not values.
         # Cache stores values from first caller, but values are applied at solve time.
-        cache_d1 = _get_cubic_cache(x, D1(0.5))
+        cache_d1 = _get_cubic_cache(x, Deriv1(0.5))
         @test cache_d1 isa CubicSplineCache{Float64}
-        @test cache_d1.bc_data isa BCPair{Float64, D1{Float64}, D1{Float64}}
+        @test cache_d1.bc_data isa BCPair{Float64, Deriv1{Float64}, Deriv1{Float64}}
         # On cache miss, actual BC values from request are stored
         @test cache_d1.bc_data.left.val == 0.5
         @test cache_d1.bc_data.right.val == 0.5
 
-        # D2 PointBC - applies symmetrically to both ends
-        cache_d2 = _get_cubic_cache(x, D2(1.0))
+        # Deriv2 PointBC - applies symmetrically to both ends
+        cache_d2 = _get_cubic_cache(x, Deriv2(1.0))
         @test cache_d2 isa CubicSplineCache{Float64}
-        @test cache_d2.bc_data isa BCPair{Float64, D2{Float64}, D2{Float64}}
+        @test cache_d2.bc_data isa BCPair{Float64, Deriv2{Float64}, Deriv2{Float64}}
         # On cache miss, actual BC values from request are stored
         @test cache_d2.bc_data.left.val == 1.0
         @test cache_d2.bc_data.right.val == 1.0
 
         # Float32 with PointBC
         x32 = Float32.(x)
-        cache_d1_32 = _get_cubic_cache(x32, D1(Float32(0.5)))
+        cache_d1_32 = _get_cubic_cache(x32, Deriv1(Float32(0.5)))
         @test cache_d1_32 isa CubicSplineCache{Float32}
     end
 
@@ -555,7 +555,7 @@ import FastInterpolations: _get_cubic_cache
 
         # Integer Vector with BCPair - should convert to Float64
         x_int = collect(0:10)
-        cache = _get_cubic_cache(x_int, BCPair(D1(0.0), D2(0.0)))
+        cache = _get_cubic_cache(x_int, BCPair(Deriv1(0.0), Deriv2(0.0)))
         @test cache isa CubicSplineCache{Float64}
 
         # Integer Vector with periodic BC - should convert to Float64

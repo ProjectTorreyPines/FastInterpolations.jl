@@ -1,7 +1,7 @@
 # Type stability tests using @inferred
 using Test
 using FastInterpolations
-using FastInterpolations: BCPair, D1, D2, PeriodicBC, NaturalBC, ClampedBC, CubicSplineCache
+using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, ClampedBC, CubicSplineCache
 
 @testset "Type Stability" begin
     x = collect(range(0.0, 2π, 10))
@@ -17,8 +17,8 @@ using FastInterpolations: BCPair, D1, D2, PeriodicBC, NaturalBC, ClampedBC, Cubi
         @test @inferred(cubic_interp(x, y; bc=NaturalBC())) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=ClampedBC())) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=PeriodicBC())) isa CubicInterpolant
-        @test @inferred(cubic_interp(x, y; bc=BCPair(D1(0.0), D2(0.0)))) isa CubicInterpolant
-        @test @inferred(cubic_interp(x, y; bc=D2(0.0))) isa CubicInterpolant  # PointBC
+        @test @inferred(cubic_interp(x, y; bc=BCPair(Deriv1(0.0), Deriv2(0.0)))) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=Deriv2(0.0))) isa CubicInterpolant  # PointBC
     end
 
     @testset "cubic_interp 2-arg extrap variations" begin
@@ -42,7 +42,7 @@ using FastInterpolations: BCPair, D1, D2, PeriodicBC, NaturalBC, ClampedBC, Cubi
         # Various BC + extrap combinations
         @test @inferred(cubic_interp(x, y; bc=NaturalBC(), extrap=:extension)) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=ClampedBC(), extrap=:constant)) isa CubicInterpolant
-        @test @inferred(cubic_interp(x, y; bc=BCPair(D1(0.5), D2(-0.5)), extrap=:wrap)) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=BCPair(Deriv1(0.5), Deriv2(-0.5)), extrap=:wrap)) isa CubicInterpolant
 
         # Periodic BC always uses :wrap internally
         itp_periodic = @inferred cubic_interp(x, y; bc=PeriodicBC())
@@ -56,7 +56,7 @@ using FastInterpolations: BCPair, D1, D2, PeriodicBC, NaturalBC, ClampedBC, Cubi
         @test @inferred(cubic_interp(x, y, x_query; bc=NaturalBC())) isa Vector{Float64}
         @test @inferred(cubic_interp(x, y, x_query; bc=ClampedBC())) isa Vector{Float64}
         @test @inferred(cubic_interp(x, y, x_query; bc=PeriodicBC())) isa Vector{Float64}
-        @test @inferred(cubic_interp(x, y, x_query; bc=BCPair(D1(0.0), D2(0.0)))) isa Vector{Float64}
+        @test @inferred(cubic_interp(x, y, x_query; bc=BCPair(Deriv1(0.0), Deriv2(0.0)))) isa Vector{Float64}
 
         # Scalar query
         @test @inferred(cubic_interp(x, y, 0.5; bc=NaturalBC())) isa Float64

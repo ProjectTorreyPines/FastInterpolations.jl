@@ -7,8 +7,8 @@
 # Type Hierarchy:
 #   AbstractBC{T}
 #   ├── PointBC{T}           # Single-point BC (abstract)
-#   │   ├── D1{T}            # First derivative
-#   │   └── D2{T}            # Second derivative
+#   │   ├── Deriv1{T}            # First derivative
+#   │   └── Deriv2{T}            # Second derivative
 #   ├── BCPair{T,L,R}        # Both endpoints
 #   ├── PeriodicBC{T}        # Periodic BC
 #   ├── NaturalBC{T}         # Natural BC (zero curvature at ends)
@@ -23,7 +23,7 @@ Abstract base type for all boundary condition specifications.
 - `NaturalBC{T}`: Natural BC (zero curvature at both ends) - default
 - `ClampedBC{T}`: Clamped BC (zero slope at both ends)
 - `PeriodicBC{T}`: Periodic boundary condition
-- `PointBC{T}`: Single-point derivative conditions (D1, D2)
+- `PointBC{T}`: Single-point derivative conditions (Deriv1, Deriv2)
 - `BCPair{T,L,R}`: Pair of left/right boundary conditions
 """
 abstract type AbstractBC{T<:AbstractFloat} end
@@ -35,44 +35,44 @@ Abstract type for single-point boundary conditions.
 Represents a derivative condition at one endpoint.
 
 # Subtypes
-- `D1{T}`: First derivative (slope) BC
-- `D2{T}`: Second derivative (curvature) BC
+- `Deriv1{T}`: First derivative (slope) BC
+- `Deriv2{T}`: Second derivative (curvature) BC
 """
 abstract type PointBC{T<:AbstractFloat} <: AbstractBC{T} end
 
 """
-    D1{T<:AbstractFloat} <: PointBC{T}
+    Deriv1{T<:AbstractFloat} <: PointBC{T}
 
 First derivative (slope) boundary condition: S'(endpoint) = val
 
 # Example
 ```julia
-D1(0.5)  # Slope of 0.5 at endpoint
-D1(0)    # Zero slope (horizontal tangent)
+Deriv1(0.5)  # Slope of 0.5 at endpoint
+Deriv1(0)    # Zero slope (horizontal tangent)
 ```
 """
-struct D1{T<:AbstractFloat} <: PointBC{T}
+struct Deriv1{T<:AbstractFloat} <: PointBC{T}
     val::T
 end
-D1(v::Real) = D1{typeof(float(v))}(float(v))
-D1{T}(bc::D1) where {T<:AbstractFloat} = D1{T}(T(bc.val))
+Deriv1(v::Real) = Deriv1{typeof(float(v))}(float(v))
+Deriv1{T}(bc::Deriv1) where {T<:AbstractFloat} = Deriv1{T}(T(bc.val))
 
 """
-    D2{T<:AbstractFloat} <: PointBC{T}
+    Deriv2{T<:AbstractFloat} <: PointBC{T}
 
 Second derivative (curvature) boundary condition: S''(endpoint) = val
 
 # Example
 ```julia
-D2(0)    # Natural BC (zero curvature)
-D2(1.5)  # Specified curvature at endpoint
+Deriv2(0)    # Natural BC (zero curvature)
+Deriv2(1.5)  # Specified curvature at endpoint
 ```
 """
-struct D2{T<:AbstractFloat} <: PointBC{T}
+struct Deriv2{T<:AbstractFloat} <: PointBC{T}
     val::T
 end
-D2(v::Real) = D2{typeof(float(v))}(float(v))
-D2{T}(bc::D2) where {T<:AbstractFloat} = D2{T}(T(bc.val))
+Deriv2(v::Real) = Deriv2{typeof(float(v))}(float(v))
+Deriv2{T}(bc::Deriv2) where {T<:AbstractFloat} = Deriv2{T}(T(bc.val))
 
 """
     BCPair{T, L<:PointBC{T}, R<:PointBC{T}} <: AbstractBC{T}
@@ -82,12 +82,12 @@ The BC types are encoded in the type parameters, enabling compile-time specializ
 
 # Type Parameters
 - `T`: Float type
-- `L`: Left boundary condition type (D1{T} or D2{T})
-- `R`: Right boundary condition type (D1{T} or D2{T})
+- `L`: Left boundary condition type (Deriv1{T} or Deriv2{T})
+- `R`: Right boundary condition type (Deriv1{T} or Deriv2{T})
 
 # Example
 ```julia
-bc = BCPair(D1(0.5), D2(0))  # Left: slope=0.5, Right: natural
+bc = BCPair(Deriv1(0.5), Deriv2(0))  # Left: slope=0.5, Right: natural
 ```
 """
 struct BCPair{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}} <: AbstractBC{T}
@@ -121,7 +121,7 @@ PeriodicBC{T}(::PeriodicBC) where {T<:AbstractFloat} = PeriodicBC{T}()
     NaturalBC{T<:AbstractFloat} <: AbstractBC{T}
 
 Natural boundary condition: S''(endpoints) = 0 (zero curvature at both ends).
-Equivalent to `BCPair(D2(0), D2(0))`.
+Equivalent to `BCPair(Deriv2(0), Deriv2(0))`.
 
 This is the default BC for cubic spline interpolation.
 
@@ -139,7 +139,7 @@ NaturalBC{T}(::NaturalBC) where {T<:AbstractFloat} = NaturalBC{T}()
     ClampedBC{T<:AbstractFloat} <: AbstractBC{T}
 
 Clamped boundary condition: S'(endpoints) = 0 (zero slope at both ends).
-Equivalent to `BCPair(D1(0), D1(0))`.
+Equivalent to `BCPair(Deriv1(0), Deriv1(0))`.
 
 Also known as "complete" spline with zero derivative.
 
@@ -164,8 +164,8 @@ ClampedBC{T}(::ClampedBC) where {T<:AbstractFloat} = ClampedBC{T}()
 Promote a PointBC to a specific float type T.
 Extensible: add methods for new PointBC subtypes.
 """
-@inline _promote_pointbc(bc::D1, ::Type{T}) where {T<:AbstractFloat} = D1{T}(T(bc.val))
-@inline _promote_pointbc(bc::D2, ::Type{T}) where {T<:AbstractFloat} = D2{T}(T(bc.val))
+@inline _promote_pointbc(bc::Deriv1, ::Type{T}) where {T<:AbstractFloat} = Deriv1{T}(T(bc.val))
+@inline _promote_pointbc(bc::Deriv2, ::Type{T}) where {T<:AbstractFloat} = Deriv2{T}(T(bc.val))
 
 
 # ========================================
@@ -181,19 +181,19 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 `_normalize_bc` is called. This function only handles derivative BCs.
 
 # Accepted Input Types
-- `NaturalBC`: Natural BC (zero curvature) → BCPair(D2(0), D2(0))
-- `ClampedBC`: Clamped BC (zero slope) → BCPair(D1(0), D1(0))
+- `NaturalBC`: Natural BC (zero curvature) → BCPair(Deriv2(0), Deriv2(0))
+- `ClampedBC`: Clamped BC (zero slope) → BCPair(Deriv1(0), Deriv1(0))
 - `BCPair`: Left/right BC pair (passed through with type promotion)
-- `PointBC` (D1/D2): Single BC applied symmetrically to both ends
+- `PointBC` (Deriv1/Deriv2): Single BC applied symmetrically to both ends
 
 # Returns
 - `BCPair{T}`: Normalized boundary condition pair
 """
-# NaturalBC → BCPair(D2(0), D2(0))
-@inline _normalize_bc(::NaturalBC, ::Type{T}) where {T<:AbstractFloat} = BCPair(D2(zero(T)), D2(zero(T)))
+# NaturalBC → BCPair(Deriv2(0), Deriv2(0))
+@inline _normalize_bc(::NaturalBC, ::Type{T}) where {T<:AbstractFloat} = BCPair(Deriv2(zero(T)), Deriv2(zero(T)))
 
-# ClampedBC → BCPair(D1(0), D1(0))
-@inline _normalize_bc(::ClampedBC, ::Type{T}) where {T<:AbstractFloat} = BCPair(D1(zero(T)), D1(zero(T)))
+# ClampedBC → BCPair(Deriv1(0), Deriv1(0))
+@inline _normalize_bc(::ClampedBC, ::Type{T}) where {T<:AbstractFloat} = BCPair(Deriv1(zero(T)), Deriv1(zero(T)))
 
 # BCPair passthrough (already normalized)
 @inline _normalize_bc(bc::BCPair{T}, ::Type{T}) where {T<:AbstractFloat} = bc

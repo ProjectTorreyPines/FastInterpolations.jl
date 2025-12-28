@@ -10,36 +10,36 @@
 # Row Builders for Generic BC (Type Dispatch)
 # ========================================
 
-# First row - D2 (second derivative specified): z[1] = bc.val
+# First row - Deriv2 (second derivative specified): z[1] = bc.val
 @inline function _set_first_row!(
-    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::D2{T}, ::AbstractVector{T}
+    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::Deriv2{T}, ::AbstractVector{T}
 ) where {T<:AbstractFloat}
     d_diag[1] = one(T)
     du[1] = zero(T)
     return nothing
 end
 
-# First row - D1 (first derivative specified): 2h₁z₁ + h₁z₂ = 6[(y₂-y₁)/h₁ - S'(x₁)]
+# First row - Deriv1 (first derivative specified): 2h₁z₁ + h₁z₂ = 6[(y₂-y₁)/h₁ - S'(x₁)]
 @inline function _set_first_row!(
-    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::D1{T}, h::AbstractVector{T}
+    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::Deriv1{T}, h::AbstractVector{T}
 ) where {T<:AbstractFloat}
     d_diag[1] = 2 * h[2]
     du[1] = h[2]
     return nothing
 end
 
-# Last row - D2 (second derivative specified): z[n+1] = bc.val
+# Last row - Deriv2 (second derivative specified): z[n+1] = bc.val
 @inline function _set_last_row!(
-    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::D2{T}, ::AbstractVector{T}, n::Int
+    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv2{T}, ::AbstractVector{T}, n::Int
 ) where {T<:AbstractFloat}
     dl[n] = zero(T)
     d_diag[n+1] = one(T)
     return nothing
 end
 
-# Last row - D1 (first derivative specified): hₙzₙ + 2hₙzₙ₊₁ = 6[S'(xₙ₊₁) - (yₙ₊₁-yₙ)/hₙ]
+# Last row - Deriv1 (first derivative specified): hₙzₙ + 2hₙzₙ₊₁ = 6[S'(xₙ₊₁) - (yₙ₊₁-yₙ)/hₙ]
 @inline function _set_last_row!(
-    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::D1{T}, h::AbstractVector{T}, n::Int
+    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv1{T}, h::AbstractVector{T}, n::Int
 ) where {T<:AbstractFloat}
     dl[n] = h[n+1]
     d_diag[n+1] = 2 * h[n+1]
@@ -108,7 +108,7 @@ function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
 end
 
 """
-Build cache for generic derivative BC (D1/D2 combinations).
+Build cache for generic derivative BC (Deriv1/Deriv2 combinations).
 Uses type dispatch for zero-overhead specialization.
 """
 function _build_derivative_bc_cache(
@@ -162,33 +162,33 @@ end
 # RHS helpers for generic BC (type dispatch)
 # ----------------------------------------
 
-# First element - D2: d[1] = bc.val (second derivative value)
+# First element - Deriv2: d[1] = bc.val (second derivative value)
 @inline function _compute_rhs_first!(
-    d::AbstractVector{T}, bc::D2{T}, ::AbstractVector{T}, ::AbstractVector{T}
+    d::AbstractVector{T}, bc::Deriv2{T}, ::AbstractVector{T}, ::AbstractVector{T}
 ) where {T<:AbstractFloat}
     d[1] = bc.val
     return nothing
 end
 
-# First element - D1: d[1] = 6[(y₂-y₁)/h₁ - S'(x₁)]
+# First element - Deriv1: d[1] = 6[(y₂-y₁)/h₁ - S'(x₁)]
 @inline function _compute_rhs_first!(
-    d::AbstractVector{T}, bc::D1{T}, y::AbstractVector{T}, h::AbstractVector{T}
+    d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, h::AbstractVector{T}
 ) where {T<:AbstractFloat}
     d[1] = 6 * ((y[2] - y[1]) / h[2] - bc.val)
     return nothing
 end
 
-# Last element - D2: d[n+1] = bc.val (second derivative value)
+# Last element - Deriv2: d[n+1] = bc.val (second derivative value)
 @inline function _compute_rhs_last!(
-    d::AbstractVector{T}, bc::D2{T}, ::AbstractVector{T}, ::AbstractVector{T}, n::Int
+    d::AbstractVector{T}, bc::Deriv2{T}, ::AbstractVector{T}, ::AbstractVector{T}, n::Int
 ) where {T<:AbstractFloat}
     d[n+1] = bc.val
     return nothing
 end
 
-# Last element - D1: d[n+1] = 6[S'(xₙ₊₁) - (yₙ₊₁-yₙ)/hₙ]
+# Last element - Deriv1: d[n+1] = 6[S'(xₙ₊₁) - (yₙ₊₁-yₙ)/hₙ]
 @inline function _compute_rhs_last!(
-    d::AbstractVector{T}, bc::D1{T}, y::AbstractVector{T}, h::AbstractVector{T}, n::Int
+    d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, h::AbstractVector{T}, n::Int
 ) where {T<:AbstractFloat}
     d[n+1] = 6 * (bc.val - (y[n+1] - y[n]) / h[n+1])
     return nothing

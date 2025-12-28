@@ -373,7 +373,7 @@ end
 
 ### 4.1. Behavior Table
 
-| Mode | In Domain | Outside Domain (Value) | Outside Domain (D1) | Outside Domain (D2) |
+| Mode | In Domain | Outside Domain (Value) | Outside Domain (Deriv1) | Outside Domain (Deriv2) |
 |------|-----------|------------------------|---------------------|---------------------|
 | `:none` | Normal eval | `DomainError` | `DomainError` | `DomainError` |
 | `:constant` | Normal eval | $y_1$ or $y_n$ | **0** | **0** |
@@ -527,7 +527,7 @@ end
 ### 6.1. Mathematical Accuracy
 
 > **Note**: Cubic spline reproduces polynomials exactly only when BCs match the actual function.
-> Natural BC (z=0) is exact only for functions with f''(boundary)=0. General polynomials require explicit D2 BC.
+> Natural BC (z=0) is exact only for functions with f''(boundary)=0. General polynomials require explicit Deriv2 BC.
 
 ```julia
 @testset "Polynomial exactness - quadratic" begin
@@ -535,8 +535,8 @@ end
     x = collect(0.0:0.1:1.0)
     y = x.^2
 
-    # Explicit D2 BC: f''(0) = 2, f''(1) = 2
-    bc = BCPair(D2(2.0), D2(2.0))
+    # Explicit Deriv2 BC: f''(0) = 2, f''(1) = 2
+    bc = BCPair(Deriv2(2.0), Deriv2(2.0))
     xi = 0.5
 
     @test cubic_interp(x, y, xi; bc=bc, deriv=0) ≈ xi^2 atol=1e-10
@@ -549,8 +549,8 @@ end
     x = collect(0.0:0.1:1.0)
     y = x.^3
 
-    # Explicit D2 BC: f''(0) = 0, f''(1) = 6
-    bc = BCPair(D2(0.0), D2(6.0))
+    # Explicit Deriv2 BC: f''(0) = 0, f''(1) = 6
+    bc = BCPair(Deriv2(0.0), Deriv2(6.0))
     xi = 0.5
 
     @test cubic_interp(x, y, xi; bc=bc, deriv=0) ≈ xi^3 atol=1e-10

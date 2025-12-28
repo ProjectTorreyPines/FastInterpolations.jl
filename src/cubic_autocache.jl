@@ -25,8 +25,8 @@ A single cache entry storing an x-grid and its associated CubicSplineCache.
 
 # Type Parameters
 - `T`: Float type (Float32 or Float64)
-- `L`: Left boundary condition type (D1{T} or D2{T})
-- `R`: Right boundary condition type (D1{T} or D2{T})
+- `L`: Left boundary condition type (Deriv1{T} or Deriv2{T})
+- `R`: Right boundary condition type (Deriv1{T} or Deriv2{T})
 - `X`: Grid type (Vector{T} or StepRangeLen)
 """
 mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
@@ -336,7 +336,7 @@ keyed by BC *type* only, not values). See `_solve_system!` 3-arg overload.
 
 # Cache Sharing Behavior
 Cache is keyed by BC *type*, not BC *values*.
-`BCPair(D1(0.0), D2(0.0))` and `BCPair(D1(1.0), D2(2.0))` share the same cache
+`BCPair(Deriv1(0.0), Deriv2(0.0))` and `BCPair(Deriv1(1.0), Deriv2(2.0))` share the same cache
 because they have the same type signature.
 
 LU factorization depends only on matrix structure (x-grid + BC type),
@@ -367,14 +367,14 @@ end
 @inline function _get_cubic_cache(x, ::NaturalBC)
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
-    bc_pair = BCPair(D2(zero(FT)), D2(zero(FT)))
+    bc_pair = BCPair(Deriv2(zero(FT)), Deriv2(zero(FT)))
     return _get_derivative_cache_impl(x, bc_pair)
 end
 
 @inline function _get_cubic_cache(x, ::ClampedBC)
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
-    bc_pair = BCPair(D1(zero(FT)), D1(zero(FT)))
+    bc_pair = BCPair(Deriv1(zero(FT)), Deriv1(zero(FT)))
     return _get_derivative_cache_impl(x, bc_pair)
 end
 

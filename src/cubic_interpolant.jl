@@ -52,17 +52,21 @@ function (itp::CubicInterpolant{T})(xi::AbstractVector{T}; order::Int=0) where {
     return output
 end
 
-# In-place vector call
-function (itp::CubicInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat}
+# In-place vector call with order keyword support
+function (itp::CubicInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}; order::Int=0) where {T<:AbstractFloat}
     @assert length(output) == length(xi) "output length must match xi length"
-    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap)
+    @_dispatch_order order => op begin
+        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap, op)
+    end
     return output
 end
 
-function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
+function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}; order::Int=0) where {T<:AbstractFloat, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     xi_typed = T.(xi)
-    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap)
+    @_dispatch_order order => op begin
+        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap, op)
+    end
     return output
 end
 

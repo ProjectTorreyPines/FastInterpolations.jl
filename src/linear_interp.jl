@@ -694,23 +694,27 @@ function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{T}; order::Int=0) wh
     return output
 end
 
-# In-place vector call - zero allocation
-function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
+# In-place vector call with order keyword support - zero allocation
+function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xi::AbstractVector{T}; order::Int=0) where {T<:AbstractFloat, X, Y}
     @assert length(output) == length(xi) "output length must match xi length"
     @boundscheck _check_domain(itp.x, xi, itp.mode)
-    @inbounds for i in eachindex(xi, output)
-        output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode)
+    @_dispatch_order order => op begin
+        @inbounds for i in eachindex(xi, output)
+            output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode, op)
+        end
     end
     return output
 end
 
-# In-place with type conversion
-function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
+# In-place with type conversion and order keyword
+function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xi::AbstractVector{S}; order::Int=0) where {T<:AbstractFloat, X, Y, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     xi_typed = T.(xi)
     @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
-    @inbounds for i in eachindex(xi_typed, output)
-        output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode)
+    @_dispatch_order order => op begin
+        @inbounds for i in eachindex(xi_typed, output)
+            output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode, op)
+        end
     end
     return output
 end

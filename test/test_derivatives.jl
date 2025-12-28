@@ -440,6 +440,20 @@ end # Derivative Kernels
             derivs2 = itp(x_query; order=2)
             @test all(d ≈ 2.0 for d in derivs2)
         end
+
+        @testset "in-place order=1" begin
+            x_query = [0.25, 0.5, 0.75]
+            output = zeros(3)
+            itp(output, x_query; order=1)
+            @test output ≈ 2.0 .* x_query atol=1e-10
+        end
+
+        @testset "in-place order=2" begin
+            x_query = [0.25, 0.5, 0.75]
+            output = zeros(3)
+            itp(output, x_query; order=2)
+            @test all(d ≈ 2.0 for d in output)
+        end
     end
 
     @testset "CubicInterpolant order keyword" begin
@@ -694,6 +708,23 @@ end # Cubic Derivatives
             x_query = [0.25, 0.75, 1.5, 2.5]
             derivs2 = itp(x_query; order=2)
             @test all(d ≈ 0.0 for d in derivs2)
+        end
+
+        @testset "in-place order=1" begin
+            x_query = [0.25, 0.75, 1.5, 2.5]
+            output = zeros(4)
+            itp(output, x_query; order=1)
+            @test output[1] ≈ 2.0
+            @test output[2] ≈ 2.0
+            @test output[3] ≈ 1.0
+            @test output[4] ≈ 1.0
+        end
+
+        @testset "in-place order=2" begin
+            x_query = [0.25, 0.75, 1.5, 2.5]
+            output = zeros(4)
+            itp(output, x_query; order=2)
+            @test all(d ≈ 0.0 for d in output)
         end
     end
 
@@ -1090,10 +1121,7 @@ end # Derivative Type Stability
         @test itp(5.0; order=1) ≈ cos(5.0) atol=1e-3
         @test itp(5.0; order=2) ≈ -sin(5.0) atol=1e-3
 
-        # Allocation should still be zero
-        itp(5.0; order=1)
-        alloc = @allocated itp(5.0; order=1)
-        @test alloc <= DERIV_ALLOC_THRESHOLD
+        # Note: Allocation tests are in the dedicated "Derivative Allocations" section
     end
 
 end # Derivative Edge Cases

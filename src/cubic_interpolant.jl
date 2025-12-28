@@ -211,8 +211,6 @@ function cubic_interp(
     extrap::Symbol=:none,
     autocache::Bool=true
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
-    _validate_bc(bc)
-
     T = promote_type(TX, TY)
     FT = float(T)
     x_float = _to_float(x, FT)

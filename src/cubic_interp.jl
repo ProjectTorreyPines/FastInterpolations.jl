@@ -81,8 +81,6 @@ result2 = cubic_interp(cache, y2, [0.25, 0.75])
 ```
 """
 function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC=NaturalBC()) where {T<:AbstractFloat}
-    _validate_bc(bc)
-
     # Periodic BC
     if _is_periodic_bc(bc)
         return _build_periodic_cache(x)
@@ -299,7 +297,6 @@ In-place cubic spline interpolation with optional automatic caching.
     autocache::Bool=true,
     deriv::Int=0
 ) where {T<:AbstractFloat}
-    _validate_bc(bc)
     _validate_extrap(extrap)
 
     @_dispatch_deriv deriv => op begin
@@ -341,7 +338,6 @@ end
 ) where {T<:AbstractFloat}
     @assert length(output) >= 1 "output must have at least 1 element"
 
-    _validate_bc(bc)
     _validate_extrap(extrap)
 
     @_dispatch_deriv deriv => op begin
@@ -419,7 +415,6 @@ function cubic_interp(
     autocache::Bool=true,
     deriv::Int=0
 ) where {T<:AbstractFloat}
-    _validate_bc(bc)
     _validate_extrap(extrap)
 
     output = Vector{T}(undef, length(x_query))
@@ -448,7 +443,6 @@ function cubic_interp(
     autocache::Bool=true,
     deriv::Int=0
 ) where {T<:AbstractFloat}
-    _validate_bc(bc)
     _validate_extrap(extrap)
 
     @_dispatch_deriv deriv => op begin

@@ -218,13 +218,6 @@ Valid options: `:none`, `:constant`, `:extension`, `:wrap`
     throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
 end
 
-# Accept BC types: all AbstractBC subtypes
-@inline _validate_bc(::NaturalBC) = nothing
-@inline _validate_bc(::ClampedBC) = nothing
-@inline _validate_bc(::PeriodicBC) = nothing
-@inline _validate_bc(::PointBC) = nothing
-@inline _validate_bc(::BCPair) = nothing
-
 # ========================================
 # Dispatch Macros (Zero-Allocation Branching)
 # ========================================

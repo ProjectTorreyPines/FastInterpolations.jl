@@ -126,6 +126,23 @@
         @test linear_interp(x, y, 1.0) ≈ 5.0
     end
 
+    @testset "Invalid extrap symbol - ArgumentError" begin
+        x = [0.0, 0.5, 1.0]
+        y = [1.0, 3.0, 5.0]
+
+        # Invalid extrap symbol should throw ArgumentError
+        @test_throws ArgumentError linear_interp(x, y, 0.5; extrap=:invalid)
+        @test_throws ArgumentError linear_interp(x, y, 0.5; extrap=:foo)
+        @test_throws ArgumentError linear_interp(x, y, [0.5]; extrap=:invalid)
+
+        # In-place version
+        output = zeros(1)
+        @test_throws ArgumentError linear_interp!(output, x, y, [0.5]; extrap=:invalid)
+
+        # Interpolant via linear_interp(x, y)
+        @test_throws ArgumentError linear_interp(x, y; extrap=:invalid)
+    end
+
     @testset "Edge cases - Exact matches at grid points" begin
         x = 0.0:0.1:1.0
         y = collect(x).^2

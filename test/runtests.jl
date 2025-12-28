@@ -24,5 +24,6 @@ else
     include("test_periodic_bc.jl")
     include("test_generic_bc.jl")
     include("test_type_stability.jl")
+    include("test_derivatives.jl")
     include("test_packages_comparison.jl")
 end

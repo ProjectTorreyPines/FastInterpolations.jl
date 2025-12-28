@@ -138,6 +138,29 @@
         @test cubic_interp(x, y, 1.0) ≈ y[end]
     end
 
+    @testset "Invalid extrap symbol - ArgumentError" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = sin.(2π .* x)
+
+        # Invalid extrap symbol should throw ArgumentError
+        @test_throws ArgumentError cubic_interp(x, y, 0.5; extrap=:invalid)
+        @test_throws ArgumentError cubic_interp(x, y, 0.5; extrap=:foo)
+        @test_throws ArgumentError cubic_interp(x, y, [0.5]; extrap=:invalid)
+
+        # With cache
+        cache = CubicSplineCache(x)
+        @test_throws ArgumentError cubic_interp(cache, y, 0.5; extrap=:invalid)
+        @test_throws ArgumentError cubic_interp(cache, y, [0.5]; extrap=:invalid)
+
+        # In-place version
+        output = zeros(1)
+        @test_throws ArgumentError cubic_interp!(output, x, y, [0.5]; extrap=:invalid)
+        @test_throws ArgumentError cubic_interp!(output, cache, y, [0.5]; extrap=:invalid)
+
+        # Interpolant via cubic_interp(x, y)
+        @test_throws ArgumentError cubic_interp(x, y; extrap=:invalid)
+    end
+
     @testset "Extrapolation :constant" begin
         x = collect(range(0.0, 1.0, 11))
         y = sin.(2π .* x)

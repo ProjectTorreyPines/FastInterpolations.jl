@@ -2,6 +2,7 @@
 Manifest.toml
 
 # Internal development docs
+/docs/plans
 /internal/design/
 
 # Build artifacts

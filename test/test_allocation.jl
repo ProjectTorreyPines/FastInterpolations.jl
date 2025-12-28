@@ -884,10 +884,10 @@ import FastInterpolations: _get_cubic_cache
 
         # Function simulating dynamic BC values in a loop
         function interp_with_dynamic_bc(left_curv::Float64, right_slope::Float64)
-            cubic_interp(x, y, xi; bc=BCPair(D2(left_curv), D1(right_slope)))
+            cubic_interp(x, y, xi; bc=BCPair(Deriv2(left_curv), Deriv1(right_slope)))
         end
 
-        # Prime cache (first call creates cache entry for D2-D1 type combination)
+        # Prime cache (first call creates cache entry for Deriv2-Deriv1 type combination)
         interp_with_dynamic_bc(0.0, 0.0)
 
         # Warmup with varying values
@@ -920,7 +920,7 @@ import FastInterpolations: _get_cubic_cache
 
         # Function simulating dynamic BC values in a loop (in-place version)
         function interp_inplace_dynamic_bc!(out, left_curv::Float64, right_slope::Float64)
-            cubic_interp!(out, x, y, x_query; bc=BCPair(D2(left_curv), D1(right_slope)))
+            cubic_interp!(out, x, y, x_query; bc=BCPair(Deriv2(left_curv), Deriv1(right_slope)))
         end
 
         # Prime cache
@@ -952,7 +952,7 @@ import FastInterpolations: _get_cubic_cache
             for i in 1:n
                 left_curv = sin(Float64(i) * 0.1)
                 right_slope = cos(Float64(i) * 0.1)
-                result += cubic_interp(x, y, xi; bc=BCPair(D2(left_curv), D1(right_slope)))
+                result += cubic_interp(x, y, xi; bc=BCPair(Deriv2(left_curv), Deriv1(right_slope)))
             end
             return result
         end
@@ -968,16 +968,16 @@ import FastInterpolations: _get_cubic_cache
         @test allocs <= ALLOC_THRESHOLD * 100
     end
 
-    @testset "Dynamic BCPair values: symmetric D2-D2 type" begin
+    @testset "Dynamic BCPair values: symmetric Deriv2-Deriv2 type" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
         xi = 0.5
 
         clear_cubic_cache!()
 
-        # Symmetric BC: D2 at both ends with different values
+        # Symmetric BC: Deriv2 at both ends with different values
         function interp_symmetric_d2(left_curv::Float64, right_curv::Float64)
-            cubic_interp(x, y, xi; bc=BCPair(D2(left_curv), D2(right_curv)))
+            cubic_interp(x, y, xi; bc=BCPair(Deriv2(left_curv), Deriv2(right_curv)))
         end
 
         # Prime cache
@@ -996,16 +996,16 @@ import FastInterpolations: _get_cubic_cache
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "Dynamic BCPair values: symmetric D1-D1 type (ClampedBC equivalent)" begin
+    @testset "Dynamic BCPair values: symmetric Deriv1-Deriv1 type (ClampedBC equivalent)" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
         xi = 0.5
 
         clear_cubic_cache!()
 
-        # Symmetric BC: D1 at both ends with different values
+        # Symmetric BC: Deriv1 at both ends with different values
         function interp_symmetric_d1(left_slope::Float64, right_slope::Float64)
-            cubic_interp(x, y, xi; bc=BCPair(D1(left_slope), D1(right_slope)))
+            cubic_interp(x, y, xi; bc=BCPair(Deriv1(left_slope), Deriv1(right_slope)))
         end
 
         # Prime cache
@@ -1032,7 +1032,7 @@ import FastInterpolations: _get_cubic_cache
         clear_cubic_cache!()
 
         function interp_f32_dynamic_bc(left_curv::Float32, right_slope::Float32)
-            cubic_interp(x, y, xi; bc=BCPair(D2(left_curv), D1(right_slope)))
+            cubic_interp(x, y, xi; bc=BCPair(Deriv2(left_curv), Deriv1(right_slope)))
         end
 
         # Prime cache

@@ -218,13 +218,6 @@ Valid options: `:none`, `:constant`, `:extension`, `:wrap`
     throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
 end
 
-# Accept BC types: all AbstractBC subtypes
-@inline _validate_bc(::NaturalBC) = nothing
-@inline _validate_bc(::ClampedBC) = nothing
-@inline _validate_bc(::PeriodicBC) = nothing
-@inline _validate_bc(::PointBC) = nothing
-@inline _validate_bc(::BCPair) = nothing
-
 # ========================================
 # Dispatch Macros (Zero-Allocation Branching)
 # ========================================
@@ -284,6 +277,68 @@ macro _dispatch_extrap(pair, body)
             else
                 throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$_mode"))
             end
+        end
+    end
+end
+
+"""
+    @_dispatch_deriv deriv => op body
+
+Dispatch on runtime deriv integer, executing body with concrete AbstractEvalOp type.
+
+Converts `deriv::Int` (0, 1, 2) to compile-time constant `EvalValue()`, `EvalDeriv1()`,
+or `EvalDeriv2()`. This creates a function barrier ensuring type stability downstream.
+
+# Arguments
+- `deriv => op`: Pair of deriv expression and symbol to bind the concrete EvalOp type
+- `body`: Expression to execute with `op` bound to concrete type
+
+# Example
+```julia
+@_dispatch_deriv deriv => op begin
+    _cubic_interp_impl(x, y, xi, op; extrap=extrap)
+end
+```
+
+Expands to:
+```julia
+let _deriv = deriv
+    if _deriv == 0
+        let op = EvalValue()
+            _cubic_interp_impl(x, y, xi, op; extrap=extrap)
+        end
+    elseif _deriv == 1
+        let op = EvalDeriv1()
+            ...
+        end
+    ...
+    end
+end
+```
+"""
+macro _dispatch_deriv(pair, body)
+    # Parse pair: deriv => op becomes Expr(:call, :(=>), :deriv, :op)
+    pair.head === :call && pair.args[1] === :(=>) ||
+        error("@_dispatch_deriv expects `deriv => op`, got: $pair")
+    deriv_expr = pair.args[2]
+    op_sym = pair.args[3]
+    deriv_var = gensym(:deriv)
+    quote
+        local $(deriv_var) = $(esc(deriv_expr))
+        if $(deriv_var) == 0
+            let $(esc(op_sym)) = EvalValue()
+                $(esc(body))
+            end
+        elseif $(deriv_var) == 1
+            let $(esc(op_sym)) = EvalDeriv1()
+                $(esc(body))
+            end
+        elseif $(deriv_var) == 2
+            let $(esc(op_sym)) = EvalDeriv2()
+                $(esc(body))
+            end
+        else
+            throw(ArgumentError("deriv must be 0, 1, or 2; got $($(deriv_var))"))
         end
     end
 end

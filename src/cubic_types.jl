@@ -5,7 +5,7 @@
 # Separated from cubic_interp.jl for clarity.
 # Include order: utils.jl → bc_types.jl → cubic_types.jl → cubic_solver.jl → cubic_interp.jl
 
-# Boundary condition types (AbstractBC, PointBC, D1, D2, BCPair, PeriodicBC) are defined in bc_types.jl
+# Boundary condition types (AbstractBC, PointBC, Deriv1, Deriv2, BCPair, PeriodicBC) are defined in bc_types.jl
 
 """
     PeriodicData{T}
@@ -67,13 +67,7 @@ struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC}
     bc_data::BC
 end
 
-"""
-    ExtrapVal
-
-Union type for extrapolation mode values.
-Using concrete Union enables Julia's union-splitting optimization.
-"""
-const ExtrapVal = Union{Val{:none}, Val{:constant}, Val{:extension}, Val{:wrap}}
+# ExtrapVal is defined in ops.jl (shared between linear and cubic)
 
 """
     CubicInterpolant{T,C}

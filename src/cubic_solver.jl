@@ -256,14 +256,15 @@ end
     vTq = α * (q[1] + q[n])
 
     denom = one(T) + vTq
-    # Use sqrt(eps) for numerical stability: catches near-degenerate cases
-    # where division would cause significant precision loss (~1e-8 for Float64)
+    # Defensive check: unreachable under valid inputs (denom ≥ √3 for SPD systems),
+    # but guards against corrupted data (NaN/Inf from invalid grid spacing).
+    # The isfinite check catches NaN propagation since abs(NaN) < tol is always false.
     tol = sqrt(eps(T))
-    if abs(denom) < tol
+    if !isfinite(denom) || abs(denom) < tol
         throw(DomainError(denom,
-            "Sherman-Morrison formula failed: denominator (1 + v'q) ≈ 0.\n" *
+            "Sherman-Morrison formula failed: denominator (1 + v'q) ≈ 0 or non-finite.\n" *
             "  denom = $denom (tol = $tol), α = $α, q[1] = $(q[1]), q[n] = $(q[n])\n" *
-            "  This usually indicates a degenerate or ill-conditioned periodic grid."))
+            "  This usually indicates corrupted input data (NaN/Inf) or degenerate grid."))
     end
     factor = vTy / denom
 

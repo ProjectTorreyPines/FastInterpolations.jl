@@ -27,6 +27,9 @@ include("cubic_autocache.jl")   # Ring buffer cache for reusing LU factorization
 include("cubic_interp.jl")      # 4-arg API, helper functions
 include("cubic_interpolant.jl") # 2-arg API, CubicInterpolant callable
 
+# Derivative view wrapper (depends on both CubicInterpolant and LinearInterpolant)
+include("derivative_view.jl")
+
 # Exports
 export linear_interp, linear_interp!, LinearInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant

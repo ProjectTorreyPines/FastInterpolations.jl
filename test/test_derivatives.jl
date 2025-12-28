@@ -706,6 +706,87 @@ end # Cubic Derivatives
         @test linear_interp(x, y, xi; order=2) ≈ 0.0
     end
 
+    # ========================================
+    # LinearInterpolant Order Keyword Tests (Phase 2)
+    # ========================================
+
+    @testset "LinearInterpolant order keyword" begin
+        # Linear function: y = 2x on [0,1] and y = 4x - 2 on [1,2]
+        # Slopes: 2.0 on [0,1], 4.0 on [1,2]
+        x = [0.0, 1.0, 2.0]
+        y = [0.0, 2.0, 6.0]
+        litp = linear_interp(x, y)
+
+        @testset "order=0 matches default call" begin
+            @test litp(0.5) == litp(0.5; order=0)
+            @test litp(0.25) == litp(0.25; order=0)
+            @test litp(1.5) == litp(1.5; order=0)
+        end
+
+        @testset "order=1 matches existing derivative function" begin
+            @test litp(0.5; order=1) == derivative(litp, 0.5)
+            @test litp(0.25; order=1) == derivative(litp, 0.25)
+            @test litp(1.5; order=1) == derivative(litp, 1.5)
+        end
+
+        @testset "order=2 matches existing derivative2 function" begin
+            @test litp(0.5; order=2) == derivative2(litp, 0.5)
+            @test litp(1.0; order=2) == derivative2(litp, 1.0)
+            @test litp(1.5; order=2) == derivative2(litp, 1.5)
+        end
+
+        @testset "order=1 returns correct slopes" begin
+            # Interval [0,1]: slope = (2-0)/(1-0) = 2.0
+            @test litp(0.5; order=1) ≈ 2.0
+            @test litp(0.0; order=1) ≈ 2.0
+            # Interval [1,2]: slope = (6-2)/(2-1) = 4.0
+            @test litp(1.5; order=1) ≈ 4.0
+            @test litp(2.0; order=1) ≈ 4.0
+        end
+
+        @testset "order=2 returns zero" begin
+            # Linear interpolation has no curvature
+            @test litp(0.5; order=2) === 0.0
+            @test litp(1.0; order=2) === 0.0
+            @test litp(1.5; order=2) === 0.0
+        end
+
+        @testset "Real input works with order keyword" begin
+            # Integer input should work (exact equality - same code path after conversion)
+            @test litp(1; order=0) == litp(1.0; order=0)
+            @test litp(1; order=1) == litp(1.0; order=1)
+            @test litp(1; order=2) == litp(1.0; order=2)
+
+            # Float32 input should work (exact equality - 0.5f0 converts exactly to 0.5)
+            @test litp(0.5f0; order=1) == litp(0.5; order=1)
+        end
+
+        @testset "Type stability with order keyword" begin
+            @test @inferred(litp(0.5; order=0)) isa Float64
+            @test @inferred(litp(0.5; order=1)) isa Float64
+            @test @inferred(litp(0.5; order=2)) isa Float64
+        end
+    end
+
+    @testset "LinearInterpolant order keyword - different extrap modes" begin
+        x = [0.0, 1.0, 2.0]
+        y = [0.0, 2.0, 6.0]  # slopes: 2.0, 4.0
+
+        extrap_modes = [:none, :constant, :extension, :wrap]
+
+        for mode in extrap_modes
+            mode == :none && continue  # Skip :none for out-of-domain test
+
+            litp = linear_interp(x, y; extrap=mode)
+            @testset "extrap=$mode" begin
+                # In-domain tests work for all modes
+                @test litp(0.5; order=0) ≈ 1.0
+                @test litp(0.5; order=1) ≈ 2.0
+                @test litp(0.5; order=2) === 0.0
+            end
+        end
+    end
+
 end # Linear Derivatives
 
 # ========================================
@@ -1108,6 +1189,23 @@ end # Derivative Edge Cases
         @test alloc2 == 0
     end
 
+    @testset "LinearInterpolant order keyword allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x .^ 2
+        litp = linear_interp(x, y)
+
+        # Warmup
+        for _ in 1:5
+            litp(0.5; order=0)
+            litp(0.5; order=1)
+            litp(0.5; order=2)
+        end
+
+        @test @allocated(litp(0.5; order=0)) <= DERIV_ALLOC_THRESHOLD
+        @test @allocated(litp(0.5; order=1)) <= DERIV_ALLOC_THRESHOLD
+        @test @allocated(litp(0.5; order=2)) <= DERIV_ALLOC_THRESHOLD
+    end
+
     @testset "Function-wrapped allocation tests" begin
         # Function-wrapped tests for type stability
         function test_derivative_alloc(itp, xi::T) where {T}
@@ -1450,3 +1548,138 @@ end # Derivative Allocations
     end
 
 end # Derivative Comprehensive Coverage
+
+# ========================================
+# Group 10: DerivativeView Wrapper (Phase 3)
+# ========================================
+@testset "DerivativeView Wrapper" begin
+
+    @testset "DerivativeView wrapper - CubicInterpolant" begin
+        x = collect(0.0:0.2:2.0)
+        y = x .^ 2
+        itp = cubic_interp(x, y)
+
+        # Factory functions return DerivativeView
+        d1 = derivative(itp)
+        d2 = derivative2(itp)
+
+        @test d1 isa FastInterpolations.DerivativeView
+        @test d2 isa FastInterpolations.DerivativeView
+
+        # Callable equivalence
+        @test d1(0.5) ≈ itp(0.5; order=1)
+        @test d2(0.5) ≈ itp(0.5; order=2)
+
+        # Multiple points
+        @test d1(0.25) ≈ itp(0.25; order=1)
+        @test d1(1.5) ≈ itp(1.5; order=1)
+        @test d2(1.0) ≈ itp(1.0; order=2)
+
+        # Real input works (Integer → Float64)
+        @test d1(1) ≈ d1(1.0)
+        @test d2(1) ≈ d2(1.0)
+
+        # Type stability
+        @test @inferred(d1(0.5)) isa Float64
+        @test @inferred(d2(0.5)) isa Float64
+    end
+
+    @testset "DerivativeView wrapper - LinearInterpolant" begin
+        x = [0.0, 1.0, 2.0]
+        y = [0.0, 2.0, 6.0]  # slopes: 2.0, 4.0
+        litp = linear_interp(x, y)
+
+        d1 = derivative(litp)
+        d2 = derivative2(litp)
+
+        @test d1 isa FastInterpolations.DerivativeView
+        @test d2 isa FastInterpolations.DerivativeView
+
+        # Callable equivalence
+        @test d1(0.5) ≈ litp(0.5; order=1)
+        @test d2(0.5) === litp(0.5; order=2)
+
+        # Correct slope values
+        @test d1(0.5) ≈ 2.0
+        @test d1(1.5) ≈ 4.0
+        @test d2(0.5) === 0.0
+
+        # Type stability
+        @test @inferred(d1(0.5)) isa Float64
+        @test @inferred(d2(0.5)) isa Float64
+    end
+
+    @testset "Broadcast idiom" begin
+        x = collect(0.0:0.1:2.0)
+        y = x .^ 2
+        itp = cubic_interp(x, y)
+        d1 = derivative(itp)
+
+        # Broadcast works
+        xs = [0.25, 0.5, 0.75, 1.0]
+        @test d1.(xs) ≈ [itp(xi; order=1) for xi in xs]
+
+        # Fused broadcast works
+        @test (@. 2.0 * d1(xs)) ≈ 2.0 .* d1.(xs)
+
+        # Direct vector call should NOT be defined (throws MethodError)
+        @test_throws MethodError d1(xs)
+    end
+
+    @testset "DerivativeView allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x .^ 2
+        itp = cubic_interp(x, y)
+
+        # Warmup
+        d1 = derivative(itp)
+        d1(0.5)
+
+        # Wrapper creation should be cheap (struct with single field)
+        @test @allocated(derivative(itp)) == 0
+
+        # Scalar call should be zero-allocation
+        @test @allocated(d1(0.5)) <= DERIV_ALLOC_THRESHOLD
+    end
+
+    @testset "DerivativeView with different BCs" begin
+        x = collect(range(0.0, 1.0, 21))
+        y = sin.(x)
+
+        # Non-periodic BCs work with regular sin data
+        for bc in [NaturalBC(), ClampedBC()]
+            itp = cubic_interp(x, y; bc=bc)
+            d1 = derivative(itp)
+            d2 = derivative2(itp)
+
+            @testset "BC=$(typeof(bc).name.name)" begin
+                # Should be callable
+                @test d1(0.5) isa Float64
+                @test d2(0.5) isa Float64
+
+                # Should match order keyword
+                @test d1(0.5) == itp(0.5; order=1)
+                @test d2(0.5) == itp(0.5; order=2)
+            end
+        end
+
+        # PeriodicBC requires y[1] ≈ y[end], use full period of sin
+        @testset "BC=PeriodicBC" begin
+            x_periodic = collect(range(0.0, 2π, 51))
+            y_periodic = sin.(x_periodic)  # sin(0) = sin(2π) = 0
+
+            itp = cubic_interp(x_periodic, y_periodic; bc=PeriodicBC())
+            d1 = derivative(itp)
+            d2 = derivative2(itp)
+
+            # Should be callable
+            @test d1(π/4) isa Float64
+            @test d2(π/4) isa Float64
+
+            # Should match order keyword
+            @test d1(π/4) == itp(π/4; order=1)
+            @test d2(π/4) == itp(π/4; order=2)
+        end
+    end
+
+end # DerivativeView Wrapper

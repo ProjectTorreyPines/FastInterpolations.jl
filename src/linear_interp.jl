@@ -656,13 +656,17 @@ struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector
 end
 
 # Scalar call - hot path (inlined for broadcast fusion)
-@inline function (itp::LinearInterpolant{T})(xi::T) where {T<:AbstractFloat}
-    linear_interp(itp.x, itp.y, xi, itp.mode)
+# Supports order keyword for derivative evaluation
+@inline function (itp::LinearInterpolant{T})(xi::T; order::Int=0) where {T<:AbstractFloat}
+    @boundscheck _check_domain(itp.x, xi, itp.mode)
+    @_dispatch_order order => op begin
+        _linear_with_extrap(itp.x, itp.y, xi, itp.mode, op)
+    end
 end
 
-# Real scalar wrapper for convenience
-@inline function (itp::LinearInterpolant{T})(xi::S) where {T<:AbstractFloat, S<:Real}
-    linear_interp(itp.x, itp.y, T(xi), itp.mode)
+# Real scalar wrapper - delegates to T method with order keyword
+@inline function (itp::LinearInterpolant{T})(xi::S; order::Int=0) where {T<:AbstractFloat, S<:Real}
+    itp(T(xi); order=order)
 end
 
 # Vector call - optimized to avoid type reflection
@@ -717,23 +721,17 @@ end
 Compute the first derivative (slope) of the linear interpolant at point `xi`.
 
 Zero-allocation for scalar queries. Returns the constant slope of the segment containing `xi`.
+Equivalent to `itp(xi; order=1)`.
 
 # Example
 ```julia
 itp = linear_interp(x, y)
 slope = derivative(itp, 0.5)
+# or equivalently:
+slope = itp(0.5; order=1)
 ```
 """
-@inline function derivative(itp::LinearInterpolant{T}, xi::T) where {T<:AbstractFloat}
-    @boundscheck _check_domain(itp.x, xi, itp.mode)
-    _linear_with_extrap(itp.x, itp.y, xi, itp.mode, EvalDeriv1())
-end
-
-@inline function derivative(itp::LinearInterpolant{T}, xi::S) where {T<:AbstractFloat, S<:Real}
-    xi_t = T(xi)
-    @boundscheck _check_domain(itp.x, xi_t, itp.mode)
-    _linear_with_extrap(itp.x, itp.y, xi_t, itp.mode, EvalDeriv1())
-end
+@inline derivative(itp::LinearInterpolant, xi::Real) = itp(xi; order=1)
 
 """
     derivative(itp::LinearInterpolant, xi::AbstractVector) -> Vector{T}
@@ -756,23 +754,17 @@ end
 Compute the second derivative of the linear interpolant at point `xi`.
 
 Always returns zero (linear functions have no curvature).
+Equivalent to `itp(xi; order=2)`.
 
 # Example
 ```julia
 itp = linear_interp(x, y)
 curvature = derivative2(itp, 0.5)  # Always 0.0
+# or equivalently:
+curvature = itp(0.5; order=2)
 ```
 """
-@inline function derivative2(itp::LinearInterpolant{T}, xi::T) where {T<:AbstractFloat}
-    @boundscheck _check_domain(itp.x, xi, itp.mode)
-    _linear_with_extrap(itp.x, itp.y, xi, itp.mode, EvalDeriv2())
-end
-
-@inline function derivative2(itp::LinearInterpolant{T}, xi::S) where {T<:AbstractFloat, S<:Real}
-    xi_t = T(xi)
-    @boundscheck _check_domain(itp.x, xi_t, itp.mode)
-    _linear_with_extrap(itp.x, itp.y, xi_t, itp.mode, EvalDeriv2())
-end
+@inline derivative2(itp::LinearInterpolant, xi::Real) = itp(xi; order=2)
 
 """
     derivative2(itp::LinearInterpolant, xi::AbstractVector) -> Vector{T}

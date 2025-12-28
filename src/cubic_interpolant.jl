@@ -34,17 +34,21 @@ end
     itp(T(xi); order=order)
 end
 
-# Vector call
-function (itp::CubicInterpolant{T})(xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
+# Vector call with order keyword support
+function (itp::CubicInterpolant{T})(xi::AbstractVector{S}; order::Int=0) where {T<:AbstractFloat, S<:Real}
     xi_typed = S === T ? xi : T.(xi)
     output = Vector{T}(undef, length(xi_typed))
-    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap)
+    @_dispatch_order order => op begin
+        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap, op)
+    end
     return output
 end
 
-function (itp::CubicInterpolant{T})(xi::AbstractVector{T}) where {T<:AbstractFloat}
+function (itp::CubicInterpolant{T})(xi::AbstractVector{T}; order::Int=0) where {T<:AbstractFloat}
     output = Vector{T}(undef, length(xi))
-    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap)
+    @_dispatch_order order => op begin
+        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap, op)
+    end
     return output
 end
 
@@ -59,68 +63,6 @@ function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S
     @assert length(output) == length(xi) "output length must match xi length"
     xi_typed = T.(xi)
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap)
-    return output
-end
-
-# ========================================
-# Derivative Functions for CubicInterpolant
-# ========================================
-
-"""
-    derivative(itp::CubicInterpolant, xi) -> T
-
-Compute the first derivative of the interpolant at point `xi`.
-
-Zero-allocation for scalar queries. Equivalent to `itp(xi; order=1)`.
-
-# Example
-```julia
-itp = cubic_interp(x, y)
-slope = derivative(itp, 0.5)
-# or equivalently:
-slope = itp(0.5; order=1)
-```
-"""
-@inline derivative(itp::CubicInterpolant, xi::Real) = itp(xi; order=1)
-
-"""
-    derivative(itp::CubicInterpolant, xi::AbstractVector) -> Vector{T}
-
-Compute the first derivative at multiple points.
-"""
-function derivative(itp::CubicInterpolant{T}, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
-    xi_typed = S === T ? xi : T.(xi)
-    output = Vector{T}(undef, length(xi_typed))
-    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap, EvalDeriv1())
-    return output
-end
-
-"""
-    derivative2(itp::CubicInterpolant, xi) -> T
-
-Compute the second derivative of the interpolant at point `xi`.
-
-Zero-allocation for scalar queries. Equivalent to `itp(xi; order=2)`.
-
-# Example
-```julia
-itp = cubic_interp(x, y)
-curvature = derivative2(itp, 0.5)
-# or equivalently:
-curvature = itp(0.5; order=2)
-```
-"""
-@inline derivative2(itp::CubicInterpolant, xi::Real) = itp(xi; order=2)
-
-"""
-    derivative2(itp::CubicInterpolant, xi::AbstractVector) -> Vector{T}
-
-Compute the second derivative at multiple points.
-"""
-function derivative2(itp::CubicInterpolant{T}, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
-    xi_typed = S === T ? xi : T.(xi)
-    output = Vector{T}(undef, length(xi_typed))
-    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap, EvalDeriv2())
     return output
 end
 

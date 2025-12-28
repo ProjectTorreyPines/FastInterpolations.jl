@@ -669,23 +669,27 @@ end
     itp(T(xi); order=order)
 end
 
-# Vector call - optimized to avoid type reflection
-function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{S}) where {T<:AbstractFloat, X, Y, S<:Real}
+# Vector call with order keyword support
+function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{S}; order::Int=0) where {T<:AbstractFloat, X, Y, S<:Real}
     xi_typed = S === T ? xi : T.(xi)
     @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
     output = Vector{T}(undef, length(xi_typed))
-    @inbounds for i in eachindex(xi_typed, output)
-        output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode)
+    @_dispatch_order order => op begin
+        @inbounds for i in eachindex(xi_typed, output)
+            output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode, op)
+        end
     end
     return output
 end
 
 # Optimized path when xi element type matches T (zero conversion)
-function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{T}) where {T<:AbstractFloat, X, Y}
+function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{T}; order::Int=0) where {T<:AbstractFloat, X, Y}
     @boundscheck _check_domain(itp.x, xi, itp.mode)
     output = Vector{T}(undef, length(xi))
-    @inbounds for i in eachindex(xi, output)
-        output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode)
+    @_dispatch_order order => op begin
+        @inbounds for i in eachindex(xi, output)
+            output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode, op)
+        end
     end
     return output
 end
@@ -707,76 +711,6 @@ function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xi::AbstractVec
     @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
     @inbounds for i in eachindex(xi_typed, output)
         output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode)
-    end
-    return output
-end
-
-# ========================================
-# Derivative Functions for LinearInterpolant
-# ========================================
-
-"""
-    derivative(itp::LinearInterpolant, xi) -> T
-
-Compute the first derivative (slope) of the linear interpolant at point `xi`.
-
-Zero-allocation for scalar queries. Returns the constant slope of the segment containing `xi`.
-Equivalent to `itp(xi; order=1)`.
-
-# Example
-```julia
-itp = linear_interp(x, y)
-slope = derivative(itp, 0.5)
-# or equivalently:
-slope = itp(0.5; order=1)
-```
-"""
-@inline derivative(itp::LinearInterpolant, xi::Real) = itp(xi; order=1)
-
-"""
-    derivative(itp::LinearInterpolant, xi::AbstractVector) -> Vector{T}
-
-Compute the first derivative at multiple points.
-"""
-function derivative(itp::LinearInterpolant{T}, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
-    xi_typed = S === T ? xi : T.(xi)
-    output = Vector{T}(undef, length(xi_typed))
-    @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
-    @inbounds for i in eachindex(xi_typed, output)
-        output[i] = _linear_with_extrap(itp.x, itp.y, xi_typed[i], itp.mode, EvalDeriv1())
-    end
-    return output
-end
-
-"""
-    derivative2(itp::LinearInterpolant, xi) -> T
-
-Compute the second derivative of the linear interpolant at point `xi`.
-
-Always returns zero (linear functions have no curvature).
-Equivalent to `itp(xi; order=2)`.
-
-# Example
-```julia
-itp = linear_interp(x, y)
-curvature = derivative2(itp, 0.5)  # Always 0.0
-# or equivalently:
-curvature = itp(0.5; order=2)
-```
-"""
-@inline derivative2(itp::LinearInterpolant, xi::Real) = itp(xi; order=2)
-
-"""
-    derivative2(itp::LinearInterpolant, xi::AbstractVector) -> Vector{T}
-
-Compute the second derivative at multiple points (always zero for linear).
-"""
-function derivative2(itp::LinearInterpolant{T}, xi::AbstractVector{S}) where {T<:AbstractFloat, S<:Real}
-    xi_typed = S === T ? xi : T.(xi)
-    output = Vector{T}(undef, length(xi_typed))
-    @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
-    @inbounds for i in eachindex(xi_typed, output)
-        output[i] = _linear_with_extrap(itp.x, itp.y, xi_typed[i], itp.mode, EvalDeriv2())
     end
     return output
 end

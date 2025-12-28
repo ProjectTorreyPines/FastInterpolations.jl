@@ -71,16 +71,6 @@ end
     return output
 end
 
-# Backward-compatible wrapper (defaults to EvalValue)
-@inline function _linear_interp_loop!(
-    output::AbstractVector{FT},
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT},
-    extrap_val::Val
-) where {FT<:AbstractFloat}
-    _linear_interp_loop!(output, x, y, x_targets, extrap_val, EvalValue())
-end
 
 # Optimized loop for :wrap - uses 2-stage strategy
 # Stage 1: Check if ALL queries are inside domain (cheap: ~150ns for 1000 elements)
@@ -215,15 +205,6 @@ Supports value (EvalValue), first derivative (EvalDeriv1), and second derivative
     @inbounds return _linear_kernel(op, y[idx], y[idx + 1], h, dt1)
 end
 
-# Backward-compatible wrapper (defaults to value)
-@inline function _linear_eval_at_point(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xi::FT,
-    extrap::Val
-)::FT where {FT<:AbstractFloat}
-    _linear_eval_at_point(x, y, xi, extrap, EvalValue())
-end
 
 """
     _linear_eval_constant_extrap(y, is_left, op) -> FT
@@ -307,33 +288,10 @@ end
     _linear_eval_at_point(x, y, xi_wrapped, Val(:extension), op)
 end
 
-# Backward-compatible wrapper (defaults to EvalValue)
-@inline function _linear_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xi::FT,
-    extrap::Val
-)::FT where {FT<:AbstractFloat}
-    _linear_with_extrap(x, y, xi, extrap, EvalValue())
-end
 
 # ========================================
 # Core implementation with Val dispatch
 # ========================================
-
-# Core implementation with Val dispatch (compile-time specialization)
-@inline function linear_interp(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xi::FT,
-    extrap::Val
-)::FT where {FT<:AbstractFloat}
-    # Domain check for :none extrapolation (before interval search)
-    @boundscheck _check_domain(x, xi, extrap)
-    idx, x0, x1 = _find_interval_with_bounds(x, xi)
-    α = _compute_alpha(x0, x1, xi, extrap)
-    @inbounds return y[idx] * (one(FT) - α) + y[idx + 1] * α
-end
 
 # Core implementation with Val + op dispatch
 @inline function linear_interp(
@@ -378,70 +336,6 @@ end
             linear_interp(x, y, xi, ev, op)
         end
     end
-end
-
-# ========================================
-# Helper functions (2-step dispatch pattern)
-# ========================================
-# Step 1: _check_domain (from utils.jl) - Early domain validation for :none extrapolation
-# Step 2: _find_interval_with_bounds (from utils.jl) - Dispatches on grid type (Range O(1) vs Vector O(log n))
-# Step 3: _compute_alpha - Dispatches on extrapolation (constant clamps, extension doesn't)
-
-# Compute alpha with :none extrapolation (domain already checked)
-@inline function _compute_alpha(
-    x0::FT,
-    x1::FT,
-    xi::FT,
-    ::Val{:none}
-) where {FT<:AbstractFloat}
-    return (xi - x0) / (x1 - x0)
-end
-
-# Compute alpha with constant extrapolation (clamp to [0, 1])
-@inline function _compute_alpha(
-    x0::FT,
-    x1::FT,
-    xi::FT,
-    ::Val{:constant}
-) where {FT<:AbstractFloat}
-    α = (xi - x0) / (x1 - x0)
-    return clamp(α, zero(FT), one(FT))
-end
-
-# Compute alpha with extension extrapolation (no clamping)
-@inline function _compute_alpha(
-    x0::FT,
-    x1::FT,
-    xi::FT,
-    ::Val{:extension}
-) where {FT<:AbstractFloat}
-    return (xi - x0) / (x1 - x0)
-end
-
-# ========================================
-# Wrap extrapolation support
-# ========================================
-
-"""
-    linear_interp(x, y, xi, ::Val{:wrap})
-
-Linear interpolation with coordinate wrapping.
-Wraps xi to domain [first(x), last(x)) before interpolation.
-Useful for periodic data where y[1] may or may not equal y[end].
-"""
-@inline function linear_interp(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xi::FT,
-    ::Val{:wrap}
-)::FT where {FT<:AbstractFloat}
-    # Wrap to domain - optimized to skip mod if in-bounds
-    xi_wrapped = _wrap_to_domain(xi, first(x), last(x))
-
-    # Find interval and interpolate (using extension alpha since we're in domain)
-    idx, x0, x1 = _find_interval_with_bounds(x, xi_wrapped)
-    α = _compute_alpha(x0, x1, xi_wrapped, Val(:extension))
-    @inbounds return y[idx] * (one(FT) - α) + y[idx + 1] * α
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
@@ -508,10 +402,6 @@ end
     return output
 end
 
-# Backward-compatible wrapper
-@inline function _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, extrap_val::Val)
-    _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, extrap_val, EvalValue())
-end
 
 # Wrapper for AbstractRange with Real types (requires conversion)
 function linear_interp!(

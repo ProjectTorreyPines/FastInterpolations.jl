@@ -130,18 +130,6 @@ end
 # BC-Aware Evaluation Helper
 # ========================================
 
-"Evaluate with BC-aware dispatch (Periodic BC - ignores extrapolation) - backward compat."
-@inline function _eval_with_bc(
-    cache::CubicSplineCache{T,X,F,PeriodicData{T}},
-    y::AbstractVector{T},
-    h::AbstractVector{T},
-    z::AbstractVector{T},
-    xi::T,
-    ev::Val  # extrapolation ignored for periodic
-) where {T<:AbstractFloat, X, F}
-    _eval_with_bc(cache, y, h, z, xi, ev, EvalValue())
-end
-
 "Evaluate with BC-aware dispatch (Periodic BC) with op."
 @inline function _eval_with_bc(
     cache::CubicSplineCache{T,X,F,PeriodicData{T}},
@@ -153,18 +141,6 @@ end
     op::O
 ) where {T<:AbstractFloat, X, F, O<:AbstractEvalOp}
     _eval_cubic_at_point_periodic(cache.x, y, h, z, xi, cache.bc_data.period, op)
-end
-
-"Evaluate with BC-aware dispatch (Generic Derivative BC) - backward compat."
-@inline function _eval_with_bc(
-    cache::CubicSplineCache{T,X,F,BCPair{T,L,R}},
-    y::AbstractVector{T},
-    h::AbstractVector{T},
-    z::AbstractVector{T},
-    xi::T,
-    extrap::Val
-) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}}
-    _eval_with_bc(cache, y, h, z, xi, extrap, EvalValue())
 end
 
 "Evaluate with BC-aware dispatch (Generic Derivative BC) with op."
@@ -184,18 +160,6 @@ end
 # Vector Loop Functions
 # ========================================
 
-"Default vector loop (for :none, :constant, :extension) - backward compatible."
-@inline function _cubic_vector_loop!(
-    output::AbstractVector{T},
-    cache::CubicSplineCache{T,X,F,BC},
-    y::AbstractVector{T},
-    z::AbstractVector{T},
-    x_query::AbstractVector{T},
-    ev::Val
-) where {T<:AbstractFloat, X, F, BC}
-    _cubic_vector_loop!(output, cache, y, z, x_query, ev, EvalValue())
-end
-
 "Default vector loop with op parameter (for :none, :constant, :extension)."
 @inline function _cubic_vector_loop!(
     output::AbstractVector{T},
@@ -210,18 +174,6 @@ end
     @inbounds for (k, xq) in enumerate(x_query)
         output[k] = _eval_with_bc(cache, y, cache.h, z, xq, ev, op)
     end
-end
-
-"Optimized vector loop for Periodic BC - backward compat."
-@inline function _cubic_vector_loop!(
-    output::AbstractVector{T},
-    cache::CubicSplineCache{T,X,F,PeriodicData{T}},
-    y::AbstractVector{T},
-    z::AbstractVector{T},
-    x_query::AbstractVector{T},
-    ev::Val  # extrap ignored for periodic
-) where {T<:AbstractFloat, X, F}
-    _cubic_vector_loop!(output, cache, y, z, x_query, ev, EvalValue())
 end
 
 "Optimized vector loop for Periodic BC with op - uses 2-stage strategy."

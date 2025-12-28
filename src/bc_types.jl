@@ -226,8 +226,5 @@ end
 
 Check if a boundary condition is periodic.
 """
-@inline _is_periodic_bc(::PeriodicBC) = true
-@inline _is_periodic_bc(::NaturalBC) = false
-@inline _is_periodic_bc(::ClampedBC) = false
-@inline _is_periodic_bc(::BCPair) = false
-@inline _is_periodic_bc(::PointBC) = false
+@inline _is_periodic_bc(::AbstractBC) = false  # default for all BC types
+@inline _is_periodic_bc(::PeriodicBC) = true   # only PeriodicBC is periodic

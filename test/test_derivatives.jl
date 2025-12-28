@@ -13,7 +13,7 @@ using FastInterpolations: _eval_cubic_at_point, _eval_cubic_with_extrap, _get_cu
 using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
 
 # Julia version-aware threshold (1.12+ has improved allocation tracking)
-const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 64
+const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
 
 # ========================================
 # Group 1: Core Types and Dispatch

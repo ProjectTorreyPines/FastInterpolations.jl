@@ -98,39 +98,8 @@ end
 # ========================================
 
 # Note: _is_periodic_bc is defined in bc_types.jl
-
-"""
-    _get_cache_and_solve!(x, y, bc_pair, autocache) -> CubicSplineCache
-
-Common helper for BCPair: creates cache (with optional autocache) and solves system.
-Eliminates duplication across 4-arg and 2-arg paths.
-"""
-@inline function _get_cache_and_solve!(
-    x::AbstractVector{T}, y::AbstractVector{T},
-    bc_pair::BCPair{T,L,R}, autocache::Bool
-) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
-    if autocache
-        cache = _get_cubic_cache(x, bc_pair)
-        _solve_system!(cache, y, bc_pair)
-    else
-        cache = CubicSplineCache(x; bc=bc_pair)
-        _solve_system!(cache, y, cache.bc_data)
-    end
-    return cache
-end
-
-"""
-    _get_cache_and_solve_periodic!(x, y, autocache) -> CubicSplineCache
-
-Common helper for PeriodicBC: creates cache (with optional autocache) and solves system.
-"""
-@inline function _get_cache_and_solve_periodic!(
-    x::AbstractVector{T}, y::AbstractVector{T}, autocache::Bool
-) where {T<:AbstractFloat}
-    cache = autocache ? _get_cubic_cache(x, PeriodicBC{T}()) : CubicSplineCache(x; bc=PeriodicBC())
-    _solve_system!(cache, y, cache.bc_data)
-    return cache
-end
+# Note: _get_cache_and_solve! helpers have been removed for thread-safety.
+#       All functions now use _get_cubic_cache + @with_pool pattern.
 
 # ========================================
 # In-Place Vector API
@@ -142,6 +111,7 @@ end
 In-place cubic spline interpolation using cached LU factorization.
 
 Solves the tridiagonal system ONCE, then evaluates at all query points.
+Thread-safe: workspaces allocated from task-local pool.
 
 # Arguments
 - `output::AbstractVector{T}`: Pre-allocated output buffer (modified in-place)
@@ -151,7 +121,7 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
 - `extrap::Symbol=:none`: Extrapolation mode (`:none`, `:constant`, `:extension`, `:wrap`)
 - `deriv::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 """
-@inline function cubic_interp!(
+@inline @with_pool pool function cubic_interp!(
     output::AbstractVector{T},
     cache::CubicSplineCache{T,X,F,BC},
     y::AbstractVector{T},
@@ -162,7 +132,8 @@ Solves the tridiagonal system ONCE, then evaluates at all query points.
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
 
-    z = _solve_system!(cache, y, cache.bc_data)
+    z = similar!(pool, y)
+    _solve_system!(z, cache, y, cache.bc_data)
 
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
@@ -186,9 +157,9 @@ end
 
 """
 Core implementation for BCPair boundary conditions (vector output).
-Uses `_get_cache_and_solve!` helper for unified autocache handling.
+Thread-safe: uses _get_cubic_cache + @with_pool pattern.
 """
-@inline function _cubic_interp_bcpair!(
+@inline @with_pool pool function _cubic_interp_bcpair!(
     output::AbstractVector{T},
     x::AbstractVector{T},
     y::AbstractVector{T},
@@ -201,8 +172,9 @@ Uses `_get_cache_and_solve!` helper for unified autocache handling.
     @assert length(y) == length(x) "y length must match x"
     @assert length(output) == length(x_query) "output length must match x_query"
 
-    cache = _get_cache_and_solve!(x, y, bc, autocache)
-    z = cache.z_workspace
+    cache = _get_cubic_cache(x, bc, autocache)
+    z = similar!(pool, y)
+    _solve_system!(z, cache, y, bc)
 
     @_dispatch_extrap extrap => ev begin
         _cubic_vector_loop!(output, cache, y, z, x_query, ev, op)
@@ -213,9 +185,9 @@ end
 
 """
 Core implementation for BCPair boundary conditions (scalar query).
-Uses `_get_cache_and_solve!` helper for unified autocache handling.
+Thread-safe: uses _get_cubic_cache + @with_pool pattern.
 """
-@inline function _cubic_interp_bcpair_scalar(
+@inline @with_pool pool function _cubic_interp_bcpair_scalar(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_query::T,
@@ -224,20 +196,24 @@ Uses `_get_cache_and_solve!` helper for unified autocache handling.
     autocache::Bool,
     op::O
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, O<:AbstractEvalOp}
-    cache = _get_cache_and_solve!(x, y, bc, autocache)
-    z = cache.z_workspace
+    # cache = _get_cache_and_solve!(x, y, bc, autocache)
+    # z = cache.z_workspace
+
+    tmp_z = similar!(pool, y)
+    cache = _get_cubic_cache(x, bc, autocache)
+    _solve_system!(tmp_z, cache, y, bc)
 
     @_dispatch_extrap extrap => ev begin
         _check_domain(cache.x, x_query, ev)
-        return _eval_with_bc(cache, y, cache.h, z, x_query, ev, op)
+        return _eval_with_bc(cache, y, cache.h, tmp_z, x_query, ev, op)
     end
 end
 
 """
 Core implementation for PeriodicBC boundary conditions (vector output).
-Uses `_get_cache_and_solve_periodic!` helper for unified autocache handling.
+Thread-safe: uses _get_cubic_cache + @with_pool pattern.
 """
-@inline function _cubic_interp_periodic!(
+@inline @with_pool pool function _cubic_interp_periodic!(
     output::AbstractVector{T},
     x::AbstractVector{T},
     y::AbstractVector{T},
@@ -249,8 +225,9 @@ Uses `_get_cache_and_solve_periodic!` helper for unified autocache handling.
     @assert length(output) == length(x_query) "output length must match x_query"
 
     _check_periodic_endpoints(y)
-    cache = _get_cache_and_solve_periodic!(x, y, autocache)
-    z = cache.z_workspace
+    cache = _get_cubic_cache(x, PeriodicBC{T}(), autocache)
+    z = similar!(pool, y)
+    _solve_system!(z, cache, y, cache.bc_data)
 
     # Periodic BC always uses :wrap extrapolation
     @_dispatch_extrap :wrap => ev begin
@@ -262,9 +239,9 @@ end
 
 """
 Core implementation for PeriodicBC boundary conditions (scalar query).
-Uses `_get_cache_and_solve_periodic!` helper for unified autocache handling.
+Thread-safe: uses _get_cubic_cache + @with_pool pattern.
 """
-@inline function _cubic_interp_periodic_scalar(
+@inline @with_pool pool function _cubic_interp_periodic_scalar(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_query::T,
@@ -272,8 +249,9 @@ Uses `_get_cache_and_solve_periodic!` helper for unified autocache handling.
     op::O
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     _check_periodic_endpoints(y)
-    cache = _get_cache_and_solve_periodic!(x, y, autocache)
-    z = cache.z_workspace
+    cache = _get_cubic_cache(x, PeriodicBC{T}(), autocache)
+    z = similar!(pool, y)
+    _solve_system!(z, cache, y, cache.bc_data)
 
     # Periodic BC always uses :wrap extrapolation
     @_dispatch_extrap :wrap => ev begin

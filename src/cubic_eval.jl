@@ -208,8 +208,13 @@ end
 # Scalar Evaluation Entry Point
 # ========================================
 
-"Scalar cubic spline evaluation (solves system once, evaluates once)."
-@inline function cubic_interp_scalar(
+"""
+Scalar cubic spline evaluation (solves system once, evaluates once).
+
+# Thread-Safety
+Uses task-local pool for workspace allocation.
+"""
+@inline @with_pool pool function cubic_interp_scalar(
     cache::CubicSplineCache{T,X,F,BC},
     y::AbstractVector{T},
     x_query::T;
@@ -218,7 +223,8 @@ end
 ) where {T<:AbstractFloat, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
-    z = _solve_system!(cache, y, cache.bc_data)
+    z = similar!(pool, y)
+    _solve_system!(z, cache, y, cache.bc_data)
 
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin

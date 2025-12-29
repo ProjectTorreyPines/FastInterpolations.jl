@@ -28,21 +28,21 @@ end
     return nothing
 end
 
-# Last row - Deriv2 (second derivative specified): z[n+1] = bc.val
+# Last row - Deriv2 (second derivative specified): z[end] = bc.val
 @inline function _set_last_row!(
-    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv2{T}, ::AbstractVector{T}, n::Int
+    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv2{T}, ::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    dl[n] = zero(T)
-    d_diag[n+1] = one(T)
+    dl[end] = zero(T)
+    d_diag[end] = one(T)
     return nothing
 end
 
 # Last row - Deriv1 (first derivative specified): hₙzₙ + 2hₙzₙ₊₁ = 6[S'(xₙ₊₁) - (yₙ₊₁-yₙ)/hₙ]
 @inline function _set_last_row!(
-    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv1{T}, h::AbstractVector{T}, n::Int
+    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv1{T}, h::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    dl[n] = h[n+1]
-    d_diag[n+1] = 2 * h[n+1]
+    dl[end] = h[end-1]
+    d_diag[end] = 2 * h[end-1]
     return nothing
 end
 
@@ -52,12 +52,11 @@ end
 
 "Build cache for periodic cubic spline using Sherman-Morrison formula."
 function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
-    N = length(x)
-    n = N - 1  # Number of intervals
+    n = length(x) - 1  # Number of intervals
 
-    length(x) >= 4 || throw(ArgumentError("Periodic spline requires at least 4 points"))
+    n >= 3 || throw(ArgumentError("Periodic spline requires at least 4 points"))
 
-    period = x[N] - x[1]
+    period = last(x) - first(x)
 
     # Compute grid spacing h
     h = Vector{T}(undef, n + 2)
@@ -130,7 +129,7 @@ function _build_derivative_bc_cache(
 
     # First and last rows depend on BC type (type dispatch)
     _set_first_row!(d_diag, du, left_bc, h)
-    _set_last_row!(dl, d_diag, right_bc, h, n)
+    _set_last_row!(dl, d_diag, right_bc, h)
 
     # Interior rows (same for all BC types)
     @inbounds for i in 2:n
@@ -172,19 +171,19 @@ end
     return nothing
 end
 
-# Last element - Deriv2: d[n+1] = bc.val (second derivative value)
+# Last element - Deriv2: d[end] = bc.val (second derivative value)
 @inline function _compute_rhs_last!(
-    d::AbstractVector{T}, bc::Deriv2{T}, ::AbstractVector{T}, ::AbstractVector{T}, n::Int
+    d::AbstractVector{T}, bc::Deriv2{T}, ::AbstractVector{T}, ::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    d[n+1] = bc.val
+    d[end] = bc.val
     return nothing
 end
 
-# Last element - Deriv1: d[n+1] = 6[S'(xₙ₊₁) - (yₙ₊₁-yₙ)/hₙ]
+# Last element - Deriv1: d[end] = 6[S'(x_end) - (y_end - y_{end-1}) / h_{end-1}]
 @inline function _compute_rhs_last!(
-    d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, h::AbstractVector{T}, n::Int
+    d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, h::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    d[n+1] = 6 * (bc.val - (y[n+1] - y[n]) / h[n+1])
+    d[end] = 6 * (bc.val - (y[end] - y[end-1]) / h[end-1])
     return nothing
 end
 
@@ -200,7 +199,7 @@ Compute RHS vector for generic derivative BC system in-place.
     @inbounds for i in 2:n
         d[i] = 6 * ((y[i+1] - y[i]) / h[i+1] - (y[i] - y[i-1]) / h[i])
     end
-    _compute_rhs_last!(d, bc_data.right, y, h, n)
+    _compute_rhs_last!(d, bc_data.right, y, h)
     return nothing
 end
 
@@ -210,16 +209,15 @@ end
 
 "Compute RHS vector d for periodic cubic spline system in-place."
 @inline function compute_rhs_periodic!(d::AbstractVector{T}, y::AbstractVector{T}, h::AbstractVector{T}) where {T}
-    N = length(y)
-    n = N - 1
+    n = length(y) - 1
 
-    @inbounds d[1] = 6 * (y[2] - y[1]) / h[2] - 6 * (y[1] - y[N-1]) / h[n+1]
+    @inbounds d[1] = 6 * (y[2] - y[1]) / h[2] - 6 * (y[1] - y[end-1]) / h[n+1]
 
     @inbounds for i in 2:n-1
         d[i] = 6 * (y[i+1] - y[i]) / h[i+1] - 6 * (y[i] - y[i-1]) / h[i]
     end
 
-    @inbounds d[n] = 6 * (y[N] - y[N-1]) / h[n+1] - 6 * (y[N-1] - y[N-2]) / h[n]
+    @inbounds d[n] = 6 * (y[end] - y[end-1]) / h[n+1] - 6 * (y[end-1] - y[end-2]) / h[n]
 
     return nothing
 end
@@ -236,8 +234,7 @@ end
     cache::CubicSplineCache{T,X,F,PeriodicData{T}},
     y::AbstractVector{T}
 ) where {T<:AbstractFloat, X, F}
-    N = length(y)
-    n = N - 1
+    n = length(y) - 1
 
     compute_rhs_periodic!(d_workspace, y, cache.h)
 
@@ -308,10 +305,9 @@ Thread-safe: workspaces allocated from task-local pool.
     y::AbstractVector{T},
     ::PeriodicData{T}  # Unused, for API consistency with BCPair version
 ) where {T<:AbstractFloat, X, F}
-    N = length(y)
-    n = N - 1
+    n = length(y) - 1
 
-    # Periodic workspaces need n elements (NOT N!)
+    # Periodic workspaces need n elements (NOT length(y)!)
     d_workspace = acquire!(pool, T, n)
     y_temp = acquire!(pool, T, n)
 

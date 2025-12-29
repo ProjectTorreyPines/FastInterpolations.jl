@@ -88,7 +88,10 @@ PeriodicCacheBank{T,X}() where {T<:AbstractFloat, X<:AbstractVector{T}} =
 const _DERIVATIVE_BANK_REGISTRY = IdDict{DataType, Any}()
 const _PERIODIC_BANK_REGISTRY = IdDict{DataType, Any}()
 const _CACHE_LOCK = ReentrantLock()
-const _CACHE_SIZE_REF = Ref{Int}(16)
+
+# Load-time constant: immutable after package load, enables compiler optimizations
+# Change via set_cubic_cache_size!(n) then restart Julia
+const _CACHE_SIZE = @load_preference("cache_size", 16)::Int
 
 
 # ===============================================================
@@ -98,23 +101,34 @@ const _CACHE_SIZE_REF = Ref{Int}(16)
 """
     set_cubic_cache_size!(n::Int)
 
-Set maximum number of cached x-grids per store.
+Set maximum cache size for future Julia sessions via Preferences.jl.
+
+**Requires Julia restart** to take effect (cache size is a load-time constant
+for thread-safety and compiler optimization).
 
 # Arguments
 - `n::Int`: Maximum cache entries (default: 16)
+
+# Example
+```julia
+set_cubic_cache_size!(32)  # Sets preference
+# Restart Julia to apply new size
+get_cubic_cache_size()     # Now returns 32
+```
 """
 function set_cubic_cache_size!(n::Int)
     n > 0 || throw(ArgumentError("Cache size must be positive"))
-    _CACHE_SIZE_REF[] = n
+    @set_preferences!("cache_size" => n)
+    @info "Cache size set to $n. Restart Julia to apply."
     return n
 end
 
 """
     get_cubic_cache_size()
 
-Get current maximum cache size.
+Get current maximum cache size (load-time constant).
 """
-get_cubic_cache_size() = _CACHE_SIZE_REF[]
+get_cubic_cache_size() = _CACHE_SIZE
 
 """
     clear_cubic_cache!()
@@ -183,13 +197,12 @@ end
 # ===============================================================
 
 @inline function _add_to_ring!(store::Vector{E}, ring::Base.RefValue{Int}, entry::E) where E
-    max_size = _CACHE_SIZE_REF[]
-    if length(store) < max_size
+    if length(store) < _CACHE_SIZE
         push!(store, entry)
     else
         idx = ring[]
         store[idx] = entry
-        ring[] = (idx % max_size) + 1
+        ring[] = (idx % _CACHE_SIZE) + 1
     end
     return nothing
 end

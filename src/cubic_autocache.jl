@@ -51,8 +51,12 @@ mutable struct CacheBank{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:Abst
     ring::Base.RefValue{Int}
 end
 
-CacheBank{T,L,R,X}() where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}} =
-    CacheBank{T,L,R,X}(CacheEntry{T,L,R,X}[], Ref(1))
+# Constructor with sizehint! to prevent push! reallocation race during warm-up
+function CacheBank{T,L,R,X}() where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+    store = CacheEntry{T,L,R,X}[]
+    sizehint!(store, _CACHE_SIZE)  # Pre-allocate to prevent push! reallocation race
+    CacheBank{T,L,R,X}(store, Ref(1))
+end
 
 """
     PeriodicCacheEntry{T, X}
@@ -75,8 +79,12 @@ mutable struct PeriodicCacheBank{T<:AbstractFloat, X<:AbstractVector{T}}
     ring::Base.RefValue{Int}
 end
 
-PeriodicCacheBank{T,X}() where {T<:AbstractFloat, X<:AbstractVector{T}} =
-    PeriodicCacheBank{T,X}(PeriodicCacheEntry{T,X}[], Ref(1))
+# Constructor with sizehint! to prevent push! reallocation race during warm-up
+function PeriodicCacheBank{T,X}() where {T<:AbstractFloat, X<:AbstractVector{T}}
+    store = PeriodicCacheEntry{T,X}[]
+    sizehint!(store, _CACHE_SIZE)  # Pre-allocate to prevent push! reallocation race
+    PeriodicCacheBank{T,X}(store, Ref(1))
+end
 
 # ===============================================================
 # Bank Registry (Dynamic/Lazy)
@@ -93,6 +101,28 @@ const _CACHE_LOCK = ReentrantLock()
 # Change via set_cubic_cache_size!(n) then restart Julia
 const _CACHE_SIZE = @load_preference("cache_size", 16)::Int
 
+# ===============================================================
+# Module Initialization (Thread-Safety)
+# ===============================================================
+
+"""
+    __init__()
+
+Module initialization function called at `using` time (not precompile time).
+Pre-allocates registry capacity to prevent IdDict resize race during concurrent bank creation.
+
+# Thread-Safety
+- IdDict resizes at ~33% load factor
+- `sizehint!(100)` → 256 slots → safe for ~85 entries
+- Realistic usage: <20 different (T, L, R, X) type combinations
+"""
+function __init__()
+    # Pre-allocate registry capacity to prevent resize race during bank creation.
+    # IdDict resizes at ~33% load factor; sizehint!(100) → 256 slots → ~85 safe entries.
+    # Realistic usage: <20 different (T, L, R, X) type combinations.
+    sizehint!(_DERIVATIVE_BANK_REGISTRY, 100)
+    sizehint!(_PERIODIC_BANK_REGISTRY, 100)
+end
 
 # ===============================================================
 # Public API
@@ -211,6 +241,41 @@ end
 # Internal: Lookup/Insert (Unified)
 # ===============================================================
 
+# ---------------------------------------------------------------
+# DCL (Double-Check Locking) Helpers
+# ---------------------------------------------------------------
+# These are @noinline to prevent closure allocation from affecting hot path.
+# The lock() do pattern creates closures; isolating them ensures
+# cache hit paths remain zero-allocation.
+
+"""
+DCL insert for derivative BC cache (multi-thread path).
+@noinline prevents closure code from affecting hot path optimization.
+"""
+@noinline function _dcl_insert_derivative!(
+    store::Vector{CacheEntry{T,L,R,X}},
+    ring::Base.RefValue{Int},
+    id::UInt,
+    x::X,
+    new_cache::CubicSplineCache{T,X,F,BCPair{T,L,R}}
+) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}, F}
+    lock(_CACHE_LOCK)
+    try
+        # Re-check after acquiring lock (another thread may have inserted)
+        for entry in store
+            if entry.id === id || isequal(entry.x, x)
+                return entry.cache
+            end
+        end
+        # No existing entry found, insert new one
+        new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
+        _add_to_ring!(store, ring, new_entry)
+        return new_cache
+    finally
+        unlock(_CACHE_LOCK)
+    end
+end
+
 """
 Lookup or insert into a derivative BC cache bank.
 2-pass lookup: identity check (fast) → equality check (slower) → insert.
@@ -234,20 +299,54 @@ use 3-arg `_solve_system!` for dynamic BC values.
     # [Pass 2] Equality check - O(1) for Range, O(N) for Vector
     @inbounds for entry in store
         if isequal(entry.x, x)
-            entry.id = id  # Self-healing for future fast-path hits
+            # Self-healing: update id for future fast-path hits (single-thread only)
+            # In multi-thread mode, this write races with other reads/writes
+            Threads.nthreads() == 1 && (entry.id = id)
             return entry.cache
         end
     end
 
-    # [Cache Miss] Create new entry with the provided BC values.
+    # [Cache Miss] Create new cache (expensive, done outside lock)
     # Cache is keyed by BC *type* only (LU factorization depends on matrix structure).
-    # On cache hit, bc_data may differ from caller's BC values, so callers should
-    # use 3-arg _solve_system!(cache, y, bc_tuple) to apply their actual BC values.
     new_cache = _build_derivative_bc_cache(x, bc_pair.left, bc_pair.right)
-    new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
-    _add_to_ring!(store, ring, new_entry)
 
-    return new_cache
+    if Threads.nthreads() == 1
+        # Single-thread: no lock needed
+        new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
+        _add_to_ring!(store, ring, new_entry)
+        return new_cache
+    else
+        # Multi-thread: DCL via @noinline helper (avoids closure in hot path)
+        return _dcl_insert_derivative!(store, ring, id, x, new_cache)
+    end
+end
+
+"""
+DCL insert for periodic BC cache (multi-thread path).
+@noinline prevents closure code from affecting hot path optimization.
+"""
+@noinline function _dcl_insert_periodic!(
+    store::Vector{PeriodicCacheEntry{T,X}},
+    ring::Base.RefValue{Int},
+    id::UInt,
+    x::X,
+    new_cache::CubicSplineCache{T,X,F,PeriodicData{T}}
+) where {T<:AbstractFloat, X<:AbstractVector{T}, F}
+    lock(_CACHE_LOCK)
+    try
+        # Re-check after acquiring lock (another thread may have inserted)
+        for entry in store
+            if entry.id === id || isequal(entry.x, x)
+                return entry.cache
+            end
+        end
+        # No existing entry found, insert new one
+        new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
+        _add_to_ring!(store, ring, new_entry)
+        return new_cache
+    finally
+        unlock(_CACHE_LOCK)
+    end
 end
 
 """
@@ -268,17 +367,25 @@ Lookup or insert into a periodic BC cache bank.
     # [Pass 2] Equality check
     @inbounds for entry in store
         if isequal(entry.x, x)
-            entry.id = id  # Self-healing
+            # Self-healing: update id for future fast-path hits (single-thread only)
+            # In multi-thread mode, this write races with other reads/writes
+            Threads.nthreads() == 1 && (entry.id = id)
             return entry.cache
         end
     end
 
-    # [Cache Miss] Create new entry
+    # [Cache Miss] Create new cache (expensive, done outside lock)
     new_cache = _build_periodic_cache(x)
-    new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
-    _add_to_ring!(store, ring, new_entry)
 
-    return new_cache
+    if Threads.nthreads() == 1
+        # Single-thread: no lock needed
+        new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
+        _add_to_ring!(store, ring, new_entry)
+        return new_cache
+    else
+        # Multi-thread: DCL via @noinline helper (avoids closure in hot path)
+        return _dcl_insert_periodic!(store, ring, id, x, new_cache)
+    end
 end
 
 # ===============================================================

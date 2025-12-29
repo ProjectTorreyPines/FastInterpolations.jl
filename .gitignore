@@ -13,6 +13,13 @@ Manifest.toml
 # Documentation build
 /docs/build/
 /docs/site/
+/docs/Manifest.toml
+
+# Auto-generated docs (created by make.jl)
+/docs/src/index.md
+/docs/src/tutorials/
+/docs/src/guides/performance.md
+/docs/src/images/
 
 # Test artifacts
 /test/Manifest.toml

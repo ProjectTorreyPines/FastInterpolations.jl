@@ -3,6 +3,7 @@ module FastInterpolations
 import LinearAlgebra
 using LinearAlgebra: Tridiagonal, lu, ldiv!
 using Preferences: @load_preference, @set_preferences!
+using AdaptiveArrayPools
 
 # Operation types (must be first - used by all interp files)
 include("ops.jl")

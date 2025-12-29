@@ -53,11 +53,11 @@ if isdir(IMAGES_SRC)
     end
 end
 
-# 1c. Copy README.md → index.md (with path rewriting)
+# 1b. Copy README.md → index.md (with path rewriting)
 readme_content = read(joinpath(@__DIR__, "../README.md"), String)
 write(joinpath(DOCS_SRC, "index.md"), rewrite_readme_paths(readme_content; from_root=true))
 
-# 1d. Copy benchmark/README.md → guides/performance.md (with path rewriting)
+# 1c. Copy benchmark/README.md → guides/performance.md (with path rewriting)
 bench_readme = joinpath(@__DIR__, "../benchmark/README.md")
 if isfile(bench_readme)
     bench_content = read(bench_readme, String)
@@ -65,7 +65,7 @@ if isfile(bench_readme)
           rewrite_readme_paths(bench_content; from_root=false))
 end
 
-# 1e. Generate tutorials from examples/*.jl using Literate.jl
+# 1d. Generate tutorials from examples/*.jl using Literate.jl
 if isdir(EXAMPLES_DIR)
     for file in sort(readdir(EXAMPLES_DIR))  # Sort for deterministic order
         if endswith(file, ".jl")

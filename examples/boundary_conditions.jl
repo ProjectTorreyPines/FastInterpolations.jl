@@ -1,437 +1,210 @@
-#=
-Boundary Conditions and Extrapolation Methods in FastInterpolations.jl
-=======================================================================
-
-This script demonstrates different boundary conditions (BC) and extrapolation
-behaviors for both linear and cubic interpolation.
-
-Run this script:
-    julia --project examples/boundary_conditions.jl
-
-Requirements:
-    - Plots.jl (for visualization)
-    - FastInterpolations.jl
-=#
-
-using Pkg
-Pkg.activate(dirname(@__DIR__))
+# # Boundary Conditions and Extrapolation
+#
+# This tutorial demonstrates different boundary conditions and extrapolation
+# behaviors for both linear and cubic interpolation in FastInterpolations.jl.
 
 using FastInterpolations
 using Plots
 
-# Set plot defaults
-default(
-    linewidth=2,
-    markersize=6,
-    legend=:topleft,
-    size=(800, 500)
-)
+# Set plot defaults for consistent visualization
+default(linewidth=2, markersize=6, legend=:topleft, size=(700, 400))
 
-#=
-## 1. Linear Interpolation: Extrapolation Methods
+# ## Linear Interpolation: Extrapolation Methods
+#
+# The `extrap` parameter controls out-of-domain behavior:
+#
+# | Option | Behavior |
+# |--------|----------|
+# | `:none` | Throws DomainError (default) |
+# | `:extension` | Extends boundary segments linearly |
+# | `:constant` | Returns boundary values |
+# | `:wrap` | Wraps coordinates (for periodic data) |
 
-The `extrap` parameter controls out-of-domain behavior:
+# Sample data
+x = [0.0, 1.0, 2.0, 3.0, 4.0]
+y = [1.0, 2.5, 1.5, 3.0, 2.0]
 
-- `:none` (default): Throws DomainError for out-of-domain queries
-- `:extension`: Extends the boundary segments linearly
-- `:constant`: Returns boundary values outside the domain
-- `:wrap`: Wraps coordinates to the domain (for periodic patterns)
-=#
+# Query points including extrapolation region
+xq = range(-1.0, 5.0, 200)
 
-function demo_linear_extrapolation()
-    println("\n" * "="^60)
-    println("1. Linear Interpolation: Extrapolation Methods")
-    println("="^60)
+# Different extrapolation methods
+y_extension = linear_interp(x, y, collect(xq); extrap=:extension)
+y_constant = linear_interp(x, y, collect(xq); extrap=:constant)
 
-    # Sample data (non-periodic function)
-    x = [0.0, 1.0, 2.0, 3.0, 4.0]
-    y = [1.0, 2.5, 1.5, 3.0, 2.0]
+# Visualize the results
+p = plot(title="Linear Interpolation: Extrapolation Methods",
+         xlabel="x", ylabel="y")
+vspan!([-1.0, 0.0], alpha=0.1, color=:gray, label="extrapolation region")
+vspan!([4.0, 5.0], alpha=0.1, color=:gray, label=nothing)
+plot!(xq, y_extension, label="extrap=:extension", color=:blue)
+plot!(xq, y_constant, label="extrap=:constant", color=:red, linestyle=:dash)
+scatter!(x, y, label="data points", color=:black, markersize=8)
 
-    # Query points including extrapolation region
-    xq = range(-1.0, 5.0, 200)
+# ## Linear Interpolation: Wrap Extrapolation
+#
+# When `extrap=:wrap`, the function wraps query points to the domain `[x[1], x[end])`.
+# This is useful for periodic functions like sin, cos, or any cyclic data.
+#
+# **Note**: For smooth wrapping, ensure `y[1] ≈ y[end]`.
 
-    # Different extrapolation methods
-    y_extension = linear_interp(x, y, collect(xq); extrap=:extension)
-    y_constant = linear_interp(x, y, collect(xq); extrap=:constant)
+# Periodic data: one complete sine wave
+n = 21
+x_periodic = collect(range(0.0, 2π, n))
+y_periodic = sin.(x_periodic)  # y[1] = y[end] = 0
 
-    # Create plot
-    p = plot(title="Linear Interpolation: Extrapolation Methods",
-             xlabel="x", ylabel="y")
+# Query points extending beyond the domain
+xq_extended = range(-π, 3π, 300)
 
-    # Shade extrapolation regions
-    vspan!([-1.0, 0.0], alpha=0.1, color=:gray, label="extrapolation region")
-    vspan!([4.0, 5.0], alpha=0.1, color=:gray, label=nothing)
+# Compare wrap vs extension
+y_wrap = linear_interp(x_periodic, y_periodic, collect(xq_extended); extrap=:wrap)
+y_ext = linear_interp(x_periodic, y_periodic, collect(xq_extended); extrap=:extension)
+y_true = sin.(xq_extended)
 
-    # Plot interpolation results
-    plot!(p, xq, y_extension, label="extrapolation=:extension", color=:blue)
-    plot!(p, xq, y_constant, label="extrapolation=:constant",
-          color=:red, linestyle=:dash)
+# Visualize
+p2 = plot(title="Linear Interpolation: Wrap vs Extension", xlabel="x", ylabel="y")
+vspan!([-π, 0.0], alpha=0.1, color=:gray, label="outside domain")
+vspan!([2π, 3π], alpha=0.1, color=:gray, label=nothing)
+plot!(xq_extended, y_true, label="sin(x) reference", color=:lightgray, linewidth=3)
+plot!(xq_extended, y_wrap, label="extrap=:wrap", color=:blue)
+plot!(xq_extended, y_ext, label="extrap=:extension", color=:red, linestyle=:dash)
+vline!([0.0, 2π], color=:black, linestyle=:dot, alpha=0.5, label=nothing)
+scatter!(x_periodic, y_periodic, label="data points", color=:black, markersize=5)
 
-    # Plot original data points
-    scatter!(p, x, y, label="data points", color=:black, markersize=8)
+# ## Cubic Interpolation: Natural vs Periodic BC
+#
+# Cubic spline boundary conditions control the behavior at domain edges:
+#
+# | BC | Description |
+# |----|-------------|
+# | `:natural` | S''(x₁) = S''(xₙ) = 0 (default) |
+# | `:periodic` | S'(x₁) = S'(xₙ), S''(x₁) = S''(xₙ) (C² continuity) |
+#
+# The periodic BC uses the Sherman-Morrison formula to solve the cyclic
+# tridiagonal system efficiently.
 
-    savefig(p, joinpath(@__DIR__, "linear_extrapolation.png"))
-    println("Saved: examples/linear_extrapolation.png")
+# Fewer points to see the difference more clearly
+n_cubic = 11
+x_cubic = collect(range(0.0, 2π, n_cubic))
+y_cubic = sin.(x_cubic)
 
-    # Print usage
-    println("""
+# Query points
+xq_cubic = range(-π, 3π, 400)
 
-    Usage:
-        # Extension (default) - continues slope at boundaries
-        linear_interp(x, y, xq; extrap=:extension)
+# Different boundary conditions
+y_natural = cubic_interp(x_cubic, y_cubic, xq_cubic; bc=:natural, extrap=:extension)
+y_periodic_bc = cubic_interp(x_cubic, y_cubic, xq_cubic; bc=:periodic, extrap=:extension)
+y_sin = sin.(xq_cubic)
 
-        # Constant - clamps to boundary values
-        linear_interp(x, y, xq; extrap=:constant)
-    """)
+# Visualize
+p3 = plot(title="Cubic Interpolation: Natural vs Periodic BC", xlabel="x", ylabel="y")
+vspan!([-π, 0.0], alpha=0.1, color=:gray, label="outside domain")
+vspan!([2π, 3π], alpha=0.1, color=:gray, label=nothing)
+plot!(xq_cubic, y_sin, label="sin(x) reference", color=:lightgray, linewidth=3)
+plot!(xq_cubic, y_natural, label="bc=:natural", color=:red, linestyle=:dash)
+plot!(xq_cubic, y_periodic_bc, label="bc=:periodic", color=:blue)
+vline!([0.0, 2π], color=:black, linestyle=:dot, alpha=0.5, label=nothing)
+scatter!(x_cubic, y_cubic, label="data points", color=:black, markersize=6)
 
-    return p
-end
+# ## C² Continuity Visualization
+#
+# The key difference between natural and periodic BC is at the boundary:
+# - **Natural BC**: Second derivative is forced to zero at boundaries
+# - **Periodic BC**: First AND second derivatives match at boundaries
 
-#=
-## 2. Linear Interpolation: Wrap Extrapolation
+# More complex periodic function
+n_c2 = 17
+x_c2 = collect(range(0.0, 2π, n_c2))
+y_c2 = sin.(x_c2) .+ 0.3 .* cos.(3 .* x_c2)
 
-When `extrap=:wrap`, the function wraps query points to the domain [x[1], x[end]).
-This is useful for periodic functions like sin, cos, or any cyclic data.
+# Fine query grid
+xq_c2 = collect(range(-0.5, 2π + 0.5, 500))
 
-Note: For smooth wrapping, ensure y[1] ≈ y[end].
-=#
+# Interpolate with both BC types
+y_nat = cubic_interp(x_c2, y_c2, xq_c2; bc=:natural, extrap=:extension)
+y_per = cubic_interp(x_c2, y_c2, xq_c2; bc=:periodic)
 
-function demo_linear_wrap()
-    println("\n" * "="^60)
-    println("2. Linear Interpolation: Wrap Extrapolation")
-    println("="^60)
-
-    # Periodic data: one complete sine wave
-    n = 21
-    x = range(0.0, 2π, n)
-    y = sin.(x)  # y[1] = y[end] = 0
-
-    # Query points extending beyond the domain
-    xq = range(-π, 3π, 300)
-
-    # Wrap vs Extension extrapolation
-    y_wrap = linear_interp(collect(x), collect(y), collect(xq); extrap=:wrap)
-    y_extension = linear_interp(collect(x), collect(y), collect(xq); extrap=:extension)
-
-    # True sin function for reference
-    y_true = sin.(xq)
-
-    # Create plot
-    p = plot(title="Linear Interpolation: Wrap vs Extension",
-             xlabel="x", ylabel="y")
-
-    # Shade extrapolation regions
-    vspan!([-π, 0.0], alpha=0.1, color=:gray, label="outside domain")
-    vspan!([2π, 3π], alpha=0.1, color=:gray, label=nothing)
-
-    # Plot results
-    plot!(p, xq, y_true, label="sin(x) reference", color=:lightgray, linewidth=3)
-    plot!(p, xq, y_wrap, label="extrap=:wrap", color=:blue)
-    plot!(p, xq, y_extension, label="extrap=:extension",
-          color=:red, linestyle=:dash)
-
-    # Mark the domain
-    vline!([0.0, 2π], color=:black, linestyle=:dot, alpha=0.5, label=nothing)
-
-    # Original data points
-    scatter!(p, x, y, label="data points", color=:black, markersize=5)
-
-    savefig(p, joinpath(@__DIR__, "linear_wrap.png"))
-    println("Saved: examples/linear_wrap.png")
-
-    println("""
-
-    Usage:
-        # Wrap extrapolation - wraps x to [x[1], x[end]) before interpolation
-        linear_interp(x, y, xq; extrap=:wrap)
-
-    Note: Ensure y[1] ≈ y[end] for smooth wrapping behavior.
-    """)
-
-    return p
-end
-
-#=
-## 3. Cubic Interpolation: Natural vs Periodic BC
-
-Cubic spline boundary conditions:
-
-- `bc=:natural` (default): S''(x₁) = S''(xₙ) = 0 (natural spline)
-- `bc=:periodic`: S'(x₁) = S'(xₙ), S''(x₁) = S''(xₙ) (C² continuity at boundaries)
-
-The periodic BC uses the Sherman-Morrison formula to solve the cyclic
-tridiagonal system efficiently.
-=#
-
-function demo_cubic_bc()
-    println("\n" * "="^60)
-    println("3. Cubic Interpolation: Natural vs Periodic BC")
-    println("="^60)
-
-    # Periodic data: one complete sine wave
-    n = 11  # Fewer points to see the difference more clearly
-    x = range(0.0, 2π, n)
-    y = sin.(x)
-
-    # Query points extending beyond domain
-    xq = range(-π, 3π, 400)
-
-    # Different boundary conditions
-    y_natural = cubic_interp(x, y, xq; bc=:natural, extrap=:extension)
-    y_periodic = cubic_interp(x, y, xq; bc=:periodic, extrap=:extension)
-
-    # True sin function
-    y_true = sin.(xq)
-
-    # Create plot
-    p = plot(title="Cubic Interpolation: Natural vs Periodic BC",
-             xlabel="x", ylabel="y")
-
-    # Shade extrapolation regions
-    vspan!([-π, 0.0], alpha=0.1, color=:gray, label="outside domain")
-    vspan!([2π, 3π], alpha=0.1, color=:gray, label=nothing)
-
-    # Plot results
-    plot!(p, xq, y_true, label="sin(x) reference", color=:lightgray, linewidth=3)
-    plot!(p, xq, y_natural, label="bc=:natural", color=:red, linestyle=:dash)
-    plot!(p, xq, y_periodic, label="bc=:periodic", color=:blue)
-
-    # Domain markers
-    vline!([0.0, 2π], color=:black, linestyle=:dot, alpha=0.5, label=nothing)
-
-    # Data points
-    scatter!(p, x, y, label="data points", color=:black, markersize=6)
-
-    savefig(p, joinpath(@__DIR__, "cubic_bc.png"))
-    println("Saved: examples/cubic_bc.png")
-
-    println("""
-
-    Usage:
-        # Natural BC (default) - S''(x₁) = S''(xₙ) = 0
-        cubic_interp(x, y, xq; bc=:natural)
-
-        # Periodic BC - C² continuous at boundaries
-        cubic_interp(x, y, xq; bc=:periodic)
-    """)
-
-    return p
-end
-
-#=
-## 4. C² Continuity Visualization
-
-The key difference between natural and periodic BC is at the boundary:
-
-- Natural BC: Second derivative is forced to zero at boundaries
-- Periodic BC: First AND second derivatives match at x[1] and x[end]
-
-This visualization shows the curvature (second derivative) near boundaries.
-=#
-
-function demo_c2_continuity()
-    println("\n" * "="^60)
-    println("4. C² Continuity Comparison")
-    println("="^60)
-
-    # Periodic function
-    n = 17
-    x = range(0.0, 2π, n)
-    y = sin.(x) .+ 0.3 .* cos.(3 .* x)
-
-    # Fine query grid for derivatives
-    xq = range(-0.5, 2π + 0.5, 500)
-
-    # Interpolate with both BC types (use extrap=:extension to query outside domain)
-    y_natural = cubic_interp(collect(x), collect(y), collect(xq); bc=:natural, extrap=:extension)
-    y_periodic = cubic_interp(collect(x), collect(y), collect(xq); bc=:periodic)  # bc=:periodic always wraps
-
-    # Numerical second derivative (curvature)
-    function numerical_second_deriv(xq, yq)
-        h = xq[2] - xq[1]
-        d2y = similar(yq)
-        d2y[1] = (yq[3] - 2yq[2] + yq[1]) / h^2
-        d2y[end] = (yq[end] - 2yq[end-1] + yq[end-2]) / h^2
-        for i in 2:length(yq)-1
-            d2y[i] = (yq[i+1] - 2yq[i] + yq[i-1]) / h^2
-        end
-        return d2y
+# Numerical second derivative (curvature)
+function numerical_d2(xq, yq)
+    h = xq[2] - xq[1]
+    d2y = similar(yq)
+    d2y[1] = (yq[3] - 2yq[2] + yq[1]) / h^2
+    d2y[end] = (yq[end] - 2yq[end-1] + yq[end-2]) / h^2
+    for i in 2:length(yq)-1
+        d2y[i] = (yq[i+1] - 2yq[i] + yq[i-1]) / h^2
     end
-
-    d2y_natural = numerical_second_deriv(collect(xq), y_natural)
-    d2y_periodic = numerical_second_deriv(collect(xq), y_periodic)
-
-    # Create two subplots
-    p1 = plot(title="Interpolation Results",
-              xlabel="x", ylabel="y", legend=:topright)
-    plot!(p1, xq, y_natural, label="bc=:natural", color=:red)
-    plot!(p1, xq, y_periodic, label="bc=:periodic", color=:blue)
-    scatter!(p1, x, y, label="data", color=:black, markersize=5)
-    vline!(p1, [0.0, 2π], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
-
-    p2 = plot(title="Second Derivative (Curvature)",
-              xlabel="x", ylabel="y''", legend=:topright)
-    plot!(p2, xq, d2y_natural, label="bc=:natural (→0 at boundaries)", color=:red)
-    plot!(p2, xq, d2y_periodic, label="bc=:periodic (matches at boundaries)", color=:blue)
-    vline!(p2, [0.0, 2π], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
-    hline!(p2, [0.0], color=:black, linestyle=:dash, alpha=0.3, label=nothing)
-
-    # Combine plots
-    p = plot(p1, p2, layout=(2, 1), size=(800, 700))
-
-    savefig(p, joinpath(@__DIR__, "c2_continuity.png"))
-    println("Saved: examples/c2_continuity.png")
-
-    # Print the C² continuity check
-    h = Float64(xq[2] - xq[1])
-    idx_left = findfirst(x -> x >= 0.0, xq)
-    idx_right = findfirst(x -> x >= 2π, xq)
-
-    println("\nC² Continuity Check at boundaries:")
-    println("  Natural BC:  y''(0) = $(round(d2y_natural[idx_left], digits=3)), y''(2π) = $(round(d2y_natural[idx_right], digits=3))")
-    println("  Periodic BC: y''(0) = $(round(d2y_periodic[idx_left], digits=3)), y''(2π) = $(round(d2y_periodic[idx_right], digits=3))")
-
-    println("""
-
-    Key Observation:
-        - Natural BC forces y'' → 0 at boundaries
-        - Periodic BC ensures y''(x₁) ≈ y''(xₙ) for true C² continuity
-    """)
-
-    return p
+    return d2y
 end
 
-#=
-## 5. Callable Interpolant Objects
+d2y_nat = numerical_d2(xq_c2, y_nat)
+d2y_per = numerical_d2(xq_c2, y_per)
 
-For repeated interpolation at different query points, create an interpolant
-object once and call it multiple times (more efficient).
-=#
+# Two subplots
+p4a = plot(title="Interpolation Results", xlabel="x", ylabel="y", legend=:topright)
+plot!(p4a, xq_c2, y_nat, label="bc=:natural", color=:red)
+plot!(p4a, xq_c2, y_per, label="bc=:periodic", color=:blue)
+scatter!(p4a, x_c2, y_c2, label="data", color=:black, markersize=5)
+vline!(p4a, [0.0, 2π], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
 
-function demo_callable()
-    println("\n" * "="^60)
-    println("5. Callable Interpolant Objects")
-    println("="^60)
+p4b = plot(title="Second Derivative (Curvature)", xlabel="x", ylabel="y''", legend=:topright)
+plot!(p4b, xq_c2, d2y_nat, label="bc=:natural (→0 at boundaries)", color=:red)
+plot!(p4b, xq_c2, d2y_per, label="bc=:periodic (matches)", color=:blue)
+vline!(p4b, [0.0, 2π], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
+hline!(p4b, [0.0], color=:black, linestyle=:dash, alpha=0.3, label=nothing)
 
-    # Create data
-    x = range(0.0, 2π, 51)
-    y = sin.(x)
+plot(p4a, p4b, layout=(2, 1), size=(700, 600))
 
-    # Create interpolants (with different extrapolation modes)
-    linear_ext = LinearInterpolant(collect(x), collect(y); extrap=:extension)
-    linear_wrap = LinearInterpolant(collect(x), collect(y); extrap=:wrap)
+# ## Callable Interpolant Objects
+#
+# For repeated interpolation at different query points, create an interpolant
+# object once and call it multiple times. This is more efficient for repeated queries.
 
-    cubic_natural = cubic_interp(collect(x), collect(y); extrap=:extension)  # Returns CubicInterpolant
-    cubic_periodic = cubic_interp(collect(x), collect(y); bc=:periodic)  # bc=:periodic always wraps
+x_call = collect(range(0.0, 2π, 51))
+y_call = sin.(x_call)
 
-    # Query at various points
-    test_points = [-0.5, 0.5, π, 2π + 0.5]
+# Create interpolants with different extrapolation modes
+linear_ext = LinearInterpolant(x_call, y_call; extrap=:extension)
+linear_wrap_itp = LinearInterpolant(x_call, y_call; extrap=:wrap)
+cubic_nat = cubic_interp(x_call, y_call; extrap=:extension)
+cubic_per = cubic_interp(x_call, y_call; bc=:periodic)
 
-    println("\nEvaluation at test points:")
-    println("-"^60)
-    println("  x\t\tLinear\t\tLinear\t\tCubic\t\tCubic")
-    println("  \t\t(ext)\t\t(wrap)\t\t(natural)\t(periodic)")
-    println("-"^60)
+# Evaluate at test points
+test_points = [-0.5, 0.5, π, 2π + 0.5]
 
-    for xi in test_points
-        v1 = linear_ext(xi)
-        v2 = linear_wrap(xi)
-        v3 = cubic_natural(xi)
-        v4 = cubic_periodic(xi)
-        println("  $(round(xi, digits=2))\t\t$(round(v1, digits=4))\t\t$(round(v2, digits=4))\t\t$(round(v3, digits=4))\t\t$(round(v4, digits=4))")
-    end
-
-    println("""
-
-    Usage:
-        # Create once
-        itp = LinearInterpolant(x, y; extrap=:wrap)
-        itp = cubic_interp(x, y; bc=:periodic)
-
-        # Call multiple times (zero-allocation for scalar queries)
-        y1 = itp(x1)
-        y2 = itp(x2)
-    """)
+println("Evaluation at test points:")
+println("| x | Linear (ext) | Linear (wrap) | Cubic (natural) | Cubic (periodic) |")
+println("|---|--------------|---------------|-----------------|------------------|")
+for xi in test_points
+    v1 = round(linear_ext(xi), digits=4)
+    v2 = round(linear_wrap_itp(xi), digits=4)
+    v3 = round(cubic_nat(xi), digits=4)
+    v4 = round(cubic_per(xi), digits=4)
+    println("| $xi | $v1 | $v2 | $v3 | $v4 |")
 end
 
-#=
-## 6. Pre-built Cache for Multiple Y-values
+# ## Pre-built Cache for Multiple Y-values
+#
+# When you need to interpolate many different y-values on the same x-grid,
+# pre-build the cache for maximum efficiency.
 
-When you need to interpolate many different y-values on the same x-grid,
-pre-build the cache for maximum efficiency.
-=#
+x_cache = collect(range(0.0, 2π, 51))
+y1_cache = sin.(x_cache)
+y2_cache = cos.(x_cache)
+y3_cache = sin.(2 .* x_cache)
 
-function demo_cache()
-    println("\n" * "="^60)
-    println("6. Pre-built Cache for Multiple Y-values")
-    println("="^60)
+# Pre-build cache (computed once)
+cache = CubicSplineCache(x_cache; bc=:periodic)
 
-    # Same x-grid, different y-values
-    x = range(0.0, 2π, 51)
-    y1 = sin.(x)
-    y2 = cos.(x)
-    y3 = sin.(2 .* x)
+# Interpolate multiple y-values with the same cache
+xq_cache = collect(range(0.0, 2π, 200))
+result1 = cubic_interp(cache, y1_cache, xq_cache)
+result2 = cubic_interp(cache, y2_cache, xq_cache)
+result3 = cubic_interp(cache, y3_cache, xq_cache)
 
-    # Pre-build cache (computed once)
-    cache_periodic = CubicSplineCache(collect(x); bc=:periodic)
-
-    # Interpolate multiple y-values with same cache
-    xq = range(0.0, 2π, 200)
-
-    result1 = cubic_interp(cache_periodic, collect(y1), collect(xq))
-    result2 = cubic_interp(cache_periodic, collect(y2), collect(xq))
-    result3 = cubic_interp(cache_periodic, collect(y3), collect(xq))
-
-    # Plot
-    p = plot(title="Multiple Y-values with Same Cache",
-             xlabel="x", ylabel="y", legend=:topright)
-
-    plot!(p, xq, result1, label="sin(x)", color=:blue)
-    plot!(p, xq, result2, label="cos(x)", color=:red)
-    plot!(p, xq, result3, label="sin(2x)", color=:green)
-
-    scatter!(p, x[1:5:end], y1[1:5:end], label=nothing, color=:blue, markersize=4)
-    scatter!(p, x[1:5:end], collect(y2)[1:5:end], label=nothing, color=:red, markersize=4)
-    scatter!(p, x[1:5:end], collect(y3)[1:5:end], label=nothing, color=:green, markersize=4)
-
-    savefig(p, joinpath(@__DIR__, "cache_usage.png"))
-    println("Saved: examples/cache_usage.png")
-
-    println("""
-
-    Usage:
-        # Pre-build cache for x-grid (computed once)
-        cache = CubicSplineCache(x; bc=:periodic)
-
-        # Interpolate different y-values efficiently
-        result1 = cubic_interp(cache, y1, xq)
-        result2 = cubic_interp(cache, y2, xq)
-        result3 = cubic_interp(cache, y3, xq)
-    """)
-
-    return p
-end
-
-# ============================================================================
-# Run all demos
-# ============================================================================
-
-function main()
-    println("\n" * "="^60)
-    println("FastInterpolations.jl: Boundary Conditions Demo")
-    println("="^60)
-
-    demo_linear_extrapolation()
-    demo_linear_wrap()
-    demo_cubic_bc()
-    demo_c2_continuity()
-    demo_callable()
-    demo_cache()
-
-    println("\n" * "="^60)
-    println("All demos completed!")
-    println("Check the examples/ folder for generated plots.")
-    println("="^60)
-end
-
-main()
+# Visualize
+p5 = plot(title="Multiple Y-values with Same Cache", xlabel="x", ylabel="y", legend=:topright)
+plot!(p5, xq_cache, result1, label="sin(x)", color=:blue)
+plot!(p5, xq_cache, result2, label="cos(x)", color=:red)
+plot!(p5, xq_cache, result3, label="sin(2x)", color=:green)
+scatter!(p5, x_cache[1:5:end], y1_cache[1:5:end], label=nothing, color=:blue, markersize=4)
+scatter!(p5, x_cache[1:5:end], y2_cache[1:5:end], label=nothing, color=:red, markersize=4)
+scatter!(p5, x_cache[1:5:end], y3_cache[1:5:end], label=nothing, color=:green, markersize=4)

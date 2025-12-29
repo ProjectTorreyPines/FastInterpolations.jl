@@ -76,8 +76,8 @@ scatter!(x_periodic, y_periodic, label="data points", color=:black, markersize=5
 #
 # | BC | Description |
 # |----|-------------|
-# | `:natural` | S''(x₁) = S''(xₙ) = 0 (default) |
-# | `:periodic` | S'(x₁) = S'(xₙ), S''(x₁) = S''(xₙ) (C² continuity) |
+# | `NaturalBC()` | S''(x₁) = S''(xₙ) = 0 (default) |
+# | `PeriodicBC()` | S'(x₁) = S'(xₙ), S''(x₁) = S''(xₙ) (C² continuity) |
 #
 # The periodic BC uses the Sherman-Morrison formula to solve the cyclic
 # tridiagonal system efficiently.
@@ -91,8 +91,8 @@ y_cubic = sin.(x_cubic)
 xq_cubic = range(-π, 3π, 400)
 
 # Different boundary conditions
-y_natural = cubic_interp(x_cubic, y_cubic, xq_cubic; bc=:natural, extrap=:extension)
-y_periodic_bc = cubic_interp(x_cubic, y_cubic, xq_cubic; bc=:periodic, extrap=:extension)
+y_natural = cubic_interp(x_cubic, y_cubic, xq_cubic; bc=NaturalBC(), extrap=:extension)
+y_periodic_bc = cubic_interp(x_cubic, y_cubic, xq_cubic; bc=PeriodicBC(), extrap=:extension)
 y_sin = sin.(xq_cubic)
 
 # Visualize
@@ -120,8 +120,8 @@ y_c2 = sin.(x_c2) .+ 0.3 .* cos.(3 .* x_c2)
 xq_c2 = collect(range(-0.5, 2π + 0.5, 500))
 
 # Interpolate with both BC types
-y_nat = cubic_interp(x_c2, y_c2, xq_c2; bc=:natural, extrap=:extension)
-y_per = cubic_interp(x_c2, y_c2, xq_c2; bc=:periodic)
+y_nat = cubic_interp(x_c2, y_c2, xq_c2; bc=NaturalBC(), extrap=:extension)
+y_per = cubic_interp(x_c2, y_c2, xq_c2; bc=PeriodicBC())
 
 # Numerical second derivative (curvature)
 function numerical_d2(xq, yq)
@@ -165,7 +165,7 @@ y_call = sin.(x_call)
 linear_ext = LinearInterpolant(x_call, y_call; extrap=:extension)
 linear_wrap_itp = LinearInterpolant(x_call, y_call; extrap=:wrap)
 cubic_nat = cubic_interp(x_call, y_call; extrap=:extension)
-cubic_per = cubic_interp(x_call, y_call; bc=:periodic)
+cubic_per = cubic_interp(x_call, y_call; bc=PeriodicBC())
 
 # Evaluate at test points
 test_points = [-0.5, 0.5, π, 2π + 0.5]
@@ -192,7 +192,7 @@ y2_cache = cos.(x_cache)
 y3_cache = sin.(2 .* x_cache)
 
 # Pre-build cache (computed once)
-cache = CubicSplineCache(x_cache; bc=:periodic)
+cache = CubicSplineCache(x_cache; bc=PeriodicBC())
 
 # Interpolate multiple y-values with the same cache
 xq_cache = collect(range(0.0, 2π, 200))

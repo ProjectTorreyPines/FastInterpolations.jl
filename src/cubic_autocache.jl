@@ -90,10 +90,6 @@ const _PERIODIC_BANK_REGISTRY = IdDict{DataType, Any}()
 const _CACHE_LOCK = ReentrantLock()
 const _CACHE_SIZE_REF = Ref{Int}(16)
 
-# Statistics (non-atomic, for debugging only - may be inaccurate under multithreading)
-const _CACHE_HITS = Ref{Int}(0)
-const _CACHE_MISSES = Ref{Int}(0)
-const _CACHE_EVICTIONS = Ref{Int}(0)
 
 # ===============================================================
 # Public API
@@ -129,46 +125,8 @@ function clear_cubic_cache!()
     lock(_CACHE_LOCK) do
         empty!(_DERIVATIVE_BANK_REGISTRY)
         empty!(_PERIODIC_BANK_REGISTRY)
-        _CACHE_HITS[] = 0
-        _CACHE_MISSES[] = 0
-        _CACHE_EVICTIONS[] = 0
     end
     return nothing
-end
-
-"""
-    cubic_cache_stats()
-
-Return cache hit/miss statistics.
-
-# Returns
-`NamedTuple` with fields: `hits`, `misses`, `evictions`, `bank_count`, `efficiency`
-"""
-function cubic_cache_stats()
-    hits = _CACHE_HITS[]
-    misses = _CACHE_MISSES[]
-    evictions = _CACHE_EVICTIONS[]
-
-    local derivative_count, periodic_count, total_entries
-    lock(_CACHE_LOCK) do
-        derivative_count = length(_DERIVATIVE_BANK_REGISTRY)
-        periodic_count = length(_PERIODIC_BANK_REGISTRY)
-        total_entries = sum(length(bank.store) for bank in values(_DERIVATIVE_BANK_REGISTRY); init=0) +
-                        sum(length(bank.store) for bank in values(_PERIODIC_BANK_REGISTRY); init=0)
-    end
-
-    total = hits + misses
-    efficiency = total > 0 ? round(100 * hits / total, digits=1) : 0.0
-
-    return (
-        hits = hits,
-        misses = misses,
-        evictions = evictions,
-        derivative_banks = derivative_count,
-        periodic_banks = periodic_count,
-        total_entries = total_entries,
-        efficiency = efficiency
-    )
 end
 
 # ===============================================================
@@ -232,7 +190,6 @@ end
         idx = ring[]
         store[idx] = entry
         ring[] = (idx % max_size) + 1
-        _CACHE_EVICTIONS[] += 1
     end
     return nothing
 end
@@ -257,7 +214,6 @@ use 3-arg `_solve_system!` for dynamic BC values.
     # [Pass 1] Identity check (fast path)
     @inbounds for entry in store
         if entry.id === id
-            _CACHE_HITS[] += 1
             return entry.cache
         end
     end
@@ -266,7 +222,6 @@ use 3-arg `_solve_system!` for dynamic BC values.
     @inbounds for entry in store
         if isequal(entry.x, x)
             entry.id = id  # Self-healing for future fast-path hits
-            _CACHE_HITS[] += 1
             return entry.cache
         end
     end
@@ -275,7 +230,6 @@ use 3-arg `_solve_system!` for dynamic BC values.
     # Cache is keyed by BC *type* only (LU factorization depends on matrix structure).
     # On cache hit, bc_data may differ from caller's BC values, so callers should
     # use 3-arg _solve_system!(cache, y, bc_tuple) to apply their actual BC values.
-    _CACHE_MISSES[] += 1
     new_cache = _build_derivative_bc_cache(x, bc_pair.left, bc_pair.right)
     new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
     _add_to_ring!(store, ring, new_entry)
@@ -294,7 +248,6 @@ Lookup or insert into a periodic BC cache bank.
     # [Pass 1] Identity check (fast path)
     @inbounds for entry in store
         if entry.id === id
-            _CACHE_HITS[] += 1
             return entry.cache
         end
     end
@@ -303,13 +256,11 @@ Lookup or insert into a periodic BC cache bank.
     @inbounds for entry in store
         if isequal(entry.x, x)
             entry.id = id  # Self-healing
-            _CACHE_HITS[] += 1
             return entry.cache
         end
     end
 
     # [Cache Miss] Create new entry
-    _CACHE_MISSES[] += 1
     new_cache = _build_periodic_cache(x)
     new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
     _add_to_ring!(store, ring, new_entry)
@@ -395,6 +346,20 @@ end
     bc_pair = BCPair(bc_t, bc_t)
     return _get_derivative_cache_impl(x, bc_pair)
 end
+
+@inline function _get_cubic_cache(
+    x::AbstractVector{T}, 
+    bc::AbstractBC, 
+    autocache::Bool
+) where {T<:AbstractFloat}
+    if autocache
+        cache = _get_cubic_cache(x, bc)
+    else
+        cache = CubicSplineCache(x; bc=bc)
+    end
+    return cache
+end
+
 
 # ===============================================================
 # Internal: Cache Implementation with Locking

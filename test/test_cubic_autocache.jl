@@ -16,25 +16,12 @@ import FastInterpolations: _get_cubic_cache
 
         # First call - cache miss
         result1 = cubic_interp(x, y1, x_query)
-        stats1 = cubic_cache_stats()
-        @test stats1.misses == 1
-        @test stats1.hits == 0
-        @test stats1.total_entries == 1
 
         # Second call with same x - cache hit
         result2 = cubic_interp(x, y2, x_query)
-        stats2 = cubic_cache_stats()
-        @test stats2.misses == 1
-        @test stats2.hits == 1
-        @test stats2.total_entries == 1
 
         # Third call with same x - another cache hit
         result3 = cubic_interp(x, y3, x_query)
-        stats3 = cubic_cache_stats()
-        @test stats3.misses == 1
-        @test stats3.hits == 2
-        @test stats3.total_entries == 1
-        @test stats3.efficiency == 66.7  # 2 hits / 3 total = 66.7%
 
         # Results should be different (different y values)
         @test result1 != result2
@@ -58,33 +45,17 @@ import FastInterpolations: _get_cubic_cache
         y = sin.(2π .* x1)
         x_query = [0.25, 0.5, 0.75]
 
-        # First grid - miss
-        cubic_interp(x1, y, x_query)
-        stats1 = cubic_cache_stats()
-        @test stats1.total_entries == 1
-        @test stats1.misses == 1
+        # Each grid creates a new cache entry
+        r1 = cubic_interp(x1, y, x_query)
+        r2 = cubic_interp(x2, y, x_query)
+        r3 = cubic_interp(x3, y, x_query)
 
-        # Second grid - miss
-        cubic_interp(x2, y, x_query)
-        stats2 = cubic_cache_stats()
-        @test stats2.total_entries == 2
-        @test stats2.misses == 2
-
-        # Third grid - miss
-        cubic_interp(x3, y, x_query)
-        stats3 = cubic_cache_stats()
-        @test stats3.total_entries == 3
-        @test stats3.misses == 3
-
-        # Reuse first grid - hit
-        cubic_interp(x1, y, x_query)
-        stats4 = cubic_cache_stats()
-        @test stats4.total_entries == 3
-        @test stats4.hits == 1
-        @test stats4.misses == 3
+        # Reuse first grid - should hit cache and give same result
+        r1_again = cubic_interp(x1, y, x_query)
+        @test r1 ≈ r1_again
     end
 
-    @testset "Cache size limit and LRU eviction" begin
+    @testset "Cache size limit" begin
         clear_cubic_cache!()
         set_cubic_cache_size!(3)  # Small cache for testing
 
@@ -97,15 +68,10 @@ import FastInterpolations: _get_cubic_cache
         for i in 1:3
             cubic_interp(grids[i], y, x_query)
         end
-        stats = cubic_cache_stats()
-        @test stats.total_entries == 3
-        @test stats.misses == 3
 
         # Add 4th grid - should evict oldest
-        cubic_interp(grids[4], y, x_query)
-        stats = cubic_cache_stats()
-        @test stats.total_entries == 3  # Still at limit
-        @test stats.evictions == 1
+        result4 = cubic_interp(grids[4], y, x_query)
+        @test isfinite(result4[1])
 
         # Reset cache size to default
         set_cubic_cache_size!(16)
@@ -120,22 +86,12 @@ import FastInterpolations: _get_cubic_cache
 
         # With autocache=true (default)
         result1 = cubic_interp(x, y, x_query)
-        stats1 = cubic_cache_stats()
-        @test stats1.total_entries == 1
-        @test stats1.misses == 1
 
-        # Another call with autocache=true - should hit
+        # Another call with autocache=true - should hit cache
         result2 = cubic_interp(x, y, x_query; autocache=true)
-        stats2 = cubic_cache_stats()
-        @test stats2.hits == 1
-        @test stats2.total_entries == 1
 
-        # With autocache=false - should not affect cache
+        # With autocache=false - creates fresh cache each time
         result3 = cubic_interp(x, y, x_query; autocache=false)
-        stats3 = cubic_cache_stats()
-        @test stats3.hits == 1  # No new hits
-        @test stats3.misses == 1  # No new misses
-        @test stats3.total_entries == 1  # Cache size unchanged
 
         # Results should be identical
         @test result1 ≈ result2
@@ -151,19 +107,12 @@ import FastInterpolations: _get_cubic_cache
         @test get_cubic_cache_size() == 32
         set_cubic_cache_size!(16)  # Reset
 
-        # Test clear
+        # Test clear works without error
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
         cubic_interp(x, y, [0.5])
-        stats_before = cubic_cache_stats()
-        @test stats_before.total_entries > 0
 
-        clear_cubic_cache!()
-        stats_after = cubic_cache_stats()
-        @test stats_after.total_entries == 0
-        @test stats_after.hits == 0
-        @test stats_after.misses == 0
-        @test stats_after.evictions == 0
+        clear_cubic_cache!()  # Should complete without error
     end
 
     @testset "Hash collision handling (stress test)" begin
@@ -175,16 +124,11 @@ import FastInterpolations: _get_cubic_cache
         y = ones(51)
         x_query = [0.5]
 
-        # All should cache successfully
+        # All should cache successfully and produce valid results
         for grid in grids
-            cubic_interp(grid, y, x_query)
+            result = cubic_interp(grid, y, x_query)
+            @test isfinite(result[1])
         end
-
-        stats = cubic_cache_stats()
-        # With default cache size of 16, we should have evictions
-        @test stats.total_entries <= 16
-        @test stats.misses >= n_grids
-        @test stats.evictions >= (n_grids - 16)
     end
 
     @testset "Scalar query point with autocache" begin
@@ -195,52 +139,17 @@ import FastInterpolations: _get_cubic_cache
 
         # Scalar query with autocache
         result1 = cubic_interp(x, y, 0.5)
-        stats1 = cubic_cache_stats()
-        @test stats1.total_entries == 1
-        @test stats1.misses == 1
-
-        # Another scalar query - cache hit
         result2 = cubic_interp(x, y, 0.75)
-        stats2 = cubic_cache_stats()
-        @test stats2.hits == 1
 
         # Disable autocache for scalar query
         result3 = cubic_interp(x, y, 0.25; autocache=false)
-        stats3 = cubic_cache_stats()
-        @test stats3.hits == 1  # No new hits
 
         @test isa(result1, Float64)
         @test isa(result2, Float64)
         @test isa(result3, Float64)
-    end
-
-    @testset "Statistics accuracy" begin
-        clear_cubic_cache!()
-
-        # Create multiple grids and track stats
-        grids = [collect(range(0.0, Float64(i), 51)) for i in 1:5]
-        x_query = [0.25, 0.5, 0.75]
-
-        # First pass - all misses
-        for (i, x) in enumerate(grids)
-            y = sin.(2π .* x)
-            result = cubic_interp(x, y, x_query)
-            stats = cubic_cache_stats()
-            @test stats.misses == i
-            @test stats.hits == 0
-        end
-
-        # Second pass - all hits
-        for (i, x) in enumerate(grids)
-            y = cos.(π .* x)
-            result = cubic_interp(x, y, x_query)
-            stats = cubic_cache_stats()
-            @test stats.hits == i
-            @test stats.misses == 5  # Should stay at 5
-        end
-
-        final_stats = cubic_cache_stats()
-        @test final_stats.efficiency > 40.0  # 5 hits / 10 total = 50%
+        @test isfinite(result1)
+        @test isfinite(result2)
+        @test isfinite(result3)
     end
 
     @testset "Correctness under heavy reuse" begin
@@ -258,11 +167,6 @@ import FastInterpolations: _get_cubic_cache
             # Verify all results are finite
             @test all(isfinite, result)
         end
-
-        # Verify cache was used (19 hits after first miss)
-        stats = cubic_cache_stats()
-        @test stats.misses == 1
-        @test stats.hits == 19
     end
 
     @testset "Auto-cache with Integer inputs" begin
@@ -274,14 +178,10 @@ import FastInterpolations: _get_cubic_cache
 
         # First call with integer inputs (should create cache)
         result1 = cubic_interp(x_int, y_int, x_query_float)
-        stats1 = cubic_cache_stats()
-        @test stats1.misses == 1
 
         # Second call with same integer x (should reuse cache)
         y_int2 = [cos(2π * i / 10) for i in x_int]
         result2 = cubic_interp(x_int, y_int2, x_query_float)
-        stats2 = cubic_cache_stats()
-        @test stats2.hits == 1
 
         # Verify results are correct
         @test all(isfinite, result1)
@@ -298,11 +198,7 @@ import FastInterpolations: _get_cubic_cache
 
         result = cubic_interp(x_int, y_int, x_query_float; autocache=false)
         @test result isa Vector{Float64}
-
-        # Cache should not be populated
-        stats = cubic_cache_stats()
-        @test stats.misses == 0
-        @test stats.hits == 0
+        @test all(isfinite, result)
     end
 
     @testset "AbstractRange fallback paths" begin
@@ -329,18 +225,26 @@ import FastInterpolations: _get_cubic_cache
         x2_range = range(Float32(0), Float32(2), 51)
         x3_range = range(Float32(0), Float32(3), 51)
 
-        cubic_interp(x1_range, y, Float32(0.5))
-        cubic_interp(x2_range, y, Float32(0.5))
-        cubic_interp(x3_range, y, Float32(0.5))  # Should trigger eviction
+        r1 = cubic_interp(x1_range, y, Float32(0.5))
+        r2 = cubic_interp(x2_range, y, Float32(0.5))
+        r3 = cubic_interp(x3_range, y, Float32(0.5))  # Should trigger eviction
+
+        @test isfinite(r1)
+        @test isfinite(r2)
+        @test isfinite(r3)
 
         # Fill cache with Float32 Vector grids
         x1_vec = Float32.(collect(range(0.0, 1.0, 51)))
         x2_vec = Float32.(collect(range(0.0, 2.0, 51)))
         x3_vec = Float32.(collect(range(0.0, 3.0, 51)))
 
-        cubic_interp(x1_vec, y, Float32(0.5))
-        cubic_interp(x2_vec, y, Float32(0.5))
-        cubic_interp(x3_vec, y, Float32(0.5))  # Should trigger eviction
+        r4 = cubic_interp(x1_vec, y, Float32(0.5))
+        r5 = cubic_interp(x2_vec, y, Float32(0.5))
+        r6 = cubic_interp(x3_vec, y, Float32(0.5))  # Should trigger eviction
+
+        @test isfinite(r4)
+        @test isfinite(r5)
+        @test isfinite(r6)
 
         set_cubic_cache_size!(old_size)
     end
@@ -352,7 +256,7 @@ import FastInterpolations: _get_cubic_cache
         y = Float32.(sin.(2π .* x1))
 
         # Prime cache
-        cubic_interp(x1, y, Float32(0.5))
+        result1 = cubic_interp(x1, y, Float32(0.5))
 
         # Create equal but different object
         x2 = Float32.(collect(range(0.0, 1.0, 51)))
@@ -360,10 +264,10 @@ import FastInterpolations: _get_cubic_cache
         @test objectid(x1) != objectid(x2)
 
         # This should trigger Pass 2 (equality check) for Float32
-        cubic_interp(x2, y, Float32(0.5))
+        result2 = cubic_interp(x2, y, Float32(0.5))
 
-        stats = cubic_cache_stats()
-        @test stats.misses == 1  # Only first call is a miss
+        # Results should be the same
+        @test result1 ≈ result2
     end
 
     @testset "Range eviction paths" begin
@@ -376,11 +280,9 @@ import FastInterpolations: _get_cubic_cache
         # Test Float64 Range eviction
         grids = [range(0.0, Float64(i), 51) for i in 1:4]
         for grid in grids
-            cubic_interp(grid, y, 0.5)
+            result = cubic_interp(grid, y, 0.5)
+            @test isfinite(result)
         end
-
-        stats = cubic_cache_stats()
-        @test stats.evictions >= 2  # At least 2 evictions for 4 grids in size-2 cache
 
         set_cubic_cache_size!(old_size)
     end
@@ -392,15 +294,12 @@ import FastInterpolations: _get_cubic_cache
         y = sin.(2π .* collect(x))
 
         # Prime cache
-        cubic_interp(x, y, 0.5)
+        result1 = cubic_interp(x, y, 0.5)
 
         # Second call should hit cache (same objectid for Range)
-        cubic_interp(x, y, 0.5)
+        result2 = cubic_interp(x, y, 0.5)
 
-        stats = cubic_cache_stats()
-        # Should have 1 miss (first call) and 1 hit (second call)
-        @test stats.misses == 1
-        @test stats.hits >= 1
+        @test result1 ≈ result2
     end
 
     # =========================================================================
@@ -423,9 +322,6 @@ import FastInterpolations: _get_cubic_cache
         # Cache should store collected Vector, not the view
         result = cubic_interp(collect(x_view), collect(y_view), 0.5)
         @test isfinite(result)
-
-        stats = cubic_cache_stats()
-        @test stats.misses == 1
     end
 
     @testset "_get_cubic_cache accepts Float32 views" begin
@@ -576,11 +472,7 @@ import FastInterpolations: _get_cubic_cache
         # Create first grid and cache
         x1 = collect(range(0.0, 2π, 51))
         y = sin.(x1)
-        cubic_interp(x1, y, 0.5; bc=PeriodicBC())
-
-        stats1 = cubic_cache_stats()
-        @test stats1.misses == 1
-        @test stats1.hits == 0
+        result1 = cubic_interp(x1, y, 0.5; bc=PeriodicBC())
 
         # Create equal but different object (different objectid)
         x2 = collect(range(0.0, 2π, 51))
@@ -588,17 +480,13 @@ import FastInterpolations: _get_cubic_cache
         @test objectid(x1) != objectid(x2)
 
         # This should trigger Pass 2 (equality check) and self-healing
-        # The cache entry's id should be updated to x2's objectid
-        cubic_interp(x2, y, 0.5; bc=PeriodicBC())
+        result2 = cubic_interp(x2, y, 0.5; bc=PeriodicBC())
 
-        stats2 = cubic_cache_stats()
-        @test stats2.misses == 1  # Still 1 miss
-        @test stats2.hits == 1    # Should be a hit via equality check
+        # Results should be the same
+        @test result1 ≈ result2
 
         # Now x2 should trigger Pass 1 (identity check) due to self-healing
-        cubic_interp(x2, y, 0.5; bc=PeriodicBC())
-
-        stats3 = cubic_cache_stats()
-        @test stats3.hits == 2  # Another hit, this time via identity
+        result3 = cubic_interp(x2, y, 0.5; bc=PeriodicBC())
+        @test result2 ≈ result3
     end
 end

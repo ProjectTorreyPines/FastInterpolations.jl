@@ -51,7 +51,7 @@ end
 # ========================================
 
 "Build cache for periodic cubic spline using Sherman-Morrison formula."
-function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
+@with_pool pool function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
     n = length(x) - 1  # Number of intervals
 
     n >= 3 || throw(ArgumentError("Periodic spline requires at least 4 points"))
@@ -69,9 +69,9 @@ function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
     # Build modified tridiagonal matrix A' for Sherman-Morrison
     α = h[n+1]
 
-    dl = Vector{T}(undef, n - 1)
-    d_diag = Vector{T}(undef, n)
-    du = Vector{T}(undef, n - 1)
+    dl = acquire!(pool, T, n - 1)
+    d_diag = acquire!(pool, T, n)
+    du = acquire!(pool, T, n - 1)
 
     d_diag[1] = h[n+1] + 2 * h[2]
 
@@ -92,7 +92,7 @@ function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
     lu_factor = lu(tA_prime)
 
     # Pre-compute q = A'^{-1} * u
-    u = zeros(T, n)
+    u = zeros!(pool, T, n)
     u[1] = one(T)
     u[n] = one(T)
     q = lu_factor \ u
@@ -109,7 +109,7 @@ end
 Build cache for generic derivative BC (Deriv1/Deriv2 combinations).
 Uses type dispatch for zero-overhead specialization.
 """
-function _build_derivative_bc_cache(
+@with_pool pool function _build_derivative_bc_cache(
     x::AbstractVector{T},
     left_bc::L,
     right_bc::R
@@ -125,9 +125,9 @@ function _build_derivative_bc_cache(
     end
 
     # Build tridiagonal matrix A
-    dl = Vector{T}(undef, n)       # Lower diagonal
-    d_diag = Vector{T}(undef, n+1) # Main diagonal
-    du = Vector{T}(undef, n)       # Upper diagonal
+    dl = acquire!(pool, T, n)       # Lower diagonal
+    d_diag = acquire!(pool, T, n+1) # Main diagonal
+    du = acquire!(pool, T, n)       # Upper diagonal
 
     # First and last rows depend on BC type (type dispatch)
     _set_first_row!(d_diag, du, left_bc, h)

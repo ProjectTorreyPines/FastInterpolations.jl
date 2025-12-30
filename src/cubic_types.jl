@@ -45,7 +45,7 @@ Cache structure for cubic spline interpolation with reusable LU factorization.
 - `x::X`: Grid points (immutable after construction, can be Range or Vector)
 - `h::Vector{T}`: Grid spacing h[i] = x[i+1] - x[i]
 - `lu_factor::F`: LU factorization of tridiagonal matrix A
-- `bc_data::BC`: Boundary condition data (BCPair for derivative BC, PeriodicData for periodic)
+- `bc_config::BC`: Boundary condition data (BCPair for derivative BC, PeriodicData for periodic)
 
 # Notes
 The LU factorization depends ONLY on x geometry and can be reused for:
@@ -66,7 +66,7 @@ struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC}
     x::X
     h::Vector{T}
     lu_factor::F
-    bc_data::BC
+    bc_config::BC
 end
 
 # ExtrapVal is defined in ops.jl (shared between linear and cubic)

@@ -10,7 +10,7 @@
 # Dependencies (from cubic_interp.jl):
 # - _is_periodic_bc(bc)
 # - _get_cubic_cache(x, bc, autocache)
-# - _solve_system!(out_z, cache, y, bc_data)
+# - _solve_system!(out_z, cache, y, bc_config)
 # - _check_periodic_endpoints(y)
 # - _cubic_vector_loop!(output, cache, y, z, x_query, ev)
 
@@ -133,7 +133,7 @@ so the pool memory can be safely reused after this function returns.
     _check_periodic_endpoints(y)
     cache = _get_cubic_cache(x, PeriodicBC(), autocache)
     tmp_z = similar!(pool, y)
-    _solve_system!(tmp_z, cache, y, cache.bc_data)
+    _solve_system!(tmp_z, cache, y, cache.bc_config)
     # tmp_z is copied by CubicInterpolant constructor - safe to return to pool
     return CubicInterpolant(cache, y, tmp_z, Val(:wrap))
 end
@@ -191,11 +191,11 @@ end
 Create a callable interpolant from a pre-built cache.
 
 # Note on BC Values
-Uses `cache.bc_data` for boundary condition values. This is correct when:
+Uses `cache.bc_config` for boundary condition values. This is correct when:
 - Cache was built via `CubicSplineCache(x; bc=...)` with actual BC values
 - BC is NaturalBC/ClampedBC/PeriodicBC (values are always zero)
 
-**Warning**: Caches from `get_cubic_cache` contain placeholder zeros in `bc_data`.
+**Warning**: Caches from `get_cubic_cache` contain placeholder zeros in `bc_config`.
 For non-zero BC values, use the full API: `cubic_interp(x, y; bc=Deriv1(val))`.
 
 # Thread-Safety
@@ -208,9 +208,9 @@ by the CubicInterpolant constructor.
     extrap::Symbol=:none
 ) where {T<:AbstractFloat}
     tmp_z = similar!(pool, y)
-    _solve_system!(tmp_z, cache, y, cache.bc_data)
+    _solve_system!(tmp_z, cache, y, cache.bc_config)
 
-    if cache.bc_data isa PeriodicData
+    if cache.bc_config isa PeriodicData
         _check_periodic_endpoints(y)
         return CubicInterpolant(cache, y, tmp_z, Val(:wrap))
     end

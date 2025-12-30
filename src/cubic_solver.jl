@@ -98,11 +98,11 @@ end
     q = lu_factor \ u
 
     # Workspaces (d, z, y_temp) are now allocated from task-local pools
-    bc_data = PeriodicData(q, period)
+    bc_config = PeriodicData(q, period)
 
     # Store full h array (size n+2) with both paddings to ensure h[end-1] = hₙ
     # This fixes the RHS indexing bug where h[end-1] was incorrectly giving hₙ₋₁
-    return CubicSplineCache(x, h, lu_factor, bc_data)
+    return CubicSplineCache(x, h, lu_factor, bc_config)
 end
 
 """
@@ -144,11 +144,11 @@ Uses type dispatch for zero-overhead specialization.
     lu_factor = lu(tA)
 
     # Workspaces (d, z) are now allocated from task-local pools
-    bc_data = BCPair(left_bc, right_bc)
+    bc_config = BCPair(left_bc, right_bc)
 
     # Store full h array (size n+2) with both paddings to ensure h[end-1] = hₙ
     # This fixes the RHS indexing bug where h[end-1] was incorrectly giving hₙ₋₁
-    return CubicSplineCache(x, h, lu_factor, bc_data)
+    return CubicSplineCache(x, h, lu_factor, bc_config)
 end
 
 # ========================================
@@ -196,14 +196,14 @@ Compute RHS vector for generic derivative BC system in-place.
 """
 @inline function compute_rhs!(
     d::AbstractVector{T}, y::AbstractVector{T}, h::AbstractVector{T},
-    bc_data::BCPair{T,L,R}
+    bc_config::BCPair{T,L,R}
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     n = length(y) - 1
-    _compute_rhs_first!(d, bc_data.left, y, h)
+    _compute_rhs_first!(d, bc_config.left, y, h)
     @inbounds for i in 2:n
         d[i] = 6 * ((y[i+1] - y[i]) / h[i+1] - (y[i] - y[i-1]) / h[i])
     end
-    _compute_rhs_last!(d, bc_data.right, y, h)
+    _compute_rhs_last!(d, bc_config.right, y, h)
     return nothing
 end
 
@@ -246,7 +246,7 @@ end
     ldiv!(y_temp, cache.lu_factor, d_workspace)
 
     α = cache.h[n+1]
-    q = cache.bc_data.q
+    q = cache.bc_config.q
 
     vTy = α * (y_temp[1] + y_temp[n])
     vTq = α * (q[1] + q[n])

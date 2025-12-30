@@ -391,7 +391,7 @@ Core lookup/insert logic for CacheBank{E} using RCU pattern.
 - Cache hit: ~11 ns (atomic load + linear scan, no lock)
 - Cache miss: Lock overhead + O(N) copy (N ≤ 16, negligible)
 """
-@inline function _lookup_or_insert!(bank::CacheBank{E}, x::X, bc_data) where {E<:AbstractCacheEntry, X}
+@inline function _lookup_or_insert!(bank::CacheBank{E}, x::X, bc_config) where {E<:AbstractCacheEntry, X}
     id = objectid(x)
 
     # === RCU Read Path (Lock-Free) ===
@@ -408,7 +408,7 @@ Core lookup/insert logic for CacheBank{E} using RCU pattern.
         found !== nothing && return found
 
         # Build new cache
-        new_cache = _build_cache(E, x, bc_data)
+        new_cache = _build_cache(E, x, bc_config)
         new_entry = E(id, x, new_cache)
 
         # Copy-on-write: create new snapshot with added entry

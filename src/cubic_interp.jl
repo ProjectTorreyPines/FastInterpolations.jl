@@ -133,7 +133,7 @@ Thread-safe: workspaces allocated from task-local pool.
     @assert length(output) == length(x_query) "output length must match x_query"
 
     z = similar!(pool, y)
-    _solve_system!(z, cache, y, cache.bc_data)
+    _solve_system!(z, cache, y, cache.bc_config)
 
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
@@ -227,7 +227,7 @@ Thread-safe: uses _get_cubic_cache + @with_pool pattern.
     _check_periodic_endpoints(y)
     cache = _get_cubic_cache(x, PeriodicBC{T}(), autocache)
     z = similar!(pool, y)
-    _solve_system!(z, cache, y, cache.bc_data)
+    _solve_system!(z, cache, y, cache.bc_config)
 
     # Periodic BC always uses :wrap extrapolation
     @_dispatch_extrap :wrap => ev begin
@@ -251,7 +251,7 @@ Thread-safe: uses _get_cubic_cache + @with_pool pattern.
     _check_periodic_endpoints(y)
     cache = _get_cubic_cache(x, PeriodicBC{T}(), autocache)
     z = similar!(pool, y)
-    _solve_system!(z, cache, y, cache.bc_data)
+    _solve_system!(z, cache, y, cache.bc_config)
 
     # Periodic BC always uses :wrap extrapolation
     @_dispatch_extrap :wrap => ev begin

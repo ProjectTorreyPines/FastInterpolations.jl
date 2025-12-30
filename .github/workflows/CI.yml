@@ -37,9 +37,7 @@ jobs:
       - uses: julia-actions/cache@v2
 
       - name: Add FuseRegistry
-        run: |
-          rm -rf ~/.julia/registries/FuseRegistry
-          julia -e 'using Pkg; Pkg.Registry.add(RegistrySpec(url="https://github.com/ProjectTorreyPines/FuseRegistry.jl.git")); Pkg.Registry.add("General"); Pkg.Registry.update()'
+        run: julia -e 'using Pkg; Pkg.Registry.add(RegistrySpec(url="https://github.com/ProjectTorreyPines/FuseRegistry.jl.git")); Pkg.Registry.add("General"); Pkg.Registry.update()'
 
       - uses: julia-actions/julia-buildpkg@v1
 

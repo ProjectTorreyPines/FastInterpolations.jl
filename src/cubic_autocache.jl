@@ -287,10 +287,11 @@ end
 # ---------------------------------------------------------------
 # Common lookup logic for both single-thread and multi-thread paths.
 # Returns cache if found, nothing if cache miss.
+# Self-healing (updating entry.id) only in single-thread mode.
 
 """
 Cache lookup (2-pass: identity check → equality check).
-Used by both single-thread (lock-free) and multi-thread (inside lock) paths.
+Self-healing enabled only in single-thread mode to avoid write race.
 """
 @inline function _lookup(store::Vector{E}, id::UInt, x::X) where {E, X}
     # [Pass 1] Identity check (fast path)
@@ -299,9 +300,12 @@ Used by both single-thread (lock-free) and multi-thread (inside lock) paths.
             return entry.cache
         end
     end
-    # [Pass 2] Equality check
+    # [Pass 2] Equality check (+ self-healing in single-thread)
     @inbounds for entry in store
         if isequal(entry.x, x)
+            if Threads.nthreads() == 1
+                entry.id = id  # Self-healing for future fast-path
+            end
             return entry.cache
         end
     end
@@ -310,14 +314,9 @@ end
 
 """
 Lookup or insert into a derivative BC cache bank.
-2-pass lookup: identity check (fast) → equality check (slower) → insert.
-
-On cache miss, creates entry with the provided `bc_pair` values. This ensures
-the cache has meaningful bc_data for edge cases, though callers should still
-use 3-arg `_solve_system!` for dynamic BC values.
 
 # Thread-Safety
-- Single-thread: Lock-free reads with self-healing, direct writes
+- Single-thread: Lock-free lookup with self-healing, direct insert
 - Multi-thread: Coarse-grained locking (lookup + build + insert under single lock)
 """
 @inline function _lookup_or_insert!(bank::CacheBank{T,L,R,X}, x::X, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
@@ -326,41 +325,22 @@ use 3-arg `_solve_system!` for dynamic BC values.
     id = objectid(x)
 
     if Threads.nthreads() == 1
-        # ─────────────────────────────────────────────────────────────
-        # Single-thread: Lock-free fast path
-        # ─────────────────────────────────────────────────────────────
-        # [Pass 1] Identity check
-        @inbounds for entry in store
-            if entry.id === id
-                return entry.cache
-            end
-        end
+        # Single-thread: Lock-free
+        found = _lookup(store, id, x)
+        found !== nothing && return found
 
-        # [Pass 2] Equality check with self-healing
-        @inbounds for entry in store
-            if isequal(entry.x, x)
-                entry.id = id  # Self-healing for future fast-path
-                return entry.cache
-            end
-        end
-
-        # [Cache Miss] Create and insert
+        # Cache miss - build & insert
         new_cache = _build_derivative_bc_cache(x, bc_pair.left, bc_pair.right)
         new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
         _add_to_ring!(store, ring, new_entry)
         return new_cache
     else
-        # ─────────────────────────────────────────────────────────────
-        # Multi-thread: Coarse-grained locking (simple & safe)
-        # Cache miss is Cold Path → lock duration doesn't affect steady-state
-        # ─────────────────────────────────────────────────────────────
+        # Multi-thread: Coarse-grained locking
         lock(_CACHE_LOCK)
         try
-            # Lookup under lock (safe from push! race)
             found = _lookup(store, id, x)
             found !== nothing && return found
 
-            # Cache miss - build & insert under lock
             new_cache = _build_derivative_bc_cache(x, bc_pair.left, bc_pair.right)
             new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
             _add_to_ring!(store, ring, new_entry)
@@ -375,7 +355,7 @@ end
 Lookup or insert into a periodic BC cache bank.
 
 # Thread-Safety
-- Single-thread: Lock-free reads with self-healing, direct writes
+- Single-thread: Lock-free lookup with self-healing, direct insert
 - Multi-thread: Coarse-grained locking (lookup + build + insert under single lock)
 """
 @inline function _lookup_or_insert!(bank::PeriodicCacheBank{T,X}, x::X) where {T<:AbstractFloat, X<:AbstractVector{T}}
@@ -384,41 +364,22 @@ Lookup or insert into a periodic BC cache bank.
     id = objectid(x)
 
     if Threads.nthreads() == 1
-        # ─────────────────────────────────────────────────────────────
-        # Single-thread: Lock-free fast path
-        # ─────────────────────────────────────────────────────────────
-        # [Pass 1] Identity check
-        @inbounds for entry in store
-            if entry.id === id
-                return entry.cache
-            end
-        end
+        # Single-thread: Lock-free
+        found = _lookup(store, id, x)
+        found !== nothing && return found
 
-        # [Pass 2] Equality check with self-healing
-        @inbounds for entry in store
-            if isequal(entry.x, x)
-                entry.id = id  # Self-healing for future fast-path
-                return entry.cache
-            end
-        end
-
-        # [Cache Miss] Create and insert
+        # Cache miss - build & insert
         new_cache = _build_periodic_cache(x)
         new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
         _add_to_ring!(store, ring, new_entry)
         return new_cache
     else
-        # ─────────────────────────────────────────────────────────────
-        # Multi-thread: Coarse-grained locking (simple & safe)
-        # Cache miss is Cold Path → lock duration doesn't affect steady-state
-        # ─────────────────────────────────────────────────────────────
+        # Multi-thread: Coarse-grained locking
         lock(_CACHE_LOCK)
         try
-            # Lookup under lock (safe from push! race)
             found = _lookup(store, id, x)
             found !== nothing && return found
 
-            # Cache miss - build & insert under lock
             new_cache = _build_periodic_cache(x)
             new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
             _add_to_ring!(store, ring, new_entry)

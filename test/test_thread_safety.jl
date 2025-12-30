@@ -217,6 +217,7 @@ end
             end
         end
 
+        # Tolerance: cubic interpolation of sin() with 51 points has ~1% max error
         @test max_err[] < 0.01
     end
 
@@ -318,7 +319,7 @@ end
         @test max_err[] < 1f-5
     end
 
-    @testset "deriv=1" begin
+    @testset "First derivative evaluation (deriv=1)" begin
         FastInterpolations.clear_cubic_cache!()
         x = collect(range(0.0, 1.0, 51))
         x_query = [0.25, 0.5, 0.75]

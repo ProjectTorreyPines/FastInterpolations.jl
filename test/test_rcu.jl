@@ -205,7 +205,7 @@ const BankType = FI.CacheBank{EntryType}
 
             allocs = @allocated FI.cubic_interp(x, y, 0.5; autocache=true)
             @test allocs <= 256
-            @info "Bank: Full interp cache hit allocation: $allocs bytes"
+            @info "Bank: Full interp cache hit allocation: $allocs bytes (threshold: 256 bytes)"
         end
     end
 

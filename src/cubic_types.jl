@@ -22,7 +22,7 @@ For cyclic tridiagonal system A_cyclic = A' + u * v^T, Sherman-Morrison gives:
 where q = A'^{-1} * u is pre-computed and reused for different y vectors.
 
 # Thread-Safety
-Workspaces (d, y_temp) are allocated from task-local pools via `@with_pool`,
+Workspaces for the periodic solver are allocated from task-local pools via `@with_pool`,
 not stored in this struct. This eliminates shared mutable state.
 """
 struct PeriodicData{T<:AbstractFloat}

@@ -175,7 +175,7 @@ const _PERIODIC_REGISTRY = GlobalRegistry()
 const _CACHE_LOCK = ReentrantLock()
 
 # Load-time constant: immutable after package load, enables compiler optimizations
-# Change via set_cubic_cache_size!(n) then restart Julia
+# To change: call set_cubic_cache_size!(n), then restart Julia for it to take effect
 const _CACHE_SIZE = @load_preference("cache_size", 16)::Int
 
 # ===============================================================
@@ -210,7 +210,7 @@ get_cubic_cache_size()     # Now returns 32
 function set_cubic_cache_size!(n::Int)
     n > 0 || throw(ArgumentError("Cache size must be positive"))
     @set_preferences!("cache_size" => n)
-    @info "Cache size set to $n. Restart Julia to apply."
+    @info "Cache size preference saved. Restart Julia to apply (current session uses $(get_cubic_cache_size()))."
     return n
 end
 

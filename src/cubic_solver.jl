@@ -28,7 +28,7 @@ end
     return nothing
 end
 
-# Last row - Deriv2 (second derivative specified): z[end] = bc.val
+# Last row - Deriv2 (second derivative specified): matrix row enforces z[end] = bc.val
 @inline function _set_last_row!(
     dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv2{T}, ::AbstractVector{T}
 ) where {T<:AbstractFloat}
@@ -58,7 +58,12 @@ end
 
     period = last(x) - first(x)
 
-    # Compute grid spacing h
+    # Compute grid spacing h with padding for consistent indexing
+    # Layout: [0, h₁, h₂, ..., hₙ, 0] where hᵢ = x[i+1] - x[i]
+    # - h[1] = 0 (left sentinel, unused)
+    # - h[i+1] = hᵢ for i = 1..n
+    # - h[end] = 0 (right sentinel, unused)
+    # This ensures h[end-1] = hₙ (last actual spacing)
     h = Vector{T}(undef, n + 2)
     h[1] = zero(T)
     h[end] = zero(T)
@@ -100,8 +105,7 @@ end
     # Workspaces (d, z, y_temp) are now allocated from task-local pools
     bc_config = PeriodicData(q, period)
 
-    # Store full h array (size n+2) with both paddings to ensure h[end-1] = hₙ
-    # This fixes the RHS indexing bug where h[end-1] was incorrectly giving hₙ₋₁
+    # Store full h array (see layout comment above) - required for RHS computation
     return CubicSplineCache(x, h, lu_factor, bc_config)
 end
 
@@ -116,7 +120,10 @@ Uses type dispatch for zero-overhead specialization.
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     n = length(x) - 1
 
-    # Compute grid spacing h[i] = x[i+1] - x[i]
+    # Compute grid spacing h with padding for consistent indexing
+    # Layout: [0, h₁, h₂, ..., hₙ, 0] where hᵢ = x[i+1] - x[i]
+    # - h[1] = 0 (left sentinel), h[i+1] = hᵢ, h[end] = 0 (right sentinel)
+    # This ensures h[end-1] = hₙ (last actual spacing)
     h = Vector{T}(undef, n + 2)
     h[1] = zero(T)
     h[end] = zero(T)
@@ -146,8 +153,7 @@ Uses type dispatch for zero-overhead specialization.
     # Workspaces (d, z) are now allocated from task-local pools
     bc_config = BCPair(left_bc, right_bc)
 
-    # Store full h array (size n+2) with both paddings to ensure h[end-1] = hₙ
-    # This fixes the RHS indexing bug where h[end-1] was incorrectly giving hₙ₋₁
+    # Store full h array (see layout comment above) - required for RHS computation
     return CubicSplineCache(x, h, lu_factor, bc_config)
 end
 

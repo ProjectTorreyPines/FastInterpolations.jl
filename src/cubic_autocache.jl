@@ -121,14 +121,48 @@ function CacheBank{E}() where {E<:AbstractCacheEntry}
 end
 
 # ===============================================================
-# Bank Registry (Dynamic/Lazy)
+# RCU Registry (Lock-Free Bank Lookup)
 # ===============================================================
 
-# NOTE: Value type is `Any` because banks are created dynamically for each
-# entry type combination at runtime. Type-stable access is ensured by
-# the typed getter functions (_get_derivative_bank, _get_periodic_bank).
-const _DERIVATIVE_BANK_REGISTRY = IdDict{DataType, Any}()
-const _PERIODIC_BANK_REGISTRY = IdDict{DataType, Any}()
+"""
+    RegistrySnapshot
+
+Type alias for the registry's immutable snapshot.
+Simple association list: [(BankType, BankInstance), ...]
+
+# Design Choice
+Using Vector{Pair{DataType, Any}} instead of IdDict because:
+- N < 20 banks → linear scan faster than hash lookup (cache-friendly)
+- Immutable snapshot enables lock-free reads via RCU pattern
+- Copy-on-write for writes is O(N) with small N
+"""
+const RegistrySnapshot = Vector{Pair{DataType, Any}}
+
+"""
+    GlobalRegistry
+
+Atomic registry wrapper for RCU-style lock-free bank lookup.
+
+# Thread Safety
+- Read path: Lock-free via `@atomic :acquire` snapshot load
+- Write path: Lock → copy → push → `@atomic :release` publish
+
+# Example
+```julia
+registry = GlobalRegistry()
+snap = @atomic :acquire registry.snapshot  # Lock-free read
+```
+"""
+mutable struct GlobalRegistry
+    @atomic snapshot::RegistrySnapshot
+end
+
+# Default constructor with empty snapshot
+GlobalRegistry() = GlobalRegistry(RegistrySnapshot())
+
+# Global registries (RCU style)
+const _DERIVATIVE_REGISTRY = GlobalRegistry()
+const _PERIODIC_REGISTRY = GlobalRegistry()
 const _CACHE_LOCK = ReentrantLock()
 
 # Load-time constant: immutable after package load, enables compiler optimizations
@@ -136,27 +170,11 @@ const _CACHE_LOCK = ReentrantLock()
 const _CACHE_SIZE = @load_preference("cache_size", 16)::Int
 
 # ===============================================================
-# Module Initialization (Thread-Safety)
+# Module Initialization
 # ===============================================================
 
-"""
-    __init__()
-
-Module initialization function called at `using` time (not precompile time).
-Pre-allocates registry capacity to prevent IdDict resize race during concurrent bank creation.
-
-# Thread-Safety
-- IdDict resizes at ~33% load factor
-- `sizehint!(100)` → 256 slots → safe for ~85 entries
-- Realistic usage: <20 different type combinations
-"""
-function __init__()
-    # Pre-allocate registry capacity to prevent resize race during bank creation.
-    # IdDict resizes at ~33% load factor; sizehint!(100) → 256 slots → ~85 safe entries.
-    # Realistic usage: <20 different type combinations.
-    sizehint!(_DERIVATIVE_BANK_REGISTRY, 100)
-    sizehint!(_PERIODIC_BANK_REGISTRY, 100)
-end
+# NOTE: With RCU pattern, __init__ is no longer needed for registry pre-allocation.
+# The atomic registry handles concurrent access safely without pre-sizing.
 
 # ===============================================================
 # Public API
@@ -198,55 +216,86 @@ get_cubic_cache_size() = _CACHE_SIZE
     clear_cubic_cache!()
 
 Clear all cached x-grids.
+
+# Thread Safety (RCU)
+Atomically replaces registry snapshots with empty vectors.
+Existing readers continue to see their old snapshots until they finish.
 """
 function clear_cubic_cache!()
     lock(_CACHE_LOCK) do
-        empty!(_DERIVATIVE_BANK_REGISTRY)
-        empty!(_PERIODIC_BANK_REGISTRY)
+        # Atomic replace with empty snapshots (RCU pattern)
+        @atomic :release _DERIVATIVE_REGISTRY.snapshot = RegistrySnapshot()
+        @atomic :release _PERIODIC_REGISTRY.snapshot = RegistrySnapshot()
     end
     return nothing
 end
 
 # ===============================================================
-# Internal: Bank Retrieval
+# Internal: RCU Registry Lookup
 # ===============================================================
 
 """
-Generic bank retrieval with DCL pattern.
+    _registry_lookup(registry, BankType) -> bank or nothing
 
-# Thread-Safety
-- Single-thread: Lock-free (no overhead)
-- Multi-thread: Double-checked locking for safe bank creation
+Lock-free registry lookup using RCU pattern.
+Atomically loads the snapshot and scans for matching bank type.
 
-# Note
-`CacheBank{E}()` calls constructor which includes sizehint! initialization.
+# Thread Safety
+- Lock-free read via `@atomic :acquire`
+- Linear scan on immutable snapshot (safe for concurrent reads)
 """
-@inline function _get_bank(registry::IdDict, ::Type{CacheBank{E}}) where {E<:AbstractCacheEntry}
-    BankType = CacheBank{E}
-    if Threads.nthreads() == 1
-        # Single-thread: Lock-free
-        bank = get(registry, BankType, nothing)
-        if bank === nothing
-            bank = CacheBank{E}()
-            registry[BankType] = bank
-        end
-        return bank::BankType
-    else
-        # Multi-thread: DCL (optimistic read → lock → double-check)
-        bank = get(registry, BankType, nothing)
-        bank !== nothing && return bank::BankType
+@inline function _registry_lookup(registry::GlobalRegistry, ::Type{B}) where {B}
+    snap = @atomic :acquire registry.snapshot
 
-        lock(_CACHE_LOCK)
-        try
-            bank = get(registry, BankType, nothing)
-            if bank === nothing
-                bank = CacheBank{E}()
-                registry[BankType] = bank
-            end
-            return bank::BankType
-        finally
-            unlock(_CACHE_LOCK)
+    # Linear scan (N < 20 → faster than hash lookup)
+    for (TypeKey, Bank) in snap
+        if TypeKey === B
+            return Bank::B
         end
+    end
+
+    return nothing
+end
+
+"""
+    _get_bank(registry, BankType) -> bank
+
+RCU-style bank retrieval with copy-on-write for new bank creation.
+
+# Thread Safety (RCU)
+- Read path (hit): Lock-free via `_registry_lookup`
+- Write path (miss): Lock → copy → push → atomic publish
+
+# Performance
+- Registry hit: ~10 ns (atomic load + linear scan)
+- Registry miss: Lock overhead + O(N) copy (N < 20)
+"""
+@inline function _get_bank(registry::GlobalRegistry, ::Type{CacheBank{E}}) where {E<:AbstractCacheEntry}
+    BankType = CacheBank{E}
+
+    # === RCU Read Path (Lock-Free) ===
+    bank = _registry_lookup(registry, BankType)
+    bank !== nothing && return bank
+
+    # === RCU Write Path (Lock + Copy-on-Write) ===
+    lock(_CACHE_LOCK)
+    try
+        # Double-check after acquiring lock
+        bank = _registry_lookup(registry, BankType)
+        bank !== nothing && return bank
+
+        # Create new bank
+        new_bank = CacheBank{E}()
+
+        # Copy-on-write: copy snapshot → push → publish
+        old_snap = @atomic :monotonic registry.snapshot
+        new_snap = copy(old_snap)
+        push!(new_snap, BankType => new_bank)
+        @atomic :release registry.snapshot = new_snap
+
+        return new_bank
+    finally
+        unlock(_CACHE_LOCK)
     end
 end
 
@@ -255,7 +304,7 @@ Get or create a derivative BC cache bank for the given (T, L, R, X) combination.
 """
 @inline function _get_derivative_bank(::X, ::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
     EntryType = CacheEntry{T,L,R,X}
-    return _get_bank(_DERIVATIVE_BANK_REGISTRY, CacheBank{EntryType})
+    return _get_bank(_DERIVATIVE_REGISTRY, CacheBank{EntryType})
 end
 
 """
@@ -263,7 +312,7 @@ Get or create a periodic BC cache bank for the given (T, X) combination.
 """
 @inline function _get_periodic_bank(::X) where {T<:AbstractFloat, X<:AbstractVector{T}}
     EntryType = PeriodicCacheEntry{T,X}
-    return _get_bank(_PERIODIC_BANK_REGISTRY, CacheBank{EntryType})
+    return _get_bank(_PERIODIC_REGISTRY, CacheBank{EntryType})
 end
 
 # ===============================================================

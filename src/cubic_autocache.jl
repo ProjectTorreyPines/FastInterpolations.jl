@@ -174,52 +174,93 @@ function clear_cubic_cache!()
 end
 
 # ===============================================================
-# Internal: Bank Retrieval (Lock-free Read Path)
+# Internal: Bank Retrieval
 # ===============================================================
 
 """
 Get or create a derivative BC cache bank for the given (T, L, R, X) combination.
-Uses lock-free read for fast path, lock only for first creation.
+
+# Thread-Safety
+- Single-thread: Lock-free (no overhead)
+- Multi-thread: Double-checked locking for safe bank creation
 """
 @inline function _get_derivative_bank(::X, ::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
     BankType = CacheBank{T,L,R,X}
 
-    # Fast path: lock-free read
-    bank = get(_DERIVATIVE_BANK_REGISTRY, BankType, nothing)
-    bank !== nothing && return bank::BankType
-
-    # Slow path: lock for first creation (try-finally to avoid closure allocation)
-    lock(_CACHE_LOCK)
-    try
-        if !haskey(_DERIVATIVE_BANK_REGISTRY, BankType)
-            _DERIVATIVE_BANK_REGISTRY[BankType] = CacheBank{T,L,R,X}()
+    if Threads.nthreads() == 1
+        # ─────────────────────────────────────────────────────────────
+        # Single-thread: Completely lock-free
+        # ─────────────────────────────────────────────────────────────
+        bank = get(_DERIVATIVE_BANK_REGISTRY, BankType, nothing)
+        if bank === nothing
+            bank = CacheBank{T,L,R,X}()
+            _DERIVATIVE_BANK_REGISTRY[BankType] = bank
         end
-    finally
-        unlock(_CACHE_LOCK)
+        return bank::BankType
+    else
+        # ─────────────────────────────────────────────────────────────
+        # Multi-thread: Double-checked locking
+        # ─────────────────────────────────────────────────────────────
+        # Fast path: optimistic read
+        bank = get(_DERIVATIVE_BANK_REGISTRY, BankType, nothing)
+        bank !== nothing && return bank::BankType
+
+        # Slow path: lock & double-check
+        lock(_CACHE_LOCK)
+        try
+            bank = get(_DERIVATIVE_BANK_REGISTRY, BankType, nothing)
+            if bank === nothing
+                bank = CacheBank{T,L,R,X}()
+                _DERIVATIVE_BANK_REGISTRY[BankType] = bank
+            end
+            return bank::BankType
+        finally
+            unlock(_CACHE_LOCK)
+        end
     end
-    return _DERIVATIVE_BANK_REGISTRY[BankType]::BankType
 end
 
 """
 Get or create a periodic BC cache bank for the given (T, X) combination.
+
+# Thread-Safety
+- Single-thread: Lock-free (no overhead)
+- Multi-thread: Double-checked locking for safe bank creation
 """
 @inline function _get_periodic_bank(::X) where {T<:AbstractFloat, X<:AbstractVector{T}}
     BankType = PeriodicCacheBank{T,X}
 
-    # Fast path: lock-free read
-    bank = get(_PERIODIC_BANK_REGISTRY, BankType, nothing)
-    bank !== nothing && return bank::BankType
-
-    # Slow path: lock for first creation (try-finally to avoid closure allocation)
-    lock(_CACHE_LOCK)
-    try
-        if !haskey(_PERIODIC_BANK_REGISTRY, BankType)
-            _PERIODIC_BANK_REGISTRY[BankType] = PeriodicCacheBank{T,X}()
+    if Threads.nthreads() == 1
+        # ─────────────────────────────────────────────────────────────
+        # Single-thread: Completely lock-free
+        # ─────────────────────────────────────────────────────────────
+        bank = get(_PERIODIC_BANK_REGISTRY, BankType, nothing)
+        if bank === nothing
+            bank = PeriodicCacheBank{T,X}()
+            _PERIODIC_BANK_REGISTRY[BankType] = bank
         end
-    finally
-        unlock(_CACHE_LOCK)
+        return bank::BankType
+    else
+        # ─────────────────────────────────────────────────────────────
+        # Multi-thread: Double-checked locking
+        # ─────────────────────────────────────────────────────────────
+        # Fast path: optimistic read
+        bank = get(_PERIODIC_BANK_REGISTRY, BankType, nothing)
+        bank !== nothing && return bank::BankType
+
+        # Slow path: lock & double-check
+        lock(_CACHE_LOCK)
+        try
+            bank = get(_PERIODIC_BANK_REGISTRY, BankType, nothing)
+            if bank === nothing
+                bank = PeriodicCacheBank{T,X}()
+                _PERIODIC_BANK_REGISTRY[BankType] = bank
+            end
+            return bank::BankType
+        finally
+            unlock(_CACHE_LOCK)
+        end
     end
-    return _PERIODIC_BANK_REGISTRY[BankType]::BankType
 end
 
 # ===============================================================

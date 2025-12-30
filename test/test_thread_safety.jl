@@ -420,12 +420,12 @@ end
 end
 
 # =========================================================================
-# Group 6: DCL Re-check Coverage
+# Group 6: Concurrent Insert (Writer Lock Contention)
 # =========================================================================
-@testset "DCL Re-check" begin
+@testset "Concurrent Insert" begin
     @testset "Derivative BC" begin
-        # Repeated clear + concurrent insert to trigger DCL re-check hit
-        # Two threads racing to insert same cache key → one hits re-check
+        # Repeated clear + concurrent insert to test writer lock contention
+        # Two threads racing to insert same cache key → one waits, then re-checks
         # Using @threads for guaranteed parallel execution on separate OS threads
         errors = Atomic{Int}(0)
 

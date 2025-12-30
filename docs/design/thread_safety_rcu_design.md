@@ -1,7 +1,8 @@
 # RCU Design for Autocache (Lock-Free Hit Path)
 
-**Status**: Draft
+**Status**: ✅ Implemented
 **Date**: 2024-12-29
+**Implemented**: 2025-12-29
 **Version**: 3.1
 **Scope**: Make cache hits lock-free and thread-safe with copy-on-write snapshots using Julia's `@atomic` features.
 **Prerequisites**: Julia 1.7+ (for `@atomic` field support). LTS (1.10) compatible.
@@ -260,13 +261,19 @@ snap = @atomic :acquire bank.snapshot  # atomic field load
 
 ## Performance Considerations
 
-- **Hit**: 
+- **Hit**:
     - Registry: 1 Atomic Load + Linear Scan (N < 20).
     - Bank: 1 Atomic Load + Linear Scan (N < 16).
     - Total: Extremely fast, zero lock contention.
-- **Miss**: 
+- **Miss**:
     - 1 Global Lock + Vector Copy + Atomic Store.
     - **Trade-off**: Global lock serializes misses across all banks. This is acceptable as misses converge quickly.
+
+## Allocation
+
+- **Public API**: `cubic_interp(x, y, q)` → **0 bytes** ✅ (Julia 1.12+)
+- 91개 allocation 테스트 모두 통과 (`ALLOC_THRESHOLD=0`)
+- 자세한 분석: [PLAN_rcu-lock-free-cache.md](../plans/PLAN_rcu-lock-free-cache.md#allocation-analysis-2025-12-29)
 
 ## Migration Plan (Phase 3)
 

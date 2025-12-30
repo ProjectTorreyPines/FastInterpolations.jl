@@ -10,14 +10,23 @@ Transparently reuses LU factorization for repeated x-grids.
 - **RCU (Read-Copy-Update)** pattern for lock-free cache hits
 - Zero-allocation cache hit via 2-pass lookup (objectid → isequal)
 - Ring buffer eviction for O(1) cache replacement
-- Dynamic bank creation via IdDict keyed by type
+- `GlobalRegistry` with atomic `Vector{Pair}` for lock-free bank lookup
 
 # Thread Safety (RCU Pattern)
 
-- **Read path (hit)**: Lock-free via `@atomic :acquire` snapshot load
-- **Write path (miss)**: Lock → copy snapshot → modify → `@atomic :release` publish
-- Cache hit latency: ~11 ns (no lock contention)
-- Julia 1.7+ compatible (uses `@atomic` field, not AtomicMemory)
+**Read path (cache hit)**: Lock-free
+- `@atomic :acquire` snapshot load (registry and bank)
+- Linear scan for type match (registry: N<20 banks)
+- 2-pass lookup: objectid fast path → isequal slow path
+
+**Write path (cache miss)**: Lock protected
+- Lock → double-check → copy snapshot → modify → `@atomic :release` publish
+
+**Performance**:
+- Full interp cache hit: ~810 ns/op
+- **Zero allocation** on cache hit (Julia 1.12+, avoid closure capture)
+
+**Compatibility**: Julia 1.7+ (uses `@atomic` field, not AtomicMemory)
 """
 
 # ===============================================================

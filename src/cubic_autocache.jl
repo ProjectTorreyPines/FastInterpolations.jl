@@ -6,7 +6,7 @@ Transparently reuses LU factorization for repeated x-grids.
 
 # Implementation Details
 
-- Fully parametric `CacheBank{T, L, R, X}` - supports any BC type combination
+- Generic `CacheBank{E}` - single bank type parameterized by entry type
 - Zero-allocation cache hit via 2-pass lookup (objectid → isequal)
 - Ring buffer eviction for O(1) cache replacement
 - Self-healing: updates objectid on content match for future fast-path hits
@@ -15,13 +15,23 @@ Transparently reuses LU factorization for repeated x-grids.
 """
 
 # ===============================================================
-# Parametric Cache Types
+# Cache Entry Types
 # ===============================================================
+
+"""
+    AbstractCacheEntry{T, X}
+
+Abstract type for cache entries. Subtypes must have:
+- `id::UInt` - object identity for fast lookup
+- `x::X` - grid data for equality check
+- `cache` - CubicSplineCache instance
+"""
+abstract type AbstractCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}} end
 
 """
     CacheEntry{T, L, R, X}
 
-A single cache entry storing an x-grid and its associated CubicSplineCache.
+Cache entry for derivative BC (uses BCPair).
 
 # Type Parameters
 - `T`: Float type (Float32 or Float64)
@@ -29,61 +39,46 @@ A single cache entry storing an x-grid and its associated CubicSplineCache.
 - `R`: Right boundary condition type (Deriv1{T} or Deriv2{T})
 - `X`: Grid type (Vector{T} or StepRangeLen)
 """
-mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
     cache::CubicSplineCache{T, X, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, BCPair{T,L,R}}
 end
 
 """
-    CacheBank{T, L, R, X}
-
-A cache bank holding entries for a specific (T, L, R, X) type combination.
-
-# Type Parameters
-- `T`: Float type
-- `L`: Left BC type
-- `R`: Right BC type
-- `X`: Grid type
-"""
-mutable struct CacheBank{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
-    store::Vector{CacheEntry{T, L, R, X}}
-    ring::Base.RefValue{Int}
-end
-
-# Constructor with sizehint! to prevent push! reallocation race during warm-up
-function CacheBank{T,L,R,X}() where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
-    store = CacheEntry{T,L,R,X}[]
-    sizehint!(store, _CACHE_SIZE)  # Pre-allocate to prevent push! reallocation race
-    CacheBank{T,L,R,X}(store, Ref(1))
-end
-
-"""
     PeriodicCacheEntry{T, X}
 
-Cache entry for periodic BC (uses PeriodicData instead of BCPair).
+Cache entry for periodic BC (uses PeriodicData).
 """
-mutable struct PeriodicCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}}
+mutable struct PeriodicCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
     cache::CubicSplineCache{T, X, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, PeriodicData{T}}
 end
 
-"""
-    PeriodicCacheBank{T, X}
+# ===============================================================
+# Generic Cache Bank
+# ===============================================================
 
-Cache bank for periodic BC.
 """
-mutable struct PeriodicCacheBank{T<:AbstractFloat, X<:AbstractVector{T}}
-    store::Vector{PeriodicCacheEntry{T, X}}
+    CacheBank{E}
+
+A generic cache bank holding entries of type `E`.
+Bank is parameterized by entry type, not by BC types directly.
+
+# Type Parameters
+- `E`: Entry type (CacheEntry{T,L,R,X} or PeriodicCacheEntry{T,X})
+"""
+mutable struct CacheBank{E<:AbstractCacheEntry}
+    store::Vector{E}
     ring::Base.RefValue{Int}
 end
 
-# Constructor with sizehint! to prevent push! reallocation race during warm-up
-function PeriodicCacheBank{T,X}() where {T<:AbstractFloat, X<:AbstractVector{T}}
-    store = PeriodicCacheEntry{T,X}[]
+# Single constructor for all entry types
+function CacheBank{E}() where {E<:AbstractCacheEntry}
+    store = E[]
     sizehint!(store, _CACHE_SIZE)  # Pre-allocate to prevent push! reallocation race
-    PeriodicCacheBank{T,X}(store, Ref(1))
+    CacheBank{E}(store, Ref(1))
 end
 
 # ===============================================================
@@ -91,7 +86,7 @@ end
 # ===============================================================
 
 # NOTE: Value type is `Any` because banks are created dynamically for each
-# (T, L, R, X) combination at runtime. Type-stable access is ensured by
+# entry type combination at runtime. Type-stable access is ensured by
 # the typed getter functions (_get_derivative_bank, _get_periodic_bank).
 const _DERIVATIVE_BANK_REGISTRY = IdDict{DataType, Any}()
 const _PERIODIC_BANK_REGISTRY = IdDict{DataType, Any}()
@@ -114,12 +109,12 @@ Pre-allocates registry capacity to prevent IdDict resize race during concurrent 
 # Thread-Safety
 - IdDict resizes at ~33% load factor
 - `sizehint!(100)` → 256 slots → safe for ~85 entries
-- Realistic usage: <20 different (T, L, R, X) type combinations
+- Realistic usage: <20 different type combinations
 """
 function __init__()
     # Pre-allocate registry capacity to prevent resize race during bank creation.
     # IdDict resizes at ~33% load factor; sizehint!(100) → 256 slots → ~85 safe entries.
-    # Realistic usage: <20 different (T, L, R, X) type combinations.
+    # Realistic usage: <20 different type combinations.
     sizehint!(_DERIVATIVE_BANK_REGISTRY, 100)
     sizehint!(_PERIODIC_BANK_REGISTRY, 100)
 end
@@ -178,40 +173,36 @@ end
 # ===============================================================
 
 """
-Get or create a derivative BC cache bank for the given (T, L, R, X) combination.
+Generic bank retrieval with DCL pattern.
 
 # Thread-Safety
 - Single-thread: Lock-free (no overhead)
 - Multi-thread: Double-checked locking for safe bank creation
-"""
-@inline function _get_derivative_bank(::X, ::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
-    BankType = CacheBank{T,L,R,X}
 
+# Note
+`CacheBank{E}()` calls constructor which includes sizehint! initialization.
+"""
+@inline function _get_bank(registry::IdDict, ::Type{CacheBank{E}}) where {E<:AbstractCacheEntry}
+    BankType = CacheBank{E}
     if Threads.nthreads() == 1
-        # ─────────────────────────────────────────────────────────────
-        # Single-thread: Completely lock-free
-        # ─────────────────────────────────────────────────────────────
-        bank = get(_DERIVATIVE_BANK_REGISTRY, BankType, nothing)
+        # Single-thread: Lock-free
+        bank = get(registry, BankType, nothing)
         if bank === nothing
-            bank = CacheBank{T,L,R,X}()
-            _DERIVATIVE_BANK_REGISTRY[BankType] = bank
+            bank = CacheBank{E}()
+            registry[BankType] = bank
         end
         return bank::BankType
     else
-        # ─────────────────────────────────────────────────────────────
-        # Multi-thread: Double-checked locking
-        # ─────────────────────────────────────────────────────────────
-        # Fast path: optimistic read
-        bank = get(_DERIVATIVE_BANK_REGISTRY, BankType, nothing)
+        # Multi-thread: DCL (optimistic read → lock → double-check)
+        bank = get(registry, BankType, nothing)
         bank !== nothing && return bank::BankType
 
-        # Slow path: lock & double-check
         lock(_CACHE_LOCK)
         try
-            bank = get(_DERIVATIVE_BANK_REGISTRY, BankType, nothing)
+            bank = get(registry, BankType, nothing)
             if bank === nothing
-                bank = CacheBank{T,L,R,X}()
-                _DERIVATIVE_BANK_REGISTRY[BankType] = bank
+                bank = CacheBank{E}()
+                registry[BankType] = bank
             end
             return bank::BankType
         finally
@@ -221,46 +212,19 @@ Get or create a derivative BC cache bank for the given (T, L, R, X) combination.
 end
 
 """
-Get or create a periodic BC cache bank for the given (T, X) combination.
+Get or create a derivative BC cache bank for the given (T, L, R, X) combination.
+"""
+@inline function _get_derivative_bank(::X, ::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+    EntryType = CacheEntry{T,L,R,X}
+    return _get_bank(_DERIVATIVE_BANK_REGISTRY, CacheBank{EntryType})
+end
 
-# Thread-Safety
-- Single-thread: Lock-free (no overhead)
-- Multi-thread: Double-checked locking for safe bank creation
+"""
+Get or create a periodic BC cache bank for the given (T, X) combination.
 """
 @inline function _get_periodic_bank(::X) where {T<:AbstractFloat, X<:AbstractVector{T}}
-    BankType = PeriodicCacheBank{T,X}
-
-    if Threads.nthreads() == 1
-        # ─────────────────────────────────────────────────────────────
-        # Single-thread: Completely lock-free
-        # ─────────────────────────────────────────────────────────────
-        bank = get(_PERIODIC_BANK_REGISTRY, BankType, nothing)
-        if bank === nothing
-            bank = PeriodicCacheBank{T,X}()
-            _PERIODIC_BANK_REGISTRY[BankType] = bank
-        end
-        return bank::BankType
-    else
-        # ─────────────────────────────────────────────────────────────
-        # Multi-thread: Double-checked locking
-        # ─────────────────────────────────────────────────────────────
-        # Fast path: optimistic read
-        bank = get(_PERIODIC_BANK_REGISTRY, BankType, nothing)
-        bank !== nothing && return bank::BankType
-
-        # Slow path: lock & double-check
-        lock(_CACHE_LOCK)
-        try
-            bank = get(_PERIODIC_BANK_REGISTRY, BankType, nothing)
-            if bank === nothing
-                bank = PeriodicCacheBank{T,X}()
-                _PERIODIC_BANK_REGISTRY[BankType] = bank
-            end
-            return bank::BankType
-        finally
-            unlock(_CACHE_LOCK)
-        end
-    end
+    EntryType = PeriodicCacheEntry{T,X}
+    return _get_bank(_PERIODIC_BANK_REGISTRY, CacheBank{EntryType})
 end
 
 # ===============================================================
@@ -279,15 +243,8 @@ end
 end
 
 # ===============================================================
-# Internal: Lookup/Insert (Unified)
+# Internal: Lookup/Insert
 # ===============================================================
-
-# ---------------------------------------------------------------
-# Cache Lookup Helper
-# ---------------------------------------------------------------
-# Common lookup logic for both single-thread and multi-thread paths.
-# Returns cache if found, nothing if cache miss.
-# Self-healing (updating entry.id) only in single-thread mode.
 
 """
 Cache lookup (2-pass: identity check → equality check).
@@ -312,54 +269,33 @@ Self-healing enabled only in single-thread mode to avoid write race.
     return nothing
 end
 
-"""
-Lookup or insert into a derivative BC cache bank.
+# ---------------------------------------------------------------
+# Cache Builder (type-dispatched)
+# ---------------------------------------------------------------
 
-# Thread-Safety
-- Single-thread: Lock-free lookup with self-healing, direct insert
-- Multi-thread: Coarse-grained locking (lookup + build + insert under single lock)
-"""
-@inline function _lookup_or_insert!(bank::CacheBank{T,L,R,X}, x::X, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
-    store = bank.store
-    ring = bank.ring
-    id = objectid(x)
-
-    if Threads.nthreads() == 1
-        # Single-thread: Lock-free
-        found = _lookup(store, id, x)
-        found !== nothing && return found
-
-        # Cache miss - build & insert
-        new_cache = _build_derivative_bc_cache(x, bc_pair.left, bc_pair.right)
-        new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
-        _add_to_ring!(store, ring, new_entry)
-        return new_cache
-    else
-        # Multi-thread: Coarse-grained locking
-        lock(_CACHE_LOCK)
-        try
-            found = _lookup(store, id, x)
-            found !== nothing && return found
-
-            new_cache = _build_derivative_bc_cache(x, bc_pair.left, bc_pair.right)
-            new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
-            _add_to_ring!(store, ring, new_entry)
-            return new_cache
-        finally
-            unlock(_CACHE_LOCK)
-        end
-    end
+# Build cache for derivative BC entry
+@inline function _build_cache(::Type{CacheEntry{T,L,R,X}}, x::X, bc::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+    return _build_derivative_bc_cache(x, bc.left, bc.right)
 end
 
+# Build cache for periodic BC entry
+@inline function _build_cache(::Type{PeriodicCacheEntry{T,X}}, x::X, ::Nothing) where {T<:AbstractFloat, X<:AbstractVector{T}}
+    return _build_periodic_cache(x)
+end
+
+# ---------------------------------------------------------------
+# Unified Lookup/Insert
+# ---------------------------------------------------------------
+
 """
-Lookup or insert into a periodic BC cache bank.
+Core lookup/insert logic for CacheBank{E}.
 
 # Thread-Safety
 - Single-thread: Lock-free lookup with self-healing, direct insert
 - Multi-thread: Coarse-grained locking (lookup + build + insert under single lock)
 """
-@inline function _lookup_or_insert!(bank::PeriodicCacheBank{T,X}, x::X) where {T<:AbstractFloat, X<:AbstractVector{T}}
-    store = bank.store
+@inline function _lookup_or_insert!(bank::CacheBank{E}, x::X, bc_data) where {E<:AbstractCacheEntry, X}
+    store = bank.store  # Direct field access (type-stable)
     ring = bank.ring
     id = objectid(x)
 
@@ -369,8 +305,8 @@ Lookup or insert into a periodic BC cache bank.
         found !== nothing && return found
 
         # Cache miss - build & insert
-        new_cache = _build_periodic_cache(x)
-        new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
+        new_cache = _build_cache(E, x, bc_data)
+        new_entry = E(id, x, new_cache)  # Direct constructor call
         _add_to_ring!(store, ring, new_entry)
         return new_cache
     else
@@ -380,8 +316,8 @@ Lookup or insert into a periodic BC cache bank.
             found = _lookup(store, id, x)
             found !== nothing && return found
 
-            new_cache = _build_periodic_cache(x)
-            new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
+            new_cache = _build_cache(E, x, bc_data)
+            new_entry = E(id, x, new_cache)
             _add_to_ring!(store, ring, new_entry)
             return new_cache
         finally
@@ -470,8 +406,8 @@ end
 end
 
 @inline function _get_cubic_cache(
-    x::AbstractVector{T}, 
-    bc::AbstractBC, 
+    x::AbstractVector{T},
+    bc::AbstractBC,
     autocache::Bool
 ) where {T<:AbstractFloat}
     if autocache
@@ -484,7 +420,7 @@ end
 
 
 # ===============================================================
-# Internal: Cache Implementation with Locking
+# Internal: Cache Implementation
 # ===============================================================
 
 # StepRangeLen concrete types (from `range(a, b, n)`)
@@ -527,7 +463,7 @@ Internal implementation for periodic BC cache lookup.
 @inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T<:Union{Float64,Float32}}
     x_normalized = x isa Vector ? x : collect(x)
     bank = _get_periodic_bank(x_normalized)
-    return _lookup_or_insert!(bank, x_normalized)
+    return _lookup_or_insert!(bank, x_normalized, nothing)
 end
 
 @inline function _get_periodic_cache_impl(x::AbstractRange{T}) where {T<:Union{Float64,Float32}}
@@ -535,7 +471,7 @@ end
     # LinRange and other Range types are converted (minor overhead on first call).
     x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
     bank = _get_periodic_bank(x_normalized)
-    return _lookup_or_insert!(bank, x_normalized)
+    return _lookup_or_insert!(bank, x_normalized, nothing)
 end
 
 # Fallback: other Real types → convert to Float64

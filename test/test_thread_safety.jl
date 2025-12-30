@@ -28,7 +28,7 @@ else
         FastInterpolations.clear_cubic_cache!()
         errors = Atomic{Int}(0)
 
-        @threads for i in 1:100
+        @threads for i in 1:1000
             try
                 n_points = 10 + (i % 20)
                 x = collect(range(0.0, 1.0, n_points))
@@ -46,7 +46,7 @@ else
         FastInterpolations.clear_cubic_cache!()
         errors = Atomic{Int}(0)
 
-        @threads for i in 1:200
+        @threads for i in 1:1000
             try
                 offset = i * 0.001
                 x = collect(range(offset, 1.0 + offset, 51))
@@ -64,7 +64,7 @@ else
         FastInterpolations.clear_cubic_cache!()
         errors = Atomic{Int}(0)
 
-        @threads for i in 1:150
+        @threads for i in 1:1000
             try
                 x = collect(range(0.0, 1.0, 51))
                 y = sin.(2π .* x)
@@ -95,7 +95,7 @@ end
     @testset "Scalar query" begin
         FastInterpolations.clear_cubic_cache!()
         x = collect(range(0.0, 1.0, 51))
-        n_iter = 500
+        n_iter = 1000
 
         results_cached = Vector{Float64}(undef, n_iter)
         results_nocache = Vector{Float64}(undef, n_iter)
@@ -115,7 +115,7 @@ end
         FastInterpolations.clear_cubic_cache!()
         x = collect(range(0.0, 1.0, 51))
         x_query = [0.2, 0.4, 0.6, 0.8]
-        n_iter = 300
+        n_iter = 1000
 
         max_err = Ref(0.0)
         lk = ReentrantLock()
@@ -139,7 +139,7 @@ end
     @testset "Periodic BC" begin
         FastInterpolations.clear_cubic_cache!()
         x = collect(range(0.0, 2π, 51))
-        n_iter = 300
+        n_iter = 1000
 
         max_err = Ref(0.0)
         lk = ReentrantLock()
@@ -169,7 +169,7 @@ end
         FastInterpolations.clear_cubic_cache!()
         x = collect(range(0.0, 1.0, 51))
         x_query = [0.25, 0.5, 0.75]
-        n_iter = 300
+        n_iter = 1000
 
         max_err = Ref(0.0)
         lk = ReentrantLock()

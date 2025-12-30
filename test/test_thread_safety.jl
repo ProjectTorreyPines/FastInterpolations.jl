@@ -418,6 +418,54 @@ end
     end
 end
 
+# =========================================================================
+# Group 6: DCL Re-check Coverage
+# =========================================================================
+@testset "DCL Re-check" begin
+    @testset "Derivative BC" begin
+        # Repeated clear + concurrent insert to trigger DCL re-check hit
+        # Two threads racing to insert same cache key → one hits re-check
+        # Using @threads for guaranteed parallel execution on separate OS threads
+        errors = Atomic{Int}(0)
+
+        for _ in 1:5000
+            FastInterpolations.clear_cubic_cache!()
+            x = collect(range(0.0, 1.0, 51))
+            y = sin.(2π .* x)
+
+            @threads for _ in 1:2
+                try
+                    cubic_interp(x, y, 0.5; autocache=true)
+                catch
+                    atomic_add!(errors, 1)
+                end
+            end
+        end
+
+        @test errors[] == 0
+    end
+
+    @testset "Periodic BC" begin
+        errors = Atomic{Int}(0)
+
+        for _ in 1:5000
+            FastInterpolations.clear_cubic_cache!()
+            x = collect(range(0.0, 2π, 51))
+            y = sin.(x)
+
+            @threads for _ in 1:2
+                try
+                    cubic_interp(x, y, π; bc=PeriodicBC(), autocache=true)
+                catch
+                    atomic_add!(errors, 1)
+                end
+            end
+        end
+
+        @test errors[] == 0
+    end
+end
+
 end  # if nthreads() > 1
 
 # Print summary if run directly

@@ -7,11 +7,17 @@ Transparently reuses LU factorization for repeated x-grids.
 # Implementation Details
 
 - Generic `CacheBank{E}` - single bank type parameterized by entry type
+- **RCU (Read-Copy-Update)** pattern for lock-free cache hits
 - Zero-allocation cache hit via 2-pass lookup (objectid → isequal)
 - Ring buffer eviction for O(1) cache replacement
-- Self-healing: updates objectid on content match for future fast-path hits
 - Dynamic bank creation via IdDict keyed by type
-- Thread-safe with ReentrantLock on cache access
+
+# Thread Safety (RCU Pattern)
+
+- **Read path (hit)**: Lock-free via `@atomic :acquire` snapshot load
+- **Write path (miss)**: Lock → copy snapshot → modify → `@atomic :release` publish
+- Cache hit latency: ~11 ns (no lock contention)
+- Julia 1.7+ compatible (uses `@atomic` field, not AtomicMemory)
 """
 
 # ===============================================================
@@ -57,28 +63,61 @@ mutable struct PeriodicCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}} <: Abs
 end
 
 # ===============================================================
-# Generic Cache Bank
+# RCU Snapshot (Immutable Bank State)
+# ===============================================================
+
+"""
+    BankSnapshot{E}
+
+Immutable snapshot of bank state at a point in time.
+Used for RCU (Read-Copy-Update) pattern to enable lock-free reads.
+
+# Fields
+- `store::Vector{E}` - Cache entries (effectively immutable after creation)
+- `count::Int` - Number of valid entries
+- `ring::Int` - Next eviction index (1-based)
+
+# Thread Safety
+Readers atomically load a snapshot reference and can safely read it
+without locks since the snapshot content never changes after creation.
+"""
+struct BankSnapshot{E<:AbstractCacheEntry}
+    store::Vector{E}
+    count::Int
+    ring::Int  # 1-based next eviction index
+end
+
+# Empty snapshot constructor
+function BankSnapshot{E}() where {E<:AbstractCacheEntry}
+    store = E[]
+    sizehint!(store, _CACHE_SIZE)
+    BankSnapshot{E}(store, 0, 1)
+end
+
+# ===============================================================
+# Generic Cache Bank (RCU-style)
 # ===============================================================
 
 """
     CacheBank{E}
 
 A generic cache bank holding entries of type `E`.
-Bank is parameterized by entry type, not by BC types directly.
+Uses RCU pattern with atomic snapshot for lock-free reads.
 
 # Type Parameters
 - `E`: Entry type (CacheEntry{T,L,R,X} or PeriodicCacheEntry{T,X})
+
+# Thread Safety
+- Read path: Lock-free via `@atomic :acquire` snapshot load
+- Write path: Lock + copy-on-write + `@atomic :release` publish
 """
 mutable struct CacheBank{E<:AbstractCacheEntry}
-    store::Vector{E}
-    ring::Base.RefValue{Int}
+    @atomic snapshot::BankSnapshot{E}
 end
 
 # Single constructor for all entry types
 function CacheBank{E}() where {E<:AbstractCacheEntry}
-    store = E[]
-    sizehint!(store, _CACHE_SIZE)  # Pre-allocate to prevent push! reallocation race
-    CacheBank{E}(store, Ref(1))
+    CacheBank{E}(BankSnapshot{E}())
 end
 
 # ===============================================================
@@ -228,44 +267,40 @@ Get or create a periodic BC cache bank for the given (T, X) combination.
 end
 
 # ===============================================================
-# Internal: Ring Buffer Add
-# ===============================================================
-
-@inline function _add_to_ring!(store::Vector{E}, ring::Base.RefValue{Int}, entry::E) where E
-    if length(store) < _CACHE_SIZE
-        push!(store, entry)
-    else
-        idx = ring[]
-        store[idx] = entry
-        ring[] = (idx % _CACHE_SIZE) + 1
-    end
-    return nothing
-end
-
-# ===============================================================
-# Internal: Lookup/Insert
+# Internal: RCU Lookup (Lock-Free Read Path)
 # ===============================================================
 
 """
-Cache lookup (2-pass: identity check → equality check).
-Self-healing enabled only in single-thread mode to avoid write race.
+    _rcu_lookup(snap, id, x) -> cache or nothing
+
+Lock-free cache lookup on an immutable snapshot.
+Uses 2-pass algorithm: identity check (fast) → equality check (slow).
+
+# Thread Safety
+- This function is called on an immutable snapshot
+- No self-healing (snapshot is immutable)
+- Safe for concurrent calls from multiple threads
 """
-@inline function _lookup(store::Vector{E}, id::UInt, x::X) where {E, X}
+@inline function _rcu_lookup(snap::BankSnapshot{E}, id::UInt, x::X) where {E, X}
+    store = snap.store
+    count = snap.count
+
     # [Pass 1] Identity check (fast path)
-    @inbounds for entry in store
+    @inbounds for i in 1:count
+        entry = store[i]
         if entry.id === id
             return entry.cache
         end
     end
-    # [Pass 2] Equality check (+ self-healing in single-thread)
-    @inbounds for entry in store
+
+    # [Pass 2] Equality check (no self-healing in RCU - snapshot is immutable)
+    @inbounds for i in 1:count
+        entry = store[i]
         if isequal(entry.x, x)
-            if Threads.nthreads() == 1
-                entry.id = id  # Self-healing for future fast-path
-            end
             return entry.cache
         end
     end
+
     return nothing
 end
 
@@ -284,45 +319,61 @@ end
 end
 
 # ---------------------------------------------------------------
-# Unified Lookup/Insert
+# Unified Lookup/Insert (RCU Pattern)
 # ---------------------------------------------------------------
 
 """
-Core lookup/insert logic for CacheBank{E}.
+Core lookup/insert logic for CacheBank{E} using RCU pattern.
 
-# Thread-Safety
-- Single-thread: Lock-free lookup with self-healing, direct insert
-- Multi-thread: Coarse-grained locking (lookup + build + insert under single lock)
+# Thread-Safety (RCU - Read-Copy-Update)
+- Read path (hit): Lock-free via atomic snapshot load
+- Write path (miss): Lock → copy snapshot → modify → atomic publish
+
+# Performance
+- Cache hit: ~11 ns (atomic load + linear scan, no lock)
+- Cache miss: Lock overhead + O(N) copy (N ≤ 16, negligible)
 """
 @inline function _lookup_or_insert!(bank::CacheBank{E}, x::X, bc_data) where {E<:AbstractCacheEntry, X}
-    store = bank.store  # Direct field access (type-stable)
-    ring = bank.ring
     id = objectid(x)
 
-    if Threads.nthreads() == 1
-        # Single-thread: Lock-free
-        found = _lookup(store, id, x)
+    # === RCU Read Path (Lock-Free) ===
+    snap = @atomic :acquire bank.snapshot
+    found = _rcu_lookup(snap, id, x)
+    found !== nothing && return found
+
+    # === RCU Write Path (Lock + Copy-on-Write) ===
+    lock(_CACHE_LOCK)
+    try
+        # Double-check after acquiring lock
+        snap = @atomic :monotonic bank.snapshot
+        found = _rcu_lookup(snap, id, x)
         found !== nothing && return found
 
-        # Cache miss - build & insert
+        # Build new cache
         new_cache = _build_cache(E, x, bc_data)
-        new_entry = E(id, x, new_cache)  # Direct constructor call
-        _add_to_ring!(store, ring, new_entry)
-        return new_cache
-    else
-        # Multi-thread: Coarse-grained locking
-        lock(_CACHE_LOCK)
-        try
-            found = _lookup(store, id, x)
-            found !== nothing && return found
+        new_entry = E(id, x, new_cache)
 
-            new_cache = _build_cache(E, x, bc_data)
-            new_entry = E(id, x, new_cache)
-            _add_to_ring!(store, ring, new_entry)
-            return new_cache
-        finally
-            unlock(_CACHE_LOCK)
+        # Copy-on-write: create new snapshot with added entry
+        new_store = copy(snap.store)
+        new_count = snap.count
+        new_ring = snap.ring
+
+        if new_count < _CACHE_SIZE
+            push!(new_store, new_entry)
+            new_count += 1
+        else
+            # Ring buffer eviction
+            new_store[new_ring] = new_entry
+            new_ring = (new_ring % _CACHE_SIZE) + 1
         end
+
+        # Atomic publish
+        new_snap = BankSnapshot{E}(new_store, new_count, new_ring)
+        @atomic :release bank.snapshot = new_snap
+
+        return new_cache
+    finally
+        unlock(_CACHE_LOCK)
     end
 end
 

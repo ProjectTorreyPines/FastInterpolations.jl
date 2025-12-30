@@ -100,7 +100,9 @@ function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
     # Workspaces (d, z, y_temp) are now allocated from task-local pools
     bc_data = PeriodicData(q, period)
 
-    return CubicSplineCache(x, h[1:n+1], lu_factor, bc_data)
+    # Store full h array (size n+2) with both paddings to ensure h[end-1] = hₙ
+    # This fixes the RHS indexing bug where h[end-1] was incorrectly giving hₙ₋₁
+    return CubicSplineCache(x, h, lu_factor, bc_data)
 end
 
 """
@@ -144,7 +146,9 @@ function _build_derivative_bc_cache(
     # Workspaces (d, z) are now allocated from task-local pools
     bc_data = BCPair(left_bc, right_bc)
 
-    return CubicSplineCache(x, h[1:n+1], lu_factor, bc_data)
+    # Store full h array (size n+2) with both paddings to ensure h[end-1] = hₙ
+    # This fixes the RHS indexing bug where h[end-1] was incorrectly giving hₙ₋₁
+    return CubicSplineCache(x, h, lu_factor, bc_data)
 end
 
 # ========================================

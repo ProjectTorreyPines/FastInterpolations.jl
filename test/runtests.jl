@@ -27,4 +27,6 @@ else
     include("test_derivatives.jl")
     include("test_packages_comparison.jl")
     include("test_thread_safety.jl")
+    include("test_rcu.jl")
+    include("test_nonuniform_grid.jl")
 end

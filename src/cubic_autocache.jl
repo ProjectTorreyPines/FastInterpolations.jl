@@ -242,38 +242,29 @@ end
 # ===============================================================
 
 # ---------------------------------------------------------------
-# DCL (Double-Check Locking) Helpers
+# Cache Lookup Helper
 # ---------------------------------------------------------------
-# These are @noinline to prevent closure allocation from affecting hot path.
-# The lock() do pattern creates closures; isolating them ensures
-# cache hit paths remain zero-allocation.
+# Common lookup logic for both single-thread and multi-thread paths.
+# Returns cache if found, nothing if cache miss.
 
 """
-DCL insert for derivative BC cache (multi-thread path).
-@noinline prevents closure code from affecting hot path optimization.
+Cache lookup (2-pass: identity check → equality check).
+Used by both single-thread (lock-free) and multi-thread (inside lock) paths.
 """
-@noinline function _dcl_insert_derivative!(
-    store::Vector{CacheEntry{T,L,R,X}},
-    ring::Base.RefValue{Int},
-    id::UInt,
-    x::X,
-    new_cache::CubicSplineCache{T,X,F,BCPair{T,L,R}}
-) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}, F}
-    lock(_CACHE_LOCK)
-    try
-        # Re-check after acquiring lock (another thread may have inserted)
-        for entry in store
-            if entry.id === id || isequal(entry.x, x)
-                return entry.cache
-            end
+@inline function _lookup(store::Vector{E}, id::UInt, x::X) where {E, X}
+    # [Pass 1] Identity check (fast path)
+    @inbounds for entry in store
+        if entry.id === id
+            return entry.cache
         end
-        # No existing entry found, insert new one
-        new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
-        _add_to_ring!(store, ring, new_entry)
-        return new_cache
-    finally
-        unlock(_CACHE_LOCK)
     end
+    # [Pass 2] Equality check
+    @inbounds for entry in store
+        if isequal(entry.x, x)
+            return entry.cache
+        end
+    end
+    return nothing
 end
 
 """
@@ -283,108 +274,117 @@ Lookup or insert into a derivative BC cache bank.
 On cache miss, creates entry with the provided `bc_pair` values. This ensures
 the cache has meaningful bc_data for edge cases, though callers should still
 use 3-arg `_solve_system!` for dynamic BC values.
+
+# Thread-Safety
+- Single-thread: Lock-free reads with self-healing, direct writes
+- Multi-thread: Coarse-grained locking (lookup + build + insert under single lock)
 """
 @inline function _lookup_or_insert!(bank::CacheBank{T,L,R,X}, x::X, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
     store = bank.store
     ring = bank.ring
     id = objectid(x)
 
-    # [Pass 1] Identity check (fast path)
-    @inbounds for entry in store
-        if entry.id === id
-            return entry.cache
-        end
-    end
-
-    # [Pass 2] Equality check - O(1) for Range, O(N) for Vector
-    @inbounds for entry in store
-        if isequal(entry.x, x)
-            # Self-healing: update id for future fast-path hits (single-thread only)
-            # In multi-thread mode, this write races with other reads/writes
-            Threads.nthreads() == 1 && (entry.id = id)
-            return entry.cache
-        end
-    end
-
-    # [Cache Miss] Create new cache (expensive, done outside lock)
-    # Cache is keyed by BC *type* only (LU factorization depends on matrix structure).
-    new_cache = _build_derivative_bc_cache(x, bc_pair.left, bc_pair.right)
-
     if Threads.nthreads() == 1
-        # Single-thread: no lock needed
+        # ─────────────────────────────────────────────────────────────
+        # Single-thread: Lock-free fast path
+        # ─────────────────────────────────────────────────────────────
+        # [Pass 1] Identity check
+        @inbounds for entry in store
+            if entry.id === id
+                return entry.cache
+            end
+        end
+
+        # [Pass 2] Equality check with self-healing
+        @inbounds for entry in store
+            if isequal(entry.x, x)
+                entry.id = id  # Self-healing for future fast-path
+                return entry.cache
+            end
+        end
+
+        # [Cache Miss] Create and insert
+        new_cache = _build_derivative_bc_cache(x, bc_pair.left, bc_pair.right)
         new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
         _add_to_ring!(store, ring, new_entry)
         return new_cache
     else
-        # Multi-thread: DCL via @noinline helper (avoids closure in hot path)
-        return _dcl_insert_derivative!(store, ring, id, x, new_cache)
-    end
-end
+        # ─────────────────────────────────────────────────────────────
+        # Multi-thread: Coarse-grained locking (simple & safe)
+        # Cache miss is Cold Path → lock duration doesn't affect steady-state
+        # ─────────────────────────────────────────────────────────────
+        lock(_CACHE_LOCK)
+        try
+            # Lookup under lock (safe from push! race)
+            found = _lookup(store, id, x)
+            found !== nothing && return found
 
-"""
-DCL insert for periodic BC cache (multi-thread path).
-@noinline prevents closure code from affecting hot path optimization.
-"""
-@noinline function _dcl_insert_periodic!(
-    store::Vector{PeriodicCacheEntry{T,X}},
-    ring::Base.RefValue{Int},
-    id::UInt,
-    x::X,
-    new_cache::CubicSplineCache{T,X,F,PeriodicData{T}}
-) where {T<:AbstractFloat, X<:AbstractVector{T}, F}
-    lock(_CACHE_LOCK)
-    try
-        # Re-check after acquiring lock (another thread may have inserted)
-        for entry in store
-            if entry.id === id || isequal(entry.x, x)
-                return entry.cache
-            end
+            # Cache miss - build & insert under lock
+            new_cache = _build_derivative_bc_cache(x, bc_pair.left, bc_pair.right)
+            new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
+            _add_to_ring!(store, ring, new_entry)
+            return new_cache
+        finally
+            unlock(_CACHE_LOCK)
         end
-        # No existing entry found, insert new one
-        new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
-        _add_to_ring!(store, ring, new_entry)
-        return new_cache
-    finally
-        unlock(_CACHE_LOCK)
     end
 end
 
 """
 Lookup or insert into a periodic BC cache bank.
+
+# Thread-Safety
+- Single-thread: Lock-free reads with self-healing, direct writes
+- Multi-thread: Coarse-grained locking (lookup + build + insert under single lock)
 """
 @inline function _lookup_or_insert!(bank::PeriodicCacheBank{T,X}, x::X) where {T<:AbstractFloat, X<:AbstractVector{T}}
     store = bank.store
     ring = bank.ring
     id = objectid(x)
 
-    # [Pass 1] Identity check (fast path)
-    @inbounds for entry in store
-        if entry.id === id
-            return entry.cache
-        end
-    end
-
-    # [Pass 2] Equality check
-    @inbounds for entry in store
-        if isequal(entry.x, x)
-            # Self-healing: update id for future fast-path hits (single-thread only)
-            # In multi-thread mode, this write races with other reads/writes
-            Threads.nthreads() == 1 && (entry.id = id)
-            return entry.cache
-        end
-    end
-
-    # [Cache Miss] Create new cache (expensive, done outside lock)
-    new_cache = _build_periodic_cache(x)
-
     if Threads.nthreads() == 1
-        # Single-thread: no lock needed
+        # ─────────────────────────────────────────────────────────────
+        # Single-thread: Lock-free fast path
+        # ─────────────────────────────────────────────────────────────
+        # [Pass 1] Identity check
+        @inbounds for entry in store
+            if entry.id === id
+                return entry.cache
+            end
+        end
+
+        # [Pass 2] Equality check with self-healing
+        @inbounds for entry in store
+            if isequal(entry.x, x)
+                entry.id = id  # Self-healing for future fast-path
+                return entry.cache
+            end
+        end
+
+        # [Cache Miss] Create and insert
+        new_cache = _build_periodic_cache(x)
         new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
         _add_to_ring!(store, ring, new_entry)
         return new_cache
     else
-        # Multi-thread: DCL via @noinline helper (avoids closure in hot path)
-        return _dcl_insert_periodic!(store, ring, id, x, new_cache)
+        # ─────────────────────────────────────────────────────────────
+        # Multi-thread: Coarse-grained locking (simple & safe)
+        # Cache miss is Cold Path → lock duration doesn't affect steady-state
+        # ─────────────────────────────────────────────────────────────
+        lock(_CACHE_LOCK)
+        try
+            # Lookup under lock (safe from push! race)
+            found = _lookup(store, id, x)
+            found !== nothing && return found
+
+            # Cache miss - build & insert under lock
+            new_cache = _build_periodic_cache(x)
+            new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
+            _add_to_ring!(store, ring, new_entry)
+            return new_cache
+        finally
+            unlock(_CACHE_LOCK)
+        end
     end
 end
 

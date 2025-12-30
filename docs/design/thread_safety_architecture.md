@@ -1,9 +1,5 @@
 # Thread-Safety Architecture for FastInterpolations.jl
 
-**Status**: Implemented
-**Version**: 1.1
-**Updated**: 2025-12-30
-
 ## Overview
 
 This document describes the thread-safety architecture for the cubic spline autocache system. The design achieves **lock-free cache hits** while maintaining correctness under concurrent access.
@@ -14,15 +10,6 @@ This document describes the thread-safety architecture for the cubic spline auto
 2. **Zero Allocation**: No heap allocation on cache hits after warmup
 3. **Thread Safety**: Eliminate all race conditions without sacrificing single-thread performance
 4. **Backward Compatibility**: Preserve existing API semantics
-
-## Original Issues (Brief)
-
-Two race conditions existed in the original implementation:
-
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| **Workspace Race** | Mutable `d_workspace`, `z_workspace` shared across threads | Remove from cache; use task-local pools |
-| **Registry Race** | Concurrent `push!` to `Vector` during warm-up | RCU (Read-Copy-Update) pattern |
 
 ## Architecture
 

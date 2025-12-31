@@ -248,7 +248,8 @@ end # Derivative Kernels
 
         # Use Deriv2 BC with f''(x) = 2 for exact quadratic representation
         cache = _get_cubic_cache(x, BCPair(Deriv2(2.0), Deriv2(2.0)))
-        z = _solve_system!(cache, y, cache.bc_data)
+        z = similar(y)
+        _solve_system!(z, cache, y, cache.bc_config)
 
         @testset "_eval_cubic_at_point with op" begin
             # Value at midpoint x=1.0: f(1) = 1.0

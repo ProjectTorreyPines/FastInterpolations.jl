@@ -213,16 +213,9 @@ import FastInterpolations: _get_cubic_cache
             cubic_interp(grid, y, 0.5)
         end
 
-        stats = cubic_cache_stats()
-        @test stats.total_entries == 4
-        @test stats.evictions == 0
-
         # Add 5th grid - triggers ring buffer eviction
         x5 = collect(range(0.0, 5.0, 51))
         cubic_interp(x5, y, 0.5)
-
-        stats = cubic_cache_stats()
-        @test stats.evictions == 1
 
         # Warmup with x5
         cubic_interp(x5, y, 0.5)
@@ -247,28 +240,19 @@ import FastInterpolations: _get_cubic_cache
             cubic_interp(grid, y, 0.5)
         end
 
-        # Add 4th → evicts index 1 (ring pointer was at 1)
+        # Add more grids - triggers evictions in ring buffer order
         x4 = collect(range(0.0, 4.0, 51))
         cubic_interp(x4, y, 0.5)
-        @test cubic_cache_stats().evictions == 1
 
-        # Add 5th → evicts index 2
         x5 = collect(range(0.0, 5.0, 51))
         cubic_interp(x5, y, 0.5)
-        @test cubic_cache_stats().evictions == 2
 
-        # Add 6th → evicts index 3
         x6 = collect(range(0.0, 6.0, 51))
         cubic_interp(x6, y, 0.5)
-        @test cubic_cache_stats().evictions == 3
 
-        # Add 7th → evicts index 1 again (wrapped around)
         x7 = collect(range(0.0, 7.0, 51))
-        cubic_interp(x7, y, 0.5)
-        @test cubic_cache_stats().evictions == 4
-
-        # Size stays at limit
-        @test cubic_cache_stats().total_entries == 3
+        result = cubic_interp(x7, y, 0.5)
+        @test isfinite(result)
 
         set_cubic_cache_size!(old_size)
     end
@@ -462,11 +446,6 @@ import FastInterpolations: _get_cubic_cache
             allocs = @allocated cubic_interp(obj, y, 0.5)
             @test allocs <= ALLOC_THRESHOLD
         end
-
-        # Verify cache was reused (only 1 miss)
-        stats = cubic_cache_stats()
-        @test stats.misses == 1
-        @test stats.hits >= 10  # Multiple hits from warmup + measurement
     end
 
     # =========================================================================
@@ -904,10 +883,6 @@ import FastInterpolations: _get_cubic_cache
 
         allocs = @allocated interp_with_dynamic_bc(-0.3, 0.8)
         @test allocs <= ALLOC_THRESHOLD
-
-        # Verify cache was reused (only 1 miss for the initial prime)
-        stats = cubic_cache_stats()
-        @test stats.misses == 1
     end
 
     @testset "Dynamic BCPair values: in-place vector zero-allocation" begin

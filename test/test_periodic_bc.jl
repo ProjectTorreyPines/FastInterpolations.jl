@@ -196,8 +196,8 @@ using FastInterpolations
 
         @testset "Basic cache construction" begin
             cache = CubicSplineCache(x; bc=PeriodicBC())
-            @test cache.bc_data isa FastInterpolations.PeriodicData
-            @test cache.bc_data.period ≈ 2π atol=1e-10
+            @test cache.bc_config isa FastInterpolations.PeriodicData
+            @test cache.bc_config.period ≈ 2π atol=1e-10
         end
 
         @testset "Basic interpolation" begin

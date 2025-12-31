@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Boundary Conditions and Extrapolation · FastInterpolations.jl</title><meta name="title" content="Boundary Conditions and Extrapolation · FastInterpolations.jl"/><meta property="og:title" content="Boundary Conditions and Extrapolation · FastInterpolations.jl"/><meta property="twitter:title" content="Boundary Conditions and Extrapolation · FastInterpolations.jl"/><meta name="description" content="Documentation for FastInterpolations.jl."/><meta property="og:description" content="Documentation for FastInterpolations.jl."/><meta property="twitter:description" content="Documentation for FastInterpolations.jl."/><meta property="og:url" content="https://projecttorreypines.github.io/FastInterpolations.jl/tutorials/boundary_conditions/"/><meta property="twitter:url" content="https://projecttorreypines.github.io/FastInterpolations.jl/tutorials/boundary_conditions/"/><link rel="canonical" href="https://projecttorreypines.github.io/FastInterpolations.jl/tutorials/boundary_conditions/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">FastInterpolations.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Tutorials</span><ul><li class="is-active"><a class="tocitem" href>Boundary Conditions and Extrapolation</a><ul class="internal"><li><a class="tocitem" href="#Linear-Interpolation:-Extrapolation-Methods"><span>Linear Interpolation: Extrapolation Methods</span></a></li><li><a class="tocitem" href="#Linear-Interpolation:-Wrap-Extrapolation"><span>Linear Interpolation: Wrap Extrapolation</span></a></li><li><a class="tocitem" href="#Cubic-Interpolation:-Natural-vs-Periodic-BC"><span>Cubic Interpolation: Natural vs Periodic BC</span></a></li><li><a class="tocitem" href="#C-Continuity-Visualization"><span>C² Continuity Visualization</span></a></li><li><a class="tocitem" href="#Callable-Interpolant-Objects"><span>Callable Interpolant Objects</span></a></li><li><a class="tocitem" href="#Pre-built-Cache-for-Multiple-Y-values"><span>Pre-built Cache for Multiple Y-values</span></a></li></ul></li></ul></li><li><span class="tocitem">Guides</span><ul><li><a class="tocitem" href="../../guides/performance/">Performance</a></li></ul></li><li><span class="tocitem">API Reference</span><ul><li><a class="tocitem" href="../../api/linear/">Linear</a></li><li><a class="tocitem" href="../../api/cubic/">Cubic</a></li><li><a class="tocitem" href="../../api/types/">Types</a></li></ul></li><li><a class="tocitem" href="../../internals/">Internals</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>Boundary Conditions and Extrapolation</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Boundary Conditions and Extrapolation</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/ProjectTorreyPines/FastInterpolations.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/ProjectTorreyPines/FastInterpolations.jl/blob/master/examples/boundary_conditions.jl" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Boundary-Conditions-and-Extrapolation"><a class="docs-heading-anchor" href="#Boundary-Conditions-and-Extrapolation">Boundary Conditions and Extrapolation</a><a id="Boundary-Conditions-and-Extrapolation-1"></a><a class="docs-heading-anchor-permalink" href="#Boundary-Conditions-and-Extrapolation" title="Permalink"></a></h1><p>This tutorial demonstrates different boundary conditions and extrapolation behaviors for both linear and cubic interpolation in FastInterpolations.jl.</p><pre><code class="language-julia hljs">using FastInterpolations
+using Plots</code></pre><p>Set plot defaults for consistent visualization</p><pre><code class="language-julia hljs">default(linewidth=2, markersize=6, legend=:topleft, size=(700, 400))</code></pre><h2 id="Linear-Interpolation:-Extrapolation-Methods"><a class="docs-heading-anchor" href="#Linear-Interpolation:-Extrapolation-Methods">Linear Interpolation: Extrapolation Methods</a><a id="Linear-Interpolation:-Extrapolation-Methods-1"></a><a class="docs-heading-anchor-permalink" href="#Linear-Interpolation:-Extrapolation-Methods" title="Permalink"></a></h2><p>The <code>extrap</code> parameter controls out-of-domain behavior:</p><table><tr><th style="text-align: right">Option</th><th style="text-align: right">Behavior</th></tr><tr><td style="text-align: right"><code>:none</code></td><td style="text-align: right">Throws DomainError (default)</td></tr><tr><td style="text-align: right"><code>:extension</code></td><td style="text-align: right">Extends boundary segments linearly</td></tr><tr><td style="text-align: right"><code>:constant</code></td><td style="text-align: right">Returns boundary values</td></tr><tr><td style="text-align: right"><code>:wrap</code></td><td style="text-align: right">Wraps coordinates (for periodic data)</td></tr></table><p>Sample data</p><pre><code class="language-julia hljs">x = [0.0, 1.0, 2.0, 3.0, 4.0]
+y = [1.0, 2.5, 1.5, 3.0, 2.0]</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">5-element Vector{Float64}:
+ 1.0
+ 2.5
+ 1.5
+ 3.0
+ 2.0</code></pre><p>Query points including extrapolation region</p><pre><code class="language-julia hljs">xq = range(-1.0, 5.0, 200)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-1.0:0.03015075376884422:5.0</code></pre><p>Different extrapolation methods</p><pre><code class="language-julia hljs">y_extension = linear_interp(x, y, collect(xq); extrap=:extension)
+y_constant = linear_interp(x, y, collect(xq); extrap=:constant)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">200-element Vector{Float64}:
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ 1.0
+ ⋮
+ 2.0
+ 2.0
+ 2.0
+ 2.0
+ 2.0
+ 2.0
+ 2.0
+ 2.0
+ 2.0</code></pre><p>Visualize the results</p><pre><code class="language-julia hljs">p = plot(title=&quot;Linear Interpolation: Extrapolation Methods&quot;,
+         xlabel=&quot;x&quot;, ylabel=&quot;y&quot;)
+vspan!([-1.0, 0.0], alpha=0.1, color=:gray, label=&quot;extrapolation region&quot;)
+vspan!([4.0, 5.0], alpha=0.1, color=:gray, label=nothing)
+plot!(xq, y_extension, label=&quot;extrap=:extension&quot;, color=:blue)
+plot!(xq, y_constant, label=&quot;extrap=:constant&quot;, color=:red, linestyle=:dash)
+scatter!(x, y, label=&quot;data points&quot;, color=:black, markersize=8)</code></pre><img src="9e62a62e.svg" alt="Example block output"/><h2 id="Linear-Interpolation:-Wrap-Extrapolation"><a class="docs-heading-anchor" href="#Linear-Interpolation:-Wrap-Extrapolation">Linear Interpolation: Wrap Extrapolation</a><a id="Linear-Interpolation:-Wrap-Extrapolation-1"></a><a class="docs-heading-anchor-permalink" href="#Linear-Interpolation:-Wrap-Extrapolation" title="Permalink"></a></h2><p>When <code>extrap=:wrap</code>, the function wraps query points to the domain <code>[x[1], x[end])</code>. This is useful for periodic functions like sin, cos, or any cyclic data.</p><p><strong>Note</strong>: For smooth wrapping, ensure <code>y[1] ≈ y[end]</code>.</p><p>Periodic data: one complete sine wave</p><pre><code class="language-julia hljs">n = 21
+x_periodic = collect(range(0.0, 2π, n))
+y_periodic = sin.(x_periodic)  # y[1] = y[end] = 0</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">21-element Vector{Float64}:
+  0.0
+  0.3090169943749474
+  0.5877852522924731
+  0.8090169943749475
+  0.9510565162951535
+  1.0
+  0.9510565162951536
+  0.8090169943749475
+  0.5877852522924732
+  0.3090169943749475
+  ⋮
+ -0.587785252292473
+ -0.8090169943749473
+ -0.9510565162951535
+ -1.0
+ -0.9510565162951536
+ -0.8090169943749476
+ -0.5877852522924734
+ -0.3090169943749476
+ -2.4492935982947064e-16</code></pre><p>Query points extending beyond the domain</p><pre><code class="language-julia hljs">xq_extended = range(-π, 3π, 300)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-3.141592653589793:0.04202799536574974:9.42477796076938</code></pre><p>Compare wrap vs extension</p><pre><code class="language-julia hljs">y_wrap = linear_interp(x_periodic, y_periodic, collect(xq_extended); extrap=:wrap)
+y_ext = linear_interp(x_periodic, y_periodic, collect(xq_extended); extrap=:extension)
+y_true = sin.(xq_extended)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">300-element Vector{Float64}:
+ -1.2246467991473532e-16
+ -0.04201562375005738
+ -0.08395704402592015
+ -0.12575018840358781
+ -0.16732124632799675
+ -0.20859679946928322
+ -0.24950395138633755
+ -0.28997045626865714
+ -0.32992484652912163
+ -0.36929655902235753
+  ⋮
+  0.329924846529121
+  0.28997045626865825
+  0.24950395138633863
+  0.2085967994692839
+  0.1673212463279974
+  0.12575018840358848
+  0.08395704402592083
+  0.04201562375005763
+  3.6739403974420594e-16</code></pre><p>Visualize</p><pre><code class="language-julia hljs">p2 = plot(title=&quot;Linear Interpolation: Wrap vs Extension&quot;, xlabel=&quot;x&quot;, ylabel=&quot;y&quot;)
+vspan!([-π, 0.0], alpha=0.1, color=:gray, label=&quot;outside domain&quot;)
+vspan!([2π, 3π], alpha=0.1, color=:gray, label=nothing)
+plot!(xq_extended, y_true, label=&quot;sin(x) reference&quot;, color=:lightgray, linewidth=3)
+plot!(xq_extended, y_wrap, label=&quot;extrap=:wrap&quot;, color=:blue)
+plot!(xq_extended, y_ext, label=&quot;extrap=:extension&quot;, color=:red, linestyle=:dash)
+vline!([0.0, 2π], color=:black, linestyle=:dot, alpha=0.5, label=nothing)
+scatter!(x_periodic, y_periodic, label=&quot;data points&quot;, color=:black, markersize=5)</code></pre><img src="5f4dc2fe.svg" alt="Example block output"/><h2 id="Cubic-Interpolation:-Natural-vs-Periodic-BC"><a class="docs-heading-anchor" href="#Cubic-Interpolation:-Natural-vs-Periodic-BC">Cubic Interpolation: Natural vs Periodic BC</a><a id="Cubic-Interpolation:-Natural-vs-Periodic-BC-1"></a><a class="docs-heading-anchor-permalink" href="#Cubic-Interpolation:-Natural-vs-Periodic-BC" title="Permalink"></a></h2><p>Cubic spline boundary conditions control the behavior at domain edges:</p><table><tr><th style="text-align: right">BC</th><th style="text-align: right">Description</th></tr><tr><td style="text-align: right"><code>NaturalBC()</code></td><td style="text-align: right">S&#39;&#39;(x₁) = S&#39;&#39;(xₙ) = 0 (default)</td></tr><tr><td style="text-align: right"><code>PeriodicBC()</code></td><td style="text-align: right">S&#39;(x₁) = S&#39;(xₙ), S&#39;&#39;(x₁) = S&#39;&#39;(xₙ) (C² continuity)</td></tr></table><p>The periodic BC uses the Sherman-Morrison formula to solve the cyclic tridiagonal system efficiently.</p><p>Fewer points to see the difference more clearly</p><pre><code class="language-julia hljs">n_cubic = 11
+x_cubic = collect(range(0.0, 2π, n_cubic))
+y_cubic = sin.(x_cubic)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">11-element Vector{Float64}:
+  0.0
+  0.5877852522924731
+  0.9510565162951535
+  0.9510565162951536
+  0.5877852522924732
+  1.2246467991473532e-16
+ -0.587785252292473
+ -0.9510565162951535
+ -0.9510565162951536
+ -0.5877852522924734
+ -2.4492935982947064e-16</code></pre><p>Query points</p><pre><code class="language-julia hljs">xq_cubic = range(-π, 3π, 400)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">-3.141592653589793:0.03149466319388264:9.42477796076938</code></pre><p>Different boundary conditions</p><pre><code class="language-julia hljs">y_natural = cubic_interp(x_cubic, y_cubic, xq_cubic; bc=NaturalBC(), extrap=:extension)
+y_periodic_bc = cubic_interp(x_cubic, y_cubic, xq_cubic; bc=PeriodicBC(), extrap=:extension)
+y_sin = sin.(xq_cubic)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">400-element Vector{Float64}:
+ -1.2246467991473532e-16
+ -0.03148945678687939
+ -0.0629476813284808
+ -0.09434347235666257
+ -0.12564569052682642
+ -0.1568232893029141
+ -0.18784534575034612
+ -0.21868109120637594
+ -0.24929994179742518
+ -0.27967152877314616
+  ⋮
+  0.24929994179742543
+  0.2186810912063762
+  0.1878453457503468
+  0.15682328930291478
+  0.12564569052682756
+  0.09434347235666193
+  0.06294768132848061
+  0.03148945678687919
+  3.6739403974420594e-16</code></pre><p>Visualize</p><pre><code class="language-julia hljs">p3 = plot(title=&quot;Cubic Interpolation: Natural vs Periodic BC&quot;, xlabel=&quot;x&quot;, ylabel=&quot;y&quot;)
+vspan!([-π, 0.0], alpha=0.1, color=:gray, label=&quot;outside domain&quot;)
+vspan!([2π, 3π], alpha=0.1, color=:gray, label=nothing)
+plot!(xq_cubic, y_sin, label=&quot;sin(x) reference&quot;, color=:lightgray, linewidth=3)
+plot!(xq_cubic, y_natural, label=&quot;bc=:natural&quot;, color=:red, linestyle=:dash)
+plot!(xq_cubic, y_periodic_bc, label=&quot;bc=:periodic&quot;, color=:blue)
+vline!([0.0, 2π], color=:black, linestyle=:dot, alpha=0.5, label=nothing)
+scatter!(x_cubic, y_cubic, label=&quot;data points&quot;, color=:black, markersize=6)</code></pre><img src="1930b404.svg" alt="Example block output"/><h2 id="C-Continuity-Visualization"><a class="docs-heading-anchor" href="#C-Continuity-Visualization">C² Continuity Visualization</a><a id="C-Continuity-Visualization-1"></a><a class="docs-heading-anchor-permalink" href="#C-Continuity-Visualization" title="Permalink"></a></h2><p>The key difference between natural and periodic BC is at the boundary:</p><ul><li><strong>Natural BC</strong>: Second derivative is forced to zero at boundaries</li><li><strong>Periodic BC</strong>: First AND second derivatives match at boundaries</li></ul><p>More complex periodic function</p><pre><code class="language-julia hljs">n_c2 = 17
+x_c2 = collect(range(0.0, 2π, n_c2))
+y_c2 = sin.(x_c2) .+ 0.3 .* cos.(3 .* x_c2)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">17-element Vector{Float64}:
+  0.3
+  0.4974884620746167
+  0.49497474683058323
+  0.6467156727579007
+  1.0
+  1.2010433922646726
+  0.9192388155425119
+  0.26787840265556295
+ -0.2999999999999999
+ -0.49748846207461683
+ -0.4949747468305835
+ -0.6467156727579002
+ -0.9999999999999999
+ -1.2010433922646726
+ -0.9192388155425119
+ -0.2678784026555645
+  0.29999999999999977</code></pre><p>Fine query grid</p><pre><code class="language-julia hljs">xq_c2 = collect(range(-0.5, 2π + 0.5, 500))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">500-element Vector{Float64}:
+ -0.5
+ -0.48540443826216517
+ -0.4708088765243303
+ -0.45621331478649546
+ -0.44161775304866063
+ -0.4270221913108258
+ -0.4124266295729909
+ -0.3978310678351561
+ -0.38323550609732127
+ -0.36863994435948644
+  ⋮
+  6.666420813276908
+  6.681016375014742
+  6.695611936752577
+  6.710207498490412
+  6.724803060228247
+  6.739398621966082
+  6.753994183703917
+  6.768589745441751
+  6.783185307179586</code></pre><p>Interpolate with both BC types</p><pre><code class="language-julia hljs">y_nat = cubic_interp(x_c2, y_c2, xq_c2; bc=NaturalBC(), extrap=:extension)
+y_per = cubic_interp(x_c2, y_c2, xq_c2; bc=PeriodicBC())</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">500-element Vector{Float64}:
+ -0.45762337280979876
+ -0.4317089671893338
+ -0.4057762538940114
+ -0.3798539287562867
+ -0.3539706876086153
+ -0.32815522628345256
+ -0.30243624061325397
+ -0.27684242643047496
+ -0.2514019868383753
+ -0.22613699962988418
+  ⋮
+  0.4964463867293528
+  0.4979955894293601
+  0.4992244779400848
+  0.5001560091395938
+  0.5008136750901829
+  0.5012209678541479
+  0.5014013794937843
+  0.5013784020713878
+  0.5011755276492541</code></pre><p>Numerical second derivative (curvature)</p><pre><code class="language-julia hljs">function numerical_d2(xq, yq)
+    h = xq[2] - xq[1]
+    d2y = similar(yq)
+    d2y[1] = (yq[3] - 2yq[2] + yq[1]) / h^2
+    d2y[end] = (yq[end] - 2yq[end-1] + yq[end-2]) / h^2
+    for i in 2:length(yq)-1
+        d2y[i] = (yq[i+1] - 2yq[i] + yq[i-1]) / h^2
+    end
+    return d2y
+end
+
+d2y_nat = numerical_d2(xq_c2, y_nat)
+d2y_per = numerical_d2(xq_c2, y_per)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">500-element Vector{Float64}:
+  0.08593925058943826
+  0.08593925058943826
+ -0.048763728103306675
+ -0.1834667067973545
+ -0.3181696854911418
+ -0.4528726641846684
+ -0.5875756428784557
+ -0.7199656693184193
+ -0.8236024770386862
+ -0.9077629644814195
+  ⋮
+ -1.5801404229335962
+ -1.5036077270532435
+ -1.3958443484535554
+ -1.2855687266602178
+ -1.1752931048671407
+ -1.0650174830753667
+ -0.9547418612815078
+ -0.8444662394897336
+ -0.8444662394897336</code></pre><p>Two subplots</p><pre><code class="language-julia hljs">p4a = plot(title=&quot;Interpolation Results&quot;, xlabel=&quot;x&quot;, ylabel=&quot;y&quot;, legend=:topright)
+plot!(p4a, xq_c2, y_nat, label=&quot;bc=:natural&quot;, color=:red)
+plot!(p4a, xq_c2, y_per, label=&quot;bc=:periodic&quot;, color=:blue)
+scatter!(p4a, x_c2, y_c2, label=&quot;data&quot;, color=:black, markersize=5)
+vline!(p4a, [0.0, 2π], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
+
+p4b = plot(title=&quot;Second Derivative (Curvature)&quot;, xlabel=&quot;x&quot;, ylabel=&quot;y&#39;&#39;&quot;, legend=:topright)
+plot!(p4b, xq_c2, d2y_nat, label=&quot;bc=:natural (→0 at boundaries)&quot;, color=:red)
+plot!(p4b, xq_c2, d2y_per, label=&quot;bc=:periodic (matches)&quot;, color=:blue)
+vline!(p4b, [0.0, 2π], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
+hline!(p4b, [0.0], color=:black, linestyle=:dash, alpha=0.3, label=nothing)
+
+plot(p4a, p4b, layout=(2, 1), size=(700, 600))</code></pre><img src="cccdf2ab.svg" alt="Example block output"/><h2 id="Callable-Interpolant-Objects"><a class="docs-heading-anchor" href="#Callable-Interpolant-Objects">Callable Interpolant Objects</a><a id="Callable-Interpolant-Objects-1"></a><a class="docs-heading-anchor-permalink" href="#Callable-Interpolant-Objects" title="Permalink"></a></h2><p>For repeated interpolation at different query points, create an interpolant object once and call it multiple times. This is more efficient for repeated queries.</p><pre><code class="language-julia hljs">x_call = collect(range(0.0, 2π, 51))
+y_call = sin.(x_call)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">51-element Vector{Float64}:
+  0.0
+  0.12533323356430426
+  0.2486898871648548
+  0.3681245526846779
+  0.4817536741017153
+  0.5877852522924731
+  0.6845471059286886
+  0.7705132427757893
+  0.8443279255020151
+  0.9048270524660196
+  ⋮
+ -0.844327925502015
+ -0.7705132427757896
+ -0.684547105928689
+ -0.5877852522924734
+ -0.4817536741017153
+ -0.36812455268467786
+ -0.24868988716485535
+ -0.12533323356430465
+ -2.4492935982947064e-16</code></pre><p>Create interpolants with different extrapolation modes</p><pre><code class="language-julia hljs">linear_ext = LinearInterpolant(x_call, y_call; extrap=:extension)
+linear_wrap_itp = LinearInterpolant(x_call, y_call; extrap=:wrap)
+cubic_nat = cubic_interp(x_call, y_call; extrap=:extension)
+cubic_per = cubic_interp(x_call, y_call; bc=PeriodicBC())</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">CubicInterpolant{Float64, CubicSplineCache{Float64, Vector{Float64}, LinearAlgebra.LU{Float64, LinearAlgebra.Tridiagonal{Float64, Vector{Float64}}, Vector{Int64}}, FastInterpolations.PeriodicData{Float64}}}(CubicSplineCache{Float64, Vector{Float64}, LinearAlgebra.LU{Float64, LinearAlgebra.Tridiagonal{Float64, Vector{Float64}}, Vector{Int64}}, FastInterpolations.PeriodicData{Float64}}([0.0, 0.12566370614359174, 0.25132741228718347, 0.37699111843077515, 0.5026548245743669, 0.6283185307179586, 0.7539822368615503, 0.8796459430051421, 1.0053096491487339, 1.1309733552923256  …  5.152211951887261, 5.277875658030853, 5.403539364174444, 5.529203070318036, 5.654866776461628, 5.7805304826052195, 5.906194188748811, 6.031857894892402, 6.157521601035994, 6.283185307179586], [0.0, 0.12566370614359174, 0.12566370614359174, 0.12566370614359168, 0.1256637061435918, 0.12566370614359168, 0.12566370614359168, 0.1256637061435918, 0.1256637061435918, 0.12566370614359168  …  0.1256637061435919, 0.12566370614359101, 0.1256637061435919, 0.1256637061435919, 0.1256637061435919, 0.1256637061435919, 0.12566370614359101, 0.1256637061435919, 0.1256637061435919, 0.0], LinearAlgebra.LU{Float64, LinearAlgebra.Tridiagonal{Float64, Vector{Float64}}, Vector{Int64}}(Tridiagonal([0.3333333333333332, 0.2727272727272727, 0.26829268292682923, 0.26797385620915043, 0.2679509632224167, 0.2679493195682778, 0.2679492015591602, 0.26794919308648635, 0.26794919247817556, 0.26794919243450094  …  0.26794919243112275, 0.2679491924311227, 0.2679491924311227, 0.2679491924311217, 0.26794919243112364, 0.26794919243112275, 0.2679491924311227, 0.2679491924311227, 0.2679491924311217, 0.26794919243112364], [0.3769911184307754, 0.46076692252650303, 0.46838290471702365, 0.46894017170657404, 0.46898023665353517, 0.4689831134710926, 0.4689833200187635, 0.4689833348482268, 0.46898333591293423, 0.4689833359893766  …  0.46898333599529024, 0.46898333599529024, 0.4689833359952887, 0.4689833359952886, 0.46898333599529013, 0.46898333599529024, 0.46898333599529024, 0.4689833359952887, 0.4689833359952886, 0.3433196298516982], [0.12566370614359174, 0.12566370614359168, 0.1256637061435918, 0.12566370614359168, 0.12566370614359168, 0.1256637061435918, 0.1256637061435918, 0.12566370614359168, 0.12566370614359168, 0.12566370614359168  …  0.1256637061435919, 0.1256637061435919, 0.12566370614359101, 0.1256637061435919, 0.1256637061435919, 0.1256637061435919, 0.1256637061435919, 0.12566370614359101, 0.1256637061435919, 0.1256637061435919]), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10  …  41, 42, 43, 44, 45, 46, 47, 48, 49, 50], 0), FastInterpolations.PeriodicData{Float64}([2.912737615475016, -0.7804656918302846, 0.20912515184612226, -0.05603491555420435, 0.01501451037069522, -0.0040231259285765, 0.0010779933436107835, -0.0002888474458666352, 7.739643985575737e-5, -2.0738313556394147e-5  …  -2.073831355639413e-5, 7.73964398557573e-5, -0.00028884744586663713, 0.0010779933436107871, -0.0040231259285764985, 0.015014510370695205, -0.056034915554204326, 0.20912515184612357, -0.7804656918302869, 2.9127376154750144], 6.283185307179586)), [0.0, 0.12533323356430426, 0.2486898871648548, 0.3681245526846779, 0.4817536741017153, 0.5877852522924731, 0.6845471059286886, 0.7705132427757893, 0.8443279255020151, 0.9048270524660196  …  -0.9048270524660196, -0.844327925502015, -0.7705132427757896, -0.684547105928689, -0.5877852522924734, -0.4817536741017153, -0.36812455268467786, -0.24868988716485535, -0.12533323356430465, -2.4492935982947064e-16], [-2.4195923042924505e-14, -0.12549825216630933, -0.2490173219269456, -0.36860923976504545, -0.48238796969557446, -0.5885591531793966, -0.6854484072293614, -0.771527730430338, -0.8454396004340299, -0.9060183828978268  …  0.9060183828978209, 0.845439600434035, 0.771527730430332, 0.6854484072293606, 0.5885591531794081, 0.48238796969555914, 0.36860923976505855, 0.24901732192693868, 0.12549825216632113, -2.4195923042924505e-14], Val{:wrap}())</code></pre><p>Evaluate at test points</p><pre><code class="language-julia hljs">test_points = [-0.5, 0.5, π, 2π + 0.5]
+
+println(&quot;Evaluation at test points:&quot;)
+println(&quot;| x | Linear (ext) | Linear (wrap) | Cubic (natural) | Cubic (periodic) |&quot;)
+println(&quot;|---|--------------|---------------|-----------------|------------------|&quot;)
+for xi in test_points
+    v1 = round(linear_ext(xi), digits=4)
+    v2 = round(linear_wrap_itp(xi), digits=4)
+    v3 = round(cubic_nat(xi), digits=4)
+    v4 = round(cubic_per(xi), digits=4)
+    println(&quot;| $xi | $v1 | $v2 | $v3 | $v4 |&quot;)
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Evaluation at test points:
+| x | Linear (ext) | Linear (wrap) | Cubic (natural) | Cubic (periodic) |
+|---|--------------|---------------|-----------------|------------------|
+| -0.5 | -0.4987 | -0.4794 | -0.4792 | -0.4794 |
+| 0.5 | 0.4794 | 0.4794 | 0.4794 | 0.4794 |
+| 3.141592653589793 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 6.783185307179586 | 0.4987 | 0.4794 | 0.4792 | 0.4794 |</code></pre><h2 id="Pre-built-Cache-for-Multiple-Y-values"><a class="docs-heading-anchor" href="#Pre-built-Cache-for-Multiple-Y-values">Pre-built Cache for Multiple Y-values</a><a id="Pre-built-Cache-for-Multiple-Y-values-1"></a><a class="docs-heading-anchor-permalink" href="#Pre-built-Cache-for-Multiple-Y-values" title="Permalink"></a></h2><p>When you need to interpolate many different y-values on the same x-grid, pre-build the cache for maximum efficiency.</p><pre><code class="language-julia hljs">x_cache = collect(range(0.0, 2π, 51))
+y1_cache = sin.(x_cache)
+y2_cache = cos.(x_cache)
+y3_cache = sin.(2 .* x_cache)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">51-element Vector{Float64}:
+  0.0
+  0.2486898871648548
+  0.4817536741017153
+  0.6845471059286886
+  0.8443279255020151
+  0.9510565162951535
+  0.9980267284282716
+  0.9822872507286887
+  0.9048270524660195
+  0.7705132427757893
+  ⋮
+ -0.9048270524660197
+ -0.9822872507286885
+ -0.9980267284282716
+ -0.9510565162951538
+ -0.8443279255020152
+ -0.6845471059286885
+ -0.4817536741017163
+ -0.2486898871648556
+ -4.898587196589413e-16</code></pre><p>Pre-build cache (computed once)</p><pre><code class="language-julia hljs">cache = CubicSplineCache(x_cache; bc=PeriodicBC())</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">CubicSplineCache{Float64, Vector{Float64}, LinearAlgebra.LU{Float64, LinearAlgebra.Tridiagonal{Float64, Vector{Float64}}, Vector{Int64}}, FastInterpolations.PeriodicData{Float64}}([0.0, 0.12566370614359174, 0.25132741228718347, 0.37699111843077515, 0.5026548245743669, 0.6283185307179586, 0.7539822368615503, 0.8796459430051421, 1.0053096491487339, 1.1309733552923256  …  5.152211951887261, 5.277875658030853, 5.403539364174444, 5.529203070318036, 5.654866776461628, 5.7805304826052195, 5.906194188748811, 6.031857894892402, 6.157521601035994, 6.283185307179586], [0.0, 0.12566370614359174, 0.12566370614359174, 0.12566370614359168, 0.1256637061435918, 0.12566370614359168, 0.12566370614359168, 0.1256637061435918, 0.1256637061435918, 0.12566370614359168  …  0.1256637061435919, 0.12566370614359101, 0.1256637061435919, 0.1256637061435919, 0.1256637061435919, 0.1256637061435919, 0.12566370614359101, 0.1256637061435919, 0.1256637061435919, 0.0], LinearAlgebra.LU{Float64, LinearAlgebra.Tridiagonal{Float64, Vector{Float64}}, Vector{Int64}}(Tridiagonal([0.3333333333333332, 0.2727272727272727, 0.26829268292682923, 0.26797385620915043, 0.2679509632224167, 0.2679493195682778, 0.2679492015591602, 0.26794919308648635, 0.26794919247817556, 0.26794919243450094  …  0.26794919243112275, 0.2679491924311227, 0.2679491924311227, 0.2679491924311217, 0.26794919243112364, 0.26794919243112275, 0.2679491924311227, 0.2679491924311227, 0.2679491924311217, 0.26794919243112364], [0.3769911184307754, 0.46076692252650303, 0.46838290471702365, 0.46894017170657404, 0.46898023665353517, 0.4689831134710926, 0.4689833200187635, 0.4689833348482268, 0.46898333591293423, 0.4689833359893766  …  0.46898333599529024, 0.46898333599529024, 0.4689833359952887, 0.4689833359952886, 0.46898333599529013, 0.46898333599529024, 0.46898333599529024, 0.4689833359952887, 0.4689833359952886, 0.3433196298516982], [0.12566370614359174, 0.12566370614359168, 0.1256637061435918, 0.12566370614359168, 0.12566370614359168, 0.1256637061435918, 0.1256637061435918, 0.12566370614359168, 0.12566370614359168, 0.12566370614359168  …  0.1256637061435919, 0.1256637061435919, 0.12566370614359101, 0.1256637061435919, 0.1256637061435919, 0.1256637061435919, 0.1256637061435919, 0.12566370614359101, 0.1256637061435919, 0.1256637061435919]), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10  …  41, 42, 43, 44, 45, 46, 47, 48, 49, 50], 0), FastInterpolations.PeriodicData{Float64}([2.912737615475016, -0.7804656918302846, 0.20912515184612226, -0.05603491555420435, 0.01501451037069522, -0.0040231259285765, 0.0010779933436107835, -0.0002888474458666352, 7.739643985575737e-5, -2.0738313556394147e-5  …  -2.073831355639413e-5, 7.73964398557573e-5, -0.00028884744586663713, 0.0010779933436107871, -0.0040231259285764985, 0.015014510370695205, -0.056034915554204326, 0.20912515184612357, -0.7804656918302869, 2.9127376154750144], 6.283185307179586))</code></pre><p>Interpolate multiple y-values with the same cache</p><pre><code class="language-julia hljs">xq_cache = collect(range(0.0, 2π, 200))
+result1 = cubic_interp(cache, y1_cache, xq_cache)
+result2 = cubic_interp(cache, y2_cache, xq_cache)
+result3 = cubic_interp(cache, y3_cache, xq_cache)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">200-element Vector{Float64}:
+  0.0
+  0.06310443403218294
+  0.12595838785105368
+  0.18831138124330002
+  0.24991293401659467
+  0.3105153495481386
+  0.3698814173779859
+  0.4277763958858287
+  0.4839655437765672
+  0.5382198343142626
+  ⋮
+ -0.483965543776568
+ -0.4277763958858289
+ -0.3698814173779871
+ -0.3105153495481391
+ -0.24991293401659448
+ -0.18831138124330082
+ -0.12595838785105373
+ -0.06310443403218406
+  0.0</code></pre><p>Visualize</p><pre><code class="language-julia hljs">p5 = plot(title=&quot;Multiple Y-values with Same Cache&quot;, xlabel=&quot;x&quot;, ylabel=&quot;y&quot;, legend=:topright)
+plot!(p5, xq_cache, result1, label=&quot;sin(x)&quot;, color=:blue)
+plot!(p5, xq_cache, result2, label=&quot;cos(x)&quot;, color=:red)
+plot!(p5, xq_cache, result3, label=&quot;sin(2x)&quot;, color=:green)
+scatter!(p5, x_cache[1:5:end], y1_cache[1:5:end], label=nothing, color=:blue, markersize=4)
+scatter!(p5, x_cache[1:5:end], y2_cache[1:5:end], label=nothing, color=:red, markersize=4)
+scatter!(p5, x_cache[1:5:end], y3_cache[1:5:end], label=nothing, color=:green, markersize=4)</code></pre><img src="01220b0e.svg" alt="Example block output"/></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../../">« Home</a><a class="docs-footer-nextpage" href="../../guides/performance/">Performance »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Wednesday 31 December 2025 04:58">Wednesday 31 December 2025</span>. Using Julia version 1.12.3.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

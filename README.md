@@ -151,7 +151,6 @@ Adjust cache size:
 set_cubic_cache_size!(32)      # Increase for many distinct grids
 set_cubic_cache_size!(4)       # Reduce for memory-constrained environments
 clear_cubic_cache!()           # Clear all cached data
-cubic_cache_stats()            # View cache statistics
 ```
 
 </details>

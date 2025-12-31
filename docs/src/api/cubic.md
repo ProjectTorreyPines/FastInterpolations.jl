@@ -20,7 +20,6 @@ CubicSplineCache
 set_cubic_cache_size!
 get_cubic_cache_size
 clear_cubic_cache!
-cubic_cache_stats
 ```
 
 ## Derivative Views

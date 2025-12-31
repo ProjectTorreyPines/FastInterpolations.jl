@@ -14,18 +14,20 @@ Pre-computed data for Sherman-Morrison periodic spline solver.
 
 # Fields
 - `q::Vector{T}`: Pre-computed A'^{-1} * u vector for Sherman-Morrison formula
-- `y_temp::Vector{T}`: Workspace for intermediate solution (for zero-allocation ldiv!)
 - `period::T`: Period T = x[end] - x[1]
 
 # Notes
 For cyclic tridiagonal system A_cyclic = A' + u * v^T, Sherman-Morrison gives:
     z = y - ((v^T * y) / (1 + v^T * q)) * q
 where q = A'^{-1} * u is pre-computed and reused for different y vectors.
+
+# Thread-Safety
+Workspaces for the periodic solver are allocated from task-local pools via `@with_pool`,
+not stored in this struct. This eliminates shared mutable state.
 """
 struct PeriodicData{T<:AbstractFloat}
-    q::Vector{T}       # Pre-computed A'^{-1} * u
-    y_temp::Vector{T}  # Workspace for ldiv! (zero-allocation solver)
-    period::T          # x[end] - x[1]
+    q::Vector{T}  # Pre-computed A'^{-1} * u
+    period::T     # x[end] - x[1]
 end
 
 """
@@ -43,9 +45,7 @@ Cache structure for cubic spline interpolation with reusable LU factorization.
 - `x::X`: Grid points (immutable after construction, can be Range or Vector)
 - `h::Vector{T}`: Grid spacing h[i] = x[i+1] - x[i]
 - `lu_factor::F`: LU factorization of tridiagonal matrix A
-- `d_workspace::Vector{T}`: Workspace for RHS vector computation
-- `z_workspace::Vector{T}`: Workspace for solution vector
-- `bc_data::BC`: Boundary condition data (BCPair for derivative BC, PeriodicData for periodic)
+- `bc_config::BC`: Boundary condition data (BCPair for derivative BC, PeriodicData for periodic)
 
 # Notes
 The LU factorization depends ONLY on x geometry and can be reused for:
@@ -53,6 +53,10 @@ The LU factorization depends ONLY on x geometry and can be reused for:
 - Different x_query vectors (varying query points)
 
 When x is an AbstractRange, O(1) index lookup is used instead of O(log n) binary search.
+
+# Thread-Safety
+Workspaces (d, z) are allocated from task-local pools via `@with_pool`,
+not stored in this struct. This makes the cache thread-safe by design.
 
 # Boundary Conditions
 - `bc=NaturalBC()` (default): Natural spline with z[1] = z[n+1] = 0
@@ -62,9 +66,7 @@ struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC}
     x::X
     h::Vector{T}
     lu_factor::F
-    d_workspace::Vector{T}
-    z_workspace::Vector{T}
-    bc_data::BC
+    bc_config::BC
 end
 
 # ExtrapVal is defined in ops.jl (shared between linear and cubic)

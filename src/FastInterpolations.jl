@@ -2,6 +2,8 @@ module FastInterpolations
 
 import LinearAlgebra
 using LinearAlgebra: Tridiagonal, lu, ldiv!
+using Preferences: @load_preference, @set_preferences!
+using AdaptiveArrayPools
 
 # Operation types (must be first - used by all interp files)
 include("ops.jl")
@@ -33,7 +35,7 @@ include("derivative_view.jl")
 # Exports
 export linear_interp, linear_interp!, LinearInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
-export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!, cubic_cache_stats
+export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 
 # Boundary condition types
 export AbstractBC, PointBC, Deriv1, Deriv2, BCPair

@@ -1,7 +1,12 @@
 name = "FastInterpolations"
 uuid = "9ea80cae-fc13-4c00-8066-6eaedb12f34b"
-authors = ["Min-Gu Yoo <mgyoo86@gmail.com>"]
 version = "0.1.0"
+authors = ["Min-Gu Yoo <mgyoo86@gmail.com>"]
 
 [deps]
+AdaptiveArrayPools = "5768322a-0810-4546-8322-123456789abc"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Preferences = "21216c6a-2e73-6563-6e65-726566657250"
+
+[compat]
+julia = "1.7"

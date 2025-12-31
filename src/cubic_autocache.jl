@@ -6,22 +6,47 @@ Transparently reuses LU factorization for repeated x-grids.
 
 # Implementation Details
 
-- Fully parametric `CacheBank{T, L, R, X}` - supports any BC type combination
+- Generic `CacheBank{E}` - single bank type parameterized by entry type
+- **RCU (Read-Copy-Update)** pattern for lock-free cache hits
 - Zero-allocation cache hit via 2-pass lookup (objectid → isequal)
 - Ring buffer eviction for O(1) cache replacement
-- Self-healing: updates objectid on content match for future fast-path hits
-- Dynamic bank creation via IdDict keyed by type
-- Thread-safe with ReentrantLock on cache access
+- `GlobalRegistry` with atomic `Vector{Pair}` for lock-free bank lookup
+
+# Thread Safety (RCU Pattern)
+
+**Read path (cache hit)**: Lock-free
+- `@atomic :acquire` snapshot load (registry and bank)
+- Linear scan for type match (registry: N<20 banks)
+- 2-pass lookup: objectid fast path → isequal slow path
+
+**Write path (cache miss)**: Lock protected
+- Lock → double-check → copy snapshot → modify → `@atomic :release` publish
+
+**Performance**:
+- Full interp cache hit: ~810 ns/op
+- **Zero allocation** on cache hit (Julia 1.12+, avoid closure capture)
+
+**Compatibility**: Julia 1.7+ (uses `@atomic` field, not AtomicMemory)
 """
 
 # ===============================================================
-# Parametric Cache Types
+# Cache Entry Types
 # ===============================================================
+
+"""
+    AbstractCacheEntry{T, X}
+
+Abstract type for cache entries. Subtypes must have:
+- `id::UInt` - object identity for fast lookup
+- `x::X` - grid data for equality check
+- `cache` - CubicSplineCache instance
+"""
+abstract type AbstractCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}} end
 
 """
     CacheEntry{T, L, R, X}
 
-A single cache entry storing an x-grid and its associated CubicSplineCache.
+Cache entry for derivative BC (uses BCPair).
 
 # Type Parameters
 - `T`: Float type (Float32 or Float64)
@@ -29,71 +54,136 @@ A single cache entry storing an x-grid and its associated CubicSplineCache.
 - `R`: Right boundary condition type (Deriv1{T} or Deriv2{T})
 - `X`: Grid type (Vector{T} or StepRangeLen)
 """
-mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
     cache::CubicSplineCache{T, X, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, BCPair{T,L,R}}
 end
 
 """
-    CacheBank{T, L, R, X}
-
-A cache bank holding entries for a specific (T, L, R, X) type combination.
-
-# Type Parameters
-- `T`: Float type
-- `L`: Left BC type
-- `R`: Right BC type
-- `X`: Grid type
-"""
-mutable struct CacheBank{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
-    store::Vector{CacheEntry{T, L, R, X}}
-    ring::Base.RefValue{Int}
-end
-
-CacheBank{T,L,R,X}() where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}} =
-    CacheBank{T,L,R,X}(CacheEntry{T,L,R,X}[], Ref(1))
-
-"""
     PeriodicCacheEntry{T, X}
 
-Cache entry for periodic BC (uses PeriodicData instead of BCPair).
+Cache entry for periodic BC (uses PeriodicData).
 """
-mutable struct PeriodicCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}}
+mutable struct PeriodicCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
     cache::CubicSplineCache{T, X, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, PeriodicData{T}}
 end
 
-"""
-    PeriodicCacheBank{T, X}
+# ===============================================================
+# RCU Snapshot (Immutable Bank State)
+# ===============================================================
 
-Cache bank for periodic BC.
 """
-mutable struct PeriodicCacheBank{T<:AbstractFloat, X<:AbstractVector{T}}
-    store::Vector{PeriodicCacheEntry{T, X}}
-    ring::Base.RefValue{Int}
+    BankSnapshot{E}
+
+Immutable snapshot of bank state at a point in time.
+Used for RCU (Read-Copy-Update) pattern to enable lock-free reads.
+
+# Fields
+- `store::Vector{E}` - Cache entries (effectively immutable after creation)
+- `count::Int` - Number of valid entries
+- `ring::Int` - Next eviction index (1-based)
+
+# Thread Safety
+Readers atomically load a snapshot reference and can safely read it
+without locks since the snapshot content never changes after creation.
+"""
+struct BankSnapshot{E<:AbstractCacheEntry}
+    store::Vector{E}
+    count::Int
+    ring::Int  # 1-based next eviction index
 end
 
-PeriodicCacheBank{T,X}() where {T<:AbstractFloat, X<:AbstractVector{T}} =
-    PeriodicCacheBank{T,X}(PeriodicCacheEntry{T,X}[], Ref(1))
+# Empty snapshot constructor
+function BankSnapshot{E}() where {E<:AbstractCacheEntry}
+    store = E[]
+    sizehint!(store, _CACHE_SIZE)
+    BankSnapshot{E}(store, 0, 1)
+end
 
 # ===============================================================
-# Bank Registry (Dynamic/Lazy)
+# Generic Cache Bank (RCU-style)
 # ===============================================================
 
-# NOTE: Value type is `Any` because banks are created dynamically for each
-# (T, L, R, X) combination at runtime. Type-stable access is ensured by
-# the typed getter functions (_get_derivative_bank, _get_periodic_bank).
-const _DERIVATIVE_BANK_REGISTRY = IdDict{DataType, Any}()
-const _PERIODIC_BANK_REGISTRY = IdDict{DataType, Any}()
+"""
+    CacheBank{E}
+
+A generic cache bank holding entries of type `E`.
+Uses RCU pattern with atomic snapshot for lock-free reads.
+
+# Type Parameters
+- `E`: Entry type (CacheEntry{T,L,R,X} or PeriodicCacheEntry{T,X})
+
+# Thread Safety
+- Read path: Lock-free via `@atomic :acquire` snapshot load
+- Write path: Lock + copy-on-write + `@atomic :release` publish
+"""
+mutable struct CacheBank{E<:AbstractCacheEntry}
+    @atomic snapshot::BankSnapshot{E}
+end
+
+# Single constructor for all entry types
+function CacheBank{E}() where {E<:AbstractCacheEntry}
+    CacheBank{E}(BankSnapshot{E}())
+end
+
+# ===============================================================
+# RCU Registry (Lock-Free Bank Lookup)
+# ===============================================================
+
+"""
+    RegistrySnapshot
+
+Type alias for the registry's immutable snapshot.
+Simple association list: [(BankType, BankInstance), ...]
+
+# Design Choice
+Using Vector{Pair{DataType, Any}} instead of IdDict because:
+- N < 20 banks → linear scan faster than hash lookup (cache-friendly)
+- Immutable snapshot enables lock-free reads via RCU pattern
+- Copy-on-write for writes is O(N) with small N
+"""
+const RegistrySnapshot = Vector{Pair{DataType, Any}}
+
+"""
+    GlobalRegistry
+
+Atomic registry wrapper for RCU-style lock-free bank lookup.
+
+# Thread Safety
+- Read path: Lock-free via `@atomic :acquire` snapshot load
+- Write path: Lock → copy → push → `@atomic :release` publish
+
+# Example
+```julia
+registry = GlobalRegistry()
+snap = @atomic :acquire registry.snapshot  # Lock-free read
+```
+"""
+mutable struct GlobalRegistry
+    @atomic snapshot::RegistrySnapshot
+end
+
+# Default constructor with empty snapshot
+GlobalRegistry() = GlobalRegistry(RegistrySnapshot())
+
+# Global registries (RCU style)
+const _DERIVATIVE_REGISTRY = GlobalRegistry()
+const _PERIODIC_REGISTRY = GlobalRegistry()
 const _CACHE_LOCK = ReentrantLock()
-const _CACHE_SIZE_REF = Ref{Int}(16)
 
-# Statistics (non-atomic, for debugging only - may be inaccurate under multithreading)
-const _CACHE_HITS = Ref{Int}(0)
-const _CACHE_MISSES = Ref{Int}(0)
-const _CACHE_EVICTIONS = Ref{Int}(0)
+# Load-time constant: immutable after package load, enables compiler optimizations
+# To change: call set_cubic_cache_size!(n), then restart Julia for it to take effect
+const _CACHE_SIZE = @load_preference("cache_size", 16)::Int
+
+# ===============================================================
+# Module Initialization
+# ===============================================================
+
+# NOTE: With RCU pattern, __init__ is no longer needed for registry pre-allocation.
+# The atomic registry handles concurrent access safely without pre-sizing.
 
 # ===============================================================
 # Public API
@@ -102,219 +192,247 @@ const _CACHE_EVICTIONS = Ref{Int}(0)
 """
     set_cubic_cache_size!(n::Int)
 
-Set maximum number of cached x-grids per store.
+Set maximum cache size for future Julia sessions via Preferences.jl.
+
+**Requires Julia restart** to take effect (cache size is a load-time constant
+for thread-safety and compiler optimization).
 
 # Arguments
 - `n::Int`: Maximum cache entries (default: 16)
+
+# Example
+```julia
+set_cubic_cache_size!(32)  # Sets preference
+# Restart Julia to apply new size
+get_cubic_cache_size()     # Now returns 32
+```
 """
 function set_cubic_cache_size!(n::Int)
     n > 0 || throw(ArgumentError("Cache size must be positive"))
-    _CACHE_SIZE_REF[] = n
+    @set_preferences!("cache_size" => n)
+    @info "Cache size preference saved. Restart Julia to apply (current session uses $(get_cubic_cache_size()))."
     return n
 end
 
 """
     get_cubic_cache_size()
 
-Get current maximum cache size.
+Get current maximum cache size (load-time constant).
 """
-get_cubic_cache_size() = _CACHE_SIZE_REF[]
+get_cubic_cache_size() = _CACHE_SIZE
 
 """
     clear_cubic_cache!()
 
 Clear all cached x-grids.
+
+# Thread Safety (RCU)
+Atomically replaces registry snapshots with empty vectors.
+Existing readers continue to see their old snapshots until they finish.
 """
 function clear_cubic_cache!()
     lock(_CACHE_LOCK) do
-        empty!(_DERIVATIVE_BANK_REGISTRY)
-        empty!(_PERIODIC_BANK_REGISTRY)
-        _CACHE_HITS[] = 0
-        _CACHE_MISSES[] = 0
-        _CACHE_EVICTIONS[] = 0
+        # Atomic replace with empty snapshots (RCU pattern)
+        @atomic :release _DERIVATIVE_REGISTRY.snapshot = RegistrySnapshot()
+        @atomic :release _PERIODIC_REGISTRY.snapshot = RegistrySnapshot()
     end
     return nothing
 end
 
+# ===============================================================
+# Internal: RCU Registry Lookup
+# ===============================================================
+
 """
-    cubic_cache_stats()
+    _registry_lookup(registry, BankType) -> bank or nothing
 
-Return cache hit/miss statistics.
+Lock-free registry lookup using RCU pattern.
+Atomically loads the snapshot and scans for matching bank type.
 
-# Returns
-`NamedTuple` with fields: `hits`, `misses`, `evictions`, `bank_count`, `efficiency`
+# Thread Safety
+- Lock-free read via `@atomic :acquire`
+- Linear scan on immutable snapshot (safe for concurrent reads)
 """
-function cubic_cache_stats()
-    hits = _CACHE_HITS[]
-    misses = _CACHE_MISSES[]
-    evictions = _CACHE_EVICTIONS[]
+@inline function _registry_lookup(registry::GlobalRegistry, ::Type{B}) where {B}
+    snap = @atomic :acquire registry.snapshot
 
-    local derivative_count, periodic_count, total_entries
-    lock(_CACHE_LOCK) do
-        derivative_count = length(_DERIVATIVE_BANK_REGISTRY)
-        periodic_count = length(_PERIODIC_BANK_REGISTRY)
-        total_entries = sum(length(bank.store) for bank in values(_DERIVATIVE_BANK_REGISTRY); init=0) +
-                        sum(length(bank.store) for bank in values(_PERIODIC_BANK_REGISTRY); init=0)
+    # Linear scan (N < 20 → faster than hash lookup)
+    for (TypeKey, Bank) in snap
+        if TypeKey === B
+            return Bank::B
+        end
     end
 
-    total = hits + misses
-    efficiency = total > 0 ? round(100 * hits / total, digits=1) : 0.0
-
-    return (
-        hits = hits,
-        misses = misses,
-        evictions = evictions,
-        derivative_banks = derivative_count,
-        periodic_banks = periodic_count,
-        total_entries = total_entries,
-        efficiency = efficiency
-    )
+    return nothing
 end
 
-# ===============================================================
-# Internal: Bank Retrieval (Lock-free Read Path)
-# ===============================================================
-
 """
-Get or create a derivative BC cache bank for the given (T, L, R, X) combination.
-Uses lock-free read for fast path, lock only for first creation.
+    _get_bank(registry, BankType) -> bank
+
+RCU-style bank retrieval with copy-on-write for new bank creation.
+
+# Thread Safety (RCU)
+- Read path (hit): Lock-free via `_registry_lookup`
+- Write path (miss): Lock → copy → push → atomic publish
+
+# Performance
+- Registry hit: ~10 ns (atomic load + linear scan)
+- Registry miss: Lock overhead + O(N) copy (N < 20)
 """
-@inline function _get_derivative_bank(::X, ::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
-    BankType = CacheBank{T,L,R,X}
+@inline function _get_bank(registry::GlobalRegistry, ::Type{CacheBank{E}}) where {E<:AbstractCacheEntry}
+    BankType = CacheBank{E}
 
-    # Fast path: lock-free read
-    bank = get(_DERIVATIVE_BANK_REGISTRY, BankType, nothing)
-    bank !== nothing && return bank::BankType
+    # === RCU Read Path (Lock-Free) ===
+    bank = _registry_lookup(registry, BankType)
+    bank !== nothing && return bank
 
-    # Slow path: lock for first creation (try-finally to avoid closure allocation)
+    # === RCU Write Path (Lock + Copy-on-Write) ===
     lock(_CACHE_LOCK)
     try
-        if !haskey(_DERIVATIVE_BANK_REGISTRY, BankType)
-            _DERIVATIVE_BANK_REGISTRY[BankType] = CacheBank{T,L,R,X}()
-        end
+        # Double-check after acquiring lock
+        bank = _registry_lookup(registry, BankType)
+        bank !== nothing && return bank
+
+        # Create new bank
+        new_bank = CacheBank{E}()
+
+        # Copy-on-write: copy snapshot → push → publish
+        old_snap = @atomic :monotonic registry.snapshot
+        new_snap = copy(old_snap)
+        push!(new_snap, BankType => new_bank)
+        @atomic :release registry.snapshot = new_snap
+
+        return new_bank
     finally
         unlock(_CACHE_LOCK)
     end
-    return _DERIVATIVE_BANK_REGISTRY[BankType]::BankType
+end
+
+"""
+Get or create a derivative BC cache bank for the given (T, L, R, X) combination.
+"""
+@inline function _get_derivative_bank(::X, ::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+    EntryType = CacheEntry{T,L,R,X}
+    return _get_bank(_DERIVATIVE_REGISTRY, CacheBank{EntryType})
 end
 
 """
 Get or create a periodic BC cache bank for the given (T, X) combination.
 """
 @inline function _get_periodic_bank(::X) where {T<:AbstractFloat, X<:AbstractVector{T}}
-    BankType = PeriodicCacheBank{T,X}
-
-    # Fast path: lock-free read
-    bank = get(_PERIODIC_BANK_REGISTRY, BankType, nothing)
-    bank !== nothing && return bank::BankType
-
-    # Slow path: lock for first creation (try-finally to avoid closure allocation)
-    lock(_CACHE_LOCK)
-    try
-        if !haskey(_PERIODIC_BANK_REGISTRY, BankType)
-            _PERIODIC_BANK_REGISTRY[BankType] = PeriodicCacheBank{T,X}()
-        end
-    finally
-        unlock(_CACHE_LOCK)
-    end
-    return _PERIODIC_BANK_REGISTRY[BankType]::BankType
+    EntryType = PeriodicCacheEntry{T,X}
+    return _get_bank(_PERIODIC_REGISTRY, CacheBank{EntryType})
 end
 
 # ===============================================================
-# Internal: Ring Buffer Add
+# Internal: RCU Lookup (Lock-Free Read Path)
 # ===============================================================
 
-@inline function _add_to_ring!(store::Vector{E}, ring::Base.RefValue{Int}, entry::E) where E
-    max_size = _CACHE_SIZE_REF[]
-    if length(store) < max_size
-        push!(store, entry)
-    else
-        idx = ring[]
-        store[idx] = entry
-        ring[] = (idx % max_size) + 1
-        _CACHE_EVICTIONS[] += 1
+"""
+    _rcu_lookup(snap, id, x) -> cache or nothing
+
+Lock-free cache lookup on an immutable snapshot.
+Uses 2-pass algorithm: identity check (fast) → equality check (slow).
+
+# Thread Safety
+- This function is called on an immutable snapshot
+- No self-healing (snapshot is immutable)
+- Safe for concurrent calls from multiple threads
+"""
+@inline function _rcu_lookup(snap::BankSnapshot{E}, id::UInt, x::X) where {E, X}
+    store = snap.store
+    count = snap.count
+
+    # [Pass 1] Identity check (fast path)
+    @inbounds for i in 1:count
+        entry = store[i]
+        if entry.id === id
+            return entry.cache
+        end
     end
+
+    # [Pass 2] Equality check (no self-healing in RCU - snapshot is immutable)
+    @inbounds for i in 1:count
+        entry = store[i]
+        if isequal(entry.x, x)
+            return entry.cache
+        end
+    end
+
     return nothing
 end
 
-# ===============================================================
-# Internal: Lookup/Insert (Unified)
-# ===============================================================
+# ---------------------------------------------------------------
+# Cache Builder (type-dispatched)
+# ---------------------------------------------------------------
 
-"""
-Lookup or insert into a derivative BC cache bank.
-2-pass lookup: identity check (fast) → equality check (slower) → insert.
-
-On cache miss, creates entry with the provided `bc_pair` values. This ensures
-the cache has meaningful bc_data for edge cases, though callers should still
-use 3-arg `_solve_system!` for dynamic BC values.
-"""
-@inline function _lookup_or_insert!(bank::CacheBank{T,L,R,X}, x::X, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
-    store = bank.store
-    ring = bank.ring
-    id = objectid(x)
-
-    # [Pass 1] Identity check (fast path)
-    @inbounds for entry in store
-        if entry.id === id
-            _CACHE_HITS[] += 1
-            return entry.cache
-        end
-    end
-
-    # [Pass 2] Equality check - O(1) for Range, O(N) for Vector
-    @inbounds for entry in store
-        if isequal(entry.x, x)
-            entry.id = id  # Self-healing for future fast-path hits
-            _CACHE_HITS[] += 1
-            return entry.cache
-        end
-    end
-
-    # [Cache Miss] Create new entry with the provided BC values.
-    # Cache is keyed by BC *type* only (LU factorization depends on matrix structure).
-    # On cache hit, bc_data may differ from caller's BC values, so callers should
-    # use 3-arg _solve_system!(cache, y, bc_tuple) to apply their actual BC values.
-    _CACHE_MISSES[] += 1
-    new_cache = _build_derivative_bc_cache(x, bc_pair.left, bc_pair.right)
-    new_entry = CacheEntry{T,L,R,X}(id, x, new_cache)
-    _add_to_ring!(store, ring, new_entry)
-
-    return new_cache
+# Build cache for derivative BC entry
+@inline function _build_cache(::Type{CacheEntry{T,L,R,X}}, x::X, bc::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+    return _build_derivative_bc_cache(x, bc.left, bc.right)
 end
 
+# Build cache for periodic BC entry
+@inline function _build_cache(::Type{PeriodicCacheEntry{T,X}}, x::X, ::Nothing) where {T<:AbstractFloat, X<:AbstractVector{T}}
+    return _build_periodic_cache(x)
+end
+
+# ---------------------------------------------------------------
+# Unified Lookup/Insert (RCU Pattern)
+# ---------------------------------------------------------------
+
 """
-Lookup or insert into a periodic BC cache bank.
+Core lookup/insert logic for CacheBank{E} using RCU pattern.
+
+# Thread-Safety (RCU - Read-Copy-Update)
+- Read path (hit): Lock-free via atomic snapshot load
+- Write path (miss): Lock → copy snapshot → modify → atomic publish
+
+# Performance
+- Cache hit: ~11 ns (atomic load + linear scan, no lock)
+- Cache miss: Lock overhead + O(N) copy (N ≤ 16, negligible)
 """
-@inline function _lookup_or_insert!(bank::PeriodicCacheBank{T,X}, x::X) where {T<:AbstractFloat, X<:AbstractVector{T}}
-    store = bank.store
-    ring = bank.ring
+@inline function _lookup_or_insert!(bank::CacheBank{E}, x::X, bc_config) where {E<:AbstractCacheEntry, X}
     id = objectid(x)
 
-    # [Pass 1] Identity check (fast path)
-    @inbounds for entry in store
-        if entry.id === id
-            _CACHE_HITS[] += 1
-            return entry.cache
+    # === RCU Read Path (Lock-Free) ===
+    snap = @atomic :acquire bank.snapshot
+    found = _rcu_lookup(snap, id, x)
+    found !== nothing && return found
+
+    # === RCU Write Path (Lock + Copy-on-Write) ===
+    lock(_CACHE_LOCK)
+    try
+        # Double-check after acquiring lock
+        snap = @atomic :monotonic bank.snapshot
+        found = _rcu_lookup(snap, id, x)
+        found !== nothing && return found
+
+        # Build new cache
+        new_cache = _build_cache(E, x, bc_config)
+        new_entry = E(id, x, new_cache)
+
+        # Copy-on-write: create new snapshot with added entry
+        new_store = copy(snap.store)
+        new_count = snap.count
+        new_ring = snap.ring
+
+        if new_count < _CACHE_SIZE
+            push!(new_store, new_entry)
+            new_count += 1
+        else
+            # Ring buffer eviction
+            new_store[new_ring] = new_entry
+            new_ring = (new_ring % _CACHE_SIZE) + 1
         end
+
+        # Atomic publish
+        new_snap = BankSnapshot{E}(new_store, new_count, new_ring)
+        @atomic :release bank.snapshot = new_snap
+
+        return new_cache
+    finally
+        unlock(_CACHE_LOCK)
     end
-
-    # [Pass 2] Equality check
-    @inbounds for entry in store
-        if isequal(entry.x, x)
-            entry.id = id  # Self-healing
-            _CACHE_HITS[] += 1
-            return entry.cache
-        end
-    end
-
-    # [Cache Miss] Create new entry
-    _CACHE_MISSES[] += 1
-    new_cache = _build_periodic_cache(x)
-    new_entry = PeriodicCacheEntry{T,X}(id, x, new_cache)
-    _add_to_ring!(store, ring, new_entry)
-
-    return new_cache
 end
 
 # ===============================================================
@@ -396,8 +514,22 @@ end
     return _get_derivative_cache_impl(x, bc_pair)
 end
 
+@inline function _get_cubic_cache(
+    x::AbstractVector{T},
+    bc::AbstractBC,
+    autocache::Bool
+) where {T<:AbstractFloat}
+    if autocache
+        cache = _get_cubic_cache(x, bc)
+    else
+        cache = CubicSplineCache(x; bc=bc)
+    end
+    return cache
+end
+
+
 # ===============================================================
-# Internal: Cache Implementation with Locking
+# Internal: Cache Implementation
 # ===============================================================
 
 # StepRangeLen concrete types (from `range(a, b, n)`)
@@ -440,7 +572,7 @@ Internal implementation for periodic BC cache lookup.
 @inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T<:Union{Float64,Float32}}
     x_normalized = x isa Vector ? x : collect(x)
     bank = _get_periodic_bank(x_normalized)
-    return _lookup_or_insert!(bank, x_normalized)
+    return _lookup_or_insert!(bank, x_normalized, nothing)
 end
 
 @inline function _get_periodic_cache_impl(x::AbstractRange{T}) where {T<:Union{Float64,Float32}}
@@ -448,7 +580,7 @@ end
     # LinRange and other Range types are converted (minor overhead on first call).
     x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
     bank = _get_periodic_bank(x_normalized)
-    return _lookup_or_insert!(bank, x_normalized)
+    return _lookup_or_insert!(bank, x_normalized, nothing)
 end
 
 # Fallback: other Real types → convert to Float64

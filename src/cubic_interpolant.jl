@@ -9,8 +9,8 @@
 #
 # Dependencies (from cubic_interp.jl):
 # - _is_periodic_bc(bc)
-# - _get_cache_and_solve!(x, y, bc_pair, autocache)
-# - _get_cache_and_solve_periodic!(x, y, autocache)
+# - _get_cubic_cache(x, bc, autocache)
+# - _solve_system!(out_z, cache, y, bc_config)
 # - _check_periodic_endpoints(y)
 # - _cubic_vector_loop!(output, cache, y, z, x_query, ev)
 
@@ -93,37 +93,49 @@ end
     _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache) -> CubicInterpolant
 
 Build a CubicInterpolant for BCPair boundary conditions.
-Uses `_get_cache_and_solve!` for unified cache handling.
+Uses task-local pool for thread-safe workspace allocation.
+
+# Thread-Safety
+Pool-allocated `tmp_z` is copied by the CubicInterpolant constructor,
+so the pool memory can be safely reused after this function returns.
 """
-@inline function _build_interpolant_bcpair(
+@inline @with_pool pool function _build_interpolant_bcpair(
     x::AbstractVector{T},
     y::AbstractVector{T},
     bc_pair::BCPair{T,L,R},
     extrap::Symbol,
     autocache::Bool
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
-    cache = _get_cache_and_solve!(x, y, bc_pair, autocache)
+    cache = _get_cubic_cache(x, bc_pair, autocache)
     ev = _symbol_to_extrap_val(extrap)
-    # Pass z_workspace directly - constructor will copy
-    return CubicInterpolant(cache, y, cache.z_workspace, ev)
+    tmp_z = similar!(pool, y)
+    _solve_system!(tmp_z, cache, y, bc_pair)
+    # tmp_z is copied by CubicInterpolant constructor - safe to return to pool
+    return CubicInterpolant(cache, y, tmp_z, ev)
 end
 
 """
     _build_interpolant_periodic(x, y, autocache) -> CubicInterpolant
 
 Build a CubicInterpolant for PeriodicBC boundary conditions.
-Uses `_get_cache_and_solve_periodic!` for unified cache handling.
+Uses task-local pool for thread-safe workspace allocation.
 Periodic BC always uses :wrap extrapolation.
+
+# Thread-Safety
+Pool-allocated `tmp_z` is copied by the CubicInterpolant constructor,
+so the pool memory can be safely reused after this function returns.
 """
-@inline function _build_interpolant_periodic(
+@inline @with_pool pool function _build_interpolant_periodic(
     x::AbstractVector{T},
     y::AbstractVector{T},
     autocache::Bool
 ) where {T<:AbstractFloat}
     _check_periodic_endpoints(y)
-    cache = _get_cache_and_solve_periodic!(x, y, autocache)
-    # Pass z_workspace directly - constructor will copy
-    return CubicInterpolant(cache, y, cache.z_workspace, Val(:wrap))
+    cache = _get_cubic_cache(x, PeriodicBC(), autocache)
+    tmp_z = similar!(pool, y)
+    _solve_system!(tmp_z, cache, y, cache.bc_config)
+    # tmp_z is copied by CubicInterpolant constructor - safe to return to pool
+    return CubicInterpolant(cache, y, tmp_z, Val(:wrap))
 end
 
 # ========================================
@@ -179,28 +191,32 @@ end
 Create a callable interpolant from a pre-built cache.
 
 # Note on BC Values
-Uses `cache.bc_data` for boundary condition values. This is correct when:
+Uses `cache.bc_config` for boundary condition values. This is correct when:
 - Cache was built via `CubicSplineCache(x; bc=...)` with actual BC values
 - BC is NaturalBC/ClampedBC/PeriodicBC (values are always zero)
 
-**Warning**: Caches from `get_cubic_cache` contain placeholder zeros in `bc_data`.
+**Warning**: Caches from `get_cubic_cache` contain placeholder zeros in `bc_config`.
 For non-zero BC values, use the full API: `cubic_interp(x, y; bc=Deriv1(val))`.
+
+# Thread-Safety
+Uses task-local pool for workspace allocation. Pool memory is copied
+by the CubicInterpolant constructor.
 """
-function cubic_interp(
+@with_pool pool function cubic_interp(
     cache::CubicSplineCache{T},
     y::AbstractVector{T};
     extrap::Symbol=:none
 ) where {T<:AbstractFloat}
-    _solve_system!(cache, y, cache.bc_data)
-    # Pass z_workspace directly - constructor will copy
+    tmp_z = similar!(pool, y)
+    _solve_system!(tmp_z, cache, y, cache.bc_config)
 
-    if cache.bc_data isa PeriodicData
+    if cache.bc_config isa PeriodicData
         _check_periodic_endpoints(y)
-        return CubicInterpolant(cache, y, cache.z_workspace, Val(:wrap))
+        return CubicInterpolant(cache, y, tmp_z, Val(:wrap))
     end
 
     ev = _symbol_to_extrap_val(extrap)
-    return CubicInterpolant(cache, y, cache.z_workspace, ev)
+    return CubicInterpolant(cache, y, tmp_z, ev)
 end
 
 # Real wrapper for 2-argument form

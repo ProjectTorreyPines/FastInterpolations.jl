@@ -88,6 +88,7 @@ makedocs(
             ],
         ],
         "Extrapolation" => "extrapolation.md",
+        "Derivatives" => "derivatives.md",
         "Architecture" => [
             "Overview" => "architecture/overview.md",
             "Auto-Cache" => "architecture/caching.md",

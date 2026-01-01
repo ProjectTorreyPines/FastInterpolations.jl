@@ -10,6 +10,7 @@ A high-performance 1D interpolation package for Julia, optimized for speed and m
 - 🚀 **Fast**: Optimized algorithms outperform other packages
 - ✅ **Zero-allocation**: Auto-managed caching eliminates allocations on hot paths
 - 🎯 **Simple API**: One-shot function call — no intermediate objects
+- 📐 **Derivatives**: Analytical first and second derivatives for cubic splines
 
 ## Installation
 `FastInterpolations` is registered with [FuseRegistry](https://github.com/ProjectTorreyPines/FuseRegistry.jl/):
@@ -154,6 +155,29 @@ clear_cubic_cache!()           # Clear all cached data
 ```
 
 </details>
+
+## Derivatives
+
+Evaluate analytical derivatives directly—no finite difference approximation needed.
+
+```julia
+x = range(0.0, 2π, 100)
+y = sin.(x)
+
+# One-shot: use deriv keyword
+cubic_interp(x, y, 1.0; deriv=1)   # First derivative (cos(1.0) ≈ 0.5403)
+cubic_interp(x, y, 1.0; deriv=2)   # Second derivative (-sin(1.0) ≈ -0.8415)
+
+# Interpolant: use deriv1/deriv2 wrappers
+itp = cubic_interp(x, y)
+d1 = deriv1(itp)   # First derivative view
+d2 = deriv2(itp)   # Second derivative view
+
+d1(1.0)            # Evaluate first derivative at x=1.0
+d2.(xq)            # Broadcast second derivative over query points
+```
+
+Linear interpolation also supports `deriv=1` (piecewise constant slope).
 
 ## Performance
 

@@ -143,6 +143,11 @@ title!("Linear Interpolation of sin(x)")
 - Derivative continuity matters
 - Data represents smooth physical quantities
 
+## See Also
+
+- **[Derivatives](../derivatives.md)**: Analytical derivatives for interpolants
+- **[Cubic Overview](cubic/overview.md)**: For smooth C² continuous interpolation
+
 ## API Reference
 
 See the [Linear API Reference](../api/linear.md) for complete function signatures and options.

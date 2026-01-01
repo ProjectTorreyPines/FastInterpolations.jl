@@ -199,5 +199,6 @@ println("In-place results: ", round.(out, digits=4))
 ## See Also
 
 - **[Periodic BC](periodic.md)**: For cyclic data that wraps around
+- **[Derivatives](../../derivatives.md)**: Analytical first and second derivatives
 - **[Extrapolation](../../extrapolation.md)**: Behavior outside the data domain
 - **[Cubic API Reference](../../api/cubic.md)**: Complete function signatures

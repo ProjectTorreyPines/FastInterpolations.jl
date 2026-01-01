@@ -112,34 +112,23 @@ scatter!(x_cubic, y_cubic, label="data points", color=:black, markersize=6)
 
 ### Curvature Comparison
 
-The second derivative (curvature) reveals why the extrapolation behaviors differ:
+The second derivative (curvature) reveals why the extrapolation behaviors differ. FastInterpolations.jl provides **analytical derivatives**—no finite difference approximation needed:
 
 ```@example extrap
 # More complex periodic function
 x_c2 = range(0.0, 2π, 17)
 y_c2 = sin.(x_c2) .+ 0.3 .* cos.(3 .* x_c2)
 
-# Fine query grid (collect for numerical derivative calculation)
-xq_c2 = collect(range(-0.5, 2π + 0.5, 500))
+# Fine query grid
+xq_c2 = range(-0.5, 2π + 0.5, 500)
 
 # Interpolate with both BC types
 y_nat = cubic_interp(x_c2, y_c2, xq_c2; bc=NaturalBC(), extrap=:extension)
 y_per = cubic_interp(x_c2, y_c2, xq_c2; bc=PeriodicBC(), extrap=:extension)
 
-# Numerical second derivative (curvature)
-function numerical_d2(xq, yq)
-    h = xq[2] - xq[1]
-    d2y = similar(yq)
-    d2y[1] = (yq[3] - 2yq[2] + yq[1]) / h^2
-    d2y[end] = (yq[end] - 2yq[end-1] + yq[end-2]) / h^2
-    for i in 2:length(yq)-1
-        d2y[i] = (yq[i+1] - 2yq[i] + yq[i-1]) / h^2
-    end
-    return d2y
-end
-
-d2y_nat = numerical_d2(xq_c2, y_nat)
-d2y_per = numerical_d2(xq_c2, y_per)
+# Analytical second derivative using deriv=2 (no finite difference needed!)
+d2y_nat = cubic_interp(x_c2, y_c2, xq_c2; bc=NaturalBC(), extrap=:extension, deriv=2)
+d2y_per = cubic_interp(x_c2, y_c2, xq_c2; bc=PeriodicBC(), extrap=:extension, deriv=2)
 
 # Two subplots
 p4a = plot(title="Interpolation Results", xlabel="x", ylabel="y", legend=:topright)
@@ -158,6 +147,9 @@ plot(p4a, p4b, layout=(2, 1), size=(700, 500))
 ```
 
 The bottom plot shows clearly how `NaturalBC` forces the curvature to zero at boundaries, while `PeriodicBC` maintains continuous curvature.
+
+!!! tip "Analytical Derivatives"
+    Use `deriv=1` or `deriv=2` for analytical derivatives instead of finite difference approximations. See the [Derivatives](derivatives.md) page for details.
 
 ## Using with Interpolants
 

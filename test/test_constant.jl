@@ -223,6 +223,62 @@ end
         @test result == 20.0
     end
 
+    @testset "Real→Float wrappers (coverage)" begin
+        # Integer grid data (T<:Real, not T<:AbstractFloat)
+        x_int = [0, 1, 2, 3, 4]
+        y_int = [10, 20, 30, 40, 50]
+
+        # Test 1: ConstantInterpolant scalar with Integer input (lines 167-169)
+        # This tests itp(xi::S) where S<:Real, S≠T
+        itp = constant_interp([0.0, 1.0, 2.0, 3.0, 4.0], [10.0, 20.0, 30.0, 40.0, 50.0])
+        @test itp(1) == 20.0  # Integer query to Float64 interpolant
+        @test itp(2) == 30.0
+        @test itp(0) == 10.0
+
+        # Test 2: ConstantInterpolant in-place with type conversion (lines 201-211)
+        # This tests itp(output, xi::AbstractVector{S}) where S≠T
+        out = zeros(3)
+        itp(out, [0, 1, 2])  # Integer query vector
+        @test out ≈ [10.0, 20.0, 30.0]
+
+        # Test 3: Vector allocating Real→Float wrapper (lines 422-434)
+        # constant_interp(x::AbstractVector{T}, y::AbstractVector{T}, x_targets::AbstractVector{S})
+        # where T<:Real (Integer grid + Integer query)
+        result_vec = constant_interp(x_int, y_int, [0, 1, 2])
+        @test result_vec isa Vector{Float64}
+        @test result_vec ≈ [10.0, 20.0, 30.0]
+
+        # Test 4: In-place Real→Float wrapper (lines 440-468)
+        # constant_interp!(output, x::AbstractVector{T}, y::AbstractVector{T}, x_targets::AbstractVector{S})
+        out2 = zeros(3)
+        constant_interp!(out2, x_int, y_int, [0, 1, 2])
+        @test out2 ≈ [10.0, 20.0, 30.0]
+
+        # Test 5: 2-arg callable Real→Float wrapper (lines 474-482)
+        # constant_interp(x::AbstractVector{T}, y::AbstractVector{T}) where T<:Real
+        itp_int = constant_interp(x_int, y_int)
+        @test itp_int isa FastInterpolations.ConstantInterpolant
+        @test itp_int(0.5) == 10.0
+        @test itp_int(1.5) == 20.0
+
+        # Test options pass through the wrappers correctly
+        @test constant_interp(x_int, y_int, 0; side=:right) == 10.0
+        @test constant_interp(x_int, y_int, 0; side=:left) == 10.0
+        @test constant_interp(x_int, y_int, -1; extrap=:constant) == 10.0
+        @test constant_interp(x_int, y_int, 5; extrap=:constant) == 50.0
+
+        # Test in-place wrapper with options
+        out3 = zeros(2)
+        constant_interp!(out3, x_int, y_int, [-1, 5]; extrap=:constant)
+        @test out3 ≈ [10.0, 50.0]
+
+        # Test 2-arg callable with options
+        itp_left = constant_interp(x_int, y_int; side=:left)
+        @test itp_left(0.9) == 10.0
+        itp_wrap = constant_interp(x_int, y_int; extrap=:wrap)
+        @test itp_wrap(4.0) == 10.0
+    end
+
     @testset "ConstantInterpolant - 2-arg form" begin
         itp = constant_interp(x, y)
         @test itp isa FastInterpolations.ConstantInterpolant

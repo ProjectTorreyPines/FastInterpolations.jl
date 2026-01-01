@@ -420,6 +420,40 @@ end
         @test allocs == 0
     end
 
+    # ─────────────────────────────────────────────────────────────
+    # Real→Float wrapper zero-allocation tests
+    # When types already match Float64, _to_float identity should be used
+    # ─────────────────────────────────────────────────────────────
+
+    @testset "Real wrapper - constant_interp! when types match" begin
+        # When x, y are Float64 and x_targets is Float64, Real wrapper
+        # should be zero-alloc due to _to_float identity specialization
+        x_f64 = collect(0.0:0.1:1.0)
+        y_f64 = sin.(x_f64)
+        xq_f64 = [0.1, 0.3, 0.5, 0.7, 0.9]
+        out = zeros(5)
+
+        # Warmup - ensure compilation
+        constant_interp!(out, x_f64, y_f64, xq_f64)
+
+        allocs = @allocated constant_interp!(out, x_f64, y_f64, xq_f64)
+        @test allocs == 0
+    end
+
+    @testset "Real wrapper - ConstantInterpolant in-place when types match" begin
+        x_f64 = collect(0.0:0.1:1.0)
+        y_f64 = sin.(x_f64)
+        itp = constant_interp(x_f64, y_f64)
+        xq_f64 = [0.1, 0.3, 0.5, 0.7, 0.9]
+        out = zeros(5)
+
+        # Warmup
+        itp(out, xq_f64)
+
+        allocs = @allocated itp(out, xq_f64)
+        @test allocs == 0
+    end
+
 end
 
 # ============================================================================
@@ -566,6 +600,49 @@ end
 
         itp_range = constant_interp(x_range, y_range)
         @test itp_range(0.25) == 10.0
+    end
+
+end
+
+# ============================================================================
+# Group 6: Type Conversion Warning Tests
+# ============================================================================
+# Uses @test_logs for maxlog-independent testing of warning behavior.
+
+@testset "Constant Interpolation - Type Conversion Warnings" begin
+
+    @testset "Int vector input triggers warning - Float64 target" begin
+        x_int = [0, 1, 2, 3, 4]
+        y_int = [10, 20, 30, 40, 50]
+        # @test_logs captures logs independently of maxlog state
+        @test_logs (:warn, r"Non-float vector input.*Float64") constant_interp(x_int, y_int, 0.5)
+    end
+
+    @testset "Int vector input triggers warning - Float32 target" begin
+        # Float32 interpolant with Int query vector → should warn with Float32
+        x_f32 = Float32[0.0, 1.0, 2.0, 3.0, 4.0]
+        y_f32 = Float32[10.0, 20.0, 30.0, 40.0, 50.0]
+        itp = constant_interp(x_f32, y_f32)
+        # Int query to Float32 interpolant should show Float32 in warning
+        @test_logs (:warn, r"Non-float vector input.*Float32") itp([0, 1, 2])
+    end
+
+    @testset "Float64 vector input - no warning (zero-alloc path)" begin
+        x_f64 = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y_f64 = [10.0, 20.0, 30.0, 40.0, 50.0]
+        xq_f64 = [0.5, 1.5, 2.5]
+        out = zeros(3)
+        # Float64 input should NOT trigger any logs
+        @test_logs constant_interp!(out, x_f64, y_f64, xq_f64)
+    end
+
+    @testset "Float32 vector input - no warning (zero-alloc path)" begin
+        x_f32 = Float32[0.0, 1.0, 2.0, 3.0, 4.0]
+        y_f32 = Float32[10.0, 20.0, 30.0, 40.0, 50.0]
+        xq_f32 = Float32[0.5, 1.5, 2.5]
+        out = zeros(Float32, 3)
+        # Float32 input should NOT trigger any logs
+        @test_logs constant_interp!(out, x_f32, y_f32, xq_f32)
     end
 
 end

@@ -90,11 +90,24 @@ _to_float(x::AbstractRange, ::Type{FT}) where {FT<:AbstractFloat} =
     range(FT(first(x)), FT(last(x)), length(x))
 
 """
+    _to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT<:AbstractFloat}
+
+Identity conversion - return as-is when element type already matches target type.
+This enables zero-allocation for Real→Float wrappers when types already match.
+"""
+_to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT<:AbstractFloat} = x
+
+"""
     _to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat}
 
 Convert a Vector to a float type (element-wise broadcast).
+Emits a one-time warning since this allocates a new vector.
 """
-_to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat} = FT.(x)
+function _to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat}
+    @warn "Non-float vector input detected - allocating type conversion. " *
+          "For zero-allocation, pre-convert your data: `x_float = $FT.(x)`" maxlog=1
+    return FT.(x)
+end
 
 # ========================================
 # Periodic Boundary Helpers

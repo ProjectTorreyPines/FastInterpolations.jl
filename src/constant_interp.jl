@@ -172,7 +172,7 @@ end
 # Vector call (allocating)
 # ─────────────────────────────────────────────────────────────
 function (itp::ConstantInterpolant{T})(xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
-    xi_typed = S === T ? xi : T.(xi)
+    xi_typed = _to_float(xi, T)
     output = Vector{T}(undef, length(xi_typed))
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
@@ -200,7 +200,7 @@ end
 # In-place with type conversion
 function (itp::ConstantInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
-    xi_typed = T.(xi)
+    xi_typed = _to_float(xi, T)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
         @inbounds for i in eachindex(xi_typed, output)
@@ -412,7 +412,7 @@ end
     deriv::Int=0
 ) where {T<:Real, S<:Real}
     FT = float(T)
-    return constant_interp(_to_float(x, FT), FT.(y), FT(xi); extrap, side, deriv)
+    return constant_interp(_to_float(x, FT), _to_float(y, FT), FT(xi); extrap, side, deriv)
 end
 
 # ========================================
@@ -451,8 +451,8 @@ function constant_interp!(
 
     FT = float(T)
     x_float = _to_float(x, FT)
-    y_float = FT.(y)
-    x_targets_float = FT.(x_targets)
+    y_float = _to_float(y, FT)
+    x_targets_float = _to_float(x_targets, FT)
 
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
@@ -478,5 +478,5 @@ function constant_interp(
     side::Symbol=:nearest
 ) where {T<:Real}
     FT = float(T)
-    return ConstantInterpolant(_to_float(x, FT), FT.(y); extrap, side)
+    return ConstantInterpolant(_to_float(x, FT), _to_float(y, FT); extrap, side)
 end

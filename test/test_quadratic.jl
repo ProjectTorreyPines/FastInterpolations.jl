@@ -385,3 +385,150 @@ end
     end
 
 end
+
+# ============================================================================
+# Group 5: Public API Tests (Phase 4)
+# ============================================================================
+@testset "Quadratic Interpolation - Public API" begin
+
+    @testset "quadratic_interp scalar - grid points" begin
+        # Grid point interpolation is always exact regardless of BC
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = [0.0, 1.0, 4.0, 9.0]
+
+        @test quadratic_interp(x, y, 0.0) ≈ 0.0
+        @test quadratic_interp(x, y, 1.0) ≈ 1.0
+        @test quadratic_interp(x, y, 2.0) ≈ 4.0
+        @test quadratic_interp(x, y, 3.0) ≈ 9.0
+    end
+
+    @testset "quadratic_interp scalar - exact with correct BC" begin
+        # f(x) = x² on [0, 3]
+        # For exact interpolation, use BC that matches f:
+        # f'(3) = 6, so Right(Deriv1(6)) gives exact x² interpolation
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = [0.0, 1.0, 4.0, 9.0]
+
+        # With Right(Deriv1(6)), quadratic spline exactly interpolates x²
+        @test quadratic_interp(x, y, 0.5; bc=Right(Deriv1(6.0))) ≈ 0.25 rtol=1e-10
+        @test quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0))) ≈ 2.25 rtol=1e-10
+        @test quadratic_interp(x, y, 2.5; bc=Right(Deriv1(6.0))) ≈ 6.25 rtol=1e-10
+    end
+
+    @testset "quadratic_interp BC variants" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = [0.0, 1.0, 4.0, 9.0]
+
+        # Left(Deriv2(0)) - natural at left (default)
+        v1 = quadratic_interp(x, y, 0.5; bc=Left(Deriv2(0.0)))
+        @test isfinite(v1)
+        @test 0.0 < v1 < 1.0  # between y[1] and y[2]
+
+        # Left(Deriv1(0)) - zero slope at left
+        v2 = quadratic_interp(x, y, 0.5; bc=Left(Deriv1(0.0)))
+        @test isfinite(v2)
+
+        # Right(Deriv2(0)) - natural at right
+        v3 = quadratic_interp(x, y, 0.5; bc=Right(Deriv2(0.0)))
+        @test isfinite(v3)
+
+        # Right(Deriv1(6)) - specified slope at right (S'(3) = 6 for x²)
+        v4 = quadratic_interp(x, y, 0.5; bc=Right(Deriv1(6.0)))
+        @test v4 ≈ 0.25 rtol=1e-10
+    end
+
+    @testset "quadratic_interp! in-place" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = [0.0, 1.0, 4.0, 9.0]
+        xq = [0.5, 1.5, 2.5]
+        out = zeros(3)
+
+        # Use correct BC for exact x² interpolation
+        quadratic_interp!(out, x, y, xq; bc=Right(Deriv1(6.0)))
+
+        @test out[1] ≈ 0.25 rtol=1e-10
+        @test out[2] ≈ 2.25 rtol=1e-10
+        @test out[3] ≈ 6.25 rtol=1e-10
+    end
+
+    @testset "quadratic_interp vector (allocating)" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = [0.0, 1.0, 4.0, 9.0]
+        xq = [0.5, 1.5, 2.5]
+
+        # Use correct BC for exact x² interpolation
+        result = quadratic_interp(x, y, xq; bc=Right(Deriv1(6.0)))
+
+        @test result isa Vector{Float64}
+        @test length(result) == 3
+        @test result[1] ≈ 0.25 rtol=1e-10
+        @test result[2] ≈ 2.25 rtol=1e-10
+        @test result[3] ≈ 6.25 rtol=1e-10
+    end
+
+    @testset "quadratic_interp derivatives" begin
+        # f(x) = x², with correct BC for exact interpolation
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = [0.0, 1.0, 4.0, 9.0]
+
+        # deriv=1: S'(1.5) = 3.0 (for f(x)=x², f'(x)=2x)
+        d1 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)), deriv=1)
+        @test d1 ≈ 3.0 rtol=1e-10
+
+        # deriv=2: S''(x) = 2 for f(x)=x²
+        d2 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)), deriv=2)
+        @test d2 ≈ 2.0 rtol=1e-10
+    end
+
+    @testset "quadratic_interp extrapolation" begin
+        x = [0.0, 1.0, 2.0]
+        y = [0.0, 1.0, 4.0]
+
+        # :none (default) should throw for out-of-domain
+        @test_throws DomainError quadratic_interp(x, y, -0.5)
+        @test_throws DomainError quadratic_interp(x, y, 2.5)
+
+        # :constant - clamp to boundary values
+        @test quadratic_interp(x, y, -0.5; extrap=:constant) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap=:constant) ≈ 4.0
+
+        # :extension - extend the polynomial
+        v_ext = quadratic_interp(x, y, 2.5; extrap=:extension)
+        @test isfinite(v_ext)
+    end
+
+    @testset "quadratic_interp Float32" begin
+        x32 = Float32[0.0, 1.0, 2.0, 3.0]
+        y32 = Float32[0.0, 1.0, 4.0, 9.0]
+
+        # Use correct BC for exact x² interpolation
+        result = quadratic_interp(x32, y32, 1.5f0; bc=Right(Deriv1(6.0f0)))
+        @test result isa Float32
+        @test result ≈ 2.25f0 rtol=1e-5
+    end
+
+    @testset "quadratic_interp type stability" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = [0.0, 1.0, 4.0, 9.0]
+
+        @test @inferred(quadratic_interp(x, y, 0.5)) isa Float64
+        @test @inferred(quadratic_interp(x, y, 0.5; deriv=1)) isa Float64
+        @test @inferred(quadratic_interp(x, y, 0.5; deriv=2)) isa Float64
+    end
+
+    @testset "quadratic_interp non-uniform grid" begin
+        x = [0.0, 0.5, 1.5, 3.0]
+        y = x.^2  # [0, 0.25, 2.25, 9]
+
+        # At grid points (always exact)
+        @test quadratic_interp(x, y, 0.0) ≈ 0.0
+        @test quadratic_interp(x, y, 0.5) ≈ 0.25
+        @test quadratic_interp(x, y, 1.5) ≈ 2.25
+        @test quadratic_interp(x, y, 3.0) ≈ 9.0
+
+        # Midpoints with correct BC (f'(3) = 6 for x²)
+        @test quadratic_interp(x, y, 0.25; bc=Right(Deriv1(6.0))) ≈ 0.0625 rtol=1e-10
+        @test quadratic_interp(x, y, 2.0; bc=Right(Deriv1(6.0))) ≈ 4.0 rtol=1e-10
+    end
+
+end

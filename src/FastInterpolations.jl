@@ -38,6 +38,7 @@ include("cubic_interpolant.jl") # 2-arg API, CubicInterpolant callable
 include("quadratic_types.jl")       # Type definitions (QuadraticSplineCache)
 include("quadratic_autocache.jl")   # RCU-style cache for x-grid reuse
 include("quadratic_coefficients.jl") # Coefficient computation (secants, d[], a[])
+include("quadratic_interp.jl")      # Public API (quadratic_interp, quadratic_interp!)
 
 # Derivative view wrapper (depends on both CubicInterpolant and LinearInterpolant)
 include("derivative_view.jl")
@@ -47,7 +48,7 @@ export linear_interp, linear_interp!, LinearInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
-export QuadraticSplineCache
+export quadratic_interp, quadratic_interp!, QuadraticSplineCache
 export set_quadratic_cache_size!, get_quadratic_cache_size, clear_quadratic_cache!
 
 # Boundary condition types

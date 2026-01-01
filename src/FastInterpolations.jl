@@ -37,7 +37,7 @@ include("cubic_interpolant.jl") # 2-arg API, CubicInterpolant callable
 # Quadratic spline interpolation
 include("quadratic_types.jl")       # Type definitions (QuadraticSplineCache)
 include("quadratic_autocache.jl")   # RCU-style cache for x-grid reuse
-include("quadratic_coefficients.jl") # Coefficient computation (secants, d[], a[])
+include("quadratic_solver.jl")       # Coefficient computation (secants, d[], a[])
 include("quadratic_interp.jl")      # Public API (quadratic_interp, quadratic_interp!)
 
 # Derivative view wrapper (depends on all interpolant types)

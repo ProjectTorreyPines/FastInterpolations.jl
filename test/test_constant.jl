@@ -461,4 +461,231 @@ import FastInterpolations: @_dispatch_side, _constant_kernel, EvalValue, EvalDer
 
     end
 
+    # ========================================
+    # Phase 4: DerivativeView Integration Tests
+    # ========================================
+    @testset "DerivativeView Integration" begin
+
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y = [10.0, 20.0, 30.0, 40.0, 50.0]
+        itp = constant_interp(x, y)
+
+        @testset "deriv1 factory function" begin
+            d1 = deriv1(itp)
+            @test d1 isa FastInterpolations.DerivativeView{1}
+        end
+
+        @testset "deriv2 factory function" begin
+            d2 = deriv2(itp)
+            @test d2 isa FastInterpolations.DerivativeView{2}
+        end
+
+        @testset "deriv1 scalar call" begin
+            d1 = deriv1(itp)
+            # Constant function has zero first derivative everywhere
+            @test d1(0.5) == 0.0
+            @test d1(1.5) == 0.0
+            @test d1(2.5) == 0.0
+            @test d1(3.5) == 0.0
+        end
+
+        @testset "deriv2 scalar call" begin
+            d2 = deriv2(itp)
+            # Constant function has zero second derivative everywhere
+            @test d2(0.5) == 0.0
+            @test d2(1.5) == 0.0
+            @test d2(2.5) == 0.0
+            @test d2(3.5) == 0.0
+        end
+
+        @testset "deriv1 broadcast" begin
+            d1 = deriv1(itp)
+            result = d1.([0.5, 1.5, 2.5])
+            @test result ≈ [0.0, 0.0, 0.0]
+        end
+
+        @testset "deriv2 broadcast" begin
+            d2 = deriv2(itp)
+            result = d2.([0.5, 1.5, 2.5])
+            @test result ≈ [0.0, 0.0, 0.0]
+        end
+
+        @testset "fused broadcast with deriv1" begin
+            d1 = deriv1(itp)
+            coef = 2.0
+            xs = [0.5, 1.5, 2.5]
+            result = @. coef * d1(xs)
+            @test result ≈ [0.0, 0.0, 0.0]
+        end
+
+        @testset "DerivativeView type stability" begin
+            d1 = deriv1(itp)
+            d2 = deriv2(itp)
+            @test @inferred(d1(0.5)) isa Float64
+            @test @inferred(d2(0.5)) isa Float64
+        end
+
+        @testset "DerivativeView with extrap options" begin
+            itp_const = constant_interp(x, y; extrap=:constant)
+            d1 = deriv1(itp_const)
+            # Derivative is zero even in extrapolation region
+            @test d1(-1.0) == 0.0
+            @test d1(5.0) == 0.0
+
+            itp_wrap = constant_interp(x, y; extrap=:wrap)
+            d2 = deriv2(itp_wrap)
+            @test d2(4.5) == 0.0  # wraps to 0.5
+        end
+
+        @testset "DerivativeView with side options" begin
+            itp_left = constant_interp(x, y; side=:left)
+            d1 = deriv1(itp_left)
+            @test d1(0.5) == 0.0
+
+            itp_right = constant_interp(x, y; side=:right)
+            d2 = deriv2(itp_right)
+            @test d2(0.5) == 0.0
+        end
+
+    end
+
+    # ========================================
+    # Phase 4: Comprehensive Edge Case Tests
+    # ========================================
+    @testset "Edge Cases" begin
+
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y = [10.0, 20.0, 30.0, 40.0, 50.0]
+
+        @testset "Grid point behavior - all sides return y[i]" begin
+            # At grid point x[i], all side options should return y[i]
+            for side in (:nearest, :left, :right)
+                @test constant_interp(x, y, 0.0; side=side) == 10.0
+                @test constant_interp(x, y, 1.0; side=side) == 20.0
+                @test constant_interp(x, y, 2.0; side=side) == 30.0
+                @test constant_interp(x, y, 3.0; side=side) == 40.0
+                @test constant_interp(x, y, 4.0; side=side) == 50.0
+            end
+        end
+
+        @testset "Boundary: xi == x[end] with different extrap modes" begin
+            # xi == x[end] is within domain for all modes except :wrap
+            @test constant_interp(x, y, 4.0; extrap=:none) == 50.0
+            @test constant_interp(x, y, 4.0; extrap=:constant) == 50.0
+            @test constant_interp(x, y, 4.0; extrap=:extension) == 50.0
+            # :wrap treats x_max as x_min (half-open interval)
+            @test constant_interp(x, y, 4.0; extrap=:wrap) == 10.0
+        end
+
+        @testset "Wrap + boundary edge cases" begin
+            # x_max wraps to x_min
+            @test constant_interp(x, y, 4.0; extrap=:wrap, side=:left) == 10.0
+            @test constant_interp(x, y, 4.0; extrap=:wrap, side=:right) == 10.0
+            @test constant_interp(x, y, 4.0; extrap=:wrap, side=:nearest) == 10.0
+
+            # Just past x_max wraps into first interval
+            @test constant_interp(x, y, 4.5; extrap=:wrap, side=:nearest) == 10.0  # wraps to 0.5
+            @test constant_interp(x, y, 5.0; extrap=:wrap, side=:nearest) == 20.0  # wraps to 1.0
+        end
+
+        @testset "Extrapolation + deriv combinations" begin
+            # Derivatives are always zero, even in extrapolation
+            @test constant_interp(x, y, -1.0; extrap=:constant, deriv=1) == 0.0
+            @test constant_interp(x, y, 5.0; extrap=:constant, deriv=2) == 0.0
+            @test constant_interp(x, y, -1.0; extrap=:extension, deriv=1) == 0.0
+            @test constant_interp(x, y, 5.0; extrap=:extension, deriv=2) == 0.0
+            @test constant_interp(x, y, 4.5; extrap=:wrap, deriv=1) == 0.0
+        end
+
+        @testset "xi == x[1] with side=:right returns y[1]" begin
+            # At grid point x[1], side=:right should still return y[1] (dt1 == 0)
+            @test constant_interp(x, y, 0.0; side=:right) == 10.0
+        end
+
+        @testset "Midpoint tie-breaking (left convention)" begin
+            # At exactly midpoint, :nearest uses left tie-breaking
+            @test constant_interp(x, y, 0.5; side=:nearest) == 10.0  # midpoint → left
+            @test constant_interp(x, y, 1.5; side=:nearest) == 20.0  # midpoint → left
+            @test constant_interp(x, y, 2.5; side=:nearest) == 30.0  # midpoint → left
+        end
+
+        @testset "Non-uniform grid" begin
+            x_nu = [0.0, 0.5, 2.0, 2.5, 4.0]  # non-uniform spacing
+            y_nu = [10.0, 20.0, 30.0, 40.0, 50.0]
+
+            # Should work correctly with non-uniform grids
+            @test constant_interp(x_nu, y_nu, 0.25; side=:nearest) == 10.0  # midpoint of [0, 0.5]
+            @test constant_interp(x_nu, y_nu, 1.0; side=:nearest) == 20.0   # closer to 0.5
+            @test constant_interp(x_nu, y_nu, 1.5; side=:nearest) == 30.0   # closer to 2.0
+        end
+
+        @testset "Float32 type preservation" begin
+            x32 = Float32[0.0, 1.0, 2.0, 3.0, 4.0]
+            y32 = Float32[10.0, 20.0, 30.0, 40.0, 50.0]
+
+            result = constant_interp(x32, y32, 0.5f0)
+            @test result isa Float32
+            @test result == 10.0f0
+
+            itp32 = constant_interp(x32, y32)
+            @test itp32(0.5f0) isa Float32
+            @test itp32(0.5f0) == 10.0f0
+        end
+
+        @testset "Minimum grid size (2 points)" begin
+            x_min = [0.0, 1.0]
+            y_min = [10.0, 20.0]
+
+            @test constant_interp(x_min, y_min, 0.5; side=:nearest) == 10.0
+            @test constant_interp(x_min, y_min, 0.5; side=:left) == 10.0
+            @test constant_interp(x_min, y_min, 0.5; side=:right) == 20.0
+            @test constant_interp(x_min, y_min, 0.0) == 10.0
+            @test constant_interp(x_min, y_min, 1.0) == 20.0
+        end
+
+        @testset "Range input (O(1) path)" begin
+            x_range = 0.0:0.5:4.0  # 9 points
+            y_range = collect(10.0:10.0:90.0)
+
+            # Should use O(1) direct calculation
+            @test constant_interp(x_range, y_range, 0.25; side=:nearest) == 10.0
+            @test constant_interp(x_range, y_range, 0.75; side=:nearest) == 20.0
+
+            itp_range = constant_interp(x_range, y_range)
+            @test itp_range(0.25) == 10.0
+        end
+
+    end
+
+    # ========================================
+    # Phase 4: Type Inference Tests
+    # ========================================
+    @testset "Type Inference" begin
+
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y = [10.0, 20.0, 30.0, 40.0, 50.0]
+
+        @testset "constant_interp scalar" begin
+            @test @inferred(constant_interp(x, y, 0.5)) isa Float64
+            @test @inferred(constant_interp(x, y, 0.5; side=:left)) isa Float64
+            @test @inferred(constant_interp(x, y, 0.5; extrap=:constant)) isa Float64
+            @test @inferred(constant_interp(x, y, 0.5; deriv=1)) isa Float64
+        end
+
+        @testset "ConstantInterpolant callable" begin
+            itp = constant_interp(x, y)
+            @test @inferred(itp(0.5)) isa Float64
+            @test @inferred(itp(0.5; deriv=1)) isa Float64
+        end
+
+        @testset "ConstantInterpolant with options" begin
+            itp_left = constant_interp(x, y; side=:left)
+            @test @inferred(itp_left(0.5)) isa Float64
+
+            itp_wrap = constant_interp(x, y; extrap=:wrap)
+            @test @inferred(itp_wrap(0.5)) isa Float64
+        end
+
+    end
+
 end

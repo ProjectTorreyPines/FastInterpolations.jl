@@ -17,6 +17,7 @@ include("utils.jl")
 # Kernel functions (pure math, no dependencies)
 include("linear_kernels.jl")
 include("cubic_kernels.jl")
+include("constant_kernels.jl")
 
 # Linear interpolation
 include("linear_interp.jl")

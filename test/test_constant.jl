@@ -1,8 +1,7 @@
 # Tests for constant (step/piecewise constant) interpolation
-# Phase 1: Infrastructure tests - @_dispatch_side macro and SideVal type
 
-# Import internal macro for testing
-import FastInterpolations: @_dispatch_side
+# Import internal items for testing
+import FastInterpolations: @_dispatch_side, _constant_kernel, EvalValue, EvalDeriv1, EvalDeriv2
 
 @testset "Constant Interpolation" begin
 
@@ -102,6 +101,83 @@ import FastInterpolations: @_dispatch_side
             @test !(Val(:none) isa FastInterpolations.SideVal)
             @test !(Val(:constant) isa FastInterpolations.SideVal)
             @test !(Val(:other) isa FastInterpolations.SideVal)
+        end
+
+    end
+
+    # ========================================
+    # Phase 2: _constant_kernel Tests
+    # ========================================
+    @testset "_constant_kernel" begin
+
+        # Test setup: interval [0, 1] with y_left=10.0, y_right=20.0
+        # h = 1.0, dt1 varies
+        y_left = 10.0
+        y_right = 20.0
+        h = 1.0
+
+        @testset "EvalValue - side=:left" begin
+            op = EvalValue()
+            sv = Val(:left)
+            # :left always returns y_left regardless of position
+            @test _constant_kernel(op, y_left, y_right, h, 0.0, sv) == 10.0  # at left boundary
+            @test _constant_kernel(op, y_left, y_right, h, 0.3, sv) == 10.0  # 30% into interval
+            @test _constant_kernel(op, y_left, y_right, h, 0.7, sv) == 10.0  # 70% into interval
+            @test _constant_kernel(op, y_left, y_right, h, 0.99, sv) == 10.0 # near right boundary
+        end
+
+        @testset "EvalValue - side=:right" begin
+            op = EvalValue()
+            sv = Val(:right)
+            # :right returns y_left at grid point (dt1==0), y_right otherwise
+            @test _constant_kernel(op, y_left, y_right, h, 0.0, sv) == 10.0  # grid point → y_left
+            @test _constant_kernel(op, y_left, y_right, h, 0.3, sv) == 20.0  # off grid → y_right
+            @test _constant_kernel(op, y_left, y_right, h, 0.7, sv) == 20.0  # off grid → y_right
+            @test _constant_kernel(op, y_left, y_right, h, 0.99, sv) == 20.0 # off grid → y_right
+        end
+
+        @testset "EvalValue - side=:nearest" begin
+            op = EvalValue()
+            sv = Val(:nearest)
+            # :nearest returns y_left if dt1 <= h/2, y_right otherwise (left tie-breaking)
+            @test _constant_kernel(op, y_left, y_right, h, 0.0, sv) == 10.0  # at left → y_left
+            @test _constant_kernel(op, y_left, y_right, h, 0.4, sv) == 10.0  # < midpoint → y_left
+            @test _constant_kernel(op, y_left, y_right, h, 0.5, sv) == 10.0  # midpoint → y_left (tie-breaking)
+            @test _constant_kernel(op, y_left, y_right, h, 0.6, sv) == 20.0  # > midpoint → y_right
+            @test _constant_kernel(op, y_left, y_right, h, 0.99, sv) == 20.0 # near right → y_right
+        end
+
+        @testset "EvalDeriv1 - all sides return zero" begin
+            op = EvalDeriv1()
+            # Constant function has zero derivative everywhere
+            @test _constant_kernel(op, y_left, y_right, h, 0.5, Val(:nearest)) == 0.0
+            @test _constant_kernel(op, y_left, y_right, h, 0.5, Val(:left)) == 0.0
+            @test _constant_kernel(op, y_left, y_right, h, 0.5, Val(:right)) == 0.0
+        end
+
+        @testset "EvalDeriv2 - all sides return zero" begin
+            op = EvalDeriv2()
+            # Constant function has zero second derivative everywhere
+            @test _constant_kernel(op, y_left, y_right, h, 0.5, Val(:nearest)) == 0.0
+            @test _constant_kernel(op, y_left, y_right, h, 0.5, Val(:left)) == 0.0
+            @test _constant_kernel(op, y_left, y_right, h, 0.5, Val(:right)) == 0.0
+        end
+
+        @testset "Type preservation" begin
+            # Float64
+            @test _constant_kernel(EvalValue(), 1.0, 2.0, 1.0, 0.5, Val(:left)) isa Float64
+            @test _constant_kernel(EvalDeriv1(), 1.0, 2.0, 1.0, 0.5, Val(:left)) isa Float64
+            # Float32
+            @test _constant_kernel(EvalValue(), 1.0f0, 2.0f0, 1.0f0, 0.5f0, Val(:nearest)) isa Float32
+            @test _constant_kernel(EvalDeriv1(), 1.0f0, 2.0f0, 1.0f0, 0.5f0, Val(:nearest)) isa Float32
+        end
+
+        @testset "Non-uniform grid (h != 1)" begin
+            op = EvalValue()
+            # Interval [0, 2] → h=2.0, midpoint at dt1=1.0
+            @test _constant_kernel(op, 100.0, 200.0, 2.0, 0.9, Val(:nearest)) == 100.0  # < midpoint
+            @test _constant_kernel(op, 100.0, 200.0, 2.0, 1.0, Val(:nearest)) == 100.0  # = midpoint (tie)
+            @test _constant_kernel(op, 100.0, 200.0, 2.0, 1.1, Val(:nearest)) == 200.0  # > midpoint
         end
 
     end

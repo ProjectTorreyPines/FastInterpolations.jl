@@ -106,6 +106,36 @@ d2 = deriv2(litp)
 """
 @inline deriv2(itp::LinearInterpolant) = DerivativeView{2, typeof(itp)}(itp)
 
+"""
+    deriv1(itp::ConstantInterpolant) -> DerivativeView{1, ...}
+
+Create a callable first-derivative view of the constant interpolant.
+Always returns zero (constant functions have zero derivative).
+
+# Example
+```julia
+citp = constant_interp(x, y)
+d1 = deriv1(citp)
+@assert all(d1.(xs) .== 0.0)
+```
+"""
+@inline deriv1(itp::ConstantInterpolant) = DerivativeView{1, typeof(itp)}(itp)
+
+"""
+    deriv2(itp::ConstantInterpolant) -> DerivativeView{2, ...}
+
+Create a callable second-derivative view of the constant interpolant.
+Always returns zero (constant functions have zero curvature).
+
+# Example
+```julia
+citp = constant_interp(x, y)
+d2 = deriv2(citp)
+@assert all(d2.(xs) .== 0.0)
+```
+"""
+@inline deriv2(itp::ConstantInterpolant) = DerivativeView{2, typeof(itp)}(itp)
+
 # ========================================
 # Callable Methods
 # ========================================

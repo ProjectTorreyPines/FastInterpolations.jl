@@ -90,11 +90,24 @@ _to_float(x::AbstractRange, ::Type{FT}) where {FT<:AbstractFloat} =
     range(FT(first(x)), FT(last(x)), length(x))
 
 """
+    _to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT<:AbstractFloat}
+
+Identity conversion - return as-is when element type already matches target type.
+This enables zero-allocation for Real→Float wrappers when types already match.
+"""
+_to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT<:AbstractFloat} = x
+
+"""
     _to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat}
 
 Convert a Vector to a float type (element-wise broadcast).
+Emits a one-time warning since this allocates a new vector.
 """
-_to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat} = FT.(x)
+function _to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat}
+    @warn "Non-float vector input detected - allocating type conversion. " *
+          "For zero-allocation, pre-convert your data: `x_float = $FT.(x)`" maxlog=1
+    return FT.(x)
+end
 
 # ========================================
 # Periodic Boundary Helpers
@@ -339,6 +352,63 @@ macro _dispatch_deriv(pair, body)
             end
         else
             throw(ArgumentError("deriv must be 0, 1, or 2; got $($(deriv_var))"))
+        end
+    end
+end
+
+"""
+    @_dispatch_side sym => varname body
+
+Dispatch on runtime side symbol, executing body with concrete Val type.
+
+Converts `side::Symbol` (`:nearest`, `:left`, `:right`) to compile-time constant
+`Val(:nearest)`, `Val(:left)`, or `Val(:right)`. This creates a function barrier
+ensuring type stability and enabling union-splitting optimization.
+
+# Arguments
+- `sym => varname`: Pair of symbol variable and binding name for Val type
+- `body`: Expression to execute with `varname` bound to concrete Val
+
+# Example
+```julia
+@_dispatch_side side => sv begin
+    _constant_kernel(op, y_left, y_right, h, dt1, sv)
+end
+```
+
+Expands to:
+```julia
+let _side = side
+    if _side === :nearest
+        sv = Val(:nearest)
+        _constant_kernel(op, y_left, y_right, h, dt1, sv)
+    elseif _side === :left
+        ...
+    end
+end
+```
+"""
+macro _dispatch_side(pair, body)
+    # Parse pair: side => sv becomes Expr(:call, :(=>), :side, :sv)
+    pair.head === :call && pair.args[1] === :(=>) ||
+        error("@_dispatch_side expects `sym => varname`, got: $pair")
+    sym = pair.args[2]
+    varname = pair.args[3]
+    svs = esc(varname)
+    quote
+        let _side = $(esc(sym))
+            if _side === :nearest
+                $svs = Val(:nearest)
+                $(esc(body))
+            elseif _side === :left
+                $svs = Val(:left)
+                $(esc(body))
+            elseif _side === :right
+                $svs = Val(:right)
+                $(esc(body))
+            else
+                throw(ArgumentError("`side` must be :nearest, :left, or :right, got :$_side"))
+            end
         end
     end
 end

@@ -45,3 +45,13 @@ Union type for extrapolation mode values.
 Using concrete Union enables Julia's union-splitting optimization.
 """
 const ExtrapVal = Union{Val{:none}, Val{:constant}, Val{:extension}, Val{:wrap}}
+
+"""
+    SideVal
+
+Union type for side selection mode values (constant interpolation).
+Using concrete Union enables Julia's union-splitting optimization.
+
+Valid values: `Val(:nearest)`, `Val(:left)`, `Val(:right)`
+"""
+const SideVal = Union{Val{:nearest}, Val{:left}, Val{:right}}

@@ -637,6 +637,94 @@ end
 # ============================================================================
 # Group 7: DerivativeView Tests (Phase 5)
 # ============================================================================
+# ============================================================================
+# Group 7: Allocation Tests (Phase 6)
+# ============================================================================
+@testset "Quadratic Interpolation - Allocations" begin
+
+    @testset "scalar interpolation zero-allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x.^2
+
+        # Create interpolant (precomputes coefficients)
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(2.0)))
+
+        # Prime JIT
+        for _ in 1:10
+            itp(0.5)
+        end
+
+        # Scalar call should be zero-allocation
+        allocs = @allocated itp(0.5)
+        @test allocs == 0
+
+        # Derivative calls should also be zero-allocation
+        for _ in 1:10
+            itp(0.5; deriv=1)
+            itp(0.5; deriv=2)
+        end
+        allocs_d1 = @allocated itp(0.5; deriv=1)
+        allocs_d2 = @allocated itp(0.5; deriv=2)
+        @test allocs_d1 == 0
+        @test allocs_d2 == 0
+    end
+
+    @testset "in-place vector zero-allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x.^2
+        xq = collect(range(0.1, 0.9, 100))
+        out = zeros(100)
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(2.0)))
+
+        # Prime JIT
+        for _ in 1:10
+            itp(out, xq)
+        end
+
+        # In-place should be zero-allocation
+        allocs = @allocated itp(out, xq)
+        @test allocs == 0
+    end
+
+    @testset "3-arg API with autocache" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x.^2
+        clear_quadratic_cache!()
+
+        # Prime cache and JIT
+        for _ in 1:10
+            quadratic_interp(x, y, 0.5; bc=Right(Deriv1(2.0)))
+        end
+
+        # After cache is warmed, scalar call allocates for coefficients (expected)
+        # But autocache lookup itself should be zero-alloc
+        # Note: 3-arg form computes coefficients each call, so allocations expected
+        # This is different from 2-arg form which precomputes
+    end
+
+    @testset "DerivativeView zero-allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x.^2
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(2.0)))
+        d1 = deriv1(itp)
+        d2 = deriv2(itp)
+
+        # Prime
+        for _ in 1:10
+            d1(0.5)
+            d2(0.5)
+        end
+
+        allocs_d1 = @allocated d1(0.5)
+        allocs_d2 = @allocated d2(0.5)
+        @test allocs_d1 == 0
+        @test allocs_d2 == 0
+    end
+
+end
+
 @testset "Quadratic Interpolation - DerivativeView" begin
 
     @testset "deriv1 view" begin

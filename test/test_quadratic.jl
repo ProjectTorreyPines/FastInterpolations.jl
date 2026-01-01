@@ -532,3 +532,150 @@ end
     end
 
 end
+
+# ============================================================================
+# Group 6: QuadraticInterpolant Tests (Phase 5)
+# ============================================================================
+@testset "Quadratic Interpolation - Interpolant" begin
+
+    @testset "QuadraticInterpolant construction" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        # 2-argument form returns QuadraticInterpolant
+        itp = quadratic_interp(x, y)
+        @test itp isa QuadraticInterpolant
+
+        # With BC option
+        itp2 = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        @test itp2 isa QuadraticInterpolant
+    end
+
+    @testset "QuadraticInterpolant scalar call" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+
+        # Grid points
+        @test itp(0.0) ≈ 0.0
+        @test itp(1.0) ≈ 1.0
+        @test itp(2.0) ≈ 4.0
+        @test itp(3.0) ≈ 9.0
+
+        # Midpoints (exact with correct BC)
+        @test itp(0.5) ≈ 0.25 rtol=1e-10
+        @test itp(1.5) ≈ 2.25 rtol=1e-10
+        @test itp(2.5) ≈ 6.25 rtol=1e-10
+    end
+
+    @testset "QuadraticInterpolant broadcast" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+
+        # Broadcast
+        result = itp.([0.5, 1.5, 2.5])
+        @test result ≈ [0.25, 2.25, 6.25] rtol=1e-10
+    end
+
+    @testset "QuadraticInterpolant vector call" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+
+        # Vector call
+        result = itp([0.5, 1.5, 2.5])
+        @test result isa Vector{Float64}
+        @test result ≈ [0.25, 2.25, 6.25] rtol=1e-10
+    end
+
+    @testset "QuadraticInterpolant in-place call" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+
+        out = zeros(3)
+        itp(out, [0.5, 1.5, 2.5])
+        @test out ≈ [0.25, 2.25, 6.25] rtol=1e-10
+    end
+
+    @testset "QuadraticInterpolant derivative call" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+
+        # deriv keyword
+        @test itp(1.5; deriv=1) ≈ 3.0 rtol=1e-10
+        @test itp(1.5; deriv=2) ≈ 2.0 rtol=1e-10
+    end
+
+    @testset "QuadraticInterpolant Float32" begin
+        x32 = Float32[0.0, 1.0, 2.0, 3.0]
+        y32 = x32.^2
+
+        itp = quadratic_interp(x32, y32; bc=Right(Deriv1(6.0f0)))
+        @test itp isa QuadraticInterpolant{Float32}
+        @test itp(1.5f0) isa Float32
+        @test itp(1.5f0) ≈ 2.25f0 rtol=1e-5
+    end
+
+    @testset "QuadraticInterpolant type stability" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        itp = quadratic_interp(x, y)
+        @test @inferred(itp(0.5)) isa Float64
+    end
+
+end
+
+# ============================================================================
+# Group 7: DerivativeView Tests (Phase 5)
+# ============================================================================
+@testset "Quadratic Interpolation - DerivativeView" begin
+
+    @testset "deriv1 view" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        d1 = deriv1(itp)
+
+        # d1(x) = S'(x) = 2x for f(x)=x²
+        @test d1(0.0) ≈ 0.0 rtol=1e-10
+        @test d1(1.0) ≈ 2.0 rtol=1e-10
+        @test d1(1.5) ≈ 3.0 rtol=1e-10
+        @test d1(2.0) ≈ 4.0 rtol=1e-10
+        @test d1(3.0) ≈ 6.0 rtol=1e-10
+    end
+
+    @testset "deriv2 view" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        d2 = deriv2(itp)
+
+        # d2(x) = S''(x) = 2 (constant) for f(x)=x²
+        @test d2(0.5) ≈ 2.0 rtol=1e-10
+        @test d2(1.5) ≈ 2.0 rtol=1e-10
+        @test d2(2.5) ≈ 2.0 rtol=1e-10
+    end
+
+    @testset "deriv1 broadcast" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        d1 = deriv1(itp)
+
+        result = d1.([0.5, 1.5, 2.5])
+        @test result ≈ [1.0, 3.0, 5.0] rtol=1e-10
+    end
+
+end

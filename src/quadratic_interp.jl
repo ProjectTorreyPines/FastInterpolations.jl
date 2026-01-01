@@ -436,3 +436,171 @@ function quadratic_interp!(
     end
     return output
 end
+
+
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║                    CALLABLE INTERPOLANT (2-ARG FORM)                      ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+"""
+    QuadraticInterpolant{T,X,Y}
+
+Lightweight callable interpolant for quadratic spline interpolation.
+Returned by `quadratic_interp(x, y)` (2-argument form).
+
+# Fields
+- `x::X`: x-coordinates (sorted)
+- `y::Y`: y-values
+- `cache::QuadraticSplineCache{T}`: Precomputed grid spacing
+- `a::Vector{T}`: Quadratic coefficients
+- `d::Vector{T}`: Slope coefficients
+- `mode::ExtrapVal`: Extrapolation mode
+
+# Usage
+```julia
+itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+val = itp(0.5)               # scalar evaluation
+vals = itp.([0.5, 1.5])      # broadcast
+vals = itp([0.5, 1.5])       # vector call
+
+# Derivatives
+d1 = itp(0.5; deriv=1)       # first derivative
+d2 = itp(0.5; deriv=2)       # second derivative
+```
+"""
+struct QuadraticInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
+    x::X
+    y::Y
+    cache::QuadraticSplineCache{T,X}
+    a::Vector{T}
+    d::Vector{T}
+    mode::ExtrapVal
+
+    function QuadraticInterpolant(
+        x::X, y::Y;
+        bc::Union{Left{T}, Right{T}}=Left(Deriv2(zero(T))),
+        extrap::Symbol=:none
+    ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
+        @assert length(x) == length(y) "x and y must have same length"
+        @assert length(x) >= 2 "x must have at least 2 elements"
+
+        # Get/create cache
+        cache = _get_quadratic_cache(x)
+
+        # Compute coefficients
+        _, d, a = _compute_quadratic_coeffs(y, cache, bc)
+
+        @_dispatch_extrap extrap => ev begin
+            return new{T,X,Y}(x, y, cache, a, d, ev)
+        end
+    end
+end
+
+# ─────────────────────────────────────────────────────────────
+# Scalar call - hot path (inlined for broadcast fusion)
+# ─────────────────────────────────────────────────────────────
+@inline function (itp::QuadraticInterpolant{T})(xi::T; deriv::Int=0) where {T<:AbstractFloat}
+    @_dispatch_deriv deriv => op begin
+        _quadratic_eval_at_point(itp.x, itp.y, itp.cache, itp.a, itp.d, xi, itp.mode, op)
+    end
+end
+
+# Real scalar wrapper - delegates to T method
+@inline function (itp::QuadraticInterpolant{T})(xi::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+    itp(T(xi); deriv=deriv)
+end
+
+# ─────────────────────────────────────────────────────────────
+# Vector call (allocating)
+# ─────────────────────────────────────────────────────────────
+function (itp::QuadraticInterpolant{T})(xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+    xi_typed = _to_float(xi, T)
+    output = Vector{T}(undef, length(xi_typed))
+    @_dispatch_deriv deriv => op begin
+        @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
+        @inbounds for i in eachindex(xi_typed, output)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.cache, itp.a, itp.d, xi_typed[i], itp.mode, op)
+        end
+    end
+    return output
+end
+
+# ─────────────────────────────────────────────────────────────
+# In-place vector call (zero allocation)
+# ─────────────────────────────────────────────────────────────
+function (itp::QuadraticInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat}
+    @assert length(output) == length(xi) "output length must match xi length"
+    @_dispatch_deriv deriv => op begin
+        @boundscheck _check_domain(itp.x, xi, itp.mode)
+        @inbounds for i in eachindex(xi, output)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.cache, itp.a, itp.d, xi[i], itp.mode, op)
+        end
+    end
+    return output
+end
+
+# In-place with type conversion
+function (itp::QuadraticInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+    @assert length(output) == length(xi) "output length must match xi length"
+    xi_typed = _to_float(xi, T)
+    @_dispatch_deriv deriv => op begin
+        @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
+        @inbounds for i in eachindex(xi_typed, output)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.cache, itp.a, itp.d, xi_typed[i], itp.mode, op)
+        end
+    end
+    return output
+end
+
+
+# ========================================
+# 2-Argument Form: Return Callable
+# ========================================
+
+"""
+    quadratic_interp(x, y; bc=Left(Deriv2(0)), extrap=:none) -> QuadraticInterpolant
+
+Create a callable interpolant for broadcast fusion and reuse.
+
+# Arguments
+- `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
+- `y::AbstractVector`: y-values
+- `bc::Union{Left,Right}`: Boundary condition at one endpoint
+- `extrap::Symbol`: Extrapolation mode
+
+# Returns
+`QuadraticInterpolant` object for scalar/broadcast evaluation.
+
+# Example
+```julia
+x = [0.0, 1.0, 2.0, 3.0]
+y = x.^2
+
+itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+itp(0.5)           # 0.25
+itp.([0.5, 1.5])   # [0.25, 2.25]
+
+# Fused broadcast (optimal)
+result = @. coef * itp(query)
+```
+"""
+function quadratic_interp(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT};
+    bc::Union{Left{FT}, Right{FT}}=Left(Deriv2(zero(FT))),
+    extrap::Symbol=:none
+) where {FT<:AbstractFloat}
+    return QuadraticInterpolant(x, y; bc, extrap)
+end
+
+# Real wrapper for 2-argument form
+function quadratic_interp(
+    x::AbstractVector{T},
+    y::AbstractVector{T};
+    bc::Union{Left, Right}=Left(Deriv2(zero(T))),
+    extrap::Symbol=:none
+) where {T<:Real}
+    FT = float(T)
+    bc_promoted = _promote_bc(bc, FT)
+    return QuadraticInterpolant(_to_float(x, FT), _to_float(y, FT); bc=bc_promoted, extrap)
+end

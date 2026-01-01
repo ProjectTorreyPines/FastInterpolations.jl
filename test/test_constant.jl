@@ -182,4 +182,161 @@ import FastInterpolations: @_dispatch_side, _constant_kernel, EvalValue, EvalDer
 
     end
 
+    # ========================================
+    # Phase 3: constant_interp API Tests
+    # ========================================
+    @testset "constant_interp API" begin
+
+        # Test data: step function
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y = [10.0, 20.0, 30.0, 40.0, 50.0]
+
+        @testset "Scalar API" begin
+            # Basic interpolation with default :nearest
+            @test constant_interp(x, y, 0.5) == 10.0  # < midpoint → left
+            @test constant_interp(x, y, 1.5) == 20.0  # at 1.0 interval
+            @test constant_interp(x, y, 2.5) == 30.0
+
+            # side=:left
+            @test constant_interp(x, y, 0.9; side=:left) == 10.0
+            @test constant_interp(x, y, 1.1; side=:left) == 20.0
+
+            # side=:right
+            @test constant_interp(x, y, 0.0; side=:right) == 10.0  # grid point
+            @test constant_interp(x, y, 0.1; side=:right) == 20.0  # off grid
+
+            # Grid points - all sides return y[i]
+            @test constant_interp(x, y, 1.0; side=:nearest) == 20.0
+            @test constant_interp(x, y, 1.0; side=:left) == 20.0
+            @test constant_interp(x, y, 1.0; side=:right) == 20.0
+
+            # Boundary: x[end]
+            @test constant_interp(x, y, 4.0) == 50.0
+
+            # Derivatives always zero
+            @test constant_interp(x, y, 1.5; deriv=1) == 0.0
+            @test constant_interp(x, y, 2.5; deriv=2) == 0.0
+        end
+
+        @testset "Vector API (allocating)" begin
+            result = constant_interp(x, y, [0.5, 1.5, 2.5])
+            @test result ≈ [10.0, 20.0, 30.0]
+
+            result_left = constant_interp(x, y, [0.5, 1.5]; side=:left)
+            @test result_left ≈ [10.0, 20.0]
+        end
+
+        @testset "In-place API" begin
+            out = zeros(3)
+            constant_interp!(out, x, y, [0.5, 1.5, 2.5])
+            @test out ≈ [10.0, 20.0, 30.0]
+        end
+
+        @testset "Extrapolation modes" begin
+            # :none throws DomainError
+            @test_throws DomainError constant_interp(x, y, -1.0; extrap=:none)
+            @test_throws DomainError constant_interp(x, y, 5.0; extrap=:none)
+
+            # :constant clamps to boundary (side ignored in extrap)
+            @test constant_interp(x, y, -1.0; extrap=:constant) == 10.0
+            @test constant_interp(x, y, 5.0; extrap=:constant) == 50.0
+
+            # :extension same as :constant for step function
+            @test constant_interp(x, y, -1.0; extrap=:extension) == 10.0
+            @test constant_interp(x, y, 5.0; extrap=:extension) == 50.0
+
+            # :wrap - half-open interval [x_min, x_max)
+            @test constant_interp(x, y, 4.0; extrap=:wrap) == 10.0  # x_max → x_min
+            @test constant_interp(x, y, 4.5; extrap=:wrap) == 10.0  # wraps to 0.5
+
+            # Extrap + deriv returns zero
+            @test constant_interp(x, y, -1.0; extrap=:constant, deriv=1) == 0.0
+        end
+
+        @testset "Real type wrapper (Integer input)" begin
+            x_int = [0, 1, 2, 3, 4]
+            y_int = [10, 20, 30, 40, 50]
+            # Should auto-promote to Float64
+            result = constant_interp(x_int, y_int, 1.5)
+            @test result isa Float64
+            @test result == 20.0
+        end
+
+    end
+
+    # ========================================
+    # Phase 3: ConstantInterpolant Tests
+    # ========================================
+    @testset "ConstantInterpolant" begin
+
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y = [10.0, 20.0, 30.0, 40.0, 50.0]
+
+        @testset "2-arg form returns interpolant" begin
+            itp = constant_interp(x, y)
+            @test itp isa FastInterpolations.ConstantInterpolant
+        end
+
+        @testset "Scalar call" begin
+            itp = constant_interp(x, y)
+            @test itp(0.5) == 10.0
+            @test itp(1.5) == 20.0
+            @test itp(4.0) == 50.0
+
+            # With deriv keyword
+            @test itp(1.5; deriv=1) == 0.0
+            @test itp(2.5; deriv=2) == 0.0
+        end
+
+        @testset "Vector call" begin
+            itp = constant_interp(x, y)
+            result = itp([0.5, 1.5, 2.5])
+            @test result ≈ [10.0, 20.0, 30.0]
+        end
+
+        @testset "Broadcast fusion" begin
+            itp = constant_interp(x, y)
+            # Broadcasting
+            result = itp.([0.5, 1.5])
+            @test result ≈ [10.0, 20.0]
+
+            # Fused broadcast
+            coef = 2.0
+            query = [0.5, 1.5]
+            result_fused = @. coef * itp(query)
+            @test result_fused ≈ [20.0, 40.0]
+        end
+
+        @testset "Extrapolation options" begin
+            itp_wrap = constant_interp(x, y; extrap=:wrap)
+            @test itp_wrap(4.0) == 10.0  # wraps
+
+            itp_const = constant_interp(x, y; extrap=:constant)
+            @test itp_const(-1.0) == 10.0
+            @test itp_const(5.0) == 50.0
+        end
+
+        @testset "Side options" begin
+            itp_left = constant_interp(x, y; side=:left)
+            @test itp_left(0.9) == 10.0
+
+            itp_right = constant_interp(x, y; side=:right)
+            @test itp_right(0.1) == 20.0
+        end
+
+        @testset "Type inference" begin
+            itp = constant_interp(x, y)
+            @test @inferred(itp(0.5)) isa Float64
+        end
+
+        @testset "Zero allocation (scalar)" begin
+            itp = constant_interp(x, y)
+            itp(0.5)  # warmup
+            allocs = @allocated itp(0.55)
+            # Allow small allocation on older Julia
+            @test allocs <= 256
+        end
+
+    end
+
 end

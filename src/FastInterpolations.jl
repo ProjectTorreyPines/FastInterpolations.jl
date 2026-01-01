@@ -22,6 +22,9 @@ include("constant_kernels.jl")
 # Linear interpolation
 include("linear_interp.jl")
 
+# Constant (step) interpolation
+include("constant_interp.jl")
+
 # Cubic spline interpolation
 include("cubic_types.jl")       # Type definitions (PeriodicData, CubicSplineCache, CubicInterpolant)
 include("cubic_solver.jl")      # Cache builders and system solvers
@@ -35,6 +38,7 @@ include("derivative_view.jl")
 
 # Exports
 export linear_interp, linear_interp!, LinearInterpolant
+export constant_interp, constant_interp!, ConstantInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 

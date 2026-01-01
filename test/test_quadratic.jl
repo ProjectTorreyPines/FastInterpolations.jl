@@ -391,9 +391,25 @@ end
         @test quadratic_interp(x, y, -0.5; extrap=:constant) ≈ 0.0
         @test quadratic_interp(x, y, 2.5; extrap=:constant) ≈ 4.0
 
-        # :extension - extend the polynomial
-        v_ext = quadratic_interp(x, y, 2.5; extrap=:extension)
-        @test isfinite(v_ext)
+        # :constant - derivatives return zero outside domain
+        @test quadratic_interp(x, y, -0.5; extrap=:constant, deriv=1) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap=:constant, deriv=1) ≈ 0.0
+        @test quadratic_interp(x, y, -0.5; extrap=:constant, deriv=2) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap=:constant, deriv=2) ≈ 0.0
+
+        # :extension - extend the polynomial (right side)
+        v_ext_right = quadratic_interp(x, y, 2.5; extrap=:extension)
+        @test isfinite(v_ext_right)
+
+        # :extension - extend the polynomial (left side)
+        v_ext_left = quadratic_interp(x, y, -0.5; extrap=:extension)
+        @test isfinite(v_ext_left)
+
+        # :extension derivatives
+        d1_left = quadratic_interp(x, y, -0.5; extrap=:extension, deriv=1)
+        d2_left = quadratic_interp(x, y, -0.5; extrap=:extension, deriv=2)
+        @test isfinite(d1_left)
+        @test isfinite(d2_left)
     end
 
     @testset "quadratic_interp Float32" begin

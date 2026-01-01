@@ -362,21 +362,23 @@ end
 # BC Type Promotion Helper
 # ========================================
 
-"""Promote BC to target float type FT"""
-@inline function _promote_bc(bc::Left{T, Deriv1{T}}, ::Type{FT}) where {T<:AbstractFloat, FT<:AbstractFloat}
-    Left(Deriv1(FT(bc.bc.val)))
+"""
+    _promote_bc(bc::Left/Right, ::Type{FT}) -> Left{FT}/Right{FT}
+
+Promote Left/Right BC wrapper to target float type FT.
+Uses _promote_pointbc from bc_types.jl for inner BC promotion.
+"""
+# Same-type passthrough (zero-cost, no object creation)
+@inline _promote_bc(bc::Left{T, <:PointBC{T}}, ::Type{T}) where {T<:AbstractFloat} = bc
+@inline _promote_bc(bc::Right{T, <:PointBC{T}}, ::Type{T}) where {T<:AbstractFloat} = bc
+
+# Type conversion (delegates to _promote_pointbc)
+@inline function _promote_bc(bc::Left{T, <:PointBC{T}}, ::Type{FT}) where {T<:AbstractFloat, FT<:AbstractFloat}
+    Left(_promote_pointbc(bc.bc, FT))
 end
 
-@inline function _promote_bc(bc::Left{T, Deriv2{T}}, ::Type{FT}) where {T<:AbstractFloat, FT<:AbstractFloat}
-    Left(Deriv2(FT(bc.bc.val)))
-end
-
-@inline function _promote_bc(bc::Right{T, Deriv1{T}}, ::Type{FT}) where {T<:AbstractFloat, FT<:AbstractFloat}
-    Right(Deriv1(FT(bc.bc.val)))
-end
-
-@inline function _promote_bc(bc::Right{T, Deriv2{T}}, ::Type{FT}) where {T<:AbstractFloat, FT<:AbstractFloat}
-    Right(Deriv2(FT(bc.bc.val)))
+@inline function _promote_bc(bc::Right{T, <:PointBC{T}}, ::Type{FT}) where {T<:AbstractFloat, FT<:AbstractFloat}
+    Right(_promote_pointbc(bc.bc, FT))
 end
 
 # ========================================

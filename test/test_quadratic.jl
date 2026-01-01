@@ -621,6 +621,170 @@ end
 
 end
 
+# ============================================================================
+# Group 7: Type Conversion Tests (Real → Float wrappers)
+# ============================================================================
+@testset "Quadratic Interpolation - Type Conversion" begin
+    using FastInterpolations: _promote_bc
+
+    @testset "_promote_bc same-type passthrough" begin
+        # Same-type should return the same object (zero-cost)
+        bc_left = Left(Deriv1(1.0))
+        bc_right = Right(Deriv2(0.0))
+
+        @test _promote_bc(bc_left, Float64) === bc_left
+        @test _promote_bc(bc_right, Float64) === bc_right
+
+        # Float32 same-type passthrough
+        bc_left32 = Left(Deriv1(1.0f0))
+        bc_right32 = Right(Deriv2(0.0f0))
+
+        @test _promote_bc(bc_left32, Float32) === bc_left32
+        @test _promote_bc(bc_right32, Float32) === bc_right32
+    end
+
+    @testset "_promote_bc type conversion" begin
+        # Float32 → Float64 conversion
+        bc_left32 = Left(Deriv1(1.0f0))
+        bc_right32 = Right(Deriv2(0.0f0))
+
+        bc_left64 = _promote_bc(bc_left32, Float64)
+        bc_right64 = _promote_bc(bc_right32, Float64)
+
+        @test bc_left64 isa Left{Float64}
+        @test bc_right64 isa Right{Float64}
+        @test bc_left64.bc.val ≈ 1.0
+        @test bc_right64.bc.val ≈ 0.0
+
+        # Float64 → Float32 conversion
+        bc_left_f64 = Left(Deriv2(2.0))
+        bc_right_f64 = Right(Deriv1(3.0))
+
+        bc_left_f32 = _promote_bc(bc_left_f64, Float32)
+        bc_right_f32 = _promote_bc(bc_right_f64, Float32)
+
+        @test bc_left_f32 isa Left{Float32}
+        @test bc_right_f32 isa Right{Float32}
+    end
+
+    @testset "quadratic_interp with Integer arrays (Real → Float)" begin
+        # Integer arrays trigger the Real → Float wrapper
+        x = [0, 1, 2, 3]  # Int64
+        y = [0, 1, 4, 9]  # Int64 (x²)
+
+        # Scalar interpolation with Int data
+        result = quadratic_interp(x, y, 1.5)
+        @test result isa Float64
+        @test isfinite(result)
+
+        # With explicit BC
+        result2 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)))
+        @test result2 ≈ 2.25 rtol=1e-10
+
+        # Scalar with Int query point
+        result3 = quadratic_interp(x, y, 2)
+        @test result3 ≈ 4.0
+
+        # Derivatives with Int data
+        d1 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)), deriv=1)
+        @test d1 ≈ 3.0 rtol=1e-10
+    end
+
+    @testset "quadratic_interp vector with Integer arrays" begin
+        x = [0, 1, 2, 3]
+        y = [0, 1, 4, 9]
+        xq = [0.5, 1.5, 2.5]
+
+        # Allocating version
+        result = quadratic_interp(x, y, xq; bc=Right(Deriv1(6.0)))
+        @test result isa Vector{Float64}
+        @test result ≈ [0.25, 2.25, 6.25] rtol=1e-10
+
+        # With Integer query points
+        xq_int = [1, 2]
+        result_int = quadratic_interp(x, y, xq_int)
+        @test result_int ≈ [1.0, 4.0]
+    end
+
+    @testset "quadratic_interp! with Integer arrays (in-place Real → Float)" begin
+        x = [0, 1, 2, 3]
+        y = [0, 1, 4, 9]
+        xq = [0.5, 1.5, 2.5]
+        out = zeros(3)
+
+        quadratic_interp!(out, x, y, xq; bc=Right(Deriv1(6.0)))
+        @test out ≈ [0.25, 2.25, 6.25] rtol=1e-10
+
+        # Integer query points
+        xq_int = [1, 2]
+        out2 = zeros(2)
+        quadratic_interp!(out2, x, y, xq_int)
+        @test out2 ≈ [1.0, 4.0]
+    end
+
+    @testset "QuadraticInterpolant Real scalar wrapper" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+
+        # Call with Int (triggers Real wrapper, not the T method)
+        result = itp(2)  # Int64, not Float64
+        @test result isa Float64
+        @test result ≈ 4.0
+
+        # Derivative with Int query
+        d1 = itp(2; deriv=1)
+        @test d1 ≈ 4.0 rtol=1e-10
+    end
+
+    @testset "QuadraticInterpolant in-place with type conversion" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+
+        # In-place with Integer query points (triggers type conversion path)
+        out = zeros(3)
+        xq_int = [1, 2, 3]  # Int64
+        itp(out, xq_int)
+        @test out ≈ [1.0, 4.0, 9.0]
+
+        # Derivative with type conversion
+        out2 = zeros(2)
+        itp(out2, [1, 2]; deriv=1)
+        @test out2 ≈ [2.0, 4.0] rtol=1e-10
+    end
+
+    @testset "QuadraticInterpolant from Integer arrays (2-arg Real wrapper)" begin
+        # Integer arrays trigger the Real wrapper for 2-argument form
+        x = [0, 1, 2, 3]  # Int64
+        y = [0, 1, 4, 9]  # Int64
+
+        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        @test itp isa QuadraticInterpolant{Float64}
+
+        @test itp(1.5) ≈ 2.25 rtol=1e-10
+        @test itp(0.5) ≈ 0.25 rtol=1e-10
+    end
+
+    @testset "BC type promotion with Real data" begin
+        # Int data with Int BC (both promoted to Float64)
+        x_int = [0, 1, 2, 3]
+        y_int = [0, 1, 4, 9]
+
+        # BC with Int value triggers promotion
+        result = quadratic_interp(x_int, y_int, 1.5; bc=Left(Deriv2(0)))
+        @test result isa Float64
+        @test isfinite(result)
+
+        # BC with Float64 value for Int data
+        result2 = quadratic_interp(x_int, y_int, 1.5; bc=Right(Deriv1(6.0)))
+        @test result2 ≈ 2.25 rtol=1e-10
+    end
+
+end
+
 @testset "Quadratic Interpolation - DerivativeView" begin
 
     @testset "deriv1 view" begin

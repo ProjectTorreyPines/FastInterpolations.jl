@@ -1,6 +1,5 @@
 using Documenter
 using FastInterpolations
-using Literate
 
 # ============================================
 # Helper: Rewrite relative paths in README files
@@ -27,19 +26,19 @@ function rewrite_readme_paths(content::String; from_root::Bool=true)
 end
 
 # ============================================
-# Step 1: Auto-generate content (DRY principle)
+# Step 1: Setup directories and content
 # ============================================
 
 const DOCS_SRC = joinpath(@__DIR__, "src")
-const EXAMPLES_DIR = joinpath(@__DIR__, "../examples")
-const TUTORIALS_DIR = joinpath(DOCS_SRC, "tutorials")
 
-# Create directories (may not exist initially)
+# Create directories
 mkpath(DOCS_SRC)
 mkpath(joinpath(DOCS_SRC, "guides"))
-mkpath(TUTORIALS_DIR)
+mkpath(joinpath(DOCS_SRC, "interpolation"))
+mkpath(joinpath(DOCS_SRC, "interpolation", "cubic"))
+mkpath(joinpath(DOCS_SRC, "architecture"))
 
-# 1a. Copy images directory
+# Copy images directory
 const IMAGES_SRC = joinpath(@__DIR__, "images")
 const IMAGES_DST = joinpath(DOCS_SRC, "images")
 if isdir(IMAGES_SRC)
@@ -53,11 +52,11 @@ if isdir(IMAGES_SRC)
     end
 end
 
-# 1b. Copy README.md → index.md (with path rewriting)
+# Copy README.md → index.md (with path rewriting)
 readme_content = read(joinpath(@__DIR__, "../README.md"), String)
 write(joinpath(DOCS_SRC, "index.md"), rewrite_readme_paths(readme_content; from_root=true))
 
-# 1c. Copy benchmark/README.md → guides/performance.md (with path rewriting)
+# Copy benchmark/README.md → guides/performance.md (with path rewriting)
 bench_readme = joinpath(@__DIR__, "../benchmark/README.md")
 if isfile(bench_readme)
     bench_content = read(bench_readme, String)
@@ -65,31 +64,9 @@ if isfile(bench_readme)
           rewrite_readme_paths(bench_content; from_root=false))
 end
 
-# 1d. Generate tutorials from examples/*.jl using Literate.jl
-if isdir(EXAMPLES_DIR)
-    for file in sort(readdir(EXAMPLES_DIR))  # Sort for deterministic order
-        if endswith(file, ".jl")
-            Literate.markdown(
-                joinpath(EXAMPLES_DIR, file),
-                TUTORIALS_DIR;
-                documenter = true,
-                credit = false
-            )
-        end
-    end
-end
-
 # ============================================
 # Step 2: Build documentation
 # ============================================
-
-# Collect generated tutorial pages (sorted order)
-tutorial_pages = if isdir(EXAMPLES_DIR) && !isempty(readdir(EXAMPLES_DIR))
-    sort(["tutorials/$(replace(f, ".jl" => ".md"))"
-          for f in readdir(EXAMPLES_DIR) if endswith(f, ".jl")])
-else
-    String[]
-end
 
 makedocs(
     sitename = "FastInterpolations.jl",
@@ -100,21 +77,30 @@ makedocs(
         canonical = "https://projecttorreypines.github.io/FastInterpolations.jl",
         assets = String[],
     ),
-    pages = vcat(
-        ["Home" => "index.md"],
-        isempty(tutorial_pages) ? [] : ["Tutorials" => tutorial_pages],
-        [
-            "Guides" => [
-                "Performance" => "guides/performance.md",
+    pages = [
+        "Home" => "index.md",
+        "Interpolation" => [
+            "Linear" => "interpolation/linear.md",
+            "Cubic Splines" => [
+                "Overview" => "interpolation/cubic/overview.md",
+                "Standard BC" => "interpolation/cubic/standard.md",
+                "Periodic BC" => "interpolation/cubic/periodic.md",
             ],
-            "API Reference" => [
-                "Linear" => "api/linear.md",
-                "Cubic" => "api/cubic.md",
-                "Types" => "api/types.md",
-            ],
-            "Internals" => "internals.md",
-        ]
-    ),
+        ],
+        "Extrapolation" => "extrapolation.md",
+        "Architecture" => [
+            "Overview" => "architecture/overview.md",
+            "Auto-Cache" => "architecture/caching.md",
+            "Thread Safety" => "architecture/thread_safety.md",
+        ],
+        "Benchmarks" => "guides/performance.md",
+        "API Reference" => [
+            "Linear" => "api/linear.md",
+            "Cubic" => "api/cubic.md",
+            "Types" => "api/types.md",
+        ],
+        "Internals" => "internals.md",
+    ],
     doctest = true,
     checkdocs = :exports,
 )

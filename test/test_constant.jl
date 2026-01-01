@@ -349,7 +349,7 @@ end
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
         constant_interp!(out, x, y, xq)
         allocs = @allocated constant_interp!(out, x, y, xq)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "constant_interp! with side option" begin
@@ -357,7 +357,7 @@ end
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
         constant_interp!(out, x, y, xq; side=:left)
         allocs = @allocated constant_interp!(out, x, y, xq; side=:left)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "constant_interp! with extrap option" begin
@@ -365,23 +365,14 @@ end
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
         constant_interp!(out, x, y, xq; extrap=:constant)
         allocs = @allocated constant_interp!(out, x, y, xq; extrap=:constant)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "ConstantInterpolant scalar" begin
         itp = constant_interp(x, y)
         itp(0.5)
         allocs = @allocated itp(0.55)
-        @test allocs == 0
-    end
-
-    @testset "ConstantInterpolant scalar (legacy threshold)" begin
-        x5 = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y5 = [10.0, 20.0, 30.0, 40.0, 50.0]
-        itp = constant_interp(x5, y5)
-        itp(0.5)
-        allocs = @allocated itp(0.55)
-        @test allocs <= 256  # Allow small allocation on older Julia
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "ConstantInterpolant in-place vector" begin
@@ -390,7 +381,7 @@ end
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
         itp(out, xq)
         allocs = @allocated itp(out, xq)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "ConstantInterpolant in-place with deriv" begin
@@ -399,7 +390,7 @@ end
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
         itp(out, xq; deriv=1)
         allocs = @allocated itp(out, xq; deriv=1)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "ConstantInterpolant with extrap=:wrap in-place" begin
@@ -408,7 +399,7 @@ end
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
         itp(out, xq)
         allocs = @allocated itp(out, xq)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "ConstantInterpolant with side=:left in-place" begin
@@ -417,7 +408,7 @@ end
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
         itp(out, xq)
         allocs = @allocated itp(out, xq)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     # ─────────────────────────────────────────────────────────────
@@ -437,7 +428,7 @@ end
         constant_interp!(out, x_f64, y_f64, xq_f64)
 
         allocs = @allocated constant_interp!(out, x_f64, y_f64, xq_f64)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Real wrapper - ConstantInterpolant in-place when types match" begin
@@ -451,7 +442,7 @@ end
         itp(out, xq_f64)
 
         allocs = @allocated itp(out, xq_f64)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
 end

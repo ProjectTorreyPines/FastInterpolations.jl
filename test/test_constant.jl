@@ -334,6 +334,13 @@ end
         @test @inferred(constant_interp(x, y, 0.5; deriv=1)) isa Float64
     end
 
+    @testset "Invalid side argument throws ArgumentError" begin
+        @test_throws ArgumentError constant_interp(x, y, 0.5; side=:invalid)
+        @test_throws ArgumentError constant_interp(x, y, [0.5, 1.5]; side=:foo)
+        out = zeros(2)
+        @test_throws ArgumentError constant_interp!(out, x, y, [0.5, 1.5]; side=:bar)
+    end
+
 end
 
 # ============================================================================

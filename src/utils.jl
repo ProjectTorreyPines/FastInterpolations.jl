@@ -343,3 +343,60 @@ macro _dispatch_deriv(pair, body)
     end
 end
 
+"""
+    @_dispatch_side sym => varname body
+
+Dispatch on runtime side symbol, executing body with concrete Val type.
+
+Converts `side::Symbol` (`:nearest`, `:left`, `:right`) to compile-time constant
+`Val(:nearest)`, `Val(:left)`, or `Val(:right)`. This creates a function barrier
+ensuring type stability and enabling union-splitting optimization.
+
+# Arguments
+- `sym => varname`: Pair of symbol variable and binding name for Val type
+- `body`: Expression to execute with `varname` bound to concrete Val
+
+# Example
+```julia
+@_dispatch_side side => sv begin
+    _constant_kernel(op, y_left, y_right, h, dt1, sv)
+end
+```
+
+Expands to:
+```julia
+let _side = side
+    if _side === :nearest
+        sv = Val(:nearest)
+        _constant_kernel(op, y_left, y_right, h, dt1, sv)
+    elseif _side === :left
+        ...
+    end
+end
+```
+"""
+macro _dispatch_side(pair, body)
+    # Parse pair: side => sv becomes Expr(:call, :(=>), :side, :sv)
+    pair.head === :call && pair.args[1] === :(=>) ||
+        error("@_dispatch_side expects `sym => varname`, got: $pair")
+    sym = pair.args[2]
+    varname = pair.args[3]
+    svs = esc(varname)
+    quote
+        let _side = $(esc(sym))
+            if _side === :nearest
+                $svs = Val(:nearest)
+                $(esc(body))
+            elseif _side === :left
+                $svs = Val(:left)
+                $(esc(body))
+            elseif _side === :right
+                $svs = Val(:right)
+                $(esc(body))
+            else
+                throw(ArgumentError("`side` must be :nearest, :left, or :right, got :$_side"))
+            end
+        end
+    end
+end
+

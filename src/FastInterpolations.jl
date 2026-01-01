@@ -33,6 +33,10 @@ include("cubic_autocache.jl")   # Ring buffer cache for reusing LU factorization
 include("cubic_interp.jl")      # 4-arg API, helper functions
 include("cubic_interpolant.jl") # 2-arg API, CubicInterpolant callable
 
+# Quadratic spline interpolation
+include("quadratic_types.jl")     # Type definitions (QuadraticSplineCache)
+include("quadratic_autocache.jl") # RCU-style cache for x-grid reuse
+
 # Derivative view wrapper (depends on both CubicInterpolant and LinearInterpolant)
 include("derivative_view.jl")
 
@@ -41,6 +45,8 @@ export linear_interp, linear_interp!, LinearInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
+export QuadraticSplineCache
+export set_quadratic_cache_size!, get_quadratic_cache_size, clear_quadratic_cache!
 
 # Boundary condition types
 export AbstractBC, PointBC, Deriv1, Deriv2, BCPair

@@ -4,11 +4,31 @@
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
+# Grid Spacing Computation
+# ========================================
+
+"""
+    _compute_grid_spacing(x) -> (h, inv_h)
+
+Compute grid spacing and inverse from x-coordinates.
+"""
+@inline function _compute_grid_spacing(x::AbstractVector{T}) where {T<:AbstractFloat}
+    n = length(x)
+    h = Vector{T}(undef, n-1)
+    inv_h = Vector{T}(undef, n-1)
+    @inbounds for i in 1:(n-1)
+        h[i] = x[i+1] - x[i]
+        inv_h[i] = inv(h[i])
+    end
+    return h, inv_h
+end
+
+# ========================================
 # Internal Evaluation Functions
 # ========================================
 
 """
-    _quadratic_eval_at_point(x, y, cache, a, d, xi, extrap, op)
+    _quadratic_eval_at_point(x, y, h, a, d, xi, extrap, op)
 
 Core quadratic spline evaluation at a single point.
 Uses precomputed coefficients (a, d) from BC.
@@ -16,7 +36,7 @@ Uses precomputed coefficients (a, d) from BC.
 @inline function _quadratic_eval_at_point(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
-    cache::QuadraticSplineCache{FT},
+    h::AbstractVector{FT},
     a::AbstractVector{FT},
     d::AbstractVector{FT},
     xi::FT,
@@ -30,15 +50,15 @@ Uses precomputed coefficients (a, d) from BC.
     # Boundary special case: xi == x[end]
     # Use last interval (n-1): a[end], d[end-1], y[end-1], dt=h[end]
     if xi == x_max
-        dt = cache.h[end]
+        dt = h[end]
         @inbounds return _quadratic_kernel(op, a[end], d[end-1], y[end-1], dt)
     end
 
     # Extrapolation handling
     if xi < x_min
-        return _quadratic_eval_extrap(y, a, d, cache.h, xi, x_min, Val(:left), extrap, op)
+        return _quadratic_eval_extrap(y, a, d, h, xi, x_min, Val(:left), extrap, op)
     elseif xi > x_max
-        return _quadratic_eval_extrap(y, a, d, cache.h, xi, x_max, Val(:right), extrap, op)
+        return _quadratic_eval_extrap(y, a, d, h, xi, x_max, Val(:right), extrap, op)
     end
 
     # Normal case: interval search and kernel evaluation
@@ -147,18 +167,21 @@ end
 # ========================================
 
 """
-    _compute_quadratic_coeffs(y, cache, bc)
+    _compute_quadratic_coeffs(x, y, bc)
 
 Compute quadratic spline coefficients (s, d, a) from BC.
-Uses AdaptiveArrayPools for temporary arrays.
+Computes h and inv_h inline - no caching.
 """
 function _compute_quadratic_coeffs(
+    x::AbstractVector{FT},
     y::AbstractVector{FT},
-    cache::QuadraticSplineCache{FT},
     bc::Union{Left{FT}, Right{FT}}
 ) where {FT<:AbstractFloat}
     n = length(y)
     nm1 = n - 1
+
+    # Compute grid spacing inline
+    h, inv_h = _compute_grid_spacing(x)
 
     # Allocate coefficient arrays
     s = Vector{FT}(undef, nm1)
@@ -166,18 +189,18 @@ function _compute_quadratic_coeffs(
     a = Vector{FT}(undef, nm1)
 
     # 1. Compute secants
-    _compute_quadratic_secants!(s, y, cache.inv_h)
+    _compute_quadratic_secants!(s, y, inv_h)
 
     # 2. Compute d[1] from BC
-    d1 = _compute_d1_from_bc(bc, s, cache.h, n)
+    d1 = _compute_d1_from_bc(bc, s, h, n)
 
     # 3. Forward recurrence to fill d[]
     _forward_recurrence!(d, s, d1)
 
     # 4. Compute quadratic coefficients a[]
-    _compute_quadratic_coefficients!(a, d, s, cache.inv_h)
+    _compute_quadratic_coefficients!(a, d, s, inv_h)
 
-    return s, d, a
+    return h, s, d, a
 end
 
 
@@ -240,15 +263,12 @@ quadratic_interp(x, y, 1.5; deriv=2)  # ≈ 2.0 (curvature)
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
-    # Get/create cache
-    cache = _get_quadratic_cache(x)
-
-    # Compute coefficients from BC
-    _, d, a = _compute_quadratic_coeffs(y, cache, bc)
+    # Compute coefficients from BC (no caching)
+    h, _, d, a = _compute_quadratic_coeffs(x, y, bc)
 
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
-            _quadratic_eval_at_point(x, y, cache, a, d, xi, ev, op)
+            _quadratic_eval_at_point(x, y, h, a, d, xi, ev, op)
         end
     end
 end
@@ -288,17 +308,14 @@ function quadratic_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert length(x) >= 2 "x must have at least 2 elements"
 
-    # Get/create cache
-    cache = _get_quadratic_cache(x)
-
-    # Compute coefficients from BC
-    _, d, a = _compute_quadratic_coeffs(y, cache, bc)
+    # Compute coefficients from BC (no caching)
+    h, _, d, a = _compute_quadratic_coeffs(x, y, bc)
 
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             @boundscheck _check_domain(x, x_targets, ev)
             @inbounds for i in eachindex(x_targets, output)
-                output[i] = _quadratic_eval_at_point(x, y, cache, a, d, x_targets[i], ev, op)
+                output[i] = _quadratic_eval_at_point(x, y, h, a, d, x_targets[i], ev, op)
             end
         end
     end
@@ -420,17 +437,14 @@ function quadratic_interp!(
     x_targets_float = _to_float(x_targets, FT)
     bc_promoted = _promote_bc(bc, FT)
 
-    # Get/create cache
-    cache = _get_quadratic_cache(x_float)
-
-    # Compute coefficients
-    _, d, a = _compute_quadratic_coeffs(y_float, cache, bc_promoted)
+    # Compute coefficients (no caching)
+    h, _, d, a = _compute_quadratic_coeffs(x_float, y_float, bc_promoted)
 
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             @boundscheck _check_domain(x_float, x_targets_float, ev)
             @inbounds for i in eachindex(x_targets_float, output)
-                output[i] = _quadratic_eval_at_point(x_float, y_float, cache, a, d, x_targets_float[i], ev, op)
+                output[i] = _quadratic_eval_at_point(x_float, y_float, h, a, d, x_targets_float[i], ev, op)
             end
         end
     end
@@ -451,7 +465,7 @@ Returned by `quadratic_interp(x, y)` (2-argument form).
 # Fields
 - `x::X`: x-coordinates (sorted)
 - `y::Y`: y-values
-- `cache::QuadraticSplineCache{T}`: Precomputed grid spacing
+- `h::Vector{T}`: Grid spacing (precomputed)
 - `a::Vector{T}`: Quadratic coefficients
 - `d::Vector{T}`: Slope coefficients
 - `mode::ExtrapVal`: Extrapolation mode
@@ -471,7 +485,7 @@ d2 = itp(0.5; deriv=2)       # second derivative
 struct QuadraticInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
     x::X
     y::Y
-    cache::QuadraticSplineCache{T,X}
+    h::Vector{T}
     a::Vector{T}
     d::Vector{T}
     mode::ExtrapVal
@@ -484,14 +498,11 @@ struct QuadraticInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractV
         @assert length(x) == length(y) "x and y must have same length"
         @assert length(x) >= 2 "x must have at least 2 elements"
 
-        # Get/create cache
-        cache = _get_quadratic_cache(x)
-
-        # Compute coefficients
-        _, d, a = _compute_quadratic_coeffs(y, cache, bc)
+        # Compute coefficients (no caching)
+        h, _, d, a = _compute_quadratic_coeffs(x, y, bc)
 
         @_dispatch_extrap extrap => ev begin
-            return new{T,X,Y}(x, y, cache, a, d, ev)
+            return new{T,X,Y}(x, y, h, a, d, ev)
         end
     end
 end
@@ -501,7 +512,7 @@ end
 # ─────────────────────────────────────────────────────────────
 @inline function (itp::QuadraticInterpolant{T})(xi::T; deriv::Int=0) where {T<:AbstractFloat}
     @_dispatch_deriv deriv => op begin
-        _quadratic_eval_at_point(itp.x, itp.y, itp.cache, itp.a, itp.d, xi, itp.mode, op)
+        _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.mode, op)
     end
 end
 
@@ -519,7 +530,7 @@ function (itp::QuadraticInterpolant{T})(xi::AbstractVector{S}; deriv::Int=0) whe
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.cache, itp.a, itp.d, xi_typed[i], itp.mode, op)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.mode, op)
         end
     end
     return output
@@ -533,7 +544,7 @@ function (itp::QuadraticInterpolant{T})(output::AbstractVector{T}, xi::AbstractV
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi, itp.mode)
         @inbounds for i in eachindex(xi, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.cache, itp.a, itp.d, xi[i], itp.mode, op)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.mode, op)
         end
     end
     return output
@@ -546,7 +557,7 @@ function (itp::QuadraticInterpolant{T})(output::AbstractVector, xi::AbstractVect
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.cache, itp.a, itp.d, xi_typed[i], itp.mode, op)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.mode, op)
         end
     end
     return output

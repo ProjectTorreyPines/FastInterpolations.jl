@@ -2,8 +2,8 @@
 #
 # This file follows TDD: tests are written BEFORE implementation.
 # Phase 1: BC Tags (Left/Right types)
-# Phase 2: QuadraticSplineCache + Autocache
-# Phase 3: Kernels + Coefficient Computation
+# Phase 2: Kernels + Coefficient Computation
+# Phase 3: Public API + QuadraticInterpolant
 
 # ============================================================================
 # Group 1: BC Type Tests (Phase 1)
@@ -99,108 +99,7 @@
 end
 
 # ============================================================================
-# Group 2: Cache Tests (Phase 2)
-# ============================================================================
-@testset "Quadratic Interpolation - Cache" begin
-
-    @testset "QuadraticSplineCache construction" begin
-        x = collect(range(0.0, 1.0, 11))
-
-        cache = QuadraticSplineCache(x)
-        @test cache isa QuadraticSplineCache{Float64}
-        @test length(cache.h) == 10
-        @test length(cache.inv_h) == 10
-        @test cache.h[1] ≈ 0.1
-        @test cache.inv_h[1] ≈ 10.0
-    end
-
-    @testset "QuadraticSplineCache Float32" begin
-        x32 = Float32.(collect(range(0.0, 1.0, 11)))
-        cache32 = QuadraticSplineCache(x32)
-        @test cache32 isa QuadraticSplineCache{Float32}
-        @test eltype(cache32.h) === Float32
-    end
-
-    @testset "QuadraticSplineCache edge cases" begin
-        # Too few points
-        @test_throws ArgumentError QuadraticSplineCache([1.0])
-
-        # Not strictly increasing
-        @test_throws ArgumentError QuadraticSplineCache([1.0, 1.0, 2.0])
-        @test_throws ArgumentError QuadraticSplineCache([1.0, 0.5, 2.0])
-
-        # Minimum valid (n=2)
-        cache_min = QuadraticSplineCache([0.0, 1.0])
-        @test length(cache_min.h) == 1
-    end
-
-    @testset "QuadraticSplineCache non-uniform grid" begin
-        x_nu = [0.0, 0.1, 0.3, 0.6, 1.0]
-        cache = QuadraticSplineCache(x_nu)
-        @test cache.h[1] ≈ 0.1
-        @test cache.h[2] ≈ 0.2
-        @test cache.h[3] ≈ 0.3
-        @test cache.h[4] ≈ 0.4
-    end
-
-end
-
-@testset "Quadratic Interpolation - Autocache" begin
-    using FastInterpolations: _get_quadratic_cache
-
-    @testset "autocache basic" begin
-        x = collect(range(0.0, 1.0, 11))
-        clear_quadratic_cache!()
-
-        # First call creates cache
-        cache1 = _get_quadratic_cache(x)
-        @test cache1 isa QuadraticSplineCache
-
-        # Second call returns same cache (RCU hit)
-        cache2 = _get_quadratic_cache(x)
-        @test cache1 === cache2  # identity check
-    end
-
-    @testset "autocache different grids" begin
-        clear_quadratic_cache!()
-
-        x1 = collect(range(0.0, 1.0, 11))
-        x2 = collect(range(0.0, 2.0, 11))
-
-        cache1 = _get_quadratic_cache(x1)
-        cache2 = _get_quadratic_cache(x2)
-
-        @test cache1 !== cache2
-    end
-
-    @testset "autocache disabled" begin
-        x = collect(range(0.0, 1.0, 11))
-        clear_quadratic_cache!()
-
-        # With autocache disabled, should create new cache each time
-        cache1 = _get_quadratic_cache(x; autocache=false)
-        cache2 = _get_quadratic_cache(x; autocache=false)
-        @test cache1 !== cache2
-    end
-
-    @testset "autocache zero-allocation" begin
-        x = collect(range(0.0, 1.0, 51))
-        clear_quadratic_cache!()
-        _get_quadratic_cache(x)  # prime
-
-        allocs = @allocated _get_quadratic_cache(x)
-        @test allocs == 0
-    end
-
-    @testset "get/set cache size" begin
-        @test get_quadratic_cache_size() > 0
-        @test get_quadratic_cache_size() isa Int
-    end
-
-end
-
-# ============================================================================
-# Group 3: Kernel Tests (Phase 3)
+# Group 2: Kernel Tests
 # ============================================================================
 @testset "Quadratic Interpolation - Kernels" begin
     using FastInterpolations: _quadratic_kernel, EvalValue, EvalDeriv1, EvalDeriv2
@@ -275,7 +174,7 @@ end
 end
 
 # ============================================================================
-# Group 4: Coefficient Computation Tests (Phase 3)
+# Group 3: Coefficient Computation Tests
 # ============================================================================
 @testset "Quadratic Interpolation - Coefficient Computation" begin
     using FastInterpolations: _compute_quadratic_secants!, _compute_d1_from_bc,
@@ -387,7 +286,7 @@ end
 end
 
 # ============================================================================
-# Group 5: Public API Tests (Phase 4)
+# Group 4: Public API Tests
 # ============================================================================
 @testset "Quadratic Interpolation - Public API" begin
 
@@ -534,7 +433,7 @@ end
 end
 
 # ============================================================================
-# Group 6: QuadraticInterpolant Tests (Phase 5)
+# Group 5: QuadraticInterpolant Tests
 # ============================================================================
 @testset "Quadratic Interpolation - Interpolant" begin
 
@@ -635,10 +534,7 @@ end
 end
 
 # ============================================================================
-# Group 7: DerivativeView Tests (Phase 5)
-# ============================================================================
-# ============================================================================
-# Group 7: Allocation Tests (Phase 6)
+# Group 6: Allocation Tests
 # ============================================================================
 @testset "Quadratic Interpolation - Allocations" begin
 
@@ -685,22 +581,6 @@ end
         # In-place should be zero-allocation
         allocs = @allocated itp(out, xq)
         @test allocs == 0
-    end
-
-    @testset "3-arg API with autocache" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        clear_quadratic_cache!()
-
-        # Prime cache and JIT
-        for _ in 1:10
-            quadratic_interp(x, y, 0.5; bc=Right(Deriv1(2.0)))
-        end
-
-        # After cache is warmed, scalar call allocates for coefficients (expected)
-        # But autocache lookup itself should be zero-alloc
-        # Note: 3-arg form computes coefficients each call, so allocations expected
-        # This is different from 2-arg form which precomputes
     end
 
     @testset "DerivativeView zero-allocation" begin

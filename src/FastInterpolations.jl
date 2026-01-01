@@ -18,6 +18,7 @@ include("utils.jl")
 include("linear_kernels.jl")
 include("cubic_kernels.jl")
 include("constant_kernels.jl")
+include("quadratic_kernels.jl")
 
 # Linear interpolation
 include("linear_interp.jl")
@@ -34,8 +35,9 @@ include("cubic_interp.jl")      # 4-arg API, helper functions
 include("cubic_interpolant.jl") # 2-arg API, CubicInterpolant callable
 
 # Quadratic spline interpolation
-include("quadratic_types.jl")     # Type definitions (QuadraticSplineCache)
-include("quadratic_autocache.jl") # RCU-style cache for x-grid reuse
+include("quadratic_types.jl")       # Type definitions (QuadraticSplineCache)
+include("quadratic_autocache.jl")   # RCU-style cache for x-grid reuse
+include("quadratic_coefficients.jl") # Coefficient computation (secants, d[], a[])
 
 # Derivative view wrapper (depends on both CubicInterpolant and LinearInterpolant)
 include("derivative_view.jl")

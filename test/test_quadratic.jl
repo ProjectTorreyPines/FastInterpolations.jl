@@ -3,6 +3,7 @@
 # This file follows TDD: tests are written BEFORE implementation.
 # Phase 1: BC Tags (Left/Right types)
 # Phase 2: QuadraticSplineCache + Autocache
+# Phase 3: Kernels + Coefficient Computation
 
 # ============================================================================
 # Group 1: BC Type Tests (Phase 1)
@@ -194,6 +195,193 @@ end
     @testset "get/set cache size" begin
         @test get_quadratic_cache_size() > 0
         @test get_quadratic_cache_size() isa Int
+    end
+
+end
+
+# ============================================================================
+# Group 3: Kernel Tests (Phase 3)
+# ============================================================================
+@testset "Quadratic Interpolation - Kernels" begin
+    using FastInterpolations: _quadratic_kernel, EvalValue, EvalDeriv1, EvalDeriv2
+
+    @testset "quadratic kernel value" begin
+        # S(x) = a*(x-x_i)² + d*(x-x_i) + y
+        # Test f(x) = x² on [0, 1], with d=0 at x=0
+        # s = (1-0)/1 = 1, a = (s-d)/h = 1
+        a = 1.0
+        d = 0.0
+        y = 0.0
+
+        # At dt=0.5: value = 1*0.25 + 0*0.5 + 0 = 0.25
+        @test _quadratic_kernel(EvalValue(), a, d, y, 0.5) ≈ 0.25
+
+        # At dt=0: value = 0 (at interval start)
+        @test _quadratic_kernel(EvalValue(), a, d, y, 0.0) ≈ 0.0
+
+        # At dt=1: value = 1 (at interval end)
+        @test _quadratic_kernel(EvalValue(), a, d, y, 1.0) ≈ 1.0
+    end
+
+    @testset "quadratic kernel deriv1" begin
+        # S'(x) = 2*a*(x-x_i) + d
+        a = 1.0
+        d = 0.0
+        y = 0.0
+
+        # At dt=0.5: deriv1 = 2*1*0.5 + 0 = 1.0
+        @test _quadratic_kernel(EvalDeriv1(), a, d, y, 0.5) ≈ 1.0
+
+        # At dt=0: deriv1 = d = 0
+        @test _quadratic_kernel(EvalDeriv1(), a, d, y, 0.0) ≈ 0.0
+
+        # At dt=1: deriv1 = 2*1 + 0 = 2
+        @test _quadratic_kernel(EvalDeriv1(), a, d, y, 1.0) ≈ 2.0
+    end
+
+    @testset "quadratic kernel deriv2" begin
+        # S''(x) = 2*a (constant)
+        a = 1.0
+        d = 0.0
+        y = 0.0
+
+        # deriv2 = 2*a = 2.0 at any dt
+        @test _quadratic_kernel(EvalDeriv2(), a, d, y, 0.0) ≈ 2.0
+        @test _quadratic_kernel(EvalDeriv2(), a, d, y, 0.5) ≈ 2.0
+        @test _quadratic_kernel(EvalDeriv2(), a, d, y, 1.0) ≈ 2.0
+    end
+
+    @testset "kernel edge cases" begin
+        # Constant function (a=0, d=0)
+        @test _quadratic_kernel(EvalValue(), 0.0, 0.0, 5.0, 0.5) ≈ 5.0
+        @test _quadratic_kernel(EvalDeriv1(), 0.0, 0.0, 5.0, 0.5) ≈ 0.0
+        @test _quadratic_kernel(EvalDeriv2(), 0.0, 0.0, 5.0, 0.5) ≈ 0.0
+
+        # Linear function (a=0, d=2)
+        @test _quadratic_kernel(EvalValue(), 0.0, 2.0, 0.0, 0.5) ≈ 1.0
+        @test _quadratic_kernel(EvalDeriv1(), 0.0, 2.0, 0.0, 0.5) ≈ 2.0
+        @test _quadratic_kernel(EvalDeriv2(), 0.0, 2.0, 0.0, 0.5) ≈ 0.0
+    end
+
+    @testset "kernel type stability" begin
+        @test @inferred(_quadratic_kernel(EvalValue(), 1.0, 0.0, 0.0, 0.5)) isa Float64
+        @test @inferred(_quadratic_kernel(EvalDeriv1(), 1.0, 0.0, 0.0, 0.5)) isa Float64
+        @test @inferred(_quadratic_kernel(EvalDeriv2(), 1.0, 0.0, 0.0, 0.5)) isa Float64
+
+        # Float32
+        @test @inferred(_quadratic_kernel(EvalValue(), 1.0f0, 0.0f0, 0.0f0, 0.5f0)) isa Float32
+    end
+
+end
+
+# ============================================================================
+# Group 4: Coefficient Computation Tests (Phase 3)
+# ============================================================================
+@testset "Quadratic Interpolation - Coefficient Computation" begin
+    using FastInterpolations: _compute_quadratic_secants!, _compute_d1_from_bc,
+                               _forward_recurrence!, _compute_quadratic_coefficients!
+
+    @testset "secant computation" begin
+        y = [0.0, 1.0, 4.0, 9.0]  # x²
+        inv_h = [1.0, 1.0, 1.0]   # uniform grid h=1
+        s = zeros(3)
+
+        _compute_quadratic_secants!(s, y, inv_h)
+
+        # s[i] = (y[i+1] - y[i]) * inv_h[i]
+        @test s[1] ≈ 1.0   # (1-0)/1
+        @test s[2] ≈ 3.0   # (4-1)/1
+        @test s[3] ≈ 5.0   # (9-4)/1
+    end
+
+    @testset "d1 from Left(Deriv1)" begin
+        bc = Left(Deriv1(3.0))
+        s = [1.0, 3.0, 5.0]
+        h = [1.0, 1.0, 1.0]
+        n = 4
+
+        d1 = _compute_d1_from_bc(bc, s, h, n)
+        @test d1 ≈ 3.0  # given directly
+    end
+
+    @testset "d1 from Left(Deriv2)" begin
+        # Left(Deriv2(κ)): a[1] = κ/2, d[1] = s[1] - a[1]*h[1]
+        bc = Left(Deriv2(2.0))
+        s = [1.0, 3.0, 5.0]
+        h = [1.0, 1.0, 1.0]
+        n = 4
+
+        d1 = _compute_d1_from_bc(bc, s, h, n)
+        # a[1] = 2/2 = 1, d[1] = 1 - 1*1 = 0
+        @test d1 ≈ 0.0
+    end
+
+    @testset "d1 from Right(Deriv1)" begin
+        # d[n] = v, backward recurrence to d[1]
+        bc = Right(Deriv1(7.0))
+        s = [1.0, 3.0, 5.0]
+        h = [1.0, 1.0, 1.0]
+        n = 4
+
+        d1 = _compute_d1_from_bc(bc, s, h, n)
+        # backward: d[i] = 2*s[i] - d[i+1]
+        # d[4] = 7
+        # d[3] = 2*5 - 7 = 3
+        # d[2] = 2*3 - 3 = 3
+        # d[1] = 2*1 - 3 = -1
+        @test d1 ≈ -1.0
+    end
+
+    @testset "d1 from Right(Deriv2)" begin
+        # a[n-1] = κ/2, d[n-1] = s[n-1] - a[n-1]*h[n-1]
+        # d[n] = 2*a[n-1]*h[n-1] + d[n-1], then backward
+        bc = Right(Deriv2(2.0))
+        s = [1.0, 3.0, 5.0]
+        h = [1.0, 1.0, 1.0]
+        n = 4
+
+        d1 = _compute_d1_from_bc(bc, s, h, n)
+        # a[3] = 2/2 = 1
+        # d[3] = 5 - 1*1 = 4
+        # d[4] = 2*1*1 + 4 = 6
+        # d[3] = 2*5 - 6 = 4 (verify)
+        # d[2] = 2*3 - 4 = 2
+        # d[1] = 2*1 - 2 = 0
+        @test d1 ≈ 0.0
+    end
+
+    @testset "forward recurrence" begin
+        s = [1.0, 3.0, 5.0]
+        d = zeros(4)
+        d1 = 0.0
+
+        _forward_recurrence!(d, s, d1)
+
+        # d[1] = 0
+        # d[2] = 2*1 - 0 = 2
+        # d[3] = 2*3 - 2 = 4
+        # d[4] = 2*5 - 4 = 6
+        @test d[1] ≈ 0.0
+        @test d[2] ≈ 2.0
+        @test d[3] ≈ 4.0
+        @test d[4] ≈ 6.0
+    end
+
+    @testset "coefficient computation" begin
+        # a[i] = (s[i] - d[i]) * inv_h[i]
+        s = [1.0, 3.0, 5.0]
+        d = [0.0, 2.0, 4.0, 6.0]
+        inv_h = [1.0, 1.0, 1.0]
+        a = zeros(3)
+
+        _compute_quadratic_coefficients!(a, d, s, inv_h)
+
+        # a[1] = (1 - 0) * 1 = 1
+        # a[2] = (3 - 2) * 1 = 1
+        # a[3] = (5 - 4) * 1 = 1
+        @test a[1] ≈ 1.0
+        @test a[2] ≈ 1.0
+        @test a[3] ≈ 1.0
     end
 
 end

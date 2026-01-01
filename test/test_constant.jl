@@ -337,6 +337,128 @@ import FastInterpolations: @_dispatch_side, _constant_kernel, EvalValue, EvalDer
             @test allocs <= 256
         end
 
+        @testset "Zero allocation (in-place vector)" begin
+            itp = constant_interp(x, y)
+            out = zeros(3)
+            xq = [0.5, 1.5, 2.5]
+
+            # Warmup
+            itp(out, xq)
+
+            # Test zero allocation
+            allocs = @allocated itp(out, xq)
+            @test allocs == 0
+        end
+
+    end
+
+    # ========================================
+    # Phase 3: Zero Allocation Tests
+    # ========================================
+    @testset "Zero Allocation Verification" begin
+
+        x = collect(0.0:0.1:1.0)
+        y = sin.(x)
+
+        @testset "constant_interp! in-place" begin
+            out = zeros(5)
+            xq = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+            # Warmup
+            constant_interp!(out, x, y, xq)
+
+            # Test zero allocation
+            allocs = @allocated constant_interp!(out, x, y, xq)
+            @test allocs == 0
+        end
+
+        @testset "constant_interp! with side option" begin
+            out = zeros(5)
+            xq = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+            # Warmup
+            constant_interp!(out, x, y, xq; side=:left)
+
+            # Test zero allocation
+            allocs = @allocated constant_interp!(out, x, y, xq; side=:left)
+            @test allocs == 0
+        end
+
+        @testset "constant_interp! with extrap option" begin
+            out = zeros(5)
+            xq = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+            # Warmup
+            constant_interp!(out, x, y, xq; extrap=:constant)
+
+            # Test zero allocation
+            allocs = @allocated constant_interp!(out, x, y, xq; extrap=:constant)
+            @test allocs == 0
+        end
+
+        @testset "ConstantInterpolant scalar" begin
+            itp = constant_interp(x, y)
+
+            # Warmup
+            itp(0.5)
+
+            # Test zero allocation
+            allocs = @allocated itp(0.55)
+            @test allocs == 0
+        end
+
+        @testset "ConstantInterpolant in-place vector" begin
+            itp = constant_interp(x, y)
+            out = zeros(5)
+            xq = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+            # Warmup
+            itp(out, xq)
+
+            # Test zero allocation
+            allocs = @allocated itp(out, xq)
+            @test allocs == 0
+        end
+
+        @testset "ConstantInterpolant in-place with deriv" begin
+            itp = constant_interp(x, y)
+            out = zeros(5)
+            xq = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+            # Warmup
+            itp(out, xq; deriv=1)
+
+            # Test zero allocation
+            allocs = @allocated itp(out, xq; deriv=1)
+            @test allocs == 0
+        end
+
+        @testset "ConstantInterpolant with extrap=:wrap in-place" begin
+            itp = constant_interp(x, y; extrap=:wrap)
+            out = zeros(5)
+            xq = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+            # Warmup
+            itp(out, xq)
+
+            # Test zero allocation
+            allocs = @allocated itp(out, xq)
+            @test allocs == 0
+        end
+
+        @testset "ConstantInterpolant with side=:left in-place" begin
+            itp = constant_interp(x, y; side=:left)
+            out = zeros(5)
+            xq = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+            # Warmup
+            itp(out, xq)
+
+            # Test zero allocation
+            allocs = @allocated itp(out, xq)
+            @test allocs == 0
+        end
+
     end
 
 end

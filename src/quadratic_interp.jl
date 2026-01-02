@@ -33,16 +33,85 @@ end
 # Internal Evaluation Functions
 # ========================================
 
+# Note: _constant_extrap_result helper is defined in cubic_eval.jl (shared)
+
+"""
+    _quadratic_eval_core(x, y, a, d, xi, op)
+
+Core quadratic spline evaluation at a single point.
+Uses interval clamping for extension extrapolation (matches cubic pattern).
+"""
+@inline function _quadratic_eval_core(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    a::AbstractVector{FT},
+    d::AbstractVector{FT},
+    xi::FT,
+    op::AbstractEvalOp
+) where {FT<:AbstractFloat}
+    # _find_interval_with_bounds clamps idx to [1, n-1]
+    # This handles both normal evaluation and extension extrapolation
+    idx, x0, _ = _find_interval_with_bounds(x, xi)
+    dt = xi - x0
+    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
+end
+
+# ========================================
+# Extrapolation-aware Evaluation (matches cubic pattern)
+# ========================================
+
+"Evaluate with no extrapolation - throws DomainError if outside domain."
+@inline function _quadratic_eval_with_extrap(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    a::AbstractVector{FT},
+    d::AbstractVector{FT},
+    xi::FT,
+    ::Val{:none},
+    op::AbstractEvalOp
+) where {FT<:AbstractFloat}
+    return _quadratic_eval_core(x, y, a, d, xi, op)
+end
+
+"Evaluate with constant extrapolation - returns boundary values outside domain."
+@inline function _quadratic_eval_with_extrap(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    a::AbstractVector{FT},
+    d::AbstractVector{FT},
+    xi::FT,
+    ::Val{:constant},
+    op::AbstractEvalOp
+) where {FT<:AbstractFloat}
+    xi < first(x) && return _constant_extrap_result(op, @inbounds y[1])
+    xi > last(x) && return _constant_extrap_result(op, @inbounds y[end])
+    return _quadratic_eval_core(x, y, a, d, xi, op)
+end
+
+"Evaluate with extension extrapolation - extends boundary polynomial."
+@inline function _quadratic_eval_with_extrap(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    a::AbstractVector{FT},
+    d::AbstractVector{FT},
+    xi::FT,
+    ::Val{:extension},
+    op::AbstractEvalOp
+) where {FT<:AbstractFloat}
+    # Interval clamping in _find_interval_with_bounds handles extension
+    return _quadratic_eval_core(x, y, a, d, xi, op)
+end
+
 """
     _quadratic_eval_at_point(x, y, h, a, d, xi, extrap, op)
 
-Core quadratic spline evaluation at a single point.
-Uses precomputed coefficients (a, d) from BC.
+Entry point for quadratic spline evaluation with extrapolation dispatch.
+Note: `h` parameter kept for API compatibility but not used (interval info from x).
 """
 @inline function _quadratic_eval_at_point(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
-    h::AbstractVector{FT},
+    ::AbstractVector{FT},  # h - unused, kept for API compatibility
     a::AbstractVector{FT},
     d::AbstractVector{FT},
     xi::FT,
@@ -50,121 +119,7 @@ Uses precomputed coefficients (a, d) from BC.
     op::AbstractEvalOp
 ) where {FT<:AbstractFloat}
     @boundscheck _check_domain(x, xi, extrap)
-
-    x_min, x_max = first(x), last(x)
-
-    # Boundary special case: xi == x[end]
-    # Use last interval (n-1): a[end], d[end-1], y[end-1], dt=h[end]
-    if xi == x_max
-        dt = h[end]
-        @inbounds return _quadratic_kernel(op, a[end], d[end-1], y[end-1], dt)
-    end
-
-    # Extrapolation handling
-    if xi < x_min
-        return _quadratic_eval_extrap(y, a, d, h, xi, x_min, Val(:left), extrap, op)
-    elseif xi > x_max
-        return _quadratic_eval_extrap(y, a, d, h, xi, x_max, Val(:right), extrap, op)
-    end
-
-    # Normal case: interval search and kernel evaluation
-    idx, x0, _ = _find_interval_with_bounds(x, xi)
-    dt = xi - x0
-    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
-end
-
-"""
-    _quadratic_eval_extrap(y, a, d, h, xi, x_bound, side, extrap, op)
-
-Handle extrapolation for quadratic spline.
-"""
-@inline function _quadratic_eval_extrap(
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    h::AbstractVector{FT},
-    xi::FT,
-    x_bound::FT,
-    ::Val{:left},
-    ::Val{:constant},
-    ::EvalValue
-) where {FT<:AbstractFloat}
-    @inbounds return y[1]
-end
-
-@inline function _quadratic_eval_extrap(
-    y::AbstractVector{FT},
-    ::AbstractVector{FT},
-    ::AbstractVector{FT},
-    ::AbstractVector{FT},
-    ::FT,
-    ::FT,
-    ::Val{:right},
-    ::Val{:constant},
-    ::EvalValue
-) where {FT<:AbstractFloat}
-    @inbounds return y[end]
-end
-
-# Constant extrapolation for derivatives - zero
-@inline function _quadratic_eval_extrap(
-    ::AbstractVector{FT},
-    ::AbstractVector{FT},
-    ::AbstractVector{FT},
-    ::AbstractVector{FT},
-    ::FT,
-    ::FT,
-    ::Val,
-    ::Val{:constant},
-    ::EvalDeriv1
-) where {FT<:AbstractFloat}
-    return zero(FT)
-end
-
-@inline function _quadratic_eval_extrap(
-    ::AbstractVector{FT},
-    ::AbstractVector{FT},
-    ::AbstractVector{FT},
-    ::AbstractVector{FT},
-    ::FT,
-    ::FT,
-    ::Val,
-    ::Val{:constant},
-    ::EvalDeriv2
-) where {FT<:AbstractFloat}
-    return zero(FT)
-end
-
-# Extension extrapolation - continue first/last interval polynomial
-@inline function _quadratic_eval_extrap(
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    ::AbstractVector{FT},
-    xi::FT,
-    x_bound::FT,
-    ::Val{:left},
-    ::Val{:extension},
-    op::AbstractEvalOp
-) where {FT<:AbstractFloat}
-    dt = xi - x_bound  # negative
-    @inbounds return _quadratic_kernel(op, a[1], d[1], y[1], dt)
-end
-
-@inline function _quadratic_eval_extrap(
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    h::AbstractVector{FT},
-    xi::FT,
-    x_bound::FT,
-    ::Val{:right},
-    ::Val{:extension},
-    op::AbstractEvalOp
-) where {FT<:AbstractFloat}
-    dt = xi - (x_bound - h[end])  # distance from x[n-1]
-    # Use d[end-1] = slope at interval start (x[n-1]), not d[end] = slope at x[n]
-    @inbounds return _quadratic_kernel(op, a[end], d[end-1], y[end-1], dt)
+    return _quadratic_eval_with_extrap(x, y, a, d, xi, extrap, op)
 end
 
 

@@ -12,7 +12,9 @@
 #   ├── BCPair{T,L,R}        # Both endpoints
 #   ├── PeriodicBC{T}        # Periodic BC
 #   ├── NaturalBC{T}         # Natural BC (zero curvature at ends)
-#   └── ClampedBC{T}         # Clamped BC (zero slope at ends)
+#   ├── ClampedBC{T}         # Clamped BC (zero slope at ends)
+#   ├── Left{T,B}            # Endpoint wrapper: BC at left (x[1])
+#   └── Right{T,B}           # Endpoint wrapper: BC at right (x[end])
 
 """
     AbstractBC{T<:AbstractFloat}
@@ -25,6 +27,8 @@ Abstract base type for all boundary condition specifications.
 - `PeriodicBC{T}`: Periodic boundary condition
 - `PointBC{T}`: Single-point derivative conditions (Deriv1, Deriv2)
 - `BCPair{T,L,R}`: Pair of left/right boundary conditions
+- `Left{T,B}`: Endpoint wrapper for BC at left (x[1]) - used by quadratic splines
+- `Right{T,B}`: Endpoint wrapper for BC at right (x[end]) - used by quadratic splines
 """
 abstract type AbstractBC{T<:AbstractFloat} end
 
@@ -228,3 +232,42 @@ Check if a boundary condition is periodic.
 """
 @inline _is_periodic_bc(::AbstractBC) = false  # default for all BC types
 @inline _is_periodic_bc(::PeriodicBC) = true   # only PeriodicBC is periodic
+
+
+# ========================================
+# Endpoint-Specific BC Wrappers (Quadratic)
+# ========================================
+
+"""
+    Left{T, B<:PointBC{T}} <: AbstractBC{T}
+
+Wrapper indicating BC is applied at left endpoint (x[1]).
+Used for quadratic splines where only one endpoint BC is specified.
+
+# Example
+```julia
+bc = Left(Deriv1(0.5))   # slope = 0.5 at left endpoint
+bc = Left(Deriv2(0.0))   # curvature = 0 at left endpoint
+```
+"""
+struct Left{T<:AbstractFloat, B<:PointBC{T}} <: AbstractBC{T}
+    bc::B
+end
+# Note: Julia generates outer constructor automatically: Left(bc::B) where {T,B<:PointBC{T}}
+
+"""
+    Right{T, B<:PointBC{T}} <: AbstractBC{T}
+
+Wrapper indicating BC is applied at right endpoint (x[end]).
+Used for quadratic splines where only one endpoint BC is specified.
+
+# Example
+```julia
+bc = Right(Deriv1(2.0))  # slope = 2.0 at right endpoint
+bc = Right(Deriv2(0.0))  # curvature = 0 at right endpoint
+```
+"""
+struct Right{T<:AbstractFloat, B<:PointBC{T}} <: AbstractBC{T}
+    bc::B
+end
+# Note: Julia generates outer constructor automatically: Right(bc::B) where {T,B<:PointBC{T}}

@@ -17,6 +17,7 @@ else
     # Default behavior: run all tests
     include("test_constant.jl")
     include("test_linear.jl")
+    include("test_quadratic.jl")
     include("test_cubic.jl")
     include("test_cubic_autocache.jl")
     include("test_cubic_interpolant.jl")

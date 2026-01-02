@@ -425,9 +425,12 @@ end
         @test_throws DomainError quadratic_interp(x, y, -0.5)
         @test_throws DomainError quadratic_interp(x, y, 2.5)
 
-        # :constant - clamp to boundary values
+        # :constant - clamp to boundary values (outside domain)
         @test quadratic_interp(x, y, -0.5; extrap=:constant) ≈ 0.0
         @test quadratic_interp(x, y, 2.5; extrap=:constant) ≈ 4.0
+
+        # :constant - inside domain should work normally (coverage for eval_core path)
+        @test quadratic_interp(x, y, 1.0; extrap=:constant) ≈ 1.0
 
         # :constant - derivatives return zero outside domain
         @test quadratic_interp(x, y, -0.5; extrap=:constant, deriv=1) ≈ 0.0

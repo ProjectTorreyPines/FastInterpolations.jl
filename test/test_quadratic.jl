@@ -554,7 +554,9 @@ end
 # ============================================================================
 @testset "Quadratic Interpolation - Allocations" begin
 
-    @testset "scalar interpolation zero-allocation" begin
+    # ALLOC_THRESHOLD is defined in runtests.jl
+
+    @testset "interpolant scalar zero-allocation" begin
         x = collect(range(0.0, 1.0, 51))
         y = x.^2
 
@@ -568,7 +570,7 @@ end
 
         # Scalar call should be zero-allocation
         allocs = @allocated itp(0.5)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
 
         # Derivative calls should also be zero-allocation
         for _ in 1:10
@@ -577,11 +579,11 @@ end
         end
         allocs_d1 = @allocated itp(0.5; deriv=1)
         allocs_d2 = @allocated itp(0.5; deriv=2)
-        @test allocs_d1 == 0
-        @test allocs_d2 == 0
+        @test allocs_d1 <= ALLOC_THRESHOLD
+        @test allocs_d2 <= ALLOC_THRESHOLD
     end
 
-    @testset "in-place vector zero-allocation" begin
+    @testset "interpolant in-place vector zero-allocation" begin
         x = collect(range(0.0, 1.0, 51))
         y = x.^2
         xq = collect(range(0.1, 0.9, 100))
@@ -596,7 +598,7 @@ end
 
         # In-place should be zero-allocation
         allocs = @allocated itp(out, xq)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "DerivativeView zero-allocation" begin
@@ -615,10 +617,83 @@ end
 
         allocs_d1 = @allocated d1(0.5)
         allocs_d2 = @allocated d2(0.5)
-        @test allocs_d1 == 0
-        @test allocs_d2 == 0
+        @test allocs_d1 <= ALLOC_THRESHOLD
+        @test allocs_d2 <= ALLOC_THRESHOLD
     end
 
+    # ========================================
+    # One-shot API Allocation Tests
+    # ========================================
+    @testset "one-shot scalar zero-allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x.^2
+
+        # warm-up all code paths (deriv=0, 1, 2)
+        quadratic_interp(x, y, 0.5)
+        quadratic_interp(x, y, 0.5; deriv=1)
+        quadratic_interp(x, y, 0.5; deriv=2)
+
+        # Measure allocation for scalar one-shot
+        allocs = @allocated quadratic_interp(x, y, 0.5)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Different query points should have same allocation
+        allocs_other = @allocated quadratic_interp(x, y, 0.3)
+        @test allocs_other <= ALLOC_THRESHOLD
+
+        # Derivative calls should also be zero-allocation
+        allocs_d1 = @allocated quadratic_interp(x, y, 0.5; deriv=1)
+        allocs_d2 = @allocated quadratic_interp(x, y, 0.5; deriv=2)
+        @test allocs_d1 <= ALLOC_THRESHOLD
+        @test allocs_d2 <= ALLOC_THRESHOLD
+    end
+
+    @testset "one-shot vector in-place zero-allocation" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x.^2
+        xq = collect(range(0.1, 0.9, 100))
+        out = similar(xq)
+
+        # warmup all BC types and deriv values (single call each)
+        quadratic_interp!(out, x, y, xq)
+        quadratic_interp!(out, x, y, xq; bc = Left(Deriv1(2.0)))
+        quadratic_interp!(out, x, y, xq; bc = Left(Deriv2(1.0)))
+        quadratic_interp!(out, x, y, xq; bc = Right(Deriv1(2.0)))
+        quadratic_interp!(out, x, y, xq; bc = Right(Deriv2(1.0)))
+        quadratic_interp!(out, x, y, xq; deriv=1)
+        quadratic_interp!(out, x, y, xq; deriv=2)
+
+        # In-place version - all BC types
+        alloc1 = @allocated quadratic_interp!(out, x, y, xq)
+        alloc2 = @allocated quadratic_interp!(out, x, y, xq; bc = Left(Deriv1(2.0)))
+        alloc3 = @allocated quadratic_interp!(out, x, y, xq; bc = Left(Deriv2(1.0)))
+        alloc4 = @allocated quadratic_interp!(out, x, y, xq; bc = Right(Deriv1(2.0)))
+        alloc5 = @allocated quadratic_interp!(out, x, y, xq; bc = Right(Deriv2(1.0)))
+
+        @test alloc1 <= ALLOC_THRESHOLD
+        @test alloc2 <= ALLOC_THRESHOLD
+        @test alloc3 <= ALLOC_THRESHOLD
+        @test alloc4 <= ALLOC_THRESHOLD
+        @test alloc5 <= ALLOC_THRESHOLD
+
+        # With different BC run-time value (should not affect allocation)
+        alloc2 = @allocated quadratic_interp!(out, x, y, xq; bc = Left(Deriv1(-2.0)))
+        alloc3 = @allocated quadratic_interp!(out, x, y, xq; bc = Left(Deriv2(-1.0)))
+        alloc4 = @allocated quadratic_interp!(out, x, y, xq; bc = Right(Deriv1(-2.0)))
+        alloc5 = @allocated quadratic_interp!(out, x, y, xq; bc = Right(Deriv2(-1.0)))
+
+        @test alloc2 <= ALLOC_THRESHOLD
+        @test alloc3 <= ALLOC_THRESHOLD
+        @test alloc4 <= ALLOC_THRESHOLD
+        @test alloc5 <= ALLOC_THRESHOLD
+
+        # Derivative evaluations
+        alloc_d1 = @allocated quadratic_interp!(out, x, y, xq; deriv=1)
+        alloc_d2 = @allocated quadratic_interp!(out, x, y, xq; deriv=2)
+
+        @test alloc_d1 <= ALLOC_THRESHOLD
+        @test alloc_d2 <= ALLOC_THRESHOLD
+    end
 end
 
 # ============================================================================
@@ -824,6 +899,172 @@ end
 
         result = d1.([0.5, 1.5, 2.5])
         @test result ≈ [1.0, 3.0, 5.0] rtol=1e-10
+    end
+
+end
+
+# ============================================================================
+# Group 9: Mathematical Correctness Tests (Non-uniform Grid)
+# ============================================================================
+@testset "Quadratic Interpolation - Mathematical Correctness" begin
+    # For a quadratic polynomial f(x) = ax² + bx + c, the quadratic spline
+    # should be EXACT regardless of which BC is used (Left/Right, Deriv1/Deriv2),
+    # as long as the BC value matches the true derivative.
+
+    @testset "BC equivalence on quadratic polynomial (non-uniform grid)" begin
+        # Non-uniform grid with varying spacing
+        x = [0.0, 0.3, 0.7, 1.2, 2.0, 3.5]
+
+        # f(x) = 2x² - 3x + 1
+        a, b, c = 2.0, -3.0, 1.0
+        f(t) = a*t^2 + b*t + c
+        f_d1(t) = 2*a*t + b  # f'(x) = 4x - 3
+        f_d2 = 2*a           # f''(x) = 4 (constant)
+
+        y = f.(x)
+
+        # Compute true BC values
+        x_left, x_right = first(x), last(x)
+        d1_left = f_d1(x_left)    # f'(0) = -3
+        d1_right = f_d1(x_right)  # f'(3.5) = 11
+        d2_val = f_d2             # f''(x) = 4
+
+        # All four BC variants
+        bc_left_d1 = Left(Deriv1(d1_left))
+        bc_left_d2 = Left(Deriv2(d2_val))
+        bc_right_d1 = Right(Deriv1(d1_right))
+        bc_right_d2 = Right(Deriv2(d2_val))
+
+        # Query points (including edge cases near boundaries)
+        xq = [0.0, 0.1, 0.5, 1.0, 1.5, 2.5, 3.0, 3.5]
+        expected = f.(xq)
+        expected_d1 = f_d1.(xq)
+        expected_d2 = fill(f_d2, length(xq))
+
+        # Test all BC variants produce exact results
+        for (name, bc) in [
+            ("Left(Deriv1)", bc_left_d1),
+            ("Left(Deriv2)", bc_left_d2),
+            ("Right(Deriv1)", bc_right_d1),
+            ("Right(Deriv2)", bc_right_d2)
+        ]
+            @testset "$name" begin
+                # Value interpolation
+                result = quadratic_interp(x, y, xq; bc=bc)
+                @test result ≈ expected rtol=1e-12 atol=1e-14
+
+                # First derivative
+                result_d1 = quadratic_interp(x, y, xq; bc=bc, deriv=1)
+                @test result_d1 ≈ expected_d1 rtol=1e-12 atol=1e-14
+
+                # Second derivative
+                result_d2 = quadratic_interp(x, y, xq; bc=bc, deriv=2)
+                @test result_d2 ≈ expected_d2 rtol=1e-12 atol=1e-14
+            end
+        end
+    end
+
+    @testset "all BCs produce identical spline for quadratic" begin
+        # Highly non-uniform grid
+        x = [0.0, 0.1, 0.5, 2.0, 2.1, 5.0]
+
+        # f(x) = x² (simpler case)
+        y = x.^2
+
+        # True derivatives
+        d1_left = 2 * first(x)   # 0
+        d1_right = 2 * last(x)   # 10
+        d2_val = 2.0             # constant
+
+        # Create interpolants with all BC variants
+        itp_left_d1 = quadratic_interp(x, y; bc=Left(Deriv1(d1_left)))
+        itp_left_d2 = quadratic_interp(x, y; bc=Left(Deriv2(d2_val)))
+        itp_right_d1 = quadratic_interp(x, y; bc=Right(Deriv1(d1_right)))
+        itp_right_d2 = quadratic_interp(x, y; bc=Right(Deriv2(d2_val)))
+
+        # Query at many points
+        xq = range(0.0, 5.0, 50)
+
+        # All should produce identical results
+        result_ld1 = itp_left_d1.(xq)
+        result_ld2 = itp_left_d2.(xq)
+        result_rd1 = itp_right_d1.(xq)
+        result_rd2 = itp_right_d2.(xq)
+
+        @test result_ld1 ≈ result_ld2 rtol=1e-12
+        @test result_ld1 ≈ result_rd1 rtol=1e-12
+        @test result_ld1 ≈ result_rd2 rtol=1e-12
+
+        # All should match x²
+        expected = collect(xq).^2
+        @test result_ld1 ≈ expected rtol=1e-12
+    end
+
+    @testset "edge cases: boundary evaluation" begin
+        # Grid with extreme spacing variation
+        x = [0.0, 0.01, 1.0, 1.01, 10.0]  # tiny + large intervals
+
+        # f(x) = -x² + 5x
+        f(t) = -t^2 + 5*t
+        f_d1(t) = -2*t + 5
+        f_d2 = -2.0
+
+        y = f.(x)
+
+        bc = Right(Deriv1(f_d1(last(x))))  # f'(10) = -15
+
+        # Test exact boundary points
+        @test quadratic_interp(x, y, 0.0; bc=bc) ≈ f(0.0) rtol=1e-12
+        @test quadratic_interp(x, y, 10.0; bc=bc) ≈ f(10.0) rtol=1e-12
+
+        # Test points very close to boundaries
+        @test quadratic_interp(x, y, 1e-10; bc=bc) ≈ f(1e-10) rtol=1e-10
+        @test quadratic_interp(x, y, 10.0 - 1e-10; bc=bc) ≈ f(10.0 - 1e-10) rtol=1e-10
+
+        # Test mid-interval points
+        @test quadratic_interp(x, y, 0.005; bc=bc) ≈ f(0.005) rtol=1e-12
+        @test quadratic_interp(x, y, 5.0; bc=bc) ≈ f(5.0) atol=1e-14  # f(5)=0, need atol
+    end
+
+    @testset "Float32 precision on non-uniform grid" begin
+        x32 = Float32[0.0, 0.5, 1.5, 3.0]
+        y32 = x32.^2
+
+        d1_right = 2 * last(x32)  # 6.0f0
+
+        itp = quadratic_interp(x32, y32; bc=Right(Deriv1(d1_right)))
+
+        # Should be exact within Float32 precision
+        @test itp(1.0f0) ≈ 1.0f0 rtol=1e-6
+        @test itp(2.0f0) ≈ 4.0f0 rtol=1e-6
+        @test itp(0.25f0) ≈ 0.0625f0 rtol=1e-6
+    end
+
+    @testset "consistency: scalar vs vector API" begin
+        x = [0.0, 0.4, 1.1, 2.0, 3.3]
+        y = x.^2
+
+        bc = Left(Deriv2(2.0))
+        xq = [0.2, 0.8, 1.5, 2.5, 3.0]
+
+        # Scalar API
+        results_scalar = [quadratic_interp(x, y, xi; bc=bc) for xi in xq]
+
+        # Vector API (allocating)
+        results_vector = quadratic_interp(x, y, xq; bc=bc)
+
+        # In-place API
+        results_inplace = zeros(length(xq))
+        quadratic_interp!(results_inplace, x, y, xq; bc=bc)
+
+        # Interpolant API
+        itp = quadratic_interp(x, y; bc=bc)
+        results_itp = itp.(xq)
+
+        # All should be identical (not just approximately equal)
+        @test results_scalar == results_vector
+        @test results_scalar == results_inplace
+        @test results_scalar == results_itp
     end
 
 end

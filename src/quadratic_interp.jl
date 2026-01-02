@@ -8,19 +8,25 @@
 # ========================================
 
 """
-    _compute_grid_spacing(x) -> (h, inv_h)
+    _compute_grid_spacing!(h, inv_h, x)
 
-Compute grid spacing and inverse from x-coordinates.
+Fill pre-allocated h and inv_h arrays with grid spacing and inverse.
+
+# Arguments
+- `h::AbstractVector{T}`: Output grid spacing (length n-1)
+- `inv_h::AbstractVector{T}`: Output inverse grid spacing (length n-1)
+- `x::AbstractVector{T}`: x-coordinates (length n)
 """
-@inline function _compute_grid_spacing(x::AbstractVector{T}) where {T<:AbstractFloat}
-    n = length(x)
-    h = Vector{T}(undef, n-1)
-    inv_h = Vector{T}(undef, n-1)
-    @inbounds for i in 1:(n-1)
+@inline function _compute_grid_spacing!(
+    h::AbstractVector{T},
+    inv_h::AbstractVector{T},
+    x::AbstractVector{T}
+) where {T<:AbstractFloat}
+    @inbounds for i in eachindex(h, inv_h)
         h[i] = x[i+1] - x[i]
         inv_h[i] = inv(h[i])
     end
-    return h, inv_h
+    return nothing
 end
 
 # ========================================
@@ -156,21 +162,73 @@ end
     ::Val{:extension},
     op::AbstractEvalOp
 ) where {FT<:AbstractFloat}
-    n = length(y)
     dt = xi - (x_bound - h[end])  # distance from x[n-1]
     @inbounds return _quadratic_kernel(op, a[end], d[end], y[end-1], dt)
 end
 
 
 # ========================================
-# Coefficient Computation Wrapper
+# Coefficient Computation (In-Place)
 # ========================================
 
 """
-    _compute_quadratic_coeffs(x, y, bc)
+    _compute_quadratic_coeffs!(h, inv_h, s, d, a, x, y, bc)
 
-Compute quadratic spline coefficients (s, d, a) from BC.
-Computes h and inv_h inline - no caching.
+Fill pre-allocated coefficient arrays for quadratic spline.
+This is the zero-allocation core used by AdaptiveArrayPools.
+
+# Arguments (outputs first, then inputs)
+- `h::AbstractVector{FT}`: Grid spacing (length n-1)
+- `inv_h::AbstractVector{FT}`: Inverse grid spacing (length n-1)
+- `s::AbstractVector{FT}`: Secant slopes (length n-1)
+- `d::AbstractVector{FT}`: Slope coefficients (length n)
+- `a::AbstractVector{FT}`: Quadratic coefficients (length n-1)
+- `x::AbstractVector{FT}`: x-coordinates (length n)
+- `y::AbstractVector{FT}`: y-values (length n)
+- `bc::Union{Left{FT}, Right{FT}}`: Boundary condition
+"""
+function _compute_quadratic_coeffs!(
+    h::AbstractVector{FT},
+    inv_h::AbstractVector{FT},
+    s::AbstractVector{FT},
+    d::AbstractVector{FT},
+    a::AbstractVector{FT},
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    bc::Union{Left{FT}, Right{FT}}
+) where {FT<:AbstractFloat}
+    n = length(y)
+
+    # 1. Compute grid spacing
+    _compute_grid_spacing!(h, inv_h, x)
+
+    # 2. Compute secants
+    _compute_quadratic_secants!(s, y, inv_h)
+
+    # 3. Compute d[1] from BC
+    d1 = _compute_d1_from_bc(bc, s, h, n)
+
+    # 4. Forward recurrence to fill d[]
+    _forward_recurrence!(d, s, d1)
+
+    # 5. Compute quadratic coefficients a[]
+    _compute_quadratic_coefficients!(a, d, s, inv_h)
+
+    return nothing
+end
+
+# ========================================
+# Coefficient Computation (Allocating)
+# ========================================
+
+"""
+    _compute_quadratic_coeffs(x, y, bc) -> (h, s, d, a)
+
+Compute quadratic spline coefficients (allocating version).
+Allocates h, inv_h, s, d, a arrays internally.
+
+For zero-allocation usage, use `_compute_quadratic_coeffs!` with
+pre-allocated buffers (e.g., from AdaptiveArrayPools).
 """
 function _compute_quadratic_coeffs(
     x::AbstractVector{FT},
@@ -180,25 +238,15 @@ function _compute_quadratic_coeffs(
     n = length(y)
     nm1 = n - 1
 
-    # Compute grid spacing inline
-    h, inv_h = _compute_grid_spacing(x)
-
-    # Allocate coefficient arrays
+    # Allocate all arrays
+    h = Vector{FT}(undef, nm1)
+    inv_h = Vector{FT}(undef, nm1)
     s = Vector{FT}(undef, nm1)
     d = Vector{FT}(undef, n)
     a = Vector{FT}(undef, nm1)
 
-    # 1. Compute secants
-    _compute_quadratic_secants!(s, y, inv_h)
-
-    # 2. Compute d[1] from BC
-    d1 = _compute_d1_from_bc(bc, s, h, n)
-
-    # 3. Forward recurrence to fill d[]
-    _forward_recurrence!(d, s, d1)
-
-    # 4. Compute quadratic coefficients a[]
-    _compute_quadratic_coefficients!(a, d, s, inv_h)
+    # Fill using in-place version
+    _compute_quadratic_coeffs!(h, inv_h, s, d, a, x, y, bc)
 
     return h, s, d, a
 end
@@ -252,7 +300,7 @@ quadratic_interp(x, y, 1.5; deriv=1)  # ≈ 3.0 (slope at x=1.5)
 quadratic_interp(x, y, 1.5; deriv=2)  # ≈ 2.0 (curvature)
 ```
 """
-@inline function quadratic_interp(
+@inline @with_pool pool function quadratic_interp(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     xi::FT;
@@ -263,8 +311,14 @@ quadratic_interp(x, y, 1.5; deriv=2)  # ≈ 2.0 (curvature)
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
-    # Compute coefficients from BC (no caching)
-    h, _, d, a = _compute_quadratic_coeffs(x, y, bc)
+    # Compute coefficients using temporary arrays from pool
+    n = length(y) - 1 
+    h = acquire!(pool, FT, n) 
+    inv_h = acquire!(pool, FT, n)
+    s = acquire!(pool, FT, n)
+    d = acquire!(pool, FT, n+1)
+    a = acquire!(pool, FT, n)
+    _compute_quadratic_coeffs!(h, inv_h, s, d, a, x, y, bc)
 
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
@@ -295,7 +349,7 @@ quadratic_interp!(out, x, y, [0.5, 1.5, 2.5])
 # out ≈ [0.25, 2.25, 6.25]
 ```
 """
-function quadratic_interp!(
+@with_pool pool function quadratic_interp!(
     output::AbstractVector{FT},
     x::AbstractVector{FT},
     y::AbstractVector{FT},
@@ -308,8 +362,15 @@ function quadratic_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert length(x) >= 2 "x must have at least 2 elements"
 
-    # Compute coefficients from BC (no caching)
-    h, _, d, a = _compute_quadratic_coeffs(x, y, bc)
+    # Compute coefficients using temporary arrays from pool
+    n = length(y) - 1 
+    h = acquire!(pool, FT, n) 
+    inv_h = acquire!(pool, FT, n)
+    s = acquire!(pool, FT, n)
+    d = acquire!(pool, FT, n+1)
+    a = acquire!(pool, FT, n)
+    _compute_quadratic_coeffs!(h, inv_h, s, d, a, x, y, bc)
+
 
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
@@ -421,7 +482,7 @@ end
 # Vector Real → Float wrappers (in-place)
 # ========================================
 
-function quadratic_interp!(
+@with_pool pool function quadratic_interp!(
     output::AbstractVector,
     x::AbstractVector{T},
     y::AbstractVector{T},
@@ -439,8 +500,14 @@ function quadratic_interp!(
     x_targets_float = _to_float(x_targets, FT)
     bc_promoted = _promote_bc(bc, FT)
 
-    # Compute coefficients (no caching)
-    h, _, d, a = _compute_quadratic_coeffs(x_float, y_float, bc_promoted)
+    # Compute coefficients using temporary arrays from pool
+    n = length(y) - 1 
+    h = acquire!(pool, FT, n) 
+    inv_h = acquire!(pool, FT, n)
+    s = acquire!(pool, FT, n)
+    d = acquire!(pool, FT, n+1)
+    a = acquire!(pool, FT, n)
+    _compute_quadratic_coeffs!(h, inv_h, s, d, a, x_float, y_float, bc_promoted)
 
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin

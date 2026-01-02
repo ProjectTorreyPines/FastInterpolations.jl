@@ -27,8 +27,8 @@ Compute secant slopes: s[i] = (y[i+1] - y[i]) * inv_h[i]
 - `inv_h::Vector{T}`: Inverse grid spacing (length n-1)
 """
 @inline function _compute_quadratic_secants!(s::AbstractVector{T}, y::AbstractVector{T}, inv_h::AbstractVector{T}) where {T<:AbstractFloat}
-    n = length(y)
-    @inbounds for i in 1:(n-1)
+    n = length(y) - 1
+    @inbounds for i in 1:n
         s[i] = (y[i+1] - y[i]) * inv_h[i]
     end
     return s

@@ -106,6 +106,64 @@ d2 = deriv2(litp)
 """
 @inline deriv2(itp::LinearInterpolant) = DerivativeView{2, typeof(itp)}(itp)
 
+"""
+    deriv1(itp::ConstantInterpolant) -> DerivativeView{1, ...}
+
+Create a callable first-derivative view of the constant interpolant.
+Always returns zero (constant functions have zero derivative).
+
+# Example
+```julia
+citp = constant_interp(x, y)
+d1 = deriv1(citp)
+@assert all(d1.(xs) .== 0.0)
+```
+"""
+@inline deriv1(itp::ConstantInterpolant) = DerivativeView{1, typeof(itp)}(itp)
+
+"""
+    deriv2(itp::ConstantInterpolant) -> DerivativeView{2, ...}
+
+Create a callable second-derivative view of the constant interpolant.
+Always returns zero (constant functions have zero curvature).
+
+# Example
+```julia
+citp = constant_interp(x, y)
+d2 = deriv2(citp)
+@assert all(d2.(xs) .== 0.0)
+```
+"""
+@inline deriv2(itp::ConstantInterpolant) = DerivativeView{2, typeof(itp)}(itp)
+
+"""
+    deriv1(itp::QuadraticInterpolant) -> DerivativeView{1, ...}
+
+Create a callable first-derivative view of the quadratic interpolant.
+
+# Example
+```julia
+qitp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+d1 = deriv1(qitp)
+slopes = d1.(xs)  # First derivative at query points
+```
+"""
+@inline deriv1(itp::QuadraticInterpolant) = DerivativeView{1, typeof(itp)}(itp)
+
+"""
+    deriv2(itp::QuadraticInterpolant) -> DerivativeView{2, ...}
+
+Create a callable second-derivative view of the quadratic interpolant.
+
+# Example
+```julia
+qitp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+d2 = deriv2(qitp)
+curvatures = d2.(xs)  # Second derivative (constant per interval)
+```
+"""
+@inline deriv2(itp::QuadraticInterpolant) = DerivativeView{2, typeof(itp)}(itp)
+
 # ========================================
 # Callable Methods
 # ========================================

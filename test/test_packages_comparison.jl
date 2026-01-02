@@ -182,4 +182,27 @@ const APPROX_REL_TOLERANCCE = 1e-15
         end
     end
 
+    # =========================================================================
+    # Quadratic Interpolation - Comparison Skipped
+    # =========================================================================
+    # Direct comparison with DataInterpolations.jl QuadraticSpline is not included
+    # because the two packages use fundamentally different algorithms:
+    #
+    # - FastInterpolations: Piecewise polynomial with explicit BC (recurrence-based, O(n))
+    #   User specifies boundary condition directly (e.g., Left(Deriv2(0.0)))
+    #
+    # - DataInterpolations.jl: B-spline basis with implicit BC (clamped knot vector)
+    #   BC is implicitly determined by the B-spline construction, not user-specified
+    #
+    # Both solve the same mathematical problem (quadratic spline has 1 DOF requiring 1 BC),
+    # but with different BC choices. When BCs match exactly, results are identical to
+    # machine precision. However, matching DataInterpolations' implicit BC would require
+    # reverse-engineering their B-spline construction, which is not practical.
+    #
+    # Note: Linear and Cubic comparisons work because:
+    # - Linear: No BC needed (unique solution)
+    # - Cubic: DataInterpolations.jl CubicSpline uses tridiagonal system with Natural BC,
+    #          same algorithm as FastInterpolations
+    # =========================================================================
+
 end

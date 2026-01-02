@@ -1106,3 +1106,138 @@ end
     end
 
 end
+
+# ============================================================================
+# Group 10: Extension Extrapolation Accuracy Tests
+# ============================================================================
+@testset "Quadratic Interpolation - Extension Extrapolation Accuracy" begin
+    # For quadratic polynomials, extension extrapolation should be EXACT
+    # because extending a quadratic polynomial is still the same quadratic.
+
+    @testset "extension extrapolation exact for ax² + bx + c" begin
+        # Non-uniform grid
+        x = [0.0, 0.3, 0.7, 1.2, 2.0, 3.5]
+
+        # f(x) = 2x² - 3x + 1
+        a, b, c = 2.0, -3.0, 1.0
+        f(t) = a*t^2 + b*t + c
+        f_d1(t) = 2*a*t + b  # f'(x) = 4x - 3
+        f_d2 = 2*a           # f''(x) = 4 (constant)
+
+        y = f.(x)
+
+        # Compute true BC values
+        x_left, x_right = first(x), last(x)
+        d1_left = f_d1(x_left)    # f'(0) = -3
+        d1_right = f_d1(x_right)  # f'(3.5) = 11
+        d2_val = f_d2             # f''(x) = 4
+
+        # All four BC variants
+        bcs = [
+            ("Left(Deriv1)", Left(Deriv1(d1_left))),
+            ("Left(Deriv2)", Left(Deriv2(d2_val))),
+            ("Right(Deriv1)", Right(Deriv1(d1_right))),
+            ("Right(Deriv2)", Right(Deriv2(d2_val)))
+        ]
+
+        # Extrapolation query points (outside domain)
+        xq_left = [-1.0, -0.5, -0.1]   # left of x[1]=0
+        xq_right = [4.0, 5.0, 6.0]      # right of x[end]=3.5
+
+        for (name, bc) in bcs
+            @testset "$name - one-shot API" begin
+                # Left extrapolation - value
+                for xi in xq_left
+                    result = quadratic_interp(x, y, xi; bc=bc, extrap=:extension)
+                    @test result ≈ f(xi) rtol=1e-12 atol=1e-14
+                end
+
+                # Right extrapolation - value
+                for xi in xq_right
+                    result = quadratic_interp(x, y, xi; bc=bc, extrap=:extension)
+                    @test result ≈ f(xi) rtol=1e-12 atol=1e-14
+                end
+
+                # Left extrapolation - derivatives
+                for xi in xq_left
+                    d1 = quadratic_interp(x, y, xi; bc=bc, extrap=:extension, deriv=1)
+                    d2 = quadratic_interp(x, y, xi; bc=bc, extrap=:extension, deriv=2)
+                    @test d1 ≈ f_d1(xi) rtol=1e-12 atol=1e-14
+                    @test d2 ≈ f_d2 rtol=1e-12 atol=1e-14
+                end
+
+                # Right extrapolation - derivatives
+                for xi in xq_right
+                    d1 = quadratic_interp(x, y, xi; bc=bc, extrap=:extension, deriv=1)
+                    d2 = quadratic_interp(x, y, xi; bc=bc, extrap=:extension, deriv=2)
+                    @test d1 ≈ f_d1(xi) rtol=1e-12 atol=1e-14
+                    @test d2 ≈ f_d2 rtol=1e-12 atol=1e-14
+                end
+            end
+
+            @testset "$name - interpolant API" begin
+                itp = quadratic_interp(x, y; bc=bc, extrap=:extension)
+                d1_view = deriv1(itp)
+                d2_view = deriv2(itp)
+
+                # Left extrapolation
+                for xi in xq_left
+                    @test itp(xi) ≈ f(xi) rtol=1e-12 atol=1e-14
+                    @test d1_view(xi) ≈ f_d1(xi) rtol=1e-12 atol=1e-14
+                    @test d2_view(xi) ≈ f_d2 rtol=1e-12 atol=1e-14
+                end
+
+                # Right extrapolation
+                for xi in xq_right
+                    @test itp(xi) ≈ f(xi) rtol=1e-12 atol=1e-14
+                    @test d1_view(xi) ≈ f_d1(xi) rtol=1e-12 atol=1e-14
+                    @test d2_view(xi) ≈ f_d2 rtol=1e-12 atol=1e-14
+                end
+            end
+        end
+    end
+
+    @testset "extension C0 continuity at boundary" begin
+        # The extension polynomial must match exactly at the boundary
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2  # f(x) = x²
+
+        bc = Right(Deriv1(6.0))  # f'(3) = 6
+
+        # Value at boundary should match from both sides
+        val_inside = quadratic_interp(x, y, 3.0; bc=bc)
+        val_outside = quadratic_interp(x, y, 3.0 + 1e-10; bc=bc, extrap=:extension)
+        @test val_inside ≈ val_outside rtol=1e-8
+
+        # Left boundary (value is 0.0, so use atol instead of rtol)
+        val_inside_left = quadratic_interp(x, y, 0.0; bc=bc)
+        val_outside_left = quadratic_interp(x, y, -1e-10; bc=bc, extrap=:extension)
+        @test val_inside_left ≈ val_outside_left atol=1e-8
+    end
+
+    @testset "extension vector API" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        f(t) = t^2
+        y = f.(x)
+
+        bc = Right(Deriv1(6.0))
+
+        # Query points spanning inside and outside
+        xq = [-0.5, 0.5, 1.5, 2.5, 3.5]
+        expected = f.(xq)
+
+        # One-shot vector API
+        result = quadratic_interp(x, y, xq; bc=bc, extrap=:extension)
+        @test result ≈ expected rtol=1e-12
+
+        # In-place API
+        out = zeros(length(xq))
+        quadratic_interp!(out, x, y, xq; bc=bc, extrap=:extension)
+        @test out ≈ expected rtol=1e-12
+
+        # Interpolant vector call
+        itp = quadratic_interp(x, y; bc=bc, extrap=:extension)
+        @test itp(xq) ≈ expected rtol=1e-12
+    end
+
+end

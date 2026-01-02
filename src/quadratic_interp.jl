@@ -163,7 +163,8 @@ end
     op::AbstractEvalOp
 ) where {FT<:AbstractFloat}
     dt = xi - (x_bound - h[end])  # distance from x[n-1]
-    @inbounds return _quadratic_kernel(op, a[end], d[end], y[end-1], dt)
+    # Use d[end-1] = slope at interval start (x[n-1]), not d[end] = slope at x[n]
+    @inbounds return _quadratic_kernel(op, a[end], d[end-1], y[end-1], dt)
 end
 
 

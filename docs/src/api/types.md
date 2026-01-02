@@ -2,6 +2,8 @@
 
 ## Boundary Conditions
 
+### Cubic Splines (BCPair)
+
 ```@docs
 AbstractBC
 PointBC
@@ -11,6 +13,13 @@ BCPair
 NaturalBC
 ClampedBC
 PeriodicBC
+```
+
+### Quadratic Splines (Single Endpoint)
+
+```@docs
+Left
+Right
 ```
 
 ## Index

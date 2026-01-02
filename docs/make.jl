@@ -2,6 +2,30 @@ using Documenter
 using FastInterpolations
 
 # ============================================
+# Helper: Conditional write (for LiveServer compatibility)
+# ============================================
+
+"""
+Write file only if content changed (prevents LiveServer infinite loop).
+"""
+function write_if_changed(path::String, content::String)
+    if isfile(path) && read(path, String) == content
+        return  # 내용이 같으면 아무것도 하지 않음
+    end
+    write(path, content)
+end
+
+"""
+Copy file only if content changed (prevents mtime update triggering rebuild).
+"""
+function cp_if_changed(src::String, dst::String)
+    if isfile(dst) && read(src) == read(dst)
+        return  # 내용이 같으면 복사 건너뜀
+    end
+    cp(src, dst; force=true)
+end
+
+# ============================================
 # Helper: Rewrite relative paths in README files
 # ============================================
 
@@ -47,21 +71,21 @@ if isdir(IMAGES_SRC)
         src = joinpath(IMAGES_SRC, img)
         dst = joinpath(IMAGES_DST, img)
         if isfile(src)
-            cp(src, dst; force=true)
+            cp_if_changed(src, dst)
         end
     end
 end
 
-# Copy README.md → index.md (with path rewriting)
+# Copy README.md → index.md (with path rewriting, conditional write)
 readme_content = read(joinpath(@__DIR__, "../README.md"), String)
-write(joinpath(DOCS_SRC, "index.md"), rewrite_readme_paths(readme_content; from_root=true))
+write_if_changed(joinpath(DOCS_SRC, "index.md"), rewrite_readme_paths(readme_content; from_root=true))
 
-# Copy benchmark/README.md → guides/performance.md (with path rewriting)
+# Copy benchmark/README.md → guides/performance.md (with path rewriting, conditional write)
 bench_readme = joinpath(@__DIR__, "../benchmark/README.md")
 if isfile(bench_readme)
     bench_content = read(bench_readme, String)
-    write(joinpath(DOCS_SRC, "guides/performance.md"),
-          rewrite_readme_paths(bench_content; from_root=false))
+    write_if_changed(joinpath(DOCS_SRC, "guides/performance.md"),
+                     rewrite_readme_paths(bench_content; from_root=false))
 end
 
 # ============================================
@@ -80,7 +104,10 @@ makedocs(
     pages = [
         "Home" => "index.md",
         "Interpolation" => [
+            "Overview" => "interpolation/overview.md",
+            "Constant" => "interpolation/constant.md",
             "Linear" => "interpolation/linear.md",
+            "Quadratic" => "interpolation/quadratic.md",
             "Cubic Splines" => [
                 "Overview" => "interpolation/cubic/overview.md",
                 "Standard BC" => "interpolation/cubic/standard.md",
@@ -96,7 +123,9 @@ makedocs(
         ],
         "Benchmarks" => "guides/performance.md",
         "API Reference" => [
+            "Constant" => "api/constant.md",
             "Linear" => "api/linear.md",
+            "Quadratic" => "api/quadratic.md",
             "Cubic" => "api/cubic.md",
             "Types" => "api/types.md",
         ],

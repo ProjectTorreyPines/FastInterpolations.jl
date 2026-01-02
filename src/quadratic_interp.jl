@@ -208,13 +208,10 @@ and automatically released when the function returns.
     # 2. Compute secants
     _compute_quadratic_secants!(secant, y, inv_h)
 
-    # 3. Compute d[1] from BC
-    d1 = _compute_d1_from_bc(bc, secant, h, nx)
+    # 3. Fill slopes d[] (BC-dispatched: Left→forward, Right→backward)
+    _fill_slopes!(d, secant, h, bc)
 
-    # 4. Forward recurrence to fill d[]
-    _forward_recurrence!(d, secant, d1)
-
-    # 5. Compute quadratic coefficients a[]
+    # 4. Compute quadratic coefficients a[]
     _compute_quadratic_coefficients!(a, d, secant, inv_h)
 
     return nothing

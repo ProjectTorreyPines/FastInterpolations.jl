@@ -177,8 +177,9 @@ end
 # Group 3: Coefficient Computation Tests
 # ============================================================================
 @testset "Quadratic Interpolation - Coefficient Computation" begin
-    using FastInterpolations: _compute_quadratic_secants!, _compute_d1_from_bc,
-                               _forward_recurrence!, _compute_quadratic_coefficients!
+    using FastInterpolations: _compute_quadratic_secants!, _fill_slopes!,
+                               _forward_recurrence!, _backward_recurrence!,
+                               _compute_quadratic_coefficients!
 
     @testset "secant computation" begin
         y = [0.0, 1.0, 4.0, 9.0]  # x²
@@ -193,60 +194,80 @@ end
         @test s[3] ≈ 5.0   # (9-4)/1
     end
 
-    @testset "d1 from Left(Deriv1)" begin
+    @testset "_fill_slopes! with Left(Deriv1)" begin
+        # d[1] given directly, forward recurrence
         bc = Left(Deriv1(3.0))
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
-        n = 4
+        d = zeros(4)
 
-        d1 = _compute_d1_from_bc(bc, s, h, n)
-        @test d1 ≈ 3.0  # given directly
+        _fill_slopes!(d, s, h, bc)
+
+        # d[1] = 3 (given)
+        # d[2] = 2*1 - 3 = -1
+        # d[3] = 2*3 - (-1) = 7
+        # d[4] = 2*5 - 7 = 3
+        @test d[1] ≈ 3.0
+        @test d[2] ≈ -1.0
+        @test d[3] ≈ 7.0
+        @test d[4] ≈ 3.0
     end
 
-    @testset "d1 from Left(Deriv2)" begin
-        # Left(Deriv2(κ)): a[1] = κ/2, d[1] = s[1] - a[1]*h[1]
+    @testset "_fill_slopes! with Left(Deriv2)" begin
+        # d[1] = s[1] - (κ/2)*h[1], forward recurrence
         bc = Left(Deriv2(2.0))
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
-        n = 4
+        d = zeros(4)
 
-        d1 = _compute_d1_from_bc(bc, s, h, n)
-        # a[1] = 2/2 = 1, d[1] = 1 - 1*1 = 0
-        @test d1 ≈ 0.0
+        _fill_slopes!(d, s, h, bc)
+
+        # d[1] = 1 - (2/2)*1 = 0
+        # d[2] = 2*1 - 0 = 2
+        # d[3] = 2*3 - 2 = 4
+        # d[4] = 2*5 - 4 = 6
+        @test d[1] ≈ 0.0
+        @test d[2] ≈ 2.0
+        @test d[3] ≈ 4.0
+        @test d[4] ≈ 6.0
     end
 
-    @testset "d1 from Right(Deriv1)" begin
-        # d[n] = v, backward recurrence to d[1]
+    @testset "_fill_slopes! with Right(Deriv1)" begin
+        # d[n] given directly, backward recurrence
         bc = Right(Deriv1(7.0))
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
-        n = 4
+        d = zeros(4)
 
-        d1 = _compute_d1_from_bc(bc, s, h, n)
-        # backward: d[i] = 2*s[i] - d[i+1]
-        # d[4] = 7
+        _fill_slopes!(d, s, h, bc)
+
+        # d[4] = 7 (given)
         # d[3] = 2*5 - 7 = 3
         # d[2] = 2*3 - 3 = 3
         # d[1] = 2*1 - 3 = -1
-        @test d1 ≈ -1.0
+        @test d[1] ≈ -1.0
+        @test d[2] ≈ 3.0
+        @test d[3] ≈ 3.0
+        @test d[4] ≈ 7.0
     end
 
-    @testset "d1 from Right(Deriv2)" begin
-        # a[n-1] = κ/2, d[n-1] = s[n-1] - a[n-1]*h[n-1]
-        # d[n] = 2*a[n-1]*h[n-1] + d[n-1], then backward
+    @testset "_fill_slopes! with Right(Deriv2)" begin
+        # d[n] = s[end] + (κ/2)*h[end], backward recurrence
         bc = Right(Deriv2(2.0))
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
-        n = 4
+        d = zeros(4)
 
-        d1 = _compute_d1_from_bc(bc, s, h, n)
-        # a[3] = 2/2 = 1
-        # d[3] = 5 - 1*1 = 4
-        # d[4] = 2*1*1 + 4 = 6
-        # d[3] = 2*5 - 6 = 4 (verify)
+        _fill_slopes!(d, s, h, bc)
+
+        # d[4] = 5 + (2/2)*1 = 6
+        # d[3] = 2*5 - 6 = 4
         # d[2] = 2*3 - 4 = 2
         # d[1] = 2*1 - 2 = 0
-        @test d1 ≈ 0.0
+        @test d[1] ≈ 0.0
+        @test d[2] ≈ 2.0
+        @test d[3] ≈ 4.0
+        @test d[4] ≈ 6.0
     end
 
     @testset "forward recurrence" begin
@@ -260,6 +281,23 @@ end
         # d[2] = 2*1 - 0 = 2
         # d[3] = 2*3 - 2 = 4
         # d[4] = 2*5 - 4 = 6
+        @test d[1] ≈ 0.0
+        @test d[2] ≈ 2.0
+        @test d[3] ≈ 4.0
+        @test d[4] ≈ 6.0
+    end
+
+    @testset "backward recurrence" begin
+        s = [1.0, 3.0, 5.0]
+        d = zeros(4)
+        dn = 6.0
+
+        _backward_recurrence!(d, s, dn)
+
+        # d[4] = 6
+        # d[3] = 2*5 - 6 = 4
+        # d[2] = 2*3 - 4 = 2
+        # d[1] = 2*1 - 2 = 0
         @test d[1] ≈ 0.0
         @test d[2] ≈ 2.0
         @test d[3] ≈ 4.0

@@ -8,11 +8,13 @@
 #   AbstractBC{T}
 #   ├── PointBC{T}           # Single-point BC (abstract)
 #   │   ├── Deriv1{T}            # First derivative
-#   │   └── Deriv2{T}            # Second derivative
+#   │   ├── Deriv2{T}            # Second derivative
+#   │   └── ParabolaFit{T}       # 3-point parabola fit (quadratic splines)
 #   ├── BCPair{T,L,R}        # Both endpoints
 #   ├── PeriodicBC{T}        # Periodic BC
 #   ├── NaturalBC{T}         # Natural BC (zero curvature at ends)
 #   ├── ClampedBC{T}         # Clamped BC (zero slope at ends)
+#   ├── MinCurvBC{T}         # Minimum curvature BC (quadratic splines)
 #   ├── Left{T,B}            # Endpoint wrapper: BC at left (x[1])
 #   └── Right{T,B}           # Endpoint wrapper: BC at right (x[end])
 

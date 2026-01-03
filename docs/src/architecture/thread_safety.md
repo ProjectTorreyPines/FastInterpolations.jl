@@ -22,48 +22,48 @@ The auto-cache uses **RCU (Read-Copy-Update)**, a concurrent programming pattern
 
 ```
      ┌──────────────────────────────────────────────────┐
-     │                   Read Path                       │
-     │                  (lock-free)                      │
+     │                   Read Path                      │
+     │                  (lock-free)                     │
      └──────────────────────────────────────────────────┘
                             │
                             ▼
           ┌─────────────────────────────────────┐
-          │    @atomic :acquire load snapshot    │
-          │         (immutable reference)        │
+          │    @atomic :acquire load snapshot   │
+          │         (immutable reference)       │
           └─────────────────────────────────────┘
                             │
                             ▼
           ┌─────────────────────────────────────┐
           │      Scan snapshot for x-grid       │
-          │    (safe - snapshot never changes)   │
+          │    (safe - snapshot never changes)  │
           └─────────────────────────────────────┘
 
 
      ┌──────────────────────────────────────────────────┐
-     │                   Write Path                      │
-     │                (under lock)                       │
+     │                   Write Path                     │
+     │                (under lock)                      │
      └──────────────────────────────────────────────────┘
                             │
                             ▼
           ┌─────────────────────────────────────┐
-          │          Acquire global lock         │
+          │          Acquire global lock        │
           └─────────────────────────────────────┘
                             │
                             ▼
           ┌─────────────────────────────────────┐
-          │   Double-check (another thread may   │
-          │    have inserted while we waited)    │
+          │   Double-check (another thread may  │
+          │    have inserted while we waited)   │
           └─────────────────────────────────────┘
                             │
                             ▼
           ┌─────────────────────────────────────┐
           │     Copy snapshot → Modify copy     │
-          │     → Atomic publish new snapshot    │
+          │     → Atomic publish new snapshot   │
           └─────────────────────────────────────┘
                             │
                             ▼
           ┌─────────────────────────────────────┐
-          │          Release global lock         │
+          │          Release global lock        │
           └─────────────────────────────────────┘
 ```
 

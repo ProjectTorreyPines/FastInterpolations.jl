@@ -16,13 +16,13 @@ Steps 1-2 depend **only on the x-grid**, not on y-values. By caching the LU fact
 
 ```
                      ┌─────────────────────────────────────┐
-                     │        cubic_interp!(out, x, y, xq)  │
+                     │       cubic_interp!(out, x, y, xq)  │
                      └─────────────────────────────────────┘
                                         │
                                         ▼
                      ┌─────────────────────────────────────┐
-                     │         Cache Lookup (lock-free)     │
-                     │    Key: x-grid + BC type signature   │
+                     │        Cache Lookup (lock-free)     │
+                     │   Key: x-grid + BC type signature   │
                      └─────────────────────────────────────┘
                             │                    │
                        Cache Hit              Cache Miss
@@ -37,8 +37,8 @@ Steps 1-2 depend **only on the x-grid**, not on y-values. By caching the LU fact
                             └────────┬───────────┘
                                      ▼
                      ┌─────────────────────────────────────┐
-                     │   Solve: L⁻¹ U⁻¹ (y + BC RHS)       │
-                     │   (task-local workspace, no alloc)   │
+                     │     Solve: L⁻¹ U⁻¹ (y + BC RHS)     │
+                     │   (task-local workspace, no alloc)  │
                      └─────────────────────────────────────┘
 ```
 

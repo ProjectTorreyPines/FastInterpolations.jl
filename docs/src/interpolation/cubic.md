@@ -49,8 +49,12 @@ S(x) = S(x + \tau), \quad S'(x) = S'(x + \tau), \quad S''(x) = S''(x + \tau)
 ```
 
 ```julia
-PeriodicBC()   # Requires: y[1] ≈ y[end]
+PeriodicBC()
 ```
+
+!!! warning "Periodicity Requirement"
+    Your data must satisfy `y[1] ≈ y[end]`. If this condition is violated, the spline
+    will still be computed but won't represent a truly periodic function.
 
 !!! note "Different Algorithm"
     PeriodicBC uses the **Sherman-Morrison formula** to solve a cyclic tridiagonal system.
@@ -161,5 +165,3 @@ p # hide
 !!! tip "Key Observation"
     - **NaturalBC** forces `S''(0) = S''(2π) = 0`, but true `cos''(x) = -cos(x) = -1` at endpoints → mismatch
     - **PeriodicBC** allows `S''(0) = S''(2π)` to match naturally through cyclic continuity
-
-**More details**: [Standard BC](standard.md) | [Periodic BC](periodic.md)

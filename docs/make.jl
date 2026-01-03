@@ -59,7 +59,6 @@ const DOCS_SRC = joinpath(@__DIR__, "src")
 mkpath(DOCS_SRC)
 mkpath(joinpath(DOCS_SRC, "guides"))
 mkpath(joinpath(DOCS_SRC, "interpolation"))
-mkpath(joinpath(DOCS_SRC, "interpolation", "cubic"))
 mkpath(joinpath(DOCS_SRC, "architecture"))
 
 # Copy images directory
@@ -108,11 +107,7 @@ makedocs(
             "Constant" => "interpolation/constant.md",
             "Linear" => "interpolation/linear.md",
             "Quadratic" => "interpolation/quadratic.md",
-            "Cubic Splines" => [
-                "Overview" => "interpolation/cubic/overview.md",
-                "Standard BC" => "interpolation/cubic/standard.md",
-                "Periodic BC" => "interpolation/cubic/periodic.md",
-            ],
+            "Cubic" => "interpolation/cubic.md",
         ],
         "Extrapolation" => "extrapolation.md",
         "Derivatives" => "derivatives.md",

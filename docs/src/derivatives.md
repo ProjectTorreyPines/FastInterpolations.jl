@@ -97,46 +97,6 @@ result = @. 2.0 * d1(xq) + d2(xq)
 println("Fused broadcast (first 5): ", round.(result[1:5], digits=4))
 ```
 
-## Visualization
-
-```@example deriv
-using Plots
-
-x = range(0.0, 2π, 25)
-y = sin.(x)
-itp = cubic_interp(x, y)
-
-xq = range(0.0, 2π, 200)
-
-p = plot(layout=(3,1), size=(700, 600), legend=:topright)
-
-# Value
-plot!(p[1], xq, itp.(xq), label="Interpolated", linewidth=2)
-plot!(p[1], xq, sin.(xq), label="sin(x)", linestyle=:dash, alpha=0.7)
-scatter!(p[1], x, y, label="Data", markersize=4)
-title!(p[1], "Value")
-ylabel!(p[1], "S(x)")
-
-# First derivative
-d1 = deriv1(itp)
-plot!(p[2], xq, d1.(xq), label="S'(x)", linewidth=2, color=:red)
-plot!(p[2], xq, cos.(xq), label="cos(x)", linestyle=:dash, alpha=0.7)
-hline!(p[2], [0], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
-title!(p[2], "First Derivative")
-ylabel!(p[2], "S'(x)")
-
-# Second derivative
-d2 = deriv2(itp)
-plot!(p[3], xq, d2.(xq), label="S''(x)", linewidth=2, color=:purple)
-plot!(p[3], xq, -sin.(xq), label="-sin(x)", linestyle=:dash, alpha=0.7)
-hline!(p[3], [0], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
-title!(p[3], "Second Derivative")
-ylabel!(p[3], "S''(x)")
-xlabel!(p[3], "x")
-
-p
-```
-
 ## Linear Interpolation Derivatives
 
 Linear interpolation has piecewise constant first derivative (the slope of each segment):
@@ -156,21 +116,22 @@ println("Via interpolant: ", round(d1_lin(1.0), digits=4))
 ```
 
 ```@example deriv
+using Plots # hide
 xq = range(0.0, 2π, 200)
 y_interp = linear_interp(x_lin, y_lin, xq)
 y_deriv = linear_interp(x_lin, y_lin, xq; deriv=1)
 
-p = plot(layout=(2,1), size=(700, 400))
-plot!(p[1], xq, y_interp, label="Linear interpolation", linewidth=2)
-scatter!(p[1], x_lin, y_lin, label="Data points", markersize=6)
-title!(p[1], "Linear Interpolation")
-
-plot!(p[2], xq, y_deriv, label="Slope (piecewise constant)", linewidth=2, color=:red)
-plot!(p[2], xq, cos.(xq), label="cos(x) [true derivative]", linestyle=:dash, alpha=0.7)
-hline!(p[2], [0], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
-title!(p[2], "First Derivative")
-xlabel!(p[2], "x")
-p
+# Note: y_deriv is piecewise constant (step function)
+p = plot(layout=(2,1), size=(700, 400)) # hide
+plot!(p[1], xq, y_interp, label="Linear interpolation", linewidth=2) # hide
+scatter!(p[1], x_lin, y_lin, label="Data points", markersize=6) # hide
+title!(p[1], "Linear Interpolation") # hide
+plot!(p[2], xq, y_deriv, label="Slope (piecewise constant)", linewidth=2, color=:red) # hide
+plot!(p[2], xq, cos.(xq), label="cos(x) [true derivative]", linestyle=:dash, alpha=0.7) # hide
+hline!(p[2], [0], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # hide
+title!(p[2], "First Derivative") # hide
+xlabel!(p[2], "x") # hide
+p # hide
 ```
 
 !!! note "Second Derivative of Linear Interpolation"
@@ -185,42 +146,34 @@ x = range(0.0, 2π, 13)
 y = sin.(x)
 xq = range(0.0, 2π, 200)
 
-# Compare derivatives with different BC
+# Compare S''(x) with different BC
 itp_nat = cubic_interp(x, y; bc=NaturalBC())
 itp_per = cubic_interp(x, y; bc=PeriodicBC())
-
 d2_nat = deriv2(itp_nat)
 d2_per = deriv2(itp_per)
 
-p = plot(title="Second Derivative: Natural vs Periodic BC", xlabel="x", ylabel="S''(x)")
-plot!(xq, d2_nat.(xq), label="NaturalBC (→0 at endpoints)", linewidth=2)
-plot!(xq, d2_per.(xq), label="PeriodicBC (continuous)", linewidth=2)
-plot!(xq, -sin.(xq), label="-sin(x) [true]", linestyle=:dash, alpha=0.5)
-vline!([0, 2π], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
-hline!([0], color=:black, linestyle=:dash, alpha=0.3, label=nothing)
+p = plot(title="Second Derivative: Natural vs Periodic BC", xlabel="x", ylabel="S''(x)") # hide
+plot!(xq, d2_nat.(xq), label="NaturalBC (→0 at endpoints)", linewidth=2) # hide
+plot!(xq, d2_per.(xq), label="PeriodicBC (continuous)", linewidth=2) # hide
+plot!(xq, -sin.(xq), label="-sin(x) [true]", linestyle=:dash, alpha=0.5) # hide
+vline!([0, 2π], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # hide
+hline!([0], color=:black, linestyle=:dash, alpha=0.3, label=nothing) # hide
 ```
 
-Notice how `NaturalBC` forces the second derivative to zero at endpoints, while `PeriodicBC` maintains continuity.
+- **NaturalBC**: Forces `S''(x) → 0` at endpoints
+- **PeriodicBC**: Maintains continuity across the boundary
 
 ## Derivatives with Extrapolation
 
-Derivatives work with all extrapolation modes:
+Derivatives respect the `extrap` setting of the interpolant:
 
-```@example deriv
-x = range(0.0, 2π, 25)
-y = sin.(x)
-xq = range(-0.5, 2π + 0.5, 200)
-
+```julia
 itp = cubic_interp(x, y; extrap=:extension)
 d1 = deriv1(itp)
-
-p = plot(title="First Derivative with Extrapolation", xlabel="x", ylabel="S'(x)")
-vspan!([-0.5, 0.0], alpha=0.1, color=:gray, label="extrapolation")
-vspan!([2π, 2π + 0.5], alpha=0.1, color=:gray, label=nothing)
-plot!(xq, d1.(xq), label="S'(x)", linewidth=2)
-plot!(xq, cos.(xq), label="cos(x)", linestyle=:dash, alpha=0.7)
-vline!([0, 2π], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
+d1(-0.5)  # Uses :extension extrapolation for derivative too
 ```
+
+See [Extrapolation](extrapolation.md) for available modes.
 
 ## API Summary
 

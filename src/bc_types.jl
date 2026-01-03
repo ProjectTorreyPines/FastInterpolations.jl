@@ -249,6 +249,7 @@ Extensible: add methods for new PointBC subtypes.
 """
 @inline _promote_pointbc(bc::Deriv1, ::Type{T}) where {T<:AbstractFloat} = Deriv1{T}(T(bc.val))
 @inline _promote_pointbc(bc::Deriv2, ::Type{T}) where {T<:AbstractFloat} = Deriv2{T}(T(bc.val))
+@inline _promote_pointbc(::ParabolaFit, ::Type{T}) where {T<:AbstractFloat} = ParabolaFit{T}()
 
 
 # ========================================

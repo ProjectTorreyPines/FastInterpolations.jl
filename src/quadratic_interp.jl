@@ -409,15 +409,11 @@ end
     Right(_promote_pointbc(bc.bc, FT))
 end
 
-# MinCurvFit promotion (no inner value, just type conversion)
+# MinCurvFit promotion (not a PointBC, needs explicit handling)
 @inline _promote_bc(::MinCurvFit, ::Type{T}) where {T<:AbstractFloat} = MinCurvFit{T}()
 @inline _promote_bc(::MinCurvFit{T}, ::Type{T}) where {T<:AbstractFloat} = MinCurvFit{T}()
 
-# ParabolaFit promotion (marker type, no inner value)
-@inline _promote_bc(bc::Left{T, ParabolaFit{T}}, ::Type{T}) where {T<:AbstractFloat} = bc
-@inline _promote_bc(::Left{<:Any, <:ParabolaFit}, ::Type{T}) where {T<:AbstractFloat} = Left(ParabolaFit{T}())
-@inline _promote_bc(bc::Right{T, ParabolaFit{T}}, ::Type{T}) where {T<:AbstractFloat} = bc
-@inline _promote_bc(::Right{<:Any, <:ParabolaFit}, ::Type{T}) where {T<:AbstractFloat} = Right(ParabolaFit{T}())
+# Note: ParabolaFit <: PointBC, handled by generic _promote_pointbc in bc_types.jl
 
 # ========================================
 # Scalar Real → Float wrappers
@@ -427,7 +423,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     xi::S;
-    bc::Union{Left, Right, MinCurvFit}=Left(ParabolaFit{Float64}()),
+    bc::QuadraticBC{<:AbstractFloat}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
@@ -444,7 +440,7 @@ function quadratic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    bc::Union{Left, Right, MinCurvFit}=Left(ParabolaFit{Float64}()),
+    bc::QuadraticBC{<:AbstractFloat}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
@@ -464,7 +460,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    bc::Union{Left, Right, MinCurvFit}=Left(ParabolaFit{Float64}()),
+    bc::QuadraticBC{<:AbstractFloat}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
@@ -653,7 +649,7 @@ end
 function quadratic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
-    bc::Union{Left, Right, MinCurvFit}=Left(ParabolaFit{Float64}()),
+    bc::QuadraticBC{<:AbstractFloat}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none
 ) where {T<:Real}
     FT = float(T)

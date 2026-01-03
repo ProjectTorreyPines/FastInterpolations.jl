@@ -909,6 +909,45 @@ end
         @test bc_right_f32 isa Right{Float32}
     end
 
+    @testset "_promote_bc for ParabolaFit" begin
+        using FastInterpolations: _promote_pointbc
+
+        # ParabolaFit same-type passthrough via _promote_pointbc
+        pf64 = ParabolaFit{Float64}()
+        pf64_promoted = _promote_pointbc(pf64, Float64)
+        @test pf64_promoted isa ParabolaFit{Float64}
+
+        # ParabolaFit type conversion
+        pf32 = _promote_pointbc(pf64, Float32)
+        @test pf32 isa ParabolaFit{Float32}
+
+        # Left(ParabolaFit) promotion
+        bc_left = Left(ParabolaFit{Float64}())
+        bc_left32 = _promote_bc(bc_left, Float32)
+        @test bc_left32 isa Left{Float32, ParabolaFit{Float32}}
+
+        # Right(ParabolaFit) promotion
+        bc_right = Right(ParabolaFit{Float64}())
+        bc_right32 = _promote_bc(bc_right, Float32)
+        @test bc_right32 isa Right{Float32, ParabolaFit{Float32}}
+    end
+
+    @testset "_promote_bc for MinCurvFit" begin
+        # MinCurvFit same-type passthrough
+        mc64 = MinCurvFit{Float64}()
+        mc64_promoted = _promote_bc(mc64, Float64)
+        @test mc64_promoted isa MinCurvFit{Float64}
+
+        # MinCurvFit untyped → typed
+        mc = MinCurvFit()
+        mc32 = _promote_bc(mc, Float32)
+        @test mc32 isa MinCurvFit{Float32}
+
+        # MinCurvFit typed → different type
+        mc64_to_32 = _promote_bc(mc64, Float32)
+        @test mc64_to_32 isa MinCurvFit{Float32}
+    end
+
     @testset "quadratic_interp with Integer arrays (Real → Float)" begin
         # Integer arrays trigger the Real → Float wrapper
         x = [0, 1, 2, 3]  # Int64

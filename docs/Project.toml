@@ -1,0 +1,9 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+FastInterpolations = "9ea80cae-fc13-4c00-8066-6eaedb12f34b"
+LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+
+[compat]
+Documenter = "1"
+Plots = "1"

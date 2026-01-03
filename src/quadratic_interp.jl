@@ -151,7 +151,7 @@ Uses AdaptiveArrayPools internally for temporary arrays (`inv_h`, `secant`).
 - `a::AbstractVector{FT}`: Quadratic coefficients (length n-1)
 - `x::AbstractVector{FT}`: x-coordinates (length n)
 - `y::AbstractVector{FT}`: y-values (length n)
-- `bc::QuadraticBC{FT}`: Boundary condition (Left, Right, or SmoothBC)
+- `bc::QuadraticBC{FT}`: Boundary condition (Left, Right, or MinCurvFit)
 
 # Note
 Intermediate arrays (`inv_h`, `secant`) are acquired from thread-local pool

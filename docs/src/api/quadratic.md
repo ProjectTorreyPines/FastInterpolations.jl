@@ -12,3 +12,10 @@ quadratic_interp!
 ```@docs
 QuadraticInterpolant
 ```
+
+## Boundary Condition Types
+
+```@docs
+ParabolaFit
+MinCurvFit
+```

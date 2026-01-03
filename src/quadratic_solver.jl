@@ -121,6 +121,157 @@ end
 end
 
 # ========================================
+# ParabolaFit: 3-point derivative formula
+# ========================================
+
+"""
+    _fill_slopes!(d, s, h, bc::Left{T, ParabolaFit{T}})
+
+Fill slope array using parabola fit at left endpoint.
+
+Uses the 3-point derivative formula to compute d[1] from the first 3 points,
+then applies forward recurrence. This exactly reproduces any polynomial ≤ degree 2.
+
+# Mathematical Derivation
+For the first 3 points, the Lagrange interpolant derivative at x₀ is:
+- d[1] = [s[1]·(2h[1]+h[2]) − s[2]·h[1]] / (h[1]+h[2])
+
+For uniform grids (h[1] = h[2] = h), this simplifies to:
+- d[1] = (3·s[1] − s[2]) / 2
+
+# Edge Case
+For n=2 (single segment), falls back to linear: d[1] = s[1].
+"""
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T},
+                               h::AbstractVector{T}, ::Left{T, ParabolaFit{T}}) where {T<:AbstractFloat}
+    n = length(d)
+
+    # Edge case: single segment (n=2) - fallback to linear
+    if n == 2
+        d1 = @inbounds s[1]
+        _forward_recurrence!(d, s, d1)
+        return d
+    end
+
+    # 3-point derivative formula for d[1]
+    # d[1] = [s[1]·(2h[1]+h[2]) − s[2]·h[1]] / (h[1]+h[2])
+    @inbounds begin
+        h1, h2 = h[1], h[2]
+        s1, s2 = s[1], s[2]
+        d1 = (s1 * (2*h1 + h2) - s2 * h1) / (h1 + h2)
+    end
+    _forward_recurrence!(d, s, d1)
+end
+
+"""
+    _fill_slopes!(d, s, h, bc::Right{T, ParabolaFit{T}})
+
+Fill slope array using parabola fit at right endpoint.
+
+Uses the 3-point derivative formula to compute d[n] from the last 3 points,
+then applies backward recurrence. This exactly reproduces any polynomial ≤ degree 2.
+
+# Mathematical Derivation
+For the last 3 points, the Lagrange interpolant derivative at x_n is:
+- d[n] = [s[n-1]·(h[n-2]+2h[n-1]) − s[n-2]·h[n-1]] / (h[n-2]+h[n-1])
+
+For uniform grids, this simplifies to:
+- d[n] = (3·s[n-1] − s[n-2]) / 2
+
+# Edge Case
+For n=2 (single segment), falls back to linear: d[n] = s[1].
+"""
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T},
+                               h::AbstractVector{T}, ::Right{T, ParabolaFit{T}}) where {T<:AbstractFloat}
+    n = length(d)
+
+    # Edge case: single segment (n=2) - fallback to linear
+    if n == 2
+        dn = @inbounds s[1]
+        _backward_recurrence!(d, s, dn)
+        return d
+    end
+
+    # 3-point derivative formula for d[n]
+    # Using last 3 points: indices n-2, n-1, n (so secants at n-2 and n-1)
+    # d[n] = [s[n-1]·(h[n-2]+2h[n-1]) − s[n-2]·h[n-1]] / (h[n-2]+h[n-1])
+    @inbounds begin
+        n_intervals = length(s)
+        h_nm2 = h[n_intervals-1]  # h[n-2] in 1-based indexing
+        h_nm1 = h[n_intervals]    # h[n-1]
+        s_nm2 = s[n_intervals-1]  # s[n-2]
+        s_nm1 = s[n_intervals]    # s[n-1]
+        dn = (s_nm1 * (h_nm2 + 2*h_nm1) - s_nm2 * h_nm1) / (h_nm2 + h_nm1)
+    end
+    _backward_recurrence!(d, s, dn)
+end
+
+
+# MinCurvFit: minimize total curvature via closed-form optimization
+"""
+    _fill_slopes!(d, s, h, ::MinCurvFit)
+
+Fill slope array using global curvature minimization.
+
+Minimizes total curvature: ∫(S'')² dx = Σ 4*a[i]²*h[i] = Σ (s[i] - d[i])²/h[i]
+
+# Mathematical Derivation
+The slope d[i] depends on d[1] via forward recurrence:
+- d[i] = α[i] * d[1] + β[i]  where α[i] = (-1)^(i+1) (alternating sign)
+- β[1] = 0, β[i+1] = 2*s[i] - β[i]
+
+Setting df/d(d[1]) = 0 gives the closed-form solution:
+- d[1]_optimal = [Σ α[i]*(s[i] - β[i])/h[i]] / [Σ 1/h[i]]
+
+# Complexity
+O(n) time, O(1) extra space (on-the-fly β computation).
+"""
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T},
+                               h::AbstractVector{T}, ::MinCurvFit{T}) where {T<:AbstractFloat}
+    n = length(d)
+    n_intervals = n - 1  # = length(s) = length(h)
+
+    # Edge case: single segment (n=2)
+    # For single segment, minimize a² = (s-d[1])²/h
+    # This means d[1] = s[1] (making a = 0, zero curvature)
+    if n == 2
+        d1 = @inbounds s[1]
+        _forward_recurrence!(d, s, d1)
+        return d
+    end
+
+    # Compute optimal d[1] using closed-form solution
+    # d[i] = α[i] * d[1] + β[i]
+    # α[i] = (-1)^(i+1): +1, -1, +1, -1, ...
+    # β[i+1] = 2*s[i] - β[i], β[1] = 0
+
+    # Objective: minimize Σ (s[i] - d[i])²/h[i]
+    # = Σ (s[i] - α[i]*d[1] - β[i])²/h[i]
+    # df/d(d[1]) = -2 * Σ α[i]*(s[i] - α[i]*d[1] - β[i])/h[i] = 0
+    # Note: α[i]² = 1
+
+    # Rearranging:
+    # Σ α[i]*(s[i] - β[i])/h[i] = d[1] * Σ 1/h[i]
+    # d[1] = [Σ α[i]*(s[i] - β[i])/h[i]] / [Σ 1/h[i]]
+
+    inv_h_sum = zero(T)
+    numerator = zero(T)
+    β = zero(T)
+    sign = one(T)  # α[1] = (-1)^(1+1) = +1
+
+    @inbounds for i in 1:n_intervals
+        inv_h_i = inv(h[i])
+        inv_h_sum += inv_h_i
+        numerator += sign * (s[i] - β) * inv_h_i
+        β = 2*s[i] - β
+        sign = -sign  # alternate: +1, -1, +1, ...
+    end
+
+    d1_optimal = numerator / inv_h_sum
+    _forward_recurrence!(d, s, d1_optimal)
+end
+
+# ========================================
 # Quadratic Coefficient Computation
 # ========================================
 

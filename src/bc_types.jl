@@ -8,11 +8,13 @@
 #   AbstractBC{T}
 #   ├── PointBC{T}           # Single-point BC (abstract)
 #   │   ├── Deriv1{T}            # First derivative
-#   │   └── Deriv2{T}            # Second derivative
+#   │   ├── Deriv2{T}            # Second derivative
+#   │   └── ParabolaFit{T}       # 3-point parabola fit (quadratic splines)
 #   ├── BCPair{T,L,R}        # Both endpoints
 #   ├── PeriodicBC{T}        # Periodic BC
 #   ├── NaturalBC{T}         # Natural BC (zero curvature at ends)
 #   ├── ClampedBC{T}         # Clamped BC (zero slope at ends)
+#   ├── MinCurvFit{T}         # Minimum curvature BC (quadratic splines)
 #   ├── Left{T,B}            # Endpoint wrapper: BC at left (x[1])
 #   └── Right{T,B}           # Endpoint wrapper: BC at right (x[end])
 
@@ -156,6 +158,83 @@ struct ClampedBC{T<:AbstractFloat} <: AbstractBC{T} end
 ClampedBC() = ClampedBC{Float64}()
 ClampedBC{T}(::ClampedBC) where {T<:AbstractFloat} = ClampedBC{T}()
 
+"""
+    MinCurvFit{T<:AbstractFloat} <: AbstractBC{T}
+
+Minimum curvature boundary condition for quadratic splines.
+Minimizes total curvature (∫S''² dx) by optimizing the initial slope d[1].
+
+This produces globally smooth interpolation by finding the optimal d[1] that
+minimizes the integrated squared second derivative. The optimal d[1] is computed
+using a closed-form solution in O(n) time with no additional allocation.
+
+# Mathematical Background
+For quadratic splines, the slope d[i] depends on d[1] via recurrence:
+- d[i] = α[i] * d[1] + β[i]  where α[i] = (-1)^(i+1)
+
+The optimal d[1] minimizes:
+- ∫(S'')² dx = Σ 4*a[i]²*h[i] = Σ (s[i] - d[i])²/h[i]
+
+Closed-form solution:
+- d[1] = [Σ α[i]*(s[i] - β[i])/h[i]] / [Σ 1/h[i]]
+
+# Example
+```julia
+x = [0.0, 0.3, 0.8, 1.5, 2.5, 3.0, 4.0]
+y = [0.0, 0.8, 1.2, 0.9, 0.3, 0.6, 1.0]
+
+# Default BC uses ParabolaFit
+itp_default = quadratic_interp(x, y)
+
+# MinCurvFit gives globally smooth result via curvature minimization
+itp_smooth = quadratic_interp(x, y; bc=MinCurvFit())
+```
+"""
+struct MinCurvFit{T<:AbstractFloat} <: AbstractBC{T} end
+MinCurvFit() = MinCurvFit{Float64}()
+MinCurvFit{T}(::MinCurvFit) where {T<:AbstractFloat} = MinCurvFit{T}()
+
+"""
+    ParabolaFit{T<:AbstractFloat} <: PointBC{T}
+
+Parabola-fit boundary condition for quadratic splines.
+Computes the initial slope d[1] (or d[n]) using a 3-point derivative formula
+that exactly reproduces any polynomial up to degree 2.
+
+This is the recommended BC for quadratic splines when the underlying function
+is polynomial-like or smooth. It uses the first (or last) 3 points to fit a
+parabola and computes the derivative at the endpoint.
+
+# Mathematical Background
+For the first 3 points (x₀, y₀), (x₁, y₁), (x₂, y₂), the 3-point derivative formula is:
+- d[1] = y₀·(−(2h₁+h₂))/(h₁(h₁+h₂)) + y₁·(h₁+h₂)/(h₁·h₂) − y₂·h₁/((h₁+h₂)·h₂)
+
+where h₁ = x₁ - x₀ and h₂ = x₂ - x₁.
+
+For uniform grids (h₁ = h₂ = h), this simplifies to:
+- d[1] = (−3y₀ + 4y₁ − y₂) / (2h)
+
+# Key Property
+**Polynomial Reproduction**: For any quadratic polynomial f(x) = ax² + bx + c,
+ParabolaFit BC produces exact interpolation at all query points.
+
+# Example
+```julia
+x = [0.0, 1.0, 2.0, 3.0, 4.0]
+y = x.^2  # f(x) = x²
+
+# ParabolaFit gives exact reproduction
+itp = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+itp(1.5)  # ≈ 2.25 (exact)
+
+# Works at both endpoints
+itp_right = quadratic_interp(x, y; bc=Right(ParabolaFit()))
+```
+"""
+struct ParabolaFit{T<:AbstractFloat} <: PointBC{T} end
+ParabolaFit() = ParabolaFit{Float64}()
+ParabolaFit{T}(::ParabolaFit) where {T<:AbstractFloat} = ParabolaFit{T}()
+
 
 # ========================================
 # Type Promotion Helpers
@@ -170,6 +249,7 @@ Extensible: add methods for new PointBC subtypes.
 """
 @inline _promote_pointbc(bc::Deriv1, ::Type{T}) where {T<:AbstractFloat} = Deriv1{T}(T(bc.val))
 @inline _promote_pointbc(bc::Deriv2, ::Type{T}) where {T<:AbstractFloat} = Deriv2{T}(T(bc.val))
+@inline _promote_pointbc(::ParabolaFit, ::Type{T}) where {T<:AbstractFloat} = ParabolaFit{T}()
 
 
 # ========================================

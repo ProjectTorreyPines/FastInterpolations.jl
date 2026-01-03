@@ -104,30 +104,7 @@ println("Fused broadcast (first 5): ", round.(result[1:5], digits=4))
 
 ## Derivatives with Boundary Conditions
 
-Different boundary conditions affect derivative behavior at endpoints:
-
-```@example deriv
-using Plots # hide
-x = range(0.0, 2π, 13)
-y = sin.(x)
-xq = range(0.0, 2π, 200)
-
-# Compare S''(x) with different BC
-itp_nat = cubic_interp(x, y; bc=NaturalBC())
-itp_per = cubic_interp(x, y; bc=PeriodicBC())
-d2_nat = deriv2(itp_nat)
-d2_per = deriv2(itp_per)
-
-p = plot(title="Second Derivative: Natural vs Periodic BC", xlabel="x", ylabel="S''(x)") # hide
-plot!(xq, d2_nat.(xq), label="NaturalBC (→0 at endpoints)", linewidth=2) # hide
-plot!(xq, d2_per.(xq), label="PeriodicBC (continuous)", linewidth=2) # hide
-plot!(xq, -sin.(xq), label="-sin(x) [true]", linestyle=:dash, alpha=0.5) # hide
-vline!([0, 2π], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # hide
-hline!([0], color=:black, linestyle=:dash, alpha=0.3, label=nothing) # hide
-```
-
-- **NaturalBC**: Forces `S''(x) → 0` at endpoints
-- **PeriodicBC**: Maintains continuity across the boundary
+Different boundary conditions affect derivative behavior at endpoints. See [Cubic Splines](interpolation/cubic.md) for details on `NaturalBC`, `ClampedBC`, and `PeriodicBC`.
 
 ## Derivatives with Extrapolation
 

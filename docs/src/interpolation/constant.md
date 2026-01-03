@@ -94,4 +94,4 @@ p
 - Monotonicity preservation is critical
 - Lookup table behavior
 
-**Need smooth curves?** → [Linear](linear.md) or [Cubic](cubic/overview.md)
+**Need smooth curves?** → [Linear](linear.md) or [Cubic](cubic.md)

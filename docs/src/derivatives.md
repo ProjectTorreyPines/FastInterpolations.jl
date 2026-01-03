@@ -235,6 +235,5 @@ vline!([0, 2π], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
 
 ## See Also
 
-- **[Cubic Overview](interpolation/cubic/overview.md)**: Cubic spline interpolation basics
+- **[Cubic Splines](interpolation/cubic.md)**: Cubic spline interpolation and boundary conditions
 - **[Linear Interpolation](interpolation/linear.md)**: Linear interpolation with derivatives
-- **[Standard BC](interpolation/cubic/standard.md)**: How boundary conditions affect derivatives

@@ -174,4 +174,4 @@ p  # hide
 - **[Constant](constant.md)**: Step interpolation with `side` modes
 - **[Linear](linear.md)**: Simple and fast
 - **[Quadratic](quadratic.md)**: C¹ with single-endpoint BC
-- **[Cubic](cubic/overview.md)**: C² with various boundary conditions
+- **[Cubic](cubic.md)**: C² with various boundary conditions

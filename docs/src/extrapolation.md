@@ -108,7 +108,7 @@ S(x + \tau) = S(x), \quad \tau = x_{\text{end}} - x_1
 This is **purely coordinate mapping**—it does not enforce any physical conditions at the boundary. The spline may have discontinuities in value, slope, or curvature at the wrap point.
 
 !!! note "For Smooth Periodicity"
-    If you need C² continuity at the periodic boundary, use [`bc=PeriodicBC()`](interpolation/cubic/periodic.md) with `cubic_interp`. This enforces ``S(x_1) = S(x_{\text{end}})``, ``S'(x_1) = S'(x_{\text{end}})``, and ``S''(x_1) = S''(x_{\text{end}})``.
+    If you need C² continuity at the periodic boundary, use [`bc=PeriodicBC()`](interpolation/cubic.md) with `cubic_interp`. This enforces ``S(x_1) = S(x_{\text{end}})``, ``S'(x_1) = S'(x_{\text{end}})``, and ``S''(x_1) = S''(x_{\text{end}})``.
 
 ```@example extrap
 yq = cubic_interp(x, y, xq; extrap=:wrap)
@@ -145,10 +145,9 @@ vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
 | `:none` | `DomainError` | Strict domain enforcement (default) |
 | `:constant` | Returns boundary values | Physical constraints |
 | `:extension` | Continues boundary polynomial | Smooth continuation |
-| `:wrap` | Wraps coordinates (no smoothness) | Cyclic data (see [`PeriodicBC`](interpolation/cubic/periodic.md) for C² continuity) |
+| `:wrap` | Wraps coordinates (no smoothness) | Cyclic data (see [`PeriodicBC`](interpolation/cubic.md) for C² continuity) |
 
 ## See Also
 
 - **[Derivatives](derivatives.md)**: Analytical derivatives with extrapolation
-- **[Standard BC](interpolation/cubic/standard.md)**: Boundary conditions for cubic splines
-- **[Periodic BC](interpolation/cubic/periodic.md)**: Smooth wrap-around for cyclic data
+- **[Cubic Splines](interpolation/cubic.md)**: Boundary conditions and smooth periodicity

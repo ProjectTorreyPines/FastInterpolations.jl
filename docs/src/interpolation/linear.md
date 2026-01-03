@@ -107,4 +107,4 @@ p
 - Guaranteed monotonicity preservation
 - Memory-constrained (no spline coefficient overhead)
 
-**Need smooth curves?** → [Quadratic](quadratic.md) (C¹) or [Cubic](cubic/overview.md) (C²)
+**Need smooth curves?** → [Quadratic](quadratic.md) (C¹) or [Cubic](cubic.md) (C²)

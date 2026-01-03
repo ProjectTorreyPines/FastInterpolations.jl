@@ -166,5 +166,5 @@ title!("Second Derivative (piecewise constant)")
 - Known derivative at one endpoint
 - Simpler than cubic, smoother than linear
 
-**Need C² continuity?** → [Cubic](cubic/overview.md)
+**Need C² continuity?** → [Cubic](cubic.md)
 **Speed over smoothness?** → [Linear](linear.md)

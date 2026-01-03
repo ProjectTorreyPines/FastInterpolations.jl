@@ -156,6 +156,42 @@ struct ClampedBC{T<:AbstractFloat} <: AbstractBC{T} end
 ClampedBC() = ClampedBC{Float64}()
 ClampedBC{T}(::ClampedBC) where {T<:AbstractFloat} = ClampedBC{T}()
 
+"""
+    MinCurvBC{T<:AbstractFloat} <: AbstractBC{T}
+
+Minimum curvature boundary condition for quadratic splines.
+Minimizes total curvature (∫S''² dx) by optimizing the initial slope d[1].
+
+This produces globally smooth interpolation by finding the optimal d[1] that
+minimizes the integrated squared second derivative. The optimal d[1] is computed
+using a closed-form solution in O(n) time with no additional allocation.
+
+# Mathematical Background
+For quadratic splines, the slope d[i] depends on d[1] via recurrence:
+- d[i] = α[i] * d[1] + β[i]  where α[i] = (-1)^(i+1)
+
+The optimal d[1] minimizes:
+- ∫(S'')² dx = Σ 4*a[i]²*h[i] = Σ (s[i] - d[i])²/h[i]
+
+Closed-form solution:
+- d[1] = [Σ α[i]*(s[i] - β[i])/h[i]] / [Σ 1/h[i]]
+
+# Example
+```julia
+x = [0.0, 0.3, 0.8, 1.5, 2.5, 3.0, 4.0]
+y = [0.0, 0.8, 1.2, 0.9, 0.3, 0.6, 1.0]
+
+# Default BC uses ParabolaFit
+itp_default = quadratic_interp(x, y)
+
+# MinCurvBC gives globally smooth result via curvature minimization
+itp_smooth = quadratic_interp(x, y; bc=MinCurvBC())
+```
+"""
+struct MinCurvBC{T<:AbstractFloat} <: AbstractBC{T} end
+MinCurvBC() = MinCurvBC{Float64}()
+MinCurvBC{T}(::MinCurvBC) where {T<:AbstractFloat} = MinCurvBC{T}()
+
 
 # ========================================
 # Type Promotion Helpers

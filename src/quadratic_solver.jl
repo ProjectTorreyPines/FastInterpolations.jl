@@ -120,6 +120,70 @@ end
     _backward_recurrence!(d, s, dn)
 end
 
+# MinCurvBC: minimize total curvature via closed-form optimization
+"""
+    _fill_slopes!(d, s, h, ::MinCurvBC)
+
+Fill slope array using global curvature minimization.
+
+Minimizes total curvature: ∫(S'')² dx = Σ 4*a[i]²*h[i] = Σ (s[i] - d[i])²/h[i]
+
+# Mathematical Derivation
+The slope d[i] depends on d[1] via forward recurrence:
+- d[i] = α[i] * d[1] + β[i]  where α[i] = (-1)^(i+1) (alternating sign)
+- β[1] = 0, β[i+1] = 2*s[i] - β[i]
+
+Setting df/d(d[1]) = 0 gives the closed-form solution:
+- d[1]_optimal = [Σ α[i]*(s[i] - β[i])/h[i]] / [Σ 1/h[i]]
+
+# Complexity
+O(n) time, O(1) extra space (on-the-fly β computation).
+"""
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T},
+                               h::AbstractVector{T}, ::MinCurvBC{T}) where {T<:AbstractFloat}
+    n = length(d)
+    n_intervals = n - 1  # = length(s) = length(h)
+
+    # Edge case: single segment (n=2)
+    # For single segment, minimize a² = (s-d[1])²/h
+    # This means d[1] = s[1] (making a = 0, zero curvature)
+    if n == 2
+        d1 = @inbounds s[1]
+        _forward_recurrence!(d, s, d1)
+        return d
+    end
+
+    # Compute optimal d[1] using closed-form solution
+    # d[i] = α[i] * d[1] + β[i]
+    # α[i] = (-1)^(i+1): +1, -1, +1, -1, ...
+    # β[i+1] = 2*s[i] - β[i], β[1] = 0
+
+    # Objective: minimize Σ (s[i] - d[i])²/h[i]
+    # = Σ (s[i] - α[i]*d[1] - β[i])²/h[i]
+    # df/d(d[1]) = -2 * Σ α[i]*(s[i] - α[i]*d[1] - β[i])/h[i] = 0
+    # Note: α[i]² = 1
+
+    # Rearranging:
+    # Σ α[i]*(s[i] - β[i])/h[i] = d[1] * Σ 1/h[i]
+    # d[1] = [Σ α[i]*(s[i] - β[i])/h[i]] / [Σ 1/h[i]]
+
+    inv_h_sum = zero(T)
+    numerator = zero(T)
+    β = zero(T)
+    sign = one(T)  # α[1] = (-1)^(1+1) = +1
+
+    @inbounds for i in 1:n_intervals
+        inv_h_i = inv(h[i])
+        inv_h_sum += inv_h_i
+        numerator += sign * (s[i] - β) * inv_h_i
+        β = 2*s[i] - β
+        sign = -sign  # alternate: +1, -1, +1, ...
+    end
+
+    d1_optimal = numerator / inv_h_sum
+    _forward_recurrence!(d, s, d1_optimal)
+end
+
 # ========================================
 # Quadratic Coefficient Computation
 # ========================================

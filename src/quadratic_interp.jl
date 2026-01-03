@@ -4,6 +4,18 @@
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
+# Type Alias for Quadratic BC
+# ========================================
+
+"""
+Supported boundary conditions for quadratic spline interpolation.
+- `Left{T}`: BC at left endpoint (forward recurrence)
+- `Right{T}`: BC at right endpoint (backward recurrence)
+- `MinCurvBC{T}`: Global curvature minimization
+"""
+const QuadraticBC{T} = Union{Left{T}, Right{T}, MinCurvBC{T}}
+
+# ========================================
 # Grid Spacing Computation
 # ========================================
 
@@ -139,7 +151,7 @@ Uses AdaptiveArrayPools internally for temporary arrays (`inv_h`, `secant`).
 - `a::AbstractVector{FT}`: Quadratic coefficients (length n-1)
 - `x::AbstractVector{FT}`: x-coordinates (length n)
 - `y::AbstractVector{FT}`: y-values (length n)
-- `bc::Union{Left{FT}, Right{FT}}`: Boundary condition
+- `bc::QuadraticBC{FT}`: Boundary condition (Left, Right, or SmoothBC)
 
 # Note
 Intermediate arrays (`inv_h`, `secant`) are acquired from thread-local pool
@@ -151,7 +163,7 @@ and automatically released when the function returns.
     a::AbstractVector{FT},
     x::AbstractVector{FT},
     y::AbstractVector{FT},
-    bc::Union{Left{FT}, Right{FT}}
+    bc::QuadraticBC{FT}
 ) where {FT<:AbstractFloat}
     nx = length(x)
 
@@ -192,7 +204,7 @@ which stores precomputed coefficients.
 function _compute_quadratic_coeffs(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
-    bc::Union{Left{FT}, Right{FT}}
+    bc::QuadraticBC{FT}
 ) where {FT<:AbstractFloat}
     nx = length(x)
 
@@ -225,11 +237,12 @@ C1 piecewise quadratic spline interpolation at a single point.
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (same length as x)
 - `xi::Real`: Query point
-- `bc::Union{Left,Right}`: Boundary condition at one endpoint
+- `bc`: Boundary condition (one of):
   - `Left(Deriv1(v))`: First derivative = v at left endpoint
   - `Left(Deriv2(v))`: Second derivative = v at left endpoint (default: v=0)
   - `Right(Deriv1(v))`: First derivative = v at right endpoint
   - `Right(Deriv2(v))`: Second derivative = v at right endpoint
+  - `MinCurvBC()`: Minimize total curvature (globally smooth)
 - `extrap::Symbol`: Extrapolation mode
   - `:none` (default): throws DomainError if outside domain
   - `:constant`: clamp to boundary values
@@ -260,7 +273,7 @@ quadratic_interp(x, y, 1.5; deriv=2)  # ≈ 2.0 (curvature)
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     xi::FT;
-    bc::Union{Left{FT}, Right{FT}}=Left(Deriv2(zero(FT))),
+    bc::QuadraticBC{FT}=Left(Deriv2(zero(FT))),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {FT<:AbstractFloat}
@@ -308,7 +321,7 @@ quadratic_interp!(out, x, y, [0.5, 1.5, 2.5])
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
-    bc::Union{Left{FT}, Right{FT}}=Left(Deriv2(zero(FT))),
+    bc::QuadraticBC{FT}=Left(Deriv2(zero(FT))),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {FT<:AbstractFloat}
@@ -356,7 +369,7 @@ function quadratic_interp(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
-    bc::Union{Left{FT}, Right{FT}}=Left(Deriv2(zero(FT))),
+    bc::QuadraticBC{FT}=Left(Deriv2(zero(FT))),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {FT<:AbstractFloat}
@@ -394,6 +407,10 @@ end
     Right(_promote_pointbc(bc.bc, FT))
 end
 
+# MinCurvBC promotion (no inner value, just type conversion)
+@inline _promote_bc(::MinCurvBC, ::Type{T}) where {T<:AbstractFloat} = MinCurvBC{T}()
+@inline _promote_bc(::MinCurvBC{T}, ::Type{T}) where {T<:AbstractFloat} = MinCurvBC{T}()
+
 # ========================================
 # Scalar Real → Float wrappers
 # ========================================
@@ -402,7 +419,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     xi::S;
-    bc::Union{Left, Right}=Left(Deriv2(zero(T))),
+    bc::Union{Left, Right, MinCurvBC}=Left(Deriv2(zero(T))),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
@@ -419,7 +436,7 @@ function quadratic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    bc::Union{Left, Right}=Left(Deriv2(zero(T))),
+    bc::Union{Left, Right, MinCurvBC}=Left(Deriv2(zero(T))),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
@@ -439,7 +456,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    bc::Union{Left, Right}=Left(Deriv2(zero(T))),
+    bc::Union{Left, Right, MinCurvBC}=Left(Deriv2(zero(T))),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
@@ -511,7 +528,7 @@ struct QuadraticInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractV
 
     function QuadraticInterpolant(
         x::X, y::Y;
-        bc::Union{Left{T}, Right{T}}=Left(Deriv2(zero(T))),
+        bc::QuadraticBC{T}=Left(Deriv2(zero(T))),
         extrap::Symbol=:none
     ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
         @assert length(x) == length(y) "x and y must have same length"
@@ -595,7 +612,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values
-- `bc::Union{Left,Right}`: Boundary condition at one endpoint
+- `bc`: Boundary condition (Left, Right, or MinCurvBC)
 - `extrap::Symbol`: Extrapolation mode
 
 # Returns
@@ -617,7 +634,7 @@ result = @. coef * itp(query)
 function quadratic_interp(
     x::AbstractVector{FT},
     y::AbstractVector{FT};
-    bc::Union{Left{FT}, Right{FT}}=Left(Deriv2(zero(FT))),
+    bc::QuadraticBC{FT}=Left(Deriv2(zero(FT))),
     extrap::Symbol=:none
 ) where {FT<:AbstractFloat}
     return QuadraticInterpolant(x, y; bc, extrap)
@@ -627,7 +644,7 @@ end
 function quadratic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
-    bc::Union{Left, Right}=Left(Deriv2(zero(T))),
+    bc::Union{Left, Right, MinCurvBC}=Left(Deriv2(zero(T))),
     extrap::Symbol=:none
 ) where {T<:Real}
     FT = float(T)

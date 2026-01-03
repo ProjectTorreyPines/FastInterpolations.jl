@@ -96,6 +96,43 @@
         @test !(Right(Deriv1(0.0)) isa Left)
     end
 
+    @testset "MinCurvBC type" begin
+        @testset "construction with default (Float64)" begin
+            bc = MinCurvBC()
+            @test bc isa MinCurvBC{Float64}
+            @test bc isa AbstractBC{Float64}
+        end
+
+        @testset "construction with Float32" begin
+            bc = MinCurvBC{Float32}()
+            @test bc isa MinCurvBC{Float32}
+            @test bc isa AbstractBC{Float32}
+        end
+
+        @testset "type conversion" begin
+            bc64 = MinCurvBC()
+            bc32 = MinCurvBC{Float32}(bc64)
+            @test bc32 isa MinCurvBC{Float32}
+        end
+
+        @testset "type stability" begin
+            @test @inferred(MinCurvBC()) isa MinCurvBC{Float64}
+            @test @inferred(MinCurvBC{Float32}()) isa MinCurvBC{Float32}
+        end
+
+        @testset "subtype relationship" begin
+            @test MinCurvBC{Float64} <: AbstractBC{Float64}
+            @test MinCurvBC{Float32} <: AbstractBC{Float32}
+        end
+
+        @testset "distinctness from Left/Right" begin
+            @test !(MinCurvBC() isa Left)
+            @test !(MinCurvBC() isa Right)
+            @test !(Left(Deriv1(0.0)) isa MinCurvBC)
+            @test !(Right(Deriv1(0.0)) isa MinCurvBC)
+        end
+    end
+
 end
 
 # ============================================================================
@@ -319,6 +356,95 @@ end
         @test a[1] ≈ 1.0
         @test a[2] ≈ 1.0
         @test a[3] ≈ 1.0
+    end
+
+    @testset "_fill_slopes! with MinCurvBC" begin
+        @testset "uniform grid - recurrence satisfied" begin
+            # MinCurvBC minimizes total curvature Σ(s[i]-d[i])²/h[i]
+            # For s = [1, 3, 5], h = [1, 1, 1]:
+            # Optimal d[1] = 1/3 (gives lower curvature than d[1]=0)
+            s = [1.0, 3.0, 5.0]
+            h = [1.0, 1.0, 1.0]
+            d = zeros(4)
+
+            _fill_slopes!(d, s, h, MinCurvBC{Float64}())
+
+            # Verify recurrence relation is satisfied: d[i+1] = 2*s[i] - d[i]
+            for i in 1:3
+                @test d[i+1] ≈ 2*s[i] - d[i] rtol=1e-12
+            end
+
+            # Verify all values are finite
+            @test all(isfinite, d)
+
+            # Verify d[1] is optimal: 1/3 for this case
+            # (minimizes Σ(s[i] - d[i])²/h[i])
+            @test d[1] ≈ 1/3 rtol=1e-12
+        end
+
+        @testset "non-uniform grid - produces finite values" begin
+            # Test that optimization produces finite values on non-uniform grid
+            s = [2.0, 1.0, 3.0]  # varying secants
+            h = [0.5, 1.5, 1.0]  # non-uniform spacing
+            d = zeros(4)
+
+            _fill_slopes!(d, s, h, MinCurvBC{Float64}())
+
+            @test all(isfinite, d)
+            # Verify recurrence relation: d[i+1] = 2*s[i] - d[i]
+            for i in 1:3
+                @test d[i+1] ≈ 2*s[i] - d[i] rtol=1e-12
+            end
+        end
+
+        @testset "single segment (n=2)" begin
+            # n=2: only one segment
+            s = [2.0]  # single secant
+            h = [1.0]
+            d = zeros(2)
+
+            _fill_slopes!(d, s, h, MinCurvBC{Float64}())
+
+            # For single segment, minimizing curvature means a = 0
+            # a = (s - d[1]) / h => d[1] = s[1] for a = 0
+            @test d[1] ≈ s[1] rtol=1e-12
+            # d[2] = 2*s[1] - d[1] = 2*2 - 2 = 2
+            @test d[2] ≈ 2*s[1] - d[1] rtol=1e-12
+        end
+
+        @testset "Float32 support" begin
+            s = Float32[1.0, 3.0, 5.0]
+            h = Float32[1.0, 1.0, 1.0]
+            d = zeros(Float32, 4)
+
+            _fill_slopes!(d, s, h, MinCurvBC{Float32}())
+
+            # Verify finite values and recurrence
+            @test all(isfinite, d)
+            for i in 1:3
+                @test d[i+1] ≈ 2*s[i] - d[i] rtol=1e-5
+            end
+        end
+
+        @testset "curvature lower than Left(Deriv2(0))" begin
+            # MinCurvBC should produce lower or equal total curvature
+            # compared to Left(Deriv2(0)) which forces first interval linear
+            s = [1.0, 3.0, 5.0]
+            h = [1.0, 1.0, 1.0]
+
+            d_smooth = zeros(4)
+            d_left = zeros(4)
+
+            _fill_slopes!(d_smooth, s, h, MinCurvBC{Float64}())
+            _fill_slopes!(d_left, s, h, Left(Deriv2(0.0)))
+
+            # Compute total curvature: Σ (s[i] - d[i])² / h[i]
+            curvature_smooth = sum((s[i] - d_smooth[i])^2 / h[i] for i in 1:3)
+            curvature_left = sum((s[i] - d_left[i])^2 / h[i] for i in 1:3)
+
+            # MinCurvBC should have lower or equal curvature (it's the optimum)
+            @test curvature_smooth <= curvature_left + 1e-10
+        end
     end
 
 end
@@ -1241,6 +1367,474 @@ end
         # Interpolant vector call
         itp = quadratic_interp(x, y; bc=bc, extrap=:extension)
         @test itp(xq) ≈ expected rtol=1e-12
+    end
+
+end
+
+# ============================================================================
+# Group 11: MinCurvBC API Integration Tests (Phase 3)
+# ============================================================================
+@testset "Quadratic Interpolation - MinCurvBC API" begin
+
+    @testset "quadratic_interp scalar with MinCurvBC" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        # Grid points should be exact
+        @test quadratic_interp(x, y, 0.0; bc=MinCurvBC()) ≈ 0.0
+        @test quadratic_interp(x, y, 1.0; bc=MinCurvBC()) ≈ 1.0
+        @test quadratic_interp(x, y, 2.0; bc=MinCurvBC()) ≈ 4.0
+        @test quadratic_interp(x, y, 3.0; bc=MinCurvBC()) ≈ 9.0
+
+        # Interior points
+        @test isfinite(quadratic_interp(x, y, 0.5; bc=MinCurvBC()))
+        @test isfinite(quadratic_interp(x, y, 1.5; bc=MinCurvBC()))
+        @test isfinite(quadratic_interp(x, y, 2.5; bc=MinCurvBC()))
+    end
+
+    @testset "quadratic_interp vector with MinCurvBC" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+        xq = [0.5, 1.5, 2.5]
+
+        result = quadratic_interp(x, y, xq; bc=MinCurvBC())
+        @test length(result) == 3
+        @test all(isfinite, result)
+    end
+
+    @testset "quadratic_interp! with MinCurvBC" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+        xq = [0.5, 1.5, 2.5]
+        out = zeros(3)
+
+        quadratic_interp!(out, x, y, xq; bc=MinCurvBC())
+        @test all(isfinite, out)
+    end
+
+    @testset "QuadraticInterpolant with MinCurvBC" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        itp = quadratic_interp(x, y; bc=MinCurvBC())
+        @test itp isa QuadraticInterpolant
+
+        # Scalar evaluation
+        @test isfinite(itp(0.5))
+        @test isfinite(itp(1.5))
+
+        # Grid points exact
+        @test itp(0.0) ≈ 0.0
+        @test itp(1.0) ≈ 1.0
+        @test itp(3.0) ≈ 9.0
+    end
+
+    @testset "MinCurvBC derivatives" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        # First derivative (should be finite)
+        d1 = quadratic_interp(x, y, 1.5; bc=MinCurvBC(), deriv=1)
+        @test isfinite(d1)
+
+        # Second derivative (should be finite)
+        d2 = quadratic_interp(x, y, 1.5; bc=MinCurvBC(), deriv=2)
+        @test isfinite(d2)
+
+        # Interpolant derivatives
+        itp = quadratic_interp(x, y; bc=MinCurvBC())
+        @test isfinite(itp(1.5; deriv=1))
+        @test isfinite(itp(1.5; deriv=2))
+    end
+
+    @testset "MinCurvBC type promotion (Real → Float)" begin
+        # Int arrays
+        x = [0, 1, 2, 3]
+        y = [0, 1, 4, 9]
+
+        result = quadratic_interp(x, y, 1.5; bc=MinCurvBC())
+        @test isfinite(result)
+        @test result isa Float64
+
+        # Interpolant with Int arrays
+        itp = quadratic_interp(x, y; bc=MinCurvBC())
+        @test itp isa QuadraticInterpolant{Float64}
+    end
+
+    @testset "MinCurvBC Float32 support" begin
+        x = Float32[0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        result = quadratic_interp(x, y, 1.5f0; bc=MinCurvBC{Float32}())
+        @test result isa Float32
+        @test isfinite(result)
+
+        itp = quadratic_interp(x, y; bc=MinCurvBC{Float32}())
+        @test itp isa QuadraticInterpolant{Float32}
+    end
+
+    @testset "MinCurvBC extrapolation modes" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = x.^2
+
+        # :extension mode
+        itp_ext = quadratic_interp(x, y; bc=MinCurvBC(), extrap=:extension)
+        @test isfinite(itp_ext(-0.5))  # outside left
+        @test isfinite(itp_ext(3.5))   # outside right
+
+        # :constant mode
+        itp_const = quadratic_interp(x, y; bc=MinCurvBC(), extrap=:constant)
+        @test itp_const(-0.5) ≈ 0.0    # clamps to y[1]
+        @test itp_const(3.5) ≈ 9.0     # clamps to y[end]
+    end
+
+end
+
+# ============================================================================
+# Group 12: MinCurvBC Mathematical Verification (Phase 4)
+# ============================================================================
+@testset "Quadratic Interpolation - MinCurvBC Mathematical Verification" begin
+    using FastInterpolations: _fill_slopes!, _compute_quadratic_secants!
+
+    # ========================================
+    # Test 1: d[1] Optimality Verification
+    # ========================================
+    # User requirement: Perturb d[1] by ±δ and verify curvature increases
+    @testset "d[1] optimality - perturbation increases curvature" begin
+        # Curvature objective function: Σ (s[i] - d[i])²/h[i]
+        # MinCurvBC finds the d[1] that minimizes this
+
+        @testset "uniform grid" begin
+            s = [1.0, 3.0, 5.0]  # secants for x² on [0,1,2,3]
+            h = [1.0, 1.0, 1.0]
+            d_opt = zeros(4)
+
+            _fill_slopes!(d_opt, s, h, MinCurvBC{Float64}())
+
+            # Compute optimal curvature
+            curvature_opt = sum((s[i] - d_opt[i])^2 / h[i] for i in 1:3)
+
+            # Perturb d[1] and verify curvature increases
+            for δ in [0.01, 0.1, 0.5, 1.0, -0.01, -0.1, -0.5, -1.0]
+                d_perturbed = zeros(4)
+                # Forward recurrence with perturbed d[1]
+                d_perturbed[1] = d_opt[1] + δ
+                for i in 1:3
+                    d_perturbed[i+1] = 2*s[i] - d_perturbed[i]
+                end
+
+                curvature_perturbed = sum((s[i] - d_perturbed[i])^2 / h[i] for i in 1:3)
+
+                @test curvature_perturbed >= curvature_opt - 1e-12  # allow tiny numerical error
+            end
+        end
+
+        @testset "non-uniform grid" begin
+            s = [2.0, 1.0, 3.0, 0.5]  # varying secants
+            h = [0.5, 1.5, 1.0, 2.0]  # non-uniform spacing
+            n = length(h) + 1
+            d_opt = zeros(n)
+
+            _fill_slopes!(d_opt, s, h, MinCurvBC{Float64}())
+
+            # Compute optimal curvature
+            curvature_opt = sum((s[i] - d_opt[i])^2 / h[i] for i in 1:length(s))
+
+            # Perturb d[1] and verify curvature increases
+            for δ in [0.1, 0.5, -0.1, -0.5]
+                d_perturbed = zeros(n)
+                d_perturbed[1] = d_opt[1] + δ
+                for i in 1:length(s)
+                    d_perturbed[i+1] = 2*s[i] - d_perturbed[i]
+                end
+
+                curvature_perturbed = sum((s[i] - d_perturbed[i])^2 / h[i] for i in 1:length(s))
+
+                @test curvature_perturbed >= curvature_opt - 1e-12
+            end
+        end
+
+        @testset "gradient is zero at optimum" begin
+            # At the optimal d[1], the gradient of the objective should be zero
+            # df/d(d[1]) = -2 * Σ α[i]*(s[i] - d[i])/h[i] where α[i] = (-1)^(i+1)
+            s = [1.0, 3.0, 5.0, 7.0]
+            h = [0.5, 1.0, 1.5, 0.8]
+            n = length(h) + 1
+            d_opt = zeros(n)
+
+            _fill_slopes!(d_opt, s, h, MinCurvBC{Float64}())
+
+            # Compute gradient at optimal point
+            gradient = 0.0
+            sign = 1.0  # α[1] = (-1)^(1+1) = +1
+            for i in 1:length(s)
+                gradient += sign * (s[i] - d_opt[i]) / h[i]
+                sign = -sign
+            end
+            gradient *= -2
+
+            @test abs(gradient) < 1e-12  # gradient should be (near) zero
+        end
+    end
+
+    # ========================================
+    # Test 2: MinCurvBC Curvature Minimization Behavior
+    # ========================================
+    # IMPORTANT: MinCurvBC does NOT reproduce exact quadratic polynomials!
+    # It minimizes Σ(s[i] - d[i])²/h[i], which trades exactness for smoothness.
+    # For f(x) = x² on [0,1,2,3]: exact d[1]=0 gives curvature=12,
+    # but MinCurvBC optimal d[1]=1/3 gives curvature≈10.67 (lower!)
+    @testset "MinCurvBC curvature minimization behavior" begin
+
+        @testset "f(x) = x² - MinCurvBC trades exactness for smoothness" begin
+            x = [0.0, 1.0, 2.0, 3.0, 4.0]
+            y = x.^2
+
+            # MinCurvBC does NOT give exact x² - it optimizes curvature instead
+            xq = [0.5, 1.5, 2.5, 3.5]
+
+            result = quadratic_interp(x, y, xq; bc=MinCurvBC())
+
+            # Should be finite and reasonable
+            @test all(isfinite, result)
+            # Grid points are always exact
+            @test quadratic_interp(x, y, 1.0; bc=MinCurvBC()) ≈ 1.0
+            @test quadratic_interp(x, y, 2.0; bc=MinCurvBC()) ≈ 4.0
+        end
+
+        @testset "MinCurvBC has lower curvature than exact BC for quadratic data" begin
+            # This test demonstrates that MinCurvBC minimizes curvature,
+            # which means it does NOT reproduce exact quadratic polynomials
+            x = [0.0, 0.3, 0.8, 1.5, 2.5, 3.0]  # non-uniform
+            a, b, c = 2.0, -3.0, 1.0
+            f(t) = a*t^2 + b*t + c
+            f_d1(t) = 2*a*t + b
+            f_d2 = 2*a
+
+            y = f.(x)
+
+            # Compute secants and spacing
+            h = diff(x)
+            inv_h = 1.0 ./ h
+            s = diff(y) .* inv_h
+            n = length(x)
+
+            # MinCurvBC curvature
+            d_smooth = zeros(n)
+            _fill_slopes!(d_smooth, s, h, MinCurvBC{Float64}())
+            curvature_smooth = sum((s[i] - d_smooth[i])^2 / h[i] for i in 1:length(s))
+
+            # Exact BC (Left(Deriv1)) curvature - uses correct d[1] = f'(x[1])
+            d_exact = zeros(n)
+            _fill_slopes!(d_exact, s, h, Left(Deriv1(f_d1(first(x)))))
+            curvature_exact = sum((s[i] - d_exact[i])^2 / h[i] for i in 1:length(s))
+
+            # MinCurvBC should have lower or equal curvature
+            @test curvature_smooth <= curvature_exact + 1e-10
+        end
+
+        @testset "linear function f(x) = 2x + 1 (exact, zero curvature)" begin
+            # Linear function: s[i] = d[i] for all i, so curvature = 0
+            # MinCurvBC will give exact results because minimizing zero is zero
+            x = [0.0, 1.0, 2.0, 3.0]
+            y = 2.0 .* x .+ 1.0
+
+            xq = [0.5, 1.5, 2.5]
+            expected = 2.0 .* xq .+ 1.0
+
+            result = quadratic_interp(x, y, xq; bc=MinCurvBC())
+            @test result ≈ expected rtol=1e-12
+
+            # Second derivative should be zero (linear function)
+            d2 = quadratic_interp(x, y, xq; bc=MinCurvBC(), deriv=2)
+            @test all(abs.(d2) .< 1e-12)
+        end
+
+        @testset "constant function f(x) = 5 (exact, zero curvature)" begin
+            # Constant function: all s[i] = 0, all d[i] = 0, curvature = 0
+            x = [0.0, 1.0, 2.0, 3.0]
+            y = fill(5.0, 4)
+
+            xq = [0.5, 1.5, 2.5]
+            expected = fill(5.0, 3)
+
+            result = quadratic_interp(x, y, xq; bc=MinCurvBC())
+            @test result ≈ expected rtol=1e-12
+
+            # All derivatives should be zero
+            d1 = quadratic_interp(x, y, xq; bc=MinCurvBC(), deriv=1)
+            d2 = quadratic_interp(x, y, xq; bc=MinCurvBC(), deriv=2)
+            @test all(abs.(d1) .< 1e-12)
+            @test all(abs.(d2) .< 1e-12)
+        end
+    end
+
+    # ========================================
+    # Test 3: Correct BCs Give Exact Quadratic (MinCurvBC Differs)
+    # ========================================
+    @testset "correct BCs give exact quadratic, MinCurvBC minimizes curvature" begin
+        # For a quadratic polynomial, explicit BCs with correct derivative values
+        # produce exact results. MinCurvBC optimizes curvature instead.
+        x = [0.0, 0.3, 0.8, 1.5, 2.5, 3.0]
+
+        # f(x) = 2x² - 3x + 1
+        a, b, c = 2.0, -3.0, 1.0
+        f(t) = a*t^2 + b*t + c
+        f_d1(t) = 2*a*t + b
+        f_d2 = 2*a
+
+        y = f.(x)
+
+        # Correct BC values
+        d1_left = f_d1(first(x))
+        d1_right = f_d1(last(x))
+
+        # Explicit BCs with correct values should give exact results
+        bc_left_d1 = Left(Deriv1(d1_left))
+        bc_left_d2 = Left(Deriv2(f_d2))
+        bc_right_d1 = Right(Deriv1(d1_right))
+        bc_right_d2 = Right(Deriv2(f_d2))
+
+        xq = range(0.0, 3.0, 20)
+        expected = f.(xq)
+
+        # Explicit BCs with correct values produce exact results
+        for bc in [bc_left_d1, bc_left_d2, bc_right_d1, bc_right_d2]
+            result = quadratic_interp(x, y, collect(xq); bc=bc)
+            @test result ≈ expected rtol=1e-12
+        end
+
+        # MinCurvBC produces finite, reasonable results (but not exact)
+        result_smooth = quadratic_interp(x, y, collect(xq); bc=MinCurvBC())
+        @test all(isfinite, result_smooth)
+    end
+
+    # ========================================
+    # Test 4: MinCurvBC vs Default BC Difference
+    # ========================================
+    @testset "MinCurvBC differs from Left(Deriv2(0)) for curved data" begin
+        # Non-quadratic data where MinCurvBC should differ from default Left(Deriv2(0))
+        x = [0.0, 0.3, 0.8, 1.5, 2.5, 3.0, 4.0]
+        y = [0.0, 0.8, 1.2, 0.9, 0.3, 0.6, 1.0]  # curved data
+
+        # Default BC: Left(Deriv2(0)) forces first interval to be linear
+        val_default = quadratic_interp(x, y, 0.15; bc=Left(Deriv2(0.0)))
+
+        # MinCurvBC: globally smooth, doesn't force linearity
+        val_smooth = quadratic_interp(x, y, 0.15; bc=MinCurvBC())
+
+        # They should be different for non-quadratic data
+        @test val_default != val_smooth
+
+        # Both should be within reasonable interpolation bounds
+        @test 0.0 < val_default < 1.0
+        @test 0.0 < val_smooth < 1.0
+    end
+
+    # ========================================
+    # Test 5: MinCurvBC Edge Cases
+    # ========================================
+    @testset "MinCurvBC edge cases" begin
+
+        @testset "n=2 (minimum grid - single segment)" begin
+            x = [0.0, 1.0]
+            y = [0.0, 1.0]
+
+            # Should not error
+            result = quadratic_interp(x, y, 0.5; bc=MinCurvBC())
+            @test isfinite(result)
+            @test result ≈ 0.5  # linear interpolation (zero curvature optimal)
+
+            # Create interpolant
+            itp = quadratic_interp(x, y; bc=MinCurvBC())
+            @test itp(0.5) ≈ 0.5
+        end
+
+        @testset "extreme spacing variation" begin
+            # Tiny + large intervals
+            x = [0.0, 0.001, 1.0, 1.001, 10.0]
+            y = x.^2  # f(x) = x²
+
+            # Should handle extreme spacing without numerical issues
+            result = quadratic_interp(x, y, 5.0; bc=MinCurvBC())
+            @test isfinite(result)
+            # MinCurvBC optimizes curvature, not exact x² reproduction
+            # Just verify it's in a reasonable range
+            @test 20.0 < result < 30.0
+
+            # Query near tiny intervals - should be finite and reasonable
+            result_tiny = quadratic_interp(x, y, 0.0005; bc=MinCurvBC())
+            @test isfinite(result_tiny)
+            @test result_tiny >= 0.0  # should be non-negative for x² data
+        end
+
+        @testset "Float32 precision" begin
+            x32 = Float32[0.0, 1.0, 2.0, 3.0]
+            y32 = x32.^2
+
+            itp = quadratic_interp(x32, y32; bc=MinCurvBC{Float32}())
+            @test itp isa QuadraticInterpolant{Float32}
+
+            # MinCurvBC doesn't give exact x², but should be finite and reasonable
+            @test isfinite(itp(1.5f0))
+            @test isfinite(itp(0.5f0))
+            # Grid points are always exact
+            @test itp(1.0f0) ≈ 1.0f0
+            @test itp(2.0f0) ≈ 4.0f0
+        end
+
+        @testset "many points (large n)" begin
+            x = collect(range(0.0, 10.0, 101))  # n = 101 points
+            y = x.^2
+
+            # With many points, MinCurvBC should be reasonably accurate
+            # (curvature optimization converges toward exact for dense grids)
+            xq = [2.5, 5.0, 7.5]
+            expected = xq.^2
+
+            result = quadratic_interp(x, y, xq; bc=MinCurvBC())
+            # Allow some tolerance since MinCurvBC trades exactness for smoothness
+            @test all(isfinite, result)
+            # With dense grid, should be quite close to exact
+            @test result ≈ expected rtol=0.01  # 1% tolerance
+        end
+    end
+
+    # ========================================
+    # Test 6: MinCurvBC Curvature is Minimal
+    # ========================================
+    @testset "MinCurvBC produces minimal or equal curvature" begin
+        # MinCurvBC should produce total curvature <= any other BC
+        x = [0.0, 0.5, 1.5, 2.5, 3.0]
+        y = [1.0, 2.5, 1.8, 3.2, 2.0]  # arbitrary curved data
+
+        # Compute curvature for various BCs
+        # Curvature = Σ a[i]² * h[i] where a[i] = (s[i] - d[i]) / h[i]
+        # Equivalent to Σ (s[i] - d[i])² / h[i]
+
+        h = diff(x)
+        inv_h = 1.0 ./ h
+        s = diff(y) .* inv_h
+        n = length(x)
+
+        # MinCurvBC curvature
+        d_smooth = zeros(n)
+        _fill_slopes!(d_smooth, s, h, MinCurvBC{Float64}())
+        curvature_smooth = sum((s[i] - d_smooth[i])^2 / h[i] for i in 1:length(s))
+
+        # Left(Deriv2(0)) curvature
+        d_left = zeros(n)
+        _fill_slopes!(d_left, s, h, Left(Deriv2(0.0)))
+        curvature_left = sum((s[i] - d_left[i])^2 / h[i] for i in 1:length(s))
+
+        # Right(Deriv2(0)) curvature
+        d_right = zeros(n)
+        _fill_slopes!(d_right, s, h, Right(Deriv2(0.0)))
+        curvature_right = sum((s[i] - d_right[i])^2 / h[i] for i in 1:length(s))
+
+        # MinCurvBC should have minimal curvature
+        @test curvature_smooth <= curvature_left + 1e-10
+        @test curvature_smooth <= curvature_right + 1e-10
     end
 
 end

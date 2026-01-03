@@ -229,7 +229,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y, xi; bc=Left(Deriv2(0)), extrap=:none, deriv=0)
+    quadratic_interp(x, y, xi; bc=Left(ParabolaFit()), extrap=:none, deriv=0)
 
 C1 piecewise quadratic spline interpolation at a single point.
 
@@ -238,8 +238,10 @@ C1 piecewise quadratic spline interpolation at a single point.
 - `y::AbstractVector`: y-values (same length as x)
 - `xi::Real`: Query point
 - `bc`: Boundary condition (one of):
+  - `Left(ParabolaFit())`: 3-point parabola fit at left (default, exact for polynomials)
+  - `Right(ParabolaFit())`: 3-point parabola fit at right
   - `Left(Deriv1(v))`: First derivative = v at left endpoint
-  - `Left(Deriv2(v))`: Second derivative = v at left endpoint (default: v=0)
+  - `Left(Deriv2(v))`: Second derivative = v at left endpoint
   - `Right(Deriv1(v))`: First derivative = v at right endpoint
   - `Right(Deriv2(v))`: Second derivative = v at right endpoint
   - `MinCurvBC()`: Minimize total curvature (globally smooth)
@@ -257,12 +259,12 @@ C1 piecewise quadratic spline interpolation at a single point.
 x = [0.0, 1.0, 2.0, 3.0]
 y = x.^2  # [0, 1, 4, 9]
 
-# Default: natural at left (Deriv2=0)
-quadratic_interp(x, y, 1.5)  # ≈ 2.25
+# Default: ParabolaFit (exact for quadratic polynomials)
+quadratic_interp(x, y, 1.5)  # ≈ 2.25 (exact)
 
 # With specific BC
 quadratic_interp(x, y, 1.5; bc=Left(Deriv1(0.0)))  # zero slope at left
-quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0))) # slope=6 at right
+quadratic_interp(x, y, 1.5; bc=MinCurvBC())        # minimize curvature
 
 # Derivatives
 quadratic_interp(x, y, 1.5; deriv=1)  # ≈ 3.0 (slope at x=1.5)
@@ -273,7 +275,7 @@ quadratic_interp(x, y, 1.5; deriv=2)  # ≈ 2.0 (curvature)
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     xi::FT;
-    bc::QuadraticBC{FT}=Left(Deriv2(zero(FT))),
+    bc::QuadraticBC{FT}=Left(ParabolaFit{FT}()),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {FT<:AbstractFloat}
@@ -282,7 +284,7 @@ quadratic_interp(x, y, 1.5; deriv=2)  # ≈ 2.0 (curvature)
 
     # Compute coefficients using temporary arrays from pool
     nx = length(x)
-    h = acquire!(pool, FT, nx-1) 
+    h = acquire!(pool, FT, nx-1)
     d = acquire!(pool, FT, nx)
     a = acquire!(pool, FT, nx-1)
     _compute_quadratic_coeffs!(h, d, a, x, y, bc)
@@ -299,7 +301,7 @@ end
 # ========================================
 
 """
-    quadratic_interp!(output, x, y, x_targets; bc=Left(Deriv2(0)), extrap=:none, deriv=0)
+    quadratic_interp!(output, x, y, x_targets; bc=Left(ParabolaFit()), extrap=:none, deriv=0)
 
 In-place quadratic spline interpolation for multiple query points.
 
@@ -321,7 +323,7 @@ quadratic_interp!(out, x, y, [0.5, 1.5, 2.5])
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
-    bc::QuadraticBC{FT}=Left(Deriv2(zero(FT))),
+    bc::QuadraticBC{FT}=Left(ParabolaFit{FT}()),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {FT<:AbstractFloat}
@@ -331,7 +333,7 @@ quadratic_interp!(out, x, y, [0.5, 1.5, 2.5])
 
     # Compute coefficients using temporary arrays from pool
     nx = length(x)
-    h = acquire!(pool, FT, nx-1) 
+    h = acquire!(pool, FT, nx-1)
     d = acquire!(pool, FT, nx)
     a = acquire!(pool, FT, nx-1)
     _compute_quadratic_coeffs!(h, d, a, x, y, bc)
@@ -353,7 +355,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y, x_targets; bc=Left(Deriv2(0)), extrap=:none, deriv=0)
+    quadratic_interp(x, y, x_targets; bc=Left(ParabolaFit()), extrap=:none, deriv=0)
 
 Quadratic spline interpolation for multiple query points (allocating version).
 
@@ -369,7 +371,7 @@ function quadratic_interp(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
-    bc::QuadraticBC{FT}=Left(Deriv2(zero(FT))),
+    bc::QuadraticBC{FT}=Left(ParabolaFit{FT}()),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {FT<:AbstractFloat}
@@ -425,7 +427,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     xi::S;
-    bc::Union{Left, Right, MinCurvBC}=Left(Deriv2(zero(T))),
+    bc::Union{Left, Right, MinCurvBC}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
@@ -442,7 +444,7 @@ function quadratic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    bc::Union{Left, Right, MinCurvBC}=Left(Deriv2(zero(T))),
+    bc::Union{Left, Right, MinCurvBC}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
@@ -462,7 +464,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    bc::Union{Left, Right, MinCurvBC}=Left(Deriv2(zero(T))),
+    bc::Union{Left, Right, MinCurvBC}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
@@ -534,7 +536,7 @@ struct QuadraticInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractV
 
     function QuadraticInterpolant(
         x::X, y::Y;
-        bc::QuadraticBC{T}=Left(Deriv2(zero(T))),
+        bc::QuadraticBC{T}=Left(ParabolaFit{T}()),
         extrap::Symbol=:none
     ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
         @assert length(x) == length(y) "x and y must have same length"
@@ -611,14 +613,14 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y; bc=Left(Deriv2(0)), extrap=:none) -> QuadraticInterpolant
+    quadratic_interp(x, y; bc=Left(ParabolaFit()), extrap=:none) -> QuadraticInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values
-- `bc`: Boundary condition (Left, Right, or MinCurvBC)
+- `bc`: Boundary condition (Left, Right, MinCurvBC, or Left/Right with ParabolaFit)
 - `extrap::Symbol`: Extrapolation mode
 
 # Returns
@@ -629,8 +631,9 @@ Create a callable interpolant for broadcast fusion and reuse.
 x = [0.0, 1.0, 2.0, 3.0]
 y = x.^2
 
-itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
-itp(0.5)           # 0.25
+# Default BC (ParabolaFit) gives exact polynomial reproduction
+itp = quadratic_interp(x, y)
+itp(1.5)           # 2.25 (exact)
 itp.([0.5, 1.5])   # [0.25, 2.25]
 
 # Fused broadcast (optimal)
@@ -640,7 +643,7 @@ result = @. coef * itp(query)
 function quadratic_interp(
     x::AbstractVector{FT},
     y::AbstractVector{FT};
-    bc::QuadraticBC{FT}=Left(Deriv2(zero(FT))),
+    bc::QuadraticBC{FT}=Left(ParabolaFit{FT}()),
     extrap::Symbol=:none
 ) where {FT<:AbstractFloat}
     return QuadraticInterpolant(x, y; bc, extrap)
@@ -650,7 +653,7 @@ end
 function quadratic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
-    bc::Union{Left, Right, MinCurvBC}=Left(Deriv2(zero(T))),
+    bc::Union{Left, Right, MinCurvBC}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none
 ) where {T<:Real}
     FT = float(T)

@@ -1,13 +1,18 @@
 # Derivatives
 
-FastInterpolations.jl provides **analytical derivatives** for both linear and cubic interpolation. No finite difference approximation needed—derivatives are computed directly from the spline coefficients.
+FastInterpolations.jl provides **analytical derivatives** for all interpolation methods. No finite difference approximation needed—derivatives are computed directly from the spline coefficients.
+
+!!! tip "Visual Comparison"
+    See [Interpolation Overview](interpolation/overview.md) for side-by-side derivative plots of all 4 methods.
 
 ## Overview
 
 | Interpolation | First Derivative | Second Derivative |
 |---------------|------------------|-------------------|
-| Linear | Piecewise constant (slope) | Always zero |
-| Cubic | Smooth (C¹ continuous) | Continuous (C² continuous) |
+| Constant | Always 0 | Always 0 |
+| Linear | Piecewise constant (slope) | Always 0 |
+| Quadratic | Continuous (C¹) | Piecewise constant |
+| Cubic | Smooth (C¹ continuous) | Continuous (C²) |
 
 ## One-Shot API
 
@@ -97,51 +102,12 @@ result = @. 2.0 * d1(xq) + d2(xq)
 println("Fused broadcast (first 5): ", round.(result[1:5], digits=4))
 ```
 
-## Linear Interpolation Derivatives
-
-Linear interpolation has piecewise constant first derivative (the slope of each segment):
-
-```@example deriv
-x_lin = range(0.0, 2π, 9)
-y_lin = sin.(x_lin)
-
-# One-shot
-slope = linear_interp(x_lin, y_lin, 1.0; deriv=1)
-println("Slope at x=1.0: ", round(slope, digits=4))
-
-# Interpolant
-litp = linear_interp(x_lin, y_lin)
-d1_lin = deriv1(litp)
-println("Via interpolant: ", round(d1_lin(1.0), digits=4))
-```
-
-```@example deriv
-using Plots # hide
-xq = range(0.0, 2π, 200)
-y_interp = linear_interp(x_lin, y_lin, xq)
-y_deriv = linear_interp(x_lin, y_lin, xq; deriv=1)
-
-# Note: y_deriv is piecewise constant (step function)
-p = plot(layout=(2,1), size=(700, 400)) # hide
-plot!(p[1], xq, y_interp, label="Linear interpolation", linewidth=2) # hide
-scatter!(p[1], x_lin, y_lin, label="Data points", markersize=6) # hide
-title!(p[1], "Linear Interpolation") # hide
-plot!(p[2], xq, y_deriv, label="Slope (piecewise constant)", linewidth=2, color=:red) # hide
-plot!(p[2], xq, cos.(xq), label="cos(x) [true derivative]", linestyle=:dash, alpha=0.7) # hide
-hline!(p[2], [0], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # hide
-title!(p[2], "First Derivative") # hide
-xlabel!(p[2], "x") # hide
-p # hide
-```
-
-!!! note "Second Derivative of Linear Interpolation"
-    `deriv2(linear_itp)` always returns 0.0, since linear segments have no curvature.
-
 ## Derivatives with Boundary Conditions
 
 Different boundary conditions affect derivative behavior at endpoints:
 
 ```@example deriv
+using Plots # hide
 x = range(0.0, 2π, 13)
 y = sin.(x)
 xq = range(0.0, 2π, 200)
@@ -177,16 +143,24 @@ See [Extrapolation](extrapolation.md) for available modes.
 
 ## API Summary
 
-| Method | Usage | Description |
-|--------|-------|-------------|
-| `cubic_interp(...; deriv=1)` | One-shot | First derivative |
-| `cubic_interp(...; deriv=2)` | One-shot | Second derivative |
-| `linear_interp(...; deriv=1)` | One-shot | Piecewise constant slope |
-| `deriv1(itp)` | Interpolant | First derivative view |
-| `deriv2(itp)` | Interpolant | Second derivative view |
-| `d1.(xq)` | Broadcast | Vector evaluation |
+### One-Shot API
+
+| Function | `deriv=1` | `deriv=2` |
+|----------|-----------|-----------|
+| `constant_interp(x, y, xq; deriv=...)` | 0 | 0 |
+| `linear_interp(x, y, xq; deriv=...)` | Piecewise constant | 0 |
+| `quadratic_interp(x, y, xq; deriv=...)` | Continuous | Piecewise constant |
+| `cubic_interp(x, y, xq; deriv=...)` | Smooth | Continuous |
+
+### Interpolant API
+
+| Method | Description |
+|--------|-------------|
+| `deriv1(itp)` | First derivative view |
+| `deriv2(itp)` | Second derivative view |
+| `d1.(xq)` | Vector evaluation via broadcast |
 
 ## See Also
 
-- **[Cubic Splines](interpolation/cubic.md)**: Cubic spline interpolation and boundary conditions
-- **[Linear Interpolation](interpolation/linear.md)**: Linear interpolation with derivatives
+- **[Interpolation Overview](interpolation/overview.md)**: Visual comparison of all 4 methods
+- **[Constant](interpolation/constant.md)** | **[Linear](interpolation/linear.md)** | **[Quadratic](interpolation/quadratic.md)** | **[Cubic](interpolation/cubic.md)**

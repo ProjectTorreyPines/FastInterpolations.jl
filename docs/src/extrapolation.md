@@ -29,14 +29,15 @@ Both `linear_interp` and `cubic_interp` support the same extrapolation modes.
 
 ```@example extrap
 using FastInterpolations
-using Plots
+using Plots # hide
 
 # Sample data
 x = [0.0, 0.7, 1.5, 2.3, 3.0, 4.2, 5.0, 6.0]
 y = [0.2, 1.1, 0.6, 1.8, 1.2, 0.4, 1.5, 0.8]
 
-# Query points (full range including extrapolation region)
+# Query points (including extrapolation region)
 xq = range(x[1] - 1.5, x[end] + 1.5, 300)
+nothing # hide
 ```
 
 ## `extrap=:none` (Default)
@@ -58,13 +59,12 @@ Only interior queries succeed:
 ```@example extrap
 yq = cubic_interp(x, y, range(x[1], x[end], 200); extrap=:none)
 
-plot(title="extrap=:none", xlabel="x", ylabel="y", legend=:topright,
-     xlims=(x[1] - 1.5, x[end] + 1.5))
-vspan!([x[1] - 1.5, x[1]], alpha=0.1, color=:gray, label="out of domain")
-vspan!([x[end], x[end] + 1.5], alpha=0.1, color=:gray, label=nothing)
-plot!(range(x[1], x[end], 200), yq, label="spline", linewidth=2)
-scatter!(x, y, label="data", markersize=7, color=:black)
-vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
+plot(title="extrap=:none", xlabel="x", ylabel="y", legend=:topright, xlims=(x[1] - 1.5, x[end] + 1.5)) # hide
+vspan!([x[1] - 1.5, x[1]], alpha=0.1, color=:gray, label="out of domain") # hide
+vspan!([x[end], x[end] + 1.5], alpha=0.1, color=:gray, label=nothing) # hide
+plot!(range(x[1], x[end], 200), yq, label="spline", linewidth=2) # hide
+scatter!(x, y, label="data", markersize=7, color=:black) # hide
+vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # hide
 ```
 
 ## `extrap=:constant`
@@ -74,12 +74,12 @@ Returns boundary values: `y[1]` for left, `y[end]` for right.
 ```@example extrap
 yq = cubic_interp(x, y, xq; extrap=:constant)
 
-plot(title="extrap=:constant", xlabel="x", ylabel="y", legend=:topright)
-vspan!([x[1] - 1.5, x[1]], alpha=0.1, color=:gray, label="out of domain")
-vspan!([x[end], x[end] + 1.5], alpha=0.1, color=:gray, label=nothing)
-plot!(xq, yq, label="spline", linewidth=2)
-scatter!(x, y, label="data", markersize=7, color=:black)
-vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
+plot(title="extrap=:constant", xlabel="x", ylabel="y", legend=:topright) # hide
+vspan!([x[1] - 1.5, x[1]], alpha=0.1, color=:gray, label="out of domain") # hide
+vspan!([x[end], x[end] + 1.5], alpha=0.1, color=:gray, label=nothing) # hide
+plot!(xq, yq, label="spline", linewidth=2) # hide
+scatter!(x, y, label="data", markersize=7, color=:black) # hide
+vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # hide
 ```
 
 ## `extrap=:extension`
@@ -89,12 +89,12 @@ Extends the boundary polynomial beyond the domain.
 ```@example extrap
 yq = cubic_interp(x, y, xq; extrap=:extension)
 
-plot(title="extrap=:extension", xlabel="x", ylabel="y", legend=:topright)
-vspan!([x[1] - 1.5, x[1]], alpha=0.1, color=:gray, label="out of domain")
-vspan!([x[end], x[end] + 1.5], alpha=0.1, color=:gray, label=nothing)
-plot!(xq, yq, label="spline", linewidth=2)
-scatter!(x, y, label="data", markersize=7, color=:black)
-vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
+plot(title="extrap=:extension", xlabel="x", ylabel="y", legend=:topright) # hide
+vspan!([x[1] - 1.5, x[1]], alpha=0.1, color=:gray, label="out of domain") # hide
+vspan!([x[end], x[end] + 1.5], alpha=0.1, color=:gray, label=nothing) # hide
+plot!(xq, yq, label="spline", linewidth=2) # hide
+scatter!(x, y, label="data", markersize=7, color=:black) # hide
+vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # hide
 ```
 
 ## `extrap=:wrap`
@@ -113,29 +113,30 @@ This is **purely coordinate mapping**—it does not enforce any physical conditi
 ```@example extrap
 yq = cubic_interp(x, y, xq; extrap=:wrap)
 
-plot(title="extrap=:wrap", xlabel="x", ylabel="y", legend=:topright)
-vspan!([x[1] - 1.5, x[1]], alpha=0.1, color=:gray, label="out of domain")
-vspan!([x[end], x[end] + 1.5], alpha=0.1, color=:gray, label=nothing)
-plot!(xq, yq, label="spline", linewidth=2)
-scatter!(x, y, label="data", markersize=7, color=:black)
-vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
+plot(title="extrap=:wrap", xlabel="x", ylabel="y", legend=:topright) # hide
+vspan!([x[1] - 1.5, x[1]], alpha=0.1, color=:gray, label="out of domain") # hide
+vspan!([x[end], x[end] + 1.5], alpha=0.1, color=:gray, label=nothing) # hide
+plot!(xq, yq, label="spline", linewidth=2) # hide
+scatter!(x, y, label="data", markersize=7, color=:black) # hide
+vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # hide
 ```
 
 ## Comparison
 
 ```@example extrap
-plot(title="Extrapolation Comparison", xlabel="x", ylabel="y",
-     legend=:topright, size=(700, 400))
-vspan!([x[1] - 1.5, x[1]], alpha=0.1, color=:gray, label=nothing)
-vspan!([x[end], x[end] + 1.5], alpha=0.1, color=:gray, label=nothing)
-plot!(xq, cubic_interp(x, y, xq; extrap=:constant),
-      label=":constant", linewidth=2)
-plot!(xq, cubic_interp(x, y, xq; extrap=:extension),
-      label=":extension", linewidth=2, linestyle=:dash)
-plot!(xq, cubic_interp(x, y, xq; extrap=:wrap),
-      label=":wrap", linewidth=2, linestyle=:dashdot)
-scatter!(x, y, label="data", markersize=7, color=:black)
-vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing)
+# All three modes on same plot
+y_const = cubic_interp(x, y, xq; extrap=:constant)
+y_ext   = cubic_interp(x, y, xq; extrap=:extension)
+y_wrap  = cubic_interp(x, y, xq; extrap=:wrap)
+
+plot(title="Extrapolation Comparison", xlabel="x", ylabel="y", legend=:topright, size=(700, 400)) # hide
+vspan!([x[1] - 1.5, x[1]], alpha=0.1, color=:gray, label=nothing) # hide
+vspan!([x[end], x[end] + 1.5], alpha=0.1, color=:gray, label=nothing) # hide
+plot!(xq, y_const, label=":constant", linewidth=2) # hide
+plot!(xq, y_ext, label=":extension", linewidth=2, linestyle=:dash) # hide
+plot!(xq, y_wrap, label=":wrap", linewidth=2, linestyle=:dashdot) # hide
+scatter!(x, y, label="data", markersize=7, color=:black) # hide
+vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # hide
 ```
 
 ## Summary

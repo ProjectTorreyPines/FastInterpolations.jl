@@ -1,106 +1,165 @@
 # Cubic Spline Interpolation
 
-Cubic spline interpolation creates smooth curves (C² continuous) that pass through all data points. Unlike linear interpolation, cubic splines have continuous first and second derivatives.
+C²-continuous spline interpolation with smooth first and second derivatives.
 
-## Basic Usage
+---
 
-```@example cubic_overview
-using FastInterpolations
-using Plots
+## Two Fundamental BC Categories
 
-# Sample data (Range works directly - most performant)
+Cubic splines require boundary conditions at **both** endpoints. There are two fundamentally different approaches:
+
+| Category | Algorithm | Mathematical Meaning |
+|----------|-----------|----------------------|
+| **BCPair** | Standard tridiagonal | Independent constraints at each endpoint |
+| **PeriodicBC** | Sherman-Morrison cyclic | True periodic: ``S(x) = S(x+\tau)`` with C² continuity |
+
+### 1. BCPair: Independent Endpoint Constraints
+
+Each endpoint has its own `PointBC` constraint — either first or second derivative:
+
+```julia
+BCPair(left::PointBC, right::PointBC)
+
+# PointBC types:
+Deriv1(v)   # S'(endpoint) = v   (slope)
+Deriv2(v)   # S''(endpoint) = v  (curvature)
+```
+
+**Examples**:
+```julia
+BCPair(Deriv2(0), Deriv2(0))      # Natural: zero curvature at both ends
+BCPair(Deriv1(0), Deriv1(0))      # Clamped: zero slope at both ends
+BCPair(Deriv1(1.0), Deriv2(0))    # Mixed: slope=1 at left, curvature=0 at right
+BCPair(Deriv2(-2.0), Deriv1(0.5)) # Mixed: curvature=-2 at left, slope=0.5 at right
+```
+
+**Convenience shortcuts**:
+
+| Shortcut | Equivalent | Meaning |
+|----------|------------|---------|
+| `NaturalBC()` | `BCPair(Deriv2(0), Deriv2(0))` | S''=0 at both ends — **default** |
+| `ClampedBC()` | `BCPair(Deriv1(0), Deriv1(0))` | S'=0 at both ends (flat) |
+
+### 2. PeriodicBC: True Periodic C² Continuity
+
+The spline satisfies periodicity with period ``\tau = x_n - x_0``:
+
+```math
+S(x) = S(x + \tau), \quad S'(x) = S'(x + \tau), \quad S''(x) = S''(x + \tau)
+```
+
+```julia
+PeriodicBC()   # Requires: y[1] ≈ y[end]
+```
+
+!!! note "Different Algorithm"
+    PeriodicBC uses the **Sherman-Morrison formula** to solve a cyclic tridiagonal system.
+    This is fundamentally different from BCPair's standard tridiagonal solver.
+
+---
+
+## API Reference
+
+### One-shot
+
+| Function | Description |
+|----------|-------------|
+| `cubic_interp(x, y, xq)` | Cubic spline at point(s) `xq` (default: NaturalBC) |
+| `cubic_interp(x, y, xq; bc=...)` | With specified BC |
+| `cubic_interp!(out, x, y, xq; bc=...)` | In-place version |
+
+### Interpolant
+
+| Function | Description |
+|----------|-------------|
+| `itp = cubic_interp(x, y; bc=...)` | Create interpolant |
+| `itp(xq)` / `itp(out, xq)` | Evaluate |
+| `deriv1(itp)` / `deriv2(itp)` | Derivative views |
+
+```julia
 x = range(0.0, 2π, 15)
 y = sin.(x)
 
-# Interpolate at a single point
-result = cubic_interp(x, y, 1.5)
-println("cubic_interp(x, y, 1.5) = ", round(result, digits=6))
+# Standard (open curve)
+cubic_interp(x, y, 1.0)                            # NaturalBC (default)
+cubic_interp(x, y, 1.0; bc=ClampedBC())            # Flat endpoints
+cubic_interp(x, y, 1.0; bc=BCPair(Deriv1(1), Deriv2(0)))  # Custom
+
+# Periodic (closed curve) - requires y[1] ≈ y[end]
+cubic_interp(x, y, 1.0; bc=PeriodicBC())
 ```
 
-```@example cubic_overview
-# Interpolate at multiple points (Range for query points too)
-xq = range(0.0, 2π, 200)
-yq = cubic_interp(x, y, xq)
+---
 
-plot(xq, yq, label="Cubic spline", linewidth=2)
-scatter!(x, y, label="Data points", markersize=6)
-plot!(xq, sin.(xq), label="True sin(x)", linestyle=:dash, alpha=0.5)
-title!("Cubic Spline Interpolation")
-xlabel!("x")
-ylabel!("y")
+## When to Use Each BC
+
+| Situation | Recommended BC |
+|-----------|----------------|
+| General data, unknown endpoint behavior | `NaturalBC()` (default) |
+| Endpoints should be flat (zero slope) | `ClampedBC()` |
+| Known endpoint derivatives (physics) | `BCPair(Deriv1(...), Deriv1(...))` |
+| Cyclic data (angles, phases, time-of-day) | `PeriodicBC()` |
+
+---
+
+## Visual Comparison: NaturalBC vs PeriodicBC
+
+Comparing `cos(x)` interpolation — note that `cos''(x) = -cos(x) ≠ 0` at endpoints:
+
+```@example cubic
+using FastInterpolations
+using Plots # hide
+
+# Uniform grid (9 points)
+x = range(0, 2π, 9)
+y = cos.(x)
+xq = range(0, 2π, 500)
+
+itp_natural = cubic_interp(x, y; bc=NaturalBC())
+itp_periodic = cubic_interp(x, y; bc=PeriodicBC())
+
+# Compare: S(x), S'(x), S''(x) for both BCs
+d1_nat, d2_nat = deriv1(itp_natural), deriv2(itp_natural)
+d1_per, d2_per = deriv1(itp_periodic), deriv2(itp_periodic)
+
+p = plot(layout=(3, 2), size=(900, 700), legend=:topright) # hide
+plot!(p[1], xq, itp_natural.(xq), label="NaturalBC", linewidth=2) # hide
+plot!(p[1], xq, cos.(xq), label="cos(x)", linestyle=:dash, color=:black, alpha=0.7) # hide
+scatter!(p[1], x, y, label="data", markersize=5, color=:black) # hide
+title!(p[1], "NaturalBC: S(x)") # hide
+ylims!(p[1], -1.3, 1.3) # hide
+plot!(p[2], xq, itp_periodic.(xq), label="PeriodicBC", linewidth=2, color=:red) # hide
+plot!(p[2], xq, cos.(xq), label="cos(x)", linestyle=:dash, color=:black, alpha=0.7) # hide
+scatter!(p[2], x, y, label="data", markersize=5, color=:black) # hide
+title!(p[2], "PeriodicBC: S(x)") # hide
+ylims!(p[2], -1.3, 1.3) # hide
+plot!(p[3], xq, d1_nat.(xq), label="S'(x)", linewidth=2) # hide
+plot!(p[3], xq, -sin.(xq), label="-sin(x)", linestyle=:dash, linewidth=2, color=:black, alpha=0.7) # hide
+scatter!(p[3], x, -sin.(x), label=nothing, markersize=5, color=:black) # hide
+title!(p[3], "NaturalBC: S'(x)") # hide
+ylims!(p[3], -1.3, 1.3) # hide
+plot!(p[4], xq, d1_per.(xq), label="S'(x)", linewidth=2, color=:red) # hide
+plot!(p[4], xq, -sin.(xq), label="-sin(x)", linestyle=:dash, linewidth=2, color=:black, alpha=0.7) # hide
+scatter!(p[4], x, -sin.(x), label=nothing, markersize=5, color=:black) # hide
+title!(p[4], "PeriodicBC: S'(x)") # hide
+ylims!(p[4], -1.3, 1.3) # hide
+plot!(p[5], xq, d2_nat.(xq), label="S''(x)", linewidth=2) # hide
+plot!(p[5], xq, -cos.(xq), label="-cos(x)", linestyle=:dash, linewidth=2, color=:black, alpha=0.7) # hide
+scatter!(p[5], x, -cos.(x), label=nothing, markersize=5, color=:black) # hide
+hline!(p[5], [0], color=:gray, linestyle=:dot, label=nothing) # hide
+title!(p[5], "NaturalBC: S''(x) — forced 0 at ends") # hide
+ylims!(p[5], -1.5, 1.5) # hide
+plot!(p[6], xq, d2_per.(xq), label="S''(x)", linewidth=2, color=:red) # hide
+plot!(p[6], xq, -cos.(xq), label="-cos(x)", linestyle=:dash, linewidth=2, color=:black, alpha=0.7) # hide
+scatter!(p[6], x, -cos.(x), label=nothing, markersize=5, color=:black) # hide
+hline!(p[6], [0], color=:gray, linestyle=:dot, label=nothing) # hide
+title!(p[6], "PeriodicBC: S''(x) — matches at wrap") # hide
+ylims!(p[6], -1.5, 1.5) # hide
+p # hide
 ```
 
-## Two Categories of Boundary Conditions
+!!! tip "Key Observation"
+    - **NaturalBC** forces `S''(0) = S''(2π) = 0`, but true `cos''(x) = -cos(x) = -1` at endpoints → mismatch
+    - **PeriodicBC** allows `S''(0) = S''(2π)` to match naturally through cyclic continuity
 
-Cubic splines require boundary conditions at the endpoints. FastInterpolations.jl provides two main categories:
-
-### 1. Standard Boundary Conditions
-
-For **non-periodic data** where endpoints are distinct:
-
-| Type | Description | Use Case |
-|------|-------------|----------|
-| `NaturalBC()` | Zero curvature at ends (default) | General purpose, no prior knowledge |
-| `ClampedBC()` | Zero slope at ends | Data with flat endpoints |
-| `Deriv1(val)` | Specified first derivative | Known endpoint slopes |
-| `Deriv2(val)` | Specified second derivative | Known endpoint curvatures |
-| `BCPair(left, right)` | Different conditions at each end | Asymmetric constraints |
-
-➡️ **[Learn more: Standard BC](standard.md)**
-
-### 2. Periodic Boundary Condition
-
-For **cyclic/periodic data** where the curve should wrap smoothly:
-
-| Type | Description | Use Case |
-|------|-------------|----------|
-| `PeriodicBC()` | Smooth wrap-around | Angles, phases, time-of-day |
-
-➡️ **[Learn more: Periodic BC](periodic.md)**
-
-## Quick Decision Guide
-
-```
-Is your data periodic/cyclic?
-│
-├─ YES → Use PeriodicBC()
-│        (angles, phases, circular data)
-│
-└─ NO → Use Standard BC
-        │
-        ├─ No prior knowledge? → NaturalBC() (default)
-        ├─ Flat endpoints? → ClampedBC()
-        └─ Known derivatives? → Deriv1/Deriv2 + BCPair
-```
-
-## In-Place Interpolation
-
-For maximum performance, use the in-place version:
-
-```@example cubic_overview
-out = zeros(5)
-xq_small = [0.5, 1.0, 1.5, 2.0, 2.5]
-cubic_interp!(out, x, y, xq_small)
-println("Results: ", round.(out, digits=4))
-```
-
-## Reusable Interpolant
-
-When both `x` and `y` are fixed:
-
-```@example cubic_overview
-# Create interpolant once (pre-computes coefficients)
-itp = cubic_interp(x, y)
-
-# Evaluate multiple times (zero-allocation)
-println("itp(1.0) = ", round(itp(1.0), digits=4))
-println("itp(2.0) = ", round(itp(2.0), digits=4))
-println("itp(3.0) = ", round(itp(3.0), digits=4))
-```
-
-## Next Steps
-
-- **[Standard BC](standard.md)**: Learn about NaturalBC, ClampedBC, and custom constraints
-- **[Periodic BC](periodic.md)**: Handle cyclic data with smooth wrap-around
-- **[Extrapolation](../../extrapolation.md)**: Control behavior outside the data domain
-- **[Architecture Overview](../../architecture/overview.md)**: Understand zero-allocation and caching
+**More details**: [Standard BC](standard.md) | [Periodic BC](periodic.md)

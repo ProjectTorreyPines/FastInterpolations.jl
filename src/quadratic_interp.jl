@@ -11,9 +11,9 @@
 Supported boundary conditions for quadratic spline interpolation.
 - `Left{T}`: BC at left endpoint (forward recurrence)
 - `Right{T}`: BC at right endpoint (backward recurrence)
-- `MinCurvBC{T}`: Global curvature minimization
+- `MinCurvFit{T}`: Global curvature minimization
 """
-const QuadraticBC{T} = Union{Left{T}, Right{T}, MinCurvBC{T}}
+const QuadraticBC{T} = Union{Left{T}, Right{T}, MinCurvFit{T}}
 
 # ========================================
 # Grid Spacing Computation
@@ -244,7 +244,7 @@ C1 piecewise quadratic spline interpolation at a single point.
   - `Left(Deriv2(v))`: Second derivative = v at left endpoint
   - `Right(Deriv1(v))`: First derivative = v at right endpoint
   - `Right(Deriv2(v))`: Second derivative = v at right endpoint
-  - `MinCurvBC()`: Minimize total curvature (globally smooth)
+  - `MinCurvFit()`: Minimize total curvature (globally smooth)
 - `extrap::Symbol`: Extrapolation mode
   - `:none` (default): throws DomainError if outside domain
   - `:constant`: clamp to boundary values
@@ -264,7 +264,7 @@ quadratic_interp(x, y, 1.5)  # ≈ 2.25 (exact)
 
 # With specific BC
 quadratic_interp(x, y, 1.5; bc=Left(Deriv1(0.0)))  # zero slope at left
-quadratic_interp(x, y, 1.5; bc=MinCurvBC())        # minimize curvature
+quadratic_interp(x, y, 1.5; bc=MinCurvFit())        # minimize curvature
 
 # Derivatives
 quadratic_interp(x, y, 1.5; deriv=1)  # ≈ 3.0 (slope at x=1.5)
@@ -409,9 +409,9 @@ end
     Right(_promote_pointbc(bc.bc, FT))
 end
 
-# MinCurvBC promotion (no inner value, just type conversion)
-@inline _promote_bc(::MinCurvBC, ::Type{T}) where {T<:AbstractFloat} = MinCurvBC{T}()
-@inline _promote_bc(::MinCurvBC{T}, ::Type{T}) where {T<:AbstractFloat} = MinCurvBC{T}()
+# MinCurvFit promotion (no inner value, just type conversion)
+@inline _promote_bc(::MinCurvFit, ::Type{T}) where {T<:AbstractFloat} = MinCurvFit{T}()
+@inline _promote_bc(::MinCurvFit{T}, ::Type{T}) where {T<:AbstractFloat} = MinCurvFit{T}()
 
 # ParabolaFit promotion (marker type, no inner value)
 @inline _promote_bc(bc::Left{T, ParabolaFit{T}}, ::Type{T}) where {T<:AbstractFloat} = bc
@@ -427,7 +427,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     xi::S;
-    bc::Union{Left, Right, MinCurvBC}=Left(ParabolaFit{Float64}()),
+    bc::Union{Left, Right, MinCurvFit}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
@@ -444,7 +444,7 @@ function quadratic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    bc::Union{Left, Right, MinCurvBC}=Left(ParabolaFit{Float64}()),
+    bc::Union{Left, Right, MinCurvFit}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
@@ -464,7 +464,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    bc::Union{Left, Right, MinCurvBC}=Left(ParabolaFit{Float64}()),
+    bc::Union{Left, Right, MinCurvFit}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
@@ -620,7 +620,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values
-- `bc`: Boundary condition (Left, Right, MinCurvBC, or Left/Right with ParabolaFit)
+- `bc`: Boundary condition (Left, Right, MinCurvFit, or Left/Right with ParabolaFit)
 - `extrap::Symbol`: Extrapolation mode
 
 # Returns
@@ -653,7 +653,7 @@ end
 function quadratic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
-    bc::Union{Left, Right, MinCurvBC}=Left(ParabolaFit{Float64}()),
+    bc::Union{Left, Right, MinCurvFit}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none
 ) where {T<:Real}
     FT = float(T)

@@ -14,7 +14,7 @@
 #   ├── PeriodicBC{T}        # Periodic BC
 #   ├── NaturalBC{T}         # Natural BC (zero curvature at ends)
 #   ├── ClampedBC{T}         # Clamped BC (zero slope at ends)
-#   ├── MinCurvBC{T}         # Minimum curvature BC (quadratic splines)
+#   ├── MinCurvFit{T}         # Minimum curvature BC (quadratic splines)
 #   ├── Left{T,B}            # Endpoint wrapper: BC at left (x[1])
 #   └── Right{T,B}           # Endpoint wrapper: BC at right (x[end])
 
@@ -159,7 +159,7 @@ ClampedBC() = ClampedBC{Float64}()
 ClampedBC{T}(::ClampedBC) where {T<:AbstractFloat} = ClampedBC{T}()
 
 """
-    MinCurvBC{T<:AbstractFloat} <: AbstractBC{T}
+    MinCurvFit{T<:AbstractFloat} <: AbstractBC{T}
 
 Minimum curvature boundary condition for quadratic splines.
 Minimizes total curvature (∫S''² dx) by optimizing the initial slope d[1].
@@ -186,13 +186,13 @@ y = [0.0, 0.8, 1.2, 0.9, 0.3, 0.6, 1.0]
 # Default BC uses ParabolaFit
 itp_default = quadratic_interp(x, y)
 
-# MinCurvBC gives globally smooth result via curvature minimization
-itp_smooth = quadratic_interp(x, y; bc=MinCurvBC())
+# MinCurvFit gives globally smooth result via curvature minimization
+itp_smooth = quadratic_interp(x, y; bc=MinCurvFit())
 ```
 """
-struct MinCurvBC{T<:AbstractFloat} <: AbstractBC{T} end
-MinCurvBC() = MinCurvBC{Float64}()
-MinCurvBC{T}(::MinCurvBC) where {T<:AbstractFloat} = MinCurvBC{T}()
+struct MinCurvFit{T<:AbstractFloat} <: AbstractBC{T} end
+MinCurvFit() = MinCurvFit{Float64}()
+MinCurvFit{T}(::MinCurvFit) where {T<:AbstractFloat} = MinCurvFit{T}()
 
 """
     ParabolaFit{T<:AbstractFloat} <: PointBC{T}

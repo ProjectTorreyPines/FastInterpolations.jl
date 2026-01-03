@@ -207,9 +207,9 @@ For n=2 (single segment), falls back to linear: d[n] = s[1].
 end
 
 
-# MinCurvBC: minimize total curvature via closed-form optimization
+# MinCurvFit: minimize total curvature via closed-form optimization
 """
-    _fill_slopes!(d, s, h, ::MinCurvBC)
+    _fill_slopes!(d, s, h, ::MinCurvFit)
 
 Fill slope array using global curvature minimization.
 
@@ -227,7 +227,7 @@ Setting df/d(d[1]) = 0 gives the closed-form solution:
 O(n) time, O(1) extra space (on-the-fly β computation).
 """
 @inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T},
-                               h::AbstractVector{T}, ::MinCurvBC{T}) where {T<:AbstractFloat}
+                               h::AbstractVector{T}, ::MinCurvFit{T}) where {T<:AbstractFloat}
     n = length(d)
     n_intervals = n - 1  # = length(s) = length(h)
 

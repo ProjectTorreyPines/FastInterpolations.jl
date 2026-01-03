@@ -11,13 +11,12 @@ FastInterpolations.jl provides four interpolation methods with increasing smooth
 
 ---
 
-## API
+## API Styles
 
-### One-shot API (Recommended)
-**Best for evolving `y` while `x` stays fixed** — common in simulations where the grid is constant but values update each timestep.
+`FastInterpolations.jl` provides two API styles designed for maximum performance through strict **type stability** and **compile-time dispatch**.
 
-!!! tip "Zero-Allocation"
-    After a single **warm-up** call, the One-shot API is **guaranteed zero-allocation** for repeated calls on the same grid—perfect for high-performance simulations.
+### 1. One-shot API (Recommended)
+**Best when `y` values change frequently but the grid `x` remains fixed** — the same x-grid is reused but y-values change over time.
 
 ```julia
 # x, y: known data points (target)
@@ -28,7 +27,20 @@ yq = quadratic_interp(x, y, xq)
 yq = cubic_interp(x, y, xq)
 ```
 
-### Interpolant API
+**Example**: Simulation where y evolves each timestep
+```julia
+x = range(0.0, 10.0, 100)
+out = zeros(N_query)
+
+for step in 1:1000
+    y = compute_new_values(step)  # y changes every iteration
+    cubic_interp!(out, x, y, xq)  # zero-allocation ✅ 
+end
+```
+!!! tip "Zero-Allocation"
+    After a single **warm-up** call, the One-shot API is **guaranteed zero-allocation** for repeated calls on the same grid—perfect for high-performance simulations.
+
+### 2. Interpolant API
 **Best when both `x` and `y` are fixed** — pre-computes coefficients once for fast repeated evaluation.
 
 ```julia
@@ -36,7 +48,18 @@ itp = cubic_interp(x, y)   # construct once
 itp(xq)                    # evaluate many times
 ```
 
----
+**Example**: Lookup table with fixed data
+```julia
+x = range(0.0, 10.0, 100)
+y = sin.(x)
+itp = cubic_interp(x, y)  # pre-compute once
+
+for query in queries
+    result = itp(query)   # zero-allocation ✅
+end
+```
+
+-----
 
 ## Visual Comparison
 

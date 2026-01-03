@@ -3,14 +3,15 @@
 
 # FastInterpolations.jl
 
-A high-performance 1D interpolation package for Julia, optimized for speed and minimal allocations.
+A high-performance 1D interpolation package for Julia, optimized for **zero-allocation hot loops** and **thread-safe** concurrent access.
 
-## Features
+## Key Strengths
 
-- 🚀 **Fast**: Optimized algorithms outperform other packages
-- ✅ **Zero-allocation**: Auto-managed caching eliminates allocations on hot paths
-- 🎯 **Simple API**: One-shot function call — no intermediate objects
-- 📐 **Derivatives**: Analytical first and second derivatives for cubic splines
+- 🚀 **Fast**: Optimized algorithms that outperform other packages.
+- ✅ **Zero-Allocation**: No GC pressure on hot loops.
+- 🎯 **Explicit BCs**: Support custom physical boundary conditions.
+- 📐 **Derivatives**: Analytical 1st and 2nd derivatives for all methods.
+- 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
 ## Installation
 `FastInterpolations` is registered with [FuseRegistry](https://github.com/ProjectTorreyPines/FuseRegistry.jl/):
@@ -18,177 +19,96 @@ A high-performance 1D interpolation package for Julia, optimized for speed and m
 ```julia
 using Pkg
 Pkg.Registry.add(RegistrySpec(url="https://github.com/ProjectTorreyPines/FuseRegistry.jl.git"))
-Pkg.Registry.add("General")
 Pkg.add("FastInterpolations")
 ```
 
 ## Quick Start
-Supports **linear** and **cubic spline** interpolation. Works with `Range` or `Vector` grids (`Range` recommended for best performance).
+
+`FastInterpolations.jl` provides two API styles optimized for different data dynamics.
+
+### 1. One-shot API (Dynamic Data)
+Best when **`y` values change** every step, but the grid **`x` remains fixed**.
 
 ```julia
 using FastInterpolations
 
-x = range(0.0, 10.0, 100)  # or Vector: x = collect(range(...))
-y = sin.(x)
+# Define grid and query points
+x = range(0.0, 10.0, 100)   # source grid (100 points)
+y = sin.(x)                 # initial y data
 
-# Interpolate at a point
-linear_interp(x, y, 5.5)
-cubic_interp(x, y, 5.5)
+xq = range(0.0, 10.0, 500)  # query grid  (500 points)
+out = similar(xq)           # pre-allocate output buffer
 
-# Interpolate at multiple points
-xq = [1.0, 2.0, 3.0]
-linear_interp(x, y, xq)
-cubic_interp(x, y, xq)
-
-# In-place interpolation for maximum performance and zero-allocation
-out = similar(xq) 
-for step in 1:1000
-    y = compute_new_values(step) # evolving y over time
-
-	linear_interp!(out, x, y, xq)  # zero-allocation ✅
-    cubic_interp!(out, x, y, xq)  # zero-allocation ✅ (after first-call)
+for t in 1:1000
+    @. y = sin(x + 0.01t)           # y values evolve each timestep
+    cubic_interp!(out, x, y, xq)    # zero-allocation ✅ (after warm-up)
 end
 ```
 
-## API Reference
-
-### One-shot (construction + evaluation)
-
-| Function | Description |
-|----------|-------------|
-| `linear_interp(x, y, xq)` | Linear interpolation at point(s) `xq` |
-| `linear_interp!(out, x, y, xq)` | In-place linear interpolation |
-| `cubic_interp(x, y, xq)` | Cubic spline interpolation at point(s) `xq` |
-| `cubic_interp!(out, x, y, xq)` | In-place cubic spline interpolation |
-
-### Re-usable interpolant
-
-| Function | Description |
-|----------|-------------|
-| `itp = linear_interp(x, y)` | Create linear interpolant |
-| `itp = cubic_interp(x, y)` | Create cubic spline interpolant |
-| `itp(xq)` | Evaluate at point(s) `xq` |
-| `itp(out, xq)` | Evaluate at `xq`, store result in `out` |
-
-<details>
-<summary>Examples: When to use each approach</summary>
-
-### One-shot: Best when `y` changes frequently
-
-Use one-shot functions when the same x-grid is reused but y-values evolve over time. The auto-cache ensures zero-allocation after the first call.
+### 2. Interpolant API (Static Data)
+Best for **fixed lookup tables** where both `x` and `y` are constant.
 
 ```julia
-# Simulation: x-grid fixed, y evolves each timestep
-x = range(0.0, 10.0, 100)
-out = zeros(N_query)
-
-for step in 1:1000
-    y = compute_new_values(step)  # y changes every iteration
-    cubic_interp!(out, x, y, xq)  # zero-allocation ✅ (cache hit on x)
-end
-```
-
-### Interpolant: Best when both `x` and `y` are fixed
-
-Use interpolant objects when both x and y are constant. Pre-computes coefficients for maximum evaluation speed.
-
-```julia
-# Lookup table: x and y never change
 x = range(0.0, 10.0, 100)
 y = sin.(x)
-itp = cubic_interp(x, y)  # pre-compute once
 
-# Fast repeated evaluation
-for query in queries
-    result = itp(query)   # zero-allocation ✅
-end
+itp = cubic_interp(x, y)       # pre-compute spline coefficients once
+
+result = itp(5.5)              # evaluate at single point
+result = itp(xq)               # evaluate at multiple points
+@. result = a * itp(xq) + b    # seamless broadcast fusion
 ```
 
-### In-place evaluation
+## Supported Methods
+`FastInterpolations.jl` supports four interpolation methods: `Constant`, `Linear`, `Quadratic`, and `Cubic` splines.
 
-Both approaches support in-place evaluation for zero output allocation:
+| Method | Continuity | Best For |
+|:-------|:-----------|:---------|
+| `constant_interp` | C⁻¹ | Step functions (Nearest, Left, Right) |
+| `linear_interp` | C⁰ | Simple, fast O(1) range lookup |
+| `quadratic_interp` | C¹ | Smooth C¹ continuity with minimal overhead |
+| `cubic_interp` | C² | High-quality C² splines (Natural, Clamped, Periodic) |
 
-```julia
-out = zeros(3)
-
-# One-shot in-place
-cubic_interp!(out, x, y, [1.0, 2.0, 3.0])
-
-# Interpolant in-place
-itp = cubic_interp(x, y)
-itp(out, [1.0, 2.0, 3.0])
-```
-
-</details>
-
-## Allocation Behavior
-
-Designed for **zero-allocation** on hot paths.
-
-| Method | Scalar | Vector | In-place |
-|--------|--------|--------|----------|
-| `linear_interp` | zero ✅ | output only | zero ✅ |
-| `cubic_interp` | zero ✅ (cached*) | output only | zero ✅ (cached*) |
-
-*zero after first call (auto-cached). Julia 1.12+ achieves true zero-allocation; older versions may show minor (~16-64 bytes) overhead.
-
-<details>
-<summary>Details: How caching works</summary>
-
-Cubic splines require solving a tridiagonal system, which normally allocates working memory. `FastInterpolations` uses **auto-managed caching** to eliminate this overhead.
-
-**Hot-path optimization**: After the first call, repeated interpolations on the same x-grid are allocation-free. Ideal for simulation loops where the grid stays fixed but y-values change.
-
-**Multi-grid caching**: The cache stores multiple x-grid entries (default: 16), enabling zero-allocation across different grids:
-
-```julia
-cubic_interp!(out1, x1, y1, query)  # caches x1
-cubic_interp!(out2, x2, y2, query)  # caches x2
-cubic_interp!(out1, x1, y1, query)  # cache hit → zero-allocation
-```
-
-Adjust cache size:
-```julia
-set_cubic_cache_size!(32)      # Increase for many distinct grids
-set_cubic_cache_size!(4)       # Reduce for memory-constrained environments
-clear_cubic_cache!()           # Clear all cached data
-```
-
-</details>
-
-## Derivatives
-
-Evaluate analytical derivatives directly—no finite difference approximation needed.
-
-```julia
-x = range(0.0, 2π, 100)
-y = sin.(x)
-
-# One-shot: use deriv keyword
-cubic_interp(x, y, 1.0; deriv=1)   # First derivative (cos(1.0) ≈ 0.5403)
-cubic_interp(x, y, 1.0; deriv=2)   # Second derivative (-sin(1.0) ≈ -0.8415)
-
-# Interpolant: use deriv1/deriv2 wrappers
-itp = cubic_interp(x, y)
-d1 = deriv1(itp)   # First derivative view
-d2 = deriv2(itp)   # Second derivative view
-
-d1(1.0)            # Evaluate first derivative at x=1.0
-d2.(xq)            # Broadcast second derivative over query points
-```
-
-Linear interpolation also supports `deriv=1` (piecewise constant slope).
 
 ## Performance
 
-Benchmark comparison against [Interpolations.jl](https://github.com/JuliaMath/Interpolations.jl) and [DataInterpolations.jl](https://github.com/SciML/DataInterpolations.jl) for **cubic spline interpolation**. See [benchmark/](benchmark/) for full results.
+Benchmark comparison against [Interpolations.jl](https://github.com/JuliaMath/Interpolations.jl) and [DataInterpolations.jl](https://github.com/SciML/DataInterpolations.jl) for **cubic spline interpolation**.
 
 ![One-Shot](docs/images/benchmark_oneshot_detail.png)
 
-One-shot (construction + evaluation) time per call with fixed grid size n=100.
-- **cache-hit**: Reuses cached spline coefficients (same x-grid)
-- **cache-miss**: Fresh construction every call (like other packages)
+One-shot (construction + evaluation) time per call with fixed grid size $n=100$. `FastInterpolations.jl` is significantly faster even on the first call (cache-miss), and becomes even faster on subsequent calls (cache-hit).
+
+## More Features
+
+```julia
+# Analytical derivatives — all methods support deriv=1 and deriv=2
+cubic_interp(x, y, 5.0; deriv=1)   # 1st derivative at x=5.0
+cubic_interp(x, y, 5.0; deriv=2)   # 2nd derivative at x=5.0
+
+# Constant interpolation — choose which side to sample
+constant_interp(x, y, xq; side=:nearest) # nearest neighbor (default)
+constant_interp(x, y, xq; side=:left)    # left-continuous 
+constant_interp(x, y, xq; side=:right)   # right-continuous
+
+# Quadratic boundary condition — single endpoint constraint
+quadratic_interp(x, y, xq; bc=Left(Deriv1(0.0)))   # S'(left) = 0
+quadratic_interp(x, y, xq; bc=Right(Deriv1(1.0)))  # S'(right) = 1
+
+# Cubic boundary conditions — paired endpoint constraints
+cubic_interp(x, y, xq; bc=NaturalBC())    # S''=0 at both ends (default)
+cubic_interp(x, y, xq; bc=PeriodicBC())   # C²-continuous periodic spline
+cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv2(-5.0)))  # custom (left, right) BC
+
+# Extrapolation modes — all methods support these
+linear_interp(x, y, xq; extrap=:constant)    # clamp to boundary values
+quadratic_interp(x, y, xq; extrap=:wrap)     # wrap around (periodic data)
+cubic_interp(x, y, xq; extrap=:extension)    # extend boundary polynomial
+```
+
+## Documentation
+
+For detailed guides on boundary conditions, extrapolation, and performance tuning, visit the [Documentation](https://projecttorreypines.github.io/FastInterpolations.jl).
+
 
 ## License
-
 Apache License 2.0

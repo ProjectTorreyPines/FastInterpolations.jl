@@ -1838,3 +1838,244 @@ end
     end
 
 end
+
+
+# ============================================================================
+# Group 13: ParabolaFit BC Type Tests (Phase 2)
+# ============================================================================
+@testset "Quadratic Interpolation - ParabolaFit BC Type" begin
+    using FastInterpolations: _fill_slopes!
+
+    @testset "ParabolaFit type construction" begin
+        @testset "default constructor (Float64)" begin
+            bc = ParabolaFit()
+            @test bc isa ParabolaFit{Float64}
+            @test bc isa PointBC{Float64}
+            @test bc isa AbstractBC{Float64}
+        end
+
+        @testset "explicit type parameter" begin
+            bc32 = ParabolaFit{Float32}()
+            @test bc32 isa ParabolaFit{Float32}
+            @test bc32 isa PointBC{Float32}
+        end
+
+        @testset "type conversion" begin
+            bc64 = ParabolaFit()
+            bc32 = ParabolaFit{Float32}(bc64)
+            @test bc32 isa ParabolaFit{Float32}
+        end
+
+        @testset "type stability" begin
+            @test @inferred(ParabolaFit()) isa ParabolaFit{Float64}
+            @test @inferred(ParabolaFit{Float32}()) isa ParabolaFit{Float32}
+        end
+    end
+
+    @testset "Left/Right wrappers accept ParabolaFit" begin
+        @test Left(ParabolaFit()) isa Left{Float64, ParabolaFit{Float64}}
+        @test Right(ParabolaFit()) isa Right{Float64, ParabolaFit{Float64}}
+        @test Left(ParabolaFit{Float32}()) isa Left{Float32, ParabolaFit{Float32}}
+        @test Right(ParabolaFit{Float32}()) isa Right{Float32, ParabolaFit{Float32}}
+    end
+end
+
+
+# ============================================================================
+# Group 14: ParabolaFit Polynomial Reproduction Tests (Phase 2)
+# ============================================================================
+@testset "Quadratic Interpolation - ParabolaFit Polynomial Reproduction" begin
+    using FastInterpolations: _fill_slopes!
+
+    @testset "Left(ParabolaFit()) uniform grid" begin
+        # f(x) = x² on uniform grid
+        @testset "f(x) = x² reproduction" begin
+            x = [0.0, 1.0, 2.0, 3.0, 4.0]
+            y = x.^2
+            itp = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+
+            # Should reproduce exactly at midpoints
+            @test itp(0.5) ≈ 0.5^2 atol=1e-12
+            @test itp(1.5) ≈ 1.5^2 atol=1e-12
+            @test itp(2.5) ≈ 2.5^2 atol=1e-12
+            @test itp(3.5) ≈ 3.5^2 atol=1e-12
+
+            # And at arbitrary points
+            @test itp(0.25) ≈ 0.25^2 atol=1e-12
+            @test itp(2.7) ≈ 2.7^2 atol=1e-12
+        end
+
+        # General quadratic: f(x) = 2x² - 3x + 1
+        @testset "f(x) = 2x² - 3x + 1 reproduction" begin
+            x = [0.0, 1.0, 2.0, 3.0, 4.0]
+            y = @. 2*x^2 - 3*x + 1
+            itp = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+
+            f(t) = 2*t^2 - 3*t + 1
+            @test itp(0.5) ≈ f(0.5) atol=1e-12
+            @test itp(1.5) ≈ f(1.5) atol=1e-12
+            @test itp(2.5) ≈ f(2.5) atol=1e-12
+        end
+    end
+
+    @testset "Right(ParabolaFit()) uniform grid" begin
+        @testset "f(x) = x² reproduction" begin
+            x = [0.0, 1.0, 2.0, 3.0, 4.0]
+            y = x.^2
+            itp = quadratic_interp(x, y; bc=Right(ParabolaFit()))
+
+            @test itp(0.5) ≈ 0.5^2 atol=1e-12
+            @test itp(1.5) ≈ 1.5^2 atol=1e-12
+            @test itp(2.5) ≈ 2.5^2 atol=1e-12
+            @test itp(3.5) ≈ 3.5^2 atol=1e-12
+        end
+    end
+
+    @testset "Non-uniform grid polynomial reproduction" begin
+        @testset "f(x) = x² on non-uniform grid" begin
+            x = [0.0, 0.5, 1.5, 3.0, 5.0]
+            y = x.^2
+            itp_left = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+            itp_right = quadratic_interp(x, y; bc=Right(ParabolaFit()))
+
+            # Test at various points
+            for t in [0.25, 0.75, 1.0, 2.0, 4.0]
+                @test itp_left(t) ≈ t^2 atol=1e-11
+                @test itp_right(t) ≈ t^2 atol=1e-11
+            end
+        end
+
+        @testset "f(x) = -x² + 4x on non-uniform grid" begin
+            x = [0.0, 1.0, 2.5, 4.0, 5.5, 7.0]
+            f(t) = -t^2 + 4*t
+            y = f.(x)
+            itp = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+
+            for t in [0.5, 1.5, 3.0, 5.0, 6.5]
+                @test itp(t) ≈ f(t) atol=1e-11
+            end
+        end
+    end
+
+    @testset "Edge cases" begin
+        @testset "n=3 (minimum for ParabolaFit)" begin
+            x = [0.0, 1.0, 2.0]
+            y = x.^2
+            itp_left = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+            itp_right = quadratic_interp(x, y; bc=Right(ParabolaFit()))
+
+            @test itp_left(0.5) ≈ 0.5^2 atol=1e-12
+            @test itp_left(1.5) ≈ 1.5^2 atol=1e-12
+            @test itp_right(0.5) ≈ 0.5^2 atol=1e-12
+            @test itp_right(1.5) ≈ 1.5^2 atol=1e-12
+        end
+
+        @testset "n=2 (fallback to linear)" begin
+            x = [0.0, 1.0]
+            y = [0.0, 1.0]
+            itp_left = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+            itp_right = quadratic_interp(x, y; bc=Right(ParabolaFit()))
+
+            # Should be linear interpolation
+            @test itp_left(0.5) ≈ 0.5 atol=1e-12
+            @test itp_right(0.5) ≈ 0.5 atol=1e-12
+            @test itp_left(0.25) ≈ 0.25 atol=1e-12
+            @test itp_right(0.75) ≈ 0.75 atol=1e-12
+        end
+    end
+
+    @testset "Derivatives on polynomial data" begin
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y = x.^2  # f(x) = x², f'(x) = 2x, f''(x) = 2
+
+        itp = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+
+        # First derivative should match 2x
+        @test itp(1.5; deriv=1) ≈ 2*1.5 atol=1e-11
+        @test itp(2.5; deriv=1) ≈ 2*2.5 atol=1e-11
+
+        # Second derivative should be constant = 2
+        @test itp(1.5; deriv=2) ≈ 2.0 atol=1e-11
+        @test itp(2.5; deriv=2) ≈ 2.0 atol=1e-11
+    end
+
+    @testset "Float32 support" begin
+        x = Float32[0.0, 1.0, 2.0, 3.0, 4.0]
+        y = x.^2
+        itp = quadratic_interp(x, y; bc=Left(ParabolaFit{Float32}()))
+
+        @test itp(1.5f0) isa Float32
+        @test itp(1.5f0) ≈ 1.5f0^2 atol=1e-5
+    end
+end
+
+
+# ============================================================================
+# Group 15: ParabolaFit _fill_slopes! Direct Tests (Phase 2)
+# ============================================================================
+@testset "Quadratic Interpolation - ParabolaFit _fill_slopes!" begin
+    using FastInterpolations: _fill_slopes!
+
+    @testset "Left(ParabolaFit) slope computation" begin
+        # For f(x) = x² on uniform grid [0,1,2,3,4]
+        # f'(0) = 0, so d[1] should be 0
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y = x.^2
+        h = diff(x)
+        s = diff(y) ./ h  # [1, 3, 5, 7]
+        d = zeros(5)
+
+        _fill_slopes!(d, s, h, Left(ParabolaFit{Float64}()))
+
+        # For x², the derivative at x=0 is 0
+        @test d[1] ≈ 0.0 atol=1e-12
+
+        # Forward recurrence: d[i+1] = 2*s[i] - d[i]
+        # So: d[2] = 2*1 - 0 = 2, d[3] = 2*3 - 2 = 4, etc.
+        @test d[2] ≈ 2.0 atol=1e-12
+        @test d[3] ≈ 4.0 atol=1e-12
+        @test d[4] ≈ 6.0 atol=1e-12
+        @test d[5] ≈ 8.0 atol=1e-12
+    end
+
+    @testset "Right(ParabolaFit) slope computation" begin
+        # For f(x) = x² on uniform grid [0,1,2,3,4]
+        # f'(4) = 8, so d[5] should be 8
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y = x.^2
+        h = diff(x)
+        s = diff(y) ./ h  # [1, 3, 5, 7]
+        d = zeros(5)
+
+        _fill_slopes!(d, s, h, Right(ParabolaFit{Float64}()))
+
+        # For x², the derivative at x=4 is 8
+        @test d[5] ≈ 8.0 atol=1e-12
+
+        # Backward recurrence from d[5]=8
+        # d[4] = 2*s[4] - d[5] = 2*7 - 8 = 6
+        # d[3] = 2*s[3] - d[4] = 2*5 - 6 = 4, etc.
+        @test d[4] ≈ 6.0 atol=1e-12
+        @test d[3] ≈ 4.0 atol=1e-12
+        @test d[2] ≈ 2.0 atol=1e-12
+        @test d[1] ≈ 0.0 atol=1e-12
+    end
+
+    @testset "Non-uniform grid 3-point formula" begin
+        # For f(x) = x² on non-uniform grid [0, 0.5, 1.5]
+        # f'(0) = 0, f'(1.5) = 3
+        x = [0.0, 0.5, 1.5]
+        y = x.^2  # [0, 0.25, 2.25]
+        h = diff(x)  # [0.5, 1.0]
+        s = diff(y) ./ h  # [0.5, 2.0]
+        d = zeros(3)
+
+        _fill_slopes!(d, s, h, Left(ParabolaFit{Float64}()))
+        @test d[1] ≈ 0.0 atol=1e-12
+
+        # Test Right as well
+        d_right = zeros(3)
+        _fill_slopes!(d_right, s, h, Right(ParabolaFit{Float64}()))
+        @test d_right[3] ≈ 3.0 atol=1e-12
+    end
+end

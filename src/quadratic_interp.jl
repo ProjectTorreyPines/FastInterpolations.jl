@@ -411,6 +411,12 @@ end
 @inline _promote_bc(::MinCurvBC, ::Type{T}) where {T<:AbstractFloat} = MinCurvBC{T}()
 @inline _promote_bc(::MinCurvBC{T}, ::Type{T}) where {T<:AbstractFloat} = MinCurvBC{T}()
 
+# ParabolaFit promotion (marker type, no inner value)
+@inline _promote_bc(bc::Left{T, ParabolaFit{T}}, ::Type{T}) where {T<:AbstractFloat} = bc
+@inline _promote_bc(::Left{<:Any, <:ParabolaFit}, ::Type{T}) where {T<:AbstractFloat} = Left(ParabolaFit{T}())
+@inline _promote_bc(bc::Right{T, ParabolaFit{T}}, ::Type{T}) where {T<:AbstractFloat} = bc
+@inline _promote_bc(::Right{<:Any, <:ParabolaFit}, ::Type{T}) where {T<:AbstractFloat} = Right(ParabolaFit{T}())
+
 # ========================================
 # Scalar Real → Float wrappers
 # ========================================

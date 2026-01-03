@@ -50,7 +50,7 @@ export quadratic_interp, quadratic_interp!, QuadraticInterpolant
 
 # Boundary condition types
 export AbstractBC, PointBC, Deriv1, Deriv2, BCPair
-export NaturalBC, ClampedBC, PeriodicBC, MinCurvBC
+export NaturalBC, ClampedBC, PeriodicBC, MinCurvBC, ParabolaFit
 export Left, Right
 
 # Derivative view functions for interpolants

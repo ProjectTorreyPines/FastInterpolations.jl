@@ -120,6 +120,93 @@ end
     _backward_recurrence!(d, s, dn)
 end
 
+# ========================================
+# ParabolaFit: 3-point derivative formula
+# ========================================
+
+"""
+    _fill_slopes!(d, s, h, bc::Left{T, ParabolaFit{T}})
+
+Fill slope array using parabola fit at left endpoint.
+
+Uses the 3-point derivative formula to compute d[1] from the first 3 points,
+then applies forward recurrence. This exactly reproduces any polynomial ≤ degree 2.
+
+# Mathematical Derivation
+For the first 3 points, the Lagrange interpolant derivative at x₀ is:
+- d[1] = [s[1]·(2h[1]+h[2]) − s[2]·h[1]] / (h[1]+h[2])
+
+For uniform grids (h[1] = h[2] = h), this simplifies to:
+- d[1] = (3·s[1] − s[2]) / 2
+
+# Edge Case
+For n=2 (single segment), falls back to linear: d[1] = s[1].
+"""
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T},
+                               h::AbstractVector{T}, ::Left{T, ParabolaFit{T}}) where {T<:AbstractFloat}
+    n = length(d)
+
+    # Edge case: single segment (n=2) - fallback to linear
+    if n == 2
+        d1 = @inbounds s[1]
+        _forward_recurrence!(d, s, d1)
+        return d
+    end
+
+    # 3-point derivative formula for d[1]
+    # d[1] = [s[1]·(2h[1]+h[2]) − s[2]·h[1]] / (h[1]+h[2])
+    @inbounds begin
+        h1, h2 = h[1], h[2]
+        s1, s2 = s[1], s[2]
+        d1 = (s1 * (2*h1 + h2) - s2 * h1) / (h1 + h2)
+    end
+    _forward_recurrence!(d, s, d1)
+end
+
+"""
+    _fill_slopes!(d, s, h, bc::Right{T, ParabolaFit{T}})
+
+Fill slope array using parabola fit at right endpoint.
+
+Uses the 3-point derivative formula to compute d[n] from the last 3 points,
+then applies backward recurrence. This exactly reproduces any polynomial ≤ degree 2.
+
+# Mathematical Derivation
+For the last 3 points, the Lagrange interpolant derivative at x_n is:
+- d[n] = [s[n-1]·(h[n-2]+2h[n-1]) − s[n-2]·h[n-1]] / (h[n-2]+h[n-1])
+
+For uniform grids, this simplifies to:
+- d[n] = (3·s[n-1] − s[n-2]) / 2
+
+# Edge Case
+For n=2 (single segment), falls back to linear: d[n] = s[1].
+"""
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T},
+                               h::AbstractVector{T}, ::Right{T, ParabolaFit{T}}) where {T<:AbstractFloat}
+    n = length(d)
+
+    # Edge case: single segment (n=2) - fallback to linear
+    if n == 2
+        dn = @inbounds s[1]
+        _backward_recurrence!(d, s, dn)
+        return d
+    end
+
+    # 3-point derivative formula for d[n]
+    # Using last 3 points: indices n-2, n-1, n (so secants at n-2 and n-1)
+    # d[n] = [s[n-1]·(h[n-2]+2h[n-1]) − s[n-2]·h[n-1]] / (h[n-2]+h[n-1])
+    @inbounds begin
+        n_intervals = length(s)
+        h_nm2 = h[n_intervals-1]  # h[n-2] in 1-based indexing
+        h_nm1 = h[n_intervals]    # h[n-1]
+        s_nm2 = s[n_intervals-1]  # s[n-2]
+        s_nm1 = s[n_intervals]    # s[n-1]
+        dn = (s_nm1 * (h_nm2 + 2*h_nm1) - s_nm2 * h_nm1) / (h_nm2 + h_nm1)
+    end
+    _backward_recurrence!(d, s, dn)
+end
+
+
 # MinCurvBC: minimize total curvature via closed-form optimization
 """
     _fill_slopes!(d, s, h, ::MinCurvBC)

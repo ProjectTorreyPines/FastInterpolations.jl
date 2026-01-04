@@ -62,35 +62,36 @@ PeriodicBC()
 
 ---
 
-## API Reference
-
-### One-shot
-
-| Function | Description |
-|----------|-------------|
-| `cubic_interp(x, y, xq)` | Cubic spline at point(s) `xq` (default: NaturalBC) |
-| `cubic_interp(x, y, xq; bc=...)` | With specified BC |
-| `cubic_interp!(out, x, y, xq; bc=...)` | In-place version |
-
-### Interpolant
-
-| Function | Description |
-|----------|-------------|
-| `itp = cubic_interp(x, y; bc=...)` | Create interpolant |
-| `itp(xq)` / `itp(out, xq)` | Evaluate |
-| `deriv1(itp)` / `deriv2(itp)` | Derivative views |
+## Usage
 
 ```julia
+using FastInterpolations
+
 x = range(0.0, 2π, 15)
 y = sin.(x)
 
-# Standard (open curve)
-cubic_interp(x, y, 1.0)                            # NaturalBC (default)
-cubic_interp(x, y, 1.0; bc=ClampedBC())            # Flat endpoints
-cubic_interp(x, y, 1.0; bc=BCPair(Deriv1(1), Deriv2(0)))  # Custom
+# One-shot evaluation (default: NaturalBC)
+cubic_interp(x, y, 1.0)
+cubic_interp(x, y, 1.0; bc=ClampedBC())            # flat endpoints
+cubic_interp(x, y, 1.0; bc=BCPair(Deriv1(1), Deriv2(0)))  # custom
 
 # Periodic (closed curve) - requires y[1] ≈ y[end]
 cubic_interp(x, y, 1.0; bc=PeriodicBC())
+
+# In-place evaluation (zero allocation)
+xq = range(x[1], x[end], 200)
+out = similar(xq)
+cubic_interp!(out, x, y, xq)
+
+# Create reusable interpolant
+itp = cubic_interp(x, y; bc=NaturalBC())
+itp(1.0)    # evaluate at single point
+itp(xq)     # evaluate at multiple points
+
+# Derivatives
+cubic_interp(x, y, 1.0; deriv=1)  # continuous first derivative
+d1 = deriv1(itp); d1(1.0)         # same via interpolant
+d2 = deriv2(itp); d2(1.0)         # continuous second derivative
 ```
 
 ---

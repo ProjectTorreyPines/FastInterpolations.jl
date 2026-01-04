@@ -1,5 +1,34 @@
 # Cubic Spline API
 
+## Overview
+
+### One-shot (construction + evaluation)
+
+| Function | Description |
+|----------|-------------|
+| `cubic_interp(x, y, xq)` | Cubic spline at point(s) `xq` (default: NaturalBC) |
+| `cubic_interp(x, y, xq; bc=...)` | With specified BC |
+| `cubic_interp!(out, x, y, xq; bc=...)` | In-place version |
+
+### Re-usable interpolant
+
+| Function | Description |
+|----------|-------------|
+| `itp = cubic_interp(x, y; bc=...)` | Create interpolant |
+| `itp(xq)` | Evaluate at point(s) `xq` |
+| `itp(out, xq)` | Evaluate at `xq`, store result in `out` |
+
+### Derivatives
+
+| Function | Description |
+|----------|-------------|
+| `cubic_interp(x, y, xq; deriv=1)` | First derivative (continuous) |
+| `cubic_interp(x, y, xq; deriv=2)` | Second derivative (continuous) |
+| `deriv1(itp)` | First derivative view |
+| `deriv2(itp)` | Second derivative view |
+
+---
+
 ## Functions
 
 ```@docs

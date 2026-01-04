@@ -11,52 +11,32 @@ Piecewise linear interpolation connecting data points with straight line segment
 
 ---
 
-## API Reference
-
-### One-shot (construction + evaluation)
-
-| Function | Description |
-|----------|-------------|
-| `linear_interp(x, y, xq)` | Linear interpolation at point(s) `xq` |
-| `linear_interp!(out, x, y, xq)` | In-place linear interpolation |
-
-### Re-usable interpolant
-
-| Function | Description |
-|----------|-------------|
-| `itp = linear_interp(x, y)` | Create linear interpolant |
-| `itp(xq)` | Evaluate at point(s) `xq` |
-| `itp(out, xq)` | Evaluate at `xq`, store result in `out` |
-
-### Derivatives
-
-| Function | Description |
-|----------|-------------|
-| `linear_interp(x, y, xq; deriv=1)` | First derivative (piecewise constant) |
-| `linear_interp(x, y, xq; deriv=2)` | Second derivative (always 0) |
-| `deriv1(itp)` | First derivative view |
-| `deriv2(itp)` | Second derivative view |
+## Usage
 
 ```julia
+using FastInterpolations
+
 x = range(0.0, 2π, 20)   # Range grid → O(1) lookup
 y = sin.(x)
+
+# One-shot evaluation
+linear_interp(x, y, 1.0)       # single point → 0.8269...
+linear_interp(x, y, [1.0, 2.0]) # multiple points
+
+# In-place evaluation (zero allocation)
 xq = range(0.0, 2π, 200)
-
-# One-shot
-linear_interp(x, y, 1.0)           # single point → 0.8269...
-linear_interp(x, y, xq)            # multiple points
-
 out = similar(xq)
-linear_interp!(out, x, y, xq)      # in-place (zero-allocation)
+linear_interp!(out, x, y, xq)
 
-# Interpolant
-itp = linear_interp(x, y)          # create once
-itp(1.0)                           # evaluate at single point
-itp(xq)                            # evaluate at multiple points
+# Create reusable interpolant
+itp = linear_interp(x, y)
+itp(1.0)    # evaluate at single point
+itp(xq)     # evaluate at multiple points
 
 # Derivatives
 linear_interp(x, y, 1.0; deriv=1)  # piecewise constant slope
 d1 = deriv1(itp); d1(1.0)          # same via interpolant
+d2 = deriv2(itp); d2(1.0)          # always 0
 ```
 
 !!! tip "Performance"

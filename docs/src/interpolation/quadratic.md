@@ -18,57 +18,33 @@ C¹-continuous spline interpolation with smooth first derivatives.
 
 ---
 
-## API Reference
-
-### One-shot (construction + evaluation)
-
-| Function | Description |
-|----------|-------------|
-| `quadratic_interp(x, y, xq)` | Quadratic interpolation at point(s) `xq` |
-| `quadratic_interp(x, y, xq; bc=...)` | With boundary condition |
-| `quadratic_interp!(out, x, y, xq)` | In-place quadratic interpolation |
-| `quadratic_interp!(out, x, y, xq; bc)` | In-place with BC |
-
-### Re-usable interpolant
-
-| Function | Description |
-|----------|-------------|
-| `itp = quadratic_interp(x, y)` | Create quadratic interpolant |
-| `itp = quadratic_interp(x, y; bc=...)` | Create with boundary condition |
-| `itp(xq)` | Evaluate at point(s) `xq` |
-| `itp(out, xq)` | Evaluate at `xq`, store result in `out` |
-
-### Derivatives
-
-| Function | Description |
-|----------|-------------|
-| `quadratic_interp(x, y, xq; deriv=1)` | First derivative (continuous) |
-| `quadratic_interp(x, y, xq; deriv=2)` | Second derivative (piecewise constant) |
-| `deriv1(itp)` | First derivative view |
-| `deriv2(itp)` | Second derivative view |
+## Usage
 
 ```julia
+using FastInterpolations
+
 x = range(0.0, 2π, 15)
 y = sin.(x)
-xq = range(x[1], x[end], 200)
 
-# One-shot (default: ParabolaFit - exact for polynomials)
+# One-shot evaluation (default: ParabolaFit - exact for polynomials)
 quadratic_interp(x, y, 1.0)                        # default BC
 quadratic_interp(x, y, 1.0; bc=Left(Deriv1(1.0)))  # S'(left) = 1.0
 quadratic_interp(x, y, 1.0; bc=MinCurvFit())       # minimize curvature
 
+# In-place evaluation (zero allocation)
+xq = range(x[1], x[end], 200)
 out = similar(xq)
-quadratic_interp!(out, x, y, xq)                   # in-place (zero-allocation)
+quadratic_interp!(out, x, y, xq)
 
-# Interpolant
+# Create reusable interpolant
 itp = quadratic_interp(x, y; bc=Left(Deriv2(0.0)))
-itp(1.0)                                           # evaluate at single point
-itp(xq)                                            # evaluate at multiple points
+itp(1.0)    # evaluate at single point
+itp(xq)     # evaluate at multiple points
 
 # Derivatives
-quadratic_interp(x, y, 1.0; deriv=1)               # continuous first derivative
-d1 = deriv1(itp); d1(1.0)                          # same via interpolant
-d2 = deriv2(itp); d2(1.0)                          # piecewise constant
+quadratic_interp(x, y, 1.0; deriv=1)  # continuous first derivative
+d1 = deriv1(itp); d1(1.0)             # same via interpolant
+d2 = deriv2(itp); d2(1.0)             # piecewise constant
 ```
 
 !!! tip "Choosing BC"

@@ -108,9 +108,10 @@ makedocs(
             "Linear" => "interpolation/linear.md",
             "Quadratic" => "interpolation/quadratic.md",
             "Cubic" => "interpolation/cubic.md",
+            "Derivatives" => "interpolation/derivatives.md",
+            "Visual Comparison" => "interpolation/comparison.md",
         ],
         "Extrapolation" => "extrapolation.md",
-        "Derivatives" => "derivatives.md",
         "Architecture" => [
             "Overview" => "architecture/overview.md",
             "Auto-Cache" => "architecture/caching.md",

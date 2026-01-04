@@ -3,7 +3,7 @@
 FastInterpolations.jl provides **analytical derivatives** for all interpolation methods. No finite difference approximation needed—derivatives are computed directly from the spline coefficients.
 
 !!! tip "Visual Comparison"
-    See [Interpolation Overview](interpolation/overview.md) for side-by-side derivative plots of all 4 methods.
+    See [Visual Comparison](comparison.md) for side-by-side derivative plots of all 4 methods.
 
 ## Overview
 
@@ -104,7 +104,7 @@ println("Fused broadcast (first 5): ", round.(result[1:5], digits=4))
 
 ## Derivatives with Boundary Conditions
 
-Different boundary conditions affect derivative behavior at endpoints. See [Cubic Splines](interpolation/cubic.md) for details on `NaturalBC`, `ClampedBC`, and `PeriodicBC`.
+Different boundary conditions affect derivative behavior at endpoints. See [Cubic Splines](cubic.md) for details on `NaturalBC`, `ClampedBC`, and `PeriodicBC`.
 
 ## Derivatives with Extrapolation
 
@@ -116,7 +116,7 @@ d1 = deriv1(itp)
 d1(-0.5)  # Uses :extension extrapolation for derivative too
 ```
 
-See [Extrapolation](extrapolation.md) for available modes.
+See [Extrapolation](../extrapolation.md) for available modes.
 
 ## API Summary
 
@@ -139,5 +139,5 @@ See [Extrapolation](extrapolation.md) for available modes.
 
 ## See Also
 
-- **[Interpolation Overview](interpolation/overview.md)**: Visual comparison of all 4 methods
-- **[Constant](interpolation/constant.md)** | **[Linear](interpolation/linear.md)** | **[Quadratic](interpolation/quadratic.md)** | **[Cubic](interpolation/cubic.md)**
+- **[Visual Comparison](comparison.md)**: Side-by-side plots of all 4 methods
+- **[Constant](constant.md)** | **[Linear](linear.md)** | **[Quadratic](quadratic.md)** | **[Cubic](cubic.md)**

@@ -42,41 +42,8 @@ d2 = deriv2(itp); d2(1.0)          # always 0
 !!! tip "Performance"
     Always prefer `Range` over `Vector` when possible. Direct O(1) indexing vs O(log n) binary search.
 
----
-
-## Visual Comparison
-
-```@example linear
-using FastInterpolations
-using Plots
-
-x = range(0.0, 2π, 20)
-y = sin.(x)
-xq = range(0.0, 2π, 200)
-
-yq = linear_interp(x, y, xq)
-
-plot(xq, yq, label="Linear", linewidth=2)
-scatter!(x, y, label="data", markersize=5, color=:black)
-plot!(xq, sin.(xq), label="sin(x)", linestyle=:dash, alpha=0.5)
-title!("Linear Interpolation")
-```
-
----
-
-## Derivative Visualization
-
-```@example linear
-y_interp = linear_interp(x, y, xq)
-y_deriv = linear_interp(x, y, xq; deriv=1)
-
-p = plot(layout=(2,1), size=(700, 400))
-plot!(p[1], xq, y_interp, label="S(x)", linewidth=2)
-scatter!(p[1], x, y, label="data", markersize=4)
-plot!(p[2], xq, y_deriv, label="S'(x)", linewidth=2, color=:red)
-plot!(p[2], xq, cos.(xq), label="cos(x)", linestyle=:dash, alpha=0.5)
-p
-```
+!!! note "Visualization"
+    See [Visual Comparison](comparison.md) for side-by-side plots of all methods, or [Derivatives](derivatives.md) for detailed derivative documentation.
 
 ---
 

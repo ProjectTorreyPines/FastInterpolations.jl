@@ -52,6 +52,9 @@ d2 = deriv2(itp); d2(1.0)             # piecewise constant
     - **`MinCurvFit()`**: Best for globally smooth interpolation
     - **`Deriv1(v)`/`Deriv2(v)`**: When you know the endpoint derivative
 
+!!! note "Visualization"
+    See [Visual Comparison](comparison.md) for side-by-side plots of all methods, or [Derivatives](derivatives.md) for detailed derivative documentation.
+
 ---
 
 ## Boundary Condition Comparison
@@ -93,55 +96,6 @@ p
     - **Left(Deriv1(0))**: Starts flat (zero slope at left endpoint)
     - **Right(Deriv1(3))**: Ends with steep upward slope
     - **Right(Deriv2(-1))**: Ends with specified negative curvature
-
----
-
-## Derivative Visualization
-
-```@example quadratic
-using FastInterpolations
-using Plots
-
-x = [0.0, 0.9, 1.5, 2.2, 3.5, 4.5, 5.5, 2π]  # 8 non-uniform points
-y = sin.(x)
-xq = range(x[1], x[end], 500)
-
-itp = quadratic_interp(x, y)
-d1_view = deriv1(itp)
-d2_view = deriv2(itp)
-```
-
-### Value: ``S(x)``
-
-```@example quadratic
-plot(xq, itp.(xq), label="Quadratic", linewidth=2)
-plot!(xq, sin.(xq), label="sin(x)", linestyle=:dash, alpha=0.7, color=:black)
-scatter!(x, y, label="data", markersize=6, color=:black)
-ylims!(-1.3, 1.3)
-title!("Value")
-```
-
-### First Derivative: ``S'(x)``
-
-```@example quadratic
-plot(xq, d1_view.(xq), label="S'(x)", linewidth=2, color=:red)
-plot!(xq, cos.(xq), label="cos(x)", linestyle=:dash, alpha=0.7, color=:black)
-scatter!(x, cos.(x), label="cos(xᵢ)", markersize=6, color=:black)
-hline!([0], color=:gray, linestyle=:dot, label=nothing)
-ylims!(-1.3, 1.3)
-title!("First Derivative")
-```
-
-### Second Derivative: ``S''(x)``
-
-```@example quadratic
-plot(xq, d2_view.(xq), label="S''(x)", linewidth=2, color=:green)
-plot!(xq, -sin.(xq), label="-sin(x)", linestyle=:dash, alpha=0.7, color=:black)
-scatter!(x, -sin.(x), label="-sin(xᵢ)", markersize=6, color=:black)
-hline!([0], color=:gray, linestyle=:dot, label=nothing)
-ylims!(-1.3, 1.3)
-title!("Second Derivative (piecewise constant)")
-```
 
 ---
 

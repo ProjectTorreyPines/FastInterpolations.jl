@@ -150,5 +150,5 @@ vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # 
 
 ## See Also
 
-- **[Derivatives](derivatives.md)**: Analytical derivatives with extrapolation
+- **[Derivatives](interpolation/derivatives.md)**: Analytical derivatives with extrapolation
 - **[Cubic Splines](interpolation/cubic.md)**: Boundary conditions and smooth periodicity

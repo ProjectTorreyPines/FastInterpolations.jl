@@ -115,3 +115,6 @@ For detailed guides on boundary conditions, extrapolation, and performance tunin
 
 ## License
 Apache License 2.0
+
+## Contact
+Min-Gu Yoo [![Linkedin](https://i.sstatic.net/gVE0j.png)](https://www.linkedin.com/in/min-gu-yoo-704773230) (General Atomics)  yoom@fusion.gat.com

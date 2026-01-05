@@ -108,36 +108,33 @@ println("Running benchmarks...")
 results = run(suite, verbose=true)
 
 println("\nSaving results to output.json...")
+BenchmarkTools.save("output.json", median(results))
 
-# Build sorted JSON output directly (github-action-benchmark 'julia' format)
+# Sort JSON keys recursively for consistent dashboard ordering
+println("Sorting JSON keys for dashboard display...")
 using JSON
-med_results = median(results)
+using OrderedCollections
 
-# Collect all benchmarks as (name, data) pairs
-entries = Tuple{String, Dict{String,Any}}[]
-for group_name in keys(med_results)
-    group = med_results[group_name]
-    for bench_name in keys(group)
-        trial = group[bench_name]
-        full_name = "$group_name/$bench_name"
-        data = Dict{String,Any}(
-            "time" => trial.time,
-            "gctime" => trial.gctime,
-            "memory" => trial.memory,
-            "allocs" => trial.allocs
-        )
-        push!(entries, (full_name, data))
+function sort_keys_recursive(obj)
+    if obj isa AbstractDict
+        sorted = OrderedDict{String,Any}()
+        for k in sort(collect(keys(obj)); by=string)
+            sorted[string(k)] = sort_keys_recursive(obj[k])
+        end
+        return sorted
+    elseif obj isa AbstractVector
+        return [sort_keys_recursive(item) for item in obj]
+    else
+        return obj
     end
 end
 
-# Sort alphabetically by benchmark name
-sort!(entries, by = first)
-
-# Write in BenchmarkTools-compatible format
+json_data = JSON.parsefile("output.json")
+sorted_data = sort_keys_recursive(json_data)
 open("output.json", "w") do io
-    JSON.print(io, [[name, data] for (name, data) in entries])
+    JSON.print(io, sorted_data)
 end
-println("Saved $(length(entries)) benchmarks (sorted)")
+println("Saved $(length(collect(BenchmarkTools.leaves(median(results))))) benchmarks (sorted)")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Print Summary

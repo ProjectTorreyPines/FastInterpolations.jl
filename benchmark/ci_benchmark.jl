@@ -110,6 +110,16 @@ results = run(suite, verbose=true)
 println("\nSaving results to output.json...")
 BenchmarkTools.save("output.json", median(results))
 
+# Sort JSON entries alphabetically for consistent dashboard ordering
+println("Sorting benchmark entries...")
+using JSON
+json_data = JSON.parsefile("output.json")
+# Sort by group/benchmark name (e.g., "1_cubic_oneshot/q00001")
+sort!(json_data, by = entry -> entry[1])
+open("output.json", "w") do io
+    JSON.print(io, json_data)
+end
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Print Summary
 # ══════════════════════════════════════════════════════════════════════════════

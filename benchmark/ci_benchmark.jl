@@ -39,52 +39,62 @@ const itp_linear = linear_interp(x, y)
 const itp_cubic = cubic_interp(x, y; autocache=false)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# One-Shot Benchmarks (construct + evaluate)
+# Cubic Benchmarks (shown first)
 # ══════════════════════════════════════════════════════════════════════════════
-# Typical user workflow: build interpolant and evaluate in one call
 
-println("Setting up one-shot benchmarks...")
+println("Setting up cubic benchmarks...")
 
+# 1. Cubic One-Shot (construct + evaluate)
 for nq in QUERY_SIZES
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
-
-    suite["oneshot"]["linear_q$nq"] = @benchmarkable linear_interp($x, $y, $xi)
-
-    # Prime cache, then benchmark cache-hit performance
     clear_cubic_cache!()
-    cubic_interp(x, y, xi)  # prime
-    suite["oneshot"]["cubic_q$nq"] = @benchmarkable cubic_interp($x, $y, $xi)
+    cubic_interp(x, y, xi)  # prime cache
+    label = lpad(nq, 5, '0')  # 00001, 00100, 10000
+    suite["1_cubic_oneshot"]["q$label"] = @benchmarkable cubic_interp($x, $y, $xi)
 end
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Construction Benchmarks (varying grid size)
-# ══════════════════════════════════════════════════════════════════════════════
-# Track how construction scales with grid size
-
-println("Setting up construction benchmarks...")
-
+# 2. Cubic Construction (varying grid size)
 for ng in GRID_SIZES
     x_grid = range(0.0, 10.0, ng)
     y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
-
-    suite["construct"]["linear_g$ng"] = @benchmarkable linear_interp($x_grid, $y_grid)
-
     clear_cubic_cache!()
-    suite["construct"]["cubic_g$ng"] = @benchmarkable cubic_interp($x_grid, $y_grid; autocache=false)
+    label = lpad(ng, 4, '0')  # 0010, 0100, 1000
+    suite["2_cubic_construct"]["g$label"] = @benchmarkable cubic_interp($x_grid, $y_grid; autocache=false)
+end
+
+# 3. Cubic Evaluation (reuse interpolant)
+for nq in QUERY_SIZES
+    xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
+    label = lpad(nq, 5, '0')
+    suite["3_cubic_eval"]["q$label"] = @benchmarkable $itp_cubic($xi)
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Evaluation Benchmarks (reuse interpolant)
+# Linear Benchmarks (shown second)
 # ══════════════════════════════════════════════════════════════════════════════
-# Performance when interpolant is reused across many evaluations
 
-println("Setting up evaluation benchmarks...")
+println("Setting up linear benchmarks...")
 
+# 4. Linear One-Shot (construct + evaluate)
 for nq in QUERY_SIZES
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
+    label = lpad(nq, 5, '0')
+    suite["4_linear_oneshot"]["q$label"] = @benchmarkable linear_interp($x, $y, $xi)
+end
 
-    suite["eval"]["linear_q$nq"] = @benchmarkable $itp_linear($xi)
-    suite["eval"]["cubic_q$nq"] = @benchmarkable $itp_cubic($xi)
+# 5. Linear Construction (varying grid size)
+for ng in GRID_SIZES
+    x_grid = range(0.0, 10.0, ng)
+    y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
+    label = lpad(ng, 4, '0')
+    suite["5_linear_construct"]["g$label"] = @benchmarkable linear_interp($x_grid, $y_grid)
+end
+
+# 6. Linear Evaluation (reuse interpolant)
+for nq in QUERY_SIZES
+    xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
+    label = lpad(nq, 5, '0')
+    suite["6_linear_eval"]["q$label"] = @benchmarkable $itp_linear($xi)
 end
 
 # ══════════════════════════════════════════════════════════════════════════════

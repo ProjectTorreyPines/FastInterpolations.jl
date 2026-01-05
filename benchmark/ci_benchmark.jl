@@ -19,10 +19,10 @@ import DataInterpolations
 
 const N_GRID = 100
 const QUERY_SIZES = [10, 100, 1000]
-const COMPARISON_QUERY_SIZES = [1, 10, 100, 1000]
+const COMPARISON_QUERY_SIZES = [1, 10, 100, 1000, 10_000, 100_000]
 
-# Reduce benchmark time for CI (default is 5s per benchmark)
-BenchmarkTools.DEFAULT_PARAMETERS.seconds = 0.5
+# Benchmark time per test (default is 5s, increased for more reliable results)
+BenchmarkTools.DEFAULT_PARAMETERS.seconds = 3.0
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Setup Data

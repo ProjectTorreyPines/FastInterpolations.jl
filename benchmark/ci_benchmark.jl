@@ -113,9 +113,9 @@ BenchmarkTools.save("output.json", median(results))
 # Sort JSON entries alphabetically for consistent dashboard ordering
 println("Sorting benchmark entries...")
 using JSON
-json_data = JSON.parsefile("output.json")
-# Sort by group/benchmark name (e.g., "1_cubic_oneshot/q00001")
-sort!(json_data, by = entry -> entry[1])
+json_str = read("output.json", String)
+json_data = JSON.parse(json_str)  # Returns Vector{Any} with regular Julia types
+sort!(json_data, by = entry -> entry[1])  # entry[1] is the benchmark name string
 open("output.json", "w") do io
     JSON.print(io, json_data)
 end

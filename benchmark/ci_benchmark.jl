@@ -108,17 +108,36 @@ println("Running benchmarks...")
 results = run(suite, verbose=true)
 
 println("\nSaving results to output.json...")
-BenchmarkTools.save("output.json", median(results))
 
-# Sort JSON entries alphabetically for consistent dashboard ordering
-println("Sorting benchmark entries...")
+# Build sorted JSON output directly (github-action-benchmark 'julia' format)
 using JSON
-json_str = read("output.json", String)
-json_data = JSON.parse(json_str)  # Returns Vector{Any} with regular Julia types
-sort!(json_data, by = entry -> entry[1])  # entry[1] is the benchmark name string
-open("output.json", "w") do io
-    JSON.print(io, json_data)
+med_results = median(results)
+
+# Collect all benchmarks as (name, data) pairs
+entries = Tuple{String, Dict{String,Any}}[]
+for group_name in keys(med_results)
+    group = med_results[group_name]
+    for bench_name in keys(group)
+        trial = group[bench_name]
+        full_name = "$group_name/$bench_name"
+        data = Dict{String,Any}(
+            "time" => trial.time,
+            "gctime" => trial.gctime,
+            "memory" => trial.memory,
+            "allocs" => trial.allocs
+        )
+        push!(entries, (full_name, data))
+    end
 end
+
+# Sort alphabetically by benchmark name
+sort!(entries, by = first)
+
+# Write in BenchmarkTools-compatible format
+open("output.json", "w") do io
+    JSON.print(io, [[name, data] for (name, data) in entries])
+end
+println("Saved $(length(entries)) benchmarks (sorted)")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Print Summary

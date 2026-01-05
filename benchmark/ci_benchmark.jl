@@ -5,7 +5,7 @@ Benchmark script for GitHub Actions CI.
 Outputs JSON compatible with github-action-benchmark.
 
 Usage:
-    julia --project benchmark/ci_benchmark.jl
+    julia --project=benchmark benchmark/ci_benchmark.jl
 """
 
 using BenchmarkTools

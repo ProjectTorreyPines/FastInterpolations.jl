@@ -10,24 +10,26 @@ Usage:
 
 using BenchmarkTools
 using FastInterpolations
-import Interpolations
-import DataInterpolations
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Configuration
 # ══════════════════════════════════════════════════════════════════════════════
 
-const N_GRID = 100
-const QUERY_SIZES = [10, 100, 1000]
-const COMPARISON_QUERY_SIZES = [1, 10, 100, 1000, 10_000, 100_000]
+# Representative sizes for benchmarking
+const QUERY_SIZES = [1, 100, 10_000]      # queries: single, medium, large batch
+const GRID_SIZES = [10, 100, 1000]        # grids: small, medium, large
 
-# Benchmark time budget per test (slower benchmarks will use more time)
+# Benchmark time budget (slower benchmarks will use more time)
 BenchmarkTools.DEFAULT_PARAMETERS.seconds = 10.0
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Setup Data
+# Setup
 # ══════════════════════════════════════════════════════════════════════════════
 
+suite = BenchmarkGroup()
+
+# Use medium grid for oneshot and eval benchmarks
+const N_GRID = 100
 x = range(0.0, 10.0, N_GRID)
 y = sin.(x) .+ 0.1 .* collect(x)
 
@@ -36,24 +38,39 @@ clear_cubic_cache!()
 const itp_linear = linear_interp(x, y)
 const itp_cubic = cubic_interp(x, y; autocache=false)
 
-suite = BenchmarkGroup()
-
 # ══════════════════════════════════════════════════════════════════════════════
 # One-Shot Benchmarks (construct + evaluate)
 # ══════════════════════════════════════════════════════════════════════════════
-# Typical user workflow: interpolate once per dataset
+# Typical user workflow: build interpolant and evaluate in one call
 
 println("Setting up one-shot benchmarks...")
 
 for nq in QUERY_SIZES
-    xi = collect(range(0.1, 9.9, nq))
+    xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
 
-    suite["oneshot"]["linear_$nq"] = @benchmarkable linear_interp($x, $y, $xi)
+    suite["oneshot"]["linear_q$nq"] = @benchmarkable linear_interp($x, $y, $xi)
 
     # Prime cache, then benchmark cache-hit performance
     clear_cubic_cache!()
     cubic_interp(x, y, xi)  # prime
-    suite["oneshot"]["cubic_$nq"] = @benchmarkable cubic_interp($x, $y, $xi)
+    suite["oneshot"]["cubic_q$nq"] = @benchmarkable cubic_interp($x, $y, $xi)
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Construction Benchmarks (varying grid size)
+# ══════════════════════════════════════════════════════════════════════════════
+# Track how construction scales with grid size
+
+println("Setting up construction benchmarks...")
+
+for ng in GRID_SIZES
+    x_grid = range(0.0, 10.0, ng)
+    y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
+
+    suite["construct"]["linear_g$ng"] = @benchmarkable linear_interp($x_grid, $y_grid)
+
+    clear_cubic_cache!()
+    suite["construct"]["cubic_g$ng"] = @benchmarkable cubic_interp($x_grid, $y_grid; autocache=false)
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -64,50 +81,10 @@ end
 println("Setting up evaluation benchmarks...")
 
 for nq in QUERY_SIZES
-    xi = collect(range(0.1, 9.9, nq))
-
-    suite["eval"]["linear_$nq"] = @benchmarkable $itp_linear($xi)
-    suite["eval"]["cubic_$nq"] = @benchmarkable $itp_cubic($xi)
-end
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Construction Benchmarks
-# ══════════════════════════════════════════════════════════════════════════════
-# Track construction overhead separately
-
-println("Setting up construction benchmarks...")
-
-suite["construct"]["linear"] = @benchmarkable linear_interp($x, $y)
-
-clear_cubic_cache!()
-suite["construct"]["cubic"] = @benchmarkable cubic_interp($x, $y; autocache=false)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Package Comparison (cubic one-shot)
-# ══════════════════════════════════════════════════════════════════════════════
-# Compare against Interpolations.jl and DataInterpolations.jl
-
-println("Setting up comparison benchmarks...")
-
-for nq in COMPARISON_QUERY_SIZES
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
 
-    # FastInterpolations (cache-hit)
-    clear_cubic_cache!()
-    cubic_interp(x, y, xi)  # prime cache
-    suite["compare"]["FastInterp_$nq"] = @benchmarkable cubic_interp($x, $y, $xi)
-
-    # Interpolations.jl
-    suite["compare"]["Interpolations_$nq"] = @benchmarkable begin
-        itp = Interpolations.cubic_spline_interpolation($x, $y)
-        itp($xi)
-    end
-
-    # DataInterpolations.jl
-    suite["compare"]["DataInterp_$nq"] = @benchmarkable begin
-        itp = DataInterpolations.CubicSpline($y, $x)
-        itp($xi)
-    end
+    suite["eval"]["linear_q$nq"] = @benchmarkable $itp_linear($xi)
+    suite["eval"]["cubic_q$nq"] = @benchmarkable $itp_cubic($xi)
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -152,18 +129,4 @@ for group_name in sort(collect(keys(med_results)))
     end
 end
 
-# Package comparison table
-println("\n" * "-"^70)
-println("PACKAGE COMPARISON (cubic one-shot, median)")
-println("-"^70)
-println("  n_query  │ FastInterp │ Interpolations │ DataInterp")
-println("  ─────────┼────────────┼────────────────┼────────────")
-for nq in COMPARISON_QUERY_SIZES
-    fast = med_results["compare"]["FastInterp_$nq"].time
-    interp = med_results["compare"]["Interpolations_$nq"].time
-    data = med_results["compare"]["DataInterp_$nq"].time
-    println("  $(lpad(nq, 7))  │ $(rpad(format_time(fast), 10)) │ $(rpad(format_time(interp), 14)) │ $(format_time(data))")
-end
-println()
-
-println("Done!")
+println("\nDone! (18 benchmarks total)")

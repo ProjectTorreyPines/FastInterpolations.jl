@@ -21,8 +21,8 @@ const N_GRID = 100
 const QUERY_SIZES = [10, 100, 1000]
 const COMPARISON_QUERY_SIZES = [1, 10, 100, 1000, 10_000, 100_000]
 
-# Benchmark time per test (default is 5s, increased for more reliable results)
-BenchmarkTools.DEFAULT_PARAMETERS.seconds = 3.0
+# Benchmark time budget per test (slower benchmarks will use more time)
+BenchmarkTools.DEFAULT_PARAMETERS.seconds = 10.0
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Setup Data

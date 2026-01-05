@@ -123,4 +123,47 @@ results = run(suite, verbose=true)
 println("\nSaving results to output.json...")
 BenchmarkTools.save("output.json", median(results))
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Print Summary
+# ══════════════════════════════════════════════════════════════════════════════
+
+function format_time(ns::Float64)
+    if ns < 1000
+        return "$(round(ns, digits=1)) ns"
+    elseif ns < 1_000_000
+        return "$(round(ns/1000, digits=2)) μs"
+    else
+        return "$(round(ns/1_000_000, digits=2)) ms"
+    end
+end
+
+println("\n" * "="^70)
+println("BENCHMARK SUMMARY (median times)")
+println("="^70)
+
+med_results = median(results)
+
+for group_name in sort(collect(keys(med_results)))
+    group = med_results[group_name]
+    println("\n[$group_name]")
+    for bench_name in sort(collect(keys(group)))
+        trial = group[bench_name]
+        println("  $(rpad(bench_name, 20)) $(format_time(trial.time))")
+    end
+end
+
+# Package comparison table
+println("\n" * "-"^70)
+println("PACKAGE COMPARISON (cubic one-shot, median)")
+println("-"^70)
+println("  n_query  │ FastInterp │ Interpolations │ DataInterp")
+println("  ─────────┼────────────┼────────────────┼────────────")
+for nq in COMPARISON_QUERY_SIZES
+    fast = med_results["compare"]["FastInterp_$nq"].time
+    interp = med_results["compare"]["Interpolations_$nq"].time
+    data = med_results["compare"]["DataInterp_$nq"].time
+    println("  $(lpad(nq, 7))  │ $(rpad(format_time(fast), 10)) │ $(rpad(format_time(interp), 14)) │ $(format_time(data))")
+end
+println()
+
 println("Done!")

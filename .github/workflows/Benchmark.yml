@@ -59,6 +59,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_results == true) }}
           alert-threshold: '150%'
+          comment-always: true
           comment-on-alert: true
           fail-on-alert: false
           gh-pages-branch: gh-pages

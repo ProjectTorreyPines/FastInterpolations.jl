@@ -19,8 +19,16 @@ using FastInterpolations
 const QUERY_SIZES = [1, 100, 10_000]      # queries: single, medium, large batch
 const GRID_SIZES = [10, 100, 1000]        # grids: small, medium, large
 
-# Benchmark time budget (slower benchmarks will use more time)
+# Benchmark parameters for noise reduction in CI
+# BenchmarkTools stops when EITHER limit is reached (whichever comes first)
 BenchmarkTools.DEFAULT_PARAMETERS.seconds = 10.0
+BenchmarkTools.DEFAULT_PARAMETERS.samples = 100_000
+
+# Fixed evals by speed category (skip tuning for faster CI)
+# Higher evals = more stable ns-level measurements
+const EVALS_FAST = 10_000   # ~10-50ns benchmarks
+const EVALS_MED  = 1_000    # ~500ns-2μs benchmarks
+const EVALS_SLOW = 100       # ~30-100μs benchmarks
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Setup
@@ -50,7 +58,9 @@ for nq in QUERY_SIZES
     clear_cubic_cache!()
     cubic_interp(x, y, xi)  # prime cache
     label = lpad(nq, 5, '0')  # 00001, 00100, 10000
-    suite["1_cubic_oneshot"]["q$label"] = @benchmarkable cubic_interp($x, $y, $xi)
+    b = @benchmarkable cubic_interp($x, $y, $xi)
+    b.params.evals = nq >= 10_000 ? EVALS_SLOW : EVALS_MED
+    suite["1_cubic_oneshot"]["q$label"] = b
 end
 
 # 2. Cubic Construction (varying grid size)
@@ -59,14 +69,18 @@ for ng in GRID_SIZES
     y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
     clear_cubic_cache!()
     label = lpad(ng, 4, '0')  # 0010, 0100, 1000
-    suite["2_cubic_construct"]["g$label"] = @benchmarkable cubic_interp($x_grid, $y_grid; autocache=false)
+    b = @benchmarkable cubic_interp($x_grid, $y_grid; autocache=false)
+    b.params.evals = ng >= 1000 ? EVALS_SLOW : EVALS_MED
+    suite["2_cubic_construct"]["g$label"] = b
 end
 
 # 3. Cubic Evaluation (reuse interpolant)
 for nq in QUERY_SIZES
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
     label = lpad(nq, 5, '0')
-    suite["3_cubic_eval"]["q$label"] = @benchmarkable $itp_cubic($xi)
+    b = @benchmarkable $itp_cubic($xi)
+    b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
+    suite["3_cubic_eval"]["q$label"] = b
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -79,32 +93,36 @@ println("Setting up linear benchmarks...")
 for nq in QUERY_SIZES
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
     label = lpad(nq, 5, '0')
-    suite["4_linear_oneshot"]["q$label"] = @benchmarkable linear_interp($x, $y, $xi)
+    b = @benchmarkable linear_interp($x, $y, $xi)
+    b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
+    suite["4_linear_oneshot"]["q$label"] = b
 end
 
-# 5. Linear Construction (varying grid size)
+# 5. Linear Construction (varying grid size) - nearly instant, use high evals
 for ng in GRID_SIZES
     x_grid = range(0.0, 10.0, ng)
     y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
     label = lpad(ng, 4, '0')
-    suite["5_linear_construct"]["g$label"] = @benchmarkable linear_interp($x_grid, $y_grid)
+    b = @benchmarkable linear_interp($x_grid, $y_grid)
+    b.params.evals = EVALS_FAST
+    suite["5_linear_construct"]["g$label"] = b
 end
 
 # 6. Linear Evaluation (reuse interpolant)
 for nq in QUERY_SIZES
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
     label = lpad(nq, 5, '0')
-    suite["6_linear_eval"]["q$label"] = @benchmarkable $itp_linear($xi)
+    b = @benchmarkable $itp_linear($xi)
+    b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
+    suite["6_linear_eval"]["q$label"] = b
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Run and Save
 # ══════════════════════════════════════════════════════════════════════════════
 
-println("\nTuning benchmarks...")
-tune!(suite)
-
-println("Running benchmarks...")
+# Skip tuning - we set evals manually for consistent CI results
+println("\nRunning benchmarks (evals preset, no tuning)...")
 results = run(suite, verbose=true)
 
 println("\nSaving results to output.json...")

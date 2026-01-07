@@ -58,17 +58,15 @@ end
 
     period = last(x) - first(x)
 
-    # Compute grid spacing h with padding for consistent indexing
-    # Layout: [0, h₁, h₂, ..., hₙ, 0] where hᵢ = x[i+1] - x[i]
-    # - h[1] = 0 (left sentinel, unused)
-    # - h[i+1] = hᵢ for i = 1..n
-    # - h[end] = 0 (right sentinel, unused)
-    # This ensures h[end-1] = hₙ (last actual spacing)
-    h = Vector{T}(undef, n + 2)
-    h[1] = zero(T)
-    h[end] = zero(T)
+    # Compute grid spacing h and precomputed reciprocals inv_h
+    # Standard indexing: h[i] = x[i+1] - x[i] for i = 1..n
+    # Fused loop for cache efficiency
+    h = Vector{T}(undef, n)
+    inv_h = Vector{T}(undef, n)
     @inbounds for i in 1:n
-        h[i+1] = x[i+1] - x[i]
+        val = x[i+1] - x[i]
+        h[i] = val
+        inv_h[i] = inv(val)
     end
 
     # Build modified tridiagonal matrix A' for Sherman-Morrison
@@ -120,15 +118,15 @@ Uses type dispatch for zero-overhead specialization.
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     n = length(x) - 1
 
-    # Compute grid spacing h with padding for consistent indexing
-    # Layout: [0, h₁, h₂, ..., hₙ, 0] where hᵢ = x[i+1] - x[i]
-    # - h[1] = 0 (left sentinel), h[i+1] = hᵢ, h[end] = 0 (right sentinel)
-    # This ensures h[end-1] = hₙ (last actual spacing)
-    h = Vector{T}(undef, n + 2)
-    h[1] = zero(T)
-    h[end] = zero(T)
+    # Compute grid spacing h and precomputed reciprocals inv_h
+    # Standard indexing: h[i] = x[i+1] - x[i] for i = 1..n
+    # Fused loop for cache efficiency
+    h = Vector{T}(undef, n)
+    inv_h = Vector{T}(undef, n)
     @inbounds for i in 1:n
-        h[i+1] = x[i+1] - x[i]
+        val = x[i+1] - x[i]
+        h[i] = val
+        inv_h[i] = inv(val)
     end
 
     # Build tridiagonal matrix A

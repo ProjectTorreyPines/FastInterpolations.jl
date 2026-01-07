@@ -65,7 +65,7 @@ Formula:
     # inv_h passed as parameter (fdiv eliminated)
 
     inv_2h  = inv_h * inv(T(2))
-    h_div6 = h  * inv(T(6))
+    h_div6 = h * inv(T(6))
 
     dL_sq = dL * dL
     dR_sq = dR * dR

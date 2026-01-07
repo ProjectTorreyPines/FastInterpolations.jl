@@ -4,65 +4,81 @@
 # Pure mathematical kernel functions for cubic spline evaluation.
 # No dependencies - can be tested independently.
 #
-# Signature: _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, dt1, dt2)
-# - z_i, z_ip1: second derivative (moment) values at interval endpoints
-# - y_i, y_ip1: function values at interval endpoints
-# - h_i: interval width (x[i+1] - x[i])
-# - dt1: xi - x[i] (offset from left)
-# - dt2: x[i+1] - xi (offset from right)
+# Signature: _cubic_kernel(op, z0, z1, y0, y1, h, α0, α1)
+# - z0, z1: second derivative (moment) values at interval endpoints
+# - y0, y1: function values at interval endpoints
+# - h: interval width (x[i+1] - x[i])
+# - α0: xi - x[i] (offset from left)
+# - α1: x[i+1] - xi (offset from right)
 
 """
-    _cubic_kernel(::EvalValue, z_i, z_ip1, y_i, y_ip1, h_i, dt1, dt2)
+    _cubic_kernel(::EvalValue, z0, z1, y0, y1, h, α0, α1)
 
 Evaluate cubic spline value using moment (z) formulation.
 
-Formula:
-    S(x) = z_i*(dt2³)/(6h) + z_{i+1}*(dt1³)/(6h)
-         + (y_{i+1}/h - z_{i+1}*h/6)*dt1
-         + (y_i/h - z_i*h/6)*dt2
+# Formula
+    S(x) = z0*(α1³)/(6h) + z1*(α0³)/(6h)
+         + (y1/h - z1*h/6)*α0
+         + (y0/h - z0*h/6)*α1
+
+The computation is restructured to group common terms and leverage `muladd`
+for FMA (Fused Multiply-Add) hardware instructions, reducing total FP operations.
+
+# Operation counts (ARM64 native)
+    1 fdiv + 9 fmul + 4 fmadd + 1 fmsub = 15 FP ops
 """
 @inline function _cubic_kernel(
     ::EvalValue,
-    z_i::T, z_ip1::T, y_i::T, y_ip1::T, h_i::T, dt1::T, dt2::T
+    z0::T, z1::T, y0::T, y1::T, h::T, α0::T, α1::T
 ) where {T}
-    I = (z_i * dt2^3 + z_ip1 * dt1^3) / (6 * h_i)
-    C = (y_ip1 / h_i - z_ip1 * h_i / 6) * dt1
-    D = (y_i / h_i - z_i * h_i / 6) * dt2
-    return I + C + D
+    # Native (ARM64) instruction breakdown:
+    div6 = inv(T(6))                                    # (const-folded)
+    inv_h = inv(h)                                      # fdiv
+
+    α0_cu = α0^3                                        # fmul, fmul
+    α1_cu = α1^3                                        # fmul, fmul
+
+    y_mix = muladd(y1, α0, y0 * α1)                     # fmul, fmadd
+    z_mix1 = muladd(z0, α1_cu, z1 * α0_cu)              # fmul, fmadd
+    z_mix2 = muladd(z1, α0, z0 * α1)                    # fmul, fmadd
+
+    z_term = muladd(-h, z_mix2, inv_h * z_mix1) * div6  # fmul, fmsub, fmul
+    return muladd(inv_h, y_mix, z_term)                 # fmadd
 end
+# Total: 1 fdiv + 9 fmul + 4 fmadd + 1 fmsub = 15 FP ops
 
 """
-    _cubic_kernel(::EvalDeriv1, z_i, z_ip1, y_i, y_ip1, h_i, dt1, dt2)
+    _cubic_kernel(::EvalDeriv1, z0, z1, y0, y1, h, α0, α1)
 
 Evaluate first derivative of cubic spline.
 
 Formula:
-    S'(x) = (-z_i*dt2² + z_{i+1}*dt1²)/(2h)
-          + (y_{i+1} - y_i)/h
-          + h*(z_i - z_{i+1})/6
+    S'(x) = (-z0*α1² + z1*α0²)/(2h)
+          + (y1 - y0)/h   
+          + h*(z0 - z1)/6
 """
 @inline function _cubic_kernel(
     ::EvalDeriv1,
-    z_i::T, z_ip1::T, y_i::T, y_ip1::T, h_i::T, dt1::T, dt2::T
+    z0::T, z1::T, y0::T, y1::T, h::T, α0::T, α1::T
 ) where {T}
-    term1 = (-z_i * dt2^2 + z_ip1 * dt1^2) / (2 * h_i)
-    term2 = (y_ip1 - y_i) / h_i
-    term3 = (z_i - z_ip1) * h_i / 6
+    term1 = (-z0 * α1^2 + z1 * α0^2) / (2 * h)
+    term2 = (y1 - y0) / h
+    term3 = (z0 - z1) * h / 6
     return term1 + term2 + term3
 end
 
 """
-    _cubic_kernel(::EvalDeriv2, z_i, z_ip1, y_i, y_ip1, h_i, dt1, dt2)
+    _cubic_kernel(::EvalDeriv2, z0, z1, y0, y1, h, α0, α1)
 
 Evaluate second derivative of cubic spline.
 This is simply a linear interpolation of the z (moment) values.
 
 Formula:
-    S''(x) = (z_i*dt2 + z_{i+1}*dt1) / h
+    S''(x) = (z0*α1 + z1*α0) / h
 """
 @inline function _cubic_kernel(
     ::EvalDeriv2,
-    z_i::T, z_ip1::T, ::T, ::T, h_i::T, dt1::T, dt2::T
+    z0::T, z1::T, ::T, ::T, h::T, α0::T, α1::T
 ) where {T}
-    return (z_i * dt2 + z_ip1 * dt1) / h_i
+    return (z0 * α1 + z1 * α0) / h
 end

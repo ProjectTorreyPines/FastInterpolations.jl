@@ -17,7 +17,7 @@ Returns: y0 * (1 - α) + y1 * α where α = dt1 / h
 """
 @inline function _linear_kernel(::EvalValue, y0::T, y1::T, h::T, dt1::T) where {T}
     α = dt1 / h
-    return y0 * (one(T) - α) + y1 * α
+    return muladd(α, y1 - y0, y0)  # y0 + α*(y1-y0)
 end
 
 """

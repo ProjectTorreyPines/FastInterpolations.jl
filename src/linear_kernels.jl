@@ -5,8 +5,8 @@
 # No dependencies - can be tested independently.
 #
 # Unified signature: _linear_kernel(op, yL, yR, h, dL)
-# - h = x1 - x0 (interval width)
-# - dL = xq - x0 (offset from left boundary)
+# - h = xR - xL (interval width)
+# - dL = xq - xL (offset from left boundary)
 # - α = dL / h (computed internally for Value)
 
 """

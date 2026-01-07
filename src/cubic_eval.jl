@@ -18,10 +18,10 @@
     xi::T,
     op::O
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
-    idx, x0, x1 = _find_interval_with_bounds(x, xi)
+    idx, xL, xR = _find_interval_with_bounds(x, xi)
 
-    dL = xi - x0   # distance from Left endpoint
-    dR = x1 - xi   # distance from Right endpoint
+    dL = xi - xL   # distance from Left endpoint
+    dR = xR - xi   # distance from Right endpoint
     h_i = h[idx]
     inv_h_i = inv_h[idx]
 
@@ -47,10 +47,10 @@ end
     op::O
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     xi_wrapped = _wrap_to_domain(xi, first(x), first(x) + period)
-    idx, x0, x1 = _find_interval_with_bounds(x, xi_wrapped)
+    idx, xL, xR = _find_interval_with_bounds(x, xi_wrapped)
 
-    dL = xi_wrapped - x0   # distance from Left endpoint
-    dR = x1 - xi_wrapped   # distance from Right endpoint
+    dL = xi_wrapped - xL   # distance from Left endpoint
+    dR = xR - xi_wrapped   # distance from Right endpoint
     h_i = h[idx]
     inv_h_i = inv_h[idx]
 

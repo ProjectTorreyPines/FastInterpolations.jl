@@ -223,16 +223,16 @@ end # Derivative Core
             # For a true cubic f(x) = x³ on [0, 1]:
             # f(0) = 0, f(1) = 1
             # f''(x) = 6x, so zL = f''(0) = 0, zR = f''(1) = 6
-            yL, yR = 0.0, 1.0
-            zL, zR = 0.0, 6.0
+            yL_cubic, yR_cubic = 0.0, 1.0
+            zL_cubic, zR_cubic = 0.0, 6.0
             h = 1.0
             inv_h = inv(h)
 
             # At x = 0.5: f(0.5) = 0.125, f'(0.5) = 0.75, f''(0.5) = 3
             dL, dR = 0.5, 0.5
-            @test _cubic_kernel(EvalValue(), z0_cubic, z1_cubic, y0_cubic, y1_cubic, h, inv_h, dL, dR) ≈ 0.125 atol=1e-10
-            @test _cubic_kernel(EvalDeriv1(), z0_cubic, z1_cubic, y0_cubic, y1_cubic, h, inv_h, dL, dR) ≈ 0.75 atol=1e-10
-            @test _cubic_kernel(EvalDeriv2(), z0_cubic, z1_cubic, y0_cubic, y1_cubic, h, inv_h, dL, dR) ≈ 3.0 atol=1e-10
+            @test _cubic_kernel(EvalValue(), zL_cubic, zR_cubic, yL_cubic, yR_cubic, h, inv_h, dL, dR) ≈ 0.125 atol=1e-10
+            @test _cubic_kernel(EvalDeriv1(), zL_cubic, zR_cubic, yL_cubic, yR_cubic, h, inv_h, dL, dR) ≈ 0.75 atol=1e-10
+            @test _cubic_kernel(EvalDeriv2(), zL_cubic, zR_cubic, yL_cubic, yR_cubic, h, inv_h, dL, dR) ≈ 3.0 atol=1e-10
         end
     end
 

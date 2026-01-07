@@ -13,6 +13,7 @@
     x::AbstractVector{T},
     y::AbstractVector{T},
     h::AbstractVector{T},
+    inv_h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
     op::O
@@ -21,7 +22,8 @@
 
     dt1 = xi - x0
     dt2 = x1 - xi
-    h_i = h[idx+1]
+    h_i = h[idx]
+    inv_h_i = inv_h[idx]
 
     @inbounds begin
         z_i = z[idx]
@@ -30,7 +32,7 @@
         y_ip1 = y[idx+1]
     end
 
-    return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, dt1, dt2)
+    return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dt1, dt2)
 end
 
 "Evaluate periodic cubic spline at a single point with operation dispatch."
@@ -38,6 +40,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     h::AbstractVector{T},
+    inv_h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
     period::T,
@@ -48,7 +51,8 @@ end
 
     dt1 = xi_wrapped - x0
     dt2 = x1 - xi_wrapped
-    h_i = h[idx+1]
+    h_i = h[idx]
+    inv_h_i = inv_h[idx]
 
     @inbounds begin
         z_i = z[idx]
@@ -57,7 +61,7 @@ end
         y_ip1 = y[idx+1]
     end
 
-    return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, dt1, dt2)
+    return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dt1, dt2)
 end
 
 # ========================================
@@ -76,12 +80,13 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     h::AbstractVector{T},
+    inv_h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
     ::Val{:none},
     op::O
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
-    return _eval_cubic_at_point(x, y, h, z, xi, op)
+    return _eval_cubic_at_point(x, y, h, inv_h, z, xi, op)
 end
 
 "Evaluate with constant extrapolation - returns boundary values outside domain."
@@ -89,6 +94,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     h::AbstractVector{T},
+    inv_h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
     ::Val{:constant},
@@ -96,7 +102,7 @@ end
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     xi < first(x) && return _constant_extrap_result(op, @inbounds y[1])
     xi > last(x) && return _constant_extrap_result(op, @inbounds y[end])
-    return _eval_cubic_at_point(x, y, h, z, xi, op)
+    return _eval_cubic_at_point(x, y, h, inv_h, z, xi, op)
 end
 
 "Evaluate with extension extrapolation - extends boundary polynomial."
@@ -104,12 +110,13 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     h::AbstractVector{T},
+    inv_h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
     ::Val{:extension},
     op::O
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
-    return _eval_cubic_at_point(x, y, h, z, xi, op)
+    return _eval_cubic_at_point(x, y, h, inv_h, z, xi, op)
 end
 
 "Evaluate with coordinate wrapping (for natural BC with wrap extrapolation)."
@@ -117,13 +124,14 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     h::AbstractVector{T},
+    inv_h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
     ::Val{:wrap},
     op::O
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     xi_wrapped = _wrap_to_domain(xi, first(x), last(x))
-    return _eval_cubic_at_point(x, y, h, z, xi_wrapped, op)
+    return _eval_cubic_at_point(x, y, h, inv_h, z, xi_wrapped, op)
 end
 
 # ========================================
@@ -135,12 +143,13 @@ end
     cache::CubicSplineCache{T,X,F,PeriodicData{T}},
     y::AbstractVector{T},
     h::AbstractVector{T},
+    inv_h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
     ::Val,  # extrapolation ignored for periodic
     op::O
 ) where {T<:AbstractFloat, X, F, O<:AbstractEvalOp}
-    _eval_cubic_at_point_periodic(cache.x, y, h, z, xi, cache.bc_config.period, op)
+    _eval_cubic_at_point_periodic(cache.x, y, h, inv_h, z, xi, cache.bc_config.period, op)
 end
 
 "Evaluate with BC-aware dispatch (Generic Derivative BC) with op."
@@ -148,12 +157,13 @@ end
     cache::CubicSplineCache{T,X,F,BCPair{T,L,R}},
     y::AbstractVector{T},
     h::AbstractVector{T},
+    inv_h::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
     extrap::Val,
     op::O
 ) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}, O<:AbstractEvalOp}
-    _eval_cubic_with_extrap(cache.x, y, h, z, xi, extrap, op)
+    _eval_cubic_with_extrap(cache.x, y, h, inv_h, z, xi, extrap, op)
 end
 
 # ========================================
@@ -172,7 +182,7 @@ end
 ) where {T<:AbstractFloat, X, F, BC, O<:AbstractEvalOp}
     @boundscheck _check_domain(cache.x, x_query, ev)
     @inbounds for (k, xq) in enumerate(x_query)
-        output[k] = _eval_with_bc(cache, y, cache.h, z, xq, ev, op)
+        output[k] = _eval_with_bc(cache, y, cache.h, cache.inv_h, z, xq, ev, op)
     end
 end
 
@@ -193,13 +203,13 @@ end
     if qmin >= x_min && qmax < x_max
         # Fast path: all queries inside domain
         @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_cubic_at_point(cache.x, y, cache.h, z, xq, op)
+            output[k] = _eval_cubic_at_point(cache.x, y, cache.h, cache.inv_h, z, xq, op)
         end
     else
         # Slow path: per-element wrap
         period = cache.bc_config.period
         @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.h, z, xq, period, op)
+            output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.h, cache.inv_h, z, xq, period, op)
         end
     end
 end
@@ -229,7 +239,7 @@ Uses task-local pool for workspace allocation.
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             @boundscheck _check_domain(cache.x, x_query, ev)
-            _eval_with_bc(cache, y, cache.h, z, x_query, ev, op)
+            _eval_with_bc(cache, y, cache.h, cache.inv_h, z, x_query, ev, op)
         end
     end
 end

@@ -4,34 +4,34 @@
 # Pure mathematical kernel functions for linear interpolation.
 # No dependencies - can be tested independently.
 #
-# Unified signature: _linear_kernel(op, y0, y1, h, dt1)
+# Unified signature: _linear_kernel(op, yL, yR, h, dL)
 # - h = x1 - x0 (interval width)
-# - dt1 = xi - x0 (offset from left boundary)
-# - α = dt1 / h (computed internally for Value)
+# - dL = xq - x0 (offset from left boundary)
+# - α = dL / h (computed internally for Value)
 
 """
-    _linear_kernel(::EvalValue, y0, y1, h, dt1)
+    _linear_kernel(::EvalValue, yL, yR, h, dL)
 
-Evaluate linear interpolation value at offset dt1 from left boundary.
-Returns: y0 * (1 - α) + y1 * α where α = dt1 / h
+Evaluate linear interpolation value at offset dL from left boundary.
+Returns: yL * (1 - α) + yR * α where α = dL / h
 """
-@inline function _linear_kernel(::EvalValue, y0::T, y1::T, h::T, dt1::T) where {T}
-    α = dt1 / h
-    return muladd(α, y1 - y0, y0)  # y0 + α*(y1-y0)
+@inline function _linear_kernel(::EvalValue, yL::T, yR::T, h::T, dL::T) where {T}
+    α = dL / h
+    return muladd(α, yR - yL, yL)  # yL + α*(yR-yL)
 end
 
 """
-    _linear_kernel(::EvalDeriv1, y0, y1, h, dt1)
+    _linear_kernel(::EvalDeriv1, yL, yR, h, dL)
 
 Evaluate first derivative (slope) of linear interpolation.
-Returns constant slope: (y1 - y0) / h
+Returns constant slope: (yR - yL) / h
 """
-@inline function _linear_kernel(::EvalDeriv1, y0::T, y1::T, h::T, ::T) where {T}
-    return (y1 - y0) / h
+@inline function _linear_kernel(::EvalDeriv1, yL::T, yR::T, h::T, ::T) where {T}
+    return (yR - yL) / h
 end
 
 """
-    _linear_kernel(::EvalDeriv2, y0, y1, h, dt1)
+    _linear_kernel(::EvalDeriv2, yL, yR, h, dL)
 
 Evaluate second derivative of linear interpolation.
 Always returns zero (linear function has no curvature).

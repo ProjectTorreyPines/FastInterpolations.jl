@@ -4,16 +4,16 @@
 # Pure mathematical kernel functions for constant (step) interpolation.
 # No dependencies - can be tested independently.
 #
-# Unified signature: _constant_kernel(op, y_left, y_right, h, dt1, side)
-# - h = x1 - x0 (interval width)
-# - dt1 = xi - x0 (offset from left boundary)
+# Unified signature: _constant_kernel(op, y_left, y_right, h, dL, side)
+# - h = x_{i+1} - x_i (interval width)
+# - dL = xq - x_i (offset from left boundary)
 # - side = Val(:nearest) | Val(:left) | Val(:right)
 #
-# Grid point behavior: When dt1 == 0 (exactly at grid point),
+# Grid point behavior: When dL == 0 (exactly at grid point),
 # all side modes return y_left (the value at that grid point).
 
 """
-    _constant_kernel(::EvalValue, y_left, y_right, h, dt1, ::Val{:left})
+    _constant_kernel(::EvalValue, y_left, y_right, h, dL, ::Val{:left})
 
 Constant interpolation with left-continuous (floor) convention.
 Always returns the left boundary value `y_left`.
@@ -23,27 +23,27 @@ Always returns the left boundary value `y_left`.
 end
 
 """
-    _constant_kernel(::EvalValue, y_left, y_right, h, dt1, ::Val{:right})
+    _constant_kernel(::EvalValue, y_left, y_right, h, dL, ::Val{:right})
 
 Constant interpolation with right-continuous (ceiling) convention.
-Returns `y_left` at grid point (dt1 == 0), `y_right` otherwise.
+Returns `y_left` at grid point (dL == 0), `y_right` otherwise.
 """
-@inline function _constant_kernel(::EvalValue, y_left::T, y_right::T, ::T, dt1::T, ::Val{:right}) where {T}
-    return iszero(dt1) ? y_left : y_right
+@inline function _constant_kernel(::EvalValue, y_left::T, y_right::T, ::T, dL::T, ::Val{:right}) where {T}
+    return iszero(dL) ? y_left : y_right
 end
 
 """
-    _constant_kernel(::EvalValue, y_left, y_right, h, dt1, ::Val{:nearest})
+    _constant_kernel(::EvalValue, y_left, y_right, h, dL, ::Val{:nearest})
 
 Constant interpolation with nearest-neighbor convention and left tie-breaking.
-Returns `y_left` if dt1 <= h/2 (including midpoint), `y_right` otherwise.
+Returns `y_left` if dL <= h/2 (including midpoint), `y_right` otherwise.
 """
-@inline function _constant_kernel(::EvalValue, y_left::T, y_right::T, h::T, dt1::T, ::Val{:nearest}) where {T}
-    return dt1 <= h / 2 ? y_left : y_right
+@inline function _constant_kernel(::EvalValue, y_left::T, y_right::T, h::T, dL::T, ::Val{:nearest}) where {T}
+    return dL <= h / 2 ? y_left : y_right
 end
 
 """
-    _constant_kernel(::EvalDeriv1, y_left, y_right, h, dt1, side)
+    _constant_kernel(::EvalDeriv1, y_left, y_right, h, dL, side)
 
 First derivative of constant interpolation.
 Always returns zero (constant function has no slope).
@@ -53,7 +53,7 @@ Always returns zero (constant function has no slope).
 end
 
 """
-    _constant_kernel(::EvalDeriv2, y_left, y_right, h, dt1, side)
+    _constant_kernel(::EvalDeriv2, y_left, y_right, h, dL, side)
 
 Second derivative of constant interpolation.
 Always returns zero (constant function has no curvature).

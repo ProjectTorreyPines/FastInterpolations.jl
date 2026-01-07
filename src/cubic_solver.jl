@@ -23,8 +23,8 @@ end
 @inline function _set_first_row!(
     d_diag::AbstractVector{T}, du::AbstractVector{T}, ::Deriv1{T}, h::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    d_diag[1] = 2 * h[2]
-    du[1] = h[2]
+    d_diag[1] = 2 * h[1]
+    du[1] = h[1]
     return nothing
 end
 
@@ -41,8 +41,8 @@ end
 @inline function _set_last_row!(
     dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv1{T}, h::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    dl[end] = h[end-1]
-    d_diag[end] = 2 * h[end-1]
+    dl[end] = h[end]
+    d_diag[end] = 2 * h[end]
     return nothing
 end
 
@@ -70,25 +70,26 @@ end
     end
 
     # Build modified tridiagonal matrix A' for Sherman-Morrison
-    α = h[n+1]
+    # Standard indexing: h[i] = x[i+1] - x[i]
+    α = h[n]
 
     dl = acquire!(pool, T, n - 1)
     d_diag = acquire!(pool, T, n)
     du = acquire!(pool, T, n - 1)
 
-    d_diag[1] = h[n+1] + 2 * h[2]
+    d_diag[1] = h[n] + 2 * h[1]
 
     @inbounds for i in 2:n-1
-        dl[i-1] = h[i]
-        d_diag[i] = 2 * (h[i] + h[i+1])
-        du[i-1] = h[i+1]
+        dl[i-1] = h[i-1]
+        d_diag[i] = 2 * (h[i-1] + h[i])
+        du[i-1] = h[i]
     end
 
-    dl[n-1] = h[n]
-    d_diag[n] = 2 * h[n] + h[n+1]
+    dl[n-1] = h[n-1]
+    d_diag[n] = 2 * h[n-1] + h[n]
 
     if n > 1
-        du[n-1] = h[n]
+        du[n-1] = h[n-1]
     end
 
     tA_prime = Tridiagonal(dl, d_diag, du)
@@ -139,10 +140,11 @@ Uses type dispatch for zero-overhead specialization.
     _set_last_row!(dl, d_diag, right_bc, h)
 
     # Interior rows (same for all BC types)
+    # Standard indexing: h[i] = x[i+1] - x[i]
     @inbounds for i in 2:n
-        dl[i-1] = h[i]
-        d_diag[i] = 2 * (h[i] + h[i+1])
-        du[i] = h[i+1]
+        dl[i-1] = h[i-1]
+        d_diag[i] = 2 * (h[i-1] + h[i])
+        du[i] = h[i]
     end
 
     tA = Tridiagonal(dl, d_diag, du)

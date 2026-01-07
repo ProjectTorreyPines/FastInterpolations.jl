@@ -59,6 +59,12 @@ When x is an AbstractRange, O(1) index lookup is used instead of O(log n) binary
 Workspaces (d, z) are allocated from task-local pools via `@with_pool`,
 not stored in this struct. This makes the cache thread-safe by design.
 
+# Performance
+The `inv_h` field stores precomputed reciprocals (1/h[i]), eliminating floating-point
+division in kernel hot paths. On ARM64 (Apple Silicon), this reduces per-evaluation
+latency from ~10 cycles (fdiv) to ~4 cycles (fmul) — a 2.5× speedup in the inner loop.
+The kernels also use `muladd` for FMA (Fused Multiply-Add) instruction generation.
+
 # Boundary Conditions
 - `bc=NaturalBC()` (default): Natural spline with z[1] = z[n+1] = 0
 - `bc=PeriodicBC()`: Periodic spline with C2 continuity at boundaries

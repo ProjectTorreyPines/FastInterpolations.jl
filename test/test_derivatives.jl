@@ -163,46 +163,46 @@ end # Derivative Core
         # Test with known quadratic: f(x) = x² on [0, 1]
         # f(0) = 0, f(1) = 1, f'(x) = 2x, f''(x) = 2
         # For natural spline on x² with enough points, z values approximate f''
-        h_i = 1.0
-        inv_h_i = inv(h_i)  # Precomputed reciprocal for kernel
-        y_i, y_ip1 = 0.0, 1.0
-        z_i, z_ip1 = 2.0, 2.0  # f''(x) = 2 (constant for quadratic)
+        h = 1.0
+        inv_h = inv(h)  # Precomputed reciprocal for kernel
+        y0, y1 = 0.0, 1.0
+        z0, z1 = 2.0, 2.0  # f''(x) = 2 (constant for quadratic)
 
         @testset "EvalValue - quadratic exactness" begin
             # At x = 0.5: f(0.5) = 0.25
-            dt1, dt2 = 0.5, 0.5
-            result = _cubic_kernel(EvalValue(), z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dt1, dt2)
+            dL, dR = 0.5, 0.5
+            result = _cubic_kernel(EvalValue(), z0, z1, y0, y1, h, inv_h, dL, dR)
             @test result ≈ 0.25 atol=1e-10
 
             # At boundaries
-            @test _cubic_kernel(EvalValue(), z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, 0.0, 1.0) ≈ y_i atol=1e-10
-            @test _cubic_kernel(EvalValue(), z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, 1.0, 0.0) ≈ y_ip1 atol=1e-10
+            @test _cubic_kernel(EvalValue(), z0, z1, y0, y1, h, inv_h, 0.0, 1.0) ≈ y0 atol=1e-10
+            @test _cubic_kernel(EvalValue(), z0, z1, y0, y1, h, inv_h, 1.0, 0.0) ≈ y1 atol=1e-10
         end
 
         @testset "EvalDeriv1 - derivative of quadratic" begin
             # f'(x) = 2x, so f'(0.5) = 1.0
-            dt1, dt2 = 0.5, 0.5
-            result = _cubic_kernel(EvalDeriv1(), z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dt1, dt2)
+            dL, dR = 0.5, 0.5
+            result = _cubic_kernel(EvalDeriv1(), z0, z1, y0, y1, h, inv_h, dL, dR)
             @test result ≈ 1.0 atol=1e-10
 
             # f'(0) = 0
-            @test _cubic_kernel(EvalDeriv1(), z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, 0.0, 1.0) ≈ 0.0 atol=1e-10
+            @test _cubic_kernel(EvalDeriv1(), z0, z1, y0, y1, h, inv_h, 0.0, 1.0) ≈ 0.0 atol=1e-10
             # f'(1) = 2
-            @test _cubic_kernel(EvalDeriv1(), z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, 1.0, 0.0) ≈ 2.0 atol=1e-10
+            @test _cubic_kernel(EvalDeriv1(), z0, z1, y0, y1, h, inv_h, 1.0, 0.0) ≈ 2.0 atol=1e-10
         end
 
         @testset "EvalDeriv2 - second derivative of quadratic" begin
             # f''(x) = 2 everywhere
-            @test _cubic_kernel(EvalDeriv2(), z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, 0.5, 0.5) ≈ 2.0 atol=1e-10
-            @test _cubic_kernel(EvalDeriv2(), z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, 0.0, 1.0) ≈ 2.0 atol=1e-10
-            @test _cubic_kernel(EvalDeriv2(), z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, 1.0, 0.0) ≈ 2.0 atol=1e-10
+            @test _cubic_kernel(EvalDeriv2(), z0, z1, y0, y1, h, inv_h, 0.5, 0.5) ≈ 2.0 atol=1e-10
+            @test _cubic_kernel(EvalDeriv2(), z0, z1, y0, y1, h, inv_h, 0.0, 1.0) ≈ 2.0 atol=1e-10
+            @test _cubic_kernel(EvalDeriv2(), z0, z1, y0, y1, h, inv_h, 1.0, 0.0) ≈ 2.0 atol=1e-10
         end
 
         @testset "Type stability" begin
-            dt1, dt2 = 0.5, 0.5
-            @test @inferred(_cubic_kernel(EvalValue(), z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dt1, dt2)) isa Float64
-            @test @inferred(_cubic_kernel(EvalDeriv1(), z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dt1, dt2)) isa Float64
-            @test @inferred(_cubic_kernel(EvalDeriv2(), z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dt1, dt2)) isa Float64
+            dL, dR = 0.5, 0.5
+            @test @inferred(_cubic_kernel(EvalValue(), z0, z1, y0, y1, h, inv_h, dL, dR)) isa Float64
+            @test @inferred(_cubic_kernel(EvalDeriv1(), z0, z1, y0, y1, h, inv_h, dL, dR)) isa Float64
+            @test @inferred(_cubic_kernel(EvalDeriv2(), z0, z1, y0, y1, h, inv_h, dL, dR)) isa Float64
 
             # Float32 preservation
             args_f32 = (2.0f0, 2.0f0, 0.0f0, 1.0f0, 1.0f0, inv(1.0f0), 0.5f0, 0.5f0)
@@ -210,29 +210,29 @@ end # Derivative Core
         end
 
         @testset "Varying z values (non-constant curvature)" begin
-            # Test with z_i ≠ z_ip1 (linear interpolation of z)
+            # Test with z0 ≠ z1 (linear interpolation of z)
             z_left, z_right = 0.0, 4.0
-            dt1, dt2 = 0.5, 0.5
+            dL, dR = 0.5, 0.5
 
             # f''(0.5) should be average of z values
-            result = _cubic_kernel(EvalDeriv2(), z_left, z_right, y_i, y_ip1, h_i, inv_h_i, dt1, dt2)
+            result = _cubic_kernel(EvalDeriv2(), z_left, z_right, y0, y1, h, inv_h, dL, dR)
             @test result ≈ 2.0 atol=1e-10  # (0*0.5 + 4*0.5) / 1 = 2
         end
 
         @testset "Cubic polynomial exactness" begin
             # For a true cubic f(x) = x³ on [0, 1]:
             # f(0) = 0, f(1) = 1
-            # f''(x) = 6x, so z_i = f''(0) = 0, z_ip1 = f''(1) = 6
+            # f''(x) = 6x, so z0 = f''(0) = 0, z1 = f''(1) = 6
             y0_cubic, y1_cubic = 0.0, 1.0
             z0_cubic, z1_cubic = 0.0, 6.0
             h = 1.0
             inv_h = inv(h)
 
             # At x = 0.5: f(0.5) = 0.125, f'(0.5) = 0.75, f''(0.5) = 3
-            dt1, dt2 = 0.5, 0.5
-            @test _cubic_kernel(EvalValue(), z0_cubic, z1_cubic, y0_cubic, y1_cubic, h, inv_h, dt1, dt2) ≈ 0.125 atol=1e-10
-            @test _cubic_kernel(EvalDeriv1(), z0_cubic, z1_cubic, y0_cubic, y1_cubic, h, inv_h, dt1, dt2) ≈ 0.75 atol=1e-10
-            @test _cubic_kernel(EvalDeriv2(), z0_cubic, z1_cubic, y0_cubic, y1_cubic, h, inv_h, dt1, dt2) ≈ 3.0 atol=1e-10
+            dL, dR = 0.5, 0.5
+            @test _cubic_kernel(EvalValue(), z0_cubic, z1_cubic, y0_cubic, y1_cubic, h, inv_h, dL, dR) ≈ 0.125 atol=1e-10
+            @test _cubic_kernel(EvalDeriv1(), z0_cubic, z1_cubic, y0_cubic, y1_cubic, h, inv_h, dL, dR) ≈ 0.75 atol=1e-10
+            @test _cubic_kernel(EvalDeriv2(), z0_cubic, z1_cubic, y0_cubic, y1_cubic, h, inv_h, dL, dR) ≈ 3.0 atol=1e-10
         end
     end
 

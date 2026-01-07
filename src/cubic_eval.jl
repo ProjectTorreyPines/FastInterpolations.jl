@@ -20,8 +20,8 @@
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     idx, x0, x1 = _find_interval_with_bounds(x, xi)
 
-    dt1 = xi - x0
-    dt2 = x1 - xi
+    dL = xi - x0   # distance from Left endpoint
+    dR = x1 - xi   # distance from Right endpoint
     h_i = h[idx]
     inv_h_i = inv_h[idx]
 
@@ -32,7 +32,7 @@
         y_ip1 = y[idx+1]
     end
 
-    return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dt1, dt2)
+    return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dL, dR)
 end
 
 "Evaluate periodic cubic spline at a single point with operation dispatch."
@@ -49,8 +49,8 @@ end
     xi_wrapped = _wrap_to_domain(xi, first(x), first(x) + period)
     idx, x0, x1 = _find_interval_with_bounds(x, xi_wrapped)
 
-    dt1 = xi_wrapped - x0
-    dt2 = x1 - xi_wrapped
+    dL = xi_wrapped - x0   # distance from Left endpoint
+    dR = x1 - xi_wrapped   # distance from Right endpoint
     h_i = h[idx]
     inv_h_i = inv_h[idx]
 
@@ -61,7 +61,7 @@ end
         y_ip1 = y[idx+1]
     end
 
-    return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dt1, dt2)
+    return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dL, dR)
 end
 
 # ========================================

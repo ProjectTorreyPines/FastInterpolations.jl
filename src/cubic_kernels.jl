@@ -61,10 +61,23 @@ Formula:
     ::EvalDeriv1,
     z0::T, z1::T, y0::T, y1::T, h::T, α0::T, α1::T
 ) where {T}
-    term1 = (-z0 * α1^2 + z1 * α0^2) / (2 * h)
-    term2 = (y1 - y0) / h
-    term3 = (z0 - z1) * h / 6
-    return term1 + term2 + term3
+
+    inv_h = inv(h)
+
+    inv_2h  = inv_h * inv(T(2))  
+    h_div6 = h  * inv(T(6)) 
+
+    α0_sq = α0 * α0
+    α1_sq = α1 * α1
+    
+    # z1*α0^2 - z0*α1^2
+    z_mix   = muladd(z1, α0_sq, -z0 * α1_sq)
+
+    # z_term = (z_mix)/(2h) + (z0 - z1)*(h/6)
+    z_term  = muladd(inv_2h, z_mix, (z0 - z1) * h_div6)
+
+    # (y1-y0)/h + z_term
+    return muladd(inv_h, y1 - y0, z_term)
 end
 
 """
@@ -80,5 +93,5 @@ Formula:
     ::EvalDeriv2,
     z0::T, z1::T, ::T, ::T, h::T, α0::T, α1::T
 ) where {T}
-    return (z0 * α1 + z1 * α0) / h
+    return muladd(z0, α1, z1 * α0) / h
 end

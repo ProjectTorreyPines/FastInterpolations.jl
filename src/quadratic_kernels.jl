@@ -38,7 +38,7 @@ Evaluate first derivative of quadratic polynomial.
 Formula: S'(x) = 2*a*dt + d = muladd(2*a, dt, d)
 """
 @inline function _quadratic_kernel(::EvalDeriv1, a::T, d::T, ::T, dt::T) where {T<:AbstractFloat}
-    return muladd(2*a, dt, d)  # 2*a*dt + d
+    return muladd(T(2)*a, dt, d)  # 2*a*dt + d
 end
 
 """
@@ -49,5 +49,5 @@ Evaluate second derivative of quadratic polynomial.
 Formula: S''(x) = 2*a (constant within interval)
 """
 @inline function _quadratic_kernel(::EvalDeriv2, a::T, ::T, ::T, ::T) where {T<:AbstractFloat}
-    return 2*a  # constant
+    return T(2)*a  # constant
 end

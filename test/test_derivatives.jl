@@ -147,8 +147,8 @@ end # Derivative Core
             @test @inferred(_linear_kernel(EvalDeriv2(), yL, yR, h, dL)) isa Float64
 
             # Float32 preservation
-            y0_f32, y1_f32, h_f32, dt1_f32 = 1.0f0, 3.0f0, 1.0f0, 0.5f0
-            @test @inferred(_linear_kernel(EvalValue(), y0_f32, y1_f32, h_f32, dt1_f32)) isa Float32
+            yL_f32, yR_f32, h_f32, dL_f32 = 1.0f0, 3.0f0, 1.0f0, 0.5f0
+            @test @inferred(_linear_kernel(EvalValue(), yL_f32, yR_f32, h_f32, dL_f32)) isa Float32
         end
 
         @testset "Different slopes" begin

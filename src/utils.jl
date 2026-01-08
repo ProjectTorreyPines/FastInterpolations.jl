@@ -1,7 +1,7 @@
 # Internal utility functions for FastInterpolations.jl
 
 """
-    _find_interval_with_bounds(x::AbstractRange{FT}, xi::FT) where {FT<:AbstractFloat}
+    _find_interval(x::AbstractRange{FT}, xi::FT) where {FT<:AbstractFloat}
 
 Find interpolation interval using O(1) direct calculation for uniform grids.
 
@@ -18,25 +18,24 @@ Returns `(idx, xL, xR)` where:
 Uses `unsafe_trunc` for ~40% faster index calculation. Safety is guaranteed by
 the preconditions and the final `clamp` which handles floating-point edge cases.
 """
-@inline function _find_interval_with_bounds(
+@inline function _find_interval(
     x::AbstractRange{FT},
     xi::FT
 ) where {FT<:AbstractFloat}
     n = length(x)
     x_min = first(x)
     dx = Base.step(x)
-
-    # +10*eps prevents 1.999... → 1 rounding error; clamp handles edge cases
-    idx = clamp(unsafe_trunc(Int, (xi - x_min) / dx + 1 + 10*eps(FT)), 1, n - 1)
+    # Calculate index directly with unsafe_trunc for speed
+    idx = clamp(unsafe_trunc(Int, (xi - x_min) / dx + 1), 1, n - 1)
 
     # Direct calculation to avoid expensive TwicePrecision indexing
-    xL = x_min + (idx - 1) * dx
+    xL = muladd(idx-1, dx, x_min)
     xR = xL + dx
     return idx, xL, xR
 end
 
 """
-    _find_interval_with_bounds(x::AbstractVector{FT}, xi::FT) where {FT<:AbstractFloat}
+    _find_interval(x::AbstractVector{FT}, xi::FT) where {FT<:AbstractFloat}
 
 Find interpolation interval using O(log n) binary search for non-uniform grids.
 
@@ -45,7 +44,7 @@ Returns `(idx, xL, xR)` where:
 - `xL`: left boundary value x[idx]
 - `xR`: right boundary value x[idx+1]
 """
-@inline function _find_interval_with_bounds(
+@inline function _find_interval(
     x::AbstractVector{FT},
     xi::FT
 ) where {FT<:AbstractFloat}
@@ -74,6 +73,44 @@ Returns `(idx, xL, xR)` where:
     # Return idx and boundary values for alpha calculation
     @inbounds xL, xR = x[idx], x[idx + 1]
     return idx, xL, xR
+end
+
+# ========================================
+# Spacing-aware Interval Search
+# ========================================
+
+"""
+    _find_interval(x, spacing, xi)
+
+Find interpolation interval using spacing-aware dispatch.
+
+For `ScalarSpacing` on `AbstractRange`, uses `inv_h` to replace division with
+multiplication. For other cases, delegates to `_find_interval`.
+"""
+@inline function _find_interval(
+    x::AbstractRange{FT},
+    spacing::ScalarSpacing{FT},
+    xi::FT
+) where {FT<:AbstractFloat}
+
+    n = length(x)
+    x_min = first(x)
+
+    # Multiply by inv_h to avoid fdiv in hot path
+    idx = clamp(unsafe_trunc(Int, (xi - x_min) * spacing.inv_h + 1), 1, n - 1)
+
+    # Direct calculation to avoid expensive TwicePrecision indexing
+    xL = muladd(idx - 1, spacing.h, x_min)
+    xR = xL + spacing.h
+    return idx, xL, xR
+end
+
+@inline function _find_interval(
+    x::AbstractVector{FT},
+    ::AbstractGridSpacing{FT},
+    xi::FT
+) where {FT<:AbstractFloat}
+    return _find_interval(x, xi)
 end
 
 # ========================================
@@ -412,4 +449,3 @@ macro _dispatch_side(pair, body)
         end
     end
 end
-

@@ -205,7 +205,7 @@ Thread-safe: uses _get_cubic_cache + @with_pool pattern.
 
     @_dispatch_extrap extrap => ev begin
         _check_domain(cache.x, x_query, ev)
-        return _eval_with_bc(cache, y, cache.h, cache.inv_h, tmp_z, x_query, ev, op)
+        return _eval_with_bc(cache, y, tmp_z, x_query, ev, op)
     end
 end
 
@@ -256,7 +256,7 @@ Thread-safe: uses _get_cubic_cache + @with_pool pattern.
     # Periodic BC always uses :wrap extrapolation
     @_dispatch_extrap :wrap => ev begin
         _check_domain(cache.x, x_query, ev)
-        return _eval_with_bc(cache, y, cache.h, cache.inv_h, z, x_query, ev, op)
+        return _eval_with_bc(cache, y, z, x_query, ev, op)
     end
 end
 

@@ -44,7 +44,7 @@ Abstract type for cache entries. Subtypes must have:
 abstract type AbstractCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}} end
 
 """
-    CacheEntry{T, L, R, X}
+    CacheEntry{T, L, R, X, S}
 
 Cache entry for derivative BC (uses BCPair).
 
@@ -53,22 +53,28 @@ Cache entry for derivative BC (uses BCPair).
 - `L`: Left boundary condition type (Deriv1{T} or Deriv2{T})
 - `R`: Right boundary condition type (Deriv1{T} or Deriv2{T})
 - `X`: Grid type (Vector{T} or StepRangeLen)
+- `S`: Grid spacing type (ScalarSpacing{T} or VectorSpacing{T})
 """
-mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}} <: AbstractCacheEntry{T, X}
+mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}, S<:AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
-    cache::CubicSplineCache{T, X, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, BCPair{T,L,R}}
+    cache::CubicSplineCache{T, X, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, BCPair{T,L,R}, S}
 end
 
 """
-    PeriodicCacheEntry{T, X}
+    PeriodicCacheEntry{T, X, S}
 
 Cache entry for periodic BC (uses PeriodicData).
+
+# Type Parameters
+- `T`: Float type (Float32 or Float64)
+- `X`: Grid type (Vector{T} or StepRangeLen)
+- `S`: Grid spacing type (ScalarSpacing{T} or VectorSpacing{T})
 """
-mutable struct PeriodicCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}} <: AbstractCacheEntry{T, X}
+mutable struct PeriodicCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}, S<:AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
-    cache::CubicSplineCache{T, X, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, PeriodicData{T}}
+    cache::CubicSplineCache{T, X, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, PeriodicData{T}, S}
 end
 
 # ===============================================================
@@ -308,19 +314,25 @@ RCU-style bank retrieval with copy-on-write for new bank creation.
     end
 end
 
+# Helper to determine spacing type from grid type
+@inline _spacing_type(::Type{X}) where {T, X<:AbstractRange{T}} = ScalarSpacing{T}
+@inline _spacing_type(::Type{X}) where {T, X<:AbstractVector{T}} = VectorSpacing{T}
+
 """
-Get or create a derivative BC cache bank for the given (T, L, R, X) combination.
+Get or create a derivative BC cache bank for the given (T, L, R, X, S) combination.
 """
 @inline function _get_derivative_bank(::X, ::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
-    EntryType = CacheEntry{T,L,R,X}
+    S = _spacing_type(X)
+    EntryType = CacheEntry{T,L,R,X,S}
     return _get_bank(_DERIVATIVE_REGISTRY, CacheBank{EntryType})
 end
 
 """
-Get or create a periodic BC cache bank for the given (T, X) combination.
+Get or create a periodic BC cache bank for the given (T, X, S) combination.
 """
 @inline function _get_periodic_bank(::X) where {T<:AbstractFloat, X<:AbstractVector{T}}
-    EntryType = PeriodicCacheEntry{T,X}
+    S = _spacing_type(X)
+    EntryType = PeriodicCacheEntry{T,X,S}
     return _get_bank(_PERIODIC_REGISTRY, CacheBank{EntryType})
 end
 
@@ -367,12 +379,12 @@ end
 # ---------------------------------------------------------------
 
 # Build cache for derivative BC entry
-@inline function _build_cache(::Type{CacheEntry{T,L,R,X}}, x::X, bc::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+@inline function _build_cache(::Type{<:CacheEntry{T,L,R,X}}, x::X, bc::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
     return _build_derivative_bc_cache(x, bc.left, bc.right)
 end
 
 # Build cache for periodic BC entry
-@inline function _build_cache(::Type{PeriodicCacheEntry{T,X}}, x::X, ::Nothing) where {T<:AbstractFloat, X<:AbstractVector{T}}
+@inline function _build_cache(::Type{<:PeriodicCacheEntry{T,X}}, x::X, ::Nothing) where {T<:AbstractFloat, X<:AbstractVector{T}}
     return _build_periodic_cache(x)
 end
 

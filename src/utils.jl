@@ -26,11 +26,11 @@ the preconditions and the final `clamp` which handles floating-point edge cases.
     x_min = first(x)
     dx = Base.step(x)
 
-    # +10*eps prevents 1.999... → 1 rounding error; clamp handles edge cases
-    idx = clamp(unsafe_trunc(Int, (xi - x_min) / dx + 1 + 10*eps(FT)), 1, n - 1)
+    # Calculate index directly with unsafe_trunc for speed
+    idx = clamp(unsafe_trunc(Int, (xi - x_min) / dx + 1), 1, n - 1)
 
     # Direct calculation to avoid expensive TwicePrecision indexing
-    xL = x_min + (idx - 1) * dx
+    xL = muladd(idx-1, dx, x_min)
     xR = xL + dx
     return idx, xL, xR
 end

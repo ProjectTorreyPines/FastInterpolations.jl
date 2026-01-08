@@ -31,7 +31,7 @@ struct PeriodicData{T<:AbstractFloat}
 end
 
 """
-    CubicSplineCache{T,X,F,BC}
+    CubicSplineCache{T,X,F,BC,S}
 
 Cache structure for cubic spline interpolation with reusable LU factorization.
 
@@ -40,11 +40,11 @@ Cache structure for cubic spline interpolation with reusable LU factorization.
 - `X`: Grid type (Vector{T} or AbstractRange{T})
 - `F`: LU factorization type
 - `BC`: Boundary condition data type (BCPair{T,L,R} for derivative BC, PeriodicData{T} for periodic)
+- `S`: Grid spacing type (ScalarSpacing{T} for Range, VectorSpacing{T} for Vector)
 
 # Fields
 - `x::X`: Grid points (immutable after construction, can be Range or Vector)
-- `h::Vector{T}`: Grid spacing h[i] = x[i+1] - x[i] (standard 1-based indexing, size n)
-- `inv_h::Vector{T}`: Precomputed reciprocals inv_h[i] = 1/h[i] (eliminates fdiv in kernels)
+- `spacing::S`: Grid spacing data (ScalarSpacing for uniform, VectorSpacing for non-uniform)
 - `lu_factor::F`: LU factorization of tridiagonal matrix A
 - `bc_config::BC`: Boundary condition data (BCPair for derivative BC, PeriodicData for periodic)
 
@@ -60,19 +60,21 @@ Workspaces (d, z) are allocated from task-local pools via `@with_pool`,
 not stored in this struct. This makes the cache thread-safe by design.
 
 # Performance
-The `inv_h` field stores precomputed reciprocals (1/h[i]), eliminating floating-point
-division in kernel hot paths. On ARM64 (Apple Silicon), this reduces per-evaluation
-latency from ~10 cycles (fdiv) to ~4 cycles (fmul) — a 2.5× speedup in the inner loop.
-The kernels also use `muladd` for FMA (Fused Multiply-Add) instruction generation.
+The `spacing` field stores grid spacing with precomputed reciprocals.
+- `ScalarSpacing`: O(1) memory for uniform grids (Range inputs) with constant propagation
+- `VectorSpacing`: O(N) memory for non-uniform grids (Vector inputs)
+
+Both store `inv_h` for eliminating floating-point division in kernel hot paths.
+On ARM64 (Apple Silicon), this reduces per-evaluation latency from ~10 cycles (fdiv)
+to ~4 cycles (fmul) — a 2.5× speedup in the inner loop.
 
 # Boundary Conditions
 - `bc=NaturalBC()` (default): Natural spline with z[1] = z[n+1] = 0
 - `bc=PeriodicBC()`: Periodic spline with C2 continuity at boundaries
 """
-struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC}
+struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC,S<:AbstractGridSpacing{T}}
     x::X
-    h::Vector{T}
-    inv_h::Vector{T}
+    spacing::S
     lu_factor::F
     bc_config::BC
 end

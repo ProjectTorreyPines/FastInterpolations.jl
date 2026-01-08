@@ -15,7 +15,7 @@ using Test
 
 # Common type aliases for tests
 const FI = FastInterpolations
-const EntryType = FI.CacheEntry{Float64, FI.Deriv2{Float64}, FI.Deriv2{Float64}, Vector{Float64}}
+const EntryType = FI.CacheEntry{Float64, FI.Deriv2{Float64}, FI.Deriv2{Float64}, Vector{Float64}, FI.VectorSpacing{Float64}}
 const BankType = FI.CacheBank{EntryType}
 
 # ###################################################################

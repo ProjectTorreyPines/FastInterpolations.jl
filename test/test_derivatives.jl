@@ -255,49 +255,49 @@ end # Derivative Kernels
 
         @testset "_eval_cubic_at_point with op" begin
             # Value at midpoint x=1.0: f(1) = 1.0
-            val = _eval_cubic_at_point(x, y, cache.h, cache.inv_h, z, 1.0, EvalValue())
+            val = _eval_cubic_at_point(x, y, cache.spacing, z, 1.0, EvalValue())
             @test val ≈ 1.0 atol=1e-10
 
             # First derivative at x=1.0: f'(x) = 2x, so f'(1) = 2.0
-            deriv1 = _eval_cubic_at_point(x, y, cache.h, cache.inv_h, z, 1.0, EvalDeriv1())
+            deriv1 = _eval_cubic_at_point(x, y, cache.spacing, z, 1.0, EvalDeriv1())
             @test deriv1 ≈ 2.0 atol=0.1  # Spline approximation
 
             # Second derivative: f''(x) = 2.0
-            deriv2 = _eval_cubic_at_point(x, y, cache.h, cache.inv_h, z, 1.0, EvalDeriv2())
+            deriv2 = _eval_cubic_at_point(x, y, cache.spacing, z, 1.0, EvalDeriv2())
             @test deriv2 ≈ 2.0 atol=0.1
         end
 
         @testset "_eval_cubic_with_extrap with op" begin
             # Test constant extrapolation with derivatives
             # Outside left boundary: should return 0 for derivatives
-            left_val = _eval_cubic_with_extrap(x, y, cache.h, cache.inv_h, z, -0.5, Val(:constant), EvalValue())
+            left_val = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:constant), EvalValue())
             @test left_val ≈ y[1]  # y[1] = 0.0
 
-            left_deriv1 = _eval_cubic_with_extrap(x, y, cache.h, cache.inv_h, z, -0.5, Val(:constant), EvalDeriv1())
+            left_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:constant), EvalDeriv1())
             @test left_deriv1 === 0.0  # Constant extrap → derivative = 0
 
-            left_deriv2 = _eval_cubic_with_extrap(x, y, cache.h, cache.inv_h, z, -0.5, Val(:constant), EvalDeriv2())
+            left_deriv2 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:constant), EvalDeriv2())
             @test left_deriv2 === 0.0
 
             # Inside domain: should use normal evaluation
-            mid_deriv1 = _eval_cubic_with_extrap(x, y, cache.h, cache.inv_h, z, 1.0, Val(:constant), EvalDeriv1())
+            mid_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, 1.0, Val(:constant), EvalDeriv1())
             @test mid_deriv1 ≈ 2.0 atol=0.1
 
             # Extension extrapolation: use boundary polynomial
-            ext_deriv1 = _eval_cubic_with_extrap(x, y, cache.h, cache.inv_h, z, -0.5, Val(:extension), EvalDeriv1())
+            ext_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:extension), EvalDeriv1())
             @test ext_deriv1 isa Float64  # Should not throw
         end
 
         @testset "Type stability with op" begin
-            @test @inferred(_eval_cubic_at_point(x, y, cache.h, cache.inv_h, z, 1.0, EvalValue())) isa Float64
-            @test @inferred(_eval_cubic_at_point(x, y, cache.h, cache.inv_h, z, 1.0, EvalDeriv1())) isa Float64
-            @test @inferred(_eval_cubic_at_point(x, y, cache.h, cache.inv_h, z, 1.0, EvalDeriv2())) isa Float64
+            @test @inferred(_eval_cubic_at_point(x, y, cache.spacing, z, 1.0, EvalValue())) isa Float64
+            @test @inferred(_eval_cubic_at_point(x, y, cache.spacing, z, 1.0, EvalDeriv1())) isa Float64
+            @test @inferred(_eval_cubic_at_point(x, y, cache.spacing, z, 1.0, EvalDeriv2())) isa Float64
         end
 
         @testset "Derivative at different points" begin
             # f'(0) = 0, f'(0.5) = 1, f'(1) = 2, f'(1.5) = 3, f'(2) = 4
             for (xi, expected_deriv) in [(0.0, 0.0), (0.5, 1.0), (1.5, 3.0), (2.0, 4.0)]
-                deriv = _eval_cubic_at_point(x, y, cache.h, cache.inv_h, z, xi, EvalDeriv1())
+                deriv = _eval_cubic_at_point(x, y, cache.spacing, z, xi, EvalDeriv1())
                 @test deriv ≈ expected_deriv atol=0.15
             end
         end

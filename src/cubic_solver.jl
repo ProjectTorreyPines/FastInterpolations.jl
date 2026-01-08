@@ -12,7 +12,7 @@
 
 # First row - Deriv2 (second derivative specified): z[1] = bc.val
 @inline function _set_first_row!(
-    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::Deriv2{T}, ::AbstractVector{T}
+    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::Deriv2{T}, ::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
     d_diag[1] = one(T)
     du[1] = zero(T)
@@ -21,16 +21,17 @@ end
 
 # First row - Deriv1 (first derivative specified): 2h₁z₁ + h₁z₂ = 6[(y₂-y₁)/h₁ - S'(x₁)]
 @inline function _set_first_row!(
-    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::Deriv1{T}, h::AbstractVector{T}
+    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::Deriv1{T}, spacing::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
-    d_diag[1] = 2 * h[1]
-    du[1] = h[1]
+    h1 = _get_h(spacing, 1)
+    d_diag[1] = 2 * h1
+    du[1] = h1
     return nothing
 end
 
 # Last row - Deriv2 (second derivative specified): matrix row enforces z[end] = bc.val
 @inline function _set_last_row!(
-    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv2{T}, ::AbstractVector{T}
+    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv2{T}, ::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
     dl[end] = zero(T)
     d_diag[end] = one(T)
@@ -39,10 +40,14 @@ end
 
 # Last row - Deriv1 (first derivative specified): hₙzₙ + 2hₙzₙ₊₁ = 6[S'(xₙ₊₁) - (yₙ₊₁-yₙ)/hₙ]
 @inline function _set_last_row!(
-    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv1{T}, h::AbstractVector{T}
+    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv1{T}, spacing::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
-    dl[end] = h[end]
-    d_diag[end] = 2 * h[end]
+    # For the last row, we need h[n] which is the last spacing value
+    # The number of spacing values is length(dl) for dl (n elements)
+    n = length(dl)
+    h_n = _get_h(spacing, n)
+    dl[end] = h_n
+    d_diag[end] = 2 * h_n
     return nothing
 end
 
@@ -58,38 +63,33 @@ end
 
     period = last(x) - first(x)
 
-    # Compute grid spacing h and precomputed reciprocals inv_h
-    # Standard indexing: h[i] = x[i+1] - x[i] for i = 1..n
-    # Fused loop for cache efficiency
-    h = Vector{T}(undef, n)
-    inv_h = Vector{T}(undef, n)
-    @inbounds for i in 1:n
-        val = x[i+1] - x[i]
-        h[i] = val
-        inv_h[i] = inv(val)
-    end
+    # Create spacing object (ScalarSpacing for Range, VectorSpacing for Vector)
+    spacing = _create_spacing(x)
 
     # Build modified tridiagonal matrix A' for Sherman-Morrison
-    # Standard indexing: h[i] = x[i+1] - x[i]
-    α = h[n]
-
+    # Use _get_h accessor for spacing values
     dl = acquire!(pool, T, n - 1)
     d_diag = acquire!(pool, T, n)
     du = acquire!(pool, T, n - 1)
 
-    d_diag[1] = h[n] + 2 * h[1]
+    h_n = _get_h(spacing, n)
+    h_1 = _get_h(spacing, 1)
+    d_diag[1] = h_n + 2 * h_1
 
     @inbounds for i in 2:n-1
-        dl[i-1] = h[i-1]
-        d_diag[i] = 2 * (h[i-1] + h[i])
-        du[i-1] = h[i]
+        h_im1 = _get_h(spacing, i-1)
+        h_i = _get_h(spacing, i)
+        dl[i-1] = h_im1
+        d_diag[i] = 2 * (h_im1 + h_i)
+        du[i-1] = h_i
     end
 
-    dl[n-1] = h[n-1]
-    d_diag[n] = 2 * h[n-1] + h[n]
+    h_nm1 = _get_h(spacing, n-1)
+    dl[n-1] = h_nm1
+    d_diag[n] = 2 * h_nm1 + h_n
 
     if n > 1
-        du[n-1] = h[n-1]
+        du[n-1] = h_nm1
     end
 
     tA_prime = Tridiagonal(dl, d_diag, du)
@@ -104,7 +104,7 @@ end
     # Workspaces (d, z, y_temp) are now allocated from task-local pools
     bc_config = PeriodicData(q, period)
 
-    return CubicSplineCache(x, h, inv_h, lu_factor, bc_config)
+    return CubicSplineCache(x, spacing, lu_factor, bc_config)
 end
 
 """
@@ -118,16 +118,8 @@ Uses type dispatch for zero-overhead specialization.
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     n = length(x) - 1
 
-    # Compute grid spacing h and precomputed reciprocals inv_h
-    # Standard indexing: h[i] = x[i+1] - x[i] for i = 1..n
-    # Fused loop for cache efficiency
-    h = Vector{T}(undef, n)
-    inv_h = Vector{T}(undef, n)
-    @inbounds for i in 1:n
-        val = x[i+1] - x[i]
-        h[i] = val
-        inv_h[i] = inv(val)
-    end
+    # Create spacing object (ScalarSpacing for Range, VectorSpacing for Vector)
+    spacing = _create_spacing(x)
 
     # Build tridiagonal matrix A
     dl = acquire!(pool, T, n)       # Lower diagonal
@@ -135,15 +127,16 @@ Uses type dispatch for zero-overhead specialization.
     du = acquire!(pool, T, n)       # Upper diagonal
 
     # First and last rows depend on BC type (type dispatch)
-    _set_first_row!(d_diag, du, left_bc, h)
-    _set_last_row!(dl, d_diag, right_bc, h)
+    _set_first_row!(d_diag, du, left_bc, spacing)
+    _set_last_row!(dl, d_diag, right_bc, spacing)
 
     # Interior rows (same for all BC types)
-    # Standard indexing: h[i] = x[i+1] - x[i]
     @inbounds for i in 2:n
-        dl[i-1] = h[i-1]
-        d_diag[i] = 2 * (h[i-1] + h[i])
-        du[i] = h[i]
+        h_im1 = _get_h(spacing, i-1)
+        h_i = _get_h(spacing, i)
+        dl[i-1] = h_im1
+        d_diag[i] = 2 * (h_im1 + h_i)
+        du[i] = h_i
     end
 
     tA = Tridiagonal(dl, d_diag, du)
@@ -152,7 +145,7 @@ Uses type dispatch for zero-overhead specialization.
     # Workspaces (d, z) are now allocated from task-local pools
     bc_config = BCPair(left_bc, right_bc)
 
-    return CubicSplineCache(x, h, inv_h, lu_factor, bc_config)
+    return CubicSplineCache(x, spacing, lu_factor, bc_config)
 end
 
 # ========================================
@@ -165,7 +158,7 @@ end
 
 # First element - Deriv2: d[1] = bc.val (second derivative value)
 @inline function _compute_rhs_first!(
-    d::AbstractVector{T}, bc::Deriv2{T}, ::AbstractVector{T}, ::AbstractVector{T}
+    d::AbstractVector{T}, bc::Deriv2{T}, ::AbstractVector{T}, ::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
     d[1] = bc.val
     return nothing
@@ -173,15 +166,15 @@ end
 
 # First element - Deriv1: d[1] = 6[(y₂-y₁)/h₁ - S'(x₁)]
 @inline function _compute_rhs_first!(
-    d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, h::AbstractVector{T}
+    d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, spacing::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
-    d[1] = 6 * ((y[2] - y[1]) / h[1] - bc.val)
+    d[1] = 6 * ((y[2] - y[1]) / _get_h(spacing, 1) - bc.val)
     return nothing
 end
 
 # Last element - Deriv2: d[end] = bc.val (second derivative value)
 @inline function _compute_rhs_last!(
-    d::AbstractVector{T}, bc::Deriv2{T}, ::AbstractVector{T}, ::AbstractVector{T}
+    d::AbstractVector{T}, bc::Deriv2{T}, ::AbstractVector{T}, ::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
     d[end] = bc.val
     return nothing
@@ -189,9 +182,10 @@ end
 
 # Last element - Deriv1: d[end] = 6[S'(x_end) - (y_end - y_{end-1}) / h_end]
 @inline function _compute_rhs_last!(
-    d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, h::AbstractVector{T}
+    d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, spacing::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
-    d[end] = 6 * (bc.val - (y[end] - y[end-1]) / h[end])
+    n = length(y) - 1
+    d[end] = 6 * (bc.val - (y[end] - y[end-1]) / _get_h(spacing, n))
     return nothing
 end
 
@@ -199,16 +193,16 @@ end
 Compute RHS vector for generic derivative BC system in-place.
 """
 @inline function compute_rhs!(
-    d::AbstractVector{T}, y::AbstractVector{T}, h::AbstractVector{T},
+    d::AbstractVector{T}, y::AbstractVector{T}, spacing::AbstractGridSpacing{T},
     bc_config::BCPair{T,L,R}
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     n = length(y) - 1
-    _compute_rhs_first!(d, bc_config.left, y, h)
-    # Standard indexing: h[i] = x[i+1] - x[i]
+    _compute_rhs_first!(d, bc_config.left, y, spacing)
+    # Use spacing accessors
     @inbounds for i in 2:n
-        d[i] = 6 * ((y[i+1] - y[i]) / h[i] - (y[i] - y[i-1]) / h[i-1])
+        d[i] = 6 * ((y[i+1] - y[i]) / _get_h(spacing, i) - (y[i] - y[i-1]) / _get_h(spacing, i-1))
     end
-    _compute_rhs_last!(d, bc_config.right, y, h)
+    _compute_rhs_last!(d, bc_config.right, y, spacing)
     return nothing
 end
 
@@ -217,17 +211,17 @@ end
 # ----------------------------------------
 
 "Compute RHS vector d for periodic cubic spline system in-place."
-@inline function compute_rhs_periodic!(d::AbstractVector{T}, y::AbstractVector{T}, h::AbstractVector{T}) where {T}
+@inline function compute_rhs_periodic!(d::AbstractVector{T}, y::AbstractVector{T}, spacing::AbstractGridSpacing{T}) where {T}
     n = length(y) - 1
 
-    # Standard indexing: h[i] = x[i+1] - x[i]
-    @inbounds d[1] = 6 * (y[2] - y[1]) / h[1] - 6 * (y[1] - y[end-1]) / h[n]
+    # Use spacing accessors
+    @inbounds d[1] = 6 * (y[2] - y[1]) / _get_h(spacing, 1) - 6 * (y[1] - y[end-1]) / _get_h(spacing, n)
 
     @inbounds for i in 2:n-1
-        d[i] = 6 * (y[i+1] - y[i]) / h[i] - 6 * (y[i] - y[i-1]) / h[i-1]
+        d[i] = 6 * (y[i+1] - y[i]) / _get_h(spacing, i) - 6 * (y[i] - y[i-1]) / _get_h(spacing, i-1)
     end
 
-    @inbounds d[n] = 6 * (y[end] - y[end-1]) / h[n] - 6 * (y[end-1] - y[end-2]) / h[n-1]
+    @inbounds d[n] = 6 * (y[end] - y[end-1]) / _get_h(spacing, n) - 6 * (y[end-1] - y[end-2]) / _get_h(spacing, n-1)
 
     return nothing
 end
@@ -241,17 +235,17 @@ end
     z_workspace::AbstractVector{T},
     d_workspace::AbstractVector{T},
     y_temp::AbstractVector{T},
-    cache::CubicSplineCache{T,X,F,PeriodicData{T}},
+    cache::CubicSplineCache{T,X,F,PeriodicData{T},S},
     y::AbstractVector{T}
-) where {T<:AbstractFloat, X, F}
+) where {T<:AbstractFloat, X, F, S<:AbstractGridSpacing{T}}
     n = length(y) - 1
 
-    compute_rhs_periodic!(d_workspace, y, cache.h)
+    compute_rhs_periodic!(d_workspace, y, cache.spacing)
 
     # y_temp is now passed as parameter (from task-local pool)
     ldiv!(y_temp, cache.lu_factor, d_workspace)
 
-    α = cache.h[n]
+    α = _get_h(cache.spacing, n)
     q = cache.bc_config.q
 
     vTy = α * (y_temp[1] + y_temp[n])
@@ -293,14 +287,14 @@ Thread-safe: workspaces allocated from task-local pool.
 """
 @inline @with_pool pool function _solve_system!(
     out_z::AbstractVector{T},
-    cache::CubicSplineCache{T,X,F,BCPair{T,L,R}},
+    cache::CubicSplineCache{T,X,F,BCPair{T,L,R},S},
     y::AbstractVector{T},
     bc_pair::BCPair{T,L,R}
-) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}}
+) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}, S<:AbstractGridSpacing{T}}
     # d_workspace needs length(y) = n+1
     d_workspace = similar!(pool, y)
 
-    compute_rhs!(d_workspace, y, cache.h, bc_pair)
+    compute_rhs!(d_workspace, y, cache.spacing, bc_pair)
     ldiv!(out_z, cache.lu_factor, d_workspace)
     return out_z
 end
@@ -311,10 +305,10 @@ Thread-safe: workspaces allocated from task-local pool.
 """
 @inline @with_pool pool function _solve_system!(
     out_z::AbstractVector{T},
-    cache::CubicSplineCache{T,X,F,PeriodicData{T}},
+    cache::CubicSplineCache{T,X,F,PeriodicData{T},S},
     y::AbstractVector{T},
     ::PeriodicData{T}  # Unused, for API consistency with BCPair version
-) where {T<:AbstractFloat, X, F}
+) where {T<:AbstractFloat, X, F, S<:AbstractGridSpacing{T}}
     n = length(y) - 1
 
     # Periodic workspaces need n elements (NOT length(y)!)

@@ -44,10 +44,19 @@ y = sin.(x) .+ 0.1 .* collect(x)
 # Pre-build interpolants for evaluation benchmarks
 clear_cubic_cache!()
 const itp_linear = linear_interp(x, y)
-const itp_cubic = cubic_interp(x, y; autocache=false)
+const itp_cubic = cubic_interp(x, y; autocache)
+
+# Also create vector-based grid version for dispatch comparison (cubic only)
+const x_vec = collect(x)
+const y_vec = collect(y)
+clear_cubic_cache!()
+const itp_cubic_vec = cubic_interp(x_vec, y_vec)
+
+# Scalar query for scalar vs vec1 comparison
+const xq_scalar = 5.0
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Cubic Benchmarks (shown first)
+# Cubic Benchmarks
 # ══════════════════════════════════════════════════════════════════════════════
 
 println("Setting up cubic benchmarks...")
@@ -118,6 +127,36 @@ for nq in QUERY_SIZES
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Cubic Scalar vs Vector(1) Comparison
+# ══════════════════════════════════════════════════════════════════════════════
+
+println("Setting up cubic scalar vs vec1 benchmarks...")
+
+const xq_vec1 = [5.0]  # 1-element vector for comparison
+
+# 7. Cubic: Range grid - scalar vs vec1
+let b = @benchmarkable $itp_cubic($xq_scalar)
+    b.params.evals = EVALS_FAST
+    suite["7_cubic_range"]["scalar_query"] = b
+end
+
+let b = @benchmarkable $itp_cubic($xq_vec1)
+    b.params.evals = EVALS_FAST
+    suite["7_cubic_range"]["vec1_query"] = b
+end
+
+# 7. Cubic: Vector grid - scalar vs vec1
+let b = @benchmarkable $itp_cubic_vec($xq_scalar)
+    b.params.evals = EVALS_FAST
+    suite["7_cubic_vec"]["scalar_query"] = b
+end
+
+let b = @benchmarkable $itp_cubic_vec($xq_vec1)
+    b.params.evals = EVALS_FAST
+    suite["7_cubic_vec"]["vec1_query"] = b
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Run and Save
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -183,4 +222,4 @@ for group_name in sort(collect(keys(med_results)))
     end
 end
 
-println("\nDone! (18 benchmarks total)")
+println("\nDone! (22 benchmarks total)")

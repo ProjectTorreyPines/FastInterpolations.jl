@@ -44,7 +44,7 @@ y = sin.(x) .+ 0.1 .* collect(x)
 # Pre-build interpolants for evaluation benchmarks
 clear_cubic_cache!()
 const itp_linear = linear_interp(x, y)
-const itp_cubic = cubic_interp(x, y; autocache)
+const itp_cubic = cubic_interp(x, y)
 
 # Also create vector-based grid version for dispatch comparison (cubic only)
 const x_vec = collect(x)

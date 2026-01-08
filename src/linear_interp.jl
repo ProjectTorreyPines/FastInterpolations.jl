@@ -149,14 +149,14 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xi::Real; extrap=:none) -> AbstractFloat
+    linear_interp(x, y, xq::Real; extrap=:none) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
 - For general `AbstractVector` x: O(log n) binary search
 
 # Arguments
-- `xi::Real`: Single interpolation point
+- `xq::Real`: Single interpolation query point
 - `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, `:extension`, or `:wrap`
 
 # Returns
@@ -186,7 +186,7 @@ value = linear_interp(x_int, y_int, 5.5)  # Returns Float64 (not Int)
 # ========================================
 
 """
-    _linear_eval_at_point(x, y, xi, extrap, op) -> FT
+    _linear_eval_at_point(x, y, xq, extrap, op) -> FT
 
 Core linear interpolation evaluation using kernel function.
 Supports value (EvalValue), first derivative (EvalDeriv1), and second derivative (EvalDeriv2).
@@ -194,15 +194,15 @@ Supports value (EvalValue), first derivative (EvalDeriv1), and second derivative
 @inline function _linear_eval_at_point(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
-    xi::FT,
+    xq::FT,
     extrap::Val,
     op::O
 )::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    @boundscheck _check_domain(x, xi, extrap)
-    idx, x0, x1 = _find_interval_with_bounds(x, xi)
-    h = x1 - x0
-    dt1 = xi - x0
-    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], h, dt1)
+    @boundscheck _check_domain(x, xq, extrap)
+    idx, xL, xR = _find_interval_with_bounds(x, xq)
+    h = xR - xL
+    dL = xq - xL
+    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], h, dL)
 end
 
 
@@ -236,55 +236,55 @@ end
 end
 
 """
-    _linear_with_extrap(x, y, xi, extrap, op) -> FT
+    _linear_with_extrap(x, y, xq, extrap, op) -> FT
 
 Linear interpolation with extrapolation handling and op parameter.
 """
 @inline function _linear_with_extrap(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
-    xi::FT,
+    xq::FT,
     ::Val{:none},
     op::O
 )::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    _linear_eval_at_point(x, y, xi, Val(:none), op)
+    _linear_eval_at_point(x, y, xq, Val(:none), op)
 end
 
 @inline function _linear_with_extrap(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
-    xi::FT,
+    xq::FT,
     ::Val{:extension},
     op::O
 )::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    _linear_eval_at_point(x, y, xi, Val(:extension), op)
+    _linear_eval_at_point(x, y, xq, Val(:extension), op)
 end
 
 @inline function _linear_with_extrap(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
-    xi::FT,
+    xq::FT,
     ::Val{:constant},
     op::O
 )::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
     x_min, x_max = first(x), last(x)
-    if xi < x_min
+    if xq < x_min
         return _linear_eval_constant_extrap(y, true, op)
-    elseif xi > x_max
+    elseif xq > x_max
         return _linear_eval_constant_extrap(y, false, op)
     else
-        return _linear_eval_at_point(x, y, xi, Val(:extension), op)
+        return _linear_eval_at_point(x, y, xq, Val(:extension), op)
     end
 end
 
 @inline function _linear_with_extrap(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
-    xi::FT,
+    xq::FT,
     ::Val{:wrap},
     op::O
 )::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    xi_wrapped = _wrap_to_domain(xi, first(x), last(x))
+    xi_wrapped = _wrap_to_domain(xq, first(x), last(x))
     _linear_eval_at_point(x, y, xi_wrapped, Val(:extension), op)
 end
 
@@ -297,18 +297,18 @@ end
 @inline function linear_interp(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
-    xi::FT,
+    xq::FT,
     extrap::Val,
     op::O
 )::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    _linear_with_extrap(x, y, xi, extrap, op)
+    _linear_with_extrap(x, y, xq, extrap, op)
 end
 
 # Public API - Symbol dispatch (converts to Val)
 @inline function linear_interp(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
-    xi::FT;
+    xq::FT;
     extrap::Symbol=:none,
     deriv::Int=0
 )::FT where {FT<:AbstractFloat}
@@ -316,7 +316,7 @@ end
 
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
-            linear_interp(x, y, xi, ev, op)
+            linear_interp(x, y, xq, ev, op)
         end
     end
 end
@@ -325,7 +325,7 @@ end
 @inline function linear_interp(
     x::AbstractRange{FT},
     y::AbstractVector{FT},
-    xi::FT;
+    xq::FT;
     extrap::Symbol=:none,
     deriv::Int=0
 )::FT where {FT<:AbstractFloat}
@@ -333,7 +333,7 @@ end
 
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
-            linear_interp(x, y, xi, ev, op)
+            linear_interp(x, y, xq, ev, op)
         end
     end
 end
@@ -459,13 +459,13 @@ end
 @inline function linear_interp(
     x::AbstractRange{T},
     y::AbstractVector{T},
-    xi::S;
+    xq::S;
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
     FT = float(T)
     x_float = range(FT(first(x)), FT(last(x)), length(x))
-    return linear_interp(x_float, FT.(y), FT(xi); extrap, deriv)
+    return linear_interp(x_float, FT.(y), FT(xq); extrap, deriv)
 end
 
 function linear_interp(
@@ -484,12 +484,12 @@ end
 @inline function linear_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
-    xi::S;
+    xq::S;
     extrap::Symbol=:none,
     deriv::Int=0
 ) where {T<:Real, S<:Real}
     FT = float(T)
-    return linear_interp(FT.(x), FT.(y), FT(xi); extrap, deriv)
+    return linear_interp(FT.(x), FT.(y), FT(xq); extrap, deriv)
 end
 
 # ========================================
@@ -547,21 +547,21 @@ end
 
 # Scalar call - hot path (inlined for broadcast fusion)
 # Supports deriv keyword for derivative evaluation
-@inline function (itp::LinearInterpolant{T})(xi::T; deriv::Int=0) where {T<:AbstractFloat}
-    @boundscheck _check_domain(itp.x, xi, itp.mode)
+@inline function (itp::LinearInterpolant{T})(xq::T; deriv::Int=0) where {T<:AbstractFloat}
+    @boundscheck _check_domain(itp.x, xq, itp.mode)
     @_dispatch_deriv deriv => op begin
-        _linear_with_extrap(itp.x, itp.y, xi, itp.mode, op)
+        _linear_with_extrap(itp.x, itp.y, xq, itp.mode, op)
     end
 end
 
 # Real scalar wrapper - delegates to T method with deriv keyword
-@inline function (itp::LinearInterpolant{T})(xi::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
-    itp(T(xi); deriv=deriv)
+@inline function (itp::LinearInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+    itp(T(xq); deriv=deriv)
 end
 
 # Vector call with deriv keyword support
-function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, X, Y, S<:Real}
-    xi_typed = S === T ? xi : T.(xi)
+function (itp::LinearInterpolant{T,X,Y})(xq::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, X, Y, S<:Real}
+    xi_typed = S === T ? xq : T.(xq)
     @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
     output = Vector{T}(undef, length(xi_typed))
     @_dispatch_deriv deriv => op begin
@@ -572,34 +572,34 @@ function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{S}; deriv::Int=0) wh
     return output
 end
 
-# Optimized path when xi element type matches T (zero conversion)
-function (itp::LinearInterpolant{T,X,Y})(xi::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat, X, Y}
-    @boundscheck _check_domain(itp.x, xi, itp.mode)
-    output = Vector{T}(undef, length(xi))
+# Optimized path when xq element type matches T (zero conversion)
+function (itp::LinearInterpolant{T,X,Y})(xq::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat, X, Y}
+    @boundscheck _check_domain(itp.x, xq, itp.mode)
+    output = Vector{T}(undef, length(xq))
     @_dispatch_deriv deriv => op begin
-        @inbounds for i in eachindex(xi, output)
-            output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode, op)
+        @inbounds for i in eachindex(xq, output)
+            output[i] = linear_interp(itp.x, itp.y, xq[i], itp.mode, op)
         end
     end
     return output
 end
 
 # In-place vector call with deriv keyword support - zero allocation
-function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xi::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat, X, Y}
-    @assert length(output) == length(xi) "output length must match xi length"
-    @boundscheck _check_domain(itp.x, xi, itp.mode)
+function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xq::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat, X, Y}
+    @assert length(output) == length(xq) "output length must match xq length"
+    @boundscheck _check_domain(itp.x, xq, itp.mode)
     @_dispatch_deriv deriv => op begin
-        @inbounds for i in eachindex(xi, output)
-            output[i] = linear_interp(itp.x, itp.y, xi[i], itp.mode, op)
+        @inbounds for i in eachindex(xq, output)
+            output[i] = linear_interp(itp.x, itp.y, xq[i], itp.mode, op)
         end
     end
     return output
 end
 
 # In-place with type conversion and deriv keyword
-function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, X, Y, S<:Real}
-    @assert length(output) == length(xi) "output length must match xi length"
-    xi_typed = T.(xi)
+function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xq::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, X, Y, S<:Real}
+    @assert length(output) == length(xq) "output length must match xq length"
+    xi_typed = T.(xq)
     @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi_typed, output)

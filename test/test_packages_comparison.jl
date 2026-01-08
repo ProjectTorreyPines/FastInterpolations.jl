@@ -4,7 +4,11 @@ import DataInterpolations as DI
 import Interpolations as Itp
 using Random
 
-const APPROX_REL_TOLERANCCE = 1e-15
+# 1e-14 instead of 1e-15: accounts for FMA (fused multiply-add) differences
+# between Julia versions (e.g., 1.10 LTS vs latest) that cause last-bit variations.
+# Note: FMA is numerically more accurate (single rounding vs two), but produces
+# slightly different results than separate multiply-then-add operations.
+const APPROX_REL_TOLERANCCE = 1e-14
 
 @testset "Package Comparison Tests" begin
 

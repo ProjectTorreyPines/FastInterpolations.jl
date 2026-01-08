@@ -5,10 +5,10 @@
 
 Find interpolation interval using O(1) direct calculation for uniform grids.
 
-Returns `(idx, x0, x1)` where:
+Returns `(idx, xL, xR)` where:
 - `idx`: interval index in [1, length(x)-1]
-- `x0`: left boundary value x[idx]
-- `x1`: right boundary value x[idx+1]
+- `xL`: left boundary value x[idx]
+- `xR`: right boundary value x[idx+1]
 
 # Preconditions (caller must ensure)
 - `xi` must be validated by `_check_domain` (in [x_min, x_max] or wrapped)
@@ -30,9 +30,9 @@ the preconditions and the final `clamp` which handles floating-point edge cases.
     idx = clamp(unsafe_trunc(Int, (xi - x_min) / dx + 1 + 10*eps(FT)), 1, n - 1)
 
     # Direct calculation to avoid expensive TwicePrecision indexing
-    x0 = x_min + (idx - 1) * dx
-    x1 = x0 + dx
-    return idx, x0, x1
+    xL = x_min + (idx - 1) * dx
+    xR = xL + dx
+    return idx, xL, xR
 end
 
 """
@@ -40,10 +40,10 @@ end
 
 Find interpolation interval using O(log n) binary search for non-uniform grids.
 
-Returns `(idx, x0, x1)` where:
+Returns `(idx, xL, xR)` where:
 - `idx`: interval index in [1, length(x)-1]
-- `x0`: left boundary value x[idx]
-- `x1`: right boundary value x[idx+1]
+- `xL`: left boundary value x[idx]
+- `xR`: right boundary value x[idx+1]
 """
 @inline function _find_interval_with_bounds(
     x::AbstractVector{FT},
@@ -72,8 +72,8 @@ Returns `(idx, x0, x1)` where:
     end
 
     # Return idx and boundary values for alpha calculation
-    @inbounds x0, x1 = x[idx], x[idx + 1]
-    return idx, x0, x1
+    @inbounds xL, xR = x[idx], x[idx + 1]
+    return idx, xL, xR
 end
 
 # ========================================
@@ -372,7 +372,7 @@ ensuring type stability and enabling union-splitting optimization.
 # Example
 ```julia
 @_dispatch_side side => sv begin
-    _constant_kernel(op, y_left, y_right, h, dt1, sv)
+    _constant_kernel(op, y_left, y_right, h, dL, sv)
 end
 ```
 
@@ -381,7 +381,7 @@ Expands to:
 let _side = side
     if _side === :nearest
         sv = Val(:nearest)
-        _constant_kernel(op, y_left, y_right, h, dt1, sv)
+        _constant_kernel(op, y_left, y_right, h, dL, sv)
     elseif _side === :left
         ...
     end

@@ -23,8 +23,8 @@ end
 @inline function _set_first_row!(
     d_diag::AbstractVector{T}, du::AbstractVector{T}, ::Deriv1{T}, h::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    d_diag[1] = 2 * h[2]
-    du[1] = h[2]
+    d_diag[1] = 2 * h[1]
+    du[1] = h[1]
     return nothing
 end
 
@@ -41,8 +41,8 @@ end
 @inline function _set_last_row!(
     dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv1{T}, h::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    dl[end] = h[end-1]
-    d_diag[end] = 2 * h[end-1]
+    dl[end] = h[end]
+    d_diag[end] = 2 * h[end]
     return nothing
 end
 
@@ -58,39 +58,38 @@ end
 
     period = last(x) - first(x)
 
-    # Compute grid spacing h with padding for consistent indexing
-    # Layout: [0, h₁, h₂, ..., hₙ, 0] where hᵢ = x[i+1] - x[i]
-    # - h[1] = 0 (left sentinel, unused)
-    # - h[i+1] = hᵢ for i = 1..n
-    # - h[end] = 0 (right sentinel, unused)
-    # This ensures h[end-1] = hₙ (last actual spacing)
-    h = Vector{T}(undef, n + 2)
-    h[1] = zero(T)
-    h[end] = zero(T)
+    # Compute grid spacing h and precomputed reciprocals inv_h
+    # Standard indexing: h[i] = x[i+1] - x[i] for i = 1..n
+    # Fused loop for cache efficiency
+    h = Vector{T}(undef, n)
+    inv_h = Vector{T}(undef, n)
     @inbounds for i in 1:n
-        h[i+1] = x[i+1] - x[i]
+        val = x[i+1] - x[i]
+        h[i] = val
+        inv_h[i] = inv(val)
     end
 
     # Build modified tridiagonal matrix A' for Sherman-Morrison
-    α = h[n+1]
+    # Standard indexing: h[i] = x[i+1] - x[i]
+    α = h[n]
 
     dl = acquire!(pool, T, n - 1)
     d_diag = acquire!(pool, T, n)
     du = acquire!(pool, T, n - 1)
 
-    d_diag[1] = h[n+1] + 2 * h[2]
+    d_diag[1] = h[n] + 2 * h[1]
 
     @inbounds for i in 2:n-1
-        dl[i-1] = h[i]
-        d_diag[i] = 2 * (h[i] + h[i+1])
-        du[i-1] = h[i+1]
+        dl[i-1] = h[i-1]
+        d_diag[i] = 2 * (h[i-1] + h[i])
+        du[i-1] = h[i]
     end
 
-    dl[n-1] = h[n]
-    d_diag[n] = 2 * h[n] + h[n+1]
+    dl[n-1] = h[n-1]
+    d_diag[n] = 2 * h[n-1] + h[n]
 
     if n > 1
-        du[n-1] = h[n]
+        du[n-1] = h[n-1]
     end
 
     tA_prime = Tridiagonal(dl, d_diag, du)
@@ -105,8 +104,7 @@ end
     # Workspaces (d, z, y_temp) are now allocated from task-local pools
     bc_config = PeriodicData(q, period)
 
-    # Store full h array (see layout comment above) - required for RHS computation
-    return CubicSplineCache(x, h, lu_factor, bc_config)
+    return CubicSplineCache(x, h, inv_h, lu_factor, bc_config)
 end
 
 """
@@ -120,15 +118,15 @@ Uses type dispatch for zero-overhead specialization.
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     n = length(x) - 1
 
-    # Compute grid spacing h with padding for consistent indexing
-    # Layout: [0, h₁, h₂, ..., hₙ, 0] where hᵢ = x[i+1] - x[i]
-    # - h[1] = 0 (left sentinel), h[i+1] = hᵢ, h[end] = 0 (right sentinel)
-    # This ensures h[end-1] = hₙ (last actual spacing)
-    h = Vector{T}(undef, n + 2)
-    h[1] = zero(T)
-    h[end] = zero(T)
+    # Compute grid spacing h and precomputed reciprocals inv_h
+    # Standard indexing: h[i] = x[i+1] - x[i] for i = 1..n
+    # Fused loop for cache efficiency
+    h = Vector{T}(undef, n)
+    inv_h = Vector{T}(undef, n)
     @inbounds for i in 1:n
-        h[i+1] = x[i+1] - x[i]
+        val = x[i+1] - x[i]
+        h[i] = val
+        inv_h[i] = inv(val)
     end
 
     # Build tridiagonal matrix A
@@ -141,10 +139,11 @@ Uses type dispatch for zero-overhead specialization.
     _set_last_row!(dl, d_diag, right_bc, h)
 
     # Interior rows (same for all BC types)
+    # Standard indexing: h[i] = x[i+1] - x[i]
     @inbounds for i in 2:n
-        dl[i-1] = h[i]
-        d_diag[i] = 2 * (h[i] + h[i+1])
-        du[i] = h[i+1]
+        dl[i-1] = h[i-1]
+        d_diag[i] = 2 * (h[i-1] + h[i])
+        du[i] = h[i]
     end
 
     tA = Tridiagonal(dl, d_diag, du)
@@ -153,8 +152,7 @@ Uses type dispatch for zero-overhead specialization.
     # Workspaces (d, z) are now allocated from task-local pools
     bc_config = BCPair(left_bc, right_bc)
 
-    # Store full h array (see layout comment above) - required for RHS computation
-    return CubicSplineCache(x, h, lu_factor, bc_config)
+    return CubicSplineCache(x, h, inv_h, lu_factor, bc_config)
 end
 
 # ========================================
@@ -177,7 +175,7 @@ end
 @inline function _compute_rhs_first!(
     d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, h::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    d[1] = 6 * ((y[2] - y[1]) / h[2] - bc.val)
+    d[1] = 6 * ((y[2] - y[1]) / h[1] - bc.val)
     return nothing
 end
 
@@ -189,11 +187,11 @@ end
     return nothing
 end
 
-# Last element - Deriv1: d[end] = 6[S'(x_end) - (y_end - y_{end-1}) / h_{end-1}]
+# Last element - Deriv1: d[end] = 6[S'(x_end) - (y_end - y_{end-1}) / h_end]
 @inline function _compute_rhs_last!(
     d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, h::AbstractVector{T}
 ) where {T<:AbstractFloat}
-    d[end] = 6 * (bc.val - (y[end] - y[end-1]) / h[end-1])
+    d[end] = 6 * (bc.val - (y[end] - y[end-1]) / h[end])
     return nothing
 end
 
@@ -206,8 +204,9 @@ Compute RHS vector for generic derivative BC system in-place.
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     n = length(y) - 1
     _compute_rhs_first!(d, bc_config.left, y, h)
+    # Standard indexing: h[i] = x[i+1] - x[i]
     @inbounds for i in 2:n
-        d[i] = 6 * ((y[i+1] - y[i]) / h[i+1] - (y[i] - y[i-1]) / h[i])
+        d[i] = 6 * ((y[i+1] - y[i]) / h[i] - (y[i] - y[i-1]) / h[i-1])
     end
     _compute_rhs_last!(d, bc_config.right, y, h)
     return nothing
@@ -221,13 +220,14 @@ end
 @inline function compute_rhs_periodic!(d::AbstractVector{T}, y::AbstractVector{T}, h::AbstractVector{T}) where {T}
     n = length(y) - 1
 
-    @inbounds d[1] = 6 * (y[2] - y[1]) / h[2] - 6 * (y[1] - y[end-1]) / h[n+1]
+    # Standard indexing: h[i] = x[i+1] - x[i]
+    @inbounds d[1] = 6 * (y[2] - y[1]) / h[1] - 6 * (y[1] - y[end-1]) / h[n]
 
     @inbounds for i in 2:n-1
-        d[i] = 6 * (y[i+1] - y[i]) / h[i+1] - 6 * (y[i] - y[i-1]) / h[i]
+        d[i] = 6 * (y[i+1] - y[i]) / h[i] - 6 * (y[i] - y[i-1]) / h[i-1]
     end
 
-    @inbounds d[n] = 6 * (y[end] - y[end-1]) / h[n+1] - 6 * (y[end-1] - y[end-2]) / h[n]
+    @inbounds d[n] = 6 * (y[end] - y[end-1]) / h[n] - 6 * (y[end-1] - y[end-2]) / h[n-1]
 
     return nothing
 end
@@ -251,7 +251,7 @@ end
     # y_temp is now passed as parameter (from task-local pool)
     ldiv!(y_temp, cache.lu_factor, d_workspace)
 
-    α = cache.h[n+1]
+    α = cache.h[n]
     q = cache.bc_config.q
 
     vTy = α * (y_temp[1] + y_temp[n])

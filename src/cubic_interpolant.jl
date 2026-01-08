@@ -25,7 +25,7 @@
 @inline function (itp::CubicInterpolant{T})(xi::T; deriv::Int=0) where {T<:AbstractFloat}
     @boundscheck _check_domain(itp.cache.x, xi, itp.extrap)
     @_dispatch_deriv deriv => op begin
-        _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.z, xi, itp.extrap, op)
+        _eval_with_bc(itp.cache, itp.y, itp.cache.h, itp.cache.inv_h, itp.z, xi, itp.extrap, op)
     end
 end
 

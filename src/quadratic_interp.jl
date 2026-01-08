@@ -63,8 +63,8 @@ Uses interval clamping for extension extrapolation (matches cubic pattern).
 ) where {FT<:AbstractFloat}
     # _find_interval_with_bounds clamps idx to [1, n-1]
     # This handles both normal evaluation and extension extrapolation
-    idx, x0, _ = _find_interval_with_bounds(x, xi)
-    dt = xi - x0
+    idx, xL, _ = _find_interval_with_bounds(x, xi)
+    dt = xi - xL
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 

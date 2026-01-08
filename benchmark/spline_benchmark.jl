@@ -232,21 +232,24 @@ function run_benchmark()
     @printf("  Evaluation points      = %d\n", N_EVAL_POINTS)
     println()
 
-    # Generate test data
+    # Generate test data: psi_grid (uniform), data[psi, m1, m2]
     psi_grid, data = generate_test_data(NPSI, MPERT)
     psi_values = generate_evaluation_points(N_EVAL_POINTS)
+    # Total individual spline evaluations: N_EVAL_POINTS × (MPERT × MPERT splines)
     total_spline_evals = N_EVAL_POINTS * MPERT * MPERT
 
     @printf("Grid spacing: %.4e (uniform)\n", step(psi_grid))
     println()
 
     # Pre-allocate output arrays
+    # A: Single evaluation output - stores mpert×mpert matrix for one psi value (scalar API)
     A = Matrix{Float64}(undef, MPERT, MPERT)
+    # A_all: Batch evaluation output - stores all evaluations: A_all[i,m1,m2] = spline[m1,m2](psi_values[i])
     A_all = Array{Float64,3}(undef, N_EVAL_POINTS, MPERT, MPERT)
 
     # Results storage
-    results = Dict{String,Any}()
-    final_matrices = Dict{String,Matrix{Float64}}()
+    results = Dict{String,Any}()                    # Benchmark timing results per package
+    final_matrices = Dict{String,Matrix{Float64}}() # Final output for numerical consistency check
 
     # -------------------------------------------------------------------------
     # Interpolations.jl

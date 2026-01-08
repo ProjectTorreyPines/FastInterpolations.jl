@@ -21,17 +21,18 @@
 
     dL = xi - xL   # distance from Left endpoint
     dR = xR - xi   # distance from Right endpoint
-    h_i = _get_h(spacing, idx)
-    inv_h_i = _get_inv_h(spacing, idx)
+
+    h = _get_h(spacing, idx)
+    inv_h = _get_inv_h(spacing, idx)
 
     @inbounds begin
-        z_i = z[idx]
-        z_ip1 = z[idx+1]
-        y_i = y[idx]
-        y_ip1 = y[idx+1]
+        zL = z[idx]
+        zR = z[idx+1]
+        yL = y[idx]
+        yR = y[idx+1]
     end
 
-    return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dL, dR)
+    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
 "Evaluate periodic cubic spline at a single point with operation dispatch."
@@ -49,17 +50,17 @@ end
 
     dL = xi_wrapped - xL   # distance from Left endpoint
     dR = xR - xi_wrapped   # distance from Right endpoint
-    h_i = _get_h(spacing, idx)
-    inv_h_i = _get_inv_h(spacing, idx)
+    h = _get_h(spacing, idx)
+    inv_h = _get_inv_h(spacing, idx)
 
     @inbounds begin
-        z_i = z[idx]
-        z_ip1 = z[idx+1]
-        y_i = y[idx]
-        y_ip1 = y[idx+1]
+        zL = z[idx]
+        zR = z[idx+1]
+        yL = y[idx]
+        yR = y[idx+1]
     end
 
-    return _cubic_kernel(op, z_i, z_ip1, y_i, y_ip1, h_i, inv_h_i, dL, dR)
+    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
 # ========================================

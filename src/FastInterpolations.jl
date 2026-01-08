@@ -11,6 +11,9 @@ include("ops.jl")
 # Boundary condition types
 include("bc_types.jl")
 
+# Grid spacing types (ScalarSpacing for Range, VectorSpacing for Vector)
+include("grid_spacing.jl")
+
 # Shared internal utilities
 include("utils.jl")
 

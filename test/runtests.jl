@@ -15,6 +15,7 @@ if !isempty(ARGS)
     end
 else
     # Default behavior: run all tests
+    include("test_grid_spacing.jl")
     include("test_constant.jl")
     include("test_linear.jl")
     include("test_quadratic.jl")

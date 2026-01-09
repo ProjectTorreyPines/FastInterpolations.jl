@@ -352,4 +352,60 @@
         end
     end
 
+    @testset "Vector evaluation - in-place" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y; extrap=:extension)
+
+        xq = [0.15, 0.35, 0.5, 0.75]
+        aq_vec = FI._anchor_query(x, xq)
+        output = Vector{Float64}(undef, 4)
+
+        result = itp(output, aq_vec)
+
+        @test result === output
+        for (i, xq_i) in enumerate(xq)
+            @test output[i] ≈ itp(xq_i) atol=1e-14
+        end
+    end
+
+    @testset "Vector evaluation - derivatives" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y; extrap=:extension)
+
+        xq = [0.15, 0.5, 0.85]
+        aq_vec = FI._anchor_query(x, xq)
+
+        for deriv in [1, 2]
+            vals = itp(aq_vec; deriv=deriv)
+            for (i, xq_i) in enumerate(xq)
+                @test vals[i] ≈ itp(xq_i; deriv=deriv) atol=1e-14
+            end
+        end
+    end
+
+    @testset "Vector evaluation - length mismatch" begin
+        x = collect(range(0.0, 1.0, 101))
+        itp = cubic_interp(x, sin.(x))
+
+        aq_vec = FI._anchor_query(x, [0.15, 0.35, 0.5])
+        output = Vector{Float64}(undef, 2)  # Wrong size
+
+        @test_throws AssertionError itp(output, aq_vec)
+    end
+
+    @testset "Vector evaluation - extrap :constant derivatives" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y; extrap=:constant)
+
+        xq = [-0.5, 0.5, 1.5]
+        aq_vec = FI._anchor_query(x, xq)
+
+        derivs = itp(aq_vec; deriv=1)
+        @test derivs[1] == 0.0
+        @test derivs[3] == 0.0
+    end
+
 end

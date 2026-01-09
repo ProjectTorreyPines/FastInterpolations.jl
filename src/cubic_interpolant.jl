@@ -235,6 +235,29 @@ function (itp::CubicInterpolant{T})(
     return output
 end
 
+"""
+    (itp::CubicInterpolant{T})(output::AbstractVector{T}, aq::AbstractVector{<:_CubicAnchoredQuery{T}}; deriv::Int=0) -> AbstractVector{T}
+
+Evaluate cubic spline at multiple anchored query points (in-place, zero-allocation).
+
+# Example
+```julia
+output = Vector{Float64}(undef, length(aq_vec))
+itp(output, aq_vec; deriv=1)  # Zero allocation after warmup
+```
+"""
+function (itp::CubicInterpolant{T})(
+    output::AbstractVector{T},
+    aq::AbstractVector{<:_CubicAnchoredQuery{T}};
+    deriv::Int=0
+) where {T<:AbstractFloat}
+    @assert length(output) == length(aq) "output length ($(length(output))) must match aq length ($(length(aq)))"
+    @_dispatch_deriv deriv => op begin
+        _eval_anchored_vector_loop!(output, itp, aq, op)
+    end
+    return output
+end
+
 # ========================================
 # Internal Build Helpers
 # ========================================

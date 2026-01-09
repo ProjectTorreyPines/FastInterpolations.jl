@@ -144,9 +144,46 @@ function _anchor_query(x::AbstractVector{T}, xq::T; periodic::Bool=false) where 
     return _anchor_query_impl(x, xq, periodic)
 end
 
-# Real wrapper for convenience
+# Real wrapper for convenience (scalar)
 function _anchor_query(x::AbstractVector{T}, xq::S; periodic::Bool=false) where {T<:AbstractFloat, S<:Real}
     _anchor_query(x, T(xq); periodic=periodic)
+end
+
+"""
+    _anchor_query(x::AbstractVector{T}, xq::AbstractVector; periodic::Bool=false) -> Vector{_CubicAnchoredQuery{T}}
+
+Create anchored queries for multiple query points.
+
+Internal API: No runtime grid validation. Caller must ensure `x` matches
+the grid used for interpolant construction.
+
+# Arguments
+- `x`: Grid points (must match interpolant's grid)
+- `xq`: Query points (any Real type, auto-promoted to T)
+- `periodic`: If true, wrap query points to domain before anchoring
+
+# Example
+```julia
+x = collect(range(0.0, 1.0, 101))
+aq_vec = _anchor_query(x, [0.15, 0.35, 0.75])
+
+itp1 = cubic_interp(x, sin.(2π .* x))
+itp2 = cubic_interp(x, cos.(2π .* x))
+
+vals1 = itp1(aq_vec)  # Batch evaluation
+vals2 = itp2(aq_vec)  # Reuse same anchors
+```
+"""
+function _anchor_query(
+    x::AbstractVector{T},
+    xq::AbstractVector{S};
+    periodic::Bool=false
+) where {T<:AbstractFloat, S<:Real}
+    output = Vector{_CubicAnchoredQuery{T}}(undef, length(xq))
+    @inbounds for k in eachindex(xq)
+        output[k] = _anchor_query_impl(x, T(xq[k]), periodic)
+    end
+    return output
 end
 
 """

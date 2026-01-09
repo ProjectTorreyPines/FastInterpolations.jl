@@ -257,4 +257,42 @@
         @test_throws ArgumentError itp(aq; deriv=3)
     end
 
+    # ========================================
+    # Vector Anchored Queries
+    # ========================================
+
+    @testset "Vector anchor construction" begin
+        x = collect(range(0.0, 1.0, 101))
+        xq = [0.15, 0.35, 0.5, 0.75]
+
+        aq_vec = FI._anchor_query(x, xq)
+
+        @test length(aq_vec) == 4
+        @test all(aq -> aq isa FI._CubicAnchoredQuery{Float64}, aq_vec)
+        @test all(aq -> aq.side == 0x00, aq_vec)  # All inside domain
+    end
+
+    @testset "Vector anchor - type promotion" begin
+        x = collect(range(0.0, 1.0, 101))
+        xq_f32 = Float32[0.15, 0.35, 0.5]
+        aq_vec = FI._anchor_query(x, xq_f32)
+
+        @test all(aq -> aq isa FI._CubicAnchoredQuery{Float64}, aq_vec)
+    end
+
+    @testset "Vector anchor - periodic wrapping" begin
+        x = collect(range(0.0, 1.0, 101))
+        xq = [-0.3, 1.3, 2.5]
+        aq_vec = FI._anchor_query(x, xq; periodic=true)
+
+        @test all(aq -> aq.side == 0x00, aq_vec)  # All wrapped to inside
+    end
+
+    @testset "Vector anchor - empty input" begin
+        x = collect(range(0.0, 1.0, 101))
+        aq_vec = FI._anchor_query(x, Float64[])
+
+        @test length(aq_vec) == 0
+    end
+
 end

@@ -213,3 +213,44 @@ Internal implementation of anchor_query with concrete Op type.
 
     return CubicAnchoredQuery{T,Op}(grid_id, idx, xq, side, w)
 end
+
+# ========================================
+# Grid Validation
+# ========================================
+
+"""
+    GridMismatchError <: Exception
+
+Thrown when a CubicAnchoredQuery is used with an interpolant built from a different grid.
+
+# Fields
+- `anchor_grid_id::Tuple{Int,UInt}`: Grid identity from the anchor
+- `interp_grid_id::Tuple{Int,UInt}`: Grid identity from the interpolant
+"""
+struct GridMismatchError <: Exception
+    anchor_grid_id::Tuple{Int,UInt}
+    interp_grid_id::Tuple{Int,UInt}
+end
+
+function Base.showerror(io::IO, e::GridMismatchError)
+    print(io, "GridMismatchError: anchor was built for grid with ")
+    print(io, "(length=$(e.anchor_grid_id[1]), hash=$(e.anchor_grid_id[2])) ")
+    print(io, "but interpolant has ")
+    print(io, "(length=$(e.interp_grid_id[1]), hash=$(e.interp_grid_id[2]))")
+end
+
+"""
+    _validate_grid(aq::CubicAnchoredQuery, itp::CubicInterpolant) -> Nothing
+
+Validate that the anchor was built for the same grid as the interpolant.
+
+Throws `GridMismatchError` if the grid identities don't match.
+
+# Performance
+This is an O(1) check (two integer comparisons).
+When used with `@boundscheck`, it can be elided in `@inbounds` blocks.
+"""
+@inline function _validate_grid(aq::CubicAnchoredQuery, itp::CubicInterpolant)
+    aq.grid_id == itp.grid_id && return nothing
+    throw(GridMismatchError(aq.grid_id, itp.grid_id))
+end

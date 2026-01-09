@@ -79,6 +79,74 @@
         @test itp1.grid_id == FastInterpolations._grid_id(x)
     end
 
+    # ========================================
+    # Phase 3: Grid Validation
+    # ========================================
+
+    @testset "GridMismatchError type" begin
+        # GridMismatchError should be defined and be an Exception
+        @test isdefined(FastInterpolations, :GridMismatchError)
+        @test FastInterpolations.GridMismatchError <: Exception
+    end
+
+    @testset "_validate_grid matching grids" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+
+        itp = cubic_interp(x, y)
+        aq = anchor_query(x, 0.5)
+
+        # Same grid → validation passes (returns nothing)
+        @test FastInterpolations._validate_grid(aq, itp) === nothing
+    end
+
+    @testset "_validate_grid different length" begin
+        x1 = collect(range(0.0, 1.0, 101))
+        x2 = collect(range(0.0, 1.0, 51))  # different length
+
+        itp = cubic_interp(x1, sin.(2π .* x1))
+        aq = anchor_query(x2, 0.5)
+
+        # Different length → GridMismatchError
+        @test_throws FastInterpolations.GridMismatchError FastInterpolations._validate_grid(aq, itp)
+    end
+
+    @testset "_validate_grid different content same length" begin
+        x1 = collect(range(0.0, 1.0, 101))
+        x2 = collect(range(0.0, 2.0, 101))  # same length, different content
+
+        itp = cubic_interp(x1, sin.(2π .* x1))
+        aq = anchor_query(x2, 0.5)
+
+        # Different hash → GridMismatchError
+        @test_throws FastInterpolations.GridMismatchError FastInterpolations._validate_grid(aq, itp)
+    end
+
+    @testset "GridMismatchError message quality" begin
+        x1 = collect(range(0.0, 1.0, 101))
+        x2 = collect(range(0.0, 2.0, 51))  # different length AND content
+
+        itp = cubic_interp(x1, sin.(2π .* x1))
+        aq = anchor_query(x2, 0.5)
+
+        # Capture the error and check message
+        err = try
+            FastInterpolations._validate_grid(aq, itp)
+            nothing
+        catch e
+            e
+        end
+
+        @test err isa FastInterpolations.GridMismatchError
+        @test err.anchor_grid_id == aq.grid_id
+        @test err.interp_grid_id == itp.grid_id
+
+        # Error message should contain grid info
+        msg = sprint(showerror, err)
+        @test occursin("GridMismatchError", msg)
+        @test occursin("length", msg)
+    end
+
     @testset "CubicAnchoredQuery struct" begin
         x = collect(range(0.0, 1.0, 101))
         xq = 0.35

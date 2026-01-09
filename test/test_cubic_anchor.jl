@@ -444,4 +444,33 @@
         @test_throws ArgumentError anchor_query(x, 0.5; deriv=3)
     end
 
+    # ========================================
+    # Phase 5: Integration & Documentation
+    # ========================================
+
+    @testset "Public API exports" begin
+        # anchor_query should be exported (no module prefix needed)
+        @test isdefined(FastInterpolations, :anchor_query)
+        @test isdefined(Main, :anchor_query)  # available in test scope
+
+        # CubicAnchoredQuery type should be exported
+        @test isdefined(FastInterpolations, :CubicAnchoredQuery)
+        @test isdefined(Main, :CubicAnchoredQuery)
+
+        # EvalOp types should be exported for type checking
+        @test isdefined(FastInterpolations, :AbstractEvalOp)
+        @test isdefined(FastInterpolations, :EvalValue)
+        @test isdefined(FastInterpolations, :EvalDeriv1)
+        @test isdefined(FastInterpolations, :EvalDeriv2)
+        @test isdefined(Main, :EvalValue)
+    end
+
+    @testset "Documentation exists" begin
+        # anchor_query should have a docstring
+        doc_str = string(@doc anchor_query)
+        @test occursin("anchor_query", doc_str)
+        @test occursin("Arguments", doc_str) || occursin("xq", doc_str)
+        @test occursin("Example", doc_str)
+    end
+
 end

@@ -408,4 +408,49 @@
         @test derivs[3] == 0.0
     end
 
+    @testset "Vector evaluation - zero allocation" begin
+        x = collect(range(0.0, 1.0, 101))
+        itp = cubic_interp(x, sin.(x))
+
+        xq = collect(range(0.1, 0.9, 50))
+        aq_vec = FI._anchor_query(x, xq)
+        output = similar(xq)
+
+        # Warmup
+        itp(output, aq_vec)
+
+        allocs = @allocated itp(output, aq_vec)
+        @test allocs == 0
+    end
+
+    @testset "Vector evaluation - multi-interpolant reuse" begin
+        x = collect(range(0.0, 1.0, 101))
+
+        itp1 = cubic_interp(x, sin.(2π .* x))
+        itp2 = cubic_interp(x, cos.(2π .* x))
+        itp3 = cubic_interp(x, exp.(-3 .* x))
+
+        xq = [0.15, 0.35, 0.5, 0.75]
+        aq_vec = FI._anchor_query(x, xq)  # Anchors computed once
+
+        @test itp1(aq_vec) ≈ [itp1(q) for q in xq] atol=1e-14
+        @test itp2(aq_vec) ≈ [itp2(q) for q in xq] atol=1e-14
+        @test itp3(aq_vec) ≈ [itp3(q) for q in xq] atol=1e-14
+    end
+
+    @testset "Vector evaluation - periodic wrapping" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y; extrap=:wrap)
+
+        xq = [-0.3, 1.3, 2.5]
+        aq_vec = FI._anchor_query(x, xq; periodic=true)
+        vals = itp(aq_vec)
+
+        for (i, xq_i) in enumerate(xq)
+            wrapped = mod(xq_i, 1.0)
+            @test vals[i] ≈ itp(wrapped) atol=1e-14
+        end
+    end
+
 end

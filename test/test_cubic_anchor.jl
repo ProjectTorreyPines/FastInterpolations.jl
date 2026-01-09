@@ -4,6 +4,81 @@
     # Phase 1: Core Types & Weight Computation
     # ========================================
 
+    # ========================================
+    # Phase 2: CubicInterpolant Grid ID
+    # ========================================
+
+    @testset "CubicInterpolant has grid_id field" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+
+        itp = cubic_interp(x, y)
+
+        # grid_id field exists and matches _grid_id(x)
+        @test hasfield(CubicInterpolant, :grid_id)
+        @test itp.grid_id == FastInterpolations._grid_id(x)
+        @test itp.grid_id isa Tuple{Int, UInt}
+    end
+
+    @testset "Same grid produces same grid_id" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        y3 = exp.(-3 .* x)
+
+        itp1 = cubic_interp(x, y1)
+        itp2 = cubic_interp(x, y2)
+        itp3 = cubic_interp(x, y3)
+
+        # All three should have identical grid_id
+        @test itp1.grid_id == itp2.grid_id
+        @test itp2.grid_id == itp3.grid_id
+    end
+
+    @testset "Different grids produce different grid_id" begin
+        x1 = collect(range(0.0, 1.0, 101))
+        x2 = collect(range(0.0, 2.0, 101))  # different range
+        x3 = collect(range(0.0, 1.0, 51))   # different length
+        y = sin.(2π .* x1)
+
+        itp1 = cubic_interp(x1, y)
+        itp2 = cubic_interp(x2, sin.(π .* x2))
+        itp3 = cubic_interp(x3, sin.(2π .* x3))
+
+        @test itp1.grid_id != itp2.grid_id
+        @test itp1.grid_id != itp3.grid_id
+    end
+
+    @testset "Grid ID with different BC types" begin
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+        y[end] = y[1]  # periodic
+
+        # NaturalBC
+        itp_natural = cubic_interp(x, y; bc=NaturalBC())
+
+        # PeriodicBC
+        itp_periodic = cubic_interp(x, y; bc=PeriodicBC())
+
+        # Same grid → same grid_id
+        @test itp_natural.grid_id == itp_periodic.grid_id
+    end
+
+    @testset "Grid ID with cache reuse" begin
+        x = collect(range(0.0, 1.0, 101))
+        cache = CubicSplineCache(x)
+
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        itp1 = cubic_interp(cache, y1)
+        itp2 = cubic_interp(cache, y2)
+
+        # Both should have same grid_id (from cache's grid)
+        @test itp1.grid_id == itp2.grid_id
+        @test itp1.grid_id == FastInterpolations._grid_id(x)
+    end
+
     @testset "CubicAnchoredQuery struct" begin
         x = collect(range(0.0, 1.0, 101))
         xq = 0.35

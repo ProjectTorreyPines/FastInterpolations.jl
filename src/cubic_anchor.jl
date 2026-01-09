@@ -6,23 +6,8 @@
 # search and geometry setup for repeated evaluations.
 #
 # Include order: ops.jl → ... → cubic_types.jl → cubic_anchor.jl → cubic_interpolant.jl
-
-# ========================================
-# Grid Identity
-# ========================================
-
-"""
-    _grid_id(x::AbstractVector) -> Tuple{Int, UInt}
-
-Compute a grid identity token for O(1) validation.
-
-Returns `(length(x), hash(x))` which uniquely identifies the grid content.
-Two vectors with identical content produce identical grid IDs.
-
-# Thread-Safety
-This function is pure and thread-safe.
-"""
-@inline _grid_id(x::AbstractVector) = (length(x), hash(x))
+#
+# Note: _grid_id(x) is defined in utils.jl (shared with CubicInterpolant)
 
 # ========================================
 # CubicAnchoredQuery Type

@@ -250,6 +250,27 @@ No-op vector domain check for extrapolation modes other than `:none`.
 @inline _check_domain(::AbstractVector{FT}, ::AbstractVector{FT}, ::Val) where {FT<:AbstractFloat} = nothing
 
 # ========================================
+# Grid Identity
+# ========================================
+
+"""
+    _grid_id(x::AbstractVector) -> Tuple{Int, UInt}
+
+Compute a grid identity token for O(1) validation.
+
+Returns `(length(x), hash(x))` which uniquely identifies the grid content.
+Two vectors with identical content produce identical grid IDs.
+
+# Thread-Safety
+This function is pure and thread-safe.
+
+# Usage
+Used by `CubicInterpolant` and `CubicAnchoredQuery` to validate that an
+anchor was built for the same grid as the interpolant.
+"""
+@inline _grid_id(x::AbstractVector) = (length(x), hash(x))
+
+# ========================================
 # Validation Utilities
 # ========================================
 #

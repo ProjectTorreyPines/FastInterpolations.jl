@@ -96,6 +96,7 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 - `y::Vector{T}`: y-values (function values at grid points)
 - `z::Vector{T}`: Pre-computed second derivative coefficients (solves system once!)
 - `extrap::ExtrapVal`: Extrapolation mode (union-split for efficient dispatch)
+- `grid_id::Tuple{Int,UInt}`: Grid identity token (length, hash) for O(1) anchor validation
 
 # Usage
 ```julia
@@ -109,12 +110,14 @@ val = itp(0.5)                              # scalar (zero-allocation)
 - Each scalar call just evaluates cubic polynomial (zero-allocation!)
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Extrapolation mode uses union-splitting for near-zero overhead dispatch
+- Grid ID enables O(1) validation for anchored queries (see `anchor_query`)
 """
 struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T}}
     cache::C
     y::Vector{T}
     z::Vector{T}  # Pre-computed second derivative coefficients
     extrap::ExtrapVal  # Extrapolation mode (concrete union for union-splitting)
+    grid_id::Tuple{Int,UInt}  # Grid identity for anchor validation
 
     function CubicInterpolant(
         cache::C,
@@ -124,10 +127,12 @@ struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T}}
     ) where {T<:AbstractFloat, C<:CubicSplineCache{T}}
         @assert length(cache.x) == length(y) "cache grid and y must have same length"
         @assert length(cache.x) == length(z) "z coefficients must match grid length"
+        # Compute grid identity for anchor validation
+        grid_id = _grid_id(cache.x)
         # Always copy to ensure immutability: once constructed, the interpolant
         # owns its data and always returns identical results for the same query.
         # Without copying, external modifications to y or cache reuse could
         # silently corrupt results.
-        new{T,C}(cache, Vector{T}(y), Vector{T}(z), extrap)
+        new{T,C}(cache, Vector{T}(y), Vector{T}(z), extrap, grid_id)
     end
 end

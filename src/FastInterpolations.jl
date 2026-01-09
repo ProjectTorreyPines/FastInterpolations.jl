@@ -49,7 +49,6 @@ include("derivative_view.jl")
 export linear_interp, linear_interp!, LinearInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
-export anchor_query, CubicAnchoredQuery
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant
 
@@ -61,7 +60,7 @@ export Left, Right
 # Derivative view functions for interpolants
 export deriv1, deriv2
 
-# Operation types (for CubicAnchoredQuery type checking)
+# Operation types (for derivative dispatch)
 export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
 
 end # module

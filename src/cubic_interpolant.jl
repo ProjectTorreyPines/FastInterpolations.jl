@@ -71,6 +71,99 @@ function (itp::CubicInterpolant{T})(output::AbstractVector, xi::AbstractVector{S
 end
 
 # ========================================
+# Anchored Query Evaluation
+# ========================================
+
+"""
+    (itp::CubicInterpolant)(aq::CubicAnchoredQuery) -> T
+
+Evaluate cubic spline using precomputed anchor weights.
+
+This is the ultra-fast evaluation path that skips interval search and
+geometry computation. The anchor must have been built for the same grid
+as the interpolant.
+
+# Performance
+- 4 loads (yL, yR, zL, zR)
+- 4 weight loads (from anchor struct, likely in registers)
+- 3 FMAs + 1 mul (dot product)
+- Total: ~8 FP ops vs ~14 for standard path + no interval search
+
+# Example
+```julia
+x = collect(range(0.0, 1.0, 101))
+itp = cubic_interp(x, sin.(2π .* x))
+aq = anchor_query(x, 0.35)
+
+itp(aq)  # Ultra-fast evaluation
+```
+"""
+@inline function (itp::CubicInterpolant{T})(aq::CubicAnchoredQuery{T,Op}) where {T<:AbstractFloat, Op<:AbstractEvalOp}
+    @boundscheck _validate_grid(aq, itp)
+
+    # Fast path: inside domain (most common case)
+    if aq.side == 0x00
+        return _eval_anchored_kernel(itp, aq)
+    end
+
+    # Outside domain: dispatch on extrapolation mode
+    return _eval_anchored_extrap(itp, aq, itp.extrap)
+end
+
+"""
+    _eval_anchored_kernel(itp, aq) -> T
+
+Core anchored evaluation kernel. Computes the 4-term dot product.
+
+S(xq) = wyL*yL + wyR*yR + wzL*zL + wzR*zR
+"""
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{T}, aq::CubicAnchoredQuery{T,Op}) where {T,Op}
+    @inbounds begin
+        yL = itp.y[aq.idx]
+        yR = itp.y[aq.idx + 1]
+        zL = itp.z[aq.idx]
+        zR = itp.z[aq.idx + 1]
+    end
+    wyL, wyR, wzL, wzR = aq.w
+    # Optimal FMA chain: 3 FMAs + 1 mul
+    return muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
+end
+
+# ========================================
+# Anchored Extrapolation Handlers
+# ========================================
+
+# :none - throw DomainError
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{T}, aq::CubicAnchoredQuery{T,Op}, ::Val{:none}) where {T,Op}
+    x_min, x_max = first(itp.cache.x), last(itp.cache.x)
+    throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+end
+
+# :constant for value - return boundary y value
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{T}, aq::CubicAnchoredQuery{T,EvalValue}, ::Val{:constant}) where {T}
+    return aq.side == 0x01 ? @inbounds(itp.y[1]) : @inbounds(itp.y[end])
+end
+
+# :constant for derivatives - return zero
+@inline function _eval_anchored_extrap(::CubicInterpolant{T}, ::CubicAnchoredQuery{T,EvalDeriv1}, ::Val{:constant}) where {T}
+    return zero(T)
+end
+
+@inline function _eval_anchored_extrap(::CubicInterpolant{T}, ::CubicAnchoredQuery{T,EvalDeriv2}, ::Val{:constant}) where {T}
+    return zero(T)
+end
+
+# :extension - use precomputed weights (boundary polynomial extrapolation)
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{T}, aq::CubicAnchoredQuery{T,Op}, ::Val{:extension}) where {T,Op}
+    return _eval_anchored_kernel(itp, aq)
+end
+
+# :wrap - use precomputed weights (already wrapped at anchor construction if needed)
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{T}, aq::CubicAnchoredQuery{T,Op}, ::Val{:wrap}) where {T,Op}
+    return _eval_anchored_kernel(itp, aq)
+end
+
+# ========================================
 # Internal Build Helpers
 # ========================================
 # These helpers unify the interpolant construction logic,

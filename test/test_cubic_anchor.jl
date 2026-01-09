@@ -295,4 +295,61 @@
         @test length(aq_vec) == 0
     end
 
+    # ========================================
+    # Vector Anchored Query Evaluation
+    # ========================================
+
+    @testset "Vector evaluation - allocating" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y; extrap=:extension)
+
+        xq = [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
+        aq_vec = FI._anchor_query(x, xq)
+        vals = itp(aq_vec)
+
+        @test length(vals) == length(xq)
+        for (i, xq_i) in enumerate(xq)
+            @test vals[i] ≈ itp(xq_i) atol=1e-14
+        end
+    end
+
+    @testset "Vector evaluation - extrap :none" begin
+        x = collect(range(0.0, 1.0, 101))
+        itp = cubic_interp(x, sin.(x); extrap=:none)
+
+        xq = [-0.1, 0.5, 1.1]  # First is out of domain
+        aq_vec = FI._anchor_query(x, xq)
+
+        @test_throws DomainError itp(aq_vec)
+    end
+
+    @testset "Vector evaluation - extrap :constant" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y; extrap=:constant)
+
+        xq = [-0.5, 0.5, 1.5]
+        aq_vec = FI._anchor_query(x, xq)
+        vals = itp(aq_vec)
+
+        @test vals[1] ≈ y[1]
+        @test vals[2] ≈ itp(0.5)
+        @test vals[3] ≈ y[end]
+    end
+
+    @testset "Vector evaluation - extrap :extension" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y; extrap=:extension)
+
+        xq = [-0.1, 0.5, 1.1]
+        aq_vec = FI._anchor_query(x, xq)
+        vals = itp(aq_vec)
+
+        for (i, xq_i) in enumerate(xq)
+            @test vals[i] ≈ itp(xq_i) atol=1e-14
+        end
+    end
+
 end

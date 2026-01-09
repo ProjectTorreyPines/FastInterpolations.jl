@@ -170,6 +170,72 @@ end
 end
 
 # ========================================
+# Vector Anchored Query Evaluation
+# ========================================
+
+"""
+    _eval_anchored_vector_loop!(output, itp, aq, op) -> output
+
+Internal kernel for batch anchored evaluation.
+
+Iterates through anchor vector, dispatching each to existing scalar kernels:
+- `_eval_anchored_kernel` for inside-domain (side == 0x00)
+- `_eval_anchored_extrap` for outside-domain (side != 0x00)
+
+For extrap=:none, throws DomainError on first out-of-domain anchor.
+"""
+@inline function _eval_anchored_vector_loop!(
+    output::AbstractVector{T},
+    itp::CubicInterpolant{T},
+    aq::AbstractVector{<:_CubicAnchoredQuery{T}},
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    @inbounds for k in eachindex(aq, output)
+        aq_k = aq[k]
+        if aq_k.side == 0x00
+            # Fast path: inside domain
+            output[k] = _eval_anchored_kernel(itp, aq_k, op)
+        else
+            # Extrapolation path (may throw for :none)
+            output[k] = _eval_anchored_extrap(itp, aq_k, itp.extrap, op)
+        end
+    end
+    return output
+end
+
+"""
+    (itp::CubicInterpolant{T})(aq::AbstractVector{<:_CubicAnchoredQuery{T}}; deriv::Int=0) -> Vector{T}
+
+Evaluate cubic spline at multiple anchored query points (allocating).
+
+# Extrapolation Behavior
+- `:none`: Throws `DomainError` on **first** out-of-domain anchor
+- `:constant`: Returns boundary value (or zero for derivatives)
+- `:extension`: Uses boundary polynomial extrapolation
+- `:wrap`: Uses pre-wrapped coordinates from anchor construction
+
+# Example
+```julia
+x = collect(range(0.0, 1.0, 101))
+itp = cubic_interp(x, sin.(2π .* x))
+aq_vec = _anchor_query(x, [0.15, 0.35, 0.5])
+
+vals = itp(aq_vec)            # Value
+derivs = itp(aq_vec; deriv=1) # First derivative
+```
+"""
+function (itp::CubicInterpolant{T})(
+    aq::AbstractVector{<:_CubicAnchoredQuery{T}};
+    deriv::Int=0
+) where {T<:AbstractFloat}
+    output = Vector{T}(undef, length(aq))
+    @_dispatch_deriv deriv => op begin
+        _eval_anchored_vector_loop!(output, itp, aq, op)
+    end
+    return output
+end
+
+# ========================================
 # Internal Build Helpers
 # ========================================
 # These helpers unify the interpolant construction logic,

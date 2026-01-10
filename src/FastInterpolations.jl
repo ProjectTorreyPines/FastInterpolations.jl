@@ -37,6 +37,7 @@ include("cubic_autocache.jl")   # Ring buffer cache for reusing LU factorization
 include("cubic_interp.jl")      # 4-arg API, helper functions
 include("cubic_anchor.jl")      # Anchored query for ultra-fast evaluation
 include("cubic_interpolant.jl") # 2-arg API, CubicInterpolant callable
+include("multi_cubic_interp.jl") # Multi-Y cubic interpolation
 
 # Quadratic spline interpolation
 include("quadratic_solver.jl")       # Coefficient computation (secants, d[], a[])
@@ -48,7 +49,7 @@ include("derivative_view.jl")
 # Exports
 export linear_interp, linear_interp!, LinearInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant
-export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
+export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, MultiCubicInterpolant
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant
 

@@ -29,6 +29,7 @@ include("linear_anchor.jl")    # Anchored query for ultra-fast evaluation (after
 
 # Constant (step) interpolation
 include("constant_interp.jl")
+include("constant_anchor.jl")  # Anchored query for ultra-fast evaluation (after ConstantInterpolant)
 
 # Cubic spline interpolation
 include("cubic_types.jl")       # Type definitions (PeriodicData, CubicSplineCache, CubicInterpolant)

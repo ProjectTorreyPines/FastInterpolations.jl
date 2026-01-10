@@ -25,6 +25,7 @@ include("quadratic_kernels.jl")
 
 # Linear interpolation
 include("linear_interp.jl")
+include("linear_anchor.jl")    # Anchored query for ultra-fast evaluation (after LinearInterpolant)
 
 # Constant (step) interpolation
 include("constant_interp.jl")

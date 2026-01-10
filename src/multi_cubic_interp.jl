@@ -14,7 +14,7 @@
 # ========================================
 
 """
-    MultiCubicInterpolant{T,C}
+    CubicMultiInterpolant{T,C}
 
 Container for multiple cubic spline interpolants sharing the same x-grid.
 All interpolants share the same `CubicSplineCache` for memory efficiency.
@@ -47,19 +47,22 @@ mitp([out1, out2, out3], xq)    # In-place (zero allocation)
 - In-place container evaluation is zero-allocation
 - All series share same cache (O(1) memory overhead)
 """
-struct MultiCubicInterpolant{T<:AbstractFloat, C<:AbstractArray{<:CubicInterpolant{T}}}
+struct CubicMultiInterpolant{T<:AbstractFloat, C<:AbstractArray{<:CubicInterpolant{T}}} <: AbstractMultiInterpolant{T}
     itps::C
 end
+
+# Backward compatibility alias
+const MultiCubicInterpolant = CubicMultiInterpolant
 
 # ========================================
 # Helper Functions
 # ========================================
 
 """Reference interpolant for grid access and mode checks."""
-@inline _ref_itp(mitp::MultiCubicInterpolant) = first(mitp.itps)
+@inline _ref_itp(mitp::CubicMultiInterpolant) = first(mitp.itps)
 
 """Check if wrap mode is active (for anchor construction)."""
-@inline _should_wrap(mitp::MultiCubicInterpolant) = _ref_itp(mitp).extrap === Val(:wrap)
+@inline _should_wrap(mitp::CubicMultiInterpolant) = _ref_itp(mitp).extrap === Val(:wrap)
 
 # ========================================
 # Constructors
@@ -78,7 +81,7 @@ Create a multi-Y cubic spline interpolant for multiple y-data series sharing the
 - `autocache`: If true, reuse cached LU factorization (default: true)
 
 # Returns
-`MultiCubicInterpolant` object with shared cache.
+`CubicMultiInterpolant` object with shared cache.
 
 # Example
 ```julia
@@ -116,7 +119,7 @@ function cubic_interp(
         itps[k] = cubic_interp(x, y; bc=bc, extrap=extrap, autocache=autocache)
     end
 
-    return MultiCubicInterpolant{T, typeof(itps)}(itps)
+    return CubicMultiInterpolant{T, typeof(itps)}(itps)
 end
 
 # Matrix input: columns as y-series
@@ -188,7 +191,7 @@ Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
 Returns a vector of values, one per y-series.
 """
-function (mitp::MultiCubicInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+function (mitp::CubicMultiInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
     ref = _ref_itp(mitp)
     xq_typed = T(xq)
 
@@ -208,7 +211,7 @@ end
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
-function (mitp::MultiCubicInterpolant{T})(
+function (mitp::CubicMultiInterpolant{T})(
     output::AbstractVector{T},
     xq::S;
     deriv::Int=0
@@ -239,7 +242,7 @@ Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
 Returns a vector of vectors: one vector per y-series, each containing results for all query points.
 """
-function (mitp::MultiCubicInterpolant{T})(
+function (mitp::CubicMultiInterpolant{T})(
     xq::AbstractVector{S};
     deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
@@ -271,7 +274,7 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 
 This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
 """
-function (mitp::MultiCubicInterpolant{T})(
+function (mitp::CubicMultiInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{T};
     deriv::Int=0
@@ -292,7 +295,7 @@ function (mitp::MultiCubicInterpolant{T})(
 end
 
 # Real type wrapper for in-place vector
-function (mitp::MultiCubicInterpolant{T})(
+function (mitp::CubicMultiInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{S};
     deriv::Int=0
@@ -322,7 +325,7 @@ for _ in 1:1000
 end
 ```
 """
-function (mitp::MultiCubicInterpolant{T})(
+function (mitp::CubicMultiInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
     aq_vec::AbstractVector{<:_CubicAnchoredQuery{T}};
     deriv::Int=0

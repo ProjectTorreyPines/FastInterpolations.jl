@@ -5,7 +5,10 @@ using LinearAlgebra: Tridiagonal, lu, ldiv!
 using Preferences: @load_preference, @set_preferences!
 using AdaptiveArrayPools
 
-# Operation types (must be first - used by all interp files)
+# Abstract type hierarchy (must be first - defines AbstractInterpolant, AbstractMultiInterpolant)
+include("abstract_types.jl")
+
+# Operation types (used by all interp files)
 include("ops.jl")
 
 # Boundary condition types
@@ -50,9 +53,11 @@ include("quadratic_anchor.jl")      # Anchored query for ultra-fast evaluation (
 include("derivative_view.jl")
 
 # Exports
+export AbstractInterpolant, AbstractMultiInterpolant
 export linear_interp, linear_interp!, LinearInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant
-export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, MultiCubicInterpolant
+export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
+export CubicMultiInterpolant, MultiCubicInterpolant  # MultiCubicInterpolant is alias for backward compat
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant
 

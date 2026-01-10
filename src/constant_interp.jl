@@ -132,7 +132,7 @@ itp_left = constant_interp(x, y; side=:left)
 itp_wrap = constant_interp(x, y; extrap=:wrap, side=:right)
 ```
 """
-struct ConstantInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
+struct ConstantInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}} <: AbstractInterpolant{T}
     x::X
     y::Y
     mode::ExtrapVal

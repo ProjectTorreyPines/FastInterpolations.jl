@@ -522,7 +522,7 @@ d1 = itp(0.5; deriv=1)       # first derivative
 d2 = itp(0.5; deriv=2)       # second derivative
 ```
 """
-struct QuadraticInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
+struct QuadraticInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}} <: AbstractInterpolant{T}
     x::X
     y::Y
     h::Vector{T}

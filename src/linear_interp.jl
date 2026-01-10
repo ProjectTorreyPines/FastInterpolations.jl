@@ -526,7 +526,7 @@ itp_wrap = linear_interp(x, y; extrap=:wrap)  # wrap to domain
 val = itp_wrap(2.5)  # wraps to domain
 ```
 """
-struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector{T}}
+struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector{T}} <: AbstractInterpolant{T}
     x::X
     y::Y
     mode::ExtrapVal  # Evaluation mode (concrete union for union-splitting)

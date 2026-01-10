@@ -225,6 +225,28 @@ end
     return _constant_anchor_dispatch(itp, aq, op, itp.mode)
 end
 
+# No extrapolation: throw DomainError if outside domain
+@inline function _constant_anchor_dispatch(
+    itp::ConstantInterpolant{T},
+    aq::_ConstantAnchoredQuery{T},
+    op::O,
+    ::Val{:none}
+) where {T<:AbstractFloat, O<:AbstractEvalOp}
+    if aq.side != 0x00  # outside domain
+        x_min, x_max = first(itp.x), last(itp.x)
+        throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+    end
+    # Inside domain
+    if aq.xq == last(itp.x)
+        return op isa EvalValue ? (@inbounds itp.y[end]) : zero(T)
+    end
+    @inbounds begin
+        y_left = itp.y[aq.idx]
+        y_right = itp.y[aq.idx + 1]
+        return _constant_kernel(op, y_left, y_right, aq.h, aq.dL, itp.side)
+    end
+end
+
 # Inside domain or extension mode: use interpolation
 @inline function _constant_anchor_dispatch(
     itp::ConstantInterpolant{T},

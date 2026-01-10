@@ -34,6 +34,7 @@ include("multi_linear_interp.jl") # Multi-Y linear interpolation
 # Constant (step) interpolation
 include("constant_interp.jl")
 include("constant_anchor.jl")  # Anchored query for ultra-fast evaluation (after ConstantInterpolant)
+include("multi_constant_interp.jl") # Multi-Y constant interpolation
 
 # Cubic spline interpolation
 include("cubic_types.jl")       # Type definitions (PeriodicData, CubicSplineCache, CubicInterpolant)
@@ -56,7 +57,7 @@ include("derivative_view.jl")
 # Exports
 export AbstractInterpolant, AbstractMultiInterpolant
 export linear_interp, linear_interp!, LinearInterpolant, LinearMultiInterpolant
-export constant_interp, constant_interp!, ConstantInterpolant
+export constant_interp, constant_interp!, ConstantInterpolant, ConstantMultiInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
 export CubicMultiInterpolant, MultiCubicInterpolant  # MultiCubicInterpolant is alias for backward compat
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!

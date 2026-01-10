@@ -379,4 +379,86 @@ end
         @test length(result) == 3
         @test all(isfinite, result)
     end
+
+    @testset "In-place vector with type-promoted xq" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        mitp = constant_interp(x, [y1, y2])
+
+        xq_f32 = Float32[0.1, 0.3, 0.5, 0.7, 0.9]
+        out1 = Vector{Float64}(undef, 5)
+        out2 = Vector{Float64}(undef, 5)
+        outputs = [out1, out2]
+
+        result = mitp(outputs, xq_f32)
+        @test result === outputs
+        @test all(isfinite, out1)
+        @test all(isfinite, out2)
+
+        xq_f64 = Float64.(xq_f32)
+        ref = mitp(xq_f64)
+        @test out1 ≈ ref[1] atol=1e-10
+        @test out2 ≈ ref[2] atol=1e-10
+    end
+end
+
+# ============================================================================
+# Phase 6: Additional Size Assertion Tests
+# ============================================================================
+
+@testset "ConstantMultiInterpolant - Size Assertions" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = exp.(-3 .* x)
+
+    mitp = constant_interp(x, [y1, y2, y3]; extrap=:extension)
+    xq = collect(range(0.1, 0.9, 50))
+
+    @testset "Size assertion on buffer mismatch" begin
+        outputs = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
+        @test_throws AssertionError mitp(outputs, xq)
+    end
+
+    @testset "Size assertion with pre-built anchors" begin
+        aq_vec = FI._anchor_query(x, xq, Val(:constant))
+
+        # Wrong number of output buffers
+        outputs_wrong = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50)]
+        @test_throws AssertionError mitp(outputs_wrong, aq_vec)
+
+        # Wrong buffer size
+        outputs_bad = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
+        @test_throws AssertionError mitp(outputs_bad, aq_vec)
+    end
+end
+
+# ============================================================================
+# Phase 7: extrap=:extension Tests
+# ============================================================================
+
+@testset "ConstantMultiInterpolant - extrap=:extension" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+
+    mitp = constant_interp(x, [y1, y2]; extrap=:extension)
+    itp1 = constant_interp(x, y1; extrap=:extension)
+    itp2 = constant_interp(x, y2; extrap=:extension)
+
+    @testset "extrap=:extension outside domain" begin
+        below = mitp(-0.1)
+        @test below[1] ≈ itp1(-0.1) atol=1e-14
+        @test below[2] ≈ itp2(-0.1) atol=1e-14
+
+        above = mitp(1.1)
+        @test above[1] ≈ itp1(1.1) atol=1e-14
+        @test above[2] ≈ itp2(1.1) atol=1e-14
+    end
 end

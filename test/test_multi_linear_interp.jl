@@ -464,3 +464,98 @@ end
         @test out2 ≈ ref[2] atol=1e-10
     end
 end
+
+# ============================================================================
+# Phase 6: Zero-Allocation Tests for Derivatives
+# ============================================================================
+
+@testset "LinearMultiInterpolant - Zero-Allocation Derivative Tests" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = exp.(-3 .* x)
+
+    mitp = linear_interp(x, [y1, y2, y3]; extrap=:extension)
+    xq = collect(range(0.1, 0.9, 50))
+
+    @testset "Container in-place with deriv=1 - zero allocation" begin
+        out1 = Vector{Float64}(undef, 50)
+        out2 = Vector{Float64}(undef, 50)
+        out3 = Vector{Float64}(undef, 50)
+        outputs = [out1, out2, out3]
+
+        # Pre-build anchors
+        aq_vec = FI._anchor_query(x, xq, Val(:linear))
+
+        # Warmup
+        mitp(outputs, aq_vec; deriv=1)
+        mitp(outputs, aq_vec; deriv=1)
+
+        allocs = @allocated mitp(outputs, aq_vec; deriv=1)
+        @test allocs == 0
+    end
+
+    @testset "Derivative correctness with anchors" begin
+        out1 = Vector{Float64}(undef, 50)
+        out2 = Vector{Float64}(undef, 50)
+        out3 = Vector{Float64}(undef, 50)
+        outputs = [out1, out2, out3]
+
+        aq_vec = FI._anchor_query(x, xq, Val(:linear))
+
+        # Get derivatives via anchored path
+        mitp(outputs, aq_vec; deriv=1)
+
+        # Compare with individual interpolants
+        itp1 = linear_interp(x, y1; extrap=:extension)
+        itp2 = linear_interp(x, y2; extrap=:extension)
+        itp3 = linear_interp(x, y3; extrap=:extension)
+
+        expected1 = Vector{Float64}(undef, 50)
+        expected2 = Vector{Float64}(undef, 50)
+        expected3 = Vector{Float64}(undef, 50)
+
+        itp1(expected1, aq_vec; deriv=1)
+        itp2(expected2, aq_vec; deriv=1)
+        itp3(expected3, aq_vec; deriv=1)
+
+        @test out1 ≈ expected1 atol=1e-14
+        @test out2 ≈ expected2 atol=1e-14
+        @test out3 ≈ expected3 atol=1e-14
+    end
+end
+
+# ============================================================================
+# Phase 7: Additional Size Assertion Tests
+# ============================================================================
+
+@testset "LinearMultiInterpolant - Size Assertions" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = exp.(-3 .* x)
+
+    mitp = linear_interp(x, [y1, y2, y3]; extrap=:extension)
+    xq = collect(range(0.1, 0.9, 50))
+
+    @testset "Size assertion on buffer mismatch" begin
+        outputs = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
+        @test_throws AssertionError mitp(outputs, xq)
+    end
+
+    @testset "Size assertion with pre-built anchors" begin
+        aq_vec = FI._anchor_query(x, xq, Val(:linear))
+
+        # Wrong number of output buffers
+        outputs_wrong = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50)]
+        @test_throws AssertionError mitp(outputs_wrong, aq_vec)
+
+        # Wrong buffer size
+        outputs_bad = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
+        @test_throws AssertionError mitp(outputs_bad, aq_vec)
+    end
+end

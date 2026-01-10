@@ -415,4 +415,254 @@ end
         @test length(result) == 3
         @test all(isfinite, result)
     end
+
+    @testset "In-place vector with type-promoted xq" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        mitp = quadratic_interp(x, [y1, y2])
+
+        xq_f32 = Float32[0.1, 0.3, 0.5, 0.7, 0.9]
+        out1 = Vector{Float64}(undef, 5)
+        out2 = Vector{Float64}(undef, 5)
+        outputs = [out1, out2]
+
+        result = mitp(outputs, xq_f32)
+        @test result === outputs
+        @test all(isfinite, out1)
+        @test all(isfinite, out2)
+
+        xq_f64 = Float64.(xq_f32)
+        ref = mitp(xq_f64)
+        @test out1 ≈ ref[1] atol=1e-10
+        @test out2 ≈ ref[2] atol=1e-10
+    end
+end
+
+# ============================================================================
+# Phase 6: Zero-Allocation Tests for Derivatives
+# ============================================================================
+
+@testset "QuadraticMultiInterpolant - Zero-Allocation Derivative Tests" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = exp.(-3 .* x)
+
+    mitp = quadratic_interp(x, [y1, y2, y3]; extrap=:extension)
+    xq = collect(range(0.1, 0.9, 50))
+
+    @testset "Container in-place with deriv=1 - zero allocation" begin
+        out1 = Vector{Float64}(undef, 50)
+        out2 = Vector{Float64}(undef, 50)
+        out3 = Vector{Float64}(undef, 50)
+        outputs = [out1, out2, out3]
+
+        # Pre-build anchors
+        aq_vec = FI._anchor_query(x, xq, Val(:quadratic))
+
+        # Warmup
+        mitp(outputs, aq_vec; deriv=1)
+        mitp(outputs, aq_vec; deriv=1)
+
+        allocs = @allocated mitp(outputs, aq_vec; deriv=1)
+        @test allocs == 0
+    end
+
+    @testset "Container in-place with deriv=2 - zero allocation" begin
+        out1 = Vector{Float64}(undef, 50)
+        out2 = Vector{Float64}(undef, 50)
+        out3 = Vector{Float64}(undef, 50)
+        outputs = [out1, out2, out3]
+
+        # Pre-build anchors
+        aq_vec = FI._anchor_query(x, xq, Val(:quadratic))
+
+        # Warmup
+        mitp(outputs, aq_vec; deriv=2)
+        mitp(outputs, aq_vec; deriv=2)
+
+        allocs = @allocated mitp(outputs, aq_vec; deriv=2)
+        @test allocs == 0
+    end
+
+    @testset "Derivative correctness with anchors" begin
+        out1 = Vector{Float64}(undef, 50)
+        out2 = Vector{Float64}(undef, 50)
+        out3 = Vector{Float64}(undef, 50)
+        outputs = [out1, out2, out3]
+
+        aq_vec = FI._anchor_query(x, xq, Val(:quadratic))
+
+        # Get derivatives via anchored path
+        mitp(outputs, aq_vec; deriv=1)
+
+        # Compare with individual interpolants
+        itp1 = quadratic_interp(x, y1; extrap=:extension)
+        itp2 = quadratic_interp(x, y2; extrap=:extension)
+        itp3 = quadratic_interp(x, y3; extrap=:extension)
+
+        expected1 = Vector{Float64}(undef, 50)
+        expected2 = Vector{Float64}(undef, 50)
+        expected3 = Vector{Float64}(undef, 50)
+
+        itp1(expected1, aq_vec; deriv=1)
+        itp2(expected2, aq_vec; deriv=1)
+        itp3(expected3, aq_vec; deriv=1)
+
+        @test out1 ≈ expected1 atol=1e-14
+        @test out2 ≈ expected2 atol=1e-14
+        @test out3 ≈ expected3 atol=1e-14
+    end
+end
+
+# ============================================================================
+# Phase 7: Additional Size Assertion Tests
+# ============================================================================
+
+@testset "QuadraticMultiInterpolant - Size Assertions" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = exp.(-3 .* x)
+
+    mitp = quadratic_interp(x, [y1, y2, y3]; extrap=:extension)
+    xq = collect(range(0.1, 0.9, 50))
+
+    @testset "Size assertion on buffer mismatch" begin
+        outputs = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
+        @test_throws AssertionError mitp(outputs, xq)
+    end
+
+    @testset "Size assertion with pre-built anchors" begin
+        aq_vec = FI._anchor_query(x, xq, Val(:quadratic))
+
+        # Wrong number of output buffers
+        outputs_wrong = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50)]
+        @test_throws AssertionError mitp(outputs_wrong, aq_vec)
+
+        # Wrong buffer size
+        outputs_bad = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
+        @test_throws AssertionError mitp(outputs_bad, aq_vec)
+    end
+end
+
+# ============================================================================
+# Phase 8: BC Type Promotion Tests
+# ============================================================================
+
+@testset "QuadraticMultiInterpolant - BC Type Promotion" begin
+    FI = FastInterpolations
+
+    @testset "BC promoted with Integer inputs" begin
+        x_int = collect(1:20)
+        y1 = Float64.(x_int) .^ 2
+        y2 = Float64.(x_int) .^ 3
+
+        # Different BC types should be promoted correctly
+        for bc in [Left(ParabolaFit()), Right(ParabolaFit()), MinCurvFit()]
+            mitp = quadratic_interp(x_int, [y1, y2]; bc=bc)
+            @test mitp isa FI.QuadraticMultiInterpolant{Float64}
+            result = mitp(10.5)
+            @test length(result) == 2
+            @test all(isfinite, result)
+        end
+    end
+
+    @testset "BC with Deriv1/Deriv2 values promoted" begin
+        x_int = collect(1:20)
+        y1 = Float64.(x_int) .^ 2
+        y2 = Float64.(x_int) .^ 3
+
+        bc_deriv1 = Left(Deriv1(0.0))
+        bc_deriv2 = Left(Deriv2(0.0))
+
+        mitp1 = quadratic_interp(x_int, [y1, y2]; bc=bc_deriv1)
+        mitp2 = quadratic_interp(x_int, [y1, y2]; bc=bc_deriv2)
+
+        @test mitp1 isa FI.QuadraticMultiInterpolant{Float64}
+        @test mitp2 isa FI.QuadraticMultiInterpolant{Float64}
+
+        @test all(isfinite, mitp1(10.5))
+        @test all(isfinite, mitp2(10.5))
+    end
+
+    # ----------------------------------------
+    # Tests to cover _promote_bc helper (lines 175-182)
+    # These require Float32 BC with Float64 data to force type promotion
+    # ----------------------------------------
+    @testset "_promote_bc coverage - Float32 BC with Float64 data" begin
+        x_int = collect(1:20)  # Integer x promotes to Float64
+        y1 = Float64.(x_int) .^ 2
+        y2 = Float64.(x_int) .^ 3
+
+        # Left(ParabolaFit{Float32}) → promotes to Float64
+        bc_lpf32 = Left(ParabolaFit{Float32}())
+        mitp = quadratic_interp(x_int, [y1, y2]; bc=bc_lpf32)
+        @test mitp isa FI.QuadraticMultiInterpolant{Float64}
+        @test all(isfinite, mitp(10.5))
+
+        # Right(ParabolaFit{Float32}) → promotes to Float64
+        bc_rpf32 = Right(ParabolaFit{Float32}())
+        mitp = quadratic_interp(x_int, [y1, y2]; bc=bc_rpf32)
+        @test mitp isa FI.QuadraticMultiInterpolant{Float64}
+        @test all(isfinite, mitp(10.5))
+
+        # Left(Deriv1{Float32}) → promotes to Float64
+        bc_ld1f32 = Left(Deriv1(0.0f0))
+        mitp = quadratic_interp(x_int, [y1, y2]; bc=bc_ld1f32)
+        @test mitp isa FI.QuadraticMultiInterpolant{Float64}
+        @test all(isfinite, mitp(10.5))
+
+        # Right(Deriv1{Float32}) → promotes to Float64
+        bc_rd1f32 = Right(Deriv1(0.0f0))
+        mitp = quadratic_interp(x_int, [y1, y2]; bc=bc_rd1f32)
+        @test mitp isa FI.QuadraticMultiInterpolant{Float64}
+        @test all(isfinite, mitp(10.5))
+
+        # Left(Deriv2{Float32}) → promotes to Float64
+        bc_ld2f32 = Left(Deriv2(0.0f0))
+        mitp = quadratic_interp(x_int, [y1, y2]; bc=bc_ld2f32)
+        @test mitp isa FI.QuadraticMultiInterpolant{Float64}
+        @test all(isfinite, mitp(10.5))
+
+        # Right(Deriv2{Float32}) → promotes to Float64
+        bc_rd2f32 = Right(Deriv2(0.0f0))
+        mitp = quadratic_interp(x_int, [y1, y2]; bc=bc_rd2f32)
+        @test mitp isa FI.QuadraticMultiInterpolant{Float64}
+        @test all(isfinite, mitp(10.5))
+
+        # MinCurvFit{Float32} → promotes to Float64
+        bc_mcf32 = MinCurvFit{Float32}()
+        mitp = quadratic_interp(x_int, [y1, y2]; bc=bc_mcf32)
+        @test mitp isa FI.QuadraticMultiInterpolant{Float64}
+        @test all(isfinite, mitp(10.5))
+    end
+
+    @testset "_promote_bc identity case - BC already correct type" begin
+        x = collect(range(0.0, 1.0, 21))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        # Float64 BC with Float64 data - no promotion needed (line 182)
+        bc_same = Left(ParabolaFit{Float64}())
+        mitp = quadratic_interp(x, [y1, y2]; bc=bc_same)
+        @test mitp isa FI.QuadraticMultiInterpolant{Float64}
+        @test all(isfinite, mitp(0.5))
+
+        # Deriv1{Float64} with Float64 data
+        bc_d1same = Left(Deriv1(0.0))
+        mitp = quadratic_interp(x, [y1, y2]; bc=bc_d1same)
+        @test mitp isa FI.QuadraticMultiInterpolant{Float64}
+
+        # Deriv2{Float64} with Float64 data
+        bc_d2same = Right(Deriv2(0.0))
+        mitp = quadratic_interp(x, [y1, y2]; bc=bc_d2same)
+        @test mitp isa FI.QuadraticMultiInterpolant{Float64}
+    end
 end

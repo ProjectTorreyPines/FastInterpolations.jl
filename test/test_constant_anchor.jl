@@ -255,4 +255,98 @@ using FastInterpolations
         @test allocs == 0
     end
 
+    # ========================================
+    # extrap=:none DomainError Tests
+    # ========================================
+    @testset "extrap=:none throws DomainError via anchor" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+        itp = constant_interp(x, y; extrap=:none)
+
+        # Inside domain works
+        aq_inside = FastInterpolations._anchor_query(x, 0.5, Val(:constant))
+        @test isfinite(itp(aq_inside))
+
+        # At boundary works
+        aq_boundary = FastInterpolations._anchor_query(x, 1.0, Val(:constant))
+        @test itp(aq_boundary) ≈ y[end]
+
+        # Outside domain throws DomainError
+        aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:constant))
+        aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:constant))
+
+        @test_throws DomainError itp(aq_below)
+        @test_throws DomainError itp(aq_above)
+    end
+
+    # ========================================
+    # extrap=:constant Tests
+    # ========================================
+    @testset "extrap=:constant via anchor with boundary check" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+        itp = constant_interp(x, y; extrap=:constant)
+
+        # At exact right boundary
+        aq_right = FastInterpolations._anchor_query(x, 1.0, Val(:constant))
+        @test itp(aq_right) ≈ y[end]
+
+        # Below domain returns first y
+        aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:constant))
+        @test itp(aq_below) ≈ y[1]
+
+        # Above domain returns last y
+        aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:constant))
+        @test itp(aq_above) ≈ y[end]
+    end
+
+    # ========================================
+    # Vector anchor with extrap modes
+    # ========================================
+    @testset "vector anchor with different extrap modes" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+
+        for extrap in [:extension, :constant]
+            itp = constant_interp(x, y; extrap=extrap)
+            xq_vec = [-0.2, 0.3, 0.7, 1.2]  # Mix of inside/outside
+            aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:constant))
+
+            result = itp(aq_vec)
+            expected = itp(xq_vec)
+            @test result ≈ expected
+        end
+    end
+
+    # ========================================
+    # In-place output length assertion
+    # ========================================
+    @testset "in-place output length assertion" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+        itp = constant_interp(x, y; extrap=:extension)
+
+        xq_vec = [0.2, 0.5, 0.8]
+        aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:constant))
+
+        # Wrong size output throws assertion
+        output_wrong = zeros(Float64, 5)
+        @test_throws AssertionError itp(output_wrong, aq_vec)
+    end
+
+    # ========================================
+    # Boundary handling - exact x_max via anchor
+    # ========================================
+    @testset "boundary handling at x_max via anchor" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+
+        # Test all modes at exact boundary
+        for mode in [:extension, :constant]
+            itp = constant_interp(x, y; extrap=mode)
+            aq = FastInterpolations._anchor_query(x, 1.0, Val(:constant))
+            @test itp(aq) ≈ y[end]
+        end
+    end
+
 end

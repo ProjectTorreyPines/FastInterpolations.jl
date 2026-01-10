@@ -240,4 +240,105 @@ using FastInterpolations
         @test allocs == 0
     end
 
+    # ========================================
+    # extrap=:none DomainError Tests
+    # ========================================
+    @testset "extrap=:none throws DomainError via anchor" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = sin.(2π .* x)
+        itp = linear_interp(x, y; extrap=:none)
+
+        # Inside domain works
+        aq_inside = FastInterpolations._anchor_query(x, 0.5, Val(:linear))
+        @test isfinite(itp(aq_inside))
+
+        # Outside domain throws DomainError
+        aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:linear))
+        aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:linear))
+
+        @test_throws DomainError itp(aq_below)
+        @test_throws DomainError itp(aq_above)
+
+        # Derivatives also throw
+        @test_throws DomainError itp(aq_below; deriv=1)
+        @test_throws DomainError itp(aq_above; deriv=1)
+    end
+
+    # ========================================
+    # extrap=:constant Tests
+    # ========================================
+    @testset "extrap=:constant via anchor" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = sin.(2π .* x)
+        itp = linear_interp(x, y; extrap=:constant)
+
+        # Below domain returns first y
+        aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:linear))
+        @test itp(aq_below) ≈ y[1]
+        @test itp(aq_below) ≈ itp(-0.5)
+
+        # Above domain returns last y
+        aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:linear))
+        @test itp(aq_above) ≈ y[end]
+        @test itp(aq_above) ≈ itp(1.5)
+
+        # Inside domain still interpolates
+        aq_mid = FastInterpolations._anchor_query(x, 0.35, Val(:linear))
+        @test itp(aq_mid) ≈ itp(0.35)
+    end
+
+    # ========================================
+    # Vector Anchor with extrap modes
+    # ========================================
+    @testset "vector anchor with different extrap modes" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = sin.(2π .* x)
+
+        for extrap in [:extension, :constant]
+            itp = linear_interp(x, y; extrap=extrap)
+            xq_vec = [-0.2, 0.3, 0.7, 1.2]  # Mix of inside/outside
+            aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:linear))
+
+            result = itp(aq_vec)
+            expected = itp(xq_vec)
+            @test result ≈ expected
+        end
+    end
+
+    # ========================================
+    # In-place output length assertion
+    # ========================================
+    @testset "in-place output length assertion" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = sin.(2π .* x)
+        itp = linear_interp(x, y; extrap=:extension)
+
+        xq_vec = [0.2, 0.5, 0.8]
+        aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:linear))
+
+        # Wrong size output throws assertion
+        output_wrong = zeros(Float64, 5)
+        @test_throws AssertionError itp(output_wrong, aq_vec)
+    end
+
+    # ========================================
+    # Zero-Allocation with deriv=1
+    # ========================================
+    @testset "zero-allocation with deriv=1" begin
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+        itp = linear_interp(x, y; extrap=:extension)
+
+        xq_vec = collect(range(0.1, 6.0, 100))
+        aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:linear))
+        output = zeros(Float64, 100)
+
+        # Warm-up call
+        itp(output, aq_vec; deriv=1)
+
+        # Allocation test
+        allocs = @allocated itp(output, aq_vec; deriv=1)
+        @test allocs == 0
+    end
+
 end

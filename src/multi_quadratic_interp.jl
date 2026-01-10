@@ -171,15 +171,7 @@ function quadratic_interp(
     return quadratic_interp(x_float, Y_float; bc=bc_typed, extrap=extrap)
 end
 
-# Helper to promote BC type
-_promote_bc(bc::Left{ParabolaFit{S}}, ::Type{T}) where {S,T} = Left(ParabolaFit{T}())
-_promote_bc(bc::Right{ParabolaFit{S}}, ::Type{T}) where {S,T} = Right(ParabolaFit{T}())
-_promote_bc(bc::Left{Deriv1{S}}, ::Type{T}) where {S,T} = Left(Deriv1(T(bc.spec.value)))
-_promote_bc(bc::Right{Deriv1{S}}, ::Type{T}) where {S,T} = Right(Deriv1(T(bc.spec.value)))
-_promote_bc(bc::Left{Deriv2{S}}, ::Type{T}) where {S,T} = Left(Deriv2(T(bc.spec.value)))
-_promote_bc(bc::Right{Deriv2{S}}, ::Type{T}) where {S,T} = Right(Deriv2(T(bc.spec.value)))
-_promote_bc(bc::MinCurvFit{S}, ::Type{T}) where {S,T} = MinCurvFit{T}()
-_promote_bc(bc::QuadraticBC{T}, ::Type{T}) where {T} = bc  # Already correct type
+# BC type promotion handled by _promote_bc in quadratic_interp.jl
 
 # ========================================
 # Scalar Evaluation

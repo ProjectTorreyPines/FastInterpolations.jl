@@ -268,4 +268,137 @@ using FastInterpolations
         end
     end
 
+    # ========================================
+    # extrap=:none DomainError Tests
+    # ========================================
+    @testset "extrap=:none throws DomainError via anchor" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = x .^ 2
+        itp = quadratic_interp(x, y; extrap=:none)
+
+        # Inside domain works
+        aq_inside = FastInterpolations._anchor_query(x, 0.5, Val(:quadratic))
+        @test isfinite(itp(aq_inside))
+
+        # Outside domain throws DomainError
+        aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:quadratic))
+        aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:quadratic))
+
+        @test_throws DomainError itp(aq_below)
+        @test_throws DomainError itp(aq_above)
+
+        # Derivatives also throw
+        @test_throws DomainError itp(aq_below; deriv=1)
+        @test_throws DomainError itp(aq_above; deriv=2)
+    end
+
+    # ========================================
+    # extrap=:constant Tests
+    # ========================================
+    @testset "extrap=:constant via anchor" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = x .^ 2
+        itp = quadratic_interp(x, y; extrap=:constant)
+
+        # Below domain returns first y
+        aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:quadratic))
+        @test itp(aq_below) ≈ y[1]
+
+        # Above domain returns last y
+        aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:quadratic))
+        @test itp(aq_above) ≈ y[end]
+
+        # Inside domain still interpolates
+        aq_mid = FastInterpolations._anchor_query(x, 0.35, Val(:quadratic))
+        @test itp(aq_mid) ≈ itp(0.35)
+    end
+
+    # ========================================
+    # Vector anchor with different extrap modes
+    # ========================================
+    @testset "vector anchor with different extrap modes" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = x .^ 2
+
+        for extrap in [:extension, :constant]
+            itp = quadratic_interp(x, y; extrap=extrap)
+            xq_vec = [-0.2, 0.3, 0.7, 1.2]  # Mix of inside/outside
+            aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:quadratic))
+
+            result = itp(aq_vec)
+            expected = itp(xq_vec)
+            @test result ≈ expected
+        end
+    end
+
+    # ========================================
+    # In-place output length assertion
+    # ========================================
+    @testset "in-place output length assertion" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = x .^ 2
+        itp = quadratic_interp(x, y; extrap=:extension)
+
+        xq_vec = [0.2, 0.5, 0.8]
+        aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:quadratic))
+
+        # Wrong size output throws assertion
+        output_wrong = zeros(Float64, 5)
+        @test_throws AssertionError itp(output_wrong, aq_vec)
+    end
+
+    # ========================================
+    # Zero-Allocation with derivatives
+    # ========================================
+    @testset "zero-allocation with deriv=1" begin
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+        itp = quadratic_interp(x, y; extrap=:extension)
+
+        xq_vec = collect(range(0.1, 6.0, 100))
+        aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:quadratic))
+        output = zeros(Float64, 100)
+
+        # Warm-up call
+        itp(output, aq_vec; deriv=1)
+
+        # Allocation test
+        allocs = @allocated itp(output, aq_vec; deriv=1)
+        @test allocs == 0
+    end
+
+    @testset "zero-allocation with deriv=2" begin
+        x = collect(range(0.0, 2π, 101))
+        y = sin.(x)
+        itp = quadratic_interp(x, y; extrap=:extension)
+
+        xq_vec = collect(range(0.1, 6.0, 100))
+        aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:quadratic))
+        output = zeros(Float64, 100)
+
+        # Warm-up call
+        itp(output, aq_vec; deriv=2)
+
+        # Allocation test
+        allocs = @allocated itp(output, aq_vec; deriv=2)
+        @test allocs == 0
+    end
+
+    # ========================================
+    # Wrap mode for anchor construction
+    # ========================================
+    @testset "wrap mode anchor construction" begin
+        x = collect(range(0.0, 1.0, 11))
+
+        # Query outside domain with wrap=true
+        aq_wrap = FastInterpolations._anchor_query(x, 1.5, Val(:quadratic); wrap=true)
+        @test aq_wrap.xq ≈ 0.5  # 1.5 wraps to 0.5
+        @test aq_wrap.side == 0x00  # inside after wrap
+
+        # Below domain with wrap=true
+        aq_wrap_neg = FastInterpolations._anchor_query(x, -0.3, Val(:quadratic); wrap=true)
+        @test aq_wrap_neg.xq ≈ 0.7  # -0.3 + 1.0 = 0.7
+        @test aq_wrap_neg.side == 0x00
+    end
+
 end

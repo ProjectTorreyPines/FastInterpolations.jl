@@ -29,6 +29,7 @@ include("quadratic_kernels.jl")
 # Linear interpolation
 include("linear_interp.jl")
 include("linear_anchor.jl")    # Anchored query for ultra-fast evaluation (after LinearInterpolant)
+include("multi_linear_interp.jl") # Multi-Y linear interpolation
 
 # Constant (step) interpolation
 include("constant_interp.jl")
@@ -54,7 +55,7 @@ include("derivative_view.jl")
 
 # Exports
 export AbstractInterpolant, AbstractMultiInterpolant
-export linear_interp, linear_interp!, LinearInterpolant
+export linear_interp, linear_interp!, LinearInterpolant, LinearMultiInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
 export CubicMultiInterpolant, MultiCubicInterpolant  # MultiCubicInterpolant is alias for backward compat

@@ -241,6 +241,28 @@ end
     end
 end
 
+# No extrapolation: throw DomainError if outside domain
+@inline function _linear_anchor_dispatch(
+    itp::LinearInterpolant{T},
+    aq::_LinearAnchoredQuery{T},
+    op::O,
+    ::Val{:none}
+) where {T<:AbstractFloat, O<:AbstractEvalOp}
+    if aq.side != 0x00  # outside domain
+        x_min, x_max = first(itp.x), last(itp.x)
+        throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+    end
+    @inbounds begin
+        yL = itp.y[aq.idx]
+        yR = itp.y[aq.idx + 1]
+        xL = itp.x[aq.idx]
+        xR = itp.x[aq.idx + 1]
+        h = xR - xL
+        dL = aq.xq - xL
+        return _linear_kernel(op, yL, yR, h, dL)
+    end
+end
+
 # Constant extrapolation: special handling for outside-domain
 @inline function _linear_anchor_dispatch(
     itp::LinearInterpolant{T},

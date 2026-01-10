@@ -112,14 +112,15 @@ end
 # ========================================
 
 """
-    _anchor_query(x::AbstractVector{T}, xq::T; periodic::Bool=false) -> _CubicAnchoredQuery
+    _anchor_query(x::AbstractVector{T}, xq::T; wrap::Bool=false) -> _CubicAnchoredQuery
 
 Create an anchored query for ultra-fast cubic spline evaluation at a fixed point.
 
 # Arguments
 - `x`: Grid points (must match grid used for interpolant construction)
 - `xq`: Query point (scalar)
-- `periodic`: If true, wrap `xq` to domain before anchoring
+- `wrap`: If true, wrap `xq` to domain [x[1], x[end]) before anchoring.
+          Used for `extrap=:wrap` mode. Distinct from `PeriodicBC` (boundary condition).
 
 # Returns
 `_CubicAnchoredQuery{T}` with precomputed geometry weights for value and derivatives.
@@ -140,17 +141,17 @@ itp2(aq; deriv=1)     # Reuses same anchor for derivative
 Anchored evaluation is 2-4x faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search and geometry setup.
 """
-function _anchor_query(x::AbstractVector{T}, xq::T; periodic::Bool=false) where {T<:AbstractFloat}
-    return _anchor_query_impl(x, xq, periodic)
+function _anchor_query(x::AbstractVector{T}, xq::T; wrap::Bool=false) where {T<:AbstractFloat}
+    return _anchor_query_impl(x, xq, wrap)
 end
 
 # Real wrapper for convenience (scalar)
-function _anchor_query(x::AbstractVector{T}, xq::S; periodic::Bool=false) where {T<:AbstractFloat, S<:Real}
-    _anchor_query(x, T(xq); periodic=periodic)
+function _anchor_query(x::AbstractVector{T}, xq::S; wrap::Bool=false) where {T<:AbstractFloat, S<:Real}
+    _anchor_query(x, T(xq); wrap=wrap)
 end
 
 """
-    _anchor_query(x::AbstractVector{T}, xq::AbstractVector; periodic::Bool=false) -> Vector{_CubicAnchoredQuery{T}}
+    _anchor_query(x::AbstractVector{T}, xq::AbstractVector; wrap::Bool=false) -> Vector{_CubicAnchoredQuery{T}}
 
 Create anchored queries for multiple query points.
 
@@ -160,7 +161,8 @@ the grid used for interpolant construction.
 # Arguments
 - `x`: Grid points (must match interpolant's grid)
 - `xq`: Query points (any Real type, auto-promoted to T)
-- `periodic`: If true, wrap query points to domain before anchoring
+- `wrap`: If true, wrap query points to domain [x[1], x[end]) before anchoring.
+          Used for `extrap=:wrap` mode. Distinct from `PeriodicBC` (boundary condition).
 
 # Example
 ```julia
@@ -177,28 +179,28 @@ vals2 = itp2(aq_vec)  # Reuse same anchors
 function _anchor_query(
     x::AbstractVector{T},
     xq::AbstractVector{S};
-    periodic::Bool=false
+    wrap::Bool=false
 ) where {T<:AbstractFloat, S<:Real}
     output = Vector{_CubicAnchoredQuery{T}}(undef, length(xq))
     @inbounds for k in eachindex(xq)
-        output[k] = _anchor_query_impl(x, T(xq[k]), periodic)
+        output[k] = _anchor_query_impl(x, T(xq[k]), wrap)
     end
     return output
 end
 
 """
-    _anchor_query_impl(x, xq, periodic) -> _CubicAnchoredQuery
+    _anchor_query_impl(x, xq, wrap) -> _CubicAnchoredQuery
 
 Internal implementation of _anchor_query.
 """
 @inline function _anchor_query_impl(
     x::AbstractVector{T},
     xq::T,
-    periodic::Bool
+    wrap::Bool
 ) where {T<:AbstractFloat}
     x_min, x_max = first(x), last(x)
-    # Handle periodic wrapping
-    if periodic && (xq < x_min || xq >= x_max)
+    # Handle wrapping (for extrap=:wrap mode)
+    if wrap && (xq < x_min || xq >= x_max)
         xq = _wrap_to_domain(xq, x_min, x_max)
     end
 

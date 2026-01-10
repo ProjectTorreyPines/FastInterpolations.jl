@@ -86,21 +86,21 @@
         y = sin.(2π .* x)
         itp = cubic_interp(x, y; extrap=:wrap)
 
-        # Wrap extrapolation - anchor must be created with periodic=true
+        # Wrap extrapolation - anchor must be created with wrap=true
         # to pre-wrap coordinates for :wrap mode
-        aq_above = FI._anchor_query(x, 1.3; periodic=true)
+        aq_above = FI._anchor_query(x, 1.3; wrap=true)
         wrapped_xq = mod(1.3, 1.0)  # 0.3
         @test itp(aq_above) ≈ itp(wrapped_xq) atol=1e-14
     end
 
-    @testset "Anchored evaluation - PeriodicBC" begin
+    @testset "Anchored evaluation - PeriodicBC with wrap" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
         y[end] = y[1]  # Ensure periodic
         itp = cubic_interp(x, y; bc=PeriodicBC())
 
-        # Periodic wrapping at anchor construction
-        aq_wrapped = FI._anchor_query(x, 2π + 1.0; periodic=true)
+        # Wrap at anchor construction (for extrap=:wrap mode)
+        aq_wrapped = FI._anchor_query(x, 2π + 1.0; wrap=true)
         @test itp(aq_wrapped) ≈ itp(1.0) atol=1e-10
     end
 
@@ -233,20 +233,20 @@
         @test aq32.w2 isa NTuple{4, Float32}
     end
 
-    @testset "Periodic anchor wrapping" begin
+    @testset "Anchor wrapping (wrap=true)" begin
         x = collect(range(0.0, 2π, 101))
 
-        # Query outside domain with periodic=true should wrap
+        # Query outside domain with wrap=true should wrap
         xq_outside = 2π + 1.0  # wraps to ~1.0
-        aq_periodic = FI._anchor_query(x, xq_outside; periodic=true)
+        aq_wrapped = FI._anchor_query(x, xq_outside; wrap=true)
 
         # Should be inside after wrapping
-        @test aq_periodic.side == 0x00
-        @test aq_periodic.xq != xq_outside  # xq is wrapped value
+        @test aq_wrapped.side == 0x00
+        @test aq_wrapped.xq != xq_outside  # xq is wrapped value
 
-        # Without periodic, should be outside
-        aq_nonperiodic = FI._anchor_query(x, xq_outside; periodic=false)
-        @test aq_nonperiodic.side == 0x02  # above max
+        # Without wrap, should be outside
+        aq_nowrap = FI._anchor_query(x, xq_outside; wrap=false)
+        @test aq_nowrap.side == 0x02  # above max
     end
 
     @testset "Invalid deriv argument" begin
@@ -280,10 +280,10 @@
         @test all(aq -> aq isa FI._CubicAnchoredQuery{Float64}, aq_vec)
     end
 
-    @testset "Vector anchor - periodic wrapping" begin
+    @testset "Vector anchor - wrap=true" begin
         x = collect(range(0.0, 1.0, 101))
         xq = [-0.3, 1.3, 2.5]
-        aq_vec = FI._anchor_query(x, xq; periodic=true)
+        aq_vec = FI._anchor_query(x, xq; wrap=true)
 
         @test all(aq -> aq.side == 0x00, aq_vec)  # All wrapped to inside
     end
@@ -438,13 +438,13 @@
         @test itp3(aq_vec) ≈ [itp3(q) for q in xq] atol=1e-14
     end
 
-    @testset "Vector evaluation - periodic wrapping" begin
+    @testset "Vector evaluation - wrap=true" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
         itp = cubic_interp(x, y; extrap=:wrap)
 
         xq = [-0.3, 1.3, 2.5]
-        aq_vec = FI._anchor_query(x, xq; periodic=true)
+        aq_vec = FI._anchor_query(x, xq; wrap=true)
         vals = itp(aq_vec)
 
         for (i, xq_i) in enumerate(xq)

@@ -453,4 +453,59 @@
         end
     end
 
+    # ========================================
+    # Zero-Allocation Tests for Derivatives
+    # ========================================
+
+    @testset "Scalar anchored derivatives - zero allocation" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y; extrap=:extension)
+        aq = FI._anchor_query(x, 0.5)
+
+        # Warmup all derivative orders
+        itp(aq)
+        itp(aq; deriv=1)
+        itp(aq; deriv=2)
+
+        # Value (deriv=0) - already tested, but include for completeness
+        allocs_d0 = @allocated itp(aq)
+        @test allocs_d0 == 0
+
+        # First derivative
+        allocs_d1 = @allocated itp(aq; deriv=1)
+        @test allocs_d1 == 0
+
+        # Second derivative
+        allocs_d2 = @allocated itp(aq; deriv=2)
+        @test allocs_d2 == 0
+    end
+
+    @testset "Vector in-place derivatives - zero allocation" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y; extrap=:extension)
+
+        xq = collect(range(0.1, 0.9, 50))
+        aq_vec = FI._anchor_query(x, xq)
+        output = similar(xq)
+
+        # Warmup all derivative orders
+        itp(output, aq_vec)
+        itp(output, aq_vec; deriv=1)
+        itp(output, aq_vec; deriv=2)
+
+        # Value (deriv=0)
+        allocs_d0 = @allocated itp(output, aq_vec)
+        @test allocs_d0 == 0
+
+        # First derivative - zero allocation
+        allocs_d1 = @allocated itp(output, aq_vec; deriv=1)
+        @test allocs_d1 == 0
+
+        # Second derivative - zero allocation
+        allocs_d2 = @allocated itp(output, aq_vec; deriv=2)
+        @test allocs_d2 == 0
+    end
+
 end

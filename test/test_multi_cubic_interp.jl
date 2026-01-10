@@ -524,3 +524,157 @@ end
         @test result isa AbstractVector{Float64}
     end
 end
+
+# ============================================================================
+# Phase 5: Zero-Allocation Tests for Derivatives
+# ============================================================================
+
+# ============================================================================
+# Phase 5b: Type Promotion Tests (coverage for Real type wrappers)
+# ============================================================================
+
+@testset "MultiCubicInterpolant - Type Promotion" begin
+    FI = FastInterpolations
+
+    @testset "Integer x with Float y vectors (promotes to Float64)" begin
+        x_int = collect(1:10)  # Integer vector
+        y1 = sin.(Float64.(x_int))
+        y2 = cos.(Float64.(x_int))
+
+        mitp = cubic_interp(x_int, [y1, y2])
+        @test mitp isa FI.MultiCubicInterpolant{Float64}
+
+        result = mitp(5.5)
+        @test length(result) == 2
+        @test all(isfinite, result)
+    end
+
+    @testset "Integer x with Integer y matrix (promotes to Float64)" begin
+        x_int = collect(1:10)  # Integer vector
+        Y_int = [i * j for i in 1:10, j in 1:3]  # Integer matrix
+
+        mitp = cubic_interp(x_int, Y_int)
+        @test mitp isa FI.MultiCubicInterpolant{Float64}
+        @test length(mitp.itps) == 3
+
+        result = mitp(5.5)
+        @test length(result) == 3
+        @test all(isfinite, result)
+    end
+
+    @testset "In-place vector with type-promoted xq" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        mitp = cubic_interp(x, [y1, y2])
+
+        # Float32 query points with Float64 interpolant
+        xq_f32 = Float32[0.1, 0.3, 0.5, 0.7, 0.9]
+        out1 = Vector{Float64}(undef, 5)
+        out2 = Vector{Float64}(undef, 5)
+        outputs = [out1, out2]
+
+        result = mitp(outputs, xq_f32)
+        @test result === outputs
+        @test all(isfinite, out1)
+        @test all(isfinite, out2)
+
+        # Verify values match Float64 path
+        xq_f64 = Float64.(xq_f32)
+        ref = mitp(xq_f64)
+        @test out1 ≈ ref[1] atol=1e-10
+        @test out2 ≈ ref[2] atol=1e-10
+    end
+
+    @testset "Mixed Integer x and y vectors" begin
+        x_int = collect(1:20)
+        y1_int = collect(1:20)
+        y2_int = collect(20:-1:1)
+
+        mitp = cubic_interp(x_int, [y1_int, y2_int])
+        @test mitp isa FI.MultiCubicInterpolant{Float64}
+
+        result = mitp(10.5)
+        @test length(result) == 2
+    end
+end
+
+# ============================================================================
+# Phase 6: Zero-Allocation Tests for Derivatives
+# ============================================================================
+
+@testset "MultiCubicInterpolant - Zero-Allocation Derivative Tests" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = exp.(-3 .* x)
+
+    mitp = cubic_interp(x, [y1, y2, y3]; extrap=:extension)
+    xq = collect(range(0.1, 0.9, 50))
+
+    @testset "Container in-place with derivatives - zero allocation (deriv=1)" begin
+        out1 = Vector{Float64}(undef, 50)
+        out2 = Vector{Float64}(undef, 50)
+        out3 = Vector{Float64}(undef, 50)
+        outputs = [out1, out2, out3]
+
+        # Pre-build anchors
+        aq_vec = FI._anchor_query(x, xq)
+
+        # Warmup
+        mitp(outputs, aq_vec; deriv=1)
+        mitp(outputs, aq_vec; deriv=1)
+
+        allocs = @allocated mitp(outputs, aq_vec; deriv=1)
+        @test allocs == 0
+    end
+
+    @testset "Container in-place with derivatives - zero allocation (deriv=2)" begin
+        out1 = Vector{Float64}(undef, 50)
+        out2 = Vector{Float64}(undef, 50)
+        out3 = Vector{Float64}(undef, 50)
+        outputs = [out1, out2, out3]
+
+        # Pre-build anchors
+        aq_vec = FI._anchor_query(x, xq)
+
+        # Warmup
+        mitp(outputs, aq_vec; deriv=2)
+        mitp(outputs, aq_vec; deriv=2)
+
+        allocs = @allocated mitp(outputs, aq_vec; deriv=2)
+        @test allocs == 0
+    end
+
+    @testset "Derivative correctness with anchors" begin
+        out1 = Vector{Float64}(undef, 50)
+        out2 = Vector{Float64}(undef, 50)
+        out3 = Vector{Float64}(undef, 50)
+        outputs = [out1, out2, out3]
+
+        aq_vec = FI._anchor_query(x, xq)
+
+        # Get derivatives via anchored path
+        mitp(outputs, aq_vec; deriv=1)
+
+        # Compare with individual interpolants
+        itp1 = cubic_interp(x, y1; extrap=:extension)
+        itp2 = cubic_interp(x, y2; extrap=:extension)
+        itp3 = cubic_interp(x, y3; extrap=:extension)
+
+        expected1 = Vector{Float64}(undef, 50)
+        expected2 = Vector{Float64}(undef, 50)
+        expected3 = Vector{Float64}(undef, 50)
+
+        itp1(expected1, aq_vec; deriv=1)
+        itp2(expected2, aq_vec; deriv=1)
+        itp3(expected3, aq_vec; deriv=1)
+
+        @test out1 ≈ expected1 atol=1e-14
+        @test out2 ≈ expected2 atol=1e-14
+        @test out3 ≈ expected3 atol=1e-14
+    end
+end

@@ -44,6 +44,7 @@ include("multi_cubic_interp.jl") # Multi-Y cubic interpolation
 # Quadratic spline interpolation
 include("quadratic_solver.jl")       # Coefficient computation (secants, d[], a[])
 include("quadratic_interp.jl")      # Public API (quadratic_interp, quadratic_interp!)
+include("quadratic_anchor.jl")      # Anchored query for ultra-fast evaluation (after QuadraticInterpolant)
 
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")

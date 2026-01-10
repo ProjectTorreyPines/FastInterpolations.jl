@@ -50,6 +50,7 @@ include("multi_cubic_interp.jl") # Multi-Y cubic interpolation
 include("quadratic_solver.jl")       # Coefficient computation (secants, d[], a[])
 include("quadratic_interp.jl")      # Public API (quadratic_interp, quadratic_interp!)
 include("quadratic_anchor.jl")      # Anchored query for ultra-fast evaluation (after QuadraticInterpolant)
+include("multi_quadratic_interp.jl") # Multi-Y quadratic interpolation
 
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")
@@ -61,7 +62,7 @@ export constant_interp, constant_interp!, ConstantInterpolant, ConstantMultiInte
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
 export CubicMultiInterpolant, MultiCubicInterpolant  # MultiCubicInterpolant is alias for backward compat
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
-export quadratic_interp, quadratic_interp!, QuadraticInterpolant
+export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticMultiInterpolant
 
 # Boundary condition types
 export AbstractBC, PointBC, Deriv1, Deriv2, BCPair

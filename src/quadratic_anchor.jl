@@ -223,6 +223,20 @@ end
     return _quadratic_anchor_dispatch(itp, aq, op, itp.mode)
 end
 
+# No extrapolation: throw DomainError if outside domain
+@inline function _quadratic_anchor_dispatch(
+    itp::QuadraticInterpolant{T},
+    aq::_QuadraticAnchoredQuery{T},
+    op::O,
+    ::Val{:none}
+) where {T<:AbstractFloat, O<:AbstractEvalOp}
+    if aq.side != 0x00  # outside domain
+        x_min, x_max = first(itp.x), last(itp.x)
+        throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+    end
+    @inbounds return _quadratic_kernel(op, itp.a[aq.idx], itp.d[aq.idx], itp.y[aq.idx], aq.dL)
+end
+
 # Inside domain or extension mode: use interpolation
 @inline function _quadratic_anchor_dispatch(
     itp::QuadraticInterpolant{T},

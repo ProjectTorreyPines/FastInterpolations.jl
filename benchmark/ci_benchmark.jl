@@ -184,7 +184,7 @@ for ns in MULTI_SERIES
     xq_multi = collect(range(0.1, 9.9, N_QUERY_MULTI))
     let b = @benchmarkable $mitp($xq_multi)
         b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
-        suite["8_cubic_multi"]["eval_s$(label)_q$(qlabel)"] = b
+        suite["8_cubic_multi"]["eval_s$(slabel)_q$(qlabel)"] = b
     end
 end
 

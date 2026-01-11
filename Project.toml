@@ -10,3 +10,6 @@ Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 
 [compat]
 julia = "1.7"
+AdaptiveArrayPools = "0.1"
+LinearAlgebra = "1"
+Preferences = "1"

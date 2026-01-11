@@ -267,7 +267,7 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 
 This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
 """
-function (mitp::QuadraticMultiInterpolant{T})(
+@with_pool pool function (mitp::QuadraticMultiInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{T};
     deriv::Int=0
@@ -277,8 +277,9 @@ function (mitp::QuadraticMultiInterpolant{T})(
 
     ref = _ref_itp(mitp)
 
-    # Build anchors once
-    aq_vec = _anchor_query(ref.x, xq, Val(:quadratic); wrap=_should_wrap(mitp))
+    # Build anchors from pool (zero allocation after warmup)
+    aq_vec = acquire!(pool, _QuadraticAnchoredQuery{T}, length(xq))
+    _fill_anchors!(aq_vec, ref.x, xq, Val(:quadratic); wrap=_should_wrap(mitp))
 
     # Evaluate all series using in-place anchored evaluation
     @inbounds for k in eachindex(mitp.itps, outputs)

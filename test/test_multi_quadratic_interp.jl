@@ -668,3 +668,92 @@ end
         @test mitp isa FI.QuadraticMultiInterpolant{Float64}
     end
 end
+
+# ============================================================================
+# Phase 8: Zero-Allocation Vector API (Pooled Anchors)
+# ============================================================================
+
+@testset "QuadraticMultiInterpolant - Zero-allocation vector API (pooled anchors)" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = x .^ 2
+
+    mitp = quadratic_interp(x, [y1, y2, y3])
+    n_series = 3
+
+    @testset "Zero allocation after warmup (same size)" begin
+        xq = collect(range(0.05, 0.95, 50))
+        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_series]
+
+        # Warmup to populate pool
+        mitp(outputs, xq)
+
+        # Measure allocations on second call (same size)
+        allocs = @allocated mitp(outputs, xq)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero allocation for smaller query vector (pool reuse)" begin
+        # First call with larger vector
+        xq_large = collect(range(0.05, 0.95, 100))
+        outputs_large = [Vector{Float64}(undef, length(xq_large)) for _ in 1:n_series]
+        mitp(outputs_large, xq_large)
+
+        # Second call with smaller vector (pool should reuse)
+        xq_small = collect(range(0.1, 0.9, 30))
+        outputs_small = [Vector{Float64}(undef, length(xq_small)) for _ in 1:n_series]
+        mitp(outputs_small, xq_small)
+
+        # Third call with same small size (should be zero allocation)
+        allocs = @allocated mitp(outputs_small, xq_small)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Bit-wise identical results" begin
+        xq = collect(range(0.05, 0.95, 50))
+        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_series]
+
+        # Single-series reference values
+        itp1 = quadratic_interp(x, y1)
+        itp2 = quadratic_interp(x, y2)
+        itp3 = quadratic_interp(x, y3)
+        ref1 = itp1.(xq)
+        ref2 = itp2.(xq)
+        ref3 = itp3.(xq)
+
+        # Multi-interpolant results
+        mitp(outputs, xq)
+
+        # Must be bit-wise identical
+        @test outputs[1] == ref1
+        @test outputs[2] == ref2
+        @test outputs[3] == ref3
+    end
+
+    @testset "Zero allocation with deriv=1" begin
+        xq = collect(range(0.05, 0.95, 50))
+        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_series]
+
+        # Warmup
+        mitp(outputs, xq; deriv=1)
+
+        # Measure allocations
+        allocs = @allocated mitp(outputs, xq; deriv=1)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero allocation with deriv=2" begin
+        xq = collect(range(0.05, 0.95, 50))
+        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_series]
+
+        # Warmup
+        mitp(outputs, xq; deriv=2)
+
+        # Measure allocations
+        allocs = @allocated mitp(outputs, xq; deriv=2)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+end

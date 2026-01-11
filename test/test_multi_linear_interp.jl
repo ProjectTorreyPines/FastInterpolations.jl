@@ -561,3 +561,86 @@ end
         @test_throws AssertionError mitp(outputs_bad, aq_vec)
     end
 end
+
+# ============================================================================
+# Phase 4: Zero-Allocation Vector API (Pooled Anchors)
+# ============================================================================
+
+@testset "LinearMultiInterpolant - Zero-allocation vector API (pooled anchors)" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = exp.(-3 .* x)
+
+    mitp = linear_interp(x, [y1, y2, y3]; extrap=:extension)
+
+    @testset "zero allocation after warmup (same size)" begin
+        xq = collect(range(0.1, 0.9, 100))
+        out1 = Vector{Float64}(undef, 100)
+        out2 = Vector{Float64}(undef, 100)
+        out3 = Vector{Float64}(undef, 100)
+        outputs = [out1, out2, out3]
+
+        # Warmup calls to establish pool capacity
+        mitp(outputs, xq)
+        mitp(outputs, xq)
+
+        # Allocation test
+        allocs = @allocated mitp(outputs, xq)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "zero allocation for smaller query vectors (pool reuse)" begin
+        # First warmup with larger size
+        xq_large = collect(range(0.1, 0.9, 100))
+        out_large = [Vector{Float64}(undef, 100) for _ in 1:3]
+        mitp(out_large, xq_large)
+        mitp(out_large, xq_large)
+
+        # Now test with smaller size - should reuse pool capacity
+        xq_small = collect(range(0.1, 0.9, 50))
+        out_small = [Vector{Float64}(undef, 50) for _ in 1:3]
+
+        # Warmup with small size
+        mitp(out_small, xq_small)
+
+        allocs = @allocated mitp(out_small, xq_small)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "bit-wise identical results (in-place vs out-of-place)" begin
+        xq = collect(range(0.1, 0.9, 50))
+
+        # Out-of-place result
+        result_oop = mitp(xq)
+
+        # In-place result
+        out1 = Vector{Float64}(undef, 50)
+        out2 = Vector{Float64}(undef, 50)
+        out3 = Vector{Float64}(undef, 50)
+        outputs = [out1, out2, out3]
+        mitp(outputs, xq)
+
+        # Bit-wise equality (not approximate)
+        @test out1 == result_oop[1]
+        @test out2 == result_oop[2]
+        @test out3 == result_oop[3]
+    end
+
+    @testset "zero allocation with deriv=1" begin
+        xq = collect(range(0.1, 0.9, 100))
+        out1 = Vector{Float64}(undef, 100)
+        out2 = Vector{Float64}(undef, 100)
+        out3 = Vector{Float64}(undef, 100)
+        outputs = [out1, out2, out3]
+
+        # Warmup
+        mitp(outputs, xq; deriv=1)
+        mitp(outputs, xq; deriv=1)
+
+        allocs = @allocated mitp(outputs, xq; deriv=1)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+end

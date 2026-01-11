@@ -157,6 +157,37 @@ let b = @benchmarkable $itp_cubic_vec($xq_vec1)
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Cubic Multi-Interpolant Benchmarks
+# ══════════════════════════════════════════════════════════════════════════════
+
+println("Setting up cubic multi-interpolant benchmarks...")
+
+const MULTI_SERIES = [1, 10, 100]  # single series (to test overhead), medium batch
+const N_QUERY_MULTI = 100
+
+for ns in MULTI_SERIES
+    ys = [sin.(x .+ 0.1*i) for i in 1:ns]
+    label = lpad(ns, 2, '0')
+
+    # Construction benchmark
+    clear_cubic_cache!()
+    cubic_interp(x, ys)  # prime cache
+    let b = @benchmarkable cubic_interp($x, $ys)
+        b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
+        suite["8_cubic_multi"]["construct_s$(label)_q$(N_QUERY_MULTI)"] = b
+    end
+
+    # Evaluation benchmark
+    clear_cubic_cache!()
+    mitp = cubic_interp(x, ys)
+    xq_multi = collect(range(0.1, 9.9, N_QUERY_MULTI))
+    let b = @benchmarkable $mitp($xq_multi)
+        b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
+        suite["8_cubic_multi"]["eval_s$(label)_q$(N_QUERY_MULTI)"] = b
+    end
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Run and Save
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -222,4 +253,4 @@ for group_name in sort(collect(keys(med_results)))
     end
 end
 
-println("\nDone! (22 benchmarks total)")
+println("\nBenchmarking Done!")

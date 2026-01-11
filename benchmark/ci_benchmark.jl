@@ -167,14 +167,15 @@ const N_QUERY_MULTI = 100
 
 for ns in MULTI_SERIES
     ys = [sin.(x .+ 0.1*i) for i in 1:ns]
-    label = lpad(ns, 2, '0')
+    slabel = lpad(ns, 3, '0')
+    qlabel = lpad(N_QUERY_MULTI, 3, '0')
 
     # Construction benchmark
     clear_cubic_cache!()
     cubic_interp(x, ys)  # prime cache
     let b = @benchmarkable cubic_interp($x, $ys)
         b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
-        suite["8_cubic_multi"]["construct_s$(label)_q$(N_QUERY_MULTI)"] = b
+        suite["8_cubic_multi"]["construct_s$(slabel)_q$(qlabel)"] = b
     end
 
     # Evaluation benchmark
@@ -183,7 +184,7 @@ for ns in MULTI_SERIES
     xq_multi = collect(range(0.1, 9.9, N_QUERY_MULTI))
     let b = @benchmarkable $mitp($xq_multi)
         b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
-        suite["8_cubic_multi"]["eval_s$(label)_q$(N_QUERY_MULTI)"] = b
+        suite["8_cubic_multi"]["eval_s$(label)_q$(qlabel)"] = b
     end
 end
 

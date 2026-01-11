@@ -102,6 +102,10 @@ makedocs(
     ),
     pages = [
         "Home" => "index.md",
+        "Guide" => [
+            "API Selection" => "guides/api_selection.md",
+            "Performance Tips" => "guides/performance_tips.md",
+        ],
         "Interpolation" => [
             "Overview" => "interpolation/overview.md",
             "Constant" => "interpolation/constant.md",
@@ -117,7 +121,6 @@ makedocs(
             "Auto-Cache" => "architecture/caching.md",
             "Thread Safety" => "architecture/thread_safety.md",
         ],
-        "Benchmarks" => "guides/performance.md",
         "API Reference" => [
             "Constant" => "api/constant.md",
             "Linear" => "api/linear.md",
@@ -125,7 +128,10 @@ makedocs(
             "Cubic" => "api/cubic.md",
             "Types" => "api/types.md",
         ],
-        "Internals" => "internals.md",
+        "Internals" => [
+            "Overview" => "internals.md",
+            "Benchmarks" => "guides/performance.md",
+        ],
     ],
     doctest = true,
     checkdocs = :exports,

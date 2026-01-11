@@ -57,12 +57,9 @@ println("itp(π) = ", round(itp(π), digits=4))
 
 ## Choosing the Right Pattern
 
-| Scenario | Recommended Pattern |
-|----------|---------------------|
-| Simulation loop: x fixed, y evolves | One-shot with `cubic_interp!` |
-| Lookup table: x and y both fixed | Interpolant object |
-| One-time interpolation | Either works |
-| Memory-constrained environment | Interpolant (no cache overhead) |
+!!! tip "Comprehensive API Selection Guide"
+    For detailed decision-making support including the new MultiInterpolant pattern,
+    performance trade-offs, and optimization tips, see the [API Selection Guide](../guides/api_selection.md).
 
 ## Allocation Behavior Summary
 

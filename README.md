@@ -27,7 +27,7 @@ Pkg.add("FastInterpolations")
 
 ## Quick Start
 
-`FastInterpolations.jl` provides two API styles optimized for different data dynamics.
+`FastInterpolations.jl` provides two primary API styles, plus a specialized MultiInterpolant for multi-series data.
 
 ### 1. One-shot API (Dynamic Data)
 Best when **`y` values change** every step, but the grid **`x` remains fixed**.
@@ -61,6 +61,17 @@ result = itp(5.5)              # evaluate at single point
 result = itp(xq)               # evaluate at multiple points
 @. result = a * itp(xq) + b    # seamless broadcast fusion
 ```
+
+### 2.1 MultiInterpolant (Multiple Series)
+When **multiple y-series share the same x-grid**, use MultiInterpolant for optimal performance. It enables shared grid coefficients, zero-allocation batch evaluation, and anchored queries that skip grid search entirely.
+
+```julia
+mitp = cubic_interp(x, [temp, press, vel])  # 3 series, 1 shared grid
+outputs = [similar(xq) for _ in 1:3]
+mitp(outputs, xq)                           # zero-allocation batch
+```
+
+For detailed API selection guidance, see the [API Selection Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/api_selection/).
 
 ## Supported Methods
 `FastInterpolations.jl` supports four interpolation methods: `Constant`, `Linear`, `Quadratic`, and `Cubic` splines.

@@ -156,7 +156,7 @@ In-place version of `_anchor_query(x, xq, Val(:linear))` for zero-allocation poo
 The same `buffer` object, filled with anchored queries.
 """
 @inline function _fill_anchors!(
-    buffer::Vector{_LinearAnchoredQuery{T}},
+    buffer::AbstractVector{_LinearAnchoredQuery{T}},
     x::AbstractVector{T},
     xq::AbstractVector{S},
     ::Val{:linear};

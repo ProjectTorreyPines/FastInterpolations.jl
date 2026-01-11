@@ -158,7 +158,7 @@ In-place version of `_anchor_query(x, xq, Val(:constant))` for zero-allocation p
 The same `buffer` object, filled with anchored queries.
 """
 @inline function _fill_anchors!(
-    buffer::Vector{_ConstantAnchoredQuery{T}},
+    buffer::AbstractVector{_ConstantAnchoredQuery{T}},
     x::AbstractVector{T},
     xq::AbstractVector{S},
     ::Val{:constant};

@@ -156,7 +156,7 @@ In-place version of `_anchor_query(x, xq, Val(:quadratic))` for zero-allocation 
 The same `buffer` object, filled with anchored queries.
 """
 @inline function _fill_anchors!(
-    buffer::Vector{_QuadraticAnchoredQuery{T}},
+    buffer::AbstractVector{_QuadraticAnchoredQuery{T}},
     x::AbstractVector{T},
     xq::AbstractVector{S},
     ::Val{:quadratic};

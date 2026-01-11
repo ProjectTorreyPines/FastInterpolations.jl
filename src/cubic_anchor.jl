@@ -212,7 +212,7 @@ _fill_anchors!(buffer, x, xq)
 ```
 """
 @inline function _fill_anchors!(
-    buffer::Vector{_CubicAnchoredQuery{T}},
+    buffer::AbstractVector{_CubicAnchoredQuery{T}},
     x::AbstractVector{T},
     xq::AbstractVector{S};
     wrap::Bool=false

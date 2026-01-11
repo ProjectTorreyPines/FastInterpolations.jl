@@ -273,8 +273,9 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 - `deriv`: Derivative order (0, 1, or 2)
 
 This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
+Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 """
-function (mitp::CubicMultiInterpolant{T})(
+@with_pool pool function (mitp::CubicMultiInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{T};
     deriv::Int=0
@@ -284,8 +285,9 @@ function (mitp::CubicMultiInterpolant{T})(
 
     ref = _ref_itp(mitp)
 
-    # Build anchors once (this allocates, but anchors can be pre-built for even better perf)
-    aq_vec = _anchor_query(ref.cache.x, xq; wrap=_should_wrap(mitp))
+    # Build anchors from pool (zero allocation after warmup)
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{T}, length(xq))
+    _fill_anchors!(aq_vec, ref.cache.x, xq; wrap=_should_wrap(mitp))
 
     # Evaluate all series using in-place anchored evaluation
     @inbounds for k in eachindex(mitp.itps, outputs)

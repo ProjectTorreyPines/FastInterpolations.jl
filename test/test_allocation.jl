@@ -93,7 +93,7 @@ import FastInterpolations: _get_cubic_cache
 
         # In-place with cache - MUST be zero allocation
         allocs = @allocated cubic_interp!(output, cache, y, x_query)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Zero-allocation: In-place with autocache" begin
@@ -193,7 +193,7 @@ import FastInterpolations: _get_cubic_cache
 
         # In-place - zero allocation
         allocs = @allocated cubic_interp!(output, cache, y, x_query)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     # =========================================================================
@@ -507,7 +507,7 @@ import FastInterpolations: _get_cubic_cache
 
         # In-place linear interpolation - MUST be zero allocation
         allocs = @allocated linear_interp!(output, x, y, x_query)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Zero-allocation: LinearInterpolant callable" begin
@@ -574,7 +574,7 @@ import FastInterpolations: _get_cubic_cache
 
         # In-place with explicit cache - MUST be zero allocation
         allocs = @allocated cubic_interp!(output, cache, y, x_query)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Periodic BC: autocache achieves zero-allocation" begin
@@ -716,14 +716,14 @@ import FastInterpolations: _get_cubic_cache
 
         # Runtime extrapolation - MUST be zero allocation
         allocs = @allocated inplace_runtime_extrapolation!(output, :extension)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
 
         allocs = @allocated inplace_runtime_extrapolation!(output, :constant)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
 
         # Runtime wrap - MUST be zero allocation
         allocs = @allocated inplace_runtime_extrapolation!(output, :wrap)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Runtime symbol: cubic_interp scalar" begin

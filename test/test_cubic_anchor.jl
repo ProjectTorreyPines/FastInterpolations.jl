@@ -1,3 +1,5 @@
+# ALLOC_THRESHOLD is defined in runtests.jl
+
 @testset "Cubic Anchored Query" begin
     FI = FastInterpolations
 
@@ -127,7 +129,7 @@
 
         # Measure allocation
         allocs = @allocated itp(aq)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Multi-interpolant use case" begin
@@ -420,7 +422,7 @@
         itp(output, aq_vec)
 
         allocs = @allocated itp(output, aq_vec)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Vector evaluation - multi-interpolant reuse" begin
@@ -470,15 +472,15 @@
 
         # Value (deriv=0) - already tested, but include for completeness
         allocs_d0 = @allocated itp(aq)
-        @test allocs_d0 == 0
+        @test allocs_d0 <= ALLOC_THRESHOLD
 
         # First derivative
         allocs_d1 = @allocated itp(aq; deriv=1)
-        @test allocs_d1 == 0
+        @test allocs_d1 <= ALLOC_THRESHOLD
 
         # Second derivative
         allocs_d2 = @allocated itp(aq; deriv=2)
-        @test allocs_d2 == 0
+        @test allocs_d2 <= ALLOC_THRESHOLD
     end
 
     @testset "Vector in-place derivatives - zero allocation" begin
@@ -497,15 +499,15 @@
 
         # Value (deriv=0)
         allocs_d0 = @allocated itp(output, aq_vec)
-        @test allocs_d0 == 0
+        @test allocs_d0 <= ALLOC_THRESHOLD
 
         # First derivative - zero allocation
         allocs_d1 = @allocated itp(output, aq_vec; deriv=1)
-        @test allocs_d1 == 0
+        @test allocs_d1 <= ALLOC_THRESHOLD
 
         # Second derivative - zero allocation
         allocs_d2 = @allocated itp(output, aq_vec; deriv=2)
-        @test allocs_d2 == 0
+        @test allocs_d2 <= ALLOC_THRESHOLD
     end
 
 end

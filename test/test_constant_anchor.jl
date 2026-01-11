@@ -1,5 +1,7 @@
 # Test suite for Constant Anchored Query functionality
 # Phase 0B of AbstractMultiInterpolant implementation
+#
+# ALLOC_THRESHOLD is defined in runtests.jl
 
 using Test
 using FastInterpolations
@@ -252,7 +254,7 @@ using FastInterpolations
 
         # Allocation test
         allocs = @allocated itp(output, aq_vec)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     # ========================================

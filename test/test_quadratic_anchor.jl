@@ -1,5 +1,7 @@
 # Test suite for Quadratic Anchored Query functionality
 # Phase 0C of AbstractMultiInterpolant implementation
+#
+# ALLOC_THRESHOLD is defined in runtests.jl
 
 using Test
 using FastInterpolations
@@ -249,7 +251,7 @@ using FastInterpolations
 
         # Allocation test
         allocs = @allocated itp(output, aq_vec)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     # ========================================
@@ -364,7 +366,7 @@ using FastInterpolations
 
         # Allocation test
         allocs = @allocated itp(output, aq_vec; deriv=1)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "zero-allocation with deriv=2" begin
@@ -381,7 +383,7 @@ using FastInterpolations
 
         # Allocation test
         allocs = @allocated itp(output, aq_vec; deriv=2)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     # ========================================

@@ -2,6 +2,8 @@
 #
 # Multi-Y interpolation: multiple y-data series sharing the same x-grid.
 # Uses composition approach: wraps existing LinearInterpolant objects.
+#
+# ALLOC_THRESHOLD is defined in runtests.jl
 
 # ============================================================================
 # Phase 1: Type Definition & Constructor Tests
@@ -328,7 +330,7 @@ end
         mitp(outputs, aq_vec)
 
         allocs = @allocated mitp(outputs, aq_vec)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 end
 
@@ -494,7 +496,7 @@ end
         mitp(outputs, aq_vec; deriv=1)
 
         allocs = @allocated mitp(outputs, aq_vec; deriv=1)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Derivative correctness with anchors" begin

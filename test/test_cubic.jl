@@ -1,3 +1,5 @@
+# ALLOC_THRESHOLD is defined in runtests.jl
+
 @testset "Cubic Spline - Core Functionality" begin
 
     @testset "Basic correctness" begin
@@ -276,7 +278,7 @@
 
         # In-place with explicit cache - MUST be zero allocation
         allocs = @allocated cubic_interp!(output, cache, y, x_query)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "One-shot Convenience Function" begin

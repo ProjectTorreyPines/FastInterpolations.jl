@@ -403,4 +403,61 @@ using FastInterpolations
         @test aq_wrap_neg.side == 0x00
     end
 
+    # ========================================
+    # _fill_anchors! In-Place API
+    # ========================================
+
+    @testset "_fill_anchors! in-place" begin
+        FI = FastInterpolations
+
+        @testset "fills buffer with correct anchor values" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
+
+            expected = FI._anchor_query(x, xq, Val(:quadratic))
+            buffer = Vector{FI._QuadraticAnchoredQuery{Float64}}(undef, length(xq))
+            FI._fill_anchors!(buffer, x, xq, Val(:quadratic))
+
+            for i in eachindex(xq)
+                @test buffer[i].idx == expected[i].idx
+                @test buffer[i].xq == expected[i].xq
+                @test buffer[i].side == expected[i].side
+                @test buffer[i].dL == expected[i].dL
+            end
+        end
+
+        @testset "wrap mode works correctly" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = [-0.3, 0.5, 1.3, 2.5]
+
+            expected = FI._anchor_query(x, xq, Val(:quadratic); wrap=true)
+            buffer = Vector{FI._QuadraticAnchoredQuery{Float64}}(undef, length(xq))
+            FI._fill_anchors!(buffer, x, xq, Val(:quadratic); wrap=true)
+
+            for i in eachindex(xq)
+                @test buffer[i].idx == expected[i].idx
+                @test buffer[i].xq == expected[i].xq
+                @test buffer[i].side == expected[i].side
+            end
+        end
+
+        @testset "length assertion when buffer too small" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = [0.15, 0.35, 0.5, 0.75]
+            buffer = Vector{FI._QuadraticAnchoredQuery{Float64}}(undef, 2)
+
+            @test_throws AssertionError FI._fill_anchors!(buffer, x, xq, Val(:quadratic))
+        end
+
+        @testset "zero allocation after warmup" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = collect(range(0.1, 0.9, 50))
+            buffer = Vector{FI._QuadraticAnchoredQuery{Float64}}(undef, length(xq))
+
+            FI._fill_anchors!(buffer, x, xq, Val(:quadratic))
+            allocs = @allocated FI._fill_anchors!(buffer, x, xq, Val(:quadratic))
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
 end

@@ -140,6 +140,36 @@ function _anchor_query(
 end
 
 """
+    _fill_anchors!(buffer, x, xq, ::Val{:quadratic}; wrap=false) -> buffer
+
+Fill a pre-allocated buffer with anchored queries for quadratic interpolation.
+In-place version of `_anchor_query(x, xq, Val(:quadratic))` for zero-allocation pooled usage.
+
+# Arguments
+- `buffer::Vector{_QuadraticAnchoredQuery{T}}`: Pre-allocated buffer (length >= length(xq))
+- `x::AbstractVector{T}`: Grid points (must match interpolant's grid)
+- `xq::AbstractVector`: Query points (any Real type, auto-promoted to T)
+- `::Val{:quadratic}`: Type tag for quadratic interpolation
+- `wrap::Bool=false`: If true, wrap query points to domain [x[1], x[end])
+
+# Returns
+The same `buffer` object, filled with anchored queries.
+"""
+@inline function _fill_anchors!(
+    buffer::Vector{_QuadraticAnchoredQuery{T}},
+    x::AbstractVector{T},
+    xq::AbstractVector{S},
+    ::Val{:quadratic};
+    wrap::Bool=false
+) where {T<:AbstractFloat, S<:Real}
+    @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
+    @inbounds for k in eachindex(xq)
+        buffer[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap)
+    end
+    return buffer
+end
+
+"""
     _quadratic_anchor_query_impl(x, xq, wrap) -> _QuadraticAnchoredQuery
 
 Internal implementation of _anchor_query for quadratic interpolation.

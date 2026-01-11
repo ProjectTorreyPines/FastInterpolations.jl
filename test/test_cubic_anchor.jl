@@ -510,4 +510,92 @@
         @test allocs_d2 <= ALLOC_THRESHOLD
     end
 
+    # ========================================
+    # _fill_anchors! In-Place API
+    # ========================================
+
+    @testset "_fill_anchors! in-place" begin
+        @testset "fills buffer with correct anchor values" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
+
+            # Reference: allocating version
+            expected = FI._anchor_query(x, xq)
+
+            # In-place version
+            buffer = Vector{FI._CubicAnchoredQuery{Float64}}(undef, length(xq))
+            FI._fill_anchors!(buffer, x, xq)
+
+            # Verify all fields match exactly (bit-wise)
+            for i in eachindex(xq)
+                @test buffer[i].idx == expected[i].idx
+                @test buffer[i].xq == expected[i].xq
+                @test buffer[i].side == expected[i].side
+                @test buffer[i].w0 == expected[i].w0
+                @test buffer[i].w1 == expected[i].w1
+                @test buffer[i].w2 == expected[i].w2
+            end
+        end
+
+        @testset "wrap mode works correctly" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = [-0.3, 0.5, 1.3, 2.5]  # First and last two outside domain
+
+            # Reference
+            expected = FI._anchor_query(x, xq; wrap=true)
+
+            # In-place
+            buffer = Vector{FI._CubicAnchoredQuery{Float64}}(undef, length(xq))
+            FI._fill_anchors!(buffer, x, xq; wrap=true)
+
+            for i in eachindex(xq)
+                @test buffer[i].idx == expected[i].idx
+                @test buffer[i].xq == expected[i].xq
+                @test buffer[i].side == expected[i].side
+                @test buffer[i].w0 == expected[i].w0
+            end
+        end
+
+        @testset "length assertion when buffer too small" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = [0.15, 0.35, 0.5, 0.75]  # 4 points
+            buffer = Vector{FI._CubicAnchoredQuery{Float64}}(undef, 2)  # Only 2 slots
+
+            @test_throws AssertionError FI._fill_anchors!(buffer, x, xq)
+        end
+
+        @testset "empty vector case" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = Float64[]
+            buffer = Vector{FI._CubicAnchoredQuery{Float64}}(undef, 0)
+
+            # Should not throw
+            FI._fill_anchors!(buffer, x, xq)
+            @test length(buffer) == 0
+        end
+
+        @testset "type promotion (Float32 grid with Float64 queries)" begin
+            x = Float32.(collect(range(0.0f0, 1.0f0, 101)))
+            xq = [0.15, 0.35, 0.5]  # Float64 queries
+
+            buffer = Vector{FI._CubicAnchoredQuery{Float32}}(undef, length(xq))
+            FI._fill_anchors!(buffer, x, xq)
+
+            @test all(aq -> aq isa FI._CubicAnchoredQuery{Float32}, buffer)
+        end
+
+        @testset "zero allocation after warmup" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = collect(range(0.1, 0.9, 50))
+            buffer = Vector{FI._CubicAnchoredQuery{Float64}}(undef, length(xq))
+
+            # Warmup
+            FI._fill_anchors!(buffer, x, xq)
+
+            # Measure
+            allocs = @allocated FI._fill_anchors!(buffer, x, xq)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
 end

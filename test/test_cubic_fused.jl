@@ -541,4 +541,142 @@ using FastInterpolations
 
     end  # Phase 5 testset
 
+    # ========================================
+    # Phase 6: Derivative Support
+    # ========================================
+    @testset "Phase 6: Derivatives" begin
+
+        @testset "deriv=1 returns first derivatives" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+
+            d1 = mitp(0.5; deriv=1)
+            @test d1 isa Vector{Float64}
+            @test length(d1) == 2
+
+            # Analytical derivatives: d/dx sin(2πx) = 2π cos(2πx), d/dx cos(2πx) = -2π sin(2πx)
+            # At x=0.5: cos(π)=-1, sin(π)=0
+            # So d1 ≈ [-2π, 0]
+            @test d1[1] ≈ -2π atol=1e-2  # Numerical vs analytical
+            @test abs(d1[2]) < 1e-2  # Should be near zero
+        end
+
+        @testset "deriv=2 returns second derivatives" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+
+            d2 = mitp(0.5; deriv=2)
+            @test d2 isa Vector{Float64}
+            @test length(d2) == 2
+
+            # Analytical 2nd derivatives: d²/dx² sin(2πx) = -4π² sin(2πx), d²/dx² cos(2πx) = -4π² cos(2πx)
+            # At x=0.5: sin(π)=0, cos(π)=-1
+            # So d2 ≈ [0, 4π²]
+            @test abs(d2[1]) < 1e-1  # Should be near zero
+            @test d2[2] ≈ 4π^2 atol=1  # Numerical vs analytical
+        end
+
+        @testset "Derivatives match CubicMultiInterpolant" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+            y3 = exp.(-x)
+
+            mitp_fused = cubic_interp_fused(x, [y1, y2, y3])
+            mitp_comp = cubic_interp(x, [y1, y2, y3])
+
+            for xq in [0.1, 0.25, 0.5, 0.75, 0.9]
+                # First derivative
+                d1_fused = mitp_fused(xq; deriv=1)
+                d1_comp = mitp_comp(xq; deriv=1)
+                @test d1_fused ≈ d1_comp atol=1e-14
+
+                # Second derivative
+                d2_fused = mitp_fused(xq; deriv=2)
+                d2_comp = mitp_comp(xq; deriv=2)
+                @test d2_fused ≈ d2_comp atol=1e-14
+            end
+        end
+
+        @testset "Derivatives work with in-place API" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+            out = zeros(2)
+
+            # deriv=1
+            result = mitp(out, 0.5; deriv=1)
+            @test result === out
+            @test abs(out[1] + 2π) < 1e-2  # ≈ -2π
+
+            # deriv=2
+            mitp(out, 0.5; deriv=2)
+            @test abs(out[2] - 4π^2) < 1  # ≈ 4π²
+        end
+
+        @testset "Derivatives match finite difference approximation" begin
+            x = collect(range(0.0, 1.0, 101))
+            y1 = x .^ 3 .- 2 .* x .^ 2 .+ x  # Cubic polynomial
+            y2 = sin.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+
+            # Test point
+            xq = 0.4
+            h = 1e-6
+
+            # First derivative via finite difference
+            v_plus = mitp(xq + h)
+            v_minus = mitp(xq - h)
+            fd1 = (v_plus .- v_minus) ./ (2h)
+            d1 = mitp(xq; deriv=1)
+            @test d1 ≈ fd1 atol=1e-5
+
+            # Second derivative via finite difference
+            v_center = mitp(xq)
+            fd2 = (v_plus .- 2 .* v_center .+ v_minus) ./ h^2
+            d2 = mitp(xq; deriv=2)
+            @test d2 ≈ fd2 atol=1e-3  # Lower accuracy for 2nd deriv
+        end
+
+        @testset "Derivatives work with different BC types" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            for bc in [NaturalBC(), ClampedBC(), PeriodicBC()]
+                mitp_fused = cubic_interp_fused(x, [y1, y2]; bc=bc)
+                mitp_comp = cubic_interp(x, [y1, y2]; bc=bc)
+
+                # Test at interior point
+                d1_fused = mitp_fused(0.5; deriv=1)
+                d1_comp = mitp_comp(0.5; deriv=1)
+                @test d1_fused ≈ d1_comp atol=1e-14
+
+                d2_fused = mitp_fused(0.5; deriv=2)
+                d2_comp = mitp_comp(0.5; deriv=2)
+                @test d2_fused ≈ d2_comp atol=1e-14
+            end
+        end
+
+        @testset "Invalid deriv value throws error" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1])
+
+            # deriv=3 should throw
+            @test_throws Exception mitp(0.5; deriv=3)
+        end
+
+    end  # Phase 6 testset
+
 end  # Main testset

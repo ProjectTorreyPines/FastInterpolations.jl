@@ -971,4 +971,155 @@ using FastInterpolations
 
     end  # Phase 8 testset
 
+    # ========================================
+    # Phase 9: Matrix Input Constructor
+    # ========================================
+    @testset "Phase 9: Matrix Input Constructor" begin
+
+        @testset "layout=:columns (default) - Y is n_points × n_series" begin
+            x = collect(range(0.0, 1.0, 21))
+            n_points = length(x)
+            n_series = 3
+
+            # Y matrix: each column is a series
+            Y = Matrix{Float64}(undef, n_points, n_series)
+            Y[:, 1] = sin.(2π .* x)
+            Y[:, 2] = cos.(2π .* x)
+            Y[:, 3] = exp.(-x)
+
+            mitp = cubic_interp_fused(x, Y)  # default layout=:columns
+
+            @test mitp isa CubicMultiInterpolantFused
+            @test mitp.n_series == 3
+            @test mitp.n_points == n_points
+        end
+
+        @testset "layout=:series_first - Y is n_series × n_points" begin
+            x = collect(range(0.0, 1.0, 21))
+            n_points = length(x)
+            n_series = 3
+
+            # Y matrix: each row is a series (same as internal storage)
+            Y = Matrix{Float64}(undef, n_series, n_points)
+            Y[1, :] = sin.(2π .* x)
+            Y[2, :] = cos.(2π .* x)
+            Y[3, :] = exp.(-x)
+
+            mitp = cubic_interp_fused(x, Y; layout=:series_first)
+
+            @test mitp isa CubicMultiInterpolantFused
+            @test mitp.n_series == 3
+            @test mitp.n_points == n_points
+        end
+
+        @testset "Both layouts produce equivalent results" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            # Column layout
+            Y_cols = hcat(y1, y2)  # n_points × n_series
+            mitp_cols = cubic_interp_fused(x, Y_cols; layout=:columns)
+
+            # Row layout (series-first)
+            Y_rows = vcat(y1', y2')  # n_series × n_points
+            mitp_rows = cubic_interp_fused(x, Y_rows; layout=:series_first)
+
+            # Results should be identical
+            for xq in [0.1, 0.3, 0.5, 0.7, 0.9]
+                @test mitp_cols(xq) ≈ mitp_rows(xq) atol=1e-14
+            end
+        end
+
+        @testset "Matrix layout matches Vector{Vector} constructor" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            # Vector{Vector} API
+            mitp_vec = cubic_interp_fused(x, [y1, y2])
+
+            # Matrix API (columns)
+            Y_cols = hcat(y1, y2)
+            mitp_cols = cubic_interp_fused(x, Y_cols; layout=:columns)
+
+            # Matrix API (series_first)
+            Y_rows = vcat(y1', y2')
+            mitp_rows = cubic_interp_fused(x, Y_rows; layout=:series_first)
+
+            # All three should produce identical results
+            for xq in [0.1, 0.5, 0.9]
+                vals_vec = mitp_vec(xq)
+                vals_cols = mitp_cols(xq)
+                vals_rows = mitp_rows(xq)
+
+                @test vals_cols ≈ vals_vec atol=1e-14
+                @test vals_rows ≈ vals_vec atol=1e-14
+            end
+        end
+
+        @testset "Invalid layout throws ArgumentError" begin
+            x = collect(range(0.0, 1.0, 11))
+            Y = ones(11, 2)
+
+            @test_throws ArgumentError cubic_interp_fused(x, Y; layout=:invalid)
+            @test_throws ArgumentError cubic_interp_fused(x, Y; layout=:row_major)
+        end
+
+        @testset "Dimension mismatch throws DimensionMismatch" begin
+            x = collect(range(0.0, 1.0, 11))
+
+            # Wrong number of rows for column layout
+            Y_wrong = ones(10, 3)  # Should be 11 × n_series
+            @test_throws DimensionMismatch cubic_interp_fused(x, Y_wrong; layout=:columns)
+
+            # Wrong number of columns for series_first layout
+            Y_wrong2 = ones(3, 10)  # Should be n_series × 11
+            @test_throws DimensionMismatch cubic_interp_fused(x, Y_wrong2; layout=:series_first)
+        end
+
+        @testset "Works with all BC types" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+            Y = hcat(y1, y2)
+
+            # NaturalBC
+            mitp_natural = cubic_interp_fused(x, Y; bc=NaturalBC())
+            @test mitp_natural isa CubicMultiInterpolantFused
+
+            # ClampedBC
+            mitp_clamped = cubic_interp_fused(x, Y; bc=ClampedBC())
+            @test mitp_clamped isa CubicMultiInterpolantFused
+
+            # PeriodicBC (y1 and y2 are periodic)
+            mitp_periodic = cubic_interp_fused(x, Y; bc=PeriodicBC())
+            @test mitp_periodic isa CubicMultiInterpolantFused
+        end
+
+        @testset "Works with extrap keyword" begin
+            x = collect(range(0.0, 1.0, 21))
+            Y = hcat(sin.(2π .* x), cos.(2π .* x))
+
+            for extrap in [:none, :constant, :extension, :wrap]
+                mitp = cubic_interp_fused(x, Y; extrap=extrap)
+                @test mitp.extrap === Val(extrap)
+            end
+        end
+
+        @testset "Float32 matrix works" begin
+            x = collect(range(0.0f0, 1.0f0, 21))
+            Y = Matrix{Float32}(undef, 21, 2)
+            Y[:, 1] = sin.(2π .* x)
+            Y[:, 2] = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, Y)
+
+            @test mitp isa CubicMultiInterpolantFused{Float32}
+            vals = mitp(0.5f0)
+            @test vals isa Vector{Float32}
+        end
+
+    end  # Phase 9 testset
+
 end  # Main testset

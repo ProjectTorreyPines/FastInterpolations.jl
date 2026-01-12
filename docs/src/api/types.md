@@ -1,5 +1,23 @@
 # Type Reference
 
+## Abstract Types
+
+### Interpolant Hierarchy
+
+```@docs
+AbstractInterpolant
+AbstractMultiInterpolant
+```
+
+## Evaluation Operations
+
+```@docs
+AbstractEvalOp
+EvalValue
+EvalDeriv1
+EvalDeriv2
+```
+
 ## Boundary Conditions
 
 ### Cubic Splines (BCPair)
@@ -20,6 +38,32 @@ PeriodicBC
 ```@docs
 Left
 Right
+```
+
+## Multi-Interpolant Types
+
+### Constant Interpolation
+
+```@docs
+ConstantMultiInterpolant
+```
+
+### Linear Interpolation
+
+```@docs
+LinearMultiInterpolant
+```
+
+### Quadratic Interpolation
+
+```@docs
+QuadraticMultiInterpolant
+```
+
+### Cubic Interpolation
+
+```@docs
+CubicMultiInterpolant
 ```
 
 ## Index

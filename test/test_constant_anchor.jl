@@ -1,0 +1,412 @@
+# Test suite for Constant Anchored Query functionality
+# Phase 0B of AbstractMultiInterpolant implementation
+#
+# ALLOC_THRESHOLD is defined in runtests.jl
+
+using Test
+using FastInterpolations
+
+@testset "Constant Anchored Query" begin
+
+    # ========================================
+    # Struct Fields Tests
+    # ========================================
+    @testset "struct _ConstantAnchoredQuery fields" begin
+        x = collect(range(0.0, 1.0, 11))  # 0.0, 0.1, ..., 1.0
+        xq = 0.35
+
+        aq = FastInterpolations._anchor_query(x, xq, Val(:constant))
+
+        @test aq isa FastInterpolations._ConstantAnchoredQuery{Float64}
+        @test hasfield(typeof(aq), :idx)
+        @test hasfield(typeof(aq), :xq)
+        @test hasfield(typeof(aq), :side)
+        @test hasfield(typeof(aq), :h)
+        @test hasfield(typeof(aq), :dL)
+
+        # Verify field types
+        @test aq.idx isa Int
+        @test aq.xq isa Float64
+        @test aq.side isa UInt8
+        @test aq.h isa Float64
+        @test aq.dL isa Float64
+    end
+
+    # ========================================
+    # Scalar Construction Tests
+    # ========================================
+    @testset "_anchor_query scalar construction" begin
+        x = collect(range(0.0, 1.0, 11))  # h = 0.1
+
+        # Query inside domain
+        aq = FastInterpolations._anchor_query(x, 0.35, Val(:constant))
+        @test aq.idx == 4  # interval [0.3, 0.4]
+        @test aq.xq == 0.35
+        @test aq.side == 0x00  # inside
+        @test aq.h ≈ 0.1
+        @test aq.dL ≈ 0.05  # 0.35 - 0.3
+
+        # Query at left boundary
+        aq_left = FastInterpolations._anchor_query(x, 0.0, Val(:constant))
+        @test aq_left.idx == 1
+        @test aq_left.side == 0x00
+        @test aq_left.dL ≈ 0.0
+
+        # Query at right boundary
+        aq_right = FastInterpolations._anchor_query(x, 1.0, Val(:constant))
+        @test aq_right.side == 0x00
+    end
+
+    # ========================================
+    # Vector Construction Tests
+    # ========================================
+    @testset "_anchor_query vector construction" begin
+        x = collect(range(0.0, 1.0, 11))  # h = 0.1
+        xq_vec = [0.15, 0.35, 0.75]
+
+        aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:constant))
+
+        @test length(aq_vec) == 3
+        @test aq_vec[1].idx == 2   # interval [0.1, 0.2]
+        @test aq_vec[2].idx == 4   # interval [0.3, 0.4]
+        @test aq_vec[3].idx == 8   # interval [0.7, 0.8]
+
+        @test all(aq.h ≈ 0.1 for aq in aq_vec)
+    end
+
+    # ========================================
+    # Evaluation Tests - :nearest mode
+    # ========================================
+    @testset "itp(aq) for :nearest mode" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+        itp = constant_interp(x, y; side=:nearest, extrap=:extension)
+
+        xq_points = [0.05, 0.15, 0.35, 0.65, 0.95]
+
+        for xq in xq_points
+            aq = FastInterpolations._anchor_query(x, xq, Val(:constant))
+            @test itp(aq) ≈ itp(xq)
+        end
+    end
+
+    # ========================================
+    # Evaluation Tests - :left mode
+    # ========================================
+    @testset "itp(aq) for :left mode" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+        itp = constant_interp(x, y; side=:left, extrap=:extension)
+
+        xq_points = [0.05, 0.15, 0.35, 0.65, 0.95]
+
+        for xq in xq_points
+            aq = FastInterpolations._anchor_query(x, xq, Val(:constant))
+            @test itp(aq) ≈ itp(xq)
+        end
+    end
+
+    # ========================================
+    # Evaluation Tests - :right mode
+    # ========================================
+    @testset "itp(aq) for :right mode" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+        itp = constant_interp(x, y; side=:right, extrap=:extension)
+
+        xq_points = [0.05, 0.15, 0.35, 0.65, 0.95]
+
+        for xq in xq_points
+            aq = FastInterpolations._anchor_query(x, xq, Val(:constant))
+            @test itp(aq) ≈ itp(xq)
+        end
+    end
+
+    # ========================================
+    # Domain Boundary Handling Tests
+    # ========================================
+    @testset "domain boundary handling" begin
+        x = collect(range(0.0, 1.0, 11))
+
+        # Inside domain
+        aq_inside = FastInterpolations._anchor_query(x, 0.5, Val(:constant))
+        @test aq_inside.side == 0x00
+
+        # Below domain
+        aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:constant))
+        @test aq_below.side == 0x01
+
+        # Above domain
+        aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:constant))
+        @test aq_above.side == 0x02
+
+        # Verify extrapolation works with anchors
+        y = collect(1.0:11.0)
+        itp_ext = constant_interp(x, y; extrap=:extension)
+        itp_const = constant_interp(x, y; extrap=:constant)
+
+        @test itp_ext(aq_below) ≈ itp_ext(-0.5)
+        @test itp_ext(aq_above) ≈ itp_ext(1.5)
+        @test itp_const(aq_below) ≈ itp_const(-0.5)
+        @test itp_const(aq_above) ≈ itp_const(1.5)
+    end
+
+    # ========================================
+    # Wrap Mode Tests
+    # ========================================
+    @testset "wrap mode" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+        itp = constant_interp(x, y; extrap=:wrap)
+
+        # Query outside domain with wrap=true
+        aq_wrap = FastInterpolations._anchor_query(x, 1.5, Val(:constant); wrap=true)
+        @test aq_wrap.xq ≈ 0.5
+        @test aq_wrap.side == 0x00
+
+        # Verify wrapped evaluation matches
+        @test itp(aq_wrap) ≈ itp(1.5)
+    end
+
+    # ========================================
+    # Type Promotion Tests
+    # ========================================
+    @testset "type promotion Real → Float" begin
+        x = collect(range(0.0, 1.0, 11))
+
+        # Int query should be promoted
+        aq_int = FastInterpolations._anchor_query(x, 0, Val(:constant))
+        @test aq_int.xq isa Float64
+        @test aq_int.xq ≈ 0.0
+    end
+
+    # ========================================
+    # Float32 Support Tests
+    # ========================================
+    @testset "Float32 support" begin
+        x = collect(range(0.0f0, 1.0f0, 11))
+        xq = 0.35f0
+
+        aq = FastInterpolations._anchor_query(x, xq, Val(:constant))
+        @test aq isa FastInterpolations._ConstantAnchoredQuery{Float32}
+        @test aq.xq isa Float32
+        @test aq.h isa Float32
+        @test aq.dL isa Float32
+    end
+
+    # ========================================
+    # In-Place Vector Evaluation Tests
+    # ========================================
+    @testset "in-place vector evaluation with anchors" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+        itp = constant_interp(x, y; extrap=:extension)
+
+        xq_vec = [0.05, 0.15, 0.35, 0.65, 0.95]
+        aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:constant))
+
+        # Test out-of-place vector evaluation
+        result = itp(aq_vec)
+        expected = itp(xq_vec)
+        @test result ≈ expected
+
+        # Test in-place vector evaluation
+        output = zeros(Float64, 5)
+        itp(output, aq_vec)
+        @test output ≈ expected
+    end
+
+    # ========================================
+    # Non-Uniform Grid Tests
+    # ========================================
+    @testset "non-uniform grid support" begin
+        # Non-uniform grid
+        x = [0.0, 0.1, 0.3, 0.6, 1.0]
+        y = [10.0, 20.0, 30.0, 40.0, 50.0]
+        itp = constant_interp(x, y; extrap=:extension)
+
+        xq = 0.45  # interval [0.3, 0.6]
+        aq = FastInterpolations._anchor_query(x, xq, Val(:constant))
+
+        @test aq.idx == 3  # interval [0.3, 0.6]
+        @test aq.xq == 0.45
+        @test aq.h ≈ 0.3  # 0.6 - 0.3
+        @test aq.dL ≈ 0.15  # 0.45 - 0.3
+
+        # Verify evaluation matches
+        @test itp(aq) ≈ itp(xq)
+    end
+
+    # ========================================
+    # Zero-Allocation Test
+    # ========================================
+    @testset "zero-allocation with pre-built anchors" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(x)
+        itp = constant_interp(x, y; extrap=:extension)
+
+        xq_vec = collect(range(0.01, 0.99, 100))
+        aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:constant))
+        output = zeros(Float64, 100)
+
+        # Warm-up call
+        itp(output, aq_vec)
+
+        # Allocation test
+        allocs = @allocated itp(output, aq_vec)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    # ========================================
+    # extrap=:none DomainError Tests
+    # ========================================
+    @testset "extrap=:none throws DomainError via anchor" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+        itp = constant_interp(x, y; extrap=:none)
+
+        # Inside domain works
+        aq_inside = FastInterpolations._anchor_query(x, 0.5, Val(:constant))
+        @test isfinite(itp(aq_inside))
+
+        # At boundary works
+        aq_boundary = FastInterpolations._anchor_query(x, 1.0, Val(:constant))
+        @test itp(aq_boundary) ≈ y[end]
+
+        # Outside domain throws DomainError
+        aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:constant))
+        aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:constant))
+
+        @test_throws DomainError itp(aq_below)
+        @test_throws DomainError itp(aq_above)
+    end
+
+    # ========================================
+    # extrap=:constant Tests
+    # ========================================
+    @testset "extrap=:constant via anchor with boundary check" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+        itp = constant_interp(x, y; extrap=:constant)
+
+        # At exact right boundary
+        aq_right = FastInterpolations._anchor_query(x, 1.0, Val(:constant))
+        @test itp(aq_right) ≈ y[end]
+
+        # Below domain returns first y
+        aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:constant))
+        @test itp(aq_below) ≈ y[1]
+
+        # Above domain returns last y
+        aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:constant))
+        @test itp(aq_above) ≈ y[end]
+    end
+
+    # ========================================
+    # Vector anchor with extrap modes
+    # ========================================
+    @testset "vector anchor with different extrap modes" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+
+        for extrap in [:extension, :constant]
+            itp = constant_interp(x, y; extrap=extrap)
+            xq_vec = [-0.2, 0.3, 0.7, 1.2]  # Mix of inside/outside
+            aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:constant))
+
+            result = itp(aq_vec)
+            expected = itp(xq_vec)
+            @test result ≈ expected
+        end
+    end
+
+    # ========================================
+    # In-place output length assertion
+    # ========================================
+    @testset "in-place output length assertion" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+        itp = constant_interp(x, y; extrap=:extension)
+
+        xq_vec = [0.2, 0.5, 0.8]
+        aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:constant))
+
+        # Wrong size output throws assertion
+        output_wrong = zeros(Float64, 5)
+        @test_throws AssertionError itp(output_wrong, aq_vec)
+    end
+
+    # ========================================
+    # Boundary handling - exact x_max via anchor
+    # ========================================
+    @testset "boundary handling at x_max via anchor" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = collect(1.0:11.0)
+
+        # Test all modes at exact boundary
+        for mode in [:extension, :constant]
+            itp = constant_interp(x, y; extrap=mode)
+            aq = FastInterpolations._anchor_query(x, 1.0, Val(:constant))
+            @test itp(aq) ≈ y[end]
+        end
+    end
+
+    # ========================================
+    # _fill_anchors! In-Place API
+    # ========================================
+
+    @testset "_fill_anchors! in-place" begin
+        FI = FastInterpolations
+
+        @testset "fills buffer with correct anchor values" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
+
+            expected = FI._anchor_query(x, xq, Val(:constant))
+            buffer = Vector{FI._ConstantAnchoredQuery{Float64}}(undef, length(xq))
+            FI._fill_anchors!(buffer, x, xq, Val(:constant))
+
+            for i in eachindex(xq)
+                @test buffer[i].idx == expected[i].idx
+                @test buffer[i].xq == expected[i].xq
+                @test buffer[i].side == expected[i].side
+                @test buffer[i].h == expected[i].h
+                @test buffer[i].dL == expected[i].dL
+            end
+        end
+
+        @testset "wrap mode works correctly" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = [-0.3, 0.5, 1.3, 2.5]
+
+            expected = FI._anchor_query(x, xq, Val(:constant); wrap=true)
+            buffer = Vector{FI._ConstantAnchoredQuery{Float64}}(undef, length(xq))
+            FI._fill_anchors!(buffer, x, xq, Val(:constant); wrap=true)
+
+            for i in eachindex(xq)
+                @test buffer[i].idx == expected[i].idx
+                @test buffer[i].xq == expected[i].xq
+                @test buffer[i].side == expected[i].side
+            end
+        end
+
+        @testset "length assertion when buffer too small" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = [0.15, 0.35, 0.5, 0.75]
+            buffer = Vector{FI._ConstantAnchoredQuery{Float64}}(undef, 2)
+
+            @test_throws AssertionError FI._fill_anchors!(buffer, x, xq, Val(:constant))
+        end
+
+        @testset "zero allocation after warmup" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = collect(range(0.1, 0.9, 50))
+            buffer = Vector{FI._ConstantAnchoredQuery{Float64}}(undef, length(xq))
+
+            FI._fill_anchors!(buffer, x, xq, Val(:constant))
+            allocs = @allocated FI._fill_anchors!(buffer, x, xq, Val(:constant))
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+end

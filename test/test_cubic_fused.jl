@@ -802,4 +802,173 @@ using FastInterpolations
 
     end  # Phase 7 testset
 
+    # ========================================
+    # Phase 8: Pre-built Anchor API
+    # ========================================
+    @testset "Phase 8: Pre-built Anchor API" begin
+
+        @testset "Can build anchor vector via _fill_anchors!" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+            xq_vec = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+            # Build anchors
+            aq_vec = Vector{FastInterpolations._CubicAnchoredQuery{Float64}}(undef, length(xq_vec))
+            FastInterpolations._fill_anchors!(aq_vec, mitp.x, xq_vec; wrap=false)
+
+            @test length(aq_vec) == 5
+            @test all(aq -> aq isa FastInterpolations._CubicAnchoredQuery{Float64}, aq_vec)
+        end
+
+        @testset "mitp(outputs, aq_vec) produces correct results" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+            y3 = exp.(-x)
+
+            mitp = cubic_interp_fused(x, [y1, y2, y3])
+            xq_vec = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+            # Build anchors
+            aq_vec = Vector{FastInterpolations._CubicAnchoredQuery{Float64}}(undef, length(xq_vec))
+            FastInterpolations._fill_anchors!(aq_vec, mitp.x, xq_vec; wrap=false)
+
+            # Evaluate with anchors
+            outputs = [zeros(5) for _ in 1:3]
+            result = mitp(outputs, aq_vec)
+
+            @test result === outputs
+            @test all(o -> any(v != 0.0 for v in o), outputs)  # Was filled
+        end
+
+        @testset "Anchor API results match query-point API exactly" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+            xq_vec = [0.1, 0.25, 0.5, 0.75, 0.9]
+
+            # Query-point API
+            outputs_query = mitp(xq_vec)
+
+            # Anchor API
+            aq_vec = Vector{FastInterpolations._CubicAnchoredQuery{Float64}}(undef, length(xq_vec))
+            FastInterpolations._fill_anchors!(aq_vec, mitp.x, xq_vec; wrap=false)
+            outputs_anchor = [zeros(5) for _ in 1:2]
+            mitp(outputs_anchor, aq_vec)
+
+            # Results should be identical
+            for k in 1:2
+                @test outputs_anchor[k] ≈ outputs_query[k] atol=1e-14
+            end
+        end
+
+        @testset "deriv keyword works with anchors" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+            xq_vec = [0.2, 0.4, 0.6, 0.8]
+
+            # Build anchors
+            aq_vec = Vector{FastInterpolations._CubicAnchoredQuery{Float64}}(undef, length(xq_vec))
+            FastInterpolations._fill_anchors!(aq_vec, mitp.x, xq_vec; wrap=false)
+
+            # deriv=1 with anchors
+            d1_query = mitp(xq_vec; deriv=1)
+            d1_anchor = [zeros(4) for _ in 1:2]
+            mitp(d1_anchor, aq_vec; deriv=1)
+
+            for k in 1:2
+                @test d1_anchor[k] ≈ d1_query[k] atol=1e-14
+            end
+
+            # deriv=2 with anchors
+            d2_query = mitp(xq_vec; deriv=2)
+            d2_anchor = [zeros(4) for _ in 1:2]
+            mitp(d2_anchor, aq_vec; deriv=2)
+
+            for k in 1:2
+                @test d2_anchor[k] ≈ d2_query[k] atol=1e-14
+            end
+        end
+
+        @testset "Validation for mismatched lengths" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+            xq_vec = [0.1, 0.3, 0.5]
+
+            # Build anchors
+            aq_vec = Vector{FastInterpolations._CubicAnchoredQuery{Float64}}(undef, length(xq_vec))
+            FastInterpolations._fill_anchors!(aq_vec, mitp.x, xq_vec; wrap=false)
+
+            # Wrong number of series
+            outputs_wrong_series = [zeros(3)]
+            @test_throws DimensionMismatch mitp(outputs_wrong_series, aq_vec)
+
+            # Wrong query length
+            outputs_wrong_query = [zeros(5), zeros(5)]
+            @test_throws DimensionMismatch mitp(outputs_wrong_query, aq_vec)
+        end
+
+        @testset "Anchors can be reused across multiple calls" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+            xq_vec = [0.2, 0.5, 0.8]
+
+            # Build anchors once
+            aq_vec = Vector{FastInterpolations._CubicAnchoredQuery{Float64}}(undef, length(xq_vec))
+            FastInterpolations._fill_anchors!(aq_vec, mitp.x, xq_vec; wrap=false)
+
+            # First call
+            outputs1 = [zeros(3) for _ in 1:2]
+            mitp(outputs1, aq_vec)
+
+            # Second call with same anchors
+            outputs2 = [zeros(3) for _ in 1:2]
+            mitp(outputs2, aq_vec)
+
+            # Results should be identical
+            for k in 1:2
+                @test outputs1[k] ≈ outputs2[k] atol=1e-14
+            end
+        end
+
+        @testset "Wrap mode works with anchors" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)  # Periodic
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2]; extrap=:wrap)
+            xq_vec = [-0.1, 0.5, 1.3]  # Out-of-domain points
+
+            # Build anchors with wrap=true
+            aq_vec = Vector{FastInterpolations._CubicAnchoredQuery{Float64}}(undef, length(xq_vec))
+            FastInterpolations._fill_anchors!(aq_vec, mitp.x, xq_vec; wrap=true)
+
+            # Evaluate with anchors
+            outputs_anchor = [zeros(3) for _ in 1:2]
+            mitp(outputs_anchor, aq_vec)
+
+            # Compare to query-point API
+            outputs_query = mitp(xq_vec)
+
+            for k in 1:2
+                @test outputs_anchor[k] ≈ outputs_query[k] atol=1e-14
+            end
+        end
+
+    end  # Phase 8 testset
+
 end  # Main testset

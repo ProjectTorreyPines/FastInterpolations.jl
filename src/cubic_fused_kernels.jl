@@ -359,3 +359,92 @@ function (mitp::CubicMultiInterpolantFused{T})(
     xq_typed = T.(xq)
     return mitp(xq_typed; deriv=deriv)
 end
+
+# ========================================
+# Pre-built Anchor API
+# ========================================
+
+"""
+    (mitp::CubicMultiInterpolantFused)(outputs, aq_vec; deriv=0)
+
+Evaluate fused multi-series interpolant using pre-built anchored queries (in-place).
+
+This is the zero-allocation hot-loop API. Build anchors once with `_fill_anchors!`,
+then reuse across multiple evaluation calls.
+
+# Arguments
+- `outputs::AbstractVector{<:AbstractVector{T}}`: Pre-allocated output vectors
+  - Length must equal n_series
+  - Each vector must have length equal to length(aq_vec)
+- `aq_vec::AbstractVector{<:_CubicAnchoredQuery{T}}`: Pre-built anchored queries
+- `deriv::Int`: Derivative order (0=value, 1=first, 2=second)
+
+# Output Layout
+`outputs[k][j]` = value of series k at anchored query aq_vec[j]
+
+# Returns
+The same `outputs` vector of vectors.
+
+# Zero-Allocation Pattern
+```julia
+mitp = cubic_interp_fused(x, [y1, y2, y3])
+xq_vec = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+# Pre-allocate anchors (once)
+aq_vec = Vector{FastInterpolations._CubicAnchoredQuery{Float64}}(undef, length(xq_vec))
+FastInterpolations._fill_anchors!(aq_vec, mitp.x, xq_vec; wrap=false)
+
+# Pre-allocate outputs (once)
+outputs = [zeros(5) for _ in 1:3]
+
+# Hot loop: zero allocations after warmup
+for iteration in 1:1000
+    mitp(outputs, aq_vec)  # Reuses pre-built anchors
+end
+```
+"""
+@with_pool pool function (mitp::CubicMultiInterpolantFused{T})(
+    outputs::AbstractVector{<:AbstractVector{T}},
+    aq_vec::AbstractVector{<:_CubicAnchoredQuery{T}};
+    deriv::Int=0
+) where {T<:AbstractFloat}
+    n_query = length(aq_vec)
+    n_series = mitp.n_series
+
+    # Validate dimensions
+    if length(outputs) != n_series
+        throw(DimensionMismatch(
+            "outputs length $(length(outputs)) must match n_series $n_series"
+        ))
+    end
+    for (k, out_k) in enumerate(outputs)
+        if length(out_k) != n_query
+            throw(DimensionMismatch(
+                "outputs[$k] length $(length(out_k)) must match n_query $n_query"
+            ))
+        end
+    end
+
+    # Acquire temporary buffer for scalar evaluation
+    tmp = acquire!(pool, T, n_series)
+
+    @_dispatch_deriv deriv => op begin
+        @inbounds for j in 1:n_query
+            aq = aq_vec[j]
+
+            # Evaluate all series at this anchor
+            if aq.side == 0x00
+                _eval_fused_scalar!(tmp, mitp, aq, op)
+            else
+                _eval_fused_with_extrap!(tmp, mitp, aq, op)
+            end
+
+            # Scatter to outputs: tmp[k] → outputs[k][j]
+            for k in 1:n_series
+                outputs[k][j] = tmp[k]
+            end
+        end
+    end
+
+    return outputs
+end

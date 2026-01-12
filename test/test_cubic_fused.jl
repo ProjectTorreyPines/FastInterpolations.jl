@@ -291,4 +291,120 @@ using FastInterpolations
 
     end  # Phase 3 testset
 
+    # ========================================
+    # Phase 4: Extrapolation Handling
+    # ========================================
+    @testset "Phase 4: Extrapolation" begin
+
+        @testset ":none mode throws DomainError" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2]; extrap=:none)
+
+            # Below domain
+            @test_throws DomainError mitp(-0.1)
+            # Above domain
+            @test_throws DomainError mitp(1.1)
+        end
+
+        @testset ":constant mode returns boundary values" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2]; extrap=:constant)
+
+            # Below domain: should return first values
+            vals_below = mitp(-0.5)
+            @test vals_below ≈ [y1[1], y2[1]] atol=1e-14
+
+            # Above domain: should return last values
+            vals_above = mitp(1.5)
+            @test vals_above ≈ [y1[end], y2[end]] atol=1e-14
+        end
+
+        @testset ":constant mode matches CubicMultiInterpolant" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp_fused = cubic_interp_fused(x, [y1, y2]; extrap=:constant)
+            mitp_comp = cubic_interp(x, [y1, y2]; extrap=:constant)
+
+            # Test at various out-of-domain points
+            for xq in [-0.5, -0.1, 1.1, 1.5]
+                vals_fused = mitp_fused(xq)
+                vals_comp = mitp_comp(xq)
+                @test vals_fused ≈ vals_comp atol=1e-14
+            end
+        end
+
+        @testset ":extension mode extrapolates smoothly" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp_fused = cubic_interp_fused(x, [y1, y2]; extrap=:extension)
+            mitp_comp = cubic_interp(x, [y1, y2]; extrap=:extension)
+
+            # Test at various out-of-domain points
+            for xq in [-0.1, -0.05, 1.05, 1.1]
+                vals_fused = mitp_fused(xq)
+                vals_comp = mitp_comp(xq)
+                @test vals_fused ≈ vals_comp atol=1e-14
+            end
+
+            # Extension should produce non-boundary values
+            vals_below = mitp_fused(-0.1)
+            @test vals_below[1] != y1[1]  # Not just clamped
+        end
+
+        @testset ":wrap mode wraps to domain" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp_fused = cubic_interp_fused(x, [y1, y2]; extrap=:wrap)
+            mitp_comp = cubic_interp(x, [y1, y2]; extrap=:wrap)
+
+            # Test periodic wrapping
+            for xq in [-0.5, 1.5, 2.3, -1.7]
+                vals_fused = mitp_fused(xq)
+                vals_comp = mitp_comp(xq)
+                @test vals_fused ≈ vals_comp atol=1e-14
+            end
+
+            # x + period should give same result
+            @test mitp_fused(0.3) ≈ mitp_fused(1.3) atol=1e-14
+            @test mitp_fused(0.7) ≈ mitp_fused(-0.3) atol=1e-14
+        end
+
+        @testset "All extrap modes work with in-place API" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            out = zeros(2)
+
+            # :constant
+            mitp_const = cubic_interp_fused(x, [y1, y2]; extrap=:constant)
+            result = mitp_const(out, -0.5)
+            @test result === out
+            @test out ≈ [y1[1], y2[1]] atol=1e-14
+
+            # :extension
+            mitp_ext = cubic_interp_fused(x, [y1, y2]; extrap=:extension)
+            mitp_ext(out, 1.1)
+            @test out[1] != 0.0  # Was filled
+
+            # :wrap
+            mitp_wrap = cubic_interp_fused(x, [y1, y2]; extrap=:wrap)
+            mitp_wrap(out, 1.3)
+            @test out ≈ mitp_wrap(0.3) atol=1e-14
+        end
+
+    end  # Phase 4 testset
+
 end  # Main testset

@@ -299,53 +299,6 @@ function run_benchmark()
     println()
 
     # -------------------------------------------------------------------------
-    # DataInterpolations.jl
-    # -------------------------------------------------------------------------
-    println("-"^70)
-    println("DataInterpolations.jl (CubicSpline)")
-    println("-"^70)
-
-    println(" Benchmarking initialization...")
-    init_data_interpolations_splines(psi_grid, data) # warm-up
-    GC.gc()
-    b_init = @benchmark $init_data_interpolations_splines($psi_grid, $data) samples = 5 evals = 2 seconds = 120
-    init_time = median(b_init).time / 1e9
-    init_std = std(b_init.times) / 1e9
-    print_benchmark_stats(b_init, "Init")
-    @printf("   Time per spline: %.2f μs\n", init_time / (MPERT * MPERT) * 1e6)
-    println()
-
-    data_splines = init_data_interpolations_splines(psi_grid, data)
-
-    println(" Benchmarking scalar API...")
-    run_data_interpolations_eval_loop!(A, data_splines, psi_values)
-    GC.gc()
-    b_eval = @benchmark $run_data_interpolations_eval_loop!($A, $data_splines, $psi_values) samples = 5 evals = 2 seconds = 120
-    eval_time = median(b_eval).time / 1e9
-    eval_std = std(b_eval.times) / 1e9
-    print_benchmark_stats(b_eval, "Eval")
-    @printf("   Evals/sec: %.2e\n", total_spline_evals / eval_time)
-    @printf("   Time per eval: %.2f ns\n", eval_time / total_spline_evals * 1e9)
-    results["DataInterpolations.jl (scalar)"] = (init_time=init_time, init_std=init_std,
-        eval_time=eval_time, eval_std=eval_std, allocs=median(b_eval).allocs, memory=median(b_eval).memory)
-    final_matrices["DataInterpolations.jl (scalar)"] = copy(A)
-    println()
-
-    println(" Benchmarking vector API (in-place)...")
-    run_data_interpolations_vector_API!(A_all, data_splines, psi_values)
-    GC.gc()
-    b_eval = @benchmark $run_data_interpolations_vector_API!($A_all, $data_splines, $psi_values) samples = 5 evals = 2 seconds = 120
-    eval_time = median(b_eval).time / 1e9
-    eval_std = std(b_eval.times) / 1e9
-    print_benchmark_stats(b_eval, "Eval")
-    @printf("   Evals/sec: %.2e\n", total_spline_evals / eval_time)
-    @printf("   Time per eval: %.2f ns\n", eval_time / total_spline_evals * 1e9)
-    results["DataInterpolations.jl (vector)"] = (init_time=init_time, init_std=init_std,
-        eval_time=eval_time, eval_std=eval_std, allocs=median(b_eval).allocs, memory=median(b_eval).memory)
-    final_matrices["DataInterpolations.jl (vector)"] = copy(A_all[end, :, :])
-    println()
-
-    # -------------------------------------------------------------------------
     # FastInterpolations.jl
     # -------------------------------------------------------------------------
     println("-"^70)
@@ -390,6 +343,137 @@ function run_benchmark()
     results["FastInterpolations.jl (vector)"] = (init_time=init_time, init_std=init_std,
         eval_time=eval_time, eval_std=eval_std, allocs=median(b_eval).allocs, memory=median(b_eval).memory)
     final_matrices["FastInterpolations.jl (vector)"] = copy(A_all[end, :, :])
+    println()
+
+    # -------------------------------------------------------------------------
+    # FastInterpolations.jl (MultiCubicInterpolant API)
+    # -------------------------------------------------------------------------
+    println("-"^70)
+    println("FastInterpolations.jl (MultiCubicInterpolant)")
+    println("-"^70)
+    println()
+    println(" Note: MultiCubicInterpolant computes anchor ONCE per query point,")
+    println("       then reuses it for all $(MPERT*MPERT) y-series. This should")
+    println("       significantly outperform independent splines on scalar API.")
+    println()
+
+    # Reshape data for MultiCubicInterpolant: (npsi, mpert, mpert) -> Vector of npsi-length vectors
+    # Each series is data[:, m1, m2] for m1=1:mpert, m2=1:mpert
+    println(" Benchmarking initialization (MultiCubicInterpolant)...")
+
+    function init_multi_cubic_interp(psi_grid, data::Array{Float64,3})
+        _, mpert, _ = size(data)
+        # Create vector of y-series in COLUMN-MAJOR order (m1 varies fastest)
+        # This matches reshape() behavior: reshape(vec, m, n)[i,j] = vec[(j-1)*m + i]
+        ys = [data[:, m1, m2] for m2 in 1:mpert for m1 in 1:mpert]
+        return FastInterpolations.cubic_interp(psi_grid, ys)
+    end
+
+    init_multi_cubic_interp(psi_grid, data)  # warm-up
+    GC.gc()
+    b_init = @benchmark $init_multi_cubic_interp($psi_grid, $data) samples = 5 evals = 2 seconds = 120
+    init_time_multi = median(b_init).time / 1e9
+    init_std_multi = std(b_init.times) / 1e9
+    print_benchmark_stats(b_init, "Init")
+    @printf("   Time per spline: %.2f μs\n", init_time_multi / (MPERT * MPERT) * 1e6)
+    println()
+
+    mitp = init_multi_cubic_interp(psi_grid, data)
+
+    # Pre-allocate output for scalar API (returns Vector of length mpert^2)
+    A_multi = Vector{Float64}(undef, MPERT * MPERT)
+
+    println(" Benchmarking scalar API (anchor reuse)...")
+    # Scalar API: mitp(psi) computes anchor ONCE, evaluates all series
+    function run_multi_cubic_eval_loop!(A::Vector{Float64}, mitp, psi_values::Vector{Float64})
+        for psi in psi_values
+            mitp(A, psi)  # In-place scalar evaluation
+        end
+        return A
+    end
+
+    run_multi_cubic_eval_loop!(A_multi, mitp, psi_values)  # warm-up
+    GC.gc()
+    b_eval = @benchmark $run_multi_cubic_eval_loop!($A_multi, $mitp, $psi_values) samples = 5 evals = 2 seconds = 120
+    eval_time = median(b_eval).time / 1e9
+    eval_std = std(b_eval.times) / 1e9
+    print_benchmark_stats(b_eval, "Eval")
+    @printf("   Evals/sec: %.2e\n", total_spline_evals / eval_time)
+    @printf("   Time per eval: %.2f ns\n", eval_time / total_spline_evals * 1e9)
+    results["FastInterp.jl (Multi scalar)"] = (init_time=init_time_multi, init_std=init_std_multi,
+        eval_time=eval_time, eval_std=eval_std, allocs=median(b_eval).allocs, memory=median(b_eval).memory)
+    # Reshape A_multi back to matrix for consistency check
+    final_matrices["FastInterp.jl (Multi scalar)"] = reshape(copy(A_multi), MPERT, MPERT)
+    println()
+
+    println(" Benchmarking vector API (in-place, zero-alloc)...")
+    # Vector API: mitp(outputs, xq) where outputs is Vector of preallocated buffers
+    A_multi_all = [Vector{Float64}(undef, N_EVAL_POINTS) for _ in 1:(MPERT * MPERT)]
+
+    function run_multi_cubic_vector_API!(A_all::Vector{Vector{Float64}}, mitp, psi_values::Vector{Float64})
+        mitp(A_all, psi_values)
+        return A_all
+    end
+
+    run_multi_cubic_vector_API!(A_multi_all, mitp, psi_values)  # warm-up
+    GC.gc()
+    b_eval = @benchmark $run_multi_cubic_vector_API!($A_multi_all, $mitp, $psi_values) samples = 5 evals = 2 seconds = 120
+    eval_time = median(b_eval).time / 1e9
+    eval_std = std(b_eval.times) / 1e9
+    print_benchmark_stats(b_eval, "Eval")
+    @printf("   Evals/sec: %.2e\n", total_spline_evals / eval_time)
+    @printf("   Time per eval: %.2f ns\n", eval_time / total_spline_evals * 1e9)
+    results["FastInterp.jl (Multi vector)"] = (init_time=init_time_multi, init_std=init_std_multi,
+        eval_time=eval_time, eval_std=eval_std, allocs=median(b_eval).allocs, memory=median(b_eval).memory)
+    # Reshape for consistency check: last row of each buffer
+    final_matrices["FastInterp.jl (Multi vector)"] = reshape([buf[end] for buf in A_multi_all], MPERT, MPERT)
+    println()
+
+    # -------------------------------------------------------------------------
+    # DataInterpolations.jl
+    # -------------------------------------------------------------------------
+    println("-"^70)
+    println("DataInterpolations.jl (CubicSpline)")
+    println("-"^70)
+
+    println(" Benchmarking initialization...")
+    init_data_interpolations_splines(psi_grid, data) # warm-up
+    GC.gc()
+    b_init = @benchmark $init_data_interpolations_splines($psi_grid, $data) samples = 5 evals = 2 seconds = 120
+    init_time = median(b_init).time / 1e9
+    init_std = std(b_init.times) / 1e9
+    print_benchmark_stats(b_init, "Init")
+    @printf("   Time per spline: %.2f μs\n", init_time / (MPERT * MPERT) * 1e6)
+    println()
+
+    data_splines = init_data_interpolations_splines(psi_grid, data)
+
+    println(" Benchmarking scalar API...")
+    run_data_interpolations_eval_loop!(A, data_splines, psi_values)
+    GC.gc()
+    b_eval = @benchmark $run_data_interpolations_eval_loop!($A, $data_splines, $psi_values) samples = 5 evals = 2 seconds = 120
+    eval_time = median(b_eval).time / 1e9
+    eval_std = std(b_eval.times) / 1e9
+    print_benchmark_stats(b_eval, "Eval")
+    @printf("   Evals/sec: %.2e\n", total_spline_evals / eval_time)
+    @printf("   Time per eval: %.2f ns\n", eval_time / total_spline_evals * 1e9)
+    results["DataInterpolations.jl (scalar)"] = (init_time=init_time, init_std=init_std,
+        eval_time=eval_time, eval_std=eval_std, allocs=median(b_eval).allocs, memory=median(b_eval).memory)
+    final_matrices["DataInterpolations.jl (scalar)"] = copy(A)
+    println()
+
+    println(" Benchmarking vector API (in-place)...")
+    run_data_interpolations_vector_API!(A_all, data_splines, psi_values)
+    GC.gc()
+    b_eval = @benchmark $run_data_interpolations_vector_API!($A_all, $data_splines, $psi_values) samples = 5 evals = 2 seconds = 120
+    eval_time = median(b_eval).time / 1e9
+    eval_std = std(b_eval.times) / 1e9
+    print_benchmark_stats(b_eval, "Eval")
+    @printf("   Evals/sec: %.2e\n", total_spline_evals / eval_time)
+    @printf("   Time per eval: %.2f ns\n", eval_time / total_spline_evals * 1e9)
+    results["DataInterpolations.jl (vector)"] = (init_time=init_time, init_std=init_std,
+        eval_time=eval_time, eval_std=eval_std, allocs=median(b_eval).allocs, memory=median(b_eval).memory)
+    final_matrices["DataInterpolations.jl (vector)"] = copy(A_all[end, :, :])
     println()
 
 

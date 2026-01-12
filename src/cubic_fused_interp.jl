@@ -187,6 +187,63 @@ Internal helper to build periodic BC fused interpolant.
 end
 
 # ========================================
+# Conversion from CubicMultiInterpolant
+# ========================================
+
+"""
+    CubicMultiInterpolantFused(mitp::CubicMultiInterpolant)
+
+Convert a composition-based `CubicMultiInterpolant` to a fused `CubicMultiInterpolantFused`.
+
+This extracts the coefficients from the individual interpolants and packs them
+into the interleaved matrix layout for improved cache performance with large m.
+
+# Example
+```julia
+mitp_comp = cubic_interp(x, [y1, y2, y3])  # Composition-based
+mitp_fused = CubicMultiInterpolantFused(mitp_comp)  # Fused layout
+
+# Both produce identical results
+@assert mitp_fused(0.5) ≈ mitp_comp(0.5)
+```
+
+# Note
+The conversion preserves BC and extrapolation settings from the original interpolant.
+"""
+function CubicMultiInterpolantFused(mitp::CubicMultiInterpolant{T}) where {T<:AbstractFloat}
+    itps = mitp.itps
+    n_series = length(itps)
+
+    isempty(itps) && throw(ArgumentError("Cannot convert empty CubicMultiInterpolant"))
+
+    # Get reference interpolant for shared properties
+    ref = first(itps)
+    n_points = length(ref.y)
+
+    # Extract coefficients into matrices
+    y_mat = Matrix{T}(undef, n_series, n_points)
+    z_mat = Matrix{T}(undef, n_series, n_points)
+
+    @inbounds for (k, itp) in enumerate(itps)
+        for j in 1:n_points
+            y_mat[k, j] = itp.y[j]
+            z_mat[k, j] = itp.z[j]
+        end
+    end
+
+    return CubicMultiInterpolantFused(
+        ref.cache.x,
+        ref.cache.spacing,
+        y_mat,
+        z_mat,
+        ref.cache.bc_config,
+        ref.extrap,
+        n_series,
+        n_points
+    )
+end
+
+# ========================================
 # Matrix Input Constructor
 # ========================================
 

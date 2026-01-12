@@ -1122,4 +1122,123 @@ using FastInterpolations
 
     end  # Phase 9 testset
 
+    # ========================================
+    # Phase 10: Conversion & Type Promotion
+    # ========================================
+    @testset "Phase 10: Conversion & Type Promotion" begin
+
+        @testset "Conversion from CubicMultiInterpolant" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+            y3 = exp.(-x)
+
+            # Create composition-based interpolant
+            mitp_comp = cubic_interp(x, [y1, y2, y3])
+
+            # Convert to fused
+            mitp_fused = CubicMultiInterpolantFused(mitp_comp)
+
+            @test mitp_fused isa CubicMultiInterpolantFused{Float64}
+            @test mitp_fused.n_series == 3
+            @test mitp_fused.n_points == 51
+        end
+
+        @testset "Converted interpolant matches original results" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp_comp = cubic_interp(x, [y1, y2])
+            mitp_fused = CubicMultiInterpolantFused(mitp_comp)
+
+            # Results should be identical
+            for xq in [0.1, 0.25, 0.5, 0.75, 0.9]
+                vals_comp = mitp_comp(xq)
+                vals_fused = mitp_fused(xq)
+                @test vals_fused ≈ vals_comp atol=1e-14
+            end
+        end
+
+        @testset "Conversion preserves BC settings" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            # Test with ClampedBC
+            mitp_comp = cubic_interp(x, [y1, y2]; bc=ClampedBC())
+            mitp_fused = CubicMultiInterpolantFused(mitp_comp)
+
+            for xq in [0.2, 0.5, 0.8]
+                @test mitp_fused(xq) ≈ mitp_comp(xq) atol=1e-14
+            end
+        end
+
+        @testset "Conversion preserves extrap settings" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            # Test with :constant extrap
+            mitp_comp = cubic_interp(x, [y1, y2]; extrap=:constant)
+            mitp_fused = CubicMultiInterpolantFused(mitp_comp)
+
+            @test mitp_fused.extrap === mitp_comp.itps[1].extrap
+
+            # Out-of-bounds should match
+            @test mitp_fused(1.5) ≈ mitp_comp(1.5) atol=1e-14
+        end
+
+        @testset "Vector{Vector} with Integer inputs works" begin
+            x = 1:10  # Integer range
+            y1 = [i^2 for i in 1:10]  # Integer vector
+            y2 = [2*i for i in 1:10]
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+
+            @test mitp isa CubicMultiInterpolantFused{Float64}
+            vals = mitp(5.5)
+            @test vals isa Vector{Float64}
+        end
+
+        @testset "Matrix with Integer inputs works" begin
+            x = 1:10
+            Y = [i^2 for i in 1:10, j in 1:3]  # 10×3 Integer matrix
+
+            mitp = cubic_interp_fused(x, Y)
+
+            @test mitp isa CubicMultiInterpolantFused{Float64}
+        end
+
+        @testset "Mixed type promotion works correctly" begin
+            x = collect(range(0.0f0, 1.0f0, 21))  # Float32
+            y1 = Float64.(sin.(2π .* x))  # Float64
+            y2 = Float64.(cos.(2π .* x))
+
+            # Should promote to Float64
+            mitp = cubic_interp_fused(x, [y1, y2])
+            @test mitp isa CubicMultiInterpolantFused{Float64}
+        end
+
+        @testset "Conversion works with derivatives" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp_comp = cubic_interp(x, [y1, y2])
+            mitp_fused = CubicMultiInterpolantFused(mitp_comp)
+
+            # First derivative
+            d1_comp = mitp_comp(0.5; deriv=1)
+            d1_fused = mitp_fused(0.5; deriv=1)
+            @test d1_fused ≈ d1_comp atol=1e-14
+
+            # Second derivative
+            d2_comp = mitp_comp(0.5; deriv=2)
+            d2_fused = mitp_fused(0.5; deriv=2)
+            @test d2_fused ≈ d2_comp atol=1e-14
+        end
+
+    end  # Phase 10 testset
+
 end  # Main testset

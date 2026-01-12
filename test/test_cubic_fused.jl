@@ -679,4 +679,127 @@ using FastInterpolations
 
     end  # Phase 6 testset
 
+    # ========================================
+    # Phase 7: Vector API (Multiple Queries)
+    # ========================================
+    @testset "Phase 7: Vector API" begin
+
+        @testset "Out-of-place: mitp(xq_vec) returns Vector{Vector}" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+            y3 = exp.(-x)
+
+            mitp = cubic_interp_fused(x, [y1, y2, y3])
+            xq_vec = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+            outputs = mitp(xq_vec)
+
+            @test outputs isa Vector{Vector{Float64}}
+            @test length(outputs) == 3  # n_series
+            @test all(length(o) == 5 for o in outputs)  # n_query
+        end
+
+        @testset "Output layout is series-first" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+            xq_vec = [0.2, 0.4, 0.6]
+
+            outputs = mitp(xq_vec)
+
+            # outputs[k][j] = series k at xq[j]
+            for (j, xq) in enumerate(xq_vec)
+                scalar_result = mitp(xq)
+                @test outputs[1][j] ≈ scalar_result[1] atol=1e-14
+                @test outputs[2][j] ≈ scalar_result[2] atol=1e-14
+            end
+        end
+
+        @testset "In-place: mitp(outputs, xq_vec) fills pre-allocated" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+            xq_vec = [0.1, 0.3, 0.5, 0.7, 0.9]
+
+            outputs = [zeros(5) for _ in 1:2]
+            result = mitp(outputs, xq_vec)
+
+            @test result === outputs
+            @test all(o -> any(v != 0.0 for v in o), outputs)  # Was filled
+        end
+
+        @testset "Results match CubicMultiInterpolant" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+            y3 = exp.(-x)
+
+            mitp_fused = cubic_interp_fused(x, [y1, y2, y3])
+            mitp_comp = cubic_interp(x, [y1, y2, y3])
+
+            xq_vec = [0.1, 0.25, 0.5, 0.75, 0.9]
+
+            outputs_fused = mitp_fused(xq_vec)
+            outputs_comp = mitp_comp(xq_vec)
+
+            for k in 1:3
+                @test outputs_fused[k] ≈ outputs_comp[k] atol=1e-14
+            end
+        end
+
+        @testset "DimensionMismatch for wrong output lengths" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+            xq_vec = [0.1, 0.3, 0.5]
+
+            # Wrong number of series
+            outputs_wrong_series = [zeros(3)]  # Only 1 series, need 2
+            @test_throws DimensionMismatch mitp(outputs_wrong_series, xq_vec)
+
+            # Wrong query length
+            outputs_wrong_query = [zeros(5), zeros(5)]  # Wrong length
+            @test_throws DimensionMismatch mitp(outputs_wrong_query, xq_vec)
+        end
+
+        @testset "Vector API with deriv=1 works" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp_fused = cubic_interp_fused(x, [y1, y2])
+            mitp_comp = cubic_interp(x, [y1, y2])
+
+            xq_vec = [0.2, 0.4, 0.6, 0.8]
+
+            d1_fused = mitp_fused(xq_vec; deriv=1)
+            d1_comp = mitp_comp(xq_vec; deriv=1)
+
+            for k in 1:2
+                @test d1_fused[k] ≈ d1_comp[k] atol=1e-14
+            end
+        end
+
+        @testset "Type promotion with Integer query points" begin
+            x = collect(range(0.0, 10.0, 101))
+            y1 = sin.(π .* x ./ 10)
+            y2 = cos.(π .* x ./ 10)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+            xq_int = [1, 3, 5, 7, 9]  # Integer query points
+
+            outputs = mitp(xq_int)
+            @test outputs isa Vector{Vector{Float64}}
+            @test length(outputs) == 2
+        end
+
+    end  # Phase 7 testset
+
 end  # Main testset

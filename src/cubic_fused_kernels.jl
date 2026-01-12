@@ -244,3 +244,118 @@ end
     # Anchor already wrapped coordinates and has correct weights
     return _eval_fused_scalar!(out, mitp, aq, op)
 end
+
+# ========================================
+# Vector API - Multiple Query Points
+# ========================================
+
+"""
+    (mitp::CubicMultiInterpolantFused)(outputs, xq_vec; deriv=0)
+
+Evaluate fused multi-series interpolant at multiple query points (in-place).
+
+# Arguments
+- `outputs::AbstractVector{<:AbstractVector{T}}`: Pre-allocated output vectors
+  - Length must equal n_series
+  - Each vector must have length equal to length(xq_vec)
+- `xq_vec::AbstractVector`: Query points
+- `deriv::Int`: Derivative order (0=value, 1=first, 2=second)
+
+# Output Layout
+`outputs[k][j]` = value of series k at query point xq_vec[j] (series-first layout)
+
+# Returns
+The same `outputs` vector of vectors.
+
+# Example
+```julia
+mitp = cubic_interp_fused(x, [y1, y2, y3])
+xq = [0.1, 0.3, 0.5, 0.7, 0.9]
+outputs = [zeros(5) for _ in 1:3]
+mitp(outputs, xq)  # Fills outputs with interpolated values
+```
+"""
+@with_pool pool function (mitp::CubicMultiInterpolantFused{T})(
+    outputs::AbstractVector{<:AbstractVector{T}},
+    xq::AbstractVector{T};
+    deriv::Int=0
+) where {T<:AbstractFloat}
+    n_query = length(xq)
+    n_series = mitp.n_series
+
+    # Validate dimensions
+    if length(outputs) != n_series
+        throw(DimensionMismatch(
+            "outputs length $(length(outputs)) must match n_series $n_series"
+        ))
+    end
+    for (k, out_k) in enumerate(outputs)
+        if length(out_k) != n_query
+            throw(DimensionMismatch(
+                "outputs[$k] length $(length(out_k)) must match n_query $n_query"
+            ))
+        end
+    end
+
+    # Acquire temporary buffer for scalar evaluation
+    tmp = acquire!(pool, T, n_series)
+
+    wrap = _should_wrap(mitp)
+
+    @_dispatch_deriv deriv => op begin
+        @inbounds for j in 1:n_query
+            # Build anchor for this query point
+            aq = _anchor_query(mitp.x, xq[j]; wrap=wrap)
+
+            # Evaluate all series at this query
+            if aq.side == 0x00
+                _eval_fused_scalar!(tmp, mitp, aq, op)
+            else
+                _eval_fused_with_extrap!(tmp, mitp, aq, op)
+            end
+
+            # Scatter to outputs: tmp[k] → outputs[k][j]
+            for k in 1:n_series
+                outputs[k][j] = tmp[k]
+            end
+        end
+    end
+
+    return outputs
+end
+
+"""
+    (mitp::CubicMultiInterpolantFused)(xq_vec; deriv=0)
+
+Evaluate fused multi-series interpolant at multiple query points (allocating).
+
+# Arguments
+- `xq_vec::AbstractVector`: Query points
+- `deriv::Int`: Derivative order (0=value, 1=first, 2=second)
+
+# Returns
+`Vector{Vector{T}}` with layout `outputs[k][j]` = series k at xq_vec[j]
+
+# Example
+```julia
+mitp = cubic_interp_fused(x, [y1, y2, y3])
+outputs = mitp([0.1, 0.3, 0.5])  # Returns 3 vectors, each of length 3
+```
+"""
+function (mitp::CubicMultiInterpolantFused{T})(
+    xq::AbstractVector{T};
+    deriv::Int=0
+) where {T<:AbstractFloat}
+    n_query = length(xq)
+    outputs = [Vector{T}(undef, n_query) for _ in 1:mitp.n_series]
+    return mitp(outputs, xq; deriv=deriv)
+end
+
+# Real type wrapper for vector queries
+function (mitp::CubicMultiInterpolantFused{T})(
+    xq::AbstractVector{S};
+    deriv::Int=0
+) where {T<:AbstractFloat, S<:Real}
+    xq_typed = T.(xq)
+    return mitp(xq_typed; deriv=deriv)
+end

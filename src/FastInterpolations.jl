@@ -47,6 +47,7 @@ include("cubic_interpolant.jl") # 2-arg API, CubicInterpolant callable
 include("multi_cubic_interp.jl") # Multi-Y cubic interpolation
 include("cubic_fused_types.jl")   # Fused multi-series cubic interpolant type
 include("cubic_fused_interp.jl")  # Fused multi-series constructor
+include("cubic_fused_kernels.jl") # Fused multi-series evaluation kernels
 
 # Quadratic spline interpolation
 include("quadratic_solver.jl")       # Coefficient computation (secants, d[], a[])

@@ -196,4 +196,99 @@ using FastInterpolations
 
     end  # Phase 2 testset
 
+    # ========================================
+    # Phase 3: Scalar Evaluation Kernel (Value)
+    # ========================================
+    @testset "Phase 3: Scalar Evaluation" begin
+
+        @testset "Out-of-place scalar: mitp(xq) returns Vector" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+            y3 = exp.(-x)
+
+            mitp = cubic_interp_fused(x, [y1, y2, y3])
+
+            vals = mitp(0.5)
+
+            @test vals isa Vector{Float64}
+            @test length(vals) == 3
+        end
+
+        @testset "In-place scalar: mitp(out, xq) fills pre-allocated" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+
+            out = zeros(2)
+            result = mitp(out, 0.5)
+
+            @test result === out  # Returns same array
+            @test out[1] != 0.0   # Was actually filled
+            @test out[2] != 0.0
+        end
+
+        @testset "Results match CubicMultiInterpolant" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+            y3 = exp.(-x)
+
+            mitp_fused = cubic_interp_fused(x, [y1, y2, y3])
+            mitp_comp = cubic_interp(x, [y1, y2, y3])
+
+            # Test at multiple points
+            for xq in [0.1, 0.25, 0.5, 0.75, 0.9]
+                vals_fused = mitp_fused(xq)
+                vals_comp = mitp_comp(xq)
+
+                @test vals_fused ≈ vals_comp atol=1e-14
+            end
+        end
+
+        @testset "Evaluation at grid knots is exact" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+
+            # At grid points, interpolation should match y exactly
+            for (i, xi) in enumerate(x)
+                vals = mitp(xi)
+                @test vals[1] ≈ y1[i] atol=1e-14
+                @test vals[2] ≈ y2[i] atol=1e-14
+            end
+        end
+
+        @testset "DimensionMismatch for wrong output length" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+
+            out_wrong = zeros(5)  # Wrong length!
+            @test_throws DimensionMismatch mitp(out_wrong, 0.5)
+        end
+
+        @testset "Works at grid boundaries" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+
+            # At boundaries
+            vals_start = mitp(0.0)
+            vals_end = mitp(1.0)
+
+            @test vals_start ≈ [y1[1], y2[1]] atol=1e-14
+            @test vals_end ≈ [y1[end], y2[end]] atol=1e-14
+        end
+
+    end  # Phase 3 testset
+
 end  # Main testset

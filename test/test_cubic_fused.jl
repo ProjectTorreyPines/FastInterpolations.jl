@@ -103,4 +103,97 @@ using FastInterpolations
 
     end  # Phase 1 testset
 
+    # ========================================
+    # Phase 2: Vector{Vector} Constructor Tests
+    # ========================================
+    @testset "Phase 2: Constructor" begin
+
+        @testset "Basic construction with Vector{Vector}" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+            y3 = exp.(-x)
+
+            mitp = cubic_interp_fused(x, [y1, y2, y3])
+
+            @test mitp isa CubicMultiInterpolantFused{Float64}
+            @test mitp.n_series == 3
+            @test mitp.n_points == 11
+        end
+
+        @testset "Coefficients match single CubicInterpolant" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            # Build fused interpolant
+            mitp = cubic_interp_fused(x, [y1, y2])
+
+            # Build individual interpolants
+            itp1 = cubic_interp(x, y1)
+            itp2 = cubic_interp(x, y2)
+
+            # Check z coefficients match (within floating point tolerance)
+            @test mitp.z[1, :] ≈ itp1.z atol=1e-14
+            @test mitp.z[2, :] ≈ itp2.z atol=1e-14
+
+            # Check y values match
+            @test mitp.y[1, :] ≈ y1 atol=1e-14
+            @test mitp.y[2, :] ≈ y2 atol=1e-14
+        end
+
+        @testset "Works with AbstractRange grid" begin
+            x = range(0.0, 1.0, 11)  # Range, not collected
+            y1 = sin.(2π .* collect(x))
+            y2 = cos.(2π .* collect(x))
+
+            mitp = cubic_interp_fused(x, [y1, y2])
+
+            @test mitp isa CubicMultiInterpolantFused
+            # Verify Range type is preserved for O(1) lookup
+            @test mitp.x isa AbstractRange
+        end
+
+        @testset "Validation: mismatched y lengths throw DimensionMismatch" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x[1:5])  # Wrong length!
+
+            @test_throws DimensionMismatch cubic_interp_fused(x, [y1, y2])
+        end
+
+        @testset "Validation: empty ys throws ArgumentError" begin
+            x = collect(range(0.0, 1.0, 11))
+            ys = Vector{Float64}[]
+
+            @test_throws ArgumentError cubic_interp_fused(x, ys)
+        end
+
+        @testset "Works with bc keyword" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            # Test ClampedBC
+            mitp_clamped = cubic_interp_fused(x, [y1, y2]; bc=ClampedBC())
+            @test mitp_clamped isa CubicMultiInterpolantFused
+
+            # Test explicit NaturalBC
+            mitp_natural = cubic_interp_fused(x, [y1, y2]; bc=NaturalBC())
+            @test mitp_natural isa CubicMultiInterpolantFused
+        end
+
+        @testset "Works with extrap keyword" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            for extrap in [:none, :constant, :extension]
+                mitp = cubic_interp_fused(x, [y1, y2]; extrap=extrap)
+                @test mitp.extrap === Val(extrap)
+            end
+        end
+
+    end  # Phase 2 testset
+
 end  # Main testset

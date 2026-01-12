@@ -407,4 +407,138 @@ using FastInterpolations
 
     end  # Phase 4 testset
 
+    # ========================================
+    # Phase 5: Boundary Condition Support
+    # ========================================
+    @testset "Phase 5: Boundary Conditions" begin
+
+        @testset "ClampedBC constructs successfully" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp = cubic_interp_fused(x, [y1, y2]; bc=ClampedBC())
+            @test mitp isa CubicMultiInterpolantFused
+            @test mitp.n_series == 2
+        end
+
+        @testset "ClampedBC coefficients match single-series" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp_fused = cubic_interp_fused(x, [y1, y2]; bc=ClampedBC())
+            itp1 = cubic_interp(x, y1; bc=ClampedBC())
+            itp2 = cubic_interp(x, y2; bc=ClampedBC())
+
+            # Check z coefficients match
+            @test mitp_fused.z[1, :] ≈ itp1.z atol=1e-14
+            @test mitp_fused.z[2, :] ≈ itp2.z atol=1e-14
+        end
+
+        @testset "ClampedBC evaluation matches CubicMultiInterpolant" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp_fused = cubic_interp_fused(x, [y1, y2]; bc=ClampedBC())
+            mitp_comp = cubic_interp(x, [y1, y2]; bc=ClampedBC())
+
+            for xq in [0.1, 0.25, 0.5, 0.75, 0.9]
+                @test mitp_fused(xq) ≈ mitp_comp(xq) atol=1e-14
+            end
+        end
+
+        @testset "PeriodicBC constructs successfully with periodic data" begin
+            x = collect(range(0.0, 1.0, 21))
+            # Create truly periodic data (y[1] == y[end])
+            y1 = sin.(2π .* x)  # sin(0) == sin(2π) == 0
+            y2 = cos.(2π .* x)  # cos(0) == cos(2π) == 1
+
+            mitp = cubic_interp_fused(x, [y1, y2]; bc=PeriodicBC())
+            @test mitp isa CubicMultiInterpolantFused
+            @test mitp.n_series == 2
+        end
+
+        @testset "PeriodicBC forces :wrap extrapolation" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            # Even if we specify :none, PeriodicBC should force :wrap
+            mitp = cubic_interp_fused(x, [y1, y2]; bc=PeriodicBC(), extrap=:none)
+            @test mitp.extrap === Val(:wrap)
+
+            # Should NOT throw for out-of-bounds query (wrap enabled)
+            vals = mitp(1.5)
+            @test vals ≈ mitp(0.5) atol=1e-12  # Period is 1.0
+        end
+
+        @testset "PeriodicBC throws for non-periodic y data" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = exp.(-x)  # NOT periodic: y[1]=1.0, y[end]=exp(-1)≈0.37
+            y2 = sin.(2π .* x)  # periodic
+
+            @test_throws ArgumentError cubic_interp_fused(x, [y1, y2]; bc=PeriodicBC())
+        end
+
+        @testset "PeriodicBC coefficients match single-series" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            mitp_fused = cubic_interp_fused(x, [y1, y2]; bc=PeriodicBC())
+            itp1 = cubic_interp(x, y1; bc=PeriodicBC())
+            itp2 = cubic_interp(x, y2; bc=PeriodicBC())
+
+            # Check z coefficients match
+            @test mitp_fused.z[1, :] ≈ itp1.z atol=1e-14
+            @test mitp_fused.z[2, :] ≈ itp2.z atol=1e-14
+        end
+
+        @testset "BCPair with custom Deriv1 values" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            # Custom first derivative values at boundaries
+            bc = BCPair(Deriv1(0.0), Deriv1(0.0))
+            mitp = cubic_interp_fused(x, [y1, y2]; bc=bc)
+
+            @test mitp isa CubicMultiInterpolantFused
+        end
+
+        @testset "BCPair with custom Deriv2 values (same as NaturalBC)" begin
+            x = collect(range(0.0, 1.0, 21))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            # Deriv2(0) at both ends is equivalent to NaturalBC
+            bc = BCPair(Deriv2(0.0), Deriv2(0.0))
+            mitp_custom = cubic_interp_fused(x, [y1, y2]; bc=bc)
+            mitp_natural = cubic_interp_fused(x, [y1, y2]; bc=NaturalBC())
+
+            # Coefficients should match
+            @test mitp_custom.z ≈ mitp_natural.z atol=1e-14
+        end
+
+        @testset "All BC types evaluate correctly at interior points" begin
+            x = collect(range(0.0, 1.0, 51))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            bcs = [NaturalBC(), ClampedBC(), PeriodicBC()]
+            for bc in bcs
+                mitp_fused = cubic_interp_fused(x, [y1, y2]; bc=bc)
+                mitp_comp = cubic_interp(x, [y1, y2]; bc=bc)
+
+                # Interior point evaluation should match
+                for xq in [0.2, 0.4, 0.6, 0.8]
+                    @test mitp_fused(xq) ≈ mitp_comp(xq) atol=1e-14
+                end
+            end
+        end
+
+    end  # Phase 5 testset
+
 end  # Main testset

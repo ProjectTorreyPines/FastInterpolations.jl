@@ -160,13 +160,15 @@ Internal helper to build periodic BC fused interpolant.
     n_points::Int
 ) where {T<:AbstractFloat}
     # Validate periodic endpoints for all series
+    # Use same atol as _check_periodic_endpoints in utils.jl
+    atol = T === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
     @inbounds for k in 1:n_series
         y_first = y_mat[k, 1]
         y_last = y_mat[k, n_points]
-        if !isapprox(y_first, y_last; rtol=sqrt(eps(T)))
+        if !isapprox(y_first, y_last; atol=atol)
             throw(ArgumentError(
                 "Periodic BC requires y[1] ≈ y[end] for series $k, " *
-                "got y[1]=$y_first, y[end]=$y_last"
+                "got y[1]=$y_first, y[end]=$y_last (diff=$(abs(y_last-y_first)))"
             ))
         end
     end

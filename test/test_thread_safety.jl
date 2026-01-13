@@ -467,6 +467,145 @@ end
     end
 end
 
+# =========================================================================
+# Group 5: CubicMultiInterpolant Thread Safety
+# =========================================================================
+@testset "CubicMultiInterpolant Thread Safety" begin
+    @testset "Lazy transpose concurrent initialization" begin
+        # Test that concurrent scalar queries safely initialize the lazy transpose
+        FastInterpolations.clear_cubic_cache!()
+        errors = Atomic{Int}(0)
+        n_iter = 500
+
+        x = collect(range(0.0, 1.0, 101))
+        y1, y2 = sin.(2π .* x), cos.(2π .* x)
+        mitp = cubic_interp(x, [y1, y2])  # No precompute_transpose
+
+        expected = mitp(0.5)  # Trigger lazy transpose (warm up)
+
+        @threads for i in 1:n_iter
+            try
+                result = mitp(0.1 + 0.8 * rand())
+                @assert length(result) == 2
+            catch
+                atomic_add!(errors, 1)
+            end
+        end
+
+        @test errors[] == 0
+    end
+
+    @testset "Concurrent scalar evaluation" begin
+        FastInterpolations.clear_cubic_cache!()
+        errors = Atomic{Int}(0)
+        n_iter = 500
+
+        x = collect(range(0.0, 1.0, 101))
+        y1, y2, y3 = sin.(2π .* x), cos.(2π .* x), exp.(-3 .* x)
+        mitp = cubic_interp(x, [y1, y2, y3]; precompute_transpose=true)
+
+        # Pre-compute expected values
+        itp1 = cubic_interp(x, y1)
+        itp2 = cubic_interp(x, y2)
+        itp3 = cubic_interp(x, y3)
+
+        @threads for i in 1:n_iter
+            try
+                xq = 0.1 + 0.8 * rand()
+                result = mitp(xq)
+
+                # Verify correctness
+                @assert result[1] ≈ itp1(xq) atol=1e-12
+                @assert result[2] ≈ itp2(xq) atol=1e-12
+                @assert result[3] ≈ itp3(xq) atol=1e-12
+            catch
+                atomic_add!(errors, 1)
+            end
+        end
+
+        @test errors[] == 0
+    end
+
+    @testset "Concurrent in-place scalar evaluation" begin
+        FastInterpolations.clear_cubic_cache!()
+        errors = Atomic{Int}(0)
+        n_iter = 500
+
+        x = collect(range(0.0, 1.0, 101))
+        y1, y2 = sin.(2π .* x), cos.(2π .* x)
+        mitp = cubic_interp(x, [y1, y2]; precompute_transpose=true)
+
+        # Thread-local output buffers
+        outputs = [zeros(2) for _ in 1:nthreads()]
+
+        @threads for i in 1:n_iter
+            try
+                tid = threadid()
+                xq = 0.1 + 0.8 * rand()
+                mitp(outputs[tid], xq)
+
+                # Basic sanity check
+                @assert !any(isnan, outputs[tid])
+            catch
+                atomic_add!(errors, 1)
+            end
+        end
+
+        @test errors[] == 0
+    end
+
+    @testset "Concurrent vector evaluation" begin
+        FastInterpolations.clear_cubic_cache!()
+        errors = Atomic{Int}(0)
+        n_iter = 200
+
+        x = collect(range(0.0, 1.0, 101))
+        y1, y2 = sin.(2π .* x), cos.(2π .* x)
+        mitp = cubic_interp(x, [y1, y2])
+
+        # Thread-local output buffers
+        xq = collect(range(0.1, 0.9, 50))
+        outputs_per_thread = [[zeros(50), zeros(50)] for _ in 1:nthreads()]
+
+        @threads for i in 1:n_iter
+            try
+                tid = threadid()
+                mitp(outputs_per_thread[tid], xq)
+
+                # Basic sanity check
+                @assert !any(isnan, outputs_per_thread[tid][1])
+                @assert !any(isnan, outputs_per_thread[tid][2])
+            catch
+                atomic_add!(errors, 1)
+            end
+        end
+
+        @test errors[] == 0
+    end
+
+    @testset "Concurrent construction with autocache" begin
+        FastInterpolations.clear_cubic_cache!()
+        errors = Atomic{Int}(0)
+        n_iter = 200
+
+        x = collect(range(0.0, 1.0, 51))
+
+        @threads for i in 1:n_iter
+            try
+                y1 = sin.(2π .* x .+ i * 0.01)
+                y2 = cos.(2π .* x .+ i * 0.01)
+                mitp = cubic_interp(x, [y1, y2]; autocache=true)
+                result = mitp(0.5)
+                @assert length(result) == 2
+            catch
+                atomic_add!(errors, 1)
+            end
+        end
+
+        @test errors[] == 0
+    end
+end
+
 end  # if nthreads() > 1
 
 # Print summary if run directly

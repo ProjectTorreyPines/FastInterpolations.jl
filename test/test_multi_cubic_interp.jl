@@ -393,6 +393,176 @@ end
 end
 
 # ============================================================================
+# Phase 6: Uncovered Path Coverage Tests
+# ============================================================================
+
+@testset "MultiCubicInterpolant - Uncovered Path Coverage" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+
+    @testset "precompute_transpose! function" begin
+        mitp = cubic_interp(x, [y1, y2])
+
+        # Initially empty
+        snap = @atomic :acquire mitp._point_snapshot
+        @test snap.y_point === nothing
+
+        # Call precompute_transpose!
+        result = FI.precompute_transpose!(mitp)
+        @test result === mitp
+
+        # Now populated
+        snap_after = @atomic :acquire mitp._point_snapshot
+        @test snap_after.y_point !== nothing
+    end
+
+    @testset ":wrap extrapolation scalar SIMD path" begin
+        # Create periodic data (endpoints match)
+        y_periodic = sin.(2π .* x)  # sin(0) = sin(2π) = 0
+        y_periodic2 = cos.(2π .* x)  # cos(0) = cos(2π) = 1
+        y_periodic2[end] = y_periodic2[1]  # Ensure exact match
+
+        mitp = cubic_interp(x, [y_periodic, y_periodic2]; bc=PeriodicBC())
+
+        # Query outside domain triggers :wrap extrapolation
+        out = zeros(2)
+        mitp(out, -0.1)  # Below domain
+        @test !any(isnan, out)
+
+        mitp(out, 1.1)   # Above domain
+        @test !any(isnan, out)
+    end
+
+    @testset "Periodic BC endpoint mismatch error" begin
+        y_bad = sin.(2π .* x)
+        y_bad[end] = 999.0  # Force mismatch
+
+        @test_throws ArgumentError cubic_interp(x, [y_bad]; bc=PeriodicBC())
+    end
+
+    @testset "precompute_transpose with periodic BC" begin
+        y_periodic = sin.(2π .* x)
+        mitp = cubic_interp(x, [y_periodic]; bc=PeriodicBC(), precompute_transpose=true)
+
+        # Should have point layout immediately
+        snap = @atomic :acquire mitp._point_snapshot
+        @test snap.y_point !== nothing
+    end
+
+    @testset "Matrix input with row dimension mismatch" begin
+        Y_wrong = rand(50, 3)  # 50 rows but x has 101 points
+        @test_throws DimensionMismatch cubic_interp(x, Y_wrong)
+    end
+
+    @testset "Matrix input with periodic BC" begin
+        Y_periodic = hcat(sin.(2π .* x), cos.(2π .* x))
+        Y_periodic[end, 2] = Y_periodic[1, 2]  # Fix endpoint
+
+        mitp = cubic_interp(x, Y_periodic; bc=PeriodicBC())
+        @test mitp.extrap === Val(:wrap)
+    end
+
+    @testset "Matrix input with precompute_transpose" begin
+        Y = hcat(y1, y2)
+        mitp = cubic_interp(x, Y; precompute_transpose=true)
+
+        snap = @atomic :acquire mitp._point_snapshot
+        @test snap.y_point !== nothing
+    end
+
+    @testset "Anchored query path dimension errors" begin
+        mitp = cubic_interp(x, [y1, y2, sin.(x)])
+        xq_vec = [0.1, 0.3, 0.5]
+        aq_vec = FI._anchor_query(x, xq_vec)
+
+        # Wrong number of output buffers
+        outputs_wrong = [zeros(3), zeros(3)]  # 2 instead of 3
+        @test_throws DimensionMismatch mitp(outputs_wrong, aq_vec)
+
+        # Wrong buffer length
+        outputs_bad_len = [zeros(3), zeros(3), zeros(5)]  # Last has wrong length
+        @test_throws DimensionMismatch mitp(outputs_bad_len, aq_vec)
+    end
+
+    @testset "Vector extrapolation :extension mode" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=:extension)
+        xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
+
+        outputs = [zeros(3), zeros(3)]
+        mitp(outputs, xq)
+
+        @test !any(isnan, outputs[1])
+        @test !any(isnan, outputs[2])
+    end
+
+    @testset "Vector extrapolation :constant mode" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=:constant)
+        xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
+
+        outputs = [zeros(3), zeros(3)]
+        mitp(outputs, xq)
+
+        # Out-of-domain should clamp to boundary values
+        @test outputs[1][1] ≈ y1[1] atol=1e-10  # Below domain → first value
+        @test outputs[1][3] ≈ y1[end] atol=1e-10  # Above domain → last value
+    end
+
+    @testset "Vector extrapolation :wrap mode (periodic)" begin
+        y_periodic = sin.(2π .* x)
+        y_periodic2 = cos.(2π .* x)
+        y_periodic2[end] = y_periodic2[1]
+
+        mitp = cubic_interp(x, [y_periodic, y_periodic2]; bc=PeriodicBC())
+        xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
+
+        outputs = [zeros(3), zeros(3)]
+        mitp(outputs, xq)
+
+        @test !any(isnan, outputs[1])
+        @test !any(isnan, outputs[2])
+    end
+
+    @testset "Vector extrapolation :constant with derivative" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=:constant)
+        xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
+
+        outputs = [zeros(3), zeros(3)]
+        mitp(outputs, xq; deriv=1)
+
+        # Derivatives outside domain should be zero for :constant
+        @test outputs[1][1] ≈ 0.0 atol=1e-10
+        @test outputs[1][3] ≈ 0.0 atol=1e-10
+    end
+
+    @testset "DomainError message includes bounds" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=:none)
+
+        # Scalar path
+        err = try
+            mitp(-0.1)
+            nothing
+        catch e
+            e
+        end
+        @test err isa DomainError
+        @test occursin("[0.0, 1.0]", err.msg)
+
+        # Vector path
+        err2 = try
+            mitp([-0.1, 0.5])
+            nothing
+        catch e
+            e
+        end
+        @test err2 isa DomainError
+        @test occursin("[0.0, 1.0]", err2.msg)
+    end
+end
+
+# ============================================================================
 # Phase 1 (Legacy): Type Definition & Constructor Tests
 # ============================================================================
 

@@ -184,7 +184,7 @@ Contiguous column access enables vectorization across series dimension.
 end
 
 """
-    _eval_multi_point_with_extrap!(out, y_point, z_point, n_pts, aq, extrap, op)
+    _eval_multi_point_with_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op)
 
 SIMD evaluation with extrapolation handling for multi-series.
 """
@@ -193,6 +193,8 @@ SIMD evaluation with extrapolation handling for multi-series.
     y_point::Matrix{T},
     z_point::Matrix{T},
     n_pts::Int,
+    x_min::T,
+    x_max::T,
     aq::_CubicAnchoredQuery{T},
     extrap::ExtrapVal,
     op::AbstractEvalOp
@@ -203,7 +205,7 @@ SIMD evaluation with extrapolation handling for multi-series.
     end
 
     # Outside domain: dispatch on extrap mode
-    _eval_multi_point_extrap!(out, y_point, z_point, n_pts, aq, extrap, op, aq.side)
+    _eval_multi_point_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op, aq.side)
 end
 
 # :none - throw DomainError
@@ -212,12 +214,14 @@ end
     ::Matrix{T},
     ::Matrix{T},
     ::Int,
+    x_min::T,
+    x_max::T,
     aq::_CubicAnchoredQuery{T},
     ::Val{:none},
     ::AbstractEvalOp,
     ::UInt8
 ) where {T<:AbstractFloat}
-    throw(DomainError(aq.xq, "Query point outside domain"))
+    throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
 end
 
 # :constant - clamp to boundary
@@ -226,6 +230,8 @@ end
     y_point::Matrix{T},
     ::Matrix{T},
     n_pts::Int,
+    ::T,
+    ::T,
     ::_CubicAnchoredQuery{T},
     ::Val{:constant},
     ::AbstractEvalOp,
@@ -244,6 +250,8 @@ end
     y_point::Matrix{T},
     z_point::Matrix{T},
     n_pts::Int,
+    ::T,
+    ::T,
     aq::_CubicAnchoredQuery{T},
     ::Val{:extension},
     op::AbstractEvalOp,
@@ -270,6 +278,8 @@ end
     y_point::Matrix{T},
     z_point::Matrix{T},
     ::Int,
+    ::T,
+    ::T,
     aq::_CubicAnchoredQuery{T},
     ::Val{:wrap},
     op::AbstractEvalOp,
@@ -568,88 +578,14 @@ function (mitp::CubicMultiInterpolant{T})(
     # Build anchor
     aq = _anchor_query(mitp.cache.x, xq_typed; wrap=_should_wrap(mitp))
 
+    # Get domain bounds for error messages
+    x_min, x_max = T(first(mitp.cache.x)), T(last(mitp.cache.x))
+
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin
-        _eval_multi_point_with_extrap!(output, y_point, z_point, n_points(mitp), aq, mitp.extrap, op)
+        _eval_multi_point_with_extrap!(output, y_point, z_point, n_points(mitp), x_min, x_max, aq, mitp.extrap, op)
     end
     return output
-end
-
-"""
-Evaluate a single series using anchored query.
-Adapts the CubicInterpolant anchored kernel pattern for matrix column access.
-"""
-@inline function _eval_multi_anchored_single(
-    mitp::CubicMultiInterpolant{T},
-    k::Int,
-    aq::_CubicAnchoredQuery{T},
-    op::AbstractEvalOp
-) where {T<:AbstractFloat}
-    # Fast path: inside domain
-    if aq.side == 0x00
-        return _eval_multi_anchored_kernel(mitp, k, aq, op)
-    end
-
-    # Outside domain: dispatch on extrapolation mode
-    return _eval_multi_anchored_extrap(mitp, k, aq, mitp.extrap, op)
-end
-
-"""
-Core anchored kernel for matrix column access.
-Computes the 4-term dot product: S(xq) = wyL*yL + wyR*yR + wzL*zL + wzR*zR
-"""
-@inline function _eval_multi_anchored_kernel(
-    mitp::CubicMultiInterpolant{T},
-    k::Int,
-    aq::_CubicAnchoredQuery{T},
-    op::AbstractEvalOp
-) where {T<:AbstractFloat}
-    @inbounds begin
-        yL = mitp.y[aq.idx, k]
-        yR = mitp.y[aq.idx + 1, k]
-        zL = mitp.z[aq.idx, k]
-        zR = mitp.z[aq.idx + 1, k]
-    end
-    wyL, wyR, wzL, wzR = _anchored_weights(aq, op)
-    return muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
-end
-
-# Extrapolation handlers for multi-interpolant
-@inline function _eval_multi_anchored_extrap(
-    mitp::CubicMultiInterpolant{T}, k::Int, aq::_CubicAnchoredQuery{T}, ::Val{:none}, ::AbstractEvalOp
-) where {T<:AbstractFloat}
-    x_min, x_max = first(mitp.cache.x), last(mitp.cache.x)
-    throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
-end
-
-@inline function _eval_multi_anchored_extrap(
-    mitp::CubicMultiInterpolant{T}, k::Int, aq::_CubicAnchoredQuery{T}, ::Val{:constant}, ::EvalValue
-) where {T<:AbstractFloat}
-    return aq.side == 0x01 ? @inbounds(mitp.y[1, k]) : @inbounds(mitp.y[end, k])
-end
-
-@inline function _eval_multi_anchored_extrap(
-    ::CubicMultiInterpolant{T}, ::Int, ::_CubicAnchoredQuery{T}, ::Val{:constant}, ::EvalDeriv1
-) where {T<:AbstractFloat}
-    return zero(T)
-end
-
-@inline function _eval_multi_anchored_extrap(
-    ::CubicMultiInterpolant{T}, ::Int, ::_CubicAnchoredQuery{T}, ::Val{:constant}, ::EvalDeriv2
-) where {T<:AbstractFloat}
-    return zero(T)
-end
-
-@inline function _eval_multi_anchored_extrap(
-    mitp::CubicMultiInterpolant{T}, k::Int, aq::_CubicAnchoredQuery{T}, ::Val{:extension}, op::AbstractEvalOp
-) where {T<:AbstractFloat}
-    return _eval_multi_anchored_kernel(mitp, k, aq, op)
-end
-
-@inline function _eval_multi_anchored_extrap(
-    mitp::CubicMultiInterpolant{T}, k::Int, aq::_CubicAnchoredQuery{T}, ::Val{:wrap}, op::AbstractEvalOp
-) where {T<:AbstractFloat}
-    return _eval_multi_anchored_kernel(mitp, k, aq, op)
 end
 
 # ========================================
@@ -720,11 +656,12 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     n_pts = n_points(mitp)
     n = n_series(mitp)
     extrap = mitp.extrap
+    x_min, x_max = T(first(mitp.cache.x)), T(last(mitp.cache.x))
 
     # Evaluate all series
     @_dispatch_deriv deriv => op begin
         @inbounds for k in 1:n
-            _eval_multi_vector_series!(outputs[k], y, z, n_pts, k, aq_vec, extrap, op)
+            _eval_multi_vector_series!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, op)
         end
     end
     return outputs
@@ -788,11 +725,12 @@ function (mitp::CubicMultiInterpolant{T})(
     n_pts = n_points(mitp)
     n = n_series(mitp)
     extrap = mitp.extrap
+    x_min, x_max = T(first(mitp.cache.x)), T(last(mitp.cache.x))
 
     # Evaluate all series
     @_dispatch_deriv deriv => op begin
         @inbounds for k in 1:n
-            _eval_multi_vector_series!(outputs[k], y, z, n_pts, k, aq_vec, extrap, op)
+            _eval_multi_vector_series!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, op)
         end
     end
     return outputs
@@ -807,13 +745,15 @@ Uses argument-passing pattern for optimal performance (avoids struct field acces
     y::Matrix{T},
     z::Matrix{T},
     n_pts::Int,
+    x_min::T,
+    x_max::T,
     k::Int,
     aq_vec::AbstractVector{<:_CubicAnchoredQuery{T}},
     extrap::ExtrapVal,
     op::AbstractEvalOp
 ) where {T<:AbstractFloat}
     @inbounds for j in eachindex(out, aq_vec)
-        out[j] = _eval_multi_series_with_extrap(y, z, n_pts, k, aq_vec[j], extrap, op)
+        out[j] = _eval_multi_series_with_extrap(y, z, n_pts, x_min, x_max, k, aq_vec[j], extrap, op)
     end
     return out
 end
@@ -826,6 +766,8 @@ Takes matrices as arguments for optimal performance.
     y::Matrix{T},
     z::Matrix{T},
     n_pts::Int,
+    x_min::T,
+    x_max::T,
     k::Int,
     aq::_CubicAnchoredQuery{T},
     extrap::ExtrapVal,
@@ -847,7 +789,7 @@ Takes matrices as arguments for optimal performance.
             return zero(T)
         end
     else
-        throw(DomainError(aq.xq, "Query point outside domain"))
+        throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
     end
 end
 

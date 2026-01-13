@@ -1183,7 +1183,7 @@ using FastInterpolations
             mitp_comp = cubic_interp(x, [y1, y2]; extrap=:constant)
             mitp_fused = CubicMultiInterpolantFused(mitp_comp)
 
-            @test mitp_fused.extrap === mitp_comp.itps[1].extrap
+            @test mitp_fused.extrap === mitp_comp.extrap  # Unified struct has single extrap field
 
             # Out-of-bounds should match
             @test mitp_fused(1.5) ≈ mitp_comp(1.5) atol=1e-14

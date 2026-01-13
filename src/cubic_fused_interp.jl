@@ -211,35 +211,26 @@ mitp_fused = CubicMultiInterpolantFused(mitp_comp)  # Fused layout
 The conversion preserves BC and extrapolation settings from the original interpolant.
 """
 function CubicMultiInterpolantFused(mitp::CubicMultiInterpolant{T}) where {T<:AbstractFloat}
-    itps = mitp.itps
-    n_series = length(itps)
+    # After unification: CubicMultiInterpolant has matrix storage (n_points × n_series)
+    # Fused layout uses (n_series × n_points), so we transpose
+    ns = n_series(mitp)
+    np = n_points(mitp)
 
-    isempty(itps) && throw(ArgumentError("Cannot convert empty CubicMultiInterpolant"))
+    ns == 0 && throw(ArgumentError("Cannot convert empty CubicMultiInterpolant"))
 
-    # Get reference interpolant for shared properties
-    ref = first(itps)
-    n_points = length(ref.y)
-
-    # Extract coefficients into matrices
-    y_mat = Matrix{T}(undef, n_series, n_points)
-    z_mat = Matrix{T}(undef, n_series, n_points)
-
-    @inbounds for (k, itp) in enumerate(itps)
-        for j in 1:n_points
-            y_mat[k, j] = itp.y[j]
-            z_mat[k, j] = itp.z[j]
-        end
-    end
+    # Transpose from (n_points × n_series) to (n_series × n_points)
+    y_mat = permutedims(mitp.y)
+    z_mat = permutedims(mitp.z)
 
     return CubicMultiInterpolantFused(
-        ref.cache.x,
-        ref.cache.spacing,
+        mitp.cache.x,
+        mitp.cache.spacing,
         y_mat,
         z_mat,
-        ref.cache.bc_config,
-        ref.extrap,
-        n_series,
-        n_points
+        mitp.cache.bc_config,
+        mitp.extrap,
+        ns,
+        np
     )
 end
 

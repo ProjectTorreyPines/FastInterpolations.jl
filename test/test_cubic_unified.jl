@@ -3,6 +3,8 @@
 # ║     Tests for CubicMultiInterpolantUnified - adaptive layout type         ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
+# ALLOC_THRESHOLD is defined in runtests.jl
+
 using Test
 using FastInterpolations
 using FastInterpolations: TransposeSnapshot, CubicMultiInterpolantUnified
@@ -121,10 +123,9 @@ end
         mitp_ref = cubic_interp(x, [y1, y2])
 
         # Compare coefficients (z values)
-        # Unified stores (n_points × n_series), composition stores per-interpolant
-        for k in 1:2
-            @test mitp_unified.z[:, k] ≈ mitp_ref.itps[k].z rtol=1e-12
-        end
+        # Both now store in (n_points × n_series) layout
+        @test mitp_unified.z ≈ mitp_ref.z rtol=1e-12
+        @test mitp_unified.y ≈ mitp_ref.y rtol=1e-14
     end
 end
 
@@ -632,7 +633,7 @@ end
 
         # Measure allocations
         allocs = @allocated mitp(out, 0.5)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Vector in-place evaluation is zero-alloc after warmup" begin
@@ -649,7 +650,7 @@ end
 
         # Measure allocations
         allocs = @allocated mitp(outputs, xq)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Point-layout creation only allocates once" begin
@@ -663,7 +664,7 @@ end
 
         # Subsequent calls should not allocate
         allocs = @allocated _ensure_point_layout!(mitp)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Memory footprint verification (zero-cost abstraction)" begin

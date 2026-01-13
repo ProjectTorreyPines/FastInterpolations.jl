@@ -336,6 +336,44 @@ end
         mitp_wrap = cubic_interp_unified(x, [y1]; extrap=:wrap)
         @test mitp_wrap(1.1)[1] ≈ mitp_wrap(0.1)[1] rtol=1e-10
     end
+
+    @testset "Scalar extrapolation with deriv=1" begin
+        x = collect(range(0.0, 1.0, 51))
+        y1 = sin.(2π .* x)
+
+        # :constant returns 0 for derivatives outside domain
+        mitp_const = cubic_interp_unified(x, [y1]; extrap=:constant)
+        @test mitp_const(-0.1; deriv=1)[1] ≈ 0.0
+        @test mitp_const(1.1; deriv=1)[1] ≈ 0.0
+
+        # :extension uses polynomial extrapolation for derivatives
+        mitp_ext = cubic_interp_unified(x, [y1]; extrap=:extension)
+        @test mitp_ext(-0.1; deriv=1)[1] isa Float64
+        @test mitp_ext(1.1; deriv=1)[1] isa Float64
+
+        # :wrap wraps derivatives
+        mitp_wrap = cubic_interp_unified(x, [y1]; extrap=:wrap)
+        @test mitp_wrap(1.1; deriv=1)[1] ≈ mitp_wrap(0.1; deriv=1)[1] rtol=1e-6
+    end
+
+    @testset "Scalar extrapolation with deriv=2" begin
+        x = collect(range(0.0, 1.0, 51))
+        y1 = sin.(2π .* x)
+
+        # :constant returns 0 for second derivatives outside domain
+        mitp_const = cubic_interp_unified(x, [y1]; extrap=:constant)
+        @test mitp_const(-0.1; deriv=2)[1] ≈ 0.0
+        @test mitp_const(1.1; deriv=2)[1] ≈ 0.0
+
+        # :extension uses polynomial extrapolation
+        mitp_ext = cubic_interp_unified(x, [y1]; extrap=:extension)
+        @test mitp_ext(-0.1; deriv=2)[1] isa Float64
+        @test mitp_ext(1.1; deriv=2)[1] isa Float64
+
+        # :wrap wraps second derivatives
+        mitp_wrap = cubic_interp_unified(x, [y1]; extrap=:wrap)
+        @test mitp_wrap(1.1; deriv=2)[1] ≈ mitp_wrap(0.1; deriv=2)[1] rtol=1e-4
+    end
 end
 
 # ============================================================================
@@ -408,6 +446,80 @@ end
 
         @test outputs[1][2] ≈ sin(π) atol=1e-6
         @test outputs[2][2] ≈ cos(π) atol=1e-6
+    end
+
+    @testset "Vector extrapolation modes" begin
+        x = collect(range(0.0, 1.0, 51))
+        y1 = x .^ 2
+        y2 = x .^ 3
+
+        # Queries including points outside domain
+        xq_outside = [-0.1, 0.5, 1.1]
+
+        # :none throws DomainError for vector queries with out-of-domain points
+        mitp_none = cubic_interp_unified(x, [y1, y2]; extrap=:none)
+        @test_throws DomainError mitp_none(xq_outside)
+
+        # :constant returns boundary values for out-of-domain points
+        mitp_const = cubic_interp_unified(x, [y1, y2]; extrap=:constant)
+        outputs_const = mitp_const(xq_outside)
+        @test outputs_const[1][1] ≈ 0.0 atol=1e-12  # y1(-0.1) → y1[1] = 0
+        @test outputs_const[1][3] ≈ 1.0 atol=1e-12  # y1(1.1) → y1[end] = 1
+        @test outputs_const[2][1] ≈ 0.0 atol=1e-12  # y2(-0.1) → y2[1] = 0
+        @test outputs_const[2][3] ≈ 1.0 atol=1e-12  # y2(1.1) → y2[end] = 1
+
+        # :extension uses polynomial extrapolation
+        mitp_ext = cubic_interp_unified(x, [y1, y2]; extrap=:extension)
+        outputs_ext = mitp_ext(xq_outside)
+        @test outputs_ext[1][1] isa Float64  # Should not throw
+        @test outputs_ext[1][3] isa Float64
+        @test outputs_ext[2][1] isa Float64
+        @test outputs_ext[2][3] isa Float64
+
+        # :wrap wraps to domain
+        mitp_wrap = cubic_interp_unified(x, [y1, y2]; extrap=:wrap)
+        outputs_wrap = mitp_wrap(xq_outside)
+        xq_wrapped = [0.1, 0.5, 0.9]
+        outputs_ref = mitp_wrap(xq_wrapped)
+        # 1.1 wraps to 0.1, -0.1 wraps to 0.9
+        @test outputs_wrap[1][3] ≈ outputs_ref[1][1] rtol=1e-6  # 1.1 → 0.1
+        @test outputs_wrap[1][1] ≈ outputs_ref[1][3] rtol=1e-6  # -0.1 → 0.9
+    end
+
+    @testset "Vector extrapolation with derivatives" begin
+        x = collect(range(0.0, 1.0, 51))
+        y1 = sin.(2π .* x)
+
+        xq_outside = [-0.1, 0.5, 1.1]
+
+        # :constant returns 0 for derivatives outside domain
+        mitp_const = cubic_interp_unified(x, [y1]; extrap=:constant)
+        outputs_d1 = mitp_const(xq_outside; deriv=1)
+        @test outputs_d1[1][1] ≈ 0.0  # deriv at -0.1 is 0
+        @test outputs_d1[1][3] ≈ 0.0  # deriv at 1.1 is 0
+        @test outputs_d1[1][2] != 0.0  # deriv at 0.5 is not 0
+
+        outputs_d2 = mitp_const(xq_outside; deriv=2)
+        @test outputs_d2[1][1] ≈ 0.0  # second deriv at -0.1 is 0
+        @test outputs_d2[1][3] ≈ 0.0  # second deriv at 1.1 is 0
+
+        # :extension uses polynomial extrapolation for derivatives
+        mitp_ext = cubic_interp_unified(x, [y1]; extrap=:extension)
+        outputs_ext_d1 = mitp_ext(xq_outside; deriv=1)
+        @test outputs_ext_d1[1][1] isa Float64
+        @test outputs_ext_d1[1][3] isa Float64
+
+        outputs_ext_d2 = mitp_ext(xq_outside; deriv=2)
+        @test outputs_ext_d2[1][1] isa Float64
+        @test outputs_ext_d2[1][3] isa Float64
+
+        # :wrap wraps derivatives
+        mitp_wrap = cubic_interp_unified(x, [y1]; extrap=:wrap)
+        outputs_wrap_d1 = mitp_wrap(xq_outside; deriv=1)
+        xq_ref = [0.9, 0.5, 0.1]  # wrapped points
+        outputs_ref_d1 = mitp_wrap(xq_ref; deriv=1)
+        @test outputs_wrap_d1[1][1] ≈ outputs_ref_d1[1][1] rtol=1e-6  # -0.1 → 0.9
+        @test outputs_wrap_d1[1][3] ≈ outputs_ref_d1[1][3] rtol=1e-6  # 1.1 → 0.1
     end
 end
 

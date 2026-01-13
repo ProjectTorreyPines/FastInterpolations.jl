@@ -9,8 +9,11 @@
 #
 # Benchmark Structure:
 #   1. Initialization: Time to construct mpert×mpert spline objects
-#   2. Scalar API: Point-by-point evaluation 
+#   2. Scalar API: Point-by-point evaluation
 #   3. Vector API: Batch evaluation with in-place output (where supported)
+#
+# FastInterpolations.jl Multi-Series APIs:
+#   - CubicMultiInterpolant: Adaptive layout (series-contiguous + lazy transpose)
 #
 # Use Case:
 #   Simulates JPEC equilibrium matrix interpolation where npsi×mpert×mpert
@@ -33,7 +36,10 @@ using Statistics
 # =============================================================================
 
 const NPSI = 64            # Number of grid points
-const MPERT = 200          # Matrix dimension (mpert × mpert splines)
+# const MPERT = 200          # Matrix dimension (mpert × mpert splines)
+const MPERT = 20          # Matrix dimension (mpert × mpert splines)
+# const N_EVAL_POINTS = 4000 # Evaluation points (query points) 
+# const MPERT = 20          # Matrix dimension (mpert × mpert splines)
 const N_EVAL_POINTS = 4000 # Evaluation points (query points) 
 
 # =============================================================================
@@ -85,7 +91,7 @@ end
 
 """Evaluate all splines at a single point (scalar API)."""
 function eval_interpolations_splines!(A::Matrix{Float64}, splines::Matrix, psi::Float64)
-    for m1 in axes(splines, 1), m2 in axes(splines, 2)
+    for m2 in axes(splines, 2), m1 in axes(splines, 1)
         A[m1, m2] = splines[m1, m2](psi)
     end
     return A
@@ -101,7 +107,7 @@ end
 
 """Batch evaluation using broadcasting."""
 function run_interpolations_broadcast!(A::Array{Float64,3}, splines::Matrix, psi_values::Vector{Float64})
-    for m1 in axes(splines, 1), m2 in axes(splines, 2)
+    for m2 in axes(splines, 2), m1 in axes(splines, 1)
         @. A[:, m1, m2] = splines[m1, m2](psi_values)
     end
     return A
@@ -129,7 +135,7 @@ end
 
 """Evaluate all splines at a single point (scalar API)."""
 function eval_fast_interpolations_splines!(A::Matrix{Float64}, splines::Matrix, psi::Float64)
-    for m1 in axes(splines, 1), m2 in axes(splines, 2)
+    for m2 in axes(splines, 2), m1 in axes(splines, 1)
         A[m1, m2] = splines[m1, m2](psi)
     end
     return A
@@ -148,7 +154,7 @@ Batch evaluation using in-place vector API.
 Syntax: spline(output, input_vector).
 """
 function run_fast_interpolations_vector_API!(A::Array{Float64,3}, splines::Matrix, psi_values::Vector{Float64})
-    for m1 in axes(splines, 1), m2 in axes(splines, 2)
+    for m2 in axes(splines, 2), m1 in axes(splines, 1)
         @views splines[m1, m2](A[:, m1, m2], psi_values)
     end
     return A
@@ -204,7 +210,7 @@ end
 
 """Evaluate all splines at a single point (scalar API)."""
 function eval_data_interpolations_splines!(A::Matrix{Float64}, splines::Matrix, psi::Float64)
-    for m1 in axes(splines, 1), m2 in axes(splines, 2)
+    for m2 in axes(splines, 2), m1 in axes(splines, 1)
         A[m1, m2] = splines[m1, m2](psi)
     end
     return A
@@ -223,7 +229,7 @@ Batch evaluation using in-place vector API.
 Syntax: spline(output, input_vector) - same as FastInterpolations.jl.
 """
 function run_data_interpolations_vector_API!(A::Array{Float64,3}, splines::Matrix, psi_values::Vector{Float64})
-    for m1 in axes(splines, 1), m2 in axes(splines, 2)
+    for m2 in axes(splines, 2), m1 in axes(splines, 1)
         @views splines[m1, m2](A[:, m1, m2], psi_values)
     end
     return A

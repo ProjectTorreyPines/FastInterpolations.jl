@@ -45,12 +45,6 @@ include("cubic_interp.jl")      # 4-arg API, helper functions
 include("cubic_anchor.jl")      # Anchored query for ultra-fast evaluation
 include("cubic_interpolant.jl") # 2-arg API, CubicInterpolant callable
 include("multi_cubic_interp.jl") # Multi-Y cubic interpolation
-include("cubic_fused_types.jl")   # Fused multi-series cubic interpolant type
-include("cubic_fused_interp.jl")  # Fused multi-series constructor
-include("cubic_fused_kernels.jl") # Fused multi-series evaluation kernels
-include("cubic_unified_types.jl")   # Unified multi-series type definitions
-include("cubic_unified_interp.jl")  # Unified multi-series constructors
-include("cubic_unified_kernels.jl") # Unified multi-series evaluation kernels
 
 # Quadratic spline interpolation
 include("quadratic_solver.jl")       # Coefficient computation (secants, d[], a[])
@@ -67,8 +61,7 @@ export linear_interp, linear_interp!, LinearInterpolant, LinearMultiInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantMultiInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
 export CubicMultiInterpolant, MultiCubicInterpolant  # MultiCubicInterpolant is alias for backward compat
-export CubicMultiInterpolantFused, cubic_interp_fused  # High-performance fused multi-series
-export CubicMultiInterpolantUnified, cubic_interp_unified, precompute_transpose!, TransposeSnapshot  # Unified adaptive-layout multi-series
+export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar queries
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticMultiInterpolant
 

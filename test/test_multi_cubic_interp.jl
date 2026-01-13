@@ -216,8 +216,19 @@ end
         end
     end
 
-    # NOTE: "Lazy point-layout triggered by scalar eval" test moved to Phase 3 GREEN
-    # The scalar kernel currently doesn't trigger lazy layout - will be fixed in Phase 3
+    @testset "Lazy point-layout triggered by scalar eval" begin
+        mitp = cubic_interp(x, [y1, y2])
+
+        # Initially empty
+        snap = @atomic :acquire mitp._point_snapshot
+        @test snap.y_point === nothing
+
+        # After scalar eval → populated
+        _ = mitp(0.5)
+        snap_after = @atomic :acquire mitp._point_snapshot
+        @test snap_after.y_point !== nothing
+        @test size(snap_after.y_point) == (2, length(x))
+    end
 
     @testset "_ensure_point_layout! idempotency" begin
         mitp = cubic_interp(x, [y1, y2])

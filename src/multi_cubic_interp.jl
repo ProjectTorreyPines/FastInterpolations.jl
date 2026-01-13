@@ -445,6 +445,8 @@ end
 """
 Internal scalar evaluation kernel using per-series cubic evaluation.
 Uses the series-contiguous layout (y[:, k], z[:, k]) for each series.
+
+Note: Triggers lazy point-layout creation for future SIMD scalar queries.
 """
 @inline function _eval_multi_scalar!(
     output::AbstractVector{T},
@@ -452,6 +454,10 @@ Uses the series-contiguous layout (y[:, k], z[:, k]) for each series.
     aq::_CubicAnchoredQuery{T},
     deriv::Int
 ) where {T<:AbstractFloat}
+    # Ensure point-contiguous layout exists (lazy creation)
+    # This enables SIMD optimization for repeated scalar queries
+    _ensure_point_layout!(mitp)
+
     n = n_series(mitp)
 
     @_dispatch_deriv deriv => op begin

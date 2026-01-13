@@ -4,7 +4,7 @@
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
 # Key difference from existing types:
-# - CubicMultiInterpolant: Composition of Vector{CubicInterpolant}, pointer chasing
+# - CubicMultiInterpolant: Now uses unified-style matrix storage (n_points × n_series)
 # - CubicMultiInterpolantFused: Interleaved matrix layout (n_series × n_points)
 # - CubicMultiInterpolantUnified: Adaptive layout based on query pattern
 #   - Vector queries use series-contiguous layout (n_points × n_series)
@@ -12,30 +12,8 @@
 #
 # Include order: ... → cubic_fused_kernels.jl → cubic_unified_types.jl → ...
 #
-
-# ========================================
-# TransposeSnapshot Type
-# ========================================
-
-"""
-    TransposeSnapshot{T}
-
-Immutable snapshot of point-contiguous (transposed) matrices.
-
-Used for atomic swap in `CubicMultiInterpolantUnified` to ensure thread-safe
-lazy initialization of point-contiguous layout.
-
-# Fields
-- `y_point::Union{Nothing, Matrix{T}}`: Point-contiguous y values (n_series × n_points)
-- `z_point::Union{Nothing, Matrix{T}}`: Point-contiguous z values (n_series × n_points)
-"""
-struct TransposeSnapshot{T<:AbstractFloat}
-    y_point::Union{Nothing, Matrix{T}}
-    z_point::Union{Nothing, Matrix{T}}
-end
-
-# Empty snapshot constructor
-TransposeSnapshot{T}() where {T<:AbstractFloat} = TransposeSnapshot{T}(nothing, nothing)
+# Note: TransposeSnapshot is defined in cubic_types.jl (shared type)
+#
 
 # ========================================
 # CubicMultiInterpolantUnified Type

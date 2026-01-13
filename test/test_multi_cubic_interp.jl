@@ -1,12 +1,150 @@
 # Tests for MultiCubicInterpolant - Multi-Y cubic interpolation
 #
 # Multi-Y interpolation: multiple y-data series sharing the same x-grid.
-# Uses composition approach: wraps existing CubicInterpolant objects.
+# After unification: Uses matrix storage with adaptive layout for optimal performance.
 #
 # ALLOC_THRESHOLD is defined in runtests.jl
 
 # ============================================================================
-# Phase 1: Type Definition & Constructor Tests
+# Phase 1: Unified Type Migration Tests (TDD RED → GREEN → REFACTOR)
+# ============================================================================
+
+@testset "MultiCubicInterpolant - TransposeSnapshot Type" begin
+    FI = FastInterpolations
+
+    @testset "Empty snapshot creation" begin
+        snap = FI.TransposeSnapshot{Float64}()
+        @test snap.y_point === nothing
+        @test snap.z_point === nothing
+    end
+
+    @testset "Snapshot with matrices" begin
+        y_point = rand(3, 10)  # 3 series × 10 points
+        z_point = rand(3, 10)
+        snap = FI.TransposeSnapshot{Float64}(y_point, z_point)
+        @test snap.y_point === y_point
+        @test snap.z_point === z_point
+    end
+
+    @testset "Float32 snapshot" begin
+        snap32 = FI.TransposeSnapshot{Float32}()
+        @test snap32.y_point === nothing
+        @test snap32.z_point === nothing
+
+        y_pt = rand(Float32, 2, 5)
+        z_pt = rand(Float32, 2, 5)
+        snap32_full = FI.TransposeSnapshot{Float32}(y_pt, z_pt)
+        @test snap32_full.y_point === y_pt
+    end
+end
+
+@testset "MultiCubicInterpolant - Unified Struct Fields" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = exp.(-3 .* x)
+
+    mitp = cubic_interp(x, [y1, y2, y3])
+
+    @testset "Has matrix storage fields (not itps)" begin
+        # After unification: has matrix storage
+        @test hasfield(typeof(mitp), :y)
+        @test hasfield(typeof(mitp), :z)
+        @test hasfield(typeof(mitp), :cache)
+        @test hasfield(typeof(mitp), :_point_snapshot)
+        @test hasfield(typeof(mitp), :extrap)
+
+        # Should NOT have itps field anymore
+        @test !hasfield(typeof(mitp), :itps)
+    end
+
+    @testset "Matrix dimensions correct (n_points × n_series)" begin
+        n_points = length(x)
+        n_series_count = 3
+
+        @test mitp.y isa Matrix{Float64}
+        @test size(mitp.y) == (n_points, n_series_count)
+        @test size(mitp.z) == (n_points, n_series_count)
+    end
+
+    @testset "y values stored correctly in columns" begin
+        @test mitp.y[:, 1] ≈ y1
+        @test mitp.y[:, 2] ≈ y2
+        @test mitp.y[:, 3] ≈ y3
+    end
+
+    @testset "z coefficients match individual interpolants" begin
+        itp1 = cubic_interp(x, y1)
+        itp2 = cubic_interp(x, y2)
+        itp3 = cubic_interp(x, y3)
+
+        @test mitp.z[:, 1] ≈ itp1.z rtol=1e-12
+        @test mitp.z[:, 2] ≈ itp2.z rtol=1e-12
+        @test mitp.z[:, 3] ≈ itp3.z rtol=1e-12
+    end
+
+    @testset "Cache is CubicSplineCache" begin
+        @test mitp.cache isa FI.CubicSplineCache{Float64}
+    end
+
+    @testset "Extrap is Val type" begin
+        mitp_ext = cubic_interp(x, [y1, y2]; extrap=:extension)
+        @test mitp_ext.extrap === Val(:extension)
+
+        mitp_const = cubic_interp(x, [y1, y2]; extrap=:constant)
+        @test mitp_const.extrap === Val(:constant)
+    end
+end
+
+@testset "MultiCubicInterpolant - Helper Functions" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = exp.(-3 .* x)
+
+    @testset "n_series and n_points helpers" begin
+        mitp = cubic_interp(x, [y1, y2, y3])
+        @test FI.n_series(mitp) == 3
+        @test FI.n_points(mitp) == 101
+    end
+
+    @testset "n_series with different counts" begin
+        mitp1 = cubic_interp(x, [y1])
+        @test FI.n_series(mitp1) == 1
+
+        mitp5 = cubic_interp(x, [y1, y2, y3, y1, y2])
+        @test FI.n_series(mitp5) == 5
+    end
+end
+
+@testset "MultiCubicInterpolant - Type Parameters" begin
+    FI = FastInterpolations
+
+    @testset "Float64 type parameter" begin
+        x64 = collect(range(0.0, 1.0, 101))
+        y1_64 = sin.(2π .* x64)
+        y2_64 = cos.(2π .* x64)
+
+        mitp64 = cubic_interp(x64, [y1_64, y2_64])
+        @test mitp64 isa FI.CubicMultiInterpolant{Float64}
+    end
+
+    @testset "Float32 type parameter" begin
+        x32 = Float32.(collect(range(0.0f0, 1.0f0, 101)))
+        y1_32 = sin.(2f0 * Float32(π) .* x32)
+        y2_32 = cos.(2f0 * Float32(π) .* x32)
+
+        mitp32 = cubic_interp(x32, [y1_32, y2_32])
+        @test mitp32 isa FI.CubicMultiInterpolant{Float32}
+    end
+end
+
+# ============================================================================
+# Phase 1 (Legacy): Type Definition & Constructor Tests
 # ============================================================================
 
 @testset "MultiCubicInterpolant - Type Structure" begin
@@ -22,28 +160,27 @@
         mitp = cubic_interp(x, [y1, y2, y3])
         @test mitp isa FI.MultiCubicInterpolant
 
-        # Access internal interpolants
-        @test hasfield(typeof(mitp), :itps)
-        @test length(mitp.itps) == 3
-        @test all(itp -> itp isa CubicInterpolant, mitp.itps)
+        # Unified structure: has matrix storage
+        @test hasfield(typeof(mitp), :y)
+        @test FI.n_series(mitp) == 3
     end
 
     @testset "Construction from Matrix (columns as series)" begin
         Y = hcat(y1, y2, y3)  # 101×3 matrix
         mitp = cubic_interp(x, Y)
         @test mitp isa FI.MultiCubicInterpolant
-        @test length(mitp.itps) == 3
+        @test FI.n_series(mitp) == 3
     end
 
     @testset "Single series works" begin
         mitp = cubic_interp(x, [y1])
         @test mitp isa FI.MultiCubicInterpolant
-        @test length(mitp.itps) == 1
+        @test FI.n_series(mitp) == 1
     end
 
     @testset "Type inference - Float64" begin
         mitp = cubic_interp(x, [y1, y2])
-        @test eltype(mitp.itps) <: CubicInterpolant{Float64}
+        @test mitp isa FI.CubicMultiInterpolant{Float64}
     end
 
     @testset "Type inference - Float32" begin
@@ -51,7 +188,7 @@
         y1_32 = Float32.(y1)
         y2_32 = Float32.(y2)
         mitp = cubic_interp(x32, [y1_32, y2_32])
-        @test eltype(mitp.itps) <: CubicInterpolant{Float32}
+        @test mitp isa FI.CubicMultiInterpolant{Float32}
     end
 end
 
@@ -63,24 +200,26 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    @testset "All interpolants share same cache reference" begin
+    @testset "Single shared cache (unified struct)" begin
         mitp = cubic_interp(x, [y1, y2, y3])
 
-        # Use === for reference equality (not just value equality)
-        @test mitp.itps[1].cache === mitp.itps[2].cache
-        @test mitp.itps[2].cache === mitp.itps[3].cache
+        # Unified struct has a single cache field (not itps)
+        @test mitp.cache isa FI.CubicSplineCache
+        @test mitp.cache.x === x || mitp.cache.x == x
     end
 
     @testset "Cache sharing with different BC types" begin
         # NaturalBC (default)
         mitp_natural = cubic_interp(x, [y1, y2])
-        @test mitp_natural.itps[1].cache === mitp_natural.itps[2].cache
+        @test mitp_natural.cache isa FI.CubicSplineCache
+        @test mitp_natural.cache.bc_config isa BCPair
 
         # PeriodicBC
         y1_periodic = copy(y1); y1_periodic[end] = y1_periodic[1]
         y2_periodic = copy(y2); y2_periodic[end] = y2_periodic[1]
         mitp_periodic = cubic_interp(x, [y1_periodic, y2_periodic]; bc=PeriodicBC())
-        @test mitp_periodic.itps[1].cache === mitp_periodic.itps[2].cache
+        @test mitp_periodic.cache isa FI.CubicSplineCache
+        @test mitp_periodic.cache.bc_config isa FI.PeriodicData
     end
 end
 
@@ -101,22 +240,22 @@ end
     end
 
     @testset "BC propagation" begin
-        # NaturalBC (default) - check bc_config field
+        # NaturalBC (default) - check bc_config field (unified struct)
         mitp_natural = cubic_interp(x, [y1, y2])
-        @test mitp_natural.itps[1].cache.bc_config isa BCPair
+        @test mitp_natural.cache.bc_config isa BCPair
 
         # PeriodicBC - check bc_config is PeriodicData
         y1_periodic = copy(y1); y1_periodic[end] = y1_periodic[1]
         y2_periodic = copy(y2); y2_periodic[end] = y2_periodic[1]
         mitp_periodic = cubic_interp(x, [y1_periodic, y2_periodic]; bc=PeriodicBC())
-        @test mitp_periodic.itps[1].cache.bc_config isa FastInterpolations.PeriodicData
+        @test mitp_periodic.cache.bc_config isa FastInterpolations.PeriodicData
     end
 
     @testset "Extrap propagation" begin
         for extrap_mode in (:none, :constant, :extension, :wrap)
             mitp = cubic_interp(x, [y1, y2]; extrap=extrap_mode)
-            @test mitp.itps[1].extrap === Val(extrap_mode)
-            @test mitp.itps[2].extrap === Val(extrap_mode)
+            # Unified struct has single extrap field
+            @test mitp.extrap === Val(extrap_mode)
         end
     end
 end
@@ -496,7 +635,7 @@ end
     @testset "Large number of series (10+)" begin
         ys = [sin.(k .* x) for k in 1:12]
         mitp = cubic_interp(x, ys)
-        @test length(mitp.itps) == 12
+        @test FI.n_series(mitp) == 12
 
         result = mitp(0.5)
         @test length(result) == 12
@@ -557,7 +696,7 @@ end
 
         mitp = cubic_interp(x_int, Y_int)
         @test mitp isa FI.MultiCubicInterpolant{Float64}
-        @test length(mitp.itps) == 3
+        @test FI.n_series(mitp) == 3
 
         result = mitp(5.5)
         @test length(result) == 3

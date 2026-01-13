@@ -149,6 +149,137 @@ function precompute_transpose!(mitp::CubicMultiInterpolant)
 end
 
 # ========================================
+# SIMD Scalar Evaluation Kernels
+# ========================================
+
+"""
+    _eval_multi_point!(out, y_point, z_point, aq, op)
+
+SIMD-optimized evaluation for point-contiguous layout (n_series × n_points).
+Contiguous column access enables vectorization across series dimension.
+"""
+@inline function _eval_multi_point!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    aq::_CubicAnchoredQuery{T},
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    idx = aq.idx
+    idx1 = idx + 1
+    wyL, wyR, wzL, wzR = _anchored_weights(aq, op)
+
+    # SIMD loop over series (contiguous column access)
+    @inbounds @simd for k in axes(out, 1)
+        yL = y_point[k, idx]
+        yR = y_point[k, idx1]
+        zL = z_point[k, idx]
+        zR = z_point[k, idx1]
+
+        # Optimal FMA chain: 3 FMAs + 1 mul
+        out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
+    end
+
+    return out
+end
+
+"""
+    _eval_multi_point_with_extrap!(out, y_point, z_point, n_pts, aq, extrap, op)
+
+SIMD evaluation with extrapolation handling for multi-series.
+"""
+@inline function _eval_multi_point_with_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    n_pts::Int,
+    aq::_CubicAnchoredQuery{T},
+    extrap::ExtrapVal,
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    # Inside domain: normal evaluation
+    if aq.side == 0x00
+        return _eval_multi_point!(out, y_point, z_point, aq, op)
+    end
+
+    # Outside domain: dispatch on extrap mode
+    _eval_multi_point_extrap!(out, y_point, z_point, n_pts, aq, extrap, op, aq.side)
+end
+
+# :none - throw DomainError
+@inline function _eval_multi_point_extrap!(
+    ::AbstractVector{T},
+    ::Matrix{T},
+    ::Matrix{T},
+    ::Int,
+    aq::_CubicAnchoredQuery{T},
+    ::Val{:none},
+    ::AbstractEvalOp,
+    ::UInt8
+) where {T<:AbstractFloat}
+    throw(DomainError(aq.xq, "Query point outside domain"))
+end
+
+# :constant - clamp to boundary
+@inline function _eval_multi_point_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    ::Matrix{T},
+    n_pts::Int,
+    ::_CubicAnchoredQuery{T},
+    ::Val{:constant},
+    ::AbstractEvalOp,
+    side::UInt8
+) where {T<:AbstractFloat}
+    idx = side == 0x01 ? 1 : n_pts
+    @inbounds @simd for k in axes(out, 1)
+        out[k] = y_point[k, idx]
+    end
+    return out
+end
+
+# :extension - extend polynomial
+@inline function _eval_multi_point_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    n_pts::Int,
+    aq::_CubicAnchoredQuery{T},
+    ::Val{:extension},
+    op::AbstractEvalOp,
+    side::UInt8
+) where {T<:AbstractFloat}
+    # Use boundary interval for extension
+    idx = side == 0x01 ? 1 : (n_pts - 1)
+    idx1 = idx + 1
+    wyL, wyR, wzL, wzR = _anchored_weights(aq, op)
+
+    @inbounds @simd for k in axes(out, 1)
+        yL = y_point[k, idx]
+        yR = y_point[k, idx1]
+        zL = z_point[k, idx]
+        zR = z_point[k, idx1]
+        out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
+    end
+    return out
+end
+
+# :wrap - periodic (anchor already adjusted)
+@inline function _eval_multi_point_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    ::Int,
+    aq::_CubicAnchoredQuery{T},
+    ::Val{:wrap},
+    op::AbstractEvalOp,
+    ::UInt8
+) where {T<:AbstractFloat}
+    # Anchor was already wrapped, use normal evaluation
+    return _eval_multi_point!(out, y_point, z_point, aq, op)
+end
+
+# ========================================
 # Internal: Coefficient Solver
 # ========================================
 
@@ -454,16 +585,12 @@ Note: Triggers lazy point-layout creation for future SIMD scalar queries.
     aq::_CubicAnchoredQuery{T},
     deriv::Int
 ) where {T<:AbstractFloat}
-    # Ensure point-contiguous layout exists (lazy creation)
-    # This enables SIMD optimization for repeated scalar queries
-    _ensure_point_layout!(mitp)
+    # Use point-contiguous layout for SIMD evaluation
+    y_point, z_point = _ensure_point_layout!(mitp)
 
-    n = n_series(mitp)
-
+    # SIMD dispatch on derivative order
     @_dispatch_deriv deriv => op begin
-        @inbounds for k in 1:n
-            output[k] = _eval_multi_anchored_single(mitp, k, aq, op)
-        end
+        _eval_multi_point_with_extrap!(output, y_point, z_point, n_points(mitp), aq, mitp.extrap, op)
     end
 
     return output

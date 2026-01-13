@@ -5,6 +5,8 @@
 #
 # ALLOC_THRESHOLD is defined in runtests.jl
 
+using FastInterpolations: _ensure_point_layout!
+
 # ============================================================================
 # Phase 1: Unified Type Migration Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
@@ -232,8 +234,8 @@ end
 
     @testset "_ensure_point_layout! idempotency" begin
         mitp = cubic_interp(x, [y1, y2])
-        y_pt1, z_pt1 = FI._ensure_point_layout!(mitp)
-        y_pt2, z_pt2 = FI._ensure_point_layout!(mitp)
+        y_pt1, z_pt1 = _ensure_point_layout!(mitp)
+        y_pt2, z_pt2 = _ensure_point_layout!(mitp)
         @test y_pt1 === y_pt2  # Same reference (idempotent)
         @test z_pt1 === z_pt2
     end
@@ -333,6 +335,60 @@ end
 
         d1_multi = mitp_periodic(0.5; deriv=1)
         @test d1_multi[1] ≈ itp1_periodic(0.5; deriv=1) atol=1e-14
+    end
+end
+
+# ============================================================================
+# Phase 5: Memory & Allocation Verification Tests (TDD RED → GREEN → REFACTOR)
+# ============================================================================
+
+@testset "MultiCubicInterpolant - Memory & Allocation" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+
+    @testset "Memory footprint - lazy transpose" begin
+        ys = [rand(101) for _ in 1:10]
+        mitp = cubic_interp(x, ys)
+
+        size_before = Base.summarysize(mitp)
+        _ = mitp(0.5)  # Triggers lazy layout creation
+        size_after = Base.summarysize(mitp)
+
+        ratio = size_after / size_before
+        @test 1.5 < ratio < 2.5  # ~2x for transpose storage
+    end
+
+    @testset "_ensure_point_layout! allocates only once" begin
+        mitp = cubic_interp(x, [y1])
+        _ensure_point_layout!(mitp)  # First call (warmup)
+
+        # Use direct import to ensure proper escape analysis
+        allocs = @allocated _ensure_point_layout!(mitp)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Scalar deriv=1 zero-alloc" begin
+        mitp = cubic_interp(x, [y1, y2]; precompute_transpose=true)
+        out = zeros(2)
+        mitp(out, 0.5; deriv=1)  # Warmup
+
+        allocs = @allocated mitp(out, 0.5; deriv=1)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Vector deriv=1 zero-alloc with pool" begin
+        mitp = cubic_interp(x, [y1, y2])
+        xq = collect(range(0.1, 0.9, 100))
+        outputs = [zeros(100) for _ in 1:2]
+
+        mitp(outputs, xq; deriv=1)  # Warmup × 2
+        mitp(outputs, xq; deriv=1)
+
+        allocs = @allocated mitp(outputs, xq; deriv=1)
+        @test allocs <= ALLOC_THRESHOLD
     end
 end
 

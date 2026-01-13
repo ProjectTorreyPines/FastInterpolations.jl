@@ -697,9 +697,16 @@ function (mitp::CubicMultiInterpolant{T})(
     n = n_series(mitp)
     outputs = [Vector{T}(undef, length(xq_typed)) for _ in 1:n]
 
+    # Extract matrices for argument-passing pattern
+    y, z = mitp.y, mitp.z
+    n_pts = n_points(mitp)
+    extrap = mitp.extrap
+
     # Evaluate all series
-    @inbounds for k in 1:n
-        _eval_multi_vector_series!(outputs[k], mitp, k, aq_vec, deriv)
+    @_dispatch_deriv deriv => op begin
+        @inbounds for k in 1:n
+            _eval_multi_vector_series!(outputs[k], y, z, n_pts, k, aq_vec, extrap, op)
+        end
     end
     return outputs
 end
@@ -729,10 +736,17 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     aq_vec = acquire!(pool, _CubicAnchoredQuery{T}, length(xq))
     _fill_anchors!(aq_vec, mitp.cache.x, xq; wrap=_should_wrap(mitp))
 
-    # Evaluate all series
+    # Extract matrices for argument-passing pattern
+    y, z = mitp.y, mitp.z
+    n_pts = n_points(mitp)
     n = n_series(mitp)
-    @inbounds for k in 1:n
-        _eval_multi_vector_series!(outputs[k], mitp, k, aq_vec, deriv)
+    extrap = mitp.extrap
+
+    # Evaluate all series
+    @_dispatch_deriv deriv => op begin
+        @inbounds for k in 1:n
+            _eval_multi_vector_series!(outputs[k], y, z, n_pts, k, aq_vec, extrap, op)
+        end
     end
     return outputs
 end
@@ -776,29 +790,92 @@ function (mitp::CubicMultiInterpolant{T})(
     @assert length(outputs) == n_series(mitp) "outputs length must match number of series"
     @assert all(out -> length(out) == length(aq_vec), outputs) "all output buffers must match aq_vec length"
 
-    # Evaluate all series
+    # Extract matrices for argument-passing pattern
+    y, z = mitp.y, mitp.z
+    n_pts = n_points(mitp)
     n = n_series(mitp)
-    @inbounds for k in 1:n
-        _eval_multi_vector_series!(outputs[k], mitp, k, aq_vec, deriv)
+    extrap = mitp.extrap
+
+    # Evaluate all series
+    @_dispatch_deriv deriv => op begin
+        @inbounds for k in 1:n
+            _eval_multi_vector_series!(outputs[k], y, z, n_pts, k, aq_vec, extrap, op)
+        end
     end
     return outputs
 end
 
 """
 Internal: Evaluate a single series for vector of query points.
+Uses argument-passing pattern for optimal performance (avoids struct field access in loop).
 """
 @inline function _eval_multi_vector_series!(
     out::AbstractVector{T},
-    mitp::CubicMultiInterpolant{T},
+    y::Matrix{T},
+    z::Matrix{T},
+    n_pts::Int,
     k::Int,
     aq_vec::AbstractVector{<:_CubicAnchoredQuery{T}},
-    deriv::Int
+    extrap::ExtrapVal,
+    op::AbstractEvalOp
 ) where {T<:AbstractFloat}
-    @_dispatch_deriv deriv => op begin
-        @inbounds for j in eachindex(out, aq_vec)
-            out[j] = _eval_multi_anchored_single(mitp, k, aq_vec[j], op)
-        end
+    @inbounds for j in eachindex(out, aq_vec)
+        out[j] = _eval_multi_series_with_extrap(y, z, n_pts, k, aq_vec[j], extrap, op)
+    end
+    return out
+end
+
+"""
+Internal: Evaluate single series at single query point with extrapolation handling.
+Takes matrices as arguments for optimal performance.
+"""
+@inline function _eval_multi_series_with_extrap(
+    y::Matrix{T},
+    z::Matrix{T},
+    n_pts::Int,
+    k::Int,
+    aq::_CubicAnchoredQuery{T},
+    extrap::ExtrapVal,
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    # Inside domain: normal evaluation
+    if aq.side == 0x00
+        return _eval_multi_series_anchored(y, z, k, aq, op)
     end
 
-    return out
+    # Outside domain: dispatch on extrap mode
+    if extrap === Val(:extension) || extrap === Val(:wrap)
+        return _eval_multi_series_anchored(y, z, k, aq, op)
+    elseif extrap === Val(:constant)
+        if op isa EvalValue
+            pt_idx = aq.side == 0x01 ? 1 : n_pts
+            @inbounds return y[pt_idx, k]
+        else
+            return zero(T)
+        end
+    else
+        throw(DomainError(aq.xq, "Query point outside domain"))
+    end
+end
+
+"""
+Internal: Core cubic evaluation for series k at anchored query point.
+Direct matrix access for optimal performance.
+"""
+@inline function _eval_multi_series_anchored(
+    y::Matrix{T},
+    z::Matrix{T},
+    k::Int,
+    aq::_CubicAnchoredQuery{T},
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    idx = aq.idx
+    wyL, wyR, wzL, wzR = _anchored_weights(aq, op)
+    @inbounds begin
+        yL = y[idx, k]
+        yR = y[idx + 1, k]
+        zL = z[idx, k]
+        zR = z[idx + 1, k]
+    end
+    return muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
 end

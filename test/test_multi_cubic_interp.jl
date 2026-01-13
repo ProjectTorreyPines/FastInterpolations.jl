@@ -260,6 +260,83 @@ end
 end
 
 # ============================================================================
+# Phase 4: Vector Kernel Migration Tests (TDD RED → GREEN → REFACTOR)
+# ============================================================================
+
+@testset "MultiCubicInterpolant - Vector Kernel Migration" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+
+    @testset "Output layout series-first" begin
+        mitp = cubic_interp(x, [y1, y2])
+        xq_vec = [0.2, 0.4, 0.6]
+        outputs = mitp(xq_vec)
+
+        for (j, xq) in enumerate(xq_vec)
+            scalar_result = mitp(xq)
+            @test outputs[1][j] ≈ scalar_result[1] atol=1e-14
+            @test outputs[2][j] ≈ scalar_result[2] atol=1e-14
+        end
+    end
+
+    @testset "DimensionMismatch for wrong container size" begin
+        mitp = cubic_interp(x, [y1, y2])
+        xq_vec = [0.1, 0.3, 0.5]
+
+        outputs_wrong = [zeros(3)]  # Only 1 series (should be 2)
+        @test_throws Union{DimensionMismatch, AssertionError} mitp(outputs_wrong, xq_vec)
+    end
+
+    @testset "Anchor reuse produces identical results" begin
+        mitp = cubic_interp(x, [y1, y2])
+        xq_vec = [0.2, 0.5, 0.8]
+        aq_vec = FI._anchor_query(x, xq_vec)
+
+        outputs1 = [zeros(3) for _ in 1:2]
+        outputs2 = [zeros(3) for _ in 1:2]
+
+        mitp(outputs1, aq_vec)
+        mitp(outputs2, aq_vec)
+
+        @test outputs1[1] ≈ outputs2[1] atol=1e-14
+        @test outputs1[2] ≈ outputs2[2] atol=1e-14
+    end
+
+    @testset "Finite difference derivative verification" begin
+        y_poly = x .^ 3 .- 2 .* x .^ 2 .+ x
+        mitp = cubic_interp(x, [y_poly])
+        xq = 0.4
+        h = 1e-6
+
+        fd1 = (mitp(xq + h) .- mitp(xq - h)) ./ (2h)
+        d1 = mitp(xq; deriv=1)
+        @test d1 ≈ fd1 atol=1e-5
+    end
+
+    @testset "Derivatives with all BC types" begin
+        for bc in [NaturalBC(), ClampedBC()]
+            mitp = cubic_interp(x, [y1, y2]; bc=bc)
+            itp1 = cubic_interp(x, y1; bc=bc)
+
+            d1_multi = mitp(0.5; deriv=1)
+            @test d1_multi[1] ≈ itp1(0.5; deriv=1) atol=1e-14
+        end
+
+        # PeriodicBC requires matching endpoints
+        y1_periodic = sin.(2π .* x)
+        y2_periodic = cos.(2π .* x)
+        mitp_periodic = cubic_interp(x, [y1_periodic, y2_periodic]; bc=PeriodicBC())
+        itp1_periodic = cubic_interp(x, y1_periodic; bc=PeriodicBC())
+
+        d1_multi = mitp_periodic(0.5; deriv=1)
+        @test d1_multi[1] ≈ itp1_periodic(0.5; deriv=1) atol=1e-14
+    end
+end
+
+# ============================================================================
 # Phase 1 (Legacy): Type Definition & Constructor Tests
 # ============================================================================
 

@@ -481,12 +481,21 @@ end
         y1, y2 = sin.(2π .* x), cos.(2π .* x)
         mitp = cubic_interp(x, [y1, y2])  # No precompute_transpose
 
-        expected = mitp(0.5)  # Trigger lazy transpose (warm up)
+        # Pre-compute expected values with deterministic query points
+        itp1 = cubic_interp(x, y1)
+        itp2 = cubic_interp(x, y2)
+        xq_values = collect(range(0.1, 0.9, n_iter))
+
+        _ = mitp(0.5)  # Trigger lazy transpose (warm up)
 
         @threads for i in 1:n_iter
             try
-                result = mitp(0.1 + 0.8 * rand())
-                @assert length(result) == 2
+                xq = xq_values[i]
+                result = mitp(xq)
+
+                # Verify correctness against single-interpolant results
+                @assert result[1] ≈ itp1(xq) atol=1e-12
+                @assert result[2] ≈ itp2(xq) atol=1e-12
             catch
                 atomic_add!(errors, 1)
             end
@@ -504,14 +513,15 @@ end
         y1, y2, y3 = sin.(2π .* x), cos.(2π .* x), exp.(-3 .* x)
         mitp = cubic_interp(x, [y1, y2, y3]; precompute_transpose=true)
 
-        # Pre-compute expected values
+        # Pre-compute expected values with deterministic query points
         itp1 = cubic_interp(x, y1)
         itp2 = cubic_interp(x, y2)
         itp3 = cubic_interp(x, y3)
+        xq_values = collect(range(0.1, 0.9, n_iter))
 
         @threads for i in 1:n_iter
             try
-                xq = 0.1 + 0.8 * rand()
+                xq = xq_values[i]
                 result = mitp(xq)
 
                 # Verify correctness
@@ -535,17 +545,21 @@ end
         y1, y2 = sin.(2π .* x), cos.(2π .* x)
         mitp = cubic_interp(x, [y1, y2]; precompute_transpose=true)
 
-        # Thread-local output buffers
-        outputs = [zeros(2) for _ in 1:nthreads()]
+        # Pre-compute expected values with deterministic query points
+        itp1 = cubic_interp(x, y1)
+        itp2 = cubic_interp(x, y2)
+        xq_values = collect(range(0.1, 0.9, n_iter))
 
         @threads for i in 1:n_iter
             try
-                tid = threadid()
-                xq = 0.1 + 0.8 * rand()
-                mitp(outputs[tid], xq)
+                # Task-local output buffer (safe from task migration)
+                output = zeros(2)
+                xq = xq_values[i]
+                mitp(output, xq)
 
-                # Basic sanity check
-                @assert !any(isnan, outputs[tid])
+                # Verify correctness against single-interpolant results
+                @assert output[1] ≈ itp1(xq) atol=1e-12
+                @assert output[2] ≈ itp2(xq) atol=1e-12
             catch
                 atomic_add!(errors, 1)
             end
@@ -563,18 +577,22 @@ end
         y1, y2 = sin.(2π .* x), cos.(2π .* x)
         mitp = cubic_interp(x, [y1, y2])
 
-        # Thread-local output buffers
+        # Pre-compute expected values
+        itp1 = cubic_interp(x, y1)
+        itp2 = cubic_interp(x, y2)
         xq = collect(range(0.1, 0.9, 50))
-        outputs_per_thread = [[zeros(50), zeros(50)] for _ in 1:nthreads()]
+        expected1 = itp1.(xq)
+        expected2 = itp2.(xq)
 
         @threads for i in 1:n_iter
             try
-                tid = threadid()
-                mitp(outputs_per_thread[tid], xq)
+                # Task-local output buffers (safe from task migration)
+                outputs = [zeros(50), zeros(50)]
+                mitp(outputs, xq)
 
-                # Basic sanity check
-                @assert !any(isnan, outputs_per_thread[tid][1])
-                @assert !any(isnan, outputs_per_thread[tid][2])
+                # Verify correctness against pre-computed expected values
+                @assert outputs[1] ≈ expected1 atol=1e-12
+                @assert outputs[2] ≈ expected2 atol=1e-12
             catch
                 atomic_add!(errors, 1)
             end

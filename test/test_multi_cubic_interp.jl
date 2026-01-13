@@ -243,7 +243,7 @@ end
     @testset "DimensionMismatch for wrong output size" begin
         mitp = cubic_interp(x, [y1, y2])
         out_wrong = zeros(5)  # Wrong size (should be 2)
-        @test_throws Union{DimensionMismatch, AssertionError} mitp(out_wrong, 0.5)
+        @test_throws DimensionMismatch mitp(out_wrong, 0.5)
     end
 
     @testset "Scalar zero-alloc after precompute" begin
@@ -289,7 +289,7 @@ end
         xq_vec = [0.1, 0.3, 0.5]
 
         outputs_wrong = [zeros(3)]  # Only 1 series (should be 2)
-        @test_throws Union{DimensionMismatch, AssertionError} mitp(outputs_wrong, xq_vec)
+        @test_throws DimensionMismatch mitp(outputs_wrong, xq_vec)
     end
 
     @testset "Anchor reuse produces identical results" begin
@@ -591,7 +591,7 @@ end
 
     @testset "Size assertion on output mismatch" begin
         output_wrong = Vector{Float64}(undef, 2)  # Wrong size
-        @test_throws AssertionError mitp(output_wrong, 0.35)
+        @test_throws DimensionMismatch mitp(output_wrong, 0.35)
     end
 
     @testset "In-place with derivatives" begin
@@ -743,12 +743,12 @@ end
 
     @testset "Size assertion on container mismatch" begin
         outputs_wrong = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50)]  # Only 2
-        @test_throws AssertionError mitp(outputs_wrong, xq)
+        @test_throws DimensionMismatch mitp(outputs_wrong, xq)
     end
 
     @testset "Size assertion on buffer mismatch" begin
         outputs = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]  # Last is wrong size
-        @test_throws AssertionError mitp(outputs, xq)
+        @test_throws DimensionMismatch mitp(outputs, xq)
     end
 
     @testset "ZERO ALLOCATION with pre-built anchors (critical)" begin

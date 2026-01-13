@@ -6,9 +6,9 @@
 # Phase 1: Unified-style matrix storage for optimal performance.
 # Key optimization: Adaptive layout with lazy transpose for scalar queries.
 #
-# Include order: ... → cubic_unified_types.jl → multi_cubic_interp.jl
+# Include order: ... → cubic_types.jl → ... → multi_cubic_interp.jl
 #
-# Note: TransposeSnapshot is defined in cubic_unified_types.jl
+# Note: TransposeSnapshot is defined in cubic_types.jl
 #
 
 # ========================================
@@ -537,18 +537,8 @@ Evaluate multi-Y interpolant at scalar query point (out-of-place).
 Returns a vector of values, one per y-series.
 """
 function (mitp::CubicMultiInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
-    xq_typed = T(xq)
-
-    # Build anchor once
-    aq = _anchor_query(mitp.cache.x, xq_typed; wrap=_should_wrap(mitp))
-
-    # Allocate output
-    n = n_series(mitp)
-    output = Vector{T}(undef, n)
-
-    # Evaluate using scalar kernel
-    _eval_multi_scalar!(output, mitp, aq, deriv)
-    return output
+    out = Vector{T}(undef, n_series(mitp))
+    return mitp(out, xq; deriv=deriv)
 end
 
 """
@@ -561,38 +551,27 @@ function (mitp::CubicMultiInterpolant{T})(
     xq::S;
     deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
-    @assert length(output) == n_series(mitp) "output length must match number of series"
+    n_ser = n_series(mitp)
+
+    # Validate output length
+    if length(output) != n_ser
+        throw(DimensionMismatch(
+            "output length $(length(output)) must match n_series $n_ser"
+        ))
+    end
 
     xq_typed = T(xq)
 
-    # Build anchor once
-    aq = _anchor_query(mitp.cache.x, xq_typed; wrap=_should_wrap(mitp))
-
-    # Evaluate using scalar kernel
-    _eval_multi_scalar!(output, mitp, aq, deriv)
-    return output
-end
-
-"""
-Internal scalar evaluation kernel using per-series cubic evaluation.
-Uses the series-contiguous layout (y[:, k], z[:, k]) for each series.
-
-Note: Triggers lazy point-layout creation for future SIMD scalar queries.
-"""
-@inline function _eval_multi_scalar!(
-    output::AbstractVector{T},
-    mitp::CubicMultiInterpolant{T},
-    aq::_CubicAnchoredQuery{T},
-    deriv::Int
-) where {T<:AbstractFloat}
-    # Use point-contiguous layout for SIMD evaluation
+    # Use point-contiguous layout for scalar queries
     y_point, z_point = _ensure_point_layout!(mitp)
 
-    # SIMD dispatch on derivative order
+    # Build anchor
+    aq = _anchor_query(mitp.cache.x, xq_typed; wrap=_should_wrap(mitp))
+
+    # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin
         _eval_multi_point_with_extrap!(output, y_point, z_point, n_points(mitp), aq, mitp.extrap, op)
     end
-
     return output
 end
 
@@ -689,25 +668,11 @@ function (mitp::CubicMultiInterpolant{T})(
     deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
     xq_typed = _to_float(xq, T)
+    n_query = length(xq_typed)
 
-    # Build anchors once
-    aq_vec = _anchor_query(mitp.cache.x, xq_typed; wrap=_should_wrap(mitp))
+    outputs = [Vector{T}(undef, n_query) for _ in 1:n_series(mitp)]
+    mitp(outputs, xq_typed; deriv=deriv)
 
-    # Allocate outputs
-    n = n_series(mitp)
-    outputs = [Vector{T}(undef, length(xq_typed)) for _ in 1:n]
-
-    # Extract matrices for argument-passing pattern
-    y, z = mitp.y, mitp.z
-    n_pts = n_points(mitp)
-    extrap = mitp.extrap
-
-    # Evaluate all series
-    @_dispatch_deriv deriv => op begin
-        @inbounds for k in 1:n
-            _eval_multi_vector_series!(outputs[k], y, z, n_pts, k, aq_vec, extrap, op)
-        end
-    end
     return outputs
 end
 
@@ -729,8 +694,22 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     xq::AbstractVector{T};
     deriv::Int=0
 ) where {T<:AbstractFloat}
-    @assert length(outputs) == n_series(mitp) "outputs length must match number of series"
-    @assert all(out -> length(out) == length(xq), outputs) "all output buffers must match xq length"
+    n_query = length(xq)
+    n_ser = n_series(mitp)
+
+    # Validate dimensions
+    if length(outputs) != n_ser
+        throw(DimensionMismatch(
+            "outputs length $(length(outputs)) must match n_series $n_ser"
+        ))
+    end
+    for (k, out_k) in enumerate(outputs)
+        if length(out_k) != n_query
+            throw(DimensionMismatch(
+                "outputs[$k] length $(length(out_k)) must match n_query $n_query"
+            ))
+        end
+    end
 
     # Build anchors from pool (zero allocation after warmup)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{T}, length(xq))
@@ -787,8 +766,22 @@ function (mitp::CubicMultiInterpolant{T})(
     aq_vec::AbstractVector{<:_CubicAnchoredQuery{T}};
     deriv::Int=0
 ) where {T<:AbstractFloat}
-    @assert length(outputs) == n_series(mitp) "outputs length must match number of series"
-    @assert all(out -> length(out) == length(aq_vec), outputs) "all output buffers must match aq_vec length"
+    n_query = length(aq_vec)
+    n_ser = n_series(mitp)
+
+    # Validate dimensions
+    if length(outputs) != n_ser
+        throw(DimensionMismatch(
+            "outputs length $(length(outputs)) must match n_series $n_ser"
+        ))
+    end
+    for (k, out_k) in enumerate(outputs)
+        if length(out_k) != n_query
+            throw(DimensionMismatch(
+                "outputs[$k] length $(length(out_k)) must match n_query $n_query"
+            ))
+        end
+    end
 
     # Extract matrices for argument-passing pattern
     y, z = mitp.y, mitp.z

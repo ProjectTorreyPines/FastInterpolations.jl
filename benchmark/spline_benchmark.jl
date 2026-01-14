@@ -12,8 +12,8 @@
 #   2. Scalar API: Point-by-point evaluation
 #   3. Vector API: Batch evaluation with in-place output (where supported)
 #
-# FastInterpolations.jl Multi-Series APIs:
-#   - CubicMultiInterpolant: Adaptive layout (series-contiguous + lazy transpose)
+# FastInterpolations.jl Series APIs:
+#   - CubicSeriesInterpolant: Adaptive layout (series-contiguous + lazy transpose)
 #
 # Use Case:
 #   Simulates JPEC equilibrium matrix interpolation where npsi×mpert×mpert
@@ -44,9 +44,9 @@ using Statistics
 
 # Problem size presets: (npsi, mpert, n_eval_points)
 const SIZE_PRESETS = Dict(
-    :tiny    => (32,  10,    50),
-    :small   => (64,  20,   100),
-    :default => (64, 100,   500),
+    :tiny    => (32,  2,    50),
+    :small   => (64,  5,   100),
+    :default => (64, 100,   1000),
     :large   => (64, 200,  4000),
     :huge    => (64, 400, 10000),
 )
@@ -189,11 +189,11 @@ function run_fast_interpolations_vector_API!(A::Array{Float64,3}, splines::Matri
 end
 
 # =============================================================================
-# MultiCubicInterpolant Helpers
+# CubicSeriesInterpolant Helpers
 # =============================================================================
 
-"""Initialize MultiCubicInterpolant from 3D data array."""
-function init_multi_cubic_interp(psi_grid, data::Array{Float64,3})
+"""Initialize CubicSeriesInterpolant from 3D data array."""
+function init_cubic_series_interp(psi_grid, data::Array{Float64,3})
     _, mpert, _ = size(data)
     # Create vector of y-series in COLUMN-MAJOR order (m1 varies fastest)
     # This matches reshape() behavior: reshape(vec, m, n)[i,j] = vec[(j-1)*m + i]
@@ -202,16 +202,16 @@ function init_multi_cubic_interp(psi_grid, data::Array{Float64,3})
 end
 
 """Sequential evaluation loop using scalar API with anchor reuse."""
-function run_multi_cubic_eval_loop!(A::Vector{Float64}, mitp, psi_values::Vector{Float64})
+function run_cubic_series_eval_loop!(A::Vector{Float64}, sitp, psi_values::Vector{Float64})
     for psi in psi_values
-        mitp(A, psi)  # In-place scalar evaluation
+        sitp(A, psi)  # In-place scalar evaluation
     end
     return A
 end
 
 """Batch evaluation using in-place vector API."""
-function run_multi_cubic_vector_API!(A_all::Vector{Vector{Float64}}, mitp, psi_values::Vector{Float64})
-    mitp(A_all, psi_values)
+function run_cubic_series_vector_API!(A_all::Vector{Vector{Float64}}, sitp, psi_values::Vector{Float64})
+    sitp(A_all, psi_values)
     return A_all
 end
 
@@ -413,32 +413,32 @@ function run_benchmark(; verbose::Bool=false)
         init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
 
     # -------------------------------------------------------------------------
-    # FastInterpolations.jl (MultiCubicInterpolant API)
+    # FastInterpolations.jl (CubicSeriesInterpolant API)
     # -------------------------------------------------------------------------
-    print_section_header("FastInterpolations.jl (MultiCubicInterpolant)")
+    print_section_header("FastInterpolations.jl (CubicSeriesInterpolant)")
     println()
-    println(" Note: MultiCubicInterpolant computes anchor ONCE per query point,")
+    println(" Note: CubicSeriesInterpolant computes anchor ONCE per query point,")
     println("       then reuses it for all $(n_splines) y-series. This should")
     println("       significantly outperform independent splines on scalar API.")
     println()
 
-    init_result = benchmark_init(() -> init_multi_cubic_interp(psi_grid, data); n_splines=n_splines, verbose=verbose)
-    mitp = init_result.splines
+    init_result = benchmark_init(() -> init_cubic_series_interp(psi_grid, data); n_splines=n_splines, verbose=verbose)
+    sitp = init_result.splines
 
-    # Pre-allocate outputs for Multi API
-    A_multi = Vector{Float64}(undef, n_splines)
-    A_multi_all = [Vector{Float64}(undef, N_EVAL_POINTS) for _ in 1:n_splines]
+    # Pre-allocate outputs for Series API
+    A_series = Vector{Float64}(undef, n_splines)
+    A_series_all = [Vector{Float64}(undef, N_EVAL_POINTS) for _ in 1:n_splines]
 
     benchmark_eval!(results, final_matrices,
-        "FastInterpolations.jl (Multi+scalar)", "scalar API (anchor reuse)",
-        () -> run_multi_cubic_eval_loop!(A_multi, mitp, psi_values),
-        () -> reshape(copy(A_multi), MPERT, MPERT);
+        "FastInterpolations.jl (Series+scalar)", "scalar API (anchor reuse)",
+        () -> run_cubic_series_eval_loop!(A_series, sitp, psi_values),
+        () -> reshape(copy(A_series), MPERT, MPERT);
         init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
 
     benchmark_eval!(results, final_matrices,
-        "FastInterpolations.jl (Multi+vector)", "vector API (in-place, zero-alloc)",
-        () -> run_multi_cubic_vector_API!(A_multi_all, mitp, psi_values),
-        () -> reshape([buf[end] for buf in A_multi_all], MPERT, MPERT);
+        "FastInterpolations.jl (Series+vector)", "vector API (in-place, zero-alloc)",
+        () -> run_cubic_series_vector_API!(A_series_all, sitp, psi_values),
+        () -> reshape([buf[end] for buf in A_series_all], MPERT, MPERT);
         init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
 
     # -------------------------------------------------------------------------

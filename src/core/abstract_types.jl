@@ -40,20 +40,23 @@ All functionality is implemented in concrete subtypes.
 abstract type AbstractInterpolant{T<:AbstractFloat} end
 
 """
-    AbstractMultiInterpolant{T<:AbstractFloat}
+    AbstractSeriesInterpolant{T<:AbstractFloat}
 
 Abstract supertype for multi-series interpolant objects.
-Multi-interpolants wrap multiple single interpolants sharing the same x-grid.
+Series interpolants handle multiple y-series sharing the same x-grid.
 
 # Type Parameter
 - `T`: Float type (Float32 or Float64)
 
 # Subtypes
-- `CubicMultiInterpolant{T}`: Multiple cubic splines sharing x-grid
+- `CubicSeriesInterpolant{T}`: Multiple cubic splines sharing x-grid
+- `LinearMultiInterpolant{T}`: Multiple linear interpolants sharing x-grid
+- `ConstantMultiInterpolant{T}`: Multiple constant interpolants sharing x-grid
+- `QuadraticMultiInterpolant{T}`: Multiple quadratic interpolants sharing x-grid
 
 # Key Features
 - Anchor optimization: compute interval once, evaluate all series
-- Composition-based: wrap `Vector{<:AbstractInterpolant}`, not raw data
+- Matrix storage: unified storage for optimal SIMD vectorization
 - Zero-allocation batch evaluation with pre-built anchors
 
 # Usage
@@ -61,14 +64,17 @@ Multi-interpolants wrap multiple single interpolants sharing the same x-grid.
 x = collect(range(0.0, 1.0, 101))
 y1, y2, y3 = sin.(2π .* x), cos.(2π .* x), exp.(-x)
 
-mitp = cubic_interp(x, [y1, y2, y3])  # Creates CubicMultiInterpolant
+sitp = cubic_interp(x, [y1, y2, y3])  # Creates CubicSeriesInterpolant
 
-vals = mitp(0.5)            # Returns Vector of 3 values
-mitp(output, 0.5)           # In-place evaluation
+vals = sitp(0.5)            # Returns Vector of 3 values
+sitp(output, 0.5)           # In-place evaluation
 ```
 
 # Note
-This is a pure type hierarchy - no methods are defined on `AbstractMultiInterpolant` itself.
+This is a pure type hierarchy - no methods are defined on `AbstractSeriesInterpolant` itself.
 All functionality is implemented in concrete subtypes.
 """
-abstract type AbstractMultiInterpolant{T<:AbstractFloat} end
+abstract type AbstractSeriesInterpolant{T<:AbstractFloat} end
+
+# Backward compatibility alias
+const AbstractMultiInterpolant = AbstractSeriesInterpolant

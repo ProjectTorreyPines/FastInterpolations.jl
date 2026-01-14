@@ -14,6 +14,18 @@
 #   3. a[i] = (s[i] - d[i]) / h[i]  (quadratic coefficients)
 
 # ========================================
+# Type Alias for Quadratic BC
+# ========================================
+
+"""
+Supported boundary conditions for quadratic spline interpolation.
+- `Left{T}`: BC at left endpoint (forward recurrence)
+- `Right{T}`: BC at right endpoint (backward recurrence)
+- `MinCurvFit{T}`: Global curvature minimization
+"""
+const QuadraticBC{T} = Union{Left{T}, Right{T}, MinCurvFit{T}}
+
+# ========================================
 # Secant Computation
 # ========================================
 
@@ -291,4 +303,114 @@ Compute quadratic coefficients: a[i] = (s[i] - d[i]) * inv_h[i]
         a[i] = (s[i] - d[i]) * inv_h[i]
     end
     return a
+end
+
+# ========================================
+# Grid Spacing Computation
+# ========================================
+
+"""
+    _compute_grid_spacing!(h, inv_h, x)
+
+Fill pre-allocated h and inv_h arrays with grid spacing and inverse.
+
+# Arguments
+- `h::AbstractVector{T}`: Output grid spacing (length n-1)
+- `inv_h::AbstractVector{T}`: Output inverse grid spacing (length n-1)
+- `x::AbstractVector{T}`: x-coordinates (length n)
+"""
+@inline function _compute_grid_spacing!(
+    h::AbstractVector{T},
+    inv_h::AbstractVector{T},
+    x::AbstractVector{T}
+) where {T<:AbstractFloat}
+    @inbounds for i in eachindex(h, inv_h)
+        h[i] = x[i+1] - x[i]
+        inv_h[i] = inv(h[i])
+    end
+    return nothing
+end
+
+# ========================================
+# Coefficient Computation (In-Place)
+# ========================================
+
+"""
+    _compute_quadratic_coeffs!(h, d, a, x, y, bc)
+
+Fill pre-allocated coefficient arrays for quadratic spline.
+Uses AdaptiveArrayPools internally for temporary arrays (`inv_h`, `secant`).
+
+# Arguments (outputs first, then inputs)
+- `h::AbstractVector{FT}`: Grid spacing (length n-1)
+- `d::AbstractVector{FT}`: Slope coefficients (length n)
+- `a::AbstractVector{FT}`: Quadratic coefficients (length n-1)
+- `x::AbstractVector{FT}`: x-coordinates (length n)
+- `y::AbstractVector{FT}`: y-values (length n)
+- `bc::QuadraticBC{FT}`: Boundary condition (Left, Right, or MinCurvFit)
+
+# Note
+Intermediate arrays (`inv_h`, `secant`) are acquired from thread-local pool
+and automatically released when the function returns.
+"""
+@with_pool pool function _compute_quadratic_coeffs!(
+    h::AbstractVector{FT},
+    d::AbstractVector{FT},
+    a::AbstractVector{FT},
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    bc::QuadraticBC{FT}
+) where {FT<:AbstractFloat}
+    nx = length(x)
+
+    inv_h = acquire!(pool, FT, nx-1) # Inverse grid spacing
+    secant = acquire!(pool, FT, nx-1) # secant slopes
+
+    # 1. Compute grid spacing
+    _compute_grid_spacing!(h, inv_h, x)
+
+    # 2. Compute secants
+    _compute_quadratic_secants!(secant, y, inv_h)
+
+    # 3. Fill slopes d[] (BC-dispatched: Left→forward, Right→backward)
+    _fill_slopes!(d, secant, h, bc)
+
+    # 4. Compute quadratic coefficients a[]
+    _compute_quadratic_coefficients!(a, d, secant, inv_h)
+
+    return nothing
+end
+
+# ========================================
+# Coefficient Computation (Allocating)
+# ========================================
+
+"""
+    _compute_quadratic_coeffs(x, y, bc) -> (h, d, a)
+
+Compute quadratic spline coefficients (allocating version).
+Returns only the arrays needed for evaluation: `h`, `d`, `a`.
+
+Intermediate arrays (`inv_h`, `secant`) are handled internally via
+AdaptiveArrayPools and not returned.
+
+For repeated interpolation on the same grid, use `QuadraticInterpolant`
+which stores precomputed coefficients.
+"""
+function _compute_quadratic_coeffs(
+    x::AbstractVector{FT},
+    y::AbstractVector{FT},
+    bc::QuadraticBC{FT}
+) where {FT<:AbstractFloat}
+    nx = length(x)
+
+    # Allocate all arrays
+    h = Vector{FT}(undef, nx-1)
+    d = Vector{FT}(undef, nx)
+    a = Vector{FT}(undef, nx-1)
+
+    # Fill using in-place version
+    _compute_quadratic_coeffs!(h, d, a, x, y, bc)
+
+    return h, d, a
 end

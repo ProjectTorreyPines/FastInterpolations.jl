@@ -6,7 +6,7 @@
 
 ```@docs
 AbstractInterpolant
-AbstractMultiInterpolant
+AbstractSeriesInterpolant
 ```
 
 ## Evaluation Operations
@@ -63,7 +63,7 @@ QuadraticMultiInterpolant
 ### Cubic Interpolation
 
 ```@docs
-CubicMultiInterpolant
+CubicSeriesInterpolant
 precompute_transpose!
 ```
 

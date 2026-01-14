@@ -117,6 +117,9 @@ const MultiCubicInterpolant = CubicSeriesInterpolant
 # Series Interface Traits
 # ========================================
 
+"""Return the interpolation method kind for kernel dispatch."""
+@inline _method_kind(::Type{<:CubicSeriesInterpolant}) = Val(:cubic)
+
 """
     _make_anchor(sitp::CubicSeriesInterpolant, xq::T) -> _CubicAnchoredQuery{T}
 

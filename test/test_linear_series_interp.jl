@@ -168,6 +168,54 @@ const FI = FastInterpolations
     end
 
     # ========================================
+    # Precompute Transpose Tests
+    # ========================================
+
+    @testset "precompute_transpose!" begin
+        x = collect(0.0:0.1:1.0)
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        @testset "returns self for method chaining" begin
+            sitp = linear_interp(x, [y1, y2])
+            result = precompute_transpose!(sitp)
+            @test result === sitp
+        end
+
+        @testset "computes transpose matrix" begin
+            sitp = linear_interp(x, [y1, y2])
+            # Before precompute, snapshot should be nothing
+            @test FI._get_snapshot(sitp._transpose) === nothing
+
+            precompute_transpose!(sitp)
+            # After precompute, snapshot should be a matrix
+            snapshot = FI._get_snapshot(sitp._transpose)
+            @test snapshot !== nothing
+            @test snapshot isa Matrix{Float64}
+            @test size(snapshot) == (2, 11)  # (n_series × n_points)
+        end
+
+        @testset "scalar evaluation works after precompute" begin
+            sitp = linear_interp(x, [y1, y2])
+            precompute_transpose!(sitp)
+
+            result = sitp(0.5)
+            @test length(result) == 2
+            @test all(isfinite, result)
+
+            # Verify values match non-precomputed path
+            sitp_ref = linear_interp(x, [y1, y2])
+            @test result ≈ sitp_ref(0.5) atol=1e-10
+        end
+
+        @testset "method chaining pattern" begin
+            sitp = precompute_transpose!(linear_interp(x, [y1, y2]))
+            @test sitp isa FI.LinearSeriesInterpolant{Float64}
+            @test FI._get_snapshot(sitp._transpose) !== nothing
+        end
+    end
+
+    # ========================================
     # Callable Signatures
     # ========================================
 

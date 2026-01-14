@@ -1,14 +1,17 @@
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                    DEPRECATED IMPLEMENTATIONS                              ║
-# ║        Legacy MultiInterpolant types for A/B testing and rollback         ║
+# ║           (Cleaned up after SeriesInterpolant migration)                  ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
-# These files are preserved during SeriesInterpolant migration for:
-# 1. A/B performance comparison testing
-# 2. Safe rollback if issues arise
-# 3. Validation of new implementations against known-good code
+# The old composition-based MultiInterpolant implementations have been removed.
+# They were replaced by unified-matrix SeriesInterpolant which provides:
+# - 10-120x faster scalar evaluation (SIMD point-contiguous access)
+# - Competitive vector evaluation (anchor pooling)
+# - Simpler, single-struct storage
 #
-# REMOVAL TIMELINE: After 1+ minor version with successful benchmarks
+# Backward compatibility is maintained via type aliases:
+#   LinearMultiInterpolant = LinearSeriesInterpolant
+#   ConstantMultiInterpolant = ConstantSeriesInterpolant
+#   QuadraticMultiInterpolant = QuadraticSeriesInterpolant
+#   CubicMultiInterpolant = CubicSeriesInterpolant
 #
-
-# Currently empty - files will be moved here during Phase C-E

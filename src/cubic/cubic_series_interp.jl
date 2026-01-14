@@ -1,12 +1,12 @@
 # ╔═══════════════════════════════════════════════════════════════════════════╗
-# ║                      MULTI-Y CUBIC INTERPOLATION                          ║
+# ║                    CUBIC SERIES INTERPOLATION                             ║
 # ║         Multiple y-data series sharing the same x-grid                    ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
-# Phase 1: Unified-style matrix storage for optimal performance.
+# Unified matrix storage for optimal performance.
 # Key optimization: Adaptive layout with lazy transpose for scalar queries.
 #
-# Include order: ... → cubic_types.jl → ... → multi_cubic_interp.jl
+# Include order: ... → cubic_types.jl → ... → cubic_series_interp.jl
 #
 # Note: TransposeSnapshot is defined in cubic_types.jl
 #
@@ -154,12 +154,12 @@ end
 # ========================================
 
 """
-    _eval_multi_point!(out, y_point, z_point, aq, op)
+    _eval_series_point!(out, y_point, z_point, aq, op)
 
 SIMD-optimized evaluation for point-contiguous layout (n_series × n_points).
 Contiguous column access enables vectorization across series dimension.
 """
-@inline function _eval_multi_point!(
+@inline function _eval_series_point!(
     out::AbstractVector{T},
     y_point::Matrix{T},
     z_point::Matrix{T},
@@ -185,11 +185,11 @@ Contiguous column access enables vectorization across series dimension.
 end
 
 """
-    _eval_multi_point_with_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op)
+    _eval_series_point_with_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op)
 
 SIMD evaluation with extrapolation handling for multi-series.
 """
-@inline function _eval_multi_point_with_extrap!(
+@inline function _eval_series_point_with_extrap!(
     out::AbstractVector{T},
     y_point::Matrix{T},
     z_point::Matrix{T},
@@ -202,15 +202,15 @@ SIMD evaluation with extrapolation handling for multi-series.
 ) where {T<:AbstractFloat}
     # Inside domain: normal evaluation
     if aq.side == 0x00
-        return _eval_multi_point!(out, y_point, z_point, aq, op)
+        return _eval_series_point!(out, y_point, z_point, aq, op)
     end
 
     # Outside domain: dispatch on extrap mode
-    _eval_multi_point_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op, aq.side)
+    _eval_series_point_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op, aq.side)
 end
 
 # :none - throw DomainError
-@inline function _eval_multi_point_extrap!(
+@inline function _eval_series_point_extrap!(
     ::AbstractVector{T},
     ::Matrix{T},
     ::Matrix{T},
@@ -226,7 +226,7 @@ end
 end
 
 # :constant - clamp to boundary (value only, derivatives are zero)
-@inline function _eval_multi_point_extrap!(
+@inline function _eval_series_point_extrap!(
     out::AbstractVector{T},
     y_point::Matrix{T},
     ::Matrix{T},
@@ -253,7 +253,7 @@ end
 end
 
 # :extension - extend polynomial
-@inline function _eval_multi_point_extrap!(
+@inline function _eval_series_point_extrap!(
     out::AbstractVector{T},
     y_point::Matrix{T},
     z_point::Matrix{T},
@@ -281,7 +281,7 @@ end
 end
 
 # :wrap - periodic (anchor already adjusted)
-@inline function _eval_multi_point_extrap!(
+@inline function _eval_series_point_extrap!(
     out::AbstractVector{T},
     y_point::Matrix{T},
     z_point::Matrix{T},
@@ -294,7 +294,7 @@ end
     ::UInt8
 ) where {T<:AbstractFloat}
     # Anchor was already wrapped, use normal evaluation
-    return _eval_multi_point!(out, y_point, z_point, aq, op)
+    return _eval_series_point!(out, y_point, z_point, aq, op)
 end
 
 # ========================================
@@ -302,11 +302,11 @@ end
 # ========================================
 
 """
-    _solve_multi_coefficients!(z_mat, y_mat, cache, bc_for_solve)
+    _solve_series_coefficients!(z_mat, y_mat, cache, bc_for_solve)
 
 Solve cubic spline systems for all series using shared LU factorization.
 """
-@with_pool pool function _solve_multi_coefficients!(
+@with_pool pool function _solve_series_coefficients!(
     z_mat::Matrix{T},
     y_mat::Matrix{T},
     cache::CubicSplineCache{T},
@@ -384,7 +384,7 @@ function cubic_interp(
 
     # Handle periodic BC separately
     if _is_periodic_bc(bc)
-        return _build_multi_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose)
+        return _build_series_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose)
     end
 
     # Get cache for derivative BC
@@ -393,7 +393,7 @@ function cubic_interp(
 
     # Build z matrix by solving systems
     z_mat = Matrix{T}(undef, n_pts, n_series_count)
-    _solve_multi_coefficients!(z_mat, y_mat, cache, bc_pair)
+    _solve_series_coefficients!(z_mat, y_mat, cache, bc_pair)
 
     # Convert extrap symbol to Val
     extrap_val = _symbol_to_extrap_val(extrap)
@@ -410,7 +410,7 @@ end
 """
 Internal helper for periodic BC multi-interpolant construction.
 """
-function _build_multi_periodic(
+function _build_series_periodic(
     x::AbstractVector{T},
     y_mat::Matrix{T},
     n_pts::Int,
@@ -436,7 +436,7 @@ function _build_multi_periodic(
 
     # Build z matrix
     z_mat = Matrix{T}(undef, n_pts, n_series_count)
-    _solve_multi_coefficients!(z_mat, y_mat, cache, cache.bc_config)
+    _solve_series_coefficients!(z_mat, y_mat, cache, cache.bc_config)
 
     # Periodic BC always uses :wrap extrapolation
     sitp = CubicSeriesInterpolant(cache, cache.bc_config, y_mat, z_mat, Val(:wrap))
@@ -491,7 +491,7 @@ function cubic_interp(
 
     # Handle periodic BC separately
     if _is_periodic_bc(bc)
-        return _build_multi_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose)
+        return _build_series_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose)
     end
 
     # Get cache for derivative BC
@@ -500,7 +500,7 @@ function cubic_interp(
 
     # Build z matrix by solving systems
     z_mat = Matrix{T}(undef, n_pts, n_series_count)
-    _solve_multi_coefficients!(z_mat, y_mat, cache, bc_pair)
+    _solve_series_coefficients!(z_mat, y_mat, cache, bc_pair)
 
     # Convert extrap symbol to Val
     extrap_val = _symbol_to_extrap_val(extrap)
@@ -591,7 +591,7 @@ function (sitp::CubicSeriesInterpolant{T})(
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin
-        _eval_multi_point_with_extrap!(output, y_point, z_point, n_points(sitp), x_min, x_max, aq, sitp.extrap, op)
+        _eval_series_point_with_extrap!(output, y_point, z_point, n_points(sitp), x_min, x_max, aq, sitp.extrap, op)
     end
     return output
 end
@@ -669,7 +669,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     # Evaluate all series
     @_dispatch_deriv deriv => op begin
         @inbounds for k in 1:n
-            _eval_multi_vector_series!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, op)
+            _eval_series_vector!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, op)
         end
     end
     return outputs
@@ -738,7 +738,7 @@ function (sitp::CubicSeriesInterpolant{T})(
     # Evaluate all series
     @_dispatch_deriv deriv => op begin
         @inbounds for k in 1:n
-            _eval_multi_vector_series!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, op)
+            _eval_series_vector!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, op)
         end
     end
     return outputs
@@ -748,7 +748,7 @@ end
 Internal: Evaluate a single series for vector of query points.
 Uses argument-passing pattern for optimal performance (avoids struct field access in loop).
 """
-@inline function _eval_multi_vector_series!(
+@inline function _eval_series_vector!(
     out::AbstractVector{T},
     y::Matrix{T},
     z::Matrix{T},
@@ -761,7 +761,7 @@ Uses argument-passing pattern for optimal performance (avoids struct field acces
     op::AbstractEvalOp
 ) where {T<:AbstractFloat}
     @inbounds for j in eachindex(out, aq_vec)
-        out[j] = _eval_multi_series_with_extrap(y, z, n_pts, x_min, x_max, k, aq_vec[j], extrap, op)
+        out[j] = _eval_series_with_extrap(y, z, n_pts, x_min, x_max, k, aq_vec[j], extrap, op)
     end
     return out
 end
@@ -770,7 +770,7 @@ end
 Internal: Evaluate single series at single query point with extrapolation handling.
 Takes matrices as arguments for optimal performance.
 """
-@inline function _eval_multi_series_with_extrap(
+@inline function _eval_series_with_extrap(
     y::Matrix{T},
     z::Matrix{T},
     n_pts::Int,
@@ -783,12 +783,12 @@ Takes matrices as arguments for optimal performance.
 ) where {T<:AbstractFloat}
     # Inside domain: normal evaluation
     if aq.side == 0x00
-        return _eval_multi_series_anchored(y, z, k, aq, op)
+        return _eval_series_anchored(y, z, k, aq, op)
     end
 
     # Outside domain: dispatch on extrap mode
     if extrap === Val(:extension) || extrap === Val(:wrap)
-        return _eval_multi_series_anchored(y, z, k, aq, op)
+        return _eval_series_anchored(y, z, k, aq, op)
     elseif extrap === Val(:constant)
         if op isa EvalValue
             pt_idx = aq.side == 0x01 ? 1 : n_pts
@@ -805,7 +805,7 @@ end
 Internal: Core cubic evaluation for series k at anchored query point.
 Direct matrix access for optimal performance.
 """
-@inline function _eval_multi_series_anchored(
+@inline function _eval_series_anchored(
     y::Matrix{T},
     z::Matrix{T},
     k::Int,

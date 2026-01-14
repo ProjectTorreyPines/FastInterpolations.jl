@@ -561,29 +561,16 @@ function (sitp::CubicSeriesInterpolant{T})(
     xq::S;
     deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
-    n_ser = n_series(sitp)
-
-    # Validate output length
-    if length(output) != n_ser
-        throw(DimensionMismatch(
-            "output length $(length(output)) must match n_series $n_ser"
-        ))
-    end
+    _validate_scalar_output(output, n_series(sitp))
 
     xq_typed = T(xq)
 
-    # Use point-contiguous layout for scalar queries
-    y_point, z_point = _ensure_point_layout!(sitp)
-
-    # Build anchor
-    aq = _anchor_query(sitp.cache.x, xq_typed; wrap=_should_wrap(sitp))
-
-    # Get domain bounds for error messages
-    x_min, x_max = T(first(sitp.cache.x)), T(last(sitp.cache.x))
+    # Build anchor using trait
+    aq = _make_anchor(sitp, xq_typed)
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin
-        _eval_series_point_with_extrap!(output, y_point, z_point, n_points(sitp), x_min, x_max, aq, sitp.extrap, op)
+        _eval_series_at_anchor!(output, sitp, aq, op)
     end
     return output
 end

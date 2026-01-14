@@ -27,7 +27,7 @@ Pkg.add("FastInterpolations")
 
 ## Quick Start
 
-`FastInterpolations.jl` provides two primary API styles, plus a specialized MultiInterpolant for multi-series data.
+`FastInterpolations.jl` provides two primary API styles, plus a specialized **SeriesInterpolant** for multi-series data.
 
 ### 1. One-shot API (Dynamic Data)
 Best when **`y` values change** every step, but the grid **`x` remains fixed**.
@@ -62,14 +62,20 @@ result = itp(xq)               # evaluate at multiple points
 @. result = a * itp(xq) + b    # seamless broadcast fusion
 ```
 
-### 2.1 MultiInterpolant (Multiple Series)
-When **multiple y-series share the same x-grid**, use MultiInterpolant for optimal performance. It enables shared grid coefficients, zero-allocation batch evaluation, and anchored queries that skip grid search entirely.
+### 2.1 SeriesInterpolant (Multiple Series)
+When **multiple y-series share the same x-grid**, use SeriesInterpolant for optimal performance. It stores all series in a **unified matrix** with point-contiguous memory layout, enabling:
+
+- **10-120× faster scalar queries** via SIMD and cache locality
+- Zero-allocation batch evaluation
+- Shared grid coefficients (computed once)
 
 ```julia
-mitp = cubic_interp(x, [temp, press, vel])  # 3 series, 1 shared grid
+sitp = cubic_interp(x, [temp, press, vel])  # 3 series, 1 shared grid
 outputs = [similar(xq) for _ in 1:3]
-mitp(outputs, xq)                           # zero-allocation batch
+sitp(outputs, xq)                           # zero-allocation batch
 ```
+
+> **Note:** For very small series counts (n ≤ 2-4) with vector queries, a manual loop over individual interpolants may be marginally faster (~10-25%) due to anchor allocation overhead. For scalar queries or larger series counts, SeriesInterpolant always wins.
 
 For detailed API selection guidance, see the [API Selection Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/api_selection/).
 

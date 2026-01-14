@@ -31,7 +31,7 @@ To balance convenience and maximum performance, three API patterns are available
 
 - **One-shot**: For dynamic data or simple scripts.
 - **Interpolant**: For static lookups (pre-computed).
-- **MultiInterpolant**: For handling multiple series efficiently.
+- **SeriesInterpolant**: For handling multiple series efficiently (10-120× faster scalar queries).
 
 !!! tip "Selection Guide"
     Not sure which one to use? Check the [API Selection Guide](../guides/api_selection.md).

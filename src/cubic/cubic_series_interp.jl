@@ -107,6 +107,12 @@ const MultiCubicInterpolant = CubicSeriesInterpolant
 """Number of grid points in the interpolant."""
 @inline n_points(sitp::CubicSeriesInterpolant) = size(sitp.y, 1)
 
+"""Return the x-grid vector."""
+@inline _get_grid(sitp::CubicSeriesInterpolant) = sitp.cache.x
+
+"""Return the extrapolation mode."""
+@inline _get_extrap(sitp::CubicSeriesInterpolant) = sitp.extrap
+
 # ========================================
 # Lazy Point-Layout Management
 # ========================================

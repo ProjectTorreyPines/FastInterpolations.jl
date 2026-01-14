@@ -16,15 +16,6 @@ A high-performance 1D interpolation package for Julia, optimized for **zero-allo
 - 📐 **Derivatives**: Analytical 1st and 2nd derivatives for all methods.
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
-## Installation
-`FastInterpolations` is registered with [FuseRegistry](https://github.com/ProjectTorreyPines/FuseRegistry.jl/):
-
-```julia
-using Pkg
-Pkg.Registry.add(RegistrySpec(url="https://github.com/ProjectTorreyPines/FuseRegistry.jl.git"))
-Pkg.add("FastInterpolations")
-```
-
 ## Quick Start
 
 `FastInterpolations.jl` provides two primary API styles, plus a specialized **SeriesInterpolant** for multi-series data.

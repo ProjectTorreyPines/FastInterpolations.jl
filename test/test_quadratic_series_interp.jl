@@ -142,6 +142,18 @@ const FI = FastInterpolations
             @test_throws DomainError sitp(1.1)
         end
 
+        @testset "domain error message format" begin
+            sitp = quadratic_interp(x, ys; extrap=:none)
+            err = try
+                sitp(-0.5)
+                nothing
+            catch e
+                e
+            end
+            @test err isa DomainError
+            @test occursin("outside domain", string(err))
+        end
+
         @testset "extrap=:constant returns boundary" begin
             sitp = quadratic_interp(x, ys; extrap=:constant)
             @test sitp(-0.1)[1] ≈ sin(0.0) atol=1e-6

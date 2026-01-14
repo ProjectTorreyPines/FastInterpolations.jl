@@ -174,7 +174,7 @@ SIMD kernel for evaluating all series at a single anchor point with extrapolatio
     op::AbstractEvalOp
 ) where {T<:AbstractFloat}
     if aq.side != 0x00
-        throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+        _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
     _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
 end
@@ -191,10 +191,9 @@ end
     extrap::Val{:constant},
     op::AbstractEvalOp
 ) where {T<:AbstractFloat}
-    if aq.side == 0x01  # below min
-        _fill_boundary_values!(output, y_point, 1, op)
-    elseif aq.side == 0x02  # above max
-        _fill_boundary_values!(output, y_point, n_pts, op)
+    if aq.side != 0x00  # outside domain
+        idx = _boundary_point_index(aq.side, n_pts)
+        _fill_boundary_values!(output, y_point, idx, op)
     else
         _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
     end
@@ -623,7 +622,7 @@ end
     op::AbstractEvalOp
 ) where {T<:AbstractFloat}
     if aq.side != 0x00
-        throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+        _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
     return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
 end
@@ -639,10 +638,9 @@ end
     extrap::Val{:constant},
     op::EvalValue
 ) where {T<:AbstractFloat}
-    if aq.side == 0x01  # below min
-        return y[1]
-    elseif aq.side == 0x02  # above max
-        return y[n_pts]
+    if aq.side != 0x00  # outside domain
+        idx = _boundary_point_index(aq.side, n_pts)
+        return @inbounds y[idx]
     else
         return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], aq.dL)
     end

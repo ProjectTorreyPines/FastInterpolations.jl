@@ -16,10 +16,10 @@
 # ========================================
 
 """
-    CubicMultiInterpolant{T, C, B}
+    CubicSeriesInterpolant{T, C, B}
 
-Container for multiple cubic spline interpolants sharing the same x-grid.
-Uses unified matrix storage with adaptive layout for optimal performance.
+Multi-series cubic spline interpolant with unified matrix storage and SIMD optimization.
+Shares a single x-grid across N y-series for efficient batch evaluation.
 
 # Type Parameters
 - `T`: Float type (Float32 or Float64)
@@ -47,15 +47,15 @@ Lazy transpose (n_series × n_points) for scalar queries:
 x = collect(range(0.0, 1.0, 101))
 y1, y2, y3 = sin.(2π .* x), cos.(2π .* x), exp.(-x)
 
-mitp = cubic_interp(x, [y1, y2, y3])
+sitp = cubic_interp(x, [y1, y2, y3])
 
 # Scalar evaluation
-vals = mitp(0.5)            # Returns Vector{Float64} of length 3
-mitp(output, 0.5)           # In-place
+vals = sitp(0.5)            # Returns Vector{Float64} of length 3
+sitp(output, 0.5)           # In-place
 
 # Vector evaluation
-vals = mitp([0.1, 0.5, 0.9])    # Returns Vector of Vectors
-mitp([out1, out2, out3], xq)    # In-place (zero allocation)
+vals = sitp([0.1, 0.5, 0.9])    # Returns Vector of Vectors
+sitp([out1, out2, out3], xq)    # In-place (zero allocation)
 ```
 
 # Performance
@@ -63,11 +63,11 @@ mitp([out1, out2, out3], xq)    # In-place (zero allocation)
 - Scalar queries trigger lazy transpose on first call
 - All series share same cache (O(1) memory overhead)
 """
-mutable struct CubicMultiInterpolant{
+mutable struct CubicSeriesInterpolant{
     T<:AbstractFloat,
     C<:CubicSplineCache{T},
     B
-} <: AbstractMultiInterpolant{T}
+} <: AbstractSeriesInterpolant{T}
     const cache::C                    # Shared cache with LU factorization
     const bc_for_solve::B             # BC config for solving
     const y::Matrix{T}                # Series-contiguous y (n_points × n_series)
@@ -75,7 +75,7 @@ mutable struct CubicMultiInterpolant{
     @atomic _point_snapshot::TransposeSnapshot{T}  # Lazy point-contiguous layout
     const extrap::ExtrapVal           # Extrapolation mode
 
-    function CubicMultiInterpolant(
+    function CubicSeriesInterpolant(
         cache::C,
         bc_for_solve::B,
         y::Matrix{T},
@@ -90,28 +90,29 @@ mutable struct CubicMultiInterpolant{
     end
 end
 
-# Backward compatibility alias
-const MultiCubicInterpolant = CubicMultiInterpolant
+# Backward compatibility aliases
+const CubicMultiInterpolant = CubicSeriesInterpolant
+const MultiCubicInterpolant = CubicSeriesInterpolant
 
 # ========================================
 # Helper Functions
 # ========================================
 
 """Check if wrap mode is active (for anchor construction)."""
-@inline _should_wrap(mitp::CubicMultiInterpolant) = mitp.extrap === Val(:wrap)
+@inline _should_wrap(sitp::CubicSeriesInterpolant) = sitp.extrap === Val(:wrap)
 
 """Number of series in the interpolant."""
-@inline n_series(mitp::CubicMultiInterpolant) = size(mitp.y, 2)
+@inline n_series(sitp::CubicSeriesInterpolant) = size(sitp.y, 2)
 
 """Number of grid points in the interpolant."""
-@inline n_points(mitp::CubicMultiInterpolant) = size(mitp.y, 1)
+@inline n_points(sitp::CubicSeriesInterpolant) = size(sitp.y, 1)
 
 # ========================================
 # Lazy Point-Layout Management
 # ========================================
 
 """
-    _ensure_point_layout!(mitp::CubicMultiInterpolant{T}) -> (y_point, z_point)
+    _ensure_point_layout!(sitp::CubicSeriesInterpolant{T}) -> (y_point, z_point)
 
 Ensure point-contiguous layout exists. Thread-safe via atomic snapshot.
 
@@ -119,33 +120,33 @@ RCU-style implementation:
 - Fast path: atomic acquire read, return if populated
 - Slow path: compute transpose, atomic release publish
 """
-@inline function _ensure_point_layout!(mitp::CubicMultiInterpolant{T}) where T
+@inline function _ensure_point_layout!(sitp::CubicSeriesInterpolant{T}) where T
     # Fast path: check if already populated
-    snap = @atomic :acquire mitp._point_snapshot
+    snap = @atomic :acquire sitp._point_snapshot
     if snap.y_point !== nothing
         return (snap.y_point::Matrix{T}, snap.z_point::Matrix{T})
     end
 
     # Slow path: build point-contiguous layout
-    y_point = permutedims(mitp.y)
-    z_point = permutedims(mitp.z)
+    y_point = permutedims(sitp.y)
+    z_point = permutedims(sitp.z)
     new_snap = TransposeSnapshot{T}(y_point, z_point)
 
     # Atomic publish
-    @atomic :release mitp._point_snapshot = new_snap
+    @atomic :release sitp._point_snapshot = new_snap
 
     return (y_point, z_point)
 end
 
 """
-    precompute_transpose!(mitp::CubicMultiInterpolant) -> mitp
+    precompute_transpose!(sitp::CubicSeriesInterpolant) -> sitp
 
 Pre-allocate point-contiguous matrices for scalar queries.
 Call before hot loops to avoid first-call latency.
 """
-function precompute_transpose!(mitp::CubicMultiInterpolant)
-    _ensure_point_layout!(mitp)
-    return mitp
+function precompute_transpose!(sitp::CubicSeriesInterpolant)
+    _ensure_point_layout!(sitp)
+    return sitp
 end
 
 # ========================================
@@ -339,7 +340,7 @@ Create a multi-Y cubic spline interpolant for multiple y-data series sharing the
 - `precompute_transpose`: If true, build point-contiguous layout immediately
 
 # Returns
-`CubicMultiInterpolant` object with matrix storage.
+`CubicSeriesInterpolant` object with matrix storage.
 
 # Example
 ```julia
@@ -348,8 +349,8 @@ y1 = sin.(2π .* x)
 y2 = cos.(2π .* x)
 y3 = exp.(-x)
 
-mitp = cubic_interp(x, [y1, y2, y3])
-vals = mitp(0.5)  # [sin(π), cos(π), exp(-0.5)]
+sitp = cubic_interp(x, [y1, y2, y3])
+vals = sitp(0.5)  # [sin(π), cos(π), exp(-0.5)]
 ```
 """
 function cubic_interp(
@@ -397,13 +398,13 @@ function cubic_interp(
     # Convert extrap symbol to Val
     extrap_val = _symbol_to_extrap_val(extrap)
 
-    mitp = CubicMultiInterpolant(cache, bc_pair, y_mat, z_mat, extrap_val)
+    sitp = CubicSeriesInterpolant(cache, bc_pair, y_mat, z_mat, extrap_val)
 
     if precompute_transpose
-        _ensure_point_layout!(mitp)
+        _ensure_point_layout!(sitp)
     end
 
-    return mitp
+    return sitp
 end
 
 """
@@ -438,13 +439,13 @@ function _build_multi_periodic(
     _solve_multi_coefficients!(z_mat, y_mat, cache, cache.bc_config)
 
     # Periodic BC always uses :wrap extrapolation
-    mitp = CubicMultiInterpolant(cache, cache.bc_config, y_mat, z_mat, Val(:wrap))
+    sitp = CubicSeriesInterpolant(cache, cache.bc_config, y_mat, z_mat, Val(:wrap))
 
     if precompute_transpose
-        _ensure_point_layout!(mitp)
+        _ensure_point_layout!(sitp)
     end
 
-    return mitp
+    return sitp
 end
 
 # Matrix input: columns as y-series
@@ -463,7 +464,7 @@ Create a multi-Y cubic spline interpolant from a matrix where each column is a y
 x = collect(range(0.0, 1.0, 101))
 Y = hcat(sin.(2π .* x), cos.(2π .* x))  # 101×2 matrix
 
-mitp = cubic_interp(x, Y)
+sitp = cubic_interp(x, Y)
 ```
 """
 function cubic_interp(
@@ -504,13 +505,13 @@ function cubic_interp(
     # Convert extrap symbol to Val
     extrap_val = _symbol_to_extrap_val(extrap)
 
-    mitp = CubicMultiInterpolant(cache, bc_pair, y_mat, z_mat, extrap_val)
+    sitp = CubicSeriesInterpolant(cache, bc_pair, y_mat, z_mat, extrap_val)
 
     if precompute_transpose
-        _ensure_point_layout!(mitp)
+        _ensure_point_layout!(sitp)
     end
 
-    return mitp
+    return sitp
 end
 
 # Real type wrappers (auto-promote to Float)
@@ -547,28 +548,28 @@ end
 # ========================================
 
 """
-    (mitp::MultiCubicInterpolant)(xq::Real; deriv=0)
+    (sitp::CubicSeriesInterpolant)(xq::Real; deriv=0)
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
 Returns a vector of values, one per y-series.
 """
-function (mitp::CubicMultiInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
-    out = Vector{T}(undef, n_series(mitp))
-    return mitp(out, xq; deriv=deriv)
+function (sitp::CubicSeriesInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+    out = Vector{T}(undef, n_series(sitp))
+    return sitp(out, xq; deriv=deriv)
 end
 
 """
-    (mitp::MultiCubicInterpolant)(output::AbstractVector, xq::Real; deriv=0)
+    (sitp::CubicSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0)
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
-function (mitp::CubicMultiInterpolant{T})(
+function (sitp::CubicSeriesInterpolant{T})(
     output::AbstractVector{T},
     xq::S;
     deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
-    n_ser = n_series(mitp)
+    n_ser = n_series(sitp)
 
     # Validate output length
     if length(output) != n_ser
@@ -580,17 +581,17 @@ function (mitp::CubicMultiInterpolant{T})(
     xq_typed = T(xq)
 
     # Use point-contiguous layout for scalar queries
-    y_point, z_point = _ensure_point_layout!(mitp)
+    y_point, z_point = _ensure_point_layout!(sitp)
 
     # Build anchor
-    aq = _anchor_query(mitp.cache.x, xq_typed; wrap=_should_wrap(mitp))
+    aq = _anchor_query(sitp.cache.x, xq_typed; wrap=_should_wrap(sitp))
 
     # Get domain bounds for error messages
-    x_min, x_max = T(first(mitp.cache.x)), T(last(mitp.cache.x))
+    x_min, x_max = T(first(sitp.cache.x)), T(last(sitp.cache.x))
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin
-        _eval_multi_point_with_extrap!(output, y_point, z_point, n_points(mitp), x_min, x_max, aq, mitp.extrap, op)
+        _eval_multi_point_with_extrap!(output, y_point, z_point, n_points(sitp), x_min, x_max, aq, sitp.extrap, op)
     end
     return output
 end
@@ -600,27 +601,27 @@ end
 # ========================================
 
 """
-    (mitp::MultiCubicInterpolant)(xq::AbstractVector; deriv=0)
+    (sitp::CubicSeriesInterpolant)(xq::AbstractVector; deriv=0)
 
 Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
 Returns a vector of vectors: one vector per y-series, each containing results for all query points.
 """
-function (mitp::CubicMultiInterpolant{T})(
+function (sitp::CubicSeriesInterpolant{T})(
     xq::AbstractVector{S};
     deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
     xq_typed = _to_float(xq, T)
     n_query = length(xq_typed)
 
-    outputs = [Vector{T}(undef, n_query) for _ in 1:n_series(mitp)]
-    mitp(outputs, xq_typed; deriv=deriv)
+    outputs = [Vector{T}(undef, n_query) for _ in 1:n_series(sitp)]
+    sitp(outputs, xq_typed; deriv=deriv)
 
     return outputs
 end
 
 """
-    (mitp::MultiCubicInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=0)
+    (sitp::CubicSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=0)
 
 Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation).
 
@@ -632,13 +633,13 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
 Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 """
-@with_pool pool function (mitp::CubicMultiInterpolant{T})(
+@with_pool pool function (sitp::CubicSeriesInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{T};
     deriv::Int=0
 ) where {T<:AbstractFloat}
     n_query = length(xq)
-    n_ser = n_series(mitp)
+    n_ser = n_series(sitp)
 
     # Validate dimensions
     if length(outputs) != n_ser
@@ -656,14 +657,14 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 
     # Build anchors from pool (zero allocation after warmup)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{T}, length(xq))
-    _fill_anchors!(aq_vec, mitp.cache.x, xq; wrap=_should_wrap(mitp))
+    _fill_anchors!(aq_vec, sitp.cache.x, xq; wrap=_should_wrap(sitp))
 
     # Extract matrices for argument-passing pattern
-    y, z = mitp.y, mitp.z
-    n_pts = n_points(mitp)
-    n = n_series(mitp)
-    extrap = mitp.extrap
-    x_min, x_max = T(first(mitp.cache.x)), T(last(mitp.cache.x))
+    y, z = sitp.y, sitp.z
+    n_pts = n_points(sitp)
+    n = n_series(sitp)
+    extrap = sitp.extrap
+    x_min, x_max = T(first(sitp.cache.x)), T(last(sitp.cache.x))
 
     # Evaluate all series
     @_dispatch_deriv deriv => op begin
@@ -675,24 +676,24 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 end
 
 # Real type wrapper for in-place vector
-function (mitp::CubicMultiInterpolant{T})(
+function (sitp::CubicSeriesInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{S};
     deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
     xq_typed = _to_float(xq, T)
-    return mitp(outputs, xq_typed; deriv=deriv)
+    return sitp(outputs, xq_typed; deriv=deriv)
 end
 
 """
-    (mitp::MultiCubicInterpolant)(outputs, aq_vec::AbstractVector{<:_CubicAnchoredQuery}; deriv=0)
+    (sitp::CubicSeriesInterpolant)(outputs, aq_vec::AbstractVector{<:_CubicAnchoredQuery}; deriv=0)
 
 Evaluate multi-Y interpolant with pre-built anchors (TRUE zero-allocation).
 
 For maximum performance in hot loops, pre-build anchors once and reuse:
 ```julia
 x = ...
-mitp = cubic_interp(x, [y1, y2, y3])
+sitp = cubic_interp(x, [y1, y2, y3])
 xq = [0.1, 0.2, 0.3, ...]
 
 # Pre-build anchors (allocates once)
@@ -701,17 +702,17 @@ aq_vec = FastInterpolations._anchor_query(x, xq)
 # Zero-allocation loop
 outputs = [similar(xq) for _ in 1:3]
 for _ in 1:1000
-    mitp(outputs, aq_vec)  # Zero allocation!
+    sitp(outputs, aq_vec)  # Zero allocation!
 end
 ```
 """
-function (mitp::CubicMultiInterpolant{T})(
+function (sitp::CubicSeriesInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
     aq_vec::AbstractVector{<:_CubicAnchoredQuery{T}};
     deriv::Int=0
 ) where {T<:AbstractFloat}
     n_query = length(aq_vec)
-    n_ser = n_series(mitp)
+    n_ser = n_series(sitp)
 
     # Validate dimensions
     if length(outputs) != n_ser
@@ -728,11 +729,11 @@ function (mitp::CubicMultiInterpolant{T})(
     end
 
     # Extract matrices for argument-passing pattern
-    y, z = mitp.y, mitp.z
-    n_pts = n_points(mitp)
-    n = n_series(mitp)
-    extrap = mitp.extrap
-    x_min, x_max = T(first(mitp.cache.x)), T(last(mitp.cache.x))
+    y, z = sitp.y, sitp.z
+    n_pts = n_points(sitp)
+    n = n_series(sitp)
+    extrap = sitp.extrap
+    x_min, x_max = T(first(sitp.cache.x)), T(last(sitp.cache.x))
 
     # Evaluate all series
     @_dispatch_deriv deriv => op begin

@@ -16,11 +16,11 @@ include("cubic/cubic.jl")
 include("derivative_view.jl")
 
 # Exports
-export AbstractInterpolant, AbstractMultiInterpolant
+export AbstractInterpolant, AbstractSeriesInterpolant, AbstractMultiInterpolant
 export linear_interp, linear_interp!, LinearInterpolant, LinearMultiInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantMultiInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant
-export CubicMultiInterpolant, MultiCubicInterpolant  # MultiCubicInterpolant is alias for backward compat
+export CubicSeriesInterpolant, CubicMultiInterpolant, MultiCubicInterpolant  # Last two are backward compat aliases
 export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar queries
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticMultiInterpolant

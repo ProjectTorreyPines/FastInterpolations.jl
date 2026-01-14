@@ -454,9 +454,7 @@ end
 # Callable Interface (via Default + Override)
 # ========================================
 
-# Scalar evaluation inherits from series_callable.jl via default implementations
-
-# Override for deriv keyword support
+# Scalar evaluation (explicit implementation for deriv keyword support)
 """
     (sitp::QuadraticSeriesInterpolant)(xq::Real; deriv=0)
 

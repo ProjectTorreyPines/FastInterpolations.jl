@@ -229,4 +229,168 @@ const FI = FastInterpolations
         end
     end
 
+    # ========================================
+    # Type Promotion Tests (coverage for Real type wrappers)
+    # ========================================
+
+    @testset "type promotion" begin
+        @testset "Integer x with Float y vectors (promotes to Float64)" begin
+            x_int = collect(1:10)  # Integer vector
+            y1 = sin.(Float64.(x_int))
+            y2 = cos.(Float64.(x_int))
+
+            sitp = linear_interp(x_int, [y1, y2])
+            @test sitp isa FI.LinearSeriesInterpolant{Float64}
+
+            result = sitp(5.5)
+            @test length(result) == 2
+            @test all(isfinite, result)
+        end
+
+        @testset "Integer x with Integer y vectors (promotes to Float64)" begin
+            x_int = collect(1:10)
+            y1_int = collect(1:10)
+            y2_int = collect(10:-1:1)
+
+            sitp = linear_interp(x_int, [y1_int, y2_int])
+            @test sitp isa FI.LinearSeriesInterpolant{Float64}
+
+            result = sitp(5.5)
+            @test length(result) == 2
+        end
+
+        @testset "Integer x with Integer y matrix (promotes to Float64)" begin
+            x_int = collect(1:10)
+            Y_int = [i * j for i in 1:10, j in 1:3]
+
+            sitp = linear_interp(x_int, Y_int)
+            @test sitp isa FI.LinearSeriesInterpolant{Float64}
+            @test FI.n_series(sitp) == 3
+
+            result = sitp(5.5)
+            @test length(result) == 3
+            @test all(isfinite, result)
+        end
+
+        @testset "In-place vector with type-promoted xq" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            sitp = linear_interp(x, [y1, y2])
+
+            # Float32 query points with Float64 interpolant
+            xq_f32 = Float32[0.1, 0.3, 0.5, 0.7, 0.9]
+            out1 = Vector{Float64}(undef, 5)
+            out2 = Vector{Float64}(undef, 5)
+            outputs = [out1, out2]
+
+            result = sitp(outputs, xq_f32)
+            @test result === outputs
+            @test all(isfinite, out1)
+            @test all(isfinite, out2)
+
+            # Verify values match Float64 path
+            xq_f64 = Float64.(xq_f32)
+            ref = sitp(xq_f64)
+            @test out1 ≈ ref[1] atol=1e-10
+            @test out2 ≈ ref[2] atol=1e-10
+        end
+    end
+
+    # ========================================
+    # Matrix Dimension Validation Tests
+    # ========================================
+
+    @testset "matrix dimension validation" begin
+        x = collect(0.0:0.1:1.0)
+
+        @testset "Matrix input with row dimension mismatch" begin
+            Y_wrong = rand(5, 3)  # 5 rows but x has 11 points
+            @test_throws DimensionMismatch linear_interp(x, Y_wrong)
+        end
+    end
+
+    # ========================================
+    # Vector Extrapolation Branches Tests
+    # ========================================
+
+    @testset "vector extrapolation branches" begin
+        x = collect(0.0:0.1:1.0)
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        @testset "vector :none extrapolation throws" begin
+            sitp = linear_interp(x, [y1, y2]; extrap=:none)
+            xq = [-0.1, 0.5, 1.1]
+
+            @test_throws DomainError sitp(xq)
+        end
+
+        @testset "vector :constant extrapolation" begin
+            sitp = linear_interp(x, [y1, y2]; extrap=:constant)
+            xq = [-0.1, 0.5, 1.1]
+
+            outputs = [zeros(3), zeros(3)]
+            sitp(outputs, xq)
+
+            # Out-of-domain should clamp to boundary values
+            @test outputs[1][1] ≈ y1[1] atol=1e-10
+            @test outputs[1][3] ≈ y1[end] atol=1e-10
+        end
+
+        @testset "vector :extension extrapolation" begin
+            sitp = linear_interp(x, [y1, y2]; extrap=:extension)
+            xq = [-0.1, 0.5, 1.1]
+
+            outputs = [zeros(3), zeros(3)]
+            sitp(outputs, xq)
+
+            @test !any(isnan, outputs[1])
+            @test !any(isnan, outputs[2])
+        end
+
+        @testset "vector :constant extrapolation with derivatives" begin
+            sitp = linear_interp(x, [y1, y2]; extrap=:constant)
+            xq = [-0.1, 0.5, 1.1]
+
+            # deriv=1 outside domain should be zero for constant extrap
+            outputs_d1 = [zeros(3), zeros(3)]
+            sitp(outputs_d1, xq; deriv=1)
+            @test outputs_d1[1][1] ≈ 0.0 atol=1e-10  # Left boundary
+            @test outputs_d1[1][3] ≈ 0.0 atol=1e-10  # Right boundary
+        end
+    end
+
+    # ========================================
+    # Derivative Support Tests
+    # ========================================
+
+    @testset "derivative evaluation" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        y1 = [0.0, 2.0, 4.0, 6.0]  # y = 2x (linear)
+        y2 = [1.0, 1.0, 1.0, 1.0]  # y = 1 (constant)
+        sitp = linear_interp(x, [y1, y2])
+
+        @testset "deriv=0 same as default" begin
+            @test sitp(0.5; deriv=0) == sitp(0.5)
+        end
+
+        @testset "deriv=1 with vector query" begin
+            xq = [0.5, 1.5, 2.5]
+            result = sitp(xq; deriv=1)
+            @test length(result) == 2
+            @test all(d -> d ≈ 2.0, result[1])  # Slope of y = 2x
+            @test all(d -> d ≈ 0.0, result[2])  # Slope of constant
+        end
+
+        @testset "deriv=1 in-place vector" begin
+            xq = [0.5, 1.5, 2.5]
+            outputs = [zeros(3), zeros(3)]
+            sitp(outputs, xq; deriv=1)
+            @test all(d -> d ≈ 2.0, outputs[1])
+            @test all(d -> d ≈ 0.0, outputs[2])
+        end
+    end
+
 end  # testset "LinearSeriesInterpolant"

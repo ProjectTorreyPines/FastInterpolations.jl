@@ -303,4 +303,221 @@ const FI = FastInterpolations
         end
     end
 
+    # ========================================
+    # Type Promotion Tests (coverage for Real type wrappers)
+    # ========================================
+
+    @testset "type promotion" begin
+        @testset "Integer x with Float y vectors (promotes to Float64)" begin
+            x_int = collect(1:10)  # Integer vector
+            y1 = sin.(Float64.(x_int))
+            y2 = cos.(Float64.(x_int))
+
+            sitp = quadratic_interp(x_int, [y1, y2])
+            @test sitp isa FI.QuadraticSeriesInterpolant{Float64}
+
+            result = sitp(5.5)
+            @test length(result) == 2
+            @test all(isfinite, result)
+        end
+
+        @testset "Integer x with Integer y vectors (promotes to Float64)" begin
+            x_int = collect(1:10)
+            y1_int = collect(1:10)
+            y2_int = collect(10:-1:1)
+
+            sitp = quadratic_interp(x_int, [y1_int, y2_int])
+            @test sitp isa FI.QuadraticSeriesInterpolant{Float64}
+
+            result = sitp(5.5)
+            @test length(result) == 2
+        end
+
+        @testset "Integer x with Integer y matrix (promotes to Float64)" begin
+            x_int = collect(1:10)
+            Y_int = [i * j for i in 1:10, j in 1:3]
+
+            sitp = quadratic_interp(x_int, Y_int)
+            @test sitp isa FI.QuadraticSeriesInterpolant{Float64}
+            @test FI.n_series(sitp) == 3
+
+            result = sitp(5.5)
+            @test length(result) == 3
+            @test all(isfinite, result)
+        end
+
+        @testset "In-place vector with type-promoted xq" begin
+            x = collect(range(0.0, 1.0, 11))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            sitp = quadratic_interp(x, [y1, y2])
+
+            # Float32 query points with Float64 interpolant
+            xq_f32 = Float32[0.1, 0.3, 0.5, 0.7, 0.9]
+            out1 = Vector{Float64}(undef, 5)
+            out2 = Vector{Float64}(undef, 5)
+            outputs = [out1, out2]
+
+            result = sitp(outputs, xq_f32)
+            @test result === outputs
+            @test all(isfinite, out1)
+            @test all(isfinite, out2)
+
+            # Verify values match Float64 path
+            xq_f64 = Float64.(xq_f32)
+            ref = sitp(xq_f64)
+            @test out1 ≈ ref[1] atol=1e-10
+            @test out2 ≈ ref[2] atol=1e-10
+        end
+    end
+
+    # ========================================
+    # Matrix Dimension Validation Tests
+    # ========================================
+
+    @testset "matrix dimension validation" begin
+        x = collect(0.0:0.1:1.0)
+
+        @testset "Matrix input with row dimension mismatch" begin
+            Y_wrong = rand(5, 3)  # 5 rows but x has 11 points
+            @test_throws Exception quadratic_interp(x, Y_wrong)
+        end
+    end
+
+    # ========================================
+    # Vector Extrapolation Branches Tests
+    # ========================================
+
+    @testset "vector extrapolation branches" begin
+        x = collect(0.0:0.1:1.0)
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        @testset "vector :none extrapolation throws" begin
+            sitp = quadratic_interp(x, [y1, y2]; extrap=:none)
+            xq = [-0.1, 0.5, 1.1]
+
+            @test_throws DomainError sitp(xq)
+        end
+
+        @testset "vector :constant extrapolation" begin
+            sitp = quadratic_interp(x, [y1, y2]; extrap=:constant)
+            xq = [-0.1, 0.5, 1.1]
+
+            outputs = [zeros(3), zeros(3)]
+            sitp(outputs, xq)
+
+            # Out-of-domain should clamp to boundary values
+            @test outputs[1][1] ≈ y1[1] atol=1e-10
+            @test outputs[1][3] ≈ y1[end] atol=1e-10
+        end
+
+        @testset "vector :extension extrapolation" begin
+            sitp = quadratic_interp(x, [y1, y2]; extrap=:extension)
+            xq = [-0.1, 0.5, 1.1]
+
+            outputs = [zeros(3), zeros(3)]
+            sitp(outputs, xq)
+
+            @test !any(isnan, outputs[1])
+            @test !any(isnan, outputs[2])
+        end
+
+        @testset "vector :constant extrapolation with derivatives" begin
+            sitp = quadratic_interp(x, [y1, y2]; extrap=:constant)
+            xq = [-0.1, 0.5, 1.1]
+
+            # deriv=1 outside domain should be zero for constant extrap
+            outputs_d1 = [zeros(3), zeros(3)]
+            sitp(outputs_d1, xq; deriv=1)
+            @test outputs_d1[1][1] ≈ 0.0 atol=1e-10  # Left boundary
+            @test outputs_d1[1][3] ≈ 0.0 atol=1e-10  # Right boundary
+
+            # deriv=2 outside domain should be zero
+            outputs_d2 = [zeros(3), zeros(3)]
+            sitp(outputs_d2, xq; deriv=2)
+            @test outputs_d2[1][1] ≈ 0.0 atol=1e-10
+            @test outputs_d2[1][3] ≈ 0.0 atol=1e-10
+        end
+    end
+
+    # ========================================
+    # Scalar Constant Extrapolation with Derivatives
+    # ========================================
+
+    @testset "scalar constant extrap inside domain" begin
+        # Test that :constant extrap still works correctly inside domain
+        x = collect(0.0:0.1:1.0)
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp_const = quadratic_interp(x, [y1, y2]; extrap=:constant)
+        sitp_none = quadratic_interp(x, [y1, y2]; extrap=:none)
+
+        @testset "value inside domain same as :none extrap" begin
+            result_const = sitp_const(0.5)
+            result_none = sitp_none(0.5)
+            @test result_const ≈ result_none atol=1e-10
+        end
+
+        @testset "deriv inside domain same as :none extrap" begin
+            result_const = sitp_const(0.5; deriv=1)
+            result_none = sitp_none(0.5; deriv=1)
+            @test result_const ≈ result_none atol=1e-10
+        end
+    end
+
+    @testset "scalar constant extrap derivatives" begin
+        x = collect(0.0:0.1:1.0)
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = quadratic_interp(x, [y1, y2]; extrap=:constant)
+
+        @testset "deriv=1 outside domain returns zero" begin
+            result_below = sitp(-0.1; deriv=1)
+            @test result_below[1] ≈ 0.0 atol=1e-10
+            @test result_below[2] ≈ 0.0 atol=1e-10
+
+            result_above = sitp(1.1; deriv=1)
+            @test result_above[1] ≈ 0.0 atol=1e-10
+            @test result_above[2] ≈ 0.0 atol=1e-10
+        end
+
+        @testset "deriv=2 outside domain returns zero" begin
+            result_below = sitp(-0.1; deriv=2)
+            @test result_below[1] ≈ 0.0 atol=1e-10
+            @test result_below[2] ≈ 0.0 atol=1e-10
+
+            result_above = sitp(1.1; deriv=2)
+            @test result_above[1] ≈ 0.0 atol=1e-10
+            @test result_above[2] ≈ 0.0 atol=1e-10
+        end
+
+        @testset "value outside domain returns boundary" begin
+            result_below = sitp(-0.1)
+            @test result_below[1] ≈ y1[1] atol=1e-10
+            @test result_below[2] ≈ y2[1] atol=1e-10
+
+            result_above = sitp(1.1)
+            @test result_above[1] ≈ y1[end] atol=1e-10
+            @test result_above[2] ≈ y2[end] atol=1e-10
+        end
+
+        @testset "in-place scalar with constant extrap and derivatives" begin
+            out = zeros(2)
+
+            # deriv=0 outside domain
+            sitp(out, -0.1)
+            @test out[1] ≈ y1[1] atol=1e-10
+
+            # deriv=1 outside domain
+            sitp(out, -0.1; deriv=1)
+            @test out[1] ≈ 0.0 atol=1e-10
+
+            # deriv=2 outside domain
+            sitp(out, -0.1; deriv=2)
+            @test out[1] ≈ 0.0 atol=1e-10
+        end
+    end
+
 end  # testset "QuadraticSeriesInterpolant"

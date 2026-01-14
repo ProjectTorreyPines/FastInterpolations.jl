@@ -7,4 +7,4 @@ include("quadratic_types.jl")         # 3. QuadraticInterpolant struct
 include("quadratic_oneshot.jl")       # 4. 3-arg API (quadratic_interp!, quadratic_interp)
 include("quadratic_interpolant.jl")   # 5. 2-arg API, callable
 include("quadratic_anchor.jl")        # 6. Anchored queries
-include("multi_quadratic_interp.jl")  # 7. Multi-Y interpolation
+include("quadratic_series_interp.jl") # 7. Multi-Y series interpolation (replaces multi_quadratic_interp.jl)

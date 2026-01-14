@@ -58,7 +58,7 @@ println("itp(π) = ", round(itp(π), digits=4))
 ## Choosing the Right Pattern
 
 !!! tip "Comprehensive API Selection Guide"
-    For detailed decision-making support including the new MultiInterpolant pattern,
+    For detailed decision-making support including the **SeriesInterpolant** pattern,
     performance trade-offs, and optimization tips, see the [API Selection Guide](../guides/api_selection.md).
 
 ## Allocation Behavior Summary

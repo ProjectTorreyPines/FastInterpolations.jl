@@ -1,4 +1,4 @@
-# Tests for MultiCubicInterpolant - Multi-Y cubic interpolation
+# Tests for CubicSeriesInterpolant - Multi-Y cubic interpolation
 #
 # Multi-Y interpolation: multiple y-data series sharing the same x-grid.
 # After unification: Uses matrix storage with adaptive layout for optimal performance.
@@ -11,7 +11,7 @@ using FastInterpolations: _ensure_point_layout!
 # Phase 1: Unified Type Migration Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
 
-@testset "MultiCubicInterpolant - TransposeSnapshot Type" begin
+@testset "CubicSeriesInterpolant - TransposeSnapshot Type" begin
     FI = FastInterpolations
 
     @testset "Empty snapshot creation" begin
@@ -40,7 +40,7 @@ using FastInterpolations: _ensure_point_layout!
     end
 end
 
-@testset "MultiCubicInterpolant - Unified Struct Fields" begin
+@testset "CubicSeriesInterpolant - Unified Struct Fields" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -55,7 +55,7 @@ end
         @test hasfield(typeof(mitp), :y)
         @test hasfield(typeof(mitp), :z)
         @test hasfield(typeof(mitp), :cache)
-        @test hasfield(typeof(mitp), :_point_snapshot)
+        @test hasfield(typeof(mitp), :_transpose)  # LazyTransposePair for lazy point layout
         @test hasfield(typeof(mitp), :extrap)
 
         # Should NOT have itps field anymore
@@ -100,7 +100,7 @@ end
     end
 end
 
-@testset "MultiCubicInterpolant - Helper Functions" begin
+@testset "CubicSeriesInterpolant - Helper Functions" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -123,7 +123,7 @@ end
     end
 end
 
-@testset "MultiCubicInterpolant - Type Parameters" begin
+@testset "CubicSeriesInterpolant - Type Parameters" begin
     FI = FastInterpolations
 
     @testset "Float64 type parameter" begin
@@ -132,7 +132,7 @@ end
         y2_64 = cos.(2π .* x64)
 
         mitp64 = cubic_interp(x64, [y1_64, y2_64])
-        @test mitp64 isa FI.CubicMultiInterpolant{Float64}
+        @test mitp64 isa FI.CubicSeriesInterpolant{Float64}
     end
 
     @testset "Float32 type parameter" begin
@@ -141,7 +141,7 @@ end
         y2_32 = cos.(2f0 * Float32(π) .* x32)
 
         mitp32 = cubic_interp(x32, [y1_32, y2_32])
-        @test mitp32 isa FI.CubicMultiInterpolant{Float32}
+        @test mitp32 isa FI.CubicSeriesInterpolant{Float32}
     end
 end
 
@@ -149,7 +149,7 @@ end
 # Phase 2: Constructor Migration Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
 
-@testset "MultiCubicInterpolant - Constructor Migration" begin
+@testset "CubicSeriesInterpolant - Constructor Migration" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 51))
@@ -159,21 +159,20 @@ end
     @testset "precompute_transpose option" begin
         mitp = cubic_interp(x, [y1, y2]; precompute_transpose=true)
 
-        # _point_snapshot should be populated immediately
-        snap = @atomic :acquire mitp._point_snapshot
-        @test snap.y_point !== nothing
-        @test snap.z_point !== nothing
-        @test size(snap.y_point) == (2, length(x))  # (n_series × n_points)
-        @test size(snap.z_point) == (2, length(x))
+        # _transpose should be populated immediately
+        snap = FI._get_snapshot(mitp._transpose)
+        @test snap !== nothing
+        y_point, z_point = snap
+        @test size(y_point) == (2, length(x))  # (n_series × n_points)
+        @test size(z_point) == (2, length(x))
     end
 
     @testset "Lazy transpose (precompute_transpose=false)" begin
         mitp = cubic_interp(x, [y1, y2])  # default precompute_transpose=false
 
         # Initially empty
-        snap = @atomic :acquire mitp._point_snapshot
-        @test snap.y_point === nothing
-        @test snap.z_point === nothing
+        snap = FI._get_snapshot(mitp._transpose)
+        @test snap === nothing
     end
 
     @testset "Range grid preserved in cache" begin
@@ -202,7 +201,7 @@ end
 # Phase 3: Scalar Kernel Migration Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
 
-@testset "MultiCubicInterpolant - Scalar Kernel Migration" begin
+@testset "CubicSeriesInterpolant - Scalar Kernel Migration" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -222,14 +221,14 @@ end
         mitp = cubic_interp(x, [y1, y2])
 
         # Initially empty
-        snap = @atomic :acquire mitp._point_snapshot
-        @test snap.y_point === nothing
+        snap = FI._get_snapshot(mitp._transpose)
+        @test snap === nothing
 
         # After scalar eval → populated
         _ = mitp(0.5)
-        snap_after = @atomic :acquire mitp._point_snapshot
-        @test snap_after.y_point !== nothing
-        @test size(snap_after.y_point) == (2, length(x))
+        snap_after = FI._get_snapshot(mitp._transpose)
+        @test snap_after !== nothing
+        @test size(snap_after[1]) == (2, length(x))  # y_point = snap_after[1]
     end
 
     @testset "_ensure_point_layout! idempotency" begin
@@ -265,7 +264,7 @@ end
 # Phase 4: Vector Kernel Migration Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
 
-@testset "MultiCubicInterpolant - Vector Kernel Migration" begin
+@testset "CubicSeriesInterpolant - Vector Kernel Migration" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -342,7 +341,7 @@ end
 # Phase 5: Memory & Allocation Verification Tests (TDD RED → GREEN → REFACTOR)
 # ============================================================================
 
-@testset "MultiCubicInterpolant - Memory & Allocation" begin
+@testset "CubicSeriesInterpolant - Memory & Allocation" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -396,7 +395,7 @@ end
 # Phase 6: Uncovered Path Coverage Tests
 # ============================================================================
 
-@testset "MultiCubicInterpolant - Uncovered Path Coverage" begin
+@testset "CubicSeriesInterpolant - Uncovered Path Coverage" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -407,16 +406,16 @@ end
         mitp = cubic_interp(x, [y1, y2])
 
         # Initially empty
-        snap = @atomic :acquire mitp._point_snapshot
-        @test snap.y_point === nothing
+        snap = FI._get_snapshot(mitp._transpose)
+        @test snap === nothing
 
         # Call precompute_transpose!
         result = FI.precompute_transpose!(mitp)
         @test result === mitp
 
         # Now populated
-        snap_after = @atomic :acquire mitp._point_snapshot
-        @test snap_after.y_point !== nothing
+        snap_after = FI._get_snapshot(mitp._transpose)
+        @test snap_after !== nothing
     end
 
     @testset ":wrap extrapolation scalar SIMD path" begin
@@ -448,8 +447,8 @@ end
         mitp = cubic_interp(x, [y_periodic]; bc=PeriodicBC(), precompute_transpose=true)
 
         # Should have point layout immediately
-        snap = @atomic :acquire mitp._point_snapshot
-        @test snap.y_point !== nothing
+        snap = FI._get_snapshot(mitp._transpose)
+        @test snap !== nothing
     end
 
     @testset "Matrix input with row dimension mismatch" begin
@@ -469,8 +468,8 @@ end
         Y = hcat(y1, y2)
         mitp = cubic_interp(x, Y; precompute_transpose=true)
 
-        snap = @atomic :acquire mitp._point_snapshot
-        @test snap.y_point !== nothing
+        snap = FI._get_snapshot(mitp._transpose)
+        @test snap !== nothing
     end
 
     @testset "Anchored query path dimension errors" begin
@@ -596,7 +595,7 @@ end
 # Phase 1 (Legacy): Type Definition & Constructor Tests
 # ============================================================================
 
-@testset "MultiCubicInterpolant - Type Structure" begin
+@testset "CubicSeriesInterpolant - Type Structure" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -605,9 +604,9 @@ end
     y3 = exp.(-3 .* x)
 
     @testset "Construction from Vector of y-series" begin
-        # 2-arg form returns MultiCubicInterpolant
+        # 2-arg form returns CubicSeriesInterpolant
         mitp = cubic_interp(x, [y1, y2, y3])
-        @test mitp isa FI.MultiCubicInterpolant
+        @test mitp isa FI.CubicSeriesInterpolant
 
         # Unified structure: has matrix storage
         @test hasfield(typeof(mitp), :y)
@@ -617,19 +616,19 @@ end
     @testset "Construction from Matrix (columns as series)" begin
         Y = hcat(y1, y2, y3)  # 101×3 matrix
         mitp = cubic_interp(x, Y)
-        @test mitp isa FI.MultiCubicInterpolant
+        @test mitp isa FI.CubicSeriesInterpolant
         @test FI.n_series(mitp) == 3
     end
 
     @testset "Single series works" begin
         mitp = cubic_interp(x, [y1])
-        @test mitp isa FI.MultiCubicInterpolant
+        @test mitp isa FI.CubicSeriesInterpolant
         @test FI.n_series(mitp) == 1
     end
 
     @testset "Type inference - Float64" begin
         mitp = cubic_interp(x, [y1, y2])
-        @test mitp isa FI.CubicMultiInterpolant{Float64}
+        @test mitp isa FI.CubicSeriesInterpolant{Float64}
     end
 
     @testset "Type inference - Float32" begin
@@ -637,11 +636,11 @@ end
         y1_32 = Float32.(y1)
         y2_32 = Float32.(y2)
         mitp = cubic_interp(x32, [y1_32, y2_32])
-        @test mitp isa FI.CubicMultiInterpolant{Float32}
+        @test mitp isa FI.CubicSeriesInterpolant{Float32}
     end
 end
 
-@testset "MultiCubicInterpolant - Cache Sharing" begin
+@testset "CubicSeriesInterpolant - Cache Sharing" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -672,7 +671,7 @@ end
     end
 end
 
-@testset "MultiCubicInterpolant - Constructor Validation" begin
+@testset "CubicSeriesInterpolant - Constructor Validation" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -713,7 +712,7 @@ end
 # Phase 2: Scalar Evaluation Tests
 # ============================================================================
 
-@testset "MultiCubicInterpolant - Scalar Evaluation (out-of-place)" begin
+@testset "CubicSeriesInterpolant - Scalar Evaluation (out-of-place)" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -764,7 +763,7 @@ end
     end
 end
 
-@testset "MultiCubicInterpolant - Scalar Evaluation (in-place)" begin
+@testset "CubicSeriesInterpolant - Scalar Evaluation (in-place)" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -803,7 +802,7 @@ end
     end
 end
 
-@testset "MultiCubicInterpolant - Scalar Extrap Modes" begin
+@testset "CubicSeriesInterpolant - Scalar Extrap Modes" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -864,7 +863,7 @@ end
 # Phase 3: Vector Evaluation Tests
 # ============================================================================
 
-@testset "MultiCubicInterpolant - Vector Evaluation (out-of-place)" begin
+@testset "CubicSeriesInterpolant - Vector Evaluation (out-of-place)" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -911,7 +910,7 @@ end
     end
 end
 
-@testset "MultiCubicInterpolant - Container In-place (KILLER FEATURE)" begin
+@testset "CubicSeriesInterpolant - Container In-place (KILLER FEATURE)" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -988,7 +987,7 @@ end
     end
 end
 
-@testset "MultiCubicInterpolant - Vector Extrap Modes" begin
+@testset "CubicSeriesInterpolant - Vector Extrap Modes" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -1017,7 +1016,7 @@ end
 # Phase 4: Safety & Integration Tests
 # ============================================================================
 
-@testset "MultiCubicInterpolant - Immutability" begin
+@testset "CubicSeriesInterpolant - Immutability" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -1046,7 +1045,7 @@ end
     end
 end
 
-@testset "MultiCubicInterpolant - Float32 Support" begin
+@testset "CubicSeriesInterpolant - Float32 Support" begin
     FI = FastInterpolations
 
     x32 = Float32.(collect(range(Float32(0), Float32(1), 101)))
@@ -1074,7 +1073,7 @@ end
     end
 end
 
-@testset "MultiCubicInterpolant - Edge Cases" begin
+@testset "CubicSeriesInterpolant - Edge Cases" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -1123,7 +1122,7 @@ end
 # Phase 5b: Type Promotion Tests (coverage for Real type wrappers)
 # ============================================================================
 
-@testset "MultiCubicInterpolant - Type Promotion" begin
+@testset "CubicSeriesInterpolant - Type Promotion" begin
     FI = FastInterpolations
 
     @testset "Integer x with Float y vectors (promotes to Float64)" begin
@@ -1132,7 +1131,7 @@ end
         y2 = cos.(Float64.(x_int))
 
         mitp = cubic_interp(x_int, [y1, y2])
-        @test mitp isa FI.MultiCubicInterpolant{Float64}
+        @test mitp isa FI.CubicSeriesInterpolant{Float64}
 
         result = mitp(5.5)
         @test length(result) == 2
@@ -1144,7 +1143,7 @@ end
         Y_int = [i * j for i in 1:10, j in 1:3]  # Integer matrix
 
         mitp = cubic_interp(x_int, Y_int)
-        @test mitp isa FI.MultiCubicInterpolant{Float64}
+        @test mitp isa FI.CubicSeriesInterpolant{Float64}
         @test FI.n_series(mitp) == 3
 
         result = mitp(5.5)
@@ -1183,7 +1182,7 @@ end
         y2_int = collect(20:-1:1)
 
         mitp = cubic_interp(x_int, [y1_int, y2_int])
-        @test mitp isa FI.MultiCubicInterpolant{Float64}
+        @test mitp isa FI.CubicSeriesInterpolant{Float64}
 
         result = mitp(10.5)
         @test length(result) == 2
@@ -1198,7 +1197,7 @@ end
 # Phase 3: Zero-Allocation Vector API (Pooled Anchors)
 # ============================================================================
 
-@testset "MultiCubicInterpolant - Zero-allocation vector API (pooled anchors)" begin
+@testset "CubicSeriesInterpolant - Zero-allocation vector API (pooled anchors)" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))
@@ -1292,7 +1291,7 @@ end
     end
 end
 
-@testset "MultiCubicInterpolant - Zero-Allocation Derivative Tests" begin
+@testset "CubicSeriesInterpolant - Zero-Allocation Derivative Tests" begin
     FI = FastInterpolations
 
     x = collect(range(0.0, 1.0, 101))

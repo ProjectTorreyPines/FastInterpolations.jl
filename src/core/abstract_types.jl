@@ -49,10 +49,10 @@ Series interpolants handle multiple y-series sharing the same x-grid.
 - `T`: Float type (Float32 or Float64)
 
 # Subtypes
+- `LinearSeriesInterpolant{T}`: Multiple linear interpolants sharing x-grid
+- `ConstantSeriesInterpolant{T}`: Multiple constant interpolants sharing x-grid
+- `QuadraticSeriesInterpolant{T}`: Multiple quadratic interpolants sharing x-grid
 - `CubicSeriesInterpolant{T}`: Multiple cubic splines sharing x-grid
-- `LinearMultiInterpolant{T}`: Multiple linear interpolants sharing x-grid
-- `ConstantMultiInterpolant{T}`: Multiple constant interpolants sharing x-grid
-- `QuadraticMultiInterpolant{T}`: Multiple quadratic interpolants sharing x-grid
 
 # Key Features
 - Anchor optimization: compute interval once, evaluate all series
@@ -75,6 +75,3 @@ This is a pure type hierarchy - no methods are defined on `AbstractSeriesInterpo
 All functionality is implemented in concrete subtypes.
 """
 abstract type AbstractSeriesInterpolant{T<:AbstractFloat} end
-
-# Backward compatibility alias
-const AbstractMultiInterpolant = AbstractSeriesInterpolant

@@ -72,7 +72,7 @@ mutable struct CubicSeriesInterpolant{
     const bc_for_solve::B             # BC config for solving
     const y::Matrix{T}                # Series-contiguous y (n_points × n_series)
     const z::Matrix{T}                # Series-contiguous z (n_points × n_series)
-    @atomic _point_snapshot::TransposeSnapshot{T}  # Lazy point-contiguous layout
+    const _transpose::LazyTransposePair{T}  # Lazy point-contiguous layout (shared infra)
     const extrap::ExtrapVal           # Extrapolation mode
 
     function CubicSeriesInterpolant(
@@ -84,15 +84,11 @@ mutable struct CubicSeriesInterpolant{
     ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, B}
         new{T, C, B}(
             cache, bc_for_solve, y, z,
-            TransposeSnapshot{T}(),
+            LazyTransposePair{T}(),
             extrap
         )
     end
 end
-
-# Backward compatibility aliases
-const CubicMultiInterpolant = CubicSeriesInterpolant
-const MultiCubicInterpolant = CubicSeriesInterpolant
 
 # ========================================
 # Helper Functions
@@ -107,6 +103,48 @@ const MultiCubicInterpolant = CubicSeriesInterpolant
 """Number of grid points in the interpolant."""
 @inline n_points(sitp::CubicSeriesInterpolant) = size(sitp.y, 1)
 
+"""Return the x-grid vector."""
+@inline _get_grid(sitp::CubicSeriesInterpolant) = sitp.cache.x
+
+"""Return the extrapolation mode."""
+@inline _get_extrap(sitp::CubicSeriesInterpolant) = sitp.extrap
+
+# ========================================
+# Series Interface Traits
+# ========================================
+
+"""Return the interpolation method kind for kernel dispatch."""
+@inline _method_kind(::Type{<:CubicSeriesInterpolant}) = Val(:cubic)
+
+"""
+    _make_anchor(sitp::CubicSeriesInterpolant, xq::T) -> _CubicAnchoredQuery{T}
+
+Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
+"""
+@inline function _make_anchor(sitp::CubicSeriesInterpolant{T}, xq::T) where T
+    return _anchor_query(sitp.cache.x, xq; wrap=_should_wrap(sitp))
+end
+
+"""
+    _eval_series_at_anchor!(output, sitp::CubicSeriesInterpolant, aq, op)
+
+Evaluate all series at the given anchor point. Required trait for AbstractSeriesInterpolant.
+Uses point-contiguous layout for SIMD optimization.
+"""
+@inline function _eval_series_at_anchor!(
+    output::AbstractVector{T},
+    sitp::CubicSeriesInterpolant{T},
+    aq::_CubicAnchoredQuery{T},
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    y_point, z_point = _ensure_point_layout!(sitp)
+    n_pts = n_points(sitp)
+    x_min, x_max = T(first(sitp.cache.x)), T(last(sitp.cache.x))
+
+    _eval_series_point_with_extrap!(output, y_point, z_point, n_pts, x_min, x_max, aq, sitp.extrap, op)
+    return output
+end
+
 # ========================================
 # Lazy Point-Layout Management
 # ========================================
@@ -114,28 +152,10 @@ const MultiCubicInterpolant = CubicSeriesInterpolant
 """
     _ensure_point_layout!(sitp::CubicSeriesInterpolant{T}) -> (y_point, z_point)
 
-Ensure point-contiguous layout exists. Thread-safe via atomic snapshot.
-
-RCU-style implementation:
-- Fast path: atomic acquire read, return if populated
-- Slow path: compute transpose, atomic release publish
+Ensure point-contiguous layout exists. Delegates to shared LazyTransposePair infrastructure.
 """
 @inline function _ensure_point_layout!(sitp::CubicSeriesInterpolant{T}) where T
-    # Fast path: check if already populated
-    snap = @atomic :acquire sitp._point_snapshot
-    if snap.y_point !== nothing
-        return (snap.y_point::Matrix{T}, snap.z_point::Matrix{T})
-    end
-
-    # Slow path: build point-contiguous layout
-    y_point = permutedims(sitp.y)
-    z_point = permutedims(sitp.z)
-    new_snap = TransposeSnapshot{T}(y_point, z_point)
-
-    # Atomic publish
-    @atomic :release sitp._point_snapshot = new_snap
-
-    return (y_point, z_point)
+    return _ensure_transpose_pair!(sitp._transpose, sitp.y, sitp.z)
 end
 
 """
@@ -222,7 +242,7 @@ end
     ::AbstractEvalOp,
     ::UInt8
 ) where {T<:AbstractFloat}
-    throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+    _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
 # :constant - clamp to boundary (value only, derivatives are zero)
@@ -238,18 +258,7 @@ end
     op::AbstractEvalOp,
     side::UInt8
 ) where {T<:AbstractFloat}
-    if op isa EvalValue
-        idx = side == 0x01 ? 1 : n_pts
-        @inbounds @simd for k in axes(out, 1)
-            out[k] = y_point[k, idx]
-        end
-    else
-        # Derivatives of constant extrapolation are zero
-        @inbounds @simd for k in axes(out, 1)
-            out[k] = zero(T)
-        end
-    end
-    return out
+    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
 # :extension - extend polynomial
@@ -278,23 +287,6 @@ end
         out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
     end
     return out
-end
-
-# :wrap - periodic (anchor already adjusted)
-@inline function _eval_series_point_extrap!(
-    out::AbstractVector{T},
-    y_point::Matrix{T},
-    z_point::Matrix{T},
-    ::Int,
-    ::T,
-    ::T,
-    aq::_CubicAnchoredQuery{T},
-    ::Val{:wrap},
-    op::AbstractEvalOp,
-    ::UInt8
-) where {T<:AbstractFloat}
-    # Anchor was already wrapped, use normal evaluation
-    return _eval_series_point!(out, y_point, z_point, aq, op)
 end
 
 # ========================================
@@ -569,29 +561,16 @@ function (sitp::CubicSeriesInterpolant{T})(
     xq::S;
     deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
-    n_ser = n_series(sitp)
-
-    # Validate output length
-    if length(output) != n_ser
-        throw(DimensionMismatch(
-            "output length $(length(output)) must match n_series $n_ser"
-        ))
-    end
+    _validate_scalar_output(output, n_series(sitp))
 
     xq_typed = T(xq)
 
-    # Use point-contiguous layout for scalar queries
-    y_point, z_point = _ensure_point_layout!(sitp)
-
-    # Build anchor
-    aq = _anchor_query(sitp.cache.x, xq_typed; wrap=_should_wrap(sitp))
-
-    # Get domain bounds for error messages
-    x_min, x_max = T(first(sitp.cache.x)), T(last(sitp.cache.x))
+    # Build anchor using trait
+    aq = _make_anchor(sitp, xq_typed)
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin
-        _eval_series_point_with_extrap!(output, y_point, z_point, n_points(sitp), x_min, x_max, aq, sitp.extrap, op)
+        _eval_series_at_anchor!(output, sitp, aq, op)
     end
     return output
 end
@@ -790,14 +769,9 @@ Takes matrices as arguments for optimal performance.
     if extrap === Val(:extension) || extrap === Val(:wrap)
         return _eval_series_anchored(y, z, k, aq, op)
     elseif extrap === Val(:constant)
-        if op isa EvalValue
-            pt_idx = aq.side == 0x01 ? 1 : n_pts
-            @inbounds return y[pt_idx, k]
-        else
-            return zero(T)
-        end
+        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op)
     else
-        throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+        _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
 end
 

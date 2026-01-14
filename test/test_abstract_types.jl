@@ -1,5 +1,4 @@
 # Test suite for Abstract Type Hierarchy
-# Phase 1 of AbstractMultiInterpolant implementation
 
 using Test
 using FastInterpolations
@@ -15,10 +14,10 @@ using FastInterpolations
         @test isabstracttype(FastInterpolations.AbstractInterpolant{Float64})
     end
 
-    @testset "AbstractMultiInterpolant{T} exists and is abstract" begin
-        @test isdefined(FastInterpolations, :AbstractMultiInterpolant)
-        @test isabstracttype(FastInterpolations.AbstractMultiInterpolant)
-        @test isabstracttype(FastInterpolations.AbstractMultiInterpolant{Float64})
+    @testset "AbstractSeriesInterpolant{T} exists and is abstract" begin
+        @test isdefined(FastInterpolations, :AbstractSeriesInterpolant)
+        @test isabstracttype(FastInterpolations.AbstractSeriesInterpolant)
+        @test isabstracttype(FastInterpolations.AbstractSeriesInterpolant{Float64})
     end
 
     # ========================================
@@ -65,37 +64,46 @@ using FastInterpolations
     end
 
     # ========================================
-    # CubicMultiInterpolant Exists and Subtypes AbstractMultiInterpolant
+    # SeriesInterpolants Subtype AbstractSeriesInterpolant
     # ========================================
-    @testset "CubicMultiInterpolant subtypes AbstractMultiInterpolant" begin
+    @testset "CubicSeriesInterpolant subtypes AbstractSeriesInterpolant" begin
         x = collect(range(0.0, 1.0, 11))
         y1, y2 = sin.(x), cos.(x)
-        mitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, [y1, y2])
 
-        @test mitp isa FastInterpolations.AbstractMultiInterpolant
-        @test mitp isa FastInterpolations.AbstractMultiInterpolant{Float64}
-
-        # Check that CubicMultiInterpolant is exported and usable
-        @test isdefined(FastInterpolations, :CubicMultiInterpolant)
+        @test sitp isa FastInterpolations.AbstractSeriesInterpolant
+        @test sitp isa FastInterpolations.AbstractSeriesInterpolant{Float64}
+        @test isdefined(FastInterpolations, :CubicSeriesInterpolant)
     end
 
-    # ========================================
-    # Backward Compatibility: MultiCubicInterpolant Alias
-    # ========================================
-    @testset "MultiCubicInterpolant alias still works" begin
+    @testset "LinearSeriesInterpolant subtypes AbstractSeriesInterpolant" begin
         x = collect(range(0.0, 1.0, 11))
         y1, y2 = sin.(x), cos.(x)
-        mitp = cubic_interp(x, [y1, y2])
+        sitp = linear_interp(x, [y1, y2])
 
-        # MultiCubicInterpolant should still be available
-        @test isdefined(FastInterpolations, :MultiCubicInterpolant)
-        @test mitp isa MultiCubicInterpolant
+        @test sitp isa FastInterpolations.AbstractSeriesInterpolant
+        @test sitp isa FastInterpolations.AbstractSeriesInterpolant{Float64}
+        @test isdefined(FastInterpolations, :LinearSeriesInterpolant)
+    end
 
-        # Both names should refer to the same type
-        @test MultiCubicInterpolant === FastInterpolations.CubicMultiInterpolant
+    @testset "ConstantSeriesInterpolant subtypes AbstractSeriesInterpolant" begin
+        x = collect(range(0.0, 1.0, 11))
+        y1, y2 = sin.(x), cos.(x)
+        sitp = constant_interp(x, [y1, y2])
 
-        # Functionality should work the same
-        @test length(mitp(0.5)) == 2
+        @test sitp isa FastInterpolations.AbstractSeriesInterpolant
+        @test sitp isa FastInterpolations.AbstractSeriesInterpolant{Float64}
+        @test isdefined(FastInterpolations, :ConstantSeriesInterpolant)
+    end
+
+    @testset "QuadraticSeriesInterpolant subtypes AbstractSeriesInterpolant" begin
+        x = collect(range(0.0, 1.0, 11))
+        y1, y2 = sin.(x), cos.(x)
+        sitp = quadratic_interp(x, [y1, y2])
+
+        @test sitp isa FastInterpolations.AbstractSeriesInterpolant
+        @test sitp isa FastInterpolations.AbstractSeriesInterpolant{Float64}
+        @test isdefined(FastInterpolations, :QuadraticSeriesInterpolant)
     end
 
     # ========================================
@@ -118,8 +126,8 @@ using FastInterpolations
         @test itp_cubic isa FastInterpolations.AbstractInterpolant{Float32}
 
         y1, y2 = sin.(x), cos.(x)
-        mitp = cubic_interp(x, [y1, y2])
-        @test mitp isa FastInterpolations.AbstractMultiInterpolant{Float32}
+        sitp = cubic_interp(x, [y1, y2])
+        @test sitp isa FastInterpolations.AbstractSeriesInterpolant{Float32}
     end
 
     # ========================================
@@ -132,8 +140,11 @@ using FastInterpolations
         @test QuadraticInterpolant{Float64} <: FastInterpolations.AbstractInterpolant{Float64}
         @test CubicInterpolant{Float64} <: FastInterpolations.AbstractInterpolant{Float64}
 
-        # AbstractMultiInterpolant should be at top of multi interpolant hierarchy
-        @test FastInterpolations.CubicMultiInterpolant{Float64} <: FastInterpolations.AbstractMultiInterpolant{Float64}
+        # AbstractSeriesInterpolant should be at top of series interpolant hierarchy
+        @test CubicSeriesInterpolant{Float64} <: FastInterpolations.AbstractSeriesInterpolant{Float64}
+        @test LinearSeriesInterpolant{Float64} <: FastInterpolations.AbstractSeriesInterpolant{Float64}
+        @test ConstantSeriesInterpolant{Float64} <: FastInterpolations.AbstractSeriesInterpolant{Float64}
+        @test QuadraticSeriesInterpolant{Float64} <: FastInterpolations.AbstractSeriesInterpolant{Float64}
     end
 
 end

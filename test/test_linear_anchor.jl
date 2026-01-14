@@ -1,5 +1,4 @@
 # Test suite for Linear Anchored Query functionality
-# Phase 0A of AbstractMultiInterpolant implementation
 #
 # ALLOC_THRESHOLD is defined in runtests.jl
 

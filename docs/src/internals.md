@@ -49,20 +49,25 @@ for i in 1:10000
 end
 ```
 
-### With MultiInterpolant
+### With SeriesInterpolant
+
+SeriesInterpolant uses a **unified matrix storage** with point-contiguous layout, enabling SIMD-optimized scalar queries (10-120× faster than looping over individual interpolants).
 
 ```julia
-mitp = cubic_interp(x, [y1, y2, y3])
+sitp = cubic_interp(x, [y1, y2, y3])
 outputs = [similar(xq) for _ in 1:3]
 
 # Pre-compute anchors
-aq_vec = FastInterpolations._anchor_query(x, xq)
+aq_vec = FastInterpolations._anchor_query(x, xq, Val(:cubic))
 
-# Fastest possible path
+# Fastest possible path - scalar queries especially benefit from SIMD
 for i in 1:10000
-    mitp(outputs, aq_vec)
+    sitp(outputs, aq_vec)
 end
 ```
+
+!!! note "Small Series Caveat"
+    For very small series counts (n ≤ 2-4) with **vector queries only**, the anchor allocation overhead may make a manual loop marginally faster (~10-25%). For scalar queries or n ≥ 4, SeriesInterpolant always wins.
 
 ## Advanced Optimization
 

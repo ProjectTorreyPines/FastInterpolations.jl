@@ -1,5 +1,5 @@
 # test/test_cubic_series_naming.jl
-# Phase 2: Test CubicSeriesInterpolant naming and backward compatibility
+# Test CubicSeriesInterpolant naming and type hierarchy
 
 using Test
 using FastInterpolations
@@ -18,27 +18,9 @@ using FastInterpolations
         @test sitp isa CubicSeriesInterpolant
     end
 
-    @testset "Backward compat: CubicMultiInterpolant alias" begin
-        sitp = cubic_interp(x, [y1, y2])
-        @test sitp isa CubicMultiInterpolant  # Should still work
-        @test CubicMultiInterpolant === CubicSeriesInterpolant
-    end
-
-    @testset "Backward compat: MultiCubicInterpolant alias" begin
-        sitp = cubic_interp(x, [y1, y2])
-        @test sitp isa MultiCubicInterpolant  # Should still work
-        @test MultiCubicInterpolant === CubicSeriesInterpolant
-    end
-
     @testset "AbstractSeriesInterpolant supertype" begin
         @test isdefined(FastInterpolations, :AbstractSeriesInterpolant)
         sitp = cubic_interp(x, [y1, y2])
         @test sitp isa AbstractSeriesInterpolant
-    end
-
-    @testset "AbstractMultiInterpolant backward compat" begin
-        sitp = cubic_interp(x, [y1, y2])
-        @test sitp isa AbstractMultiInterpolant
-        @test AbstractMultiInterpolant === AbstractSeriesInterpolant
     end
 end

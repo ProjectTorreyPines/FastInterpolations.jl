@@ -40,24 +40,26 @@ Left
 Right
 ```
 
-## Multi-Interpolant Types
+## Series Interpolant Types
+
+SeriesInterpolant stores multiple y-series in a **unified matrix** with point-contiguous layout for optimal SIMD performance on scalar queries (10-120× faster than composition-based approaches).
 
 ### Constant Interpolation
 
 ```@docs
-ConstantMultiInterpolant
+ConstantSeriesInterpolant
 ```
 
 ### Linear Interpolation
 
 ```@docs
-LinearMultiInterpolant
+LinearSeriesInterpolant
 ```
 
 ### Quadratic Interpolation
 
 ```@docs
-QuadraticMultiInterpolant
+QuadraticSeriesInterpolant
 ```
 
 ### Cubic Interpolation

@@ -246,7 +246,7 @@ end
     ::AbstractEvalOp,
     ::UInt8
 ) where {T<:AbstractFloat}
-    throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+    _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
 # :constant - clamp to boundary (value only, derivatives are zero)
@@ -262,18 +262,7 @@ end
     op::AbstractEvalOp,
     side::UInt8
 ) where {T<:AbstractFloat}
-    if op isa EvalValue
-        idx = side == 0x01 ? 1 : n_pts
-        @inbounds @simd for k in axes(out, 1)
-            out[k] = y_point[k, idx]
-        end
-    else
-        # Derivatives of constant extrapolation are zero
-        @inbounds @simd for k in axes(out, 1)
-            out[k] = zero(T)
-        end
-    end
-    return out
+    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
 # :extension - extend polynomial
@@ -814,14 +803,9 @@ Takes matrices as arguments for optimal performance.
     if extrap === Val(:extension) || extrap === Val(:wrap)
         return _eval_series_anchored(y, z, k, aq, op)
     elseif extrap === Val(:constant)
-        if op isa EvalValue
-            pt_idx = aq.side == 0x01 ? 1 : n_pts
-            @inbounds return y[pt_idx, k]
-        else
-            return zero(T)
-        end
+        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op)
     else
-        throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+        _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
 end
 

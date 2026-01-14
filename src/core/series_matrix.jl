@@ -132,6 +132,70 @@ Tuple of transposed matrices (y_point, z_point), each (n_series × n_points).
 end
 
 # ════════════════════════════════════════════════════════════════════════════
+# LAZY TRANSPOSE TRIPLE - Three Matrices (for Quadratic)
+# ════════════════════════════════════════════════════════════════════════════
+
+"""
+    LazyTransposeTriple{T}
+
+Thread-safe lazy transpose holder for three matrices (y, a, d).
+
+Used by QuadraticSeriesInterpolant which stores y values plus a and d coefficients.
+All three transposes are computed together on first scalar query.
+
+# Thread Safety
+Same RCU pattern as LazyTranspose.
+"""
+mutable struct LazyTransposeTriple{T<:AbstractFloat}
+    @atomic snapshot::Union{Nothing, Tuple{Matrix{T}, Matrix{T}, Matrix{T}}}
+
+    LazyTransposeTriple{T}() where {T} = new{T}(nothing)
+end
+
+"""
+    _get_snapshot(ltt::LazyTransposeTriple) -> Union{Nothing, Tuple{Matrix, Matrix, Matrix}}
+
+Get current snapshot triple (for testing). Returns nothing if not yet computed.
+"""
+@inline _get_snapshot(ltt::LazyTransposeTriple) = @atomic :acquire ltt.snapshot
+
+"""
+    _ensure_transpose_triple!(ltt::LazyTransposeTriple{T}, y::Matrix{T}, a::Matrix{T}, d::Matrix{T}) -> (Matrix{T}, Matrix{T}, Matrix{T})
+
+Ensure point-contiguous transpose triple exists. Thread-safe via atomic RCU pattern.
+
+# Arguments
+- `ltt`: LazyTransposeTriple holder
+- `y`: Y-values matrix (n_points × n_series)
+- `a`: Quadratic coefficients matrix (n_points × n_series)
+- `d`: Slope coefficients matrix (n_points × n_series)
+
+# Returns
+Tuple of transposed matrices (y_point, a_point, d_point), each (n_series × n_points).
+"""
+@inline function _ensure_transpose_triple!(
+    ltt::LazyTransposeTriple{T},
+    y::Matrix{T},
+    a::Matrix{T},
+    d::Matrix{T}
+) where {T<:AbstractFloat}
+    # Fast path: check if already populated
+    snap = @atomic :acquire ltt.snapshot
+    snap !== nothing && return snap::Tuple{Matrix{T}, Matrix{T}, Matrix{T}}
+
+    # Slow path: compute all three transposes
+    y_point = permutedims(y)
+    a_point = permutedims(a)
+    d_point = permutedims(d)
+    triple = (y_point, a_point, d_point)
+
+    # Atomic publish
+    @atomic :release ltt.snapshot = triple
+
+    return triple
+end
+
+# ════════════════════════════════════════════════════════════════════════════
 # PRECOMPUTE HELPERS
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -153,4 +217,14 @@ Pre-compute transpose pair before hot loops. Returns the holder for chaining.
 function precompute_transpose!(ltp::LazyTransposePair{T}, y::Matrix{T}, z::Matrix{T}) where {T}
     _ensure_transpose_pair!(ltp, y, z)
     return ltp
+end
+
+"""
+    precompute_transpose!(ltt::LazyTransposeTriple, y::Matrix, a::Matrix, d::Matrix) -> LazyTransposeTriple
+
+Pre-compute transpose triple before hot loops. Returns the holder for chaining.
+"""
+function precompute_transpose!(ltt::LazyTransposeTriple{T}, y::Matrix{T}, a::Matrix{T}, d::Matrix{T}) where {T}
+    _ensure_transpose_triple!(ltt, y, a, d)
+    return ltt
 end

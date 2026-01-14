@@ -1,0 +1,294 @@
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║                  QUADRATIC SERIES INTERPOLANT TESTS                        ║
+# ║         Tests for QuadraticSeriesInterpolant with direct matrix storage    ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+#
+# Phase E.3: Tests verify QuadraticSeriesInterpolant works correctly using the
+# shared series infrastructure from Phases A-D.
+#
+
+using Test
+using FastInterpolations
+const FI = FastInterpolations
+
+@testset "QuadraticSeriesInterpolant" begin
+
+    # ========================================
+    # Constructor Tests
+    # ========================================
+
+    @testset "construction" begin
+        x = collect(0.0:0.1:1.0)
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        ys = [y1, y2]
+
+        @testset "from vector of vectors" begin
+            sitp = quadratic_interp(x, ys)
+            @test sitp isa FI.QuadraticSeriesInterpolant{Float64}
+            @test FI.n_series(sitp) == 2
+        end
+
+        @testset "from matrix" begin
+            Y = hcat(y1, y2)
+            sitp = quadratic_interp(x, Y)
+            @test sitp isa FI.QuadraticSeriesInterpolant{Float64}
+            @test FI.n_series(sitp) == 2
+        end
+
+        @testset "validates input dimensions" begin
+            bad_y = [y1[1:end-1], y2]  # Wrong length
+            @test_throws Exception quadratic_interp(x, bad_y)
+        end
+
+        @testset "single series" begin
+            sitp = quadratic_interp(x, [y1])
+            @test FI.n_series(sitp) == 1
+        end
+
+        @testset "boundary conditions preserved" begin
+            # Test with different BC types
+            sitp_left = quadratic_interp(x, ys; bc=FI.Left(FI.ParabolaFit{Float64}()))
+            @test sitp_left isa FI.QuadraticSeriesInterpolant{Float64}
+
+            sitp_right = quadratic_interp(x, ys; bc=FI.Right(FI.ParabolaFit{Float64}()))
+            @test sitp_right isa FI.QuadraticSeriesInterpolant{Float64}
+        end
+    end
+
+    # ========================================
+    # Trait Implementation Tests
+    # ========================================
+
+    @testset "trait implementations" begin
+        x = collect(0.0:0.1:1.0)
+        sitp = quadratic_interp(x, [sin.(2π .* x), cos.(2π .* x)])
+
+        @test FI.n_series(sitp) == 2
+        @test FI._get_grid(sitp) ≈ x
+        @test FI._get_extrap(sitp) isa FI.ExtrapVal
+        @test FI._should_wrap(sitp) == false
+        @test FI._method_kind(typeof(sitp)) === Val(:quadratic)
+    end
+
+    # ========================================
+    # Evaluation Accuracy Tests
+    # ========================================
+
+    @testset "evaluation accuracy" begin
+        # Quadratic interpolation should be exact for quadratic data
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y1 = x .^ 2              # Quadratic: should be exact
+        y2 = 2.0 .* x .+ 1.0    # Linear: should also be exact
+        sitp = quadratic_interp(x, [y1, y2])
+
+        @testset "at grid points" begin
+            for (i, xi) in enumerate(x)
+                result = sitp(xi)
+                @test result[1] ≈ y1[i] atol=1e-10
+                @test result[2] ≈ y2[i] atol=1e-10
+            end
+        end
+
+        @testset "interpolation midpoints" begin
+            # Quadratic interpolation should produce good results at midpoints
+            result = sitp(0.5)
+            @test result isa Vector{Float64}
+            @test length(result) == 2
+            # For quadratic y=x², at x=0.5 we expect y≈0.25
+            @test result[1] ≈ 0.25 atol=0.1  # Quadratic spline may not be exact
+            # For linear y=2x+1, at x=0.5 we expect y=2.0
+            @test result[2] ≈ 2.0 atol=0.1
+        end
+    end
+
+    # ========================================
+    # Zero-Allocation Tests
+    # ========================================
+
+    @testset "zero allocation" begin
+        x = collect(0.0:0.1:1.0)
+        sitp = quadratic_interp(x, [sin.(2π .* x), cos.(2π .* x)])
+
+        @testset "scalar in-place" begin
+            output = zeros(2)
+            sitp(output, 0.5)  # Warmup
+            sitp(output, 0.5)  # Warmup
+            allocs = @allocated sitp(output, 0.5)
+            @test allocs == 0
+        end
+
+        @testset "vector in-place" begin
+            xq = collect(0.0:0.05:1.0)
+            outputs = [zeros(length(xq)) for _ in 1:2]
+            sitp(outputs, xq)  # Warmup
+            sitp(outputs, xq)  # Warmup
+            allocs = @allocated sitp(outputs, xq)
+            @test allocs == 0
+        end
+    end
+
+    # ========================================
+    # Extrapolation Tests
+    # ========================================
+
+    @testset "extrapolation modes" begin
+        x = collect(0.0:0.1:1.0)
+        ys = [sin.(2π .* x)]
+
+        @testset "extrap=:none throws" begin
+            sitp = quadratic_interp(x, ys; extrap=:none)
+            @test_throws DomainError sitp(-0.1)
+            @test_throws DomainError sitp(1.1)
+        end
+
+        @testset "extrap=:constant returns boundary" begin
+            sitp = quadratic_interp(x, ys; extrap=:constant)
+            @test sitp(-0.1)[1] ≈ sin(0.0) atol=1e-6
+            @test sitp(1.1)[1] ≈ sin(2π) atol=1e-6
+        end
+
+        @testset "extrap=:extension extrapolates" begin
+            sitp = quadratic_interp(x, ys; extrap=:extension)
+            @test sitp(-0.1) isa Vector{Float64}
+            @test sitp(1.1) isa Vector{Float64}
+        end
+    end
+
+    # ========================================
+    # Type Stability
+    # ========================================
+
+    @testset "type stability" begin
+        x32 = Float32.(collect(0.0:0.1:1.0))
+        ys32 = [Float32.(sin.(2π .* Float64.(x32)))]
+
+        x64 = collect(0.0:0.1:1.0)
+        ys64 = [sin.(2π .* x64)]
+
+        sitp32 = quadratic_interp(x32, ys32)
+        sitp64 = quadratic_interp(x64, ys64)
+
+        @test sitp32(0.5f0) isa Vector{Float32}
+        @test sitp64(0.5) isa Vector{Float64}
+
+        @test_nowarn @inferred sitp64(0.5)
+    end
+
+    # ========================================
+    # Callable Signatures
+    # ========================================
+
+    @testset "callable signatures" begin
+        x = collect(0.0:0.1:1.0)
+        sitp = quadratic_interp(x, [sin.(2π .* x), cos.(2π .* x)])
+
+        @testset "scalar out-of-place" begin
+            result = sitp(0.5)
+            @test length(result) == 2
+            @test result isa Vector{Float64}
+        end
+
+        @testset "scalar in-place" begin
+            output = zeros(2)
+            result = sitp(output, 0.5)
+            @test result === output
+        end
+
+        @testset "vector out-of-place" begin
+            xq = [0.25, 0.5, 0.75]
+            results = sitp(xq)
+            @test length(results) == 2  # n_series
+            @test all(r -> length(r) == 3, results)
+        end
+
+        @testset "vector in-place" begin
+            xq = [0.25, 0.5, 0.75]
+            outputs = [zeros(3), zeros(3)]
+            result = sitp(outputs, xq)
+            @test result === outputs
+        end
+    end
+
+    # ========================================
+    # Derivative Support
+    # ========================================
+
+    @testset "derivative evaluation" begin
+        x = collect(0.0:0.1:1.0)
+        y = x .^ 2  # Simple quadratic for testing
+        sitp = quadratic_interp(x, [y, 2.0 .* y])
+
+        @testset "first derivative" begin
+            # For y = x², dy/dx = 2x at x=0.5 → expect ~1.0
+            result = sitp(0.5; deriv=1)
+            @test length(result) == 2
+            @test result[1] ≈ 1.0 atol=0.2  # Some tolerance for spline approximation
+        end
+
+        @testset "second derivative" begin
+            # For y = x², d²y/dx² = 2 (constant)
+            result = sitp(0.5; deriv=2)
+            @test length(result) == 2
+            @test result[1] ≈ 2.0 atol=0.5  # Larger tolerance for second derivative
+        end
+
+        @testset "derivative in-place" begin
+            output = zeros(2)
+            sitp(output, 0.5; deriv=1)
+            @test output[1] ≈ 1.0 atol=0.2
+        end
+    end
+
+    # ========================================
+    # Comparison with Existing MultiInterpolant
+    # ========================================
+
+    @testset "consistency with existing implementation" begin
+        x = collect(0.0:0.01:1.0)
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        ys = [y1, y2]
+
+        # Both should give same results
+        sitp = quadratic_interp(x, ys)
+
+        # Compare at multiple points
+        xq = [0.15, 0.35, 0.55, 0.75, 0.95]
+        for xqi in xq
+            result = sitp(xqi)
+            # Create reference single interpolants and compare
+            ref1 = quadratic_interp(x, y1)(xqi)
+            ref2 = quadratic_interp(x, y2)(xqi)
+            @test result[1] ≈ ref1 atol=1e-10
+            @test result[2] ≈ ref2 atol=1e-10
+        end
+    end
+
+    # ========================================
+    # Coefficient Matrix Storage
+    # ========================================
+
+    @testset "coefficient storage" begin
+        x = collect(0.0:0.1:1.0)
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = quadratic_interp(x, [y1, y2])
+
+        @testset "coefficient matrices exist" begin
+            # Should have a, d coefficient matrices
+            @test hasfield(typeof(sitp), :a)
+            @test hasfield(typeof(sitp), :d)
+            @test sitp.a isa Matrix{Float64}
+            @test sitp.d isa Matrix{Float64}
+        end
+
+        @testset "coefficient dimensions" begin
+            n = length(x)
+            # Coefficients should be (n_points × n_series) for series-contiguous
+            @test size(sitp.a) == (n, 2)
+            @test size(sitp.d) == (n, 2)
+        end
+    end
+
+end  # testset "QuadraticSeriesInterpolant"

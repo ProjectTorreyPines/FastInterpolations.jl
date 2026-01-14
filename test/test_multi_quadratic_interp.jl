@@ -1,7 +1,7 @@
 # Tests for QuadraticMultiInterpolant - Multi-Y quadratic interpolation
 #
 # Multi-Y interpolation: multiple y-data series sharing the same x-grid.
-# Uses composition approach: wraps existing QuadraticInterpolant objects.
+# Uses matrix storage with shared coefficients.
 #
 # ALLOC_THRESHOLD is defined in runtests.jl
 
@@ -21,27 +21,28 @@
         mitp = quadratic_interp(x, [y1, y2, y3])
         @test mitp isa FI.QuadraticMultiInterpolant
 
-        @test hasfield(typeof(mitp), :itps)
-        @test length(mitp.itps) == 3
-        @test all(itp -> itp isa QuadraticInterpolant, mitp.itps)
+        @test FI.n_series(mitp) == 3
+        @test mitp.y isa Matrix{Float64}
+        @test mitp.a isa Matrix{Float64}
+        @test mitp.d isa Matrix{Float64}
     end
 
     @testset "Construction from Matrix (columns as series)" begin
         Y = hcat(y1, y2, y3)
         mitp = quadratic_interp(x, Y)
         @test mitp isa FI.QuadraticMultiInterpolant
-        @test length(mitp.itps) == 3
+        @test FI.n_series(mitp) == 3
     end
 
     @testset "Single series works" begin
         mitp = quadratic_interp(x, [y1])
         @test mitp isa FI.QuadraticMultiInterpolant
-        @test length(mitp.itps) == 1
+        @test FI.n_series(mitp) == 1
     end
 
     @testset "Type inference - Float64" begin
         mitp = quadratic_interp(x, [y1, y2])
-        @test eltype(mitp.itps) <: QuadraticInterpolant{Float64}
+        @test eltype(mitp.y) == Float64
     end
 
     @testset "Type inference - Float32" begin
@@ -49,12 +50,12 @@
         y1_32 = Float32.(y1)
         y2_32 = Float32.(y2)
         mitp = quadratic_interp(x32, [y1_32, y2_32])
-        @test eltype(mitp.itps) <: QuadraticInterpolant{Float32}
+        @test eltype(mitp.y) == Float32
     end
 
-    @testset "Subtypes AbstractMultiInterpolant" begin
+    @testset "Subtypes AbstractSeriesInterpolant" begin
         mitp = quadratic_interp(x, [y1, y2])
-        @test mitp isa AbstractMultiInterpolant{Float64}
+        @test mitp isa FI.AbstractSeriesInterpolant{Float64}
     end
 end
 
@@ -77,8 +78,7 @@ end
     @testset "Extrap propagation" begin
         for extrap_mode in (:none, :constant, :extension)
             mitp = quadratic_interp(x, [y1, y2]; extrap=extrap_mode)
-            @test mitp.itps[1].mode === Val(extrap_mode)
-            @test mitp.itps[2].mode === Val(extrap_mode)
+            @test mitp.extrap === Val(extrap_mode)
         end
     end
 end
@@ -164,7 +164,7 @@ end
 
     @testset "Size assertion on output mismatch" begin
         output_wrong = Vector{Float64}(undef, 2)
-        @test_throws AssertionError mitp(output_wrong, 0.35)
+        @test_throws DimensionMismatch mitp(output_wrong, 0.35)
     end
 
     @testset "In-place with derivatives" begin
@@ -302,7 +302,7 @@ end
 
     @testset "Size assertion on container mismatch" begin
         outputs_wrong = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50)]
-        @test_throws AssertionError mitp(outputs_wrong, xq)
+        @test_throws DimensionMismatch mitp(outputs_wrong, xq)
     end
 
     @testset "ZERO ALLOCATION with pre-built anchors (critical)" begin
@@ -326,8 +326,7 @@ end
 # Phase 4: Safety & Integration Tests
 # ============================================================================
 
-# Note: QuadraticInterpolant stores references (not copies) for efficiency.
-# Use copy() if immutability is needed.
+# Note: QuadraticSeriesInterpolant uses matrix storage.
 
 @testset "QuadraticMultiInterpolant - Float32 Support" begin
     FI = FastInterpolations
@@ -354,7 +353,7 @@ end
     @testset "Large number of series (10+)" begin
         ys = [sin.(k .* x) for k in 1:12]
         mitp = quadratic_interp(x, ys)
-        @test length(mitp.itps) == 12
+        @test FI.n_series(mitp) == 12
 
         result = mitp(0.5)
         @test length(result) == 12
@@ -411,7 +410,7 @@ end
 
         mitp = quadratic_interp(x_int, Y_int)
         @test mitp isa FI.QuadraticMultiInterpolant{Float64}
-        @test length(mitp.itps) == 3
+        @test FI.n_series(mitp) == 3
 
         result = mitp(5.5)
         @test length(result) == 3
@@ -538,7 +537,7 @@ end
 
     @testset "Size assertion on buffer mismatch" begin
         outputs = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
-        @test_throws AssertionError mitp(outputs, xq)
+        @test_throws DimensionMismatch mitp(outputs, xq)
     end
 
     @testset "Size assertion with pre-built anchors" begin
@@ -546,11 +545,11 @@ end
 
         # Wrong number of output buffers
         outputs_wrong = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50)]
-        @test_throws AssertionError mitp(outputs_wrong, aq_vec)
+        @test_throws DimensionMismatch mitp(outputs_wrong, aq_vec)
 
         # Wrong buffer size
         outputs_bad = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
-        @test_throws AssertionError mitp(outputs_bad, aq_vec)
+        @test_throws DimensionMismatch mitp(outputs_bad, aq_vec)
     end
 end
 
@@ -595,7 +594,7 @@ end
     end
 
     # ----------------------------------------
-    # Tests to cover _promote_bc helper (lines 175-182)
+    # Tests to cover _promote_bc helper
     # These require Float32 BC with Float64 data to force type promotion
     # ----------------------------------------
     @testset "_promote_bc coverage - Float32 BC with Float64 data" begin
@@ -651,7 +650,7 @@ end
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
 
-        # Float64 BC with Float64 data - no promotion needed (line 182)
+        # Float64 BC with Float64 data - no promotion needed
         bc_same = Left(ParabolaFit{Float64}())
         mitp = quadratic_interp(x, [y1, y2]; bc=bc_same)
         @test mitp isa FI.QuadraticMultiInterpolant{Float64}
@@ -682,11 +681,11 @@ end
     y3 = x .^ 2
 
     mitp = quadratic_interp(x, [y1, y2, y3])
-    n_series = 3
+    n_ser = FI.n_series(mitp)
 
     @testset "Zero allocation after warmup (same size)" begin
         xq = collect(range(0.05, 0.95, 50))
-        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_series]
+        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_ser]
 
         # Warmup to populate pool
         mitp(outputs, xq)
@@ -699,12 +698,12 @@ end
     @testset "Zero allocation for smaller query vector (pool reuse)" begin
         # First call with larger vector
         xq_large = collect(range(0.05, 0.95, 100))
-        outputs_large = [Vector{Float64}(undef, length(xq_large)) for _ in 1:n_series]
+        outputs_large = [Vector{Float64}(undef, length(xq_large)) for _ in 1:n_ser]
         mitp(outputs_large, xq_large)
 
         # Second call with smaller vector (pool should reuse)
         xq_small = collect(range(0.1, 0.9, 30))
-        outputs_small = [Vector{Float64}(undef, length(xq_small)) for _ in 1:n_series]
+        outputs_small = [Vector{Float64}(undef, length(xq_small)) for _ in 1:n_ser]
         mitp(outputs_small, xq_small)
 
         # Third call with same small size (should be zero allocation)
@@ -714,7 +713,7 @@ end
 
     @testset "Bit-wise identical results" begin
         xq = collect(range(0.05, 0.95, 50))
-        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_series]
+        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_ser]
 
         # Single-series reference values
         itp1 = quadratic_interp(x, y1)
@@ -735,7 +734,7 @@ end
 
     @testset "Zero allocation with deriv=1" begin
         xq = collect(range(0.05, 0.95, 50))
-        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_series]
+        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_ser]
 
         # Warmup
         mitp(outputs, xq; deriv=1)
@@ -747,7 +746,7 @@ end
 
     @testset "Zero allocation with deriv=2" begin
         xq = collect(range(0.05, 0.95, 50))
-        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_series]
+        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_ser]
 
         # Warmup
         mitp(outputs, xq; deriv=2)

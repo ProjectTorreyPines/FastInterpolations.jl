@@ -55,7 +55,7 @@ end
         @test hasfield(typeof(mitp), :y)
         @test hasfield(typeof(mitp), :z)
         @test hasfield(typeof(mitp), :cache)
-        @test hasfield(typeof(mitp), :_point_snapshot)
+        @test hasfield(typeof(mitp), :_transpose)  # LazyTransposePair for lazy point layout
         @test hasfield(typeof(mitp), :extrap)
 
         # Should NOT have itps field anymore
@@ -159,21 +159,20 @@ end
     @testset "precompute_transpose option" begin
         mitp = cubic_interp(x, [y1, y2]; precompute_transpose=true)
 
-        # _point_snapshot should be populated immediately
-        snap = @atomic :acquire mitp._point_snapshot
-        @test snap.y_point !== nothing
-        @test snap.z_point !== nothing
-        @test size(snap.y_point) == (2, length(x))  # (n_series × n_points)
-        @test size(snap.z_point) == (2, length(x))
+        # _transpose should be populated immediately
+        snap = FI._get_snapshot(mitp._transpose)
+        @test snap !== nothing
+        y_point, z_point = snap
+        @test size(y_point) == (2, length(x))  # (n_series × n_points)
+        @test size(z_point) == (2, length(x))
     end
 
     @testset "Lazy transpose (precompute_transpose=false)" begin
         mitp = cubic_interp(x, [y1, y2])  # default precompute_transpose=false
 
         # Initially empty
-        snap = @atomic :acquire mitp._point_snapshot
-        @test snap.y_point === nothing
-        @test snap.z_point === nothing
+        snap = FI._get_snapshot(mitp._transpose)
+        @test snap === nothing
     end
 
     @testset "Range grid preserved in cache" begin
@@ -222,14 +221,14 @@ end
         mitp = cubic_interp(x, [y1, y2])
 
         # Initially empty
-        snap = @atomic :acquire mitp._point_snapshot
-        @test snap.y_point === nothing
+        snap = FI._get_snapshot(mitp._transpose)
+        @test snap === nothing
 
         # After scalar eval → populated
         _ = mitp(0.5)
-        snap_after = @atomic :acquire mitp._point_snapshot
-        @test snap_after.y_point !== nothing
-        @test size(snap_after.y_point) == (2, length(x))
+        snap_after = FI._get_snapshot(mitp._transpose)
+        @test snap_after !== nothing
+        @test size(snap_after[1]) == (2, length(x))  # y_point = snap_after[1]
     end
 
     @testset "_ensure_point_layout! idempotency" begin
@@ -407,16 +406,16 @@ end
         mitp = cubic_interp(x, [y1, y2])
 
         # Initially empty
-        snap = @atomic :acquire mitp._point_snapshot
-        @test snap.y_point === nothing
+        snap = FI._get_snapshot(mitp._transpose)
+        @test snap === nothing
 
         # Call precompute_transpose!
         result = FI.precompute_transpose!(mitp)
         @test result === mitp
 
         # Now populated
-        snap_after = @atomic :acquire mitp._point_snapshot
-        @test snap_after.y_point !== nothing
+        snap_after = FI._get_snapshot(mitp._transpose)
+        @test snap_after !== nothing
     end
 
     @testset ":wrap extrapolation scalar SIMD path" begin
@@ -448,8 +447,8 @@ end
         mitp = cubic_interp(x, [y_periodic]; bc=PeriodicBC(), precompute_transpose=true)
 
         # Should have point layout immediately
-        snap = @atomic :acquire mitp._point_snapshot
-        @test snap.y_point !== nothing
+        snap = FI._get_snapshot(mitp._transpose)
+        @test snap !== nothing
     end
 
     @testset "Matrix input with row dimension mismatch" begin
@@ -469,8 +468,8 @@ end
         Y = hcat(y1, y2)
         mitp = cubic_interp(x, Y; precompute_transpose=true)
 
-        snap = @atomic :acquire mitp._point_snapshot
-        @test snap.y_point !== nothing
+        snap = FI._get_snapshot(mitp._transpose)
+        @test snap !== nothing
     end
 
     @testset "Anchored query path dimension errors" begin

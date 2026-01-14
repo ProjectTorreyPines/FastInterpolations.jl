@@ -72,7 +72,7 @@ mutable struct CubicSeriesInterpolant{
     const bc_for_solve::B             # BC config for solving
     const y::Matrix{T}                # Series-contiguous y (n_points × n_series)
     const z::Matrix{T}                # Series-contiguous z (n_points × n_series)
-    @atomic _point_snapshot::TransposeSnapshot{T}  # Lazy point-contiguous layout
+    const _transpose::LazyTransposePair{T}  # Lazy point-contiguous layout (shared infra)
     const extrap::ExtrapVal           # Extrapolation mode
 
     function CubicSeriesInterpolant(
@@ -84,7 +84,7 @@ mutable struct CubicSeriesInterpolant{
     ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, B}
         new{T, C, B}(
             cache, bc_for_solve, y, z,
-            TransposeSnapshot{T}(),
+            LazyTransposePair{T}(),
             extrap
         )
     end
@@ -120,28 +120,10 @@ const MultiCubicInterpolant = CubicSeriesInterpolant
 """
     _ensure_point_layout!(sitp::CubicSeriesInterpolant{T}) -> (y_point, z_point)
 
-Ensure point-contiguous layout exists. Thread-safe via atomic snapshot.
-
-RCU-style implementation:
-- Fast path: atomic acquire read, return if populated
-- Slow path: compute transpose, atomic release publish
+Ensure point-contiguous layout exists. Delegates to shared LazyTransposePair infrastructure.
 """
 @inline function _ensure_point_layout!(sitp::CubicSeriesInterpolant{T}) where T
-    # Fast path: check if already populated
-    snap = @atomic :acquire sitp._point_snapshot
-    if snap.y_point !== nothing
-        return (snap.y_point::Matrix{T}, snap.z_point::Matrix{T})
-    end
-
-    # Slow path: build point-contiguous layout
-    y_point = permutedims(sitp.y)
-    z_point = permutedims(sitp.z)
-    new_snap = TransposeSnapshot{T}(y_point, z_point)
-
-    # Atomic publish
-    @atomic :release sitp._point_snapshot = new_snap
-
-    return (y_point, z_point)
+    return _ensure_transpose_pair!(sitp._transpose, sitp.y, sitp.z)
 end
 
 """

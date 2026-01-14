@@ -8,3 +8,4 @@ include("grid_spacing.jl")     # 4. ScalarSpacing, VectorSpacing
 include("utils.jl")            # 5. Shared utilities
 include("series_utils.jl")     # 6. Series validation helpers
 include("series_interface.jl") # 7. Series traits + default callables
+include("series_matrix.jl")    # 8. Lazy transpose infrastructure

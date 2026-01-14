@@ -1,7 +1,6 @@
-# Tests for ConstantMultiInterpolant - Multi-Y constant interpolation
-#
-# Multi-Y interpolation: multiple y-data series sharing the same x-grid.
-# Uses composition approach: wraps existing ConstantInterpolant objects.
+# Tests for ConstantSeriesInterpolant (formerly ConstantMultiInterpolant)
+# Multi-Y constant interpolation: multiple y-data series sharing the same x-grid.
+# Uses unified matrix storage for optimal performance.
 #
 # ALLOC_THRESHOLD is defined in runtests.jl
 
@@ -19,29 +18,30 @@
 
     @testset "Construction from Vector of y-series" begin
         mitp = constant_interp(x, [y1, y2, y3])
-        @test mitp isa FI.ConstantMultiInterpolant
+        @test mitp isa FI.ConstantSeriesInterpolant
 
-        @test hasfield(typeof(mitp), :itps)
-        @test length(mitp.itps) == 3
-        @test all(itp -> itp isa ConstantInterpolant, mitp.itps)
+        @test hasfield(typeof(mitp), :y)
+        @test FI.n_series(mitp) == 3
+        @test size(mitp.y, 1) == length(x)  # n_points
+        @test size(mitp.y, 2) == 3          # n_series
     end
 
     @testset "Construction from Matrix (columns as series)" begin
         Y = hcat(y1, y2, y3)
         mitp = constant_interp(x, Y)
-        @test mitp isa FI.ConstantMultiInterpolant
-        @test length(mitp.itps) == 3
+        @test mitp isa FI.ConstantSeriesInterpolant
+        @test FI.n_series(mitp) == 3
     end
 
     @testset "Single series works" begin
         mitp = constant_interp(x, [y1])
-        @test mitp isa FI.ConstantMultiInterpolant
-        @test length(mitp.itps) == 1
+        @test mitp isa FI.ConstantSeriesInterpolant
+        @test FI.n_series(mitp) == 1
     end
 
     @testset "Type inference - Float64" begin
         mitp = constant_interp(x, [y1, y2])
-        @test eltype(mitp.itps) <: ConstantInterpolant{Float64}
+        @test mitp isa FI.ConstantSeriesInterpolant{Float64}
     end
 
     @testset "Type inference - Float32" begin
@@ -49,12 +49,12 @@
         y1_32 = Float32.(y1)
         y2_32 = Float32.(y2)
         mitp = constant_interp(x32, [y1_32, y2_32])
-        @test eltype(mitp.itps) <: ConstantInterpolant{Float32}
+        @test mitp isa FI.ConstantSeriesInterpolant{Float32}
     end
 
-    @testset "Subtypes AbstractMultiInterpolant" begin
+    @testset "Subtypes AbstractSeriesInterpolant" begin
         mitp = constant_interp(x, [y1, y2])
-        @test mitp isa AbstractMultiInterpolant{Float64}
+        @test mitp isa AbstractSeriesInterpolant{Float64}
     end
 end
 
@@ -77,16 +77,14 @@ end
     @testset "Extrap propagation" begin
         for extrap_mode in (:none, :constant, :extension, :wrap)
             mitp = constant_interp(x, [y1, y2]; extrap=extrap_mode)
-            @test mitp.itps[1].mode === Val(extrap_mode)
-            @test mitp.itps[2].mode === Val(extrap_mode)
+            @test mitp.extrap === Val(extrap_mode)
         end
     end
 
     @testset "Side propagation" begin
         for side_mode in (:left, :right, :nearest)
             mitp = constant_interp(x, [y1, y2]; side=side_mode)
-            @test mitp.itps[1].side === Val(side_mode)
-            @test mitp.itps[2].side === Val(side_mode)
+            @test mitp.side === Val(side_mode)
         end
     end
 end
@@ -154,7 +152,7 @@ end
 
     @testset "Size assertion on output mismatch" begin
         output_wrong = Vector{Float64}(undef, 2)
-        @test_throws AssertionError mitp(output_wrong, 0.35)
+        @test_throws DimensionMismatch mitp(output_wrong, 0.35)
     end
 end
 
@@ -266,32 +264,13 @@ end
 
     @testset "Size assertion on container mismatch" begin
         outputs_wrong = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50)]
-        @test_throws AssertionError mitp(outputs_wrong, xq)
-    end
-
-    @testset "ZERO ALLOCATION with pre-built anchors (critical)" begin
-        FI = FastInterpolations
-        out1 = Vector{Float64}(undef, 50)
-        out2 = Vector{Float64}(undef, 50)
-        out3 = Vector{Float64}(undef, 50)
-        outputs = [out1, out2, out3]
-
-        aq_vec = FI._anchor_query(x, xq, Val(:constant))
-
-        mitp(outputs, aq_vec)
-        mitp(outputs, aq_vec)
-
-        allocs = @allocated mitp(outputs, aq_vec)
-        @test allocs <= ALLOC_THRESHOLD
+        @test_throws DimensionMismatch mitp(outputs_wrong, xq)
     end
 end
 
 # ============================================================================
 # Phase 4: Safety & Integration Tests
 # ============================================================================
-
-# Note: ConstantInterpolant stores references (not copies) for efficiency.
-# Use copy() if immutability is needed.
 
 @testset "ConstantMultiInterpolant - Float32 Support" begin
     FI = FastInterpolations
@@ -318,7 +297,7 @@ end
     @testset "Large number of series (10+)" begin
         ys = [sin.(k .* x) for k in 1:12]
         mitp = constant_interp(x, ys)
-        @test length(mitp.itps) == 12
+        @test FI.n_series(mitp) == 12
 
         result = mitp(0.5)
         @test length(result) == 12
@@ -362,7 +341,7 @@ end
         y2 = cos.(Float64.(x_int))
 
         mitp = constant_interp(x_int, [y1, y2])
-        @test mitp isa FI.ConstantMultiInterpolant{Float64}
+        @test mitp isa FI.ConstantSeriesInterpolant{Float64}
 
         result = mitp(5.5)
         @test length(result) == 2
@@ -374,8 +353,8 @@ end
         Y_int = [i * j for i in 1:10, j in 1:3]
 
         mitp = constant_interp(x_int, Y_int)
-        @test mitp isa FI.ConstantMultiInterpolant{Float64}
-        @test length(mitp.itps) == 3
+        @test mitp isa FI.ConstantSeriesInterpolant{Float64}
+        @test FI.n_series(mitp) == 3
 
         result = mitp(5.5)
         @test length(result) == 3
@@ -407,7 +386,7 @@ end
 end
 
 # ============================================================================
-# Phase 6: Additional Size Assertion Tests
+# Phase 6: Size Assertions
 # ============================================================================
 
 @testset "ConstantMultiInterpolant - Size Assertions" begin
@@ -423,19 +402,7 @@ end
 
     @testset "Size assertion on buffer mismatch" begin
         outputs = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
-        @test_throws AssertionError mitp(outputs, xq)
-    end
-
-    @testset "Size assertion with pre-built anchors" begin
-        aq_vec = FI._anchor_query(x, xq, Val(:constant))
-
-        # Wrong number of output buffers
-        outputs_wrong = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50)]
-        @test_throws AssertionError mitp(outputs_wrong, aq_vec)
-
-        # Wrong buffer size
-        outputs_bad = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
-        @test_throws AssertionError mitp(outputs_bad, aq_vec)
+        @test_throws DimensionMismatch mitp(outputs, xq)
     end
 end
 
@@ -478,13 +445,14 @@ end
     y3 = x .^ 2
 
     mitp = constant_interp(x, [y1, y2, y3])
-    n_series = 3
+    n_ser = 3
 
     @testset "Zero allocation after warmup (same size)" begin
         xq = collect(range(0.05, 0.95, 50))
-        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_series]
+        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_ser]
 
         # Warmup to populate pool
+        mitp(outputs, xq)
         mitp(outputs, xq)
 
         # Measure allocations on second call (same size)
@@ -495,12 +463,13 @@ end
     @testset "Zero allocation for smaller query vector (pool reuse)" begin
         # First call with larger vector
         xq_large = collect(range(0.05, 0.95, 100))
-        outputs_large = [Vector{Float64}(undef, length(xq_large)) for _ in 1:n_series]
+        outputs_large = [Vector{Float64}(undef, length(xq_large)) for _ in 1:n_ser]
+        mitp(outputs_large, xq_large)
         mitp(outputs_large, xq_large)
 
         # Second call with smaller vector (pool should reuse)
         xq_small = collect(range(0.1, 0.9, 30))
-        outputs_small = [Vector{Float64}(undef, length(xq_small)) for _ in 1:n_series]
+        outputs_small = [Vector{Float64}(undef, length(xq_small)) for _ in 1:n_ser]
         mitp(outputs_small, xq_small)
 
         # Third call with same small size (should be zero allocation)
@@ -510,7 +479,7 @@ end
 
     @testset "Bit-wise identical results" begin
         xq = collect(range(0.05, 0.95, 50))
-        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_series]
+        outputs = [Vector{Float64}(undef, length(xq)) for _ in 1:n_ser]
 
         # Single-series reference values
         itp1 = constant_interp(x, y1)

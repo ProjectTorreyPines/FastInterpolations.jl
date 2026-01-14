@@ -241,4 +241,66 @@ const FI = FastInterpolations
         end
     end
 
+    # ========================================
+    # Derivative Support (Phase 4)
+    # ========================================
+
+    @testset "derivative support" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+        ys = [[1.0, 2.0, 3.0, 4.0], [10.0, 20.0, 30.0, 40.0]]
+        sitp = constant_interp(x, ys)
+
+        @testset "deriv=0 returns values (existing behavior)" begin
+            @test sitp(0.5; deriv=0) == sitp(0.5)
+            @test sitp(1.5; deriv=0) == sitp(1.5)
+        end
+
+        @testset "deriv=1 returns zeros" begin
+            @test sitp(0.5; deriv=1) == [0.0, 0.0]
+            @test sitp(1.5; deriv=1) == [0.0, 0.0]
+            @test sitp(2.5; deriv=1) == [0.0, 0.0]
+        end
+
+        @testset "deriv=2 returns zeros" begin
+            @test sitp(0.5; deriv=2) == [0.0, 0.0]
+            @test sitp(1.5; deriv=2) == [0.0, 0.0]
+        end
+
+        @testset "vector evaluation with deriv" begin
+            xq = [0.5, 1.5, 2.5]
+            results_d1 = sitp(xq; deriv=1)
+            @test all(r -> r == zeros(3), results_d1)
+
+            results_d2 = sitp(xq; deriv=2)
+            @test all(r -> r == zeros(3), results_d2)
+        end
+    end
+
+    @testset "derivative with extrapolation" begin
+        x = [0.0, 1.0, 2.0]
+        ys = [[1.0, 2.0, 3.0]]
+        sitp = constant_interp(x, ys; extrap=:constant)
+
+        @testset "outside boundaries derivative is zero" begin
+            @test sitp(-0.5; deriv=1) == [0.0]
+            @test sitp(2.5; deriv=1) == [0.0]
+            @test sitp(-0.5; deriv=2) == [0.0]
+            @test sitp(2.5; deriv=2) == [0.0]
+        end
+    end
+
+    @testset "x_max boundary value preserved" begin
+        x = [0.0, 1.0, 2.0]
+        ys = [[1.0, 2.0, 3.0]]
+        sitp = constant_interp(x, ys)
+
+        @testset "x_max returns last value (CRITICAL)" begin
+            # CRITICAL: x_max should return last value, not second-to-last
+            @test sitp(2.0) == [3.0]  # Must be 3.0, not 2.0
+            @test sitp(2.0; deriv=0) == [3.0]
+            @test sitp(2.0; deriv=1) == [0.0]
+            @test sitp(2.0; deriv=2) == [0.0]
+        end
+    end
+
 end  # testset "ConstantSeriesInterpolant"

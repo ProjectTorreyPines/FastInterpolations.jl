@@ -241,7 +241,7 @@ end
     ::AbstractEvalOp,
     ::UInt8
 ) where {T<:AbstractFloat}
-    throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+    _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
 # :constant - clamp to boundary
@@ -258,18 +258,7 @@ end
     op::AbstractEvalOp,
     side::UInt8
 ) where {T<:AbstractFloat}
-    if op isa EvalValue
-        idx = side == 0x01 ? 1 : n_pts
-        @inbounds @simd for k in axes(out, 1)
-            out[k] = y_point[k, idx]
-        end
-    else
-        # Derivatives of constant extrapolation are zero
-        @inbounds @simd for k in axes(out, 1)
-            out[k] = zero(T)
-        end
-    end
-    return out
+    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
 # :extension - extend using same constant value
@@ -450,25 +439,30 @@ end
 # ========================================
 
 """
-    (sitp::ConstantSeriesInterpolant)(xq::Real)
+    (sitp::ConstantSeriesInterpolant)(xq::Real; deriv=0)
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
 Returns a vector of values, one per y-series.
+
+# Derivative support
+- `deriv=0`: Returns function values
+- `deriv=1,2`: Returns zeros (step function derivative is zero everywhere)
 """
-function (sitp::ConstantSeriesInterpolant{T})(xq::S) where {T<:AbstractFloat, S<:Real}
+function (sitp::ConstantSeriesInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
     out = Vector{T}(undef, n_series(sitp))
-    return sitp(out, xq)
+    return sitp(out, xq; deriv=deriv)
 end
 
 """
-    (sitp::ConstantSeriesInterpolant)(output::AbstractVector, xq::Real)
+    (sitp::ConstantSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0)
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
 function (sitp::ConstantSeriesInterpolant{T})(
     output::AbstractVector{T},
-    xq::S
+    xq::S;
+    deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
     n_ser = n_series(sitp)
 
@@ -480,8 +474,10 @@ function (sitp::ConstantSeriesInterpolant{T})(
     # Build anchor
     aq = _make_anchor(sitp, xq_typed)
 
-    # Evaluate with EvalValue (constant interp has no meaningful derivatives)
-    _eval_series_at_anchor!(output, sitp, aq, EvalValue())
+    # Dispatch on derivative order
+    @_dispatch_deriv deriv => op begin
+        _eval_series_at_anchor!(output, sitp, aq, op)
+    end
     return output
 end
 
@@ -490,39 +486,42 @@ end
 # ========================================
 
 """
-    (sitp::ConstantSeriesInterpolant)(xq::AbstractVector)
+    (sitp::ConstantSeriesInterpolant)(xq::AbstractVector; deriv=0)
 
 Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
 Returns a vector of vectors: one vector per y-series, each containing results for all query points.
 """
 function (sitp::ConstantSeriesInterpolant{T})(
-    xq::AbstractVector{S}
+    xq::AbstractVector{S};
+    deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
     xq_typed = _to_float(xq, T)
     n_query = length(xq_typed)
 
     outputs = [Vector{T}(undef, n_query) for _ in 1:n_series(sitp)]
-    sitp(outputs, xq_typed)
+    sitp(outputs, xq_typed; deriv=deriv)
 
     return outputs
 end
 
 """
-    (sitp::ConstantSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector)
+    (sitp::ConstantSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=0)
 
 Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation).
 
 # Arguments
 - `outputs`: Vector of pre-allocated output buffers (one per y-series)
 - `xq`: Query points
+- `deriv`: Derivative order (0, 1, or 2)
 
 This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
 Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 """
 @with_pool pool function (sitp::ConstantSeriesInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
-    xq::AbstractVector{T}
+    xq::AbstractVector{T};
+    deriv::Int=0
 ) where {T<:AbstractFloat}
     n_query = length(xq)
     n_ser = n_series(sitp)
@@ -543,9 +542,11 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     side_val = sitp.side
     x_min, x_max = T(first(sitp.x)), T(last(sitp.x))
 
-    # Evaluate all series
-    @inbounds for k in 1:n
-        _eval_constant_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, side_val)
+    # Evaluate all series with derivative dispatch
+    @_dispatch_deriv deriv => op begin
+        @inbounds for k in 1:n
+            _eval_constant_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, side_val, op)
+        end
     end
     return outputs
 end
@@ -553,10 +554,11 @@ end
 # Real type wrapper for in-place vector
 function (sitp::ConstantSeriesInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
-    xq::AbstractVector{S}
+    xq::AbstractVector{S};
+    deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
     xq_typed = _to_float(xq, T)
-    return sitp(outputs, xq_typed)
+    return sitp(outputs, xq_typed; deriv=deriv)
 end
 
 """
@@ -573,10 +575,11 @@ Uses argument-passing pattern for optimal performance.
     k::Int,
     aq_vec::AbstractVector{<:_ConstantAnchoredQuery{T}},
     extrap::ExtrapVal,
-    side_val::SideVal
+    side_val::SideVal,
+    op::AbstractEvalOp
 ) where {T<:AbstractFloat}
     @inbounds for j in eachindex(out, aq_vec)
-        out[j] = _eval_constant_series_with_extrap(y, x, n_pts, x_min, x_max, k, aq_vec[j], extrap, side_val)
+        out[j] = _eval_constant_series_with_extrap(y, x, n_pts, x_min, x_max, k, aq_vec[j], extrap, side_val, op)
     end
     return out
 end
@@ -593,26 +596,30 @@ Internal: Evaluate single series at single query point with extrapolation handli
     k::Int,
     aq::_ConstantAnchoredQuery{T},
     extrap::ExtrapVal,
-    side_val::SideVal
+    side_val::SideVal,
+    op::AbstractEvalOp
 ) where {T<:AbstractFloat}
-    # Special case: at right boundary
+    # Special case: at right boundary (MUST be preserved!)
     if aq.xq == x_max
-        @inbounds return y[n_pts, k]
+        if op isa EvalValue
+            @inbounds return y[n_pts, k]
+        else
+            return zero(T)  # Derivatives of step function are zero
+        end
     end
 
     # Inside domain: normal evaluation
     if aq.side == 0x00
-        return _eval_constant_series_anchored(y, k, aq, side_val)
+        return _eval_constant_series_anchored(y, k, aq, side_val, op)
     end
 
     # Outside domain: dispatch on extrap mode
     if extrap === Val(:extension) || extrap === Val(:wrap)
-        return _eval_constant_series_anchored(y, k, aq, side_val)
+        return _eval_constant_series_anchored(y, k, aq, side_val, op)
     elseif extrap === Val(:constant)
-        pt_idx = aq.side == 0x01 ? 1 : n_pts
-        @inbounds return y[pt_idx, k]
+        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op)
     else
-        throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+        _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
 end
 
@@ -623,8 +630,14 @@ Internal: Core constant evaluation for series k at anchored query point.
     y::Matrix{T},
     k::Int,
     aq::_ConstantAnchoredQuery{T},
-    side_val::SideVal
+    side_val::SideVal,
+    op::AbstractEvalOp
 ) where {T<:AbstractFloat}
+    # Derivatives of constant (step) function are zero
+    if !(op isa EvalValue)
+        return zero(T)
+    end
+
     idx = aq.idx
     @inbounds begin
         y_left = y[idx, k]

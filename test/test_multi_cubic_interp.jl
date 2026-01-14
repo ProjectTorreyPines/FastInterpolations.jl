@@ -257,7 +257,7 @@ end
 
     @testset "Invalid deriv=3 throws" begin
         mitp = cubic_interp(x, [y1])
-        @test_throws Exception mitp(0.5; deriv=3)
+        @test_throws ArgumentError mitp(0.5; deriv=3)
     end
 end
 
@@ -523,6 +523,36 @@ end
 
         @test !any(isnan, outputs[1])
         @test !any(isnan, outputs[2])
+    end
+
+    @testset "Scalar extrapolation :constant with derivative" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=:constant)
+
+        # First derivative outside domain should be zero
+        out1 = zeros(2)
+        mitp(out1, -0.1; deriv=1)
+        @test out1[1] ≈ 0.0 atol=1e-10
+        @test out1[2] ≈ 0.0 atol=1e-10
+
+        mitp(out1, 1.1; deriv=1)
+        @test out1[1] ≈ 0.0 atol=1e-10
+        @test out1[2] ≈ 0.0 atol=1e-10
+
+        # Second derivative outside domain should be zero
+        out2 = zeros(2)
+        mitp(out2, -0.1; deriv=2)
+        @test out2[1] ≈ 0.0 atol=1e-10
+        @test out2[2] ≈ 0.0 atol=1e-10
+
+        mitp(out2, 1.1; deriv=2)
+        @test out2[1] ≈ 0.0 atol=1e-10
+        @test out2[2] ≈ 0.0 atol=1e-10
+
+        # Value should still return boundary value
+        out_val = zeros(2)
+        mitp(out_val, -0.1)
+        @test out_val[1] ≈ y1[1] atol=1e-10
+        @test out_val[2] ≈ y2[1] atol=1e-10
     end
 
     @testset "Vector extrapolation :constant with derivative" begin

@@ -20,8 +20,15 @@
 #   data requires mpert² independent splines along the psi direction.
 #
 # Usage:
-#   julia --project=benchmark benchmark/spline_benchmark.jl (from repository root)
-#   julia --project=. spline_benchmark.jl (inside /benchmark folder)
+#   julia --project=benchmark benchmark/spline_benchmark.jl [SIZE]
+#   julia --project=. spline_benchmark.jl [SIZE]
+#
+# SIZE options:
+#   --tiny     Quick smoke test (mpert=10, eval=50)
+#   --small    Fast iteration (mpert=20, eval=100)
+#   --default  Standard benchmark (mpert=100, eval=100)  [default]
+#   --large    Production-like (mpert=200, eval=4000)
+#   --huge     Stress test (mpert=400, eval=10000)
 
 using BenchmarkTools
 using Interpolations
@@ -35,12 +42,33 @@ using Statistics
 # Configuration
 # =============================================================================
 
-const NPSI = 64            # Number of grid points
-# const MPERT = 200          # Matrix dimension (mpert × mpert splines)
-const MPERT = 20          # Matrix dimension (mpert × mpert splines)
-# const N_EVAL_POINTS = 4000 # Evaluation points (query points) 
-# const MPERT = 20          # Matrix dimension (mpert × mpert splines)
-const N_EVAL_POINTS = 4000 # Evaluation points (query points) 
+# Problem size presets: (npsi, mpert, n_eval_points)
+const SIZE_PRESETS = Dict(
+    :tiny    => (32,  10,    50),
+    :small   => (64,  20,   100),
+    :default => (64, 100,   500),
+    :large   => (64, 200,  4000),
+    :huge    => (64, 400, 10000),
+)
+
+function parse_size_arg(args)
+    for arg in args
+        if startswith(arg, "--")
+            key = Symbol(arg[3:end])
+            if haskey(SIZE_PRESETS, key)
+                return key
+            else
+                @warn "Unknown size preset: $arg. Using --default."
+            end
+        end
+    end
+    return :default
+end
+
+const SIZE_KEY = parse_size_arg(ARGS)
+const (NPSI, MPERT, N_EVAL_POINTS) = SIZE_PRESETS[SIZE_KEY]
+
+@info "Benchmark configuration" size=SIZE_KEY npsi=NPSI mpert=MPERT n_eval=N_EVAL_POINTS 
 
 # =============================================================================
 # Test Data Generation
@@ -250,7 +278,7 @@ end
 function print_benchmark_stats(b, label::String)
     med = median(b)
     @printf("    @benchmark details (%s):\n", label)
-    @printf("       ├─ Time: %.4f ± %.4f s\n", med.time / 1e9, std(b.times) / 1e9)
+    @printf("       ├─ Time: %.3f ± %.3f ms\n", med.time / 1e6, std(b.times) / 1e6)
     @printf("       ├─ GC time: %.2f ms (%.1f%%)\n", med.gctime / 1e6, 100 * med.gctime / med.time)
     @printf("       ├─ Allocations: %d (%.2f MiB)\n", med.allocs, med.memory / 1024^2)
     @printf("       └─ Samples: %d, Evals/sample: %d\n", length(b.times), b.params.evals)
@@ -265,26 +293,27 @@ function benchmark_init(init_func; n_splines::Int, verbose::Bool=false)
     init_func()  # warm-up
     GC.gc()
     b = @benchmark $init_func() samples = 5 evals = 2 seconds = 120
-    init_time = median(b).time / 1e9
-    init_std = std(b.times) / 1e9
+    init_time_ms = median(b).time / 1e6
+    init_std_ms = std(b.times) / 1e6
     init_allocs = median(b).allocs
     init_memory = median(b).memory
     verbose && print_benchmark_stats(b, "Init")
-    @printf("   Time per spline: %.2f μs\n", init_time / n_splines * 1e6)
+    @printf("   Time per spline: %.2f μs\n", init_time_ms / n_splines * 1e3)
     println()
-    return (time=init_time, std=init_std, allocs=init_allocs, memory=init_memory, splines=init_func())
+    return (time=init_time_ms, std=init_std_ms, allocs=init_allocs, memory=init_memory, splines=init_func())
 end
 
 """
 Benchmark evaluation and store results.
 The `eval_func` should be a zero-argument closure that performs evaluation.
 `get_matrix` extracts the final matrix for consistency check.
+Note: All times are in milliseconds (ms).
 """
 function benchmark_eval!(
     results::Dict, final_matrices::Dict,
     name::String, api_label::String,
     eval_func, get_matrix;
-    init_time::Float64, init_std::Float64,
+    init_time_ms::Float64, init_std_ms::Float64,
     init_allocs::Int, init_memory::Int,
     total_evals::Int, verbose::Bool=false
 )
@@ -292,15 +321,15 @@ function benchmark_eval!(
     eval_func()  # warm-up
     GC.gc()
     b = @benchmark $eval_func() samples = 5 evals = 2 seconds = 120
-    eval_time = median(b).time / 1e9
-    eval_std = std(b.times) / 1e9
+    eval_time_ms = median(b).time / 1e6
+    eval_std_ms = std(b.times) / 1e6
     verbose && print_benchmark_stats(b, "Eval")
-    @printf("   Evals/sec: %.2e\n", total_evals / eval_time)
-    @printf("   Time per eval: %.2f ns\n", eval_time / total_evals * 1e9)
+    @printf("   Evals/sec: %.2e\n", total_evals / (eval_time_ms / 1e3))
+    @printf("   Time per eval: %.2f ns\n", eval_time_ms / total_evals * 1e6)
     results[name] = (
-        init_time=init_time, init_std=init_std,
+        init_time=init_time_ms, init_std=init_std_ms,
         init_allocs=init_allocs, init_memory=init_memory,
-        eval_time=eval_time, eval_std=eval_std,
+        eval_time=eval_time_ms, eval_std=eval_std_ms,
         eval_allocs=median(b).allocs, eval_memory=median(b).memory
     )
     final_matrices[name] = get_matrix()
@@ -355,13 +384,13 @@ function run_benchmark(; verbose::Bool=false)
         "Interpolations.jl (scalar)", "scalar API",
         () -> run_interpolations_eval_loop!(A, interp_splines, psi_values),
         () -> copy(A);
-        init_time=init_result.time, init_std=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
+        init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
 
     benchmark_eval!(results, final_matrices,
         "Interpolations.jl (broadcast)", "broadcast API",
         () -> run_interpolations_broadcast!(A_all, interp_splines, psi_values),
         () -> copy(A_all[end, :, :]);
-        init_time=init_result.time, init_std=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
+        init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
 
     # -------------------------------------------------------------------------
     # FastInterpolations.jl
@@ -375,13 +404,13 @@ function run_benchmark(; verbose::Bool=false)
         "FastInterpolations.jl (scalar)", "scalar API",
         () -> run_fast_interpolations_eval_loop!(A, fast_splines, psi_values),
         () -> copy(A);
-        init_time=init_result.time, init_std=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
+        init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
 
     benchmark_eval!(results, final_matrices,
         "FastInterpolations.jl (vector)", "vector API (in-place)",
         () -> run_fast_interpolations_vector_API!(A_all, fast_splines, psi_values),
         () -> copy(A_all[end, :, :]);
-        init_time=init_result.time, init_std=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
+        init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
 
     # -------------------------------------------------------------------------
     # FastInterpolations.jl (MultiCubicInterpolant API)
@@ -404,13 +433,13 @@ function run_benchmark(; verbose::Bool=false)
         "FastInterpolations.jl (Multi+scalar)", "scalar API (anchor reuse)",
         () -> run_multi_cubic_eval_loop!(A_multi, mitp, psi_values),
         () -> reshape(copy(A_multi), MPERT, MPERT);
-        init_time=init_result.time, init_std=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
+        init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
 
     benchmark_eval!(results, final_matrices,
         "FastInterpolations.jl (Multi+vector)", "vector API (in-place, zero-alloc)",
         () -> run_multi_cubic_vector_API!(A_multi_all, mitp, psi_values),
         () -> reshape([buf[end] for buf in A_multi_all], MPERT, MPERT);
-        init_time=init_result.time, init_std=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
+        init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
 
     # -------------------------------------------------------------------------
     # DataInterpolations.jl
@@ -424,13 +453,13 @@ function run_benchmark(; verbose::Bool=false)
         "DataInterpolations.jl (scalar)", "scalar API",
         () -> run_data_interpolations_eval_loop!(A, data_splines, psi_values),
         () -> copy(A);
-        init_time=init_result.time, init_std=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
+        init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
 
     benchmark_eval!(results, final_matrices,
         "DataInterpolations.jl (vector)", "vector API (in-place)",
         () -> run_data_interpolations_vector_API!(A_all, data_splines, psi_values),
         () -> copy(A_all[end, :, :]);
-        init_time=init_result.time, init_std=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
+        init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_spline_evals, verbose=verbose)
 
 
     # -------------------------------------------------------------------------
@@ -452,18 +481,22 @@ function run_benchmark(; verbose::Bool=false)
 
     # --- Part 1: One-shot (Total = Init + Eval) ---
     println("="^100)
-    println("Summary: Total (Init + Eval)")
+    println("Summary: Total (Init + Eval) vs DataInterpolations.jl scalar")
     println("="^100)
-    @printf("%-38s %16s %10s %12s\n", "Package", "Total (s)", "Allocs", "Memory")
+    @printf("%-38s %18s %8s %10s %12s\n", "Package", "Total (ms)", "Speedup", "Allocs", "Memory")
     println("-"^100)
 
+    baseline_total = results["DataInterpolations.jl (scalar)"].init_time + results["DataInterpolations.jl (scalar)"].eval_time
     for (name, r) in sort(collect(results), by=x -> x[2].init_time + x[2].eval_time)
         total_time = r.init_time + r.eval_time
         total_std = sqrt(r.init_std^2 + r.eval_std^2)
         total_allocs = r.init_allocs + r.eval_allocs
         total_memory = r.init_memory + r.eval_memory
-        main_part = @sprintf("%-38s %7.4f ± %6.4f", name, total_time, total_std)
+        speedup = baseline_total / total_time
+        main_part = @sprintf("%-38s %8.3f ± %6.3f", name, total_time, total_std)
         printstyled(main_part; color=get_color(name))
+        speedup_part = @sprintf(" %7.2fx", speedup)
+        print(speedup_part)
         alloc_part = @sprintf(" %10d %10.2f MiB", total_allocs, total_memory / 1024^2)
         print(alloc_part)
         println()
@@ -474,14 +507,14 @@ function run_benchmark(; verbose::Bool=false)
     println("="^100)
     println("Summary: Initialization (vs DataInterpolations.jl scalar)")
     println("="^100)
-    @printf("%-38s %16s %14s %8s %10s %12s\n", "Package", "Init (s)", "Splines/sec", "Speedup", "Allocs", "Memory")
+    @printf("%-38s %18s %14s %8s %10s %12s\n", "Package", "Init (ms)", "Splines/sec", "Speedup", "Allocs", "Memory")
     println("-"^100)
 
     baseline_init = results["DataInterpolations.jl (scalar)"].init_time
     for (name, r) in sort(collect(results), by=x -> x[2].init_time)
-        splines_per_sec = n_splines / r.init_time
+        splines_per_sec = n_splines / (r.init_time / 1e3)  # ms → s for rate
         speedup = baseline_init / r.init_time
-        main_part = @sprintf("%-38s %7.4f ± %6.4f %14.2e", name, r.init_time, r.init_std, splines_per_sec)
+        main_part = @sprintf("%-38s %8.3f ± %6.3f %14.2e", name, r.init_time, r.init_std, splines_per_sec)
         printstyled(main_part; color=get_color(name))
         speedup_part = @sprintf(" %7.2fx", speedup)
         print(speedup_part)
@@ -495,14 +528,14 @@ function run_benchmark(; verbose::Bool=false)
     println("="^100)
     println("Summary: Evaluation (vs DataInterpolations.jl scalar)")
     println("="^100)
-    @printf("%-38s %16s %14s %8s %10s %12s\n", "Package", "Eval (s)", "Evals/sec", "Speedup", "Allocs", "Memory")
+    @printf("%-38s %18s %14s %8s %10s %12s\n", "Package", "Eval (ms)", "Evals/sec", "Speedup", "Allocs", "Memory")
     println("-"^100)
 
     baseline_eval = results["DataInterpolations.jl (scalar)"].eval_time
     for (name, r) in sort(collect(results), by=x -> x[2].eval_time)
-        evals_per_sec = total_spline_evals / r.eval_time
+        evals_per_sec = total_spline_evals / (r.eval_time / 1e3)  # ms → s for rate
         speedup = baseline_eval / r.eval_time
-        main_part = @sprintf("%-38s %7.4f ± %6.4f %14.2e", name, r.eval_time, r.eval_std, evals_per_sec)
+        main_part = @sprintf("%-38s %8.3f ± %6.3f %14.2e", name, r.eval_time, r.eval_std, evals_per_sec)
         printstyled(main_part; color=get_color(name))
         speedup_part = @sprintf(" %7.2fx", speedup)
         print(speedup_part)

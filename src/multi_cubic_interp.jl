@@ -224,7 +224,7 @@ end
     throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
 end
 
-# :constant - clamp to boundary
+# :constant - clamp to boundary (value only, derivatives are zero)
 @inline function _eval_multi_point_extrap!(
     out::AbstractVector{T},
     y_point::Matrix{T},
@@ -234,12 +234,19 @@ end
     ::T,
     ::_CubicAnchoredQuery{T},
     ::Val{:constant},
-    ::AbstractEvalOp,
+    op::AbstractEvalOp,
     side::UInt8
 ) where {T<:AbstractFloat}
-    idx = side == 0x01 ? 1 : n_pts
-    @inbounds @simd for k in axes(out, 1)
-        out[k] = y_point[k, idx]
+    if op isa EvalValue
+        idx = side == 0x01 ? 1 : n_pts
+        @inbounds @simd for k in axes(out, 1)
+            out[k] = y_point[k, idx]
+        end
+    else
+        # Derivatives of constant extrapolation are zero
+        @inbounds @simd for k in axes(out, 1)
+            out[k] = zero(T)
+        end
     end
     return out
 end

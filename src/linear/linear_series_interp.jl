@@ -277,23 +277,6 @@ end
     return out
 end
 
-# :wrap - periodic (anchor already adjusted)
-@inline function _eval_linear_series_point_extrap!(
-    out::AbstractVector{T},
-    y_point::Matrix{T},
-    x::Vector{T},
-    ::Int,
-    ::T,
-    ::T,
-    aq::_LinearAnchoredQuery{T},
-    ::Val{:wrap},
-    op::AbstractEvalOp,
-    ::UInt8
-) where {T<:AbstractFloat}
-    # Anchor was already wrapped, use normal evaluation
-    return _eval_linear_series_point!(out, y_point, x, aq, op)
-end
-
 # ========================================
 # Constructors
 # ========================================

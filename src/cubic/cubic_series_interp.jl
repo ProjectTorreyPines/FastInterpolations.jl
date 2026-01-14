@@ -289,23 +289,6 @@ end
     return out
 end
 
-# :wrap - periodic (anchor already adjusted)
-@inline function _eval_series_point_extrap!(
-    out::AbstractVector{T},
-    y_point::Matrix{T},
-    z_point::Matrix{T},
-    ::Int,
-    ::T,
-    ::T,
-    aq::_CubicAnchoredQuery{T},
-    ::Val{:wrap},
-    op::AbstractEvalOp,
-    ::UInt8
-) where {T<:AbstractFloat}
-    # Anchor was already wrapped, use normal evaluation
-    return _eval_series_point!(out, y_point, z_point, aq, op)
-end
-
 # ========================================
 # Internal: Coefficient Solver
 # ========================================

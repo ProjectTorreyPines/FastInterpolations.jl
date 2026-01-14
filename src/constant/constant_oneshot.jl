@@ -1,3 +1,10 @@
+# ========================================
+# Constant Interpolation Oneshot API
+# ========================================
+# Zero-allocation constant interpolation functions.
+# Type definitions in constant_types.jl.
+# Callable methods (2-arg form) in constant_interpolant.jl.
+
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                      CONSTANT (STEP) INTERPOLATION                        ║
 # ║              Piecewise constant interpolation with side options           ║
@@ -102,112 +109,6 @@ Evaluation flow:
     h = xR - xL
     dL = xi - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx+1], h, dL, side)
-end
-
-
-# ========================================
-# ConstantInterpolant Struct
-# ========================================
-
-"""
-    ConstantInterpolant{T,X,Y}
-
-Lightweight callable interpolant for constant (step) interpolation.
-Returned by `constant_interp(x, y)` (2-argument form).
-
-# Fields
-- `x::X`: x-coordinates (sorted)
-- `y::Y`: y-values
-- `mode::ExtrapVal`: Extrapolation mode
-- `side::SideVal`: Side selection (:nearest, :left, :right)
-
-# Usage
-```julia
-itp = constant_interp(x, y)  # default: extrap=:none, side=:nearest
-val = itp(0.5)               # scalar evaluation
-vals = itp.(query_points)    # broadcast
-
-# With options
-itp_left = constant_interp(x, y; side=:left)
-itp_wrap = constant_interp(x, y; extrap=:wrap, side=:right)
-```
-"""
-struct ConstantInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}} <: AbstractInterpolant{T}
-    x::X
-    y::Y
-    mode::ExtrapVal
-    side::SideVal
-
-    function ConstantInterpolant(
-        x::X, y::Y;
-        extrap::Symbol=:none,
-        side::Symbol=:nearest
-    ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
-        @assert length(x) == length(y) "x and y must have same length"
-        @assert length(x) >= 2 "x must have at least 2 elements"
-
-        @_dispatch_extrap extrap => ev begin
-            @_dispatch_side side => sv begin
-                return new{T,X,Y}(x, y, ev, sv)
-            end
-        end
-    end
-end
-
-# ─────────────────────────────────────────────────────────────
-# Scalar call - hot path (inlined for broadcast fusion)
-# ─────────────────────────────────────────────────────────────
-@inline function (itp::ConstantInterpolant{T})(xi::T; deriv::Int=0) where {T<:AbstractFloat}
-    @_dispatch_deriv deriv => op begin
-        _constant_eval_at_point(itp.x, itp.y, xi, itp.mode, itp.side, op)
-    end
-end
-
-# Real scalar wrapper - delegates to T method
-@inline function (itp::ConstantInterpolant{T})(xi::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
-    itp(T(xi); deriv=deriv)
-end
-
-# ─────────────────────────────────────────────────────────────
-# Vector call (allocating)
-# ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{T})(xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
-    xi_typed = _to_float(xi, T)
-    output = Vector{T}(undef, length(xi_typed))
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
-        @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _constant_eval_at_point(itp.x, itp.y, xi_typed[i], itp.mode, itp.side, op)
-        end
-    end
-    return output
-end
-
-# ─────────────────────────────────────────────────────────────
-# In-place vector call (zero allocation)
-# ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat}
-    @assert length(output) == length(xi) "output length must match xi length"
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi, itp.mode)
-        @inbounds for i in eachindex(xi, output)
-            output[i] = _constant_eval_at_point(itp.x, itp.y, xi[i], itp.mode, itp.side, op)
-        end
-    end
-    return output
-end
-
-# In-place with type conversion
-function (itp::ConstantInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
-    @assert length(output) == length(xi) "output length must match xi length"
-    xi_typed = _to_float(xi, T)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
-        @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _constant_eval_at_point(itp.x, itp.y, xi_typed[i], itp.mode, itp.side, op)
-        end
-    end
-    return output
 end
 
 
@@ -353,47 +254,6 @@ function constant_interp(
 end
 
 
-# ========================================
-# 2-Argument Form: Return Callable
-# ========================================
-
-"""
-    constant_interp(x, y; extrap=:none, side=:nearest) -> ConstantInterpolant
-
-Create a callable interpolant for broadcast fusion and reuse.
-
-# Arguments
-- `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
-- `y::AbstractVector`: y-values
-- `extrap::Symbol`: Extrapolation mode
-- `side::Symbol`: Side selection
-
-# Returns
-`ConstantInterpolant` object for scalar/broadcast evaluation.
-
-# Example
-```julia
-x = [0.0, 1.0, 2.0, 3.0]
-y = [10.0, 20.0, 30.0, 40.0]
-
-itp = constant_interp(x, y)
-itp(0.5)           # 10.0
-itp.([0.5, 1.5])   # [10.0, 20.0]
-
-# Fused broadcast (optimal)
-result = @. coef * itp(query)
-```
-"""
-function constant_interp(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT};
-    extrap::Symbol=:none,
-    side::Symbol=:nearest
-) where {FT<:AbstractFloat}
-    return ConstantInterpolant(x, y; extrap, side)
-end
-
-
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                     GENERIC WRAPPERS - CONVENIENCE                        ║
 # ║              Auto-promote Real types to Float (type conversion)           ║
@@ -467,16 +327,3 @@ function constant_interp!(
     return output
 end
 
-# ========================================
-# 2-arg Callable Real → Float wrapper
-# ========================================
-
-function constant_interp(
-    x::AbstractVector{T},
-    y::AbstractVector{T};
-    extrap::Symbol=:none,
-    side::Symbol=:nearest
-) where {T<:Real}
-    FT = float(T)
-    return ConstantInterpolant(_to_float(x, FT), _to_float(y, FT); extrap, side)
-end

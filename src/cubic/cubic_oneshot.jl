@@ -1,105 +1,11 @@
-"""
-    cubic_interp.jl
-
-Zero-allocation cubic spline interpolation with reusable LU factorization.
-
-# Design Philosophy
-
-1. Hot-path functions for zero-allocation evaluation
-2. LU decomposition caching to avoid repeated factorizations
-3. Support for varying y values with same x grid
-4. Support for varying query points (x_query)
-
-# Use Cases
-
-**Scenario 1: One-shot interpolation**
-```julia
-result = cubic_interp(x, y, x_query)  # Allocating version
-```
-
-**Scenario 2: Fixed grid, multiple y vectors (RECOMMENDED)**
-```julia
-cache = CubicSplineCache(x)
-for y_i in [y1, y2, ..., y9]
-    result = cubic_interp(cache, y_i, x_query)
-end
-```
-This saves 91% allocations and 87% memory when interpolating multiple fields.
-
-# Mathematical Background
-
-Natural cubic spline solves the tridiagonal system:
-    A * z = d
-
-where:
-- A: tridiagonal matrix depending ONLY on x (grid geometry)
-- d: RHS vector depending on y (function values)
-- z: second derivative coefficients at knots
-
-Key optimization: A can be LU-factorized once and reused for different y.
-"""
-
-# Type definitions in cubic_types.jl
-# System solvers in cubic_solver.jl
-# Evaluation functions in cubic_eval.jl
-
 # ========================================
-# CubicSplineCache Constructor
+# Cubic Spline Oneshot API
 # ========================================
-
-"""
-    CubicSplineCache(x::AbstractVector{T}; bc=NaturalBC()) where {T<:AbstractFloat}
-
-Construct a cubic spline cache for grid points `x`.
-
-Pre-computes and factorizes the tridiagonal matrix that depends only on x geometry.
-This factorization can be reused for interpolating different y vectors.
-
-# Arguments
-- `x::AbstractVector{T}`: Grid points (must be sorted, length >= 3)
-- `bc`: Boundary condition specification:
-  - `NaturalBC()`: Zero curvature at both ends (default)
-  - `ClampedBC()`: Zero slope at both ends
-  - `PeriodicBC()`: Periodic boundary condition
-  - `Deriv1(val)` or `Deriv2(val)`: Symmetric BC (same at both ends)
-  - `BCPair(Deriv1(v1), Deriv2(v2))`: Asymmetric BC pair
-
-# Example
-```julia
-x = range(0.0, 1.0, 51)
-cache = CubicSplineCache(x)                              # Natural BC (default)
-cache = CubicSplineCache(x; bc=ClampedBC())              # Zero slope at both ends
-cache = CubicSplineCache(x; bc=Deriv1(0.5))                  # Slope=0.5 at both ends
-cache = CubicSplineCache(x; bc=BCPair(Deriv1(0.5), Deriv2(0)))   # Mixed: slope left, natural right
-cache_periodic = CubicSplineCache(x; bc=PeriodicBC())    # Periodic BC
-
-# Reuse for multiple y vectors
-y1 = sin.(x)
-y2 = cos.(x)
-result1 = cubic_interp(cache, y1, [0.25, 0.75])
-result2 = cubic_interp(cache, y2, [0.25, 0.75])
-```
-"""
-function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC=NaturalBC()) where {T<:AbstractFloat}
-    # Periodic BC
-    if _is_periodic_bc(bc)
-        return _build_periodic_cache(x)
-    end
-
-    # Normalize BC to BCPair (NaturalBC/ClampedBC → BCPair, PointBC → symmetric BCPair)
-    bc_normalized = _normalize_bc(bc, T)
-
-    # All non-periodic BC use unified BCPair path
-    return _build_derivative_bc_cache(x, bc_normalized.left, bc_normalized.right)
-end
-
-# ========================================
-# Helper Functions
-# ========================================
-
-# Note: _is_periodic_bc is defined in bc_types.jl
-# Note: _get_cache_and_solve! helpers have been removed for thread-safety.
-#       All functions now use _get_cubic_cache + @with_pool pattern.
+# Zero-allocation cubic spline interpolation functions.
+# CubicSplineCache constructor is in cubic_cache.jl.
+# Type definitions in cubic_types.jl.
+# System solvers in cubic_solver.jl.
+# Evaluation functions in cubic_eval.jl.
 
 # ========================================
 # In-Place Vector API

@@ -1,7 +1,6 @@
-# Tests for LinearMultiInterpolant - Multi-Y linear interpolation
-#
-# Multi-Y interpolation: multiple y-data series sharing the same x-grid.
-# Uses composition approach: wraps existing LinearInterpolant objects.
+# Tests for LinearSeriesInterpolant (formerly LinearMultiInterpolant)
+# Multi-Y linear interpolation: multiple y-data series sharing the same x-grid.
+# Uses unified matrix storage for optimal performance.
 #
 # ALLOC_THRESHOLD is defined in runtests.jl
 
@@ -19,30 +18,31 @@
 
     @testset "Construction from Vector of y-series" begin
         mitp = linear_interp(x, [y1, y2, y3])
-        @test mitp isa FI.LinearMultiInterpolant
+        @test mitp isa FI.LinearSeriesInterpolant
 
-        # Access internal interpolants
-        @test hasfield(typeof(mitp), :itps)
-        @test length(mitp.itps) == 3
-        @test all(itp -> itp isa LinearInterpolant, mitp.itps)
+        # Check matrix storage (n_points × n_series)
+        @test hasfield(typeof(mitp), :y)
+        @test FI.n_series(mitp) == 3
+        @test size(mitp.y, 1) == length(x)  # n_points
+        @test size(mitp.y, 2) == 3          # n_series
     end
 
     @testset "Construction from Matrix (columns as series)" begin
         Y = hcat(y1, y2, y3)  # 101×3 matrix
         mitp = linear_interp(x, Y)
-        @test mitp isa FI.LinearMultiInterpolant
-        @test length(mitp.itps) == 3
+        @test mitp isa FI.LinearSeriesInterpolant
+        @test FI.n_series(mitp) == 3
     end
 
     @testset "Single series works" begin
         mitp = linear_interp(x, [y1])
-        @test mitp isa FI.LinearMultiInterpolant
-        @test length(mitp.itps) == 1
+        @test mitp isa FI.LinearSeriesInterpolant
+        @test FI.n_series(mitp) == 1
     end
 
     @testset "Type inference - Float64" begin
         mitp = linear_interp(x, [y1, y2])
-        @test eltype(mitp.itps) <: LinearInterpolant{Float64}
+        @test mitp isa FI.LinearSeriesInterpolant{Float64}
     end
 
     @testset "Type inference - Float32" begin
@@ -50,12 +50,12 @@
         y1_32 = Float32.(y1)
         y2_32 = Float32.(y2)
         mitp = linear_interp(x32, [y1_32, y2_32])
-        @test eltype(mitp.itps) <: LinearInterpolant{Float32}
+        @test mitp isa FI.LinearSeriesInterpolant{Float32}
     end
 
-    @testset "Subtypes AbstractMultiInterpolant" begin
+    @testset "Subtypes AbstractSeriesInterpolant" begin
         mitp = linear_interp(x, [y1, y2])
-        @test mitp isa AbstractMultiInterpolant{Float64}
+        @test mitp isa AbstractSeriesInterpolant{Float64}
     end
 end
 
@@ -78,8 +78,7 @@ end
     @testset "Extrap propagation" begin
         for extrap_mode in (:none, :constant, :extension, :wrap)
             mitp = linear_interp(x, [y1, y2]; extrap=extrap_mode)
-            @test mitp.itps[1].mode === Val(extrap_mode)
-            @test mitp.itps[2].mode === Val(extrap_mode)
+            @test mitp.extrap === Val(extrap_mode)
         end
     end
 end
@@ -160,7 +159,7 @@ end
 
     @testset "Size assertion on output mismatch" begin
         output_wrong = Vector{Float64}(undef, 2)  # Wrong size
-        @test_throws AssertionError mitp(output_wrong, 0.35)
+        @test_throws DimensionMismatch mitp(output_wrong, 0.35)
     end
 
     @testset "In-place with derivatives" begin
@@ -307,39 +306,18 @@ end
 
     @testset "Size assertion on container mismatch" begin
         outputs_wrong = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50)]
-        @test_throws AssertionError mitp(outputs_wrong, xq)
+        @test_throws DimensionMismatch mitp(outputs_wrong, xq)
     end
 
     @testset "Size assertion on buffer mismatch" begin
         outputs = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
-        @test_throws AssertionError mitp(outputs, xq)
-    end
-
-    @testset "ZERO ALLOCATION with pre-built anchors (critical)" begin
-        FI = FastInterpolations
-        out1 = Vector{Float64}(undef, 50)
-        out2 = Vector{Float64}(undef, 50)
-        out3 = Vector{Float64}(undef, 50)
-        outputs = [out1, out2, out3]
-
-        # Pre-build anchors
-        aq_vec = FI._anchor_query(x, xq, Val(:linear))
-
-        # Warmup
-        mitp(outputs, aq_vec)
-        mitp(outputs, aq_vec)
-
-        allocs = @allocated mitp(outputs, aq_vec)
-        @test allocs <= ALLOC_THRESHOLD
+        @test_throws DimensionMismatch mitp(outputs, xq)
     end
 end
 
 # ============================================================================
 # Phase 4: Safety & Integration Tests
 # ============================================================================
-
-# Note: LinearInterpolant stores references (not copies) for efficiency.
-# Use copy() if immutability is needed. This differs from CubicInterpolant.
 
 @testset "LinearMultiInterpolant - Float32 Support" begin
     FI = FastInterpolations
@@ -379,7 +357,7 @@ end
     @testset "Large number of series (10+)" begin
         ys = [sin.(k .* x) for k in 1:12]
         mitp = linear_interp(x, ys)
-        @test length(mitp.itps) == 12
+        @test FI.n_series(mitp) == 12
 
         result = mitp(0.5)
         @test length(result) == 12
@@ -423,7 +401,7 @@ end
         y2 = cos.(Float64.(x_int))
 
         mitp = linear_interp(x_int, [y1, y2])
-        @test mitp isa FI.LinearMultiInterpolant{Float64}
+        @test mitp isa FI.LinearSeriesInterpolant{Float64}
 
         result = mitp(5.5)
         @test length(result) == 2
@@ -435,8 +413,8 @@ end
         Y_int = [i * j for i in 1:10, j in 1:3]
 
         mitp = linear_interp(x_int, Y_int)
-        @test mitp isa FI.LinearMultiInterpolant{Float64}
-        @test length(mitp.itps) == 3
+        @test mitp isa FI.LinearSeriesInterpolant{Float64}
+        @test FI.n_series(mitp) == 3
 
         result = mitp(5.5)
         @test length(result) == 3
@@ -468,102 +446,7 @@ end
 end
 
 # ============================================================================
-# Phase 6: Zero-Allocation Tests for Derivatives
-# ============================================================================
-
-@testset "LinearMultiInterpolant - Zero-Allocation Derivative Tests" begin
-    FI = FastInterpolations
-
-    x = collect(range(0.0, 1.0, 101))
-    y1 = sin.(2π .* x)
-    y2 = cos.(2π .* x)
-    y3 = exp.(-3 .* x)
-
-    mitp = linear_interp(x, [y1, y2, y3]; extrap=:extension)
-    xq = collect(range(0.1, 0.9, 50))
-
-    @testset "Container in-place with deriv=1 - zero allocation" begin
-        out1 = Vector{Float64}(undef, 50)
-        out2 = Vector{Float64}(undef, 50)
-        out3 = Vector{Float64}(undef, 50)
-        outputs = [out1, out2, out3]
-
-        # Pre-build anchors
-        aq_vec = FI._anchor_query(x, xq, Val(:linear))
-
-        # Warmup
-        mitp(outputs, aq_vec; deriv=1)
-        mitp(outputs, aq_vec; deriv=1)
-
-        allocs = @allocated mitp(outputs, aq_vec; deriv=1)
-        @test allocs <= ALLOC_THRESHOLD
-    end
-
-    @testset "Derivative correctness with anchors" begin
-        out1 = Vector{Float64}(undef, 50)
-        out2 = Vector{Float64}(undef, 50)
-        out3 = Vector{Float64}(undef, 50)
-        outputs = [out1, out2, out3]
-
-        aq_vec = FI._anchor_query(x, xq, Val(:linear))
-
-        # Get derivatives via anchored path
-        mitp(outputs, aq_vec; deriv=1)
-
-        # Compare with individual interpolants
-        itp1 = linear_interp(x, y1; extrap=:extension)
-        itp2 = linear_interp(x, y2; extrap=:extension)
-        itp3 = linear_interp(x, y3; extrap=:extension)
-
-        expected1 = Vector{Float64}(undef, 50)
-        expected2 = Vector{Float64}(undef, 50)
-        expected3 = Vector{Float64}(undef, 50)
-
-        itp1(expected1, aq_vec; deriv=1)
-        itp2(expected2, aq_vec; deriv=1)
-        itp3(expected3, aq_vec; deriv=1)
-
-        @test out1 ≈ expected1 atol=1e-14
-        @test out2 ≈ expected2 atol=1e-14
-        @test out3 ≈ expected3 atol=1e-14
-    end
-end
-
-# ============================================================================
-# Phase 7: Additional Size Assertion Tests
-# ============================================================================
-
-@testset "LinearMultiInterpolant - Size Assertions" begin
-    FI = FastInterpolations
-
-    x = collect(range(0.0, 1.0, 101))
-    y1 = sin.(2π .* x)
-    y2 = cos.(2π .* x)
-    y3 = exp.(-3 .* x)
-
-    mitp = linear_interp(x, [y1, y2, y3]; extrap=:extension)
-    xq = collect(range(0.1, 0.9, 50))
-
-    @testset "Size assertion on buffer mismatch" begin
-        outputs = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
-        @test_throws AssertionError mitp(outputs, xq)
-    end
-
-    @testset "Size assertion with pre-built anchors" begin
-        aq_vec = FI._anchor_query(x, xq, Val(:linear))
-
-        # Wrong number of output buffers
-        outputs_wrong = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50)]
-        @test_throws AssertionError mitp(outputs_wrong, aq_vec)
-
-        # Wrong buffer size
-        outputs_bad = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
-        @test_throws AssertionError mitp(outputs_bad, aq_vec)
-    end
-end
-
-# ============================================================================
-# Phase 4: Zero-Allocation Vector API (Pooled Anchors)
+# Phase 6: Zero-Allocation Tests
 # ============================================================================
 
 @testset "LinearMultiInterpolant - Zero-allocation vector API (pooled anchors)" begin
@@ -642,5 +525,26 @@ end
 
         allocs = @allocated mitp(outputs, xq; deriv=1)
         @test allocs <= ALLOC_THRESHOLD
+    end
+end
+
+# ============================================================================
+# Phase 7: Size Assertions
+# ============================================================================
+
+@testset "LinearMultiInterpolant - Size Assertions" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = exp.(-3 .* x)
+
+    mitp = linear_interp(x, [y1, y2, y3]; extrap=:extension)
+    xq = collect(range(0.1, 0.9, 50))
+
+    @testset "Size assertion on buffer mismatch" begin
+        outputs = [Vector{Float64}(undef, 50), Vector{Float64}(undef, 50), Vector{Float64}(undef, 30)]
+        @test_throws DimensionMismatch mitp(outputs, xq)
     end
 end

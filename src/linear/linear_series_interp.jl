@@ -1,0 +1,638 @@
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║                    LINEAR SERIES INTERPOLATION                            ║
+# ║         Multiple y-data series sharing the same x-grid                    ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+#
+# Phase E.1: Unified matrix storage for optimal performance.
+# Key optimization: Adaptive layout with lazy transpose for scalar queries.
+#
+# Include order: ... → linear_anchor.jl → linear_series_interp.jl
+#
+
+# ========================================
+# Type Definition
+# ========================================
+
+"""
+    LinearSeriesInterpolant{T}
+
+Multi-series linear interpolant with unified matrix storage and SIMD optimization.
+Shares a single x-grid across N y-series for efficient batch evaluation.
+
+# Type Parameters
+- `T`: Float type (Float32 or Float64)
+
+# Fields
+- `x::Vector{T}`: Shared x-grid
+- `y::Matrix{T}`: Function values (n_points × n_series) series-contiguous
+- `_transpose::LazyTranspose{T}`: Lazy point-contiguous layout for scalar SIMD
+- `extrap::ExtrapVal`: Extrapolation mode
+
+# Memory Layout
+Primary storage is series-contiguous (n_points × n_series):
+- `y[i, k]` = value of series k at grid point i
+- `y[:, k]` is contiguous → optimal for vector queries
+
+Lazy transpose (n_series × n_points) for scalar queries:
+- `y_point[:, i]` is contiguous → optimal for SIMD scalar queries
+
+# Usage
+```julia
+x = collect(range(0.0, 1.0, 101))
+y1, y2, y3 = sin.(2π .* x), cos.(2π .* x), exp.(-x)
+
+sitp = linear_interp(x, [y1, y2, y3])
+
+# Scalar evaluation
+vals = sitp(0.5)            # Returns Vector{Float64} of length 3
+sitp(output, 0.5)           # In-place
+
+# Vector evaluation
+vals = sitp([0.1, 0.5, 0.9])    # Returns Vector of Vectors
+sitp([out1, out2, out3], xq)    # In-place (zero allocation)
+```
+
+# Performance
+- Vector queries use series-contiguous layout directly
+- Scalar queries trigger lazy transpose on first call
+"""
+mutable struct LinearSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
+    const x::Vector{T}                    # Shared x-grid
+    const y::Matrix{T}                    # Series-contiguous y (n_points × n_series)
+    const _transpose::LazyTranspose{T}    # Lazy point-contiguous layout
+    const extrap::ExtrapVal               # Extrapolation mode
+
+    function LinearSeriesInterpolant(
+        x::Vector{T},
+        y::Matrix{T},
+        extrap::ExtrapVal
+    ) where {T<:AbstractFloat}
+        new{T}(x, y, LazyTranspose{T}(), extrap)
+    end
+end
+
+# Backward compatibility alias
+const LinearMultiInterpolant = LinearSeriesInterpolant
+
+# ========================================
+# Required Trait Implementations
+# ========================================
+
+"""Check if wrap mode is active (for anchor construction)."""
+@inline _should_wrap(sitp::LinearSeriesInterpolant) = sitp.extrap === Val(:wrap)
+
+"""Number of series in the interpolant."""
+@inline n_series(sitp::LinearSeriesInterpolant) = size(sitp.y, 2)
+
+"""Number of grid points in the interpolant."""
+@inline n_points(sitp::LinearSeriesInterpolant) = size(sitp.y, 1)
+
+"""Return the x-grid vector."""
+@inline _get_grid(sitp::LinearSeriesInterpolant) = sitp.x
+
+"""Return the extrapolation mode."""
+@inline _get_extrap(sitp::LinearSeriesInterpolant) = sitp.extrap
+
+# ========================================
+# Series Interface Traits
+# ========================================
+
+"""Return the interpolation method kind for kernel dispatch."""
+@inline _method_kind(::Type{<:LinearSeriesInterpolant}) = Val(:linear)
+
+"""
+    _make_anchor(sitp::LinearSeriesInterpolant, xq::T) -> _LinearAnchoredQuery{T}
+
+Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
+"""
+@inline function _make_anchor(sitp::LinearSeriesInterpolant{T}, xq::T) where T
+    return _linear_anchor_query_impl(sitp.x, xq, _should_wrap(sitp))
+end
+
+"""
+    _eval_series_at_anchor!(output, sitp::LinearSeriesInterpolant, aq, op)
+
+Evaluate all series at the given anchor point. Required trait for AbstractSeriesInterpolant.
+Uses point-contiguous layout for SIMD optimization.
+"""
+@inline function _eval_series_at_anchor!(
+    output::AbstractVector{T},
+    sitp::LinearSeriesInterpolant{T},
+    aq::_LinearAnchoredQuery{T},
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    y_point = _ensure_point_layout!(sitp)
+    n_pts = n_points(sitp)
+    x_min, x_max = T(first(sitp.x)), T(last(sitp.x))
+
+    _eval_linear_series_point_with_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, op)
+    return output
+end
+
+# ========================================
+# Lazy Point-Layout Management
+# ========================================
+
+"""
+    _ensure_point_layout!(sitp::LinearSeriesInterpolant{T}) -> y_point
+
+Ensure point-contiguous layout exists. Delegates to shared LazyTranspose infrastructure.
+"""
+@inline function _ensure_point_layout!(sitp::LinearSeriesInterpolant{T}) where T
+    return _ensure_transpose!(sitp._transpose, sitp.y)
+end
+
+"""
+    precompute_transpose!(sitp::LinearSeriesInterpolant) -> sitp
+
+Pre-allocate point-contiguous matrix for scalar queries.
+Call before hot loops to avoid first-call latency.
+"""
+function precompute_transpose!(sitp::LinearSeriesInterpolant)
+    _ensure_point_layout!(sitp)
+    return sitp
+end
+
+# ========================================
+# SIMD Scalar Evaluation Kernels
+# ========================================
+
+"""
+    _eval_linear_series_point!(out, y_point, x, aq, op)
+
+SIMD-optimized evaluation for point-contiguous layout (n_series × n_points).
+Contiguous column access enables vectorization across series dimension.
+"""
+@inline function _eval_linear_series_point!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    x::Vector{T},
+    aq::_LinearAnchoredQuery{T},
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    idx = aq.idx
+    idx1 = idx + 1
+
+    # Get interval data
+    @inbounds begin
+        xL = x[idx]
+        xR = x[idx1]
+    end
+    h = xR - xL
+    dL = aq.xq - xL
+
+    # SIMD loop over series (contiguous column access)
+    @inbounds @simd for k in axes(out, 1)
+        yL = y_point[k, idx]
+        yR = y_point[k, idx1]
+        out[k] = _linear_kernel(op, yL, yR, h, dL)
+    end
+
+    return out
+end
+
+"""
+    _eval_linear_series_point_with_extrap!(out, y_point, x, n_pts, x_min, x_max, aq, extrap, op)
+
+SIMD evaluation with extrapolation handling for multi-series linear interpolation.
+"""
+@inline function _eval_linear_series_point_with_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    x::Vector{T},
+    n_pts::Int,
+    x_min::T,
+    x_max::T,
+    aq::_LinearAnchoredQuery{T},
+    extrap::ExtrapVal,
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    # Inside domain: normal evaluation
+    if aq.side == 0x00
+        return _eval_linear_series_point!(out, y_point, x, aq, op)
+    end
+
+    # Outside domain: dispatch on extrap mode
+    _eval_linear_series_point_extrap!(out, y_point, x, n_pts, x_min, x_max, aq, extrap, op, aq.side)
+end
+
+# :none - throw DomainError
+@inline function _eval_linear_series_point_extrap!(
+    ::AbstractVector{T},
+    ::Matrix{T},
+    ::Vector{T},
+    ::Int,
+    x_min::T,
+    x_max::T,
+    aq::_LinearAnchoredQuery{T},
+    ::Val{:none},
+    ::AbstractEvalOp,
+    ::UInt8
+) where {T<:AbstractFloat}
+    throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+end
+
+# :constant - clamp to boundary (value only, derivatives are zero)
+@inline function _eval_linear_series_point_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    ::Vector{T},
+    n_pts::Int,
+    ::T,
+    ::T,
+    ::_LinearAnchoredQuery{T},
+    ::Val{:constant},
+    op::AbstractEvalOp,
+    side::UInt8
+) where {T<:AbstractFloat}
+    if op isa EvalValue
+        idx = side == 0x01 ? 1 : n_pts
+        @inbounds @simd for k in axes(out, 1)
+            out[k] = y_point[k, idx]
+        end
+    else
+        # Derivatives of constant extrapolation are zero
+        @inbounds @simd for k in axes(out, 1)
+            out[k] = zero(T)
+        end
+    end
+    return out
+end
+
+# :extension - extend linear polynomial
+@inline function _eval_linear_series_point_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    x::Vector{T},
+    n_pts::Int,
+    ::T,
+    ::T,
+    aq::_LinearAnchoredQuery{T},
+    ::Val{:extension},
+    op::AbstractEvalOp,
+    side::UInt8
+) where {T<:AbstractFloat}
+    # Use boundary interval for extension
+    idx = side == 0x01 ? 1 : (n_pts - 1)
+    idx1 = idx + 1
+
+    @inbounds begin
+        xL = x[idx]
+        xR = x[idx1]
+    end
+    h = xR - xL
+    dL = aq.xq - xL
+
+    @inbounds @simd for k in axes(out, 1)
+        yL = y_point[k, idx]
+        yR = y_point[k, idx1]
+        out[k] = _linear_kernel(op, yL, yR, h, dL)
+    end
+    return out
+end
+
+# :wrap - periodic (anchor already adjusted)
+@inline function _eval_linear_series_point_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    x::Vector{T},
+    ::Int,
+    ::T,
+    ::T,
+    aq::_LinearAnchoredQuery{T},
+    ::Val{:wrap},
+    op::AbstractEvalOp,
+    ::UInt8
+) where {T<:AbstractFloat}
+    # Anchor was already wrapped, use normal evaluation
+    return _eval_linear_series_point!(out, y_point, x, aq, op)
+end
+
+# ========================================
+# Constructors
+# ========================================
+
+"""
+    linear_interp(x, ys::AbstractVector{<:AbstractVector}; extrap=:none)
+
+Create a multi-Y linear interpolant for multiple y-data series sharing the same x-grid.
+
+# Arguments
+- `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
+- `ys`: Vector of y-value vectors (all same length as x)
+- `extrap`: Extrapolation mode (:none, :constant, :extension, :wrap)
+
+# Returns
+`LinearSeriesInterpolant` object with matrix storage.
+
+# Example
+```julia
+x = collect(range(0.0, 1.0, 101))
+y1 = sin.(2π .* x)
+y2 = cos.(2π .* x)
+y3 = exp.(-x)
+
+sitp = linear_interp(x, [y1, y2, y3])
+vals = sitp(0.5)  # [sin(π), cos(π), exp(-0.5)]
+```
+"""
+function linear_interp(
+    x::AbstractVector{T},
+    ys::AbstractVector{<:AbstractVector{T}};
+    extrap::Symbol=:none
+) where {T<:AbstractFloat}
+    # Validate input
+    @assert !isempty(ys) "ys must not be empty"
+
+    n_pts = length(x)
+    n_series_count = length(ys)
+
+    # Validate all y-series have same length as x
+    for (k, y) in enumerate(ys)
+        if length(y) != n_pts
+            throw(DimensionMismatch(
+                "y-series $k has length $(length(y)), expected $n_pts (length of x)"
+            ))
+        end
+    end
+
+    # Build y matrix (n_points × n_series) series-contiguous
+    y_mat = Matrix{T}(undef, n_pts, n_series_count)
+    @inbounds for k in 1:n_series_count
+        y_mat[:, k] .= ys[k]
+    end
+
+    # Convert extrap symbol to Val
+    extrap_val = _symbol_to_extrap_val(extrap)
+
+    # Copy x to ensure ownership
+    x_vec = collect(x)
+
+    return LinearSeriesInterpolant(x_vec, y_mat, extrap_val)
+end
+
+# Matrix input: columns as y-series
+"""
+    linear_interp(x, Y::AbstractMatrix; extrap=:none)
+
+Create a multi-Y linear interpolant from a matrix where each column is a y-series.
+
+# Arguments
+- `x::AbstractVector`: x-coordinates (length n)
+- `Y::AbstractMatrix`: n×m matrix, each column is a y-series
+- `extrap`: Extrapolation mode
+
+# Example
+```julia
+x = collect(range(0.0, 1.0, 101))
+Y = hcat(sin.(2π .* x), cos.(2π .* x))  # 101×2 matrix
+
+sitp = linear_interp(x, Y)
+```
+"""
+function linear_interp(
+    x::AbstractVector{T},
+    Y::AbstractMatrix{T};
+    extrap::Symbol=:none
+) where {T<:AbstractFloat}
+    n_pts = length(x)
+
+    # Validate dimensions
+    if size(Y, 1) != n_pts
+        throw(DimensionMismatch(
+            "Y has $(size(Y, 1)) rows but x has $n_pts points (expected n_points × n_series matrix)"
+        ))
+    end
+
+    # Copy to ensure ownership
+    y_mat = copy(Y)
+    x_vec = collect(x)
+
+    # Convert extrap symbol to Val
+    extrap_val = _symbol_to_extrap_val(extrap)
+
+    return LinearSeriesInterpolant(x_vec, y_mat, extrap_val)
+end
+
+# Real type wrappers (auto-promote to Float)
+function linear_interp(
+    x::AbstractVector{Tx},
+    ys::AbstractVector{<:AbstractVector{Ty}};
+    extrap::Symbol=:none
+) where {Tx<:Real, Ty<:Real}
+    T = promote_type(float(Tx), float(Ty))
+    x_float = _to_float(x, T)
+    ys_float = [_to_float(y, T) for y in ys]
+    return linear_interp(x_float, ys_float; extrap=extrap)
+end
+
+function linear_interp(
+    x::AbstractVector{Tx},
+    Y::AbstractMatrix{Ty};
+    extrap::Symbol=:none
+) where {Tx<:Real, Ty<:Real}
+    T = promote_type(float(Tx), float(Ty))
+    x_float = _to_float(x, T)
+    Y_float = T.(Y)
+    return linear_interp(x_float, Y_float; extrap=extrap)
+end
+
+# ========================================
+# Scalar Evaluation (Override default for debugging)
+# ========================================
+
+"""
+    (sitp::LinearSeriesInterpolant)(xq::Real; deriv=0)
+
+Evaluate multi-Y interpolant at scalar query point (out-of-place).
+
+Returns a vector of values, one per y-series.
+"""
+function (sitp::LinearSeriesInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+    out = Vector{T}(undef, n_series(sitp))
+    return sitp(out, xq; deriv=deriv)
+end
+
+"""
+    (sitp::LinearSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0)
+
+Evaluate multi-Y interpolant at scalar query point (in-place).
+"""
+function (sitp::LinearSeriesInterpolant{T})(
+    output::AbstractVector{T},
+    xq::S;
+    deriv::Int=0
+) where {T<:AbstractFloat, S<:Real}
+    n_ser = n_series(sitp)
+
+    # Validate output length
+    _validate_scalar_output(output, n_ser)
+
+    xq_typed = T(xq)
+
+    # Build anchor
+    aq = _make_anchor(sitp, xq_typed)
+
+    # Dispatch on derivative order
+    @_dispatch_deriv deriv => op begin
+        _eval_series_at_anchor!(output, sitp, aq, op)
+    end
+    return output
+end
+
+# ========================================
+# Vector Evaluation
+# ========================================
+
+"""
+    (sitp::LinearSeriesInterpolant)(xq::AbstractVector; deriv=0)
+
+Evaluate multi-Y interpolant at multiple query points (out-of-place).
+
+Returns a vector of vectors: one vector per y-series, each containing results for all query points.
+"""
+function (sitp::LinearSeriesInterpolant{T})(
+    xq::AbstractVector{S};
+    deriv::Int=0
+) where {T<:AbstractFloat, S<:Real}
+    xq_typed = _to_float(xq, T)
+    n_query = length(xq_typed)
+
+    outputs = [Vector{T}(undef, n_query) for _ in 1:n_series(sitp)]
+    sitp(outputs, xq_typed; deriv=deriv)
+
+    return outputs
+end
+
+"""
+    (sitp::LinearSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=0)
+
+Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation).
+
+# Arguments
+- `outputs`: Vector of pre-allocated output buffers (one per y-series)
+- `xq`: Query points
+- `deriv`: Derivative order (0 or 1)
+
+This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
+Uses task-local pool for anchor vector to achieve zero allocation after warmup.
+"""
+@with_pool pool function (sitp::LinearSeriesInterpolant{T})(
+    outputs::AbstractVector{<:AbstractVector{T}},
+    xq::AbstractVector{T};
+    deriv::Int=0
+) where {T<:AbstractFloat}
+    n_query = length(xq)
+    n_ser = n_series(sitp)
+
+    # Validate dimensions
+    _validate_series_outputs(outputs, n_ser, n_query)
+
+    # Build anchors from pool (zero allocation after warmup)
+    aq_vec = acquire!(pool, _LinearAnchoredQuery{T}, length(xq))
+    _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp))
+
+    # Extract matrices for argument-passing pattern
+    y = sitp.y
+    x_grid = sitp.x
+    n_pts = n_points(sitp)
+    n = n_series(sitp)
+    extrap = sitp.extrap
+    x_min, x_max = T(first(sitp.x)), T(last(sitp.x))
+
+    # Evaluate all series
+    @_dispatch_deriv deriv => op begin
+        @inbounds for k in 1:n
+            _eval_linear_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, op)
+        end
+    end
+    return outputs
+end
+
+# Real type wrapper for in-place vector
+function (sitp::LinearSeriesInterpolant{T})(
+    outputs::AbstractVector{<:AbstractVector{T}},
+    xq::AbstractVector{S};
+    deriv::Int=0
+) where {T<:AbstractFloat, S<:Real}
+    xq_typed = _to_float(xq, T)
+    return sitp(outputs, xq_typed; deriv=deriv)
+end
+
+"""
+Internal: Evaluate a single series for vector of query points.
+Uses argument-passing pattern for optimal performance.
+"""
+@inline function _eval_linear_series_vector!(
+    out::AbstractVector{T},
+    y::Matrix{T},
+    x::Vector{T},
+    n_pts::Int,
+    x_min::T,
+    x_max::T,
+    k::Int,
+    aq_vec::AbstractVector{<:_LinearAnchoredQuery{T}},
+    extrap::ExtrapVal,
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    @inbounds for j in eachindex(out, aq_vec)
+        out[j] = _eval_linear_series_with_extrap(y, x, n_pts, x_min, x_max, k, aq_vec[j], extrap, op)
+    end
+    return out
+end
+
+"""
+Internal: Evaluate single series at single query point with extrapolation handling.
+"""
+@inline function _eval_linear_series_with_extrap(
+    y::Matrix{T},
+    x::Vector{T},
+    n_pts::Int,
+    x_min::T,
+    x_max::T,
+    k::Int,
+    aq::_LinearAnchoredQuery{T},
+    extrap::ExtrapVal,
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    # Inside domain: normal evaluation
+    if aq.side == 0x00
+        return _eval_linear_series_anchored(y, x, k, aq, op)
+    end
+
+    # Outside domain: dispatch on extrap mode
+    if extrap === Val(:extension) || extrap === Val(:wrap)
+        return _eval_linear_series_anchored(y, x, k, aq, op)
+    elseif extrap === Val(:constant)
+        if op isa EvalValue
+            pt_idx = aq.side == 0x01 ? 1 : n_pts
+            @inbounds return y[pt_idx, k]
+        else
+            return zero(T)
+        end
+    else
+        throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+    end
+end
+
+"""
+Internal: Core linear evaluation for series k at anchored query point.
+"""
+@inline function _eval_linear_series_anchored(
+    y::Matrix{T},
+    x::Vector{T},
+    k::Int,
+    aq::_LinearAnchoredQuery{T},
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    idx = aq.idx
+    @inbounds begin
+        yL = y[idx, k]
+        yR = y[idx + 1, k]
+        xL = x[idx]
+        xR = x[idx + 1]
+    end
+    h = xR - xL
+    dL = aq.xq - xL
+    return _linear_kernel(op, yL, yR, h, dL)
+end

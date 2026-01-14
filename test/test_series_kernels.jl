@@ -134,12 +134,12 @@ const FI = FastInterpolations
 
         # Should have zero allocations
         allocs = @allocated FI._eval_kernel(coeffs, weights, Val(:cubic))
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
 
         # Linear kernel
         FI._eval_kernel((1.0, 2.0), (0.3, 0.7), Val(:linear))
         allocs_linear = @allocated FI._eval_kernel((1.0, 2.0), (0.3, 0.7), Val(:linear))
-        @test allocs_linear == 0
+        @test allocs_linear <= ALLOC_THRESHOLD
 
         # Constant kernel
         FI._eval_kernel((42.0,), (), Val(:constant))

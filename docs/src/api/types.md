@@ -44,9 +44,6 @@ Right
 
 SeriesInterpolant stores multiple y-series in a **unified matrix** with point-contiguous layout for optimal SIMD performance on scalar queries (10-120× faster than composition-based approaches).
 
-!!! tip "Backward Compatibility"
-    The old `*MultiInterpolant` names are aliases to `*SeriesInterpolant` for migration ease.
-
 ### Constant Interpolation
 
 ```@docs

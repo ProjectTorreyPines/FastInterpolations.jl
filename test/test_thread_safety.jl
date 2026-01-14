@@ -468,9 +468,9 @@ end
 end
 
 # =========================================================================
-# Group 5: CubicMultiInterpolant Thread Safety
+# Group 5: CubicSeriesInterpolant Thread Safety
 # =========================================================================
-@testset "CubicMultiInterpolant Thread Safety" begin
+@testset "CubicSeriesInterpolant Thread Safety" begin
     @testset "Lazy transpose concurrent initialization" begin
         # Test that concurrent scalar queries safely initialize the lazy transpose
         FastInterpolations.clear_cubic_cache!()

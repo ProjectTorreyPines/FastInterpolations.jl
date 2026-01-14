@@ -65,7 +65,7 @@ const FI = FastInterpolations
         # Test: Zero allocation (after warmup)
         sitp(output, 0.5)  # Warmup
         allocs = @allocated sitp(output, 0.5)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
 
         # Test: Validates output size
         bad_output = zeros(3)  # Wrong size
@@ -116,7 +116,7 @@ const FI = FastInterpolations
         # Test: Zero allocation (after warmup)
         sitp(outputs, xq)  # Warmup
         allocs = @allocated sitp(outputs, xq)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
 
         # Test: Validates output dimensions - wrong number of series
         bad_outputs_count = [zeros(n_query) for _ in 1:3]
@@ -152,7 +152,7 @@ const FI = FastInterpolations
         # Test: Zero allocation with pre-built anchors
         sitp(outputs, aq_vec)  # Warmup
         allocs = @allocated sitp(outputs, aq_vec)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     # ========================================

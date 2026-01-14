@@ -85,10 +85,6 @@ mutable struct QuadraticSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInt
     end
 end
 
-# Backward compatibility aliases
-const QuadraticMultiInterpolant = QuadraticSeriesInterpolant
-const MultiQuadraticInterpolant = QuadraticSeriesInterpolant
-
 # ========================================
 # Required Trait Implementations
 # ========================================

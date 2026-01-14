@@ -71,9 +71,6 @@ mutable struct LinearSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterp
     end
 end
 
-# Backward compatibility alias
-const LinearMultiInterpolant = LinearSeriesInterpolant
-
 # ========================================
 # Required Trait Implementations
 # ========================================

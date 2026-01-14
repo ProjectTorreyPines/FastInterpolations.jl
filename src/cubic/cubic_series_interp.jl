@@ -90,10 +90,6 @@ mutable struct CubicSeriesInterpolant{
     end
 end
 
-# Backward compatibility aliases
-const CubicMultiInterpolant = CubicSeriesInterpolant
-const MultiCubicInterpolant = CubicSeriesInterpolant
-
 # ========================================
 # Helper Functions
 # ========================================

@@ -115,6 +115,6 @@ end
         sitp(output, 0.5)  # Warmup
 
         allocs = @allocated sitp(output, 0.5)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 end

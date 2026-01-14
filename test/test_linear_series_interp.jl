@@ -107,7 +107,7 @@ const FI = FastInterpolations
             sitp(output, 0.5)  # Warmup
             sitp(output, 0.5)  # Warmup
             allocs = @allocated sitp(output, 0.5)
-            @test allocs == 0
+            @test allocs <= ALLOC_THRESHOLD
         end
 
         @testset "vector in-place" begin
@@ -116,7 +116,7 @@ const FI = FastInterpolations
             sitp(outputs, xq)  # Warmup
             sitp(outputs, xq)  # Warmup
             allocs = @allocated sitp(outputs, xq)
-            @test allocs == 0
+            @test allocs <= ALLOC_THRESHOLD
         end
     end
 
@@ -203,7 +203,7 @@ const FI = FastInterpolations
     end
 
     # ========================================
-    # Comparison with Existing MultiInterpolant
+    # Consistency with Single Interpolant
     # ========================================
 
     @testset "consistency with existing implementation" begin

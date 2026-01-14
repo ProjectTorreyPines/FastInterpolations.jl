@@ -70,9 +70,6 @@ mutable struct ConstantSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInte
     end
 end
 
-# Backward compatibility alias
-const ConstantMultiInterpolant = ConstantSeriesInterpolant
-
 # ========================================
 # Required Trait Implementations
 # ========================================

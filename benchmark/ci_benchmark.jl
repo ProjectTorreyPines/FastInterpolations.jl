@@ -178,13 +178,25 @@ for ns in MULTI_SERIES
         suite["8_cubic_multi"]["construct_s$(slabel)_q$(qlabel)"] = b
     end
 
-    # Evaluation benchmark
+    # Vector evaluation benchmark (batch query) - keep original name for dashboard continuity
     clear_cubic_cache!()
     mitp = cubic_interp(x, ys)
     xq_multi = collect(range(0.1, 9.9, N_QUERY_MULTI))
     let b = @benchmarkable $mitp($xq_multi)
         b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
         suite["8_cubic_multi"]["eval_s$(slabel)_q$(qlabel)"] = b
+    end
+
+    # Scalar loop evaluation benchmark (tests SIMD scalar kernel in realistic usage)
+    # Pattern: for xq in queries; mitp(out, xq); end - like ODE solver callbacks
+    out_scalar = zeros(ns)
+    let b = @benchmarkable begin
+            for xq in $xq_multi
+                $mitp($out_scalar, xq)
+            end
+        end
+        b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
+        suite["8_cubic_multi"]["eval_s$(slabel)_q$(qlabel)_scalar_loop"] = b
     end
 end
 

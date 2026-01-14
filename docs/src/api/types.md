@@ -64,6 +64,7 @@ QuadraticMultiInterpolant
 
 ```@docs
 CubicMultiInterpolant
+precompute_transpose!
 ```
 
 ## Index

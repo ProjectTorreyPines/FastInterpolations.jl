@@ -3,10 +3,12 @@
 # ║         Multiple y-data series sharing the same x-grid                    ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 #
-# Uses composition approach: wraps existing CubicInterpolant objects.
-# Key optimization: shared cache via _get_cubic_cache with autocache=true.
+# Phase 1: Unified-style matrix storage for optimal performance.
+# Key optimization: Adaptive layout with lazy transpose for scalar queries.
 #
-# Include order: ... → cubic_interpolant.jl → multi_cubic_interp.jl
+# Include order: ... → cubic_types.jl → ... → multi_cubic_interp.jl
+#
+# Note: TransposeSnapshot is defined in cubic_types.jl
 #
 
 # ========================================
@@ -14,17 +16,31 @@
 # ========================================
 
 """
-    CubicMultiInterpolant{T,C}
+    CubicMultiInterpolant{T, C, B}
 
 Container for multiple cubic spline interpolants sharing the same x-grid.
-All interpolants share the same `CubicSplineCache` for memory efficiency.
+Uses unified matrix storage with adaptive layout for optimal performance.
 
 # Type Parameters
 - `T`: Float type (Float32 or Float64)
-- `C`: Container type for interpolants (Vector, etc.)
+- `C`: Cache type (`CubicSplineCache{T}`)
+- `B`: Boundary condition config type (BCPair or PeriodicData)
 
 # Fields
-- `itps::C`: Container of `CubicInterpolant{T}` objects
+- `cache::C`: Shared CubicSplineCache with LU factorization
+- `bc_for_solve::B`: BC configuration for solving systems
+- `y::Matrix{T}`: Function values (n_points × n_series) series-contiguous
+- `z::Matrix{T}`: Second derivatives (n_points × n_series) series-contiguous
+- `_point_snapshot`: Atomic field for lazy point-contiguous layout
+- `extrap::ExtrapVal`: Extrapolation mode
+
+# Memory Layout
+Primary storage is series-contiguous (n_points × n_series):
+- `y[i, k]` = value of series k at grid point i
+- `y[:, k]` is contiguous → optimal for vector queries
+
+Lazy transpose (n_series × n_points) for scalar queries:
+- `y_point[:, i]` is contiguous → optimal for SIMD scalar queries
 
 # Usage
 ```julia
@@ -43,12 +59,35 @@ mitp([out1, out2, out3], xq)    # In-place (zero allocation)
 ```
 
 # Performance
-- Anchor computed once, reused for all series
-- In-place container evaluation is zero-allocation
+- Vector queries use series-contiguous layout directly
+- Scalar queries trigger lazy transpose on first call
 - All series share same cache (O(1) memory overhead)
 """
-struct CubicMultiInterpolant{T<:AbstractFloat, C<:AbstractArray{<:CubicInterpolant{T}}} <: AbstractMultiInterpolant{T}
-    itps::C
+mutable struct CubicMultiInterpolant{
+    T<:AbstractFloat,
+    C<:CubicSplineCache{T},
+    B
+} <: AbstractMultiInterpolant{T}
+    const cache::C                    # Shared cache with LU factorization
+    const bc_for_solve::B             # BC config for solving
+    const y::Matrix{T}                # Series-contiguous y (n_points × n_series)
+    const z::Matrix{T}                # Series-contiguous z (n_points × n_series)
+    @atomic _point_snapshot::TransposeSnapshot{T}  # Lazy point-contiguous layout
+    const extrap::ExtrapVal           # Extrapolation mode
+
+    function CubicMultiInterpolant(
+        cache::C,
+        bc_for_solve::B,
+        y::Matrix{T},
+        z::Matrix{T},
+        extrap::ExtrapVal
+    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, B}
+        new{T, C, B}(
+            cache, bc_for_solve, y, z,
+            TransposeSnapshot{T}(),
+            extrap
+        )
+    end
 end
 
 # Backward compatibility alias
@@ -58,18 +97,236 @@ const MultiCubicInterpolant = CubicMultiInterpolant
 # Helper Functions
 # ========================================
 
-"""Reference interpolant for grid access and mode checks."""
-@inline _ref_itp(mitp::CubicMultiInterpolant) = first(mitp.itps)
-
 """Check if wrap mode is active (for anchor construction)."""
-@inline _should_wrap(mitp::CubicMultiInterpolant) = _ref_itp(mitp).extrap === Val(:wrap)
+@inline _should_wrap(mitp::CubicMultiInterpolant) = mitp.extrap === Val(:wrap)
+
+"""Number of series in the interpolant."""
+@inline n_series(mitp::CubicMultiInterpolant) = size(mitp.y, 2)
+
+"""Number of grid points in the interpolant."""
+@inline n_points(mitp::CubicMultiInterpolant) = size(mitp.y, 1)
+
+# ========================================
+# Lazy Point-Layout Management
+# ========================================
+
+"""
+    _ensure_point_layout!(mitp::CubicMultiInterpolant{T}) -> (y_point, z_point)
+
+Ensure point-contiguous layout exists. Thread-safe via atomic snapshot.
+
+RCU-style implementation:
+- Fast path: atomic acquire read, return if populated
+- Slow path: compute transpose, atomic release publish
+"""
+@inline function _ensure_point_layout!(mitp::CubicMultiInterpolant{T}) where T
+    # Fast path: check if already populated
+    snap = @atomic :acquire mitp._point_snapshot
+    if snap.y_point !== nothing
+        return (snap.y_point::Matrix{T}, snap.z_point::Matrix{T})
+    end
+
+    # Slow path: build point-contiguous layout
+    y_point = permutedims(mitp.y)
+    z_point = permutedims(mitp.z)
+    new_snap = TransposeSnapshot{T}(y_point, z_point)
+
+    # Atomic publish
+    @atomic :release mitp._point_snapshot = new_snap
+
+    return (y_point, z_point)
+end
+
+"""
+    precompute_transpose!(mitp::CubicMultiInterpolant) -> mitp
+
+Pre-allocate point-contiguous matrices for scalar queries.
+Call before hot loops to avoid first-call latency.
+"""
+function precompute_transpose!(mitp::CubicMultiInterpolant)
+    _ensure_point_layout!(mitp)
+    return mitp
+end
+
+# ========================================
+# SIMD Scalar Evaluation Kernels
+# ========================================
+
+"""
+    _eval_multi_point!(out, y_point, z_point, aq, op)
+
+SIMD-optimized evaluation for point-contiguous layout (n_series × n_points).
+Contiguous column access enables vectorization across series dimension.
+"""
+@inline function _eval_multi_point!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    aq::_CubicAnchoredQuery{T},
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    idx = aq.idx
+    idx1 = idx + 1
+    wyL, wyR, wzL, wzR = _anchored_weights(aq, op)
+
+    # SIMD loop over series (contiguous column access)
+    @inbounds @simd for k in axes(out, 1)
+        yL = y_point[k, idx]
+        yR = y_point[k, idx1]
+        zL = z_point[k, idx]
+        zR = z_point[k, idx1]
+
+        # Optimal FMA chain: 3 FMAs + 1 mul
+        out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
+    end
+
+    return out
+end
+
+"""
+    _eval_multi_point_with_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op)
+
+SIMD evaluation with extrapolation handling for multi-series.
+"""
+@inline function _eval_multi_point_with_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    n_pts::Int,
+    x_min::T,
+    x_max::T,
+    aq::_CubicAnchoredQuery{T},
+    extrap::ExtrapVal,
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    # Inside domain: normal evaluation
+    if aq.side == 0x00
+        return _eval_multi_point!(out, y_point, z_point, aq, op)
+    end
+
+    # Outside domain: dispatch on extrap mode
+    _eval_multi_point_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op, aq.side)
+end
+
+# :none - throw DomainError
+@inline function _eval_multi_point_extrap!(
+    ::AbstractVector{T},
+    ::Matrix{T},
+    ::Matrix{T},
+    ::Int,
+    x_min::T,
+    x_max::T,
+    aq::_CubicAnchoredQuery{T},
+    ::Val{:none},
+    ::AbstractEvalOp,
+    ::UInt8
+) where {T<:AbstractFloat}
+    throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+end
+
+# :constant - clamp to boundary (value only, derivatives are zero)
+@inline function _eval_multi_point_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    ::Matrix{T},
+    n_pts::Int,
+    ::T,
+    ::T,
+    ::_CubicAnchoredQuery{T},
+    ::Val{:constant},
+    op::AbstractEvalOp,
+    side::UInt8
+) where {T<:AbstractFloat}
+    if op isa EvalValue
+        idx = side == 0x01 ? 1 : n_pts
+        @inbounds @simd for k in axes(out, 1)
+            out[k] = y_point[k, idx]
+        end
+    else
+        # Derivatives of constant extrapolation are zero
+        @inbounds @simd for k in axes(out, 1)
+            out[k] = zero(T)
+        end
+    end
+    return out
+end
+
+# :extension - extend polynomial
+@inline function _eval_multi_point_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    n_pts::Int,
+    ::T,
+    ::T,
+    aq::_CubicAnchoredQuery{T},
+    ::Val{:extension},
+    op::AbstractEvalOp,
+    side::UInt8
+) where {T<:AbstractFloat}
+    # Use boundary interval for extension
+    idx = side == 0x01 ? 1 : (n_pts - 1)
+    idx1 = idx + 1
+    wyL, wyR, wzL, wzR = _anchored_weights(aq, op)
+
+    @inbounds @simd for k in axes(out, 1)
+        yL = y_point[k, idx]
+        yR = y_point[k, idx1]
+        zL = z_point[k, idx]
+        zR = z_point[k, idx1]
+        out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
+    end
+    return out
+end
+
+# :wrap - periodic (anchor already adjusted)
+@inline function _eval_multi_point_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    ::Int,
+    ::T,
+    ::T,
+    aq::_CubicAnchoredQuery{T},
+    ::Val{:wrap},
+    op::AbstractEvalOp,
+    ::UInt8
+) where {T<:AbstractFloat}
+    # Anchor was already wrapped, use normal evaluation
+    return _eval_multi_point!(out, y_point, z_point, aq, op)
+end
+
+# ========================================
+# Internal: Coefficient Solver
+# ========================================
+
+"""
+    _solve_multi_coefficients!(z_mat, y_mat, cache, bc_for_solve)
+
+Solve cubic spline systems for all series using shared LU factorization.
+"""
+@with_pool pool function _solve_multi_coefficients!(
+    z_mat::Matrix{T},
+    y_mat::Matrix{T},
+    cache::CubicSplineCache{T},
+    bc_for_solve
+) where {T<:AbstractFloat}
+    n_series_count = size(y_mat, 2)
+
+    # Solve each series column
+    @inbounds for k in 1:n_series_count
+        _solve_system!(@view(z_mat[:, k]), cache, @view(y_mat[:, k]), bc_for_solve)
+    end
+
+    return z_mat
+end
 
 # ========================================
 # Constructors
 # ========================================
 
 """
-    cubic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=NaturalBC(), extrap=:none, autocache=true)
+    cubic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=NaturalBC(), extrap=:none, autocache=true, precompute_transpose=false)
 
 Create a multi-Y cubic spline interpolant for multiple y-data series sharing the same x-grid.
 
@@ -79,9 +336,10 @@ Create a multi-Y cubic spline interpolant for multiple y-data series sharing the
 - `bc`: Boundary condition (NaturalBC, ClampedBC, PeriodicBC, etc.)
 - `extrap`: Extrapolation mode (:none, :constant, :extension, :wrap)
 - `autocache`: If true, reuse cached LU factorization (default: true)
+- `precompute_transpose`: If true, build point-contiguous layout immediately
 
 # Returns
-`CubicMultiInterpolant` object with shared cache.
+`CubicMultiInterpolant` object with matrix storage.
 
 # Example
 ```julia
@@ -99,39 +357,106 @@ function cubic_interp(
     ys::AbstractVector{<:AbstractVector{T}};
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
-    autocache::Bool=true
+    autocache::Bool=true,
+    precompute_transpose::Bool=false
 ) where {T<:AbstractFloat}
     # Validate input
     @assert !isempty(ys) "ys must not be empty"
-    n = length(x)
-    @assert all(y -> length(y) == n, ys) "All y-series must have same length as x"
 
-    # Build first interpolant to get concrete type and establish cache
-    itp0 = cubic_interp(x, first(ys); bc=bc, extrap=extrap, autocache=autocache)
+    n_pts = length(x)
+    n_series_count = length(ys)
 
-    # Build remaining interpolants using shared cache (autocache=true reuses it)
-    # Use similar for type-stable container
-    itps = similar(ys, typeof(itp0))
-    idx = firstindex(itps)
-    itps[idx] = itp0
-
-    for (k, y) in Iterators.drop(pairs(ys), 1)
-        itps[k] = cubic_interp(x, y; bc=bc, extrap=extrap, autocache=autocache)
+    # Validate all y-series have same length as x
+    for (k, y) in enumerate(ys)
+        if length(y) != n_pts
+            throw(DimensionMismatch(
+                "y-series $k has length $(length(y)), expected $n_pts (length of x)"
+            ))
+        end
     end
 
-    return CubicMultiInterpolant{T, typeof(itps)}(itps)
+    # Build y matrix (n_points × n_series) series-contiguous
+    y_mat = Matrix{T}(undef, n_pts, n_series_count)
+    @inbounds for k in 1:n_series_count
+        y_mat[:, k] .= ys[k]
+    end
+
+    # Handle periodic BC separately
+    if _is_periodic_bc(bc)
+        return _build_multi_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose)
+    end
+
+    # Get cache for derivative BC
+    bc_pair = _normalize_bc(bc, T)
+    cache = _get_cubic_cache(x, bc_pair, autocache)
+
+    # Build z matrix by solving systems
+    z_mat = Matrix{T}(undef, n_pts, n_series_count)
+    _solve_multi_coefficients!(z_mat, y_mat, cache, bc_pair)
+
+    # Convert extrap symbol to Val
+    extrap_val = _symbol_to_extrap_val(extrap)
+
+    mitp = CubicMultiInterpolant(cache, bc_pair, y_mat, z_mat, extrap_val)
+
+    if precompute_transpose
+        _ensure_point_layout!(mitp)
+    end
+
+    return mitp
+end
+
+"""
+Internal helper for periodic BC multi-interpolant construction.
+"""
+function _build_multi_periodic(
+    x::AbstractVector{T},
+    y_mat::Matrix{T},
+    n_pts::Int,
+    n_series_count::Int,
+    autocache::Bool,
+    precompute_transpose::Bool
+) where {T<:AbstractFloat}
+    # Validate periodic endpoints for all series
+    atol = T === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
+    @inbounds for k in 1:n_series_count
+        y_first = y_mat[1, k]
+        y_last = y_mat[n_pts, k]
+        if !isapprox(y_first, y_last; atol=atol)
+            throw(ArgumentError(
+                "Periodic BC requires y[1] ≈ y[end] for series $k, " *
+                "got y[1]=$y_first, y[end]=$y_last (diff=$(abs(y_last-y_first)))"
+            ))
+        end
+    end
+
+    # Get periodic cache
+    cache = _get_cubic_cache(x, PeriodicBC(), autocache)
+
+    # Build z matrix
+    z_mat = Matrix{T}(undef, n_pts, n_series_count)
+    _solve_multi_coefficients!(z_mat, y_mat, cache, cache.bc_config)
+
+    # Periodic BC always uses :wrap extrapolation
+    mitp = CubicMultiInterpolant(cache, cache.bc_config, y_mat, z_mat, Val(:wrap))
+
+    if precompute_transpose
+        _ensure_point_layout!(mitp)
+    end
+
+    return mitp
 end
 
 # Matrix input: columns as y-series
 """
-    cubic_interp(x, Y::AbstractMatrix; bc=NaturalBC(), extrap=:none, autocache=true)
+    cubic_interp(x, Y::AbstractMatrix; bc=NaturalBC(), extrap=:none, autocache=true, precompute_transpose=false)
 
 Create a multi-Y cubic spline interpolant from a matrix where each column is a y-series.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (length n)
 - `Y::AbstractMatrix`: n×m matrix, each column is a y-series
-- `bc`, `extrap`, `autocache`: Same as vector form
+- `bc`, `extrap`, `autocache`, `precompute_transpose`: Same as vector form
 
 # Example
 ```julia
@@ -146,11 +471,46 @@ function cubic_interp(
     Y::AbstractMatrix{T};
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
-    autocache::Bool=true
+    autocache::Bool=true,
+    precompute_transpose::Bool=false
 ) where {T<:AbstractFloat}
-    # Convert matrix columns to vector of vectors
-    ys = [Y[:, k] for k in axes(Y, 2)]
-    return cubic_interp(x, ys; bc=bc, extrap=extrap, autocache=autocache)
+    n_pts = length(x)
+
+    # Validate dimensions
+    if size(Y, 1) != n_pts
+        throw(DimensionMismatch(
+            "Y has $(size(Y, 1)) rows but x has $n_pts points (expected n_points × n_series matrix)"
+        ))
+    end
+
+    n_series_count = size(Y, 2)
+
+    # Copy to ensure ownership
+    y_mat = copy(Y)
+
+    # Handle periodic BC separately
+    if _is_periodic_bc(bc)
+        return _build_multi_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose)
+    end
+
+    # Get cache for derivative BC
+    bc_pair = _normalize_bc(bc, T)
+    cache = _get_cubic_cache(x, bc_pair, autocache)
+
+    # Build z matrix by solving systems
+    z_mat = Matrix{T}(undef, n_pts, n_series_count)
+    _solve_multi_coefficients!(z_mat, y_mat, cache, bc_pair)
+
+    # Convert extrap symbol to Val
+    extrap_val = _symbol_to_extrap_val(extrap)
+
+    mitp = CubicMultiInterpolant(cache, bc_pair, y_mat, z_mat, extrap_val)
+
+    if precompute_transpose
+        _ensure_point_layout!(mitp)
+    end
+
+    return mitp
 end
 
 # Real type wrappers (auto-promote to Float)
@@ -159,12 +519,13 @@ function cubic_interp(
     ys::AbstractVector{<:AbstractVector{Ty}};
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
-    autocache::Bool=true
+    autocache::Bool=true,
+    precompute_transpose::Bool=false
 ) where {Tx<:Real, Ty<:Real}
     T = promote_type(float(Tx), float(Ty))
     x_float = _to_float(x, T)
     ys_float = [_to_float(y, T) for y in ys]
-    return cubic_interp(x_float, ys_float; bc=bc, extrap=extrap, autocache=autocache)
+    return cubic_interp(x_float, ys_float; bc=bc, extrap=extrap, autocache=autocache, precompute_transpose=precompute_transpose)
 end
 
 function cubic_interp(
@@ -172,12 +533,13 @@ function cubic_interp(
     Y::AbstractMatrix{Ty};
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
-    autocache::Bool=true
+    autocache::Bool=true,
+    precompute_transpose::Bool=false
 ) where {Tx<:Real, Ty<:Real}
     T = promote_type(float(Tx), float(Ty))
     x_float = _to_float(x, T)
     Y_float = T.(Y)
-    return cubic_interp(x_float, Y_float; bc=bc, extrap=extrap, autocache=autocache)
+    return cubic_interp(x_float, Y_float; bc=bc, extrap=extrap, autocache=autocache, precompute_transpose=precompute_transpose)
 end
 
 # ========================================
@@ -192,18 +554,8 @@ Evaluate multi-Y interpolant at scalar query point (out-of-place).
 Returns a vector of values, one per y-series.
 """
 function (mitp::CubicMultiInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
-    ref = _ref_itp(mitp)
-    xq_typed = T(xq)
-
-    # Build anchor once
-    aq = _anchor_query(ref.cache.x, xq_typed; wrap=_should_wrap(mitp))
-
-    # Evaluate all series
-    output = Vector{T}(undef, length(mitp.itps))
-    @inbounds for k in eachindex(mitp.itps)
-        output[k] = mitp.itps[k](aq; deriv=deriv)
-    end
-    return output
+    out = Vector{T}(undef, n_series(mitp))
+    return mitp(out, xq; deriv=deriv)
 end
 
 """
@@ -216,17 +568,29 @@ function (mitp::CubicMultiInterpolant{T})(
     xq::S;
     deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
-    @assert length(output) == length(mitp.itps) "output length must match number of series"
+    n_ser = n_series(mitp)
 
-    ref = _ref_itp(mitp)
+    # Validate output length
+    if length(output) != n_ser
+        throw(DimensionMismatch(
+            "output length $(length(output)) must match n_series $n_ser"
+        ))
+    end
+
     xq_typed = T(xq)
 
-    # Build anchor once
-    aq = _anchor_query(ref.cache.x, xq_typed; wrap=_should_wrap(mitp))
+    # Use point-contiguous layout for scalar queries
+    y_point, z_point = _ensure_point_layout!(mitp)
 
-    # Evaluate all series
-    @inbounds for k in eachindex(mitp.itps, output)
-        output[k] = mitp.itps[k](aq; deriv=deriv)
+    # Build anchor
+    aq = _anchor_query(mitp.cache.x, xq_typed; wrap=_should_wrap(mitp))
+
+    # Get domain bounds for error messages
+    x_min, x_max = T(first(mitp.cache.x)), T(last(mitp.cache.x))
+
+    # Dispatch on derivative order
+    @_dispatch_deriv deriv => op begin
+        _eval_multi_point_with_extrap!(output, y_point, z_point, n_points(mitp), x_min, x_max, aq, mitp.extrap, op)
     end
     return output
 end
@@ -246,19 +610,12 @@ function (mitp::CubicMultiInterpolant{T})(
     xq::AbstractVector{S};
     deriv::Int=0
 ) where {T<:AbstractFloat, S<:Real}
-    ref = _ref_itp(mitp)
     xq_typed = _to_float(xq, T)
+    n_query = length(xq_typed)
 
-    # Build anchors once
-    aq_vec = _anchor_query(ref.cache.x, xq_typed; wrap=_should_wrap(mitp))
+    outputs = [Vector{T}(undef, n_query) for _ in 1:n_series(mitp)]
+    mitp(outputs, xq_typed; deriv=deriv)
 
-    # Allocate outputs
-    outputs = [Vector{T}(undef, length(xq_typed)) for _ in 1:length(mitp.itps)]
-
-    # Evaluate all series using in-place anchored evaluation
-    @inbounds for k in eachindex(mitp.itps)
-        mitp.itps[k](outputs[k], aq_vec; deriv=deriv)
-    end
     return outputs
 end
 
@@ -280,18 +637,39 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     xq::AbstractVector{T};
     deriv::Int=0
 ) where {T<:AbstractFloat}
-    @assert length(outputs) == length(mitp.itps) "outputs length must match number of series"
-    @assert all(out -> length(out) == length(xq), outputs) "all output buffers must match xq length"
+    n_query = length(xq)
+    n_ser = n_series(mitp)
 
-    ref = _ref_itp(mitp)
+    # Validate dimensions
+    if length(outputs) != n_ser
+        throw(DimensionMismatch(
+            "outputs length $(length(outputs)) must match n_series $n_ser"
+        ))
+    end
+    for (k, out_k) in enumerate(outputs)
+        if length(out_k) != n_query
+            throw(DimensionMismatch(
+                "outputs[$k] length $(length(out_k)) must match n_query $n_query"
+            ))
+        end
+    end
 
     # Build anchors from pool (zero allocation after warmup)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{T}, length(xq))
-    _fill_anchors!(aq_vec, ref.cache.x, xq; wrap=_should_wrap(mitp))
+    _fill_anchors!(aq_vec, mitp.cache.x, xq; wrap=_should_wrap(mitp))
 
-    # Evaluate all series using in-place anchored evaluation
-    @inbounds for k in eachindex(mitp.itps, outputs)
-        mitp.itps[k](outputs[k], aq_vec; deriv=deriv)
+    # Extract matrices for argument-passing pattern
+    y, z = mitp.y, mitp.z
+    n_pts = n_points(mitp)
+    n = n_series(mitp)
+    extrap = mitp.extrap
+    x_min, x_max = T(first(mitp.cache.x)), T(last(mitp.cache.x))
+
+    # Evaluate all series
+    @_dispatch_deriv deriv => op begin
+        @inbounds for k in 1:n
+            _eval_multi_vector_series!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, op)
+        end
     end
     return outputs
 end
@@ -332,12 +710,114 @@ function (mitp::CubicMultiInterpolant{T})(
     aq_vec::AbstractVector{<:_CubicAnchoredQuery{T}};
     deriv::Int=0
 ) where {T<:AbstractFloat}
-    @assert length(outputs) == length(mitp.itps) "outputs length must match number of series"
-    @assert all(out -> length(out) == length(aq_vec), outputs) "all output buffers must match aq_vec length"
+    n_query = length(aq_vec)
+    n_ser = n_series(mitp)
 
-    # Evaluate all series using in-place anchored evaluation
-    @inbounds for k in eachindex(mitp.itps, outputs)
-        mitp.itps[k](outputs[k], aq_vec; deriv=deriv)
+    # Validate dimensions
+    if length(outputs) != n_ser
+        throw(DimensionMismatch(
+            "outputs length $(length(outputs)) must match n_series $n_ser"
+        ))
+    end
+    for (k, out_k) in enumerate(outputs)
+        if length(out_k) != n_query
+            throw(DimensionMismatch(
+                "outputs[$k] length $(length(out_k)) must match n_query $n_query"
+            ))
+        end
+    end
+
+    # Extract matrices for argument-passing pattern
+    y, z = mitp.y, mitp.z
+    n_pts = n_points(mitp)
+    n = n_series(mitp)
+    extrap = mitp.extrap
+    x_min, x_max = T(first(mitp.cache.x)), T(last(mitp.cache.x))
+
+    # Evaluate all series
+    @_dispatch_deriv deriv => op begin
+        @inbounds for k in 1:n
+            _eval_multi_vector_series!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, op)
+        end
     end
     return outputs
+end
+
+"""
+Internal: Evaluate a single series for vector of query points.
+Uses argument-passing pattern for optimal performance (avoids struct field access in loop).
+"""
+@inline function _eval_multi_vector_series!(
+    out::AbstractVector{T},
+    y::Matrix{T},
+    z::Matrix{T},
+    n_pts::Int,
+    x_min::T,
+    x_max::T,
+    k::Int,
+    aq_vec::AbstractVector{<:_CubicAnchoredQuery{T}},
+    extrap::ExtrapVal,
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    @inbounds for j in eachindex(out, aq_vec)
+        out[j] = _eval_multi_series_with_extrap(y, z, n_pts, x_min, x_max, k, aq_vec[j], extrap, op)
+    end
+    return out
+end
+
+"""
+Internal: Evaluate single series at single query point with extrapolation handling.
+Takes matrices as arguments for optimal performance.
+"""
+@inline function _eval_multi_series_with_extrap(
+    y::Matrix{T},
+    z::Matrix{T},
+    n_pts::Int,
+    x_min::T,
+    x_max::T,
+    k::Int,
+    aq::_CubicAnchoredQuery{T},
+    extrap::ExtrapVal,
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    # Inside domain: normal evaluation
+    if aq.side == 0x00
+        return _eval_multi_series_anchored(y, z, k, aq, op)
+    end
+
+    # Outside domain: dispatch on extrap mode
+    if extrap === Val(:extension) || extrap === Val(:wrap)
+        return _eval_multi_series_anchored(y, z, k, aq, op)
+    elseif extrap === Val(:constant)
+        if op isa EvalValue
+            pt_idx = aq.side == 0x01 ? 1 : n_pts
+            @inbounds return y[pt_idx, k]
+        else
+            return zero(T)
+        end
+    else
+        throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+    end
+end
+
+"""
+Internal: Core cubic evaluation for series k at anchored query point.
+Direct matrix access for optimal performance.
+"""
+@inline function _eval_multi_series_anchored(
+    y::Matrix{T},
+    z::Matrix{T},
+    k::Int,
+    aq::_CubicAnchoredQuery{T},
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    idx = aq.idx
+    wyL, wyR, wzL, wzR = _anchored_weights(aq, op)
+    @inbounds begin
+        yL = y[idx, k]
+        yR = y[idx + 1, k]
+        zL = z[idx, k]
+        zR = z[idx + 1, k]
+    end
+    return muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
 end

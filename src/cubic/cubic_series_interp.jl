@@ -114,6 +114,39 @@ const MultiCubicInterpolant = CubicSeriesInterpolant
 @inline _get_extrap(sitp::CubicSeriesInterpolant) = sitp.extrap
 
 # ========================================
+# Series Interface Traits
+# ========================================
+
+"""
+    _make_anchor(sitp::CubicSeriesInterpolant, xq::T) -> _CubicAnchoredQuery{T}
+
+Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
+"""
+@inline function _make_anchor(sitp::CubicSeriesInterpolant{T}, xq::T) where T
+    return _anchor_query(sitp.cache.x, xq; wrap=_should_wrap(sitp))
+end
+
+"""
+    _eval_series_at_anchor!(output, sitp::CubicSeriesInterpolant, aq, op)
+
+Evaluate all series at the given anchor point. Required trait for AbstractSeriesInterpolant.
+Uses point-contiguous layout for SIMD optimization.
+"""
+@inline function _eval_series_at_anchor!(
+    output::AbstractVector{T},
+    sitp::CubicSeriesInterpolant{T},
+    aq::_CubicAnchoredQuery{T},
+    op::AbstractEvalOp
+) where {T<:AbstractFloat}
+    y_point, z_point = _ensure_point_layout!(sitp)
+    n_pts = n_points(sitp)
+    x_min, x_max = T(first(sitp.cache.x)), T(last(sitp.cache.x))
+
+    _eval_series_point_with_extrap!(output, y_point, z_point, n_pts, x_min, x_max, aq, sitp.extrap, op)
+    return output
+end
+
+# ========================================
 # Lazy Point-Layout Management
 # ========================================
 

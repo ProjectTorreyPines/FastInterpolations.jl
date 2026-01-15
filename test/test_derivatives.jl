@@ -1687,5 +1687,485 @@ end # Derivative Comprehensive Coverage
             @test d2(π/4) == itp(π/4; deriv=2)
         end
     end
-
 end # DerivativeView Wrapper
+
+# ========================================
+# Group 11: Deriv=3 Extensions
+# ========================================
+@testset "Deriv=3 Extensions" begin
+
+    @testset "EvalDeriv3 core type" begin
+        @test isdefined(FastInterpolations, :EvalDeriv3)
+        @test FastInterpolations.EvalDeriv3 <: FastInterpolations.AbstractEvalOp
+        @test FastInterpolations.EvalDeriv3() isa FastInterpolations.AbstractEvalOp
+    end
+
+    @testset "@_dispatch_deriv handles deriv=3" begin
+        result = FastInterpolations.@_dispatch_deriv 3 => op begin
+            op
+        end
+        @test result isa FastInterpolations.EvalDeriv3
+
+        # Invalid deriv values should throw
+        @test_throws ArgumentError begin
+            FastInterpolations.@_dispatch_deriv 4 => op begin
+                op
+            end
+        end
+    end
+
+    @testset "Cubic kernel - S'''(x) = (zR - zL) / h" begin
+        zL, zR = 1.0, 3.0
+        yL, yR = 0.0, 1.0
+        h = 0.5
+        inv_h = 1.0 / h
+        dL, dR = 0.2, 0.3
+
+        result = FastInterpolations._cubic_kernel(
+            FastInterpolations.EvalDeriv3(), zL, zR, yL, yR, h, inv_h, dL, dR
+        )
+
+        expected = (zR - zL) / h
+        @test result ≈ expected
+
+        # Result should be constant within interval
+        result1 = FastInterpolations._cubic_kernel(
+            FastInterpolations.EvalDeriv3(), 2.0, 5.0, 0.0, 0.0, 0.1, 10.0, 0.02, 0.08
+        )
+        result2 = FastInterpolations._cubic_kernel(
+            FastInterpolations.EvalDeriv3(), 2.0, 5.0, 0.0, 0.0, 0.1, 10.0, 0.05, 0.05
+        )
+        @test result1 ≈ result2
+    end
+
+    @testset "Lower-order kernels return zero" begin
+        # Linear kernel
+        @test FastInterpolations._linear_kernel(
+            FastInterpolations.EvalDeriv3(), 1.0, 5.0, 0.5, 0.2
+        ) === zero(Float64)
+
+        # Quadratic kernel
+        @test FastInterpolations._quadratic_kernel(
+            FastInterpolations.EvalDeriv3(), 1.0, 2.0, 3.0, 0.5
+        ) === zero(Float64)
+
+        # Constant kernel
+        @test FastInterpolations._constant_kernel(
+            FastInterpolations.EvalDeriv3(), 5.0, 5.0, 0.5, 0.2, Val(:left)
+        ) === zero(Float64)
+    end
+
+    @testset "Anchor weight computation for deriv=3" begin
+        FI = FastInterpolations
+        h, inv_h = 0.1, 10.0
+        dL, dR = 0.03, 0.07
+
+        w3 = FI._compute_anchor_weights(FI.EvalDeriv3(), h, inv_h, dL, dR)
+
+        @test w3[1] === 0.0
+        @test w3[2] === 0.0
+        @test w3[3] === -10.0
+        @test w3[4] === 10.0
+    end
+
+    @testset "Numerical validation - f(x) = x³, f'''(x) = 6" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = x.^3
+        bc = BCPair(Deriv2(0.0), Deriv2(6.0))
+        itp = cubic_interp(x, y; bc=bc)
+
+        for xq in [0.1, 0.25, 0.5, 0.75, 0.9]
+            @test itp(xq; deriv=3) ≈ 6.0 atol=1e-8
+        end
+    end
+
+    @testset "Numerical validation - finite difference" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y)
+
+        xq = 0.5
+        h = 1e-5
+
+        d2_plus = itp(xq + h; deriv=2)
+        d2_minus = itp(xq - h; deriv=2)
+        fd_approx = (d2_plus - d2_minus) / (2h)
+
+        analytical = itp(xq; deriv=3)
+
+        @test analytical ≈ fd_approx rtol=1e-4
+    end
+
+    @testset "Constant within interval property" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y)
+
+        # Third derivative should be constant within each interval
+        for i in 1:length(x)-1
+            mid1 = x[i] + 0.25 * (x[i+1] - x[i])
+            mid2 = x[i] + 0.50 * (x[i+1] - x[i])
+            mid3 = x[i] + 0.75 * (x[i+1] - x[i])
+
+            val1 = itp(mid1; deriv=3)
+            val2 = itp(mid2; deriv=3)
+            val3 = itp(mid3; deriv=3)
+
+            @test val1 ≈ val2 ≈ val3
+        end
+    end
+
+    @testset "deriv3() factory function" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y)
+
+        d3 = deriv3(itp)
+
+        @test d3 isa FastInterpolations.DerivativeView{3}
+        @test d3.parent === itp
+        @test d3(0.5) == itp(0.5; deriv=3)
+    end
+
+    @testset "Lower-order interpolants return zero for deriv=3" begin
+        x = collect(range(0.0, 1.0, 11))
+
+        # Linear
+        litp = linear_interp(x, 2.0 .* x)
+        @test litp(0.5; deriv=3) === 0.0
+        @test deriv3(litp)(0.5) === 0.0
+
+        # Quadratic
+        qitp = quadratic_interp(x, x.^2)
+        @test qitp(0.5; deriv=3) === 0.0
+        @test deriv3(qitp)(0.5) === 0.0
+
+        # Constant
+        citp = constant_interp(x, fill(5.0, length(x)))
+        @test citp(0.5; deriv=3) === 0.0
+        @test deriv3(citp)(0.5) === 0.0
+    end
+
+    @testset "Extrapolation modes with deriv=3" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = x.^3
+
+        # Constant extrapolation
+        itp_const = cubic_interp(x, y; extrap=:constant)
+        @test itp_const(-0.5; deriv=3) === 0.0
+        @test itp_const(1.5; deriv=3) === 0.0
+
+        # Extension extrapolation
+        itp_ext = cubic_interp(x, y; extrap=:extension)
+        val_below = itp_ext(-0.5; deriv=3)
+        val_first = itp_ext(0.05; deriv=3)
+        @test val_below ≈ val_first
+
+        # None throws
+        itp_none = cubic_interp(x, y; extrap=:none)
+        @test_throws DomainError itp_none(-0.5; deriv=3)
+    end
+
+    @testset "Type stability for deriv=3" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y)
+
+        @test @inferred(itp(0.5; deriv=3)) isa Float64
+        @test @inferred(deriv3(itp)) isa FastInterpolations.DerivativeView{3}
+        @test @inferred(deriv3(itp)(0.5)) isa Float64
+    end
+
+    @testset "Zero-allocation for deriv=3" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y)
+
+        # Warmup
+        itp(0.5; deriv=3)
+        d3 = deriv3(itp)
+        d3(0.5)
+
+        # Measure
+        alloc_direct = @allocated itp(0.5; deriv=3)
+        alloc_view = @allocated d3(0.5)
+
+        @test alloc_direct <= DERIV_ALLOC_THRESHOLD
+        @test alloc_view <= DERIV_ALLOC_THRESHOLD
+    end
+
+end # Deriv=3 Extensions
+
+# ========================================
+# Group 12: DerivativeView Vector Queries
+# ========================================
+@testset "DerivativeView Vector Queries" begin
+
+    @testset "DerivativeView accepts vector queries - Cubic" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = x.^2
+        bc = BCPair(Deriv2(2.0), Deriv2(2.0))
+        itp = cubic_interp(x, y; bc=bc)
+
+        d1 = deriv1(itp)
+        d2 = deriv2(itp)
+        d3 = deriv3(itp)
+
+        x_query = [0.1, 0.5, 0.9]
+
+        # Direct vector query (not broadcast)
+        vals1 = d1(x_query)
+        vals2 = d2(x_query)
+        vals3 = d3(x_query)
+
+        @test vals1 isa Vector{Float64}
+        @test vals2 isa Vector{Float64}
+        @test vals3 isa Vector{Float64}
+
+        # Should match individual queries
+        @test vals1 ≈ [d1(xq) for xq in x_query]
+        @test vals2 ≈ [d2(xq) for xq in x_query]
+        @test vals3 ≈ [d3(xq) for xq in x_query]
+
+        # Should match itp(x_query; deriv=N)
+        @test vals1 ≈ itp(x_query; deriv=1)
+        @test vals2 ≈ itp(x_query; deriv=2)
+        @test vals3 ≈ itp(x_query; deriv=3)
+    end
+
+    @testset "DerivativeView accepts vector queries - Linear" begin
+        x = [0.0, 1.0, 2.0]
+        y = [0.0, 2.0, 6.0]
+        itp = linear_interp(x, y)
+
+        d1 = deriv1(itp)
+        d2 = deriv2(itp)
+        d3 = deriv3(itp)
+
+        x_query = [0.5, 1.5]
+
+        vals1 = d1(x_query)
+        vals2 = d2(x_query)
+        vals3 = d3(x_query)
+
+        @test vals1 ≈ itp(x_query; deriv=1)
+        @test vals2 ≈ itp(x_query; deriv=2)
+        @test vals3 ≈ itp(x_query; deriv=3)
+    end
+
+    @testset "DerivativeView vector query type stability" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = x.^2
+        itp = cubic_interp(x, y)
+
+        d1 = deriv1(itp)
+        x_query = [0.25, 0.5, 0.75]
+
+        @test @inferred(d1(x_query)) isa Vector{Float64}
+    end
+
+end # DerivativeView Vector Queries
+
+# ========================================
+# Group 13: SeriesInterpolant Derivatives
+# ========================================
+@testset "SeriesInterpolant Derivatives" begin
+
+    @testset "CubicSeriesInterpolant with deriv keyword - scalar" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        # Scalar queries with deriv=0,1,2,3
+        vals0 = sitp(0.5; deriv=0)
+        vals1 = sitp(0.5; deriv=1)
+        vals2 = sitp(0.5; deriv=2)
+        vals3 = sitp(0.5; deriv=3)
+
+        @test length(vals0) == 2
+        @test length(vals1) == 2
+        @test length(vals2) == 2
+        @test length(vals3) == 2
+
+        @test vals0 isa Vector{Float64}
+        @test vals1 isa Vector{Float64}
+        @test vals2 isa Vector{Float64}
+        @test vals3 isa Vector{Float64}
+    end
+
+    @testset "CubicSeriesInterpolant with deriv keyword - vector" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        x_query = [0.1, 0.5, 0.9]
+
+        # Vector queries with deriv=0,1,2,3
+        results0 = sitp(x_query; deriv=0)
+        results1 = sitp(x_query; deriv=1)
+        results2 = sitp(x_query; deriv=2)
+        results3 = sitp(x_query; deriv=3)
+
+        @test length(results0) == 2
+        @test length(results1) == 2
+        @test length(results2) == 2
+        @test length(results3) == 2
+
+        @test length(results0[1]) == 3
+        @test length(results1[1]) == 3
+        @test length(results2[1]) == 3
+        @test length(results3[1]) == 3
+    end
+
+    @testset "CubicSeriesInterpolant in-place with deriv keyword" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        # Scalar in-place
+        out_scalar = similar([0.0, 0.0])
+        sitp(out_scalar, 0.5; deriv=1)
+        @test out_scalar ≈ sitp(0.5; deriv=1)
+
+        # Vector in-place
+        x_query = [0.1, 0.5, 0.9]
+        outputs = [similar(x_query) for _ in 1:2]
+        sitp(outputs, x_query; deriv=1)
+
+        results = sitp(x_query; deriv=1)
+        @test outputs[1] ≈ results[1]
+        @test outputs[2] ≈ results[2]
+    end
+
+    @testset "LinearSeriesInterpolant with deriv keyword" begin
+        x = collect(range(0.0, 1.0, 11))
+        y1 = 2.0 .* x
+        y2 = 3.0 .* x
+        sitp = linear_interp(x, [y1, y2])
+
+        # deriv=0: values
+        vals0 = sitp(0.5; deriv=0)
+        @test vals0[1] ≈ 1.0
+        @test vals0[2] ≈ 1.5
+
+        # deriv=1: slopes
+        vals1 = sitp(0.5; deriv=1)
+        @test vals1[1] ≈ 2.0
+        @test vals1[2] ≈ 3.0
+
+        # deriv=2,3: zero
+        vals2 = sitp(0.5; deriv=2)
+        vals3 = sitp(0.5; deriv=3)
+        @test all(v === 0.0 for v in vals2)
+        @test all(v === 0.0 for v in vals3)
+    end
+
+    @testset "SeriesInterpolant extrapolation with deriv keyword" begin
+        x = collect(range(0.0, 1.0, 11))
+        y1 = x.^3
+        y2 = x.^2
+        sitp = cubic_interp(x, [y1, y2]; extrap=:constant)
+
+        # Outside domain with deriv=3
+        vals_below = sitp(-0.5; deriv=3)
+        vals_above = sitp(1.5; deriv=3)
+
+        @test vals_below[1] === 0.0
+        @test vals_below[2] === 0.0
+        @test vals_above[1] === 0.0
+        @test vals_above[2] === 0.0
+    end
+
+    @testset "SeriesInterpolant + deriv1/deriv2/deriv3 factories" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        # Factory functions should work
+        d1 = deriv1(sitp)
+        d2 = deriv2(sitp)
+        d3 = deriv3(sitp)
+
+        @test d1 isa FastInterpolations.DerivativeView{1}
+        @test d2 isa FastInterpolations.DerivativeView{2}
+        @test d3 isa FastInterpolations.DerivativeView{3}
+
+        # Scalar evaluation
+        vals1 = d1(0.5)
+        vals2 = d2(0.5)
+        vals3 = d3(0.5)
+
+        @test vals1 ≈ sitp(0.5; deriv=1)
+        @test vals2 ≈ sitp(0.5; deriv=2)
+        @test vals3 ≈ sitp(0.5; deriv=3)
+    end
+
+    @testset "SeriesInterpolant DerivativeView vector queries" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = x.^2
+        y2 = x.^3
+        sitp = cubic_interp(x, [y1, y2])
+
+        d1 = deriv1(sitp)
+        x_query = [0.25, 0.5, 0.75]
+
+        # Direct vector query
+        results = d1(x_query)
+
+        @test length(results) == 2
+        @test length(results[1]) == 3
+        @test length(results[2]) == 3
+
+        # Should match itp(x_query; deriv=1)
+        expected = sitp(x_query; deriv=1)
+        @test results[1] ≈ expected[1]
+        @test results[2] ≈ expected[2]
+    end
+
+    @testset "SeriesInterpolant DerivativeView broadcasting" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        d1 = deriv1(sitp)
+        x_query = [0.25, 0.5, 0.75]
+
+        # Broadcasting should work (but returns array of vectors, not vector of arrays)
+        results_bc = d1.(x_query)
+
+        @test length(results_bc) == 3
+        @test all(r -> length(r) == 2, results_bc)
+    end
+
+    @testset "SeriesInterpolant deriv keyword type stability" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        @test @inferred(sitp(0.5; deriv=1)) isa Vector{Float64}
+        @test @inferred(sitp([0.1, 0.5]; deriv=1)) isa Vector{Vector{Float64}}
+    end
+
+    @testset "SeriesInterpolant zero-allocation for scalar queries" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        # Warmup
+        out = sitp(0.5; deriv=1)
+        output = similar(out)
+        sitp(output, 0.5; deriv=1)
+
+        # In-place should be zero-allocation
+        alloc = @allocated sitp(output, 0.5; deriv=1)
+        @test alloc <= DERIV_ALLOC_THRESHOLD
+    end
+
+end # SeriesInterpolant Derivatives

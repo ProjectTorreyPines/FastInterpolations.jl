@@ -165,6 +165,49 @@ curvatures = d2.(xs)  # Second derivative (constant per interval)
 @inline deriv2(itp::QuadraticInterpolant) = DerivativeView{2, typeof(itp)}(itp)
 
 # ========================================
+# Third Derivative Factories
+# ========================================
+
+"""
+    deriv3(itp::CubicInterpolant) -> DerivativeView{3, ...}
+
+Create a callable third-derivative view of the cubic interpolant.
+
+# Note
+Third derivative of cubic spline is constant within each interval.
+Values may jump at knot points (this is mathematically expected).
+
+# Example
+```julia
+itp = cubic_interp(x, y)
+d3 = deriv3(itp)
+jerks = d3.(xs)  # Third derivative (jerk) at query points
+```
+"""
+@inline deriv3(itp::CubicInterpolant) = DerivativeView{3, typeof(itp)}(itp)
+
+"""
+    deriv3(itp::LinearInterpolant) -> DerivativeView{3, ...}
+
+Third derivative of linear interpolation is always zero.
+"""
+@inline deriv3(itp::LinearInterpolant) = DerivativeView{3, typeof(itp)}(itp)
+
+"""
+    deriv3(itp::ConstantInterpolant) -> DerivativeView{3, ...}
+
+Third derivative of constant interpolation is always zero.
+"""
+@inline deriv3(itp::ConstantInterpolant) = DerivativeView{3, typeof(itp)}(itp)
+
+"""
+    deriv3(itp::QuadraticInterpolant) -> DerivativeView{3, ...}
+
+Third derivative of quadratic spline is always zero.
+"""
+@inline deriv3(itp::QuadraticInterpolant) = DerivativeView{3, typeof(itp)}(itp)
+
+# ========================================
 # Callable Methods
 # ========================================
 
@@ -176,6 +219,11 @@ end
 # Second derivative view - scalar call only (broadcast-friendly)
 @inline function (d::DerivativeView{2, ITP})(xi::Real) where {ITP}
     d.parent(xi; deriv=2)
+end
+
+# Third derivative view - scalar call only (broadcast-friendly)
+@inline function (d::DerivativeView{3, ITP})(xi::Real) where {ITP}
+    d.parent(xi; deriv=3)
 end
 
 # Note: Vector methods are intentionally NOT defined.

@@ -30,9 +30,9 @@ export NaturalBC, ClampedBC, PeriodicBC, MinCurvFit, ParabolaFit
 export Left, Right
 
 # Derivative view functions for interpolants
-export deriv1, deriv2
+export deriv1, deriv2, deriv3
 
 # Operation types (for derivative dispatch)
-export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3
 
 end # module

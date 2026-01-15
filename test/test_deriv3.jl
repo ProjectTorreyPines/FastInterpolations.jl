@@ -244,3 +244,118 @@ end
         @test aq.w3 isa NTuple{4, Float32}
     end
 end
+
+@testset "Deriv3 - Phase 4: DerivativeView & Exports" begin
+    FI = FastInterpolations
+
+    @testset "deriv3() factory - CubicInterpolant" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y)
+
+        d3 = FI.deriv3(itp)
+
+        @test d3 isa FI.DerivativeView{3}
+        @test d3.parent === itp
+    end
+
+    @testset "deriv3() factory - LinearInterpolant" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = 2.0 .* x .+ 1.0
+        itp = linear_interp(x, y)
+
+        d3 = FI.deriv3(itp)
+
+        @test d3 isa FI.DerivativeView{3}
+        @test d3(0.5) === 0.0
+    end
+
+    @testset "deriv3() factory - QuadraticInterpolant" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = x.^2
+        itp = quadratic_interp(x, y)
+
+        d3 = FI.deriv3(itp)
+
+        @test d3 isa FI.DerivativeView{3}
+        @test d3(0.5) === 0.0
+    end
+
+    @testset "deriv3() factory - ConstantInterpolant" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = fill(5.0, length(x))
+        itp = constant_interp(x, y)
+
+        d3 = FI.deriv3(itp)
+
+        @test d3 isa FI.DerivativeView{3}
+        @test d3(0.5) === 0.0
+    end
+
+    @testset "DerivativeView{3} callable - scalar evaluation" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y)
+
+        d3 = FI.deriv3(itp)
+
+        @test d3(0.5) == itp(0.5; deriv=3)
+        @test d3(0.25) == itp(0.25; deriv=3)
+    end
+
+    @testset "DerivativeView{3} callable - broadcasting" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y)
+
+        d3 = FI.deriv3(itp)
+        xs = [0.1, 0.5, 0.9]
+
+        results = d3.(xs)
+        expected = [itp(xi; deriv=3) for xi in xs]
+
+        @test results ≈ expected
+    end
+
+    @testset "DerivativeView{3} - type stability" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y)
+
+        d3 = FI.deriv3(itp)
+
+        @inferred d3(0.5)
+        @inferred FI.deriv3(itp)
+    end
+
+    @testset "DerivativeView{3} - Float32 support" begin
+        x = collect(range(0.0f0, 1.0f0, 101))
+        y = sin.(2f0 * Float32(π) .* x)
+        itp = cubic_interp(x, y)
+
+        d3 = FI.deriv3(itp)
+        val = d3(0.5f0)
+
+        @test val isa Float32
+    end
+
+    @testset "Exports - EvalDeriv3 is exported" begin
+        @test :EvalDeriv3 in names(FastInterpolations)
+    end
+
+    @testset "Exports - deriv3 is exported" begin
+        @test :deriv3 in names(FastInterpolations)
+    end
+
+    @testset "deriv3 matches itp(x; deriv=3) exactly" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = x.^3
+        itp = cubic_interp(x, y)
+
+        d3 = FI.deriv3(itp)
+
+        for xq in [0.1, 0.25, 0.5, 0.75, 0.9]
+            @test d3(xq) === itp(xq; deriv=3)
+        end
+    end
+end

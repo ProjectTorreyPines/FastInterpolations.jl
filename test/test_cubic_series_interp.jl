@@ -1521,3 +1521,274 @@ end
         @test out3 ≈ expected3 atol=1e-14
     end
 end
+
+# ============================================================================
+# Per-Series Boundary Conditions Tests
+# ============================================================================
+
+@testset "CubicSeriesInterpolant - Per-Series BC" begin
+    FI = FastInterpolations
+
+    @testset "Same BC type, different values - linear functions" begin
+        x = collect(range(0.0, 1.0, 11))
+
+        # Linear functions with different slopes
+        y1 = 1.0 .* x      # slope = 1
+        y2 = 2.0 .* x      # slope = 2
+        y3 = 3.0 .* x      # slope = 3
+
+        # Each series uses its actual slope as BC
+        sitp = cubic_interp(x, [y1, y2, y3]; bc=[
+            BCPair(Deriv1(1.0), Deriv1(1.0)),
+            BCPair(Deriv1(2.0), Deriv1(2.0)),
+            BCPair(Deriv1(3.0), Deriv1(3.0)),
+        ])
+
+        # Linear functions should be exactly reproduced
+        @test sitp(0.5) ≈ [0.5, 1.0, 1.5] atol=1e-14
+
+        # Test at multiple points
+        for xq in [0.0, 0.25, 0.5, 0.75, 1.0]
+            result = sitp(xq)
+            @test result[1] ≈ 1.0 * xq atol=1e-14
+            @test result[2] ≈ 2.0 * xq atol=1e-14
+            @test result[3] ≈ 3.0 * xq atol=1e-14
+        end
+    end
+
+    @testset "Mixed BC types" begin
+        x = collect(range(0.0, 1.0, 21))
+        y1 = sin.(π .* x)
+        y2 = cos.(π .* x)
+        y3 = x.^2
+
+        # Different BC types for each series
+        sitp = cubic_interp(x, [y1, y2, y3]; bc=[
+            NaturalBC(),                           # Natural BC
+            BCPair(Deriv1(0.0), Deriv1(0.0)),      # Clamped BC
+            BCPair(Deriv2(2.0), Deriv2(2.0)),      # Constant curvature = 2
+        ])
+
+        # Each series should be computed correctly
+        @test sitp(0.5) isa Vector{Float64}
+        @test length(sitp(0.5)) == 3
+
+        # Compare with individual interpolants using same BC
+        itp1 = cubic_interp(x, y1; bc=NaturalBC())
+        itp2 = cubic_interp(x, y2; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
+        itp3 = cubic_interp(x, y3; bc=BCPair(Deriv2(2.0), Deriv2(2.0)))
+
+        for xq in [0.1, 0.3, 0.5, 0.7, 0.9]
+            result = sitp(xq)
+            @test result[1] ≈ itp1(xq) atol=1e-14
+            @test result[2] ≈ itp2(xq) atol=1e-14
+            @test result[3] ≈ itp3(xq) atol=1e-14
+        end
+    end
+
+    @testset "Matrix input with BC array" begin
+        x = collect(range(0.0, 1.0, 11))
+        y1 = 1.0 .* x
+        y2 = 2.0 .* x
+        Y = hcat(y1, y2)  # 11×2 matrix
+
+        sitp = cubic_interp(x, Y; bc=[
+            BCPair(Deriv1(1.0), Deriv1(1.0)),
+            BCPair(Deriv1(2.0), Deriv1(2.0)),
+        ])
+
+        @test sitp(0.5) ≈ [0.5, 1.0] atol=1e-14
+    end
+
+    @testset "BC array with Deriv2 and Deriv3" begin
+        x = collect(range(0.0, 1.0, 21))
+
+        # Quadratic: y = x^2, y'' = 2
+        y_quad = x.^2
+
+        # Cubic: y = x^3, y''' = 6
+        y_cubic = x.^3
+
+        sitp = cubic_interp(x, [y_quad, y_cubic]; bc=[
+            BCPair(Deriv2(2.0), Deriv2(2.0)),      # Quadratic's curvature
+            BCPair(Deriv3(6.0), Deriv3(6.0)),      # Cubic's third derivative
+        ])
+
+        # Verify results match individual interpolants
+        itp_quad = cubic_interp(x, y_quad; bc=BCPair(Deriv2(2.0), Deriv2(2.0)))
+        itp_cubic = cubic_interp(x, y_cubic; bc=BCPair(Deriv3(6.0), Deriv3(6.0)))
+
+        for xq in [0.2, 0.5, 0.8]
+            result = sitp(xq)
+            @test result[1] ≈ itp_quad(xq) atol=1e-13
+            @test result[2] ≈ itp_cubic(xq) atol=1e-13
+        end
+    end
+
+    @testset "BC array length validation" begin
+        x = collect(range(0.0, 1.0, 11))
+        y1, y2 = sin.(x), cos.(x)
+
+        # Length mismatch → DimensionMismatch
+        @test_throws DimensionMismatch cubic_interp(x, [y1, y2]; bc=[NaturalBC()])
+        @test_throws DimensionMismatch cubic_interp(x, [y1, y2]; bc=[NaturalBC(), NaturalBC(), NaturalBC()])
+    end
+
+    @testset "PeriodicBC in array - not supported" begin
+        x = collect(range(0.0, 1.0, 11))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        # PeriodicBC not supported in arrays
+        @test_throws ArgumentError cubic_interp(x, [y1, y2]; bc=[
+            PeriodicBC(),
+            NaturalBC(),
+        ])
+    end
+
+    @testset "Derivatives with per-series BC" begin
+        x = collect(range(0.0, 1.0, 21))
+        y1 = 1.0 .* x      # slope = 1
+        y2 = 2.0 .* x      # slope = 2
+
+        sitp = cubic_interp(x, [y1, y2]; bc=[
+            BCPair(Deriv1(1.0), Deriv1(1.0)),
+            BCPair(Deriv1(2.0), Deriv1(2.0)),
+        ])
+
+        # First derivative of linear function = slope
+        d1 = sitp(0.5; deriv=1)
+        @test d1[1] ≈ 1.0 atol=1e-12
+        @test d1[2] ≈ 2.0 atol=1e-12
+
+        # Second derivative of linear function = 0
+        d2 = sitp(0.5; deriv=2)
+        @test d2[1] ≈ 0.0 atol=1e-10
+        @test d2[2] ≈ 0.0 atol=1e-10
+    end
+
+    # =========================================================================
+    # Zero-Allocation Tests for Per-Series BC
+    # =========================================================================
+    # BC is only used at construction time. Evaluation should be zero-allocation
+    # regardless of whether single BC or BC array was used.
+
+    @testset "Zero-allocation: scalar query with per-series BC" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        y3 = exp.(-3 .* x)
+
+        # Create with per-series BC (mixed types)
+        sitp = cubic_interp(x, [y1, y2, y3]; bc=[
+            NaturalBC(),
+            BCPair(Deriv1(0.0), Deriv1(0.0)),
+            BCPair(Deriv2(0.0), Deriv2(0.0)),
+        ], precompute_transpose=true)
+
+        out = zeros(3)
+
+        # Warmup
+        sitp(out, 0.5)
+        sitp(out, 0.5)
+
+        # Scalar query - zero allocation
+        allocs = @allocated sitp(out, 0.5)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-allocation: vector query with per-series BC" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        # Create with same BC type, different values
+        sitp = cubic_interp(x, [y1, y2]; bc=[
+            BCPair(Deriv1(1.0), Deriv1(-1.0)),
+            BCPair(Deriv1(0.5), Deriv1(-0.5)),
+        ])
+
+        xq = collect(range(0.1, 0.9, 50))
+        out1 = Vector{Float64}(undef, 50)
+        out2 = Vector{Float64}(undef, 50)
+        outputs = [out1, out2]
+
+        # Warmup
+        sitp(outputs, xq)
+        sitp(outputs, xq)
+
+        # Vector query - zero allocation
+        allocs = @allocated sitp(outputs, xq)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-allocation: derivatives with per-series BC" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        # Create with mixed BC types
+        sitp = cubic_interp(x, [y1, y2]; bc=[
+            NaturalBC(),
+            BCPair(Deriv1(0.0), Deriv1(0.0)),
+        ], precompute_transpose=true)
+
+        out = zeros(2)
+
+        # Warmup deriv=1
+        sitp(out, 0.5; deriv=1)
+        sitp(out, 0.5; deriv=1)
+
+        allocs = @allocated sitp(out, 0.5; deriv=1)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Warmup deriv=2
+        sitp(out, 0.5; deriv=2)
+        sitp(out, 0.5; deriv=2)
+
+        allocs = @allocated sitp(out, 0.5; deriv=2)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Fast path: BCPair array normalization is zero-allocation" begin
+        # When user provides BCPair array directly, _normalize_bc_array
+        # should return the same array without allocation (identity fast path)
+        bc_pairs = [
+            BCPair(Deriv1(0.0), Deriv1(0.0)),
+            BCPair(Deriv2(0.0), Deriv2(0.0)),
+            BCPair(Deriv1(1.0), Deriv3(0.0)),
+        ]
+
+        # Warmup
+        FastInterpolations._normalize_bc_array(bc_pairs, Float64, 3)
+        FastInterpolations._normalize_bc_array(bc_pairs, Float64, 3)
+
+        # Should return the same object (identity)
+        result = FastInterpolations._normalize_bc_array(bc_pairs, Float64, 3)
+        @test result === bc_pairs  # Same object reference, not a copy
+
+        # Zero allocation
+        allocs = @allocated FastInterpolations._normalize_bc_array(bc_pairs, Float64, 3)
+        @test allocs == 0
+    end
+
+    @testset "General path: mixed BC array creates new Vector{BCPair}" begin
+        # When BC types are mixed, normalization must create new array
+        mixed_bcs = AbstractBC{Float64}[
+            NaturalBC(),
+            BCPair(Deriv1(0.0), Deriv2(3.0)),
+            ClampedBC()
+        ]
+
+        result = FastInterpolations._normalize_bc_array(mixed_bcs, Float64, 3)
+
+        # Should be a new Vector{BCPair{Float64}}
+        @test result isa Vector{BCPair{Float64}}
+        @test result !== mixed_bcs  # Different object
+
+        # Values should be correctly normalized (uses Julia's default structural equality for BCPair)
+        @test result[1] == BCPair(Deriv2(0.0), Deriv2(0.0))  # NaturalBC
+        @test result[2] == BCPair(Deriv1(0.0), Deriv2(3.0))  # Already BCPair
+        @test result[3] == BCPair(Deriv1(0.0), Deriv1(0.0))  # ClampedBC
+    end
+end

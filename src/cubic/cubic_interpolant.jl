@@ -168,12 +168,6 @@ end
     return muladd(wzR, zR, wzL * zL)
 end
 
-# Helper functions to extract weights (used by series interpolation)
-@inline _anchored_weights(aq::_CubicAnchoredQuery, ::EvalValue) = aq.w0
-@inline _anchored_weights(aq::_CubicAnchoredQuery, ::EvalDeriv1) = aq.w1
-@inline _anchored_weights(aq::_CubicAnchoredQuery, ::EvalDeriv2) = aq.w2
-@inline _anchored_weights(aq::_CubicAnchoredQuery, ::EvalDeriv3) = aq.w3
-
 # ========================================
 # Anchored Extrapolation Handlers
 # ========================================

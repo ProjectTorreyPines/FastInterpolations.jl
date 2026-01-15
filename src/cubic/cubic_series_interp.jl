@@ -453,6 +453,56 @@ Solve cubic spline systems for all series using shared LU factorization.
     return z_mat
 end
 
+"""
+    _solve_series_with_bc_array!(z_mat, y_mat, x, bc_array, autocache)
+
+Solve cubic spline systems for series with per-series boundary conditions.
+Groups series by BC type for cache efficiency.
+
+# Arguments
+- `z_mat`: Output matrix for second derivatives (n_points × n_series)
+- `y_mat`: Input y-values matrix (n_points × n_series)
+- `x`: x-grid vector
+- `bc_array`: Vector of BCPair, one per series
+- `autocache`: Whether to use cache pool
+"""
+@with_pool pool function _solve_series_with_bc_array!(
+    z_mat::Matrix{T},
+    y_mat::Matrix{T},
+    x::AbstractVector{T},
+    bc_array::AbstractVector{<:BCPair{T}},
+    autocache::Bool
+) where {T<:AbstractFloat}
+    n_series = size(y_mat, 2)
+
+    # Group series by BC type for cache reuse
+    # Dict: typeof(bc) => (cache, indices)
+    type_groups = Dict{DataType, Tuple{CubicSplineCache{T}, Vector{Int}}}()
+
+    for k in 1:n_series
+        bc = bc_array[k]
+        bc_type = typeof(bc)
+
+        if haskey(type_groups, bc_type)
+            # Cache already exists for this BC type → just add index
+            push!(type_groups[bc_type][2], k)
+        else
+            # New BC type → get cache from pool
+            cache = _get_cubic_cache(x, bc, autocache)
+            type_groups[bc_type] = (cache, [k])
+        end
+    end
+
+    # Solve each group using its cache
+    for (_, (cache, indices)) in type_groups
+        for k in indices
+            _solve_system!(@view(z_mat[:, k]), cache, @view(y_mat[:, k]), bc_array[k])
+        end
+    end
+
+    return z_mat
+end
+
 # ========================================
 # Constructors
 # ========================================
@@ -465,7 +515,7 @@ Create a multi-Y cubic spline interpolant for multiple y-data series sharing the
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
-- `bc`: Boundary condition (NaturalBC, ClampedBC, PeriodicBC, etc.)
+- `bc`: Boundary condition (NaturalBC, ClampedBC, PeriodicBC, or Vector of BC for per-series)
 - `extrap`: Extrapolation mode (:none, :constant, :extension, :wrap)
 - `autocache`: If true, reuse cached LU factorization (default: true)
 - `precompute_transpose`: If true, build point-contiguous layout immediately
@@ -480,14 +530,22 @@ y1 = sin.(2π .* x)
 y2 = cos.(2π .* x)
 y3 = exp.(-x)
 
+# Uniform BC for all series
 sitp = cubic_interp(x, [y1, y2, y3])
 vals = sitp(0.5)  # [sin(π), cos(π), exp(-0.5)]
+
+# Per-series BC (each series can have different BC)
+sitp = cubic_interp(x, [y1, y2, y3]; bc=[
+    NaturalBC(),
+    BCPair(Deriv1(2.0), Deriv1(0.0)),
+    BCPair(Deriv2(0.0), Deriv3(5.0)),
+])
 ```
 """
 function cubic_interp(
     x::AbstractVector{T},
     ys::AbstractVector{<:AbstractVector{T}};
-    bc::AbstractBC=NaturalBC(),
+    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
     precompute_transpose::Bool=false
@@ -513,23 +571,35 @@ function cubic_interp(
         y_mat[:, k] .= ys[k]
     end
 
-    # Handle periodic BC separately
-    if _is_periodic_bc(bc)
+    # Handle periodic BC separately (only for scalar BC)
+    if bc isa AbstractBC && _is_periodic_bc(bc)
         return _build_series_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose)
     end
 
-    # Get cache for derivative BC
-    bc_pair = _normalize_bc(bc, T)
-    cache = _get_cubic_cache(x, bc_pair, autocache)
-
     # Build z matrix by solving systems
     z_mat = Matrix{T}(undef, n_pts, n_series_count)
-    _solve_series_coefficients!(z_mat, y_mat, cache, bc_pair)
+
+    if bc isa AbstractVector
+        # Per-series BC array
+        bc_array = _normalize_bc_array(bc, T, n_series_count)
+        _solve_series_with_bc_array!(z_mat, y_mat, x, bc_array, autocache)
+        # All per-series caches share the same x-grid, so any BC's cache is valid here.
+        # We store the first BC as a "representative" for struct compatibility and
+        # x-grid access via _get_grid(cache); the specific BC chosen does not affect evaluation.
+        bc_representative = bc_array[1]
+        cache = _get_cubic_cache(x, bc_representative, autocache)
+    else
+        # Uniform BC (original path)
+        bc_pair = _normalize_bc(bc, T)
+        cache = _get_cubic_cache(x, bc_pair, autocache)
+        _solve_series_coefficients!(z_mat, y_mat, cache, bc_pair)
+        bc_representative = bc_pair
+    end
 
     # Convert extrap symbol to Val
     extrap_val = _symbol_to_extrap_val(extrap)
 
-    sitp = CubicSeriesInterpolant(cache, bc_pair, y_mat, z_mat, extrap_val)
+    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap_val)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)
@@ -601,7 +671,7 @@ sitp = cubic_interp(x, Y)
 function cubic_interp(
     x::AbstractVector{T},
     Y::AbstractMatrix{T};
-    bc::AbstractBC=NaturalBC(),
+    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
     precompute_transpose::Bool=false
@@ -620,23 +690,35 @@ function cubic_interp(
     # Copy to ensure ownership
     y_mat = copy(Y)
 
-    # Handle periodic BC separately
-    if _is_periodic_bc(bc)
+    # Handle periodic BC separately (only for scalar BC)
+    if bc isa AbstractBC && _is_periodic_bc(bc)
         return _build_series_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose)
     end
 
-    # Get cache for derivative BC
-    bc_pair = _normalize_bc(bc, T)
-    cache = _get_cubic_cache(x, bc_pair, autocache)
-
     # Build z matrix by solving systems
     z_mat = Matrix{T}(undef, n_pts, n_series_count)
-    _solve_series_coefficients!(z_mat, y_mat, cache, bc_pair)
+
+    if bc isa AbstractVector
+        # Per-series BC array
+        bc_array = _normalize_bc_array(bc, T, n_series_count)
+        _solve_series_with_bc_array!(z_mat, y_mat, x, bc_array, autocache)
+        # All per-series caches share the same x-grid, so any BC's cache is valid here.
+        # We store the first BC as a "representative" for struct compatibility and
+        # x-grid access via _get_grid(cache); the specific BC chosen does not affect evaluation.
+        bc_representative = bc_array[1]
+        cache = _get_cubic_cache(x, bc_representative, autocache)
+    else
+        # Uniform BC (original path)
+        bc_pair = _normalize_bc(bc, T)
+        cache = _get_cubic_cache(x, bc_pair, autocache)
+        _solve_series_coefficients!(z_mat, y_mat, cache, bc_pair)
+        bc_representative = bc_pair
+    end
 
     # Convert extrap symbol to Val
     extrap_val = _symbol_to_extrap_val(extrap)
 
-    sitp = CubicSeriesInterpolant(cache, bc_pair, y_mat, z_mat, extrap_val)
+    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap_val)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)
@@ -649,7 +731,7 @@ end
 function cubic_interp(
     x::AbstractVector{Tx},
     ys::AbstractVector{<:AbstractVector{Ty}};
-    bc::AbstractBC=NaturalBC(),
+    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
     precompute_transpose::Bool=false
@@ -663,7 +745,7 @@ end
 function cubic_interp(
     x::AbstractVector{Tx},
     Y::AbstractMatrix{Ty};
-    bc::AbstractBC=NaturalBC(),
+    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
     precompute_transpose::Bool=false

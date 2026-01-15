@@ -36,6 +36,7 @@ else
     include("test_generic_bc.jl")
     include("test_type_stability.jl")
     include("test_derivatives.jl")
+    include("test_deriv3.jl")
     include("test_packages_comparison.jl")
     include("test_thread_safety.jl")
     include("test_rcu.jl")

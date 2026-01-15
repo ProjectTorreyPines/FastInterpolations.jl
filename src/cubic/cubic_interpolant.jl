@@ -134,6 +134,7 @@ end
 @inline _anchored_weights(aq::_CubicAnchoredQuery, ::EvalValue) = aq.w0
 @inline _anchored_weights(aq::_CubicAnchoredQuery, ::EvalDeriv1) = aq.w1
 @inline _anchored_weights(aq::_CubicAnchoredQuery, ::EvalDeriv2) = aq.w2
+@inline _anchored_weights(aq::_CubicAnchoredQuery, ::EvalDeriv3) = aq.w3
 
 # ========================================
 # Anchored Extrapolation Handlers
@@ -156,6 +157,10 @@ end
 end
 
 @inline function _eval_anchored_extrap(::CubicInterpolant{T}, ::_CubicAnchoredQuery{T}, ::Val{:constant}, ::EvalDeriv2) where {T}
+    return zero(T)
+end
+
+@inline function _eval_anchored_extrap(::CubicInterpolant{T}, ::_CubicAnchoredQuery{T}, ::Val{:constant}, ::EvalDeriv3) where {T}
     return zero(T)
 end
 

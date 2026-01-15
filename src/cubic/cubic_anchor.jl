@@ -27,6 +27,7 @@ matches the interpolant grid.
 - `w0`: Precomputed weights for value
 - `w1`: Precomputed weights for first derivative
 - `w2`: Precomputed weights for second derivative
+- `w3`: Precomputed weights for third derivative
 
 # Usage
 ```julia
@@ -51,6 +52,7 @@ struct _CubicAnchoredQuery{T<:AbstractFloat}
     w0::NTuple{4,T}            # (wyL, wyR, wzL, wzR) for value
     w1::NTuple{4,T}            # (wyL, wyR, wzL, wzR) for first deriv
     w2::NTuple{4,T}            # (wyL, wyR, wzL, wzR) for second deriv
+    w3::NTuple{4,T}            # (wyL, wyR, wzL, wzR) for third deriv
 end
 
 # ========================================
@@ -104,6 +106,29 @@ Weights satisfy: S''(xq) = wzL*zL + wzR*zR (no y contribution)
     wyR = zero(T)
     wzL = dR * inv_h
     wzR = dL * inv_h
+    return (wyL, wyR, wzL, wzR)
+end
+
+"""
+    _compute_anchor_weights(::EvalDeriv3, h, inv_h, dL, dR) -> NTuple{4,T}
+
+Compute weights for cubic spline third derivative evaluation.
+
+# Formula
+S'''(x) = (zR - zL) / h = -inv_h * zL + inv_h * zR
+        = wyL*yL + wyR*yR + wzL*zL + wzR*zR
+        = 0*yL + 0*yR + (-inv_h)*zL + (inv_h)*zR
+
+Weights: wyL=0, wyR=0, wzL=-inv_h, wzR=inv_h
+
+# Note
+Third derivative is constant within each interval (independent of dL, dR).
+"""
+@inline function _compute_anchor_weights(::EvalDeriv3, ::T, inv_h::T, ::T, ::T) where {T}
+    wyL = zero(T)
+    wyR = zero(T)
+    wzL = -inv_h
+    wzR =  inv_h
     return (wyL, wyR, wzL, wzR)
 end
 
@@ -273,6 +298,7 @@ Internal implementation of _anchor_query.
     w0 = _compute_anchor_weights(EvalValue(), h, inv_h, dL, dR)
     w1 = _compute_anchor_weights(EvalDeriv1(), h, inv_h, dL, dR)
     w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
+    w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
 
-    return _CubicAnchoredQuery{T}(idx, xq, side, w0, w1, w2)
+    return _CubicAnchoredQuery{T}(idx, xq, side, w0, w1, w2, w3)
 end

@@ -54,6 +54,16 @@ Cache entry for derivative BC (uses BCPair).
 - `R`: Right boundary condition type (Deriv1{T} or Deriv2{T})
 - `X`: Grid type (Vector{T} or StepRangeLen)
 - `S`: Grid spacing type (ScalarSpacing{T} or VectorSpacing{T})
+
+# Fields
+- `id::UInt`: objectid of the ORIGINAL input x (hint for fast lookup)
+- `x::X`: SNAPSHOT of the grid (copy for Vector, same object for Range)
+- `cache`: CubicSplineCache built from the snapshot
+
+# Mutation Safety
+The `x` field stores a snapshot (copy) for Vector inputs, preventing external
+mutation from corrupting the cache. Lookup verifies `isequal(entry.x, input_x)`
+even on objectid match to detect in-place mutation.
 """
 mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}, S<:AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
     id::UInt
@@ -70,6 +80,14 @@ Cache entry for periodic BC (uses PeriodicData).
 - `T`: Float type (Float32 or Float64)
 - `X`: Grid type (Vector{T} or StepRangeLen)
 - `S`: Grid spacing type (ScalarSpacing{T} or VectorSpacing{T})
+
+# Fields
+- `id::UInt`: objectid of the ORIGINAL input x (hint for fast lookup)
+- `x::X`: SNAPSHOT of the grid (copy for Vector, same object for Range)
+- `cache`: CubicSplineCache built from the snapshot
+
+# Mutation Safety
+See `CacheEntry` documentation for details on mutation safety pattern.
 """
 mutable struct PeriodicCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}, S<:AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
     id::UInt

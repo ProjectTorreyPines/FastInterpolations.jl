@@ -7,12 +7,12 @@ FastInterpolations.jl provides **analytical derivatives** for all interpolation 
 
 ## Overview
 
-| Interpolation | First Derivative | Second Derivative |
-|---------------|------------------|-------------------|
-| Constant | Always 0 | Always 0 |
-| Linear | Piecewise constant (slope) | Always 0 |
-| Quadratic | Continuous (C¹) | Piecewise constant |
-| Cubic | Smooth (C¹ continuous) | Continuous (C²) |
+| Interpolation | First Derivative | Second Derivative | Third Derivative |
+|---------------|------------------|-------------------|------------------|
+| Constant | Always 0 | Always 0 | Always 0 |
+| Linear | Piecewise constant (slope) | Always 0 | Always 0 |
+| Quadratic | Continuous (C¹) | Piecewise constant | Always 0 |
+| Cubic | Smooth (C¹ continuous) | Continuous (C²) | Piecewise constant |
 
 ## One-Shot API
 
@@ -64,7 +64,7 @@ println("In-place first derivatives: ", round.(out, digits=4))
 
 ## Interpolant API
 
-For repeated evaluation, use `deriv1()` and `deriv2()` wrapper functions:
+For repeated evaluation, use `deriv1()`, `deriv2()`, and `deriv3()` wrapper functions:
 
 ```@example deriv
 itp = cubic_interp(x, y)
@@ -72,6 +72,7 @@ itp = cubic_interp(x, y)
 # Create derivative views
 d1 = deriv1(itp)  # First derivative
 d2 = deriv2(itp)  # Second derivative
+d3 = deriv3(itp)  # Third derivative (cubic only)
 
 # Scalar evaluation
 println("d1(1.0) = ", round(d1(1.0), digits=6))
@@ -122,12 +123,12 @@ See [Extrapolation](../extrapolation.md) for available modes.
 
 ### One-Shot API
 
-| Function | `deriv=1` | `deriv=2` |
-|----------|-----------|-----------|
-| `constant_interp(x, y, xq; deriv=...)` | 0 | 0 |
-| `linear_interp(x, y, xq; deriv=...)` | Piecewise constant | 0 |
-| `quadratic_interp(x, y, xq; deriv=...)` | Continuous | Piecewise constant |
-| `cubic_interp(x, y, xq; deriv=...)` | Smooth | Continuous |
+| Function | `deriv=1` | `deriv=2` | `deriv=3` |
+|----------|-----------|-----------|-----------|
+| `constant_interp(x, y, xq; deriv=...)` | 0 | 0 | 0 |
+| `linear_interp(x, y, xq; deriv=...)` | Piecewise constant | 0 | 0 |
+| `quadratic_interp(x, y, xq; deriv=...)` | Continuous | Piecewise constant | 0 |
+| `cubic_interp(x, y, xq; deriv=...)` | Smooth | Continuous | Piecewise constant |
 
 ### Interpolant API
 
@@ -135,6 +136,7 @@ See [Extrapolation](../extrapolation.md) for available modes.
 |--------|-------------|
 | `deriv1(itp)` | First derivative view |
 | `deriv2(itp)` | Second derivative view |
+| `deriv3(itp)` | Third derivative view (cubic only) |
 | `d1.(xq)` | Vector evaluation via broadcast |
 
 ## See Also

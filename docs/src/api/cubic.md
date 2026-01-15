@@ -24,8 +24,10 @@
 |----------|-------------|
 | `cubic_interp(x, y, xq; deriv=1)` | First derivative (continuous) |
 | `cubic_interp(x, y, xq; deriv=2)` | Second derivative (continuous) |
+| `cubic_interp(x, y, xq; deriv=3)` | Third derivative (piecewise constant) |
 | `deriv1(itp)` | First derivative view |
 | `deriv2(itp)` | Second derivative view |
+| `deriv3(itp)` | Third derivative view |
 
 ---
 
@@ -56,4 +58,5 @@ clear_cubic_cache!
 ```@docs
 deriv1
 deriv2
+deriv3
 ```

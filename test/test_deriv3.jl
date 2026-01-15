@@ -359,3 +359,153 @@ end
         end
     end
 end
+
+@testset "Deriv3 - Phase 5: Series & Extrapolation" begin
+
+    @testset "Extrapolation - :constant returns zero" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = x.^3
+        itp = cubic_interp(x, y; extrap=:constant)
+
+        @test itp(-0.5; deriv=3) === 0.0
+        @test itp(-1.0; deriv=3) === 0.0
+        @test itp(1.5; deriv=3) === 0.0
+        @test itp(2.0; deriv=3) === 0.0
+    end
+
+    @testset "Extrapolation - :extension uses boundary polynomial" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = x.^3
+        itp = cubic_interp(x, y; extrap=:extension)
+
+        val_below = itp(-0.5; deriv=3)
+        val_first = itp(0.05; deriv=3)
+        @test val_below ≈ val_first
+
+        val_above = itp(1.5; deriv=3)
+        val_last = itp(0.95; deriv=3)
+        @test val_above ≈ val_last
+    end
+
+    @testset "Extrapolation - :none throws DomainError" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y; extrap=:none)
+
+        @test_throws DomainError itp(-0.5; deriv=3)
+        @test_throws DomainError itp(1.5; deriv=3)
+    end
+
+    @testset "Extrapolation - :wrap (periodic)" begin
+        x = collect(range(0.0, 1.0, 11))
+        y = sin.(2π .* x)
+        itp = cubic_interp(x, y; extrap=:wrap)
+
+        val_below = itp(-0.2; deriv=3)
+        val_equiv = itp(0.8; deriv=3)
+
+        @test isfinite(val_below)
+        @test isfinite(val_equiv)
+    end
+
+    @testset "CubicSeriesInterpolant - scalar evaluation" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        vals = sitp(0.5; deriv=3)
+
+        @test length(vals) == 2
+        @test vals isa Vector
+    end
+
+    @testset "CubicSeriesInterpolant - in-place scalar" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        vals = sitp(0.5; deriv=3)
+        out = similar(vals)
+        sitp(out, 0.5; deriv=3)
+
+        @test out ≈ vals
+    end
+
+    @testset "CubicSeriesInterpolant - vector evaluation" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        xq = [0.1, 0.5, 0.9]
+        results = sitp(xq; deriv=3)
+
+        @test length(results) == 2
+        @test length(results[1]) == 3
+        @test length(results[2]) == 3
+    end
+
+    @testset "CubicSeriesInterpolant - in-place vector" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        xq = [0.1, 0.5, 0.9]
+        results = sitp(xq; deriv=3)
+
+        outputs = [similar(xq) for _ in 1:2]
+        sitp(outputs, xq; deriv=3)
+
+        @test outputs[1] ≈ results[1]
+        @test outputs[2] ≈ results[2]
+    end
+
+    @testset "CubicSeriesInterpolant - extrapolation :constant" begin
+        x = collect(range(0.0, 1.0, 11))
+        y1 = x.^3
+        y2 = x.^2
+        sitp = cubic_interp(x, [y1, y2]; extrap=:constant)
+
+        vals_below = sitp(-0.5; deriv=3)
+        vals_above = sitp(1.5; deriv=3)
+
+        @test vals_below[1] === 0.0
+        @test vals_below[2] === 0.0
+        @test vals_above[1] === 0.0
+        @test vals_above[2] === 0.0
+    end
+
+    @testset "LinearSeriesInterpolant - deriv=3 returns zero" begin
+        x = collect(range(0.0, 1.0, 11))
+        y1 = 2.0 .* x
+        y2 = 3.0 .* x
+        sitp = linear_interp(x, [y1, y2])
+
+        vals = sitp(0.5; deriv=3)
+
+        @test all(v === 0.0 for v in vals)
+    end
+
+    @testset "Series interpolant - type stability" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        @inferred sitp(0.5; deriv=3)
+    end
+
+    @testset "Series interpolant - Float32" begin
+        x = collect(range(0.0f0, 1.0f0, 101))
+        y1 = sin.(2f0 * Float32(π) .* x)
+        y2 = cos.(2f0 * Float32(π) .* x)
+        sitp = cubic_interp(x, [y1, y2])
+
+        vals = sitp(0.5f0; deriv=3)
+
+        @test eltype(vals) === Float32
+    end
+end

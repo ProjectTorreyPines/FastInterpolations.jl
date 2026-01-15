@@ -73,6 +73,7 @@ end
 @inline _constant_extrap_result(::EvalValue, y_boundary::T) where {T} = y_boundary
 @inline _constant_extrap_result(::EvalDeriv1, ::T) where {T} = zero(T)
 @inline _constant_extrap_result(::EvalDeriv2, ::T) where {T} = zero(T)
+@inline _constant_extrap_result(::EvalDeriv3, ::T) where {T} = zero(T)
 
 "Evaluate with no extrapolation - throws DomainError if outside domain."
 @inline function _eval_cubic_with_extrap(

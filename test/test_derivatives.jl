@@ -1762,10 +1762,10 @@ end # DerivativeView Wrapper
 
         w3 = FI._compute_anchor_weights(FI.EvalDeriv3(), h, inv_h, dL, dR)
 
-        @test w3[1] === 0.0
-        @test w3[2] === 0.0
-        @test w3[3] === -10.0
-        @test w3[4] === 10.0
+        # Optimized: w3 is now (wzL, wzR) - removed zero y-weights
+        @test w3 isa NTuple{2, Float64}
+        @test w3[1] === -10.0  # wzL
+        @test w3[2] === 10.0   # wzR
     end
 
     @testset "Numerical validation - f(x) = x³, f'''(x) = 6" begin

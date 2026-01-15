@@ -227,12 +227,14 @@
         aq = FI._anchor_query(x, xq)
         @test aq.w0 isa NTuple{4, Float64}
         @test aq.w1 isa NTuple{4, Float64}
-        @test aq.w2 isa NTuple{4, Float64}
+        @test aq.w2 isa NTuple{2, Float64}  # Optimized: only (wzL, wzR)
+        @test aq.w3 isa NTuple{2, Float64}  # Optimized: only (wzL, wzR)
 
         aq32 = FI._anchor_query(Float32.(x), Float32(xq))
         @test aq32.w0 isa NTuple{4, Float32}
         @test aq32.w1 isa NTuple{4, Float32}
-        @test aq32.w2 isa NTuple{4, Float32}
+        @test aq32.w2 isa NTuple{2, Float32}  # Optimized: only (wzL, wzR)
+        @test aq32.w3 isa NTuple{2, Float32}  # Optimized: only (wzL, wzR)
     end
 
     @testset "Anchor wrapping (wrap=true)" begin
@@ -595,6 +597,135 @@
             # Measure
             allocs = @allocated FI._fill_anchors!(buffer, x, xq)
             @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
+    # Phase 1: Cubic Weight Optimization (RED - Failing Tests)
+    # ========================================
+    # These tests encode the expected behavior after optimization:
+    # - w2 and w3 should be NTuple{2,T} (only wzL, wzR needed)
+    # - Deriv2/3 evaluation should remain correct
+    # - Type stability must be preserved
+
+    @testset "Cubic Weight Optimization - Reduced Weights" begin
+        # Test 1.1: Anchor weight tuple shapes (w2/w3 are 2-tuples)
+        @testset "w2 and w3 reduced to 2-tuples" begin
+            x = collect(range(0.0, 1.0, 101))
+            xq = 0.35
+
+            aq = FI._anchor_query(x, xq)
+
+            # After optimization, w2 and w3 should only store (wzL, wzR)
+            # These will FAIL until Phase 2 implementation
+            @test length(aq.w2) == 2  # Expected: 2, Current: 4
+            @test length(aq.w3) == 2  # Expected: 2, Current: 4
+
+            # w0 and w1 should remain 4-tuples (they need all weights)
+            @test length(aq.w0) == 4
+            @test length(aq.w1) == 4
+
+            # Float32 should work the same way
+            aq32 = FI._anchor_query(Float32.(x), Float32(xq))
+            @test length(aq32.w2) == 2
+            @test length(aq32.w3) == 2
+            @test aq32.w2 isa NTuple{2, Float32}
+            @test aq32.w3 isa NTuple{2, Float32}
+        end
+
+        # Test 1.2: Anchored deriv2/3 evaluation correctness
+        @testset "Deriv2/3 correctness with anchored query" begin
+            x = collect(range(0.0, 1.0, 101))
+            y = sin.(2π .* x)
+            itp = cubic_interp(x, y; extrap=:extension)
+
+            # Test multiple query points including boundaries and interior
+            test_points = [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
+
+            for xq in test_points
+                aq = FI._anchor_query(x, xq)
+
+                # Second derivative
+                anchored_d2 = itp(aq; deriv=2)
+                direct_d2 = itp(xq; deriv=2)
+                @test anchored_d2 ≈ direct_d2 atol=1e-14
+
+                # Third derivative
+                anchored_d3 = itp(aq; deriv=3)
+                direct_d3 = itp(xq; deriv=3)
+                @test anchored_d3 ≈ direct_d3 atol=1e-12
+            end
+        end
+
+        # Test 1.3: Type stability for anchored deriv2/3 entry points
+        @testset "Type stability for deriv2/3" begin
+            x = collect(range(0.0, 1.0, 101))
+            y = sin.(2π .* x)
+            itp = cubic_interp(x, y; extrap=:extension)
+            aq = FI._anchor_query(x, 0.5)
+
+            # Scalar anchored evaluation should be type-stable
+            @test (@inferred itp(aq; deriv=2)) isa Float64
+            @test (@inferred itp(aq; deriv=3)) isa Float64
+
+            # Vector evaluation should also be type-stable
+            xq_vec = [0.15, 0.5, 0.85]
+            aq_vec = FI._anchor_query(x, xq_vec)
+
+            d2_vec = @inferred itp(aq_vec; deriv=2)
+            @test d2_vec isa Vector{Float64}
+            @test length(d2_vec) == 3
+
+            d3_vec = @inferred itp(aq_vec; deriv=3)
+            @test d3_vec isa Vector{Float64}
+            @test length(d3_vec) == 3
+        end
+
+        # Additional test: Extrapolation modes with deriv2/3
+        @testset "Deriv2/3 with extrapolation modes" begin
+            x = collect(range(0.0, 1.0, 101))
+            y = sin.(2π .* x)
+
+            # Test :extension mode
+            itp_ext = cubic_interp(x, y; extrap=:extension)
+            aq_below = FI._anchor_query(x, -0.1)
+            aq_above = FI._anchor_query(x, 1.1)
+
+            @test itp_ext(aq_below; deriv=2) ≈ itp_ext(-0.1; deriv=2) atol=1e-12
+            @test itp_ext(aq_above; deriv=3) ≈ itp_ext(1.1; deriv=3) atol=1e-12
+
+            # Test :constant mode (derivatives should be zero outside domain)
+            itp_const = cubic_interp(x, y; extrap=:constant)
+            @test itp_const(aq_below; deriv=2) == 0.0
+            @test itp_const(aq_above; deriv=3) == 0.0
+        end
+
+        # Additional test: Zero allocation for deriv2/3
+        @testset "Zero allocation for deriv2/3 anchored evaluation" begin
+            x = collect(range(0.0, 1.0, 101))
+            y = sin.(2π .* x)
+            itp = cubic_interp(x, y; extrap=:extension)
+            aq = FI._anchor_query(x, 0.5)
+
+            # Warmup
+            itp(aq; deriv=2)
+            itp(aq; deriv=3)
+
+            # Third derivative should have zero allocation
+            allocs_d3 = @allocated itp(aq; deriv=3)
+            @test allocs_d3 <= ALLOC_THRESHOLD
+
+            # Vector in-place should also have zero allocation
+            xq_vec = collect(range(0.1, 0.9, 50))
+            aq_vec = FI._anchor_query(x, xq_vec)
+            output = similar(xq_vec)
+
+            # Warmup
+            itp(output, aq_vec; deriv=3)
+
+            # Measure
+            allocs_vec_d3 = @allocated itp(output, aq_vec; deriv=3)
+            @test allocs_vec_d3 <= ALLOC_THRESHOLD
         end
     end
 

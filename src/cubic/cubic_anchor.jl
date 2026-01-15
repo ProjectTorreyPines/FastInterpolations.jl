@@ -24,10 +24,10 @@ matches the interpolant grid.
 - `idx`: Interval index where xq falls
 - `xq`: Original query point (or wrapped value for periodic)
 - `side`: Domain position (0=inside, 1=left, 2=right)
-- `w0`: Precomputed weights for value
-- `w1`: Precomputed weights for first derivative
-- `w2`: Precomputed weights for second derivative
-- `w3`: Precomputed weights for third derivative
+- `w0`: Precomputed weights for value (wyL, wyR, wzL, wzR)
+- `w1`: Precomputed weights for first derivative (wyL, wyR, wzL, wzR)
+- `w2`: Precomputed weights for second derivative (wzL, wzR) - optimized, no y-weights
+- `w3`: Precomputed weights for third derivative (wzL, wzR) - optimized, no y-weights
 
 # Usage
 ```julia
@@ -44,6 +44,11 @@ itp2(aq; deriv=1)     # Reuses same anchor for derivative
 # Performance
 Anchored evaluation is 2-4x faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search and geometry setup.
+
+# Memory Optimization
+w2 and w3 store only (wzL, wzR) since second and third derivatives
+depend only on z-values, not y-values. This reduces anchor size by 16 bytes
+per query for Float64.
 """
 struct _CubicAnchoredQuery{T<:AbstractFloat}
     idx::Int                   # interval index
@@ -51,8 +56,8 @@ struct _CubicAnchoredQuery{T<:AbstractFloat}
     side::UInt8                # 0=inside, 1=below_min, 2=above_max
     w0::NTuple{4,T}            # (wyL, wyR, wzL, wzR) for value
     w1::NTuple{4,T}            # (wyL, wyR, wzL, wzR) for first deriv
-    w2::NTuple{4,T}            # (wyL, wyR, wzL, wzR) for second deriv
-    w3::NTuple{4,T}            # (wyL, wyR, wzL, wzR) for third deriv
+    w2::NTuple{2,T}            # (wzL, wzR) for second deriv - optimized
+    w3::NTuple{2,T}            # (wzL, wzR) for third deriv - optimized
 end
 
 # ========================================
@@ -95,41 +100,40 @@ Weights satisfy: S'(xq) = wyL*yL + wyR*yR + wzL*zL + wzR*zR
 end
 
 """
-    _compute_anchor_weights(::EvalDeriv2, h, inv_h, dL, dR) -> NTuple{4,T}
+    _compute_anchor_weights(::EvalDeriv2, h, inv_h, dL, dR) -> NTuple{2,T}
 
 Compute weights for cubic spline second derivative evaluation.
 
 Weights satisfy: S''(xq) = wzL*zL + wzR*zR (no y contribution)
+
+Returns (wzL, wzR) - optimized to exclude zero y-weights.
 """
 @inline function _compute_anchor_weights(::EvalDeriv2, ::T, inv_h::T, dL::T, dR::T) where {T}
-    wyL = zero(T)
-    wyR = zero(T)
     wzL = dR * inv_h
     wzR = dL * inv_h
-    return (wyL, wyR, wzL, wzR)
+    return (wzL, wzR)
 end
 
 """
-    _compute_anchor_weights(::EvalDeriv3, h, inv_h, dL, dR) -> NTuple{4,T}
+    _compute_anchor_weights(::EvalDeriv3, h, inv_h, dL, dR) -> NTuple{2,T}
 
 Compute weights for cubic spline third derivative evaluation.
 
 # Formula
 S'''(x) = (zR - zL) / h = -inv_h * zL + inv_h * zR
-        = wyL*yL + wyR*yR + wzL*zL + wzR*zR
-        = 0*yL + 0*yR + (-inv_h)*zL + (inv_h)*zR
+        = wzL*zL + wzR*zR
 
-Weights: wyL=0, wyR=0, wzL=-inv_h, wzR=inv_h
+Weights: wzL=-inv_h, wzR=inv_h
+
+Returns (wzL, wzR) - optimized to exclude zero y-weights.
 
 # Note
 Third derivative is constant within each interval (independent of dL, dR).
 """
 @inline function _compute_anchor_weights(::EvalDeriv3, ::T, inv_h::T, ::T, ::T) where {T}
-    wyL = zero(T)
-    wyR = zero(T)
     wzL = -inv_h
     wzR =  inv_h
-    return (wyL, wyR, wzL, wzR)
+    return (wzL, wzR)
 end
 
 # ========================================

@@ -530,8 +530,16 @@ y1 = sin.(2π .* x)
 y2 = cos.(2π .* x)
 y3 = exp.(-x)
 
+# Uniform BC for all series
 sitp = cubic_interp(x, [y1, y2, y3])
 vals = sitp(0.5)  # [sin(π), cos(π), exp(-0.5)]
+
+# Per-series BC (each series can have different BC)
+sitp = cubic_interp(x, [y1, y2, y3]; bc=[
+    NaturalBC(),
+    BCPair(Deriv1(2.0), Deriv1(0.0)),
+    BCPair(Deriv2(0.0), Deriv3(5.0)),
+])
 ```
 """
 function cubic_interp(
@@ -575,7 +583,9 @@ function cubic_interp(
         # Per-series BC array
         bc_array = _normalize_bc_array(bc, T, n_series_count)
         _solve_series_with_bc_array!(z_mat, y_mat, x, bc_array, autocache)
-        # Use first BC's cache as representative (for struct compatibility)
+        # All per-series caches share the same x-grid, so any BC's cache is valid here.
+        # We store the first BC as a "representative" for struct compatibility and
+        # x-grid access via _get_grid(cache); the specific BC chosen does not affect evaluation.
         bc_representative = bc_array[1]
         cache = _get_cubic_cache(x, bc_representative, autocache)
     else
@@ -692,7 +702,9 @@ function cubic_interp(
         # Per-series BC array
         bc_array = _normalize_bc_array(bc, T, n_series_count)
         _solve_series_with_bc_array!(z_mat, y_mat, x, bc_array, autocache)
-        # Use first BC's cache as representative (for struct compatibility)
+        # All per-series caches share the same x-grid, so any BC's cache is valid here.
+        # We store the first BC as a "representative" for struct compatibility and
+        # x-grid access via _get_grid(cache); the specific BC chosen does not affect evaluation.
         bc_representative = bc_array[1]
         cache = _get_cubic_cache(x, bc_representative, autocache)
     else

@@ -1786,7 +1786,7 @@ end
         @test result isa Vector{BCPair{Float64}}
         @test result !== mixed_bcs  # Different object
 
-        # Values should be correctly normalized
+        # Values should be correctly normalized (uses Julia's default structural equality for BCPair)
         @test result[1] == BCPair(Deriv2(0.0), Deriv2(0.0))  # NaturalBC
         @test result[2] == BCPair(Deriv1(0.0), Deriv2(3.0))  # Already BCPair
         @test result[3] == BCPair(Deriv1(0.0), Deriv1(0.0))  # ClampedBC

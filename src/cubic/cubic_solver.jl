@@ -51,6 +51,26 @@ end
     return nothing
 end
 
+# First row - Deriv3 (third derivative specified): (z[2] - z[1]) / h[1] = bc.val
+# Rearranged: -z[1] + z[2] = h[1] * val
+@inline function _set_first_row!(
+    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::Deriv3{T}, ::AbstractGridSpacing{T}
+) where {T<:AbstractFloat}
+    d_diag[1] = -one(T)
+    du[1] = one(T)
+    return nothing
+end
+
+# Last row - Deriv3 (third derivative specified): (z[n+1] - z[n]) / h[n] = bc.val
+# Rearranged: -z[n] + z[n+1] = h[n] * val
+@inline function _set_last_row!(
+    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::Deriv3{T}, ::AbstractGridSpacing{T}
+) where {T<:AbstractFloat}
+    dl[end] = -one(T)
+    d_diag[end] = one(T)
+    return nothing
+end
+
 # ========================================
 # Cache Builders
 # ========================================
@@ -186,6 +206,23 @@ end
 ) where {T<:AbstractFloat}
     n = length(y) - 1
     d[end] = 6 * (bc.val - (y[end] - y[end-1]) / _get_h(spacing, n))
+    return nothing
+end
+
+# First element - Deriv3: d[1] = h[1] * bc.val (from -z[1] + z[2] = h[1] * val)
+@inline function _compute_rhs_first!(
+    d::AbstractVector{T}, bc::Deriv3{T}, ::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+) where {T<:AbstractFloat}
+    d[1] = _get_h(spacing, 1) * bc.val
+    return nothing
+end
+
+# Last element - Deriv3: d[end] = h[n] * bc.val (from -z[n] + z[n+1] = h[n] * val)
+@inline function _compute_rhs_last!(
+    d::AbstractVector{T}, bc::Deriv3{T}, ::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+) where {T<:AbstractFloat}
+    n = length(d) - 1
+    d[end] = _get_h(spacing, n) * bc.val
     return nothing
 end
 

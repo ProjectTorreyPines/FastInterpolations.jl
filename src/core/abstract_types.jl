@@ -14,24 +14,17 @@
 """
     AbstractInterpolant{T<:AbstractFloat}
 
-Abstract supertype for all single-series interpolant objects.
+Abstract supertype for all interpolant objects.
 
 # Type Parameter
 - `T`: Float type (Float32 or Float64)
 
 # Subtypes
+- `AbstractSeriesInterpolant{T}`: Multi-series interpolants
 - `LinearInterpolant{T}`: Piecewise linear interpolation
 - `ConstantInterpolant{T}`: Piecewise constant (step) interpolation
 - `QuadraticInterpolant{T}`: C1 piecewise quadratic spline
 - `CubicInterpolant{T}`: C2 natural/clamped/periodic cubic spline
-
-# Usage
-This type enables generic programming over different interpolation methods:
-```julia
-function evaluate_all(itps::Vector{<:AbstractInterpolant}, xq)
-    return [itp(xq) for itp in itps]
-end
-```
 
 # Note
 This is a pure type hierarchy - no methods are defined on `AbstractInterpolant` itself.
@@ -74,4 +67,4 @@ sitp(output, 0.5)           # In-place evaluation
 This is a pure type hierarchy - no methods are defined on `AbstractSeriesInterpolant` itself.
 All functionality is implemented in concrete subtypes.
 """
-abstract type AbstractSeriesInterpolant{T<:AbstractFloat} end
+abstract type AbstractSeriesInterpolant{T<:AbstractFloat} <: AbstractInterpolant{T} end

@@ -61,3 +61,13 @@ Always returns zero (constant function has no curvature).
 @inline function _constant_kernel(::EvalDeriv2, y_left::T, ::T, ::T, ::T, ::SideVal) where {T}
     return zero(T)
 end
+
+"""
+    _constant_kernel(::EvalDeriv3, y_left, y_right, h, dL, side) -> zero(T)
+
+Third derivative of constant interpolation is always zero.
+Constant functions have all derivatives equal to zero.
+"""
+@inline function _constant_kernel(::EvalDeriv3, ::T, ::T, ::T, ::T, ::SideVal) where {T}
+    return zero(T)
+end

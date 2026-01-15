@@ -25,14 +25,14 @@ export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar 
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 
 # Boundary condition types
-export AbstractBC, PointBC, Deriv1, Deriv2, BCPair
+export AbstractBC, PointBC, Deriv1, Deriv2, Deriv3, BCPair
 export NaturalBC, ClampedBC, PeriodicBC, MinCurvFit, ParabolaFit
 export Left, Right
 
 # Derivative view functions for interpolants
-export deriv1, deriv2
+export deriv1, deriv2, deriv3
 
 # Operation types (for derivative dispatch)
-export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3
 
 end # module

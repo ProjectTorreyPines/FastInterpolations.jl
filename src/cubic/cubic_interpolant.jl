@@ -114,26 +114,65 @@ end
 """
     _eval_anchored_kernel(itp, aq, op) -> T
 
-Core anchored evaluation kernel. Computes the 4-term dot product.
+Core anchored evaluation kernel. Dispatches on concrete EvalOp type for optimal performance.
 
-S(xq) = wyL*yL + wyR*yR + wzL*zL + wzR*zR
+# Methods:
+- EvalValue, EvalDeriv1: 4-term dot product (wyL*yL + wyR*yR + wzL*zL + wzR*zR)
+- EvalDeriv2, EvalDeriv3: 2-term dot product (wzL*zL + wzR*zR) - optimized, no y-loads
 """
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{T}, aq::_CubicAnchoredQuery{T}, op::AbstractEvalOp) where {T}
+# EvalValue: Full 4-term evaluation with y and z
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{T}, aq::_CubicAnchoredQuery{T}, ::EvalValue) where {T}
     @inbounds begin
         yL = itp.y[aq.idx]
         yR = itp.y[aq.idx + 1]
         zL = itp.z[aq.idx]
         zR = itp.z[aq.idx + 1]
     end
-    wyL, wyR, wzL, wzR = _anchored_weights(aq, op)
+    wyL, wyR, wzL, wzR = aq.w0
     # Optimal FMA chain: 3 FMAs + 1 mul
     return muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
 end
 
-# Anchored weights by op
+# EvalDeriv1: Full 4-term evaluation with y and z
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{T}, aq::_CubicAnchoredQuery{T}, ::EvalDeriv1) where {T}
+    @inbounds begin
+        yL = itp.y[aq.idx]
+        yR = itp.y[aq.idx + 1]
+        zL = itp.z[aq.idx]
+        zR = itp.z[aq.idx + 1]
+    end
+    wyL, wyR, wzL, wzR = aq.w1
+    # Optimal FMA chain: 3 FMAs + 1 mul
+    return muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
+end
+
+# EvalDeriv2: Optimized 2-term evaluation with only z (no y-loads)
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{T}, aq::_CubicAnchoredQuery{T}, ::EvalDeriv2) where {T}
+    @inbounds begin
+        zL = itp.z[aq.idx]
+        zR = itp.z[aq.idx + 1]
+    end
+    wzL, wzR = aq.w2
+    # Simple 2-term: 1 FMA
+    return muladd(wzR, zR, wzL * zL)
+end
+
+# EvalDeriv3: Optimized 2-term evaluation with only z (no y-loads)
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{T}, aq::_CubicAnchoredQuery{T}, ::EvalDeriv3) where {T}
+    @inbounds begin
+        zL = itp.z[aq.idx]
+        zR = itp.z[aq.idx + 1]
+    end
+    wzL, wzR = aq.w3
+    # Simple 2-term: 1 FMA
+    return muladd(wzR, zR, wzL * zL)
+end
+
+# Helper functions to extract weights (used by series interpolation)
 @inline _anchored_weights(aq::_CubicAnchoredQuery, ::EvalValue) = aq.w0
 @inline _anchored_weights(aq::_CubicAnchoredQuery, ::EvalDeriv1) = aq.w1
 @inline _anchored_weights(aq::_CubicAnchoredQuery, ::EvalDeriv2) = aq.w2
+@inline _anchored_weights(aq::_CubicAnchoredQuery, ::EvalDeriv3) = aq.w3
 
 # ========================================
 # Anchored Extrapolation Handlers
@@ -156,6 +195,10 @@ end
 end
 
 @inline function _eval_anchored_extrap(::CubicInterpolant{T}, ::_CubicAnchoredQuery{T}, ::Val{:constant}, ::EvalDeriv2) where {T}
+    return zero(T)
+end
+
+@inline function _eval_anchored_extrap(::CubicInterpolant{T}, ::_CubicAnchoredQuery{T}, ::Val{:constant}, ::EvalDeriv3) where {T}
     return zero(T)
 end
 

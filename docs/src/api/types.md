@@ -16,6 +16,7 @@ AbstractEvalOp
 EvalValue
 EvalDeriv1
 EvalDeriv2
+EvalDeriv3
 ```
 
 ## Boundary Conditions
@@ -27,6 +28,7 @@ AbstractBC
 PointBC
 Deriv1
 Deriv2
+Deriv3
 BCPair
 NaturalBC
 ClampedBC

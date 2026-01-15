@@ -387,8 +387,12 @@ macro _dispatch_deriv(pair, body)
             let $(esc(op_sym)) = EvalDeriv2()
                 $(esc(body))
             end
+        elseif $(deriv_var) == 3
+            let $(esc(op_sym)) = EvalDeriv3()
+                $(esc(body))
+            end
         else
-            throw(ArgumentError("deriv must be 0, 1, or 2; got $($(deriv_var))"))
+            throw(ArgumentError("deriv must be 0, 1, 2, or 3; got $($(deriv_var))"))
         end
     end
 end

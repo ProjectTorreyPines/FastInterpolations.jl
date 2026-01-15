@@ -178,29 +178,92 @@ end
 
 SIMD-optimized evaluation for point-contiguous layout (n_series × n_points).
 Contiguous column access enables vectorization across series dimension.
+
+Dispatches on concrete EvalOp for optimal performance:
+- EvalValue, EvalDeriv1: Full 4-term evaluation
+- EvalDeriv2, EvalDeriv3: Optimized 2-term evaluation (no y-loads)
 """
+# EvalValue: Full 4-term evaluation
 @inline function _eval_series_point!(
     out::AbstractVector{T},
     y_point::Matrix{T},
     z_point::Matrix{T},
     aq::_CubicAnchoredQuery{T},
-    op::AbstractEvalOp
+    ::EvalValue
 ) where {T<:AbstractFloat}
     idx = aq.idx
     idx1 = idx + 1
-    wyL, wyR, wzL, wzR = _anchored_weights(aq, op)
+    wyL, wyR, wzL, wzR = aq.w0
 
-    # SIMD loop over series (contiguous column access)
     @inbounds @simd for k in axes(out, 1)
         yL = y_point[k, idx]
         yR = y_point[k, idx1]
         zL = z_point[k, idx]
         zR = z_point[k, idx1]
-
-        # Optimal FMA chain: 3 FMAs + 1 mul
         out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
     end
+    return out
+end
 
+# EvalDeriv1: Full 4-term evaluation
+@inline function _eval_series_point!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    aq::_CubicAnchoredQuery{T},
+    ::EvalDeriv1
+) where {T<:AbstractFloat}
+    idx = aq.idx
+    idx1 = idx + 1
+    wyL, wyR, wzL, wzR = aq.w1
+
+    @inbounds @simd for k in axes(out, 1)
+        yL = y_point[k, idx]
+        yR = y_point[k, idx1]
+        zL = z_point[k, idx]
+        zR = z_point[k, idx1]
+        out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
+    end
+    return out
+end
+
+# EvalDeriv2: Optimized 2-term evaluation (no y-loads)
+@inline function _eval_series_point!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    aq::_CubicAnchoredQuery{T},
+    ::EvalDeriv2
+) where {T<:AbstractFloat}
+    idx = aq.idx
+    idx1 = idx + 1
+    wzL, wzR = aq.w2
+
+    @inbounds @simd for k in axes(out, 1)
+        zL = z_point[k, idx]
+        zR = z_point[k, idx1]
+        out[k] = muladd(wzR, zR, wzL * zL)
+    end
+    return out
+end
+
+# EvalDeriv3: Optimized 2-term evaluation (no y-loads)
+@inline function _eval_series_point!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    aq::_CubicAnchoredQuery{T},
+    ::EvalDeriv3
+) where {T<:AbstractFloat}
+    idx = aq.idx
+    idx1 = idx + 1
+    wzL, wzR = aq.w3
+
+    @inbounds @simd for k in axes(out, 1)
+        zL = z_point[k, idx]
+        zR = z_point[k, idx1]
+        out[k] = muladd(wzR, zR, wzL * zL)
+    end
     return out
 end
 
@@ -261,7 +324,7 @@ end
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
-# :extension - extend polynomial
+# :extension - extend polynomial (EvalValue)
 @inline function _eval_series_point_extrap!(
     out::AbstractVector{T},
     y_point::Matrix{T},
@@ -271,13 +334,12 @@ end
     ::T,
     aq::_CubicAnchoredQuery{T},
     ::Val{:extension},
-    op::AbstractEvalOp,
+    ::EvalValue,
     side::UInt8
 ) where {T<:AbstractFloat}
-    # Use boundary interval for extension
     idx = side == 0x01 ? 1 : (n_pts - 1)
     idx1 = idx + 1
-    wyL, wyR, wzL, wzR = _anchored_weights(aq, op)
+    wyL, wyR, wzL, wzR = aq.w0
 
     @inbounds @simd for k in axes(out, 1)
         yL = y_point[k, idx]
@@ -285,6 +347,83 @@ end
         zL = z_point[k, idx]
         zR = z_point[k, idx1]
         out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
+    end
+    return out
+end
+
+# :extension - extend polynomial (EvalDeriv1)
+@inline function _eval_series_point_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    n_pts::Int,
+    ::T,
+    ::T,
+    aq::_CubicAnchoredQuery{T},
+    ::Val{:extension},
+    ::EvalDeriv1,
+    side::UInt8
+) where {T<:AbstractFloat}
+    idx = side == 0x01 ? 1 : (n_pts - 1)
+    idx1 = idx + 1
+    wyL, wyR, wzL, wzR = aq.w1
+
+    @inbounds @simd for k in axes(out, 1)
+        yL = y_point[k, idx]
+        yR = y_point[k, idx1]
+        zL = z_point[k, idx]
+        zR = z_point[k, idx1]
+        out[k] = muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
+    end
+    return out
+end
+
+# :extension - extend polynomial (EvalDeriv2) - optimized, no y-loads
+@inline function _eval_series_point_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    n_pts::Int,
+    ::T,
+    ::T,
+    aq::_CubicAnchoredQuery{T},
+    ::Val{:extension},
+    ::EvalDeriv2,
+    side::UInt8
+) where {T<:AbstractFloat}
+    idx = side == 0x01 ? 1 : (n_pts - 1)
+    idx1 = idx + 1
+    wzL, wzR = aq.w2
+
+    @inbounds @simd for k in axes(out, 1)
+        zL = z_point[k, idx]
+        zR = z_point[k, idx1]
+        out[k] = muladd(wzR, zR, wzL * zL)
+    end
+    return out
+end
+
+# :extension - extend polynomial (EvalDeriv3) - optimized, no y-loads
+@inline function _eval_series_point_extrap!(
+    out::AbstractVector{T},
+    y_point::Matrix{T},
+    z_point::Matrix{T},
+    n_pts::Int,
+    ::T,
+    ::T,
+    aq::_CubicAnchoredQuery{T},
+    ::Val{:extension},
+    ::EvalDeriv3,
+    side::UInt8
+) where {T<:AbstractFloat}
+    idx = side == 0x01 ? 1 : (n_pts - 1)
+    idx1 = idx + 1
+    wzL, wzR = aq.w3
+
+    @inbounds @simd for k in axes(out, 1)
+        zL = z_point[k, idx]
+        zR = z_point[k, idx1]
+        out[k] = muladd(wzR, zR, wzL * zL)
     end
     return out
 end
@@ -778,16 +917,21 @@ end
 """
 Internal: Core cubic evaluation for series k at anchored query point.
 Direct matrix access for optimal performance.
+
+Dispatches on concrete EvalOp for optimal performance:
+- EvalValue, EvalDeriv1: Full 4-term evaluation
+- EvalDeriv2, EvalDeriv3: Optimized 2-term evaluation (no y-loads)
 """
+# EvalValue: Full 4-term evaluation
 @inline function _eval_series_anchored(
     y::Matrix{T},
     z::Matrix{T},
     k::Int,
     aq::_CubicAnchoredQuery{T},
-    op::AbstractEvalOp
+    ::EvalValue
 ) where {T<:AbstractFloat}
     idx = aq.idx
-    wyL, wyR, wzL, wzR = _anchored_weights(aq, op)
+    wyL, wyR, wzL, wzR = aq.w0
     @inbounds begin
         yL = y[idx, k]
         yR = y[idx + 1, k]
@@ -795,4 +939,57 @@ Direct matrix access for optimal performance.
         zR = z[idx + 1, k]
     end
     return muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
+end
+
+# EvalDeriv1: Full 4-term evaluation
+@inline function _eval_series_anchored(
+    y::Matrix{T},
+    z::Matrix{T},
+    k::Int,
+    aq::_CubicAnchoredQuery{T},
+    ::EvalDeriv1
+) where {T<:AbstractFloat}
+    idx = aq.idx
+    wyL, wyR, wzL, wzR = aq.w1
+    @inbounds begin
+        yL = y[idx, k]
+        yR = y[idx + 1, k]
+        zL = z[idx, k]
+        zR = z[idx + 1, k]
+    end
+    return muladd(wyR, yR, muladd(wyL, yL, muladd(wzR, zR, wzL * zL)))
+end
+
+# EvalDeriv2: Optimized 2-term evaluation (no y-loads)
+@inline function _eval_series_anchored(
+    y::Matrix{T},
+    z::Matrix{T},
+    k::Int,
+    aq::_CubicAnchoredQuery{T},
+    ::EvalDeriv2
+) where {T<:AbstractFloat}
+    idx = aq.idx
+    wzL, wzR = aq.w2
+    @inbounds begin
+        zL = z[idx, k]
+        zR = z[idx + 1, k]
+    end
+    return muladd(wzR, zR, wzL * zL)
+end
+
+# EvalDeriv3: Optimized 2-term evaluation (no y-loads)
+@inline function _eval_series_anchored(
+    y::Matrix{T},
+    z::Matrix{T},
+    k::Int,
+    aq::_CubicAnchoredQuery{T},
+    ::EvalDeriv3
+) where {T<:AbstractFloat}
+    idx = aq.idx
+    wzL, wzR = aq.w3
+    @inbounds begin
+        zL = z[idx, k]
+        zR = z[idx + 1, k]
+    end
+    return muladd(wzR, zR, wzL * zL)
 end

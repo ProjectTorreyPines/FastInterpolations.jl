@@ -42,3 +42,13 @@ but we return zero everywhere as a practical approximation.
 @inline function _linear_kernel(::EvalDeriv2, ::T, ::T, ::T, ::T) where {T}
     return zero(T)
 end
+
+"""
+    _linear_kernel(::EvalDeriv3, yL, yR, h, dL) -> zero(T)
+
+Third derivative of linear interpolation is always zero.
+Linear functions have constant first derivative (slope), zero second and third derivatives.
+"""
+@inline function _linear_kernel(::EvalDeriv3, ::T, ::T, ::T, ::T) where {T}
+    return zero(T)
+end

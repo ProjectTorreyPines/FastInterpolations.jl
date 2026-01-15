@@ -9,6 +9,7 @@
 #   ├── PointBC{T}           # Single-point BC (abstract)
 #   │   ├── Deriv1{T}            # First derivative
 #   │   ├── Deriv2{T}            # Second derivative
+#   │   ├── Deriv3{T}            # Third derivative
 #   │   └── ParabolaFit{T}       # 3-point parabola fit (quadratic splines)
 #   ├── BCPair{T,L,R}        # Both endpoints
 #   ├── PeriodicBC{T}        # Periodic BC
@@ -79,6 +80,27 @@ struct Deriv2{T<:AbstractFloat} <: PointBC{T}
 end
 Deriv2(v::Real) = Deriv2{typeof(float(v))}(float(v))
 Deriv2{T}(bc::Deriv2) where {T<:AbstractFloat} = Deriv2{T}(T(bc.val))
+
+"""
+    Deriv3{T<:AbstractFloat} <: PointBC{T}
+
+Third derivative boundary condition: S'''(endpoint) = val
+
+For cubic splines, the third derivative is constant within each interval:
+S'''(x) = (z[i+1] - z[i]) / h[i]. This BC specifies the third derivative
+value at the first (or last) interval.
+
+# Example
+```julia
+Deriv3(0)    # Zero third derivative at endpoint
+Deriv3(1.0)  # Specified third derivative
+```
+"""
+struct Deriv3{T<:AbstractFloat} <: PointBC{T}
+    val::T
+end
+Deriv3(v::Real) = Deriv3{typeof(float(v))}(float(v))
+Deriv3{T}(bc::Deriv3) where {T<:AbstractFloat} = Deriv3{T}(T(bc.val))
 
 """
     BCPair{T, L<:PointBC{T}, R<:PointBC{T}} <: AbstractBC{T}
@@ -249,6 +271,7 @@ Extensible: add methods for new PointBC subtypes.
 """
 @inline _promote_pointbc(bc::Deriv1, ::Type{T}) where {T<:AbstractFloat} = Deriv1{T}(T(bc.val))
 @inline _promote_pointbc(bc::Deriv2, ::Type{T}) where {T<:AbstractFloat} = Deriv2{T}(T(bc.val))
+@inline _promote_pointbc(bc::Deriv3, ::Type{T}) where {T<:AbstractFloat} = Deriv3{T}(T(bc.val))
 @inline _promote_pointbc(::ParabolaFit, ::Type{T}) where {T<:AbstractFloat} = ParabolaFit{T}()
 
 

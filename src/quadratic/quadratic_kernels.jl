@@ -50,3 +50,13 @@ Formula: S''(x) = 2*a (constant within interval)
 @inline function _quadratic_kernel(::EvalDeriv2, a::T, ::T, ::T, ::T) where {T<:AbstractFloat}
     return T(2)*a  # constant
 end
+
+"""
+    _quadratic_kernel(::EvalDeriv3, a, d, y, dL) -> zero(T)
+
+Third derivative of quadratic spline is always zero.
+Quadratic polynomials have constant second derivative, zero third derivative.
+"""
+@inline function _quadratic_kernel(::EvalDeriv3, ::T, ::T, ::T, ::T) where {T<:AbstractFloat}
+    return zero(T)
+end

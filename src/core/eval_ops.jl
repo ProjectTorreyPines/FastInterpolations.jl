@@ -14,6 +14,7 @@ Subtypes:
 - `EvalValue`: Evaluate function value f(x)
 - `EvalDeriv1`: Evaluate first derivative f'(x)
 - `EvalDeriv2`: Evaluate second derivative f''(x)
+- `EvalDeriv3`: Evaluate third derivative f'''(x)
 """
 abstract type AbstractEvalOp end
 
@@ -37,6 +38,24 @@ struct EvalDeriv1 <: AbstractEvalOp end
 Singleton type indicating evaluation of second derivative f''(x).
 """
 struct EvalDeriv2 <: AbstractEvalOp end
+
+"""
+    EvalDeriv3 <: AbstractEvalOp
+
+Singleton type indicating evaluation of third derivative f'''(x).
+
+# Note
+For cubic splines, S'''(x) is constant within each interval.
+Linear/quadratic/constant interpolants always return zero.
+
+# Mathematical Background
+The cubic spline third derivative is:
+    S'''(x) = (zR - zL) / h
+
+where zL and zR are the second derivative values (moments) at the
+interval endpoints, and h is the interval width.
+"""
+struct EvalDeriv3 <: AbstractEvalOp end
 
 """
     ExtrapVal

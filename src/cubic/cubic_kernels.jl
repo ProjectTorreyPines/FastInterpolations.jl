@@ -95,3 +95,28 @@ Formula:
 ) where {T}
     return muladd(zL, dR, zR * dL) * inv_h
 end
+
+"""
+    _cubic_kernel(::EvalDeriv3, zL, zR, yL, yR, h, inv_h, dL, dR)
+
+Third derivative of cubic spline (constant within each interval).
+
+# Formula
+    S'''(x) = (zR - zL) / h
+
+# Mathematical Background
+The cubic spline in moment form is:
+    S(x) = zL*(dR³)/(6h) + zR*(dL³)/(6h) + (yR/h - zR*h/6)*dL + (yL/h - zL*h/6)*dR
+
+Third derivative (constant, independent of x within interval):
+    S'''(x) = (zR - zL) / h
+
+# Operation Count
+    0 fdiv + 1 fmul + 1 fsub = 2 FP ops
+"""
+@inline function _cubic_kernel(
+    ::EvalDeriv3,
+    zL::T, zR::T, ::T, ::T, ::T, inv_h::T, ::T, ::T
+) where {T}
+    return (zR - zL) * inv_h
+end

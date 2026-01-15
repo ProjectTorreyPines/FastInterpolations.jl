@@ -17,7 +17,7 @@
 
 using Test
 using FastInterpolations
-using FastInterpolations: Deriv1, Deriv2, BCPair
+using FastInterpolations: Deriv1, Deriv2, Deriv3, BCPair
 
 # ========================================
 # Test Utilities
@@ -74,6 +74,7 @@ struct TestPolynomial{T}
     f::Function
     f_prime::Function
     f_double_prime::Function
+    f_triple_prime::Function  # Third derivative (constant for cubic, 0 for quadratic/linear)
     name::String
 end
 
@@ -81,6 +82,7 @@ const QUADRATIC = TestPolynomial{Float64}(
     t -> 2t^2 - 3t + 1,
     t -> 4t - 3,
     t -> 4.0,
+    t -> 0.0,  # f'''(x) = 0 for quadratic
     "quadratic"
 )
 
@@ -88,6 +90,7 @@ const CUBIC = TestPolynomial{Float64}(
     t -> t^3 - 2t^2 + 3t - 1,
     t -> 3t^2 - 4t + 3,
     t -> 6t - 4,
+    t -> 6.0,  # f'''(x) = 6 (constant for cubic)
     "cubic"
 )
 
@@ -95,6 +98,7 @@ const LINEAR = TestPolynomial{Float64}(
     t -> 2.5t - 1.0,
     t -> 2.5,
     t -> 0.0,
+    t -> 0.0,  # f'''(x) = 0 for linear
     "linear"
 )
 
@@ -593,6 +597,96 @@ end
 end
 
 # ========================================
+# 5b. Cubic Interpolation - Deriv3 BC
+# ========================================
+# Deriv3 BC specifies the third derivative at endpoints.
+# For cubic polynomials, f'''(x) = constant, so Deriv3 BC should
+# exactly reproduce any cubic polynomial on any non-uniform grid.
+
+@testset "Non-uniform Grid: Cubic - Deriv3 BC" begin
+
+    @testset "Cubic polynomial reproduction with exact third derivative" begin
+        # CUBIC polynomial has constant f'''(x) = 6 - perfect for Deriv3 BC exactness test
+        for (grid_name, grid_fn) in [
+            ("large_last", grid_large_last),
+            ("small_last", grid_small_last),
+            ("asymmetric", grid_asymmetric),
+            ("geometric", grid_geometric),
+        ]
+            @testset "Grid: $grid_name" begin
+                x = grid_fn()
+                y = CUBIC.f.(x)
+                x0, xn = first(x), last(x)
+
+                # Provide exact third derivative at both endpoints
+                bc = BCPair(Deriv3(CUBIC.f_triple_prime(x0)), Deriv3(CUBIC.f_triple_prime(xn)))
+
+                xi = range(x0 + 0.1, xn - 0.1, 15) |> collect
+
+                result = cubic_interp(x, y, xi; bc=bc)
+                expected = CUBIC.f.(xi)
+
+                # Should exactly reproduce polynomial
+                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+            end
+        end
+    end
+
+    @testset "Linear/Quadratic polynomial reproduction with Deriv3(0)" begin
+        # LINEAR and QUADRATIC have f'''(x) = 0
+        for poly in [LINEAR, QUADRATIC]
+            @testset "$(poly.name) polynomial" begin
+                for (grid_name, grid_fn) in [
+                    ("large_last", grid_large_last),
+                    ("geometric", grid_geometric),
+                ]
+                    @testset "Grid: $grid_name" begin
+                        x = grid_fn()
+                        y = poly.f.(x)
+                        x0, xn = first(x), last(x)
+
+                        bc = BCPair(Deriv3(0.0), Deriv3(0.0))  # f'''(x) = 0 for lower-order polys
+
+                        xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
+
+                        result = cubic_interp(x, y, xi; bc=bc)
+                        expected = poly.f.(xi)
+
+                        @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                    end
+                end
+            end
+        end
+    end
+
+    @testset "Single Deriv3 BC (symmetric)" begin
+        x = grid_large_last()
+        y = CUBIC.f.(x)
+
+        third_deriv = 6.0  # CUBIC has constant f'''(x) = 6
+        result_single = cubic_interp(x, y, [2.0, 8.0]; bc=Deriv3(third_deriv))
+        result_pair = cubic_interp(x, y, [2.0, 8.0]; bc=BCPair(Deriv3(third_deriv), Deriv3(third_deriv)))
+
+        @test result_single ≈ result_pair rtol=POLY_RTOL atol=POLY_ATOL
+    end
+
+    @testset "Deriv3 boundary derivative accuracy" begin
+        # Verify that deriv=3 evaluation matches the specified BC value
+        x = grid_geometric()
+        y = CUBIC.f.(x)
+        x0, xn = first(x), last(x)
+
+        bc = BCPair(Deriv3(6.0), Deriv3(6.0))
+        itp = cubic_interp(x, y; bc=bc)
+
+        # Third derivative should be constant = 6 in first and last intervals
+        h = 1e-10
+        @test itp(x0 + h; deriv=3) ≈ 6.0 rtol=1e-6 atol=1e-8
+        @test itp(xn - h; deriv=3) ≈ 6.0 rtol=1e-6 atol=1e-8
+    end
+end
+
+# ========================================
 # 6. Cubic Interpolation - Mixed BCPair
 # ========================================
 @testset "Non-uniform Grid: Cubic - Mixed BCPair" begin
@@ -643,6 +737,94 @@ end
         end
     end
 
+    @testset "BCPair(Deriv3, Deriv1) - cubic polynomial" begin
+        for (grid_name, grid_fn) in [
+            ("large_last", grid_large_last),
+            ("asymmetric", grid_asymmetric),
+        ]
+            @testset "Grid: $grid_name" begin
+                x = grid_fn()
+                y = CUBIC.f.(x)
+                x0, xn = first(x), last(x)
+
+                bc = BCPair(Deriv3(CUBIC.f_triple_prime(x0)), Deriv1(CUBIC.f_prime(xn)))
+
+                xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
+
+                result = cubic_interp(x, y, xi; bc=bc)
+                expected = CUBIC.f.(xi)
+
+                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+            end
+        end
+    end
+
+    @testset "BCPair(Deriv1, Deriv3) - cubic polynomial" begin
+        for (grid_name, grid_fn) in [
+            ("small_last", grid_small_last),
+            ("geometric", grid_geometric),
+        ]
+            @testset "Grid: $grid_name" begin
+                x = grid_fn()
+                y = CUBIC.f.(x)
+                x0, xn = first(x), last(x)
+
+                bc = BCPair(Deriv1(CUBIC.f_prime(x0)), Deriv3(CUBIC.f_triple_prime(xn)))
+
+                xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
+
+                result = cubic_interp(x, y, xi; bc=bc)
+                expected = CUBIC.f.(xi)
+
+                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+            end
+        end
+    end
+
+    @testset "BCPair(Deriv3, Deriv2) - cubic polynomial" begin
+        for (grid_name, grid_fn) in [
+            ("large_last", grid_large_last),
+            ("geometric", grid_geometric),
+        ]
+            @testset "Grid: $grid_name" begin
+                x = grid_fn()
+                y = CUBIC.f.(x)
+                x0, xn = first(x), last(x)
+
+                bc = BCPair(Deriv3(CUBIC.f_triple_prime(x0)), Deriv2(CUBIC.f_double_prime(xn)))
+
+                xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
+
+                result = cubic_interp(x, y, xi; bc=bc)
+                expected = CUBIC.f.(xi)
+
+                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+            end
+        end
+    end
+
+    @testset "BCPair(Deriv2, Deriv3) - cubic polynomial" begin
+        for (grid_name, grid_fn) in [
+            ("small_last", grid_small_last),
+            ("asymmetric", grid_asymmetric),
+        ]
+            @testset "Grid: $grid_name" begin
+                x = grid_fn()
+                y = CUBIC.f.(x)
+                x0, xn = first(x), last(x)
+
+                bc = BCPair(Deriv2(CUBIC.f_double_prime(x0)), Deriv3(CUBIC.f_triple_prime(xn)))
+
+                xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
+
+                result = cubic_interp(x, y, xi; bc=bc)
+                expected = CUBIC.f.(xi)
+
+                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+            end
+        end
+    end
+
     @testset "All BCPair combinations give different results" begin
         x = grid_large_last()
         y = sin.(x)
@@ -655,8 +837,13 @@ end
             ("Clamped", ClampedBC()),
             ("D1-D1", BCPair(Deriv1(1.0), Deriv1(0.5))),
             ("D2-D2", BCPair(Deriv2(0.0), Deriv2(-1.0))),
+            ("D3-D3", BCPair(Deriv3(0.0), Deriv3(1.0))),
             ("D1-D2", BCPair(Deriv1(1.0), Deriv2(0.0))),
             ("D2-D1", BCPair(Deriv2(0.0), Deriv1(0.5))),
+            ("D3-D1", BCPair(Deriv3(0.0), Deriv1(0.5))),
+            ("D1-D3", BCPair(Deriv1(1.0), Deriv3(0.0))),
+            ("D3-D2", BCPair(Deriv3(0.0), Deriv2(-1.0))),
+            ("D2-D3", BCPair(Deriv2(0.0), Deriv3(1.0))),
         ]
             results[name] = cubic_interp(x, y, xi; bc=bc)[1]
         end
@@ -666,7 +853,7 @@ end
 
         # Different BC should give different results (not all the same)
         unique_vals = unique(round.(values(results), digits=10))
-        @test length(unique_vals) >= 3  # At least 3 meaningfully different
+        @test length(unique_vals) >= 5  # At least 5 meaningfully different (more combinations now)
     end
 end
 
@@ -799,6 +986,8 @@ end
             NaturalBC{Float32}(),
             ClampedBC{Float32}(),
             BCPair(Deriv1(Float32(0.5)), Deriv2(Float32(0.0))),
+            BCPair(Deriv3(Float32(0.0)), Deriv1(Float32(0.5))),
+            Deriv3(Float32(0.0)),
         ]
             result = cubic_interp(x, y, Float32(5.0); bc=bc)
             @test result isa Float32

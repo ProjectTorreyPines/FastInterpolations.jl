@@ -18,17 +18,20 @@ const ATOL = 1e-14
     # Type Hierarchy Tests
     # ========================================
     @testset "BC Type Hierarchy" begin
-        # PointBC is abstract parent of Deriv1, Deriv2
+        # PointBC is abstract parent of Deriv1, Deriv2, Deriv3
         @test Deriv1{Float64} <: FastInterpolations.PointBC{Float64}
         @test Deriv2{Float64} <: FastInterpolations.PointBC{Float64}
+        @test Deriv3{Float64} <: FastInterpolations.PointBC{Float64}
         @test Deriv1{Float32} <: FastInterpolations.PointBC{Float32}
         @test Deriv2{Float32} <: FastInterpolations.PointBC{Float32}
+        @test Deriv3{Float32} <: FastInterpolations.PointBC{Float32}
 
         # PointBC <: AbstractBC
         @test FastInterpolations.PointBC{Float64} <: AbstractBC{Float64}
 
         # BCPair <: AbstractBC
         @test BCPair{Float64, Deriv1{Float64}, Deriv2{Float64}} <: AbstractBC{Float64}
+        @test BCPair{Float64, Deriv3{Float64}, Deriv1{Float64}} <: AbstractBC{Float64}
 
         # PeriodicBC <: AbstractBC
         @test PeriodicBC{Float64} <: AbstractBC{Float64}
@@ -51,6 +54,16 @@ const ATOL = 1e-14
         # Float32
         bc_f32 = BCPair(Deriv1(0.5f0), Deriv2(1.0f0))
         @test bc_f32 isa BCPair{Float32, Deriv1{Float32}, Deriv2{Float32}}
+
+        # BCPair with Deriv3
+        bc_d3 = BCPair(Deriv3(6.0), Deriv3(2.0))
+        @test bc_d3 isa BCPair{Float64, Deriv3{Float64}, Deriv3{Float64}}
+        @test bc_d3.left.val == 6.0
+        @test bc_d3.right.val == 2.0
+
+        # Mixed BCPair with Deriv3
+        bc_mixed = BCPair(Deriv3(0.0), Deriv1(1.0))
+        @test bc_mixed isa BCPair{Float64, Deriv3{Float64}, Deriv1{Float64}}
     end
 
     @testset "PeriodicBC Construction" begin
@@ -82,6 +95,12 @@ const ATOL = 1e-14
         d2_f32 = Deriv2{Float32}(d2_f64)
         @test d2_f32 isa Deriv2{Float32}
         @test d2_f32.val == Float32(1.5)
+
+        # Deriv3{T}(bc::Deriv3) - convert Deriv3{Float64} → Deriv3{Float32}
+        d3_f64 = Deriv3(6.0)
+        d3_f32 = Deriv3{Float32}(d3_f64)
+        @test d3_f32 isa Deriv3{Float32}
+        @test d3_f32.val == Float32(6.0)
 
         # PeriodicBC{T}(::PeriodicBC)
         pbc_f64 = PeriodicBC()
@@ -135,6 +154,8 @@ const ATOL = 1e-14
         @test FastInterpolations._is_periodic_bc(BCPair(Deriv1(0.0), Deriv2(0.0))) == false
         @test FastInterpolations._is_periodic_bc(Deriv1(0.0)) == false
         @test FastInterpolations._is_periodic_bc(Deriv2(0.0)) == false
+        @test FastInterpolations._is_periodic_bc(Deriv3(0.0)) == false
+        @test FastInterpolations._is_periodic_bc(BCPair(Deriv3(0.0), Deriv1(0.0))) == false
     end
 
     # ========================================
@@ -150,6 +171,11 @@ const ATOL = 1e-14
         d2_promoted = FastInterpolations._promote_pointbc(Deriv2(1.5), Float32)
         @test d2_promoted isa Deriv2{Float32}
         @test d2_promoted.val == Float32(1.5)
+
+        # Deriv3 promotion
+        d3_promoted = FastInterpolations._promote_pointbc(Deriv3(6.0), Float32)
+        @test d3_promoted isa Deriv3{Float32}
+        @test d3_promoted.val == Float32(6.0)
     end
 
     # ========================================
@@ -167,6 +193,12 @@ const ATOL = 1e-14
         @test Deriv2(0.5f0) isa Deriv2{Float32}
         @test Deriv2(0).val == 0.0
         @test Deriv2(1).val == 1.0
+
+        # Deriv3 construction
+        @test Deriv3(6.0) isa Deriv3{Float64}
+        @test Deriv3(6.0f0) isa Deriv3{Float32}
+        @test Deriv3(0).val == 0.0
+        @test Deriv3(6).val == 6.0
     end
 
     @testset "BC Type Equivalence" begin
@@ -305,6 +337,45 @@ const ATOL = 1e-14
             expected = f.(xi)
             @test result ≈ expected rtol=RTOL atol=ATOL
         end
+
+        # Deriv3 tests: f'''(x) = 6a (constant for cubic polynomial)
+        f_triple_prime = 6a
+
+        @testset "Deriv3, Deriv3 (third derivative BC)" begin
+            # Third derivative is constant for cubic polynomial
+            bc = BCPair(Deriv3(f_triple_prime), Deriv3(f_triple_prime))
+            result = cubic_interp(x, y, xi; bc=bc)
+            expected = f.(xi)
+            @test result ≈ expected rtol=RTOL atol=ATOL
+        end
+
+        @testset "Deriv3, Deriv1 (mixed BC)" begin
+            bc = BCPair(Deriv3(f_triple_prime), Deriv1(f_prime(xn)))
+            result = cubic_interp(x, y, xi; bc=bc)
+            expected = f.(xi)
+            @test result ≈ expected rtol=RTOL atol=ATOL
+        end
+
+        @testset "Deriv1, Deriv3 (mixed BC)" begin
+            bc = BCPair(Deriv1(f_prime(x0)), Deriv3(f_triple_prime))
+            result = cubic_interp(x, y, xi; bc=bc)
+            expected = f.(xi)
+            @test result ≈ expected rtol=RTOL atol=ATOL
+        end
+
+        @testset "Deriv3, Deriv2 (mixed BC)" begin
+            bc = BCPair(Deriv3(f_triple_prime), Deriv2(f_double_prime(xn)))
+            result = cubic_interp(x, y, xi; bc=bc)
+            expected = f.(xi)
+            @test result ≈ expected rtol=RTOL atol=ATOL
+        end
+
+        @testset "Deriv2, Deriv3 (mixed BC)" begin
+            bc = BCPair(Deriv2(f_double_prime(x0)), Deriv3(f_triple_prime))
+            result = cubic_interp(x, y, xi; bc=bc)
+            expected = f.(xi)
+            @test result ≈ expected rtol=RTOL atol=ATOL
+        end
     end
 
     @testset "Linear Function: y = mx + b" begin
@@ -323,12 +394,15 @@ const ATOL = 1e-14
         @test cubic_interp(x, y, xi; bc=BCPair(Deriv1(slope), Deriv1(slope))) ≈ expected rtol=RTOL atol=ATOL
         @test cubic_interp(x, y, xi; bc=BCPair(Deriv2(0.0), Deriv2(0.0))) ≈ expected rtol=RTOL atol=ATOL
         @test cubic_interp(x, y, xi; bc=BCPair(Deriv1(slope), Deriv2(0.0))) ≈ expected rtol=RTOL atol=ATOL
+        # Deriv3(0) for linear: f'''(x) = 0
+        @test cubic_interp(x, y, xi; bc=Deriv3(0.0)) ≈ expected rtol=RTOL atol=ATOL
+        @test cubic_interp(x, y, xi; bc=BCPair(Deriv3(0.0), Deriv1(slope))) ≈ expected rtol=RTOL atol=ATOL
     end
 
     # ========================================
     # CubicSplineCache with Generic BC
     # ========================================
-    @testset "CubicSplineCache with Deriv1/Deriv2" begin
+    @testset "CubicSplineCache with Deriv1/Deriv2/Deriv3" begin
         x = collect(range(0.0, 1.0, 21))
         y = sin.(π .* x)
 
@@ -349,6 +423,22 @@ const ATOL = 1e-14
         result1 = cubic_interp(cache_d1, y, 0.5)
         result2 = cubic_interp(cache_d1, y2, 0.5)
         @test result1 != result2  # Different y should give different results
+
+        # Create cache with Deriv3 BC
+        cache_d3 = CubicSplineCache(x; bc=Deriv3(0.0))
+        @test cache_d3 isa CubicSplineCache
+        result_d3 = cubic_interp(cache_d3, y, 0.5)
+        @test isfinite(result_d3)
+
+        # Create cache with mixed Deriv3 BC
+        cache_d3_mixed = CubicSplineCache(x; bc=BCPair(Deriv3(1.0), Deriv2(0.0)))
+        @test cache_d3_mixed isa CubicSplineCache
+
+        # In-place API with Deriv3 cache
+        x_query = [0.1, 0.5, 0.9]
+        output = zeros(3)
+        cubic_interp!(output, cache_d3, y, x_query)
+        @test all(isfinite, output)
     end
 
     # ========================================
@@ -412,6 +502,27 @@ const ATOL = 1e-14
         output = zeros(3)
         cubic_interp!(output, collect(x), collect(y), [0.25, 0.5, 0.75]; bc=Deriv1(0.0))
         @test all(isfinite, output)
+    end
+
+    # ========================================
+    # CubicSeriesInterpolant with Generic BC
+    # ========================================
+    @testset "CubicSeriesInterpolant with Deriv3" begin
+        x = 0.0:0.25:1.0
+        Y = [sin.(π .* x) cos.(π .* x) x.^2]
+
+        # Series interpolant with Deriv3 BC
+        itp = cubic_interp(x, Y; bc=Deriv3(0.0))
+        @test itp isa CubicSeriesInterpolant
+
+        # Should work for all series
+        @test size(itp(0.5)) == (3,)
+        @test all(isfinite, itp(0.5))
+
+        # With mixed BC
+        itp_mixed = cubic_interp(x, Y; bc=BCPair(Deriv3(0.0), Deriv1(0.0)))
+        @test itp_mixed isa CubicSeriesInterpolant
+        @test all(isfinite, itp_mixed(0.5))
     end
 
 end

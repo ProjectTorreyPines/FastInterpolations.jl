@@ -64,14 +64,14 @@ d2 = sitp(0.5; deriv=2)     # Second derivatives
 - Scalar queries trigger lazy transpose on first call
 - All series share same h[] array (O(1) memory overhead)
 """
-mutable struct QuadraticSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
-    const x::Vector{T}                        # Grid points
-    const y::Matrix{T}                        # Series-contiguous y (n_points × n_series)
-    const a::Matrix{T}                        # Series-contiguous a (n_points × n_series)
-    const d::Matrix{T}                        # Series-contiguous d (n_points × n_series)
-    const h::Vector{T}                        # Grid spacing (shared)
-    const _transpose::LazyTransposeTriple{T}  # Lazy point-contiguous layout
-    const extrap::ExtrapVal                   # Extrapolation mode
+struct QuadraticSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
+    x::Vector{T}                        # Grid points
+    y::Matrix{T}                        # Series-contiguous y (n_points × n_series)
+    a::Matrix{T}                        # Series-contiguous a (n_points × n_series)
+    d::Matrix{T}                        # Series-contiguous d (n_points × n_series)
+    h::Vector{T}                        # Grid spacing (shared)
+    _transpose::LazyTransposeTriple{T}  # Lazy point-contiguous layout
+    extrap::ExtrapVal                   # Extrapolation mode
 
     function QuadraticSeriesInterpolant(
         x::Vector{T},

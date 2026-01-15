@@ -53,12 +53,12 @@ vals = sitp([0.1, 0.5, 0.9])    # Returns Vector of Vectors
 sitp([out1, out2, out3], xq)    # In-place (zero allocation)
 ```
 """
-mutable struct ConstantSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
-    const x::Vector{T}                    # Shared x-grid
-    const y::Matrix{T}                    # Series-contiguous y (n_points × n_series)
-    const _transpose::LazyTranspose{T}    # Lazy point-contiguous layout
-    const extrap::ExtrapVal               # Extrapolation mode
-    const side::SideVal                   # Side selection
+struct ConstantSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
+    x::Vector{T}                    # Shared x-grid
+    y::Matrix{T}                    # Series-contiguous y (n_points × n_series)
+    _transpose::LazyTranspose{T}    # Lazy point-contiguous layout
+    extrap::ExtrapVal               # Extrapolation mode
+    side::SideVal                   # Side selection
 
     function ConstantSeriesInterpolant(
         x::Vector{T},

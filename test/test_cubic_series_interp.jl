@@ -254,9 +254,9 @@ end
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "Invalid deriv=3 throws" begin
+    @testset "Invalid deriv=4 throws" begin
         mitp = cubic_interp(x, [y1])
-        @test_throws ArgumentError mitp(0.5; deriv=3)
+        @test_throws ArgumentError mitp(0.5; deriv=4)
     end
 end
 

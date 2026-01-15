@@ -256,7 +256,7 @@
         aq = FI._anchor_query(x, 0.5)
         itp = cubic_interp(x, sin.(2π .* x))
         @test_throws ArgumentError itp(aq; deriv=-1)
-        @test_throws ArgumentError itp(aq; deriv=3)
+        @test_throws ArgumentError itp(aq; deriv=4)
     end
 
     # ========================================

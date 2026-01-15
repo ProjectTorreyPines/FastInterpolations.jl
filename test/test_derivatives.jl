@@ -56,7 +56,7 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
         @test result2 === EvalDeriv2
 
         # Invalid deriv throws ArgumentError (macro-level)
-        @test_throws ArgumentError @_dispatch_deriv 3 => op begin
+        @test_throws ArgumentError @_dispatch_deriv 4 => op begin
             typeof(op)
         end
         @test_throws ArgumentError @_dispatch_deriv -1 => op begin
@@ -66,9 +66,9 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
         # Invalid deriv throws ArgumentError (public API - for coverage)
         x = [0.0, 0.5, 1.0]
         y = [0.0, 0.25, 1.0]
-        @test_throws ArgumentError cubic_interp(x, y, 0.5; deriv=3)
+        @test_throws ArgumentError cubic_interp(x, y, 0.5; deriv=4)
         @test_throws ArgumentError cubic_interp(x, y, 0.5; deriv=-1)
-        @test_throws ArgumentError linear_interp(x, y, 0.5; deriv=3)
+        @test_throws ArgumentError linear_interp(x, y, 0.5; deriv=4)
         @test_throws ArgumentError linear_interp(x, y, 0.5; deriv=-1)
     end
 
@@ -1630,9 +1630,6 @@ end # Derivative Comprehensive Coverage
 
         # Fused broadcast works
         @test (@. 2.0 * d1(xs)) ≈ 2.0 .* d1.(xs)
-
-        # Direct vector call should NOT be defined (throws MethodError)
-        @test_throws MethodError d1(xs)
     end
 
     @testset "DerivativeView allocation" begin

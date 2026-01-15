@@ -1666,4 +1666,129 @@ end
         @test d2[1] ≈ 0.0 atol=1e-10
         @test d2[2] ≈ 0.0 atol=1e-10
     end
+
+    # =========================================================================
+    # Zero-Allocation Tests for Per-Series BC
+    # =========================================================================
+    # BC is only used at construction time. Evaluation should be zero-allocation
+    # regardless of whether single BC or BC array was used.
+
+    @testset "Zero-allocation: scalar query with per-series BC" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+        y3 = exp.(-3 .* x)
+
+        # Create with per-series BC (mixed types)
+        sitp = cubic_interp(x, [y1, y2, y3]; bc=[
+            NaturalBC(),
+            BCPair(Deriv1(0.0), Deriv1(0.0)),
+            BCPair(Deriv2(0.0), Deriv2(0.0)),
+        ], precompute_transpose=true)
+
+        out = zeros(3)
+
+        # Warmup
+        sitp(out, 0.5)
+        sitp(out, 0.5)
+
+        # Scalar query - zero allocation
+        allocs = @allocated sitp(out, 0.5)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-allocation: vector query with per-series BC" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        # Create with same BC type, different values
+        sitp = cubic_interp(x, [y1, y2]; bc=[
+            BCPair(Deriv1(1.0), Deriv1(-1.0)),
+            BCPair(Deriv1(0.5), Deriv1(-0.5)),
+        ])
+
+        xq = collect(range(0.1, 0.9, 50))
+        out1 = Vector{Float64}(undef, 50)
+        out2 = Vector{Float64}(undef, 50)
+        outputs = [out1, out2]
+
+        # Warmup
+        sitp(outputs, xq)
+        sitp(outputs, xq)
+
+        # Vector query - zero allocation
+        allocs = @allocated sitp(outputs, xq)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-allocation: derivatives with per-series BC" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        # Create with mixed BC types
+        sitp = cubic_interp(x, [y1, y2]; bc=[
+            NaturalBC(),
+            BCPair(Deriv1(0.0), Deriv1(0.0)),
+        ], precompute_transpose=true)
+
+        out = zeros(2)
+
+        # Warmup deriv=1
+        sitp(out, 0.5; deriv=1)
+        sitp(out, 0.5; deriv=1)
+
+        allocs = @allocated sitp(out, 0.5; deriv=1)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # Warmup deriv=2
+        sitp(out, 0.5; deriv=2)
+        sitp(out, 0.5; deriv=2)
+
+        allocs = @allocated sitp(out, 0.5; deriv=2)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Fast path: BCPair array normalization is zero-allocation" begin
+        # When user provides BCPair array directly, _normalize_bc_array
+        # should return the same array without allocation (identity fast path)
+        bc_pairs = [
+            BCPair(Deriv1(0.0), Deriv1(0.0)),
+            BCPair(Deriv2(0.0), Deriv2(0.0)),
+            BCPair(Deriv1(1.0), Deriv3(0.0)),
+        ]
+
+        # Warmup
+        FastInterpolations._normalize_bc_array(bc_pairs, Float64, 3)
+        FastInterpolations._normalize_bc_array(bc_pairs, Float64, 3)
+
+        # Should return the same object (identity)
+        result = FastInterpolations._normalize_bc_array(bc_pairs, Float64, 3)
+        @test result === bc_pairs  # Same object reference, not a copy
+
+        # Zero allocation
+        allocs = @allocated FastInterpolations._normalize_bc_array(bc_pairs, Float64, 3)
+        @test allocs == 0
+    end
+
+    @testset "General path: mixed BC array creates new Vector{BCPair}" begin
+        # When BC types are mixed, normalization must create new array
+        mixed_bcs = AbstractBC{Float64}[
+            NaturalBC(),
+            BCPair(Deriv1(0.0), Deriv2(3.0)),
+            ClampedBC()
+        ]
+
+        result = FastInterpolations._normalize_bc_array(mixed_bcs, Float64, 3)
+
+        # Should be a new Vector{BCPair{Float64}}
+        @test result isa Vector{BCPair{Float64}}
+        @test result !== mixed_bcs  # Different object
+
+        # Values should be correctly normalized
+        @test result[1] == BCPair(Deriv2(0.0), Deriv2(0.0))  # NaturalBC
+        @test result[2] == BCPair(Deriv1(0.0), Deriv2(3.0))  # Already BCPair
+        @test result[3] == BCPair(Deriv1(0.0), Deriv1(0.0))  # ClampedBC
+    end
 end

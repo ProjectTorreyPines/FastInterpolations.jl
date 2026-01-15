@@ -329,9 +329,9 @@ end
 # ========================================
 
 """
-    _normalize_bc_array(bcs, T, n_series) -> Vector
+    _normalize_bc_array(bcs, T, n_series) -> AbstractVector{<:BCPair{T}}
 
-Normalize an array of BCs to a vector of BCPair for per-series boundary conditions.
+Normalize an array of BCs to BCPair for per-series boundary conditions.
 
 # Arguments
 - `bcs`: Array of AbstractBC (length must equal n_series)
@@ -339,12 +339,28 @@ Normalize an array of BCs to a vector of BCPair for per-series boundary conditio
 - `n_series`: Expected number of series
 
 # Returns
-Vector of normalized BCPair objects.
+- If input is already `AbstractVector{<:BCPair{T}}`: returns input unchanged (zero allocation)
+- Otherwise: `Vector{BCPair{T}}` of normalized boundary conditions
 
 # Throws
 - `DimensionMismatch`: if length(bcs) != n_series
 - `ArgumentError`: if any BC is PeriodicBC (not supported in arrays)
 """
+function _normalize_bc_array end
+
+# Fast path: already BCPair{T} - zero allocation, inline away
+@inline function _normalize_bc_array(
+    bcs::AbstractVector{<:BCPair{T}},
+    ::Type{T},
+    n_series::Int
+) where {T<:AbstractFloat}
+    length(bcs) == n_series || throw(DimensionMismatch(
+        "BC array length $(length(bcs)) does not match n_series $n_series"
+    ))
+    return bcs  # No conversion needed
+end
+
+# General path: needs normalization to BCPair{T}
 function _normalize_bc_array(
     bcs::AbstractVector{<:AbstractBC},
     ::Type{T},
@@ -364,7 +380,8 @@ function _normalize_bc_array(
         end
     end
 
-    return [_normalize_bc(bc, T) for bc in bcs]
+    # Create new Vector{BCPair{T}} with normalized BCs
+    return BCPair{T}[_normalize_bc(bc, T) for bc in bcs]
 end
 
 

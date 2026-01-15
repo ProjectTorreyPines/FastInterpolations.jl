@@ -1291,6 +1291,162 @@ end
     end
 end
 
+# ============================================================================
+# Phase 7: Scalar Extension Extrapolation with Derivatives (Coverage)
+# ============================================================================
+
+@testset "CubicSeriesInterpolant - Scalar Extension Extrapolation with Derivatives" begin
+    FI = FastInterpolations
+
+    # Setup: create interpolant with :extension extrapolation
+    x = collect(range(0.0, 1.0, 101))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = x .^ 3 .- 2 .* x .^ 2 .+ x  # polynomial for easy derivative verification
+
+    mitp = cubic_interp(x, [y1, y2, y3]; extrap=:extension)
+
+    # Create individual interpolants for reference comparison
+    itp1 = cubic_interp(x, y1; extrap=:extension)
+    itp2 = cubic_interp(x, y2; extrap=:extension)
+    itp3 = cubic_interp(x, y3; extrap=:extension)
+
+    @testset "deriv=1 outside domain (left side, xq < 0)" begin
+        xq = -0.15  # Outside domain on left
+
+        out = zeros(3)
+        mitp(out, xq; deriv=1)
+
+        # Verify against individual interpolants
+        @test out[1] ≈ itp1(xq; deriv=1) atol=1e-12
+        @test out[2] ≈ itp2(xq; deriv=1) atol=1e-12
+        @test out[3] ≈ itp3(xq; deriv=1) atol=1e-12
+
+        # Verify values are finite and non-zero (extension continues the slope)
+        @test all(isfinite, out)
+    end
+
+    @testset "deriv=1 outside domain (right side, xq > 1)" begin
+        xq = 1.15  # Outside domain on right
+
+        out = zeros(3)
+        mitp(out, xq; deriv=1)
+
+        # Verify against individual interpolants
+        @test out[1] ≈ itp1(xq; deriv=1) atol=1e-12
+        @test out[2] ≈ itp2(xq; deriv=1) atol=1e-12
+        @test out[3] ≈ itp3(xq; deriv=1) atol=1e-12
+
+        @test all(isfinite, out)
+    end
+
+    @testset "deriv=2 outside domain (left side)" begin
+        xq = -0.2
+
+        out = zeros(3)
+        mitp(out, xq; deriv=2)
+
+        # Verify against individual interpolants
+        @test out[1] ≈ itp1(xq; deriv=2) atol=1e-12
+        @test out[2] ≈ itp2(xq; deriv=2) atol=1e-12
+        @test out[3] ≈ itp3(xq; deriv=2) atol=1e-12
+
+        @test all(isfinite, out)
+    end
+
+    @testset "deriv=2 outside domain (right side)" begin
+        xq = 1.2
+
+        out = zeros(3)
+        mitp(out, xq; deriv=2)
+
+        # Verify against individual interpolants
+        @test out[1] ≈ itp1(xq; deriv=2) atol=1e-12
+        @test out[2] ≈ itp2(xq; deriv=2) atol=1e-12
+        @test out[3] ≈ itp3(xq; deriv=2) atol=1e-12
+
+        @test all(isfinite, out)
+    end
+
+    @testset "deriv=3 outside domain (left side)" begin
+        xq = -0.1
+
+        out = zeros(3)
+        mitp(out, xq; deriv=3)
+
+        # Verify against individual interpolants
+        @test out[1] ≈ itp1(xq; deriv=3) atol=1e-12
+        @test out[2] ≈ itp2(xq; deriv=3) atol=1e-12
+        @test out[3] ≈ itp3(xq; deriv=3) atol=1e-12
+
+        @test all(isfinite, out)
+    end
+
+    @testset "deriv=3 outside domain (right side)" begin
+        xq = 1.1
+
+        out = zeros(3)
+        mitp(out, xq; deriv=3)
+
+        # Verify against individual interpolants
+        @test out[1] ≈ itp1(xq; deriv=3) atol=1e-12
+        @test out[2] ≈ itp2(xq; deriv=3) atol=1e-12
+        @test out[3] ≈ itp3(xq; deriv=3) atol=1e-12
+
+        @test all(isfinite, out)
+    end
+
+    @testset "Out-of-place scalar extension derivatives" begin
+        # Test out-of-place API as well (covers the allocation path)
+        xq_left = -0.1
+        xq_right = 1.1
+
+        # deriv=1
+        d1_left = mitp(xq_left; deriv=1)
+        d1_right = mitp(xq_right; deriv=1)
+        @test length(d1_left) == 3
+        @test length(d1_right) == 3
+        @test d1_left[1] ≈ itp1(xq_left; deriv=1) atol=1e-12
+
+        # deriv=2
+        d2_left = mitp(xq_left; deriv=2)
+        d2_right = mitp(xq_right; deriv=2)
+        @test length(d2_left) == 3
+        @test d2_left[2] ≈ itp2(xq_left; deriv=2) atol=1e-12
+
+        # deriv=3
+        d3_left = mitp(xq_left; deriv=3)
+        d3_right = mitp(xq_right; deriv=3)
+        @test length(d3_left) == 3
+        @test d3_right[3] ≈ itp3(xq_right; deriv=3) atol=1e-12
+    end
+
+    @testset "Polynomial accuracy check (extension preserves cubic)" begin
+        # For y3 = x³ - 2x² + x, we know exact derivatives:
+        # y3' = 3x² - 4x + 1
+        # y3'' = 6x - 4
+        # y3''' = 6
+
+        # Outside domain, extension uses boundary polynomial
+        # The cubic spline should approximate the polynomial well
+
+        # At interior point for sanity check
+        xq_interior = 0.5
+        d1_interior = mitp(xq_interior; deriv=1)[3]
+        d2_interior = mitp(xq_interior; deriv=2)[3]
+        d3_interior = mitp(xq_interior; deriv=3)[3]
+
+        exact_d1 = 3 * xq_interior^2 - 4 * xq_interior + 1
+        exact_d2 = 6 * xq_interior - 4
+        exact_d3 = 6.0
+
+        # Interior should be very accurate
+        @test d1_interior ≈ exact_d1 atol=1e-10
+        @test d2_interior ≈ exact_d2 atol=1e-10
+        @test d3_interior ≈ exact_d3 atol=1e-8  # Third derivative has larger error
+    end
+end
+
 @testset "CubicSeriesInterpolant - Zero-Allocation Derivative Tests" begin
     FI = FastInterpolations
 

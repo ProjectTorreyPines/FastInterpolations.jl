@@ -2142,6 +2142,45 @@ end # DerivativeView Vector Queries
         @test all(r -> length(r) == 2, results_bc)
     end
 
+    @testset "SeriesInterpolant DerivativeView in-place scalar query" begin
+        # Covers: (d::DerivativeView)(out::AbstractArray{<:Real}, xq::Real)
+        x = collect(range(0.0, 1.0, 101))
+        y1 = x.^2
+        y2 = x.^3
+        sitp = cubic_interp(x, [y1, y2])
+
+        d1 = deriv1(sitp)
+        d2 = deriv2(sitp)
+
+        # In-place scalar query: d(out, xq)
+        out1 = zeros(2)
+        d1(out1, 0.5)
+        @test out1 ≈ sitp(0.5; deriv=1)
+
+        out2 = zeros(2)
+        d2(out2, 0.5)
+        @test out2 ≈ sitp(0.5; deriv=2)
+    end
+
+    @testset "SeriesInterpolant DerivativeView in-place vector query" begin
+        # Covers: (d::DerivativeView)(out::AbstractArray{<:AbstractArray{<:Real}}, xq::AbstractArray{<:Real})
+        x = collect(range(0.0, 1.0, 101))
+        y1 = x.^2
+        y2 = x.^3
+        sitp = cubic_interp(x, [y1, y2])
+
+        d1 = deriv1(sitp)
+        x_query = [0.25, 0.5, 0.75]
+
+        # In-place vector query: d(out, xq_vec)
+        out = [zeros(3), zeros(3)]  # Vector of vectors
+        d1(out, x_query)
+
+        expected = sitp(x_query; deriv=1)
+        @test out[1] ≈ expected[1]
+        @test out[2] ≈ expected[2]
+    end
+
     @testset "SeriesInterpolant deriv keyword type stability" begin
         x = collect(range(0.0, 1.0, 101))
         y1 = sin.(2π .* x)

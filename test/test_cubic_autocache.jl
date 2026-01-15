@@ -519,7 +519,7 @@ import FastInterpolations: _get_cubic_cache
         fresh = cubic_interp(x, y, xq; autocache=false)
 
         @test all(isfinite, fresh)
-        @test_broken stale ≈ fresh
+        @test stale ≈ fresh
     end
 
     # =========================================================================
@@ -550,7 +550,7 @@ import FastInterpolations: _get_cubic_cache
             fresh = cubic_interp(x, y, xq; autocache=false)
 
             @test all(isfinite, [stale, fresh])
-            @test_broken stale ≈ fresh
+            @test stale ≈ fresh
         end
 
         @testset "Mutation at start position" begin
@@ -570,7 +570,7 @@ import FastInterpolations: _get_cubic_cache
             fresh = cubic_interp(x, y, xq; autocache=false)
 
             @test all(isfinite, fresh)
-            @test_broken stale ≈ fresh
+            @test stale ≈ fresh
         end
 
         @testset "Mutation at end position" begin
@@ -590,7 +590,7 @@ import FastInterpolations: _get_cubic_cache
             fresh = cubic_interp(x, y, xq; autocache=false)
 
             @test all(isfinite, fresh)
-            @test_broken stale ≈ fresh
+            @test stale ≈ fresh
         end
 
         @testset "Multiple sequential mutations" begin
@@ -607,19 +607,19 @@ import FastInterpolations: _get_cubic_cache
             x[2] = 0.5
             stale1 = cubic_interp(x, y, xq; autocache=true)
             fresh1 = cubic_interp(x, y, xq; autocache=false)
-            @test_broken stale1 ≈ fresh1
+            @test stale1 ≈ fresh1
 
             # Second mutation
             x[4] = 3.5
             stale2 = cubic_interp(x, y, xq; autocache=true)
             fresh2 = cubic_interp(x, y, xq; autocache=false)
-            @test_broken stale2 ≈ fresh2
+            @test stale2 ≈ fresh2
 
             # Third mutation - restore one value
             x[2] = 1.0
             stale3 = cubic_interp(x, y, xq; autocache=true)
             fresh3 = cubic_interp(x, y, xq; autocache=false)
-            @test_broken stale3 ≈ fresh3
+            @test stale3 ≈ fresh3
         end
 
         @testset "Re-mutation back to original values" begin
@@ -666,7 +666,7 @@ import FastInterpolations: _get_cubic_cache
             stale = cubic_interp(x, y, xq; autocache=true)
             fresh = cubic_interp(x, y, xq; autocache=false)
 
-            @test_broken stale ≈ fresh
+            @test stale ≈ fresh
         end
 
         @testset "Periodic BC mutation safety" begin
@@ -685,7 +685,7 @@ import FastInterpolations: _get_cubic_cache
             stale = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=true)
             fresh = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=false)
 
-            @test_broken stale ≈ fresh
+            @test stale ≈ fresh
         end
     end
 

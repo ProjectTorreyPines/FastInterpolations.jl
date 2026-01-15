@@ -200,7 +200,8 @@ const _CACHE_LOCK = ReentrantLock()
 
 # Load-time constant: immutable after package load, enables compiler optimizations
 # To change: call set_cubic_cache_size!(n), then restart Julia for it to take effect
-const _CACHE_SIZE = @load_preference("cache_size", 16)::Int
+# Default reduced from 16→8: with isequal verification, smaller cache = faster worst-case scan
+const _CACHE_SIZE = @load_preference("cache_size", 8)::Int
 
 # ===============================================================
 # Module Initialization

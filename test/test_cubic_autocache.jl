@@ -103,15 +103,15 @@ import FastInterpolations: _get_cubic_cache
 
         # Cache size is a load-time constant via Preferences.jl
         # get_cubic_cache_size() returns the current (immutable) value
-        @test get_cubic_cache_size() == 16  # Default
+        @test get_cubic_cache_size() == 8  # Default (reduced from 16 for faster worst-case scan)
 
         # set_cubic_cache_size! saves to Preferences but doesn't change current session
         # (change takes effect after Julia restart)
         @test set_cubic_cache_size!(32) == 32  # Returns the requested value
-        @test get_cubic_cache_size() == 16     # Still 16 until restart
+        @test get_cubic_cache_size() == 8      # Still 8 until restart
 
         # Clean up: reset preference back to default for future sessions
-        set_cubic_cache_size!(16)
+        set_cubic_cache_size!(8)
 
         # Test clear works without error
         x = collect(range(0.0, 1.0, 51))

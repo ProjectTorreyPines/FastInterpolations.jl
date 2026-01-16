@@ -1,8 +1,10 @@
 # Import internal function for testing
 import FastInterpolations: _get_cubic_cache
 
-@testset "Cubic Spline Auto-Cache" begin
-    # Clear cache before tests
+# =============================================================================
+# TESTSET 1: Basic Cache Operations
+# =============================================================================
+@testset "Cubic Cache: Basic Operations" begin
     clear_cubic_cache!()
 
     @testset "Basic auto-cache reuse" begin
@@ -120,7 +122,12 @@ import FastInterpolations: _get_cubic_cache
 
         clear_cubic_cache!()  # Should complete without error
     end
+end
 
+# =============================================================================
+# TESTSET 2: Stress Tests & Edge Cases
+# =============================================================================
+@testset "Cubic Cache: Stress Tests & Edge Cases" begin
     @testset "Hash collision handling (stress test)" begin
         clear_cubic_cache!()
 
@@ -174,7 +181,12 @@ import FastInterpolations: _get_cubic_cache
             @test all(isfinite, result)
         end
     end
+end
 
+# =============================================================================
+# TESTSET 3: Type Support (Integer, Float32, AbstractRange, AbstractVector)
+# =============================================================================
+@testset "Cubic Cache: Type Support" begin
     @testset "Auto-cache with Integer inputs" begin
         clear_cubic_cache!()
 
@@ -394,11 +406,12 @@ import FastInterpolations: _get_cubic_cache
         # Periodic cache should have PeriodicData BC
         @test c4.bc_config !== nothing
     end
+end
 
-    # =========================================================================
-    # Coverage Tests for Uncovered Paths
-    # =========================================================================
-
+# =============================================================================
+# TESTSET 4: Boundary Condition Coverage
+# =============================================================================
+@testset "Cubic Cache: Boundary Condition Coverage" begin
     @testset "_get_cubic_cache with ClampedBC (typed API)" begin
         clear_cubic_cache!()
 
@@ -495,7 +508,12 @@ import FastInterpolations: _get_cubic_cache
         result3 = cubic_interp(x2, y, 0.5; bc=PeriodicBC())
         @test result2 ≈ result3
     end
+end
 
+# =============================================================================
+# TESTSET 5: Mutation Safety & Cache Invalidation
+# =============================================================================
+@testset "Cubic Cache: Mutation Safety" begin
     @testset "Vector x mutation safety" begin
         # Verify autocache detects in-place mutation and rebuilds correctly.
         # Key invariant: before !== after (result changed) AND after == fresh_build
@@ -730,11 +748,12 @@ import FastInterpolations: _get_cubic_cache
 
         @test result_before == result_after
     end
+end
 
-    # =========================================================================
-    # Analytic Correctness Tests After Mutation
-    # =========================================================================
-
+# =============================================================================
+# TESTSET 6: Analytic Correctness After Mutation
+# =============================================================================
+@testset "Cubic Cache: Analytic Correctness" begin
     @testset "Analytic correctness: cubic polynomial with ClampedBC after mutation" begin
         # Cubic splines with CLAMPED BC (exact endpoint derivatives) reproduce
         # cubic polynomials EXACTLY. Natural BC only reproduces linears.

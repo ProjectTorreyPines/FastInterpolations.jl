@@ -496,197 +496,61 @@ import FastInterpolations: _get_cubic_cache
         @test result2 ≈ result3
     end
 
-    @testset "Vector x mutation after cache creation (known bug)" begin
+    @testset "Vector x mutation safety" begin
+        # Verify autocache detects in-place mutation and rebuilds correctly.
+        # After mutation, autocache=true must produce identical results to autocache=false.
         clear_cubic_cache!()
 
-        # NOTE: Current auto-cache stores `x` by reference inside both the cache key
-        # and the CubicSplineCache itself. Mutating `x` after the cache is created
-        # leaves the cached LU factorization + spacing inconsistent with `cache.x`,
-        # which can silently corrupt results.
-        x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = [0.0, 1.0, 0.0, 1.0, 0.0]
-        xq = [1.5, 2.5, 3.5]
+        x = collect(range(0.0, 10.0, 11))  # [0,1,2,...,10]
+        y = sin.(x)
+        xq = [1.5, 4.5, 7.5]
 
-        # Prime cache
+        # Helper: verify autocache matches fresh build after mutation
+        function test_after_mutation()
+            cached = cubic_interp(x, y, xq; autocache=true)
+            fresh = cubic_interp(x, y, xq; autocache=false)
+            @test cached == fresh  # Must be bit-identical
+        end
+
+        # Prime cache with original grid
         cubic_interp(x, y, xq; autocache=true)
 
-        # Mutate x in-place (keep sorted)
-        x[3] = 1.1
+        # Mutation 1: middle position
+        x[6] = 5.5
+        test_after_mutation()
 
-        # Desired behavior: autocache=true should detect changed grid and rebuild,
-        # matching a fresh cache build (autocache=false).
-        stale = cubic_interp(x, y, xq; autocache=true)
-        fresh = cubic_interp(x, y, xq; autocache=false)
+        # Mutation 2: start position
+        x[1] = -0.5
+        test_after_mutation()
 
-        @test all(isfinite, fresh)
-        @test stale ≈ fresh
+        # Mutation 3: end position
+        x[11] = 11.0
+        test_after_mutation()
+
+        # Mutation 4: restore to different values
+        x[6] = 5.0
+        x[1] = 0.0
+        test_after_mutation()
     end
 
-    # =========================================================================
-    # Phase 1: Mutation Safety Tests (TDD RED Phase)
-    # =========================================================================
-    # These tests define the expected mutation-safe behavior for autocache.
-    # After implementation, @test_broken should become @test.
+    @testset "Float32 and PeriodicBC mutation safety" begin
+        # Float32
+        clear_cubic_cache!()
+        x32 = Float32.(collect(range(0.0, 4.0, 9)))
+        y32 = Float32.(sin.(x32))
+        cubic_interp(x32, y32, Float32(2.0); autocache=true)
+        x32[5] = Float32(2.2)
+        @test cubic_interp(x32, y32, Float32(2.0); autocache=true) ==
+              cubic_interp(x32, y32, Float32(2.0); autocache=false)
 
-    @testset "Vector x mutation safety - comprehensive" begin
-        # Test 1.1: Comprehensive Vector mutation coverage
-        # Expected: FAIL (red) until Phase 2 implementation
-
-        @testset "Basic mutation at middle position" begin
-            clear_cubic_cache!()
-
-            x = [0.0, 1.0, 2.0, 3.0, 4.0]
-            y = [0.0, 1.0, 4.0, 9.0, 16.0]  # y = x^2
-            xq = 2.5
-
-            # Prime cache with original grid
-            result_before = cubic_interp(x, y, xq; autocache=true)
-
-            # Mutate x in middle position
-            x[3] = 2.5  # Change from 2.0 to 2.5
-
-            # Autocache should detect mutation and rebuild
-            stale = cubic_interp(x, y, xq; autocache=true)
-            fresh = cubic_interp(x, y, xq; autocache=false)
-
-            @test all(isfinite, [stale, fresh])
-            @test stale ≈ fresh
-        end
-
-        @testset "Mutation at start position" begin
-            clear_cubic_cache!()
-
-            x = [0.0, 1.0, 2.0, 3.0, 4.0]
-            y = sin.(x)
-            xq = [0.5, 1.5, 2.5]
-
-            # Prime cache
-            cubic_interp(x, y, xq; autocache=true)
-
-            # Mutate first element (keep sorted)
-            x[1] = -0.5
-
-            stale = cubic_interp(x, y, xq; autocache=true)
-            fresh = cubic_interp(x, y, xq; autocache=false)
-
-            @test all(isfinite, fresh)
-            @test stale ≈ fresh
-        end
-
-        @testset "Mutation at end position" begin
-            clear_cubic_cache!()
-
-            x = [0.0, 1.0, 2.0, 3.0, 4.0]
-            y = cos.(x)
-            xq = [2.5, 3.5]
-
-            # Prime cache
-            cubic_interp(x, y, xq; autocache=true)
-
-            # Mutate last element
-            x[5] = 5.0
-
-            stale = cubic_interp(x, y, xq; autocache=true)
-            fresh = cubic_interp(x, y, xq; autocache=false)
-
-            @test all(isfinite, fresh)
-            @test stale ≈ fresh
-        end
-
-        @testset "Multiple sequential mutations" begin
-            clear_cubic_cache!()
-
-            x = [0.0, 1.0, 2.0, 3.0, 4.0]
-            y = exp.(-x)
-            xq = 1.5
-
-            # Prime cache
-            cubic_interp(x, y, xq; autocache=true)
-
-            # First mutation
-            x[2] = 0.5
-            stale1 = cubic_interp(x, y, xq; autocache=true)
-            fresh1 = cubic_interp(x, y, xq; autocache=false)
-            @test stale1 ≈ fresh1
-
-            # Second mutation
-            x[4] = 3.5
-            stale2 = cubic_interp(x, y, xq; autocache=true)
-            fresh2 = cubic_interp(x, y, xq; autocache=false)
-            @test stale2 ≈ fresh2
-
-            # Third mutation - restore one value
-            x[2] = 1.0
-            stale3 = cubic_interp(x, y, xq; autocache=true)
-            fresh3 = cubic_interp(x, y, xq; autocache=false)
-            @test stale3 ≈ fresh3
-        end
-
-        @testset "Re-mutation back to original values" begin
-            clear_cubic_cache!()
-
-            x_orig = [0.0, 1.0, 2.0, 3.0, 4.0]
-            x = copy(x_orig)
-            y = sin.(2π .* x ./ 4)
-            xq = [0.5, 1.5, 2.5, 3.5]
-
-            # Prime cache with original
-            result_orig = cubic_interp(x, y, xq; autocache=true)
-
-            # Mutate
-            x[3] = 2.5
-
-            # Query with mutated grid
-            _ = cubic_interp(x, y, xq; autocache=true)
-
-            # Restore original value
-            x[3] = 2.0
-
-            # Should now produce same result as original
-            # (either by detecting it's the same grid again, or by having stored snapshot)
-            result_restored = cubic_interp(x, y, xq; autocache=true)
-            fresh_restored = cubic_interp(x, y, xq; autocache=false)
-
-            @test result_restored ≈ fresh_restored  # This should pass after fix
-        end
-
-        @testset "Float32 mutation safety" begin
-            clear_cubic_cache!()
-
-            x = Float32[0.0, 1.0, 2.0, 3.0, 4.0]
-            y = Float32.(sin.(x))
-            xq = Float32(1.5)
-
-            # Prime cache
-            cubic_interp(x, y, xq; autocache=true)
-
-            # Mutate
-            x[3] = Float32(2.2)
-
-            stale = cubic_interp(x, y, xq; autocache=true)
-            fresh = cubic_interp(x, y, xq; autocache=false)
-
-            @test stale ≈ fresh
-        end
-
-        @testset "Periodic BC mutation safety" begin
-            clear_cubic_cache!()
-
-            x = collect(range(0.0, 2π, 9))
-            y = sin.(x)
-            xq = 1.0
-
-            # Prime cache
-            cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=true)
-
-            # Mutate interior point
-            x[5] = x[5] + 0.1
-
-            stale = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=true)
-            fresh = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=false)
-
-            @test stale ≈ fresh
-        end
+        # PeriodicBC
+        clear_cubic_cache!()
+        xp = collect(range(0.0, 2π, 9))
+        yp = sin.(xp)
+        cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=true)
+        xp[5] += 0.1
+        @test cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=true) ==
+              cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=false)
     end
 
     @testset "AbstractRange immutability (should already pass)" begin

@@ -16,6 +16,16 @@ A high-performance 1D interpolation package for Julia, optimized for **zero-allo
 - 📐 **Derivatives**: Analytical 1st and 2nd derivatives for all methods.
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
+## Supported Methods
+`FastInterpolations.jl` supports four interpolation methods: `Constant`, `Linear`, `Quadratic`, and `Cubic` splines.
+
+| Method | Continuity | Best For |
+|:-------|:-----------|:---------|
+| `constant_interp` | C⁻¹ | Step functions (Nearest, Left, Right) |
+| `linear_interp` | C⁰ | Simple, fast O(1) range lookup |
+| `quadratic_interp` | C¹ | Smooth C¹ continuity with minimal overhead |
+| `cubic_interp` | C² | High-quality C² splines (Natural, Clamped, Periodic) |
+
 ## Quick Start
 
 `FastInterpolations.jl` provides two primary API styles, plus a specialized **SeriesInterpolant** for multi-series data.
@@ -66,28 +76,16 @@ sitp(0.5)  # → 4-element Vector: interpolated values for each series
 
 For detailed usage and performance trade-offs, see the [API Selection Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/api_selection/).
 
-## Supported Methods
-`FastInterpolations.jl` supports four interpolation methods: `Constant`, `Linear`, `Quadratic`, and `Cubic` splines.
-
-| Method | Continuity | Best For |
-|:-------|:-----------|:---------|
-| `constant_interp` | C⁻¹ | Step functions (Nearest, Left, Right) |
-| `linear_interp` | C⁰ | Simple, fast O(1) range lookup |
-| `quadratic_interp` | C¹ | Smooth C¹ continuity with minimal overhead |
-| `cubic_interp` | C² | High-quality C² splines (Natural, Clamped, Periodic) |
-
 
 ## Performance
 
 Benchmark comparison against [Interpolations.jl](https://github.com/JuliaMath/Interpolations.jl) and [DataInterpolations.jl](https://github.com/SciML/DataInterpolations.jl) for **cubic spline interpolation**.
+<!-- BENCHMARK_VERSIONS_START -->
+<!-- BENCHMARK_VERSIONS_END -->
 
 ![One-Shot](docs/images/benchmark_oneshot_detail.png)
 
 One-shot (construction + evaluation) time per call with fixed grid size $n=100$. `FastInterpolations.jl` is significantly faster even on the first call (cache-miss), and becomes even faster on subsequent calls (cache-hit).
-
-<!-- BENCHMARK_VERSIONS_START -->
-<sub>Benchmarked with FastInterpolations.jl v0.2.2, Interpolations.jl v, DataInterpolations.jl v on Julia 1.12</sub>
-<!-- BENCHMARK_VERSIONS_END -->
 
 ## More Features
 

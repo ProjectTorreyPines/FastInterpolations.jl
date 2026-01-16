@@ -60,8 +60,8 @@ jobs:
         env:
           PKG_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          # Extract package versions using Julia
-          VERSIONS=$(julia --project=benchmark -e '
+          # Extract package versions using Julia and update README directly
+          julia --project=benchmark -e '
             using Pkg
 
             # Helper to get version from installed packages
@@ -78,18 +78,30 @@ jobs:
             itp_ver = get_pkg_version("Interpolations")
             di_ver = get_pkg_version("DataInterpolations")
             pkg_ver = ENV["PKG_VERSION"]
-            julia_ver = "$(VERSION.major).$(VERSION.minor)"
+            julia_ver = "$(VERSION.major).$(VERSION.minor).$(VERSION.patch)"
 
-            println("FastInterpolations.jl v$(pkg_ver), Interpolations.jl v$(itp_ver), DataInterpolations.jl v$(di_ver) on Julia $(julia_ver)")
-          ')
+            println("Versions: FastInterpolations v$pkg_ver, Interpolations v$itp_ver, DataInterpolations v$di_ver, Julia $julia_ver")
 
-          echo "Extracted versions: $VERSIONS"
+            # Build new content block (no leading whitespace)
+            new_content = "<!-- BENCHMARK_VERSIONS_START -->\n" *
+                "> **Env:** GitHub Actions · \`ubuntu-latest\` · Julia $julia_ver<br>\n" *
+                "> **Pkg:** FastInterpolations (v$pkg_ver) · Interpolations (v$itp_ver) · DataInterpolations (v$di_ver)\n" *
+                "<!-- BENCHMARK_VERSIONS_END -->"
 
-          # Update README between markers
-          sed -i '/<!-- BENCHMARK_VERSIONS_START -->/,/<!-- BENCHMARK_VERSIONS_END -->/c\<!-- BENCHMARK_VERSIONS_START -->\n<sub>Benchmarked with '"$VERSIONS"'<\/sub>\n<!-- BENCHMARK_VERSIONS_END -->' README.md
+            # Read README
+            readme = read("README.md", String)
+
+            # Replace content between markers
+            pattern = r"<!-- BENCHMARK_VERSIONS_START -->.*?<!-- BENCHMARK_VERSIONS_END -->"s
+            new_readme = replace(readme, pattern => new_content)
+
+            # Write back
+            write("README.md", new_readme)
+            println("Updated README with new benchmark versions")
+          '
 
           echo "Updated README:"
-          grep -A2 "BENCHMARK_VERSIONS_START" README.md
+          grep -A3 "BENCHMARK_VERSIONS_START" README.md
 
       # ──────────────────────────────────────────────────────────────
       # Commit and push

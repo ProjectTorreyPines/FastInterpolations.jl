@@ -84,10 +84,13 @@ for ng in GRID_SIZES
 end
 
 # 3. Cubic Evaluation (reuse interpolant)
+# Use in-place API for vector queries to avoid GC noise in benchmarks
 for nq in QUERY_SIZES
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
     label = lpad(nq, 5, '0')
-    b = @benchmarkable $itp_cubic($xi)
+    # In-place: pre-allocate output to measure pure computation
+    out = Vector{Float64}(undef, nq)
+    b = @benchmarkable $itp_cubic($out, $xi)
     b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
     suite["3_cubic_eval"]["q$label"] = b
 end
@@ -118,10 +121,13 @@ for ng in GRID_SIZES
 end
 
 # 6. Linear Evaluation (reuse interpolant)
+# Use in-place API for vector queries to avoid GC noise in benchmarks
 for nq in QUERY_SIZES
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
     label = lpad(nq, 5, '0')
-    b = @benchmarkable $itp_linear($xi)
+    # In-place: pre-allocate output to measure pure computation
+    out = Vector{Float64}(undef, nq)
+    b = @benchmarkable $itp_linear($out, $xi)
     b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
     suite["6_linear_eval"]["q$label"] = b
 end
@@ -133,6 +139,7 @@ end
 println("Setting up cubic scalar vs vec1 benchmarks...")
 
 const xq_vec1 = [5.0]  # 1-element vector for comparison
+const out_vec1 = Vector{Float64}(undef, 1)  # Pre-allocated output for vec1
 
 # 7. Cubic: Range grid - scalar vs vec1
 let b = @benchmarkable $itp_cubic($xq_scalar)
@@ -140,7 +147,7 @@ let b = @benchmarkable $itp_cubic($xq_scalar)
     suite["7_cubic_range"]["scalar_query"] = b
 end
 
-let b = @benchmarkable $itp_cubic($xq_vec1)
+let b = @benchmarkable $itp_cubic($out_vec1, $xq_vec1)
     b.params.evals = EVALS_FAST
     suite["7_cubic_range"]["vec1_query"] = b
 end
@@ -151,7 +158,7 @@ let b = @benchmarkable $itp_cubic_vec($xq_scalar)
     suite["7_cubic_vec"]["scalar_query"] = b
 end
 
-let b = @benchmarkable $itp_cubic_vec($xq_vec1)
+let b = @benchmarkable $itp_cubic_vec($out_vec1, $xq_vec1)
     b.params.evals = EVALS_FAST
     suite["7_cubic_vec"]["vec1_query"] = b
 end
@@ -178,11 +185,13 @@ for ns in MULTI_SERIES
         suite["8_cubic_multi"]["construct_s$(slabel)_q$(qlabel)"] = b
     end
 
-    # Vector evaluation benchmark (batch query) - keep original name for dashboard continuity
+    # Vector evaluation benchmark (batch query) - in-place for zero-alloc measurement
     clear_cubic_cache!()
     mitp = cubic_interp(x, ys)
     xq_multi = collect(range(0.1, 9.9, N_QUERY_MULTI))
-    let b = @benchmarkable $mitp($xq_multi)
+    # Pre-allocate outputs: one vector per series, each of length N_QUERY_MULTI
+    outputs_multi = [Vector{Float64}(undef, N_QUERY_MULTI) for _ in 1:ns]
+    let b = @benchmarkable $mitp($outputs_multi, $xq_multi)
         b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
         suite["8_cubic_multi"]["eval_s$(slabel)_q$(qlabel)"] = b
     end

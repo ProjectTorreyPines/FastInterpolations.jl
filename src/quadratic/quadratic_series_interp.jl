@@ -63,6 +63,10 @@ d2 = sitp(0.5; deriv=2)     # Second derivatives
 - Vector queries use series-contiguous layout directly
 - Scalar queries trigger lazy transpose on first call
 - All series share same h[] array (O(1) memory overhead)
+
+# Implementation Note: `mutable struct` with `const` fields
+This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
+plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
 mutable struct QuadraticSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
     const x::Vector{T}                        # Grid points

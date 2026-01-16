@@ -1023,4 +1023,140 @@ import FastInterpolations: _get_cubic_cache
         @test allocs <= ALLOC_THRESHOLD
     end
 
+    # =========================================================================
+    # Range Cache Entry Efficiency Tests (Phase 1 - TDD Baseline)
+    # =========================================================================
+    # These tests verify that AbstractRange inputs remain memory-efficient.
+    # Ranges are immutable and should NOT be materialized to Vector when cached.
+    # Expected: PASS (establishes baseline for Range efficiency)
+
+    @testset "Range cache entry does not allocate O(N) Vector" begin
+        # Test 1.3: Verify Range cache operations are efficient
+
+        @testset "Range cache hit is zero-allocation" begin
+            clear_cubic_cache!()
+
+            x = range(0.0, 1.0, 51)  # StepRangeLen
+            y = sin.(2π .* collect(x))
+
+            # Prime cache
+            cubic_interp(x, y, 0.5)
+
+            # Warmup
+            cubic_interp(x, y, 0.5)
+            cubic_interp(x, y, 0.5)
+
+            # Range cache hit should be zero-allocation (same as Vector cache hit)
+            allocs = @allocated cubic_interp(x, y, 0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        @testset "Range cache miss has bounded allocation" begin
+            clear_cubic_cache!()
+
+            x = range(0.0, 1.0, 101)
+            y = sin.(2π .* collect(x))
+
+            # Warmup JIT with different grid
+            x_warmup = range(0.0, 2.0, 101)
+            cubic_interp(x_warmup, sin.(2π .* collect(x_warmup)), 0.5)
+            clear_cubic_cache!()
+
+            # Cache miss for Range should NOT allocate O(N) bytes for the x snapshot
+            # It should only allocate for LU factorization workspaces + cache entry overhead
+            allocs = @allocated cubic_interp(x, y, 0.5)
+
+            # Vector of 101 Float64 would be ~808 bytes
+            # Range snapshot should be O(1) - just 3 numbers (first, last, length)
+            # Total allocation should be dominated by LU factorization (~6-8 KB), not x snapshot
+            @test allocs < 12_000  # Reasonable budget for cache creation
+        end
+
+        @testset "Float32 Range cache hit is zero-allocation" begin
+            clear_cubic_cache!()
+
+            x = range(Float32(0), Float32(1), 51)
+            y = Float32.(sin.(2π .* collect(x)))
+
+            # Prime cache
+            cubic_interp(x, y, Float32(0.5))
+
+            # Warmup
+            cubic_interp(x, y, Float32(0.5))
+            cubic_interp(x, y, Float32(0.5))
+
+            # Float32 Range cache hit
+            allocs = @allocated cubic_interp(x, y, Float32(0.5))
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        @testset "LinRange cache efficiency" begin
+            clear_cubic_cache!()
+
+            x = LinRange(0.0, 1.0, 51)
+            y = cos.(collect(x))
+
+            # Prime cache (LinRange gets normalized to StepRangeLen)
+            cubic_interp(x, y, 0.5)
+
+            # Warmup
+            cubic_interp(x, y, 0.5)
+            cubic_interp(x, y, 0.5)
+
+            # LinRange cache hit - has small overhead from LinRange→StepRangeLen normalization
+            # on each call (~112 bytes for creating StepRangeLen), but NOT O(N) allocation
+            allocs = @allocated cubic_interp(x, y, 0.5)
+            # Allow up to 200 bytes for range normalization overhead
+            @test allocs <= ALLOC_THRESHOLD + 200
+        end
+
+        @testset "Periodic BC Range cache efficiency" begin
+            clear_cubic_cache!()
+
+            x = range(0.0, 2π, 51)
+            y = sin.(collect(x))
+
+            # Prime periodic cache
+            cubic_interp(x, y, 1.0; bc=PeriodicBC())
+
+            # Warmup
+            cubic_interp(x, y, 1.0; bc=PeriodicBC())
+            cubic_interp(x, y, 1.0; bc=PeriodicBC())
+
+            # Periodic BC Range cache hit
+            allocs = @allocated cubic_interp(x, y, 1.0; bc=PeriodicBC())
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        @testset "Range vs Vector cache miss allocation comparison" begin
+            # This test verifies that Range cache miss doesn't allocate significantly more
+            # than Vector cache miss (it should actually allocate LESS for the x storage)
+
+            clear_cubic_cache!()
+            n = 101
+
+            # Measure Vector cache miss
+            x_vec = collect(range(0.0, 1.0, n))
+            y = sin.(2π .* x_vec)
+
+            # Warmup JIT
+            cubic_interp(x_vec, y, 0.5)
+            clear_cubic_cache!()
+
+            vec_allocs = @allocated cubic_interp(x_vec, y, 0.5)
+
+            clear_cubic_cache!()
+
+            # Measure Range cache miss
+            x_range = range(0.0, 1.0, n)
+            y_range = sin.(2π .* collect(x_range))
+
+            range_allocs = @allocated cubic_interp(x_range, y_range, 0.5)
+
+            # Range should allocate less or similar to Vector
+            # (no need to copy O(N) x values for Range - it's stored compactly)
+            @test range_allocs <= vec_allocs + 200  # Allow small overhead for normalization
+        end
+    end
+
 end

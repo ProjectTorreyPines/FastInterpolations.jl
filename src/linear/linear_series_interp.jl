@@ -55,6 +55,10 @@ sitp([out1, out2, out3], xq)    # In-place (zero allocation)
 # Performance
 - Vector queries use series-contiguous layout directly
 - Scalar queries trigger lazy transpose on first call
+
+# Implementation Note: `mutable struct` with `const` fields
+This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
+plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
 mutable struct LinearSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
     const x::Vector{T}                    # Shared x-grid

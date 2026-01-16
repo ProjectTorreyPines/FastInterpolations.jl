@@ -54,6 +54,16 @@ Cache entry for derivative BC (uses BCPair).
 - `R`: Right boundary condition type (Deriv1{T} or Deriv2{T})
 - `X`: Grid type (Vector{T} or StepRangeLen)
 - `S`: Grid spacing type (ScalarSpacing{T} or VectorSpacing{T})
+
+# Fields
+- `id::UInt`: objectid of the ORIGINAL input x (hint for fast lookup)
+- `x::X`: SNAPSHOT of the grid (copy for Vector, same object for Range)
+- `cache`: CubicSplineCache built from the snapshot
+
+# Mutation Safety
+The `x` field stores a snapshot (copy) for Vector inputs, preventing external
+mutation from corrupting the cache. Lookup verifies `isequal(entry.x, input_x)`
+even on objectid match to detect in-place mutation.
 """
 mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}, S<:AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
     id::UInt
@@ -70,6 +80,14 @@ Cache entry for periodic BC (uses PeriodicData).
 - `T`: Float type (Float32 or Float64)
 - `X`: Grid type (Vector{T} or StepRangeLen)
 - `S`: Grid spacing type (ScalarSpacing{T} or VectorSpacing{T})
+
+# Fields
+- `id::UInt`: objectid of the ORIGINAL input x (hint for fast lookup)
+- `x::X`: SNAPSHOT of the grid (copy for Vector, same object for Range)
+- `cache`: CubicSplineCache built from the snapshot
+
+# Mutation Safety
+See `CacheEntry` documentation for details on mutation safety pattern.
 """
 mutable struct PeriodicCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}, S<:AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
     id::UInt
@@ -182,7 +200,8 @@ const _CACHE_LOCK = ReentrantLock()
 
 # Load-time constant: immutable after package load, enables compiler optimizations
 # To change: call set_cubic_cache_size!(n), then restart Julia for it to take effect
-const _CACHE_SIZE = @load_preference("cache_size", 16)::Int
+# Default reduced from 16→8: with isequal verification, smaller cache = faster worst-case scan
+const _CACHE_SIZE = @load_preference("cache_size", 8)::Int
 
 # ===============================================================
 # Module Initialization
@@ -216,7 +235,7 @@ get_cubic_cache_size()     # Now returns 32
 function set_cubic_cache_size!(n::Int)
     n > 0 || throw(ArgumentError("Cache size must be positive"))
     @set_preferences!("cache_size" => n)
-    @info "Cache size preference saved. Restart Julia to apply (current session uses $(get_cubic_cache_size()))."
+    @info "Cache size preference set to $(n). Restart Julia to apply the change; the current session continues to use $(get_cubic_cache_size())."
     return n
 end
 
@@ -344,26 +363,40 @@ end
     _rcu_lookup(snap, id, x) -> cache or nothing
 
 Lock-free cache lookup on an immutable snapshot.
-Uses 2-pass algorithm: identity check (fast) → equality check (slow).
+Uses 2-pass algorithm with verification:
+- Pass 1: objectid hint match → verify with isequal (catches in-place mutation)
+- Pass 2: isequal fallback (different object, same content)
 
 # Thread Safety
 - This function is called on an immutable snapshot
 - No self-healing (snapshot is immutable)
 - Safe for concurrent calls from multiple threads
+
+# Mutation Safety
+Entry stores a snapshot of x (copy for Vector, same for Range).
+Pass 1 verifies content even on objectid match to detect in-place mutation.
 """
 @inline function _rcu_lookup(snap::BankSnapshot{E}, id::UInt, x::X) where {E, X}
     store = snap.store
     count = snap.count
 
-    # [Pass 1] Identity check (fast path)
+    # [Pass 1] Identity hint check with verification
+    # objectid match is a HINT that this might be the right entry.
+    # We MUST verify content because user may have mutated x in-place.
     @inbounds for i in 1:count
         entry = store[i]
         if entry.id === id
-            return entry.cache
+            # Verify content matches snapshot (catches in-place mutation)
+            if isequal(entry.x, x)
+                return entry.cache
+            end
+            # objectid matched but content differs → mutation detected!
+            # Continue to Pass 2 (might find another entry with matching content)
         end
     end
 
-    # [Pass 2] Equality check (no self-healing in RCU - snapshot is immutable)
+    # [Pass 2] Equality check fallback (no self-healing in RCU - snapshot is immutable)
+    # This handles: different object with same content (cache hit)
     @inbounds for i in 1:count
         entry = store[i]
         if isequal(entry.x, x)
@@ -419,9 +452,14 @@ Core lookup/insert logic for CacheBank{E} using RCU pattern.
         found = _rcu_lookup(snap, id, x)
         found !== nothing && return found
 
-        # Build new cache
-        new_cache = _build_cache(E, x, bc_config)
-        new_entry = E(id, x, new_cache)
+        # Create snapshot of x to prevent external mutation from corrupting cache.
+        # - Vector: copy to break aliasing (user can mutate original, snapshot is safe)
+        # - AbstractRange: immutable in Julia, no copy needed (O(1) storage)
+        snapshot_x = x isa Vector ? copy(x) : x
+
+        # Build new cache using snapshot (ensures cache.x === snapshot_x)
+        new_cache = _build_cache(E, snapshot_x, bc_config)
+        new_entry = E(id, snapshot_x, new_cache)
 
         # Copy-on-write: create new snapshot with added entry
         new_store = copy(snap.store)

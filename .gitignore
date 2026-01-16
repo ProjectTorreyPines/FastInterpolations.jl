@@ -3,7 +3,9 @@ Manifest.toml
 
 # Internal development docs
 /docs/plans
+/docs/done
 /internal/design/
+/claudedocs
 
 # Build artifacts
 /build/

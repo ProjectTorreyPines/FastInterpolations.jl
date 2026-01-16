@@ -63,17 +63,17 @@ sitp([out1, out2, out3], xq)    # In-place (zero allocation)
 - Scalar queries trigger lazy transpose on first call
 - All series share same cache (O(1) memory overhead)
 """
-struct CubicSeriesInterpolant{
+mutable struct CubicSeriesInterpolant{
     T<:AbstractFloat,
     C<:CubicSplineCache{T},
     B
 } <: AbstractSeriesInterpolant{T}
-    cache::C                    # Shared cache with LU factorization
-    bc_for_solve::B             # BC config for solving
-    y::Matrix{T}                # Series-contiguous y (n_points × n_series)
-    z::Matrix{T}                # Series-contiguous z (n_points × n_series)
-    _transpose::LazyTransposePair{T}  # Lazy point-contiguous layout (shared infra)
-    extrap::ExtrapVal           # Extrapolation mode
+    const cache::C                    # Shared cache with LU factorization
+    const bc_for_solve::B             # BC config for solving
+    const y::Matrix{T}                # Series-contiguous y (n_points × n_series)
+    const z::Matrix{T}                # Series-contiguous z (n_points × n_series)
+    const _transpose::LazyTransposePair{T}  # Lazy point-contiguous layout (shared infra)
+    const extrap::ExtrapVal           # Extrapolation mode
 
     function CubicSeriesInterpolant(
         cache::C,

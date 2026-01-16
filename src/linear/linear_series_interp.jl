@@ -56,11 +56,11 @@ sitp([out1, out2, out3], xq)    # In-place (zero allocation)
 - Vector queries use series-contiguous layout directly
 - Scalar queries trigger lazy transpose on first call
 """
-struct LinearSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
-    x::Vector{T}                    # Shared x-grid
-    y::Matrix{T}                    # Series-contiguous y (n_points × n_series)
-    _transpose::LazyTranspose{T}    # Lazy point-contiguous layout
-    extrap::ExtrapVal               # Extrapolation mode
+mutable struct LinearSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
+    const x::Vector{T}                    # Shared x-grid
+    const y::Matrix{T}                    # Series-contiguous y (n_points × n_series)
+    const _transpose::LazyTranspose{T}    # Lazy point-contiguous layout
+    const extrap::ExtrapVal               # Extrapolation mode
 
     function LinearSeriesInterpolant(
         x::Vector{T},

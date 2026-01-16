@@ -54,21 +54,17 @@ result = itp(xq)               # evaluate at multiple points
 ```
 
 ### 2.1 SeriesInterpolant (Multiple Series)
-When **multiple y-series share the same x-grid**, use SeriesInterpolant for optimal performance. It stores all series in a **unified matrix** with point-contiguous memory layout, enabling:
-
-- **10-120× faster scalar queries** via SIMD and cache locality
-- Zero-allocation batch evaluation
-- Shared grid coefficients (computed once)
+When multiple y-series share the same x-grid, use SeriesInterpolant. It leverages **SIMD** and **cache locality** for **10-100× faster** evaluation compared to looping over individual interpolants.
 
 ```julia
-sitp = cubic_interp(x, [temp, press, vel])  # 3 series, 1 shared grid
-outputs = [similar(xq) for _ in 1:3]
-sitp(outputs, xq)                           # zero-allocation batch
+x = range(0, 10, 100)
+y1, y2, y3, y4 = sin.(x), cos.(x), tan.(x), exp.(-x)  # 4 series, same grid
+
+sitp = cubic_interp(x, [y1, y2, y3, y4])   # create SeriesInterpolant
+sitp(0.5)  # → 4-element Vector: interpolated values for each series
 ```
 
-> **Note:** For very small series counts (n ≤ 2-4) with vector queries, a manual loop over individual interpolants may be marginally faster (~10-25%) due to anchor allocation overhead. For scalar queries or larger series counts, SeriesInterpolant always wins.
-
-For detailed API selection guidance, see the [API Selection Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/api_selection/).
+For detailed usage and performance trade-offs, see the [API Selection Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/api_selection/).
 
 ## Supported Methods
 `FastInterpolations.jl` supports four interpolation methods: `Constant`, `Linear`, `Quadratic`, and `Cubic` splines.

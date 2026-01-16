@@ -104,6 +104,7 @@ makedocs(
         "Home" => "index.md",
         "Guide" => [
             "API Selection" => "guides/api_selection.md",
+            "SeriesInterpolant" => "guides/series_interpolant.md",
             "Performance Tips" => "guides/performance_tips.md",
         ],
         "Interpolation" => [

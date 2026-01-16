@@ -67,7 +67,7 @@ for nq in QUERY_SIZES
     clear_cubic_cache!()
     cubic_interp(x, y, xi)  # prime cache
     label = lpad(nq, 5, '0')  # 00001, 00100, 10000
-    b = @benchmarkable cubic_interp($x, $y, $xi)
+    b = @benchmarkable cubic_interp($x, $y, $xi) setup=(GC.gc())
     b.params.evals = nq >= 10_000 ? EVALS_SLOW : EVALS_MED
     suite["1_cubic_oneshot"]["q$label"] = b
 end
@@ -78,7 +78,7 @@ for ng in GRID_SIZES
     y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
     clear_cubic_cache!()
     label = lpad(ng, 4, '0')  # 0010, 0100, 1000
-    b = @benchmarkable cubic_interp($x_grid, $y_grid; autocache=false)
+    b = @benchmarkable cubic_interp($x_grid, $y_grid; autocache=false) setup=(GC.gc())
     b.params.evals = ng >= 1000 ? EVALS_SLOW : EVALS_MED
     suite["2_cubic_construct"]["g$label"] = b
 end
@@ -90,7 +90,7 @@ for nq in QUERY_SIZES
     label = lpad(nq, 5, '0')
     # In-place: pre-allocate output to measure pure computation
     out = Vector{Float64}(undef, nq)
-    b = @benchmarkable $itp_cubic($out, $xi)
+    b = @benchmarkable $itp_cubic($out, $xi) setup=(GC.gc())
     b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
     suite["3_cubic_eval"]["q$label"] = b
 end
@@ -105,7 +105,7 @@ println("Setting up linear benchmarks...")
 for nq in QUERY_SIZES
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
     label = lpad(nq, 5, '0')
-    b = @benchmarkable linear_interp($x, $y, $xi)
+    b = @benchmarkable linear_interp($x, $y, $xi) setup=(GC.gc())
     b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
     suite["4_linear_oneshot"]["q$label"] = b
 end
@@ -115,7 +115,7 @@ for ng in GRID_SIZES
     x_grid = range(0.0, 10.0, ng)
     y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
     label = lpad(ng, 4, '0')
-    b = @benchmarkable linear_interp($x_grid, $y_grid)
+    b = @benchmarkable linear_interp($x_grid, $y_grid) setup=(GC.gc())
     b.params.evals = EVALS_FAST
     suite["5_linear_construct"]["g$label"] = b
 end
@@ -127,7 +127,7 @@ for nq in QUERY_SIZES
     label = lpad(nq, 5, '0')
     # In-place: pre-allocate output to measure pure computation
     out = Vector{Float64}(undef, nq)
-    b = @benchmarkable $itp_linear($out, $xi)
+    b = @benchmarkable $itp_linear($out, $xi) setup=(GC.gc())
     b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
     suite["6_linear_eval"]["q$label"] = b
 end
@@ -142,23 +142,23 @@ const xq_vec1 = [5.0]  # 1-element vector for comparison
 const out_vec1 = Vector{Float64}(undef, 1)  # Pre-allocated output for vec1
 
 # 7. Cubic: Range grid - scalar vs vec1
-let b = @benchmarkable $itp_cubic($xq_scalar)
+let b = @benchmarkable $itp_cubic($xq_scalar) setup=(GC.gc())
     b.params.evals = EVALS_FAST
     suite["7_cubic_range"]["scalar_query"] = b
 end
 
-let b = @benchmarkable $itp_cubic($out_vec1, $xq_vec1)
+let b = @benchmarkable $itp_cubic($out_vec1, $xq_vec1) setup=(GC.gc())
     b.params.evals = EVALS_FAST
     suite["7_cubic_range"]["vec1_query"] = b
 end
 
 # 7. Cubic: Vector grid - scalar vs vec1
-let b = @benchmarkable $itp_cubic_vec($xq_scalar)
+let b = @benchmarkable $itp_cubic_vec($xq_scalar) setup=(GC.gc())
     b.params.evals = EVALS_FAST
     suite["7_cubic_vec"]["scalar_query"] = b
 end
 
-let b = @benchmarkable $itp_cubic_vec($out_vec1, $xq_vec1)
+let b = @benchmarkable $itp_cubic_vec($out_vec1, $xq_vec1) setup=(GC.gc())
     b.params.evals = EVALS_FAST
     suite["7_cubic_vec"]["vec1_query"] = b
 end
@@ -180,7 +180,7 @@ for ns in MULTI_SERIES
     # Construction benchmark
     clear_cubic_cache!()
     cubic_interp(x, ys)  # prime cache
-    let b = @benchmarkable cubic_interp($x, $ys)
+    let b = @benchmarkable cubic_interp($x, $ys) setup=(GC.gc())
         b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
         suite["8_cubic_multi"]["construct_s$(slabel)_q$(qlabel)"] = b
     end
@@ -191,7 +191,7 @@ for ns in MULTI_SERIES
     xq_multi = collect(range(0.1, 9.9, N_QUERY_MULTI))
     # Pre-allocate outputs: one vector per series, each of length N_QUERY_MULTI
     outputs_multi = [Vector{Float64}(undef, N_QUERY_MULTI) for _ in 1:ns]
-    let b = @benchmarkable $mitp($outputs_multi, $xq_multi)
+    let b = @benchmarkable $mitp($outputs_multi, $xq_multi) setup=(GC.gc())
         b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
         suite["8_cubic_multi"]["eval_s$(slabel)_q$(qlabel)"] = b
     end
@@ -203,7 +203,7 @@ for ns in MULTI_SERIES
             for xq in $xq_multi
                 $mitp($out_scalar, xq)
             end
-        end
+        end setup=(GC.gc())
         b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
         suite["8_cubic_multi"]["eval_s$(slabel)_q$(qlabel)_scalar_loop"] = b
     end

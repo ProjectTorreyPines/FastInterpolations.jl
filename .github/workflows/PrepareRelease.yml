@@ -1,0 +1,123 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_benchmark:
+        description: 'Skip benchmark plot generation'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  prepare:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version from Project.toml
+        id: version
+        run: |
+          VERSION=$(grep '^version' Project.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Current version: $VERSION"
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      # ──────────────────────────────────────────────────────────────
+      # Benchmark plot generation (optional)
+      # ──────────────────────────────────────────────────────────────
+      - name: Add registries
+        if: ${{ !inputs.skip_benchmark }}
+        run: |
+          julia -e 'using Pkg
+            Pkg.Registry.add(RegistrySpec(url="https://github.com/ProjectTorreyPines/FuseRegistry.jl.git"))
+            Pkg.Registry.add("General")
+            Pkg.Registry.update()'
+
+      - name: Install benchmark dependencies
+        if: ${{ !inputs.skip_benchmark }}
+        run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Generate benchmark plot
+        if: ${{ !inputs.skip_benchmark }}
+        run: julia --project=benchmark benchmark/run_readme_benchmark.jl
+
+      - name: Update benchmark versions in README
+        if: ${{ !inputs.skip_benchmark }}
+        env:
+          PKG_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Extract package versions using Julia
+          VERSIONS=$(julia --project=benchmark -e '
+            using Pkg
+            deps = Pkg.dependencies()
+
+            # Find package versions
+            itp_ver = ""
+            di_ver = ""
+            for (uuid, info) in deps
+                if info.name == "Interpolations"
+                    itp_ver = string(info.version)
+                elseif info.name == "DataInterpolations"
+                    di_ver = string(info.version)
+                end
+            end
+
+            pkg_ver = ENV["PKG_VERSION"]
+            julia_ver = "$(VERSION.major).$(VERSION.minor)"
+            println("FastInterpolations.jl v$(pkg_ver), Interpolations.jl v$(itp_ver), DataInterpolations.jl v$(di_ver) on Julia $(julia_ver)")
+          ')
+
+          echo "Extracted versions: $VERSIONS"
+
+          # Update README between markers
+          sed -i '/<!-- BENCHMARK_VERSIONS_START -->/,/<!-- BENCHMARK_VERSIONS_END -->/c\<!-- BENCHMARK_VERSIONS_START -->\n<sub>Benchmarked with '"$VERSIONS"'<\/sub>\n<!-- BENCHMARK_VERSIONS_END -->' README.md
+
+          echo "Updated README:"
+          grep -A2 "BENCHMARK_VERSIONS_START" README.md
+
+      # ──────────────────────────────────────────────────────────────
+      # Commit and push
+      # ──────────────────────────────────────────────────────────────
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/images/ README.md
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update benchmark for v${{ steps.version.outputs.version }}"
+            git push
+            echo "✅ Changes committed and pushed"
+          fi
+
+      # ──────────────────────────────────────────────────────────────
+      # Summary
+      # ──────────────────────────────────────────────────────────────
+      - name: Print next steps
+        run: |
+          echo ""
+          echo "════════════════════════════════════════════════════════════"
+          echo "  ✅ Release v${{ steps.version.outputs.version }} prepared!"
+          echo "════════════════════════════════════════════════════════════"
+          echo ""
+          echo "  📋 Next steps:"
+          echo ""
+          echo "  1. Go to the latest commit on master branch"
+          echo "  2. Comment: @JuliaRegistrator register"
+          echo "  3. Wait for Registry PR to be created and merged"
+          echo "  4. TagBot will automatically create the git tag"
+          echo ""
+          echo "════════════════════════════════════════════════════════════"

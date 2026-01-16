@@ -63,21 +63,23 @@ jobs:
           # Extract package versions using Julia
           VERSIONS=$(julia --project=benchmark -e '
             using Pkg
-            deps = Pkg.dependencies()
 
-            # Find package versions
-            itp_ver = ""
-            di_ver = ""
-            for (uuid, info) in deps
-                if info.name == "Interpolations"
-                    itp_ver = string(info.version)
-                elseif info.name == "DataInterpolations"
-                    di_ver = string(info.version)
+            # Helper to get version from installed packages
+            function get_pkg_version(name::String)
+                deps = Pkg.dependencies()
+                for (uuid, info) in deps
+                    if info.name == name && info.version !== nothing
+                        return string(info.version)
+                    end
                 end
+                return "?"
             end
 
+            itp_ver = get_pkg_version("Interpolations")
+            di_ver = get_pkg_version("DataInterpolations")
             pkg_ver = ENV["PKG_VERSION"]
             julia_ver = "$(VERSION.major).$(VERSION.minor)"
+
             println("FastInterpolations.jl v$(pkg_ver), Interpolations.jl v$(itp_ver), DataInterpolations.jl v$(di_ver) on Julia $(julia_ver)")
           ')
 

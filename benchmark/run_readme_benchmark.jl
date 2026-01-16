@@ -24,25 +24,28 @@ using Statistics
 
 # Benchmark parameters for noise reduction
 # BenchmarkTools stops when EITHER limit is reached (whichever comes first)
-const BENCH_SECONDS = 5.0      # seconds per benchmark point
 const BENCH_SAMPLES = 10_000   # max samples per benchmark
 
-BenchmarkTools.DEFAULT_PARAMETERS.seconds = BENCH_SECONDS
 BenchmarkTools.DEFAULT_PARAMETERS.samples = BENCH_SAMPLES
 
-# Fixed evals by query size (skip auto-tuning for more stable results)
-# Higher evals = more stable measurements for fast operations
+# Fixed evals and seconds by query size (skip auto-tuning for more stable results)
+# Higher evals/seconds = more stable measurements for fast operations
 const EVALS_TINY = 10_000   # nq ≤ 5: ~1-5μs benchmarks
 const EVALS_SMALL = 1_000   # nq ≤ 100: ~5-20μs benchmarks
 const EVALS_MED = 100       # nq ≤ 1000: ~20-100μs benchmarks
 const EVALS_LARGE = 10      # nq > 1000: ~100μs+ benchmarks
 
-"""Get appropriate evals count based on query size."""
-function get_evals(nq::Int)
-    nq ≤ 5 && return EVALS_TINY
-    nq ≤ 100 && return EVALS_SMALL
-    nq ≤ 1000 && return EVALS_MED
-    return EVALS_LARGE
+const SECS_TINY = 10.0      # nq ≤ 5: longer for stability
+const SECS_SMALL = 5.0      # nq ≤ 100
+const SECS_MED = 3.0        # nq ≤ 1000
+const SECS_LARGE = 2.0      # nq > 1000: already stable
+
+"""Get appropriate (evals, seconds) based on query size."""
+function get_bench_params(nq::Int)
+    nq ≤ 5 && return (EVALS_TINY, SECS_TINY)
+    nq ≤ 100 && return (EVALS_SMALL, SECS_SMALL)
+    nq ≤ 1000 && return (EVALS_MED, SECS_MED)
+    return (EVALS_LARGE, SECS_LARGE)
 end
 
 # Query sizes for the plot (10^0 ~ 10^5)
@@ -82,14 +85,16 @@ function run_readme_benchmark(; verbose::Bool=true)
     ns_to_sec(ns) = ns / 1e9
 
     n_benchmarks = length(QUERY_SIZES) * 4  # 4 packages/configs per query size
-    est_time_min = n_benchmarks * BENCH_SECONDS / 60
+    # Estimate total time based on variable seconds per query size
+    est_time_sec = sum(nq -> get_bench_params(nq)[2] * 4, QUERY_SIZES)
+    est_time_min = est_time_sec / 60
 
     if verbose
         println("Running one-shot benchmark (n_grid=$N_GRID)")
         println("  • $(length(QUERY_SIZES)) query sizes × 4 configs = $n_benchmarks benchmarks")
-        println("  • $(BENCH_SECONDS)s max per benchmark → ~$(round(est_time_min, digits=1)) min total")
-        println("  • Using in-place APIs for zero-allocation evaluation")
-        println("  • Fixed evals: tiny=$(EVALS_TINY), small=$(EVALS_SMALL), med=$(EVALS_MED), large=$(EVALS_LARGE)")
+        println("  • Variable seconds: tiny=$(SECS_TINY)s, small=$(SECS_SMALL)s, med=$(SECS_MED)s, large=$(SECS_LARGE)s")
+        println("  • Estimated total: ~$(round(est_time_min, digits=1)) min")
+        println("  • GC.gc() before each benchmark for fair comparison")
         println()
     end
 
@@ -99,18 +104,20 @@ function run_readme_benchmark(; verbose::Bool=true)
     for nq in QUERY_SIZES
         xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
         out = Vector{Float64}(undef, nq)  # Pre-allocate output buffer
-        evals = get_evals(nq)
+        evals, secs = get_bench_params(nq)
 
         # ── FastInterpolations (no cache) ──
         # One-shot: construct + evaluate in-place
         bench_count += 1
         verbose && print("  [$bench_count/$n_benchmarks] FastInterp(cache-miss) n=$(lpad(nq, 6))... ")
         clear_cubic_cache!()
+        GC.gc()  # Clear GC state before benchmark
         bench = @benchmarkable begin
             itp = cubic_interp($x, $y; autocache=false)
             itp($out, $xi)
         end
         bench.params.evals = evals
+        bench.params.seconds = secs
         b = run(bench)
         t_fast_nocache = ns_to_sec(median(b.times))
         verbose && println("$(lpad(format_time(median(b.times)), 10)) $(format_bench_stats(b))")
@@ -120,11 +127,13 @@ function run_readme_benchmark(; verbose::Bool=true)
         verbose && print("  [$bench_count/$n_benchmarks] FastInterp(cache)      n=$(lpad(nq, 6))... ")
         clear_cubic_cache!()
         cubic_interp(x, y)  # prime cache
+        GC.gc()  # Clear GC state before benchmark
         bench = @benchmarkable begin
             itp = cubic_interp($x, $y)
             itp($out, $xi)
         end
         bench.params.evals = evals
+        bench.params.seconds = secs
         b = run(bench)
         t_fast_cache = ns_to_sec(median(b.times))
         verbose && println("$(lpad(format_time(median(b.times)), 10)) $(format_bench_stats(b))")
@@ -133,11 +142,13 @@ function run_readme_benchmark(; verbose::Bool=true)
         # One-shot: construct + broadcast into pre-allocated output
         bench_count += 1
         verbose && print("  [$bench_count/$n_benchmarks] Interpolations.jl     n=$(lpad(nq, 6))... ")
+        GC.gc()  # Clear GC state before benchmark
         bench = @benchmarkable begin
             itp = Interpolations.cubic_spline_interpolation($x, $y)
             @. $out = itp($xi)
         end
         bench.params.evals = evals
+        bench.params.seconds = secs
         b = run(bench)
         t_itp = ns_to_sec(median(b.times))
         verbose && println("$(lpad(format_time(median(b.times)), 10)) $(format_bench_stats(b))")
@@ -146,11 +157,13 @@ function run_readme_benchmark(; verbose::Bool=true)
         # One-shot: construct + evaluate in-place
         bench_count += 1
         verbose && print("  [$bench_count/$n_benchmarks] DataInterpolations    n=$(lpad(nq, 6))... ")
+        GC.gc()  # Clear GC state before benchmark
         bench = @benchmarkable begin
             itp = DataInterpolations.CubicSpline($y, $x)
             itp($out, $xi)
         end
         bench.params.evals = evals
+        bench.params.seconds = secs
         b = run(bench)
         t_di = ns_to_sec(median(b.times))
         verbose && println("$(lpad(format_time(median(b.times)), 10)) $(format_bench_stats(b))")

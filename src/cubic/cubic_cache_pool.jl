@@ -235,7 +235,7 @@ get_cubic_cache_size()     # Now returns 32
 function set_cubic_cache_size!(n::Int)
     n > 0 || throw(ArgumentError("Cache size must be positive"))
     @set_preferences!("cache_size" => n)
-    @info "Cache size preference saved. Restart Julia to apply (current session uses $(get_cubic_cache_size()))."
+    @info "Cache size preference set to $(n). Restart Julia to apply the change; the current session continues to use $(get_cubic_cache_size())."
     return n
 end
 

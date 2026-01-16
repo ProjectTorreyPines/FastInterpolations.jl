@@ -81,6 +81,7 @@ For detailed usage and performance trade-offs, see the [API Selection Guide](htt
 
 Benchmark comparison against [Interpolations.jl](https://github.com/JuliaMath/Interpolations.jl) and [DataInterpolations.jl](https://github.com/SciML/DataInterpolations.jl) for **cubic spline interpolation**.
 <!-- BENCHMARK_VERSIONS_START -->
+<sub>Benchmarked with FastInterpolations.jl v0.2.3, Interpolations.jl v0.16.2, DataInterpolations.jl v8.9.0 on Julia 1.12</sub>
 <!-- BENCHMARK_VERSIONS_END -->
 
 ![One-Shot](docs/images/benchmark_oneshot_detail.png)

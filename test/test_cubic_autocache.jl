@@ -498,39 +498,38 @@ import FastInterpolations: _get_cubic_cache
 
     @testset "Vector x mutation safety" begin
         # Verify autocache detects in-place mutation and rebuilds correctly.
-        # After mutation, autocache=true must produce identical results to autocache=false.
+        # Key invariant: before !== after (result changed) AND after == fresh_build
         clear_cubic_cache!()
 
         x = collect(range(0.0, 10.0, 11))  # [0,1,2,...,10]
         y = sin.(x)
         xq = [1.5, 4.5, 7.5]
 
-        # Helper: verify autocache matches fresh build after mutation
-        function test_after_mutation()
-            cached = cubic_interp(x, y, xq; autocache=true)
-            fresh = cubic_interp(x, y, xq; autocache=false)
-            @test cached == fresh  # Must be bit-identical
-        end
-
-        # Prime cache with original grid
-        cubic_interp(x, y, xq; autocache=true)
+        # Before mutation
+        before = cubic_interp(x, y, xq; autocache=true)
 
         # Mutation 1: middle position
         x[6] = 5.5
-        test_after_mutation()
+        after = cubic_interp(x, y, xq; autocache=true)
+        fresh = cubic_interp(x, y, xq; autocache=false)
+        @test before != after  # Result must change after mutation
+        @test after == fresh   # Autocache must match fresh build
 
-        # Mutation 2: start position
-        x[1] = -0.5
-        test_after_mutation()
+        # Mutation 2: another position (sequential)
+        before = after
+        x[3] = 2.2
+        after = cubic_interp(x, y, xq; autocache=true)
+        fresh = cubic_interp(x, y, xq; autocache=false)
+        @test before != after
+        @test after == fresh
 
         # Mutation 3: end position
+        before = after
         x[11] = 11.0
-        test_after_mutation()
-
-        # Mutation 4: restore to different values
-        x[6] = 5.0
-        x[1] = 0.0
-        test_after_mutation()
+        after = cubic_interp(x, y, xq; autocache=true)
+        fresh = cubic_interp(x, y, xq; autocache=false)
+        @test before != after
+        @test after == fresh
     end
 
     @testset "Float32 and PeriodicBC mutation safety" begin
@@ -538,19 +537,21 @@ import FastInterpolations: _get_cubic_cache
         clear_cubic_cache!()
         x32 = Float32.(collect(range(0.0, 4.0, 9)))
         y32 = Float32.(sin.(x32))
-        cubic_interp(x32, y32, Float32(2.0); autocache=true)
+        before = cubic_interp(x32, y32, Float32(2.0); autocache=true)
         x32[5] = Float32(2.2)
-        @test cubic_interp(x32, y32, Float32(2.0); autocache=true) ==
-              cubic_interp(x32, y32, Float32(2.0); autocache=false)
+        after = cubic_interp(x32, y32, Float32(2.0); autocache=true)
+        fresh = cubic_interp(x32, y32, Float32(2.0); autocache=false)
+        @test before != after && after == fresh
 
         # PeriodicBC
         clear_cubic_cache!()
         xp = collect(range(0.0, 2π, 9))
         yp = sin.(xp)
-        cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=true)
+        before = cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=true)
         xp[5] += 0.1
-        @test cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=true) ==
-              cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=false)
+        after = cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=true)
+        fresh = cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=false)
+        @test before != after && after == fresh
     end
 
     @testset "AbstractRange immutability (should already pass)" begin
@@ -621,5 +622,273 @@ import FastInterpolations: _get_cubic_cache
 
             @test result1 ≈ result2
         end
+    end
+
+    # =========================================================================
+    # Explicit Cache Invalidation Tests
+    # =========================================================================
+
+    @testset "Explicit cache object invalidation after mutation" begin
+        # Verify that mutation creates a NEW cache object, not reusing old one
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 10.0, 11))
+        y = sin.(x)
+
+        # Prime cache and get cache object
+        cache_before = _get_cubic_cache(x, NaturalBC())
+        cache_id_before = objectid(cache_before)
+
+        # Mutate x in-place
+        x[6] = 5.5
+
+        # Get cache again - should be a DIFFERENT cache object
+        cache_after = _get_cubic_cache(x, NaturalBC())
+        cache_id_after = objectid(cache_after)
+
+        # Key assertion: cache objects must be different after mutation
+        @test cache_id_before != cache_id_after
+
+        # Additional verification: the new cache should have the mutated x stored
+        # (via snapshot mechanism)
+        @test cache_after.x[6] == 5.5
+    end
+
+    @testset "Cache invalidation with PeriodicBC" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 2π, 9))
+        cache_before = _get_cubic_cache(x, PeriodicBC())
+
+        x[5] += 0.1
+        cache_after = _get_cubic_cache(x, PeriodicBC())
+
+        @test objectid(cache_before) != objectid(cache_after)
+        @test cache_after.x[5] ≈ x[5]
+    end
+
+    # =========================================================================
+    # CubicInterpolant Immutability Tests
+    # =========================================================================
+
+    @testset "CubicInterpolant immutability under x mutation" begin
+        # Once an interpolant is created, it should return identical results
+        # regardless of subsequent mutations to the original x array
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 4.0, 9))
+        y = sin.(x)
+        xq = [0.5, 1.5, 2.5, 3.5]
+
+        # Create interpolant
+        itp = cubic_interp(x, y)
+
+        # Evaluate before mutation
+        result_before = itp.(xq)
+
+        # Mutate original x (should NOT affect interpolant)
+        x[5] = 100.0  # Drastic change
+
+        # Evaluate after mutation - should be IDENTICAL
+        result_after = itp.(xq)
+
+        @test result_before == result_after  # Exact equality, not ≈
+    end
+
+    @testset "CubicInterpolant immutability under y mutation" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 4.0, 9))
+        y = cos.(x)
+        xq = [0.5, 1.5, 2.5, 3.5]
+
+        itp = cubic_interp(x, y)
+        result_before = itp.(xq)
+
+        # Mutate original y (should NOT affect interpolant)
+        y[5] = 999.0
+
+        result_after = itp.(xq)
+
+        @test result_before == result_after
+    end
+
+    @testset "CubicInterpolant immutability with PeriodicBC" begin
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 2π, 17))
+        y = sin.(x)
+        xq = [π/4, π/2, π, 3π/2]
+
+        itp = cubic_interp(x, y; bc=PeriodicBC())
+        result_before = itp.(xq)
+
+        x[9] = 100.0  # Mutate middle point
+        y[1] = 999.0  # Mutate first point
+
+        result_after = itp.(xq)
+
+        @test result_before == result_after
+    end
+
+    # =========================================================================
+    # Analytic Correctness Tests After Mutation
+    # =========================================================================
+
+    @testset "Analytic correctness: cubic polynomial with ClampedBC after mutation" begin
+        # Cubic splines with CLAMPED BC (exact endpoint derivatives) reproduce
+        # cubic polynomials EXACTLY. Natural BC only reproduces linears.
+        # This verifies autocache produces correct results after mutation.
+
+        clear_cubic_cache!()
+
+        # Define a cubic polynomial: f(x) = 2x³ - 3x² + x - 1
+        # f'(x) = 6x² - 6x + 1
+        f(x) = 2x^3 - 3x^2 + x - 1
+        df(x) = 6x^2 - 6x + 1
+
+        # Initial grid
+        x = collect(range(0.0, 5.0, 11))
+        y = f.(x)
+        xq = [0.5, 1.25, 2.75, 4.0]
+
+        # Use Clamped BC with exact derivatives for polynomial exactness
+        bc = BCPair(Deriv1(df(x[1])), Deriv1(df(x[end])))
+
+        # Prime cache
+        result1 = cubic_interp(x, y, xq; bc=bc, autocache=true)
+
+        # Verify initial result is exact (cubic spline reproduces cubics with clamped BC)
+        expected1 = f.(xq)
+        @test result1 ≈ expected1 atol=1e-12
+
+        # MUTATE x to create a different grid (non-uniform spacing)
+        x[3] = 0.8   # was 1.0
+        x[6] = 2.3   # was 2.5
+        x[9] = 4.2   # was 4.0
+
+        # Recompute y for mutated x, update BC for new endpoints
+        y .= f.(x)
+        bc_new = BCPair(Deriv1(df(x[1])), Deriv1(df(x[end])))
+
+        # After mutation, autocache should rebuild and give CORRECT results
+        result2 = cubic_interp(x, y, xq; bc=bc_new, autocache=true)
+        expected2 = f.(xq)  # Same expected values (polynomial is exact)
+
+        @test result2 ≈ expected2 atol=1e-12
+
+        # Cross-check: fresh computation should match
+        fresh = cubic_interp(x, y, xq; bc=bc_new, autocache=false)
+        @test result2 ≈ fresh atol=1e-14
+    end
+
+    @testset "Analytic correctness: quadratic polynomial with ClampedBC" begin
+        # Quadratic: f(x) = x² - 2x + 3, f'(x) = 2x - 2
+        # Clamped BC with correct derivatives should give exact results
+
+        clear_cubic_cache!()
+
+        f(x) = x^2 - 2x + 3
+        df(x) = 2x - 2
+
+        x = collect(range(-1.0, 3.0, 9))
+        y = f.(x)
+        xq = [-0.5, 0.5, 1.5, 2.5]
+
+        # Use clamped BC with exact derivatives
+        bc = BCPair(Deriv1(df(x[1])), Deriv1(df(x[end])))
+
+        result1 = cubic_interp(x, y, xq; bc=bc, autocache=true)
+        expected = f.(xq)
+        @test result1 ≈ expected atol=1e-12
+
+        # Mutate grid
+        x[4] = 0.3  # was 0.0
+        x[6] = 1.3  # was 1.5
+        y .= f.(x)
+
+        # Update BC for new endpoints (endpoints unchanged, so BC same)
+        result2 = cubic_interp(x, y, xq; bc=bc, autocache=true)
+        @test result2 ≈ expected atol=1e-12
+    end
+
+    @testset "Analytic correctness: linear function with NaturalBC" begin
+        # Linear: f(x) = 3x + 2
+        # Natural BC (f''=0 at endpoints) is exact for linear functions
+
+        clear_cubic_cache!()
+
+        f(x) = 3x + 2
+
+        x = collect(range(0.0, 10.0, 11))
+        y = f.(x)
+        xq = [0.5, 3.33, 7.77, 9.5]
+
+        result1 = cubic_interp(x, y, xq; autocache=true)
+        @test result1 ≈ f.(xq) atol=1e-13
+
+        # Mutate to non-uniform grid
+        x[2] = 0.5
+        x[5] = 3.7
+        x[8] = 7.2
+        y .= f.(x)
+
+        result2 = cubic_interp(x, y, xq; autocache=true)
+        @test result2 ≈ f.(xq) atol=1e-13
+
+        # Verify autocache matches fresh
+        @test result2 ≈ cubic_interp(x, y, xq; autocache=false) atol=1e-14
+    end
+
+    @testset "Analytic correctness: Float32 with mutation" begin
+        clear_cubic_cache!()
+
+        f(x) = x^2 - x + 1
+
+        x = Float32.(collect(range(0.0, 4.0, 9)))
+        y = f.(x)
+        xq = Float32.([0.5, 1.5, 2.5, 3.5])
+
+        result1 = cubic_interp(x, y, xq; autocache=true)
+        @test result1 ≈ f.(xq) atol=1e-5  # Float32 precision
+
+        x[5] = Float32(2.1)
+        y .= f.(x)
+
+        result2 = cubic_interp(x, y, xq; autocache=true)
+        @test result2 ≈ f.(xq) atol=1e-5
+    end
+
+    @testset "Analytic correctness: PeriodicBC with sine function" begin
+        # sin(x) is periodic, and with correct periodic BC should be very accurate
+        # Key test: after mutation, autocache result MUST match fresh computation
+
+        clear_cubic_cache!()
+
+        x = collect(range(0.0, 2π, 33))  # Dense grid for accuracy
+        y = sin.(x)
+        xq = [π/6, π/3, π/2, 2π/3, π, 4π/3, 3π/2, 5π/3]
+
+        result1 = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=true)
+        expected = sin.(xq)
+        @test result1 ≈ expected atol=1e-5  # Cubic spline approximation error
+
+        # Key correctness check: autocache matches fresh for initial grid
+        fresh1 = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=false)
+        @test result1 ≈ fresh1 atol=1e-14
+
+        # Mutate interior points (keep endpoints for periodicity)
+        x[10] = x[10] + 0.02
+        x[20] = x[20] - 0.02
+        y .= sin.(x)
+
+        result2 = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=true)
+        # After mutation, still interpolating sin, should be close to expected
+        @test result2 ≈ expected atol=1e-4  # Slightly looser due to grid perturbation
+
+        # CRITICAL: autocache must match fresh computation EXACTLY after mutation
+        # This is the key test - if stale cache was used, this would fail
+        fresh2 = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=false)
+        @test result2 ≈ fresh2 atol=1e-14
     end
 end

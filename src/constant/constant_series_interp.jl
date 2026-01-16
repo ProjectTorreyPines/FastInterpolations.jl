@@ -52,6 +52,10 @@ sitp(output, 0.5)           # In-place
 vals = sitp([0.1, 0.5, 0.9])    # Returns Vector of Vectors
 sitp([out1, out2, out3], xq)    # In-place (zero allocation)
 ```
+
+# Implementation Note: `mutable struct` with `const` fields
+This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
+plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
 mutable struct ConstantSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
     const x::Vector{T}                    # Shared x-grid

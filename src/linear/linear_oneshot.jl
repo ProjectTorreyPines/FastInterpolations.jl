@@ -206,7 +206,7 @@ Supports value (EvalValue), first derivative (EvalDeriv1), and second derivative
     op::O
 )::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
     @boundscheck _check_domain(x, xq, extrap)
-    idx, xL, xR = _find_interval(x, xq)
+    idx, xL, xR = _search_interval(x, xq)
     h = xR - xL
     dL = xq - xL
     @inbounds return _linear_kernel(op, y[idx], y[idx + 1], h, dL)

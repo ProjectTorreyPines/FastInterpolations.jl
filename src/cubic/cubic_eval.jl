@@ -17,7 +17,7 @@
     xi::T,
     op::O
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
-    idx, xL, xR = _find_interval(x, spacing, xi)
+    idx, xL, xR = _search_interval(x, spacing, xi)
 
     dL = xi - xL   # distance from Left endpoint
     dR = xR - xi   # distance from Right endpoint
@@ -46,7 +46,7 @@ end
     op::O
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     xi_wrapped = _wrap_to_domain(xi, first(x), first(x) + period)
-    idx, xL, xR = _find_interval(x, spacing, xi_wrapped)
+    idx, xL, xR = _search_interval(x, spacing, xi_wrapped)
 
     dL = xi_wrapped - xL   # distance from Left endpoint
     dR = xR - xi_wrapped   # distance from Right endpoint

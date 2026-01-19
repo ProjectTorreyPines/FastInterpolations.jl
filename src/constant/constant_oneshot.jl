@@ -87,14 +87,14 @@ Evaluation flow:
     # :wrap mode handles all cases (inside and outside domain)
     if extrap === Val(:wrap)
         xi_wrapped = _wrap_to_domain(xi, x_min, x_max)
-        idx, xL, xR = _find_interval(x, xi_wrapped)
+        idx, xL, xR = _search_interval(x, xi_wrapped)
         h = xR - xL
         dL = xi_wrapped - xL
         @inbounds return _constant_kernel(op, y[idx], y[idx+1], h, dL, side)
     end
 
     # Boundary special case: xi == x[end] → y[end] directly
-    # (avoids _find_interval returning idx=n-1, dL=h)
+    # (avoids _search_interval returning idx=n-1, dL=h)
     if xi == x_max
         return op isa EvalValue ? (@inbounds y[end]) : zero(FT)
     end
@@ -105,7 +105,7 @@ Evaluation flow:
     end
 
     # Normal case: interval search and kernel evaluation
-    idx, xL, xR = _find_interval(x, xi)
+    idx, xL, xR = _search_interval(x, xi)
     h = xR - xL
     dL = xi - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx+1], h, dL, side)

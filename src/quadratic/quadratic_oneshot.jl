@@ -31,9 +31,9 @@ Uses interval clamping for extension extrapolation (matches cubic pattern).
     xi::FT,
     op::AbstractEvalOp
 ) where {FT<:AbstractFloat}
-    # _find_interval clamps idx to [1, n-1]
+    # _search_interval clamps idx to [1, n-1]
     # This handles both normal evaluation and extension extrapolation
-    idx, xL, _ = _find_interval(x, xi)
+    idx, xL, _ = _search_interval(x, xi)
     dt = xi - xL
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
@@ -80,7 +80,7 @@ end
     ::Val{:extension},
     op::AbstractEvalOp
 ) where {FT<:AbstractFloat}
-    # Interval clamping in _find_interval handles extension
+    # Interval clamping in _search_interval handles extension
     return _quadratic_eval_core(x, y, a, d, xi, op)
 end
 

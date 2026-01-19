@@ -343,7 +343,36 @@ end
 # 6. Deprecated Aliases (backward compat)
 # ========================================
 # Transitional alias for existing _find_interval callers.
-# TODO: Add Base.depwarn after validation period
+# Will be removed in v0.4.0
 
-@inline _find_interval(x, xi) = _search_interval(x, xi)
-@inline _find_interval(x, spacing, xi) = _search_interval(x, spacing, xi)
+"""
+    _find_interval(x, xi) -> (idx, xL, xR)
+
+!!! warning "Deprecated"
+    `_find_interval` is deprecated and will be removed in v0.4.0.
+    Use `_search_interval(x, xi)` instead.
+
+Find interpolation interval. See [`_search_interval`](@ref) for details.
+"""
+@inline function _find_interval(x, xi)
+    Base.depwarn(
+        "`_find_interval(x, xi)` is deprecated, use `_search_interval(x, xi)` instead",
+        :_find_interval
+    )
+    return _search_interval(x, xi)
+end
+
+"""
+    _find_interval(x, spacing, xi) -> (idx, xL, xR)
+
+!!! warning "Deprecated"
+    `_find_interval` is deprecated and will be removed in v0.4.0.
+    Use `_search_interval(x, spacing, xi)` instead.
+"""
+@inline function _find_interval(x, spacing, xi)
+    Base.depwarn(
+        "`_find_interval(x, spacing, xi)` is deprecated, use `_search_interval(x, spacing, xi)` instead",
+        :_find_interval
+    )
+    return _search_interval(x, spacing, xi)
+end

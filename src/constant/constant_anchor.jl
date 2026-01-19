@@ -135,8 +135,12 @@ function _anchor_query(
     wrap::Bool=false
 ) where {T<:AbstractFloat, S<:Real}
     output = Vector{_ConstantAnchoredQuery{T}}(undef, length(xq))
+
+    # Use bounded linear for vector queries (optimal for sequential access)
+    policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(Ref(1)))
+
     @inbounds for k in eachindex(xq)
-        output[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap)
+        output[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap, policy)
     end
     return output
 end
@@ -165,22 +169,34 @@ The same `buffer` object, filled with anchored queries.
     wrap::Bool=false
 ) where {T<:AbstractFloat, S<:Real}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
+
+    # Create loop-local policy with hint (thread-safe)
+    # LinearBoundedAlg{8} is optimal for monotonic-ish queries
+    policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(Ref(1)))
+
     @inbounds for k in eachindex(xq)
-        buffer[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap)
+        buffer[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap, policy)
     end
     return buffer
 end
 
 """
-    _constant_anchor_query_impl(x, xq, wrap) -> _ConstantAnchoredQuery
+    _constant_anchor_query_impl(x, xq, wrap, policy) -> _ConstantAnchoredQuery
 
 Internal implementation of _anchor_query for constant interpolation.
+
+# Arguments
+- `x`: Grid points
+- `xq`: Query point
+- `wrap`: Whether to wrap query point to domain
+- `policy`: Search policy for interval search (default: DEFAULT_SEARCH_POLICY)
 """
 @inline function _constant_anchor_query_impl(
     x::AbstractVector{T},
     xq::T,
-    wrap::Bool
-) where {T<:AbstractFloat}
+    wrap::Bool,
+    policy::P=DEFAULT_SEARCH_POLICY
+) where {T<:AbstractFloat, P<:SearchPolicy}
     x_min, x_max = first(x), last(x)
 
     # Handle wrapping (for extrap=:wrap mode)
@@ -207,8 +223,8 @@ Internal implementation of _anchor_query for constant interpolation.
         n = length(x)
         @inbounds (n - 1, x[n-1], x[n])
     else
-        # Inside domain: normal interval search
-        _find_interval(x, xq)
+        # Inside domain: use policy-based interval search
+        search_interval(policy, x, xq)
     end
 
     # Compute geometry

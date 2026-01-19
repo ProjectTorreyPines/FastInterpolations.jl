@@ -24,6 +24,9 @@ export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, CubicSer
 export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar queries
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 
+# Search policy types (user-facing algorithm selection)
+export AbstractSearchPolicy, Binary, HintedBinary, LinearBounded
+
 # Boundary condition types
 export AbstractBC, PointBC, Deriv1, Deriv2, Deriv3, BCPair
 export NaturalBC, ClampedBC, PeriodicBC, MinCurvFit, ParabolaFit

@@ -6,64 +6,69 @@
 # Oneshot API (linear_interp!, linear_interp 3-arg) is in linear_oneshot.jl.
 
 # Scalar call - hot path (inlined for broadcast fusion)
-# Supports deriv keyword for derivative evaluation
-@inline function (itp::LinearInterpolant{T})(xq::T; deriv::Int=0) where {T<:AbstractFloat}
+# Supports deriv and search keywords for derivative evaluation and search policy
+@inline function (itp::LinearInterpolant{T})(xq::T; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat}
     @boundscheck _check_domain(itp.x, xq, itp.mode)
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
-        _linear_with_extrap(itp.x, itp.y, xq, itp.mode, op)
+        _linear_with_extrap(itp.x, itp.y, xq, itp.mode, op, searcher)
     end
 end
 
 # Real scalar wrapper - delegates to T method with deriv keyword
-@inline function (itp::LinearInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
-    itp(T(xq); deriv=deriv)
+@inline function (itp::LinearInterpolant{T})(xq::S; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
+    itp(T(xq); deriv=deriv, search=search)
 end
 
-# Vector call with deriv keyword support
-function (itp::LinearInterpolant{T,X,Y})(xq::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, X, Y, S<:Real}
+# Vector call with deriv and search keyword support
+function (itp::LinearInterpolant{T,X,Y})(xq::AbstractVector{S}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, X, Y, S<:Real}
     xi_typed = S === T ? xq : T.(xq)
     @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
     output = Vector{T}(undef, length(xi_typed))
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode, op)
+            output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode, op, searcher)
         end
     end
     return output
 end
 
 # Optimized path when xq element type matches T (zero conversion)
-function (itp::LinearInterpolant{T,X,Y})(xq::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat, X, Y}
+function (itp::LinearInterpolant{T,X,Y})(xq::AbstractVector{T}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, X, Y}
     @boundscheck _check_domain(itp.x, xq, itp.mode)
     output = Vector{T}(undef, length(xq))
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xq, output)
-            output[i] = linear_interp(itp.x, itp.y, xq[i], itp.mode, op)
+            output[i] = linear_interp(itp.x, itp.y, xq[i], itp.mode, op, searcher)
         end
     end
     return output
 end
 
-# In-place vector call with deriv keyword support - zero allocation
-function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xq::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat, X, Y}
+# In-place vector call with deriv and search keyword support - zero allocation
+function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xq::AbstractVector{T}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, X, Y}
     @assert length(output) == length(xq) "output length must match xq length"
     @boundscheck _check_domain(itp.x, xq, itp.mode)
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xq, output)
-            output[i] = linear_interp(itp.x, itp.y, xq[i], itp.mode, op)
+            output[i] = linear_interp(itp.x, itp.y, xq[i], itp.mode, op, searcher)
         end
     end
     return output
 end
 
 # In-place with type conversion and deriv keyword
-function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xq::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, X, Y, S<:Real}
+function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xq::AbstractVector{S}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, X, Y, S<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
     xi_typed = T.(xq)
     @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode, op)
+            output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode, op, searcher)
         end
     end
     return output
@@ -86,6 +91,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 # Returns
 `LinearInterpolant` object that can be:
 - Called with scalar: `itp(0.5)`
+- Called with search policy: `itp(0.5; search=HintedBinary())`
 - Broadcasted: `itp.(rho)` or `@. coef * itp(rho)`
 - Reused multiple times without re-creating
 
@@ -96,6 +102,13 @@ itp = linear_interp(x_data, y_data)
 
 # Scalar call
 val = itp(0.5)
+
+# Scalar call with search policy
+val = itp(0.5; search=HintedBinary())
+
+# Vector call with optimized search for sorted queries
+sorted_queries = sort(rand(1000))
+vals = itp(sorted_queries; search=LinearBounded(max_steps=8))
 
 # Broadcast (creates array)
 vals = itp.(query_points)
@@ -114,6 +127,7 @@ vals_direct = linear_interp(x_data, y_data, query_points)
 # Performance Notes
 - Returns lightweight callable (~48 bytes), best for reuse and broadcast fusion
 - 3-argument form returns array immediately, best for single use
+- Use `search=LinearBounded(max_steps=8)` for sorted query sequences
 """
 function linear_interp(
     x::AbstractVector{T},

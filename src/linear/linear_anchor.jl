@@ -135,7 +135,7 @@ function _anchor_query(
     output = Vector{_LinearAnchoredQuery{T}}(undef, length(xq))
 
     # Use bounded linear for vector queries (optimal for sequential access)
-    policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(Ref(1)))
+    policy = Searcher{LinearBounded{8},RefHint}(RefHint(Ref(1)))
 
     @inbounds for k in eachindex(xq)
         output[k] = _linear_anchor_query_impl(x, T(xq[k]), wrap, policy)
@@ -169,8 +169,8 @@ The same `buffer` object, filled with anchored queries.
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 
     # Create loop-local policy with hint (thread-safe)
-    # LinearBoundedAlg{8} is optimal for monotonic-ish queries
-    policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(Ref(1)))
+    # LinearBounded{8} is optimal for monotonic-ish queries
+    policy = Searcher{LinearBounded{8},RefHint}(RefHint(Ref(1)))
 
     @inbounds for k in eachindex(xq)
         buffer[k] = _linear_anchor_query_impl(x, T(xq[k]), wrap, policy)
@@ -187,14 +187,14 @@ Internal implementation of _anchor_query for linear interpolation.
 - `x`: Grid points
 - `xq`: Query point
 - `wrap`: Whether to wrap query point to domain
-- `policy`: Search policy for interval search (default: DEFAULT_SEARCH_POLICY)
+- `policy`: Search policy for interval search (default: DEFAULT_SEARCHER)
 """
 @inline function _linear_anchor_query_impl(
     x::AbstractVector{T},
     xq::T,
     wrap::Bool,
-    policy::P=DEFAULT_SEARCH_POLICY
-) where {T<:AbstractFloat, P<:SearchPolicy}
+    policy::P=DEFAULT_SEARCHER
+) where {T<:AbstractFloat, P<:Searcher}
     x_min, x_max = first(x), last(x)
 
     # Handle wrapping (for extrap=:wrap mode)

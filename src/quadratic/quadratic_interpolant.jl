@@ -9,27 +9,29 @@
 # ─────────────────────────────────────────────────────────────
 # Scalar call - hot path (inlined for broadcast fusion)
 # ─────────────────────────────────────────────────────────────
-@inline function (itp::QuadraticInterpolant{T})(xi::T; deriv::Int=0) where {T<:AbstractFloat}
+@inline function (itp::QuadraticInterpolant{T})(xi::T; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat}
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
-        _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.mode, op)
+        _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.mode, op, searcher)
     end
 end
 
 # Real scalar wrapper - delegates to T method
-@inline function (itp::QuadraticInterpolant{T})(xi::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
-    itp(T(xi); deriv=deriv)
+@inline function (itp::QuadraticInterpolant{T})(xi::S; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
+    itp(T(xi); deriv=deriv, search=search)
 end
 
 # ─────────────────────────────────────────────────────────────
 # Vector call (allocating)
 # ─────────────────────────────────────────────────────────────
-function (itp::QuadraticInterpolant{T})(xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+function (itp::QuadraticInterpolant{T})(xi::AbstractVector{S}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
     xi_typed = _to_float(xi, T)
     output = Vector{T}(undef, length(xi_typed))
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.mode, op)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.mode, op, searcher)
         end
     end
     return output
@@ -38,25 +40,27 @@ end
 # ─────────────────────────────────────────────────────────────
 # In-place vector call (zero allocation)
 # ─────────────────────────────────────────────────────────────
-function (itp::QuadraticInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat}
+function (itp::QuadraticInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat}
     @assert length(output) == length(xi) "output length must match xi length"
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi, itp.mode)
         @inbounds for i in eachindex(xi, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.mode, op)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.mode, op, searcher)
         end
     end
     return output
 end
 
 # In-place with type conversion
-function (itp::QuadraticInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+function (itp::QuadraticInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     xi_typed = _to_float(xi, T)
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.mode, op)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.mode, op, searcher)
         end
     end
     return output
@@ -93,6 +97,10 @@ itp.([0.5, 1.5])   # [0.25, 2.25]
 
 # Fused broadcast (optimal)
 result = @. coef * itp(query)
+
+# Vector call with search policy
+sorted_queries = sort(rand(1000))
+vals = itp(sorted_queries; search=LinearBounded(max_steps=8))
 ```
 """
 function quadratic_interp(

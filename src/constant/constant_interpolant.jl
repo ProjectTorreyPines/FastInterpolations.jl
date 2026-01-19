@@ -9,27 +9,29 @@
 # ─────────────────────────────────────────────────────────────
 # Scalar call - hot path (inlined for broadcast fusion)
 # ─────────────────────────────────────────────────────────────
-@inline function (itp::ConstantInterpolant{T})(xi::T; deriv::Int=0) where {T<:AbstractFloat}
+@inline function (itp::ConstantInterpolant{T})(xi::T; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat}
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
-        _constant_eval_at_point(itp.x, itp.y, xi, itp.mode, itp.side, op)
+        _constant_eval_at_point(itp.x, itp.y, xi, itp.mode, itp.side, op, searcher)
     end
 end
 
 # Real scalar wrapper - delegates to T method
-@inline function (itp::ConstantInterpolant{T})(xi::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
-    itp(T(xi); deriv=deriv)
+@inline function (itp::ConstantInterpolant{T})(xi::S; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
+    itp(T(xi); deriv=deriv, search=search)
 end
 
 # ─────────────────────────────────────────────────────────────
 # Vector call (allocating)
 # ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{T})(xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+function (itp::ConstantInterpolant{T})(xi::AbstractVector{S}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
     xi_typed = _to_float(xi, T)
     output = Vector{T}(undef, length(xi_typed))
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _constant_eval_at_point(itp.x, itp.y, xi_typed[i], itp.mode, itp.side, op)
+            output[i] = _constant_eval_at_point(itp.x, itp.y, xi_typed[i], itp.mode, itp.side, op, searcher)
         end
     end
     return output
@@ -38,25 +40,27 @@ end
 # ─────────────────────────────────────────────────────────────
 # In-place vector call (zero allocation)
 # ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}; deriv::Int=0) where {T<:AbstractFloat}
+function (itp::ConstantInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat}
     @assert length(output) == length(xi) "output length must match xi length"
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi, itp.mode)
         @inbounds for i in eachindex(xi, output)
-            output[i] = _constant_eval_at_point(itp.x, itp.y, xi[i], itp.mode, itp.side, op)
+            output[i] = _constant_eval_at_point(itp.x, itp.y, xi[i], itp.mode, itp.side, op, searcher)
         end
     end
     return output
 end
 
 # In-place with type conversion
-function (itp::ConstantInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+function (itp::ConstantInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     xi_typed = _to_float(xi, T)
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _constant_eval_at_point(itp.x, itp.y, xi_typed[i], itp.mode, itp.side, op)
+            output[i] = _constant_eval_at_point(itp.x, itp.y, xi_typed[i], itp.mode, itp.side, op, searcher)
         end
     end
     return output
@@ -92,6 +96,10 @@ itp.([0.5, 1.5])   # [10.0, 20.0]
 
 # Fused broadcast (optimal)
 result = @. coef * itp(query)
+
+# Vector call with search policy
+sorted_queries = sort(rand(1000))
+vals = itp(sorted_queries; search=LinearBounded(max_steps=8))
 ```
 """
 function constant_interp(

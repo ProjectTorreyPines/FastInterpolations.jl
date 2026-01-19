@@ -7,53 +7,96 @@
 # enabling compile-time dispatch and zero-overhead for the default path.
 #
 # Naming Convention:
-#   SearchPolicy → search_interval → _search_direct (O(1) for Range)
-#                                  → _search_binary (O(log n) for Vector)
+#   AbstractSearchPolicy (user-facing) → Searcher (internal executor)
+#   Searcher → search_interval → _search_direct (O(1) for Range)
+#                              → _search_binary (O(log n) for Vector)
 #
 # Include order dependency: grid_spacing.jl (for ScalarSpacing) → search.jl
 
 # ========================================
-# 1. Search Policy Types
+# 1. User-Facing Search Policy Types (Exported)
 # ========================================
 
 """
-    AbstractSearchAlg
+    AbstractSearchPolicy
 
-Abstract supertype for search algorithm types.
-Concrete subtypes encode search strategy in the type system.
-"""
-abstract type AbstractSearchAlg end
+Abstract supertype for user-facing search policy selection.
+Concrete subtypes encode the search algorithm choice.
 
+See also: [`Binary`](@ref), [`HintedBinary`](@ref), [`LinearBounded`](@ref)
 """
-    BinaryAlg <: AbstractSearchAlg
-
-Default binary search algorithm. O(log n) for vectors, O(1) for ranges.
-Zero-overhead: compiles to identical code as direct `_find_interval` call.
-"""
-struct BinaryAlg <: AbstractSearchAlg end
+abstract type AbstractSearchPolicy end
 
 """
-    HintedBinaryAlg <: AbstractSearchAlg
+    Binary <: AbstractSearchPolicy
 
-Hinted binary search: O(1) if hint is valid, O(log n) fallback.
-Useful when queries repeatedly hit the same interval.
+Binary search algorithm. O(log n) per query for vectors, O(1) for ranges.
+Stateless and thread-safe. This is the default search policy.
+
+# Example
+```julia
+val = linear_interp(x, y, 0.5; search=Binary())  # explicit
+val = linear_interp(x, y, 0.5)                    # same (default)
+```
 """
-struct HintedBinaryAlg <: AbstractSearchAlg end
+struct Binary <: AbstractSearchPolicy end
 
 """
-    LinearBoundedAlg{MAX} <: AbstractSearchAlg
+    HintedBinary <: AbstractSearchPolicy
 
-Bounded linear search: up to MAX linear steps, then binary fallback.
-Optimal for monotonic-ish query sequences where consecutive queries
-are likely to be in adjacent intervals.
+Hinted binary search: O(1) if query hits cached interval, O(log n) fallback.
+Useful when queries repeatedly access the same interval region.
+
+# Example
+```julia
+itp = linear_interp(x, y)
+vals = itp(query_points; search=HintedBinary())
+```
+"""
+struct HintedBinary <: AbstractSearchPolicy end
+
+"""
+    LinearBounded{MAX} <: AbstractSearchPolicy
+
+Bounded linear search: up to MAX linear steps from hint, then binary fallback.
+Optimal for monotonic query sequences where consecutive queries are in adjacent intervals.
 
 # Type Parameter
 - `MAX`: Maximum linear search steps before falling back to binary (compile-time constant)
+
+# Construction
+Use the factory function for convenient construction:
+```julia
+LinearBounded()              # default MAX=8
+LinearBounded(max_steps=4)   # custom MAX=4
+```
+
+# Example
+```julia
+sorted_queries = sort(rand(1000))
+vals = linear_interp(x, y, sorted_queries; search=LinearBounded(max_steps=8))
+```
 """
-struct LinearBoundedAlg{MAX} <: AbstractSearchAlg end
+struct LinearBounded{MAX} <: AbstractSearchPolicy end
+
+"""
+    LinearBounded(; max_steps::Int=8) -> LinearBounded{max_steps}
+
+Factory function for creating LinearBounded search policy with specified max steps.
+
+# Arguments
+- `max_steps::Int=8`: Maximum linear search steps before binary fallback
+
+# Example
+```julia
+policy = LinearBounded()             # LinearBounded{8}()
+policy = LinearBounded(max_steps=4)  # LinearBounded{4}()
+```
+"""
+LinearBounded(; max_steps::Int=8) = LinearBounded{max_steps}()
 
 # ----------------------------------------
-# Hint Types
+# Hint Types (Internal)
 # ----------------------------------------
 
 """
@@ -66,7 +109,7 @@ abstract type AbstractHint end
 """
     NoHint <: AbstractHint
 
-No state maintained. Used with `BinaryAlg` for stateless search.
+No state maintained. Used with `Binary` for stateless search.
 """
 struct NoHint <: AbstractHint end
 
@@ -91,45 +134,51 @@ RefHint(idx::Int) = RefHint(Ref(idx))
 # end
 
 # ----------------------------------------
-# Combined Policy Type
+# Internal Searcher Type (Policy + State)
 # ----------------------------------------
 
 """
-    SearchPolicy{Alg<:AbstractSearchAlg, H<:AbstractHint}
+    Searcher{P<:AbstractSearchPolicy, H<:AbstractHint}
 
-Combined search policy type encoding both algorithm and hint strategy.
+Internal searcher type combining search policy with hint state.
 Type parameters enable compile-time dispatch with zero runtime overhead.
 
 # Type Parameters
-- `Alg`: Search algorithm type (`BinaryAlg`, `HintedBinaryAlg`, `LinearBoundedAlg{N}`)
+- `P`: Search policy type (`Binary`, `HintedBinary`, `LinearBounded{N}`)
 - `H`: Hint type (`NoHint`, `RefHint`)
 
 # Fields
 - `hint::H`: The hint instance (NoHint singleton or RefHint with mutable Ref)
 
-# Example
-```julia
-# Default: stateless binary search
-policy = SearchPolicy{BinaryAlg,NoHint}(NoHint())
-
-# Hinted binary with loop-local state
-policy = SearchPolicy{HintedBinaryAlg,RefHint}(RefHint(Ref(1)))
-
-# Bounded linear with max 8 steps
-policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(Ref(1)))
-```
+# Note
+Users should not construct Searcher directly. Use the policy types (`Binary()`,
+`HintedBinary()`, `LinearBounded()`) with the `search` keyword argument instead.
 """
-struct SearchPolicy{Alg<:AbstractSearchAlg,H<:AbstractHint}
+struct Searcher{P<:AbstractSearchPolicy,H<:AbstractHint}
     hint::H
 end
 
 """
-    DEFAULT_SEARCH_POLICY
+    DEFAULT_SEARCHER
 
-Default search policy: stateless binary search with no hint.
-Compiles to identical code as direct `_find_interval` call.
+Default internal searcher: stateless binary search with no hint.
+Compiles to identical code as direct `_search_interval` call.
 """
-const DEFAULT_SEARCH_POLICY = SearchPolicy{BinaryAlg,NoHint}(NoHint())
+const DEFAULT_SEARCHER = Searcher{Binary,NoHint}(NoHint())
+
+# ----------------------------------------
+# Policy → Searcher Conversion (Thread-Safe)
+# ----------------------------------------
+
+"""
+    _to_searcher(policy::AbstractSearchPolicy) -> Searcher
+
+Convert user-facing policy to internal Searcher with fresh hint state.
+Creates a new RefHint for stateful policies, ensuring thread safety.
+"""
+@inline _to_searcher(::Binary) = Searcher{Binary,NoHint}(NoHint())
+@inline _to_searcher(::HintedBinary) = Searcher{HintedBinary,RefHint}(RefHint())
+@inline _to_searcher(::LinearBounded{MAX}) where {MAX} = Searcher{LinearBounded{MAX},RefHint}(RefHint())
 
 # ========================================
 # 2. Base Implementations
@@ -301,43 +350,71 @@ end
 # 4. Main Dispatcher (search_interval)
 # ========================================
 
-# --- Default: BinaryAlg + NoHint (zero-overhead) ---
+# --- Default: Binary + NoHint (zero-overhead) ---
 
-@inline search_interval(::SearchPolicy{BinaryAlg,NoHint}, x::AbstractVector{T}, xi::T) where {T} =
+@inline search_interval(::Searcher{Binary,NoHint}, x::AbstractVector{T}, xi::T) where {T} =
     _search_binary(x, xi)
 
-@inline search_interval(::SearchPolicy{BinaryAlg,NoHint}, x::AbstractRange{T}, xi::T) where {T} =
+@inline search_interval(::Searcher{Binary,NoHint}, x::AbstractRange{T}, xi::T) where {T} =
     _search_direct(x, xi)
 
-@inline search_interval(::SearchPolicy{BinaryAlg,NoHint}, x, spacing, xi) =
+@inline search_interval(::Searcher{Binary,NoHint}, x, spacing, xi) =
     _search_interval(x, spacing, xi)
 
-# --- HintedBinaryAlg + RefHint ---
+# --- HintedBinary + RefHint ---
 
 @inline function search_interval(
-    p::SearchPolicy{HintedBinaryAlg,RefHint}, x::AbstractVector{T}, xi::T
+    p::Searcher{HintedBinary,RefHint}, x::AbstractVector{T}, xi::T
 ) where {T}
     return _search_hinted_binary!(x, xi, p.hint.idx)
 end
 
 # Range always uses O(1) direct - hint ignored
-@inline search_interval(::SearchPolicy{HintedBinaryAlg,RefHint}, x::AbstractRange{T}, xi::T) where {T} =
+@inline search_interval(::Searcher{HintedBinary,RefHint}, x::AbstractRange{T}, xi::T) where {T} =
     _search_direct(x, xi)
 
-# --- LinearBoundedAlg{MAX} + RefHint ---
+# --- LinearBounded{MAX} + RefHint ---
 
 @inline function search_interval(
-    p::SearchPolicy{LinearBoundedAlg{MAX},RefHint}, x::AbstractVector{T}, xi::T
+    p::Searcher{LinearBounded{MAX},RefHint}, x::AbstractVector{T}, xi::T
 ) where {MAX,T}
     return _search_linear_bounded!(x, xi, p.hint.idx, Val(MAX))
 end
 
 @inline search_interval(
-    ::SearchPolicy{LinearBoundedAlg{MAX},RefHint},
+    ::Searcher{LinearBounded{MAX},RefHint},
     x::AbstractRange{T},
     xi::T,
 ) where {MAX,T} =
     _search_direct(x, xi)
+
+# --- Spacing-aware overloads ---
+# For uniform grids (AbstractRange + ScalarSpacing): always O(1) direct
+# For non-uniform grids (AbstractVector + VectorSpacing): delegate to standard search
+
+# HintedBinary + spacing
+@inline function search_interval(
+    p::Searcher{HintedBinary,RefHint}, x::AbstractVector{T}, ::AbstractGridSpacing{T}, xi::T
+) where {T}
+    return _search_hinted_binary!(x, xi, p.hint.idx)
+end
+
+@inline search_interval(
+    ::Searcher{HintedBinary,RefHint}, x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T
+) where {T} =
+    _search_direct(x, spacing, xi)
+
+# LinearBounded + spacing
+@inline function search_interval(
+    p::Searcher{LinearBounded{MAX},RefHint}, x::AbstractVector{T}, ::AbstractGridSpacing{T}, xi::T
+) where {MAX,T}
+    return _search_linear_bounded!(x, xi, p.hint.idx, Val(MAX))
+end
+
+@inline search_interval(
+    ::Searcher{LinearBounded{MAX},RefHint}, x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T
+) where {MAX,T} =
+    _search_direct(x, spacing, xi)
 
 # ========================================
 # 5. Internal Aliases (for module-internal use)
@@ -387,3 +464,27 @@ end
     )
     return _search_interval(x, spacing, xi)
 end
+
+# ========================================
+# 7. Backward Compatibility Aliases
+# ========================================
+# These maintain backward compatibility for internal code that uses
+# the old type names. Will be removed in v0.4.0.
+
+"""Deprecated alias for AbstractSearchPolicy. Use AbstractSearchPolicy instead."""
+const AbstractSearchAlg = AbstractSearchPolicy
+
+"""Deprecated alias for Binary. Use Binary instead."""
+const BinaryAlg = Binary
+
+"""Deprecated alias for HintedBinary. Use HintedBinary instead."""
+const HintedBinaryAlg = HintedBinary
+
+"""Deprecated alias for LinearBounded. Use LinearBounded instead."""
+const LinearBoundedAlg{MAX} = LinearBounded{MAX}
+
+"""Deprecated alias for Searcher. Use Searcher instead."""
+const SearchPolicy{P,H} = Searcher{P,H}
+
+"""Deprecated alias for DEFAULT_SEARCHER."""
+const DEFAULT_SEARCH_POLICY = DEFAULT_SEARCHER

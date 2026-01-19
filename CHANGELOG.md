@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `src/core/search.jl` with `SearchPolicy{Alg,H}` type system
 - Search algorithms: `BinaryAlg`, `HintedBinaryAlg`, `LinearBoundedAlg{N}`
 - Hint types: `NoHint`, `RefHint`
-- Zero-overhead: default `Binary()` path compiles to identical assembly as before
+- Zero-overhead: default path compiles to identical assembly as before
+- Renamed `_search_binary(::AbstractRange)` → `_search_direct` for clarity (O(1) direct calculation, not binary search)
 
 ### Deprecated
 - `_find_interval(x, xi)` → use `_search_interval(x, xi)` instead

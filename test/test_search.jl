@@ -1,6 +1,6 @@
 using Test
 using FastInterpolations
-using FastInterpolations: search_interval, _search_binary, _search_interval,
+using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
     SearchPolicy, BinaryAlg, HintedBinaryAlg, LinearBoundedAlg,
     NoHint, RefHint, DEFAULT_SEARCH_POLICY, ScalarSpacing, _create_spacing
 
@@ -57,7 +57,7 @@ using FastInterpolations: search_interval, _search_binary, _search_interval,
         @testset "Range Path" begin
             for xi in [0.0, 0.25, 0.5, 0.75, 1.0]
                 result_policy = search_interval(policy, x_range, xi)
-                result_direct = _search_binary(x_range, xi)
+                result_direct = _search_direct(x_range, xi)
                 @test result_policy == result_direct
             end
         end
@@ -379,6 +379,212 @@ using FastInterpolations: search_interval, _search_binary, _search_interval,
                     @test xL <= xi <= xR
                 end
             end
+        end
+    end
+
+    # ========================================
+    # Additional Coverage Tests
+    # ========================================
+    # These tests specifically target uncovered code paths
+
+    @testset "Coverage: _search_hinted_binary! Direct" begin
+        # Import internal function for direct testing
+        _search_hinted_binary! = FastInterpolations._search_hinted_binary!
+
+        x = collect(range(0.0, 1.0, 101))
+
+        @testset "O(1) Hint Hit Path" begin
+            hint_ref = Ref(50)
+            # Query exactly in interval 50: [0.49, 0.50)
+            idx, xL, xR = _search_hinted_binary!(x, 0.495, hint_ref)
+            @test idx == 50
+            @test xL ≈ 0.49 atol=1e-12
+            @test xR ≈ 0.50 atol=1e-12
+            @test hint_ref[] == 50  # Unchanged (direct hit)
+        end
+
+        @testset "Hint Miss - Fallback to Binary" begin
+            hint_ref = Ref(10)
+            # Query far from hint
+            idx, xL, xR = _search_hinted_binary!(x, 0.75, hint_ref)
+            @test idx == 76
+            @test hint_ref[] == 76  # Updated after binary search
+        end
+
+        @testset "Hint at Boundary" begin
+            hint_ref = Ref(1)
+            # Query in first interval
+            idx, _, _ = _search_hinted_binary!(x, 0.005, hint_ref)
+            @test idx == 1
+            @test hint_ref[] == 1
+        end
+    end
+
+    @testset "Coverage: LinearBoundedAlg Direct Hit" begin
+        # Test the early return path when hint already points to correct interval
+        x = collect(range(0.0, 1.0, 101))
+
+        @testset "Direct Hit - Hint Already Correct" begin
+            # Hint at 50: interval [0.49, 0.50)
+            # Query 0.495 is in interval 50, so direct hit (no search needed)
+            hint = Ref(50)
+            policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(hint))
+
+            idx, xL, xR = search_interval(policy, x, 0.495)
+            @test idx == 50
+            @test hint[] == 50  # Unchanged, direct hit
+            @test xL ≈ 0.49 atol=1e-12
+            @test xR ≈ 0.50 atol=1e-12
+        end
+
+        @testset "Direct Hit - Multiple Queries Same Interval" begin
+            hint = Ref(30)
+            policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(hint))
+
+            # Multiple queries in interval 30: [0.29, 0.30)
+            for xi in [0.291, 0.295, 0.299]
+                idx, xL, xR = search_interval(policy, x, xi)
+                @test idx == 30
+                @test hint[] == 30  # All direct hits
+            end
+        end
+    end
+
+    @testset "Coverage: Backward Linear Search Hit" begin
+        # Grid: [0.0, 0.01, 0.02, ..., 1.0] - 101 points, 100 intervals
+        # Interval i spans [x[i], x[i+1]) = [(i-1)*0.01, i*0.01)
+        x = collect(range(0.0, 1.0, 101))
+
+        @testset "Backward Search Finds Match After 1 Step" begin
+            # Hint at index 60: interval [0.59, 0.60)
+            # Query 0.585 < x[60]=0.59, so enters backward search
+            # After 1 decrement: ix=59, interval [0.58, 0.59) contains 0.585 ✓
+            hint = Ref(60)
+            policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(hint))
+
+            idx, xL, xR = search_interval(policy, x, 0.585)
+            @test idx == 59
+            @test hint[] == 59  # Updated by backward search
+            @test xL ≈ 0.58 atol=1e-12
+            @test xR ≈ 0.59 atol=1e-12
+        end
+
+        @testset "Backward Search Finds Match After 3 Steps" begin
+            # Hint at index 70: interval [0.69, 0.70)
+            # Query 0.665 < x[70]=0.69, enters backward search
+            # Need to find interval containing 0.665 = interval 67 [0.66, 0.67)
+            # Steps: 70→69→68→67 (3 decrements)
+            hint = Ref(70)
+            policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(hint))
+
+            idx, xL, xR = search_interval(policy, x, 0.665)
+            @test idx == 67
+            @test hint[] == 67
+            @test xL ≈ 0.66 atol=1e-12
+            @test xR ≈ 0.67 atol=1e-12
+        end
+
+        @testset "Backward Search Single Step" begin
+            # Most direct case: hint just 1 interval ahead
+            # Hint at 52: interval [0.51, 0.52)
+            # Query 0.505 < x[52]=0.51, backward 1 step to interval 51 [0.50, 0.51)
+            hint = Ref(52)
+            policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(hint))
+
+            idx, xL, xR = search_interval(policy, x, 0.505)
+            @test idx == 51
+            @test hint[] == 51
+            @test xL ≈ 0.50 atol=1e-12
+            @test xR ≈ 0.51 atol=1e-12
+        end
+    end
+
+    @testset "Coverage: LinearBoundedAlg with Range" begin
+        x_range = range(0.0, 1.0, 101)
+        hint = Ref(50)
+        policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(hint))
+
+        @testset "Range Uses O(1) - Ignores Hint" begin
+            # Range path should use direct O(1) calculation
+            idx, xL, xR = search_interval(policy, x_range, 0.25)
+            @test idx == 26
+            @test xL ≈ 0.25 atol=1e-12
+            @test xR ≈ 0.26 atol=1e-12
+            # Hint should NOT be updated for ranges
+            @test hint[] == 50
+        end
+
+        @testset "Range Multiple Queries" begin
+            for xi in [0.1, 0.3, 0.7, 0.9]
+                idx, _, _ = search_interval(policy, x_range, xi)
+                expected_idx = round(Int, xi * 100) + 1
+                @test idx == expected_idx
+            end
+        end
+    end
+
+    @testset "Coverage: HintedBinaryAlg with Range" begin
+        x_range = range(0.0, 1.0, 101)
+        hint = Ref(80)
+        policy = SearchPolicy{HintedBinaryAlg,RefHint}(RefHint(hint))
+
+        @testset "Range Uses O(1) - Ignores Hint" begin
+            idx, xL, xR = search_interval(policy, x_range, 0.15)
+            @test idx == 16
+            @test hint[] == 80  # Hint unchanged for ranges
+        end
+    end
+
+    @testset "Coverage: Spacing-aware with Default Policy" begin
+        x_range = range(0.0, 1.0, 101)
+        x_vec = collect(x_range)
+        spacing_scalar = _create_spacing(x_range)
+        spacing_vector = _create_spacing(x_vec)
+        policy = DEFAULT_SEARCH_POLICY
+
+        @testset "Direct search_interval with Spacing" begin
+            # This specifically tests line 303-304
+            idx, xL, xR = search_interval(policy, x_range, spacing_scalar, 0.75)
+            @test idx == 76
+            @test xL ≈ 0.75 atol=1e-12
+            @test xR ≈ 0.76 atol=1e-12
+        end
+
+        @testset "Multiple Spacing Queries" begin
+            for xi in [0.0, 0.25, 0.5, 0.75, 1.0]
+                r1 = search_interval(policy, x_range, spacing_scalar, xi)
+                r2 = search_interval(policy, x_vec, spacing_vector, xi)
+                # Both should give same index
+                @test r1[1] == r2[1]
+            end
+        end
+    end
+
+    @testset "Coverage: Edge Cases in Linear Search" begin
+        x = collect(range(0.0, 1.0, 101))
+
+        @testset "Linear Search at Domain Boundaries" begin
+            # Near left boundary
+            hint = Ref(5)
+            policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(hint))
+            idx, _, _ = search_interval(policy, x, 0.005)
+            @test idx == 1
+            @test hint[] == 1
+
+            # Near right boundary
+            hint2 = Ref(95)
+            policy2 = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(hint2))
+            idx2, _, _ = search_interval(policy2, x, 0.995)
+            @test idx2 == 100
+            @test hint2[] == 100
+        end
+
+        @testset "Linear Search Backward at Left Edge" begin
+            # Hint at 3, query at 0.0 - should clamp and handle
+            hint = Ref(3)
+            policy = SearchPolicy{LinearBoundedAlg{8},RefHint}(RefHint(hint))
+            idx, _, _ = search_interval(policy, x, 0.0)
+            @test idx == 1
         end
     end
 

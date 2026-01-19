@@ -4,9 +4,11 @@
 #
 # This module provides a typed policy system for interval search dispatch.
 # The key insight is that algorithm selection is encoded in type parameters,
-# enabling compile-time dispatch and zero-overhead for the default Binary path.
+# enabling compile-time dispatch and zero-overhead for the default path.
 #
-# Naming Convention: SearchPolicy → search_interval → _search_binary
+# Naming Convention:
+#   SearchPolicy → search_interval → _search_direct (O(1) for Range)
+#                                  → _search_binary (O(log n) for Vector)
 #
 # Include order dependency: grid_spacing.jl (for ScalarSpacing) → search.jl
 
@@ -130,11 +132,14 @@ Compiles to identical code as direct `_find_interval` call.
 const DEFAULT_SEARCH_POLICY = SearchPolicy{BinaryAlg,NoHint}(NoHint())
 
 # ========================================
-# 2. Base Implementations (Binary Search)
+# 2. Base Implementations
 # ========================================
 #
 # These are the core implementations, moved from utils.jl.
-# Function naming: _search_binary (internal), search_interval (dispatcher)
+# Function naming:
+#   - _search_direct: O(1) direct calculation for uniform grids (AbstractRange)
+#   - _search_binary: O(log n) binary search for non-uniform grids (AbstractVector)
+#   - search_interval: public dispatcher
 
 # ----------------------------------------
 # Interval index semantics (IMPORTANT)
@@ -149,12 +154,15 @@ const DEFAULT_SEARCH_POLICY = SearchPolicy{BinaryAlg,NoHint}(NoHint())
 # ----------------------------------------
 
 """
-    _search_binary(x::AbstractRange{T}, xi::T) where {T<:AbstractFloat}
+    _search_direct(x::AbstractRange{T}, xi::T) where {T<:AbstractFloat}
 
-O(1) direct calculation for uniform grids (AbstractRange).
+O(1) direct index calculation for uniform grids (AbstractRange).
 Uses `unsafe_trunc` for ~40% faster index calculation.
+
+Unlike `_search_binary`, this function computes the interval index directly
+via arithmetic rather than iterative search, exploiting uniform grid spacing.
 """
-@inline function _search_binary(x::AbstractRange{T}, xi::T) where {T<:AbstractFloat}
+@inline function _search_direct(x::AbstractRange{T}, xi::T) where {T<:AbstractFloat}
     n = length(x)
     x_min = first(x)
     dx = Base.step(x)
@@ -194,11 +202,12 @@ O(log n) binary search for non-uniform grids (AbstractVector).
 end
 
 """
-    _search_binary(x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T)
+    _search_direct(x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T)
 
-Spacing-aware O(1) for ScalarSpacing (multiplication instead of division).
+Spacing-aware O(1) direct calculation for ScalarSpacing.
+Uses pre-computed `inv_h` for multiplication instead of division.
 """
-@inline function _search_binary(
+@inline function _search_direct(
     x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T
 ) where {T<:AbstractFloat}
     n = length(x)
@@ -298,10 +307,10 @@ end
     _search_binary(x, xi)
 
 @inline search_interval(::SearchPolicy{BinaryAlg,NoHint}, x::AbstractRange{T}, xi::T) where {T} =
-    _search_binary(x, xi)
+    _search_direct(x, xi)
 
 @inline search_interval(::SearchPolicy{BinaryAlg,NoHint}, x, spacing, xi) =
-    _search_binary(x, spacing, xi)
+    _search_interval(x, spacing, xi)
 
 # --- HintedBinaryAlg + RefHint ---
 
@@ -311,9 +320,9 @@ end
     return _search_hinted_binary!(x, xi, p.hint.idx)
 end
 
-# Range always uses O(1) - hint ignored
+# Range always uses O(1) direct - hint ignored
 @inline search_interval(::SearchPolicy{HintedBinaryAlg,RefHint}, x::AbstractRange{T}, xi::T) where {T} =
-    _search_binary(x, xi)
+    _search_direct(x, xi)
 
 # --- LinearBoundedAlg{MAX} + RefHint ---
 
@@ -328,16 +337,18 @@ end
     x::AbstractRange{T},
     xi::T,
 ) where {MAX,T} =
-    _search_binary(x, xi)
+    _search_direct(x, xi)
 
 # ========================================
 # 5. Internal Aliases (for module-internal use)
 # ========================================
 # For module-internal use without explicit policy.
-# search_interval(DEFAULT_SEARCH_POLICY, x, xi) → _search_interval(x, xi)
+# These dispatch to the appropriate implementation based on grid type.
 
-@inline _search_interval(x, xi) = _search_binary(x, xi)
-@inline _search_interval(x, spacing, xi) = _search_binary(x, spacing, xi)
+@inline _search_interval(x::AbstractVector, xi) = _search_binary(x, xi)
+@inline _search_interval(x::AbstractRange, xi) = _search_direct(x, xi)
+@inline _search_interval(x::AbstractVector, spacing, xi) = _search_binary(x, spacing, xi)
+@inline _search_interval(x::AbstractRange, spacing, xi) = _search_direct(x, spacing, xi)
 
 # ========================================
 # 6. Deprecated Aliases (backward compat)

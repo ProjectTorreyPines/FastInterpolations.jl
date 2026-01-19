@@ -4,7 +4,10 @@
 # Interval Search (MOVED TO search.jl)
 # ========================================
 # The _find_interval functions have been moved to src/core/search.jl
-# and renamed to _search_interval/_search_binary.
+# and renamed to:
+#   - _search_direct: O(1) direct calculation for uniform grids (AbstractRange)
+#   - _search_binary: O(log n) binary search for non-uniform grids (AbstractVector)
+#   - _search_interval: dispatcher that routes to the appropriate implementation
 #
 # For backward compatibility, _find_interval is an alias to _search_interval
 # defined in search.jl. This alias will be deprecated in a future version.

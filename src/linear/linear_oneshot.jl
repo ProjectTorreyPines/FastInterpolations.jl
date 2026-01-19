@@ -89,18 +89,6 @@ end
     return output
 end
 
-# Backward-compatible method without searcher (uses default)
-@inline function _linear_interp_loop!(
-    output::AbstractVector{FT},
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT},
-    extrap_val::Val,
-    op::O
-) where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    _linear_interp_loop!(output, x, y, x_targets, extrap_val, op, DEFAULT_SEARCHER)
-end
-
 
 # Optimized loop for :wrap - uses 2-stage strategy
 # Stage 1: Check if ALL queries are inside domain (cheap: ~150ns for 1000 elements)
@@ -132,18 +120,6 @@ end
     return output
 end
 
-# Backward-compatible :wrap without searcher
-@inline function _linear_interp_loop!(
-    output::AbstractVector{FT},
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT},
-    wrap::Val{:wrap},
-    op::O
-) where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    _linear_interp_loop!(output, x, y, x_targets, wrap, op, DEFAULT_SEARCHER)
-end
-
 # Same optimization for AbstractRange (O(1) indexing path)
 @inline function _linear_interp_loop!(
     output::AbstractVector{FT},
@@ -168,18 +144,6 @@ end
         end
     end
     return output
-end
-
-# Backward-compatible Range :wrap without searcher
-@inline function _linear_interp_loop!(
-    output::AbstractVector{FT},
-    x::AbstractRange{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT},
-    wrap::Val{:wrap},
-    op::O
-) where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    _linear_interp_loop!(output, x, y, x_targets, wrap, op, DEFAULT_SEARCHER)
 end
 
 # Specific method for AbstractRange{FT} (resolves ambiguity with Real wrappers)
@@ -266,21 +230,6 @@ Supports value (EvalValue), first derivative (EvalDeriv1), and second derivative
 )::FT where {FT<:AbstractFloat, O<:AbstractEvalOp, S<:Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, xR = search_interval(searcher, x, xq)
-    h = xR - xL
-    dL = xq - xL
-    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], h, dL)
-end
-
-# Backward-compatible without searcher (uses default _search_interval)
-@inline function _linear_eval_at_point(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT,
-    extrap::Val,
-    op::O
-)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    @boundscheck _check_domain(x, xq, extrap)
-    idx, xL, xR = _search_interval(x, xq)
     h = xR - xL
     dL = xq - xL
     @inbounds return _linear_kernel(op, y[idx], y[idx + 1], h, dL)
@@ -373,55 +322,6 @@ end
     _linear_eval_at_point(x, y, xi_wrapped, Val(:extension), op, searcher)
 end
 
-# Backward-compatible methods without searcher (for internal use)
-@inline function _linear_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT,
-    ::Val{:none},
-    op::O
-)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    _linear_eval_at_point(x, y, xq, Val(:none), op)
-end
-
-@inline function _linear_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT,
-    ::Val{:extension},
-    op::O
-)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    _linear_eval_at_point(x, y, xq, Val(:extension), op)
-end
-
-@inline function _linear_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT,
-    ::Val{:constant},
-    op::O
-)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    x_min, x_max = first(x), last(x)
-    if xq < x_min
-        return _linear_eval_constant_extrap(y, true, op)
-    elseif xq > x_max
-        return _linear_eval_constant_extrap(y, false, op)
-    else
-        return _linear_eval_at_point(x, y, xq, Val(:extension), op)
-    end
-end
-
-@inline function _linear_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT,
-    ::Val{:wrap},
-    op::O
-)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    xi_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    _linear_eval_at_point(x, y, xi_wrapped, Val(:extension), op)
-end
-
 
 # ========================================
 # Core implementation with Val dispatch
@@ -437,17 +337,6 @@ end
     searcher::S
 )::FT where {FT<:AbstractFloat, O<:AbstractEvalOp, S<:Searcher}
     _linear_with_extrap(x, y, xq, extrap, op, searcher)
-end
-
-# Core implementation with Val + op dispatch (backward compatible)
-@inline function linear_interp(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT,
-    extrap::Val,
-    op::O
-)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp}
-    _linear_with_extrap(x, y, xq, extrap, op)
 end
 
 # Public API - Symbol dispatch (converts to Val)
@@ -550,15 +439,6 @@ end
     @boundscheck _check_domain(x_float, x_targets_float, extrap_val)
     @inbounds for i in eachindex(x_targets_float, output)
         output[i] = linear_interp(x_float, y_float, x_targets_float[i], extrap_val, op, searcher)
-    end
-    return output
-end
-
-# Backward-compatible without searcher
-@inline function _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, extrap_val::Val, op::O) where {O<:AbstractEvalOp}
-    @boundscheck _check_domain(x_float, x_targets_float, extrap_val)
-    @inbounds for i in eachindex(x_targets_float, output)
-        output[i] = linear_interp(x_float, y_float, x_targets_float[i], extrap_val, op)
     end
     return output
 end

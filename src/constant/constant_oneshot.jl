@@ -112,47 +112,6 @@ Evaluation flow:
     @inbounds return _constant_kernel(op, y[idx], y[idx+1], h, dL, side)
 end
 
-# Backward-compatible without searcher (uses default _search_interval)
-@inline function _constant_eval_at_point(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xi::FT,
-    extrap::ExtrapVal,
-    side::SideVal,
-    op::AbstractEvalOp
-) where {FT<:AbstractFloat}
-    # Domain check for :none mode (throws DomainError)
-    @boundscheck _check_domain(x, xi, extrap)
-
-    x_min, x_max = first(x), last(x)
-
-    # :wrap mode handles all cases (inside and outside domain)
-    if extrap === Val(:wrap)
-        xi_wrapped = _wrap_to_domain(xi, x_min, x_max)
-        idx, xL, xR = _search_interval(x, xi_wrapped)
-        h = xR - xL
-        dL = xi_wrapped - xL
-        @inbounds return _constant_kernel(op, y[idx], y[idx+1], h, dL, side)
-    end
-
-    # Boundary special case: xi == x[end] → y[end] directly
-    # (avoids _search_interval returning idx=n-1, dL=h)
-    if xi == x_max
-        return op isa EvalValue ? (@inbounds y[end]) : zero(FT)
-    end
-
-    # Extrapolation handling (:constant, :extension)
-    if xi < x_min || xi > x_max
-        return _constant_eval_extrap(y, xi, x_min, x_max, extrap, side, op)
-    end
-
-    # Normal case: interval search and kernel evaluation
-    idx, xL, xR = _search_interval(x, xi)
-    h = xR - xL
-    dL = xi - xL
-    @inbounds return _constant_kernel(op, y[idx], y[idx+1], h, dL, side)
-end
-
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                         PUBLIC API - HOT PATH                             ║

@@ -39,21 +39,6 @@ Uses interval clamping for extension extrapolation (matches cubic pattern).
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
-# Backward-compatible without searcher
-@inline function _quadratic_eval_core(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
-    op::AbstractEvalOp
-) where {FT<:AbstractFloat}
-    # _search_interval clamps idx to [1, n-1]
-    idx, xL, _ = _search_interval(x, xi)
-    dt = xi - xL
-    @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
-end
-
 # ========================================
 # Extrapolation-aware Evaluation (matches cubic pattern)
 # ========================================
@@ -103,45 +88,6 @@ end
     return _quadratic_eval_core(x, y, a, d, xi, op, searcher)
 end
 
-# Backward-compatible methods without searcher
-@inline function _quadratic_eval_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
-    ::Val{:none},
-    op::AbstractEvalOp
-) where {FT<:AbstractFloat}
-    return _quadratic_eval_core(x, y, a, d, xi, op)
-end
-
-@inline function _quadratic_eval_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
-    ::Val{:constant},
-    op::AbstractEvalOp
-) where {FT<:AbstractFloat}
-    xi < first(x) && return _constant_extrap_result(op, @inbounds y[1])
-    xi > last(x) && return _constant_extrap_result(op, @inbounds y[end])
-    return _quadratic_eval_core(x, y, a, d, xi, op)
-end
-
-@inline function _quadratic_eval_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
-    ::Val{:extension},
-    op::AbstractEvalOp
-) where {FT<:AbstractFloat}
-    return _quadratic_eval_core(x, y, a, d, xi, op)
-end
-
 """
     _quadratic_eval_at_point(x, y, h, a, d, xi, extrap, op, searcher)
 
@@ -161,21 +107,6 @@ Note: `h` parameter kept for API compatibility but not used (interval info from 
 ) where {FT<:AbstractFloat, S<:Searcher}
     @boundscheck _check_domain(x, xi, extrap)
     return _quadratic_eval_with_extrap(x, y, a, d, xi, extrap, op, searcher)
-end
-
-# Backward-compatible without searcher
-@inline function _quadratic_eval_at_point(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    ::AbstractVector{FT},  # h - unused, kept for API compatibility
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
-    extrap::ExtrapVal,
-    op::AbstractEvalOp
-) where {FT<:AbstractFloat}
-    @boundscheck _check_domain(x, xi, extrap)
-    return _quadratic_eval_with_extrap(x, y, a, d, xi, extrap, op)
 end
 
 

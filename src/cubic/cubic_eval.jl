@@ -92,34 +92,6 @@ end
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
 end
 
-# Backward-compatible without searcher
-@inline function _eval_cubic_at_point_periodic(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    spacing::AbstractGridSpacing{T},
-    z::AbstractVector{T},
-    xi::T,
-    period::T,
-    op::O
-) where {T<:AbstractFloat, O<:AbstractEvalOp}
-    xi_wrapped = _wrap_to_domain(xi, first(x), first(x) + period)
-    idx, xL, xR = _search_interval(x, spacing, xi_wrapped)
-
-    dL = xi_wrapped - xL   # distance from Left endpoint
-    dR = xR - xi_wrapped   # distance from Right endpoint
-    h = _get_h(spacing, idx)
-    inv_h = _get_inv_h(spacing, idx)
-
-    @inbounds begin
-        zL = z[idx]
-        zR = z[idx+1]
-        yL = y[idx]
-        yR = y[idx+1]
-    end
-
-    return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
-end
-
 # ========================================
 # Extrapolation-aware Evaluation
 # ========================================
@@ -193,62 +165,6 @@ end
     return _eval_cubic_at_point(x, y, spacing, z, xi_wrapped, op, searcher)
 end
 
-# --- Backward-compatible versions (without searcher) ---
-
-"Evaluate with no extrapolation - throws DomainError if outside domain."
-@inline function _eval_cubic_with_extrap(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    spacing::AbstractGridSpacing{T},
-    z::AbstractVector{T},
-    xi::T,
-    ::Val{:none},
-    op::O
-) where {T<:AbstractFloat, O<:AbstractEvalOp}
-    return _eval_cubic_at_point(x, y, spacing, z, xi, op)
-end
-
-"Evaluate with constant extrapolation - returns boundary values outside domain."
-@inline function _eval_cubic_with_extrap(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    spacing::AbstractGridSpacing{T},
-    z::AbstractVector{T},
-    xi::T,
-    ::Val{:constant},
-    op::O
-) where {T<:AbstractFloat, O<:AbstractEvalOp}
-    xi < first(x) && return _constant_extrap_result(op, @inbounds y[1])
-    xi > last(x) && return _constant_extrap_result(op, @inbounds y[end])
-    return _eval_cubic_at_point(x, y, spacing, z, xi, op)
-end
-
-"Evaluate with extension extrapolation - extends boundary polynomial."
-@inline function _eval_cubic_with_extrap(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    spacing::AbstractGridSpacing{T},
-    z::AbstractVector{T},
-    xi::T,
-    ::Val{:extension},
-    op::O
-) where {T<:AbstractFloat, O<:AbstractEvalOp}
-    return _eval_cubic_at_point(x, y, spacing, z, xi, op)
-end
-
-"Evaluate with coordinate wrapping (for natural BC with wrap extrapolation)."
-@inline function _eval_cubic_with_extrap(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    spacing::AbstractGridSpacing{T},
-    z::AbstractVector{T},
-    xi::T,
-    ::Val{:wrap},
-    op::O
-) where {T<:AbstractFloat, O<:AbstractEvalOp}
-    xi_wrapped = _wrap_to_domain(xi, first(x), last(x))
-    return _eval_cubic_at_point(x, y, spacing, z, xi_wrapped, op)
-end
 
 # ========================================
 # BC-Aware Evaluation Helper
@@ -282,31 +198,6 @@ end
     _eval_cubic_with_extrap(cache.x, y, cache.spacing, z, xi, extrap, op, searcher)
 end
 
-# --- Backward-compatible versions (without searcher) ---
-
-"Evaluate with BC-aware dispatch (Periodic BC) with op."
-@inline function _eval_with_bc(
-    cache::CubicSplineCache{T,X,F,PeriodicData{T},S},
-    y::AbstractVector{T},
-    z::AbstractVector{T},
-    xi::T,
-    ::Val,  # extrapolation ignored for periodic
-    op::O
-) where {T<:AbstractFloat, X, F, S<:AbstractGridSpacing{T}, O<:AbstractEvalOp}
-    _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, xi, cache.bc_config.period, op)
-end
-
-"Evaluate with BC-aware dispatch (Generic Derivative BC) with op."
-@inline function _eval_with_bc(
-    cache::CubicSplineCache{T,X,F,BCPair{T,L,R},S},
-    y::AbstractVector{T},
-    z::AbstractVector{T},
-    xi::T,
-    extrap::Val,
-    op::O
-) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}, S<:AbstractGridSpacing{T}, O<:AbstractEvalOp}
-    _eval_cubic_with_extrap(cache.x, y, cache.spacing, z, xi, extrap, op)
-end
 
 # ========================================
 # Vector Loop Functions

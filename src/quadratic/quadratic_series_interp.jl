@@ -508,16 +508,15 @@ Returns a vector of vectors: one vector per y-series.
 """
 function (sitp::QuadraticSeriesInterpolant{T})(
     xq::AbstractVector{S};
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=LinearBounded()
 ) where {T<:AbstractFloat, S<:Real}
     xq_typed = _to_float(xq, T)
 
     # Allocate outputs
     outputs = [Vector{T}(undef, length(xq_typed)) for _ in 1:n_series(sitp)]
 
-    @_dispatch_deriv deriv => op begin
-        _eval_series_vector!(outputs, sitp, xq_typed, op)
-    end
+    sitp(outputs, xq_typed; deriv=deriv, search=search)
     return outputs
 end
 
@@ -529,13 +528,14 @@ Evaluate all series at multiple query points (in-place, zero allocation).
 @with_pool pool function (sitp::QuadraticSeriesInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{T};
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=LinearBounded()
 ) where {T<:AbstractFloat}
     _validate_series_outputs(outputs, n_series(sitp), length(xq))
 
     # Acquire anchor buffer from pool
     aq_vec = acquire!(pool, _QuadraticAnchoredQuery{T}, length(xq))
-    _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp))
+    _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search))
 
     @_dispatch_deriv deriv => op begin
         _eval_series_anchored!(outputs, sitp, aq_vec, op)
@@ -547,10 +547,11 @@ end
 function (sitp::QuadraticSeriesInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{S};
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=LinearBounded()
 ) where {T<:AbstractFloat, S<:Real}
     xq_typed = _to_float(xq, T)
-    return sitp(outputs, xq_typed; deriv=deriv)
+    return sitp(outputs, xq_typed; deriv=deriv, search=search)
 end
 
 # ========================================

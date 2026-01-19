@@ -533,6 +533,30 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test idx == 16
             @test hint[] == 80  # Hint unchanged for ranges
         end
+
+        @testset "Range with ScalarSpacing" begin
+            spacing = _create_spacing(x_range)
+            idx, xL, xR = search_interval(policy, x_range, spacing, 0.25)
+            @test idx == 26
+            @test xL ≈ 0.25 atol=1e-12
+            @test xR ≈ 0.26 atol=1e-12
+            @test hint[] == 80  # Hint unchanged for ranges with spacing
+        end
+    end
+
+    @testset "Coverage: LinearBoundedAlg with Range and Spacing" begin
+        x_range = range(0.0, 1.0, 101)
+        spacing = _create_spacing(x_range)
+        hint = Ref(50)
+        policy = Searcher{LinearBounded{8},RefHint}(RefHint(hint))
+
+        @testset "Range with ScalarSpacing Uses O(1)" begin
+            idx, xL, xR = search_interval(policy, x_range, spacing, 0.35)
+            @test idx == 36
+            @test xL ≈ 0.35 atol=1e-12
+            @test xR ≈ 0.36 atol=1e-12
+            @test hint[] == 50  # Hint unchanged for ranges with spacing
+        end
     end
 
     @testset "Coverage: Spacing-aware with Default Policy" begin
@@ -586,6 +610,64 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             idx, _, _ = search_interval(policy, x, 0.0)
             @test idx == 1
         end
+    end
+
+    # ========================================
+    # LinearBounded Constructor Tests
+    # ========================================
+
+    @testset "LinearBounded Constructor" begin
+        @testset "Valid max_steps Values" begin
+            # All allowed max_steps values
+            valid_steps = (2, 4, 8, 16, 32, 64, 128)
+            for ms in valid_steps
+                policy = LinearBounded(max_steps=ms)
+                @test policy isa LinearBounded{ms}
+
+                # Also test positional argument
+                policy2 = LinearBounded(ms)
+                @test policy2 isa LinearBounded{ms}
+            end
+
+            # Default is 8
+            @test LinearBounded() isa LinearBounded{8}
+        end
+
+        @testset "Invalid max_steps Throws ArgumentError" begin
+            invalid_steps = (0, 1, 3, 5, 6, 7, 9, 10, 15, 17, 100, 256)
+            for ms in invalid_steps
+                @test_throws ArgumentError LinearBounded(max_steps=ms)
+                @test_throws ArgumentError LinearBounded(ms)
+            end
+        end
+    end
+
+    @testset "Integrated test" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = x.^3
+
+        xq = 0.5
+        xq_vec = rand(10)
+
+        out_vec1 = similar(xq_vec)
+        out_vec2 = similar(xq_vec)
+        out_vec3 = similar(xq_vec)
+        out_vec4 = similar(xq_vec)
+        out_vec5 = similar(xq_vec)
+
+        itp = cubic_interp(x, y)
+
+        itp(out_vec1, xq_vec) # Default search (Binary)
+        itp(out_vec2, xq_vec; search=Binary()) # Default search (Binary)
+        itp(out_vec3, xq_vec; search=HintedBinary()) # Default search (HintedBinary)
+        itp(out_vec4, xq_vec; search=LinearBounded()) # Default search (LinearBounded{8})
+        itp(out_vec5, xq_vec; search=LinearBounded{2}()) # Default search (LinearBounded{2})
+
+
+        @test out_vec1 == out_vec2
+        @test out_vec1 == out_vec3
+        @test out_vec1 == out_vec4
+        @test out_vec1 == out_vec5
     end
 
 end  # @testset "Search Module"

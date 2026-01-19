@@ -478,13 +478,14 @@ Returns a vector of vectors: one vector per y-series, each containing results fo
 """
 function (sitp::ConstantSeriesInterpolant{T})(
     xq::AbstractVector{S};
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=LinearBounded()
 ) where {T<:AbstractFloat, S<:Real}
     xq_typed = _to_float(xq, T)
     n_query = length(xq_typed)
 
     outputs = [Vector{T}(undef, n_query) for _ in 1:n_series(sitp)]
-    sitp(outputs, xq_typed; deriv=deriv)
+    sitp(outputs, xq_typed; deriv=deriv, search=search)
 
     return outputs
 end
@@ -505,7 +506,8 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 @with_pool pool function (sitp::ConstantSeriesInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{T};
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=LinearBounded()
 ) where {T<:AbstractFloat}
     n_query = length(xq)
     n_ser = n_series(sitp)
@@ -515,7 +517,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 
     # Build anchors from pool (zero allocation after warmup)
     aq_vec = acquire!(pool, _ConstantAnchoredQuery{T}, length(xq))
-    _fill_anchors!(aq_vec, sitp.x, xq, Val(:constant); wrap=_should_wrap(sitp))
+    _fill_anchors!(aq_vec, sitp.x, xq, Val(:constant); wrap=_should_wrap(sitp), searcher=_to_searcher(search))
 
     # Extract matrices for argument-passing pattern
     y = sitp.y
@@ -539,10 +541,11 @@ end
 function (sitp::ConstantSeriesInterpolant{T})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{S};
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=LinearBounded()
 ) where {T<:AbstractFloat, S<:Real}
     xq_typed = _to_float(xq, T)
-    return sitp(outputs, xq_typed; deriv=deriv)
+    return sitp(outputs, xq_typed; deriv=deriv, search=search)
 end
 
 """

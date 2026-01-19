@@ -130,15 +130,13 @@ function _anchor_query(
     x::AbstractVector{T},
     xq::AbstractVector{S},
     ::Val{:quadratic};
-    wrap::Bool=false
+    wrap::Bool=false,
+    searcher::Searcher=_to_searcher(LinearBounded())
 ) where {T<:AbstractFloat, S<:Real}
     output = Vector{_QuadraticAnchoredQuery{T}}(undef, length(xq))
 
-    # Use bounded linear for vector queries (optimal for sequential access)
-    policy = Searcher{LinearBounded{8},RefHint}(RefHint(Ref(1)))
-
     @inbounds for k in eachindex(xq)
-        output[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap, policy)
+        output[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap, searcher)
     end
     return output
 end
@@ -164,16 +162,13 @@ The same `buffer` object, filled with anchored queries.
     x::AbstractVector{T},
     xq::AbstractVector{S},
     ::Val{:quadratic};
-    wrap::Bool=false
+    wrap::Bool=false,
+    searcher::Searcher=_to_searcher(LinearBounded())
 ) where {T<:AbstractFloat, S<:Real}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 
-    # Create loop-local policy with hint (thread-safe)
-    # LinearBounded{8} is optimal for monotonic-ish queries
-    policy = Searcher{LinearBounded{8},RefHint}(RefHint(Ref(1)))
-
     @inbounds for k in eachindex(xq)
-        buffer[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap, policy)
+        buffer[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap, searcher)
     end
     return buffer
 end

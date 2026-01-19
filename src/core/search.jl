@@ -58,17 +58,29 @@ struct HintedBinary <: AbstractSearchPolicy end
 """
     LinearBounded{MAX} <: AbstractSearchPolicy
 
-Bounded linear search: up to MAX linear steps from hint, then binary fallback.
-Optimal for monotonic query sequences where consecutive queries are in adjacent intervals.
+Bounded linear search: up to `MAX` linear steps from hint, then binary fallback.
+Optimal for **sorted/monotonic query sequences** where consecutive queries tend to
+fall in adjacent or nearby intervals.
 
 # Type Parameter
-- `MAX`: Maximum linear search steps before falling back to binary (compile-time constant)
+- `MAX::Int`: Maximum linear search steps before falling back to binary search.
+  This is a compile-time constant encoded in the type parameter.
+
+# Performance Characteristics
+- **Best case**: O(1) when query is within `MAX` steps of the hint
+- **Worst case**: O(log n) binary search fallback
+- **Ideal for**: Sorted queries, time-series data, streaming evaluations
 
 # Construction
-Use the factory function for convenient construction:
+Use the factory function (recommended) to construct with a curated set of values:
 ```julia
-LinearBounded()              # default MAX=8
-LinearBounded(max_steps=4)   # custom MAX=4
+LinearBounded()               # default MAX=8
+LinearBounded(max_steps=4)    # custom MAX=4
+```
+
+Or construct the parametric type directly (advanced):
+```julia
+LinearBounded{8}()            # explicit type parameter
 ```
 
 # Example
@@ -76,24 +88,56 @@ LinearBounded(max_steps=4)   # custom MAX=4
 sorted_queries = sort(rand(1000))
 vals = linear_interp(x, y, sorted_queries; search=LinearBounded(max_steps=8))
 ```
+
+See also: [`Binary`](@ref), [`HintedBinary`](@ref)
 """
 struct LinearBounded{MAX} <: AbstractSearchPolicy end
 
 """
-    LinearBounded(; max_steps::Int=8) -> LinearBounded{max_steps}
+    LinearBounded(max_steps::Integer)
+    LinearBounded(; max_steps::Integer=8)
 
-Factory function for creating LinearBounded search policy with specified max steps.
+Factory constructor for `LinearBounded{MAX}` with a **curated set of `max_steps` values**.
+
+# Why Restricted Values?
+Julia compiles a specialized method for each unique type parameter `MAX`. Allowing
+arbitrary integers (1–1000) would cause **type parameter explosion**: hundreds of
+specialized methods, increased compile time, and code cache bloat.
+
+By restricting to powers of 2, we limit specialization to just 7 variants while
+covering the practical range of use cases.
 
 # Arguments
-- `max_steps::Int=8`: Maximum linear search steps before binary fallback
+- `max_steps::Integer=8`: Maximum linear search steps before binary fallback.
+  **Allowed values**: `2, 4, 8, 16, 32, 64, 128` (powers of 2 from 2¹ to 2⁷)
+
+# Throws
+- `ArgumentError`: If `max_steps` is not one of the allowed values.
 
 # Example
 ```julia
-policy = LinearBounded()             # LinearBounded{8}()
-policy = LinearBounded(max_steps=4)  # LinearBounded{4}()
+policy = LinearBounded()              # LinearBounded{8}()  (default)
+policy = LinearBounded(max_steps=4)   # LinearBounded{4}()
+policy = LinearBounded(max_steps=16)  # LinearBounded{16}()
+policy = LinearBounded(max_steps=3)   # ERROR: ArgumentError
 ```
+
+# Choosing `max_steps`
+- **Small values (2–4)**: Lower overhead, but more frequent binary fallbacks
+- **Medium values (8–16)**: Good balance for typical sorted query patterns
+- **Large values (32–128)**: For highly localized queries or very large datasets
 """
-LinearBounded(; max_steps::Int=8) = LinearBounded{max_steps}()
+function LinearBounded(max_steps::Integer)
+    max_steps == 2  && return LinearBounded{2}()
+    max_steps == 4  && return LinearBounded{4}()
+    max_steps == 8  && return LinearBounded{8}()
+    max_steps == 16 && return LinearBounded{16}()
+    max_steps == 32 && return LinearBounded{32}()
+    max_steps == 64 && return LinearBounded{64}()
+    max_steps == 128 && return LinearBounded{128}()
+    throw(ArgumentError("`max_steps` must be one of (2, 4, 8, 16, 32, 64, 128), got $max_steps"))
+end
+LinearBounded(; max_steps::Integer=8) = LinearBounded(max_steps)
 
 # ----------------------------------------
 # Hint Types (Internal)

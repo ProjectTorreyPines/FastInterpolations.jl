@@ -509,26 +509,3 @@ end
     return _search_interval(x, spacing, xi)
 end
 
-# ========================================
-# 7. Backward Compatibility Aliases
-# ========================================
-# These maintain backward compatibility for internal code that uses
-# the old type names. Will be removed in v0.4.0.
-
-"""Deprecated alias for AbstractSearchPolicy. Use AbstractSearchPolicy instead."""
-const AbstractSearchAlg = AbstractSearchPolicy
-
-"""Deprecated alias for Binary. Use Binary instead."""
-const BinaryAlg = Binary
-
-"""Deprecated alias for HintedBinary. Use HintedBinary instead."""
-const HintedBinaryAlg = HintedBinary
-
-"""Deprecated alias for LinearBounded. Use LinearBounded instead."""
-const LinearBoundedAlg{MAX} = LinearBounded{MAX}
-
-"""Deprecated alias for Searcher. Use Searcher instead."""
-const SearchPolicy{P,H} = Searcher{P,H}
-
-"""Deprecated alias for DEFAULT_SEARCHER."""
-const DEFAULT_SEARCH_POLICY = DEFAULT_SEARCHER

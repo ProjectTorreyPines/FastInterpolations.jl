@@ -2,7 +2,7 @@ using Test
 using FastInterpolations
 using FastInterpolations: _anchor_query, _fill_anchors!,
     _LinearAnchoredQuery, _ConstantAnchoredQuery, _QuadraticAnchoredQuery, _CubicAnchoredQuery,
-    SearchPolicy, HintedBinaryAlg, LinearBoundedAlg, RefHint
+    Searcher, HintedBinary, LinearBounded, RefHint
 
 @testset "Search Policy Anchor Integration" begin
 

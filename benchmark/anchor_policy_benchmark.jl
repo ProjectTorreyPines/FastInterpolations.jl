@@ -2,7 +2,7 @@
 # ========================================
 # Anchor Policy Integration Benchmark
 # ========================================
-# Measures the performance benefit of LinearBoundedAlg{8} for batch anchor operations.
+# Measures the performance benefit of LinearBounded{8} for batch anchor operations.
 # The optimization targets monotonic-ish queries where hint caching can avoid binary search.
 #
 # Expected results:
@@ -123,6 +123,6 @@ println()
 
 # Note on interpretation
 println("Note: Positive values indicate monotonic queries are faster than random.")
-println("      This demonstrates the benefit of LinearBoundedAlg{8} hint caching.")
+println("      This demonstrates the benefit of LinearBounded{8} hint caching.")
 println("      Negative or near-zero values indicate the search is dominated by")
 println("      anchor weight computation rather than interval search.")

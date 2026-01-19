@@ -1,6 +1,6 @@
-# Zero-Overhead Validation for SearchPolicy
+# Zero-Overhead Validation for Searcher
 #
-# This script validates that the new SearchPolicy system introduces
+# This script validates that the new Searcher system introduces
 # NO performance regression for the default Binary() path.
 #
 # Run: julia --project benchmark/validate_zero_overhead.jl
@@ -9,7 +9,7 @@ using FastInterpolations
 using BenchmarkTools
 
 println("=" ^ 60)
-println("SearchPolicy Zero-Overhead Validation")
+println("Searcher Zero-Overhead Validation")
 println("=" ^ 60)
 println()
 
@@ -30,7 +30,7 @@ t_baseline_vec = @belapsed FastInterpolations._search_interval($x_vec, $xi)
 println("  _search_interval(x_vec, xi):     $(round(t_baseline_vec * 1e9, digits=2)) ns")
 
 # Policy path: new dispatcher
-policy = FastInterpolations.DEFAULT_SEARCH_POLICY
+policy = FastInterpolations.DEFAULT_SEARCHER
 t_policy_vec = @belapsed FastInterpolations.search_interval($policy, $x_vec, $xi)
 println("  search_interval(policy, x_vec, xi): $(round(t_policy_vec * 1e9, digits=2)) ns")
 
@@ -119,7 +119,7 @@ using InteractiveUtils
 # Check return type inference
 function check_type_stability()
     x = x_vec
-    policy = FastInterpolations.DEFAULT_SEARCH_POLICY
+    policy = FastInterpolations.DEFAULT_SEARCHER
 
     # Get inferred return type
     ret_type = Base.return_types(FastInterpolations.search_interval, (typeof(policy), typeof(x), Float64))[1]
@@ -149,7 +149,7 @@ println()
 
 function check_correctness()
     test_points = [0.0, 0.001, 0.1, 0.5, 0.999, 1.0]
-    policy = FastInterpolations.DEFAULT_SEARCH_POLICY
+    policy = FastInterpolations.DEFAULT_SEARCHER
 
     for xi in test_points
         r1 = FastInterpolations._search_interval(x_vec, xi)
@@ -180,5 +180,5 @@ println("=" ^ 60)
 println("🎉 ALL VALIDATIONS PASSED")
 println("=" ^ 60)
 println()
-println("Zero-overhead confirmed for SearchPolicy default path.")
+println("Zero-overhead confirmed for Searcher default path.")
 println("Safe to proceed to Phase 3.")

@@ -360,52 +360,6 @@ end
     end
 end
 
-# --- Backward-compatible versions (without searcher) ---
-
-"Default vector loop with op parameter (for :none, :constant, :extension)."
-@inline function _cubic_vector_loop!(
-    output::AbstractVector{T},
-    cache::CubicSplineCache{T,X,F,BC,S},
-    y::AbstractVector{T},
-    z::AbstractVector{T},
-    x_query::AbstractVector{T},
-    ev::Val,
-    op::O
-) where {T<:AbstractFloat, X, F, BC, S<:AbstractGridSpacing{T}, O<:AbstractEvalOp}
-    @boundscheck _check_domain(cache.x, x_query, ev)
-    @inbounds for (k, xq) in enumerate(x_query)
-        output[k] = _eval_with_bc(cache, y, z, xq, ev, op)
-    end
-end
-
-"Optimized vector loop for Periodic BC with op - uses 2-stage strategy."
-@inline function _cubic_vector_loop!(
-    output::AbstractVector{T},
-    cache::CubicSplineCache{T,X,F,PeriodicData{T},S},
-    y::AbstractVector{T},
-    z::AbstractVector{T},
-    x_query::AbstractVector{T},
-    ::Val,  # extrap ignored for periodic
-    op::O
-) where {T<:AbstractFloat, X, F, S<:AbstractGridSpacing{T}, O<:AbstractEvalOp}
-    x_min = first(cache.x)
-    x_max = x_min + cache.bc_config.period
-    qmin, qmax = minimum(x_query), maximum(x_query)
-
-    if qmin >= x_min && qmax < x_max
-        # Fast path: all queries inside domain
-        @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_cubic_at_point(cache.x, y, cache.spacing, z, xq, op)
-        end
-    else
-        # Slow path: per-element wrap
-        period = cache.bc_config.period
-        @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, xq, period, op)
-        end
-    end
-end
-
 # ========================================
 # Scalar Evaluation Entry Point
 # ========================================

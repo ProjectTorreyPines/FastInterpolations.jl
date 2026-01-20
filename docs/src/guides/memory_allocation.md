@@ -1,6 +1,6 @@
-# Performance Tips
+# [Memory & Allocation](@id memory_allocation)
 
-Optimizing performance in FastInterpolations.jl boils down to three key areas: vector handling, memory allocation, and grid selection.
+Optimizing memory usage in FastInterpolations.jl focuses on three key areas: vector handling, allocation patterns, and grid selection.
 
 ## 1. Vector Queries: Avoid Loops
 

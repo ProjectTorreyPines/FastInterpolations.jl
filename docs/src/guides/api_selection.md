@@ -52,11 +52,11 @@ Usage is consistent across different interpolation methods:
 
 !!! tip "Vector Queries & Performance"
     If you need to query multiple points (a vector `xq`), **do not use a loop** with scalar queries.
-    FastInterpolations.jl has optimized vector APIs. See [Performance Tips](performance_tips.md).
+    FastInterpolations.jl has optimized vector APIs. See [Memory & Allocation](memory_allocation.md).
 
 ---
 
 ## See Also
 
-- [Performance Tips](performance_tips.md) - Zero-allocation patterns and optimization
+- [Memory & Allocation](memory_allocation.md) - Zero-allocation patterns and optimization
 - [Interpolation Overview](../interpolation/overview.md) - Methods and grid types

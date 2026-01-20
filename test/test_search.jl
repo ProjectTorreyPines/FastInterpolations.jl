@@ -91,31 +91,6 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
     end
 
     # ========================================
-    # Deprecated Alias Tests
-    # ========================================
-
-    @testset "Deprecated Alias (_find_interval)" begin
-        x = collect(range(0.0, 1.0, 101))
-
-        @testset "Backward Compatibility" begin
-            idx, xL, xR = FastInterpolations._find_interval(x, 0.5)
-            @test idx == 51
-            @test xL ≈ 0.50 atol=1e-12
-            @test xR ≈ 0.51 atol=1e-12
-        end
-
-        @testset "Equivalence Chain" begin
-            # _find_interval → _search_interval → _search_binary
-            for xi in [0.0, 0.5, 1.0]
-                r1 = FastInterpolations._find_interval(x, xi)
-                r2 = _search_interval(x, xi)
-                r3 = _search_binary(x, xi)
-                @test r1 == r2 == r3
-            end
-        end
-    end
-
-    # ========================================
     # Hinted Binary Search Tests
     # ========================================
 
@@ -239,9 +214,12 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "Internal Alias with Spacing" begin
+            # Verify spacing-aware path via internal alias
             r1 = _search_interval(x_range, spacing_scalar, 0.5)
-            r2 = FastInterpolations._find_interval(x_range, spacing_scalar, 0.5)
-            @test r1 == r2
+            idx, xL, xR = r1
+            @test idx == 51
+            @test xL ≈ 0.50 atol=1e-12
+            @test xR ≈ 0.51 atol=1e-12
         end
     end
 

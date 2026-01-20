@@ -268,7 +268,7 @@ const FI = FastInterpolations
         for xqi in xq
             result = sitp(xqi)
             # Linear interpolation of sin(2πx) at xqi
-            idx, xL, xR = FI._find_interval(x, xqi)
+            idx, xL, xR = FI._search_interval(x, xqi)
             t = (xqi - x[idx]) / (x[idx+1] - x[idx])
             expected1 = y1[idx] * (1 - t) + y1[idx+1] * t
             expected2 = y2[idx] * (1 - t) + y2[idx+1] * t

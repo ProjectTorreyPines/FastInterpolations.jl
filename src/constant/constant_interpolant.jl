@@ -8,8 +8,9 @@
 
 # ─────────────────────────────────────────────────────────────
 # Scalar call - hot path (inlined for broadcast fusion)
+# Default search is now the stored policy in itp.search_policy
 # ─────────────────────────────────────────────────────────────
-@inline function (itp::ConstantInterpolant{T})(xi::T; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat}
+@inline function (itp::ConstantInterpolant{T,X,Y,P})(xi::T; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         _constant_eval_at_point(itp.x, itp.y, xi, itp.mode, itp.side, op, searcher)
@@ -17,17 +18,18 @@
 end
 
 # Real scalar wrapper - delegates to T method
-@inline function (itp::ConstantInterpolant{T})(xi::S; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, S<:Real}
+@inline function (itp::ConstantInterpolant{T,X,Y,P})(xi::S; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
     itp(T(xi); deriv=deriv, search=search, hint=hint)
 end
 
 # ─────────────────────────────────────────────────────────────
 # Vector call (allocating)
+# Now supports hint for ODE/streaming patterns
 # ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{T})(xi::AbstractVector{S}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
+function (itp::ConstantInterpolant{T,X,Y,P})(xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
     xi_typed = _to_float(xi, T)
     output = Vector{T}(undef, length(xi_typed))
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
         @inbounds for i in eachindex(xi_typed, output)
@@ -40,9 +42,9 @@ end
 # ─────────────────────────────────────────────────────────────
 # In-place vector call (zero allocation)
 # ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{T})(output::AbstractVector{T}, xi::AbstractVector{T}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat}
+function (itp::ConstantInterpolant{T,X,Y,P})(output::AbstractVector{T}, xi::AbstractVector{T}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
     @assert length(output) == length(xi) "output length must match xi length"
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi, itp.mode)
         @inbounds for i in eachindex(xi, output)
@@ -53,10 +55,10 @@ function (itp::ConstantInterpolant{T})(output::AbstractVector{T}, xi::AbstractVe
 end
 
 # In-place with type conversion
-function (itp::ConstantInterpolant{T})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
+function (itp::ConstantInterpolant{T,X,Y,P})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
     xi_typed = _to_float(xi, T)
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
         @inbounds for i in eachindex(xi_typed, output)
@@ -72,7 +74,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y; extrap=:none, side=:nearest) -> ConstantInterpolant
+    constant_interp(x, y; extrap=:none, side=:nearest, search=Binary()) -> ConstantInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -81,6 +83,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `y::AbstractVector`: y-values
 - `extrap::Symbol`: Extrapolation mode
 - `side::Symbol`: Side selection
+- `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
 
 # Returns
 `ConstantInterpolant` object for scalar/broadcast evaluation.
@@ -94,21 +97,28 @@ itp = constant_interp(x, y)
 itp(0.5)           # 10.0
 itp.([0.5, 1.5])   # [10.0, 20.0]
 
+# Create with custom search policy
+itp = constant_interp(x, y; search=LinearBounded())
+val = itp(0.5)     # uses LinearBounded() by default
+
 # Fused broadcast (optimal)
 result = @. coef * itp(query)
 
-# Vector call with search policy
-sorted_queries = sort(rand(1000))
-vals = itp(sorted_queries; search=LinearBounded(max_steps=8))
+# Vector call with hint for ODE/streaming patterns
+hint = Ref(1)
+for batch in batches
+    vals = itp(batch; hint=hint)
+end
 ```
 """
 function constant_interp(
     x::AbstractVector{FT},
     y::AbstractVector{FT};
     extrap::Symbol=:none,
-    side::Symbol=:nearest
+    side::Symbol=:nearest,
+    search::AbstractSearchPolicy=Binary()
 ) where {FT<:AbstractFloat}
-    return ConstantInterpolant(x, y; extrap, side)
+    return ConstantInterpolant(x, y; extrap, side, search)
 end
 
 # ========================================
@@ -119,8 +129,9 @@ function constant_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
     extrap::Symbol=:none,
-    side::Symbol=:nearest
+    side::Symbol=:nearest,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:Real}
     FT = float(T)
-    return ConstantInterpolant(_to_float(x, FT), _to_float(y, FT); extrap, side)
+    return ConstantInterpolant(_to_float(x, FT), _to_float(y, FT); extrap, side, search)
 end

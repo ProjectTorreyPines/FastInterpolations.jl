@@ -57,20 +57,22 @@ sitp([out1, out2, out3], xq)    # In-place (zero allocation)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct ConstantSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
+mutable struct ConstantSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPolicy} <: AbstractSeriesInterpolant{T}
     const x::Vector{T}                    # Shared x-grid
     const y::Matrix{T}                    # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{T}    # Lazy point-contiguous layout
     const extrap::ExtrapVal               # Extrapolation mode
     const side::SideVal                   # Side selection
+    const search_policy::P                # Default search policy
 
     function ConstantSeriesInterpolant(
         x::Vector{T},
         y::Matrix{T},
         extrap::ExtrapVal,
-        side::SideVal
-    ) where {T<:AbstractFloat}
-        new{T}(x, y, LazyTranspose{T}(), extrap, side)
+        side::SideVal,
+        search::P=Binary()
+    ) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
+        new{T,P}(x, y, LazyTranspose{T}(), extrap, side, search)
     end
 end
 
@@ -314,7 +316,8 @@ function constant_interp(
     x::AbstractVector{T},
     ys::AbstractVector{<:AbstractVector{T}};
     side::Symbol=:nearest,
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat}
     # Validate input
     @assert !isempty(ys) "ys must not be empty"
@@ -343,7 +346,7 @@ function constant_interp(
     @_dispatch_side side => side_val begin
         # Copy x to ensure ownership
         x_vec = collect(x)
-        return ConstantSeriesInterpolant(x_vec, y_mat, extrap_val, side_val)
+        return ConstantSeriesInterpolant(x_vec, y_mat, extrap_val, side_val, search)
     end
 end
 
@@ -370,7 +373,8 @@ function constant_interp(
     x::AbstractVector{T},
     Y::AbstractMatrix{T};
     side::Symbol=:nearest,
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat}
     n_pts = length(x)
 
@@ -389,7 +393,7 @@ function constant_interp(
     extrap_val = _symbol_to_extrap_val(extrap)
 
     @_dispatch_side side => side_val begin
-        return ConstantSeriesInterpolant(x_vec, y_mat, extrap_val, side_val)
+        return ConstantSeriesInterpolant(x_vec, y_mat, extrap_val, side_val, search)
     end
 end
 
@@ -398,24 +402,26 @@ function constant_interp(
     x::AbstractVector{Tx},
     ys::AbstractVector{<:AbstractVector{Ty}};
     side::Symbol=:nearest,
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {Tx<:Real, Ty<:Real}
     T = promote_type(float(Tx), float(Ty))
     x_float = _to_float(x, T)
     ys_float = [_to_float(y, T) for y in ys]
-    return constant_interp(x_float, ys_float; side=side, extrap=extrap)
+    return constant_interp(x_float, ys_float; side=side, extrap=extrap, search=search)
 end
 
 function constant_interp(
     x::AbstractVector{Tx},
     Y::AbstractMatrix{Ty};
     side::Symbol=:nearest,
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {Tx<:Real, Ty<:Real}
     T = promote_type(float(Tx), float(Ty))
     x_float = _to_float(x, T)
     Y_float = T.(Y)
-    return constant_interp(x_float, Y_float; side=side, extrap=extrap)
+    return constant_interp(x_float, Y_float; side=side, extrap=extrap, search=search)
 end
 
 # ========================================
@@ -433,7 +439,7 @@ Returns a vector of values, one per y-series.
 - `deriv=0`: Returns function values
 - `deriv=1,2`: Returns zeros (step function derivative is zero everywhere)
 """
-function (sitp::ConstantSeriesInterpolant{T})(xq::S; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, S<:Real}
+function (sitp::ConstantSeriesInterpolant{T,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, P, S<:Real}
     out = Vector{T}(undef, n_series(sitp))
     return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
@@ -443,13 +449,13 @@ end
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
-function (sitp::ConstantSeriesInterpolant{T})(
+function (sitp::ConstantSeriesInterpolant{T,P})(
     output::AbstractVector{T},
     xq::S;
     deriv::Int=0,
-    search=Binary(),
+    search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {T<:AbstractFloat, S<:Real}
+) where {T<:AbstractFloat, P, S<:Real}
     n_ser = n_series(sitp)
 
     # Validate output length
@@ -478,16 +484,17 @@ Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
 Returns a vector of vectors: one vector per y-series, each containing results for all query points.
 """
-function (sitp::ConstantSeriesInterpolant{T})(
+function (sitp::ConstantSeriesInterpolant{T,P})(
     xq::AbstractVector{S};
     deriv::Int=0,
-    search::AbstractSearchPolicy=LinearBounded()
-) where {T<:AbstractFloat, S<:Real}
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, P, S<:Real}
     xq_typed = _to_float(xq, T)
     n_query = length(xq_typed)
 
     outputs = [Vector{T}(undef, n_query) for _ in 1:n_series(sitp)]
-    sitp(outputs, xq_typed; deriv=deriv, search=search)
+    sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 
     return outputs
 end
@@ -505,12 +512,13 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
 Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 """
-@with_pool pool function (sitp::ConstantSeriesInterpolant{T})(
+@with_pool pool function (sitp::ConstantSeriesInterpolant{T,P})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{T};
     deriv::Int=0,
-    search::AbstractSearchPolicy=LinearBounded()
-) where {T<:AbstractFloat}
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, P}
     n_query = length(xq)
     n_ser = n_series(sitp)
 
@@ -519,7 +527,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 
     # Build anchors from pool (zero allocation after warmup)
     aq_vec = acquire!(pool, _ConstantAnchoredQuery{T}, length(xq))
-    _fill_anchors!(aq_vec, sitp.x, xq, Val(:constant); wrap=_should_wrap(sitp), searcher=_to_searcher(search))
+    _fill_anchors!(aq_vec, sitp.x, xq, Val(:constant); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     # Extract matrices for argument-passing pattern
     y = sitp.y
@@ -540,14 +548,15 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 end
 
 # Real type wrapper for in-place vector
-function (sitp::ConstantSeriesInterpolant{T})(
+function (sitp::ConstantSeriesInterpolant{T,P})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{S};
     deriv::Int=0,
-    search::AbstractSearchPolicy=LinearBounded()
-) where {T<:AbstractFloat, S<:Real}
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, P, S<:Real}
     xq_typed = _to_float(xq, T)
-    return sitp(outputs, xq_typed; deriv=deriv, search=search)
+    return sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 end
 
 """

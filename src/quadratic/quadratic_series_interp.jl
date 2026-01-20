@@ -68,7 +68,7 @@ d2 = sitp(0.5; deriv=2)     # Second derivatives
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct QuadraticSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
+mutable struct QuadraticSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPolicy} <: AbstractSeriesInterpolant{T}
     const x::Vector{T}                        # Grid points
     const y::Matrix{T}                        # Series-contiguous y (n_points × n_series)
     const a::Matrix{T}                        # Series-contiguous a (n_points × n_series)
@@ -76,6 +76,7 @@ mutable struct QuadraticSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInt
     const h::Vector{T}                        # Grid spacing (shared)
     const _transpose::LazyTransposeTriple{T}  # Lazy point-contiguous layout
     const extrap::ExtrapVal                   # Extrapolation mode
+    const search_policy::P                    # Default search policy
 
     function QuadraticSeriesInterpolant(
         x::Vector{T},
@@ -83,9 +84,10 @@ mutable struct QuadraticSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInt
         a::Matrix{T},
         d::Matrix{T},
         h::Vector{T},
-        extrap::ExtrapVal
-    ) where {T<:AbstractFloat}
-        new{T}(x, y, a, d, h, LazyTransposeTriple{T}(), extrap)
+        extrap::ExtrapVal,
+        search::P=Binary()
+    ) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
+        new{T,P}(x, y, a, d, h, LazyTransposeTriple{T}(), extrap, search)
     end
 end
 
@@ -349,7 +351,8 @@ function quadratic_interp(
     x::AbstractVector{T},
     ys::AbstractVector{<:AbstractVector{T}};
     bc::QuadraticBC{T}=Left(ParabolaFit{T}()),
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat}
     _validate_series_inputs(x, ys)
 
@@ -390,7 +393,7 @@ function quadratic_interp(
     end
 
     @_dispatch_extrap extrap => ev begin
-        return QuadraticSeriesInterpolant(Vector{T}(x), y_mat, a_mat, d_mat, h, ev)
+        return QuadraticSeriesInterpolant(Vector{T}(x), y_mat, a_mat, d_mat, h, ev, search)
     end
 end
 
@@ -417,10 +420,11 @@ function quadratic_interp(
     x::AbstractVector{T},
     Y::AbstractMatrix{T};
     bc::QuadraticBC{T}=Left(ParabolaFit{T}()),
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat}
     ys = [Y[:, k] for k in axes(Y, 2)]
-    return quadratic_interp(x, ys; bc=bc, extrap=extrap)
+    return quadratic_interp(x, ys; bc=bc, extrap=extrap, search=search)
 end
 
 # Real type wrappers (auto-promote to Float)
@@ -428,26 +432,28 @@ function quadratic_interp(
     x::AbstractVector{Tx},
     ys::AbstractVector{<:AbstractVector{Ty}};
     bc=Left(ParabolaFit()),
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {Tx<:Real, Ty<:Real}
     T = promote_type(float(Tx), float(Ty))
     x_float = _to_float(x, T)
     ys_float = [_to_float(y, T) for y in ys]
     bc_typed = _promote_bc(bc, T)
-    return quadratic_interp(x_float, ys_float; bc=bc_typed, extrap=extrap)
+    return quadratic_interp(x_float, ys_float; bc=bc_typed, extrap=extrap, search=search)
 end
 
 function quadratic_interp(
     x::AbstractVector{Tx},
     Y::AbstractMatrix{Ty};
     bc=Left(ParabolaFit()),
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {Tx<:Real, Ty<:Real}
     T = promote_type(float(Tx), float(Ty))
     x_float = _to_float(x, T)
     Y_float = T.(Y)
     bc_typed = _promote_bc(bc, T)
-    return quadratic_interp(x_float, Y_float; bc=bc_typed, extrap=extrap)
+    return quadratic_interp(x_float, Y_float; bc=bc_typed, extrap=extrap, search=search)
 end
 
 # ========================================
@@ -460,7 +466,7 @@ end
 
 Evaluate all series at scalar query point (out-of-place).
 """
-function (sitp::QuadraticSeriesInterpolant{T})(xq::S; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, S<:Real}
+function (sitp::QuadraticSeriesInterpolant{T,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, P, S<:Real}
     xq_typed = T(xq)
     aq = _anchor_query(sitp.x, xq_typed, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
@@ -476,13 +482,13 @@ end
 
 Evaluate all series at scalar query point (in-place, zero allocation).
 """
-function (sitp::QuadraticSeriesInterpolant{T})(
+function (sitp::QuadraticSeriesInterpolant{T,P})(
     output::AbstractVector{T},
     xq::S;
     deriv::Int=0,
-    search=Binary(),
+    search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {T<:AbstractFloat, S<:Real}
+) where {T<:AbstractFloat, P, S<:Real}
     _validate_scalar_output(output, n_series(sitp))
 
     xq_typed = T(xq)
@@ -504,17 +510,18 @@ end
 Evaluate all series at multiple query points (out-of-place).
 Returns a vector of vectors: one vector per y-series.
 """
-function (sitp::QuadraticSeriesInterpolant{T})(
+function (sitp::QuadraticSeriesInterpolant{T,P})(
     xq::AbstractVector{S};
     deriv::Int=0,
-    search::AbstractSearchPolicy=LinearBounded()
-) where {T<:AbstractFloat, S<:Real}
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, P, S<:Real}
     xq_typed = _to_float(xq, T)
 
     # Allocate outputs
     outputs = [Vector{T}(undef, length(xq_typed)) for _ in 1:n_series(sitp)]
 
-    sitp(outputs, xq_typed; deriv=deriv, search=search)
+    sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
     return outputs
 end
 
@@ -523,17 +530,18 @@ end
 
 Evaluate all series at multiple query points (in-place, zero allocation).
 """
-@with_pool pool function (sitp::QuadraticSeriesInterpolant{T})(
+@with_pool pool function (sitp::QuadraticSeriesInterpolant{T,P})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{T};
     deriv::Int=0,
-    search::AbstractSearchPolicy=LinearBounded()
-) where {T<:AbstractFloat}
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, P}
     _validate_series_outputs(outputs, n_series(sitp), length(xq))
 
     # Acquire anchor buffer from pool
     aq_vec = acquire!(pool, _QuadraticAnchoredQuery{T}, length(xq))
-    _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search))
+    _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     @_dispatch_deriv deriv => op begin
         _eval_series_anchored!(outputs, sitp, aq_vec, op)
@@ -542,14 +550,15 @@ Evaluate all series at multiple query points (in-place, zero allocation).
 end
 
 # Real type wrapper for in-place vector
-function (sitp::QuadraticSeriesInterpolant{T})(
+function (sitp::QuadraticSeriesInterpolant{T,P})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{S};
     deriv::Int=0,
-    search::AbstractSearchPolicy=LinearBounded()
-) where {T<:AbstractFloat, S<:Real}
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, P, S<:Real}
     xq_typed = _to_float(xq, T)
-    return sitp(outputs, xq_typed; deriv=deriv, search=search)
+    return sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 end
 
 """Evaluate all series using pre-built anchors."""

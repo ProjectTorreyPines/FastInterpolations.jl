@@ -7,7 +7,8 @@
 
 # Scalar call - hot path (inlined for broadcast fusion)
 # Supports deriv, search, and hint keywords for derivative evaluation and search policy
-@inline function (itp::LinearInterpolant{T})(xq::T; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat}
+# Default search is now the stored policy in itp.search_policy
+@inline function (itp::LinearInterpolant{T,X,Y,P})(xq::T; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
     @boundscheck _check_domain(itp.x, xq, itp.mode)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
@@ -16,16 +17,17 @@
 end
 
 # Real scalar wrapper - delegates to T method with deriv keyword
-@inline function (itp::LinearInterpolant{T})(xq::S; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, S<:Real}
+@inline function (itp::LinearInterpolant{T,X,Y,P})(xq::S; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
     itp(T(xq); deriv=deriv, search=search, hint=hint)
 end
 
 # Vector call with deriv and search keyword support
-function (itp::LinearInterpolant{T,X,Y})(xq::AbstractVector{S}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, X, Y, S<:Real}
+# Now supports hint for ODE/streaming patterns - hint is updated during loop
+function (itp::LinearInterpolant{T,X,Y,P})(xq::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
     xi_typed = S === T ? xq : T.(xq)
     @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
     output = Vector{T}(undef, length(xi_typed))
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi_typed, output)
             output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode, op, searcher)
@@ -35,10 +37,10 @@ function (itp::LinearInterpolant{T,X,Y})(xq::AbstractVector{S}; deriv::Int=0, se
 end
 
 # Optimized path when xq element type matches T (zero conversion)
-function (itp::LinearInterpolant{T,X,Y})(xq::AbstractVector{T}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, X, Y}
+function (itp::LinearInterpolant{T,X,Y,P})(xq::AbstractVector{T}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
     @boundscheck _check_domain(itp.x, xq, itp.mode)
     output = Vector{T}(undef, length(xq))
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xq, output)
             output[i] = linear_interp(itp.x, itp.y, xq[i], itp.mode, op, searcher)
@@ -48,10 +50,10 @@ function (itp::LinearInterpolant{T,X,Y})(xq::AbstractVector{T}; deriv::Int=0, se
 end
 
 # In-place vector call with deriv and search keyword support - zero allocation
-function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xq::AbstractVector{T}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, X, Y}
+function (itp::LinearInterpolant{T,X,Y,P})(output::AbstractVector{T}, xq::AbstractVector{T}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
     @assert length(output) == length(xq) "output length must match xq length"
     @boundscheck _check_domain(itp.x, xq, itp.mode)
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xq, output)
             output[i] = linear_interp(itp.x, itp.y, xq[i], itp.mode, op, searcher)
@@ -61,11 +63,11 @@ function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector{T}, xq::Abstract
 end
 
 # In-place with type conversion and deriv keyword
-function (itp::LinearInterpolant{T,X,Y})(output::AbstractVector, xq::AbstractVector{S}; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, X, Y, S<:Real}
+function (itp::LinearInterpolant{T,X,Y,P})(output::AbstractVector, xq::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
     xi_typed = T.(xq)
     @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi_typed, output)
             output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode, op, searcher)
@@ -79,7 +81,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y; extrap=:none) -> LinearInterpolant
+    linear_interp(x, y; extrap=:none, search=Binary()) -> LinearInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -87,28 +89,34 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values
 - `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, `:extension`, or `:wrap`
+- `search::AbstractSearchPolicy`: Default search policy for interval lookup (default: `Binary()`)
 
 # Returns
 `LinearInterpolant` object that can be:
-- Called with scalar: `itp(0.5)`
-- Called with search policy: `itp(0.5; search=HintedBinary())`
+- Called with scalar: `itp(0.5)` (uses stored search policy)
+- Called with search override: `itp(0.5; search=Binary())` (override stored policy)
 - Broadcasted: `itp.(rho)` or `@. coef * itp(rho)`
 - Reused multiple times without re-creating
 
 # Examples
 ```julia
-# Create once, reuse multiple times
+# Create with default Binary() search policy
 itp = linear_interp(x_data, y_data)
 
-# Scalar call
+# Create with LinearBounded() as default policy (optimal for sorted queries)
+itp = linear_interp(x_data, y_data; search=LinearBounded())
+
+# Scalar call (uses stored policy)
 val = itp(0.5)
 
-# Scalar call with search policy
-val = itp(0.5; search=HintedBinary())
+# Scalar call with search policy override
+val = itp(0.5; search=Binary())
 
-# Vector call with optimized search for sorted queries
-sorted_queries = sort(rand(1000))
-vals = itp(sorted_queries; search=LinearBounded(max_steps=8))
+# Vector call with hint for ODE/streaming patterns
+hint = Ref(1)
+for batch in batches
+    vals = itp(batch; hint=hint)  # hint persists across calls
+end
 
 # Broadcast (creates array)
 vals = itp.(query_points)
@@ -125,16 +133,18 @@ vals_direct = linear_interp(x_data, y_data, query_points)
 ```
 
 # Performance Notes
-- Returns lightweight callable (~48 bytes), best for reuse and broadcast fusion
+- Returns lightweight callable (~56 bytes), best for reuse and broadcast fusion
 - 3-argument form returns array immediately, best for single use
-- Use `search=LinearBounded(max_steps=8)` for sorted query sequences
+- Use `search=LinearBounded()` for sorted query sequences
+- Use `hint=Ref(idx)` for ODE/streaming patterns with persistent hint
 """
 function linear_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat}
-    return LinearInterpolant(x, y; extrap)
+    return LinearInterpolant(x, y; extrap, search)
 end
 
 # Real wrapper for 2-argument form (allows different container types)
@@ -142,9 +152,10 @@ end
 function linear_interp(
     x::X,
     y::Y;
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
     T = promote_type(TX, TY)
     FT = float(T)
-    return LinearInterpolant(_to_float(x, FT), FT.(y); extrap)
+    return LinearInterpolant(_to_float(x, FT), FT.(y); extrap, search)
 end

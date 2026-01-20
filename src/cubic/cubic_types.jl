@@ -82,7 +82,7 @@ end
 # ExtrapVal is defined in ops.jl (shared between linear and cubic)
 
 """
-    CubicInterpolant{T,C}
+    CubicInterpolant{T,C,P}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `cubic_interp(x, y)` (2-argument form).
@@ -90,18 +90,25 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 # Type Parameters
 - `T`: Float type (Float32 or Float64)
 - `C`: CubicSplineCache type (preserves grid type info for O(1) vs O(log n) lookup)
+- `P`: Search policy type (Binary, HintedBinary, LinearBounded, etc.)
 
 # Fields
 - `cache::C`: Pre-computed CubicSplineCache (LU factorization)
 - `y::Vector{T}`: y-values (function values at grid points)
 - `z::Vector{T}`: Pre-computed second derivative coefficients (solves system once!)
 - `extrap::ExtrapVal`: Extrapolation mode (union-split for efficient dispatch)
+- `search_policy::P`: Default search policy for interval lookup
 
 # Usage
 ```julia
 itp = cubic_interp(x, y)
 result = @. coef * itp(rho) * other_terms  # fused, zero-allocation per call
 val = itp(0.5)                              # scalar (zero-allocation)
+
+# Create with custom search policy
+itp = cubic_interp(x, y; search=LinearBounded())
+val = itp(0.5)                              # uses LinearBounded() by default
+val = itp(0.5; search=Binary())             # override with Binary()
 ```
 
 # Performance Notes
@@ -110,24 +117,26 @@ val = itp(0.5)                              # scalar (zero-allocation)
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Extrapolation mode uses union-splitting for near-zero overhead dispatch
 """
-struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T}} <: AbstractInterpolant{T}
+struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},P<:AbstractSearchPolicy} <: AbstractInterpolant{T}
     cache::C
     y::Vector{T}
     z::Vector{T}  # Pre-computed second derivative coefficients
     extrap::ExtrapVal  # Extrapolation mode (concrete union for union-splitting)
+    search_policy::P  # Default search policy (immutable, thread-safe)
     function CubicInterpolant(
         cache::C,
         y::AbstractVector{T},
         z::AbstractVector{T},
-        extrap::ExtrapVal
-    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}}
+        extrap::ExtrapVal,
+        search::P=Binary()
+    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, P<:AbstractSearchPolicy}
         @assert length(cache.x) == length(y) "cache grid and y must have same length"
         @assert length(cache.x) == length(z) "z coefficients must match grid length"
         # Always copy to ensure immutability: once constructed, the interpolant
         # owns its data and always returns identical results for the same query.
         # Without copying, external modifications to y or cache reuse could
         # silently corrupt results.
-        new{T,C}(cache, Vector{T}(y), Vector{T}(z), extrap)
+        new{T,C,P}(cache, Vector{T}(y), Vector{T}(z), extrap, search)
     end
 end
 

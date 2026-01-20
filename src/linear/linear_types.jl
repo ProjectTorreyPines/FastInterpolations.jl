@@ -5,7 +5,7 @@
 # Constructor and callable methods are in linear_interpolant.jl.
 
 """
-    LinearInterpolant{T,X,Y}
+    LinearInterpolant{T,X,Y,P}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `linear_interp(x, y)` (2-argument form).
@@ -14,11 +14,15 @@ Returned by `linear_interp(x, y)` (2-argument form).
 - `x::X`: x-coordinates (sorted)
 - `y::Y`: y-values
 - `mode::Val`: Evaluation mode (Val(:none), Val(:extension), Val(:constant), or Val(:wrap))
+- `search_policy::P`: Default search policy for interval lookup
 
 # Usage
 ```julia
 # Create interpolator (minimal allocation)
-itp = linear_interp(x, y)  # default extrap=:none (throws error if outside domain)
+itp = linear_interp(x, y)  # default extrap=:none, search=Binary()
+
+# Create with custom search policy (baked-in default)
+itp = linear_interp(x, y; search=LinearBounded())
 
 # Use in broadcast (fused, no intermediate arrays)
 result = @. coef * itp(rho) * other_terms
@@ -32,23 +36,28 @@ itp_ext = linear_interp(x, y; extrap=:extension)  # linear extrap
 itp_const = linear_interp(x, y; extrap=:constant)  # clamp to boundary values
 itp_wrap = linear_interp(x, y; extrap=:wrap)  # wrap to domain
 val = itp_wrap(2.5)  # wraps to domain
+
+# Override search policy at call time
+itp(0.5; search=Binary())  # override stored policy
 ```
 """
-struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector{T}} <: AbstractInterpolant{T}
+struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector{T},P<:AbstractSearchPolicy} <: AbstractInterpolant{T}
     x::X
     y::Y
     mode::ExtrapVal  # Evaluation mode (concrete union for union-splitting)
+    search_policy::P  # Default search policy (immutable, thread-safe)
 
     function LinearInterpolant(
         x::X,
         y::Y;
-        extrap::Symbol=:none
-    ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}}
+        extrap::Symbol=:none,
+        search::P=Binary()
+    ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}, P<:AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
 
         # Manual dispatch to avoid union-splitting with 4 Val types
         @_dispatch_extrap extrap => ev begin
-            return new{T,X,Y}(x, y, ev)
+            return new{T,X,Y,P}(x, y, ev, search)
         end
     end
 end

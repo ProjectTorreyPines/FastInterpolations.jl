@@ -460,9 +460,9 @@ end
 
 Evaluate all series at scalar query point (out-of-place).
 """
-function (sitp::QuadraticSeriesInterpolant{T})(xq::S; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
+function (sitp::QuadraticSeriesInterpolant{T})(xq::S; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, S<:Real}
     xq_typed = T(xq)
-    aq = _anchor_query(sitp.x, xq_typed, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search))
+    aq = _anchor_query(sitp.x, xq_typed, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     output = Vector{T}(undef, n_series(sitp))
     @_dispatch_deriv deriv => op begin
@@ -480,12 +480,13 @@ function (sitp::QuadraticSeriesInterpolant{T})(
     output::AbstractVector{T},
     xq::S;
     deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
+    search=Binary(),
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {T<:AbstractFloat, S<:Real}
     _validate_scalar_output(output, n_series(sitp))
 
     xq_typed = T(xq)
-    aq = _anchor_query(sitp.x, xq_typed, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search))
+    aq = _anchor_query(sitp.x, xq_typed, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     @_dispatch_deriv deriv => op begin
         _eval_series_at_anchor!(output, sitp, aq, op)

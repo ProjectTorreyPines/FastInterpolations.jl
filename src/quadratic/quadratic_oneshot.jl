@@ -172,7 +172,8 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBounded(max_steps=8))
     bc::QuadraticBC{FT}=Left(ParabolaFit{FT}()),
     extrap::Symbol=:none,
     deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
+    search=Binary(),
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
@@ -184,7 +185,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBounded(max_steps=8))
     a = acquire!(pool, FT, nx-1)
     _compute_quadratic_coeffs!(h, d, a, x, y, bc)
 
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             _quadratic_eval_at_point(x, y, h, a, d, xi, ev, op, searcher)

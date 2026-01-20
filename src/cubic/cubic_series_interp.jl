@@ -776,9 +776,9 @@ Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
 Returns a vector of values, one per y-series.
 """
-function (sitp::CubicSeriesInterpolant{T})(xq::S; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
+function (sitp::CubicSeriesInterpolant{T})(xq::S; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, S<:Real}
     out = Vector{T}(undef, n_series(sitp))
-    return sitp(out, xq; deriv=deriv, search=search)
+    return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
 
 """
@@ -790,14 +790,15 @@ function (sitp::CubicSeriesInterpolant{T})(
     output::AbstractVector{T},
     xq::S;
     deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
+    search=Binary(),
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {T<:AbstractFloat, S<:Real}
     _validate_scalar_output(output, n_series(sitp))
 
     xq_typed = T(xq)
 
     # Build anchor using trait
-    aq = _make_anchor(sitp, xq_typed, _to_searcher(search))
+    aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin

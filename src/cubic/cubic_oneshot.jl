@@ -337,8 +337,8 @@ end
 
 # Scalar query - zero allocation
 cubic_interp(cache::CubicSplineCache{T}, y::AbstractVector{T},
-             x_query::T; extrap::Symbol=:none, deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat} =
-    cubic_interp_scalar(cache, y, x_query; extrap=extrap, deriv=deriv, search=search)
+             x_query::T; extrap::Symbol=:none, deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat} =
+    cubic_interp_scalar(cache, y, x_query; extrap=extrap, deriv=deriv, search=search, hint=hint)
 
 function cubic_interp(
     x::AbstractVector{T},
@@ -348,11 +348,12 @@ function cubic_interp(
     extrap::Symbol=:none,
     autocache::Bool=true,
     deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
+    search=Binary(),
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {T<:AbstractFloat}
     _validate_extrap(extrap)
 
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         if _is_periodic_bc(bc)
             return _cubic_interp_periodic_scalar(x, y, x_query, autocache, op, searcher)

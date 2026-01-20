@@ -346,11 +346,12 @@ end
     xq::FT;
     extrap::Symbol=:none,
     deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
+    search=Binary(),
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             linear_interp(x, y, xq, ev, op, searcher)
@@ -365,11 +366,12 @@ end
     xq::FT;
     extrap::Symbol=:none,
     deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
+    search=Binary(),
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
 )::FT where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             linear_interp(x, y, xq, ev, op, searcher)

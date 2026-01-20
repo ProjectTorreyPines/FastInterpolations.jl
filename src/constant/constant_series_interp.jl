@@ -433,9 +433,9 @@ Returns a vector of values, one per y-series.
 - `deriv=0`: Returns function values
 - `deriv=1,2`: Returns zeros (step function derivative is zero everywhere)
 """
-function (sitp::ConstantSeriesInterpolant{T})(xq::S; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
+function (sitp::ConstantSeriesInterpolant{T})(xq::S; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, S<:Real}
     out = Vector{T}(undef, n_series(sitp))
-    return sitp(out, xq; deriv=deriv, search=search)
+    return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
 
 """
@@ -447,7 +447,8 @@ function (sitp::ConstantSeriesInterpolant{T})(
     output::AbstractVector{T},
     xq::S;
     deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
+    search=Binary(),
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {T<:AbstractFloat, S<:Real}
     n_ser = n_series(sitp)
 
@@ -457,7 +458,7 @@ function (sitp::ConstantSeriesInterpolant{T})(
     xq_typed = T(xq)
 
     # Build anchor
-    aq = _make_anchor(sitp, xq_typed, _to_searcher(search))
+    aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin

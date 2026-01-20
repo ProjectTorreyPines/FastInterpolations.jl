@@ -6,18 +6,18 @@
 # Oneshot API (linear_interp!, linear_interp 3-arg) is in linear_oneshot.jl.
 
 # Scalar call - hot path (inlined for broadcast fusion)
-# Supports deriv and search keywords for derivative evaluation and search policy
-@inline function (itp::LinearInterpolant{T})(xq::T; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat}
+# Supports deriv, search, and hint keywords for derivative evaluation and search policy
+@inline function (itp::LinearInterpolant{T})(xq::T; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat}
     @boundscheck _check_domain(itp.x, xq, itp.mode)
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         _linear_with_extrap(itp.x, itp.y, xq, itp.mode, op, searcher)
     end
 end
 
 # Real scalar wrapper - delegates to T method with deriv keyword
-@inline function (itp::LinearInterpolant{T})(xq::S; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
-    itp(T(xq); deriv=deriv, search=search)
+@inline function (itp::LinearInterpolant{T})(xq::S; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, S<:Real}
+    itp(T(xq); deriv=deriv, search=search, hint=hint)
 end
 
 # Vector call with deriv and search keyword support

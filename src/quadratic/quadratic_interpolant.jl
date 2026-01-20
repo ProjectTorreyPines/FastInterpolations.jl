@@ -9,16 +9,16 @@
 # ─────────────────────────────────────────────────────────────
 # Scalar call - hot path (inlined for broadcast fusion)
 # ─────────────────────────────────────────────────────────────
-@inline function (itp::QuadraticInterpolant{T})(xi::T; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat}
-    searcher = _to_searcher(search)
+@inline function (itp::QuadraticInterpolant{T})(xi::T; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat}
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.mode, op, searcher)
     end
 end
 
 # Real scalar wrapper - delegates to T method
-@inline function (itp::QuadraticInterpolant{T})(xi::S; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
-    itp(T(xi); deriv=deriv, search=search)
+@inline function (itp::QuadraticInterpolant{T})(xi::S; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, S<:Real}
+    itp(T(xi); deriv=deriv, search=search, hint=hint)
 end
 
 # ─────────────────────────────────────────────────────────────

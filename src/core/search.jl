@@ -168,6 +168,8 @@ Thread-safe when each loop creates its own RefHint instance.
 """
 struct RefHint <: AbstractHint
     idx::Base.RefValue{Int}
+    # Inner constructor for external Ref injection (persistent hint)
+    RefHint(ref::Base.RefValue{Int}) = new(ref)
 end
 RefHint() = RefHint(Ref(1))
 RefHint(idx::Int) = RefHint(Ref(idx))
@@ -223,6 +225,30 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(::Binary) = Searcher{Binary,NoHint}(NoHint())
 @inline _to_searcher(::HintedBinary) = Searcher{HintedBinary,RefHint}(RefHint())
 @inline _to_searcher(::LinearBounded{MAX}) where {MAX} = Searcher{LinearBounded{MAX},RefHint}(RefHint())
+
+# ----------------------------------------
+# 2-arg overloads: Policy + External Hint
+# ----------------------------------------
+# Enables persistent hint across scalar calls (ODE/streaming pattern).
+# When hint=nothing, behaves identically to 1-arg version.
+# When hint=Ref{Int}, stateful policies use the external Ref for persistence.
+
+@inline _to_searcher(::Binary, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
+@inline _to_searcher(::Binary, ::Base.RefValue{Int}) = Searcher{Binary,NoHint}(NoHint())  # hint ignored
+@inline _to_searcher(::HintedBinary, ::Nothing) = Searcher{HintedBinary,RefHint}(RefHint())
+@inline _to_searcher(::HintedBinary, hint::Base.RefValue{Int}) = Searcher{HintedBinary,RefHint}(RefHint(hint))
+@inline _to_searcher(::LinearBounded{MAX}, ::Nothing) where {MAX} = Searcher{LinearBounded{MAX},RefHint}(RefHint())
+@inline _to_searcher(::LinearBounded{MAX}, hint::Base.RefValue{Int}) where {MAX} = Searcher{LinearBounded{MAX},RefHint}(RefHint(hint))
+
+# ----------------------------------------
+# Searcher passthrough (advanced usage)
+# ----------------------------------------
+# Allows direct Searcher injection for zero _to_searcher overhead in tight loops.
+# Users can pre-construct a Searcher and reuse it across calls.
+
+@inline _to_searcher(s::Searcher) = s
+@inline _to_searcher(s::Searcher, ::Nothing) = s
+@inline _to_searcher(s::Searcher, ::Base.RefValue{Int}) = s  # already configured, hint ignored
 
 # ========================================
 # 2. Base Implementations

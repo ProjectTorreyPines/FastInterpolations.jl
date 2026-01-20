@@ -172,11 +172,12 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBounded(max_steps=8))
     extrap::Symbol=:none,
     side::Symbol=:nearest,
     deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
+    search=Binary(),
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             @_dispatch_side side => sv begin

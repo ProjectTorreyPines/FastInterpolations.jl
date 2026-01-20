@@ -21,18 +21,18 @@
 # CubicInterpolant struct defined in cubic_types.jl
 
 # Scalar call - hot path (zero-allocation)
-# Supports deriv keyword for derivative evaluation
-@inline function (itp::CubicInterpolant{T})(xi::T; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat}
+# Supports deriv, search, and hint keywords for derivative evaluation and search policy
+@inline function (itp::CubicInterpolant{T})(xi::T; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat}
     @boundscheck _check_domain(itp.cache.x, xi, itp.extrap)
-    searcher = _to_searcher(search)
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         _eval_with_bc(itp.cache, itp.y, itp.z, xi, itp.extrap, op, searcher)
     end
 end
 
 # Real scalar wrapper - delegates to T method with deriv keyword
-@inline function (itp::CubicInterpolant{T})(xi::S; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
-    itp(T(xi); deriv=deriv, search=search)
+@inline function (itp::CubicInterpolant{T})(xi::S; deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, S<:Real}
+    itp(T(xi); deriv=deriv, search=search, hint=hint)
 end
 
 # Vector call with deriv keyword support

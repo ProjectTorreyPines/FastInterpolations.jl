@@ -2,7 +2,7 @@ using Test
 using FastInterpolations
 using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
     Searcher, Binary, HintedBinary, LinearBounded,
-    NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, _create_spacing
+    NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, _create_spacing, _to_searcher
 
 @testset "Search Module" begin
 
@@ -668,6 +668,179 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @test out_vec1 == out_vec3
         @test out_vec1 == out_vec4
         @test out_vec1 == out_vec5
+    end
+
+    # ========================================
+    # Persistent Hint Tests (ODE/Streaming Pattern)
+    # ========================================
+
+    @testset "Persistent Hint via _to_searcher 2-arg" begin
+        @testset "hint=nothing creates fresh RefHint" begin
+            s1 = _to_searcher(LinearBounded(), nothing)
+            @test s1.hint.idx[] == 1
+
+            s2 = _to_searcher(HintedBinary(), nothing)
+            @test s2.hint.idx[] == 1
+        end
+
+        @testset "hint=Ref uses external Ref" begin
+            ext_ref = Ref(50)
+            s = _to_searcher(LinearBounded(), ext_ref)
+            @test s.hint.idx === ext_ref
+            @test s.hint.idx[] == 50
+        end
+
+        @testset "Binary ignores hint" begin
+            # Binary policy should always use NoHint regardless of hint argument
+            s1 = _to_searcher(Binary(), Ref(100))
+            @test s1.hint isa NoHint
+
+            s2 = _to_searcher(Binary(), nothing)
+            @test s2.hint isa NoHint
+        end
+
+        @testset "Searcher direct injection passthrough" begin
+            # Pre-built Searcher should pass through unchanged
+            ext_ref = Ref(42)
+            pre_built = Searcher{LinearBounded{8},RefHint}(RefHint(ext_ref))
+
+            s1 = _to_searcher(pre_built)
+            @test s1 === pre_built
+
+            s2 = _to_searcher(pre_built, nothing)
+            @test s2 === pre_built
+
+            s3 = _to_searcher(pre_built, Ref(99))
+            @test s3 === pre_built  # Ignores new hint
+        end
+    end
+
+    @testset "ODE-style Persistent Hint Pattern" begin
+        x = collect(range(0.0, 1.0, 1001))
+        y = sin.(2π .* x)
+
+        @testset "LinearInterpolant with persistent hint" begin
+            itp = linear_interp(x, y)
+            hint = Ref(500)
+
+            # Simulate ODE-style monotonic queries
+            xi = 0.5
+            for _ in 1:100
+                xi += 1e-3
+                yi = itp(xi; search=LinearBounded(), hint=hint)
+            end
+
+            # hint should be near xi position (0.6 → index ~601)
+            @test hint[] >= 590 && hint[] <= 610
+        end
+
+        @testset "CubicInterpolant with persistent hint" begin
+            itp = cubic_interp(x, y)
+            hint = Ref(200)
+
+            xi = 0.2
+            for _ in 1:50
+                xi += 2e-3
+                yi = itp(xi; search=HintedBinary(), hint=hint)
+            end
+
+            # hint should track xi position (0.3 → index ~301)
+            @test hint[] >= 290 && hint[] <= 310
+        end
+
+        @testset "hint=nothing is thread-safe (fresh each call)" begin
+            itp = linear_interp(x, y)
+
+            # Without hint kwarg, each call gets fresh state
+            y1 = itp(0.1; search=LinearBounded())
+            y2 = itp(0.9; search=LinearBounded())
+
+            @test y1 ≈ sin(2π * 0.1) atol=1e-4
+            @test y2 ≈ sin(2π * 0.9) atol=1e-4
+        end
+    end
+
+    @testset "Persistent Hint with One-shot Functions" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = x.^2
+
+        @testset "linear_interp oneshot" begin
+            hint = Ref(1)
+            for xi in range(0.1, 0.5, 10)
+                yi = linear_interp(x, y, xi; search=LinearBounded(), hint=hint)
+                @test yi ≈ xi^2 atol=1e-4
+            end
+            # hint should have updated
+            @test hint[] > 1
+        end
+
+        @testset "quadratic_interp oneshot" begin
+            hint = Ref(50)
+            for xi in range(0.5, 0.9, 10)
+                yi = quadratic_interp(x, y, xi; search=HintedBinary(), hint=hint)
+                @test yi ≈ xi^2 atol=1e-4
+            end
+            @test hint[] > 50
+        end
+
+        @testset "constant_interp oneshot" begin
+            hint = Ref(10)
+            yi = constant_interp(x, y, 0.55; search=LinearBounded(), hint=hint)
+            @test hint[] == 56 || hint[] == 55  # Depends on side selection
+        end
+    end
+
+    @testset "Persistent Hint with Series Interpolants" begin
+        x = collect(range(0.0, 1.0, 101))
+        y1 = x.^2
+        y2 = sin.(π .* x)
+
+        @testset "LinearSeriesInterpolant" begin
+            sitp = linear_interp(x, [y1, y2])
+            hint = Ref(1)
+
+            # Scalar query evaluates all series, returns first by default
+            for xi in range(0.1, 0.4, 5)
+                yi = sitp(xi; search=LinearBounded(), hint=hint)
+            end
+            @test hint[] >= 35 && hint[] <= 45
+
+            # Continue with more queries (hint preserved)
+            old_hint = hint[]
+            for xi in range(0.5, 0.8, 5)
+                yi = sitp(xi; search=LinearBounded(), hint=hint)
+            end
+            @test hint[] > old_hint
+        end
+
+        @testset "CubicSeriesInterpolant" begin
+            sitp = cubic_interp(x, [y1, y2])
+            hint = Ref(50)
+
+            yi = sitp(0.55; search=HintedBinary(), hint=hint)
+            @test hint[] >= 54 && hint[] <= 57
+        end
+    end
+
+    @testset "Searcher Direct Injection (Advanced Usage)" begin
+        x = collect(range(0.0, 1.0, 1001))
+        y = x.^3
+        itp = linear_interp(x, y)
+
+        @testset "Pre-built Searcher avoids _to_searcher overhead" begin
+            ext_ref = Ref(500)
+            searcher = Searcher{LinearBounded{8},RefHint}(RefHint(ext_ref))
+
+            # Directly inject searcher (no _to_searcher call at runtime)
+            xi = 0.5
+            for _ in 1:100
+                xi += 1e-3
+                yi = itp(xi; search=searcher)
+            end
+
+            # External ref should be updated
+            @test ext_ref[] >= 590 && ext_ref[] <= 610
+        end
     end
 
 end  # @testset "Search Module"

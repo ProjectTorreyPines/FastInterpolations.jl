@@ -60,18 +60,20 @@ sitp([out1, out2, out3], xq)    # In-place (zero allocation)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct LinearSeriesInterpolant{T<:AbstractFloat} <: AbstractSeriesInterpolant{T}
+mutable struct LinearSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPolicy} <: AbstractSeriesInterpolant{T}
     const x::Vector{T}                    # Shared x-grid
     const y::Matrix{T}                    # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{T}    # Lazy point-contiguous layout
     const extrap::ExtrapVal               # Extrapolation mode
+    const search_policy::P                # Default search policy (immutable, thread-safe)
 
     function LinearSeriesInterpolant(
         x::Vector{T},
         y::Matrix{T},
-        extrap::ExtrapVal
-    ) where {T<:AbstractFloat}
-        new{T}(x, y, LazyTranspose{T}(), extrap)
+        extrap::ExtrapVal,
+        search::P=Binary()
+    ) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
+        new{T,P}(x, y, LazyTranspose{T}(), extrap, search)
     end
 end
 
@@ -106,8 +108,8 @@ end
 
 Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
 """
-@inline function _make_anchor(sitp::LinearSeriesInterpolant{T}, xq::T) where T
-    return _linear_anchor_query_impl(sitp.x, xq, _should_wrap(sitp))
+@inline function _make_anchor(sitp::LinearSeriesInterpolant{T}, xq::T, searcher::Searcher=DEFAULT_SEARCHER) where T
+    return _linear_anchor_query_impl(sitp.x, xq, _should_wrap(sitp), searcher)
 end
 
 """
@@ -312,8 +314,9 @@ vals = sitp(0.5)  # [sin(π), cos(π), exp(-0.5)]
 function linear_interp(
     x::AbstractVector{T},
     ys::AbstractVector{<:AbstractVector{T}};
-    extrap::Symbol=:none
-) where {T<:AbstractFloat}
+    extrap::Symbol=:none,
+    search::P=Binary()
+) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
     # Validate input
     @assert !isempty(ys) "ys must not be empty"
 
@@ -341,7 +344,7 @@ function linear_interp(
     # Copy x to ensure ownership
     x_vec = collect(x)
 
-    return LinearSeriesInterpolant(x_vec, y_mat, extrap_val)
+    return LinearSeriesInterpolant(x_vec, y_mat, extrap_val, search)
 end
 
 # Matrix input: columns as y-series
@@ -366,7 +369,8 @@ sitp = linear_interp(x, Y)
 function linear_interp(
     x::AbstractVector{T},
     Y::AbstractMatrix{T};
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat}
     n_pts = length(x)
 
@@ -384,30 +388,32 @@ function linear_interp(
     # Convert extrap symbol to Val
     extrap_val = _symbol_to_extrap_val(extrap)
 
-    return LinearSeriesInterpolant(x_vec, y_mat, extrap_val)
+    return LinearSeriesInterpolant(x_vec, y_mat, extrap_val, search)
 end
 
 # Real type wrappers (auto-promote to Float)
 function linear_interp(
     x::AbstractVector{Tx},
     ys::AbstractVector{<:AbstractVector{Ty}};
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {Tx<:Real, Ty<:Real}
     T = promote_type(float(Tx), float(Ty))
     x_float = _to_float(x, T)
     ys_float = [_to_float(y, T) for y in ys]
-    return linear_interp(x_float, ys_float; extrap=extrap)
+    return linear_interp(x_float, ys_float; extrap=extrap, search=search)
 end
 
 function linear_interp(
     x::AbstractVector{Tx},
     Y::AbstractMatrix{Ty};
-    extrap::Symbol=:none
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
 ) where {Tx<:Real, Ty<:Real}
     T = promote_type(float(Tx), float(Ty))
     x_float = _to_float(x, T)
     Y_float = T.(Y)
-    return linear_interp(x_float, Y_float; extrap=extrap)
+    return linear_interp(x_float, Y_float; extrap=extrap, search=search)
 end
 
 # ========================================
@@ -415,27 +421,29 @@ end
 # ========================================
 
 """
-    (sitp::LinearSeriesInterpolant)(xq::Real; deriv=0)
+    (sitp::LinearSeriesInterpolant)(xq::Real; deriv=0, search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
 Returns a vector of values, one per y-series.
 """
-function (sitp::LinearSeriesInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+function (sitp::LinearSeriesInterpolant{T,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, P, S<:Real}
     out = Vector{T}(undef, n_series(sitp))
-    return sitp(out, xq; deriv=deriv)
+    return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
 
 """
-    (sitp::LinearSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0)
+    (sitp::LinearSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
-function (sitp::LinearSeriesInterpolant{T})(
+function (sitp::LinearSeriesInterpolant{T,P})(
     output::AbstractVector{T},
     xq::S;
-    deriv::Int=0
-) where {T<:AbstractFloat, S<:Real}
+    deriv::Int=0,
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, P, S<:Real}
     n_ser = n_series(sitp)
 
     # Validate output length
@@ -444,7 +452,7 @@ function (sitp::LinearSeriesInterpolant{T})(
     xq_typed = T(xq)
 
     # Build anchor
-    aq = _make_anchor(sitp, xq_typed)
+    aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin
@@ -464,15 +472,17 @@ Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
 Returns a vector of vectors: one vector per y-series, each containing results for all query points.
 """
-function (sitp::LinearSeriesInterpolant{T})(
+function (sitp::LinearSeriesInterpolant{T,P})(
     xq::AbstractVector{S};
-    deriv::Int=0
-) where {T<:AbstractFloat, S<:Real}
+    deriv::Int=0,
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, P, S<:Real}
     xq_typed = _to_float(xq, T)
     n_query = length(xq_typed)
 
     outputs = [Vector{T}(undef, n_query) for _ in 1:n_series(sitp)]
-    sitp(outputs, xq_typed; deriv=deriv)
+    sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 
     return outputs
 end
@@ -490,11 +500,13 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
 Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 """
-@with_pool pool function (sitp::LinearSeriesInterpolant{T})(
+@with_pool pool function (sitp::LinearSeriesInterpolant{T,P})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{T};
-    deriv::Int=0
-) where {T<:AbstractFloat}
+    deriv::Int=0,
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, P}
     n_query = length(xq)
     n_ser = n_series(sitp)
 
@@ -503,7 +515,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 
     # Build anchors from pool (zero allocation after warmup)
     aq_vec = acquire!(pool, _LinearAnchoredQuery{T}, length(xq))
-    _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp))
+    _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     # Extract matrices for argument-passing pattern
     y = sitp.y
@@ -523,13 +535,15 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 end
 
 # Real type wrapper for in-place vector
-function (sitp::LinearSeriesInterpolant{T})(
+function (sitp::LinearSeriesInterpolant{T,P})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{S};
-    deriv::Int=0
-) where {T<:AbstractFloat, S<:Real}
+    deriv::Int=0,
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, P, S<:Real}
     xq_typed = _to_float(xq, T)
-    return sitp(outputs, xq_typed; deriv=deriv)
+    return sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 end
 
 """

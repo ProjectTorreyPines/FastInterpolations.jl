@@ -170,13 +170,13 @@ itp2(aq; deriv=1)     # Reuses same anchor for derivative
 Anchored evaluation is 2-4x faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search and geometry setup.
 """
-function _anchor_query(x::AbstractVector{T}, xq::T; wrap::Bool=false) where {T<:AbstractFloat}
-    return _anchor_query_impl(x, xq, wrap)
+function _anchor_query(x::AbstractVector{T}, xq::T; wrap::Bool=false, searcher::Searcher=DEFAULT_SEARCHER) where {T<:AbstractFloat}
+    return _anchor_query_impl(x, xq, wrap, searcher)
 end
 
 # Real wrapper for convenience (scalar)
-function _anchor_query(x::AbstractVector{T}, xq::S; wrap::Bool=false) where {T<:AbstractFloat, S<:Real}
-    _anchor_query(x, T(xq); wrap=wrap)
+function _anchor_query(x::AbstractVector{T}, xq::S; wrap::Bool=false, searcher::Searcher=DEFAULT_SEARCHER) where {T<:AbstractFloat, S<:Real}
+    _anchor_query(x, T(xq); wrap=wrap, searcher=searcher)
 end
 
 """
@@ -208,11 +208,13 @@ vals2 = itp2(aq_vec)  # Reuse same anchors
 function _anchor_query(
     x::AbstractVector{T},
     xq::AbstractVector{S};
-    wrap::Bool=false
+    wrap::Bool=false,
+    searcher::Searcher=_to_searcher(LinearBinary())
 ) where {T<:AbstractFloat, S<:Real}
     output = Vector{_CubicAnchoredQuery{T}}(undef, length(xq))
+
     @inbounds for k in eachindex(xq)
-        output[k] = _anchor_query_impl(x, T(xq[k]), wrap)
+        output[k] = _anchor_query_impl(x, T(xq[k]), wrap, searcher)
     end
     return output
 end
@@ -244,25 +246,34 @@ _fill_anchors!(buffer, x, xq)
     buffer::AbstractVector{_CubicAnchoredQuery{T}},
     x::AbstractVector{T},
     xq::AbstractVector{S};
-    wrap::Bool=false
+    wrap::Bool=false,
+    searcher::Searcher=_to_searcher(LinearBinary())
 ) where {T<:AbstractFloat, S<:Real}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
+
     @inbounds for k in eachindex(xq)
-        buffer[k] = _anchor_query_impl(x, T(xq[k]), wrap)
+        buffer[k] = _anchor_query_impl(x, T(xq[k]), wrap, searcher)
     end
     return buffer
 end
 
 """
-    _anchor_query_impl(x, xq, wrap) -> _CubicAnchoredQuery
+    _anchor_query_impl(x, xq, wrap, policy) -> _CubicAnchoredQuery
 
 Internal implementation of _anchor_query.
+
+# Arguments
+- `x`: Grid points
+- `xq`: Query point
+- `wrap`: Whether to wrap query point to domain
+- `policy`: Search policy for interval search (default: DEFAULT_SEARCHER)
 """
 @inline function _anchor_query_impl(
     x::AbstractVector{T},
     xq::T,
-    wrap::Bool
-) where {T<:AbstractFloat}
+    wrap::Bool,
+    policy::P=DEFAULT_SEARCHER
+) where {T<:AbstractFloat, P<:Searcher}
     x_min, x_max = first(x), last(x)
     # Handle wrapping (for extrap=:wrap mode)
     if wrap && (xq < x_min || xq >= x_max)
@@ -288,8 +299,8 @@ Internal implementation of _anchor_query.
         n = length(x)
         @inbounds (n - 1, x[n-1], x[n])
     else
-        # Inside domain: normal interval search
-        _find_interval(x, xq)
+        # Inside domain: use policy-based interval search
+        search_interval(policy, x, xq)
     end
 
     # Compute geometry

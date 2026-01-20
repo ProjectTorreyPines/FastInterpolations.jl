@@ -1,117 +1,12 @@
 # Internal utility functions for FastInterpolations.jl
 
-"""
-    _find_interval(x::AbstractRange{FT}, xi::FT) where {FT<:AbstractFloat}
-
-Find interpolation interval using O(1) direct calculation for uniform grids.
-
-Returns `(idx, xL, xR)` where:
-- `idx`: interval index in [1, length(x)-1]
-- `xL`: left boundary value x[idx]
-- `xR`: right boundary value x[idx+1]
-
-# Preconditions (caller must ensure)
-- `xi` must be validated by `_check_domain` (in [x_min, x_max] or wrapped)
-- `step(x) > 0` (ascending grid assumed)
-- `xi` must not be NaN/Inf (undefined behavior; caller's responsibility)
-
-Uses `unsafe_trunc` for ~40% faster index calculation. Safety is guaranteed by
-the preconditions and the final `clamp` which handles floating-point edge cases.
-"""
-@inline function _find_interval(
-    x::AbstractRange{FT},
-    xi::FT
-) where {FT<:AbstractFloat}
-    n = length(x)
-    x_min = first(x)
-    dx = Base.step(x)
-    # Calculate index directly with unsafe_trunc for speed
-    idx = clamp(unsafe_trunc(Int, (xi - x_min) / dx + 1), 1, n - 1)
-
-    # Direct calculation to avoid expensive TwicePrecision indexing
-    xL = muladd(idx-1, dx, x_min)
-    xR = xL + dx
-    return idx, xL, xR
-end
-
-"""
-    _find_interval(x::AbstractVector{FT}, xi::FT) where {FT<:AbstractFloat}
-
-Find interpolation interval using O(log n) binary search for non-uniform grids.
-
-Returns `(idx, xL, xR)` where:
-- `idx`: interval index in [1, length(x)-1]
-- `xL`: left boundary value x[idx]
-- `xR`: right boundary value x[idx+1]
-"""
-@inline function _find_interval(
-    x::AbstractVector{FT},
-    xi::FT
-) where {FT<:AbstractFloat}
-    n = length(x)
-
-    # Find interval using binary search
-    @inbounds begin
-        if xi <= x[1]
-            idx = 1
-        elseif xi >= x[end]
-            idx = n - 1
-        else
-            lo, hi = 1, n
-            while hi - lo > 1
-                mid = (lo + hi) >> 1 # Fast division by 2
-                if x[mid] <= xi
-                    lo = mid
-                else
-                    hi = mid
-                end
-            end
-            idx = lo
-        end
-    end
-
-    # Return idx and boundary values for alpha calculation
-    @inbounds xL, xR = x[idx], x[idx + 1]
-    return idx, xL, xR
-end
-
 # ========================================
-# Spacing-aware Interval Search
+# Interval Search (IN search.jl)
 # ========================================
-
-"""
-    _find_interval(x, spacing, xi)
-
-Find interpolation interval using spacing-aware dispatch.
-
-For `ScalarSpacing` on `AbstractRange`, uses `inv_h` to replace division with
-multiplication. For other cases, delegates to `_find_interval`.
-"""
-@inline function _find_interval(
-    x::AbstractRange{FT},
-    spacing::ScalarSpacing{FT},
-    xi::FT
-) where {FT<:AbstractFloat}
-
-    n = length(x)
-    x_min = first(x)
-
-    # Multiply by inv_h to avoid fdiv in hot path
-    idx = clamp(unsafe_trunc(Int, (xi - x_min) * spacing.inv_h + 1), 1, n - 1)
-
-    # Direct calculation to avoid expensive TwicePrecision indexing
-    xL = muladd(idx - 1, spacing.h, x_min)
-    xR = xL + spacing.h
-    return idx, xL, xR
-end
-
-@inline function _find_interval(
-    x::AbstractVector{FT},
-    ::AbstractGridSpacing{FT},
-    xi::FT
-) where {FT<:AbstractFloat}
-    return _find_interval(x, xi)
-end
+# Interval search functions are defined in src/core/search.jl:
+#   - _search_direct: O(1) direct calculation for uniform grids (AbstractRange)
+#   - _search_binary: O(log n) binary search for non-uniform grids (AbstractVector)
+#   - _search_interval: dispatcher that routes to the appropriate implementation
 
 # ========================================
 # Type Conversion Helpers

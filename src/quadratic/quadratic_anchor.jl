@@ -85,9 +85,10 @@ itp2(aq; deriv=1)     # Reuses same anchor for derivative
     x::AbstractVector{T},
     xq::T,
     ::Val{:quadratic};
-    wrap::Bool=false
+    wrap::Bool=false,
+    searcher::Searcher=DEFAULT_SEARCHER
 ) where {T<:AbstractFloat}
-    return _quadratic_anchor_query_impl(x, xq, wrap)
+    return _quadratic_anchor_query_impl(x, xq, wrap, searcher)
 end
 
 # Real wrapper for convenience (scalar)
@@ -95,9 +96,10 @@ end
     x::AbstractVector{T},
     xq::S,
     tag::Val{:quadratic};
-    wrap::Bool=false
+    wrap::Bool=false,
+    searcher::Searcher=DEFAULT_SEARCHER
 ) where {T<:AbstractFloat, S<:Real}
-    _anchor_query(x, T(xq), tag; wrap=wrap)
+    _anchor_query(x, T(xq), tag; wrap=wrap, searcher=searcher)
 end
 
 """
@@ -130,11 +132,13 @@ function _anchor_query(
     x::AbstractVector{T},
     xq::AbstractVector{S},
     ::Val{:quadratic};
-    wrap::Bool=false
+    wrap::Bool=false,
+    searcher::Searcher=_to_searcher(LinearBinary())
 ) where {T<:AbstractFloat, S<:Real}
     output = Vector{_QuadraticAnchoredQuery{T}}(undef, length(xq))
+
     @inbounds for k in eachindex(xq)
-        output[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap)
+        output[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap, searcher)
     end
     return output
 end
@@ -160,25 +164,34 @@ The same `buffer` object, filled with anchored queries.
     x::AbstractVector{T},
     xq::AbstractVector{S},
     ::Val{:quadratic};
-    wrap::Bool=false
+    wrap::Bool=false,
+    searcher::Searcher=_to_searcher(LinearBinary())
 ) where {T<:AbstractFloat, S<:Real}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
+
     @inbounds for k in eachindex(xq)
-        buffer[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap)
+        buffer[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap, searcher)
     end
     return buffer
 end
 
 """
-    _quadratic_anchor_query_impl(x, xq, wrap) -> _QuadraticAnchoredQuery
+    _quadratic_anchor_query_impl(x, xq, wrap, policy) -> _QuadraticAnchoredQuery
 
 Internal implementation of _anchor_query for quadratic interpolation.
+
+# Arguments
+- `x`: Grid points
+- `xq`: Query point
+- `wrap`: Whether to wrap query point to domain
+- `policy`: Search policy for interval search (default: DEFAULT_SEARCHER)
 """
 @inline function _quadratic_anchor_query_impl(
     x::AbstractVector{T},
     xq::T,
-    wrap::Bool
-) where {T<:AbstractFloat}
+    wrap::Bool,
+    policy::P=DEFAULT_SEARCHER
+) where {T<:AbstractFloat, P<:Searcher}
     x_min, x_max = first(x), last(x)
 
     # Handle wrapping (for extrap=:wrap mode)
@@ -205,8 +218,8 @@ Internal implementation of _anchor_query for quadratic interpolation.
         n = length(x)
         @inbounds (n - 1, x[n-1], x[n])
     else
-        # Inside domain: normal interval search
-        _find_interval(x, xq)
+        # Inside domain: use policy-based interval search
+        search_interval(policy, x, xq)
     end
 
     # Compute dL: offset from interval start

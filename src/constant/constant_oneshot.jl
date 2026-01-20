@@ -60,9 +60,9 @@ end
 
 
 """
-    _constant_eval_at_point(x, y, xi, extrap, side, op)
+    _constant_eval_at_point(x, y, xi, extrap, side, op, searcher)
 
-Core constant interpolation evaluation.
+Core constant interpolation evaluation with search policy.
 
 Evaluation flow:
 1. Domain check (:none mode → DomainError if outside)
@@ -77,8 +77,9 @@ Evaluation flow:
     xi::FT,
     extrap::ExtrapVal,
     side::SideVal,
-    op::AbstractEvalOp
-) where {FT<:AbstractFloat}
+    op::AbstractEvalOp,
+    searcher::S
+) where {FT<:AbstractFloat, S<:Searcher}
     # Domain check for :none mode (throws DomainError)
     @boundscheck _check_domain(x, xi, extrap)
 
@@ -87,14 +88,14 @@ Evaluation flow:
     # :wrap mode handles all cases (inside and outside domain)
     if extrap === Val(:wrap)
         xi_wrapped = _wrap_to_domain(xi, x_min, x_max)
-        idx, xL, xR = _find_interval(x, xi_wrapped)
+        idx, xL, xR = search_interval(searcher, x, xi_wrapped)
         h = xR - xL
         dL = xi_wrapped - xL
         @inbounds return _constant_kernel(op, y[idx], y[idx+1], h, dL, side)
     end
 
     # Boundary special case: xi == x[end] → y[end] directly
-    # (avoids _find_interval returning idx=n-1, dL=h)
+    # (avoids _search_interval returning idx=n-1, dL=h)
     if xi == x_max
         return op isa EvalValue ? (@inbounds y[end]) : zero(FT)
     end
@@ -105,7 +106,7 @@ Evaluation flow:
     end
 
     # Normal case: interval search and kernel evaluation
-    idx, xL, xR = _find_interval(x, xi)
+    idx, xL, xR = search_interval(searcher, x, xi)
     h = xR - xL
     dL = xi - xL
     @inbounds return _constant_kernel(op, y[idx], y[idx+1], h, dL, side)
@@ -122,7 +123,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, xi; extrap=:none, side=:nearest, deriv=0)
+    constant_interp(x, y, xi; extrap=:none, side=:nearest, deriv=0, search=Binary())
 
 Constant (step/piecewise constant) interpolation at a single point.
 
@@ -140,6 +141,10 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `:left`: always use left value
   - `:right`: use right value (except at grid points)
 - `deriv::Int`: Derivative order (0, 1, or 2). Derivatives are always 0.
+- `search::AbstractSearchPolicy`: Search algorithm for interval finding
+  - `Binary()` (default): O(log n) binary search, stateless
+  - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
+  - `LinearBinary(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns
 - Interpolated value (Float type)
@@ -154,6 +159,10 @@ constant_interp(x, y, 0.5; side=:left)        # 10.0
 constant_interp(x, y, 0.5; side=:right)       # 20.0
 constant_interp(x, y, 1.0)                    # 20.0 (grid point)
 constant_interp(x, y, -1.0; extrap=:constant) # 10.0 (clamped)
+
+# Optimized for sorted queries
+sorted_queries = sort(rand(1000))
+vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
 ```
 """
 @inline function constant_interp(
@@ -162,14 +171,17 @@ constant_interp(x, y, -1.0; extrap=:constant) # 10.0 (clamped)
     xi::FT;
     extrap::Symbol=:none,
     side::Symbol=:nearest,
-    deriv::Int=0
+    deriv::Int=0,
+    search=Binary(),
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {FT<:AbstractFloat}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
+    searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             @_dispatch_side side => sv begin
-                _constant_eval_at_point(x, y, xi, ev, sv, op)
+                _constant_eval_at_point(x, y, xi, ev, sv, op, searcher)
             end
         end
     end
@@ -180,7 +192,7 @@ end
 # ========================================
 
 """
-    constant_interp!(output, x, y, x_targets; extrap=:none, side=:nearest, deriv=0)
+    constant_interp!(output, x, y, x_targets; extrap=:none, side=:nearest, deriv=0, search=Binary())
 
 Zero-allocation constant interpolation for multiple query points.
 
@@ -188,6 +200,7 @@ Zero-allocation constant interpolation for multiple query points.
 - `output`: Pre-allocated output vector
 - `x, y, x_targets`: Grid and query points
 - `extrap, side, deriv`: Same as `constant_interp`
+- `search::AbstractSearchPolicy`: Search algorithm for interval finding
 
 # Example
 ```julia
@@ -196,6 +209,11 @@ y = [10.0, 20.0, 30.0, 40.0]
 out = zeros(3)
 constant_interp!(out, x, y, [0.5, 1.5, 2.5])
 # out == [10.0, 20.0, 30.0]
+
+# Optimized for sorted queries
+sorted_queries = sort(rand(1000))
+output = zeros(1000)
+constant_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_window=8))
 ```
 """
 function constant_interp!(
@@ -205,17 +223,19 @@ function constant_interp!(
     x_targets::AbstractVector{FT};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=Binary()
 ) where {FT<:AbstractFloat}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             @_dispatch_side side => sv begin
                 @boundscheck _check_domain(x, x_targets, ev)
                 @inbounds for i in eachindex(x_targets, output)
-                    output[i] = _constant_eval_at_point(x, y, x_targets[i], ev, sv, op)
+                    output[i] = _constant_eval_at_point(x, y, x_targets[i], ev, sv, op, searcher)
                 end
             end
         end
@@ -228,7 +248,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, x_targets; extrap=:none, side=:nearest, deriv=0)
+    constant_interp(x, y, x_targets; extrap=:none, side=:nearest, deriv=0, search=Binary())
 
 Constant interpolation for multiple query points (allocating version).
 
@@ -238,6 +258,10 @@ x = [0.0, 1.0, 2.0, 3.0]
 y = [10.0, 20.0, 30.0, 40.0]
 result = constant_interp(x, y, [0.5, 1.5, 2.5])
 # result == [10.0, 20.0, 30.0]
+
+# Optimized for sorted queries
+sorted_queries = sort(rand(1000))
+vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
 ```
 """
 function constant_interp(
@@ -246,10 +270,11 @@ function constant_interp(
     x_targets::AbstractVector{FT};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=Binary()
 ) where {FT<:AbstractFloat}
     output = Vector{FT}(undef, length(x_targets))
-    constant_interp!(output, x, y, x_targets; extrap, side, deriv)
+    constant_interp!(output, x, y, x_targets; extrap, side, deriv, search)
     return output
 end
 
@@ -269,10 +294,11 @@ end
     xi::S;
     extrap::Symbol=:none,
     side::Symbol=:nearest,
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:Real, S<:Real}
     FT = float(T)
-    return constant_interp(_to_float(x, FT), _to_float(y, FT), FT(xi); extrap, side, deriv)
+    return constant_interp(_to_float(x, FT), _to_float(y, FT), FT(xi); extrap, side, deriv, search)
 end
 
 # ========================================
@@ -285,11 +311,12 @@ function constant_interp(
     x_targets::AbstractVector{S};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:Real, S<:Real}
     FT = float(T)
     output = Vector{FT}(undef, length(x_targets))
-    constant_interp!(output, x, y, x_targets; extrap, side, deriv)
+    constant_interp!(output, x, y, x_targets; extrap, side, deriv, search)
     return output
 end
 
@@ -304,7 +331,8 @@ function constant_interp!(
     x_targets::AbstractVector{S};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:Real, S<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -314,16 +342,16 @@ function constant_interp!(
     y_float = _to_float(y, FT)
     x_targets_float = _to_float(x_targets, FT)
 
+    searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
             @_dispatch_side side => sv begin
                 @boundscheck _check_domain(x_float, x_targets_float, ev)
                 @inbounds for i in eachindex(x_targets_float, output)
-                    output[i] = _constant_eval_at_point(x_float, y_float, x_targets_float[i], ev, sv, op)
+                    output[i] = _constant_eval_at_point(x_float, y_float, x_targets_float[i], ev, sv, op, searcher)
                 end
             end
         end
     end
     return output
 end
-

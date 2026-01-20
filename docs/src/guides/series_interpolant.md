@@ -1,4 +1,4 @@
-# SeriesInterpolant Guide
+# [SeriesInterpolant Guide](@id series_interpolant)
 
 When multiple y-series share the same x-grid, `SeriesInterpolant` can be **up to ~30× faster** (depending on the number of series and hardware) by leveraging SIMD and cache locality.
 
@@ -152,4 +152,4 @@ Expected output (approximate):
 ## See Also
 
 - [API Selection Guide](api_selection.md) — When to use which API
-- [Performance Tips](performance_tips.md) — General optimization patterns
+- [Memory & Allocation](memory_allocation.md) — General optimization patterns

@@ -1,6 +1,6 @@
-# Performance Tips
+# [Memory & Allocation](@id memory_allocation)
 
-Optimizing performance in FastInterpolations.jl boils down to three key areas: vector handling, memory allocation, and grid selection.
+Optimizing memory usage in FastInterpolations.jl focuses on three key areas: vector handling, allocation patterns, and grid selection.
 
 ## 1. Vector Queries: Avoid Loops
 
@@ -44,23 +44,14 @@ Use this pattern in hot loops to eliminate garbage collection overhead.
 
 ## 3. Grid Selection: Range vs Vector
 
-The type of your grid `x` significantly affects lookup speed.
-
-| Grid Type | Lookup Speed | Memory | Use Case |
-|:---|:---:|:---:|:---|
-| **Range** (`0.0:0.1:1.0`) | **O(1)** | O(1) | Uniform grids |
-| **Vector** (`[0.0, 0.1]`) | O(log n) | O(n) | Non-uniform grids |
-
-**Recommendation:** Always use `Range` objects for uniform grids. Avoid `collect()` which degrades performance by converting efficiently searchable Ranges into generic Vectors.
+For uniform grids, always use `Range` instead of `Vector`:
 
 ```julia
-# ❌ Bad: Converts to Vector (O(log n) lookup)
-x = collect(0.0:0.1:10.0)
-
-# ✅ Good: Keeps as Range (O(1) lookup)
+# ✅ Good: Range (O(1) lookup, minimal memory)
 x = 0.0:0.1:10.0
+
+# ❌ Bad: collect() degrades to Vector (O(log n) lookup)
+x = collect(0.0:0.1:10.0)
 ```
 
----
-
-For deeper technical details (grid types, cache optimization, thread safety), see [Advanced Optimization](../internals.md#advanced-optimization).
+For non-uniform grids where `Vector` is required, see [Search & Hints](@ref search_hints) for optimizing lookup performance.

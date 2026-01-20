@@ -220,6 +220,20 @@
         end
     end
 
+    @testset "type promotion Real → Float" begin
+        x = collect(range(0.0, 1.0, 11))
+
+        # Int query should be promoted
+        aq_int = FI._anchor_query(x, 0)
+        @test aq_int.xq isa Float64
+        @test aq_int.xq ≈ 0.0
+
+        # Rational query should be promoted
+        aq_rat = FI._anchor_query(x, 1//2)
+        @test aq_rat.xq isa Float64
+        @test aq_rat.xq ≈ 0.5
+    end
+
     @testset "Anchor weights tuple" begin
         x = collect(range(0.0, 1.0, 101))
         xq = 0.35

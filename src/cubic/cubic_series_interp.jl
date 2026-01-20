@@ -75,7 +75,8 @@ Benchmarks show ~15% regression when using plain `struct` instead.
 mutable struct CubicSeriesInterpolant{
     T<:AbstractFloat,
     C<:CubicSplineCache{T},
-    B
+    B,
+    P<:AbstractSearchPolicy
 } <: AbstractSeriesInterpolant{T}
     const cache::C                    # Shared cache with LU factorization
     const bc_for_solve::B             # BC config for solving
@@ -83,18 +84,20 @@ mutable struct CubicSeriesInterpolant{
     const z::Matrix{T}                # Series-contiguous z (n_points × n_series)
     const _transpose::LazyTransposePair{T}  # Lazy point-contiguous layout (shared infra)
     const extrap::ExtrapVal           # Extrapolation mode
+    const search_policy::P            # Default search policy (immutable, thread-safe)
 
     function CubicSeriesInterpolant(
         cache::C,
         bc_for_solve::B,
         y::Matrix{T},
         z::Matrix{T},
-        extrap::ExtrapVal
-    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, B}
-        new{T, C, B}(
+        extrap::ExtrapVal,
+        search::P=Binary()
+    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, B, P<:AbstractSearchPolicy}
+        new{T, C, B, P}(
             cache, bc_for_solve, y, z,
             LazyTransposePair{T}(),
-            extrap
+            extrap, search
         )
     end
 end
@@ -130,8 +133,8 @@ end
 
 Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
 """
-@inline function _make_anchor(sitp::CubicSeriesInterpolant{T}, xq::T) where T
-    return _anchor_query(sitp.cache.x, xq; wrap=_should_wrap(sitp))
+@inline function _make_anchor(sitp::CubicSeriesInterpolant{T}, xq::T, searcher::Searcher=DEFAULT_SEARCHER) where T
+    return _anchor_query(sitp.cache.x, xq; wrap=_should_wrap(sitp), searcher=searcher)
 end
 
 """
@@ -557,8 +560,9 @@ function cubic_interp(
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    precompute_transpose::Bool=false
-) where {T<:AbstractFloat}
+    precompute_transpose::Bool=false,
+    search::P=Binary()
+) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
     # Validate input
     @assert !isempty(ys) "ys must not be empty"
 
@@ -582,7 +586,7 @@ function cubic_interp(
 
     # Handle periodic BC separately (only for scalar BC)
     if bc isa AbstractBC && _is_periodic_bc(bc)
-        return _build_series_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose)
+        return _build_series_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose, search)
     end
 
     # Build z matrix by solving systems
@@ -608,7 +612,7 @@ function cubic_interp(
     # Convert extrap symbol to Val
     extrap_val = _symbol_to_extrap_val(extrap)
 
-    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap_val)
+    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap_val, search)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)
@@ -626,7 +630,8 @@ function _build_series_periodic(
     n_pts::Int,
     n_series_count::Int,
     autocache::Bool,
-    precompute_transpose::Bool
+    precompute_transpose::Bool,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat}
     # Validate periodic endpoints for all series
     atol = T === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
@@ -649,7 +654,7 @@ function _build_series_periodic(
     _solve_series_coefficients!(z_mat, y_mat, cache, cache.bc_config)
 
     # Periodic BC always uses :wrap extrapolation
-    sitp = CubicSeriesInterpolant(cache, cache.bc_config, y_mat, z_mat, Val(:wrap))
+    sitp = CubicSeriesInterpolant(cache, cache.bc_config, y_mat, z_mat, Val(:wrap), search)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)
@@ -683,7 +688,8 @@ function cubic_interp(
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    precompute_transpose::Bool=false
+    precompute_transpose::Bool=false,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat}
     n_pts = length(x)
 
@@ -701,7 +707,7 @@ function cubic_interp(
 
     # Handle periodic BC separately (only for scalar BC)
     if bc isa AbstractBC && _is_periodic_bc(bc)
-        return _build_series_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose)
+        return _build_series_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose, search)
     end
 
     # Build z matrix by solving systems
@@ -727,7 +733,7 @@ function cubic_interp(
     # Convert extrap symbol to Val
     extrap_val = _symbol_to_extrap_val(extrap)
 
-    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap_val)
+    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap_val, search)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)
@@ -743,12 +749,13 @@ function cubic_interp(
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    precompute_transpose::Bool=false
+    precompute_transpose::Bool=false,
+    search::AbstractSearchPolicy=Binary()
 ) where {Tx<:Real, Ty<:Real}
     T = promote_type(float(Tx), float(Ty))
     x_float = _to_float(x, T)
     ys_float = [_to_float(y, T) for y in ys]
-    return cubic_interp(x_float, ys_float; bc=bc, extrap=extrap, autocache=autocache, precompute_transpose=precompute_transpose)
+    return cubic_interp(x_float, ys_float; bc=bc, extrap=extrap, autocache=autocache, precompute_transpose=precompute_transpose, search=search)
 end
 
 function cubic_interp(
@@ -757,12 +764,13 @@ function cubic_interp(
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    precompute_transpose::Bool=false
+    precompute_transpose::Bool=false,
+    search::AbstractSearchPolicy=Binary()
 ) where {Tx<:Real, Ty<:Real}
     T = promote_type(float(Tx), float(Ty))
     x_float = _to_float(x, T)
     Y_float = T.(Y)
-    return cubic_interp(x_float, Y_float; bc=bc, extrap=extrap, autocache=autocache, precompute_transpose=precompute_transpose)
+    return cubic_interp(x_float, Y_float; bc=bc, extrap=extrap, autocache=autocache, precompute_transpose=precompute_transpose, search=search)
 end
 
 # ========================================
@@ -770,33 +778,35 @@ end
 # ========================================
 
 """
-    (sitp::CubicSeriesInterpolant)(xq::Real; deriv=0)
+    (sitp::CubicSeriesInterpolant)(xq::Real; deriv=0, search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
 Returns a vector of values, one per y-series.
 """
-function (sitp::CubicSeriesInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+function (sitp::CubicSeriesInterpolant{T,C,B,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, C, B, P, S<:Real}
     out = Vector{T}(undef, n_series(sitp))
-    return sitp(out, xq; deriv=deriv)
+    return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
 
 """
-    (sitp::CubicSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0)
+    (sitp::CubicSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
-function (sitp::CubicSeriesInterpolant{T})(
+function (sitp::CubicSeriesInterpolant{T,C,B,P})(
     output::AbstractVector{T},
     xq::S;
-    deriv::Int=0
-) where {T<:AbstractFloat, S<:Real}
+    deriv::Int=0,
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, C, B, P, S<:Real}
     _validate_scalar_output(output, n_series(sitp))
 
     xq_typed = T(xq)
 
     # Build anchor using trait
-    aq = _make_anchor(sitp, xq_typed)
+    aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin
@@ -816,15 +826,17 @@ Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
 Returns a vector of vectors: one vector per y-series, each containing results for all query points.
 """
-function (sitp::CubicSeriesInterpolant{T})(
+function (sitp::CubicSeriesInterpolant{T,C,B,P})(
     xq::AbstractVector{S};
-    deriv::Int=0
-) where {T<:AbstractFloat, S<:Real}
+    deriv::Int=0,
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, C, B, P, S<:Real}
     xq_typed = _to_float(xq, T)
     n_query = length(xq_typed)
 
     outputs = [Vector{T}(undef, n_query) for _ in 1:n_series(sitp)]
-    sitp(outputs, xq_typed; deriv=deriv)
+    sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 
     return outputs
 end
@@ -842,11 +854,13 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
 Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 """
-@with_pool pool function (sitp::CubicSeriesInterpolant{T})(
+@with_pool pool function (sitp::CubicSeriesInterpolant{T,C,B,P})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{T};
-    deriv::Int=0
-) where {T<:AbstractFloat}
+    deriv::Int=0,
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, C, B, P}
     n_query = length(xq)
     n_ser = n_series(sitp)
 
@@ -866,7 +880,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 
     # Build anchors from pool (zero allocation after warmup)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{T}, length(xq))
-    _fill_anchors!(aq_vec, sitp.cache.x, xq; wrap=_should_wrap(sitp))
+    _fill_anchors!(aq_vec, sitp.cache.x, xq; wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     # Extract matrices for argument-passing pattern
     y, z = sitp.y, sitp.z
@@ -885,13 +899,15 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 end
 
 # Real type wrapper for in-place vector
-function (sitp::CubicSeriesInterpolant{T})(
+function (sitp::CubicSeriesInterpolant{T,C,B,P})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{S};
-    deriv::Int=0
-) where {T<:AbstractFloat, S<:Real}
+    deriv::Int=0,
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {T<:AbstractFloat, C, B, P, S<:Real}
     xq_typed = _to_float(xq, T)
-    return sitp(outputs, xq_typed; deriv=deriv)
+    return sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 end
 
 """

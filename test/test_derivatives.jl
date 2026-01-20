@@ -11,6 +11,7 @@ using FastInterpolations
 using FastInterpolations: @_dispatch_deriv, _linear_kernel, _cubic_kernel
 using FastInterpolations: _eval_cubic_at_point, _eval_cubic_with_extrap, _get_cubic_cache, _solve_system!
 using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
+using FastInterpolations: _to_searcher
 
 # Julia version-aware threshold (1.12+ has improved allocation tracking)
 const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
@@ -269,22 +270,25 @@ end # Derivative Kernels
 
         @testset "_eval_cubic_with_extrap with op" begin
             # Test constant extrapolation with derivatives
+
+            searcher = _to_searcher(Binary())
+
             # Outside left boundary: should return 0 for derivatives
-            left_val = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:constant), EvalValue())
+            left_val = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:constant), EvalValue(), searcher)
             @test left_val ≈ y[1]  # y[1] = 0.0
 
-            left_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:constant), EvalDeriv1())
+            left_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:constant), EvalDeriv1(), searcher)
             @test left_deriv1 === 0.0  # Constant extrap → derivative = 0
 
-            left_deriv2 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:constant), EvalDeriv2())
+            left_deriv2 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:constant), EvalDeriv2(), searcher  )
             @test left_deriv2 === 0.0
 
             # Inside domain: should use normal evaluation
-            mid_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, 1.0, Val(:constant), EvalDeriv1())
+            mid_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, 1.0, Val(:constant), EvalDeriv1(), searcher)
             @test mid_deriv1 ≈ 2.0 atol=0.1
 
             # Extension extrapolation: use boundary polynomial
-            ext_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:extension), EvalDeriv1())
+            ext_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:extension), EvalDeriv1(), searcher)
             @test ext_deriv1 isa Float64  # Should not throw
         end
 

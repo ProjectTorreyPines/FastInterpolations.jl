@@ -173,7 +173,7 @@ using FastInterpolations
         @test sizeof(s_vector) < 100  # Struct overhead is small
     end
 
-    @testset "_find_interval with Spacing (Phase 5)" begin
+    @testset "_search_interval with Spacing (Phase 5)" begin
         # Test spacing-aware interval search (fdiv → fmul optimization)
 
         @testset "ScalarSpacing: boundary regression" begin
@@ -182,19 +182,19 @@ using FastInterpolations
             n = length(x)
 
             # Boundary tests: first point → idx=1
-            idx, xL, xR = FastInterpolations._find_interval(x, spacing, first(x))
+            idx, xL, xR = FastInterpolations._search_interval(x, spacing, first(x))
             @test idx == 1
             @test xL ≈ first(x)
             @test xR ≈ first(x) + step(x)
 
             # Boundary tests: last point → idx=n-1
-            idx, xL, xR = FastInterpolations._find_interval(x, spacing, last(x))
+            idx, xL, xR = FastInterpolations._search_interval(x, spacing, last(x))
             @test idx == n - 1
             @test xL ≈ last(x) - step(x)
             @test xR ≈ last(x)
 
             # Interior point
-            idx, xL, xR = FastInterpolations._find_interval(x, spacing, 0.5)
+            idx, xL, xR = FastInterpolations._search_interval(x, spacing, 0.5)
             @test 1 <= idx <= n - 1
             @test xL <= 0.5 <= xR
         end
@@ -206,8 +206,8 @@ using FastInterpolations
             # Test exact grid points (k * step)
             for k in 0:10:100
                 xi = first(x) + k * step(x)
-                idx_base, xL_base, xR_base = FastInterpolations._find_interval(x, xi)
-                idx_new, xL_new, xR_new = FastInterpolations._find_interval(x, spacing, xi)
+                idx_base, xL_base, xR_base = FastInterpolations._search_interval(x, xi)
+                idx_new, xL_new, xR_new = FastInterpolations._search_interval(x, spacing, xi)
 
                 @test idx_base == idx_new
                 @test xL_base ≈ xL_new atol=1e-14
@@ -222,8 +222,8 @@ using FastInterpolations
             # Compare spacing-aware vs base for many random points
             for _ in 1:100
                 xi = first(x) + rand() * (last(x) - first(x))
-                idx_base, xL_base, xR_base = FastInterpolations._find_interval(x, xi)
-                idx_new, xL_new, xR_new = FastInterpolations._find_interval(x, spacing, xi)
+                idx_base, xL_base, xR_base = FastInterpolations._search_interval(x, xi)
+                idx_new, xL_new, xR_new = FastInterpolations._search_interval(x, spacing, xi)
 
                 @test idx_base == idx_new
                 @test xL_base ≈ xL_new atol=1e-12
@@ -235,9 +235,9 @@ using FastInterpolations
             x = [0.0, 0.3, 0.7, 1.0]
             spacing = FastInterpolations._create_spacing(x)
 
-            # VectorSpacing should delegate to base _find_interval
-            idx, xL, xR = FastInterpolations._find_interval(x, spacing, 0.5)
-            idx_base, xL_base, xR_base = FastInterpolations._find_interval(x, 0.5)
+            # VectorSpacing should delegate to base _search_interval
+            idx, xL, xR = FastInterpolations._search_interval(x, spacing, 0.5)
+            idx_base, xL_base, xR_base = FastInterpolations._search_interval(x, 0.5)
 
             @test idx == idx_base
             @test xL == xL_base
@@ -254,7 +254,7 @@ using FastInterpolations
             spacing = FastInterpolations._create_spacing(x)
 
             xi = 0.5f0
-            idx, xL, xR = FastInterpolations._find_interval(x, spacing, xi)
+            idx, xL, xR = FastInterpolations._search_interval(x, spacing, xi)
 
             @test idx isa Int
             @test xL isa Float32
@@ -270,8 +270,8 @@ using FastInterpolations
             spacing_vector = FastInterpolations._create_spacing(x_vec)
 
             # Both should be type-stable
-            @test @inferred(FastInterpolations._find_interval(x_range, spacing_scalar, 0.5)) isa Tuple{Int, Float64, Float64}
-            @test @inferred(FastInterpolations._find_interval(x_vec, spacing_vector, 0.5)) isa Tuple{Int, Float64, Float64}
+            @test @inferred(FastInterpolations._search_interval(x_range, spacing_scalar, 0.5)) isa Tuple{Int, Float64, Float64}
+            @test @inferred(FastInterpolations._search_interval(x_vec, spacing_vector, 0.5)) isa Tuple{Int, Float64, Float64}
         end
     end
 

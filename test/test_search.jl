@@ -671,6 +671,145 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
     end
 
     # ========================================
+    # Baked-in Default Search Policy Tests
+    # ========================================
+    # Tests that verify when an interpolant is created with a non-default search policy,
+    # that policy is used by default (without explicit search= override at call time).
+
+    @testset "Baked-in Default Search Policy" begin
+        x = collect(range(0.0, 1.0, 1001))
+        y = sin.(2π .* x)
+
+        @testset "Single Interpolant: stored policy is used by default" begin
+            # Create with LinearBounded as default
+            itp_lb = linear_interp(x, y; search=LinearBounded())
+            @test itp_lb.search_policy isa LinearBounded{8}
+
+            # Create with HintedBinary as default
+            itp_hb = linear_interp(x, y; search=HintedBinary())
+            @test itp_hb.search_policy isa HintedBinary
+
+            # Create with default (Binary)
+            itp_bin = linear_interp(x, y)
+            @test itp_bin.search_policy isa Binary
+        end
+
+        @testset "Baked-in policy with hint: hint updates when policy supports it" begin
+            # Create interpolant with LinearBounded as default
+            itp = linear_interp(x, y; search=LinearBounded())
+            hint = Ref(500)
+
+            # Call WITHOUT search= override → uses stored LinearBounded → hint should update
+            xi = 0.5
+            for _ in 1:50
+                xi += 1e-3
+                yi = itp(xi; hint=hint)  # Uses itp.search_policy (LinearBounded)
+            end
+
+            # hint should have tracked the position (~550-560)
+            @test hint[] >= 540 && hint[] <= 570
+        end
+
+        @testset "Override policy ignores hint when Binary" begin
+            # Create with LinearBounded default, but override with Binary at call time
+            itp = linear_interp(x, y; search=LinearBounded())
+            hint = Ref(100)
+
+            # Override with Binary → hint should be IGNORED (Binary is stateless)
+            for xi in range(0.5, 0.6, 10)
+                yi = itp(xi; search=Binary(), hint=hint)
+            end
+
+            # hint should remain at initial value (Binary ignores it)
+            @test hint[] == 100
+        end
+
+        @testset "Cubic interpolant baked-in policy" begin
+            itp = cubic_interp(x, y; search=LinearBounded(max_steps=4))
+            @test itp.search_policy isa LinearBounded{4}
+
+            hint = Ref(200)
+            xi = 0.2
+            for _ in 1:30
+                xi += 2e-3
+                yi = itp(xi; hint=hint)  # Uses baked-in LinearBounded{4}
+            end
+
+            # hint should track position (~260)
+            @test hint[] >= 250 && hint[] <= 280
+        end
+
+        @testset "Quadratic interpolant baked-in policy" begin
+            itp = quadratic_interp(x, y; search=HintedBinary())
+            @test itp.search_policy isa HintedBinary
+
+            hint = Ref(300)
+            yi = itp(0.35; hint=hint)
+            # HintedBinary updates hint
+            @test hint[] >= 340 && hint[] <= 360
+        end
+
+        @testset "Constant interpolant baked-in policy" begin
+            itp = constant_interp(x, y; search=LinearBounded(max_steps=16))
+            @test itp.search_policy isa LinearBounded{16}
+        end
+    end
+
+    @testset "Series Interpolant Baked-in Default Search" begin
+        x = collect(range(0.0, 1.0, 1001))
+        y1 = sin.(2π .* x)
+        y2 = cos.(2π .* x)
+
+        @testset "LinearSeriesInterpolant stored policy" begin
+            sitp = linear_interp(x, [y1, y2]; search=LinearBounded())
+            @test sitp.search_policy isa LinearBounded{8}
+
+            # Scalar call uses stored policy
+            hint = Ref(400)
+            xi = 0.4
+            for _ in 1:30
+                xi += 1e-3
+                yi = sitp(xi; hint=hint)  # Uses sitp.search_policy
+            end
+            @test hint[] >= 420 && hint[] <= 440
+        end
+
+        @testset "CubicSeriesInterpolant stored policy" begin
+            sitp = cubic_interp(x, [y1, y2]; search=HintedBinary())
+            @test sitp.search_policy isa HintedBinary
+
+            hint = Ref(600)
+            yi = sitp(0.65; hint=hint)
+            @test hint[] >= 640 && hint[] <= 660
+        end
+
+        @testset "Series vector call with baked-in policy and hint" begin
+            sitp = linear_interp(x, [y1, y2]; search=LinearBounded())
+            hint = Ref(1)
+
+            # Vector call with sorted queries
+            xq = collect(range(0.1, 0.5, 100))
+            outputs = sitp(xq; hint=hint)  # Uses stored LinearBounded
+
+            # hint should track to end of query range (~500)
+            @test hint[] >= 490 && hint[] <= 510
+            @test length(outputs) == 2
+            @test length(outputs[1]) == 100
+        end
+
+        @testset "Series override with Binary ignores hint" begin
+            sitp = linear_interp(x, [y1, y2]; search=LinearBounded())
+            hint = Ref(250)
+
+            # Override with Binary at call time
+            yi = sitp(0.75; search=Binary(), hint=hint)
+
+            # Binary ignores hint
+            @test hint[] == 250
+        end
+    end
+
+    # ========================================
     # Persistent Hint Tests (ODE/Streaming Pattern)
     # ========================================
 

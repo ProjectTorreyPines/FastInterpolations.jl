@@ -561,8 +561,8 @@ function cubic_interp(
     extrap::Symbol=:none,
     autocache::Bool=true,
     precompute_transpose::Bool=false,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:AbstractFloat}
+    search::P=Binary()
+) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
     # Validate input
     @assert !isempty(ys) "ys must not be empty"
 

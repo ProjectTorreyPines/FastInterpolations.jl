@@ -352,8 +352,8 @@ function quadratic_interp(
     ys::AbstractVector{<:AbstractVector{T}};
     bc::QuadraticBC{T}=Left(ParabolaFit{T}()),
     extrap::Symbol=:none,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:AbstractFloat}
+    search::P=Binary()
+) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
     _validate_series_inputs(x, ys)
 
     n_pts = length(x)

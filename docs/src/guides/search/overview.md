@@ -38,6 +38,11 @@ nothing # hide
 | [`LinearBinary()`](@ref search_policies) | **Monotonic queries (recommended)** | O(1) local, O(log n) fallback | ✓ With hint |
 | [`Linear()`](@ref search_policies) | Close + monotonic queries (expert) | O(1) amortized | ✓ With hint |
 
+!!! note "Why No Hunt Algorithm?"
+    The Hunt (correlated) algorithm offers *theoretical* O(log k) for nearby queries and O(log n) worst-case.
+    However, our benchmarks showed no practical advantage over existing policies—each access pattern
+    already has a better-suited option.
+
 ## Quick Selection Guide
 
 **Which policy should I use?**

@@ -688,18 +688,18 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test hint[] >= 540 && hint[] <= 570
         end
 
-        @testset "Override policy ignores hint when Binary" begin
+        @testset "Override with Binary + hint auto-upgrades to HintedBinary" begin
             # Create with LinearBounded default, but override with Binary at call time
             itp = linear_interp(x, y; search=LinearBounded())
             hint = Ref(100)
 
-            # Override with Binary → hint should be IGNORED (Binary is stateless)
+            # Override with Binary + hint → auto-upgrades to HintedBinary behavior
             for xi in range(0.5, 0.6, 10)
                 yi = itp(xi; search=Binary(), hint=hint)
             end
 
-            # hint should remain at initial value (Binary ignores it)
-            @test hint[] == 100
+            # hint should be updated (auto-upgraded to HintedBinary)
+            @test hint[] >= 500 && hint[] <= 610
         end
 
         @testset "Cubic interpolant baked-in policy" begin
@@ -775,15 +775,15 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test length(outputs[1]) == 100
         end
 
-        @testset "Series override with Binary ignores hint" begin
+        @testset "Series override with Binary + hint auto-upgrades" begin
             sitp = linear_interp(x, [y1, y2]; search=LinearBounded())
             hint = Ref(250)
 
-            # Override with Binary at call time
+            # Override with Binary + hint → auto-upgrades to HintedBinary
             yi = sitp(0.75; search=Binary(), hint=hint)
 
-            # Binary ignores hint
-            @test hint[] == 250
+            # hint should be updated (auto-upgraded to HintedBinary)
+            @test hint[] >= 740 && hint[] <= 760
         end
     end
 
@@ -807,11 +807,14 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test s.hint.idx[] == 50
         end
 
-        @testset "Binary ignores hint" begin
-            # Binary policy should always use NoHint regardless of hint argument
-            s1 = _to_searcher(Binary(), Ref(100))
-            @test s1.hint isa NoHint
+        @testset "Binary with hint auto-upgrades to HintedBinary" begin
+            # Binary policy with hint auto-upgrades to HintedBinary behavior
+            ext_ref = Ref(100)
+            s1 = _to_searcher(Binary(), ext_ref)
+            @test s1.hint isa RefHint
+            @test s1.hint.idx === ext_ref  # Uses external Ref
 
+            # Binary without hint stays pure Binary
             s2 = _to_searcher(Binary(), nothing)
             @test s2.hint isa NoHint
         end

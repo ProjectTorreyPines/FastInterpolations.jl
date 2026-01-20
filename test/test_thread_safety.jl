@@ -624,6 +624,71 @@ end
     end
 end
 
+# =========================================================================
+# Group 7: Search Policy Thread Safety
+# =========================================================================
+@testset "Search Policy Thread Safety" begin
+    @testset "LinearBounded concurrent access" begin
+        x = collect(range(0.0, 1.0, 1001))
+        y = sin.(2π .* x)
+        itp = linear_interp(x, y)
+
+        results = Vector{Float64}(undef, nthreads() * 1000)
+        errors = Atomic{Int}(0)
+
+        @threads for i in eachindex(results)
+            try
+                results[i] = itp(rand(); search=LinearBounded())
+            catch
+                atomic_add!(errors, 1)
+            end
+        end
+
+        @test errors[] == 0
+        @test all(isfinite, results)
+    end
+
+    @testset "HintedBinary concurrent access" begin
+        x = collect(range(0.0, 1.0, 1001))
+        y = sin.(2π .* x)
+        itp = linear_interp(x, y)
+
+        results = Vector{Float64}(undef, nthreads() * 1000)
+        errors = Atomic{Int}(0)
+
+        @threads for i in eachindex(results)
+            try
+                results[i] = itp(rand(); search=HintedBinary())
+            catch
+                atomic_add!(errors, 1)
+            end
+        end
+
+        @test errors[] == 0
+        @test all(isfinite, results)
+    end
+
+    @testset "Binary concurrent access" begin
+        x = collect(range(0.0, 1.0, 1001))
+        y = sin.(2π .* x)
+        itp = linear_interp(x, y)
+
+        results = Vector{Float64}(undef, nthreads() * 1000)
+        errors = Atomic{Int}(0)
+
+        @threads for i in eachindex(results)
+            try
+                results[i] = itp(rand(); search=Binary())
+            catch
+                atomic_add!(errors, 1)
+            end
+        end
+
+        @test errors[] == 0
+        @test all(isfinite, results)
+    end
+end
+
 end  # if nthreads() > 1
 
 # Print summary if run directly

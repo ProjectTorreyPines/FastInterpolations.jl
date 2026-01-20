@@ -33,11 +33,22 @@ abstract type AbstractSearchPolicy end
 Binary search algorithm. O(log n) per query for vectors, O(1) for ranges.
 Stateless and thread-safe. This is the default search policy.
 
+# Hint Behavior
+When a `hint` argument is provided with `Binary()`, the search automatically
+upgrades to `HintedBinary` behavior to utilize the hint. Without a hint,
+pure binary search is used.
+
 # Example
 ```julia
-val = linear_interp(x, y, 0.5; search=Binary())  # explicit
+val = linear_interp(x, y, 0.5; search=Binary())  # pure binary search
 val = linear_interp(x, y, 0.5)                    # same (default)
+
+# With hint: auto-upgrades to HintedBinary behavior
+hint = Ref(1)
+val = itp(0.5; search=Binary(), hint=hint)  # uses hinted binary internally
 ```
+
+See also: [`HintedBinary`](@ref), [`LinearBounded`](@ref)
 """
 struct Binary <: AbstractSearchPolicy end
 
@@ -234,7 +245,7 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 # When hint=Ref{Int}, stateful policies use the external Ref for persistence.
 
 @inline _to_searcher(::Binary, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
-@inline _to_searcher(::Binary, ::Base.RefValue{Int}) = Searcher{Binary,NoHint}(NoHint())  # hint ignored
+@inline _to_searcher(::Binary, hint::Base.RefValue{Int}) = Searcher{HintedBinary,RefHint}(RefHint(hint))  # auto-upgrade to hinted
 @inline _to_searcher(::HintedBinary, ::Nothing) = Searcher{HintedBinary,RefHint}(RefHint())
 @inline _to_searcher(::HintedBinary, hint::Base.RefValue{Int}) = Searcher{HintedBinary,RefHint}(RefHint(hint))
 @inline _to_searcher(::LinearBounded{MAX}, ::Nothing) where {MAX} = Searcher{LinearBounded{MAX},RefHint}(RefHint())

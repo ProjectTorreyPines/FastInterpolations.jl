@@ -267,7 +267,7 @@ derivs = cubic_interp(cache, y, [0.25, 0.5, 0.75]; deriv=1)  # First derivative
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = cubic_interp(cache, y, sorted_queries; search=LinearBinary(max_steps=8))
+vals = cubic_interp(cache, y, sorted_queries; search=LinearBinary(linear_window=8))
 ```
 """
 function cubic_interp(
@@ -307,7 +307,7 @@ result = cubic_interp(x, y, x_query; extrap=:extension)  # Extend beyond domain
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = cubic_interp(x, y, sorted_queries; search=LinearBinary(max_steps=8))
+vals = cubic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
 ```
 """
 function cubic_interp(

@@ -65,7 +65,7 @@ y = sin.(2π .* x)
 
 # Create interpolants with different search policies
 itp_binary = linear_interp(x, y; search=Binary())
-itp_lb = linear_interp(x, y; search=LinearBinary(max_steps=4))
+itp_lb = linear_interp(x, y; search=LinearBinary(linear_window=4))
 itp_linear = linear_interp(x, y; search=Linear())
 
 Random.seed!(42)  # hide
@@ -142,7 +142,7 @@ nothing  # hide
 
     # Create interpolants with different search policies
     itp_binary = linear_interp(x, y; search=Binary())
-    itp_lb = linear_interp(x, y; search=LinearBinary(max_steps=4))
+    itp_lb = linear_interp(x, y; search=LinearBinary(linear_window=4))
     itp_linear = linear_interp(x, y; search=Linear())
 
     Random.seed!(42)

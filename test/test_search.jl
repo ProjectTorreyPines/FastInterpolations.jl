@@ -696,17 +696,17 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
     # ========================================
 
     @testset "LinearBinary Constructor" begin
-        @testset "Valid max_steps Values" begin
-            # All allowed max_steps values
-            # Note: max_steps=1 maps to LinearBinary{2} (see factory function)
-            @test LinearBinary(max_steps=1) isa LinearBinary{2}
-            @test LinearBinary(max_steps=2) isa LinearBinary{2}
-            @test LinearBinary(max_steps=4) isa LinearBinary{4}
-            @test LinearBinary(max_steps=8) isa LinearBinary{8}
-            @test LinearBinary(max_steps=16) isa LinearBinary{16}
-            @test LinearBinary(max_steps=32) isa LinearBinary{32}
-            @test LinearBinary(max_steps=64) isa LinearBinary{64}
-            @test LinearBinary(max_steps=128) isa LinearBinary{128}
+        @testset "Valid linear_window Values" begin
+            # All allowed linear_window values
+            # Note: linear_window=1 maps to LinearBinary{2} (see factory function)
+            @test LinearBinary(linear_window=1) isa LinearBinary{2}
+            @test LinearBinary(linear_window=2) isa LinearBinary{2}
+            @test LinearBinary(linear_window=4) isa LinearBinary{4}
+            @test LinearBinary(linear_window=8) isa LinearBinary{8}
+            @test LinearBinary(linear_window=16) isa LinearBinary{16}
+            @test LinearBinary(linear_window=32) isa LinearBinary{32}
+            @test LinearBinary(linear_window=64) isa LinearBinary{64}
+            @test LinearBinary(linear_window=128) isa LinearBinary{128}
 
             # Test positional argument
             @test LinearBinary(4) isa LinearBinary{4}
@@ -716,10 +716,10 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test LinearBinary() isa LinearBinary{8}
         end
 
-        @testset "Invalid max_steps Throws ArgumentError" begin
+        @testset "Invalid linear_window Throws ArgumentError" begin
             invalid_steps = (0, 3, 5, 6, 7, 9, 10, 15, 17, 100, 256)
             for ms in invalid_steps
-                @test_throws ArgumentError LinearBinary(max_steps=ms)
+                @test_throws ArgumentError LinearBinary(linear_window=ms)
                 @test_throws ArgumentError LinearBinary(ms)
             end
         end
@@ -810,7 +810,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "Cubic interpolant baked-in policy" begin
-            itp = cubic_interp(x, y; search=LinearBinary(max_steps=4))
+            itp = cubic_interp(x, y; search=LinearBinary(linear_window=4))
             @test itp.search_policy isa LinearBinary{4}
 
             hint = Ref(200)
@@ -835,7 +835,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "Constant interpolant baked-in policy" begin
-            itp = constant_interp(x, y; search=LinearBinary(max_steps=16))
+            itp = constant_interp(x, y; search=LinearBinary(linear_window=16))
             @test itp.search_policy isa LinearBinary{16}
         end
     end

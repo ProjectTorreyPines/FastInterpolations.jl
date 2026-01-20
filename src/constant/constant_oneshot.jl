@@ -144,7 +144,7 @@ Constant (step/piecewise constant) interpolation at a single point.
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
   - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
-  - `LinearBinary(max_steps=8)`: Linear search up to N steps, then binary fallback
+  - `LinearBinary(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns
 - Interpolated value (Float type)
@@ -162,7 +162,7 @@ constant_interp(x, y, -1.0; extrap=:constant) # 10.0 (clamped)
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = constant_interp(x, y, sorted_queries; search=LinearBinary(max_steps=8))
+vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
 ```
 """
 @inline function constant_interp(
@@ -213,7 +213,7 @@ constant_interp!(out, x, y, [0.5, 1.5, 2.5])
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
 output = zeros(1000)
-constant_interp!(output, x, y, sorted_queries; search=LinearBinary(max_steps=8))
+constant_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_window=8))
 ```
 """
 function constant_interp!(
@@ -261,7 +261,7 @@ result = constant_interp(x, y, [0.5, 1.5, 2.5])
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = constant_interp(x, y, sorted_queries; search=LinearBinary(max_steps=8))
+vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
 ```
 """
 function constant_interp(

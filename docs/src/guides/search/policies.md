@@ -47,7 +47,7 @@ end
 
 ## Linear
 
-Maximum-speed linear search for **strictly monotonic, closely-spaced queries**. No binary fallback, no step limit.
+Maximum-speed linear search for **strictly monotonic, closely-spaced queries**. Scans the grid sequentially one interval at a time from the hint until the target is found—no binary fallback, no window limit.
 
 **Complexity**: O(1) amortized for monotonic, closely-spaced sequences
 
@@ -111,25 +111,25 @@ itp = linear_interp(x, y; search=LinearBinary())
 vals = itp(sorted_queries)  # O(1) amortized for sorted input
 ```
 
-**How it works**: Starting from the hint position, walks linearly left or right (up to `max_steps`). If the target interval isn't found within bounds, falls back to binary search.
+**How it works**: Starting from the hint position, walks linearly left or right (up to `linear_window`). If the target interval isn't found within bounds, falls back to binary search.
 
-### Tuning max_steps
+### Tuning linear_window
 
-You can tune the maximum linear steps before falling back to binary search:
+You can tune the linear search window size before falling back to binary search:
 
 ```julia
-LinearBinary()             # default: max 8 steps
-LinearBinary(max_steps=4)  # smaller bound for tightly spaced queries
-LinearBinary(max_steps=16) # larger bound for sparser queries
+LinearBinary()             # default: linear_window=8
+LinearBinary(linear_window=4)  # smaller bound for tightly spaced queries
+LinearBinary(linear_window=16) # larger bound for sparser queries
 ```
 
 **Guidelines**:
-- **Small `max_steps` (4)**: Better when queries are very close together
-- **Large `max_steps` (16-32)**: Better when queries might skip a few intervals
+- **Small `linear_window` (4)**: Better when queries are very close together
+- **Large `linear_window` (16-32)**: Better when queries might skip a few intervals
 - **Default (8)**: Good balance for most use cases
 
 !!! note "Type Parameter Restriction"
-    `max_steps` is restricted to powers of 2 (1, 2, 4, 8, 16, 32, 64) to prevent type parameter explosion. Each unique value creates a specialized method, so limiting choices keeps compile times reasonable.
+    `linear_window` is restricted to powers of 2 (1, 2, 4, 8, 16, 32, 64) to prevent type parameter explosion. Each unique value creates a specialized method, so limiting choices keeps compile times reasonable.
 
 ---
 

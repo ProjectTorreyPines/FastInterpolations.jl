@@ -110,16 +110,16 @@ struct Linear <: AbstractSearchPolicy end
 """
     LinearBinary{MAX} <: AbstractSearchPolicy
 
-Bounded linear search: up to `MAX` linear steps from hint, then binary fallback.
+Bounded linear search within a window of `MAX` positions from hint, then binary fallback.
 Optimal for **sorted/monotonic query sequences** where consecutive queries tend to
 fall in adjacent or nearby intervals.
 
 # Type Parameter
-- `MAX::Int`: Maximum linear search steps before falling back to binary search.
+- `MAX::Int`: Size of the linear search window before falling back to binary search.
   This is a compile-time constant encoded in the type parameter.
 
 # Performance Characteristics
-- **Best case**: O(1) when query is within `MAX` steps of the hint
+- **Best case**: O(1) when query is within `MAX` positions of the hint
 - **Worst case**: O(log n) binary search fallback
 - **Ideal for**: Sorted queries, time-series data, streaming evaluations
 
@@ -127,7 +127,7 @@ fall in adjacent or nearby intervals.
 Use the factory function (recommended) to construct with a curated set of values:
 ```julia
 LinearBinary()               # default MAX=8
-LinearBinary(max_steps=4)    # custom MAX=4
+LinearBinary(linear_window=4)    # custom MAX=4
 ```
 
 Or construct the parametric type directly (advanced):
@@ -138,7 +138,7 @@ LinearBinary{8}()            # explicit type parameter
 # Example
 ```julia
 sorted_queries = sort(rand(1000))
-vals = linear_interp(x, y, sorted_queries; search=LinearBinary(max_steps=8))
+vals = linear_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
 ```
 
 See also: [`Binary`](@ref), [`HintedBinary`](@ref)
@@ -146,10 +146,10 @@ See also: [`Binary`](@ref), [`HintedBinary`](@ref)
 struct LinearBinary{MAX} <: AbstractSearchPolicy end
 
 """
-    LinearBinary(max_steps::Integer)
-    LinearBinary(; max_steps::Integer=8)
+    LinearBinary(linear_window::Integer)
+    LinearBinary(; linear_window::Integer=8)
 
-Factory constructor for `LinearBinary{MAX}` with a **curated set of `max_steps` values**.
+Factory constructor for `LinearBinary{MAX}` with a **curated set of `linear_window` values**.
 
 # Why Restricted Values?
 Julia compiles a specialized method for each unique type parameter `MAX`. Allowing
@@ -160,37 +160,37 @@ By restricting to powers of 2, we limit specialization to just 7 variants while
 covering the practical range of use cases.
 
 # Arguments
-- `max_steps::Integer=8`: Maximum linear search steps before binary fallback.
+- `linear_window::Integer=8`: Size of the linear search window before binary fallback.
   **Allowed values**: `1, 2, 4, 8, 16, 32, 64, 128` (powers of 2 from 2⁰ to 2⁷)
 
 # Throws
-- `ArgumentError`: If `max_steps` is not one of the allowed values.
+- `ArgumentError`: If `linear_window` is not one of the allowed values.
 
 # Example
 ```julia
 policy = LinearBinary()              # LinearBinary{8}()  (default)
-policy = LinearBinary(max_steps=4)   # LinearBinary{4}()
-policy = LinearBinary(max_steps=16)  # LinearBinary{16}()
-policy = LinearBinary(max_steps=3)   # ERROR: ArgumentError
+policy = LinearBinary(linear_window=4)   # LinearBinary{4}()
+policy = LinearBinary(linear_window=16)  # LinearBinary{16}()
+policy = LinearBinary(linear_window=3)   # ERROR: ArgumentError
 ```
 
-# Choosing `max_steps`
+# Choosing `linear_window`
 - **Small values (1–4)**: Lower overhead, but more frequent binary fallbacks
 - **Medium values (8–16)**: Good balance for typical sorted query patterns
 - **Large values (32–128)**: For highly localized queries or very large datasets
 """
-function LinearBinary(max_steps::Integer)
-    max_steps == 1  && return LinearBinary{2}()
-    max_steps == 2  && return LinearBinary{2}()
-    max_steps == 4  && return LinearBinary{4}()
-    max_steps == 8  && return LinearBinary{8}()
-    max_steps == 16 && return LinearBinary{16}()
-    max_steps == 32 && return LinearBinary{32}()
-    max_steps == 64 && return LinearBinary{64}()
-    max_steps == 128 && return LinearBinary{128}()
-    throw(ArgumentError("`max_steps` must be one of (1, 2, 4, 8, 16, 32, 64, 128), got $max_steps"))
+function LinearBinary(linear_window::Integer)
+    linear_window == 1  && return LinearBinary{2}()
+    linear_window == 2  && return LinearBinary{2}()
+    linear_window == 4  && return LinearBinary{4}()
+    linear_window == 8  && return LinearBinary{8}()
+    linear_window == 16 && return LinearBinary{16}()
+    linear_window == 32 && return LinearBinary{32}()
+    linear_window == 64 && return LinearBinary{64}()
+    linear_window == 128 && return LinearBinary{128}()
+    throw(ArgumentError("`linear_window` must be one of (1, 2, 4, 8, 16, 32, 64, 128), got $linear_window"))
 end
-LinearBinary(; max_steps::Integer=8) = LinearBinary(max_steps)
+LinearBinary(; linear_window::Integer=8) = LinearBinary(linear_window)
 
 # ----------------------------------------
 # Hint Types (Internal)
@@ -472,7 +472,7 @@ end
 """
     _search_linear_binary!(x, xi, hint_ref, ::Val{MAX}) -> (idx, xL, xR)
 
-Bounded linear search: up to MAX steps, then binary fallback.
+Bounded linear search within MAX-sized window, then binary fallback.
 Optimal for monotonic query sequences.
 """
 @inline function _search_linear_binary!(

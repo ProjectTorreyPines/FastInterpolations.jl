@@ -82,16 +82,6 @@ end
 
 **How it works**: Walks linearly from the hint position one interval at a time. Without a step limit, it will traverse the entire grid if necessary—which is optimal for close queries but catastrophic for distant ones.
 
-### Performance Summary
-
-| Query Pattern | `Binary()` | `LinearBinary()` | `Linear()` |
-|:--------------|:-----------|:-----------------|:-----------|
-| **Random** | ✅ Best | ~2-3x slower | ❌ Up to 7x slower |
-| **Monotonic** | Baseline | ✅ ~5x faster | ✅ ~6x faster |
-
-!!! note "Results Vary"
-    These are approximate results from a 500-point grid with 1000 queries. Actual performance depends on your **grid size** and **query spacing**. Run benchmark with your own data to find the best policy.
-
 ---
 
 ## LinearBinary
@@ -130,6 +120,18 @@ LinearBinary(linear_window=16) # larger bound for sparser queries
 
 !!! note "Type Parameter Restriction"
     `linear_window` is restricted to powers of 2 (1, 2, 4, 8, 16, 32, 64) to prevent type parameter explosion. Each unique value creates a specialized method, so limiting choices keeps compile times reasonable.
+
+---
+
+## Performance Summary
+
+| Query Pattern | `Binary()` | `LinearBinary()` | `Linear()` |
+|:--------------|:-----------|:-----------------|:-----------|
+| **Random** | ✅ Best | ~2-3x slower | ❌ Up to 7x slower |
+| **Monotonic** | Baseline | ✅ ~5x faster | ✅ ~6x faster |
+
+!!! note "Results Vary"
+    These are approximate results from a 500-point grid with 1000 queries. Actual performance depends on your **grid size** and **query spacing**. Run benchmark with your own data to find the best policy.
 
 ---
 

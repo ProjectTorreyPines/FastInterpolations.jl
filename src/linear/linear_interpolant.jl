@@ -142,8 +142,8 @@ function linear_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
     extrap::Symbol=:none,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:AbstractFloat}
+    search::P=Binary()
+) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
     return LinearInterpolant(x, y; extrap, search)
 end
 
@@ -153,8 +153,8 @@ function linear_interp(
     x::X,
     y::Y;
     extrap::Symbol=:none,
-    search::AbstractSearchPolicy=Binary()
-) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
+    search::P=Binary()
+) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}, P<:AbstractSearchPolicy}
     T = promote_type(TX, TY)
     FT = float(T)
     return LinearInterpolant(_to_float(x, FT), FT.(y); extrap, search)

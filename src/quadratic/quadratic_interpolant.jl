@@ -117,8 +117,8 @@ function quadratic_interp(
     y::AbstractVector{FT};
     bc::QuadraticBC{FT}=Left(ParabolaFit{FT}()),
     extrap::Symbol=:none,
-    search::AbstractSearchPolicy=Binary()
-) where {FT<:AbstractFloat}
+    search::P=Binary()
+) where {FT<:AbstractFloat, P<:AbstractSearchPolicy}
     return QuadraticInterpolant(x, y; bc, extrap, search)
 end
 
@@ -128,8 +128,8 @@ function quadratic_interp(
     y::AbstractVector{T};
     bc::QuadraticBC{<:AbstractFloat}=Left(ParabolaFit{Float64}()),
     extrap::Symbol=:none,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:Real}
+    search::P=Binary()
+) where {T<:Real, P<:AbstractSearchPolicy}
     FT = float(T)
     bc_promoted = _promote_bc(bc, FT)
     return QuadraticInterpolant(_to_float(x, FT), _to_float(y, FT); bc=bc_promoted, extrap, search)

@@ -412,8 +412,8 @@ val = itp(0.5; search=Binary())     # Override with Binary()
     bc::AbstractBC,
     extrap::Symbol,
     autocache::Bool,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:AbstractFloat}
+    search::P=Binary()
+) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x, y, autocache, search)
     else
@@ -429,8 +429,8 @@ function cubic_interp(
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:AbstractFloat}
+    search::P=Binary()
+) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
     return _cubic_interp_impl(x, y, bc, extrap, autocache, search)
 end
 
@@ -455,8 +455,8 @@ by the CubicInterpolant constructor.
     cache::CubicSplineCache{T},
     y::AbstractVector{T};
     extrap::Symbol=:none,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:AbstractFloat}
+    search::P=Binary()
+) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
     tmp_z = similar!(pool, y)
     _solve_system!(tmp_z, cache, y, cache.bc_config)
 
@@ -476,8 +476,8 @@ function cubic_interp(
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
-    search::AbstractSearchPolicy=Binary()
-) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}}
+    search::P=Binary()
+) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}, P<:AbstractSearchPolicy}
     T = promote_type(TX, TY)
     FT = float(T)
     x_float = _to_float(x, FT)

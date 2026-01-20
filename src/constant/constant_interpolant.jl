@@ -116,8 +116,8 @@ function constant_interp(
     y::AbstractVector{FT};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
-    search::AbstractSearchPolicy=Binary()
-) where {FT<:AbstractFloat}
+    search::P=Binary()
+) where {FT<:AbstractFloat, P<:AbstractSearchPolicy}
     return ConstantInterpolant(x, y; extrap, side, search)
 end
 
@@ -130,8 +130,8 @@ function constant_interp(
     y::AbstractVector{T};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:Real}
+    search::P=Binary()
+) where {T<:Real, P<:AbstractSearchPolicy}
     FT = float(T)
     return ConstantInterpolant(_to_float(x, FT), _to_float(y, FT); extrap, side, search)
 end

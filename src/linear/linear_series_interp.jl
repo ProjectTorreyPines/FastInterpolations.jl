@@ -475,13 +475,14 @@ Returns a vector of vectors: one vector per y-series, each containing results fo
 function (sitp::LinearSeriesInterpolant{T,P})(
     xq::AbstractVector{S};
     deriv::Int=0,
-    search=sitp.search_policy
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {T<:AbstractFloat, P, S<:Real}
     xq_typed = _to_float(xq, T)
     n_query = length(xq_typed)
 
     outputs = [Vector{T}(undef, n_query) for _ in 1:n_series(sitp)]
-    sitp(outputs, xq_typed; deriv=deriv, search=search)
+    sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 
     return outputs
 end
@@ -503,7 +504,8 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{T};
     deriv::Int=0,
-    search=sitp.search_policy
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {T<:AbstractFloat, P}
     n_query = length(xq)
     n_ser = n_series(sitp)
@@ -513,7 +515,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 
     # Build anchors from pool (zero allocation after warmup)
     aq_vec = acquire!(pool, _LinearAnchoredQuery{T}, length(xq))
-    _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp), searcher=_to_searcher(search))
+    _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     # Extract matrices for argument-passing pattern
     y = sitp.y
@@ -537,10 +539,11 @@ function (sitp::LinearSeriesInterpolant{T,P})(
     outputs::AbstractVector{<:AbstractVector{T}},
     xq::AbstractVector{S};
     deriv::Int=0,
-    search=sitp.search_policy
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {T<:AbstractFloat, P, S<:Real}
     xq_typed = _to_float(xq, T)
-    return sitp(outputs, xq_typed; deriv=deriv, search=search)
+    return sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 end
 
 """

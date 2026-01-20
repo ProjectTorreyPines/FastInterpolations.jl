@@ -4,7 +4,7 @@ Hints allow you to persist search state across calls, enabling O(1) lookup for s
 
 ## Basic Usage
 
-For stateful policies (`HintedBinary`, `LinearBounded`), provide an external `Ref{Int}` to persist the hint:
+For stateful policies (`HintedBinary`, `Linear`, `LinearBinary`), provide an external `Ref{Int}` to persist the hint:
 
 ```julia
 itp = linear_interp(x, y)
@@ -12,7 +12,7 @@ hint = Ref(1)  # external hint storage
 
 # Hint persists across calls
 for xi in streaming_data
-    val = itp(xi; search=LinearBounded(), hint=hint)
+    val = itp(xi; search=LinearBinary(), hint=hint)
 end
 ```
 
@@ -53,7 +53,7 @@ Each thread must have its own hint to avoid data races:
 Threads.@threads for i in 1:n
     local_hint = Ref(1)  # per-thread hint
     for xi in chunks[i]
-        val = itp(xi; search=LinearBounded(), hint=local_hint)
+        val = itp(xi; search=LinearBinary(), hint=local_hint)
     end
 end
 ```
@@ -75,27 +75,31 @@ end
 ```julia
 using FastInterpolations
 
-# Create interpolant with LinearBounded (optimal for monotonic time)
+# Create interpolant (Linear is fastest for strictly monotonic time)
 x = 0.0:0.01:10.0
 y = sin.(x)
-itp = linear_interp(x, y; search=LinearBounded())
+itp = linear_interp(x, y)
 
 # External hint persists across solver steps
 hint = Ref(1)
 
 function ode_callback!(du, u, p, t)
-    # t increases monotonically → O(1) lookup with hint
-    forcing = itp(t; hint=hint)
+    # t increases monotonically → O(1) lookup with Linear()
+    forcing = itp(t; search=Linear(), hint=hint)
     du[1] = -u[1] + forcing
 end
 ```
+
+!!! tip "Linear vs LinearBinary for ODE"
+    Use `Linear()` when time is strictly monotonic (typical ODE case).
+    Use `LinearBinary()` if queries might occasionally jump or exceed bounds.
 
 ### Batch Processing with Sorted Queries
 
 ```julia
 x = collect(range(0.0, 10.0, 10001))
 y = sin.(2π .* x)
-itp = linear_interp(x, y; search=LinearBounded())
+itp = linear_interp(x, y; search=LinearBinary())
 
 # Sort queries for optimal performance
 queries = sort(rand(100_000) .* 10)
@@ -130,9 +134,9 @@ hint = Ref(1)  # shared hint for same x-grid
 
 for t in time_points
     # All three use same hint since they share the x-grid
-    T = itp_temp(t; search=LinearBounded(), hint=hint)
-    P = itp_pressure(t; search=LinearBounded(), hint=hint)
-    ρ = itp_density(t; search=LinearBounded(), hint=hint)
+    T = itp_temp(t; search=LinearBinary(), hint=hint)
+    P = itp_pressure(t; search=LinearBinary(), hint=hint)
+    ρ = itp_density(t; search=LinearBinary(), hint=hint)
 end
 ```
 

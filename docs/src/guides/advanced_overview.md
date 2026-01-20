@@ -42,4 +42,4 @@ For **Vector grids**, see [**Search & Hints**](@ref search_hints) section help o
 - **"I have multiple outputs for the same input grid"** → [Series Interpolant](@ref series_interpolant)
 - **"I need zero allocations in my hot loop"** → [Memory & Allocation](@ref memory_allocation)
 
-These features can be combined. For example, a Series Interpolant can use `LinearBounded` search policy with external hints for maximum performance in ODE integrator callbacks.
+These features can be combined. For example, a Series Interpolant can use `LinearBinary` search policy with external hints for maximum performance in ODE integrator callbacks.

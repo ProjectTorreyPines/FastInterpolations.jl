@@ -102,11 +102,7 @@ makedocs(
     ),
     pages = [
         "Home" => "index.md",
-        "Guide" => [
-            "API Selection" => "guides/api_selection.md",
-            "SeriesInterpolant" => "guides/series_interpolant.md",
-            "Performance Tips" => "guides/performance_tips.md",
-        ],
+        "API Selection Guide" => "guides/api_selection.md",
         "Interpolation" => [
             "Overview" => "interpolation/overview.md",
             "Constant" => "interpolation/constant.md",
@@ -117,6 +113,16 @@ makedocs(
             "Visual Comparison" => "interpolation/comparison.md",
         ],
         "Extrapolation" => "extrapolation.md",
+        "Advanced Usage" => [
+            "Overview" => "guides/advanced_overview.md",
+            "Search & Hints" => [
+                "Overview" => "guides/search/overview.md",
+                "Search Policies" => "guides/search/policies.md",
+                "Using Hints" => "guides/search/hints.md",
+            ],
+            "Series Interpolant" => "guides/series_interpolant.md",
+            "Memory & Allocation" => "guides/memory_allocation.md",
+        ],
         "Architecture" => [
             "Overview" => "architecture/overview.md",
             "Auto-Cache" => "architecture/caching.md",

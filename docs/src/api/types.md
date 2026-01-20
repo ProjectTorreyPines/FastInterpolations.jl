@@ -50,7 +50,8 @@ Search policies control how the interpolant finds the correct interval for a que
 AbstractSearchPolicy
 Binary
 HintedBinary
-LinearBounded
+Linear
+LinearBinary
 ```
 
 ## Series Interpolant Types

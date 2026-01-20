@@ -106,8 +106,8 @@ end
 
 Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
 """
-@inline function _make_anchor(sitp::LinearSeriesInterpolant{T}, xq::T) where T
-    return _linear_anchor_query_impl(sitp.x, xq, _should_wrap(sitp))
+@inline function _make_anchor(sitp::LinearSeriesInterpolant{T}, xq::T, searcher::Searcher=DEFAULT_SEARCHER) where T
+    return _linear_anchor_query_impl(sitp.x, xq, _should_wrap(sitp), searcher)
 end
 
 """
@@ -415,26 +415,27 @@ end
 # ========================================
 
 """
-    (sitp::LinearSeriesInterpolant)(xq::Real; deriv=0)
+    (sitp::LinearSeriesInterpolant)(xq::Real; deriv=0, search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
 Returns a vector of values, one per y-series.
 """
-function (sitp::LinearSeriesInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+function (sitp::LinearSeriesInterpolant{T})(xq::S; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
     out = Vector{T}(undef, n_series(sitp))
-    return sitp(out, xq; deriv=deriv)
+    return sitp(out, xq; deriv=deriv, search=search)
 end
 
 """
-    (sitp::LinearSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0)
+    (sitp::LinearSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
 function (sitp::LinearSeriesInterpolant{T})(
     output::AbstractVector{T},
     xq::S;
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat, S<:Real}
     n_ser = n_series(sitp)
 
@@ -444,7 +445,7 @@ function (sitp::LinearSeriesInterpolant{T})(
     xq_typed = T(xq)
 
     # Build anchor
-    aq = _make_anchor(sitp, xq_typed)
+    aq = _make_anchor(sitp, xq_typed, _to_searcher(search))
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin

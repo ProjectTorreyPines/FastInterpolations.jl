@@ -170,13 +170,13 @@ itp2(aq; deriv=1)     # Reuses same anchor for derivative
 Anchored evaluation is 2-4x faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search and geometry setup.
 """
-function _anchor_query(x::AbstractVector{T}, xq::T; wrap::Bool=false) where {T<:AbstractFloat}
-    return _anchor_query_impl(x, xq, wrap)
+function _anchor_query(x::AbstractVector{T}, xq::T; wrap::Bool=false, searcher::Searcher=DEFAULT_SEARCHER) where {T<:AbstractFloat}
+    return _anchor_query_impl(x, xq, wrap, searcher)
 end
 
 # Real wrapper for convenience (scalar)
-function _anchor_query(x::AbstractVector{T}, xq::S; wrap::Bool=false) where {T<:AbstractFloat, S<:Real}
-    _anchor_query(x, T(xq); wrap=wrap)
+function _anchor_query(x::AbstractVector{T}, xq::S; wrap::Bool=false, searcher::Searcher=DEFAULT_SEARCHER) where {T<:AbstractFloat, S<:Real}
+    _anchor_query(x, T(xq); wrap=wrap, searcher=searcher)
 end
 
 """

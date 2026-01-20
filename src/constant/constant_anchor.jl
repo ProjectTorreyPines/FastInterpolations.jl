@@ -87,9 +87,10 @@ itp2(aq)              # Reuses same anchor
     x::AbstractVector{T},
     xq::T,
     ::Val{:constant};
-    wrap::Bool=false
+    wrap::Bool=false,
+    searcher::Searcher=DEFAULT_SEARCHER
 ) where {T<:AbstractFloat}
-    return _constant_anchor_query_impl(x, xq, wrap)
+    return _constant_anchor_query_impl(x, xq, wrap, searcher)
 end
 
 # Real wrapper for convenience (scalar)
@@ -97,9 +98,10 @@ end
     x::AbstractVector{T},
     xq::S,
     tag::Val{:constant};
-    wrap::Bool=false
+    wrap::Bool=false,
+    searcher::Searcher=DEFAULT_SEARCHER
 ) where {T<:AbstractFloat, S<:Real}
-    _anchor_query(x, T(xq), tag; wrap=wrap)
+    _anchor_query(x, T(xq), tag; wrap=wrap, searcher=searcher)
 end
 
 """

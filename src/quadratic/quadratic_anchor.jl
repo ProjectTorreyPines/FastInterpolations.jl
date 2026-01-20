@@ -85,9 +85,10 @@ itp2(aq; deriv=1)     # Reuses same anchor for derivative
     x::AbstractVector{T},
     xq::T,
     ::Val{:quadratic};
-    wrap::Bool=false
+    wrap::Bool=false,
+    searcher::Searcher=DEFAULT_SEARCHER
 ) where {T<:AbstractFloat}
-    return _quadratic_anchor_query_impl(x, xq, wrap)
+    return _quadratic_anchor_query_impl(x, xq, wrap, searcher)
 end
 
 # Real wrapper for convenience (scalar)
@@ -95,9 +96,10 @@ end
     x::AbstractVector{T},
     xq::S,
     tag::Val{:quadratic};
-    wrap::Bool=false
+    wrap::Bool=false,
+    searcher::Searcher=DEFAULT_SEARCHER
 ) where {T<:AbstractFloat, S<:Real}
-    _anchor_query(x, T(xq), tag; wrap=wrap)
+    _anchor_query(x, T(xq), tag; wrap=wrap, searcher=searcher)
 end
 
 """

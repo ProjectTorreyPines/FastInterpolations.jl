@@ -101,12 +101,12 @@ end
 @inline _method_kind(::Type{<:ConstantSeriesInterpolant}) = Val(:constant)
 
 """
-    _make_anchor(sitp::ConstantSeriesInterpolant, xq::T) -> _ConstantAnchoredQuery{T}
+    _make_anchor(sitp::ConstantSeriesInterpolant, xq::T, searcher) -> _ConstantAnchoredQuery{T}
 
 Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
 """
-@inline function _make_anchor(sitp::ConstantSeriesInterpolant{T}, xq::T) where T
-    return _constant_anchor_query_impl(sitp.x, xq, _should_wrap(sitp))
+@inline function _make_anchor(sitp::ConstantSeriesInterpolant{T}, xq::T, searcher::Searcher=DEFAULT_SEARCHER) where T
+    return _constant_anchor_query_impl(sitp.x, xq, _should_wrap(sitp), searcher)
 end
 
 """
@@ -423,7 +423,7 @@ end
 # ========================================
 
 """
-    (sitp::ConstantSeriesInterpolant)(xq::Real; deriv=0)
+    (sitp::ConstantSeriesInterpolant)(xq::Real; deriv=0, search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
@@ -433,20 +433,21 @@ Returns a vector of values, one per y-series.
 - `deriv=0`: Returns function values
 - `deriv=1,2`: Returns zeros (step function derivative is zero everywhere)
 """
-function (sitp::ConstantSeriesInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+function (sitp::ConstantSeriesInterpolant{T})(xq::S; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
     out = Vector{T}(undef, n_series(sitp))
-    return sitp(out, xq; deriv=deriv)
+    return sitp(out, xq; deriv=deriv, search=search)
 end
 
 """
-    (sitp::ConstantSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0)
+    (sitp::ConstantSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
 function (sitp::ConstantSeriesInterpolant{T})(
     output::AbstractVector{T},
     xq::S;
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat, S<:Real}
     n_ser = n_series(sitp)
 
@@ -456,7 +457,7 @@ function (sitp::ConstantSeriesInterpolant{T})(
     xq_typed = T(xq)
 
     # Build anchor
-    aq = _make_anchor(sitp, xq_typed)
+    aq = _make_anchor(sitp, xq_typed, _to_searcher(search))
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin

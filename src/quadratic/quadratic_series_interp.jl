@@ -108,12 +108,8 @@ end
 """Check if wrap mode is active."""
 @inline _should_wrap(sitp::QuadraticSeriesInterpolant) = sitp.extrap === Val(:wrap)
 
-"""Method kind for anchor construction."""
+"""Return the interpolation method kind for dispatch."""
 @inline _method_kind(::Type{<:QuadraticSeriesInterpolant}) = Val(:quadratic)
-
-"""Make appropriate anchor type."""
-@inline _make_anchor(::QuadraticSeriesInterpolant{T}, idx, xq, side, dL, h) where {T} =
-    _QuadraticAnchoredQuery{T}(idx, xq, side, dL)
 
 # ========================================
 # SIMD Evaluation Kernel
@@ -460,13 +456,13 @@ end
 
 # Scalar evaluation (explicit implementation for deriv keyword support)
 """
-    (sitp::QuadraticSeriesInterpolant)(xq::Real; deriv=0)
+    (sitp::QuadraticSeriesInterpolant)(xq::Real; deriv=0, search=Binary())
 
 Evaluate all series at scalar query point (out-of-place).
 """
-function (sitp::QuadraticSeriesInterpolant{T})(xq::S; deriv::Int=0) where {T<:AbstractFloat, S<:Real}
+function (sitp::QuadraticSeriesInterpolant{T})(xq::S; deriv::Int=0, search::AbstractSearchPolicy=Binary()) where {T<:AbstractFloat, S<:Real}
     xq_typed = T(xq)
-    aq = _anchor_query(sitp.x, xq_typed, Val(:quadratic); wrap=_should_wrap(sitp))
+    aq = _anchor_query(sitp.x, xq_typed, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search))
 
     output = Vector{T}(undef, n_series(sitp))
     @_dispatch_deriv deriv => op begin
@@ -476,19 +472,20 @@ function (sitp::QuadraticSeriesInterpolant{T})(xq::S; deriv::Int=0) where {T<:Ab
 end
 
 """
-    (sitp::QuadraticSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0)
+    (sitp::QuadraticSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
 
 Evaluate all series at scalar query point (in-place, zero allocation).
 """
 function (sitp::QuadraticSeriesInterpolant{T})(
     output::AbstractVector{T},
     xq::S;
-    deriv::Int=0
+    deriv::Int=0,
+    search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat, S<:Real}
     _validate_scalar_output(output, n_series(sitp))
 
     xq_typed = T(xq)
-    aq = _anchor_query(sitp.x, xq_typed, Val(:quadratic); wrap=_should_wrap(sitp))
+    aq = _anchor_query(sitp.x, xq_typed, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search))
 
     @_dispatch_deriv deriv => op begin
         _eval_series_at_anchor!(output, sitp, aq, op)
@@ -552,34 +549,6 @@ function (sitp::QuadraticSeriesInterpolant{T})(
 ) where {T<:AbstractFloat, S<:Real}
     xq_typed = _to_float(xq, T)
     return sitp(outputs, xq_typed; deriv=deriv, search=search)
-end
-
-# ========================================
-# Internal Vector Evaluation
-# ========================================
-
-"""Evaluate all series across vector queries using series-contiguous layout."""
-function _eval_series_vector!(
-    outputs::AbstractVector{<:AbstractVector{T}},
-    sitp::QuadraticSeriesInterpolant{T},
-    xq::AbstractVector{T},
-    op::AbstractEvalOp
-) where {T<:AbstractFloat}
-    # For each series, evaluate all query points
-    @inbounds for k in 1:n_series(sitp)
-        y_col = view(sitp.y, :, k)
-        a_col = view(sitp.a, :, k)
-        d_col = view(sitp.d, :, k)
-        output_k = outputs[k]
-
-        for (j, xq_j) in enumerate(xq)
-            aq = _anchor_query(sitp.x, xq_j, Val(:quadratic); wrap=_should_wrap(sitp))
-            output_k[j] = _eval_single_quadratic_with_extrap(y_col, a_col, d_col, length(sitp.x),
-                                                            T(first(sitp.x)), T(last(sitp.x)),
-                                                            aq, sitp.extrap, op)
-        end
-    end
-    return outputs
 end
 
 """Evaluate all series using pre-built anchors."""

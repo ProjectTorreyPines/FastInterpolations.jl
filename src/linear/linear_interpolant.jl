@@ -103,8 +103,8 @@ Create a callable interpolant for broadcast fusion and reuse.
 # Create with default Binary() search policy
 itp = linear_interp(x_data, y_data)
 
-# Create with LinearBounded() as default policy (optimal for sorted queries)
-itp = linear_interp(x_data, y_data; search=LinearBounded())
+# Create with LinearBinary() as default policy (optimal for sorted queries)
+itp = linear_interp(x_data, y_data; search=LinearBinary())
 
 # Scalar call (uses stored policy)
 val = itp(0.5)
@@ -135,7 +135,7 @@ vals_direct = linear_interp(x_data, y_data, query_points)
 # Performance Notes
 - Returns lightweight callable (~56 bytes), best for reuse and broadcast fusion
 - 3-argument form returns array immediately, best for single use
-- Use `search=LinearBounded()` for sorted query sequences
+- Use `search=LinearBinary()` for sorted query sequences
 - Use `hint=Ref(idx)` for ODE/streaming patterns with persistent hint
 """
 function linear_interp(

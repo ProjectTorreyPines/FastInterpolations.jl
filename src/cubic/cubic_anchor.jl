@@ -209,7 +209,7 @@ function _anchor_query(
     x::AbstractVector{T},
     xq::AbstractVector{S};
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBounded())
+    searcher::Searcher=_to_searcher(LinearBinary())
 ) where {T<:AbstractFloat, S<:Real}
     output = Vector{_CubicAnchoredQuery{T}}(undef, length(xq))
 
@@ -247,7 +247,7 @@ _fill_anchors!(buffer, x, xq)
     x::AbstractVector{T},
     xq::AbstractVector{S};
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBounded())
+    searcher::Searcher=_to_searcher(LinearBinary())
 ) where {T<:AbstractFloat, S<:Real}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 

@@ -628,7 +628,7 @@ end
 # Group 7: Search Policy Thread Safety
 # =========================================================================
 @testset "Search Policy Thread Safety" begin
-    @testset "LinearBounded concurrent access" begin
+    @testset "LinearBinary concurrent access" begin
         x = collect(range(0.0, 1.0, 1001))
         y = sin.(2π .* x)
         itp = linear_interp(x, y)
@@ -638,7 +638,7 @@ end
 
         @threads for i in eachindex(results)
             try
-                results[i] = itp(rand(); search=LinearBounded())
+                results[i] = itp(rand(); search=LinearBinary())
             catch
                 atomic_add!(errors, 1)
             end

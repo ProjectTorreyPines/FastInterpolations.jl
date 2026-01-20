@@ -29,7 +29,7 @@ Zero-allocation linear interpolation with automatic dispatch:
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
   - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
-  - `LinearBounded(max_steps=8)`: Linear search up to N steps, then binary fallback
+  - `LinearBinary(max_steps=8)`: Linear search up to N steps, then binary fallback
 
 # Example
 ```julia
@@ -42,7 +42,7 @@ linear_interp!(out, rho, y, [-0.1, 1.2]; extrap=:extension)  # linear extrapolat
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
 output = zeros(1000)
-linear_interp!(output, x_vec, y_vec, sorted_queries; search=LinearBounded(max_steps=8))
+linear_interp!(output, x_vec, y_vec, sorted_queries; search=LinearBinary(max_steps=8))
 ```
 
 # Implementation Note
@@ -186,7 +186,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
   - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
-  - `LinearBounded(max_steps=8)`: Linear search up to N steps, then binary fallback
+  - `LinearBinary(max_steps=8)`: Linear search up to N steps, then binary fallback
 
 # Returns
 - Always returns a floating-point type (Integer inputs auto-promoted to Float)
@@ -413,7 +413,7 @@ result = linear_interp(rho, y, [-0.1, 1.2]; extrap=:extension)  # linear extrap
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = linear_interp(x_vec, y_vec, sorted_queries; search=LinearBounded(max_steps=8))
+vals = linear_interp(x_vec, y_vec, sorted_queries; search=LinearBinary(max_steps=8))
 ```
 """
 function linear_interp(

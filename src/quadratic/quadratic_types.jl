@@ -33,8 +33,8 @@ d1 = itp(0.5; deriv=1)       # first derivative
 d2 = itp(0.5; deriv=2)       # second derivative
 
 # Custom search policy
-itp = quadratic_interp(x, y; search=LinearBounded())
-val = itp(0.5)               # uses LinearBounded() by default
+itp = quadratic_interp(x, y; search=LinearBinary())
+val = itp(0.5)               # uses LinearBinary() by default
 val = itp(0.5; search=Binary())  # override with Binary()
 ```
 """

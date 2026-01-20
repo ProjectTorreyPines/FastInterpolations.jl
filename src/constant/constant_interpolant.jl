@@ -98,8 +98,8 @@ itp(0.5)           # 10.0
 itp.([0.5, 1.5])   # [10.0, 20.0]
 
 # Create with custom search policy
-itp = constant_interp(x, y; search=LinearBounded())
-val = itp(0.5)     # uses LinearBounded() by default
+itp = constant_interp(x, y; search=LinearBinary())
+val = itp(0.5)     # uses LinearBinary() by default
 
 # Fused broadcast (optimal)
 result = @. coef * itp(query)

@@ -25,7 +25,7 @@ export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar 
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 
 # Search policy types (user-facing algorithm selection)
-export AbstractSearchPolicy, Binary, HintedBinary, LinearBounded
+export AbstractSearchPolicy, Binary, HintedBinary, Linear, LinearBinary
 
 # Boundary condition types
 export AbstractBC, PointBC, Deriv1, Deriv2, Deriv3, BCPair

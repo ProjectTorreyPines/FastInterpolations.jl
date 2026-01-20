@@ -133,7 +133,7 @@ function _anchor_query(
     xq::AbstractVector{S},
     tag::Val{:linear};
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBounded())
+    searcher::Searcher=_to_searcher(LinearBinary())
 ) where {T<:AbstractFloat, S<:Real}
     output = Vector{_LinearAnchoredQuery{T}}(undef, length(xq))
 
@@ -165,7 +165,7 @@ The same `buffer` object, filled with anchored queries.
     xq::AbstractVector{S},
     ::Val{:linear};
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBounded())
+    searcher::Searcher=_to_searcher(LinearBinary())
 ) where {T<:AbstractFloat, S<:Real}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 

@@ -22,7 +22,7 @@ Returned by `linear_interp(x, y)` (2-argument form).
 itp = linear_interp(x, y)  # default extrap=:none, search=Binary()
 
 # Create with custom search policy (baked-in default)
-itp = linear_interp(x, y; search=LinearBounded())
+itp = linear_interp(x, y; search=LinearBinary())
 
 # Use in broadcast (fused, no intermediate arrays)
 result = @. coef * itp(rho) * other_terms

@@ -23,7 +23,7 @@
 Abstract supertype for user-facing search policy selection.
 Concrete subtypes encode the search algorithm choice.
 
-See also: [`Binary`](@ref), [`HintedBinary`](@ref), [`LinearBounded`](@ref)
+See also: [`Binary`](@ref), [`HintedBinary`](@ref), [`LinearBinary`](@ref)
 """
 abstract type AbstractSearchPolicy end
 
@@ -48,7 +48,7 @@ hint = Ref(1)
 val = itp(0.5; search=Binary(), hint=hint)  # uses hinted binary internally
 ```
 
-See also: [`HintedBinary`](@ref), [`LinearBounded`](@ref)
+See also: [`HintedBinary`](@ref), [`LinearBinary`](@ref)
 """
 struct Binary <: AbstractSearchPolicy end
 
@@ -67,7 +67,48 @@ vals = itp(query_points; search=HintedBinary())
 struct HintedBinary <: AbstractSearchPolicy end
 
 """
-    LinearBounded{MAX} <: AbstractSearchPolicy
+    Linear <: AbstractSearchPolicy
+
+Pure linear search for **strictly monotonic query sequences**.
+Maximum speed with no binary fallback and minimal bounds checking.
+
+# Safety Contract (User Responsibility)
+**Preconditions that MUST be satisfied:**
+1. Queries must be monotonically ordered (all increasing OR all decreasing)
+2. All queries must satisfy `x[1] <= xi <= x[end]` (within interpolation domain)
+
+**If violated**: Undefined behavior (infinite loop or out-of-bounds access)
+
+# Performance Characteristics
+- **Best case**: O(1) per query (consecutive intervals)
+- **Amortized**: O(1) for properly monotonic sequences
+- **Worst case**: O(n) if sequence is not monotonic
+
+# When to Use
+- ODE integration with strictly monotonic time stepping
+- Streaming data evaluation with guaranteed ordering
+- Performance-critical loops where ALL inputs are controlled
+
+# When NOT to Use
+- Random access patterns (use [`Binary`](@ref))
+- Queries that might exceed domain bounds (use [`LinearBinary`](@ref))
+- Untrusted input data (use [`LinearBinary`](@ref))
+
+# Example
+```julia
+# ODE-style monotonic evaluation
+hint = Ref(1)
+for t in t_values  # strictly increasing
+    y = itp(t; search=Linear(), hint=hint)
+end
+```
+
+See also: [`LinearBinary`](@ref), [`Binary`](@ref), [`HintedBinary`](@ref)
+"""
+struct Linear <: AbstractSearchPolicy end
+
+"""
+    LinearBinary{MAX} <: AbstractSearchPolicy
 
 Bounded linear search: up to `MAX` linear steps from hint, then binary fallback.
 Optimal for **sorted/monotonic query sequences** where consecutive queries tend to
@@ -85,30 +126,30 @@ fall in adjacent or nearby intervals.
 # Construction
 Use the factory function (recommended) to construct with a curated set of values:
 ```julia
-LinearBounded()               # default MAX=8
-LinearBounded(max_steps=4)    # custom MAX=4
+LinearBinary()               # default MAX=8
+LinearBinary(max_steps=4)    # custom MAX=4
 ```
 
 Or construct the parametric type directly (advanced):
 ```julia
-LinearBounded{8}()            # explicit type parameter
+LinearBinary{8}()            # explicit type parameter
 ```
 
 # Example
 ```julia
 sorted_queries = sort(rand(1000))
-vals = linear_interp(x, y, sorted_queries; search=LinearBounded(max_steps=8))
+vals = linear_interp(x, y, sorted_queries; search=LinearBinary(max_steps=8))
 ```
 
 See also: [`Binary`](@ref), [`HintedBinary`](@ref)
 """
-struct LinearBounded{MAX} <: AbstractSearchPolicy end
+struct LinearBinary{MAX} <: AbstractSearchPolicy end
 
 """
-    LinearBounded(max_steps::Integer)
-    LinearBounded(; max_steps::Integer=8)
+    LinearBinary(max_steps::Integer)
+    LinearBinary(; max_steps::Integer=8)
 
-Factory constructor for `LinearBounded{MAX}` with a **curated set of `max_steps` values**.
+Factory constructor for `LinearBinary{MAX}` with a **curated set of `max_steps` values**.
 
 # Why Restricted Values?
 Julia compiles a specialized method for each unique type parameter `MAX`. Allowing
@@ -127,10 +168,10 @@ covering the practical range of use cases.
 
 # Example
 ```julia
-policy = LinearBounded()              # LinearBounded{8}()  (default)
-policy = LinearBounded(max_steps=4)   # LinearBounded{4}()
-policy = LinearBounded(max_steps=16)  # LinearBounded{16}()
-policy = LinearBounded(max_steps=3)   # ERROR: ArgumentError
+policy = LinearBinary()              # LinearBinary{8}()  (default)
+policy = LinearBinary(max_steps=4)   # LinearBinary{4}()
+policy = LinearBinary(max_steps=16)  # LinearBinary{16}()
+policy = LinearBinary(max_steps=3)   # ERROR: ArgumentError
 ```
 
 # Choosing `max_steps`
@@ -138,18 +179,18 @@ policy = LinearBounded(max_steps=3)   # ERROR: ArgumentError
 - **Medium values (8–16)**: Good balance for typical sorted query patterns
 - **Large values (32–128)**: For highly localized queries or very large datasets
 """
-function LinearBounded(max_steps::Integer)
-    max_steps == 1  && return LinearBounded{2}()
-    max_steps == 2  && return LinearBounded{2}()
-    max_steps == 4  && return LinearBounded{4}()
-    max_steps == 8  && return LinearBounded{8}()
-    max_steps == 16 && return LinearBounded{16}()
-    max_steps == 32 && return LinearBounded{32}()
-    max_steps == 64 && return LinearBounded{64}()
-    max_steps == 128 && return LinearBounded{128}()
+function LinearBinary(max_steps::Integer)
+    max_steps == 1  && return LinearBinary{2}()
+    max_steps == 2  && return LinearBinary{2}()
+    max_steps == 4  && return LinearBinary{4}()
+    max_steps == 8  && return LinearBinary{8}()
+    max_steps == 16 && return LinearBinary{16}()
+    max_steps == 32 && return LinearBinary{32}()
+    max_steps == 64 && return LinearBinary{64}()
+    max_steps == 128 && return LinearBinary{128}()
     throw(ArgumentError("`max_steps` must be one of (1, 2, 4, 8, 16, 32, 64, 128), got $max_steps"))
 end
-LinearBounded(; max_steps::Integer=8) = LinearBounded(max_steps)
+LinearBinary(; max_steps::Integer=8) = LinearBinary(max_steps)
 
 # ----------------------------------------
 # Hint Types (Internal)
@@ -202,7 +243,7 @@ Internal searcher type combining search policy with hint state.
 Type parameters enable compile-time dispatch with zero runtime overhead.
 
 # Type Parameters
-- `P`: Search policy type (`Binary`, `HintedBinary`, `LinearBounded{N}`)
+- `P`: Search policy type (`Binary`, `HintedBinary`, `LinearBinary{N}`)
 - `H`: Hint type (`NoHint`, `RefHint`)
 
 # Fields
@@ -210,7 +251,7 @@ Type parameters enable compile-time dispatch with zero runtime overhead.
 
 # Note
 Users should not construct Searcher directly. Use the policy types (`Binary()`,
-`HintedBinary()`, `LinearBounded()`) with the `search` keyword argument instead.
+`HintedBinary()`, `LinearBinary()`) with the `search` keyword argument instead.
 """
 struct Searcher{P<:AbstractSearchPolicy,H<:AbstractHint}
     hint::H
@@ -236,7 +277,8 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 """
 @inline _to_searcher(::Binary) = Searcher{Binary,NoHint}(NoHint())
 @inline _to_searcher(::HintedBinary) = Searcher{HintedBinary,RefHint}(RefHint())
-@inline _to_searcher(::LinearBounded{MAX}) where {MAX} = Searcher{LinearBounded{MAX},RefHint}(RefHint())
+@inline _to_searcher(::Linear) = Searcher{Linear,RefHint}(RefHint())
+@inline _to_searcher(::LinearBinary{MAX}) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint())
 
 # ----------------------------------------
 # 2-arg overloads: Policy + External Hint
@@ -249,8 +291,10 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(::Binary, hint::Base.RefValue{Int}) = Searcher{HintedBinary,RefHint}(RefHint(hint))  # auto-upgrade to hinted
 @inline _to_searcher(::HintedBinary, ::Nothing) = Searcher{HintedBinary,RefHint}(RefHint())
 @inline _to_searcher(::HintedBinary, hint::Base.RefValue{Int}) = Searcher{HintedBinary,RefHint}(RefHint(hint))
-@inline _to_searcher(::LinearBounded{MAX}, ::Nothing) where {MAX} = Searcher{LinearBounded{MAX},RefHint}(RefHint())
-@inline _to_searcher(::LinearBounded{MAX}, hint::Base.RefValue{Int}) where {MAX} = Searcher{LinearBounded{MAX},RefHint}(RefHint(hint))
+@inline _to_searcher(::Linear, ::Nothing) = Searcher{Linear,RefHint}(RefHint())
+@inline _to_searcher(::Linear, hint::Base.RefValue{Int}) = Searcher{Linear,RefHint}(RefHint(hint))
+@inline _to_searcher(::LinearBinary{MAX}, ::Nothing) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint())
+@inline _to_searcher(::LinearBinary{MAX}, hint::Base.RefValue{Int}) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint(hint))
 
 # ----------------------------------------
 # Searcher passthrough (advanced usage)
@@ -384,12 +428,54 @@ Updates `hint_ref` with the found interval index.
 end
 
 """
-    _search_linear_bounded!(x, xi, hint_ref, ::Val{MAX}) -> (idx, xL, xR)
+    _search_linear!(x, xi, hint_ref) -> (idx, xL, xR)
+
+Pure linear search: walks from hint until interval found.
+No bounds checking (except initial clamp), no binary fallback.
+
+# Safety Contract
+- Caller guarantees `x[1] <= xi <= x[end]` (within domain)
+- Caller guarantees monotonic query progression
+- Hint is clamped once at start, then trusted
+"""
+@inline function _search_linear!(
+    x::AbstractVector{T},
+    xi::T,
+    hint_ref::Base.RefValue{Int},
+) where {T<:AbstractFloat}
+    ix = hint_ref[]
+    n = length(x)
+    @inbounds begin
+        # Clamp once at start (handles bad initial hint)
+        ix = clamp(ix, 1, n - 1)
+
+        # Direct hit - most common case for monotonic queries
+        if x[ix] <= xi < x[ix + 1]
+            return ix, x[ix], x[ix + 1]
+        end
+
+        # Linear walk - NO bounds check, NO fallback
+        if xi < x[ix]
+            while x[ix] > xi
+                ix -= 1
+            end
+        else  # xi >= x[ix + 1]
+            while x[ix + 1] <= xi
+                ix += 1
+            end
+        end
+        hint_ref[] = ix
+        return ix, x[ix], x[ix + 1]
+    end
+end
+
+"""
+    _search_linear_binary!(x, xi, hint_ref, ::Val{MAX}) -> (idx, xL, xR)
 
 Bounded linear search: up to MAX steps, then binary fallback.
 Optimal for monotonic query sequences.
 """
-@inline function _search_linear_bounded!(
+@inline function _search_linear_binary!(
     x::AbstractVector{T},
     xi::T,
     hint_ref::Base.RefValue{Int},
@@ -455,16 +541,28 @@ end
 @inline search_interval(::Searcher{HintedBinary,RefHint}, x::AbstractRange{T}, xi::T) where {T} =
     _search_direct(x, xi)
 
-# --- LinearBounded{MAX} + RefHint ---
+# --- Linear + RefHint ---
 
 @inline function search_interval(
-    p::Searcher{LinearBounded{MAX},RefHint}, x::AbstractVector{T}, xi::T
+    p::Searcher{Linear,RefHint}, x::AbstractVector{T}, xi::T
+) where {T}
+    return _search_linear!(x, xi, p.hint.idx)
+end
+
+# Range always uses O(1) direct - hint ignored
+@inline search_interval(::Searcher{Linear,RefHint}, x::AbstractRange{T}, xi::T) where {T} =
+    _search_direct(x, xi)
+
+# --- LinearBinary{MAX} + RefHint ---
+
+@inline function search_interval(
+    p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractVector{T}, xi::T
 ) where {MAX,T}
-    return _search_linear_bounded!(x, xi, p.hint.idx, Val(MAX))
+    return _search_linear_binary!(x, xi, p.hint.idx, Val(MAX))
 end
 
 @inline search_interval(
-    ::Searcher{LinearBounded{MAX},RefHint},
+    ::Searcher{LinearBinary{MAX},RefHint},
     x::AbstractRange{T},
     xi::T,
 ) where {MAX,T} =
@@ -486,15 +584,27 @@ end
 ) where {T} =
     _search_direct(x, spacing, xi)
 
-# LinearBounded + spacing
+# Linear + spacing
 @inline function search_interval(
-    p::Searcher{LinearBounded{MAX},RefHint}, x::AbstractVector{T}, ::AbstractGridSpacing{T}, xi::T
-) where {MAX,T}
-    return _search_linear_bounded!(x, xi, p.hint.idx, Val(MAX))
+    p::Searcher{Linear,RefHint}, x::AbstractVector{T}, ::AbstractGridSpacing{T}, xi::T
+) where {T}
+    return _search_linear!(x, xi, p.hint.idx)
 end
 
 @inline search_interval(
-    ::Searcher{LinearBounded{MAX},RefHint}, x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T
+    ::Searcher{Linear,RefHint}, x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T
+) where {T} =
+    _search_direct(x, spacing, xi)
+
+# LinearBinary + spacing
+@inline function search_interval(
+    p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractVector{T}, ::AbstractGridSpacing{T}, xi::T
+) where {MAX,T}
+    return _search_linear_binary!(x, xi, p.hint.idx, Val(MAX))
+end
+
+@inline search_interval(
+    ::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T
 ) where {MAX,T} =
     _search_direct(x, spacing, xi)
 

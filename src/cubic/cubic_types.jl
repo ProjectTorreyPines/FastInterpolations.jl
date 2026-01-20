@@ -90,7 +90,7 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 # Type Parameters
 - `T`: Float type (Float32 or Float64)
 - `C`: CubicSplineCache type (preserves grid type info for O(1) vs O(log n) lookup)
-- `P`: Search policy type (Binary, HintedBinary, LinearBounded, etc.)
+- `P`: Search policy type (Binary, HintedBinary, LinearBinary, etc.)
 
 # Fields
 - `cache::C`: Pre-computed CubicSplineCache (LU factorization)
@@ -106,8 +106,8 @@ result = @. coef * itp(rho) * other_terms  # fused, zero-allocation per call
 val = itp(0.5)                              # scalar (zero-allocation)
 
 # Create with custom search policy
-itp = cubic_interp(x, y; search=LinearBounded())
-val = itp(0.5)                              # uses LinearBounded() by default
+itp = cubic_interp(x, y; search=LinearBinary())
+val = itp(0.5)                              # uses LinearBinary() by default
 val = itp(0.5; search=Binary())             # override with Binary()
 ```
 

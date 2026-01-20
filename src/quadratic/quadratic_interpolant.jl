@@ -99,8 +99,8 @@ itp(1.5)           # 2.25 (exact)
 itp.([0.5, 1.5])   # [0.25, 2.25]
 
 # Create with custom search policy
-itp = quadratic_interp(x, y; search=LinearBounded())
-val = itp(0.5)     # uses LinearBounded() by default
+itp = quadratic_interp(x, y; search=LinearBinary())
+val = itp(0.5)     # uses LinearBinary() by default
 
 # Fused broadcast (optimal)
 result = @. coef * itp(query)

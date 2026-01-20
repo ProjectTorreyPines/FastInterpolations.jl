@@ -29,8 +29,8 @@ itp_left = constant_interp(x, y; side=:left)
 itp_wrap = constant_interp(x, y; extrap=:wrap, side=:right)
 
 # Custom search policy
-itp = constant_interp(x, y; search=LinearBounded())
-val = itp(0.5)               # uses LinearBounded() by default
+itp = constant_interp(x, y; search=LinearBinary())
+val = itp(0.5)               # uses LinearBinary() by default
 val = itp(0.5; search=Binary())  # override with Binary()
 ```
 """

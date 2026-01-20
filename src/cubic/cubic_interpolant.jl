@@ -400,8 +400,8 @@ vals = itp.(query_points)           # Broadcast
 result = @. coef * itp(rho) * ne    # Fused broadcast
 
 # Create with custom search policy
-itp = cubic_interp(x, y; search=LinearBounded())
-val = itp(0.5)                      # Uses LinearBounded() by default
+itp = cubic_interp(x, y; search=LinearBinary())
+val = itp(0.5)                      # Uses LinearBinary() by default
 val = itp(0.5; search=Binary())     # Override with Binary()
 ```
 """

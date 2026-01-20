@@ -48,7 +48,7 @@ nothing # hide
 - **Strictly monotonic, performance-critical** → `Linear()` (benchmark first! see below)
 
 !!! note "Benchmark Before Choosing Linear()"
-    `Linear()` can be faster for some monotonic patterns but slower for others. Always benchmark with your actual query patterns using `benchmark/search_policy_benchmark.jl`.
+    `Linear()` can be faster for some monotonic patterns but slower for others. Always benchmark with your actual query patterns.
 
 ## Performance Comparison
 

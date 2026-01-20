@@ -42,6 +42,17 @@ Left
 Right
 ```
 
+## Search Policies
+
+Search policies control how the interpolant finds the correct interval for a query point. Different policies offer trade-offs between simplicity, performance for sequential queries, and thread safety.
+
+```@docs
+AbstractSearchPolicy
+Binary
+HintedBinary
+LinearBounded
+```
+
 ## Series Interpolant Types
 
 SeriesInterpolant stores multiple y-series in a **unified matrix** with point-contiguous layout for optimal SIMD performance on scalar queries (10-120× faster than composition-based approaches).

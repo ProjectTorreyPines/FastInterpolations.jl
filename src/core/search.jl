@@ -120,7 +120,7 @@ covering the practical range of use cases.
 
 # Arguments
 - `max_steps::Integer=8`: Maximum linear search steps before binary fallback.
-  **Allowed values**: `2, 4, 8, 16, 32, 64, 128` (powers of 2 from 2¹ to 2⁷)
+  **Allowed values**: `1, 2, 4, 8, 16, 32, 64, 128` (powers of 2 from 2⁰ to 2⁷)
 
 # Throws
 - `ArgumentError`: If `max_steps` is not one of the allowed values.
@@ -134,11 +134,12 @@ policy = LinearBounded(max_steps=3)   # ERROR: ArgumentError
 ```
 
 # Choosing `max_steps`
-- **Small values (2–4)**: Lower overhead, but more frequent binary fallbacks
+- **Small values (1–4)**: Lower overhead, but more frequent binary fallbacks
 - **Medium values (8–16)**: Good balance for typical sorted query patterns
 - **Large values (32–128)**: For highly localized queries or very large datasets
 """
 function LinearBounded(max_steps::Integer)
+    max_steps == 1  && return LinearBounded{2}()
     max_steps == 2  && return LinearBounded{2}()
     max_steps == 4  && return LinearBounded{4}()
     max_steps == 8  && return LinearBounded{8}()
@@ -146,7 +147,7 @@ function LinearBounded(max_steps::Integer)
     max_steps == 32 && return LinearBounded{32}()
     max_steps == 64 && return LinearBounded{64}()
     max_steps == 128 && return LinearBounded{128}()
-    throw(ArgumentError("`max_steps` must be one of (2, 4, 8, 16, 32, 64, 128), got $max_steps"))
+    throw(ArgumentError("`max_steps` must be one of (1, 2, 4, 8, 16, 32, 64, 128), got $max_steps"))
 end
 LinearBounded(; max_steps::Integer=8) = LinearBounded(max_steps)
 

@@ -597,7 +597,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
     @testset "LinearBounded Constructor" begin
         @testset "Valid max_steps Values" begin
             # All allowed max_steps values
-            valid_steps = (2, 4, 8, 16, 32, 64, 128)
+            valid_steps = (1, 2, 4, 8, 16, 32, 64, 128)
             for ms in valid_steps
                 policy = LinearBounded(max_steps=ms)
                 @test policy isa LinearBounded{ms}
@@ -612,7 +612,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "Invalid max_steps Throws ArgumentError" begin
-            invalid_steps = (0, 1, 3, 5, 6, 7, 9, 10, 15, 17, 100, 256)
+            invalid_steps = (0, 3, 5, 6, 7, 9, 10, 15, 17, 100, 256)
             for ms in invalid_steps
                 @test_throws ArgumentError LinearBounded(max_steps=ms)
                 @test_throws ArgumentError LinearBounded(ms)

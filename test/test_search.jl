@@ -895,6 +895,26 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
     end
 
     # ========================================
+    # _to_searcher 1-arg (used by oneshot functions)
+    # ========================================
+
+    @testset "_to_searcher 1-arg coverage" begin
+        # These are used by oneshot functions like linear_interp!(output, x, y, xq_vec; search=...)
+        s1 = _to_searcher(Binary())
+        @test s1.hint isa NoHint
+
+        s2 = _to_searcher(HintedBinary())
+        @test s2.hint isa RefHint
+        @test s2.hint.idx[] == 1
+
+        s3 = _to_searcher(Linear())
+        @test s3.hint isa RefHint
+
+        s4 = _to_searcher(LinearBinary())
+        @test s4.hint isa RefHint
+    end
+
+    # ========================================
     # Persistent Hint Tests (ODE/Streaming Pattern)
     # ========================================
 

@@ -26,8 +26,10 @@
 |----------|-------------|
 | `quadratic_interp(x, y, xq; deriv=1)` | First derivative (continuous) |
 | `quadratic_interp(x, y, xq; deriv=2)` | Second derivative (piecewise constant) |
+| `quadratic_interp(x, y, xq; deriv=3)` | Third derivative (always 0) |
 | `deriv1(itp)` | First derivative view |
 | `deriv2(itp)` | Second derivative view |
+| `deriv3(itp)` | Third derivative view (always 0) |
 
 ---
 
@@ -50,3 +52,7 @@ QuadraticInterpolant
 ParabolaFit
 MinCurvFit
 ```
+
+## Derivative Views
+
+See [Derivatives](../interpolation/derivatives.md) for `deriv1`, `deriv2`, `deriv3` API reference.

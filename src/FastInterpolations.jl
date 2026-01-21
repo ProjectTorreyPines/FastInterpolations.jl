@@ -32,8 +32,8 @@ export AbstractBC, PointBC, Deriv1, Deriv2, Deriv3, BCPair
 export NaturalBC, ClampedBC, PeriodicBC, MinCurvFit, ParabolaFit
 export Left, Right
 
-# Derivative view functions for interpolants
-export deriv1, deriv2, deriv3
+# Derivative view functions and types
+export deriv1, deriv2, deriv3, AbstractDerivativeView, DerivativeView
 
 # Operation types (for derivative dispatch)
 export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3

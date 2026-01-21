@@ -2218,11 +2218,13 @@ end # SeriesInterpolant Derivatives
 # ========================================
 
 @testset "DerivativeView search/hint keywords" begin
+    # Shared cubic test data
+    x_cubic = collect(range(0.0, 1.0, 51))
+    y_cubic = x_cubic.^2
+    xq = [0.25, 0.5, 0.75]
 
     @testset "Cubic - search keyword passthrough" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        itp = cubic_interp(x, y; search=Binary())
+        itp = cubic_interp(x_cubic, y_cubic; search=Binary())
         d1 = deriv1(itp)
         d2 = deriv2(itp)
 
@@ -2237,9 +2239,7 @@ end # SeriesInterpolant Derivatives
     end
 
     @testset "Cubic - hint keyword passthrough" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x_cubic, y_cubic)
         d1 = deriv1(itp)
 
         hint = Ref(1)
@@ -2264,11 +2264,8 @@ end # SeriesInterpolant Derivatives
     end
 
     @testset "Vector query with search and hint" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x_cubic, y_cubic)
         d1 = deriv1(itp)
-        xq = [0.25, 0.5, 0.75]
 
         hint = Ref(1)
         result = d1(xq; search=LinearBinary(), hint=hint)
@@ -2276,18 +2273,25 @@ end # SeriesInterpolant Derivatives
         @test result ≈ expected
     end
 
+    @testset "Error on deriv keyword override" begin
+        itp = cubic_interp(x_cubic, y_cubic)
+        d1 = deriv1(itp)
+
+        @test_throws ArgumentError d1(0.5; deriv=2)
+        @test_throws ArgumentError d1(xq; deriv=3)
+    end
 end # DerivativeView search/hint keywords
 
 @testset "DerivativeView single-series in-place vector" begin
+    # Shared test data
+    x_base = collect(range(0.0, 1.0, 51))
+    xq = [0.25, 0.5, 0.75]
 
     @testset "CubicInterpolant in-place vector" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x_base, x_base.^2)
         d1 = deriv1(itp)
         d2 = deriv2(itp)
 
-        xq = [0.25, 0.5, 0.75]
         output1 = zeros(3)
         output2 = zeros(3)
 
@@ -2305,20 +2309,17 @@ end # DerivativeView search/hint keywords
         itp = linear_interp(x, y)
         d1 = deriv1(itp)
 
-        xq = [0.5, 1.5, 2.5]
+        xq_lin = [0.5, 1.5, 2.5]
         output = zeros(3)
-        d1(output, xq)
+        d1(output, xq_lin)
 
-        @test output ≈ itp(xq; deriv=1)
+        @test output ≈ itp(xq_lin; deriv=1)
     end
 
     @testset "QuadraticInterpolant in-place vector" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^3
-        itp = quadratic_interp(x, y)
+        itp = quadratic_interp(x_base, x_base.^3)
         d1 = deriv1(itp)
 
-        xq = [0.25, 0.5, 0.75]
         output = zeros(3)
         d1(output, xq)
 
@@ -2326,12 +2327,9 @@ end # DerivativeView search/hint keywords
     end
 
     @testset "In-place vector with search and hint" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x_base, x_base.^2)
         d1 = deriv1(itp)
 
-        xq = [0.25, 0.5, 0.75]
         output = zeros(3)
         hint = Ref(1)
 
@@ -2340,31 +2338,29 @@ end # DerivativeView search/hint keywords
     end
 
     @testset "In-place vector zero allocation" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x_base, x_base.^2)
         d1 = deriv1(itp)
 
-        xq = collect(range(0.1, 0.9, 10))
+        xq_alloc = collect(range(0.1, 0.9, 10))
         output = zeros(10)
 
         # Warmup
-        d1(output, xq)
+        d1(output, xq_alloc)
 
         # Should be zero-allocation
-        alloc = @allocated d1(output, xq)
+        alloc = @allocated d1(output, xq_alloc)
         @test alloc <= DERIV_ALLOC_THRESHOLD
     end
 
 end # DerivativeView single-series in-place vector
 
 @testset "DerivativeView SeriesInterpolant search/hint keywords" begin
+    # Shared test data for series interpolant
+    x = collect(range(0.0, 1.0, 51))
+    sitp = cubic_interp(x, [x.^2, x.^3])
+    xq = [0.25, 0.5, 0.75]
 
     @testset "SeriesInterpolant scalar with search and hint" begin
-        x = collect(range(0.0, 1.0, 51))
-        y1 = x.^2
-        y2 = x.^3
-        sitp = cubic_interp(x, [y1, y2])
         d1 = deriv1(sitp)
 
         # Scalar with search and hint
@@ -2377,10 +2373,6 @@ end # DerivativeView single-series in-place vector
     end
 
     @testset "SeriesInterpolant in-place scalar with keywords" begin
-        x = collect(range(0.0, 1.0, 51))
-        y1 = x.^2
-        y2 = x.^3
-        sitp = cubic_interp(x, [y1, y2])
         d1 = deriv1(sitp)
 
         out = zeros(2)
@@ -2389,13 +2381,8 @@ end # DerivativeView single-series in-place vector
     end
 
     @testset "SeriesInterpolant in-place vector with keywords" begin
-        x = collect(range(0.0, 1.0, 51))
-        y1 = x.^2
-        y2 = x.^3
-        sitp = cubic_interp(x, [y1, y2])
         d1 = deriv1(sitp)
 
-        xq = [0.25, 0.5, 0.75]
         outputs = [zeros(3), zeros(3)]
         d1(outputs, xq; search=LinearBinary(), hint=Ref(1))
 
@@ -2407,11 +2394,13 @@ end # DerivativeView single-series in-place vector
 end # DerivativeView SeriesInterpolant search/hint keywords
 
 @testset "DerivativeView type stability and performance" begin
+    # Shared cubic test data
+    x_cubic = collect(range(0.0, 1.0, 51))
+    y_cubic = x_cubic.^2
+    xq = [0.25, 0.5, 0.75]
 
     @testset "Type stability - scalar evaluation" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x_cubic, y_cubic)
         d1 = deriv1(itp)
         d2 = deriv2(itp)
 
@@ -2433,12 +2422,8 @@ end # DerivativeView SeriesInterpolant search/hint keywords
     end
 
     @testset "Type stability - vector evaluation" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x_cubic, y_cubic)
         d1 = deriv1(itp)
-
-        xq = [0.25, 0.5, 0.75]
 
         # Basic vector
         @test @inferred(d1(xq)) isa Vector{Float64}
@@ -2449,12 +2434,9 @@ end # DerivativeView SeriesInterpolant search/hint keywords
     end
 
     @testset "Type stability - in-place evaluation" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x_cubic, y_cubic)
         d1 = deriv1(itp)
 
-        xq = [0.25, 0.5, 0.75]
         output = zeros(3)
 
         # In-place should return the output array
@@ -2478,10 +2460,7 @@ end # DerivativeView SeriesInterpolant search/hint keywords
     end
 
     @testset "Type stability - SeriesInterpolant" begin
-        x = collect(range(0.0, 1.0, 51))
-        y1 = x.^2
-        y2 = x.^3
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x_cubic, [x_cubic.^2, x_cubic.^3])
         d1 = deriv1(sitp)
 
         # Scalar returns Vector
@@ -2489,14 +2468,11 @@ end # DerivativeView SeriesInterpolant search/hint keywords
         @test @inferred(d1(0.5; search=Binary())) isa Vector{Float64}
 
         # Vector returns Vector of Vectors
-        xq = [0.25, 0.5, 0.75]
         @test @inferred(d1(xq)) isa Vector{Vector{Float64}}
     end
 
     @testset "Zero allocation - scalar with kwargs" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x_cubic, y_cubic)
         d1 = deriv1(itp)
 
         # Warmup
@@ -2516,26 +2492,24 @@ end # DerivativeView SeriesInterpolant search/hint keywords
     end
 
     @testset "Zero allocation - in-place with kwargs" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x_cubic, y_cubic)
         d1 = deriv1(itp)
 
-        xq = collect(range(0.1, 0.9, 10))
+        xq_alloc = collect(range(0.1, 0.9, 10))
         output = zeros(10)
         hint = Ref(1)
 
         # Warmup
-        d1(output, xq)
-        d1(output, xq; search=Binary())
-        d1(output, xq; hint=hint)
-        d1(output, xq; search=LinearBinary(), hint=hint)
+        d1(output, xq_alloc)
+        d1(output, xq_alloc; search=Binary())
+        d1(output, xq_alloc; hint=hint)
+        d1(output, xq_alloc; search=LinearBinary(), hint=hint)
 
         # Test allocations
-        alloc_basic = @allocated d1(output, xq)
-        alloc_search = @allocated d1(output, xq; search=Binary())
-        alloc_hint = @allocated d1(output, xq; hint=hint)
-        alloc_both = @allocated d1(output, xq; search=LinearBinary(), hint=hint)
+        alloc_basic = @allocated d1(output, xq_alloc)
+        alloc_search = @allocated d1(output, xq_alloc; search=Binary())
+        alloc_hint = @allocated d1(output, xq_alloc; hint=hint)
+        alloc_both = @allocated d1(output, xq_alloc; search=LinearBinary(), hint=hint)
 
         @test alloc_basic <= DERIV_ALLOC_THRESHOLD
         @test alloc_search <= DERIV_ALLOC_THRESHOLD
@@ -2544,9 +2518,7 @@ end # DerivativeView SeriesInterpolant search/hint keywords
     end
 
     @testset "kwargs forwarding preserves behavior" begin
-        x = collect(range(0.0, 1.0, 51))
-        y = x.^2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x_cubic, y_cubic)
         d1 = deriv1(itp)
 
         # DerivativeView with kwargs should match direct itp call with kwargs
@@ -2560,7 +2532,6 @@ end # DerivativeView SeriesInterpolant search/hint keywords
             @test dv_result ≈ itp_result
 
             # Vector
-            xq = [0.25, 0.5, 0.75]
             hint = Ref(1)
             hint2 = Ref(1)
             dv_result = d1(xq; search=search_policy, hint=hint)

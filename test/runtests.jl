@@ -41,4 +41,5 @@ else
     include("test_thread_safety.jl")
     include("test_rcu.jl")
     include("test_nonuniform_grid.jl")
+    include("test_show.jl")
 end

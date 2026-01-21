@@ -101,9 +101,9 @@ query_pts = range(0.0, 1.0, 100)
 results = @. itp(query_pts) + 0.1 * d1(query_pts)
 
 # In-place evaluation (single-series)
-output = zeros(length(xq))
-d1(output, xq)
-d1(output, xq; search=LinearBinary())
+output = similar(query_pts)
+d1(output, query_pts)
+d1(output, query_pts; search=LinearBinary())
 ```
 """
 (deriv1, deriv2, deriv3)

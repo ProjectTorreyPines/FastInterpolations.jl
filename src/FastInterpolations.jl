@@ -15,6 +15,9 @@ include("cubic/cubic.jl")
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")
 
+# Custom show methods (depends on all interpolant types and DerivativeView)
+include("core/show.jl")
+
 # Exports
 export AbstractInterpolant, AbstractSeriesInterpolant
 export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant

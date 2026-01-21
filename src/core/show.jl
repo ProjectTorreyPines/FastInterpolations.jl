@@ -98,7 +98,7 @@ function _show_grid_row(io::IO, is_last::Bool, x::AbstractVector)
 end
 
 """Format extrapolation mode from ExtrapVal."""
-function _format_extrap(mode::ExtrapVal)
+function _format_extrap(mode)
     mode === Val(:none) && return ":none"
     mode === Val(:constant) && return ":constant"
     mode === Val(:extension) && return ":extension"
@@ -107,7 +107,7 @@ function _format_extrap(mode::ExtrapVal)
 end
 
 """Format side selection from SideVal."""
-function _format_side(side::SideVal)
+function _format_side(side)
     side === Val(:nearest) && return ":nearest"
     side === Val(:left) && return ":left"
     side === Val(:right) && return ":right"
@@ -124,12 +124,11 @@ _format_search(::LinearBinary{MAX}) where {MAX} = "LinearBinary{$MAX}"
 _format_bc(::NaturalBC) = "Natural (S''=0 at ends)"
 _format_bc(::ClampedBC) = "Clamped (S'=0 at ends)"
 _format_bc(::PeriodicBC) = "Periodic"
-_format_bc(::PeriodicData) = "Periodic"
-_format_bc(::MinCurvFit) = "MinCurvFit"
-_format_bc(::ParabolaFit) = "ParabolaFit"
 _format_bc(bc::Deriv1) = "Deriv1($(bc.val))"
 _format_bc(bc::Deriv2) = "Deriv2($(bc.val))"
 _format_bc(bc::Deriv3) = "Deriv3($(bc.val))"
+_format_bc(::MinCurvFit) = "MinCurvFit"
+_format_bc(::ParabolaFit) = "ParabolaFit"
 _format_bc(bc::Left) = "Left($(nameof(typeof(bc.bc))))"
 _format_bc(bc::Right) = "Right($(nameof(typeof(bc.bc))))"
 
@@ -234,7 +233,7 @@ end
 
 function Base.show(io::IO, itp::CubicInterpolant{T}) where {T}
     n = length(itp.cache.x)
-    bc_name = _short_bc_name(itp.cache.bc_config)
+    bc_name = _short_bc_name(itp.bc)
     _show_type_header(io, "CubicInterpolant", T)
     print(io, "($n pts, $bc_name)")
 end
@@ -251,14 +250,22 @@ function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolant{T}) where {
         _show_row(io, false, "Search:", _format_search(itp.search_policy))
     end
     println(io)
-    _show_row(io, true, "BC:    ", _format_bc(itp.cache.bc_config))
+    _show_row(io, true, "BC:    ", _format_bc(itp.bc))
 end
 
 # Short BC name for compact display
-_short_bc_name(::BCPair{T,L,R}) where {T, L<:Deriv2, R<:Deriv2} = "Natural"
-_short_bc_name(::BCPair{T,L,R}) where {T, L<:Deriv1, R<:Deriv1} = "Clamped"
-_short_bc_name(::PeriodicData) = "Periodic"
-_short_bc_name(bc::BCPair) = "Custom"
+_short_bc_name(::PeriodicBC) = "Periodic"
+function _short_bc_name(bc::BCPair)
+    # Check for Natural: both ends have Deriv2 with val=0
+    if bc.left isa Deriv2 && bc.right isa Deriv2 && bc.left.val == 0 && bc.right.val == 0
+        return "Natural"
+    # Check for Clamped: both ends have Deriv1 with val=0
+    elseif bc.left isa Deriv1 && bc.right isa Deriv1 && bc.left.val == 0 && bc.right.val == 0
+        return "Clamped"
+    else
+        return "Custom"
+    end
+end
 
 # ========================================
 # Show Methods: Multi-Series Interpolants

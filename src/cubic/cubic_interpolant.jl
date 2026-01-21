@@ -344,7 +344,7 @@ so the pool memory can be safely reused after this function returns.
     tmp_z = similar!(pool, y)
     _solve_system!(tmp_z, cache, y, bc_pair)
     # tmp_z is copied by CubicInterpolant constructor - safe to return to pool
-    return CubicInterpolant(cache, y, tmp_z, ev, search)
+    return CubicInterpolant(cache, y, tmp_z, bc_pair, ev, search)
 end
 
 """
@@ -369,7 +369,7 @@ so the pool memory can be safely reused after this function returns.
     tmp_z = similar!(pool, y)
     _solve_system!(tmp_z, cache, y, cache.bc_config)
     # tmp_z is copied by CubicInterpolant constructor - safe to return to pool
-    return CubicInterpolant(cache, y, tmp_z, Val(:wrap), search)
+    return CubicInterpolant(cache, y, tmp_z, PeriodicBC{T}(), Val(:wrap), search)
 end
 
 # ========================================
@@ -462,11 +462,12 @@ by the CubicInterpolant constructor.
 
     if cache.bc_config isa PeriodicData
         _check_periodic_endpoints(y)
-        return CubicInterpolant(cache, y, tmp_z, Val(:wrap), search)
+        return CubicInterpolant(cache, y, tmp_z, PeriodicBC{T}(), Val(:wrap), search)
     end
 
+    # cache.bc_config is BCPair - use it directly
     ev = _symbol_to_extrap_val(extrap)
-    return CubicInterpolant(cache, y, tmp_z, ev, search)
+    return CubicInterpolant(cache, y, tmp_z, cache.bc_config, ev, search)
 end
 
 # Real wrapper for 2-argument form

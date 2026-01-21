@@ -82,7 +82,7 @@ end
 # ExtrapVal is defined in ops.jl (shared between linear and cubic)
 
 """
-    CubicInterpolant{T,C,P}
+    CubicInterpolant{T,C,P,BC}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `cubic_interp(x, y)` (2-argument form).
@@ -91,11 +91,13 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 - `T`: Float type (Float32 or Float64)
 - `C`: CubicSplineCache type (preserves grid type info for O(1) vs O(log n) lookup)
 - `P`: Search policy type (Binary, HintedBinary, LinearBinary, etc.)
+- `BC`: Boundary condition type (BCPair or PeriodicBC)
 
 # Fields
 - `cache::C`: Pre-computed CubicSplineCache (LU factorization)
 - `y::Vector{T}`: y-values (function values at grid points)
 - `z::Vector{T}`: Pre-computed second derivative coefficients (solves system once!)
+- `bc::BC`: Boundary condition used for this interpolant
 - `extrap::ExtrapVal`: Extrapolation mode (union-split for efficient dispatch)
 - `search_policy::P`: Default search policy for interval lookup
 
@@ -117,26 +119,28 @@ val = itp(0.5; search=Binary())             # override with Binary()
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Extrapolation mode uses union-splitting for near-zero overhead dispatch
 """
-struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},P<:AbstractSearchPolicy} <: AbstractInterpolant{T}
+struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},P<:AbstractSearchPolicy,BC<:CubicBC{T}} <: AbstractInterpolant{T}
     cache::C
     y::Vector{T}
     z::Vector{T}  # Pre-computed second derivative coefficients
+    bc::BC  # Boundary condition used for this interpolant
     extrap::ExtrapVal  # Extrapolation mode (concrete union for union-splitting)
     search_policy::P  # Default search policy (immutable, thread-safe)
     function CubicInterpolant(
         cache::C,
         y::AbstractVector{T},
         z::AbstractVector{T},
+        bc::BC,
         extrap::ExtrapVal,
         search::P=Binary()
-    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, P<:AbstractSearchPolicy}
+    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, P<:AbstractSearchPolicy, BC<:CubicBC{T}}
         @assert length(cache.x) == length(y) "cache grid and y must have same length"
         @assert length(cache.x) == length(z) "z coefficients must match grid length"
         # Always copy to ensure immutability: once constructed, the interpolant
         # owns its data and always returns identical results for the same query.
         # Without copying, external modifications to y or cache reuse could
         # silently corrupt results.
-        new{T,C,P}(cache, Vector{T}(y), Vector{T}(z), extrap, search)
+        new{T,C,P,BC}(cache, Vector{T}(y), Vector{T}(z), bc, extrap, search)
     end
 end
 

@@ -328,10 +328,23 @@
         compact_periodic = sprint(show, itp_periodic)
         @test occursin("Periodic", compact_periodic)
 
-        # Custom (non-standard BC)
+        # Custom (non-standard BC with mixed types)
         itp_custom = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(1.0), Deriv2(0.5)))
         compact_custom = sprint(show, itp_custom)
         @test occursin("Custom", compact_custom)
+
+        # Note: autocache=false to avoid cache sharing with previous BC of same type
+        itp_deriv2_nonzero = cubic_interp(x_vec, y_short; bc=BCPair(Deriv2(1.0), Deriv2(0.0)))
+        compact_deriv2_nonzero = sprint(show, itp_deriv2_nonzero)
+        @test occursin("Custom", compact_deriv2_nonzero)
+        @test !occursin("Natural", compact_deriv2_nonzero)
+
+        # Bug fix: Deriv1 type but non-zero values should show "Custom", not "Clamped"
+        # Note: autocache=false to avoid cache sharing with previous BC of same type
+        itp_deriv1_nonzero = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(0.5), Deriv1(1.0)))
+        compact_deriv1_nonzero = sprint(show, itp_deriv1_nonzero)
+        @test occursin("Custom", compact_deriv1_nonzero)
+        @test !occursin("Clamped", compact_deriv1_nonzero)
     end
 
     @testset "3rd+ derivative order formatting" begin
@@ -377,5 +390,73 @@
         verbose = sprint(show, MIME("text/plain"), d1_linear)
         @test occursin("LinearInterpolant", verbose)
         @test occursin("101 points", verbose)
+    end
+
+    @testset "Coverage: _format_bc" begin
+        x = collect(range(0.0, 2π, 11))
+        y = sin.(x)    
+        
+        # Custom BC with Deriv3
+        itp = cubic_interp(x, y; bc=Deriv3(0.0))
+        @test occursin("Deriv3(0.0) | Deriv3(0.0)", sprint(show, MIME("text/plain"), itp))
+
+        itp = cubic_interp(x, y; bc=BCPair(Deriv3(0.0), Deriv3(0.0)))
+        @test occursin("Deriv3(0.0) | Deriv3(0.0)", sprint(show, MIME("text/plain"), itp))
+
+        itp = cubic_interp(x, y; bc=BCPair(Deriv2(1.0), Deriv3(-5.0)))
+        @test occursin("Deriv2(1.0) | Deriv3(-5.0)", sprint(show, MIME("text/plain"), itp))
+
+        itp = cubic_interp(x, y; bc=NaturalBC())
+        @test occursin("Natural (S''=0 at ends)", sprint(show, MIME("text/plain"), itp))
+
+        itp = cubic_interp(x, y; bc=ClampedBC())
+        @test occursin("Clamped (S'=0 at ends)", sprint(show, MIME("text/plain"), itp))
+
+        itp = cubic_interp(x, y; bc=PeriodicBC())
+        @test occursin("Periodic", sprint(show, MIME("text/plain"), itp))
+    end
+
+
+    @testset "Coverage: Fallback formats" begin
+        FI = FastInterpolations
+
+        # Access internal formatting functions directly to ensure full coverage
+        @test FI._format_extrap(Val(:unknown_mode)) == "unknown"
+        @test FI._format_side(Val(:unknown_side)) == "unknown"
+        @test FI._format_deriv_order(4) == "4th"
+
+        @test FI._format_search(Linear()) == "Linear"
+        @test FI._format_search(Binary()) == "Binary"
+        @test FI._format_search(HintedBinary()) == "HintedBinary"
+        @test FI._format_search(LinearBinary()) == "LinearBinary{8}"
+        @test FI._format_search(LinearBinary(linear_window=4)) == "LinearBinary{4}"
+
+        # DerivativeView with unknown parent type (no .x or .cache.x)
+        struct DummyInterpolant{T} <: FastInterpolations.AbstractInterpolant{T} end
+        Base.show(io::IO, ::DummyInterpolant) = print(io, "Dummy")
+        d_dummy = DerivativeView{1, DummyInterpolant{Float64}}(DummyInterpolant{Float64}())
+        verbose_dummy = sprint(show, MIME("text/plain"), d_dummy)
+        @test occursin("?", verbose_dummy)
+
+        # BC formatting for types not usually exposed in high-level show
+        @test FI._format_bc(MinCurvFit()) == "MinCurvFit"
+        @test FI._format_bc(ParabolaFit()) == "ParabolaFit"
+        @test occursin("Left", FI._format_bc(Left(Deriv1(0.0))))
+        @test occursin("Right", FI._format_bc(Right(Deriv1(0.0))))
+
+        # Direct verification of single-BC formatters (bypassed by BCPair logic)
+        @test FI._format_bc(NaturalBC()) == "Natural (S''=0 at ends)"
+        @test FI._format_bc(ClampedBC()) == "Clamped (S'=0 at ends)"
+        @test FI._format_bc(PeriodicBC()) == "Periodic"
+        @test FI._format_bc(Deriv1(1.0)) == "Deriv1(1.0)"
+        @test FI._format_bc(Deriv2(2.0)) == "Deriv2(2.0)"
+        @test FI._format_bc(Deriv3(3.0)) == "Deriv3(3.0)"
+        @test FI._format_bc(MinCurvFit()) == "MinCurvFit"
+        @test FI._format_bc(ParabolaFit()) == "ParabolaFit"
+        
+        # BC point fallback
+        @test FI._format_bc_point(ParabolaFit()) == "ParabolaFit"
+        struct UnknownBC end
+        @test FI._format_bc_point(UnknownBC()) == "UnknownBC"
     end
 end

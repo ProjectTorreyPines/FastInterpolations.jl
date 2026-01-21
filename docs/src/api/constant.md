@@ -25,8 +25,10 @@
 | Function | Description |
 |----------|-------------|
 | `constant_interp(x, y, xq; deriv=1)` | First derivative (always 0) |
+| `constant_interp(x, y, xq; deriv=2)` | Second derivative (always 0) |
 | `deriv1(itp)` | First derivative view |
 | `deriv2(itp)` | Second derivative view |
+| `deriv3(itp)` | Third derivative view (always 0) |
 
 ---
 
@@ -41,4 +43,12 @@ constant_interp!
 
 ```@docs
 ConstantInterpolant
+```
+
+## Derivative Views
+
+```@docs
+deriv1
+deriv2
+deriv3
 ```

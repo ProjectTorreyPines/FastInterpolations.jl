@@ -4,6 +4,8 @@ Manifest.toml
 # Internal development docs
 /docs/plans
 /docs/done
+/docs/todo
+/docs/pr
 /internal/design/
 /claudedocs
 

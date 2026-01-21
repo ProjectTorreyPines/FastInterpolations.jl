@@ -399,6 +399,32 @@ Check if a boundary condition is periodic.
 
 
 # ========================================
+# Cubic BC Type Alias
+# ========================================
+
+"""
+    CubicBC{T} = Union{PointBC{T}, BCPair{T,...}, PeriodicBC{T}}
+
+Type alias for boundary conditions accepted by cubic spline interpolants.
+
+Encompasses:
+- `PointBC{T}`: Single-point BC (Deriv1, Deriv2, Deriv3) - promoted to BCPair internally
+- `BCPair{T,L,R}`: Explicit left/right BC pair
+- `PeriodicBC{T}`: Periodic boundary condition
+
+This type is used as a constraint for the `bc` field in `CubicInterpolant`,
+ensuring type safety while allowing all valid cubic spline BC types.
+
+# Example
+```julia
+itp = cubic_interp(x, y; bc=NaturalBC())   # NaturalBC → BCPair stored
+itp.bc  # BCPair{Float64, Deriv2{Float64}, Deriv2{Float64}}
+```
+"""
+const CubicBC{T} = Union{PointBC{T}, BCPair{T,<:PointBC{T},<:PointBC{T}}, PeriodicBC{T}} where {T<:AbstractFloat}
+
+
+# ========================================
 # Endpoint-Specific BC Wrappers (Quadratic)
 # ========================================
 

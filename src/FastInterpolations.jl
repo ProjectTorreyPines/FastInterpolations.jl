@@ -1,6 +1,7 @@
 module FastInterpolations
 
 import LinearAlgebra
+import Printf
 using LinearAlgebra: Tridiagonal, lu, ldiv!
 using Preferences: @load_preference, @set_preferences!
 using AdaptiveArrayPools
@@ -14,6 +15,9 @@ include("cubic/cubic.jl")
 
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")
+
+# Custom show methods (depends on all interpolant types and DerivativeView)
+include("core/show.jl")
 
 # Exports
 export AbstractInterpolant, AbstractSeriesInterpolant

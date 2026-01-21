@@ -180,7 +180,7 @@ policy = LinearBinary(linear_window=3)   # ERROR: ArgumentError
 - **Large values (32–128)**: For highly localized queries or very large datasets
 """
 function LinearBinary(linear_window::Integer)
-    linear_window == 1  && return LinearBinary{2}()
+    linear_window == 1  && return LinearBinary{1}()
     linear_window == 2  && return LinearBinary{2}()
     linear_window == 4  && return LinearBinary{4}()
     linear_window == 8  && return LinearBinary{8}()

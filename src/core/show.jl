@@ -7,15 +7,12 @@
 # - Colored output via printstyled
 # - Compact and verbose display modes
 #
-# Color Scheme:
+# Color Scheme ("Less is More"):
 # - Type name: cyan + bold
 # - Type param (Float64): light_blue
-# - Labels (Grid, Extrap): light_black
-# - Numeric values: yellow
-# - Symbols (:none, etc.): magenta
-# - BC names: green
-# - Box chars: light_black
-# - Series count: light_cyan
+# - Labels & box chars: light_black
+# - Values (Grid, Search, BC, etc.): default (terminal text color)
+# - Symbols only (:none, :wrap, etc.): magenta
 
 # ========================================
 # Helper Functions
@@ -49,33 +46,55 @@ function _show_type_header(io::IO, typename::String, ::Type{T}; suffix::String="
     _show_print(io, string(T), :light_blue)
     _show_print(io, "}", :light_black)
     if !isempty(suffix)
-        _show_print(io, suffix, :light_cyan)
+        _show_print(io, suffix, :cyan)
     end
 end
 
 """
-    _show_row(io, is_last, label, value; value_color=:yellow)
+    _show_row(io, is_last, label, value; value_color=:normal)
 
 Print a box-drawing row with label and value.
+Default value_color is :normal (terminal default text color).
 """
-function _show_row(io::IO, is_last::Bool, label::String, value::String; value_color::Symbol=:yellow)
+function _show_row(io::IO, is_last::Bool, label::String, value::String; value_color::Symbol=:normal)
     prefix = is_last ? "└─ " : "├─ "
     _show_print(io, prefix, :light_black)
     _show_print(io, label, :light_black)
     print(io, " ")
-    _show_print(io, value, value_color)
+    if value_color === :normal
+        print(io, value)
+    else
+        _show_print(io, value, value_color)
+    end
 end
 
 # ========================================
 # Formatting Functions
 # ========================================
 
-"""Format grid information: N points, Type [min, max]"""
-function _format_grid_info(x::AbstractVector{T}) where {T}
+"""Format a number compactly: use %.3g for floats, string for others."""
+function _format_num(x::AbstractFloat)
+    # Use %.3g for compact display (3 significant digits)
+    return Printf.@sprintf("%.3g", x)
+end
+_format_num(x) = string(x)
+
+"""
+    _show_grid_row(io, is_last, x)
+
+Print grid info with type highlighted: `Grid:   Range, 100 points ∈ [0.0, 1.0]`
+"""
+function _show_grid_row(io::IO, is_last::Bool, x::AbstractVector)
     n = length(x)
-    x_min, x_max = first(x), last(x)
+    x_min_str = _format_num(first(x))
+    x_max_str = _format_num(last(x))
     grid_type = x isa AbstractRange ? "Range" : "Vector"
-    return "$n points, $grid_type [$x_min, $x_max]"
+
+    prefix = is_last ? "└─ " : "├─ "
+    _show_print(io, prefix, :light_black)
+    _show_print(io, "Grid:  ", :light_black)
+    _show_print(io, grid_type, :magenta)
+    print(io, ", $n points ∈ [$x_min_str, $x_max_str]")
 end
 
 """Format extrapolation mode from ExtrapVal."""
@@ -157,11 +176,14 @@ end
 function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolant{T}) where {T}
     _show_type_header(io, "LinearInterpolant", T)
     println(io)
-    _show_row(io, false, "Grid:  ", _format_grid_info(itp.x))
+    is_range = itp.x isa AbstractRange
+    _show_grid_row(io, false, itp.x)
     println(io)
-    _show_row(io, false, "Extrap:", _format_extrap(itp.mode); value_color=:magenta)
-    println(io)
-    _show_row(io, true, "Search:", _format_search(itp.search_policy); value_color=:green)
+    _show_row(io, is_range, "Extrap:", _format_extrap(itp.mode); value_color=:magenta)
+    if !is_range
+        println(io)
+        _show_row(io, true, "Search:", _format_search(itp.search_policy))
+    end
 end
 
 # --- ConstantInterpolant ---
@@ -175,13 +197,16 @@ end
 function Base.show(io::IO, ::MIME"text/plain", itp::ConstantInterpolant{T}) where {T}
     _show_type_header(io, "ConstantInterpolant", T)
     println(io)
-    _show_row(io, false, "Grid:  ", _format_grid_info(itp.x))
+    is_range = itp.x isa AbstractRange
+    _show_grid_row(io, false, itp.x)
     println(io)
     _show_row(io, false, "Extrap:", _format_extrap(itp.mode); value_color=:magenta)
     println(io)
-    _show_row(io, false, "Side:  ", _format_side(itp.side); value_color=:magenta)
-    println(io)
-    _show_row(io, true, "Search:", _format_search(itp.search_policy); value_color=:green)
+    _show_row(io, is_range, "Side:  ", _format_side(itp.side); value_color=:magenta)
+    if !is_range
+        println(io)
+        _show_row(io, true, "Search:", _format_search(itp.search_policy))
+    end
 end
 
 # --- QuadraticInterpolant ---
@@ -195,11 +220,14 @@ end
 function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolant{T}) where {T}
     _show_type_header(io, "QuadraticInterpolant", T)
     println(io)
-    _show_row(io, false, "Grid:  ", _format_grid_info(itp.x))
+    is_range = itp.x isa AbstractRange
+    _show_grid_row(io, false, itp.x)
     println(io)
-    _show_row(io, false, "Extrap:", _format_extrap(itp.mode); value_color=:magenta)
-    println(io)
-    _show_row(io, true, "Search:", _format_search(itp.search_policy); value_color=:green)
+    _show_row(io, is_range, "Extrap:", _format_extrap(itp.mode); value_color=:magenta)
+    if !is_range
+        println(io)
+        _show_row(io, true, "Search:", _format_search(itp.search_policy))
+    end
 end
 
 # --- CubicInterpolant ---
@@ -214,13 +242,16 @@ end
 function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolant{T}) where {T}
     _show_type_header(io, "CubicInterpolant", T)
     println(io)
-    _show_row(io, false, "Grid:  ", _format_grid_info(itp.cache.x))
+    is_range = itp.cache.x isa AbstractRange
+    _show_grid_row(io, false, itp.cache.x)
     println(io)
     _show_row(io, false, "Extrap:", _format_extrap(itp.extrap); value_color=:magenta)
+    if !is_range
+        println(io)
+        _show_row(io, false, "Search:", _format_search(itp.search_policy))
+    end
     println(io)
-    _show_row(io, false, "Search:", _format_search(itp.search_policy); value_color=:green)
-    println(io)
-    _show_row(io, true, "BC:    ", _format_bc(itp.cache.bc_config); value_color=:green)
+    _show_row(io, true, "BC:    ", _format_bc(itp.cache.bc_config))
 end
 
 # Short BC name for compact display
@@ -243,15 +274,18 @@ end
 
 function Base.show(io::IO, ::MIME"text/plain", sitp::LinearSeriesInterpolant{T}) where {T}
     np, ns = size(sitp.y)
+    is_range = sitp.x isa AbstractRange
     _show_type_header(io, "LinearSeriesInterpolant", T; suffix=" with $ns series")
     println(io)
-    _show_row(io, false, "Grid:  ", _format_grid_info(sitp.x))
+    _show_grid_row(io, false, sitp.x)
     println(io)
-    _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)"; value_color=:yellow)
+    _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)")
     println(io)
-    _show_row(io, false, "Extrap:", _format_extrap(sitp.extrap); value_color=:magenta)
-    println(io)
-    _show_row(io, true, "Search:", _format_search(sitp.search_policy); value_color=:green)
+    _show_row(io, is_range, "Extrap:", _format_extrap(sitp.extrap); value_color=:magenta)
+    if !is_range
+        println(io)
+        _show_row(io, true, "Search:", _format_search(sitp.search_policy))
+    end
 end
 
 # --- ConstantSeriesInterpolant ---
@@ -264,17 +298,20 @@ end
 
 function Base.show(io::IO, ::MIME"text/plain", sitp::ConstantSeriesInterpolant{T}) where {T}
     np, ns = size(sitp.y)
+    is_range = sitp.x isa AbstractRange
     _show_type_header(io, "ConstantSeriesInterpolant", T; suffix=" with $ns series")
     println(io)
-    _show_row(io, false, "Grid:  ", _format_grid_info(sitp.x))
+    _show_grid_row(io, false, sitp.x)
     println(io)
-    _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)"; value_color=:yellow)
+    _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)")
     println(io)
     _show_row(io, false, "Extrap:", _format_extrap(sitp.extrap); value_color=:magenta)
     println(io)
-    _show_row(io, false, "Side:  ", _format_side(sitp.side); value_color=:magenta)
-    println(io)
-    _show_row(io, true, "Search:", _format_search(sitp.search_policy); value_color=:green)
+    _show_row(io, is_range, "Side:  ", _format_side(sitp.side); value_color=:magenta)
+    if !is_range
+        println(io)
+        _show_row(io, true, "Search:", _format_search(sitp.search_policy))
+    end
 end
 
 # --- QuadraticSeriesInterpolant ---
@@ -287,15 +324,18 @@ end
 
 function Base.show(io::IO, ::MIME"text/plain", sitp::QuadraticSeriesInterpolant{T}) where {T}
     np, ns = size(sitp.y)
+    is_range = sitp.x isa AbstractRange
     _show_type_header(io, "QuadraticSeriesInterpolant", T; suffix=" with $ns series")
     println(io)
-    _show_row(io, false, "Grid:  ", _format_grid_info(sitp.x))
+    _show_grid_row(io, false, sitp.x)
     println(io)
-    _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)"; value_color=:yellow)
+    _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)")
     println(io)
-    _show_row(io, false, "Extrap:", _format_extrap(sitp.extrap); value_color=:magenta)
-    println(io)
-    _show_row(io, true, "Search:", _format_search(sitp.search_policy); value_color=:green)
+    _show_row(io, is_range, "Extrap:", _format_extrap(sitp.extrap); value_color=:magenta)
+    if !is_range
+        println(io)
+        _show_row(io, true, "Search:", _format_search(sitp.search_policy))
+    end
 end
 
 # --- CubicSeriesInterpolant ---
@@ -309,17 +349,20 @@ end
 
 function Base.show(io::IO, ::MIME"text/plain", sitp::CubicSeriesInterpolant{T}) where {T}
     np, ns = size(sitp.y)
+    is_range = sitp.cache.x isa AbstractRange
     _show_type_header(io, "CubicSeriesInterpolant", T; suffix=" with $ns series")
     println(io)
-    _show_row(io, false, "Grid:  ", _format_grid_info(sitp.cache.x))
+    _show_grid_row(io, false, sitp.cache.x)
     println(io)
-    _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)"; value_color=:yellow)
+    _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)")
     println(io)
     _show_row(io, false, "Extrap:", _format_extrap(sitp.extrap); value_color=:magenta)
+    if !is_range
+        println(io)
+        _show_row(io, false, "Search:", _format_search(sitp.search_policy))
+    end
     println(io)
-    _show_row(io, false, "Search:", _format_search(sitp.search_policy); value_color=:green)
-    println(io)
-    _show_row(io, true, "BC:    ", _format_bc(sitp.bc_for_solve); value_color=:green)
+    _show_row(io, true, "BC:    ", _format_bc(sitp.bc_for_solve))
 end
 
 # ========================================
@@ -358,5 +401,5 @@ function Base.show(io::IO, ::MIME"text/plain", d::DerivativeView{Order, ITP}) wh
         "?"
     end
 
-    _show_row(io, true, "Parent:", "$parent_type{$T}, $n_pts points"; value_color=:yellow)
+    _show_row(io, true, "Parent:", "$parent_type{$T}, $n_pts points")
 end

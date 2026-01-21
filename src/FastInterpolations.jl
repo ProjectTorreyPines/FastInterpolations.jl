@@ -1,6 +1,7 @@
 module FastInterpolations
 
 import LinearAlgebra
+import Printf
 using LinearAlgebra: Tridiagonal, lu, ldiv!
 using Preferences: @load_preference, @set_preferences!
 using AdaptiveArrayPools

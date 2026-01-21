@@ -13,13 +13,14 @@
         @test occursin("Float64", compact_str)
         @test occursin("101 pts", compact_str)
 
-        # Verbose show
+        # Verbose show (Range grid → no Search row)
         verbose_str = sprint(show, MIME("text/plain"), itp)
         @test occursin("LinearInterpolant", verbose_str)
         @test occursin("Grid:", verbose_str)
+        @test occursin("Range", verbose_str)
         @test occursin("101 points", verbose_str)
         @test occursin("Extrap:", verbose_str)
-        @test occursin("Search:", verbose_str)
+        @test !occursin("Search:", verbose_str)  # Range → no Search
     end
 
     @testset "ConstantInterpolant show" begin
@@ -30,13 +31,13 @@
         @test occursin("ConstantInterpolant", compact_str)
         @test occursin("101 pts", compact_str)
 
-        # Verbose show
+        # Verbose show (Range grid → no Search row)
         verbose_str = sprint(show, MIME("text/plain"), itp)
         @test occursin("ConstantInterpolant", verbose_str)
         @test occursin("Grid:", verbose_str)
         @test occursin("Extrap:", verbose_str)
         @test occursin("Side:", verbose_str)
-        @test occursin("Search:", verbose_str)
+        @test !occursin("Search:", verbose_str)  # Range → no Search
     end
 
     @testset "QuadraticInterpolant show" begin
@@ -47,12 +48,12 @@
         @test occursin("QuadraticInterpolant", compact_str)
         @test occursin("101 pts", compact_str)
 
-        # Verbose show
+        # Verbose show (Range grid → no Search row)
         verbose_str = sprint(show, MIME("text/plain"), itp)
         @test occursin("QuadraticInterpolant", verbose_str)
         @test occursin("Grid:", verbose_str)
         @test occursin("Extrap:", verbose_str)
-        @test occursin("Search:", verbose_str)
+        @test !occursin("Search:", verbose_str)  # Range → no Search
     end
 
     @testset "CubicInterpolant show" begin
@@ -64,11 +65,12 @@
         @test occursin("101 pts", compact_str)
         @test occursin("Natural", compact_str)
 
+        # Verbose show (Range grid → no Search row)
         verbose_str = sprint(show, MIME("text/plain"), itp_natural)
         @test occursin("CubicInterpolant", verbose_str)
         @test occursin("Grid:", verbose_str)
         @test occursin("Extrap:", verbose_str)
-        @test occursin("Search:", verbose_str)
+        @test !occursin("Search:", verbose_str)  # Range → no Search
         @test occursin("BC:", verbose_str)
         @test occursin("Natural", verbose_str)
 
@@ -214,5 +216,20 @@
 
         verbose_vector = sprint(show, MIME("text/plain"), itp_vector)
         @test occursin("Vector", verbose_vector)
+    end
+
+    @testset "Search row conditional display" begin
+        # Range grid → no Search row (O(1) index computation)
+        x_range = range(0.0, 1.0, 101)
+        itp_range = linear_interp(x_range, y)
+        verbose_range = sprint(show, MIME("text/plain"), itp_range)
+        @test !occursin("Search:", verbose_range)
+
+        # Vector grid → Search row shown (binary search needed)
+        x_vector = collect(x_range)
+        itp_vector = linear_interp(x_vector, y; search=Binary())
+        verbose_vector = sprint(show, MIME("text/plain"), itp_vector)
+        @test occursin("Search:", verbose_vector)
+        @test occursin("Binary", verbose_vector)
     end
 end

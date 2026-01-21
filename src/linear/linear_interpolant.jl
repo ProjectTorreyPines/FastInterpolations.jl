@@ -9,10 +9,10 @@
 # Supports deriv, search, and hint keywords for derivative evaluation and search policy
 # Default search is now the stored policy in itp.search_policy
 @inline function (itp::LinearInterpolant{T,X,Y,P})(xq::T; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
-    @boundscheck _check_domain(itp.x, xq, itp.mode)
+    @boundscheck _check_domain(itp.x, xq, itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        _linear_with_extrap(itp.x, itp.y, xq, itp.mode, op, searcher)
+        _linear_with_extrap(itp.x, itp.y, xq, itp.extrap, op, searcher)
     end
 end
 
@@ -25,12 +25,12 @@ end
 # Now supports hint for ODE/streaming patterns - hint is updated during loop
 function (itp::LinearInterpolant{T,X,Y,P})(xq::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
     xi_typed = S === T ? xq : T.(xq)
-    @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
+    @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
     output = Vector{T}(undef, length(xi_typed))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode, op, searcher)
+            output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.extrap, op, searcher)
         end
     end
     return output
@@ -38,12 +38,12 @@ end
 
 # Optimized path when xq element type matches T (zero conversion)
 function (itp::LinearInterpolant{T,X,Y,P})(xq::AbstractVector{T}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
-    @boundscheck _check_domain(itp.x, xq, itp.mode)
+    @boundscheck _check_domain(itp.x, xq, itp.extrap)
     output = Vector{T}(undef, length(xq))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xq, output)
-            output[i] = linear_interp(itp.x, itp.y, xq[i], itp.mode, op, searcher)
+            output[i] = linear_interp(itp.x, itp.y, xq[i], itp.extrap, op, searcher)
         end
     end
     return output
@@ -52,11 +52,11 @@ end
 # In-place vector call with deriv and search keyword support - zero allocation
 function (itp::LinearInterpolant{T,X,Y,P})(output::AbstractVector{T}, xq::AbstractVector{T}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
     @assert length(output) == length(xq) "output length must match xq length"
-    @boundscheck _check_domain(itp.x, xq, itp.mode)
+    @boundscheck _check_domain(itp.x, xq, itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xq, output)
-            output[i] = linear_interp(itp.x, itp.y, xq[i], itp.mode, op, searcher)
+            output[i] = linear_interp(itp.x, itp.y, xq[i], itp.extrap, op, searcher)
         end
     end
     return output
@@ -66,11 +66,11 @@ end
 function (itp::LinearInterpolant{T,X,Y,P})(output::AbstractVector, xq::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
     xi_typed = T.(xq)
-    @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
+    @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.mode, op, searcher)
+            output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.extrap, op, searcher)
         end
     end
     return output

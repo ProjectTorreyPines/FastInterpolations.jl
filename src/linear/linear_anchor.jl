@@ -263,7 +263,7 @@ end
     op::O
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     # Handle extrapolation based on mode and side
-    return _linear_anchor_dispatch(itp, aq, op, itp.mode)
+    return _linear_anchor_dispatch(itp, aq, op, itp.extrap)
 end
 
 # Inside domain or extension mode: use interpolation

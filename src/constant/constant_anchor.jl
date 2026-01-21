@@ -265,7 +265,7 @@ end
     op::O
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     # Handle extrapolation based on mode and side
-    return _constant_anchor_dispatch(itp, aq, op, itp.mode)
+    return _constant_anchor_dispatch(itp, aq, op, itp.extrap)
 end
 
 # No extrapolation: throw DomainError if outside domain

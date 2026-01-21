@@ -187,4 +187,57 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
         @test @inferred(litp(0.5)) isa Float64
         @test @inferred(litp(x_query)) isa Vector{Float64}
     end
+
+    # =========================================================================
+    # Unified extrap field naming verification
+    # All interpolant types should have .extrap field (not .mode)
+    # =========================================================================
+    @testset "Unified extrap field naming" begin
+        @testset "LinearInterpolant extrap field" begin
+            litp_none = linear_interp(x, y; extrap=:none)
+            litp_const = linear_interp(x, y; extrap=:constant)
+            litp_ext = linear_interp(x, y; extrap=:extension)
+            litp_wrap = linear_interp(x, y; extrap=:wrap)
+
+            @test litp_none.extrap === Val(:none)
+            @test litp_const.extrap === Val(:constant)
+            @test litp_ext.extrap === Val(:extension)
+            @test litp_wrap.extrap === Val(:wrap)
+
+            # All should be same concrete type
+            @test typeof(litp_none) === typeof(litp_const)
+            @test typeof(litp_none) === typeof(litp_ext)
+            @test typeof(litp_none) === typeof(litp_wrap)
+        end
+
+        @testset "ConstantInterpolant extrap field" begin
+            citp_none = constant_interp(x, y; extrap=:none)
+            citp_const = constant_interp(x, y; extrap=:constant)
+            citp_ext = constant_interp(x, y; extrap=:extension)
+            citp_wrap = constant_interp(x, y; extrap=:wrap)
+
+            @test citp_none.extrap === Val(:none)
+            @test citp_const.extrap === Val(:constant)
+            @test citp_ext.extrap === Val(:extension)
+            @test citp_wrap.extrap === Val(:wrap)
+
+            # All should be same concrete type
+            @test typeof(citp_none) === typeof(citp_const)
+        end
+
+        @testset "QuadraticInterpolant extrap field" begin
+            qitp_none = quadratic_interp(x, y; extrap=:none)
+            qitp_const = quadratic_interp(x, y; extrap=:constant)
+            qitp_ext = quadratic_interp(x, y; extrap=:extension)
+            qitp_wrap = quadratic_interp(x, y; extrap=:wrap)
+
+            @test qitp_none.extrap === Val(:none)
+            @test qitp_const.extrap === Val(:constant)
+            @test qitp_ext.extrap === Val(:extension)
+            @test qitp_wrap.extrap === Val(:wrap)
+
+            # All should be same concrete type
+            @test typeof(qitp_none) === typeof(qitp_const)
+        end
+    end
 end

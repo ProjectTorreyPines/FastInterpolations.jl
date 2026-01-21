@@ -13,7 +13,7 @@ Returned by `linear_interp(x, y)` (2-argument form).
 # Fields
 - `x::X`: x-coordinates (sorted)
 - `y::Y`: y-values
-- `mode::Val`: Evaluation mode (Val(:none), Val(:extension), Val(:constant), or Val(:wrap))
+- `extrap::Val`: Extrapolation mode (Val(:none), Val(:extension), Val(:constant), or Val(:wrap))
 - `search_policy::P`: Default search policy for interval lookup
 
 # Usage
@@ -44,7 +44,7 @@ itp(0.5; search=Binary())  # override stored policy
 struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector{T},P<:AbstractSearchPolicy} <: AbstractInterpolant{T}
     x::X
     y::Y
-    mode::ExtrapVal  # Evaluation mode (concrete union for union-splitting)
+    extrap::ExtrapVal  # Extrapolation mode (concrete union for union-splitting)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
     function LinearInterpolant(

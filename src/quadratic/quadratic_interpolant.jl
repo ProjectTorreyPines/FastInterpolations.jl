@@ -13,7 +13,7 @@
 @inline function (itp::QuadraticInterpolant{T,X,Y,P})(xi::T; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.mode, op, searcher)
+        _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.extrap, op, searcher)
     end
 end
 
@@ -31,9 +31,9 @@ function (itp::QuadraticInterpolant{T,X,Y,P})(xi::AbstractVector{S}; deriv::Int=
     output = Vector{T}(undef, length(xi_typed))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
+        @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.mode, op, searcher)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.extrap, op, searcher)
         end
     end
     return output
@@ -46,9 +46,9 @@ function (itp::QuadraticInterpolant{T,X,Y,P})(output::AbstractVector{T}, xi::Abs
     @assert length(output) == length(xi) "output length must match xi length"
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi, itp.mode)
+        @boundscheck _check_domain(itp.x, xi, itp.extrap)
         @inbounds for i in eachindex(xi, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.mode, op, searcher)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.extrap, op, searcher)
         end
     end
     return output
@@ -60,9 +60,9 @@ function (itp::QuadraticInterpolant{T,X,Y,P})(output::AbstractVector, xi::Abstra
     xi_typed = _to_float(xi, T)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
+        @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.mode, op, searcher)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.extrap, op, searcher)
         end
     end
     return output

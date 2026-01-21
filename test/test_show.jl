@@ -417,7 +417,7 @@
     end
 
 
-    @testset "Coverage: Fallback formats" begin
+    @testset "Coverage: Direct call of inlined formatting functions" begin
         FI = FastInterpolations
 
         # Access internal formatting functions directly to ensure full coverage
@@ -453,7 +453,9 @@
         @test FI._format_bc(Deriv3(3.0)) == "Deriv3(3.0)"
         @test FI._format_bc(MinCurvFit()) == "MinCurvFit"
         @test FI._format_bc(ParabolaFit()) == "ParabolaFit"
-        
+
+        @test FI._short_bc_name(PeriodicBC()) == "Periodic"
+
         # BC point fallback
         @test FI._format_bc_point(ParabolaFit()) == "ParabolaFit"
         struct UnknownBC end

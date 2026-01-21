@@ -73,11 +73,10 @@ end
 # ========================================
 
 """Format a number compactly: use %.3g for floats, string for others."""
-function _format_num(x::AbstractFloat)
+function _format_num(x::Real)
     # Use %.3g for compact display (3 significant digits)
     return Printf.@sprintf("%.3g", x)
 end
-_format_num(x) = string(x)
 
 """
     _show_grid_row(io, is_last, x)

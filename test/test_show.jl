@@ -232,4 +232,150 @@
         @test occursin("Search:", verbose_vector)
         @test occursin("Binary", verbose_vector)
     end
+
+    # ========================================
+    # Additional coverage tests
+    # ========================================
+
+    @testset "Color output (IOContext :color)" begin
+        itp = linear_interp(x, y)
+        # Test with color-enabled IO context
+        io_color = IOContext(IOBuffer(), :color => true)
+        show(io_color, MIME("text/plain"), itp)
+        output = String(take!(io_color.io))
+        # Should still contain the text (color codes are invisible in string)
+        @test occursin("LinearInterpolant", output)
+        @test occursin("Grid:", output)
+    end
+
+    @testset "Integer grid (_format_num non-float)" begin
+        # Integer grid triggers _format_num(x) = string(x) fallback
+        x_int = 1:10
+        y_int = collect(Float64, 1:10)
+        itp = linear_interp(x_int, y_int)
+        verbose = sprint(show, MIME("text/plain"), itp)
+        @test occursin("Grid:", verbose)
+        @test occursin("10 points", verbose)
+        @test occursin("[1, 10]", verbose)  # Integer bounds
+    end
+
+    @testset "Side options (:left, :right)" begin
+        x_vec = collect(range(0.0, 1.0, 11))
+        y_short = sin.(x_vec)
+
+        itp_left = constant_interp(x_vec, y_short; side=:left)
+        itp_right = constant_interp(x_vec, y_short; side=:right)
+
+        verbose_left = sprint(show, MIME("text/plain"), itp_left)
+        verbose_right = sprint(show, MIME("text/plain"), itp_right)
+
+        @test occursin(":left", verbose_left)
+        @test occursin(":right", verbose_right)
+    end
+
+    @testset "Search policy formatting (direct)" begin
+        x_vec = collect(range(0.0, 1.0, 11))
+        y_short = sin.(x_vec)
+
+        # Linear search policy
+        itp_linear = linear_interp(x_vec, y_short; search=Linear())
+        verbose_linear = sprint(show, MIME("text/plain"), itp_linear)
+        @test occursin("Linear", verbose_linear)
+        @test !occursin("LinearBinary", verbose_linear)  # Should be just "Linear"
+    end
+
+    @testset "BC type formatting" begin
+        x_vec = collect(range(0.0, 1.0, 11))
+        y_short = sin.(x_vec)
+
+        # Clamped BC (Deriv1(0) at both ends)
+        itp_clamped = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
+        verbose_clamped = sprint(show, MIME("text/plain"), itp_clamped)
+        @test occursin("Clamped", verbose_clamped)
+
+        # Periodic BC (use PeriodicBC() API, internally becomes PeriodicData)
+        y_periodic = sin.(2π .* x_vec)
+        y_periodic[end] = y_periodic[1]  # Ensure periodicity
+        itp_periodic = cubic_interp(x_vec, y_periodic; bc=PeriodicBC())
+        verbose_periodic = sprint(show, MIME("text/plain"), itp_periodic)
+        @test occursin("Periodic", verbose_periodic)
+
+        # Custom BC with Deriv3
+        itp_deriv3 = cubic_interp(x_vec, y_short; bc=BCPair(Deriv3(0.0), Deriv3(0.0)))
+        verbose_deriv3 = sprint(show, MIME("text/plain"), itp_deriv3)
+        @test occursin("Deriv3", verbose_deriv3)
+
+        # Mixed BC types (tests _format_bc_point fallback path)
+        itp_mixed = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(0.5), Deriv3(0.0)))
+        verbose_mixed = sprint(show, MIME("text/plain"), itp_mixed)
+        @test occursin("Deriv1", verbose_mixed)
+        @test occursin("Deriv3", verbose_mixed)
+    end
+
+    @testset "Short BC name for compact display" begin
+        x_vec = collect(range(0.0, 1.0, 11))
+        y_short = sin.(x_vec)
+
+        # Clamped (Deriv1)
+        itp_clamped = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
+        compact_clamped = sprint(show, itp_clamped)
+        @test occursin("Clamped", compact_clamped)
+
+        # Periodic (use PeriodicBC() API)
+        y_periodic = sin.(2π .* x_vec)
+        y_periodic[end] = y_periodic[1]
+        itp_periodic = cubic_interp(x_vec, y_periodic; bc=PeriodicBC())
+        compact_periodic = sprint(show, itp_periodic)
+        @test occursin("Periodic", compact_periodic)
+
+        # Custom (non-standard BC)
+        itp_custom = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(1.0), Deriv2(0.5)))
+        compact_custom = sprint(show, itp_custom)
+        @test occursin("Custom", compact_custom)
+    end
+
+    @testset "3rd+ derivative order formatting" begin
+        itp = cubic_interp(x, y)
+        d3 = deriv3(itp)
+
+        verbose_d3 = sprint(show, MIME("text/plain"), d3)
+        @test occursin("3rd derivative", verbose_d3)
+    end
+
+    @testset "Vector grid Search row - all interpolant types" begin
+        x_vec = collect(range(0.0, 1.0, 11))
+        y_short = sin.(x_vec)
+        y_matrix_short = [sin.(x_vec) cos.(x_vec)]
+
+        # ConstantInterpolant with Vector grid
+        itp_const = constant_interp(x_vec, y_short; search=Binary())
+        verbose_const = sprint(show, MIME("text/plain"), itp_const)
+        @test occursin("Search:", verbose_const)
+        @test occursin("Binary", verbose_const)
+
+        # QuadraticInterpolant with Vector grid
+        itp_quad = quadratic_interp(x_vec, y_short; search=Binary())
+        verbose_quad = sprint(show, MIME("text/plain"), itp_quad)
+        @test occursin("Search:", verbose_quad)
+
+        # CubicInterpolant with Vector grid
+        itp_cubic = cubic_interp(x_vec, y_short; search=Binary())
+        verbose_cubic = sprint(show, MIME("text/plain"), itp_cubic)
+        @test occursin("Search:", verbose_cubic)
+
+        # CubicSeriesInterpolant with Vector grid
+        sitp_cubic = cubic_interp(x_vec, y_matrix_short; search=Binary())
+        verbose_sitp = sprint(show, MIME("text/plain"), sitp_cubic)
+        @test occursin("Search:", verbose_sitp)
+    end
+
+    @testset "DerivativeView with LinearInterpolant parent" begin
+        # LinearInterpolant has .x directly (not .cache.x)
+        itp_linear = linear_interp(x, y)
+        d1_linear = deriv1(itp_linear)
+
+        verbose = sprint(show, MIME("text/plain"), d1_linear)
+        @test occursin("LinearInterpolant", verbose)
+        @test occursin("101 points", verbose)
+    end
 end

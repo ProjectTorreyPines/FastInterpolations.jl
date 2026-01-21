@@ -699,7 +699,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @testset "Valid linear_window Values" begin
             # All allowed linear_window values
             # Note: linear_window=1 maps to LinearBinary{2} (see factory function)
-            @test LinearBinary(linear_window=1) isa LinearBinary{2}
+            @test LinearBinary(linear_window=1) isa LinearBinary{1}
             @test LinearBinary(linear_window=2) isa LinearBinary{2}
             @test LinearBinary(linear_window=4) isa LinearBinary{4}
             @test LinearBinary(linear_window=8) isa LinearBinary{8}

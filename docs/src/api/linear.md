@@ -44,8 +44,4 @@ LinearInterpolant
 
 ## Derivative Views
 
-```@docs
-deriv1
-deriv2
-deriv3
-```
+See [Derivatives](../interpolation/derivatives.md) for `deriv1`, `deriv2`, `deriv3` API reference.

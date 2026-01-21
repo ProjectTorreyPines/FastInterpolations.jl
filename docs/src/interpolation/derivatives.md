@@ -127,6 +127,16 @@ d1(-0.5)  # Uses :extension extrapolation
 | `d(output, xq)` | In-place vector evaluation |
 | `d(xq; search=..., hint=...)` | With keyword arguments |
 
+## API Reference
+
+```@docs
+deriv1
+deriv2
+deriv3
+AbstractDerivativeView
+DerivativeView
+```
+
 ## See Also
 
 - **[Visual Comparison](comparison.md)**: Side-by-side derivative plots

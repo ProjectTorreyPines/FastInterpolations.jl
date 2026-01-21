@@ -2541,3 +2541,101 @@ end # DerivativeView SeriesInterpolant search/hint keywords
     end
 
 end # DerivativeView type stability and performance
+
+@testset "AbstractDerivativeView type hierarchy" begin
+    # Create test interpolants
+    x = collect(range(0.0, 1.0, 11))
+    y = x.^2
+
+    cubic_itp = cubic_interp(x, y)
+    linear_itp = linear_interp(x, y)
+    quad_itp = quadratic_interp(x, y)
+    const_itp = constant_interp(x, y)
+
+    @testset "DerivativeView subtype relationship" begin
+        # DerivativeView is a subtype of AbstractDerivativeView
+        @test DerivativeView <: AbstractDerivativeView
+
+        # Concrete instances satisfy isa check
+        d1_cubic = deriv1(cubic_itp)
+        d2_cubic = deriv2(cubic_itp)
+        d3_cubic = deriv3(cubic_itp)
+
+        @test d1_cubic isa AbstractDerivativeView
+        @test d2_cubic isa AbstractDerivativeView
+        @test d3_cubic isa AbstractDerivativeView
+
+        @test d1_cubic isa DerivativeView
+        @test d2_cubic isa DerivativeView
+        @test d3_cubic isa DerivativeView
+    end
+
+    @testset "Partial type parameter dispatch" begin
+        # DerivativeView{N} matches any interpolant type
+        d1_cubic = deriv1(cubic_itp)
+        d1_linear = deriv1(linear_itp)
+        d2_cubic = deriv2(cubic_itp)
+
+        # Dispatch on order only (any interpolant)
+        @test d1_cubic isa DerivativeView{1}
+        @test d1_linear isa DerivativeView{1}
+        @test d2_cubic isa DerivativeView{2}
+
+        @test !(d1_cubic isa DerivativeView{2})
+        @test !(d2_cubic isa DerivativeView{1})
+    end
+
+    @testset "Full type parameter dispatch" begin
+        d1_cubic = deriv1(cubic_itp)
+        d1_linear = deriv1(linear_itp)
+
+        # Dispatch on order AND interpolant type
+        @test d1_cubic isa DerivativeView{1, <:CubicInterpolant}
+        @test d1_linear isa DerivativeView{1, <:LinearInterpolant}
+
+        @test !(d1_cubic isa DerivativeView{1, <:LinearInterpolant})
+        @test !(d1_linear isa DerivativeView{1, <:CubicInterpolant})
+    end
+
+    @testset "All interpolant types work with AbstractDerivativeView" begin
+        # All interpolant types produce AbstractDerivativeView
+        for (name, itp) in [
+            ("Cubic", cubic_itp),
+            ("Linear", linear_itp),
+            ("Quadratic", quad_itp),
+            ("Constant", const_itp)
+        ]
+            d1 = deriv1(itp)
+            d2 = deriv2(itp)
+            d3 = deriv3(itp)
+
+            @test d1 isa AbstractDerivativeView
+            @test d2 isa AbstractDerivativeView
+            @test d3 isa AbstractDerivativeView
+
+            @test d1 isa DerivativeView{1}
+            @test d2 isa DerivativeView{2}
+            @test d3 isa DerivativeView{3}
+        end
+    end
+
+    @testset "Type dispatch function example" begin
+        # Example: function that accepts any derivative view
+        function accepts_any(d::AbstractDerivativeView)
+            return :any
+        end
+
+        # Example: function specialized for first derivative
+        function accepts_first(d::DerivativeView{1})
+            return :first
+        end
+
+        d1 = deriv1(cubic_itp)
+        d2 = deriv2(cubic_itp)
+
+        @test accepts_any(d1) == :any
+        @test accepts_any(d2) == :any
+        @test accepts_first(d1) == :first
+        @test_throws MethodError accepts_first(d2)  # d2 is not DerivativeView{1}
+    end
+end # AbstractDerivativeView type hierarchy

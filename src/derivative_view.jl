@@ -17,30 +17,65 @@
 # ========================================
 
 """
-    DerivativeView{Order, ITP}
+    AbstractDerivativeView
 
-Lightweight wrapper for derivative evaluation.
+Abstract supertype for all derivative view wrappers.
+
+Useful for dispatch when you want to accept any derivative view regardless of order or interpolant type.
+
+# Example
+```julia
+# Accept any derivative view
+function integrate(d::AbstractDerivativeView, a, b)
+    # works with deriv1, deriv2, deriv3 of any interpolant
+end
+```
+
+See also: [`DerivativeView`](@ref), [`deriv1`](@ref), [`deriv2`](@ref), [`deriv3`](@ref)
+"""
+abstract type AbstractDerivativeView end
+
+"""
+    DerivativeView{Order, ITP} <: AbstractDerivativeView
+
+Lightweight callable wrapper for derivative evaluation with a fixed derivative order.
 Enables broadcast and higher-order function composition.
 
-# Note
-This is an internal type. Use `deriv1(itp)` or `deriv2(itp)` to create.
-For vector evaluation, use broadcast: `deriv1(itp).(xs)`
+# Type Parameters
+- `Order`: Derivative order (1, 2, or 3)
+- `ITP`: Parent interpolant type
+
+# Construction
+Use `deriv1(itp)`, `deriv2(itp)`, or `deriv3(itp)` to create instances.
+
+# Type Dispatch Patterns
+```julia
+# Match any derivative view
+function foo(d::AbstractDerivativeView) ... end
+
+# Match specific derivative order (any interpolant)
+function foo(d::DerivativeView{1}) ... end
+
+# Match specific order AND interpolant type
+function foo(d::DerivativeView{1, <:CubicInterpolant}) ... end
+```
 
 # Example
 ```julia
 itp = cubic_interp(x, y)
-d1 = deriv1(itp)     # First derivative view
-d2 = deriv2(itp)     # Second derivative view
-d3 = deriv3(itp)     # Third derivative view
+d1 = deriv1(itp)     # DerivativeView{1, ...}
+d2 = deriv2(itp)     # DerivativeView{2, ...}
 
 # Broadcast evaluation
 slopes = d1.(query_points)
 
-# Fused broadcast
+# Fused broadcast (zero allocation)
 result = @. coef * d1(xs) * other_func(xs)
 ```
+
+See also: [`AbstractDerivativeView`](@ref), [`deriv1`](@ref), [`deriv2`](@ref), [`deriv3`](@ref)
 """
-struct DerivativeView{Order, ITP}
+struct DerivativeView{Order, ITP} <: AbstractDerivativeView
     parent::ITP
 end
 

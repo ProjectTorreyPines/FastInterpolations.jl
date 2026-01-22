@@ -33,6 +33,41 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Current version: $VERSION"
 
+      # ──────────────────────────────────────────────────────────────
+      # Safety checks
+      # ──────────────────────────────────────────────────────────────
+      - name: Validate version format
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            echo "   Expected: X.Y.Z or X.Y.Z-suffix (semver)"
+            exit 1
+          fi
+          echo "✅ Version format valid: $VERSION"
+
+      - name: Check branch is master
+        run: |
+          BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          if [ "$BRANCH" != "master" ] && [ "$BRANCH" != "main" ]; then
+            echo "❌ Release must be run from master/main branch"
+            echo "   Current branch: $BRANCH"
+            exit 1
+          fi
+          echo "✅ On branch: $BRANCH"
+
+      - name: Check tag does not exist
+        run: |
+          VERSION="v${{ steps.version.outputs.version }}"
+          git fetch --tags
+          if git tag -l | grep -q "^${VERSION}$"; then
+            echo "❌ Tag $VERSION already exists!"
+            echo "   This version has already been released."
+            echo "   Bump the version in Project.toml first."
+            exit 1
+          fi
+          echo "✅ Tag $VERSION does not exist yet"
+
       - name: Check release notes exist
         id: release_notes
         run: |

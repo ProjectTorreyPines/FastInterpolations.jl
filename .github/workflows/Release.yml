@@ -1,4 +1,4 @@
-name: Prepare Release
+name: Release
 
 on:
   workflow_dispatch:
@@ -8,13 +8,18 @@ on:
         required: false
         default: false
         type: boolean
+      skip_register:
+        description: 'Skip JuliaRegistrator call (manual registration)'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 jobs:
-  prepare:
-    name: Prepare Release
+  release:
+    name: Release
     runs-on: ubuntu-latest
 
     steps:
@@ -27,6 +32,20 @@ jobs:
           VERSION=$(grep '^version' Project.toml | sed 's/version = "\(.*\)"/\1/')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Current version: $VERSION"
+
+      - name: Check release notes exist
+        id: release_notes
+        run: |
+          NOTES_FILE="docs/release_notes/v${{ steps.version.outputs.version }}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+            echo "file=$NOTES_FILE" >> $GITHUB_OUTPUT
+            echo "✅ Release notes found: $NOTES_FILE"
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Release notes not found: $NOTES_FILE"
+            echo "   Will use auto-generated notes from TagBot"
+          fi
 
       - name: Setup Julia
         uses: julia-actions/setup-julia@v2
@@ -107,6 +126,7 @@ jobs:
       # Commit and push
       # ──────────────────────────────────────────────────────────────
       - name: Commit changes
+        id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -114,27 +134,75 @@ jobs:
 
           if git diff --staged --quiet; then
             echo "No changes to commit"
+            echo "committed=false" >> $GITHUB_OUTPUT
+            # Get the latest commit SHA for registration
+            echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
           else
             git commit -m "Update benchmark for v${{ steps.version.outputs.version }}"
             git push
             echo "✅ Changes committed and pushed"
+            echo "committed=true" >> $GITHUB_OUTPUT
+            echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
           fi
+
+      # ──────────────────────────────────────────────────────────────
+      # JuliaRegistrator call
+      # ──────────────────────────────────────────────────────────────
+      - name: Prepare registration comment
+        if: ${{ !inputs.skip_register }}
+        id: comment_body
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          NOTES_FILE="docs/release_notes/v${VERSION}.md"
+
+          # Build the comment body
+          if [ -f "$NOTES_FILE" ]; then
+            # With custom release notes
+            BODY="@JuliaRegistrator register
+
+          Release notes:
+
+          $(cat "$NOTES_FILE")"
+          else
+            # Without custom release notes (TagBot will auto-generate)
+            BODY="@JuliaRegistrator register"
+          fi
+
+          # Save to file for the next step (handles multiline properly)
+          echo "$BODY" > /tmp/comment_body.txt
+          echo "✅ Registration comment prepared"
+
+      - name: Call JuliaRegistrator
+        if: ${{ !inputs.skip_register }}
+        uses: peter-evans/commit-comment@v3
+        with:
+          sha: ${{ steps.commit.outputs.sha }}
+          body-path: /tmp/comment_body.txt
 
       # ──────────────────────────────────────────────────────────────
       # Summary
       # ──────────────────────────────────────────────────────────────
-      - name: Print next steps
+      - name: Print summary
         run: |
           echo ""
           echo "════════════════════════════════════════════════════════════"
           echo "  ✅ Release v${{ steps.version.outputs.version }} prepared!"
           echo "════════════════════════════════════════════════════════════"
           echo ""
-          echo "  📋 Next steps:"
-          echo ""
-          echo "  1. Go to the latest commit on master branch"
-          echo "  2. Comment: @JuliaRegistrator register"
-          echo "  3. Wait for Registry PR to be created and merged"
-          echo "  4. TagBot will automatically create the git tag"
+          if [ "${{ inputs.skip_register }}" == "true" ]; then
+            echo "  📋 Registration skipped. Manual steps:"
+            echo ""
+            echo "  1. Go to commit: ${{ steps.commit.outputs.sha }}"
+            echo "  2. Comment: @JuliaRegistrator register"
+            echo "  3. (Optional) Add Release notes: section"
+          else
+            echo "  📋 JuliaRegistrator has been called automatically!"
+            echo ""
+            echo "  Next steps (automatic):"
+            echo "  1. ⏳ Wait for Registry PR to be created"
+            echo "  2. ⏳ Wait for Registry PR to be merged (~3 min)"
+            echo "  3. 🏷️ TagBot will create the git tag"
+            echo "  4. 📚 Documentation will be built"
+          fi
           echo ""
           echo "════════════════════════════════════════════════════════════"

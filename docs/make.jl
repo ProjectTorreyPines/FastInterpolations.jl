@@ -148,5 +148,5 @@ makedocs(
 deploydocs(
     repo = "github.com/ProjectTorreyPines/FastInterpolations.jl.git",
     devbranch = "master",
-    push_preview = false,  # Deploy only on master/tag, not on PR
+    push_preview = true,  # Deploy only on master/tag, not on PR
 )

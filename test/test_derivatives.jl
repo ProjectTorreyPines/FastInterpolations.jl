@@ -1870,6 +1870,22 @@ end # DerivativeView Wrapper
         @test_throws DomainError itp_none(-0.5; deriv=3)
     end
 
+    @testset "Linear/Constant oneshot deriv=3 with constant extrapolation" begin
+        # This tests the _linear_eval_constant_extrap and _constant_eval_extrap
+        # dispatch for EvalDeriv3, which returns zero outside domain
+        x = collect(range(0.0, 1.0, 11))
+        y_linear = 2.0 .* x
+        y_const = fill(5.0, length(x))
+
+        # Linear interpolation: deriv=3 with :constant extrap outside domain
+        @test linear_interp(x, y_linear, -0.5; extrap=:constant, deriv=3) === 0.0
+        @test linear_interp(x, y_linear, 1.5; extrap=:constant, deriv=3) === 0.0
+
+        # Constant interpolation: deriv=3 with :constant extrap outside domain
+        @test constant_interp(x, y_const, -0.5; extrap=:constant, deriv=3) === 0.0
+        @test constant_interp(x, y_const, 1.5; extrap=:constant, deriv=3) === 0.0
+    end
+
     @testset "Type stability for deriv=3" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)

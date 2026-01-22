@@ -144,7 +144,7 @@ plot(
 ```@example viz
 p = plot(constant_interp(x, y; extrap=:extension); color=:black, alpha=0.7, lw=2)
 plot!(p, linear_interp(x, y; extrap=:extension); show_data=false, show_bounds=false, show_outside=false, color=:blue, alpha=0.7, lw=2)
-plot!(p, cubic_interp(x, y; extrap=:extension); show_data=false, show_bounds=false, show_outside=false,  color=:red, alpha=0.7, lw=2)
+plot!(p, cubic_interp(x, y; extrap=:extension); show_data=false, show_bounds=false, show_outside=false, color=:red, alpha=0.7, lw=2)
 plot!(p; title="Method Comparison", legend=:outertopright, xlims=(-1.5, 6.5), ylims=(-1.0, 2.0), size=(900,500))
 ```
 

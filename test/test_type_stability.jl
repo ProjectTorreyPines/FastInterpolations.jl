@@ -223,6 +223,8 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
 
             # All should be same concrete type
             @test typeof(citp_none) === typeof(citp_const)
+            @test typeof(citp_none) === typeof(citp_ext)
+            @test typeof(citp_none) === typeof(citp_wrap)
         end
 
         @testset "QuadraticInterpolant extrap field" begin
@@ -238,6 +240,25 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
 
             # All should be same concrete type
             @test typeof(qitp_none) === typeof(qitp_const)
+            @test typeof(qitp_none) === typeof(qitp_ext)
+            @test typeof(qitp_none) === typeof(qitp_wrap)
+        end
+
+        @testset "CubicInterpolant extrap field" begin
+            cbitp_none = cubic_interp(x, y; extrap=:none)
+            cbitp_const = cubic_interp(x, y; extrap=:constant)
+            cbitp_ext = cubic_interp(x, y; extrap=:extension)
+            cbitp_wrap = cubic_interp(x, y; extrap=:wrap)
+
+            @test cbitp_none.extrap === Val(:none)
+            @test cbitp_const.extrap === Val(:constant)
+            @test cbitp_ext.extrap === Val(:extension)
+            @test cbitp_wrap.extrap === Val(:wrap)
+
+            # All should be same concrete type
+            @test typeof(cbitp_none) === typeof(cbitp_const)
+            @test typeof(cbitp_none) === typeof(cbitp_ext)
+            @test typeof(cbitp_none) === typeof(cbitp_wrap)
         end
     end
 end

@@ -17,6 +17,11 @@ on:
 permissions:
   contents: write
 
+# Prevent concurrent releases (avoid race conditions)
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Release
@@ -29,7 +34,12 @@ jobs:
       - name: Read version from Project.toml
         id: version
         run: |
-          VERSION=$(grep '^version' Project.toml | sed 's/version = "\(.*\)"/\1/')
+          # Robust parsing: handles 'version = "X.Y.Z"' or 'version="X.Y.Z"' (with/without spaces)
+          VERSION=$(grep '^version' Project.toml | sed -E 's/version[[:space:]]*=[[:space:]]*"([^"]+)"/\1/')
+          if [ -z "$VERSION" ]; then
+            echo "❌ Failed to parse version from Project.toml"
+            exit 1
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Current version: $VERSION"
 
@@ -67,6 +77,16 @@ jobs:
             exit 1
           fi
           echo "✅ Tag $VERSION does not exist yet"
+
+      - name: Check README benchmark markers
+        if: ${{ !inputs.skip_benchmark }}
+        run: |
+          if ! grep -q "BENCHMARK_VERSIONS_START" README.md; then
+            echo "❌ README.md is missing <!-- BENCHMARK_VERSIONS_START --> marker"
+            echo "   Add the marker to enable automatic benchmark version updates"
+            exit 1
+          fi
+          echo "✅ README benchmark markers found"
 
       - name: Check release notes exist
         id: release_notes
@@ -174,7 +194,8 @@ jobs:
             echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
           else
             git commit -m "Update benchmark for v${{ steps.version.outputs.version }}"
-            git push
+            # Explicit refspec for CI environment safety
+            git push origin HEAD:master
             echo "✅ Changes committed and pushed"
             echo "committed=true" >> $GITHUB_OUTPUT
             echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT

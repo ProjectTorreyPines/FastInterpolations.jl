@@ -8,8 +8,8 @@ on:
   pull_request:
     branches:
       - master
-  release:
-    types: [created]
+  repository_dispatch:
+    types: [TagBot]
   workflow_dispatch:
 
 concurrency:

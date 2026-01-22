@@ -13,6 +13,7 @@ module FastInterpolationsRecipesBaseExt
 
 using FastInterpolations
 using RecipesBase: @recipe, @series
+import HelpPlots: assert_type_and_record_argument, recipe_dispatch
 
 # Import types for dispatch
 import FastInterpolations:
@@ -113,6 +114,15 @@ Compute default domain margin: 0.25 * (x[end] - x[1])
 _default_margin(x::AbstractVector{T}) where {T} = T(0.25) * (last(x) - first(x))
 
 # ========================================
+# HelpPlots Integration (recipe_dispatch)
+# ========================================
+
+# Define dispatch names for help_plot discovery
+recipe_dispatch(::AbstractInterpolant) = "AbstractInterpolant"
+recipe_dispatch(::AbstractSeriesInterpolant) = "AbstractSeriesInterpolant"
+recipe_dispatch(::DerivativeView) = "DerivativeView"
+
+# ========================================
 # Single-Series Interpolant Recipe
 # ========================================
 
@@ -148,6 +158,19 @@ Generates multiple series:
     samples = pop!(plotattributes, :samples, nothing)
     domain_margin = pop!(plotattributes, :domain_margin, nothing)
     user_xlims = pop!(plotattributes, :xlims, nothing)
+
+    # Record arguments for help_plot discovery
+    dispatch_name = recipe_dispatch(itp)
+    assert_type_and_record_argument(dispatch_name, Union{Bool,Nothing},
+        "Show original data points (default: auto, hidden when n ≥ $(SCATTER_THRESHOLD))"; show_data=show_data_opt)
+    assert_type_and_record_argument(dispatch_name, Bool,
+        "Show domain boundary lines (default: true)"; show_bounds)
+    assert_type_and_record_argument(dispatch_name, Bool,
+        "Show out-of-domain shading (default: true)"; show_outside)
+    assert_type_and_record_argument(dispatch_name, Union{Integer,Nothing},
+        "Number of curve samples (nothing = auto-computed from grid size)"; samples)
+    assert_type_and_record_argument(dispatch_name, Union{Real,Nothing},
+        "Domain extension for extrapolation visualization (nothing = 25% of domain)"; domain_margin)
 
     # Extract data
     x, y, extrap = _get_recipe_data(itp)
@@ -290,6 +313,21 @@ end
     domain_margin = pop!(plotattributes, :domain_margin, nothing)
     series_idx = pop!(plotattributes, :series_idx, :all)
     user_xlims = pop!(plotattributes, :xlims, nothing)
+
+    # Record arguments for help_plot discovery
+    dispatch_name = recipe_dispatch(sitp)
+    assert_type_and_record_argument(dispatch_name, Union{Bool,Nothing},
+        "Show original data points (default: auto, hidden when n ≥ $(SCATTER_THRESHOLD))"; show_data=show_data_opt)
+    assert_type_and_record_argument(dispatch_name, Bool,
+        "Show domain boundary lines (default: true)"; show_bounds)
+    assert_type_and_record_argument(dispatch_name, Bool,
+        "Show out-of-domain shading (default: true)"; show_outside)
+    assert_type_and_record_argument(dispatch_name, Union{Integer,Nothing},
+        "Number of curve samples (nothing = auto-computed from grid size)"; samples)
+    assert_type_and_record_argument(dispatch_name, Union{Real,Nothing},
+        "Domain extension for extrapolation visualization (nothing = 25% of domain)"; domain_margin)
+    assert_type_and_record_argument(dispatch_name, Union{Symbol,Integer,AbstractRange,AbstractVector{<:Integer}},
+        "Which series to plot: :all, :first, Int, range, or vector of indices (default: :all)"; series_idx)
 
     # Extract data
     x, Y, extrap, n_ser = _get_series_recipe_data(sitp)
@@ -450,6 +488,19 @@ end
     samples = pop!(plotattributes, :samples, nothing)
     domain_margin = pop!(plotattributes, :domain_margin, nothing)
     user_xlims = pop!(plotattributes, :xlims, nothing)
+
+    # Record arguments for help_plot discovery
+    dispatch_name = recipe_dispatch(dv)
+    assert_type_and_record_argument(dispatch_name, Bool,
+        "Show original data points (default: false for derivatives)"; show_data)
+    assert_type_and_record_argument(dispatch_name, Bool,
+        "Show domain boundary lines (default: true)"; show_bounds)
+    assert_type_and_record_argument(dispatch_name, Bool,
+        "Show out-of-domain shading (default: true)"; show_outside)
+    assert_type_and_record_argument(dispatch_name, Union{Integer,Nothing},
+        "Number of curve samples (nothing = auto-computed from grid size)"; samples)
+    assert_type_and_record_argument(dispatch_name, Union{Real,Nothing},
+        "Domain extension for extrapolation visualization (nothing = 25% of domain)"; domain_margin)
 
     parent = dv.parent
 

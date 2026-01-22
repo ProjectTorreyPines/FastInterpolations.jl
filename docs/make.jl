@@ -113,6 +113,7 @@ makedocs(
             "Visual Comparison" => "interpolation/comparison.md",
         ],
         "Extrapolation" => "extrapolation.md",
+        "Visualization" => "visualization.md",
         "Advanced Usage" => [
             "Overview" => "guides/advanced_overview.md",
             "Search & Hints" => [

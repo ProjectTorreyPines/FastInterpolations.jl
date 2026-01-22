@@ -23,78 +23,45 @@ The recipe automatically generates:
 - **Domain boundaries** — dashed vertical lines at `x[1]` and `x[end]`
 - **Out-of-domain shading** — gray regions beyond the data domain (when extrapolation enabled)
 
-## Discovering Available Options
+## Basic Usage
 
-Use `help_plot()` to discover all available recipe options at runtime:
-
-```@example viz
-help_plot(itp)
-```
-
-Different interpolant types show their specific options:
+### Single-Series Interpolants
 
 ```@example viz
-# Multi-series interpolant (includes series_idx option)
-sitp = cubic_interp(x, [y y.^2]; extrap=:constant)
-help_plot(sitp)
-```
-
-```@example viz
-# Derivative view (show_data defaults to false)
-help_plot(deriv1(itp))
-```
-
-## Single-Series Interpolants
-
-All single-series interpolants (`LinearInterpolant`, `ConstantInterpolant`, `QuadraticInterpolant`, `CubicInterpolant`) share the same recipe options.
-
-### Basic Usage
-
-```@example viz
-# Different interpolation methods
-itp_linear = linear_interp(x, y; extrap=:extension)
-itp_cubic = cubic_interp(x, y; extrap=:extension)
-
 plot(
-    plot(itp_linear, title="Linear"),
-    plot(itp_cubic, title="Cubic"),
-    layout=(1, 2), size=(800, 350)
+    plot(constant_interp(x, y), title="Constant"),
+    plot(linear_interp(x, y), title="Linear"),
+    plot(cubic_interp(x, y), title="Cubic"),
+    layout=(1, 3), size=(900, 300)
 )
 ```
 
-### Recipe Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `show_data` | `Bool` or `nothing` | `nothing` (auto) | Show data points. Auto-hidden when `n ≥ 200` |
-| `show_bounds` | `Bool` | `true` | Show vertical lines at domain boundaries |
-| `show_outside` | `Bool` | `true` | Show gray shading for out-of-domain regions |
-| `samples` | `Int` or `nothing` | `nothing` (auto) | Curve sample count. Default: `clamp(50*(n-1), 200, 2000)` |
-| `domain_margin` | `Real` or `nothing` | `nothing` (auto) | Domain extension. Default: 25% of domain width |
-
-### Customization Examples
+### Multi-Series Interpolants
 
 ```@example viz
-itp = cubic_interp(x, y; extrap=:extension)
+x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+Y = [sin.(x) cos.(x) sin.(x .+ 1)]  # 3 series
 
-# Minimal: curve only
-p1 = plot(itp; show_data=false, show_bounds=false, show_outside=false, title="Curve only")
-
-# Dense sampling
-p2 = plot(itp; samples=1000, title="Dense sampling")
-
-# Extended domain
-p3 = plot(itp; domain_margin=3.0, title="Wide margin")
-
-# Custom styling (Plots.jl attributes work normally)
-p4 = plot(itp; color=:red, linewidth=3, linestyle=:dash, title="Custom style")
-
-plot(p1, p2, p3, p4, layout=(2, 2), size=(800, 600))
+sitp = cubic_interp(x, Y; extrap=:extension)
+plot(sitp, title="Multi-Series")
 ```
 
-### Extrapolation Mode Effects
+### Derivative Views
 
-The recipe adapts to the interpolant's extrapolation mode:
+```@example viz
+x = range(0, 2π, 15)
+itp = cubic_interp(collect(x), sin.(x); extrap=:extension)
+
+plot(
+    plot(itp, title="S(x)"),
+    plot(deriv1(itp), title="S'(x) [1st-derivative]"),
+    plot(deriv2(itp), title="S''(x) [2nd-derivative]"),
+    plot(deriv3(itp), title="S'''(x) [3rd-derivative]"),
+    layout=(4, 1), size=(900, 700)
+)
+```
+
+### Extrapolation Modes
 
 ```@example viz
 x = [0.0, 1.0, 2.0, 3.0, 4.0]
@@ -105,151 +72,15 @@ plot(
     plot(cubic_interp(x, y; extrap=:constant), title="extrap=:constant"),
     plot(cubic_interp(x, y; extrap=:extension), title="extrap=:extension"),
     plot(cubic_interp(x, y; extrap=:wrap), title="extrap=:wrap"),
-    layout=(2, 2), size=(800, 600)
+    layout=(2, 2), size=(900, 600)
 )
 ```
 
-## Multi-Series Interpolants
+## Advanced Usage
 
-Series interpolants (`LinearSeriesInterpolant`, `CubicSeriesInterpolant`, etc.) plot multiple curves with distinct colors.
+All standard Plots.jl attributes work alongside our custom recipe options.
 
-### Basic Usage
-
-```@example viz
-x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
-Y = [sin.(x) cos.(x) sin.(x .+ 1)]  # 3 series
-
-sitp = cubic_interp(x, Y; extrap=:extension)
-plot(sitp, title="Multi-Series (3 curves)")
-```
-
-### Series Selection
-
-Use `series_idx` to control which series to display:
-
-```@example viz
-x = range(0, 2π, 10)
-Y = [sin.(x) cos.(x) tan.(x) ./ 5]
-
-sitp = cubic_interp(collect(x), Y; extrap=:extension)
-
-plot(
-    plot(sitp; series_idx=:all, title="All series"),
-    plot(sitp; series_idx=:first, title="First only"),
-    plot(sitp; series_idx=1:2, title="Series 1-2"),
-    plot(sitp; series_idx=[1, 3], title="Series 1 & 3"),
-    layout=(2, 2), size=(800, 600)
-)
-```
-
-### Multi-Series Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `series_idx` | `Symbol`, `Int`, `Range`, `Vector{Int}` | `:all` | Which series to plot |
-
-Values for `series_idx`:
-- `:all` — Plot all series (default)
-- `:first` — Plot only the first series
-- `n::Int` — Plot series `n` only
-- `1:3` — Plot series 1 through 3
-- `[1, 3, 5]` — Plot specific series
-
-## Derivative Views
-
-Derivative views (`deriv1`, `deriv2`, `deriv3`) have their own recipe with derivative-specific defaults.
-
-### Basic Usage
-
-```@example viz
-x = range(0, 2π, 15)
-y = sin.(x)
-
-itp = cubic_interp(collect(x), y; extrap=:extension)
-
-plot(
-    plot(itp, title="S(x)"),
-    plot(deriv1(itp), title="S'(x)"),
-    plot(deriv2(itp), title="S''(x)"),
-    plot(deriv3(itp), title="S'''(x)"),
-    layout=(2, 2), size=(800, 600)
-)
-```
-
-### Derivative-Specific Defaults
-
-| Option | Default (Derivatives) | Default (Interpolants) |
-|--------|----------------------|------------------------|
-| `show_data` | `false` | `true` (auto) |
-| Line style | `:dash` | `:solid` |
-| Color | `:steelblue` | `:blue` |
-
-Derivatives hide data points by default since the original `y` values don't represent derivative values.
-
-### Combined Visualization
-
-Plot the interpolant and its derivative together:
-
-```@example viz
-x = range(0, 2π, 12)
-y = sin.(x)
-itp = cubic_interp(collect(x), y; extrap=:extension)
-
-p = plot(itp, label="sin(x)", title="Function and Derivative")
-plot!(p, deriv1(itp), label="cos(x) ≈ S'(x)")
-```
-
-## Intelligent Defaults
-
-The recipe includes smart defaults that adapt to your data:
-
-### Automatic Marker Scaling
-
-Marker size and opacity scale inversely with data count to prevent visual clutter:
-
-```@example viz
-# Small dataset: large, opaque markers
-x_small = range(0, 5, 8)
-y_small = sin.(x_small)
-
-# Large dataset: smaller, transparent markers
-x_large = range(0, 5, 50)
-y_large = sin.(x_large)
-
-plot(
-    plot(cubic_interp(collect(x_small), y_small), title="n=8 (large markers)"),
-    plot(cubic_interp(collect(x_large), y_large), title="n=50 (small markers)"),
-    layout=(1, 2), size=(800, 350)
-)
-```
-
-### Automatic Scatter Hiding
-
-For datasets with 200+ points, scatter points are hidden by default:
-
-```julia
-x = range(0, 10, 250)
-y = sin.(x)
-itp = cubic_interp(collect(x), y)
-
-plot(itp)                    # Scatter hidden (n ≥ 200)
-plot(itp; show_data=true)    # Force show scatter
-```
-
-### Automatic Curve Sampling
-
-Sample count is computed as `clamp(50*(n-1), 200, 2000)`:
-
-| Data Points | Auto Samples |
-|-------------|--------------|
-| 5 | 200 |
-| 10 | 450 |
-| 20 | 950 |
-| 50+ | 2000 |
-
-## Combining with Plots.jl
-
-All standard Plots.jl attributes work normally:
+### Plots.jl Attributes
 
 ```@example viz
 x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
@@ -258,42 +89,79 @@ itp = cubic_interp(x, y; extrap=:constant)
 
 plot(itp;
     title="Styled Interpolant",
-    xlabel="Time (s)",
-    ylabel="Amplitude",
-    color=:crimson,
+    xlabel="Time (s)", ylabel="Amplitude",
+    ylims=(-1.0, 1.5),
+    xlims=(-0.8, 8.5),
     linewidth=3,
+    alpha=0.5,
+    color=:crimson,
     legend=:topright,
-    size=(600, 400),
-    dpi=150
 )
 ```
 
-### Overlaying Multiple Interpolants
+### Recipe Options
 
-```@example viz
-x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
-y = [0.0, 0.8, 0.9, 0.4, 0.2, 0.6]
+In addition to standard `Plots.jl` attributes, the recipe provides custom options:
 
-itp_const = constant_interp(x, y)
-itp_linear = linear_interp(x, y)
-itp_quad = quadratic_interp(x, y)
-itp_cubic = cubic_interp(x, y)
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `show_data` | `Bool` or `nothing` | `nothing` (auto) | Show data points. Auto-hidden when `n ≥ 200` |
+| `show_bounds` | `Bool` | `true` | Show vertical lines at domain boundaries |
+| `show_outside` | `Bool` | `true` | Show gray shading for out-of-domain regions |
+| `samples` | `Int` or `nothing` | `nothing` (auto) | Curve sample count |
+| `domain_margin` | `Real` or `nothing` | `nothing` (auto) | Domain extension for visualization |
+| `series_idx` | `Symbol`, `Int`, `Range`, `Vector` | `:all` | Which series to plot (multi-series only) |
 
-# Note: overlay using plot!() after initial plot()
-p = plot(itp_const; show_bounds=false, show_outside=false, label="constant", color=:gray)
-plot!(p, itp_linear; show_data=false, show_bounds=false, show_outside=false, label="linear", color=:blue)
-plot!(p, itp_quad; show_data=false, show_bounds=false, show_outside=false, label="quadratic", color=:green)
-plot!(p, itp_cubic; show_data=false, show_bounds=false, show_outside=false, label="cubic", color=:red)
-plot!(p; title="Method Comparison", legend=:topright)
+Use `help_plot()` to discover options interactively—it displays options while simultaneously rendering the plot, making it easy to experiment with different settings:
+
+```julia-repl
+julia> help_plot(itp; samples=500, show_bounds=false)
+CubicInterpolant
+     show_data::Union{Nothing, Bool} = nothing  # Show original data points (default: auto, hidden when n ≥ 200)
+     show_bounds::Bool = false  # Show domain boundary lines
+     show_outside::Bool = true  # Show out-of-domain shading
+     samples::Union{Nothing, Integer} = 500  # Number of curve samples (default: auto)
+     domain_margin::Union{Nothing, Real} = nothing  # Domain extension margin (default: auto)
 ```
 
-## Summary
+For detailed usage, see [HelpPlots.jl](https://github.com/ProjectTorreyPines/HelpPlots.jl).
 
-| Interpolant Type | Recipe Features |
-|------------------|-----------------|
-| Single-series (`CubicInterpolant`, etc.) | Curve, scatter, bounds, out-of-domain shading |
-| Multi-series (`CubicSeriesInterpolant`, etc.) | Multiple colored curves, `series_idx` selection |
-| Derivative views (`deriv1`, `deriv2`, `deriv3`) | Dashed curves, `show_data=false` default |
+### Customization Examples
+
+```@example viz
+itp = cubic_interp(x, y; extrap=:extension)
+
+plot(
+    plot(itp; show_data=false, show_bounds=false, show_outside=false, title="Curve only"),
+    plot(itp; samples=1000, title="Dense sampling"),
+    plot(itp; domain_margin=3.0, title="Wide margin"),
+    layout=(1, 3), size=(900, 300)
+)
+```
+
+### Overlaying Interpolants
+
+```@example viz
+p = plot(constant_interp(x, y; extrap=:extension); color=:black, alpha=0.7, lw=2)
+plot!(p, linear_interp(x, y; extrap=:extension); show_data=false, show_bounds=false, show_outside=false, color=:blue, alpha=0.7, lw=2)
+plot!(p, cubic_interp(x, y; extrap=:extension); show_data=false, show_bounds=false, show_outside=false,  color=:red, alpha=0.7, lw=2)
+plot!(p; title="Method Comparison", legend=:outertopright, xlims=(-1.5, 6.5), ylims=(-1.0, 2.0), size=(900,500))
+```
+
+### Series Selection
+
+```@example viz
+x = range(0, 2π, 10)
+Y = [sin.(x) cos.(x) tan.(x) ./ 5]
+sitp = cubic_interp(collect(x), Y; extrap=:extension)
+
+plot(
+    plot(sitp; series_idx=:all, title="All series"),
+    plot(sitp; series_idx=:first, title="First only"),
+    plot(sitp; series_idx=[1, 3], title="Series 1 & 3"),
+    layout=(3, 1), size=(900, 900)
+)
+```
 
 ## See Also
 

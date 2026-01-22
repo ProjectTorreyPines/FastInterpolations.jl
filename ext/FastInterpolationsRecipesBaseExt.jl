@@ -158,6 +158,7 @@ Generates multiple series:
     samples = pop!(plotattributes, :samples, nothing)
     domain_margin = pop!(plotattributes, :domain_margin, nothing)
     user_xlims = pop!(plotattributes, :xlims, nothing)
+    user_ylims = pop!(plotattributes, :ylims, nothing)
 
     # Record arguments for help_plot discovery
     dispatch_name = recipe_dispatch(itp)
@@ -228,18 +229,24 @@ Generates multiple series:
     # Compute ylims based on extrapolation mode:
     # - extrap=:none → use only original data (y_vec)
     # - extrap enabled → use both data and extrapolated curve (yq) for balanced view
-    if extrap === Val(:none)
-        y_for_lims = y_vec
+    # User-provided ylims override auto-computed limits
+    if !isnothing(user_ylims)
+        y_lim_min, y_lim_max = T(first(user_ylims)), T(last(user_ylims))
     else
-        y_for_lims = vcat(y_vec, yq)
+        if extrap === Val(:none)
+            y_for_lims = y_vec
+        else
+            y_for_lims = vcat(y_vec, yq)
+        end
+        y_range = maximum(y_for_lims) - minimum(y_for_lims)
+        y_margin = max(y_range * 0.05, eps(T))  # 5% margin
+        y_lim_min = minimum(y_for_lims) - y_margin
+        y_lim_max = maximum(y_for_lims) + y_margin
     end
-    y_range = maximum(y_for_lims) - minimum(y_for_lims)
-    y_margin = max(y_range * 0.05, eps(T))  # 5% margin
-    y_lim_min = minimum(y_for_lims) - y_margin
-    y_lim_max = maximum(y_for_lims) + y_margin
 
     # Series 1 & 2: Out-of-domain shading (only when extrapolation is enabled)
-    # Shading extends from data domain boundary to xq_min/xq_max (respects user xlims)
+    # Use large values so shading auto-clips to actual xlims/ylims
+    shade_min, shade_max = T(-1e10), T(1e10)
     if show_outside && extrap !== Val(:none)
         @series begin
             seriestype := :shape
@@ -247,8 +254,8 @@ Generates multiple series:
             fillalpha --> 0.1
             linewidth := 0
             label := nothing
-            [xq_min, x_min, x_min, xq_min],
-            [y_lim_min, y_lim_min, y_lim_max, y_lim_max]
+            [shade_min, x_min, x_min, shade_min],
+            [shade_min, shade_min, shade_max, shade_max]
         end
         @series begin
             seriestype := :shape
@@ -256,8 +263,8 @@ Generates multiple series:
             fillalpha --> 0.1
             linewidth := 0
             label --> "out of domain"
-            [x_max, xq_max, xq_max, x_max],
-            [y_lim_min, y_lim_min, y_lim_max, y_lim_max]
+            [x_max, shade_max, shade_max, x_max],
+            [shade_min, shade_min, shade_max, shade_max]
         end
     end
 
@@ -313,6 +320,7 @@ end
     domain_margin = pop!(plotattributes, :domain_margin, nothing)
     series_idx = pop!(plotattributes, :series_idx, :all)
     user_xlims = pop!(plotattributes, :xlims, nothing)
+    user_ylims = pop!(plotattributes, :ylims, nothing)
 
     # Record arguments for help_plot discovery
     dispatch_name = recipe_dispatch(sitp)
@@ -386,15 +394,20 @@ end
     # Compute ylims based on extrapolation mode:
     # - extrap=:none → use only original data (Y)
     # - extrap enabled → use both data and extrapolated curve for balanced view
-    if extrap === Val(:none)
-        y_for_lims = vec(Y)
+    # User-provided ylims override auto-computed limits
+    if !isnothing(user_ylims)
+        y_lim_min, y_lim_max = T(first(user_ylims)), T(last(user_ylims))
     else
-        y_for_lims = vcat(vec(Y), vec(yq_matrix))
+        if extrap === Val(:none)
+            y_for_lims = vec(Y)
+        else
+            y_for_lims = vcat(vec(Y), vec(yq_matrix))
+        end
+        y_range = maximum(y_for_lims) - minimum(y_for_lims)
+        y_margin = max(y_range * 0.05, eps(T))  # 5% margin
+        y_lim_min = minimum(y_for_lims) - y_margin
+        y_lim_max = maximum(y_for_lims) + y_margin
     end
-    y_range = maximum(y_for_lims) - minimum(y_for_lims)
-    y_margin = max(y_range * 0.05, eps(T))  # 5% margin
-    y_lim_min = minimum(y_for_lims) - y_margin
-    y_lim_max = maximum(y_for_lims) + y_margin
 
     # Compute data-dependent marker properties
     n_data = length(x_vec)
@@ -407,6 +420,8 @@ end
     tickfontsize --> 12
 
     # Out-of-domain shading (once, internal series - use := for type, --> for colors)
+    # Use large values so shading auto-clips to actual xlims/ylims
+    shade_min, shade_max = T(-1e10), T(1e10)
     if show_outside && length(series_indices) > 0
         if extrap !== Val(:none)
             @series begin
@@ -415,8 +430,8 @@ end
                 fillalpha --> 0.1
                 linewidth := 0
                 label := nothing
-                [xq_min, x_min, x_min, xq_min],
-                [y_lim_min, y_lim_min, y_lim_max, y_lim_max]
+                [shade_min, x_min, x_min, shade_min],
+                [shade_min, shade_min, shade_max, shade_max]
             end
             @series begin
                 seriestype := :shape
@@ -424,8 +439,8 @@ end
                 fillalpha --> 0.1
                 linewidth := 0
                 label --> "out of domain"
-                [x_max, xq_max, xq_max, x_max],
-                [y_lim_min, y_lim_min, y_lim_max, y_lim_max]
+                [x_max, shade_max, shade_max, x_max],
+                [shade_min, shade_min, shade_max, shade_max]
             end
         end
     end
@@ -488,6 +503,7 @@ end
     samples = pop!(plotattributes, :samples, nothing)
     domain_margin = pop!(plotattributes, :domain_margin, nothing)
     user_xlims = pop!(plotattributes, :xlims, nothing)
+    user_ylims = pop!(plotattributes, :ylims, nothing)
 
     # Record arguments for help_plot discovery
     dispatch_name = recipe_dispatch(dv)
@@ -561,12 +577,18 @@ end
     tickfontsize --> 12
 
     # Compute ylims from evaluated derivative (yq already respects extrap mode via xq range)
-    y_range = maximum(yq) - minimum(yq)
-    y_margin = max(y_range * 0.05, eps(ElType))  # 5% margin
-    y_lim_min = minimum(yq) - y_margin
-    y_lim_max = maximum(yq) + y_margin
+    # User-provided ylims override auto-computed limits
+    if !isnothing(user_ylims)
+        y_lim_min, y_lim_max = ElType(first(user_ylims)), ElType(last(user_ylims))
+    else
+        y_range = maximum(yq) - minimum(yq)
+        y_margin = max(y_range * 0.05, eps(ElType))  # 5% margin
+        y_lim_min = minimum(yq) - y_margin
+        y_lim_max = maximum(yq) + y_margin
+    end
 
-    # Out-of-domain shading (respects user xlims)
+    # Out-of-domain shading - use large values so shading auto-clips to actual xlims/ylims
+    shade_min, shade_max = ElType(-1e10), ElType(1e10)
     if show_outside && extrap !== Val(:none)
         @series begin
             seriestype := :shape
@@ -574,8 +596,8 @@ end
             fillalpha --> 0.1
             linewidth := 0
             label := nothing
-            [xq_min, x_min, x_min, xq_min],
-            [y_lim_min, y_lim_min, y_lim_max, y_lim_max]
+            [shade_min, x_min, x_min, shade_min],
+            [shade_min, shade_min, shade_max, shade_max]
         end
         @series begin
             seriestype := :shape
@@ -583,8 +605,8 @@ end
             fillalpha --> 0.1
             linewidth := 0
             label --> "out of domain"
-            [x_max, xq_max, xq_max, x_max],
-            [y_lim_min, y_lim_min, y_lim_max, y_lim_max]
+            [x_max, shade_max, shade_max, x_max],
+            [shade_min, shade_min, shade_max, shade_max]
         end
     end
 

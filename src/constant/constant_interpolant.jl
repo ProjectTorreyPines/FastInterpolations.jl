@@ -13,7 +13,7 @@
 @inline function (itp::ConstantInterpolant{T,X,Y,P})(xi::T; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        _constant_eval_at_point(itp.x, itp.y, xi, itp.mode, itp.side, op, searcher)
+        _constant_eval_at_point(itp.x, itp.y, xi, itp.extrap, itp.side, op, searcher)
     end
 end
 
@@ -31,9 +31,9 @@ function (itp::ConstantInterpolant{T,X,Y,P})(xi::AbstractVector{S}; deriv::Int=0
     output = Vector{T}(undef, length(xi_typed))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
+        @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _constant_eval_at_point(itp.x, itp.y, xi_typed[i], itp.mode, itp.side, op, searcher)
+            output[i] = _constant_eval_at_point(itp.x, itp.y, xi_typed[i], itp.extrap, itp.side, op, searcher)
         end
     end
     return output
@@ -46,9 +46,9 @@ function (itp::ConstantInterpolant{T,X,Y,P})(output::AbstractVector{T}, xi::Abst
     @assert length(output) == length(xi) "output length must match xi length"
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi, itp.mode)
+        @boundscheck _check_domain(itp.x, xi, itp.extrap)
         @inbounds for i in eachindex(xi, output)
-            output[i] = _constant_eval_at_point(itp.x, itp.y, xi[i], itp.mode, itp.side, op, searcher)
+            output[i] = _constant_eval_at_point(itp.x, itp.y, xi[i], itp.extrap, itp.side, op, searcher)
         end
     end
     return output
@@ -60,9 +60,9 @@ function (itp::ConstantInterpolant{T,X,Y,P})(output::AbstractVector, xi::Abstrac
     xi_typed = _to_float(xi, T)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi_typed, itp.mode)
+        @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _constant_eval_at_point(itp.x, itp.y, xi_typed[i], itp.mode, itp.side, op, searcher)
+            output[i] = _constant_eval_at_point(itp.x, itp.y, xi_typed[i], itp.extrap, itp.side, op, searcher)
         end
     end
     return output

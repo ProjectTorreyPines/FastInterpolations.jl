@@ -177,7 +177,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolant{T}) where 
     is_range = itp.x isa AbstractRange
     _show_grid_row(io, false, itp.x)
     println(io)
-    _show_row(io, is_range, "Extrap:", _format_extrap(itp.mode); value_color=:magenta)
+    _show_row(io, is_range, "Extrap:", _format_extrap(itp.extrap); value_color=:magenta)
     if !is_range
         println(io)
         _show_row(io, true, "Search:", _format_search(itp.search_policy))
@@ -198,7 +198,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::ConstantInterpolant{T}) wher
     is_range = itp.x isa AbstractRange
     _show_grid_row(io, false, itp.x)
     println(io)
-    _show_row(io, false, "Extrap:", _format_extrap(itp.mode); value_color=:magenta)
+    _show_row(io, false, "Extrap:", _format_extrap(itp.extrap); value_color=:magenta)
     println(io)
     _show_row(io, is_range, "Side:  ", _format_side(itp.side); value_color=:magenta)
     if !is_range
@@ -221,7 +221,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolant{T}) whe
     is_range = itp.x isa AbstractRange
     _show_grid_row(io, false, itp.x)
     println(io)
-    _show_row(io, is_range, "Extrap:", _format_extrap(itp.mode); value_color=:magenta)
+    _show_row(io, is_range, "Extrap:", _format_extrap(itp.extrap); value_color=:magenta)
     if !is_range
         println(io)
         _show_row(io, true, "Search:", _format_search(itp.search_policy))

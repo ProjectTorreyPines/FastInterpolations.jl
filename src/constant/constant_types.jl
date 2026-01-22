@@ -14,7 +14,7 @@ Returned by `constant_interp(x, y)` (2-argument form).
 # Fields
 - `x::X`: x-coordinates (sorted)
 - `y::Y`: y-values
-- `mode::ExtrapVal`: Extrapolation mode
+- `extrap::ExtrapVal`: Extrapolation mode
 - `side::SideVal`: Side selection (:nearest, :left, :right)
 - `search_policy::P`: Default search policy for interval lookup
 
@@ -37,7 +37,7 @@ val = itp(0.5; search=Binary())  # override with Binary()
 struct ConstantInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}, P<:AbstractSearchPolicy} <: AbstractInterpolant{T}
     x::X
     y::Y
-    mode::ExtrapVal
+    extrap::ExtrapVal
     side::SideVal
     search_policy::P  # Default search policy (immutable, thread-safe)
 

@@ -18,7 +18,7 @@ Returned by `quadratic_interp(x, y)` (2-argument form).
 - `h::Vector{T}`: Grid spacing (precomputed)
 - `a::Vector{T}`: Quadratic coefficients
 - `d::Vector{T}`: Slope coefficients
-- `mode::ExtrapVal`: Extrapolation mode
+- `extrap::ExtrapVal`: Extrapolation mode
 - `search_policy::P`: Default search policy for interval lookup
 
 # Usage
@@ -44,7 +44,7 @@ struct QuadraticInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractV
     h::Vector{T}
     a::Vector{T}
     d::Vector{T}
-    mode::ExtrapVal
+    extrap::ExtrapVal
     search_policy::P  # Default search policy (immutable, thread-safe)
 
     function QuadraticInterpolant(

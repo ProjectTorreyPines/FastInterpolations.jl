@@ -5,6 +5,7 @@ import Printf
 using LinearAlgebra: Tridiagonal, lu, ldiv!
 using Preferences: @load_preference, @set_preferences!
 using AdaptiveArrayPools
+using HelpPlots: help_plot, help_plot!
 
 # Module aggregators (encapsulate include order complexity)
 include("core/core.jl")
@@ -41,5 +42,8 @@ export deriv1, deriv2, deriv3, AbstractDerivativeView, DerivativeView
 
 # Operation types (for derivative dispatch)
 export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3
+
+# Plot recipe helpers (re-exported from HelpPlots)
+export help_plot, help_plot!
 
 end # module

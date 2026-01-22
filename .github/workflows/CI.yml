@@ -50,6 +50,8 @@ jobs:
         run: julia --project -e 'using Pkg; Pkg.test(; coverage=true, julia_args=["-t", "16"], test_args=["test_thread_safety.jl"])'
 
       - uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: src
 
       - uses: codecov/codecov-action@v5
         with:

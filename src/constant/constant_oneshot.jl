@@ -50,6 +50,13 @@ end
     return zero(FT)
 end
 
+@inline function _constant_eval_extrap(
+    y::AbstractVector{FT}, ::FT, ::FT, ::FT,
+    ::Val{:constant}, ::SideVal, ::EvalDeriv3
+) where {FT<:AbstractFloat}
+    return zero(FT)
+end
+
 # :extension delegates to :constant (slope=0 for constant function)
 @inline function _constant_eval_extrap(
     y::AbstractVector{FT}, xi::FT, x_min::FT, x_max::FT,

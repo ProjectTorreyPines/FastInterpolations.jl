@@ -265,6 +265,14 @@ end
     return zero(FT)
 end
 
+@inline function _linear_eval_constant_extrap(
+    ::AbstractVector{FT},
+    ::Bool,
+    ::EvalDeriv3
+)::FT where {FT<:AbstractFloat}
+    return zero(FT)
+end
+
 """
     _linear_with_extrap(x, y, xq, extrap, op, searcher) -> FT
 

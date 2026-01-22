@@ -42,4 +42,5 @@ else
     include("test_rcu.jl")
     include("test_nonuniform_grid.jl")
     include("test_show.jl")
+    include("test_recipes.jl")
 end

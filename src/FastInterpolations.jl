@@ -35,6 +35,7 @@ export AbstractSearchPolicy, Binary, HintedBinary, Linear, LinearBinary
 # Boundary condition types
 export AbstractBC, PointBC, Deriv1, Deriv2, Deriv3, BCPair
 export NaturalBC, ClampedBC, PeriodicBC, MinCurvFit, ParabolaFit
+export LagrangeBC  # Estimated endpoint derivative via Lagrange polynomial
 export Left, Right
 
 # Derivative view functions and types

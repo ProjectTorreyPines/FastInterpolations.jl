@@ -71,6 +71,28 @@ end
     return nothing
 end
 
+# First row - LagrangeBC (auto-estimated first derivative): same matrix structure as Deriv1
+# The derivative value is computed from data in RHS, not specified by user
+@inline function _set_first_row!(
+    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::LagrangeBC{T}, spacing::AbstractGridSpacing{T}
+) where {T<:AbstractFloat}
+    h1 = _get_h(spacing, 1)
+    d_diag[1] = 2 * h1
+    du[1] = h1
+    return nothing
+end
+
+# Last row - LagrangeBC (auto-estimated first derivative): same matrix structure as Deriv1
+@inline function _set_last_row!(
+    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::LagrangeBC{T}, spacing::AbstractGridSpacing{T}
+) where {T<:AbstractFloat}
+    n = length(dl)
+    h_n = _get_h(spacing, n)
+    dl[end] = h_n
+    d_diag[end] = 2 * h_n
+    return nothing
+end
+
 # ========================================
 # Cache Builders
 # ========================================
@@ -127,6 +149,10 @@ end
     return CubicSplineCache(x, spacing, lu_factor, bc_config)
 end
 
+# Helper to check if a BC type is LagrangeBC
+_is_lagrange_bc(::LagrangeBC) = true
+_is_lagrange_bc(::PointBC) = false
+
 """
 Build cache for generic derivative BC (Deriv1/Deriv2 combinations).
 Uses type dispatch for zero-overhead specialization.
@@ -137,6 +163,22 @@ Uses type dispatch for zero-overhead specialization.
     right_bc::R
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     n = length(x) - 1
+
+    # Validate LagrangeBC requirements (if either BC is LagrangeBC)
+    uses_lagrange = _is_lagrange_bc(left_bc) || _is_lagrange_bc(right_bc)
+    if uses_lagrange
+        # LagrangeBC requires minimum 4 points for 4-point Lagrange polynomial
+        length(x) >= 4 || throw(ArgumentError(
+            "LagrangeBC requires at least 4 data points (got $(length(x))). " *
+            "The 4-point Lagrange polynomial needs 4 points to estimate endpoint derivatives."
+        ))
+
+        # Phase 1: Only uniform grids supported (non-uniform deferred)
+        x isa AbstractRange || throw(ArgumentError(
+            "LagrangeBC currently requires uniform grid (AbstractRange). " *
+            "Non-uniform grid support is planned for a future release."
+        ))
+    end
 
     # Create spacing object (ScalarSpacing for Range, VectorSpacing for Vector)
     spacing = _create_spacing(x)
@@ -175,10 +217,12 @@ end
 # ----------------------------------------
 # RHS helpers for generic BC (type dispatch)
 # ----------------------------------------
+# All helpers now accept x parameter for consistency; existing BCs ignore it.
+# LagrangeBC uses x to compute endpoint derivatives from data.
 
 # First element - Deriv2: d[1] = bc.val (second derivative value)
 @inline function _compute_rhs_first!(
-    d::AbstractVector{T}, bc::Deriv2{T}, ::AbstractVector{T}, ::AbstractGridSpacing{T}
+    d::AbstractVector{T}, bc::Deriv2{T}, ::AbstractVector{T}, ::AbstractVector{T}, ::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
     d[1] = bc.val
     return nothing
@@ -186,7 +230,7 @@ end
 
 # First element - Deriv1: d[1] = 6[(y₂-y₁)/h₁ - S'(x₁)]
 @inline function _compute_rhs_first!(
-    d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+    d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, ::AbstractVector{T}, spacing::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
     d[1] = 6 * ((y[2] - y[1]) / _get_h(spacing, 1) - bc.val)
     return nothing
@@ -194,7 +238,7 @@ end
 
 # Last element - Deriv2: d[end] = bc.val (second derivative value)
 @inline function _compute_rhs_last!(
-    d::AbstractVector{T}, bc::Deriv2{T}, ::AbstractVector{T}, ::AbstractGridSpacing{T}
+    d::AbstractVector{T}, bc::Deriv2{T}, ::AbstractVector{T}, ::AbstractVector{T}, ::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
     d[end] = bc.val
     return nothing
@@ -202,7 +246,7 @@ end
 
 # Last element - Deriv1: d[end] = 6[S'(x_end) - (y_end - y_{end-1}) / h_end]
 @inline function _compute_rhs_last!(
-    d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+    d::AbstractVector{T}, bc::Deriv1{T}, y::AbstractVector{T}, ::AbstractVector{T}, spacing::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
     n = length(y) - 1
     d[end] = 6 * (bc.val - (y[end] - y[end-1]) / _get_h(spacing, n))
@@ -211,7 +255,7 @@ end
 
 # First element - Deriv3: d[1] = h[1] * bc.val (from -z[1] + z[2] = h[1] * val)
 @inline function _compute_rhs_first!(
-    d::AbstractVector{T}, bc::Deriv3{T}, ::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+    d::AbstractVector{T}, bc::Deriv3{T}, ::AbstractVector{T}, ::AbstractVector{T}, spacing::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
     d[1] = _get_h(spacing, 1) * bc.val
     return nothing
@@ -219,27 +263,53 @@ end
 
 # Last element - Deriv3: d[end] = h[n] * bc.val (from -z[n] + z[n+1] = h[n] * val)
 @inline function _compute_rhs_last!(
-    d::AbstractVector{T}, bc::Deriv3{T}, ::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+    d::AbstractVector{T}, bc::Deriv3{T}, ::AbstractVector{T}, ::AbstractVector{T}, spacing::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
     n = length(d) - 1
     d[end] = _get_h(spacing, n) * bc.val
     return nothing
 end
 
+# First element - LagrangeBC: compute derivative from data using Lagrange polynomial
+# Formula: d[1] = 6[(y₂-y₁)/h₁ - estimated_derivative]
+@inline function _compute_rhs_first!(
+    d::AbstractVector{T}, ::LagrangeBC{T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+) where {T<:AbstractFloat}
+    # Compute endpoint derivative automatically from data
+    estimated_deriv = _estimate_endpoint_derivative(x, y, Val(:left))
+    d[1] = 6 * ((y[2] - y[1]) / _get_h(spacing, 1) - estimated_deriv)
+    return nothing
+end
+
+# Last element - LagrangeBC: compute derivative from data using Lagrange polynomial
+# Formula: d[end] = 6[estimated_derivative - (y_end - y_{end-1}) / h_end]
+@inline function _compute_rhs_last!(
+    d::AbstractVector{T}, ::LagrangeBC{T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+) where {T<:AbstractFloat}
+    n = length(y) - 1
+    # Compute endpoint derivative automatically from data
+    estimated_deriv = _estimate_endpoint_derivative(x, y, Val(:right))
+    d[end] = 6 * (estimated_deriv - (y[end] - y[end-1]) / _get_h(spacing, n))
+    return nothing
+end
+
 """
 Compute RHS vector for generic derivative BC system in-place.
+
+The `x` parameter is needed for LagrangeBC which computes endpoint derivatives from data.
+For other BC types (Deriv1, Deriv2, Deriv3), `x` is passed but ignored.
 """
 @inline function compute_rhs!(
-    d::AbstractVector{T}, y::AbstractVector{T}, spacing::AbstractGridSpacing{T},
-    bc_config::BCPair{T,L,R}
+    d::AbstractVector{T}, y::AbstractVector{T}, x::AbstractVector{T},
+    spacing::AbstractGridSpacing{T}, bc_config::BCPair{T,L,R}
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     n = length(y) - 1
-    _compute_rhs_first!(d, bc_config.left, y, spacing)
+    _compute_rhs_first!(d, bc_config.left, y, x, spacing)
     # Use spacing accessors
     @inbounds for i in 2:n
         d[i] = 6 * ((y[i+1] - y[i]) / _get_h(spacing, i) - (y[i] - y[i-1]) / _get_h(spacing, i-1))
     end
-    _compute_rhs_last!(d, bc_config.right, y, spacing)
+    _compute_rhs_last!(d, bc_config.right, y, x, spacing)
     return nothing
 end
 
@@ -331,7 +401,7 @@ Thread-safe: workspaces allocated from task-local pool.
     # d_workspace needs length(y) = n+1
     d_workspace = similar!(pool, y)
 
-    compute_rhs!(d_workspace, y, cache.spacing, bc_pair)
+    compute_rhs!(d_workspace, y, cache.x, cache.spacing, bc_pair)
     ldiv!(out_z, cache.lu_factor, d_workspace)
     return out_z
 end

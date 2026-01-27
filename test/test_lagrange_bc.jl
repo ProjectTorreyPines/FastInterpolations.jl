@@ -493,15 +493,6 @@ end
         @test isfinite(result)
     end
 
-    @testset "Non-Uniform Grid Error (Phase 1)" begin
-        # LagrangeBC Phase 1 only supports uniform grids
-        x_nonuniform = [0.0, 0.3, 0.7, 1.0, 1.5, 2.0]  # Non-uniform Vector
-        y = sin.(x_nonuniform)
-
-        # Should throw for non-uniform grid
-        @test_throws ArgumentError cubic_interp(x_nonuniform, y, 0.5; bc=LagrangeBC())
-    end
-
 end
 
 @testset "LagrangeBC with CubicSplineCache" begin

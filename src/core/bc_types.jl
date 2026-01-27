@@ -10,7 +10,8 @@
 #   │   ├── Deriv1{T}            # First derivative
 #   │   ├── Deriv2{T}            # Second derivative
 #   │   ├── Deriv3{T}            # Third derivative
-#   │   └── ParabolaFit{T}       # 3-point parabola fit (quadratic splines)
+#   │   ├── ParabolaFit{T}       # 3-point parabola fit (quadratic splines)
+#   │   └── LagrangeBC{T}        # 4-point Lagrange endpoint estimation
 #   ├── BCPair{T,L,R}        # Both endpoints
 #   ├── PeriodicBC{T}        # Periodic BC
 #   ├── NaturalBC{T}         # Natural BC (zero curvature at ends)
@@ -101,47 +102,6 @@ struct Deriv3{T<:AbstractFloat} <: PointBC{T}
 end
 Deriv3(v::Real) = Deriv3{typeof(float(v))}(float(v))
 Deriv3{T}(bc::Deriv3) where {T<:AbstractFloat} = Deriv3{T}(T(bc.val))
-
-"""
-    LagrangeBC{T<:AbstractFloat} <: PointBC{T}
-
-Lagrange polynomial endpoint derivative boundary condition.
-
-Estimates the first derivative at endpoints using a 4-point one-sided
-Lagrange polynomial formula. For uniform grids with spacing h:
-
-- **Left endpoint**:  f'(x₁) ≈ (-11f₁ + 18f₂ - 9f₃ + 2f₄) / (6h)
-- **Right endpoint**: f'(xₙ) ≈ (-2fₙ₋₃ + 9fₙ₋₂ - 18fₙ₋₁ + 11fₙ) / (6h)
-
-This is equivalent to fitting a cubic polynomial through 4 points and
-evaluating its derivative at the endpoint. The formula is 4th-order
-accurate for smooth functions.
-
-# Requirements
-- Minimum 4 grid points (n ≥ 4)
-- Currently supports **uniform grids only** (Range input)
-
-# Key Difference from Deriv1
-- `Deriv1(val)`: User **provides** the derivative value
-- `LagrangeBC()`: Derivative is **estimated** from data automatically
-
-# Example
-```julia
-# Symmetric Lagrange BC at both endpoints
-itp = cubic_interp(x, y; bc=LagrangeBC())
-
-# Mixed: Lagrange left, natural (Deriv2=0) right
-itp = cubic_interp(x, y; bc=BCPair(LagrangeBC(), Deriv2(0)))
-
-# Mixed: Exact slope left, Lagrange right
-itp = cubic_interp(x, y; bc=BCPair(Deriv1(known_slope), LagrangeBC()))
-```
-
-See also: [`Deriv1`](@ref), [`FDMBC`](@ref), [`EstimateDerivBC`](@ref)
-"""
-struct LagrangeBC{T<:AbstractFloat} <: PointBC{T} end
-LagrangeBC() = LagrangeBC{Float64}()
-LagrangeBC{T}(::LagrangeBC) where {T<:AbstractFloat} = LagrangeBC{T}()
 
 """
     BCPair{T, L<:PointBC{T}, R<:PointBC{T}} <: AbstractBC{T}
@@ -297,6 +257,50 @@ itp_right = quadratic_interp(x, y; bc=Right(ParabolaFit()))
 struct ParabolaFit{T<:AbstractFloat} <: PointBC{T} end
 ParabolaFit() = ParabolaFit{Float64}()
 ParabolaFit{T}(::ParabolaFit) where {T<:AbstractFloat} = ParabolaFit{T}()
+
+"""
+    LagrangeBC{T<:AbstractFloat} <: PointBC{T}
+
+Lagrange polynomial endpoint derivative boundary condition.
+
+Estimates the first derivative at endpoints using a 4-point one-sided
+Lagrange polynomial formula. For uniform grids with spacing h:
+
+- **Left endpoint**:  f'(x₁) ≈ (-11f₁ + 18f₂ - 9f₃ + 2f₄) / (6h)
+- **Right endpoint**: f'(xₙ) ≈ (-2fₙ₋₃ + 9fₙ₋₂ - 18fₙ₋₁ + 11fₙ) / (6h)
+
+This is equivalent to fitting a cubic polynomial through 4 points and
+evaluating its derivative at the endpoint. The formula is 4th-order
+accurate for smooth functions.
+
+# Requirements
+- Minimum 4 grid points (n ≥ 4)
+- Supports both uniform and non-uniform grids
+
+# Key Difference from Deriv1
+- `Deriv1(val)`: User **provides** the derivative value
+- `LagrangeBC()`: Derivative is **estimated** from data automatically
+
+# Example
+```julia
+# Symmetric Lagrange BC at both endpoints
+itp = cubic_interp(x, y; bc=LagrangeBC())
+
+# Mixed: Lagrange left, natural (Deriv2=0) right
+itp = cubic_interp(x, y; bc=BCPair(LagrangeBC(), Deriv2(0)))
+
+# Mixed: Exact slope left, Lagrange right
+itp = cubic_interp(x, y; bc=BCPair(Deriv1(known_slope), LagrangeBC()))
+
+# For 2D bicubic Hermite - achieves machine precision for additive polynomials
+itp = BicubicHermiteInterpolant(x, y, data; bc=(LagrangeBC(), LagrangeBC()))
+```
+
+See also: [`Deriv1`](@ref), [`ParabolaFit`](@ref)
+"""
+struct LagrangeBC{T<:AbstractFloat} <: PointBC{T} end
+LagrangeBC() = LagrangeBC{Float64}()
+LagrangeBC{T}(::LagrangeBC) where {T<:AbstractFloat} = LagrangeBC{T}()
 
 
 # ========================================

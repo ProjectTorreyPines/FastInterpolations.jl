@@ -172,12 +172,6 @@ Uses type dispatch for zero-overhead specialization.
             "LagrangeBC requires at least 4 data points (got $(length(x))). " *
             "The 4-point Lagrange polynomial needs 4 points to estimate endpoint derivatives."
         ))
-
-        # Phase 1: Only uniform grids supported (non-uniform deferred)
-        x isa AbstractRange || throw(ArgumentError(
-            "LagrangeBC currently requires uniform grid (AbstractRange). " *
-            "Non-uniform grid support is planned for a future release."
-        ))
     end
 
     # Create spacing object (ScalarSpacing for Range, VectorSpacing for Vector)

@@ -127,7 +127,10 @@ _format_bc(bc::Deriv1) = "Deriv1($(bc.val))"
 _format_bc(bc::Deriv2) = "Deriv2($(bc.val))"
 _format_bc(bc::Deriv3) = "Deriv3($(bc.val))"
 _format_bc(::MinCurvFit) = "MinCurvFit"
-_format_bc(::ParabolaFit) = "ParabolaFit"
+_format_bc(::PolyFit{1}) = "LinearFit"
+_format_bc(::PolyFit{2}) = "ParabolaFit"
+_format_bc(::PolyFit{3}) = "CubicFit"
+_format_bc(::PolyFit{D}) where {D} = "PolyFit{$D}"  # Fallback for other degrees
 _format_bc(bc::Left) = "Left($(nameof(typeof(bc.bc))))"
 _format_bc(bc::Right) = "Right($(nameof(typeof(bc.bc))))"
 
@@ -148,7 +151,10 @@ end
 _format_bc_point(bc::Deriv1) = "Deriv1($(bc.val))"
 _format_bc_point(bc::Deriv2) = "Deriv2($(bc.val))"
 _format_bc_point(bc::Deriv3) = "Deriv3($(bc.val))"
-_format_bc_point(::ParabolaFit) = "ParabolaFit"
+_format_bc_point(::PolyFit{1}) = "LinearFit"
+_format_bc_point(::PolyFit{2}) = "ParabolaFit"
+_format_bc_point(::PolyFit{3}) = "CubicFit"
+_format_bc_point(::PolyFit{D}) where {D} = "PolyFit{$D}"  # Fallback for other degrees
 _format_bc_point(bc) = string(nameof(typeof(bc)))
 
 """Format derivative order as ordinal."""

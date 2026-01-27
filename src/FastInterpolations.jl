@@ -34,8 +34,9 @@ export AbstractSearchPolicy, Binary, HintedBinary, Linear, LinearBinary
 
 # Boundary condition types
 export AbstractBC, PointBC, Deriv1, Deriv2, Deriv3, BCPair
-export NaturalBC, ClampedBC, PeriodicBC, MinCurvFit, ParabolaFit
-export LagrangeBC  # Estimated endpoint derivative via Lagrange polynomial
+export NaturalBC, ClampedBC, PeriodicBC, MinCurvFit
+export PolyFit, LinearFit, ParabolaFit, CubicFit  # Polynomial fitting BCs
+export LagrangeBC  # Deprecated alias for CubicFit (backward compatibility)
 export Left, Right
 
 # Derivative view functions and types

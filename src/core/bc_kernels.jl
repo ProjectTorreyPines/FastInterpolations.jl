@@ -42,7 +42,7 @@ passing through (x₁,f₁), (x₂,f₂), (x₃,f₃), (x₄,f₄) and evaluatin
 
 # Accuracy
 - Exact for polynomials of degree ≤ 3 (cubic and below)
-- 4th-order accurate O(h⁴) for smooth functions
+- 3rd-order accurate O(h³) for smooth functions
 
 # Operation Count
     0 fdiv + 2 fmul + 3 fmadd = 5 FP ops (excluding inv_h computation)
@@ -80,7 +80,7 @@ Note: Coefficients are negated/reversed from left formula due to symmetry:
 
 # Accuracy
 - Exact for polynomials of degree ≤ 3 (cubic and below)
-- 4th-order accurate O(h⁴) for smooth functions
+- 3rd-order accurate O(h³) for smooth functions
 
 # Operation Count
     0 fdiv + 2 fmul + 3 fmadd = 5 FP ops (excluding inv_h computation)

@@ -71,21 +71,21 @@ end
     return nothing
 end
 
-# First row - LagrangeBC (auto-estimated first derivative): same matrix structure as Deriv1
+# First row - PolyFit{D} (auto-estimated first derivative): same matrix structure as Deriv1
 # The derivative value is computed from data in RHS, not specified by user
 @inline function _set_first_row!(
-    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::LagrangeBC{T}, spacing::AbstractGridSpacing{T}
-) where {T<:AbstractFloat}
+    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::PolyFit{D, T}, spacing::AbstractGridSpacing{T}
+) where {D, T<:AbstractFloat}
     h1 = _get_h(spacing, 1)
     d_diag[1] = 2 * h1
     du[1] = h1
     return nothing
 end
 
-# Last row - LagrangeBC (auto-estimated first derivative): same matrix structure as Deriv1
+# Last row - PolyFit{D} (auto-estimated first derivative): same matrix structure as Deriv1
 @inline function _set_last_row!(
-    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::LagrangeBC{T}, spacing::AbstractGridSpacing{T}
-) where {T<:AbstractFloat}
+    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::PolyFit{D, T}, spacing::AbstractGridSpacing{T}
+) where {D, T<:AbstractFloat}
     n = length(dl)
     h_n = _get_h(spacing, n)
     dl[end] = h_n
@@ -149,9 +149,10 @@ end
     return CubicSplineCache(x, spacing, lu_factor, bc_config)
 end
 
-# Helper to check if a BC type is LagrangeBC
-_is_lagrange_bc(::LagrangeBC) = true
-_is_lagrange_bc(::PointBC) = false
+# Helper to get polynomial degree for PolyFit validation
+# Returns D for PolyFit{D}, 0 for other PointBC types (no extra point requirement)
+_polyfit_degree(::PolyFit{D}) where {D} = D
+_polyfit_degree(::PointBC) = 0
 
 """
 Build cache for generic derivative BC (Deriv1/Deriv2 combinations).
@@ -164,13 +165,13 @@ Uses type dispatch for zero-overhead specialization.
 ) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
     n = length(x) - 1
 
-    # Validate LagrangeBC requirements (if either BC is LagrangeBC)
-    uses_lagrange = _is_lagrange_bc(left_bc) || _is_lagrange_bc(right_bc)
-    if uses_lagrange
-        # LagrangeBC requires minimum 4 points for 4-point Lagrange polynomial
-        length(x) >= 4 || throw(ArgumentError(
-            "LagrangeBC requires at least 4 data points (got $(length(x))). " *
-            "The 4-point Lagrange polynomial needs 4 points to estimate endpoint derivatives."
+    # Validate PolyFit requirements: PolyFit{D} requires D+1 points
+    max_degree = max(_polyfit_degree(left_bc), _polyfit_degree(right_bc))
+    if max_degree > 0
+        min_points = max_degree + 1
+        length(x) >= min_points || throw(ArgumentError(
+            "PolyFit{$max_degree} requires at least $min_points data points (got $(length(x))). " *
+            "A degree-$max_degree polynomial needs $(min_points) points to estimate endpoint derivatives."
         ))
     end
 
@@ -212,7 +213,7 @@ end
 # RHS helpers for generic BC (type dispatch)
 # ----------------------------------------
 # All helpers now accept x parameter for consistency; existing BCs ignore it.
-# LagrangeBC uses x to compute endpoint derivatives from data.
+# CubicFit (PolyFit{3}) uses x to compute endpoint derivatives from data.
 
 # First element - Deriv2: d[1] = bc.val (second derivative value)
 @inline function _compute_rhs_first!(
@@ -264,24 +265,24 @@ end
     return nothing
 end
 
-# First element - LagrangeBC: compute derivative from data using Lagrange polynomial
+# First element - CubicFit (PolyFit{3}): compute derivative from data using 4-point polynomial
 # Formula: d[1] = 6[(y₂-y₁)/h₁ - estimated_derivative]
 @inline function _compute_rhs_first!(
-    d::AbstractVector{T}, ::LagrangeBC{T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+    d::AbstractVector{T}, ::PolyFit{3, T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
-    # Compute endpoint derivative automatically from data
+    # Compute endpoint derivative automatically from data (4-point Lagrange formula)
     estimated_deriv = _estimate_endpoint_derivative(x, y, Val(:left))
     d[1] = 6 * ((y[2] - y[1]) / _get_h(spacing, 1) - estimated_deriv)
     return nothing
 end
 
-# Last element - LagrangeBC: compute derivative from data using Lagrange polynomial
+# Last element - CubicFit (PolyFit{3}): compute derivative from data using 4-point polynomial
 # Formula: d[end] = 6[estimated_derivative - (y_end - y_{end-1}) / h_end]
 @inline function _compute_rhs_last!(
-    d::AbstractVector{T}, ::LagrangeBC{T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+    d::AbstractVector{T}, ::PolyFit{3, T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
     n = length(y) - 1
-    # Compute endpoint derivative automatically from data
+    # Compute endpoint derivative automatically from data (4-point Lagrange formula)
     estimated_deriv = _estimate_endpoint_derivative(x, y, Val(:right))
     d[end] = 6 * (estimated_deriv - (y[end] - y[end-1]) / _get_h(spacing, n))
     return nothing
@@ -290,7 +291,7 @@ end
 """
 Compute RHS vector for generic derivative BC system in-place.
 
-The `x` parameter is needed for LagrangeBC which computes endpoint derivatives from data.
+The `x` parameter is needed for CubicFit (PolyFit{3}) which computes endpoint derivatives from data.
 For other BC types (Deriv1, Deriv2, Deriv3), `x` is passed but ignored.
 """
 @inline function compute_rhs!(

@@ -1,8 +1,12 @@
 # ========================================
-# LagrangeBC and Estimated Derivative BC Tests
+# PolyFit and LagrangeBC (Estimated Derivative BC) Tests
 # ========================================
-# Tests for LagrangeBC (Lagrange polynomial endpoint derivative estimation)
-# and FDMBC (Finite Difference Method endpoint derivative estimation)
+# Tests for PolyFit{D} (polynomial fitting boundary conditions)
+# which include:
+#   - LinearFit   = PolyFit{1} (2-point, O(h))
+#   - ParabolaFit = PolyFit{2} (3-point, O(h²))
+#   - CubicFit    = PolyFit{3} (4-point, O(h³))
+#   - LagrangeBC  = PolyFit{3} (deprecated alias)
 #
 # These BCs compute endpoint derivatives from data automatically,
 # unlike Deriv1/Deriv2 which require user-specified values.
@@ -15,7 +19,152 @@ const LAGRANGE_RTOL = 1e-12
 const LAGRANGE_ATOL = 1e-12
 
 # ========================================
-# Phase 1: LagrangeBC Type System Tests
+# PolyFit{D} Type System Tests
+# ========================================
+
+@testset "PolyFit{D} Type System" begin
+
+    @testset "Type Aliases" begin
+        # Verify type aliases are truly identical to PolyFit{D}
+        @test LinearFit{Float64} === PolyFit{1, Float64}
+        @test ParabolaFit{Float64} === PolyFit{2, Float64}
+        @test CubicFit{Float64} === PolyFit{3, Float64}
+        @test LagrangeBC{Float64} === PolyFit{3, Float64}  # Deprecated alias
+
+        @test LinearFit{Float32} === PolyFit{1, Float32}
+        @test ParabolaFit{Float32} === PolyFit{2, Float32}
+        @test CubicFit{Float32} === PolyFit{3, Float32}
+    end
+
+    @testset "Type Hierarchy" begin
+        # All PolyFit should be PointBC subtypes
+        @test PolyFit{1, Float64} <: FastInterpolations.PointBC{Float64}
+        @test PolyFit{2, Float64} <: FastInterpolations.PointBC{Float64}
+        @test PolyFit{3, Float64} <: FastInterpolations.PointBC{Float64}
+
+        # PointBC <: AbstractBC
+        @test FastInterpolations.PointBC{Float64} <: AbstractBC{Float64}
+    end
+
+    @testset "Default Constructors" begin
+        # Default constructors should return Float64 variant
+        @test LinearFit() isa PolyFit{1, Float64}
+        @test ParabolaFit() isa PolyFit{2, Float64}
+        @test CubicFit() isa PolyFit{3, Float64}
+        @test PolyFit{3}() isa CubicFit{Float64}
+    end
+
+    @testset "Explicit Type Constructors" begin
+        @test LinearFit{Float32}() isa PolyFit{1, Float32}
+        @test ParabolaFit{Float32}() isa PolyFit{2, Float32}
+        @test CubicFit{Float32}() isa PolyFit{3, Float32}
+
+        @test PolyFit{1, Float32}() isa LinearFit{Float32}
+        @test PolyFit{2, Float32}() isa ParabolaFit{Float32}
+        @test PolyFit{3, Float32}() isa CubicFit{Float32}
+    end
+
+    @testset "Degree Validation" begin
+        # Polynomial degree must be >= 1
+        @test_throws ArgumentError PolyFit{0, Float64}()
+        @test_throws ArgumentError PolyFit{-1, Float64}()
+
+        # Valid degrees should work
+        @test PolyFit{1, Float64}() isa PolyFit{1, Float64}
+        @test PolyFit{4, Float64}() isa PolyFit{4, Float64}  # Higher orders
+    end
+
+    @testset "Type Promotion" begin
+        # _promote_pointbc should work with generic PolyFit
+        @test FastInterpolations._promote_pointbc(PolyFit{1}(), Float32) isa PolyFit{1, Float32}
+        @test FastInterpolations._promote_pointbc(PolyFit{2}(), Float32) isa PolyFit{2, Float32}
+        @test FastInterpolations._promote_pointbc(PolyFit{3}(), Float32) isa PolyFit{3, Float32}
+
+        # Round-trip promotion
+        pf = PolyFit{2, Float64}()
+        pf32 = FastInterpolations._promote_pointbc(pf, Float32)
+        pf64 = FastInterpolations._promote_pointbc(pf32, Float64)
+        @test pf64 isa PolyFit{2, Float64}
+    end
+
+    @testset "Not Periodic" begin
+        # PolyFit is never periodic
+        @test FastInterpolations._is_periodic_bc(PolyFit{1}()) == false
+        @test FastInterpolations._is_periodic_bc(PolyFit{2}()) == false
+        @test FastInterpolations._is_periodic_bc(PolyFit{3}()) == false
+    end
+
+end
+
+@testset "PolyFit Normalization and BCPair" begin
+
+    @testset "Single PolyFit → Symmetric BCPair" begin
+        bc1 = FastInterpolations._normalize_bc(LinearFit(), Float64)
+        @test bc1 isa BCPair{Float64, PolyFit{1, Float64}, PolyFit{1, Float64}}
+
+        bc2 = FastInterpolations._normalize_bc(ParabolaFit(), Float64)
+        @test bc2 isa BCPair{Float64, PolyFit{2, Float64}, PolyFit{2, Float64}}
+
+        bc3 = FastInterpolations._normalize_bc(CubicFit(), Float64)
+        @test bc3 isa BCPair{Float64, PolyFit{3, Float64}, PolyFit{3, Float64}}
+    end
+
+    @testset "Type Promotion in Normalization" begin
+        bc = FastInterpolations._normalize_bc(CubicFit{Float64}(), Float32)
+        @test bc isa BCPair{Float32, PolyFit{3, Float32}, PolyFit{3, Float32}}
+    end
+
+    @testset "Mixed BCPair with PolyFit" begin
+        bc1 = BCPair(LinearFit(), Deriv1(0.0))
+        @test bc1 isa BCPair{Float64, PolyFit{1, Float64}, Deriv1{Float64}}
+
+        bc2 = BCPair(Deriv1(1.0), ParabolaFit())
+        @test bc2 isa BCPair{Float64, Deriv1{Float64}, PolyFit{2, Float64}}
+
+        bc3 = BCPair(CubicFit(), Deriv2(0.0))
+        @test bc3 isa BCPair{Float64, PolyFit{3, Float64}, Deriv2{Float64}}
+    end
+
+end
+
+@testset "CubicFit Integration (as CubicFit, not LagrangeBC)" begin
+
+    @testset "Cubic Polynomial Reproduction with CubicFit" begin
+        # f(x) = x³ - 2x² + x - 1, f'(x) = 3x² - 4x + 1
+        f_cubic(x) = x^3 - 2x^2 + x - 1
+
+        x = range(0.0, 2.0, 21)
+        y = f_cubic.(x)
+        xi = [0.15, 0.5, 1.0, 1.5, 1.85]
+
+        result = cubic_interp(x, y, xi; bc=CubicFit())
+        expected = f_cubic.(xi)
+        @test result ≈ expected rtol=LAGRANGE_RTOL atol=LAGRANGE_ATOL
+    end
+
+    @testset "CubicFit with CubicInterpolant" begin
+        x = range(0.0, 1.0, 21)
+        y = sin.(π .* x)
+
+        itp = cubic_interp(x, y; bc=CubicFit())
+        @test itp isa CubicInterpolant
+        @test isfinite(itp(0.5))
+    end
+
+    @testset "CubicFit Requires 4 Points" begin
+        x_short = range(0.0, 1.0, 3)
+        y_short = sin.(x_short)
+        @test_throws ArgumentError cubic_interp(x_short, y_short, 0.5; bc=CubicFit())
+
+        x_ok = range(0.0, 1.0, 4)
+        y_ok = sin.(x_ok)
+        @test isfinite(cubic_interp(x_ok, y_ok, 0.5; bc=CubicFit()))
+    end
+
+end
+
+# ========================================
+# Phase 1: LagrangeBC Type System Tests (Backward Compatibility)
 # ========================================
 
 @testset "LagrangeBC Type System" begin
@@ -608,16 +757,11 @@ end
 end
 
 # ========================================
-# Phase 5-6: FDMBC and EstimateDerivBC Tests
-# (To be added in later phases)
+# Note: FDMBC Tests Not Needed
 # ========================================
-
-# Placeholder for FDMBC tests
-@testset "FDMBC Type System" begin
-    @test_skip "FDMBC not yet implemented"
-end
-
-# Placeholder for EstimateDerivBC factory tests
-@testset "EstimateDerivBC Factory" begin
-    @test_skip "EstimateDerivBC not yet implemented"
-end
+# Analysis showed that Lagrange polynomial derivative estimation
+# is mathematically equivalent to Finite Difference Method (FDM):
+#   - Same coefficients for uniform grids
+#   - Same formulas for non-uniform grids
+# Therefore, no separate FDMBC type is implemented.
+# Use PolyFit{D} for all polynomial fitting boundary conditions.

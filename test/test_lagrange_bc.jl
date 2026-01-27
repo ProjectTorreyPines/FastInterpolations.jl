@@ -459,8 +459,8 @@ end
         c_left = FastInterpolations._lagrange_coeffs_left(xs[1], xs[2], xs[3], xs[4])
         d_left_precomp = FastInterpolations._lagrange_d1_nonuniform(c_left..., ys[1], ys[2], ys[3], ys[4])
 
-        # Left endpoint using on-the-fly (existing _estimate_endpoint_derivative)
-        d_left_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:left))
+        # Left endpoint using unified API (4-arg with PolyFit{3})
+        d_left_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:left), PolyFit{3}())
 
         @test d_left_precomp ≈ d_left_onfly rtol=1e-14
 
@@ -468,7 +468,7 @@ end
         n = length(xs)
         c_right = FastInterpolations._lagrange_coeffs_right(xs[n-3], xs[n-2], xs[n-1], xs[n])
         d_right_precomp = FastInterpolations._lagrange_d1_nonuniform(c_right..., ys[n-3], ys[n-2], ys[n-1], ys[n])
-        d_right_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:right))
+        d_right_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:right), PolyFit{3}())
 
         @test d_right_precomp ≈ d_right_onfly rtol=1e-14
     end
@@ -752,6 +752,144 @@ end
         cache = CubicSplineCache(x; bc=LagrangeBC{Float32}())
 
         @test eltype(cache.x) == Float32
+    end
+
+end
+
+# ========================================
+# ParabolaFit (PolyFit{2}) Kernel Tests
+# ========================================
+# Tests for the 3-point derivative estimation kernels in bc_kernels.jl
+
+@testset "ParabolaFit Kernels (bc_kernels.jl)" begin
+
+    @testset "Uniform Grid - Quadratic Reproduction" begin
+        # f(x) = x² - 2x + 1, f'(x) = 2x - 2
+        f_quad(x) = x^2 - 2x + 1
+        df_quad(x) = 2x - 2
+
+        x = range(0.0, 2.0, 11)
+        y = f_quad.(x)
+        inv_h = inv(step(x))
+
+        # Left endpoint: f'(0) = -2
+        d_left = FastInterpolations._quadratic_d1_left_uniform(y[1], y[2], y[3], inv_h)
+        @test d_left ≈ df_quad(x[1]) rtol=1e-12
+
+        # Right endpoint: f'(2) = 2
+        d_right = FastInterpolations._quadratic_d1_right_uniform(y[end-2], y[end-1], y[end], inv_h)
+        @test d_right ≈ df_quad(x[end]) rtol=1e-12
+    end
+
+    @testset "Uniform Grid - Linear Function (Exact)" begin
+        # f(x) = 3x + 1, f'(x) = 3 (constant)
+        f_linear(x) = 3x + 1
+        df_linear = 3.0
+
+        x = range(0.0, 5.0, 21)
+        y = f_linear.(x)
+        inv_h = inv(step(x))
+
+        d_left = FastInterpolations._quadratic_d1_left_uniform(y[1], y[2], y[3], inv_h)
+        d_right = FastInterpolations._quadratic_d1_right_uniform(y[end-2], y[end-1], y[end], inv_h)
+
+        @test d_left ≈ df_linear rtol=1e-12
+        @test d_right ≈ df_linear rtol=1e-12
+    end
+
+    @testset "Non-Uniform Grid - Quadratic Reproduction" begin
+        f_quad(x) = x^2 - 2x + 1
+        df_quad(x) = 2x - 2
+
+        # Non-uniform grid
+        x = [0.0, 0.3, 0.8, 1.5, 2.0]
+        y = f_quad.(x)
+
+        # Left endpoint via coefficient kernels
+        c1, c2, c3 = FastInterpolations._quadratic_coeffs_left(x[1], x[2], x[3])
+        d_left = FastInterpolations._quadratic_d1_nonuniform(c1, c2, c3, y[1], y[2], y[3])
+        @test d_left ≈ df_quad(x[1]) rtol=1e-12
+
+        # Right endpoint via coefficient kernels
+        c1r, c2r, c3r = FastInterpolations._quadratic_coeffs_right(x[end-2], x[end-1], x[end])
+        d_right = FastInterpolations._quadratic_d1_nonuniform(c1r, c2r, c3r, y[end-2], y[end-1], y[end])
+        @test d_right ≈ df_quad(x[end]) rtol=1e-12
+    end
+
+    @testset "Unified API - PolyFit{2} Dispatch" begin
+        f_quad(x) = x^2 - 2x + 1
+        df_quad(x) = 2x - 2
+
+        # Uniform grid (Range)
+        x_range = range(0.0, 2.0, 11)
+        y_range = collect(f_quad.(x_range))
+
+        d_left_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, Val(:left), PolyFit{2}())
+        d_right_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, Val(:right), PolyFit{2}())
+
+        @test d_left_range ≈ df_quad(x_range[1]) rtol=1e-12
+        @test d_right_range ≈ df_quad(x_range[end]) rtol=1e-12
+
+        # Non-uniform grid (Vector)
+        x_vec = [0.0, 0.3, 0.8, 1.5, 2.0]
+        y_vec = f_quad.(x_vec)
+
+        d_left_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, Val(:left), PolyFit{2}())
+        d_right_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, Val(:right), PolyFit{2}())
+
+        @test d_left_vec ≈ df_quad(x_vec[1]) rtol=1e-12
+        @test d_right_vec ≈ df_quad(x_vec[end]) rtol=1e-12
+    end
+
+    @testset "Unified API - PolyFit{3} Dispatch (4-arg)" begin
+        # Verify 4-arg API works for CubicFit too
+        f_cubic(x) = x^3 - x^2 + x - 1
+        df_cubic(x) = 3x^2 - 2x + 1
+
+        x_range = range(0.0, 2.0, 21)
+        y_range = collect(f_cubic.(x_range))
+
+        d_left = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, Val(:left), PolyFit{3}())
+        d_right = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, Val(:right), PolyFit{3}())
+
+        @test d_left ≈ df_cubic(x_range[1]) rtol=1e-10
+        @test d_right ≈ df_cubic(x_range[end]) rtol=1e-10
+    end
+
+    @testset "PolyFit{2} vs PolyFit{3} Accuracy Comparison" begin
+        # For a cubic function, PolyFit{3} should be exact, PolyFit{2} should have some error
+        f_cubic(x) = x^3
+        df_cubic(x) = 3x^2
+
+        x = range(0.0, 1.0, 11)
+        y = collect(f_cubic.(x))
+
+        d2_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{2}())
+        d3_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{3}())
+
+        exact = df_cubic(x[1])  # = 0
+
+        # PolyFit{3} should be nearly exact for cubic
+        @test abs(d3_left - exact) < 1e-12
+
+        # PolyFit{2} will have O(h²) error (not exact for cubic)
+        # For this test, we just verify it gives a finite result
+        @test isfinite(d2_left)
+    end
+
+    @testset "Float32 Support" begin
+        x = range(0.0f0, 2.0f0, 11)
+        y = Float32[xi^2 for xi in x]
+        inv_h = inv(step(x))
+
+        d_left = FastInterpolations._quadratic_d1_left_uniform(y[1], y[2], y[3], inv_h)
+        @test d_left isa Float32
+        @test isfinite(d_left)
+
+        # Unified API
+        d_api = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{2}())
+        @test d_api isa Float32
+        @test isfinite(d_api)
     end
 
 end

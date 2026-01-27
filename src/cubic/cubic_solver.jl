@@ -271,7 +271,7 @@ end
     d::AbstractVector{T}, ::PolyFit{3, T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
 ) where {T<:AbstractFloat}
     # Compute endpoint derivative automatically from data (4-point Lagrange formula)
-    estimated_deriv = _estimate_endpoint_derivative(x, y, Val(:left))
+    estimated_deriv = _estimate_endpoint_derivative(x, y, Val(:left), PolyFit{3}())
     d[1] = 6 * ((y[2] - y[1]) / _get_h(spacing, 1) - estimated_deriv)
     return nothing
 end
@@ -283,7 +283,7 @@ end
 ) where {T<:AbstractFloat}
     n = length(y) - 1
     # Compute endpoint derivative automatically from data (4-point Lagrange formula)
-    estimated_deriv = _estimate_endpoint_derivative(x, y, Val(:right))
+    estimated_deriv = _estimate_endpoint_derivative(x, y, Val(:right), PolyFit{3}())
     d[end] = 6 * (estimated_deriv - (y[end] - y[end-1]) / _get_h(spacing, n))
     return nothing
 end

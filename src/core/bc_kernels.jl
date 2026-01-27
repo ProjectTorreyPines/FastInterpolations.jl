@@ -94,6 +94,84 @@ end
 
 
 # ========================================
+# Uniform Grid: Quadratic (3-point) Endpoint Derivative Kernels
+# ========================================
+# 3-point one-sided Lagrange polynomial derivative formulas for uniform grids.
+# Used by ParabolaFit (PolyFit{2}) boundary conditions.
+
+"""
+    _quadratic_d1_left_uniform(f1, f2, f3, inv_h) -> T
+
+Compute first derivative at LEFT endpoint using 3-point Lagrange formula.
+
+For uniform grid with spacing h:
+    f'(x₁) ≈ (-3f₁ + 4f₂ - f₃) / (2h)
+
+# Arguments
+- `f1, f2, f3::T`: Function values at first 3 grid points
+- `inv_h::T`: Inverse of uniform grid spacing (1/h)
+
+# Returns
+- Estimated derivative f'(x₁)
+
+# Mathematical Derivation
+This formula comes from differentiating the unique quadratic polynomial P(x)
+passing through (x₁,f₁), (x₂,f₂), (x₃,f₃) and evaluating P'(x₁).
+
+# Accuracy
+- Exact for polynomials of degree ≤ 2 (quadratic and below)
+- 2nd-order accurate O(h²) for smooth functions
+
+# Operation Count
+    0 fdiv + 2 fmul + 2 fmadd = 4 FP ops (excluding inv_h computation)
+"""
+@inline function _quadratic_d1_left_uniform(f1::T, f2::T, f3::T, inv_h::T) where {T<:AbstractFloat}
+    # Coefficients: (-3, 4, -1) / 2
+    coeff = inv_h / 2
+    numer = muladd(T(-3), f1, muladd(T(4), f2, -f3))
+    return coeff * numer
+end
+
+"""
+    _quadratic_d1_right_uniform(fnm2, fnm1, fn, inv_h) -> T
+
+Compute first derivative at RIGHT endpoint using 3-point Lagrange formula.
+
+For uniform grid with spacing h:
+    f'(xₙ) ≈ (fₙ₋₂ - 4fₙ₋₁ + 3fₙ) / (2h)
+
+# Arguments
+- `fnm2, fnm1, fn::T`: Function values at last 3 grid points
+  (n-2, n-1, n in 1-based indexing)
+- `inv_h::T`: Inverse of uniform grid spacing (1/h)
+
+# Returns
+- Estimated derivative f'(xₙ)
+
+# Mathematical Derivation
+Mirror of the left formula, obtained by differentiating the Lagrange
+polynomial through the last 3 points and evaluating at xₙ.
+
+Note: Coefficients are negated/reversed from left formula due to symmetry:
+    Left:  (-3, 4, -1)
+    Right: (1, -4, 3)
+
+# Accuracy
+- Exact for polynomials of degree ≤ 2 (quadratic and below)
+- 2nd-order accurate O(h²) for smooth functions
+
+# Operation Count
+    0 fdiv + 2 fmul + 2 fmadd = 4 FP ops (excluding inv_h computation)
+"""
+@inline function _quadratic_d1_right_uniform(fnm2::T, fnm1::T, fn::T, inv_h::T) where {T<:AbstractFloat}
+    # Coefficients: (1, -4, 3) / 2
+    coeff = inv_h / 2
+    numer = muladd(T(1), fnm2, muladd(T(-4), fnm1, T(3) * fn))
+    return coeff * numer
+end
+
+
+# ========================================
 # Non-Uniform Grid: Precomputed Coefficient Kernels
 # ========================================
 # Two-stage kernel pattern for batch operations on non-uniform grids:
@@ -207,28 +285,144 @@ end
 
 
 # ========================================
-# Unified Endpoint Derivative Estimation API
+# Non-Uniform Grid: 3-point (Quadratic) Coefficient Kernels
 # ========================================
-# Higher-level API using Val{:left}/Val{:right} dispatch.
-# Handles both uniform (Range) and non-uniform (Vector) grids.
-#
-# These functions are used by LagrangeBC in the cubic solver to automatically
-# compute endpoint derivatives from data without user-specified values.
+# Two-stage kernel pattern for 3-point (ParabolaFit) operations on non-uniform grids.
 
 """
-    _estimate_endpoint_derivative(xs::AbstractRange, ys, ::Val{:left}) -> T
+    _quadratic_coeffs_left(x1, x2, x3) -> (c1, c2, c3)
 
-Estimate first derivative at LEFT endpoint for UNIFORM grid using 4-point Lagrange formula.
+Precompute 3-point Lagrange derivative coefficients for LEFT endpoint (x₁).
+
+For a non-uniform grid, the derivative f'(x₁) can be expressed as:
+    f'(x₁) = c₁f₁ + c₂f₂ + c₃f₃
+
+where c₁, c₂, c₃ depend only on the x coordinates, not on f values.
 
 # Arguments
-- `xs::AbstractRange{T}`: Uniform grid (Range type)
-- `ys::AbstractVector{T}`: Function values (must have ≥4 elements)
-- `::Val{:left}`: Dispatch tag for left endpoint
+- `x1, x2, x3::T`: First 3 grid points
 
 # Returns
-- Estimated f'(x₁) using formula: (-11f₁ + 18f₂ - 9f₃ + 2f₄) / (6h)
+- Tuple `(c1, c2, c3)` of coefficients
+
+# Mathematical Derivation
+For the Lagrange basis L₁(x) = (x-x₂)(x-x₃)/[(x₁-x₂)(x₁-x₃)]:
+    L'₁(x₁) = [(x₁-x₂) + (x₁-x₃)] / [(x₁-x₂)(x₁-x₃)]
+
+# Operation Count
+    3 fdiv + 4 fmul + 3 fadd = 10 FP ops (one-time cost per grid)
 """
-@inline function _estimate_endpoint_derivative(xs::AbstractRange{T}, ys::AbstractVector{T}, ::Val{:left}) where {T<:AbstractFloat}
+@inline function _quadratic_coeffs_left(x1::T, x2::T, x3::T) where {T<:AbstractFloat}
+    d12, d13 = x1 - x2, x1 - x3
+    d23 = x2 - x3
+
+    # c1 = L'_1(x1) = (d12 + d13) / (d12 * d13)
+    c1 = (d12 + d13) / (d12 * d13)
+    # c2 = L'_2(x1) = d13 / [(-d12) * d23]
+    c2 = d13 / ((-d12) * d23)
+    # c3 = L'_3(x1) = d12 / [d13 * d23]
+    c3 = d12 / (d13 * d23)
+
+    return (c1, c2, c3)
+end
+
+"""
+    _quadratic_coeffs_right(x1, x2, x3) -> (c1, c2, c3)
+
+Precompute 3-point Lagrange derivative coefficients for RIGHT endpoint (x₃).
+
+For a non-uniform grid, the derivative f'(x₃) can be expressed as:
+    f'(x₃) = c₁f₁ + c₂f₂ + c₃f₃
+
+where the x arguments are the LAST 3 grid points: x[n-2], x[n-1], x[n].
+
+# Arguments
+- `x1, x2, x3::T`: Last 3 grid points (x[n-2], x[n-1], x[n])
+
+# Returns
+- Tuple `(c1, c2, c3)` of coefficients
+
+# Mathematical Derivation
+For the Lagrange basis L₃(x) = (x-x₁)(x-x₂)/[(x₃-x₁)(x₃-x₂)]:
+    L'₃(x₃) = [(x₃-x₁) + (x₃-x₂)] / [(x₃-x₁)(x₃-x₂)]
+
+# Operation Count
+    3 fdiv + 4 fmul + 3 fadd = 10 FP ops (one-time cost per grid)
+"""
+@inline function _quadratic_coeffs_right(x1::T, x2::T, x3::T) where {T<:AbstractFloat}
+    d12, d13, d23 = x1 - x2, x1 - x3, x2 - x3
+
+    # At x = x3, the Lagrange basis derivatives are:
+    # L'_1(x3) = (x3 - x2) / [(x1-x2)(x1-x3)] = -d23 / [d12 * d13]
+    c1 = (-d23) / (d12 * d13)
+    # L'_2(x3) = (x3 - x1) / [(x2-x1)(x2-x3)] = -d13 / [(-d12)(d23)] = d13 / [d12 * d23]
+    c2 = d13 / (d12 * d23)
+    # L'_3(x3) = [(x3-x2)+(x3-x1)] / [(x3-x1)(x3-x2)] = -(d13+d23) / [d13 * d23]
+    c3 = (-(d13 + d23)) / (d13 * d23)
+
+    return (c1, c2, c3)
+end
+
+"""
+    _quadratic_d1_nonuniform(c1, c2, c3, f1, f2, f3) -> T
+
+Apply precomputed 3-point Lagrange coefficients to function values.
+
+This is the "Stage 2" kernel for 3-point non-uniform grids:
+    f'(x) = c₁f₁ + c₂f₂ + c₃f₃
+
+# Arguments
+- `c1, c2, c3::T`: Precomputed coefficients from `_quadratic_coeffs_left/right`
+- `f1, f2, f3::T`: Function values at the 3 grid points
+
+# Returns
+- Estimated derivative value
+
+# Operation Count
+    0 fdiv + 1 fmul + 2 fmadd = 3 FP ops (per evaluation)
+"""
+@inline function _quadratic_d1_nonuniform(
+    c1::T, c2::T, c3::T,
+    f1::T, f2::T, f3::T
+) where {T<:AbstractFloat}
+    return muladd(c1, f1, muladd(c2, f2, c3 * f3))
+end
+
+
+# ========================================
+# Unified Endpoint Derivative Estimation API
+# ========================================
+# Higher-level API using Val{:left}/Val{:right} and PolyFit{D} dispatch.
+# Handles both uniform (Range) and non-uniform (Vector) grids.
+#
+# API signature: _estimate_endpoint_derivative(xs, ys, Val(:left/:right), PolyFit{D}())
+#
+# Supported polynomial degrees:
+#   - PolyFit{2} (ParabolaFit): 3-point, O(h²) accuracy
+#   - PolyFit{3} (CubicFit):    4-point, O(h³) accuracy
+
+
+# ----------------------------------------
+# CubicFit (PolyFit{3}) - 4-point formulas
+# ----------------------------------------
+
+"""
+    _estimate_endpoint_derivative(xs, ys, ::Val{:left}, ::PolyFit{3}) -> T
+
+Estimate first derivative at LEFT endpoint using 4-point CubicFit formula.
+
+# Arguments
+- `xs`: Grid coordinates (AbstractRange for uniform, AbstractVector for non-uniform)
+- `ys::AbstractVector{T}`: Function values (must have ≥4 elements)
+- `::Val{:left}`: Dispatch tag for left endpoint
+- `::PolyFit{3}`: CubicFit boundary condition (4-point, O(h³))
+
+# Returns
+- Estimated f'(x₁) using formula: (-11f₁ + 18f₂ - 9f₃ + 2f₄) / (6h) for uniform grids
+"""
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractRange{T}, ys::AbstractVector{T}, ::Val{:left}, ::PolyFit{3}
+) where {T<:AbstractFloat}
     @inbounds begin
         f1, f2, f3, f4 = ys[1], ys[2], ys[3], ys[4]
         inv_h = inv(T(step(xs)))
@@ -236,20 +430,9 @@ Estimate first derivative at LEFT endpoint for UNIFORM grid using 4-point Lagran
     end
 end
 
-"""
-    _estimate_endpoint_derivative(xs::AbstractRange, ys, ::Val{:right}) -> T
-
-Estimate first derivative at RIGHT endpoint for UNIFORM grid using 4-point Lagrange formula.
-
-# Arguments
-- `xs::AbstractRange{T}`: Uniform grid (Range type)
-- `ys::AbstractVector{T}`: Function values (must have ≥4 elements)
-- `::Val{:right}`: Dispatch tag for right endpoint
-
-# Returns
-- Estimated f'(xₙ) using formula: (-2fₙ₋₃ + 9fₙ₋₂ - 18fₙ₋₁ + 11fₙ) / (6h)
-"""
-@inline function _estimate_endpoint_derivative(xs::AbstractRange{T}, ys::AbstractVector{T}, ::Val{:right}) where {T<:AbstractFloat}
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractRange{T}, ys::AbstractVector{T}, ::Val{:right}, ::PolyFit{3}
+) where {T<:AbstractFloat}
     n = length(ys)
     @inbounds begin
         f1, f2, f3, f4 = ys[n-3], ys[n-2], ys[n-1], ys[n]
@@ -258,25 +441,9 @@ Estimate first derivative at RIGHT endpoint for UNIFORM grid using 4-point Lagra
     end
 end
 
-"""
-    _estimate_endpoint_derivative(xs::AbstractVector, ys, ::Val{:left}) -> T
-
-Estimate first derivative at LEFT endpoint for NON-UNIFORM grid using full Lagrange formula.
-
-# Mathematical Background
-For non-uniform grids, we compute the derivative of the Lagrange interpolating polynomial
-P(x) through the first 4 points and evaluate P'(x₁). The formula involves computing
-the Lagrange basis function derivatives at x₁.
-
-# Arguments
-- `xs::AbstractVector{T}`: Non-uniform grid (Vector type)
-- `ys::AbstractVector{T}`: Function values (must have ≥4 elements)
-- `::Val{:left}`: Dispatch tag for left endpoint
-
-# Returns
-- Estimated f'(x₁) using full Lagrange derivative formula
-"""
-@inline function _estimate_endpoint_derivative(xs::AbstractVector{T}, ys::AbstractVector{T}, ::Val{:left}) where {T<:AbstractFloat}
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractVector{T}, ys::AbstractVector{T}, ::Val{:left}, ::PolyFit{3}
+) where {T<:AbstractFloat}
     @inbounds begin
         x1, x2, x3, x4 = xs[1], xs[2], xs[3], xs[4]
         f1, f2, f3, f4 = ys[1], ys[2], ys[3], ys[4]
@@ -285,25 +452,77 @@ the Lagrange basis function derivatives at x₁.
     end
 end
 
-"""
-    _estimate_endpoint_derivative(xs::AbstractVector, ys, ::Val{:right}) -> T
-
-Estimate first derivative at RIGHT endpoint for NON-UNIFORM grid using full Lagrange formula.
-
-# Arguments
-- `xs::AbstractVector{T}`: Non-uniform grid (Vector type)
-- `ys::AbstractVector{T}`: Function values (must have ≥4 elements)
-- `::Val{:right}`: Dispatch tag for right endpoint
-
-# Returns
-- Estimated f'(xₙ) using full Lagrange derivative formula
-"""
-@inline function _estimate_endpoint_derivative(xs::AbstractVector{T}, ys::AbstractVector{T}, ::Val{:right}) where {T<:AbstractFloat}
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractVector{T}, ys::AbstractVector{T}, ::Val{:right}, ::PolyFit{3}
+) where {T<:AbstractFloat}
     n = length(xs)
     @inbounds begin
         x1, x2, x3, x4 = xs[n-3], xs[n-2], xs[n-1], xs[n]
         f1, f2, f3, f4 = ys[n-3], ys[n-2], ys[n-1], ys[n]
         c1, c2, c3, c4 = _lagrange_coeffs_right(x1, x2, x3, x4)
         return _lagrange_d1_nonuniform(c1, c2, c3, c4, f1, f2, f3, f4)
+    end
+end
+
+
+# ----------------------------------------
+# ParabolaFit (PolyFit{2}) - 3-point formulas
+# ----------------------------------------
+
+"""
+    _estimate_endpoint_derivative(xs, ys, ::Val{:left}, ::PolyFit{2}) -> T
+
+Estimate first derivative at LEFT endpoint using 3-point ParabolaFit formula.
+
+# Arguments
+- `xs`: Grid coordinates (AbstractRange for uniform, AbstractVector for non-uniform)
+- `ys::AbstractVector{T}`: Function values (must have ≥3 elements)
+- `::Val{:left}`: Dispatch tag for left endpoint
+- `::PolyFit{2}`: ParabolaFit boundary condition (3-point, O(h²))
+
+# Returns
+- Estimated f'(x₁) using formula: (-3f₁ + 4f₂ - f₃) / (2h) for uniform grids
+"""
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractRange{T}, ys::AbstractVector{T}, ::Val{:left}, ::PolyFit{2}
+) where {T<:AbstractFloat}
+    @inbounds begin
+        f1, f2, f3 = ys[1], ys[2], ys[3]
+        inv_h = inv(T(step(xs)))
+        return _quadratic_d1_left_uniform(f1, f2, f3, inv_h)
+    end
+end
+
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractRange{T}, ys::AbstractVector{T}, ::Val{:right}, ::PolyFit{2}
+) where {T<:AbstractFloat}
+    n = length(ys)
+    @inbounds begin
+        f1, f2, f3 = ys[n-2], ys[n-1], ys[n]
+        inv_h = inv(T(step(xs)))
+        return _quadratic_d1_right_uniform(f1, f2, f3, inv_h)
+    end
+end
+
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractVector{T}, ys::AbstractVector{T}, ::Val{:left}, ::PolyFit{2}
+) where {T<:AbstractFloat}
+    @inbounds begin
+        x1, x2, x3 = xs[1], xs[2], xs[3]
+        f1, f2, f3 = ys[1], ys[2], ys[3]
+        c1, c2, c3 = _quadratic_coeffs_left(x1, x2, x3)
+        return _quadratic_d1_nonuniform(c1, c2, c3, f1, f2, f3)
+    end
+end
+
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractVector{T}, ys::AbstractVector{T}, ::Val{:right}, ::PolyFit{2}
+) where {T<:AbstractFloat}
+    n = length(xs)
+    @inbounds begin
+        x1, x2, x3 = xs[n-2], xs[n-1], xs[n]
+        f1, f2, f3 = ys[n-2], ys[n-1], ys[n]
+        c1, c2, c3 = _quadratic_coeffs_right(x1, x2, x3)
+        return _quadratic_d1_nonuniform(c1, c2, c3, f1, f2, f3)
     end
 end

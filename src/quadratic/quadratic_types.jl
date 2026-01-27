@@ -5,6 +5,9 @@
 # QuadraticBC type alias and _compute_quadratic_coeffs are in quadratic_solver.jl.
 # Callable methods are in quadratic_interpolant.jl.
 # Oneshot API is in quadratic_oneshot.jl.
+#
+# Note: PolyFit{D} point validation uses generic `validate_polyfit_points(bc, n)`
+# from bc_types.jl (shared with cubic and other interpolators).
 
 """
     QuadraticInterpolant{T,X,Y,P}
@@ -55,6 +58,9 @@ struct QuadraticInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractV
     ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}, P<:AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         @assert length(x) >= 2 "x must have at least 2 elements"
+
+        # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
+        validate_polyfit_points(bc, length(x))
 
         # Compute coefficients (no caching)
         h, d, a = _compute_quadratic_coeffs(x, y, bc)

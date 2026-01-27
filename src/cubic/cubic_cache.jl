@@ -38,6 +38,9 @@ result2 = cubic_interp(cache, y2, [0.25, 0.75])
 ```
 """
 function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC=NaturalBC()) where {T<:AbstractFloat}
+    # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
+    validate_polyfit_points(bc, length(x))
+
     # Periodic BC
     if _is_periodic_bc(bc)
         return _build_periodic_cache(x)

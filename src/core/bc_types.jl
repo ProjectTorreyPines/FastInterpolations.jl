@@ -567,3 +567,118 @@ struct Right{T<:AbstractFloat, B<:PointBC{T}} <: AbstractBC{T}
     bc::B
 end
 # Note: Julia generates outer constructor automatically: Right(bc::B) where {T,B<:PointBC{T}}
+
+
+# ========================================
+# BC Materialization (PolyFit → Deriv1)
+# ========================================
+
+"""
+    materialize_bc(bc::PolyFit{D}, xs, ys, endpoint::Val{:left/:right}) -> Deriv1{T}
+
+Convert a polynomial-fit BC to a concrete `Deriv1` by estimating the derivative from data.
+
+This "materializes" the lazy `PolyFit{D}` specification into an actual derivative value,
+allowing all existing `Deriv1` code paths to work unchanged.
+
+# Arguments
+- `bc::PolyFit{D,T}`: Polynomial fit BC to materialize
+- `xs::AbstractVector{T}`: Grid coordinates
+- `ys::AbstractVector{T}`: Function values at grid points
+- `endpoint::Val{:left}` or `Val{:right}`: Which endpoint to estimate
+
+# Returns
+- `Deriv1{T}(estimated_value)`: Concrete first derivative BC
+
+# Example
+```julia
+bc = ParabolaFit()  # = PolyFit{2}
+concrete_bc = materialize_bc(bc, xs, ys, Val(:left))  # → Deriv1{Float64}(computed_value)
+```
+
+See also: [`PolyFit`](@ref), [`_estimate_endpoint_derivative`](@ref)
+"""
+@inline function materialize_bc(
+    ::PolyFit{D, T}, xs::AbstractVector{T}, ys::AbstractVector{T}, endpoint::Val
+) where {D, T<:AbstractFloat}
+    val = _estimate_endpoint_derivative(xs, ys, endpoint, PolyFit{D}())
+    return Deriv1{T}(val)
+end
+
+# Passthrough for already-concrete BCs (no materialization needed)
+@inline materialize_bc(bc::Deriv1, ::AbstractVector, ::AbstractVector, ::Val) = bc
+@inline materialize_bc(bc::Deriv2, ::AbstractVector, ::AbstractVector, ::Val) = bc
+@inline materialize_bc(bc::Deriv3, ::AbstractVector, ::AbstractVector, ::Val) = bc
+
+
+# ========================================
+# PolyFit{D} Point Validation (Generic)
+# ========================================
+
+"""
+    get_polyfit_degree(bc) -> Int
+
+Extract the maximum polynomial degree D from a boundary condition if it contains a `PolyFit{D}`.
+Returns 0 for non-PolyFit BCs (no extra point requirement).
+
+This function recursively unwraps container types (`Left`, `Right`, `BCPair`) to find
+any inner `PolyFit{D}` type and returns the highest degree found.
+
+# Examples
+```julia
+get_polyfit_degree(ParabolaFit())                    # → 2
+get_polyfit_degree(Left(CubicFit()))                 # → 3
+get_polyfit_degree(BCPair(ParabolaFit(), CubicFit())) # → 3 (max of 2 and 3)
+get_polyfit_degree(Deriv1(0.0))                       # → 0 (no PolyFit)
+```
+"""
+get_polyfit_degree(::PolyFit{D}) where {D} = D
+get_polyfit_degree(::Left{<:AbstractFloat, <:PolyFit{D}}) where {D} = D
+get_polyfit_degree(::Right{<:AbstractFloat, <:PolyFit{D}}) where {D} = D
+
+# BCPair: return maximum degree from left and right
+@inline function get_polyfit_degree(bc::BCPair)
+    d_left = get_polyfit_degree(bc.left)
+    d_right = get_polyfit_degree(bc.right)
+    return max(d_left, d_right)
+end
+
+# Default: no PolyFit, no extra point requirement
+get_polyfit_degree(::AbstractBC) = 0
+get_polyfit_degree(::PointBC) = 0  # Deriv1, Deriv2, Deriv3
+
+
+"""
+    validate_polyfit_points(bc, n_points::Int)
+
+Validate that the grid has enough points for `PolyFit{D}` boundary conditions.
+
+`PolyFit{D}` requires at least `D+1` data points to estimate the endpoint derivative
+using a degree-D polynomial fit. This function checks that requirement and throws
+`ArgumentError` if insufficient points are provided.
+
+# Arguments
+- `bc`: Boundary condition (any type)
+- `n_points`: Number of data points in the grid
+
+# Throws
+- `ArgumentError`: If `PolyFit{D}` is used but `n_points < D + 1`
+
+# Examples
+```julia
+validate_polyfit_points(ParabolaFit(), 5)  # OK: 5 >= 3
+validate_polyfit_points(CubicFit(), 3)     # ERROR: 3 < 4
+validate_polyfit_points(Deriv1(0.0), 2)    # OK: no PolyFit requirement
+```
+"""
+function validate_polyfit_points(bc, n_points::Int)
+    D = get_polyfit_degree(bc)
+    if D > 0
+        min_points = D + 1
+        n_points >= min_points || throw(ArgumentError(
+            "PolyFit{$D} requires at least $min_points data points (got $n_points). " *
+            "A degree-$D polynomial needs $(min_points) points to estimate endpoint derivatives."
+        ))
+    end
+    return nothing
+end

@@ -96,34 +96,41 @@ end
 # ========================================
 
 """
-    _fill_slopes!(d, s, h, bc)
+    _fill_slopes!(d, s, h, bc, x, y)
 
 Fill slope array d[] based on boundary condition type.
 Dispatches at compile time to use optimal recurrence direction:
 - Left BC:  compute d[1], forward recurrence  → O(n)
 - Right BC: compute d[n], backward recurrence → O(n)
+
+The `x` and `y` parameters are needed for PolyFit{D} BCs which estimate
+derivatives from data. For other BC types, they are ignored.
 """
 # Left(Deriv1): d[1] given directly, forward recurrence
-@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T}, bc::Left{T, Deriv1{T}}) where {T<:AbstractFloat}
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T},
+                               bc::Left{T, Deriv1{T}}, ::AbstractVector{T}, ::AbstractVector{T}) where {T<:AbstractFloat}
     d1 = bc.bc.val
     _forward_recurrence!(d, s, d1)
 end
 
 # Left(Deriv2): d[1] = s[1] - (κ/2)*h[1], forward recurrence
-@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T}, bc::Left{T, Deriv2{T}}) where {T<:AbstractFloat}
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T},
+                               bc::Left{T, Deriv2{T}}, ::AbstractVector{T}, ::AbstractVector{T}) where {T<:AbstractFloat}
     κ = bc.bc.val
     d1 = s[1] - (κ / 2) * h[1]
     _forward_recurrence!(d, s, d1)
 end
 
 # Right(Deriv1): d[n] given directly, backward recurrence
-@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T}, bc::Right{T, Deriv1{T}}) where {T<:AbstractFloat}
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T},
+                               bc::Right{T, Deriv1{T}}, ::AbstractVector{T}, ::AbstractVector{T}) where {T<:AbstractFloat}
     dn = bc.bc.val
     _backward_recurrence!(d, s, dn)
 end
 
 # Right(Deriv2): compute d[n] from curvature, backward recurrence
-@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T}, bc::Right{T, Deriv2{T}}) where {T<:AbstractFloat}
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T},
+                               bc::Right{T, Deriv2{T}}, ::AbstractVector{T}, ::AbstractVector{T}) where {T<:AbstractFloat}
     κ = bc.bc.val
     # a[n-1] = κ/2
     # d[n-1] = s[n-1] - a[n-1]*h[n-1]
@@ -137,7 +144,7 @@ end
 # ========================================
 
 """
-    _fill_slopes!(d, s, h, bc::Left{T, ParabolaFit{T}})
+    _fill_slopes!(d, s, h, bc::Left{T, ParabolaFit{T}}, x, y)
 
 Fill slope array using parabola fit at left endpoint.
 
@@ -154,8 +161,8 @@ For uniform grids (h[1] = h[2] = h), this simplifies to:
 # Edge Case
 For n=2 (single segment), falls back to linear: d[1] = s[1].
 """
-@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T},
-                               h::AbstractVector{T}, ::Left{T, ParabolaFit{T}}) where {T<:AbstractFloat}
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T},
+                               ::Left{T, ParabolaFit{T}}, ::AbstractVector{T}, ::AbstractVector{T}) where {T<:AbstractFloat}
     n = length(d)
 
     # Edge case: single segment (n=2) - fallback to linear
@@ -176,7 +183,7 @@ For n=2 (single segment), falls back to linear: d[1] = s[1].
 end
 
 """
-    _fill_slopes!(d, s, h, bc::Right{T, ParabolaFit{T}})
+    _fill_slopes!(d, s, h, bc::Right{T, ParabolaFit{T}}, x, y)
 
 Fill slope array using parabola fit at right endpoint.
 
@@ -193,8 +200,8 @@ For uniform grids, this simplifies to:
 # Edge Case
 For n=2 (single segment), falls back to linear: d[n] = s[1].
 """
-@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T},
-                               h::AbstractVector{T}, ::Right{T, ParabolaFit{T}}) where {T<:AbstractFloat}
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T},
+                               ::Right{T, ParabolaFit{T}}, ::AbstractVector{T}, ::AbstractVector{T}) where {T<:AbstractFloat}
     n = length(d)
 
     # Edge case: single segment (n=2) - fallback to linear
@@ -221,7 +228,7 @@ end
 
 # MinCurvFit: minimize total curvature via closed-form optimization
 """
-    _fill_slopes!(d, s, h, ::MinCurvFit)
+    _fill_slopes!(d, s, h, ::MinCurvFit, x, y)
 
 Fill slope array using global curvature minimization.
 
@@ -238,8 +245,8 @@ Setting df/d(d[1]) = 0 gives the closed-form solution:
 # Complexity
 O(n) time, O(1) extra space (on-the-fly β computation).
 """
-@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T},
-                               h::AbstractVector{T}, ::MinCurvFit{T}) where {T<:AbstractFloat}
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T},
+                               ::MinCurvFit{T}, ::AbstractVector{T}, ::AbstractVector{T}) where {T<:AbstractFloat}
     n = length(d)
     n_intervals = n - 1  # = length(s) = length(h)
 
@@ -281,6 +288,43 @@ O(n) time, O(1) extra space (on-the-fly β computation).
 
     d1_optimal = numerator / inv_h_sum
     _forward_recurrence!(d, s, d1_optimal)
+end
+
+# ========================================
+# Generic PolyFit{D}: Materialize to Deriv1
+# ========================================
+
+"""
+    _fill_slopes!(d, s, h, bc::Left{T, PolyFit{D,T}}, x, y)
+
+Fill slope array using generic polynomial fit at left endpoint.
+
+Materializes PolyFit{D} to Deriv1 using `materialize_bc`, then delegates to
+the Deriv1 code path. Supports all polynomial degrees: LinearFit (D=1),
+ParabolaFit (D=2), CubicFit (D=3), etc.
+"""
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T},
+                               bc::Left{T, PolyFit{D, T}}, x::AbstractVector{T}, y::AbstractVector{T}) where {D, T<:AbstractFloat}
+    # Materialize PolyFit{D} → Deriv1 using estimated derivative
+    concrete_bc = materialize_bc(bc.bc, x, y, Val(:left))
+    # Delegate to Deriv1 code path
+    _fill_slopes!(d, s, h, Left(concrete_bc), x, y)
+end
+
+"""
+    _fill_slopes!(d, s, h, bc::Right{T, PolyFit{D,T}}, x, y)
+
+Fill slope array using generic polynomial fit at right endpoint.
+
+Materializes PolyFit{D} to Deriv1 using `materialize_bc`, then delegates to
+the Deriv1 code path.
+"""
+@inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T},
+                               bc::Right{T, PolyFit{D, T}}, x::AbstractVector{T}, y::AbstractVector{T}) where {D, T<:AbstractFloat}
+    # Materialize PolyFit{D} → Deriv1 using estimated derivative
+    concrete_bc = materialize_bc(bc.bc, x, y, Val(:right))
+    # Delegate to Deriv1 code path
+    _fill_slopes!(d, s, h, Right(concrete_bc), x, y)
 end
 
 # ========================================
@@ -373,7 +417,7 @@ and automatically released when the function returns.
     _compute_quadratic_secants!(secant, y, inv_h)
 
     # 3. Fill slopes d[] (BC-dispatched: Left→forward, Right→backward)
-    _fill_slopes!(d, secant, h, bc)
+    _fill_slopes!(d, secant, h, bc, x, y)
 
     # 4. Compute quadratic coefficients a[]
     _compute_quadratic_coefficients!(a, d, secant, inv_h)

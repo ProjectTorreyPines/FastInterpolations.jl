@@ -895,6 +895,192 @@ end
 end
 
 # ========================================
+# Cross-BC Tests: Generic PolyFit{D} Support
+# ========================================
+# Tests for using any PolyFit{D} with both cubic_interp and quadratic_interp.
+# This validates the materialize_bc factory function and generic dispatch.
+
+@testset "Cross-BC: Cubic Interpolation with ParabolaFit" begin
+    # Test that ParabolaFit (PolyFit{2}) works with cubic_interp
+
+    @testset "Quadratic Function Reproduction" begin
+        f_quad(x) = x^2 - 2x + 1
+        df_quad(x) = 2x - 2
+
+        x = range(0.0, 2.0, 11)
+        y = collect(f_quad.(x))
+        xi = [0.25, 0.5, 1.0, 1.5, 1.75]
+
+        # ParabolaFit should work with cubic_interp
+        result = cubic_interp(x, y, xi; bc=ParabolaFit())
+        @test result ≈ f_quad.(xi) rtol=1e-10
+
+        # Test with interpolant form
+        itp = cubic_interp(x, y; bc=ParabolaFit())
+        @test itp.(xi) ≈ f_quad.(xi) rtol=1e-10
+    end
+
+    @testset "Mixed BCs: ParabolaFit + CubicFit" begin
+        f_quad(x) = x^2 - 2x + 1
+
+        x = range(0.0, 2.0, 11)
+        y = collect(f_quad.(x))
+        xi = [0.5, 1.0, 1.5]
+
+        # ParabolaFit left, CubicFit right
+        result_pc = cubic_interp(x, y, xi; bc=BCPair(ParabolaFit(), CubicFit()))
+        @test result_pc ≈ f_quad.(xi) rtol=1e-10
+
+        # CubicFit left, ParabolaFit right
+        result_cp = cubic_interp(x, y, xi; bc=BCPair(CubicFit(), ParabolaFit()))
+        @test result_cp ≈ f_quad.(xi) rtol=1e-10
+    end
+
+    @testset "Mixed BCs: ParabolaFit + Deriv1/Deriv2" begin
+        f_quad(x) = x^2 - 2x + 1
+        df_quad(x) = 2x - 2
+
+        x = range(0.0, 2.0, 11)
+        y = collect(f_quad.(x))
+        xi = [0.5, 1.0, 1.5]
+
+        # ParabolaFit left, Natural (Deriv2(0)) right
+        result_pn = cubic_interp(x, y, xi; bc=BCPair(ParabolaFit(), Deriv2(0.0)))
+        @test all(isfinite.(result_pn))
+
+        # Exact Deriv1 left, ParabolaFit right
+        result_dp = cubic_interp(x, y, xi; bc=BCPair(Deriv1(df_quad(x[1])), ParabolaFit()))
+        @test result_dp ≈ f_quad.(xi) rtol=1e-10
+    end
+
+    @testset "ParabolaFit Minimum Points (3)" begin
+        x3 = [0.0, 1.0, 2.0]
+        y3 = [1.0, 2.0, 5.0]
+
+        # ParabolaFit needs 3 points - should work
+        @test_nowarn cubic_interp(x3, y3; bc=ParabolaFit())
+    end
+end
+
+@testset "Cross-BC: Quadratic Interpolation with CubicFit" begin
+    # Test that CubicFit (PolyFit{3}) works with quadratic_interp
+
+    @testset "Quadratic Function Reproduction" begin
+        f_quad(x) = x^2 - 2x + 1
+
+        x = range(0.0, 2.0, 21)
+        y = collect(f_quad.(x))
+        xi = [0.25, 0.5, 1.0, 1.5, 1.75]
+
+        # CubicFit should work with quadratic_interp (Left BC)
+        result_left = quadratic_interp(x, y, xi; bc=Left(CubicFit()))
+        @test result_left ≈ f_quad.(xi) rtol=1e-10
+
+        # CubicFit should work with quadratic_interp (Right BC)
+        result_right = quadratic_interp(x, y, xi; bc=Right(CubicFit()))
+        @test result_right ≈ f_quad.(xi) rtol=1e-10
+    end
+
+    @testset "ParabolaFit vs CubicFit on Quadratic" begin
+        # Both should exactly reproduce quadratic functions
+        f_quad(x) = x^2 - 2x + 1
+
+        x = range(0.0, 2.0, 21)
+        y = collect(f_quad.(x))
+        xi = [0.5, 1.0, 1.5]
+
+        result_p2 = quadratic_interp(x, y, xi; bc=Left(ParabolaFit()))
+        result_p3 = quadratic_interp(x, y, xi; bc=Left(CubicFit()))
+
+        @test result_p2 ≈ f_quad.(xi) rtol=1e-10
+        @test result_p3 ≈ f_quad.(xi) rtol=1e-10
+        @test result_p2 ≈ result_p3 rtol=1e-10
+    end
+
+    @testset "CubicFit with Interpolant Form" begin
+        f_quad(x) = x^2 - 2x + 1
+
+        x = range(0.0, 2.0, 11)
+        y = collect(f_quad.(x))
+
+        itp = quadratic_interp(x, y; bc=Left(CubicFit()))
+        @test itp(0.5) ≈ f_quad(0.5) rtol=1e-10
+        @test itp(1.5) ≈ f_quad(1.5) rtol=1e-10
+    end
+end
+
+@testset "PolyFit{D} Minimum Points Validation" begin
+    x3 = [0.0, 1.0, 2.0]
+    y3 = [1.0, 2.0, 3.0]
+    x4 = [0.0, 1.0, 2.0, 3.0]
+    y4 = [1.0, 2.0, 3.0, 4.0]
+
+    @testset "Quadratic Interpolation" begin
+        # ParabolaFit (D=2) needs 3 points - should work
+        @test_nowarn quadratic_interp(x3, y3; bc=Left(ParabolaFit()))
+
+        # CubicFit (D=3) needs 4 points
+        @test_throws ArgumentError quadratic_interp(x3, y3; bc=Left(CubicFit()))
+        @test_nowarn quadratic_interp(x4, y4; bc=Left(CubicFit()))
+
+        # Right BC validation
+        @test_throws ArgumentError quadratic_interp(x3, y3; bc=Right(CubicFit()))
+        @test_nowarn quadratic_interp(x4, y4; bc=Right(CubicFit()))
+    end
+
+    @testset "Cubic Interpolation" begin
+        # ParabolaFit needs 3 points - should work
+        @test_nowarn cubic_interp(x3, y3; bc=ParabolaFit())
+
+        # CubicFit needs 4 points
+        @test_throws ArgumentError cubic_interp(x3, y3; bc=CubicFit())
+        @test_nowarn cubic_interp(x4, y4; bc=CubicFit())
+    end
+end
+
+@testset "materialize_bc Factory Function" begin
+    x = range(0.0, 2.0, 11)
+    y = collect(x .^ 2)
+
+    @testset "PolyFit{D} → Deriv1 Conversion" begin
+        # ParabolaFit
+        bc_p2 = FastInterpolations.materialize_bc(ParabolaFit{Float64}(), x, y, Val(:left))
+        @test bc_p2 isa Deriv1{Float64}
+        @test isfinite(bc_p2.val)
+
+        # CubicFit
+        bc_p3 = FastInterpolations.materialize_bc(CubicFit{Float64}(), x, y, Val(:left))
+        @test bc_p3 isa Deriv1{Float64}
+        @test isfinite(bc_p3.val)
+
+        # Right endpoint
+        bc_right = FastInterpolations.materialize_bc(ParabolaFit{Float64}(), x, y, Val(:right))
+        @test bc_right isa Deriv1{Float64}
+        @test isfinite(bc_right.val)
+    end
+
+    @testset "Passthrough for Concrete BCs" begin
+        # Deriv1 should pass through unchanged
+        bc_d1 = Deriv1(1.5)
+        result_d1 = FastInterpolations.materialize_bc(bc_d1, x, y, Val(:left))
+        @test result_d1 === bc_d1
+
+        # Deriv2 should pass through unchanged
+        bc_d2 = Deriv2(0.0)
+        result_d2 = FastInterpolations.materialize_bc(bc_d2, x, y, Val(:left))
+        @test result_d2 === bc_d2
+    end
+
+    @testset "Estimated Values Match Direct API" begin
+        # materialize_bc should produce same values as _estimate_endpoint_derivative
+        direct_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{2}())
+        materialized = FastInterpolations.materialize_bc(ParabolaFit{Float64}(), x, y, Val(:left))
+
+        @test materialized.val ≈ direct_left rtol=1e-14
+    end
+end
+
+# ========================================
 # Note: FDMBC Tests Not Needed
 # ========================================
 # Analysis showed that Lagrange polynomial derivative estimation

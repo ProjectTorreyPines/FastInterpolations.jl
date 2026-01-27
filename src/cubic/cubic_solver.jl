@@ -265,34 +265,35 @@ end
     return nothing
 end
 
-# First element - CubicFit (PolyFit{3}): compute derivative from data using 4-point polynomial
-# Formula: d[1] = 6[(y₂-y₁)/h₁ - estimated_derivative]
+# First element - Generic PolyFit{D}: materialize to Deriv1, then delegate
+# Supports all polynomial degrees: LinearFit (D=1), ParabolaFit (D=2), CubicFit (D=3), etc.
 @inline function _compute_rhs_first!(
-    d::AbstractVector{T}, ::PolyFit{3, T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
-) where {T<:AbstractFloat}
-    # Compute endpoint derivative automatically from data (4-point Lagrange formula)
-    estimated_deriv = _estimate_endpoint_derivative(x, y, Val(:left), PolyFit{3}())
-    d[1] = 6 * ((y[2] - y[1]) / _get_h(spacing, 1) - estimated_deriv)
+    d::AbstractVector{T}, bc::PolyFit{D, T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+) where {D, T<:AbstractFloat}
+    # Materialize PolyFit{D} → Deriv1 using estimated derivative
+    concrete_bc = materialize_bc(bc, x, y, Val(:left))
+    # Delegate to existing Deriv1 code path
+    _compute_rhs_first!(d, concrete_bc, y, x, spacing)
     return nothing
 end
 
-# Last element - CubicFit (PolyFit{3}): compute derivative from data using 4-point polynomial
-# Formula: d[end] = 6[estimated_derivative - (y_end - y_{end-1}) / h_end]
+# Last element - Generic PolyFit{D}: materialize to Deriv1, then delegate
 @inline function _compute_rhs_last!(
-    d::AbstractVector{T}, ::PolyFit{3, T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
-) where {T<:AbstractFloat}
-    n = length(y) - 1
-    # Compute endpoint derivative automatically from data (4-point Lagrange formula)
-    estimated_deriv = _estimate_endpoint_derivative(x, y, Val(:right), PolyFit{3}())
-    d[end] = 6 * (estimated_deriv - (y[end] - y[end-1]) / _get_h(spacing, n))
+    d::AbstractVector{T}, bc::PolyFit{D, T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+) where {D, T<:AbstractFloat}
+    # Materialize PolyFit{D} → Deriv1 using estimated derivative
+    concrete_bc = materialize_bc(bc, x, y, Val(:right))
+    # Delegate to existing Deriv1 code path
+    _compute_rhs_last!(d, concrete_bc, y, x, spacing)
     return nothing
 end
 
 """
 Compute RHS vector for generic derivative BC system in-place.
 
-The `x` parameter is needed for CubicFit (PolyFit{3}) which computes endpoint derivatives from data.
-For other BC types (Deriv1, Deriv2, Deriv3), `x` is passed but ignored.
+The `x` parameter is needed for PolyFit{D} BCs (LinearFit, ParabolaFit, CubicFit, etc.)
+which compute endpoint derivatives from data. For other BC types (Deriv1, Deriv2, Deriv3),
+`x` is passed but ignored.
 """
 @inline function compute_rhs!(
     d::AbstractVector{T}, y::AbstractVector{T}, x::AbstractVector{T},

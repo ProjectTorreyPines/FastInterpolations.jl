@@ -217,6 +217,119 @@ end
 
 
 # ========================================
+# Non-Uniform Grid: Precomputed Coefficient Kernels
+# ========================================
+# Two-stage kernel pattern for batch operations on non-uniform grids:
+#   Stage 1: Compute coefficients from x coordinates (once per grid)
+#   Stage 2: Apply coefficients to f values (repeated for each y vector)
+#
+# This mirrors the uniform grid pattern where inv_h is precomputed.
+
+"""
+    _lagrange_coeffs_left(x1, x2, x3, x4) -> (c1, c2, c3, c4)
+
+Precompute Lagrange derivative coefficients for LEFT endpoint (x₁).
+
+For a non-uniform grid, the derivative f'(x₁) can be expressed as:
+    f'(x₁) = c₁f₁ + c₂f₂ + c₃f₃ + c₄f₄
+
+where c₁, c₂, c₃, c₄ depend only on the x coordinates, not on f values.
+This allows precomputation for batch operations.
+
+# Arguments
+- `x1, x2, x3, x4::T`: First 4 grid points
+
+# Returns
+- Tuple `(c1, c2, c3, c4)` of coefficients
+
+# Operation Count
+    4 fdiv + 12 fmul + 6 fadd = 22 FP ops (one-time cost per grid)
+"""
+@inline function _lagrange_coeffs_left(x1::T, x2::T, x3::T, x4::T) where {T<:AbstractFloat}
+    d12, d13, d14 = x1 - x2, x1 - x3, x1 - x4
+    d23, d24, d34 = x2 - x3, x2 - x4, x3 - x4
+
+    # L'_1(x1) numerator: derivative of L1 basis at x1
+    L1_numer = muladd(d12, d13, muladd(d12, d14, d13 * d14))
+
+    # Compute coefficients c_i = L'_i(x1)
+    c1 = L1_numer / (d12 * d13 * d14)
+    c2 = (d13 * d14) / ((-d12) * d23 * d24)
+    c3 = (d12 * d14) / (d13 * d23 * d34)
+    c4 = (d12 * d13) / ((-d14) * d24 * d34)
+
+    return (c1, c2, c3, c4)
+end
+
+"""
+    _lagrange_coeffs_right(x1, x2, x3, x4) -> (c1, c2, c3, c4)
+
+Precompute Lagrange derivative coefficients for RIGHT endpoint (x₄).
+
+For a non-uniform grid, the derivative f'(x₄) can be expressed as:
+    f'(x₄) = c₁f₁ + c₂f₂ + c₃f₃ + c₄f₄
+
+where the x arguments are the LAST 4 grid points: x[n-3], x[n-2], x[n-1], x[n].
+
+# Arguments
+- `x1, x2, x3, x4::T`: Last 4 grid points (x[n-3], x[n-2], x[n-1], x[n])
+
+# Returns
+- Tuple `(c1, c2, c3, c4)` of coefficients
+
+# Operation Count
+    4 fdiv + 12 fmul + 6 fadd = 22 FP ops (one-time cost per grid)
+"""
+@inline function _lagrange_coeffs_right(x1::T, x2::T, x3::T, x4::T) where {T<:AbstractFloat}
+    d12, d13, d14 = x1 - x2, x1 - x3, x1 - x4
+    d23, d24, d34 = x2 - x3, x2 - x4, x3 - x4
+
+    # L'_4(x4) numerator: derivative of L4 basis at x4
+    L4_numer = muladd(d14, d24, muladd(d14, d34, d24 * d34))
+
+    # Compute coefficients c_i = L'_i(x4)
+    c1 = (d24 * d34) / (d12 * d13 * d14)
+    c2 = (d14 * d34) / ((-d12) * d23 * d24)
+    c3 = (d14 * d24) / (d13 * d23 * d34)
+    c4 = L4_numer / ((-d14) * d24 * d34)
+
+    return (c1, c2, c3, c4)
+end
+
+"""
+    _lagrange_d1_nonuniform(c1, c2, c3, c4, f1, f2, f3, f4) -> T
+
+Apply precomputed Lagrange coefficients to function values.
+
+This is the "Stage 2" kernel for non-uniform grids:
+    f'(x) = c₁f₁ + c₂f₂ + c₃f₃ + c₄f₄
+
+Same pattern as uniform grid kernel, but coefficients are grid-dependent
+rather than just `inv_h/6 * [-11, 18, -9, 2]`.
+
+# Arguments
+- `c1, c2, c3, c4::T`: Precomputed coefficients from `_lagrange_coeffs_left/right`
+- `f1, f2, f3, f4::T`: Function values at the 4 grid points
+
+# Returns
+- Estimated derivative value
+
+# Operation Count
+    0 fdiv + 1 fmul + 3 fmadd = 4 FP ops (per evaluation)
+
+# Comparison with Uniform Grid
+    Uniform:     _lagrange_d1_left_uniform(f1,f2,f3,f4, inv_h)  → 5 FP ops
+    Non-uniform: _lagrange_d1_nonuniform(c1,c2,c3,c4, f1,f2,f3,f4) → 4 FP ops
+"""
+@inline function _lagrange_d1_nonuniform(
+    c1::T, c2::T, c3::T, c4::T,
+    f1::T, f2::T, f3::T, f4::T
+) where {T<:AbstractFloat}
+    return muladd(c1, f1, muladd(c2, f2, muladd(c3, f3, c4 * f4)))
+end
+
+
+# ========================================
 # Unified Endpoint Derivative Estimation
 # ========================================
 # Higher-level API using Val{:left}/Val{:right} dispatch.

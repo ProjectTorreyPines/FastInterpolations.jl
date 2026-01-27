@@ -206,6 +206,160 @@ end
 end
 
 # ========================================
+# Non-Uniform Grid Kernel Tests (Precomputed Coefficients)
+# ========================================
+
+@testset "Non-Uniform Lagrange Kernels" begin
+
+    @testset "Coefficient Precomputation: Left Endpoint" begin
+        # Non-uniform grid: [0, 0.1, 0.3, 0.6]
+        x1, x2, x3, x4 = 0.0, 0.1, 0.3, 0.6
+        c1, c2, c3, c4 = FastInterpolations._lagrange_coeffs_left(x1, x2, x3, x4)
+
+        # Test: coefficients should be finite
+        @test all(isfinite, (c1, c2, c3, c4))
+
+        # Test: sum of coefficients for constant function should be 0
+        # f(x) = 1, f'(x) = 0
+        f1, f2, f3, f4 = 1.0, 1.0, 1.0, 1.0
+        deriv = FastInterpolations._lagrange_d1_nonuniform(c1, c2, c3, c4, f1, f2, f3, f4)
+        @test deriv ≈ 0.0 atol=1e-14
+    end
+
+    @testset "Coefficient Precomputation: Right Endpoint" begin
+        # Non-uniform grid: [0.4, 0.7, 0.9, 1.0]
+        x1, x2, x3, x4 = 0.4, 0.7, 0.9, 1.0
+        c1, c2, c3, c4 = FastInterpolations._lagrange_coeffs_right(x1, x2, x3, x4)
+
+        # Test: coefficients should be finite
+        @test all(isfinite, (c1, c2, c3, c4))
+
+        # Test: constant function f(x) = 5, f'(x) = 0
+        f1, f2, f3, f4 = 5.0, 5.0, 5.0, 5.0
+        deriv = FastInterpolations._lagrange_d1_nonuniform(c1, c2, c3, c4, f1, f2, f3, f4)
+        @test deriv ≈ 0.0 atol=1e-14
+    end
+
+    @testset "Linear Function (Exact)" begin
+        # f(x) = 2x + 3, f'(x) = 2
+        # Non-uniform grid
+        x_left = [0.0, 0.1, 0.25, 0.5]
+        x_right = [0.5, 0.75, 0.9, 1.0]
+        f_lin(x) = 2x + 3
+
+        # Left endpoint
+        c_left = FastInterpolations._lagrange_coeffs_left(x_left...)
+        f_left = f_lin.(x_left)
+        d_left = FastInterpolations._lagrange_d1_nonuniform(c_left..., f_left...)
+        @test d_left ≈ 2.0 atol=1e-13
+
+        # Right endpoint
+        c_right = FastInterpolations._lagrange_coeffs_right(x_right...)
+        f_right = f_lin.(x_right)
+        d_right = FastInterpolations._lagrange_d1_nonuniform(c_right..., f_right...)
+        @test d_right ≈ 2.0 atol=1e-13
+    end
+
+    @testset "Quadratic Function (Exact)" begin
+        # f(x) = x² - 3x + 2, f'(x) = 2x - 3
+        # f'(0) = -3, f'(1) = -1
+        x_left = [0.0, 0.15, 0.35, 0.6]
+        x_right = [0.4, 0.65, 0.85, 1.0]
+        f_quad(x) = x^2 - 3x + 2
+
+        # Left endpoint: f'(0) = -3
+        c_left = FastInterpolations._lagrange_coeffs_left(x_left...)
+        f_left = f_quad.(x_left)
+        d_left = FastInterpolations._lagrange_d1_nonuniform(c_left..., f_left...)
+        @test d_left ≈ -3.0 atol=1e-12
+
+        # Right endpoint: f'(1) = -1
+        c_right = FastInterpolations._lagrange_coeffs_right(x_right...)
+        f_right = f_quad.(x_right)
+        d_right = FastInterpolations._lagrange_d1_nonuniform(c_right..., f_right...)
+        @test d_right ≈ -1.0 atol=1e-12
+    end
+
+    @testset "Cubic Function (Exact)" begin
+        # f(x) = x³, f'(x) = 3x²
+        # f'(0) = 0, f'(1) = 3
+        x_left = [0.0, 0.2, 0.4, 0.7]
+        x_right = [0.3, 0.6, 0.8, 1.0]
+        f_cub(x) = x^3
+
+        # Left endpoint: f'(0) = 0
+        c_left = FastInterpolations._lagrange_coeffs_left(x_left...)
+        f_left = f_cub.(x_left)
+        d_left = FastInterpolations._lagrange_d1_nonuniform(c_left..., f_left...)
+        @test d_left ≈ 0.0 atol=1e-12
+
+        # Right endpoint: f'(1) = 3
+        c_right = FastInterpolations._lagrange_coeffs_right(x_right...)
+        f_right = f_cub.(x_right)
+        d_right = FastInterpolations._lagrange_d1_nonuniform(c_right..., f_right...)
+        @test d_right ≈ 3.0 atol=1e-11
+    end
+
+    @testset "Equivalence: Precomputed vs On-the-fly (Non-uniform)" begin
+        # Verify precomputed kernel matches the on-the-fly calculation
+        xs = [0.0, 0.12, 0.31, 0.55, 0.72, 0.88, 1.0]
+        f_test(x) = sin(2π * x)
+        ys = f_test.(xs)
+
+        # Left endpoint using precomputed coefficients
+        c_left = FastInterpolations._lagrange_coeffs_left(xs[1], xs[2], xs[3], xs[4])
+        d_left_precomp = FastInterpolations._lagrange_d1_nonuniform(c_left..., ys[1], ys[2], ys[3], ys[4])
+
+        # Left endpoint using on-the-fly (existing _estimate_endpoint_derivative)
+        d_left_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:left))
+
+        @test d_left_precomp ≈ d_left_onfly rtol=1e-14
+
+        # Right endpoint
+        n = length(xs)
+        c_right = FastInterpolations._lagrange_coeffs_right(xs[n-3], xs[n-2], xs[n-1], xs[n])
+        d_right_precomp = FastInterpolations._lagrange_d1_nonuniform(c_right..., ys[n-3], ys[n-2], ys[n-1], ys[n])
+        d_right_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:right))
+
+        @test d_right_precomp ≈ d_right_onfly rtol=1e-14
+    end
+
+    @testset "Equivalence: Uniform Grid - Precomputed vs Direct" begin
+        # For uniform grids, precomputed coefficients should give same result as direct formula
+        h = 0.25
+        xs_uniform = [0.0, 0.25, 0.5, 0.75, 1.0]
+        f_test(x) = x^3 - x
+        ys = f_test.(xs_uniform)
+
+        # Precomputed (non-uniform kernel with uniform data)
+        c_left = FastInterpolations._lagrange_coeffs_left(xs_uniform[1:4]...)
+        d_precomp = FastInterpolations._lagrange_d1_nonuniform(c_left..., ys[1:4]...)
+
+        # Direct uniform kernel
+        inv_h = 1 / h
+        d_direct = FastInterpolations._lagrange_d1_left_uniform(ys[1], ys[2], ys[3], ys[4], inv_h)
+
+        @test d_precomp ≈ d_direct rtol=1e-13
+    end
+
+    @testset "Float32 Precision" begin
+        x1, x2, x3, x4 = Float32.([0.0, 0.1, 0.3, 0.6])
+        c1, c2, c3, c4 = FastInterpolations._lagrange_coeffs_left(x1, x2, x3, x4)
+
+        @test c1 isa Float32
+        @test c2 isa Float32
+        @test c3 isa Float32
+        @test c4 isa Float32
+
+        f1, f2, f3, f4 = Float32.([0.0, 0.1, 0.3, 0.6].^2)  # f(x) = x²
+        deriv = FastInterpolations._lagrange_d1_nonuniform(c1, c2, c3, c4, f1, f2, f3, f4)
+        @test deriv isa Float32
+        @test deriv ≈ Float32(0.0) atol=1e-5  # f'(0) = 0
+    end
+
+end
+
+# ========================================
 # Phase 4: LagrangeBC Integration Tests
 # ========================================
 

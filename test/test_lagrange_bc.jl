@@ -273,7 +273,7 @@ end
 # Phase 3: Lagrange Kernel Tests
 # ========================================
 
-@testset "Lagrange Kernel Correctness" begin
+@testset "Lagrange Kernel Correctness (PolyFit{3})" begin
 
     @testset "Left Endpoint: f(x) = x³" begin
         # f(x) = x³, f'(x) = 3x²
@@ -283,9 +283,9 @@ end
         f = x -> x^3
 
         # First 4 points: x = 0.0, 0.1, 0.2, 0.3
-        f1, f2, f3, f4 = f(0.0), f(0.1), f(0.2), f(0.3)
+        fvals = (f(0.0), f(0.1), f(0.2), f(0.3))
 
-        d_left = FastInterpolations._lagrange_d1_left_uniform(f1, f2, f3, f4, inv_h)
+        d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), fvals, inv_h)
         @test d_left ≈ 0.0 atol=1e-10  # f'(0) = 0
     end
 
@@ -297,9 +297,9 @@ end
         f = x -> x^3
 
         # Last 4 points: x = 0.7, 0.8, 0.9, 1.0
-        fnm3, fnm2, fnm1, fn = f(0.7), f(0.8), f(0.9), f(1.0)
+        fvals = (f(0.7), f(0.8), f(0.9), f(1.0))
 
-        d_right = FastInterpolations._lagrange_d1_right_uniform(fnm3, fnm2, fnm1, fn, inv_h)
+        d_right = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:right), fvals, inv_h)
         @test d_right ≈ 3.0 atol=1e-10  # f'(1) = 3
     end
 
@@ -310,8 +310,8 @@ end
         inv_h = 1 / h
         f = x -> x^2 - 2x + 1
 
-        f1, f2, f3, f4 = f(0.0), f(0.25), f(0.5), f(0.75)
-        d_left = FastInterpolations._lagrange_d1_left_uniform(f1, f2, f3, f4, inv_h)
+        fvals = (f(0.0), f(0.25), f(0.5), f(0.75))
+        d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), fvals, inv_h)
         @test d_left ≈ -2.0 atol=1e-10
     end
 
@@ -321,8 +321,8 @@ end
         inv_h = 1 / h
         f = x -> x^2 - 2x + 1
 
-        fnm3, fnm2, fnm1, fn = f(1.25), f(1.5), f(1.75), f(2.0)
-        d_right = FastInterpolations._lagrange_d1_right_uniform(fnm3, fnm2, fnm1, fn, inv_h)
+        fvals = (f(1.25), f(1.5), f(1.75), f(2.0))
+        d_right = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:right), fvals, inv_h)
         @test d_right ≈ 2.0 atol=1e-10
     end
 
@@ -332,12 +332,12 @@ end
         inv_h = 1 / h
         f = x -> 3x + 2
 
-        f1, f2, f3, f4 = f(0.0), f(0.5), f(1.0), f(1.5)
-        d_left = FastInterpolations._lagrange_d1_left_uniform(f1, f2, f3, f4, inv_h)
+        fvals_left = (f(0.0), f(0.5), f(1.0), f(1.5))
+        d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), fvals_left, inv_h)
         @test d_left ≈ 3.0 atol=1e-14  # Exact for linear
 
-        fnm3, fnm2, fnm1, fn = f(1.5), f(2.0), f(2.5), f(3.0)
-        d_right = FastInterpolations._lagrange_d1_right_uniform(fnm3, fnm2, fnm1, fn, inv_h)
+        fvals_right = (f(1.5), f(2.0), f(2.5), f(3.0))
+        d_right = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:right), fvals_right, inv_h)
         @test d_right ≈ 3.0 atol=1e-14
     end
 
@@ -346,8 +346,8 @@ end
         inv_h = 1 / h
         f = x -> x^2
 
-        f1, f2, f3, f4 = Float32.(f.([0.0, 0.1, 0.2, 0.3]))
-        d_left = FastInterpolations._lagrange_d1_left_uniform(f1, f2, f3, f4, inv_h)
+        fvals = NTuple{4, Float32}(Float32.(f.([0.0, 0.1, 0.2, 0.3])))
+        d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), fvals, inv_h)
         @test d_left isa Float32
         @test d_left ≈ Float32(0.0) atol=1e-5  # f'(0) = 0
     end
@@ -358,94 +358,94 @@ end
 # Non-Uniform Grid Kernel Tests (Precomputed Coefficients)
 # ========================================
 
-@testset "Non-Uniform Lagrange Kernels" begin
+@testset "Non-Uniform Lagrange Kernels (PolyFit{3})" begin
 
     @testset "Coefficient Precomputation: Left Endpoint" begin
         # Non-uniform grid: [0, 0.1, 0.3, 0.6]
-        x1, x2, x3, x4 = 0.0, 0.1, 0.3, 0.6
-        c1, c2, c3, c4 = FastInterpolations._lagrange_coeffs_left(x1, x2, x3, x4)
+        xvals = (0.0, 0.1, 0.3, 0.6)
+        coeffs = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), xvals)
 
         # Test: coefficients should be finite
-        @test all(isfinite, (c1, c2, c3, c4))
+        @test all(isfinite, coeffs)
 
         # Test: sum of coefficients for constant function should be 0
         # f(x) = 1, f'(x) = 0
-        f1, f2, f3, f4 = 1.0, 1.0, 1.0, 1.0
-        deriv = FastInterpolations._lagrange_d1_nonuniform(c1, c2, c3, c4, f1, f2, f3, f4)
+        fvals = (1.0, 1.0, 1.0, 1.0)
+        deriv = FastInterpolations._weighted_sum(coeffs, fvals)
         @test deriv ≈ 0.0 atol=1e-14
     end
 
     @testset "Coefficient Precomputation: Right Endpoint" begin
         # Non-uniform grid: [0.4, 0.7, 0.9, 1.0]
-        x1, x2, x3, x4 = 0.4, 0.7, 0.9, 1.0
-        c1, c2, c3, c4 = FastInterpolations._lagrange_coeffs_right(x1, x2, x3, x4)
+        xvals = (0.4, 0.7, 0.9, 1.0)
+        coeffs = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:right), xvals)
 
         # Test: coefficients should be finite
-        @test all(isfinite, (c1, c2, c3, c4))
+        @test all(isfinite, coeffs)
 
         # Test: constant function f(x) = 5, f'(x) = 0
-        f1, f2, f3, f4 = 5.0, 5.0, 5.0, 5.0
-        deriv = FastInterpolations._lagrange_d1_nonuniform(c1, c2, c3, c4, f1, f2, f3, f4)
+        fvals = (5.0, 5.0, 5.0, 5.0)
+        deriv = FastInterpolations._weighted_sum(coeffs, fvals)
         @test deriv ≈ 0.0 atol=1e-14
     end
 
     @testset "Linear Function (Exact)" begin
         # f(x) = 2x + 3, f'(x) = 2
         # Non-uniform grid
-        x_left = [0.0, 0.1, 0.25, 0.5]
-        x_right = [0.5, 0.75, 0.9, 1.0]
+        x_left = (0.0, 0.1, 0.25, 0.5)
+        x_right = (0.5, 0.75, 0.9, 1.0)
         f_lin(x) = 2x + 3
 
         # Left endpoint
-        c_left = FastInterpolations._lagrange_coeffs_left(x_left...)
-        f_left = f_lin.(x_left)
-        d_left = FastInterpolations._lagrange_d1_nonuniform(c_left..., f_left...)
+        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x_left)
+        f_left = NTuple{4}(f_lin.(collect(x_left)))
+        d_left = FastInterpolations._weighted_sum(c_left, f_left)
         @test d_left ≈ 2.0 atol=1e-13
 
         # Right endpoint
-        c_right = FastInterpolations._lagrange_coeffs_right(x_right...)
-        f_right = f_lin.(x_right)
-        d_right = FastInterpolations._lagrange_d1_nonuniform(c_right..., f_right...)
+        c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:right), x_right)
+        f_right = NTuple{4}(f_lin.(collect(x_right)))
+        d_right = FastInterpolations._weighted_sum(c_right, f_right)
         @test d_right ≈ 2.0 atol=1e-13
     end
 
     @testset "Quadratic Function (Exact)" begin
         # f(x) = x² - 3x + 2, f'(x) = 2x - 3
         # f'(0) = -3, f'(1) = -1
-        x_left = [0.0, 0.15, 0.35, 0.6]
-        x_right = [0.4, 0.65, 0.85, 1.0]
+        x_left = (0.0, 0.15, 0.35, 0.6)
+        x_right = (0.4, 0.65, 0.85, 1.0)
         f_quad(x) = x^2 - 3x + 2
 
         # Left endpoint: f'(0) = -3
-        c_left = FastInterpolations._lagrange_coeffs_left(x_left...)
-        f_left = f_quad.(x_left)
-        d_left = FastInterpolations._lagrange_d1_nonuniform(c_left..., f_left...)
+        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x_left)
+        f_left = NTuple{4}(f_quad.(collect(x_left)))
+        d_left = FastInterpolations._weighted_sum(c_left, f_left)
         @test d_left ≈ -3.0 atol=1e-12
 
         # Right endpoint: f'(1) = -1
-        c_right = FastInterpolations._lagrange_coeffs_right(x_right...)
-        f_right = f_quad.(x_right)
-        d_right = FastInterpolations._lagrange_d1_nonuniform(c_right..., f_right...)
+        c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:right), x_right)
+        f_right = NTuple{4}(f_quad.(collect(x_right)))
+        d_right = FastInterpolations._weighted_sum(c_right, f_right)
         @test d_right ≈ -1.0 atol=1e-12
     end
 
     @testset "Cubic Function (Exact)" begin
         # f(x) = x³, f'(x) = 3x²
         # f'(0) = 0, f'(1) = 3
-        x_left = [0.0, 0.2, 0.4, 0.7]
-        x_right = [0.3, 0.6, 0.8, 1.0]
+        x_left = (0.0, 0.2, 0.4, 0.7)
+        x_right = (0.3, 0.6, 0.8, 1.0)
         f_cub(x) = x^3
 
         # Left endpoint: f'(0) = 0
-        c_left = FastInterpolations._lagrange_coeffs_left(x_left...)
-        f_left = f_cub.(x_left)
-        d_left = FastInterpolations._lagrange_d1_nonuniform(c_left..., f_left...)
+        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x_left)
+        f_left = NTuple{4}(f_cub.(collect(x_left)))
+        d_left = FastInterpolations._weighted_sum(c_left, f_left)
         @test d_left ≈ 0.0 atol=1e-12
 
         # Right endpoint: f'(1) = 3
-        c_right = FastInterpolations._lagrange_coeffs_right(x_right...)
-        f_right = f_cub.(x_right)
-        d_right = FastInterpolations._lagrange_d1_nonuniform(c_right..., f_right...)
+        c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:right), x_right)
+        f_right = NTuple{4}(f_cub.(collect(x_right)))
+        d_right = FastInterpolations._weighted_sum(c_right, f_right)
         @test d_right ≈ 3.0 atol=1e-11
     end
 
@@ -456,8 +456,10 @@ end
         ys = f_test.(xs)
 
         # Left endpoint using precomputed coefficients
-        c_left = FastInterpolations._lagrange_coeffs_left(xs[1], xs[2], xs[3], xs[4])
-        d_left_precomp = FastInterpolations._lagrange_d1_nonuniform(c_left..., ys[1], ys[2], ys[3], ys[4])
+        x_left = (xs[1], xs[2], xs[3], xs[4])
+        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x_left)
+        f_left = (ys[1], ys[2], ys[3], ys[4])
+        d_left_precomp = FastInterpolations._weighted_sum(c_left, f_left)
 
         # Left endpoint using unified API (4-arg with PolyFit{3})
         d_left_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:left), PolyFit{3}())
@@ -466,8 +468,10 @@ end
 
         # Right endpoint
         n = length(xs)
-        c_right = FastInterpolations._lagrange_coeffs_right(xs[n-3], xs[n-2], xs[n-1], xs[n])
-        d_right_precomp = FastInterpolations._lagrange_d1_nonuniform(c_right..., ys[n-3], ys[n-2], ys[n-1], ys[n])
+        x_right = (xs[n-3], xs[n-2], xs[n-1], xs[n])
+        c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:right), x_right)
+        f_right = (ys[n-3], ys[n-2], ys[n-1], ys[n])
+        d_right_precomp = FastInterpolations._weighted_sum(c_right, f_right)
         d_right_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:right), PolyFit{3}())
 
         @test d_right_precomp ≈ d_right_onfly rtol=1e-14
@@ -481,27 +485,29 @@ end
         ys = f_test.(xs_uniform)
 
         # Precomputed (non-uniform kernel with uniform data)
-        c_left = FastInterpolations._lagrange_coeffs_left(xs_uniform[1:4]...)
-        d_precomp = FastInterpolations._lagrange_d1_nonuniform(c_left..., ys[1:4]...)
+        x_left = (xs_uniform[1], xs_uniform[2], xs_uniform[3], xs_uniform[4])
+        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x_left)
+        f_left = (ys[1], ys[2], ys[3], ys[4])
+        d_precomp = FastInterpolations._weighted_sum(c_left, f_left)
 
         # Direct uniform kernel
         inv_h = 1 / h
-        d_direct = FastInterpolations._lagrange_d1_left_uniform(ys[1], ys[2], ys[3], ys[4], inv_h)
+        d_direct = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), f_left, inv_h)
 
         @test d_precomp ≈ d_direct rtol=1e-13
     end
 
     @testset "Float32 Precision" begin
-        x1, x2, x3, x4 = Float32.([0.0, 0.1, 0.3, 0.6])
-        c1, c2, c3, c4 = FastInterpolations._lagrange_coeffs_left(x1, x2, x3, x4)
+        xvals = NTuple{4, Float32}((0.0f0, 0.1f0, 0.3f0, 0.6f0))
+        coeffs = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), xvals)
 
-        @test c1 isa Float32
-        @test c2 isa Float32
-        @test c3 isa Float32
-        @test c4 isa Float32
+        @test coeffs[1] isa Float32
+        @test coeffs[2] isa Float32
+        @test coeffs[3] isa Float32
+        @test coeffs[4] isa Float32
 
-        f1, f2, f3, f4 = Float32.([0.0, 0.1, 0.3, 0.6].^2)  # f(x) = x²
-        deriv = FastInterpolations._lagrange_d1_nonuniform(c1, c2, c3, c4, f1, f2, f3, f4)
+        fvals = NTuple{4, Float32}(Float32.([0.0, 0.1, 0.3, 0.6].^2))  # f(x) = x²
+        deriv = FastInterpolations._weighted_sum(coeffs, fvals)
         @test deriv isa Float32
         @test deriv ≈ Float32(0.0) atol=1e-5  # f'(0) = 0
     end
@@ -773,11 +779,13 @@ end
         inv_h = inv(step(x))
 
         # Left endpoint: f'(0) = -2
-        d_left = FastInterpolations._quadratic_d1_left_uniform(y[1], y[2], y[3], inv_h)
+        fvals_left = (y[1], y[2], y[3])
+        d_left = FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:left), fvals_left, inv_h)
         @test d_left ≈ df_quad(x[1]) rtol=1e-12
 
         # Right endpoint: f'(2) = 2
-        d_right = FastInterpolations._quadratic_d1_right_uniform(y[end-2], y[end-1], y[end], inv_h)
+        fvals_right = (y[end-2], y[end-1], y[end])
+        d_right = FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:right), fvals_right, inv_h)
         @test d_right ≈ df_quad(x[end]) rtol=1e-12
     end
 
@@ -790,8 +798,10 @@ end
         y = f_linear.(x)
         inv_h = inv(step(x))
 
-        d_left = FastInterpolations._quadratic_d1_left_uniform(y[1], y[2], y[3], inv_h)
-        d_right = FastInterpolations._quadratic_d1_right_uniform(y[end-2], y[end-1], y[end], inv_h)
+        fvals_left = (y[1], y[2], y[3])
+        fvals_right = (y[end-2], y[end-1], y[end])
+        d_left = FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:left), fvals_left, inv_h)
+        d_right = FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:right), fvals_right, inv_h)
 
         @test d_left ≈ df_linear rtol=1e-12
         @test d_right ≈ df_linear rtol=1e-12
@@ -806,13 +816,17 @@ end
         y = f_quad.(x)
 
         # Left endpoint via coefficient kernels
-        c1, c2, c3 = FastInterpolations._quadratic_coeffs_left(x[1], x[2], x[3])
-        d_left = FastInterpolations._quadratic_d1_nonuniform(c1, c2, c3, y[1], y[2], y[3])
+        x_left = (x[1], x[2], x[3])
+        f_left = (y[1], y[2], y[3])
+        coeffs_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), Val(:left), x_left)
+        d_left = FastInterpolations._weighted_sum(coeffs_left, f_left)
         @test d_left ≈ df_quad(x[1]) rtol=1e-12
 
         # Right endpoint via coefficient kernels
-        c1r, c2r, c3r = FastInterpolations._quadratic_coeffs_right(x[end-2], x[end-1], x[end])
-        d_right = FastInterpolations._quadratic_d1_nonuniform(c1r, c2r, c3r, y[end-2], y[end-1], y[end])
+        x_right = (x[end-2], x[end-1], x[end])
+        f_right = (y[end-2], y[end-1], y[end])
+        coeffs_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), Val(:right), x_right)
+        d_right = FastInterpolations._weighted_sum(coeffs_right, f_right)
         @test d_right ≈ df_quad(x[end]) rtol=1e-12
     end
 
@@ -882,7 +896,8 @@ end
         y = Float32[xi^2 for xi in x]
         inv_h = inv(step(x))
 
-        d_left = FastInterpolations._quadratic_d1_left_uniform(y[1], y[2], y[3], inv_h)
+        fvals = (y[1], y[2], y[3])
+        d_left = FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:left), fvals, inv_h)
         @test d_left isa Float32
         @test isfinite(d_left)
 
@@ -911,11 +926,13 @@ end
         inv_h = inv(step(x))
 
         # Left endpoint: f'(0) = 3
-        d_left = FastInterpolations._linear_d1_left_uniform(y[1], y[2], inv_h)
+        fvals_left = (y[1], y[2])
+        d_left = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:left), fvals_left, inv_h)
         @test d_left ≈ df_linear rtol=1e-14
 
         # Right endpoint: f'(2) = 3
-        d_right = FastInterpolations._linear_d1_right_uniform(y[end-1], y[end], inv_h)
+        fvals_right = (y[end-1], y[end])
+        d_right = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:right), fvals_right, inv_h)
         @test d_right ≈ df_linear rtol=1e-14
     end
 
@@ -931,12 +948,14 @@ end
         inv_h = inv(step(x))
 
         # Left endpoint: exact f'(0) = 0, but LinearFit will have O(h) error
-        d_left = FastInterpolations._linear_d1_left_uniform(y[1], y[2], inv_h)
+        fvals_left = (y[1], y[2])
+        d_left = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:left), fvals_left, inv_h)
         # Forward difference: (f(h) - f(0)) / h = h ≈ 0.1
         @test abs(d_left - df_quad(x[1])) ≈ h atol=1e-12
 
         # Right endpoint: exact f'(1) = 2
-        d_right = FastInterpolations._linear_d1_right_uniform(y[end-1], y[end], inv_h)
+        fvals_right = (y[end-1], y[end])
+        d_right = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:right), fvals_right, inv_h)
         # Backward difference: (f(1) - f(1-h)) / h = (1 - (1-h)²) / h = 2 - h
         @test d_right ≈ df_quad(x[end]) - h atol=1e-12
     end
@@ -951,13 +970,17 @@ end
         y = f_linear.(x)
 
         # Left endpoint via coefficient kernels
-        c1, c2 = FastInterpolations._linear_coeffs_left(x[1], x[2])
-        d_left = FastInterpolations._linear_d1_nonuniform(c1, c2, y[1], y[2])
+        x_left = (x[1], x[2])
+        f_left = (y[1], y[2])
+        coeffs_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:left), x_left)
+        d_left = FastInterpolations._weighted_sum(coeffs_left, f_left)
         @test d_left ≈ df_linear rtol=1e-13
 
         # Right endpoint via coefficient kernels
-        c1r, c2r = FastInterpolations._linear_coeffs_right(x[end-1], x[end])
-        d_right = FastInterpolations._linear_d1_nonuniform(c1r, c2r, y[end-1], y[end])
+        x_right = (x[end-1], x[end])
+        f_right = (y[end-1], y[end])
+        coeffs_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:right), x_right)
+        d_right = FastInterpolations._weighted_sum(coeffs_right, f_right)
         @test d_right ≈ df_linear rtol=1e-13
     end
 
@@ -966,12 +989,16 @@ end
         x = [0.0, 0.2, 0.5, 0.9]
         y = fill(7.0, 4)
 
-        c1, c2 = FastInterpolations._linear_coeffs_left(x[1], x[2])
-        d_left = FastInterpolations._linear_d1_nonuniform(c1, c2, y[1], y[2])
+        x_left = (x[1], x[2])
+        f_left = (y[1], y[2])
+        coeffs_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:left), x_left)
+        d_left = FastInterpolations._weighted_sum(coeffs_left, f_left)
         @test d_left ≈ 0.0 atol=1e-14
 
-        c1r, c2r = FastInterpolations._linear_coeffs_right(x[end-1], x[end])
-        d_right = FastInterpolations._linear_d1_nonuniform(c1r, c2r, y[end-1], y[end])
+        x_right = (x[end-1], x[end])
+        f_right = (y[end-1], y[end])
+        coeffs_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:right), x_right)
+        d_right = FastInterpolations._weighted_sum(coeffs_right, f_right)
         @test d_right ≈ 0.0 atol=1e-14
     end
 
@@ -1028,7 +1055,8 @@ end
         y = Float32[3xi + 1 for xi in x]  # f(x) = 3x + 1
         inv_h = inv(step(x))
 
-        d_left = FastInterpolations._linear_d1_left_uniform(y[1], y[2], inv_h)
+        fvals = (y[1], y[2])
+        d_left = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:left), fvals, inv_h)
         @test d_left isa Float32
         @test d_left ≈ 3.0f0 rtol=1e-6
 

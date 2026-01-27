@@ -10,12 +10,10 @@ using BenchmarkTools
 using Printf
 
 # Access internal functions
-const _lagrange_coeffs_left = FastInterpolations._lagrange_coeffs_left
-const _lagrange_coeffs_right = FastInterpolations._lagrange_coeffs_right
-const _lagrange_d1_nonuniform = FastInterpolations._lagrange_d1_nonuniform
+const _compute_deriv1 = FastInterpolations._compute_deriv1
+const _compute_deriv1_coeffs = FastInterpolations._compute_deriv1_coeffs
+const _weighted_sum = FastInterpolations._weighted_sum
 const _estimate_endpoint_derivative = FastInterpolations._estimate_endpoint_derivative
-const _lagrange_d1_left_uniform = FastInterpolations._lagrange_d1_left_uniform
-const _lagrange_d1_right_uniform = FastInterpolations._lagrange_d1_right_uniform
 
 println("=" ^ 70)
 println("Lagrange Endpoint Derivative Kernel Benchmark")
@@ -53,16 +51,18 @@ println("-" ^ 70)
 println("NON-UNIFORM GRID")
 println("-" ^ 70)
 
-# Precompute coefficients
-c_left = _lagrange_coeffs_left(xs_nonuniform[1], xs_nonuniform[2], xs_nonuniform[3], xs_nonuniform[4])
-c_right = _lagrange_coeffs_right(xs_nonuniform[end-3], xs_nonuniform[end-2], xs_nonuniform[end-1], xs_nonuniform[end])
+# Precompute coefficients using new API
+x_left_tuple = (xs_nonuniform[1], xs_nonuniform[2], xs_nonuniform[3], xs_nonuniform[4])
+x_right_tuple = (xs_nonuniform[end-3], xs_nonuniform[end-2], xs_nonuniform[end-1], xs_nonuniform[end])
+c_left = _compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x_left_tuple)
+c_right = _compute_deriv1_coeffs(PolyFit{3}(), Val(:right), x_right_tuple)
 
 # Method 1: On-the-fly (existing implementation)
 function bench_onfly_nonuniform(xs, ys_batch)
     results = zeros(2, length(ys_batch))
     @inbounds for (j, ys) in enumerate(ys_batch)
-        results[1, j] = _estimate_endpoint_derivative(xs, ys, Val(:left))
-        results[2, j] = _estimate_endpoint_derivative(xs, ys, Val(:right))
+        results[1, j] = _estimate_endpoint_derivative(xs, ys, Val(:left), PolyFit{3}())
+        results[2, j] = _estimate_endpoint_derivative(xs, ys, Val(:right), PolyFit{3}())
     end
     return results
 end
@@ -71,9 +71,11 @@ end
 function bench_precomputed_nonuniform(c_left, c_right, ys_batch)
     results = zeros(2, length(ys_batch))
     @inbounds for (j, ys) in enumerate(ys_batch)
-        results[1, j] = _lagrange_d1_nonuniform(c_left..., ys[1], ys[2], ys[3], ys[4])
+        f_left = (ys[1], ys[2], ys[3], ys[4])
+        results[1, j] = _weighted_sum(c_left, f_left)
         n = length(ys)
-        results[2, j] = _lagrange_d1_nonuniform(c_right..., ys[n-3], ys[n-2], ys[n-1], ys[n])
+        f_right = (ys[n-3], ys[n-2], ys[n-1], ys[n])
+        results[2, j] = _weighted_sum(c_right, f_right)
     end
     return results
 end
@@ -114,8 +116,8 @@ inv_h = 1 / step(xs_uniform)
 function bench_onfly_uniform(xs, ys_batch)
     results = zeros(2, length(ys_batch))
     @inbounds for (j, ys) in enumerate(ys_batch)
-        results[1, j] = _estimate_endpoint_derivative(xs, ys, Val(:left))
-        results[2, j] = _estimate_endpoint_derivative(xs, ys, Val(:right))
+        results[1, j] = _estimate_endpoint_derivative(xs, ys, Val(:left), PolyFit{3}())
+        results[2, j] = _estimate_endpoint_derivative(xs, ys, Val(:right), PolyFit{3}())
     end
     return results
 end
@@ -124,9 +126,11 @@ end
 function bench_direct_uniform(inv_h, ys_batch)
     results = zeros(2, length(ys_batch))
     @inbounds for (j, ys) in enumerate(ys_batch)
-        results[1, j] = _lagrange_d1_left_uniform(ys[1], ys[2], ys[3], ys[4], inv_h)
+        f_left = (ys[1], ys[2], ys[3], ys[4])
+        results[1, j] = _compute_deriv1(PolyFit{3}(), Val(:left), f_left, inv_h)
         n = length(ys)
-        results[2, j] = _lagrange_d1_right_uniform(ys[n-3], ys[n-2], ys[n-1], ys[n], inv_h)
+        f_right = (ys[n-3], ys[n-2], ys[n-1], ys[n])
+        results[2, j] = _compute_deriv1(PolyFit{3}(), Val(:right), f_right, inv_h)
     end
     return results
 end

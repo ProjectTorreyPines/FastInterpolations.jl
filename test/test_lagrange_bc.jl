@@ -895,6 +895,152 @@ end
 end
 
 # ========================================
+# LinearFit (PolyFit{1}) Kernel Tests
+# ========================================
+# Tests for the 2-point derivative estimation kernels in bc_kernels.jl
+
+@testset "LinearFit Kernels (bc_kernels.jl)" begin
+
+    @testset "Uniform Grid - Linear Function (Exact)" begin
+        # f(x) = 3x + 2, f'(x) = 3 (constant)
+        f_linear(x) = 3x + 2
+        df_linear = 3.0
+
+        x = range(0.0, 2.0, 11)
+        y = f_linear.(x)
+        inv_h = inv(step(x))
+
+        # Left endpoint: f'(0) = 3
+        d_left = FastInterpolations._linear_d1_left_uniform(y[1], y[2], inv_h)
+        @test d_left ≈ df_linear rtol=1e-14
+
+        # Right endpoint: f'(2) = 3
+        d_right = FastInterpolations._linear_d1_right_uniform(y[end-1], y[end], inv_h)
+        @test d_right ≈ df_linear rtol=1e-14
+    end
+
+    @testset "Uniform Grid - Quadratic Function (O(h) Error)" begin
+        # f(x) = x², f'(x) = 2x
+        # LinearFit has O(h) error for non-linear functions
+        f_quad(x) = x^2
+        df_quad(x) = 2x
+
+        h = 0.1
+        x = range(0.0, 1.0, 11)
+        y = f_quad.(x)
+        inv_h = inv(step(x))
+
+        # Left endpoint: exact f'(0) = 0, but LinearFit will have O(h) error
+        d_left = FastInterpolations._linear_d1_left_uniform(y[1], y[2], inv_h)
+        # Forward difference: (f(h) - f(0)) / h = h ≈ 0.1
+        @test abs(d_left - df_quad(x[1])) ≈ h atol=1e-12
+
+        # Right endpoint: exact f'(1) = 2
+        d_right = FastInterpolations._linear_d1_right_uniform(y[end-1], y[end], inv_h)
+        # Backward difference: (f(1) - f(1-h)) / h = (1 - (1-h)²) / h = 2 - h
+        @test d_right ≈ df_quad(x[end]) - h atol=1e-12
+    end
+
+    @testset "Non-Uniform Grid - Linear Function (Exact)" begin
+        # f(x) = 5x - 1, f'(x) = 5
+        f_linear(x) = 5x - 1
+        df_linear = 5.0
+
+        # Non-uniform grid
+        x = [0.0, 0.3, 0.7, 1.0, 1.5]
+        y = f_linear.(x)
+
+        # Left endpoint via coefficient kernels
+        c1, c2 = FastInterpolations._linear_coeffs_left(x[1], x[2])
+        d_left = FastInterpolations._linear_d1_nonuniform(c1, c2, y[1], y[2])
+        @test d_left ≈ df_linear rtol=1e-13
+
+        # Right endpoint via coefficient kernels
+        c1r, c2r = FastInterpolations._linear_coeffs_right(x[end-1], x[end])
+        d_right = FastInterpolations._linear_d1_nonuniform(c1r, c2r, y[end-1], y[end])
+        @test d_right ≈ df_linear rtol=1e-13
+    end
+
+    @testset "Non-Uniform Grid - Constant Function" begin
+        # f(x) = 7, f'(x) = 0
+        x = [0.0, 0.2, 0.5, 0.9]
+        y = fill(7.0, 4)
+
+        c1, c2 = FastInterpolations._linear_coeffs_left(x[1], x[2])
+        d_left = FastInterpolations._linear_d1_nonuniform(c1, c2, y[1], y[2])
+        @test d_left ≈ 0.0 atol=1e-14
+
+        c1r, c2r = FastInterpolations._linear_coeffs_right(x[end-1], x[end])
+        d_right = FastInterpolations._linear_d1_nonuniform(c1r, c2r, y[end-1], y[end])
+        @test d_right ≈ 0.0 atol=1e-14
+    end
+
+    @testset "Unified API - PolyFit{1} Dispatch" begin
+        f_linear(x) = 3x + 2
+        df_linear = 3.0
+
+        # Uniform grid (Range)
+        x_range = range(0.0, 2.0, 11)
+        y_range = collect(f_linear.(x_range))
+
+        d_left_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, Val(:left), PolyFit{1}())
+        d_right_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, Val(:right), PolyFit{1}())
+
+        @test d_left_range ≈ df_linear rtol=1e-14
+        @test d_right_range ≈ df_linear rtol=1e-14
+
+        # Non-uniform grid (Vector)
+        x_vec = [0.0, 0.3, 0.8, 1.5, 2.0]
+        y_vec = f_linear.(x_vec)
+
+        d_left_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, Val(:left), PolyFit{1}())
+        d_right_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, Val(:right), PolyFit{1}())
+
+        @test d_left_vec ≈ df_linear rtol=1e-13
+        @test d_right_vec ≈ df_linear rtol=1e-13
+    end
+
+    @testset "PolyFit{1} vs PolyFit{2} vs PolyFit{3} Accuracy" begin
+        # For a quadratic function, PolyFit{2} and PolyFit{3} are exact, PolyFit{1} has error
+        f_quad(x) = x^2
+        df_quad(x) = 2x
+
+        x = range(0.0, 1.0, 11)
+        y = collect(f_quad.(x))
+        h = step(x)
+
+        d1_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{1}())
+        d2_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{2}())
+        d3_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{3}())
+
+        exact = df_quad(x[1])  # = 0
+
+        # PolyFit{2} and PolyFit{3} should be exact for quadratic
+        @test abs(d2_left - exact) < 1e-12
+        @test abs(d3_left - exact) < 1e-12
+
+        # PolyFit{1} has O(h) error
+        @test abs(d1_left - exact) ≈ h atol=1e-12
+    end
+
+    @testset "Float32 Support" begin
+        x = range(0.0f0, 2.0f0, 11)
+        y = Float32[3xi + 1 for xi in x]  # f(x) = 3x + 1
+        inv_h = inv(step(x))
+
+        d_left = FastInterpolations._linear_d1_left_uniform(y[1], y[2], inv_h)
+        @test d_left isa Float32
+        @test d_left ≈ 3.0f0 rtol=1e-6
+
+        # Unified API
+        d_api = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{1}())
+        @test d_api isa Float32
+        @test d_api ≈ 3.0f0 rtol=1e-6
+    end
+
+end
+
+# ========================================
 # Cross-BC Tests: Generic PolyFit{D} Support
 # ========================================
 # Tests for using any PolyFit{D} with both cubic_interp and quadratic_interp.
@@ -1009,13 +1155,85 @@ end
     end
 end
 
+@testset "Cross-BC: LinearFit Integration" begin
+    # Test that LinearFit (PolyFit{1}) works with interpolation functions
+
+    @testset "Cubic Interpolation with LinearFit" begin
+        f_linear(x) = 3x + 2
+
+        x = range(0.0, 2.0, 11)
+        y = collect(f_linear.(x))
+        xi = [0.25, 0.5, 1.0, 1.5, 1.75]
+
+        # LinearFit should work with cubic_interp
+        result = cubic_interp(x, y, xi; bc=LinearFit())
+        @test result ≈ f_linear.(xi) rtol=1e-10
+
+        # Test with interpolant form
+        itp = cubic_interp(x, y; bc=LinearFit())
+        @test itp.(xi) ≈ f_linear.(xi) rtol=1e-10
+    end
+
+    @testset "Quadratic Interpolation with LinearFit" begin
+        f_linear(x) = 3x + 2
+
+        x = range(0.0, 2.0, 11)
+        y = collect(f_linear.(x))
+        xi = [0.25, 0.5, 1.0, 1.5, 1.75]
+
+        # LinearFit with Left BC
+        result_left = quadratic_interp(x, y, xi; bc=Left(LinearFit()))
+        @test result_left ≈ f_linear.(xi) rtol=1e-10
+
+        # LinearFit with Right BC
+        result_right = quadratic_interp(x, y, xi; bc=Right(LinearFit()))
+        @test result_right ≈ f_linear.(xi) rtol=1e-10
+    end
+
+    @testset "Mixed BCs: LinearFit + Others" begin
+        f_linear(x) = 3x + 2
+        df_linear = 3.0
+
+        x = range(0.0, 2.0, 11)
+        y = collect(f_linear.(x))
+        xi = [0.5, 1.0, 1.5]
+
+        # LinearFit left, ParabolaFit right
+        result_lp = cubic_interp(x, y, xi; bc=BCPair(LinearFit(), ParabolaFit()))
+        @test result_lp ≈ f_linear.(xi) rtol=1e-10
+
+        # CubicFit left, LinearFit right
+        result_cl = cubic_interp(x, y, xi; bc=BCPair(CubicFit(), LinearFit()))
+        @test result_cl ≈ f_linear.(xi) rtol=1e-10
+
+        # LinearFit left, exact Deriv1 right
+        result_ld = cubic_interp(x, y, xi; bc=BCPair(LinearFit(), Deriv1(df_linear)))
+        @test result_ld ≈ f_linear.(xi) rtol=1e-10
+    end
+
+    @testset "LinearFit Minimum Points (2)" begin
+        x2 = [0.0, 1.0]
+        y2 = [2.0, 5.0]
+
+        # LinearFit needs 2 points - should work
+        @test_nowarn cubic_interp(x2, y2; bc=LinearFit())
+        @test_nowarn quadratic_interp(x2, y2; bc=Left(LinearFit()))
+    end
+
+end
+
 @testset "PolyFit{D} Minimum Points Validation" begin
+    x2 = [0.0, 1.0]
+    y2 = [1.0, 2.0]
     x3 = [0.0, 1.0, 2.0]
     y3 = [1.0, 2.0, 3.0]
     x4 = [0.0, 1.0, 2.0, 3.0]
     y4 = [1.0, 2.0, 3.0, 4.0]
 
     @testset "Quadratic Interpolation" begin
+        # LinearFit (D=1) needs 2 points - should work
+        @test_nowarn quadratic_interp(x2, y2; bc=Left(LinearFit()))
+
         # ParabolaFit (D=2) needs 3 points - should work
         @test_nowarn quadratic_interp(x3, y3; bc=Left(ParabolaFit()))
 
@@ -1029,6 +1247,9 @@ end
     end
 
     @testset "Cubic Interpolation" begin
+        # LinearFit needs 2 points - should work
+        @test_nowarn cubic_interp(x2, y2; bc=LinearFit())
+
         # ParabolaFit needs 3 points - should work
         @test_nowarn cubic_interp(x3, y3; bc=ParabolaFit())
 
@@ -1043,6 +1264,11 @@ end
     y = collect(x .^ 2)
 
     @testset "PolyFit{D} → Deriv1 Conversion" begin
+        # LinearFit
+        bc_p1 = FastInterpolations.materialize_bc(LinearFit{Float64}(), x, y, Val(:left))
+        @test bc_p1 isa Deriv1{Float64}
+        @test isfinite(bc_p1.val)
+
         # ParabolaFit
         bc_p2 = FastInterpolations.materialize_bc(ParabolaFit{Float64}(), x, y, Val(:left))
         @test bc_p2 isa Deriv1{Float64}
@@ -1057,6 +1283,11 @@ end
         bc_right = FastInterpolations.materialize_bc(ParabolaFit{Float64}(), x, y, Val(:right))
         @test bc_right isa Deriv1{Float64}
         @test isfinite(bc_right.val)
+
+        # LinearFit right endpoint
+        bc_linear_right = FastInterpolations.materialize_bc(LinearFit{Float64}(), x, y, Val(:right))
+        @test bc_linear_right isa Deriv1{Float64}
+        @test isfinite(bc_linear_right.val)
     end
 
     @testset "Passthrough for Concrete BCs" begin

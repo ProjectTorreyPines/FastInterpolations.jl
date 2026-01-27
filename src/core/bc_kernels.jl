@@ -172,6 +172,75 @@ end
 
 
 # ========================================
+# Uniform Grid: Linear (2-point) Endpoint Derivative Kernels
+# ========================================
+# 2-point one-sided finite difference formulas for uniform grids.
+# Used by LinearFit (PolyFit{1}) boundary conditions.
+
+"""
+    _linear_d1_left_uniform(f1, f2, inv_h) -> T
+
+Compute first derivative at LEFT endpoint using 2-point forward difference.
+
+For uniform grid with spacing h:
+    f'(x₁) ≈ (f₂ - f₁) / h
+
+# Arguments
+- `f1, f2::T`: Function values at first 2 grid points
+- `inv_h::T`: Inverse of uniform grid spacing (1/h)
+
+# Returns
+- Estimated derivative f'(x₁)
+
+# Mathematical Derivation
+This is the simplest forward difference formula, exact for linear polynomials.
+
+# Accuracy
+- Exact for polynomials of degree ≤ 1 (linear and constant)
+- 1st-order accurate O(h) for smooth functions
+
+# Operation Count
+    0 fdiv + 1 fmul + 1 fsub = 2 FP ops (excluding inv_h computation)
+"""
+@inline function _linear_d1_left_uniform(f1::T, f2::T, inv_h::T) where {T<:AbstractFloat}
+    return (f2 - f1) * inv_h
+end
+
+"""
+    _linear_d1_right_uniform(fnm1, fn, inv_h) -> T
+
+Compute first derivative at RIGHT endpoint using 2-point backward difference.
+
+For uniform grid with spacing h:
+    f'(xₙ) ≈ (fₙ - fₙ₋₁) / h
+
+# Arguments
+- `fnm1, fn::T`: Function values at last 2 grid points
+  (n-1, n in 1-based indexing)
+- `inv_h::T`: Inverse of uniform grid spacing (1/h)
+
+# Returns
+- Estimated derivative f'(xₙ)
+
+# Mathematical Derivation
+Mirror of the left formula (backward difference).
+
+Note: Both forward and backward differences use the same formula structure
+since linear interpolation is symmetric.
+
+# Accuracy
+- Exact for polynomials of degree ≤ 1 (linear and constant)
+- 1st-order accurate O(h) for smooth functions
+
+# Operation Count
+    0 fdiv + 1 fmul + 1 fsub = 2 FP ops (excluding inv_h computation)
+"""
+@inline function _linear_d1_right_uniform(fnm1::T, fn::T, inv_h::T) where {T<:AbstractFloat}
+    return (fn - fnm1) * inv_h
+end
+
+
+# ========================================
 # Non-Uniform Grid: Precomputed Coefficient Kernels
 # ========================================
 # Two-stage kernel pattern for batch operations on non-uniform grids:
@@ -390,6 +459,93 @@ end
 
 
 # ========================================
+# Non-Uniform Grid: 2-point (Linear) Coefficient Kernels
+# ========================================
+# Two-stage kernel pattern for 2-point (LinearFit) operations on non-uniform grids.
+
+"""
+    _linear_coeffs_left(x1, x2) -> (c1, c2)
+
+Precompute 2-point finite difference coefficients for LEFT endpoint (x₁).
+
+For a non-uniform grid, the derivative f'(x₁) can be expressed as:
+    f'(x₁) = c₁f₁ + c₂f₂
+
+where c₁, c₂ depend only on the x coordinates, not on f values.
+
+# Arguments
+- `x1, x2::T`: First 2 grid points
+
+# Returns
+- Tuple `(c1, c2)` of coefficients: `(-1/Δx, 1/Δx)` where `Δx = x₂ - x₁`
+
+# Mathematical Derivation
+For the 2-point linear interpolant through (x₁,f₁) and (x₂,f₂):
+    f'(x) = (f₂ - f₁) / (x₂ - x₁) = -f₁/Δx + f₂/Δx
+
+# Operation Count
+    1 fdiv + 1 fneg = 2 FP ops (one-time cost per grid)
+"""
+@inline function _linear_coeffs_left(x1::T, x2::T) where {T<:AbstractFloat}
+    inv_dx = inv(x2 - x1)
+    return (-inv_dx, inv_dx)
+end
+
+"""
+    _linear_coeffs_right(x1, x2) -> (c1, c2)
+
+Precompute 2-point finite difference coefficients for RIGHT endpoint (x₂).
+
+For a non-uniform grid, the derivative f'(x₂) can be expressed as:
+    f'(x₂) = c₁f₁ + c₂f₂
+
+where the x arguments are the LAST 2 grid points: x[n-1], x[n].
+
+# Arguments
+- `x1, x2::T`: Last 2 grid points (x[n-1], x[n])
+
+# Returns
+- Tuple `(c1, c2)` of coefficients: `(-1/Δx, 1/Δx)` where `Δx = x₂ - x₁`
+
+# Note
+For 2-point linear interpolation, left and right coefficients are identical
+since the derivative of a line is constant everywhere.
+
+# Operation Count
+    1 fdiv + 1 fneg = 2 FP ops (one-time cost per grid)
+"""
+@inline function _linear_coeffs_right(x1::T, x2::T) where {T<:AbstractFloat}
+    inv_dx = inv(x2 - x1)
+    return (-inv_dx, inv_dx)
+end
+
+"""
+    _linear_d1_nonuniform(c1, c2, f1, f2) -> T
+
+Apply precomputed 2-point finite difference coefficients to function values.
+
+This is the "Stage 2" kernel for 2-point non-uniform grids:
+    f'(x) = c₁f₁ + c₂f₂
+
+# Arguments
+- `c1, c2::T`: Precomputed coefficients from `_linear_coeffs_left/right`
+- `f1, f2::T`: Function values at the 2 grid points
+
+# Returns
+- Estimated derivative value
+
+# Operation Count
+    0 fdiv + 1 fmul + 1 fmadd = 2 FP ops (per evaluation)
+"""
+@inline function _linear_d1_nonuniform(
+    c1::T, c2::T,
+    f1::T, f2::T
+) where {T<:AbstractFloat}
+    return muladd(c1, f1, c2 * f2)
+end
+
+
+# ========================================
 # Unified Endpoint Derivative Estimation API
 # ========================================
 # Higher-level API using Val{:left}/Val{:right} and PolyFit{D} dispatch.
@@ -398,6 +554,7 @@ end
 # API signature: _estimate_endpoint_derivative(xs, ys, Val(:left/:right), PolyFit{D}())
 #
 # Supported polynomial degrees:
+#   - PolyFit{1} (LinearFit):   2-point, O(h)  accuracy
 #   - PolyFit{2} (ParabolaFit): 3-point, O(h²) accuracy
 #   - PolyFit{3} (CubicFit):    4-point, O(h³) accuracy
 
@@ -524,5 +681,68 @@ end
         f1, f2, f3 = ys[n-2], ys[n-1], ys[n]
         c1, c2, c3 = _quadratic_coeffs_right(x1, x2, x3)
         return _quadratic_d1_nonuniform(c1, c2, c3, f1, f2, f3)
+    end
+end
+
+
+# ----------------------------------------
+# LinearFit (PolyFit{1}) - 2-point formulas
+# ----------------------------------------
+
+"""
+    _estimate_endpoint_derivative(xs, ys, ::Val{:left}, ::PolyFit{1}) -> T
+
+Estimate first derivative at LEFT endpoint using 2-point LinearFit (forward difference).
+
+# Arguments
+- `xs`: Grid coordinates (AbstractRange for uniform, AbstractVector for non-uniform)
+- `ys::AbstractVector{T}`: Function values (must have ≥2 elements)
+- `::Val{:left}`: Dispatch tag for left endpoint
+- `::PolyFit{1}`: LinearFit boundary condition (2-point, O(h))
+
+# Returns
+- Estimated f'(x₁) using formula: (f₂ - f₁) / h for uniform grids
+"""
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractRange{T}, ys::AbstractVector{T}, ::Val{:left}, ::PolyFit{1}
+) where {T<:AbstractFloat}
+    @inbounds begin
+        f1, f2 = ys[1], ys[2]
+        inv_h = inv(T(step(xs)))
+        return _linear_d1_left_uniform(f1, f2, inv_h)
+    end
+end
+
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractRange{T}, ys::AbstractVector{T}, ::Val{:right}, ::PolyFit{1}
+) where {T<:AbstractFloat}
+    n = length(ys)
+    @inbounds begin
+        f1, f2 = ys[n-1], ys[n]
+        inv_h = inv(T(step(xs)))
+        return _linear_d1_right_uniform(f1, f2, inv_h)
+    end
+end
+
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractVector{T}, ys::AbstractVector{T}, ::Val{:left}, ::PolyFit{1}
+) where {T<:AbstractFloat}
+    @inbounds begin
+        x1, x2 = xs[1], xs[2]
+        f1, f2 = ys[1], ys[2]
+        c1, c2 = _linear_coeffs_left(x1, x2)
+        return _linear_d1_nonuniform(c1, c2, f1, f2)
+    end
+end
+
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractVector{T}, ys::AbstractVector{T}, ::Val{:right}, ::PolyFit{1}
+) where {T<:AbstractFloat}
+    n = length(xs)
+    @inbounds begin
+        x1, x2 = xs[n-1], xs[n]
+        f1, f2 = ys[n-1], ys[n]
+        c1, c2 = _linear_coeffs_right(x1, x2)
+        return _linear_d1_nonuniform(c1, c2, f1, f2)
     end
 end

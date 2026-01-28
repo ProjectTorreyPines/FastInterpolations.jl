@@ -348,21 +348,6 @@ itp = cubic_interp(x, y; bc=BCPair(CubicFit(), Deriv2(0)))
 """
 const CubicFit = PolyFit{3}
 
-# ----------------------------------------
-# Deprecated: LagrangeBC (use CubicFit)
-# ----------------------------------------
-
-"""
-    LagrangeBC (deprecated)
-
-**Deprecated**: Use `CubicFit` instead.
-
-`LagrangeBC` is an alias for `PolyFit{3}` (= `CubicFit`).
-The name change reflects that all polynomial fitting methods (Lagrange, FDM, etc.)
-are mathematically equivalent.
-"""
-const LagrangeBC = PolyFit{3}
-
 
 # ========================================
 # Type Promotion Helpers

@@ -404,8 +404,8 @@ Higher degrees (D > 6) may amplify numerical noise in the data.
 """
 const MAX_RECOMMENDED_POLYFIT_DEGREE = 6
 
-# Thread-local warning tracker (avoids global state issues)
-const _polyfit_warning_issued = Ref(false)
+# Thread-safe warning tracker (avoids global state issues)
+const _polyfit_warning_issued = Threads.Atomic{Bool}(false)
 
 """
     _warn_high_degree(D::Int)
@@ -414,8 +414,7 @@ Issue a one-time warning if polynomial degree exceeds recommendation.
 Called by `_check_polyfit_requirements` when D > MAX_RECOMMENDED_POLYFIT_DEGREE.
 """
 @noinline function _warn_high_degree(D::Int)
-    if !_polyfit_warning_issued[]
-        _polyfit_warning_issued[] = true
+    if !Threads.atomic_cas!(_polyfit_warning_issued, false, true)
         @warn "PolyFit{$D} uses $(D+1) points. For D > $MAX_RECOMMENDED_POLYFIT_DEGREE, " *
               "numerical noise amplification may degrade accuracy. Consider D ≤ 6."
     end

@@ -131,8 +131,8 @@ _format_bc(::PolyFit{1}) = "LinearFit"
 _format_bc(::PolyFit{2}) = "QuadraticFit"
 _format_bc(::PolyFit{3}) = "CubicFit"
 _format_bc(::PolyFit{D}) where {D} = "PolyFit{$D}"  # Fallback for other degrees
-_format_bc(bc::Left) = "Left($(nameof(typeof(bc.bc))))"
-_format_bc(bc::Right) = "Right($(nameof(typeof(bc.bc))))"
+_format_bc(bc::Left) = "Left($(_format_bc_point(bc.bc)))"
+_format_bc(bc::Right) = "Right($(_format_bc_point(bc.bc)))"
 
 function _format_bc(bc::BCPair)
     left_str = _format_bc_point(bc.left)

@@ -26,9 +26,9 @@ BenchmarkTools.DEFAULT_PARAMETERS.samples = 100_000
 
 # Fixed evals by speed category (skip tuning for faster CI)
 # Higher evals = more stable ns-level measurements
-const EVALS_FAST = 10_000   # ~10-50ns benchmarks
-const EVALS_MED  = 1_000    # ~500ns-2μs benchmarks
-const EVALS_SLOW = 100       # ~30-100μs benchmarks
+const EVALS_FAST = 100      # ~10-50ns benchmarks (reduced for more stable minimum)
+const EVALS_MED  = 100       # ~500ns-2μs benchmarks
+const EVALS_SLOW = 10       # ~30-100μs benchmarks
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Setup

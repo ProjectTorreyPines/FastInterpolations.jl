@@ -42,6 +42,7 @@ PolyFit
 LinearFit
 QuadraticFit
 CubicFit
+ParabolaFit
 ```
 
 ### Endpoint Wrappers (Quadratic Splines)

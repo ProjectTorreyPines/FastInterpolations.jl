@@ -324,7 +324,16 @@ itp32 = quadratic_interp(Float32.(x), Float32.(y); bc=Left(QuadraticFit{Float32}
 """
 const QuadraticFit{T<:AbstractFloat} = PolyFit{2, T}
 QuadraticFit() = QuadraticFit{Float64}()
-const ParabolaFit = QuadraticFit  # deprecated alias for backward compatibility
+
+"""
+    ParabolaFit
+
+Deprecated alias for [`QuadraticFit`](@ref).
+"""
+function ParabolaFit(args...)
+    Base.depwarn("ParabolaFit is deprecated and has been renamed to QuadraticFit; please use QuadraticFit instead.", :ParabolaFit)
+    QuadraticFit(args...)
+end
 
 
 """

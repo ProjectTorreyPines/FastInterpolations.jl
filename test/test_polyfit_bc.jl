@@ -14,8 +14,8 @@ using Test
 using FastInterpolations
 
 # Tolerance constants for numerical comparisons (local to this test file)
-const LAGRANGE_RTOL = 1e-12
-const LAGRANGE_ATOL = 1e-12
+const POLYFIT_RTOL = 1e-12
+const POLYFIT_ATOL = 1e-12
 
 # ========================================
 # PolyFit{D} Type System Tests
@@ -137,7 +137,7 @@ end
 
         result = cubic_interp(x, y, xi; bc=CubicFit())
         expected = f_cubic.(xi)
-        @test result ≈ expected rtol=LAGRANGE_RTOL atol=LAGRANGE_ATOL
+        @test result ≈ expected rtol=POLYFIT_RTOL atol=POLYFIT_ATOL
     end
 
     @testset "CubicFit with CubicInterpolant" begin
@@ -268,10 +268,10 @@ end
 end
 
 # ========================================
-# Phase 3: Lagrange Kernel Tests
+# Phase 3: PolyFit Kernel Tests
 # ========================================
 
-@testset "Lagrange Kernel Correctness (PolyFit{3})" begin
+@testset "PolyFit Kernel Correctness (PolyFit{3})" begin
 
     @testset "Left Endpoint: f(x) = x³" begin
         # f(x) = x³, f'(x) = 3x²
@@ -356,7 +356,7 @@ end
 # Non-Uniform Grid Kernel Tests (Precomputed Coefficients)
 # ========================================
 
-@testset "Non-Uniform Lagrange Kernels (PolyFit{3})" begin
+@testset "Non-Uniform PolyFit Kernels (PolyFit{3})" begin
 
     @testset "Coefficient Precomputation: Left Endpoint" begin
         # Non-uniform grid: [0, 0.1, 0.3, 0.6]
@@ -531,7 +531,7 @@ end
 
         result = cubic_interp(x_cubic, y_cubic, xi_cubic; bc=CubicFit())
         expected = f_cubic.(xi_cubic)
-        @test result ≈ expected rtol=LAGRANGE_RTOL atol=LAGRANGE_ATOL
+        @test result ≈ expected rtol=POLYFIT_RTOL atol=POLYFIT_ATOL
     end
 
     @testset "Quadratic Polynomial Reproduction" begin
@@ -545,7 +545,7 @@ end
 
         result = cubic_interp(x_quad, y_quad, xi_quad; bc=CubicFit())
         expected = f_quad.(xi_quad)
-        @test result ≈ expected rtol=LAGRANGE_RTOL atol=LAGRANGE_ATOL
+        @test result ≈ expected rtol=POLYFIT_RTOL atol=POLYFIT_ATOL
     end
 
     @testset "Linear Function Reproduction" begin
@@ -558,7 +558,7 @@ end
 
         result = cubic_interp(x_lin, y_lin, xi_lin; bc=CubicFit())
         expected = f_lin.(xi_lin)
-        @test result ≈ expected rtol=LAGRANGE_RTOL atol=LAGRANGE_ATOL
+        @test result ≈ expected rtol=POLYFIT_RTOL atol=POLYFIT_ATOL
     end
 
     @testset "Smooth Function (sin)" begin
@@ -1572,7 +1572,7 @@ end
 # ========================================
 # Note: FDMBC Tests Not Needed
 # ========================================
-# Analysis showed that Lagrange polynomial derivative estimation
+# Analysis showed that PolyFit polynomial derivative estimation
 # is mathematically equivalent to Finite Difference Method (FDM):
 #   - Same coefficients for uniform grids
 #   - Same formulas for non-uniform grids

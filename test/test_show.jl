@@ -440,7 +440,7 @@
 
         # BC formatting for types not usually exposed in high-level show
         @test FI._format_bc(MinCurvFit()) == "MinCurvFit"
-        @test FI._format_bc(ParabolaFit()) == "ParabolaFit"
+        @test FI._format_bc(QuadraticFit()) == "QuadraticFit"
         @test occursin("Left", FI._format_bc(Left(Deriv1(0.0))))
         @test occursin("Right", FI._format_bc(Right(Deriv1(0.0))))
 
@@ -452,12 +452,23 @@
         @test FI._format_bc(Deriv2(2.0)) == "Deriv2(2.0)"
         @test FI._format_bc(Deriv3(3.0)) == "Deriv3(3.0)"
         @test FI._format_bc(MinCurvFit()) == "MinCurvFit"
-        @test FI._format_bc(ParabolaFit()) == "ParabolaFit"
+        @test FI._format_bc(LinearFit()) == "LinearFit"
+        @test FI._format_bc(QuadraticFit()) == "QuadraticFit"
+        @test FI._format_bc(CubicFit()) == "CubicFit"
+        @test FI._format_bc(PolyFit{4}()) == "PolyFit{4}"
 
         @test FI._short_bc_name(PeriodicBC()) == "Periodic"
 
         # BC point fallback
-        @test FI._format_bc_point(ParabolaFit()) == "ParabolaFit"
+        @test FI._format_bc_point(LinearFit()) == "LinearFit"
+        @test FI._format_bc_point(QuadraticFit()) == "QuadraticFit"
+        @test FI._format_bc_point(CubicFit()) == "CubicFit"
+        @test FI._format_bc_point(PolyFit{4}()) == "PolyFit{4}"
+        
+        # Test Left/Right wrappers with PolyFit (integration test)
+        @test FI._format_bc(Left(LinearFit())) == "Left(LinearFit)"
+        @test FI._format_bc(Right(CubicFit())) == "Right(CubicFit)"
+
         struct UnknownBC end
         @test FI._format_bc_point(UnknownBC()) == "UnknownBC"
     end

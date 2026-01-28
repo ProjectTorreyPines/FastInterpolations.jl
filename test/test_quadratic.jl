@@ -237,8 +237,11 @@ end
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
         d = zeros(4)
+        # Dummy x, y (unused by Deriv1)
+        x_dummy = [0.0, 1.0, 2.0, 3.0]
+        y_dummy = [0.0, 1.0, 4.0, 9.0]
 
-        _fill_slopes!(d, s, h, bc)
+        _fill_slopes!(d, s, h, bc, x_dummy, y_dummy)
 
         # d[1] = 3 (given)
         # d[2] = 2*1 - 3 = -1
@@ -256,8 +259,11 @@ end
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
         d = zeros(4)
+        # Dummy x, y (unused by Deriv2)
+        x_dummy = [0.0, 1.0, 2.0, 3.0]
+        y_dummy = [0.0, 1.0, 4.0, 9.0]
 
-        _fill_slopes!(d, s, h, bc)
+        _fill_slopes!(d, s, h, bc, x_dummy, y_dummy)
 
         # d[1] = 1 - (2/2)*1 = 0
         # d[2] = 2*1 - 0 = 2
@@ -275,8 +281,11 @@ end
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
         d = zeros(4)
+        # Dummy x, y (unused by Deriv1)
+        x_dummy = [0.0, 1.0, 2.0, 3.0]
+        y_dummy = [0.0, 1.0, 4.0, 9.0]
 
-        _fill_slopes!(d, s, h, bc)
+        _fill_slopes!(d, s, h, bc, x_dummy, y_dummy)
 
         # d[4] = 7 (given)
         # d[3] = 2*5 - 7 = 3
@@ -294,8 +303,11 @@ end
         s = [1.0, 3.0, 5.0]
         h = [1.0, 1.0, 1.0]
         d = zeros(4)
+        # Dummy x, y (unused by Deriv2)
+        x_dummy = [0.0, 1.0, 2.0, 3.0]
+        y_dummy = [0.0, 1.0, 4.0, 9.0]
 
-        _fill_slopes!(d, s, h, bc)
+        _fill_slopes!(d, s, h, bc, x_dummy, y_dummy)
 
         # d[4] = 5 + (2/2)*1 = 6
         # d[3] = 2*5 - 6 = 4
@@ -366,8 +378,11 @@ end
             s = [1.0, 3.0, 5.0]
             h = [1.0, 1.0, 1.0]
             d = zeros(4)
+            # Dummy x, y (unused by MinCurvFit)
+            x_dummy = [0.0, 1.0, 2.0, 3.0]
+            y_dummy = [0.0, 1.0, 4.0, 9.0]
 
-            _fill_slopes!(d, s, h, MinCurvFit{Float64}())
+            _fill_slopes!(d, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
 
             # Verify recurrence relation is satisfied: d[i+1] = 2*s[i] - d[i]
             for i in 1:3
@@ -387,8 +402,11 @@ end
             s = [2.0, 1.0, 3.0]  # varying secants
             h = [0.5, 1.5, 1.0]  # non-uniform spacing
             d = zeros(4)
+            # Dummy x, y (unused by MinCurvFit)
+            x_dummy = [0.0, 0.5, 2.0, 3.0]
+            y_dummy = [0.0, 1.0, 2.5, 5.5]
 
-            _fill_slopes!(d, s, h, MinCurvFit{Float64}())
+            _fill_slopes!(d, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
 
             @test all(isfinite, d)
             # Verify recurrence relation: d[i+1] = 2*s[i] - d[i]
@@ -402,8 +420,11 @@ end
             s = [2.0]  # single secant
             h = [1.0]
             d = zeros(2)
+            # Dummy x, y (unused by MinCurvFit)
+            x_dummy = [0.0, 1.0]
+            y_dummy = [0.0, 2.0]
 
-            _fill_slopes!(d, s, h, MinCurvFit{Float64}())
+            _fill_slopes!(d, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
 
             # For single segment, minimizing curvature means a = 0
             # a = (s - d[1]) / h => d[1] = s[1] for a = 0
@@ -416,8 +437,11 @@ end
             s = Float32[1.0, 3.0, 5.0]
             h = Float32[1.0, 1.0, 1.0]
             d = zeros(Float32, 4)
+            # Dummy x, y (unused by MinCurvFit)
+            x_dummy = Float32[0.0, 1.0, 2.0, 3.0]
+            y_dummy = Float32[0.0, 1.0, 4.0, 9.0]
 
-            _fill_slopes!(d, s, h, MinCurvFit{Float32}())
+            _fill_slopes!(d, s, h, MinCurvFit{Float32}(), x_dummy, y_dummy)
 
             # Verify finite values and recurrence
             @test all(isfinite, d)
@@ -431,12 +455,15 @@ end
             # compared to Left(Deriv2(0)) which forces first interval linear
             s = [1.0, 3.0, 5.0]
             h = [1.0, 1.0, 1.0]
+            # Dummy x, y (unused by MinCurvFit and Deriv2)
+            x_dummy = [0.0, 1.0, 2.0, 3.0]
+            y_dummy = [0.0, 1.0, 4.0, 9.0]
 
             d_smooth = zeros(4)
             d_left = zeros(4)
 
-            _fill_slopes!(d_smooth, s, h, MinCurvFit{Float64}())
-            _fill_slopes!(d_left, s, h, Left(Deriv2(0.0)))
+            _fill_slopes!(d_smooth, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
+            _fill_slopes!(d_left, s, h, Left(Deriv2(0.0)), x_dummy, y_dummy)
 
             # Compute total curvature: Σ (s[i] - d[i])² / h[i]
             curvature_smooth = sum((s[i] - d_smooth[i])^2 / h[i] for i in 1:3)
@@ -909,27 +936,27 @@ end
         @test bc_right_f32 isa Right{Float32}
     end
 
-    @testset "_promote_bc for ParabolaFit" begin
+    @testset "_promote_bc for QuadraticFit" begin
         using FastInterpolations: _promote_pointbc
 
-        # ParabolaFit same-type passthrough via _promote_pointbc
-        pf64 = ParabolaFit{Float64}()
+        # QuadraticFit same-type passthrough via _promote_pointbc
+        pf64 = QuadraticFit{Float64}()
         pf64_promoted = _promote_pointbc(pf64, Float64)
-        @test pf64_promoted isa ParabolaFit{Float64}
+        @test pf64_promoted isa QuadraticFit{Float64}
 
-        # ParabolaFit type conversion
+        # QuadraticFit type conversion
         pf32 = _promote_pointbc(pf64, Float32)
-        @test pf32 isa ParabolaFit{Float32}
+        @test pf32 isa QuadraticFit{Float32}
 
-        # Left(ParabolaFit) promotion
-        bc_left = Left(ParabolaFit{Float64}())
+        # Left(QuadraticFit) promotion
+        bc_left = Left(QuadraticFit{Float64}())
         bc_left32 = _promote_bc(bc_left, Float32)
-        @test bc_left32 isa Left{Float32, ParabolaFit{Float32}}
+        @test bc_left32 isa Left{Float32, QuadraticFit{Float32}}
 
-        # Right(ParabolaFit) promotion
-        bc_right = Right(ParabolaFit{Float64}())
+        # Right(QuadraticFit) promotion
+        bc_right = Right(QuadraticFit{Float64}())
         bc_right32 = _promote_bc(bc_right, Float32)
-        @test bc_right32 isa Right{Float32, ParabolaFit{Float32}}
+        @test bc_right32 isa Right{Float32, QuadraticFit{Float32}}
     end
 
     @testset "_promote_bc for MinCurvFit" begin
@@ -1547,8 +1574,10 @@ end
             s = [1.0, 3.0, 5.0]  # secants for x² on [0,1,2,3]
             h = [1.0, 1.0, 1.0]
             d_opt = zeros(4)
+            x_dummy = [0.0, 1.0, 2.0, 3.0]
+            y_dummy = x_dummy.^2
 
-            _fill_slopes!(d_opt, s, h, MinCurvFit{Float64}())
+            _fill_slopes!(d_opt, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
 
             # Compute optimal curvature
             curvature_opt = sum((s[i] - d_opt[i])^2 / h[i] for i in 1:3)
@@ -1573,8 +1602,10 @@ end
             h = [0.5, 1.5, 1.0, 2.0]  # non-uniform spacing
             n = length(h) + 1
             d_opt = zeros(n)
+            x_dummy = cumsum([0.0; h])  # [0, 0.5, 2.0, 3.0, 5.0]
+            y_dummy = zeros(n)
 
-            _fill_slopes!(d_opt, s, h, MinCurvFit{Float64}())
+            _fill_slopes!(d_opt, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
 
             # Compute optimal curvature
             curvature_opt = sum((s[i] - d_opt[i])^2 / h[i] for i in 1:length(s))
@@ -1600,8 +1631,10 @@ end
             h = [0.5, 1.0, 1.5, 0.8]
             n = length(h) + 1
             d_opt = zeros(n)
+            x_dummy = cumsum([0.0; h])
+            y_dummy = zeros(n)
 
-            _fill_slopes!(d_opt, s, h, MinCurvFit{Float64}())
+            _fill_slopes!(d_opt, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
 
             # Compute gradient at optimal point
             gradient = 0.0
@@ -1660,12 +1693,12 @@ end
 
             # MinCurvFit curvature
             d_smooth = zeros(n)
-            _fill_slopes!(d_smooth, s, h, MinCurvFit{Float64}())
+            _fill_slopes!(d_smooth, s, h, MinCurvFit{Float64}(), x, y)
             curvature_smooth = sum((s[i] - d_smooth[i])^2 / h[i] for i in 1:length(s))
 
             # Exact BC (Left(Deriv1)) curvature - uses correct d[1] = f'(x[1])
             d_exact = zeros(n)
-            _fill_slopes!(d_exact, s, h, Left(Deriv1(f_d1(first(x)))))
+            _fill_slopes!(d_exact, s, h, Left(Deriv1(f_d1(first(x)))), x, y)
             curvature_exact = sum((s[i] - d_exact[i])^2 / h[i] for i in 1:length(s))
 
             # MinCurvFit should have lower or equal curvature
@@ -1858,17 +1891,17 @@ end
 
         # MinCurvFit curvature
         d_smooth = zeros(n)
-        _fill_slopes!(d_smooth, s, h, MinCurvFit{Float64}())
+        _fill_slopes!(d_smooth, s, h, MinCurvFit{Float64}(), x, y)
         curvature_smooth = sum((s[i] - d_smooth[i])^2 / h[i] for i in 1:length(s))
 
         # Left(Deriv2(0)) curvature
         d_left = zeros(n)
-        _fill_slopes!(d_left, s, h, Left(Deriv2(0.0)))
+        _fill_slopes!(d_left, s, h, Left(Deriv2(0.0)), x, y)
         curvature_left = sum((s[i] - d_left[i])^2 / h[i] for i in 1:length(s))
 
         # Right(Deriv2(0)) curvature
         d_right = zeros(n)
-        _fill_slopes!(d_right, s, h, Right(Deriv2(0.0)))
+        _fill_slopes!(d_right, s, h, Right(Deriv2(0.0)), x, y)
         curvature_right = sum((s[i] - d_right[i])^2 / h[i] for i in 1:length(s))
 
         # MinCurvFit should have minimal curvature
@@ -1880,58 +1913,58 @@ end
 
 
 # ============================================================================
-# Group 13: ParabolaFit BC Type Tests (Phase 2)
+# Group 13: QuadraticFit BC Type Tests (Phase 2)
 # ============================================================================
-@testset "Quadratic Interpolation - ParabolaFit BC Type" begin
+@testset "Quadratic Interpolation - QuadraticFit BC Type" begin
     using FastInterpolations: _fill_slopes!
 
-    @testset "ParabolaFit type construction" begin
+    @testset "QuadraticFit type construction" begin
         @testset "default constructor (Float64)" begin
-            bc = ParabolaFit()
-            @test bc isa ParabolaFit{Float64}
+            bc = QuadraticFit()
+            @test bc isa QuadraticFit{Float64}
             @test bc isa PointBC{Float64}
             @test bc isa AbstractBC{Float64}
         end
 
         @testset "explicit type parameter" begin
-            bc32 = ParabolaFit{Float32}()
-            @test bc32 isa ParabolaFit{Float32}
+            bc32 = QuadraticFit{Float32}()
+            @test bc32 isa QuadraticFit{Float32}
             @test bc32 isa PointBC{Float32}
         end
 
         @testset "type conversion" begin
-            bc64 = ParabolaFit()
-            bc32 = ParabolaFit{Float32}(bc64)
-            @test bc32 isa ParabolaFit{Float32}
+            bc64 = QuadraticFit()
+            bc32 = QuadraticFit{Float32}(bc64)
+            @test bc32 isa QuadraticFit{Float32}
         end
 
         @testset "type stability" begin
-            @test @inferred(ParabolaFit()) isa ParabolaFit{Float64}
-            @test @inferred(ParabolaFit{Float32}()) isa ParabolaFit{Float32}
+            @test @inferred(QuadraticFit()) isa QuadraticFit{Float64}
+            @test @inferred(QuadraticFit{Float32}()) isa QuadraticFit{Float32}
         end
     end
 
-    @testset "Left/Right wrappers accept ParabolaFit" begin
-        @test Left(ParabolaFit()) isa Left{Float64, ParabolaFit{Float64}}
-        @test Right(ParabolaFit()) isa Right{Float64, ParabolaFit{Float64}}
-        @test Left(ParabolaFit{Float32}()) isa Left{Float32, ParabolaFit{Float32}}
-        @test Right(ParabolaFit{Float32}()) isa Right{Float32, ParabolaFit{Float32}}
+    @testset "Left/Right wrappers accept QuadraticFit" begin
+        @test Left(QuadraticFit()) isa Left{Float64, QuadraticFit{Float64}}
+        @test Right(QuadraticFit()) isa Right{Float64, QuadraticFit{Float64}}
+        @test Left(QuadraticFit{Float32}()) isa Left{Float32, QuadraticFit{Float32}}
+        @test Right(QuadraticFit{Float32}()) isa Right{Float32, QuadraticFit{Float32}}
     end
 end
 
 
 # ============================================================================
-# Group 14: ParabolaFit Polynomial Reproduction Tests (Phase 2)
+# Group 14: QuadraticFit Polynomial Reproduction Tests (Phase 2)
 # ============================================================================
-@testset "Quadratic Interpolation - ParabolaFit Polynomial Reproduction" begin
+@testset "Quadratic Interpolation - QuadraticFit Polynomial Reproduction" begin
     using FastInterpolations: _fill_slopes!
 
-    @testset "Left(ParabolaFit()) uniform grid" begin
+    @testset "Left(QuadraticFit()) uniform grid" begin
         # f(x) = x² on uniform grid
         @testset "f(x) = x² reproduction" begin
             x = [0.0, 1.0, 2.0, 3.0, 4.0]
             y = x.^2
-            itp = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+            itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
 
             # Should reproduce exactly at midpoints
             @test itp(0.5) ≈ 0.5^2 atol=1e-12
@@ -1948,7 +1981,7 @@ end
         @testset "f(x) = 2x² - 3x + 1 reproduction" begin
             x = [0.0, 1.0, 2.0, 3.0, 4.0]
             y = @. 2*x^2 - 3*x + 1
-            itp = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+            itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
 
             f(t) = 2*t^2 - 3*t + 1
             @test itp(0.5) ≈ f(0.5) atol=1e-12
@@ -1957,11 +1990,11 @@ end
         end
     end
 
-    @testset "Right(ParabolaFit()) uniform grid" begin
+    @testset "Right(QuadraticFit()) uniform grid" begin
         @testset "f(x) = x² reproduction" begin
             x = [0.0, 1.0, 2.0, 3.0, 4.0]
             y = x.^2
-            itp = quadratic_interp(x, y; bc=Right(ParabolaFit()))
+            itp = quadratic_interp(x, y; bc=Right(QuadraticFit()))
 
             @test itp(0.5) ≈ 0.5^2 atol=1e-12
             @test itp(1.5) ≈ 1.5^2 atol=1e-12
@@ -1974,8 +2007,8 @@ end
         @testset "f(x) = x² on non-uniform grid" begin
             x = [0.0, 0.5, 1.5, 3.0, 5.0]
             y = x.^2
-            itp_left = quadratic_interp(x, y; bc=Left(ParabolaFit()))
-            itp_right = quadratic_interp(x, y; bc=Right(ParabolaFit()))
+            itp_left = quadratic_interp(x, y; bc=Left(QuadraticFit()))
+            itp_right = quadratic_interp(x, y; bc=Right(QuadraticFit()))
 
             # Test at various points
             for t in [0.25, 0.75, 1.0, 2.0, 4.0]
@@ -1988,7 +2021,7 @@ end
             x = [0.0, 1.0, 2.5, 4.0, 5.5, 7.0]
             f(t) = -t^2 + 4*t
             y = f.(x)
-            itp = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+            itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
 
             for t in [0.5, 1.5, 3.0, 5.0, 6.5]
                 @test itp(t) ≈ f(t) atol=1e-11
@@ -1997,11 +2030,11 @@ end
     end
 
     @testset "Edge cases" begin
-        @testset "n=3 (minimum for ParabolaFit)" begin
+        @testset "n=3 (minimum for QuadraticFit)" begin
             x = [0.0, 1.0, 2.0]
             y = x.^2
-            itp_left = quadratic_interp(x, y; bc=Left(ParabolaFit()))
-            itp_right = quadratic_interp(x, y; bc=Right(ParabolaFit()))
+            itp_left = quadratic_interp(x, y; bc=Left(QuadraticFit()))
+            itp_right = quadratic_interp(x, y; bc=Right(QuadraticFit()))
 
             @test itp_left(0.5) ≈ 0.5^2 atol=1e-12
             @test itp_left(1.5) ≈ 1.5^2 atol=1e-12
@@ -2009,17 +2042,18 @@ end
             @test itp_right(1.5) ≈ 1.5^2 atol=1e-12
         end
 
-        @testset "n=2 (fallback to linear)" begin
+        @testset "n=2 requires Deriv1/Deriv2 (QuadraticFit needs 3+ points)" begin
             x = [0.0, 1.0]
             y = [0.0, 1.0]
-            itp_left = quadratic_interp(x, y; bc=Left(ParabolaFit()))
-            itp_right = quadratic_interp(x, y; bc=Right(ParabolaFit()))
+            # QuadraticFit (PolyFit{2}) requires 3 points to estimate derivative
+            @test_throws ArgumentError quadratic_interp(x, y; bc=Left(QuadraticFit()))
+            @test_throws ArgumentError quadratic_interp(x, y; bc=Right(QuadraticFit()))
 
-            # Should be linear interpolation
+            # With explicit Deriv1 BC, n=2 works fine (linear interpolation)
+            itp_left = quadratic_interp(x, y; bc=Left(Deriv1(1.0)))  # slope 1
+            itp_right = quadratic_interp(x, y; bc=Right(Deriv1(1.0)))
             @test itp_left(0.5) ≈ 0.5 atol=1e-12
             @test itp_right(0.5) ≈ 0.5 atol=1e-12
-            @test itp_left(0.25) ≈ 0.25 atol=1e-12
-            @test itp_right(0.75) ≈ 0.75 atol=1e-12
         end
     end
 
@@ -2027,7 +2061,7 @@ end
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y = x.^2  # f(x) = x², f'(x) = 2x, f''(x) = 2
 
-        itp = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+        itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
 
         # First derivative should match 2x
         @test itp(1.5; deriv=1) ≈ 2*1.5 atol=1e-11
@@ -2041,7 +2075,7 @@ end
     @testset "Float32 support" begin
         x = Float32[0.0, 1.0, 2.0, 3.0, 4.0]
         y = x.^2
-        itp = quadratic_interp(x, y; bc=Left(ParabolaFit{Float32}()))
+        itp = quadratic_interp(x, y; bc=Left(QuadraticFit{Float32}()))
 
         @test itp(1.5f0) isa Float32
         @test itp(1.5f0) ≈ 1.5f0^2 atol=1e-5
@@ -2050,12 +2084,12 @@ end
 
 
 # ============================================================================
-# Group 15: ParabolaFit _fill_slopes! Direct Tests (Phase 2)
+# Group 15: QuadraticFit _fill_slopes! Direct Tests (Phase 2)
 # ============================================================================
-@testset "Quadratic Interpolation - ParabolaFit _fill_slopes!" begin
+@testset "Quadratic Interpolation - QuadraticFit _fill_slopes!" begin
     using FastInterpolations: _fill_slopes!
 
-    @testset "Left(ParabolaFit) slope computation" begin
+    @testset "Left(QuadraticFit) slope computation" begin
         # For f(x) = x² on uniform grid [0,1,2,3,4]
         # f'(0) = 0, so d[1] should be 0
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
@@ -2064,7 +2098,7 @@ end
         s = diff(y) ./ h  # [1, 3, 5, 7]
         d = zeros(5)
 
-        _fill_slopes!(d, s, h, Left(ParabolaFit{Float64}()))
+        _fill_slopes!(d, s, h, Left(QuadraticFit{Float64}()), x, y)
 
         # For x², the derivative at x=0 is 0
         @test d[1] ≈ 0.0 atol=1e-12
@@ -2077,7 +2111,7 @@ end
         @test d[5] ≈ 8.0 atol=1e-12
     end
 
-    @testset "Right(ParabolaFit) slope computation" begin
+    @testset "Right(QuadraticFit) slope computation" begin
         # For f(x) = x² on uniform grid [0,1,2,3,4]
         # f'(4) = 8, so d[5] should be 8
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
@@ -2086,7 +2120,7 @@ end
         s = diff(y) ./ h  # [1, 3, 5, 7]
         d = zeros(5)
 
-        _fill_slopes!(d, s, h, Right(ParabolaFit{Float64}()))
+        _fill_slopes!(d, s, h, Right(QuadraticFit{Float64}()), x, y)
 
         # For x², the derivative at x=4 is 8
         @test d[5] ≈ 8.0 atol=1e-12
@@ -2109,12 +2143,12 @@ end
         s = diff(y) ./ h  # [0.5, 2.0]
         d = zeros(3)
 
-        _fill_slopes!(d, s, h, Left(ParabolaFit{Float64}()))
+        _fill_slopes!(d, s, h, Left(QuadraticFit{Float64}()), x, y)
         @test d[1] ≈ 0.0 atol=1e-12
 
         # Test Right as well
         d_right = zeros(3)
-        _fill_slopes!(d_right, s, h, Right(ParabolaFit{Float64}()))
+        _fill_slopes!(d_right, s, h, Right(QuadraticFit{Float64}()), x, y)
         @test d_right[3] ≈ 3.0 atol=1e-12
     end
 end

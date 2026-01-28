@@ -261,7 +261,7 @@ using FastInterpolations
         y = x .^ 2
 
         # Test with different BCs
-        for bc in [Left(ParabolaFit{Float64}()), Right(ParabolaFit{Float64}()), MinCurvFit{Float64}()]
+        for bc in [Left(QuadraticFit{Float64}()), Right(QuadraticFit{Float64}()), MinCurvFit{Float64}()]
             itp = quadratic_interp(x, y; bc=bc, extrap=:extension)
             xq = 0.35
             aq = FastInterpolations._anchor_query(x, xq, Val(:quadratic))

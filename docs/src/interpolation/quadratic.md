@@ -6,15 +6,17 @@ C¹-continuous spline interpolation with smooth first derivatives.
 
 | BC | Description |
 |----|-------------|
-| `Left(ParabolaFit())` | 3-point parabola fit at left **(Default)** |
-| `Right(ParabolaFit())` | 3-point parabola fit at right |
+| `Left(QuadraticFit())` | 3-point parabola fit at left **(Default)** |
+| `Right(QuadraticFit())` | 3-point parabola fit at right |
 | `Left(Deriv1(v))` | S'(left) = v |
 | `Left(Deriv2(v))` | S''(left) = v |
 | `Right(Deriv1(v))` | S'(right) = v |
 | `Right(Deriv2(v))` | S''(right) = v |
 | `MinCurvFit()` | Minimize total curvature (globally smooth) |
 
-**Default**: `Left(ParabolaFit())` — exact for quadratic polynomials.
+**Default**: `Left(QuadraticFit())` — exact for quadratic polynomials.
+
+👉 See [Boundary Conditions Overview](../boundary-conditions/overview.md) for the complete BC type hierarchy and detailed explanations.
 
 ---
 
@@ -26,7 +28,7 @@ using FastInterpolations
 x = range(0.0, 2π, 15)
 y = sin.(x)
 
-# One-shot evaluation (default: ParabolaFit - exact for polynomials)
+# One-shot evaluation (default: QuadraticFit - exact for polynomials)
 quadratic_interp(x, y, 1.0)                        # default BC
 quadratic_interp(x, y, 1.0; bc=Left(Deriv1(1.0)))  # S'(left) = 1.0
 quadratic_interp(x, y, 1.0; bc=MinCurvFit())       # minimize curvature
@@ -48,7 +50,7 @@ d2 = deriv2(itp); d2(1.0)             # piecewise constant
 ```
 
 !!! tip "Choosing BC"
-    - **Default `ParabolaFit()`**: Best for polynomial-like data (exact for quadratic)
+    - **Default `QuadraticFit()`**: Best for polynomial-like data (exact for quadratic)
     - **`MinCurvFit()`**: Best for globally smooth interpolation
     - **`Deriv1(v)`/`Deriv2(v)`**: When you know the endpoint derivative
 
@@ -73,7 +75,7 @@ xq = range(x[1], x[end], 200)
 p = plot(layout=(2,3), size=(900, 600), legend=:topright)
 
 for (i, (bc, label)) in enumerate([
-    (Left(ParabolaFit()), "Left(ParabolaFit()) [Default]"),
+    (Left(QuadraticFit()), "Left(QuadraticFit()) [Default]"),
     (MinCurvFit(), "MinCurvFit()"),
     (Left(Deriv2(0.0)), "Left(Deriv2(0))"),
     (Left(Deriv1(0.0)), "Left(Deriv1(0))"),
@@ -90,7 +92,7 @@ p
 ```
 
 !!! note "BC Effect"
-    - **Left(ParabolaFit())** [Default]: Exact for quadratic polynomials
+    - **Left(QuadraticFit())** [Default]: Exact for quadratic polynomials
     - **MinCurvFit()**: Minimizes total curvature (globally smooth)
     - **Left(Deriv2(0))**: First interval is linear (no curvature at left)
     - **Left(Deriv1(0))**: Starts flat (zero slope at left endpoint)

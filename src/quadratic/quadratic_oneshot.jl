@@ -119,7 +119,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y, xi; bc=Left(ParabolaFit()), extrap=:none, deriv=0, search=Binary())
+    quadratic_interp(x, y, xi; bc=Left(QuadraticFit()), extrap=:none, deriv=0, search=Binary())
 
 C1 piecewise quadratic spline interpolation at a single point.
 
@@ -128,8 +128,8 @@ C1 piecewise quadratic spline interpolation at a single point.
 - `y::AbstractVector`: y-values (same length as x)
 - `xi::Real`: Query point
 - `bc`: Boundary condition (one of):
-  - `Left(ParabolaFit())`: 3-point parabola fit at left (default, exact for polynomials)
-  - `Right(ParabolaFit())`: 3-point parabola fit at right
+  - `Left(QuadraticFit())`: 3-point parabola fit at left (default, exact for polynomials)
+  - `Right(QuadraticFit())`: 3-point parabola fit at right
   - `Left(Deriv1(v))`: First derivative = v at left endpoint
   - `Left(Deriv2(v))`: Second derivative = v at left endpoint
   - `Right(Deriv1(v))`: First derivative = v at right endpoint
@@ -153,7 +153,7 @@ C1 piecewise quadratic spline interpolation at a single point.
 x = [0.0, 1.0, 2.0, 3.0]
 y = x.^2  # [0, 1, 4, 9]
 
-# Default: ParabolaFit (exact for quadratic polynomials)
+# Default: QuadraticFit (exact for quadratic polynomials)
 quadratic_interp(x, y, 1.5)  # ≈ 2.25 (exact)
 
 # With specific BC
@@ -169,7 +169,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     xi::FT;
-    bc::QuadraticBC{FT}=Left(ParabolaFit{FT}()),
+    bc::QuadraticBC{FT}=Left(QuadraticFit{FT}()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search=Binary(),
@@ -198,7 +198,7 @@ end
 # ========================================
 
 """
-    quadratic_interp!(output, x, y, x_targets; bc=Left(ParabolaFit()), extrap=:none, deriv=0, search=Binary())
+    quadratic_interp!(output, x, y, x_targets; bc=Left(QuadraticFit()), extrap=:none, deriv=0, search=Binary())
 
 In-place quadratic spline interpolation for multiple query points.
 
@@ -225,7 +225,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
-    bc::QuadraticBC{FT}=Left(ParabolaFit{FT}()),
+    bc::QuadraticBC{FT}=Left(QuadraticFit{FT}()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -258,7 +258,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y, x_targets; bc=Left(ParabolaFit()), extrap=:none, deriv=0, search=Binary())
+    quadratic_interp(x, y, x_targets; bc=Left(QuadraticFit()), extrap=:none, deriv=0, search=Binary())
 
 Quadratic spline interpolation for multiple query points (allocating version).
 
@@ -278,7 +278,7 @@ function quadratic_interp(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
-    bc::QuadraticBC{FT}=Left(ParabolaFit{FT}()),
+    bc::QuadraticBC{FT}=Left(QuadraticFit{FT}()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -321,7 +321,7 @@ end
 @inline _promote_bc(::MinCurvFit, ::Type{T}) where {T<:AbstractFloat} = MinCurvFit{T}()
 @inline _promote_bc(::MinCurvFit{T}, ::Type{T}) where {T<:AbstractFloat} = MinCurvFit{T}()
 
-# Note: ParabolaFit <: PointBC, handled by generic _promote_pointbc in bc_types.jl
+# Note: QuadraticFit <: PointBC, handled by generic _promote_pointbc in bc_types.jl
 
 # ========================================
 # Scalar Real → Float wrappers
@@ -331,7 +331,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     xi::S;
-    bc::QuadraticBC{<:AbstractFloat}=Left(ParabolaFit{Float64}()),
+    bc::QuadraticBC{<:AbstractFloat}=Left(QuadraticFit{Float64}()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -349,7 +349,7 @@ function quadratic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    bc::QuadraticBC{<:AbstractFloat}=Left(ParabolaFit{Float64}()),
+    bc::QuadraticBC{<:AbstractFloat}=Left(QuadraticFit{Float64}()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -370,7 +370,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    bc::QuadraticBC{<:AbstractFloat}=Left(ParabolaFit{Float64}()),
+    bc::QuadraticBC{<:AbstractFloat}=Left(QuadraticFit{Float64}()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()

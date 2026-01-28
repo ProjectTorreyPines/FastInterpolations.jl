@@ -323,14 +323,14 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=Left(ParabolaFit()), extrap=:none)
+    quadratic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=Left(QuadraticFit()), extrap=:none)
 
 Create a multi-Y quadratic series interpolant for multiple y-data series sharing the same x-grid.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
-- `bc`: Boundary condition (Left/Right with ParabolaFit, Deriv1, Deriv2, MinCurvFit)
+- `bc`: Boundary condition (Left/Right with QuadraticFit, Deriv1, Deriv2, MinCurvFit)
 - `extrap`: Extrapolation mode (:none, :constant, :extension)
 
 # Returns
@@ -350,7 +350,7 @@ vals = sitp(0.5)  # Returns [val1, val2, val3]
 function quadratic_interp(
     x::AbstractVector{T},
     ys::AbstractVector{<:AbstractVector{T}};
-    bc::QuadraticBC{T}=Left(ParabolaFit{T}()),
+    bc::QuadraticBC{T}=Left(QuadraticFit{T}()),
     extrap::Symbol=:none,
     search::P=Binary()
 ) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
@@ -399,7 +399,7 @@ end
 
 # Matrix input: columns as y-series
 """
-    quadratic_interp(x, Y::AbstractMatrix; bc=Left(ParabolaFit()), extrap=:none)
+    quadratic_interp(x, Y::AbstractMatrix; bc=Left(QuadraticFit()), extrap=:none)
 
 Create a multi-Y quadratic series interpolant from a matrix where each column is a y-series.
 
@@ -419,7 +419,7 @@ sitp = quadratic_interp(x, Y)
 function quadratic_interp(
     x::AbstractVector{T},
     Y::AbstractMatrix{T};
-    bc::QuadraticBC{T}=Left(ParabolaFit{T}()),
+    bc::QuadraticBC{T}=Left(QuadraticFit{T}()),
     extrap::Symbol=:none,
     search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat}
@@ -431,7 +431,7 @@ end
 function quadratic_interp(
     x::AbstractVector{Tx},
     ys::AbstractVector{<:AbstractVector{Ty}};
-    bc=Left(ParabolaFit()),
+    bc=Left(QuadraticFit()),
     extrap::Symbol=:none,
     search::AbstractSearchPolicy=Binary()
 ) where {Tx<:Real, Ty<:Real}
@@ -445,7 +445,7 @@ end
 function quadratic_interp(
     x::AbstractVector{Tx},
     Y::AbstractMatrix{Ty};
-    bc=Left(ParabolaFit()),
+    bc=Left(QuadraticFit()),
     extrap::Symbol=:none,
     search::AbstractSearchPolicy=Binary()
 ) where {Tx<:Real, Ty<:Real}

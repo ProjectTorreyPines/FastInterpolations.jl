@@ -74,14 +74,14 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y; bc=Left(ParabolaFit()), extrap=:none, search=Binary()) -> QuadraticInterpolant
+    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=:none, search=Binary()) -> QuadraticInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values
-- `bc`: Boundary condition (Left, Right, MinCurvFit, or Left/Right with ParabolaFit)
+- `bc`: Boundary condition (Left, Right, MinCurvFit, or Left/Right with QuadraticFit)
 - `extrap::Symbol`: Extrapolation mode
 - `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
 
@@ -93,7 +93,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 x = [0.0, 1.0, 2.0, 3.0]
 y = x.^2
 
-# Default BC (ParabolaFit) gives exact polynomial reproduction
+# Default BC (QuadraticFit) gives exact polynomial reproduction
 itp = quadratic_interp(x, y)
 itp(1.5)           # 2.25 (exact)
 itp.([0.5, 1.5])   # [0.25, 2.25]
@@ -115,7 +115,7 @@ end
 function quadratic_interp(
     x::AbstractVector{FT},
     y::AbstractVector{FT};
-    bc::QuadraticBC{FT}=Left(ParabolaFit{FT}()),
+    bc::QuadraticBC{FT}=Left(QuadraticFit{FT}()),
     extrap::Symbol=:none,
     search::P=Binary()
 ) where {FT<:AbstractFloat, P<:AbstractSearchPolicy}
@@ -126,7 +126,7 @@ end
 function quadratic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T};
-    bc::QuadraticBC{<:AbstractFloat}=Left(ParabolaFit{Float64}()),
+    bc::QuadraticBC{<:AbstractFloat}=Left(QuadraticFit{Float64}()),
     extrap::Symbol=:none,
     search::P=Binary()
 ) where {T<:Real, P<:AbstractSearchPolicy}

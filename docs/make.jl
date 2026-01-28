@@ -1,3 +1,6 @@
+# Headless mode for Plots.jl (prevents Qt GUI errors during doc build)
+ENV["GKSwstype"] = "100"
+
 using Documenter
 using FastInterpolations
 
@@ -60,6 +63,7 @@ mkpath(DOCS_SRC)
 mkpath(joinpath(DOCS_SRC, "guides"))
 mkpath(joinpath(DOCS_SRC, "interpolation"))
 mkpath(joinpath(DOCS_SRC, "architecture"))
+mkpath(joinpath(DOCS_SRC, "boundary-conditions"))
 
 # Copy images directory
 const IMAGES_SRC = joinpath(@__DIR__, "images")
@@ -111,6 +115,10 @@ makedocs(
             "Cubic" => "interpolation/cubic.md",
             "Derivatives" => "interpolation/derivatives.md",
             "Visual Comparison" => "interpolation/comparison.md",
+        ],
+        "Boundary Conditions" => [
+            "Overview" => "boundary-conditions/overview.md",
+            "PointBC & PolyFit" => "boundary-conditions/pointbc.md",
         ],
         "Extrapolation" => "extrapolation.md",
         "Visualization" => "visualization.md",

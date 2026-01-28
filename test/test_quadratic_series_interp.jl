@@ -48,10 +48,10 @@ const FI = FastInterpolations
 
         @testset "boundary conditions preserved" begin
             # Test with different BC types
-            sitp_left = quadratic_interp(x, ys; bc=FI.Left(FI.ParabolaFit{Float64}()))
+            sitp_left = quadratic_interp(x, ys; bc=FI.Left(FI.QuadraticFit{Float64}()))
             @test sitp_left isa FI.QuadraticSeriesInterpolant{Float64}
 
-            sitp_right = quadratic_interp(x, ys; bc=FI.Right(FI.ParabolaFit{Float64}()))
+            sitp_right = quadratic_interp(x, ys; bc=FI.Right(FI.QuadraticFit{Float64}()))
             @test sitp_right isa FI.QuadraticSeriesInterpolant{Float64}
         end
     end

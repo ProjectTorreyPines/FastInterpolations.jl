@@ -7,15 +7,18 @@
 # Type Hierarchy:
 #   AbstractBC{T}
 #   ├── PointBC{T}           # Single-point BC (abstract)
-#   │   ├── Deriv1{T}            # First derivative
-#   │   ├── Deriv2{T}            # Second derivative
-#   │   ├── Deriv3{T}            # Third derivative
-#   │   └── ParabolaFit{T}       # 3-point parabola fit (quadratic splines)
+#   │   ├── Deriv1{T}            # User-specified first derivative
+#   │   ├── Deriv2{T}            # User-specified second derivative
+#   │   ├── Deriv3{T}            # User-specified third derivative
+#   │   └── PolyFit{D, T}        # D-degree polynomial fit (auto-estimated)
+#   │       ├── LinearFit   = PolyFit{1}  (2 points, O(h))
+#   │       ├── QuadraticFit = PolyFit{2}  (3 points, O(h²))
+#   │       └── CubicFit    = PolyFit{3}  (4 points, O(h³))
 #   ├── BCPair{T,L,R}        # Both endpoints
 #   ├── PeriodicBC{T}        # Periodic BC
 #   ├── NaturalBC{T}         # Natural BC (zero curvature at ends)
 #   ├── ClampedBC{T}         # Clamped BC (zero slope at ends)
-#   ├── MinCurvFit{T}         # Minimum curvature BC (quadratic splines)
+#   ├── MinCurvFit{T}        # Minimum curvature BC (quadratic splines)
 #   ├── Left{T,B}            # Endpoint wrapper: BC at left (x[1])
 #   └── Right{T,B}           # Endpoint wrapper: BC at right (x[end])
 
@@ -205,7 +208,7 @@ Closed-form solution:
 x = [0.0, 0.3, 0.8, 1.5, 2.5, 3.0, 4.0]
 y = [0.0, 0.8, 1.2, 0.9, 0.3, 0.6, 1.0]
 
-# Default BC uses ParabolaFit
+# Default BC uses QuadraticFit
 itp_default = quadratic_interp(x, y)
 
 # MinCurvFit gives globally smooth result via curvature minimization
@@ -216,46 +219,151 @@ struct MinCurvFit{T<:AbstractFloat} <: AbstractBC{T} end
 MinCurvFit() = MinCurvFit{Float64}()
 MinCurvFit{T}(::MinCurvFit) where {T<:AbstractFloat} = MinCurvFit{T}()
 
+# ========================================
+# Polynomial Fit Boundary Conditions
+# ========================================
+
 """
-    ParabolaFit{T<:AbstractFloat} <: PointBC{T}
+    PolyFit{D, T<:AbstractFloat} <: PointBC{T}
 
-Parabola-fit boundary condition for quadratic splines.
-Computes the initial slope d[1] (or d[n]) using a 3-point derivative formula
-that exactly reproduces any polynomial up to degree 2.
+Generic polynomial fitting boundary condition.
 
-This is the recommended BC for quadratic splines when the underlying function
-is polynomial-like or smooth. It uses the first (or last) 3 points to fit a
-parabola and computes the derivative at the endpoint.
+Fits a degree-D polynomial through (D+1) points at the endpoint and evaluates
+its derivative. This automatically estimates the first derivative from data
+without requiring user-specified values.
+
+# Type Parameters
+- `D::Int`: Polynomial degree (1=linear, 2=quadratic, 3=cubic, ...)
+- `T`: Floating point type
+
+# Relationships
+    Points needed = D + 1
+    Accuracy = O(h^D) for smooth functions
+
+# Aliases (Recommended for common cases)
+- `LinearFit`   = `PolyFit{1}` → 2 points, O(h)
+- `QuadraticFit` = `PolyFit{2}` → 3 points, O(h²)
+- `CubicFit`    = `PolyFit{3}` → 4 points, O(h³)
 
 # Mathematical Background
-For the first 3 points (x₀, y₀), (x₁, y₁), (x₂, y₂), the 3-point derivative formula is:
-- d[1] = y₀·(−(2h₁+h₂))/(h₁(h₁+h₂)) + y₁·(h₁+h₂)/(h₁·h₂) − y₂·h₁/((h₁+h₂)·h₂)
-
-where h₁ = x₁ - x₀ and h₂ = x₂ - x₁.
-
-For uniform grids (h₁ = h₂ = h), this simplifies to:
-- d[1] = (−3y₀ + 4y₁ − y₂) / (2h)
+All polynomial fitting methods are mathematically equivalent to finite difference
+formulas of the same order. For example, `CubicFit` (4-point) gives identical
+coefficients to 4-point one-sided finite difference:
+- Left:  `f'(x₁) ≈ (-11f₁ + 18f₂ - 9f₃ + 2f₄) / (6h)`
+- Right: `f'(xₙ) ≈ (-2fₙ₋₃ + 9fₙ₋₂ - 18fₙ₋₁ + 11fₙ) / (6h)`
 
 # Key Property
-**Polynomial Reproduction**: For any quadratic polynomial f(x) = ax² + bx + c,
-ParabolaFit BC produces exact interpolation at all query points.
+**Polynomial Reproduction**: `PolyFit{D}` exactly reproduces polynomials up to degree D.
 
 # Example
 ```julia
-x = [0.0, 1.0, 2.0, 3.0, 4.0]
-y = x.^2  # f(x) = x²
+# Recommended: use named aliases
+itp = cubic_interp(x, y; bc=CubicFit())
+itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
 
-# ParabolaFit gives exact reproduction
-itp = quadratic_interp(x, y; bc=Left(ParabolaFit()))
-itp(1.5)  # ≈ 2.25 (exact)
+# Generic form (equivalent)
+itp = cubic_interp(x, y; bc=PolyFit{3}())
+```
 
-# Works at both endpoints
-itp_right = quadratic_interp(x, y; bc=Right(ParabolaFit()))
+See also: [`LinearFit`](@ref), [`QuadraticFit`](@ref), [`CubicFit`](@ref), [`Deriv1`](@ref)
+"""
+struct PolyFit{D, T<:AbstractFloat} <: PointBC{T}
+    function PolyFit{D, T}() where {D, T<:AbstractFloat}
+        D isa Int || throw(ArgumentError("Polynomial degree D must be an integer"))
+        D >= 1 || throw(ArgumentError("Polynomial degree must be ≥ 1, got $D"))
+        new{D, T}()
+    end
+end
+
+# Convenience constructors
+PolyFit{D}() where {D} = PolyFit{D, Float64}()
+PolyFit{D, T}(::PolyFit{D}) where {D, T<:AbstractFloat} = PolyFit{D, T}()
+
+# ----------------------------------------
+# Type Aliases: Named convenience types
+# ----------------------------------------
+
+"""
+    LinearFit = PolyFit{1}
+
+2-point linear fit boundary condition. Estimates derivative using forward/backward
+difference: `f'(x) ≈ (f₂ - f₁) / h`.
+
+Accuracy: O(h) - first order.
+Points needed: 2
+
+# Example
+```julia
+itp = cubic_interp(x, y; bc=LinearFit())
+itp32 = cubic_interp(Float32.(x), Float32.(y); bc=LinearFit{Float32}())
 ```
 """
-struct ParabolaFit{T<:AbstractFloat} <: PointBC{T} end
-ParabolaFit() = ParabolaFit{Float64}()
-ParabolaFit{T}(::ParabolaFit) where {T<:AbstractFloat} = ParabolaFit{T}()
+const LinearFit{T<:AbstractFloat} = PolyFit{1, T}
+LinearFit() = LinearFit{Float64}()
+
+"""
+    QuadraticFit = PolyFit{2}
+
+3-point quadratic fit boundary condition. Fits a parabola through 3 points
+and evaluates its derivative at the endpoint.
+
+Accuracy: O(h²) - second order.
+Points needed: 3
+
+For uniform grids: `f'(x₁) ≈ (-3f₁ + 4f₂ - f₃) / (2h)`
+
+# Key Property
+**Polynomial Reproduction**: Exactly reproduces quadratic polynomials.
+
+# Example
+```julia
+# Default BC for quadratic splines
+itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
+itp32 = quadratic_interp(Float32.(x), Float32.(y); bc=Left(QuadraticFit{Float32}()))
+```
+"""
+const QuadraticFit{T<:AbstractFloat} = PolyFit{2, T}
+QuadraticFit() = QuadraticFit{Float64}()
+
+"""
+    ParabolaFit
+
+Deprecated alias for [`QuadraticFit`](@ref).
+"""
+function ParabolaFit(args...)
+    Base.depwarn("ParabolaFit is deprecated and has been renamed to QuadraticFit; please use QuadraticFit instead.", :ParabolaFit)
+    QuadraticFit(args...)
+end
+
+
+"""
+    CubicFit = PolyFit{3}
+
+4-point cubic fit boundary condition. Fits a cubic polynomial through 4 points
+and evaluates its derivative at the endpoint.
+
+Accuracy: O(h³) - third order.
+Points needed: 4
+
+For uniform grids:
+- Left:  `f'(x₁) ≈ (-11f₁ + 18f₂ - 9f₃ + 2f₄) / (6h)`
+- Right: `f'(xₙ) ≈ (-2fₙ₋₃ + 9fₙ₋₂ - 18fₙ₋₁ + 11fₙ) / (6h)`
+
+# Key Property
+**Polynomial Reproduction**: Exactly reproduces cubic polynomials.
+
+# Example
+```julia
+# Recommended BC for cubic splines when derivative is unknown
+itp = cubic_interp(x, y; bc=CubicFit())
+itp32 = cubic_interp(Float32.(x), Float32.(y); bc=CubicFit{Float32}())
+
+# Mixed with other BCs
+itp = cubic_interp(x, y; bc=BCPair(CubicFit(), Deriv2(0)))
+```
+"""
+const CubicFit{T<:AbstractFloat} = PolyFit{3, T}
+CubicFit() = CubicFit{Float64}()
 
 
 # ========================================
@@ -272,7 +380,7 @@ Extensible: add methods for new PointBC subtypes.
 @inline _promote_pointbc(bc::Deriv1, ::Type{T}) where {T<:AbstractFloat} = Deriv1{T}(T(bc.val))
 @inline _promote_pointbc(bc::Deriv2, ::Type{T}) where {T<:AbstractFloat} = Deriv2{T}(T(bc.val))
 @inline _promote_pointbc(bc::Deriv3, ::Type{T}) where {T<:AbstractFloat} = Deriv3{T}(T(bc.val))
-@inline _promote_pointbc(::ParabolaFit, ::Type{T}) where {T<:AbstractFloat} = ParabolaFit{T}()
+@inline _promote_pointbc(::PolyFit{D}, ::Type{T}) where {D, T<:AbstractFloat} = PolyFit{D, T}()
 
 
 # ========================================
@@ -461,3 +569,117 @@ struct Right{T<:AbstractFloat, B<:PointBC{T}} <: AbstractBC{T}
     bc::B
 end
 # Note: Julia generates outer constructor automatically: Right(bc::B) where {T,B<:PointBC{T}}
+
+
+# ========================================
+# BC Materialization (PolyFit → Deriv1)
+# ========================================
+
+"""
+    materialize_bc(bc::PolyFit{D}, xs, ys, endpoint::Val{:left/:right}) -> Deriv1{T}
+
+Convert a polynomial-fit BC to a concrete `Deriv1` by estimating the derivative from data.
+
+This "materializes" the lazy `PolyFit{D}` specification into an actual derivative value,
+allowing all existing `Deriv1` code paths to work unchanged.
+
+# Arguments
+- `bc::PolyFit{D,T}`: Polynomial fit BC to materialize
+- `xs::AbstractVector{T}`: Grid coordinates
+- `ys::AbstractVector{T}`: Function values at grid points
+- `endpoint::Val{:left}` or `Val{:right}`: Which endpoint to estimate
+
+# Returns
+- `Deriv1{T}(estimated_value)`: Concrete first derivative BC
+
+# Example
+```julia
+bc = QuadraticFit()  # = PolyFit{2}
+concrete_bc = materialize_bc(bc, xs, ys, Val(:left))  # → Deriv1{Float64}(computed_value)
+```
+
+See also: [`PolyFit`](@ref), [`_estimate_endpoint_derivative`](@ref)
+"""
+@inline function materialize_bc(
+    ::PolyFit{D, T}, xs::AbstractVector{T}, ys::AbstractVector{T}, endpoint::Val
+) where {D, T<:AbstractFloat}
+    val = _estimate_endpoint_derivative(xs, ys, endpoint, PolyFit{D}())
+    return Deriv1{T}(val)
+end
+
+# Passthrough for already-concrete BCs (no materialization needed)
+@inline materialize_bc(bc::Deriv1, ::AbstractVector, ::AbstractVector, ::Val) = bc
+@inline materialize_bc(bc::Deriv2, ::AbstractVector, ::AbstractVector, ::Val) = bc
+@inline materialize_bc(bc::Deriv3, ::AbstractVector, ::AbstractVector, ::Val) = bc
+
+
+# ========================================
+# PolyFit{D} Point Validation (Generic)
+# ========================================
+
+"""
+    get_polyfit_degree(bc) -> Int
+
+Extract the maximum polynomial degree D from a boundary condition if it contains a `PolyFit{D}`.
+Returns 0 for non-PolyFit BCs (no extra point requirement).
+
+This function recursively unwraps container types (`Left`, `Right`, `BCPair`) to find
+any inner `PolyFit{D}` type and returns the highest degree found.
+
+# Examples
+```julia
+get_polyfit_degree(QuadraticFit())                    # → 2
+get_polyfit_degree(Left(CubicFit()))                 # → 3
+get_polyfit_degree(BCPair(QuadraticFit(), CubicFit())) # → 3 (max of 2 and 3)
+get_polyfit_degree(Deriv1(0.0))                       # → 0 (no PolyFit)
+```
+"""
+get_polyfit_degree(::PolyFit{D}) where {D} = D
+get_polyfit_degree(::Left{<:AbstractFloat, <:PolyFit{D}}) where {D} = D
+get_polyfit_degree(::Right{<:AbstractFloat, <:PolyFit{D}}) where {D} = D
+
+# BCPair: return maximum degree from left and right
+@inline function get_polyfit_degree(bc::BCPair)
+    d_left = get_polyfit_degree(bc.left)
+    d_right = get_polyfit_degree(bc.right)
+    return max(d_left, d_right)
+end
+
+# Default: no PolyFit, no extra point requirement
+get_polyfit_degree(::AbstractBC) = 0
+
+
+"""
+    validate_polyfit_points(bc, n_points::Int)
+
+Validate that the grid has enough points for `PolyFit{D}` boundary conditions.
+
+`PolyFit{D}` requires at least `D+1` data points to estimate the endpoint derivative
+using a degree-D polynomial fit. This function checks that requirement and throws
+`ArgumentError` if insufficient points are provided.
+
+# Arguments
+- `bc`: Boundary condition (any type)
+- `n_points`: Number of data points in the grid
+
+# Throws
+- `ArgumentError`: If `PolyFit{D}` is used but `n_points < D + 1`
+
+# Examples
+```julia
+validate_polyfit_points(QuadraticFit(), 5)  # OK: 5 >= 3
+validate_polyfit_points(CubicFit(), 3)     # ERROR: 3 < 4
+validate_polyfit_points(Deriv1(0.0), 2)    # OK: no PolyFit requirement
+```
+"""
+function validate_polyfit_points(bc, n_points::Int)
+    D = get_polyfit_degree(bc)
+    if D > 0
+        min_points = D + 1
+        n_points >= min_points || throw(ArgumentError(
+            "PolyFit{$D} requires at least $min_points data points (got $n_points). " *
+            "A degree-$D polynomial needs $(min_points) points to estimate endpoint derivatives."
+        ))
+    end
+    return nothing
+end

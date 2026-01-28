@@ -435,65 +435,10 @@ end
 # ----------------------------------------
 
 """
-    _extract_stencil_view(v::AbstractVector, ::Val{:left}, ::Val{N}) -> SubArray
-    _extract_stencil_view(v::AbstractVector, ::Val{:right}, ::Val{N}) -> SubArray
-
-Extract N values from left or right endpoint as a view (allocation-free).
-
-# Returns
-- `SubArray` view into the original vector
-"""
-@inline function _extract_stencil_view(v::AbstractVector{T}, ::Val{:left}, ::Val{N}) where {T, N}
-    @inbounds @view v[1:N]
-end
-
-@inline function _extract_stencil_view(v::AbstractVector{T}, ::Val{:right}, ::Val{N}) where {T, N}
-    n = length(v)
-    @inbounds @view v[(n - N + 1):n]
-end
-
-"""
-    _extract_stencil_values!(out::AbstractVector, v::AbstractVector, ::Val{:left}, ::Val{N}) -> out
-    _extract_stencil_values!(out::AbstractVector, v::AbstractVector, ::Val{:right}, ::Val{N}) -> out
-
-In-place extraction of N values from left or right endpoint into output buffer.
-
-# Arguments
-- `out::AbstractVector{T}`: Output buffer (length ≥ N)
-- `v::AbstractVector{T}`: Source vector
-- `::Val{:left}` or `::Val{:right}`: Which endpoint
-- `::Val{N}`: Number of values to extract
-
-# Returns
-- `out`: The same buffer, now containing the extracted values
-"""
-@inline function _extract_stencil_values!(
-    out::AbstractVector{T}, v::AbstractVector{T}, ::Val{:left}, ::Val{N}
-) where {T, N}
-    @inbounds for i in 1:N
-        out[i] = v[i]
-    end
-    return out
-end
-
-@inline function _extract_stencil_values!(
-    out::AbstractVector{T}, v::AbstractVector{T}, ::Val{:right}, ::Val{N}
-) where {T, N}
-    n = length(v)
-    @inbounds for i in 1:N
-        out[i] = v[n - N + i]
-    end
-    return out
-end
-
-"""
     _extract_stencil_values(v::AbstractVector, ::Val{:left}, ::Val{N}) -> NTuple{N}
     _extract_stencil_values(v::AbstractVector, ::Val{:right}, ::Val{N}) -> NTuple{N}
 
 Extract N values from left or right endpoint as NTuple for kernel dispatch.
-
-Note: For allocation-free usage, prefer `_extract_stencil_view` or
-`_extract_stencil_values!` with a preallocated buffer.
 """
 @inline function _extract_stencil_values(v::AbstractVector{T}, ::Val{:left}, ::Val{N}) where {T, N}
     @inbounds ntuple(i -> v[i], Val(N))

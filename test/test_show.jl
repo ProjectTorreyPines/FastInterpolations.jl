@@ -440,7 +440,7 @@
 
         # BC formatting for types not usually exposed in high-level show
         @test FI._format_bc(MinCurvFit()) == "MinCurvFit"
-        @test FI._format_bc(ParabolaFit()) == "ParabolaFit"
+        @test FI._format_bc(QuadraticFit()) == "QuadraticFit"
         @test occursin("Left", FI._format_bc(Left(Deriv1(0.0))))
         @test occursin("Right", FI._format_bc(Right(Deriv1(0.0))))
 
@@ -452,12 +452,12 @@
         @test FI._format_bc(Deriv2(2.0)) == "Deriv2(2.0)"
         @test FI._format_bc(Deriv3(3.0)) == "Deriv3(3.0)"
         @test FI._format_bc(MinCurvFit()) == "MinCurvFit"
-        @test FI._format_bc(ParabolaFit()) == "ParabolaFit"
+        @test FI._format_bc(QuadraticFit()) == "QuadraticFit"
 
         @test FI._short_bc_name(PeriodicBC()) == "Periodic"
 
         # BC point fallback
-        @test FI._format_bc_point(ParabolaFit()) == "ParabolaFit"
+        @test FI._format_bc_point(QuadraticFit()) == "QuadraticFit"
         struct UnknownBC end
         @test FI._format_bc_point(UnknownBC()) == "UnknownBC"
     end

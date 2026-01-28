@@ -12,7 +12,7 @@
 #   │   ├── Deriv3{T}            # User-specified third derivative
 #   │   └── PolyFit{D, T}        # D-degree polynomial fit (auto-estimated)
 #   │       ├── LinearFit   = PolyFit{1}  (2 points, O(h))
-#   │       ├── ParabolaFit = PolyFit{2}  (3 points, O(h²))
+#   │       ├── QuadraticFit = PolyFit{2}  (3 points, O(h²))
 #   │       └── CubicFit    = PolyFit{3}  (4 points, O(h³))
 #   ├── BCPair{T,L,R}        # Both endpoints
 #   ├── PeriodicBC{T}        # Periodic BC
@@ -208,7 +208,7 @@ Closed-form solution:
 x = [0.0, 0.3, 0.8, 1.5, 2.5, 3.0, 4.0]
 y = [0.0, 0.8, 1.2, 0.9, 0.3, 0.6, 1.0]
 
-# Default BC uses ParabolaFit
+# Default BC uses QuadraticFit
 itp_default = quadratic_interp(x, y)
 
 # MinCurvFit gives globally smooth result via curvature minimization
@@ -242,7 +242,7 @@ without requiring user-specified values.
 
 # Aliases (Recommended for common cases)
 - `LinearFit`   = `PolyFit{1}` → 2 points, O(h)
-- `ParabolaFit` = `PolyFit{2}` → 3 points, O(h²)
+- `QuadraticFit` = `PolyFit{2}` → 3 points, O(h²)
 - `CubicFit`    = `PolyFit{3}` → 4 points, O(h³)
 
 # Mathematical Background
@@ -259,13 +259,13 @@ coefficients to 4-point one-sided finite difference:
 ```julia
 # Recommended: use named aliases
 itp = cubic_interp(x, y; bc=CubicFit())
-itp = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
 
 # Generic form (equivalent)
 itp = cubic_interp(x, y; bc=PolyFit{3}())
 ```
 
-See also: [`LinearFit`](@ref), [`ParabolaFit`](@ref), [`CubicFit`](@ref), [`Deriv1`](@ref)
+See also: [`LinearFit`](@ref), [`QuadraticFit`](@ref), [`CubicFit`](@ref), [`Deriv1`](@ref)
 """
 struct PolyFit{D, T<:AbstractFloat} <: PointBC{T}
     function PolyFit{D, T}() where {D, T<:AbstractFloat}
@@ -300,7 +300,7 @@ itp = cubic_interp(x, y; bc=LinearFit())
 const LinearFit = PolyFit{1}
 
 """
-    ParabolaFit = PolyFit{2}
+    QuadraticFit = PolyFit{2}
 
 3-point quadratic fit boundary condition. Fits a parabola through 3 points
 and evaluates its derivative at the endpoint.
@@ -316,10 +316,12 @@ For uniform grids: `f'(x₁) ≈ (-3f₁ + 4f₂ - f₃) / (2h)`
 # Example
 ```julia
 # Default BC for quadratic splines
-itp = quadratic_interp(x, y; bc=Left(ParabolaFit()))
+itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
 ```
 """
-const ParabolaFit = PolyFit{2}
+const QuadraticFit = PolyFit{2}
+const ParabolaFit = QuadraticFit  # deprecated alias for backward compatibility
+
 
 """
     CubicFit = PolyFit{3}
@@ -577,7 +579,7 @@ allowing all existing `Deriv1` code paths to work unchanged.
 
 # Example
 ```julia
-bc = ParabolaFit()  # = PolyFit{2}
+bc = QuadraticFit()  # = PolyFit{2}
 concrete_bc = materialize_bc(bc, xs, ys, Val(:left))  # → Deriv1{Float64}(computed_value)
 ```
 
@@ -611,9 +613,9 @@ any inner `PolyFit{D}` type and returns the highest degree found.
 
 # Examples
 ```julia
-get_polyfit_degree(ParabolaFit())                    # → 2
+get_polyfit_degree(QuadraticFit())                    # → 2
 get_polyfit_degree(Left(CubicFit()))                 # → 3
-get_polyfit_degree(BCPair(ParabolaFit(), CubicFit())) # → 3 (max of 2 and 3)
+get_polyfit_degree(BCPair(QuadraticFit(), CubicFit())) # → 3 (max of 2 and 3)
 get_polyfit_degree(Deriv1(0.0))                       # → 0 (no PolyFit)
 ```
 """
@@ -651,7 +653,7 @@ using a degree-D polynomial fit. This function checks that requirement and throw
 
 # Examples
 ```julia
-validate_polyfit_points(ParabolaFit(), 5)  # OK: 5 >= 3
+validate_polyfit_points(QuadraticFit(), 5)  # OK: 5 >= 3
 validate_polyfit_points(CubicFit(), 3)     # ERROR: 3 < 4
 validate_polyfit_points(Deriv1(0.0), 2)    # OK: no PolyFit requirement
 ```

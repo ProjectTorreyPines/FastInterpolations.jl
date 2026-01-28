@@ -49,7 +49,6 @@ QuadraticInterpolant
 ## Boundary Condition Types
 
 ```@docs
-ParabolaFit
 MinCurvFit
 ```
 

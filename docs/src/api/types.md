@@ -35,7 +35,16 @@ ClampedBC
 PeriodicBC
 ```
 
-### Quadratic Splines (Single Endpoint)
+### PolyFit: Polynomial Fitting BCs
+
+```@docs
+PolyFit
+LinearFit
+QuadraticFit
+CubicFit
+```
+
+### Endpoint Wrappers (Quadratic Splines)
 
 ```@docs
 Left

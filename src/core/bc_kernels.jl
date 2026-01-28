@@ -86,7 +86,7 @@ Compute first derivative on uniform grid using D+1 point stencil.
 
 # Supported Degrees
 - PolyFit{1} (LinearFit): 2 points, O(h) accuracy
-- PolyFit{2} (ParabolaFit): 3 points, O(h²) accuracy
+- PolyFit{2} (QuadraticFit): 3 points, O(h²) accuracy
 - PolyFit{3} (CubicFit): 4 points, O(h³) accuracy
 """
 # PolyFit{1} (LinearFit) - 2 points, O(h)
@@ -98,7 +98,7 @@ end
     return (f[2] - f[1]) * inv_h  # Same as left for linear
 end
 
-# PolyFit{2} (ParabolaFit) - 3 points, O(h²)
+# PolyFit{2} (QuadraticFit) - 3 points, O(h²)
 @inline function _compute_deriv1(::PolyFit{2}, ::Val{:left}, f::NTuple{3,T}, inv_h::T) where {T<:AbstractFloat}
     # Coefficients: (-3, 4, -1) / 2
     coeff = inv_h / 2
@@ -174,7 +174,7 @@ end
     return (-inv_dx, inv_dx)  # Same as left for linear
 end
 
-# PolyFit{2} (ParabolaFit) - 3 points
+# PolyFit{2} (QuadraticFit) - 3 points
 @inline function _compute_deriv1_coeffs(::PolyFit{2}, ::Val{:left}, x::NTuple{3,T}) where {T<:AbstractFloat}
     x1, x2, x3 = x
     d12, d13 = x1 - x2, x1 - x3
@@ -367,7 +367,7 @@ end
 #
 # Supported polynomial degrees:
 #   - PolyFit{1} (LinearFit):   2-point, O(h)  accuracy
-#   - PolyFit{2} (ParabolaFit): 3-point, O(h²) accuracy
+#   - PolyFit{2} (QuadraticFit): 3-point, O(h²) accuracy
 #   - PolyFit{3} (CubicFit):    4-point, O(h³) accuracy
 
 
@@ -460,7 +460,7 @@ Estimate first derivative at endpoint using D+1 point polynomial fit.
 
 # Supported Degrees
 - PolyFit{1} (LinearFit):   2 points, O(h) accuracy
-- PolyFit{2} (ParabolaFit): 3 points, O(h²) accuracy
+- PolyFit{2} (QuadraticFit): 3 points, O(h²) accuracy
 - PolyFit{3} (CubicFit):    4 points, O(h³) accuracy
 - PolyFit{D} (D > 3):       D+1 points, O(h^D) accuracy (barycentric method)
 

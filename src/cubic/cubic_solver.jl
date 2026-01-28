@@ -266,7 +266,7 @@ end
 end
 
 # First element - Generic PolyFit{D}: materialize to Deriv1, then delegate
-# Supports all polynomial degrees: LinearFit (D=1), ParabolaFit (D=2), CubicFit (D=3), etc.
+# Supports all polynomial degrees: LinearFit (D=1), QuadraticFit (D=2), CubicFit (D=3), etc.
 @inline function _compute_rhs_first!(
     d::AbstractVector{T}, bc::PolyFit{D, T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
 ) where {D, T<:AbstractFloat}
@@ -291,7 +291,7 @@ end
 """
 Compute RHS vector for generic derivative BC system in-place.
 
-The `x` parameter is needed for PolyFit{D} BCs (LinearFit, ParabolaFit, CubicFit, etc.)
+The `x` parameter is needed for PolyFit{D} BCs (LinearFit, QuadraticFit, CubicFit, etc.)
 which compute endpoint derivatives from data. For other BC types (Deriv1, Deriv2, Deriv3),
 `x` is passed but ignored.
 """

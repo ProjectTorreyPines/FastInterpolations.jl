@@ -52,7 +52,7 @@ struct QuadraticInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractV
 
     function QuadraticInterpolant(
         x::X, y::Y;
-        bc::QuadraticBC{T}=Left(ParabolaFit{T}()),
+        bc::QuadraticBC{T}=Left(QuadraticFit{T}()),
         extrap::Symbol=:none,
         search::P=Binary()
     ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}, P<:AbstractSearchPolicy}

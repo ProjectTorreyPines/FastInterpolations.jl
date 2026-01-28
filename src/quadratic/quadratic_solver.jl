@@ -214,7 +214,7 @@ Fill slope array using generic polynomial fit at left endpoint.
 
 Materializes PolyFit{D} to Deriv1 using `materialize_bc`, then delegates to
 the Deriv1 code path. Supports all polynomial degrees: LinearFit (D=1),
-ParabolaFit (D=2), CubicFit (D=3), etc.
+QuadraticFit (D=2), CubicFit (D=3), etc.
 """
 @inline function _fill_slopes!(d::AbstractVector{T}, s::AbstractVector{T}, h::AbstractVector{T},
                                bc::Left{T, PolyFit{D, T}}, x::AbstractVector{T}, y::AbstractVector{T}) where {D, T<:AbstractFloat}

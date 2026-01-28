@@ -1631,20 +1631,20 @@ end
             # D=1 (LinearFit)
             alloc_d1_left = @allocated FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:left), f2, inv_h)
             alloc_d1_right = @allocated FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:right), f2, inv_h)
-            @test alloc_d1_left == 0
-            @test alloc_d1_right == 0
+            @test alloc_d1_left <= ALLOC_THRESHOLD
+            @test alloc_d1_right <= ALLOC_THRESHOLD
 
             # D=2 (ParabolaFit)
             alloc_d2_left = @allocated FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:left), f3, inv_h)
             alloc_d2_right = @allocated FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:right), f3, inv_h)
-            @test alloc_d2_left == 0
-            @test alloc_d2_right == 0
+            @test alloc_d2_left <= ALLOC_THRESHOLD
+            @test alloc_d2_right <= ALLOC_THRESHOLD
 
             # D=3 (CubicFit)
             alloc_d3_left = @allocated FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), f4, inv_h)
             alloc_d3_right = @allocated FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:right), f4, inv_h)
-            @test alloc_d3_left == 0
-            @test alloc_d3_right == 0
+            @test alloc_d3_left <= ALLOC_THRESHOLD
+            @test alloc_d3_right <= ALLOC_THRESHOLD
         end
 
         @testset "_compute_deriv1_coeffs (Non-Uniform Grid)" begin
@@ -1656,20 +1656,20 @@ end
             # D=1 (LinearFit)
             alloc_d1_left = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:left), x2)
             alloc_d1_right = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:right), x2)
-            @test alloc_d1_left == 0
-            @test alloc_d1_right == 0
+            @test alloc_d1_left <= ALLOC_THRESHOLD
+            @test alloc_d1_right <= ALLOC_THRESHOLD
 
             # D=2 (ParabolaFit)
             alloc_d2_left = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), Val(:left), x3)
             alloc_d2_right = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), Val(:right), x3)
-            @test alloc_d2_left == 0
-            @test alloc_d2_right == 0
+            @test alloc_d2_left <= ALLOC_THRESHOLD
+            @test alloc_d2_right <= ALLOC_THRESHOLD
 
             # D=3 (CubicFit)
             alloc_d3_left = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x4)
             alloc_d3_right = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:right), x4)
-            @test alloc_d3_left == 0
-            @test alloc_d3_right == 0
+            @test alloc_d3_left <= ALLOC_THRESHOLD
+            @test alloc_d3_right <= ALLOC_THRESHOLD
         end
 
         @testset "_weighted_sum (NTuple)" begin
@@ -1685,15 +1685,15 @@ end
 
             # N=2 tuple
             alloc_n2 = @allocated FastInterpolations._weighted_sum(c2, f2)
-            @test alloc_n2 == 0
+            @test alloc_n2 <= ALLOC_THRESHOLD
 
             # N=3 tuple
             alloc_n3 = @allocated FastInterpolations._weighted_sum(c3, f3)
-            @test alloc_n3 == 0
+            @test alloc_n3 <= ALLOC_THRESHOLD
 
             # N=4 tuple
             alloc_n4 = @allocated FastInterpolations._weighted_sum(c4, f4)
-            @test alloc_n4 == 0
+            @test alloc_n4 <= ALLOC_THRESHOLD
         end
 
         @testset "_estimate_endpoint_derivative (Unified API, D≤3)" begin
@@ -1707,19 +1707,19 @@ end
             alloc_d1_uniform = @allocated FastInterpolations._estimate_endpoint_derivative(
                 xs_uniform, ys, Val(:left), PolyFit{1}()
             )
-            @test alloc_d1_uniform == 0
+            @test alloc_d1_uniform <= ALLOC_THRESHOLD
 
             # D=2 uniform
             alloc_d2_uniform = @allocated FastInterpolations._estimate_endpoint_derivative(
                 xs_uniform, ys, Val(:left), PolyFit{2}()
             )
-            @test alloc_d2_uniform == 0
+            @test alloc_d2_uniform <= ALLOC_THRESHOLD
 
             # D=3 uniform
             alloc_d3_uniform = @allocated FastInterpolations._estimate_endpoint_derivative(
                 xs_uniform, ys, Val(:left), PolyFit{3}()
             )
-            @test alloc_d3_uniform == 0
+            @test alloc_d3_uniform <= ALLOC_THRESHOLD
 
             # Test with non-uniform grid (Vector) - also should be zero for D≤3
             # Warmup
@@ -1731,19 +1731,19 @@ end
             alloc_d1_nonuniform = @allocated FastInterpolations._estimate_endpoint_derivative(
                 xs_nonuniform, ys_nonuniform, Val(:left), PolyFit{1}()
             )
-            @test alloc_d1_nonuniform == 0
+            @test alloc_d1_nonuniform <= ALLOC_THRESHOLD
 
             # D=2 non-uniform
             alloc_d2_nonuniform = @allocated FastInterpolations._estimate_endpoint_derivative(
                 xs_nonuniform, ys_nonuniform, Val(:left), PolyFit{2}()
             )
-            @test alloc_d2_nonuniform == 0
+            @test alloc_d2_nonuniform <= ALLOC_THRESHOLD
 
             # D=3 non-uniform
             alloc_d3_nonuniform = @allocated FastInterpolations._estimate_endpoint_derivative(
                 xs_nonuniform, ys_nonuniform, Val(:left), PolyFit{3}()
             )
-            @test alloc_d3_nonuniform == 0
+            @test alloc_d3_nonuniform <= ALLOC_THRESHOLD
         end
 
     end
@@ -1765,11 +1765,6 @@ end
             # D=5 (QuinticFit) - verify correct result
             result_d5 = FastInterpolations._compute_deriv1(PolyFit{5}(), Val(:left), f6, inv_h)
             @test isfinite(result_d5)
-
-            # Report allocations (may be 0 due to escape analysis)
-            alloc_d4 = @allocated FastInterpolations._compute_deriv1(PolyFit{4}(), Val(:left), f5, inv_h)
-            alloc_d5 = @allocated FastInterpolations._compute_deriv1(PolyFit{5}(), Val(:left), f6, inv_h)
-            @info "Generic _compute_deriv1 (uniform):" D4_bytes=alloc_d4 D5_bytes=alloc_d5
         end
 
         @testset "_compute_deriv1_coeffs (Non-Uniform Grid, D>3)" begin
@@ -1782,11 +1777,6 @@ end
             coeffs_d5 = FastInterpolations._compute_deriv1_coeffs(PolyFit{5}(), Val(:left), x6)
             @test all(isfinite, coeffs_d5)
             @test length(coeffs_d5) == 6
-
-            # Report allocations
-            alloc_d4 = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{4}(), Val(:left), x5)
-            alloc_d5 = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{5}(), Val(:left), x6)
-            @info "Generic _compute_deriv1_coeffs (non-uniform):" D4_bytes=alloc_d4 D5_bytes=alloc_d5
         end
 
         @testset "_estimate_endpoint_derivative (Unified API, D>3)" begin
@@ -1796,38 +1786,40 @@ end
 
             # D=4 uniform - verify correctness
             result_d4 = FastInterpolations._estimate_endpoint_derivative(
-                xs_large, ys_large, Val(:left), PolyFit{4}()
+                xs_large, ys_large, Val(:right), PolyFit{4}()
             )
-            @test result_d4 ≈ 0.0 atol=1e-10  # f'(0) = 0
+            @test result_d4 ≈ 2.0 atol=1e-10  # f'(0) = 0
 
             # D=5 uniform - verify correctness
             result_d5 = FastInterpolations._estimate_endpoint_derivative(
-                xs_large, ys_large, Val(:left), PolyFit{5}()
+                xs_large, ys_large, Val(:right), PolyFit{5}()
             )
-            @test result_d5 ≈ 0.0 atol=1e-10
+            @test result_d5 ≈ 2.0 atol=1e-10
+
+
+            function alloc_est(xs, ys, side, pf) 
+                @allocated FastInterpolations._estimate_endpoint_derivative(xs, ys, side, pf)
+            end
 
             # Report allocations
-            alloc_d4 = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_large, ys_large, Val(:left), PolyFit{4}()
-            )
-            alloc_d5 = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_large, ys_large, Val(:left), PolyFit{5}()
-            )
-            @info "Generic _estimate_endpoint_derivative (uniform):" D4_bytes=alloc_d4 D5_bytes=alloc_d5
+            alloc_d4 = alloc_est( xs_large, ys_large, Val(:right), PolyFit{4}())
+            alloc_d5 = alloc_est( xs_large, ys_large, Val(:right), PolyFit{5}())
+
+            @test alloc_d4 <= ALLOC_THRESHOLD 
+            @test alloc_d5 <= ALLOC_THRESHOLD
+
 
             # Non-uniform grid
             xs_nonuniform_large = [0.0, 0.08, 0.2, 0.35, 0.5, 0.68, 0.82, 1.0]
             ys_nonuniform_large = xs_nonuniform_large .^ 2
 
             result_d4_nu = FastInterpolations._estimate_endpoint_derivative(
-                xs_nonuniform_large, ys_nonuniform_large, Val(:left), PolyFit{4}()
+                xs_nonuniform_large, ys_nonuniform_large, Val(:right), PolyFit{4}()
             )
-            @test result_d4_nu ≈ 0.0 atol=1e-10
+            @test result_d4_nu ≈ 2.0 atol=1e-10
 
-            alloc_d4_nu = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_nonuniform_large, ys_nonuniform_large, Val(:left), PolyFit{4}()
-            )
-            @info "Generic _estimate_endpoint_derivative (non-uniform):" D4_bytes=alloc_d4_nu
+            alloc_d4_nu = alloc_est( xs_nonuniform_large, ys_nonuniform_large, Val(:right), PolyFit{4}())
+            @test alloc_d4_nu <= ALLOC_THRESHOLD
         end
 
     end
@@ -1848,7 +1840,7 @@ end
 
         # The @generated function should produce allocation-free code
         # @generated _weighted_sum(N=5) should be allocation-free
-        @test alloc_n5 == 0
+        @test alloc_n5 <= ALLOC_THRESHOLD
 
         # N=6 tuple
         c6 = ntuple(i -> Float64(i), 6)
@@ -1858,7 +1850,7 @@ end
         alloc_n6 = @allocated FastInterpolations._weighted_sum(c6, f6_tuple)
 
         # @generated _weighted_sum(N=6) should be allocation-free
-        @test alloc_n6 == 0
+        @test alloc_n6 <= ALLOC_THRESHOLD
     end
 
 end

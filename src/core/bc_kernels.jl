@@ -467,16 +467,41 @@ const MAX_RECOMMENDED_POLYFIT_DEGREE = 6
 const _polyfit_warning_issued = Ref(false)
 
 """
-    _check_polyfit_degree(D::Int)
+    _warn_high_degree(D::Int)
 
 Issue a one-time warning if polynomial degree exceeds recommendation.
+Called by `_check_polyfit_requirements` when D > MAX_RECOMMENDED_POLYFIT_DEGREE.
 """
-@noinline function _check_polyfit_degree(D::Int)
-    if D > MAX_RECOMMENDED_POLYFIT_DEGREE && !_polyfit_warning_issued[]
+@noinline function _warn_high_degree(D::Int)
+    if !_polyfit_warning_issued[]
         _polyfit_warning_issued[] = true
         @warn "PolyFit{$D} uses $(D+1) points. For D > $MAX_RECOMMENDED_POLYFIT_DEGREE, " *
               "numerical noise amplification may degrade accuracy. Consider D ≤ 6."
     end
+    nothing
+end
+
+"""
+    _check_polyfit_requirements(D::Int, n::Int)
+
+Validate PolyFit{D} requirements:
+1. Bounds check: `n ≥ D + 1` (can be elided with `@inbounds`)
+2. Degree warning: one-time warning if D > MAX_RECOMMENDED_POLYFIT_DEGREE
+
+# Arguments
+- `D::Int`: Polynomial degree
+- `n::Int`: Number of available data points (length of xs or ys)
+
+# Throws
+- `ArgumentError` if `n < D + 1` (unless bounds checking is disabled)
+"""
+@inline function _check_polyfit_requirements(D::Int, n::Int)
+    @boundscheck if n < D + 1
+        throw(ArgumentError(
+            "PolyFit{$D} requires at least $(D+1) points, got $n"
+        ))
+    end
+    D > MAX_RECOMMENDED_POLYFIT_DEGREE && _warn_high_degree(D)
     nothing
 end
 
@@ -505,7 +530,7 @@ Estimate first derivative at endpoint using D+1 point polynomial fit.
 @inline function _estimate_endpoint_derivative(
     xs::AbstractRange{T}, ys::AbstractVector{T}, side::Val{S}, pf::PolyFit{D}
 ) where {T<:AbstractFloat, S, D}
-    D > 3 && _check_polyfit_degree(D)
+    _check_polyfit_requirements(D, length(ys))
     @inbounds begin
         f = _extract_stencil_values(ys, side, Val(D + 1))
         inv_h = inv(T(step(xs)))
@@ -516,7 +541,8 @@ end
 @inline function _estimate_endpoint_derivative(
     xs::AbstractVector{T}, ys::AbstractVector{T}, side::Val{S}, pf::PolyFit{D}
 ) where {T<:AbstractFloat, S, D}
-    D > 3 && _check_polyfit_degree(D)
+    @assert length(xs) == length(ys) "xs and ys must have same length"
+    _check_polyfit_requirements(D, length(ys))
     @inbounds begin
         x = _extract_stencil_values(xs, side, Val(D + 1))
         f = _extract_stencil_values(ys, side, Val(D + 1))

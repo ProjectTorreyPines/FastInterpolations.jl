@@ -763,9 +763,9 @@ end
 # ========================================
 # QuadraticFit (PolyFit{2}) Kernel Tests
 # ========================================
-# Tests for the 3-point derivative estimation kernels in bc_kernels.jl
+# Tests for the 3-point derivative estimation kernels in polyfit_kernels.jl
 
-@testset "QuadraticFit Kernels (bc_kernels.jl)" begin
+@testset "QuadraticFit Kernels (polyfit_kernels.jl)" begin
 
     @testset "Uniform Grid - Quadratic Reproduction" begin
         # f(x) = x² - 2x + 1, f'(x) = 2x - 2
@@ -910,9 +910,9 @@ end
 # ========================================
 # LinearFit (PolyFit{1}) Kernel Tests
 # ========================================
-# Tests for the 2-point derivative estimation kernels in bc_kernels.jl
+# Tests for the 2-point derivative estimation kernels in polyfit_kernels.jl
 
-@testset "LinearFit Kernels (bc_kernels.jl)" begin
+@testset "LinearFit Kernels (polyfit_kernels.jl)" begin
 
     @testset "Uniform Grid - Linear Function (Exact)" begin
         # f(x) = 3x + 2, f'(x) = 3 (constant)

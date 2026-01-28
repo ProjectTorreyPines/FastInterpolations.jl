@@ -56,177 +56,196 @@ This gives a data-driven estimate of the endpoint derivative without requiring m
 | `LinearFit()` = `PolyFit{1}` | 2 | O(h) | `(y₂ - y₁) / h` |
 | `QuadraticFit()` = `PolyFit{2}` | 3 | O(h²) | `(-3y₁ + 4y₂ - y₃) / (2h)` |
 | `CubicFit()` = `PolyFit{3}` | 4 | O(h³) | `(-11y₁ + 18y₂ - 9y₃ + 2y₄) / (6h)` |
+| `PolyFit{N}()` (N > 3) | N+1 | O(hᴺ) | Barycentric interpolation |
 
 !!! tip "Choosing the Right Degree"
-    - **LinearFit**: Simplest, but only first-order accurate
+    - **LinearFit**: Simplest, first-order accurate
     - **QuadraticFit**: Default for quadratic splines — exact for quadratic polynomials
-    - **CubicFit**: Best accuracy, exact for cubic polynomials
+    - **CubicFit**: Third-order accurate, exact for cubic polynomials
+    - **PolyFit{N}**: Arbitrary degree N — uses barycentric interpolation for N > 3
+
+    Match the polynomial degree to your data's smoothness. See the [visual comparison below](#Visual-Comparison) for examples.
+
+!!! warning "Higher Degree ≠ Always Better"
+    Higher-degree fits are **not always more accurate**. For oscillatory or noisy data,
+    high-degree polynomial fits can produce **overshoot** at boundaries.
+    When in doubt, start with `QuadraticFit` or `CubicFit` and compare results visually.
 
 ---
 
 ## Visual Comparison
 
-The following visualization shows how different `PolyFit` degrees affect the estimated slope at the boundary:
+### Part 1: Smooth Polynomial Data
 
-```@example polyfit_visual
+When the data near the boundary follows a **smooth polynomial**, higher-degree `PolyFit` estimates the true derivative more accurately.
+
+The plots below show `cubic_interp` applied to `f(x) = 2x³ - 13x` with different boundary conditions.
+Notice how `CubicFit()` computes the exact boundary tangent, perfectly reproducing the original cubic.
+
+```@setup polyfit_smooth
 using FastInterpolations
 using Plots
 
-# Test function with visible nonlinearity at boundary
-f(x) = sin(π * x) + 0.2 * cos(3π * x)
-f_prime(x) = π * cos(π * x) - 0.6π * sin(3π * x)
+a, b, c, d = (2, 0, -13,0 )
 
-# Sparse data (7 points)
-n_points = 7
-xs = collect(range(0.0, 1.0, length=n_points))
+f(x) = a*x^3 + b*x^2 + c*x + d
+f_prime(x) = 3a*x^2 + 2b*x + c
+# True cubic polynomial
+# f(x) = x^3
+# f_prime(x) = 3x^2
+# Sparse sampling (5 points)
+
+xs = collect(range(-2.0, 3.0, length=5))
 ys = f.(xs)
 
-true_slope = f_prime(xs[1])
-
-# Estimate slopes with each PolyFit degree
-slopes = Dict(
-    "LinearFit (D=1)" => FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:left), LinearFit()),
-    "QuadraticFit (D=2)" => FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:left), QuadraticFit()),
-    "CubicFit (D=3)" => FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:left), CubicFit()),
-)
-
-p = plot(
-    title="Slope Estimation at Left Boundary",
-    xlabel="x", ylabel="y",
-    xlims=(-0.1, 0.35), ylims=(-0.15, 0.7),
-    legend=:topleft, size=(550, 400)
-)
-
-# Boundary point
-scatter!(p, [xs[1]], [ys[1]], color=:black, markersize=10, label="Boundary point")
-
-# True tangent
-tangent_len = 0.3
-x_true = [xs[1] - tangent_len/2, xs[1] + tangent_len/2]
-y_true = ys[1] .+ true_slope .* (x_true .- xs[1])
-plot!(p, x_true, y_true, color=:black, linewidth=3, label="True slope ($(round(true_slope, digits=2)))")
-
-# Estimated tangents
-colors = [:royalblue, :green3, :darkorange]
-for (i, (name, slope)) in enumerate(sort(collect(slopes), by=x->x[1]))
-    x_est = [xs[1] - tangent_len/2, xs[1] + tangent_len/2]
-    y_est = ys[1] .+ slope .* (x_est .- xs[1])
-    plot!(p, x_est, y_est, color=colors[i], linewidth=2, linestyle=:dash,
-          label="$name ($(round(slope, digits=2)))")
-end
-
-p
-```
-
-**Key Observation**: Higher polynomial degree → better slope estimate → closer to the true tangent (black line).
-
----
-
-## Effect on Spline Shape
-
-Different `PolyFit` degrees produce different spline behaviors, especially visible near boundaries:
-
-```@example polyfit_spline
-using FastInterpolations
-using Plots
-
-f(x) = sin(π * x) + 0.2 * cos(3π * x)
-
-xs = collect(range(0.0, 1.0, length=7))
-ys = f.(xs)
-
-xlim_left = (-0.05, 0.55)
-x_dense = range(xlim_left[1], xlim_left[2], length=200)
-y_true = f.(x_dense)
+x_dense = range(minimum(xs), maximum(xs), length=200)
+# BCs to compare
+bcs = [
+    ("NaturalBC (default)", NaturalBC(), :gray),
+    ("LinearFit", LinearFit(), :royalblue),
+    ("QuadraticFit", QuadraticFit(), :green3),
+    ("CubicFit", CubicFit(), :darkorange),
+]
 
 plots_list = []
-
-for (D, title, color) in [
-    (1, "LinearFit (D=1)", :royalblue),
-    (2, "QuadraticFit (D=2)", :green3),
-    (3, "CubicFit (D=3)", :darkorange)
-]
-    bc = D == 1 ? LinearFit() : (D == 2 ? QuadraticFit() : CubicFit())
+for (title, bc, color) in bcs
     itp = cubic_interp(xs, ys; bc=bc)
 
-    p = plot(title=title, xlims=xlim_left, legend=false, titlefontsize=10)
+    p = plot(title=title, legend=true, titlefontsize=15, dpi=200)
 
-    # True function (gray dashed)
-    plot!(p, x_dense, y_true, color=:gray, alpha=0.5, linestyle=:dash, linewidth=1)
+    # True function
+    plot!(p, x_dense, f.(x_dense), color=:black,  linewidth=2, label="True f(x)=2x³-13x")
 
-    # Cubic spline
-    x_spline = range(xs[1], min(xs[end], xlim_left[2]), length=150)
+    # Spline
+    x_spline = range(xs[1], xs[end], length=150)
     y_spline = [itp(x) for x in x_spline]
-    plot!(p, x_spline, y_spline, color=color, linewidth=2.5)
+    plot!(p, x_spline, y_spline, color=color, linewidth=3, alpha=0.6, label="spline")
 
     # Data points
-    scatter!(p, xs, ys, color=:white, markerstrokecolor=:black,
-             markerstrokewidth=1.5, markersize=6)
+    scatter!(p, xs, ys, color=color, alpha=0.6, markerstrokecolor=:black, markersize=8, label=nothing)
 
-    # Highlight points used for fitting
-    n_fit = D + 1
-    scatter!(p, xs[1:n_fit], ys[1:n_fit], color=color,
-             markerstrokecolor=:black, markerstrokewidth=2, markersize=9)
+    # Tangent lines at boundaries
+    # for xi in [xs[1], xs[end]]
+        xi=xs[1]
+        yi = itp(xi)
+        slope_est = itp(xi; deriv=1)
+
+        # Draw estimated tangent
+        len = 0.8
+        xt = [xi - len, xi + len]
+        yt = yi .+ slope_est .* (xt .- xi)
+        plot!(p, xt, yt, color=color, linewidth=2, alpha=0.7, linestyle=:dot, label="boundary tangent")
+
+        xi=xs[end]
+        yi = itp(xi)
+        slope_est = itp(xi; deriv=1)
+
+        # Draw estimated tangent
+        xt = [xi - len, xi + len]
+        yt = yi .+ slope_est .* (xt .- xi)
+        plot!(p, xt, yt, color=color, linewidth=2, alpha=0.7, linestyle=:dot, label=nothing)
+    # end
 
     push!(plots_list, p)
 end
 
-plot(plots_list..., layout=(1, 3), size=(900, 300))
+# plot(plots_list..., layout=(2, 2), size=(800, 600), xlims=(-2.5, 3.5))
 ```
 
-**Colored points** show the data used by each `PolyFit` to estimate the boundary derivative.
+```@example polyfit_smooth
+plot(plots_list..., layout=(2, 2), size=(800, 600), xlims=(-2.5, 3.5)) # hide
+```
+
+**Key observations:**
+- **NaturalBC**: Zero-curvature assumption causes deviation from the true cubic
+- **LinearFit / QuadraticFit**: Slightly underestimate the boundary slope
+- **CubicFit**: Computes the **exact boundary derivative**, enabling perfect reproduction ✓
+
+!!! tip "Polynomial Reproduction Property"
+    When the data near the boundary follows a smooth polynomial of degree ≤ D, `PolyFit{D}` computes the exact derivative.
 
 ---
 
-## Derivative Estimation Accuracy
+### Part 2: Oscillatory Data — When Higher Degree Fails
 
-How estimation error decreases with polynomial degree:
+For **oscillatory data** (e.g., `sin(x)` with sparse sampling), higher-degree `PolyFit` can produce **worse** results due to overshoot at boundaries.
 
-```@example polyfit_accuracy
+The plots below show the **left boundary region** of a longer interpolation interval. The gray dashed line is the true function. Open circles are all data points, while **filled colored circles** indicate the points used to estimate the left boundary derivative (2 for `LinearFit`, 3 for `QuadraticFit`, 4 for `CubicFit`, etc.).
+
+```@setup polyfit_oscillatory
 using FastInterpolations
 using Plots
 
-f(x) = exp(-x) * sin(2π * x)
-f_prime(x) = exp(-x) * (2π * cos(2π * x) - sin(2π * x))
+f(x) = sin(3π * x)
 
-xs = collect(range(0.0, 2.0, length=10))
+xs = collect(range(0.0, 4.0, length=20))
 ys = f.(xs)
 
-true_deriv_left = f_prime(xs[1])
-true_deriv_right = f_prime(xs[end])
+xlim_range = (-0.05, 2.1)
+x_dense = range(minimum(xs), maximum(xlim_range), length=200)
+y_true = f.(x_dense)
 
-degrees = 1:6
-errors_left = Float64[]
-errors_right = Float64[]
+plots_list = []
 
-for D in degrees
-    pf = FastInterpolations.PolyFit{D}()
-    est_left = FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:left), pf)
-    est_right = FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:right), pf)
-    push!(errors_left, abs(est_left - true_deriv_left))
-    push!(errors_right, abs(est_right - true_deriv_right))
+# (bc, title, color, n_highlight) - n_highlight is number of points used for derivative estimation
+for (bc, title, color, n_highlight) in [
+    (NaturalBC(), "NaturalBC (default)", :gray, 0),
+    (LinearFit(), "LinearFit (D=1)", :royalblue, 2),
+    (QuadraticFit(), "QuadraticFit (D=2)", :green3, 3),
+    (CubicFit(), "CubicFit (D=3)", :darkorange, 4),
+    (PolyFit{4}(), "PolyFit (D=4)", :mediumorchid, 5),
+    (PolyFit{5}(), "PolyFit (D=5)", :mediumorchid, 6),
+    (PolyFit{6}(), "PolyFit (D=6)", :mediumorchid, 7),
+    (PolyFit{7}(), "PolyFit (D=7)", :mediumorchid, 8),
+    (PolyFit{8}(), "PolyFit (D=8)", :mediumorchid, 9),
+    (PolyFit{9}(), "PolyFit (D=9)", :mediumorchid, 10)
+]
+    itp = cubic_interp(xs, ys; bc=bc)
+
+    p = plot(title=title, xlims=xlim_range, ylims=(-1.5, 1.5), legend=false, titlefontsize=15, dpi=200)
+
+    # True function (gray dashed)
+    plot!(p, x_dense, y_true, color=:gray, linestyle=:dash, linewidth=2)
+
+    # Cubic spline
+    x_spline = x_dense
+    y_spline = [itp(x) for x in x_spline]
+    plot!(p, x_spline, y_spline, color=color, linewidth=3, alpha=0.7)
+
+    # Data points (white)
+    scatter!(p, xs, ys, color=:white, markerstrokecolor=:black, markerstrokewidth=1.5, markersize=6)
+
+    # Highlight points used for PolyFit (colored)
+    if n_highlight > 0
+        n_fit = min(n_highlight, length(xs))
+        scatter!(p, xs[1:n_fit], ys[1:n_fit], color=color, markerstrokecolor=:black, markerstrokewidth=2, markersize=9)
+    end
+
+    push!(plots_list, p)
 end
-
-p = plot(
-    title="Derivative Estimation Error vs PolyFit Degree",
-    xlabel="PolyFit Degree (D)",
-    ylabel="Absolute Error",
-    yscale=:log10,
-    legend=:topright,
-    size=(550, 350)
-)
-
-scatter!(p, degrees, errors_left, color=:blue, markersize=8, label="Left endpoint")
-plot!(p, degrees, errors_left, color=:blue, linewidth=1.5, label="")
-
-scatter!(p, degrees, errors_right, color=:red, markersize=8, label="Right endpoint")
-plot!(p, degrees, errors_right, color=:red, linewidth=1.5, label="")
-
-p
 ```
 
-!!! note "Diminishing Returns"
-    Beyond D=3-4, accuracy gains diminish and numerical stability may decrease. `CubicFit()` (D=3) is usually the sweet spot.
+```@example polyfit_oscillatory
+plot(plots_list..., layout=(5, 2), size=(800, 1200)) # hide
+```
+
+**Observations by degree:**
+
+| Degree | Behavior |
+|--------|----------|
+| D=1–2 | Stable with minimal undershoot |
+| D=3 | Overshoot begins to appear at the left boundary |
+| D=4–6 | **Noticeable overshoot** at the left boundary |
+| D=7 | Follows the true function with slight undershoot |
+| D=8, 9 | **Severe overshoot with reversed slope** |
+
+!!! danger "Runge-like Phenomenon"
+    High-degree polynomial fits on oscillatory or non-polynomial data can produce wild oscillations near boundaries. The fitted polynomial tries to pass through many points but overshoots between them.
+
+!!! tip "Practical Recommendation"
+    - Start with **QuadraticFit** or **CubicFit**
+    - Only use higher degrees if your data is known to be a smooth polynomial
+    - Always **visually inspect** boundary behavior when changing `PolyFit` degree
 
 ---
 

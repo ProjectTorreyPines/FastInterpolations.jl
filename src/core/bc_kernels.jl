@@ -45,15 +45,78 @@ coefficients to function values.
     N-1 fmadd + 1 fmul = N FP ops
 """
 @inline function _weighted_sum(c::NTuple{2,T}, f::NTuple{2,T}) where {T<:AbstractFloat}
-    muladd(c[1], f[1], c[2] * f[2])
+    return muladd(c[1], f[1], c[2] * f[2])
 end
 
 @inline function _weighted_sum(c::NTuple{3,T}, f::NTuple{3,T}) where {T<:AbstractFloat}
-    muladd(c[1], f[1], muladd(c[2], f[2], c[3] * f[3]))
+    return muladd(c[1], f[1], muladd(c[2], f[2], c[3] * f[3]))
 end
 
 @inline function _weighted_sum(c::NTuple{4,T}, f::NTuple{4,T}) where {T<:AbstractFloat}
-    muladd(c[1], f[1], muladd(c[2], f[2], muladd(c[3], f[3], c[4] * f[4])))
+    return muladd(c[1], f[1], muladd(c[2], f[2], muladd(c[3], f[3], c[4] * f[4])))
+end
+
+# Generic fallback for N > 4 (PolyFit{D} where D > 3)
+# Uses @generated to produce unrolled muladd chain at compile time
+@generated function _weighted_sum(c::NTuple{N,T}, f::NTuple{N,T}) where {N,T<:AbstractFloat}
+    # Build muladd chain: muladd(c[1], f[1], muladd(c[2], f[2], ...c[N]*f[N]...))
+    expr = :(c[$N] * f[$N])
+    for i in (N-1):-1:1
+        expr = :(muladd(c[$i], f[$i], $expr))
+    end
+    return expr
+end
+
+# ----------------------------------------
+# _weighted_sum: AbstractVector versions
+# ----------------------------------------
+# For use with Vector-based coefficients and function values.
+# Supports batched operations and dynamic sizing.
+
+"""
+    _weighted_sum(c::AbstractVector{T}, f::AbstractVector{T}, ::Val{N}) -> T
+
+Compute weighted sum Σ cᵢfᵢ for Vector inputs with compile-time known length.
+
+# Arguments
+- `c::AbstractVector{T}`: Coefficients (length ≥ N)
+- `f::AbstractVector{T}`: Function values (length ≥ N)
+- `::Val{N}`: Number of terms to sum
+
+# Returns
+- Weighted sum using muladd for numerical stability
+"""
+@inline function _weighted_sum(
+    c::AbstractVector{T}, f::AbstractVector{T}, ::Val{N}
+) where {T<:AbstractFloat, N}
+    s = zero(T)
+    @inbounds for i in 1:N
+        s = muladd(c[i], f[i], s)
+    end
+    return s
+end
+
+"""
+    _weighted_sum(c::AbstractVector{T}, f::AbstractVector{T}) -> T
+
+Compute weighted sum Σ cᵢfᵢ for equal-length Vector inputs.
+
+# Arguments
+- `c::AbstractVector{T}`: Coefficients
+- `f::AbstractVector{T}`: Function values (must have same length as c)
+
+# Returns
+- Weighted sum using muladd for numerical stability
+"""
+@inline function _weighted_sum(
+    c::AbstractVector{T}, f::AbstractVector{T}
+) where {T<:AbstractFloat}
+    @assert length(c) == length(f) "Vectors must have equal length"
+    s = zero(T)
+    @inbounds for i in eachindex(c, f)
+        s = muladd(c[i], f[i], s)
+    end
+    return s
 end
 
 
@@ -81,37 +144,59 @@ Compute first derivative on uniform grid using D+1 point stencil.
 """
 # PolyFit{1} (LinearFit) - 2 points, O(h)
 @inline function _compute_deriv1(::PolyFit{1}, ::Val{:left}, f::NTuple{2,T}, inv_h::T) where {T<:AbstractFloat}
-    (f[2] - f[1]) * inv_h
+    return (f[2] - f[1]) * inv_h
 end
 
 @inline function _compute_deriv1(::PolyFit{1}, ::Val{:right}, f::NTuple{2,T}, inv_h::T) where {T<:AbstractFloat}
-    (f[2] - f[1]) * inv_h  # Same as left for linear
+    return (f[2] - f[1]) * inv_h  # Same as left for linear
 end
 
 # PolyFit{2} (ParabolaFit) - 3 points, O(h²)
 @inline function _compute_deriv1(::PolyFit{2}, ::Val{:left}, f::NTuple{3,T}, inv_h::T) where {T<:AbstractFloat}
     # Coefficients: (-3, 4, -1) / 2
     coeff = inv_h / 2
-    muladd(T(-3), f[1], muladd(T(4), f[2], -f[3])) * coeff
+    return muladd(T(-3), f[1], muladd(T(4), f[2], -f[3])) * coeff
 end
 
 @inline function _compute_deriv1(::PolyFit{2}, ::Val{:right}, f::NTuple{3,T}, inv_h::T) where {T<:AbstractFloat}
     # Coefficients: (1, -4, 3) / 2
     coeff = inv_h / 2
-    muladd(T(1), f[1], muladd(T(-4), f[2], T(3) * f[3])) * coeff
+    return muladd(T(1), f[1], muladd(T(-4), f[2], T(3) * f[3])) * coeff
 end
 
 # PolyFit{3} (CubicFit) - 4 points, O(h³)
 @inline function _compute_deriv1(::PolyFit{3}, ::Val{:left}, f::NTuple{4,T}, inv_h::T) where {T<:AbstractFloat}
     # Coefficients: (-11, 18, -9, 2) / 6
     coeff = inv_h / 6
-    muladd(T(-11), f[1], muladd(T(18), f[2], muladd(T(-9), f[3], T(2) * f[4]))) * coeff
+    return muladd(T(-11), f[1], muladd(T(18), f[2], muladd(T(-9), f[3], T(2) * f[4]))) * coeff
 end
 
 @inline function _compute_deriv1(::PolyFit{3}, ::Val{:right}, f::NTuple{4,T}, inv_h::T) where {T<:AbstractFloat}
     # Coefficients: (-2, 9, -18, 11) / 6
     coeff = inv_h / 6
-    muladd(T(-2), f[1], muladd(T(9), f[2], muladd(T(-18), f[3], T(11) * f[4]))) * coeff
+    return muladd(T(-2), f[1], muladd(T(9), f[2], muladd(T(-18), f[3], T(11) * f[4]))) * coeff
+end
+
+# Generic fallback for D > 3 (uses barycentric differentiation)
+# Julia dispatch ensures D=1,2,3 use the specialized methods above.
+@inline function _compute_deriv1(
+    pf::PolyFit{D}, side::Val{S}, f::NTuple{N,T}, inv_h::T
+) where {D, S, N, T<:AbstractFloat}
+    # Compute coefficients on reference grid t = 0, 1, ..., D
+    c = Vector{T}(undef, N)
+    β = Vector{T}(undef, N)
+    t = Vector{T}(undef, N)
+    @inbounds for i in 1:N
+        t[i] = T(i - 1)
+    end
+    _compute_deriv1_coeffs!(c, β, pf, side, t)
+
+    # Scale by inv_h and compute weighted sum
+    s = zero(T)
+    @inbounds for i in 1:N
+        s = muladd(c[i] * inv_h, f[i], s)
+    end
+    return s
 end
 
 
@@ -137,12 +222,12 @@ Use with `_weighted_sum(coeffs, f_values)` to compute the derivative.
 # PolyFit{1} (LinearFit) - 2 points
 @inline function _compute_deriv1_coeffs(::PolyFit{1}, ::Val{:left}, x::NTuple{2,T}) where {T<:AbstractFloat}
     inv_dx = inv(x[2] - x[1])
-    (-inv_dx, inv_dx)
+    return (-inv_dx, inv_dx)
 end
 
 @inline function _compute_deriv1_coeffs(::PolyFit{1}, ::Val{:right}, x::NTuple{2,T}) where {T<:AbstractFloat}
     inv_dx = inv(x[2] - x[1])
-    (-inv_dx, inv_dx)  # Same as left for linear
+    return (-inv_dx, inv_dx)  # Same as left for linear
 end
 
 # PolyFit{2} (ParabolaFit) - 3 points
@@ -153,7 +238,7 @@ end
     c1 = (d12 + d13) / (d12 * d13)
     c2 = d13 / ((-d12) * d23)
     c3 = d12 / (d13 * d23)
-    (c1, c2, c3)
+    return (c1, c2, c3)
 end
 
 @inline function _compute_deriv1_coeffs(::PolyFit{2}, ::Val{:right}, x::NTuple{3,T}) where {T<:AbstractFloat}
@@ -162,7 +247,7 @@ end
     c1 = (-d23) / (d12 * d13)
     c2 = d13 / (d12 * d23)
     c3 = (-(d13 + d23)) / (d13 * d23)
-    (c1, c2, c3)
+    return (c1, c2, c3)
 end
 
 # PolyFit{3} (CubicFit) - 4 points
@@ -175,7 +260,7 @@ end
     c2 = (d13 * d14) / ((-d12) * d23 * d24)
     c3 = (d12 * d14) / (d13 * d23 * d34)
     c4 = (d12 * d13) / ((-d14) * d24 * d34)
-    (c1, c2, c3, c4)
+    return (c1, c2, c3, c4)
 end
 
 @inline function _compute_deriv1_coeffs(::PolyFit{3}, ::Val{:right}, x::NTuple{4,T}) where {T<:AbstractFloat}
@@ -187,7 +272,148 @@ end
     c2 = (d14 * d34) / ((-d12) * d23 * d24)
     c3 = (d14 * d24) / (d13 * d23 * d34)
     c4 = L4_numer / ((-d14) * d24 * d34)
-    (c1, c2, c3, c4)
+    return (c1, c2, c3, c4)
+end
+
+# Generic fallback for D > 3 (uses barycentric differentiation)
+# Returns NTuple for compatibility with _weighted_sum.
+# Julia dispatch ensures D=1,2,3 use the specialized methods above.
+@inline function _compute_deriv1_coeffs(
+    pf::PolyFit{D}, side::Val{S}, x::NTuple{N,T}
+) where {D, S, N, T<:AbstractFloat}
+    c = Vector{T}(undef, N)
+    β = Vector{T}(undef, N)
+    x_vec = collect(x)
+    _compute_deriv1_coeffs!(c, β, pf, side, x_vec)
+    return ntuple(i -> @inbounds(c[i]), Val(N))
+end
+
+
+# ----------------------------------------
+# Generic Barycentric Differentiation (D > 3)
+# ----------------------------------------
+# For polynomial degrees D > 3, we use the barycentric differentiation
+# formula which works for any number of points on any grid spacing.
+#
+# Math: Given N points, the derivative at node x_k is:
+#   f'(x_k) = Σ_i c_i * f_i
+# where:
+#   β_i = 1 / Π_{j≠i} (x_i - x_j)          (barycentric weights)
+#   c_i = β_i / (β_k * (x_k - x_i))        for i ≠ k
+#   c_k = -Σ_{i≠k} c_i                     (diagonal element)
+
+"""
+    _barycentric_weights!(β::AbstractVector{T}, x::AbstractVector{T}, ::Val{N}) -> β
+
+In-place computation of barycentric weights β_i = 1 / Π_{j≠i} (x_i - x_j).
+
+# Arguments
+- `β::AbstractVector{T}`: Output buffer of length N (mutated)
+- `x::AbstractVector{T}`: Grid coordinates (length ≥ N)
+- `::Val{N}`: Number of points to use
+
+# Returns
+- `β`: The same buffer, now containing the barycentric weights
+"""
+@inline function _barycentric_weights!(
+    β::AbstractVector{T}, x::AbstractVector{T}, ::Val{N}
+) where {N,T<:AbstractFloat}
+    @assert length(β) >= N "Buffer β must have length ≥ $N"
+    @assert length(x) >= N "Input x must have length ≥ $N"
+    @inbounds for i in 1:N
+        xi = x[i]
+        wi = one(T)
+        for j in 1:N
+            j == i && continue
+            wi *= inv(xi - x[j])
+        end
+        β[i] = wi
+    end
+    return β
+end
+
+"""
+    _d1_coeffs_at_node!(c, β, x::AbstractVector{T}, k::Int, ::Val{N}) -> c
+
+In-place computation of first-derivative coefficients at node x_k.
+
+Uses barycentric formula:
+- c_i = β_i / (β_k * (x_k - x_i)) for i ≠ k
+- c_k = -Σ_{i≠k} c_i
+
+# Arguments
+- `c::AbstractVector{T}`: Output buffer of length N for coefficients (mutated)
+- `β::AbstractVector{T}`: Workspace buffer of length N for barycentric weights (mutated)
+- `x::AbstractVector{T}`: Grid coordinates (length ≥ N)
+- `k::Int`: Node index (1 for left endpoint, N for right endpoint)
+- `::Val{N}`: Number of points to use
+
+# Returns
+- `c`: The same buffer, now containing the derivative coefficients
+"""
+@inline function _d1_coeffs_at_node!(
+    c::AbstractVector{T}, β::AbstractVector{T}, x::AbstractVector{T}, k::Int, ::Val{N}
+) where {N,T<:AbstractFloat}
+    @assert length(c) >= N "Buffer c must have length ≥ $N"
+    @assert length(β) >= N "Buffer β must have length ≥ $N"
+    @assert length(x) >= N "Input x must have length ≥ $N"
+    @assert 1 <= k <= N "Node index k=$k must be in 1:$N"
+
+    # Compute barycentric weights in-place
+    _barycentric_weights!(β, x, Val(N))
+
+    @inbounds xk = x[k]
+    @inbounds βk = β[k]
+
+    # Compute coefficients and accumulate sum for diagonal
+    s = zero(T)
+    @inbounds for i in 1:N
+        if i == k
+            c[i] = zero(T)  # placeholder, will be overwritten
+        else
+            c[i] = β[i] / (βk * (xk - x[i]))
+            s += c[i]
+        end
+    end
+
+    # Diagonal element
+    @inbounds c[k] = -s
+
+    return c
+end
+
+
+# ----------------------------------------
+# Generic PolyFit{D} Coefficient Computation (D > 3)
+# ----------------------------------------
+# Julia dispatch prefers the more specific D=1,2,3 methods above.
+
+"""
+    _compute_deriv1_coeffs!(c, β, ::PolyFit{D}, side::Val{S}, x::AbstractVector{T}) -> c
+
+In-place computation of derivative coefficients for generic polynomial degree D.
+
+This is the generic fallback for D > 3. For D = 1, 2, 3, the specialized
+`_compute_deriv1_coeffs` methods (which return NTuple) are used instead.
+
+# Arguments
+- `c::AbstractVector{T}`: Output buffer for coefficients (length ≥ D+1)
+- `β::AbstractVector{T}`: Workspace buffer for barycentric weights (length ≥ D+1)
+- `::PolyFit{D}`: Polynomial degree
+- `side::Val{:left}` or `Val{:right}`: Which endpoint
+- `x::AbstractVector{T}`: Grid coordinates (length ≥ D+1)
+
+# Returns
+- `c`: The coefficient buffer, now containing the derivative coefficients
+"""
+@inline function _compute_deriv1_coeffs!(
+    c::AbstractVector{T}, β::AbstractVector{T},
+    ::PolyFit{D}, side::Val{S}, x::AbstractVector{T}
+) where {D,S,T<:AbstractFloat}
+    @assert S === :left || S === :right "Invalid side: Val(:$S). Must be Val(:left) or Val(:right)."
+    N = D + 1
+    k = (S === :left) ? 1 : N
+    _d1_coeffs_at_node!(c, β, x, k, Val(N))
 end
 
 
@@ -206,14 +432,69 @@ end
 
 
 # ----------------------------------------
-# Helper: Extract stencil values as NTuple
+# Helper: Extract stencil values
 # ----------------------------------------
+
+"""
+    _extract_stencil_view(v::AbstractVector, ::Val{:left}, ::Val{N}) -> SubArray
+    _extract_stencil_view(v::AbstractVector, ::Val{:right}, ::Val{N}) -> SubArray
+
+Extract N values from left or right endpoint as a view (allocation-free).
+
+# Returns
+- `SubArray` view into the original vector
+"""
+@inline function _extract_stencil_view(v::AbstractVector{T}, ::Val{:left}, ::Val{N}) where {T, N}
+    @inbounds @view v[1:N]
+end
+
+@inline function _extract_stencil_view(v::AbstractVector{T}, ::Val{:right}, ::Val{N}) where {T, N}
+    n = length(v)
+    @inbounds @view v[(n - N + 1):n]
+end
+
+"""
+    _extract_stencil_values!(out::AbstractVector, v::AbstractVector, ::Val{:left}, ::Val{N}) -> out
+    _extract_stencil_values!(out::AbstractVector, v::AbstractVector, ::Val{:right}, ::Val{N}) -> out
+
+In-place extraction of N values from left or right endpoint into output buffer.
+
+# Arguments
+- `out::AbstractVector{T}`: Output buffer (length ≥ N)
+- `v::AbstractVector{T}`: Source vector
+- `::Val{:left}` or `::Val{:right}`: Which endpoint
+- `::Val{N}`: Number of values to extract
+
+# Returns
+- `out`: The same buffer, now containing the extracted values
+"""
+@inline function _extract_stencil_values!(
+    out::AbstractVector{T}, v::AbstractVector{T}, ::Val{:left}, ::Val{N}
+) where {T, N}
+    @inbounds for i in 1:N
+        out[i] = v[i]
+    end
+    return out
+end
+
+@inline function _extract_stencil_values!(
+    out::AbstractVector{T}, v::AbstractVector{T}, ::Val{:right}, ::Val{N}
+) where {T, N}
+    n = length(v)
+    @inbounds for i in 1:N
+        out[i] = v[n - N + i]
+    end
+    return out
+end
 
 """
     _extract_stencil_values(v::AbstractVector, ::Val{:left}, ::Val{N}) -> NTuple{N}
     _extract_stencil_values(v::AbstractVector, ::Val{:right}, ::Val{N}) -> NTuple{N}
 
 Extract N values from left or right endpoint as NTuple for kernel dispatch.
+
+Note: For allocation-free usage, prefer `_extract_stencil_view` or
+`_extract_stencil_values!` with a preallocated buffer.
 """
 @inline function _extract_stencil_values(v::AbstractVector{T}, ::Val{:left}, ::Val{N}) where {T, N}
     @inbounds ntuple(i -> v[i], Val(N))
@@ -226,120 +507,76 @@ end
 
 
 # ----------------------------------------
-# CubicFit (PolyFit{3}) - 4-point formulas
+# Unified Endpoint Derivative Estimation
 # ----------------------------------------
+# Simple unified API for all polynomial degrees.
+# Kernel functions (_compute_deriv1, _compute_deriv1_coeffs) handle
+# D-specific dispatch internally via Julia's type dispatch system.
 
 """
-    _estimate_endpoint_derivative(xs, ys, ::Val{:left}, ::PolyFit{3}) -> T
-
-Estimate first derivative at LEFT endpoint using 4-point CubicFit formula.
-
-# Arguments
-- `xs`: Grid coordinates (AbstractRange for uniform, AbstractVector for non-uniform)
-- `ys::AbstractVector{T}`: Function values (must have ≥4 elements)
-- `::Val{:left}`: Dispatch tag for left endpoint
-- `::PolyFit{3}`: CubicFit boundary condition (4-point, O(h³))
-
-# Returns
-- Estimated f'(x₁) using formula: (-11f₁ + 18f₂ - 9f₃ + 2f₄) / (6h) for uniform grids
+Maximum recommended polynomial degree for endpoint derivative estimation.
+Higher degrees (D > 6) may amplify numerical noise in the data.
 """
-@inline function _estimate_endpoint_derivative(
-    xs::AbstractRange{T}, ys::AbstractVector{T}, side::Val{S}, ::PolyFit{3}
-) where {T<:AbstractFloat, S}
-    @inbounds begin
-        f = _extract_stencil_values(ys, side, Val(4))
-        inv_h = inv(T(step(xs)))
-        return _compute_deriv1(PolyFit{3}(), side, f, inv_h)
-    end
-end
+const MAX_RECOMMENDED_POLYFIT_DEGREE = 6
 
-@inline function _estimate_endpoint_derivative(
-    xs::AbstractVector{T}, ys::AbstractVector{T}, side::Val{S}, ::PolyFit{3}
-) where {T<:AbstractFloat, S}
-    @inbounds begin
-        x = _extract_stencil_values(xs, side, Val(4))
-        f = _extract_stencil_values(ys, side, Val(4))
-        c = _compute_deriv1_coeffs(PolyFit{3}(), side, x)
-        return _weighted_sum(c, f)
+# Thread-local warning tracker (avoids global state issues)
+const _polyfit_warning_issued = Ref(false)
+
+"""
+    _check_polyfit_degree(D::Int)
+
+Issue a one-time warning if polynomial degree exceeds recommendation.
+"""
+@noinline function _check_polyfit_degree(D::Int)
+    if D > MAX_RECOMMENDED_POLYFIT_DEGREE && !_polyfit_warning_issued[]
+        _polyfit_warning_issued[] = true
+        @warn "PolyFit{$D} uses $(D+1) points. For D > $MAX_RECOMMENDED_POLYFIT_DEGREE, " *
+              "numerical noise amplification may degrade accuracy. Consider D ≤ 6."
     end
+    nothing
 end
 
 
-# ----------------------------------------
-# ParabolaFit (PolyFit{2}) - 3-point formulas
-# ----------------------------------------
-
 """
-    _estimate_endpoint_derivative(xs, ys, side, ::PolyFit{2}) -> T
+    _estimate_endpoint_derivative(xs, ys, side, ::PolyFit{D}) -> T
 
-Estimate first derivative at endpoint using 3-point ParabolaFit formula.
+Estimate first derivative at endpoint using D+1 point polynomial fit.
 
 # Arguments
 - `xs`: Grid coordinates (AbstractRange for uniform, AbstractVector for non-uniform)
-- `ys::AbstractVector{T}`: Function values (must have ≥3 elements)
+- `ys::AbstractVector{T}`: Function values (must have ≥ D+1 elements)
 - `side`: `Val(:left)` or `Val(:right)` for endpoint selection
-- `::PolyFit{2}`: ParabolaFit boundary condition (3-point, O(h²))
+- `::PolyFit{D}`: Polynomial degree
 
-# Returns
-- Estimated derivative using formula: (-3f₁ + 4f₂ - f₃) / (2h) for uniform left
+# Supported Degrees
+- PolyFit{1} (LinearFit):   2 points, O(h) accuracy
+- PolyFit{2} (ParabolaFit): 3 points, O(h²) accuracy
+- PolyFit{3} (CubicFit):    4 points, O(h³) accuracy
+- PolyFit{D} (D > 3):       D+1 points, O(h^D) accuracy (barycentric method)
+
+# Implementation
+- D ≤ 3: Dispatches to specialized NTuple-based kernels (allocation-free)
+- D > 3: Dispatches to generic barycentric kernels (Vector-based)
 """
 @inline function _estimate_endpoint_derivative(
-    xs::AbstractRange{T}, ys::AbstractVector{T}, side::Val{S}, ::PolyFit{2}
-) where {T<:AbstractFloat, S}
+    xs::AbstractRange{T}, ys::AbstractVector{T}, side::Val{S}, pf::PolyFit{D}
+) where {T<:AbstractFloat, S, D}
+    D > 3 && _check_polyfit_degree(D)
     @inbounds begin
-        f = _extract_stencil_values(ys, side, Val(3))
+        f = _extract_stencil_values(ys, side, Val(D + 1))
         inv_h = inv(T(step(xs)))
-        return _compute_deriv1(PolyFit{2}(), side, f, inv_h)
+        return _compute_deriv1(pf, side, f, inv_h)
     end
 end
 
 @inline function _estimate_endpoint_derivative(
-    xs::AbstractVector{T}, ys::AbstractVector{T}, side::Val{S}, ::PolyFit{2}
-) where {T<:AbstractFloat, S}
+    xs::AbstractVector{T}, ys::AbstractVector{T}, side::Val{S}, pf::PolyFit{D}
+) where {T<:AbstractFloat, S, D}
+    D > 3 && _check_polyfit_degree(D)
     @inbounds begin
-        x = _extract_stencil_values(xs, side, Val(3))
-        f = _extract_stencil_values(ys, side, Val(3))
-        c = _compute_deriv1_coeffs(PolyFit{2}(), side, x)
-        return _weighted_sum(c, f)
-    end
-end
-
-
-# ----------------------------------------
-# LinearFit (PolyFit{1}) - 2-point formulas
-# ----------------------------------------
-
-"""
-    _estimate_endpoint_derivative(xs, ys, side, ::PolyFit{1}) -> T
-
-Estimate first derivative at endpoint using 2-point LinearFit (finite difference).
-
-# Arguments
-- `xs`: Grid coordinates (AbstractRange for uniform, AbstractVector for non-uniform)
-- `ys::AbstractVector{T}`: Function values (must have ≥2 elements)
-- `side`: `Val(:left)` or `Val(:right)` for endpoint selection
-- `::PolyFit{1}`: LinearFit boundary condition (2-point, O(h))
-
-# Returns
-- Estimated derivative using formula: (f₂ - f₁) / h for uniform grids
-"""
-@inline function _estimate_endpoint_derivative(
-    xs::AbstractRange{T}, ys::AbstractVector{T}, side::Val{S}, ::PolyFit{1}
-) where {T<:AbstractFloat, S}
-    @inbounds begin
-        f = _extract_stencil_values(ys, side, Val(2))
-        inv_h = inv(T(step(xs)))
-        return _compute_deriv1(PolyFit{1}(), side, f, inv_h)
-    end
-end
-
-@inline function _estimate_endpoint_derivative(
-    xs::AbstractVector{T}, ys::AbstractVector{T}, side::Val{S}, ::PolyFit{1}
-) where {T<:AbstractFloat, S}
-    @inbounds begin
-        x = _extract_stencil_values(xs, side, Val(2))
-        f = _extract_stencil_values(ys, side, Val(2))
-        c = _compute_deriv1_coeffs(PolyFit{1}(), side, x)
+        x = _extract_stencil_values(xs, side, Val(D + 1))
+        f = _extract_stencil_values(ys, side, Val(D + 1))
+        c = _compute_deriv1_coeffs(pf, side, x)
         return _weighted_sum(c, f)
     end
 end

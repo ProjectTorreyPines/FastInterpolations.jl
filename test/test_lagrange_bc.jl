@@ -1340,6 +1340,238 @@ end
 end
 
 # ========================================
+# PolyFit{D > 3} Generic Implementation Tests
+# ========================================
+# Tests for the generic barycentric differentiation fallback
+# that handles polynomial degrees D > 3.
+
+@testset "PolyFit{D > 3} Generic Implementation" begin
+    @testset "Generic _weighted_sum for N > 4" begin
+        # Test that _weighted_sum works for tuple sizes > 4
+        for N in [5, 6, 7, 8]
+            c = ntuple(i -> Float64(i), N)
+            f = ntuple(i -> 1.0, N)
+            # Should compute Σ i * 1 = 1+2+...+N = N*(N+1)/2
+            expected = N * (N + 1) / 2
+            result = FastInterpolations._weighted_sum(c, f)
+            @test result ≈ expected rtol=1e-14
+        end
+
+        # Test with alternating signs
+        c5 = (-1.0, 2.0, -3.0, 4.0, -5.0)
+        f5 = (1.0, 1.0, 1.0, 1.0, 1.0)
+        @test FastInterpolations._weighted_sum(c5, f5) ≈ -1 + 2 - 3 + 4 - 5 rtol=1e-14
+    end
+
+    @testset "Barycentric Weights Computation" begin
+        # Test _barycentric_weights! on simple cases (Vector-based API)
+        # For uniform nodes [0, 1, 2], weights should follow pattern
+        x3 = [0.0, 1.0, 2.0]
+        β3 = Vector{Float64}(undef, 3)
+        FastInterpolations._barycentric_weights!(β3, x3, Val(3))
+        # β_0 = 1/((0-1)(0-2)) = 1/((-1)(-2)) = 0.5
+        # β_1 = 1/((1-0)(1-2)) = 1/(1*(-1)) = -1
+        # β_2 = 1/((2-0)(2-1)) = 1/(2*1) = 0.5
+        @test β3[1] ≈ 0.5 rtol=1e-14
+        @test β3[2] ≈ -1.0 rtol=1e-14
+        @test β3[3] ≈ 0.5 rtol=1e-14
+
+        # Test on 5-point uniform grid [0, 1, 2, 3, 4]
+        x5 = [0.0, 1.0, 2.0, 3.0, 4.0]
+        β5 = Vector{Float64}(undef, 5)
+        FastInterpolations._barycentric_weights!(β5, x5, Val(5))
+        # All weights should be finite and non-zero
+        for i in 1:5
+            @test isfinite(β5[i])
+            @test β5[i] != 0.0
+        end
+    end
+
+    @testset "D=4 (QuarticFit) Known Coefficients - Uniform Grid" begin
+        h = 1.0
+        x = collect(0.0:h:4.0)  # 5 points: [0, 1, 2, 3, 4]
+        inv_h = inv(h)
+
+        # Known FDM coefficients for 5-point left endpoint:
+        # f'(x_0) = (-25f_0 + 48f_1 - 36f_2 + 16f_3 - 3f_4) / (12h)
+        expected_left = (-25.0, 48.0, -36.0, 16.0, -3.0) ./ 12.0 .* inv_h
+
+        # Compute coefficients using in-place Vector API
+        c_left = Vector{Float64}(undef, 5)
+        β_left = Vector{Float64}(undef, 5)
+        FastInterpolations._compute_deriv1_coeffs!(c_left, β_left, PolyFit{4}(), Val(:left), x)
+
+        for i in 1:5
+            @test c_left[i] ≈ expected_left[i] rtol=1e-12
+        end
+
+        # Right endpoint: (-3f_0 + 16f_1 - 36f_2 + 48f_3 - 25f_4) / (12h)
+        # (negative reverse of left)
+        expected_right = (3.0, -16.0, 36.0, -48.0, 25.0) ./ 12.0 .* inv_h
+        c_right = Vector{Float64}(undef, 5)
+        β_right = Vector{Float64}(undef, 5)
+        FastInterpolations._compute_deriv1_coeffs!(c_right, β_right, PolyFit{4}(), Val(:right), x)
+
+        for i in 1:5
+            @test c_right[i] ≈ expected_right[i] rtol=1e-12
+        end
+    end
+
+    @testset "D=5 (QuinticFit) Known Coefficients - Uniform Grid" begin
+        h = 1.0
+        x = collect(0.0:h:5.0)  # 6 points
+
+        # Known FDM coefficients for 6-point left endpoint:
+        # f'(x_0) = (-137f_0 + 300f_1 - 300f_2 + 200f_3 - 75f_4 + 12f_5) / (60h)
+        expected_left = (-137.0, 300.0, -300.0, 200.0, -75.0, 12.0) ./ 60.0
+
+        c_left = Vector{Float64}(undef, 6)
+        β_left = Vector{Float64}(undef, 6)
+        FastInterpolations._compute_deriv1_coeffs!(c_left, β_left, PolyFit{5}(), Val(:left), x)
+
+        for i in 1:6
+            @test c_left[i] ≈ expected_left[i] rtol=1e-12
+        end
+    end
+
+    @testset "Polynomial Reproduction: x^D Uniform Grid" begin
+        # If f(x) = x^D, then f'(x) = D*x^(D-1)
+        # At x=0: f'(0) = 0 for D > 1
+        # At x=1: f'(1) = D
+
+        for D in [4, 5, 6]
+            h = 0.1
+            n_points = D + 5  # Enough points
+            xs = 0.0:h:(h * (n_points - 1))
+            ys = collect(xs) .^ D
+
+            # Left endpoint: f'(0) = 0
+            deriv_left = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:left), PolyFit{D}()
+            )
+            @test deriv_left ≈ 0.0 atol=1e-10
+
+            # Right endpoint: f'(x_end) = D * x_end^(D-1)
+            x_end = xs[end]
+            expected_right = D * x_end^(D - 1)
+            deriv_right = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:right), PolyFit{D}()
+            )
+            @test deriv_right ≈ expected_right rtol=1e-10
+        end
+    end
+
+    @testset "Polynomial Reproduction: x^D Non-Uniform Grid" begin
+        # Non-uniform grid test using Vector instead of Range
+        for D in [4, 5]
+            # Non-uniform spacing
+            xs = [0.0, 0.1, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0][1:(D+1)]
+            ys = xs .^ D
+
+            # f'(0) = 0 for D > 1
+            deriv_left = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:left), PolyFit{D}()
+            )
+            @test deriv_left ≈ 0.0 atol=1e-10
+
+            # f'(x_end) = D * x_end^(D-1)
+            x_end = xs[end]
+            expected_right = D * x_end^(D - 1)
+            deriv_right = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:right), PolyFit{D}()
+            )
+            @test deriv_right ≈ expected_right rtol=1e-9
+        end
+    end
+
+    @testset "Integration with cubic_interp" begin
+        # Test that PolyFit{4} and PolyFit{5} work with cubic_interp
+        xs = 0.0:0.1:1.0
+        ys = sin.(xs)
+
+        # QuarticFit should work (needs 5+ points, we have 11)
+        result_q4 = cubic_interp(xs, ys, 0.5; bc=PolyFit{4}())
+        @test isfinite(result_q4)
+
+        # QuinticFit should work (needs 6+ points, we have 11)
+        result_q5 = cubic_interp(xs, ys, 0.5; bc=PolyFit{5}())
+        @test isfinite(result_q5)
+
+        # Using Interpolant constructor
+        itp_q4 = cubic_interp(xs, ys; bc=PolyFit{4}())
+        @test itp_q4(0.5) ≈ result_q4 rtol=1e-14
+
+        itp_q5 = cubic_interp(xs, ys; bc=PolyFit{5}())
+        @test itp_q5(0.5) ≈ result_q5 rtol=1e-14
+    end
+
+    @testset "Regression: D=1,2,3 Unchanged" begin
+        # Verify that existing D=1,2,3 behavior is preserved
+        xs = 0.0:0.1:1.0
+        ys = sin.(xs)
+
+        # D=1: (f[2] - f[1]) * inv_h
+        inv_h = inv(0.1)
+        expected_d1_left = (ys[2] - ys[1]) * inv_h
+        result_d1_left = FastInterpolations._estimate_endpoint_derivative(
+            xs, ys, Val(:left), PolyFit{1}()
+        )
+        @test result_d1_left ≈ expected_d1_left rtol=1e-14
+
+        # D=2: (-3f₁ + 4f₂ - f₃) / (2h)
+        expected_d2_left = (-3 * ys[1] + 4 * ys[2] - ys[3]) / (2 * 0.1)
+        result_d2_left = FastInterpolations._estimate_endpoint_derivative(
+            xs, ys, Val(:left), PolyFit{2}()
+        )
+        @test result_d2_left ≈ expected_d2_left rtol=1e-14
+
+        # D=3: (-11f₁ + 18f₂ - 9f₃ + 2f₄) / (6h)
+        expected_d3_left = (-11 * ys[1] + 18 * ys[2] - 9 * ys[3] + 2 * ys[4]) / (6 * 0.1)
+        result_d3_left = FastInterpolations._estimate_endpoint_derivative(
+            xs, ys, Val(:left), PolyFit{3}()
+        )
+        @test result_d3_left ≈ expected_d3_left rtol=1e-14
+    end
+
+    @testset "Barycentric vs Specialized Equivalence (D=1,2,3)" begin
+        # Verify generic barycentric path produces identical results
+        # to specialized D=1,2,3 implementations (NTuple-returning versions)
+        test_grids = [
+            (0.0, 0.1),                    # D=1
+            (0.0, 0.1, 0.2),               # D=2
+            (0.0, 0.1, 0.2, 0.3),          # D=3
+            (0.0, 0.12, 0.35),             # D=2 non-uniform
+            (0.0, 0.08, 0.22, 0.4),        # D=3 non-uniform
+        ]
+
+        for x_tuple in test_grids
+            D = length(x_tuple) - 1
+            N = D + 1
+            x_vec = collect(x_tuple)
+
+            for side in (:left, :right)
+                # Specialized path (NTuple-returning, for D=1,2,3)
+                c_specialized = FastInterpolations._compute_deriv1_coeffs(
+                    PolyFit{D}(), Val(side), x_tuple
+                )
+
+                # Generic barycentric path (Vector-based, in-place)
+                c_barycentric = Vector{Float64}(undef, N)
+                β_barycentric = Vector{Float64}(undef, N)
+                k = (side === :left) ? 1 : N
+                FastInterpolations._d1_coeffs_at_node!(c_barycentric, β_barycentric, x_vec, k, Val(N))
+
+                # Compare element-wise (NTuple vs Vector)
+                for i in 1:N
+                    @test c_specialized[i] ≈ c_barycentric[i] rtol=1e-14
+                end
+            end
+        end
+    end
+
+end
+
+# ========================================
 # Note: FDMBC Tests Not Needed
 # ========================================
 # Analysis showed that Lagrange polynomial derivative estimation

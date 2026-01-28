@@ -31,8 +31,8 @@ BenchmarkTools.DEFAULT_PARAMETERS.samples = BENCH_SAMPLES
 
 # Fixed evals and seconds by query size (skip auto-tuning for more stable results)
 # Higher evals/seconds = more stable measurements for fast operations
-const EVALS_TINY = 10_000   # nq ≤ 5: ~1-5μs benchmarks
-const EVALS_SMALL = 1_000   # nq ≤ 100: ~5-20μs benchmarks
+const EVALS_TINY = 100      # nq ≤ 5: ~1-5μs benchmarks (prevent long samples impacting minimum)
+const EVALS_SMALL = 100     # nq ≤ 100: ~5-20μs benchmarks
 const EVALS_MED = 100       # nq ≤ 1000: ~20-100μs benchmarks
 const EVALS_LARGE = 10      # nq > 1000: ~100μs+ benchmarks
 

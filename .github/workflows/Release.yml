@@ -3,11 +3,6 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      skip_benchmark:
-        description: 'Skip benchmark plot generation'
-        required: false
-        default: false
-        type: boolean
       skip_register:
         description: 'Skip JuliaRegistrator call (manual registration)'
         required: false
@@ -17,54 +12,46 @@ on:
 permissions:
   contents: write
 
-# Prevent concurrent releases (avoid race conditions)
+# Prevent concurrent releases
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
+  # ──────────────────────────────────────────────────────────────
+  # JOB 1: Run Benchmark & Update README (Standalone Logic)
+  # ──────────────────────────────────────────────────────────────
+  benchmark:
+    uses: ./.github/workflows/UpdateREADME.yml
+
+  # ──────────────────────────────────────────────────────────────
+  # JOB 2: Finalize Release (Commit & Register)
+  # ──────────────────────────────────────────────────────────────
   release:
     name: Release
+    needs: benchmark
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Read version from Project.toml
-        id: version
-        run: |
-          # Robust parsing: handles 'version = "X.Y.Z"' or 'version="X.Y.Z"' (with/without spaces)
-          VERSION=$(grep '^version' Project.toml | sed -E 's/version[[:space:]]*=[[:space:]]*"([^"]+)"/\1/')
-          if [ -z "$VERSION" ]; then
-            echo "❌ Failed to parse version from Project.toml"
-            exit 1
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "📦 Current version: $VERSION"
-
-      # ──────────────────────────────────────────────────────────────
-      # Safety checks
-      # ──────────────────────────────────────────────────────────────
-      - name: Validate version format
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
-            echo "❌ Invalid version format: $VERSION"
-            echo "   Expected: X.Y.Z or X.Y.Z-suffix (semver)"
-            exit 1
-          fi
-          echo "✅ Version format valid: $VERSION"
-
+      # ----------------------------------------------------
+      # Pre-release checks
+      # ----------------------------------------------------
       - name: Check branch is master
         run: |
           BRANCH=$(git rev-parse --abbrev-ref HEAD)
           if [ "$BRANCH" != "master" ] && [ "$BRANCH" != "main" ]; then
             echo "❌ Release must be run from master/main branch"
-            echo "   Current branch: $BRANCH"
             exit 1
           fi
-          echo "✅ On branch: $BRANCH"
+
+      - name: Read version from Project.toml
+        id: version
+        run: |
+          VERSION=$(grep '^version' Project.toml | sed -E 's/version[[:space:]]*=[[:space:]]*"([^"]+)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Release Version: $VERSION"
 
       - name: Check tag does not exist
         run: |
@@ -72,21 +59,9 @@ jobs:
           git fetch --tags
           if git tag -l | grep -q "^${VERSION}$"; then
             echo "❌ Tag $VERSION already exists!"
-            echo "   This version has already been released."
-            echo "   Bump the version in Project.toml first."
             exit 1
           fi
-          echo "✅ Tag $VERSION does not exist yet"
-
-      - name: Check README benchmark markers
-        if: ${{ !inputs.skip_benchmark }}
-        run: |
-          if ! grep -q "BENCHMARK_VERSIONS_START" README.md; then
-            echo "❌ README.md is missing <!-- BENCHMARK_VERSIONS_START --> marker"
-            echo "   Add the marker to enable automatic benchmark version updates"
-            exit 1
-          fi
-          echo "✅ README benchmark markers found"
+          echo "✅ Tag $VERSION is available"
 
       - name: Check release notes exist
         id: release_notes
@@ -94,161 +69,71 @@ jobs:
           NOTES_FILE="docs/release_notes/v${{ steps.version.outputs.version }}.md"
           if [ -f "$NOTES_FILE" ]; then
             echo "found=true" >> $GITHUB_OUTPUT
-            echo "file=$NOTES_FILE" >> $GITHUB_OUTPUT
             echo "✅ Release notes found: $NOTES_FILE"
           else
             echo "found=false" >> $GITHUB_OUTPUT
-            echo "⚠️ Release notes not found: $NOTES_FILE"
-            echo "   Will use auto-generated notes from TagBot"
+            echo "⚠️ No custom release notes found (TagBot will auto-generate)"
           fi
 
-      - name: Setup Julia
-        uses: julia-actions/setup-julia@v2
+      # ----------------------------------------------------
+      # Restore Benchmark Results
+      # ----------------------------------------------------
+      - name: Download Benchmark Results
+        uses: actions/download-artifact@v4
         with:
-          version: '1'
+          name: benchmark-results
+          # Downloads to current directory (overwriting README.md and docs/images/)
 
-      - name: Cache Julia artifacts
-        uses: julia-actions/cache@v2
-
-      # ──────────────────────────────────────────────────────────────
-      # Benchmark plot generation (optional)
-      # ──────────────────────────────────────────────────────────────
-      - name: Add registries
-        if: ${{ !inputs.skip_benchmark }}
+      - name: Verify Artifacts
         run: |
-          julia -e 'using Pkg
-            Pkg.Registry.add(RegistrySpec(url="https://github.com/ProjectTorreyPines/FuseRegistry.jl.git"))
-            Pkg.Registry.add("General")
-            Pkg.Registry.update()'
+          ls -l README.md
+          ls -l docs/images/benchmark_oneshot_detail.png
+          echo "✅ Benchmark artifacts restored"
 
-      - name: Install benchmark dependencies
-        if: ${{ !inputs.skip_benchmark }}
-        run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Generate benchmark plot
-        if: ${{ !inputs.skip_benchmark }}
-        run: julia --project=benchmark benchmark/run_readme_benchmark.jl
-
-      - name: Update benchmark versions in README
-        if: ${{ !inputs.skip_benchmark }}
-        env:
-          PKG_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          # Extract package versions using Julia and update README directly
-          julia --project=benchmark -e '
-            using Pkg
-            using JSON
-
-            # Helper to get version from installed packages
-            function get_pkg_version(name::String)
-                deps = Pkg.dependencies()
-                for (uuid, info) in deps
-                    if info.name == name && info.version !== nothing
-                        return string(info.version)
-                    end
-                end
-                return "?"
-            end
-
-            itp_ver = get_pkg_version("Interpolations")
-            di_ver = get_pkg_version("DataInterpolations")
-            pkg_ver = ENV["PKG_VERSION"]
-            julia_ver = "$(VERSION.major).$(VERSION.minor).$(VERSION.patch)"
-
-            # Read speedup summary
-            summary = JSON.parsefile(joinpath("benchmark", "speedup_summary.json"))
-            
-            format_range(min_val, max_val) = "$(round(min_val, digits=1)) ~ $(round(max_val, digits=1))"
-            
-            s_itp = format_range(summary["itp_min"], summary["itp_max"])
-            s_di = format_range(summary["di_min"], summary["di_max"])
-
-            println("Versions: FastInterpolations v$pkg_ver, Interpolations v$itp_ver, DataInterpolations v$di_ver, Julia $julia_ver")
-            println("Speedups: $(s_itp)x (vs Itp), $(s_di)x (vs DataItp)")
-
-            # 1. Build Metadata Block (Env + Pkg)
-            meta_content = "<!-- BENCHMARK_VERSIONS_START -->\n" *
-                "> **Env:** GitHub Actions · \`ubuntu-latest\` · Julia $julia_ver<br>\n" *
-                "> **Pkg:** FastInterpolations (v$pkg_ver) · Interpolations (v$itp_ver) · DataInterpolations (v$di_ver)\n" *
-                "<!-- BENCHMARK_VERSIONS_END -->"
-
-            # 2. Build Speedup Block (Result)
-            speedup_content = "<!-- BENCHMARK_SPEEDUP_START -->\n" *
-                "**Speedup:** $(s_itp)× vs Interpolations.jl · $(s_di)× vs DataInterpolations.jl\n" *
-                "<!-- BENCHMARK_SPEEDUP_END -->"
-
-            # Read README
-            readme = read("README.md", String)
-
-            # Replace content between markers
-            # (1) Versions
-            pattern_ver = r"<!-- BENCHMARK_VERSIONS_START -->.*?<!-- BENCHMARK_VERSIONS_END -->"s
-            readme = replace(readme, pattern_ver => meta_content)
-
-            # (2) Speedup
-            pattern_spd = r"<!-- BENCHMARK_SPEEDUP_START -->.*?<!-- BENCHMARK_SPEEDUP_END -->"s
-            readme = replace(readme, pattern_spd => speedup_content)
-
-            # Write back
-            write("README.md", readme)
-            println("Updated README with new benchmark versions and speedups")
-          '
-
-          echo "Updated README (Versions):"
-          grep -A3 "BENCHMARK_VERSIONS_START" README.md
-          echo "Updated README (Speedup):"
-          grep -A3 "BENCHMARK_SPEEDUP_START" README.md
-
-      # ──────────────────────────────────────────────────────────────
-      # Commit and push
-      # ──────────────────────────────────────────────────────────────
+      # ----------------------------------------------------
+      # Commit & Push
+      # ----------------------------------------------------
       - name: Commit changes
         id: commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Force add updated files
           git add docs/images/ README.md
 
           if git diff --staged --quiet; then
-            echo "No changes to commit"
+            echo "No changes to commit (Strange for a benchmark update...)"
             echo "committed=false" >> $GITHUB_OUTPUT
-            # Get the latest commit SHA for registration
             echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
           else
             git commit -m "Update benchmark for v${{ steps.version.outputs.version }}"
-            # Explicit refspec for CI environment safety
             git push origin HEAD:master
             echo "✅ Changes committed and pushed"
             echo "committed=true" >> $GITHUB_OUTPUT
             echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
           fi
 
-      # ──────────────────────────────────────────────────────────────
-      # JuliaRegistrator call
-      # ──────────────────────────────────────────────────────────────
+      # ----------------------------------------------------
+      # Registration
+      # ----------------------------------------------------
       - name: Prepare registration comment
         if: ${{ !inputs.skip_register }}
-        id: comment_body
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           NOTES_FILE="docs/release_notes/v${VERSION}.md"
 
-          # Build the comment body
           if [ -f "$NOTES_FILE" ]; then
-            # With custom release notes
             BODY="@JuliaRegistrator register
 
           Release notes:
 
           $(cat "$NOTES_FILE")"
           else
-            # Without custom release notes (TagBot will auto-generate)
             BODY="@JuliaRegistrator register"
           fi
 
-          # Save to file for the next step (handles multiline properly)
           echo "$BODY" > /tmp/comment_body.txt
-          echo "✅ Registration comment prepared"
 
       - name: Call JuliaRegistrator
         if: ${{ !inputs.skip_register }}
@@ -257,30 +142,12 @@ jobs:
           sha: ${{ steps.commit.outputs.sha }}
           body-path: /tmp/comment_body.txt
 
-      # ──────────────────────────────────────────────────────────────
-      # Summary
-      # ──────────────────────────────────────────────────────────────
-      - name: Print summary
+      - name: Summary
         run: |
-          echo ""
-          echo "════════════════════════════════════════════════════════════"
-          echo "  ✅ Release v${{ steps.version.outputs.version }} prepared!"
-          echo "════════════════════════════════════════════════════════════"
-          echo ""
+          echo "🚀 Release Process Complete!"
           if [ "${{ inputs.skip_register }}" == "true" ]; then
-            echo "  📋 Registration skipped. Manual steps:"
-            echo ""
-            echo "  1. Go to commit: ${{ steps.commit.outputs.sha }}"
-            echo "  2. Comment: @JuliaRegistrator register"
-            echo "  3. (Optional) Add Release notes: section"
+            echo "⚠️ Registration skipped (manual mode)"
           else
-            echo "  📋 JuliaRegistrator has been called automatically!"
-            echo ""
-            echo "  Next steps (automatic):"
-            echo "  1. ⏳ Wait for Registry PR to be created"
-            echo "  2. ⏳ Wait for Registry PR to be merged (~3 min)"
-            echo "  3. 🏷️ TagBot will create the git tag"
-            echo "  4. 📚 Documentation will be built"
+            echo "✅ JuliaRegistrator called"
           fi
-          echo ""
-          echo "════════════════════════════════════════════════════════════"
+

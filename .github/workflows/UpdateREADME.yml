@@ -1,0 +1,128 @@
+name: Update Benchmark
+
+on:
+  # 독립적으로 실행하여 벤치마크/README 업데이트 테스트 가능
+  workflow_dispatch:
+  # Release 워크플로우에서 호출 가능
+  workflow_call:
+
+jobs:
+  benchmark:
+    name: Run Benchmark & Update README
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # 코드를 읽고 벤치마크를 돌리기 위함
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version from Project.toml
+        id: version
+        run: |
+          VERSION=$(grep '^version' Project.toml | sed -E 's/version[[:space:]]*=[[:space:]]*"([^"]+)"/\1/')
+          echo "PKG_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "📦 Target Version: $VERSION"
+
+      - name: Validate version format
+        run: |
+          if [[ ! "$PKG_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "❌ Invalid version format: $PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Setup Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v2
+
+      # ──────────────────────────────────────────────────────────────
+      # Benchmark Execution
+      # ──────────────────────────────────────────────────────────────
+      - name: Add registries
+        run: |
+          julia -e 'using Pkg
+            Pkg.Registry.add(RegistrySpec(url="https://github.com/ProjectTorreyPines/FuseRegistry.jl.git"))
+            Pkg.Registry.add("General")
+            Pkg.Registry.update()'
+
+      - name: Install benchmark dependencies
+        run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Generate benchmark plot
+        run: julia --project=benchmark benchmark/run_readme_benchmark.jl
+
+      - name: Update benchmark versions in README
+        run: |
+          julia --project=benchmark -e '
+            using Pkg
+            using JSON
+
+            # Helper to get version from installed packages
+            function get_pkg_version(name::String)
+                deps = Pkg.dependencies()
+                for (uuid, info) in deps
+                    if info.name == name && info.version !== nothing
+                        return string(info.version)
+                    end
+                end
+                return "?"
+            end
+
+            itp_ver = get_pkg_version("Interpolations")
+            di_ver = get_pkg_version("DataInterpolations")
+            pkg_ver = ENV["PKG_VERSION"]
+            julia_ver = "$(VERSION.major).$(VERSION.minor).$(VERSION.patch)"
+
+            # Read speedup summary
+            summary = JSON.parsefile(joinpath("benchmark", "speedup_summary.json"))
+            
+            format_range(min_val, max_val) = "$(round(min_val, digits=1)) ~ $(round(max_val, digits=1))"
+            
+            s_itp = format_range(summary["itp_min"], summary["itp_max"])
+            s_di = format_range(summary["di_min"], summary["di_max"])
+
+            println("Versions: FastInterpolations v$pkg_ver, Interpolations v$itp_ver, DataInterpolations v$di_ver, Julia $julia_ver")
+            println("Speedups: $(s_itp)x (vs Itp), $(s_di)x (vs DataItp)")
+
+            # 1. Build Metadata Block (Env + Pkg)
+            meta_content = "<!-- BENCHMARK_VERSIONS_START -->\n" *
+                "> **Env:** GitHub Actions · \`ubuntu-latest\` · Julia $julia_ver<br>\n" *
+                "> **Pkg:** FastInterpolations (v$pkg_ver) · Interpolations (v$itp_ver) · DataInterpolations (v$di_ver)\n" *
+                "<!-- BENCHMARK_VERSIONS_END -->"
+
+            # 2. Build Speedup Block (Result)
+            speedup_content = "<!-- BENCHMARK_SPEEDUP_START -->\n" *
+                "**Speedup:** $(s_itp)× vs Interpolations.jl · $(s_di)× vs DataInterpolations.jl\n" *
+                "<!-- BENCHMARK_SPEEDUP_END -->"
+
+            # Read README
+            readme = read("README.md", String)
+
+            # Replace content between markers
+            # (1) Versions
+            pattern_ver = r"<!-- BENCHMARK_VERSIONS_START -->.*?<!-- BENCHMARK_VERSIONS_END -->"s
+            readme = replace(readme, pattern_ver => meta_content)
+
+            # (2) Speedup
+            pattern_spd = r"<!-- BENCHMARK_SPEEDUP_START -->.*?<!-- BENCHMARK_SPEEDUP_END -->"s
+            readme = replace(readme, pattern_spd => speedup_content)
+
+            # Write back
+            write("README.md", readme)
+            println("Updated README with new benchmark versions and speedups")
+          '
+
+      # ──────────────────────────────────────────────────────────────
+      # Upload Artifacts (To be used by Release workflow or for inspection)
+      # ──────────────────────────────────────────────────────────────
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            README.md
+            docs/images/

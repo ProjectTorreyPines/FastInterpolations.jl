@@ -1859,7 +1859,7 @@ end
         
         # 1. Valid case: Sufficient points, low degree
         # D=3 requires 4 points, have 10. D <= 6 so no warning.
-        @test_nowarn FastInterpolations._check_polyfit_requirements(3, n)
+        @test FastInterpolations._check_polyfit_requirements(3, n) === nothing
 
         # 2. Insufficient points (Error)
         # D=5 requires 6 points, have 5.

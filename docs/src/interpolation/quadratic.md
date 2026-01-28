@@ -16,6 +16,8 @@ C¹-continuous spline interpolation with smooth first derivatives.
 
 **Default**: `Left(QuadraticFit())` — exact for quadratic polynomials.
 
+👉 See [Boundary Conditions Overview](../boundary-conditions/overview.md) for the complete BC type hierarchy and detailed explanations.
+
 ---
 
 ## Usage

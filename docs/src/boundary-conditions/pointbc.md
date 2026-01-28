@@ -134,7 +134,7 @@ for (title, bc, color) in bcs
         len = 0.8
         xt = [xi - len, xi + len]
         yt = yi .+ slope_est .* (xt .- xi)
-        plot!(p, xt, yt, color=color, linewidth=2, alpha=0.7, linestyle=:dot, label="boundary tangent")
+        plot!(p, xt, yt, color=color, linewidth=2, alpha=0.7, linestyle=:dash, label="boundary tangent")
 
         xi=xs[end]
         yi = itp(xi)
@@ -143,7 +143,7 @@ for (title, bc, color) in bcs
         # Draw estimated tangent
         xt = [xi - len, xi + len]
         yt = yi .+ slope_est .* (xt .- xi)
-        plot!(p, xt, yt, color=color, linewidth=2, alpha=0.7, linestyle=:dot, label=nothing)
+        plot!(p, xt, yt, color=color, linewidth=2, alpha=0.7, linestyle=:dash, label=nothing)
     # end
 
     push!(plots_list, p)

@@ -13,6 +13,8 @@ Cubic splines require boundary conditions at **both** endpoints. There are two f
 | **BCPair** | Standard tridiagonal | Independent constraints at each endpoint |
 | **PeriodicBC** | Sherman-Morrison cyclic | True periodic: ``S(x) = S(x+\tau)`` with C² continuity |
 
+👉 See [Boundary Conditions Overview](../boundary-conditions/overview.md) for the complete BC type hierarchy and detailed explanations.
+
 ### 1. BCPair: Independent Endpoint Constraints
 
 Each endpoint has its own `PointBC` constraint — either first or second derivative:

@@ -295,9 +295,11 @@ Points needed: 2
 # Example
 ```julia
 itp = cubic_interp(x, y; bc=LinearFit())
+itp32 = cubic_interp(Float32.(x), Float32.(y); bc=LinearFit{Float32}())
 ```
 """
-const LinearFit = PolyFit{1}
+const LinearFit{T<:AbstractFloat} = PolyFit{1, T}
+LinearFit() = LinearFit{Float64}()
 
 """
     QuadraticFit = PolyFit{2}
@@ -317,9 +319,11 @@ For uniform grids: `f'(x₁) ≈ (-3f₁ + 4f₂ - f₃) / (2h)`
 ```julia
 # Default BC for quadratic splines
 itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
+itp32 = quadratic_interp(Float32.(x), Float32.(y); bc=Left(QuadraticFit{Float32}()))
 ```
 """
-const QuadraticFit = PolyFit{2}
+const QuadraticFit{T<:AbstractFloat} = PolyFit{2, T}
+QuadraticFit() = QuadraticFit{Float64}()
 const ParabolaFit = QuadraticFit  # deprecated alias for backward compatibility
 
 
@@ -343,12 +347,14 @@ For uniform grids:
 ```julia
 # Recommended BC for cubic splines when derivative is unknown
 itp = cubic_interp(x, y; bc=CubicFit())
+itp32 = cubic_interp(Float32.(x), Float32.(y); bc=CubicFit{Float32}())
 
 # Mixed with other BCs
 itp = cubic_interp(x, y; bc=BCPair(CubicFit(), Deriv2(0)))
 ```
 """
-const CubicFit = PolyFit{3}
+const CubicFit{T<:AbstractFloat} = PolyFit{3, T}
+CubicFit() = CubicFit{Float64}()
 
 
 # ========================================

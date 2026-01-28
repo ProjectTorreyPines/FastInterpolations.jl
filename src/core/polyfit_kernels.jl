@@ -414,7 +414,7 @@ Issue a one-time warning if polynomial degree exceeds recommendation.
 Called by `_check_polyfit_requirements` when D > MAX_RECOMMENDED_POLYFIT_DEGREE.
 """
 @noinline function _warn_high_degree(D::Int)
-    if !Threads.atomic_cas!(_polyfit_warning_issued, false, true)
+    if !Threads.atomic_xchg!(_polyfit_warning_issued, true)
         @warn "PolyFit{$D} uses $(D+1) points. For D > $MAX_RECOMMENDED_POLYFIT_DEGREE, " *
               "numerical noise amplification may degrade accuracy. Consider D ≤ 6."
     end

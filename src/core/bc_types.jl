@@ -647,7 +647,6 @@ end
 
 # Default: no PolyFit, no extra point requirement
 get_polyfit_degree(::AbstractBC) = 0
-get_polyfit_degree(::PointBC) = 0  # Deriv1, Deriv2, Deriv3
 
 
 """

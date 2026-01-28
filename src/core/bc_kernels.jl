@@ -68,59 +68,6 @@ end
 end
 
 # ----------------------------------------
-# _weighted_sum: AbstractVector versions
-# ----------------------------------------
-# For use with Vector-based coefficients and function values.
-# Supports batched operations and dynamic sizing.
-
-"""
-    _weighted_sum(coeffs::AbstractVector{T}, f::AbstractVector{T}, ::Val{N}) -> T
-
-Compute weighted sum Σ cᵢfᵢ for Vector inputs with compile-time known length.
-
-# Arguments
-- `coeffs::AbstractVector{T}`: Coefficients (length ≥ N)
-- `f::AbstractVector{T}`: Function values (length ≥ N)
-- `::Val{N}`: Number of terms to sum
-
-# Returns
-- Weighted sum using muladd for numerical stability
-"""
-@inline function _weighted_sum(
-    coeffs::AbstractVector{T}, f::AbstractVector{T}, ::Val{N}
-) where {T<:AbstractFloat, N}
-    s = zero(T)
-    @inbounds for i in 1:N
-        s = muladd(coeffs[i], f[i], s)
-    end
-    return s
-end
-
-"""
-    _weighted_sum(coeffs::AbstractVector{T}, f::AbstractVector{T}) -> T
-
-Compute weighted sum Σ cᵢfᵢ for equal-length Vector inputs.
-
-# Arguments
-- `coeffs::AbstractVector{T}`: Coefficients
-- `f::AbstractVector{T}`: Function values (must have same length as c)
-
-# Returns
-- Weighted sum using muladd for numerical stability
-"""
-@inline function _weighted_sum(
-    coeffs::AbstractVector{T}, f::AbstractVector{T}
-) where {T<:AbstractFloat}
-    @assert length(coeffs) == length(f) "Vectors must have equal length"
-    s = zero(T)
-    @inbounds for i in eachindex(coeffs, f)
-        s = muladd(coeffs[i], f[i], s)
-    end
-    return s
-end
-
-
-# ----------------------------------------
 # _compute_deriv1: Uniform grid direct computation
 # ----------------------------------------
 # Computes first derivative directly using known stencil coefficients.
@@ -179,16 +126,14 @@ end
 
 # Generic fallback for D > 3 (uses barycentric differentiation)
 # Julia dispatch ensures D=1,2,3 use the specialized methods above.
-@inline function _compute_deriv1(
+@inline @with_pool pool function _compute_deriv1(
     pf::PolyFit{D}, side::Val{S}, f::NTuple{N,T}, inv_h::T
 ) where {D, S, N, T<:AbstractFloat}
     # Compute coefficients on reference grid t = 0, 1, ..., D
-    coeffs = Vector{T}(undef, N)
-    β = Vector{T}(undef, N)
-    t = Vector{T}(undef, N)
-    @inbounds for i in 1:N
-        t[i] = T(i - 1)
-    end
+    coeffs = acquire!(pool, T, N)
+    β = acquire!(pool, T, N)
+    # Reference grid as NTuple (allocation-free)
+    t = ntuple(i -> T(i - 1), Val(N))
     _compute_deriv1_coeffs!(coeffs, β, pf, side, t)
     # Scale by inv_h and compute weighted sum
     s = zero(T)
@@ -277,13 +222,12 @@ end
 # Generic fallback for D > 3 (uses barycentric differentiation)
 # Returns NTuple for compatibility with _weighted_sum.
 # Julia dispatch ensures D=1,2,3 use the specialized methods above.
-@inline function _compute_deriv1_coeffs(
+@inline @with_pool pool function _compute_deriv1_coeffs(
     pf::PolyFit{D}, side::Val{S}, x::NTuple{N,T}
 ) where {D, S, N, T<:AbstractFloat}
-    c = Vector{T}(undef, N)
-    β = Vector{T}(undef, N)
-    x_vec = collect(x)
-    _compute_deriv1_coeffs!(c, β, pf, side, x_vec)
+    c = acquire!(pool, T, N)
+    β = acquire!(pool, T, N)
+    _compute_deriv1_coeffs!(c, β, pf, side, x)
     return ntuple(i -> @inbounds(c[i]), Val(N))
 end
 
@@ -302,23 +246,22 @@ end
 #   c_k = -Σ_{i≠k} c_i                     (diagonal element)
 
 """
-    _barycentric_weights!(β::AbstractVector{T}, x::AbstractVector{T}, ::Val{N}) -> β
+    _barycentric_weights!(β::AbstractVector{T}, x::NTuple{N,T}, ::Val{N}) -> β
 
 In-place computation of barycentric weights β_i = 1 / Π_{j≠i} (x_i - x_j).
 
 # Arguments
 - `β::AbstractVector{T}`: Output buffer of length N (mutated)
-- `x::AbstractVector{T}`: Grid coordinates (length ≥ N)
+- `x::NTuple{N,T}`: Grid coordinates
 - `::Val{N}`: Number of points to use
 
 # Returns
 - `β`: The same buffer, now containing the barycentric weights
 """
 @inline function _barycentric_weights!(
-    β::AbstractVector{T}, x::AbstractVector{T}, ::Val{N}
+    β::AbstractVector{T}, x::NTuple{N,T}, ::Val{N}
 ) where {N,T<:AbstractFloat}
     @assert length(β) >= N "Buffer β must have length ≥ $N"
-    @assert length(x) >= N "Input x must have length ≥ $N"
     @inbounds for i in 1:N
         xi = x[i]
         wi = one(T)
@@ -332,7 +275,7 @@ In-place computation of barycentric weights β_i = 1 / Π_{j≠i} (x_i - x_j).
 end
 
 """
-    _d1_coeffs_at_node!(c, β, x::AbstractVector{T}, k::Int, ::Val{N}) -> c
+    _d1_coeffs_at_node!(c, β, x::NTuple{N,T}, k::Int, ::Val{N}) -> c
 
 In-place computation of first-derivative coefficients at node x_k.
 
@@ -343,7 +286,7 @@ Uses barycentric formula:
 # Arguments
 - `coeffs::AbstractVector{T}`: Output buffer of length N for coefficients (mutated)
 - `β::AbstractVector{T}`: Workspace buffer of length N for barycentric weights (mutated)
-- `x::AbstractVector{T}`: Grid coordinates (length ≥ N)
+- `x::NTuple{N,T}`: Grid coordinates
 - `k::Int`: Node index (1 for left endpoint, N for right endpoint)
 - `::Val{N}`: Number of points to use
 
@@ -351,11 +294,10 @@ Uses barycentric formula:
 - `c`: The same buffer, now containing the derivative coefficients
 """
 @inline function _d1_coeffs_at_node!(
-    coeffs::AbstractVector{T}, β::AbstractVector{T}, x::AbstractVector{T}, k::Int, ::Val{N}
+    coeffs::AbstractVector{T}, β::AbstractVector{T}, x::NTuple{N,T}, k::Int, ::Val{N}
 ) where {N,T<:AbstractFloat}
     @assert length(coeffs) >= N "Buffer coeffs must have length ≥ $N"
     @assert length(β) >= N "Buffer β must have length ≥ $N"
-    @assert length(x) >= N "Input x must have length ≥ $N"
     @assert 1 <= k <= N "Node index k=$k must be in 1:$N"
 
     # Compute barycentric weights in-place
@@ -388,7 +330,7 @@ end
 # Julia dispatch prefers the more specific D=1,2,3 methods above.
 
 """
-    _compute_deriv1_coeffs!(coeffs, β, ::PolyFit{D}, side::Val{S}, x::AbstractVector{T}) -> coeffs          
+    _compute_deriv1_coeffs!(coeffs, β, ::PolyFit{D}, side::Val{S}, x::NTuple{N,T}) -> coeffs          
 
 In-place computation of derivative coefficients for generic polynomial degree D.
 
@@ -400,19 +342,18 @@ This is the generic fallback for D > 3. For D = 1, 2, 3, the specialized
 - `β::AbstractVector{T}`: Workspace buffer for barycentric weights (length ≥ D+1)
 - `::PolyFit{D}`: Polynomial degree
 - `side::Val{:left}` or `Val{:right}`: Which endpoint
-- `x::AbstractVector{T}`: Grid coordinates (length ≥ D+1)
+- `x::NTuple{N,T}`: Grid coordinates (length ≥ D+1)
 
 # Returns
 - `coeffs::AbstractVector{T}`: The coefficient buffer, now containing the derivative coefficients
 """
 @inline function _compute_deriv1_coeffs!(
     coeffs::AbstractVector{T}, β::AbstractVector{T},
-    ::PolyFit{D}, side::Val{S}, x::AbstractVector{T}
-) where {D,S,T<:AbstractFloat}
+    ::PolyFit{D}, side::Val{S}, x::NTuple{N,T}
+) where {D,S,N,T<:AbstractFloat}
     @assert S === :left || S === :right "Invalid side: Val(:$S). Must be Val(:left) or Val(:right)."
-    N = D + 1
     k = (S === :left) ? 1 : N
-    _d1_coeffs_at_node!(coeffs  , β, x, k, Val(N))
+    _d1_coeffs_at_node!(coeffs, β, x, k, Val(N))
 end
 
 

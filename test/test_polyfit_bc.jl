@@ -1362,9 +1362,9 @@ end
     end
 
     @testset "Barycentric Weights Computation" begin
-        # Test _barycentric_weights! on simple cases (Vector-based API)
+        # Test _barycentric_weights! on simple cases (NTuple API)
         # For uniform nodes [0, 1, 2], weights should follow pattern
-        x3 = [0.0, 1.0, 2.0]
+        x3 = (0.0, 1.0, 2.0)
         β3 = Vector{Float64}(undef, 3)
         FastInterpolations._barycentric_weights!(β3, x3, Val(3))
         # β_0 = 1/((0-1)(0-2)) = 1/((-1)(-2)) = 0.5
@@ -1375,7 +1375,7 @@ end
         @test β3[3] ≈ 0.5 rtol=1e-14
 
         # Test on 5-point uniform grid [0, 1, 2, 3, 4]
-        x5 = [0.0, 1.0, 2.0, 3.0, 4.0]
+        x5 = (0.0, 1.0, 2.0, 3.0, 4.0)
         β5 = Vector{Float64}(undef, 5)
         FastInterpolations._barycentric_weights!(β5, x5, Val(5))
         # All weights should be finite and non-zero
@@ -1387,14 +1387,14 @@ end
 
     @testset "D=4 (QuarticFit) Known Coefficients - Uniform Grid" begin
         h = 1.0
-        x = collect(0.0:h:4.0)  # 5 points: [0, 1, 2, 3, 4]
+        x = (0.0, 1.0, 2.0, 3.0, 4.0)  # 5 points as NTuple
         inv_h = inv(h)
 
         # Known FDM coefficients for 5-point left endpoint:
         # f'(x_0) = (-25f_0 + 48f_1 - 36f_2 + 16f_3 - 3f_4) / (12h)
         expected_left = (-25.0, 48.0, -36.0, 16.0, -3.0) ./ 12.0 .* inv_h
 
-        # Compute coefficients using in-place Vector API
+        # Compute coefficients using in-place API (x as NTuple)
         c_left = Vector{Float64}(undef, 5)
         β_left = Vector{Float64}(undef, 5)
         FastInterpolations._compute_deriv1_coeffs!(c_left, β_left, PolyFit{4}(), Val(:left), x)
@@ -1417,7 +1417,7 @@ end
 
     @testset "D=5 (QuinticFit) Known Coefficients - Uniform Grid" begin
         h = 1.0
-        x = collect(0.0:h:5.0)  # 6 points
+        x = (0.0, 1.0, 2.0, 3.0, 4.0, 5.0)  # 6 points as NTuple
 
         # Known FDM coefficients for 6-point left endpoint:
         # f'(x_0) = (-137f_0 + 300f_1 - 300f_2 + 200f_3 - 75f_4 + 12f_5) / (60h)
@@ -1545,7 +1545,6 @@ end
         for x_tuple in test_grids
             D = length(x_tuple) - 1
             N = D + 1
-            x_vec = collect(x_tuple)
 
             for side in (:left, :right)
                 # Specialized path (NTuple-returning, for D=1,2,3)
@@ -1553,11 +1552,11 @@ end
                     PolyFit{D}(), Val(side), x_tuple
                 )
 
-                # Generic barycentric path (Vector-based, in-place)
+                # Generic barycentric path (in-place, x as NTuple)
                 c_barycentric = Vector{Float64}(undef, N)
                 β_barycentric = Vector{Float64}(undef, N)
                 k = (side === :left) ? 1 : N
-                FastInterpolations._d1_coeffs_at_node!(c_barycentric, β_barycentric, x_vec, k, Val(N))
+                FastInterpolations._d1_coeffs_at_node!(c_barycentric, β_barycentric, x_tuple, k, Val(N))
 
                 # Compare element-wise (NTuple vs Vector)
                 for i in 1:N
@@ -1803,9 +1802,11 @@ end
 
             # Report allocations
             alloc_d4 = alloc_est( xs_large, ys_large, Val(:right), PolyFit{4}())
+            alloc_d4 = alloc_est( xs_large, ys_large, Val(:right), PolyFit{4}())
+            alloc_d5 = alloc_est( xs_large, ys_large, Val(:right), PolyFit{5}())
             alloc_d5 = alloc_est( xs_large, ys_large, Val(:right), PolyFit{5}())
 
-            @test alloc_d4 <= ALLOC_THRESHOLD 
+            @test alloc_d4 <= ALLOC_THRESHOLD
             @test alloc_d5 <= ALLOC_THRESHOLD
 
 

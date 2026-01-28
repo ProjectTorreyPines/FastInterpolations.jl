@@ -1854,4 +1854,79 @@ end
         @test alloc_n6 <= ALLOC_THRESHOLD
     end
 
+    @testset "Check polyfit requirements" begin
+        n = 10
+        
+        # 1. Valid case: Sufficient points, low degree
+        # D=3 requires 4 points, have 10. D <= 6 so no warning.
+        @test_nowarn FastInterpolations._check_polyfit_requirements(3, n)
+
+        # 2. Insufficient points (Error)
+        # D=5 requires 6 points, have 5.
+        ys_short = rand(5)
+        D_too_big = 5
+        @test_throws ArgumentError FastInterpolations._check_polyfit_requirements(D_too_big, length(ys_short))
+
+        # 3. High degree warning (D > 6)
+        # Reset global warning flag to ensure we catch the warning
+        Threads.atomic_xchg!(FastInterpolations._polyfit_warning_issued, false)
+        
+        D_high = 7 # > MAX_RECOMMENDED_POLYFIT_DEGREE (6)
+        
+        @test_logs (:warn, r"numerical noise amplification") begin
+            # Should warn exactly once
+            FastInterpolations._check_polyfit_requirements(D_high, n)
+        end
+
+        # 4. Warning suppression (Thread-safety check)
+        # Should NOT warn a second time for high degree
+        @test_logs begin
+            FastInterpolations._check_polyfit_requirements(D_high + 1, n)
+        end
+    end
+end
+
+@testset "BC Types Coverage (bc_types.jl)" begin
+    # 1. ParabolaFit deprecation
+    # Check that it warns and returns a QuadraticFit
+    @test_logs (:warn, r"ParabolaFit is deprecated") begin
+        bc = FastInterpolations.ParabolaFit()
+        @test bc isa FastInterpolations.QuadraticFit
+    end
+
+    # 2. _is_periodic_bc
+    @test FastInterpolations._is_periodic_bc(PeriodicBC())
+    @test !FastInterpolations._is_periodic_bc(NaturalBC())
+    @test !FastInterpolations._is_periodic_bc(LinearFit())
+    @test !FastInterpolations._is_periodic_bc(Deriv1(0.0))
+
+    # 3. get_polyfit_degree fallbacks (for coverage)
+    @test FastInterpolations.get_polyfit_degree(NaturalBC()) == 0
+    @test FastInterpolations.get_polyfit_degree(Deriv1(0.0)) == 0
+    @test FastInterpolations.get_polyfit_degree(Deriv2(0.0)) == 0
+    @test FastInterpolations.get_polyfit_degree(Deriv3(0.0)) == 0
+
+    # 4. materialize_bc for Deriv3 (passthrough)
+    x = [0.0, 1.0]
+    y = [0.0, 1.0]
+    bc_d3 = Deriv3(1.0)
+    # Should passthrough unchanged
+    @test FastInterpolations.materialize_bc(bc_d3, x, y, Val(:left)) === bc_d3
+    
+    # 5. Type promotion helpers
+    @test FastInterpolations._promote_pointbc(Deriv1(1), Float64) isa Deriv1{Float64}
+    @test FastInterpolations._promote_pointbc(Deriv2(1), Float64) isa Deriv2{Float64}
+    @test FastInterpolations._promote_pointbc(Deriv3(1), Float64) isa Deriv3{Float64}
+    @test FastInterpolations._promote_pointbc(PolyFit{3}(), Float64) isa PolyFit{3,Float64}
+    
+    # 6. Normalize BC Array (single-series) - explicit code path test
+    bcs_single = [Deriv1(0.0)]
+    norm_bcs = FastInterpolations._normalize_bc_array(bcs_single, Float64, 1)
+    @test norm_bcs isa Vector{<:FastInterpolations.BCPair}
+    @test length(norm_bcs) == 1
+    @test norm_bcs[1].left isa Deriv1{Float64}
+    
+    # PeriodicBC in array check (Error path)
+    bcs_periodic = [PeriodicBC()]
+    @test_throws ArgumentError FastInterpolations._normalize_bc_array(bcs_periodic, Float64, 1)
 end

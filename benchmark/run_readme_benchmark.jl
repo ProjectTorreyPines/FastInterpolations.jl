@@ -17,6 +17,7 @@ import DataInterpolations
 using Plots
 using DataFrames
 using Statistics
+using JSON
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Configuration
@@ -119,8 +120,8 @@ function run_readme_benchmark(; verbose::Bool=true)
         bench.params.evals = evals
         bench.params.seconds = secs
         b = run(bench)
-        t_fast_nocache = ns_to_sec(median(b.times))
-        verbose && println("$(lpad(format_time(median(b.times)), 10)) $(format_bench_stats(b))")
+        t_fast_nocache = ns_to_sec(minimum(b.times))
+        verbose && println("$(lpad(format_time(minimum(b.times)), 10)) $(format_bench_stats(b))")
 
         # ── FastInterpolations (cache hit) ──
         bench_count += 1
@@ -135,8 +136,8 @@ function run_readme_benchmark(; verbose::Bool=true)
         bench.params.evals = evals
         bench.params.seconds = secs
         b = run(bench)
-        t_fast_cache = ns_to_sec(median(b.times))
-        verbose && println("$(lpad(format_time(median(b.times)), 10)) $(format_bench_stats(b))")
+        t_fast_cache = ns_to_sec(minimum(b.times))
+        verbose && println("$(lpad(format_time(minimum(b.times)), 10)) $(format_bench_stats(b))")
 
         # ── Interpolations.jl ──
         # One-shot: construct + broadcast into pre-allocated output
@@ -150,8 +151,8 @@ function run_readme_benchmark(; verbose::Bool=true)
         bench.params.evals = evals
         bench.params.seconds = secs
         b = run(bench)
-        t_itp = ns_to_sec(median(b.times))
-        verbose && println("$(lpad(format_time(median(b.times)), 10)) $(format_bench_stats(b))")
+        t_itp = ns_to_sec(minimum(b.times))
+        verbose && println("$(lpad(format_time(minimum(b.times)), 10)) $(format_bench_stats(b))")
 
         # ── DataInterpolations.jl ──
         # One-shot: construct + evaluate in-place
@@ -165,8 +166,8 @@ function run_readme_benchmark(; verbose::Bool=true)
         bench.params.evals = evals
         bench.params.seconds = secs
         b = run(bench)
-        t_di = ns_to_sec(median(b.times))
-        verbose && println("$(lpad(format_time(median(b.times)), 10)) $(format_bench_stats(b))")
+        t_di = ns_to_sec(minimum(b.times))
+        verbose && println("$(lpad(format_time(minimum(b.times)), 10)) $(format_bench_stats(b))")
 
         push!(rows, (
             n=nq,
@@ -237,6 +238,22 @@ function print_summary_table(df)
 
     println("  vs Interpolations.jl:    $(round(geo_itp_cache, digits=1))× (cache-hit), $(round(geo_itp_nocache, digits=1))× (cache-miss)")
     println("  vs DataInterpolations.jl: $(round(geo_di_cache, digits=1))× (cache-hit), $(round(geo_di_nocache, digits=1))× (cache-miss)")
+
+    # Calculate ranges
+    s_itp = df.Interpolations ./ df.FastInterp_cached
+    s_di = df.DataInterp ./ df.FastInterp_cached
+
+    # Save summary for Release workflow
+    summary = Dict(
+        "itp_min" => minimum(s_itp),
+        "itp_max" => maximum(s_itp),
+        "di_min" => minimum(s_di),
+        "di_max" => maximum(s_di)
+    )
+    open(joinpath(@__DIR__, "speedup_summary.json"), "w") do io
+        JSON.print(io, summary)
+    end
+    println("Saved speedup summary to $(joinpath(@__DIR__, "speedup_summary.json"))")
     println()
 end
 
@@ -262,6 +279,7 @@ function save_readme_plot(df; save_path::String="docs/images/benchmark_oneshot_d
         xlims=(0.8, 1.25e5),
         ylims=(ymin, :auto),
         xticks=10.0 .^ (0:5),
+        yticks=10.0 .^ (-7:-2),
         marker=:circle,
         markersize=6,
         linewidth=2,

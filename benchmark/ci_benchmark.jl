@@ -218,7 +218,7 @@ println("\nRunning benchmarks (evals preset, no tuning)...")
 results = run(suite, verbose=true)
 
 println("\nSaving results to output.json...")
-BenchmarkTools.save("output.json", median(results))
+BenchmarkTools.save("output.json", minimum(results))
 
 # Sort JSON keys recursively for consistent dashboard ordering
 println("Sorting JSON keys for dashboard display...")
@@ -244,7 +244,7 @@ sorted_data = sort_keys_recursive(json_data)
 open("output.json", "w") do io
     JSON.print(io, sorted_data)
 end
-println("Saved $(length(collect(BenchmarkTools.leaves(median(results))))) benchmarks (sorted)")
+println("Saved $(length(collect(BenchmarkTools.leaves(minimum(results))))) benchmarks (sorted)")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Print Summary
@@ -261,13 +261,13 @@ function format_time(ns::Float64)
 end
 
 println("\n" * "="^70)
-println("BENCHMARK SUMMARY (median times)")
+println("BENCHMARK SUMMARY (minimum times)")
 println("="^70)
 
-med_results = median(results)
+min_results = minimum(results)
 
-for group_name in sort(collect(keys(med_results)))
-    group = med_results[group_name]
+for group_name in sort(collect(keys(min_results)))
+    group = min_results[group_name]
     println("\n[$group_name]")
     for bench_name in sort(collect(keys(group)))
         trial = group[bench_name]

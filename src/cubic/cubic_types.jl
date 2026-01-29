@@ -33,23 +33,23 @@ end
 """
     CubicSplineCache{T,X,F,BC,S}
 
-Cache structure for cubic spline interpolation with reusable LU factorization.
+Cache structure for cubic spline interpolation with reusable Thomas factorization.
 
 # Type Parameters
 - `T`: Float type (Float32 or Float64)
 - `X`: Grid type (Vector{T} or AbstractRange{T})
-- `F`: LU factorization type
+- `F`: Factorization type (ThomasFactorization{T,V})
 - `BC`: Boundary condition data type (BCPair{T,L,R} for derivative BC, PeriodicData{T} for periodic)
 - `S`: Grid spacing type (ScalarSpacing{T} for Range, VectorSpacing{T} for Vector)
 
 # Fields
 - `x::X`: Grid points (immutable after construction, can be Range or Vector)
 - `spacing::S`: Grid spacing data (ScalarSpacing for uniform, VectorSpacing for non-uniform)
-- `lu_factor::F`: LU factorization of tridiagonal matrix A
+- `thomas::F`: Thomas factorization of tridiagonal matrix A (contains dl, du, inv_d)
 - `bc_config::BC`: Boundary condition data (BCPair for derivative BC, PeriodicData for periodic)
 
 # Notes
-The LU factorization depends ONLY on x geometry and can be reused for:
+The Thomas factorization depends ONLY on x geometry and can be reused for:
 - Different y vectors (varying function values)
 - Different x_query vectors (varying query points)
 
@@ -75,7 +75,7 @@ to ~4 cycles (fmul) — a 2.5× speedup in the inner loop.
 struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC,S<:AbstractGridSpacing{T}}
     x::X
     spacing::S
-    lu_factor::F
+    thomas::F
     bc_config::BC
 end
 

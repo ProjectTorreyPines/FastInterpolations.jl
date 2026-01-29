@@ -98,7 +98,7 @@ end
 # ========================================
 
 "Build cache for periodic cubic spline using Sherman-Morrison formula."
-@with_pool pool function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
+function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
     n = length(x) - 1  # Number of intervals
 
     n >= 3 || throw(ArgumentError("Periodic spline requires at least 4 points"))
@@ -109,10 +109,11 @@ end
     spacing = _create_spacing(x)
 
     # Build modified tridiagonal matrix A' for Sherman-Morrison
-    # Use _get_h accessor for spacing values
-    dl = acquire!(pool, T, n - 1)
-    d_diag = acquire!(pool, T, n)
-    du = acquire!(pool, T, n - 1)
+    # CRITICAL: Use Vector allocation (NOT pool!) for persistent arrays
+    # These arrays are stored in CubicSplineCache which outlives the function.
+    dl = Vector{T}(undef, n - 1)
+    d_diag = Vector{T}(undef, n)  # Will become inv_d after factorization
+    du = Vector{T}(undef, n - 1)
 
     h_n = _get_h(spacing, n)
     h_1 = _get_h(spacing, 1)
@@ -134,19 +135,21 @@ end
         du[n-1] = h_nm1
     end
 
-    tA_prime = Tridiagonal(dl, d_diag, du)
-    lu_factor = lu(tA_prime)
+    # ONE-PASS Thomas factorization: d_diag becomes inv_d
+    thomas = thomas_factorize!(dl, d_diag, du)
 
-    # Pre-compute q = A'^{-1} * u
-    u = zeros!(pool, T, n)
-    u[1] = one(T)
-    u[n] = one(T)
-    q = lu_factor \ u
+    # Pre-compute q = A'^{-1} * u using custom Thomas solver
+    # u = [1, 0, ..., 0, 1]^T, solve directly into permanent q storage
+    q = Vector{T}(undef, n)
+    fill!(q, zero(T))
+    q[1] = one(T)
+    q[n] = one(T)
+    _ldiv_tridiagonal_nopiv!(q, thomas)
 
-    # Workspaces (d, z, y_temp) are now allocated from task-local pools
+    # Workspaces (z, y_temp) are allocated from task-local pools at solve time
     bc_config = PeriodicData(q, period)
 
-    return CubicSplineCache(x, spacing, lu_factor, bc_config)
+    return CubicSplineCache(x, spacing, thomas, bc_config)
 end
 
 # Helper to get polynomial degree for PolyFit validation
@@ -158,7 +161,7 @@ _polyfit_degree(::PointBC) = 0
 Build cache for generic derivative BC (Deriv1/Deriv2 combinations).
 Uses type dispatch for zero-overhead specialization.
 """
-@with_pool pool function _build_derivative_bc_cache(
+function _build_derivative_bc_cache(
     x::AbstractVector{T},
     left_bc::L,
     right_bc::R
@@ -179,9 +182,11 @@ Uses type dispatch for zero-overhead specialization.
     spacing = _create_spacing(x)
 
     # Build tridiagonal matrix A
-    dl = acquire!(pool, T, n)       # Lower diagonal
-    d_diag = acquire!(pool, T, n+1) # Main diagonal
-    du = acquire!(pool, T, n)       # Upper diagonal
+    # CRITICAL: Use Vector allocation (NOT pool!) for persistent arrays
+    # These arrays are stored in CubicSplineCache which outlives the function.
+    dl = Vector{T}(undef, n)       # Lower diagonal (n elements)
+    d_diag = Vector{T}(undef, n+1) # Main diagonal (n+1 elements) → becomes inv_d
+    du = Vector{T}(undef, n)       # Upper diagonal (n elements)
 
     # First and last rows depend on BC type (type dispatch)
     _set_first_row!(d_diag, du, left_bc, spacing)
@@ -196,13 +201,12 @@ Uses type dispatch for zero-overhead specialization.
         du[i] = h_i
     end
 
-    tA = Tridiagonal(dl, d_diag, du)
-    lu_factor = lu(tA)
+    # ONE-PASS Thomas factorization: d_diag becomes inv_d
+    thomas = thomas_factorize!(dl, d_diag, du)
 
-    # Workspaces (d, z) are now allocated from task-local pools
     bc_config = BCPair(left_bc, right_bc)
 
-    return CubicSplineCache(x, spacing, lu_factor, bc_config)
+    return CubicSplineCache(x, spacing, thomas, bc_config)
 end
 
 # ========================================
@@ -332,21 +336,20 @@ end
 # ========================================
 # System Solvers
 # ========================================
+# Scalar Thomas solver moved to: core/thomas_lu_solver.jl
+# - _ldiv_tridiagonal_nopiv!
 
 "Solve periodic cyclic tridiagonal system using Sherman-Morrison formula."
 @inline function _solve_cubic_system_periodic!(
     z_workspace::AbstractVector{T},
-    d_workspace::AbstractVector{T},
     y_temp::AbstractVector{T},
     cache::CubicSplineCache{T,X,F,PeriodicData{T},S},
     y::AbstractVector{T}
 ) where {T<:AbstractFloat, X, F, S<:AbstractGridSpacing{T}}
     n = length(y) - 1
 
-    compute_rhs_periodic!(d_workspace, y, cache.spacing)
-
-    # y_temp is now passed as parameter (from task-local pool)
-    ldiv!(y_temp, cache.lu_factor, d_workspace)
+    compute_rhs_periodic!(y_temp, y, cache.spacing)
+    _ldiv_tridiagonal_nopiv!(y_temp, cache.thomas)
 
     α = _get_h(cache.spacing, n)
     q = cache.bc_config.q
@@ -385,20 +388,17 @@ end
 # have been removed as part of thread-safety refactoring.
 
 """
-Solve cubic spline system (BCPair) with explicit output and pool-based workspace.
-Thread-safe: workspaces allocated from task-local pool.
+Solve cubic spline system (BCPair) with explicit output.
+Thread-safe: no workspace allocation needed (zero-allocation hot path).
 """
-@inline @with_pool pool function _solve_system!(
+@inline function _solve_system!(
     out_z::AbstractVector{T},
     cache::CubicSplineCache{T,X,F,BCPair{T,L,R},S},
     y::AbstractVector{T},
     bc_pair::BCPair{T,L,R}
 ) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}, S<:AbstractGridSpacing{T}}
-    # d_workspace needs length(y) = n+1
-    d_workspace = similar!(pool, y)
-
-    compute_rhs!(d_workspace, y, cache.x, cache.spacing, bc_pair)
-    ldiv!(out_z, cache.lu_factor, d_workspace)
+    compute_rhs!(out_z, y, cache.x, cache.spacing, bc_pair)
+    _ldiv_tridiagonal_nopiv!(out_z, cache.thomas)
     return out_z
 end
 
@@ -415,9 +415,10 @@ Thread-safe: workspaces allocated from task-local pool.
     n = length(y) - 1
 
     # Periodic workspaces need n elements (NOT length(y)!)
-    d_workspace = acquire!(pool, T, n)
     y_temp = acquire!(pool, T, n)
 
-    _solve_cubic_system_periodic!(out_z, d_workspace, y_temp, cache, y)
+    _solve_cubic_system_periodic!(out_z, y_temp, cache, y)
     return out_z
 end
+
+# Batch Thomas solver helper moved to: core/thomas_lu_solver.jl

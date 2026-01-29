@@ -68,7 +68,7 @@ even on objectid match to detect in-place mutation.
 mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}, S<:AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
-    cache::CubicSplineCache{T, X, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, BCPair{T,L,R}, S}
+    cache::CubicSplineCache{T, X}
 end
 
 """
@@ -92,7 +92,7 @@ See `CacheEntry` documentation for details on mutation safety pattern.
 mutable struct PeriodicCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}, S<:AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
-    cache::CubicSplineCache{T, X, LinearAlgebra.LU{T, LinearAlgebra.Tridiagonal{T, Vector{T}}, Vector{Int64}}, PeriodicData{T}, S}
+    cache::CubicSplineCache{T, X}
 end
 
 # ===============================================================

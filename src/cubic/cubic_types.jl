@@ -72,11 +72,12 @@ to ~4 cycles (fmul) — a 2.5× speedup in the inner loop.
 - `bc=NaturalBC()` (default): Natural spline with z[1] = z[n+1] = 0
 - `bc=PeriodicBC()`: Periodic spline with C2 continuity at boundaries
 """
-struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC,S<:AbstractGridSpacing{T}}
+struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC,S<:AbstractGridSpacing{T},I<:AbstractVector{T}}
     x::X
     spacing::S
     lu_factor::F
     bc_config::BC
+    inv_d::I
 end
 
 # ExtrapVal is defined in ops.jl (shared between linear and cubic)

@@ -135,7 +135,16 @@ end
     end
 
     tA_prime = Tridiagonal(dl, d_diag, du)
-    lu_factor = lu(tA_prime)
+    lu_factor = lu(tA_prime, LinearAlgebra.NoPivot())
+
+    # Precompute reciprocals of LU diagonal for fast Thomas algorithm
+    inv_d = similar(lu_factor.factors.d)
+    len_inv_d = length(inv_d)
+    i = 1
+    @inbounds while i <= len_inv_d
+        inv_d[i] = 1 / lu_factor.factors.d[i]
+        i += 1
+    end
 
     # Pre-compute q = A'^{-1} * u
     u = zeros!(pool, T, n)
@@ -146,7 +155,7 @@ end
     # Workspaces (d, z, y_temp) are now allocated from task-local pools
     bc_config = PeriodicData(q, period)
 
-    return CubicSplineCache(x, spacing, lu_factor, bc_config)
+    return CubicSplineCache(x, spacing, lu_factor, bc_config, inv_d)
 end
 
 # Helper to get polynomial degree for PolyFit validation
@@ -197,12 +206,21 @@ Uses type dispatch for zero-overhead specialization.
     end
 
     tA = Tridiagonal(dl, d_diag, du)
-    lu_factor = lu(tA)
+    lu_factor = lu(tA, LinearAlgebra.NoPivot())
+
+    # Precompute reciprocals of LU diagonal for fast Thomas algorithm
+    inv_d = similar(lu_factor.factors.d)
+    len_inv_d = length(inv_d)
+    i = 1
+    @inbounds while i <= len_inv_d
+        inv_d[i] = 1 / lu_factor.factors.d[i]
+        i += 1
+    end
 
     # Workspaces (d, z) are now allocated from task-local pools
     bc_config = BCPair(left_bc, right_bc)
 
-    return CubicSplineCache(x, spacing, lu_factor, bc_config)
+    return CubicSplineCache(x, spacing, lu_factor, bc_config, inv_d)
 end
 
 # ========================================
@@ -333,20 +351,46 @@ end
 # System Solvers
 # ========================================
 
+"Fast no-pivot solver for cached tridiagonal LU with precomputed inv_d."
+@inline function _ldiv_tridiagonal_nopiv!(
+    b::AbstractVector{T},
+    lu_factor::LinearAlgebra.LU{T,Tridiagonal{T,V},P},
+    inv_d::AbstractVector{T},
+) where {T<:AbstractFloat,V<:AbstractVector{T},P}
+    dl = lu_factor.factors.dl
+    du = lu_factor.factors.du
+
+    n = length(inv_d)
+
+    # Forward elimination (while loop eliminates iterator protocol overhead)
+    i = 1
+    @inbounds while i < n
+        b[i + 1] = muladd(-dl[i], b[i], b[i + 1])
+        i += 1
+    end
+
+    # Backward substitution (while loop for StepRange overhead elimination)
+    @inbounds b[n] *= inv_d[n]
+    i = n - 1
+    @inbounds while i >= 1
+        b[i] = muladd(-du[i], b[i + 1], b[i]) * inv_d[i]
+        i -= 1
+    end
+
+    return b
+end
+
 "Solve periodic cyclic tridiagonal system using Sherman-Morrison formula."
 @inline function _solve_cubic_system_periodic!(
     z_workspace::AbstractVector{T},
-    d_workspace::AbstractVector{T},
     y_temp::AbstractVector{T},
     cache::CubicSplineCache{T,X,F,PeriodicData{T},S},
     y::AbstractVector{T}
 ) where {T<:AbstractFloat, X, F, S<:AbstractGridSpacing{T}}
     n = length(y) - 1
 
-    compute_rhs_periodic!(d_workspace, y, cache.spacing)
-
-    # y_temp is now passed as parameter (from task-local pool)
-    ldiv!(y_temp, cache.lu_factor, d_workspace)
+    compute_rhs_periodic!(y_temp, y, cache.spacing)
+    _ldiv_tridiagonal_nopiv!(y_temp, cache.lu_factor, cache.inv_d)
 
     α = _get_h(cache.spacing, n)
     q = cache.bc_config.q
@@ -388,17 +432,14 @@ end
 Solve cubic spline system (BCPair) with explicit output and pool-based workspace.
 Thread-safe: workspaces allocated from task-local pool.
 """
-@inline @with_pool pool function _solve_system!(
+@inline function _solve_system!(
     out_z::AbstractVector{T},
     cache::CubicSplineCache{T,X,F,BCPair{T,L,R},S},
     y::AbstractVector{T},
     bc_pair::BCPair{T,L,R}
 ) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}, S<:AbstractGridSpacing{T}}
-    # d_workspace needs length(y) = n+1
-    d_workspace = similar!(pool, y)
-
-    compute_rhs!(d_workspace, y, cache.x, cache.spacing, bc_pair)
-    ldiv!(out_z, cache.lu_factor, d_workspace)
+    compute_rhs!(out_z, y, cache.x, cache.spacing, bc_pair)
+    _ldiv_tridiagonal_nopiv!(out_z, cache.lu_factor, cache.inv_d)
     return out_z
 end
 
@@ -415,9 +456,8 @@ Thread-safe: workspaces allocated from task-local pool.
     n = length(y) - 1
 
     # Periodic workspaces need n elements (NOT length(y)!)
-    d_workspace = acquire!(pool, T, n)
     y_temp = acquire!(pool, T, n)
 
-    _solve_cubic_system_periodic!(out_z, d_workspace, y_temp, cache, y)
+    _solve_cubic_system_periodic!(out_z, y_temp, cache, y)
     return out_z
 end

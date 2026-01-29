@@ -146,11 +146,13 @@ end
         i += 1
     end
 
-    # Pre-compute q = A'^{-1} * u
-    u = zeros!(pool, T, n)
-    u[1] = one(T)
-    u[n] = one(T)
-    q = lu_factor \ u
+    # Pre-compute q = A'^{-1} * u using custom Thomas solver (avoids pool allocation)
+    # u = [1, 0, ..., 0, 1]^T, solve directly into permanent q storage
+    q = Vector{T}(undef, n)
+    fill!(q, zero(T))
+    q[1] = one(T)
+    q[n] = one(T)
+    _ldiv_tridiagonal_nopiv!(q, lu_factor, inv_d)
 
     # Workspaces (d, z, y_temp) are now allocated from task-local pools
     bc_config = PeriodicData(q, period)

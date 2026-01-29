@@ -109,12 +109,6 @@ const LA = FI.LinearAlgebra
         return spacing, A
     end
 
-    function _compare_solutions(x_custom, x_base; rtol::Real)
-        den = max(maximum(abs.(x_base)), eps(eltype(x_base)))
-        rel = maximum(abs.(x_custom .- x_base)) / den
-        @test rel <= rtol
-    end
-
     @testset "Derivative-BC (build A + lu + ldiv! in-test)" begin
         Random.seed!(0)
 
@@ -151,13 +145,7 @@ const LA = FI.LinearAlgebra
                     resid_custom = maximum(abs.(A * x_custom .- rhs))
                     @test resid_custom <= resid_base * T(10) + eps(T) * T(100)
 
-                    # Relative agreement threshold (Float32 looser, strongly-nonuniform looser)
-                    rtol = if T === Float64
-                        xname == "strongly-nonuniform" ? 1e-8 : 1e-10
-                    else
-                        xname == "strongly-nonuniform" ? 1e-4 : 1e-5
-                    end
-                    _compare_solutions(x_custom, x_base; rtol=rtol)
+                    @test x_custom ≈ x_base rtol = 5 * eps(T)
                 end
             end
         end
@@ -194,12 +182,53 @@ const LA = FI.LinearAlgebra
                 resid_custom = maximum(abs.(Aprime * x_custom .- rhs))
                 @test resid_custom <= resid_base * T(10) + eps(T) * T(100)
 
-                rtol = if T === Float64
-                    xname == "strongly-nonuniform" ? 1e-8 : 1e-10
-                else
-                    xname == "strongly-nonuniform" ? 1e-4 : 1e-5
+                @test x_custom ≈ x_base rtol = 5 * eps(T)
+            end
+        end
+    end
+
+    @testset "Periodic q vector (Sherman-Morrison u solve)" begin
+        # Tests the specific solve used in _build_periodic_cache for computing
+        # q = A'^{-1} * u where u = [1, 0, ..., 0, 1]^T
+        Random.seed!(42)
+
+        for T in (Float64, Float32)
+            for (xname, x) in (
+                ("uniform", _x_uniform(T, 51)),
+                ("nonuniform", _x_nonuniform(T, 51; seed=3)),
+                ("strongly-nonuniform", _x_strongly_nonuniform(T, 51; strength=:strong)),
+            )
+                spacing, Aprime = _build_tridiagonal_periodic_Aprime(x)
+                n_sys = size(Aprime, 1)
+
+                # Baseline: stdlib LU + ldiv!
+                u_base = zeros(T, n_sys)
+                u_base[1] = one(T)
+                u_base[end] = one(T)
+                F_base = LA.lu(Aprime)
+                q_base = F_base \ u_base
+
+                # Custom: LU(NoPivot) + cached inv_d + custom Thomas
+                lu_np = LA.lu(Aprime, LA.NoPivot())
+                inv_d = similar(lu_np.factors.d)
+                @inbounds for i in eachindex(inv_d)
+                    inv_d[i] = inv(lu_np.factors.d[i])
                 end
-                _compare_solutions(x_custom, x_base; rtol=rtol)
+                q_custom = zeros(T, n_sys)
+                q_custom[1] = one(T)
+                q_custom[end] = one(T)
+                FI._ldiv_tridiagonal_nopiv!(q_custom, lu_np, inv_d)
+
+                # Residual check: A' * q ≈ u
+                u_ref = zeros(T, n_sys)
+                u_ref[1] = one(T)
+                u_ref[end] = one(T)
+                resid_base = maximum(abs.(Aprime * q_base .- u_ref))
+                resid_custom = maximum(abs.(Aprime * q_custom .- u_ref))
+                @test resid_custom <= resid_base * T(10) + eps(T) * T(100)
+
+                # Solution agreement
+                @test q_custom ≈ q_base rtol = 5 * eps(T)
             end
         end
     end

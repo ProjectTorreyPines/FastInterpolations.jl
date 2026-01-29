@@ -261,17 +261,26 @@ function format_time(ns::Float64)
 end
 
 println("\n" * "="^70)
-println("BENCHMARK SUMMARY (minimum times)")
+println("BENCHMARK SUMMARY (Detailed)")
 println("="^70)
 
-min_results = minimum(results)
-
-for group_name in sort(collect(keys(min_results)))
-    group = min_results[group_name]
+for group_name in sort(collect(keys(results)))
+    group = results[group_name]
     println("\n[$group_name]")
     for bench_name in sort(collect(keys(group)))
         trial = group[bench_name]
-        println("  $(rpad(bench_name, 20)) $(format_time(trial.time))")
+        
+        t_min = minimum(trial).time
+        t_med = median(trial).time
+        
+        total_time = sum(trial.times)
+        total_gc = sum(trial.gctimes)
+        gc_pct = total_time > 0 ? round(100 * total_gc / total_time, digits=1) : 0.0
+
+        n_samples = length(trial.times)
+        n_evals = trial.params.evals
+        
+        println("  $(rpad(bench_name, 20)) min: $(rpad(format_time(t_min), 9)) | med: $(rpad(format_time(t_med), 9)) | gc: $(lpad(string(gc_pct), 4))% | mem: $(trial.memory) B | samples: $(n_samples) | evals: $(n_evals)")
     end
 end
 

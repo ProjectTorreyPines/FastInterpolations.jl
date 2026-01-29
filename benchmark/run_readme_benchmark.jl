@@ -72,11 +72,18 @@ end
 
 """Format benchmark stats for verbose output."""
 function format_bench_stats(b)
-    # b.times contains per-eval times in ns, so multiply by evals for actual elapsed time
-    elapsed_s = sum(b.times) * b.params.evals / 1e9
+    # b.times contains per-eval times in ns
+    t_med = median(b.times)
+    
+    total_time = sum(b.times)
+    total_gc = sum(b.gctimes)
+    gc_pct = total_time > 0 ? round(100 * total_gc / total_time, digits=1) : 0.0
+    
+    elapsed_s = total_time * b.params.evals / 1e9
     n_samples = length(b.times)
     n_evals = b.params.evals
-    return "($(round(elapsed_s, digits=1))s, $(n_samples) samples, $(n_evals) evals)"
+    
+    return "| med: $(format_time(t_med)) | gc: $(gc_pct)% | mem: $(b.memory)B | ($(round(elapsed_s, digits=1))s, $(n_samples) smp, $(n_evals) evl)"
 end
 
 function run_readme_benchmark(; verbose::Bool=true)

@@ -96,7 +96,7 @@ jobs:
 
             # 2. Build Speedup Block (Result)
             speedup_content = "<!-- BENCHMARK_SPEEDUP_START -->\n" *
-                "**Speedup:** $(s_itp)× vs Interpolations.jl · $(s_di)× vs DataInterpolations.jl\n" *
+                "**Speedup:** ($(s_itp))× vs \`Interpolations.jl\` · ($(s_di))× vs \`DataInterpolations.jl\`\n" *
                 "<!-- BENCHMARK_SPEEDUP_END -->"
 
             # Read README

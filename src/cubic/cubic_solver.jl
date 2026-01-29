@@ -98,7 +98,7 @@ end
 # ========================================
 
 "Build cache for periodic cubic spline using Sherman-Morrison formula."
-@with_pool pool function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
+function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
     n = length(x) - 1  # Number of intervals
 
     n >= 3 || throw(ArgumentError("Periodic spline requires at least 4 points"))
@@ -109,10 +109,11 @@ end
     spacing = _create_spacing(x)
 
     # Build modified tridiagonal matrix A' for Sherman-Morrison
-    # Use _get_h accessor for spacing values
-    dl = acquire!(pool, T, n - 1)
-    d_diag = acquire!(pool, T, n)
-    du = acquire!(pool, T, n - 1)
+    # CRITICAL: Use Vector allocation (NOT pool!) for persistent arrays
+    # These arrays are stored in CubicSplineCache which outlives the function.
+    dl = Vector{T}(undef, n - 1)
+    d_diag = Vector{T}(undef, n)  # Will become inv_d after factorization
+    du = Vector{T}(undef, n - 1)
 
     h_n = _get_h(spacing, n)
     h_1 = _get_h(spacing, 1)
@@ -134,30 +135,21 @@ end
         du[n-1] = h_nm1
     end
 
-    tA_prime = Tridiagonal(dl, d_diag, du)
-    lu_factor = lu(tA_prime, LinearAlgebra.NoPivot())
+    # ONE-PASS Thomas factorization: d_diag becomes inv_d
+    thomas = thomas_factorize!(dl, d_diag, du)
 
-    # Precompute reciprocals of LU diagonal for fast Thomas algorithm
-    inv_d = similar(lu_factor.factors.d)
-    len_inv_d = length(inv_d)
-    i = 1
-    @inbounds while i <= len_inv_d
-        inv_d[i] = 1 / lu_factor.factors.d[i]
-        i += 1
-    end
-
-    # Pre-compute q = A'^{-1} * u using custom Thomas solver (avoids pool allocation)
+    # Pre-compute q = A'^{-1} * u using custom Thomas solver
     # u = [1, 0, ..., 0, 1]^T, solve directly into permanent q storage
     q = Vector{T}(undef, n)
     fill!(q, zero(T))
     q[1] = one(T)
     q[n] = one(T)
-    _ldiv_tridiagonal_nopiv!(q, lu_factor, inv_d)
+    _ldiv_tridiagonal_nopiv!(q, thomas)
 
-    # Workspaces (d, z, y_temp) are now allocated from task-local pools
+    # Workspaces (d, z, y_temp) are allocated from task-local pools at solve time
     bc_config = PeriodicData(q, period)
 
-    return CubicSplineCache(x, spacing, lu_factor, bc_config, inv_d)
+    return CubicSplineCache(x, spacing, thomas, bc_config)
 end
 
 # Helper to get polynomial degree for PolyFit validation
@@ -169,7 +161,7 @@ _polyfit_degree(::PointBC) = 0
 Build cache for generic derivative BC (Deriv1/Deriv2 combinations).
 Uses type dispatch for zero-overhead specialization.
 """
-@with_pool pool function _build_derivative_bc_cache(
+function _build_derivative_bc_cache(
     x::AbstractVector{T},
     left_bc::L,
     right_bc::R
@@ -190,9 +182,11 @@ Uses type dispatch for zero-overhead specialization.
     spacing = _create_spacing(x)
 
     # Build tridiagonal matrix A
-    dl = acquire!(pool, T, n)       # Lower diagonal
-    d_diag = acquire!(pool, T, n+1) # Main diagonal
-    du = acquire!(pool, T, n)       # Upper diagonal
+    # CRITICAL: Use Vector allocation (NOT pool!) for persistent arrays
+    # These arrays are stored in CubicSplineCache which outlives the function.
+    dl = Vector{T}(undef, n)       # Lower diagonal (n elements)
+    d_diag = Vector{T}(undef, n+1) # Main diagonal (n+1 elements) → becomes inv_d
+    du = Vector{T}(undef, n)       # Upper diagonal (n elements)
 
     # First and last rows depend on BC type (type dispatch)
     _set_first_row!(d_diag, du, left_bc, spacing)
@@ -207,22 +201,12 @@ Uses type dispatch for zero-overhead specialization.
         du[i] = h_i
     end
 
-    tA = Tridiagonal(dl, d_diag, du)
-    lu_factor = lu(tA, LinearAlgebra.NoPivot())
+    # ONE-PASS Thomas factorization: d_diag becomes inv_d
+    thomas = thomas_factorize!(dl, d_diag, du)
 
-    # Precompute reciprocals of LU diagonal for fast Thomas algorithm
-    inv_d = similar(lu_factor.factors.d)
-    len_inv_d = length(inv_d)
-    i = 1
-    @inbounds while i <= len_inv_d
-        inv_d[i] = 1 / lu_factor.factors.d[i]
-        i += 1
-    end
-
-    # Workspaces (d, z) are now allocated from task-local pools
     bc_config = BCPair(left_bc, right_bc)
 
-    return CubicSplineCache(x, spacing, lu_factor, bc_config, inv_d)
+    return CubicSplineCache(x, spacing, thomas, bc_config)
 end
 
 # ========================================
@@ -365,7 +349,7 @@ end
     n = length(y) - 1
 
     compute_rhs_periodic!(y_temp, y, cache.spacing)
-    _ldiv_tridiagonal_nopiv!(y_temp, cache.lu_factor, cache.inv_d)
+    _ldiv_tridiagonal_nopiv!(y_temp, cache.thomas)
 
     α = _get_h(cache.spacing, n)
     q = cache.bc_config.q
@@ -414,7 +398,7 @@ Thread-safe: workspaces allocated from task-local pool.
     bc_pair::BCPair{T,L,R}
 ) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}, S<:AbstractGridSpacing{T}}
     compute_rhs!(out_z, y, cache.x, cache.spacing, bc_pair)
-    _ldiv_tridiagonal_nopiv!(out_z, cache.lu_factor, cache.inv_d)
+    _ldiv_tridiagonal_nopiv!(out_z, cache.thomas)
     return out_z
 end
 

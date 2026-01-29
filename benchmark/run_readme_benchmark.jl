@@ -115,32 +115,27 @@ function run_readme_benchmark(; verbose::Bool=true)
         out = Vector{Float64}(undef, nq)  # Pre-allocate output buffer
         evals, secs = get_bench_params(nq)
 
-        # ── FastInterpolations (no cache) ──
-        # One-shot: construct + evaluate in-place
+        # ── FastInterpolations (autocache=false) ──
+        # One-shot API: cubic_interp! does construction + evaluation in one call
         bench_count += 1
-        verbose && print("  [$bench_count/$n_benchmarks] FastInterp(cache-miss) n=$(lpad(nq, 6))... ")
+        verbose && print("  [$bench_count/$n_benchmarks] FastInterp(autocache=false) n=$(lpad(nq, 6))... ")
         clear_cubic_cache!()
         GC.gc()  # Clear GC state before benchmark
-        bench = @benchmarkable begin
-            itp = cubic_interp($x, $y; autocache=false)
-            itp($out, $xi)
-        end
+        bench = @benchmarkable cubic_interp!($out, $x, $y, $xi; autocache=false)
         bench.params.evals = evals
         bench.params.seconds = secs
         b = run(bench)
         t_fast_nocache = ns_to_sec(minimum(b.times))
         verbose && println("$(lpad(format_time(minimum(b.times)), 10)) $(format_bench_stats(b))")
 
-        # ── FastInterpolations (cache hit) ──
+        # ── FastInterpolations (autocache=true) ──
+        # One-shot API with cache primed
         bench_count += 1
-        verbose && print("  [$bench_count/$n_benchmarks] FastInterp(cache)      n=$(lpad(nq, 6))... ")
+        verbose && print("  [$bench_count/$n_benchmarks] FastInterp(autocache=true)  n=$(lpad(nq, 6))... ")
         clear_cubic_cache!()
-        cubic_interp(x, y)  # prime cache
+        cubic_interp!(out, x, y, xi)  # prime cache
         GC.gc()  # Clear GC state before benchmark
-        bench = @benchmarkable begin
-            itp = cubic_interp($x, $y)
-            itp($out, $xi)
-        end
+        bench = @benchmarkable cubic_interp!($out, $x, $y, $xi; autocache=true)
         bench.params.evals = evals
         bench.params.seconds = secs
         b = run(bench)
@@ -210,8 +205,8 @@ function run_readme_benchmark(; verbose::Bool=true)
             speedup_nocache_itp = t_itp / t_fast_nocache
             speedup_nocache_di = t_di / t_fast_nocache
             speedup_nocache_dierckx = t_dierckx / t_fast_nocache
-            println("       → FastInterp(cache) speedup: $(round(speedup_itp, digits=1))× vs Interpolations, $(round(speedup_di, digits=1))× vs DataInterp, $(round(speedup_dierckx, digits=1))× vs Dierckx")
-            println("       → FastInterp(no-cache) speedup: $(round(speedup_nocache_itp, digits=1))× vs Interpolations, $(round(speedup_nocache_di, digits=1))× vs DataInterp, $(round(speedup_nocache_dierckx, digits=1))× vs Dierckx")
+            println("       → FastInterp(autocache=true) speedup: $(round(speedup_itp, digits=1))× vs Interpolations, $(round(speedup_di, digits=1))× vs DataInterp, $(round(speedup_dierckx, digits=1))× vs Dierckx")
+            println("       → FastInterp(autocache=false) speedup: $(round(speedup_nocache_itp, digits=1))× vs Interpolations, $(round(speedup_nocache_di, digits=1))× vs DataInterp, $(round(speedup_nocache_dierckx, digits=1))× vs Dierckx")
             println()
         end
     end
@@ -229,7 +224,7 @@ function print_summary_table(df)
     # Header
     println("┌─────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┐")
     println("│  Query  │      vs Interpolations.jl      │    vs DataInterpolations.jl    │         vs Dierckx.jl          │")
-    println("│    n    │   cache-hit    cache-miss     │   cache-hit    cache-miss     │   cache-hit    cache-miss     │")
+    println("│    n    │  autocache=T   autocache=F    │  autocache=T   autocache=F    │  autocache=T   autocache=F    │")
     println("├─────────┼────────────────────────────────┼────────────────────────────────┼────────────────────────────────┤")
 
     for row in eachrow(df)
@@ -264,9 +259,9 @@ function print_summary_table(df)
     geo_dierckx_cache = geo_mean(df.Dierckx ./ df.FastInterp_cached)
     geo_dierckx_nocache = geo_mean(df.Dierckx ./ df.FastInterp_nocache)
 
-    println("  vs Interpolations.jl:     $(round(geo_itp_cache, digits=1))× (cache-hit), $(round(geo_itp_nocache, digits=1))× (cache-miss)")
-    println("  vs DataInterpolations.jl: $(round(geo_di_cache, digits=1))× (cache-hit), $(round(geo_di_nocache, digits=1))× (cache-miss)")
-    println("  vs Dierckx.jl:            $(round(geo_dierckx_cache, digits=1))× (cache-hit), $(round(geo_dierckx_nocache, digits=1))× (cache-miss)")
+    println("  vs Interpolations.jl:     $(round(geo_itp_cache, digits=1))× (autocache=true), $(round(geo_itp_nocache, digits=1))× (autocache=false)")
+    println("  vs DataInterpolations.jl: $(round(geo_di_cache, digits=1))× (autocache=true), $(round(geo_di_nocache, digits=1))× (autocache=false)")
+    println("  vs Dierckx.jl:            $(round(geo_dierckx_cache, digits=1))× (autocache=true), $(round(geo_dierckx_nocache, digits=1))× (autocache=false)")
 
     # Calculate ranges
     s_itp = df.Interpolations ./ df.FastInterp_cached
@@ -302,7 +297,7 @@ function save_readme_plot(df; save_path::String="docs/images/benchmark_oneshot_d
 
     p = plot(
         df.n, [df.Interpolations df.DataInterp df.Dierckx df.FastInterp_cached],
-        label=["Interpolations.jl" "DataInterpolations.jl" "Dierckx.jl" "FastInterpolations.jl (cache-hit)"],
+        label=["Interpolations.jl" "DataInterpolations.jl" "Dierckx.jl" "FastInterpolations.jl (autocache=true)"],
         xlabel="Query points",
         ylabel="Time (s)",
         title="One-Shot (Construction + Evaluation)",
@@ -329,7 +324,7 @@ function save_readme_plot(df; save_path::String="docs/images/benchmark_oneshot_d
 
     # Add uncached FastInterpolations as dashed line
     plot!(p, df.n, df.FastInterp_nocache,
-        label="FastInterpolations.jl (cache-miss)",
+        label="FastInterpolations.jl (autocache=false)",
         linestyle=:dash,
         linewidth=2,
         color=:blue,

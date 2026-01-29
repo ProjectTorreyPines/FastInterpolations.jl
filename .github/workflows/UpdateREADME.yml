@@ -95,8 +95,9 @@ jobs:
                 "<!-- BENCHMARK_VERSIONS_END -->"
 
             # 2. Build Speedup Block (Result)
+            # escape backticks twice: once for shell (\`), once for Julia string (\\`) if needed
             speedup_content = "<!-- BENCHMARK_SPEEDUP_START -->\n" *
-                "**Speedup:** ($(s_itp))× vs \`Interpolations.jl\` · ($(s_di))× vs \`DataInterpolations.jl\`\n" *
+                "**Speedup:** ($(s_itp))× vs `Interpolations.jl` · ($(s_di))× vs `DataInterpolations.jl`\n" *
                 "<!-- BENCHMARK_SPEEDUP_END -->"
 
             # Read README

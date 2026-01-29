@@ -96,9 +96,10 @@ One-shot (construction + evaluation) time per call with fixed grid size $n=100$.
 ## More Features
 
 ```julia
-# Analytical derivatives — all methods support deriv=1 and deriv=2
+# Analytical derivatives — all methods support 1st, 2nd, 3rd derivatives
 cubic_interp(x, y, 5.0; deriv=1)   # 1st derivative at x=5.0
 cubic_interp(x, y, 5.0; deriv=2)   # 2nd derivative at x=5.0
+cubic_interp(x, y, 5.0; deriv=3)   # 3rd derivative at x=5.0
 
 # Constant interpolation — choose which side to sample
 constant_interp(x, y, xq; side=:nearest) # nearest neighbor (default)
@@ -113,6 +114,7 @@ quadratic_interp(x, y, xq; bc=Right(Deriv1(1.0)))  # S'(right) = 1
 cubic_interp(x, y, xq; bc=NaturalBC())    # S''=0 at both ends (default)
 cubic_interp(x, y, xq; bc=PeriodicBC())   # C²-continuous periodic spline
 cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv2(-5.0)))  # custom (left, right) BC
+cubic_interp(x, y, xq; bc=CubicFit())     # Estimate derivatives using 4-point fit at both ends 
 
 # Extrapolation modes — all methods support these
 linear_interp(x, y, xq; extrap=:constant)    # clamp to boundary values

@@ -461,3 +461,67 @@ Thread-safe: workspaces allocated from task-local pool.
     _solve_cubic_system_periodic!(out_z, y_temp, cache, y)
     return out_z
 end
+
+# ========================================
+# Batch Thomas Solvers (ND Optimization)
+# ========================================
+
+"""
+    _ldiv_along_dim_vectorized!(z, lu, inv_d)
+
+Batch Thomas solver for systems along axis 2 (columns).
+
+Key optimization: outer loop iterates over system step, inner loop iterates over
+axis 1 (contiguous in column-major order), enabling `@simd` vectorization.
+
+# Arguments
+- `z::AbstractMatrix{T}`: RHS matrix (modified in-place), each row is an independent RHS
+- `lu`: LU factorization of tridiagonal system (no pivoting)
+- `inv_d::AbstractVector{T}`: Precomputed reciprocals of LU diagonal elements
+"""
+@inline function _ldiv_along_dim_vectorized!(
+    z::AbstractMatrix{T},
+    lu::LinearAlgebra.LU{T,Tridiagonal{T,V},P},
+    inv_d::AbstractVector{T},
+) where {T<:AbstractFloat, V<:AbstractVector{T}, P}
+    dl = lu.factors.dl
+    du = lu.factors.du
+    n_sys = length(inv_d)   # System size (axis 2 length)
+    n_batch = size(z, 1)    # Batch size (axis 1 length, contiguous)
+
+    # Forward substitution: transposed loop order for contiguous access
+    @inbounds for k in 2:n_sys
+        factor = -dl[k - 1]
+        @simd for i in 1:n_batch
+            z[i, k] = muladd(factor, z[i, k - 1], z[i, k])
+        end
+    end
+
+    # Backward substitution: final column
+    inv_d_n = inv_d[n_sys]
+    @inbounds @simd for i in 1:n_batch
+        z[i, n_sys] *= inv_d_n
+    end
+
+    # Backward substitution: remaining columns
+    @inbounds for k in (n_sys - 1):-1:1
+        u_factor = -du[k]
+        d_factor = inv_d[k]
+        @simd for i in 1:n_batch
+            z[i, k] = muladd(u_factor, z[i, k + 1], z[i, k]) * d_factor
+        end
+    end
+
+    return z
+end
+
+# Dispatch to SIMD-optimized solver (only for D ≥ 2)
+@inline _ldiv_along_dim!(z, lu, inv_d, ::Val{D}) where {D} = _ldiv_along_dim_vectorized!(z, lu, inv_d)
+
+# Val(1) is explicitly unsupported (ND feature parity with feat/ND_hermite_2nd_try)
+@noinline function _ldiv_along_dim!(z, lu, inv_d, ::Val{1})
+    throw(ArgumentError(
+        "Batch solving along axis 1 (Val(1)) is not supported.\n" *
+        "Use per-column/per-slice solves for axis 1, or use Val(2)+ for SIMD-optimized batch solving."
+    ))
+end

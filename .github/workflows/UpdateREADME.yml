@@ -79,25 +79,28 @@ jobs:
 
             # Read speedup summary
             summary = JSON.parsefile(joinpath("benchmark", "speedup_summary.json"))
-            
+
             format_range(min_val, max_val) = "$(round(min_val, digits=1)) ~ $(round(max_val, digits=1))"
-            
+
             s_itp = format_range(summary["itp_min"], summary["itp_max"])
             s_di = format_range(summary["di_min"], summary["di_max"])
+            s_dierckx = format_range(summary["dierckx_min"], summary["dierckx_max"])
 
-            println("Versions: FastInterpolations v$pkg_ver, Interpolations v$itp_ver, DataInterpolations v$di_ver, Julia $julia_ver")
-            println("Speedups: $(s_itp)x (vs Itp), $(s_di)x (vs DataItp)")
+            dierckx_ver = get_pkg_version("Dierckx")
+
+            println("Versions: FastInterpolations v$pkg_ver, Interpolations v$itp_ver, DataInterpolations v$di_ver, Dierckx v$dierckx_ver, Julia $julia_ver")
+            println("Speedups: $(s_itp)x (vs Itp), $(s_di)x (vs DataItp), $(s_dierckx)x (vs Dierckx)")
 
             # 1. Build Metadata Block (Env + Pkg)
             meta_content = "<!-- BENCHMARK_VERSIONS_START -->\n" *
                 "> **Env:** GitHub Actions · \`ubuntu-latest\` · Julia $julia_ver<br>\n" *
-                "> **Pkg:** FastInterpolations (v$pkg_ver) · Interpolations (v$itp_ver) · DataInterpolations (v$di_ver)\n" *
+                "> **Pkg:** FastInterpolations (v$pkg_ver) · Interpolations (v$itp_ver) · DataInterpolations (v$di_ver) · Dierckx (v$dierckx_ver)\n" *
                 "<!-- BENCHMARK_VERSIONS_END -->"
 
             # 2. Build Speedup Block (Result)
             # escape backticks twice: once for shell (\`), once for Julia string (\\`) if needed
             speedup_content = "<!-- BENCHMARK_SPEEDUP_START -->\n" *
-                "**Speedup:** ($(s_itp))× vs `Interpolations.jl` · ($(s_di))× vs `DataInterpolations.jl`\n" *
+                "**Speedup:** ($(s_itp))× vs `Interpolations.jl` · ($(s_di))× vs `DataInterpolations.jl` · ($(s_dierckx))× vs `Dierckx.jl`\n" *
                 "<!-- BENCHMARK_SPEEDUP_END -->"
 
             # Read README

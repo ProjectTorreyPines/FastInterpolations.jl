@@ -81,14 +81,14 @@ For detailed usage and performance trade-offs, see the [API Selection Guide](htt
 
 Benchmark comparison against [Interpolations.jl](https://github.com/JuliaMath/Interpolations.jl) and [DataInterpolations.jl](https://github.com/SciML/DataInterpolations.jl) for **cubic spline interpolation**.
 <!-- BENCHMARK_VERSIONS_START -->
-> **Env:** GitHub Actions · `ubuntu-latest` · Julia 1.12.4<br>
+> **Env:** Local · macOS 15.7.3 · Apple M1 Pro · Julia 1.12.4<br>
 > **Pkg:** FastInterpolations (v0.2.6) · Interpolations (v0.16.2) · DataInterpolations (v8.9.0) · Dierckx (v0.5.4)
 <!-- BENCHMARK_VERSIONS_END -->
 
 ![One-Shot](docs/images/benchmark_oneshot_detail.png)
 
 <!-- BENCHMARK_SPEEDUP_START -->
-**Speedup:** (2.3 ~ 16.3)× vs `Interpolations.jl` · (10.1 ~ 12.0)× vs `DataInterpolations.jl` · (13.0 ~ 27.5)× vs `Dierckx.jl`
+**Speedup:** (2.2 ~ 16.3)× vs `Interpolations.jl` · (9.3 ~ 22.8)× vs `DataInterpolations.jl` · (14.9 ~ 18.3)× vs `Dierckx.jl`
 <!-- BENCHMARK_SPEEDUP_END -->
 
 One-shot (construction + evaluation) time per call with fixed grid size $n=100$. `FastInterpolations.jl` is significantly faster even on the first call (cache-miss), and becomes even faster on subsequent calls (cache-hit).

@@ -5,7 +5,12 @@ using Random
 const FI = FastInterpolations
 const LA = FI.LinearAlgebra
 
-@testset "Thomas Algorithm _ldiv_tridiagonal_nopiv!" begin
+@testset "Thomas LU Solver" begin
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Helper functions for generating test grids
+    # ─────────────────────────────────────────────────────────────────────────
+
     function _x_uniform(::Type{T}, n::Int) where {T<:AbstractFloat}
         return collect(range(T(0), T(1), n))
     end
@@ -59,6 +64,10 @@ const LA = FI.LinearAlgebra
         return x
     end
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # Helper functions for building tridiagonal matrices
+    # ─────────────────────────────────────────────────────────────────────────
+
     function _build_tridiagonal_derivative_bc(x::AbstractVector{T}, bc_pair::FI.BCPair{T}) where {T<:AbstractFloat}
         spacing = FI._create_spacing(x)
         n = length(x) - 1
@@ -108,6 +117,10 @@ const LA = FI.LinearAlgebra
         A = LA.Tridiagonal(dl, d_diag, du)
         return spacing, A
     end
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # Section 1: Core Thomas Algorithm (_ldiv_tridiagonal_nopiv!)
+    # ═════════════════════════════════════════════════════════════════════════
 
     @testset "Derivative-BC: ThomasFactorization vs stdlib LU" begin
         Random.seed!(0)
@@ -229,6 +242,58 @@ const LA = FI.LinearAlgebra
                 # Solution agreement
                 @test q_custom ≈ q_base rtol = 5 * eps(T)
             end
+        end
+    end
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # Section 2: Batch Thomas Algorithm (_ldiv_along_dim!)
+    # ═════════════════════════════════════════════════════════════════════════
+
+    @testset "Batch _ldiv_along_dim!" begin
+        @testset "Val(1) throws ArgumentError" begin
+            x = collect(range(0.0, 1.0, 20))
+            cache = FI.CubicSplineCache(x; bc=NaturalBC())
+            z = rand(20, 5)
+
+            @test_throws ArgumentError FI._ldiv_along_dim!(z, cache.thomas, Val(1))
+        end
+
+        @testset "Val(2) correctness: batch == sequential" begin
+            for T in (Float64, Float32)
+                for n in (10, 50, 101)
+                    x = collect(range(T(0), T(1), n))
+                    cache = FI.CubicSplineCache(x; bc=NaturalBC())
+
+                    n_batch = 20
+                    z_batch = rand(T, n_batch, n)
+                    z_seq = copy(z_batch)
+
+                    # Sequential reference: solve each RHS row independently
+                    @inbounds for i in 1:n_batch
+                        FI._ldiv_tridiagonal_nopiv!(view(z_seq, i, :), cache.thomas)
+                    end
+
+                    FI._ldiv_along_dim!(z_batch, cache.thomas, Val(2))
+
+                    @test z_batch ≈ z_seq rtol=eps(T) * 200
+                end
+            end
+        end
+
+        @testset "Periodic system size consistency" begin
+            x = collect(range(0.0, 1.0, 51))
+            cache = FI.CubicSplineCache(x; bc=PeriodicBC())
+
+            n_sys = length(cache.thomas.inv_d) # = length(x)-1
+            z = rand(8, n_sys)
+            z_ref = copy(z)
+
+            @inbounds for i in 1:size(z, 1)
+                FI._ldiv_tridiagonal_nopiv!(view(z_ref, i, :), cache.thomas)
+            end
+
+            FI._ldiv_along_dim!(z, cache.thomas, Val(2))
+            @test z ≈ z_ref rtol=1e-10
         end
     end
 end

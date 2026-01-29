@@ -32,26 +32,27 @@ BenchmarkTools.DEFAULT_PARAMETERS.samples = BENCH_SAMPLES
 
 # Fixed evals and seconds by query size (skip auto-tuning for more stable results)
 # Higher evals/seconds = more stable measurements for fast operations
-const EVALS_TINY = 100      # nq ≤ 5: ~1-5μs benchmarks (prevent long samples impacting minimum)
+const EVALS_TINY = 200      # nq ≤ 20: ~1-5μs benchmarks (prevent long samples impacting minimum)
 const EVALS_SMALL = 100     # nq ≤ 100: ~5-20μs benchmarks
-const EVALS_MED = 100       # nq ≤ 1000: ~20-100μs benchmarks
-const EVALS_LARGE = 10      # nq > 1000: ~100μs+ benchmarks
+const EVALS_MED = 10        # nq ≤ 2000: ~20-100μs benchmarks
+const EVALS_LARGE = 1       # nq > 2000: ~100μs+ benchmarks (single call is long enough)
 
-const SECS_TINY = 10.0      # nq ≤ 5: longer for stability
-const SECS_SMALL = 5.0      # nq ≤ 100
-const SECS_MED = 3.0        # nq ≤ 1000
-const SECS_LARGE = 2.0      # nq > 1000: already stable
+const SECS_TINY = 10.0      # nq ≤ 20: longer for stability
+const SECS_SMALL = 10.0      # nq ≤ 100
+const SECS_MED = 5.0        # nq ≤ 2000
+const SECS_LARGE = 5.0      # nq > 2000: already stable
 
 """Get appropriate (evals, seconds) based on query size."""
 function get_bench_params(nq::Int)
-    nq ≤ 5 && return (EVALS_TINY, SECS_TINY)
+    nq ≤ 20 && return (EVALS_TINY, SECS_TINY)
     nq ≤ 100 && return (EVALS_SMALL, SECS_SMALL)
-    nq ≤ 1000 && return (EVALS_MED, SECS_MED)
+    nq ≤ 2000 && return (EVALS_MED, SECS_MED)
     return (EVALS_LARGE, SECS_LARGE)
 end
 
 # Query sizes for the plot (10^0 ~ 10^5)
-const QUERY_SIZES = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000, 50_000, 100_000]
+# const QUERY_SIZES = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000, 50_000, 100_000]
+const QUERY_SIZES = [1, 100_000]
 
 # Grid size (fixed)
 const N_GRID = 100
@@ -115,19 +116,6 @@ function run_readme_benchmark(; verbose::Bool=true)
         out = Vector{Float64}(undef, nq)  # Pre-allocate output buffer
         evals, secs = get_bench_params(nq)
 
-        # ── FastInterpolations (autocache=false) ──
-        # One-shot API: cubic_interp! does construction + evaluation in one call
-        bench_count += 1
-        verbose && print("  [$bench_count/$n_benchmarks] FastInterp(autocache=false) n=$(lpad(nq, 6))... ")
-        clear_cubic_cache!()
-        GC.gc()  # Clear GC state before benchmark
-        bench = @benchmarkable cubic_interp!($out, $x, $y, $xi; autocache=false)
-        bench.params.evals = evals
-        bench.params.seconds = secs
-        b = run(bench)
-        t_fast_nocache = ns_to_sec(minimum(b.times))
-        verbose && println("$(lpad(format_time(minimum(b.times)), 10)) $(format_bench_stats(b))")
-
         # ── FastInterpolations (autocache=true) ──
         # One-shot API with cache primed
         bench_count += 1
@@ -140,6 +128,19 @@ function run_readme_benchmark(; verbose::Bool=true)
         bench.params.seconds = secs
         b = run(bench)
         t_fast_cache = ns_to_sec(minimum(b.times))
+        verbose && println("$(lpad(format_time(minimum(b.times)), 10)) $(format_bench_stats(b))")
+
+        # ── FastInterpolations (autocache=false) ──
+        # One-shot API: cubic_interp! does construction + evaluation in one call
+        bench_count += 1
+        verbose && print("  [$bench_count/$n_benchmarks] FastInterp(autocache=false) n=$(lpad(nq, 6))... ")
+        clear_cubic_cache!()
+        GC.gc()  # Clear GC state before benchmark
+        bench = @benchmarkable cubic_interp!($out, $x, $y, $xi; autocache=false)
+        bench.params.evals = evals
+        bench.params.seconds = secs
+        b = run(bench)
+        t_fast_nocache = ns_to_sec(minimum(b.times))
         verbose && println("$(lpad(format_time(minimum(b.times)), 10)) $(format_bench_stats(b))")
 
         # ── Interpolations.jl ──
@@ -322,10 +323,10 @@ function save_readme_plot(df; save_path::String="docs/images/benchmark_oneshot_d
         dpi=dpi
     )
 
-    # Add uncached FastInterpolations as dashed line
+    # Add uncached FastInterpolations as dotted line
     plot!(p, df.n, df.FastInterp_nocache,
         label="FastInterpolations.jl (autocache=false)",
-        linestyle=:dash,
+        linestyle=:dot,
         linewidth=2,
         color=:blue,
         marker=:none

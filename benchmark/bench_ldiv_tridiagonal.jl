@@ -1,6 +1,7 @@
 #!/usr/bin/env julia
 
 using FastInterpolations
+using BenchmarkTools
 import LinearAlgebra
 using Random
 
@@ -74,25 +75,30 @@ function _time_loop!(f!, n_warmup::Int, n_iter::Int)
     end
 end
 
-function bench_derivative_bc(; T::Type{<:AbstractFloat}, n::Int, n_warmup::Int, n_iter::Int)
+function bench_derivative_bc(; T::Type{<:AbstractFloat}, n::Int, seconds::Float64)
     x = collect(range(T(0), T(1), n))
     bc = FI._normalize_bc(NaturalBC(), T)
     cache = FI.CubicSplineCache(x; bc=bc)
     A = _build_tridiagonal_derivative_bc(cache.x, cache.spacing, bc)
 
+    xv = cache.x
+    spacing = cache.spacing
+    lu = cache.lu_factor
+    inv_d = cache.inv_d
+
     y = rand(T, n)
     d = similar(y)
     out = similar(y)
 
-    function baseline!()
-        FI.compute_rhs!(d, y, cache.x, cache.spacing, bc)
-        LinearAlgebra.ldiv!(out, cache.lu_factor, d)
+    baseline!() = begin
+        FI.compute_rhs!(d, y, xv, spacing, bc)
+        LinearAlgebra.ldiv!(out, lu, d)
         return nothing
     end
 
-    function custom!()
-        FI.compute_rhs!(out, y, cache.x, cache.spacing, bc)
-        FI._ldiv_tridiagonal_nopiv!(out, cache.lu_factor, cache.inv_d)
+    custom!() = begin
+        FI.compute_rhs!(out, y, xv, spacing, bc)
+        FI._ldiv_tridiagonal_nopiv!(out, lu, inv_d)
         return nothing
     end
 
@@ -107,32 +113,51 @@ function bench_derivative_bc(; T::Type{<:AbstractFloat}, n::Int, n_warmup::Int, 
 
     sol_diff = maximum(abs.(out_cust .- out_base))
 
-    t_base = _time_loop!(baseline!, n_warmup, n_iter)
-    t_cust = _time_loop!(custom!, n_warmup, n_iter)
+    t_base = @benchmark begin
+        FI.compute_rhs!($d, $y, $xv, $spacing, $bc)
+        LinearAlgebra.ldiv!($out, $lu, $d)
+    end evals = 1 seconds = seconds
 
-    return (sol_diff=sol_diff, resid_base=resid_base, resid_cust=resid_cust, t_base=t_base, t_cust=t_cust)
+    t_cust = @benchmark begin
+        FI.compute_rhs!($out, $y, $xv, $spacing, $bc)
+        FI._ldiv_tridiagonal_nopiv!($out, $lu, $inv_d)
+    end evals = 1 seconds = seconds
+
+    est_base = median(t_base)
+    est_cust = median(t_cust)
+    return (
+        sol_diff=sol_diff,
+        resid_base=resid_base,
+        resid_cust=resid_cust,
+        est_base=est_base,
+        est_cust=est_cust,
+    )
 end
 
-function bench_periodic_tridiagonal(; T::Type{<:AbstractFloat}, n::Int, n_warmup::Int, n_iter::Int)
+function bench_periodic_tridiagonal(; T::Type{<:AbstractFloat}, n::Int, seconds::Float64)
     # Periodic uses n points, but the cyclic system is size n-1 (A') internally.
     x = collect(range(T(0), T(1), n))
     cache = FI.CubicSplineCache(x; bc=PeriodicBC())
     Aprime = _build_tridiagonal_periodic_Aprime(cache.x, cache.spacing)
+
+    spacing = cache.spacing
+    lu = cache.lu_factor
+    inv_d = cache.inv_d
 
     y = rand(T, n)
     n_sys = length(cache.inv_d) # = n-1
     rhs = rand(T, n_sys)
     tmp = similar(rhs)
 
-    function baseline!()
-        FI.compute_rhs_periodic!(rhs, y, cache.spacing)
-        LinearAlgebra.ldiv!(tmp, cache.lu_factor, rhs)
+    baseline!() = begin
+        FI.compute_rhs_periodic!(rhs, y, spacing)
+        LinearAlgebra.ldiv!(tmp, lu, rhs)
         return nothing
     end
 
-    function custom!()
-        FI.compute_rhs_periodic!(tmp, y, cache.spacing)
-        FI._ldiv_tridiagonal_nopiv!(tmp, cache.lu_factor, cache.inv_d)
+    custom!() = begin
+        FI.compute_rhs_periodic!(tmp, y, spacing)
+        FI._ldiv_tridiagonal_nopiv!(tmp, lu, inv_d)
         return nothing
     end
 
@@ -147,38 +172,62 @@ function bench_periodic_tridiagonal(; T::Type{<:AbstractFloat}, n::Int, n_warmup
 
     sol_diff = maximum(abs.(tmp_cust .- tmp_base))
 
-    t_base = _time_loop!(baseline!, n_warmup, n_iter)
-    t_cust = _time_loop!(custom!, n_warmup, n_iter)
+    t_base = @benchmark begin
+        FI.compute_rhs_periodic!($rhs, $y, $spacing)
+        LinearAlgebra.ldiv!($tmp, $lu, $rhs)
+    end evals = 1 seconds = seconds
 
-    return (sol_diff=sol_diff, resid_base=resid_base, resid_cust=resid_cust, t_base=t_base, t_cust=t_cust)
+    t_cust = @benchmark begin
+        FI.compute_rhs_periodic!($tmp, $y, $spacing)
+        FI._ldiv_tridiagonal_nopiv!($tmp, $lu, $inv_d)
+    end evals = 1 seconds = seconds
+
+    est_base = median(t_base)
+    est_cust = median(t_cust)
+    return (
+        sol_diff=sol_diff,
+        resid_base=resid_base,
+        resid_cust=resid_cust,
+        est_base=est_base,
+        est_cust=est_cust,
+    )
 end
 
 function main()
     Random.seed!(0)
 
-    n_warmup = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 200
-    n_iter = length(ARGS) >= 2 ? parse(Int, ARGS[2]) : 2000
+    seconds = length(ARGS) >= 1 ? parse(Float64, ARGS[1]) : 2.0
 
     println("FastInterpolations tridiagonal solve benchmark")
-    println("  warmup = $n_warmup, iter = $n_iter")
+    println("  seconds per benchmark = $seconds")
     println()
-    println("Case, T, n, sol_diff_inf, resid_inf baseline, resid_inf custom, ns/call baseline(ldiv!), ns/call custom(_ldiv)")
+    println("Case, T, n, sol_diff_inf, resid_inf baseline, resid_inf custom, median ns baseline, median ns custom, speedup, allocs baseline, allocs custom, bytes baseline, bytes custom")
 
     for T in (Float64, Float32)
         for n in (51, 201, 1001)
-            r = bench_derivative_bc(; T=T, n=n, n_warmup=n_warmup, n_iter=n_iter)
-            ns_base = _ns_per_call(r.t_base, n_iter)
-            ns_cust = _ns_per_call(r.t_cust, n_iter)
-            println("DerivativeBC, $T, $n, $(r.sol_diff), $(r.resid_base), $(r.resid_cust), $(ns_base), $(ns_cust)")
+            r = bench_derivative_bc(; T=T, n=n, seconds=seconds)
+            t_base = Float64(r.est_base.time)
+            t_cust = Float64(r.est_cust.time)
+            speedup = t_base / t_cust
+            println(
+                "DerivativeBC, $T, $n, $(r.sol_diff), $(r.resid_base), $(r.resid_cust), " *
+                "$(t_base), $(t_cust), $(speedup), " *
+                "$(r.est_base.allocs), $(r.est_cust.allocs), $(r.est_base.memory), $(r.est_cust.memory)"
+            )
         end
     end
 
     for T in (Float64, Float32)
         for n in (51, 201, 1001)
-            r = bench_periodic_tridiagonal(; T=T, n=n, n_warmup=n_warmup, n_iter=n_iter)
-            ns_base = _ns_per_call(r.t_base, n_iter)
-            ns_cust = _ns_per_call(r.t_cust, n_iter)
-            println("Periodic(A'), $T, $n, $(r.sol_diff), $(r.resid_base), $(r.resid_cust), $(ns_base), $(ns_cust)")
+            r = bench_periodic_tridiagonal(; T=T, n=n, seconds=seconds)
+            t_base = Float64(r.est_base.time)
+            t_cust = Float64(r.est_cust.time)
+            speedup = t_base / t_cust
+            println(
+                "Periodic(A'), $T, $n, $(r.sol_diff), $(r.resid_base), $(r.resid_cust), " *
+                "$(t_base), $(t_cust), $(speedup), " *
+                "$(r.est_base.allocs), $(r.est_cust.allocs), $(r.est_base.memory), $(r.est_cust.memory)"
+            )
         end
     end
 end

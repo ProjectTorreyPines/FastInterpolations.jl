@@ -46,6 +46,7 @@ using BenchmarkTools
 using Interpolations
 using DataInterpolations
 using FastInterpolations
+using Dierckx
 using Random
 using Printf
 using Statistics
@@ -464,6 +465,81 @@ function run_data_interpolations_vector_API!(A::Array{Float64,3}, interps::Matri
 end
 
 # =============================================================================
+# Dierckx.jl - Cubic Spline Only (FITPACK wrapper)
+# =============================================================================
+
+"""Initialize Dierckx.jl interpolants for all (m, m') pairs. Cubic only."""
+function init_dierckx(::Val{:cubic}, psi_grid, data::Array{Float64,3})
+    _, mpert, _ = size(data)
+    t = collect(psi_grid)  # Dierckx requires Vector
+    first_itp = Dierckx.Spline1D(t, data[:, 1, 1]; k=3, s=0.0)
+    interps = Matrix{typeof(first_itp)}(undef, mpert, mpert)
+    interps[1, 1] = first_itp
+    for m1 in 1:mpert, m2 in 1:mpert
+        (m1 == 1 && m2 == 1) && continue
+        interps[m1, m2] = Dierckx.Spline1D(t, data[:, m1, m2]; k=3, s=0.0)
+    end
+    return interps
+end
+
+# Dierckx also supports k=1 (linear) and k=2 (quadratic), but we focus on cubic
+function init_dierckx(::Val{:linear}, psi_grid, data::Array{Float64,3})
+    _, mpert, _ = size(data)
+    t = collect(psi_grid)
+    first_itp = Dierckx.Spline1D(t, data[:, 1, 1]; k=1, s=0.0)
+    interps = Matrix{typeof(first_itp)}(undef, mpert, mpert)
+    interps[1, 1] = first_itp
+    for m1 in 1:mpert, m2 in 1:mpert
+        (m1 == 1 && m2 == 1) && continue
+        interps[m1, m2] = Dierckx.Spline1D(t, data[:, m1, m2]; k=1, s=0.0)
+    end
+    return interps
+end
+
+function init_dierckx(::Val{:quadratic}, psi_grid, data::Array{Float64,3})
+    _, mpert, _ = size(data)
+    t = collect(psi_grid)
+    first_itp = Dierckx.Spline1D(t, data[:, 1, 1]; k=2, s=0.0)
+    interps = Matrix{typeof(first_itp)}(undef, mpert, mpert)
+    interps[1, 1] = first_itp
+    for m1 in 1:mpert, m2 in 1:mpert
+        (m1 == 1 && m2 == 1) && continue
+        interps[m1, m2] = Dierckx.Spline1D(t, data[:, m1, m2]; k=2, s=0.0)
+    end
+    return interps
+end
+
+# Dierckx doesn't support k=0 (constant), skip for :constant
+function init_dierckx(::Val{:constant}, psi_grid, data::Array{Float64,3})
+    return nothing  # Not supported
+end
+
+"""Evaluate all Dierckx interpolants at a single point (scalar API)."""
+function eval_dierckx!(A::Matrix{Float64}, interps::Matrix, psi::Float64)
+    for m2 in axes(interps, 2), m1 in axes(interps, 1)
+        A[m1, m2] = interps[m1, m2](psi)
+    end
+    return A
+end
+
+"""Sequential evaluation loop using scalar API."""
+function run_dierckx_eval_loop!(A::Matrix{Float64}, interps::Matrix, psi_values::Vector{Float64})
+    for psi in psi_values
+        eval_dierckx!(A, interps, psi)
+    end
+    return A
+end
+
+"""Batch evaluation using Dierckx's vector evaluation."""
+function run_dierckx_vector_API!(A::Array{Float64,3}, interps::Matrix, psi_values::Vector{Float64})
+    for m2 in axes(interps, 2), m1 in axes(interps, 1)
+        # Dierckx Spline1D supports vector evaluation directly
+        @views A[:, m1, m2] .= interps[m1, m2](psi_values)
+    end
+    return A
+end
+
+# =============================================================================
 # Benchmark Utilities
 # =============================================================================
 
@@ -666,6 +742,32 @@ function run_benchmark(method::Symbol; verbose::Bool=false)
         () -> copy(A_all[end, :, :]);
         init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_interp_evals, verbose=verbose)
 
+    # -------------------------------------------------------------------------
+    # Dierckx.jl (FITPACK wrapper - cubic/quadratic/linear only, no constant)
+    # -------------------------------------------------------------------------
+    dierckx_interps = init_dierckx(method_val, psi_grid, data)
+    if dierckx_interps !== nothing
+        print_section_header("Dierckx.jl ($(method_name))")
+
+        init_result = benchmark_init(() -> init_dierckx(method_val, psi_grid, data); n_interps=n_interps, verbose=verbose)
+        dierckx_interps = init_result.interps
+
+        benchmark_eval!(results, final_matrices,
+            "Dierckx.jl (scalar)", "scalar API",
+            () -> run_dierckx_eval_loop!(A, dierckx_interps, psi_values),
+            () -> copy(A);
+            init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_interp_evals, verbose=verbose)
+
+        benchmark_eval!(results, final_matrices,
+            "Dierckx.jl (vector)", "vector API",
+            () -> run_dierckx_vector_API!(A_all, dierckx_interps, psi_values),
+            () -> copy(A_all[end, :, :]);
+            init_time_ms=init_result.time, init_std_ms=init_result.std, init_allocs=init_result.allocs, init_memory=init_result.memory, total_evals=total_interp_evals, verbose=verbose)
+    else
+        println()
+        println("Skipping Dierckx.jl: $(method_name) interpolation not supported (constant requires k≥1)")
+        println()
+    end
 
     # -------------------------------------------------------------------------
     # Summary
@@ -676,6 +778,7 @@ function run_benchmark(method::Symbol; verbose::Bool=false)
         "Interpolations.jl" => :blue,
         "FastInterpolations.jl" => :green,
         "DataInterpolations.jl" => :yellow,
+        "Dierckx.jl" => :magenta,
     )
     get_color(name) = begin
         for (prefix, c) in pkg_colors

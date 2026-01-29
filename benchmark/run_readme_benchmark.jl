@@ -14,6 +14,7 @@ using BenchmarkTools
 using FastInterpolations
 import Interpolations
 import DataInterpolations
+import Dierckx
 using Plots
 using DataFrames
 using Statistics
@@ -92,7 +93,7 @@ function run_readme_benchmark(; verbose::Bool=true)
 
     ns_to_sec(ns) = ns / 1e9
 
-    n_benchmarks = length(QUERY_SIZES) * 4  # 4 packages/configs per query size
+    n_benchmarks = length(QUERY_SIZES) * 5  # 5 packages/configs per query size
     # Estimate total time based on variable seconds per query size
     est_time_sec = sum(nq -> get_bench_params(nq)[2] * 4, QUERY_SIZES)
     est_time_min = est_time_sec / 60
@@ -176,22 +177,41 @@ function run_readme_benchmark(; verbose::Bool=true)
         t_di = ns_to_sec(minimum(b.times))
         verbose && println("$(lpad(format_time(minimum(b.times)), 10)) $(format_bench_stats(b))")
 
+        # ── Dierckx.jl ──
+        # One-shot: construct + evaluate (FITPACK wrapper)
+        bench_count += 1
+        verbose && print("  [$bench_count/$n_benchmarks] Dierckx.jl            n=$(lpad(nq, 6))... ")
+        x_vec = collect(x)  # Dierckx requires Vector
+        GC.gc()  # Clear GC state before benchmark
+        bench = @benchmarkable begin
+            itp = Dierckx.Spline1D($x_vec, $y; k=3, s=0.0)
+            @. $out = itp($xi)
+        end
+        bench.params.evals = evals
+        bench.params.seconds = secs
+        b = run(bench)
+        t_dierckx = ns_to_sec(minimum(b.times))
+        verbose && println("$(lpad(format_time(minimum(b.times)), 10)) $(format_bench_stats(b))")
+
         push!(rows, (
             n=nq,
             FastInterp_nocache=t_fast_nocache,
             FastInterp_cached=t_fast_cache,
             Interpolations=t_itp,
-            DataInterp=t_di
+            DataInterp=t_di,
+            Dierckx=t_dierckx
         ))
 
         # Show speedup summary for this query size
         if verbose
             speedup_itp = t_itp / t_fast_cache
             speedup_di = t_di / t_fast_cache
+            speedup_dierckx = t_dierckx / t_fast_cache
             speedup_nocache_itp = t_itp / t_fast_nocache
             speedup_nocache_di = t_di / t_fast_nocache
-            println("       → FastInterp(cache) speedup: $(round(speedup_itp, digits=1))× vs Interpolations, $(round(speedup_di, digits=1))× vs DataInterp")
-            println("       → FastInterp(no-cache) speedup: $(round(speedup_nocache_itp, digits=1))× vs Interpolations, $(round(speedup_nocache_di, digits=1))× vs DataInterp")
+            speedup_nocache_dierckx = t_dierckx / t_fast_nocache
+            println("       → FastInterp(cache) speedup: $(round(speedup_itp, digits=1))× vs Interpolations, $(round(speedup_di, digits=1))× vs DataInterp, $(round(speedup_dierckx, digits=1))× vs Dierckx")
+            println("       → FastInterp(no-cache) speedup: $(round(speedup_nocache_itp, digits=1))× vs Interpolations, $(round(speedup_nocache_di, digits=1))× vs DataInterp, $(round(speedup_nocache_dierckx, digits=1))× vs Dierckx")
             println()
         end
     end
@@ -201,61 +221,66 @@ end
 
 """Print summary table with speedups."""
 function print_summary_table(df)
-    println("=" ^ 90)
+    println("=" ^ 110)
     println("SPEEDUP SUMMARY (FastInterpolations.jl vs others)")
-    println("=" ^ 90)
+    println("=" ^ 110)
     println()
 
     # Header
-    println("┌─────────┬────────────────────────────────┬────────────────────────────────┐")
-    println("│  Query  │      vs Interpolations.jl      │    vs DataInterpolations.jl    │")
-    println("│    n    │   cache-hit    cache-miss     │   cache-hit    cache-miss     │")
-    println("├─────────┼────────────────────────────────┼────────────────────────────────┤")
+    println("┌─────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┐")
+    println("│  Query  │      vs Interpolations.jl      │    vs DataInterpolations.jl    │         vs Dierckx.jl          │")
+    println("│    n    │   cache-hit    cache-miss     │   cache-hit    cache-miss     │   cache-hit    cache-miss     │")
+    println("├─────────┼────────────────────────────────┼────────────────────────────────┼────────────────────────────────┤")
 
     for row in eachrow(df)
         speedup_itp_cache = row.Interpolations / row.FastInterp_cached
         speedup_itp_nocache = row.Interpolations / row.FastInterp_nocache
         speedup_di_cache = row.DataInterp / row.FastInterp_cached
         speedup_di_nocache = row.DataInterp / row.FastInterp_nocache
+        speedup_dierckx_cache = row.Dierckx / row.FastInterp_cached
+        speedup_dierckx_nocache = row.Dierckx / row.FastInterp_nocache
 
         n_str = lpad(row.n, 6)
         itp_cache_str = lpad("$(round(speedup_itp_cache, digits=1))×", 8)
         itp_nocache_str = lpad("$(round(speedup_itp_nocache, digits=1))×", 8)
         di_cache_str = lpad("$(round(speedup_di_cache, digits=1))×", 8)
         di_nocache_str = lpad("$(round(speedup_di_nocache, digits=1))×", 8)
+        dierckx_cache_str = lpad("$(round(speedup_dierckx_cache, digits=1))×", 8)
+        dierckx_nocache_str = lpad("$(round(speedup_dierckx_nocache, digits=1))×", 8)
 
-        println("│ $n_str  │    $itp_cache_str       $itp_nocache_str      │    $di_cache_str       $di_nocache_str      │")
+        println("│ $n_str  │    $itp_cache_str       $itp_nocache_str      │    $di_cache_str       $di_nocache_str      │    $dierckx_cache_str       $dierckx_nocache_str      │")
     end
 
-    println("└─────────┴────────────────────────────────┴────────────────────────────────┘")
+    println("└─────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┘")
     println()
 
     # Overall average speedup
-    avg_speedup_itp_cache = mean(df.Interpolations ./ df.FastInterp_cached)
-    avg_speedup_itp_nocache = mean(df.Interpolations ./ df.FastInterp_nocache)
-    avg_speedup_di_cache = mean(df.DataInterp ./ df.FastInterp_cached)
-    avg_speedup_di_nocache = mean(df.DataInterp ./ df.FastInterp_nocache)
-
     println("Average speedup (geometric mean):")
     geo_mean(x) = exp(mean(log.(x)))
     geo_itp_cache = geo_mean(df.Interpolations ./ df.FastInterp_cached)
     geo_itp_nocache = geo_mean(df.Interpolations ./ df.FastInterp_nocache)
     geo_di_cache = geo_mean(df.DataInterp ./ df.FastInterp_cached)
     geo_di_nocache = geo_mean(df.DataInterp ./ df.FastInterp_nocache)
+    geo_dierckx_cache = geo_mean(df.Dierckx ./ df.FastInterp_cached)
+    geo_dierckx_nocache = geo_mean(df.Dierckx ./ df.FastInterp_nocache)
 
-    println("  vs Interpolations.jl:    $(round(geo_itp_cache, digits=1))× (cache-hit), $(round(geo_itp_nocache, digits=1))× (cache-miss)")
+    println("  vs Interpolations.jl:     $(round(geo_itp_cache, digits=1))× (cache-hit), $(round(geo_itp_nocache, digits=1))× (cache-miss)")
     println("  vs DataInterpolations.jl: $(round(geo_di_cache, digits=1))× (cache-hit), $(round(geo_di_nocache, digits=1))× (cache-miss)")
+    println("  vs Dierckx.jl:            $(round(geo_dierckx_cache, digits=1))× (cache-hit), $(round(geo_dierckx_nocache, digits=1))× (cache-miss)")
 
     # Calculate ranges
     s_itp = df.Interpolations ./ df.FastInterp_cached
     s_di = df.DataInterp ./ df.FastInterp_cached
+    s_dierckx = df.Dierckx ./ df.FastInterp_cached
 
     # Save summary for Release workflow
     summary = Dict(
         "itp_min" => minimum(s_itp),
         "itp_max" => maximum(s_itp),
         "di_min" => minimum(s_di),
-        "di_max" => maximum(s_di)
+        "di_max" => maximum(s_di),
+        "dierckx_min" => minimum(s_dierckx),
+        "dierckx_max" => maximum(s_dierckx)
     )
     open(joinpath(@__DIR__, "speedup_summary.json"), "w") do io
         JSON.print(io, summary)
@@ -269,15 +294,15 @@ end
 # ══════════════════════════════════════════════════════════════════════════════
 
 function save_readme_plot(df; save_path::String="docs/images/benchmark_oneshot_detail.png", dpi::Int=150)
-    colors = [:orange, :green, :blue]
+    colors = [:orange, :green, :magenta, :blue]  # Added magenta for Dierckx
 
     # Calculate y-axis limits: min(1e-6, data_min) to auto
-    all_times = vcat(df.Interpolations, df.DataInterp, df.FastInterp_cached, df.FastInterp_nocache)
+    all_times = vcat(df.Interpolations, df.DataInterp, df.Dierckx, df.FastInterp_cached, df.FastInterp_nocache)
     ymin = min(1e-6, minimum(all_times) * 0.5)
 
     p = plot(
-        df.n, [df.Interpolations df.DataInterp df.FastInterp_cached],
-        label=["Interpolations.jl" "DataInterpolations.jl" "FastInterpolations.jl (cache-hit)"],
+        df.n, [df.Interpolations df.DataInterp df.Dierckx df.FastInterp_cached],
+        label=["Interpolations.jl" "DataInterpolations.jl" "Dierckx.jl" "FastInterpolations.jl (cache-hit)"],
         xlabel="Query points",
         ylabel="Time (s)",
         title="One-Shot (Construction + Evaluation)",
@@ -298,7 +323,7 @@ function save_readme_plot(df; save_path::String="docs/images/benchmark_oneshot_d
         guidefontsize=14,
         titlefontsize=16,
         legendfontsize=10,
-        size=(600, 450),
+        size=(700, 450),  # Slightly wider to accommodate legend
         dpi=dpi
     )
 

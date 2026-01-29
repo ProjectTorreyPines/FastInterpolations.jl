@@ -51,8 +51,7 @@ function get_bench_params(nq::Int)
 end
 
 # Query sizes for the plot (10^0 ~ 10^5)
-# const QUERY_SIZES = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000, 50_000, 100_000]
-const QUERY_SIZES = [1, 100_000]
+const QUERY_SIZES = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000, 50_000, 100_000]
 
 # Grid size (fixed)
 const N_GRID = 100
@@ -123,7 +122,9 @@ function run_readme_benchmark(; verbose::Bool=true)
         clear_cubic_cache!()
         cubic_interp!(out, x, y, xi)  # prime cache
         GC.gc()  # Clear GC state before benchmark
-        bench = @benchmarkable cubic_interp!($out, $x, $y, $xi; autocache=true)
+        bench = @benchmarkable begin 
+            cubic_interp!($out, $x, $y, $xi; autocache=true)
+        end
         bench.params.evals = evals
         bench.params.seconds = secs
         b = run(bench)
@@ -136,7 +137,9 @@ function run_readme_benchmark(; verbose::Bool=true)
         verbose && print("  [$bench_count/$n_benchmarks] FastInterp(autocache=false) n=$(lpad(nq, 6))... ")
         clear_cubic_cache!()
         GC.gc()  # Clear GC state before benchmark
-        bench = @benchmarkable cubic_interp!($out, $x, $y, $xi; autocache=false)
+        bench = @benchmarkable begin
+            cubic_interp!($out, $x, $y, $xi; autocache=false)
+        end
         bench.params.evals = evals
         bench.params.seconds = secs
         b = run(bench)

@@ -166,19 +166,15 @@ Solves `Ax = b` in-place where `A = L*U` is the pre-computed factorization.
 
     n = length(inv_d)
 
-    # Forward elimination (while loop eliminates iterator protocol overhead)
-    i = 1
-    @inbounds while i < n
+    # Forward elimination
+    @inbounds for i in 1:n-1
         b[i + 1] = muladd(-dl[i], b[i], b[i + 1])
-        i += 1
     end
 
-    # Backward substitution (while loop for StepRange overhead elimination)
+    # Backward substitution
     @inbounds b[n] *= inv_d[n]
-    i = n - 1
-    @inbounds while i >= 1
+    @inbounds for i in n-1:-1:1
         b[i] = muladd(-du[i], b[i + 1], b[i]) * inv_d[i]
-        i -= 1
     end
 
     return b
@@ -207,19 +203,15 @@ Prefer using `ThomasFactorization` directly for better performance.
 
     n = length(inv_d)
 
-    # Forward elimination (while loop eliminates iterator protocol overhead)
-    i = 1
-    @inbounds while i < n
+    # Forward elimination
+    @inbounds for i in 1:n-1
         b[i + 1] = muladd(-dl[i], b[i], b[i + 1])
-        i += 1
     end
 
-    # Backward substitution (while loop for StepRange overhead elimination)
+    # Backward substitution
     @inbounds b[n] *= inv_d[n]
-    i = n - 1
-    @inbounds while i >= 1
+    @inbounds for i in n-1:-1:1
         b[i] = muladd(-du[i], b[i + 1], b[i]) * inv_d[i]
-        i -= 1
     end
 
     return b

@@ -9,7 +9,6 @@
 # - Batch ND interpolation (SIMD-optimized vectorized solver)
 #
 # Design: ThomasFactorization stores dl, du, inv_d for zero-allocation hot loops.
-# Backward-compatible methods for LinearAlgebra.LU are provided for testing.
 
 # ========================================
 # ThomasFactorization Type
@@ -181,44 +180,7 @@ Solves `Ax = b` in-place where `A = L*U` is the pre-computed factorization.
 end
 
 # ========================================
-# Scalar Thomas Solver - LinearAlgebra.LU (Backward Compatible)
-# ========================================
-
-"""
-    _ldiv_tridiagonal_nopiv!(b, lu_factor::LinearAlgebra.LU, inv_d) -> b
-
-Backward-compatible solver accepting `LinearAlgebra.LU` objects.
-
-# Deprecation Notice
-This method exists for backward compatibility with existing tests.
-Prefer using `ThomasFactorization` directly for better performance.
-"""
-@inline function _ldiv_tridiagonal_nopiv!(
-    b::AbstractVector{T},
-    lu_factor::LinearAlgebra.LU{T,Tridiagonal{T,V},P},
-    inv_d::AbstractVector{T},
-) where {T<:AbstractFloat, V<:AbstractVector{T}, P}
-    dl = lu_factor.factors.dl
-    du = lu_factor.factors.du
-
-    n = length(inv_d)
-
-    # Forward elimination
-    @inbounds for i in 1:n-1
-        b[i + 1] = muladd(-dl[i], b[i], b[i + 1])
-    end
-
-    # Backward substitution
-    @inbounds b[n] *= inv_d[n]
-    @inbounds for i in n-1:-1:1
-        b[i] = muladd(-du[i], b[i + 1], b[i]) * inv_d[i]
-    end
-
-    return b
-end
-
-# ========================================
-# Batch Thomas Solver - ThomasFactorization (Primary)
+# Batch Thomas Solver - ThomasFactorization
 # ========================================
 #
 # Design: _ldiv_along_dim!(z, thomas, Val{D}) dispatches based on:
@@ -298,67 +260,6 @@ to `_ldiv_tridiagonal_nopiv!` for each column.
 """
 @noinline function _ldiv_along_dim!(
     ::AbstractMatrix, ::ThomasFactorization, ::Val{1}
-)
-    throw(ArgumentError(
-        "Batch solving along axis 1 (Val{1}) is not supported for matrices.\n" *
-        "Axis 1 is contiguous in column-major layout; solving along it defeats SIMD.\n" *
-        "Use per-column calls to _ldiv_tridiagonal_nopiv! instead."
-    ))
-end
-
-# ========================================
-# Batch Thomas Solver - LinearAlgebra.LU (Backward Compatible)
-# ========================================
-
-"""
-    _ldiv_along_dim!(z::AbstractMatrix, lu::LinearAlgebra.LU, inv_d, Val{2}) -> z
-
-Backward-compatible batch solver accepting `LinearAlgebra.LU` objects.
-"""
-@inline function _ldiv_along_dim!(
-    z::AbstractMatrix{T},
-    lu::LinearAlgebra.LU{T,Tridiagonal{T,V},P},
-    inv_d::AbstractVector{T},
-    ::Val{2},
-) where {T<:AbstractFloat, V<:AbstractVector{T}, P}
-    dl = lu.factors.dl
-    du = lu.factors.du
-    n_sys = length(inv_d)   # System size (axis 2 length)
-    n_batch = size(z, 1)    # Batch size (axis 1 length, contiguous)
-
-    # Forward substitution: outer loop over system step, inner loop SIMD
-    @inbounds for k in 2:n_sys
-        factor = -dl[k - 1]
-        @simd for i in 1:n_batch
-            z[i, k] = muladd(factor, z[i, k - 1], z[i, k])
-        end
-    end
-
-    # Backward substitution: final column
-    inv_d_n = inv_d[n_sys]
-    @inbounds @simd for i in 1:n_batch
-        z[i, n_sys] *= inv_d_n
-    end
-
-    # Backward substitution: remaining columns
-    @inbounds for k in (n_sys - 1):-1:1
-        u_factor = -du[k]
-        d_factor = inv_d[k]
-        @simd for i in 1:n_batch
-            z[i, k] = muladd(u_factor, z[i, k + 1], z[i, k]) * d_factor
-        end
-    end
-
-    return z
-end
-
-"""
-    _ldiv_along_dim!(z::AbstractMatrix, lu::LinearAlgebra.LU, inv_d, Val{1})
-
-Not supported: solving along axis 1 for matrices.
-"""
-@noinline function _ldiv_along_dim!(
-    ::AbstractMatrix, ::LinearAlgebra.LU, ::AbstractVector, ::Val{1}
 )
     throw(ArgumentError(
         "Batch solving along axis 1 (Val{1}) is not supported for matrices.\n" *

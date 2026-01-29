@@ -5,7 +5,7 @@ using Random
 const FI = FastInterpolations
 const LA = FI.LinearAlgebra
 
-@testset "Tridiagonal NoPivot _ldiv_tridiagonal_nopiv!" begin
+@testset "Thomas Algorithm _ldiv_tridiagonal_nopiv!" begin
     function _x_uniform(::Type{T}, n::Int) where {T<:AbstractFloat}
         return collect(range(T(0), T(1), n))
     end
@@ -109,7 +109,7 @@ const LA = FI.LinearAlgebra
         return spacing, A
     end
 
-    @testset "Derivative-BC (build A + lu + ldiv! in-test)" begin
+    @testset "Derivative-BC: ThomasFactorization vs stdlib LU" begin
         Random.seed!(0)
 
         for T in (Float64, Float32)
@@ -131,14 +131,13 @@ const LA = FI.LinearAlgebra
                     F = LA.lu(A)
                     LA.ldiv!(x_base, F, rhs)
 
-                    # Custom: LU(NoPivot) + cached inv_d + Thomas backward substitution
-                    lu_np = LA.lu(A, LA.NoPivot())
-                    inv_d = similar(lu_np.factors.d)
-                    @inbounds for i in eachindex(inv_d)
-                        inv_d[i] = inv(lu_np.factors.d[i])
-                    end
+                    # Custom: ThomasFactorization (copy arrays since factorize! modifies in-place)
+                    dl = copy(A.dl)
+                    d_diag = copy(A.d)
+                    du = copy(A.du)
+                    thomas = FI.thomas_factorize!(dl, d_diag, du)
                     x_custom = copy(rhs)
-                    FI._ldiv_tridiagonal_nopiv!(x_custom, lu_np, inv_d)
+                    FI._ldiv_tridiagonal_nopiv!(x_custom, thomas)
 
                     # Residuals should be comparable
                     resid_base = maximum(abs.(A * x_base .- rhs))
@@ -151,7 +150,7 @@ const LA = FI.LinearAlgebra
         end
     end
 
-    @testset "Periodic A' (build A' + lu + ldiv! in-test)" begin
+    @testset "Periodic A': ThomasFactorization vs stdlib LU" begin
         Random.seed!(1)
 
         for T in (Float64, Float32)
@@ -166,17 +165,18 @@ const LA = FI.LinearAlgebra
                 rhs = Vector{T}(undef, size(Aprime, 1))
                 FI.compute_rhs_periodic!(rhs, y, spacing)
 
+                # Baseline: stdlib LU + ldiv!
                 x_base = copy(rhs)
                 F = LA.lu(Aprime)
                 LA.ldiv!(x_base, F, rhs)
 
-                lu_np = LA.lu(Aprime, LA.NoPivot())
-                inv_d = similar(lu_np.factors.d)
-                @inbounds for i in eachindex(inv_d)
-                    inv_d[i] = inv(lu_np.factors.d[i])
-                end
+                # Custom: ThomasFactorization
+                dl = copy(Aprime.dl)
+                d_diag = copy(Aprime.d)
+                du = copy(Aprime.du)
+                thomas = FI.thomas_factorize!(dl, d_diag, du)
                 x_custom = copy(rhs)
-                FI._ldiv_tridiagonal_nopiv!(x_custom, lu_np, inv_d)
+                FI._ldiv_tridiagonal_nopiv!(x_custom, thomas)
 
                 resid_base = maximum(abs.(Aprime * x_base .- rhs))
                 resid_custom = maximum(abs.(Aprime * x_custom .- rhs))
@@ -208,16 +208,15 @@ const LA = FI.LinearAlgebra
                 F_base = LA.lu(Aprime)
                 q_base = F_base \ u_base
 
-                # Custom: LU(NoPivot) + cached inv_d + custom Thomas
-                lu_np = LA.lu(Aprime, LA.NoPivot())
-                inv_d = similar(lu_np.factors.d)
-                @inbounds for i in eachindex(inv_d)
-                    inv_d[i] = inv(lu_np.factors.d[i])
-                end
+                # Custom: ThomasFactorization
+                dl = copy(Aprime.dl)
+                d_diag = copy(Aprime.d)
+                du = copy(Aprime.du)
+                thomas = FI.thomas_factorize!(dl, d_diag, du)
                 q_custom = zeros(T, n_sys)
                 q_custom[1] = one(T)
                 q_custom[end] = one(T)
-                FI._ldiv_tridiagonal_nopiv!(q_custom, lu_np, inv_d)
+                FI._ldiv_tridiagonal_nopiv!(q_custom, thomas)
 
                 # Residual check: A' * q ≈ u
                 u_ref = zeros(T, n_sys)

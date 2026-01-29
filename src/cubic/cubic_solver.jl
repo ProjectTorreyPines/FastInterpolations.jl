@@ -146,7 +146,7 @@ function _build_periodic_cache(x::AbstractVector{T}) where {T<:AbstractFloat}
     q[n] = one(T)
     _ldiv_tridiagonal_nopiv!(q, thomas)
 
-    # Workspaces (d, z, y_temp) are allocated from task-local pools at solve time
+    # Workspaces (z, y_temp) are allocated from task-local pools at solve time
     bc_config = PeriodicData(q, period)
 
     return CubicSplineCache(x, spacing, thomas, bc_config)
@@ -388,8 +388,8 @@ end
 # have been removed as part of thread-safety refactoring.
 
 """
-Solve cubic spline system (BCPair) with explicit output and pool-based workspace.
-Thread-safe: workspaces allocated from task-local pool.
+Solve cubic spline system (BCPair) with explicit output.
+Thread-safe: no workspace allocation needed (zero-allocation hot path).
 """
 @inline function _solve_system!(
     out_z::AbstractVector{T},
@@ -421,6 +421,4 @@ Thread-safe: workspaces allocated from task-local pool.
     return out_z
 end
 
-# Batch Thomas solvers moved to: core/thomas_lu_solver.jl
-# - _ldiv_along_dim_vectorized!
-# - _ldiv_along_dim!
+# Batch Thomas solver helper moved to: core/thomas_lu_solver.jl

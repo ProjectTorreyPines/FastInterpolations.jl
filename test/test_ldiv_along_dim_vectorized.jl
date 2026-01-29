@@ -3,7 +3,7 @@ using FastInterpolations
 
 const FI = FastInterpolations
 
-@testset "Batch Thomas _ldiv_along_dim_vectorized!" begin
+@testset "Batch Thomas _ldiv_along_dim!(z, lu, inv_d, Val{D})" begin
     @testset "Val(1) throws ArgumentError" begin
         x = collect(range(0.0, 1.0, 20))
         cache = FI.CubicSplineCache(x; bc=NaturalBC())
@@ -27,7 +27,7 @@ const FI = FastInterpolations
                     FI._ldiv_tridiagonal_nopiv!(view(z_seq, i, :), cache.lu_factor, cache.inv_d)
                 end
 
-                FI._ldiv_along_dim_vectorized!(z_batch, cache.lu_factor, cache.inv_d)
+                FI._ldiv_along_dim!(z_batch, cache.lu_factor, cache.inv_d, Val(2))
 
                 @test z_batch ≈ z_seq rtol=eps(T) * 200
             end
@@ -46,7 +46,7 @@ const FI = FastInterpolations
             FI._ldiv_tridiagonal_nopiv!(view(z_ref, i, :), cache.lu_factor, cache.inv_d)
         end
 
-        FI._ldiv_along_dim_vectorized!(z, cache.lu_factor, cache.inv_d)
+        FI._ldiv_along_dim!(z, cache.lu_factor, cache.inv_d, Val(2))
         @test z ≈ z_ref rtol=1e-10
     end
 end

@@ -8,5 +8,6 @@ include("polyfit_kernels.jl")       # 4. Boundary condition computation kernels 
 include("grid_spacing.jl")     # 5. ScalarSpacing, VectorSpacing
 include("search.jl")           # 6. Search policy + interval search
 include("utils.jl")            # 7. Shared utilities
-include("series_utils.jl")     # 8. Series validation helpers
-include("series_matrix.jl")    # 9. Lazy transpose infrastructure
+include("thomas_lu_solver.jl") # 8. Thomas algorithm (TDMA) solvers for tridiagonal systems
+include("series_utils.jl")     # 9. Series validation helpers
+include("series_matrix.jl")    # 10. Lazy transpose infrastructure

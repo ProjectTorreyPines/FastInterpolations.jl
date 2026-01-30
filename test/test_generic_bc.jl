@@ -116,22 +116,23 @@ const ATOL = 1e-14
         # No _normalize_bc(::PeriodicBC, T) method exists (dead code was removed).
 
         # BCPair with type promotion (Float64 BC → Float32 target)
+        # Type-Free design: BCPair{L, R} without Tv parameter
         bc_f64 = BCPair(Deriv1(0.5), Deriv2(1.0))  # Float64
         bc_promoted = FastInterpolations._normalize_bc(bc_f64, Float32)
-        @test bc_promoted isa BCPair{Float32, Deriv1{Float32}, Deriv2{Float32}}
+        @test bc_promoted isa BCPair{Deriv1{Float32}, Deriv2{Float32}}
         @test bc_promoted.left.val == Float32(0.5)
         @test bc_promoted.right.val == Float32(1.0)
 
         # PointBC with type promotion
         d1_f64 = Deriv1(0.25)  # Float64
         bc_from_d1 = FastInterpolations._normalize_bc(d1_f64, Float32)
-        @test bc_from_d1 isa BCPair{Float32, Deriv1{Float32}, Deriv1{Float32}}
+        @test bc_from_d1 isa BCPair{Deriv1{Float32}, Deriv1{Float32}}
         @test bc_from_d1.left.val == Float32(0.25)
         @test bc_from_d1.right.val == Float32(0.25)
 
         d2_f64 = Deriv2(0.75)  # Float64
         bc_from_d2 = FastInterpolations._normalize_bc(d2_f64, Float32)
-        @test bc_from_d2 isa BCPair{Float32, Deriv2{Float32}, Deriv2{Float32}}
+        @test bc_from_d2 isa BCPair{Deriv2{Float32}, Deriv2{Float32}}
     end
 
     # ========================================

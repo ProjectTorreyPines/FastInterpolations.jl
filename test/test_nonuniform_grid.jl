@@ -983,8 +983,8 @@ end
         y = Float32.(sin.(x))
 
         for bc in [
-            NaturalBC{Float32}(),
-            ClampedBC{Float32}(),
+            NaturalBC(),
+            ClampedBC(),
             BCPair(Deriv1(Float32(0.5)), Deriv2(Float32(0.0))),
             BCPair(Deriv3(Float32(0.0)), Deriv1(Float32(0.5))),
             Deriv3(Float32(0.0)),

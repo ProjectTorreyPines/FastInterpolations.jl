@@ -197,14 +197,14 @@ end
     end
 
     @testset "Type Conversion Constructor" begin
-        # CubicFit{T}(::CubicFit) should convert between float types
-        lbc_f64 = CubicFit()
-        lbc_f32 = CubicFit(lbc_f64)
-        @test lbc_f32 isa CubicFit
-
-        # Round-trip conversion
-        lbc_back = CubicFit(lbc_f32)
-        @test lbc_back isa CubicFit
+        # Type-Free design: PolyFit{D} has no value type parameter (it's lazy).
+        # No type conversion needed - all CubicFit() are identical singletons.
+        lbc1 = CubicFit()
+        lbc2 = CubicFit()
+        @test lbc1 isa CubicFit
+        @test lbc2 isa CubicFit
+        # Both are structurally identical (same type, no fields)
+        @test typeof(lbc1) === typeof(lbc2)
     end
 
 end
@@ -213,14 +213,16 @@ end
 
     @testset "Single CubicFit → Symmetric BCPair" begin
         # When a single CubicFit is provided, it should be applied to both ends
+        # Type-Free design: BCPair{L, R} without Tv parameter
         bc = FastInterpolations._normalize_bc(CubicFit(), Float64)
-        @test bc isa BCPair{Float64, CubicFit, CubicFit}
+        @test bc isa BCPair{CubicFit, CubicFit}
     end
 
     @testset "Type Promotion in Normalization" begin
-        # Float64 CubicFit → Float32 target should promote
+        # CubicFit (PolyFit{3}) is lazy - no value to promote, just returns same type
+        # Type-Free design: BCPair{L, R} without Tv parameter
         bc_promoted = FastInterpolations._normalize_bc(CubicFit(), Float32)
-        @test bc_promoted isa BCPair{Float32, CubicFit, CubicFit}
+        @test bc_promoted isa BCPair{CubicFit, CubicFit}
     end
 
     @testset "_promote_pointbc for CubicFit" begin
@@ -243,32 +245,32 @@ end
 
     @testset "Symmetric CubicFit BCPair" begin
         bc = BCPair(CubicFit(), CubicFit())
-        @test bc isa BCPair{Float64, CubicFit, CubicFit}
+        @test bc isa BCPair{CubicFit, CubicFit}
     end
 
     @testset "Mixed BCPair: CubicFit + Deriv1" begin
         bc = BCPair(CubicFit(), Deriv1(0.0))
-        @test bc isa BCPair{Float64, CubicFit, Deriv1{Float64}}
+        @test bc isa BCPair{CubicFit, Deriv1{Float64}}
     end
 
     @testset "Mixed BCPair: Deriv1 + CubicFit" begin
         bc = BCPair(Deriv1(1.0), CubicFit())
-        @test bc isa BCPair{Float64, Deriv1{Float64}, CubicFit}
+        @test bc isa BCPair{Deriv1{Float64}, CubicFit}
     end
 
     @testset "Mixed BCPair: CubicFit + Deriv2" begin
         bc = BCPair(CubicFit(), Deriv2(0.0))
-        @test bc isa BCPair{Float64, CubicFit, Deriv2{Float64}}
+        @test bc isa BCPair{CubicFit, Deriv2{Float64}}
     end
 
     @testset "Mixed BCPair: Deriv2 + CubicFit" begin
         bc = BCPair(Deriv2(-1.0), CubicFit())
-        @test bc isa BCPair{Float64, Deriv2{Float64}, CubicFit}
+        @test bc isa BCPair{Deriv2{Float64}, CubicFit}
     end
 
     @testset "Float32 BCPair" begin
         bc = BCPair(CubicFit(), Deriv1(0.0f0))
-        @test bc isa BCPair{Float32, CubicFit, Deriv1{Float32}}
+        @test bc isa BCPair{CubicFit, Deriv1{Float32}}
     end
 
 end
@@ -1923,7 +1925,7 @@ end
     @test FastInterpolations._promote_pointbc(Deriv1(1), Float64) isa Deriv1{Float64}
     @test FastInterpolations._promote_pointbc(Deriv2(1), Float64) isa Deriv2{Float64}
     @test FastInterpolations._promote_pointbc(Deriv3(1), Float64) isa Deriv3{Float64}
-    @test FastInterpolations._promote_pointbc(PolyFit{3}(), Float64) isa PolyFit{3,Float64}
+    @test FastInterpolations._promote_pointbc(PolyFit{3}(), Float64) isa PolyFit{3}
     
     # 6. Normalize BC Array (single-series) - explicit code path test
     bcs_single = [Deriv1(0.0)]

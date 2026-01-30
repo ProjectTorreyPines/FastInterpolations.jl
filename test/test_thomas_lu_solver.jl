@@ -68,7 +68,7 @@ const LA = FI.LinearAlgebra
     # Helper functions for building tridiagonal matrices
     # ─────────────────────────────────────────────────────────────────────────
 
-    function _build_tridiagonal_derivative_bc(x::AbstractVector{T}, bc_pair::FI.BCPair{T}) where {T<:AbstractFloat}
+    function _build_tridiagonal_derivative_bc(x::AbstractVector{T}, bc_pair::FI.BCPair) where {T<:AbstractFloat}
         spacing = FI._create_spacing(x)
         n = length(x) - 1
         dl = Vector{T}(undef, n)

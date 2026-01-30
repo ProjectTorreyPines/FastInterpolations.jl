@@ -482,7 +482,7 @@ Groups series by BC type for cache efficiency.
     z_mat::Matrix{T},
     y_mat::Matrix{T},
     x::AbstractVector{T},
-    bc_array::AbstractVector{<:BCPair{T}},
+    bc_array::AbstractVector{<:BCPair},
     autocache::Bool
 ) where {T<:AbstractFloat}
     n_series = size(y_mat, 2)

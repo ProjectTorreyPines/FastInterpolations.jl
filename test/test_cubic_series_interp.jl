@@ -1784,8 +1784,8 @@ end
 
         result = FastInterpolations._normalize_bc_array(mixed_bcs, Float64, 3)
 
-        # Should be a new Vector{BCPair{Float64}}
-        @test result isa Vector{BCPair{Float64}}
+        # Should be a new Vector{<:BCPair} (Type-Free design)
+        @test result isa Vector{<:BCPair}
         @test result !== mixed_bcs  # Different object
 
         # Values should be correctly normalized (uses Julia's default structural equality for BCPair)

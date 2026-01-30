@@ -99,11 +99,3 @@ Get the grid/coordinate type of an interpolant.
 Get the value type of an interpolant.
 """
 @inline value_type(::AbstractInterpolant{Tg, Tv}) where {Tg, Tv} = Tv
-
-"""
-    eval_type(::AbstractInterpolant{Tg, Tv}, ::Type{Tq}) -> Type
-
-Get the return type for evaluation with query type Tq.
-Typically returns Tv for standard queries, or promote_type(Tv, Tq) for AD queries.
-"""
-@inline eval_type(::AbstractInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} = promote_type(Tv, Tq)

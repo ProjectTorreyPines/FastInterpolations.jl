@@ -238,19 +238,28 @@ Supports value (EvalValue), first derivative (EvalDeriv1), and second derivative
 # Type Parameters
 - `Tg`: Grid type (AbstractFloat)
 - `Tv`: Value type (can be Tg, Complex{Tg}, etc.)
+- `Tq`: Query type (can be Tg or Dual{Tg} for AD support)
+
+# AD Support
+For ForwardDiff compatibility, `xq` can be a Dual type:
+- Search uses `_extract_primal(xq)` to find interval index
+- Interpolation arithmetic uses original `xq` to propagate derivatives
 """
 @inline function _linear_eval_at_point(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    xq::Tg,
+    xq::Tq,
     extrap::Val,
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
-    @boundscheck _check_domain(x, xq, extrap)
-    idx, xL, xR = search_interval(searcher, x, xq)
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+    # Extract primal for domain check and interval search (comparisons need Float)
+    xq_primal = _extract_primal(xq)
+    @boundscheck _check_domain(x, Tg(xq_primal), extrap)
+    idx, xL, xR = search_interval(searcher, x, Tg(xq_primal))
+    # Use original xq for interpolation (preserves Dual for AD)
     h = xR - xL
-    dL = xq - xL
+    dL = xq - xL  # xq can be Dual here
     @inbounds return _linear_kernel(op, y[idx], y[idx + 1], h, dL)
 end
 
@@ -297,42 +306,49 @@ end
     _linear_with_extrap(x, y, xq, extrap, op, searcher)
 
 Linear interpolation with extrapolation handling, op parameter, and search policy.
-Supports real and complex value types.
+Supports real and complex value types, plus AD via Dual types.
+
+# AD Support
+Query type `Tq` is unconstrained to support ForwardDiff.Dual:
+- Comparisons use `_extract_primal(xq)` for domain checks
+- Arithmetic uses original `xq` to preserve derivative propagation
 """
 @inline function _linear_with_extrap(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    xq::Tg,
+    xq::Tq,
     ::Val{:none},
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
     _linear_eval_at_point(x, y, xq, Val(:none), op, searcher)
 end
 
 @inline function _linear_with_extrap(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    xq::Tg,
+    xq::Tq,
     ::Val{:extension},
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
     _linear_eval_at_point(x, y, xq, Val(:extension), op, searcher)
 end
 
 @inline function _linear_with_extrap(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    xq::Tg,
+    xq::Tq,
     ::Val{:constant},
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
     x_min, x_max = first(x), last(x)
-    if xq < x_min
+    # Use primal for comparisons (AD types need Float comparison)
+    xq_primal = _extract_primal(xq)
+    if xq_primal < x_min
         return _linear_eval_constant_extrap(y, true, op)
-    elseif xq > x_max
+    elseif xq_primal > x_max
         return _linear_eval_constant_extrap(y, false, op)
     else
         return _linear_eval_at_point(x, y, xq, Val(:extension), op, searcher)
@@ -342,12 +358,14 @@ end
 @inline function _linear_with_extrap(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    xq::Tg,
+    xq::Tq,
     ::Val{:wrap},
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
-    xi_wrapped = _wrap_to_domain(xq, first(x), last(x))
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+    # Note: wrap uses primal for domain wrapping, loses derivative info outside domain
+    xq_primal = _extract_primal(xq)
+    xi_wrapped = _wrap_to_domain(Tg(xq_primal), first(x), last(x))
     _linear_eval_at_point(x, y, xi_wrapped, Val(:extension), op, searcher)
 end
 
@@ -357,29 +375,31 @@ end
 # ========================================
 
 # Core implementation with Val + op + searcher dispatch
-# Supports mixed types: Tg for grid, Tv for values
+# Supports mixed types: Tg for grid, Tv for values, Tq for query (including Dual)
 @inline function linear_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    xq::Tg,
+    xq::Tq,
     extrap::Val,
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
     _linear_with_extrap(x, y, xq, extrap, op, searcher)
 end
 
 # Public API - Symbol dispatch (converts to Val)
 # Unified for real and complex y via Tv parameter
+# AD Support: Tq can be Tg or Dual{Tg} (both are <:Real)
+# Note: Tq<:Real constraint resolves method ambiguity with the generic Real wrapper
 @inline function linear_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    xq::Tg;
+    xq::Tq;
     extrap::Symbol=:none,
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _to_searcher(search, hint)

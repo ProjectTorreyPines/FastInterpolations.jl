@@ -436,6 +436,17 @@ function linear_interp!(
 
     # Tg from x/y ONLY (not x_targets) - preserves current behavior
     Tg = float(promote_type(Tx, _real_eltype(Ty)))
+
+    # Determine expected output type and validate
+    Tv = _value_type(Ty, Tg)
+    Tout = eltype(output)
+    if !(Tout >: Tv)
+        throw(ArgumentError(
+            "output eltype $Tout cannot hold interpolation result type $Tv. " *
+            "Use Vector{$Tv} or a wider type (e.g., Vector{Complex{$Tg}} for complex y-values)."
+        ))
+    end
+
     x_typed, y_typed = _promote_xy(x, y, Tg)
     targets_typed = Tg.(x_targets)
 

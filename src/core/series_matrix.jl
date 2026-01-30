@@ -16,21 +16,24 @@
 # ════════════════════════════════════════════════════════════════════════════
 
 """
-    LazyTranspose{T}
+    LazyTranspose{Tv}
 
 Thread-safe lazy transpose holder for a single matrix.
 
 Used by Linear, Constant, and Quadratic series interpolants that store only y values.
 The transpose is computed on first scalar query and cached for subsequent calls.
 
+# Type Parameter
+- `Tv`: Value type (can be Real or Complex)
+
 # Thread Safety
 Uses atomic acquire/release semantics (RCU pattern) for safe concurrent access.
 Multiple threads may race to compute the transpose, but all will get the same result.
 """
-mutable struct LazyTranspose{T<:AbstractFloat}
-    @atomic snapshot::Union{Nothing, Matrix{T}}
+mutable struct LazyTranspose{Tv}
+    @atomic snapshot::Union{Nothing, Matrix{Tv}}
 
-    LazyTranspose{T}() where {T} = new{T}(nothing)
+    LazyTranspose{Tv}() where {Tv} = new{Tv}(nothing)
 end
 
 """
@@ -41,7 +44,7 @@ Get current snapshot (for testing). Returns nothing if not yet computed.
 @inline _get_snapshot(lt::LazyTranspose) = @atomic :acquire lt.snapshot
 
 """
-    _ensure_transpose!(lt::LazyTranspose{T}, src::Matrix{T}) -> Matrix{T}
+    _ensure_transpose!(lt::LazyTranspose{Tv}, src::Matrix{Tv}) -> Matrix{Tv}
 
 Ensure point-contiguous transpose exists. Thread-safe via atomic RCU pattern.
 
@@ -56,10 +59,10 @@ Transposed matrix (n_series × n_points), point-contiguous for SIMD scalar evalu
 - Fast path: atomic read, return cached transpose
 - Slow path: compute permutedims, atomic publish
 """
-@inline function _ensure_transpose!(lt::LazyTranspose{T}, src::Matrix{T}) where {T<:AbstractFloat}
+@inline function _ensure_transpose!(lt::LazyTranspose{Tv}, src::Matrix{Tv}) where {Tv}
     # Fast path: check if already populated
     snap = @atomic :acquire lt.snapshot
-    snap !== nothing && return snap::Matrix{T}
+    snap !== nothing && return snap::Matrix{Tv}
 
     # Slow path: compute transpose
     transposed = permutedims(src)
@@ -75,20 +78,23 @@ end
 # ════════════════════════════════════════════════════════════════════════════
 
 """
-    LazyTransposePair{T}
+    LazyTransposePair{Tv}
 
 Thread-safe lazy transpose holder for paired matrices (y and z).
 
 Used by CubicSeriesInterpolant which stores both y values and z (second derivatives).
 Both transposes are computed together on first scalar query.
 
+# Type Parameter
+- `Tv`: Value type (can be Real or Complex)
+
 # Thread Safety
 Same RCU pattern as LazyTranspose.
 """
-mutable struct LazyTransposePair{T<:AbstractFloat}
-    @atomic snapshot::Union{Nothing, Tuple{Matrix{T}, Matrix{T}}}
+mutable struct LazyTransposePair{Tv}
+    @atomic snapshot::Union{Nothing, Tuple{Matrix{Tv}, Matrix{Tv}}}
 
-    LazyTransposePair{T}() where {T} = new{T}(nothing)
+    LazyTransposePair{Tv}() where {Tv} = new{Tv}(nothing)
 end
 
 """
@@ -99,7 +105,7 @@ Get current snapshot pair (for testing). Returns nothing if not yet computed.
 @inline _get_snapshot(ltp::LazyTransposePair) = @atomic :acquire ltp.snapshot
 
 """
-    _ensure_transpose_pair!(ltp::LazyTransposePair{T}, y::Matrix{T}, z::Matrix{T}) -> (Matrix{T}, Matrix{T})
+    _ensure_transpose_pair!(ltp::LazyTransposePair{Tv}, y::Matrix{Tv}, z::Matrix{Tv}) -> (Matrix{Tv}, Matrix{Tv})
 
 Ensure point-contiguous transpose pair exists. Thread-safe via atomic RCU pattern.
 
@@ -112,13 +118,13 @@ Ensure point-contiguous transpose pair exists. Thread-safe via atomic RCU patter
 Tuple of transposed matrices (y_point, z_point), each (n_series × n_points).
 """
 @inline function _ensure_transpose_pair!(
-    ltp::LazyTransposePair{T},
-    y::Matrix{T},
-    z::Matrix{T}
-) where {T<:AbstractFloat}
+    ltp::LazyTransposePair{Tv},
+    y::Matrix{Tv},
+    z::Matrix{Tv}
+) where {Tv}
     # Fast path: check if already populated
     snap = @atomic :acquire ltp.snapshot
-    snap !== nothing && return snap::Tuple{Matrix{T}, Matrix{T}}
+    snap !== nothing && return snap::Tuple{Matrix{Tv}, Matrix{Tv}}
 
     # Slow path: compute both transposes
     y_point = permutedims(y)
@@ -136,20 +142,23 @@ end
 # ════════════════════════════════════════════════════════════════════════════
 
 """
-    LazyTransposeTriple{T}
+    LazyTransposeTriple{Tv}
 
 Thread-safe lazy transpose holder for three matrices (y, a, d).
 
 Used by QuadraticSeriesInterpolant which stores y values plus a and d coefficients.
 All three transposes are computed together on first scalar query.
 
+# Type Parameter
+- `Tv`: Value type (can be Real or Complex)
+
 # Thread Safety
 Same RCU pattern as LazyTranspose.
 """
-mutable struct LazyTransposeTriple{T<:AbstractFloat}
-    @atomic snapshot::Union{Nothing, Tuple{Matrix{T}, Matrix{T}, Matrix{T}}}
+mutable struct LazyTransposeTriple{Tv}
+    @atomic snapshot::Union{Nothing, Tuple{Matrix{Tv}, Matrix{Tv}, Matrix{Tv}}}
 
-    LazyTransposeTriple{T}() where {T} = new{T}(nothing)
+    LazyTransposeTriple{Tv}() where {Tv} = new{Tv}(nothing)
 end
 
 """
@@ -160,7 +169,7 @@ Get current snapshot triple (for testing). Returns nothing if not yet computed.
 @inline _get_snapshot(ltt::LazyTransposeTriple) = @atomic :acquire ltt.snapshot
 
 """
-    _ensure_transpose_triple!(ltt::LazyTransposeTriple{T}, y::Matrix{T}, a::Matrix{T}, d::Matrix{T}) -> (Matrix{T}, Matrix{T}, Matrix{T})
+    _ensure_transpose_triple!(ltt::LazyTransposeTriple{Tv}, y::Matrix{Tv}, a::Matrix{Tv}, d::Matrix{Tv}) -> (Matrix{Tv}, Matrix{Tv}, Matrix{Tv})
 
 Ensure point-contiguous transpose triple exists. Thread-safe via atomic RCU pattern.
 
@@ -174,14 +183,14 @@ Ensure point-contiguous transpose triple exists. Thread-safe via atomic RCU patt
 Tuple of transposed matrices (y_point, a_point, d_point), each (n_series × n_points).
 """
 @inline function _ensure_transpose_triple!(
-    ltt::LazyTransposeTriple{T},
-    y::Matrix{T},
-    a::Matrix{T},
-    d::Matrix{T}
-) where {T<:AbstractFloat}
+    ltt::LazyTransposeTriple{Tv},
+    y::Matrix{Tv},
+    a::Matrix{Tv},
+    d::Matrix{Tv}
+) where {Tv}
     # Fast path: check if already populated
     snap = @atomic :acquire ltt.snapshot
-    snap !== nothing && return snap::Tuple{Matrix{T}, Matrix{T}, Matrix{T}}
+    snap !== nothing && return snap::Tuple{Matrix{Tv}, Matrix{Tv}, Matrix{Tv}}
 
     # Slow path: compute all three transposes
     y_point = permutedims(y)
@@ -204,7 +213,7 @@ end
 
 Pre-compute transpose before hot loops. Returns the holder for chaining.
 """
-function precompute_transpose!(lt::LazyTranspose{T}, src::Matrix{T}) where {T}
+function precompute_transpose!(lt::LazyTranspose{Tv}, src::Matrix{Tv}) where {Tv}
     _ensure_transpose!(lt, src)
     return lt
 end
@@ -214,7 +223,7 @@ end
 
 Pre-compute transpose pair before hot loops. Returns the holder for chaining.
 """
-function precompute_transpose!(ltp::LazyTransposePair{T}, y::Matrix{T}, z::Matrix{T}) where {T}
+function precompute_transpose!(ltp::LazyTransposePair{Tv}, y::Matrix{Tv}, z::Matrix{Tv}) where {Tv}
     _ensure_transpose_pair!(ltp, y, z)
     return ltp
 end
@@ -224,7 +233,7 @@ end
 
 Pre-compute transpose triple before hot loops. Returns the holder for chaining.
 """
-function precompute_transpose!(ltt::LazyTransposeTriple{T}, y::Matrix{T}, a::Matrix{T}, d::Matrix{T}) where {T}
+function precompute_transpose!(ltt::LazyTransposeTriple{Tv}, y::Matrix{Tv}, a::Matrix{Tv}, d::Matrix{Tv}) where {Tv}
     _ensure_transpose_triple!(ltt, y, a, d)
     return ltt
 end

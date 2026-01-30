@@ -300,16 +300,16 @@ end
 
 # --- LinearSeriesInterpolant ---
 
-function Base.show(io::IO, sitp::LinearSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, sitp::LinearSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
-    _show_type_header(io, "LinearSeriesInterpolant", T)
+    _show_type_header_2params(io, "LinearSeriesInterpolant", Tg, Tv)
     print(io, "($np × $ns)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", sitp::LinearSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, ::MIME"text/plain", sitp::LinearSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     is_range = sitp.x isa AbstractRange
-    _show_type_header(io, "LinearSeriesInterpolant", T; suffix=" with $ns series")
+    _show_type_header_2params(io, "LinearSeriesInterpolant", Tg, Tv; suffix=" with $ns series")
     println(io)
     _show_grid_row(io, false, sitp.x)
     println(io)

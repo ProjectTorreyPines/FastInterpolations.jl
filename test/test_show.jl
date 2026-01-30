@@ -98,6 +98,31 @@
         @test occursin("n_points × n_series", verbose_str)
     end
 
+    @testset "LinearSeriesInterpolant Complex show (Tg/Tv display)" begin
+        # Complex values: should show both type parameters
+        y_complex = [exp.(2im .* π .* collect(x)) for _ in 1:2]
+        sitp_complex = linear_interp(x, y_complex)
+
+        # Compact show: should display {Float64, ComplexF64}
+        compact_str = sprint(show, sitp_complex)
+        @test occursin("LinearSeriesInterpolant", compact_str)
+        @test occursin("Float64", compact_str)
+        @test occursin("ComplexF64", compact_str)
+        @test occursin("101 × 2", compact_str)
+
+        # Verbose show
+        verbose_str = sprint(show, MIME("text/plain"), sitp_complex)
+        @test occursin("Float64", verbose_str)
+        @test occursin("ComplexF64", verbose_str)
+        @test occursin("with 2 series", verbose_str)
+
+        # Real values: should only show single type parameter (backward compatible)
+        sitp_real = linear_interp(x, y_matrix)
+        compact_real = sprint(show, sitp_real)
+        @test occursin("Float64", compact_real)
+        @test !occursin("Float64, Float64", compact_real)  # Should NOT duplicate
+    end
+
     @testset "ConstantSeriesInterpolant show" begin
         sitp = constant_interp(x, y_matrix)
 

@@ -319,4 +319,147 @@ using FastInterpolations
         @test d1 isa Float64
     end
 
+    # ========================================
+    # BC Type Promotion and Conversion Tests
+    # ========================================
+
+    @testset "BC Type Promotion Edge Cases" begin
+        x = [0.0, 1.0, 2.0, 3.0]
+
+        @testset "Complex y + Real BC (promotion)" begin
+            # y is Complex, BC value is Real → should promote BC to Complex
+            y_complex = [1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
+
+            # Real BC value (Float64) with Complex y
+            bc = Left(Deriv1(2.0))  # Deriv1{Float64}
+            itp = quadratic_interp(x, y_complex; bc=bc)
+
+            @test value_type(itp) == ComplexF64
+            val = itp(0.5)
+            @test val isa ComplexF64
+
+            # Derivative should be promoted to Complex (with zero imaginary)
+            d1 = itp(x[1]; deriv=1)
+            @test d1 isa ComplexF64
+            @test real(d1) ≈ 2.0
+            @test imag(d1) ≈ 0.0 atol=1e-14
+        end
+
+        @testset "Real y + Complex BC (zero imaginary)" begin
+            # y is Real, BC is Complex with zero imaginary → should extract real part
+            y_real = [1.0, 2.0, 5.0, 10.0]
+
+            # Complex BC with zero imaginary part
+            bc = Left(Deriv1(2.0 + 0.0im))  # Deriv1{ComplexF64}
+            itp = quadratic_interp(x, y_real; bc=bc)
+
+            @test value_type(itp) == Float64  # y determines value type
+            val = itp(0.5)
+            @test val isa Float64
+
+            # Derivative should be Real (Complex BC converted)
+            d1 = itp(x[1]; deriv=1)
+            @test d1 isa Float64
+            @test d1 ≈ 2.0
+        end
+
+        @testset "Real y + Complex BC (non-zero imaginary) → ERROR" begin
+            # y is Real, BC is Complex with non-zero imaginary → should throw
+            y_real = [1.0, 2.0, 5.0, 10.0]
+
+            # Complex BC with non-zero imaginary - cannot convert to Float64
+            bc = Left(Deriv1(2.0 + 1.0im))  # Deriv1{ComplexF64}
+
+            # Should throw InexactError during construction
+            @test_throws InexactError quadratic_interp(x, y_real; bc=bc)
+        end
+
+        @testset "Explicit Complex BC with Complex y" begin
+            # Both y and BC are Complex - exact type match path
+            y_complex = [1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
+
+            # Deriv1 with explicit Complex value
+            bc = Left(Deriv1(2.0 + 1.0im))  # Deriv1{ComplexF64}
+            itp = quadratic_interp(x, y_complex; bc=bc)
+
+            @test value_type(itp) == ComplexF64
+            d1 = itp(x[1]; deriv=1)
+            @test d1 ≈ 2.0 + 1.0im
+
+            # Deriv2 with explicit Complex value
+            bc2 = Left(Deriv2(0.5 + 0.5im))
+            itp2 = quadratic_interp(x, y_complex; bc=bc2)
+            @test itp2(0.5) isa ComplexF64
+        end
+
+        @testset "Right endpoint BC type conversion" begin
+            y_complex = [1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
+
+            # Real BC on Complex y (Right endpoint)
+            bc = Right(Deriv1(3.0))  # Float64
+            itp = quadratic_interp(x, y_complex; bc=bc)
+
+            d_end = itp(x[end]; deriv=1)
+            @test d_end isa ComplexF64
+            @test real(d_end) ≈ 3.0
+            @test imag(d_end) ≈ 0.0 atol=1e-14
+        end
+    end
+
+    @testset "BC Dispatch Path Verification" begin
+        # Verify that exact type match vs generic dispatch both work correctly
+        x = [0.0, 1.0, 2.0, 3.0]
+        y = [1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
+
+        @testset "Exact type match path" begin
+            # BC type matches y type exactly → _fill_slopes!(d, s, h, bc::Left{Deriv1{Tv}}, ...)
+            bc = Left(Deriv1(2.0 + 1.0im))  # Deriv1{ComplexF64} matches ComplexF64 y
+            itp = quadratic_interp(x, y; bc=bc)
+            @test itp(0.5) isa ComplexF64
+        end
+
+        @testset "Generic dispatch with conversion" begin
+            # BC type differs from y type → _fill_slopes!(d, s, h, bc::Left{<:Deriv1}, ...)
+            bc = Left(Deriv1(2.0))  # Deriv1{Float64} needs convert to ComplexF64
+            itp = quadratic_interp(x, y; bc=bc)
+            @test itp(0.5) isa ComplexF64
+        end
+
+        @testset "Evaluation is zero-allocation" begin
+            bc = Left(Deriv1(2.0 + 1.0im))
+            itp = quadratic_interp(x, y; bc=bc)
+
+            # Warm up
+            _ = itp(0.5)
+
+            # Evaluation should be zero-allocation
+            allocs = @allocated itp(0.5)
+            @test allocs == 0
+        end
+    end
+
+    @testset "Float32 type preservation with BC" begin
+        x32 = Float32[0.0, 1.0, 2.0, 3.0]
+        y32 = ComplexF32[1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
+
+        @testset "Float32 BC promoted to ComplexF32" begin
+            bc = Left(Deriv1(2.0f0))  # Deriv1{Float32}
+            itp = quadratic_interp(x32, y32; bc=bc)
+
+            @test grid_type(itp) == Float32
+            @test value_type(itp) == ComplexF32
+            @test itp(0.5f0) isa ComplexF32
+        end
+
+        @testset "Float64 BC with Float32 y" begin
+            # Float64 BC should be demoted to Float32 to match y
+            bc = Left(Deriv1(2.0))  # Deriv1{Float64}
+            itp = quadratic_interp(x32, y32; bc=bc)
+
+            @test value_type(itp) == ComplexF32
+            d1 = itp(x32[1]; deriv=1)
+            @test d1 isa ComplexF32
+        end
+    end
+
 end

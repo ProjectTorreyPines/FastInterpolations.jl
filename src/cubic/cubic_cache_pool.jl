@@ -65,10 +65,10 @@ The `x` field stores a snapshot (copy) for Vector inputs, preventing external
 mutation from corrupting the cache. Lookup verifies `isequal(entry.x, input_x)`
 even on objectid match to detect in-place mutation.
 """
-mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}, S<:AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
+mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC, R<:PointBC, X<:AbstractVector{T}, S<:AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
-    cache::CubicSplineCache{T, X, ThomasFactorization{T, Vector{T}}, BCPair{T,L,R}, S}
+    cache::CubicSplineCache{T, X, ThomasFactorization{T, Vector{T}}, BCPair{L,R}, S}
 end
 
 """
@@ -339,8 +339,9 @@ end
 
 """
 Get or create a derivative BC cache bank for the given (T, L, R, X, S) combination.
+Type-Free design: L, R are PointBC subtypes without type parameter constraint.
 """
-@inline function _get_derivative_bank(::X, ::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+@inline function _get_derivative_bank(::X, ::BCPair{L,R}) where {T<:AbstractFloat, L<:PointBC, R<:PointBC, X<:AbstractVector{T}}
     S = _spacing_type(X)
     EntryType = CacheEntry{T,L,R,X,S}
     return _get_bank(_DERIVATIVE_REGISTRY, CacheBank{EntryType})
@@ -412,7 +413,8 @@ end
 # ---------------------------------------------------------------
 
 # Build cache for derivative BC entry
-@inline function _build_cache(::Type{<:CacheEntry{T,L,R,X}}, x::X, bc::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, X<:AbstractVector{T}}
+# Type-Free design: L, R are PointBC subtypes without type parameter constraint
+@inline function _build_cache(::Type{<:CacheEntry{T,L,R,X}}, x::X, bc::BCPair{L,R}) where {T<:AbstractFloat, L<:PointBC, R<:PointBC, X<:AbstractVector{T}}
     return _build_derivative_bc_cache(x, bc.left, bc.right)
 end
 
@@ -550,9 +552,20 @@ end
     return _get_periodic_cache_impl(x)
 end
 
-# BCPair direct API - type stable (used by internal paths)
-@inline function _get_cubic_cache(x, bc::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
-    return _get_derivative_cache_impl(x, bc)
+# BCPair API - converts to cache-compatible form via _cache_bc_pair
+# Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types
+@inline function _get_cubic_cache(x::AbstractVector{T}, bc::BCPair{L,R}) where {T<:AbstractFloat, L<:PointBC, R<:PointBC}
+    # Convert to cache-compatible form (PolyFit → Deriv1 for same matrix structure)
+    bc_cache = _cache_bc_pair(bc, T)
+    return _get_derivative_cache_impl(x, bc_cache)
+end
+
+# Fallback for non-float vectors (e.g., Int) - promotes to Float64
+@inline function _get_cubic_cache(x::AbstractVector, bc::BCPair{L,R}) where {L<:PointBC, R<:PointBC}
+    T = eltype(x)
+    T <: AbstractFloat && error("Should dispatch to typed method")
+    bc_cache = _cache_bc_pair(bc, Float64)
+    return _get_derivative_cache_impl(x, bc_cache)
 end
 
 # PointBC convenience - convert to symmetric BCPair
@@ -588,14 +601,15 @@ const _StepRangeLen_F32 = StepRangeLen{Float32, Float64, Float64, Int64}
 
 """
 Internal implementation for derivative BC cache lookup.
+Type-Free design: bc_pair should already be cache-compatible (via _cache_bc_pair).
 """
-@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L,R}) where {T<:AbstractFloat, L<:PointBC, R<:PointBC}
     x_normalized = x isa Vector ? x : collect(x)
     bank = _get_derivative_bank(x_normalized, bc_pair)
     return _lookup_or_insert!(bank, x_normalized, bc_pair)
 end
 
-@inline function _get_derivative_cache_impl(x::AbstractRange{T}, bc_pair::BCPair{T,L,R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+@inline function _get_derivative_cache_impl(x::AbstractRange{T}, bc_pair::BCPair{L,R}) where {T<:AbstractFloat, L<:PointBC, R<:PointBC}
     # Normalize to StepRangeLen for consistent cache key type.
     # LinRange and other Range types are converted (minor overhead on first call).
     x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
@@ -604,16 +618,17 @@ end
 end
 
 # Fallback: other Real types → convert to Float64
+# Uses _cache_bc_pair to handle lazy types (PolyFit → Deriv1)
 @inline function _get_derivative_cache_impl(x::AbstractVector{<:Real}, bc_pair::BCPair)
     x_float = Vector{Float64}(x)
-    bc_float = _normalize_bc(bc_pair, Float64)
-    _get_derivative_cache_impl(x_float, bc_float)
+    bc_cache = _cache_bc_pair(bc_pair, Float64)
+    _get_derivative_cache_impl(x_float, bc_cache)
 end
 
 @inline function _get_derivative_cache_impl(x::AbstractRange{<:Real}, bc_pair::BCPair)
     x_float = range(Float64(first(x)), Float64(last(x)), length(x))
-    bc_float = _normalize_bc(bc_pair, Float64)
-    _get_derivative_cache_impl(x_float, bc_float)
+    bc_cache = _cache_bc_pair(bc_pair, Float64)
+    _get_derivative_cache_impl(x_float, bc_cache)
 end
 
 """

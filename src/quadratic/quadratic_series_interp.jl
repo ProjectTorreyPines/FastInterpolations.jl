@@ -352,7 +352,7 @@ vals = sitp(0.5)  # Returns [val1, val2, val3]
 function quadratic_interp(
     x::AbstractVector{T},
     ys::AbstractVector{<:AbstractVector{T}};
-    bc::QuadraticBC{T}=Left(QuadraticFit{T}()),
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     search::P=Binary()
 ) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
@@ -421,7 +421,7 @@ sitp = quadratic_interp(x, Y)
 function quadratic_interp(
     x::AbstractVector{T},
     Y::AbstractMatrix{T};
-    bc::QuadraticBC{T}=Left(QuadraticFit{T}()),
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     search::AbstractSearchPolicy=Binary()
 ) where {T<:AbstractFloat}

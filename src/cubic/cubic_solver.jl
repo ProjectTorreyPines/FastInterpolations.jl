@@ -74,7 +74,7 @@ end
 # First row - PolyFit{D} (auto-estimated first derivative): same matrix structure as Deriv1
 # The derivative value is computed from data in RHS, not specified by user
 @inline function _set_first_row!(
-    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::PolyFit{D, T}, spacing::AbstractGridSpacing{T}
+    d_diag::AbstractVector{T}, du::AbstractVector{T}, ::PolyFit{D}, spacing::AbstractGridSpacing{T}
 ) where {D, T<:AbstractFloat}
     h1 = _get_h(spacing, 1)
     d_diag[1] = 2 * h1
@@ -84,7 +84,7 @@ end
 
 # Last row - PolyFit{D} (auto-estimated first derivative): same matrix structure as Deriv1
 @inline function _set_last_row!(
-    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::PolyFit{D, T}, spacing::AbstractGridSpacing{T}
+    dl::AbstractVector{T}, d_diag::AbstractVector{T}, ::PolyFit{D}, spacing::AbstractGridSpacing{T}
 ) where {D, T<:AbstractFloat}
     n = length(dl)
     h_n = _get_h(spacing, n)
@@ -165,7 +165,7 @@ function _build_derivative_bc_cache(
     x::AbstractVector{T},
     left_bc::L,
     right_bc::R
-) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+) where {T<:AbstractFloat, L<:PointBC, R<:PointBC}
     n = length(x) - 1
 
     # Validate PolyFit requirements: PolyFit{D} requires D+1 points
@@ -272,7 +272,7 @@ end
 # First element - Generic PolyFit{D}: materialize to Deriv1, then delegate
 # Supports all polynomial degrees: LinearFit (D=1), QuadraticFit (D=2), CubicFit (D=3), etc.
 @inline function _compute_rhs_first!(
-    d::AbstractVector{T}, bc::PolyFit{D, T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+    d::AbstractVector{T}, bc::PolyFit{D}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
 ) where {D, T<:AbstractFloat}
     # Materialize PolyFit{D} → Deriv1 using estimated derivative
     concrete_bc = materialize_bc(bc, x, y, Val(:left))
@@ -283,7 +283,7 @@ end
 
 # Last element - Generic PolyFit{D}: materialize to Deriv1, then delegate
 @inline function _compute_rhs_last!(
-    d::AbstractVector{T}, bc::PolyFit{D, T}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
+    d::AbstractVector{T}, bc::PolyFit{D}, y::AbstractVector{T}, x::AbstractVector{T}, spacing::AbstractGridSpacing{T}
 ) where {D, T<:AbstractFloat}
     # Materialize PolyFit{D} → Deriv1 using estimated derivative
     concrete_bc = materialize_bc(bc, x, y, Val(:right))
@@ -298,11 +298,13 @@ Compute RHS vector for generic derivative BC system in-place.
 The `x` parameter is needed for PolyFit{D} BCs (LinearFit, QuadraticFit, CubicFit, etc.)
 which compute endpoint derivatives from data. For other BC types (Deriv1, Deriv2, Deriv3),
 `x` is passed but ignored.
+
+Type-Free design: BCPair{L,R} where L, R are PointBC subtypes (Deriv1{Tv}, PolyFit{D}, etc.)
 """
 @inline function compute_rhs!(
     d::AbstractVector{T}, y::AbstractVector{T}, x::AbstractVector{T},
-    spacing::AbstractGridSpacing{T}, bc_config::BCPair{T,L,R}
-) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+    spacing::AbstractGridSpacing{T}, bc_config::BCPair{L,R}
+) where {T<:AbstractFloat, L<:PointBC, R<:PointBC}
     n = length(y) - 1
     _compute_rhs_first!(d, bc_config.left, y, x, spacing)
     # Use spacing accessors
@@ -388,15 +390,20 @@ end
 # have been removed as part of thread-safety refactoring.
 
 """
-Solve cubic spline system (BCPair) with explicit output.
+Solve cubic spline system (BCPair) using cached Thomas factorization.
 Thread-safe: no workspace allocation needed (zero-allocation hot path).
+
+Type-Free design:
+- Cache stores BCPair{CL, CR} (typically Deriv1{T} from _cache_bc_pair conversion)
+- bc_pair can be BCPair{L, R} with any PointBC types (including PolyFit{D})
+- compute_rhs! uses bc_pair for RHS materialization (handles PolyFit automatically)
 """
 @inline function _solve_system!(
     out_z::AbstractVector{T},
-    cache::CubicSplineCache{T,X,F,BCPair{T,L,R},S},
+    cache::CubicSplineCache{T,X,F,BCPair{CL,CR},S},
     y::AbstractVector{T},
-    bc_pair::BCPair{T,L,R}
-) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}, S<:AbstractGridSpacing{T}}
+    bc_pair::BCPair{L,R}
+) where {T<:AbstractFloat, X, F, CL<:PointBC, CR<:PointBC, L<:PointBC, R<:PointBC, S<:AbstractGridSpacing{T}}
     compute_rhs!(out_z, y, cache.x, cache.spacing, bc_pair)
     _ldiv_tridiagonal_nopiv!(out_z, cache.thomas)
     return out_z

@@ -19,11 +19,11 @@
 
 """
 Supported boundary conditions for quadratic spline interpolation.
-- `Left{T}`: BC at left endpoint (forward recurrence)
-- `Right{T}`: BC at right endpoint (backward recurrence)
-- `MinCurvFit{T}`: Global curvature minimization
+- `Left{B<:PointBC}`: BC at left endpoint (forward recurrence)
+- `Right{B<:PointBC}`: BC at right endpoint (backward recurrence)
+- `MinCurvFit`: Global curvature minimization (singleton)
 """
-const QuadraticBC{T} = Union{Left{T}, Right{T}, MinCurvFit{T}}
+const QuadraticBC = Union{Left, Right, MinCurvFit}
 
 # ========================================
 # Secant Computation
@@ -120,37 +120,70 @@ derivatives from data. For other BC types, they are ignored.
 - `Tv`: Value type for d, s (can be AbstractFloat or Complex{AbstractFloat})
 - `Tg<:AbstractFloat`: Grid type for h, x
 """
-# Left(Deriv1): d[1] given directly, forward recurrence
-# Note: BC value type matches slope type (Tv = Tg for real-valued BC)
+# Left(Deriv1{Tv}): d[1] given directly, forward recurrence
+# BC value type Tv matches slope array type
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
-                               bc::Left{Tg, Deriv1{Tg}}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
+                               bc::Left{Deriv1{Tv}}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
+    d1 = bc.bc.val  # Already Tv type
+    _forward_recurrence!(d, s, d1)
+end
+
+# Left(Deriv1) with type conversion: BC value may need conversion to Tv
+@inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
+                               bc::Left{<:Deriv1}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
     d1 = convert(Tv, bc.bc.val)  # Convert BC value to Tv
     _forward_recurrence!(d, s, d1)
 end
 
-# Left(Deriv2): d[1] = s[1] - (κ/2)*h[1], forward recurrence
+# Left(Deriv2{Tv}): d[1] = s[1] - (κ/2)*h[1], forward recurrence
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
-                               bc::Left{Tg, Deriv2{Tg}}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
-    κ = bc.bc.val
-    d1 = s[1] - (κ / 2) * h[1]  # Tv - Tg*Tg → Tv
+                               bc::Left{Deriv2{Tv}}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
+    κ = bc.bc.val  # Tv type
+    d1 = s[1] - (κ / 2) * h[1]  # Tv - Tv*Tg → Tv
     _forward_recurrence!(d, s, d1)
 end
 
-# Right(Deriv1): d[n] given directly, backward recurrence
+# Left(Deriv2) with type conversion
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
-                               bc::Right{Tg, Deriv1{Tg}}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
+                               bc::Left{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
+    κ = convert(Tv, bc.bc.val)  # Convert BC value to Tv
+    d1 = s[1] - (κ / 2) * h[1]  # Tv - Tv*Tg → Tv
+    _forward_recurrence!(d, s, d1)
+end
+
+# Right(Deriv1{Tv}): d[n] given directly, backward recurrence
+@inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
+                               bc::Right{Deriv1{Tv}}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
+    dn = bc.bc.val  # Already Tv type
+    _backward_recurrence!(d, s, dn)
+end
+
+# Right(Deriv1) with type conversion
+@inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
+                               bc::Right{<:Deriv1}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
     dn = convert(Tv, bc.bc.val)  # Convert BC value to Tv
     _backward_recurrence!(d, s, dn)
 end
 
-# Right(Deriv2): compute d[n] from curvature, backward recurrence
+# Right(Deriv2{Tv}): compute d[n] from curvature, backward recurrence
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
-                               bc::Right{Tg, Deriv2{Tg}}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
-    κ = bc.bc.val
+                               bc::Right{Deriv2{Tv}}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
+    κ = bc.bc.val  # Tv type
     # a[n-1] = κ/2
     # d[n-1] = s[n-1] - a[n-1]*h[n-1]
     # d[n] = 2*a[n-1]*h[n-1] + d[n-1] = s[n-1] + (κ/2)*h[n-1]
-    dn = s[end] + (κ / 2) * h[end]  # Tv + Tg*Tg → Tv
+    dn = s[end] + (κ / 2) * h[end]  # Tv + Tv*Tg → Tv
+    _backward_recurrence!(d, s, dn)
+end
+
+# Right(Deriv2) with type conversion
+@inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
+                               bc::Right{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
+    κ = convert(Tv, bc.bc.val)  # Convert BC value to Tv
+    # a[n-1] = κ/2
+    # d[n-1] = s[n-1] - a[n-1]*h[n-1]
+    # d[n] = 2*a[n-1]*h[n-1] + d[n-1] = s[n-1] + (κ/2)*h[n-1]
+    dn = s[end] + (κ / 2) * h[end]  # Tv + Tv*Tg → Tv
     _backward_recurrence!(d, s, dn)
 end
 
@@ -177,7 +210,7 @@ element-wise on real and imaginary parts.
 O(n) time, O(1) extra space (on-the-fly β computation).
 """
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
-                               ::MinCurvFit{Tg}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
+                               ::MinCurvFit, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
     n = length(d)
     n_intervals = n - 1  # = length(s) = length(h)
 
@@ -226,36 +259,35 @@ end
 # ========================================
 
 """
-    _fill_slopes!(d, s, h, bc::Left{Tg, PolyFit{D,Tg}}, x, y)
+    _fill_slopes!(d, s, h, bc::Left{PolyFit{D}}, x, y)
 
 Fill slope array using generic polynomial fit at left endpoint.
 
-Materializes PolyFit{D} to Deriv1 using `materialize_bc`, then uses the
+Materializes PolyFit{D} to Deriv1{Tv} using `materialize_bc`, then uses the
 estimated derivative directly. Supports all polynomial degrees: LinearFit (D=1),
 QuadraticFit (D=2), CubicFit (D=3), etc.
 
-For Complex y values, materialize_bc returns a Complex derivative estimate.
+For Complex y values, materialize_bc returns Deriv1{ComplexF64} naturally.
 """
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
-                               bc::Left{Tg, PolyFit{D, Tg}}, x::AbstractVector{Tg}, y::AbstractVector{Tv}) where {D, Tv, Tg<:AbstractFloat}
-    # Materialize PolyFit{D} → Deriv1 using estimated derivative
-    # materialize_bc returns Deriv1 with value type matching y (Tv)
+                               bc::Left{PolyFit{D}}, x::AbstractVector{Tg}, y::AbstractVector{Tv}) where {D, Tv, Tg<:AbstractFloat}
+    # Materialize PolyFit{D} → Deriv1{Tv} using estimated derivative
     concrete_bc = materialize_bc(bc.bc, x, y, Val(:left))
     d1 = concrete_bc.val  # Already Tv type from polynomial fit on y values
     _forward_recurrence!(d, s, d1)
 end
 
 """
-    _fill_slopes!(d, s, h, bc::Right{Tg, PolyFit{D,Tg}}, x, y)
+    _fill_slopes!(d, s, h, bc::Right{PolyFit{D}}, x, y)
 
 Fill slope array using generic polynomial fit at right endpoint.
 
-Materializes PolyFit{D} to Deriv1 using `materialize_bc`, then uses the
+Materializes PolyFit{D} to Deriv1{Tv} using `materialize_bc`, then uses the
 estimated derivative directly.
 """
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
-                               bc::Right{Tg, PolyFit{D, Tg}}, x::AbstractVector{Tg}, y::AbstractVector{Tv}) where {D, Tv, Tg<:AbstractFloat}
-    # Materialize PolyFit{D} → Deriv1 using estimated derivative
+                               bc::Right{PolyFit{D}}, x::AbstractVector{Tg}, y::AbstractVector{Tv}) where {D, Tv, Tg<:AbstractFloat}
+    # Materialize PolyFit{D} → Deriv1{Tv} using estimated derivative
     concrete_bc = materialize_bc(bc.bc, x, y, Val(:right))
     dn = concrete_bc.val  # Already Tv type from polynomial fit on y values
     _backward_recurrence!(d, s, dn)
@@ -345,7 +377,7 @@ and automatically released when the function returns.
     a::AbstractVector{Tv},
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    bc::QuadraticBC{Tg}
+    bc::QuadraticBC
 ) where {Tg<:AbstractFloat, Tv}
     nx = length(x)
 
@@ -395,7 +427,7 @@ which stores precomputed coefficients.
 function _compute_quadratic_coeffs(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    bc::QuadraticBC{Tg}
+    bc::QuadraticBC
 ) where {Tg<:AbstractFloat, Tv}
     nx = length(x)
 

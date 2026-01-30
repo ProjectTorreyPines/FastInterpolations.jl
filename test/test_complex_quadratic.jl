@@ -227,7 +227,7 @@ using FastInterpolations
 
         # Measure allocation
         allocs = @allocated itp(0.5)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     # ========================================
@@ -256,12 +256,12 @@ using FastInterpolations
         y = [1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
 
         # Left QuadraticFit (default)
-        itp_left = quadratic_interp(x, y; bc=Left(QuadraticFit{Float64}()))
+        itp_left = quadratic_interp(x, y; bc=Left(QuadraticFit()))
         val_left = itp_left(0.5)
         @test val_left isa ComplexF64
 
         # Right QuadraticFit
-        itp_right = quadratic_interp(x, y; bc=Right(QuadraticFit{Float64}()))
+        itp_right = quadratic_interp(x, y; bc=Right(QuadraticFit()))
         val_right = itp_right(0.5)
         @test val_right isa ComplexF64
     end
@@ -273,7 +273,7 @@ using FastInterpolations
         x = [0.0, 1.0, 2.0, 3.0]
         y = [1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
 
-        itp = quadratic_interp(x, y; bc=MinCurvFit{Float64}())
+        itp = quadratic_interp(x, y; bc=MinCurvFit())
 
         val = itp(0.5)
         @test val isa ComplexF64

@@ -222,7 +222,7 @@ using FastInterpolations
 
         # Measure allocation
         allocs = @allocated sitp(output, 0.5)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     # ========================================

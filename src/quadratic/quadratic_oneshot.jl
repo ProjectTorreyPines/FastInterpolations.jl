@@ -177,7 +177,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     xi::FT;
-    bc::QuadraticBC{FT}=Left(QuadraticFit{FT}()),
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search=Binary(),
@@ -233,7 +233,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
-    bc::QuadraticBC{FT}=Left(QuadraticFit{FT}()),
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -286,7 +286,7 @@ function quadratic_interp(
     x::AbstractVector{FT},
     y::AbstractVector{FT},
     x_targets::AbstractVector{FT};
-    bc::QuadraticBC{FT}=Left(QuadraticFit{FT}()),
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -307,27 +307,25 @@ end
 # ========================================
 
 """
-    _promote_bc(bc::Left/Right, ::Type{FT}) -> Left{FT}/Right{FT}
+    _promote_bc(bc::Left/Right, ::Type{Tv}) -> Left/Right
 
-Promote Left/Right BC wrapper to target float type FT.
+Promote Left/Right BC wrapper to target value type Tv.
 Uses _promote_pointbc from bc_types.jl for inner BC promotion.
+
+Type-Free design: PointBC has no type parameter, so we always delegate
+to _promote_pointbc which handles both passthrough (lazy types) and
+actual conversion (concrete types like Deriv1{Tv}).
 """
-# Same-type passthrough (zero-cost, no object creation)
-@inline _promote_bc(bc::Left{T, <:PointBC{T}}, ::Type{T}) where {T<:AbstractFloat} = bc
-@inline _promote_bc(bc::Right{T, <:PointBC{T}}, ::Type{T}) where {T<:AbstractFloat} = bc
-
-# Type conversion (delegates to _promote_pointbc)
-@inline function _promote_bc(bc::Left{T, <:PointBC{T}}, ::Type{FT}) where {T<:AbstractFloat, FT<:AbstractFloat}
-    Left(_promote_pointbc(bc.bc, FT))
+@inline function _promote_bc(bc::Left, ::Type{Tv}) where {Tv}
+    Left(_promote_pointbc(bc.bc, Tv))
 end
 
-@inline function _promote_bc(bc::Right{T, <:PointBC{T}}, ::Type{FT}) where {T<:AbstractFloat, FT<:AbstractFloat}
-    Right(_promote_pointbc(bc.bc, FT))
+@inline function _promote_bc(bc::Right, ::Type{Tv}) where {Tv}
+    Right(_promote_pointbc(bc.bc, Tv))
 end
 
-# MinCurvFit promotion (not a PointBC, needs explicit handling)
-@inline _promote_bc(::MinCurvFit, ::Type{T}) where {T<:AbstractFloat} = MinCurvFit{T}()
-@inline _promote_bc(::MinCurvFit{T}, ::Type{T}) where {T<:AbstractFloat} = MinCurvFit{T}()
+# MinCurvFit is a singleton - no promotion needed
+@inline _promote_bc(::MinCurvFit, ::Type{Tv}) where {Tv} = MinCurvFit()
 
 # Note: QuadraticFit <: PointBC, handled by generic _promote_pointbc in bc_types.jl
 
@@ -339,7 +337,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     xi::S;
-    bc::QuadraticBC{<:AbstractFloat}=Left(QuadraticFit{Float64}()),
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -357,7 +355,7 @@ function quadratic_interp(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    bc::QuadraticBC{<:AbstractFloat}=Left(QuadraticFit{Float64}()),
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -378,7 +376,7 @@ end
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_targets::AbstractVector{S};
-    bc::QuadraticBC{<:AbstractFloat}=Left(QuadraticFit{Float64}()),
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()

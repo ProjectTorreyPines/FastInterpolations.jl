@@ -18,66 +18,65 @@ const ATOL = 1e-14
     # Type Hierarchy Tests
     # ========================================
     @testset "BC Type Hierarchy" begin
-        # PointBC is abstract parent of Deriv1, Deriv2, Deriv3
-        @test Deriv1{Float64} <: FastInterpolations.PointBC{Float64}
-        @test Deriv2{Float64} <: FastInterpolations.PointBC{Float64}
-        @test Deriv3{Float64} <: FastInterpolations.PointBC{Float64}
-        @test Deriv1{Float32} <: FastInterpolations.PointBC{Float32}
-        @test Deriv2{Float32} <: FastInterpolations.PointBC{Float32}
-        @test Deriv3{Float32} <: FastInterpolations.PointBC{Float32}
+        # Type-Free design: PointBC is abstract parent (no type parameter)
+        # Concrete types like Deriv1{Float64} are subtypes of PointBC
+        @test Deriv1{Float64} <: FastInterpolations.PointBC
+        @test Deriv2{Float64} <: FastInterpolations.PointBC
+        @test Deriv3{Float64} <: FastInterpolations.PointBC
+        @test Deriv1{Float32} <: FastInterpolations.PointBC
+        @test Deriv2{Float32} <: FastInterpolations.PointBC
+        @test Deriv3{Float32} <: FastInterpolations.PointBC
 
-        # PointBC <: AbstractBC
-        @test FastInterpolations.PointBC{Float64} <: AbstractBC{Float64}
+        # Type-Free design: PointBC <: AbstractBC (no type parameters)
+        @test FastInterpolations.PointBC <: AbstractBC
 
-        # BCPair <: AbstractBC
-        @test BCPair{Float64, Deriv1{Float64}, Deriv2{Float64}} <: AbstractBC{Float64}
-        @test BCPair{Float64, Deriv3{Float64}, Deriv1{Float64}} <: AbstractBC{Float64}
+        # Type-Free design: BCPair{L, R} <: AbstractBC (no Tv parameter)
+        @test BCPair{Deriv1{Float64}, Deriv2{Float64}} <: AbstractBC
+        @test BCPair{Deriv3{Float64}, Deriv1{Float64}} <: AbstractBC
 
-        # PeriodicBC <: AbstractBC
-        @test PeriodicBC{Float64} <: AbstractBC{Float64}
-        @test PeriodicBC{Float32} <: AbstractBC{Float32}
+        # PeriodicBC <: AbstractBC (singleton)
+        @test PeriodicBC <: AbstractBC
     end
 
     @testset "BCPair Construction" begin
+        # Type-Free design: BCPair{L, R} (no Tv parameter)
         # Direct construction
         bc_pair = BCPair(Deriv1(0.5), Deriv2(1.0))
-        @test bc_pair isa BCPair{Float64, Deriv1{Float64}, Deriv2{Float64}}
+        @test bc_pair isa BCPair{Deriv1{Float64}, Deriv2{Float64}}
         @test bc_pair.left.val == 0.5
         @test bc_pair.right.val == 1.0
 
         # Tuple constructor
         bc_from_tuple = BCPair((Deriv1(0.5), Deriv2(1.0)))
-        @test bc_from_tuple isa BCPair{Float64, Deriv1{Float64}, Deriv2{Float64}}
+        @test bc_from_tuple isa BCPair{Deriv1{Float64}, Deriv2{Float64}}
         @test bc_from_tuple.left.val == bc_pair.left.val
         @test bc_from_tuple.right.val == bc_pair.right.val
 
         # Float32
         bc_f32 = BCPair(Deriv1(0.5f0), Deriv2(1.0f0))
-        @test bc_f32 isa BCPair{Float32, Deriv1{Float32}, Deriv2{Float32}}
+        @test bc_f32 isa BCPair{Deriv1{Float32}, Deriv2{Float32}}
 
         # BCPair with Deriv3
         bc_d3 = BCPair(Deriv3(6.0), Deriv3(2.0))
-        @test bc_d3 isa BCPair{Float64, Deriv3{Float64}, Deriv3{Float64}}
+        @test bc_d3 isa BCPair{Deriv3{Float64}, Deriv3{Float64}}
         @test bc_d3.left.val == 6.0
         @test bc_d3.right.val == 2.0
 
         # Mixed BCPair with Deriv3
         bc_mixed = BCPair(Deriv3(0.0), Deriv1(1.0))
-        @test bc_mixed isa BCPair{Float64, Deriv3{Float64}, Deriv1{Float64}}
+        @test bc_mixed isa BCPair{Deriv3{Float64}, Deriv1{Float64}}
     end
 
     @testset "PeriodicBC Construction" begin
-        # Default (Float64)
+        # Type-Free design: PeriodicBC is a singleton, no type parameter
         pbc = PeriodicBC()
-        @test pbc isa PeriodicBC{Float64}
+        @test pbc isa PeriodicBC
+        @test pbc isa AbstractBC
 
-        # Explicit Float64
-        pbc64 = PeriodicBC{Float64}()
-        @test pbc64 isa PeriodicBC{Float64}
-
-        # Float32
-        pbc32 = PeriodicBC{Float32}()
-        @test pbc32 isa PeriodicBC{Float32}
+        # Singleton property - all instances are the same
+        pbc1 = PeriodicBC()
+        pbc2 = PeriodicBC()
+        @test typeof(pbc1) === typeof(pbc2)
     end
 
     # ========================================
@@ -102,20 +101,11 @@ const ATOL = 1e-14
         @test d3_f32 isa Deriv3{Float32}
         @test d3_f32.val == Float32(6.0)
 
-        # PeriodicBC{T}(::PeriodicBC)
-        pbc_f64 = PeriodicBC()
-        pbc_f32 = PeriodicBC{Float32}(pbc_f64)
-        @test pbc_f32 isa PeriodicBC{Float32}
-
-        # NaturalBC{T}(::NaturalBC)
-        nat_f64 = NaturalBC()
-        nat_f32 = NaturalBC{Float32}(nat_f64)
-        @test nat_f32 isa NaturalBC{Float32}
-
-        # ClampedBC{T}(::ClampedBC)
-        clamp_f64 = ClampedBC()
-        clamp_f32 = ClampedBC{Float32}(clamp_f64)
-        @test clamp_f32 isa ClampedBC{Float32}
+        # PeriodicBC, NaturalBC, ClampedBC are now non-parametric singletons
+        # No type conversion needed - they're type-agnostic
+        @test PeriodicBC() isa PeriodicBC
+        @test NaturalBC() isa NaturalBC
+        @test ClampedBC() isa ClampedBC
     end
 
     # ========================================

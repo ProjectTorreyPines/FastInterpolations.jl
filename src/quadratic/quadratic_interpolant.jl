@@ -127,7 +127,7 @@ end
 function quadratic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv};
-    bc::QuadraticBC{Tg}=Left(QuadraticFit{Tg}()),
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
@@ -153,7 +153,7 @@ end
 function quadratic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY};
-    bc::QuadraticBC{<:AbstractFloat}=Left(QuadraticFit{Float64}()),
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     search::P=Binary()
 ) where {TX<:Real, TY, P<:AbstractSearchPolicy}

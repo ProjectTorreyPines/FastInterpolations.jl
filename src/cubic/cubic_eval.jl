@@ -187,14 +187,14 @@ end
 
 "Evaluate with BC-aware dispatch (Generic Derivative BC) with search policy."
 @inline function _eval_with_bc(
-    cache::CubicSplineCache{T,X,F,BCPair{T,L,R},S},
+    cache::CubicSplineCache{T,X,F,BCPair{L,R},S},
     y::AbstractVector{T},
     z::AbstractVector{T},
     xi::T,
     extrap::Val,
     op::O,
     searcher::P
-) where {T<:AbstractFloat, X, F, L<:PointBC{T}, R<:PointBC{T}, S<:AbstractGridSpacing{T}, O<:AbstractEvalOp, P<:Searcher}
+) where {T<:AbstractFloat, X, F, L<:PointBC, R<:PointBC, S<:AbstractGridSpacing{T}, O<:AbstractEvalOp, P<:Searcher}
     _eval_cubic_with_extrap(cache.x, y, cache.spacing, z, xi, extrap, op, searcher)
 end
 

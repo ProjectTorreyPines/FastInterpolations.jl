@@ -65,25 +65,31 @@ end
 # and we apply actual BC values at solve time via _solve_system!(cache, y, bc_tuple).
 
 """
-Core implementation for BCPair boundary conditions (vector output).
+Core implementation for BCPair boundary conditions (vector query).
 Thread-safe: uses _get_cubic_cache + @with_pool pattern.
+
+Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
+- Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair)
+- Solve uses original BC for proper RHS materialization (PolyFit materializes via compute_rhs!)
 """
 @inline @with_pool pool function _cubic_interp_bcpair!(
     output::AbstractVector{T},
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_query::AbstractVector{T},
-    bc::BCPair{T,L,R},
+    bc::BCPair{L,R},
     extrap::Symbol,
     autocache::Bool,
     op::O,
     searcher::S
-) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, O<:AbstractEvalOp, S<:Searcher}
+) where {T<:AbstractFloat, L<:PointBC, R<:PointBC, O<:AbstractEvalOp, S<:Searcher}
     @assert length(y) == length(x) "y length must match x"
     @assert length(output) == length(x_query) "output length must match x_query"
 
+    # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc, autocache)
     z = similar!(pool, y)
+    # Solve uses original BC for proper RHS materialization
     _solve_system!(z, cache, y, bc)
 
     @_dispatch_extrap extrap => ev begin
@@ -96,19 +102,23 @@ end
 """
 Core implementation for BCPair boundary conditions (scalar query).
 Thread-safe: uses _get_cubic_cache + @with_pool pattern.
+
+Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
 """
 @inline @with_pool pool function _cubic_interp_bcpair_scalar(
     x::AbstractVector{T},
     y::AbstractVector{T},
     x_query::T,
-    bc::BCPair{T,L,R},
+    bc::BCPair{L,R},
     extrap::Symbol,
     autocache::Bool,
     op::O,
     searcher::S
-) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}, O<:AbstractEvalOp, S<:Searcher}
+) where {T<:AbstractFloat, L<:PointBC, R<:PointBC, O<:AbstractEvalOp, S<:Searcher}
     tmp_z = similar!(pool, y)
+    # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc, autocache)
+    # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc)
 
     @_dispatch_extrap extrap => ev begin
@@ -134,7 +144,7 @@ Thread-safe: uses _get_cubic_cache + @with_pool pattern.
     @assert length(output) == length(x_query) "output length must match x_query"
 
     _check_periodic_endpoints(y)
-    cache = _get_cubic_cache(x, PeriodicBC{T}(), autocache)
+    cache = _get_cubic_cache(x, PeriodicBC(), autocache)
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
@@ -159,7 +169,7 @@ Thread-safe: uses _get_cubic_cache + @with_pool pattern.
     searcher::S
 ) where {T<:AbstractFloat, O<:AbstractEvalOp, S<:Searcher}
     _check_periodic_endpoints(y)
-    cache = _get_cubic_cache(x, PeriodicBC{T}(), autocache)
+    cache = _get_cubic_cache(x, PeriodicBC(), autocache)
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 

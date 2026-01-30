@@ -39,7 +39,7 @@ Cache structure for cubic spline interpolation with reusable Thomas factorizatio
 - `T`: Float type (Float32 or Float64)
 - `X`: Grid type (Vector{T} or AbstractRange{T})
 - `F`: Factorization type (ThomasFactorization{T,V})
-- `BC`: Boundary condition data type (BCPair{T,L,R} for derivative BC, PeriodicData{T} for periodic)
+- `BC`: Boundary condition data type (BCPair{L,R} for derivative BC, PeriodicData{T} for periodic)
 - `S`: Grid spacing type (ScalarSpacing{T} for Range, VectorSpacing{T} for Vector)
 
 # Fields
@@ -119,7 +119,7 @@ val = itp(0.5; search=Binary())             # override with Binary()
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Extrapolation mode uses union-splitting for near-zero overhead dispatch
 """
-struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},P<:AbstractSearchPolicy,BC<:CubicBC{T}} <: AbstractInterpolant{T, T}
+struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},P<:AbstractSearchPolicy,BC<:CubicBC} <: AbstractInterpolant{T, T}
     cache::C
     y::Vector{T}
     z::Vector{T}  # Pre-computed second derivative coefficients
@@ -133,7 +133,7 @@ struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},P<:AbstractSearc
         bc::BC,
         extrap::ExtrapVal,
         search::P=Binary()
-    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, P<:AbstractSearchPolicy, BC<:CubicBC{T}}
+    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, P<:AbstractSearchPolicy, BC<:CubicBC}
         @assert length(cache.x) == length(y) "cache grid and y must have same length"
         @assert length(cache.x) == length(z) "z coefficients must match grid length"
         # Always copy to ensure immutability: once constructed, the interpolant

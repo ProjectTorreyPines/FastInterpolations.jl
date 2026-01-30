@@ -334,14 +334,16 @@ so the pool memory can be safely reused after this function returns.
 @inline @with_pool pool function _build_interpolant_bcpair(
     x::AbstractVector{T},
     y::AbstractVector{T},
-    bc_pair::BCPair{T,L,R},
+    bc_pair::BCPair{L,R},
     extrap::Symbol,
     autocache::Bool,
     search::AbstractSearchPolicy=Binary()
-) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}}
+) where {T<:AbstractFloat, L<:PointBC, R<:PointBC}
+    # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc_pair, autocache)
     ev = _symbol_to_extrap_val(extrap)
     tmp_z = similar!(pool, y)
+    # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc_pair)
     # tmp_z is copied by CubicInterpolant constructor - safe to return to pool
     return CubicInterpolant(cache, y, tmp_z, bc_pair, ev, search)
@@ -369,7 +371,7 @@ so the pool memory can be safely reused after this function returns.
     tmp_z = similar!(pool, y)
     _solve_system!(tmp_z, cache, y, cache.bc_config)
     # tmp_z is copied by CubicInterpolant constructor - safe to return to pool
-    return CubicInterpolant(cache, y, tmp_z, PeriodicBC{T}(), Val(:wrap), search)
+    return CubicInterpolant(cache, y, tmp_z, PeriodicBC(), Val(:wrap), search)
 end
 
 # ========================================
@@ -462,7 +464,7 @@ by the CubicInterpolant constructor.
 
     if cache.bc_config isa PeriodicData
         _check_periodic_endpoints(y)
-        return CubicInterpolant(cache, y, tmp_z, PeriodicBC{T}(), Val(:wrap), search)
+        return CubicInterpolant(cache, y, tmp_z, PeriodicBC(), Val(:wrap), search)
     end
 
     # cache.bc_config is BCPair - use it directly

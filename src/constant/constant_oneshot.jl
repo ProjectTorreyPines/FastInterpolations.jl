@@ -130,7 +130,7 @@ end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                         PUBLIC API - HOT PATH                             ║
-# ║                  All arguments have same FT<:AbstractFloat                ║
+# ║                 Tg<:AbstractFloat grid, Tv value type                     ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
@@ -181,15 +181,15 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
 ```
 """
 @inline function constant_interp(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xi::FT;
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    xi::Tg;
     extrap::Symbol=:none,
     side::Symbol=:nearest,
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {FT<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _to_searcher(search, hint)
@@ -232,15 +232,15 @@ constant_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_window
 ```
 """
 function constant_interp!(
-    output::AbstractVector{FT},
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT};
+    output::AbstractVector{Tv},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    x_targets::AbstractVector{Tg};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {FT<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
@@ -280,15 +280,15 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
 ```
 """
 function constant_interp(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT};
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    x_targets::AbstractVector{Tg};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {FT<:AbstractFloat}
-    output = Vector{FT}(undef, length(x_targets))
+) where {Tg<:AbstractFloat, Tv}
+    output = Vector{Tv}(undef, length(x_targets))
     constant_interp!(output, x, y, x_targets; extrap, side, deriv, search)
     return output
 end
@@ -300,73 +300,83 @@ end
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
-# Scalar Real → Float wrappers
+# Scalar Real/Complex → typed wrappers
 # ========================================
+# Unified wrapper for non-AbstractFloat inputs (Int, mixed types, Complex, etc.)
+# POLICY: Tg is computed from x/y ONLY, not from xq
 
 @inline function constant_interp(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    xi::S;
+    x::AbstractVector{Tx},
+    y::AbstractVector{Ty},
+    xi::Tq;
     extrap::Symbol=:none,
     side::Symbol=:nearest,
     deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:Real, S<:Real}
-    FT = float(T)
-    return constant_interp(_to_float(x, FT), _to_float(y, FT), FT(xi); extrap, side, deriv, search)
+    search=Binary(),
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tx<:Real, Ty, Tq<:Real}
+    # Tg from x/y ONLY (not xq)
+    Tg = float(promote_type(Tx, _real_eltype(Ty)))
+    x_typed, y_typed = _promote_xy(x, y, Tg)
+    return constant_interp(x_typed, y_typed, Tg(xi); extrap, side, deriv, search, hint)
 end
 
 # ========================================
-# Vector Real → Float wrappers (allocating)
+# Vector Real/Complex → typed wrappers (allocating)
 # ========================================
+# POLICY: Tg is computed from x/y ONLY, not from x_targets
 
 function constant_interp(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    x_targets::AbstractVector{S};
+    x::AbstractVector{Tx},
+    y::AbstractVector{Ty},
+    x_targets::AbstractVector{Tq};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {T<:Real, S<:Real}
-    FT = float(T)
-    output = Vector{FT}(undef, length(x_targets))
-    constant_interp!(output, x, y, x_targets; extrap, side, deriv, search)
+) where {Tx<:Real, Ty, Tq<:Real}
+    # Tg from x/y ONLY (not x_targets)
+    Tg = float(promote_type(Tx, _real_eltype(Ty)))
+    Tv = _value_type(Ty, Tg)
+    output = Vector{Tv}(undef, length(x_targets))
+    x_typed, y_typed = _promote_xy(x, y, Tg)
+    targets_typed = Tg.(x_targets)
+    constant_interp!(output, x_typed, y_typed, targets_typed; extrap, side, deriv, search)
     return output
 end
 
 # ========================================
-# Vector Real → Float wrappers (in-place)
+# Vector Real/Complex → typed wrappers (in-place)
 # ========================================
 
 function constant_interp!(
     output::AbstractVector,
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    x_targets::AbstractVector{S};
+    x::AbstractVector{Tx},
+    y::AbstractVector{Ty},
+    x_targets::AbstractVector{Tq};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {T<:Real, S<:Real}
+) where {Tx<:Real, Ty, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    FT = float(T)
-    x_float = _to_float(x, FT)
-    y_float = _to_float(y, FT)
-    x_targets_float = _to_float(x_targets, FT)
+    # Tg from x/y ONLY (not x_targets)
+    Tg = float(promote_type(Tx, _real_eltype(Ty)))
 
-    searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            @_dispatch_side side => sv begin
-                @boundscheck _check_domain(x_float, x_targets_float, ev)
-                @inbounds for i in eachindex(x_targets_float, output)
-                    output[i] = _constant_eval_at_point(x_float, y_float, x_targets_float[i], ev, sv, op, searcher)
-                end
-            end
-        end
+    # Determine expected output type and validate
+    Tv = _value_type(Ty, Tg)
+    Tout = eltype(output)
+    if !(Tout >: Tv)
+        throw(ArgumentError(
+            "output eltype $Tout cannot hold interpolation result type $Tv. " *
+            "Use Vector{$Tv} or a wider type (e.g., Vector{Complex{$Tg}} for complex y-values)."
+        ))
     end
-    return output
+
+    x_typed, y_typed = _promote_xy(x, y, Tg)
+    targets_typed = Tg.(x_targets)
+
+    constant_interp!(output, x_typed, y_typed, targets_typed; extrap, side, deriv, search)
 end

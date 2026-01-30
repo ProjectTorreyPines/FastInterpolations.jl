@@ -24,11 +24,15 @@ Handle extrapolation for constant interpolation.
 Note: :none and :wrap modes never reach this function.
 - :none throws DomainError via _check_domain
 - :wrap is handled in _constant_eval_at_point before extrap check
+
+Type parameters:
+- Tg: Grid type (AbstractFloat) for xi, x_min, x_max
+- Tv: Value type for y (can be Tg, Complex{Tg}, etc.)
 """
 @inline function _constant_eval_extrap(
-    y::AbstractVector{FT}, xi::FT, x_min::FT, x_max::FT,
+    y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
     ::Val{:constant}, ::SideVal, ::EvalValue
-) where {FT<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     if xi < x_min
         return @inbounds y[1]
     else  # xi > x_max
@@ -37,31 +41,31 @@ Note: :none and :wrap modes never reach this function.
 end
 
 @inline function _constant_eval_extrap(
-    y::AbstractVector{FT}, ::FT, ::FT, ::FT,
+    y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
     ::Val{:constant}, ::SideVal, ::EvalDeriv1
-) where {FT<:AbstractFloat}
-    return zero(FT)
+) where {Tg<:AbstractFloat, Tv}
+    return zero(Tv)
 end
 
 @inline function _constant_eval_extrap(
-    y::AbstractVector{FT}, ::FT, ::FT, ::FT,
+    y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
     ::Val{:constant}, ::SideVal, ::EvalDeriv2
-) where {FT<:AbstractFloat}
-    return zero(FT)
+) where {Tg<:AbstractFloat, Tv}
+    return zero(Tv)
 end
 
 @inline function _constant_eval_extrap(
-    y::AbstractVector{FT}, ::FT, ::FT, ::FT,
+    y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
     ::Val{:constant}, ::SideVal, ::EvalDeriv3
-) where {FT<:AbstractFloat}
-    return zero(FT)
+) where {Tg<:AbstractFloat, Tv}
+    return zero(Tv)
 end
 
 # :extension delegates to :constant (slope=0 for constant function)
 @inline function _constant_eval_extrap(
-    y::AbstractVector{FT}, xi::FT, x_min::FT, x_max::FT,
+    y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
     ::Val{:extension}, side::SideVal, op::AbstractEvalOp
-) where {FT<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     return _constant_eval_extrap(y, xi, x_min, x_max, Val(:constant), side, op)
 end
 
@@ -77,16 +81,20 @@ Evaluation flow:
 3. Boundary check (xi == x_max → y[end] for non-wrap modes)
 4. Extrapolation check (xi outside domain → extrap handling)
 5. Interval search → kernel evaluation
+
+Type parameters:
+- Tg: Grid type (AbstractFloat) for x and xi
+- Tv: Value type for y (can be Tg, Complex{Tg}, etc.)
 """
 @inline function _constant_eval_at_point(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xi::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    xi::Tg,
     extrap::ExtrapVal,
     side::SideVal,
     op::AbstractEvalOp,
     searcher::S
-) where {FT<:AbstractFloat, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, S<:Searcher}
     # Domain check for :none mode (throws DomainError)
     @boundscheck _check_domain(x, xi, extrap)
 
@@ -104,7 +112,7 @@ Evaluation flow:
     # Boundary special case: xi == x[end] → y[end] directly
     # (avoids _search_interval returning idx=n-1, dL=h)
     if xi == x_max
-        return op isa EvalValue ? (@inbounds y[end]) : zero(FT)
+        return op isa EvalValue ? (@inbounds y[end]) : zero(Tv)
     end
 
     # Extrapolation handling (:constant, :extension)

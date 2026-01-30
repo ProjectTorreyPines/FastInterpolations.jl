@@ -9,26 +9,28 @@
 # ─────────────────────────────────────────────────────────────
 # Scalar call - hot path (inlined for broadcast fusion)
 # Default search is now the stored policy in itp.search_policy
+# Type parameters: Tg = grid type, Tv = value type (can be Complex)
 # ─────────────────────────────────────────────────────────────
-@inline function (itp::ConstantInterpolant{T,X,Y,P})(xi::T; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
+@inline function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(xi::Tg; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         _constant_eval_at_point(itp.x, itp.y, xi, itp.extrap, itp.side, op, searcher)
     end
 end
 
-# Real scalar wrapper - delegates to T method
-@inline function (itp::ConstantInterpolant{T,X,Y,P})(xi::S; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
-    itp(T(xi); deriv=deriv, search=search, hint=hint)
+# Real scalar wrapper - delegates to Tg method
+@inline function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(xi::S; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
+    itp(Tg(xi); deriv=deriv, search=search, hint=hint)
 end
 
 # ─────────────────────────────────────────────────────────────
 # Vector call (allocating)
 # Now supports hint for ODE/streaming patterns
+# Output type is Tv (value type), not Tg (grid type)
 # ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{T,X,Y,P})(xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
-    xi_typed = _to_float(xi, T)
-    output = Vector{T}(undef, length(xi_typed))
+function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
+    xi_typed = _to_float(xi, Tg)
+    output = Vector{Tv}(undef, length(xi_typed))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
@@ -41,8 +43,9 @@ end
 
 # ─────────────────────────────────────────────────────────────
 # In-place vector call (zero allocation)
+# Output type is Tv (value type)
 # ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{T,X,Y,P})(output::AbstractVector{T}, xi::AbstractVector{T}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
+function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector{Tv}, xi::AbstractVector{Tg}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
     @assert length(output) == length(xi) "output length must match xi length"
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
@@ -55,9 +58,9 @@ function (itp::ConstantInterpolant{T,X,Y,P})(output::AbstractVector{T}, xi::Abst
 end
 
 # In-place with type conversion
-function (itp::ConstantInterpolant{T,X,Y,P})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
+function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
-    xi_typed = _to_float(xi, T)
+    xi_typed = _to_float(xi, Tg)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
@@ -80,13 +83,15 @@ Create a callable interpolant for broadcast fusion and reuse.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
-- `y::AbstractVector`: y-values
+- `y::AbstractVector`: y-values (can be Real or Complex)
 - `extrap::Symbol`: Extrapolation mode
 - `side::Symbol`: Side selection
 - `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
 
 # Returns
-`ConstantInterpolant` object for scalar/broadcast evaluation.
+`ConstantInterpolant{Tg, Tv}` object for scalar/broadcast evaluation.
+- `Tg`: Grid type (Float32/Float64)
+- `Tv`: Value type (Tg for real values, Complex{Tg} for complex values)
 
 # Example
 ```julia
@@ -96,6 +101,12 @@ y = [10.0, 20.0, 30.0, 40.0]
 itp = constant_interp(x, y)
 itp(0.5)           # 10.0
 itp.([0.5, 1.5])   # [10.0, 20.0]
+
+# Complex values
+x = [0.0, 1.0, 2.0]
+y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im]
+itp = constant_interp(x, y)
+itp(0.5)           # 1.0+2.0im (ComplexF64)
 
 # Create with custom search policy
 itp = constant_interp(x, y; search=LinearBinary())
@@ -111,27 +122,45 @@ for batch in batches
 end
 ```
 """
+# Hot path: x is AbstractFloat, y can be Tg or Complex{Tg}
 function constant_interp(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT};
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
     search::P=Binary()
-) where {FT<:AbstractFloat, P<:AbstractSearchPolicy}
+) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
+    # Check if Tv's real part requires promotion of Tg
+    Tv_real = _real_eltype(Tv)
+    if Tv_real !== Tg && Tv_real <: AbstractFloat
+        # Promote Tg to match the wider value type
+        Tg_new = promote_type(Tg, Tv_real)
+        x_typed = _to_float(x, Tg_new)
+        _, y_typed = _promote_value_type(y, Tg_new)
+        return ConstantInterpolant(x_typed, y_typed; extrap, side, search)
+    end
+    # No promotion needed - types are compatible
     return ConstantInterpolant(x, y; extrap, side, search)
 end
 
 # ========================================
-# 2-arg Callable Real → Float wrapper
+# 2-arg Generic Constructor (Type Promotion Wrapper)
+# Handles: Int grid, Real values, Complex values
 # ========================================
 
 function constant_interp(
-    x::AbstractVector{T},
-    y::AbstractVector{T};
+    x::AbstractVector{TX},
+    y::AbstractVector{TY};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
     search::P=Binary()
-) where {T<:Real, P<:AbstractSearchPolicy}
-    FT = float(T)
-    return ConstantInterpolant(_to_float(x, FT), _to_float(y, FT); extrap, side, search)
+) where {TX<:Real, TY, P<:AbstractSearchPolicy}
+    # Determine grid type from x and real part of y
+    Tg = float(promote_type(TX, _real_eltype(TY)))
+    x_typed = _to_float(x, Tg)
+
+    # Promote y to appropriate type (handles both Real and Complex)
+    _, y_typed = _promote_value_type(y, Tg)
+
+    return ConstantInterpolant(x_typed, y_typed; extrap, side, search)
 end

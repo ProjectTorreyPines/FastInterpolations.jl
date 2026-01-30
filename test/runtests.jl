@@ -18,6 +18,7 @@ else
     include("test_grid_spacing.jl")
     include("test_search.jl")
     include("test_constant.jl")
+    include("test_complex_constant.jl")
     include("test_linear.jl")
     include("test_quadratic.jl")
     include("test_cubic.jl")

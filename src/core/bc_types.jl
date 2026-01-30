@@ -607,6 +607,19 @@ See also: [`PolyFit`](@ref), [`_estimate_endpoint_derivative`](@ref)
     return Deriv1{T}(val)
 end
 
+# Mixed-type materialize_bc for Complex value support
+# xs::AbstractVector{Tg} grid (always real)
+# ys::AbstractVector{Tv} values (can be Complex)
+# Returns a lightweight struct with the derivative value (type Tv)
+@inline function materialize_bc(
+    ::PolyFit{D, Tg}, xs::AbstractVector{Tg}, ys::AbstractVector{Tv}, endpoint::Val
+) where {D, Tg<:AbstractFloat, Tv}
+    val = _estimate_endpoint_derivative(xs, ys, endpoint, PolyFit{D}())
+    # Return a simple wrapper containing the Tv-typed derivative
+    # Using a NamedTuple as a lightweight return type
+    return (val = val,)
+end
+
 # Passthrough for already-concrete BCs (no materialization needed)
 @inline materialize_bc(bc::Deriv1, ::AbstractVector, ::AbstractVector, ::Val) = bc
 @inline materialize_bc(bc::Deriv2, ::AbstractVector, ::AbstractVector, ::Val) = bc

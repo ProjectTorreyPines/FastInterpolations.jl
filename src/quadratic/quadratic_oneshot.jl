@@ -22,20 +22,24 @@
 
 Core quadratic spline evaluation at a single point with search policy.
 Uses interval clamping for extension extrapolation (matches cubic pattern).
+
+# Type Parameters
+- `Tg<:AbstractFloat`: Grid type for x and xi
+- `Tv`: Value type for y, a, d (can be Tg or Complex{Tg})
 """
 @inline function _quadratic_eval_core(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    a::AbstractVector{Tv},
+    d::AbstractVector{Tv},
+    xi::Tg,
     op::AbstractEvalOp,
     searcher::S
-) where {FT<:AbstractFloat, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, S<:Searcher}
     # search_interval clamps idx to [1, n-1]
     # This handles both normal evaluation and extension extrapolation
     idx, xL, _ = search_interval(searcher, x, xi)
-    dt = xi - xL
+    dt = xi - xL  # Tg
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
@@ -45,29 +49,29 @@ end
 
 "Evaluate with no extrapolation - throws DomainError if outside domain."
 @inline function _quadratic_eval_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    a::AbstractVector{Tv},
+    d::AbstractVector{Tv},
+    xi::Tg,
     ::Val{:none},
     op::AbstractEvalOp,
     searcher::S
-) where {FT<:AbstractFloat, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, S<:Searcher}
     return _quadratic_eval_core(x, y, a, d, xi, op, searcher)
 end
 
 "Evaluate with constant extrapolation - returns boundary values outside domain."
 @inline function _quadratic_eval_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    a::AbstractVector{Tv},
+    d::AbstractVector{Tv},
+    xi::Tg,
     ::Val{:constant},
     op::AbstractEvalOp,
     searcher::S
-) where {FT<:AbstractFloat, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, S<:Searcher}
     xi < first(x) && return _constant_extrap_result(op, @inbounds y[1])
     xi > last(x) && return _constant_extrap_result(op, @inbounds y[end])
     return _quadratic_eval_core(x, y, a, d, xi, op, searcher)
@@ -75,15 +79,15 @@ end
 
 "Evaluate with extension extrapolation - extends boundary polynomial."
 @inline function _quadratic_eval_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    a::AbstractVector{Tv},
+    d::AbstractVector{Tv},
+    xi::Tg,
     ::Val{:extension},
     op::AbstractEvalOp,
     searcher::S
-) where {FT<:AbstractFloat, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, S<:Searcher}
     # Interval clamping in search_interval handles extension
     return _quadratic_eval_core(x, y, a, d, xi, op, searcher)
 end
@@ -93,18 +97,22 @@ end
 
 Entry point for quadratic spline evaluation with extrapolation dispatch and search policy.
 Note: `h` parameter kept for API compatibility but not used (interval info from x).
+
+# Type Parameters
+- `Tg<:AbstractFloat`: Grid type for x, h, xi
+- `Tv`: Value type for y, a, d (can be Tg or Complex{Tg})
 """
 @inline function _quadratic_eval_at_point(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    ::AbstractVector{FT},  # h - unused, kept for API compatibility
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    ::AbstractVector{Tg},  # h - unused, kept for API compatibility
+    a::AbstractVector{Tv},
+    d::AbstractVector{Tv},
+    xi::Tg,
     extrap::ExtrapVal,
     op::AbstractEvalOp,
     searcher::S
-) where {FT<:AbstractFloat, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, S<:Searcher}
     @boundscheck _check_domain(x, xi, extrap)
     return _quadratic_eval_with_extrap(x, y, a, d, xi, extrap, op, searcher)
 end

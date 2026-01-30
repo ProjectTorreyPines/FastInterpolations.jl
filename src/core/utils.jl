@@ -209,11 +209,16 @@ const _PERIODIC_ATOL_F32 = 1f-6
 Validate that y[1] ≈ y[end] for periodic boundary conditions.
 Called once at construction time (zero runtime overhead).
 
+Supports both Real and Complex value types.
+For Complex, uses the underlying real type to determine tolerance.
+
 Throws `ArgumentError` if endpoints differ significantly.
 """
-@inline function _check_periodic_endpoints(y::AbstractVector{T}) where {T<:AbstractFloat}
+@inline function _check_periodic_endpoints(y::AbstractVector{Tv}) where {Tv}
     y1, yn = first(y), last(y)
-    atol = T === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
+    # Use _real_eltype to extract Float32/Float64 from Complex{T} or Real
+    Tr = _real_eltype(Tv)
+    atol = Tr === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
     if !isapprox(y1, yn; atol=atol)
         throw(ArgumentError(
             "Periodic BC requires y[1] ≈ y[end], got y[1]=$y1, y[end]=$yn (diff=$(abs(yn-y1)))"

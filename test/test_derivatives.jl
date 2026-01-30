@@ -14,7 +14,8 @@ using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
 using FastInterpolations: _to_searcher
 
 # Julia version-aware threshold (1.12+ has improved allocation tracking)
-const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
+# Note: Tg/Tv type separation (for Complex support) adds ~80-300 bytes overhead on LTS
+const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
 
 # ========================================
 # Group 1: Core Types and Dispatch

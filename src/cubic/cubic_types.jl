@@ -119,7 +119,7 @@ val = itp(0.5; search=Binary())             # override with Binary()
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Extrapolation mode uses union-splitting for near-zero overhead dispatch
 """
-struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},P<:AbstractSearchPolicy,BC<:CubicBC{T}} <: AbstractInterpolant{T}
+struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},P<:AbstractSearchPolicy,BC<:CubicBC{T}} <: AbstractInterpolant{T, T}
     cache::C
     y::Vector{T}
     z::Vector{T}  # Pre-computed second derivative coefficients

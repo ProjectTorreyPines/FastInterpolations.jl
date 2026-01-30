@@ -22,6 +22,7 @@ include("core/show.jl")
 
 # Exports
 export AbstractInterpolant, AbstractSeriesInterpolant
+export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
 export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticSeriesInterpolant

@@ -51,6 +51,28 @@ function _show_type_header(io::IO, typename::String, ::Type{T}; suffix::String="
 end
 
 """
+    _show_type_header_2params(io, typename, Tg, Tv; suffix="")
+
+Print type name with two type parameters for {Tg, Tv} interpolants.
+Shows `LinearInterpolant{Float64, ComplexF64}` for complex values,
+or `LinearInterpolant{Float64}` if Tv == Tg (backward compatible display).
+"""
+function _show_type_header_2params(io::IO, typename::String, ::Type{Tg}, ::Type{Tv}; suffix::String="") where {Tg, Tv}
+    _show_print(io, typename, :cyan; bold=true)
+    _show_print(io, "{", :light_black)
+    _show_print(io, string(Tg), :light_blue)
+    # Only show Tv if different from Tg (Complex case)
+    if Tv !== Tg
+        _show_print(io, ", ", :light_black)
+        _show_print(io, string(Tv), :light_blue)
+    end
+    _show_print(io, "}", :light_black)
+    if !isempty(suffix)
+        _show_print(io, suffix, :cyan)
+    end
+end
+
+"""
     _show_row(io, is_last, label, value; value_color=:normal)
 
 Print a box-drawing row with label and value.
@@ -171,14 +193,14 @@ end
 
 # --- LinearInterpolant ---
 
-function Base.show(io::IO, itp::LinearInterpolant{T}) where {T}
+function Base.show(io::IO, itp::LinearInterpolant{Tg, Tv}) where {Tg, Tv}
     n = length(itp.x)
-    _show_type_header(io, "LinearInterpolant", T)
+    _show_type_header_2params(io, "LinearInterpolant", Tg, Tv)
     print(io, "($n pts)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolant{T}) where {T}
-    _show_type_header(io, "LinearInterpolant", T)
+function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolant{Tg, Tv}) where {Tg, Tv}
+    _show_type_header_2params(io, "LinearInterpolant", Tg, Tv)
     println(io)
     is_range = itp.x isa AbstractRange
     _show_grid_row(io, false, itp.x)
@@ -390,8 +412,8 @@ function Base.show(io::IO, d::DerivativeView{Order, ITP}) where {Order, ITP}
     print(io, ")")
 end
 
-"""Extract float type T from AbstractInterpolant{T}."""
-_interpolant_float_type(::AbstractInterpolant{T}) where {T} = T
+"""Extract grid type Tg from AbstractInterpolant{Tg, Tv}."""
+_interpolant_float_type(::AbstractInterpolant{Tg, Tv}) where {Tg, Tv} = Tg
 
 function Base.show(io::IO, ::MIME"text/plain", d::DerivativeView{Order, ITP}) where {Order, ITP}
     ord_str = _format_deriv_order(Order)

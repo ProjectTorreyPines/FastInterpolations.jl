@@ -68,7 +68,7 @@ d2 = sitp(0.5; deriv=2)     # Second derivatives
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct QuadraticSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPolicy} <: AbstractSeriesInterpolant{T}
+mutable struct QuadraticSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPolicy} <: AbstractSeriesInterpolant{T, T}
     const x::Vector{T}                        # Grid points
     const y::Matrix{T}                        # Series-contiguous y (n_points × n_series)
     const a::Matrix{T}                        # Series-contiguous a (n_points × n_series)

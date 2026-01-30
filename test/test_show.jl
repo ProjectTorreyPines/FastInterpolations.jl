@@ -432,7 +432,7 @@
         @test FI._format_search(LinearBinary(linear_window=4)) == "LinearBinary{4}"
 
         # DerivativeView with unknown parent type (no .x or .cache.x)
-        struct DummyInterpolant{T} <: FastInterpolations.AbstractInterpolant{T} end
+        struct DummyInterpolant{T} <: FastInterpolations.AbstractInterpolant{T, T} end
         Base.show(io::IO, ::DummyInterpolant) = print(io, "Dummy")
         d_dummy = DerivativeView{1, DummyInterpolant{Float64}}(DummyInterpolant{Float64}())
         verbose_dummy = sprint(show, MIME("text/plain"), d_dummy)

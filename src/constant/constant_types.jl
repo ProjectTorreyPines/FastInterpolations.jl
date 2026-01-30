@@ -34,7 +34,7 @@ val = itp(0.5)               # uses LinearBinary() by default
 val = itp(0.5; search=Binary())  # override with Binary()
 ```
 """
-struct ConstantInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}, P<:AbstractSearchPolicy} <: AbstractInterpolant{T}
+struct ConstantInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}, P<:AbstractSearchPolicy} <: AbstractInterpolant{T, T}
     x::X
     y::Y
     extrap::ExtrapVal

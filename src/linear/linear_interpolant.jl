@@ -5,10 +5,19 @@
 # Type definition is in linear_types.jl.
 # Oneshot API (linear_interp!, linear_interp 3-arg) is in linear_oneshot.jl.
 
-# Scalar call - hot path (inlined for broadcast fusion)
-# Supports deriv, search, and hint keywords for derivative evaluation and search policy
-# Default search is now the stored policy in itp.search_policy
-@inline function (itp::LinearInterpolant{T,X,Y,P})(xq::T; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
+# ========================================
+# Scalar Call - Hot Path
+# ========================================
+# Supports deriv, search, and hint keywords for derivative evaluation and search policy.
+# Default search is the stored policy in itp.search_policy.
+#
+# TYPE PARAMETERS:
+# - Tg: Grid type (Float32/Float64)
+# - Tv: Value type (Tg, Complex{Tg}, etc.)
+# - Tq: Query type (Tg or any Real, including Dual for AD)
+
+# Primary scalar call - grid type query (most common hot path)
+@inline function (itp::LinearInterpolant{Tg,Tv,X,Y,P})(xq::Tg; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
@@ -16,61 +25,72 @@
     end
 end
 
-# Real scalar wrapper - delegates to T method with deriv keyword
-@inline function (itp::LinearInterpolant{T,X,Y,P})(xq::S; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
-    itp(T(xq); deriv=deriv, search=search, hint=hint)
+# Real scalar wrapper - delegates to Tg method with deriv keyword
+# Handles Int, Float32 queries on Float64 grid, etc.
+@inline function (itp::LinearInterpolant{Tg,Tv,X,Y,P})(xq::S; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
+    itp(Tg(xq); deriv=deriv, search=search, hint=hint)
 end
+
+# ========================================
+# Vector Call - Allocating
+# ========================================
+# Output type is Tv (value type), not Tg (grid type).
+# For Complex-valued interpolants, returns Vector{Complex{Tg}}.
 
 # Vector call with deriv and search keyword support
 # Now supports hint for ODE/streaming patterns - hint is updated during loop
-function (itp::LinearInterpolant{T,X,Y,P})(xq::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
-    xi_typed = S === T ? xq : T.(xq)
+function (itp::LinearInterpolant{Tg,Tv,X,Y,P})(xq::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
+    xi_typed = S === Tg ? xq : Tg.(xq)
     @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
-    output = Vector{T}(undef, length(xi_typed))
+    output = Vector{Tv}(undef, length(xi_typed))  # Output type is Tv (value type)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.extrap, op, searcher)
+            output[i] = _linear_with_extrap(itp.x, itp.y, xi_typed[i], itp.extrap, op, searcher)
         end
     end
     return output
 end
 
-# Optimized path when xq element type matches T (zero conversion)
-function (itp::LinearInterpolant{T,X,Y,P})(xq::AbstractVector{T}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
+# Optimized path when xq element type matches Tg (zero conversion)
+function (itp::LinearInterpolant{Tg,Tv,X,Y,P})(xq::AbstractVector{Tg}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    output = Vector{T}(undef, length(xq))
+    output = Vector{Tv}(undef, length(xq))  # Output type is Tv (value type)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xq, output)
-            output[i] = linear_interp(itp.x, itp.y, xq[i], itp.extrap, op, searcher)
+            output[i] = _linear_with_extrap(itp.x, itp.y, xq[i], itp.extrap, op, searcher)
         end
     end
     return output
 end
 
+# ========================================
+# In-Place Vector Call - Zero Allocation
+# ========================================
+
 # In-place vector call with deriv and search keyword support - zero allocation
-function (itp::LinearInterpolant{T,X,Y,P})(output::AbstractVector{T}, xq::AbstractVector{T}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P}
+function (itp::LinearInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector{Tv}, xq::AbstractVector{Tg}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
     @assert length(output) == length(xq) "output length must match xq length"
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xq, output)
-            output[i] = linear_interp(itp.x, itp.y, xq[i], itp.extrap, op, searcher)
+            output[i] = _linear_with_extrap(itp.x, itp.y, xq[i], itp.extrap, op, searcher)
         end
     end
     return output
 end
 
 # In-place with type conversion and deriv keyword
-function (itp::LinearInterpolant{T,X,Y,P})(output::AbstractVector, xq::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, X, Y, P, S<:Real}
+function (itp::LinearInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector, xq::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
-    xi_typed = T.(xq)
+    xi_typed = Tg.(xq)
     @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @inbounds for i in eachindex(xi_typed, output)
-            output[i] = linear_interp(itp.x, itp.y, xi_typed[i], itp.extrap, op, searcher)
+            output[i] = _linear_with_extrap(itp.x, itp.y, xi_typed[i], itp.extrap, op, searcher)
         end
     end
     return output
@@ -87,12 +107,23 @@ Create a callable interpolant for broadcast fusion and reuse.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (must be sorted)
-- `y::AbstractVector`: y-values
+- `y::AbstractVector`: y-values (can be real or complex)
 - `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, `:extension`, or `:wrap`
 - `search::AbstractSearchPolicy`: Default search policy for interval lookup (default: `Binary()`)
 
+# Type Handling
+- x: Grid coordinates → converted to AbstractFloat, Range structure preserved
+- y: Value type determines return type:
+  - Real types → promoted to float(eltype(y))
+  - Complex{Real} → promoted to Complex{Tg} where Tg = float(real(eltype(y)))
+  - Already matching types → no conversion
+
 # Returns
-`LinearInterpolant` object that can be:
+`LinearInterpolant{Tg, Tv}` object where:
+- `Tg`: Grid type (Float32 or Float64)
+- `Tv`: Value type (Tg for real, Complex{Tg} for complex)
+
+Can be:
 - Called with scalar: `itp(0.5)` (uses stored search policy)
 - Called with search override: `itp(0.5; search=Binary())` (override stored policy)
 - Broadcasted: `itp.(rho)` or `@. coef * itp(rho)`
@@ -138,24 +169,53 @@ vals_direct = linear_interp(x_data, y_data, query_points)
 - Use `search=LinearBinary()` for sorted query sequences
 - Use `hint=Ref(idx)` for ODE/streaming patterns with persistent hint
 """
+function linear_interp end
+
+# ========================================
+# Optimized Constructor (Type-Stable Hot Path)
+# ========================================
+# Note: _promote_value_type is defined in utils.jl (included earlier)
+
+# Unified hot path: x is AbstractFloat, y can be Tg or Complex{Tg}
+# POLICY: If Tv's real part is wider than Tg, promote Tg to match.
+# This ensures numeric consistency (e.g., Float32 grid + Float64 values → Float64 grid).
 function linear_interp(
-    x::AbstractVector{T},
-    y::AbstractVector{T};
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv};
     extrap::Symbol=:none,
     search::P=Binary()
-) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
+) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
+    # Check if Tv's real part requires promotion of Tg
+    Tv_real = _real_eltype(Tv)
+    if Tv_real !== Tg && Tv_real <: AbstractFloat
+        # Promote Tg to match the wider value type
+        Tg_new = promote_type(Tg, Tv_real)
+        x_typed = _to_float(x, Tg_new)
+        _, y_typed = _promote_value_type(y, Tg_new)
+        return LinearInterpolant(x_typed, y_typed; extrap, search)
+    end
+    # No promotion needed - types are compatible
     return LinearInterpolant(x, y; extrap, search)
 end
 
-# Real wrapper for 2-argument form (allows different container types)
-# Uses _to_float from utils.jl to preserve Range structure
+# ========================================
+# Generic Constructor (Type Promotion Wrapper)
+# ========================================
+# Handles non-AbstractFloat inputs (Int, mixed Float types, etc.)
+# POLICY: Tg is computed from x/y element types
+
 function linear_interp(
-    x::X,
-    y::Y;
+    x::AbstractVector{TX},
+    y::AbstractVector{TY};
     extrap::Symbol=:none,
     search::P=Binary()
-) where {TX<:Real, TY<:Real, X<:AbstractVector{TX}, Y<:AbstractVector{TY}, P<:AbstractSearchPolicy}
-    T = promote_type(TX, TY)
-    FT = float(T)
-    return LinearInterpolant(_to_float(x, FT), FT.(y); extrap, search)
+) where {TX<:Real, TY, P<:AbstractSearchPolicy}
+    # Determine grid type from x and real part of y
+    Tg = float(promote_type(TX, _real_eltype(TY)))
+    x_typed = _to_float(x, Tg)
+
+    # Promote y to appropriate type (handles both Real and Complex)
+    _, y_typed = _promote_value_type(y, Tg)
+
+    return LinearInterpolant(x_typed, y_typed; extrap, search)
 end

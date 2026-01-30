@@ -42,6 +42,79 @@ function _to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat}
 end
 
 # ========================================
+# Value Type Helpers (for Complex support)
+# ========================================
+
+"""
+    _real_eltype(::Type{T}) where {T<:Real} -> Type
+
+Extract the real base type from an element type.
+For Real types, returns the type itself.
+For Complex{T}, returns T.
+
+This is TYPE-BASED (works with eltype(y) in wrappers).
+"""
+@inline _real_eltype(::Type{T}) where {T<:Real} = T
+@inline _real_eltype(::Type{Complex{T}}) where {T<:Real} = T
+
+"""
+    _value_type(::Type{Ty}, ::Type{Tg}) -> Type
+
+Determine the output value type from y element type and grid type.
+- Real y → Tg (promotes to grid float type)
+- Complex y → Complex{Tg}
+"""
+@inline _value_type(::Type{T}, ::Type{Tg}) where {T<:Real, Tg<:AbstractFloat} = Tg
+@inline _value_type(::Type{Complex{T}}, ::Type{Tg}) where {T<:Real, Tg<:AbstractFloat} = Complex{Tg}
+
+"""
+    _promote_value_type(y, ::Type{Tg}) -> (Tv, y_converted)
+
+Promote y-values to appropriate type based on grid type Tg.
+
+# Rules
+1. If eltype(y) === Tg → no conversion (identity)
+2. If eltype(y) <: Real → convert to Tg
+3. If eltype(y) <: Complex → convert to Complex{Tg}
+4. Otherwise → convert to promote_type(eltype(y), Tg)
+
+# Returns
+Tuple of (Tv::Type, y_converted::AbstractVector{Tv})
+"""
+@inline function _promote_value_type(y::AbstractVector{Tv_raw}, ::Type{Tg}) where {Tv_raw, Tg<:AbstractFloat}
+    if Tv_raw === Tg
+        # Already matching float type - no conversion
+        return Tg, y
+    elseif Tv_raw <: Real
+        # Real (including Int, Float32) → promote to Tg
+        return Tg, Tg.(y)
+    elseif Tv_raw <: Complex
+        # Complex{anything} → Complex{Tg}
+        Tv = Complex{Tg}
+        return Tv, Tv.(y)
+    else
+        # Other Number types → promote
+        Tv = promote_type(Tv_raw, Tg)
+        return Tv, Tv.(y)
+    end
+end
+
+"""
+    _promote_xy(x, y, ::Type{Tg}) -> (x_typed, y_typed)
+
+Promote x and y to target grid type Tg.
+Preserves Range structure for x (O(1) lookup).
+
+# Returns
+Tuple of (x_typed::AbstractVector{Tg}, y_typed::AbstractVector{Tv})
+"""
+@inline function _promote_xy(x, y, ::Type{Tg}) where {Tg<:AbstractFloat}
+    x_typed = _to_float(x, Tg)
+    _, y_typed = _promote_value_type(y, Tg)
+    return x_typed, y_typed
+end
+
+# ========================================
 # Periodic Boundary Helpers
 # ========================================
 
@@ -94,11 +167,37 @@ end
 
 
 # ========================================
+# AD Support Helpers
+# ========================================
+
+"""
+    _extract_primal(xq) -> AbstractFloat
+
+Extract the primal (real) value from a query point for index search.
+
+For regular floats, returns as-is.
+For ForwardDiff.Dual (when loaded), returns the primal value.
+
+# Usage in Search
+This allows AD types to be used for interpolation queries:
+- Use `_extract_primal(xq)` ONLY for index search (comparisons)
+- Use original `xq` for arithmetic (preserves AD derivatives)
+
+# AD Extension
+ForwardDiff support is added via:
+```julia
+@inline _extract_primal(xq::ForwardDiff.Dual) = ForwardDiff.value(xq)
+```
+"""
+@inline _extract_primal(xq::T) where {T<:AbstractFloat} = xq
+@inline _extract_primal(xq::Real) = float(xq)
+
+# ========================================
 # Domain Validation Helpers
 # ========================================
 
 """
-    _check_domain(x, xi::T, ::Val{:none}) where {T<:AbstractFloat}
+    _check_domain(x, xi::Tg, ::Val{:none}) where {Tg<:AbstractFloat}
 
 Check if scalar query point is within domain for `:none` extrapolation mode.
 Throws `DomainError` if `xi` is outside `[first(x), last(x)]`.
@@ -106,26 +205,26 @@ Throws `DomainError` if `xi` is outside `[first(x), last(x)]`.
 Uses `@boundscheck` so it's skipped in `@inbounds` blocks for vector paths
 that do a single upfront check via the vector dispatch.
 """
-@inline function _check_domain(x::AbstractVector{FT}, xi::FT, ::Val{:none}) where {FT<:AbstractFloat}
+@inline function _check_domain(x::AbstractVector{Tg}, xi::Tg, ::Val{:none}) where {Tg<:AbstractFloat}
     x_min, x_max = first(x), last(x)
     (xi < x_min || xi > x_max) && throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
     return nothing
 end
 
 """
-    _check_domain(x, xi::T, ::Val) where {T<:AbstractFloat}
+    _check_domain(x, xi::Tg, ::Val) where {Tg<:AbstractFloat}
 
 No-op domain check for extrapolation modes other than `:none`.
 """
-@inline _check_domain(::AbstractVector{FT}, ::FT, ::Val) where {FT<:AbstractFloat} = nothing
+@inline _check_domain(::AbstractVector{Tg}, ::Tg, ::Val) where {Tg<:AbstractFloat} = nothing
 
 """
-    _check_domain(x, xi::AbstractVector{T}, ::Val{:none}) where {T<:AbstractFloat}
+    _check_domain(x, xi::AbstractVector{Tg}, ::Val{:none}) where {Tg<:AbstractFloat}
 
 Vector-level domain check using minimum/maximum (faster than extrema due to SIMD).
 Called once before vector loop, then scalar `_check_domain` is skipped via `@inbounds`.
 """
-@inline function _check_domain(x::AbstractVector{FT}, xi::AbstractVector{FT}, ::Val{:none}) where {FT<:AbstractFloat}
+@inline function _check_domain(x::AbstractVector{Tg}, xi::AbstractVector{Tg}, ::Val{:none}) where {Tg<:AbstractFloat}
     x_min, x_max = first(x), last(x)
     # NOTE: Using minimum/maximum for potential SIMD optimization over extrema
     # extrema can be ~30x slower than minimum/maximum
@@ -138,11 +237,11 @@ Called once before vector loop, then scalar `_check_domain` is skipped via `@inb
 end
 
 """
-    _check_domain(x, xi::AbstractVector{T}, ::Val) where {T<:AbstractFloat}
+    _check_domain(x, xi::AbstractVector{Tg}, ::Val) where {Tg<:AbstractFloat}
 
 No-op vector domain check for extrapolation modes other than `:none`.
 """
-@inline _check_domain(::AbstractVector{FT}, ::AbstractVector{FT}, ::Val) where {FT<:AbstractFloat} = nothing
+@inline _check_domain(::AbstractVector{Tg}, ::AbstractVector{Tg}, ::Val) where {Tg<:AbstractFloat} = nothing
 
 # ========================================
 # Validation Utilities

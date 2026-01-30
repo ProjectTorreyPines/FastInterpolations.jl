@@ -51,16 +51,19 @@ linear_interp!(output, x_vec, y_vec, sorted_queries; search=LinearBinary(linear_
 """
 function linear_interp! end
 
-# Unified method for AbstractVector{FT} (includes AbstractRange via dispatch)
+# Unified method for AbstractVector - supports both real and complex y
+# TYPE PARAMETERS:
+# - Tg: Grid type (AbstractFloat) - for x coordinates and x_targets
+# - Tv: Value type - for y and output (can be Tg, Complex{Tg}, etc.)
 function linear_interp!(
-    output::AbstractVector{FT},
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT};
+    output::AbstractVector{Tv},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    x_targets::AbstractVector{Tg};
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {FT<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
@@ -74,15 +77,16 @@ function linear_interp!(
 end
 
 # Internal loop with Val dispatch and Searcher (type-stable)
+# Supports mixed types: Tg for grid, Tv for values
 @inline function _linear_interp_loop!(
-    output::AbstractVector{FT},
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT},
+    output::AbstractVector{Tv},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    x_targets::AbstractVector{Tg},
     extrap_val::Val,
     op::O,
     searcher::S
-) where {FT<:AbstractFloat, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
     @inbounds for i in eachindex(x_targets, output)
         output[i] = linear_interp(x, y, x_targets[i], extrap_val, op, searcher)
     end
@@ -94,14 +98,14 @@ end
 # Stage 1: Check if ALL queries are inside domain (cheap: ~150ns for 1000 elements)
 # Stage 2: If all inside, use extension path (no wrap needed); otherwise per-element wrap
 @inline function _linear_interp_loop!(
-    output::AbstractVector{FT},
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT},
+    output::AbstractVector{Tv},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    x_targets::AbstractVector{Tg},
     ::Val{:wrap},
     op::O,
     searcher::S
-) where {FT<:AbstractFloat, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
@@ -122,14 +126,14 @@ end
 
 # Same optimization for AbstractRange (O(1) indexing path)
 @inline function _linear_interp_loop!(
-    output::AbstractVector{FT},
-    x::AbstractRange{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT},
+    output::AbstractVector{Tv},
+    x::AbstractRange{Tg},
+    y::AbstractVector{Tv},
+    x_targets::AbstractVector{Tg},
     ::Val{:wrap},
     op::O,
     searcher::S
-) where {FT<:AbstractFloat, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
@@ -146,16 +150,17 @@ end
     return output
 end
 
-# Specific method for AbstractRange{FT} (resolves ambiguity with Real wrappers)
+# Specific method for AbstractRange{Tg} - resolves ambiguity with Real wrappers
+# Supports both real and complex y (unified via Tv parameter)
 @inline function linear_interp!(
-    output::AbstractVector{FT},
-    x::AbstractRange{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT};
+    output::AbstractVector{Tv},
+    x::AbstractRange{Tg},
+    y::AbstractVector{Tv},
+    x_targets::AbstractVector{Tg};
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {FT<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
@@ -213,21 +218,35 @@ value = linear_interp(x_int, y_int, 5.5)  # Returns Float64 (not Int)
 # ========================================
 # Internal evaluation with op parameter
 # ========================================
+#
+# TYPE PARAMETERS:
+# - Tg: Grid type (AbstractFloat) - for x coordinates
+# - Tv: Value type - for y values (can be Tg, Complex{Tg}, etc.)
+# - Tq: Query type - typically Tg but can be left unconstrained for AD support
+#
+# These functions form the core evaluation logic that supports:
+# - Real-valued interpolation (Tv = Tg)
+# - Complex-valued interpolation (Tv = Complex{Tg})
+# - Future: AD support (xq can be Dual{Tg})
 
 """
-    _linear_eval_at_point(x, y, xq, extrap, op, searcher) -> FT
+    _linear_eval_at_point(x, y, xq, extrap, op, searcher)
 
 Core linear interpolation evaluation using kernel function and search policy.
 Supports value (EvalValue), first derivative (EvalDeriv1), and second derivative (EvalDeriv2).
+
+# Type Parameters
+- `Tg`: Grid type (AbstractFloat)
+- `Tv`: Value type (can be Tg, Complex{Tg}, etc.)
 """
 @inline function _linear_eval_at_point(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    xq::Tg,
     extrap::Val,
     op::O,
     searcher::S
-)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, xR = search_interval(searcher, x, xq)
     h = xR - xL
@@ -237,77 +256,79 @@ end
 
 
 """
-    _linear_eval_constant_extrap(y, is_left, op) -> FT
+    _linear_eval_constant_extrap(y, is_left, op) -> Tv
 
 Handle constant extrapolation: returns boundary value for EvalValue, zero for derivatives.
+Works with any value type Tv (real or complex).
 """
 @inline function _linear_eval_constant_extrap(
-    y::AbstractVector{FT},
+    y::AbstractVector{Tv},
     is_left::Bool,
     ::EvalValue
-)::FT where {FT<:AbstractFloat}
+) where {Tv}
     @inbounds return is_left ? y[1] : y[end]
 end
 
 @inline function _linear_eval_constant_extrap(
-    ::AbstractVector{FT},
+    ::AbstractVector{Tv},
     ::Bool,
     ::EvalDeriv1
-)::FT where {FT<:AbstractFloat}
-    return zero(FT)
+) where {Tv}
+    return zero(Tv)
 end
 
 @inline function _linear_eval_constant_extrap(
-    ::AbstractVector{FT},
+    ::AbstractVector{Tv},
     ::Bool,
     ::EvalDeriv2
-)::FT where {FT<:AbstractFloat}
-    return zero(FT)
+) where {Tv}
+    return zero(Tv)
 end
 
 @inline function _linear_eval_constant_extrap(
-    ::AbstractVector{FT},
+    ::AbstractVector{Tv},
     ::Bool,
     ::EvalDeriv3
-)::FT where {FT<:AbstractFloat}
-    return zero(FT)
+) where {Tv}
+    return zero(Tv)
 end
 
 """
-    _linear_with_extrap(x, y, xq, extrap, op, searcher) -> FT
+    _linear_with_extrap(x, y, xq, extrap, op, searcher)
 
 Linear interpolation with extrapolation handling, op parameter, and search policy.
+Supports real and complex value types.
 """
 @inline function _linear_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    xq::Tg,
     ::Val{:none},
     op::O,
     searcher::S
-)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
     _linear_eval_at_point(x, y, xq, Val(:none), op, searcher)
 end
 
 @inline function _linear_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    xq::Tg,
     ::Val{:extension},
     op::O,
     searcher::S
-)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
     _linear_eval_at_point(x, y, xq, Val(:extension), op, searcher)
 end
 
 @inline function _linear_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    xq::Tg,
     ::Val{:constant},
     op::O,
     searcher::S
-)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
     x_min, x_max = first(x), last(x)
     if xq < x_min
         return _linear_eval_constant_extrap(y, true, op)
@@ -319,13 +340,13 @@ end
 end
 
 @inline function _linear_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    xq::Tg,
     ::Val{:wrap},
     op::O,
     searcher::S
-)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
     xi_wrapped = _wrap_to_domain(xq, first(x), last(x))
     _linear_eval_at_point(x, y, xi_wrapped, Val(:extension), op, searcher)
 end
@@ -336,47 +357,29 @@ end
 # ========================================
 
 # Core implementation with Val + op + searcher dispatch
+# Supports mixed types: Tg for grid, Tv for values
 @inline function linear_interp(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    xq::Tg,
     extrap::Val,
     op::O,
     searcher::S
-)::FT where {FT<:AbstractFloat, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
     _linear_with_extrap(x, y, xq, extrap, op, searcher)
 end
 
 # Public API - Symbol dispatch (converts to Val)
+# Unified for real and complex y via Tv parameter
 @inline function linear_interp(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xq::FT;
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    xq::Tg;
     extrap::Symbol=:none,
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-)::FT where {FT<:AbstractFloat}
-    @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
-
-    searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            linear_interp(x, y, xq, ev, op, searcher)
-        end
-    end
-end
-
-# Specific method for AbstractRange{FT} (resolves ambiguity with Real wrappers)
-@inline function linear_interp(
-    x::AbstractRange{FT},
-    y::AbstractVector{FT},
-    xq::FT;
-    extrap::Symbol=:none,
-    deriv::Int=0,
-    search=Binary(),
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-)::FT where {FT<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _to_searcher(search, hint)
@@ -394,158 +397,90 @@ end
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
-# Vector interpolation - Allocating version
+# Vector interpolation - Allocating hot path
 # ========================================
+# Unified for real and complex y via Tv parameter
+# Works with both AbstractVector and AbstractRange x
 
-"""
-    linear_interp(x, y, x_targets; extrap=:none, deriv=0, search=Binary())
-
-Linear interpolation with automatic dispatch (allocating version):
-- For `AbstractRange` x: O(1) direct indexing
-- For general `AbstractVector` x: Search algorithm determined by `search` parameter
-
-# Arguments
-- `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, `:extension`, or `:wrap`
-- `deriv::Int`: Derivative order (0=value, 1=first derivative)
-- `search::AbstractSearchPolicy`: Search algorithm for interval finding
-
-# Returns
-- Always returns a floating-point vector (Integer inputs auto-promoted to Float)
-
-# Example
-```julia
-rho = 0.0:0.01:1.0  # Uniform grid → fast O(1) path
-y = sin.(rho)
-result = linear_interp(rho, y, [0.55, 0.77])  # throws error if outside domain
-result = linear_interp(rho, y, [-0.1, 1.2]; extrap=:extension)  # linear extrap
-
-# Optimized for sorted queries
-sorted_queries = sort(rand(1000))
-vals = linear_interp(x_vec, y_vec, sorted_queries; search=LinearBinary(linear_window=8))
-```
-"""
 function linear_interp(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    x_targets::AbstractVector{S};
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    x_targets::AbstractVector{Tg};
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {T<:Real, S<:Real}
-    FT = float(T)
-    output = Vector{FT}(undef, length(x_targets))
+) where {Tg<:AbstractFloat, Tv}
+    output = Vector{Tv}(undef, length(x_targets))
     linear_interp!(output, x, y, x_targets; extrap, deriv, search)
     return output
 end
 
 # ========================================
-# Vector interpolation - Real wrappers (in-place)
+# Vector interpolation - Real/Mixed type wrappers (in-place)
 # ========================================
+# Unified wrapper for non-AbstractFloat inputs (Int, mixed types, etc.)
+# Uses _promote_xy helper for type promotion
+# POLICY: Tg is computed from x/y ONLY, not from x_targets
 
-# Internal helper for Real wrappers (type-stable)
-@inline function _linear_interp_real_loop!(
-    output, x_float, y_float, x_targets_float, extrap_val::Val, op::O, searcher::S
-) where {O<:AbstractEvalOp, S<:Searcher}
-    @boundscheck _check_domain(x_float, x_targets_float, extrap_val)
-    @inbounds for i in eachindex(x_targets_float, output)
-        output[i] = linear_interp(x_float, y_float, x_targets_float[i], extrap_val, op, searcher)
-    end
-    return output
-end
-
-
-# Wrapper for AbstractRange with Real types (requires conversion)
 function linear_interp!(
     output::AbstractVector,
-    x::AbstractRange{T},
-    y::AbstractVector{T},
-    x_targets::AbstractVector{S};
+    x::AbstractVector{Tx},
+    y::AbstractVector{Ty},
+    x_targets::AbstractVector{Tq};
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {T<:Real, S<:Real}
+) where {Tx<:Real, Ty, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    FT = float(T)
-    x_float = range(FT(first(x)), FT(last(x)), length(x))
-    y_float = FT.(y)  # Allocate once
-    x_targets_float = FT.(x_targets)
+    # Tg from x/y ONLY (not x_targets) - preserves current behavior
+    Tg = float(promote_type(Tx, _real_eltype(Ty)))
+    x_typed, y_typed = _promote_xy(x, y, Tg)
+    targets_typed = Tg.(x_targets)
 
-    searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, ev, op, searcher)
-        end
-    end
-end
-
-# Wrapper for AbstractVector with Real types (requires conversion)
-function linear_interp!(
-    output::AbstractVector,
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    x_targets::AbstractVector{S};
-    extrap::Symbol=:none,
-    deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:Real, S<:Real}
-    @assert length(y) == length(x) "x and y must have same length"
-    @assert length(output) == length(x_targets) "output must match x_targets length"
-
-    FT = float(T)
-    x_float = FT.(x)  # Allocate once
-    y_float = FT.(y)  # Allocate once
-    x_targets_float = FT.(x_targets)
-
-    searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            _linear_interp_real_loop!(output, x_float, y_float, x_targets_float, ev, op, searcher)
-        end
-    end
+    linear_interp!(output, x_typed, y_typed, targets_typed; extrap, deriv, search)
 end
 
 # ========================================
-# Scalar interpolation - Real wrappers
+# Scalar interpolation - Real/Mixed type wrapper
 # ========================================
+# Unified wrapper for non-AbstractFloat inputs (Int, mixed types, etc.)
+# POLICY: Tg is computed from x/y ONLY, not from xq
 
-# Wrapper for AbstractRange with Real types (requires conversion)
 @inline function linear_interp(
-    x::AbstractRange{T},
-    y::AbstractVector{T},
-    xq::S;
+    x::AbstractVector{Tx},
+    y::AbstractVector{Ty},
+    xq::Tq;
     extrap::Symbol=:none,
     deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:Real, S<:Real}
-    FT = float(T)
-    x_float = range(FT(first(x)), FT(last(x)), length(x))
-    return linear_interp(x_float, FT.(y), FT(xq); extrap, deriv, search)
+    search=Binary(),
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tx<:Real, Ty, Tq<:Real}
+    # Tg from x/y ONLY (not xq) - preserves current behavior
+    Tg = float(promote_type(Tx, _real_eltype(Ty)))
+    x_typed, y_typed = _promote_xy(x, y, Tg)
+    return linear_interp(x_typed, y_typed, Tg(xq); extrap, deriv, search, hint)
 end
+
+# ========================================
+# Vector interpolation - Real/Mixed type wrapper (allocating)
+# ========================================
 
 function linear_interp(
-    x::AbstractRange{T},
-    y::AbstractVector{T},
-    x_targets::AbstractVector{S};
+    x::AbstractVector{Tx},
+    y::AbstractVector{Ty},
+    x_targets::AbstractVector{Tq};
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {T<:Real, S<:Real}
-    output = Vector{float(T)}(undef, length(x_targets))
-    return linear_interp!(output, x, y, x_targets; extrap, deriv, search)
-end
-
-
-# Wrapper for AbstractVector with Real types (requires conversion)
-@inline function linear_interp(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    xq::S;
-    extrap::Symbol=:none,
-    deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:Real, S<:Real}
-    FT = float(T)
-    return linear_interp(FT.(x), FT.(y), FT(xq); extrap, deriv, search)
+) where {Tx<:Real, Ty, Tq<:Real}
+    # Tg from x/y ONLY (not x_targets)
+    Tg = float(promote_type(Tx, _real_eltype(Ty)))
+    Tv = _value_type(Ty, Tg)
+    output = Vector{Tv}(undef, length(x_targets))
+    x_typed, y_typed = _promote_xy(x, y, Tg)
+    targets_typed = Tg.(x_targets)
+    linear_interp!(output, x_typed, y_typed, targets_typed; extrap, deriv, search)
+    return output
 end

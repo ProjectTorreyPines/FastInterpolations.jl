@@ -77,7 +77,7 @@ mutable struct CubicSeriesInterpolant{
     C<:CubicSplineCache{T},
     B,
     P<:AbstractSearchPolicy
-} <: AbstractSeriesInterpolant{T}
+} <: AbstractSeriesInterpolant{T, T}
     const cache::C                    # Shared cache with LU factorization
     const bc_for_solve::B             # BC config for solving
     const y::Matrix{T}                # Series-contiguous y (n_points × n_series)

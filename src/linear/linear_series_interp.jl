@@ -60,7 +60,7 @@ sitp([out1, out2, out3], xq)    # In-place (zero allocation)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct LinearSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPolicy} <: AbstractSeriesInterpolant{T}
+mutable struct LinearSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPolicy} <: AbstractSeriesInterpolant{T, T}
     const x::Vector{T}                    # Shared x-grid
     const y::Matrix{T}                    # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{T}    # Lazy point-contiguous layout

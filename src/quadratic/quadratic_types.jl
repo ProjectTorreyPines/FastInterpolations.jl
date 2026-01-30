@@ -41,7 +41,7 @@ val = itp(0.5)               # uses LinearBinary() by default
 val = itp(0.5; search=Binary())  # override with Binary()
 ```
 """
-struct QuadraticInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}, P<:AbstractSearchPolicy} <: AbstractInterpolant{T}
+struct QuadraticInterpolant{T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}, P<:AbstractSearchPolicy} <: AbstractInterpolant{T, T}
     x::X
     y::Y
     h::Vector{T}

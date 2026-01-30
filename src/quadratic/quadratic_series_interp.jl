@@ -14,16 +14,18 @@
 # ========================================
 
 """
-    QuadraticSeriesInterpolant{T}
+    QuadraticSeriesInterpolant{T, P, X}
 
 Multi-series quadratic spline interpolant with unified matrix storage and SIMD optimization.
 Shares a single x-grid across N y-series for efficient batch evaluation.
 
 # Type Parameters
 - `T`: Float type (Float32 or Float64)
+- `P`: Search policy type
+- `X`: Grid container type (Vector or Range)
 
 # Fields
-- `x::Vector{T}`: Grid points (sorted)
+- `x::X`: Grid points (sorted, Vector or Range)
 - `y::Matrix{T}`: Function values (n_points × n_series) series-contiguous
 - `a::Matrix{T}`: Quadratic coefficients (n_points × n_series) series-contiguous
 - `d::Matrix{T}`: Slope coefficients (n_points × n_series) series-contiguous
@@ -68,8 +70,8 @@ d2 = sitp(0.5; deriv=2)     # Second derivatives
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct QuadraticSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPolicy} <: AbstractSeriesInterpolant{T, T}
-    const x::Vector{T}                        # Grid points
+mutable struct QuadraticSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPolicy, X<:AbstractVector{T}} <: AbstractSeriesInterpolant{T, T}
+    const x::X                                # Grid points (Range or Vector)
     const y::Matrix{T}                        # Series-contiguous y (n_points × n_series)
     const a::Matrix{T}                        # Series-contiguous a (n_points × n_series)
     const d::Matrix{T}                        # Series-contiguous d (n_points × n_series)
@@ -79,15 +81,15 @@ mutable struct QuadraticSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPol
     const search_policy::P                    # Default search policy
 
     function QuadraticSeriesInterpolant(
-        x::Vector{T},
+        x::X,
         y::Matrix{T},
         a::Matrix{T},
         d::Matrix{T},
         h::Vector{T},
         extrap::ExtrapVal,
         search::P=Binary()
-    ) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
-        new{T,P}(x, y, a, d, h, LazyTransposeTriple{T}(), extrap, search)
+    ) where {T<:AbstractFloat, P<:AbstractSearchPolicy, X<:AbstractVector{T}}
+        new{T,P,X}(x, y, a, d, h, LazyTransposeTriple{T}(), extrap, search)
     end
 end
 
@@ -393,7 +395,7 @@ function quadratic_interp(
     end
 
     @_dispatch_extrap extrap => ev begin
-        return QuadraticSeriesInterpolant(Vector{T}(x), y_mat, a_mat, d_mat, h, ev, search)
+        return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, h, ev, search)
     end
 end
 

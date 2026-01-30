@@ -31,6 +31,7 @@ else
     include("test_linear_series_interp.jl")
     include("test_constant_series_interp.jl")
     include("test_quadratic_series_interp.jl")
+    include("test_series_range_grid.jl")
     include("test_allocation.jl")
     include("test_random_grid.jl")
     include("test_periodic_bc.jl")

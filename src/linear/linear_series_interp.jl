@@ -14,7 +14,7 @@
 # ========================================
 
 """
-    LinearSeriesInterpolant{Tg, Tv, P}
+    LinearSeriesInterpolant{Tg, Tv, P, X}
 
 Multi-series linear interpolant with unified matrix storage and SIMD optimization.
 Shares a single x-grid across N y-series for efficient batch evaluation.
@@ -23,9 +23,10 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 - `Tg`: Grid type (Float32 or Float64)
 - `Tv`: Value type (Tg for real, Complex{Tg} for complex)
 - `P`: Search policy type
+- `X`: Grid container type (Vector or Range)
 
 # Fields
-- `x::Vector{Tg}`: Shared x-grid
+- `x::X`: Shared x-grid (Vector or Range)
 - `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
 - `_transpose::LazyTranspose{Tv}`: Lazy point-contiguous layout for scalar SIMD
 - `extrap::ExtrapVal`: Extrapolation mode
@@ -66,20 +67,20 @@ sitp_complex = linear_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct LinearSeriesInterpolant{Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy} <: AbstractSeriesInterpolant{Tg, Tv}
-    const x::Vector{Tg}                   # Shared x-grid
+mutable struct LinearSeriesInterpolant{Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+    const x::X                            # Shared x-grid (Range or Vector)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
     const extrap::ExtrapVal               # Extrapolation mode
     const search_policy::P                # Default search policy (immutable, thread-safe)
 
     function LinearSeriesInterpolant(
-        x::Vector{Tg},
+        x::X,
         y::Matrix{Tv},
         extrap::ExtrapVal,
         search::P=Binary()
-    ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
-        new{Tg,Tv,P}(x, y, LazyTranspose{Tv}(), extrap, search)
+    ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
+        new{Tg,Tv,P,X}(x, y, LazyTranspose{Tv}(), extrap, search)
     end
 end
 
@@ -175,7 +176,7 @@ Contiguous column access enables vectorization across series dimension.
 @inline function _eval_linear_series_point!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
-    x::Vector{Tg},
+    x::AbstractVector{Tg},
     aq::_LinearAnchoredQuery{Tg},
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
@@ -208,7 +209,7 @@ SIMD evaluation with extrapolation handling for multi-series linear interpolatio
 @inline function _eval_linear_series_point_with_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
-    x::Vector{Tg},
+    x::AbstractVector{Tg},
     n_pts::Int,
     x_min::Tg,
     x_max::Tg,
@@ -229,7 +230,7 @@ end
 @inline function _eval_linear_series_point_extrap!(
     ::AbstractVector{Tv},
     ::Matrix{Tv},
-    ::Vector{Tg},
+    ::AbstractVector{Tg},
     ::Int,
     x_min::Tg,
     x_max::Tg,
@@ -245,7 +246,7 @@ end
 @inline function _eval_linear_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
-    ::Vector{Tg},
+    ::AbstractVector{Tg},
     n_pts::Int,
     ::Tg,
     ::Tg,
@@ -261,7 +262,7 @@ end
 @inline function _eval_linear_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
-    x::Vector{Tg},
+    x::AbstractVector{Tg},
     n_pts::Int,
     ::Tg,
     ::Tg,
@@ -363,10 +364,7 @@ function linear_interp(
     # Convert extrap symbol to Val
     extrap_val = _symbol_to_extrap_val(extrap)
 
-    # Copy x to ensure ownership
-    x_vec = Vector{Tg}(x)
-
-    return LinearSeriesInterpolant(x_vec, y_mat, extrap_val, search)
+    return LinearSeriesInterpolant(x, y_mat, extrap_val, search)
 end
 
 # Matrix input: columns as y-series
@@ -418,12 +416,11 @@ function linear_interp(
     # Promote Tv to appropriate type based on Tg
     Tv_out = _value_type(Tv, Tg)
     y_mat = Tv_out === Tv ? copy(Y) : Tv_out.(Y)
-    x_vec = Vector{Tg}(x)
 
     # Convert extrap symbol to Val
     extrap_val = _symbol_to_extrap_val(extrap)
 
-    return LinearSeriesInterpolant(x_vec, y_mat, extrap_val, search)
+    return LinearSeriesInterpolant(x, y_mat, extrap_val, search)
 end
 
 # ========================================
@@ -593,7 +590,7 @@ Uses argument-passing pattern for optimal performance.
 @inline function _eval_linear_series_vector!(
     out::AbstractVector{Tv},
     y::Matrix{Tv},
-    x::Vector{Tg},
+    x::AbstractVector{Tg},
     n_pts::Int,
     x_min::Tg,
     x_max::Tg,
@@ -613,7 +610,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
 """
 @inline function _eval_linear_series_with_extrap(
     y::Matrix{Tv},
-    x::Vector{Tg},
+    x::AbstractVector{Tg},
     n_pts::Int,
     x_min::Tg,
     x_max::Tg,
@@ -642,7 +639,7 @@ Internal: Core linear evaluation for series k at anchored query point.
 """
 @inline function _eval_linear_series_anchored(
     y::Matrix{Tv},
-    x::Vector{Tg},
+    x::AbstractVector{Tg},
     k::Int,
     aq::_LinearAnchoredQuery{Tg},
     op::AbstractEvalOp

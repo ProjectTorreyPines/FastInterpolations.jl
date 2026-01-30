@@ -14,16 +14,18 @@
 # ========================================
 
 """
-    ConstantSeriesInterpolant{T}
+    ConstantSeriesInterpolant{T, P, X}
 
 Multi-series constant (step) interpolant with unified matrix storage and SIMD optimization.
 Shares a single x-grid across N y-series for efficient batch evaluation.
 
 # Type Parameters
 - `T`: Float type (Float32 or Float64)
+- `P`: Search policy type
+- `X`: Grid container type (Vector or Range)
 
 # Fields
-- `x::Vector{T}`: Shared x-grid
+- `x::X`: Shared x-grid (Vector or Range)
 - `y::Matrix{T}`: Function values (n_points × n_series) series-contiguous
 - `_transpose::LazyTranspose{T}`: Lazy point-contiguous layout for scalar SIMD
 - `extrap::ExtrapVal`: Extrapolation mode
@@ -57,8 +59,8 @@ sitp([out1, out2, out3], xq)    # In-place (zero allocation)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct ConstantSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPolicy} <: AbstractSeriesInterpolant{T, T}
-    const x::Vector{T}                    # Shared x-grid
+mutable struct ConstantSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPolicy, X<:AbstractVector{T}} <: AbstractSeriesInterpolant{T, T}
+    const x::X                            # Shared x-grid (Range or Vector)
     const y::Matrix{T}                    # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{T}    # Lazy point-contiguous layout
     const extrap::ExtrapVal               # Extrapolation mode
@@ -66,13 +68,13 @@ mutable struct ConstantSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPoli
     const search_policy::P                # Default search policy
 
     function ConstantSeriesInterpolant(
-        x::Vector{T},
+        x::X,
         y::Matrix{T},
         extrap::ExtrapVal,
         side::SideVal,
         search::P=Binary()
-    ) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
-        new{T,P}(x, y, LazyTranspose{T}(), extrap, side, search)
+    ) where {T<:AbstractFloat, P<:AbstractSearchPolicy, X<:AbstractVector{T}}
+        new{T,P,X}(x, y, LazyTranspose{T}(), extrap, side, search)
     end
 end
 
@@ -168,7 +170,7 @@ Contiguous column access enables vectorization across series dimension.
 @inline function _eval_constant_series_point!(
     out::AbstractVector{T},
     y_point::Matrix{T},
-    x::Vector{T},
+    x::AbstractVector{T},
     aq::_ConstantAnchoredQuery{T},
     side_val::SideVal,
     op::AbstractEvalOp
@@ -198,7 +200,7 @@ SIMD evaluation with extrapolation handling for multi-series constant interpolat
 @inline function _eval_constant_series_point_with_extrap!(
     out::AbstractVector{T},
     y_point::Matrix{T},
-    x::Vector{T},
+    x::AbstractVector{T},
     n_pts::Int,
     x_min::T,
     x_max::T,
@@ -234,7 +236,7 @@ end
 @inline function _eval_constant_series_point_extrap!(
     ::AbstractVector{T},
     ::Matrix{T},
-    ::Vector{T},
+    ::AbstractVector{T},
     ::Int,
     x_min::T,
     x_max::T,
@@ -251,7 +253,7 @@ end
 @inline function _eval_constant_series_point_extrap!(
     out::AbstractVector{T},
     y_point::Matrix{T},
-    ::Vector{T},
+    ::AbstractVector{T},
     n_pts::Int,
     ::T,
     ::T,
@@ -268,7 +270,7 @@ end
 @inline function _eval_constant_series_point_extrap!(
     out::AbstractVector{T},
     y_point::Matrix{T},
-    x::Vector{T},
+    x::AbstractVector{T},
     n_pts::Int,
     ::T,
     ::T,
@@ -344,9 +346,7 @@ function constant_interp(
     extrap_val = _symbol_to_extrap_val(extrap)
 
     @_dispatch_side side => side_val begin
-        # Copy x to ensure ownership
-        x_vec = collect(x)
-        return ConstantSeriesInterpolant(x_vec, y_mat, extrap_val, side_val, search)
+        return ConstantSeriesInterpolant(x, y_mat, extrap_val, side_val, search)
     end
 end
 
@@ -385,15 +385,14 @@ function constant_interp(
         ))
     end
 
-    # Copy to ensure ownership
+    # Copy y to ensure ownership
     y_mat = copy(Y)
-    x_vec = collect(x)
 
     # Convert symbols to Val types
     extrap_val = _symbol_to_extrap_val(extrap)
 
     @_dispatch_side side => side_val begin
-        return ConstantSeriesInterpolant(x_vec, y_mat, extrap_val, side_val, search)
+        return ConstantSeriesInterpolant(x, y_mat, extrap_val, side_val, search)
     end
 end
 
@@ -566,7 +565,7 @@ Uses argument-passing pattern for optimal performance.
 @inline function _eval_constant_series_vector!(
     out::AbstractVector{T},
     y::Matrix{T},
-    x::Vector{T},
+    x::AbstractVector{T},
     n_pts::Int,
     x_min::T,
     x_max::T,
@@ -587,7 +586,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
 """
 @inline function _eval_constant_series_with_extrap(
     y::Matrix{T},
-    x::Vector{T},
+    x::AbstractVector{T},
     n_pts::Int,
     x_min::T,
     x_max::T,

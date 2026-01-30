@@ -81,13 +81,60 @@ const FI = FastInterpolations
     # ========================================
     # LinearSeriesInterpolant (Multi Series)
     # ========================================
-    # NOTE: Series interpolants use an anchor-based evaluation system that
-    # currently does not propagate Dual types. This would require deeper
-    # modifications to the anchor infrastructure. For now, we skip these tests.
-    # The single-series LinearInterpolant fully supports ForwardDiff.
 
     @testset "LinearSeriesInterpolant with ForwardDiff" begin
-        @test_skip "Series interpolant AD support pending anchor system update"
+        # Two series: sin and cos
+        x = collect(range(0.0, 2π, 21))
+        y1 = sin.(x)
+        y2 = cos.(x)
+        sitp = linear_interp(x, [y1, y2]; extrap=:extension)
+
+        @testset "derivative matches analytical (interior points)" begin
+            # Test at interior points only (not at grid points)
+            test_points = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0]
+
+            for xq in test_points
+                # ForwardDiff computes derivative of entire vector at once
+                fd_derivs = ForwardDiff.derivative(sitp, xq)
+                analytical = sitp(xq; deriv=1)
+
+                @test fd_derivs ≈ analytical atol=1e-10
+            end
+        end
+
+        @testset "value is preserved" begin
+            test_points = [0.5, 1.5, 2.5]
+
+            for xq in test_points
+                dual_result = sitp(ForwardDiff.Dual(xq, 1.0))
+                fd_values = ForwardDiff.value.(dual_result)
+
+                @test fd_values ≈ sitp(xq) atol=1e-10
+            end
+        end
+
+        @testset "type stability" begin
+            xq = ForwardDiff.Dual(1.5, 1.0)
+            result = sitp(xq)
+
+            # Output should be vector of Dual
+            @test eltype(result) <: ForwardDiff.Dual
+        end
+
+        @testset "linear data exact derivative" begin
+            # Linear data: y1 = 2x, y2 = -x + 5
+            x_lin = collect(0.0:0.5:5.0)
+            y1_lin = 2.0 .* x_lin
+            y2_lin = -x_lin .+ 5.0
+            sitp_lin = linear_interp(x_lin, [y1_lin, y2_lin]; extrap=:extension)
+
+            xq = 2.25
+            fd_derivs = ForwardDiff.derivative(sitp_lin, xq)
+            analytical = sitp_lin(xq; deriv=1)
+
+            @test fd_derivs ≈ analytical atol=1e-10
+            @test fd_derivs ≈ [2.0, -1.0] atol=1e-10  # d/dx(2x)=2, d/dx(-x+5)=-1
+        end
     end
 
     # ========================================

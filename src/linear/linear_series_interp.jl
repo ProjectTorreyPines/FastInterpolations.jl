@@ -291,6 +291,54 @@ end
 end
 
 # ========================================
+# AD Support: Dual-aware Evaluation
+# ========================================
+
+"""
+    _eval_series_with_dual!(output, sitp, aq, xq, op)
+
+Evaluate series at anchor point with ForwardDiff.Dual support.
+
+Uses anchor for index/side information (computed from primal),
+but uses original `xq` for arithmetic operations (preserves AD derivatives).
+
+# AD Pattern
+- `aq`: Anchor built from `Tg(xq_primal)` - provides idx, side
+- `xq`: Original query (can be Dual) - used in `dL = xq - xL`
+"""
+@inline function _eval_series_with_dual!(
+    output::AbstractVector,
+    sitp::LinearSeriesInterpolant{Tg, Tv},
+    aq::_LinearAnchoredQuery{Tg},
+    xq,  # Original xq (can be Dual)
+    op::AbstractEvalOp
+) where {Tg<:AbstractFloat, Tv}
+    # Outside domain: use existing extrap logic (no Dual propagation outside)
+    if aq.side != 0x00
+        return _eval_series_at_anchor!(output, sitp, aq, op)
+    end
+
+    # Inside domain: Dual-aware evaluation
+    y_point = _ensure_point_layout!(sitp)
+    idx = aq.idx
+    idx1 = idx + 1
+
+    @inbounds begin
+        xL = sitp.x[idx]
+        xR = sitp.x[idx1]
+    end
+    h = xR - xL
+    dL = xq - xL  # ← Original xq preserves Dual for AD
+
+    @inbounds @simd for k in axes(output, 1)
+        yL = y_point[k, idx]
+        yR = y_point[k, idx1]
+        output[k] = _linear_kernel(op, yL, yR, h, dL)
+    end
+    return output
+end
+
+# ========================================
 # Constructors
 # ========================================
 
@@ -463,9 +511,11 @@ end
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
 Returns a vector of values, one per y-series.
+Supports ForwardDiff.Dual input: output type is promoted to include Dual.
 """
 function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, P, S<:Real}
-    out = Vector{Tv}(undef, n_series(sitp))
+    T_out = promote_type(Tv, S)  # Dual input → Dual output
+    out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
 
@@ -473,9 +523,13 @@ end
     (sitp::LinearSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
+
+# AD Support
+Supports ForwardDiff.Dual input for automatic differentiation.
+The anchor is built from primal value, but original xq is used for arithmetic.
 """
 function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
-    output::AbstractVector{Tv},
+    output::AbstractVector,  # Relaxed: allows Dual vector
     xq::S;
     deriv::Int=0,
     search=sitp.search_policy,
@@ -486,14 +540,16 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     # Validate output length
     _validate_scalar_output(output, n_ser)
 
-    xq_typed = Tg(xq)
+    # Extract primal for anchor (search/comparison needs Float)
+    xq_primal = _extract_primal(xq)
+    xq_typed = Tg(xq_primal)
 
-    # Build anchor
+    # Build anchor from primal
     aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
 
-    # Dispatch on derivative order
+    # Dispatch on derivative order with Dual-aware evaluation
     @_dispatch_deriv deriv => op begin
-        _eval_series_at_anchor!(output, sitp, aq, op)
+        _eval_series_with_dual!(output, sitp, aq, xq, op)  # Pass original xq
     end
     return output
 end

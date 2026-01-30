@@ -49,6 +49,10 @@ function rewrite_readme_paths(content::String; from_root::Bool=true)
         # benchmark/README.md → guides/performance.md (docs/src/guides/ base)
         content = replace(content, "../docs/images/" => "../images/")
     end
+
+    # Remove benchmark markers (invisible in GitHub, but Documenter escapes them)
+    content = replace(content, r"<!-- BENCHMARK_[A-Z_]+ -->" => "")
+
     return content
 end
 

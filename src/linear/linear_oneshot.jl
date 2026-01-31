@@ -458,9 +458,11 @@ function linear_interp!(
     Tg = float(promote_type(Tx, _real_eltype(Ty)))
 
     # Determine expected output type and validate
+    # Use promote_type check: Tout can hold Tv if promote_type(Tout, Tv) === Tout
+    # This allows ComplexF64 output to hold Float64 results (via convert)
     Tv = _value_type(Ty, Tg)
     Tout = eltype(output)
-    if !(Tout >: Tv)
+    if promote_type(Tout, Tv) !== Tout
         throw(ArgumentError(
             "output eltype $Tout cannot hold interpolation result type $Tv. " *
             "Use Vector{$Tv} or a wider type (e.g., Vector{Complex{$Tg}} for complex y-values)."

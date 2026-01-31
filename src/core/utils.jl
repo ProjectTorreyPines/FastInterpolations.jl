@@ -113,6 +113,10 @@ Tuple of (Tv::Type, y_converted::AbstractVector{Tv})
     elseif Tv_raw <: Complex
         # Complex{anything} → Complex{Tg}
         Tv = Complex{Tg}
+        # Fast-path: already Complex{Tg} (e.g., ComplexF64 with Tg=Float64)
+        if Tv_raw === Tv
+            return Tv, y
+        end
         return Tv, Tv.(y)
     else
         # Other Number types → promote

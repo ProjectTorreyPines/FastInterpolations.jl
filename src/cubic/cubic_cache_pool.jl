@@ -561,11 +561,14 @@ end
 end
 
 # Fallback for non-float vectors (e.g., Int) - promotes to Float64
+# NOTE: Convert x first to avoid redundant conversion in _get_derivative_cache_impl
 @inline function _get_cubic_cache(x::AbstractVector, bc::BCPair{L,R}) where {L<:PointBC, R<:PointBC}
     T = eltype(x)
     T <: AbstractFloat && error("Should dispatch to typed method")
+    # Convert x once here, then call typed implementation directly
+    x_float = Vector{Float64}(x)
     bc_cache = _cache_bc_pair(bc, Float64)
-    return _get_derivative_cache_impl(x, bc_cache)
+    return _get_derivative_cache_impl(x_float, bc_cache)
 end
 
 # PointBC convenience - convert to symmetric BCPair

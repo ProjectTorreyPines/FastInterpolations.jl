@@ -131,18 +131,10 @@ function quadratic_interp(
     extrap::Symbol=:none,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
-    # Check if Tv's real part requires promotion of Tg
-    Tv_real = _real_eltype(Tv)
-    if Tv_real !== Tg && Tv_real <: AbstractFloat
-        # Promote Tg to match the wider value type
-        Tg_new = promote_type(Tg, Tv_real)
-        x_typed = _to_float(x, Tg_new)
-        _, y_typed = _promote_value_type(y, Tg_new)
-        bc_promoted = _promote_bc(bc, Tg_new)
-        return QuadraticInterpolant(x_typed, y_typed; bc=bc_promoted, extrap, search)
-    end
-    # No promotion needed - types are compatible
-    return QuadraticInterpolant(x, y; bc, extrap, search)
+    # Auto-promote x/y types (zero allocation if already compatible)
+    x_p, y_p = _ensure_promoted_xy(x, y)
+    bc_promoted = _promote_bc(bc, eltype(x_p))
+    return QuadraticInterpolant(x_p, y_p; bc=bc_promoted, extrap, search)
 end
 
 # ========================================
@@ -157,15 +149,7 @@ function quadratic_interp(
     extrap::Symbol=:none,
     search::P=Binary()
 ) where {TX<:Real, TY, P<:AbstractSearchPolicy}
-    # Determine grid type from x and real part of y
-    Tg = float(promote_type(TX, _real_eltype(TY)))
-    x_typed = _to_float(x, Tg)
-
-    # Promote y to appropriate type (handles both Real and Complex)
-    _, y_typed = _promote_value_type(y, Tg)
-
-    # Promote BC to grid type
-    bc_promoted = _promote_bc(bc, Tg)
-
-    return QuadraticInterpolant(x_typed, y_typed; bc=bc_promoted, extrap, search)
+    x_p, y_p = _ensure_promoted_xy(x, y)
+    bc_promoted = _promote_bc(bc, eltype(x_p))
+    return QuadraticInterpolant(x_p, y_p; bc=bc_promoted, extrap, search)
 end

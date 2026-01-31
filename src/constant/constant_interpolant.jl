@@ -130,17 +130,9 @@ function constant_interp(
     side::Symbol=:nearest,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
-    # Check if Tv's real part requires promotion of Tg
-    Tv_real = _real_eltype(Tv)
-    if Tv_real !== Tg && Tv_real <: AbstractFloat
-        # Promote Tg to match the wider value type
-        Tg_new = promote_type(Tg, Tv_real)
-        x_typed = _to_float(x, Tg_new)
-        _, y_typed = _promote_value_type(y, Tg_new)
-        return ConstantInterpolant(x_typed, y_typed; extrap, side, search)
-    end
-    # No promotion needed - types are compatible
-    return ConstantInterpolant(x, y; extrap, side, search)
+    # Auto-promote x/y types (zero allocation if already compatible)
+    x_p, y_p = _ensure_promoted_xy(x, y)
+    return ConstantInterpolant(x_p, y_p; extrap, side, search)
 end
 
 # ========================================
@@ -155,12 +147,6 @@ function constant_interp(
     side::Symbol=:nearest,
     search::P=Binary()
 ) where {TX<:Real, TY, P<:AbstractSearchPolicy}
-    # Determine grid type from x and real part of y
-    Tg = float(promote_type(TX, _real_eltype(TY)))
-    x_typed = _to_float(x, Tg)
-
-    # Promote y to appropriate type (handles both Real and Complex)
-    _, y_typed = _promote_value_type(y, Tg)
-
-    return ConstantInterpolant(x_typed, y_typed; extrap, side, search)
+    x_p, y_p = _ensure_promoted_xy(x, y)
+    return ConstantInterpolant(x_p, y_p; extrap, side, search)
 end

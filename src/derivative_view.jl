@@ -186,11 +186,3 @@ end
     d.parent(out, xq; deriv=Order, kwargs...)
 end
 
-# In-place vector query => vector-of-vectors output (SeriesInterpolant)
-# Note: No element type constraint - parent handles type checking/conversion
-@inline function (d::DerivativeView{Order, ITP})(
-    out::AbstractArray{<:AbstractArray}, xq::AbstractArray{<:Real}; deriv=nothing, kwargs...
-) where {Order, ITP}
-    _check_no_deriv_override(Val(Order), deriv)
-    d.parent(out, xq; deriv=Order, kwargs...)
-end

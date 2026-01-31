@@ -68,6 +68,28 @@ Determine the output value type from y element type and grid type.
 @inline _value_type(::Type{Complex{T}}, ::Type{Tg}) where {T<:Real, Tg<:AbstractFloat} = Complex{Tg}
 
 """
+    _needs_value_promotion(::Type{Tv}, ::Type{Tg}) -> Bool
+
+Check if value type `Tv` needs promotion to match grid type `Tg`.
+Returns `true` when the real base type of `Tv` differs from `Tg`.
+
+# Type Promotion Rules
+- Real types: promotes if differs from Tg (Int64→Float64, Float32→Float64)
+- Complex types: promotes if real part differs (Complex{Int}→Complex{Tg})
+- Same types: no promotion needed (Float64→Float64)
+
+# Examples
+```julia
+_needs_value_promotion(Int64, Float64)         # true  (Int → Float64)
+_needs_value_promotion(Float64, Float64)       # false (already Float64)
+_needs_value_promotion(Complex{Int64}, Float64) # true  (Int → Float64)
+_needs_value_promotion(ComplexF64, Float64)    # false (already Float64)
+```
+"""
+@inline _needs_value_promotion(::Type{Tv}, ::Type{Tg}) where {Tv, Tg<:AbstractFloat} =
+    _real_eltype(Tv) !== Tg
+
+"""
     _promote_value_type(y, ::Type{Tg}) -> (Tv, y_converted)
 
 Promote y-values to appropriate type based on grid type Tg.
@@ -109,6 +131,46 @@ Preserves Range structure for x (O(1) lookup).
 Tuple of (x_typed::AbstractVector{Tg}, y_typed::AbstractVector{Tv})
 """
 @inline function _promote_xy(x, y, ::Type{Tg}) where {Tg<:AbstractFloat}
+    x_typed = _to_float(x, Tg)
+    _, y_typed = _promote_value_type(y, Tg)
+    return x_typed, y_typed
+end
+
+"""
+    _ensure_promoted_xy(x, y) -> (x_typed, y_typed)
+
+Automatically promote x and y to compatible types for interpolation.
+Eliminates manual type-checking branches at call sites.
+
+# Behavior
+- Computes target grid type: `Tg = float(promote_type(TX, _real_eltype(TY)))`
+- Converts x via `_to_float` (no-copy if already `Vector{Tg}`)
+- Converts y via `_promote_value_type` (handles Real/Complex, no-copy if matching)
+
+# Zero-Overhead Guarantee
+- `@inline` enables compiler branch elimination
+- `_to_float` returns input unchanged for same-type vectors
+- `_promote_value_type` returns input unchanged when types match
+
+# Examples
+```julia
+x = [0.0, 1.0, 2.0]           # Float64 grid
+y_int = [1, 2, 3]             # Int64 values
+y_cplx = Complex{Int}[1+2im]  # Complex{Int} values
+
+x_p, y_p = _ensure_promoted_xy(x, y_int)   # y_p is Float64[]
+x_p, y_p = _ensure_promoted_xy(x, y_cplx)  # y_p is ComplexF64[]
+
+# Integer grid also supported
+x_int = [0, 1, 2, 3]
+x_p, y_p = _ensure_promoted_xy(x_int, y_cplx)  # x_p is Float64[], y_p is ComplexF64[]
+```
+"""
+@inline function _ensure_promoted_xy(
+    x::AbstractVector{TX},
+    y::AbstractVector{TY}
+) where {TX<:Real, TY}
+    Tg = float(promote_type(TX, _real_eltype(TY)))
     x_typed = _to_float(x, Tg)
     _, y_typed = _promote_value_type(y, Tg)
     return x_typed, y_typed

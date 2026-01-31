@@ -346,12 +346,12 @@ function linear_interp(
     extrap::Symbol=:none,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
-    # Check if Tv's real part requires Tg promotion
+    # Check if Tv's float base requires grid widening (not for Int types)
+    # Int-based types (Complex{Int}) are handled by internal _value_type conversion
     Tv_real = _real_eltype(Tv)
     if Tv_real !== Tg && Tv_real <: AbstractFloat
-        # Promote Tg to match the wider value type
         Tg_new = promote_type(Tg, Tv_real)
-        x_promoted = Tg_new.(x)
+        x_promoted = _to_float(x, Tg_new)
         return linear_interp(x_promoted, ys; extrap, search)
     end
 
@@ -413,11 +413,11 @@ function linear_interp(
     extrap::Symbol=:none,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
-    # Check if Tv's real part requires Tg promotion
+    # Check if Tv's float base requires grid widening
     Tv_real = _real_eltype(Tv)
     if Tv_real !== Tg && Tv_real <: AbstractFloat
         Tg_new = promote_type(Tg, Tv_real)
-        x_promoted = Tg_new.(x)
+        x_promoted = _to_float(x, Tg_new)
         return linear_interp(x_promoted, Y; extrap, search)
     end
 

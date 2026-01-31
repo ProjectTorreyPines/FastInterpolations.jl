@@ -455,19 +455,10 @@ function cubic_interp(
     autocache::Bool=true,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
-    # Check if Tv's real part requires promotion of Tg
-    Tv_real = _real_eltype(Tv)
-    if Tv_real !== Tg && Tv_real <: AbstractFloat
-        # Promote Tg to match the wider value type
-        Tg_new = promote_type(Tg, Tv_real)
-        x_typed = _to_float(x, Tg_new)
-        _, y_typed = _promote_value_type(y, Tg_new)
-        bc_promoted = _promote_bc(bc, eltype(y_typed))
-        return _cubic_interp_impl(x_typed, y_typed, bc_promoted, extrap, autocache, search)
-    end
-    # No promotion needed - types are compatible
-    bc_promoted = _promote_bc(bc, Tv)
-    return _cubic_interp_impl(x, y, bc_promoted, extrap, autocache, search)
+    # Auto-promote x/y types (zero allocation if already compatible)
+    x_p, y_p = _ensure_promoted_xy(x, y)
+    bc_promoted = _promote_bc(bc, eltype(y_p))
+    return _cubic_interp_impl(x_p, y_p, bc_promoted, extrap, autocache, search)
 end
 
 """
@@ -517,21 +508,14 @@ function cubic_interp(
     autocache::Bool=true,
     search::P=Binary()
 ) where {TX<:Real, TY, P<:AbstractSearchPolicy}
-    # Determine grid type from x and real part of y
-    Tg = float(promote_type(TX, _real_eltype(TY)))
-    x_typed = _to_float(x, Tg)
-
-    # Promote y to appropriate type (handles both Real and Complex)
-    _, y_typed = _promote_value_type(y, Tg)
-    Tv = eltype(y_typed)
-
-    # Promote BC to value type
+    x_p, y_p = _ensure_promoted_xy(x, y)
+    Tv = eltype(y_p)
     bc_promoted = _promote_bc(bc, Tv)
 
     if _is_periodic_bc(bc)
-        return _build_interpolant_periodic(x_typed, y_typed, autocache, search)
+        return _build_interpolant_periodic(x_p, y_p, autocache, search)
     else
         bc_pair = _normalize_bc(bc_promoted, Tv)
-        return _build_interpolant_bcpair(x_typed, y_typed, bc_pair, extrap, autocache, search)
+        return _build_interpolant_bcpair(x_p, y_p, bc_pair, extrap, autocache, search)
     end
 end

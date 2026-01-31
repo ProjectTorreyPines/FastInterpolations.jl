@@ -14,20 +14,21 @@
 # ========================================
 
 """
-    ConstantSeriesInterpolant{T, P, X}
+    ConstantSeriesInterpolant{Tg, Tv, P, X}
 
 Multi-series constant (step) interpolant with unified matrix storage and SIMD optimization.
 Shares a single x-grid across N y-series for efficient batch evaluation.
 
 # Type Parameters
-- `T`: Float type (Float32 or Float64)
+- `Tg`: Grid type (Float32 or Float64)
+- `Tv`: Value type (Tg for real, Complex{Tg} for complex)
 - `P`: Search policy type
 - `X`: Grid container type (Vector or Range)
 
 # Fields
 - `x::X`: Shared x-grid (Vector or Range)
-- `y::Matrix{T}`: Function values (n_points × n_series) series-contiguous
-- `_transpose::LazyTranspose{T}`: Lazy point-contiguous layout for scalar SIMD
+- `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
+- `_transpose::LazyTranspose{Tv}`: Lazy point-contiguous layout for scalar SIMD
 - `extrap::ExtrapVal`: Extrapolation mode
 - `side::SideVal`: Side selection (:nearest, :left, :right)
 
@@ -53,28 +54,32 @@ sitp(output, 0.5)           # In-place
 # Vector evaluation
 vals = sitp([0.1, 0.5, 0.9])    # Returns Vector of Vectors
 sitp([out1, out2, out3], xq)    # In-place (zero allocation)
+
+# Complex values are also supported
+y_complex = [exp.(2im * π * x), (1.0+2.0im) .* x]
+sitp_complex = constant_interp(x, y_complex)
 ```
 
 # Implementation Note: `mutable struct` with `const` fields
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct ConstantSeriesInterpolant{T<:AbstractFloat, P<:AbstractSearchPolicy, X<:AbstractVector{T}} <: AbstractSeriesInterpolant{T, T}
+mutable struct ConstantSeriesInterpolant{Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                            # Shared x-grid (Range or Vector)
-    const y::Matrix{T}                    # Series-contiguous y (n_points × n_series)
-    const _transpose::LazyTranspose{T}    # Lazy point-contiguous layout
+    const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
+    const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
     const extrap::ExtrapVal               # Extrapolation mode
     const side::SideVal                   # Side selection
     const search_policy::P                # Default search policy
 
     function ConstantSeriesInterpolant(
         x::X,
-        y::Matrix{T},
+        y::Matrix{Tv},
         extrap::ExtrapVal,
         side::SideVal,
         search::P=Binary()
-    ) where {T<:AbstractFloat, P<:AbstractSearchPolicy, X<:AbstractVector{T}}
-        new{T,P,X}(x, y, LazyTranspose{T}(), extrap, side, search)
+    ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
+        new{Tg,Tv,P,X}(x, y, LazyTranspose{Tv}(), extrap, side, search)
     end
 end
 
@@ -105,11 +110,11 @@ end
 @inline _method_kind(::Type{<:ConstantSeriesInterpolant}) = Val(:constant)
 
 """
-    _make_anchor(sitp::ConstantSeriesInterpolant, xq::T, searcher) -> _ConstantAnchoredQuery{T}
+    _make_anchor(sitp::ConstantSeriesInterpolant, xq::Tg, searcher) -> _ConstantAnchoredQuery{Tg}
 
 Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
 """
-@inline function _make_anchor(sitp::ConstantSeriesInterpolant{T}, xq::T, searcher::Searcher=DEFAULT_SEARCHER) where T
+@inline function _make_anchor(sitp::ConstantSeriesInterpolant{Tg}, xq::Tg, searcher::Searcher=DEFAULT_SEARCHER) where Tg
     return _constant_anchor_query_impl(sitp.x, xq, _should_wrap(sitp), searcher)
 end
 
@@ -120,14 +125,14 @@ Evaluate all series at the given anchor point. Required trait for AbstractSeries
 Uses point-contiguous layout for SIMD optimization.
 """
 @inline function _eval_series_at_anchor!(
-    output::AbstractVector{T},
-    sitp::ConstantSeriesInterpolant{T},
-    aq::_ConstantAnchoredQuery{T},
+    output::AbstractVector{Tv},
+    sitp::ConstantSeriesInterpolant{Tg, Tv},
+    aq::_ConstantAnchoredQuery{Tg},
     op::AbstractEvalOp
-) where {T<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     y_point = _ensure_point_layout!(sitp)
     n_pts = n_points(sitp)
-    x_min, x_max = T(first(sitp.x)), T(last(sitp.x))
+    x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
     _eval_constant_series_point_with_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, sitp.side, op)
     return output
@@ -138,11 +143,11 @@ end
 # ========================================
 
 """
-    _ensure_point_layout!(sitp::ConstantSeriesInterpolant{T}) -> y_point
+    _ensure_point_layout!(sitp::ConstantSeriesInterpolant) -> y_point
 
 Ensure point-contiguous layout exists. Delegates to shared LazyTranspose infrastructure.
 """
-@inline function _ensure_point_layout!(sitp::ConstantSeriesInterpolant{T}) where T
+@inline function _ensure_point_layout!(sitp::ConstantSeriesInterpolant)
     return _ensure_transpose!(sitp._transpose, sitp.y)
 end
 
@@ -168,13 +173,13 @@ SIMD-optimized evaluation for point-contiguous layout (n_series × n_points).
 Contiguous column access enables vectorization across series dimension.
 """
 @inline function _eval_constant_series_point!(
-    out::AbstractVector{T},
-    y_point::Matrix{T},
-    x::AbstractVector{T},
-    aq::_ConstantAnchoredQuery{T},
+    out::AbstractVector{Tv},
+    y_point::Matrix{Tv},
+    x::AbstractVector{Tg},
+    aq::_ConstantAnchoredQuery{Tg},
     side_val::SideVal,
     op::AbstractEvalOp
-) where {T<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     idx = aq.idx
     idx1 = idx + 1
 
@@ -198,17 +203,17 @@ end
 SIMD evaluation with extrapolation handling for multi-series constant interpolation.
 """
 @inline function _eval_constant_series_point_with_extrap!(
-    out::AbstractVector{T},
-    y_point::Matrix{T},
-    x::AbstractVector{T},
+    out::AbstractVector{Tv},
+    y_point::Matrix{Tv},
+    x::AbstractVector{Tg},
     n_pts::Int,
-    x_min::T,
-    x_max::T,
-    aq::_ConstantAnchoredQuery{T},
+    x_min::Tg,
+    x_max::Tg,
+    aq::_ConstantAnchoredQuery{Tg},
     extrap::ExtrapVal,
     side_val::SideVal,
     op::AbstractEvalOp
-) where {T<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     # Special case: at right boundary (x_max)
     if aq.xq == x_max
         if op isa EvalValue
@@ -217,7 +222,7 @@ SIMD evaluation with extrapolation handling for multi-series constant interpolat
             end
         else
             @inbounds @simd for k in axes(out, 1)
-                out[k] = zero(T)
+                out[k] = zero(Tv)
             end
         end
         return out
@@ -234,52 +239,52 @@ end
 
 # :none - throw DomainError
 @inline function _eval_constant_series_point_extrap!(
-    ::AbstractVector{T},
-    ::Matrix{T},
-    ::AbstractVector{T},
+    ::AbstractVector{Tv},
+    ::Matrix{Tv},
+    ::AbstractVector{Tg},
     ::Int,
-    x_min::T,
-    x_max::T,
-    aq::_ConstantAnchoredQuery{T},
+    x_min::Tg,
+    x_max::Tg,
+    aq::_ConstantAnchoredQuery{Tg},
     ::Val{:none},
     ::SideVal,
     ::AbstractEvalOp,
     ::UInt8
-) where {T<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
 # :constant - clamp to boundary
 @inline function _eval_constant_series_point_extrap!(
-    out::AbstractVector{T},
-    y_point::Matrix{T},
-    ::AbstractVector{T},
+    out::AbstractVector{Tv},
+    y_point::Matrix{Tv},
+    ::AbstractVector{Tg},
     n_pts::Int,
-    ::T,
-    ::T,
-    ::_ConstantAnchoredQuery{T},
+    ::Tg,
+    ::Tg,
+    ::_ConstantAnchoredQuery{Tg},
     ::Val{:constant},
     ::SideVal,
     op::AbstractEvalOp,
     side::UInt8
-) where {T<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
 # :extension - extend using same constant value
 @inline function _eval_constant_series_point_extrap!(
-    out::AbstractVector{T},
-    y_point::Matrix{T},
-    x::AbstractVector{T},
+    out::AbstractVector{Tv},
+    y_point::Matrix{Tv},
+    x::AbstractVector{Tg},
     n_pts::Int,
-    ::T,
-    ::T,
-    aq::_ConstantAnchoredQuery{T},
+    ::Tg,
+    ::Tg,
+    aq::_ConstantAnchoredQuery{Tg},
     ::Val{:extension},
     side_val::SideVal,
     op::AbstractEvalOp,
     side::UInt8
-) where {T<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     # Use boundary interval for extension
     return _eval_constant_series_point!(out, y_point, x, aq, side_val, op)
 end
@@ -314,13 +319,23 @@ sitp = constant_interp(x, [y1, y2, y3])
 vals = sitp(0.5)
 ```
 """
+# Hot path: x is AbstractFloat, ys elements can be Tg or Complex{Tg}
 function constant_interp(
-    x::AbstractVector{T},
-    ys::AbstractVector{<:AbstractVector{T}};
+    x::AbstractVector{Tg},
+    ys::AbstractVector{<:AbstractVector{Tv}};
     side::Symbol=:nearest,
     extrap::Symbol=:none,
     search::P=Binary()
-) where {T<:AbstractFloat, P<:AbstractSearchPolicy}
+) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
+    # Check if Tv's real part requires Tg promotion
+    Tv_real = _real_eltype(Tv)
+    if Tv_real !== Tg && Tv_real <: AbstractFloat
+        # Promote Tg to match the wider value type
+        Tg_new = promote_type(Tg, Tv_real)
+        x_promoted = Tg_new.(x)
+        return constant_interp(x_promoted, ys; side, extrap, search)
+    end
+
     # Validate input
     @assert !isempty(ys) "ys must not be empty"
 
@@ -337,9 +352,11 @@ function constant_interp(
     end
 
     # Build y matrix (n_points × n_series) series-contiguous
-    y_mat = Matrix{T}(undef, n_pts, n_series_count)
+    # Promote Tv to appropriate type based on Tg
+    Tv_out = _value_type(Tv, Tg)
+    y_mat = Matrix{Tv_out}(undef, n_pts, n_series_count)
     @inbounds for k in 1:n_series_count
-        y_mat[:, k] .= ys[k]
+        y_mat[:, k] .= Tv_out.(ys[k])
     end
 
     # Convert symbols to Val types
@@ -370,12 +387,20 @@ sitp = constant_interp(x, Y)
 ```
 """
 function constant_interp(
-    x::AbstractVector{T},
-    Y::AbstractMatrix{T};
+    x::AbstractVector{Tg},
+    Y::AbstractMatrix{Tv};
     side::Symbol=:nearest,
     extrap::Symbol=:none,
     search::AbstractSearchPolicy=Binary()
-) where {T<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
+    # Check if Tv's real part requires Tg promotion
+    Tv_real = _real_eltype(Tv)
+    if Tv_real !== Tg && Tv_real <: AbstractFloat
+        Tg_new = promote_type(Tg, Tv_real)
+        x_promoted = Tg_new.(x)
+        return constant_interp(x_promoted, Y; side, extrap, search)
+    end
+
     n_pts = length(x)
 
     # Validate dimensions
@@ -385,8 +410,9 @@ function constant_interp(
         ))
     end
 
-    # Copy y to ensure ownership
-    y_mat = copy(Y)
+    # Promote Tv to appropriate type based on Tg
+    Tv_out = _value_type(Tv, Tg)
+    y_mat = Tv_out === Tv ? copy(Y) : Tv_out.(Y)
 
     # Convert symbols to Val types
     extrap_val = _symbol_to_extrap_val(extrap)
@@ -396,31 +422,36 @@ function constant_interp(
     end
 end
 
-# Real type wrappers (auto-promote to Float)
+# ========================================
+# Type Promotion Wrappers (Int, mixed types)
+# ========================================
+# POLICY: Tg is computed from x and real part of y element types
+
+# Vector-of-vectors wrapper for non-AbstractFloat x
 function constant_interp(
     x::AbstractVector{Tx},
     ys::AbstractVector{<:AbstractVector{Ty}};
     side::Symbol=:nearest,
     extrap::Symbol=:none,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty<:Real}
-    T = promote_type(float(Tx), float(Ty))
-    x_float = _to_float(x, T)
-    ys_float = [_to_float(y, T) for y in ys]
-    return constant_interp(x_float, ys_float; side=side, extrap=extrap, search=search)
+) where {Tx<:Real, Ty}
+    # Compute Tg from x and real part of y
+    Tg = float(promote_type(Tx, _real_eltype(Ty)))
+    x_typed = _to_float(x, Tg)
+    return constant_interp(x_typed, ys; side, extrap, search)
 end
 
+# Matrix wrapper for non-AbstractFloat x
 function constant_interp(
     x::AbstractVector{Tx},
     Y::AbstractMatrix{Ty};
     side::Symbol=:nearest,
     extrap::Symbol=:none,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty<:Real}
-    T = promote_type(float(Tx), float(Ty))
-    x_float = _to_float(x, T)
-    Y_float = T.(Y)
-    return constant_interp(x_float, Y_float; side=side, extrap=extrap, search=search)
+) where {Tx<:Real, Ty}
+    Tg = float(promote_type(Tx, _real_eltype(Ty)))
+    x_typed = _to_float(x, Tg)
+    return constant_interp(x_typed, Y; side, extrap, search)
 end
 
 # ========================================
@@ -438,8 +469,8 @@ Returns a vector of values, one per y-series.
 - `deriv=0`: Returns function values
 - `deriv=1,2`: Returns zeros (step function derivative is zero everywhere)
 """
-function (sitp::ConstantSeriesInterpolant{T,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {T<:AbstractFloat, P, S<:Real}
-    out = Vector{T}(undef, n_series(sitp))
+function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+    out = Vector{Tv}(undef, n_series(sitp))
     return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
 
@@ -448,19 +479,19 @@ end
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
-function (sitp::ConstantSeriesInterpolant{T,P})(
-    output::AbstractVector{T},
+function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
+    output::AbstractVector{Tv},
     xq::S;
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {T<:AbstractFloat, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, S<:Real}
     n_ser = n_series(sitp)
 
     # Validate output length
     _validate_scalar_output(output, n_ser)
 
-    xq_typed = T(xq)
+    xq_typed = Tg(xq)
 
     # Build anchor
     aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
@@ -483,16 +514,16 @@ Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
 Returns a vector of vectors: one vector per y-series, each containing results for all query points.
 """
-function (sitp::ConstantSeriesInterpolant{T,P})(
+function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     xq::AbstractVector{S};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {T<:AbstractFloat, P, S<:Real}
-    xq_typed = _to_float(xq, T)
+) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+    xq_typed = _to_float(xq, Tg)
     n_query = length(xq_typed)
 
-    outputs = [Vector{T}(undef, n_query) for _ in 1:n_series(sitp)]
+    outputs = [Vector{Tv}(undef, n_query) for _ in 1:n_series(sitp)]
     sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 
     return outputs
@@ -511,13 +542,13 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
 Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 """
-@with_pool pool function (sitp::ConstantSeriesInterpolant{T,P})(
-    outputs::AbstractVector{<:AbstractVector{T}},
-    xq::AbstractVector{T};
+@with_pool pool function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
+    outputs::AbstractVector{<:AbstractVector{Tv}},
+    xq::AbstractVector{Tg};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {T<:AbstractFloat, P}
+) where {Tg<:AbstractFloat, Tv, P}
     n_query = length(xq)
     n_ser = n_series(sitp)
 
@@ -525,7 +556,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     _validate_series_outputs(outputs, n_ser, n_query)
 
     # Build anchors from pool (zero allocation after warmup)
-    aq_vec = acquire!(pool, _ConstantAnchoredQuery{T}, length(xq))
+    aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg}, length(xq))
     _fill_anchors!(aq_vec, sitp.x, xq, Val(:constant); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     # Extract matrices for argument-passing pattern
@@ -535,7 +566,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     n = n_series(sitp)
     extrap = sitp.extrap
     side_val = sitp.side
-    x_min, x_max = T(first(sitp.x)), T(last(sitp.x))
+    x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
     # Evaluate all series with derivative dispatch
     @_dispatch_deriv deriv => op begin
@@ -547,14 +578,14 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 end
 
 # Real type wrapper for in-place vector
-function (sitp::ConstantSeriesInterpolant{T,P})(
-    outputs::AbstractVector{<:AbstractVector{T}},
+function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
+    outputs::AbstractVector{<:AbstractVector{Tv}},
     xq::AbstractVector{S};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {T<:AbstractFloat, P, S<:Real}
-    xq_typed = _to_float(xq, T)
+) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+    xq_typed = _to_float(xq, Tg)
     return sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 end
 
@@ -563,18 +594,18 @@ Internal: Evaluate a single series for vector of query points.
 Uses argument-passing pattern for optimal performance.
 """
 @inline function _eval_constant_series_vector!(
-    out::AbstractVector{T},
-    y::Matrix{T},
-    x::AbstractVector{T},
+    out::AbstractVector{Tv},
+    y::Matrix{Tv},
+    x::AbstractVector{Tg},
     n_pts::Int,
-    x_min::T,
-    x_max::T,
+    x_min::Tg,
+    x_max::Tg,
     k::Int,
-    aq_vec::AbstractVector{<:_ConstantAnchoredQuery{T}},
+    aq_vec::AbstractVector{<:_ConstantAnchoredQuery{Tg}},
     extrap::ExtrapVal,
     side_val::SideVal,
     op::AbstractEvalOp
-) where {T<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     @inbounds for j in eachindex(out, aq_vec)
         out[j] = _eval_constant_series_with_extrap(y, x, n_pts, x_min, x_max, k, aq_vec[j], extrap, side_val, op)
     end
@@ -585,23 +616,23 @@ end
 Internal: Evaluate single series at single query point with extrapolation handling.
 """
 @inline function _eval_constant_series_with_extrap(
-    y::Matrix{T},
-    x::AbstractVector{T},
+    y::Matrix{Tv},
+    x::AbstractVector{Tg},
     n_pts::Int,
-    x_min::T,
-    x_max::T,
+    x_min::Tg,
+    x_max::Tg,
     k::Int,
-    aq::_ConstantAnchoredQuery{T},
+    aq::_ConstantAnchoredQuery{Tg},
     extrap::ExtrapVal,
     side_val::SideVal,
     op::AbstractEvalOp
-) where {T<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     # Special case: at right boundary (MUST be preserved!)
     if aq.xq == x_max
         if op isa EvalValue
             @inbounds return y[n_pts, k]
         else
-            return zero(T)  # Derivatives of step function are zero
+            return zero(Tv)  # Derivatives of step function are zero
         end
     end
 
@@ -624,15 +655,15 @@ end
 Internal: Core constant evaluation for series k at anchored query point.
 """
 @inline function _eval_constant_series_anchored(
-    y::Matrix{T},
+    y::Matrix{Tv},
     k::Int,
-    aq::_ConstantAnchoredQuery{T},
+    aq::_ConstantAnchoredQuery{Tg},
     side_val::SideVal,
     op::AbstractEvalOp
-) where {T<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     # Derivatives of constant (step) function are zero
     if !(op isa EvalValue)
-        return zero(T)
+        return zero(Tv)
     end
 
     idx = aq.idx

@@ -324,16 +324,16 @@ end
 
 # --- ConstantSeriesInterpolant ---
 
-function Base.show(io::IO, sitp::ConstantSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, sitp::ConstantSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
-    _show_type_header(io, "ConstantSeriesInterpolant", T)
+    _show_type_header_2params(io, "ConstantSeriesInterpolant", Tg, Tv)
     print(io, "($np × $ns)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", sitp::ConstantSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, ::MIME"text/plain", sitp::ConstantSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     is_range = sitp.x isa AbstractRange
-    _show_type_header(io, "ConstantSeriesInterpolant", T; suffix=" with $ns series")
+    _show_type_header_2params(io, "ConstantSeriesInterpolant", Tg, Tv; suffix=" with $ns series")
     println(io)
     _show_grid_row(io, false, sitp.x)
     println(io)
@@ -350,16 +350,16 @@ end
 
 # --- QuadraticSeriesInterpolant ---
 
-function Base.show(io::IO, sitp::QuadraticSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, sitp::QuadraticSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
-    _show_type_header(io, "QuadraticSeriesInterpolant", T)
+    _show_type_header_2params(io, "QuadraticSeriesInterpolant", Tg, Tv)
     print(io, "($np × $ns)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", sitp::QuadraticSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, ::MIME"text/plain", sitp::QuadraticSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     is_range = sitp.x isa AbstractRange
-    _show_type_header(io, "QuadraticSeriesInterpolant", T; suffix=" with $ns series")
+    _show_type_header_2params(io, "QuadraticSeriesInterpolant", Tg, Tv; suffix=" with $ns series")
     println(io)
     _show_grid_row(io, false, sitp.x)
     println(io)
@@ -374,17 +374,17 @@ end
 
 # --- CubicSeriesInterpolant ---
 
-function Base.show(io::IO, sitp::CubicSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, sitp::CubicSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     bc_name = _short_bc_name(sitp.bc_for_solve)
-    _show_type_header(io, "CubicSeriesInterpolant", T)
+    _show_type_header_2params(io, "CubicSeriesInterpolant", Tg, Tv)
     print(io, "($np × $ns, $bc_name)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", sitp::CubicSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, ::MIME"text/plain", sitp::CubicSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     is_range = sitp.cache.x isa AbstractRange
-    _show_type_header(io, "CubicSeriesInterpolant", T; suffix=" with $ns series")
+    _show_type_header_2params(io, "CubicSeriesInterpolant", Tg, Tv; suffix=" with $ns series")
     println(io)
     _show_grid_row(io, false, sitp.cache.x)
     println(io)

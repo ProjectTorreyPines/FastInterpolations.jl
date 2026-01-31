@@ -115,63 +115,6 @@ Tuple of (x_typed::AbstractVector{Tg}, y_typed::AbstractVector{Tv})
 end
 
 # ========================================
-# Series Value Type Helpers (for Series Interpolants)
-# ========================================
-
-"""
-    _series_eltype(ys::AbstractVector{<:AbstractVector{Tv}}) -> Type
-
-Extract the element type of the inner vectors in a vector-of-vectors.
-Used by series interpolant constructors to determine value type from input.
-
-# Example
-```julia
-ys = [rand(ComplexF64, 10), rand(ComplexF64, 10)]
-_series_eltype(ys)  # → ComplexF64
-```
-"""
-@inline _series_eltype(::AbstractVector{<:AbstractVector{Tv}}) where Tv = Tv
-
-"""
-    _promote_series_values(ys::AbstractVector{<:AbstractVector}, ::Type{Tg}) -> (Tv, Matrix{Tv})
-
-Promote a vector-of-vectors to a Matrix with appropriate value type.
-
-# Arguments
-- `ys`: Vector of y-value vectors (one per series)
-- `Tg`: Target grid type (AbstractFloat)
-
-# Returns
-- `Tv`: The promoted value type (Tg for real, Complex{Tg} for complex)
-- `y_mat`: Matrix{Tv} of shape (n_points × n_series)
-
-# Example
-```julia
-ys = [rand(ComplexF64, 10), rand(ComplexF64, 10)]
-Tv, y_mat = _promote_series_values(ys, Float64)
-# Tv = ComplexF64, y_mat is 10×2 Matrix{ComplexF64}
-```
-"""
-@inline function _promote_series_values(
-    ys::AbstractVector{<:AbstractVector},
-    ::Type{Tg}
-) where {Tg<:AbstractFloat}
-    Tv_raw = _series_eltype(ys)
-    Tv = _value_type(Tv_raw, Tg)
-
-    n_pts = length(first(ys))
-    n_series = length(ys)
-    y_mat = Matrix{Tv}(undef, n_pts, n_series)
-
-    for (k, y) in enumerate(ys)
-        @assert length(y) == n_pts "All series must have same length as x-grid"
-        y_mat[:, k] .= Tv.(y)
-    end
-
-    return Tv, y_mat
-end
-
-# ========================================
 # Periodic Boundary Helpers
 # ========================================
 

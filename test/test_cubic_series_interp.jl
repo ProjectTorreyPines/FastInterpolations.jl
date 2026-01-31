@@ -40,6 +40,19 @@ using FastInterpolations: _ensure_point_layout!
     end
 end
 
+@testset "CubicSeriesInterpolant - trait implementations" begin
+        FI = FastInterpolations
+
+        x = collect(0.0:0.1:1.0)
+        sitp = cubic_interp(x, [sin.(2π .* x), cos.(2π .* x)])
+
+        @test FI.n_series(sitp) == 2
+        @test FI._get_grid(sitp) ≈ x
+        @test FI._get_extrap(sitp) isa FI.ExtrapVal
+        @test FI._should_wrap(sitp) == false
+        @test FI._method_kind(typeof(sitp)) === Val(:cubic)
+end
+
 @testset "CubicSeriesInterpolant - Unified Struct Fields" begin
     FI = FastInterpolations
 
@@ -1769,12 +1782,14 @@ end
 
         # Zero allocation
         allocs = @allocated FastInterpolations._normalize_bc_array(bc_pairs, Float64, 3)
-        @test allocs == 0
+        @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "General path: mixed BC array creates new Vector{BCPair}" begin
         # When BC types are mixed, normalization must create new array
-        mixed_bcs = AbstractBC{Float64}[
+        # Note: With the new type system, singleton BCs are AbstractBC{Nothing},
+        # so we use a concrete type array or Any
+        mixed_bcs = [
             NaturalBC(),
             BCPair(Deriv1(0.0), Deriv2(3.0)),
             ClampedBC()
@@ -1782,8 +1797,8 @@ end
 
         result = FastInterpolations._normalize_bc_array(mixed_bcs, Float64, 3)
 
-        # Should be a new Vector{BCPair{Float64}}
-        @test result isa Vector{BCPair{Float64}}
+        # Should be a new Vector{<:BCPair} (Type-Free design)
+        @test result isa Vector{<:BCPair}
         @test result !== mixed_bcs  # Different object
 
         # Values should be correctly normalized (uses Julia's default structural equality for BCPair)

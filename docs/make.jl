@@ -128,6 +128,7 @@ makedocs(
         "Visualization" => "visualization.md",
         "Advanced Usage" => [
             "Overview" => "guides/advanced_overview.md",
+            "Generic Support" => "guides/generic_support.md",
             "Search & Hints" => [
                 "Overview" => "guides/search/overview.md",
                 "Search Policies" => "guides/search/policies.md",

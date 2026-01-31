@@ -317,7 +317,8 @@ import FastInterpolations: _get_cubic_cache
         allocs = @allocated cubic_interp(x, y2)
 
         # Should only allocate y + z copies (~800 bytes for 51 elements each) + callable struct
-        @test allocs < 1_500  # 2 KB budget (y + z vectors + minor overhead)
+        # Note: Tg/Tv type separation (for Complex support) adds ~300 bytes overhead
+        @test allocs < 2_000  # 2 KB budget (y + z vectors + type parameter overhead)
     end
 
     # =========================================================================

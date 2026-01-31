@@ -22,20 +22,24 @@
 
 Core quadratic spline evaluation at a single point with search policy.
 Uses interval clamping for extension extrapolation (matches cubic pattern).
+
+# Type Parameters
+- `Tg<:AbstractFloat`: Grid type for x and xi
+- `Tv`: Value type for y, a, d (can be Tg or Complex{Tg})
 """
 @inline function _quadratic_eval_core(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    a::AbstractVector{Tv},
+    d::AbstractVector{Tv},
+    xi::Tg,
     op::AbstractEvalOp,
     searcher::S
-) where {FT<:AbstractFloat, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, S<:Searcher}
     # search_interval clamps idx to [1, n-1]
     # This handles both normal evaluation and extension extrapolation
     idx, xL, _ = search_interval(searcher, x, xi)
-    dt = xi - xL
+    dt = xi - xL  # Tg
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
@@ -45,29 +49,29 @@ end
 
 "Evaluate with no extrapolation - throws DomainError if outside domain."
 @inline function _quadratic_eval_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    a::AbstractVector{Tv},
+    d::AbstractVector{Tv},
+    xi::Tg,
     ::Val{:none},
     op::AbstractEvalOp,
     searcher::S
-) where {FT<:AbstractFloat, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, S<:Searcher}
     return _quadratic_eval_core(x, y, a, d, xi, op, searcher)
 end
 
 "Evaluate with constant extrapolation - returns boundary values outside domain."
 @inline function _quadratic_eval_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    a::AbstractVector{Tv},
+    d::AbstractVector{Tv},
+    xi::Tg,
     ::Val{:constant},
     op::AbstractEvalOp,
     searcher::S
-) where {FT<:AbstractFloat, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, S<:Searcher}
     xi < first(x) && return _constant_extrap_result(op, @inbounds y[1])
     xi > last(x) && return _constant_extrap_result(op, @inbounds y[end])
     return _quadratic_eval_core(x, y, a, d, xi, op, searcher)
@@ -75,15 +79,15 @@ end
 
 "Evaluate with extension extrapolation - extends boundary polynomial."
 @inline function _quadratic_eval_with_extrap(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    a::AbstractVector{Tv},
+    d::AbstractVector{Tv},
+    xi::Tg,
     ::Val{:extension},
     op::AbstractEvalOp,
     searcher::S
-) where {FT<:AbstractFloat, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, S<:Searcher}
     # Interval clamping in search_interval handles extension
     return _quadratic_eval_core(x, y, a, d, xi, op, searcher)
 end
@@ -93,18 +97,22 @@ end
 
 Entry point for quadratic spline evaluation with extrapolation dispatch and search policy.
 Note: `h` parameter kept for API compatibility but not used (interval info from x).
+
+# Type Parameters
+- `Tg<:AbstractFloat`: Grid type for x, h, xi
+- `Tv`: Value type for y, a, d (can be Tg or Complex{Tg})
 """
 @inline function _quadratic_eval_at_point(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    ::AbstractVector{FT},  # h - unused, kept for API compatibility
-    a::AbstractVector{FT},
-    d::AbstractVector{FT},
-    xi::FT,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    ::AbstractVector{Tg},  # h - unused, kept for API compatibility
+    a::AbstractVector{Tv},
+    d::AbstractVector{Tv},
+    xi::Tg,
     extrap::ExtrapVal,
     op::AbstractEvalOp,
     searcher::S
-) where {FT<:AbstractFloat, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, S<:Searcher}
     @boundscheck _check_domain(x, xi, extrap)
     return _quadratic_eval_with_extrap(x, y, a, d, xi, extrap, op, searcher)
 end
@@ -112,6 +120,7 @@ end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║                         PUBLIC API - HOT PATH                             ║
+# ║                 Tg<:AbstractFloat grid, Tv value type                     ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
@@ -166,24 +175,26 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
 ```
 """
 @inline @with_pool pool function quadratic_interp(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    xi::FT;
-    bc::QuadraticBC{FT}=Left(QuadraticFit{FT}()),
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    xi::Tg;
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {FT<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
     # Compute coefficients using temporary arrays from pool
+    # h is grid-typed (Tg), d and a are value-typed (Tv)
     nx = length(x)
-    h = acquire!(pool, FT, nx-1)
-    d = acquire!(pool, FT, nx)
-    a = acquire!(pool, FT, nx-1)
-    _compute_quadratic_coeffs!(h, d, a, x, y, bc)
+    h = acquire!(pool, Tg, nx-1)
+    d = acquire!(pool, Tv, nx)
+    a = acquire!(pool, Tv, nx-1)
+    bc_promoted = _promote_bc(bc, Tv)
+    _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
@@ -221,25 +232,27 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
 ```
 """
 @with_pool pool function quadratic_interp!(
-    output::AbstractVector{FT},
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT};
-    bc::QuadraticBC{FT}=Left(QuadraticFit{FT}()),
+    output::AbstractVector{Tv},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    x_targets::AbstractVector{Tg};
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {FT<:AbstractFloat}
+) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
     @assert length(x) >= 2 "x must have at least 2 elements"
 
     # Compute coefficients using temporary arrays from pool
+    # h is grid-typed (Tg), d and a are value-typed (Tv)
     nx = length(x)
-    h = acquire!(pool, FT, nx-1)
-    d = acquire!(pool, FT, nx)
-    a = acquire!(pool, FT, nx-1)
-    _compute_quadratic_coeffs!(h, d, a, x, y, bc)
+    h = acquire!(pool, Tg, nx-1)
+    d = acquire!(pool, Tv, nx)
+    a = acquire!(pool, Tv, nx-1)
+    bc_promoted = _promote_bc(bc, Tv)
+    _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
@@ -275,15 +288,15 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
 ```
 """
 function quadratic_interp(
-    x::AbstractVector{FT},
-    y::AbstractVector{FT},
-    x_targets::AbstractVector{FT};
-    bc::QuadraticBC{FT}=Left(QuadraticFit{FT}()),
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    x_targets::AbstractVector{Tg};
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {FT<:AbstractFloat}
-    output = Vector{FT}(undef, length(x_targets))
+) where {Tg<:AbstractFloat, Tv}
+    output = Vector{Tv}(undef, length(x_targets))
     quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
     return output
 end
@@ -299,106 +312,112 @@ end
 # ========================================
 
 """
-    _promote_bc(bc::Left/Right, ::Type{FT}) -> Left{FT}/Right{FT}
+    _promote_bc(bc::Left/Right, ::Type{Tv}) -> Left/Right
 
-Promote Left/Right BC wrapper to target float type FT.
+Promote Left/Right BC wrapper to target value type Tv.
 Uses _promote_pointbc from bc_types.jl for inner BC promotion.
+
+Type-Free design: PointBC has no type parameter, so we always delegate
+to _promote_pointbc which handles both passthrough (lazy types) and
+actual conversion (concrete types like Deriv1{Tv}).
 """
-# Same-type passthrough (zero-cost, no object creation)
-@inline _promote_bc(bc::Left{T, <:PointBC{T}}, ::Type{T}) where {T<:AbstractFloat} = bc
-@inline _promote_bc(bc::Right{T, <:PointBC{T}}, ::Type{T}) where {T<:AbstractFloat} = bc
-
-# Type conversion (delegates to _promote_pointbc)
-@inline function _promote_bc(bc::Left{T, <:PointBC{T}}, ::Type{FT}) where {T<:AbstractFloat, FT<:AbstractFloat}
-    Left(_promote_pointbc(bc.bc, FT))
+@inline function _promote_bc(bc::Left, ::Type{Tv}) where {Tv}
+    Left(_promote_pointbc(bc.bc, Tv))
 end
 
-@inline function _promote_bc(bc::Right{T, <:PointBC{T}}, ::Type{FT}) where {T<:AbstractFloat, FT<:AbstractFloat}
-    Right(_promote_pointbc(bc.bc, FT))
+@inline function _promote_bc(bc::Right, ::Type{Tv}) where {Tv}
+    Right(_promote_pointbc(bc.bc, Tv))
 end
 
-# MinCurvFit promotion (not a PointBC, needs explicit handling)
-@inline _promote_bc(::MinCurvFit, ::Type{T}) where {T<:AbstractFloat} = MinCurvFit{T}()
-@inline _promote_bc(::MinCurvFit{T}, ::Type{T}) where {T<:AbstractFloat} = MinCurvFit{T}()
+# MinCurvFit is a singleton - no promotion needed
+@inline _promote_bc(::MinCurvFit, ::Type{Tv}) where {Tv} = MinCurvFit()
 
 # Note: QuadraticFit <: PointBC, handled by generic _promote_pointbc in bc_types.jl
 
 # ========================================
-# Scalar Real → Float wrappers
+# Scalar Real/Complex → typed wrappers
 # ========================================
+# Unified wrapper for non-AbstractFloat inputs (Int, mixed types, Complex, etc.)
+# POLICY: Tg is computed from x/y ONLY, not from xq
 
 @inline function quadratic_interp(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    xi::S;
-    bc::QuadraticBC{<:AbstractFloat}=Left(QuadraticFit{Float64}()),
+    x::AbstractVector{Tx},
+    y::AbstractVector{Ty},
+    xi::Tq;
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
-    search::AbstractSearchPolicy=Binary()
-) where {T<:Real, S<:Real}
-    FT = float(T)
-    bc_promoted = _promote_bc(bc, FT)
-    return quadratic_interp(_to_float(x, FT), _to_float(y, FT), FT(xi); bc=bc_promoted, extrap, deriv, search)
+    search=Binary(),
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tx<:Real, Ty, Tq<:Real}
+    # Tg from x/y ONLY (not xq)
+    Tg = float(promote_type(Tx, _real_eltype(Ty)))
+    Tv = _value_type(Ty, Tg)
+    x_typed, y_typed = _promote_xy(x, y, Tg)
+    bc_promoted = _promote_bc(bc, Tv)
+    return quadratic_interp(x_typed, y_typed, Tg(xi); bc=bc_promoted, extrap, deriv, search, hint)
 end
 
 # ========================================
-# Vector Real → Float wrappers (allocating)
+# Vector Real/Complex → typed wrappers (allocating)
 # ========================================
+# POLICY: Tg is computed from x/y ONLY, not from x_targets
 
 function quadratic_interp(
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    x_targets::AbstractVector{S};
-    bc::QuadraticBC{<:AbstractFloat}=Left(QuadraticFit{Float64}()),
+    x::AbstractVector{Tx},
+    y::AbstractVector{Ty},
+    x_targets::AbstractVector{Tq};
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {T<:Real, S<:Real}
-    FT = float(T)
-    output = Vector{FT}(undef, length(x_targets))
-    bc_promoted = _promote_bc(bc, FT)
-    quadratic_interp!(output, _to_float(x, FT), _to_float(y, FT), _to_float(x_targets, FT); bc=bc_promoted, extrap, deriv, search)
+) where {Tx<:Real, Ty, Tq<:Real}
+    # Tg from x/y ONLY (not x_targets)
+    Tg = float(promote_type(Tx, _real_eltype(Ty)))
+    Tv = _value_type(Ty, Tg)
+    output = Vector{Tv}(undef, length(x_targets))
+    x_typed, y_typed = _promote_xy(x, y, Tg)
+    targets_typed = Tg.(x_targets)
+    bc_promoted = _promote_bc(bc, Tv)
+    quadratic_interp!(output, x_typed, y_typed, targets_typed; bc=bc_promoted, extrap, deriv, search)
     return output
 end
 
 # ========================================
-# Vector Real → Float wrappers (in-place)
+# Vector Real/Complex → typed wrappers (in-place)
 # ========================================
 
-@with_pool pool function quadratic_interp!(
+function quadratic_interp!(
     output::AbstractVector,
-    x::AbstractVector{T},
-    y::AbstractVector{T},
-    x_targets::AbstractVector{S};
-    bc::QuadraticBC{<:AbstractFloat}=Left(QuadraticFit{Float64}()),
+    x::AbstractVector{Tx},
+    y::AbstractVector{Ty},
+    x_targets::AbstractVector{Tq};
+    bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {T<:Real, S<:Real}
+) where {Tx<:Real, Ty, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    FT = float(T)
-    x_float = _to_float(x, FT)
-    y_float = _to_float(y, FT)
-    x_targets_float = _to_float(x_targets, FT)
-    bc_promoted = _promote_bc(bc, FT)
+    # Tg from x/y ONLY (not x_targets)
+    Tg = float(promote_type(Tx, _real_eltype(Ty)))
 
-    # Compute coefficients using temporary arrays from pool
-    nx = length(x)
-    h = acquire!(pool, FT, nx-1)
-    d = acquire!(pool, FT, nx)
-    a = acquire!(pool, FT, nx-1)
-    _compute_quadratic_coeffs!(h, d, a, x_float, y_float, bc_promoted)
-
-    searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            @boundscheck _check_domain(x_float, x_targets_float, ev)
-            @inbounds for i in eachindex(x_targets_float, output)
-                output[i] = _quadratic_eval_at_point(x_float, y_float, h, a, d, x_targets_float[i], ev, op, searcher)
-            end
-        end
+    # Determine expected output type and validate
+    # Use promote_type check: Tout can hold Tv if promote_type(Tout, Tv) === Tout
+    # This allows ComplexF64 output to hold Float64 results (via convert)
+    Tv = _value_type(Ty, Tg)
+    Tout = eltype(output)
+    if promote_type(Tout, Tv) !== Tout
+        throw(ArgumentError(
+            "output eltype $Tout cannot hold interpolation result type $Tv. " *
+            "Use Vector{$Tv} or a wider type (e.g., Vector{Complex{$Tg}} for complex y-values)."
+        ))
     end
-    return output
+
+    x_typed, y_typed = _promote_xy(x, y, Tg)
+    targets_typed = Tg.(x_targets)
+    bc_promoted = _promote_bc(bc, Tv)
+
+    quadratic_interp!(output, x_typed, y_typed, targets_typed; bc=bc_promoted, extrap, deriv, search)
 end

@@ -5,10 +5,17 @@
 # Constructor and callable methods are in linear_interpolant.jl.
 
 """
-    LinearInterpolant{T,X,Y,P}
+    LinearInterpolant{Tg,Tv,X,Y,P}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `linear_interp(x, y)` (2-argument form).
+
+# Type Parameters
+- `Tg<:AbstractFloat`: Grid type (Float32/Float64) - coordinates and geometry
+- `Tv`: Value type - element type of y (can be Tg, Complex{Tg}, or other Number)
+- `X<:AbstractVector{Tg}`: Grid vector type (preserves Range for O(1) lookup)
+- `Y<:AbstractVector{Tv}`: Values vector type
+- `P<:AbstractSearchPolicy`: Search policy type
 
 # Fields
 - `x::X`: x-coordinates (sorted)
@@ -23,6 +30,10 @@ itp = linear_interp(x, y)  # default extrap=:none, search=Binary()
 
 # Create with custom search policy (baked-in default)
 itp = linear_interp(x, y; search=LinearBinary())
+
+# Complex-valued interpolation
+y_complex = exp.(2im .* x)
+itp_c = linear_interp(x, y_complex)  # Works natively with Complex
 
 # Use in broadcast (fused, no intermediate arrays)
 result = @. coef * itp(rho) * other_terms
@@ -41,7 +52,13 @@ val = itp_wrap(2.5)  # wraps to domain
 itp(0.5; search=Binary())  # override stored policy
 ```
 """
-struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector{T},P<:AbstractSearchPolicy} <: AbstractInterpolant{T}
+struct LinearInterpolant{
+    Tg<:AbstractFloat,
+    Tv,
+    X<:AbstractVector{Tg},
+    Y<:AbstractVector{Tv},
+    P<:AbstractSearchPolicy
+} <: AbstractInterpolant{Tg, Tv}
     x::X
     y::Y
     extrap::ExtrapVal  # Extrapolation mode (concrete union for union-splitting)
@@ -52,12 +69,22 @@ struct LinearInterpolant{T<:AbstractFloat,X<:AbstractVector{T},Y<:AbstractVector
         y::Y;
         extrap::Symbol=:none,
         search::P=Binary()
-    ) where {T<:AbstractFloat, X<:AbstractVector{T}, Y<:AbstractVector{T}, P<:AbstractSearchPolicy}
+    ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
 
         # Manual dispatch to avoid union-splitting with 4 Val types
         @_dispatch_extrap extrap => ev begin
-            return new{T,X,Y,P}(x, y, ev, search)
+            return new{Tg,Tv,X,Y,P}(x, y, ev, search)
         end
     end
 end
+
+# ========================================
+# Type Aliases for Common Cases
+# ========================================
+
+"""Real-valued linear interpolant (matches original behavior)."""
+const RealLinearInterpolant{T} = LinearInterpolant{T, T} where {T<:AbstractFloat}
+
+"""Complex-valued linear interpolant."""
+const ComplexLinearInterpolant{T} = LinearInterpolant{T, Complex{T}} where {T<:AbstractFloat}

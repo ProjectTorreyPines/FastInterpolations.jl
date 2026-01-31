@@ -142,9 +142,13 @@ Fast Thomas algorithm solver using `ThomasFactorization`.
 
 Solves `Ax = b` in-place where `A = L*U` is the pre-computed factorization.
 
+# Type Parameters
+- `Tg<:AbstractFloat`: Grid type (Thomas factorization type)
+- `Tv`: Value type for RHS (can be Real or Complex)
+
 # Arguments
-- `b::AbstractVector{T}`: RHS vector (modified in-place to hold solution)
-- `thomas::ThomasFactorization{T,V}`: Pre-computed factorization with dl, du, inv_d
+- `b::AbstractVector{Tv}`: RHS vector (modified in-place to hold solution)
+- `thomas::ThomasFactorization{Tg,V}`: Pre-computed factorization with dl, du, inv_d
 
 # Algorithm
 1. **Forward elimination**: `b[i+1] -= L[i] * b[i]` for i = 1:n-1
@@ -156,9 +160,9 @@ Solves `Ax = b` in-place where `A = L*U` is the pre-computed factorization.
 - Uses `muladd` for fused multiply-add when available
 """
 @inline function _ldiv_tridiagonal_nopiv!(
-    b::AbstractVector{T},
-    thomas::ThomasFactorization{T,V},
-) where {T<:AbstractFloat, V<:AbstractVector{T}}
+    b::AbstractVector{Tv},
+    thomas::ThomasFactorization{Tg,V},
+) where {Tg<:AbstractFloat, Tv, V<:AbstractVector{Tg}}
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d

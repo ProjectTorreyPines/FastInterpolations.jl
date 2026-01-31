@@ -422,13 +422,13 @@ end
         @test cache isa CubicSplineCache{Float64}
 
         # Cache should be created with BCPair(Deriv1(0), Deriv1(0))
-        @test cache.bc_config isa BCPair{Float64, Deriv1{Float64}, Deriv1{Float64}}
+        @test cache.bc_config isa BCPair{Deriv1{Float64}, Deriv1{Float64}}
 
         # Should work for Float32 as well
         x32 = Float32.(x)
         cache32 = _get_cubic_cache(x32, ClampedBC())
         @test cache32 isa CubicSplineCache{Float32}
-        @test cache32.bc_config isa BCPair{Float32, Deriv1{Float32}, Deriv1{Float32}}
+        @test cache32.bc_config isa BCPair{Deriv1{Float32}, Deriv1{Float32}}
 
         # Range input
         x_range = range(0.0, 1.0, 51)
@@ -446,7 +446,7 @@ end
         # Cache stores values from first caller, but values are applied at solve time.
         cache_d1 = _get_cubic_cache(x, Deriv1(0.5))
         @test cache_d1 isa CubicSplineCache{Float64}
-        @test cache_d1.bc_config isa BCPair{Float64, Deriv1{Float64}, Deriv1{Float64}}
+        @test cache_d1.bc_config isa BCPair{Deriv1{Float64}, Deriv1{Float64}}
         # On cache miss, actual BC values from request are stored
         @test cache_d1.bc_config.left.val == 0.5
         @test cache_d1.bc_config.right.val == 0.5
@@ -454,7 +454,7 @@ end
         # Deriv2 PointBC - applies symmetrically to both ends
         cache_d2 = _get_cubic_cache(x, Deriv2(1.0))
         @test cache_d2 isa CubicSplineCache{Float64}
-        @test cache_d2.bc_config isa BCPair{Float64, Deriv2{Float64}, Deriv2{Float64}}
+        @test cache_d2.bc_config isa BCPair{Deriv2{Float64}, Deriv2{Float64}}
         # On cache miss, actual BC values from request are stored
         @test cache_d2.bc_config.left.val == 1.0
         @test cache_d2.bc_config.right.val == 1.0

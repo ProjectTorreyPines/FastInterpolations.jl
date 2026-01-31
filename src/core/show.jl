@@ -51,6 +51,28 @@ function _show_type_header(io::IO, typename::String, ::Type{T}; suffix::String="
 end
 
 """
+    _show_type_header_2params(io, typename, Tg, Tv; suffix="")
+
+Print type name with two type parameters for {Tg, Tv} interpolants.
+Shows `LinearInterpolant{Float64, ComplexF64}` for complex values,
+or `LinearInterpolant{Float64}` if Tv == Tg (backward compatible display).
+"""
+function _show_type_header_2params(io::IO, typename::String, ::Type{Tg}, ::Type{Tv}; suffix::String="") where {Tg, Tv}
+    _show_print(io, typename, :cyan; bold=true)
+    _show_print(io, "{", :light_black)
+    _show_print(io, string(Tg), :light_blue)
+    # Only show Tv if different from Tg (Complex case)
+    if Tv !== Tg
+        _show_print(io, ", ", :light_black)
+        _show_print(io, string(Tv), :light_blue)
+    end
+    _show_print(io, "}", :light_black)
+    if !isempty(suffix)
+        _show_print(io, suffix, :cyan)
+    end
+end
+
+"""
     _show_row(io, is_last, label, value; value_color=:normal)
 
 Print a box-drawing row with label and value.
@@ -171,14 +193,14 @@ end
 
 # --- LinearInterpolant ---
 
-function Base.show(io::IO, itp::LinearInterpolant{T}) where {T}
+function Base.show(io::IO, itp::LinearInterpolant{Tg, Tv}) where {Tg, Tv}
     n = length(itp.x)
-    _show_type_header(io, "LinearInterpolant", T)
+    _show_type_header_2params(io, "LinearInterpolant", Tg, Tv)
     print(io, "($n pts)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolant{T}) where {T}
-    _show_type_header(io, "LinearInterpolant", T)
+function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolant{Tg, Tv}) where {Tg, Tv}
+    _show_type_header_2params(io, "LinearInterpolant", Tg, Tv)
     println(io)
     is_range = itp.x isa AbstractRange
     _show_grid_row(io, false, itp.x)
@@ -278,16 +300,16 @@ end
 
 # --- LinearSeriesInterpolant ---
 
-function Base.show(io::IO, sitp::LinearSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, sitp::LinearSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
-    _show_type_header(io, "LinearSeriesInterpolant", T)
+    _show_type_header_2params(io, "LinearSeriesInterpolant", Tg, Tv)
     print(io, "($np × $ns)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", sitp::LinearSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, ::MIME"text/plain", sitp::LinearSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     is_range = sitp.x isa AbstractRange
-    _show_type_header(io, "LinearSeriesInterpolant", T; suffix=" with $ns series")
+    _show_type_header_2params(io, "LinearSeriesInterpolant", Tg, Tv; suffix=" with $ns series")
     println(io)
     _show_grid_row(io, false, sitp.x)
     println(io)
@@ -302,16 +324,16 @@ end
 
 # --- ConstantSeriesInterpolant ---
 
-function Base.show(io::IO, sitp::ConstantSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, sitp::ConstantSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
-    _show_type_header(io, "ConstantSeriesInterpolant", T)
+    _show_type_header_2params(io, "ConstantSeriesInterpolant", Tg, Tv)
     print(io, "($np × $ns)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", sitp::ConstantSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, ::MIME"text/plain", sitp::ConstantSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     is_range = sitp.x isa AbstractRange
-    _show_type_header(io, "ConstantSeriesInterpolant", T; suffix=" with $ns series")
+    _show_type_header_2params(io, "ConstantSeriesInterpolant", Tg, Tv; suffix=" with $ns series")
     println(io)
     _show_grid_row(io, false, sitp.x)
     println(io)
@@ -328,16 +350,16 @@ end
 
 # --- QuadraticSeriesInterpolant ---
 
-function Base.show(io::IO, sitp::QuadraticSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, sitp::QuadraticSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
-    _show_type_header(io, "QuadraticSeriesInterpolant", T)
+    _show_type_header_2params(io, "QuadraticSeriesInterpolant", Tg, Tv)
     print(io, "($np × $ns)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", sitp::QuadraticSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, ::MIME"text/plain", sitp::QuadraticSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     is_range = sitp.x isa AbstractRange
-    _show_type_header(io, "QuadraticSeriesInterpolant", T; suffix=" with $ns series")
+    _show_type_header_2params(io, "QuadraticSeriesInterpolant", Tg, Tv; suffix=" with $ns series")
     println(io)
     _show_grid_row(io, false, sitp.x)
     println(io)
@@ -352,17 +374,17 @@ end
 
 # --- CubicSeriesInterpolant ---
 
-function Base.show(io::IO, sitp::CubicSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, sitp::CubicSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     bc_name = _short_bc_name(sitp.bc_for_solve)
-    _show_type_header(io, "CubicSeriesInterpolant", T)
+    _show_type_header_2params(io, "CubicSeriesInterpolant", Tg, Tv)
     print(io, "($np × $ns, $bc_name)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", sitp::CubicSeriesInterpolant{T}) where {T}
+function Base.show(io::IO, ::MIME"text/plain", sitp::CubicSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     is_range = sitp.cache.x isa AbstractRange
-    _show_type_header(io, "CubicSeriesInterpolant", T; suffix=" with $ns series")
+    _show_type_header_2params(io, "CubicSeriesInterpolant", Tg, Tv; suffix=" with $ns series")
     println(io)
     _show_grid_row(io, false, sitp.cache.x)
     println(io)
@@ -390,8 +412,8 @@ function Base.show(io::IO, d::DerivativeView{Order, ITP}) where {Order, ITP}
     print(io, ")")
 end
 
-"""Extract float type T from AbstractInterpolant{T}."""
-_interpolant_float_type(::AbstractInterpolant{T}) where {T} = T
+"""Extract grid type Tg from AbstractInterpolant{Tg, Tv}."""
+_interpolant_float_type(::AbstractInterpolant{Tg, Tv}) where {Tg, Tv} = Tg
 
 function Base.show(io::IO, ::MIME"text/plain", d::DerivativeView{Order, ITP}) where {Order, ITP}
     ord_str = _format_deriv_order(Order)

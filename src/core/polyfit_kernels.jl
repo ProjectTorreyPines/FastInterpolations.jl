@@ -68,6 +68,32 @@ end
 end
 
 # ----------------------------------------
+# Mixed-type _weighted_sum for Complex value support
+# c::NTuple{N,Tg} coefficients (grid-derived, always real)
+# f::NTuple{N,Tv} values (can be Complex)
+# Returns Tv (same as value type)
+# ----------------------------------------
+@inline function _weighted_sum(c::NTuple{2,Tg}, f::NTuple{2,Tv}) where {Tg<:AbstractFloat, Tv}
+    return muladd(c[1], f[1], c[2] * f[2])  # Tg * Tv + Tg * Tv → Tv
+end
+
+@inline function _weighted_sum(c::NTuple{3,Tg}, f::NTuple{3,Tv}) where {Tg<:AbstractFloat, Tv}
+    return muladd(c[1], f[1], muladd(c[2], f[2], c[3] * f[3]))
+end
+
+@inline function _weighted_sum(c::NTuple{4,Tg}, f::NTuple{4,Tv}) where {Tg<:AbstractFloat, Tv}
+    return muladd(c[1], f[1], muladd(c[2], f[2], muladd(c[3], f[3], c[4] * f[4])))
+end
+
+@generated function _weighted_sum(c::NTuple{N,Tg}, f::NTuple{N,Tv}) where {N, Tg<:AbstractFloat, Tv}
+    expr = :(c[$N] * f[$N])
+    for i in (N-1):-1:1
+        expr = :(muladd(c[$i], f[$i], $expr))
+    end
+    return expr
+end
+
+# ----------------------------------------
 # _compute_deriv1: Uniform grid direct computation
 # ----------------------------------------
 # Computes first derivative directly using known stencil coefficients.
@@ -122,6 +148,48 @@ end
     # Coefficients: (-2, 9, -18, 11) / 6
     coeff = inv_h / 6
     return muladd(T(-2), f[1], muladd(T(9), f[2], muladd(T(-18), f[3], T(11) * f[4]))) * coeff
+end
+
+# ----------------------------------------
+# Mixed-type _compute_deriv1 for Complex value support
+# f::NTuple{N,Tv} values (can be Complex)
+# inv_h::Tg inverse grid spacing (always real)
+# Returns Tv (same as value type)
+# ----------------------------------------
+
+# PolyFit{1} (LinearFit) - 2 points, O(h) - Mixed type
+@inline function _compute_deriv1(::PolyFit{1}, ::Val{:left}, f::NTuple{2,Tv}, inv_h::Tg) where {Tv, Tg<:AbstractFloat}
+    return (f[2] - f[1]) * inv_h  # Tv * Tg → Tv
+end
+
+@inline function _compute_deriv1(::PolyFit{1}, ::Val{:right}, f::NTuple{2,Tv}, inv_h::Tg) where {Tv, Tg<:AbstractFloat}
+    return (f[2] - f[1]) * inv_h
+end
+
+# PolyFit{2} (QuadraticFit) - 3 points, O(h²) - Mixed type
+@inline function _compute_deriv1(::PolyFit{2}, ::Val{:left}, f::NTuple{3,Tv}, inv_h::Tg) where {Tv, Tg<:AbstractFloat}
+    # Coefficients: (-3, 4, -1) / 2
+    coeff = inv_h / 2
+    return muladd(-3, f[1], muladd(4, f[2], -f[3])) * coeff  # Int * Tv → Tv, Tv * Tg → Tv
+end
+
+@inline function _compute_deriv1(::PolyFit{2}, ::Val{:right}, f::NTuple{3,Tv}, inv_h::Tg) where {Tv, Tg<:AbstractFloat}
+    # Coefficients: (1, -4, 3) / 2
+    coeff = inv_h / 2
+    return muladd(1, f[1], muladd(-4, f[2], 3 * f[3])) * coeff
+end
+
+# PolyFit{3} (CubicFit) - 4 points, O(h³) - Mixed type
+@inline function _compute_deriv1(::PolyFit{3}, ::Val{:left}, f::NTuple{4,Tv}, inv_h::Tg) where {Tv, Tg<:AbstractFloat}
+    # Coefficients: (-11, 18, -9, 2) / 6
+    coeff = inv_h / 6
+    return muladd(-11, f[1], muladd(18, f[2], muladd(-9, f[3], 2 * f[4]))) * coeff
+end
+
+@inline function _compute_deriv1(::PolyFit{3}, ::Val{:right}, f::NTuple{4,Tv}, inv_h::Tg) where {Tv, Tg<:AbstractFloat}
+    # Coefficients: (-2, 9, -18, 11) / 6
+    coeff = inv_h / 6
+    return muladd(-2, f[1], muladd(9, f[2], muladd(-18, f[3], 11 * f[4]))) * coeff
 end
 
 # Generic fallback for D > 3 (uses barycentric differentiation)
@@ -488,5 +556,35 @@ end
         f = _extract_stencil_values(ys, side, Val(D + 1))
         coeffs = _compute_deriv1_coeffs(pf, side, x)
         return _weighted_sum(coeffs, f)
+    end
+end
+
+# ----------------------------------------
+# Mixed-type _estimate_endpoint_derivative for Complex value support
+# xs::AbstractVector{Tg} grid coordinates (always real)
+# ys::AbstractVector{Tv} function values (can be Complex)
+# Returns Tv (same as value type)
+# ----------------------------------------
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractRange{Tg}, ys::AbstractVector{Tv}, side::Val{S}, pf::PolyFit{D}
+) where {Tg<:AbstractFloat, Tv, S, D}
+    _check_polyfit_requirements(D, length(ys))
+    @inbounds begin
+        f = _extract_stencil_values(ys, side, Val(D + 1))
+        inv_h = inv(Tg(step(xs)))
+        return _compute_deriv1(pf, side, f, inv_h)
+    end
+end
+
+@inline function _estimate_endpoint_derivative(
+    xs::AbstractVector{Tg}, ys::AbstractVector{Tv}, side::Val{S}, pf::PolyFit{D}
+) where {Tg<:AbstractFloat, Tv, S, D}
+    @assert length(xs) == length(ys) "xs and ys must have same length"
+    _check_polyfit_requirements(D, length(ys))
+    @inbounds begin
+        x = _extract_stencil_values(xs, side, Val(D + 1))
+        f = _extract_stencil_values(ys, side, Val(D + 1))
+        coeffs = _compute_deriv1_coeffs(pf, side, x)  # Tg coefficients
+        return _weighted_sum(coeffs, f)  # Tg * Tv → Tv
     end
 end

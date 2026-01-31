@@ -39,7 +39,7 @@ Cache structure for cubic spline interpolation with reusable Thomas factorizatio
 - `T`: Float type (Float32 or Float64)
 - `X`: Grid type (Vector{T} or AbstractRange{T})
 - `F`: Factorization type (ThomasFactorization{T,V})
-- `BC`: Boundary condition data type (BCPair{T,L,R} for derivative BC, PeriodicData{T} for periodic)
+- `BC`: Boundary condition data type (BCPair{L,R} for derivative BC, PeriodicData{T} for periodic)
 - `S`: Grid spacing type (ScalarSpacing{T} for Range, VectorSpacing{T} for Vector)
 
 # Fields
@@ -82,21 +82,22 @@ end
 # ExtrapVal is defined in ops.jl (shared between linear and cubic)
 
 """
-    CubicInterpolant{T,C,P,BC}
+    CubicInterpolant{Tg,Tv,C,P,BC}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `cubic_interp(x, y)` (2-argument form).
 
 # Type Parameters
-- `T`: Float type (Float32 or Float64)
+- `Tg<:AbstractFloat`: Grid type (Float32 or Float64) for x-coordinates
+- `Tv`: Value type for y-values (can be Tg, Complex{Tg}, or other Number)
 - `C`: CubicSplineCache type (preserves grid type info for O(1) vs O(log n) lookup)
 - `P`: Search policy type (Binary, HintedBinary, LinearBinary, etc.)
 - `BC`: Boundary condition type (BCPair or PeriodicBC)
 
 # Fields
 - `cache::C`: Pre-computed CubicSplineCache (LU factorization)
-- `y::Vector{T}`: y-values (function values at grid points)
-- `z::Vector{T}`: Pre-computed second derivative coefficients (solves system once!)
+- `y::Vector{Tv}`: y-values (function values at grid points)
+- `z::Vector{Tv}`: Pre-computed second derivative coefficients (solves system once!)
 - `bc::BC`: Boundary condition used for this interpolant
 - `extrap::ExtrapVal`: Extrapolation mode (union-split for efficient dispatch)
 - `search_policy::P`: Default search policy for interval lookup
@@ -111,6 +112,12 @@ val = itp(0.5)                              # scalar (zero-allocation)
 itp = cubic_interp(x, y; search=LinearBinary())
 val = itp(0.5)                              # uses LinearBinary() by default
 val = itp(0.5; search=Binary())             # override with Binary()
+
+# Complex values
+x = [0.0, 1.0, 2.0, 3.0, 4.0]
+y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
+itp = cubic_interp(x, y)
+val = itp(0.5)  # returns ComplexF64
 ```
 
 # Performance Notes
@@ -119,28 +126,28 @@ val = itp(0.5; search=Binary())             # override with Binary()
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Extrapolation mode uses union-splitting for near-zero overhead dispatch
 """
-struct CubicInterpolant{T<:AbstractFloat,C<:CubicSplineCache{T},P<:AbstractSearchPolicy,BC<:CubicBC{T}} <: AbstractInterpolant{T}
+struct CubicInterpolant{Tg<:AbstractFloat,Tv,C<:CubicSplineCache{Tg},P<:AbstractSearchPolicy,BC<:CubicBC} <: AbstractInterpolant{Tg, Tv}
     cache::C
-    y::Vector{T}
-    z::Vector{T}  # Pre-computed second derivative coefficients
+    y::Vector{Tv}
+    z::Vector{Tv}  # Pre-computed second derivative coefficients (value type)
     bc::BC  # Boundary condition used for this interpolant
     extrap::ExtrapVal  # Extrapolation mode (concrete union for union-splitting)
     search_policy::P  # Default search policy (immutable, thread-safe)
     function CubicInterpolant(
         cache::C,
-        y::AbstractVector{T},
-        z::AbstractVector{T},
+        y::AbstractVector{Tv},
+        z::AbstractVector{Tv},
         bc::BC,
         extrap::ExtrapVal,
         search::P=Binary()
-    ) where {T<:AbstractFloat, C<:CubicSplineCache{T}, P<:AbstractSearchPolicy, BC<:CubicBC{T}}
+    ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, P<:AbstractSearchPolicy, BC<:CubicBC}
         @assert length(cache.x) == length(y) "cache grid and y must have same length"
         @assert length(cache.x) == length(z) "z coefficients must match grid length"
         # Always copy to ensure immutability: once constructed, the interpolant
         # owns its data and always returns identical results for the same query.
         # Without copying, external modifications to y or cache reuse could
         # silently corrupt results.
-        new{T,C,P,BC}(cache, Vector{T}(y), Vector{T}(z), bc, extrap, search)
+        new{Tg,Tv,C,P,BC}(cache, Vector{Tv}(y), Vector{Tv}(z), bc, extrap, search)
     end
 end
 
@@ -149,25 +156,28 @@ end
 # ========================================
 
 """
-    TransposeSnapshot{T}
+    TransposeSnapshot{Tv}
 
 Immutable snapshot of point-contiguous (transposed) matrices.
 
 Used for atomic swap in multi-series cubic interpolants to ensure thread-safe
 lazy initialization of point-contiguous layout.
 
+# Type Parameters
+- `Tv`: Value type (can be Real or Complex)
+
 # Fields
-- `y_point::Union{Nothing, Matrix{T}}`: Point-contiguous y values (n_series × n_points)
-- `z_point::Union{Nothing, Matrix{T}}`: Point-contiguous z values (n_series × n_points)
+- `y_point::Union{Nothing, Matrix{Tv}}`: Point-contiguous y values (n_series × n_points)
+- `z_point::Union{Nothing, Matrix{Tv}}`: Point-contiguous z values (n_series × n_points)
 
 # Thread Safety
 Used with atomic operations for lock-free lazy initialization.
 Multiple threads may compute the transpose simultaneously (benign duplication).
 """
-struct TransposeSnapshot{T<:AbstractFloat}
-    y_point::Union{Nothing, Matrix{T}}
-    z_point::Union{Nothing, Matrix{T}}
+struct TransposeSnapshot{Tv}
+    y_point::Union{Nothing, Matrix{Tv}}
+    z_point::Union{Nothing, Matrix{Tv}}
 end
 
 # Empty snapshot constructor
-TransposeSnapshot{T}() where {T<:AbstractFloat} = TransposeSnapshot{T}(nothing, nothing)
+TransposeSnapshot{Tv}() where {Tv} = TransposeSnapshot{Tv}(nothing, nothing)

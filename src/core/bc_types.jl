@@ -4,88 +4,116 @@
 # Types and normalization for specifying endpoint boundary conditions.
 # Used by cubic splines and can be extended to other interpolation methods.
 #
+# DESIGN: Type-Free Abstract Types with Tv on Concrete Types Only
+# ===============================================================
+# Abstract types (AbstractBC, PointBC) have NO type parameters.
+# Only concrete types holding values (Deriv1, Deriv2, Deriv3) have Tv parameter.
+# This enables:
+# - Clean lazy types: PolyFit{D} <: PointBC (no Nothing type parameter)
+# - Natural Complex support: Deriv1{ComplexF64} still works
+# - Cache efficiency via bc_structure() trait (unchanged)
+#
+# - Deriv1{ComplexF64}(1.0+2.0im) - Complex BC value
+# - Deriv1{Float64}(0.5) - Real BC value
+# - bc_structure(::Deriv1) = Val(:deriv1) - Same structure, same cache
+#
 # Type Hierarchy:
-#   AbstractBC{T}
-#   ├── PointBC{T}           # Single-point BC (abstract)
-#   │   ├── Deriv1{T}            # User-specified first derivative
-#   │   ├── Deriv2{T}            # User-specified second derivative
-#   │   ├── Deriv3{T}            # User-specified third derivative
-#   │   └── PolyFit{D, T}        # D-degree polynomial fit (auto-estimated)
+#   AbstractBC                    # No type parameter
+#   ├── PointBC                   # No type parameter (abstract)
+#   │   ├── Deriv1{Tv}            # User-specified first derivative (has Tv)
+#   │   ├── Deriv2{Tv}            # User-specified second derivative (has Tv)
+#   │   ├── Deriv3{Tv}            # User-specified third derivative (has Tv)
+#   │   └── PolyFit{D}            # D-degree polynomial fit (lazy, just D)
 #   │       ├── LinearFit   = PolyFit{1}  (2 points, O(h))
 #   │       ├── QuadraticFit = PolyFit{2}  (3 points, O(h²))
 #   │       └── CubicFit    = PolyFit{3}  (4 points, O(h³))
-#   ├── BCPair{T,L,R}        # Both endpoints
-#   ├── PeriodicBC{T}        # Periodic BC
-#   ├── NaturalBC{T}         # Natural BC (zero curvature at ends)
-#   ├── ClampedBC{T}         # Clamped BC (zero slope at ends)
-#   ├── MinCurvFit{T}        # Minimum curvature BC (quadratic splines)
-#   ├── Left{T,B}            # Endpoint wrapper: BC at left (x[1])
-#   └── Right{T,B}           # Endpoint wrapper: BC at right (x[end])
+#   ├── BCPair{L,R}           # Both endpoints (L, R are PointBC subtypes)
+#   ├── PeriodicBC            # Periodic BC (singleton, structure-only)
+#   ├── NaturalBC             # Natural BC (singleton, normalized to Deriv2{Tv})
+#   ├── ClampedBC             # Clamped BC (singleton, normalized to Deriv1{Tv})
+#   ├── MinCurvFit            # Minimum curvature BC (singleton, quadratic splines)
+#   ├── Left{B}               # Endpoint wrapper: BC at left (x[1])
+#   └── Right{B}              # Endpoint wrapper: BC at right (x[end])
 
 """
-    AbstractBC{T<:AbstractFloat}
+    AbstractBC
 
 Abstract base type for all boundary condition specifications.
+Type-free design: no type parameter on the abstract type.
+Concrete subtypes with values (Deriv1, Deriv2, Deriv3) carry their own Tv parameter.
 
 # Subtypes
-- `NaturalBC{T}`: Natural BC (zero curvature at both ends) - default
-- `ClampedBC{T}`: Clamped BC (zero slope at both ends)
-- `PeriodicBC{T}`: Periodic boundary condition
-- `PointBC{T}`: Single-point derivative conditions (Deriv1, Deriv2)
-- `BCPair{T,L,R}`: Pair of left/right boundary conditions
-- `Left{T,B}`: Endpoint wrapper for BC at left (x[1]) - used by quadratic splines
-- `Right{T,B}`: Endpoint wrapper for BC at right (x[end]) - used by quadratic splines
+- `NaturalBC`: Natural BC (zero curvature at both ends) - singleton
+- `ClampedBC`: Clamped BC (zero slope at both ends) - singleton
+- `PeriodicBC`: Periodic boundary condition - singleton
+- `PointBC`: Single-point derivative conditions (abstract)
+- `BCPair{L,R}`: Pair of left/right boundary conditions
+- `Left{B}`: Endpoint wrapper for BC at left (x[1]) - used by quadratic splines
+- `Right{B}`: Endpoint wrapper for BC at right (x[end]) - used by quadratic splines
 """
-abstract type AbstractBC{T<:AbstractFloat} end
+abstract type AbstractBC end
 
 """
-    PointBC{T<:AbstractFloat} <: AbstractBC{T}
+    PointBC <: AbstractBC
 
 Abstract type for single-point boundary conditions.
 Represents a derivative condition at one endpoint.
+Type-free design: concrete subtypes carry their own Tv parameter.
 
 # Subtypes
-- `Deriv1{T}`: First derivative (slope) BC
-- `Deriv2{T}`: Second derivative (curvature) BC
+- `Deriv1{Tv}`: First derivative (slope) BC
+- `Deriv2{Tv}`: Second derivative (curvature) BC
+- `Deriv3{Tv}`: Third derivative BC
+- `PolyFit{D}`: Polynomial fit (lazy, no Tv until materialization)
 """
-abstract type PointBC{T<:AbstractFloat} <: AbstractBC{T} end
+abstract type PointBC <: AbstractBC end
 
 """
-    Deriv1{T<:AbstractFloat} <: PointBC{T}
+    Deriv1{Tv} <: PointBC
 
 First derivative (slope) boundary condition: S'(endpoint) = val
 
+The type parameter `Tv` is the value type, supporting both Real and Complex.
+
 # Example
 ```julia
-Deriv1(0.5)  # Slope of 0.5 at endpoint
-Deriv1(0)    # Zero slope (horizontal tangent)
+Deriv1(0.5)           # Slope of 0.5 at endpoint (Float64)
+Deriv1(0)             # Zero slope (horizontal tangent)
+Deriv1(1.0+2.0im)     # Complex slope (ComplexF64)
 ```
 """
-struct Deriv1{T<:AbstractFloat} <: PointBC{T}
-    val::T
+struct Deriv1{Tv} <: PointBC
+    val::Tv
 end
+# Outer constructors for backward compatibility
 Deriv1(v::Real) = Deriv1{typeof(float(v))}(float(v))
-Deriv1{T}(bc::Deriv1) where {T<:AbstractFloat} = Deriv1{T}(T(bc.val))
+Deriv1(v::Complex{T}) where {T<:AbstractFloat} = Deriv1{Complex{T}}(v)
+Deriv1{Tv}(bc::Deriv1) where {Tv} = Deriv1{Tv}(convert(Tv, bc.val))
 
 """
-    Deriv2{T<:AbstractFloat} <: PointBC{T}
+    Deriv2{Tv} <: PointBC
 
 Second derivative (curvature) boundary condition: S''(endpoint) = val
 
+The type parameter `Tv` is the value type, supporting both Real and Complex.
+
 # Example
 ```julia
-Deriv2(0)    # Natural BC (zero curvature)
-Deriv2(1.5)  # Specified curvature at endpoint
+Deriv2(0)             # Natural BC (zero curvature)
+Deriv2(1.5)           # Specified curvature at endpoint
+Deriv2(0.0+0.0im)     # Complex curvature
 ```
 """
-struct Deriv2{T<:AbstractFloat} <: PointBC{T}
-    val::T
+struct Deriv2{Tv} <: PointBC
+    val::Tv
 end
+# Outer constructors for backward compatibility
 Deriv2(v::Real) = Deriv2{typeof(float(v))}(float(v))
-Deriv2{T}(bc::Deriv2) where {T<:AbstractFloat} = Deriv2{T}(T(bc.val))
+Deriv2(v::Complex{T}) where {T<:AbstractFloat} = Deriv2{Complex{T}}(v)
+Deriv2{Tv}(bc::Deriv2) where {Tv} = Deriv2{Tv}(convert(Tv, bc.val))
 
 """
-    Deriv3{T<:AbstractFloat} <: PointBC{T}
+    Deriv3{Tv} <: PointBC
 
 Third derivative boundary condition: S'''(endpoint) = val
 
@@ -93,68 +121,76 @@ For cubic splines, the third derivative is constant within each interval:
 S'''(x) = (z[i+1] - z[i]) / h[i]. This BC specifies the third derivative
 value at the first (or last) interval.
 
+The type parameter `Tv` is the value type, supporting both Real and Complex.
+
 # Example
 ```julia
-Deriv3(0)    # Zero third derivative at endpoint
-Deriv3(1.0)  # Specified third derivative
+Deriv3(0)             # Zero third derivative at endpoint
+Deriv3(1.0)           # Specified third derivative
+Deriv3(0.0+0.0im)     # Complex third derivative
 ```
 """
-struct Deriv3{T<:AbstractFloat} <: PointBC{T}
-    val::T
+struct Deriv3{Tv} <: PointBC
+    val::Tv
 end
+# Outer constructors for backward compatibility
 Deriv3(v::Real) = Deriv3{typeof(float(v))}(float(v))
-Deriv3{T}(bc::Deriv3) where {T<:AbstractFloat} = Deriv3{T}(T(bc.val))
+Deriv3(v::Complex{T}) where {T<:AbstractFloat} = Deriv3{Complex{T}}(v)
+Deriv3{Tv}(bc::Deriv3) where {Tv} = Deriv3{Tv}(convert(Tv, bc.val))
 
 """
-    BCPair{T, L<:PointBC{T}, R<:PointBC{T}} <: AbstractBC{T}
+    BCPair{L<:PointBC, R<:PointBC} <: AbstractBC
 
 Container for left and right boundary conditions with type parameters for zero-overhead dispatch.
 The BC types are encoded in the type parameters, enabling compile-time specialization.
 
+Type-free design: no Tv parameter on BCPair itself. The value type is determined by
+the concrete L and R types (e.g., `BCPair{Deriv1{Float64}, Deriv2{Float64}}`).
+
 # Type Parameters
-- `T`: Float type
-- `L`: Left boundary condition type (Deriv1{T} or Deriv2{T})
-- `R`: Right boundary condition type (Deriv1{T} or Deriv2{T})
+- `L`: Left boundary condition type (Deriv1{Tv}, Deriv2{Tv}, PolyFit{D}, etc.)
+- `R`: Right boundary condition type (Deriv1{Tv}, Deriv2{Tv}, PolyFit{D}, etc.)
 
 # Example
 ```julia
-bc = BCPair(Deriv1(0.5), Deriv2(0))  # Left: slope=0.5, Right: natural
+bc = BCPair(Deriv1(0.5), Deriv2(0))           # Left: slope=0.5, Right: natural
+bc = BCPair(Deriv1(1.0+0.0im), Deriv2(0.0im)) # Complex BC
+bc = BCPair(CubicFit(), Deriv2(0.0))          # Mixed: lazy left, concrete right
 ```
 """
-struct BCPair{T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}} <: AbstractBC{T}
+struct BCPair{L<:PointBC, R<:PointBC} <: AbstractBC
     left::L
     right::R
 end
 
 # Convenience constructor from tuple
-BCPair(t::Tuple{L, R}) where {T<:AbstractFloat, L<:PointBC{T}, R<:PointBC{T}} =
-    BCPair{T,L,R}(t[1], t[2])
+BCPair(t::Tuple{L, R}) where {L<:PointBC, R<:PointBC} =
+    BCPair{L,R}(t[1], t[2])
 
 
 """
-    PeriodicBC{T<:AbstractFloat} <: AbstractBC{T}
+    PeriodicBC <: AbstractBC
 
 Periodic boundary condition: S(x_0) = S(x_n), S'(x_0) = S'(x_n), S''(x_0) = S''(x_n)
 
-This is a user-facing type. Internally, periodic BC uses Sherman-Morrison
-solver with `PeriodicData{T}` for the cache.
+This is a singleton type (structure-only, no value parameter).
+Internally, periodic BC uses Sherman-Morrison solver with `PeriodicData{T}` for the cache.
 
 # Example
 ```julia
 cache = CubicSplineCache(x; bc=PeriodicBC())
 ```
 """
-struct PeriodicBC{T<:AbstractFloat} <: AbstractBC{T} end
-PeriodicBC() = PeriodicBC{Float64}()
-PeriodicBC{T}(::PeriodicBC) where {T<:AbstractFloat} = PeriodicBC{T}()
+struct PeriodicBC <: AbstractBC end
 
 """
-    NaturalBC{T<:AbstractFloat} <: AbstractBC{T}
+    NaturalBC <: AbstractBC
 
 Natural boundary condition: S''(endpoints) = 0 (zero curvature at both ends).
 Equivalent to `BCPair(Deriv2(0), Deriv2(0))`.
 
-This is the default BC for cubic spline interpolation.
+This is a singleton type (structure-only). Normalized to `BCPair` with
+`Deriv2(zero(Tv))` at both ends based on the value type during interpolant construction.
 
 # Example
 ```julia
@@ -162,36 +198,32 @@ itp = cubic_interp(x, y; bc=NaturalBC())  # Default
 itp = cubic_interp(x, y)                   # Same as above
 ```
 """
-struct NaturalBC{T<:AbstractFloat} <: AbstractBC{T} end
-NaturalBC() = NaturalBC{Float64}()
-NaturalBC{T}(::NaturalBC) where {T<:AbstractFloat} = NaturalBC{T}()
+struct NaturalBC <: AbstractBC end
 
 """
-    ClampedBC{T<:AbstractFloat} <: AbstractBC{T}
+    ClampedBC <: AbstractBC
 
 Clamped boundary condition: S'(endpoints) = 0 (zero slope at both ends).
 Equivalent to `BCPair(Deriv1(0), Deriv1(0))`.
 
-Also known as "complete" spline with zero derivative.
+This is a singleton type (structure-only). Normalized to `BCPair` with
+`Deriv1(zero(Tv))` at both ends based on the value type during interpolant construction.
 
 # Example
 ```julia
 itp = cubic_interp(x, y; bc=ClampedBC())
 ```
 """
-struct ClampedBC{T<:AbstractFloat} <: AbstractBC{T} end
-ClampedBC() = ClampedBC{Float64}()
-ClampedBC{T}(::ClampedBC) where {T<:AbstractFloat} = ClampedBC{T}()
+struct ClampedBC <: AbstractBC end
 
 """
-    MinCurvFit{T<:AbstractFloat} <: AbstractBC{T}
+    MinCurvFit <: AbstractBC
 
 Minimum curvature boundary condition for quadratic splines.
 Minimizes total curvature (∫S''² dx) by optimizing the initial slope d[1].
 
-This produces globally smooth interpolation by finding the optimal d[1] that
-minimizes the integrated squared second derivative. The optimal d[1] is computed
-using a closed-form solution in O(n) time with no additional allocation.
+This is a singleton type (structure-only). The optimization is performed
+during interpolant construction based on the actual data values.
 
 # Mathematical Background
 For quadratic splines, the slope d[i] depends on d[1] via recurrence:
@@ -215,26 +247,26 @@ itp_default = quadratic_interp(x, y)
 itp_smooth = quadratic_interp(x, y; bc=MinCurvFit())
 ```
 """
-struct MinCurvFit{T<:AbstractFloat} <: AbstractBC{T} end
-MinCurvFit() = MinCurvFit{Float64}()
-MinCurvFit{T}(::MinCurvFit) where {T<:AbstractFloat} = MinCurvFit{T}()
+struct MinCurvFit <: AbstractBC end
 
 # ========================================
 # Polynomial Fit Boundary Conditions
 # ========================================
 
 """
-    PolyFit{D, T<:AbstractFloat} <: PointBC{T}
+    PolyFit{D} <: PointBC
 
-Generic polynomial fitting boundary condition.
+Generic polynomial fitting boundary condition (lazy).
 
 Fits a degree-D polynomial through (D+1) points at the endpoint and evaluates
 its derivative. This automatically estimates the first derivative from data
 without requiring user-specified values.
 
+This is a **lazy** type with no value parameter. The actual derivative value
+is computed during `materialize_bc()` based on the data's value type (Tv).
+
 # Type Parameters
 - `D::Int`: Polynomial degree (1=linear, 2=quadratic, 3=cubic, ...)
-- `T`: Floating point type
 
 # Relationships
     Points needed = D + 1
@@ -267,17 +299,14 @@ itp = cubic_interp(x, y; bc=PolyFit{3}())
 
 See also: [`LinearFit`](@ref), [`QuadraticFit`](@ref), [`CubicFit`](@ref), [`Deriv1`](@ref)
 """
-struct PolyFit{D, T<:AbstractFloat} <: PointBC{T}
-    function PolyFit{D, T}() where {D, T<:AbstractFloat}
+struct PolyFit{D} <: PointBC
+    function PolyFit{D}() where {D}
         D isa Int || throw(ArgumentError("Polynomial degree D must be an integer"))
         D >= 1 || throw(ArgumentError("Polynomial degree must be ≥ 1, got $D"))
-        new{D, T}()
+        new{D}()
     end
 end
 
-# Convenience constructors
-PolyFit{D}() where {D} = PolyFit{D, Float64}()
-PolyFit{D, T}(::PolyFit{D}) where {D, T<:AbstractFloat} = PolyFit{D, T}()
 
 # ----------------------------------------
 # Type Aliases: Named convenience types
@@ -295,11 +324,9 @@ Points needed: 2
 # Example
 ```julia
 itp = cubic_interp(x, y; bc=LinearFit())
-itp32 = cubic_interp(Float32.(x), Float32.(y); bc=LinearFit{Float32}())
 ```
 """
-const LinearFit{T<:AbstractFloat} = PolyFit{1, T}
-LinearFit() = LinearFit{Float64}()
+const LinearFit = PolyFit{1}
 
 """
     QuadraticFit = PolyFit{2}
@@ -319,11 +346,9 @@ For uniform grids: `f'(x₁) ≈ (-3f₁ + 4f₂ - f₃) / (2h)`
 ```julia
 # Default BC for quadratic splines
 itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
-itp32 = quadratic_interp(Float32.(x), Float32.(y); bc=Left(QuadraticFit{Float32}()))
 ```
 """
-const QuadraticFit{T<:AbstractFloat} = PolyFit{2, T}
-QuadraticFit() = QuadraticFit{Float64}()
+const QuadraticFit = PolyFit{2}
 
 """
     ParabolaFit
@@ -356,31 +381,64 @@ For uniform grids:
 ```julia
 # Recommended BC for cubic splines when derivative is unknown
 itp = cubic_interp(x, y; bc=CubicFit())
-itp32 = cubic_interp(Float32.(x), Float32.(y); bc=CubicFit{Float32}())
 
 # Mixed with other BCs
 itp = cubic_interp(x, y; bc=BCPair(CubicFit(), Deriv2(0)))
 ```
 """
-const CubicFit{T<:AbstractFloat} = PolyFit{3, T}
-CubicFit() = CubicFit{Float64}()
+const CubicFit = PolyFit{3}
+
+
+# ========================================
+# BC Structure Trait (for Cache Keys)
+# ========================================
+# Thomas factorization depends only on BC **structure**, not on BC **values**.
+# This trait enables cache sharing between Float64 and ComplexF64 interpolants
+# with the same BC structure.
+
+"""
+    bc_structure(bc) -> Val{Symbol}
+
+Return the structural identity of a BC for cache key purposes.
+Different Tv types with the same structure share the same cache.
+
+# Example
+```julia
+bc_structure(Deriv1{Float64}(0.5))       # → Val(:deriv1)
+bc_structure(Deriv1{ComplexF64}(1.0im))  # → Val(:deriv1)  # Same!
+bc_structure(Deriv2{Float64}(0.0))       # → Val(:deriv2)
+bc_structure(PolyFit{2}())               # → Val(:polyfit_2)
+```
+"""
+@inline bc_structure(::Deriv1) = Val(:deriv1)
+@inline bc_structure(::Deriv2) = Val(:deriv2)
+@inline bc_structure(::Deriv3) = Val(:deriv3)
+@inline bc_structure(::PolyFit{D}) where {D} = Val(Symbol(:polyfit_, D))
+@inline bc_structure(::NaturalBC) = Val(:natural)
+@inline bc_structure(::ClampedBC) = Val(:clamped)
+@inline bc_structure(::PeriodicBC) = Val(:periodic)
+@inline bc_structure(::MinCurvFit) = Val(:mincurvfit)
+@inline bc_structure(bc::BCPair) = (bc_structure(bc.left), bc_structure(bc.right))
+# Note: bc_structure for Left/Right is defined after those types (see below)
 
 
 # ========================================
 # Type Promotion Helpers
 # ========================================
-# Generic promotion for extensibility (D0, D3, etc. in future)
+# Promote BC values to target value type Tv.
 
 """
-    _promote_pointbc(bc::PointBC, ::Type{T}) -> PointBC{T}
+    _promote_pointbc(bc::PointBC, ::Type{Tv}) -> PointBC
 
-Promote a PointBC to a specific float type T.
+Promote a PointBC to a specific value type Tv.
+For concrete types (Deriv1, Deriv2, Deriv3), returns Deriv*{Tv} with converted value.
+For lazy types (PolyFit), returns the same type unchanged.
 Extensible: add methods for new PointBC subtypes.
 """
-@inline _promote_pointbc(bc::Deriv1, ::Type{T}) where {T<:AbstractFloat} = Deriv1{T}(T(bc.val))
-@inline _promote_pointbc(bc::Deriv2, ::Type{T}) where {T<:AbstractFloat} = Deriv2{T}(T(bc.val))
-@inline _promote_pointbc(bc::Deriv3, ::Type{T}) where {T<:AbstractFloat} = Deriv3{T}(T(bc.val))
-@inline _promote_pointbc(::PolyFit{D}, ::Type{T}) where {D, T<:AbstractFloat} = PolyFit{D, T}()
+@inline _promote_pointbc(bc::Deriv1, ::Type{Tv}) where {Tv} = Deriv1{Tv}(convert(Tv, bc.val))
+@inline _promote_pointbc(bc::Deriv2, ::Type{Tv}) where {Tv} = Deriv2{Tv}(convert(Tv, bc.val))
+@inline _promote_pointbc(bc::Deriv3, ::Type{Tv}) where {Tv} = Deriv3{Tv}(convert(Tv, bc.val))
+@inline _promote_pointbc(::PolyFit{D}, ::Type{Tv}) where {D, Tv} = PolyFit{D}()  # Lazy, no value
 
 
 # ========================================
@@ -388,9 +446,10 @@ Extensible: add methods for new PointBC subtypes.
 # ========================================
 
 """
-    _normalize_bc(bc::AbstractBC, ::Type{T}) -> BCPair{T}
+    _normalize_bc(bc::AbstractBC, ::Type{Tv}) -> BCPair
 
-Convert BC specification to normalized BCPair form for cache construction.
+Convert BC specification to normalized BCPair form for solver construction.
+The type parameter Tv is the **value type** (Float64, ComplexF64, etc.).
 
 Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 `_normalize_bc` is called. This function only handles derivative BCs.
@@ -402,33 +461,68 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 - `PointBC` (Deriv1/Deriv2): Single BC applied symmetrically to both ends
 
 # Returns
-- `BCPair{T}`: Normalized boundary condition pair
+- `BCPair{L,R}`: Normalized boundary condition pair
 """
 # NaturalBC → BCPair(Deriv2(0), Deriv2(0))
-@inline _normalize_bc(::NaturalBC, ::Type{T}) where {T<:AbstractFloat} = BCPair(Deriv2(zero(T)), Deriv2(zero(T)))
+@inline _normalize_bc(::NaturalBC, ::Type{Tv}) where {Tv} = BCPair(Deriv2(zero(Tv)), Deriv2(zero(Tv)))
 
 # ClampedBC → BCPair(Deriv1(0), Deriv1(0))
-@inline _normalize_bc(::ClampedBC, ::Type{T}) where {T<:AbstractFloat} = BCPair(Deriv1(zero(T)), Deriv1(zero(T)))
+@inline _normalize_bc(::ClampedBC, ::Type{Tv}) where {Tv} = BCPair(Deriv1(zero(Tv)), Deriv1(zero(Tv)))
 
-# BCPair passthrough (already normalized)
-@inline _normalize_bc(bc::BCPair{T}, ::Type{T}) where {T<:AbstractFloat} = bc
-
-# BCPair with type promotion
-@inline function _normalize_bc(bc::BCPair, ::Type{T}) where {T<:AbstractFloat}
-    left_t = _promote_pointbc(bc.left, T)
-    right_t = _promote_pointbc(bc.right, T)
+# BCPair with type promotion (general case - promotes inner BCs to Tv)
+@inline function _normalize_bc(bc::BCPair, ::Type{Tv}) where {Tv}
+    left_t = _promote_pointbc(bc.left, Tv)
+    right_t = _promote_pointbc(bc.right, Tv)
     return BCPair(left_t, right_t)
 end
 
-# Single PointBC → symmetric BCPair (same BC at both ends)
-@inline function _normalize_bc(bc::PointBC{T}, ::Type{T}) where {T<:AbstractFloat}
-    return BCPair(bc, bc)
+# Single PointBC → symmetric BCPair (same BC at both ends, with type promotion)
+@inline function _normalize_bc(bc::PointBC, ::Type{Tv}) where {Tv}
+    bc_t = _promote_pointbc(bc, Tv)
+    return BCPair(bc_t, bc_t)
 end
 
-# Single PointBC with type promotion
-@inline function _normalize_bc(bc::PointBC, ::Type{T}) where {T<:AbstractFloat}
-    bc_t = _promote_pointbc(bc, T)
-    return BCPair(bc_t, bc_t)
+
+# ========================================
+# Cache-Compatible BC Conversion
+# ========================================
+
+"""
+    _cache_pointbc(bc::PointBC, ::Type{T}) -> PointBC
+
+Convert a PointBC to cache-compatible form with value type T.
+
+For lazy types like PolyFit{D}, this converts to Deriv1{T}(zero(T)) since
+PolyFit uses the same matrix structure as Deriv1 (first-derivative BC).
+This enables cache sharing across different PolyFit degrees.
+
+For concrete types (Deriv1, Deriv2, Deriv3), promotes value to type T.
+"""
+@inline _cache_pointbc(bc::Deriv1, ::Type{T}) where {T} = Deriv1{T}(convert(T, bc.val))
+@inline _cache_pointbc(bc::Deriv2, ::Type{T}) where {T} = Deriv2{T}(convert(T, bc.val))
+@inline _cache_pointbc(bc::Deriv3, ::Type{T}) where {T} = Deriv3{T}(convert(T, bc.val))
+# PolyFit → Deriv1 (same matrix structure, zero value for cache key)
+@inline _cache_pointbc(::PolyFit, ::Type{T}) where {T} = Deriv1{T}(zero(T))
+
+"""
+    _cache_bc_pair(bc_pair::BCPair, ::Type{T}) -> BCPair{L, R}
+
+Convert a BCPair to cache-compatible form with value type T.
+
+For BCPair containing lazy types (PolyFit), converts to concrete types
+suitable for cache lookup. PolyFit → Deriv1 (same matrix structure).
+
+# Arguments
+- `bc_pair`: BCPair (may contain lazy types like PolyFit)
+- `T`: Target value type (Float64, Float32, etc.)
+
+# Returns
+BCPair{L, R} suitable for cache key matching.
+"""
+@inline function _cache_bc_pair(bc::BCPair, ::Type{T}) where {T}
+    left = _cache_pointbc(bc.left, T)
+    right = _cache_pointbc(bc.right, T)
+    return BCPair(left, right)
 end
 
 
@@ -437,18 +531,18 @@ end
 # ========================================
 
 """
-    _normalize_bc_array(bcs, T, n_series) -> AbstractVector{<:BCPair{T}}
+    _normalize_bc_array(bcs, Tv, n_series) -> Vector{<:BCPair}
 
 Normalize an array of BCs to BCPair for per-series boundary conditions.
 
 # Arguments
 - `bcs`: Array of AbstractBC (length must equal n_series)
-- `T`: Target float type
+- `Tv`: Target value type (Float64, ComplexF64, etc.)
 - `n_series`: Expected number of series
 
 # Returns
-- If input is already `AbstractVector{<:BCPair{T}}`: returns input unchanged (zero allocation)
-- Otherwise: `Vector{BCPair{T}}` of normalized boundary conditions
+- If input is already `AbstractVector{<:BCPair}`: returns input unchanged (zero allocation)
+- Otherwise: `Vector` of normalized BCPair boundary conditions
 
 # Throws
 - `DimensionMismatch`: if length(bcs) != n_series
@@ -456,24 +550,24 @@ Normalize an array of BCs to BCPair for per-series boundary conditions.
 """
 function _normalize_bc_array end
 
-# Fast path: already BCPair{T} - zero allocation, inline away
+# Fast path: already BCPair - zero allocation, inline away
 @inline function _normalize_bc_array(
-    bcs::AbstractVector{<:BCPair{T}},
-    ::Type{T},
+    bcs::AbstractVector{<:BCPair},
+    ::Type{Tv},
     n_series::Int
-) where {T<:AbstractFloat}
+) where {Tv}
     length(bcs) == n_series || throw(DimensionMismatch(
         "BC array length $(length(bcs)) does not match n_series $n_series"
     ))
     return bcs  # No conversion needed
 end
 
-# General path: needs normalization to BCPair{T}
+# General path: needs normalization to BCPair
 function _normalize_bc_array(
     bcs::AbstractVector{<:AbstractBC},
-    ::Type{T},
+    ::Type{Tv},
     n_series::Int
-) where {T<:AbstractFloat}
+) where {Tv}
     length(bcs) == n_series || throw(DimensionMismatch(
         "BC array length $(length(bcs)) does not match n_series $n_series"
     ))
@@ -488,8 +582,8 @@ function _normalize_bc_array(
         end
     end
 
-    # Create new Vector{BCPair{T}} with normalized BCs
-    return BCPair{T}[_normalize_bc(bc, T) for bc in bcs]
+    # Create new Vector with normalized BCs (type inferred from Tv)
+    return [_normalize_bc(bc, Tv) for bc in bcs]
 end
 
 
@@ -511,14 +605,14 @@ Check if a boundary condition is periodic.
 # ========================================
 
 """
-    CubicBC{T} = Union{PointBC{T}, BCPair{T,...}, PeriodicBC{T}}
+    CubicBC = Union{PointBC, BCPair, PeriodicBC}
 
 Type alias for boundary conditions accepted by cubic spline interpolants.
 
-Encompasses:
-- `PointBC{T}`: Single-point BC (Deriv1, Deriv2, Deriv3) - promoted to BCPair internally
-- `BCPair{T,L,R}`: Explicit left/right BC pair
-- `PeriodicBC{T}`: Periodic boundary condition
+With the Type-Free design, this is a simple union without type parameters:
+- `PointBC`: Single-point BC (Deriv1{Tv}, Deriv2{Tv}, Deriv3{Tv}, PolyFit{D}) - promoted to BCPair internally
+- `BCPair{L,R}`: Left/right BC pair (L, R are PointBC subtypes)
+- `PeriodicBC`: Periodic boundary condition (singleton)
 
 This type is used as a constraint for the `bc` field in `CubicInterpolant`,
 ensuring type safety while allowing all valid cubic spline BC types.
@@ -526,10 +620,13 @@ ensuring type safety while allowing all valid cubic spline BC types.
 # Example
 ```julia
 itp = cubic_interp(x, y; bc=NaturalBC())   # NaturalBC → BCPair stored
-itp.bc  # BCPair{Float64, Deriv2{Float64}, Deriv2{Float64}}
+itp.bc  # BCPair{Deriv2{Float64}, Deriv2{Float64}}
+
+itp = cubic_interp(x, y; bc=CubicFit())    # CubicFit → BCPair stored
+itp.bc  # BCPair{PolyFit{3}, PolyFit{3}}
 ```
 """
-const CubicBC{T} = Union{PointBC{T}, BCPair{T,<:PointBC{T},<:PointBC{T}}, PeriodicBC{T}} where {T<:AbstractFloat}
+const CubicBC = Union{PointBC, BCPair, PeriodicBC}
 
 
 # ========================================
@@ -537,38 +634,51 @@ const CubicBC{T} = Union{PointBC{T}, BCPair{T,<:PointBC{T},<:PointBC{T}}, Period
 # ========================================
 
 """
-    Left{T, B<:PointBC{T}} <: AbstractBC{T}
+    Left{B<:PointBC} <: AbstractBC
 
 Wrapper indicating BC is applied at left endpoint (x[1]).
 Used for quadratic splines where only one endpoint BC is specified.
 
+The type parameter `B` is the inner PointBC type, which carries the value type Tv
+for concrete types (Deriv1{Tv}, etc.) or just the degree D for lazy types (PolyFit{D}).
+
 # Example
 ```julia
-bc = Left(Deriv1(0.5))   # slope = 0.5 at left endpoint
-bc = Left(Deriv2(0.0))   # curvature = 0 at left endpoint
+bc = Left(Deriv1(0.5))        # slope = 0.5 at left endpoint
+bc = Left(Deriv2(0.0))        # curvature = 0 at left endpoint
+bc = Left(Deriv1(1.0+2.0im))  # Complex slope
+bc = Left(QuadraticFit())     # Lazy polynomial fit
 ```
 """
-struct Left{T<:AbstractFloat, B<:PointBC{T}} <: AbstractBC{T}
+struct Left{B<:PointBC} <: AbstractBC
     bc::B
 end
-# Note: Julia generates outer constructor automatically: Left(bc::B) where {T,B<:PointBC{T}}
+
 
 """
-    Right{T, B<:PointBC{T}} <: AbstractBC{T}
+    Right{B<:PointBC} <: AbstractBC
 
 Wrapper indicating BC is applied at right endpoint (x[end]).
 Used for quadratic splines where only one endpoint BC is specified.
 
+The type parameter `B` is the inner PointBC type, which carries the value type Tv
+for concrete types (Deriv1{Tv}, etc.) or just the degree D for lazy types (PolyFit{D}).
+
 # Example
 ```julia
-bc = Right(Deriv1(2.0))  # slope = 2.0 at right endpoint
-bc = Right(Deriv2(0.0))  # curvature = 0 at right endpoint
+bc = Right(Deriv1(2.0))        # slope = 2.0 at right endpoint
+bc = Right(Deriv2(0.0))        # curvature = 0 at right endpoint
+bc = Right(Deriv1(1.0+2.0im))  # Complex slope
+bc = Right(QuadraticFit())     # Lazy polynomial fit
 ```
 """
-struct Right{T<:AbstractFloat, B<:PointBC{T}} <: AbstractBC{T}
+struct Right{B<:PointBC} <: AbstractBC
     bc::B
 end
-# Note: Julia generates outer constructor automatically: Right(bc::B) where {T,B<:PointBC{T}}
+
+# bc_structure for Left/Right (must be after type definitions)
+@inline bc_structure(bc::Left) = bc_structure(bc.bc)
+@inline bc_structure(bc::Right) = bc_structure(bc.bc)
 
 
 # ========================================
@@ -576,7 +686,7 @@ end
 # ========================================
 
 """
-    materialize_bc(bc::PolyFit{D}, xs, ys, endpoint::Val{:left/:right}) -> Deriv1{T}
+    materialize_bc(bc::PolyFit{D}, xs, ys, endpoint::Val{:left/:right}) -> Deriv1{Tv}
 
 Convert a polynomial-fit BC to a concrete `Deriv1` by estimating the derivative from data.
 
@@ -584,27 +694,31 @@ This "materializes" the lazy `PolyFit{D}` specification into an actual derivativ
 allowing all existing `Deriv1` code paths to work unchanged.
 
 # Arguments
-- `bc::PolyFit{D,T}`: Polynomial fit BC to materialize
-- `xs::AbstractVector{T}`: Grid coordinates
-- `ys::AbstractVector{T}`: Function values at grid points
+- `bc::PolyFit{D}`: Polynomial fit BC to materialize (lazy, no value type)
+- `xs::AbstractVector{Tg}`: Grid coordinates (real-valued)
+- `ys::AbstractVector{Tv}`: Function values at grid points (can be Complex)
 - `endpoint::Val{:left}` or `Val{:right}`: Which endpoint to estimate
 
 # Returns
-- `Deriv1{T}(estimated_value)`: Concrete first derivative BC
+- `Deriv1{Tv}(estimated_value)`: Concrete first derivative BC with value type from ys
 
 # Example
 ```julia
 bc = QuadraticFit()  # = PolyFit{2}
 concrete_bc = materialize_bc(bc, xs, ys, Val(:left))  # → Deriv1{Float64}(computed_value)
+
+# Complex values
+y_complex = [1.0+2.0im, 3.0+4.0im, ...]
+concrete_bc = materialize_bc(bc, xs, y_complex, Val(:left))  # → Deriv1{ComplexF64}(...)
 ```
 
 See also: [`PolyFit`](@ref), [`_estimate_endpoint_derivative`](@ref)
 """
 @inline function materialize_bc(
-    ::PolyFit{D, T}, xs::AbstractVector{T}, ys::AbstractVector{T}, endpoint::Val
-) where {D, T<:AbstractFloat}
+    ::PolyFit{D}, xs::AbstractVector{Tg}, ys::AbstractVector{Tv}, endpoint::Val
+) where {D, Tg<:AbstractFloat, Tv}
     val = _estimate_endpoint_derivative(xs, ys, endpoint, PolyFit{D}())
-    return Deriv1{T}(val)
+    return Deriv1{Tv}(val)  # Natural Deriv1{Tv} return - no workaround needed!
 end
 
 # Passthrough for already-concrete BCs (no materialization needed)
@@ -635,8 +749,8 @@ get_polyfit_degree(Deriv1(0.0))                       # → 0 (no PolyFit)
 ```
 """
 get_polyfit_degree(::PolyFit{D}) where {D} = D
-get_polyfit_degree(::Left{<:AbstractFloat, <:PolyFit{D}}) where {D} = D
-get_polyfit_degree(::Right{<:AbstractFloat, <:PolyFit{D}}) where {D} = D
+get_polyfit_degree(::Left{<:PolyFit{D}}) where {D} = D
+get_polyfit_degree(::Right{<:PolyFit{D}}) where {D} = D
 
 # BCPair: return maximum degree from left and right
 @inline function get_polyfit_degree(bc::BCPair)

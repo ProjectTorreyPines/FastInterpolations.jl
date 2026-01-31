@@ -25,64 +25,58 @@ const POLYFIT_ATOL = 1e-12
 
     @testset "Type Aliases" begin
         # Verify type aliases are truly identical to PolyFit{D}
-        @test LinearFit{Float64} === PolyFit{1, Float64}
-        @test QuadraticFit{Float64} === PolyFit{2, Float64}
-        @test CubicFit{Float64} === PolyFit{3, Float64}
-
-        @test LinearFit{Float32} === PolyFit{1, Float32}
-        @test QuadraticFit{Float32} === PolyFit{2, Float32}
-        @test CubicFit{Float32} === PolyFit{3, Float32}
+        # PolyFit now has only degree parameter (no T parameter)
+        @test LinearFit === PolyFit{1}
+        @test QuadraticFit === PolyFit{2}
+        @test CubicFit === PolyFit{3}
     end
 
     @testset "Type Hierarchy" begin
-        # All PolyFit should be PointBC subtypes
-        @test PolyFit{1, Float64} <: FastInterpolations.PointBC{Float64}
-        @test PolyFit{2, Float64} <: FastInterpolations.PointBC{Float64}
-        @test PolyFit{3, Float64} <: FastInterpolations.PointBC{Float64}
+        # Type-Free design: All PolyFit are PointBC subtypes (no type parameter)
+        @test PolyFit{1} <: FastInterpolations.PointBC
+        @test PolyFit{2} <: FastInterpolations.PointBC
+        @test PolyFit{3} <: FastInterpolations.PointBC
 
-        # PointBC <: AbstractBC
-        @test FastInterpolations.PointBC{Float64} <: AbstractBC{Float64}
+        # Type-Free design: PointBC <: AbstractBC (no type parameters)
+        @test FastInterpolations.PointBC <: AbstractBC
     end
 
     @testset "Default Constructors" begin
-        # Default constructors should return Float64 variant
-        @test LinearFit() isa PolyFit{1, Float64}
-        @test QuadraticFit() isa PolyFit{2, Float64}
-        @test CubicFit() isa PolyFit{3, Float64}
-        @test PolyFit{3}() isa CubicFit{Float64}
+        # Constructors return non-parametric singletons
+        @test LinearFit() isa PolyFit{1}
+        @test QuadraticFit() isa PolyFit{2}
+        @test CubicFit() isa PolyFit{3}
+        @test PolyFit{3}() isa CubicFit
     end
 
-    @testset "Explicit Type Constructors" begin
-        @test LinearFit{Float32}() isa PolyFit{1, Float32}
-        @test QuadraticFit{Float32}() isa PolyFit{2, Float32}
-        @test CubicFit{Float32}() isa PolyFit{3, Float32}
-
-        @test PolyFit{1, Float32}() isa LinearFit{Float32}
-        @test PolyFit{2, Float32}() isa QuadraticFit{Float32}
-        @test PolyFit{3, Float32}() isa CubicFit{Float32}
+    @testset "Singleton Property" begin
+        # All instances of same degree are the same type
+        @test typeof(LinearFit()) === typeof(PolyFit{1}())
+        @test typeof(QuadraticFit()) === typeof(PolyFit{2}())
+        @test typeof(CubicFit()) === typeof(PolyFit{3}())
     end
 
     @testset "Degree Validation" begin
         # Polynomial degree must be >= 1
-        @test_throws ArgumentError PolyFit{0, Float64}()
-        @test_throws ArgumentError PolyFit{-1, Float64}()
+        @test_throws ArgumentError PolyFit{0}()
+        @test_throws ArgumentError PolyFit{-1}()
 
         # Valid degrees should work
-        @test PolyFit{1, Float64}() isa PolyFit{1, Float64}
-        @test PolyFit{4, Float64}() isa PolyFit{4, Float64}  # Higher orders
+        @test PolyFit{1}() isa PolyFit{1}
+        @test PolyFit{4}() isa PolyFit{4}  # Higher orders
     end
 
     @testset "Type Promotion" begin
         # _promote_pointbc should work with generic PolyFit
-        @test FastInterpolations._promote_pointbc(PolyFit{1}(), Float32) isa PolyFit{1, Float32}
-        @test FastInterpolations._promote_pointbc(PolyFit{2}(), Float32) isa PolyFit{2, Float32}
-        @test FastInterpolations._promote_pointbc(PolyFit{3}(), Float32) isa PolyFit{3, Float32}
+        @test FastInterpolations._promote_pointbc(PolyFit{1}(), Float32) isa PolyFit{1}
+        @test FastInterpolations._promote_pointbc(PolyFit{2}(), Float32) isa PolyFit{2}
+        @test FastInterpolations._promote_pointbc(PolyFit{3}(), Float32) isa PolyFit{3}
 
         # Round-trip promotion
-        pf = PolyFit{2, Float64}()
+        pf = PolyFit{2}()
         pf32 = FastInterpolations._promote_pointbc(pf, Float32)
         pf64 = FastInterpolations._promote_pointbc(pf32, Float64)
-        @test pf64 isa PolyFit{2, Float64}
+        @test pf64 isa PolyFit{2}
     end
 
     @testset "Not Periodic" begin
@@ -97,30 +91,43 @@ end
 @testset "PolyFit Normalization and BCPair" begin
 
     @testset "Single PolyFit → Symmetric BCPair" begin
+        # Type-Free design: _normalize_bc promotes to concrete types
+        # PolyFit stays as-is (lazy materialization at solve time)
         bc1 = FastInterpolations._normalize_bc(LinearFit(), Float64)
-        @test bc1 isa BCPair{Float64, PolyFit{1, Float64}, PolyFit{1, Float64}}
+        @test bc1 isa BCPair{PolyFit{1}, PolyFit{1}}
 
         bc2 = FastInterpolations._normalize_bc(QuadraticFit(), Float64)
-        @test bc2 isa BCPair{Float64, PolyFit{2, Float64}, PolyFit{2, Float64}}
+        @test bc2 isa BCPair{PolyFit{2}, PolyFit{2}}
 
         bc3 = FastInterpolations._normalize_bc(CubicFit(), Float64)
-        @test bc3 isa BCPair{Float64, PolyFit{3, Float64}, PolyFit{3, Float64}}
+        @test bc3 isa BCPair{PolyFit{3}, PolyFit{3}}
     end
 
     @testset "Type Promotion in Normalization" begin
-        bc = FastInterpolations._normalize_bc(CubicFit{Float64}(), Float32)
-        @test bc isa BCPair{Float32, PolyFit{3, Float32}, PolyFit{3, Float32}}
+        # Type-Free design: PolyFit stays lazy, BCPair{L, R} (no Tv parameter)
+        bc = FastInterpolations._normalize_bc(CubicFit(), Float32)
+        @test bc isa BCPair{PolyFit{3}, PolyFit{3}}
     end
 
-    @testset "Mixed BCPair with PolyFit" begin
-        bc1 = BCPair(LinearFit(), Deriv1(0.0))
-        @test bc1 isa BCPair{Float64, PolyFit{1, Float64}, Deriv1{Float64}}
+    @testset "Symmetric BCPair with PolyFit" begin
+        # Type-Free design: BCPair{L, R} with any PointBC subtypes
+        # Mixed BCPair (PolyFit + Deriv1) is NOW SUPPORTED because
+        # both PolyFit{D} and Deriv1{Tv} are subtypes of PointBC (no type parameter)
 
-        bc2 = BCPair(Deriv1(1.0), QuadraticFit())
-        @test bc2 isa BCPair{Float64, Deriv1{Float64}, PolyFit{2, Float64}}
+        # Symmetric PolyFit BCPairs work:
+        bc1 = BCPair(LinearFit(), LinearFit())
+        @test bc1 isa BCPair{PolyFit{1}, PolyFit{1}}
 
-        bc3 = BCPair(CubicFit(), Deriv2(0.0))
-        @test bc3 isa BCPair{Float64, PolyFit{3, Float64}, Deriv2{Float64}}
+        bc2 = BCPair(CubicFit(), CubicFit())
+        @test bc2 isa BCPair{PolyFit{3}, PolyFit{3}}
+
+        # Symmetric typed BCPairs work:
+        bc3 = BCPair(Deriv1(0.0), Deriv2(1.0))
+        @test bc3 isa BCPair{Deriv1{Float64}, Deriv2{Float64}}
+
+        # Mixed BCPair (PolyFit + Deriv) now works with Type-Free design!
+        bc4 = BCPair(CubicFit(), Deriv2(0.0))
+        @test bc4 isa BCPair{PolyFit{3}, Deriv2{Float64}}
     end
 
 end
@@ -168,37 +175,36 @@ end
 @testset "CubicFit Type System" begin
 
     @testset "Type Hierarchy" begin
-        # CubicFit should be a PointBC subtype (like Deriv1, Deriv2)
-        @test CubicFit{Float64} <: FastInterpolations.PointBC{Float64}
-        @test CubicFit{Float32} <: FastInterpolations.PointBC{Float32}
+        # Type-Free design: CubicFit is a PointBC subtype (no type parameter)
+        @test CubicFit <: FastInterpolations.PointBC
 
-        # PointBC <: AbstractBC
-        @test FastInterpolations.PointBC{Float64} <: AbstractBC{Float64}
+        # Type-Free design: PointBC <: AbstractBC (no type parameters)
+        @test FastInterpolations.PointBC <: AbstractBC
     end
 
     @testset "Default Construction" begin
         # Default constructor should return Float64 variant
         lbc = CubicFit()
-        @test lbc isa CubicFit{Float64}
+        @test lbc isa CubicFit
     end
 
     @testset "Explicit Type Construction" begin
-        lbc32 = CubicFit{Float32}()
-        @test lbc32 isa CubicFit{Float32}
+        lbc32 = CubicFit()
+        @test lbc32 isa CubicFit
 
-        lbc64 = CubicFit{Float64}()
-        @test lbc64 isa CubicFit{Float64}
+        lbc64 = CubicFit()
+        @test lbc64 isa CubicFit
     end
 
     @testset "Type Conversion Constructor" begin
-        # CubicFit{T}(::CubicFit) should convert between float types
-        lbc_f64 = CubicFit()
-        lbc_f32 = CubicFit{Float32}(lbc_f64)
-        @test lbc_f32 isa CubicFit{Float32}
-
-        # Round-trip conversion
-        lbc_back = CubicFit{Float64}(lbc_f32)
-        @test lbc_back isa CubicFit{Float64}
+        # Type-Free design: PolyFit{D} has no value type parameter (it's lazy).
+        # No type conversion needed - all CubicFit() are identical singletons.
+        lbc1 = CubicFit()
+        lbc2 = CubicFit()
+        @test lbc1 isa CubicFit
+        @test lbc2 isa CubicFit
+        # Both are structurally identical (same type, no fields)
+        @test typeof(lbc1) === typeof(lbc2)
     end
 
 end
@@ -207,23 +213,25 @@ end
 
     @testset "Single CubicFit → Symmetric BCPair" begin
         # When a single CubicFit is provided, it should be applied to both ends
+        # Type-Free design: BCPair{L, R} without Tv parameter
         bc = FastInterpolations._normalize_bc(CubicFit(), Float64)
-        @test bc isa BCPair{Float64, CubicFit{Float64}, CubicFit{Float64}}
+        @test bc isa BCPair{CubicFit, CubicFit}
     end
 
     @testset "Type Promotion in Normalization" begin
-        # Float64 CubicFit → Float32 target should promote
+        # CubicFit (PolyFit{3}) is lazy - no value to promote, just returns same type
+        # Type-Free design: BCPair{L, R} without Tv parameter
         bc_promoted = FastInterpolations._normalize_bc(CubicFit(), Float32)
-        @test bc_promoted isa BCPair{Float32, CubicFit{Float32}, CubicFit{Float32}}
+        @test bc_promoted isa BCPair{CubicFit, CubicFit}
     end
 
     @testset "_promote_pointbc for CubicFit" begin
         # Direct promotion helper
         lbc_promoted = FastInterpolations._promote_pointbc(CubicFit(), Float32)
-        @test lbc_promoted isa CubicFit{Float32}
+        @test lbc_promoted isa CubicFit
 
-        lbc_promoted64 = FastInterpolations._promote_pointbc(CubicFit{Float32}(), Float64)
-        @test lbc_promoted64 isa CubicFit{Float64}
+        lbc_promoted64 = FastInterpolations._promote_pointbc(CubicFit(), Float64)
+        @test lbc_promoted64 isa CubicFit
     end
 
     @testset "_is_periodic_bc for CubicFit" begin
@@ -237,32 +245,32 @@ end
 
     @testset "Symmetric CubicFit BCPair" begin
         bc = BCPair(CubicFit(), CubicFit())
-        @test bc isa BCPair{Float64, CubicFit{Float64}, CubicFit{Float64}}
+        @test bc isa BCPair{CubicFit, CubicFit}
     end
 
     @testset "Mixed BCPair: CubicFit + Deriv1" begin
         bc = BCPair(CubicFit(), Deriv1(0.0))
-        @test bc isa BCPair{Float64, CubicFit{Float64}, Deriv1{Float64}}
+        @test bc isa BCPair{CubicFit, Deriv1{Float64}}
     end
 
     @testset "Mixed BCPair: Deriv1 + CubicFit" begin
         bc = BCPair(Deriv1(1.0), CubicFit())
-        @test bc isa BCPair{Float64, Deriv1{Float64}, CubicFit{Float64}}
+        @test bc isa BCPair{Deriv1{Float64}, CubicFit}
     end
 
     @testset "Mixed BCPair: CubicFit + Deriv2" begin
         bc = BCPair(CubicFit(), Deriv2(0.0))
-        @test bc isa BCPair{Float64, CubicFit{Float64}, Deriv2{Float64}}
+        @test bc isa BCPair{CubicFit, Deriv2{Float64}}
     end
 
     @testset "Mixed BCPair: Deriv2 + CubicFit" begin
         bc = BCPair(Deriv2(-1.0), CubicFit())
-        @test bc isa BCPair{Float64, Deriv2{Float64}, CubicFit{Float64}}
+        @test bc isa BCPair{Deriv2{Float64}, CubicFit}
     end
 
     @testset "Float32 BCPair" begin
-        bc = BCPair(CubicFit{Float32}(), Deriv1(0.0f0))
-        @test bc isa BCPair{Float32, CubicFit{Float32}, Deriv1{Float32}}
+        bc = BCPair(CubicFit(), Deriv1(0.0f0))
+        @test bc isa BCPair{CubicFit, Deriv1{Float32}}
     end
 
 end
@@ -753,7 +761,7 @@ end
     @testset "Float32 Cache" begin
         # Use Range directly (not collect) - CubicFit requires uniform grid
         x = range(0.0f0, 1.0f0, 21)
-        cache = CubicSplineCache(x; bc=CubicFit{Float32}())
+        cache = CubicSplineCache(x; bc=CubicFit())
 
         @test eltype(cache.x) == Float32
     end
@@ -1291,27 +1299,27 @@ end
 
     @testset "PolyFit{D} → Deriv1 Conversion" begin
         # LinearFit
-        bc_p1 = FastInterpolations.materialize_bc(LinearFit{Float64}(), x, y, Val(:left))
+        bc_p1 = FastInterpolations.materialize_bc(LinearFit(), x, y, Val(:left))
         @test bc_p1 isa Deriv1{Float64}
         @test isfinite(bc_p1.val)
 
         # QuadraticFit
-        bc_p2 = FastInterpolations.materialize_bc(QuadraticFit{Float64}(), x, y, Val(:left))
+        bc_p2 = FastInterpolations.materialize_bc(QuadraticFit(), x, y, Val(:left))
         @test bc_p2 isa Deriv1{Float64}
         @test isfinite(bc_p2.val)
 
         # CubicFit
-        bc_p3 = FastInterpolations.materialize_bc(CubicFit{Float64}(), x, y, Val(:left))
+        bc_p3 = FastInterpolations.materialize_bc(CubicFit(), x, y, Val(:left))
         @test bc_p3 isa Deriv1{Float64}
         @test isfinite(bc_p3.val)
 
         # Right endpoint
-        bc_right = FastInterpolations.materialize_bc(QuadraticFit{Float64}(), x, y, Val(:right))
+        bc_right = FastInterpolations.materialize_bc(QuadraticFit(), x, y, Val(:right))
         @test bc_right isa Deriv1{Float64}
         @test isfinite(bc_right.val)
 
         # LinearFit right endpoint
-        bc_linear_right = FastInterpolations.materialize_bc(LinearFit{Float64}(), x, y, Val(:right))
+        bc_linear_right = FastInterpolations.materialize_bc(LinearFit(), x, y, Val(:right))
         @test bc_linear_right isa Deriv1{Float64}
         @test isfinite(bc_linear_right.val)
     end
@@ -1331,7 +1339,7 @@ end
     @testset "Estimated Values Match Direct API" begin
         # materialize_bc should produce same values as _estimate_endpoint_derivative
         direct_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{2}())
-        materialized = FastInterpolations.materialize_bc(QuadraticFit{Float64}(), x, y, Val(:left))
+        materialized = FastInterpolations.materialize_bc(QuadraticFit(), x, y, Val(:left))
 
         @test materialized.val ≈ direct_left rtol=1e-14
     end
@@ -1917,7 +1925,7 @@ end
     @test FastInterpolations._promote_pointbc(Deriv1(1), Float64) isa Deriv1{Float64}
     @test FastInterpolations._promote_pointbc(Deriv2(1), Float64) isa Deriv2{Float64}
     @test FastInterpolations._promote_pointbc(Deriv3(1), Float64) isa Deriv3{Float64}
-    @test FastInterpolations._promote_pointbc(PolyFit{3}(), Float64) isa PolyFit{3,Float64}
+    @test FastInterpolations._promote_pointbc(PolyFit{3}(), Float64) isa PolyFit{3}
     
     # 6. Normalize BC Array (single-series) - explicit code path test
     bcs_single = [Deriv1(0.0)]
@@ -1929,4 +1937,224 @@ end
     # PeriodicBC in array check (Error path)
     bcs_periodic = [PeriodicBC()]
     @test_throws ArgumentError FastInterpolations._normalize_bc_array(bcs_periodic, Float64, 1)
+end
+
+# ========================================
+# Complex Value Support Tests (polyfit_kernels.jl coverage)
+# ========================================
+# These tests ensure mixed-type kernels (Tg for grid, Tv for values)
+# are properly exercised for Complex{Float64} values.
+#
+# Missing coverage from polyfit_kernels.jl:
+#   - _weighted_sum: N=2, N=4, N>4 mixed-type versions
+#   - _compute_deriv1: D=1,2,3 mixed-type versions (uniform grid)
+#   - _estimate_endpoint_derivative: mixed-type for non-uniform grids
+
+@testset "Complex Value Kernel Coverage" begin
+
+    # ========================================
+    # Mixed-type _compute_deriv1 (Uniform Grid + Complex)
+    # ========================================
+    # These test the direct kernel functions with Complex NTuple values
+
+    @testset "Mixed-type _compute_deriv1 (uniform grid)" begin
+        # D=1 (LinearFit) - covers lines 161-167
+        @testset "D=1 LinearFit" begin
+            f2 = (1.0 + 1.0im, 2.0 + 2.0im)
+            inv_h = 1.0
+
+            # Left endpoint
+            result_left = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:left), f2, inv_h)
+            @test result_left isa ComplexF64
+            @test result_left ≈ (f2[2] - f2[1]) * inv_h
+
+            # Right endpoint
+            result_right = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:right), f2, inv_h)
+            @test result_right isa ComplexF64
+            @test result_right ≈ (f2[2] - f2[1]) * inv_h
+        end
+
+        # D=2 (QuadraticFit) right endpoint - covers lines 176-180
+        @testset "D=2 QuadraticFit right" begin
+            f3 = (1.0 + 1.0im, 4.0 + 2.0im, 9.0 + 3.0im)
+            inv_h = 1.0
+
+            # Right endpoint: (1, -4, 3) / 2
+            result_right = FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:right), f3, inv_h)
+            @test result_right isa ComplexF64
+            expected = (1 * f3[1] + (-4) * f3[2] + 3 * f3[3]) * (inv_h / 2)
+            @test result_right ≈ expected
+        end
+
+        # D=3 (CubicFit) - covers lines 183-193
+        @testset "D=3 CubicFit" begin
+            f4 = (1.0 + 0.5im, 8.0 + 1.0im, 27.0 + 1.5im, 64.0 + 2.0im)
+            inv_h = 1.0
+
+            # Left endpoint: (-11, 18, -9, 2) / 6
+            result_left = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), f4, inv_h)
+            @test result_left isa ComplexF64
+            expected_left = (-11 * f4[1] + 18 * f4[2] + (-9) * f4[3] + 2 * f4[4]) * (inv_h / 6)
+            @test result_left ≈ expected_left
+
+            # Right endpoint: (-2, 9, -18, 11) / 6
+            result_right = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:right), f4, inv_h)
+            @test result_right isa ComplexF64
+            expected_right = (-2 * f4[1] + 9 * f4[2] + (-18) * f4[3] + 11 * f4[4]) * (inv_h / 6)
+            @test result_right ≈ expected_right
+        end
+    end
+
+    # ========================================
+    # Mixed-type _weighted_sum (Non-uniform Grid + Complex)
+    # ========================================
+    # These test coefficient application with real coefficients and Complex values
+
+    @testset "Mixed-type _weighted_sum (non-uniform grid)" begin
+        # N=2 (LinearFit) - covers lines 76-78
+        @testset "N=2 (LinearFit)" begin
+            c2 = (-1.0, 1.0)  # Real coefficients
+            f2 = (1.0 + 1.0im, 3.0 + 2.0im)  # Complex values
+
+            result = FastInterpolations._weighted_sum(c2, f2)
+            @test result isa ComplexF64
+            @test result ≈ c2[1] * f2[1] + c2[2] * f2[2]
+        end
+
+        # N=4 (CubicFit) - covers lines 84-86
+        @testset "N=4 (CubicFit)" begin
+            c4 = (-1.5, 2.0, -0.75, 0.25)  # Real coefficients
+            f4 = (1.0 + 0.5im, 2.0 + 1.0im, 3.0 + 1.5im, 4.0 + 2.0im)  # Complex values
+
+            result = FastInterpolations._weighted_sum(c4, f4)
+            @test result isa ComplexF64
+            expected = sum(c4[i] * f4[i] for i in 1:4)
+            @test result ≈ expected
+        end
+
+        # N=5 (PolyFit{4}) - covers lines 88-94 (generic fallback)
+        @testset "N=5 (PolyFit{4})" begin
+            c5 = (-2.0, 4.0, -3.0, 1.5, -0.5)  # Real coefficients
+            f5 = ntuple(i -> Float64(i) + Float64(i) * 0.5im, 5)  # Complex values
+
+            result = FastInterpolations._weighted_sum(c5, f5)
+            @test result isa ComplexF64
+            expected = sum(c5[i] * f5[i] for i in 1:5)
+            @test result ≈ expected
+        end
+
+        # N=6 (PolyFit{5}) - additional generic fallback test
+        @testset "N=6 (PolyFit{5})" begin
+            c6 = ntuple(i -> Float64((-1)^i * i), 6)  # Real coefficients
+            f6 = ntuple(i -> Float64(i^2) + Float64(i) * 1.0im, 6)  # Complex values
+
+            result = FastInterpolations._weighted_sum(c6, f6)
+            @test result isa ComplexF64
+            expected = sum(c6[i] * f6[i] for i in 1:6)
+            @test result ≈ expected
+        end
+    end
+
+    # ========================================
+    # Integration: _estimate_endpoint_derivative with Complex
+    # ========================================
+    # End-to-end tests through the public API
+
+    @testset "_estimate_endpoint_derivative Complex integration" begin
+        # Uniform grid (Range) + Complex values
+        @testset "Uniform grid (Range)" begin
+            xs = 0.0:0.1:1.0
+            # Complex polynomial: f(x) = (1+i)x^2 + (2-i)x + 3
+            a, b, c = 1.0 + 1.0im, 2.0 - 1.0im, 3.0 + 0.0im
+            f(x) = a * x^2 + b * x + c
+            f_deriv(x) = 2a * x + b
+            ys = f.(collect(xs))
+
+            # LinearFit (D=1) - uniform + Complex
+            d1_left = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:left), PolyFit{1}()
+            )
+            @test d1_left isa ComplexF64
+
+            d1_right = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:right), PolyFit{1}()
+            )
+            @test d1_right isa ComplexF64
+
+            # QuadraticFit (D=2) should be exact for quadratic
+            d2_left = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:left), PolyFit{2}()
+            )
+            @test d2_left isa ComplexF64
+            @test d2_left ≈ f_deriv(xs[1]) rtol=1e-10
+
+            d2_right = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:right), PolyFit{2}()
+            )
+            @test d2_right isa ComplexF64
+            @test d2_right ≈ f_deriv(xs[end]) rtol=1e-10
+
+            # CubicFit (D=3) - uniform + Complex
+            d3_left = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:left), PolyFit{3}()
+            )
+            @test d3_left isa ComplexF64
+            @test d3_left ≈ f_deriv(xs[1]) rtol=1e-8
+
+            d3_right = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:right), PolyFit{3}()
+            )
+            @test d3_right isa ComplexF64
+            @test d3_right ≈ f_deriv(xs[end]) rtol=1e-8
+        end
+
+        # Non-uniform grid (Vector) + Complex values
+        @testset "Non-uniform grid (Vector)" begin
+            xs = [0.0, 0.1, 0.3, 0.5, 0.8, 1.0]
+            # Complex polynomial: f(x) = (1+i)x^2 + (2-i)x + 3
+            a, b, c = 1.0 + 1.0im, 2.0 - 1.0im, 3.0 + 0.0im
+            f(x) = a * x^2 + b * x + c
+            f_deriv(x) = 2a * x + b
+            ys = f.(xs)
+
+            # LinearFit (D=1) - non-uniform + Complex (covers N=2 _weighted_sum)
+            d1_left = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:left), PolyFit{1}()
+            )
+            @test d1_left isa ComplexF64
+
+            # QuadraticFit (D=2) should be exact for quadratic
+            d2_left = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:left), PolyFit{2}()
+            )
+            @test d2_left isa ComplexF64
+            @test d2_left ≈ f_deriv(xs[1]) rtol=1e-10
+
+            # CubicFit (D=3) - non-uniform + Complex (covers N=4 _weighted_sum)
+            d3_left = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:left), PolyFit{3}()
+            )
+            @test d3_left isa ComplexF64
+            @test d3_left ≈ f_deriv(xs[1]) rtol=1e-8
+
+            d3_right = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:right), PolyFit{3}()
+            )
+            @test d3_right isa ComplexF64
+            @test d3_right ≈ f_deriv(xs[end]) rtol=1e-8
+
+            # PolyFit{4} - non-uniform + Complex (covers N=5 _weighted_sum generic)
+            d4_left = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:left), PolyFit{4}()
+            )
+            @test d4_left isa ComplexF64
+
+            # PolyFit{5} - non-uniform + Complex (covers N=6 _weighted_sum generic)
+            d5_left = FastInterpolations._estimate_endpoint_derivative(
+                xs, ys, Val(:left), PolyFit{5}()
+            )
+            @test d5_left isa ComplexF64
+        end
+    end
+
 end

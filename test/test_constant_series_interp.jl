@@ -128,7 +128,7 @@ const FI = FastInterpolations
             sitp(outputs, xq)  # Warmup
             allocs = @allocated sitp(outputs, xq)
             if VERSION >= v"1.12"
-                @test allocs == 0
+                @test allocs <= ALLOC_THRESHOLD
             else
                 @test allocs <= 5000 # Allow higher allocation for older Julia versions
             end

@@ -13,20 +13,20 @@
     @testset "Left BC wrapper" begin
         @testset "construction with Float64" begin
             bc1 = Left(Deriv1(0.5))
-            @test bc1 isa Left{Float64, Deriv1{Float64}}
+            @test bc1 isa Left{Deriv1{Float64}}
 
             bc2 = Left(Deriv2(1.0))
-            @test bc2 isa Left{Float64, Deriv2{Float64}}
+            @test bc2 isa Left{Deriv2{Float64}}
         end
 
         @testset "construction with Float32" begin
             bc = Left(Deriv2(1.0f0))
-            @test bc isa Left{Float32, Deriv2{Float32}}
+            @test bc isa Left{Deriv2{Float32}}
         end
 
         @testset "type promotion (Int → Float64)" begin
             bc = Left(Deriv1(1))
-            @test bc isa Left{Float64, Deriv1{Float64}}
+            @test bc isa Left{Deriv1{Float64}}
         end
 
         @testset "accessor (inner BC value)" begin
@@ -43,29 +43,30 @@
         end
 
         @testset "subtype relationship" begin
-            @test Left{Float64, Deriv1{Float64}} <: AbstractBC{Float64}
-            @test Left{Float64, Deriv2{Float64}} <: AbstractBC{Float64}
-            @test Left{Float32, Deriv1{Float32}} <: AbstractBC{Float32}
+            # Type-Free design: Left/Right wrappers are AbstractBC (no type parameter)
+            @test Left{Deriv1{Float64}} <: AbstractBC
+            @test Left{Deriv2{Float64}} <: AbstractBC
+            @test Left{Deriv1{Float32}} <: AbstractBC
         end
     end
 
     @testset "Right BC wrapper" begin
         @testset "construction with Float64" begin
             bc1 = Right(Deriv1(-0.5))
-            @test bc1 isa Right{Float64, Deriv1{Float64}}
+            @test bc1 isa Right{Deriv1{Float64}}
 
             bc2 = Right(Deriv2(0.0))
-            @test bc2 isa Right{Float64, Deriv2{Float64}}
+            @test bc2 isa Right{Deriv2{Float64}}
         end
 
         @testset "construction with Float32" begin
             bc = Right(Deriv1(1.0f0))
-            @test bc isa Right{Float32, Deriv1{Float32}}
+            @test bc isa Right{Deriv1{Float32}}
         end
 
         @testset "type promotion (Int → Float64)" begin
             bc = Right(Deriv2(0))
-            @test bc isa Right{Float64, Deriv2{Float64}}
+            @test bc isa Right{Deriv2{Float64}}
         end
 
         @testset "accessor (inner BC value)" begin
@@ -82,9 +83,10 @@
         end
 
         @testset "subtype relationship" begin
-            @test Right{Float64, Deriv1{Float64}} <: AbstractBC{Float64}
-            @test Right{Float64, Deriv2{Float64}} <: AbstractBC{Float64}
-            @test Right{Float32, Deriv2{Float32}} <: AbstractBC{Float32}
+            # Type-Free design: Left/Right wrappers are AbstractBC (no type parameter)
+            @test Right{Deriv1{Float64}} <: AbstractBC
+            @test Right{Deriv2{Float64}} <: AbstractBC
+            @test Right{Deriv2{Float32}} <: AbstractBC
         end
     end
 
@@ -97,32 +99,27 @@
     end
 
     @testset "MinCurvFit type" begin
-        @testset "construction with default (Float64)" begin
+        @testset "construction (non-parametric singleton)" begin
             bc = MinCurvFit()
-            @test bc isa MinCurvFit{Float64}
-            @test bc isa AbstractBC{Float64}
+            @test bc isa MinCurvFit
+            # Type-Free design: MinCurvFit is AbstractBC (no type parameter)
+            @test bc isa AbstractBC
         end
 
-        @testset "construction with Float32" begin
-            bc = MinCurvFit{Float32}()
-            @test bc isa MinCurvFit{Float32}
-            @test bc isa AbstractBC{Float32}
-        end
-
-        @testset "type conversion" begin
-            bc64 = MinCurvFit()
-            bc32 = MinCurvFit{Float32}(bc64)
-            @test bc32 isa MinCurvFit{Float32}
+        @testset "singleton property" begin
+            # All MinCurvFit() calls return the same type
+            bc1 = MinCurvFit()
+            bc2 = MinCurvFit()
+            @test typeof(bc1) === typeof(bc2)
         end
 
         @testset "type stability" begin
-            @test @inferred(MinCurvFit()) isa MinCurvFit{Float64}
-            @test @inferred(MinCurvFit{Float32}()) isa MinCurvFit{Float32}
+            @test @inferred(MinCurvFit()) isa MinCurvFit
         end
 
         @testset "subtype relationship" begin
-            @test MinCurvFit{Float64} <: AbstractBC{Float64}
-            @test MinCurvFit{Float32} <: AbstractBC{Float32}
+            # Type-Free design: MinCurvFit is AbstractBC (no type parameter)
+            @test MinCurvFit <: AbstractBC
         end
 
         @testset "distinctness from Left/Right" begin
@@ -382,7 +379,7 @@ end
             x_dummy = [0.0, 1.0, 2.0, 3.0]
             y_dummy = [0.0, 1.0, 4.0, 9.0]
 
-            _fill_slopes!(d, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
+            _fill_slopes!(d, s, h, MinCurvFit(), x_dummy, y_dummy)
 
             # Verify recurrence relation is satisfied: d[i+1] = 2*s[i] - d[i]
             for i in 1:3
@@ -406,7 +403,7 @@ end
             x_dummy = [0.0, 0.5, 2.0, 3.0]
             y_dummy = [0.0, 1.0, 2.5, 5.5]
 
-            _fill_slopes!(d, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
+            _fill_slopes!(d, s, h, MinCurvFit(), x_dummy, y_dummy)
 
             @test all(isfinite, d)
             # Verify recurrence relation: d[i+1] = 2*s[i] - d[i]
@@ -424,7 +421,7 @@ end
             x_dummy = [0.0, 1.0]
             y_dummy = [0.0, 2.0]
 
-            _fill_slopes!(d, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
+            _fill_slopes!(d, s, h, MinCurvFit(), x_dummy, y_dummy)
 
             # For single segment, minimizing curvature means a = 0
             # a = (s - d[1]) / h => d[1] = s[1] for a = 0
@@ -441,7 +438,7 @@ end
             x_dummy = Float32[0.0, 1.0, 2.0, 3.0]
             y_dummy = Float32[0.0, 1.0, 4.0, 9.0]
 
-            _fill_slopes!(d, s, h, MinCurvFit{Float32}(), x_dummy, y_dummy)
+            _fill_slopes!(d, s, h, MinCurvFit(), x_dummy, y_dummy)
 
             # Verify finite values and recurrence
             @test all(isfinite, d)
@@ -462,7 +459,7 @@ end
             d_smooth = zeros(4)
             d_left = zeros(4)
 
-            _fill_slopes!(d_smooth, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
+            _fill_slopes!(d_smooth, s, h, MinCurvFit(), x_dummy, y_dummy)
             _fill_slopes!(d_left, s, h, Left(Deriv2(0.0)), x_dummy, y_dummy)
 
             # Compute total curvature: Σ (s[i] - d[i])² / h[i]
@@ -920,8 +917,9 @@ end
         bc_left64 = _promote_bc(bc_left32, Float64)
         bc_right64 = _promote_bc(bc_right32, Float64)
 
-        @test bc_left64 isa Left{Float64}
-        @test bc_right64 isa Right{Float64}
+        # Left/Right now only have B parameter (the inner BC type)
+        @test bc_left64 isa Left{Deriv1{Float64}}
+        @test bc_right64 isa Right{Deriv2{Float64}}
         @test bc_left64.bc.val ≈ 1.0
         @test bc_right64.bc.val ≈ 0.0
 
@@ -932,47 +930,46 @@ end
         bc_left_f32 = _promote_bc(bc_left_f64, Float32)
         bc_right_f32 = _promote_bc(bc_right_f64, Float32)
 
-        @test bc_left_f32 isa Left{Float32}
-        @test bc_right_f32 isa Right{Float32}
+        @test bc_left_f32 isa Left{Deriv2{Float32}}
+        @test bc_right_f32 isa Right{Deriv1{Float32}}
     end
 
     @testset "_promote_bc for QuadraticFit" begin
         using FastInterpolations: _promote_pointbc
 
-        # QuadraticFit same-type passthrough via _promote_pointbc
-        pf64 = QuadraticFit{Float64}()
-        pf64_promoted = _promote_pointbc(pf64, Float64)
-        @test pf64_promoted isa QuadraticFit{Float64}
+        # QuadraticFit is now a non-parametric singleton (PolyFit{2})
+        # _promote_pointbc returns the same type (no T parameter to promote)
+        pf = QuadraticFit()
+        pf_promoted = _promote_pointbc(pf, Float64)
+        @test pf_promoted isa QuadraticFit
+        @test pf_promoted === pf  # Same singleton instance
 
-        # QuadraticFit type conversion
-        pf32 = _promote_pointbc(pf64, Float32)
-        @test pf32 isa QuadraticFit{Float32}
+        pf32 = _promote_pointbc(pf, Float32)
+        @test pf32 isa QuadraticFit
+        @test pf32 === pf  # Same singleton instance
 
-        # Left(QuadraticFit) promotion
-        bc_left = Left(QuadraticFit{Float64}())
+        # Left(QuadraticFit) promotion - Left only has B parameter
+        bc_left = Left(QuadraticFit())
         bc_left32 = _promote_bc(bc_left, Float32)
-        @test bc_left32 isa Left{Float32, QuadraticFit{Float32}}
+        @test bc_left32 isa Left{QuadraticFit}
 
         # Right(QuadraticFit) promotion
-        bc_right = Right(QuadraticFit{Float64}())
+        bc_right = Right(QuadraticFit())
         bc_right32 = _promote_bc(bc_right, Float32)
-        @test bc_right32 isa Right{Float32, QuadraticFit{Float32}}
+        @test bc_right32 isa Right{QuadraticFit}
     end
 
     @testset "_promote_bc for MinCurvFit" begin
-        # MinCurvFit same-type passthrough
-        mc64 = MinCurvFit{Float64}()
-        mc64_promoted = _promote_bc(mc64, Float64)
-        @test mc64_promoted isa MinCurvFit{Float64}
-
-        # MinCurvFit untyped → typed
+        # MinCurvFit is now a non-parametric singleton
+        # _promote_bc returns the same type
         mc = MinCurvFit()
-        mc32 = _promote_bc(mc, Float32)
-        @test mc32 isa MinCurvFit{Float32}
+        mc_promoted = _promote_bc(mc, Float64)
+        @test mc_promoted isa MinCurvFit
+        @test mc_promoted === mc  # Same singleton instance
 
-        # MinCurvFit typed → different type
-        mc64_to_32 = _promote_bc(mc64, Float32)
-        @test mc64_to_32 isa MinCurvFit{Float32}
+        mc32 = _promote_bc(mc, Float32)
+        @test mc32 isa MinCurvFit
+        @test mc32 === mc  # Same singleton instance
     end
 
     @testset "quadratic_interp with Integer arrays (Real → Float)" begin
@@ -1531,11 +1528,11 @@ end
         x = Float32[0.0, 1.0, 2.0, 3.0]
         y = x.^2
 
-        result = quadratic_interp(x, y, 1.5f0; bc=MinCurvFit{Float32}())
+        result = quadratic_interp(x, y, 1.5f0; bc=MinCurvFit())
         @test result isa Float32
         @test isfinite(result)
 
-        itp = quadratic_interp(x, y; bc=MinCurvFit{Float32}())
+        itp = quadratic_interp(x, y; bc=MinCurvFit())
         @test itp isa QuadraticInterpolant{Float32}
     end
 
@@ -1577,7 +1574,7 @@ end
             x_dummy = [0.0, 1.0, 2.0, 3.0]
             y_dummy = x_dummy.^2
 
-            _fill_slopes!(d_opt, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
+            _fill_slopes!(d_opt, s, h, MinCurvFit(), x_dummy, y_dummy)
 
             # Compute optimal curvature
             curvature_opt = sum((s[i] - d_opt[i])^2 / h[i] for i in 1:3)
@@ -1605,7 +1602,7 @@ end
             x_dummy = cumsum([0.0; h])  # [0, 0.5, 2.0, 3.0, 5.0]
             y_dummy = zeros(n)
 
-            _fill_slopes!(d_opt, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
+            _fill_slopes!(d_opt, s, h, MinCurvFit(), x_dummy, y_dummy)
 
             # Compute optimal curvature
             curvature_opt = sum((s[i] - d_opt[i])^2 / h[i] for i in 1:length(s))
@@ -1634,7 +1631,7 @@ end
             x_dummy = cumsum([0.0; h])
             y_dummy = zeros(n)
 
-            _fill_slopes!(d_opt, s, h, MinCurvFit{Float64}(), x_dummy, y_dummy)
+            _fill_slopes!(d_opt, s, h, MinCurvFit(), x_dummy, y_dummy)
 
             # Compute gradient at optimal point
             gradient = 0.0
@@ -1693,7 +1690,7 @@ end
 
             # MinCurvFit curvature
             d_smooth = zeros(n)
-            _fill_slopes!(d_smooth, s, h, MinCurvFit{Float64}(), x, y)
+            _fill_slopes!(d_smooth, s, h, MinCurvFit(), x, y)
             curvature_smooth = sum((s[i] - d_smooth[i])^2 / h[i] for i in 1:length(s))
 
             # Exact BC (Left(Deriv1)) curvature - uses correct d[1] = f'(x[1])
@@ -1844,7 +1841,7 @@ end
             x32 = Float32[0.0, 1.0, 2.0, 3.0]
             y32 = x32.^2
 
-            itp = quadratic_interp(x32, y32; bc=MinCurvFit{Float32}())
+            itp = quadratic_interp(x32, y32; bc=MinCurvFit())
             @test itp isa QuadraticInterpolant{Float32}
 
             # MinCurvFit doesn't give exact x², but should be finite and reasonable
@@ -1891,7 +1888,7 @@ end
 
         # MinCurvFit curvature
         d_smooth = zeros(n)
-        _fill_slopes!(d_smooth, s, h, MinCurvFit{Float64}(), x, y)
+        _fill_slopes!(d_smooth, s, h, MinCurvFit(), x, y)
         curvature_smooth = sum((s[i] - d_smooth[i])^2 / h[i] for i in 1:length(s))
 
         # Left(Deriv2(0)) curvature
@@ -1919,36 +1916,34 @@ end
     using FastInterpolations: _fill_slopes!
 
     @testset "QuadraticFit type construction" begin
-        @testset "default constructor (Float64)" begin
+        @testset "constructor (non-parametric singleton)" begin
             bc = QuadraticFit()
-            @test bc isa QuadraticFit{Float64}
-            @test bc isa PointBC{Float64}
-            @test bc isa AbstractBC{Float64}
+            # QuadraticFit is now PolyFit{2} - a non-parametric singleton
+            @test bc isa QuadraticFit
+            @test bc isa PolyFit{2}
+            # Type-Free design: PointBC and AbstractBC have no type parameters
+            @test bc isa PointBC
+            @test bc isa AbstractBC
         end
 
-        @testset "explicit type parameter" begin
-            bc32 = QuadraticFit{Float32}()
-            @test bc32 isa QuadraticFit{Float32}
-            @test bc32 isa PointBC{Float32}
-        end
-
-        @testset "type conversion" begin
-            bc64 = QuadraticFit()
-            bc32 = QuadraticFit{Float32}(bc64)
-            @test bc32 isa QuadraticFit{Float32}
+        @testset "type alias identity" begin
+            # QuadraticFit is exactly PolyFit{2}
+            @test QuadraticFit === PolyFit{2}
+            @test QuadraticFit() isa PolyFit{2}
         end
 
         @testset "type stability" begin
-            @test @inferred(QuadraticFit()) isa QuadraticFit{Float64}
-            @test @inferred(QuadraticFit{Float32}()) isa QuadraticFit{Float32}
+            @test @inferred(QuadraticFit()) isa QuadraticFit
+            @test @inferred(PolyFit{2}()) isa QuadraticFit
         end
     end
 
     @testset "Left/Right wrappers accept QuadraticFit" begin
-        @test Left(QuadraticFit()) isa Left{Float64, QuadraticFit{Float64}}
-        @test Right(QuadraticFit()) isa Right{Float64, QuadraticFit{Float64}}
-        @test Left(QuadraticFit{Float32}()) isa Left{Float32, QuadraticFit{Float32}}
-        @test Right(QuadraticFit{Float32}()) isa Right{Float32, QuadraticFit{Float32}}
+        # Left/Right now only have B parameter (the inner BC type)
+        @test Left(QuadraticFit()) isa Left{QuadraticFit}
+        @test Right(QuadraticFit()) isa Right{QuadraticFit}
+        @test Left(QuadraticFit()) isa Left{PolyFit{2}}
+        @test Right(QuadraticFit()) isa Right{PolyFit{2}}
     end
 end
 
@@ -2075,7 +2070,7 @@ end
     @testset "Float32 support" begin
         x = Float32[0.0, 1.0, 2.0, 3.0, 4.0]
         y = x.^2
-        itp = quadratic_interp(x, y; bc=Left(QuadraticFit{Float32}()))
+        itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
 
         @test itp(1.5f0) isa Float32
         @test itp(1.5f0) ≈ 1.5f0^2 atol=1e-5
@@ -2098,7 +2093,7 @@ end
         s = diff(y) ./ h  # [1, 3, 5, 7]
         d = zeros(5)
 
-        _fill_slopes!(d, s, h, Left(QuadraticFit{Float64}()), x, y)
+        _fill_slopes!(d, s, h, Left(QuadraticFit()), x, y)
 
         # For x², the derivative at x=0 is 0
         @test d[1] ≈ 0.0 atol=1e-12
@@ -2120,7 +2115,7 @@ end
         s = diff(y) ./ h  # [1, 3, 5, 7]
         d = zeros(5)
 
-        _fill_slopes!(d, s, h, Right(QuadraticFit{Float64}()), x, y)
+        _fill_slopes!(d, s, h, Right(QuadraticFit()), x, y)
 
         # For x², the derivative at x=4 is 8
         @test d[5] ≈ 8.0 atol=1e-12
@@ -2143,12 +2138,12 @@ end
         s = diff(y) ./ h  # [0.5, 2.0]
         d = zeros(3)
 
-        _fill_slopes!(d, s, h, Left(QuadraticFit{Float64}()), x, y)
+        _fill_slopes!(d, s, h, Left(QuadraticFit()), x, y)
         @test d[1] ≈ 0.0 atol=1e-12
 
         # Test Right as well
         d_right = zeros(3)
-        _fill_slopes!(d_right, s, h, Right(QuadraticFit{Float64}()), x, y)
+        _fill_slopes!(d_right, s, h, Right(QuadraticFit()), x, y)
         @test d_right[3] ≈ 3.0 atol=1e-12
     end
 end

@@ -133,18 +133,18 @@ For `EvalValue`, returns the boundary y-value. For derivatives (`EvalDeriv1`,
 
 # Returns
 - Boundary value for `EvalValue`
-- `zero(T)` for `EvalDeriv1` or `EvalDeriv2`
+- `zero(Tv)` for `EvalDeriv1` or `EvalDeriv2`
 """
 @inline function _constant_extrap_boundary_value(
-    y::Matrix{T}, side::UInt8, n_pts::Int, k::Int, ::EvalValue
-) where {T<:AbstractFloat}
+    y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue
+) where {Tv}
     @inbounds return y[_boundary_point_index(side, n_pts), k]
 end
 
 @inline function _constant_extrap_boundary_value(
-    ::Matrix{T}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
-) where {T<:AbstractFloat}
-    return zero(T)
+    ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
+) where {Tv}
+    return zero(Tv)
 end
 
 """
@@ -170,8 +170,8 @@ Matrix layout uses `y_point[k, idx]` convention (series first, point second)
 to match the transposed SIMD layout used across all series interpolants.
 """
 @inline function _fill_constant_extrap_simd!(
-    out::AbstractVector{T}, y_point::Matrix{T}, side::UInt8, n_pts::Int, ::EvalValue
-) where {T<:AbstractFloat}
+    out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::EvalValue
+) where {Tv}
     idx = _boundary_point_index(side, n_pts)
     @inbounds @simd for k in axes(out, 1)
         out[k] = y_point[k, idx]
@@ -180,10 +180,10 @@ to match the transposed SIMD layout used across all series interpolants.
 end
 
 @inline function _fill_constant_extrap_simd!(
-    out::AbstractVector{T}, ::Matrix{T}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
-) where {T<:AbstractFloat}
+    out::AbstractVector{Tv}, ::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
+) where {Tv}
     @inbounds @simd for k in axes(out, 1)
-        out[k] = zero(T)
+        out[k] = zero(Tv)
     end
     return out
 end

@@ -44,6 +44,7 @@ else
     include("test_generic_bc.jl")
     include("test_polyfit_bc.jl")
     include("test_bc_structure.jl")
+    include("test_bc_complex_int.jl")
     include("test_type_stability.jl")
     include("test_derivatives.jl")
     include("test_packages_comparison.jl")

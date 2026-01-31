@@ -120,69 +120,34 @@ derivatives from data. For other BC types, they are ignored.
 - `Tv`: Value type for d, s (can be AbstractFloat or Complex{AbstractFloat})
 - `Tg<:AbstractFloat`: Grid type for h, x
 """
-# Left(Deriv1{Tv}): d[1] given directly, forward recurrence
-# BC value type Tv matches slope array type
-@inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
-                               bc::Left{Deriv1{Tv}}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
-    d1 = bc.bc.val  # Already Tv type
-    _forward_recurrence!(d, s, d1)
-end
-
-# Left(Deriv1) with type conversion: BC value may need conversion to Tv
+# Left(Deriv1): d[1] given directly, forward recurrence
+# convert() is a no-op when types match (optimized away at compile time)
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
                                bc::Left{<:Deriv1}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
-    d1 = convert(Tv, bc.bc.val)  # Convert BC value to Tv
+    d1 = convert(Tv, bc.bc.val)
     _forward_recurrence!(d, s, d1)
 end
 
-# Left(Deriv2{Tv}): d[1] = s[1] - (κ/2)*h[1], forward recurrence
-@inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
-                               bc::Left{Deriv2{Tv}}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
-    κ = bc.bc.val  # Tv type
-    d1 = s[1] - (κ / 2) * h[1]  # Tv - Tv*Tg → Tv
-    _forward_recurrence!(d, s, d1)
-end
-
-# Left(Deriv2) with type conversion
+# Left(Deriv2): d[1] = s[1] - (κ/2)*h[1], forward recurrence
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
                                bc::Left{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
-    κ = convert(Tv, bc.bc.val)  # Convert BC value to Tv
+    κ = convert(Tv, bc.bc.val)
     d1 = s[1] - (κ / 2) * h[1]  # Tv - Tv*Tg → Tv
     _forward_recurrence!(d, s, d1)
 end
 
-# Right(Deriv1{Tv}): d[n] given directly, backward recurrence
-@inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
-                               bc::Right{Deriv1{Tv}}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
-    dn = bc.bc.val  # Already Tv type
-    _backward_recurrence!(d, s, dn)
-end
-
-# Right(Deriv1) with type conversion
+# Right(Deriv1): d[n] given directly, backward recurrence
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
                                bc::Right{<:Deriv1}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
-    dn = convert(Tv, bc.bc.val)  # Convert BC value to Tv
+    dn = convert(Tv, bc.bc.val)
     _backward_recurrence!(d, s, dn)
 end
 
-# Right(Deriv2{Tv}): compute d[n] from curvature, backward recurrence
-@inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
-                               bc::Right{Deriv2{Tv}}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
-    κ = bc.bc.val  # Tv type
-    # a[n-1] = κ/2
-    # d[n-1] = s[n-1] - a[n-1]*h[n-1]
-    # d[n] = 2*a[n-1]*h[n-1] + d[n-1] = s[n-1] + (κ/2)*h[n-1]
-    dn = s[end] + (κ / 2) * h[end]  # Tv + Tv*Tg → Tv
-    _backward_recurrence!(d, s, dn)
-end
-
-# Right(Deriv2) with type conversion
+# Right(Deriv2): compute d[n] from curvature, backward recurrence
+# d[n] = s[n-1] + (κ/2)*h[n-1]  (derived from a[n-1] = κ/2)
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
                                bc::Right{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
-    κ = convert(Tv, bc.bc.val)  # Convert BC value to Tv
-    # a[n-1] = κ/2
-    # d[n-1] = s[n-1] - a[n-1]*h[n-1]
-    # d[n] = 2*a[n-1]*h[n-1] + d[n-1] = s[n-1] + (κ/2)*h[n-1]
+    κ = convert(Tv, bc.bc.val)
     dn = s[end] + (κ / 2) * h[end]  # Tv + Tv*Tg → Tv
     _backward_recurrence!(d, s, dn)
 end

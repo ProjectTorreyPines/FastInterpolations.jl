@@ -169,24 +169,27 @@ d1(output, query_pts; search=LinearBinary())
 end
 
 # In-place vector query => vector output (single-series interpolants)
+# Note: No element type constraint - parent handles type checking/conversion
 @inline function (d::DerivativeView{Order, ITP})(
-    output::AbstractVector{<:Real}, xq::AbstractVector{<:Real}; deriv=nothing, kwargs...
+    output::AbstractVector, xq::AbstractVector{<:Real}; deriv=nothing, kwargs...
 ) where {Order, ITP}
     _check_no_deriv_override(Val(Order), deriv)
     d.parent(output, xq; deriv=Order, kwargs...)
 end
 
-# In-place scalar query => vector output (SeriesInterpolant)
+# In-place scalar query => array output (SeriesInterpolant)
+# Note: No element type constraint - parent handles type checking/conversion
 @inline function (d::DerivativeView{Order, ITP})(
-    out::AbstractArray{<:Real}, xq::Real; deriv=nothing, kwargs...
+    out::AbstractArray, xq::Real; deriv=nothing, kwargs...
 ) where {Order, ITP}
     _check_no_deriv_override(Val(Order), deriv)
     d.parent(out, xq; deriv=Order, kwargs...)
 end
 
 # In-place vector query => vector-of-vectors output (SeriesInterpolant)
+# Note: No element type constraint - parent handles type checking/conversion
 @inline function (d::DerivativeView{Order, ITP})(
-    out::AbstractArray{<:AbstractArray{<:Real}}, xq::AbstractArray{<:Real}; deriv=nothing, kwargs...
+    out::AbstractArray{<:AbstractArray}, xq::AbstractArray{<:Real}; deriv=nothing, kwargs...
 ) where {Order, ITP}
     _check_no_deriv_override(Val(Order), deriv)
     d.parent(out, xq; deriv=Order, kwargs...)

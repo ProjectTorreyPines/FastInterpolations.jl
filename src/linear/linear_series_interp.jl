@@ -168,43 +168,12 @@ end
 # ========================================
 
 """
-    _eval_linear_series_point!(out, y_point, x, aq, op)
-
-SIMD-optimized evaluation for point-contiguous layout (n_series × n_points).
-Contiguous column access enables vectorization across series dimension.
-"""
-@inline function _eval_linear_series_point!(
-    out::AbstractVector{Tv},
-    y_point::Matrix{Tv},
-    x::AbstractVector{Tg},
-    aq::_LinearAnchoredQuery{Tg},
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv}
-    idx = aq.idx
-    idx1 = idx + 1
-
-    # Get interval data
-    @inbounds begin
-        xL = x[idx]
-        xR = x[idx1]
-    end
-    h = xR - xL
-    dL = aq.xq - xL
-
-    # SIMD loop over series (contiguous column access)
-    @inbounds @simd for k in axes(out, 1)
-        yL = y_point[k, idx]
-        yR = y_point[k, idx1]
-        out[k] = _linear_kernel(op, yL, yR, h, dL)
-    end
-
-    return out
-end
-
-"""
     _eval_linear_series_point_with_extrap!(out, y_point, x, n_pts, x_min, x_max, aq, extrap, op)
 
-SIMD evaluation with extrapolation handling for multi-series linear interpolation.
+Extrapolation handler for outside-domain scalar evaluation.
+Called only when aq.side != 0x00 (query point outside domain).
+
+Note: Inside-domain evaluation uses _eval_linear_series_point! directly.
 """
 @inline function _eval_linear_series_point_with_extrap!(
     out::AbstractVector{Tv},
@@ -217,12 +186,7 @@ SIMD evaluation with extrapolation handling for multi-series linear interpolatio
     extrap::ExtrapVal,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
-    # Inside domain: normal evaluation
-    if aq.side == 0x00
-        return _eval_linear_series_point!(out, y_point, x, aq, op)
-    end
-
-    # Outside domain: dispatch on extrap mode
+    # Dispatch on extrap mode (called only for outside-domain points)
     _eval_linear_series_point_extrap!(out, y_point, x, n_pts, x_min, x_max, aq, extrap, op, aq.side)
 end
 
@@ -291,34 +255,39 @@ end
 end
 
 # ========================================
-# AD Support: Dual-aware Evaluation
+# Scalar Evaluation Core
 # ========================================
 
 """
-    _eval_series_with_dual!(output, sitp, aq, xq, op)
+    _eval_linear_series_point!(output, sitp, aq, xq, op)
 
-Evaluate series at anchor point with ForwardDiff.Dual support.
+Core scalar evaluation for all series at a single query point.
+Uses SIMD-optimized point-contiguous layout for vectorization across series.
 
-Uses anchor for index/side information (computed from primal),
-but uses original `xq` for arithmetic operations (preserves AD derivatives).
+# Arguments
+- `output`: Pre-allocated output vector (length = n_series)
+- `sitp`: LinearSeriesInterpolant
+- `aq`: Anchor with precomputed index/side (from primal value)
+- `xq`: Original query point (any Real type, including ForwardDiff.Dual)
+- `op`: Evaluation operation (value, derivative)
 
-# AD Pattern
-- `aq`: Anchor built from `Tg(xq_primal)` - provides idx, side
-- `xq`: Original query (can be Dual) - used in `dL = xq - xL`
+# AD Support
+Supports ForwardDiff.Dual input: anchor provides index/side from primal,
+while `xq` is used directly in arithmetic to preserve derivative information.
 """
-@inline function _eval_series_with_dual!(
+@inline function _eval_linear_series_point!(
     output::AbstractVector,
     sitp::LinearSeriesInterpolant{Tg, Tv},
     aq::_LinearAnchoredQuery{Tg},
-    xq,  # Original xq (can be Dual)
+    xq,  # Original xq (any Real, including Dual)
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
-    # Outside domain: use existing extrap logic (no Dual propagation outside)
+    # Outside domain: delegate to extrapolation handler
     if aq.side != 0x00
         return _eval_series_at_anchor!(output, sitp, aq, op)
     end
 
-    # Inside domain: Dual-aware evaluation
+    # Inside domain: SIMD evaluation with point-contiguous layout
     y_point = _ensure_point_layout!(sitp)
     idx = aq.idx
     idx1 = idx + 1
@@ -328,7 +297,7 @@ but uses original `xq` for arithmetic operations (preserves AD derivatives).
         xR = sitp.x[idx1]
     end
     h = xR - xL
-    dL = xq - xL  # ← Original xq preserves Dual for AD
+    dL = xq - xL  # Original xq preserves Dual for AD
 
     @inbounds @simd for k in axes(output, 1)
         yL = y_point[k, idx]
@@ -549,7 +518,7 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
 
     # Dispatch on derivative order with Dual-aware evaluation
     @_dispatch_deriv deriv => op begin
-        _eval_series_with_dual!(output, sitp, aq, xq, op)  # Pass original xq
+        _eval_linear_series_point!(output, sitp, aq, xq, op)  # Pass original xq
     end
     return output
 end

@@ -20,7 +20,7 @@ FastInterpolationsRecipesBaseExt = "RecipesBase"
 
 [compat]
 AdaptiveArrayPools = "0.1"
-ForwardDiff = "1.3.2"
+ForwardDiff = "1"
 HelpPlots = "1"
 LinearAlgebra = "1"
 Preferences = "1"

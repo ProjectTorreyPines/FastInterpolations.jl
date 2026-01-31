@@ -9,6 +9,14 @@ AbstractInterpolant
 AbstractSeriesInterpolant
 ```
 
+### Type Accessors
+
+```@docs
+grid_type
+value_type
+eval_type
+```
+
 ## Evaluation Operations
 
 ```@docs

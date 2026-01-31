@@ -40,6 +40,19 @@ using FastInterpolations: _ensure_point_layout!
     end
 end
 
+@testset "CubicSeriesInterpolant - trait implementations" begin
+        FI = FastInterpolations
+
+        x = collect(0.0:0.1:1.0)
+        sitp = cubic_interp(x, [sin.(2π .* x), cos.(2π .* x)])
+
+        @test FI.n_series(sitp) == 2
+        @test FI._get_grid(sitp) ≈ x
+        @test FI._get_extrap(sitp) isa FI.ExtrapVal
+        @test FI._should_wrap(sitp) == false
+        @test FI._method_kind(typeof(sitp)) === Val(:cubic)
+end
+
 @testset "CubicSeriesInterpolant - Unified Struct Fields" begin
     FI = FastInterpolations
 

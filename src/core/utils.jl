@@ -18,8 +18,12 @@
 Convert a Range to a float type while preserving Range structure for O(1) index lookup.
 Using `FT.(x)` would convert Range to Vector, losing the O(1) optimization.
 """
+# General conversion: rebuild as StepRangeLen to preserve O(1) indexing
 _to_float(x::AbstractRange, ::Type{FT}) where {FT<:AbstractFloat} =
     range(FT(first(x)), FT(last(x)), length(x))
+
+# Fast-path: already Float Range (StepRangeLen, LinRange, etc.) - return as-is
+_to_float(x::AbstractRange{FT}, ::Type{FT}) where {FT<:AbstractFloat} = x
 
 """
     _to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT<:AbstractFloat}

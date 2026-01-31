@@ -22,6 +22,7 @@ using FastInterpolations
         @test itp isa QuadraticInterpolant{Float64, ComplexF64}
         @test grid_type(itp) == Float64
         @test value_type(itp) == ComplexF64
+        @test eval_type(itp, Float64) == ComplexF64
 
         # Evaluation returns ComplexF64
         val = itp(0.5)
@@ -40,6 +41,7 @@ using FastInterpolations
         @test itp isa QuadraticInterpolant{Float32, ComplexF32}
         @test grid_type(itp) == Float32
         @test value_type(itp) == ComplexF32
+        @test eval_type(itp, Float32) == ComplexF32
 
         val = itp(0.5f0)
         @test val isa ComplexF32
@@ -311,6 +313,7 @@ using FastInterpolations
         @test itp isa QuadraticInterpolant{Float64, Float64}
         @test grid_type(itp) == Float64
         @test value_type(itp) == Float64
+        @test eval_type(itp, Float64) == Float64
 
         val = itp(0.5)
         @test val isa Float64
@@ -448,6 +451,7 @@ using FastInterpolations
 
             @test grid_type(itp) == Float32
             @test value_type(itp) == ComplexF32
+            @test eval_type(itp, Float32) == ComplexF32
             @test itp(0.5f0) isa ComplexF32
         end
 

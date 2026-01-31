@@ -99,3 +99,21 @@ Get the grid/coordinate type of an interpolant.
 Get the value type of an interpolant.
 """
 @inline value_type(::AbstractInterpolant{Tg, Tv}) where {Tg, Tv} = Tv
+
+"""
+    eval_type(::AbstractInterpolant{Tg, Tv}, ::Type{Tq}) -> Type
+
+Compute the output type when evaluating an interpolant with query type `Tq`.
+This is `promote_type(Tv, Tq)`, accounting for value type (real or complex)
+and query type (standard float or ForwardDiff.Dual).
+
+# Examples
+```julia
+itp = linear_interp([0.0, 1.0], [1.0, 2.0])
+eval_type(itp, Float64)  # Float64
+
+itp_c = linear_interp([0.0, 1.0], [1.0+0im, 2.0+0im])
+eval_type(itp_c, Float64)  # ComplexF64
+```
+"""
+@inline eval_type(::AbstractInterpolant{Tg, Tv}, ::Type{Tq}) where {Tg, Tv, Tq} = promote_type(Tv, Tq)

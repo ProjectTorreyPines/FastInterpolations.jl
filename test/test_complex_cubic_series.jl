@@ -24,6 +24,7 @@ using FastInterpolations
         @test sitp isa CubicSeriesInterpolant{Float64, ComplexF64}
         @test grid_type(sitp) == Float64
         @test value_type(sitp) == ComplexF64
+        @test eval_type(sitp, Float64) == ComplexF64
 
         # Scalar evaluation returns Vector{ComplexF64}
         vals = sitp(0.5)
@@ -50,6 +51,7 @@ using FastInterpolations
         @test sitp isa CubicSeriesInterpolant{Float32, ComplexF32}
         @test grid_type(sitp) == Float32
         @test value_type(sitp) == ComplexF32
+        @test eval_type(sitp, Float32) == ComplexF32
 
         vals = sitp(0.5f0)
         @test vals isa Vector{ComplexF32}
@@ -288,6 +290,7 @@ using FastInterpolations
         @test sitp isa CubicSeriesInterpolant{Float64, Float64}
         @test grid_type(sitp) == Float64
         @test value_type(sitp) == Float64
+        @test eval_type(sitp, Float64) == Float64
 
         vals = sitp(0.5)
         @test vals isa Vector{Float64}

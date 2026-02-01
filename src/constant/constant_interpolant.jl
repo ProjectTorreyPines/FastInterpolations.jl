@@ -18,9 +18,13 @@
     end
 end
 
-# Real scalar wrapper - delegates to Tg method
+# Real scalar wrapper - AD Support: call _constant_eval_at_point directly to preserve Dual
+# This allows ForwardDiff.Dual to pass through without conversion to Tg
 @inline function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(xi::S; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
-    itp(Tg(xi); deriv=deriv, search=search, hint=hint)
+    searcher = _to_searcher(search, hint)
+    @_dispatch_deriv deriv => op begin
+        _constant_eval_at_point(itp.x, itp.y, xi, itp.extrap, itp.side, op, searcher)
+    end
 end
 
 # ─────────────────────────────────────────────────────────────

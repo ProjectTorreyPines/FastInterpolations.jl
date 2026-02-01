@@ -242,4 +242,126 @@ const FI = FastInterpolations
         end
     end
 
+    # ========================================
+    # ConstantInterpolant with ForwardDiff
+    # ========================================
+
+    @testset "ConstantInterpolant with ForwardDiff" begin
+        x = collect(0.0:1.0:5.0)
+        y = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+
+        @testset "interpolant callable AD - derivative is zero" begin
+            itp = constant_interp(x, y; side=:left, extrap=:extension)
+
+            # Constant interpolation derivative should be 0 (step function)
+            for xq in [0.5, 1.5, 2.5, 3.5]
+                fd_deriv = ForwardDiff.derivative(itp, xq)
+                analytical = itp(xq; deriv=1)
+                @test fd_deriv ≈ 0.0 atol=1e-10
+                @test fd_deriv ≈ analytical atol=1e-10
+            end
+        end
+
+        @testset "one-shot API AD" begin
+            # Verify one-shot API works with ForwardDiff
+            xq = 2.5
+            fd_deriv = ForwardDiff.derivative(q -> constant_interp(x, y, q; side=:left), xq)
+            @test fd_deriv ≈ 0.0 atol=1e-10
+        end
+
+        @testset "value is preserved" begin
+            itp = constant_interp(x, y; side=:left, extrap=:extension)
+            test_points = [0.5, 1.5, 2.5, 3.5]
+
+            for xq in test_points
+                dual_val = ForwardDiff.value(ForwardDiff.Dual(xq, 1.0) |> itp)
+                direct_val = itp(xq)
+                @test dual_val ≈ direct_val atol=1e-10
+            end
+        end
+
+        @testset "side modes" begin
+            # Test all side modes work with AD
+            for side_mode in [:left, :right, :nearest]
+                itp = constant_interp(x, y; side=side_mode, extrap=:extension)
+                fd_deriv = ForwardDiff.derivative(itp, 2.5)
+                @test fd_deriv ≈ 0.0 atol=1e-10
+            end
+        end
+    end
+
+    # ========================================
+    # ConstantSeriesInterpolant with ForwardDiff
+    # ========================================
+
+    @testset "ConstantSeriesInterpolant with ForwardDiff" begin
+        x = collect(0.0:1.0:5.0)
+        y1 = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+        y2 = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        sitp = constant_interp(x, [y1, y2]; side=:left, extrap=:extension)
+
+        @testset "series derivative is zero" begin
+            # ForwardDiff.derivative on series returns vector of derivatives
+            for xq in [0.5, 1.5, 2.5]
+                fd_derivs = ForwardDiff.derivative(sitp, xq)
+                analytical = sitp(xq; deriv=1)
+
+                @test all(fd_derivs .≈ 0.0)
+                @test fd_derivs ≈ analytical atol=1e-10
+            end
+        end
+
+        @testset "series value is preserved" begin
+            xq = 2.5
+            dual_result = sitp(ForwardDiff.Dual(xq, 1.0))
+            fd_values = ForwardDiff.value.(dual_result)
+
+            @test fd_values ≈ sitp(xq) atol=1e-10
+        end
+    end
+
+    # ========================================
+    # Constant + Complex values with ForwardDiff
+    # ========================================
+
+    @testset "Constant complex values with ForwardDiff" begin
+        x = collect(0.0:1.0:5.0)
+        y_complex = [10.0+1.0im, 20.0+2.0im, 30.0+3.0im, 40.0+4.0im, 50.0+5.0im, 60.0+6.0im]
+
+        itp = constant_interp(x, y_complex; side=:left, extrap=:extension)
+
+        @testset "complex derivative" begin
+            xq = 2.5
+
+            fd_deriv = ForwardDiff.derivative(itp, xq)
+            analytical = itp(xq; deriv=1)
+
+            # Derivative should be zero for both real and imaginary parts
+            @test real(fd_deriv) ≈ 0.0 atol=1e-10
+            @test imag(fd_deriv) ≈ 0.0 atol=1e-10
+            @test fd_deriv ≈ analytical atol=1e-10
+        end
+    end
+
+    # ========================================
+    # Constant gradient composition
+    # ========================================
+
+    @testset "Constant gradient composition" begin
+        x = collect(0.0:1.0:5.0)
+        y = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+        itp = constant_interp(x, y; side=:left, extrap=:extension)
+
+        @testset "gradient through loss function" begin
+            function loss(params)
+                xq = params[1]
+                return itp(xq)^2
+            end
+
+            # d/d(xq)[f(xq)²] = 2 * f(xq) * f'(xq) = 2 * f(xq) * 0 = 0
+            grad = ForwardDiff.gradient(loss, [2.5])
+            @test grad[1] ≈ 0.0 atol=1e-10
+        end
+    end
+
 end  # testset "AutoDiff Support"

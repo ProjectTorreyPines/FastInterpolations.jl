@@ -83,47 +83,58 @@ Evaluation flow:
 5. Interval search → kernel evaluation
 
 Type parameters:
-- Tg: Grid type (AbstractFloat) for x and xi
+- Tg: Grid type (AbstractFloat) for x
 - Tv: Value type for y (can be Tg, Complex{Tg}, etc.)
+
+AD Support:
+- xi can be any Real (including ForwardDiff.Dual)
+- Comparisons use _extract_primal(xi) for Float value
+- Original xi is passed to kernel for AD compatibility
 """
 @inline function _constant_eval_at_point(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    xi::Tg,
+    xi::Tq,
     extrap::ExtrapVal,
     side::SideVal,
     op::AbstractEvalOp,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real, S<:Searcher}
+    # Extract primal for comparisons and search (supports ForwardDiff.Dual)
+    xi_primal = _extract_primal(xi)
+    xi_typed = Tg(xi_primal)
+
     # Domain check for :none mode (throws DomainError)
-    @boundscheck _check_domain(x, xi, extrap)
+    @boundscheck _check_domain(x, xi_typed, extrap)
 
     x_min, x_max = first(x), last(x)
 
     # :wrap mode handles all cases (inside and outside domain)
+    # For :wrap, the query is wrapped to domain, so use wrapped position for dL
+    # (AD derivative is zero for constant interp regardless)
     if extrap === Val(:wrap)
-        xi_wrapped = _wrap_to_domain(xi, x_min, x_max)
+        xi_wrapped = _wrap_to_domain(xi_typed, x_min, x_max)
         idx, xL, xR = search_interval(searcher, x, xi_wrapped)
         h = xR - xL
-        dL = xi_wrapped - xL
+        dL = xi_wrapped - xL  # Use wrapped position for correct interval calculation
         @inbounds return _constant_kernel(op, y[idx], y[idx+1], h, dL, side)
     end
 
     # Boundary special case: xi == x[end] → y[end] directly
     # (avoids _search_interval returning idx=n-1, dL=h)
-    if xi == x_max
+    if xi_typed == x_max
         return op isa EvalValue ? (@inbounds y[end]) : zero(Tv)
     end
 
     # Extrapolation handling (:constant, :extension)
-    if xi < x_min || xi > x_max
-        return _constant_eval_extrap(y, xi, x_min, x_max, extrap, side, op)
+    if xi_typed < x_min || xi_typed > x_max
+        return _constant_eval_extrap(y, xi_typed, x_min, x_max, extrap, side, op)
     end
 
     # Normal case: interval search and kernel evaluation
-    idx, xL, xR = search_interval(searcher, x, xi)
+    idx, xL, xR = search_interval(searcher, x, xi_typed)
     h = xR - xL
-    dL = xi - xL
+    dL = xi - xL  # Use original xi for AD
     @inbounds return _constant_kernel(op, y[idx], y[idx+1], h, dL, side)
 end
 
@@ -180,16 +191,18 @@ sorted_queries = sort(rand(1000))
 vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
 ```
 """
+# AD Support: xi can be any Real (including ForwardDiff.Dual)
+# Note: Tq<:Real constraint resolves method ambiguity with generic Real wrapper
 @inline function constant_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    xi::Tg;
+    xi::Tq;
     extrap::Symbol=:none,
     side::Symbol=:nearest,
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _to_searcher(search, hint)
@@ -304,6 +317,7 @@ end
 # ========================================
 # Unified wrapper for non-AbstractFloat inputs (Int, mixed types, Complex, etc.)
 # POLICY: Tg is computed from x/y ONLY, not from xq
+# AD Support: Pass xi directly without Tg conversion to preserve Dual type
 
 @inline function constant_interp(
     x::AbstractVector{Tx},
@@ -318,7 +332,8 @@ end
     # Tg from x/y ONLY (not xq)
     Tg = float(promote_type(Tx, _real_eltype(Ty)))
     x_typed, y_typed = _promote_xy(x, y, Tg)
-    return constant_interp(x_typed, y_typed, Tg(xi); extrap, side, deriv, search, hint)
+    # Pass xi directly (not Tg(xi)) to preserve ForwardDiff.Dual for AD
+    return constant_interp(x_typed, y_typed, xi; extrap, side, deriv, search, hint)
 end
 
 # ========================================

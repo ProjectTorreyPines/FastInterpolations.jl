@@ -198,6 +198,64 @@ Contiguous column access enables vectorization across series dimension.
 end
 
 """
+    _eval_constant_series_point_ad!(output, sitp, aq, xq, op)
+
+AD-aware evaluation for multi-series constant interpolation.
+Uses anchor for index/side info, but computes dL from original `xq` for AD support.
+ForwardDiff.Dual types can pass through `xq` to preserve derivative information.
+
+For constant interpolation, the AD derivative should be zero (step function).
+"""
+@inline function _eval_constant_series_point_ad!(
+    output::AbstractVector{Tv},
+    sitp::ConstantSeriesInterpolant{Tg, Tv},
+    aq::_ConstantAnchoredQuery{Tg},
+    xq::Tq,  # Original xq (can be Dual for AD)
+    op::AbstractEvalOp
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+    y_point = _ensure_point_layout!(sitp)
+    n_pts = n_points(sitp)
+    x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
+
+    # Special case: at right boundary (use primal for comparison)
+    xq_primal = _extract_primal(xq)
+    if Tg(xq_primal) == x_max
+        if op isa EvalValue
+            @inbounds @simd for k in axes(output, 1)
+                output[k] = y_point[k, n_pts]
+            end
+        else
+            @inbounds @simd for k in axes(output, 1)
+                output[k] = zero(Tv)
+            end
+        end
+        return output
+    end
+
+    # Outside domain: delegate to anchor-based extrap handler
+    if aq.side != 0x00
+        _eval_constant_series_point_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, sitp.side, op, aq.side)
+        return output
+    end
+
+    # Inside domain: compute dL from original xq for AD support
+    idx = aq.idx
+    idx1 = idx + 1
+    h = aq.h
+    @inbounds xL = sitp.x[idx]
+    dL = xq - xL  # Use original xq to preserve Dual for AD
+
+    # SIMD loop over series
+    @inbounds @simd for k in axes(output, 1)
+        y_left = y_point[k, idx]
+        y_right = y_point[k, idx1]
+        output[k] = _constant_kernel(op, y_left, y_right, h, dL, sitp.side)
+    end
+
+    return output
+end
+
+"""
     _eval_constant_series_point_with_extrap!(out, y_point, x, n_pts, x_min, x_max, aq, extrap, side_val, op)
 
 SIMD evaluation with extrapolation handling for multi-series constant interpolation.
@@ -491,14 +549,16 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     # Validate output length
     _validate_scalar_output(output, n_ser)
 
-    xq_typed = Tg(xq)
+    # AD Support: Extract primal for anchor building, pass original xq for AD
+    xq_primal = _extract_primal(xq)
+    xq_typed = Tg(xq_primal)
 
-    # Build anchor
+    # Build anchor using primal value
     aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
 
-    # Dispatch on derivative order
+    # Dispatch on derivative order - pass original xq for AD support
     @_dispatch_deriv deriv => op begin
-        _eval_series_at_anchor!(output, sitp, aq, op)
+        _eval_constant_series_point_ad!(output, sitp, aq, xq, op)
     end
     return output
 end

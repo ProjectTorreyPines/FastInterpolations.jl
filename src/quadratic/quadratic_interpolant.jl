@@ -132,7 +132,7 @@ function quadratic_interp(
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Auto-promote x/y types (zero allocation if already compatible)
-    x_p, y_p = _ensure_promoted_xy(x, y)
+    x_p, y_p = _promote_itp_inputs(x, y)
     bc_promoted = _promote_bc(bc, eltype(x_p))
     return QuadraticInterpolant(x_p, y_p; bc=bc_promoted, extrap, search)
 end
@@ -149,7 +149,7 @@ function quadratic_interp(
     extrap::Symbol=:none,
     search::P=Binary()
 ) where {TX<:Real, TY, P<:AbstractSearchPolicy}
-    x_p, y_p = _ensure_promoted_xy(x, y)
+    x_p, y_p = _promote_itp_inputs(x, y)
     bc_promoted = _promote_bc(bc, eltype(x_p))
     return QuadraticInterpolant(x_p, y_p; bc=bc_promoted, extrap, search)
 end

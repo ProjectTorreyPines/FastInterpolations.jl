@@ -384,26 +384,23 @@ end
 
 # Allocating - vector query
 function cubic_interp(
-    x::AbstractVector{Tx},
-    y::AbstractVector{Ty},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
     x_query::AbstractVector{Tq};
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty, Tq<:Real}
-    # Tg from x/y ONLY (not x_query)
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
-    x_typed, y_typed = _promote_xy(x, y, Tg)
-    query_typed = Tg.(x_query)
-    return cubic_interp(x_typed, y_typed, query_typed; bc, extrap, autocache, deriv, search)
+) where {Tg<:Real, Tv, Tq<:Real}
+    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_query)
+    return cubic_interp(x_typed, y_typed, xq_typed; bc, extrap, autocache, deriv, search)
 end
 
 # Allocating - scalar query
 function cubic_interp(
-    x::AbstractVector{Tx},
-    y::AbstractVector{Ty},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
     x_query::Tq;
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
@@ -411,66 +408,59 @@ function cubic_interp(
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tx<:Real, Ty, Tq<:Real}
-    # Tg from x/y ONLY (not x_query)
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
-    x_typed, y_typed = _promote_xy(x, y, Tg)
-    return cubic_interp(x_typed, y_typed, Tg(x_query); bc, extrap, autocache, deriv, search, hint)
+) where {Tg<:Real, Tv, Tq<:Real}
+    x_typed, y_typed = _promote_itp_inputs(x, y)
+    Tg_float = eltype(x_typed)
+    return cubic_interp(x_typed, y_typed, Tg_float(x_query); bc, extrap, autocache, deriv, search, hint)
 end
 
 # In-place - vector query
 function cubic_interp!(
     output::AbstractVector,
-    x::AbstractVector{Tx},
-    y::AbstractVector{Ty},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
     x_query::AbstractVector{Tq};
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty, Tq<:Real}
+) where {Tg<:Real, Tv, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_query) "output must match x_query length"
 
-    # Tg from x/y ONLY (not x_query)
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
+    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_query)
+    Tg_float = eltype(x_typed)
+    Tv_float = eltype(y_typed)
 
-    # Determine expected output type and validate
-    # Use promote_type check: Tout can hold Tv if promote_type(Tout, Tv) === Tout
-    # This allows ComplexF64 output to hold Float64 results (via convert)
-    Tv = _value_type(Ty, Tg)
+    # Validate output can hold result type
     Tout = eltype(output)
-    if promote_type(Tout, Tv) !== Tout
+    if promote_type(Tout, Tv_float) !== Tout
         throw(ArgumentError(
-            "output eltype $Tout cannot hold interpolation result type $Tv. " *
-            "Use Vector{$Tv} or a wider type (e.g., Vector{Complex{$Tg}} for complex y-values)."
+            "output eltype $Tout cannot hold interpolation result type $Tv_float. " *
+            "Use Vector{$Tv_float} or a wider type (e.g., Vector{Complex{$Tg_float}} for complex y-values)."
         ))
     end
 
-    x_typed, y_typed = _promote_xy(x, y, Tg)
-    query_typed = Tg.(x_query)
-
-    cubic_interp!(output, x_typed, y_typed, query_typed; bc, extrap, autocache, deriv, search)
+    cubic_interp!(output, x_typed, y_typed, xq_typed; bc, extrap, autocache, deriv, search)
 end
 
 # In-place - scalar query
 function cubic_interp!(
     output::AbstractVector,
-    x::AbstractVector{Tx},
-    y::AbstractVector{Ty},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
     x_query::Tq;
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty, Tq<:Real}
+) where {Tg<:Real, Tv, Tq<:Real}
     @assert length(output) >= 1 "output must have at least 1 element"
 
-    # Tg from x/y ONLY (not x_query)
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
-    x_typed, y_typed = _promote_xy(x, y, Tg)
-    output[1] = cubic_interp(x_typed, y_typed, Tg(x_query); bc, extrap, autocache, deriv, search)
+    x_typed, y_typed = _promote_itp_inputs(x, y)
+    Tg_float = eltype(x_typed)
+    output[1] = cubic_interp(x_typed, y_typed, Tg_float(x_query); bc, extrap, autocache, deriv, search)
     return output
 end

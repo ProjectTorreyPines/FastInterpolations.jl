@@ -750,36 +750,37 @@ end
 
 # Type promotion wrappers (auto-promote to Float, handle Complex)
 function cubic_interp(
-    x::AbstractVector{Tx},
-    ys::AbstractVector{<:AbstractVector{Ty}};
+    x::AbstractVector{Tg},
+    ys::AbstractVector{<:AbstractVector{Tv}};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty}
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
-    Tv = _value_type(Ty, Tg)
-    x_typed = _to_float(x, Tg)
-    ys_typed = [Tv.(y) for y in ys]
-    bc_typed = _promote_bc(bc, Tg)
+) where {Tg<:Real, Tv}
+    # Compute promoted grid type (Tg may be Int, promotes to Float)
+    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
+    Tv_float = _value_type(Tv, Tg_float)
+    x_typed = _to_float(x, Tg_float)
+    ys_typed = [Tv_float.(y) for y in ys]
+    bc_typed = _promote_bc(bc, Tg_float)
     return cubic_interp(x_typed, ys_typed; bc=bc_typed, extrap=extrap, autocache=autocache, precompute_transpose=precompute_transpose, search=search)
 end
 
 function cubic_interp(
-    x::AbstractVector{Tx},
-    Y::AbstractMatrix{Ty};
+    x::AbstractVector{Tg},
+    Y::AbstractMatrix{Tv};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty}
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
-    Tv = _value_type(Ty, Tg)
-    x_typed = _to_float(x, Tg)
-    Y_typed = Tv.(Y)
-    bc_typed = _promote_bc(bc, Tg)
+) where {Tg<:Real, Tv}
+    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
+    Tv_float = _value_type(Tv, Tg_float)
+    x_typed = _to_float(x, Tg_float)
+    Y_typed = Tv_float.(Y)
+    bc_typed = _promote_bc(bc, Tg_float)
     return cubic_interp(x_typed, Y_typed; bc=bc_typed, extrap=extrap, autocache=autocache, precompute_transpose=precompute_transpose, search=search)
 end
 

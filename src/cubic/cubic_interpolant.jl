@@ -456,7 +456,7 @@ function cubic_interp(
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Auto-promote x/y types (zero allocation if already compatible)
-    x_p, y_p = _ensure_promoted_xy(x, y)
+    x_p, y_p = _promote_itp_inputs(x, y)
     bc_promoted = _promote_bc(bc, eltype(y_p))
     return _cubic_interp_impl(x_p, y_p, bc_promoted, extrap, autocache, search)
 end
@@ -508,7 +508,7 @@ function cubic_interp(
     autocache::Bool=true,
     search::P=Binary()
 ) where {TX<:Real, TY, P<:AbstractSearchPolicy}
-    x_p, y_p = _ensure_promoted_xy(x, y)
+    x_p, y_p = _promote_itp_inputs(x, y)
     Tv = eltype(y_p)
     bc_promoted = _promote_bc(bc, Tv)
 

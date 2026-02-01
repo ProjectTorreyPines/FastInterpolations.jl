@@ -36,9 +36,9 @@ end
 # Vector Call - Allocating
 # ========================================
 # Output type is Tv (value type), not Tg (grid type).
-# Handles type conversion via ternary (no-op when Tq === Tg).
+# Handles type conversion via _to_float (no-op when already Tg).
 function (itp::LinearInterpolant{Tg,Tv,X,Y,P})(xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, Tq<:Real}
-    xq_typed = Tq === Tg ? xq : Tg.(xq)
+    xq_typed = _to_float(xq, Tg)
     @boundscheck _check_domain(itp.x, xq_typed, itp.extrap)
     output = Vector{Tv}(undef, length(xq_typed))
     searcher = _to_searcher(search, hint)
@@ -146,13 +146,13 @@ function linear_interp end
 # Generic Constructor
 # ========================================
 # Handles all Real grid types (Int, Float32, Float64, etc.)
-# _ensure_promoted_xy handles type promotion (no-op when already compatible)
+# _promote_itp_inputs handles type promotion (no-op when already compatible)
 function linear_interp(
-    x::AbstractVector{Tx},
-    y::AbstractVector{Ty};
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv};
     extrap::Symbol=:none,
     search::P=Binary()
-) where {Tx<:Real, Ty, P<:AbstractSearchPolicy}
-    x_p, y_p = _ensure_promoted_xy(x, y)
+) where {Tg<:Real, Tv, P<:AbstractSearchPolicy}
+    x_p, y_p = _promote_itp_inputs(x, y)
     return LinearInterpolant(x_p, y_p; extrap, search)
 end

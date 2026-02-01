@@ -487,28 +487,28 @@ end
 
 # Vector-of-vectors wrapper for non-AbstractFloat x
 function constant_interp(
-    x::AbstractVector{Tx},
-    ys::AbstractVector{<:AbstractVector{Ty}};
+    x::AbstractVector{Tg},
+    ys::AbstractVector{<:AbstractVector{Tv}};
     side::Symbol=:nearest,
     extrap::Symbol=:none,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty}
-    # Compute Tg from x and real part of y
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
-    x_typed = _to_float(x, Tg)
+) where {Tg<:Real, Tv}
+    # Compute promoted grid type (Tg may be Int, promotes to Float)
+    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
+    x_typed = _to_float(x, Tg_float)
     return constant_interp(x_typed, ys; side, extrap, search)
 end
 
 # Matrix wrapper for non-AbstractFloat x
 function constant_interp(
-    x::AbstractVector{Tx},
-    Y::AbstractMatrix{Ty};
+    x::AbstractVector{Tg},
+    Y::AbstractMatrix{Tv};
     side::Symbol=:nearest,
     extrap::Symbol=:none,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty}
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
-    x_typed = _to_float(x, Tg)
+) where {Tg<:Real, Tv}
+    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
+    x_typed = _to_float(x, Tg_float)
     return constant_interp(x_typed, Y; side, extrap, search)
 end
 

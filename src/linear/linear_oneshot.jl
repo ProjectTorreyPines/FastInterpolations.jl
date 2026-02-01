@@ -444,35 +444,29 @@ end
 
 function linear_interp!(
     output::AbstractVector,
-    x::AbstractVector{Tx},
-    y::AbstractVector{Ty},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty, Tq<:Real}
+) where {Tg<:Real, Tv, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    # Tg from x/y ONLY (not x_targets) - preserves current behavior
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
+    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
+    Tv_float = eltype(y_typed)
 
-    # Determine expected output type and validate
-    # Use promote_type check: Tout can hold Tv if promote_type(Tout, Tv) === Tout
-    # This allows ComplexF64 output to hold Float64 results (via convert)
-    Tv = _value_type(Ty, Tg)
+    # Validate output can hold result type
     Tout = eltype(output)
-    if promote_type(Tout, Tv) !== Tout
+    if promote_type(Tout, Tv_float) !== Tout
         throw(ArgumentError(
-            "output eltype $Tout cannot hold interpolation result type $Tv. " *
-            "Use Vector{$Tv} or a wider type (e.g., Vector{Complex{$Tg}} for complex y-values)."
+            "output eltype $Tout cannot hold interpolation result type $Tv_float. " *
+            "Use Vector{$Tv_float} or a wider type."
         ))
     end
 
-    x_typed, y_typed = _promote_xy(x, y, Tg)
-    targets_typed = Tg.(x_targets)
-
-    linear_interp!(output, x_typed, y_typed, targets_typed; extrap, deriv, search)
+    linear_interp!(output, x_typed, y_typed, xq_typed; extrap, deriv, search)
 end
 
 # ========================================
@@ -482,18 +476,16 @@ end
 # POLICY: Tg is computed from x/y ONLY, not from xq
 
 @inline function linear_interp(
-    x::AbstractVector{Tx},
-    y::AbstractVector{Ty},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
     xq::Tq;
     extrap::Symbol=:none,
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tx<:Real, Ty, Tq<:Real}
-    # Tg from x/y ONLY (not xq) - preserves current behavior
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
-    x_typed, y_typed = _promote_xy(x, y, Tg)
-    # Pass xq directly (not Tg(xq)) to preserve ForwardDiff.Dual for AD
+) where {Tg<:Real, Tv, Tq<:Real}
+    x_typed, y_typed = _promote_itp_inputs(x, y)
+    # Pass xq directly (not converted) to preserve ForwardDiff.Dual for AD
     return linear_interp(x_typed, y_typed, xq; extrap, deriv, search, hint)
 end
 
@@ -502,19 +494,16 @@ end
 # ========================================
 
 function linear_interp(
-    x::AbstractVector{Tx},
-    y::AbstractVector{Ty},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
     extrap::Symbol=:none,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty, Tq<:Real}
-    # Tg from x/y ONLY (not x_targets)
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
-    Tv = _value_type(Ty, Tg)
-    output = Vector{Tv}(undef, length(x_targets))
-    x_typed, y_typed = _promote_xy(x, y, Tg)
-    targets_typed = Tg.(x_targets)
-    linear_interp!(output, x_typed, y_typed, targets_typed; extrap, deriv, search)
+) where {Tg<:Real, Tv, Tq<:Real}
+    x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
+    Tv_float = eltype(y_typed)
+    output = Vector{Tv_float}(undef, length(x_targets))
+    linear_interp!(output, x_typed, y_typed, xq_typed; extrap, deriv, search)
     return output
 end

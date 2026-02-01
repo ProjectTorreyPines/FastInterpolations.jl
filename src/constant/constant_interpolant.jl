@@ -8,68 +8,46 @@
 
 # ─────────────────────────────────────────────────────────────
 # Scalar call - hot path (inlined for broadcast fusion)
-# Default search is now the stored policy in itp.search_policy
-# Type parameters: Tg = grid type, Tv = value type (can be Complex)
+# AD Support: xq can be any Real (including ForwardDiff.Dual)
+# Type parameters: Tg = grid type, Tv = value type, Tq = query type
 # ─────────────────────────────────────────────────────────────
-@inline function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(xi::Tg; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
+@inline function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(xq::Tq; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, Tq<:Real}
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        _constant_eval_at_point(itp.x, itp.y, xi, itp.extrap, itp.side, op, searcher)
-    end
-end
-
-# Real scalar wrapper - AD Support: call _constant_eval_at_point directly to preserve Dual
-# This allows ForwardDiff.Dual to pass through without conversion to Tg
-@inline function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(xi::S; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
-    searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        _constant_eval_at_point(itp.x, itp.y, xi, itp.extrap, itp.side, op, searcher)
+        _constant_eval_at_point(itp.x, itp.y, xq, itp.extrap, itp.side, op, searcher)
     end
 end
 
 # ─────────────────────────────────────────────────────────────
 # Vector call (allocating)
-# Now supports hint for ODE/streaming patterns
+# Supports hint for ODE/streaming patterns
 # Output type is Tv (value type), not Tg (grid type)
 # ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
-    xi_typed = _to_float(xi, Tg)
-    output = Vector{Tv}(undef, length(xi_typed))
+function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, Tq<:Real}
+    xq_typed = _to_float(xq, Tg)
+    output = Vector{Tv}(undef, length(xq_typed))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
-        @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _constant_eval_at_point(itp.x, itp.y, xi_typed[i], itp.extrap, itp.side, op, searcher)
+        @boundscheck _check_domain(itp.x, xq_typed, itp.extrap)
+        @inbounds for i in eachindex(xq_typed, output)
+            output[i] = _constant_eval_at_point(itp.x, itp.y, xq_typed[i], itp.extrap, itp.side, op, searcher)
         end
     end
     return output
 end
 
 # ─────────────────────────────────────────────────────────────
-# In-place vector call (zero allocation)
-# Output type is Tv (value type)
+# In-place vector call
+# Handles type conversion via _to_float (no-op when already Tg)
 # ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector{Tv}, xi::AbstractVector{Tg}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
-    @assert length(output) == length(xi) "output length must match xi length"
+function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, Tq<:Real}
+    @assert length(output) == length(xq) "output length must match xq length"
+    xq_typed = _to_float(xq, Tg)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi, itp.extrap)
-        @inbounds for i in eachindex(xi, output)
-            output[i] = _constant_eval_at_point(itp.x, itp.y, xi[i], itp.extrap, itp.side, op, searcher)
-        end
-    end
-    return output
-end
-
-# In-place with type conversion
-function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
-    @assert length(output) == length(xi) "output length must match xi length"
-    xi_typed = _to_float(xi, Tg)
-    searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
-        @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _constant_eval_at_point(itp.x, itp.y, xi_typed[i], itp.extrap, itp.side, op, searcher)
+        @boundscheck _check_domain(itp.x, xq_typed, itp.extrap)
+        @inbounds for i in eachindex(xq_typed, output)
+            output[i] = _constant_eval_at_point(itp.x, itp.y, xq_typed[i], itp.extrap, itp.side, op, searcher)
         end
     end
     return output
@@ -126,31 +104,15 @@ for batch in batches
 end
 ```
 """
-# Hot path: x is AbstractFloat, y can be Tg or Complex{Tg}
+# Generic constructor handles all Real grid types (Int, Float32, Float64, etc.)
+# _ensure_promoted_xy handles type promotion (no-op when already compatible)
 function constant_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv};
+    x::AbstractVector{Tx},
+    y::AbstractVector{Ty};
     extrap::Symbol=:none,
     side::Symbol=:nearest,
     search::P=Binary()
-) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
-    # Auto-promote x/y types (zero allocation if already compatible)
-    x_p, y_p = _ensure_promoted_xy(x, y)
-    return ConstantInterpolant(x_p, y_p; extrap, side, search)
-end
-
-# ========================================
-# 2-arg Generic Constructor (Type Promotion Wrapper)
-# Handles: Int grid, Real values, Complex values
-# ========================================
-
-function constant_interp(
-    x::AbstractVector{TX},
-    y::AbstractVector{TY};
-    extrap::Symbol=:none,
-    side::Symbol=:nearest,
-    search::P=Binary()
-) where {TX<:Real, TY, P<:AbstractSearchPolicy}
+) where {Tx<:Real, Ty, P<:AbstractSearchPolicy}
     x_p, y_p = _ensure_promoted_xy(x, y)
     return ConstantInterpolant(x_p, y_p; extrap, side, search)
 end

@@ -38,41 +38,25 @@ end
 
 # Vector call with deriv keyword support
 # Now supports hint for ODE/streaming patterns - hint is updated during loop
-function (itp::CubicInterpolant{Tg,Tv,C,P})(xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P, S<:Real}
-    xi_typed = S === Tg ? xi : Tg.(xi)
-    output = Vector{Tv}(undef, length(xi_typed))
+# Handles type conversion via _to_float (no-op when already Tg).
+function (itp::CubicInterpolant{Tg,Tv,C,P})(xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P, Tq<:Real}
+    xq_typed = _to_float(xq, Tg)
+    output = Vector{Tv}(undef, length(xq_typed))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap, op, searcher)
-    end
-    return output
-end
-
-function (itp::CubicInterpolant{Tg,Tv,C,P})(xi::AbstractVector{Tg}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P}
-    output = Vector{Tv}(undef, length(xi))
-    searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap, op, searcher)
+        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq_typed, itp.extrap, op, searcher)
     end
     return output
 end
 
 # In-place vector call with deriv keyword support
-function (itp::CubicInterpolant{Tg,Tv,C,P})(output::AbstractVector{Tv}, xi::AbstractVector{Tg}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P}
-    @assert length(output) == length(xi) "output length must match xi length"
+# Handles type conversion via _to_float (no-op when already Tg).
+function (itp::CubicInterpolant{Tg,Tv,C,P})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P, Tq<:Real}
+    @assert length(output) == length(xq) "output length must match xq length"
+    xq_typed = _to_float(xq, Tg)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi, itp.extrap, op, searcher)
-    end
-    return output
-end
-
-function (itp::CubicInterpolant{Tg,Tv,C,P})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P, S<:Real}
-    @assert length(output) == length(xi) "output length must match xi length"
-    xi_typed = Tg.(xi)
-    searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xi_typed, itp.extrap, op, searcher)
+        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq_typed, itp.extrap, op, searcher)
     end
     return output
 end

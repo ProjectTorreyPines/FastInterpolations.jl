@@ -277,7 +277,7 @@ using FastInterpolations
     # Tg Calculation Policy (Query Independence)
     # ========================================
     @testset "Tg from x/y only, not query" begin
-        # Float32 data + Float64 query → Float32 output
+        # Float32 data + Float64 query
         x32 = Float32.(0:0.1:1)
         y1 = sin.(x32)
         y2 = cos.(x32)
@@ -285,9 +285,10 @@ using FastInterpolations
         sitp = quadratic_interp(x32, [y1, y2])
         @test sitp isa QuadraticSeriesInterpolant{Float32, Float32}
 
-        # Float64 query should return Float32 (Tg from x/y)
+        # Note: QuadraticSeriesInterpolant promotes result to query type (Float64)
+        # This enables ForwardDiff.Dual support (Dual input → Dual output)
         result = sitp(0.5)  # 0.5 is Float64
-        @test eltype(result) === Float32
+        @test eltype(result) === Float64
     end
 
     # ========================================

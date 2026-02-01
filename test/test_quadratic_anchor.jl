@@ -164,18 +164,20 @@ using FastInterpolations
     # ========================================
     # Type Promotion Tests
     # ========================================
-    @testset "type promotion Real → Float" begin
+    @testset "type preservation Real types" begin
         x = collect(range(0.0, 1.0, 11))
 
-        # Int query should be promoted
+        # Int query type is preserved (for AD compatibility)
         aq_int = FastInterpolations._anchor_query(x, 0, Val(:quadratic))
-        @test aq_int.xq isa Float64
-        @test aq_int.xq ≈ 0.0
+        @test aq_int.xq isa Int
+        @test aq_int.xq == 0
+        @test aq_int isa FastInterpolations._QuadraticAnchoredQuery{Float64, Int}
 
-        # Rational query should be promoted
+        # Rational query type is preserved (for AD compatibility)
         aq_rat = FastInterpolations._anchor_query(x, 1//2, Val(:quadratic))
-        @test aq_rat.xq isa Float64
-        @test aq_rat.xq ≈ 0.5
+        @test aq_rat.xq isa Rational
+        @test aq_rat.xq == 1//2
+        @test aq_rat isa FastInterpolations._QuadraticAnchoredQuery{Float64, Rational{Int}}
     end
 
     # ========================================
@@ -186,7 +188,7 @@ using FastInterpolations
         xq = 0.35f0
 
         aq = FastInterpolations._anchor_query(x, xq, Val(:quadratic))
-        @test aq isa FastInterpolations._QuadraticAnchoredQuery{Float32}
+        @test aq isa FastInterpolations._QuadraticAnchoredQuery{Float32, Float32}
         @test aq.xq isa Float32
         @test aq.dL isa Float32
     end
@@ -414,7 +416,7 @@ using FastInterpolations
             xq = [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
 
             expected = FI._anchor_query(x, xq, Val(:quadratic))
-            buffer = Vector{FI._QuadraticAnchoredQuery{Float64}}(undef, length(xq))
+            buffer = Vector{FI._QuadraticAnchoredQuery{Float64, Float64}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:quadratic))
 
             for i in eachindex(xq)
@@ -430,7 +432,7 @@ using FastInterpolations
             xq = [-0.3, 0.5, 1.3, 2.5]
 
             expected = FI._anchor_query(x, xq, Val(:quadratic); wrap=true)
-            buffer = Vector{FI._QuadraticAnchoredQuery{Float64}}(undef, length(xq))
+            buffer = Vector{FI._QuadraticAnchoredQuery{Float64, Float64}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:quadratic); wrap=true)
 
             for i in eachindex(xq)
@@ -443,7 +445,7 @@ using FastInterpolations
         @testset "length assertion when buffer too small" begin
             x = collect(range(0.0, 1.0, 101))
             xq = [0.15, 0.35, 0.5, 0.75]
-            buffer = Vector{FI._QuadraticAnchoredQuery{Float64}}(undef, 2)
+            buffer = Vector{FI._QuadraticAnchoredQuery{Float64, Float64}}(undef, 2)
 
             @test_throws AssertionError FI._fill_anchors!(buffer, x, xq, Val(:quadratic))
         end
@@ -451,7 +453,7 @@ using FastInterpolations
         @testset "zero allocation after warmup" begin
             x = collect(range(0.0, 1.0, 101))
             xq = collect(range(0.1, 0.9, 50))
-            buffer = Vector{FI._QuadraticAnchoredQuery{Float64}}(undef, length(xq))
+            buffer = Vector{FI._QuadraticAnchoredQuery{Float64, Float64}}(undef, length(xq))
 
             FI._fill_anchors!(buffer, x, xq, Val(:quadratic))
             allocs = @allocated FI._fill_anchors!(buffer, x, xq, Val(:quadratic))

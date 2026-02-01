@@ -669,4 +669,125 @@ const FI = FastInterpolations
         end
     end
 
+    # ========================================
+    # QuadraticSeriesInterpolant with ForwardDiff
+    # ========================================
+
+    @testset "QuadraticSeriesInterpolant with ForwardDiff" begin
+        # Two series: sin and cos
+        x = collect(range(0.0, 2π, 21))
+        y1 = sin.(x)
+        y2 = cos.(x)
+        sitp = quadratic_interp(x, [y1, y2]; extrap=:extension)
+
+        @testset "derivative matches analytical (interior points)" begin
+            # Test at interior points only (not at grid points)
+            test_points = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0]
+
+            for xq in test_points
+                # ForwardDiff computes derivative of entire vector at once
+                fd_derivs = ForwardDiff.derivative(sitp, xq)
+                analytical = sitp(xq; deriv=1)
+
+                @test fd_derivs ≈ analytical atol=1e-10
+            end
+        end
+
+        @testset "value is preserved" begin
+            test_points = [0.5, 1.5, 2.5]
+
+            for xq in test_points
+                dual_result = sitp(ForwardDiff.Dual(xq, 1.0))
+                fd_values = ForwardDiff.value.(dual_result)
+
+                @test fd_values ≈ sitp(xq) atol=1e-10
+            end
+        end
+
+        @testset "type stability" begin
+            xq = ForwardDiff.Dual(1.5, 1.0)
+            result = sitp(xq)
+
+            # Output should be vector of Dual
+            @test eltype(result) <: ForwardDiff.Dual
+        end
+
+        @testset "quadratic data exact derivative" begin
+            # Quadratic data: y1 = x², y2 = 2x²
+            x_quad = collect(0.0:0.5:5.0)
+            y1_quad = x_quad .^ 2
+            y2_quad = 2.0 .* x_quad .^ 2
+            sitp_quad = quadratic_interp(x_quad, [y1_quad, y2_quad]; extrap=:extension)
+
+            xq = 2.25
+            fd_derivs = ForwardDiff.derivative(sitp_quad, xq)
+            analytical = sitp_quad(xq; deriv=1)
+
+            @test fd_derivs ≈ analytical atol=1e-10
+            # Derivative of x² is 2x, derivative of 2x² is 4x
+            @test fd_derivs ≈ [2.0 * xq, 4.0 * xq] atol=1e-10
+        end
+
+        @testset "Float32 support" begin
+            x32 = Float32.(collect(range(0.0, 2π, 21)))
+            y1_32 = sin.(x32)
+            y2_32 = cos.(x32)
+            sitp32 = quadratic_interp(x32, [y1_32, y2_32]; extrap=:extension)
+
+            xq = 1.5f0
+            fd_derivs = ForwardDiff.derivative(sitp32, xq)
+            analytical = sitp32(xq; deriv=1)
+
+            @test fd_derivs ≈ analytical atol=1e-5
+            @test eltype(fd_derivs) == Float32
+        end
+
+        @testset "gradient computation" begin
+            # Gradient of scalar function using interpolant
+            function loss(params)
+                xq = params[1]
+                vals = sitp(xq)
+                return sum(vals .^ 2)  # scalar output
+            end
+
+            params = [2.25]
+            grad = ForwardDiff.gradient(loss, params)
+
+            # d/d(xq)[sum(f_i(xq)²)] = 2 * sum(f_i(xq) * f_i'(xq))
+            vals = sitp(2.25)
+            derivs = sitp(2.25; deriv=1)
+            expected_grad = 2 * sum(vals .* derivs)
+
+            @test grad[1] ≈ expected_grad atol=1e-10
+        end
+    end
+
+    @testset "QuadraticSeriesInterpolant complex values with ForwardDiff" begin
+        x = collect(range(0.0, 2π, 21))
+        # Complex series
+        y1_complex = (1.0 + 1.0im) .* sin.(x)
+        y2_complex = (2.0 - 1.0im) .* cos.(x)
+        sitp = quadratic_interp(x, [y1_complex, y2_complex]; extrap=:extension)
+
+        @testset "complex derivative" begin
+            xq = 1.5
+
+            fd_derivs = ForwardDiff.derivative(sitp, xq)
+            analytical = sitp(xq; deriv=1)
+
+            @test fd_derivs ≈ analytical atol=1e-10
+        end
+
+        @testset "value preserved for complex" begin
+            xq = 1.5
+            dual_result = sitp(ForwardDiff.Dual(xq, 1.0))
+            fd_values = ForwardDiff.value.(dual_result)
+
+            @test fd_values ≈ sitp(xq) atol=1e-10
+        end
+    end
+
+    # NOTE: CubicSeriesInterpolant AD support is pending implementation.
+    # See docs/todo/series_interpolant_ad_support.md for design details.
+
 end  # testset "AutoDiff Support"

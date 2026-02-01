@@ -18,13 +18,14 @@
 # Note: _constant_extrap_result helper is defined in cubic_eval.jl (shared)
 
 """
-    _quadratic_eval_core(x, y, a, d, xi, op, searcher)
+    _quadratic_eval_core(x, y, a, d, xq, op, searcher)
 
 Core quadratic spline evaluation at a single point with search policy.
 Uses interval clamping for extension extrapolation (matches cubic pattern).
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type for x and xi
+- `Tg<:AbstractFloat`: Grid type for x
+- `Tq`: Query type (can be Tg or ForwardDiff.Dual for AD)
 - `Tv`: Value type for y, a, d (can be Tg or Complex{Tg})
 """
 @inline function _quadratic_eval_core(
@@ -32,14 +33,17 @@ Uses interval clamping for extension extrapolation (matches cubic pattern).
     y::AbstractVector{Tv},
     a::AbstractVector{Tv},
     d::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     op::AbstractEvalOp,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
+    # Extract primal for search (comparisons need Float, not Dual)
+    xq_primal = _extract_primal(xq)
     # search_interval clamps idx to [1, n-1]
     # This handles both normal evaluation and extension extrapolation
-    idx, xL, _ = search_interval(searcher, x, xi)
-    dt = xi - xL  # Tg
+    idx, xL, _ = search_interval(searcher, x, Tg(xq_primal))
+    # Use original xq for arithmetic to preserve AD
+    dt = xq - xL  # Can be Dual for AD
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
 end
 
@@ -53,12 +57,12 @@ end
     y::AbstractVector{Tv},
     a::AbstractVector{Tv},
     d::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     ::Val{:none},
     op::AbstractEvalOp,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, S<:Searcher}
-    return _quadratic_eval_core(x, y, a, d, xi, op, searcher)
+) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
+    return _quadratic_eval_core(x, y, a, d, xq, op, searcher)
 end
 
 "Evaluate with constant extrapolation - returns boundary values outside domain."
@@ -67,14 +71,16 @@ end
     y::AbstractVector{Tv},
     a::AbstractVector{Tv},
     d::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     ::Val{:constant},
     op::AbstractEvalOp,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, S<:Searcher}
-    xi < first(x) && return _constant_extrap_result(op, @inbounds y[1])
-    xi > last(x) && return _constant_extrap_result(op, @inbounds y[end])
-    return _quadratic_eval_core(x, y, a, d, xi, op, searcher)
+) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
+    # Use primal for boundary comparisons (Dual needs real value for comparison)
+    xq_primal = _extract_primal(xq)
+    xq_primal < first(x) && return _constant_extrap_result(op, @inbounds y[1])
+    xq_primal > last(x) && return _constant_extrap_result(op, @inbounds y[end])
+    return _quadratic_eval_core(x, y, a, d, xq, op, searcher)
 end
 
 "Evaluate with extension extrapolation - extends boundary polynomial."
@@ -83,23 +89,24 @@ end
     y::AbstractVector{Tv},
     a::AbstractVector{Tv},
     d::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     ::Val{:extension},
     op::AbstractEvalOp,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
     # Interval clamping in search_interval handles extension
-    return _quadratic_eval_core(x, y, a, d, xi, op, searcher)
+    return _quadratic_eval_core(x, y, a, d, xq, op, searcher)
 end
 
 """
-    _quadratic_eval_at_point(x, y, h, a, d, xi, extrap, op, searcher)
+    _quadratic_eval_at_point(x, y, h, a, d, xq, extrap, op, searcher)
 
 Entry point for quadratic spline evaluation with extrapolation dispatch and search policy.
 Note: `h` parameter kept for API compatibility but not used (interval info from x).
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type for x, h, xi
+- `Tg<:AbstractFloat`: Grid type for x, h
+- `Tq`: Query type (can be Tg or ForwardDiff.Dual for AD)
 - `Tv`: Value type for y, a, d (can be Tg or Complex{Tg})
 """
 @inline function _quadratic_eval_at_point(
@@ -108,13 +115,15 @@ Note: `h` parameter kept for API compatibility but not used (interval info from 
     ::AbstractVector{Tg},  # h - unused, kept for API compatibility
     a::AbstractVector{Tv},
     d::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     extrap::ExtrapVal,
     op::AbstractEvalOp,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, S<:Searcher}
-    @boundscheck _check_domain(x, xi, extrap)
-    return _quadratic_eval_with_extrap(x, y, a, d, xi, extrap, op, searcher)
+) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
+    # Domain check uses primal value (Dual needs real value for comparison)
+    xq_primal = _extract_primal(xq)
+    @boundscheck _check_domain(x, Tg(xq_primal), extrap)
+    return _quadratic_eval_with_extrap(x, y, a, d, xq, extrap, op, searcher)
 end
 
 
@@ -177,13 +186,13 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
 @inline @with_pool pool function quadratic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    xi::Tg;
+    xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
     @boundscheck length(x) >= 2 || throw(ArgumentError("x must have at least 2 elements"))
 
@@ -199,7 +208,8 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @_dispatch_extrap extrap => ev begin
-            _quadratic_eval_at_point(x, y, h, a, d, xi, ev, op, searcher)
+            # xq passed as-is to preserve Dual type for AD
+            _quadratic_eval_at_point(x, y, h, a, d, xq, ev, op, searcher)
         end
     end
 end
@@ -340,10 +350,12 @@ end
 # Unified wrapper for non-AbstractFloat inputs (Int, mixed types, Complex, etc.)
 # POLICY: Tg is computed from x/y ONLY, not from xq
 
+# Wrapper for non-AbstractFloat inputs (Int, mixed types, etc.)
+# Preserves original xq type for AD support (Dual types flow through)
 @inline function quadratic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    xi::Tq;
+    xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
     deriv::Int=0,
@@ -351,10 +363,10 @@ end
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
-    Tg_float = eltype(x_typed)
     Tv_float = eltype(y_typed)
     bc_promoted = _promote_bc(bc, Tv_float)
-    return quadratic_interp(x_typed, y_typed, Tg_float(xi); bc=bc_promoted, extrap, deriv, search, hint)
+    # Pass xq directly to preserve Dual type for AD
+    return quadratic_interp(x_typed, y_typed, xq; bc=bc_promoted, extrap, deriv, search, hint)
 end
 
 # ========================================

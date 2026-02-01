@@ -104,26 +104,29 @@ Core implementation for BCPair boundary conditions (scalar query).
 Thread-safe: uses _get_cubic_cache + @with_pool pattern.
 
 Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
+AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
 """
 @inline @with_pool pool function _cubic_interp_bcpair_scalar(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    x_query::Tg,
+    xq::Tq,  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::BCPair{L,R},
     extrap::Symbol,
     autocache::Bool,
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, L<:PointBC, R<:PointBC, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real, L<:PointBC, R<:PointBC, O<:AbstractEvalOp, S<:Searcher}
     tmp_z = similar!(pool, y)
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc, autocache)
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc)
 
+    # Extract primal for domain check, pass original xq to preserve AD
+    xq_primal = _extract_primal(xq)
     @_dispatch_extrap extrap => ev begin
-        _check_domain(cache.x, x_query, ev)
-        return _eval_with_bc(cache, y, tmp_z, x_query, ev, op, searcher)
+        _check_domain(cache.x, Tg(xq_primal), ev)
+        return _eval_with_bc(cache, y, tmp_z, xq, ev, op, searcher)
     end
 end
 
@@ -159,24 +162,27 @@ end
 """
 Core implementation for PeriodicBC boundary conditions (scalar query).
 Thread-safe: uses _get_cubic_cache + @with_pool pattern.
+AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
 """
 @inline @with_pool pool function _cubic_interp_periodic_scalar(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    x_query::Tg,
+    xq::Tq,  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     autocache::Bool,
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real, O<:AbstractEvalOp, S<:Searcher}
     _check_periodic_endpoints(y)
     cache = _get_cubic_cache(x, PeriodicBC(), autocache)
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
+    # Extract primal for domain check, pass original xq to preserve AD
+    xq_primal = _extract_primal(xq)
     # Periodic BC always uses :wrap extrapolation
     @_dispatch_extrap :wrap => ev begin
-        _check_domain(cache.x, x_query, ev)
-        return _eval_with_bc(cache, y, z, x_query, ev, op, searcher)
+        _check_domain(cache.x, Tg(xq_primal), ev)
+        return _eval_with_bc(cache, y, z, xq, ev, op, searcher)
     end
 end
 
@@ -350,27 +356,29 @@ cubic_interp(cache::CubicSplineCache{Tg}, y::AbstractVector{Tv},
              x_query::Tg; extrap::Symbol=:none, deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv} =
     cubic_interp_scalar(cache, y, x_query; extrap=extrap, deriv=deriv, search=search, hint=hint)
 
+# Primary scalar method - AD-compatible
+# xq accepts Real including ForwardDiff.Dual (Dual <: Real)
 function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    x_query::Tg;
+    xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     _validate_extrap(extrap)
 
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         if _is_periodic_bc(bc)
-            return _cubic_interp_periodic_scalar(x, y, x_query, autocache, op, searcher)
+            return _cubic_interp_periodic_scalar(x, y, xq, autocache, op, searcher)
         end
 
         bc_pair = _normalize_bc(bc, Tv)
-        return _cubic_interp_bcpair_scalar(x, y, x_query, bc_pair, extrap, autocache, op, searcher)
+        return _cubic_interp_bcpair_scalar(x, y, xq, bc_pair, extrap, autocache, op, searcher)
     end
 end
 
@@ -397,11 +405,12 @@ function cubic_interp(
     return cubic_interp(x_typed, y_typed, xq_typed; bc, extrap, autocache, deriv, search)
 end
 
-# Allocating - scalar query
+# Allocating - scalar query wrapper
+# Preserves original xq type for AD support (Dual types flow through)
 function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    x_query::Tq;
+    xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::AbstractBC=NaturalBC(),
     extrap::Symbol=:none,
     autocache::Bool=true,
@@ -410,8 +419,8 @@ function cubic_interp(
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
-    Tg_float = eltype(x_typed)
-    return cubic_interp(x_typed, y_typed, Tg_float(x_query); bc, extrap, autocache, deriv, search, hint)
+    # Pass xq directly to preserve Dual type for AD
+    return cubic_interp(x_typed, y_typed, xq; bc, extrap, autocache, deriv, search, hint)
 end
 
 # In-place - vector query

@@ -24,17 +24,16 @@
 # Supports deriv, search, and hint keywords for derivative evaluation and search policy
 # Default search is now the stored policy in itp.search_policy
 # Tg = grid type, Tv = value type (can be Complex)
-@inline function (itp::CubicInterpolant{Tg,Tv,C,P})(xi::Tg; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P}
-    @boundscheck _check_domain(itp.cache.x, xi, itp.extrap)
+# Unified method: accepts any query type (Tg, Real, or Dual for AD)
+@inline function (itp::CubicInterpolant{Tg,Tv,C,P})(xq; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P}
+    # Extract primal for domain check (Dual needs real value for comparison)
+    xq_primal = _extract_primal(xq)
+    @boundscheck _check_domain(itp.cache.x, Tg(xq_primal), itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        _eval_with_bc(itp.cache, itp.y, itp.z, xi, itp.extrap, op, searcher)
+        # Pass original xq to preserve Dual type for AD
+        _eval_with_bc(itp.cache, itp.y, itp.z, xq, itp.extrap, op, searcher)
     end
-end
-
-# Real scalar wrapper - delegates to Tg method with deriv keyword
-@inline function (itp::CubicInterpolant{Tg,Tv,C,P})(xi::S; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P, S<:Real}
-    itp(Tg(xi); deriv=deriv, search=search, hint=hint)
 end
 
 # Vector call with deriv keyword support

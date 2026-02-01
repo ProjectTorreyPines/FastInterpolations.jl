@@ -10,17 +10,17 @@
 # Scalar call - hot path (inlined for broadcast fusion)
 # Default search is now the stored policy in itp.search_policy
 # Type parameters: Tg = grid type, Tv = value type (can be Complex)
+# Unified method: accepts any query type (Tg, Real, or Dual for AD)
 # ─────────────────────────────────────────────────────────────
-@inline function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(xi::Tg; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
+@inline function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(xq; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
+    # Extract primal for domain check (Dual needs real value for comparison)
+    xq_primal = _extract_primal(xq)
+    @boundscheck _check_domain(itp.x, Tg(xq_primal), itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.extrap, op, searcher)
+        # Pass original xq to preserve Dual type for AD
+        _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xq, itp.extrap, op, searcher)
     end
-end
-
-# Real scalar wrapper - delegates to Tg method
-@inline function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(xi::S; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
-    itp(Tg(xi); deriv=deriv, search=search, hint=hint)
 end
 
 # ─────────────────────────────────────────────────────────────

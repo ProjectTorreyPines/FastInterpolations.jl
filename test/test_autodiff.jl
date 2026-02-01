@@ -76,6 +76,15 @@ const FI = FastInterpolations
             @test fd_deriv ≈ expected_slope atol=1e-10
             @test fd_deriv ≈ analytical atol=1e-10
         end
+
+        @testset "one-shot API AD" begin
+            # One-shot API should also support ForwardDiff
+            xq = 2.25
+            fd_deriv = ForwardDiff.derivative(q -> linear_interp(x, y, q), xq)
+            analytical = linear_interp(x, y, xq; deriv=1)
+            @test fd_deriv ≈ analytical atol=1e-10
+            @test fd_deriv ≈ 2.0 atol=1e-10  # Known slope for y = 2x + 1
+        end
     end
 
     # ========================================
@@ -162,6 +171,13 @@ const FI = FastInterpolations
             @test fd_deriv ≈ analytical atol=1e-10
             @test real(fd_deriv) ≈ 2.0 atol=1e-10  # d/dx(2x+1)
             @test imag(fd_deriv) ≈ 1.0 atol=1e-10  # d/dx(x-1)
+        end
+
+        @testset "one-shot API AD with complex" begin
+            xq = 2.25
+            fd_deriv = ForwardDiff.derivative(q -> linear_interp(x, y_complex, q), xq)
+            analytical = linear_interp(x, y_complex, xq; deriv=1)
+            @test fd_deriv ≈ analytical atol=1e-10
         end
     end
 
@@ -361,6 +377,295 @@ const FI = FastInterpolations
             # d/d(xq)[f(xq)²] = 2 * f(xq) * f'(xq) = 2 * f(xq) * 0 = 0
             grad = ForwardDiff.gradient(loss, [2.5])
             @test grad[1] ≈ 0.0 atol=1e-10
+        end
+    end
+
+    # ========================================
+    # QuadraticInterpolant with ForwardDiff
+    # ========================================
+
+    @testset "QuadraticInterpolant with ForwardDiff" begin
+        # Quadratic data: y = x²
+        # For quadratic spline with quadratic data, derivatives should be exact
+        x = collect(0.0:0.5:5.0)
+        y = x .^ 2
+
+        itp = quadratic_interp(x, y; extrap=:extension)
+
+        @testset "derivative matches analytical" begin
+            test_points = [0.25, 1.0, 2.5, 3.75, 4.5]
+
+            for xq in test_points
+                # ForwardDiff derivative
+                fd_deriv = ForwardDiff.derivative(itp, xq)
+
+                # Analytical derivative from interpolant
+                analytical = itp(xq; deriv=1)
+
+                @test fd_deriv ≈ analytical atol=1e-10
+            end
+        end
+
+        @testset "exact quadratic reproduction" begin
+            # Quadratic spline should reproduce y=x² exactly (up to BC effects)
+            test_points = [0.25, 1.25, 2.25, 3.25]
+
+            for xq in test_points
+                fd_deriv = ForwardDiff.derivative(itp, xq)
+                # True derivative of x² is 2x
+                expected = 2.0 * xq
+                @test fd_deriv ≈ expected atol=1e-10
+            end
+        end
+
+        @testset "value is preserved" begin
+            test_points = [0.25, 1.0, 2.5, 3.75, 4.5]
+
+            for xq in test_points
+                fd_value = ForwardDiff.value(ForwardDiff.Dual(xq, 1.0) |> itp)
+                direct_value = itp(xq)
+
+                @test fd_value ≈ direct_value atol=1e-10
+            end
+        end
+
+        @testset "works with cubic data" begin
+            # Cubic data: y = x³ - piecewise quadratic won't be exact
+            y_cubic = x .^ 3
+            itp_cubic = quadratic_interp(x, y_cubic; extrap=:extension)
+
+            xq = 2.25
+
+            fd_deriv = ForwardDiff.derivative(itp_cubic, xq)
+            analytical = itp_cubic(xq; deriv=1)
+
+            # ForwardDiff and analytical should still match
+            @test fd_deriv ≈ analytical atol=1e-10
+        end
+
+        @testset "type stability" begin
+            xq = ForwardDiff.Dual(2.5, 1.0)
+            result = itp(xq)
+            @test result isa ForwardDiff.Dual
+        end
+
+        @testset "Float32 support" begin
+            x32 = Float32.(collect(0.0:0.5:5.0))
+            y32 = x32 .^ 2
+            itp32 = quadratic_interp(x32, y32; extrap=:extension)
+
+            xq = 2.25f0
+            fd_deriv = ForwardDiff.derivative(itp32, xq)
+            analytical = itp32(xq; deriv=1)
+
+            @test fd_deriv ≈ analytical atol=1e-5
+            @test fd_deriv isa Float32
+        end
+
+        @testset "gradient computation" begin
+            function loss(params)
+                xq = params[1]
+                return itp(xq)^2
+            end
+
+            params = [2.25]
+            grad = ForwardDiff.gradient(loss, params)
+
+            # d/d(xq)[itp(xq)²] = 2 * itp(xq) * itp'(xq)
+            val = itp(2.25)
+            deriv = itp(2.25; deriv=1)
+            expected_grad = 2 * val * deriv
+
+            @test grad[1] ≈ expected_grad atol=1e-10
+        end
+
+        @testset "one-shot API AD" begin
+            # One-shot API should also support ForwardDiff
+            xq = 2.25
+            fd_deriv = ForwardDiff.derivative(q -> quadratic_interp(x, y, q), xq)
+            analytical = quadratic_interp(x, y, xq; deriv=1)
+            @test fd_deriv ≈ analytical atol=1e-10
+        end
+    end
+
+    @testset "Quadratic complex values with ForwardDiff" begin
+        x = collect(0.0:0.5:5.0)
+        # Complex quadratic: z = (1 + i)x²
+        y_complex = (1.0 + 1.0im) .* x .^ 2
+
+        itp = quadratic_interp(x, y_complex; extrap=:extension)
+
+        @testset "complex derivative" begin
+            xq = 2.25
+
+            fd_deriv = ForwardDiff.derivative(itp, xq)
+            analytical = itp(xq; deriv=1)
+
+            @test fd_deriv ≈ analytical atol=1e-10
+            # For (1+i)x², derivative is (1+i)*2x = (2+2i)*x
+            # At x=2.25: (2+2i)*2.25 = 4.5 + 4.5i
+            @test real(fd_deriv) ≈ 2.0 * 2.25 atol=1e-10
+            @test imag(fd_deriv) ≈ 2.0 * 2.25 atol=1e-10
+        end
+
+        @testset "one-shot API AD with complex" begin
+            xq = 2.25
+            fd_deriv = ForwardDiff.derivative(q -> quadratic_interp(x, y_complex, q), xq)
+            analytical = quadratic_interp(x, y_complex, xq; deriv=1)
+            @test fd_deriv ≈ analytical atol=1e-10
+        end
+    end
+
+    # ========================================
+    # CubicInterpolant with ForwardDiff
+    # ========================================
+
+    @testset "CubicInterpolant with ForwardDiff" begin
+        # Cubic data: y = x³
+        # For cubic spline with cubic data, derivatives should be close
+        x = collect(0.0:0.5:5.0)
+        y = x .^ 3
+
+        itp = cubic_interp(x, y; extrap=:extension)
+
+        @testset "derivative matches analytical" begin
+            test_points = [0.25, 1.0, 2.5, 3.75, 4.5]
+
+            for xq in test_points
+                # ForwardDiff derivative
+                fd_deriv = ForwardDiff.derivative(itp, xq)
+
+                # Analytical derivative from interpolant
+                analytical = itp(xq; deriv=1)
+
+                @test fd_deriv ≈ analytical atol=1e-10
+            end
+        end
+
+        @testset "cubic data derivative accuracy" begin
+            # Cubic spline should reproduce cubic polynomial derivatives well
+            test_points = [1.25, 2.25, 3.25]
+
+            for xq in test_points
+                fd_deriv = ForwardDiff.derivative(itp, xq)
+                # True derivative of x³ is 3x²
+                expected = 3.0 * xq^2
+                # Cubic spline approximation, not exact
+                @test fd_deriv ≈ expected rtol=0.05
+            end
+        end
+
+        @testset "value is preserved" begin
+            test_points = [0.25, 1.0, 2.5, 3.75, 4.5]
+
+            for xq in test_points
+                fd_value = ForwardDiff.value(ForwardDiff.Dual(xq, 1.0) |> itp)
+                direct_value = itp(xq)
+
+                @test fd_value ≈ direct_value atol=1e-10
+            end
+        end
+
+        @testset "works with sine data" begin
+            # Sin data: more realistic use case
+            y_sin = sin.(x)
+            itp_sin = cubic_interp(x, y_sin; extrap=:extension)
+
+            xq = 1.5
+
+            fd_deriv = ForwardDiff.derivative(itp_sin, xq)
+            analytical = itp_sin(xq; deriv=1)
+
+            # ForwardDiff and analytical should match
+            @test fd_deriv ≈ analytical atol=1e-10
+            # Should be close to cos(1.5)
+            @test fd_deriv ≈ cos(1.5) rtol=0.01
+        end
+
+        @testset "type stability" begin
+            xq = ForwardDiff.Dual(2.5, 1.0)
+            result = itp(xq)
+            @test result isa ForwardDiff.Dual
+        end
+
+        @testset "Float32 support" begin
+            x32 = Float32.(collect(0.0:0.5:5.0))
+            y32 = x32 .^ 3
+            itp32 = cubic_interp(x32, y32; extrap=:extension)
+
+            xq = 2.25f0
+            fd_deriv = ForwardDiff.derivative(itp32, xq)
+            analytical = itp32(xq; deriv=1)
+
+            @test fd_deriv ≈ analytical atol=1e-4
+            @test fd_deriv isa Float32
+        end
+
+        @testset "gradient computation" begin
+            function loss(params)
+                xq = params[1]
+                return itp(xq)^2
+            end
+
+            params = [2.25]
+            grad = ForwardDiff.gradient(loss, params)
+
+            # d/d(xq)[itp(xq)²] = 2 * itp(xq) * itp'(xq)
+            val = itp(2.25)
+            deriv = itp(2.25; deriv=1)
+            expected_grad = 2 * val * deriv
+
+            @test grad[1] ≈ expected_grad atol=1e-10
+        end
+
+        @testset "different BC types" begin
+            # Test different boundary conditions work with AD
+            for bc in [NaturalBC(), ClampedBC()]
+                itp_bc = cubic_interp(x, y; bc=bc, extrap=:extension)
+
+                xq = 2.25
+                fd_deriv = ForwardDiff.derivative(itp_bc, xq)
+                analytical = itp_bc(xq; deriv=1)
+
+                @test fd_deriv ≈ analytical atol=1e-10
+            end
+        end
+
+        @testset "one-shot API AD" begin
+            # One-shot API should also support ForwardDiff
+            xq = 2.25
+            fd_deriv = ForwardDiff.derivative(q -> cubic_interp(x, y, q), xq)
+            analytical = cubic_interp(x, y, xq; deriv=1)
+            @test fd_deriv ≈ analytical atol=1e-10
+        end
+    end
+
+    @testset "Cubic complex values with ForwardDiff" begin
+        x = collect(0.0:0.5:5.0)
+        # Complex cubic: z = (1 + i)x³
+        y_complex = (1.0 + 1.0im) .* x .^ 3
+
+        itp = cubic_interp(x, y_complex; extrap=:extension)
+
+        @testset "complex derivative" begin
+            xq = 2.25
+
+            fd_deriv = ForwardDiff.derivative(itp, xq)
+            analytical = itp(xq; deriv=1)
+
+            @test fd_deriv ≈ analytical atol=1e-10
+            # For (1+i)x³, derivative is (1+i)*3x²
+            # At x=2.25: (3+3i)*2.25² ≈ 15.1875 + 15.1875i
+            expected_deriv = 3.0 * 2.25^2
+            @test real(fd_deriv) ≈ expected_deriv rtol=0.05
+            @test imag(fd_deriv) ≈ expected_deriv rtol=0.05
+        end
+
+        @testset "one-shot API AD with complex" begin
+            xq = 2.25
+            fd_deriv = ForwardDiff.derivative(q -> cubic_interp(x, y_complex, q), xq)
+            analytical = cubic_interp(x, y_complex, xq; deriv=1)
+            @test fd_deriv ≈ analytical atol=1e-10
         end
     end
 

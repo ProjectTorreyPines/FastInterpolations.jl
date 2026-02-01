@@ -828,7 +828,7 @@ Note: For AD support with ForwardDiff.Dual, use the out-of-place version
 which automatically promotes the output type.
 """
 function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
-    output::AbstractVector{Tv},
+    output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
     xq::S;
     deriv::Int=0,
     search=sitp.search_policy,

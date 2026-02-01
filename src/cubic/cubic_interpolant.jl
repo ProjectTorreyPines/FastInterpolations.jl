@@ -41,7 +41,8 @@ end
 # Handles type conversion via _to_float (no-op when already Tg).
 function (itp::CubicInterpolant{Tg,Tv,C,P})(xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P, Tq<:Real}
     xq_typed = _to_float(xq, Tg)
-    output = Vector{Tv}(undef, length(xq_typed))
+    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
+    output = Vector{T_out}(undef, length(xq_typed))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq_typed, itp.extrap, op, searcher)
@@ -253,10 +254,11 @@ derivs = itp(aq_vec; deriv=1) # First derivative
 ```
 """
 function (itp::CubicInterpolant{Tg,Tv})(
-    aq::AbstractVector{<:_CubicAnchoredQuery{Tg}};
+    aq::AbstractVector{<:_CubicAnchoredQuery{Tg, Tq}};
     deriv::Int=0
-) where {Tg<:AbstractFloat, Tv}
-    output = Vector{Tv}(undef, length(aq))
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss from anchor
+    output = Vector{T_out}(undef, length(aq))
     @_dispatch_deriv deriv => op begin
         _eval_anchored_vector_loop!(output, itp, aq, op)
     end

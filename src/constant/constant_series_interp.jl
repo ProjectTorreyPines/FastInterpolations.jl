@@ -207,7 +207,7 @@ ForwardDiff.Dual types can pass through `xq` to preserve derivative information.
 For constant interpolation, the AD derivative should be zero (step function).
 """
 @inline function _eval_constant_series_point_ad!(
-    output::AbstractVector{Tv},
+    output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
     sitp::ConstantSeriesInterpolant{Tg, Tv},
     aq::_ConstantAnchoredQuery{Tg},
     xq::Tq,  # Original xq (can be Dual for AD)
@@ -526,9 +526,14 @@ Returns a vector of values, one per y-series.
 # Derivative support
 - `deriv=0`: Returns function values
 - `deriv=1,2`: Returns zeros (step function derivative is zero everywhere)
+
+# AD Support
+When `xq` is a ForwardDiff.Dual, the output type is promoted to preserve
+derivatives. Output type is `promote_type(Tv, S)`.
 """
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, P, S<:Real}
-    out = Vector{Tv}(undef, n_series(sitp))
+    T_out = promote_type(Tv, S)  # Lossless: wider type to avoid precision loss
+    out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
 
@@ -538,7 +543,7 @@ end
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
-    output::AbstractVector{Tv},
+    output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
     xq::S;
     deriv::Int=0,
     search=sitp.search_policy,

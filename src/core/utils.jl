@@ -312,6 +312,43 @@ _promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
 @inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq<:Real, Tg<:AbstractFloat} = Tg(xq)
 
 # ========================================
+# Output Type Promotion (Lossless)
+# ========================================
+#
+# Uses promote_type(Tv, Tq) to select the wider type between data and query,
+# avoiding precision loss. Applied ONLY at public API entry points.
+# Internal kernels use native Tg/Tv types for efficiency.
+
+"""
+    _promote_result(result, ::Type{T_out}) -> T_out
+
+Convert result to output type. Zero overhead when types already match.
+
+This enables lossless type promotion via `T_out = promote_type(Tv, Tq)`:
+- Float32 data + Float64 query → Float64 (wider type wins)
+- Float64 data + Float32 query → Float64 (wider type wins)
+- Float64 data + Dual query → Dual (AD support)
+
+# Performance
+When `T_out == typeof(result)`, returns as-is with zero overhead.
+Julia's multiple dispatch selects the identity method at compile time.
+
+# Example
+```julia
+T_out = promote_type(Tv, Tq)
+return _promote_result(result, T_out)  # no-op if Tv == Tq
+```
+"""
+@inline _promote_result(result::T, ::Type{T}) where {T} = result  # no-op identity
+@inline _promote_result(result, ::Type{T_out}) where {T_out} = convert(T_out, result)
+
+# Vector version for batch results
+@inline _promote_result(result::Vector{T}, ::Type{T}) where {T} = result  # no-op identity
+@inline function _promote_result(result::Vector, ::Type{T_out}) where {T_out}
+    return T_out.(result)
+end
+
+# ========================================
 # Domain Validation Helpers
 # ========================================
 

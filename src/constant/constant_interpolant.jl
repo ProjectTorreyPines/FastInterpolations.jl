@@ -25,7 +25,8 @@ end
 # ─────────────────────────────────────────────────────────────
 function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, Tq<:Real}
     xq_typed = _to_float(xq, Tg)
-    output = Vector{Tv}(undef, length(xq_typed))
+    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
+    output = Vector{T_out}(undef, length(xq_typed))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xq_typed, itp.extrap)

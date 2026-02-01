@@ -30,7 +30,8 @@ end
 # ─────────────────────────────────────────────────────────────
 function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
     xi_typed = _to_float(xi, Tg)
-    output = Vector{Tv}(undef, length(xi_typed))
+    T_out = promote_type(Tv, S)  # Lossless: wider type to avoid precision loss
+    output = Vector{T_out}(undef, length(xi_typed))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)

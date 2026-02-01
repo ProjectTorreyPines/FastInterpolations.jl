@@ -493,7 +493,8 @@ end
     # Tg from x/y ONLY (not xq) - preserves current behavior
     Tg = float(promote_type(Tx, _real_eltype(Ty)))
     x_typed, y_typed = _promote_xy(x, y, Tg)
-    return linear_interp(x_typed, y_typed, Tg(xq); extrap, deriv, search, hint)
+    # Pass xq directly (not Tg(xq)) to preserve ForwardDiff.Dual for AD
+    return linear_interp(x_typed, y_typed, xq; extrap, deriv, search, hint)
 end
 
 # ========================================

@@ -85,12 +85,12 @@ the `deriv` keyword, matching `itp(xq; deriv=...)`.
 ```julia
 x = collect(range(0.0, 1.0, 101))
 itp = cubic_interp(x, sin.(2π .* x))
-aq = _anchor_query(x, 0.35)
+aq = _anchor_query(x, 0.35, Val(:cubic))
 
 itp(aq)  # Ultra-fast evaluation
 ```
 """
-@inline function (itp::CubicInterpolant{Tg,Tv})(aq::_CubicAnchoredQuery{Tg}; deriv::Int=0) where {Tg<:AbstractFloat, Tv}
+@inline function (itp::CubicInterpolant{Tg,Tv})(aq::_CubicAnchoredQuery{Tg,Tq}; deriv::Int=0) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @_dispatch_deriv deriv => op begin
         # Fast path: inside domain (most common case)
         if aq.side == 0x00
@@ -112,7 +112,7 @@ Core anchored evaluation kernel. Dispatches on concrete EvalOp type for optimal 
 - EvalDeriv2, EvalDeriv3: 2-term dot product (wzL*zL + wzR*zR) - optimized, no y-loads
 """
 # EvalValue: Full 4-term evaluation with y and z
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg}, ::EvalValue) where {Tg<:AbstractFloat, Tv}
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::EvalValue) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @inbounds begin
         yL = itp.y[aq.idx]
         yR = itp.y[aq.idx + 1]
@@ -125,7 +125,7 @@ Core anchored evaluation kernel. Dispatches on concrete EvalOp type for optimal 
 end
 
 # EvalDeriv1: Full 4-term evaluation with y and z
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg}, ::EvalDeriv1) where {Tg<:AbstractFloat, Tv}
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::EvalDeriv1) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @inbounds begin
         yL = itp.y[aq.idx]
         yR = itp.y[aq.idx + 1]
@@ -138,7 +138,7 @@ end
 end
 
 # EvalDeriv2: Optimized 2-term evaluation with only z (no y-loads)
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg}, ::EvalDeriv2) where {Tg<:AbstractFloat, Tv}
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::EvalDeriv2) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @inbounds begin
         zL = itp.z[aq.idx]
         zR = itp.z[aq.idx + 1]
@@ -149,7 +149,7 @@ end
 end
 
 # EvalDeriv3: Optimized 2-term evaluation with only z (no y-loads)
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg}, ::EvalDeriv3) where {Tg<:AbstractFloat, Tv}
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::EvalDeriv3) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @inbounds begin
         zL = itp.z[aq.idx]
         zR = itp.z[aq.idx + 1]
@@ -164,36 +164,36 @@ end
 # ========================================
 
 # :none - throw DomainError
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg}, ::Val{:none}, ::AbstractEvalOp) where {Tg<:AbstractFloat, Tv}
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::Val{:none}, ::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     x_min, x_max = first(itp.cache.x), last(itp.cache.x)
     throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
 end
 
 # :constant for value - return boundary y value
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg}, ::Val{:constant}, ::EvalValue) where {Tg<:AbstractFloat, Tv}
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::Val{:constant}, ::EvalValue) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return aq.side == 0x01 ? @inbounds(itp.y[1]) : @inbounds(itp.y[end])
 end
 
 # :constant for derivatives - return zero (preserves Tv type for Complex)
-@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg}, ::Val{:constant}, ::EvalDeriv1) where {Tg<:AbstractFloat, Tv}
+@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::Val{:constant}, ::EvalDeriv1) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return zero(Tv)
 end
 
-@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg}, ::Val{:constant}, ::EvalDeriv2) where {Tg<:AbstractFloat, Tv}
+@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::Val{:constant}, ::EvalDeriv2) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return zero(Tv)
 end
 
-@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg}, ::Val{:constant}, ::EvalDeriv3) where {Tg<:AbstractFloat, Tv}
+@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::Val{:constant}, ::EvalDeriv3) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return zero(Tv)
 end
 
 # :extension - use precomputed weights (boundary polynomial extrapolation)
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg}, ::Val{:extension}, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv}
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::Val{:extension}, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return _eval_anchored_kernel(itp, aq, op)
 end
 
 # :wrap - use precomputed weights (already wrapped at anchor construction if needed)
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg}, ::Val{:wrap}, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv}
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::Val{:wrap}, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return _eval_anchored_kernel(itp, aq, op)
 end
 
@@ -246,7 +246,7 @@ Evaluate cubic spline at multiple anchored query points (allocating).
 ```julia
 x = collect(range(0.0, 1.0, 101))
 itp = cubic_interp(x, sin.(2π .* x))
-aq_vec = _anchor_query(x, [0.15, 0.35, 0.5])
+aq_vec = _anchor_query(x, [0.15, 0.35, 0.5], Val(:cubic))
 
 vals = itp(aq_vec)            # Value
 derivs = itp(aq_vec; deriv=1) # First derivative

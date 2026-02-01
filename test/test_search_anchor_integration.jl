@@ -88,12 +88,12 @@ using FastInterpolations: _anchor_query, _fill_anchors!,
 
         @testset "Vector Query" begin
             xq = collect(range(0.1, 0.9, 9))
-            buffer = Vector{_QuadraticAnchoredQuery{Float64}}(undef, length(xq))
+            buffer = Vector{_QuadraticAnchoredQuery{Float64,Float64}}(undef, length(xq))
 
             _fill_anchors!(buffer, x, xq, Val(:quadratic))
 
             for i in eachindex(xq)
-                @test buffer[i] isa _QuadraticAnchoredQuery{Float64}
+                @test buffer[i] isa _QuadraticAnchoredQuery{Float64,Float64}
             end
         end
     end
@@ -106,19 +106,19 @@ using FastInterpolations: _anchor_query, _fill_anchors!,
         x = collect(range(0.0, 1.0, 101))
 
         @testset "Single Query" begin
-            aq = _anchor_query(x, 0.5)  # Cubic uses default (no tag)
+            aq = _anchor_query(x, 0.5, Val(:cubic))
             @test aq isa _CubicAnchoredQuery{Float64}
             @test aq.idx == 51
         end
 
         @testset "Vector Query" begin
             xq = collect(range(0.1, 0.9, 9))
-            buffer = Vector{_CubicAnchoredQuery{Float64}}(undef, length(xq))
+            buffer = Vector{_CubicAnchoredQuery{Float64,Float64}}(undef, length(xq))
 
-            _fill_anchors!(buffer, x, xq)  # Cubic uses default tag
+            _fill_anchors!(buffer, x, xq, Val(:cubic))
 
             for i in eachindex(xq)
-                @test buffer[i] isa _CubicAnchoredQuery{Float64}
+                @test buffer[i] isa _CubicAnchoredQuery{Float64,Float64}
             end
         end
     end
@@ -135,7 +135,7 @@ using FastInterpolations: _anchor_query, _fill_anchors!,
             aq_linear = _anchor_query(x, 0.5, Val(:linear))
             @test aq_linear.idx == 51
 
-            aq_cubic = _anchor_query(x, 0.5)  # Default cubic
+            aq_cubic = _anchor_query(x, 0.5, Val(:cubic))
             @test aq_cubic.idx == 51
 
             # Vector query
@@ -161,11 +161,11 @@ using FastInterpolations: _anchor_query, _fill_anchors!,
         end
 
         @testset "Quadratic Type Stable" begin
-            @test @inferred(_anchor_query(x, 0.5, Val(:quadratic))) isa _QuadraticAnchoredQuery{Float64}
+            @test @inferred(_anchor_query(x, 0.5, Val(:quadratic))) isa _QuadraticAnchoredQuery{Float64,Float64}
         end
 
         @testset "Cubic Type Stable" begin
-            @test @inferred(_anchor_query(x, 0.5)) isa _CubicAnchoredQuery{Float64}
+            @test @inferred(_anchor_query(x, 0.5, Val(:cubic))) isa _CubicAnchoredQuery{Float64,Float64}
         end
     end
 

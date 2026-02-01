@@ -288,6 +288,29 @@ ForwardDiff support is added via:
 @inline _extract_primal(xq::T) where {T<:AbstractFloat} = xq
 @inline _extract_primal(xq::Real) = float(xq)
 
+"""
+    _promote_for_anchor(xq::Tq, ::Type{Tg}) -> promoted_xq
+
+Promote query point for anchor construction.
+
+# Behavior
+- ForwardDiff.Dual: preserved as-is (for AD support)
+- AbstractFloat: converted to grid type Tg
+- Other Real (Int, Rational): converted to grid type Tg
+
+This is needed for cubic anchors which store precomputed weight tuples.
+Unlike quadratic (which stores only dL), cubic weights involve complex
+floating-point arithmetic that can't be represented as Int/Rational.
+
+# Example
+```julia
+_promote_for_anchor(0, Float64)      # → 0.0 (Float64)
+_promote_for_anchor(1//2, Float64)   # → 0.5 (Float64)
+_promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
+```
+"""
+@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq<:Real, Tg<:AbstractFloat} = Tg(xq)
+
 # ========================================
 # Domain Validation Helpers
 # ========================================

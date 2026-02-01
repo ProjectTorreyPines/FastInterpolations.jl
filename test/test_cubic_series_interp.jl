@@ -307,7 +307,7 @@ end
     @testset "Anchor reuse produces identical results" begin
         mitp = cubic_interp(x, [y1, y2])
         xq_vec = [0.2, 0.5, 0.8]
-        aq_vec = FI._anchor_query(x, xq_vec)
+        aq_vec = FI._anchor_query(x, xq_vec, Val(:cubic))
 
         outputs1 = [zeros(3) for _ in 1:2]
         outputs2 = [zeros(3) for _ in 1:2]
@@ -488,7 +488,7 @@ end
     @testset "Anchored query path dimension errors" begin
         mitp = cubic_interp(x, [y1, y2, sin.(x)])
         xq_vec = [0.1, 0.3, 0.5]
-        aq_vec = FI._anchor_query(x, xq_vec)
+        aq_vec = FI._anchor_query(x, xq_vec, Val(:cubic))
 
         # Wrong number of output buffers
         outputs_wrong = [zeros(3), zeros(3)]  # 2 instead of 3
@@ -971,7 +971,7 @@ end
         outputs = [out1, out2, out3]
 
         # Pre-build anchors (this is the key for zero-allocation)
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Warmup
         mitp(outputs, aq_vec)
@@ -989,7 +989,7 @@ end
         outputs = [out1, out2, out3]
 
         # Pre-build anchors
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
         mitp(outputs, aq_vec; deriv=1)
 
         itp1 = cubic_interp(x, y1; extrap=:extension)
@@ -1478,7 +1478,7 @@ end
         outputs = [out1, out2, out3]
 
         # Pre-build anchors
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Warmup
         mitp(outputs, aq_vec; deriv=1)
@@ -1495,7 +1495,7 @@ end
         outputs = [out1, out2, out3]
 
         # Pre-build anchors
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Warmup
         mitp(outputs, aq_vec; deriv=2)
@@ -1511,7 +1511,7 @@ end
         out3 = Vector{Float64}(undef, 50)
         outputs = [out1, out2, out3]
 
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Get derivatives via anchored path
         mitp(outputs, aq_vec; deriv=1)

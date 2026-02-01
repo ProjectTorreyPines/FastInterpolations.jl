@@ -135,12 +135,15 @@ end
 @inline _method_kind(::Type{<:CubicSeriesInterpolant}) = Val(:cubic)
 
 """
-    _make_anchor(sitp::CubicSeriesInterpolant, xq::Tg) -> _CubicAnchoredQuery{Tg}
+    _make_anchor(sitp::CubicSeriesInterpolant, xq::Tq) -> _CubicAnchoredQuery{Tg, Tq}
 
 Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
+
+# AD Support
+When `xq` is a ForwardDiff.Dual, the returned anchor preserves the Dual type.
 """
-@inline function _make_anchor(sitp::CubicSeriesInterpolant{Tg}, xq::Tg, searcher::Searcher=DEFAULT_SEARCHER) where Tg
-    return _anchor_query(sitp.cache.x, xq; wrap=_should_wrap(sitp), searcher=searcher)
+@inline function _make_anchor(sitp::CubicSeriesInterpolant{Tg}, xq::Tq, searcher::Searcher=DEFAULT_SEARCHER) where {Tg, Tq<:Real}
+    return _anchor_query(sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=searcher)
 end
 
 """
@@ -148,13 +151,16 @@ end
 
 Evaluate all series at the given anchor point. Required trait for AbstractSeriesInterpolant.
 Uses point-contiguous layout for SIMD optimization.
+
+# AD Support
+When `aq` has Dual type weights (from Dual query), the output will have promoted type.
 """
 @inline function _eval_series_at_anchor!(
-    output::AbstractVector{Tv},
+    output::AbstractVector,
     sitp::CubicSeriesInterpolant{Tg,Tv},
-    aq::_CubicAnchoredQuery{Tg},
+    aq::_CubicAnchoredQuery{Tg,Tq},
     op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     y_point, z_point = _ensure_point_layout!(sitp)
     n_pts = n_points(sitp)
     x_min, x_max = Tg(first(sitp.cache.x)), Tg(last(sitp.cache.x))
@@ -203,12 +209,12 @@ Dispatches on concrete EvalOp for optimal performance:
 """
 # EvalValue: Full 4-term evaluation
 @inline function _eval_series_point!(
-    out::AbstractVector{Tv},
+    out::AbstractVector,
     y_point::Matrix{Tv},
     z_point::Matrix{Tv},
-    aq::_CubicAnchoredQuery{Tg},
+    aq::_CubicAnchoredQuery{Tg,Tq},
     ::EvalValue
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     idx = aq.idx
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w0
@@ -225,12 +231,12 @@ end
 
 # EvalDeriv1: Full 4-term evaluation
 @inline function _eval_series_point!(
-    out::AbstractVector{Tv},
+    out::AbstractVector,
     y_point::Matrix{Tv},
     z_point::Matrix{Tv},
-    aq::_CubicAnchoredQuery{Tg},
+    aq::_CubicAnchoredQuery{Tg,Tq},
     ::EvalDeriv1
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     idx = aq.idx
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w1
@@ -247,12 +253,12 @@ end
 
 # EvalDeriv2: Optimized 2-term evaluation (no y-loads)
 @inline function _eval_series_point!(
-    out::AbstractVector{Tv},
+    out::AbstractVector,
     y_point::Matrix{Tv},
     z_point::Matrix{Tv},
-    aq::_CubicAnchoredQuery{Tg},
+    aq::_CubicAnchoredQuery{Tg,Tq},
     ::EvalDeriv2
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     idx = aq.idx
     idx1 = idx + 1
     wzL, wzR = aq.w2
@@ -267,12 +273,12 @@ end
 
 # EvalDeriv3: Optimized 2-term evaluation (no y-loads)
 @inline function _eval_series_point!(
-    out::AbstractVector{Tv},
+    out::AbstractVector,
     y_point::Matrix{Tv},
     z_point::Matrix{Tv},
-    aq::_CubicAnchoredQuery{Tg},
+    aq::_CubicAnchoredQuery{Tg,Tq},
     ::EvalDeriv3
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     idx = aq.idx
     idx1 = idx + 1
     wzL, wzR = aq.w3
@@ -291,16 +297,16 @@ end
 SIMD evaluation with extrapolation handling for multi-series.
 """
 @inline function _eval_series_point_with_extrap!(
-    out::AbstractVector{Tv},
+    out::AbstractVector,
     y_point::Matrix{Tv},
     z_point::Matrix{Tv},
     n_pts::Int,
     x_min::Tg,
     x_max::Tg,
-    aq::_CubicAnchoredQuery{Tg},
+    aq::_CubicAnchoredQuery{Tg,Tq},
     extrap::ExtrapVal,
     op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     # Inside domain: normal evaluation
     if aq.side == 0x00
         return _eval_series_point!(out, y_point, z_point, aq, op)
@@ -312,49 +318,49 @@ end
 
 # :none - throw DomainError
 @inline function _eval_series_point_extrap!(
-    ::AbstractVector{Tv},
+    ::AbstractVector,
     ::Matrix{Tv},
     ::Matrix{Tv},
     ::Int,
     x_min::Tg,
     x_max::Tg,
-    aq::_CubicAnchoredQuery{Tg},
+    aq::_CubicAnchoredQuery{Tg,Tq},
     ::Val{:none},
     ::AbstractEvalOp,
     ::UInt8
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
 # :constant - clamp to boundary (value only, derivatives are zero)
 @inline function _eval_series_point_extrap!(
-    out::AbstractVector{Tv},
+    out::AbstractVector,
     y_point::Matrix{Tv},
     ::Matrix{Tv},
     n_pts::Int,
     ::Tg,
     ::Tg,
-    ::_CubicAnchoredQuery{Tg},
+    ::_CubicAnchoredQuery{Tg,Tq},
     ::Val{:constant},
     op::AbstractEvalOp,
     side::UInt8
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
 # :extension - extend polynomial (EvalValue)
 @inline function _eval_series_point_extrap!(
-    out::AbstractVector{Tv},
+    out::AbstractVector,
     y_point::Matrix{Tv},
     z_point::Matrix{Tv},
     n_pts::Int,
     ::Tg,
     ::Tg,
-    aq::_CubicAnchoredQuery{Tg},
+    aq::_CubicAnchoredQuery{Tg,Tq},
     ::Val{:extension},
     ::EvalValue,
     side::UInt8
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     idx = side == 0x01 ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w0
@@ -371,17 +377,17 @@ end
 
 # :extension - extend polynomial (EvalDeriv1)
 @inline function _eval_series_point_extrap!(
-    out::AbstractVector{Tv},
+    out::AbstractVector,
     y_point::Matrix{Tv},
     z_point::Matrix{Tv},
     n_pts::Int,
     ::Tg,
     ::Tg,
-    aq::_CubicAnchoredQuery{Tg},
+    aq::_CubicAnchoredQuery{Tg,Tq},
     ::Val{:extension},
     ::EvalDeriv1,
     side::UInt8
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     idx = side == 0x01 ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wyL, wyR, wzL, wzR = aq.w1
@@ -398,17 +404,17 @@ end
 
 # :extension - extend polynomial (EvalDeriv2) - optimized, no y-loads
 @inline function _eval_series_point_extrap!(
-    out::AbstractVector{Tv},
+    out::AbstractVector,
     y_point::Matrix{Tv},
     z_point::Matrix{Tv},
     n_pts::Int,
     ::Tg,
     ::Tg,
-    aq::_CubicAnchoredQuery{Tg},
+    aq::_CubicAnchoredQuery{Tg,Tq},
     ::Val{:extension},
     ::EvalDeriv2,
     side::UInt8
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     idx = side == 0x01 ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wzL, wzR = aq.w2
@@ -423,17 +429,17 @@ end
 
 # :extension - extend polynomial (EvalDeriv3) - optimized, no y-loads
 @inline function _eval_series_point_extrap!(
-    out::AbstractVector{Tv},
+    out::AbstractVector,
     y_point::Matrix{Tv},
     z_point::Matrix{Tv},
     n_pts::Int,
     ::Tg,
     ::Tg,
-    aq::_CubicAnchoredQuery{Tg},
+    aq::_CubicAnchoredQuery{Tg,Tq},
     ::Val{:extension},
     ::EvalDeriv3,
     side::UInt8
-) where {Tg<:AbstractFloat, Tv}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     idx = side == 0x01 ? 1 : (n_pts - 1)
     idx1 = idx + 1
     wzL, wzR = aq.w3
@@ -794,16 +800,32 @@ end
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
 Returns a vector of values, one per y-series.
+
+# AD Support
+When `xq` is a ForwardDiff.Dual, the output type is promoted to preserve
+derivatives. Output type is `promote_type(Tv, S)`.
 """
 function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, B, P, S<:Real}
-    out = Vector{Tv}(undef, n_series(sitp))
-    return sitp(out, xq; deriv=deriv, search=search, hint=hint)
+    T_out = promote_type(Tv, S)  # Dual input → Dual output
+    output = Vector{T_out}(undef, n_series(sitp))
+
+    # Build anchor preserving Dual type in xq
+    aq = _make_anchor(sitp, xq, _to_searcher(search, hint))
+
+    # Dispatch on derivative order
+    @_dispatch_deriv deriv => op begin
+        _eval_series_at_anchor!(output, sitp, aq, op)
+    end
+    return output
 end
 
 """
     (sitp::CubicSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
+
+Note: For AD support with ForwardDiff.Dual, use the out-of-place version
+which automatically promotes the output type.
 """
 function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
     output::AbstractVector{Tv},
@@ -814,10 +836,8 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
 ) where {Tg<:AbstractFloat, Tv, C, B, P, S<:Real}
     _validate_scalar_output(output, n_series(sitp))
 
-    xq_typed = Tg(xq)
-
-    # Build anchor using trait
-    aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
+    # Build anchor preserving Dual type in xq (for AD)
+    aq = _make_anchor(sitp, xq, _to_searcher(search, hint))
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin
@@ -890,8 +910,8 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     end
 
     # Build anchors from pool (zero allocation after warmup)
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg}, length(xq))
-    _fill_anchors!(aq_vec, sitp.cache.x, xq; wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg,Tg}, length(xq))
+    _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     # Extract matrices for argument-passing pattern
     y, z = sitp.y, sitp.z
@@ -933,7 +953,7 @@ sitp = cubic_interp(x, [y1, y2, y3])
 xq = [0.1, 0.2, 0.3, ...]
 
 # Pre-build anchors (allocates once)
-aq_vec = FastInterpolations._anchor_query(x, xq)
+aq_vec = FastInterpolations._anchor_query(x, xq, Val(:cubic))
 
 # Zero-allocation loop
 outputs = [similar(xq) for _ in 1:3]

@@ -134,7 +134,7 @@ Uses point-contiguous layout for SIMD optimization.
     n_pts = n_points(sitp)
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
-    _eval_constant_series_point_with_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, sitp.side, op)
+    _eval_constant_series_point_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, sitp.side, op, aq.side)
     return output
 end
 
@@ -167,59 +167,44 @@ end
 # ========================================
 
 """
-    _eval_constant_series_point!(out, y_point, x, aq, side_val, op)
+    _eval_constant_series_point!(output, sitp, aq, xq, op)
 
-SIMD-optimized evaluation for point-contiguous layout (n_series × n_points).
-Contiguous column access enables vectorization across series dimension.
+Main entry point for scalar evaluation of multi-series constant interpolation.
+Uses anchor for index/side info, but computes dL from original `xq` for AD support.
+
+# AD Support
+Supports ForwardDiff.Dual input: anchor provides index/side from primal,
+while `xq` is used directly in arithmetic to preserve derivative information.
+
+# Arguments
+- `output`: Pre-allocated output vector (length = n_series)
+- `sitp`: ConstantSeriesInterpolant
+- `aq`: Anchor with precomputed index/side (from primal value)
+- `xq`: Original query point (any Real type, including ForwardDiff.Dual)
+- `op`: Evaluation operation (value, derivative)
+
+Note: Inside-domain evaluation uses this function directly.
+Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
 """
 @inline function _eval_constant_series_point!(
-    out::AbstractVector{Tv},
-    y_point::Matrix{Tv},
-    x::AbstractVector{Tg},
-    aq::_ConstantAnchoredQuery{Tg},
-    side_val::SideVal,
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv}
-    idx = aq.idx
-    idx1 = idx + 1
-
-    # Get interval data
-    h = aq.h
-    dL = aq.dL
-
-    # SIMD loop over series (contiguous column access)
-    @inbounds @simd for k in axes(out, 1)
-        y_left = y_point[k, idx]
-        y_right = y_point[k, idx1]
-        out[k] = _constant_kernel(op, y_left, y_right, h, dL, side_val)
-    end
-
-    return out
-end
-
-"""
-    _eval_constant_series_point_ad!(output, sitp, aq, xq, op)
-
-AD-aware evaluation for multi-series constant interpolation.
-Uses anchor for index/side info, but computes dL from original `xq` for AD support.
-ForwardDiff.Dual types can pass through `xq` to preserve derivative information.
-
-For constant interpolation, the AD derivative should be zero (step function).
-"""
-@inline function _eval_constant_series_point_ad!(
     output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
     sitp::ConstantSeriesInterpolant{Tg, Tv},
     aq::_ConstantAnchoredQuery{Tg},
-    xq::Tq,  # Original xq (can be Dual for AD)
+    xq,  # Original xq (any Real, including Dual)
     op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+) where {Tg<:AbstractFloat, Tv}
+    # Outside domain: delegate to extrapolation handler (trait method)
+    if aq.side != 0x00
+        return _eval_series_at_anchor!(output, sitp, aq, op)
+    end
+
+    # Inside domain: SIMD evaluation with point-contiguous layout
     y_point = _ensure_point_layout!(sitp)
     n_pts = n_points(sitp)
-    x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
     # Special case: at right boundary (use primal for comparison)
     xq_primal = _extract_primal(xq)
-    if Tg(xq_primal) == x_max
+    if Tg(xq_primal) == Tg(last(sitp.x))
         if op isa EvalValue
             @inbounds @simd for k in axes(output, 1)
                 output[k] = y_point[k, n_pts]
@@ -229,12 +214,6 @@ For constant interpolation, the AD derivative should be zero (step function).
                 output[k] = zero(Tv)
             end
         end
-        return output
-    end
-
-    # Outside domain: delegate to anchor-based extrap handler
-    if aq.side != 0x00
-        _eval_constant_series_point_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, sitp.side, op, aq.side)
         return output
     end
 
@@ -253,46 +232,6 @@ For constant interpolation, the AD derivative should be zero (step function).
     end
 
     return output
-end
-
-"""
-    _eval_constant_series_point_with_extrap!(out, y_point, x, n_pts, x_min, x_max, aq, extrap, side_val, op)
-
-SIMD evaluation with extrapolation handling for multi-series constant interpolation.
-"""
-@inline function _eval_constant_series_point_with_extrap!(
-    out::AbstractVector{Tv},
-    y_point::Matrix{Tv},
-    x::AbstractVector{Tg},
-    n_pts::Int,
-    x_min::Tg,
-    x_max::Tg,
-    aq::_ConstantAnchoredQuery{Tg},
-    extrap::ExtrapVal,
-    side_val::SideVal,
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv}
-    # Special case: at right boundary (x_max)
-    if aq.xq == x_max
-        if op isa EvalValue
-            @inbounds @simd for k in axes(out, 1)
-                out[k] = y_point[k, n_pts]
-            end
-        else
-            @inbounds @simd for k in axes(out, 1)
-                out[k] = zero(Tv)
-            end
-        end
-        return out
-    end
-
-    # Inside domain: normal evaluation
-    if aq.side == 0x00
-        return _eval_constant_series_point!(out, y_point, x, aq, side_val, op)
-    end
-
-    # Outside domain: dispatch on extrap mode
-    _eval_constant_series_point_extrap!(out, y_point, x, n_pts, x_min, x_max, aq, extrap, side_val, op, aq.side)
 end
 
 # :none - throw DomainError
@@ -329,7 +268,7 @@ end
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
-# :extension - extend using same constant value
+# :extension - extend using same constant value at boundary interval
 @inline function _eval_constant_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -341,10 +280,21 @@ end
     ::Val{:extension},
     side_val::SideVal,
     op::AbstractEvalOp,
-    side::UInt8
+    ::UInt8
 ) where {Tg<:AbstractFloat, Tv}
-    # Use boundary interval for extension
-    return _eval_constant_series_point!(out, y_point, x, aq, side_val, op)
+    # Use boundary interval for extension (inline evaluation, no xq needed)
+    idx = aq.idx
+    idx1 = idx + 1
+    h = aq.h
+    dL = aq.dL
+
+    # SIMD loop over series
+    @inbounds @simd for k in axes(out, 1)
+        y_left = y_point[k, idx]
+        y_right = y_point[k, idx1]
+        out[k] = _constant_kernel(op, y_left, y_right, h, dL, side_val)
+    end
+    return out
 end
 
 
@@ -563,7 +513,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
 
     # Dispatch on derivative order - pass original xq for AD support
     @_dispatch_deriv deriv => op begin
-        _eval_constant_series_point_ad!(output, sitp, aq, xq, op)
+        _eval_constant_series_point!(output, sitp, aq, xq, op)
     end
     return output
 end

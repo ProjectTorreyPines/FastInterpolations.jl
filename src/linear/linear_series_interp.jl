@@ -135,7 +135,7 @@ Uses point-contiguous layout for SIMD optimization.
     n_pts = n_points(sitp)
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
-    _eval_linear_series_point_with_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, op)
+    _eval_linear_series_point_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, op, aq.side)
     return output
 end
 
@@ -166,29 +166,6 @@ end
 # ========================================
 # SIMD Scalar Evaluation Kernels
 # ========================================
-
-"""
-    _eval_linear_series_point_with_extrap!(out, y_point, x, n_pts, x_min, x_max, aq, extrap, op)
-
-Extrapolation handler for outside-domain scalar evaluation.
-Called only when aq.side != 0x00 (query point outside domain).
-
-Note: Inside-domain evaluation uses _eval_linear_series_point! directly.
-"""
-@inline function _eval_linear_series_point_with_extrap!(
-    out::AbstractVector{Tv},
-    y_point::Matrix{Tv},
-    x::AbstractVector{Tg},
-    n_pts::Int,
-    x_min::Tg,
-    x_max::Tg,
-    aq::_LinearAnchoredQuery{Tg},
-    extrap::ExtrapVal,
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv}
-    # Dispatch on extrap mode (called only for outside-domain points)
-    _eval_linear_series_point_extrap!(out, y_point, x, n_pts, x_min, x_max, aq, extrap, op, aq.side)
-end
 
 # :none - throw DomainError
 @inline function _eval_linear_series_point_extrap!(

@@ -144,21 +144,23 @@ Tuple of (x_typed::AbstractVector{Tg}, y_typed::AbstractVector{Tv})
     return x_typed, y_typed
 end
 
-"""
-    _ensure_promoted_xy(x, y) -> (x_typed, y_typed)
+# ========================================
+# Unified Input Promotion API
+# ========================================
 
-Automatically promote x and y to compatible types for interpolation.
-Eliminates manual type-checking branches at call sites.
+"""
+    _promote_itp_inputs(x, y) -> (x_typed, y_typed)
+
+Promote grid (x) and values (y) to compatible Float types for interpolation.
 
 # Behavior
 - Computes target grid type: `Tg = float(promote_type(TX, _real_eltype(TY)))`
-- Converts x via `_to_float` (no-copy if already `Vector{Tg}`)
+- Converts x via `_to_float` (no-copy if already matching type, Range preserved)
 - Converts y via `_promote_value_type` (handles Real/Complex, no-copy if matching)
 
 # Zero-Overhead Guarantee
 - `@inline` enables compiler branch elimination
-- `_to_float` returns input unchanged for same-type vectors
-- `_promote_value_type` returns input unchanged when types match
+- Returns inputs unchanged when types already match (zero allocation)
 
 # Examples
 ```julia
@@ -166,15 +168,15 @@ x = [0.0, 1.0, 2.0]           # Float64 grid
 y_int = [1, 2, 3]             # Int64 values
 y_cplx = Complex{Int}[1+2im]  # Complex{Int} values
 
-x_p, y_p = _ensure_promoted_xy(x, y_int)   # y_p is Float64[]
-x_p, y_p = _ensure_promoted_xy(x, y_cplx)  # y_p is ComplexF64[]
+x_p, y_p = _promote_itp_inputs(x, y_int)   # y_p is Float64[]
+x_p, y_p = _promote_itp_inputs(x, y_cplx)  # y_p is ComplexF64[]
 
 # Integer grid also supported
 x_int = [0, 1, 2, 3]
-x_p, y_p = _ensure_promoted_xy(x_int, y_cplx)  # x_p is Float64[], y_p is ComplexF64[]
+x_p, y_p = _promote_itp_inputs(x_int, y_cplx)  # x_p is Float64[], y_p is ComplexF64[]
 ```
 """
-@inline function _ensure_promoted_xy(
+@inline function _promote_itp_inputs(
     x::AbstractVector{TX},
     y::AbstractVector{TY}
 ) where {TX<:Real, TY}
@@ -182,6 +184,40 @@ x_p, y_p = _ensure_promoted_xy(x_int, y_cplx)  # x_p is Float64[], y_p is Comple
     x_typed = _to_float(x, Tg)
     _, y_typed = _promote_value_type(y, Tg)
     return x_typed, y_typed
+end
+
+"""
+    _promote_itp_inputs(x, y, xq::AbstractVector) -> (x_typed, y_typed, xq_typed)
+
+Promote grid (x), values (y), and vector query (xq) to compatible Float types.
+
+# Arguments
+- `x`: Grid coordinates (any Real type)
+- `y`: Values at grid points (Real or Complex)
+- `xq`: Query points (AbstractVector or AbstractRange)
+
+# Returns
+- `x_typed`: Grid converted to AbstractFloat
+- `y_typed`: Values converted to compatible type
+- `xq_typed`: Query converted to grid type (Range structure preserved via `_to_float`)
+
+# Fast-paths
+- When types already match, returns inputs unchanged (zero allocation)
+- Range inputs remain Range (not converted to Vector)
+
+# Note
+For scalar queries, use the 2-arg version and pass the query directly
+to preserve ForwardDiff.Dual types for automatic differentiation.
+"""
+@inline function _promote_itp_inputs(
+    x::AbstractVector{TX},
+    y::AbstractVector{TY},
+    xq::AbstractVector{TQ}
+) where {TX<:Real, TY, TQ<:Real}
+    x_typed, y_typed = _promote_itp_inputs(x, y)
+    Tg = eltype(x_typed)
+    xq_typed = _to_float(xq, Tg)
+    return x_typed, y_typed, xq_typed
 end
 
 # ========================================

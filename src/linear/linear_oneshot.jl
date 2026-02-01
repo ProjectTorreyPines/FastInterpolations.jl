@@ -439,7 +439,7 @@ end
 # Vector interpolation - Real/Mixed type wrappers (in-place)
 # ========================================
 # Unified wrapper for non-AbstractFloat inputs (Int, mixed types, etc.)
-# Uses _promote_xy helper for type promotion
+# Uses _promote_itp_inputs helper for type promotion
 # POLICY: Tg is computed from x/y ONLY, not from x_targets
 
 function linear_interp!(

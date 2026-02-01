@@ -129,21 +129,6 @@ Tuple of (Tv::Type, y_converted::AbstractVector{Tv})
     end
 end
 
-"""
-    _promote_xy(x, y, ::Type{Tg}) -> (x_typed, y_typed)
-
-Promote x and y to target grid type Tg.
-Preserves Range structure for x (O(1) lookup).
-
-# Returns
-Tuple of (x_typed::AbstractVector{Tg}, y_typed::AbstractVector{Tv})
-"""
-@inline function _promote_xy(x, y, ::Type{Tg}) where {Tg<:AbstractFloat}
-    x_typed = _to_float(x, Tg)
-    _, y_typed = _promote_value_type(y, Tg)
-    return x_typed, y_typed
-end
-
 # ========================================
 # Unified Input Promotion API
 # ========================================

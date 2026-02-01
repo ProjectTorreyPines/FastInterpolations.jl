@@ -47,6 +47,18 @@ const FI = FastInterpolations
             end
         end
 
+        @testset "second derivative works (nested Dual)" begin
+            # y = 2x + 1 is linear, so d²/dx² is 0 away from knots.
+            xq = 0.25
+            fd_d2 = ForwardDiff.derivative(q -> ForwardDiff.derivative(itp, q), xq)
+            @test fd_d2 ≈ 0.0 atol=1e-10
+
+            # Also cover Float32-grid interpolants (previously hit Float32(::Dual) errors).
+            itp32 = linear_interp(Float32.(x), Float32.(y); extrap=:extension)
+            fd_d2_32 = ForwardDiff.derivative(q -> ForwardDiff.derivative(itp32, q), xq)
+            @test fd_d2_32 ≈ 0.0 atol=1e-6
+        end
+
         @testset "value is preserved" begin
             test_points = [0.25, 1.0, 2.5, 3.75, 4.5]
 

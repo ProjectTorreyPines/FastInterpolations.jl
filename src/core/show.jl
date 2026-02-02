@@ -35,22 +35,6 @@ Print text with color if supported, otherwise plain text.
 end
 
 """
-    _show_type_header(io, typename, T; suffix="")
-
-Print type name in cyan bold with type parameter in light_blue.
-Example: `CubicInterpolant{Float64}`
-"""
-function _show_type_header(io::IO, typename::String, ::Type{T}; suffix::String="") where {T}
-    _show_print(io, typename, :cyan; bold=true)
-    _show_print(io, "{", :light_black)
-    _show_print(io, string(T), :light_blue)
-    _show_print(io, "}", :light_black)
-    if !isempty(suffix)
-        _show_print(io, suffix, :cyan)
-    end
-end
-
-"""
     _show_type_header_2params(io, typename, Tg, Tv; suffix="")
 
 Print type name with two type parameters for {Tg, Tv} interpolants.

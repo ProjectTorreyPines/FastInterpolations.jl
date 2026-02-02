@@ -14,7 +14,7 @@ A high-performance 1D interpolation package for Julia, optimized for **zero-allo
 - ✅ **Zero-Allocation**: No GC pressure on hot loops.
 - 🎯 **Explicit BCs**: Support custom physical boundary conditions.
 - 📐 **Derivatives**: Analytical 1st, 2nd, and 3rd derivatives for all methods.
-- 🌌 **Generic**: Native support for **Complex** values.
+- 🌌 **Generic**: Supports **Complex** values and **AD (AutoDiff)** — ForwardDiff, Zygote, Enzyme.
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
 ## Supported Methods

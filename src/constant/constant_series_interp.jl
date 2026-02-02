@@ -537,8 +537,13 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
 ) where {Tg<:AbstractFloat, Tv, P, S<:Real}
     xq_typed = _to_float(xq, Tg)
     n_query = length(xq_typed)
+    n_ser = n_series(sitp)
 
-    outputs = [Vector{Tv}(undef, n_query) for _ in 1:n_series(sitp)]
+    # Explicit Vector{Vector{Tv}} for type stability on Julia LTS
+    outputs = Vector{Vector{Tv}}(undef, n_ser)
+    @inbounds for k in 1:n_ser
+        outputs[k] = Vector{Tv}(undef, n_query)
+    end
     sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 
     return outputs

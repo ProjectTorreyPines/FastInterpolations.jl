@@ -519,9 +519,14 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, S<:Real}
     n_query = length(xq)
+    n_ser = n_series(sitp)
     T_out = promote_type(Tv, S)  # Lossless: wider type to avoid precision loss
 
-    outputs = [Vector{T_out}(undef, n_query) for _ in 1:n_series(sitp)]
+    # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
+    outputs = Vector{Vector{T_out}}(undef, n_ser)
+    @inbounds for k in 1:n_ser
+        outputs[k] = Vector{T_out}(undef, n_query)
+    end
     # Delegate to in-place (unified path handles precision preservation)
     sitp(outputs, xq; deriv=deriv, search=search, hint=hint)
 

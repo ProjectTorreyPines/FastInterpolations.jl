@@ -106,16 +106,20 @@ else
     # CONSTANT INTERPOLATION
     # ════════════════════════════════════════════════════════════════════════
 
-    @testset "Constant - Enzyme" begin
-        x = collect(0.0:1.0:5.0)
-        y = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
+    # Note: Constant interpolation has Enzyme LLVM compilation issues on Julia < 1.12
+    # due to phi node handling in the generated IR
+    if VERSION >= v"1.12"
+        @testset "Constant - Enzyme" begin
+            x = collect(0.0:1.0:5.0)
+            y = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
 
-        @testset "Single Interpolant" begin
-            itp = constant_interp(x, y; side=:left, extrap=:extension)
+            @testset "Single Interpolant" begin
+                itp = constant_interp(x, y; side=:left, extrap=:extension)
 
-            f(xq) = itp(xq)
-            result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(2.5))
-            @test abs(result[1][1]) < 1e-10  # Derivative should be 0
+                f(xq) = itp(xq)
+                result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(2.5))
+                @test abs(result[1][1]) < 1e-10  # Derivative should be 0
+            end
         end
     end
 

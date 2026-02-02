@@ -125,7 +125,7 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     # Extract primal for domain check, pass original xq to preserve AD
     xq_primal = _extract_primal(xq)
     @_dispatch_extrap extrap => ev begin
-        _check_domain(cache.x, Tg(xq_primal), ev)
+        _check_domain(cache.x, xq_primal, ev)
         return _eval_with_bc(cache, y, tmp_z, xq, ev, op, searcher)
     end
 end
@@ -181,7 +181,7 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     xq_primal = _extract_primal(xq)
     # Periodic BC always uses :wrap extrapolation
     @_dispatch_extrap :wrap => ev begin
-        _check_domain(cache.x, Tg(xq_primal), ev)
+        _check_domain(cache.x, xq_primal, ev)
         return _eval_with_bc(cache, y, z, xq, ev, op, searcher)
     end
 end

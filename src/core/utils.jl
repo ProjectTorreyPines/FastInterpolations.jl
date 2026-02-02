@@ -388,34 +388,39 @@ end
 # ========================================
 
 """
-    _check_domain(x, xi::Tg, ::Val{:none}) where {Tg<:AbstractFloat}
+    _check_domain(x, xi, ::Val{:none})
 
 Check if scalar query point is within domain for `:none` extrapolation mode.
 Throws `DomainError` if `xi` is outside `[first(x), last(x)]`.
 
+Type-relaxed: accepts any Real query type (Int, Float32, Float64, Dual, etc.)
+to avoid unnecessary type conversions at call sites.
+
 Uses `@boundscheck` so it's skipped in `@inbounds` blocks for vector paths
 that do a single upfront check via the vector dispatch.
 """
-@inline function _check_domain(x::AbstractVector{Tg}, xi::Tg, ::Val{:none}) where {Tg<:AbstractFloat}
+@inline function _check_domain(x::AbstractVector, xi::Real, ::Val{:none})
     x_min, x_max = first(x), last(x)
     (xi < x_min || xi > x_max) && throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
     return nothing
 end
 
 """
-    _check_domain(x, xi::Tg, ::Val) where {Tg<:AbstractFloat}
+    _check_domain(x, xi, ::Val)
 
 No-op domain check for extrapolation modes other than `:none`.
 """
-@inline _check_domain(::AbstractVector{Tg}, ::Tg, ::Val) where {Tg<:AbstractFloat} = nothing
+@inline _check_domain(::AbstractVector, ::Real, ::Val) = nothing
 
 """
-    _check_domain(x, xi::AbstractVector{Tg}, ::Val{:none}) where {Tg<:AbstractFloat}
+    _check_domain(x, xi::AbstractVector, ::Val{:none})
 
 Vector-level domain check using minimum/maximum (faster than extrema due to SIMD).
 Called once before vector loop, then scalar `_check_domain` is skipped via `@inbounds`.
+
+Type-relaxed: accepts any Real element type to avoid unnecessary conversions.
 """
-@inline function _check_domain(x::AbstractVector{Tg}, xi::AbstractVector{Tg}, ::Val{:none}) where {Tg<:AbstractFloat}
+@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::Val{:none})
     x_min, x_max = first(x), last(x)
     # NOTE: Using minimum/maximum for potential SIMD optimization over extrema
     # extrema can be ~30x slower than minimum/maximum
@@ -428,11 +433,11 @@ Called once before vector loop, then scalar `_check_domain` is skipped via `@inb
 end
 
 """
-    _check_domain(x, xi::AbstractVector{Tg}, ::Val) where {Tg<:AbstractFloat}
+    _check_domain(x, xi::AbstractVector, ::Val)
 
 No-op vector domain check for extrapolation modes other than `:none`.
 """
-@inline _check_domain(::AbstractVector{Tg}, ::AbstractVector{Tg}, ::Val) where {Tg<:AbstractFloat} = nothing
+@inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, ::Val) = nothing
 
 # ========================================
 # Validation Utilities

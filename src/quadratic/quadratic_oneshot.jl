@@ -122,7 +122,7 @@ Note: `h` parameter kept for API compatibility but not used (interval info from 
 ) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
     # Domain check uses primal value (Dual needs real value for comparison)
     xq_primal = _extract_primal(xq)
-    @boundscheck _check_domain(x, Tg(xq_primal), extrap)
+    @boundscheck _check_domain(x, xq_primal, extrap)
     return _quadratic_eval_with_extrap(x, y, a, d, xq, extrap, op, searcher)
 end
 

@@ -361,9 +361,7 @@ end
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
-    # Note: wrap uses primal for domain wrapping, loses derivative info outside domain
-    xq_primal = _extract_primal(xq)
-    xi_wrapped = _wrap_to_domain(Tg(xq_primal), first(x), last(x))
+    xi_wrapped = _wrap_to_domain(xq, first(x), last(x))
     _linear_eval_at_point(x, y, xi_wrapped, Val(:extension), op, searcher)
 end
 

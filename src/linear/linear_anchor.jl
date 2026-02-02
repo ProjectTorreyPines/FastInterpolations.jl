@@ -249,7 +249,7 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
     # Handle wrapping (for extrap=:wrap mode)
     if wrap && (xq_primal < x_min || xq_primal >= x_max)
         xq = _wrap_to_domain(xq, x_min, x_max)
-        xq_primal = _extract_primal(xq)
+        xq_primal = xq  # xq is now Tg, no need for _extract_primal
     end
 
     # Determine side (domain position)

@@ -217,7 +217,7 @@ Used for periodic boundary conditions and extrap=:wrap.
 
 Optimized: skips expensive `mod()` when xi is already in domain.
 """
-@inline function _wrap_to_domain(xi::FT, x_min::FT, x_max::FT) where {FT<:AbstractFloat}
+@inline function _wrap_to_domain(xi::Tg, x_min::Tg, x_max::Tg) where {Tg<:AbstractFloat}
     # Single-branch check: outside domain → slow path
     if xi < x_min || xi >= x_max
         period = x_max - x_min
@@ -225,6 +225,13 @@ Optimized: skips expensive `mod()` when xi is already in domain.
     end
     # Fast path: already in domain (most common case)
     return xi
+end
+
+# Generic wrapper: handles Dual, Int, Float32 on Float64 grid, etc.
+# Same pattern as _search_binary generic wrapper.
+@inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg<:AbstractFloat}
+    xi_conv = Tg(_extract_primal(xi))
+    return _wrap_to_domain(xi_conv, x_min, x_max)
 end
 
 # ========================================

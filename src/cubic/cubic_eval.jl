@@ -76,9 +76,7 @@ end
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
-    # Extract primal for wrapping and search (comparisons need Float, not Dual)
-    xq_primal = _extract_primal(xq)
-    xq_wrapped = _wrap_to_domain(Tg(xq_primal), first(x), first(x) + period)
+    xq_wrapped = _wrap_to_domain(xq, first(x), first(x) + period)
     idx, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
 
     # Compute offset from original xq to preserve AD (adjust for wrapping)
@@ -171,9 +169,7 @@ end
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
-    # Use primal for wrapping (discrete operation, not tracked by AD)
-    xq_primal = _extract_primal(xq)
-    xq_wrapped = _wrap_to_domain(Tg(xq_primal), first(x), last(x))
+    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
     return _eval_cubic_at_point(x, y, spacing, z, xq_wrapped, op, searcher)
 end
 

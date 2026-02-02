@@ -318,9 +318,10 @@ while preserving the full Dual value for weight computation.
     xq_primal = _extract_primal(xq)
 
     # Handle wrapping (for extrap=:wrap mode)
+    # Generic _wrap_to_domain handles AD primal extraction and returns Tg
     if wrap && (xq_primal < x_min || xq_primal >= x_max)
         xq = _wrap_to_domain(xq, x_min, x_max)
-        xq_primal = _extract_primal(xq)
+        xq_primal = xq  # xq is now Tg, no need for _extract_primal
     end
 
     # Determine side (domain position)

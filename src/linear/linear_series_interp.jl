@@ -653,37 +653,19 @@ end
 """
 Internal: Core linear evaluation for series k at anchored query point.
 
-# Precision Preservation
-Uses anchor's precomputed `alpha` for value evaluation (avoids division).
-For derivatives, computes `h` from grid since derivative formula needs it.
+Uses anchor's precomputed values via `_linear_kernel(op, yL, yR, aq)`.
+The kernel internally extracts alpha (for EvalValue) or inv_h (for derivatives).
 """
 @inline function _eval_linear_series_anchored(
     y::Matrix{Tv},
-    x::AbstractVector{Tg},
+    ::AbstractVector{Tg},
     k::Int,
     aq::_LinearAnchoredQuery{Tg},
-    op::EvalValue
+    op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
-    idx = aq.idx
     @inbounds begin
-        yL = y[idx, k]
-        yR = y[idx + 1, k]
+        yL = y[aq.idx, k]
+        yR = y[aq.idx + 1, k]
     end
-    return _linear_kernel_alpha(op, yL, yR, aq.alpha)
-end
-
-@inline function _eval_linear_series_anchored(
-    y::Matrix{Tv},
-    x::AbstractVector{Tg},
-    k::Int,
-    aq::_LinearAnchoredQuery{Tg},
-    op::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
-) where {Tg<:AbstractFloat, Tv}
-    idx = aq.idx
-    @inbounds begin
-        yL = y[idx, k]
-        yR = y[idx + 1, k]
-        h = x[idx + 1] - x[idx]
-    end
-    return _linear_kernel_alpha(op, yL, yR, h)
+    return _linear_kernel(op, yL, yR, aq)
 end

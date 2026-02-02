@@ -26,6 +26,8 @@ matches the interpolant grid.
 - `idx`: Interval index where xq falls
 - `xq`: Original query point (or wrapped value for periodic), preserves original precision
 - `side`: Domain position (0=inside, 1=below, 2=above)
+- `h`: Interval width (xR - xL)
+- `inv_h`: Precomputed reciprocal (1/h) for fast derivative computation
 - `alpha`: Normalized position within interval: (xq - xL) / h, preserves precision
 
 # Usage
@@ -45,14 +47,53 @@ Anchored evaluation is faster than `itp(xq)` for non-uniform grids,
 as it eliminates O(log n) binary search.
 
 # Efficiency
-Using `alpha` instead of `dL` avoids division at evaluation time:
-`y = yL * (1 - alpha) + yR * alpha`
+- `alpha` for EvalValue: `muladd(alpha, yR - yL, yL)` (no division)
+- `inv_h` for EvalDeriv1: `(yR - yL) * inv_h` (no division)
 """
 struct _LinearAnchoredQuery{Tg<:AbstractFloat, Tq<:Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), original precision
     side::UInt8                # 0=inside, 1=below_min, 2=above_max
+    h::Tg                      # interval width
+    inv_h::Tg                  # precomputed 1/h
     alpha::Tq                  # normalized position: (xq - xL) / h, preserves precision
+end
+
+# ========================================
+# Anchored Kernel Overloads
+# ========================================
+# These _linear_kernel methods receive the anchor directly and extract
+# the appropriate precomputed value (alpha or inv_h) based on the operation.
+# Leverages Julia's dispatch system for clean, unified API.
+
+"""
+    _linear_kernel(::EvalValue, yL, yR, aq::_LinearAnchoredQuery)
+
+Evaluate linear interpolation using anchor's precomputed alpha.
+No division: uses muladd(alpha, yR - yL, yL).
+"""
+@inline function _linear_kernel(::EvalValue, yL::Tv, yR::Tv, aq::_LinearAnchoredQuery) where {Tv}
+    return muladd(aq.alpha, yR - yL, yL)
+end
+
+"""
+    _linear_kernel(::EvalDeriv1, yL, yR, aq::_LinearAnchoredQuery)
+
+Evaluate first derivative using anchor's precomputed inv_h.
+No division: uses (yR - yL) * inv_h.
+"""
+@inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, aq::_LinearAnchoredQuery{Tg}) where {Tg<:AbstractFloat, Tv}
+    return (yR - yL) * aq.inv_h
+end
+
+"""Second derivative of linear is always zero."""
+@inline function _linear_kernel(::EvalDeriv2, yL::Tv, ::Tv, ::_LinearAnchoredQuery{Tg}) where {Tg<:AbstractFloat, Tv}
+    return zero(promote_type(Tv, Tg))
+end
+
+"""Third derivative of linear is always zero."""
+@inline function _linear_kernel(::EvalDeriv3, yL::Tv, ::Tv, ::_LinearAnchoredQuery{Tg}) where {Tg<:AbstractFloat, Tv}
+    return zero(promote_type(Tv, Tg))
 end
 
 # ========================================
@@ -235,12 +276,13 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
         search_interval(policy, x, Tg(xq_primal))
     end
 
-    # Compute alpha: normalized position within interval
-    # This preserves Dual type when xq is Dual, avoids division at eval time
+    # Compute geometry
     h = xR - xL
+    inv_h = one(Tg) / h
+    # alpha preserves Dual type when xq is Dual
     alpha = (xq - xL) / h
 
-    return _LinearAnchoredQuery{Tg, Tq}(idx, xq, side, alpha)
+    return _LinearAnchoredQuery{Tg, Tq}(idx, xq, side, h, inv_h, alpha)
 end
 
 # ========================================
@@ -280,40 +322,25 @@ end
     return _linear_anchor_dispatch(itp, aq, op, itp.extrap)
 end
 
-# Inside domain or extension mode: use interpolation with precomputed alpha
+# Default case (extension, wrap): direct anchored kernel evaluation
 @inline function _linear_anchor_dispatch(
     itp::LinearInterpolant{Tg},
     aq::_LinearAnchoredQuery{Tg, Tq},
-    op::EvalValue,
+    op::AbstractEvalOp,
     ::Val
 ) where {Tg<:AbstractFloat, Tq<:Real}
     @inbounds begin
         yL = itp.y[aq.idx]
         yR = itp.y[aq.idx + 1]
-        return _linear_kernel_alpha(op, yL, yR, aq.alpha)  # Use precomputed alpha
     end
-end
-
-# Derivative needs h, compute from grid
-@inline function _linear_anchor_dispatch(
-    itp::LinearInterpolant{Tg},
-    aq::_LinearAnchoredQuery{Tg, Tq},
-    op::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3},
-    ::Val
-) where {Tg<:AbstractFloat, Tq<:Real}
-    @inbounds begin
-        yL = itp.y[aq.idx]
-        yR = itp.y[aq.idx + 1]
-        h = itp.x[aq.idx + 1] - itp.x[aq.idx]
-        return _linear_kernel_alpha(op, yL, yR, h)
-    end
+    return _linear_kernel(op, yL, yR, aq)
 end
 
 # No extrapolation: throw DomainError if outside domain
 @inline function _linear_anchor_dispatch(
     itp::LinearInterpolant{Tg},
     aq::_LinearAnchoredQuery{Tg, Tq},
-    op::EvalValue,
+    op::AbstractEvalOp,
     ::Val{:none}
 ) where {Tg<:AbstractFloat, Tq<:Real}
     if aq.side != 0x00  # outside domain
@@ -323,65 +350,25 @@ end
     @inbounds begin
         yL = itp.y[aq.idx]
         yR = itp.y[aq.idx + 1]
-        return _linear_kernel_alpha(op, yL, yR, aq.alpha)
     end
+    return _linear_kernel(op, yL, yR, aq)
 end
 
+# Constant extrapolation: boundary handling
 @inline function _linear_anchor_dispatch(
     itp::LinearInterpolant{Tg},
     aq::_LinearAnchoredQuery{Tg, Tq},
-    op::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3},
-    ::Val{:none}
+    op::AbstractEvalOp,
+    ::Val{:constant}
 ) where {Tg<:AbstractFloat, Tq<:Real}
     if aq.side != 0x00  # outside domain
-        x_min, x_max = first(itp.x), last(itp.x)
-        throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
+        return _linear_eval_constant_extrap(itp.y, aq.side == 0x01, op)
     end
     @inbounds begin
         yL = itp.y[aq.idx]
         yR = itp.y[aq.idx + 1]
-        h = itp.x[aq.idx + 1] - itp.x[aq.idx]
-        return _linear_kernel_alpha(op, yL, yR, h)
     end
-end
-
-# Constant extrapolation: EvalValue (resolves ambiguity)
-@inline function _linear_anchor_dispatch(
-    itp::LinearInterpolant{Tg},
-    aq::_LinearAnchoredQuery{Tg, Tq},
-    op::EvalValue,
-    ::Val{:constant}
-) where {Tg<:AbstractFloat, Tq<:Real}
-    if aq.side == 0x01  # below domain
-        return _linear_eval_constant_extrap(itp.y, true, op)
-    elseif aq.side == 0x02  # above domain
-        return _linear_eval_constant_extrap(itp.y, false, op)
-    else
-        @inbounds begin
-            yL = itp.y[aq.idx]
-            yR = itp.y[aq.idx + 1]
-        end
-        return _linear_kernel_alpha(op, yL, yR, aq.alpha)
-    end
-end
-
-# Constant extrapolation: derivatives (outside domain → zero, inside domain → compute)
-@inline function _linear_anchor_dispatch(
-    itp::LinearInterpolant{Tg},
-    aq::_LinearAnchoredQuery{Tg, Tq},
-    op::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3},
-    ::Val{:constant}
-) where {Tg<:AbstractFloat, Tq<:Real}
-    if aq.side != 0x00  # outside domain
-        return _linear_eval_constant_extrap(itp.y, true, op)  # returns zero
-    else
-        @inbounds begin
-            yL = itp.y[aq.idx]
-            yR = itp.y[aq.idx + 1]
-            h = itp.x[aq.idx + 1] - itp.x[aq.idx]
-        end
-        return _linear_kernel_alpha(op, yL, yR, h)
-    end
+    return _linear_kernel(op, yL, yR, aq)
 end
 
 # ========================================

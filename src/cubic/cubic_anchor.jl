@@ -101,9 +101,9 @@ Compute weights for cubic spline first derivative evaluation.
 Weights satisfy: S'(xq) = wyL*yL + wyR*yR + wzL*zL + wzR*zR
 """
 @inline function _compute_anchor_weights(::EvalDeriv1, h::Tg, inv_h::Tg, dL::Tq, dR::Tq) where {Tg, Tq}
-    # Convert to Tq for type consistency (important for AD support with Dual types)
-    wyL = -inv_h + zero(dL)
-    wyR =  inv_h + zero(dL)
+    # Promote to Tq for AD support (zero-overhead when Tg === Tq)
+    wyL = oftype(dL, -inv_h)
+    wyR = oftype(dL,  inv_h)
     inv_2h = inv_h * inv(Tg(2))
     h_div6 = h * inv(Tg(6))
     wzL = -dR^2 * inv_2h + h_div6
@@ -145,10 +145,9 @@ The weights are converted to Tq type for struct consistency, though they
 don't carry AD derivative information.
 """
 @inline function _compute_anchor_weights(::EvalDeriv3, ::Tg, inv_h::Tg, dL::Tq, ::Tq) where {Tg, Tq}
-    # Convert to Tq for type consistency with other weight tuples
-    # Using zero(dL) ensures correct Tq type even when Tq is Dual
-    wzL = -inv_h + zero(dL)
-    wzR =  inv_h + zero(dL)
+    # Promote to Tq for AD support (zero-overhead when Tg === Tq)
+    wzL = oftype(dL, -inv_h)
+    wzR = oftype(dL,  inv_h)
     return (wzL, wzR)
 end
 

@@ -101,8 +101,9 @@ Compute weights for cubic spline first derivative evaluation.
 Weights satisfy: S'(xq) = wyL*yL + wyR*yR + wzL*zL + wzR*zR
 """
 @inline function _compute_anchor_weights(::EvalDeriv1, h::Tg, inv_h::Tg, dL::Tq, dR::Tq) where {Tg, Tq}
-    wyL = -inv_h
-    wyR =  inv_h
+    # Convert to Tq for type consistency (important for AD support with Dual types)
+    wyL = -inv_h + zero(dL)
+    wyR =  inv_h + zero(dL)
     inv_2h = inv_h * inv(Tg(2))
     h_div6 = h * inv(Tg(6))
     wzL = -dR^2 * inv_2h + h_div6

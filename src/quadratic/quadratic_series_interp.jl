@@ -505,8 +505,10 @@ Supports ForwardDiff.Dual input: output type is promoted to include Dual.
 The anchor preserves the Dual type in `xq` and `dL` fields for AD propagation.
 """
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, P, S<:Real}
-    T_out = promote_type(Tv, S)  # Dual input → Dual output
-    aq = _anchor_query(sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+    # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
+    xq_promoted = _promote_for_anchor(xq, Tg)
+    T_out = promote_type(Tv, typeof(xq_promoted))
+    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     output = Vector{T_out}(undef, n_series(sitp))
     @_dispatch_deriv deriv => op begin
@@ -533,7 +535,10 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
 ) where {Tg<:AbstractFloat, Tv, P, S<:Real}
     _validate_scalar_output(output, n_series(sitp))
 
-    aq = _anchor_query(sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+    # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
+    xq_promoted = _promote_for_anchor(xq, Tg)
+
+    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     @_dispatch_deriv deriv => op begin
         _eval_series_at_anchor!(output, sitp, aq, op)

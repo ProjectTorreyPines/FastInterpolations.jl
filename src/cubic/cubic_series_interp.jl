@@ -806,11 +806,13 @@ When `xq` is a ForwardDiff.Dual, the output type is promoted to preserve
 derivatives. Output type is `promote_type(Tv, S)`.
 """
 function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, B, P, S<:Real}
-    T_out = promote_type(Tv, S)  # Dual input → Dual output
+    # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
+    xq_promoted = _promote_for_anchor(xq, Tg)
+    T_out = promote_type(Tv, typeof(xq_promoted))
     output = Vector{T_out}(undef, n_series(sitp))
 
     # Build anchor preserving Dual type in xq
-    aq = _make_anchor(sitp, xq, _to_searcher(search, hint))
+    aq = _make_anchor(sitp, xq_promoted, _to_searcher(search, hint))
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin
@@ -836,8 +838,11 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
 ) where {Tg<:AbstractFloat, Tv, C, B, P, S<:Real}
     _validate_scalar_output(output, n_series(sitp))
 
+    # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
+    xq_promoted = _promote_for_anchor(xq, Tg)
+
     # Build anchor preserving Dual type in xq (for AD)
-    aq = _make_anchor(sitp, xq, _to_searcher(search, hint))
+    aq = _make_anchor(sitp, xq_promoted, _to_searcher(search, hint))
 
     # Dispatch on derivative order
     @_dispatch_deriv deriv => op begin

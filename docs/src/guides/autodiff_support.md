@@ -45,11 +45,13 @@ itp = cubic_interp(x, y; extrap=:extension)
 
 # Compute derivative via AD
 grad = ForwardDiff.derivative(itp, 1.5)
+nothing #hide
 ```
 
 ```@example ad
 # Works with one-shot API too
 grad_oneshot = ForwardDiff.derivative(q -> cubic_interp(x, y, q), 1.5)
+nothing #hide
 ```
 
 ```@example ad
@@ -57,12 +59,14 @@ grad_oneshot = ForwardDiff.derivative(q -> cubic_interp(x, y, q), 1.5)
 y1, y2 = sin.(x), cos.(x)
 sitp = cubic_interp(x, [y1, y2]; extrap=:extension)
 grad_series = ForwardDiff.derivative(q -> sum(sitp(q)), 1.5)
+nothing #hide
 ```
 
 ```@example ad
 # Vector query: use broadcast + gradient (not derivative)
 xq = [0.5, 1.0, 1.5]
 grads = ForwardDiff.gradient(v -> sum(itp.(v)), xq)
+nothing #hide
 ```
 
 **Supported:**
@@ -85,6 +89,7 @@ itp = linear_interp(x, y; extrap=:extension)
 
 # Single interpolant works
 grad = Zygote.gradient(itp, 1.5)[1]  # Returns 2.0
+nothing #hide
 ```
 
 **Limitations:**
@@ -98,7 +103,7 @@ grad = Zygote.gradient(itp, 1.5)[1]  # Returns 2.0
   # ✅ Use this instead:
   grad_real = Zygote.gradient(q -> real(itp_complex(q)), 1.5)[1]
   grad_imag = Zygote.gradient(q -> imag(itp_complex(q)), 1.5)[1]
-  (grad_real, grad_imag)
+  nothing #hide
   ```
 - **Series interpolants**: Not supported (array mutation)
 - **Constant interpolation**: Returns `nothing` instead of `0.0`
@@ -118,6 +123,7 @@ itp = quadratic_interp(x, y; extrap=:extension)
 f(xq) = itp(xq)
 result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(2.25))
 grad = result[1][1]  # Returns 4.5 (= 2 * 2.25)
+nothing #hide
 ```
 
 **Supported:**

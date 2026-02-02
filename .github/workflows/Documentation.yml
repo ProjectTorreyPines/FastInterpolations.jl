@@ -25,6 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # For repository_dispatch from TagBot, checkout the tag
+          # For push/PR events, use default behavior
+          ref: ${{ github.event.client_payload.tag || github.ref }}
 
       - uses: julia-actions/setup-julia@latest
 

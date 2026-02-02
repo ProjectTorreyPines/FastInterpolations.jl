@@ -267,6 +267,34 @@ end
 # ========================================
 
 """
+    _to_grid_type(xq, ::Type{Tg}) -> Tg
+
+Convert query point to grid type for index search.
+Extracts primal value from AD types (via `_extract_primal`), then converts to Tg.
+
+# Zero-overhead paths (compile-time dispatch)
+- `xq::Tg` → returns as-is (identity method selected)
+- `xq` after primal extraction equals Tg → `Tg(Tg_value)` optimized away
+
+# Conversion paths
+- `xq::Float32` on `Float64` grid → converts to Float64
+- `xq::Int` → directly to Tg (no intermediate Float64)
+- `xq::Dual{...}` → extracts primal via `_extract_primal` → converts to Tg
+
+# Usage in Search
+```julia
+# Before (2 lines):
+xq_primal = _extract_primal(xq)
+xq_conv = Tg(xq_primal)
+
+# After (1 line):
+xq_conv = _to_grid_type(xq, Tg)
+```
+"""
+@inline _to_grid_type(xq::Tg, ::Type{Tg}) where {Tg<:Real} = xq  # identity: already correct type
+@inline _to_grid_type(xq::Real, ::Type{Tg}) where {Tg<:Real} = Tg(_extract_primal(xq))  # convert via primal extraction
+
+"""
     _extract_primal(xq) -> AbstractFloat
 
 Extract the primal (real) value from a query point for index search.
@@ -286,7 +314,7 @@ ForwardDiff support is added via:
 ```
 """
 @inline _extract_primal(xq::T) where {T<:AbstractFloat} = xq
-@inline _extract_primal(xq::Real) = float(xq)
+@inline _extract_primal(xq::Real) = xq  # return as-is, let _to_grid_type handle conversion
 
 """
     _promote_for_anchor(xq::Tq, ::Type{Tg}) -> promoted_xq

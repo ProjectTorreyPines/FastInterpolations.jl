@@ -235,7 +235,7 @@ while preserving the full Dual value for `dL` computation.
         @inbounds (n - 1, x[n-1], x[n])
     else
         # Inside domain: use policy-based interval search
-        search_interval(policy, x, Tg(xq_primal))
+        search_interval(policy, x, xq_primal)
     end
 
     # Compute dL: offset from interval start

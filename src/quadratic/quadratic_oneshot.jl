@@ -41,7 +41,7 @@ Uses interval clamping for extension extrapolation (matches cubic pattern).
     xq_primal = _extract_primal(xq)
     # search_interval clamps idx to [1, n-1]
     # This handles both normal evaluation and extension extrapolation
-    idx, xL, _ = search_interval(searcher, x, Tg(xq_primal))
+    idx, xL, _ = search_interval(searcher, x, xq_primal)
     # Use original xq for arithmetic to preserve AD
     dt = xq - xL  # Can be Dual for AD
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)

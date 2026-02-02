@@ -256,7 +256,7 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     # Extract primal for domain check and interval search (comparisons need Float)
     xq_primal = _extract_primal(xq)
     @boundscheck _check_domain(x, Tg(xq_primal), extrap)
-    idx, xL, xR = search_interval(searcher, x, Tg(xq_primal))
+    idx, xL, xR = search_interval(searcher, x, xq_primal)
     # Use original xq for interpolation (preserves Dual for AD)
     h = xR - xL
     dL = xq - xL  # xq can be Dual here

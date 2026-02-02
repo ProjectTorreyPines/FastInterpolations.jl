@@ -108,15 +108,8 @@ for batch in batches
 end
 ```
 """
-# Generic constructor handles all Real grid types (Int, Float32, Float64, etc.)
-# _promote_itp_inputs handles type promotion (no-op when already compatible)
-function constant_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv};
-    extrap::Symbol=:none,
-    side::Symbol=:nearest,
-    search::P=Binary()
-) where {Tg<:Real, Tv, P<:AbstractSearchPolicy}
-    x_p, y_p = _promote_itp_inputs(x, y)
-    return ConstantInterpolant(x_p, y_p; extrap, side, search)
-end
+# Generic constructor (forwarding to outer constructor)
+# Handles all Real grid types (Int, Float32, Float64, etc.)
+# Type promotion is handled by ConstantInterpolant outer constructor
+constant_interp(x::AbstractVector{<:Real}, y::AbstractVector; extrap::Symbol=:none, side::Symbol=:nearest, search::AbstractSearchPolicy=Binary()) =
+    ConstantInterpolant(x, y; extrap, side, search)

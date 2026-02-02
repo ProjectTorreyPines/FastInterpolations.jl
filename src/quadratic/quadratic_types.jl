@@ -63,23 +63,47 @@ struct QuadraticInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:Abs
     extrap::ExtrapVal
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    function QuadraticInterpolant(
-        x::X, y::Y;
-        bc::QuadraticBC=Left(QuadraticFit()),
-        extrap::Symbol=:none,
-        search::P=Binary()
+    # Inner constructor: parametric, only calls new (handles validation only)
+    function QuadraticInterpolant{Tg,Tv,X,Y,P}(
+        x::X, y::Y, h::Vector{Tg}, a::Vector{Tv}, d::Vector{Tv}, ev::ExtrapVal, search::P
     ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         @assert length(x) >= 2 "x must have at least 2 elements"
+        new{Tg,Tv,X,Y,P}(x, y, h, a, d, ev, search)
+    end
+end
 
-        # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
-        validate_polyfit_points(bc, length(x))
+# ========================================
+# Outer Constructor: handles all logic
+# ========================================
+# - Type conversion (_promote_itp_inputs)
+# - BC conversion (_promote_bc)
+# - Coefficient computation (_compute_quadratic_coeffs)
+# - Symbol → Val dispatch
+# - Call inner constructor
+function QuadraticInterpolant(
+    x::AbstractVector,
+    y::AbstractVector;
+    bc::QuadraticBC=Left(QuadraticFit()),
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
+)
+    x_p, y_p = _promote_itp_inputs(x, y)
+    bc_p = _promote_bc(bc, eltype(x_p))
 
-        # Compute coefficients (h::Tg, d::Tv, a::Tv)
-        h, d, a = _compute_quadratic_coeffs(x, y, bc)
+    # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
+    validate_polyfit_points(bc_p, length(x_p))
 
-        @_dispatch_extrap extrap => ev begin
-            return new{Tg,Tv,X,Y,P}(x, y, h, a, d, ev, search)
-        end
+    # Compute coefficients (h::Tg, d::Tv, a::Tv)
+    h, d, a = _compute_quadratic_coeffs(x_p, y_p, bc_p)
+
+    X = typeof(x_p)
+    Y = typeof(y_p)
+    Tg = eltype(x_p)
+    Tv = eltype(y_p)
+    P = typeof(search)
+
+    @_dispatch_extrap extrap => ev begin
+        return QuadraticInterpolant{Tg,Tv,X,Y,P}(x_p, y_p, h, a, d, ev, search)
     end
 end

@@ -144,16 +144,9 @@ vals_direct = linear_interp(x_data, y_data, query_points)
 function linear_interp end
 
 # ========================================
-# Generic Constructor
+# Generic Constructor (forwarding to outer constructor)
 # ========================================
 # Handles all Real grid types (Int, Float32, Float64, etc.)
-# _promote_itp_inputs handles type promotion (no-op when already compatible)
-function linear_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv};
-    extrap::Symbol=:none,
-    search::P=Binary()
-) where {Tg<:Real, Tv, P<:AbstractSearchPolicy}
-    x_p, y_p = _promote_itp_inputs(x, y)
-    return LinearInterpolant(x_p, y_p; extrap, search)
-end
+# Type promotion is handled by LinearInterpolant outer constructor
+linear_interp(x::AbstractVector{<:Real}, y::AbstractVector; extrap::Symbol=:none, search::AbstractSearchPolicy=Binary()) =
+    LinearInterpolant(x, y; extrap, search)

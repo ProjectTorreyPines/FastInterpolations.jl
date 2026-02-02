@@ -54,19 +54,39 @@ struct ConstantInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:Abst
     side::SideVal
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    function ConstantInterpolant(
-        x::X, y::Y;
-        extrap::Symbol=:none,
-        side::Symbol=:nearest,
-        search::P=Binary()
+    # Inner constructor: parametric, only calls new (handles validation only)
+    function ConstantInterpolant{Tg,Tv,X,Y,P}(
+        x::X, y::Y, ev::ExtrapVal, sv::SideVal, search::P
     ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         @assert length(x) >= 2 "x must have at least 2 elements"
+        new{Tg,Tv,X,Y,P}(x, y, ev, sv, search)
+    end
+end
 
-        @_dispatch_extrap extrap => ev begin
-            @_dispatch_side side => sv begin
-                return new{Tg,Tv,X,Y,P}(x, y, ev, sv, search)
-            end
+# ========================================
+# Outer Constructor: handles all logic
+# ========================================
+# - Type conversion (_promote_itp_inputs)
+# - Symbol → Val dispatch
+# - Call inner constructor
+function ConstantInterpolant(
+    x::AbstractVector,
+    y::AbstractVector;
+    extrap::Symbol=:none,
+    side::Symbol=:nearest,
+    search::AbstractSearchPolicy=Binary()
+)
+    x_p, y_p = _promote_itp_inputs(x, y)
+    X = typeof(x_p)
+    Y = typeof(y_p)
+    Tg = eltype(x_p)
+    Tv = eltype(y_p)
+    P = typeof(search)
+
+    @_dispatch_extrap extrap => ev begin
+        @_dispatch_side side => sv begin
+            return ConstantInterpolant{Tg,Tv,X,Y,P}(x_p, y_p, ev, sv, search)
         end
     end
 end

@@ -126,33 +126,8 @@ for batch in batches
 end
 ```
 """
-# Hot path: x is AbstractFloat, y can be Tg or Complex{Tg}
-function quadratic_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv};
-    bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Symbol=:none,
-    search::P=Binary()
-) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
-    # Auto-promote x/y types (zero allocation if already compatible)
-    x_p, y_p = _promote_itp_inputs(x, y)
-    bc_promoted = _promote_bc(bc, eltype(x_p))
-    return QuadraticInterpolant(x_p, y_p; bc=bc_promoted, extrap, search)
-end
-
-# ========================================
-# 2-arg Generic Constructor (Type Promotion Wrapper)
-# Handles: Int grid, Real values, Complex values
-# ========================================
-
-function quadratic_interp(
-    x::AbstractVector{TX},
-    y::AbstractVector{TY};
-    bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Symbol=:none,
-    search::P=Binary()
-) where {TX<:Real, TY, P<:AbstractSearchPolicy}
-    x_p, y_p = _promote_itp_inputs(x, y)
-    bc_promoted = _promote_bc(bc, eltype(x_p))
-    return QuadraticInterpolant(x_p, y_p; bc=bc_promoted, extrap, search)
-end
+# Generic constructor (forwarding to outer constructor)
+# Handles all Real grid types (Int, Float32, Float64, etc.)
+# Type promotion is handled by QuadraticInterpolant outer constructor
+quadratic_interp(x::AbstractVector{<:Real}, y::AbstractVector; bc::QuadraticBC=Left(QuadraticFit()), extrap::Symbol=:none, search::AbstractSearchPolicy=Binary()) =
+    QuadraticInterpolant(x, y; bc, extrap, search)

@@ -64,18 +64,36 @@ struct LinearInterpolant{
     extrap::ExtrapVal  # Extrapolation mode (concrete union for union-splitting)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    function LinearInterpolant(
-        x::X,
-        y::Y;
-        extrap::Symbol=:none,
-        search::P=Binary()
+    # Inner constructor: parametric, only calls new (handles validation only)
+    function LinearInterpolant{Tg,Tv,X,Y,P}(
+        x::X, y::Y, ev::ExtrapVal, search::P
     ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
+        new{Tg,Tv,X,Y,P}(x, y, ev, search)
+    end
+end
 
-        # Manual dispatch to avoid union-splitting with 4 Val types
-        @_dispatch_extrap extrap => ev begin
-            return new{Tg,Tv,X,Y,P}(x, y, ev, search)
-        end
+# ========================================
+# Outer Constructor: handles all logic
+# ========================================
+# - Type conversion (_promote_itp_inputs)
+# - Symbol → Val dispatch
+# - Call inner constructor
+function LinearInterpolant(
+    x::AbstractVector,
+    y::AbstractVector;
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
+)
+    x_p, y_p = _promote_itp_inputs(x, y)
+    X = typeof(x_p)
+    Y = typeof(y_p)
+    Tg = eltype(x_p)
+    Tv = eltype(y_p)
+    P = typeof(search)
+
+    @_dispatch_extrap extrap => ev begin
+        return LinearInterpolant{Tg,Tv,X,Y,P}(x_p, y_p, ev, search)
     end
 end
 

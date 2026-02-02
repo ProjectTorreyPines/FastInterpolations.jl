@@ -589,8 +589,8 @@ end
 Evaluate all series at multiple query points (in-place, zero allocation when types match).
 
 # Precision Preservation
-When `Tq === Tg`, uses pooled anchors for zero-allocation.
-When `Tq !== Tg`, builds anchors with promoted type `promote_type(Tq, Tg)` to preserve precision.
+Uses pooled anchors with promoted type `promote_type(Tq, Tg)` to preserve precision.
+Pool handles both same-type and mixed-type cases efficiently.
 """
 @with_pool pool function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector},
@@ -602,16 +602,14 @@ When `Tq !== Tg`, builds anchors with promoted type `promote_type(Tq, Tg)` to pr
     n_query = length(xq)
     _validate_series_outputs(outputs, n_series(sitp), n_query)
 
-    # Build anchors - type depends on query type for precision preservation
+    # Build anchors - pool handles both same-type and mixed-type cases
+    Tq_eff = promote_type(Tq, Tg)
+    aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg, Tq_eff}, n_query)
     if Tq === Tg
-        # Same type: use pool for zero-allocation
-        aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg, Tg}, n_query)
         _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
     else
-        # Mixed type: anchors with promoted type (allocation expected for type promotion anyway)
-        Tq_promoted = promote_type(Tq, Tg)
-        xq_promoted = _promote_for_anchor.(xq, Tg)  # Preserves wider precision
-        aq_vec = Vector{_QuadraticAnchoredQuery{Tg, Tq_promoted}}(undef, n_query)
+        # Mixed type: convert query points to preserve precision
+        xq_promoted = _promote_for_anchor.(xq, Tg)
         _fill_anchors!(aq_vec, sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
     end
 

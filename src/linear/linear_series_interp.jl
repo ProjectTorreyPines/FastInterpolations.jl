@@ -552,8 +552,8 @@ This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
 Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 
 # Precision Preservation
-When `Tq === Tg`, uses pooled anchors for zero-allocation.
-When `Tq !== Tg`, builds anchors with promoted type to preserve precision in alpha.
+Uses pooled anchors with promoted type `promote_type(Tq, Tg)` to preserve precision in alpha.
+Pool handles both same-type and mixed-type cases efficiently.
 """
 @with_pool pool function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector},
@@ -568,17 +568,10 @@ When `Tq !== Tg`, builds anchors with promoted type to preserve precision in alp
     # Validate dimensions
     _validate_series_outputs(outputs, n_ser, n_query)
 
-    # Build anchors - type depends on query type for precision preservation
-    if Tq === Tg
-        # Same type: use pool for zero-allocation
-        aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tg}, n_query)
-        _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
-    else
-        # Mixed type: anchors with promoted type (allocation expected anyway)
-        Tq_promoted = promote_type(Tq, Tg)
-        aq_vec = Vector{_LinearAnchoredQuery{Tg, Tq_promoted}}(undef, n_query)
-        _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
-    end
+    # Build anchors - pool handles both same-type and mixed-type cases
+    Tq_eff = promote_type(Tq, Tg)
+    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tq_eff}, n_query)
+    _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     # Extract matrices for argument-passing pattern
     y = sitp.y

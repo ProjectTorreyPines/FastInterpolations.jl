@@ -933,18 +933,10 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
         end
     end
 
-    # Build anchors - use pool when Tq===Tg (hot path), allocate otherwise
-    # The anchor's Tq type parameter determines weight precision
-    aq_vec = if Tq === Tg
-        aq_pool = acquire!(pool, _CubicAnchoredQuery{Tg,Tg}, n_query)
-        _fill_anchors!(aq_pool, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
-        aq_pool
-    else
-        # Mixed type: allocate with precision-preserving Tq=Tq
-        aq_alloc = Vector{_CubicAnchoredQuery{Tg,Tq}}(undef, n_query)
-        _fill_anchors!(aq_alloc, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
-        aq_alloc
-    end
+    # Build anchors - pool handles both Tq===Tg and mixed-type cases
+    # Each unique type combination gets its own pool slot
+    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg,Tq}, n_query)
+    _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     # Use point-contiguous layout for SIMD evaluation (matches scalar path exactly)
     y_point, z_point = _ensure_point_layout!(sitp)

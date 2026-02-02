@@ -74,3 +74,37 @@ Linear functions have constant first derivative (slope), zero second and third d
 @inline function _linear_kernel(::EvalDeriv3, yL::Tv, ::Tv, h::Tg, dL) where {Tg<:AbstractFloat, Tv}
     return zero(promote_type(Tv, Tg))
 end
+
+# ========================================
+# Alpha-based Kernels (Pre-normalized)
+# ========================================
+# These kernels take `alpha` directly (already normalized: α = dL/h).
+# More efficient when alpha is precomputed in anchor, avoids division.
+
+"""
+    _linear_kernel_alpha(::EvalValue, yL, yR, alpha)
+
+Evaluate linear interpolation using pre-normalized alpha.
+Avoids division since alpha = dL/h is precomputed.
+"""
+@inline function _linear_kernel_alpha(::EvalValue, yL::Tv, yR::Tv, alpha::Tq) where {Tv, Tq<:Real}
+    return muladd(alpha, yR - yL, yL)  # yL + α*(yR-yL)
+end
+
+"""
+    _linear_kernel_alpha(::EvalDeriv1, yL, yR, h)
+
+Evaluate first derivative (slope). Needs h, not alpha.
+"""
+@inline function _linear_kernel_alpha(::EvalDeriv1, yL::Tv, yR::Tv, h::Tg) where {Tg<:AbstractFloat, Tv}
+    return (yR - yL) / h
+end
+
+"""Second/third derivatives are zero for linear."""
+@inline function _linear_kernel_alpha(::EvalDeriv2, yL::Tv, ::Tv, ::Any) where {Tv}
+    return zero(Tv)
+end
+
+@inline function _linear_kernel_alpha(::EvalDeriv3, yL::Tv, ::Tv, ::Any) where {Tv}
+    return zero(Tv)
+end

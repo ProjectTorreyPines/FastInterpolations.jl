@@ -590,9 +590,9 @@
             @test length(buffer) == 0
         end
 
-        @testset "type promotion (Float32 grid with Float64 queries)" begin
+        @testset "type matching (Float32 grid and queries)" begin
             x = Float32.(collect(range(0.0f0, 1.0f0, 101)))
-            xq = [0.15, 0.35, 0.5]  # Float64 queries
+            xq = Float32[0.15f0, 0.35f0, 0.5f0]  # Float32 queries
 
             buffer = Vector{FI._CubicAnchoredQuery{Float32, Float32}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:cubic))

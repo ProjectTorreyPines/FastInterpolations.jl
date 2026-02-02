@@ -159,20 +159,24 @@ In-place version of `_anchor_query(x, xq, Val(:quadratic))` for zero-allocation 
 The same `buffer` object, filled with anchored queries.
 
 # Note
-Query points are promoted to grid type `T` for pool compatibility.
+When buffer element type is `{Tg, Tq}` and `xq` element type is `S`:
+- If `Tq === S`: uses `xq[k]` directly (preserves precision)
+- Otherwise: uses `_promote_for_anchor(xq[k], Tg)` for lossless promotion
 """
 @inline function _fill_anchors!(
-    buffer::AbstractVector{_QuadraticAnchoredQuery{T,T}},
-    x::AbstractVector{T},
+    buffer::AbstractVector{_QuadraticAnchoredQuery{Tg, Tq}},
+    x::AbstractVector{Tg},
     xq::AbstractVector{S},
     ::Val{:quadratic};
     wrap::Bool=false,
     searcher::Searcher=_to_searcher(LinearBinary())
-) where {T<:AbstractFloat, S<:Real}
+) where {Tg<:AbstractFloat, Tq<:Real, S<:Real}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 
     @inbounds for k in eachindex(xq)
-        buffer[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap, searcher)
+        # Promote query point: preserves precision when S is wider than Tg
+        xq_promoted = _promote_for_anchor(xq[k], Tg)
+        buffer[k] = _quadratic_anchor_query_impl(x, xq_promoted, wrap, searcher)
     end
     return buffer
 end

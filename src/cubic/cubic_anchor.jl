@@ -256,17 +256,14 @@ Fill a pre-allocated buffer with anchored queries for cubic spline evaluation.
 In-place version of `_anchor_query(x, xq, Val(:cubic))` for zero-allocation pooled usage.
 
 # Arguments
-- `buffer::Vector{_CubicAnchoredQuery{T,T}}`: Pre-allocated buffer (length >= length(xq))
-- `x::AbstractVector{T}`: Grid points (must match interpolant's grid)
-- `xq::AbstractVector`: Query points (any Real type, auto-promoted to T)
+- `buffer::AbstractVector{_CubicAnchoredQuery{Tg,Tq}}`: Pre-allocated buffer (length >= length(xq))
+- `x::AbstractVector{Tg}`: Grid points (must match interpolant's grid)
+- `xq::AbstractVector{Tq}`: Query points (must match buffer's query type)
 - `::Val{:cubic}`: Type tag for cubic interpolation
 - `wrap::Bool=false`: If true, wrap query points to domain [x[1], x[end])
 
 # Returns
 The same `buffer` object, filled with anchored queries.
-
-# Note
-Query points are promoted to grid type `T` for pool compatibility.
 
 # Example
 ```julia
@@ -277,17 +274,18 @@ _fill_anchors!(buffer, x, xq, Val(:cubic))
 ```
 """
 @inline function _fill_anchors!(
-    buffer::AbstractVector{_CubicAnchoredQuery{T,T}},
-    x::AbstractVector{T},
-    xq::AbstractVector{S},
+    buffer::AbstractVector{_CubicAnchoredQuery{Tg,Tq}},
+    x::AbstractVector{Tg},
+    xq::AbstractVector{Tq},
     ::Val{:cubic};
     wrap::Bool=false,
     searcher::Searcher=_to_searcher(LinearBinary())
-) where {T<:AbstractFloat, S<:Real}
+) where {Tg<:AbstractFloat, Tq<:Real}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 
+    # Use original xq[k] directly (no conversion) to preserve precision in weights
     @inbounds for k in eachindex(xq)
-        buffer[k] = _anchor_query_impl(x, T(xq[k]), wrap, searcher)
+        buffer[k] = _anchor_query_impl(x, xq[k], wrap, searcher)
     end
     return buffer
 end

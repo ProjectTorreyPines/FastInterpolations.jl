@@ -294,8 +294,10 @@ ForwardDiff support is added via:
 Promote query point for anchor construction.
 
 # Behavior
-- ForwardDiff.Dual: preserved as-is (for AD support)
-- AbstractFloat: converted to grid type Tg
+- ForwardDiff.Dual: preserved as-is (for AD support, see extension)
+- AbstractFloat: uses promote_type(Tq, Tg) to preserve precision
+  - Float64 on Float32 grid → Float64 (preserves query precision)
+  - Float32 on Float64 grid → Float64 (uses grid precision)
 - Other Real (Int, Rational): converted to grid type Tg
 
 This is needed for cubic anchors which store precomputed weight tuples.
@@ -306,9 +308,14 @@ floating-point arithmetic that can't be represented as Int/Rational.
 ```julia
 _promote_for_anchor(0, Float64)      # → 0.0 (Float64)
 _promote_for_anchor(1//2, Float64)   # → 0.5 (Float64)
+_promote_for_anchor(0.5, Float32)    # → 0.5 (Float64, preserves precision)
+_promote_for_anchor(0.5f0, Float32)  # → 0.5f0 (Float32)
 _promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
 ```
 """
+# For AbstractFloat queries: preserve precision using wider type (lossless promotion)
+@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq<:AbstractFloat, Tg<:AbstractFloat} = convert(promote_type(Tq, Tg), xq)
+# For other Real (Int, Rational): convert to grid type (no precision loss for integers)
 @inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq<:Real, Tg<:AbstractFloat} = Tg(xq)
 
 # ========================================

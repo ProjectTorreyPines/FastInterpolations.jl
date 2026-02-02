@@ -38,26 +38,29 @@ end
 
 # Vector call with deriv keyword support
 # Now supports hint for ODE/streaming patterns - hint is updated during loop
-# Handles type conversion via _to_float (no-op when already Tg).
+# Output type is promoted to wider type for precision preservation.
+# Uses xq_search for domain check only; arithmetic uses original xq.
 function (itp::CubicInterpolant{Tg,Tv,C,P})(xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P, Tq<:Real}
-    xq_typed = _to_float(xq, Tg)
-    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
-    output = Vector{T_out}(undef, length(xq_typed))
+    xq_search = _to_float(xq, Tg)  # For domain check only
+    T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
+    output = Vector{T_out}(undef, length(xq))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq_typed, itp.extrap, op, searcher)
+        # Pass both xq (arithmetic) and xq_search (domain check) to preserve precision
+        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, xq_search, itp.extrap, op, searcher)
     end
     return output
 end
 
 # In-place vector call with deriv keyword support
-# Handles type conversion via _to_float (no-op when already Tg).
+# Uses xq_search for domain check only; arithmetic uses original xq.
 function (itp::CubicInterpolant{Tg,Tv,C,P})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
-    xq_typed = _to_float(xq, Tg)
+    xq_search = _to_float(xq, Tg)  # For domain check only
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq_typed, itp.extrap, op, searcher)
+        # Pass both xq (arithmetic) and xq_search (domain check) to preserve precision
+        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, xq_search, itp.extrap, op, searcher)
     end
     return output
 end

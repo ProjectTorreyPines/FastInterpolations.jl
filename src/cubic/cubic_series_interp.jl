@@ -856,6 +856,10 @@ end
 Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
 Returns a vector of vectors: one vector per y-series, each containing results for all query points.
+
+# Precision Preservation
+For mixed-type queries (e.g., Float64 queries on Float32 grid), output type is
+`promote_type(Tv, S)` to preserve precision and match scalar/broadcast semantics.
 """
 function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
     xq::AbstractVector{S};
@@ -863,11 +867,12 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, C, B, P, S<:Real}
-    xq_typed = _to_float(xq, Tg)
-    n_query = length(xq_typed)
+    n_query = length(xq)
+    T_out = promote_type(Tv, S)  # Lossless: wider type to avoid precision loss
 
-    outputs = [Vector{Tv}(undef, n_query) for _ in 1:n_series(sitp)]
-    sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
+    outputs = [Vector{T_out}(undef, n_query) for _ in 1:n_series(sitp)]
+    # Delegate to in-place (handles precision preservation via anchor building)
+    sitp(outputs, xq; deriv=deriv, search=search, hint=hint)
 
     return outputs
 end
@@ -875,23 +880,27 @@ end
 """
     (sitp::CubicSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=0)
 
-Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation).
+Evaluate multi-Y interpolant at multiple query points (in-place).
 
 # Arguments
 - `outputs`: Vector of pre-allocated output buffers (one per y-series)
-- `xq`: Query points
-- `deriv`: Derivative order (0, 1, or 2)
+- `xq`: Query points (any Real type)
+- `deriv`: Derivative order (0, 1, 2, or 3)
 
-This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
-Uses task-local pool for anchor vector to achieve zero allocation after warmup.
+# Zero Allocation (Hot Path)
+When `eltype(xq) === Tg`, uses task-local pool for anchors → zero allocation after warmup.
+When `eltype(xq) !== Tg`, allocates anchor vector with precision-preserving weights.
+
+# Precision Preservation
+Builds anchors from original `xq` (preserving precision in weights) for scalar/vector symmetry.
 """
 @with_pool pool function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
-    outputs::AbstractVector{<:AbstractVector{Tv}},
-    xq::AbstractVector{Tg};
+    outputs::AbstractVector{<:AbstractVector},
+    xq::AbstractVector{S};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, C, B, P}
+) where {Tg<:AbstractFloat, Tv, C, B, P, S<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
 
@@ -909,36 +918,39 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
         end
     end
 
-    # Build anchors from pool (zero allocation after warmup)
-    aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg,Tg}, length(xq))
-    _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+    # Build anchors - use pool when S===Tg (hot path), allocate otherwise
+    # The anchor's Tq type parameter determines weight precision
+    aq_vec = if S === Tg
+        aq_pool = acquire!(pool, _CubicAnchoredQuery{Tg,Tg}, n_query)
+        _fill_anchors!(aq_pool, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+        aq_pool
+    else
+        # Mixed type: allocate with precision-preserving Tq=S
+        aq_alloc = Vector{_CubicAnchoredQuery{Tg,S}}(undef, n_query)
+        _fill_anchors!(aq_alloc, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+        aq_alloc
+    end
 
-    # Extract matrices for argument-passing pattern
-    y, z = sitp.y, sitp.z
+    # Use point-contiguous layout for SIMD evaluation (matches scalar path exactly)
+    y_point, z_point = _ensure_point_layout!(sitp)
     n_pts = n_points(sitp)
-    n = n_series(sitp)
     extrap = sitp.extrap
     x_min, x_max = Tg(first(sitp.cache.x)), Tg(last(sitp.cache.x))
 
-    # Evaluate all series
+    # Acquire temp buffer from pool for single-point all-series evaluation
+    temp_out = acquire!(pool, eltype(outputs[1]), n_ser)
+
+    # Evaluate using point-contiguous layout (same as scalar path)
+    # Note: _eval_series_with_extrap accepts _CubicAnchoredQuery{Tg} which matches any Tq
     @_dispatch_deriv deriv => op begin
-        @inbounds for k in 1:n
-            _eval_series_vector!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, op)
+        @inbounds for j in eachindex(aq_vec)
+            _eval_series_point_with_extrap!(temp_out, y_point, z_point, n_pts, x_min, x_max, aq_vec[j], extrap, op)
+            for k in 1:n_ser
+                outputs[k][j] = temp_out[k]
+            end
         end
     end
     return outputs
-end
-
-# Real type wrapper for in-place vector
-function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
-    outputs::AbstractVector{<:AbstractVector{Tv}},
-    xq::AbstractVector{S};
-    deriv::Int=0,
-    search=sitp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, C, B, P, S<:Real}
-    xq_typed = _to_float(xq, Tg)
-    return sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 end
 
 """

@@ -510,6 +510,7 @@ end
 Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
 Returns a vector of vectors: one vector per y-series, each containing results for all query points.
+Output type is promoted to wider type for precision preservation.
 """
 function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     xq::AbstractVector{S};
@@ -517,11 +518,12 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, S<:Real}
-    xq_typed = _to_float(xq, Tg)
-    n_query = length(xq_typed)
+    n_query = length(xq)
+    T_out = promote_type(Tv, S)  # Lossless: wider type to avoid precision loss
 
-    outputs = [Vector{Tv}(undef, n_query) for _ in 1:n_series(sitp)]
-    sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
+    outputs = [Vector{T_out}(undef, n_query) for _ in 1:n_series(sitp)]
+    # Delegate to in-place (unified path handles precision preservation)
+    sitp(outputs, xq; deriv=deriv, search=search, hint=hint)
 
     return outputs
 end
@@ -533,64 +535,67 @@ Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation
 
 # Arguments
 - `outputs`: Vector of pre-allocated output buffers (one per y-series)
-- `xq`: Query points
+- `xq`: Query points (any Real type, auto-promoted for search)
 - `deriv`: Derivative order (0 or 1)
 
 This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
 Uses task-local pool for anchor vector to achieve zero allocation after warmup.
+
+# Precision Preservation
+When `S === Tg`, uses pooled anchors for zero-allocation.
+When `S !== Tg`, builds anchors with promoted type to preserve precision in alpha.
 """
 @with_pool pool function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
-    outputs::AbstractVector{<:AbstractVector{Tv}},
-    xq::AbstractVector{Tg};
+    outputs::AbstractVector{<:AbstractVector},
+    xq::AbstractVector{S};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P}
+) where {Tg<:AbstractFloat, Tv, P, S<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
 
     # Validate dimensions
     _validate_series_outputs(outputs, n_ser, n_query)
 
-    # Build anchors from pool (zero allocation after warmup)
-    aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg}, length(xq))
-    _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+    # Build anchors - type depends on query type for precision preservation
+    if S === Tg
+        # Same type: use pool for zero-allocation
+        aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tg}, n_query)
+        _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+    else
+        # Mixed type: anchors with promoted type (allocation expected anyway)
+        Tq = promote_type(S, Tg)
+        aq_vec = Vector{_LinearAnchoredQuery{Tg, Tq}}(undef, n_query)
+        _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+    end
 
     # Extract matrices for argument-passing pattern
     y = sitp.y
     x_grid = sitp.x
     n_pts = n_points(sitp)
-    n = n_series(sitp)
     extrap = sitp.extrap
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
-    # Evaluate all series
+    # Evaluate all series - anchor already has correct alpha precision
     @_dispatch_deriv deriv => op begin
-        @inbounds for k in 1:n
+        @inbounds for k in 1:n_ser
             _eval_linear_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, op)
         end
     end
     return outputs
 end
 
-# Real type wrapper for in-place vector
-function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
-    outputs::AbstractVector{<:AbstractVector{Tv}},
-    xq::AbstractVector{S};
-    deriv::Int=0,
-    search=sitp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
-    xq_typed = _to_float(xq, Tg)
-    return sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
-end
-
 """
 Internal: Evaluate a single series for vector of query points.
 Uses argument-passing pattern for optimal performance.
+
+# Precision Preservation
+The anchor's `alpha` field already contains precision-preserving normalized position
+computed as `(xq - xL) / h` with the query's original precision.
 """
 @inline function _eval_linear_series_vector!(
-    out::AbstractVector{Tv},
+    out::AbstractVector,
     y::Matrix{Tv},
     x::AbstractVector{Tg},
     n_pts::Int,
@@ -609,6 +614,10 @@ end
 
 """
 Internal: Evaluate single series at single query point with extrapolation handling.
+
+# Precision Preservation
+Uses anchor's precomputed `alpha` for value evaluation (avoids division).
+Uses anchor's `xq` for domain error messages.
 """
 @inline function _eval_linear_series_with_extrap(
     y::Matrix{Tv},
@@ -638,22 +647,38 @@ end
 
 """
 Internal: Core linear evaluation for series k at anchored query point.
+
+# Precision Preservation
+Uses anchor's precomputed `alpha` for value evaluation (avoids division).
+For derivatives, computes `h` from grid since derivative formula needs it.
 """
 @inline function _eval_linear_series_anchored(
     y::Matrix{Tv},
     x::AbstractVector{Tg},
     k::Int,
     aq::_LinearAnchoredQuery{Tg},
-    op::AbstractEvalOp
+    op::EvalValue
 ) where {Tg<:AbstractFloat, Tv}
     idx = aq.idx
     @inbounds begin
         yL = y[idx, k]
         yR = y[idx + 1, k]
-        xL = x[idx]
-        xR = x[idx + 1]
     end
-    h = xR - xL
-    dL = aq.xq - xL
-    return _linear_kernel(op, yL, yR, h, dL)
+    return _linear_kernel_alpha(op, yL, yR, aq.alpha)
+end
+
+@inline function _eval_linear_series_anchored(
+    y::Matrix{Tv},
+    x::AbstractVector{Tg},
+    k::Int,
+    aq::_LinearAnchoredQuery{Tg},
+    op::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
+) where {Tg<:AbstractFloat, Tv}
+    idx = aq.idx
+    @inbounds begin
+        yL = y[idx, k]
+        yR = y[idx + 1, k]
+        h = x[idx + 1] - x[idx]
+    end
+    return _linear_kernel_alpha(op, yL, yR, h)
 end

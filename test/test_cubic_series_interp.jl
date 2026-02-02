@@ -1182,9 +1182,9 @@ end
         @test all(isfinite, out1)
         @test all(isfinite, out2)
 
-        # Verify values match Float64 path
-        xq_f64 = Float64.(xq_f32)
-        ref = mitp(xq_f64)
+        # Verify values match same-type allocating path (precision preservation)
+        # Float32 in-place should match Float32 allocating, not Float64 allocating
+        ref = mitp(xq_f32)
         @test out1 ≈ ref[1] atol=1e-10
         @test out2 ≈ ref[2] atol=1e-10
     end

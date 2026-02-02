@@ -26,17 +26,19 @@ end
 # ─────────────────────────────────────────────────────────────
 # Vector call (allocating)
 # Now supports hint for ODE/streaming patterns
-# Output type is Tv (value type), not Tg (grid type)
+# Output type is promoted to wider type for precision preservation
+# Uses xi_search for domain check only; arithmetic uses original xi
 # ─────────────────────────────────────────────────────────────
 function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
-    xi_typed = _to_float(xi, Tg)
-    T_out = promote_type(Tv, S)  # Lossless: wider type to avoid precision loss
-    output = Vector{T_out}(undef, length(xi_typed))
+    xi_search = _to_float(xi, Tg)  # For domain check only
+    T_out = promote_type(Tv, S)    # Lossless: wider type to avoid precision loss
+    output = Vector{T_out}(undef, length(xi))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
-        @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.extrap, op, searcher)
+        @boundscheck _check_domain(itp.x, xi_search, itp.extrap)
+        @inbounds for i in eachindex(xi, output)
+            # Use original xi[i] for arithmetic (preserves precision and Dual types)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.extrap, op, searcher)
         end
     end
     return output
@@ -58,15 +60,17 @@ function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector{Tv}, xi
     return output
 end
 
-# In-place with type conversion
+# In-place with mixed types
+# Uses xi_search for domain check only; arithmetic uses original xi
 function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
     @assert length(output) == length(xi) "output length must match xi length"
-    xi_typed = _to_float(xi, Tg)
+    xi_search = _to_float(xi, Tg)  # For domain check only
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
-        @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.extrap, op, searcher)
+        @boundscheck _check_domain(itp.x, xi_search, itp.extrap)
+        @inbounds for i in eachindex(xi, output)
+            # Use original xi[i] for arithmetic (preserves precision and Dual types)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.extrap, op, searcher)
         end
     end
     return output

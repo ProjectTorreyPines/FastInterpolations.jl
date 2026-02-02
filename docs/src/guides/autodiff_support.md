@@ -14,11 +14,23 @@ For **simple derivatives** of the interpolant itself, use the built-in `deriv` k
 
 ## Supported AD Backends
 
-| Backend | Mode | Support Level | Notes |
-|---------|------|---------------|-------|
-| **ForwardDiff.jl** | Forward | ✅ Full | Best for few-input, many-output |
-| **Zygote.jl** | Reverse | ✅ Single interpolants | Best for many-input, few-output |
-| **Enzyme.jl** | LLVM-level | ✅ Single interpolants | Fastest, most restrictive |
+| Backend | Mode | Notes |
+|---------|------|-------|
+| **ForwardDiff.jl** | Forward | Best for few-input, many-output |
+| **Zygote.jl** | Reverse | Best for many-input, few-output |
+| **Enzyme.jl** | LLVM-level | Fastest, most restrictive |
+
+### Support Matrix
+
+| Feature | ForwardDiff | Zygote | Enzyme |
+|:--------|:-----------:|:------:|:------:|
+| Constant | ✅ | ✅ | ✅ |
+| Linear | ✅ | ✅ | ✅ |
+| Quadratic | ✅ | ✅ | ✅ |
+| Cubic | ✅ | ✅ | ✅ |
+| Series | ✅ | — | — |
+| One-shot | ✅ | ✅ | Linear |
+| Complex | ✅ | `real()`/`imag()` | `real()`/`imag()` |
 
 ## ForwardDiff.jl (Recommended)
 

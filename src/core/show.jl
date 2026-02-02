@@ -214,14 +214,14 @@ end
 
 # --- ConstantInterpolant ---
 
-function Base.show(io::IO, itp::ConstantInterpolant{T}) where {T}
+function Base.show(io::IO, itp::ConstantInterpolant{Tg, Tv}) where {Tg, Tv}
     n = length(itp.x)
-    _show_type_header(io, "ConstantInterpolant", T)
+    _show_type_header_2params(io, "ConstantInterpolant", Tg, Tv)
     print(io, "($n pts)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", itp::ConstantInterpolant{T}) where {T}
-    _show_type_header(io, "ConstantInterpolant", T)
+function Base.show(io::IO, ::MIME"text/plain", itp::ConstantInterpolant{Tg, Tv}) where {Tg, Tv}
+    _show_type_header_2params(io, "ConstantInterpolant", Tg, Tv)
     println(io)
     is_range = itp.x isa AbstractRange
     _show_grid_row(io, false, itp.x)
@@ -237,14 +237,14 @@ end
 
 # --- QuadraticInterpolant ---
 
-function Base.show(io::IO, itp::QuadraticInterpolant{T}) where {T}
+function Base.show(io::IO, itp::QuadraticInterpolant{Tg, Tv}) where {Tg, Tv}
     n = length(itp.x)
-    _show_type_header(io, "QuadraticInterpolant", T)
+    _show_type_header_2params(io, "QuadraticInterpolant", Tg, Tv)
     print(io, "($n pts)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolant{T}) where {T}
-    _show_type_header(io, "QuadraticInterpolant", T)
+function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolant{Tg, Tv}) where {Tg, Tv}
+    _show_type_header_2params(io, "QuadraticInterpolant", Tg, Tv)
     println(io)
     is_range = itp.x isa AbstractRange
     _show_grid_row(io, false, itp.x)
@@ -258,15 +258,15 @@ end
 
 # --- CubicInterpolant ---
 
-function Base.show(io::IO, itp::CubicInterpolant{T}) where {T}
+function Base.show(io::IO, itp::CubicInterpolant{Tg, Tv}) where {Tg, Tv}
     n = length(itp.cache.x)
     bc_name = _short_bc_name(itp.bc)
-    _show_type_header(io, "CubicInterpolant", T)
+    _show_type_header_2params(io, "CubicInterpolant", Tg, Tv)
     print(io, "($n pts, $bc_name)")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolant{T}) where {T}
-    _show_type_header(io, "CubicInterpolant", T)
+function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolant{Tg, Tv}) where {Tg, Tv}
+    _show_type_header_2params(io, "CubicInterpolant", Tg, Tv)
     println(io)
     is_range = itp.cache.x isa AbstractRange
     _show_grid_row(io, false, itp.cache.x)

@@ -211,51 +211,30 @@ end
 # Vector Loop Functions
 # ========================================
 
-# --- Searcher-aware versions ---
-
-"Default vector loop with search policy (for :none, :constant, :extension)."
-@inline function _cubic_vector_loop!(
-    output::AbstractVector{Tv},
-    cache::CubicSplineCache{Tg,X,F,BC,S},
-    y::AbstractVector{Tv},
-    z::AbstractVector{Tv},
-    x_query::AbstractVector{Tg},
-    ev::Val,
-    op::O,
-    searcher::P
-) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
-    @boundscheck _check_domain(cache.x, x_query, ev)
-    @inbounds for (k, xq) in enumerate(x_query)
-        output[k] = _eval_with_bc(cache, y, z, xq, ev, op, searcher)
-    end
-end
-
-"Mixed-type vector loop: uses x_query_search for domain check, x_query for arithmetic."
+"Vector loop for non-periodic BC. Accepts any Real query type (AD-compatible)."
 @inline function _cubic_vector_loop!(
     output::AbstractVector,
     cache::CubicSplineCache{Tg,X,F,BC,S},
     y::AbstractVector{Tv},
     z::AbstractVector{Tv},
-    x_query::AbstractVector{Tq},
-    x_query_search::AbstractVector{Tg},
+    x_query::AbstractVector{<:Real},
     ev::Val,
     op::O,
     searcher::P
-) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher, Tq<:Real}
-    @boundscheck _check_domain(cache.x, x_query_search, ev)
+) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
+    @boundscheck _check_domain(cache.x, x_query, ev)
     @inbounds for k in eachindex(x_query, output)
-        # Use original x_query[k] for arithmetic (preserves precision and Dual types)
         output[k] = _eval_with_bc(cache, y, z, x_query[k], ev, op, searcher)
     end
 end
 
-"Optimized vector loop for Periodic BC with search policy - uses 2-stage strategy."
+"Vector loop for Periodic BC with 2-stage optimization. Accepts any Real query type."
 @inline function _cubic_vector_loop!(
-    output::AbstractVector{Tv},
+    output::AbstractVector,
     cache::CubicSplineCache{Tg,X,F,PeriodicData{Tg},S},
     y::AbstractVector{Tv},
     z::AbstractVector{Tv},
-    x_query::AbstractVector{Tg},
+    x_query::AbstractVector{<:Real},
     ::Val,  # extrap ignored for periodic
     op::O,
     searcher::P
@@ -266,42 +245,11 @@ end
 
     if qmin >= x_min && qmax < x_max
         # Fast path: all queries inside domain
-        @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_cubic_at_point(cache.x, y, cache.spacing, z, xq, op, searcher)
-        end
-    else
-        # Slow path: per-element wrap
-        period = cache.bc_config.period
-        @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, xq, period, op, searcher)
-        end
-    end
-end
-
-"Mixed-type optimized vector loop for Periodic BC - uses 2-stage strategy with precision preservation."
-@inline function _cubic_vector_loop!(
-    output::AbstractVector,
-    cache::CubicSplineCache{Tg,X,F,PeriodicData{Tg},S},
-    y::AbstractVector{Tv},
-    z::AbstractVector{Tv},
-    x_query::AbstractVector{Tq},
-    x_query_search::AbstractVector{Tg},
-    ::Val,  # extrap ignored for periodic
-    op::O,
-    searcher::P
-) where {Tg<:AbstractFloat, Tv, X, F, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher, Tq<:Real}
-    x_min = first(cache.x)
-    x_max = x_min + cache.bc_config.period
-    # Use search values for min/max comparison (Tg type)
-    qmin, qmax = minimum(x_query_search), maximum(x_query_search)
-
-    if qmin >= x_min && qmax < x_max
-        # Fast path: all queries inside domain - use original x_query for arithmetic
         @inbounds for k in eachindex(x_query, output)
             output[k] = _eval_cubic_at_point(cache.x, y, cache.spacing, z, x_query[k], op, searcher)
         end
     else
-        # Slow path: per-element wrap - use original x_query for arithmetic
+        # Slow path: per-element wrap
         period = cache.bc_config.period
         @inbounds for k in eachindex(x_query, output)
             output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, x_query[k], period, op, searcher)

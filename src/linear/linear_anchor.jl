@@ -140,11 +140,11 @@ end
 # Real wrapper for convenience (scalar) - preserves precision
 @inline function _anchor_query(
     x::AbstractVector{Tg},
-    xq::S,
+    xq::Tq,
     tag::Val{:linear};
     wrap::Bool=false,
     searcher::Searcher=DEFAULT_SEARCHER
-) where {Tg<:AbstractFloat, S<:Real}
+) where {Tg<:AbstractFloat, Tq<:Real}
     xq_promoted = _promote_for_anchor(xq, Tg)
     return _linear_anchor_query_impl(x, xq_promoted, wrap, searcher)
 end
@@ -155,7 +155,7 @@ end
 Create anchored queries for multiple query points with precision preservation.
 
 # Precision Preservation
-Uses `_promote_for_anchor` to preserve wider precision when `S` differs from `Tg`.
+Uses `_promote_for_anchor` to preserve wider precision when `Tq` differs from `Tg`.
 
 # Example
 ```julia
@@ -171,13 +171,13 @@ vals2 = itp2(aq_vec)  # Reuse same anchors
 """
 function _anchor_query(
     x::AbstractVector{Tg},
-    xq::AbstractVector{S},
+    xq::AbstractVector{Tq},
     ::Val{:linear};
     wrap::Bool=false,
     searcher::Searcher=_to_searcher(LinearBinary())
-) where {Tg<:AbstractFloat, S<:Real}
-    Tq = promote_type(S, Tg)
-    output = Vector{_LinearAnchoredQuery{Tg, Tq}}(undef, length(xq))
+) where {Tg<:AbstractFloat, Tq<:Real}
+    Tq_promoted = promote_type(Tq, Tg)
+    output = Vector{_LinearAnchoredQuery{Tg, Tq_promoted}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
         xq_promoted = _promote_for_anchor(xq[k], Tg)

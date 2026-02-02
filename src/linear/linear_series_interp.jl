@@ -459,8 +459,13 @@ Evaluate multi-Y interpolant at scalar query point (out-of-place).
 Returns a vector of values, one per y-series.
 Supports ForwardDiff.Dual input: output type is promoted to include Dual.
 """
-function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, P, S<:Real}
-    T_out = promote_type(Tv, S)  # Dual input → Dual output
+function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
+    xq::Tq; 
+    deriv::Int=0,
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
+    T_out = promote_type(Tv, Tq)  # Dual input → Dual output
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
@@ -476,11 +481,11 @@ The anchor is built from primal value, but original xq is used for arithmetic.
 """
 function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     output::AbstractVector,  # Relaxed: allows Dual vector
-    xq::S;
+    xq::Tq;
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_ser = n_series(sitp)
 
     # Validate output length
@@ -513,14 +518,14 @@ Returns a vector of vectors: one vector per y-series, each containing results fo
 Output type is promoted to wider type for precision preservation.
 """
 function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
-    xq::AbstractVector{S};
+    xq::AbstractVector{Tq};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = promote_type(Tv, S)  # Lossless: wider type to avoid precision loss
+    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)
@@ -547,16 +552,16 @@ This is the KILLER FEATURE: zero-allocation batch evaluation for hot loops.
 Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 
 # Precision Preservation
-When `S === Tg`, uses pooled anchors for zero-allocation.
-When `S !== Tg`, builds anchors with promoted type to preserve precision in alpha.
+When `Tq === Tg`, uses pooled anchors for zero-allocation.
+When `Tq !== Tg`, builds anchors with promoted type to preserve precision in alpha.
 """
 @with_pool pool function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector},
-    xq::AbstractVector{S};
+    xq::AbstractVector{Tq};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
 
@@ -564,14 +569,14 @@ When `S !== Tg`, builds anchors with promoted type to preserve precision in alph
     _validate_series_outputs(outputs, n_ser, n_query)
 
     # Build anchors - type depends on query type for precision preservation
-    if S === Tg
+    if Tq === Tg
         # Same type: use pool for zero-allocation
         aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tg}, n_query)
         _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
     else
         # Mixed type: anchors with promoted type (allocation expected anyway)
-        Tq = promote_type(S, Tg)
-        aq_vec = Vector{_LinearAnchoredQuery{Tg, Tq}}(undef, n_query)
+        Tq_promoted = promote_type(Tq, Tg)
+        aq_vec = Vector{_LinearAnchoredQuery{Tg, Tq_promoted}}(undef, n_query)
         _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
     end
 

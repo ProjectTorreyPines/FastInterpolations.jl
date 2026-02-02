@@ -504,7 +504,12 @@ Evaluate all series at scalar query point (out-of-place).
 Supports ForwardDiff.Dual input: output type is promoted to include Dual.
 The anchor preserves the Dual type in `xq` and `dL` fields for AD propagation.
 """
-function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
+    xq::Tq;
+    deriv::Int=0,
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
     T_out = promote_type(Tv, typeof(xq_promoted))
@@ -528,11 +533,11 @@ The anchor preserves the Dual type in `xq` and `dL` fields for AD propagation.
 """
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     output::AbstractVector,  # Relaxed: allows Dual vector
-    xq::S;
+    xq::Tq;
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     _validate_scalar_output(output, n_series(sitp))
 
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
@@ -558,14 +563,14 @@ Returns a vector of vectors: one vector per y-series.
 Output type is promoted to wider type for precision preservation.
 """
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
-    xq::AbstractVector{S};
+    xq::AbstractVector{Tq};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = promote_type(Tv, S)  # Lossless: wider type to avoid precision loss
+    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)
@@ -584,29 +589,29 @@ end
 Evaluate all series at multiple query points (in-place, zero allocation when types match).
 
 # Precision Preservation
-When `S === Tg`, uses pooled anchors for zero-allocation.
-When `S !== Tg`, builds anchors with promoted type `promote_type(S, Tg)` to preserve precision.
+When `Tq === Tg`, uses pooled anchors for zero-allocation.
+When `Tq !== Tg`, builds anchors with promoted type `promote_type(Tq, Tg)` to preserve precision.
 """
 @with_pool pool function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector},
-    xq::AbstractVector{S};
+    xq::AbstractVector{Tq};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_query = length(xq)
     _validate_series_outputs(outputs, n_series(sitp), n_query)
 
     # Build anchors - type depends on query type for precision preservation
-    if S === Tg
+    if Tq === Tg
         # Same type: use pool for zero-allocation
         aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg, Tg}, n_query)
         _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
     else
         # Mixed type: anchors with promoted type (allocation expected for type promotion anyway)
-        Tq = promote_type(S, Tg)
+        Tq_promoted = promote_type(Tq, Tg)
         xq_promoted = _promote_for_anchor.(xq, Tg)  # Preserves wider precision
-        aq_vec = Vector{_QuadraticAnchoredQuery{Tg, Tq}}(undef, n_query)
+        aq_vec = Vector{_QuadraticAnchoredQuery{Tg, Tq_promoted}}(undef, n_query)
         _fill_anchors!(aq_vec, sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
     end
 

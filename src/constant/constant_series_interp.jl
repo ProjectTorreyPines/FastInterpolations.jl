@@ -479,10 +479,15 @@ Returns a vector of values, one per y-series.
 
 # AD Support
 When `xq` is a ForwardDiff.Dual, the output type is promoted to preserve
-derivatives. Output type is `promote_type(Tv, S)`.
+derivatives. Output type is `promote_type(Tv, Tq)`.
 """
-function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, P, S<:Real}
-    T_out = promote_type(Tv, S)  # Lossless: wider type to avoid precision loss
+function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
+    xq::Tq;
+    deriv::Int=0,
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
+    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
@@ -494,11 +499,11 @@ Evaluate multi-Y interpolant at scalar query point (in-place).
 """
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
-    xq::S;
+    xq::Tq;
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_ser = n_series(sitp)
 
     # Validate output length
@@ -530,11 +535,11 @@ Evaluate multi-Y interpolant at multiple query points (out-of-place).
 Returns a vector of vectors: one vector per y-series, each containing results for all query points.
 """
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
-    xq::AbstractVector{S};
+    xq::AbstractVector{Tq};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     xq_typed = _to_float(xq, Tg)
     n_query = length(xq_typed)
     n_ser = n_series(sitp)
@@ -600,11 +605,11 @@ end
 # Real type wrapper for in-place vector
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector{Tv}},
-    xq::AbstractVector{S};
+    xq::AbstractVector{Tq};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     xq_typed = _to_float(xq, Tg)
     return sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 end

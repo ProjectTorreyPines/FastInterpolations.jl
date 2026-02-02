@@ -803,9 +803,14 @@ Returns a vector of values, one per y-series.
 
 # AD Support
 When `xq` is a ForwardDiff.Dual, the output type is promoted to preserve
-derivatives. Output type is `promote_type(Tv, S)`.
+derivatives. Output type is `promote_type(Tv, Tq)`.
 """
-function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, B, P, S<:Real}
+function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
+    xq::Tq; 
+    deriv::Int=0, 
+    search=sitp.search_policy, 
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tg<:AbstractFloat, Tv, C, B, P, Tq<:Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
     T_out = promote_type(Tv, typeof(xq_promoted))
@@ -831,11 +836,11 @@ which automatically promotes the output type.
 """
 function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
     output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
-    xq::S;
+    xq::Tq;
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, C, B, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, C, B, P, Tq<:Real}
     _validate_scalar_output(output, n_series(sitp))
 
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
@@ -864,17 +869,17 @@ Returns a vector of vectors: one vector per y-series, each containing results fo
 
 # Precision Preservation
 For mixed-type queries (e.g., Float64 queries on Float32 grid), output type is
-`promote_type(Tv, S)` to preserve precision and match scalar/broadcast semantics.
+`promote_type(Tv, Tq)` to preserve precision and match scalar/broadcast semantics.
 """
 function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
-    xq::AbstractVector{S};
+    xq::AbstractVector{Tq};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, C, B, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, C, B, P, Tq<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = promote_type(Tv, S)  # Lossless: wider type to avoid precision loss
+    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)
@@ -888,7 +893,7 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
 end
 
 """
-    (sitp::CubicSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=0)
+    (sitp::CubicSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector{Tq}; deriv=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tq<:Real}
 
 Evaluate multi-Y interpolant at multiple query points (in-place).
 
@@ -906,11 +911,11 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
 """
 @with_pool pool function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
     outputs::AbstractVector{<:AbstractVector},
-    xq::AbstractVector{S};
+    xq::AbstractVector{Tq};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, C, B, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, C, B, P, Tq<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
 
@@ -928,15 +933,15 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
         end
     end
 
-    # Build anchors - use pool when S===Tg (hot path), allocate otherwise
+    # Build anchors - use pool when Tq===Tg (hot path), allocate otherwise
     # The anchor's Tq type parameter determines weight precision
-    aq_vec = if S === Tg
+    aq_vec = if Tq === Tg
         aq_pool = acquire!(pool, _CubicAnchoredQuery{Tg,Tg}, n_query)
         _fill_anchors!(aq_pool, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
         aq_pool
     else
-        # Mixed type: allocate with precision-preserving Tq=S
-        aq_alloc = Vector{_CubicAnchoredQuery{Tg,S}}(undef, n_query)
+        # Mixed type: allocate with precision-preserving Tq=Tq
+        aq_alloc = Vector{_CubicAnchoredQuery{Tg,Tq}}(undef, n_query)
         _fill_anchors!(aq_alloc, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
         aq_alloc
     end
@@ -964,7 +969,7 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
 end
 
 """
-    (sitp::CubicSeriesInterpolant)(outputs, aq_vec::AbstractVector{<:_CubicAnchoredQuery}; deriv=0)
+    (sitp::CubicSeriesInterpolant)(outputs, aq_vec::AbstractVector{<:_CubicAnchoredQuery{Tg,Tq}}; deriv=0) where {Tg<:AbstractFloat, Tq<:Real}
 
 Evaluate multi-Y interpolant with pre-built anchors (TRUE zero-allocation).
 

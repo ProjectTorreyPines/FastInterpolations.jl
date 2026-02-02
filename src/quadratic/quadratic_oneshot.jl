@@ -37,11 +37,9 @@ Uses interval clamping for extension extrapolation (matches cubic pattern).
     op::AbstractEvalOp,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
-    # Extract primal for search (comparisons need Float, not Dual)
-    xq_primal = _extract_primal(xq)
     # search_interval clamps idx to [1, n-1]
     # This handles both normal evaluation and extension extrapolation
-    idx, xL, _ = search_interval(searcher, x, xq_primal)
+    idx, xL, _ = search_interval(searcher, x, xq)
     # Use original xq for arithmetic to preserve AD
     dt = xq - xL  # Can be Dual for AD
     @inbounds return _quadratic_kernel(op, a[idx], d[idx], y[idx], dt)
@@ -120,9 +118,7 @@ Note: `h` parameter kept for API compatibility but not used (interval info from 
     op::AbstractEvalOp,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
-    # Domain check uses primal value (Dual needs real value for comparison)
-    xq_primal = _extract_primal(xq)
-    @boundscheck _check_domain(x, xq_primal, extrap)
+    @boundscheck _check_domain(x, xq, extrap)
     return _quadratic_eval_with_extrap(x, y, a, d, xq, extrap, op, searcher)
 end
 

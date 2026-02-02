@@ -22,9 +22,7 @@
 # - Int/Float32 queries (type promotion)
 # - ForwardDiff.Dual queries (automatic differentiation)
 @inline function (itp::LinearInterpolant{Tg,Tv,X,Y,P})(xq; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
-    # For domain check, extract primal value (works for Float and Dual)
-    xq_primal = _extract_primal(xq)
-    @boundscheck _check_domain(itp.x, xq_primal, itp.extrap)
+    @boundscheck _check_domain(itp.x, xq, itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         # Pass original xq to preserve Dual type for AD

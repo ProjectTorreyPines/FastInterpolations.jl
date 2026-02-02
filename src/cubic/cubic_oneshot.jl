@@ -122,10 +122,8 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc)
 
-    # Extract primal for domain check, pass original xq to preserve AD
-    xq_primal = _extract_primal(xq)
     @_dispatch_extrap extrap => ev begin
-        _check_domain(cache.x, xq_primal, ev)
+        _check_domain(cache.x, xq, ev)
         return _eval_with_bc(cache, y, tmp_z, xq, ev, op, searcher)
     end
 end
@@ -177,11 +175,9 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
-    # Extract primal for domain check, pass original xq to preserve AD
-    xq_primal = _extract_primal(xq)
     # Periodic BC always uses :wrap extrapolation
     @_dispatch_extrap :wrap => ev begin
-        _check_domain(cache.x, xq_primal, ev)
+        _check_domain(cache.x, xq, ev)
         return _eval_with_bc(cache, y, z, xq, ev, op, searcher)
     end
 end

@@ -26,9 +26,7 @@
 # Tg = grid type, Tv = value type (can be Complex)
 # Unified method: accepts any query type (Tg, Real, or Dual for AD)
 @inline function (itp::CubicInterpolant{Tg,Tv,C,P})(xq; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P}
-    # Extract primal for domain check (Dual needs real value for comparison)
-    xq_primal = _extract_primal(xq)
-    @boundscheck _check_domain(itp.cache.x, xq_primal, itp.extrap)
+    @boundscheck _check_domain(itp.cache.x, xq, itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         # Pass original xq to preserve Dual type for AD

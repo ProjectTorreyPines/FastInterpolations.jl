@@ -18,9 +18,7 @@
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
-    # Extract primal for search (comparisons need Float, not Dual)
-    xq_primal = _extract_primal(xq)
-    idx, xL, xR = search_interval(searcher, x, spacing, xq_primal)
+    idx, xL, xR = search_interval(searcher, x, spacing, xq)
 
     # Use original xq for arithmetic to preserve AD
     dL = xq - xL   # distance from Left endpoint (can be Dual for AD)
@@ -48,9 +46,7 @@ end
     xq::Tq,
     op::O
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp}
-    # Extract primal for search (comparisons need Float, not Dual)
-    xq_primal = _extract_primal(xq)
-    idx, xL, xR = _search_interval(x, spacing, xq_primal)
+    idx, xL, xR = _search_interval(x, spacing, xq)
 
     # Use original xq for arithmetic to preserve AD
     dL = xq - xL   # distance from Left endpoint (can be Dual for AD)

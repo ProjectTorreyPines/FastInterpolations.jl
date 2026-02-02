@@ -22,17 +22,14 @@ end
 # Vector call (allocating)
 # Supports hint for ODE/streaming patterns
 # Output type is promoted to wider type for precision preservation
-# Uses xq_search for domain check only; arithmetic uses original xq
 # ─────────────────────────────────────────────────────────────
 function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, Tq<:Real}
-    xq_search = _to_float(xq, Tg)  # For domain check only
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xq_search, itp.extrap)
+        @boundscheck _check_domain(itp.x, xq, itp.extrap)
         @inbounds for i in eachindex(xq, output)
-            # Use original xq[i] for arithmetic (preserves precision and Dual types)
             output[i] = _constant_eval_at_point(itp.x, itp.y, xq[i], itp.extrap, itp.side, op, searcher)
         end
     end
@@ -41,16 +38,13 @@ end
 
 # ─────────────────────────────────────────────────────────────
 # In-place vector call
-# Uses xq_search for domain check only; arithmetic uses original xq
 # ─────────────────────────────────────────────────────────────
 function (itp::ConstantInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
-    xq_search = _to_float(xq, Tg)  # For domain check only
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xq_search, itp.extrap)
+        @boundscheck _check_domain(itp.x, xq, itp.extrap)
         @inbounds for i in eachindex(xq, output)
-            # Use original xq[i] for arithmetic (preserves precision and Dual types)
             output[i] = _constant_eval_at_point(itp.x, itp.y, xq[i], itp.extrap, itp.side, op, searcher)
         end
     end

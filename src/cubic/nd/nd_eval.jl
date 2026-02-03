@@ -252,6 +252,51 @@ All helper functions use ntuple(Val(N)) pattern for zero-allocation operation.
     return _eval_nd_cell(itp.nodal_derivs.partials, indices, hs, inv_hs, dLs, ops)
 end
 
+"""
+    _eval_nd_hermite(itp::CubicInterpolantND{Tg,Tv,2}, query, ops, search)
+
+Specialized 2D Hermite evaluation that eliminates ntuple closure overhead.
+Uses direct destructuring and inline operations for better LLVM optimization.
+"""
+@inline function _eval_nd_hermite(
+    itp::CubicInterpolantND{Tg, Tv, 2},
+    query::NTuple{2, Tq},
+    ops::NTuple{2, <:AbstractEvalOp},
+    search::NTuple{2, <:AbstractSearchPolicy}
+) where {Tg, Tv, Tq<:Real}
+    # Direct destructuring (no @generated helper overhead)
+    xq, yq = query
+    grid_x, grid_y = itp.grids
+    spacing_x, spacing_y = itp.spacings
+    extrap_x, extrap_y = itp.extraps
+    op_x, op_y = ops
+    search_x, search_y = search
+
+    # Inline extrapolation handling (no ntuple closure)
+    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
+    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
+
+    # Inline interval search (no ntuple closure)
+    searcher_x = _to_searcher(search_x)
+    searcher_y = _to_searcher(search_y)
+    ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
+    iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
+
+    # Inline local params (no ntuple closure)
+    hx = _get_h(spacing_x, ix)
+    hy = _get_h(spacing_y, iy)
+    inv_hx = _get_inv_h(spacing_x, ix)
+    inv_hy = _get_inv_h(spacing_y, iy)
+    dLx = x_eval - xL
+    dLy = y_eval - yL
+
+    # Same @generated tensor product kernel
+    return _eval_nd_cell(
+        itp.nodal_derivs.partials,
+        (ix, iy), (hx, hy), (inv_hx, inv_hy), (dLx, dLy), (op_x, op_y)
+    )
+end
+
 # ========================================
 # @GENERATED TENSOR PRODUCT EVALUATION
 # ========================================

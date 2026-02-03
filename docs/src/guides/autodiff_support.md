@@ -135,3 +135,6 @@ nothing #hide
 - Series interpolants (array mutation)
 - `Enzyme.gradient` API
 
+!!! warning "Platform Compatibility"
+    Enzyme has known LLVM codegen issues on **Windows + Julia 1.12+** that can cause Access Violations. If you need Enzyme on this combination, please test your specific use case manually. Other platforms (Linux, macOS) work as expected.
+

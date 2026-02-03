@@ -16,9 +16,23 @@
 #   - Enzyme.gradient API (different interface)
 #   - Series interpolants (array mutation)
 #
+# PLATFORM NOTES:
+#   - Windows + Julia 1.12: Enzyme has known LLVM codegen issues causing Access
+#     Violations (exit code 0xC0000005). Tests are skipped on this combination;
+#     users should verify Enzyme compatibility manually if needed.
+#
 
 using Test
 using FastInterpolations
+
+# Skip Enzyme tests on Windows + Julia 1.12 due to LLVM codegen issues
+const SKIP_ENZYME = Sys.iswindows() && VERSION >= v"1.12"
+
+if SKIP_ENZYME
+    @testset "Enzyme AD Support (skipped on Windows + Julia 1.12)" begin
+        @test_skip "Enzyme has known LLVM issues on Windows + Julia 1.12 - verify manually if needed"
+    end
+else
 
 # Try to import Enzyme, skip all tests if not available
 const ENZYME_AVAILABLE = try
@@ -215,3 +229,5 @@ else
 end  # testset "Enzyme AD Support"
 
 end  # if ENZYME_AVAILABLE
+
+end  # if !SKIP_ENZYME

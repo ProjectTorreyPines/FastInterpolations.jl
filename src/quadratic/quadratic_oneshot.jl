@@ -96,6 +96,22 @@ end
     return _quadratic_eval_core(x, y, a, d, xq, op, searcher)
 end
 
+"Evaluate with wrap extrapolation - wraps query to domain using mod()."
+@inline function _quadratic_eval_with_extrap(
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    a::AbstractVector{Tv},
+    d::AbstractVector{Tv},
+    xq::Tq,
+    ::Val{:wrap},
+    op::AbstractEvalOp,
+    searcher::S
+) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
+    # Wrap query to domain, then evaluate with extension
+    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
+    return _quadratic_eval_core(x, y, a, d, xq_wrapped, op, searcher)
+end
+
 """
     _quadratic_eval_at_point(x, y, h, a, d, xq, extrap, op, searcher)
 

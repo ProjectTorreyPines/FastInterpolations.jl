@@ -1075,6 +1075,23 @@ const FI = FastInterpolations
                 @test fd_left ≈ 0.0 atol=1e-10
                 @test fd_left ≈ an_left atol=1e-10
             end
+
+            @testset "extrap=:wrap" begin
+                itp = quadratic_interp(x, y_quad; extrap=:wrap)
+
+                # In-domain
+                fd_in = ForwardDiff.derivative(itp, 2.25)
+                an_in = itp(2.25; deriv=1)
+                @test fd_in ≈ an_in atol=1e-10
+
+                # Out-of-domain: wraps and AD still works
+                fd_out = ForwardDiff.derivative(itp, 6.5)
+                an_out = itp(6.5; deriv=1)
+                @test fd_out ≈ an_out atol=1e-10
+
+                # Value preservation after wrapping
+                @test itp(6.5) ≈ itp(1.5) atol=1e-10  # 6.5 mod 5 = 1.5
+            end
         end
 
         @testset "Value preservation across extrap modes" begin

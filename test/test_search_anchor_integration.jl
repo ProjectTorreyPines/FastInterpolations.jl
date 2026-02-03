@@ -15,13 +15,13 @@ using FastInterpolations: _anchor_query, _fill_anchors!,
 
         @testset "Single Query - Default Policy" begin
             aq = _anchor_query(x, 0.5, Val(:linear))
-            @test aq isa _LinearAnchoredQuery{Float64}
+            @test aq isa _LinearAnchoredQuery{Float64,Float64}
             @test aq.idx == 51
         end
 
         @testset "Vector Query - Policy Used in _fill_anchors!" begin
             xq = collect(range(0.1, 0.9, 9))
-            buffer = Vector{_LinearAnchoredQuery{Float64}}(undef, length(xq))
+            buffer = Vector{_LinearAnchoredQuery{Float64,Float64}}(undef, length(xq))
 
             # _fill_anchors! should use hinted search internally
             _fill_anchors!(buffer, x, xq, Val(:linear))
@@ -35,7 +35,7 @@ using FastInterpolations: _anchor_query, _fill_anchors!,
         @testset "Monotonic Query Benefit" begin
             # Monotonic queries should benefit from hint caching
             xq_monotonic = collect(range(0.01, 0.99, 99))
-            buffer = Vector{_LinearAnchoredQuery{Float64}}(undef, length(xq_monotonic))
+            buffer = Vector{_LinearAnchoredQuery{Float64,Float64}}(undef, length(xq_monotonic))
 
             # This should be faster due to linear bounded search
             _fill_anchors!(buffer, x, xq_monotonic, Val(:linear))
@@ -153,7 +153,7 @@ using FastInterpolations: _anchor_query, _fill_anchors!,
         x = collect(range(0.0, 1.0, 101))
 
         @testset "Linear Type Stable" begin
-            @test @inferred(_anchor_query(x, 0.5, Val(:linear))) isa _LinearAnchoredQuery{Float64}
+            @test @inferred(_anchor_query(x, 0.5, Val(:linear))) isa _LinearAnchoredQuery{Float64,Float64}
         end
 
         @testset "Constant Type Stable" begin

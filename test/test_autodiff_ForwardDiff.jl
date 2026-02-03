@@ -917,4 +917,179 @@ const FI = FastInterpolations
         end
     end
 
+    # ========================================
+    # Extrapolation Mode AD Tests
+    # ========================================
+    # Tests that ForwardDiff derivatives match analytical derivatives
+    # for all extrapolation modes (extension, constant, wrap).
+    #
+    # The wrap mode is particularly important: _wrap_to_domain must
+    # preserve ForwardDiff.Dual type through the mod() operation.
+
+    @testset "Extrapolation modes with ForwardDiff" begin
+
+        @testset "Linear extrap modes" begin
+            x = collect(0.0:0.5:5.0)
+            y_quad = x .^ 2  # y = x², slope at interval [2.0,2.5] is (6.25-4)/0.5 = 4.5
+
+            @testset "extrap=:extension" begin
+                itp = linear_interp(x, y_quad; extrap=:extension)
+
+                # In-domain
+                fd = ForwardDiff.derivative(itp, 2.25)
+                an = itp(2.25; deriv=1)
+                @test fd ≈ an atol=1e-10
+
+                # Outside domain (extends linearly)
+                fd_out = ForwardDiff.derivative(itp, 6.5)
+                an_out = itp(6.5; deriv=1)
+                @test fd_out ≈ an_out atol=1e-10
+            end
+
+            @testset "extrap=:constant" begin
+                itp = linear_interp(x, y_quad; extrap=:constant)
+
+                # In-domain
+                fd = ForwardDiff.derivative(itp, 2.25)
+                an = itp(2.25; deriv=1)
+                @test fd ≈ an atol=1e-10
+
+                # Outside domain right: derivative is 0 for constant extrap
+                fd_right = ForwardDiff.derivative(itp, 6.5)
+                an_right = itp(6.5; deriv=1)
+                @test fd_right ≈ 0.0 atol=1e-10
+                @test fd_right ≈ an_right atol=1e-10
+
+                # Outside domain left: derivative is also 0
+                fd_left = ForwardDiff.derivative(itp, -1.0)
+                an_left = itp(-1.0; deriv=1)
+                @test fd_left ≈ 0.0 atol=1e-10
+                @test fd_left ≈ an_left atol=1e-10
+            end
+
+            @testset "extrap=:wrap" begin
+                itp = linear_interp(x, y_quad; extrap=:wrap)
+
+                # In-domain: AD must preserve Dual type
+                fd_in = ForwardDiff.derivative(itp, 2.25)
+                an_in = itp(2.25; deriv=1)
+                @test fd_in ≈ an_in atol=1e-10
+
+                # Out-of-domain positive: wraps via mod(), AD must work
+                fd_pos = ForwardDiff.derivative(itp, 6.5)
+                an_pos = itp(6.5; deriv=1)
+                @test fd_pos ≈ an_pos atol=1e-10
+                # 6.5 mod 5.0 = 1.5 → in interval [1.0, 1.5]
+                @test fd_pos ≈ 3.5 atol=1e-10  # slope at x=1.5
+
+                # Out-of-domain negative: wraps correctly
+                fd_neg = ForwardDiff.derivative(itp, -1.0)
+                an_neg = itp(-1.0; deriv=1)
+                @test fd_neg ≈ an_neg atol=1e-10
+                # -1.0 mod 5.0 = 4.0 → in interval [4.0, 4.5]
+                @test fd_neg ≈ 8.5 atol=1e-10  # slope at x=4.5
+            end
+        end
+
+        @testset "Cubic extrap modes" begin
+            x = collect(0.0:0.5:5.0)
+            y_cubic = x .^ 3
+
+            @testset "extrap=:extension" begin
+                itp = cubic_interp(x, y_cubic; extrap=:extension)
+
+                fd = ForwardDiff.derivative(itp, 2.25)
+                an = itp(2.25; deriv=1)
+                @test fd ≈ an atol=1e-10
+
+                fd_out = ForwardDiff.derivative(itp, 6.5)
+                an_out = itp(6.5; deriv=1)
+                @test fd_out ≈ an_out atol=1e-10
+            end
+
+            @testset "extrap=:constant" begin
+                itp = cubic_interp(x, y_cubic; extrap=:constant)
+
+                fd = ForwardDiff.derivative(itp, 2.25)
+                an = itp(2.25; deriv=1)
+                @test fd ≈ an atol=1e-10
+
+                # Out-of-domain: derivative is 0 for constant extrap
+                fd_right = ForwardDiff.derivative(itp, 6.5)
+                an_right = itp(6.5; deriv=1)
+                @test fd_right ≈ 0.0 atol=1e-10
+                @test fd_right ≈ an_right atol=1e-10
+
+                fd_left = ForwardDiff.derivative(itp, -1.0)
+                an_left = itp(-1.0; deriv=1)
+                @test fd_left ≈ 0.0 atol=1e-10
+                @test fd_left ≈ an_left atol=1e-10
+            end
+
+            @testset "extrap=:wrap" begin
+                itp = cubic_interp(x, y_cubic; extrap=:wrap)
+
+                # In-domain
+                fd_in = ForwardDiff.derivative(itp, 2.25)
+                an_in = itp(2.25; deriv=1)
+                @test fd_in ≈ an_in atol=1e-10
+
+                # Out-of-domain: wraps and AD still works
+                fd_out = ForwardDiff.derivative(itp, 6.5)
+                an_out = itp(6.5; deriv=1)
+                @test fd_out ≈ an_out atol=1e-10
+            end
+        end
+
+        @testset "Quadratic extrap modes" begin
+            x = collect(0.0:0.5:5.0)
+            y_quad = x .^ 2
+
+            @testset "extrap=:extension" begin
+                itp = quadratic_interp(x, y_quad; extrap=:extension)
+
+                fd = ForwardDiff.derivative(itp, 2.25)
+                an = itp(2.25; deriv=1)
+                @test fd ≈ an atol=1e-10
+
+                fd_out = ForwardDiff.derivative(itp, 6.5)
+                an_out = itp(6.5; deriv=1)
+                @test fd_out ≈ an_out atol=1e-10
+            end
+
+            @testset "extrap=:constant" begin
+                itp = quadratic_interp(x, y_quad; extrap=:constant)
+
+                fd = ForwardDiff.derivative(itp, 2.25)
+                an = itp(2.25; deriv=1)
+                @test fd ≈ an atol=1e-10
+
+                # Out-of-domain: derivative is 0 for constant extrap
+                fd_right = ForwardDiff.derivative(itp, 6.5)
+                an_right = itp(6.5; deriv=1)
+                @test fd_right ≈ 0.0 atol=1e-10
+                @test fd_right ≈ an_right atol=1e-10
+
+                fd_left = ForwardDiff.derivative(itp, -1.0)
+                an_left = itp(-1.0; deriv=1)
+                @test fd_left ≈ 0.0 atol=1e-10
+                @test fd_left ≈ an_left atol=1e-10
+            end
+        end
+
+        @testset "Value preservation across extrap modes" begin
+            x = collect(0.0:1.0:10.0)
+            y = 2.0 .* x .+ 1.0  # y = 2x + 1
+
+            for ext in [:extension, :constant, :wrap]
+                itp = linear_interp(x, y; extrap=ext)
+
+                # In-domain value test
+                xq = 5.5
+                dual_val = itp(ForwardDiff.Dual(xq, 1.0))
+                @test ForwardDiff.value(dual_val) ≈ itp(xq) atol=1e-10
+            end
+        end
+    end
+
 end  # testset "AutoDiff Support"

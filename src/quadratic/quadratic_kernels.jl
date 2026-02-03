@@ -14,7 +14,7 @@
 #   - dL = xq - x_i (offset from interval start)
 #
 # Type parameters:
-# - Tg<:AbstractFloat: Grid type (geometry) for dL
+# - Td<:Real: Offset type for dL (can be Tg or ForwardDiff.Dual for AD)
 # - Tv: Value type (can be Tg, Complex{Tg}, or other Number) for a, d, y
 
 """
@@ -27,9 +27,9 @@ Formula: S(x) = a*dL² + d*dL + y = muladd(muladd(a, dL, d), dL, y)
 - `a::Tv`: Quadratic coefficient (value-derived)
 - `d::Tv`: Slope at interval start (value-derived)
 - `y::Tv`: Value at interval start
-- `dL::Tg`: Offset from interval start (x - x_i, grid-derived)
+- `dL::Td`: Offset from interval start (x - x_i, can be Float or Dual for AD)
 """
-@inline function _quadratic_kernel(::EvalValue, a::Tv, d::Tv, y::Tv, dL::Tg) where {Tv, Tg<:AbstractFloat}
+@inline function _quadratic_kernel(::EvalValue, a::Tv, d::Tv, y::Tv, dL::Td) where {Tv, Td<:Real}
     return muladd(muladd(a, dL, d), dL, y)  # a*dL² + d*dL + y, returns Tv
 end
 
@@ -41,8 +41,8 @@ Evaluate first derivative of quadratic polynomial.
 Formula: S'(x) = 2*a*dL + d = muladd(2*a, dL, d)
 Returns Tv (preserves Complex type when applicable).
 """
-@inline function _quadratic_kernel(::EvalDeriv1, a::Tv, d::Tv, ::Tv, dL::Tg) where {Tv, Tg<:AbstractFloat}
-    return muladd(Tg(2)*a, dL, d)  # 2*a*dL + d, returns Tv
+@inline function _quadratic_kernel(::EvalDeriv1, a::Tv, d::Tv, ::Tv, dL::Td) where {Tv, Td<:Real}
+    return muladd(2 * a, dL, d)  # 2*a*dL + d, returns Tv (2 promotes naturally)
 end
 
 """
@@ -53,7 +53,7 @@ Evaluate second derivative of quadratic polynomial.
 Formula: S''(x) = 2*a (constant within interval)
 Returns Tv (preserves Complex type when applicable).
 """
-@inline function _quadratic_kernel(::EvalDeriv2, a::Tv, ::Tv, ::Tv, ::Tg) where {Tv, Tg<:AbstractFloat}
+@inline function _quadratic_kernel(::EvalDeriv2, a::Tv, ::Tv, ::Tv, ::Td) where {Tv, Td<:Real}
     return a + a  # 2*a, returns Tv (avoids type conversion issues)
 end
 
@@ -64,6 +64,6 @@ Third derivative of quadratic spline is always zero.
 Quadratic polynomials have constant second derivative, zero third derivative.
 Returns `zero(Tv)` to preserve Complex type when applicable.
 """
-@inline function _quadratic_kernel(::EvalDeriv3, a::Tv, ::Tv, ::Tv, ::Tg) where {Tv, Tg<:AbstractFloat}
+@inline function _quadratic_kernel(::EvalDeriv3, a::Tv, ::Tv, ::Tv, ::Td) where {Tv, Td<:Real}
     return zero(Tv)
 end

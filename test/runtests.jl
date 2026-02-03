@@ -53,4 +53,9 @@ else
     include("test_nonuniform_grid.jl")
     include("test_show.jl")
     include("test_recipes.jl")
+
+    # Auto-differentiation tests (ForwardDiff, Zygote, Enzyme)
+    include("test_autodiff_ForwardDiff.jl")
+    include("test_autodiff_Zygote.jl")
+    include("test_autodiff_Enzyme.jl")
 end

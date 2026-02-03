@@ -1,12 +1,8 @@
-# Generic Data Support
-
-FastInterpolations.jl is designed to be generic over the element types of the data. This design allows native support for **Complex numbers** and provides the foundation for **Automatic Differentiation (AD)** types.
-
-## Complex Value Support
+# Complex Number Support
 
 All interpolation methods support complex-valued data natively. The type system automatically handles the distinction between the grid type (which must be real) and the value type (which can be real or complex).
 
-### Basic Usage
+## Basic Usage
 
 When interpolating complex data, the interpolant will return complex values. Analytic derivatives (`deriv=1`, `deriv=2`) also return complex values corresponding to the derivative of the real and imaginary parts respectively.
 
@@ -23,7 +19,7 @@ itp = cubic_interp(x, y)
 val = itp(1.5)  # Returns ComplexF64
 ```
 
-### Type System
+## Type System
 
 Internally, the interpolant separates the grid type (`Tg`) from the value type (`Tv`):
 
@@ -32,7 +28,7 @@ Internally, the interpolant separates the grid type (`Tg`) from the value type (
 
 If you provide inputs with different precisions (e.g., `Float64` grid and `ComplexF32` values), they will be promoted appropriately to ensure compatibility.
 
-### Boundary Conditions with Complex Values
+## Boundary Conditions with Complex Values
 
 Boundary conditions (`BCPair`) can specify complex values for derivatives. You can even mix real and complex boundary conditions if needed (though typically they match the data type).
 
@@ -52,7 +48,7 @@ The `CubicFit()` boundary condition works seamlessly with complex data, estimati
 itp_auto = cubic_interp(x, y; bc=CubicFit())
 ```
 
-### Applications: Periodic Trajectories
+## Applications: Periodic Trajectories
 
 A common use case in physics and engineering is interpolating a closed trajectory in the complex plane.
 

@@ -10,43 +10,25 @@
 # Scalar call - hot path (inlined for broadcast fusion)
 # Default search is now the stored policy in itp.search_policy
 # Type parameters: Tg = grid type, Tv = value type (can be Complex)
+# Unified method: accepts any query type (Tg, Real, or Dual for AD)
 # ─────────────────────────────────────────────────────────────
-@inline function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(xi::Tg; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
+@inline function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(xq; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
+    @boundscheck _check_domain(itp.x, xq, itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.extrap, op, searcher)
+        # Pass original xq to preserve Dual type for AD
+        _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xq, itp.extrap, op, searcher)
     end
-end
-
-# Real scalar wrapper - delegates to Tg method
-@inline function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(xi::S; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
-    itp(Tg(xi); deriv=deriv, search=search, hint=hint)
 end
 
 # ─────────────────────────────────────────────────────────────
 # Vector call (allocating)
 # Now supports hint for ODE/streaming patterns
-# Output type is Tv (value type), not Tg (grid type)
+# Output type is promoted to wider type for precision preservation
 # ─────────────────────────────────────────────────────────────
 function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
-    xi_typed = _to_float(xi, Tg)
-    output = Vector{Tv}(undef, length(xi_typed))
-    searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
-        @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.extrap, op, searcher)
-        end
-    end
-    return output
-end
-
-# ─────────────────────────────────────────────────────────────
-# In-place vector call (zero allocation)
-# Output type is Tv (value type)
-# ─────────────────────────────────────────────────────────────
-function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector{Tv}, xi::AbstractVector{Tg}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
-    @assert length(output) == length(xi) "output length must match xi length"
+    T_out = promote_type(Tv, S)    # Lossless: wider type to avoid precision loss
+    output = Vector{T_out}(undef, length(xi))
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(itp.x, xi, itp.extrap)
@@ -57,15 +39,17 @@ function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector{Tv}, xi
     return output
 end
 
-# In-place with type conversion
-function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector, xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
+# ─────────────────────────────────────────────────────────────
+# In-place vector call
+# Unified: accepts any Real query type (Tg, Float32, Dual, etc.)
+# ─────────────────────────────────────────────────────────────
+function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector, xi::AbstractVector{<:Real}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
     @assert length(output) == length(xi) "output length must match xi length"
-    xi_typed = _to_float(xi, Tg)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi_typed, itp.extrap)
-        @inbounds for i in eachindex(xi_typed, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi_typed[i], itp.extrap, op, searcher)
+        @boundscheck _check_domain(itp.x, xi, itp.extrap)
+        @inbounds for i in eachindex(xi, output)
+            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.extrap, op, searcher)
         end
     end
     return output
@@ -123,33 +107,30 @@ for batch in batches
 end
 ```
 """
-# Hot path: x is AbstractFloat, y can be Tg or Complex{Tg}
-function quadratic_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv};
-    bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Symbol=:none,
-    search::P=Binary()
-) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
-    # Auto-promote x/y types (zero allocation if already compatible)
-    x_p, y_p = _ensure_promoted_xy(x, y)
-    bc_promoted = _promote_bc(bc, eltype(x_p))
-    return QuadraticInterpolant(x_p, y_p; bc=bc_promoted, extrap, search)
-end
-
 # ========================================
-# 2-arg Generic Constructor (Type Promotion Wrapper)
-# Handles: Int grid, Real values, Complex values
+# Generic Constructor (User API)
 # ========================================
-
-function quadratic_interp(
+# Handles all Real grid types (Int, Float32, Float64, etc.)
+# Type promotion, BC conversion, and coefficient computation done here,
+# then forwards to typed QuadraticInterpolant constructor.
+#
+# PERFORMANCE: Typed signature enables compile-time specialization.
+# _promote_itp_inputs becomes no-op when types already match (Float64 → Float64).
+@inline function quadratic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::Symbol=:none,
-    search::P=Binary()
-) where {TX<:Real, TY, P<:AbstractSearchPolicy}
-    x_p, y_p = _ensure_promoted_xy(x, y)
-    bc_promoted = _promote_bc(bc, eltype(x_p))
-    return QuadraticInterpolant(x_p, y_p; bc=bc_promoted, extrap, search)
+    search::AbstractSearchPolicy=Binary()
+) where {TX<:Real, TY}
+    x_p, y_p = _promote_itp_inputs(x, y)
+    bc_p = _promote_bc(bc, eltype(x_p))
+
+    # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
+    validate_polyfit_points(bc_p, length(x_p))
+
+    # Compute coefficients (h::Tg, d::Tv, a::Tv)
+    h, d, a = _compute_quadratic_coeffs(x_p, y_p, bc_p)
+
+    return QuadraticInterpolant(x_p, y_p, h, a, d; extrap, search)
 end

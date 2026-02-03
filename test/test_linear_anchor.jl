@@ -21,12 +21,16 @@ using FastInterpolations
         @test hasfield(typeof(aq), :idx)
         @test hasfield(typeof(aq), :xq)
         @test hasfield(typeof(aq), :side)
+        @test hasfield(typeof(aq), :h)
+        @test hasfield(typeof(aq), :inv_h)
         @test hasfield(typeof(aq), :alpha)
 
         # Verify field types
         @test aq.idx isa Int
         @test aq.xq isa Float64
         @test aq.side isa UInt8
+        @test aq.h isa Float64
+        @test aq.inv_h isa Float64
         @test aq.alpha isa Float64
     end
 
@@ -41,19 +45,21 @@ using FastInterpolations
         @test aq.idx == 4  # interval [0.3, 0.4]
         @test aq.xq == 0.35
         @test aq.side == 0x00  # inside
-        @test aq.alpha ≈ 0.5  # (0.35 - 0.3) / 0.1 = 0.5
+        @test aq.h ≈ 0.1            # interval width
+        @test aq.inv_h ≈ 10.0       # 1/h
+        @test aq.alpha ≈ 0.5        # (0.35 - 0.3) / 0.1 = 0.5
 
         # Query at left boundary
         aq_left = FastInterpolations._anchor_query(x, 0.0, Val(:linear))
         @test aq_left.idx == 1
         @test aq_left.side == 0x00  # inside (at boundary)
-        @test aq_left.alpha ≈ 0.0
+        @test aq_left.alpha ≈ 0.0   # at left boundary, alpha = 0
 
         # Query at right boundary
         aq_right = FastInterpolations._anchor_query(x, 1.0, Val(:linear))
         @test aq_right.idx == 10  # last interval
         @test aq_right.side == 0x00
-        @test aq_right.alpha ≈ 1.0
+        @test aq_right.alpha ≈ 1.0  # (1.0 - 0.9) / 0.1 = 1.0
     end
 
     # ========================================
@@ -70,6 +76,7 @@ using FastInterpolations
         @test aq_vec[2].idx == 4   # interval [0.3, 0.4]
         @test aq_vec[3].idx == 8   # interval [0.7, 0.8]
 
+        # alpha = (xq - xL) / h = 0.05 / 0.1 = 0.5 for all
         @test aq_vec[1].alpha ≈ 0.5  # (0.15 - 0.1) / 0.1
         @test aq_vec[2].alpha ≈ 0.5  # (0.35 - 0.3) / 0.1
         @test aq_vec[3].alpha ≈ 0.5  # (0.75 - 0.7) / 0.1
@@ -176,6 +183,8 @@ using FastInterpolations
         aq = FastInterpolations._anchor_query(x, xq, Val(:linear))
         @test aq isa FastInterpolations._LinearAnchoredQuery{Float32}
         @test aq.xq isa Float32
+        @test aq.h isa Float32
+        @test aq.inv_h isa Float32
         @test aq.alpha isa Float32
     end
 
@@ -215,7 +224,8 @@ using FastInterpolations
 
         @test aq.idx == 3  # interval [0.3, 0.6]
         @test aq.xq == 0.45
-        @test aq.alpha ≈ (0.45 - 0.3) / (0.6 - 0.3)  # 0.5
+        @test aq.h ≈ 0.3           # 0.6 - 0.3 = 0.3
+        @test aq.alpha ≈ 0.5       # (0.45 - 0.3) / 0.3 = 0.5
 
         # Verify evaluation matches
         @test itp(aq) ≈ itp(xq)
@@ -356,8 +366,8 @@ using FastInterpolations
             # Reference: allocating version
             expected = FI._anchor_query(x, xq, Val(:linear))
 
-            # In-place version
-            buffer = Vector{FI._LinearAnchoredQuery{Float64}}(undef, length(xq))
+            # In-place version - now uses {Tg, Tq} type parameters
+            buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:linear))
 
             # Verify all fields match exactly (bit-wise)
@@ -365,6 +375,8 @@ using FastInterpolations
                 @test buffer[i].idx == expected[i].idx
                 @test buffer[i].xq == expected[i].xq
                 @test buffer[i].side == expected[i].side
+                @test buffer[i].h == expected[i].h
+                @test buffer[i].inv_h == expected[i].inv_h
                 @test buffer[i].alpha == expected[i].alpha
             end
         end
@@ -374,7 +386,7 @@ using FastInterpolations
             xq = [-0.3, 0.5, 1.3, 2.5]
 
             expected = FI._anchor_query(x, xq, Val(:linear); wrap=true)
-            buffer = Vector{FI._LinearAnchoredQuery{Float64}}(undef, length(xq))
+            buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:linear); wrap=true)
 
             for i in eachindex(xq)
@@ -387,7 +399,7 @@ using FastInterpolations
         @testset "length assertion when buffer too small" begin
             x = collect(range(0.0, 1.0, 101))
             xq = [0.15, 0.35, 0.5, 0.75]
-            buffer = Vector{FI._LinearAnchoredQuery{Float64}}(undef, 2)
+            buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64}}(undef, 2)
 
             @test_throws AssertionError FI._fill_anchors!(buffer, x, xq, Val(:linear))
         end
@@ -395,7 +407,7 @@ using FastInterpolations
         @testset "zero allocation after warmup" begin
             x = collect(range(0.0, 1.0, 101))
             xq = collect(range(0.1, 0.9, 50))
-            buffer = Vector{FI._LinearAnchoredQuery{Float64}}(undef, length(xq))
+            buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64}}(undef, length(xq))
 
             FI._fill_anchors!(buffer, x, xq, Val(:linear))
             allocs = @allocated FI._fill_anchors!(buffer, x, xq, Val(:linear))

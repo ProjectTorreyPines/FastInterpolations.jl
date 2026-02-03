@@ -63,23 +63,34 @@ struct QuadraticInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:Abs
     extrap::ExtrapVal
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    function QuadraticInterpolant(
-        x::X, y::Y;
-        bc::QuadraticBC=Left(QuadraticFit()),
-        extrap::Symbol=:none,
-        search::P=Binary()
+    # Inner constructor: parametric, only calls new (handles validation only)
+    function QuadraticInterpolant{Tg,Tv,X,Y,P}(
+        x::X, y::Y, h::Vector{Tg}, a::Vector{Tv}, d::Vector{Tv}, ev::ExtrapVal, search::P
     ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         @assert length(x) >= 2 "x must have at least 2 elements"
+        new{Tg,Tv,X,Y,P}(x, y, h, a, d, ev, search)
+    end
+end
 
-        # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
-        validate_polyfit_points(bc, length(x))
-
-        # Compute coefficients (h::Tg, d::Tv, a::Tv)
-        h, d, a = _compute_quadratic_coeffs(x, y, bc)
-
-        @_dispatch_extrap extrap => ev begin
-            return new{Tg,Tv,X,Y,P}(x, y, h, a, d, ev, search)
-        end
+# ========================================
+# Outer Constructor: typed inputs only
+# ========================================
+# - Symbol → Val dispatch
+# - Call inner constructor
+#
+# PERFORMANCE: Typed signature + @inline enables compile-time specialization.
+# Use quadratic_interp() for automatic type promotion and coefficient computation.
+@inline function QuadraticInterpolant(
+    x::X,
+    y::Y,
+    h::Vector{Tg},
+    a::Vector{Tv},
+    d::Vector{Tv};
+    extrap::Symbol=:none,
+    search::P=Binary()
+) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
+    @_dispatch_extrap extrap => ev begin
+        return QuadraticInterpolant{Tg,Tv,X,Y,P}(x, y, h, a, d, ev, search)
     end
 end

@@ -274,8 +274,8 @@ using FastInterpolations
     # ========================================
     # Tg Calculation Policy (Query Independence)
     # ========================================
-    @testset "Tg from x/y only, not query" begin
-        # Float32 data + Float64 query
+    @testset "Lossless type promotion" begin
+        # Float32 data + Float64 query → Float64 output (wider type wins)
         x32 = Float32.(0:0.1:1)
         y1 = sin.(x32)
         y2 = cos.(x32)
@@ -283,8 +283,7 @@ using FastInterpolations
         sitp = linear_interp(x32, [y1, y2])
         @test sitp isa LinearSeriesInterpolant{Float32, Float32}
 
-        # Note: LinearSeriesInterpolant promotes result to query type (Float64)
-        # This differs from other series interpolants that preserve Tv
+        # Float64 query promotes output to Float64 (lossless - wider type)
         result = sitp(0.5)  # 0.5 is Float64
         @test eltype(result) === Float64
     end

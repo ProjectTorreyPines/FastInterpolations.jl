@@ -134,7 +134,7 @@ Uses point-contiguous layout for SIMD optimization.
     n_pts = n_points(sitp)
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
-    _eval_constant_series_point_with_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, sitp.side, op)
+    _eval_constant_series_point_extrap!(output, y_point, sitp.x, n_pts, x_min, x_max, aq, sitp.extrap, sitp.side, op, aq.side)
     return output
 end
 
@@ -167,74 +167,71 @@ end
 # ========================================
 
 """
-    _eval_constant_series_point!(out, y_point, x, aq, side_val, op)
+    _eval_constant_series_point!(output, sitp, aq, xq, op)
 
-SIMD-optimized evaluation for point-contiguous layout (n_series × n_points).
-Contiguous column access enables vectorization across series dimension.
+Main entry point for scalar evaluation of multi-series constant interpolation.
+Uses anchor for index/side info, but computes dL from original `xq` for AD support.
+
+# AD Support
+Supports ForwardDiff.Dual input: anchor provides index/side from primal,
+while `xq` is used directly in arithmetic to preserve derivative information.
+
+# Arguments
+- `output`: Pre-allocated output vector (length = n_series)
+- `sitp`: ConstantSeriesInterpolant
+- `aq`: Anchor with precomputed index/side (from primal value)
+- `xq`: Original query point (any Real type, including ForwardDiff.Dual)
+- `op`: Evaluation operation (value, derivative)
+
+Note: Inside-domain evaluation uses this function directly.
+Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
 """
 @inline function _eval_constant_series_point!(
-    out::AbstractVector{Tv},
-    y_point::Matrix{Tv},
-    x::AbstractVector{Tg},
+    output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
+    sitp::ConstantSeriesInterpolant{Tg, Tv},
     aq::_ConstantAnchoredQuery{Tg},
-    side_val::SideVal,
+    xq,  # Original xq (any Real, including Dual)
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
-    idx = aq.idx
-    idx1 = idx + 1
-
-    # Get interval data
-    h = aq.h
-    dL = aq.dL
-
-    # SIMD loop over series (contiguous column access)
-    @inbounds @simd for k in axes(out, 1)
-        y_left = y_point[k, idx]
-        y_right = y_point[k, idx1]
-        out[k] = _constant_kernel(op, y_left, y_right, h, dL, side_val)
+    # Outside domain: delegate to extrapolation handler (trait method)
+    if aq.side != 0x00
+        return _eval_series_at_anchor!(output, sitp, aq, op)
     end
 
-    return out
-end
+    # Inside domain: SIMD evaluation with point-contiguous layout
+    y_point = _ensure_point_layout!(sitp)
+    n_pts = n_points(sitp)
 
-"""
-    _eval_constant_series_point_with_extrap!(out, y_point, x, n_pts, x_min, x_max, aq, extrap, side_val, op)
-
-SIMD evaluation with extrapolation handling for multi-series constant interpolation.
-"""
-@inline function _eval_constant_series_point_with_extrap!(
-    out::AbstractVector{Tv},
-    y_point::Matrix{Tv},
-    x::AbstractVector{Tg},
-    n_pts::Int,
-    x_min::Tg,
-    x_max::Tg,
-    aq::_ConstantAnchoredQuery{Tg},
-    extrap::ExtrapVal,
-    side_val::SideVal,
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv}
-    # Special case: at right boundary (x_max)
-    if aq.xq == x_max
+    # Special case: at right boundary (use primal for comparison)
+    xq_primal = _extract_primal(xq)
+    if Tg(xq_primal) == Tg(last(sitp.x))
         if op isa EvalValue
-            @inbounds @simd for k in axes(out, 1)
-                out[k] = y_point[k, n_pts]
+            @inbounds @simd for k in axes(output, 1)
+                output[k] = y_point[k, n_pts]
             end
         else
-            @inbounds @simd for k in axes(out, 1)
-                out[k] = zero(Tv)
+            @inbounds @simd for k in axes(output, 1)
+                output[k] = zero(Tv)
             end
         end
-        return out
+        return output
     end
 
-    # Inside domain: normal evaluation
-    if aq.side == 0x00
-        return _eval_constant_series_point!(out, y_point, x, aq, side_val, op)
+    # Inside domain: compute dL from original xq for AD support
+    idx = aq.idx
+    idx1 = idx + 1
+    h = aq.h
+    @inbounds xL = sitp.x[idx]
+    dL = xq - xL  # Use original xq to preserve Dual for AD
+
+    # SIMD loop over series
+    @inbounds @simd for k in axes(output, 1)
+        y_left = y_point[k, idx]
+        y_right = y_point[k, idx1]
+        output[k] = _constant_kernel(op, y_left, y_right, h, dL, sitp.side)
     end
 
-    # Outside domain: dispatch on extrap mode
-    _eval_constant_series_point_extrap!(out, y_point, x, n_pts, x_min, x_max, aq, extrap, side_val, op, aq.side)
+    return output
 end
 
 # :none - throw DomainError
@@ -271,7 +268,7 @@ end
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
-# :extension - extend using same constant value
+# :extension - extend using same constant value at boundary interval
 @inline function _eval_constant_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -283,10 +280,21 @@ end
     ::Val{:extension},
     side_val::SideVal,
     op::AbstractEvalOp,
-    side::UInt8
+    ::UInt8
 ) where {Tg<:AbstractFloat, Tv}
-    # Use boundary interval for extension
-    return _eval_constant_series_point!(out, y_point, x, aq, side_val, op)
+    # Use boundary interval for extension (inline evaluation, no xq needed)
+    idx = aq.idx
+    idx1 = idx + 1
+    h = aq.h
+    dL = aq.dL
+
+    # SIMD loop over series
+    @inbounds @simd for k in axes(out, 1)
+        y_left = y_point[k, idx]
+        y_right = y_point[k, idx1]
+        out[k] = _constant_kernel(op, y_left, y_right, h, dL, side_val)
+    end
+    return out
 end
 
 
@@ -429,28 +437,28 @@ end
 
 # Vector-of-vectors wrapper for non-AbstractFloat x
 function constant_interp(
-    x::AbstractVector{Tx},
-    ys::AbstractVector{<:AbstractVector{Ty}};
+    x::AbstractVector{Tg},
+    ys::AbstractVector{<:AbstractVector{Tv}};
     side::Symbol=:nearest,
     extrap::Symbol=:none,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty}
-    # Compute Tg from x and real part of y
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
-    x_typed = _to_float(x, Tg)
+) where {Tg<:Real, Tv}
+    # Compute promoted grid type (Tg may be Int, promotes to Float)
+    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
+    x_typed = _to_float(x, Tg_float)
     return constant_interp(x_typed, ys; side, extrap, search)
 end
 
 # Matrix wrapper for non-AbstractFloat x
 function constant_interp(
-    x::AbstractVector{Tx},
-    Y::AbstractMatrix{Ty};
+    x::AbstractVector{Tg},
+    Y::AbstractMatrix{Tv};
     side::Symbol=:nearest,
     extrap::Symbol=:none,
     search::AbstractSearchPolicy=Binary()
-) where {Tx<:Real, Ty}
-    Tg = float(promote_type(Tx, _real_eltype(Ty)))
-    x_typed = _to_float(x, Tg)
+) where {Tg<:Real, Tv}
+    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
+    x_typed = _to_float(x, Tg_float)
     return constant_interp(x_typed, Y; side, extrap, search)
 end
 
@@ -468,9 +476,19 @@ Returns a vector of values, one per y-series.
 # Derivative support
 - `deriv=0`: Returns function values
 - `deriv=1,2`: Returns zeros (step function derivative is zero everywhere)
+
+# AD Support
+When `xq` is a ForwardDiff.Dual, the output type is promoted to preserve
+derivatives. Output type is `promote_type(Tv, Tq)`.
 """
-function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(xq::S; deriv::Int=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, P, S<:Real}
-    out = Vector{Tv}(undef, n_series(sitp))
+function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
+    xq::Tq;
+    deriv::Int=0,
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
+    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
+    out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
 
@@ -480,25 +498,27 @@ end
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
-    output::AbstractVector{Tv},
-    xq::S;
+    output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
+    xq::Tq;
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_ser = n_series(sitp)
 
     # Validate output length
     _validate_scalar_output(output, n_ser)
 
-    xq_typed = Tg(xq)
+    # AD Support: Extract primal for anchor building, pass original xq for AD
+    xq_primal = _extract_primal(xq)
+    xq_typed = Tg(xq_primal)
 
-    # Build anchor
+    # Build anchor using primal value
     aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
 
-    # Dispatch on derivative order
+    # Dispatch on derivative order - pass original xq for AD support
     @_dispatch_deriv deriv => op begin
-        _eval_series_at_anchor!(output, sitp, aq, op)
+        _eval_constant_series_point!(output, sitp, aq, xq, op)
     end
     return output
 end
@@ -515,15 +535,20 @@ Evaluate multi-Y interpolant at multiple query points (out-of-place).
 Returns a vector of vectors: one vector per y-series, each containing results for all query points.
 """
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
-    xq::AbstractVector{S};
+    xq::AbstractVector{Tq};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     xq_typed = _to_float(xq, Tg)
     n_query = length(xq_typed)
+    n_ser = n_series(sitp)
 
-    outputs = [Vector{Tv}(undef, n_query) for _ in 1:n_series(sitp)]
+    # Explicit Vector{Vector{Tv}} for type stability on Julia LTS
+    outputs = Vector{Vector{Tv}}(undef, n_ser)
+    @inbounds for k in 1:n_ser
+        outputs[k] = Vector{Tv}(undef, n_query)
+    end
     sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 
     return outputs
@@ -580,11 +605,11 @@ end
 # Real type wrapper for in-place vector
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector{Tv}},
-    xq::AbstractVector{S};
+    xq::AbstractVector{Tq};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, S<:Real}
+) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     xq_typed = _to_float(xq, Tg)
     return sitp(outputs, xq_typed; deriv=deriv, search=search, hint=hint)
 end

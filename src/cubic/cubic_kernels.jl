@@ -18,7 +18,8 @@
 Evaluate cubic spline value using moment (z) formulation.
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type for h, inv_h, dL, dR (always real)
+- `Tg<:AbstractFloat`: Grid type for h, inv_h (always real)
+- `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
 - `Tv`: Value type for zL, zR, yL, yR (can be Real or Complex)
 
 # Formula
@@ -35,8 +36,8 @@ for FMA (Fused Multiply-Add) hardware instructions, reducing total FP operations
 @inline function _cubic_kernel(
     ::EvalValue,
     zL::Tv, zR::Tv, yL::Tv, yR::Tv,
-    h::Tg, inv_h::Tg, dL::Tg, dR::Tg
-) where {Tg<:AbstractFloat, Tv}
+    h::Tg, inv_h::Tg, dL::Td, dR::Td
+) where {Tg<:AbstractFloat, Tv, Td<:Real}
     # Native (ARM64) instruction breakdown:
     div6 = inv(Tg(6))                                   # (const-folded)
     # inv_h passed as parameter (fdiv eliminated)
@@ -59,7 +60,8 @@ end
 Evaluate first derivative of cubic spline.
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type for h, inv_h, dL, dR (always real)
+- `Tg<:AbstractFloat`: Grid type for h, inv_h (always real)
+- `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
 - `Tv`: Value type for zL, zR, yL, yR (can be Real or Complex)
 
 Formula:
@@ -70,8 +72,8 @@ Formula:
 @inline function _cubic_kernel(
     ::EvalDeriv1,
     zL::Tv, zR::Tv, yL::Tv, yR::Tv,
-    h::Tg, inv_h::Tg, dL::Tg, dR::Tg
-) where {Tg<:AbstractFloat, Tv}
+    h::Tg, inv_h::Tg, dL::Td, dR::Td
+) where {Tg<:AbstractFloat, Tv, Td<:Real}
     # inv_h passed as parameter (fdiv eliminated)
 
     inv_2h  = inv_h * inv(Tg(2))
@@ -97,7 +99,8 @@ Evaluate second derivative of cubic spline.
 This is simply a linear interpolation of the z (moment) values.
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type for h, inv_h, dL, dR (always real)
+- `Tg<:AbstractFloat`: Grid type for h, inv_h (always real)
+- `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
 - `Tv`: Value type for zL, zR, yL, yR (can be Real or Complex)
 
 Formula:
@@ -106,8 +109,8 @@ Formula:
 @inline function _cubic_kernel(
     ::EvalDeriv2,
     zL::Tv, zR::Tv, ::Tv, ::Tv,
-    ::Tg, inv_h::Tg, dL::Tg, dR::Tg
-) where {Tg<:AbstractFloat, Tv}
+    ::Tg, inv_h::Tg, dL::Td, dR::Td
+) where {Tg<:AbstractFloat, Tv, Td<:Real}
     return muladd(zL, dR, zR * dL) * inv_h
 end
 
@@ -117,7 +120,8 @@ end
 Third derivative of cubic spline (constant within each interval).
 
 # Type Parameters
-- `Tg<:AbstractFloat`: Grid type for h, inv_h, dL, dR (always real)
+- `Tg<:AbstractFloat`: Grid type for h, inv_h (always real)
+- `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
 - `Tv`: Value type for zL, zR, yL, yR (can be Real or Complex)
 
 # Formula
@@ -136,7 +140,7 @@ Third derivative (constant, independent of x within interval):
 @inline function _cubic_kernel(
     ::EvalDeriv3,
     zL::Tv, zR::Tv, ::Tv, ::Tv,
-    ::Tg, inv_h::Tg, ::Tg, ::Tg
-) where {Tg<:AbstractFloat, Tv}
+    ::Tg, inv_h::Tg, ::Td, ::Td
+) where {Tg<:AbstractFloat, Tv, Td<:Real}
     return (zR - zL) * inv_h
 end

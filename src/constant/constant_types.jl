@@ -54,19 +54,34 @@ struct ConstantInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:Abst
     side::SideVal
     search_policy::P  # Default search policy (immutable, thread-safe)
 
-    function ConstantInterpolant(
-        x::X, y::Y;
-        extrap::Symbol=:none,
-        side::Symbol=:nearest,
-        search::P=Binary()
+    # Inner constructor: parametric, only calls new (handles validation only)
+    function ConstantInterpolant{Tg,Tv,X,Y,P}(
+        x::X, y::Y, ev::ExtrapVal, sv::SideVal, search::P
     ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         @assert length(x) >= 2 "x must have at least 2 elements"
+        new{Tg,Tv,X,Y,P}(x, y, ev, sv, search)
+    end
+end
 
-        @_dispatch_extrap extrap => ev begin
-            @_dispatch_side side => sv begin
-                return new{Tg,Tv,X,Y,P}(x, y, ev, sv, search)
-            end
+# ========================================
+# Outer Constructor: typed inputs only
+# ========================================
+# - Symbol → Val dispatch
+# - Call inner constructor
+#
+# PERFORMANCE: Typed signature + @inline enables compile-time specialization.
+# Use constant_interp() for automatic type promotion from Real inputs.
+@inline function ConstantInterpolant(
+    x::X,
+    y::Y;
+    extrap::Symbol=:none,
+    side::Symbol=:nearest,
+    search::P=Binary()
+) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
+    @_dispatch_extrap extrap => ev begin
+        @_dispatch_side side => sv begin
+            return ConstantInterpolant{Tg,Tv,X,Y,P}(x, y, ev, sv, search)
         end
     end
 end

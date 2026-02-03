@@ -307,7 +307,7 @@ end
     @testset "Anchor reuse produces identical results" begin
         mitp = cubic_interp(x, [y1, y2])
         xq_vec = [0.2, 0.5, 0.8]
-        aq_vec = FI._anchor_query(x, xq_vec)
+        aq_vec = FI._anchor_query(x, xq_vec, Val(:cubic))
 
         outputs1 = [zeros(3) for _ in 1:2]
         outputs2 = [zeros(3) for _ in 1:2]
@@ -488,7 +488,7 @@ end
     @testset "Anchored query path dimension errors" begin
         mitp = cubic_interp(x, [y1, y2, sin.(x)])
         xq_vec = [0.1, 0.3, 0.5]
-        aq_vec = FI._anchor_query(x, xq_vec)
+        aq_vec = FI._anchor_query(x, xq_vec, Val(:cubic))
 
         # Wrong number of output buffers
         outputs_wrong = [zeros(3), zeros(3)]  # 2 instead of 3
@@ -971,7 +971,7 @@ end
         outputs = [out1, out2, out3]
 
         # Pre-build anchors (this is the key for zero-allocation)
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Warmup
         mitp(outputs, aq_vec)
@@ -989,7 +989,7 @@ end
         outputs = [out1, out2, out3]
 
         # Pre-build anchors
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
         mitp(outputs, aq_vec; deriv=1)
 
         itp1 = cubic_interp(x, y1; extrap=:extension)
@@ -1182,9 +1182,9 @@ end
         @test all(isfinite, out1)
         @test all(isfinite, out2)
 
-        # Verify values match Float64 path
-        xq_f64 = Float64.(xq_f32)
-        ref = mitp(xq_f64)
+        # Verify values match same-type allocating path (precision preservation)
+        # Float32 in-place should match Float32 allocating, not Float64 allocating
+        ref = mitp(xq_f32)
         @test out1 ≈ ref[1] atol=1e-10
         @test out2 ≈ ref[2] atol=1e-10
     end
@@ -1478,7 +1478,7 @@ end
         outputs = [out1, out2, out3]
 
         # Pre-build anchors
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Warmup
         mitp(outputs, aq_vec; deriv=1)
@@ -1495,7 +1495,7 @@ end
         outputs = [out1, out2, out3]
 
         # Pre-build anchors
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Warmup
         mitp(outputs, aq_vec; deriv=2)
@@ -1511,7 +1511,7 @@ end
         out3 = Vector{Float64}(undef, 50)
         outputs = [out1, out2, out3]
 
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Get derivatives via anchored path
         mitp(outputs, aq_vec; deriv=1)
@@ -1805,5 +1805,188 @@ end
         @test result[1] == BCPair(Deriv2(0.0), Deriv2(0.0))  # NaturalBC
         @test result[2] == BCPair(Deriv1(0.0), Deriv2(3.0))  # Already BCPair
         @test result[3] == BCPair(Deriv1(0.0), Deriv1(0.0))  # ClampedBC
+    end
+end
+
+# ============================================================================
+# Pre-built Anchor Tests for Coverage (deriv=3 and extrapolation)
+# ============================================================================
+
+@testset "CubicSeriesInterpolant - Pre-built Anchor with deriv=3" begin
+    FI = FastInterpolations
+
+    @testset "deriv=3 correctness with pre-built anchors" begin
+        x = collect(range(0.0, 1.0, 21))
+        # Use polynomial functions where 3rd derivative is analytically known
+        y1 = x .^ 4       # d³/dx³ = 24x
+        y2 = x .^ 3       # d³/dx³ = 6
+        y3 = sin.(2π .* x)  # d³/dx³ = -8π³cos(2πx)
+
+        mitp = cubic_interp(x, [y1, y2, y3])
+        xq = [0.2, 0.4, 0.6, 0.8]
+
+        # Pre-build anchors
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
+
+        outputs = [similar(xq) for _ in 1:3]
+        mitp(outputs, aq_vec; deriv=3)
+
+        # Compare with scalar evaluation
+        for (j, q) in enumerate(xq)
+            scalar_result = mitp(q; deriv=3)
+            @test outputs[1][j] ≈ scalar_result[1] atol=1e-10
+            @test outputs[2][j] ≈ scalar_result[2] atol=1e-10
+            @test outputs[3][j] ≈ scalar_result[3] atol=1e-10
+        end
+    end
+
+    @testset "deriv=3 zero allocation with pre-built anchors" begin
+        x = collect(range(0.0, 1.0, 51))
+        y1 = x .^ 4
+        y2 = x .^ 3
+
+        mitp = cubic_interp(x, [y1, y2])
+        xq = collect(range(0.1, 0.9, 20))
+
+        # Pre-build anchors
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
+        outputs = [similar(xq) for _ in 1:2]
+
+        # Warmup
+        mitp(outputs, aq_vec; deriv=3)
+        mitp(outputs, aq_vec; deriv=3)
+
+        allocs = @allocated mitp(outputs, aq_vec; deriv=3)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "deriv=3 matches individual interpolants" begin
+        x = collect(range(0.0, 1.0, 31))
+        y1 = exp.(-x)
+        y2 = x .^ 5
+
+        mitp = cubic_interp(x, [y1, y2])
+        itp1 = cubic_interp(x, y1)
+        itp2 = cubic_interp(x, y2)
+
+        xq = [0.15, 0.35, 0.55, 0.75, 0.95]
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
+
+        outputs = [similar(xq) for _ in 1:2]
+        expected1 = similar(xq)
+        expected2 = similar(xq)
+
+        mitp(outputs, aq_vec; deriv=3)
+        itp1(expected1, aq_vec; deriv=3)
+        itp2(expected2, aq_vec; deriv=3)
+
+        @test outputs[1] ≈ expected1 atol=1e-14
+        @test outputs[2] ≈ expected2 atol=1e-14
+    end
+end
+
+@testset "CubicSeriesInterpolant - Pre-built Anchor with Extrapolation" begin
+    FI = FastInterpolations
+
+    x = collect(range(0.0, 1.0, 11))
+    y1 = sin.(2π .* x)
+    y2 = cos.(2π .* x)
+    y3 = exp.(-x)
+
+    # Query points including out-of-domain
+    xq_out = [-0.15, -0.05, 0.5, 1.05, 1.15]
+
+    @testset ":extension mode with pre-built anchors" begin
+        mitp = cubic_interp(x, [y1, y2, y3]; extrap=:extension)
+
+        # Pre-build anchors (will have side != 0x00 for out-of-domain points)
+        aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
+        outputs = [similar(xq_out) for _ in 1:3]
+
+        # Should not throw, uses polynomial extension
+        mitp(outputs, aq_vec)
+
+        # Compare with scalar evaluation
+        for (j, q) in enumerate(xq_out)
+            scalar_result = mitp(q)
+            @test outputs[1][j] ≈ scalar_result[1] atol=1e-10
+            @test outputs[2][j] ≈ scalar_result[2] atol=1e-10
+            @test outputs[3][j] ≈ scalar_result[3] atol=1e-10
+        end
+
+        # Test derivatives with extension
+        for deriv in 1:3
+            mitp(outputs, aq_vec; deriv=deriv)
+            for (j, q) in enumerate(xq_out)
+                scalar_result = mitp(q; deriv=deriv)
+                @test outputs[1][j] ≈ scalar_result[1] atol=1e-10
+                @test outputs[2][j] ≈ scalar_result[2] atol=1e-10
+                @test outputs[3][j] ≈ scalar_result[3] atol=1e-10
+            end
+        end
+    end
+
+    @testset ":constant mode with pre-built anchors" begin
+        mitp = cubic_interp(x, [y1, y2, y3]; extrap=:constant)
+
+        aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
+        outputs = [similar(xq_out) for _ in 1:3]
+
+        mitp(outputs, aq_vec)
+
+        # Out-of-domain points should be clamped to boundary values
+        # Left boundary (indices 1, 2 are < 0.0)
+        @test outputs[1][1] ≈ y1[1] atol=1e-10
+        @test outputs[1][2] ≈ y1[1] atol=1e-10
+        @test outputs[2][1] ≈ y2[1] atol=1e-10
+        @test outputs[2][2] ≈ y2[1] atol=1e-10
+        @test outputs[3][1] ≈ y3[1] atol=1e-10
+        @test outputs[3][2] ≈ y3[1] atol=1e-10
+
+        # Right boundary (indices 4, 5 are > 1.0)
+        @test outputs[1][4] ≈ y1[end] atol=1e-10
+        @test outputs[1][5] ≈ y1[end] atol=1e-10
+        @test outputs[2][4] ≈ y2[end] atol=1e-10
+        @test outputs[2][5] ≈ y2[end] atol=1e-10
+        @test outputs[3][4] ≈ y3[end] atol=1e-10
+        @test outputs[3][5] ≈ y3[end] atol=1e-10
+
+        # Inside domain should be normal interpolation
+        inside_result = mitp(0.5)
+        @test outputs[1][3] ≈ inside_result[1] atol=1e-10
+        @test outputs[2][3] ≈ inside_result[2] atol=1e-10
+        @test outputs[3][3] ≈ inside_result[3] atol=1e-10
+    end
+
+    @testset ":none mode with pre-built anchors throws DomainError" begin
+        mitp = cubic_interp(x, [y1, y2, y3]; extrap=:none)
+
+        aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
+        outputs = [similar(xq_out) for _ in 1:3]
+
+        @test_throws DomainError mitp(outputs, aq_vec)
+    end
+
+    @testset ":wrap mode with pre-built anchors (PeriodicBC)" begin
+        # Periodic function
+        x_per = collect(range(0.0, 2π, 21))
+        y1_per = sin.(x_per)
+        y2_per = cos.(x_per)
+
+        mitp = cubic_interp(x_per, [y1_per, y2_per]; bc=PeriodicBC())
+
+        # Query points outside domain should wrap
+        xq_wrap = [-0.5, 0.5, 2π + 0.5, 4π + 0.5]
+        aq_vec = FI._anchor_query(x_per, xq_wrap, Val(:cubic); wrap=true)
+        outputs = [similar(xq_wrap) for _ in 1:2]
+
+        mitp(outputs, aq_vec)
+
+        # Wrapped queries should match equivalent in-domain queries
+        for (j, q) in enumerate(xq_wrap)
+            scalar_result = mitp(q)
+            @test outputs[1][j] ≈ scalar_result[1] atol=1e-10
+            @test outputs[2][j] ≈ scalar_result[2] atol=1e-10
+        end
     end
 end

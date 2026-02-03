@@ -14,7 +14,7 @@
 
         # Test multiple query points
         for xq in [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
-            aq = FI._anchor_query(x, xq)
+            aq = FI._anchor_query(x, xq, Val(:cubic))
             @test itp(aq) ≈ itp(xq) atol=1e-14
         end
     end
@@ -25,7 +25,7 @@
         itp = cubic_interp(x, y; extrap=:extension)
 
         for xq in [0.15, 0.5, 0.85]
-            aq = FI._anchor_query(x, xq)
+            aq = FI._anchor_query(x, xq, Val(:cubic))
 
             # First derivative
             @test itp(aq; deriv=1) ≈ itp(xq; deriv=1) atol=1e-14
@@ -41,14 +41,14 @@
         itp = cubic_interp(x, y; extrap=:none)
 
         # Inside domain should work
-        aq_inside = FI._anchor_query(x, 0.5)
+        aq_inside = FI._anchor_query(x, 0.5, Val(:cubic))
         @test isfinite(itp(aq_inside))
 
         # Outside domain should throw DomainError
-        aq_below = FI._anchor_query(x, -0.1)
+        aq_below = FI._anchor_query(x, -0.1, Val(:cubic))
         @test_throws DomainError itp(aq_below)
 
-        aq_above = FI._anchor_query(x, 1.1)
+        aq_above = FI._anchor_query(x, 1.1, Val(:cubic))
         @test_throws DomainError itp(aq_above)
     end
 
@@ -58,11 +58,11 @@
         itp = cubic_interp(x, y; extrap=:constant)
 
         # Below domain returns y[1]
-        aq_below = FI._anchor_query(x, -0.5)
+        aq_below = FI._anchor_query(x, -0.5, Val(:cubic))
         @test itp(aq_below) ≈ y[1]
 
         # Above domain returns y[end]
-        aq_above = FI._anchor_query(x, 1.5)
+        aq_above = FI._anchor_query(x, 1.5, Val(:cubic))
         @test itp(aq_above) ≈ y[end]
 
         # Derivatives of constant are zero
@@ -76,10 +76,10 @@
         itp = cubic_interp(x, y; extrap=:extension)
 
         # Outside domain uses boundary polynomial
-        aq_below = FI._anchor_query(x, -0.1)
+        aq_below = FI._anchor_query(x, -0.1, Val(:cubic))
         @test itp(aq_below) ≈ itp(-0.1) atol=1e-14
 
-        aq_above = FI._anchor_query(x, 1.1)
+        aq_above = FI._anchor_query(x, 1.1, Val(:cubic))
         @test itp(aq_above) ≈ itp(1.1) atol=1e-14
     end
 
@@ -90,7 +90,7 @@
 
         # Wrap extrapolation - anchor must be created with wrap=true
         # to pre-wrap coordinates for :wrap mode
-        aq_above = FI._anchor_query(x, 1.3; wrap=true)
+        aq_above = FI._anchor_query(x, 1.3, Val(:cubic); wrap=true)
         wrapped_xq = mod(1.3, 1.0)  # 0.3
         @test itp(aq_above) ≈ itp(wrapped_xq) atol=1e-14
     end
@@ -102,7 +102,7 @@
         itp = cubic_interp(x, y; bc=PeriodicBC())
 
         # Wrap at anchor construction (for extrap=:wrap mode)
-        aq_wrapped = FI._anchor_query(x, 2π + 1.0; wrap=true)
+        aq_wrapped = FI._anchor_query(x, 2π + 1.0, Val(:cubic); wrap=true)
         @test itp(aq_wrapped) ≈ itp(1.0) atol=1e-10
     end
 
@@ -112,7 +112,7 @@
         itp = cubic_interp(x32, y32; extrap=:extension)
 
         xq = Float32(0.35)
-        aq = FI._anchor_query(x32, xq)
+        aq = FI._anchor_query(x32, xq, Val(:cubic))
 
         @test itp(aq) isa Float32
         @test itp(aq) ≈ itp(xq) atol=1f-6
@@ -122,7 +122,7 @@
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
         itp = cubic_interp(x, y; extrap=:extension)
-        aq = FI._anchor_query(x, 0.5)
+        aq = FI._anchor_query(x, 0.5, Val(:cubic))
 
         # Warmup
         itp(aq)
@@ -143,7 +143,7 @@
         itp3 = cubic_interp(x, y3; extrap=:extension)
 
         # Create anchor once
-        aq = FI._anchor_query(x, 0.35)
+        aq = FI._anchor_query(x, 0.35, Val(:cubic))
 
         # All three should work with same anchor
         @test itp1(aq) ≈ itp1(0.35) atol=1e-14
@@ -156,34 +156,34 @@
         xq = 0.35
 
         # Basic construction
-        aq = FI._anchor_query(x, xq)
-        @test aq isa FI._CubicAnchoredQuery{Float64}
+        aq = FI._anchor_query(x, xq, Val(:cubic))
+        @test aq isa FI._CubicAnchoredQuery{Float64, Float64}
 
         # Float32 support
         x32 = Float32.(x)
         xq32 = Float32(0.35)
-        aq32 = FI._anchor_query(x32, xq32)
-        @test aq32 isa FI._CubicAnchoredQuery{Float32}
+        aq32 = FI._anchor_query(x32, xq32, Val(:cubic))
+        @test aq32 isa FI._CubicAnchoredQuery{Float32, Float32}
     end
 
     @testset "Anchor idx field" begin
         x = collect(range(0.0, 1.0, 11))  # 10 intervals, h=0.1
 
         # Interior points
-        aq1 = FI._anchor_query(x, 0.05)
+        aq1 = FI._anchor_query(x, 0.05, Val(:cubic))
         @test aq1.idx == 1  # [0.0, 0.1)
 
-        aq2 = FI._anchor_query(x, 0.15)
+        aq2 = FI._anchor_query(x, 0.15, Val(:cubic))
         @test aq2.idx == 2  # [0.1, 0.2)
 
-        aq3 = FI._anchor_query(x, 0.95)
+        aq3 = FI._anchor_query(x, 0.95, Val(:cubic))
         @test aq3.idx == 10  # [0.9, 1.0]
 
         # At grid points
-        aq_left = FI._anchor_query(x, 0.0)
+        aq_left = FI._anchor_query(x, 0.0, Val(:cubic))
         @test aq_left.idx == 1
 
-        aq_right = FI._anchor_query(x, 1.0)
+        aq_right = FI._anchor_query(x, 1.0, Val(:cubic))
         @test aq_right.idx == 10  # last interval
     end
 
@@ -191,22 +191,22 @@
         x = collect(range(0.0, 1.0, 11))
 
         # Interior: side = 0
-        aq_inside = FI._anchor_query(x, 0.5)
+        aq_inside = FI._anchor_query(x, 0.5, Val(:cubic))
         @test aq_inside.side == 0x00
 
         # At boundaries: side = 0 (still inside domain)
-        aq_left_bound = FI._anchor_query(x, 0.0)
+        aq_left_bound = FI._anchor_query(x, 0.0, Val(:cubic))
         @test aq_left_bound.side == 0x00
 
-        aq_right_bound = FI._anchor_query(x, 1.0)
+        aq_right_bound = FI._anchor_query(x, 1.0, Val(:cubic))
         @test aq_right_bound.side == 0x00
 
         # Below minimum: side = 1
-        aq_below = FI._anchor_query(x, -0.5)
+        aq_below = FI._anchor_query(x, -0.5, Val(:cubic))
         @test aq_below.side == 0x01
 
         # Above maximum: side = 2
-        aq_above = FI._anchor_query(x, 1.5)
+        aq_above = FI._anchor_query(x, 1.5, Val(:cubic))
         @test aq_above.side == 0x02
     end
 
@@ -215,7 +215,7 @@
 
         xq_values = [0.0, 0.35, 0.5, 1.0, -0.5, 1.5]
         for xq in xq_values
-            aq = FI._anchor_query(x, xq)
+            aq = FI._anchor_query(x, xq, Val(:cubic))
             @test aq.xq == xq
         end
     end
@@ -224,12 +224,12 @@
         x = collect(range(0.0, 1.0, 11))
 
         # Int query should be promoted
-        aq_int = FI._anchor_query(x, 0)
+        aq_int = FI._anchor_query(x, 0, Val(:cubic))
         @test aq_int.xq isa Float64
         @test aq_int.xq ≈ 0.0
 
         # Rational query should be promoted
-        aq_rat = FI._anchor_query(x, 1//2)
+        aq_rat = FI._anchor_query(x, 1//2, Val(:cubic))
         @test aq_rat.xq isa Float64
         @test aq_rat.xq ≈ 0.5
     end
@@ -238,13 +238,13 @@
         x = collect(range(0.0, 1.0, 101))
         xq = 0.35
 
-        aq = FI._anchor_query(x, xq)
+        aq = FI._anchor_query(x, xq, Val(:cubic))
         @test aq.w0 isa NTuple{4, Float64}
         @test aq.w1 isa NTuple{4, Float64}
         @test aq.w2 isa NTuple{2, Float64}  # Optimized: only (wzL, wzR)
         @test aq.w3 isa NTuple{2, Float64}  # Optimized: only (wzL, wzR)
 
-        aq32 = FI._anchor_query(Float32.(x), Float32(xq))
+        aq32 = FI._anchor_query(Float32.(x), Float32(xq), Val(:cubic))
         @test aq32.w0 isa NTuple{4, Float32}
         @test aq32.w1 isa NTuple{4, Float32}
         @test aq32.w2 isa NTuple{2, Float32}  # Optimized: only (wzL, wzR)
@@ -256,20 +256,20 @@
 
         # Query outside domain with wrap=true should wrap
         xq_outside = 2π + 1.0  # wraps to ~1.0
-        aq_wrapped = FI._anchor_query(x, xq_outside; wrap=true)
+        aq_wrapped = FI._anchor_query(x, xq_outside, Val(:cubic); wrap=true)
 
         # Should be inside after wrapping
         @test aq_wrapped.side == 0x00
         @test aq_wrapped.xq != xq_outside  # xq is wrapped value
 
         # Without wrap, should be outside
-        aq_nowrap = FI._anchor_query(x, xq_outside; wrap=false)
+        aq_nowrap = FI._anchor_query(x, xq_outside, Val(:cubic); wrap=false)
         @test aq_nowrap.side == 0x02  # above max
     end
 
     @testset "Invalid deriv argument" begin
         x = collect(range(0.0, 1.0, 101))
-        aq = FI._anchor_query(x, 0.5)
+        aq = FI._anchor_query(x, 0.5, Val(:cubic))
         itp = cubic_interp(x, sin.(2π .* x))
         @test_throws ArgumentError itp(aq; deriv=-1)
         @test_throws ArgumentError itp(aq; deriv=4)
@@ -283,32 +283,32 @@
         x = collect(range(0.0, 1.0, 101))
         xq = [0.15, 0.35, 0.5, 0.75]
 
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         @test length(aq_vec) == 4
-        @test all(aq -> aq isa FI._CubicAnchoredQuery{Float64}, aq_vec)
+        @test all(aq -> aq isa FI._CubicAnchoredQuery{Float64, Float64}, aq_vec)
         @test all(aq -> aq.side == 0x00, aq_vec)  # All inside domain
     end
 
     @testset "Vector anchor - type promotion" begin
         x = collect(range(0.0, 1.0, 101))
         xq_f32 = Float32[0.15, 0.35, 0.5]
-        aq_vec = FI._anchor_query(x, xq_f32)
+        aq_vec = FI._anchor_query(x, xq_f32, Val(:cubic))
 
-        @test all(aq -> aq isa FI._CubicAnchoredQuery{Float64}, aq_vec)
+        @test all(aq -> aq isa FI._CubicAnchoredQuery{Float64, Float64}, aq_vec)
     end
 
     @testset "Vector anchor - wrap=true" begin
         x = collect(range(0.0, 1.0, 101))
         xq = [-0.3, 1.3, 2.5]
-        aq_vec = FI._anchor_query(x, xq; wrap=true)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic); wrap=true)
 
         @test all(aq -> aq.side == 0x00, aq_vec)  # All wrapped to inside
     end
 
     @testset "Vector anchor - empty input" begin
         x = collect(range(0.0, 1.0, 101))
-        aq_vec = FI._anchor_query(x, Float64[])
+        aq_vec = FI._anchor_query(x, Float64[], Val(:cubic))
 
         @test length(aq_vec) == 0
     end
@@ -323,7 +323,7 @@
         itp = cubic_interp(x, y; extrap=:extension)
 
         xq = [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
         vals = itp(aq_vec)
 
         @test length(vals) == length(xq)
@@ -337,7 +337,7 @@
         itp = cubic_interp(x, sin.(x); extrap=:none)
 
         xq = [-0.1, 0.5, 1.1]  # First is out of domain
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         @test_throws DomainError itp(aq_vec)
     end
@@ -348,7 +348,7 @@
         itp = cubic_interp(x, y; extrap=:constant)
 
         xq = [-0.5, 0.5, 1.5]
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
         vals = itp(aq_vec)
 
         @test vals[1] ≈ y[1]
@@ -362,7 +362,7 @@
         itp = cubic_interp(x, y; extrap=:extension)
 
         xq = [-0.1, 0.5, 1.1]
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
         vals = itp(aq_vec)
 
         for (i, xq_i) in enumerate(xq)
@@ -376,7 +376,7 @@
         itp = cubic_interp(x, y; extrap=:extension)
 
         xq = [0.15, 0.35, 0.5, 0.75]
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
         output = Vector{Float64}(undef, 4)
 
         result = itp(output, aq_vec)
@@ -393,7 +393,7 @@
         itp = cubic_interp(x, y; extrap=:extension)
 
         xq = [0.15, 0.5, 0.85]
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         for deriv in [1, 2]
             vals = itp(aq_vec; deriv=deriv)
@@ -407,7 +407,7 @@
         x = collect(range(0.0, 1.0, 101))
         itp = cubic_interp(x, sin.(x))
 
-        aq_vec = FI._anchor_query(x, [0.15, 0.35, 0.5])
+        aq_vec = FI._anchor_query(x, [0.15, 0.35, 0.5], Val(:cubic))
         output = Vector{Float64}(undef, 2)  # Wrong size
 
         @test_throws AssertionError itp(output, aq_vec)
@@ -419,7 +419,7 @@
         itp = cubic_interp(x, y; extrap=:constant)
 
         xq = [-0.5, 0.5, 1.5]
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         derivs = itp(aq_vec; deriv=1)
         @test derivs[1] == 0.0
@@ -431,7 +431,7 @@
         itp = cubic_interp(x, sin.(x))
 
         xq = collect(range(0.1, 0.9, 50))
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
         output = similar(xq)
 
         # Warmup
@@ -449,7 +449,7 @@
         itp3 = cubic_interp(x, exp.(-3 .* x))
 
         xq = [0.15, 0.35, 0.5, 0.75]
-        aq_vec = FI._anchor_query(x, xq)  # Anchors computed once
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))  # Anchors computed once
 
         @test itp1(aq_vec) ≈ [itp1(q) for q in xq] atol=1e-14
         @test itp2(aq_vec) ≈ [itp2(q) for q in xq] atol=1e-14
@@ -462,7 +462,7 @@
         itp = cubic_interp(x, y; extrap=:wrap)
 
         xq = [-0.3, 1.3, 2.5]
-        aq_vec = FI._anchor_query(x, xq; wrap=true)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic); wrap=true)
         vals = itp(aq_vec)
 
         for (i, xq_i) in enumerate(xq)
@@ -479,7 +479,7 @@
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
         itp = cubic_interp(x, y; extrap=:extension)
-        aq = FI._anchor_query(x, 0.5)
+        aq = FI._anchor_query(x, 0.5, Val(:cubic))
 
         # Warmup all derivative orders
         itp(aq)
@@ -505,7 +505,7 @@
         itp = cubic_interp(x, y; extrap=:extension)
 
         xq = collect(range(0.1, 0.9, 50))
-        aq_vec = FI._anchor_query(x, xq)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic))
         output = similar(xq)
 
         # Warmup all derivative orders
@@ -536,11 +536,11 @@
             xq = [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
 
             # Reference: allocating version
-            expected = FI._anchor_query(x, xq)
+            expected = FI._anchor_query(x, xq, Val(:cubic))
 
             # In-place version
-            buffer = Vector{FI._CubicAnchoredQuery{Float64}}(undef, length(xq))
-            FI._fill_anchors!(buffer, x, xq)
+            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64}}(undef, length(xq))
+            FI._fill_anchors!(buffer, x, xq, Val(:cubic))
 
             # Verify all fields match exactly (bit-wise)
             for i in eachindex(xq)
@@ -558,11 +558,11 @@
             xq = [-0.3, 0.5, 1.3, 2.5]  # First and last two outside domain
 
             # Reference
-            expected = FI._anchor_query(x, xq; wrap=true)
+            expected = FI._anchor_query(x, xq, Val(:cubic); wrap=true)
 
             # In-place
-            buffer = Vector{FI._CubicAnchoredQuery{Float64}}(undef, length(xq))
-            FI._fill_anchors!(buffer, x, xq; wrap=true)
+            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64}}(undef, length(xq))
+            FI._fill_anchors!(buffer, x, xq, Val(:cubic); wrap=true)
 
             for i in eachindex(xq)
                 @test buffer[i].idx == expected[i].idx
@@ -575,41 +575,41 @@
         @testset "length assertion when buffer too small" begin
             x = collect(range(0.0, 1.0, 101))
             xq = [0.15, 0.35, 0.5, 0.75]  # 4 points
-            buffer = Vector{FI._CubicAnchoredQuery{Float64}}(undef, 2)  # Only 2 slots
+            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64}}(undef, 2)  # Only 2 slots
 
-            @test_throws AssertionError FI._fill_anchors!(buffer, x, xq)
+            @test_throws AssertionError FI._fill_anchors!(buffer, x, xq, Val(:cubic))
         end
 
         @testset "empty vector case" begin
             x = collect(range(0.0, 1.0, 101))
             xq = Float64[]
-            buffer = Vector{FI._CubicAnchoredQuery{Float64}}(undef, 0)
+            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64}}(undef, 0)
 
             # Should not throw
-            FI._fill_anchors!(buffer, x, xq)
+            FI._fill_anchors!(buffer, x, xq, Val(:cubic))
             @test length(buffer) == 0
         end
 
-        @testset "type promotion (Float32 grid with Float64 queries)" begin
+        @testset "type matching (Float32 grid and queries)" begin
             x = Float32.(collect(range(0.0f0, 1.0f0, 101)))
-            xq = [0.15, 0.35, 0.5]  # Float64 queries
+            xq = Float32[0.15f0, 0.35f0, 0.5f0]  # Float32 queries
 
-            buffer = Vector{FI._CubicAnchoredQuery{Float32}}(undef, length(xq))
-            FI._fill_anchors!(buffer, x, xq)
+            buffer = Vector{FI._CubicAnchoredQuery{Float32, Float32}}(undef, length(xq))
+            FI._fill_anchors!(buffer, x, xq, Val(:cubic))
 
-            @test all(aq -> aq isa FI._CubicAnchoredQuery{Float32}, buffer)
+            @test all(aq -> aq isa FI._CubicAnchoredQuery{Float32, Float32}, buffer)
         end
 
         @testset "zero allocation after warmup" begin
             x = collect(range(0.0, 1.0, 101))
             xq = collect(range(0.1, 0.9, 50))
-            buffer = Vector{FI._CubicAnchoredQuery{Float64}}(undef, length(xq))
+            buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64}}(undef, length(xq))
 
             # Warmup
-            FI._fill_anchors!(buffer, x, xq)
+            FI._fill_anchors!(buffer, x, xq, Val(:cubic))
 
             # Measure
-            allocs = @allocated FI._fill_anchors!(buffer, x, xq)
+            allocs = @allocated FI._fill_anchors!(buffer, x, xq, Val(:cubic))
             @test allocs <= ALLOC_THRESHOLD
         end
     end
@@ -628,7 +628,7 @@
             x = collect(range(0.0, 1.0, 101))
             xq = 0.35
 
-            aq = FI._anchor_query(x, xq)
+            aq = FI._anchor_query(x, xq, Val(:cubic))
 
             # After optimization, w2 and w3 should only store (wzL, wzR)
             # These will FAIL until Phase 2 implementation
@@ -640,7 +640,7 @@
             @test length(aq.w1) == 4
 
             # Float32 should work the same way
-            aq32 = FI._anchor_query(Float32.(x), Float32(xq))
+            aq32 = FI._anchor_query(Float32.(x), Float32(xq), Val(:cubic))
             @test length(aq32.w2) == 2
             @test length(aq32.w3) == 2
             @test aq32.w2 isa NTuple{2, Float32}
@@ -657,7 +657,7 @@
             test_points = [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
 
             for xq in test_points
-                aq = FI._anchor_query(x, xq)
+                aq = FI._anchor_query(x, xq, Val(:cubic))
 
                 # Second derivative
                 anchored_d2 = itp(aq; deriv=2)
@@ -676,7 +676,7 @@
             x = collect(range(0.0, 1.0, 101))
             y = sin.(2π .* x)
             itp = cubic_interp(x, y; extrap=:extension)
-            aq = FI._anchor_query(x, 0.5)
+            aq = FI._anchor_query(x, 0.5, Val(:cubic))
 
             # Scalar anchored evaluation should be type-stable
             @test (@inferred itp(aq; deriv=2)) isa Float64
@@ -684,7 +684,7 @@
 
             # Vector evaluation should also be type-stable
             xq_vec = [0.15, 0.5, 0.85]
-            aq_vec = FI._anchor_query(x, xq_vec)
+            aq_vec = FI._anchor_query(x, xq_vec, Val(:cubic))
 
             d2_vec = @inferred itp(aq_vec; deriv=2)
             @test d2_vec isa Vector{Float64}
@@ -702,8 +702,8 @@
 
             # Test :extension mode
             itp_ext = cubic_interp(x, y; extrap=:extension)
-            aq_below = FI._anchor_query(x, -0.1)
-            aq_above = FI._anchor_query(x, 1.1)
+            aq_below = FI._anchor_query(x, -0.1, Val(:cubic))
+            aq_above = FI._anchor_query(x, 1.1, Val(:cubic))
 
             @test itp_ext(aq_below; deriv=2) ≈ itp_ext(-0.1; deriv=2) atol=1e-12
             @test itp_ext(aq_above; deriv=3) ≈ itp_ext(1.1; deriv=3) atol=1e-12
@@ -719,7 +719,7 @@
             x = collect(range(0.0, 1.0, 101))
             y = sin.(2π .* x)
             itp = cubic_interp(x, y; extrap=:extension)
-            aq = FI._anchor_query(x, 0.5)
+            aq = FI._anchor_query(x, 0.5, Val(:cubic))
 
             # Warmup
             itp(aq; deriv=2)
@@ -731,7 +731,7 @@
 
             # Vector in-place should also have zero allocation
             xq_vec = collect(range(0.1, 0.9, 50))
-            aq_vec = FI._anchor_query(x, xq_vec)
+            aq_vec = FI._anchor_query(x, xq_vec, Val(:cubic))
             output = similar(xq_vec)
 
             # Warmup

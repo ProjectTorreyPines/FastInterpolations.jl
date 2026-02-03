@@ -189,6 +189,83 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
     end
 
     # =========================================================================
+    # Wrapper functions with Integer grid types
+    # Tests that wrapper functions handle Integer → AbstractFloat conversion
+    # Note: Direct constructors require AbstractFloat grids
+    # =========================================================================
+    @testset "Wrapper functions with Integer grid" begin
+        @testset "linear_interp with Integer grid" begin
+            x_int = 0:10
+            y_float = sin.(Float64.(x_int))
+
+            # Wrapper function handles Integer → Float conversion
+            litp = @inferred linear_interp(x_int, y_float)
+            @test litp isa LinearInterpolant{Float64}
+            @test eltype(litp.x) === Float64
+
+            # Integer Vector grid
+            x_int_vec = [0, 1, 2, 3, 4]
+            y_int_vec = Float64[0, 1, 4, 9, 16]
+            litp_vec = @inferred linear_interp(x_int_vec, y_int_vec)
+            @test litp_vec isa LinearInterpolant{Float64}
+
+            # Verify interpolation works correctly
+            @test litp(5.5) isa Float64
+        end
+
+        @testset "constant_interp with Integer grid" begin
+            x_int = 1:5
+            y_float = Float64[10, 20, 30, 40, 50]
+
+            citp = @inferred constant_interp(x_int, y_float)
+            @test citp isa ConstantInterpolant{Float64}
+            @test eltype(citp.x) === Float64
+
+            # Integer Vector grid
+            x_int_vec = [1, 2, 3, 4, 5]
+            citp_vec = @inferred constant_interp(x_int_vec, y_float)
+            @test citp_vec isa ConstantInterpolant{Float64}
+
+            # Verify interpolation works correctly
+            @test citp(2.5) isa Float64
+        end
+
+        @testset "quadratic_interp with Integer grid" begin
+            x_int = 0:4
+            y_float = Float64.(collect(x_int).^2)  # y = x^2
+
+            qitp = @inferred quadratic_interp(x_int, y_float)
+            @test qitp isa QuadraticInterpolant{Float64}
+            @test eltype(qitp.x) === Float64
+
+            # Integer Vector grid
+            x_int_vec = [0, 1, 2, 3, 4]
+            qitp_vec = @inferred quadratic_interp(x_int_vec, y_float)
+            @test qitp_vec isa QuadraticInterpolant{Float64}
+
+            # Verify interpolation works correctly
+            @test qitp(2.5) isa Float64
+        end
+
+        @testset "Mixed Integer x, Integer y via wrappers" begin
+            # Both x and y as integers - wrappers handle conversion
+            x_int = [1, 2, 3, 4, 5]
+            y_int = [10, 20, 30, 40, 50]
+
+            litp = @inferred linear_interp(x_int, y_int)
+            @test litp isa LinearInterpolant{Float64}
+            @test eltype(litp.x) === Float64
+            @test eltype(litp.y) === Float64
+
+            citp = @inferred constant_interp(x_int, y_int)
+            @test citp isa ConstantInterpolant{Float64}
+
+            qitp = @inferred quadratic_interp(x_int, y_int)
+            @test qitp isa QuadraticInterpolant{Float64}
+        end
+    end
+
+    # =========================================================================
     # Unified extrap field naming verification
     # All interpolant types should have .extrap field (not .mode)
     # =========================================================================

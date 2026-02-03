@@ -96,11 +96,11 @@ end
 # Real wrapper for convenience (scalar)
 @inline function _anchor_query(
     x::AbstractVector{T},
-    xq::S,
+    xq::Tq,
     tag::Val{:constant};
     wrap::Bool=false,
     searcher::Searcher=DEFAULT_SEARCHER
-) where {T<:AbstractFloat, S<:Real}
+) where {T<:AbstractFloat, Tq<:Real}
     _anchor_query(x, T(xq), tag; wrap=wrap, searcher=searcher)
 end
 

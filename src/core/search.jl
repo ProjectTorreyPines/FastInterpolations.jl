@@ -328,8 +328,12 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 # - If `xi == x[end]`, then `idx == length(x)-1`.
 # ----------------------------------------
 
+# ----------------------------------------
+# Core implementations (type-matched, optimized)
+# ----------------------------------------
+
 """
-    _search_direct(x::AbstractRange{T}, xi::T) where {T<:AbstractFloat}
+    _search_direct(x::AbstractRange{T}, xq::T) where {T<:AbstractFloat}
 
 O(1) direct index calculation for uniform grids (AbstractRange).
 Uses `unsafe_trunc` for ~40% faster index calculation.
@@ -337,33 +341,33 @@ Uses `unsafe_trunc` for ~40% faster index calculation.
 Unlike `_search_binary`, this function computes the interval index directly
 via arithmetic rather than iterative search, exploiting uniform grid spacing.
 """
-@inline function _search_direct(x::AbstractRange{T}, xi::T) where {T<:AbstractFloat}
+@inline function _search_direct(x::AbstractRange{T}, xq::T) where {T<:AbstractFloat}
     n = length(x)
     x_min = first(x)
     dx = Base.step(x)
-    idx = clamp(unsafe_trunc(Int, (xi - x_min) / dx + 1), 1, n - 1)
+    idx = clamp(unsafe_trunc(Int, (xq - x_min) / dx + 1), 1, n - 1)
     xL = muladd(idx - 1, dx, x_min)
     xR = xL + dx
     return idx, xL, xR
 end
 
 """
-    _search_binary(x::AbstractVector{T}, xi::T) where {T<:AbstractFloat}
+    _search_binary(x::AbstractVector{T}, xq::T) where {T<:Real}
 
 O(log n) binary search for non-uniform grids (AbstractVector).
 """
-@inline function _search_binary(x::AbstractVector{T}, xi::T) where {T<:AbstractFloat}
+@inline function _search_binary(x::AbstractVector{T}, xq::T) where {T<:Real}
     n = length(x)
     @inbounds begin
-        if xi <= x[1]
+        if xq <= x[1]
             idx = 1
-        elseif xi >= x[end]
+        elseif xq >= x[end]
             idx = n - 1
         else
             lo, hi = 1, n
             while hi - lo > 1
                 mid = (lo + hi) >> 1
-                if x[mid] <= xi
+                if x[mid] <= xq
                     lo = mid
                 else
                     hi = mid
@@ -377,72 +381,126 @@ O(log n) binary search for non-uniform grids (AbstractVector).
 end
 
 """
-    _search_direct(x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T)
+    _search_direct(x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::T)
 
 Spacing-aware O(1) direct calculation for ScalarSpacing.
 Uses pre-computed `inv_h` for multiplication instead of division.
 """
 @inline function _search_direct(
-    x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T
+    x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::T
 ) where {T<:AbstractFloat}
     n = length(x)
     x_min = first(x)
-    idx = clamp(unsafe_trunc(Int, (xi - x_min) * spacing.inv_h + 1), 1, n - 1)
+    idx = clamp(unsafe_trunc(Int, (xq - x_min) * spacing.inv_h + 1), 1, n - 1)
     xL = muladd(idx - 1, spacing.h, x_min)
     xR = xL + spacing.h
     return idx, xL, xR
 end
 
 """
-    _search_binary(x::AbstractVector{T}, ::AbstractGridSpacing{T}, xi::T)
+    _search_binary(x::AbstractVector{T}, ::AbstractGridSpacing{T}, xq::T)
 
 VectorSpacing delegates to non-spacing version.
 """
 @inline function _search_binary(
-    x::AbstractVector{T}, ::AbstractGridSpacing{T}, xi::T
-) where {T<:AbstractFloat}
-    return _search_binary(x, xi)
+    x::AbstractVector{T}, ::AbstractGridSpacing{T}, xq::T
+) where {T<:Real}
+    return _search_binary(x, xq)
+end
+
+# ----------------------------------------
+# Generic wrappers (type-mismatched → convert → optimized)
+# ----------------------------------------
+#
+# These handle cases where query type (Tq) differs from grid type (Tg).
+# They extract primal value (for AD support), convert to grid type,
+# then dispatch to the optimized type-matched versions above.
+#
+# Julia's multiple dispatch automatically selects:
+#   - Tq == Tg → optimized version directly (no conversion overhead)
+#   - Tq != Tg → generic wrapper → convert → optimized version
+
+"""
+    _search_direct(x::AbstractRange{Tg}, xq::Tq) where {Tg<:AbstractFloat, Tq<:Real}
+
+Generic wrapper: converts query to grid type, then calls optimized version.
+"""
+@inline function _search_direct(x::AbstractRange{Tg}, xq::Tq) where {Tg<:AbstractFloat, Tq<:Real}
+    return _search_direct(x, _to_grid_type(xq, Tg))
+end
+
+"""
+    _search_binary(x::AbstractVector{Tg}, xq::Tq) where {Tg<:Real, Tq<:Real}
+
+Generic wrapper: converts query to grid type, then calls optimized version.
+"""
+@inline function _search_binary(x::AbstractVector{Tg}, xq::Tq) where {Tg<:Real, Tq<:Real}
+    return _search_binary(x, _to_grid_type(xq, Tg))
+end
+
+"""
+    _search_direct(x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Tq)
+
+Generic wrapper with spacing: converts query to grid type, then calls optimized version.
+"""
+@inline function _search_direct(x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Tq) where {Tg<:AbstractFloat, Tq<:Real}
+    return _search_direct(x, spacing, _to_grid_type(xq, Tg))
+end
+
+"""
+    _search_binary(x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Tq)
+
+Generic wrapper with spacing: converts query to grid type, then calls optimized version.
+"""
+@inline function _search_binary(x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Tq) where {Tg<:Real, Tq<:Real}
+    return _search_binary(x, spacing, _to_grid_type(xq, Tg))
 end
 
 # ========================================
 # 3. Hinted Search Implementations
 # ========================================
+#
+# Core implementations (type-matched) followed by generic wrappers.
+
+# ----------------------------------------
+# Core hinted implementations (type-matched)
+# ----------------------------------------
 
 """
-    _search_hinted_binary!(x, xi, hint_ref) -> (idx, xL, xR)
+    _search_hinted_binary!(x, xq, hint_ref) -> (idx, xL, xR)
 
 Cached binary search: O(1) if hint valid, O(log n) fallback.
 Updates `hint_ref` with the found interval index.
 """
 @inline function _search_hinted_binary!(
-    x::AbstractVector{T}, xi::T, hint_ref::Base.RefValue{Int}
-) where {T<:AbstractFloat}
+    x::AbstractVector{T}, xq::T, hint_ref::Base.RefValue{Int}
+) where {T<:Real}
     ix = hint_ref[]
     n = length(x)
-    @inbounds if 1 <= ix <= n - 1 && x[ix] <= xi < x[ix + 1]
+    @inbounds if 1 <= ix <= n - 1 && x[ix] <= xq < x[ix + 1]
         return ix, x[ix], x[ix + 1]
     end
-    idx, xL, xR = _search_binary(x, xi)
+    idx, xL, xR = _search_binary(x, xq)
     hint_ref[] = idx
     return idx, xL, xR
 end
 
 """
-    _search_linear!(x, xi, hint_ref) -> (idx, xL, xR)
+    _search_linear!(x, xq, hint_ref) -> (idx, xL, xR)
 
 Pure linear search: walks from hint until interval found.
 No bounds checking (except initial clamp), no binary fallback.
 
 # Safety Contract
-- Caller guarantees `x[1] <= xi <= x[end]` (within domain)
+- Caller guarantees `x[1] <= xq <= x[end]` (within domain)
 - Caller guarantees monotonic query progression
 - Hint is clamped once at start, then trusted
 """
 @inline function _search_linear!(
     x::AbstractVector{T},
-    xi::T,
+    xq::T,
     hint_ref::Base.RefValue{Int},
-) where {T<:AbstractFloat}
+) where {T<:Real}
     ix = hint_ref[]
     n = length(x)
     @inbounds begin
@@ -450,17 +508,17 @@ No bounds checking (except initial clamp), no binary fallback.
         ix = clamp(ix, 1, n - 1)
 
         # Direct hit - most common case for monotonic queries
-        if x[ix] <= xi < x[ix + 1]
+        if x[ix] <= xq < x[ix + 1]
             return ix, x[ix], x[ix + 1]
         end
 
         # Linear walk - NO bounds check, NO fallback
-        if xi < x[ix]
-            while x[ix] > xi
+        if xq < x[ix]
+            while x[ix] > xq
                 ix -= 1
             end
-        else  # xi >= x[ix + 1]
-            while x[ix + 1] <= xi
+        else  # xq >= x[ix + 1]
+            while x[ix + 1] <= xq
                 ix += 1
             end
         end
@@ -470,30 +528,30 @@ No bounds checking (except initial clamp), no binary fallback.
 end
 
 """
-    _search_linear_binary!(x, xi, hint_ref, ::Val{MAX}) -> (idx, xL, xR)
+    _search_linear_binary!(x, xq, hint_ref, ::Val{MAX}) -> (idx, xL, xR)
 
 Bounded linear search within MAX-sized window, then binary fallback.
 Optimal for monotonic query sequences.
 """
 @inline function _search_linear_binary!(
     x::AbstractVector{T},
-    xi::T,
+    xq::T,
     hint_ref::Base.RefValue{Int},
     ::Val{MAX},
-) where {T<:AbstractFloat,MAX}
+) where {T<:Real,MAX}
     ix = hint_ref[]
     n = length(x)
     @inbounds begin
         ix = clamp(ix, 1, n - 1)
-        if x[ix] <= xi < x[ix + 1]
+        if x[ix] <= xq < x[ix + 1]
             hint_ref[] = ix
             return ix, x[ix], x[ix + 1]
         end
-        if xi < x[ix]
+        if xq < x[ix]
             for _ in 1:MAX
                 ix -= 1
                 ix < 1 && break
-                if x[ix] <= xi < x[ix + 1]
+                if x[ix] <= xq < x[ix + 1]
                     hint_ref[] = ix
                     return ix, x[ix], x[ix + 1]
                 end
@@ -502,120 +560,125 @@ Optimal for monotonic query sequences.
             for _ in 1:MAX
                 ix += 1
                 ix > n - 1 && break
-                if x[ix] <= xi < x[ix + 1]
+                if x[ix] <= xq < x[ix + 1]
                     hint_ref[] = ix
                     return ix, x[ix], x[ix + 1]
                 end
             end
         end
     end
-    idx, xL, xR = _search_binary(x, xi)
+    idx, xL, xR = _search_binary(x, xq)
     hint_ref[] = idx
     return idx, xL, xR
+end
+
+# ----------------------------------------
+# Generic wrappers for hinted search (type-mismatched)
+# ----------------------------------------
+
+"""Generic wrapper for hinted binary search."""
+@inline function _search_hinted_binary!(x::AbstractVector{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg<:Real, Tq<:Real}
+    return _search_hinted_binary!(x, _to_grid_type(xq, Tg), hint_ref)
+end
+
+"""Generic wrapper for linear search."""
+@inline function _search_linear!(x::AbstractVector{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg<:Real, Tq<:Real}
+    return _search_linear!(x, _to_grid_type(xq, Tg), hint_ref)
+end
+
+"""Generic wrapper for linear-binary search."""
+@inline function _search_linear_binary!(x::AbstractVector{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}, v::Val{MAX}) where {Tg<:Real, Tq<:Real, MAX}
+    return _search_linear_binary!(x, _to_grid_type(xq, Tg), hint_ref, v)
 end
 
 # ========================================
 # 4. Main Dispatcher (search_interval)
 # ========================================
+#
+# Design: Thin dispatchers delegate to internal functions.
+# Type conversion happens in _search_* generic wrappers, not here.
+# This eliminates code duplication and centralizes conversion logic.
+#
+# Naming Convention:
+#   - Tg: Grid element type (from x::AbstractVector{Tg})
+#   - Tq: Query type (can be Float, Int, Dual, etc.)
+#   - xq: Query point (x query)
 
 # --- Default: Binary + NoHint (zero-overhead) ---
 
-@inline search_interval(::Searcher{Binary,NoHint}, x::AbstractVector{T}, xi::T) where {T} =
-    _search_binary(x, xi)
+@inline search_interval(::Searcher{Binary,NoHint}, x::AbstractVector, xq::Real) =
+    _search_binary(x, xq)
 
-@inline search_interval(::Searcher{Binary,NoHint}, x::AbstractRange{T}, xi::T) where {T} =
-    _search_direct(x, xi)
+@inline search_interval(::Searcher{Binary,NoHint}, x::AbstractRange, xq::Real) =
+    _search_direct(x, xq)
 
-@inline search_interval(::Searcher{Binary,NoHint}, x, spacing, xi) =
-    _search_interval(x, spacing, xi)
+@inline search_interval(::Searcher{Binary,NoHint}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg} =
+    _search_binary(x, spacing, xq)
+
+@inline search_interval(::Searcher{Binary,NoHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
+    _search_direct(x, spacing, xq)
 
 # --- HintedBinary + RefHint ---
 
-@inline function search_interval(
-    p::Searcher{HintedBinary,RefHint}, x::AbstractVector{T}, xi::T
-) where {T}
-    return _search_hinted_binary!(x, xi, p.hint.idx)
+@inline function search_interval(p::Searcher{HintedBinary,RefHint}, x::AbstractVector, xq::Real)
+    return _search_hinted_binary!(x, xq, p.hint.idx)
 end
 
 # Range always uses O(1) direct - hint ignored
-@inline search_interval(::Searcher{HintedBinary,RefHint}, x::AbstractRange{T}, xi::T) where {T} =
-    _search_direct(x, xi)
+@inline search_interval(::Searcher{HintedBinary,RefHint}, x::AbstractRange, xq::Real) =
+    _search_direct(x, xq)
 
 # --- Linear + RefHint ---
 
-@inline function search_interval(
-    p::Searcher{Linear,RefHint}, x::AbstractVector{T}, xi::T
-) where {T}
-    return _search_linear!(x, xi, p.hint.idx)
+@inline function search_interval(p::Searcher{Linear,RefHint}, x::AbstractVector, xq::Real)
+    return _search_linear!(x, xq, p.hint.idx)
 end
 
 # Range always uses O(1) direct - hint ignored
-@inline search_interval(::Searcher{Linear,RefHint}, x::AbstractRange{T}, xi::T) where {T} =
-    _search_direct(x, xi)
+@inline search_interval(::Searcher{Linear,RefHint}, x::AbstractRange, xq::Real) =
+    _search_direct(x, xq)
 
 # --- LinearBinary{MAX} + RefHint ---
 
-@inline function search_interval(
-    p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractVector{T}, xi::T
-) where {MAX,T}
-    return _search_linear_binary!(x, xi, p.hint.idx, Val(MAX))
+@inline function search_interval(p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractVector, xq::Real) where {MAX}
+    return _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 end
 
-@inline search_interval(
-    ::Searcher{LinearBinary{MAX},RefHint},
-    x::AbstractRange{T},
-    xi::T,
-) where {MAX,T} =
-    _search_direct(x, xi)
+@inline search_interval(::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange, xq::Real) where {MAX} =
+    _search_direct(x, xq)
 
 # --- Spacing-aware overloads ---
 # For uniform grids (AbstractRange + ScalarSpacing): always O(1) direct
 # For non-uniform grids (AbstractVector + VectorSpacing): delegate to standard search
 
 # HintedBinary + spacing
-@inline function search_interval(
-    p::Searcher{HintedBinary,RefHint}, x::AbstractVector{T}, ::AbstractGridSpacing{T}, xi::T
-) where {T}
-    return _search_hinted_binary!(x, xi, p.hint.idx)
-end
+@inline search_interval(p::Searcher{HintedBinary,RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) =
+    _search_hinted_binary!(x, xq, p.hint.idx)
 
-@inline search_interval(
-    ::Searcher{HintedBinary,RefHint}, x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T
-) where {T} =
-    _search_direct(x, spacing, xi)
+@inline search_interval(::Searcher{HintedBinary,RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) =
+    _search_direct(x, spacing, xq)
 
 # Linear + spacing
-@inline function search_interval(
-    p::Searcher{Linear,RefHint}, x::AbstractVector{T}, ::AbstractGridSpacing{T}, xi::T
-) where {T}
-    return _search_linear!(x, xi, p.hint.idx)
-end
+@inline search_interval(p::Searcher{Linear,RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) =
+    _search_linear!(x, xq, p.hint.idx)
 
-@inline search_interval(
-    ::Searcher{Linear,RefHint}, x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T
-) where {T} =
-    _search_direct(x, spacing, xi)
+@inline search_interval(::Searcher{Linear,RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) =
+    _search_direct(x, spacing, xq)
 
 # LinearBinary + spacing
-@inline function search_interval(
-    p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractVector{T}, ::AbstractGridSpacing{T}, xi::T
-) where {MAX,T}
-    return _search_linear_binary!(x, xi, p.hint.idx, Val(MAX))
-end
+@inline search_interval(p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) where {MAX} =
+    _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 
-@inline search_interval(
-    ::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange{T}, spacing::ScalarSpacing{T}, xi::T
-) where {MAX,T} =
-    _search_direct(x, spacing, xi)
+@inline search_interval(::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) where {MAX} =
+    _search_direct(x, spacing, xq)
 
 # ========================================
 # 5. Internal Aliases (for module-internal use)
 # ========================================
 # For module-internal use without explicit policy.
-# These dispatch to the appropriate implementation based on grid type.
+# Pure delegation to _search_binary/_search_direct which have generic wrappers.
 
-@inline _search_interval(x::AbstractVector, xi) = _search_binary(x, xi)
-@inline _search_interval(x::AbstractRange, xi) = _search_direct(x, xi)
-@inline _search_interval(x::AbstractVector, spacing, xi) = _search_binary(x, spacing, xi)
-@inline _search_interval(x::AbstractRange, spacing, xi) = _search_direct(x, spacing, xi)
-
+@inline _search_interval(x::AbstractVector, xq::Real) = _search_binary(x, xq)
+@inline _search_interval(x::AbstractRange, xq::Real) = _search_direct(x, xq)
+@inline _search_interval(x::AbstractVector, spacing::AbstractGridSpacing, xq::Real) = _search_binary(x, spacing, xq)
+@inline _search_interval(x::AbstractRange, spacing::ScalarSpacing, xq::Real) = _search_direct(x, spacing, xq)

@@ -309,10 +309,10 @@ using FastInterpolations
         end
 
         # -----------------------------------------
-        # Test 2: Float32 data + Float64 query → Float32 output
+        # Test 2: Float32 data + Float64 query → Float64 output (lossless promotion)
         # -----------------------------------------
-        # Tg = Float32 from x/y, query type (Float64) should not promote output
-        @testset "Float32 data + Float64 query → Float32" begin
+        # promote_type(Float32, Float64) = Float64 (wider type wins)
+        @testset "Float32 data + Float64 query → Float64 (lossless)" begin
             x32 = Float32.(0:0.1:1)
             y32 = sin.(x32)
 
@@ -320,18 +320,18 @@ using FastInterpolations
             itp = linear_interp(x32, y32)
             @test itp isa LinearInterpolant{Float32, Float32}
 
-            # Float64 query should return Float32 (Tg from x/y)
+            # Float64 query promotes output to Float64 (lossless - wider type)
             result = itp(0.5)  # 0.5 is Float64
-            @test result isa Float32  # NOT Float64
+            @test result isa Float64  # wider type wins
 
-            # 3-arg oneshot scalar
+            # 3-arg oneshot scalar - still uses internal Tv
             result_oneshot = linear_interp(x32, y32, 0.5)
-            @test result_oneshot isa Float32
+            @test result_oneshot isa Float32  # oneshot uses internal Tv
 
-            # Vector query with Float64 elements
+            # Vector query with Float64 elements → Float64 output
             xq = [0.25, 0.5, 0.75]  # Vector{Float64}
             results = itp(xq)
-            @test eltype(results) === Float32
+            @test eltype(results) === Float64
         end
 
         # -----------------------------------------

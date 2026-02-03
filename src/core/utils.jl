@@ -71,27 +71,6 @@ Determine the output value type from y element type and grid type.
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T<:Real, Tg<:AbstractFloat} = Tg
 @inline _value_type(::Type{Complex{T}}, ::Type{Tg}) where {T<:Real, Tg<:AbstractFloat} = Complex{Tg}
 
-"""
-    _needs_value_promotion(::Type{Tv}, ::Type{Tg}) -> Bool
-
-Check if value type `Tv` needs promotion to match grid type `Tg`.
-Returns `true` when the real base type of `Tv` differs from `Tg`.
-
-# Type Promotion Rules
-- Real types: promotes if differs from Tg (Int64→Float64, Float32→Float64)
-- Complex types: promotes if real part differs (Complex{Int}→Complex{Tg})
-- Same types: no promotion needed (Float64→Float64)
-
-# Examples
-```julia
-_needs_value_promotion(Int64, Float64)         # true  (Int → Float64)
-_needs_value_promotion(Float64, Float64)       # false (already Float64)
-_needs_value_promotion(Complex{Int64}, Float64) # true  (Int → Float64)
-_needs_value_promotion(ComplexF64, Float64)    # false (already Float64)
-```
-"""
-@inline _needs_value_promotion(::Type{Tv}, ::Type{Tg}) where {Tv, Tg<:AbstractFloat} =
-    _real_eltype(Tv) !== Tg
 
 """
     _promote_value_type(y, ::Type{Tg}) -> (Tv, y_converted)
@@ -129,36 +108,23 @@ Tuple of (Tv::Type, y_converted::AbstractVector{Tv})
     end
 end
 
-"""
-    _promote_xy(x, y, ::Type{Tg}) -> (x_typed, y_typed)
-
-Promote x and y to target grid type Tg.
-Preserves Range structure for x (O(1) lookup).
-
-# Returns
-Tuple of (x_typed::AbstractVector{Tg}, y_typed::AbstractVector{Tv})
-"""
-@inline function _promote_xy(x, y, ::Type{Tg}) where {Tg<:AbstractFloat}
-    x_typed = _to_float(x, Tg)
-    _, y_typed = _promote_value_type(y, Tg)
-    return x_typed, y_typed
-end
+# ========================================
+# Unified Input Promotion API
+# ========================================
 
 """
-    _ensure_promoted_xy(x, y) -> (x_typed, y_typed)
+    _promote_itp_inputs(x, y) -> (x_typed, y_typed)
 
-Automatically promote x and y to compatible types for interpolation.
-Eliminates manual type-checking branches at call sites.
+Promote grid (x) and values (y) to compatible Float types for interpolation.
 
 # Behavior
 - Computes target grid type: `Tg = float(promote_type(TX, _real_eltype(TY)))`
-- Converts x via `_to_float` (no-copy if already `Vector{Tg}`)
+- Converts x via `_to_float` (no-copy if already matching type, Range preserved)
 - Converts y via `_promote_value_type` (handles Real/Complex, no-copy if matching)
 
 # Zero-Overhead Guarantee
 - `@inline` enables compiler branch elimination
-- `_to_float` returns input unchanged for same-type vectors
-- `_promote_value_type` returns input unchanged when types match
+- Returns inputs unchanged when types already match (zero allocation)
 
 # Examples
 ```julia
@@ -166,15 +132,15 @@ x = [0.0, 1.0, 2.0]           # Float64 grid
 y_int = [1, 2, 3]             # Int64 values
 y_cplx = Complex{Int}[1+2im]  # Complex{Int} values
 
-x_p, y_p = _ensure_promoted_xy(x, y_int)   # y_p is Float64[]
-x_p, y_p = _ensure_promoted_xy(x, y_cplx)  # y_p is ComplexF64[]
+x_p, y_p = _promote_itp_inputs(x, y_int)   # y_p is Float64[]
+x_p, y_p = _promote_itp_inputs(x, y_cplx)  # y_p is ComplexF64[]
 
 # Integer grid also supported
 x_int = [0, 1, 2, 3]
-x_p, y_p = _ensure_promoted_xy(x_int, y_cplx)  # x_p is Float64[], y_p is ComplexF64[]
+x_p, y_p = _promote_itp_inputs(x_int, y_cplx)  # x_p is Float64[], y_p is ComplexF64[]
 ```
 """
-@inline function _ensure_promoted_xy(
+@inline function _promote_itp_inputs(
     x::AbstractVector{TX},
     y::AbstractVector{TY}
 ) where {TX<:Real, TY}
@@ -182,6 +148,40 @@ x_p, y_p = _ensure_promoted_xy(x_int, y_cplx)  # x_p is Float64[], y_p is Comple
     x_typed = _to_float(x, Tg)
     _, y_typed = _promote_value_type(y, Tg)
     return x_typed, y_typed
+end
+
+"""
+    _promote_itp_inputs(x, y, xq::AbstractVector) -> (x_typed, y_typed, xq_typed)
+
+Promote grid (x), values (y), and vector query (xq) to compatible Float types.
+
+# Arguments
+- `x`: Grid coordinates (any Real type)
+- `y`: Values at grid points (Real or Complex)
+- `xq`: Query points (AbstractVector or AbstractRange)
+
+# Returns
+- `x_typed`: Grid converted to AbstractFloat
+- `y_typed`: Values converted to compatible type
+- `xq_typed`: Query converted to grid type (Range structure preserved via `_to_float`)
+
+# Fast-paths
+- When types already match, returns inputs unchanged (zero allocation)
+- Range inputs remain Range (not converted to Vector)
+
+# Note
+For scalar queries, use the 2-arg version and pass the query directly
+to preserve ForwardDiff.Dual types for automatic differentiation.
+"""
+@inline function _promote_itp_inputs(
+    x::AbstractVector{TX},
+    y::AbstractVector{TY},
+    xq::AbstractVector{TQ}
+) where {TX<:Real, TY, TQ<:Real}
+    x_typed, y_typed = _promote_itp_inputs(x, y)
+    Tg = eltype(x_typed)
+    xq_typed = _to_float(xq, Tg)
+    return x_typed, y_typed, xq_typed
 end
 
 # ========================================
@@ -196,7 +196,7 @@ Used for periodic boundary conditions and extrap=:wrap.
 
 Optimized: skips expensive `mod()` when xi is already in domain.
 """
-@inline function _wrap_to_domain(xi::FT, x_min::FT, x_max::FT) where {FT<:AbstractFloat}
+@inline function _wrap_to_domain(xi::Tg, x_min::Tg, x_max::Tg) where {Tg<:AbstractFloat}
     # Single-branch check: outside domain → slow path
     if xi < x_min || xi >= x_max
         period = x_max - x_min
@@ -204,6 +204,21 @@ Optimized: skips expensive `mod()` when xi is already in domain.
     end
     # Fast path: already in domain (most common case)
     return xi
+end
+
+# Generic wrapper: handles Dual, Int, Float32 on Float64 grid, etc.
+# IMPORTANT: Preserves AD Dual type through the entire operation.
+# mod() is compatible with ForwardDiff.Dual, so we use it directly on xi.
+@inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg<:AbstractFloat}
+    xi_primal = _extract_primal(xi)
+    # Fast path: already in domain, return original xi (preserves Dual type for AD)
+    if xi_primal >= x_min && xi_primal < x_max
+        return xi
+    end
+    # Slow path: outside domain, wrap using mod (preserves Dual type for AD)
+    # mod() works correctly with ForwardDiff.Dual: d/dx[mod(x,p)] = 1
+    period = x_max - x_min
+    return x_min + mod(xi - x_min, period)
 end
 
 # ========================================
@@ -246,6 +261,34 @@ end
 # ========================================
 
 """
+    _to_grid_type(xq, ::Type{Tg}) -> Tg
+
+Convert query point to grid type for index search.
+Extracts primal value from AD types (via `_extract_primal`), then converts to Tg.
+
+# Zero-overhead paths (compile-time dispatch)
+- `xq::Tg` → returns as-is (identity method selected)
+- `xq` after primal extraction equals Tg → `Tg(Tg_value)` optimized away
+
+# Conversion paths
+- `xq::Float32` on `Float64` grid → converts to Float64
+- `xq::Int` → directly to Tg (no intermediate Float64)
+- `xq::Dual{...}` → extracts primal via `_extract_primal` → converts to Tg
+
+# Usage in Search
+```julia
+# Before (2 lines):
+xq_primal = _extract_primal(xq)
+xq_conv = Tg(xq_primal)
+
+# After (1 line):
+xq_conv = _to_grid_type(xq, Tg)
+```
+"""
+@inline _to_grid_type(xq::Tg, ::Type{Tg}) where {Tg<:Real} = xq  # identity: already correct type
+@inline _to_grid_type(xq::Real, ::Type{Tg}) where {Tg<:Real} = Tg(_extract_primal(xq))  # convert via primal extraction
+
+"""
     _extract_primal(xq) -> AbstractFloat
 
 Extract the primal (real) value from a query point for index search.
@@ -265,41 +308,77 @@ ForwardDiff support is added via:
 ```
 """
 @inline _extract_primal(xq::T) where {T<:AbstractFloat} = xq
-@inline _extract_primal(xq::Real) = float(xq)
+@inline _extract_primal(xq::Real) = xq  # return as-is, let _to_grid_type handle conversion
+
+"""
+    _promote_for_anchor(xq::Tq, ::Type{Tg}) -> promoted_xq
+
+Promote query point for anchor construction.
+
+# Behavior
+- ForwardDiff.Dual: preserved as-is (for AD support, see extension)
+- AbstractFloat: uses promote_type(Tq, Tg) to preserve precision
+  - Float64 on Float32 grid → Float64 (preserves query precision)
+  - Float32 on Float64 grid → Float64 (uses grid precision)
+- Other Real (Int, Rational): converted to grid type Tg
+
+This is needed for cubic anchors which store precomputed weight tuples.
+Unlike quadratic (which stores only dL), cubic weights involve complex
+floating-point arithmetic that can't be represented as Int/Rational.
+
+# Example
+```julia
+_promote_for_anchor(0, Float64)      # → 0.0 (Float64)
+_promote_for_anchor(1//2, Float64)   # → 0.5 (Float64)
+_promote_for_anchor(0.5, Float32)    # → 0.5 (Float64, preserves precision)
+_promote_for_anchor(0.5f0, Float32)  # → 0.5f0 (Float32)
+_promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
+```
+"""
+# For AbstractFloat queries: preserve precision using wider type (lossless promotion)
+@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq<:AbstractFloat, Tg<:AbstractFloat} = convert(promote_type(Tq, Tg), xq)
+# For other Real (Int, Rational): convert to grid type (no precision loss for integers)
+@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq<:Real, Tg<:AbstractFloat} = Tg(xq)
+
 
 # ========================================
 # Domain Validation Helpers
 # ========================================
 
 """
-    _check_domain(x, xi::Tg, ::Val{:none}) where {Tg<:AbstractFloat}
+    _check_domain(x, xi, ::Val{:none})
 
 Check if scalar query point is within domain for `:none` extrapolation mode.
 Throws `DomainError` if `xi` is outside `[first(x), last(x)]`.
 
+Type-relaxed: accepts any Real query type (Int, Float32, Float64, Dual, etc.)
+to avoid unnecessary type conversions at call sites.
+
 Uses `@boundscheck` so it's skipped in `@inbounds` blocks for vector paths
 that do a single upfront check via the vector dispatch.
 """
-@inline function _check_domain(x::AbstractVector{Tg}, xi::Tg, ::Val{:none}) where {Tg<:AbstractFloat}
+@inline function _check_domain(x::AbstractVector, xi::Real, ::Val{:none})
     x_min, x_max = first(x), last(x)
     (xi < x_min || xi > x_max) && throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
     return nothing
 end
 
 """
-    _check_domain(x, xi::Tg, ::Val) where {Tg<:AbstractFloat}
+    _check_domain(x, xi, ::Val)
 
 No-op domain check for extrapolation modes other than `:none`.
 """
-@inline _check_domain(::AbstractVector{Tg}, ::Tg, ::Val) where {Tg<:AbstractFloat} = nothing
+@inline _check_domain(::AbstractVector, ::Real, ::Val) = nothing
 
 """
-    _check_domain(x, xi::AbstractVector{Tg}, ::Val{:none}) where {Tg<:AbstractFloat}
+    _check_domain(x, xi::AbstractVector, ::Val{:none})
 
 Vector-level domain check using minimum/maximum (faster than extrema due to SIMD).
 Called once before vector loop, then scalar `_check_domain` is skipped via `@inbounds`.
+
+Type-relaxed: accepts any Real element type to avoid unnecessary conversions.
 """
-@inline function _check_domain(x::AbstractVector{Tg}, xi::AbstractVector{Tg}, ::Val{:none}) where {Tg<:AbstractFloat}
+@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::Val{:none})
     x_min, x_max = first(x), last(x)
     # NOTE: Using minimum/maximum for potential SIMD optimization over extrema
     # extrema can be ~30x slower than minimum/maximum
@@ -312,11 +391,11 @@ Called once before vector loop, then scalar `_check_domain` is skipped via `@inb
 end
 
 """
-    _check_domain(x, xi::AbstractVector{Tg}, ::Val) where {Tg<:AbstractFloat}
+    _check_domain(x, xi::AbstractVector, ::Val)
 
 No-op vector domain check for extrapolation modes other than `:none`.
 """
-@inline _check_domain(::AbstractVector{Tg}, ::AbstractVector{Tg}, ::Val) where {Tg<:AbstractFloat} = nothing
+@inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, ::Val) = nothing
 
 # ========================================
 # Validation Utilities

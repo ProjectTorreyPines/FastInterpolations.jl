@@ -1744,7 +1744,7 @@ end # DerivativeView Wrapper
     end
 
     @testset "Lower-order kernels return zero" begin
-        # Linear kernel
+        # Linear kernel (h=0.5, dL=0.2)
         @test FastInterpolations._linear_kernel(
             FastInterpolations.EvalDeriv3(), 1.0, 5.0, 0.5, 0.2
         ) === zero(Float64)

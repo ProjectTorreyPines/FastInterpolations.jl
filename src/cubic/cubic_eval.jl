@@ -14,14 +14,15 @@
     y::AbstractVector{Tv},
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
-    idx, xL, xR = search_interval(searcher, x, spacing, xi)
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+    idx, xL, xR = search_interval(searcher, x, spacing, xq)
 
-    dL = xi - xL   # distance from Left endpoint
-    dR = xR - xi   # distance from Right endpoint
+    # Use original xq for arithmetic to preserve AD
+    dL = xq - xL   # distance from Left endpoint (can be Dual for AD)
+    dR = xR - xq   # distance from Right endpoint (can be Dual for AD)
 
     h = _get_h(spacing, idx)
     inv_h = _get_inv_h(spacing, idx)
@@ -42,13 +43,14 @@ end
     y::AbstractVector{Tv},
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     op::O
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp}
-    idx, xL, xR = _search_interval(x, spacing, xi)
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp}
+    idx, xL, xR = _search_interval(x, spacing, xq)
 
-    dL = xi - xL   # distance from Left endpoint
-    dR = xR - xi   # distance from Right endpoint
+    # Use original xq for arithmetic to preserve AD
+    dL = xq - xL   # distance from Left endpoint (can be Dual for AD)
+    dR = xR - xq   # distance from Right endpoint (can be Dual for AD)
 
     h = _get_h(spacing, idx)
     inv_h = _get_inv_h(spacing, idx)
@@ -69,16 +71,19 @@ end
     y::AbstractVector{Tv},
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     period::Tg,
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
-    xi_wrapped = _wrap_to_domain(xi, first(x), first(x) + period)
-    idx, xL, xR = search_interval(searcher, x, spacing, xi_wrapped)
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+    xq_wrapped = _wrap_to_domain(xq, first(x), first(x) + period)
+    idx, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
 
-    dL = xi_wrapped - xL   # distance from Left endpoint
-    dR = xR - xi_wrapped   # distance from Right endpoint
+    # Compute offset from original xq to preserve AD (adjust for wrapping)
+    # For periodic, we use the wrapped position for arithmetic since
+    # wrapping is a discrete operation that AD shouldn't track
+    dL = xq_wrapped - xL   # distance from Left endpoint
+    dR = xR - xq_wrapped   # distance from Right endpoint
     h = _get_h(spacing, idx)
     inv_h = _get_inv_h(spacing, idx)
 
@@ -113,12 +118,12 @@ end
     y::AbstractVector{Tv},
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     ::Val{:none},
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
-    return _eval_cubic_at_point(x, y, spacing, z, xi, op, searcher)
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+    return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
 end
 
 "Evaluate with constant extrapolation and search policy."
@@ -127,14 +132,16 @@ end
     y::AbstractVector{Tv},
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     ::Val{:constant},
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
-    xi < first(x) && return _constant_extrap_result(op, @inbounds y[1])
-    xi > last(x) && return _constant_extrap_result(op, @inbounds y[end])
-    return _eval_cubic_at_point(x, y, spacing, z, xi, op, searcher)
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+    # Use primal for boundary comparisons (Dual needs real value for comparison)
+    xq_primal = _extract_primal(xq)
+    xq_primal < first(x) && return _constant_extrap_result(op, @inbounds y[1])
+    xq_primal > last(x) && return _constant_extrap_result(op, @inbounds y[end])
+    return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
 end
 
 "Evaluate with extension extrapolation and search policy."
@@ -143,12 +150,12 @@ end
     y::AbstractVector{Tv},
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     ::Val{:extension},
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
-    return _eval_cubic_at_point(x, y, spacing, z, xi, op, searcher)
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+    return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
 end
 
 "Evaluate with coordinate wrapping and search policy."
@@ -157,13 +164,13 @@ end
     y::AbstractVector{Tv},
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     ::Val{:wrap},
     op::O,
     searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
-    xi_wrapped = _wrap_to_domain(xi, first(x), last(x))
-    return _eval_cubic_at_point(x, y, spacing, z, xi_wrapped, op, searcher)
+) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+    xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
+    return _eval_cubic_at_point(x, y, spacing, z, xq_wrapped, op, searcher)
 end
 
 
@@ -178,12 +185,12 @@ end
     cache::CubicSplineCache{Tg,X,F,PeriodicData{Tg},S},
     y::AbstractVector{Tv},
     z::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     ::Val,  # extrapolation ignored for periodic
     op::O,
     searcher::P
-) where {Tg<:AbstractFloat, Tv, X, F, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
-    _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, xi, cache.bc_config.period, op, searcher)
+) where {Tg<:AbstractFloat, Tv, Tq, X, F, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
+    _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, xq, cache.bc_config.period, op, searcher)
 end
 
 "Evaluate with BC-aware dispatch (Generic Derivative BC) with search policy."
@@ -191,12 +198,12 @@ end
     cache::CubicSplineCache{Tg,X,F,BCPair{L,R},S},
     y::AbstractVector{Tv},
     z::AbstractVector{Tv},
-    xi::Tg,
+    xq::Tq,
     extrap::Val,
     op::O,
     searcher::P
-) where {Tg<:AbstractFloat, Tv, X, F, L<:PointBC, R<:PointBC, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
-    _eval_cubic_with_extrap(cache.x, y, cache.spacing, z, xi, extrap, op, searcher)
+) where {Tg<:AbstractFloat, Tv, Tq, X, F, L<:PointBC, R<:PointBC, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
+    _eval_cubic_with_extrap(cache.x, y, cache.spacing, z, xq, extrap, op, searcher)
 end
 
 
@@ -204,32 +211,30 @@ end
 # Vector Loop Functions
 # ========================================
 
-# --- Searcher-aware versions ---
-
-"Default vector loop with search policy (for :none, :constant, :extension)."
+"Vector loop for non-periodic BC. Accepts any Real query type (AD-compatible)."
 @inline function _cubic_vector_loop!(
-    output::AbstractVector{Tv},
+    output::AbstractVector,
     cache::CubicSplineCache{Tg,X,F,BC,S},
     y::AbstractVector{Tv},
     z::AbstractVector{Tv},
-    x_query::AbstractVector{Tg},
+    x_query::AbstractVector{<:Real},
     ev::Val,
     op::O,
     searcher::P
 ) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
     @boundscheck _check_domain(cache.x, x_query, ev)
-    @inbounds for (k, xq) in enumerate(x_query)
-        output[k] = _eval_with_bc(cache, y, z, xq, ev, op, searcher)
+    @inbounds for k in eachindex(x_query, output)
+        output[k] = _eval_with_bc(cache, y, z, x_query[k], ev, op, searcher)
     end
 end
 
-"Optimized vector loop for Periodic BC with search policy - uses 2-stage strategy."
+"Vector loop for Periodic BC with 2-stage optimization. Accepts any Real query type."
 @inline function _cubic_vector_loop!(
-    output::AbstractVector{Tv},
+    output::AbstractVector,
     cache::CubicSplineCache{Tg,X,F,PeriodicData{Tg},S},
     y::AbstractVector{Tv},
     z::AbstractVector{Tv},
-    x_query::AbstractVector{Tg},
+    x_query::AbstractVector{<:Real},
     ::Val,  # extrap ignored for periodic
     op::O,
     searcher::P
@@ -240,14 +245,14 @@ end
 
     if qmin >= x_min && qmax < x_max
         # Fast path: all queries inside domain
-        @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_cubic_at_point(cache.x, y, cache.spacing, z, xq, op, searcher)
+        @inbounds for k in eachindex(x_query, output)
+            output[k] = _eval_cubic_at_point(cache.x, y, cache.spacing, z, x_query[k], op, searcher)
         end
     else
         # Slow path: per-element wrap
         period = cache.bc_config.period
-        @inbounds for (k, xq) in enumerate(x_query)
-            output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, xq, period, op, searcher)
+        @inbounds for k in eachindex(x_query, output)
+            output[k] = _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, x_query[k], period, op, searcher)
         end
     end
 end

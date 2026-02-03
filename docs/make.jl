@@ -128,7 +128,8 @@ makedocs(
         "Visualization" => "visualization.md",
         "Advanced Usage" => [
             "Overview" => "guides/advanced_overview.md",
-            "Generic Support" => "guides/generic_support.md",
+            "Complex Numbers" => "guides/complex_number_support.md",
+            "Autodiff (AD)" => "guides/autodiff_support.md",
             "Search & Hints" => [
                 "Overview" => "guides/search/overview.md",
                 "Search Policies" => "guides/search/policies.md",

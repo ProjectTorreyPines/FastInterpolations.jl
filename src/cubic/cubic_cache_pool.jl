@@ -560,14 +560,15 @@ end
     return _get_derivative_cache_impl(x, bc_cache)
 end
 
-# Fallback for non-float vectors (e.g., Int) - promotes to Float64
+# Fallback for non-float vectors (e.g., Int) - promotes to appropriate float type
 # NOTE: Convert x first to avoid redundant conversion in _get_derivative_cache_impl
 @inline function _get_cubic_cache(x::AbstractVector, bc::BCPair{L,R}) where {L<:PointBC, R<:PointBC}
     T = eltype(x)
     T <: AbstractFloat && error("Should dispatch to typed method")
     # Convert x once here, then call typed implementation directly
-    x_float = Vector{Float64}(x)
-    bc_cache = _cache_bc_pair(bc, Float64)
+    # float.(x) preserves Float32 precision; Int → Float64
+    x_float = float.(x)
+    bc_cache = _cache_bc_pair(bc, eltype(x_float))
     return _get_derivative_cache_impl(x_float, bc_cache)
 end
 
@@ -620,30 +621,31 @@ end
     return _lookup_or_insert!(bank, x_normalized, bc_pair)
 end
 
-# Fallback: other Real types → convert to Float64
+# Fallback: other Real types → convert to appropriate float type
 # Uses _cache_bc_pair to handle lazy types (PolyFit → Deriv1)
+# float.(x) preserves Float32 precision; Int → Float64
 @inline function _get_derivative_cache_impl(x::AbstractVector{<:Real}, bc_pair::BCPair)
-    x_float = Vector{Float64}(x)
-    bc_cache = _cache_bc_pair(bc_pair, Float64)
+    x_float = float.(x)
+    bc_cache = _cache_bc_pair(bc_pair, eltype(x_float))
     _get_derivative_cache_impl(x_float, bc_cache)
 end
 
 @inline function _get_derivative_cache_impl(x::AbstractRange{<:Real}, bc_pair::BCPair)
-    x_float = range(Float64(first(x)), Float64(last(x)), length(x))
-    bc_cache = _cache_bc_pair(bc_pair, Float64)
+    x_float = range(float(first(x)), float(last(x)), length(x))
+    bc_cache = _cache_bc_pair(bc_pair, eltype(x_float))
     _get_derivative_cache_impl(x_float, bc_cache)
 end
 
 """
 Internal implementation for periodic BC cache lookup.
 """
-@inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T<:Union{Float64,Float32}}
+@inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T<:AbstractFloat}
     x_normalized = x isa Vector ? x : collect(x)
     bank = _get_periodic_bank(x_normalized)
     return _lookup_or_insert!(bank, x_normalized, nothing)
 end
 
-@inline function _get_periodic_cache_impl(x::AbstractRange{T}) where {T<:Union{Float64,Float32}}
+@inline function _get_periodic_cache_impl(x::AbstractRange{T}) where {T<:AbstractFloat}
     # Normalize to StepRangeLen for consistent cache key type.
     # LinRange and other Range types are converted (minor overhead on first call).
     x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
@@ -651,11 +653,12 @@ end
     return _lookup_or_insert!(bank, x_normalized, nothing)
 end
 
-# Fallback: other Real types → convert to Float64
+# Fallback: other Real types → convert to appropriate float type
+# float.(x) preserves Float32 precision; Int → Float64
 @inline function _get_periodic_cache_impl(x::AbstractVector{<:Real})
-    _get_periodic_cache_impl(Vector{Float64}(x))
+    _get_periodic_cache_impl(float.(x))
 end
 
 @inline function _get_periodic_cache_impl(x::AbstractRange{<:Real})
-    _get_periodic_cache_impl(range(Float64(first(x)), Float64(last(x)), length(x)))
+    _get_periodic_cache_impl(range(float(first(x)), float(last(x)), length(x)))
 end

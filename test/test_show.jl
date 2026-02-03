@@ -405,6 +405,22 @@
         sitp_cubic = cubic_interp(x_vec, y_matrix_short; search=Binary())
         verbose_sitp = sprint(show, MIME("text/plain"), sitp_cubic)
         @test occursin("Search:", verbose_sitp)
+
+        # LinearSeriesInterpolant with Vector grid
+        sitp_linear = linear_interp(x_vec, y_matrix_short; search=Binary())
+        verbose_sitp_linear = sprint(show, MIME("text/plain"), sitp_linear)
+        @test occursin("Search:", verbose_sitp_linear)
+        @test occursin("Binary", verbose_sitp_linear)
+
+        # ConstantSeriesInterpolant with Vector grid
+        sitp_const = constant_interp(x_vec, y_matrix_short; search=Binary())
+        verbose_sitp_const = sprint(show, MIME("text/plain"), sitp_const)
+        @test occursin("Search:", verbose_sitp_const)
+
+        # QuadraticSeriesInterpolant with Vector grid
+        sitp_quad = quadratic_interp(x_vec, y_matrix_short; search=Binary())
+        verbose_sitp_quad = sprint(show, MIME("text/plain"), sitp_quad)
+        @test occursin("Search:", verbose_sitp_quad)
     end
 
     @testset "DerivativeView with LinearInterpolant parent" begin

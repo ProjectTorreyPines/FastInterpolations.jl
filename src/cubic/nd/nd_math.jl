@@ -104,16 +104,15 @@ Returns interpolated function value.
     h::Tg, inv_h::Tg, dL::Tq
 ) where {Tv, Tg, Tq}
     # Promote to output type for intermediate calculations
-    T = promote_type(Tv, Tq)
-    t = T(dL) * T(inv_h)
+    t = dL * inv_h
 
     h00_val = _hermite_h00(t)
     h10_val = _hermite_h10(t)
     h01_val = _hermite_h01(t)
     h11_val = _hermite_h11(t)
 
-    value_contrib = muladd(h00_val, T(yL), h01_val * T(yR))
-    deriv_contrib = muladd(h10_val, T(dyL), h11_val * T(dyR)) * T(h)
+    value_contrib = muladd(h00_val, yL, h01_val * yR)
+    deriv_contrib = muladd(h10_val, dyL, h11_val * dyR) * h
 
     return value_contrib + deriv_contrib
 end
@@ -128,21 +127,22 @@ Evaluate first derivative: dP/dx = (dP/dt) / h
     yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
     h::Tg, inv_h::Tg, dL::Tq
 ) where {Tv, Tg, Tq}
-    T = promote_type(Tv, Tq)
-    t = T(dL) * T(inv_h)
-    t2 = t * t
+    # Let t remain in coordinate type - basis derivatives stay real
+    t = dL * inv_h
+    t_sq = t * t
 
-    # Derivatives of basis functions w.r.t. t
-    dh00_dt = muladd(T(6), t2, T(-6) * t)         # 6t² - 6t
-    dh10_dt = muladd(T(3), t2, muladd(T(-4), t, one(T)))  # 3t² - 4t + 1
-    dh01_dt = muladd(T(-6), t2, T(6) * t)         # -6t² + 6t
-    dh11_dt = muladd(T(3), t2, T(-2) * t)         # 3t² - 2t
+    # Derivatives of basis functions w.r.t. t (real arithmetic)
+    dh00_dt = muladd(6, t_sq, -6 * t)                    # 6t² - 6t
+    dh10_dt = muladd(3, t_sq, muladd(-4, t, one(t)))     # 3t² - 4t + 1
+    dh01_dt = muladd(-6, t_sq, 6 * t)                    # -6t² + 6t
+    dh11_dt = muladd(3, t_sq, -2 * t)                    # 3t² - 2t
 
-    value_contrib = muladd(dh00_dt, T(yL), dh01_dt * T(yR))
-    deriv_contrib = muladd(dh10_dt, T(dyL), dh11_dt * T(dyR)) * T(h)
+    # Auto-promote when combining with value types
+    value_contrib = muladd(dh00_dt, yL, dh01_dt * yR)
+    deriv_contrib = muladd(dh10_dt, dyL, dh11_dt * dyR) * h
 
     dP_dt = value_contrib + deriv_contrib
-    return dP_dt * T(inv_h)
+    return dP_dt * inv_h
 end
 
 """
@@ -155,20 +155,21 @@ Evaluate second derivative: d²P/dx² = (d²P/dt²) / h²
     yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
     h::Tg, inv_h::Tg, dL::Tq
 ) where {Tv, Tg, Tq}
-    T = promote_type(Tv, Tq)
-    t = T(dL) * T(inv_h)
+    # Let t remain in coordinate type - basis derivatives stay real
+    t = dL * inv_h
 
-    # Second derivatives of basis functions w.r.t. t
-    d2h00_dt2 = muladd(T(12), t, T(-6))     # 12t - 6
-    d2h10_dt2 = muladd(T(6), t, T(-4))      # 6t - 4
-    d2h01_dt2 = muladd(T(-12), t, T(6))     # -12t + 6
-    d2h11_dt2 = muladd(T(6), t, T(-2))      # 6t - 2
+    # Second derivatives of basis functions w.r.t. t (real arithmetic)
+    d2h00_dt2 = muladd(12, t, -6)      # 12t - 6
+    d2h10_dt2 = muladd(6, t, -4)       # 6t - 4
+    d2h01_dt2 = muladd(-12, t, 6)      # -12t + 6
+    d2h11_dt2 = muladd(6, t, -2)       # 6t - 2
 
-    value_contrib = muladd(d2h00_dt2, T(yL), d2h01_dt2 * T(yR))
-    deriv_contrib = muladd(d2h10_dt2, T(dyL), d2h11_dt2 * T(dyR)) * T(h)
+    # Auto-promote when combining with value types
+    value_contrib = muladd(d2h00_dt2, yL, d2h01_dt2 * yR)
+    deriv_contrib = muladd(d2h10_dt2, dyL, d2h11_dt2 * dyR) * h
 
     d2P_dt2 = value_contrib + deriv_contrib
-    inv_h2 = T(inv_h) * T(inv_h)
+    inv_h2 = inv_h * inv_h
     return d2P_dt2 * inv_h2
 end
 
@@ -182,13 +183,13 @@ Evaluate third derivative: d³P/dx³ = (d³P/dt³) / h³ (constant within interv
     yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
     h::Tg, inv_h::Tg, dL::Tq
 ) where {Tv, Tg, Tq}
-    T = promote_type(Tv, Tq)
     # Third derivatives are constants: d³h00/dt³=12, d³h10/dt³=6, d³h01/dt³=-12, d³h11/dt³=6
-    value_contrib = T(12) * (T(yL) - T(yR))
-    deriv_contrib = T(6) * T(h) * (T(dyL) + T(dyR))
+    # Auto-promote naturally through arithmetic with value types
+    value_contrib = 12 * (yL - yR)
+    deriv_contrib = 6 * h * (dyL + dyR)
 
     d3P_dt3 = value_contrib + deriv_contrib
-    inv_h3 = T(inv_h) * T(inv_h) * T(inv_h)
+    inv_h3 = inv_h * inv_h * inv_h
     return d3P_dt3 * inv_h3
 end
 

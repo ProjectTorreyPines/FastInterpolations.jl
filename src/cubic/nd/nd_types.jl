@@ -357,6 +357,65 @@ end
     return _wrap_to_domain(Tg(q), first(axis), last(axis))
 end
 
+# ========================================
+# @GENERATED VERSIONS (for performance testing)
+# ========================================
+
+"""
+@generated version of _handle_all_extraps - explicit unrolling instead of ntuple closure.
+"""
+@generated function _handle_all_extraps_gen(
+    queries::NTuple{N, Tq}, grids::NTuple{N}, extraps::NTuple{N}
+) where {N, Tq}
+    exprs = [:(
+        @inbounds _handle_axis_extrap(queries[$d], grids[$d], extraps[$d])
+    ) for d in 1:N]
+    return :(tuple($(exprs...)))
+end
+
+"""
+@generated version of _search_all_intervals - explicit unrolling.
+"""
+@generated function _search_all_intervals_gen(
+    q_evals::NTuple{N, Tg}, grids::NTuple{N}, spacings::NTuple{N}, searches::NTuple{N}
+) where {N, Tg}
+    # Generate search calls - inline searcher creation to avoid variable naming issues
+    search_exprs = [:(
+        @inbounds search_interval(_to_searcher(searches[$d]), grids[$d], spacings[$d], q_evals[$d])
+    ) for d in 1:N]
+
+    # Generate restructuring
+    idx_exprs = [:(results[$d][1]) for d in 1:N]
+    L_exprs = [:(results[$d][2]) for d in 1:N]
+    R_exprs = [:(results[$d][3]) for d in 1:N]
+
+    return quote
+        results = tuple($(search_exprs...))
+        indices = tuple($(idx_exprs...))
+        Ls = tuple($(L_exprs...))
+        Rs = tuple($(R_exprs...))
+        return (indices, Ls, Rs)
+    end
+end
+
+"""
+@generated version of _compute_all_local_params - explicit unrolling.
+"""
+@generated function _compute_all_local_params_gen(
+    q_evals::NTuple{N, Tg}, spacings::NTuple{N}, indices::NTuple{N, Int}, Ls::NTuple{N, Tg}
+) where {N, Tg}
+    h_exprs = [:(@inbounds _get_h(spacings[$d], indices[$d])) for d in 1:N]
+    inv_h_exprs = [:(@inbounds _get_inv_h(spacings[$d], indices[$d])) for d in 1:N]
+    dL_exprs = [:(@inbounds q_evals[$d] - Ls[$d]) for d in 1:N]
+
+    return quote
+        hs = tuple($(h_exprs...))
+        inv_hs = tuple($(inv_h_exprs...))
+        dLs = tuple($(dL_exprs...))
+        return (hs, inv_hs, dLs)
+    end
+end
+
 """
     _search_all_intervals(q_evals, grids, spacings, searches) -> (indices, Ls, Rs)
 

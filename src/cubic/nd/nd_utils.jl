@@ -66,39 +66,86 @@ end
 # ========================================
 # Derivative Order → EvalOp Conversion
 # ========================================
+#
+# Design: Strict API for Performance
+# -----------------------------------
+# Accepts only:
+#   1. Int (0-3): Broadcast to all axes via @_dispatch_deriv
+#   2. Val{D}: Compile-time spec → type-stable ntuple
+#
+# Raw Tuple rejected to prevent Union type performance traps.
 
 """
-    _int_to_evalop(d::Int) -> AbstractEvalOp
+    _int_to_evalop(::Val{d}) -> AbstractEvalOp
 
-Convert derivative order `d ∈ {0,1,2,3}` to evaluation operation singleton.
+Convert compile-time derivative order to evaluation operation singleton.
+Val-based dispatch ensures type stability.
 """
-@inline function _int_to_evalop(d::Int)
-    if d == 0
-        EvalValue()
-    elseif d == 1
-        EvalDeriv1()
-    elseif d == 2
-        EvalDeriv2()
-    elseif d == 3
-        EvalDeriv3()
-    else
-        throw(ArgumentError("deriv must be 0, 1, 2, or 3; got $d"))
-    end
-end
+@inline _int_to_evalop(::Val{0}) = EvalValue()
+@inline _int_to_evalop(::Val{1}) = EvalDeriv1()
+@inline _int_to_evalop(::Val{2}) = EvalDeriv2()
+@inline _int_to_evalop(::Val{3}) = EvalDeriv3()
 
 """
     _resolve_deriv_nd(deriv, Val(N)) -> NTuple{N, AbstractEvalOp}
 
-Resolve derivative specification to canonical N-tuple of evaluation operations.
-- Single `Int` → broadcast to all N axes, convert to EvalOp
-- `NTuple{N, Int}` → convert each to EvalOp
-"""
-@inline _resolve_deriv_nd(d::Int, ::Val{N}) where {N} = ntuple(_ -> _int_to_evalop(d), Val(N))
+Resolve derivative specification to N-tuple of EvalOp singletons.
 
-@inline _resolve_deriv_nd(d::NTuple{N,Int}, ::Val{N}) where {N} = ntuple(i -> @inbounds(_int_to_evalop(d[i])), Val(N))
+# Accepted
+- `Int` (0-3): Broadcast to all axes
+- `Val{Int}`: Compile-time broadcast (e.g., `Val(1)`)
+- `Val{Tuple}`: Mixed partials (e.g., `Val((1,0,0))` for ∂f/∂x)
+
+# NOT Accepted
+- Raw tuple `(1,0)`: Use `Val((1,0))` instead
+"""
+# Int path: macro dispatch at call site ensures concrete type
+@inline function _resolve_deriv_nd(d::Int, ::Val{N}) where {N}
+    if d == 0
+        return ntuple(_ -> EvalValue(), Val(N))
+    elseif d == 1
+        return ntuple(_ -> EvalDeriv1(), Val(N))
+    elseif d == 2
+        return ntuple(_ -> EvalDeriv2(), Val(N))
+    elseif d == 3
+        return ntuple(_ -> EvalDeriv3(), Val(N))
+    else
+        throw(ArgumentError(
+            "Integer deriv must be 0, 1, 2, or 3. " *
+            "For higher derivatives or mixed partials, use Val(d) or Val((d1,d2,...))."
+        ))
+    end
+end
+
+# Val{Int}: Compile-time broadcast
+@inline function _resolve_deriv_nd(::Val{D}, ::Val{N}) where {D, N}
+    if D isa Int
+        # Val(1) → broadcast to all axes
+        return ntuple(_ -> _int_to_evalop(Val(D)), Val(N))
+    elseif D isa Tuple
+        # Val((1,0)) → per-axis specification
+        length(D) == N || throw(ArgumentError(
+            "Val tuple must have $N elements, got $(length(D))"
+        ))
+        return ntuple(i -> _int_to_evalop(Val(D[i])), Val(N))
+    else
+        throw(ArgumentError("Val parameter must be Int or Tuple{Vararg{Int}}, got $(typeof(D))"))
+    end
+end
+
+# Explicit error for raw Tuple (prevent performance trap)
+@inline function _resolve_deriv_nd(d::NTuple{N,Int}, ::Val{N}) where {N}
+    throw(ArgumentError(
+        "Raw tuple deriv=$d creates Union types (performance trap). " *
+        "Use Val($d) for type-stable mixed partials."
+    ))
+end
 
 @inline function _resolve_deriv_nd(d::Tuple{Vararg{Int}}, ::Val{N}) where {N}
-    throw(ArgumentError("deriv tuple must have $N elements to match grid dimensions, got $(length(d))"))
+    throw(ArgumentError(
+        "deriv tuple must have $N elements, got $(length(d)). " *
+        "Also, use Val(tuple) for type-stable evaluation."
+    ))
 end
 
 # ========================================

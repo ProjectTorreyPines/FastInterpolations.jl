@@ -358,15 +358,18 @@ function cubic_interp(
 end
 
 """
-    cubic_interp(grids::NTuple{N,AbstractVector}, data, queries::NTuple{N,<:Real}; kwargs...)
+    cubic_interp(grids, data, query; deriv=0, kwargs...)
 
-One-shot N-dimensional cubic interpolation: create interpolant and evaluate at query point.
+One-shot ND cubic interpolation at a single point.
+
+# Keywords
+- `deriv`: `Int` (0-3) or `Val((d1,d2,...))` for mixed partials
 """
 function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{<:Any, N},
     queries::NTuple{N, <:Real};
-    deriv::Union{Int, NTuple{N,Int}}=0,
+    deriv::Union{Int, Val}=0,
     kwargs...
 ) where {N}
     itp = cubic_interp(grids, data; kwargs...)
@@ -374,15 +377,18 @@ function cubic_interp(
 end
 
 """
-    cubic_interp(grids::NTuple{N,AbstractVector}, data, queries::NTuple{N,AbstractVector}; kwargs...)
+    cubic_interp(grids, data, queries; deriv=0, kwargs...)
 
-One-shot N-dimensional cubic interpolation: create interpolant and evaluate at multiple points.
+One-shot ND cubic interpolation at multiple points (batch).
+
+# Keywords
+- `deriv`: `Int` (0-3) or `Val((d1,d2,...))` for mixed partials
 """
 function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{<:Any, N},
     queries::NTuple{N, <:AbstractVector{<:Real}};
-    deriv::Union{Int, NTuple{N,Int}}=0,
+    deriv::Union{Int, Val}=0,
     kwargs...
 ) where {N}
     itp = cubic_interp(grids, data; kwargs...)

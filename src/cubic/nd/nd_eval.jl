@@ -21,6 +21,14 @@ const _DEBUG_GENERATED_CELL = Ref(false)
 # ========================================
 # CALLABLE INTERFACE
 # ========================================
+#
+# Design: Strict API for Performance
+# -----------------------------------
+# deriv accepts only:
+#   - Int (0-3): broadcast to all axes, fast-path via @_dispatch_deriv
+#   - Val{D}: compile-time specification for zero-allocation
+#
+# Raw Tuple (1,0) is rejected to prevent Union type performance traps.
 
 """
     (itp::CubicInterpolantND)(query; deriv=0, search=itp.searches)
@@ -31,9 +39,10 @@ Evaluate N-dimensional cubic Hermite interpolant at query point.
 - `query::NTuple{N, Real}`: Query coordinates as N-tuple
 
 # Keywords
-- `deriv::Union{Int, NTuple{N,Int}}=0`: Derivative orders
-  - Single `Int`: broadcast to all dimensions
-  - `NTuple{N,Int}`: per-axis orders (e.g., `(1,0,0)` for ∂/∂x)
+- `deriv`: Derivative order (0-3) or `Val` for mixed partials
+  - `Int`: 0=value, 1=∇f, 2=∇²f, 3=∇³f (broadcast to all axes)
+  - `Val{D}`: e.g., `Val((1,0,0))` for ∂f/∂x only
+  - Raw tuple `(1,0)` NOT accepted (use `Val((1,0))`)
 - `search`: Search policy override
   - Single `AbstractSearchPolicy`: applied to all axes
   - `NTuple{N}` of policies: per-axis override
@@ -44,52 +53,167 @@ Evaluate N-dimensional cubic Hermite interpolant at query point.
 # Examples
 ```julia
 itp = cubic_interp((x, y, z), data)
-itp((1.0, 0.5, 0.3))              # Value at (1.0, 0.5, 0.3)
-itp((1.0, 0.5, 0.3); deriv=(1,0,0)) # ∂f/∂x at (1.0, 0.5, 0.3)
-itp((1.0, 0.5, 0.3); deriv=(0,1,0)) # ∂f/∂y at (1.0, 0.5, 0.3)
-itp((1.0, 0.5, 0.3); deriv=1)       # Gradient-like: same deriv order for all
+itp((1.0, 0.5, 0.3))                  # Value at point
+itp((1.0, 0.5, 0.3); deriv=1)         # All first derivatives (∇f)
+itp((1.0, 0.5, 0.3); deriv=Val((1,0,0))) # ∂f/∂x only (type-stable)
+itp((1.0, 0.5, 0.3); deriv=Val((0,1,0))) # ∂f/∂y only (type-stable)
+itp((1.0, 0.5, 0.3); deriv=Val(2))       # All second derivatives
 ```
+
+# Performance Notes
+- `deriv=0,1,2,3` literals: constant-propagation → zero-allocation
+- `Val((1,0,...))`: compile-time dispatch → zero-allocation
 """
+# Single-point evaluation
 @inline function (itp::CubicInterpolantND{Tg, Tv, N})(
     query::NTuple{N, <:Real};
-    deriv::Union{Int, NTuple{N,Int}}=0,
+    deriv::Union{Int, Val}=0,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
 ) where {Tg, Tv, N}
-    # Convert query to grid type
-    query_typed = ntuple(d -> Tg(query[d]), Val(N))
-
-    # Resolve derivative and search specifications
-    ops = _resolve_deriv_nd(deriv, Val(N))
+    # Note: Don't convert to Tg - preserve query type for AD support
     search_tuple = _resolve_search_nd(search, Val(N))
 
-    return _eval_nd_hermite(itp, query_typed, ops, search_tuple)
+    if deriv isa Int
+        # Int path: macro dispatch ensures concrete op type
+        @_dispatch_deriv deriv => op begin
+            ops = ntuple(_ -> op, Val(N))
+            return _eval_nd_hermite(itp, query, ops, search_tuple)
+        end
+    else
+        # Val path: compile-time resolution
+        ops = _resolve_deriv_nd(deriv, Val(N))
+        return _eval_nd_hermite(itp, query, ops, search_tuple)
+    end
 end
 
-# Vector query: evaluate at multiple points
+# ========================================
+# BATCH EVALUATION: Tuple of Vectors (SoA)
+# ========================================
+# Standard format for separated coordinate arrays (DataFrames, CSV columns)
+
+"""
+    (itp::CubicInterpolantND)(queries::NTuple{N,Vector}; deriv=0, search=...)
+
+Batch evaluation with Structure-of-Arrays (SoA) input.
+
+# Arguments
+- `queries::NTuple{N, AbstractVector}`: Coordinate vectors per axis
+
+# Example
+```julia
+xs, ys = rand(1000), rand(1000)
+results = itp((xs, ys))  # Evaluate at all 1000 points
+```
+"""
 function (itp::CubicInterpolantND{Tg, Tv, N})(
     queries::NTuple{N, <:AbstractVector{<:Real}};
-    deriv::Union{Int, NTuple{N,Int}}=0,
+    deriv::Union{Int, Val}=0,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
 ) where {Tg, Tv, N}
-    # Verify all query vectors have same length
     n_queries = length(queries[1])
     for d in 2:N
         length(queries[d]) == n_queries || throw(DimensionMismatch(
             "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
         ))
     end
-
-    # Resolve derivative and search specifications
-    ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
 
-    # Determine output type
-    Tout = promote_type(Tv, Tg)
+    if deriv isa Int
+        @_dispatch_deriv deriv => op begin
+            ops = ntuple(_ -> op, Val(N))
+            return _eval_nd_batch_soa(itp, queries, ops, search_tuple)
+        end
+    else
+        ops = _resolve_deriv_nd(deriv, Val(N))
+        return _eval_nd_batch_soa(itp, queries, ops, search_tuple)
+    end
+end
+
+# ========================================
+# BATCH EVALUATION: Vector of Tuples (AoS)
+# ========================================
+# Standard format for point lists (StaticArrays, geometry libraries)
+
+"""
+    (itp::CubicInterpolantND)(queries::Vector{<:NTuple{N}}; deriv=0, search=...)
+
+Batch evaluation with Array-of-Structures (AoS) input.
+
+# Arguments
+- `queries::AbstractVector{<:NTuple{N}}`: Vector of coordinate tuples
+
+# Example
+```julia
+points = [(rand(), rand()) for _ in 1:1000]
+results = itp(points)  # Evaluate at all 1000 points
+```
+"""
+function (itp::CubicInterpolantND{Tg, Tv, N})(
+    queries::AbstractVector{<:NTuple{N, <:Real}};
+    deriv::Union{Int, Val}=0,
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
+) where {Tg, Tv, N}
+    search_tuple = _resolve_search_nd(search, Val(N))
+
+    if deriv isa Int
+        @_dispatch_deriv deriv => op begin
+            ops = ntuple(_ -> op, Val(N))
+            return _eval_nd_batch_aos(itp, queries, ops, search_tuple)
+        end
+    else
+        ops = _resolve_deriv_nd(deriv, Val(N))
+        return _eval_nd_batch_aos(itp, queries, ops, search_tuple)
+    end
+end
+
+# ========================================
+# BATCH EVALUATION INNER FUNCTIONS
+# ========================================
+
+"""
+    _eval_nd_batch_soa(itp, queries, ops, search)
+
+Batch evaluation for SoA input. Query type preserved for AD support.
+"""
+@inline function _eval_nd_batch_soa(
+    itp::CubicInterpolantND{Tg, Tv, N},
+    queries::NTuple{N, <:AbstractVector{Tq}},
+    ops::OPS,
+    search::SEARCH
+) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
+    n_queries = length(queries[1])
+    # Include Tq for AD support (Dual numbers propagate through)
+    Tout = promote_type(Tv, Tg, Tq)
     results = Vector{Tout}(undef, n_queries)
 
     @inbounds for k in 1:n_queries
-        query_k = ntuple(d -> Tg(queries[d][k]), Val(N))
-        results[k] = _eval_nd_hermite(itp, query_k, ops, search_tuple)
+        # Don't convert to Tg - preserve query type for AD
+        query_k = ntuple(d -> queries[d][k], Val(N))
+        results[k] = _eval_nd_hermite(itp, query_k, ops, search)
+    end
+
+    return results
+end
+
+"""
+    _eval_nd_batch_aos(itp, queries, ops, search)
+
+Batch evaluation for AoS input. Query type preserved for AD support.
+"""
+@inline function _eval_nd_batch_aos(
+    itp::CubicInterpolantND{Tg, Tv, N},
+    queries::AbstractVector{<:NTuple{N, Tq}},
+    ops::OPS,
+    search::SEARCH
+) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
+    n_queries = length(queries)
+    # Include Tq for AD support (Dual numbers propagate through)
+    Tout = promote_type(Tv, Tg, Tq)
+    results = Vector{Tout}(undef, n_queries)
+
+    @inbounds for k in 1:n_queries
+        # Don't convert to Tg - preserve query type for AD
+        results[k] = _eval_nd_hermite(itp, queries[k], ops, search)
     end
 
     return results
@@ -108,10 +232,10 @@ All helper functions use ntuple(Val(N)) pattern for zero-allocation operation.
 """
 @inline function _eval_nd_hermite(
     itp::CubicInterpolantND{Tg, Tv, N},
-    query::NTuple{N, Tg},
-    ops::NTuple{N, AbstractEvalOp},
-    search::NTuple{N, AbstractSearchPolicy}
-) where {Tg, Tv, N}
+    query::NTuple{N, Tq},
+    ops::OPS,
+    search::SEARCH
+) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     # Extract all fields using @generated helpers (zero allocation)
     grids = _get_grids(itp)       # NTuple{N}
     spacings = _get_spacings(itp) # NTuple{N}

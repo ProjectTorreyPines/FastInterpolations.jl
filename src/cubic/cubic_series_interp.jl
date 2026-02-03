@@ -938,23 +938,21 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
     aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg,Tq}, n_query)
     _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
-    # Use point-contiguous layout for SIMD evaluation (matches scalar path exactly)
-    y_point, z_point = _ensure_point_layout!(sitp)
+    # Extract matrices for argument-passing pattern (series-contiguous layout)
+    # This is faster than point-contiguous for vector queries because:
+    # - outputs[k] is contiguous, writes are sequential
+    # - y[:, k] is contiguous, reads are sequential
+    # - No temp buffer or scatter loop needed
+    y, z = sitp.y, sitp.z
     n_pts = n_points(sitp)
+    n = n_series(sitp)
     extrap = sitp.extrap
     x_min, x_max = Tg(first(sitp.cache.x)), Tg(last(sitp.cache.x))
 
-    # Acquire temp buffer from pool for single-point all-series evaluation
-    temp_out = acquire!(pool, eltype(outputs[1]), n_ser)
-
-    # Evaluate using point-contiguous layout (same as scalar path)
-    # Note: _eval_series_with_extrap accepts _CubicAnchoredQuery{Tg} which matches any Tq
+    # Evaluate all series using series-contiguous layout
     @_dispatch_deriv deriv => op begin
-        @inbounds for j in eachindex(aq_vec)
-            _eval_series_point_with_extrap!(temp_out, y_point, z_point, n_pts, x_min, x_max, aq_vec[j], extrap, op)
-            for k in 1:n_ser
-                outputs[k][j] = temp_out[k]
-            end
+        @inbounds for k in 1:n
+            _eval_series_vector!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, op)
         end
     end
     return outputs

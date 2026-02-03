@@ -65,28 +65,23 @@ struct ConstantInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:Abst
 end
 
 # ========================================
-# Outer Constructor: handles all logic
+# Outer Constructor: typed inputs only
 # ========================================
-# - Type conversion (_promote_itp_inputs)
 # - Symbol → Val dispatch
 # - Call inner constructor
-function ConstantInterpolant(
-    x::AbstractVector,
-    y::AbstractVector;
+#
+# PERFORMANCE: Typed signature + @inline enables compile-time specialization.
+# Use constant_interp() for automatic type promotion from Real inputs.
+@inline function ConstantInterpolant(
+    x::X,
+    y::Y;
     extrap::Symbol=:none,
     side::Symbol=:nearest,
-    search::AbstractSearchPolicy=Binary()
-)
-    x_p, y_p = _promote_itp_inputs(x, y)
-    X = typeof(x_p)
-    Y = typeof(y_p)
-    Tg = eltype(x_p)
-    Tv = eltype(y_p)
-    P = typeof(search)
-
+    search::P=Binary()
+) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
     @_dispatch_extrap extrap => ev begin
         @_dispatch_side side => sv begin
-            return ConstantInterpolant{Tg,Tv,X,Y,P}(x_p, y_p, ev, sv, search)
+            return ConstantInterpolant{Tg,Tv,X,Y,P}(x, y, ev, sv, search)
         end
     end
 end

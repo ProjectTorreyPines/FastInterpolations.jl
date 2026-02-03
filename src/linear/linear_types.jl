@@ -74,26 +74,21 @@ struct LinearInterpolant{
 end
 
 # ========================================
-# Outer Constructor: handles all logic
+# Outer Constructor: typed inputs only
 # ========================================
-# - Type conversion (_promote_itp_inputs)
 # - Symbol → Val dispatch
 # - Call inner constructor
-function LinearInterpolant(
-    x::AbstractVector,
-    y::AbstractVector;
+#
+# PERFORMANCE: Typed signature + @inline enables compile-time specialization.
+# Use linear_interp() for automatic type promotion from Real inputs.
+@inline function LinearInterpolant(
+    x::X,
+    y::Y;
     extrap::Symbol=:none,
-    search::AbstractSearchPolicy=Binary()
-)
-    x_p, y_p = _promote_itp_inputs(x, y)
-    X = typeof(x_p)
-    Y = typeof(y_p)
-    Tg = eltype(x_p)
-    Tv = eltype(y_p)
-    P = typeof(search)
-
+    search::P=Binary()
+) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
     @_dispatch_extrap extrap => ev begin
-        return LinearInterpolant{Tg,Tv,X,Y,P}(x_p, y_p, ev, search)
+        return LinearInterpolant{Tg,Tv,X,Y,P}(x, y, ev, search)
     end
 end
 

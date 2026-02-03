@@ -107,8 +107,30 @@ for batch in batches
 end
 ```
 """
-# Generic constructor (forwarding to outer constructor)
+# ========================================
+# Generic Constructor (User API)
+# ========================================
 # Handles all Real grid types (Int, Float32, Float64, etc.)
-# Type promotion is handled by QuadraticInterpolant outer constructor
-quadratic_interp(x::AbstractVector{<:Real}, y::AbstractVector; bc::QuadraticBC=Left(QuadraticFit()), extrap::Symbol=:none, search::AbstractSearchPolicy=Binary()) =
-    QuadraticInterpolant(x, y; bc, extrap, search)
+# Type promotion, BC conversion, and coefficient computation done here,
+# then forwards to typed QuadraticInterpolant constructor.
+#
+# PERFORMANCE: Typed signature enables compile-time specialization.
+# _promote_itp_inputs becomes no-op when types already match (Float64 → Float64).
+@inline function quadratic_interp(
+    x::AbstractVector{TX},
+    y::AbstractVector{TY};
+    bc::QuadraticBC=Left(QuadraticFit()),
+    extrap::Symbol=:none,
+    search::AbstractSearchPolicy=Binary()
+) where {TX<:Real, TY}
+    x_p, y_p = _promote_itp_inputs(x, y)
+    bc_p = _promote_bc(bc, eltype(x_p))
+
+    # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
+    validate_polyfit_points(bc_p, length(x_p))
+
+    # Compute coefficients (h::Tg, d::Tv, a::Tv)
+    h, d, a = _compute_quadratic_coeffs(x_p, y_p, bc_p)
+
+    return QuadraticInterpolant(x_p, y_p, h, a, d; extrap, search)
+end

@@ -102,8 +102,21 @@ for batch in batches
 end
 ```
 """
-# Generic constructor (forwarding to outer constructor)
+# ========================================
+# Generic Constructor (User API)
+# ========================================
 # Handles all Real grid types (Int, Float32, Float64, etc.)
-# Type promotion is handled by ConstantInterpolant outer constructor
-constant_interp(x::AbstractVector{<:Real}, y::AbstractVector; extrap::Symbol=:none, side::Symbol=:nearest, search::AbstractSearchPolicy=Binary()) =
-    ConstantInterpolant(x, y; extrap, side, search)
+# Type promotion done here, then forwards to typed ConstantInterpolant constructor.
+#
+# PERFORMANCE: Typed signature enables compile-time specialization.
+# _promote_itp_inputs becomes no-op when types already match (Float64 → Float64).
+@inline function constant_interp(
+    x::AbstractVector{TX},
+    y::AbstractVector{TY};
+    extrap::Symbol=:none,
+    side::Symbol=:nearest,
+    search::AbstractSearchPolicy=Binary()
+) where {TX<:Real, TY}
+    x_p, y_p = _promote_itp_inputs(x, y)
+    return ConstantInterpolant(x_p, y_p; extrap, side, search)
+end

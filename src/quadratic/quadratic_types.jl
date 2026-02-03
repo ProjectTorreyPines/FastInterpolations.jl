@@ -74,36 +74,23 @@ struct QuadraticInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:Abs
 end
 
 # ========================================
-# Outer Constructor: handles all logic
+# Outer Constructor: typed inputs only
 # ========================================
-# - Type conversion (_promote_itp_inputs)
-# - BC conversion (_promote_bc)
-# - Coefficient computation (_compute_quadratic_coeffs)
 # - Symbol → Val dispatch
 # - Call inner constructor
-function QuadraticInterpolant(
-    x::AbstractVector,
-    y::AbstractVector;
-    bc::QuadraticBC=Left(QuadraticFit()),
+#
+# PERFORMANCE: Typed signature + @inline enables compile-time specialization.
+# Use quadratic_interp() for automatic type promotion and coefficient computation.
+@inline function QuadraticInterpolant(
+    x::X,
+    y::Y,
+    h::Vector{Tg},
+    a::Vector{Tv},
+    d::Vector{Tv};
     extrap::Symbol=:none,
-    search::AbstractSearchPolicy=Binary()
-)
-    x_p, y_p = _promote_itp_inputs(x, y)
-    bc_p = _promote_bc(bc, eltype(x_p))
-
-    # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
-    validate_polyfit_points(bc_p, length(x_p))
-
-    # Compute coefficients (h::Tg, d::Tv, a::Tv)
-    h, d, a = _compute_quadratic_coeffs(x_p, y_p, bc_p)
-
-    X = typeof(x_p)
-    Y = typeof(y_p)
-    Tg = eltype(x_p)
-    Tv = eltype(y_p)
-    P = typeof(search)
-
+    search::P=Binary()
+) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
     @_dispatch_extrap extrap => ev begin
-        return QuadraticInterpolant{Tg,Tv,X,Y,P}(x_p, y_p, h, a, d, ev, search)
+        return QuadraticInterpolant{Tg,Tv,X,Y,P}(x, y, h, a, d, ev, search)
     end
 end

@@ -2,72 +2,41 @@
 # Generic ND Hermite Evaluation
 # ========================================
 #
-# Callable interface and evaluation functions for N-dimensional cubic
-# Hermite interpolation.
-#
-# Key features:
+# N-dimensional cubic Hermite interpolation with:
 # - Tg/Tv type separation (grid vs value types)
-# - @generated tensor product collapse for zero-allocation O(1) evaluation
-# - Support for derivatives via AbstractEvalOp dispatch
-# - Tuple-based query interface for type stability
-#
-# The @generated function unrolls the tensor product at compile time,
-# generating specialized code for each dimension count N.
+# - @generated tensor product for zero-allocation O(1) evaluation
+# - N=2 specialization for optimal batch performance
+# - AD support (query type preserved through evaluation)
 
-# Debug flag for @generated function code inspection
-# Usage: FastInterpolations._DEBUG_GENERATED_CELL[] = true
-const _DEBUG_GENERATED_CELL = Ref(false)
+const _DEBUG_GENERATED_CELL = Ref(false)  # Debug: inspect @generated code
 
 # ========================================
 # CALLABLE INTERFACE
 # ========================================
-#
-# Design: Strict API for Performance
-# -----------------------------------
-# deriv accepts only:
-#   - Int (0-3): broadcast to all axes, fast-path via @_dispatch_deriv
-#   - Val{D}: compile-time specification for zero-allocation
-#
-# Raw Tuple (1,0) is rejected to prevent Union type performance traps.
 
 """
     (itp::CubicInterpolantND)(query; deriv=0, search=itp.searches)
 
-Evaluate N-dimensional cubic Hermite interpolant at query point.
-
-# Arguments
-- `query::NTuple{N, Real}`: Query coordinates as N-tuple
+Evaluate N-dimensional cubic Hermite interpolant.
 
 # Keywords
-- `deriv`: Derivative order (0-3) or `Val` for mixed partials
-  - `Int`: 0=value, 1=∇f, 2=∇²f, 3=∇³f (broadcast to all axes)
-  - `Val{D}`: e.g., `Val((1,0,0))` for ∂f/∂x only
-  - Raw tuple `(1,0)` NOT accepted (use `Val((1,0))`)
-- `search`: Search policy override
-  - Single `AbstractSearchPolicy`: applied to all axes
-  - `NTuple{N}` of policies: per-axis override
-
-# Returns
-- Interpolated value (or derivative) at query point
+- `deriv`: Derivative specification
+  - `Int` (0-3): same order for all axes (fastest)
+  - `NTuple{N,Int}`: per-axis orders, e.g. `(1,0)` for ∂f/∂x
+  - `Val(...)`: compile-time version for minimal allocation
+- `search`: Override search policy (single or per-axis tuple)
 
 # Examples
 ```julia
-itp = cubic_interp((x, y, z), data)
-itp((1.0, 0.5, 0.3))                  # Value at point
-itp((1.0, 0.5, 0.3); deriv=1)         # All first derivatives (∇f)
-itp((1.0, 0.5, 0.3); deriv=Val((1,0,0))) # ∂f/∂x only (type-stable)
-itp((1.0, 0.5, 0.3); deriv=Val((0,1,0))) # ∂f/∂y only (type-stable)
-itp((1.0, 0.5, 0.3); deriv=Val(2))       # All second derivatives
+itp((1.0, 0.5))              # value
+itp((1.0, 0.5); deriv=1)     # all first derivatives
+itp((1.0, 0.5); deriv=(1,0)) # ∂f/∂x only
 ```
-
-# Performance Notes
-- `deriv=0,1,2,3` literals: constant-propagation → zero-allocation
-- `Val((1,0,...))`: compile-time dispatch → zero-allocation
 """
 # Single-point evaluation
 @inline function (itp::CubicInterpolantND{Tg, Tv, N})(
     query::NTuple{N, <:Real};
-    deriv::Union{Int, Val}=0,
+    deriv::Union{Int, Val, NTuple{N,Int}}=0,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
 ) where {Tg, Tv, N}
     # Note: Don't convert to Tg - preserve query type for AD support
@@ -79,35 +48,28 @@ itp((1.0, 0.5, 0.3); deriv=Val(2))       # All second derivatives
             ops = ntuple(_ -> op, Val(N))
             return _eval_nd_hermite(itp, query, ops, search_tuple)
         end
-    else
+    elseif deriv isa Val
         # Val path: compile-time resolution
         ops = _resolve_deriv_nd(deriv, Val(N))
+        return _eval_nd_hermite(itp, query, ops, search_tuple)
+    else
+        ops = _resolve_deriv_nd(Val(deriv), Val(N))
         return _eval_nd_hermite(itp, query, ops, search_tuple)
     end
 end
 
 # ========================================
-# BATCH EVALUATION: Tuple of Vectors (SoA)
+# BATCH EVALUATION: SoA (Tuple of Vectors)
 # ========================================
-# Standard format for separated coordinate arrays (DataFrames, CSV columns)
 
 """
-    (itp::CubicInterpolantND)(queries::NTuple{N,Vector}; deriv=0, search=...)
+    (itp::CubicInterpolantND)(queries::NTuple{N,AbstractVector}; ...)
 
-Batch evaluation with Structure-of-Arrays (SoA) input.
-
-# Arguments
-- `queries::NTuple{N, AbstractVector}`: Coordinate vectors per axis
-
-# Example
-```julia
-xs, ys = rand(1000), rand(1000)
-results = itp((xs, ys))  # Evaluate at all 1000 points
-```
+Batch evaluation with Structure-of-Arrays input: `itp((xs, ys))`.
 """
 function (itp::CubicInterpolantND{Tg, Tv, N})(
     queries::NTuple{N, <:AbstractVector{<:Real}};
-    deriv::Union{Int, Val}=0,
+    deriv::Union{Int, Val, NTuple{N,Int}}=0,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
 ) where {Tg, Tv, N}
     n_queries = length(queries[1])
@@ -123,34 +85,27 @@ function (itp::CubicInterpolantND{Tg, Tv, N})(
             ops = ntuple(_ -> op, Val(N))
             return _eval_nd_batch_soa(itp, queries, ops, search_tuple)
         end
-    else
+    elseif deriv isa Val
         ops = _resolve_deriv_nd(deriv, Val(N))
+        return _eval_nd_batch_soa(itp, queries, ops, search_tuple)
+    else
+        ops = _resolve_deriv_nd(Val(deriv), Val(N))
         return _eval_nd_batch_soa(itp, queries, ops, search_tuple)
     end
 end
 
 # ========================================
-# BATCH EVALUATION: Vector of Tuples (AoS)
+# BATCH EVALUATION: AoS (Vector of Tuples)
 # ========================================
-# Standard format for point lists (StaticArrays, geometry libraries)
 
 """
-    (itp::CubicInterpolantND)(queries::Vector{<:NTuple{N}}; deriv=0, search=...)
+    (itp::CubicInterpolantND)(queries::AbstractVector{<:NTuple{N}}; ...)
 
-Batch evaluation with Array-of-Structures (AoS) input.
-
-# Arguments
-- `queries::AbstractVector{<:NTuple{N}}`: Vector of coordinate tuples
-
-# Example
-```julia
-points = [(rand(), rand()) for _ in 1:1000]
-results = itp(points)  # Evaluate at all 1000 points
-```
+Batch evaluation with Array-of-Structures input: `itp([(x,y), ...])`.
 """
 function (itp::CubicInterpolantND{Tg, Tv, N})(
     queries::AbstractVector{<:NTuple{N, <:Real}};
-    deriv::Union{Int, Val}=0,
+    deriv::Union{Int, Val, NTuple{N,Int}}=0,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
 ) where {Tg, Tv, N}
     search_tuple = _resolve_search_nd(search, Val(N))
@@ -160,21 +115,19 @@ function (itp::CubicInterpolantND{Tg, Tv, N})(
             ops = ntuple(_ -> op, Val(N))
             return _eval_nd_batch_aos(itp, queries, ops, search_tuple)
         end
-    else
+    elseif deriv isa Val
         ops = _resolve_deriv_nd(deriv, Val(N))
+        return _eval_nd_batch_aos(itp, queries, ops, search_tuple)
+    else
+        ops = _resolve_deriv_nd(Val(deriv), Val(N))
         return _eval_nd_batch_aos(itp, queries, ops, search_tuple)
     end
 end
 
 # ========================================
-# BATCH EVALUATION INNER FUNCTIONS
+# BATCH INNER FUNCTIONS
 # ========================================
 
-"""
-    _eval_nd_batch_soa(itp, queries, ops, search)
-
-Batch evaluation for SoA input. Query type preserved for AD support.
-"""
 @inline function _eval_nd_batch_soa(
     itp::CubicInterpolantND{Tg, Tv, N},
     queries::NTuple{N, <:AbstractVector{Tq}},
@@ -182,24 +135,16 @@ Batch evaluation for SoA input. Query type preserved for AD support.
     search::SEARCH
 ) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     n_queries = length(queries[1])
-    # Include Tq for AD support (Dual numbers propagate through)
-    Tout = promote_type(Tv, Tg, Tq)
+    Tout = promote_type(Tv, Tg, Tq)  # Include Tq for AD (Dual numbers)
     results = Vector{Tout}(undef, n_queries)
 
     @inbounds for k in 1:n_queries
-        # Don't convert to Tg - preserve query type for AD
         query_k = ntuple(d -> queries[d][k], Val(N))
         results[k] = _eval_nd_hermite(itp, query_k, ops, search)
     end
-
     return results
 end
 
-"""
-    _eval_nd_batch_aos(itp, queries, ops, search)
-
-Batch evaluation for AoS input. Query type preserved for AD support.
-"""
 @inline function _eval_nd_batch_aos(
     itp::CubicInterpolantND{Tg, Tv, N},
     queries::AbstractVector{<:NTuple{N, Tq}},
@@ -207,64 +152,45 @@ Batch evaluation for AoS input. Query type preserved for AD support.
     search::SEARCH
 ) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     n_queries = length(queries)
-    # Include Tq for AD support (Dual numbers propagate through)
     Tout = promote_type(Tv, Tg, Tq)
     results = Vector{Tout}(undef, n_queries)
 
     @inbounds for k in 1:n_queries
-        # Don't convert to Tg - preserve query type for AD
         results[k] = _eval_nd_hermite(itp, queries[k], ops, search)
     end
-
     return results
 end
 
 # ========================================
-# CORE EVALUATION
+# CORE HERMITE EVALUATION
 # ========================================
 
-"""
-    _eval_nd_hermite(itp, query, ops, search)
-
-Core N-dimensional Hermite evaluation using generic helpers and @generated cell kernel.
-
-All helper functions use ntuple(Val(N)) pattern for zero-allocation operation.
-"""
+# Generic N-dimensional (uses ntuple helpers)
 @inline function _eval_nd_hermite(
     itp::CubicInterpolantND{Tg, Tv, N},
     query::NTuple{N, Tq},
     ops::OPS,
     search::SEARCH
 ) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
-    # Extract all fields using @generated helpers (zero allocation)
-    grids = _get_grids(itp)       # NTuple{N}
-    spacings = _get_spacings(itp) # NTuple{N}
-    extraps = _get_extraps(itp)   # NTuple{N}
+    grids = _get_grids(itp)
+    spacings = _get_spacings(itp)
+    extraps = _get_extraps(itp)
 
-    # Per-axis setup using ntuple pattern
     q_evals = _handle_all_extraps(query, grids, extraps)
-
     indices, Ls, _ = _search_all_intervals(q_evals, grids, spacings, search)
-
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
 
-    # Tensor product collapse using @generated kernel
     return _eval_nd_cell(itp.nodal_derivs.partials, indices, hs, inv_hs, dLs, ops)
 end
 
-"""
-    _eval_nd_hermite(itp::CubicInterpolantND{Tg,Tv,2}, query, ops, search)
-
-Specialized 2D Hermite evaluation that eliminates ntuple closure overhead.
-Uses direct destructuring and inline operations for better LLVM optimization.
-"""
+# N=2 specialization: direct destructuring eliminates ntuple closure overhead,
+# enabling type-stable evaluation even with runtime deriv tuples like (1,0).
 @inline function _eval_nd_hermite(
     itp::CubicInterpolantND{Tg, Tv, 2},
     query::NTuple{2, Tq},
     ops::NTuple{2, <:AbstractEvalOp},
     search::NTuple{2, <:AbstractSearchPolicy}
 ) where {Tg, Tv, Tq<:Real}
-    # Direct destructuring (no @generated helper overhead)
     xq, yq = query
     grid_x, grid_y = itp.grids
     spacing_x, spacing_y = itp.spacings
@@ -272,17 +198,14 @@ Uses direct destructuring and inline operations for better LLVM optimization.
     op_x, op_y = ops
     search_x, search_y = search
 
-    # Inline extrapolation handling (no ntuple closure)
     x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
     y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
 
-    # Inline interval search (no ntuple closure)
     searcher_x = _to_searcher(search_x)
     searcher_y = _to_searcher(search_y)
     ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
     iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
 
-    # Inline local params (no ntuple closure)
     hx = _get_h(spacing_x, ix)
     hy = _get_h(spacing_y, iy)
     inv_hx = _get_inv_h(spacing_x, ix)
@@ -290,7 +213,6 @@ Uses direct destructuring and inline operations for better LLVM optimization.
     dLx = x_eval - xL
     dLy = y_eval - yL
 
-    # Same @generated tensor product kernel
     return _eval_nd_cell(
         itp.nodal_derivs.partials,
         (ix, iy), (hx, hy), (inv_hx, inv_hy), (dLx, dLy), (op_x, op_y)
@@ -298,71 +220,17 @@ Uses direct destructuring and inline operations for better LLVM optimization.
 end
 
 # ========================================
-# @GENERATED TENSOR PRODUCT EVALUATION
+# @GENERATED TENSOR PRODUCT KERNEL
 # ========================================
-#
-# Algorithm: Collapse dimensions 1 to N sequentially via tensor product
-#
-# Notation:
-#   - corner_bits: binary encoding of cell corner for dims d+1..N
-#   - deriv_bits: binary encoding of remaining derivatives for dims d+1..N
-#   - g_{stage}_{corner}_{deriv}: intermediate value after collapsing dim 'stage'
-#
-# For dimension d collapse:
-#   - Input: 2^(N-d+1) values at 2^(N-d+1) locations (corner × deriv combos)
-#   - Output: 2^(N-d) values at 2^(N-d) locations
-#   - Each output = hermite_kernel_1d(4 inputs from adjacent corners in dim d)
+# Collapses N dimensions via sequential 1D Hermite interpolations.
+# Each stage reduces 2^(N-d+1) → 2^(N-d) values.
 
-"""
-    _varname(stage, corner, deriv) -> Symbol
-
-Generate variable name for intermediate value.
-- stage=0: partials access (not a variable)
-- stage>0: g_{stage}_{corner}_{deriv}
-"""
 _varname(stage::Int, corner::Int, deriv::Int) = Symbol("g_$(stage)_$(corner)_$(deriv)")
-
-"""
-    _partial_index(deriv_bits) -> Int
-
-Convert derivative bit pattern to 1-based partial index.
-Bit d set means differentiated w.r.t. dimension d.
-"""
 _partial_index(deriv_bits::Int) = deriv_bits + 1
 
-"""
-    _corner_offset_expr(corner_bits, N) -> Vector{Int}
-
-Generate index offset tuple for a cell corner.
-For dimension d, bit (d-1) in corner_bits determines +0 or +1 offset.
-"""
 function _corner_offset_expr(corner_bits::Int, N::Int)
-    offsets = [((corner_bits >> (d-1)) & 1) for d in 1:N]
-    return offsets
+    [((corner_bits >> (d-1)) & 1) for d in 1:N]
 end
-
-"""
-    _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
-
-@generated tensor product collapse for N-dimensional Hermite evaluation.
-
-Generates specialized code at compile time for each N, unrolling all
-2^N kernel calls into a flat sequence of operations.
-
-# Type Parameters
-- `Tv`: Value type (from partials array)
-- `Tg`: Grid type (from hs, inv_hs, dLs)
-- `N`: Number of dimensions
-- `NP1`: N + 1 (partials array dimensionality)
-
-# Arguments
-- `partials::Array{Tv, NP1}`: Precomputed partial derivatives
-- `indices::NTuple{N, Int}`: Cell indices for each dimension
-- `hs::NTuple{N, Tg}`: Cell widths for each dimension
-- `inv_hs::NTuple{N, Tg}`: Inverse cell widths
-- `dLs::NTuple{N, Tg}`: Distances from left cell boundary
-- `ops::NTuple{N, AbstractEvalOp}`: Evaluation operations per dimension
-"""
 @inline @generated function _eval_nd_cell(
     partials::Array{Tv, NP1},
     indices::NTuple{N, Int},

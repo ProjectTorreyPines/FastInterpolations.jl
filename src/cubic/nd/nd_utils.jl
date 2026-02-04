@@ -94,10 +94,11 @@ Resolve derivative specification to N-tuple of EvalOp singletons.
 # Accepted
 - `Int` (0-3): Broadcast to all axes
 - `Val{Int}`: Compile-time broadcast (e.g., `Val(1)`)
-- `Val{Tuple}`: Mixed partials (e.g., `Val((1,0,0))` for ∂f/∂x)
+- `Val{Tuple}`: Mixed partials, compile-time (e.g., `Val((1,0))` for ∂f/∂x)
+- `NTuple{N,Int}`: Mixed partials, runtime (e.g., `(1,0)` for ∂f/∂x)
 
-# NOT Accepted
-- Raw tuple `(1,0)`: Use `Val((1,0))` instead
+Note: `Val((1,0))` is slightly faster than `(1,0)` due to compile-time dispatch,
+but the difference is negligible (~0.3 KiB extra allocation per batch call).
 """
 # Int path: macro dispatch at call site ensures concrete type
 @inline function _resolve_deriv_nd(d::Int, ::Val{N}) where {N}
@@ -133,20 +134,6 @@ end
     end
 end
 
-# Explicit error for raw Tuple (prevent performance trap)
-@inline function _resolve_deriv_nd(d::NTuple{N,Int}, ::Val{N}) where {N}
-    throw(ArgumentError(
-        "Raw tuple deriv=$d creates Union types (performance trap). " *
-        "Use Val($d) for type-stable mixed partials."
-    ))
-end
-
-@inline function _resolve_deriv_nd(d::Tuple{Vararg{Int}}, ::Val{N}) where {N}
-    throw(ArgumentError(
-        "deriv tuple must have $N elements, got $(length(d)). " *
-        "Also, use Val(tuple) for type-stable evaluation."
-    ))
-end
 
 # ========================================
 # PolyFit BC Helpers

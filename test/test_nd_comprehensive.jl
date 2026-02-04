@@ -302,19 +302,19 @@ using FastInterpolations
         end
 
         @testset "BC resolution error paths" begin
-            # Wrong number of BCs - caught by Julia's type system at dispatch
+            # Wrong number of BCs - rejected by keyword type assertion
             @test_throws TypeError cubic_interp((x, y), data; bc=(NaturalBC(),))
             @test_throws TypeError cubic_interp((x, y), data; bc=(NaturalBC(), NaturalBC(), NaturalBC()))
         end
 
         @testset "Extrap resolution error paths" begin
-            # Wrong number of extrap modes - caught by Julia's type system at dispatch
+            # Wrong number of extrap modes - rejected by keyword type assertion
             @test_throws TypeError cubic_interp((x, y), data; extrap=(:none,))
             @test_throws TypeError cubic_interp((x, y), data; extrap=(:none, :none, :none))
         end
 
         @testset "Search resolution error paths" begin
-            # Wrong number of search policies - caught by Julia's type system at dispatch
+            # Wrong number of search policies - rejected by keyword type assertion
             @test_throws TypeError cubic_interp((x, y), data; search=(Binary(),))
             @test_throws TypeError cubic_interp((x, y), data; search=(Binary(), Binary(), Binary()))
         end

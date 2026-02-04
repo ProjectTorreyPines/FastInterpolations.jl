@@ -11,4 +11,4 @@ include("cubic_oneshot.jl")      # 7. 4-arg API (cubic_interp!, cubic_interp)
 include("cubic_anchor.jl")       # 8. Anchored queries
 include("cubic_interpolant.jl")  # 9. 2-arg API, callable
 include("cubic_series_interp.jl") # 10. Series interpolation (CubicSeriesInterpolant)
-include("nd/nd.jl")              # 11. N-dimensional cubic (BicubicInterpolant, etc.)
+include("nd/nd.jl")              # 11. N-dimensional cubic (CubicInterpolantND)

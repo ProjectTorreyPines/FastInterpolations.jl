@@ -99,7 +99,6 @@ Abstract supertype for N-dimensional interpolant objects.
 
 # Subtypes
 - `CubicInterpolantND{Tg, Tv, N}`: N-dimensional cubic Hermite interpolation
-- `BicubicInterpolant{Tg, Tv}`: 2D cubic interpolation (legacy, equivalent to CubicInterpolantND with N=2)
 
 # Example
 ```julia

@@ -191,31 +191,6 @@ Uses @generated to avoid closure boxing when iterating over heterogeneous grid t
     end
 end
 
-"""
-    _validate_2d_grids(x, y, data)
-
-Validate 2D grid and data dimensions.
-"""
-function _validate_2d_grids(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tg},
-    data::AbstractMatrix{Tv}
-) where {Tg, Tv}
-    nx, ny = length(x), length(y)
-    dnx, dny = size(data)
-
-    dnx == nx || throw(DimensionMismatch(
-        "data rows ($dnx) must match length(x) ($nx)"
-    ))
-    dny == ny || throw(DimensionMismatch(
-        "data columns ($dny) must match length(y) ($ny)"
-    ))
-    nx >= 2 || throw(ArgumentError("x must have at least 2 points, got $nx"))
-    ny >= 2 || throw(ArgumentError("y must have at least 2 points, got $ny"))
-
-    return nothing
-end
-
 # ========================================
 # Zero-Allocation Grid Type Helpers
 # ========================================

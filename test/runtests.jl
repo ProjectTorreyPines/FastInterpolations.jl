@@ -54,6 +54,9 @@ else
     include("test_show.jl")
     include("test_recipes.jl")
 
+    # ND Interpolation
+    include("test_cubic_nd.jl")
+
     # Auto-differentiation tests (ForwardDiff, Zygote, Enzyme)
     include("test_autodiff_ForwardDiff.jl")
     include("test_autodiff_Zygote.jl")

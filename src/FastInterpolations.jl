@@ -30,9 +30,8 @@ export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticSeriesInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, CubicSeriesInterpolant
-export CubicInterpolantND, BicubicInterpolant, AbstractCoeffStrategy, PreCompute, OnTheFly  # ND cubic types
+export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly  # ND cubic types
 export gradient, hessian, laplacian  # Analytical vector calculus for ND (9x faster than ForwardDiff)
-export bicubic_interp  # Deprecated specialized 2D (for testing)
 export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar queries
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 

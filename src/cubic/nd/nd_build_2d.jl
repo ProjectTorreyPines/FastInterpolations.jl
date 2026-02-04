@@ -139,7 +139,7 @@ Differentiate 1D vector using cubic splines. BC type determines the method:
 """
 @with_pool pool function _deriv_1d!(
     deriv::AbstractVector{Tv}, values::AbstractVector{Tv},
-    grid::AbstractVector{Tg}, bc::AbstractBC
+    grid::AbstractVector{Tg}, bc::AbstractB
 ) where {Tg<:AbstractFloat, Tv}
     n = length(values)
     # Cache uses grid type Tg for matrix structure (factorization)

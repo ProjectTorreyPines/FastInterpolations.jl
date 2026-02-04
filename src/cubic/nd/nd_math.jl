@@ -9,8 +9,6 @@
 #
 # Type-generic: Works with Float32, Float64, Complex, and ForwardDiff.Dual
 #
-# 2D-specific batch solvers are in nd_math_2d.jl (temporary).
-#
 # Note: These functions use the OUTPUT type (Tv or promoted type) for
 # intermediate calculations to support complex values and AD.
 
@@ -281,4 +279,274 @@ end
 # Fallback (no-op for other BC types)
 function _apply_derivative_bc!(dydx, bc, args...)
     return nothing
+end
+
+# ========================================
+# 1D DIFFERENTIATION HELPERS
+# ========================================
+# Unified API: _deriv_1d!(deriv, values, grid, bc)
+# BC dispatch: AbstractBC or CubicFit
+
+"""
+    _deriv_1d!(deriv, values, grid, bc)
+
+Differentiate 1D vector using cubic splines. BC type determines the method:
+- `AbstractBC` (NaturalBC, ClampedBC, PeriodicBC, etc.): Use specified BC
+- `CubicFit`: Estimate endpoint derivatives via polynomial fitting
+"""
+@with_pool pool function _deriv_1d!(
+    deriv::AbstractVector{Tv}, values::AbstractVector{Tv},
+    grid::AbstractVector{Tg}, bc::AbstractBC
+) where {Tg<:AbstractFloat, Tv}
+    n = length(values)
+    # Cache uses grid type Tg for matrix structure (factorization)
+    # Computation uses value type Tv for actual BC values
+    bc_cache = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, Tg)
+    bc_compute = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, Tv)
+    cache = _get_cubic_cache(grid, bc_cache, true)
+    actual_bc = cache.bc_config isa PeriodicData ? cache.bc_config : bc_compute
+    m = acquire!(pool, Tv, n)
+    _solve_system!(m, cache, values, actual_bc)
+    _moments_to_derivatives_1d!(deriv, m, values, cache.spacing)
+    _apply_derivative_bc!(deriv, actual_bc)
+    return deriv
+end
+
+@with_pool pool function _deriv_1d!(
+    deriv::AbstractVector{Tv}, values::AbstractVector{Tv},
+    grid::AbstractVector{Tg}, ::CubicFit
+) where {Tg<:AbstractFloat, Tv}
+    n = length(values)
+    @assert n >= 4 "Need at least 4 points for CubicFit"
+
+    deriv_left = _estimate_endpoint_derivative(grid, values, Val(:left), CubicFit())
+    deriv_right = _estimate_endpoint_derivative(grid, values, Val(:right), CubicFit())
+
+    # BC values are Tv type (can be Complex)
+    bc = BCPair(Deriv1(Tv(deriv_left)), Deriv1(Tv(deriv_right)))
+    # Cache uses grid type Tg for matrix structure
+    bc_cache = BCPair(Deriv1(zero(Tg)), Deriv1(zero(Tg)))
+    cache = _get_cubic_cache(grid, bc_cache, true)
+    m = acquire!(pool, Tv, n)
+    _solve_system!(m, cache, values, bc)
+    _moments_to_derivatives_1d!(deriv, m, values, cache.spacing)
+    _apply_derivative_bc!(deriv, bc)
+    return deriv
+end
+
+# ========================================
+# BATCH THOMAS SOLVERS
+# ========================================
+#
+# High-performance batch solvers for ND cubic interpolation.
+# Key optimization: Loop transposition for cache-friendly SIMD access.
+#
+# When solving along axis D (D > 1), we transpose the LOOP ORDER (not data):
+# - Outer loop: system step (k = 1:n_sys)
+# - Inner loop: axis 1 (i = 1:n_batch) - CONTIGUOUS in column-major!
+#
+# This enables @simd vectorization over the contiguous dimension.
+#
+# Used by _differentiate_nd_along_dim_batch! which reshapes ND arrays to
+# 2D matrices (shape_before × n_d) for batch processing.
+
+"""
+    _ldiv_along_dim_vectorized!(z, thomas)
+
+Batch Thomas solver for systems along axis 2 (rows).
+KEY OPTIMIZATION: Outer loop = system step, inner loop = axis 1 (contiguous).
+This enables @simd vectorization over the contiguous dimension.
+
+# Type Parameters
+- `Tv`: Value type (Real, Complex, or AD type)
+- `Tg`: Grid type (AbstractFloat) for ThomasFactorization
+
+# Arguments
+- `z::AbstractMatrix{Tv}`: RHS matrix (modified in-place), systems along axis 2
+- `thomas::ThomasFactorization{Tg}`: Thomas factorization with dl, du, inv_d
+"""
+@inline function _ldiv_along_dim_vectorized!(
+    z::AbstractMatrix{Tv},
+    thomas::ThomasFactorization{Tg,V}
+) where {Tv, Tg<:AbstractFloat, V<:AbstractVector{Tg}}
+    dl = thomas.dl
+    du = thomas.du
+    inv_d = thomas.inv_d
+    n_sys = length(inv_d)   # System size (axis 2 length)
+    n_batch = size(z, 1)    # Batch size (axis 1 length, contiguous!)
+
+    # Forward substitution: transposed loop order for contiguous access
+    @inbounds for k in 2:n_sys
+        factor = Tv(-dl[k-1])
+        @simd for i in 1:n_batch
+            z[i, k] = muladd(factor, z[i, k-1], z[i, k])
+        end
+    end
+
+    # Backward substitution: final column
+    inv_d_n = Tv(inv_d[n_sys])
+    @inbounds @simd for i in 1:n_batch
+        z[i, n_sys] *= inv_d_n
+    end
+
+    # Backward substitution: remaining columns
+    @inbounds for k in (n_sys-1):-1:1
+        u_factor = Tv(-du[k])
+        d_factor = Tv(inv_d[k])
+        @simd for i in 1:n_batch
+            z[i, k] = muladd(u_factor, z[i, k+1], z[i, k]) * d_factor
+        end
+    end
+    return z
+end
+
+# Dispatch to SIMD-optimized solver (only for D ≥ 2)
+@inline _ldiv_along_dim!(z, thomas, ::Val{D}) where {D} = _ldiv_along_dim_vectorized!(z, thomas)
+
+# Val(1) is explicitly unsupported - benchmarking showed per-column approach is faster
+@noinline function _ldiv_along_dim!(z, thomas, ::Val{1})
+    throw(ArgumentError(
+        "Batch solving along axis 1 (Val(1)) is not supported.\n" *
+        "Reason: Per-column approach is faster due to view creation overhead.\n" *
+        "Use _solve_system! in a loop for axis 1, or use Val(2) for SIMD-optimized batch solving."
+    ))
+end
+
+# ========================================
+# HIGH-LEVEL BATCH SOLVER INTERFACE
+# ========================================
+
+"""
+    solve_along_dim!(out_z, cache, data, bc, ::Val{D})
+
+Compute cubic spline second derivatives (moments) for batch systems along dimension D.
+Optimized for memory locality and SIMD execution.
+
+# Use Cases
+- ND grids: `Val(2)` for batch processing of reshaped 2D matrix slices
+- For axis 1: Use `_solve_system!` in a loop (per-column approach is faster)
+
+# Type Parameters
+- `Tv`: Value type (Real, Complex, or AD type)
+- `Tg`: Grid type (AbstractFloat) for cache and spacing
+
+# Arguments
+- `out_z::AbstractMatrix{Tv}`: Output array (same size as data, modified in-place)
+- `cache::CubicSplineCache{Tg}`: Precomputed Thomas factorization and grid info
+- `data::AbstractMatrix{Tv}`: Input data array
+- `bc::BCPair`: Boundary condition pair
+- `::Val{D}`: Dimension along which to solve (D ≥ 2 only)
+"""
+function solve_along_dim!(
+    out_z::AbstractMatrix{Tv},
+    cache::CubicSplineCache{Tg,X,F,BC_cache,S},
+    data::AbstractMatrix{Tv},
+    bc::BCPair,
+    dim::Val{D}
+) where {Tv, Tg<:AbstractFloat, X, F, BC_cache, S<:AbstractGridSpacing{Tg}, D}
+    # Step 1: Compute RHS for all systems
+    # Note: bc can have different value type than cache.bc_config (e.g., ComplexF64 vs Float64)
+    compute_rhs_along_dim!(out_z, data, cache.x, cache.spacing, bc, dim)
+
+    # Step 2: Batch solve (SIMD for D≥2)
+    _ldiv_along_dim!(out_z, cache.thomas, dim)
+
+    return out_z
+end
+
+# ========================================
+# BATCH RHS COMPUTATION
+# ========================================
+
+"""
+    compute_rhs_along_dim!(D, data, x, spacing, bc, ::Val{D})
+
+Compute RHS for batch systems along dimension `D`.
+
+# Arguments
+- `D::AbstractMatrix{T}`: Output RHS matrix (modified in-place)
+- `data::AbstractMatrix{T}`: Input data matrix
+- `x::AbstractVector{T}`: Grid points
+- `spacing::AbstractGridSpacing{T}`: Grid spacing object
+- `bc::BCPair{T}`: Boundary condition pair
+- `::Val{D}`: Dimension along which to compute RHS
+"""
+# Val(1) is explicitly unsupported
+@noinline function compute_rhs_along_dim!(
+    D::AbstractMatrix{Tv},
+    data::AbstractMatrix{Tv},
+    x::AbstractVector{Tg},
+    spacing::AbstractGridSpacing{Tg},
+    bc::BCPair,
+    ::Val{1}
+) where {Tv, Tg<:AbstractFloat}
+    throw(ArgumentError(
+        "Batch RHS computation along axis 1 (Val(1)) is not supported.\n" *
+        "Use compute_rhs! in a loop for axis 1, or use Val(2) for batch computation."
+    ))
+end
+
+function compute_rhs_along_dim!(
+    D::AbstractMatrix{Tv},
+    data::AbstractMatrix{Tv},
+    x::AbstractVector{Tg},
+    spacing::AbstractGridSpacing{Tg},
+    bc::BCPair,
+    ::Val{2}
+) where {Tv, Tg<:AbstractFloat}
+    n_batch = size(data, 1)
+    @inbounds for i in 1:n_batch
+        compute_rhs!(view(D, i, :), view(data, i, :), x, spacing, bc)
+    end
+    return D
+end
+
+# ========================================
+# BATCH MOMENT-TO-DERIVATIVE CONVERSION
+# ========================================
+
+"""
+    moments_to_derivatives_along_dim!(out, M, data, spacing, bc, ::Val{D})
+
+Convert moments to derivatives for batch systems along dimension D.
+
+# Arguments
+- `out::AbstractMatrix{T}`: Output derivatives (modified in-place)
+- `M::AbstractMatrix{T}`: Input moments (second derivatives)
+- `data::AbstractMatrix{T}`: Original function values
+- `spacing::AbstractGridSpacing{T}`: Grid spacing
+- `bc`: Boundary condition configuration
+- `::Val{D}`: Dimension along which conversion was performed
+"""
+# Val(1) is explicitly unsupported
+@noinline function moments_to_derivatives_along_dim!(
+    out::AbstractMatrix{Tv},
+    M::AbstractMatrix{Tv},
+    data::AbstractMatrix{Tv},
+    spacing,
+    bc,
+    ::Val{1}
+) where {Tv}
+    throw(ArgumentError(
+        "Batch moment-to-derivative along axis 1 (Val(1)) is not supported.\n" *
+        "Use _moments_to_derivatives_1d! in a loop for axis 1, or use Val(2) for batch conversion."
+    ))
+end
+
+function moments_to_derivatives_along_dim!(
+    out::AbstractMatrix{Tv},
+    M::AbstractMatrix{Tv},
+    data::AbstractMatrix{Tv},
+    spacing::AbstractGridSpacing{Tg},
+    bc,
+    ::Val{2}
+) where {Tv, Tg<:AbstractFloat}
+    n_batch = size(data, 1)
+    @inbounds for i in 1:n_batch
+        _moments_to_derivatives_1d!(
+            view(out, i, :), view(M, i, :), view(data, i, :), spacing
+        )
+        _apply_derivative_bc!(view(out, i, :), bc)
+    end
+    return out
 end

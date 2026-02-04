@@ -56,6 +56,7 @@ else
 
     # ND Interpolation
     include("test_cubic_nd.jl")
+    include("test_nd_comprehensive.jl")
 
     # Auto-differentiation tests (ForwardDiff, Zygote, Enzyme)
     include("test_autodiff_ForwardDiff.jl")

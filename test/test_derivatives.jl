@@ -1637,6 +1637,74 @@ end # Derivative Comprehensive Coverage
         @test (@. 2.0 * d1(xs)) ≈ 2.0 .* d1.(xs)
     end
 
+    @testset "DerivativeView wrapper - ND mixed partials" begin
+        x = collect(range(0.0, 1.0, 21))
+        y = collect(range(0.0, 1.0, 17))
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        dx = deriv_view(itp, (1, 0))
+        dxy = deriv_view(itp, (1, 1))
+
+        @test dx isa FastInterpolations.DerivativeView
+        @test dxy isa FastInterpolations.DerivativeView
+
+        q = (0.35, 0.6)
+        @test dx(q) ≈ itp(q; deriv=(1, 0))
+        @test dxy(q) ≈ itp(q; deriv=(1, 1))
+
+        pts = [(0.1, 0.2), (0.3, 0.4), (0.7, 0.9)]
+        @test dx.(pts) ≈ [itp(p; deriv=(1, 0)) for p in pts]
+        @test dxy.(pts) ≈ [itp(p; deriv=(1, 1)) for p in pts]
+
+        @test_throws ArgumentError dx(q; deriv=(0, 0))
+    end
+
+    @testset "DerivativeView wrapper - ND int order" begin
+        x = collect(range(0.0, 1.0, 21))
+        y = collect(range(0.0, 1.0, 17))
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        d1 = deriv_view(itp, 1)
+        d2 = deriv_view(itp, 2)
+
+        @test d1 isa FastInterpolations.DerivativeView
+        @test d2 isa FastInterpolations.DerivativeView
+
+        q = (0.25, 0.6)
+        @test d1(q) ≈ itp(q; deriv=1)
+        @test d1(q) ≈ itp(q; deriv=(1, 1))
+        @test d2(q) ≈ itp(q; deriv=2)
+        @test d2(q) ≈ itp(q; deriv=(2, 2))
+    end
+
+    @testset "DerivativeView wrapper - ND deriv1/2/3 errors" begin
+        x = collect(range(0.0, 1.0, 21))
+        y = collect(range(0.0, 1.0, 17))
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        @test_throws ArgumentError deriv1(itp)
+        @test_throws ArgumentError deriv2(itp)
+        @test_throws ArgumentError deriv3(itp)
+    end
+
+    @testset "DerivativeView wrapper - deriv_view on 1D" begin
+        x = collect(0.0:0.2:2.0)
+        y = x .^ 2
+        itp = cubic_interp(x, y)
+
+        d1 = deriv_view(itp, 1)
+        d2 = deriv_view(itp, 2)
+
+        @test d1 isa FastInterpolations.DerivativeView
+        @test d2 isa FastInterpolations.DerivativeView
+
+        @test d1(0.5) ≈ itp(0.5; deriv=1)
+        @test d2(0.5) ≈ itp(0.5; deriv=2)
+    end
+
     @testset "DerivativeView allocation" begin
         x = collect(range(0.0, 1.0, 51))
         y = x .^ 2

@@ -94,7 +94,7 @@ Abstract supertype for N-dimensional interpolant objects.
 
 # API Differences from 1D Interpolants
 - **Evaluation**: `itp(x::NTuple{N})` or `itp(x::AbstractVector)` instead of `itp(x::Real)`
-- **Derivatives**: Use `deriv` keyword (e.g., `itp(x; deriv=(1,0))`) instead of `deriv1/deriv2/deriv3`
+- **Derivatives**: Use `deriv` keyword (e.g., `itp(x; deriv=(1,0))`) or `deriv_view(itp, (1,0))`
 - **Vector Calculus**: Supports `gradient`, `hessian`, `laplacian`
 
 # Subtypes

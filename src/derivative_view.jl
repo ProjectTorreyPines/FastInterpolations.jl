@@ -4,7 +4,7 @@
 #
 # This file contains:
 # - DerivativeView struct for derivative evaluation
-# - Factory functions for CubicInterpolant and LinearInterpolant
+# - Factory functions for 1D and ND interpolants
 # - Callable methods delegating to parent's deriv keyword
 #
 # The wrapper enables:
@@ -31,7 +31,7 @@ function integrate(d::AbstractDerivativeView, a, b)
 end
 ```
 
-See also: [`DerivativeView`](@ref), [`deriv1`](@ref), [`deriv2`](@ref), [`deriv3`](@ref)
+See also: [`DerivativeView`](@ref), [`deriv1`](@ref), [`deriv2`](@ref), [`deriv3`](@ref), [`deriv_view`](@ref)
 """
 abstract type AbstractDerivativeView end
 
@@ -42,11 +42,14 @@ Lightweight callable wrapper for derivative evaluation with a fixed derivative o
 Enables broadcast and higher-order function composition.
 
 # Type Parameters
-- `Order`: Derivative order (1, 2, or 3)
+- `Order`: Derivative order
+  - `Int` for 1D derivatives (1, 2, or 3)
+  - `NTuple{N,Int}` for ND partials (e.g., `(1,0)`)
 - `ITP`: Parent interpolant type
 
 # Construction
-Use `deriv1(itp)`, `deriv2(itp)`, or `deriv3(itp)` to create instances.
+Use `deriv1(itp)`, `deriv2(itp)`, or `deriv3(itp)` to create instances for 1D.
+Use `deriv_view(itp, (d1, d2, ...))` for ND mixed partials.
 
 # Type Dispatch Patterns
 ```julia
@@ -73,7 +76,7 @@ slopes = d1.(query_points)
 result = @. coef * d1(xs) * other_func(xs)
 ```
 
-See also: [`AbstractDerivativeView`](@ref), [`deriv1`](@ref), [`deriv2`](@ref), [`deriv3`](@ref)
+See also: [`AbstractDerivativeView`](@ref), [`deriv1`](@ref), [`deriv2`](@ref), [`deriv3`](@ref), [`deriv_view`](@ref)
 """
 struct DerivativeView{Order, ITP} <: AbstractDerivativeView
     parent::ITP
@@ -87,6 +90,10 @@ end
     deriv1(itp::AbstractInterpolant)
     deriv2(itp::AbstractInterpolant)
     deriv3(itp::AbstractInterpolant)
+
+    deriv_view(itp::AbstractInterpolant, order::Int)
+    deriv_view(itp::AbstractInterpolantND, order::Int)
+    deriv_view(itp::AbstractInterpolantND, order::NTuple{N,Int})
 
 Create a callable, zero-allocation derivative view of the interpolant for the 1st, 2nd, or 3rd derivative.
 
@@ -147,15 +154,55 @@ d1(output, query_pts; search=LinearBinary())
 @inline deriv2(itp::AbstractInterpolant) = DerivativeView{2, typeof(itp)}(itp)
 @inline deriv3(itp::AbstractInterpolant) = DerivativeView{3, typeof(itp)}(itp)
 
-# ND interpolants use different derivative API
+"""
+    deriv_view(itp::AbstractInterpolant, order::Int)
+    deriv_view(itp::AbstractInterpolantND, order::Int)
+    deriv_view(itp::AbstractInterpolantND, order::NTuple{N,Int})
+
+Create a derivative view for 1D or N-dimensional interpolants.
+- 1D: `order::Int` maps to `deriv=order`.
+- ND: `order::Int` applies the same order to all axes (e.g., `1` → `(1,1,...,1)`).
+- ND: `order::NTuple{N,Int}` specifies mixed partials.
+The ND view forwards `deriv=Val(order)` to enable compile-time dispatch.
+
+# Examples
+```julia
+itp = cubic_interp((x, y), data)
+
+d1 = deriv_view(itp, 1)         # ∂f/∂x and ∂f/∂y (same order per axis)
+dx = deriv_view(itp, (1, 0))
+dxy = deriv_view(itp, (1, 1))
+
+dx((0.5, 0.5))                         # ∂f/∂x
+dxy.([(0.1, 0.2), (0.3, 0.4)])          # broadcast over points
+```
+"""
+@inline deriv_view(itp::AbstractInterpolant, order::Int) = DerivativeView{order, typeof(itp)}(itp)
+
+@inline function deriv_view(
+    itp::AbstractInterpolantND{Tg, Tv, N},
+    order::Int
+) where {Tg, Tv, N}
+    return DerivativeView{ntuple(_ -> order, Val(N)), typeof(itp)}(itp)
+end
+
+@inline function deriv_view(
+    itp::AbstractInterpolantND{Tg, Tv, N},
+    order::NTuple{N, Int}
+) where {Tg, Tv, N}
+    return DerivativeView{order, typeof(itp)}(itp)
+end
+
+# ND interpolants use tuple-based derivative API (via deriv_view)
 @noinline function _nd_deriv_error(order::Int, N::Int)
     throw(ArgumentError(
         "deriv$order is not supported for $(N)D interpolants. " *
         "For N-dimensional interpolants, use:\n" *
-        "  • itp(x; deriv=(1,0,...))  for partial derivatives\n" *
-        "  • gradient(itp, x)          for ∇f\n" *
-        "  • hessian(itp, x)           for H(f)\n" *
-        "  • laplacian(itp, x)         for ∇²f"
+        "  • deriv_view(itp, (d1, d2, ...))  for partial derivatives\n" *
+        "  • itp(x; deriv=(1,0,...))         for partial derivatives\n" *
+        "  • gradient(itp, x)                for ∇f\n" *
+        "  • hessian(itp, x)                 for H(f)\n" *
+        "  • laplacian(itp, x)               for ∇²f"
     ))
 end
 
@@ -169,19 +216,33 @@ end
 # Note: `deriv` keyword is captured and rejected - DerivativeView always uses
 # its compile-time Order parameter. This check is zero-cost due to constant folding.
 
+@inline _order_label(order::Int) = order == 1 ? "1st" : order == 2 ? "2nd" : order == 3 ? "3rd" : "$(order)th"
+@inline _order_label(order::Tuple) = "mixed $(order)"
+
 @inline _check_no_deriv_override(::Val, ::Nothing) = nothing
 @inline _check_no_deriv_override(::Val{Order}, ::Any) where {Order} = throw(ArgumentError(
-    "This DerivativeView already evaluates the $(Order == 1 ? "1st" : Order == 2 ? "2nd" : "3rd") derivative (deriv=$Order). " *
+    "This DerivativeView already evaluates the $(_order_label(Order)) derivative (deriv=$(Order)). " *
     "The `deriv` keyword argument is not accepted. " *
-    "To evaluate a different derivative order, create a new view: deriv1(itp), deriv2(itp), or deriv3(itp)."
+    "To evaluate a different derivative order, create a new view: deriv1/deriv2/deriv3 for 1D, " *
+    "or deriv_view(itp, (d1, d2, ...)) for ND."
 ))
+
+@inline _deriv_kw(::Val{Order}) where {Order} = Order isa Tuple ? Val(Order) : Order
 
 # Out-of-place calls (Scalar or Vector)
 @inline function (d::DerivativeView{Order, ITP})(
     xq::Union{Real, AbstractArray{<:Real}}; deriv=nothing, kwargs...
 ) where {Order, ITP}
     _check_no_deriv_override(Val(Order), deriv)
-    d.parent(xq; deriv=Order, kwargs...)
+    d.parent(xq; deriv=_deriv_kw(Val(Order)), kwargs...)
+end
+
+# ND queries (tuples, SoA/AoS, etc.)
+@inline function (d::DerivativeView{Order, ITP})(
+    xq; deriv=nothing, kwargs...
+) where {Order, ITP<:AbstractInterpolantND}
+    _check_no_deriv_override(Val(Order), deriv)
+    d.parent(xq; deriv=_deriv_kw(Val(Order)), kwargs...)
 end
 
 # In-place vector query => vector output (single-series interpolants)
@@ -190,7 +251,7 @@ end
     output::AbstractVector, xq::AbstractVector{<:Real}; deriv=nothing, kwargs...
 ) where {Order, ITP}
     _check_no_deriv_override(Val(Order), deriv)
-    d.parent(output, xq; deriv=Order, kwargs...)
+    d.parent(output, xq; deriv=_deriv_kw(Val(Order)), kwargs...)
 end
 
 # In-place scalar query => array output (SeriesInterpolant)
@@ -199,6 +260,5 @@ end
     out::AbstractArray, xq::Real; deriv=nothing, kwargs...
 ) where {Order, ITP}
     _check_no_deriv_override(Val(Order), deriv)
-    d.parent(out, xq; deriv=Order, kwargs...)
+    d.parent(out, xq; deriv=_deriv_kw(Val(Order)), kwargs...)
 end
-

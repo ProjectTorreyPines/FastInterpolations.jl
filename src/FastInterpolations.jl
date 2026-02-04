@@ -47,7 +47,7 @@ export ParabolaFit # Deprecated alias of QuadraticFit
 export Left, Right
 
 # Derivative view functions and types
-export deriv1, deriv2, deriv3, AbstractDerivativeView, DerivativeView
+export deriv1, deriv2, deriv3, deriv_view, AbstractDerivativeView, DerivativeView
 
 # Operation types (for derivative dispatch)
 export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3

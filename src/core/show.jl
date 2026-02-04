@@ -171,6 +171,48 @@ function _format_deriv_order(order::Int)
     return "$(order)th"
 end
 
+function _format_deriv_order(order::Tuple)
+    N = length(order)
+    all_zero = all(o -> o == 0, order)
+    all_zero && return string(order, " value ≡ f")
+
+    parts = String[]
+    for i in 1:N
+        ord = order[i]
+        ord == 0 && continue
+        # Use normal 'x' instead of subscript 'ₓ' for better visibility
+        # Example: ∂x₁ instead of ∂ₓ₁
+        if ord == 1
+            push!(parts, "∂x" * _subscript_digit(i))
+        else
+            push!(parts, "∂" * _superscript_int(ord) * "x" * _subscript_digit(i))
+        end
+    end
+    # Wrap in parentheses to group the operator
+    return string(order, " partial derivatives ≡ (", join(parts, ""), ")f")
+end
+
+@inline function _superscript_digit(d::Int)
+    d == 0 && return "⁰"
+    d == 1 && return "¹"
+    d == 2 && return "²"
+    d == 3 && return "³"
+    d == 4 && return "⁴"
+    d == 5 && return "⁵"
+    d == 6 && return "⁶"
+    d == 7 && return "⁷"
+    d == 8 && return "⁸"
+    d == 9 && return "⁹"
+    return string(d)
+end
+
+@inline function _superscript_int(n::Int)
+    n < 0 && return "^$(n)"
+    n < 10 && return _superscript_digit(n)
+    digits = reverse(digits(n))
+    return join((_superscript_digit(d) for d in digits))
+end
+
 # ========================================
 # Show Methods: Single-Series Interpolants
 # ========================================
@@ -402,7 +444,11 @@ _interpolant_float_type(::AbstractInterpolant{Tg, Tv}) where {Tg, Tv} = Tg
 function Base.show(io::IO, ::MIME"text/plain", d::DerivativeView{Order, ITP}) where {Order, ITP}
     ord_str = _format_deriv_order(Order)
     _show_print(io, "DerivativeView", :cyan; bold=true)
-    _show_print(io, " ($ord_str derivative)", :light_black)
+    if Order isa Tuple
+        _show_print(io, " $ord_str", :light_black)
+    else
+        _show_print(io, " ($ord_str derivative)", :light_black)
+    end
     println(io)
 
     # Get parent info
@@ -410,16 +456,26 @@ function Base.show(io::IO, ::MIME"text/plain", d::DerivativeView{Order, ITP}) wh
     parent_type = nameof(typeof(parent))
     T = _interpolant_float_type(parent)
 
-    # Determine number of points
-    n_pts = if hasproperty(parent, :x)
-        length(parent.x)
-    elseif hasproperty(parent, :cache) && hasproperty(parent.cache, :x)
-        length(parent.cache.x)
+    if parent isa AbstractInterpolantND
+        # ND interpolants: show dimensionality and grid sizes
+        N = ndims(parent)
+        sizes = if hasproperty(parent, :grids)
+            join([string(length(g)) for g in parent.grids], "×")
+        else
+            "?"
+        end
+        _show_row(io, true, "Parent:", "$parent_type{$T}, $(N)D, sizes: $sizes")
     else
-        "?"
+        # Determine number of points
+        n_pts = if hasproperty(parent, :x)
+            length(parent.x)
+        elseif hasproperty(parent, :cache) && hasproperty(parent.cache, :x)
+            length(parent.cache.x)
+        else
+            "?"
+        end
+        _show_row(io, true, "Parent:", "$parent_type{$T}, $n_pts points")
     end
-
-    _show_row(io, true, "Parent:", "$parent_type{$T}, $n_pts points")
 end
 
 # ========================================

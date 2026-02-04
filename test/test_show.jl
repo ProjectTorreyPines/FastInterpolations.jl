@@ -513,4 +513,294 @@
         struct UnknownBC end
         @test FI._format_bc_point(UnknownBC()) == "UnknownBC"
     end
+
+    # ========================================
+    # Additional Coverage Tests for show.jl
+    # ========================================
+
+    @testset "Superscript digit and integer functions" begin
+        FI = FastInterpolations
+
+        # Test _superscript_digit for all single digits 0-9
+        @test FI._superscript_digit(0) == "⁰"
+        @test FI._superscript_digit(1) == "¹"
+        @test FI._superscript_digit(2) == "²"
+        @test FI._superscript_digit(3) == "³"
+        @test FI._superscript_digit(4) == "⁴"
+        @test FI._superscript_digit(5) == "⁵"
+        @test FI._superscript_digit(6) == "⁶"
+        @test FI._superscript_digit(7) == "⁷"
+        @test FI._superscript_digit(8) == "⁸"
+        @test FI._superscript_digit(9) == "⁹"
+        # Fallback for d >= 10
+        @test FI._superscript_digit(10) == "10"
+        @test FI._superscript_digit(15) == "15"
+
+        # Test _superscript_int for various values
+        @test FI._superscript_int(0) == "⁰"
+        @test FI._superscript_int(5) == "⁵"
+        @test FI._superscript_int(9) == "⁹"
+        # Negative numbers use ^(n) fallback
+        @test FI._superscript_int(-1) == "^-1"
+        @test FI._superscript_int(-5) == "^-5"
+    end
+
+    @testset "Subscript digit fallback for d >= 10" begin
+        FI = FastInterpolations
+
+        # Normal single digits
+        @test FI._subscript_digit(0) == "₀"
+        @test FI._subscript_digit(1) == "₁"
+        @test FI._subscript_digit(9) == "₉"
+
+        # Fallback for d >= 10 (uses parentheses)
+        @test FI._subscript_digit(10) == "(10)"
+        @test FI._subscript_digit(15) == "(15)"
+        @test FI._subscript_digit(100) == "(100)"
+    end
+
+    @testset "DerivativeView with tuple order (ND partial derivatives)" begin
+        FI = FastInterpolations
+
+        # Test _format_deriv_order with tuple input (ND partial derivatives)
+        # (0, 0) - all zeros returns value form
+        result_00 = FI._format_deriv_order((0, 0))
+        @test occursin("value", result_00)
+        @test occursin("f", result_00)
+
+        # (1, 0) - first-order partial with respect to x₁
+        result_10 = FI._format_deriv_order((1, 0))
+        @test occursin("partial derivatives", result_10)
+        @test occursin("∂x", result_10)
+
+        # (0, 1) - first-order partial with respect to x₂
+        result_01 = FI._format_deriv_order((0, 1))
+        @test occursin("partial derivatives", result_01)
+
+        # (2, 0) - second-order partial (exercises _superscript_int branch in push!)
+        result_20 = FI._format_deriv_order((2, 0))
+        @test occursin("partial derivatives", result_20)
+        @test occursin("²", result_20)  # Should contain superscript 2
+
+        # (1, 1) - mixed partial
+        result_11 = FI._format_deriv_order((1, 1))
+        @test occursin("partial derivatives", result_11)
+
+        # (3, 2) - higher order mixed partial
+        result_32 = FI._format_deriv_order((3, 2))
+        @test occursin("partial derivatives", result_32)
+        @test occursin("³", result_32)  # superscript 3
+        @test occursin("²", result_32)  # superscript 2
+    end
+
+    @testset "CubicInterpolantND show with mixed BCs per axis" begin
+        # Create 2D data
+        x1 = range(0.0, 1.0, 11)
+        x2 = range(0.0, 2.0, 15)
+        f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
+
+        # Mixed BCs: Natural on axis 1, Clamped on axis 2
+        bc_natural = NaturalBC()
+        bc_clamped = BCPair(Deriv1(0.0), Deriv1(0.0))  # Clamped
+        itp_mixed = cubic_interp((x1, x2), f; bc=(bc_natural, bc_clamped))
+
+        # Compact show should say "Mixed"
+        compact_str = sprint(show, itp_mixed)
+        @test occursin("CubicInterpolantND", compact_str)
+        @test occursin("Mixed", compact_str)
+
+        # Verbose show should display per-axis BCs hierarchically
+        verbose_str = sprint(show, MIME("text/plain"), itp_mixed)
+        @test occursin("BC:", verbose_str)
+        @test occursin("x₁", verbose_str)
+        @test occursin("x₂", verbose_str)
+        @test occursin("Natural", verbose_str)
+        @test occursin("Clamped", verbose_str)
+    end
+
+    @testset "CubicInterpolantND show with heterogeneous extrapolation modes" begin
+        # Create 2D data
+        x1 = range(0.0, 1.0, 11)
+        x2 = range(0.0, 2.0, 15)
+        f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
+
+        # Different extrapolation modes per axis
+        itp_mixed_extrap = cubic_interp((x1, x2), f; extrap=(:none, :constant))
+
+        # Verbose show should display tuple format for extrapolation
+        verbose_str = sprint(show, MIME("text/plain"), itp_mixed_extrap)
+        @test occursin("Extrap:", verbose_str)
+        @test occursin(":none", verbose_str)
+        @test occursin(":constant", verbose_str)
+    end
+
+    @testset "CubicInterpolantND show with heterogeneous search policies" begin
+        # Create 2D data with Vector grids (non-Range to trigger search display)
+        x1 = collect(range(0.0, 1.0, 11))
+        x2 = collect(range(0.0, 2.0, 15))
+        f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
+
+        # Different search policies per axis
+        itp_mixed_search = cubic_interp((x1, x2), f; search=(Binary(), Linear()))
+
+        # Verbose show should display tuple format for search policies
+        verbose_str = sprint(show, MIME("text/plain"), itp_mixed_search)
+        @test occursin("Search:", verbose_str)
+        @test occursin("Binary", verbose_str)
+        @test occursin("Linear", verbose_str)
+    end
+
+    @testset "CubicInterpolantND show with complex values (Tv ≠ Tg)" begin
+        # Create 2D complex data
+        x1 = range(0.0, 1.0, 11)
+        x2 = range(0.0, 2.0, 15)
+        f_complex = [exp(2π * im * xi) * cos(π * xj) for xi in x1, xj in x2]
+
+        itp_complex = cubic_interp((x1, x2), f_complex)
+
+        # Compact show should display both Tg and Tv
+        compact_str = sprint(show, itp_complex)
+        @test occursin("CubicInterpolantND", compact_str)
+        @test occursin("Float64", compact_str)
+        @test occursin("ComplexF64", compact_str)
+
+        # Verbose show should also display both types
+        verbose_str = sprint(show, MIME("text/plain"), itp_complex)
+        @test occursin("Float64", verbose_str)
+        @test occursin("ComplexF64", verbose_str)
+    end
+
+    @testset "DerivativeView show with CubicInterpolantND parent" begin
+        # Create 2D data
+        x1 = range(0.0, 1.0, 11)
+        x2 = range(0.0, 2.0, 15)
+        f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
+
+        itp_nd = cubic_interp((x1, x2), f)
+
+        # Create DerivativeView with tuple order
+        d_view = deriv_view(itp_nd, (1, 0))
+
+        # Compact show
+        compact_str = sprint(show, d_view)
+        @test occursin("DerivativeView", compact_str)
+        @test occursin("CubicInterpolantND", compact_str)
+
+        # Verbose show - should display tuple derivative info and ND parent info
+        verbose_str = sprint(show, MIME("text/plain"), d_view)
+        @test occursin("DerivativeView", verbose_str)
+        @test occursin("partial derivatives", verbose_str)
+        @test occursin("Parent:", verbose_str)
+        @test occursin("CubicInterpolantND", verbose_str)
+        @test occursin("2D", verbose_str)
+        @test occursin("11×15", verbose_str)
+    end
+
+    @testset "ND grid display with Vector grids (triggers Search row)" begin
+        # Create 2D data with Vector grids
+        x1 = collect(range(0.0, 1.0, 11))
+        x2 = collect(range(0.0, 2.0, 15))
+        f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
+
+        itp_vec = cubic_interp((x1, x2), f)
+
+        # Verbose show should include Search row
+        verbose_str = sprint(show, MIME("text/plain"), itp_vec)
+        @test occursin("Grids:", verbose_str)
+        @test occursin("Vector", verbose_str)
+        @test occursin("Search:", verbose_str)
+    end
+
+    @testset "3D CubicInterpolantND show" begin
+        # Create 3D data
+        x1 = range(0.0, 1.0, 8)
+        x2 = range(0.0, 2.0, 10)
+        x3 = range(0.0, 3.0, 12)
+        f = [sin(xi) * cos(xj) * exp(-xk/3) for xi in x1, xj in x2, xk in x3]
+
+        itp_3d = cubic_interp((x1, x2, x3), f)
+
+        # Compact show
+        compact_str = sprint(show, itp_3d)
+        @test occursin("CubicInterpolantND", compact_str)
+        @test occursin("8×10×12", compact_str)
+
+        # Verbose show
+        verbose_str = sprint(show, MIME("text/plain"), itp_3d)
+        @test occursin("3D", verbose_str)
+        @test occursin("x₁", verbose_str)
+        @test occursin("x₂", verbose_str)
+        @test occursin("x₃", verbose_str)
+    end
+
+    @testset "Color output for ND interpolants" begin
+        x1 = range(0.0, 1.0, 11)
+        x2 = range(0.0, 2.0, 15)
+        f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
+
+        itp_nd = cubic_interp((x1, x2), f)
+
+        # Test with color-enabled IO context
+        io_color = IOContext(IOBuffer(), :color => true)
+        show(io_color, MIME("text/plain"), itp_nd)
+        output = String(take!(io_color.io))
+
+        # Should contain the text (color codes are invisible in string)
+        @test occursin("CubicInterpolantND", output)
+        @test occursin("Grids:", output)
+        @test occursin("BC:", output)
+    end
+
+    @testset "Direct test of _show_nd_config_row with different values" begin
+        FI = FastInterpolations
+
+        # Test with heterogeneous tuple (different values per axis)
+        io = IOBuffer()
+        configs = (Val(:none), Val(:constant), Val(:extension))
+        FI._show_nd_config_row(io, false, "Extrap:", configs, FI._format_extrap; value_color=:magenta)
+        output = String(take!(io))
+
+        # Should show tuple format since values differ
+        @test occursin("(", output)
+        @test occursin(":none", output)
+        @test occursin(":constant", output)
+        @test occursin(":extension", output)
+
+        # Test with homogeneous tuple (same values)
+        io2 = IOBuffer()
+        configs_same = (Val(:none), Val(:none))
+        FI._show_nd_config_row(io2, true, "Extrap:", configs_same, FI._format_extrap; value_color=:magenta)
+        output2 = String(take!(io2))
+
+        # Should show single value with "(all axes)"
+        @test occursin(":none", output2)
+        @test occursin("(all axes)", output2)
+    end
+
+    @testset "Direct test of _short_bc_name_nd" begin
+        FI = FastInterpolations
+
+        # Same BCs on all axes (Natural = Deriv2(0) at both ends)
+        bc_natural = BCPair(Deriv2(0.0), Deriv2(0.0))
+        bcs_same = (bc_natural, bc_natural)
+        @test FI._short_bc_name_nd(bcs_same) == "Natural"
+
+        # Different BCs on axes (Natural vs Clamped)
+        bc_clamped = BCPair(Deriv1(0.0), Deriv1(0.0))
+        bcs_mixed = (bc_natural, bc_clamped)
+        @test FI._short_bc_name_nd(bcs_mixed) == "Mixed"
+
+        # Three axes, all same (Periodic)
+        bcs_3d_periodic = (PeriodicBC(), PeriodicBC(), PeriodicBC())
+        @test FI._short_bc_name_nd(bcs_3d_periodic) == "Periodic"
+
+        # Three axes, mixed
+        bcs_3d_mixed = (bc_natural, bc_clamped, bc_natural)
+        @test FI._short_bc_name_nd(bcs_3d_mixed) == "Mixed"
+
+        # Custom BCs (non-standard values) - both axes same
+        bc_custom = BCPair(Deriv1(1.0), Deriv2(0.5))
+        bcs_custom_same = (bc_custom, bc_custom)
+        @test FI._short_bc_name_nd(bcs_custom_same) == "Custom"
+    end
 end

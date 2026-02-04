@@ -401,16 +401,8 @@ This enables @simd vectorization over the contiguous dimension.
 end
 
 # Dispatch to SIMD-optimized solver (only for D ≥ 2)
+# Note: Val(1) error method is at the end of this file
 @inline _ldiv_along_dim!(z, thomas, ::Val{D}) where {D} = _ldiv_along_dim_vectorized!(z, thomas)
-
-# Val(1) is explicitly unsupported - benchmarking showed per-column approach is faster
-@noinline function _ldiv_along_dim!(z, thomas, ::Val{1})
-    throw(ArgumentError(
-        "Batch solving along axis 1 (Val(1)) is not supported.\n" *
-        "Reason: Per-column approach is faster due to view creation overhead.\n" *
-        "Use _solve_system! in a loop for axis 1, or use Val(2) for SIMD-optimized batch solving."
-    ))
-end
 
 # ========================================
 # HIGH-LEVEL BATCH SOLVER INTERFACE
@@ -470,22 +462,9 @@ Compute RHS for batch systems along dimension `D`.
 - `spacing::AbstractGridSpacing{T}`: Grid spacing object
 - `bc::BCPair{T}`: Boundary condition pair
 - `::Val{D}`: Dimension along which to compute RHS
-"""
-# Val(1) is explicitly unsupported
-@noinline function compute_rhs_along_dim!(
-    D::AbstractMatrix{Tv},
-    data::AbstractMatrix{Tv},
-    x::AbstractVector{Tg},
-    spacing::AbstractGridSpacing{Tg},
-    bc::BCPair,
-    ::Val{1}
-) where {Tv, Tg<:AbstractFloat}
-    throw(ArgumentError(
-        "Batch RHS computation along axis 1 (Val(1)) is not supported.\n" *
-        "Use compute_rhs! in a loop for axis 1, or use Val(2) for batch computation."
-    ))
-end
 
+Note: Val(1) error method is at the end of this file.
+"""
 function compute_rhs_along_dim!(
     D::AbstractMatrix{Tv},
     data::AbstractMatrix{Tv},
@@ -517,22 +496,9 @@ Convert moments to derivatives for batch systems along dimension D.
 - `spacing::AbstractGridSpacing{T}`: Grid spacing
 - `bc`: Boundary condition configuration
 - `::Val{D}`: Dimension along which conversion was performed
-"""
-# Val(1) is explicitly unsupported
-@noinline function moments_to_derivatives_along_dim!(
-    out::AbstractMatrix{Tv},
-    M::AbstractMatrix{Tv},
-    data::AbstractMatrix{Tv},
-    spacing,
-    bc,
-    ::Val{1}
-) where {Tv}
-    throw(ArgumentError(
-        "Batch moment-to-derivative along axis 1 (Val(1)) is not supported.\n" *
-        "Use _moments_to_derivatives_1d! in a loop for axis 1, or use Val(2) for batch conversion."
-    ))
-end
 
+Note: Val(1) error method is at the end of this file.
+"""
 function moments_to_derivatives_along_dim!(
     out::AbstractMatrix{Tv},
     M::AbstractMatrix{Tv},
@@ -549,4 +515,69 @@ function moments_to_derivatives_along_dim!(
         _apply_derivative_bc!(view(out, i, :), bc)
     end
     return out
+end
+
+# ========================================
+# UNSUPPORTED BATCH OPERATIONS (Val(1))
+# ========================================
+#
+# These methods explicitly throw errors for batch operations along axis 1.
+# Benchmarking showed that per-column approach is faster due to view creation overhead.
+# For axis 1 operations, use the per-column alternatives mentioned in error messages.
+#
+# These are grouped here for clarity and to simplify coverage testing.
+
+"""
+    _ldiv_along_dim!(z, thomas, ::Val{1})
+
+Batch solving along axis 1 is explicitly unsupported.
+Benchmarking showed per-column approach is faster due to view creation overhead.
+Use `_solve_system!` in a loop for axis 1, or use `Val(2)` for SIMD-optimized batch solving.
+"""
+@noinline function _ldiv_along_dim!(z, thomas, ::Val{1})
+    throw(ArgumentError(
+        "Batch solving along axis 1 (Val(1)) is not supported.\n" *
+        "Reason: Per-column approach is faster due to view creation overhead.\n" *
+        "Use _solve_system! in a loop for axis 1, or use Val(2) for SIMD-optimized batch solving."
+    ))
+end
+
+"""
+    compute_rhs_along_dim!(..., ::Val{1})
+
+Batch RHS computation along axis 1 is explicitly unsupported.
+Use `compute_rhs!` in a loop for axis 1, or use `Val(2)` for batch computation.
+"""
+@noinline function compute_rhs_along_dim!(
+    D::AbstractMatrix{Tv},
+    data::AbstractMatrix{Tv},
+    x::AbstractVector{Tg},
+    spacing::AbstractGridSpacing{Tg},
+    bc::BCPair,
+    ::Val{1}
+) where {Tv, Tg<:AbstractFloat}
+    throw(ArgumentError(
+        "Batch RHS computation along axis 1 (Val(1)) is not supported.\n" *
+        "Use compute_rhs! in a loop for axis 1, or use Val(2) for batch computation."
+    ))
+end
+
+"""
+    moments_to_derivatives_along_dim!(..., ::Val{1})
+
+Batch moment-to-derivative conversion along axis 1 is explicitly unsupported.
+Use `_moments_to_derivatives_1d!` in a loop for axis 1, or use `Val(2)` for batch conversion.
+"""
+@noinline function moments_to_derivatives_along_dim!(
+    out::AbstractMatrix{Tv},
+    M::AbstractMatrix{Tv},
+    data::AbstractMatrix{Tv},
+    spacing,
+    bc,
+    ::Val{1}
+) where {Tv}
+    throw(ArgumentError(
+        "Batch moment-to-derivative along axis 1 (Val(1)) is not supported.\n" *
+        "Use _moments_to_derivatives_1d! in a loop for axis 1, or use Val(2) for batch conversion."
+    ))
 end

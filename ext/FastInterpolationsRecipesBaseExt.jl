@@ -18,6 +18,7 @@ import HelpPlots: assert_type_and_record_argument, recipe_dispatch
 # Import types for dispatch
 import FastInterpolations:
     AbstractInterpolant, AbstractSeriesInterpolant, AbstractDerivativeView,
+    AbstractInterpolantND, CubicInterpolantND,
     LinearInterpolant, ConstantInterpolant, QuadraticInterpolant, CubicInterpolant,
     LinearSeriesInterpolant, ConstantSeriesInterpolant,
     QuadraticSeriesInterpolant, CubicSeriesInterpolant,
@@ -633,6 +634,231 @@ end
         xlims --> final_xlims
         ylims --> (y_lim_min, y_lim_max)
         xq_vec, yq
+    end
+end
+
+# ========================================
+# 2D N-Dimensional Interpolant Recipe (AbstractInterpolantND with N=2)
+# ========================================
+
+# HelpPlots dispatch for ND interpolants
+recipe_dispatch(::AbstractInterpolantND) = "AbstractInterpolantND"
+
+# Helper: interpolant label for ND types
+_interpolant_label(::CubicInterpolantND) = "cubic"
+
+# Helper: default high-resolution samples for 2D visualization
+_default_2d_samples(nx::Integer, ny::Integer) = (
+    clamp(10 * nx, 100, 500),
+    clamp(10 * ny, 100, 500)
+)
+
+"""
+Threshold for automatic node/gridline visibility in 2D plots.
+If total node count (nx × ny) >= this value, nodes/gridlines are hidden by default.
+User can override with `show_nodes=true` or `show_gridlines=true`.
+"""
+const SCATTER_THRESHOLD_2D = 400  # 20×20 grid
+
+"""
+    compute_marker_size_2d(n; max_size=6.0, min_size=2.0, max_n=400) -> Float64
+
+Compute marker size for 2D plots based on total node count.
+More nodes → smaller markers to avoid visual clutter.
+"""
+function compute_marker_size_2d(n::Integer; max_size::Float64=6.0, min_size::Float64=2.0, max_n::Integer=400)
+    s = max_size - (max_size - min_size) / max_n * n
+    return clamp(s, min_size, max_size)
+end
+
+"""
+    compute_marker_alpha_2d(n; max_α=0.85, min_α=0.4, max_n=400) -> Float64
+
+Compute marker alpha (opacity) for 2D plots based on total node count.
+More nodes → more transparent markers to reduce visual density.
+"""
+function compute_marker_alpha_2d(n::Integer; max_α::Float64=0.85, min_α::Float64=0.4, max_n::Integer=400)
+    a = max_α - (max_α - min_α) / max_n * n
+    return clamp(a, min_α, max_α)
+end
+
+"""
+    compute_gridline_alpha_2d(n_lines; max_α=0.4, min_α=0.1, max_n=50) -> Float64
+
+Compute gridline alpha based on number of grid lines.
+More lines → more transparent to reduce visual clutter.
+"""
+function compute_gridline_alpha_2d(n_lines::Integer; max_α::Float64=0.4, min_α::Float64=0.1, max_n::Integer=50)
+    a = max_α - (max_α - min_α) / max_n * n_lines
+    return clamp(a, min_α, max_α)
+end
+
+"""
+Recipe for 2D N-dimensional interpolants (AbstractInterpolantND with N=2).
+
+Generates a visualization with:
+1. High-resolution heatmap of interpolated values
+2. Scatter plot of original grid nodes (auto-hidden for large grids)
+3. Dashed grid lines connecting nodes (auto-hidden for large grids)
+
+# Keyword Arguments
+- `show_nodes::Union{Bool,Nothing} = nothing`: Show grid node markers.
+  If `nothing` (default), auto-determines: hidden when nx×ny ≥ $(SCATTER_THRESHOLD_2D).
+- `show_gridlines::Union{Bool,Nothing} = nothing`: Show grid lines.
+  If `nothing` (default), auto-determines: hidden when nx×ny ≥ $(SCATTER_THRESHOLD_2D).
+- `resolution::Union{Tuple{Int,Int}, Nothing} = nothing`: Heatmap resolution (nx, ny)
+- `equal_aspect::Bool = false`: Use equal aspect ratio (default: false, fills screen)
+- `clims_padding::Real = 0.02`: Padding for color limits (fraction of data range)
+- `node_color = :white`: Color for grid node markers
+- `node_size::Union{Real, Nothing} = nothing`: Marker size (nothing = auto based on grid size)
+- `node_alpha::Union{Real, Nothing} = nothing`: Marker transparency (nothing = auto)
+- `gridline_color = :white`: Color for grid lines
+- `gridline_alpha::Union{Real, Nothing} = nothing`: Grid line transparency (nothing = auto)
+- `gridline_style = :dash`: Line style for grid lines (:dash, :dot, :solid)
+"""
+@recipe function f(itp::AbstractInterpolantND{Tg, Tv, 2}) where {Tg, Tv}
+
+    # Extract custom options from plotattributes
+    show_nodes_opt = pop!(plotattributes, :show_nodes, nothing)
+    show_gridlines_opt = pop!(plotattributes, :show_gridlines, nothing)
+    resolution = pop!(plotattributes, :resolution, nothing)
+    equal_aspect = pop!(plotattributes, :equal_aspect, false)
+    clims_padding = pop!(plotattributes, :clims_padding, 0.02)
+    user_clims = pop!(plotattributes, :clims, nothing)
+    node_color = pop!(plotattributes, :node_color, :white)
+    node_size_opt = pop!(plotattributes, :node_size, nothing)
+    node_alpha_opt = pop!(plotattributes, :node_alpha, 0.6)
+    gridline_color = pop!(plotattributes, :gridline_color, :white)
+    gridline_alpha_opt = pop!(plotattributes, :gridline_alpha, 0.6)
+    gridline_style = pop!(plotattributes, :gridline_style, :dot)
+
+    # Record arguments for help_plot discovery
+    dispatch_name = recipe_dispatch(itp)
+    assert_type_and_record_argument(dispatch_name, Union{Bool, Nothing},
+        "Show grid node markers (default: auto, hidden when nx×ny ≥ $(SCATTER_THRESHOLD_2D))"; show_nodes=show_nodes_opt)
+    assert_type_and_record_argument(dispatch_name, Union{Bool, Nothing},
+        "Show grid lines (default: auto, hidden when nx×ny ≥ $(SCATTER_THRESHOLD_2D))"; show_gridlines=show_gridlines_opt)
+    assert_type_and_record_argument(dispatch_name, Union{Tuple{Int,Int}, Nothing},
+        "Heatmap resolution (nx, ny), nothing for auto"; resolution)
+    assert_type_and_record_argument(dispatch_name, Bool,
+        "Use equal aspect ratio (default: false, fills screen better)"; equal_aspect)
+    assert_type_and_record_argument(dispatch_name, Real,
+        "Padding for color limits as fraction of data range (default: 0.02)"; clims_padding)
+    assert_type_and_record_argument(dispatch_name, Any,
+        "Color for grid node markers (default: :white)"; node_color)
+    assert_type_and_record_argument(dispatch_name, Union{Real, Nothing},
+        "Marker size (nothing = auto based on grid size)"; node_size=node_size_opt)
+    assert_type_and_record_argument(dispatch_name, Union{Real, Nothing},
+        "Marker transparency (nothing = auto based on grid size)"; node_alpha=node_alpha_opt)
+    assert_type_and_record_argument(dispatch_name, Any,
+        "Color for grid lines (default: :white)"; gridline_color)
+    assert_type_and_record_argument(dispatch_name, Union{Real, Nothing},
+        "Grid line transparency (nothing = auto based on grid size)"; gridline_alpha=gridline_alpha_opt)
+    assert_type_and_record_argument(dispatch_name, Symbol,
+        "Line style for grid lines: :dash, :dot, :solid (default: :dash)"; gridline_style)
+
+    # Extract grids from interpolant
+    x_grid = collect(itp.grids[1])
+    y_grid = collect(itp.grids[2])
+    nx, ny = length(x_grid), length(y_grid)
+    n_total = nx * ny  # Total number of grid nodes
+
+    # Auto-determine visibility based on grid size
+    show_nodes = isnothing(show_nodes_opt) ? (n_total < SCATTER_THRESHOLD_2D) : show_nodes_opt
+    show_gridlines = isnothing(show_gridlines_opt) ? (n_total < SCATTER_THRESHOLD_2D) : show_gridlines_opt
+
+    # Compute dynamic marker properties based on grid size
+    node_size = isnothing(node_size_opt) ? compute_marker_size_2d(n_total) : node_size_opt
+    node_alpha = isnothing(node_alpha_opt) ? compute_marker_alpha_2d(n_total) : node_alpha_opt
+
+    # Compute dynamic gridline alpha based on number of lines
+    n_lines = nx + ny
+    gridline_alpha = isnothing(gridline_alpha_opt) ? compute_gridline_alpha_2d(n_lines) : gridline_alpha_opt
+
+    # Compute high-resolution sampling grid
+    nx_hr, ny_hr = isnothing(resolution) ? _default_2d_samples(nx, ny) : resolution
+    x_hr = range(first(x_grid), last(x_grid); length=nx_hr)
+    y_hr = range(first(y_grid), last(y_grid); length=ny_hr)
+
+    # Evaluate interpolant on high-resolution grid
+    # Use real() for complex values to make heatmap work
+    z_hr = [real(itp((xi, yj))) for xi in x_hr, yj in y_hr]
+
+    # Compute color limits with padding
+    z_min, z_max = extrema(z_hr)
+    z_range = z_max - z_min
+    if z_range < eps(typeof(z_min))
+        # Constant data - add small range for visibility
+        z_range = max(abs(z_min), one(typeof(z_min))) * 0.1
+    end
+    padding = z_range * clims_padding
+    computed_clims = isnothing(user_clims) ? (z_min - padding, z_max + padding) : user_clims
+
+    # Plot defaults
+    xlabel --> "x₁"
+    ylabel --> "x₂"
+    title --> "$(typeof(itp).name.name) ($(nx)×$(ny) grid)"
+
+    # Aspect ratio: default auto (fills screen), optional equal
+    if equal_aspect
+        aspect_ratio --> :equal
+    end
+
+    # Series 1: Heatmap of interpolated values
+    @series begin
+        seriestype := :heatmap
+        seriescolor --> :viridis
+        colorbar --> true
+        clims --> computed_clims
+        label := nothing
+        collect(x_hr), collect(y_hr), z_hr'
+    end
+
+    # Series 2: Grid lines (horizontal lines at each y_grid value)
+    if show_gridlines
+        for yj in y_grid
+            @series begin
+                seriestype := :path
+                color --> gridline_color
+                alpha --> gridline_alpha
+                linestyle --> gridline_style
+                linewidth --> 1
+                label := nothing
+                [first(x_grid), last(x_grid)], [yj, yj]
+            end
+        end
+
+        # Vertical lines at each x_grid value
+        for xi in x_grid
+            @series begin
+                seriestype := :path
+                color --> gridline_color
+                alpha --> gridline_alpha
+                linestyle --> gridline_style
+                linewidth --> 1
+                label := nothing
+                [xi, xi], [first(y_grid), last(y_grid)]
+            end
+        end
+    end
+
+    # Series 3: Grid node scatter
+    if show_nodes
+        # Create mesh grid coordinates for scatter
+        node_x = [xi for xi in x_grid for _ in y_grid]
+        node_y = [yj for _ in x_grid for yj in y_grid]
+
+        @series begin
+            seriestype := :scatter
+            color --> node_color
+            markersize --> node_size
+            markeralpha --> node_alpha
+            markerstrokewidth --> 0.5
+            markerstrokecolor --> :black
+            markerstrokealpha --> node_alpha
+            label --> "nodes ($(nx)×$(ny))"
+            node_x, node_y
+        end
     end
 end
 

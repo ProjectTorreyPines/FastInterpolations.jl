@@ -78,23 +78,23 @@ Compute all partial derivatives for bicubic interpolation.
 
     # Step 2: Compute ∂f/∂y (differentiate along dim 2) - uses batch SIMD
     if polyfit_deg_y > 0
-        _partial_deriv_dim!(pool, view(partials, 3, :, :), data, y, CubicFit(), Val(2))
+        _partial_deriv_dim!(view(partials, 3, :, :), data, y, CubicFit(), Val(2))
     else
-        _partial_deriv_dim!(pool, view(partials, 3, :, :), data, y, bc_y, Val(2))
+        _partial_deriv_dim!(view(partials, 3, :, :), data, y, bc_y, Val(2))
     end
 
     # Step 3: Compute ∂f/∂x (differentiate along dim 1) - per-column loop
     if polyfit_deg_x > 0
-        _partial_deriv_dim!(pool, view(partials, 2, :, :), data, x, CubicFit(), Val(1))
+        _partial_deriv_dim!(view(partials, 2, :, :), data, x, CubicFit(), Val(1))
     else
-        _partial_deriv_dim!(pool, view(partials, 2, :, :), data, x, bc_x, Val(1))
+        _partial_deriv_dim!(view(partials, 2, :, :), data, x, bc_x, Val(1))
     end
 
     # Step 4: Compute ∂²f/∂x∂y with data-derived edge BCs (batch SIMD via Val(2))
     # Key insight: Use fx_view and differentiate along y (Val(2)) for SIMD benefits.
     fx_view = view(partials, 2, :, :)
     if is_periodic_y
-        _partial_deriv_dim!(pool, view(partials, 4, :, :), fx_view, y, PeriodicBC(), Val(2))
+        _partial_deriv_dim!(view(partials, 4, :, :), fx_view, y, PeriodicBC(), Val(2))
     else
         # Extract ∂f/∂y edges (contiguous row access - enables @simd!)
         fy_top = acquire!(pool, Tv, nx)
@@ -108,17 +108,17 @@ Compute all partial derivatives for bicubic interpolation.
         fxy_top = acquire!(pool, Tv, nx)
         fxy_bottom = acquire!(pool, Tv, nx)
         if is_periodic_x
-            _deriv_1d!(pool, fxy_top, fy_top, x, PeriodicBC())
-            _deriv_1d!(pool, fxy_bottom, fy_bottom, x, PeriodicBC())
+            _deriv_1d!(fxy_top, fy_top, x, PeriodicBC())
+            _deriv_1d!(fxy_bottom, fy_bottom, x, PeriodicBC())
         elseif nx >= 4
-            _deriv_1d!(pool, fxy_top, fy_top, x, CubicFit())
-            _deriv_1d!(pool, fxy_bottom, fy_bottom, x, CubicFit())
+            _deriv_1d!(fxy_top, fy_top, x, CubicFit())
+            _deriv_1d!(fxy_bottom, fy_bottom, x, CubicFit())
         else
-            _deriv_1d!(pool, fxy_top, fy_top, x, NaturalBC())
-            _deriv_1d!(pool, fxy_bottom, fy_bottom, x, NaturalBC())
+            _deriv_1d!(fxy_top, fy_top, x, NaturalBC())
+            _deriv_1d!(fxy_bottom, fy_bottom, x, NaturalBC())
         end
 
-        _partial_deriv_dim!(pool, view(partials, 4, :, :), fx_view, y, (fxy_top, fxy_bottom), Val(2))
+        _partial_deriv_dim!(view(partials, 4, :, :), fx_view, y, (fxy_top, fxy_bottom), Val(2))
     end
 
     return NodalDerivatives2D{Tv}(partials)
@@ -137,8 +137,7 @@ Differentiate 1D vector using cubic splines. BC type determines the method:
 - `AbstractBC` (NaturalBC, ClampedBC, PeriodicBC, etc.): Use specified BC
 - `CubicFit`: Estimate endpoint derivatives via polynomial fitting
 """
-function _deriv_1d!(
-    pool,
+@with_pool pool function _deriv_1d!(
     deriv::AbstractVector{Tv}, values::AbstractVector{Tv},
     grid::AbstractVector{Tg}, bc::AbstractBC
 ) where {Tg<:AbstractFloat, Tv}
@@ -157,8 +156,7 @@ function _deriv_1d!(
     return deriv
 end
 
-function _deriv_1d!(
-    pool,
+@with_pool pool function _deriv_1d!(
     deriv::AbstractVector{Tv}, values::AbstractVector{Tv},
     grid::AbstractVector{Tg}, ::CubicFit
 ) where {Tg<:AbstractFloat, Tv}
@@ -199,8 +197,7 @@ Compute partial derivative of 2D data along dimension D. BC type determines the 
 - `Val(1)`: Differentiate along dim 1 (x-direction, columns)
 - `Val(2)`: Differentiate along dim 2 (y-direction, rows) - SIMD optimized
 """
-function _partial_deriv_dim!(
-    pool,
+@with_pool pool function _partial_deriv_dim!(
     out::AbstractMatrix{Tv}, data::AbstractMatrix{Tv},
     grid::AbstractVector{Tg}, bc::AbstractBC,
     ::Val{2}
@@ -236,8 +233,7 @@ function _partial_deriv_dim!(
     return out
 end
 
-function _partial_deriv_dim!(
-    pool,
+@with_pool pool function _partial_deriv_dim!(
     out::AbstractMatrix{Tv}, data::AbstractMatrix{Tv},
     grid::AbstractVector{Tg}, bc::AbstractBC,
     ::Val{1}
@@ -267,8 +263,7 @@ function _partial_deriv_dim!(
 end
 
 # CubicFit dispatch: Use polynomial fitting at boundaries
-function _partial_deriv_dim!(
-    pool,
+@with_pool pool function _partial_deriv_dim!(
     out::AbstractMatrix{Tv}, data::AbstractMatrix{Tv}, grid::AbstractVector{Tg},
     ::CubicFit, ::Val{2}
 ) where {Tg<:AbstractFloat, Tv}
@@ -278,14 +273,13 @@ function _partial_deriv_dim!(
 
     @inbounds for i in 1:nx
         for j in 1:ny; line[j] = data[i, j]; end
-        _deriv_1d!(pool, dline, line, grid, CubicFit())
+        _deriv_1d!(dline, line, grid, CubicFit())
         for j in 1:ny; out[i, j] = dline[j]; end
     end
     return out
 end
 
-function _partial_deriv_dim!(
-    pool,
+@with_pool pool function _partial_deriv_dim!(
     out::AbstractMatrix{Tv}, data::AbstractMatrix{Tv}, grid::AbstractVector{Tg},
     ::CubicFit, ::Val{1}
 ) where {Tg<:AbstractFloat, Tv}
@@ -295,7 +289,7 @@ function _partial_deriv_dim!(
 
     @inbounds for j in 1:ny
         for i in 1:nx; line[i] = data[i, j]; end
-        _deriv_1d!(pool, dline, line, grid, CubicFit())
+        _deriv_1d!(dline, line, grid, CubicFit())
         for i in 1:nx; out[i, j] = dline[i]; end
     end
     return out
@@ -303,8 +297,7 @@ end
 
 # Tuple dispatch: Per-slice edge BC values for cross-derivatives
 # Val(1): (left, right) BC for each column - per-column loop (no batch benefit)
-function _partial_deriv_dim!(
-    pool,
+@with_pool pool function _partial_deriv_dim!(
     out::AbstractMatrix{Tv}, data::AbstractMatrix{Tv}, grid::AbstractVector{Tg},
     edge_bc::Tuple{AbstractVector{Tv}, AbstractVector{Tv}},
     ::Val{1}
@@ -332,8 +325,7 @@ end
 
 # Val(2): (top, bottom) BC for each row - BATCH SIMD optimized!
 # Key insight: Thomas factorization is the same for all rows, only RHS differs.
-function _partial_deriv_dim!(
-    pool,
+@with_pool pool function _partial_deriv_dim!(
     out::AbstractMatrix{Tv}, data::AbstractMatrix{Tv}, grid::AbstractVector{Tg},
     edge_bc::Tuple{AbstractVector{Tv}, AbstractVector{Tv}},
     ::Val{2}

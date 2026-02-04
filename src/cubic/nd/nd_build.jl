@@ -97,7 +97,7 @@ For a 4D array f(x₁,x₂,x₃,x₄) with shape (10, 20, 30, 40), computing ∂
             end
 
             # Differentiate using existing _deriv_1d!
-            _deriv_1d!(pool, dline, line, grid, bc)
+            _deriv_1d!(dline, line, grid, bc)
 
             # Write back
             for k in 1:n_d
@@ -202,7 +202,7 @@ slices simultaneously using the batch solver from 2D implementation.
                 end
 
                 # Differentiate
-                _deriv_1d!(pool, dline, line, grid, bc)
+                _deriv_1d!(dline, line, grid, bc)
 
                 # Write back
                 for k in 1:n_d

@@ -138,3 +138,7 @@ nothing #hide
 !!! warning "Platform Compatibility"
     Enzyme has known LLVM codegen issues on **Windows + Julia 1.12+** that can cause Access Violations. If you need Enzyme on this combination, please test your specific use case manually. Other platforms (Linux, macOS) work as expected.
 
+## See Also
+
+- [AD Support for N-Dimensional Interpolants](autodiff_nd.md) - ForwardDiff, Zygote, and optimization with `CubicInterpolantND`
+

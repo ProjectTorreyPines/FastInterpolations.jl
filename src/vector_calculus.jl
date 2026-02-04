@@ -5,8 +5,11 @@
 # Fast analytical gradient, hessian, and laplacian using the `deriv` keyword.
 # These functions are ~9x faster than ForwardDiff equivalents.
 #
-# Currently supports: CubicInterpolantND
-# Future: Can be extended to other ND interpolant types
+# Supports: Any AbstractInterpolantND subtype that implements the `deriv` keyword API.
+# Currently: CubicInterpolantND, CubicInterpolant2D
+#
+# Required interface for subtypes:
+#   itp(query; deriv=Val((d1, d2, ...)))  # Mixed partial derivative evaluation
 #
 # This file is included last in the module to ensure all interpolant types are defined.
 
@@ -15,7 +18,7 @@
 # ========================================
 
 """
-    gradient(itp::CubicInterpolantND, query)
+    gradient(itp::AbstractInterpolantND, query)
 
 Compute the gradient (vector of partial derivatives) at `query`.
 
@@ -39,7 +42,7 @@ gradient(itp, [0.5, 0.5])    # Vector input also supported
 See also: [`hessian`](@ref), [`laplacian`](@ref)
 """
 @generated function gradient(
-    itp::CubicInterpolantND{Tg, Tv, N},
+    itp::AbstractInterpolantND{Tg, Tv, N},
     query::NTuple{N, <:Real}
 ) where {Tg, Tv, N}
     # Generate: tuple(itp(query; deriv=Val((1,0,...))), itp(query; deriv=Val((0,1,...))), ...)
@@ -52,7 +55,7 @@ end
 
 # Vector API for compatibility with ForwardDiff patterns
 @inline function gradient(
-    itp::CubicInterpolantND{Tg, Tv, N},
+    itp::AbstractInterpolantND{Tg, Tv, N},
     query::AbstractVector{<:Real}
 ) where {Tg, Tv, N}
     length(query) == N || throw(DimensionMismatch(
@@ -67,7 +70,7 @@ end
 # ========================================
 
 """
-    hessian(itp::CubicInterpolantND, query)
+    hessian(itp::AbstractInterpolantND, query)
 
 Compute the Hessian matrix (matrix of second partial derivatives) at `query`.
 
@@ -93,7 +96,7 @@ H = hessian(itp, (0.5, 0.5))
 See also: [`gradient`](@ref), [`laplacian`](@ref)
 """
 @generated function hessian(
-    itp::CubicInterpolantND{Tg, Tv, N},
+    itp::AbstractInterpolantND{Tg, Tv, N},
     query::NTuple{N, <:Real}
 ) where {Tg, Tv, N}
     # Build assignment expressions for the N×N matrix
@@ -127,7 +130,7 @@ end
 
 # Vector API
 function hessian(
-    itp::CubicInterpolantND{Tg, Tv, N},
+    itp::AbstractInterpolantND{Tg, Tv, N},
     query::AbstractVector{<:Real}
 ) where {Tg, Tv, N}
     length(query) == N || throw(DimensionMismatch(
@@ -142,7 +145,7 @@ end
 # ========================================
 
 """
-    laplacian(itp::CubicInterpolantND, query)
+    laplacian(itp::AbstractInterpolantND, query)
 
 Compute the Laplacian (sum of second partial derivatives) at `query`.
 
@@ -168,7 +171,7 @@ itp = cubic_interp((x, y), data)
 See also: [`gradient`](@ref), [`hessian`](@ref)
 """
 @generated function laplacian(
-    itp::CubicInterpolantND{Tg, Tv, N},
+    itp::AbstractInterpolantND{Tg, Tv, N},
     query::NTuple{N, <:Real}
 ) where {Tg, Tv, N}
     # Sum of diagonal elements: ∂²f/∂x₁² + ∂²f/∂x₂² + ...
@@ -181,7 +184,7 @@ end
 
 # Vector API
 @inline function laplacian(
-    itp::CubicInterpolantND{Tg, Tv, N},
+    itp::AbstractInterpolantND{Tg, Tv, N},
     query::AbstractVector{<:Real}
 ) where {Tg, Tv, N}
     length(query) == N || throw(DimensionMismatch(

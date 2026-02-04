@@ -147,6 +147,22 @@ d1(output, query_pts; search=LinearBinary())
 @inline deriv2(itp::AbstractInterpolant) = DerivativeView{2, typeof(itp)}(itp)
 @inline deriv3(itp::AbstractInterpolant) = DerivativeView{3, typeof(itp)}(itp)
 
+# ND interpolants use different derivative API
+@noinline function _nd_deriv_error(order::Int, N::Int)
+    throw(ArgumentError(
+        "deriv$order is not supported for $(N)D interpolants. " *
+        "For N-dimensional interpolants, use:\n" *
+        "  • itp(x; deriv=(1,0,...))  for partial derivatives\n" *
+        "  • gradient(itp, x)          for ∇f\n" *
+        "  • hessian(itp, x)           for H(f)\n" *
+        "  • laplacian(itp, x)         for ∇²f"
+    ))
+end
+
+@inline deriv1(itp::AbstractInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} = _nd_deriv_error(1, N)
+@inline deriv2(itp::AbstractInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} = _nd_deriv_error(2, N)
+@inline deriv3(itp::AbstractInterpolantND{Tg, Tv, N}) where {Tg, Tv, N} = _nd_deriv_error(3, N)
+
 # ========================================
 # Callable Methods (kwargs forwarding for future-proofing)
 # ========================================

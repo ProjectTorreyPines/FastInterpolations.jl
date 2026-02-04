@@ -82,6 +82,38 @@ All functionality is implemented in concrete subtypes.
 """
 abstract type AbstractSeriesInterpolant{Tg<:AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv} end
 
+"""
+    AbstractInterpolantND{Tg<:AbstractFloat, Tv, N}
+
+Abstract supertype for N-dimensional interpolant objects.
+
+# Type Parameters
+- `Tg`: Grid/coordinate type (Float32 or Float64)
+- `Tv`: Value type - can be real, complex, or other Number types
+- `N`: Number of dimensions
+
+# API Differences from 1D Interpolants
+- **Evaluation**: `itp(x::NTuple{N})` or `itp(x::AbstractVector)` instead of `itp(x::Real)`
+- **Derivatives**: Use `deriv` keyword (e.g., `itp(x; deriv=(1,0))`) instead of `deriv1/deriv2/deriv3`
+- **Vector Calculus**: Supports `gradient`, `hessian`, `laplacian`
+
+# Subtypes
+- `CubicInterpolantND{Tg, Tv, N}`: N-dimensional cubic Hermite interpolation
+- `BicubicInterpolant{Tg, Tv}`: 2D cubic interpolation (legacy, equivalent to CubicInterpolantND with N=2)
+
+# Example
+```julia
+x, y = range(0, 1, 50), range(0, 1, 50)
+data = [sin(xi) * cos(yj) for xi in x, yj in y]
+itp = cubic_interp((x, y), data)  # Returns CubicInterpolantND{..., 2}
+
+itp((0.5, 0.5))                    # Evaluate
+itp((0.5, 0.5); deriv=(1, 0))      # ∂f/∂x
+gradient(itp, (0.5, 0.5))          # (∂f/∂x, ∂f/∂y)
+```
+"""
+abstract type AbstractInterpolantND{Tg<:AbstractFloat, Tv, N} <: AbstractInterpolant{Tg, Tv} end
+
 # ========================================
 # Type Helper Functions
 # ========================================

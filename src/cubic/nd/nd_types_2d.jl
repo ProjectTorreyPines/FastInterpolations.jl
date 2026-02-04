@@ -113,7 +113,7 @@ struct CubicInterpolant2D{
     EY<:ExtrapVal,
     PX<:AbstractSearchPolicy,
     PY<:AbstractSearchPolicy,
-} <: AbstractInterpolant{Tg, Tv}
+} <: AbstractInterpolantND{Tg, Tv, 2}
     x::GX
     y::GY
     spacing_x::SX

@@ -24,7 +24,7 @@ include("vector_calculus.jl")
 include("core/show.jl")
 
 # Exports
-export AbstractInterpolant, AbstractSeriesInterpolant
+export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
 export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant

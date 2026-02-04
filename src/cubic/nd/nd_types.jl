@@ -193,7 +193,7 @@ struct CubicInterpolantND{
     B<:NTuple{N, AbstractBC},
     E<:NTuple{N, ExtrapVal},
     P<:NTuple{N, AbstractSearchPolicy},
-} <: AbstractInterpolant{Tg, Tv}
+} <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
     spacings::S
     nodal_derivs::NodalDerivativesND{Tv, N, NP1}

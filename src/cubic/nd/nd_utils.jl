@@ -168,22 +168,27 @@ end
     _validate_nd_grids(grids::NTuple{N}, data::AbstractArray{<:Any,N})
 
 Validate that grid lengths match data dimensions.
+
+Uses @generated to avoid closure boxing when iterating over heterogeneous grid tuples.
 """
-function _validate_nd_grids(grids::NTuple{N,AbstractVector}, data::AbstractArray{<:Any,N}) where {N}
-    data_size = size(data)
-    for (i, g) in enumerate(grids)
-        ng = length(g)
-        nd = data_size[i]
+@generated function _validate_nd_grids(grids::NTuple{N,AbstractVector}, data::AbstractArray{<:Any,N}) where {N}
+    checks = [quote
+        ng = length(grids[$i])
+        nd = size(data, $i)
         if ng != nd
             throw(DimensionMismatch(
-                "Grid $i has $ng points but data dimension $i has size $nd"
+                "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
             ))
         end
         if ng < 2
-            throw(ArgumentError("Grid $i must have at least 2 points, got $ng"))
+            throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
         end
+    end for i in 1:N]
+
+    quote
+        $(checks...)
+        nothing
     end
-    return nothing
 end
 
 """
@@ -240,5 +245,19 @@ Requires `_convert_grid(grid, Type)` to be defined.
 """
 @generated function _convert_grids_typed(grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
     exprs = [:(FastInterpolations._convert_grid(grids[$i], Tg)) for i in 1:N]
+    :(($(exprs...),))
+end
+
+"""
+    _create_spacings_typed(grids::NTuple{N, AbstractVector}) -> NTuple{N}
+
+Zero-allocation spacing creation from grid tuple.
+Generates unrolled `(_create_spacing(grids[1]), _create_spacing(grids[2]), ...)` at compile time.
+
+Avoids closure boxing that occurs with `ntuple(d -> _create_spacing(grids[d]), Val(N))`
+when grids is a heterogeneous tuple (e.g., mix of Range and Vector).
+"""
+@generated function _create_spacings_typed(grids::NTuple{N, AbstractVector}) where {N}
+    exprs = [:(FastInterpolations._create_spacing(grids[$i])) for i in 1:N]
     :(($(exprs...),))
 end

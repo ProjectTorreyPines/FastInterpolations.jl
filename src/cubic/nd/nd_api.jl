@@ -359,8 +359,8 @@ function _build_nd_interpolant(
     # Build nodal derivatives using generic ND builder
     nodal_derivs = _build_nd_coeffs(grids, data, bcs)
 
-    # Create spacings
-    spacings = ntuple(d -> _create_spacing(grids[d]), Val(N))
+    # Create spacings (uses @generated to avoid closure boxing for heterogeneous grids)
+    spacings = _create_spacings_typed(grids)
 
     # Normalize BCs for storage (use Tv for value-typed BCs)
     bcs_store = ntuple(Val(N)) do d

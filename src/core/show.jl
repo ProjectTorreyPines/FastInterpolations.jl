@@ -606,8 +606,13 @@ end
 """
     _show_nd_bc_summary(io, is_last, bcs::Tuple)
 
-Print BC summary with per-axis details (like grids display).
-Example output:
+Print BC summary. If all axes have the same BC, show single line with "(all axes)".
+Otherwise show per-axis details in hierarchical format.
+
+Example output (all same):
+  └─ BC: Natural (S''=0 at ends) (all axes)
+
+Example output (different):
   └─ BC:
      ├─ x₁: CubicFit | CubicFit
      └─ x₂: LinearFit | LinearFit
@@ -615,24 +620,36 @@ Example output:
 function _show_nd_bc_summary(io::IO, is_last::Bool, bcs::Tuple)
     N = length(bcs)
     prefix = is_last ? "└─ " : "├─ "
-    _show_print(io, prefix, :light_black)
-    _show_print(io, "BC:", :light_black)
-    println(io)
 
-    # Per-axis details
-    tree_prefix = is_last ? "   " : "│  "
-    for d in 1:N
-        is_last_axis = (d == N)
-        axis_prefix = is_last_axis ? "└─ " : "├─ "
-        bc_str = _format_bc(bcs[d])
+    # Check if all BCs are the same by comparing formatted strings
+    formatted = ntuple(d -> _format_bc(bcs[d]), Val(N))
+    all_same = all(f -> f == formatted[1], formatted)
 
-        _show_print(io, tree_prefix, :light_black)
-        _show_print(io, axis_prefix, :light_black)
-        _show_print(io, "x", :light_black)
-        _show_print(io, _subscript_digit(d), :light_black)
-        print(io, ": $bc_str")
-        if d < N
-            println(io)
+    if all_same
+        # Single line display
+        _show_print(io, prefix, :light_black)
+        _show_print(io, "BC:", :light_black)
+        print(io, " $(formatted[1])")
+        _show_print(io, " (all axes)", :light_black)
+    else
+        # Hierarchical per-axis display
+        _show_print(io, prefix, :light_black)
+        _show_print(io, "BC:", :light_black)
+        println(io)
+
+        tree_prefix = is_last ? "   " : "│  "
+        for d in 1:N
+            is_last_axis = (d == N)
+            axis_prefix = is_last_axis ? "└─ " : "├─ "
+
+            _show_print(io, tree_prefix, :light_black)
+            _show_print(io, axis_prefix, :light_black)
+            _show_print(io, "x", :light_black)
+            _show_print(io, _subscript_digit(d), :light_black)
+            print(io, ": $(formatted[d])")
+            if d < N
+                println(io)
+            end
         end
     end
 end

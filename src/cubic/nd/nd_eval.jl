@@ -58,6 +58,31 @@ itp((1.0, 0.5); deriv=(1,0)) # ∂f/∂x only
     end
 end
 
+# Vector API: enables ForwardDiff.gradient(itp, [x, y]) and optimize(itp, x0; autodiff=:forward)
+"""
+    (itp::CubicInterpolantND)(query::AbstractVector; deriv=0, search=itp.searches)
+
+Evaluate with vector input for ForwardDiff/Optim.jl compatibility.
+
+# Examples
+```julia
+itp([0.5, 0.5])                          # direct evaluation
+ForwardDiff.gradient(itp, [0.5, 0.5])    # AD gradient
+optimize(itp, x0, LBFGS(); autodiff=:forward)  # optimization
+```
+"""
+@inline function (itp::CubicInterpolantND{Tg, Tv, N})(
+    query::AbstractVector{<:Real};
+    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
+) where {Tg, Tv, N}
+    length(query) == N || throw(DimensionMismatch(
+        "expected $N-element vector, got $(length(query))-element vector"
+    ))
+    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
+    return itp(query_tuple; deriv=deriv, search=search)
+end
+
 # ========================================
 # BATCH EVALUATION: SoA (Tuple of Vectors)
 # ========================================

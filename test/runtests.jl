@@ -60,7 +60,7 @@ else
     include("test_nd_coverage.jl")
 
     # # Auto-differentiation tests (ForwardDiff, Zygote, Enzyme)
-    # include("test_autodiff_ForwardDiff.jl")
-    # include("test_autodiff_Zygote.jl")
-    # include("test_autodiff_Enzyme.jl")
+    include("test_autodiff_ForwardDiff.jl")
+    include("test_autodiff_Zygote.jl")
+    include("test_autodiff_Enzyme.jl")
 end

@@ -17,6 +17,9 @@ include("cubic/cubic.jl")
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")
 
+# Vector calculus operations (depends on ND interpolant types)
+include("vector_calculus.jl")
+
 # Custom show methods (depends on all interpolant types and DerivativeView)
 include("core/show.jl")
 
@@ -28,6 +31,7 @@ export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInt
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticSeriesInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, CubicSeriesInterpolant
 export CubicInterpolantND, BicubicInterpolant, AbstractCoeffStrategy, PreCompute, OnTheFly  # ND cubic types
+export gradient, hessian, laplacian  # Analytical vector calculus for ND (9x faster than ForwardDiff)
 export bicubic_interp  # Deprecated specialized 2D (for testing)
 export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar queries
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!

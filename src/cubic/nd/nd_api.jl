@@ -6,65 +6,45 @@
 # Extends cubic_interp() to support tuple grid inputs.
 #
 # Implements:
-# - 2D Bicubic with PreCompute strategy (optimized, uses CubicInterpolant2D)
-# - Generic ND with PreCompute strategy (uses CubicInterpolantND)
+# - Generic ND with PreCompute strategy (uses CubicInterpolantND for all N≥2)
+# - bicubic_interp() for specialized 2D (deprecated, for testing only)
 
 # ========================================
-# 2-ARGUMENT FORM: Returns Interpolant
+# BICUBIC_INTERP: Specialized 2D (Deprecated)
 # ========================================
 
 """
-    cubic_interp(grids::Tuple{AbstractVector, AbstractVector}, data::AbstractMatrix; kwargs...)
+    bicubic_interp(grids::Tuple{AbstractVector, AbstractVector}, data::AbstractMatrix; kwargs...)
 
-Create a 2D bicubic interpolant from grid vectors and data matrix.
+Create a specialized 2D bicubic interpolant (BicubicInterpolant).
+
+!!! warning "Deprecated"
+    This function is deprecated and will be removed in a future version.
+    Use `cubic_interp((x, y), data)` instead, which returns a `CubicInterpolantND{...,2,...}`.
 
 # Arguments
 - `grids::Tuple{AbstractVector, AbstractVector}`: Tuple of (x, y) grid vectors
 - `data::AbstractMatrix`: Function values at grid points, size (length(x), length(y))
 
 # Keywords
-- `bc=NaturalBC()`: Boundary condition(s). Can be:
-  - Single `AbstractBC`: Applied to both axes
-  - `Tuple{AbstractBC, AbstractBC}`: Per-axis BCs
-- `extrap=:none`: Extrapolation mode(s). Can be:
-  - Single `Symbol`: Applied to both axes (`:none`, `:constant`, `:wrap`)
-  - `Tuple{Symbol, Symbol}`: Per-axis modes
-- `search=Binary()`: Search policy(s). Can be:
-  - Single `AbstractSearchPolicy`: Applied to both axes
-  - `Tuple{AbstractSearchPolicy, AbstractSearchPolicy}`: Per-axis policies
+- `bc=NaturalBC()`: Boundary condition(s)
+- `extrap=:none`: Extrapolation mode(s)
+- `search=Binary()`: Search policy(s)
 - `coeffs=PreCompute()`: Coefficient computation strategy
-  - `PreCompute()`: Precompute all partial derivatives (fast queries, more memory)
-  - `OnTheFly()`: Compute at query time (not yet implemented)
 
 # Returns
 - `BicubicInterpolant{Tg, Tv, ...}`: Callable interpolant object
 
-# Type Inference
-- Grid type `Tg`: Promoted from x and y element types (always AbstractFloat)
-- Value type `Tv`: Element type of data (can be real or complex)
-
 # Examples
 ```julia
-# Basic usage
 x = range(0.0, 2π, 50)
 y = range(0.0, π, 30)
 data = [sin(xi) * cos(yj) for xi in x, yj in y]
-itp = cubic_interp((x, y), data)
+itp = bicubic_interp((x, y), data)
 itp(1.0, 0.5)  # Evaluate at (1.0, 0.5)
-
-# With options
-itp = cubic_interp((x, y), data;
-    bc=(NaturalBC(), ClampedBC()),  # Different BCs per axis
-    extrap=:constant,                # Same extrapolation for both
-    search=Binary())
-
-# Complex-valued data
-data_c = [sin(xi) * cos(yj) + im * cos(xi) * sin(yj) for xi in x, yj in y]
-itp_c = cubic_interp((x, y), data_c)
-itp_c(1.0, 0.5)  # Returns ComplexF64
 ```
 """
-function cubic_interp(
+function bicubic_interp(
     grids::Tuple{AbstractVector, AbstractVector},
     data::AbstractMatrix;
     bc::Union{AbstractBC, Tuple{AbstractBC, AbstractBC}}=NaturalBC(),
@@ -82,9 +62,6 @@ function cubic_interp(
     x = _convert_grid(x_raw, Tg)
     y = _convert_grid(y_raw, Tg)
 
-    # Get value type
-    Tv = eltype(data)
-
     # Validate dimensions
     _validate_2d_grids(x, y, data)
 
@@ -93,75 +70,39 @@ function cubic_interp(
     extrap_x, extrap_y = _resolve_extrap_nd(extrap, Val(2))
     search_x, search_y = _resolve_search_nd(search, Val(2))
 
-    # Dispatch on strategy
+    # Build using specialized 2D path
     return _build_bicubic_interpolant(x, y, data, bc_x, bc_y, extrap_x, extrap_y, search_x, search_y, coeffs)
 end
 
-# ========================================
-# 3-ARGUMENT FORM: Oneshot Evaluation
-# ========================================
-
 """
-    cubic_interp(grids, data, queries; kwargs...)
+    bicubic_interp(grids, data, queries; kwargs...)
 
-One-shot 2D cubic interpolation: create interpolant and evaluate at queries.
-
-# Arguments
-- `grids::Tuple{AbstractVector, AbstractVector}`: Tuple of (x, y) grid vectors
-- `data::AbstractMatrix`: Function values at grid points
-- `queries`: Query point(s), can be:
-  - `Tuple{Real, Real}`: Single point → returns scalar
-  - `Tuple{AbstractVector, AbstractVector}`: Multiple points → returns vector
-
-# Keywords
-Same as 2-argument form, plus:
-- `deriv::Tuple{Int,Int}=(0,0)`: Derivative orders for each axis
-
-# Returns
-- Scalar or vector of interpolated values
-
-# Examples
-```julia
-x = range(0.0, 2π, 50)
-y = range(0.0, π, 30)
-data = [sin(xi) * cos(yj) for xi in x, yj in y]
-
-# Single point
-val = cubic_interp((x, y), data, (1.0, 0.5))
-
-# Multiple points
-xqs = [0.5, 1.0, 1.5]
-yqs = [0.2, 0.4, 0.6]
-vals = cubic_interp((x, y), data, (xqs, yqs))
-
-# With derivative
-dfdx = cubic_interp((x, y), data, (1.0, 0.5); deriv=(1, 0))
-```
+One-shot specialized 2D bicubic interpolation (deprecated).
 """
-function cubic_interp(
+function bicubic_interp(
     grids::Tuple{AbstractVector, AbstractVector},
     data::AbstractMatrix,
     queries::Tuple{Real, Real};
     deriv::Tuple{Int,Int}=(0, 0),
     kwargs...
 )
-    itp = cubic_interp(grids, data; kwargs...)
+    itp = bicubic_interp(grids, data; kwargs...)
     return itp(queries[1], queries[2]; deriv=deriv)
 end
 
-function cubic_interp(
+function bicubic_interp(
     grids::Tuple{AbstractVector, AbstractVector},
     data::AbstractMatrix,
     queries::Tuple{AbstractVector{<:Real}, AbstractVector{<:Real}};
     deriv::Tuple{Int,Int}=(0, 0),
     kwargs...
 )
-    itp = cubic_interp(grids, data; kwargs...)
+    itp = bicubic_interp(grids, data; kwargs...)
     return itp(queries[1], queries[2]; deriv=deriv)
 end
 
 # ========================================
-# INTERNAL BUILDERS
+# INTERNAL BUILDERS (for bicubic_interp)
 # ========================================
 
 """
@@ -330,11 +271,6 @@ function cubic_interp(
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {N, Tv_raw}
-    # For N=2, delegate to optimized 2D path if data is a Matrix
-    if N == 2 && data isa AbstractMatrix
-        return cubic_interp((grids[1], grids[2]), data; bc=bc, extrap=extrap, search=search, coeffs=coeffs)
-    end
-
     # Promote grid types
     Tg = promote_type(map(eltype, grids)...)
     Tg = Tg <: AbstractFloat ? Tg : Float64  # Ensure AbstractFloat

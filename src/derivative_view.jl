@@ -95,7 +95,10 @@ end
     deriv_view(itp::AbstractInterpolantND, order::Int)
     deriv_view(itp::AbstractInterpolantND, order::NTuple{N,Int})
 
-Create a callable, zero-allocation derivative view of the interpolant for the 1st, 2nd, or 3rd derivative.
+Create a callable, zero-allocation derivative view of the interpolant.
+
+- 1D convenience: `deriv1/deriv2/deriv3` for the 1st/2nd/3rd derivatives.
+- Generic: `deriv_view(itp, order)` for 1D derivative orders and ND mixed partials.
 
 `DerivativeView` is a lightweight wrapper that delegates all evaluation calls to the underlying interpolant
 using the `deriv` keyword argument (e.g., `itp(xq; deriv=1)`). This enables a more functional syntax
@@ -161,7 +164,7 @@ d1(output, query_pts; search=LinearBinary())
 
 Create a derivative view for 1D or N-dimensional interpolants.
 - 1D: `order::Int` maps to `deriv=order`.
-- ND: `order::Int` applies the same order to all axes (e.g., `1` → `(1,1,...,1)`).
+- ND: `order::Int` applies the same order to all axes (e.g., `1` → `(1,1,...,1)`), i.e. a mixed partial with order `order` along every axis.
 - ND: `order::NTuple{N,Int}` specifies mixed partials.
 The ND view forwards `deriv=Val(order)` to enable compile-time dispatch.
 
@@ -169,9 +172,10 @@ The ND view forwards `deriv=Val(order)` to enable compile-time dispatch.
 ```julia
 itp = cubic_interp((x, y), data)
 
-d1 = deriv_view(itp, 1)         # ∂f/∂x and ∂f/∂y (same order per axis)
+# In 2D, `order::Int` is shorthand for the mixed partial `(order, order)`.
+dxy = deriv_view(itp, 1)        # same as (1, 1) => ∂²f/∂x∂y
 dx = deriv_view(itp, (1, 0))
-dxy = deriv_view(itp, (1, 1))
+dy = deriv_view(itp, (0, 1))
 
 dx((0.5, 0.5))                         # ∂f/∂x
 dxy.([(0.1, 0.2), (0.3, 0.4)])          # broadcast over points
@@ -198,8 +202,8 @@ end
     throw(ArgumentError(
         "deriv$order is not supported for $(N)D interpolants. " *
         "For N-dimensional interpolants, use:\n" *
-        "  • deriv_view(itp, (d1, d2, ...))  for partial derivatives\n" *
-        "  • itp(x; deriv=(1,0,...))         for partial derivatives\n" *
+        "  • deriv_view(itp, (d1, d2, ...))  for mixed partial derivatives\n" *
+        "  • itp(x; deriv=(1,0,...))         for mixed partial derivatives\n" *
         "  • gradient(itp, x)                for ∇f\n" *
         "  • hessian(itp, x)                 for H(f)\n" *
         "  • laplacian(itp, x)               for ∇²f"

@@ -35,7 +35,7 @@ itp((1.0, 0.5); deriv=(1,0)) # ∂f/∂x only
 """
 # Single-point evaluation
 @inline function (itp::CubicInterpolantND{Tg, Tv, N})(
-    query::NTuple{N, <:Real};
+    query::Tuple{Vararg{Real, N}};  # Allow heterogeneous Real types (AD: Dual + Float64)
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
 ) where {Tg, Tv, N}
@@ -104,7 +104,7 @@ end
 Batch evaluation with Array-of-Structures input: `itp([(x,y), ...])`.
 """
 function (itp::CubicInterpolantND{Tg, Tv, N})(
-    queries::AbstractVector{<:NTuple{N, <:Real}};
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};  # Allow heterogeneous Real types
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
 ) where {Tg, Tv, N}
@@ -168,10 +168,10 @@ end
 # Generic N-dimensional (uses ntuple helpers)
 @inline function _eval_nd_hermite(
     itp::CubicInterpolantND{Tg, Tv, N},
-    query::NTuple{N, Tq},
+    query::Tuple{Vararg{Real, N}},  # Allow heterogeneous Real types (AD support)
     ops::OPS,
     search::SEARCH
-) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
+) where {Tg, Tv, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     grids = _get_grids(itp)
     spacings = _get_spacings(itp)
     extraps = _get_extraps(itp)
@@ -187,10 +187,10 @@ end
 # enabling type-stable evaluation even with runtime deriv tuples like (1,0).
 @inline function _eval_nd_hermite(
     itp::CubicInterpolantND{Tg, Tv, 2},
-    query::NTuple{2, Tq},
+    query::Tuple{Vararg{Real, 2}},  # Allow heterogeneous Real types (AD support)
     ops::NTuple{2, <:AbstractEvalOp},
     search::NTuple{2, <:AbstractSearchPolicy}
-) where {Tg, Tv, Tq<:Real}
+) where {Tg, Tv}
     xq, yq = query
     grid_x, grid_y = itp.grids
     spacing_x, spacing_y = itp.spacings
@@ -236,9 +236,9 @@ end
     indices::NTuple{N, Int},
     hs::NTuple{N, Tg},
     inv_hs::NTuple{N, Tg},
-    dLs::NTuple{N, Tq},
+    dLs::Tuple{Vararg{Real, N}},  # Allow heterogeneous Real types (AD support)
     ops::NTuple{N, AbstractEvalOp}
-) where {Tv, Tg, Tq, N, NP1}
+) where {Tv, Tg, N, NP1}
     # Validate dimensions
     NP1 == N + 1 || error("NP1 must equal N+1")
 

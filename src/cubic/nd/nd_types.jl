@@ -344,17 +344,23 @@ Returns tuple of processed query values ready for interpolation.
 end
 
 # Extrapolation handlers (defined here for generic use, 2D versions may override)
-@inline function _handle_axis_extrap(q::Tq, axis::AbstractVector{Tg}, ::Val{:none}) where {Tq, Tg}
+# Note: Preserve query type (don't convert to Tg) for AD support (ForwardDiff.Dual)
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::Val{:none})
     @boundscheck _check_domain(axis, q, Val(:none))
-    return Tg(q)
+    return q  # preserve original type for AD
 end
 
-@inline function _handle_axis_extrap(q::Tq, axis::AbstractVector{Tg}, ::Val{:constant}) where {Tq, Tg}
-    return clamp(Tg(q), first(axis), last(axis))
+@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::Val{:constant}) where {Tg}
+    # For AD: use primal for comparison, preserve type when in domain
+    q_primal = _extract_primal(q)
+    lo, hi = first(axis), last(axis)
+    q_primal < lo && return lo   # outside domain: return boundary (derivative = 0)
+    q_primal > hi && return hi
+    return q  # in domain: preserve original type for AD
 end
 
-@inline function _handle_axis_extrap(q::Tq, axis::AbstractVector{Tg}, ::Val{:wrap}) where {Tq, Tg}
-    return _wrap_to_domain(Tg(q), first(axis), last(axis))
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::Val{:wrap})
+    return _wrap_to_domain(q, first(axis), last(axis))  # already handles AD via _extract_primal
 end
 
 # ========================================

@@ -304,7 +304,7 @@ One-shot ND cubic interpolation at a single point.
 function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{<:Any, N},
-    queries::NTuple{N, <:Real};
+    queries::Tuple{Vararg{Real, N}};  # Allow heterogeneous Real types (AD support)
     deriv::Union{Int, Val}=0,
     kwargs...
 ) where {N}

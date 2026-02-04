@@ -30,10 +30,13 @@ Performance: ~15x faster than Dual number propagation (27ns vs 415ns for 2D).
 function ChainRulesCore.frule(
     (_, Δquery),
     itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
-    query::NTuple{N, <:Real}
+    query::Tuple{Vararg{Real, N}}
 ) where {Tg, Tv, N}
     # Primal value
     y = itp(query)
+
+    # If the query tangent is zero/none, the directional derivative is zero.
+    Δquery isa AbstractZero && return y, zero(y)
 
     # Tangent: directional derivative = ∑ᵢ (∂f/∂xᵢ) * Δxᵢ
     # Use analytical derivatives via deriv keyword
@@ -61,6 +64,9 @@ function ChainRulesCore.frule(
     # Primal value
     y = itp(query_tuple)
 
+    # If the query tangent is zero/none, the directional derivative is zero.
+    Δquery isa AbstractZero && return y, zero(y)
+
     # Tangent: directional derivative
     ∂y = sum(
         Δquery[i] * itp(query_tuple; deriv=ntuple(j -> j == i ? 1 : 0, Val(N)))
@@ -81,13 +87,14 @@ Provides analytical reverse-mode differentiation for packages like Zygote.
 """
 function ChainRulesCore.rrule(
     itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
-    query::NTuple{N, <:Real}
+    query::Tuple{Vararg{Real, N}}
 ) where {Tg, Tv, N}
     # Primal value
     y = itp(query)
 
     # Pullback: given ∂L/∂y (scalar), return ∂L/∂query (tuple)
     function itp_pullback(Δy)
+        Δy isa AbstractZero && return NoTangent(), ZeroTangent()
         # ∂L/∂xᵢ = ∂L/∂y * ∂y/∂xᵢ
         ∂query = ntuple(Val(N)) do i
             Δy * itp(query; deriv=ntuple(j -> j == i ? 1 : 0, Val(N)))
@@ -115,6 +122,7 @@ function ChainRulesCore.rrule(
 
     # Pullback
     function itp_pullback(Δy)
+        Δy isa AbstractZero && return NoTangent(), ZeroTangent()
         ∂query = [
             Δy * itp(query_tuple; deriv=ntuple(j -> j == i ? 1 : 0, Val(N)))
             for i in 1:N

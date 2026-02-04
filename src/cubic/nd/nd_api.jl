@@ -271,12 +271,12 @@ function cubic_interp(
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {N, Tv_raw}
-    # Promote grid types
-    Tg = promote_type(map(eltype, grids)...)
+    # Zero-allocation type promotion (uses @generated function)
+    Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64  # Ensure AbstractFloat
-
-    # Convert grids if needed
-    grids_typed = ntuple(d -> _convert_grid(grids[d], Tg), Val(N))
+    
+    # Zero-allocation grid conversion (uses @generated function)
+    grids_typed = _convert_grids_typed(grids, Tg)
 
     # Get value type
     Tv = eltype(data)

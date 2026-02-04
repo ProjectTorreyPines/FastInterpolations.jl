@@ -210,3 +210,35 @@ function _validate_2d_grids(
 
     return nothing
 end
+
+# ========================================
+# Zero-Allocation Grid Type Helpers
+# ========================================
+#
+# @generated functions to avoid closure boxing in tuple operations.
+# These replace map/ntuple patterns that cause allocations due to
+# capturing heterogeneous tuple variables.
+
+"""
+    _promote_grid_eltype(grids::NTuple{N, AbstractVector}) -> Type
+
+Zero-allocation promoted element type extraction from grid tuple.
+Generates unrolled `promote_type(eltype(grids[1]), eltype(grids[2]), ...)` at compile time.
+"""
+@generated function _promote_grid_eltype(grids::NTuple{N, AbstractVector}) where {N}
+    types = [:(eltype(grids[$i])) for i in 1:N]
+    :(promote_type($(types...)))
+end
+
+"""
+    _convert_grids_typed(grids::NTuple{N, AbstractVector}, ::Type{Tg}) -> NTuple{N}
+
+Zero-allocation grid conversion to target element type.
+Generates unrolled `(_convert_grid(grids[1], Tg), _convert_grid(grids[2], Tg), ...)` at compile time.
+
+Requires `_convert_grid(grid, Type)` to be defined.
+"""
+@generated function _convert_grids_typed(grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
+    exprs = [:(FastInterpolations._convert_grid(grids[$i], Tg)) for i in 1:N]
+    :(($(exprs...),))
+end

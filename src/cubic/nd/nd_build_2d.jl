@@ -142,7 +142,6 @@ Differentiate 1D vector using cubic splines. BC type determines the method:
     grid::AbstractVector{Tg}, bc::AbstractBC
 ) where {Tg<:AbstractFloat, Tv}
     n = length(values)
-    spacing = _create_spacing(grid)
     # Cache uses grid type Tg for matrix structure (factorization)
     # Computation uses value type Tv for actual BC values
     bc_cache = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, Tg)
@@ -151,7 +150,7 @@ Differentiate 1D vector using cubic splines. BC type determines the method:
     actual_bc = cache.bc_config isa PeriodicData ? cache.bc_config : bc_compute
     m = acquire!(pool, Tv, n)
     _solve_system!(m, cache, values, actual_bc)
-    _moments_to_derivatives_1d!(deriv, m, values, spacing)
+    _moments_to_derivatives_1d!(deriv, m, values, cache.spacing)
     _apply_derivative_bc!(deriv, actual_bc)
     return deriv
 end
@@ -163,7 +162,6 @@ end
     n = length(values)
     @assert n >= 4 "Need at least 4 points for CubicFit"
 
-    spacing = _create_spacing(grid)
     deriv_left = _estimate_endpoint_derivative(grid, values, Val(:left), CubicFit())
     deriv_right = _estimate_endpoint_derivative(grid, values, Val(:right), CubicFit())
 
@@ -174,7 +172,7 @@ end
     cache = _get_cubic_cache(grid, bc_cache, true)
     m = acquire!(pool, Tv, n)
     _solve_system!(m, cache, values, bc)
-    _moments_to_derivatives_1d!(deriv, m, values, spacing)
+    _moments_to_derivatives_1d!(deriv, m, values, cache.spacing)
     _apply_derivative_bc!(deriv, bc)
     return deriv
 end
@@ -203,7 +201,6 @@ Compute partial derivative of 2D data along dimension D. BC type determines the 
     ::Val{2}
 ) where {Tg<:AbstractFloat, Tv}
     nx, ny = size(data)
-    spacing = _create_spacing(grid)
     # Cache uses grid type Tg for matrix structure (factorization)
     # Computation uses value type Tv for actual BC values
     bc_cache = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, Tg)
@@ -220,7 +217,7 @@ Compute partial derivative of 2D data along dimension D. BC type determines the 
         @inbounds for i in 1:nx
             for j in 1:ny; line[j] = data[i, j]; end
             _solve_system!(m, cache, line, actual_bc)
-            _moments_to_derivatives_1d!(dline, m, line, spacing)
+            _moments_to_derivatives_1d!(dline, m, line, cache.spacing)
             _apply_derivative_bc!(dline, actual_bc)
             for j in 1:ny; out[i, j] = dline[j]; end
         end
@@ -228,7 +225,7 @@ Compute partial derivative of 2D data along dimension D. BC type determines the 
         # Batch solve along axis 2 (SIMD optimized)
         M = acquire!(pool, Tv, (nx, ny))
         solve_along_dim!(M, cache, data, actual_bc, Val(2))
-        moments_to_derivatives_along_dim!(out, M, data, spacing, actual_bc, Val(2))
+        moments_to_derivatives_along_dim!(out, M, data, cache.spacing, actual_bc, Val(2))
     end
     return out
 end
@@ -241,7 +238,6 @@ end
     # Note: Benchmarking showed that for dim 1 (columns), per-column solving
     # is faster than batch solving due to view creation overhead in RHS.
     nx, ny = size(data)
-    spacing = _create_spacing(grid)
     # Cache uses grid type Tg for matrix structure (factorization)
     # Computation uses value type Tv for actual BC values
     bc_cache = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, Tg)
@@ -255,7 +251,7 @@ end
     @inbounds for j in 1:ny
         for i in 1:nx; line[i] = data[i, j]; end
         _solve_system!(m, cache, line, actual_bc)
-        _moments_to_derivatives_1d!(dline, m, line, spacing)
+        _moments_to_derivatives_1d!(dline, m, line, cache.spacing)
         _apply_derivative_bc!(dline, actual_bc)
         for i in 1:nx; out[i, j] = dline[i]; end
     end
@@ -304,7 +300,6 @@ end
 ) where {Tg<:AbstractFloat, Tv}
     bc_left, bc_right = edge_bc
     nx, ny = size(data)
-    spacing = _create_spacing(grid)
     # Cache uses grid type Tg for matrix structure
     canonical_bc = BCPair(Deriv1(zero(Tg)), Deriv1(zero(Tg)))
     cache = _get_cubic_cache(grid, canonical_bc, true)
@@ -316,7 +311,7 @@ end
         line_bc = BCPair(Deriv1(bc_left[j]), Deriv1(bc_right[j]))
         for i in 1:nx; line[i] = data[i, j]; end
         _solve_system!(m, cache, line, line_bc)
-        _moments_to_derivatives_1d!(dline, m, line, spacing)
+        _moments_to_derivatives_1d!(dline, m, line, cache.spacing)
         _apply_derivative_bc!(dline, line_bc)
         for i in 1:nx; out[i, j] = dline[i]; end
     end
@@ -331,7 +326,6 @@ end
     ::Val{2}
 ) where {Tg<:AbstractFloat, Tv}
     nx, ny = size(data)
-    spacing = _create_spacing(grid)
 
     # Get cache with canonical BC using grid type (Deriv1 structure - actual values in edge_bc)
     # Cache uses Tg type for matrix structure
@@ -342,13 +336,13 @@ end
     M = acquire!(pool, Tv, (nx, ny))
 
     # Step 1: Compute RHS with per-row edge BC (SIMD optimized)
-    compute_rhs_along_dim!(M, data, spacing, edge_bc, Val(2))
+    compute_rhs_along_dim!(M, data, cache.spacing, edge_bc, Val(2))
 
     # Step 2: Batch solve (SIMD optimized) - same Thomas factorization for all rows
     _ldiv_along_dim!(M, cache.thomas, Val(2))
 
     # Step 3: Convert moments to derivatives with edge BC (SIMD, no double-write)
-    moments_to_derivatives_along_dim!(out, M, data, spacing, edge_bc, Val(2))
+    moments_to_derivatives_along_dim!(out, M, data, cache.spacing, edge_bc, Val(2))
 
     return out
 end

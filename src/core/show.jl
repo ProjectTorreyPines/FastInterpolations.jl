@@ -709,3 +709,53 @@ function _show_nd_bc_summary(io::IO, is_last::Bool, bcs::Tuple)
         end
     end
 end
+
+# ========================================
+# ConstantInterpolantND Show Methods
+# ========================================
+
+function Base.show(io::IO, itp::ConstantInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
+    sizes = join([string(length(g)) for g in itp.grids], "×")
+    side_str = _short_side_name_nd(itp.sides)
+    _show_type_header_nd(io, "ConstantInterpolantND", Tg, Tv, N)
+    print(io, "($sizes, $side_str)")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", itp::ConstantInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
+    _show_type_header_nd(io, "ConstantInterpolantND", Tg, Tv, N)
+    println(io)
+
+    # Grid info with per-axis details
+    _show_nd_grids_summary(io, false, itp.grids)
+    println(io)
+
+    # Extrapolation modes
+    _show_nd_config_row(io, false, "Extrap:", itp.extraps, _format_extrap; value_color=:magenta)
+    println(io)
+
+    # Side selection
+    _show_nd_config_row(io, false, "Side:  ", itp.sides, _format_side; value_color=:magenta)
+    println(io)
+
+    # Search policies (only if any axis has non-Range grid)
+    has_vector_grid = any(g -> !(g isa AbstractRange), itp.grids)
+    if has_vector_grid
+        _show_nd_config_row(io, true, "Search:", itp.searches, _format_search)
+    end
+end
+
+"""
+    _short_side_name_nd(sides::Tuple) -> String
+
+Get compact side name for ND constant interpolant display.
+"""
+function _short_side_name_nd(sides::Tuple)
+    N = length(sides)
+    formatted = ntuple(d -> _format_side(sides[d]), Val(N))
+    all_same = all(f -> f == formatted[1], formatted)
+    if all_same
+        return formatted[1]
+    else
+        return join(formatted, ",")
+    end
+end

@@ -759,3 +759,32 @@ function _short_side_name_nd(sides::Tuple)
         return join(formatted, ",")
     end
 end
+
+# ========================================
+# LinearInterpolantND Show Methods
+# ========================================
+
+function Base.show(io::IO, itp::LinearInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
+    sizes = join([string(length(g)) for g in itp.grids], "×")
+    _show_type_header_nd(io, "LinearInterpolantND", Tg, Tv, N)
+    print(io, "($sizes)")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
+    _show_type_header_nd(io, "LinearInterpolantND", Tg, Tv, N)
+    println(io)
+
+    # Grid info with per-axis details
+    _show_nd_grids_summary(io, false, itp.grids)
+    println(io)
+
+    # Extrapolation modes
+    _show_nd_config_row(io, false, "Extrap:", itp.extraps, _format_extrap; value_color=:magenta)
+    println(io)
+
+    # Search policies (only if any axis has non-Range grid)
+    has_vector_grid = any(g -> !(g isa AbstractRange), itp.grids)
+    if has_vector_grid
+        _show_nd_config_row(io, true, "Search:", itp.searches, _format_search)
+    end
+end

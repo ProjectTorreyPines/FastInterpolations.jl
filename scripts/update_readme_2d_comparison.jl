@@ -21,9 +21,9 @@ function plot_comparison(xs, ys)
     # CMAP = :viridis
     CMAP = :RdBu
     # CMAP = :seismic
-    CRANGE = extrema(z_hi)
+    CRANGE = 0.9.*extrema(z_hi)
     kwargs = (c=CMAP, clims=CRANGE, aspect_ratio=:equal, xlabel="x", ylabel="y", xticks=0:0.2:1, yticks=0:0.2:1,
-            xlims=0.9.*extrema(xs), ylims=0.9.*extrema(ys),  titlefont=(14, "Helvetica Bold"), topmargin=9Plots.px, legend=false)
+            xlims=extrema(xs), ylims=extrema(ys),  titlefont=(14, "Helvetica Bold"), topmargin=9Plots.px, legend=false)
 
     itp_plot_kwargs = (node_color=:black, node_size=6, node_alpha=0.4, gridline_alpha=0.3)
 
@@ -45,7 +45,7 @@ end
 
 
 x_test = [0, 0.1, 0.4, 0.5, 0.82, 1.0]
-y_test = [0, 0.1, 0.2,0.5,0.8,0.9,1.0]
+y_test = [0, 0.1, 0.2,0.5,  0.8, 0.9,1.0]
 p = plot_comparison(x_test, y_test)
 
 savefig(p, "$( pkgdir(FastInterpolations))/docs/images/readme_2d_comparison.png")

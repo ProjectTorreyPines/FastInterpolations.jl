@@ -129,7 +129,10 @@ makedocs(
         "Advanced Usage" => [
             "Overview" => "guides/advanced_overview.md",
             "Complex Numbers" => "guides/complex_number_support.md",
-            "Autodiff (AD)" => "guides/autodiff_support.md",
+            "Autodiff (AD)" => [
+                "1D Interpolants" => "guides/autodiff_support.md",
+                "ND Interpolants" => "guides/autodiff_nd.md",
+            ],
             "Search & Hints" => [
                 "Overview" => "guides/search/overview.md",
                 "Search Policies" => "guides/search/policies.md",

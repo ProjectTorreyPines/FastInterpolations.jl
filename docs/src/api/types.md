@@ -7,6 +7,16 @@
 ```@docs
 AbstractInterpolant
 AbstractSeriesInterpolant
+AbstractInterpolantND
+```
+
+### ND Cubic Types
+
+```@docs
+AbstractCoeffStrategy
+PreCompute
+OnTheFly
+CubicInterpolantND
 ```
 
 ### Type Accessors
@@ -25,6 +35,14 @@ EvalValue
 EvalDeriv1
 EvalDeriv2
 EvalDeriv3
+```
+
+## Vector Calculus (ND)
+
+```@docs
+gradient
+hessian
+laplacian
 ```
 
 ## Boundary Conditions

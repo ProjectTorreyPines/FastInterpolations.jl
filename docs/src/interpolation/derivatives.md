@@ -133,6 +133,7 @@ d1(-0.5)  # Uses :extension extrapolation
 deriv1
 deriv2
 deriv3
+deriv_view
 AbstractDerivativeView
 DerivativeView
 ```

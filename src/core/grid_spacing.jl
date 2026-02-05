@@ -123,15 +123,17 @@ Extracts the constant step size and precomputes its reciprocal.
 For `LinRange`, computes the step explicitly since it's not stored.
 """
 function _create_spacing(x::AbstractRange{T}) where {T<:AbstractFloat}
-    h = T(step(x))
-    inv_h = one(T) / h
+    # step(x) already returns T for AbstractRange{T}, avoid redundant conversion
+    h = step(x)
+    inv_h = inv(h)
     return ScalarSpacing{T}(h, inv_h)
 end
 
 # LinRange needs special handling - step() works but we compute explicitly for clarity
 function _create_spacing(x::LinRange{T}) where {T<:AbstractFloat}
-    h = (last(x) - first(x)) / T(length(x) - 1)
-    inv_h = one(T) / h
+    n_intervals = length(x) - 1
+    h = (last(x) - first(x)) / n_intervals
+    inv_h = inv(h)
     return ScalarSpacing{T}(h, inv_h)
 end
 

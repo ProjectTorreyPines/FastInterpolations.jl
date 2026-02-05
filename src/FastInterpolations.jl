@@ -17,16 +17,21 @@ include("cubic/cubic.jl")
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")
 
+# Vector calculus operations (depends on ND interpolant types)
+include("vector_calculus.jl")
+
 # Custom show methods (depends on all interpolant types and DerivativeView)
 include("core/show.jl")
 
 # Exports
-export AbstractInterpolant, AbstractSeriesInterpolant
+export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
 export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticSeriesInterpolant
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, CubicSeriesInterpolant
+export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly  # ND cubic types
+export gradient, hessian, laplacian  # Analytical vector calculus for ND (9x faster than ForwardDiff)
 export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar queries
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 
@@ -41,7 +46,7 @@ export ParabolaFit # Deprecated alias of QuadraticFit
 export Left, Right
 
 # Derivative view functions and types
-export deriv1, deriv2, deriv3, AbstractDerivativeView, DerivativeView
+export deriv1, deriv2, deriv3, deriv_view, AbstractDerivativeView, DerivativeView
 
 # Operation types (for derivative dispatch)
 export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3

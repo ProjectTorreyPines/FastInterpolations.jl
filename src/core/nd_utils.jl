@@ -265,7 +265,7 @@ Returns tuple of processed query values ready for interpolation.
 Accepts heterogeneous tuples (e.g., mixed grid types, per-axis extrap modes).
 """
 @inline function _handle_all_extraps(
-    queries::Tuple{Vararg{Any,N}}, grids::Tuple{Vararg{Any,N}}, extraps::Tuple{Vararg{Any,N}}
+    queries::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}}, extraps::Tuple{Vararg{Val,N}}
 ) where {N}
     ntuple(Val(N)) do d
         @inbounds _handle_axis_extrap(queries[d], grids[d], extraps[d])
@@ -313,8 +313,8 @@ Returns tuples of: indices (cell index), Ls (left bounds), Rs (right bounds).
 Accepts heterogeneous tuples (e.g., mixed grid types, spacing types, search policies).
 """
 @inline function _search_all_intervals(
-    q_evals::Tuple{Vararg{Any,N}}, grids::Tuple{Vararg{Any,N}},
-    spacings::Tuple{Vararg{Any,N}}, searches::Tuple{Vararg{Any,N}}
+    q_evals::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
+    spacings::Tuple{Vararg{AbstractGridSpacing,N}}, searches::Tuple{Vararg{AbstractSearchPolicy,N}}
 ) where {N}
     results = ntuple(Val(N)) do d
         searcher = @inbounds _to_searcher(searches[d])

@@ -182,10 +182,10 @@ Compute cell widths and normalized coordinates for multilinear interpolation.
 - αs: normalized coordinates α = (q - L) / h
 """
 @inline function _compute_linear_params(
-    q_eval::Tuple{Vararg{Any,N}},
-    spacings::Tuple{Vararg{Any,N}},
+    q_eval::Tuple{Vararg{Real,N}},
+    spacings::Tuple{Vararg{AbstractGridSpacing,N}},
     indices::NTuple{N, Int},
-    Ls::Tuple{Vararg{Any,N}},
+    Ls::Tuple{Vararg{Real,N}},
     ::Val{N}
 ) where {N}
     hs = ntuple(Val(N)) do d

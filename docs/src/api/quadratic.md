@@ -44,6 +44,7 @@ quadratic_interp!
 
 ```@docs
 QuadraticInterpolant
+QuadraticInterpolantND
 ```
 
 ## Boundary Condition Types

@@ -43,6 +43,7 @@ constant_interp!
 
 ```@docs
 ConstantInterpolant
+ConstantInterpolantND
 ```
 
 ## Derivative Views

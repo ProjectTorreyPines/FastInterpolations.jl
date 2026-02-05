@@ -40,6 +40,7 @@ linear_interp!
 
 ```@docs
 LinearInterpolant
+LinearInterpolantND
 ```
 
 ## Derivative Views

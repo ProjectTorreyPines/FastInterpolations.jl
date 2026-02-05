@@ -6,7 +6,7 @@
 
 # FastInterpolations.jl
 
-A high-performance **N-dimensional** interpolation package for Julia, optimized for **zero-allocation hot loops** and thread-safe concurrent access.
+A high-performance **N-dimensional** interpolation package for Julia, optimized for **zero-allocation hot loops**.
 
 ## Key Strengths
 
@@ -47,11 +47,11 @@ cubic_interp(x, y, [0.11, 0.22, 0.33]) # return values at x=[0.11,0.22,0.33]
 
 # Advanced usage (in-place vector query)
 xq = range(0.0, 10.0, 500)  # query points  (500 points)
-out_vals = similar(xq)           # pre-allocate output buffer
+out = similar(xq)           # pre-allocate output buffer
 
 for t in 1:1000
     @. y = sin(x + 0.01t)           # y values evolve each timestep
-    cubic_interp!(out_vals, x, y, xq)    # zero-allocation ✅ (after warm-up)
+    cubic_interp!(out, x, y, xq)    # zero-allocation ✅ (after warm-up)
 end
 ```
 

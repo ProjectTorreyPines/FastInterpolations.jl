@@ -339,6 +339,104 @@ end
 # These replace map/ntuple patterns that cause allocations due to
 # capturing heterogeneous tuple variables.
 
+# ========================================
+# Shared ND Coefficient Storage
+# ========================================
+
+"""
+    NodalDerivativesND{Tv, N, NP1}
+
+Storage for precomputed N-dimensional partial derivatives at grid nodes.
+
+This structure stores the function value f and all mixed partial derivatives
+(∂f/∂x₁, ∂f/∂x₂, ∂²f/∂x₁∂x₂, etc.) at each grid node, enabling O(1) evaluation
+via tensor-product interpolation (Hermite for cubic, quadratic kernel for quadratic).
+
+# Type Parameters
+- `Tv`: Value type (Float64, ComplexF64, etc.)
+- `N`: Number of dimensions
+- `NP1`: N + 1 (array dimensionality, Julia can't compute N+1 in type definition)
+
+# Fields
+- `partials::Array{Tv, NP1}`: Partial derivatives array of shape (2^N, n₁, n₂, ..., nₙ)
+
+# Partials Indexing Convention (bit-encoding of derivatives)
+The first index `p` encodes which partial derivative via binary representation:
+- Bit d set → differentiate with respect to dimension d
+- p=1 (binary 0...0): f (no derivatives)
+- p=2 (binary 0...1): ∂f/∂x₁
+- p=3 (binary 0..10): ∂f/∂x₂
+- p=4 (binary 0..11): ∂²f/∂x₁∂x₂
+- etc.
+
+# Examples
+For N=2 (4 partials per point):
+- `partials[1, i, j]` = f(xᵢ, yⱼ)         (p=1, binary 00)
+- `partials[2, i, j]` = ∂f/∂x             (p=2, binary 01)
+- `partials[3, i, j]` = ∂f/∂y             (p=3, binary 10)
+- `partials[4, i, j]` = ∂²f/∂x∂y          (p=4, binary 11)
+
+For N=3 (8 partials per point):
+- `partials[1, i, j, k]` = f              (p=1, binary 000)
+- `partials[2, i, j, k]` = ∂f/∂x          (p=2, binary 001)
+- `partials[3, i, j, k]` = ∂f/∂y          (p=3, binary 010)
+- `partials[4, i, j, k]` = ∂²f/∂x∂y       (p=4, binary 011)
+- `partials[5, i, j, k]` = ∂f/∂z          (p=5, binary 100)
+- `partials[6, i, j, k]` = ∂²f/∂x∂z       (p=6, binary 101)
+- `partials[7, i, j, k]` = ∂²f/∂y∂z       (p=7, binary 110)
+- `partials[8, i, j, k]` = ∂³f/∂x∂y∂z     (p=8, binary 111)
+"""
+struct NodalDerivativesND{Tv, N, NP1}
+    partials::Array{Tv, NP1}
+
+    function NodalDerivativesND{Tv, N, NP1}(partials::Array{Tv, NP1}) where {Tv, N, NP1}
+        NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1, got NP1=$NP1, N=$N"))
+        size(partials, 1) == (1 << N) || throw(DimensionMismatch(
+            "First dimension must be 2^N=$(1 << N), got $(size(partials, 1))"
+        ))
+        new{Tv, N, NP1}(partials)
+    end
+end
+
+# Convenience constructor that computes NP1 automatically
+function NodalDerivativesND{Tv, N}(partials::Array{Tv, NP1}) where {Tv, N, NP1}
+    NodalDerivativesND{Tv, N, NP1}(partials)
+end
+
+# ========================================
+# Shared ND Local Parameter Computation
+# ========================================
+
+"""
+    _compute_all_local_params(q_evals, spacings, indices, Ls) -> (hs, inv_hs, dLs)
+
+Compute local cell parameters for all axes.
+Returns tuples of: hs (cell widths), inv_hs (reciprocals), dLs (left deltas).
+
+Used by both CubicInterpolantND and QuadraticInterpolantND evaluation.
+"""
+@inline function _compute_all_local_params(
+    q_evals::Tuple{Vararg{Real, N}},  # Allow heterogeneous/AD types (Dual)
+    spacings::Tuple{Vararg{AbstractGridSpacing, N}},  # Allow heterogeneous spacing types (VectorSpacing, ScalarSpacing)
+    indices::NTuple{N, Int},
+    Ls::Tuple{Vararg{Real, N}}  # Grid boundary (allow heterogeneous Real types)
+) where {N}
+    hs = ntuple(Val(N)) do d
+        @inbounds _get_h(spacings[d], indices[d])
+    end
+    inv_hs = ntuple(Val(N)) do d
+        @inbounds _get_inv_h(spacings[d], indices[d])
+    end
+    dLs = ntuple(Val(N)) do d
+        @inbounds q_evals[d] - Ls[d]
+    end
+    return (hs, inv_hs, dLs)
+end
+
+# ========================================
+# @generated Grid Type Promotion
+# ========================================
+
 """
     _promote_grid_eltype(grids::NTuple{N, AbstractVector}) -> Type
 

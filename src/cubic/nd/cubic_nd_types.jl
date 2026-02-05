@@ -326,46 +326,11 @@ Extract all search policies as a tuple.
 end
 
 # ========================================
-# Generic Per-Axis Helpers (allocation-free)
-# ========================================
-
-"""
-    _handle_all_extraps(queries, grids, extraps) -> NTuple{N, Tg}
-
-Apply extrapolation handling to all query coordinates.
-Returns tuple of processed query values ready for interpolation.
-"""
-@inline function _handle_all_extraps(
-    queries::NTuple{N, Tq}, grids::NTuple{N}, extraps::NTuple{N}
-) where {N, Tq}
-    ntuple(Val(N)) do d
-        @inbounds _handle_axis_extrap(queries[d], grids[d], extraps[d])
-    end
-end
-
-# Extrapolation handlers (defined here for generic use, 2D versions may override)
-# Note: Preserve query type (don't convert to Tg) for AD support (ForwardDiff.Dual)
-@inline function _handle_axis_extrap(q, axis::AbstractVector, ::Val{:none})
-    @boundscheck _check_domain(axis, q, Val(:none))
-    return q  # preserve original type for AD
-end
-
-@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::Val{:constant}) where {Tg}
-    # For AD: use primal for comparison, preserve type when in domain
-    q_primal = _extract_primal(q)
-    lo, hi = first(axis), last(axis)
-    q_primal < lo && return lo   # outside domain: return boundary (derivative = 0)
-    q_primal > hi && return hi
-    return q  # in domain: preserve original type for AD
-end
-
-@inline function _handle_axis_extrap(q, axis::AbstractVector, ::Val{:wrap})
-    return _wrap_to_domain(q, first(axis), last(axis))  # already handles AD via _extract_primal
-end
-
-# ========================================
 # @GENERATED VERSIONS (for performance testing)
 # ========================================
+#
+# Note: _handle_all_extraps, _handle_axis_extrap, and _search_all_intervals
+# are now in src/core/nd_utils.jl for shared use by constant/linear ND.
 
 """
 @generated version of _handle_all_extraps - explicit unrolling instead of ntuple closure.
@@ -422,25 +387,7 @@ end
     end
 end
 
-"""
-    _search_all_intervals(q_evals, grids, spacings, searches) -> (indices, Ls, Rs)
-
-Perform interval search on all axes.
-Returns tuples of: indices (cell index), Ls (left bounds), Rs (right bounds).
-"""
-@inline function _search_all_intervals(
-    q_evals::NTuple{N, Tg}, grids::NTuple{N}, spacings::NTuple{N}, searches::NTuple{N}
-) where {N, Tg}
-    results = ntuple(Val(N)) do d
-        searcher = @inbounds _to_searcher(searches[d])
-        @inbounds search_interval(searcher, grids[d], spacings[d], q_evals[d])
-    end
-    # Restructure (idx, L, R) tuples into separate tuples
-    indices = ntuple(d -> @inbounds(results[d][1]), Val(N))
-    Ls = ntuple(d -> @inbounds(results[d][2]), Val(N))
-    Rs = ntuple(d -> @inbounds(results[d][3]), Val(N))
-    return (indices, Ls, Rs)
-end
+# Note: _search_all_intervals is now in src/core/nd_utils.jl
 
 """
     _compute_all_local_params(q_evals, spacings, indices, Ls) -> (hs, inv_hs, dLs)

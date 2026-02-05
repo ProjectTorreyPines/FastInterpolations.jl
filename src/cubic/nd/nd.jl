@@ -17,20 +17,20 @@
 # ========================================
 # 1. Core Types
 # ========================================
-include("nd_types.jl")           # AbstractCoeffStrategy, CubicInterpolantND, NodalDerivativesND
+include("cubic_nd_types.jl")     # AbstractCoeffStrategy, CubicInterpolantND, NodalDerivativesND
 
 # ========================================
 # 3. Mathematical Functions
 # ========================================
-include("nd_math.jl")            # Hermite basis functions, 1D moment→deriv conversion
+include("cubic_nd_math.jl")      # Hermite basis functions, 1D moment→deriv conversion
 
 # ========================================
 # 4. Generic ND Implementation
 # ========================================
-include("nd_build.jl")           # Generic ND coefficient computation
-include("nd_eval.jl")            # Generic ND evaluation (@generated tensor product)
+include("cubic_nd_build.jl")     # Generic ND coefficient computation
+include("cubic_nd_eval.jl")      # Generic ND evaluation (@generated tensor product)
 
 # ========================================
 # 5. Public API
 # ========================================
-include("nd_api.jl")             # cubic_interp() for ND
+include("cubic_nd_api.jl")       # cubic_interp() for ND

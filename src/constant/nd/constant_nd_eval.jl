@@ -77,11 +77,11 @@ For constant interpolation:
         return zero(Tv)
     end
 
-    # Handle extrapolation per axis
-    q_eval = _handle_all_extraps_constant(query, itp.grids, itp.extraps, Val(N))
+    # Handle extrapolation per axis (shared utility from core/nd_utils.jl)
+    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
 
-    # Search intervals and compute parameters
-    indices, Ls, _ = _search_all_intervals_constant(q_eval, itp.grids, itp.spacings, search_tuple, Val(N))
+    # Search intervals (shared utility from core/nd_utils.jl)
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple)
     hs, dLs = _compute_local_params_constant(q_eval, itp.spacings, indices, Ls, Val(N))
 
     # Determine corner offsets based on side modes
@@ -102,67 +102,6 @@ end
         end
     end
     return false
-end
-
-# ========================================
-# Extrapolation Handling
-# ========================================
-
-@inline function _handle_all_extraps_constant(
-    query::NTuple{N, <:Real},
-    grids::NTuple{N, AbstractVector},
-    extraps::NTuple{N, ExtrapVal},
-    ::Val{N}
-) where {N}
-    return ntuple(Val(N)) do d
-        @inbounds _handle_axis_extrap_constant(query[d], grids[d], extraps[d])
-    end
-end
-
-@inline function _handle_axis_extrap_constant(q, grid::AbstractVector{Tg}, ::Val{:none}) where {Tg}
-    @boundscheck _check_domain(grid, q, Val(:none))
-    return q
-end
-
-@inline function _handle_axis_extrap_constant(q, grid::AbstractVector{Tg}, ::Val{:constant}) where {Tg}
-    q_primal = _extract_primal(q)
-    lo, hi = first(grid), last(grid)
-    if q_primal < lo
-        return oftype(q, lo)
-    elseif q_primal > hi
-        return oftype(q, hi)
-    end
-    return q
-end
-
-@inline function _handle_axis_extrap_constant(q, grid::AbstractVector{Tg}, ::Val{:extension}) where {Tg}
-    return q  # Allow outside domain
-end
-
-@inline function _handle_axis_extrap_constant(q, grid::AbstractVector{Tg}, ::Val{:wrap}) where {Tg}
-    return _wrap_to_domain(q, first(grid), last(grid))
-end
-
-# ========================================
-# Interval Search
-# ========================================
-
-@inline function _search_all_intervals_constant(
-    q_eval::NTuple{N, <:Real},
-    grids::NTuple{N, AbstractVector},
-    spacings::NTuple{N, AbstractGridSpacing},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ::Val{N}
-) where {N}
-    results = ntuple(Val(N)) do d
-        searcher = @inbounds _to_searcher(searches[d])
-        @inbounds search_interval(searcher, grids[d], spacings[d], q_eval[d])
-    end
-    # Restructure (idx, L, R) tuples into separate tuples
-    indices = ntuple(d -> @inbounds(results[d][1]), Val(N))
-    Ls = ntuple(d -> @inbounds(results[d][2]), Val(N))
-    Rs = ntuple(d -> @inbounds(results[d][3]), Val(N))
-    return (indices, Ls, Rs)
 end
 
 # ========================================

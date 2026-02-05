@@ -14,14 +14,14 @@
 # ========================================
 # 1. Core Types
 # ========================================
-include("nd_types.jl")           # ConstantInterpolantND
+include("constant_nd_types.jl")  # ConstantInterpolantND
 
 # ========================================
 # 2. Evaluation
 # ========================================
-include("nd_eval.jl")            # Scalar and batch evaluation
+include("constant_nd_eval.jl")   # Scalar and batch evaluation
 
 # ========================================
 # 3. Public API
 # ========================================
-include("nd_api.jl")             # constant_interp() for ND
+include("constant_nd_api.jl")    # constant_interp() for ND

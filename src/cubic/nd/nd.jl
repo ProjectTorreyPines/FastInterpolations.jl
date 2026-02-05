@@ -6,21 +6,18 @@
 #
 # Include order is critical for dependency resolution:
 #   1. Types first (no code dependencies)
-#   2. Utils (depends on core types)
-#   3. Math/kernels (pure functions)
-#   4. Build (depends on types + math)
-#   5. Eval (depends on types + math)
-#   6. API (public interface)
+#   2. Math/kernels (pure functions)
+#   3. Build (depends on types + math)
+#   4. Eval (depends on types + math)
+#   5. API (public interface)
+#
+# Note: Shared ND utilities (_resolve_*_nd, _validate_nd_grids, etc.)
+# are now in src/core/nd_utils.jl for reuse by constant/linear ND.
 
 # ========================================
 # 1. Core Types
 # ========================================
 include("nd_types.jl")           # AbstractCoeffStrategy, CubicInterpolantND, NodalDerivativesND
-
-# ========================================
-# 2. Utilities
-# ========================================
-include("nd_utils.jl")           # Per-axis resolution helpers
 
 # ========================================
 # 3. Mathematical Functions

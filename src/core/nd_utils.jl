@@ -3,12 +3,33 @@
 # ========================================
 #
 # Common utility functions for N-dimensional interpolation.
-# These are shared across all ND algorithms and dimensions.
+# These are shared across all ND algorithms (constant, linear, cubic)
+# and dimensions.
 #
 # _resolve_* pattern: Convert flexible user input to canonical N-tuple form.
 # - Single value → broadcast to all N axes
 # - NTuple{N} → passthrough (with optional validation)
 # - Wrong-sized tuple → ArgumentError
+
+# ========================================
+# Side Validation (for Constant ND)
+# ========================================
+
+"""
+    _validate_side(side::Symbol) -> Nothing
+
+Validate side selection symbol. Throws `ArgumentError` if invalid.
+
+Valid options: `:nearest`, `:left`, `:right`
+"""
+@inline function _validate_side(side::Symbol)
+    side in (:nearest, :left, :right) && return nothing
+    throw(ArgumentError("`side` must be :nearest, :left, or :right, got :$side"))
+end
+
+# ========================================
+# Extrapolation Resolution
+# ========================================
 
 """
     _resolve_extrap_nd(extrap, Val(N)) -> NTuple{N, Symbol}
@@ -33,6 +54,10 @@ end
     throw(ArgumentError("extrap tuple must have $N elements to match grid dimensions, got $(length(extrap))"))
 end
 
+# ========================================
+# Search Policy Resolution
+# ========================================
+
 """
     _resolve_search_nd(search, Val(N)) -> NTuple{N, AbstractSearchPolicy}
 
@@ -48,6 +73,10 @@ Resolve search policy input to canonical N-tuple.
     throw(ArgumentError("search tuple must have $N elements to match grid dimensions, got $(length(s))"))
 end
 
+# ========================================
+# Boundary Condition Resolution
+# ========================================
+
 """
     _resolve_bcs_nd(bc, Val(N)) -> NTuple{N, AbstractBC}
 
@@ -61,6 +90,35 @@ Resolve boundary condition input to canonical N-tuple.
 
 @inline function _resolve_bcs_nd(bc::Tuple{Vararg{AbstractBC}}, ::Val{N}) where {N}
     throw(ArgumentError("bc tuple must have $N elements to match grid dimensions, got $(length(bc))"))
+end
+
+# ========================================
+# Side Resolution (for Constant ND)
+# ========================================
+
+"""
+    _resolve_side_nd(side, Val(N)) -> NTuple{N, Symbol}
+
+Resolve side selection to canonical N-tuple.
+- Single `Symbol` → broadcast to all N axes (validated)
+- `NTuple{N, Symbol}` → validate each and passthrough
+
+Valid side options: `:nearest`, `:left`, `:right`
+"""
+@inline function _resolve_side_nd(side::Symbol, ::Val{N}) where {N}
+    _validate_side(side)
+    return ntuple(_ -> side, Val(N))
+end
+
+@inline function _resolve_side_nd(side::NTuple{N,Symbol}, ::Val{N}) where {N}
+    @inbounds for i in 1:N
+        _validate_side(side[i])
+    end
+    return side
+end
+
+@inline function _resolve_side_nd(side::Tuple{Vararg{Symbol}}, ::Val{N}) where {N}
+    throw(ArgumentError("side tuple must have $N elements to match grid dimensions, got $(length(side))"))
 end
 
 # ========================================

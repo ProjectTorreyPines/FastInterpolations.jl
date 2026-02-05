@@ -55,6 +55,7 @@ else
     include("test_recipes.jl")
 
     # ND Interpolation
+    include("test_nd_utils_shared.jl")  # Shared ND utilities (phase 1)
     include("test_cubic_nd.jl")
     include("test_nd_comprehensive.jl")
     include("test_nd_coverage.jl")

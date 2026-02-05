@@ -144,7 +144,7 @@ function linear_interp(
     query::NTuple{N, <:Real};
     extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
-    deriv::Union{Int, Val} = 0
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {N}
     itp = linear_interp(grids, data; extrap=extrap, search=search)
     return itp(query; deriv=deriv)
@@ -161,7 +161,7 @@ function linear_interp(
     queries::NTuple{N, AbstractVector{<:Real}};
     extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
-    deriv::Union{Int, Val} = 0
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {N}
     itp = linear_interp(grids, data; extrap=extrap, search=search)
     return itp(queries; deriv=deriv)
@@ -178,7 +178,7 @@ function linear_interp(
     queries::AbstractVector{<:NTuple{N, <:Real}};
     extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
-    deriv::Union{Int, Val} = 0
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {N}
     itp = linear_interp(grids, data; extrap=extrap, search=search)
     return itp(queries; deriv=deriv)

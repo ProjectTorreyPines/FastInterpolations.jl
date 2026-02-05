@@ -124,7 +124,7 @@ function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{<:Any, N},
     queries::Tuple{Vararg{Real, N}};  # Allow heterogeneous Real types (AD support)
-    deriv::Union{Int, Val}=0,
+    deriv::Union{Int, Val, NTuple{N,Int}}=0,
     kwargs...
 ) where {N}
     itp = cubic_interp(grids, data; kwargs...)
@@ -143,7 +143,7 @@ function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{<:Any, N},
     queries::NTuple{N, <:AbstractVector{<:Real}};
-    deriv::Union{Int, Val}=0,
+    deriv::Union{Int, Val, NTuple{N,Int}}=0,
     kwargs...
 ) where {N}
     itp = cubic_interp(grids, data; kwargs...)

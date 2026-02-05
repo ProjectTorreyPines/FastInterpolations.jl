@@ -12,7 +12,7 @@
 # Scalar tuple query
 @inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
     query::NTuple{N, <:Real};
-    deriv::Union{Int, Val} = 0,
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches
 ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -23,7 +23,7 @@ end
 # Vector query (for ForwardDiff/Optim compatibility)
 @inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
     query::AbstractVector{<:Real};
-    deriv::Union{Int, Val} = 0,
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches
 ) where {Tg, Tv, N}
     length(query) == N || throw(ArgumentError("Query vector must have $N elements, got $(length(query))"))
@@ -34,7 +34,7 @@ end
 # Batch SoA query: tuple of vectors
 @inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
     queries::NTuple{N, AbstractVector{<:Real}};
-    deriv::Union{Int, Val} = 0,
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches
 ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -45,7 +45,7 @@ end
 # Batch AoS query: vector of tuples
 @inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
     queries::AbstractVector{<:NTuple{N, <:Real}};
-    deriv::Union{Int, Val} = 0,
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches
 ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))

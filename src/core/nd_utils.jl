@@ -176,6 +176,10 @@ but the difference is negligible (~0.3 KiB extra allocation per batch call).
     end
 end
 
+# Tuple{Int,...} path: runtime per-axis specification (e.g., (1, 0) for ∂f/∂x)
+# Wraps in Val and delegates to the compile-time path (consistent with cubic_nd_eval.jl)
+@inline _resolve_deriv_nd(d::Tuple{Vararg{Int,N}}, ::Val{N}) where {N} = _resolve_deriv_nd(Val(d), Val(N))
+
 # Val{Int}: Compile-time broadcast
 @inline function _resolve_deriv_nd(::Val{D}, ::Val{N}) where {D, N}
     if D isa Int

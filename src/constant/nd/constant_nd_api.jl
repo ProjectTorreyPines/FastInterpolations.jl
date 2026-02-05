@@ -144,7 +144,7 @@ function constant_interp(
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
     extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
-    deriv::Union{Int, Val} = 0
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {N}
     itp = constant_interp(grids, data; side=side, extrap=extrap, search=search)
     return itp(query; deriv=deriv)
@@ -162,7 +162,7 @@ function constant_interp(
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
     extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
-    deriv::Union{Int, Val} = 0
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {N}
     itp = constant_interp(grids, data; side=side, extrap=extrap, search=search)
     return itp(queries; deriv=deriv)
@@ -180,7 +180,7 @@ function constant_interp(
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
     extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
-    deriv::Union{Int, Val} = 0
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {N}
     itp = constant_interp(grids, data; side=side, extrap=extrap, search=search)
     return itp(queries; deriv=deriv)

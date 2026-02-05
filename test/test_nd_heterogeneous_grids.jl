@@ -179,6 +179,166 @@ using FastInterpolations
     end
 
     # ========================================
+    # 2D QUADRATIC: HETEROGENEOUS GRID + MIXED DERIVATIVES (ANALYTIC)
+    # ========================================
+
+    @testset "2D Quadratic: Range × Vector with QuadraticFit — polynomial analytic" begin
+        # f(x,y) = x² + x*y + y²  (degree ≤ 2 per axis → quadratic reproduces exactly)
+        f(x, y)        = x^2 + x*y + y^2
+        df_dx(x, y)    = 2x + y
+        df_dy(x, y)    = x + 2y
+        d2f_dx2(x, y)  = 2.0
+        d2f_dy2(x, y)  = 2.0
+        d2f_dxdy(x, y) = 1.0
+
+        x_range = range(0.0, 2.0, 21)
+        y_vec   = [0.0, 0.1, 0.25, 0.4, 0.6, 0.8, 1.0]
+        data = [f(xi, yj) for xi in x_range, yj in y_vec]
+
+        itp = quadratic_interp((x_range, y_vec), data; bc=Right(QuadraticFit()))
+        xq, yq = 1.0, 0.5
+
+        @test itp((xq, yq); deriv=(0, 0)) ≈ f(xq, yq)          atol=1e-10
+        @test itp((xq, yq); deriv=(1, 0)) ≈ df_dx(xq, yq)      atol=1e-8
+        @test itp((xq, yq); deriv=(0, 1)) ≈ df_dy(xq, yq)      atol=1e-6
+        @test itp((xq, yq); deriv=(2, 0)) ≈ d2f_dx2(xq, yq)    atol=1e-6
+        @test itp((xq, yq); deriv=(0, 2)) ≈ d2f_dy2(xq, yq)    atol=1e-4
+        @test itp((xq, yq); deriv=(1, 1)) ≈ d2f_dxdy(xq, yq)   atol=1e-6
+    end
+
+    @testset "2D Quadratic: Vector × Range — reversed heterogeneous" begin
+        f(x, y)        = x^2 + x*y + y^2
+        df_dx(x, y)    = 2x + y
+        df_dy(x, y)    = x + 2y
+        d2f_dxdy(x, y) = 1.0
+
+        x_vec   = [0.0, 0.15, 0.3, 0.5, 0.75, 1.0, 1.3, 1.6, 2.0]
+        y_range = range(0.0, 1.0, 15)
+        data = [f(xi, yj) for xi in x_vec, yj in y_range]
+
+        itp = quadratic_interp((x_vec, y_range), data; bc=Right(QuadraticFit()))
+        xq, yq = 0.8, 0.6
+
+        @test itp((xq, yq); deriv=(0, 0)) ≈ f(xq, yq)          atol=1e-10
+        @test itp((xq, yq); deriv=(1, 0)) ≈ df_dx(xq, yq)      atol=1e-6
+        @test itp((xq, yq); deriv=(0, 1)) ≈ df_dy(xq, yq)      atol=1e-8
+        @test itp((xq, yq); deriv=(1, 1)) ≈ d2f_dxdy(xq, yq)   atol=1e-4
+    end
+
+    @testset "2D Quadratic: Vector × Vector (both non-uniform)" begin
+        f(x, y)        = x^2 + x*y
+        df_dx(x, y)    = 2x + y
+        df_dy(x, y)    = x
+        d2f_dxdy(x, y) = 1.0
+
+        x_vec = [0.0, 0.1, 0.3, 0.6, 1.0, 1.5, 2.0]
+        y_vec = [0.0, 0.2, 0.5, 0.8, 1.0]
+        data = [f(xi, yj) for xi in x_vec, yj in y_vec]
+
+        itp = quadratic_interp((x_vec, y_vec), data; bc=Right(QuadraticFit()))
+        xq, yq = 0.8, 0.6
+
+        @test itp((xq, yq); deriv=(1, 0)) ≈ df_dx(xq, yq)      atol=1e-6
+        @test itp((xq, yq); deriv=(0, 1)) ≈ df_dy(xq, yq)       atol=1e-6
+        @test itp((xq, yq); deriv=(1, 1)) ≈ d2f_dxdy(xq, yq)   atol=1e-4
+    end
+
+    # ========================================
+    # 3D QUADRATIC: HETEROGENEOUS GRID + MIXED DERIVATIVES
+    # ========================================
+
+    @testset "3D Quadratic: Range × Vector × Range — analytic" begin
+        # f(x,y,z) = x² + y² + z² + x*y  (degree ≤ 2 per axis)
+        f(x, y, z)         = x^2 + y^2 + z^2 + x*y
+        df_dx(x, y, z)     = 2x + y
+        df_dy(x, y, z)     = 2y + x
+        df_dz(x, y, z)     = 2z
+        d2f_dx2(x, y, z)   = 2.0
+        d2f_dy2(x, y, z)   = 2.0
+        d2f_dz2(x, y, z)   = 2.0
+
+        x_range = range(0.0, 2.0, 11)
+        y_vec   = [0.0, 0.15, 0.35, 0.6, 0.85, 1.0]
+        z_range = range(0.0, 1.5, 9)
+        data = [f(xi, yj, zk) for xi in x_range, yj in y_vec, zk in z_range]
+
+        itp = quadratic_interp((x_range, y_vec, z_range), data; bc=Right(QuadraticFit()))
+        xq, yq, zq = 1.0, 0.5, 0.7
+
+        @test itp((xq, yq, zq)) ≈ f(xq, yq, zq) atol=1e-8
+        @test itp((xq, yq, zq); deriv=(1, 0, 0)) ≈ df_dx(xq, yq, zq) atol=1e-6
+        @test itp((xq, yq, zq); deriv=(0, 1, 0)) ≈ df_dy(xq, yq, zq) atol=1e-6
+        @test itp((xq, yq, zq); deriv=(0, 0, 1)) ≈ df_dz(xq, yq, zq) atol=1e-6
+        @test itp((xq, yq, zq); deriv=(2, 0, 0)) ≈ d2f_dx2(xq, yq, zq) atol=1e-4
+    end
+
+    # ========================================
+    # QUADRATIC: VAL-BASED DERIVATIVE + BATCH WITH HETEROGENEOUS GRIDS
+    # ========================================
+
+    @testset "2D Quadratic: heterogeneous grid + Val derivative spec" begin
+        f(x, y) = x^2 + y^2
+        x_range = range(0.0, 2.0, 15)
+        y_vec   = [0.0, 0.2, 0.5, 0.8, 1.0]
+        data = [f(xi, yj) for xi in x_range, yj in y_vec]
+
+        itp = quadratic_interp((x_range, y_vec), data; bc=Right(QuadraticFit()))
+        xq, yq = 1.0, 0.5
+
+        @test itp((xq, yq); deriv=Val((1, 0))) ≈ 2xq   atol=1e-8
+        @test itp((xq, yq); deriv=Val((0, 1))) ≈ 2yq   atol=1e-6
+        @test itp((xq, yq); deriv=Val((2, 0))) ≈ 2.0    atol=1e-4
+    end
+
+    @testset "2D Quadratic: heterogeneous grid + batch evaluation" begin
+        f(x, y) = x^2 + y^2
+        x_range = range(0.0, 2.0, 15)
+        y_vec   = [0.0, 0.2, 0.5, 0.8, 1.0]
+        data = [f(xi, yj) for xi in x_range, yj in y_vec]
+
+        itp = quadratic_interp((x_range, y_vec), data; bc=Right(QuadraticFit()))
+
+        xqs = [0.5, 1.0, 1.5]
+        yqs = [0.3, 0.6, 0.8]
+        vals = itp((xqs, yqs))
+        for k in 1:3
+            @test vals[k] ≈ f(xqs[k], yqs[k]) atol=1e-8
+        end
+
+        dvals = itp((xqs, yqs); deriv=(1, 0))
+        for k in 1:3
+            @test dvals[k] ≈ 2xqs[k] atol=1e-6
+        end
+    end
+
+    @testset "2D Quadratic: heterogeneous grid + mixed search policies" begin
+        f(x, y) = x^2 + y^2
+        x_range = range(0.0, 2.0, 15)
+        y_vec   = [0.0, 0.2, 0.5, 0.8, 1.0]
+        data = [f(xi, yj) for xi in x_range, yj in y_vec]
+
+        itp = quadratic_interp((x_range, y_vec), data;
+                               bc=Right(QuadraticFit()),
+                               search=(Binary(), LinearBinary{4}()))
+        xq, yq = 1.0, 0.6
+        @test itp((xq, yq)) ≈ f(xq, yq) atol=1e-8
+    end
+
+    @testset "2D Quadratic: heterogeneous grid + mixed extrap modes" begin
+        f(x, y) = x^2 + y^2
+        x_range = range(0.0, 2.0, 11)
+        y_vec   = [0.0, 0.3, 0.6, 0.8, 1.0]
+        data = [f(xi, yj) for xi in x_range, yj in y_vec]
+
+        itp = quadratic_interp((x_range, y_vec), data;
+                               bc=Right(QuadraticFit()),
+                               extrap=(:constant, :extension))
+        @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) atol=1e-8
+        @test itp((-0.1, 0.5)) ≈ itp((0.0, 0.5)) rtol=1e-10
+        @test isfinite(itp((1.0, 1.5)))
+    end
+
+    # ========================================
     # MIXED SEARCH POLICIES WITH HETEROGENEOUS GRIDS
     # ========================================
 

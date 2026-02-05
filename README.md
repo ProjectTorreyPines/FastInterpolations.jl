@@ -6,7 +6,7 @@
 
 # FastInterpolations.jl
 
-A high-performance 1D interpolation package for Julia, optimized for **zero-allocation hot loops** and **thread-safe** concurrent access.
+A high-performance **N-dimensional** interpolation package for Julia, optimized for **zero-allocation hot loops** and **thread-safe** concurrent access.
 
 ## Key Strengths
 

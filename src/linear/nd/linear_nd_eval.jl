@@ -72,6 +72,7 @@ Algorithm:
 3. Compute normalized coordinates α = (q - L) / h
 4. Sum over 2^N corners with tensor-product weights
 """
+# Generic N-dimensional version
 @inline function _eval_linear_nd(
     itp::LinearInterpolantND{Tg,Tv,N},
     query::NTuple{N, <:Real},
@@ -94,6 +95,66 @@ Algorithm:
 
     # Multilinear interpolation sum over 2^N corners
     return _multilinear_sum(itp.data, indices, hs, αs, ops, Val(N))
+end
+
+# N=2 specialization: direct destructuring eliminates ntuple closure overhead
+@inline function _eval_linear_nd(
+    itp::LinearInterpolantND{Tg,Tv,2},
+    query::NTuple{2, <:Real},
+    ops::NTuple{2, AbstractEvalOp},
+    search_tuple::NTuple{2, AbstractSearchPolicy}
+) where {Tg, Tv}
+    op_x, op_y = ops
+
+    # Check for second+ derivative (always zero for linear)
+    if op_x isa EvalDeriv2 || op_x isa EvalDeriv3 || op_y isa EvalDeriv2 || op_y isa EvalDeriv3
+        return zero(promote_type(Tv, Tg))
+    end
+
+    # Direct destructuring - no ntuple closures
+    xq, yq = query
+    grid_x, grid_y = itp.grids
+    spacing_x, spacing_y = itp.spacings
+    extrap_x, extrap_y = itp.extraps
+    search_x, search_y = search_tuple
+
+    # Handle extrapolation per axis (direct calls)
+    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
+    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
+
+    # Search intervals (direct calls)
+    searcher_x = _to_searcher(search_x)
+    searcher_y = _to_searcher(search_y)
+    ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
+    iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
+
+    # Compute local parameters
+    hx = _get_h(spacing_x, ix)
+    hy = _get_h(spacing_y, iy)
+    αx = (x_eval - xL) / hx
+    αy = (y_eval - yL) / hy
+
+    # Bilinear interpolation (unrolled 2^2 = 4 corners)
+    return _bilinear_sum(itp.data, ix, iy, hx, hy, αx, αy, op_x, op_y)
+end
+
+# Specialized 2D bilinear sum (unrolled for zero overhead)
+@inline function _bilinear_sum(
+    data::AbstractMatrix{Tv},
+    ix::Int, iy::Int,
+    hx, hy, αx, αy,
+    op_x::AbstractEvalOp, op_y::AbstractEvalOp
+) where {Tv}
+    # Weights for each corner based on eval ops
+    w00 = _linear_weight(op_x, αx, hx, Val(0)) * _linear_weight(op_y, αy, hy, Val(0))
+    w10 = _linear_weight(op_x, αx, hx, Val(1)) * _linear_weight(op_y, αy, hy, Val(0))
+    w01 = _linear_weight(op_x, αx, hx, Val(0)) * _linear_weight(op_y, αy, hy, Val(1))
+    w11 = _linear_weight(op_x, αx, hx, Val(1)) * _linear_weight(op_y, αy, hy, Val(1))
+
+    @inbounds begin
+        return data[ix, iy] * w00 + data[ix+1, iy] * w10 +
+               data[ix, iy+1] * w01 + data[ix+1, iy+1] * w11
+    end
 end
 
 # ========================================
@@ -188,6 +249,7 @@ The weight function depends on the evaluation operation:
     sum_expr = foldl((a, b) -> :($a + $b), corner_exprs)
 
     return quote
+        Base.@_inline_meta
         @inbounds $sum_expr
     end
 end
@@ -213,12 +275,12 @@ end
 # Batch Evaluation - SoA
 # ========================================
 
-function _eval_linear_nd_batch_soa(
+@inline function _eval_linear_nd_batch_soa(
     itp::LinearInterpolantND{Tg,Tv,N},
-    queries::NTuple{N, AbstractVector{<:Real}},
-    ops::NTuple{N, AbstractEvalOp},
-    search_tuple::NTuple{N, AbstractSearchPolicy}
-) where {Tg, Tv, N}
+    queries::NTuple{N, <:AbstractVector{Tq}},
+    ops::OPS,
+    search_tuple::SEARCH
+) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     n = length(queries[1])
     for d in 2:N
         length(queries[d]) == n || throw(ArgumentError(
@@ -226,8 +288,8 @@ function _eval_linear_nd_batch_soa(
         ))
     end
 
-    # Determine output type
-    Tout = promote_type(Tv, Tg)
+    # Determine output type (include Tq for AD support)
+    Tout = promote_type(Tv, Tg, Tq)
 
     results = Vector{Tout}(undef, n)
     @inbounds for i in 1:n
@@ -241,16 +303,16 @@ end
 # Batch Evaluation - AoS
 # ========================================
 
-function _eval_linear_nd_batch_aos(
+@inline function _eval_linear_nd_batch_aos(
     itp::LinearInterpolantND{Tg,Tv,N},
-    queries::AbstractVector{<:NTuple{N, <:Real}},
-    ops::NTuple{N, AbstractEvalOp},
-    search_tuple::NTuple{N, AbstractSearchPolicy}
-) where {Tg, Tv, N}
+    queries::AbstractVector{<:NTuple{N, Tq}},
+    ops::OPS,
+    search_tuple::SEARCH
+) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     n = length(queries)
 
-    # Determine output type
-    Tout = promote_type(Tv, Tg)
+    # Determine output type (include Tq for AD support)
+    Tout = promote_type(Tv, Tg, Tq)
 
     results = Vector{Tout}(undef, n)
     @inbounds for i in 1:n

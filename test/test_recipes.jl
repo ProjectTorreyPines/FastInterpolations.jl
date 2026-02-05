@@ -219,6 +219,76 @@ using RecipesBase
     end
 
     # ========================================
+    # N-Dimensional Interpolants (2D)
+    # ========================================
+    @testset "N-Dimensional Interpolants (2D)" begin
+        # Setup 2D grid
+        x1 = range(0.0, 1.0, 6)
+        x2 = range(0.0, 1.0, 5)
+        data_2d = [sin(2π * xi) * cos(2π * yj) for xi in x1, yj in x2]
+
+        @testset "LinearInterpolantND" begin
+            itp = linear_interp((x1, x2), data_2d)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            @test !isempty(recipes)
+            @test all(r -> r isa RecipesBase.RecipeData, recipes)
+        end
+
+        @testset "ConstantInterpolantND" begin
+            itp = constant_interp((x1, x2), data_2d)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            @test !isempty(recipes)
+            @test all(r -> r isa RecipesBase.RecipeData, recipes)
+        end
+
+        @testset "CubicInterpolantND" begin
+            itp = cubic_interp((x1, x2), data_2d)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            @test !isempty(recipes)
+            @test all(r -> r isa RecipesBase.RecipeData, recipes)
+        end
+
+        @testset "ND recipe options" begin
+            itp = linear_interp((x1, x2), data_2d)
+
+            # Test show_nodes option
+            recipes = RecipesBase.apply_recipe(
+                Dict{Symbol,Any}(:show_nodes => true), itp
+            )
+            @test !isempty(recipes)
+
+            # Test show_gridlines option
+            recipes = RecipesBase.apply_recipe(
+                Dict{Symbol,Any}(:show_gridlines => false), itp
+            )
+            @test !isempty(recipes)
+
+            # Test custom resolution
+            recipes = RecipesBase.apply_recipe(
+                Dict{Symbol,Any}(:resolution => (20, 20)), itp
+            )
+            @test !isempty(recipes)
+
+            # Test equal_aspect
+            recipes = RecipesBase.apply_recipe(
+                Dict{Symbol,Any}(:equal_aspect => true), itp
+            )
+            @test !isempty(recipes)
+        end
+
+        @testset "Mixed grid types" begin
+            # Vector and Range combination
+            x1_vec = collect(range(0.0, 1.0, 6))
+            x2_range = range(0.0, 1.0, 5)
+            data_mixed = [xi + yj for xi in x1_vec, yj in x2_range]
+
+            itp = linear_interp((x1_vec, x2_range), data_mixed)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            @test !isempty(recipes)
+        end
+    end
+
+    # ========================================
     # Edge Cases
     # ========================================
     @testset "Edge Cases" begin

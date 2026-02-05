@@ -307,6 +307,87 @@ end
 # Generic ND Partial Derivative Computation
 # ========================================
 
+@inline _validate_nd_partials_dims!(
+    partials::AbstractArray,
+    grids::NTuple{N, AbstractVector{Tg}},
+    data::AbstractArray{Tv, N},
+    ::Val{N}
+) where {Tv, Tg<:AbstractFloat, N} = _validate_nd_partials_dims!(partials, grids, data, Val(1), Val(N))
+
+@inline function _validate_nd_partials_dims!(
+    partials::AbstractArray,
+    grids::NTuple{N, AbstractVector{Tg}},
+    data::AbstractArray{Tv, N},
+    ::Val{D},
+    ::Val{N}
+) where {Tv, Tg<:AbstractFloat, D, N}
+    size(partials, D + 1) == size(data, D) || throw(DimensionMismatch(
+        "partials dim $(D+1) must match data dim $D"
+    ))
+    size(data, D) == length(grids[D]) || throw(DimensionMismatch(
+        "data dim $D must match grid $D length"
+    ))
+    if D < N
+        _validate_nd_partials_dims!(partials, grids, data, Val(D + 1), Val(N))
+    end
+    return nothing
+end
+
+@inline _validate_nd_bcs!(
+    grids::NTuple{N, AbstractVector{Tg}},
+    bcs::NTuple{N, AbstractBC},
+    data::AbstractArray{Tv, N},
+    ::Val{N}
+) where {Tv, Tg<:AbstractFloat, N} = _validate_nd_bcs!(grids, bcs, data, Val(1), Val(N))
+
+@inline function _validate_nd_bcs!(
+    grids::NTuple{N, AbstractVector{Tg}},
+    bcs::NTuple{N, AbstractBC},
+    data::AbstractArray{Tv, N},
+    ::Val{D},
+    ::Val{N}
+) where {Tv, Tg<:AbstractFloat, D, N}
+    if _is_periodic_bc(bcs[D])
+        _check_periodic_data_nd(data, D)
+    end
+    polyfit_deg = get_polyfit_degree(bcs[D])
+    if polyfit_deg > 0 && length(grids[D]) < polyfit_deg + 1
+        throw(ArgumentError("PolyFit BC on dimension $D requires at least $(polyfit_deg+1) points"))
+    end
+    if D < N
+        _validate_nd_bcs!(grids, bcs, data, Val(D + 1), Val(N))
+    end
+    return nothing
+end
+
+@inline _build_nd_partials_dim!(
+    partials::AbstractArray{Tv, NP1},
+    grids::NTuple{N, AbstractVector{Tg}},
+    bcs::NTuple{N, AbstractBC},
+    ::Val{N}
+) where {Tv, Tg<:AbstractFloat, N, NP1} = _build_nd_partials_dim!(partials, grids, bcs, Val(1), Val(N))
+
+@inline function _build_nd_partials_dim!(
+    partials::AbstractArray{Tv, NP1},
+    grids::NTuple{N, AbstractVector{Tg}},
+    bcs::NTuple{N, AbstractBC},
+    ::Val{D},
+    ::Val{N}
+) where {Tv, Tg<:AbstractFloat, D, N, NP1}
+    bit_d = 1 << (D - 1)
+    @inbounds for p_src in 1:bit_d
+        p_dst = p_src + bit_d
+        effective_bc = _get_effective_bc(bcs[D], p_src, grids[D])
+        src_view = selectdim(partials, 1, p_src)
+        dst_view = selectdim(partials, 1, p_dst)
+        _differentiate_nd_along_dim_batch!(dst_view, src_view, grids[D], effective_bc, D)
+    end
+    if D < N
+        _build_nd_partials_dim!(partials, grids, bcs, Val(D + 1), Val(N))
+    end
+    return partials
+end
+
 """
     _compute_nd_partials!(partials, grids, data, bcs)
 
@@ -369,50 +450,18 @@ function _compute_nd_partials!(
         size(partials, 1) == n_partials || throw(DimensionMismatch(
             "partials first dimension must be 2^N=$(n_partials), got $(size(partials, 1))"
         ))
-        for d in 1:N
-            size(partials, d + 1) == size(data, d) || throw(DimensionMismatch(
-                "partials dim $(d+1) must match data dim $d"
-            ))
-            size(data, d) == length(grids[d]) || throw(DimensionMismatch(
-                "data dim $d must match grid $d length"
-            ))
-        end
+        _validate_nd_partials_dims!(partials, grids, data, Val(N))
     end
 
     # Validate periodic BCs and PolyFit requirements
-    for d in 1:N
-        if _is_periodic_bc(bcs[d])
-            _check_periodic_data_nd(data, d)
-        end
-        polyfit_deg = get_polyfit_degree(bcs[d])
-        if polyfit_deg > 0 && length(grids[d]) < polyfit_deg + 1
-            throw(ArgumentError("PolyFit BC on dimension $d requires at least $(polyfit_deg+1) points"))
-        end
-    end
+    _validate_nd_bcs!(grids, bcs, data, Val(N))
 
     # Stage 0: Copy f (the function values) into partials[1, ...]
     f_partial = selectdim(partials, 1, 1)
     copyto!(f_partial, data)
 
     # Build up higher-order partials stage by stage
-    for d in 1:N
-        bit_d = 1 << (d - 1)  # 2^(d-1)
-
-        # Iterate over all partials that don't have bit d-1 set
-        for p_src in 1:bit_d
-            p_dst = p_src + bit_d  # Set bit d-1 to create destination index
-
-            # Select effective BC for this partial computation
-            effective_bc = _get_effective_bc(bcs[d], p_src, grids[d])
-
-            # Get views into the partials array
-            src_view = selectdim(partials, 1, p_src)
-            dst_view = selectdim(partials, 1, p_dst)
-
-            # Differentiate along dimension d (batch SIMD for d≥2 with NaturalBC)
-            _differentiate_nd_along_dim_batch!(dst_view, src_view, grids[d], effective_bc, d)
-        end
-    end
+    _build_nd_partials_dim!(partials, grids, bcs, Val(N))
 
     return partials
 end

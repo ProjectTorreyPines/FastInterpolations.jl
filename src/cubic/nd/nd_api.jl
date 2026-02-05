@@ -167,13 +167,8 @@ function _build_nd_interpolant(
     searches::NTuple{N, AbstractSearchPolicy},
     ::PreCompute
 ) where {Tg<:AbstractFloat, Tv, N}
-    # Validate periodic BC + extrap compatibility
-    for d in 1:N
-        is_periodic = _is_periodic_bc(bcs[d])
-        if is_periodic && extraps[d] != :none && extraps[d] != :wrap
-            throw(ArgumentError("Periodic BC on dim $d only supports extrap=:none or :wrap, got :$(extraps[d])"))
-        end
-    end
+    # Validate periodic BC + extrap compatibility (Val recursion to avoid hetero tuple boxing)
+    _check_periodic_extrap(bcs, extraps, Val(N))
 
     # Build nodal derivatives using generic ND builder
     nodal_derivs = _build_nd_coeffs(grids, data, bcs)
@@ -199,6 +194,32 @@ function _build_nd_interpolant(
         typeof(grids), typeof(spacings), typeof(bcs_store),
         typeof(extraps_val), typeof(searches)
     }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)
+end
+
+# ========================================
+# ND Internal Helpers (Val-recursive)
+# ========================================
+
+@inline _check_periodic_extrap(
+    bcs::NTuple{N, AbstractBC},
+    extraps::NTuple{N, Symbol},
+    ::Val{N}
+) where {N} = _check_periodic_extrap(bcs, extraps, Val(1), Val(N))
+
+@inline function _check_periodic_extrap(
+    bcs::NTuple{N, AbstractBC},
+    extraps::NTuple{N, Symbol},
+    ::Val{D},
+    ::Val{N}
+) where {D, N}
+    is_periodic = _is_periodic_bc(bcs[D])
+    if is_periodic && extraps[D] != :none && extraps[D] != :wrap
+        throw(ArgumentError("Periodic BC on dim $D only supports extrap=:none or :wrap, got :$(extraps[D])"))
+    end
+    if D < N
+        _check_periodic_extrap(bcs, extraps, Val(D + 1), Val(N))
+    end
+    return nothing
 end
 
 """

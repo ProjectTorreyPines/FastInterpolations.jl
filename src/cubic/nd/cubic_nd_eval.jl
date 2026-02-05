@@ -213,8 +213,8 @@ end
 @inline function _eval_nd_hermite(
     itp::CubicInterpolantND{Tg, Tv, 2},
     query::Tuple{Vararg{Real, 2}},  # Allow heterogeneous Real types (AD support)
-    ops::NTuple{2, <:AbstractEvalOp},
-    search::NTuple{2, <:AbstractSearchPolicy}
+    ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp},  # Allow heterogeneous ops (e.g., deriv=(2,0))
+    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy}  # Allow heterogeneous search policies
 ) where {Tg, Tv}
     xq, yq = query
     grid_x, grid_y = itp.grids

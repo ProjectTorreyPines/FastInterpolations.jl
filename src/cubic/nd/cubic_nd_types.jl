@@ -397,9 +397,9 @@ Returns tuples of: hs (cell widths), inv_hs (reciprocals), dLs (left deltas).
 """
 @inline function _compute_all_local_params(
     q_evals::Tuple{Vararg{Real, N}},  # Allow heterogeneous/AD types (Dual)
-    spacings::NTuple{N},
+    spacings::Tuple{Vararg{Any, N}},  # Allow heterogeneous spacing types (VectorSpacing, ScalarSpacing)
     indices::NTuple{N, Int},
-    Ls::NTuple{N, <:Real}  # Grid boundary (always Float64 family)
+    Ls::Tuple{Vararg{Real, N}}  # Grid boundary (allow heterogeneous Real types)
 ) where {N}
     hs = ntuple(Val(N)) do d
         @inbounds _get_h(spacings[d], indices[d])

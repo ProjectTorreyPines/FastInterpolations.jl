@@ -365,4 +365,47 @@ using FastInterpolations
         @test occursin("LinearInterpolantND", str_verbose)
         @test occursin("Extrap:", str_verbose)  # Should have extrapolation info
     end
+
+    # ========================================
+    # Integer Grid Promotion (regression)
+    # ========================================
+    @testset "integer grid promotion" begin
+        # f(x,y) = 2x + 3y + 1 — bilinear should reproduce exactly
+        _f_lin(xi, yj) = 2.0 * xi + 3.0 * yj + 1.0
+
+        # Vector{Int} grids
+        @testset "Vector{Int} grids" begin
+            x = [0, 1, 2]
+            y = [0, 1, 2]
+            data = [_f_lin(xi, yj) for xi in x, yj in y]
+            itp = linear_interp((x, y), data)
+            @test itp((0.5, 0.5)) ≈ _f_lin(0.5, 0.5)
+        end
+
+        # UnitRange{Int} grids
+        @testset "UnitRange{Int} grids" begin
+            x = 0:2
+            y = 0:2
+            data = [_f_lin(xi, yj) for xi in x, yj in y]
+            itp = linear_interp((x, y), data)
+            @test itp((0.5, 0.5)) ≈ _f_lin(0.5, 0.5)
+        end
+
+        # Mixed Int + Float grids
+        @testset "mixed Int and Float grids" begin
+            x = [0, 1, 2]
+            y = [0.0, 1.0, 2.0]
+            data = [_f_lin(xi, yj) for xi in x, yj in y]
+            itp = linear_interp((x, y), data)
+            @test itp((0.5, 0.5)) ≈ _f_lin(0.5, 0.5)
+        end
+
+        # One-shot API with integer grids
+        @testset "one-shot with integer grids" begin
+            x = [0, 1, 2]
+            y = [0, 1, 2]
+            data = [_f_lin(xi, yj) for xi in x, yj in y]
+            @test linear_interp((x, y), data, (0.5, 0.5)) ≈ _f_lin(0.5, 0.5)
+        end
+    end
 end

@@ -347,4 +347,36 @@ using FastInterpolations
         # Derivatives still zero
         @test itp((0.5, 0.5); deriv=1) == 0.0 + 0.0im
     end
+
+    # ========================================
+    # Integer Grid Promotion (regression)
+    # ========================================
+    @testset "integer grid promotion" begin
+        data = [11.0 12.0 13.0; 21.0 22.0 23.0; 31.0 32.0 33.0]
+
+        # Vector{Int} grids
+        @testset "Vector{Int} grids" begin
+            x = [0, 1, 2]
+            y = [0, 1, 2]
+            itp = constant_interp((x, y), data)
+            @test itp((0.5, 0.5)) == 11.0
+        end
+
+        # UnitRange{Int} grids
+        @testset "UnitRange{Int} grids" begin
+            itp = constant_interp((0:2, 0:2), data)
+            @test itp((0.5, 0.5)) == 11.0
+        end
+
+        # Mixed Int + Float grids
+        @testset "mixed Int and Float grids" begin
+            itp = constant_interp(([0, 1, 2], [0.0, 1.0, 2.0]), data)
+            @test itp((0.5, 0.5)) == 11.0
+        end
+
+        # One-shot API with integer grids
+        @testset "one-shot with integer grids" begin
+            @test constant_interp(([0, 1, 2], [0, 1, 2]), data, (0.5, 0.5)) == 11.0
+        end
+    end
 end

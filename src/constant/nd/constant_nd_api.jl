@@ -75,8 +75,9 @@ function constant_interp(
     # Validate grid dimensions
     _validate_nd_grids(grids, data)
 
-    # Determine grid type
+    # Determine grid type (promote Int → Float64 for consistency with 1D API)
     Tg = _promote_grid_eltype(grids)
+    Tg = Tg <: AbstractFloat ? Tg : Float64
 
     # Convert grids to target type (preserving Range structure)
     grids_typed = _convert_grids_typed_constant(grids, Tg)

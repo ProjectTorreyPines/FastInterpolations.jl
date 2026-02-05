@@ -114,7 +114,7 @@ val_dxx = itp((0.5, 0.3); deriv=(2, 0)) # analytical ∂²f/∂x²
 - **Zero-Allocation:** Optimized tensor-product evaluation for high-performance loops.
 
 ### 2D Visualization Example
-Comparison on a non-uniform 2D rectilinear grid for $f(x, y) = \sin(2\pi x) \cos(2\pi y)$. Cubic interpolation maintains high accuracy and captures extrema even on coarse, non-linear grids. The gray dots in the image below represent the given node points (6x7 grid), and the dashed lines illustrate the grid structure.
+Comparison on a non-uniform 2D rectilinear grid for $f(x, y) = \sin(2\pi x) \cos(2\pi y)$. Cubic interpolation maintains high accuracy and captures extrema even on coarse, non-uniform grids. The gray dots in the image below represent the given node points (6x7 grid), and the dashed lines illustrate the grid structure.
 ![2D Interpolation Example](docs/images/readme_2d_comparison.png)
 
 

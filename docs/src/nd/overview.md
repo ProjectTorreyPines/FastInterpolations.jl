@@ -105,6 +105,30 @@ itp = cubic_interp((x, y), data)
 plot(itp)  # heatmap with grid nodes and gridlines
 ```
 
+### Example — Method Comparison
+
+Comparing constant, linear, quadratic, and cubic interpolation on a non-uniform 2D grid:
+
+```@example nd_overview
+using FastInterpolations, Plots
+using Printf, LinearAlgebra  # hide
+
+f(x, y) = sin(2π * x) * cos(2π * y)
+
+xs = [0.0, 0.1, 0.4, 0.5, 0.82, 1.0]
+ys = [0.0, 0.1, 0.2, 0.5, 0.8, 0.9, 1.0]
+data = [f(xi, yj) for xi in xs, yj in ys]
+
+itp_const = constant_interp((xs, ys), data)
+itp_linear   = linear_interp((xs, ys), data)
+itp_quad  = quadratic_interp((xs, ys), data; bc=MinCurvFit())
+itp_cubic = cubic_interp((xs, ys), data; bc=PeriodicBC())
+
+kw = (c=:RdBu, clims=(-1,1), ratio=:equal, xlims=(0,1), ylims=(0,1))
+
+itps = (itp_const, itp_linear, itp_quad, itp_cubic)
+plot((plot(itp; kw...) for itp in itps)..., layout=(2,2), size=(950, 900))
+```
 Custom options: `show_nodes`, `show_gridlines`, `resolution`, `node_color`, `gridline_style`. Use `help_plot(itp)` to discover all options.
 
 ---

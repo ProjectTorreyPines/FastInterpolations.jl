@@ -11,16 +11,29 @@ In ND, boundary conditions are specified **per-axis** via Tuples. A single BC va
 
 ---
 
+## Example Data
+```@example nd_boundary
+using FastInterpolations 
+x = range(1, 10, length = 10)
+y = range(0, 2pi, length = 5) 
+z = [0, 1, 3, 5, 10]
+data2d = [cos(xi)*sin(yi) for xi in x, yi in y] # Real 2D data
+data3d = [cos(xi)*sin(yi)+ zi*1im for xi in x, yi in y, zi in z] # Complex 3D data
+nothing #hide
+```
+
 ## Broadcast vs Per-Axis
 
-```julia
+```@example nd_boundary
 # Broadcast: same BC on all axes
-itp = cubic_interp((x, y, z), data; bc=NaturalBC())
+itp = cubic_interp((x, y, z), data3d; bc=NaturalBC())
 # Equivalent to: bc=(NaturalBC(), NaturalBC(), NaturalBC())
+```
 
+```@example nd_boundary
 # Per-axis: different BC per axis
-itp = cubic_interp((x, y, z), data;
-    bc=(NaturalBC(), PeriodicBC(), ClampedBC()))
+itp = cubic_interp((x, y, z), data3d;
+    bc=(NaturalBC(), PeriodicBC(), CubicFit()))
 ```
 
 ---
@@ -29,18 +42,19 @@ itp = cubic_interp((x, y, z), data;
 
 All [1D cubic BCs](../boundary-conditions/overview.md) are available per-axis:
 
-```julia
+```@example nd_boundary
 # Natural in x, periodic in y
-itp = cubic_interp((x, y), data;
-    bc=(NaturalBC(), PeriodicBC()))
-
-# Custom: known slope at x-left, auto-fit in y
-itp = cubic_interp((x, y), data;
-    bc=(BCPair(Deriv1(0.0), CubicFit()), CubicFit()))
+bc = (NaturalBC(), PeriodicBC())
+itp = cubic_interp((x, y), data2d; bc=bc)
 ```
-
 !!! note "PeriodicBC + Extrapolation"
     `PeriodicBC()` on an axis automatically forces `extrap=:wrap` on that axis.
+
+```@example nd_boundary
+# Custom: known slope at x-left, auto-fit in y
+bc = (BCPair(Deriv1(0.0), CubicFit()), CubicFit())
+itp = cubic_interp((x, y), data2d; bc=bc)
+```
 
 ---
 
@@ -48,12 +62,12 @@ itp = cubic_interp((x, y), data;
 
 Quadratic BCs use `Left(...)` / `Right(...)` wrappers per-axis:
 
-```julia
+```@example nd_boundary
 # Broadcast: same BC on all axes
-itp = quadratic_interp((x, y), data; bc=Left(QuadraticFit()))
+itp = quadratic_interp((x, y), data2d; bc=Left(QuadraticFit()))
 
 # Per-axis
-itp = quadratic_interp((x, y), data;
+itp = quadratic_interp((x, y), data2d;
     bc=(Left(QuadraticFit()), Right(Deriv1(0.0))))
 ```
 

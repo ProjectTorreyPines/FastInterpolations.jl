@@ -443,6 +443,90 @@ import FastInterpolations:
     end
 
     # ========================================
+    # QuadraticND Build Coverage
+    # ========================================
+    @testset "quadratic_nd_build.jl" begin
+        import FastInterpolations:
+            _slope_1d_quadratic!,
+            _differentiate_nd_along_dim_quadratic!,
+            _get_effective_bc_quadratic,
+            _compute_nd_partials_quadratic!,
+            _build_nd_coeffs_quadratic
+
+        @testset "_get_effective_bc_quadratic edge cases" begin
+            grid_short = collect(1.0:2.0)   # 2 points, not enough for QuadraticFit
+            grid_long  = collect(1.0:10.0)  # 10 points
+
+            # p_src == 1: always return original BC
+            @test _get_effective_bc_quadratic(Right(QuadraticFit()), 1, grid_long) isa Right
+            @test _get_effective_bc_quadratic(MinCurvFit(), 1, grid_long) isa MinCurvFit
+
+            # p_src > 1 with long grid: use Right(QuadraticFit())
+            result = _get_effective_bc_quadratic(Right(QuadraticFit()), 2, grid_long)
+            @test result isa Right
+
+            # p_src > 1 with short grid (< 3 points): fallback
+            result_short = _get_effective_bc_quadratic(Right(QuadraticFit()), 2, grid_short)
+            @test result_short isa FastInterpolations.AbstractBC
+        end
+
+        @testset "_build_nd_coeffs_quadratic" begin
+            x = collect(range(0.0, 1.0, 8))
+            y = collect(range(0.0, 1.0, 6))
+            data = [xi^2 + yj^2 for xi in x, yj in y]
+            bcs = (Right(QuadraticFit()), Right(QuadraticFit()))
+
+            nd = _build_nd_coeffs_quadratic((x, y), data, bcs)
+            @test nd isa NodalDerivativesND{Float64, 2, 3}
+            @test size(nd.partials) == (4, 8, 6)  # 2^2 partials, 8x6 grid
+        end
+    end
+
+    # ========================================
+    # QuadraticND API Coverage
+    # ========================================
+    @testset "quadratic_nd_api.jl" begin
+        import FastInterpolations:
+            _resolve_bcs_nd_quadratic,
+            _to_quadratic_bc
+
+        @testset "_resolve_bcs_nd_quadratic" begin
+            # Single QuadraticBC → broadcast
+            bcs = _resolve_bcs_nd_quadratic(Right(QuadraticFit()), Val(2))
+            @test length(bcs) == 2
+            @test all(b -> b isa Right, bcs)
+
+            # NTuple pass-through
+            bcs_tuple = (Left(QuadraticFit()), Right(QuadraticFit()))
+            @test _resolve_bcs_nd_quadratic(bcs_tuple, Val(2)) === bcs_tuple
+
+            # NaturalBC conversion
+            bcs_nat = _resolve_bcs_nd_quadratic(NaturalBC(), Val(2))
+            @test length(bcs_nat) == 2
+            @test all(b -> b isa Right, bcs_nat)
+
+            # PolyFit conversion
+            bcs_poly = _resolve_bcs_nd_quadratic(CubicFit(), Val(2))
+            @test length(bcs_poly) == 2
+
+            # Heterogeneous AbstractBC tuple
+            bcs_hetero = _resolve_bcs_nd_quadratic((NaturalBC(), CubicFit()), Val(2))
+            @test length(bcs_hetero) == 2
+        end
+
+        @testset "_to_quadratic_bc" begin
+            @test _to_quadratic_bc(Right(QuadraticFit())) isa Right
+            @test _to_quadratic_bc(MinCurvFit()) isa MinCurvFit
+            @test _to_quadratic_bc(NaturalBC()) isa Right
+            @test _to_quadratic_bc(CubicFit()) isa Right
+
+            # Unsupported BC
+            @test_throws ArgumentError _to_quadratic_bc(PeriodicBC())
+            @test_throws ArgumentError _to_quadratic_bc(ClampedBC())
+        end
+    end
+
+    # ========================================
     # Additional Edge Cases
     # ========================================
     @testset "Additional Edge Cases" begin

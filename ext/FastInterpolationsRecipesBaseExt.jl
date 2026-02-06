@@ -804,12 +804,16 @@ Generates a visualization with:
         aspect_ratio --> :equal
     end
 
+    # Set clims at plot level (not series level) to ensure it persists
+    if !isnothing(computed_clims)
+        clims --> computed_clims
+    end
+
     # Series 1: Heatmap of interpolated values
     @series begin
         seriestype := :heatmap
         seriescolor --> :viridis
         colorbar --> true
-        clims --> computed_clims
         label := nothing
         collect(x_hr), collect(y_hr), z_hr'
     end
@@ -850,7 +854,7 @@ Generates a visualization with:
 
         @series begin
             seriestype := :scatter
-            color --> node_color
+            markercolor --> node_color
             markersize --> node_size
             markeralpha --> node_alpha
             markerstrokewidth --> 0.5

@@ -624,6 +624,130 @@ using FastInterpolations
     end
 
     # ========================================
+    # QUADRATIC ND: SHOW, DERIV VIEW, BATCH
+    # ========================================
+    @testset "QuadraticND Show Methods" begin
+        x = range(0.0, 2.0, 11)
+        y = range(0.0, 1.0, 6)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+
+        @testset "compact show" begin
+            str = sprint(show, itp)
+            @test contains(str, "QuadraticInterpolantND")
+        end
+
+        @testset "verbose show" begin
+            str = sprint(show, MIME("text/plain"), itp)
+            @test contains(str, "QuadraticInterpolantND")
+        end
+
+        @testset "show with color" begin
+            buf = IOBuffer()
+            ctx = IOContext(buf, :color => true)
+            show(ctx, MIME("text/plain"), itp)
+            str = String(take!(buf))
+            @test contains(str, "QuadraticInterpolantND")
+        end
+
+        @testset "show with non-uniform grids" begin
+            x_vec = [0.0, 0.1, 0.3, 0.6, 1.0]
+            y_vec = [0.0, 0.5, 1.0]
+            data_nu = [xi^2 + yj^2 for xi in x_vec, yj in y_vec]
+            itp_nu = quadratic_interp((x_vec, y_vec), data_nu; bc=Right(QuadraticFit()))
+
+            buf = IOBuffer()
+            show(buf, MIME("text/plain"), itp_nu)
+            str = String(take!(buf))
+            @test contains(str, "QuadraticInterpolantND")
+        end
+    end
+
+    @testset "QuadraticND DerivativeView" begin
+        x = range(0.0, 2.0, 15)
+        y = range(0.0, 1.0, 11)
+        data = [xi^2 + yi^2 for xi in x, yi in y]
+        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+
+        @testset "deriv_view with tuple order" begin
+            dx = deriv_view(itp, (1, 0))
+            @test dx isa FastInterpolations.DerivativeView
+
+            result = dx((1.0, 0.5))
+            expected = itp((1.0, 0.5); deriv=(1, 0))
+            @test result ≈ expected
+
+            dy = deriv_view(itp, (0, 1))
+            @test dy((1.0, 0.5)) ≈ itp((1.0, 0.5); deriv=(0, 1))
+        end
+
+        @testset "deriv_view broadcast" begin
+            dx = deriv_view(itp, (1, 0))
+            points = [(0.5, 0.3), (1.0, 0.5), (1.5, 0.8)]
+            results = dx.(points)
+            @test length(results) == 3
+            for (k, pt) in enumerate(points)
+                @test results[k] ≈ dx(pt) atol=1e-12
+            end
+        end
+
+        @testset "deriv1/deriv2/deriv3 error on ND" begin
+            @test_throws ArgumentError deriv1(itp)
+            @test_throws ArgumentError deriv2(itp)
+            @test_throws ArgumentError deriv3(itp)
+        end
+    end
+
+    @testset "QuadraticND Batch APIs" begin
+        x = range(0.0, 2.0, 15)
+        y = range(0.0, 1.0, 11)
+        f(xi, yi) = xi^2 + yi^2
+        data = [f(xi, yi) for xi in x, yi in y]
+        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+
+        @testset "SoA batch with derivatives" begin
+            xqs = collect(range(0.2, 1.8, 5))
+            yqs = collect(range(0.1, 0.9, 5))
+
+            vals = itp((xqs, yqs))
+            for k in eachindex(xqs)
+                @test vals[k] ≈ itp((xqs[k], yqs[k])) atol=1e-12
+            end
+
+            vals_dx = itp((xqs, yqs); deriv=(1, 0))
+            vals_dx_val = itp((xqs, yqs); deriv=Val((1, 0)))
+            @test vals_dx ≈ vals_dx_val
+
+            vals_d1 = itp((xqs, yqs); deriv=1)
+            @test length(vals_d1) == 5
+        end
+
+        @testset "AoS batch with derivatives" begin
+            points = [(0.5, 0.3), (1.0, 0.5), (1.5, 0.8)]
+            vals = itp(points)
+            @test length(vals) == 3
+
+            vals_dx = itp(points; deriv=(1, 0))
+            vals_dx_val = itp(points; deriv=Val((1, 0)))
+            @test vals_dx ≈ vals_dx_val
+        end
+
+        @testset "SoA length mismatch" begin
+            xqs = collect(range(0.2, 1.8, 5))
+            yqs = collect(range(0.1, 0.9, 3))
+            @test_throws DimensionMismatch itp((xqs, yqs))
+        end
+    end
+
+    @testset "QuadraticND Integer Grid Conversion" begin
+        x = 1:10
+        y = 1:5
+        data = Float64[Float64(xi^2 + yj^2) for xi in x, yj in y]
+        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        @test grid_type(itp) == Float64
+    end
+
+    # ========================================
     # GRID CONVERSION EDGE CASES
     # ========================================
     @testset "Grid Conversion" begin

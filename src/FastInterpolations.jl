@@ -26,9 +26,9 @@ include("core/show.jl")
 # Exports
 export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
-export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant
-export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant
-export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticSeriesInterpolant
+export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant, LinearInterpolantND
+export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant, ConstantInterpolantND
+export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticSeriesInterpolant, QuadraticInterpolantND
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, CubicSeriesInterpolant
 export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly  # ND cubic types
 export gradient, hessian, laplacian  # Analytical vector calculus for ND (9x faster than ForwardDiff)

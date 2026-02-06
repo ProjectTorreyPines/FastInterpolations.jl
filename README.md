@@ -6,7 +6,7 @@
 
 # FastInterpolations.jl
 
-A high-performance 1D interpolation package for Julia, optimized for **zero-allocation hot loops** and **thread-safe** concurrent access.
+A high-performance **N-dimensional** interpolation package for Julia, optimized for **zero-allocation hot loops**.
 
 ## Key Strengths
 
@@ -41,7 +41,12 @@ using FastInterpolations
 x = range(0.0, 10.0, 100)   # source grid (100 points)
 y = sin.(x)                 # initial y data
 
-xq = range(0.0, 10.0, 500)  # query grid  (500 points)
+# Basic usage
+cubic_interp(x, y, 0.33) # return interpolated value at x=0.33
+cubic_interp(x, y, [0.11, 0.22, 0.33]) # return values at x=[0.11,0.22,0.33]
+
+# Advanced usage (in-place vector query)
+xq = range(0.0, 10.0, 500)  # query points  (500 points)
 out = similar(xq)           # pre-allocate output buffer
 
 for t in 1:1000
@@ -76,6 +81,42 @@ sitp(0.5)  # → 4-element Vector: interpolated values for each series
 ```
 
 For detailed usage and performance trade-offs, see the [API Selection Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/api_selection/).
+
+## Multi-Dimensional Interpolation
+`FastInterpolations.jl` supports 2D, 3D, and N-dimensional interpolation on **any rectilinear grid** (uniform or non-uniform). The API generalizes the 1D case by packing axis-specific information into **Tuples** — for example, where 1D takes `x`, ND takes `(x, y, z, ...)` for the grid, query points, and parameters.
+
+```julia
+using FastInterpolations
+
+# Define 2D rectilinear grid (can be non-uniform) and data
+x, y = [0.0, 0.2, 0.5, 1.0], range(0, 2π, 50)
+data2D = [sin(xi) * cos(yi) for xi in x, yi in y]
+xq, yq = [0.1, 0.2], [0.3, 0.4] # query vectors
+
+# 1. One-shot API: (grid_tuple, data, query_tuple)
+val  = cubic_interp((x, y), data2D, (0.5, 0.3)) # single point
+vals = cubic_interp((x, y), data2D, (xq, yq))   # vector query
+
+# 2. Interpolant API: Precompute coefficients once
+itp = cubic_interp((x, y), data2D)
+itp((0.5, 0.3)) # scalar query
+itp((xq, yq)) # vector query
+
+# 3. BCs & Derivatives: Pass settings as axis-wise Tuples
+# (Natural in X, Periodic in Y)
+itp = cubic_interp((x, y), data2D; bc=(NaturalBC(), PeriodicBC()))
+val_dxx = itp((0.5, 0.3); deriv=(2, 0)) # analytical ∂²f/∂x²
+```
+
+**Key Features:**
+- **Flexible Grids:** Supports both uniform and non-uniform rectilinear grids.
+- **Full Parity:** Every 1D feature (BCs, derivatives, extrapolation) works in ND via Tuples.
+- **Zero-Allocation:** Optimized tensor-product evaluation for high-performance loops.
+
+### 2D Visualization Example
+Comparison on a non-uniform 2D rectilinear grid for $f(x, y) = \sin(2\pi x) \cos(2\pi y)$. Cubic interpolation maintains high accuracy and captures extrema even on coarse, non-uniform grids. The gray dots in the image below represent the given node points (6x7 grid), and the dashed lines illustrate the grid structure.
+![2D Interpolation Example](docs/images/readme_2d_comparison.png)
+
 
 
 ## Performance

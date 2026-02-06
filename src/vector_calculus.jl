@@ -6,7 +6,7 @@
 # These functions are ~9x faster than ForwardDiff equivalents.
 #
 # Supports: Any AbstractInterpolantND subtype that implements the `deriv` keyword API.
-# Currently: CubicInterpolantND, CubicInterpolant2D
+# Currently: CubicInterpolantND, LinearInterpolantND, ConstantInterpolantND
 #
 # Required interface for subtypes:
 #   itp(query; deriv=Val((d1, d2, ...)))  # Mixed partial derivative evaluation

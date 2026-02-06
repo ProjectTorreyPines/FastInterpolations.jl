@@ -803,4 +803,145 @@
         bcs_custom_same = (bc_custom, bc_custom)
         @test FI._short_bc_name_nd(bcs_custom_same) == "Custom"
     end
+
+    # ========================================
+    # ConstantInterpolantND Show Methods
+    # ========================================
+
+    @testset "ConstantInterpolantND show (Range grids)" begin
+        x1 = range(0.0, 1.0, 11)
+        x2 = range(0.0, 2.0, 15)
+        data = [Float64(i + j) for i in 1:11, j in 1:15]
+
+        itp = constant_interp((x1, x2), data)
+
+        # Compact show
+        compact_str = sprint(show, itp)
+        @test occursin("ConstantInterpolantND", compact_str)
+        @test occursin("11×15", compact_str)
+        @test occursin(":nearest", compact_str)
+
+        # Verbose show (Range grids → no Search row)
+        verbose_str = sprint(show, MIME("text/plain"), itp)
+        @test occursin("ConstantInterpolantND", verbose_str)
+        @test occursin("Grids:", verbose_str)
+        @test occursin("2D", verbose_str)
+        @test occursin("Extrap:", verbose_str)
+        @test occursin("Side:", verbose_str)
+        @test !occursin("Search:", verbose_str)  # Range → no Search
+    end
+
+    @testset "ConstantInterpolantND show (Vector grids, Search displayed)" begin
+        x1 = collect(range(0.0, 1.0, 11))
+        x2 = collect(range(0.0, 2.0, 15))
+        data = [Float64(i + j) for i in 1:11, j in 1:15]
+
+        itp = constant_interp((x1, x2), data; search=Binary())
+
+        verbose_str = sprint(show, MIME("text/plain"), itp)
+        @test occursin("Search:", verbose_str)
+        @test occursin("Binary", verbose_str)
+        @test occursin("Vector", verbose_str)
+    end
+
+    @testset "ConstantInterpolantND show with heterogeneous sides" begin
+        x1 = range(0.0, 1.0, 11)
+        x2 = range(0.0, 2.0, 15)
+        data = [Float64(i + j) for i in 1:11, j in 1:15]
+
+        itp = constant_interp((x1, x2), data; side=(:left, :right))
+
+        # Compact: heterogeneous sides shown as comma-separated
+        compact_str = sprint(show, itp)
+        @test occursin(":left,:right", compact_str)
+
+        # Verbose: should show tuple format for sides
+        verbose_str = sprint(show, MIME("text/plain"), itp)
+        @test occursin(":left", verbose_str)
+        @test occursin(":right", verbose_str)
+    end
+
+    @testset "ConstantInterpolantND show with heterogeneous extrapolation" begin
+        x1 = range(0.0, 1.0, 11)
+        x2 = range(0.0, 2.0, 15)
+        data = [Float64(i + j) for i in 1:11, j in 1:15]
+
+        itp = constant_interp((x1, x2), data; extrap=(:none, :constant))
+
+        verbose_str = sprint(show, MIME("text/plain"), itp)
+        @test occursin("Extrap:", verbose_str)
+        @test occursin(":none", verbose_str)
+        @test occursin(":constant", verbose_str)
+    end
+
+    @testset "ConstantInterpolantND show with complex values (Tv ≠ Tg)" begin
+        x1 = range(0.0, 1.0, 11)
+        x2 = range(0.0, 2.0, 15)
+        data = [exp(2π * im * xi) * cos(π * xj) for xi in x1, xj in x2]
+
+        itp = constant_interp((x1, x2), data)
+
+        # Compact show: both Tg and Tv displayed
+        compact_str = sprint(show, itp)
+        @test occursin("Float64", compact_str)
+        @test occursin("ComplexF64", compact_str)
+
+        # Verbose show
+        verbose_str = sprint(show, MIME("text/plain"), itp)
+        @test occursin("Float64", verbose_str)
+        @test occursin("ComplexF64", verbose_str)
+    end
+
+    @testset "3D ConstantInterpolantND show" begin
+        x1 = range(0.0, 1.0, 8)
+        x2 = range(0.0, 2.0, 10)
+        x3 = range(0.0, 3.0, 12)
+        data = [sin(xi) + cos(xj) + xk for xi in x1, xj in x2, xk in x3]
+
+        itp = constant_interp((x1, x2, x3), data)
+
+        # Compact show
+        compact_str = sprint(show, itp)
+        @test occursin("8×10×12", compact_str)
+
+        # Verbose show
+        verbose_str = sprint(show, MIME("text/plain"), itp)
+        @test occursin("3D", verbose_str)
+        @test occursin("x₁", verbose_str)
+        @test occursin("x₂", verbose_str)
+        @test occursin("x₃", verbose_str)
+    end
+
+    @testset "Direct test of _short_side_name_nd" begin
+        FI = FastInterpolations
+
+        # All same sides → single value
+        sides_same = (Val(:nearest), Val(:nearest))
+        @test FI._short_side_name_nd(sides_same) == ":nearest"
+
+        # Different sides → comma-joined
+        sides_diff = (Val(:left), Val(:right))
+        @test FI._short_side_name_nd(sides_diff) == ":left,:right"
+
+        # Three axes, all same
+        sides_3d_same = (Val(:left), Val(:left), Val(:left))
+        @test FI._short_side_name_nd(sides_3d_same) == ":left"
+
+        # Three axes, mixed
+        sides_3d_mixed = (Val(:left), Val(:nearest), Val(:right))
+        @test FI._short_side_name_nd(sides_3d_mixed) == ":left,:nearest,:right"
+    end
+
+    @testset "LinearInterpolantND show with Vector grids (Search row)" begin
+        x1 = collect(range(0.0, 1.0, 11))
+        x2 = collect(range(0.0, 2.0, 15))
+        data = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
+
+        itp = linear_interp((x1, x2), data; search=Binary())
+
+        verbose_str = sprint(show, MIME("text/plain"), itp)
+        @test occursin("Search:", verbose_str)
+        @test occursin("Binary", verbose_str)
+        @test occursin("Vector", verbose_str)
+    end
 end

@@ -55,9 +55,14 @@ else
     include("test_recipes.jl")
 
     # ND Interpolation
+    include("test_nd_utils_shared.jl")  # Shared ND utilities (phase 1)
+    include("test_nd_constant.jl")      # Constant ND interpolation (phase 2)
+    include("test_nd_linear.jl")        # Linear ND interpolation (phase 3)
+    include("test_nd_quadratic.jl")     # Quadratic ND interpolation
     include("test_cubic_nd.jl")
     include("test_nd_comprehensive.jl")
     include("test_nd_coverage.jl")
+    include("test_nd_heterogeneous_grids.jl")
 
     # # Auto-differentiation tests (ForwardDiff, Zygote, Enzyme)
     include("test_autodiff_ForwardDiff.jl")

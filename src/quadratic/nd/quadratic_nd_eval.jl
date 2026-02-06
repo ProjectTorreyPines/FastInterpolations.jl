@@ -1,29 +1,55 @@
 # ========================================
-# Generic ND Hermite Evaluation
+# Generic ND Quadratic Evaluation
 # ========================================
 #
-# N-dimensional cubic Hermite interpolation with:
+# N-dimensional quadratic interpolation with:
 # - Tg/Tv type separation (grid vs value types)
 # - @generated tensor product for zero-allocation O(1) evaluation
-# - N=2 specialization for optimal batch performance
+# - N=2 specialization for optimal performance
 # - AD support (query type preserved through evaluation)
+#
+# Key difference from cubic: uses 3 nodal values (fL, fR, dfL) per dimension
+# instead of 4 (fL, fR, dfL, dfR). The quadratic coefficient `a` is computed
+# on-the-fly from these 3 values.
 
-const _DEBUG_GENERATED_CELL = Ref(false)  # Debug: inspect @generated code
+# ========================================
+# 1D Quadratic Kernel for ND Tensor Product
+# ========================================
+
+"""
+    _quadratic_kernel_nd(op, fL, fR, dfL, inv_h, dL)
+
+Evaluate 1D quadratic kernel for ND tensor product evaluation.
+Computes quadratic coefficient `a` on-the-fly from (fL, fR, dfL, inv_h),
+then delegates to `_quadratic_kernel(op, a, dfL, fL, dL)`.
+
+This is the quadratic analog of `_hermite_kernel_1d(op, yL, yR, dyL, dyR, h, inv_h, dL)`.
+Note: Unlike Hermite, quadratic works in physical coordinates so `h` is not needed.
+"""
+@inline function _quadratic_kernel_nd(
+    op::AbstractEvalOp,
+    fL, fR, dfL,
+    inv_h, dL
+)
+    s = (fR - fL) * inv_h    # secant slope
+    a = (s - dfL) * inv_h     # quadratic coefficient
+    return _quadratic_kernel(op, a, dfL, fL, dL)
+end
 
 # ========================================
 # CALLABLE INTERFACE
 # ========================================
 
 """
-    (itp::CubicInterpolantND)(query; deriv=0, search=itp.searches)
+    (itp::QuadraticInterpolantND)(query; deriv=0, search=itp.searches)
 
-Evaluate N-dimensional cubic Hermite interpolant.
+Evaluate N-dimensional quadratic interpolant.
 
 # Keywords
 - `deriv`: Derivative specification
-  - `Int` (0-3): same order for all axes (fastest)
+  - `Int` (0-3): same order for all axes
   - `NTuple{N,Int}`: per-axis orders, e.g. `(1,0)` for ∂f/∂x
-  - `Val(...)`: compile-time version for minimal allocation
+  - `Val(...)`: compile-time version
 - `search`: Override search policy (single or per-axis tuple)
 
 # Examples
@@ -34,44 +60,29 @@ itp((1.0, 0.5); deriv=(1,0)) # ∂f/∂x only
 ```
 """
 # Single-point evaluation
-@inline function (itp::CubicInterpolantND{Tg, Tv, N})(
-    query::Tuple{Vararg{Real, N}};  # Allow heterogeneous Real types (AD: Dual + Float64)
+@inline function (itp::QuadraticInterpolantND{Tg, Tv, N})(
+    query::Tuple{Vararg{Real, N}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
 ) where {Tg, Tv, N}
-    # Note: Don't convert to Tg - preserve query type for AD support
     search_tuple = _resolve_search_nd(search, Val(N))
 
     if deriv isa Int
-        # Int path: macro dispatch ensures concrete op type
         @_dispatch_deriv deriv => op begin
             ops = ntuple(_ -> op, Val(N))
-            return _eval_nd_hermite(itp, query, ops, search_tuple)
+            return _eval_nd_quadratic(itp, query, ops, search_tuple)
         end
     elseif deriv isa Val
-        # Val path: compile-time resolution
         ops = _resolve_deriv_nd(deriv, Val(N))
-        return _eval_nd_hermite(itp, query, ops, search_tuple)
+        return _eval_nd_quadratic(itp, query, ops, search_tuple)
     else
         ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        return _eval_nd_hermite(itp, query, ops, search_tuple)
+        return _eval_nd_quadratic(itp, query, ops, search_tuple)
     end
 end
 
-# Vector API: enables ForwardDiff.gradient(itp, [x, y]) and optimize(itp, x0; autodiff=:forward)
-"""
-    (itp::CubicInterpolantND)(query::AbstractVector; deriv=0, search=itp.searches)
-
-Evaluate with vector input for ForwardDiff/Optim.jl compatibility.
-
-# Examples
-```julia
-itp([0.5, 0.5])                          # direct evaluation
-ForwardDiff.gradient(itp, [0.5, 0.5])    # AD gradient
-optimize(itp, x0, LBFGS(); autodiff=:forward)  # optimization
-```
-"""
-@inline function (itp::CubicInterpolantND{Tg, Tv, N})(
+# Vector API: enables ForwardDiff.gradient(itp, [x, y])
+@inline function (itp::QuadraticInterpolantND{Tg, Tv, N})(
     query::AbstractVector{<:Real};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
@@ -87,12 +98,7 @@ end
 # BATCH EVALUATION: SoA (Tuple of Vectors)
 # ========================================
 
-"""
-    (itp::CubicInterpolantND)(queries::NTuple{N,AbstractVector}; ...)
-
-Batch evaluation with Structure-of-Arrays input: `itp((xs, ys))`.
-"""
-function (itp::CubicInterpolantND{Tg, Tv, N})(
+function (itp::QuadraticInterpolantND{Tg, Tv, N})(
     queries::NTuple{N, <:AbstractVector{<:Real}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
@@ -108,14 +114,14 @@ function (itp::CubicInterpolantND{Tg, Tv, N})(
     if deriv isa Int
         @_dispatch_deriv deriv => op begin
             ops = ntuple(_ -> op, Val(N))
-            return _eval_nd_batch_soa(itp, queries, ops, search_tuple)
+            return _eval_nd_batch_soa_quad(itp, queries, ops, search_tuple)
         end
     elseif deriv isa Val
         ops = _resolve_deriv_nd(deriv, Val(N))
-        return _eval_nd_batch_soa(itp, queries, ops, search_tuple)
+        return _eval_nd_batch_soa_quad(itp, queries, ops, search_tuple)
     else
         ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        return _eval_nd_batch_soa(itp, queries, ops, search_tuple)
+        return _eval_nd_batch_soa_quad(itp, queries, ops, search_tuple)
     end
 end
 
@@ -123,13 +129,8 @@ end
 # BATCH EVALUATION: AoS (Vector of Tuples)
 # ========================================
 
-"""
-    (itp::CubicInterpolantND)(queries::AbstractVector{<:NTuple{N}}; ...)
-
-Batch evaluation with Array-of-Structures input: `itp([(x,y), ...])`.
-"""
-function (itp::CubicInterpolantND{Tg, Tv, N})(
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};  # Allow heterogeneous Real types
+function (itp::QuadraticInterpolantND{Tg, Tv, N})(
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
 ) where {Tg, Tv, N}
@@ -138,14 +139,14 @@ function (itp::CubicInterpolantND{Tg, Tv, N})(
     if deriv isa Int
         @_dispatch_deriv deriv => op begin
             ops = ntuple(_ -> op, Val(N))
-            return _eval_nd_batch_aos(itp, queries, ops, search_tuple)
+            return _eval_nd_batch_aos_quad(itp, queries, ops, search_tuple)
         end
     elseif deriv isa Val
         ops = _resolve_deriv_nd(deriv, Val(N))
-        return _eval_nd_batch_aos(itp, queries, ops, search_tuple)
+        return _eval_nd_batch_aos_quad(itp, queries, ops, search_tuple)
     else
         ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        return _eval_nd_batch_aos(itp, queries, ops, search_tuple)
+        return _eval_nd_batch_aos_quad(itp, queries, ops, search_tuple)
     end
 end
 
@@ -153,25 +154,25 @@ end
 # BATCH INNER FUNCTIONS
 # ========================================
 
-@inline function _eval_nd_batch_soa(
-    itp::CubicInterpolantND{Tg, Tv, N},
+@inline function _eval_nd_batch_soa_quad(
+    itp::QuadraticInterpolantND{Tg, Tv, N},
     queries::NTuple{N, <:AbstractVector{Tq}},
     ops::OPS,
     search::SEARCH
 ) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     n_queries = length(queries[1])
-    Tout = promote_type(Tv, Tg, Tq)  # Include Tq for AD (Dual numbers)
+    Tout = promote_type(Tv, Tg, Tq)
     results = Vector{Tout}(undef, n_queries)
 
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
-        results[k] = _eval_nd_hermite(itp, query_k, ops, search)
+        results[k] = _eval_nd_quadratic(itp, query_k, ops, search)
     end
     return results
 end
 
-@inline function _eval_nd_batch_aos(
-    itp::CubicInterpolantND{Tg, Tv, N},
+@inline function _eval_nd_batch_aos_quad(
+    itp::QuadraticInterpolantND{Tg, Tv, N},
     queries::AbstractVector{<:NTuple{N, Tq}},
     ops::OPS,
     search::SEARCH
@@ -181,19 +182,19 @@ end
     results = Vector{Tout}(undef, n_queries)
 
     @inbounds for k in 1:n_queries
-        results[k] = _eval_nd_hermite(itp, queries[k], ops, search)
+        results[k] = _eval_nd_quadratic(itp, queries[k], ops, search)
     end
     return results
 end
 
 # ========================================
-# CORE HERMITE EVALUATION
+# CORE QUADRATIC EVALUATION
 # ========================================
 
-# Generic N-dimensional (uses ntuple helpers)
-@inline function _eval_nd_hermite(
-    itp::CubicInterpolantND{Tg, Tv, N},
-    query::Tuple{Vararg{Real, N}},  # Allow heterogeneous Real types (AD support)
+# Generic N-dimensional
+@inline function _eval_nd_quadratic(
+    itp::QuadraticInterpolantND{Tg, Tv, N},
+    query::Tuple{Vararg{Real, N}},
     ops::OPS,
     search::SEARCH
 ) where {Tg, Tv, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
@@ -205,16 +206,15 @@ end
     indices, Ls, _ = _search_all_intervals(q_evals, grids, spacings, search)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
 
-    return _eval_nd_cell(itp.nodal_derivs.partials, indices, hs, inv_hs, dLs, ops)
+    return _eval_nd_quad_cell(itp.nodal_derivs.partials, indices, hs, inv_hs, dLs, ops)
 end
 
-# N=2 specialization: direct destructuring eliminates ntuple closure overhead,
-# enabling type-stable evaluation even with runtime deriv tuples like (1,0).
-@inline function _eval_nd_hermite(
-    itp::CubicInterpolantND{Tg, Tv, 2},
-    query::Tuple{Vararg{Real, 2}},  # Allow heterogeneous Real types (AD support)
-    ops::NTuple{2, <:AbstractEvalOp},
-    search::NTuple{2, <:AbstractSearchPolicy}
+# N=2 specialization: direct destructuring eliminates ntuple closure overhead
+@inline function _eval_nd_quadratic(
+    itp::QuadraticInterpolantND{Tg, Tv, 2},
+    query::Tuple{Vararg{Real, 2}},
+    ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp},
+    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy}
 ) where {Tg, Tv}
     xq, yq = query
     grid_x, grid_y = itp.grids
@@ -238,39 +238,32 @@ end
     dLx = x_eval - xL
     dLy = y_eval - yL
 
-    return _eval_nd_cell(
+    return _eval_nd_quad_cell(
         itp.nodal_derivs.partials,
         (ix, iy), (hx, hy), (inv_hx, inv_hy), (dLx, dLy), (op_x, op_y)
     )
 end
 
 # ========================================
-# @GENERATED TENSOR PRODUCT KERNEL
+# @GENERATED TENSOR PRODUCT KERNEL (Quadratic)
 # ========================================
-# Collapses N dimensions via sequential 1D Hermite interpolations.
-# Each stage reduces 2^(N-d+1) → 2^(N-d) values.
+# Same dimension-collapsing strategy as cubic, but uses 3 nodal values
+# per dimension (fL, fR, dfL) instead of 4 (fL, fR, dfL, dfR).
+# The quadratic coefficient `a` is computed on-the-fly in the kernel.
 
-_varname(stage::Int, corner::Int, deriv::Int) = Symbol("g_$(stage)_$(corner)_$(deriv)")
-_partial_index(deriv_bits::Int) = deriv_bits + 1
-
-function _corner_offset_expr(corner_bits::Int, N::Int)
-    [((corner_bits >> (d-1)) & 1) for d in 1:N]
-end
-@inline @generated function _eval_nd_cell(
+@inline @generated function _eval_nd_quad_cell(
     partials::Array{Tv, NP1},
     indices::NTuple{N, Int},
     hs::NTuple{N, Tg},
     inv_hs::NTuple{N, Tg},
-    dLs::Tuple{Vararg{Real, N}},  # Allow heterogeneous Real types (AD support)
+    dLs::Tuple{Vararg{Real, N}},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tv, Tg, N, NP1}
-    # Validate dimensions
     NP1 == N + 1 || error("NP1 must equal N+1")
 
-    # Generate all statements
     stmts = Expr[]
 
-    # Unpack tuples using destructuring (efficient AST)
+    # Unpack tuples using destructuring
     for (prefix, source) in [("idx_", :indices), ("h_", :hs), ("inv_h_", :inv_hs),
                               ("dL_", :dLs), ("op_", :ops)]
         syms = ntuple(d -> Symbol(prefix, d), N)
@@ -280,7 +273,6 @@ end
 
     # Collapse each dimension
     for stage in 1:N
-        # After collapsing dim 'stage', we have 2^(N-stage) corners and derivs
         num_corners = 1 << (N - stage)
         num_derivs = 1 << (N - stage)
 
@@ -290,69 +282,47 @@ end
 
                 if stage == 1
                     # Read from partials array
-                    function make_partial_access(c_dim1::Int, d_dim1::Int)
+                    function make_partial_access_q(c_dim1::Int, d_dim1::Int)
                         corner_full = c_dim1 | (corner << 1)
                         deriv_full = d_dim1 | (deriv << 1)
                         p_idx = _partial_index(deriv_full)
-
-                        # Build index expression: partials[p_idx, idx_1 + off_1, ...]
                         offsets = _corner_offset_expr(corner_full, N)
                         idx_exprs = [:($(Symbol("idx_", d)) + $(offsets[d])) for d in 1:N]
                         return :(partials[$p_idx, $(idx_exprs...)])
                     end
 
-                    fL = make_partial_access(0, 0)
-                    fR = make_partial_access(1, 0)
-                    dfL = make_partial_access(0, 1)
-                    dfR = make_partial_access(1, 1)
+                    fL = make_partial_access_q(0, 0)   # left corner, no deriv
+                    fR = make_partial_access_q(1, 0)   # right corner, no deriv
+                    dfL = make_partial_access_q(0, 1)  # left corner, has deriv
+                    # NO dfR — quadratic only needs 3 values
                 else
                     # Read from previous stage variables
                     prev_stage = stage - 1
                     fL = _varname(prev_stage, 0 | (corner << 1), 0 | (deriv << 1))
                     fR = _varname(prev_stage, 1 | (corner << 1), 0 | (deriv << 1))
                     dfL = _varname(prev_stage, 0 | (corner << 1), 1 | (deriv << 1))
-                    dfR = _varname(prev_stage, 1 | (corner << 1), 1 | (deriv << 1))
+                    # NO dfR — quadratic only needs 3 values
                 end
 
-                h = Symbol("h_", stage)
                 inv_h = Symbol("inv_h_", stage)
                 dL = Symbol("dL_", stage)
                 op = Symbol("op_", stage)
 
-                kernel_call = :(_hermite_kernel_1d($op, $fL, $fR, $dfL, $dfR, $h, $inv_h, $dL))
+                kernel_call = :(_quadratic_kernel_nd($op, $fL, $fR, $dfL, $inv_h, $dL))
                 push!(stmts, :($out_var = $kernel_call))
             end
         end
     end
 
-    # Final result is g_{N}_{0}_{0}
+    # Final result
     final_var = _varname(N, 0, 0)
     push!(stmts, :(return $final_var))
 
-    # Wrap in quote block with @inbounds and @inline_meta
     result = quote
         Base.@_inline_meta
         @inbounds begin
             $(stmts...)
         end
-    end
-
-    # Debug output (controlled by _DEBUG_GENERATED_CELL flag)
-    if _DEBUG_GENERATED_CELL[]
-        function count_ast_nodes(ex)
-            if ex isa Expr
-                return 1 + sum(count_ast_nodes(arg) for arg in ex.args; init=0)
-            else
-                return 1
-            end
-        end
-
-        println("=" ^ 60)
-        println("Generated _eval_nd_cell for N=$N, Tv=$Tv, Tg=$Tg")
-        println("AST nodes: ", count_ast_nodes(result))
-        println("=" ^ 60)
-        println(Base.remove_linenums!(deepcopy(result)))
-        println("=" ^ 60)
     end
 
     return result

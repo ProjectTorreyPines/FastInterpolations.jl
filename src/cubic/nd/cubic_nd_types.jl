@@ -72,66 +72,8 @@ struct OnTheFly <: AbstractCoeffStrategy end
 # ========================================
 # Generic ND Coefficient Storage
 # ========================================
-
-"""
-    NodalDerivativesND{Tv, N, NP1}
-
-Storage for precomputed N-dimensional partial derivatives at grid nodes.
-
-This structure stores the function value f and all mixed partial derivatives
-(∂f/∂x₁, ∂f/∂x₂, ∂²f/∂x₁∂x₂, etc.) at each grid node, enabling O(1) evaluation
-via tensor-product Hermite polynomials.
-
-# Type Parameters
-- `Tv`: Value type (Float64, ComplexF64, etc.)
-- `N`: Number of dimensions
-- `NP1`: N + 1 (array dimensionality, Julia can't compute N+1 in type definition)
-
-# Fields
-- `partials::Array{Tv, NP1}`: Partial derivatives array of shape (2^N, n₁, n₂, ..., nₙ)
-
-# Partials Indexing Convention (bit-encoding of derivatives)
-The first index `p` encodes which partial derivative via binary representation:
-- Bit d set → differentiate with respect to dimension d
-- p=1 (binary 0...0): f (no derivatives)
-- p=2 (binary 0...1): ∂f/∂x₁
-- p=3 (binary 0..10): ∂f/∂x₂
-- p=4 (binary 0..11): ∂²f/∂x₁∂x₂
-- etc.
-
-# Examples
-For N=2 (4 partials per point):
-- `partials[1, i, j]` = f(xᵢ, yⱼ)         (p=1, binary 00)
-- `partials[2, i, j]` = ∂f/∂x             (p=2, binary 01)
-- `partials[3, i, j]` = ∂f/∂y             (p=3, binary 10)
-- `partials[4, i, j]` = ∂²f/∂x∂y          (p=4, binary 11)
-
-For N=3 (8 partials per point):
-- `partials[1, i, j, k]` = f              (p=1, binary 000)
-- `partials[2, i, j, k]` = ∂f/∂x          (p=2, binary 001)
-- `partials[3, i, j, k]` = ∂f/∂y          (p=3, binary 010)
-- `partials[4, i, j, k]` = ∂²f/∂x∂y       (p=4, binary 011)
-- `partials[5, i, j, k]` = ∂f/∂z          (p=5, binary 100)
-- `partials[6, i, j, k]` = ∂²f/∂x∂z       (p=6, binary 101)
-- `partials[7, i, j, k]` = ∂²f/∂y∂z       (p=7, binary 110)
-- `partials[8, i, j, k]` = ∂³f/∂x∂y∂z     (p=8, binary 111)
-"""
-struct NodalDerivativesND{Tv, N, NP1}
-    partials::Array{Tv, NP1}
-
-    function NodalDerivativesND{Tv, N, NP1}(partials::Array{Tv, NP1}) where {Tv, N, NP1}
-        NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1, got NP1=$NP1, N=$N"))
-        size(partials, 1) == (1 << N) || throw(DimensionMismatch(
-            "First dimension must be 2^N=$(1 << N), got $(size(partials, 1))"
-        ))
-        new{Tv, N, NP1}(partials)
-    end
-end
-
-# Convenience constructor that computes NP1 automatically
-function NodalDerivativesND{Tv, N}(partials::Array{Tv, NP1}) where {Tv, N, NP1}
-    NodalDerivativesND{Tv, N, NP1}(partials)
-end
+# NOTE: NodalDerivativesND has been moved to src/core/nd_utils.jl
+# for shared use by both CubicInterpolantND and QuadraticInterpolantND.
 
 # ========================================
 # Generic ND Interpolant Type
@@ -326,46 +268,11 @@ Extract all search policies as a tuple.
 end
 
 # ========================================
-# Generic Per-Axis Helpers (allocation-free)
-# ========================================
-
-"""
-    _handle_all_extraps(queries, grids, extraps) -> NTuple{N, Tg}
-
-Apply extrapolation handling to all query coordinates.
-Returns tuple of processed query values ready for interpolation.
-"""
-@inline function _handle_all_extraps(
-    queries::NTuple{N, Tq}, grids::NTuple{N}, extraps::NTuple{N}
-) where {N, Tq}
-    ntuple(Val(N)) do d
-        @inbounds _handle_axis_extrap(queries[d], grids[d], extraps[d])
-    end
-end
-
-# Extrapolation handlers (defined here for generic use, 2D versions may override)
-# Note: Preserve query type (don't convert to Tg) for AD support (ForwardDiff.Dual)
-@inline function _handle_axis_extrap(q, axis::AbstractVector, ::Val{:none})
-    @boundscheck _check_domain(axis, q, Val(:none))
-    return q  # preserve original type for AD
-end
-
-@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::Val{:constant}) where {Tg}
-    # For AD: use primal for comparison, preserve type when in domain
-    q_primal = _extract_primal(q)
-    lo, hi = first(axis), last(axis)
-    q_primal < lo && return lo   # outside domain: return boundary (derivative = 0)
-    q_primal > hi && return hi
-    return q  # in domain: preserve original type for AD
-end
-
-@inline function _handle_axis_extrap(q, axis::AbstractVector, ::Val{:wrap})
-    return _wrap_to_domain(q, first(axis), last(axis))  # already handles AD via _extract_primal
-end
-
-# ========================================
 # @GENERATED VERSIONS (for performance testing)
 # ========================================
+#
+# Note: _handle_all_extraps, _handle_axis_extrap, and _search_all_intervals
+# are now in src/core/nd_utils.jl for shared use by constant/linear ND.
 
 """
 @generated version of _handle_all_extraps - explicit unrolling instead of ntuple closure.
@@ -422,46 +329,7 @@ end
     end
 end
 
-"""
-    _search_all_intervals(q_evals, grids, spacings, searches) -> (indices, Ls, Rs)
+# Note: _search_all_intervals is now in src/core/nd_utils.jl
 
-Perform interval search on all axes.
-Returns tuples of: indices (cell index), Ls (left bounds), Rs (right bounds).
-"""
-@inline function _search_all_intervals(
-    q_evals::NTuple{N, Tg}, grids::NTuple{N}, spacings::NTuple{N}, searches::NTuple{N}
-) where {N, Tg}
-    results = ntuple(Val(N)) do d
-        searcher = @inbounds _to_searcher(searches[d])
-        @inbounds search_interval(searcher, grids[d], spacings[d], q_evals[d])
-    end
-    # Restructure (idx, L, R) tuples into separate tuples
-    indices = ntuple(d -> @inbounds(results[d][1]), Val(N))
-    Ls = ntuple(d -> @inbounds(results[d][2]), Val(N))
-    Rs = ntuple(d -> @inbounds(results[d][3]), Val(N))
-    return (indices, Ls, Rs)
-end
-
-"""
-    _compute_all_local_params(q_evals, spacings, indices, Ls) -> (hs, inv_hs, dLs)
-
-Compute local cell parameters for all axes.
-Returns tuples of: hs (cell widths), inv_hs (reciprocals), dLs (left deltas).
-"""
-@inline function _compute_all_local_params(
-    q_evals::Tuple{Vararg{Real, N}},  # Allow heterogeneous/AD types (Dual)
-    spacings::NTuple{N},
-    indices::NTuple{N, Int},
-    Ls::NTuple{N, <:Real}  # Grid boundary (always Float64 family)
-) where {N}
-    hs = ntuple(Val(N)) do d
-        @inbounds _get_h(spacings[d], indices[d])
-    end
-    inv_hs = ntuple(Val(N)) do d
-        @inbounds _get_inv_h(spacings[d], indices[d])
-    end
-    dLs = ntuple(Val(N)) do d
-        @inbounds q_evals[d] - Ls[d]
-    end
-    return (hs, inv_hs, dLs)
-end
+# NOTE: _compute_all_local_params has been moved to src/core/nd_utils.jl
+# for shared use by CubicInterpolantND and QuadraticInterpolantND.

@@ -1,5 +1,8 @@
 # Interpolation Overview
 
+!!! note "Looking for multi-dimensional interpolation?"
+    See [Multi-Dimensional Interpolation](../nd/overview.md) for 2D, 3D, and higher-dimensional interpolation.
+
 FastInterpolations.jl provides four interpolation methods with increasing smoothness. All methods support analytical **1st and 2nd derivatives**.
 
 | Method | Continuity | 1st Derivative | 2nd Derivative |

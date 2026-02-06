@@ -68,6 +68,7 @@ mkpath(joinpath(DOCS_SRC, "guides"))
 mkpath(joinpath(DOCS_SRC, "interpolation"))
 mkpath(joinpath(DOCS_SRC, "architecture"))
 mkpath(joinpath(DOCS_SRC, "boundary-conditions"))
+mkpath(joinpath(DOCS_SRC, "nd"))
 
 # Copy images directory
 const IMAGES_SRC = joinpath(@__DIR__, "images")
@@ -125,6 +126,12 @@ makedocs(
             "PointBC & PolyFit" => "boundary-conditions/pointbc.md",
         ],
         "Extrapolation" => "extrapolation.md",
+        "Multi-Dimensional Interpolation" => [
+            "Overview" => "nd/overview.md",
+            "Boundary Conditions" => "nd/boundary_conditions.md",
+            "Derivatives" => "nd/derivatives.md",
+            "Extrapolation" => "nd/extrapolation.md",
+        ],
         "Visualization" => "visualization.md",
         "Advanced Usage" => [
             "Overview" => "guides/advanced_overview.md",
@@ -133,6 +140,7 @@ makedocs(
                 "1D Interpolants" => "guides/autodiff_support.md",
                 "ND Interpolants" => "guides/autodiff_nd.md",
             ],
+            "Optimization (Optim.jl)" => "guides/optimization.md",
             "Search & Hints" => [
                 "Overview" => "guides/search/overview.md",
                 "Search Policies" => "guides/search/policies.md",

@@ -19,6 +19,7 @@ import HelpPlots: assert_type_and_record_argument, recipe_dispatch
 import FastInterpolations:
     AbstractInterpolant, AbstractSeriesInterpolant, AbstractDerivativeView,
     AbstractInterpolantND, CubicInterpolantND,
+    LinearInterpolantND, ConstantInterpolantND, QuadraticInterpolantND,
     LinearInterpolant, ConstantInterpolant, QuadraticInterpolant, CubicInterpolant,
     LinearSeriesInterpolant, ConstantSeriesInterpolant,
     QuadraticSeriesInterpolant, CubicSeriesInterpolant,
@@ -645,6 +646,9 @@ end
 recipe_dispatch(::AbstractInterpolantND) = "AbstractInterpolantND"
 
 # Helper: interpolant label for ND types
+_interpolant_label(::LinearInterpolantND) = "linear"
+_interpolant_label(::ConstantInterpolantND) = "constant"
+_interpolant_label(::QuadraticInterpolantND) = "quadratic"
 _interpolant_label(::CubicInterpolantND) = "cubic"
 
 # Helper: default high-resolution samples for 2D visualization
@@ -694,20 +698,46 @@ function compute_gridline_alpha_2d(n_lines::Integer; max_α::Float64=0.4, min_α
 end
 
 """
+    _default_2d_margin(grid) -> eltype(grid)
+
+Compute default domain margin for 2D extrapolation visualization: 15% of span.
+Smaller than 1D (25%) since 2D visual space is more constrained.
+"""
+_default_2d_margin(grid) = 0.15 * (last(grid) - first(grid))
+
+"""
+    _has_extrap(itp::AbstractInterpolantND) -> Bool
+
+Check if any axis of an ND interpolant has extrapolation enabled (not `:none`).
+"""
+_has_extrap(itp::AbstractInterpolantND) = any(e -> e !== Val(:none), itp.extraps)
+
+"""
+    _axis_has_extrap(itp::AbstractInterpolantND, d::Int) -> Bool
+
+Check if axis `d` has extrapolation enabled.
+"""
+_axis_has_extrap(itp::AbstractInterpolantND, d::Int) = itp.extraps[d] !== Val(:none)
+
+"""
 Recipe for 2D N-dimensional interpolants (AbstractInterpolantND with N=2).
 
 Generates a visualization with:
-1. High-resolution heatmap of interpolated values
-2. Scatter plot of original grid nodes (auto-hidden for large grids)
-3. Dashed grid lines connecting nodes (auto-hidden for large grids)
+1. High-resolution heatmap of interpolated values (extended when extrapolation enabled)
+2. Domain boundary rectangle (dashed, when extrapolation enabled)
+3. Scatter plot of original grid nodes (auto-hidden for large grids)
+4. Dashed grid lines connecting nodes (auto-hidden for large grids)
 
 # Keyword Arguments
 - `show_nodes::Union{Bool,Nothing} = nothing`: Show grid node markers.
   If `nothing` (default), auto-determines: hidden when nx×ny ≥ $(SCATTER_THRESHOLD_2D).
 - `show_gridlines::Union{Bool,Nothing} = nothing`: Show grid lines.
   If `nothing` (default), auto-determines: hidden when nx×ny ≥ $(SCATTER_THRESHOLD_2D).
+- `show_boundary::Bool = true`: Show domain boundary rectangle when extrapolation is enabled.
+- `domain_margin::Union{Real,Nothing} = nothing`: Extension margin for extrapolation (per axis).
+  Default: 15% of each axis span.
 - `resolution::Union{Tuple{Int,Int}, Nothing} = nothing`: Heatmap resolution (nx, ny)
-- `equal_aspect::Bool = false`: Use equal aspect ratio (default: false, fills screen)
+- `equal_aspect::Bool = false`: Use equal aspect ratio (default: false, figure is already near-square)
 - `clims_padding::Real = 0.02`: Padding for color limits (fraction of data range)
 - `node_color = :white`: Color for grid node markers
 - `node_size::Union{Real, Nothing} = nothing`: Marker size (nothing = auto based on grid size)
@@ -715,12 +745,18 @@ Generates a visualization with:
 - `gridline_color = :white`: Color for grid lines
 - `gridline_alpha::Union{Real, Nothing} = nothing`: Grid line transparency (nothing = auto)
 - `gridline_style = :dash`: Line style for grid lines (:dash, :dot, :solid)
+- `boundary_color = :white`: Color for domain boundary lines
+- `boundary_width::Real = 2.5`: Line width for domain boundary
+- `boundary_style = :solid`: Line style for domain boundary
+- `boundary_alpha::Real = 0.9`: Alpha for domain boundary lines
 """
 @recipe function f(itp::AbstractInterpolantND{Tg, Tv, 2}) where {Tg, Tv}
 
     # Extract custom options from plotattributes
     show_nodes_opt = pop!(plotattributes, :show_nodes, nothing)
     show_gridlines_opt = pop!(plotattributes, :show_gridlines, nothing)
+    show_boundary_opt = pop!(plotattributes, :show_boundary, true)
+    domain_margin_opt = pop!(plotattributes, :domain_margin, nothing)
     resolution = pop!(plotattributes, :resolution, nothing)
     equal_aspect = pop!(plotattributes, :equal_aspect, false)
     clims_padding = pop!(plotattributes, :clims_padding, 0.02)
@@ -731,6 +767,10 @@ Generates a visualization with:
     gridline_color = pop!(plotattributes, :gridline_color, :white)
     gridline_alpha_opt = pop!(plotattributes, :gridline_alpha, 0.6)
     gridline_style = pop!(plotattributes, :gridline_style, :dot)
+    boundary_color = pop!(plotattributes, :boundary_color, :white)
+    boundary_width = pop!(plotattributes, :boundary_width, 2.5)
+    boundary_style = pop!(plotattributes, :boundary_style, :solid)
+    boundary_alpha = pop!(plotattributes, :boundary_alpha, 0.9)
 
     # Record arguments for help_plot discovery
     dispatch_name = recipe_dispatch(itp)
@@ -738,10 +778,14 @@ Generates a visualization with:
         "Show grid node markers (default: auto, hidden when nx×ny ≥ $(SCATTER_THRESHOLD_2D))"; show_nodes=show_nodes_opt)
     assert_type_and_record_argument(dispatch_name, Union{Bool, Nothing},
         "Show grid lines (default: auto, hidden when nx×ny ≥ $(SCATTER_THRESHOLD_2D))"; show_gridlines=show_gridlines_opt)
+    assert_type_and_record_argument(dispatch_name, Bool,
+        "Show domain boundary when extrapolation enabled (default: true)"; show_boundary=show_boundary_opt)
+    assert_type_and_record_argument(dispatch_name, Union{Real, Nothing},
+        "Extension margin for extrapolation visualization (nothing = 15% of axis span)"; domain_margin=domain_margin_opt)
     assert_type_and_record_argument(dispatch_name, Union{Tuple{Int,Int}, Nothing},
         "Heatmap resolution (nx, ny), nothing for auto"; resolution)
     assert_type_and_record_argument(dispatch_name, Bool,
-        "Use equal aspect ratio (default: false, fills screen better)"; equal_aspect)
+        "Use equal aspect ratio (default: false)"; equal_aspect)
     assert_type_and_record_argument(dispatch_name, Real,
         "Padding for color limits as fraction of data range (default: 0.02)"; clims_padding)
     assert_type_and_record_argument(dispatch_name, Any,
@@ -756,12 +800,33 @@ Generates a visualization with:
         "Grid line transparency (nothing = auto based on grid size)"; gridline_alpha=gridline_alpha_opt)
     assert_type_and_record_argument(dispatch_name, Symbol,
         "Line style for grid lines: :dash, :dot, :solid (default: :dash)"; gridline_style)
+    assert_type_and_record_argument(dispatch_name, Any,
+        "Color for domain boundary lines (default: :white)"; boundary_color)
+    assert_type_and_record_argument(dispatch_name, Real,
+        "Line width for domain boundary (default: 2.5)"; boundary_width)
+    assert_type_and_record_argument(dispatch_name, Symbol,
+        "Line style for domain boundary: :solid, :dash, :dot (default: :solid)"; boundary_style)
+    assert_type_and_record_argument(dispatch_name, Real,
+        "Alpha for domain boundary lines (default: 0.9)"; boundary_alpha)
 
     # Extract grids from interpolant
     x_grid = collect(itp.grids[1])
     y_grid = collect(itp.grids[2])
     nx, ny = length(x_grid), length(y_grid)
     n_total = nx * ny  # Total number of grid nodes
+
+    # Domain boundaries
+    x_min, x_max = first(x_grid), last(x_grid)
+    y_min, y_max = first(y_grid), last(y_grid)
+
+    # Check per-axis extrapolation
+    has_extrap_x = _axis_has_extrap(itp, 1)
+    has_extrap_y = _axis_has_extrap(itp, 2)
+    has_any_extrap = has_extrap_x || has_extrap_y
+
+    # Compute per-axis margins for extrapolation extension
+    margin_x = has_extrap_x ? (isnothing(domain_margin_opt) ? _default_2d_margin(x_grid) : Tg(domain_margin_opt)) : zero(Tg)
+    margin_y = has_extrap_y ? (isnothing(domain_margin_opt) ? _default_2d_margin(y_grid) : Tg(domain_margin_opt)) : zero(Tg)
 
     # Auto-determine visibility based on grid size
     show_nodes = isnothing(show_nodes_opt) ? (n_total < SCATTER_THRESHOLD_2D) : show_nodes_opt
@@ -775,10 +840,10 @@ Generates a visualization with:
     n_lines = nx + ny
     gridline_alpha = isnothing(gridline_alpha_opt) ? compute_gridline_alpha_2d(n_lines) : gridline_alpha_opt
 
-    # Compute high-resolution sampling grid
+    # Compute high-resolution sampling grid (extended if extrapolation enabled)
     nx_hr, ny_hr = isnothing(resolution) ? _default_2d_samples(nx, ny) : resolution
-    x_hr = range(first(x_grid), last(x_grid); length=nx_hr)
-    y_hr = range(first(y_grid), last(y_grid); length=ny_hr)
+    x_hr = range(x_min - margin_x, x_max + margin_x; length=nx_hr)
+    y_hr = range(y_min - margin_y, y_max + margin_y; length=ny_hr)
 
     # Evaluate interpolant on high-resolution grid
     # Use real() for complex values to make heatmap work
@@ -794,12 +859,13 @@ Generates a visualization with:
     padding = z_range * clims_padding
     computed_clims = isnothing(user_clims) ? (z_min - padding, z_max + padding) : user_clims
 
-    # Plot defaults
+    # Plot defaults — slightly wider than tall to account for colorbar
+    size --> (550, 450)
     xlabel --> "x₁"
     ylabel --> "x₂"
     title --> "$(typeof(itp).name.name) ($(nx)×$(ny) grid)"
 
-    # Aspect ratio: default auto (fills screen), optional equal
+    # Aspect ratio: optional equal (default: off, size already near-square)
     if equal_aspect
         aspect_ratio --> :equal
     end
@@ -818,7 +884,22 @@ Generates a visualization with:
         collect(x_hr), collect(y_hr), z_hr'
     end
 
-    # Series 2: Grid lines (horizontal lines at each y_grid value)
+    # Series 2: Domain boundary rectangle (only when extrapolation is enabled)
+    if show_boundary_opt && has_any_extrap
+        @series begin
+            seriestype := :path
+            color --> boundary_color
+            alpha --> boundary_alpha
+            linestyle --> boundary_style
+            linewidth --> boundary_width
+            label --> "domain"
+            # Closed rectangle: bottom → right → top → left → close
+            Tg[x_min, x_max, x_max, x_min, x_min],
+            Tg[y_min, y_min, y_max, y_max, y_min]
+        end
+    end
+
+    # Series 3: Grid lines (horizontal lines at each y_grid value)
     if show_gridlines
         for yj in y_grid
             @series begin
@@ -846,7 +927,7 @@ Generates a visualization with:
         end
     end
 
-    # Series 3: Grid node scatter
+    # Series 4: Grid node scatter
     if show_nodes
         # Create mesh grid coordinates for scatter
         node_x = [xi for xi in x_grid for _ in y_grid]

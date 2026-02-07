@@ -55,7 +55,7 @@ points = [(0.5, 0.3), (1.0, 0.5), (1.5, 0.8)]
 slopes = dx.(points)
 
 # Fused broadcast — zero temporaries
-result = @. dx(pts) + dy(pts)
+result = @. dx(points) + dy(points)
 ```
 
 The derivative order is locked at construction — passing `deriv=...` to a view throws an `ArgumentError`. Create a new view for a different order.
@@ -104,5 +104,5 @@ hessian!(H, itp, (0.5, 1.0, 0.3))
 
 - **[1D Derivatives](../interpolation/derivatives.md)** — 1D derivative reference
 - **[AD Support (ND)](../guides/autodiff_nd.md)** — ForwardDiff / Zygote integration
-- **[Optimization](../guides/optimization.md)** - Seameless Optimization with Optim.jl
+- **[Optimization](../guides/optimization.md)** - Seamless Optimization with Optim.jl
 - **[Overview](overview.md)** — ND API introduction

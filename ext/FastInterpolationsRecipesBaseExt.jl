@@ -703,7 +703,7 @@ end
 Compute default domain margin for 2D extrapolation visualization: 15% of span.
 Smaller than 1D (25%) since 2D visual space is more constrained.
 """
-_default_2d_margin(grid) = 0.15 * (last(grid) - first(grid))
+_default_2d_margin(grid) = eltype(grid)(0.15) * (last(grid) - first(grid))
 
 """
     _has_extrap(itp::AbstractInterpolantND) -> Bool
@@ -757,8 +757,8 @@ Generates a visualization with:
     show_gridlines_opt = pop!(plotattributes, :show_gridlines, nothing)
     show_boundary_opt = pop!(plotattributes, :show_boundary, true)
     domain_margin_opt = pop!(plotattributes, :domain_margin, nothing)
-    user_xlims = pop!(plotattributes, :xlims, nothing)
-    user_ylims = pop!(plotattributes, :ylims, nothing)
+    user_xlims = get(plotattributes, :xlims, nothing)
+    user_ylims = get(plotattributes, :ylims, nothing)
     resolution = pop!(plotattributes, :resolution, nothing)
     equal_aspect = pop!(plotattributes, :equal_aspect, false)
     clims_padding = pop!(plotattributes, :clims_padding, 0.02)

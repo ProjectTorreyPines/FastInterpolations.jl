@@ -119,13 +119,13 @@ Comparison on a non-uniform 2D rectilinear grid for $f(x, y) = \sin(2\pi x) \cos
 Benchmark comparison against [Interpolations.jl](https://github.com/JuliaMath/Interpolations.jl), [DataInterpolations.jl](https://github.com/SciML/DataInterpolations.jl), and [Dierckx.jl](https://github.com/JuliaMath/Dierckx.jl) for **cubic spline interpolation**.
 <!-- BENCHMARK_VERSIONS_START -->
 > **Env:** Local · macOS 15.7.3 · Apple M1 Pro · Julia 1.12.4<br>
-> **Pkg:** FastInterpolations (v0.2.7) · Interpolations (v0.16.2) · DataInterpolations (v8.9.0) · Dierckx (v0.5.4)
+> **Pkg:** FastInterpolations (v0.2.8) · Interpolations (v0.16.2) · DataInterpolations (v8.9.0) · Dierckx (v0.5.4)
 <!-- BENCHMARK_VERSIONS_END -->
 
 ![One-Shot](docs/images/benchmark_oneshot_detail.png)
 
 <!-- BENCHMARK_SPEEDUP_START -->
-**Speedup:** (2.2 ~ 16.2)× vs `Interpolations.jl` · (9.1 ~ 20.4)× vs `DataInterpolations.jl` · (14.5 ~ 18.5)× vs `Dierckx.jl`
+**Speedup:** (2.2 ~ 16.6)× vs `Interpolations.jl` · (9.4 ~ 22.5)× vs `DataInterpolations.jl` · (15.5 ~ 18.8)× vs `Dierckx.jl`
 <!-- BENCHMARK_SPEEDUP_END -->
 
 One-shot (construction + evaluation) time per call with fixed grid size $n=100$. `FastInterpolations.jl` is significantly faster even on the first call (cache-miss), and becomes even faster on subsequent calls (cache-hit).

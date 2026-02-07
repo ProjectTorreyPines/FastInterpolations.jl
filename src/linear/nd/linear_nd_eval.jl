@@ -58,46 +58,95 @@ end
 end
 
 # ========================================
+# CELL LOCATION (locate once, evaluate many)
+# ========================================
+
+# Generic N-dimensional
+@inline function _locate_cell(
+    itp::LinearInterpolantND{Tg,Tv,N},
+    query::NTuple{N, <:Real},
+    search_tuple::NTuple{N, AbstractSearchPolicy}
+) where {Tg, Tv, N}
+    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple)
+    hs, αs = _compute_linear_params(q_eval, itp.spacings, indices, Ls, Val(N))
+    return (itp.data, indices, hs, αs)
+end
+
+# N=2 specialization: direct destructuring eliminates ntuple closure overhead
+@inline function _locate_cell(
+    itp::LinearInterpolantND{Tg,Tv,2},
+    query::NTuple{2, <:Real},
+    search_tuple::NTuple{2, AbstractSearchPolicy}
+) where {Tg, Tv}
+    xq, yq = query
+    grid_x, grid_y = itp.grids
+    spacing_x, spacing_y = itp.spacings
+    extrap_x, extrap_y = itp.extraps
+    search_x, search_y = search_tuple
+
+    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
+    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
+
+    searcher_x = _to_searcher(search_x)
+    searcher_y = _to_searcher(search_y)
+    ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
+    iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
+
+    hx = _get_h(spacing_x, ix)
+    hy = _get_h(spacing_y, iy)
+    αx = (x_eval - xL) / hx
+    αy = (y_eval - yL) / hy
+
+    return (itp.data, (ix, iy), (hx, hy), (αx, αy))
+end
+
+# Evaluate kernel at a pre-located cell with given derivative ops
+@inline function _eval_at_cell(
+    itp::LinearInterpolantND{Tg,Tv,N},
+    cell::Tuple,
+    ops::NTuple{N, AbstractEvalOp}
+) where {Tg, Tv, N}
+    if _has_second_or_higher_derivative(ops, Val(N))
+        return zero(promote_type(Tv, Tg))
+    end
+    data, indices, hs, αs = cell
+    return _multilinear_sum(data, indices, hs, αs, ops, Val(N))
+end
+
+# N=2 specialization: dispatches to _bilinear_sum for zero overhead
+@inline function _eval_at_cell(
+    itp::LinearInterpolantND{Tg,Tv,2},
+    cell::Tuple,
+    ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp}
+) where {Tg, Tv}
+    op_x, op_y = ops
+    if op_x isa EvalDeriv2 || op_x isa EvalDeriv3 || op_y isa EvalDeriv2 || op_y isa EvalDeriv3
+        return zero(promote_type(Tv, Tg))
+    end
+    data, (ix, iy), (hx, hy), (αx, αy) = cell
+    return _bilinear_sum(data, ix, iy, hx, hy, αx, αy, op_x, op_y)
+end
+
+# ========================================
 # Core Evaluation Logic
 # ========================================
 
-"""
-    _eval_linear_nd(itp, query, ops, search_tuple)
-
-Evaluate LinearInterpolantND at a single point using multilinear interpolation.
-
-Algorithm:
-1. Handle extrapolation per axis (shared utility)
-2. Search intervals to find containing cell (shared utility)
-3. Compute normalized coordinates α = (q - L) / h
-4. Sum over 2^N corners with tensor-product weights
-"""
-# Generic N-dimensional version
+# Generic N-dimensional version (uses _locate_cell + _eval_at_cell)
 @inline function _eval_linear_nd(
     itp::LinearInterpolantND{Tg,Tv,N},
     query::NTuple{N, <:Real},
     ops::NTuple{N, AbstractEvalOp},
     search_tuple::NTuple{N, AbstractSearchPolicy}
 ) where {Tg, Tv, N}
-    # Check for second+ derivative (always zero for linear)
     if _has_second_or_higher_derivative(ops, Val(N))
         return zero(promote_type(Tv, Tg))
     end
-
-    # Handle extrapolation per axis (shared utility from core/nd_utils.jl)
-    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-
-    # Search intervals (shared utility from core/nd_utils.jl)
-    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple)
-
-    # Compute local parameters
-    hs, αs = _compute_linear_params(q_eval, itp.spacings, indices, Ls, Val(N))
-
-    # Multilinear interpolation sum over 2^N corners
-    return _multilinear_sum(itp.data, indices, hs, αs, ops, Val(N))
+    cell = _locate_cell(itp, query, search_tuple)
+    return _eval_at_cell(itp, cell, ops)
 end
 
-# N=2 specialization: direct destructuring eliminates ntuple closure overhead
+# N=2 specialization: dispatches to N=2 _locate_cell via type
 @inline function _eval_linear_nd(
     itp::LinearInterpolantND{Tg,Tv,2},
     query::NTuple{2, <:Real},
@@ -105,37 +154,11 @@ end
     search_tuple::NTuple{2, AbstractSearchPolicy}
 ) where {Tg, Tv}
     op_x, op_y = ops
-
-    # Check for second+ derivative (always zero for linear)
     if op_x isa EvalDeriv2 || op_x isa EvalDeriv3 || op_y isa EvalDeriv2 || op_y isa EvalDeriv3
         return zero(promote_type(Tv, Tg))
     end
-
-    # Direct destructuring - no ntuple closures
-    xq, yq = query
-    grid_x, grid_y = itp.grids
-    spacing_x, spacing_y = itp.spacings
-    extrap_x, extrap_y = itp.extraps
-    search_x, search_y = search_tuple
-
-    # Handle extrapolation per axis (direct calls)
-    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
-    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
-
-    # Search intervals (direct calls)
-    searcher_x = _to_searcher(search_x)
-    searcher_y = _to_searcher(search_y)
-    ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
-    iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
-
-    # Compute local parameters
-    hx = _get_h(spacing_x, ix)
-    hy = _get_h(spacing_y, iy)
-    αx = (x_eval - xL) / hx
-    αy = (y_eval - yL) / hy
-
-    # Bilinear interpolation (unrolled 2^2 = 4 corners)
-    return _bilinear_sum(itp.data, ix, iy, hx, hy, αx, αy, op_x, op_y)
+    cell = _locate_cell(itp, query, search_tuple)
+    return _eval_at_cell(itp, cell, ops)
 end
 
 # Specialized 2D bilinear sum (unrolled for zero overhead)

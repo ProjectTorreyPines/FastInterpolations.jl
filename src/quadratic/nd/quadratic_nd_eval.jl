@@ -188,16 +188,15 @@ end
 end
 
 # ========================================
-# CORE QUADRATIC EVALUATION
+# CELL LOCATION (locate once, evaluate many)
 # ========================================
 
 # Generic N-dimensional
-@inline function _eval_nd_quadratic(
+@inline function _locate_cell(
     itp::QuadraticInterpolantND{Tg, Tv, N},
     query::Tuple{Vararg{Real, N}},
-    ops::OPS,
     search::SEARCH
-) where {Tg, Tv, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
+) where {Tg, Tv, N, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     grids = _get_grids(itp)
     spacings = _get_spacings(itp)
     extraps = _get_extraps(itp)
@@ -206,21 +205,19 @@ end
     indices, Ls, _ = _search_all_intervals(q_evals, grids, spacings, search)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
 
-    return _eval_nd_quad_cell(itp.nodal_derivs.partials, indices, hs, inv_hs, dLs, ops)
+    return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)
 end
 
 # N=2 specialization: direct destructuring eliminates ntuple closure overhead
-@inline function _eval_nd_quadratic(
+@inline function _locate_cell(
     itp::QuadraticInterpolantND{Tg, Tv, 2},
     query::Tuple{Vararg{Real, 2}},
-    ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp},
     search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy}
 ) where {Tg, Tv}
     xq, yq = query
     grid_x, grid_y = itp.grids
     spacing_x, spacing_y = itp.spacings
     extrap_x, extrap_y = itp.extraps
-    op_x, op_y = ops
     search_x, search_y = search
 
     x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
@@ -238,10 +235,43 @@ end
     dLx = x_eval - xL
     dLy = y_eval - yL
 
-    return _eval_nd_quad_cell(
-        itp.nodal_derivs.partials,
-        (ix, iy), (hx, hy), (inv_hx, inv_hy), (dLx, dLy), (op_x, op_y)
-    )
+    return (itp.nodal_derivs.partials, (ix, iy), (hx, hy), (inv_hx, inv_hy), (dLx, dLy))
+end
+
+# Evaluate kernel at a pre-located cell with given derivative ops
+@inline function _eval_at_cell(
+    ::QuadraticInterpolantND,
+    cell::Tuple,
+    ops::NTuple{N, AbstractEvalOp}
+) where {N}
+    partials, indices, hs, inv_hs, dLs = cell
+    return _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
+end
+
+# ========================================
+# CORE QUADRATIC EVALUATION
+# ========================================
+
+# Generic N-dimensional (uses _locate_cell + _eval_at_cell)
+@inline function _eval_nd_quadratic(
+    itp::QuadraticInterpolantND{Tg, Tv, N},
+    query::Tuple{Vararg{Real, N}},
+    ops::OPS,
+    search::SEARCH
+) where {Tg, Tv, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
+    cell = _locate_cell(itp, query, search)
+    return _eval_at_cell(itp, cell, ops)
+end
+
+# N=2 specialization: dispatches to N=2 _locate_cell via type
+@inline function _eval_nd_quadratic(
+    itp::QuadraticInterpolantND{Tg, Tv, 2},
+    query::Tuple{Vararg{Real, 2}},
+    ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp},
+    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy}
+) where {Tg, Tv}
+    cell = _locate_cell(itp, query, search)
+    return _eval_at_cell(itp, cell, ops)
 end
 
 # ========================================

@@ -180,4 +180,73 @@ using FastInterpolations
         @test lap ≈ H[1,1] + H[2,2] atol=1e-10
     end
 
+    # ========================================
+    # Zero-allocation checks
+    # ========================================
+
+    @testset "Zero allocation - gradient!" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        G = zeros(2)
+        query = (0.5, 0.5)
+
+        # Warmup
+        gradient!(G, itp, query)
+
+        allocs = @allocated gradient!(G, itp, query)
+        @test allocs == 0
+    end
+
+    @testset "Zero allocation - hessian!" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        H = zeros(2, 2)
+        query = (0.5, 0.5)
+
+        # Warmup
+        hessian!(H, itp, query)
+
+        allocs = @allocated hessian!(H, itp, query)
+        @test allocs == 0
+    end
+
+    # ========================================
+    # Vector-grid tests (binary search path)
+    # ========================================
+
+    @testset "Vector grid - gradient matches range grid" begin
+        x_range = range(0.0, 2π, 51)
+        y_range = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x_range, yj in y_range]
+
+        itp_range = cubic_interp((x_range, y_range), data)
+        itp_vec = cubic_interp((collect(x_range), collect(y_range)), data)
+
+        xq, yq = 1.7, 0.9
+        grad_range = gradient(itp_range, (xq, yq))
+        grad_vec = gradient(itp_vec, (xq, yq))
+
+        @test grad_range[1] ≈ grad_vec[1] atol=1e-12
+        @test grad_range[2] ≈ grad_vec[2] atol=1e-12
+    end
+
+    @testset "Vector grid - hessian matches range grid" begin
+        x_range = range(0.0, 2π, 51)
+        y_range = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x_range, yj in y_range]
+
+        itp_range = cubic_interp((x_range, y_range), data)
+        itp_vec = cubic_interp((collect(x_range), collect(y_range)), data)
+
+        xq, yq = 1.7, 0.9
+        H_range = hessian(itp_range, (xq, yq))
+        H_vec = hessian(itp_vec, (xq, yq))
+
+        @test H_range ≈ H_vec atol=1e-12
+    end
+
 end

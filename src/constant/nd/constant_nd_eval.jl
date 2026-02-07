@@ -135,6 +135,34 @@ end
 end
 
 # ========================================
+# CELL LOCATION (locate once, evaluate many)
+# ========================================
+
+# Generic N-dimensional
+@inline function _locate_cell(
+    itp::ConstantInterpolantND{Tg,Tv,N},
+    query::NTuple{N, <:Real},
+    search_tuple::NTuple{N, AbstractSearchPolicy}
+) where {Tg, Tv, N}
+    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple)
+    return (itp.data, itp.spacings, itp.sides, indices, q_eval, Ls)
+end
+
+# Evaluate kernel at a pre-located cell with given derivative ops
+@inline function _eval_at_cell(
+    itp::ConstantInterpolantND{Tg,Tv,N},
+    cell::Tuple,
+    ops::NTuple{N, AbstractEvalOp}
+) where {Tg, Tv, N}
+    if _has_any_derivative(ops, Val(N))
+        return zero(Tv)
+    end
+    data, spacings, sides, indices, q_eval, Ls = cell
+    return _constant_nd_kernel(data, spacings, sides, indices, q_eval, Ls)
+end
+
+# ========================================
 # Derivative Check
 # ========================================
 

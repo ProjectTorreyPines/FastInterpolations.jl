@@ -13,7 +13,7 @@ A high-performance **N-dimensional** interpolation package for Julia, optimized 
 - 🚀 **Fast**: Optimized algorithms that outperform other packages.
 - ✅ **Zero-Allocation**: No GC pressure on hot loops.
 - 🎯 **Explicit BCs**: Support custom physical boundary conditions.
-- 📐 **Derivatives**: Analytical 1st, 2nd, and 3rd derivatives for all methods.
+- 📐 **Derivatives**: Analytical differential operators (gradient, hessian, etc.)
 - 🌌 **Generic**: Supports **Complex** values and **AD (AutoDiff)** — ForwardDiff, Zygote, Enzyme.
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 
@@ -22,10 +22,10 @@ A high-performance **N-dimensional** interpolation package for Julia, optimized 
 
 | Method | Continuity | Best For |
 |:-------|:-----------|:---------|
-| `constant_interp` | C⁻¹ | Step functions (Nearest, Left, Right) |
-| `linear_interp` | C⁰ | Simple, fast O(1) range lookup |
-| `quadratic_interp` | C¹ | Smooth C¹ continuity with minimal overhead |
-| `cubic_interp` | C² | High-quality C² splines (Natural, Clamped, Periodic) |
+| `constant_interp` | C⁻¹ | Step functions |
+| `linear_interp` | C⁰ | Fast, lightweight, no overshoot |
+| `quadratic_interp` | C¹ | Smooth derivatives at low cost |
+| `cubic_interp` | C² | High-accuracy splines |
 
 ## Quick Start
 
@@ -84,7 +84,7 @@ For detailed usage and performance trade-offs, see the [API Selection Guide](htt
 
 ## Multi-Dimensional Interpolation
 `FastInterpolations.jl` supports 2D, 3D, and N-dimensional interpolation on **any rectilinear grid** (uniform or non-uniform). The API generalizes the 1D case by packing axis-specific information into **Tuples** — for example, where 1D takes `x`, ND takes `(x, y, z, ...)` for the grid, query points, and parameters.
-
+See the [ND Interpolation Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/nd/overview/) for details.
 ```julia
 using FastInterpolations
 
@@ -101,11 +101,6 @@ vals = cubic_interp((x, y), data2D, (xq, yq))   # vector query
 itp = cubic_interp((x, y), data2D)
 itp((0.5, 0.3)) # scalar query
 itp((xq, yq)) # vector query
-
-# 3. BCs & Derivatives: Pass settings as axis-wise Tuples
-# (Natural in X, Periodic in Y)
-itp = cubic_interp((x, y), data2D; bc=(NaturalBC(), PeriodicBC()))
-val_dxx = itp((0.5, 0.3); deriv=(2, 0)) # analytical ∂²f/∂x²
 ```
 
 **Key Features:**

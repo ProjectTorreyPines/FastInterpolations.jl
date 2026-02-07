@@ -180,4 +180,212 @@ using FastInterpolations
         @test lap ≈ H[1,1] + H[2,2] atol=1e-10
     end
 
+    # ========================================
+    # Zero-allocation checks
+    # ========================================
+
+    @testset "Zero allocation - gradient!" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        G = zeros(2)
+        query = (0.5, 0.5)
+
+        # Warmup
+        gradient!(G, itp, query)
+
+        # Correctness: in-place must match out-of-place
+        G_ref = gradient(itp, query)
+        @test G[1] ≈ G_ref[1]
+        @test G[2] ≈ G_ref[2]
+
+        allocs = @allocated gradient!(G, itp, query)
+        @test allocs == 0
+    end
+
+    @testset "Zero allocation - hessian!" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        H = zeros(2, 2)
+        query = (0.5, 0.5)
+
+        # Warmup
+        hessian!(H, itp, query)
+
+        # Correctness: in-place must match out-of-place
+        H_ref = hessian(itp, query)
+        @test H ≈ H_ref
+
+        allocs = @allocated hessian!(H, itp, query)
+        @test allocs == 0
+    end
+
+    # ========================================
+    # Vector-grid tests (binary search path)
+    # ========================================
+
+    @testset "Vector grid - gradient matches range grid" begin
+        x_range = range(0.0, 2π, 51)
+        y_range = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x_range, yj in y_range]
+
+        itp_range = cubic_interp((x_range, y_range), data)
+        itp_vec = cubic_interp((collect(x_range), collect(y_range)), data)
+
+        xq, yq = 1.7, 0.9
+        grad_range = gradient(itp_range, (xq, yq))
+        grad_vec = gradient(itp_vec, (xq, yq))
+
+        @test grad_range[1] ≈ grad_vec[1] atol=1e-12
+        @test grad_range[2] ≈ grad_vec[2] atol=1e-12
+    end
+
+    @testset "Vector grid - hessian matches range grid" begin
+        x_range = range(0.0, 2π, 51)
+        y_range = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x_range, yj in y_range]
+
+        itp_range = cubic_interp((x_range, y_range), data)
+        itp_vec = cubic_interp((collect(x_range), collect(y_range)), data)
+
+        xq, yq = 1.7, 0.9
+        H_range = hessian(itp_range, (xq, yq))
+        H_vec = hessian(itp_vec, (xq, yq))
+
+        @test H_range ≈ H_vec atol=1e-12
+    end
+
+    # ========================================
+    # In-place vector query dispatch
+    # ========================================
+
+    @testset "gradient! with vector query" begin
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        G = zeros(2)
+        query = [1.7, 0.9]
+
+        ret = gradient!(G, itp, query)
+        G_ref = gradient(itp, (1.7, 0.9))
+
+        @test G[1] ≈ G_ref[1]
+        @test G[2] ≈ G_ref[2]
+        @test ret === G  # returns the same buffer
+    end
+
+    @testset "hessian! with vector query" begin
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        H = zeros(2, 2)
+        query = [1.7, 0.9]
+
+        ret = hessian!(H, itp, query)
+        H_ref = hessian(itp, (1.7, 0.9))
+
+        @test H ≈ H_ref
+        @test ret === H  # returns the same buffer
+    end
+
+    # ========================================
+    # DimensionMismatch errors for in-place APIs
+    # ========================================
+
+    @testset "DimensionMismatch - in-place APIs" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [xi * yj for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        # gradient!: buffer too small
+        G_small = zeros(1)
+        @test_throws DimensionMismatch gradient!(G_small, itp, (0.5, 0.5))
+
+        # gradient!: wrong query length (vector dispatch)
+        G = zeros(2)
+        @test_throws DimensionMismatch gradient!(G, itp, [0.5])
+        @test_throws DimensionMismatch gradient!(G, itp, [0.5, 0.5, 0.5])
+
+        # hessian!: wrong matrix size
+        H_bad = zeros(3, 3)
+        @test_throws DimensionMismatch hessian!(H_bad, itp, (0.5, 0.5))
+
+        # hessian!: wrong query length (vector dispatch)
+        H = zeros(2, 2)
+        @test_throws DimensionMismatch hessian!(H, itp, [0.5])
+        @test_throws DimensionMismatch hessian!(H, itp, [0.5, 0.5, 0.5])
+
+        # laplacian: wrong query length (vector dispatch)
+        @test_throws DimensionMismatch laplacian(itp, [0.5])
+        @test_throws DimensionMismatch laplacian(itp, [0.5, 0.5, 0.5])
+    end
+
+    # ========================================
+    # Non-cubic interpolant types
+    # ========================================
+
+    @testset "Linear interpolant - gradient" begin
+        # f(x,y) = 3x + 2y → ∂f/∂x = 3, ∂f/∂y = 2 (exact for linear)
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [3xi + 2yj for xi in x, yj in y]
+        itp = linear_interp((x, y), data)
+
+        grad = gradient(itp, (0.5, 0.5))
+        @test grad[1] ≈ 3.0 atol=1e-10
+        @test grad[2] ≈ 2.0 atol=1e-10
+    end
+
+    @testset "Quadratic interpolant - gradient" begin
+        # f(x,y) = x² + y² → ∂f/∂x = 2x, ∂f/∂y = 2y
+        x = range(-1.0, 1.0, 21)
+        y = range(-1.0, 1.0, 21)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = quadratic_interp((x, y), data)
+
+        xq, yq = 0.3, -0.4
+        grad = gradient(itp, (xq, yq))
+        @test grad[1] ≈ 2xq atol=1e-2
+        @test grad[2] ≈ 2yq atol=1e-2
+    end
+
+    @testset "Constant interpolant - gradient is zero" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [5.0 for xi in x, yj in y]
+        itp = constant_interp((x, y), data)
+
+        grad = gradient(itp, (0.5, 0.5))
+        @test grad[1] ≈ 0.0 atol=1e-15
+        @test grad[2] ≈ 0.0 atol=1e-15
+    end
+
+    @testset "Linear interpolant - hessian" begin
+        # f(x,y) = 3x + 2y → all second derivatives = 0
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [3xi + 2yj for xi in x, yj in y]
+        itp = linear_interp((x, y), data)
+
+        H = hessian(itp, (0.5, 0.5))
+        @test all(abs.(H) .< 1e-10)
+    end
+
+    @testset "Quadratic interpolant - laplacian" begin
+        # f(x,y) = x² + y² → ∇²f = 2 + 2 = 4
+        x = range(-1.0, 1.0, 21)
+        y = range(-1.0, 1.0, 21)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = quadratic_interp((x, y), data)
+
+        lap = laplacian(itp, (0.3, -0.4))
+        @test lap ≈ 4.0 atol=1e-1
+    end
+
 end

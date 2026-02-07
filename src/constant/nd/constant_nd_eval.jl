@@ -66,29 +66,21 @@ For constant interpolation:
 - If any derivative order > 0, return zero(Tv)
 - Otherwise, find interval and select corner based on side mode
 """
-# Generic N-dimensional version
+# Generic N-dimensional version (uses _locate_cell + _eval_at_cell)
 @inline function _eval_constant_nd(
     itp::ConstantInterpolantND{Tg,Tv,N},
     query::NTuple{N, <:Real},
     ops::NTuple{N, AbstractEvalOp},
     search_tuple::NTuple{N, AbstractSearchPolicy}
 ) where {Tg, Tv, N}
-    # Early return: any derivative order > 0 returns zero
     if _has_any_derivative(ops, Val(N))
         return zero(Tv)
     end
-
-    # Handle extrapolation per axis (shared utility from core/nd_utils.jl)
-    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-
-    # Search intervals (shared utility from core/nd_utils.jl)
-    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple)
-
-    # Use @generated kernel for unrolled evaluation
-    return _constant_nd_kernel(itp.data, itp.spacings, itp.sides, indices, q_eval, Ls)
+    cell = _locate_cell(itp, query, search_tuple)
+    return _eval_at_cell(itp, cell, ops)
 end
 
-# N=2 specialization: direct destructuring eliminates ntuple closure overhead
+# N=2 specialization: dispatches to N=2 _locate_cell via type
 @inline function _eval_constant_nd(
     itp::ConstantInterpolantND{Tg,Tv,2},
     query::NTuple{2, <:Real},
@@ -96,42 +88,63 @@ end
     search_tuple::NTuple{2, AbstractSearchPolicy}
 ) where {Tg, Tv}
     op_x, op_y = ops
-
-    # Early return: any derivative order > 0 returns zero
     if op_x isa EvalDeriv1 || op_x isa EvalDeriv2 || op_x isa EvalDeriv3 ||
        op_y isa EvalDeriv1 || op_y isa EvalDeriv2 || op_y isa EvalDeriv3
         return zero(Tv)
     end
+    cell = _locate_cell(itp, query, search_tuple)
+    return _eval_at_cell(itp, cell, ops)
+end
 
-    # Direct destructuring - no ntuple closures
+# ========================================
+# CELL LOCATION (locate once, evaluate many)
+# ========================================
+
+# Generic N-dimensional
+@inline function _locate_cell(
+    itp::ConstantInterpolantND{Tg,Tv,N},
+    query::NTuple{N, <:Real},
+    search_tuple::NTuple{N, AbstractSearchPolicy}
+) where {Tg, Tv, N}
+    q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple)
+    return (itp.data, itp.spacings, itp.sides, indices, q_eval, Ls)
+end
+
+# N=2 specialization: direct destructuring eliminates ntuple closure overhead
+@inline function _locate_cell(
+    itp::ConstantInterpolantND{Tg,Tv,2},
+    query::NTuple{2, <:Real},
+    search_tuple::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy}
+) where {Tg, Tv}
     xq, yq = query
     grid_x, grid_y = itp.grids
     spacing_x, spacing_y = itp.spacings
     extrap_x, extrap_y = itp.extraps
-    side_x, side_y = itp.sides
     search_x, search_y = search_tuple
 
-    # Handle extrapolation per axis (direct calls)
     x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
     y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
 
-    # Search intervals (direct calls)
     searcher_x = _to_searcher(search_x)
     searcher_y = _to_searcher(search_y)
     ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
     iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
 
-    # Compute local parameters and offsets
-    hx = _get_h(spacing_x, ix)
-    hy = _get_h(spacing_y, iy)
-    dLx = x_eval - xL
-    dLy = y_eval - yL
+    return (itp.data, itp.spacings, itp.sides, (ix, iy), (x_eval, y_eval), (xL, yL))
+end
 
-    offset_x = _compute_single_offset(side_x, hx, dLx)
-    offset_y = _compute_single_offset(side_y, hy, dLy)
-
-    # Direct lookup
-    @inbounds return itp.data[ix + offset_x, iy + offset_y]
+# Evaluate kernel at a pre-located cell with given derivative ops
+@inline function _eval_at_cell(
+    itp::ConstantInterpolantND{Tg,Tv,N},
+    cell::Tuple,
+    ops::NTuple{N, AbstractEvalOp}
+) where {Tg, Tv, N}
+    if _has_any_derivative(ops, Val(N))
+        return zero(Tv)
+    end
+    data, spacings, sides, indices, q_eval, Ls = cell
+    return _constant_nd_kernel(data, spacings, sides, indices, q_eval, Ls)
 end
 
 # ========================================

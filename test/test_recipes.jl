@@ -276,6 +276,86 @@ using RecipesBase
             @test !isempty(recipes)
         end
 
+        @testset "ND extrapolation extension" begin
+            # extrap on both axes — should produce boundary rectangle series
+            itp_ext = linear_interp((x1, x2), data_2d; extrap=:extension)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp_ext)
+            @test !isempty(recipes)
+
+            # Find boundary series: path with 5-point closed rectangle
+            boundary_series = filter(recipes) do r
+                d = r.plotattributes
+                get(d, :seriestype, nothing) === :path &&
+                    get(d, :label, nothing) == "domain"
+            end
+            @test length(boundary_series) == 1
+
+            # Boundary rectangle should have 5 points (closed)
+            bx, by = boundary_series[1].args
+            @test length(bx) == 5
+            @test length(by) == 5
+            @test bx[1] == bx[end]  # closed path
+            @test by[1] == by[end]
+
+            # Heatmap should extend beyond domain
+            heatmap_series = filter(recipes) do r
+                get(r.plotattributes, :seriestype, nothing) === :heatmap
+            end
+            @test length(heatmap_series) == 1
+            hm_x = heatmap_series[1].args[1]
+            @test first(hm_x) < first(x1)  # extended left
+            @test last(hm_x) > last(x1)    # extended right
+
+            # extrap=:none — should NOT produce boundary series
+            itp_none = linear_interp((x1, x2), data_2d; extrap=:none)
+            recipes_none = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp_none)
+            boundary_none = filter(recipes_none) do r
+                get(r.plotattributes, :seriestype, nothing) === :path &&
+                    get(r.plotattributes, :label, nothing) == "domain"
+            end
+            @test isempty(boundary_none)
+
+            # Heatmap should stay within domain when extrap=:none
+            hm_none = filter(recipes_none) do r
+                get(r.plotattributes, :seriestype, nothing) === :heatmap
+            end
+            hm_x_none = hm_none[1].args[1]
+            @test first(hm_x_none) ≈ first(x1)
+            @test last(hm_x_none) ≈ last(x1)
+
+            # show_boundary=false — should suppress boundary even with extrap
+            recipes_no_bd = RecipesBase.apply_recipe(
+                Dict{Symbol,Any}(:show_boundary => false), itp_ext
+            )
+            boundary_off = filter(recipes_no_bd) do r
+                get(r.plotattributes, :seriestype, nothing) === :path &&
+                    get(r.plotattributes, :label, nothing) == "domain"
+            end
+            @test isempty(boundary_off)
+
+            # Custom domain_margin
+            recipes_margin = RecipesBase.apply_recipe(
+                Dict{Symbol,Any}(:domain_margin => 0.5), itp_ext
+            )
+            hm_margin = filter(recipes_margin) do r
+                get(r.plotattributes, :seriestype, nothing) === :heatmap
+            end
+            hm_x_m = hm_margin[1].args[1]
+            @test first(hm_x_m) ≈ first(x1) - 0.5
+            @test last(hm_x_m) ≈ last(x1) + 0.5
+        end
+
+        @testset "ND extrap with CubicInterpolantND" begin
+            itp_ext = cubic_interp((x1, x2), data_2d; extrap=:constant)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp_ext)
+            @test !isempty(recipes)
+            boundary_series = filter(recipes) do r
+                get(r.plotattributes, :seriestype, nothing) === :path &&
+                    get(r.plotattributes, :label, nothing) == "domain"
+            end
+            @test length(boundary_series) == 1
+        end
+
         @testset "Mixed grid types" begin
             # Vector and Range combination
             x1_vec = collect(range(0.0, 1.0, 6))

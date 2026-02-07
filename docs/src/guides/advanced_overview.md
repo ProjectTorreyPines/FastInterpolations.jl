@@ -33,6 +33,7 @@ For **Vector grids**, see [**Search & Hints**](@ref search_hints) section help o
 | [**Search & Hints**](@ref search_hints) | Sequential or streaming queries | O(1) amortized lookup with hints |
 | [**Series Interpolant**](@ref series_interpolant) | Multiple y-series on shared x-grid | 10-120× faster than separate interpolants |
 | [**Memory & Allocation**](@ref memory_allocation) | Tight loops, real-time systems | Zero-allocation patterns |
+| [**Optimization (Optim.jl)**](@ref optimization_guide) | Minimization over interpolated surfaces | Analytical `gradient!`/`hessian!` for Optim.jl |
 
 ## Quick Decision Guide
 
@@ -41,5 +42,6 @@ For **Vector grids**, see [**Search & Hints**](@ref search_hints) section help o
 - **"I query points in sequential order (ODE solvers, streaming)"** → [Search & Hints](@ref search_hints)
 - **"I have multiple outputs for the same input grid"** → [Series Interpolant](@ref series_interpolant)
 - **"I need zero allocations in my hot loop"** → [Memory & Allocation](@ref memory_allocation)
+- **"I want to minimize/optimize over an interpolated surface"** → [Optimization (Optim.jl)](@ref optimization_guide)
 
 These features can be combined. For example, a Series Interpolant can use `LinearBinary` search policy with external hints for maximum performance in ODE integrator callbacks.

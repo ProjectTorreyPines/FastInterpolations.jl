@@ -203,6 +203,12 @@ itp3d([0.5, 0.5, 0.5])
 ForwardDiff.gradient(itp3d, [0.5, 0.5, 0.5])  # Returns [1, 1, 1]
 ```
 
+## Full Optimization Example
+
+For a complete real-world example using `gradient!`/`hessian!` with Optim.jl (including
+FDM vs AD vs analytical comparison on the Rosenbrock function), see the
+[**Optimization with Optim.jl**](@ref optimization_guide) guide.
+
 ## Implementation Notes
 
 For detailed implementation information including:

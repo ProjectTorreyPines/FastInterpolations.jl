@@ -41,7 +41,9 @@ EvalDeriv3
 
 ```@docs
 gradient
+gradient!
 hessian
+hessian!
 laplacian
 ```
 

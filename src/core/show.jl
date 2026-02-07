@@ -308,6 +308,9 @@ end
 
 # Short BC name for compact display
 _short_bc_name(::PeriodicBC) = "Periodic"
+_short_bc_name(::MinCurvFit) = "MinCurvFit"
+_short_bc_name(bc::Left) = "Left($(_format_bc_point(bc.bc)))"
+_short_bc_name(bc::Right) = "Right($(_format_bc_point(bc.bc)))"
 function _short_bc_name(bc::BCPair)
     # Check for Natural: both ends have Deriv2 with val=0
     if bc.left isa Deriv2 && bc.right isa Deriv2 && bc.left.val == 0 && bc.right.val == 0
@@ -787,4 +790,38 @@ function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolantND{Tg, Tv, 
     if has_vector_grid
         _show_nd_config_row(io, true, "Search:", itp.searches, _format_search)
     end
+end
+
+# ========================================
+# QuadraticInterpolantND Show Methods
+# ========================================
+
+function Base.show(io::IO, itp::QuadraticInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
+    sizes = join([string(length(g)) for g in itp.grids], "×")
+    bc_name = _short_bc_name_nd(itp.bcs)
+    _show_type_header_nd(io, "QuadraticInterpolantND", Tg, Tv, N)
+    print(io, "($sizes, $bc_name)")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
+    _show_type_header_nd(io, "QuadraticInterpolantND", Tg, Tv, N)
+    println(io)
+
+    # Grid info with per-axis details
+    _show_nd_grids_summary(io, false, itp.grids)
+    println(io)
+
+    # Extrapolation modes
+    _show_nd_config_row(io, false, "Extrap:", itp.extraps, _format_extrap; value_color=:magenta)
+    println(io)
+
+    # Search policies (only if any axis has non-Range grid)
+    has_vector_grid = any(g -> !(g isa AbstractRange), itp.grids)
+    if has_vector_grid
+        _show_nd_config_row(io, false, "Search:", itp.searches, _format_search)
+        println(io)
+    end
+
+    # Boundary conditions
+    _show_nd_bc_summary(io, true, itp.bcs)
 end

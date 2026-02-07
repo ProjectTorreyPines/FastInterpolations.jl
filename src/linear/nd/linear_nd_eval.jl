@@ -114,20 +114,6 @@ end
     return _multilinear_sum(data, indices, hs, αs, ops, Val(N))
 end
 
-# N=2 specialization: dispatches to _bilinear_sum for zero overhead
-@inline function _eval_at_cell(
-    itp::LinearInterpolantND{Tg,Tv,2},
-    cell::Tuple,
-    ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp}
-) where {Tg, Tv}
-    op_x, op_y = ops
-    if op_x isa EvalDeriv2 || op_x isa EvalDeriv3 || op_y isa EvalDeriv2 || op_y isa EvalDeriv3
-        return zero(promote_type(Tv, Tg))
-    end
-    data, (ix, iy), (hx, hy), (αx, αy) = cell
-    return _bilinear_sum(data, ix, iy, hx, hy, αx, αy, op_x, op_y)
-end
-
 # ========================================
 # Core Evaluation Logic
 # ========================================
@@ -159,25 +145,6 @@ end
     end
     cell = _locate_cell(itp, query, search_tuple)
     return _eval_at_cell(itp, cell, ops)
-end
-
-# Specialized 2D bilinear sum (unrolled for zero overhead)
-@inline function _bilinear_sum(
-    data::AbstractMatrix{Tv},
-    ix::Int, iy::Int,
-    hx, hy, αx, αy,
-    op_x::AbstractEvalOp, op_y::AbstractEvalOp
-) where {Tv}
-    # Weights for each corner based on eval ops
-    w00 = _linear_weight(op_x, αx, hx, Val(0)) * _linear_weight(op_y, αy, hy, Val(0))
-    w10 = _linear_weight(op_x, αx, hx, Val(1)) * _linear_weight(op_y, αy, hy, Val(0))
-    w01 = _linear_weight(op_x, αx, hx, Val(0)) * _linear_weight(op_y, αy, hy, Val(1))
-    w11 = _linear_weight(op_x, αx, hx, Val(1)) * _linear_weight(op_y, αy, hy, Val(1))
-
-    @inbounds begin
-        return data[ix, iy] * w00 + data[ix+1, iy] * w10 +
-               data[ix, iy+1] * w01 + data[ix+1, iy+1] * w11
-    end
 end
 
 # ========================================

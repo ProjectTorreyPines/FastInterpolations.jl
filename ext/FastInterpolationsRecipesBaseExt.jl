@@ -757,6 +757,8 @@ Generates a visualization with:
     show_gridlines_opt = pop!(plotattributes, :show_gridlines, nothing)
     show_boundary_opt = pop!(plotattributes, :show_boundary, true)
     domain_margin_opt = pop!(plotattributes, :domain_margin, nothing)
+    user_xlims = pop!(plotattributes, :xlims, nothing)
+    user_ylims = pop!(plotattributes, :ylims, nothing)
     resolution = pop!(plotattributes, :resolution, nothing)
     equal_aspect = pop!(plotattributes, :equal_aspect, false)
     clims_padding = pop!(plotattributes, :clims_padding, 0.02)
@@ -828,6 +830,21 @@ Generates a visualization with:
     margin_x = has_extrap_x ? (isnothing(domain_margin_opt) ? _default_2d_margin(x_grid) : Tg(domain_margin_opt)) : zero(Tg)
     margin_y = has_extrap_y ? (isnothing(domain_margin_opt) ? _default_2d_margin(y_grid) : Tg(domain_margin_opt)) : zero(Tg)
 
+    # Evaluation bounds: default margin, extended by user xlims/ylims when extrap is enabled
+    eval_x_min = x_min - margin_x
+    eval_x_max = x_max + margin_x
+    eval_y_min = y_min - margin_y
+    eval_y_max = y_max + margin_y
+
+    if !isnothing(user_xlims) && has_extrap_x
+        eval_x_min = min(eval_x_min, Tg(first(user_xlims)))
+        eval_x_max = max(eval_x_max, Tg(last(user_xlims)))
+    end
+    if !isnothing(user_ylims) && has_extrap_y
+        eval_y_min = min(eval_y_min, Tg(first(user_ylims)))
+        eval_y_max = max(eval_y_max, Tg(last(user_ylims)))
+    end
+
     # Auto-determine visibility based on grid size
     show_nodes = isnothing(show_nodes_opt) ? (n_total < SCATTER_THRESHOLD_2D) : show_nodes_opt
     show_gridlines = isnothing(show_gridlines_opt) ? (n_total < SCATTER_THRESHOLD_2D) : show_gridlines_opt
@@ -842,8 +859,8 @@ Generates a visualization with:
 
     # Compute high-resolution sampling grid (extended if extrapolation enabled)
     nx_hr, ny_hr = isnothing(resolution) ? _default_2d_samples(nx, ny) : resolution
-    x_hr = range(x_min - margin_x, x_max + margin_x; length=nx_hr)
-    y_hr = range(y_min - margin_y, y_max + margin_y; length=ny_hr)
+    x_hr = range(eval_x_min, eval_x_max; length=nx_hr)
+    y_hr = range(eval_y_min, eval_y_max; length=ny_hr)
 
     # Evaluate interpolant on high-resolution grid
     # Use real() for complex values to make heatmap work

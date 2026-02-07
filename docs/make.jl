@@ -13,7 +13,7 @@ Write file only if content changed (prevents LiveServer infinite loop).
 """
 function write_if_changed(path::String, content::String)
     if isfile(path) && read(path, String) == content
-        return  # 내용이 같으면 아무것도 하지 않음
+        return  # Do nothing if the contents are the same
     end
     write(path, content)
 end
@@ -23,7 +23,7 @@ Copy file only if content changed (prevents mtime update triggering rebuild).
 """
 function cp_if_changed(src::String, dst::String)
     if isfile(dst) && read(src) == read(dst)
-        return  # 내용이 같으면 복사 건너뜀
+        return  # Do nothing if the contents are the same
     end
     cp(src, dst; force=true)
 end
@@ -126,13 +126,13 @@ makedocs(
             "PointBC & PolyFit" => "boundary-conditions/pointbc.md",
         ],
         "Extrapolation" => "extrapolation.md",
+        "Visualization" => "visualization.md",
         "Multi-Dimensional Interpolation" => [
             "Overview" => "nd/overview.md",
             "Boundary Conditions" => "nd/boundary_conditions.md",
             "Derivatives" => "nd/derivatives.md",
             "Extrapolation" => "nd/extrapolation.md",
         ],
-        "Visualization" => "visualization.md",
         "Advanced Usage" => [
             "Overview" => "guides/advanced_overview.md",
             "Complex Numbers" => "guides/complex_number_support.md",

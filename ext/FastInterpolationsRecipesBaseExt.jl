@@ -498,6 +498,11 @@ end
 
 @recipe function f(dv::DerivativeView{Order, ITP}) where {Order, ITP}
 
+    # ND derivative views are handled by the 2D ND recipe (via type recipe forwarding)
+    if dv.parent isa AbstractInterpolantND
+        return
+    end
+
     # Extract custom options from plotattributes
     show_data = pop!(plotattributes, :show_data, false)  # Default false for derivatives
     show_bounds = pop!(plotattributes, :show_bounds, true)
@@ -862,9 +867,10 @@ Generates a visualization with:
     x_hr = range(eval_x_min, eval_x_max; length=nx_hr)
     y_hr = range(eval_y_min, eval_y_max; length=ny_hr)
 
-    # Evaluate interpolant on high-resolution grid
+    # Evaluate on high-resolution grid (use _evaluator if set by DerivativeView recipe)
     # Use real() for complex values to make heatmap work
-    z_hr = [real(itp((xi, yj))) for xi in x_hr, yj in y_hr]
+    evaluator = pop!(plotattributes, :_evaluator, itp)
+    z_hr = [real(evaluator((xi, yj))) for xi in x_hr, yj in y_hr]
 
     # Compute color limits with padding
     z_min, z_max = extrema(z_hr)
@@ -962,6 +968,51 @@ Generates a visualization with:
             node_x, node_y
         end
     end
+end
+
+# ========================================
+# 2D DerivativeView Recipe (type recipe → forwards to AbstractInterpolantND recipe)
+# ========================================
+
+# Helper: format ND derivative order tuple as readable label
+# e.g. (1,0) → "∂f/∂x₁", (0,1) → "∂f/∂x₂", (1,1) → "∂²f/∂x₁∂x₂", (2,0) → "∂²f/∂x₁²"
+const _SUBSCRIPT_CHARS = ('₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉')
+const _SUPERSCRIPT_CHARS = ('¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹')
+
+_superscript(n::Int) = n in 1:length(_SUPERSCRIPT_CHARS) ? string(_SUPERSCRIPT_CHARS[n]) : "^$n"
+
+function _deriv_label_nd(order::NTuple{N, Int}) where {N}
+    total = sum(order)
+    total == 0 && return "f"
+    parts = String[]
+    for (i, d) in enumerate(order)
+        d == 0 && continue
+        sub = i <= length(_SUBSCRIPT_CHARS) ? string(_SUBSCRIPT_CHARS[i]) : "$i"
+        if d == 1
+            push!(parts, "∂x$sub")
+        else
+            push!(parts, "∂x$sub$(_superscript(d))")
+        end
+    end
+    denom = join(parts, "")
+    sup_total = total == 1 ? "" : _superscript(total)
+    return "∂$(sup_total)f/$denom"
+end
+
+"""
+Thin type recipe for 2D DerivativeView.
+
+Sets derivative-specific title and `_evaluator` in plotattributes, then forwards
+to the `AbstractInterpolantND{Tg, Tv, 2}` recipe which handles all visualization.
+"""
+@recipe function f(dv::DerivativeView{Order, <:AbstractInterpolantND{Tg, Tv, 2}}) where {Order, Tg, Tv}
+    itp = dv.parent
+    nx, ny = length(itp.grids[1]), length(itp.grids[2])
+    deriv_str = _deriv_label_nd(Order)
+    base_label = _interpolant_label(itp)
+    title --> "$base_label $(nx)×$(ny): $deriv_str"
+    plotattributes[:_evaluator] = dv
+    itp
 end
 
 end # module

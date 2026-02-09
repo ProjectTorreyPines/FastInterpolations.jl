@@ -561,3 +561,13 @@ In-place AoS batch evaluation. Writes results into `output`.
     end
     return output
 end
+
+# ========================================
+# Query Element Type Extraction
+# ========================================
+
+@inline _query_eltype(queries::Tuple{Vararg{AbstractVector}}) =
+    promote_type(map(eltype, queries)...)
+
+@inline _query_eltype(::AbstractVector{T}) where {T<:Tuple} =
+    promote_type(fieldtypes(T)...)

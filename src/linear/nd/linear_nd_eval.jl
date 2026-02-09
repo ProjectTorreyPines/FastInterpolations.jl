@@ -38,27 +38,27 @@ end
 end
 
 # Batch SoA query: tuple of vectors
-@inline function (itp::LinearInterpolantND{Tg,Tv,N})(
+function (itp::LinearInterpolantND{Tg,Tv,N})(
     queries::NTuple{N, AbstractVector{<:Real}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy,N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N))
-    return _eval_linear_nd_batch_soa(itp, queries, ops, search_tuple, hint)
+    Tq = _query_eltype(queries)
+    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries[1]))
+    return itp(output, queries; deriv=deriv, search=search, hint=hint)
 end
 
 # Batch AoS query: vector of tuples
-@inline function (itp::LinearInterpolantND{Tg,Tv,N})(
+function (itp::LinearInterpolantND{Tg,Tv,N})(
     queries::AbstractVector{<:NTuple{N, <:Real}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy,N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N))
-    return _eval_linear_nd_batch_aos(itp, queries, ops, search_tuple, hint)
+    Tq = _query_eltype(queries)
+    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries))
+    return itp(output, queries; deriv=deriv, search=search, hint=hint)
 end
 
 # ========================================
@@ -332,54 +332,3 @@ end
 @inline _linear_weight(::EvalDeriv2, α, h, ::Val{B}) where {B} = zero(α)
 @inline _linear_weight(::EvalDeriv3, α, h, ::Val{B}) where {B} = zero(α)
 
-# ========================================
-# Batch Evaluation - SoA
-# ========================================
-
-@inline function _eval_linear_nd_batch_soa(
-    itp::LinearInterpolantND{Tg,Tv,N},
-    queries::NTuple{N, <:AbstractVector{Tq}},
-    ops::OPS,
-    search_tuple::SEARCH,
-    hints=nothing
-) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
-    n = length(queries[1])
-    for d in 2:N
-        length(queries[d]) == n || throw(ArgumentError(
-            "All query vectors must have same length, got $(length(queries[d])) at dimension $d vs $n at dimension 1"
-        ))
-    end
-
-    # Determine output type (include Tq for AD support)
-    Tout = promote_type(Tv, Tg, Tq)
-
-    results = Vector{Tout}(undef, n)
-    @inbounds for i in 1:n
-        query = ntuple(d -> queries[d][i], Val(N))
-        results[i] = _eval_linear_nd(itp, query, ops, search_tuple, hints)
-    end
-    return results
-end
-
-# ========================================
-# Batch Evaluation - AoS
-# ========================================
-
-@inline function _eval_linear_nd_batch_aos(
-    itp::LinearInterpolantND{Tg,Tv,N},
-    queries::AbstractVector{<:NTuple{N, Tq}},
-    ops::OPS,
-    search_tuple::SEARCH,
-    hints=nothing
-) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
-    n = length(queries)
-
-    # Determine output type (include Tq for AD support)
-    Tout = promote_type(Tv, Tg, Tq)
-
-    results = Vector{Tout}(undef, n)
-    @inbounds for i in 1:n
-        results[i] = _eval_linear_nd(itp, queries[i], ops, search_tuple, hints)
-    end
-    return results
-end

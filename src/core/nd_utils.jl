@@ -370,6 +370,46 @@ end
 end
 
 # ========================================
+# N=2 Specialized Cell Location Preamble
+# ========================================
+#
+# Shared 2D preamble for all N=2 _locate_cell specializations.
+# Extracts query, handles extrapolation, and performs interval search.
+# Returns raw (x_eval, y_eval, ix, iy, xL, yL) for type-specific post-processing.
+
+"""
+    _locate_cell_2d_preamble(query, grids, spacings, extraps, search, hints)
+
+Shared preamble for all N=2 `_locate_cell` specializations.
+Destructures 2D query, applies per-axis extrapolation, and performs interval search.
+
+Returns `(x_eval, y_eval, ix, iy, xL, yL)` — the 6 raw values that each
+interpolant type then post-processes into its kernel-specific cell tuple.
+"""
+@inline function _locate_cell_2d_preamble(
+    query::Tuple{Vararg{Real, 2}},
+    grids, spacings, extraps,
+    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+    hints
+)
+    xq, yq = query
+    grid_x, grid_y = grids
+    spacing_x, spacing_y = spacings
+    extrap_x, extrap_y = extraps
+    search_x, search_y = search
+
+    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
+    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
+
+    searcher_x = _to_searcher(search_x, _get_axis_hint(hints, 1))
+    searcher_y = _to_searcher(search_y, _get_axis_hint(hints, 2))
+    ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
+    iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
+
+    return (x_eval, y_eval, ix, iy, xL, yL)
+end
+
+# ========================================
 # Zero-Allocation Grid Type Helpers
 # ========================================
 #

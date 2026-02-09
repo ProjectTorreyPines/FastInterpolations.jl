@@ -152,19 +152,8 @@ end
     search_tuple::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
     hints=nothing
 ) where {Tg, Tv}
-    xq, yq = query
-    grid_x, grid_y = itp.grids
-    spacing_x, spacing_y = itp.spacings
-    extrap_x, extrap_y = itp.extraps
-    search_x, search_y = search_tuple
-
-    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
-    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
-
-    searcher_x = _to_searcher(search_x, _get_axis_hint(hints, 1))
-    searcher_y = _to_searcher(search_y, _get_axis_hint(hints, 2))
-    ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
-    iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
+    x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
+        query, itp.grids, itp.spacings, itp.extraps, search_tuple, hints)
 
     return (itp.data, itp.spacings, itp.sides, (ix, iy), (x_eval, y_eval), (xL, yL))
 end

@@ -131,6 +131,74 @@ using FastInterpolations
     end
 
     # ========================================
+    # Heterogeneous Grid + Hint (Range × Vector)
+    # ========================================
+    @testset "Heterogeneous grid hint support" begin
+        # Range (ScalarSpacing) × Vector (IrregularSpacing)
+        # NOTE: Range axes use O(1) _search_direct — hint Refs are NOT updated for Range axes.
+        # Only Vector axes (IrregularSpacing) update the hint Ref.
+        x_range = range(0.0, 2.0, 21)
+        y_vec   = [0.0, 0.1, 0.25, 0.4, 0.6, 0.8, 1.0]
+        hdata_2d = [sin(xi) * cos(yj) for xi in x_range, yj in y_vec]
+
+        hetero_configs = [
+            ("CubicInterpolantND",     cubic_interp,     hdata_2d, (bc=CubicFit(),)),
+            ("LinearInterpolantND",    linear_interp,    hdata_2d, NamedTuple()),
+            ("QuadraticInterpolantND", quadratic_interp, hdata_2d, (bc=Right(QuadraticFit()),)),
+            ("ConstantInterpolantND",  constant_interp,  hdata_2d, NamedTuple()),
+        ]
+
+        @testset "$name" for (name, interp_fn, data, kwargs) in hetero_configs
+            itp = interp_fn((x_range, y_vec), data; kwargs...)
+            qx, qy = 1.0, 0.5
+
+            @testset "scalar with hint" begin
+                hints = (Ref(1), Ref(1))
+                ref = itp((qx, qy))
+                @test itp((qx, qy); hint=hints) ≈ ref
+                # Only Vector axis (y) updates the hint; Range axis (x) uses O(1) direct
+                @test hints[2][] == expected_interval(y_vec, qy)
+            end
+
+            @testset "SoA batch with hint" begin
+                xs = [0.5, 1.0, 1.5]
+                ys = [0.2, 0.5, 0.8]
+                hints = (Ref(1), Ref(1))
+                @test itp((xs, ys); hint=hints) ≈ itp((xs, ys))
+            end
+
+            @testset "AoS batch with hint" begin
+                queries = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
+                hints = (Ref(1), Ref(1))
+                @test itp(queries; hint=hints) ≈ itp(queries)
+            end
+        end
+
+        # 3D heterogeneous: Range × Vector × Range
+        @testset "3D heterogeneous hint" begin
+            z_range = range(0.0, 1.5, 9)
+            hdata_3d = [sin(xi) * cos(yj) * exp(-zk/3)
+                        for xi in x_range, yj in y_vec, zk in z_range]
+            itp = cubic_interp((x_range, y_vec, z_range), hdata_3d; bc=CubicFit())
+            q = (1.0, 0.5, 0.7)
+            hints = (Ref(1), Ref(1), Ref(1))
+            @test itp(q; hint=hints) ≈ itp(q)
+            # Only Vector axis (y, dim 2) updates hint; Range axes use O(1) direct
+            @test hints[2][] == expected_interval(y_vec, q[2])
+        end
+
+        # Gradient/Hessian with heterogeneous grid + hint
+        @testset "gradient with heterogeneous grid + hint" begin
+            itp = cubic_interp((x_range, y_vec), hdata_2d; bc=CubicFit())
+            q = (1.0, 0.5)
+            hints = (Ref(1), Ref(1))
+            ref = gradient(itp, q)
+            @test gradient(itp, q; hint=hints) == ref
+            @test hints[2][] == expected_interval(y_vec, q[2])
+        end
+    end
+
+    # ========================================
     # Monotonic Sequence (Hint Reuse)
     # ========================================
     @testset "Monotonic sequence benefits from hint" begin

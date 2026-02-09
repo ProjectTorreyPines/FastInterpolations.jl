@@ -29,19 +29,15 @@ end
     spacing = itp.cache.spacing
     y = itp.y
     z = itp.z
-
-    @boundscheck _check_domain(x, min(x0, x1), itp.extrap)
-    @boundscheck _check_domain(x, max(x0, x1), itp.extrap)
-
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    return _integrate_1d_cellwise(
-        x, spacing, x0, x1;
-        search=search,
-        hint=hint,
-        partial_fn=@inline((i, xL, a, b) -> begin
+
+    in_domain = @inline (a, b) -> _integrate_1d_cellwise(
+        x, spacing, a, b;
+        search=search, hint=hint,
+        partial_fn=@inline((i, xL, a2, b2) -> begin
             h = _get_h(spacing, i)
             @inbounds _cubic_integral_kernel(
-                _EvalIntegralPartial(), z[i], z[i+1], y[i], y[i+1], h, a - xL, b - xL
+                _EvalIntegralPartial(), z[i], z[i+1], y[i], y[i+1], h, a2 - xL, b2 - xL
             )
         end),
         full_fn=@inline((i) -> begin
@@ -52,6 +48,8 @@ end
         end),
         Tout=Tout
     )
+
+    return _dispatch_extrap_integrate_1d(itp.extrap, in_domain, x, y[1], y[end], x0, x1, Tout)
 end
 
 # ── LinearInterpolant 1D ──
@@ -73,19 +71,15 @@ end
     x = itp.x
     y = itp.y
     spacing = _create_spacing(x)
-
-    @boundscheck _check_domain(x, min(x0, x1), itp.extrap)
-    @boundscheck _check_domain(x, max(x0, x1), itp.extrap)
-
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    return _integrate_1d_cellwise(
-        x, spacing, x0, x1;
-        search=search,
-        hint=hint,
-        partial_fn=@inline((i, xL, a, b) -> begin
+
+    in_domain = @inline (a, b) -> _integrate_1d_cellwise(
+        x, spacing, a, b;
+        search=search, hint=hint,
+        partial_fn=@inline((i, xL, a2, b2) -> begin
             h = _get_h(spacing, i)
             @inbounds _linear_integral_kernel(
-                _EvalIntegralPartial(), y[i], y[i+1], h, a - xL, b - xL
+                _EvalIntegralPartial(), y[i], y[i+1], h, a2 - xL, b2 - xL
             )
         end),
         full_fn=@inline((i) -> begin
@@ -96,6 +90,8 @@ end
         end),
         Tout=Tout
     )
+
+    return _dispatch_extrap_integrate_1d(itp.extrap, in_domain, x, y[1], y[end], x0, x1, Tout)
 end
 
 # ── QuadraticInterpolant 1D ──
@@ -116,18 +112,14 @@ end
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.x
     spacing = _create_spacing(x)
-
-    @boundscheck _check_domain(x, min(x0, x1), itp.extrap)
-    @boundscheck _check_domain(x, max(x0, x1), itp.extrap)
-
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    return _integrate_1d_cellwise(
-        x, spacing, x0, x1;
-        search=search,
-        hint=hint,
-        partial_fn=@inline((i, xL, a, b) -> begin
+
+    in_domain = @inline (a, b) -> _integrate_1d_cellwise(
+        x, spacing, a, b;
+        search=search, hint=hint,
+        partial_fn=@inline((i, xL, a2, b2) -> begin
             @inbounds _quadratic_integral_kernel(
-                _EvalIntegralPartial(), itp.a[i], itp.d[i], itp.y[i], a - xL, b - xL
+                _EvalIntegralPartial(), itp.a[i], itp.d[i], itp.y[i], a2 - xL, b2 - xL
             )
         end),
         full_fn=@inline((i) -> begin
@@ -138,6 +130,8 @@ end
         end),
         Tout=Tout
     )
+
+    return _dispatch_extrap_integrate_1d(itp.extrap, in_domain, x, itp.y[1], itp.y[end], x0, x1, Tout)
 end
 
 # ── ConstantInterpolant 1D ──
@@ -160,19 +154,15 @@ end
     y = itp.y
     side = itp.side
     spacing = _create_spacing(x)
-
-    @boundscheck _check_domain(x, min(x0, x1), itp.extrap)
-    @boundscheck _check_domain(x, max(x0, x1), itp.extrap)
-
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    return _integrate_1d_cellwise(
-        x, spacing, x0, x1;
-        search=search,
-        hint=hint,
-        partial_fn=@inline((i, xL, a, b) -> begin
+
+    in_domain = @inline (a, b) -> _integrate_1d_cellwise(
+        x, spacing, a, b;
+        search=search, hint=hint,
+        partial_fn=@inline((i, xL, a2, b2) -> begin
             h = _get_h(spacing, i)
             @inbounds _constant_integral_kernel(
-                _EvalIntegralPartial(), y[i], y[i+1], h, a - xL, b - xL, side
+                _EvalIntegralPartial(), y[i], y[i+1], h, a2 - xL, b2 - xL, side
             )
         end),
         full_fn=@inline((i) -> begin
@@ -183,6 +173,11 @@ end
         end),
         Tout=Tout
     )
+
+    # Boundary values for constant extrap depend on side mode
+    y_left = side === Val(:right) ? (@inbounds y[2]) : (@inbounds y[1])
+    y_right = side === Val(:left) ? (@inbounds y[end-1]) : (@inbounds y[end])
+    return _dispatch_extrap_integrate_1d(itp.extrap, in_domain, x, y_left, y_right, x0, x1, Tout)
 end
 
 # ═══════════════════════════════════════════════════════════════

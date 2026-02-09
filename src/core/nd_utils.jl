@@ -472,6 +472,40 @@ Used by both CubicInterpolantND and QuadraticInterpolantND evaluation.
 end
 
 # ========================================
+# @generated Tensor-Product Code Generation Helpers
+# ========================================
+#
+# Used by @generated tensor-product kernels (cubic_nd_eval.jl, quadratic_nd_eval.jl)
+# to build AST at compile time. These are NOT called at runtime.
+
+"""
+    _varname(stage, corner, deriv) -> Symbol
+
+Generate a variable name for the tensor-product dimension-collapsing stages.
+E.g., `_varname(2, 0, 1)` → `:g_2_0_1` (stage 2, corner 0, deriv 1).
+"""
+_varname(stage::Int, corner::Int, deriv::Int) = Symbol("g_$(stage)_$(corner)_$(deriv)")
+
+"""
+    _partial_index(deriv_bits) -> Int
+
+Convert derivative bitmask to 1-based partials array index.
+The bitmask encodes which dimensions are differentiated (bit d set → ∂/∂xd).
+"""
+_partial_index(deriv_bits::Int) = deriv_bits + 1
+
+"""
+    _corner_offset_expr(corner_bits, N) -> Vector{Int}
+
+Convert corner bitmask to per-dimension 0/1 offsets.
+Used to index into the 2^N corners of an N-dimensional cell.
+E.g., for N=3, corner_bits=5 (binary 101) → [1, 0, 1].
+"""
+function _corner_offset_expr(corner_bits::Int, N::Int)
+    [((corner_bits >> (d-1)) & 1) for d in 1:N]
+end
+
+# ========================================
 # @generated Grid Type Promotion
 # ========================================
 

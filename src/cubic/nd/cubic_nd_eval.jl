@@ -303,12 +303,7 @@ end
 # Collapses N dimensions via sequential 1D Hermite interpolations.
 # Each stage reduces 2^(N-d+1) → 2^(N-d) values.
 
-_varname(stage::Int, corner::Int, deriv::Int) = Symbol("g_$(stage)_$(corner)_$(deriv)")
-_partial_index(deriv_bits::Int) = deriv_bits + 1
-
-function _corner_offset_expr(corner_bits::Int, N::Int)
-    [((corner_bits >> (d-1)) & 1) for d in 1:N]
-end
+# _varname, _partial_index, _corner_offset_expr → core/nd_utils.jl (shared with quadratic)
 @inline @generated function _eval_nd_cell(
     partials::Array{Tv, NP1},
     indices::NTuple{N, Int},

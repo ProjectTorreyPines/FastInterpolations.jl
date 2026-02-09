@@ -221,13 +221,9 @@ end
     search::SEARCH,
     hints=nothing
 ) where {Tg, Tv, N, SEARCH<:NTuple{N,AbstractSearchPolicy}}
-    grids = _get_grids(itp)
-    spacings = _get_spacings(itp)
-    extraps = _get_extraps(itp)
-
-    q_evals = _handle_all_extraps(query, grids, extraps)
-    indices, Ls, _ = _search_all_intervals(q_evals, grids, spacings, search, hints)
-    hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
+    q_evals = _handle_all_extraps(query, itp.grids, itp.extraps)
+    indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, itp.spacings, search, hints)
+    hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.spacings, indices, Ls)
 
     return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)
 end

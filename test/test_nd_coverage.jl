@@ -35,10 +35,6 @@ import FastInterpolations:
     _bc,
     _extrap,
     _search,
-    _get_grids,
-    _get_spacings,
-    _get_extraps,
-    _get_searches,
     _handle_all_extraps,
     _handle_all_extraps_gen,
     _search_all_intervals,
@@ -227,43 +223,16 @@ import FastInterpolations:
             @test _search(itp, Val(2)) isa FastInterpolations.AbstractSearchPolicy
         end
 
-        @testset "@generated tuple extractors" begin
-            x = range(0.0, 1.0, 10)
-            y = range(0.0, 2.0, 15)
-            data = rand(10, 15)
-            itp = cubic_interp((x, y), data)
-
-            # Test _get_grids
-            grids = _get_grids(itp)
-            @test grids isa NTuple{2, AbstractVector{Float64}}
-            @test length(grids) == 2
-
-            # Test _get_spacings
-            spacings = _get_spacings(itp)
-            @test spacings isa Tuple
-            @test length(spacings) == 2
-
-            # Test _get_extraps
-            extraps = _get_extraps(itp)
-            @test extraps isa Tuple
-            @test length(extraps) == 2
-
-            # Test _get_searches
-            searches = _get_searches(itp)
-            @test searches isa Tuple
-            @test length(searches) == 2
-        end
-
         @testset "@generated alternatives (performance variants)" begin
             x = range(0.0, 1.0, 10)
             y = range(0.0, 2.0, 15)
             data = rand(10, 15)
             itp = cubic_interp((x, y), data)
 
-            grids = _get_grids(itp)
-            spacings = _get_spacings(itp)
-            searches = _get_searches(itp)
-            extraps = _get_extraps(itp)
+            grids = itp.grids
+            spacings = itp.spacings
+            searches = itp.searches
+            extraps = itp.extraps
 
             query = (0.5, 1.0)
 

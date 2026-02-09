@@ -223,49 +223,6 @@ Get search policy for dimension `d`.
 """
 @inline _search(itp::CubicInterpolantND, ::Val{D}) where {D} = itp.searches[D]
 
-# ========================================
-# @generated Tuple Extractors (zero-allocation)
-# ========================================
-
-"""
-    _get_grids(itp) -> NTuple{N, AbstractVector{Tg}}
-
-Extract all grids as a tuple. Uses @generated for zero allocation.
-"""
-@inline @generated function _get_grids(itp::CubicInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
-    exprs = [:(itp.grids[$d]) for d in 1:N]
-    return :(tuple($(exprs...)))
-end
-
-"""
-    _get_spacings(itp) -> NTuple{N, AbstractGridSpacing{Tg}}
-
-Extract all spacings as a tuple.
-"""
-@inline @generated function _get_spacings(itp::CubicInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
-    exprs = [:(itp.spacings[$d]) for d in 1:N]
-    return :(tuple($(exprs...)))
-end
-
-"""
-    _get_extraps(itp) -> NTuple{N, ExtrapVal}
-
-Extract all extrapolation modes as a tuple.
-"""
-@inline @generated function _get_extraps(itp::CubicInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
-    exprs = [:(itp.extraps[$d]) for d in 1:N]
-    return :(tuple($(exprs...)))
-end
-
-"""
-    _get_searches(itp) -> NTuple{N, AbstractSearchPolicy}
-
-Extract all search policies as a tuple.
-"""
-@inline @generated function _get_searches(itp::CubicInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
-    exprs = [:(itp.searches[$d]) for d in 1:N]
-    return :(tuple($(exprs...)))
-end
 
 # ========================================
 # @GENERATED VERSIONS (for performance testing)

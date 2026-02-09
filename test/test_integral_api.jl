@@ -7,14 +7,11 @@ using FastInterpolations
     itp_lin = linear_interp(x, y)
     itp_cub = cubic_interp(x, y)
 
-    @testset "no methoderror leakage (unimplemented methods)" begin
-        @test_throws ArgumentError integrate(itp_lin)
-        @test_throws ArgumentError integrate(itp_lin, 0.2, 0.7)
-    end
-
-    @testset "cubic integrate returns value (not stub)" begin
-        @test integrate(itp_cub) isa Real
-        @test integrate(itp_cub, 0.2, 0.7) isa Real
+    @testset "1d integrate returns value (all methods)" begin
+        for itp in (itp_lin, itp_cub)
+            @test integrate(itp) isa Real
+            @test integrate(itp, 0.2, 0.7) isa Real
+        end
     end
 
     @testset "normalization helpers" begin

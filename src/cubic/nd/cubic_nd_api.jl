@@ -142,7 +142,7 @@ One-shot ND cubic interpolation at multiple points (batch).
 function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{<:Any, N},
-    queries::NTuple{N, <:AbstractVector{<:Real}};
+    queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     kwargs...
 ) where {N}

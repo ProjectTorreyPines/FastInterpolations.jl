@@ -41,7 +41,7 @@ See also: [`gradient!`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
 """
 @generated function gradient(
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::NTuple{N, <:Real};
+    query::Tuple{Vararg{Real, N}};
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     deriv_calls = [begin
@@ -93,7 +93,7 @@ See also: [`gradient`](@ref), [`hessian!`](@ref)
 @generated function gradient!(
     G::AbstractVector,
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::NTuple{N, <:Real};
+    query::Tuple{Vararg{Real, N}};
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     stmts = [begin
@@ -156,7 +156,7 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
 """
 @generated function hessian(
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::NTuple{N, <:Real};
+    query::Tuple{Vararg{Real, N}};
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     stmts = Expr[]
@@ -226,7 +226,7 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
 @generated function hessian!(
     H::AbstractMatrix,
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::NTuple{N, <:Real};
+    query::Tuple{Vararg{Real, N}};
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     stmts = Expr[]
@@ -307,7 +307,7 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
 """
 @generated function laplacian(
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::NTuple{N, <:Real};
+    query::Tuple{Vararg{Real, N}};
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     deriv_calls = [begin

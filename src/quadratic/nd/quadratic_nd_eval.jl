@@ -94,7 +94,7 @@ Returns `output` for chaining.
 """
 function (itp::QuadraticInterpolantND{Tg, Tv, N})(
     output::AbstractVector,
-    queries::NTuple{N, <:AbstractVector{<:Real}};
+    queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing

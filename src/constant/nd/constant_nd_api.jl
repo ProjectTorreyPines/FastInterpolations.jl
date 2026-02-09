@@ -141,7 +141,7 @@ One-shot N-dimensional constant interpolation (scalar query).
 function constant_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{<:Any, N},
-    query::NTuple{N, <:Real};
+    query::Tuple{Vararg{Real, N}};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
     extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
@@ -177,7 +177,7 @@ One-shot N-dimensional constant interpolation (batch AoS query).
 function constant_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{<:Any, N},
-    queries::AbstractVector{<:NTuple{N, <:Real}};
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
     extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),

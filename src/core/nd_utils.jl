@@ -603,7 +603,7 @@ In-place SoA batch evaluation. Writes results into `output`.
 @inline function _batch_nd_soa!(
     output::AbstractVector,
     itp::AbstractInterpolantND{Tg, Tv, N},
-    queries::NTuple{N, <:AbstractVector},
+    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
     ops::NTuple{N, AbstractEvalOp},
     search::Tuple{Vararg{AbstractSearchPolicy, N}},
     hints=nothing

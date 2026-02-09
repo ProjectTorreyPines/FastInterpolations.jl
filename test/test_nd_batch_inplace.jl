@@ -26,10 +26,29 @@ using FastInterpolations
     n = length(qxs)
 
     # ========================================
-    # CubicInterpolantND
+    # Parameterized config per interpolant type
     # ========================================
-    @testset "CubicInterpolantND" begin
-        itp = cubic_interp((x, y), data_2d)
+    # Each entry: (name, constructor,
+    #              deriv_cases = [(queries, deriv_arg), ...],
+    #              zero_deriv  = deriv order where output must be all zeros, or nothing)
+
+    configs = [
+        ("CubicInterpolantND", cubic_interp,
+         [(queries_soa, 1), (queries_soa, (1, 0)), (queries_soa, Val(1)), (queries_aos, 1)],
+         nothing),
+        ("QuadraticInterpolantND", quadratic_interp,
+         [(queries_soa, 1), (queries_soa, (1, 0)), (queries_aos, Val(1))],
+         nothing),
+        ("LinearInterpolantND", linear_interp,
+         [(queries_soa, 1), (queries_aos, (1, 0))],
+         2),
+        ("ConstantInterpolantND", constant_interp,
+         [],
+         1),
+    ]
+
+    @testset "$name" for (name, interp_fn, deriv_cases, zero_deriv) in configs
+        itp = interp_fn((x, y), data_2d)
 
         @testset "SoA correctness" begin
             expected = itp(queries_soa)
@@ -47,190 +66,27 @@ using FastInterpolations
             @test output ≈ expected
         end
 
-        @testset "deriv keyword" begin
-            # Int deriv
-            expected = itp(queries_soa; deriv=1)
-            output = zeros(n)
-            itp(output, queries_soa; deriv=1)
-            @test output ≈ expected
-
-            # Tuple deriv
-            expected = itp(queries_soa; deriv=(1, 0))
-            output = zeros(n)
-            itp(output, queries_soa; deriv=(1, 0))
-            @test output ≈ expected
-
-            # Val deriv
-            expected = itp(queries_soa; deriv=Val(1))
-            output = zeros(n)
-            itp(output, queries_soa; deriv=Val(1))
-            @test output ≈ expected
-
-            # AoS with deriv
-            expected = itp(queries_aos; deriv=1)
-            output = zeros(n)
-            itp(output, queries_aos; deriv=1)
-            @test output ≈ expected
+        if !isempty(deriv_cases)
+            @testset "deriv keyword" begin
+                for (qs, d) in deriv_cases
+                    expected = itp(qs; deriv=d)
+                    output = zeros(n)
+                    itp(output, qs; deriv=d)
+                    @test output ≈ expected
+                end
+            end
         end
 
-        @testset "hint keyword" begin
-            hints = (Ref(1), Ref(1))
-            expected = itp(queries_soa)
-            output = zeros(n)
-            itp(output, queries_soa; hint=hints)
-            @test output ≈ expected
-            @test hints[1][] >= 1
-        end
+        if zero_deriv !== nothing
+            @testset "deriv=$zero_deriv early-return (zeros)" begin
+                output = ones(n)
+                itp(output, queries_soa; deriv=zero_deriv)
+                @test all(iszero, output)
 
-        @testset "DimensionMismatch" begin
-            @test_throws DimensionMismatch itp(zeros(3), queries_soa)
-            @test_throws DimensionMismatch itp(zeros(3), queries_aos)
-            @test_throws DimensionMismatch itp(zeros(n), (qxs, qys[1:3]))
-        end
-    end
-
-    # ========================================
-    # QuadraticInterpolantND
-    # ========================================
-    @testset "QuadraticInterpolantND" begin
-        itp = quadratic_interp((x, y), data_2d)
-
-        @testset "SoA correctness" begin
-            expected = itp(queries_soa)
-            output = zeros(n)
-            result = itp(output, queries_soa)
-            @test result === output
-            @test output ≈ expected
-        end
-
-        @testset "AoS correctness" begin
-            expected = itp(queries_aos)
-            output = zeros(n)
-            result = itp(output, queries_aos)
-            @test result === output
-            @test output ≈ expected
-        end
-
-        @testset "deriv keyword" begin
-            expected = itp(queries_soa; deriv=1)
-            output = zeros(n)
-            itp(output, queries_soa; deriv=1)
-            @test output ≈ expected
-
-            expected = itp(queries_soa; deriv=(1, 0))
-            output = zeros(n)
-            itp(output, queries_soa; deriv=(1, 0))
-            @test output ≈ expected
-
-            expected = itp(queries_aos; deriv=Val(1))
-            output = zeros(n)
-            itp(output, queries_aos; deriv=Val(1))
-            @test output ≈ expected
-        end
-
-        @testset "hint keyword" begin
-            hints = (Ref(1), Ref(1))
-            expected = itp(queries_soa)
-            output = zeros(n)
-            itp(output, queries_soa; hint=hints)
-            @test output ≈ expected
-        end
-
-        @testset "DimensionMismatch" begin
-            @test_throws DimensionMismatch itp(zeros(3), queries_soa)
-            @test_throws DimensionMismatch itp(zeros(3), queries_aos)
-        end
-    end
-
-    # ========================================
-    # LinearInterpolantND
-    # ========================================
-    @testset "LinearInterpolantND" begin
-        itp = linear_interp((x, y), data_2d)
-
-        @testset "SoA correctness" begin
-            expected = itp(queries_soa)
-            output = zeros(n)
-            result = itp(output, queries_soa)
-            @test result === output
-            @test output ≈ expected
-        end
-
-        @testset "AoS correctness" begin
-            expected = itp(queries_aos)
-            output = zeros(n)
-            result = itp(output, queries_aos)
-            @test result === output
-            @test output ≈ expected
-        end
-
-        @testset "deriv keyword" begin
-            expected = itp(queries_soa; deriv=1)
-            output = zeros(n)
-            itp(output, queries_soa; deriv=1)
-            @test output ≈ expected
-
-            expected = itp(queries_aos; deriv=(1, 0))
-            output = zeros(n)
-            itp(output, queries_aos; deriv=(1, 0))
-            @test output ≈ expected
-        end
-
-        @testset "2nd derivative early-return (zeros)" begin
-            output = ones(n)
-            itp(output, queries_soa; deriv=2)
-            @test all(iszero, output)
-
-            output = ones(n)
-            itp(output, queries_aos; deriv=2)
-            @test all(iszero, output)
-        end
-
-        @testset "hint keyword" begin
-            hints = (Ref(1), Ref(1))
-            expected = itp(queries_soa)
-            output = zeros(n)
-            itp(output, queries_soa; hint=hints)
-            @test output ≈ expected
-        end
-
-        @testset "DimensionMismatch" begin
-            @test_throws DimensionMismatch itp(zeros(3), queries_soa)
-            @test_throws DimensionMismatch itp(zeros(3), queries_aos)
-        end
-    end
-
-    # ========================================
-    # ConstantInterpolantND
-    # ========================================
-    @testset "ConstantInterpolantND" begin
-        itp = constant_interp((x, y), data_2d)
-
-        @testset "SoA correctness" begin
-            expected = itp(queries_soa)
-            output = zeros(n)
-            result = itp(output, queries_soa)
-            @test result === output
-            @test output ≈ expected
-        end
-
-        @testset "AoS correctness" begin
-            expected = itp(queries_aos)
-            output = zeros(n)
-            result = itp(output, queries_aos)
-            @test result === output
-            @test output ≈ expected
-        end
-
-        @testset "deriv early-return (zeros)" begin
-            # Any derivative on constant returns zero
-            output = ones(n)
-            itp(output, queries_soa; deriv=1)
-            @test all(iszero, output)
-
-            output = ones(n)
-            itp(output, queries_aos; deriv=1)
-            @test all(iszero, output)
+                output = ones(n)
+                itp(output, queries_aos; deriv=zero_deriv)
+                @test all(iszero, output)
+            end
         end
 
         @testset "hint keyword" begin

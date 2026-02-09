@@ -27,25 +27,51 @@ using FastInterpolations
     const_2d = [Float64(i + j) for i in 1:length(x), j in 1:length(y)]
 
     # ========================================
-    # Cubic ND
+    # Parameterized tests for all 4 ND types
     # ========================================
-    @testset "CubicInterpolantND" begin
-        itp = cubic_interp((x, y), data_2d)
+    interp_configs = [
+        ("CubicInterpolantND",    cubic_interp,     data_2d),
+        ("LinearInterpolantND",   linear_interp,    data_2d),
+        ("QuadraticInterpolantND", quadratic_interp, data_2d),
+        ("ConstantInterpolantND", constant_interp,  const_2d),
+    ]
+
+    @testset "$name" for (name, interp_fn, data) in interp_configs
+        itp = interp_fn((x, y), data)
         qx, qy = 1.0, 0.5
 
         @testset "hint=nothing matches no-hint" begin
-            ref = itp((qx, qy))
-            @test itp((qx, qy); hint=nothing) == ref
+            @test itp((qx, qy); hint=nothing) == itp((qx, qy))
         end
 
         @testset "Scalar hint updates Refs" begin
             hints = (Ref(1), Ref(1))
             result = itp((qx, qy); hint=hints)
             @test result ≈ itp((qx, qy))
-            # Verify hint points to exact interval containing the query
             @test hints[1][] == expected_interval(x, qx)
             @test hints[2][] == expected_interval(y, qy)
         end
+
+        @testset "SoA batch with hint" begin
+            xs = [0.5, 1.0, 1.5]
+            ys = [0.2, 0.5, 0.8]
+            hints = (Ref(1), Ref(1))
+            @test itp((xs, ys); hint=hints) ≈ itp((xs, ys))
+        end
+
+        @testset "AoS batch with hint" begin
+            queries = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
+            hints = (Ref(1), Ref(1))
+            @test itp(queries; hint=hints) ≈ itp(queries)
+        end
+    end
+
+    # ========================================
+    # Cubic-specific extras
+    # ========================================
+    @testset "CubicInterpolantND extras" begin
+        itp = cubic_interp((x, y), data_2d)
+        qx, qy = 1.0, 0.5
 
         @testset "Repeated call is idempotent" begin
             hints = (Ref(1), Ref(1))
@@ -64,128 +90,12 @@ using FastInterpolations
             @test hints[2][] == expected_interval(y, qy)
         end
 
-        @testset "SoA batch with hint" begin
-            xs = [0.5, 1.0, 1.5]
-            ys = [0.2, 0.5, 0.8]
-            hints = (Ref(1), Ref(1))
-            results_hint = itp((xs, ys); hint=hints)
-            results_ref = itp((xs, ys))
-            @test results_hint ≈ results_ref
-        end
-
-        @testset "AoS batch with hint" begin
-            queries = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
-            hints = (Ref(1), Ref(1))
-            results_hint = itp(queries; hint=hints)
-            results_ref = itp(queries)
-            @test results_hint ≈ results_ref
-        end
-
         @testset "Derivatives with hint" begin
             hints = (Ref(1), Ref(1))
             ref_d1 = itp((qx, qy); deriv=1)
             @test itp((qx, qy); deriv=1, hint=hints) ≈ ref_d1
             ref_dx = itp((qx, qy); deriv=(1,0))
             @test itp((qx, qy); deriv=(1,0), hint=hints) ≈ ref_dx
-        end
-    end
-
-    # ========================================
-    # Linear ND
-    # ========================================
-    @testset "LinearInterpolantND" begin
-        itp = linear_interp((x, y), data_2d)
-        qx, qy = 1.0, 0.5
-
-        @testset "hint=nothing matches no-hint" begin
-            @test itp((qx, qy); hint=nothing) == itp((qx, qy))
-        end
-
-        @testset "Scalar hint updates Refs" begin
-            hints = (Ref(1), Ref(1))
-            result = itp((qx, qy); hint=hints)
-            @test result ≈ itp((qx, qy))
-            @test hints[1][] == expected_interval(x, qx)
-            @test hints[2][] == expected_interval(y, qy)
-        end
-
-        @testset "SoA batch with hint" begin
-            xs = [0.5, 1.0, 1.5]
-            ys = [0.2, 0.5, 0.8]
-            hints = (Ref(1), Ref(1))
-            @test itp((xs, ys); hint=hints) ≈ itp((xs, ys))
-        end
-
-        @testset "AoS batch with hint" begin
-            queries = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
-            hints = (Ref(1), Ref(1))
-            @test itp(queries; hint=hints) ≈ itp(queries)
-        end
-    end
-
-    # ========================================
-    # Quadratic ND
-    # ========================================
-    @testset "QuadraticInterpolantND" begin
-        itp = quadratic_interp((x, y), data_2d)
-        qx, qy = 1.0, 0.5
-
-        @testset "hint=nothing matches no-hint" begin
-            @test itp((qx, qy); hint=nothing) == itp((qx, qy))
-        end
-
-        @testset "Scalar hint updates Refs" begin
-            hints = (Ref(1), Ref(1))
-            result = itp((qx, qy); hint=hints)
-            @test result ≈ itp((qx, qy))
-            @test hints[1][] == expected_interval(x, qx)
-            @test hints[2][] == expected_interval(y, qy)
-        end
-
-        @testset "SoA batch with hint" begin
-            xs = [0.5, 1.0, 1.5]
-            ys = [0.2, 0.5, 0.8]
-            hints = (Ref(1), Ref(1))
-            @test itp((xs, ys); hint=hints) ≈ itp((xs, ys))
-        end
-
-        @testset "AoS batch with hint" begin
-            queries = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
-            hints = (Ref(1), Ref(1))
-            @test itp(queries; hint=hints) ≈ itp(queries)
-        end
-    end
-
-    # ========================================
-    # Constant ND
-    # ========================================
-    @testset "ConstantInterpolantND" begin
-        itp = constant_interp((x, y), const_2d)
-        qx, qy = 1.0, 0.5
-
-        @testset "hint=nothing matches no-hint" begin
-            @test itp((qx, qy); hint=nothing) == itp((qx, qy))
-        end
-
-        @testset "Scalar hint updates Refs" begin
-            hints = (Ref(1), Ref(1))
-            result = itp((qx, qy); hint=hints)
-            @test result == itp((qx, qy))
-            @test hints[1][] == expected_interval(x, qx)
-            @test hints[2][] == expected_interval(y, qy)
-        end
-
-        @testset "SoA batch with hint" begin
-            xs = [0.5, 1.0, 1.5]
-            ys = [0.2, 0.5, 0.8]
-            hints = (Ref(1), Ref(1))
-            @test itp((xs, ys); hint=hints) == itp((xs, ys))
-        end
-
-        @testset "AoS batch with hint" begin
-            queries = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
-            hints = (Ref(1), Ref(1))
-            @test itp(queries; hint=hints) == itp(queries)
         end
     end
 

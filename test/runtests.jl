@@ -67,6 +67,9 @@ else
     include("test_nd_batch_inplace.jl")
     include("test_gradient_hessian.jl")
 
+    # Integration API
+    include("test_integral_api.jl")
+
     # # Auto-differentiation tests (ForwardDiff, Zygote, Enzyme)
     include("test_autodiff_ForwardDiff.jl")
     include("test_autodiff_Zygote.jl")

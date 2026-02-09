@@ -111,3 +111,38 @@ end
         return yL * (mid - u0) + yR * (u1 - mid)
     end
 end
+
+# ═══════════════════════════════════════════════════════════════
+# ND Hermite integration kernels
+#
+# Antiderivatives of the four cubic Hermite basis functions on [0,1]:
+#   H₀₀(t) = 2t³ - 3t² + 1     →  ∫H₀₀ dt = t⁴/2 - t³ + t
+#   H₁₀(t) = t³ - 2t² + t      →  ∫H₁₀ dt = t⁴/4 - 2t³/3 + t²/2
+#   H₀₁(t) = -2t³ + 3t²        →  ∫H₀₁ dt = -t⁴/2 + t³
+#   H₁₁(t) = t³ - t²           →  ∫H₁₁ dt = t⁴/4 - t³/3
+#
+# Used by the @generated ND tensor-product cell integral kernel.
+# ═══════════════════════════════════════════════════════════════
+
+@inline _IH00(t) = t - t^3 + t^4 / 2
+@inline _IH10(t) = t^2 / 2 - 2t^3 / 3 + t^4 / 4
+@inline _IH01(t) = t^3 - t^4 / 2
+@inline _IH11(t) = -t^3 / 3 + t^4 / 4
+
+# --- 1D Hermite integral over [u0, u1] in local coordinates ---
+# Computes ∫_{u0}^{u1} P(x) dx where P is the cubic Hermite polynomial:
+#   P(t) = fL·H₀₀(t) + fR·H₀₁(t) + h·(dfL·H₁₀(t) + dfR·H₁₁(t))
+# with t = u/h, dx = h dt
+@inline function _hermite_integral_kernel_1d(
+    fL, fR, dfL, dfR,
+    h::Tg, inv_h::Tg,
+    u0::Real, u1::Real
+) where {Tg<:AbstractFloat}
+    t0 = u0 * inv_h
+    t1 = u1 * inv_h
+    dH00 = _IH00(t1) - _IH00(t0)
+    dH10 = _IH10(t1) - _IH10(t0)
+    dH01 = _IH01(t1) - _IH01(t0)
+    dH11 = _IH11(t1) - _IH11(t0)
+    return h * (fL * dH00 + fR * dH01 + h * (dfL * dH10 + dfR * dH11))
+end

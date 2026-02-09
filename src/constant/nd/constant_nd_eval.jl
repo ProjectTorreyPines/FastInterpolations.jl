@@ -13,44 +13,48 @@
 @inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
     query::NTuple{N, <:Real};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-    return _eval_constant_nd(itp, query, ops, search_tuple)
+    return _eval_constant_nd(itp, query, ops, search_tuple, hint)
 end
 
 # Vector query (for ForwardDiff/Optim compatibility)
 @inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
     query::AbstractVector{<:Real};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
     length(query) == N || throw(ArgumentError("Query vector must have $N elements, got $(length(query))"))
     query_tuple = ntuple(i -> query[i], Val(N))
-    return itp(query_tuple; deriv=deriv, search=search)
+    return itp(query_tuple; deriv=deriv, search=search, hint=hint)
 end
 
 # Batch SoA query: tuple of vectors
 @inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
     queries::NTuple{N, AbstractVector{<:Real}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-    return _eval_constant_nd_batch_soa(itp, queries, ops, search_tuple)
+    return _eval_constant_nd_batch_soa(itp, queries, ops, search_tuple, hint)
 end
 
 # Batch AoS query: vector of tuples
 @inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
     queries::AbstractVector{<:NTuple{N, <:Real}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-    return _eval_constant_nd_batch_aos(itp, queries, ops, search_tuple)
+    return _eval_constant_nd_batch_aos(itp, queries, ops, search_tuple, hint)
 end
 
 # ========================================
@@ -71,12 +75,13 @@ For constant interpolation:
     itp::ConstantInterpolantND{Tg,Tv,N},
     query::NTuple{N, <:Real},
     ops::NTuple{N, AbstractEvalOp},
-    search_tuple::NTuple{N, AbstractSearchPolicy}
+    search_tuple::NTuple{N, AbstractSearchPolicy},
+    hints=nothing
 ) where {Tg, Tv, N}
     if _has_any_derivative(ops, Val(N))
         return zero(Tv)
     end
-    cell = _locate_cell(itp, query, search_tuple)
+    cell = _locate_cell(itp, query, search_tuple, hints)
     return _eval_at_cell(itp, cell, ops)
 end
 
@@ -85,14 +90,15 @@ end
     itp::ConstantInterpolantND{Tg,Tv,2},
     query::NTuple{2, <:Real},
     ops::NTuple{2, AbstractEvalOp},
-    search_tuple::NTuple{2, AbstractSearchPolicy}
+    search_tuple::NTuple{2, AbstractSearchPolicy},
+    hints=nothing
 ) where {Tg, Tv}
     op_x, op_y = ops
     if op_x isa EvalDeriv1 || op_x isa EvalDeriv2 || op_x isa EvalDeriv3 ||
        op_y isa EvalDeriv1 || op_y isa EvalDeriv2 || op_y isa EvalDeriv3
         return zero(Tv)
     end
-    cell = _locate_cell(itp, query, search_tuple)
+    cell = _locate_cell(itp, query, search_tuple, hints)
     return _eval_at_cell(itp, cell, ops)
 end
 
@@ -104,10 +110,11 @@ end
 @inline function _locate_cell(
     itp::ConstantInterpolantND{Tg,Tv,N},
     query::NTuple{N, <:Real},
-    search_tuple::NTuple{N, AbstractSearchPolicy}
+    search_tuple::NTuple{N, AbstractSearchPolicy},
+    hints=nothing
 ) where {Tg, Tv, N}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple)
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple, hints)
     return (itp.data, itp.spacings, itp.sides, indices, q_eval, Ls)
 end
 
@@ -115,7 +122,8 @@ end
 @inline function _locate_cell(
     itp::ConstantInterpolantND{Tg,Tv,2},
     query::NTuple{2, <:Real},
-    search_tuple::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy}
+    search_tuple::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+    hints=nothing
 ) where {Tg, Tv}
     xq, yq = query
     grid_x, grid_y = itp.grids
@@ -126,8 +134,8 @@ end
     x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
     y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
 
-    searcher_x = _to_searcher(search_x)
-    searcher_y = _to_searcher(search_y)
+    searcher_x = _to_searcher(search_x, _get_axis_hint(hints, 1))
+    searcher_y = _to_searcher(search_y, _get_axis_hint(hints, 2))
     ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
     iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
 
@@ -242,7 +250,8 @@ end
     itp::ConstantInterpolantND{Tg,Tv,N},
     queries::NTuple{N, <:AbstractVector{Tq}},
     ops::OPS,
-    search_tuple::SEARCH
+    search_tuple::SEARCH,
+    hints=nothing
 ) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     n = length(queries[1])
     for d in 2:N
@@ -262,7 +271,7 @@ end
     results = Vector{Tout}(undef, n)
     @inbounds for i in 1:n
         query = ntuple(d -> queries[d][i], Val(N))
-        results[i] = _eval_constant_nd(itp, query, ops, search_tuple)
+        results[i] = _eval_constant_nd(itp, query, ops, search_tuple, hints)
     end
     return results
 end
@@ -275,7 +284,8 @@ end
     itp::ConstantInterpolantND{Tg,Tv,N},
     queries::AbstractVector{<:NTuple{N, Tq}},
     ops::OPS,
-    search_tuple::SEARCH
+    search_tuple::SEARCH,
+    hints=nothing
 ) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     n = length(queries)
 
@@ -289,7 +299,7 @@ end
 
     results = Vector{Tout}(undef, n)
     @inbounds for i in 1:n
-        results[i] = _eval_constant_nd(itp, queries[i], ops, search_tuple)
+        results[i] = _eval_constant_nd(itp, queries[i], ops, search_tuple, hints)
     end
     return results
 end

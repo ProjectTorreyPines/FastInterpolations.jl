@@ -331,6 +331,44 @@ Accepts heterogeneous tuples (e.g., mixed grid types, spacing types, search poli
     return (indices, Ls, Rs)
 end
 
+# ----------------------------------------
+# Hint-aware overloads for persistent search state
+# ----------------------------------------
+
+"""
+    _get_axis_hint(hints, d) -> Nothing or Base.RefValue{Int}
+
+Extract per-axis hint from a hint tuple or Nothing.
+Used by N=2 specializations that destructure manually.
+"""
+@inline _get_axis_hint(::Nothing, d) = nothing
+@inline _get_axis_hint(hints::Tuple, d) = @inbounds hints[d]
+
+# Nothing hint → delegate to existing 4-arg (zero overhead)
+@inline function _search_all_intervals(
+    q_evals::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
+    spacings::Tuple{Vararg{AbstractGridSpacing,N}}, searches::Tuple{Vararg{AbstractSearchPolicy,N}},
+    ::Nothing
+) where {N}
+    return _search_all_intervals(q_evals, grids, spacings, searches)
+end
+
+# Tuple hint → use 2-arg _to_searcher(policy, hint) per axis
+@inline function _search_all_intervals(
+    q_evals::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
+    spacings::Tuple{Vararg{AbstractGridSpacing,N}}, searches::Tuple{Vararg{AbstractSearchPolicy,N}},
+    hints::Tuple{Vararg{Base.RefValue{Int},N}}
+) where {N}
+    results = ntuple(Val(N)) do d
+        searcher = @inbounds _to_searcher(searches[d], hints[d])
+        @inbounds search_interval(searcher, grids[d], spacings[d], q_evals[d])
+    end
+    indices = ntuple(d -> @inbounds(results[d][1]), Val(N))
+    Ls = ntuple(d -> @inbounds(results[d][2]), Val(N))
+    Rs = ntuple(d -> @inbounds(results[d][3]), Val(N))
+    return (indices, Ls, Rs)
+end
+
 # ========================================
 # Zero-Allocation Grid Type Helpers
 # ========================================

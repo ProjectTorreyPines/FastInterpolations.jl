@@ -63,21 +63,22 @@ itp((1.0, 0.5); deriv=(1,0)) # ∂f/∂x only
 @inline function (itp::QuadraticInterpolantND{Tg, Tv, N})(
     query::Tuple{Vararg{Real, N}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     search_tuple = _resolve_search_nd(search, Val(N))
 
     if deriv isa Int
         @_dispatch_deriv deriv => op begin
             ops = ntuple(_ -> op, Val(N))
-            return _eval_nd_quadratic(itp, query, ops, search_tuple)
+            return _eval_nd_quadratic(itp, query, ops, search_tuple, hint)
         end
     elseif deriv isa Val
         ops = _resolve_deriv_nd(deriv, Val(N))
-        return _eval_nd_quadratic(itp, query, ops, search_tuple)
+        return _eval_nd_quadratic(itp, query, ops, search_tuple, hint)
     else
         ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        return _eval_nd_quadratic(itp, query, ops, search_tuple)
+        return _eval_nd_quadratic(itp, query, ops, search_tuple, hint)
     end
 end
 
@@ -85,13 +86,14 @@ end
 @inline function (itp::QuadraticInterpolantND{Tg, Tv, N})(
     query::AbstractVector{<:Real};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     length(query) == N || throw(DimensionMismatch(
         "expected $N-element vector, got $(length(query))-element vector"
     ))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-    return itp(query_tuple; deriv=deriv, search=search)
+    return itp(query_tuple; deriv=deriv, search=search, hint=hint)
 end
 
 # ========================================
@@ -101,7 +103,8 @@ end
 function (itp::QuadraticInterpolantND{Tg, Tv, N})(
     queries::NTuple{N, <:AbstractVector{<:Real}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     n_queries = length(queries[1])
     for d in 2:N
@@ -114,14 +117,14 @@ function (itp::QuadraticInterpolantND{Tg, Tv, N})(
     if deriv isa Int
         @_dispatch_deriv deriv => op begin
             ops = ntuple(_ -> op, Val(N))
-            return _eval_nd_batch_soa_quad(itp, queries, ops, search_tuple)
+            return _eval_nd_batch_soa_quad(itp, queries, ops, search_tuple, hint)
         end
     elseif deriv isa Val
         ops = _resolve_deriv_nd(deriv, Val(N))
-        return _eval_nd_batch_soa_quad(itp, queries, ops, search_tuple)
+        return _eval_nd_batch_soa_quad(itp, queries, ops, search_tuple, hint)
     else
         ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        return _eval_nd_batch_soa_quad(itp, queries, ops, search_tuple)
+        return _eval_nd_batch_soa_quad(itp, queries, ops, search_tuple, hint)
     end
 end
 
@@ -132,21 +135,22 @@ end
 function (itp::QuadraticInterpolantND{Tg, Tv, N})(
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     search_tuple = _resolve_search_nd(search, Val(N))
 
     if deriv isa Int
         @_dispatch_deriv deriv => op begin
             ops = ntuple(_ -> op, Val(N))
-            return _eval_nd_batch_aos_quad(itp, queries, ops, search_tuple)
+            return _eval_nd_batch_aos_quad(itp, queries, ops, search_tuple, hint)
         end
     elseif deriv isa Val
         ops = _resolve_deriv_nd(deriv, Val(N))
-        return _eval_nd_batch_aos_quad(itp, queries, ops, search_tuple)
+        return _eval_nd_batch_aos_quad(itp, queries, ops, search_tuple, hint)
     else
         ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        return _eval_nd_batch_aos_quad(itp, queries, ops, search_tuple)
+        return _eval_nd_batch_aos_quad(itp, queries, ops, search_tuple, hint)
     end
 end
 
@@ -158,7 +162,8 @@ end
     itp::QuadraticInterpolantND{Tg, Tv, N},
     queries::NTuple{N, <:AbstractVector{Tq}},
     ops::OPS,
-    search::SEARCH
+    search::SEARCH,
+    hints=nothing
 ) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     n_queries = length(queries[1])
     Tout = promote_type(Tv, Tg, Tq)
@@ -166,7 +171,7 @@ end
 
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
-        results[k] = _eval_nd_quadratic(itp, query_k, ops, search)
+        results[k] = _eval_nd_quadratic(itp, query_k, ops, search, hints)
     end
     return results
 end
@@ -175,14 +180,15 @@ end
     itp::QuadraticInterpolantND{Tg, Tv, N},
     queries::AbstractVector{<:NTuple{N, Tq}},
     ops::OPS,
-    search::SEARCH
+    search::SEARCH,
+    hints=nothing
 ) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     n_queries = length(queries)
     Tout = promote_type(Tv, Tg, Tq)
     results = Vector{Tout}(undef, n_queries)
 
     @inbounds for k in 1:n_queries
-        results[k] = _eval_nd_quadratic(itp, queries[k], ops, search)
+        results[k] = _eval_nd_quadratic(itp, queries[k], ops, search, hints)
     end
     return results
 end
@@ -195,14 +201,15 @@ end
 @inline function _locate_cell(
     itp::QuadraticInterpolantND{Tg, Tv, N},
     query::Tuple{Vararg{Real, N}},
-    search::SEARCH
+    search::SEARCH,
+    hints=nothing
 ) where {Tg, Tv, N, SEARCH<:NTuple{N,AbstractSearchPolicy}}
     grids = _get_grids(itp)
     spacings = _get_spacings(itp)
     extraps = _get_extraps(itp)
 
     q_evals = _handle_all_extraps(query, grids, extraps)
-    indices, Ls, _ = _search_all_intervals(q_evals, grids, spacings, search)
+    indices, Ls, _ = _search_all_intervals(q_evals, grids, spacings, search, hints)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
 
     return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)
@@ -212,7 +219,8 @@ end
 @inline function _locate_cell(
     itp::QuadraticInterpolantND{Tg, Tv, 2},
     query::Tuple{Vararg{Real, 2}},
-    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy}
+    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+    hints=nothing
 ) where {Tg, Tv}
     xq, yq = query
     grid_x, grid_y = itp.grids
@@ -223,8 +231,8 @@ end
     x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
     y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
 
-    searcher_x = _to_searcher(search_x)
-    searcher_y = _to_searcher(search_y)
+    searcher_x = _to_searcher(search_x, _get_axis_hint(hints, 1))
+    searcher_y = _to_searcher(search_y, _get_axis_hint(hints, 2))
     ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
     iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
 
@@ -257,9 +265,10 @@ end
     itp::QuadraticInterpolantND{Tg, Tv, N},
     query::Tuple{Vararg{Real, N}},
     ops::OPS,
-    search::SEARCH
+    search::SEARCH,
+    hints=nothing
 ) where {Tg, Tv, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
-    cell = _locate_cell(itp, query, search)
+    cell = _locate_cell(itp, query, search, hints)
     return _eval_at_cell(itp, cell, ops)
 end
 
@@ -268,9 +277,10 @@ end
     itp::QuadraticInterpolantND{Tg, Tv, 2},
     query::Tuple{Vararg{Real, 2}},
     ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp},
-    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy}
+    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+    hints=nothing
 ) where {Tg, Tv}
-    cell = _locate_cell(itp, query, search)
+    cell = _locate_cell(itp, query, search, hints)
     return _eval_at_cell(itp, cell, ops)
 end
 

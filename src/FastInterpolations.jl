@@ -27,6 +27,7 @@ include("core/show.jl")
 include("integral/integrate_ops.jl")
 include("integral/integrate_common_1d.jl")
 include("integral/integrate_common_nd.jl")
+include("integral/integrate_kernels.jl")
 include("integral/integrate_api.jl")
 
 # Exports

@@ -1,9 +1,57 @@
+# ── Fallback stubs (not-yet-implemented methods) ──
+
 function integrate(itp::AbstractInterpolant)
     throw(ArgumentError("integrate(itp) is not implemented for $(typeof(itp)) yet"))
 end
 
 function integrate(itp::AbstractInterpolant, x0::Real, x1::Real; search=nothing, hint=nothing)
     throw(ArgumentError("integrate(itp, x0, x1) is not implemented for $(typeof(itp)) yet"))
+end
+
+# ── CubicInterpolant 1D ──
+
+@inline function integrate(
+    itp::CubicInterpolant{Tg,Tv};
+    search=itp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tg<:AbstractFloat, Tv}
+    x = itp.cache.x
+    return integrate(itp, first(x), last(x); search=search, hint=hint)
+end
+
+@inline function integrate(
+    itp::CubicInterpolant{Tg,Tv},
+    x0::Real, x1::Real;
+    search=itp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tg<:AbstractFloat, Tv}
+    x = itp.cache.x
+    spacing = itp.cache.spacing
+    y = itp.y
+    z = itp.z
+
+    @boundscheck _check_domain(x, min(x0, x1), itp.extrap)
+    @boundscheck _check_domain(x, max(x0, x1), itp.extrap)
+
+    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    return _integrate_1d_cellwise(
+        x, spacing, x0, x1;
+        search=search,
+        hint=hint,
+        partial_fn=@inline((i, xL, a, b) -> begin
+            h = _get_h(spacing, i)
+            @inbounds _cubic_integral_kernel(
+                _EvalIntegralPartial(), z[i], z[i+1], y[i], y[i+1], h, a - xL, b - xL
+            )
+        end),
+        full_fn=@inline((i) -> begin
+            h = _get_h(spacing, i)
+            @inbounds _cubic_integral_kernel(
+                _EvalIntegralCell(), z[i], z[i+1], y[i], y[i+1], h
+            )
+        end),
+        Tout=Tout
+    )
 end
 
 function integrate(itp::AbstractInterpolantND{Tg,Tv,N}) where {Tg,Tv,N}

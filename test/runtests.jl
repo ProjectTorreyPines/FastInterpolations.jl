@@ -69,6 +69,7 @@ else
 
     # Integration API
     include("test_integral_api.jl")
+    include("test_integral_cubic_1d.jl")
 
     # # Auto-differentiation tests (ForwardDiff, Zygote, Enzyme)
     include("test_autodiff_ForwardDiff.jl")

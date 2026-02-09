@@ -58,6 +58,69 @@ end
 end
 
 # ========================================
+# IN-PLACE BATCH EVALUATION
+# ========================================
+
+"""
+    (itp::ConstantInterpolantND)(output, queries::NTuple{N,AbstractVector}; ...)
+
+In-place SoA batch evaluation. Writes results into pre-allocated `output`.
+Returns `output` for chaining.
+"""
+function (itp::ConstantInterpolantND{Tg,Tv,N})(
+    output::AbstractVector,
+    queries::NTuple{N, AbstractVector{<:Real}};
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+) where {Tg, Tv, N}
+    n_queries = length(queries[1])
+    length(output) == n_queries || throw(DimensionMismatch(
+        "output length $(length(output)) must match query length $n_queries"
+    ))
+    for d in 2:N
+        length(queries[d]) == n_queries || throw(DimensionMismatch(
+            "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
+        ))
+    end
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    search_tuple = _resolve_search_nd(search, Val(N))
+    if _has_any_derivative(ops, Val(N))
+        fill!(output, zero(eltype(output)))
+        return output
+    end
+    _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
+    return output
+end
+
+"""
+    (itp::ConstantInterpolantND)(output, queries::AbstractVector{<:NTuple}; ...)
+
+In-place AoS batch evaluation. Writes results into pre-allocated `output`.
+Returns `output` for chaining.
+"""
+function (itp::ConstantInterpolantND{Tg,Tv,N})(
+    output::AbstractVector,
+    queries::AbstractVector{<:NTuple{N, <:Real}};
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+) where {Tg, Tv, N}
+    n_queries = length(queries)
+    length(output) == n_queries || throw(DimensionMismatch(
+        "output length $(length(output)) must match query length $n_queries"
+    ))
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    search_tuple = _resolve_search_nd(search, Val(N))
+    if _has_any_derivative(ops, Val(N))
+        fill!(output, zero(eltype(output)))
+        return output
+    end
+    _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
+    return output
+end
+
+# ========================================
 # Core Evaluation Logic
 # ========================================
 

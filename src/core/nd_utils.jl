@@ -512,3 +512,52 @@ when grids is a heterogeneous tuple (e.g., mix of Range and Vector).
     exprs = [:(FastInterpolations._create_spacing(grids[$i])) for i in 1:N]
     :(($(exprs...),))
 end
+
+# ========================================
+# In-Place Batch Evaluation (Generic ND)
+# ========================================
+#
+# Generic inner loops for in-place batch evaluation.
+# Works for ALL AbstractInterpolantND subtypes via _locate_cell + _eval_at_cell dispatch.
+# Callables in each type's eval file handle deriv dispatch and call these.
+
+"""
+    _batch_nd_soa!(output, itp, queries, ops, search, hints=nothing)
+
+In-place SoA batch evaluation. Writes results into `output`.
+"""
+@inline function _batch_nd_soa!(
+    output::AbstractVector,
+    itp::AbstractInterpolantND{Tg, Tv, N},
+    queries::NTuple{N, <:AbstractVector},
+    ops::NTuple{N, AbstractEvalOp},
+    search::NTuple{N, AbstractSearchPolicy},
+    hints=nothing
+) where {Tg, Tv, N}
+    @inbounds for k in 1:length(queries[1])
+        query_k = ntuple(d -> queries[d][k], Val(N))
+        cell = _locate_cell(itp, query_k, search, hints)
+        output[k] = _eval_at_cell(itp, cell, ops)
+    end
+    return output
+end
+
+"""
+    _batch_nd_aos!(output, itp, queries, ops, search, hints=nothing)
+
+In-place AoS batch evaluation. Writes results into `output`.
+"""
+@inline function _batch_nd_aos!(
+    output::AbstractVector,
+    itp::AbstractInterpolantND{Tg, Tv, N},
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
+    ops::NTuple{N, AbstractEvalOp},
+    search::NTuple{N, AbstractSearchPolicy},
+    hints=nothing
+) where {Tg, Tv, N}
+    @inbounds for k in 1:length(queries)
+        cell = _locate_cell(itp, queries[k], search, hints)
+        output[k] = _eval_at_cell(itp, cell, ops)
+    end
+    return output
+end

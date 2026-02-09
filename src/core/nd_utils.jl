@@ -565,7 +565,7 @@ In-place SoA batch evaluation. Writes results into `output`.
     itp::AbstractInterpolantND{Tg, Tv, N},
     queries::NTuple{N, <:AbstractVector},
     ops::NTuple{N, AbstractEvalOp},
-    search::NTuple{N, AbstractSearchPolicy},
+    search::Tuple{Vararg{AbstractSearchPolicy, N}},
     hints=nothing
 ) where {Tg, Tv, N}
     @inbounds for k in 1:length(queries[1])
@@ -586,7 +586,7 @@ In-place AoS batch evaluation. Writes results into `output`.
     itp::AbstractInterpolantND{Tg, Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
     ops::NTuple{N, AbstractEvalOp},
-    search::NTuple{N, AbstractSearchPolicy},
+    search::Tuple{Vararg{AbstractSearchPolicy, N}},
     hints=nothing
 ) where {Tg, Tv, N}
     @inbounds for k in 1:length(queries)
@@ -594,6 +594,52 @@ In-place AoS batch evaluation. Writes results into `output`.
         output[k] = _eval_at_cell(itp, cell, ops)
     end
     return output
+end
+
+# ========================================
+# Shared ND Callable Interface
+# ========================================
+#
+# Vector query, SoA batch, and AoS batch callables are identical across all
+# ND interpolant types. Define once on AbstractInterpolantND.
+# Each concrete type only needs: scalar tuple callable + in-place batch callables.
+
+# Vector query → tuple conversion for ForwardDiff/Optim compatibility
+@inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
+    query::AbstractVector{<:Real};
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+) where {Tg, Tv, N}
+    length(query) == N || throw(DimensionMismatch(
+        "expected $N-element vector, got $(length(query))-element vector"
+    ))
+    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
+    return itp(query_tuple; deriv=deriv, search=search, hint=hint)
+end
+
+# SoA batch: allocate output + delegate to in-place
+function (itp::AbstractInterpolantND{Tg, Tv, N})(
+    queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+) where {Tg, Tv, N}
+    Tq = _query_eltype(queries)
+    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries[1]))
+    return itp(output, queries; deriv=deriv, search=search, hint=hint)
+end
+
+# AoS batch: allocate output + delegate to in-place
+function (itp::AbstractInterpolantND{Tg, Tv, N})(
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+) where {Tg, Tv, N}
+    Tq = _query_eltype(queries)
+    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries))
+    return itp(output, queries; deriv=deriv, search=search, hint=hint)
 end
 
 # ========================================

@@ -37,7 +37,7 @@ itp((1.0, 0.5); deriv=(1,0)) # ∂f/∂x only
 @inline function (itp::CubicInterpolantND{Tg, Tv, N})(
     query::Tuple{Vararg{Real, N}};  # Allow heterogeneous Real types (AD: Dual + Float64)
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches,
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     # Note: Don't convert to Tg - preserve query type for AD support
@@ -59,72 +59,6 @@ itp((1.0, 0.5); deriv=(1,0)) # ∂f/∂x only
     end
 end
 
-# Vector API: enables ForwardDiff.gradient(itp, [x, y]) and optimize(itp, x0; autodiff=:forward)
-"""
-    (itp::CubicInterpolantND)(query::AbstractVector; deriv=0, search=itp.searches, hint=nothing)
-
-Evaluate with vector input for ForwardDiff/Optim.jl compatibility.
-
-# Examples
-```julia
-itp([0.5, 0.5])                          # direct evaluation
-ForwardDiff.gradient(itp, [0.5, 0.5])    # AD gradient
-optimize(itp, x0, LBFGS(); autodiff=:forward)  # optimization
-```
-"""
-@inline function (itp::CubicInterpolantND{Tg, Tv, N})(
-    query::AbstractVector{<:Real};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg, Tv, N}
-    length(query) == N || throw(DimensionMismatch(
-        "expected $N-element vector, got $(length(query))-element vector"
-    ))
-    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-    return itp(query_tuple; deriv=deriv, search=search, hint=hint)
-end
-
-# ========================================
-# BATCH EVALUATION: SoA (Tuple of Vectors)
-# ========================================
-
-"""
-    (itp::CubicInterpolantND)(queries::NTuple{N,AbstractVector}; ...)
-
-Batch evaluation with Structure-of-Arrays input: `itp((xs, ys))`.
-"""
-function (itp::CubicInterpolantND{Tg, Tv, N})(
-    queries::NTuple{N, <:AbstractVector{<:Real}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg, Tv, N}
-    Tq = _query_eltype(queries)
-    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries[1]))
-    return itp(output, queries; deriv=deriv, search=search, hint=hint)
-end
-
-# ========================================
-# BATCH EVALUATION: AoS (Vector of Tuples)
-# ========================================
-
-"""
-    (itp::CubicInterpolantND)(queries::AbstractVector{<:NTuple{N}}; ...)
-
-Batch evaluation with Array-of-Structures input: `itp([(x,y), ...])`.
-"""
-function (itp::CubicInterpolantND{Tg, Tv, N})(
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg, Tv, N}
-    Tq = _query_eltype(queries)
-    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries))
-    return itp(output, queries; deriv=deriv, search=search, hint=hint)
-end
-
 # ========================================
 # IN-PLACE BATCH EVALUATION
 # ========================================
@@ -139,7 +73,7 @@ function (itp::CubicInterpolantND{Tg, Tv, N})(
     output::AbstractVector,
     queries::NTuple{N, <:AbstractVector{<:Real}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches,
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     n_queries = length(queries[1])
@@ -178,7 +112,7 @@ function (itp::CubicInterpolantND{Tg, Tv, N})(
     output::AbstractVector,
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches,
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     n_queries = length(queries)

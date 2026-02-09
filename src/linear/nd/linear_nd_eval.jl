@@ -25,42 +25,6 @@
     return _eval_linear_nd(itp, query, ops, search_tuple, hint)
 end
 
-# Vector query (for ForwardDiff/Optim compatibility)
-@inline function (itp::LinearInterpolantND{Tg,Tv,N})(
-    query::AbstractVector{<:Real};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy,N}}} = itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tg, Tv, N}
-    length(query) == N || throw(ArgumentError("Query vector must have $N elements, got $(length(query))"))
-    query_tuple = ntuple(i -> query[i], Val(N))
-    return itp(query_tuple; deriv=deriv, search=search, hint=hint)
-end
-
-# Batch SoA query: tuple of vectors
-function (itp::LinearInterpolantND{Tg,Tv,N})(
-    queries::NTuple{N, AbstractVector{<:Real}};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy,N}}} = itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tg, Tv, N}
-    Tq = _query_eltype(queries)
-    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries[1]))
-    return itp(output, queries; deriv=deriv, search=search, hint=hint)
-end
-
-# Batch AoS query: vector of tuples
-function (itp::LinearInterpolantND{Tg,Tv,N})(
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy,N}}} = itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tg, Tv, N}
-    Tq = _query_eltype(queries)
-    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries))
-    return itp(output, queries; deriv=deriv, search=search, hint=hint)
-end
-
 # ========================================
 # IN-PLACE BATCH EVALUATION
 # ========================================

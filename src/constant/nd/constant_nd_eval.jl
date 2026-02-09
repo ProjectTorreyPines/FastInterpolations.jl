@@ -13,48 +13,12 @@
 @inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
     query::Tuple{Vararg{Real, N}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
     return _eval_constant_nd(itp, query, ops, search_tuple, hint)
-end
-
-# Vector query (for ForwardDiff/Optim compatibility)
-@inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
-    query::AbstractVector{<:Real};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tg, Tv, N}
-    length(query) == N || throw(ArgumentError("Query vector must have $N elements, got $(length(query))"))
-    query_tuple = ntuple(i -> query[i], Val(N))
-    return itp(query_tuple; deriv=deriv, search=search, hint=hint)
-end
-
-# Batch SoA query: tuple of vectors
-function (itp::ConstantInterpolantND{Tg,Tv,N})(
-    queries::NTuple{N, AbstractVector{<:Real}};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tg, Tv, N}
-    Tq = _query_eltype(queries)
-    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries[1]))
-    return itp(output, queries; deriv=deriv, search=search, hint=hint)
-end
-
-# Batch AoS query: vector of tuples
-function (itp::ConstantInterpolantND{Tg,Tv,N})(
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tg, Tv, N}
-    Tq = _query_eltype(queries)
-    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries))
-    return itp(output, queries; deriv=deriv, search=search, hint=hint)
 end
 
 # ========================================
@@ -71,7 +35,7 @@ function (itp::ConstantInterpolantND{Tg,Tv,N})(
     output::AbstractVector,
     queries::NTuple{N, AbstractVector{<:Real}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
     n_queries = length(queries[1])
@@ -103,7 +67,7 @@ function (itp::ConstantInterpolantND{Tg,Tv,N})(
     output::AbstractVector,
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
     n_queries = length(queries)

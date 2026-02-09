@@ -142,7 +142,7 @@ One-shot N-dimensional linear interpolation (scalar query).
 function linear_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{<:Any, N},
-    query::NTuple{N, <:Real};
+    query::Tuple{Vararg{Real, N}};
     extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
@@ -176,7 +176,7 @@ One-shot N-dimensional linear interpolation (batch AoS query).
 function linear_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{<:Any, N},
-    queries::AbstractVector{<:NTuple{N, <:Real}};
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0

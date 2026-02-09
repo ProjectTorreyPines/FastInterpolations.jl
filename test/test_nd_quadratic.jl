@@ -458,25 +458,19 @@ using FastInterpolations
     end
 
     # ========================================
-    # @generated Tuple Extractors
+    # Field accessors (direct tuple access)
     # ========================================
-    @testset "@generated tuple extractors" begin
+    @testset "field tuple accessors" begin
         x = range(0.0, 1.0, 10)
         y = range(0.0, 2.0, 15)
         data = rand(10, 15)
         itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
 
-        grids = FastInterpolations._get_grids(itp)
-        @test grids isa Tuple
-        @test length(grids) == 2
+        @test itp.grids isa Tuple
+        @test length(itp.grids) == 2
 
-        spacings = FastInterpolations._get_spacings(itp)
-        @test length(spacings) == 2
-
-        extraps = FastInterpolations._get_extraps(itp)
-        @test length(extraps) == 2
-
-        searches = FastInterpolations._get_searches(itp)
-        @test length(searches) == 2
+        @test length(itp.spacings) == 2
+        @test length(itp.extraps) == 2
+        @test length(itp.searches) == 2
     end
 end

@@ -331,6 +331,84 @@ Accepts heterogeneous tuples (e.g., mixed grid types, spacing types, search poli
     return (indices, Ls, Rs)
 end
 
+# ----------------------------------------
+# Hint-aware overloads for persistent search state
+# ----------------------------------------
+
+"""
+    _get_axis_hint(hints, d) -> Nothing or Base.RefValue{Int}
+
+Extract per-axis hint from a hint tuple or Nothing.
+Used by N=2 specializations that destructure manually.
+"""
+@inline _get_axis_hint(::Nothing, d) = nothing
+@inline _get_axis_hint(hints::Tuple, d) = @inbounds hints[d]
+
+# Nothing hint → delegate to existing 4-arg (zero overhead)
+@inline function _search_all_intervals(
+    q_evals::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
+    spacings::Tuple{Vararg{AbstractGridSpacing,N}}, searches::Tuple{Vararg{AbstractSearchPolicy,N}},
+    ::Nothing
+) where {N}
+    return _search_all_intervals(q_evals, grids, spacings, searches)
+end
+
+# Tuple hint → use 2-arg _to_searcher(policy, hint) per axis
+@inline function _search_all_intervals(
+    q_evals::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
+    spacings::Tuple{Vararg{AbstractGridSpacing,N}}, searches::Tuple{Vararg{AbstractSearchPolicy,N}},
+    hints::Tuple{Vararg{Base.RefValue{Int},N}}
+) where {N}
+    results = ntuple(Val(N)) do d
+        searcher = @inbounds _to_searcher(searches[d], hints[d])
+        @inbounds search_interval(searcher, grids[d], spacings[d], q_evals[d])
+    end
+    indices = ntuple(d -> @inbounds(results[d][1]), Val(N))
+    Ls = ntuple(d -> @inbounds(results[d][2]), Val(N))
+    Rs = ntuple(d -> @inbounds(results[d][3]), Val(N))
+    return (indices, Ls, Rs)
+end
+
+# ========================================
+# N=2 Specialized Cell Location Preamble
+# ========================================
+#
+# Shared 2D preamble for all N=2 _locate_cell specializations.
+# Extracts query, handles extrapolation, and performs interval search.
+# Returns raw (x_eval, y_eval, ix, iy, xL, yL) for type-specific post-processing.
+
+"""
+    _locate_cell_2d_preamble(query, grids, spacings, extraps, search, hints)
+
+Shared preamble for all N=2 `_locate_cell` specializations.
+Destructures 2D query, applies per-axis extrapolation, and performs interval search.
+
+Returns `(x_eval, y_eval, ix, iy, xL, yL)` — the 6 raw values that each
+interpolant type then post-processes into its kernel-specific cell tuple.
+"""
+@inline function _locate_cell_2d_preamble(
+    query::Tuple{Vararg{Real, 2}},
+    grids, spacings, extraps,
+    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+    hints
+)
+    xq, yq = query
+    grid_x, grid_y = grids
+    spacing_x, spacing_y = spacings
+    extrap_x, extrap_y = extraps
+    search_x, search_y = search
+
+    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
+    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
+
+    searcher_x = _to_searcher(search_x, _get_axis_hint(hints, 1))
+    searcher_y = _to_searcher(search_y, _get_axis_hint(hints, 2))
+    ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
+    iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
+
+    return (x_eval, y_eval, ix, iy, xL, yL)
+end
+
 # ========================================
 # Zero-Allocation Grid Type Helpers
 # ========================================
@@ -434,6 +512,40 @@ Used by both CubicInterpolantND and QuadraticInterpolantND evaluation.
 end
 
 # ========================================
+# @generated Tensor-Product Code Generation Helpers
+# ========================================
+#
+# Used by @generated tensor-product kernels (cubic_nd_eval.jl, quadratic_nd_eval.jl)
+# to build AST at compile time. These are NOT called at runtime.
+
+"""
+    _varname(stage, corner, deriv) -> Symbol
+
+Generate a variable name for the tensor-product dimension-collapsing stages.
+E.g., `_varname(2, 0, 1)` → `:g_2_0_1` (stage 2, corner 0, deriv 1).
+"""
+_varname(stage::Int, corner::Int, deriv::Int) = Symbol("g_$(stage)_$(corner)_$(deriv)")
+
+"""
+    _partial_index(deriv_bits) -> Int
+
+Convert derivative bitmask to 1-based partials array index.
+The bitmask encodes which dimensions are differentiated (bit d set → ∂/∂xd).
+"""
+_partial_index(deriv_bits::Int) = deriv_bits + 1
+
+"""
+    _corner_offset_expr(corner_bits, N) -> Vector{Int}
+
+Convert corner bitmask to per-dimension 0/1 offsets.
+Used to index into the 2^N corners of an N-dimensional cell.
+E.g., for N=3, corner_bits=5 (binary 101) → [1, 0, 1].
+"""
+function _corner_offset_expr(corner_bits::Int, N::Int)
+    [((corner_bits >> (d-1)) & 1) for d in 1:N]
+end
+
+# ========================================
 # @generated Grid Type Promotion
 # ========================================
 
@@ -474,3 +586,108 @@ when grids is a heterogeneous tuple (e.g., mix of Range and Vector).
     exprs = [:(FastInterpolations._create_spacing(grids[$i])) for i in 1:N]
     :(($(exprs...),))
 end
+
+# ========================================
+# In-Place Batch Evaluation (Generic ND)
+# ========================================
+#
+# Generic inner loops for in-place batch evaluation.
+# Works for ALL AbstractInterpolantND subtypes via _locate_cell + _eval_at_cell dispatch.
+# Callables in each type's eval file handle deriv dispatch and call these.
+
+"""
+    _batch_nd_soa!(output, itp, queries, ops, search, hints=nothing)
+
+In-place SoA batch evaluation. Writes results into `output`.
+"""
+@inline function _batch_nd_soa!(
+    output::AbstractVector,
+    itp::AbstractInterpolantND{Tg, Tv, N},
+    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+    ops::NTuple{N, AbstractEvalOp},
+    search::Tuple{Vararg{AbstractSearchPolicy, N}},
+    hints=nothing
+) where {Tg, Tv, N}
+    @inbounds for k in 1:length(queries[1])
+        query_k = ntuple(d -> queries[d][k], Val(N))
+        cell = _locate_cell(itp, query_k, search, hints)
+        output[k] = _eval_at_cell(itp, cell, ops)
+    end
+    return output
+end
+
+"""
+    _batch_nd_aos!(output, itp, queries, ops, search, hints=nothing)
+
+In-place AoS batch evaluation. Writes results into `output`.
+"""
+@inline function _batch_nd_aos!(
+    output::AbstractVector,
+    itp::AbstractInterpolantND{Tg, Tv, N},
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
+    ops::NTuple{N, AbstractEvalOp},
+    search::Tuple{Vararg{AbstractSearchPolicy, N}},
+    hints=nothing
+) where {Tg, Tv, N}
+    @inbounds for k in 1:length(queries)
+        cell = _locate_cell(itp, queries[k], search, hints)
+        output[k] = _eval_at_cell(itp, cell, ops)
+    end
+    return output
+end
+
+# ========================================
+# Shared ND Callable Interface
+# ========================================
+#
+# Vector query, SoA batch, and AoS batch callables are identical across all
+# ND interpolant types. Define once on AbstractInterpolantND.
+# Each concrete type only needs: scalar tuple callable + in-place batch callables.
+
+# Vector query → tuple conversion for ForwardDiff/Optim compatibility
+@inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
+    query::AbstractVector{<:Real};
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+) where {Tg, Tv, N}
+    length(query) == N || throw(DimensionMismatch(
+        "expected $N-element vector, got $(length(query))-element vector"
+    ))
+    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
+    return itp(query_tuple; deriv=deriv, search=search, hint=hint)
+end
+
+# SoA batch: allocate output + delegate to in-place
+function (itp::AbstractInterpolantND{Tg, Tv, N})(
+    queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+) where {Tg, Tv, N}
+    Tq = _query_eltype(queries)
+    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries[1]))
+    return itp(output, queries; deriv=deriv, search=search, hint=hint)
+end
+
+# AoS batch: allocate output + delegate to in-place
+function (itp::AbstractInterpolantND{Tg, Tv, N})(
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
+    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+) where {Tg, Tv, N}
+    Tq = _query_eltype(queries)
+    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries))
+    return itp(output, queries; deriv=deriv, search=search, hint=hint)
+end
+
+# ========================================
+# Query Element Type Extraction
+# ========================================
+
+@inline _query_eltype(queries::Tuple{Vararg{AbstractVector}}) =
+    promote_type(map(eltype, queries)...)
+
+@inline _query_eltype(::AbstractVector{T}) where {T<:Tuple} =
+    promote_type(fieldtypes(T)...)

@@ -37,7 +37,8 @@ itp((1.0, 0.5); deriv=(1,0)) # ∂f/∂x only
 @inline function (itp::CubicInterpolantND{Tg, Tv, N})(
     query::Tuple{Vararg{Real, N}};  # Allow heterogeneous Real types (AD: Dual + Float64)
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     # Note: Don't convert to Tg - preserve query type for AD support
     search_tuple = _resolve_search_nd(search, Val(N))
@@ -46,58 +47,39 @@ itp((1.0, 0.5); deriv=(1,0)) # ∂f/∂x only
         # Int path: macro dispatch ensures concrete op type
         @_dispatch_deriv deriv => op begin
             ops = ntuple(_ -> op, Val(N))
-            return _eval_nd_hermite(itp, query, ops, search_tuple)
+            return _eval_nd_hermite(itp, query, ops, search_tuple, hint)
         end
     elseif deriv isa Val
         # Val path: compile-time resolution
         ops = _resolve_deriv_nd(deriv, Val(N))
-        return _eval_nd_hermite(itp, query, ops, search_tuple)
+        return _eval_nd_hermite(itp, query, ops, search_tuple, hint)
     else
         ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        return _eval_nd_hermite(itp, query, ops, search_tuple)
+        return _eval_nd_hermite(itp, query, ops, search_tuple, hint)
     end
 end
 
-# Vector API: enables ForwardDiff.gradient(itp, [x, y]) and optimize(itp, x0; autodiff=:forward)
-"""
-    (itp::CubicInterpolantND)(query::AbstractVector; deriv=0, search=itp.searches)
-
-Evaluate with vector input for ForwardDiff/Optim.jl compatibility.
-
-# Examples
-```julia
-itp([0.5, 0.5])                          # direct evaluation
-ForwardDiff.gradient(itp, [0.5, 0.5])    # AD gradient
-optimize(itp, x0, LBFGS(); autodiff=:forward)  # optimization
-```
-"""
-@inline function (itp::CubicInterpolantND{Tg, Tv, N})(
-    query::AbstractVector{<:Real};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
-) where {Tg, Tv, N}
-    length(query) == N || throw(DimensionMismatch(
-        "expected $N-element vector, got $(length(query))-element vector"
-    ))
-    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-    return itp(query_tuple; deriv=deriv, search=search)
-end
-
 # ========================================
-# BATCH EVALUATION: SoA (Tuple of Vectors)
+# IN-PLACE BATCH EVALUATION
 # ========================================
 
 """
-    (itp::CubicInterpolantND)(queries::NTuple{N,AbstractVector}; ...)
+    (itp::CubicInterpolantND)(output, queries::NTuple{N,AbstractVector}; ...)
 
-Batch evaluation with Structure-of-Arrays input: `itp((xs, ys))`.
+In-place SoA batch evaluation. Writes results into pre-allocated `output`.
+Returns `output` for chaining.
 """
 function (itp::CubicInterpolantND{Tg, Tv, N})(
-    queries::NTuple{N, <:AbstractVector{<:Real}};
+    output::AbstractVector,
+    queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     n_queries = length(queries[1])
+    length(output) == n_queries || throw(DimensionMismatch(
+        "output length $(length(output)) must match query length $n_queries"
+    ))
     for d in 2:N
         length(queries[d]) == n_queries || throw(DimensionMismatch(
             "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
@@ -108,83 +90,52 @@ function (itp::CubicInterpolantND{Tg, Tv, N})(
     if deriv isa Int
         @_dispatch_deriv deriv => op begin
             ops = ntuple(_ -> op, Val(N))
-            return _eval_nd_batch_soa(itp, queries, ops, search_tuple)
+            _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
         end
     elseif deriv isa Val
         ops = _resolve_deriv_nd(deriv, Val(N))
-        return _eval_nd_batch_soa(itp, queries, ops, search_tuple)
+        _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
     else
         ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        return _eval_nd_batch_soa(itp, queries, ops, search_tuple)
+        _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
     end
+    return output
 end
 
-# ========================================
-# BATCH EVALUATION: AoS (Vector of Tuples)
-# ========================================
-
 """
-    (itp::CubicInterpolantND)(queries::AbstractVector{<:NTuple{N}}; ...)
+    (itp::CubicInterpolantND)(output, queries::AbstractVector{<:Tuple}; ...)
 
-Batch evaluation with Array-of-Structures input: `itp([(x,y), ...])`.
+In-place AoS batch evaluation. Writes results into pre-allocated `output`.
+Returns `output` for chaining.
 """
 function (itp::CubicInterpolantND{Tg, Tv, N})(
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};  # Allow heterogeneous Real types
+    output::AbstractVector,
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=itp.searches
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
+    n_queries = length(queries)
+    length(output) == n_queries || throw(DimensionMismatch(
+        "output length $(length(output)) must match query length $n_queries"
+    ))
     search_tuple = _resolve_search_nd(search, Val(N))
 
     if deriv isa Int
         @_dispatch_deriv deriv => op begin
             ops = ntuple(_ -> op, Val(N))
-            return _eval_nd_batch_aos(itp, queries, ops, search_tuple)
+            _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
         end
     elseif deriv isa Val
         ops = _resolve_deriv_nd(deriv, Val(N))
-        return _eval_nd_batch_aos(itp, queries, ops, search_tuple)
+        _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
     else
         ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        return _eval_nd_batch_aos(itp, queries, ops, search_tuple)
+        _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
     end
+    return output
 end
 
-# ========================================
-# BATCH INNER FUNCTIONS
-# ========================================
-
-@inline function _eval_nd_batch_soa(
-    itp::CubicInterpolantND{Tg, Tv, N},
-    queries::NTuple{N, <:AbstractVector{Tq}},
-    ops::OPS,
-    search::SEARCH
-) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
-    n_queries = length(queries[1])
-    Tout = promote_type(Tv, Tg, Tq)  # Include Tq for AD (Dual numbers)
-    results = Vector{Tout}(undef, n_queries)
-
-    @inbounds for k in 1:n_queries
-        query_k = ntuple(d -> queries[d][k], Val(N))
-        results[k] = _eval_nd_hermite(itp, query_k, ops, search)
-    end
-    return results
-end
-
-@inline function _eval_nd_batch_aos(
-    itp::CubicInterpolantND{Tg, Tv, N},
-    queries::AbstractVector{<:NTuple{N, Tq}},
-    ops::OPS,
-    search::SEARCH
-) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
-    n_queries = length(queries)
-    Tout = promote_type(Tv, Tg, Tq)
-    results = Vector{Tout}(undef, n_queries)
-
-    @inbounds for k in 1:n_queries
-        results[k] = _eval_nd_hermite(itp, queries[k], ops, search)
-    end
-    return results
-end
 
 # ========================================
 # CELL LOCATION (locate once, evaluate many)
@@ -201,15 +152,12 @@ end
 @inline function _locate_cell(
     itp::CubicInterpolantND{Tg, Tv, N},
     query::Tuple{Vararg{Real, N}},
-    search::SEARCH
+    search::SEARCH,
+    hints=nothing
 ) where {Tg, Tv, N, SEARCH<:NTuple{N,AbstractSearchPolicy}}
-    grids = _get_grids(itp)
-    spacings = _get_spacings(itp)
-    extraps = _get_extraps(itp)
-
-    q_evals = _handle_all_extraps(query, grids, extraps)
-    indices, Ls, _ = _search_all_intervals(q_evals, grids, spacings, search)
-    hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
+    q_evals = _handle_all_extraps(query, itp.grids, itp.extraps)
+    indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, itp.spacings, search, hints)
+    hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.spacings, indices, Ls)
 
     return (itp.nodal_derivs.partials, indices, hs, inv_hs, dLs)
 end
@@ -218,28 +166,15 @@ end
 @inline function _locate_cell(
     itp::CubicInterpolantND{Tg, Tv, 2},
     query::Tuple{Vararg{Real, 2}},
-    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy}
+    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+    hints=nothing
 ) where {Tg, Tv}
-    xq, yq = query
-    grid_x, grid_y = itp.grids
-    spacing_x, spacing_y = itp.spacings
-    extrap_x, extrap_y = itp.extraps
-    search_x, search_y = search
+    x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
+        query, itp.grids, itp.spacings, itp.extraps, search, hints)
 
-    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
-    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
-
-    searcher_x = _to_searcher(search_x)
-    searcher_y = _to_searcher(search_y)
-    ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
-    iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
-
-    hx = _get_h(spacing_x, ix)
-    hy = _get_h(spacing_y, iy)
-    inv_hx = _get_inv_h(spacing_x, ix)
-    inv_hy = _get_inv_h(spacing_y, iy)
-    dLx = x_eval - xL
-    dLy = y_eval - yL
+    hx = _get_h(itp.spacings[1], ix);  hy = _get_h(itp.spacings[2], iy)
+    inv_hx = _get_inv_h(itp.spacings[1], ix); inv_hy = _get_inv_h(itp.spacings[2], iy)
+    dLx = x_eval - xL;  dLy = y_eval - yL
 
     return (itp.nodal_derivs.partials, (ix, iy), (hx, hy), (inv_hx, inv_hy), (dLx, dLy))
 end
@@ -263,9 +198,10 @@ end
     itp::CubicInterpolantND{Tg, Tv, N},
     query::Tuple{Vararg{Real, N}},
     ops::OPS,
-    search::SEARCH
+    search::SEARCH,
+    hints=nothing
 ) where {Tg, Tv, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
-    cell = _locate_cell(itp, query, search)
+    cell = _locate_cell(itp, query, search, hints)
     return _eval_at_cell(itp, cell, ops)
 end
 
@@ -274,9 +210,10 @@ end
     itp::CubicInterpolantND{Tg, Tv, 2},
     query::Tuple{Vararg{Real, 2}},
     ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp},
-    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy}
+    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+    hints=nothing
 ) where {Tg, Tv}
-    cell = _locate_cell(itp, query, search)
+    cell = _locate_cell(itp, query, search, hints)
     return _eval_at_cell(itp, cell, ops)
 end
 
@@ -286,12 +223,7 @@ end
 # Collapses N dimensions via sequential 1D Hermite interpolations.
 # Each stage reduces 2^(N-d+1) → 2^(N-d) values.
 
-_varname(stage::Int, corner::Int, deriv::Int) = Symbol("g_$(stage)_$(corner)_$(deriv)")
-_partial_index(deriv_bits::Int) = deriv_bits + 1
-
-function _corner_offset_expr(corner_bits::Int, N::Int)
-    [((corner_bits >> (d-1)) & 1) for d in 1:N]
-end
+# _varname, _partial_index, _corner_offset_expr → core/nd_utils.jl (shared with quadratic)
 @inline @generated function _eval_nd_cell(
     partials::Array{Tv, NP1},
     indices::NTuple{N, Int},

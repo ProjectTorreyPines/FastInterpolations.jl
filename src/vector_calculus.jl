@@ -41,7 +41,8 @@ See also: [`gradient!`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
 """
 @generated function gradient(
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::NTuple{N, <:Real}
+    query::Tuple{Vararg{Real, N}};
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     deriv_calls = [begin
         deriv_spec = ntuple(j -> j == i ? 1 : 0, N)
@@ -50,7 +51,7 @@ See also: [`gradient!`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
 
     return quote
         search = _resolve_search_nd(itp.searches, Val($N))
-        cell = _locate_cell(itp, query, search)
+        cell = _locate_cell(itp, query, search, hint)
         return tuple($(deriv_calls...))
     end
 end
@@ -58,13 +59,14 @@ end
 # Vector API for compatibility with ForwardDiff patterns
 @inline function gradient(
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::AbstractVector{<:Real}
+    query::AbstractVector{<:Real};
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     length(query) == N || throw(DimensionMismatch(
         "expected $N-element vector, got $(length(query))-element vector"
     ))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-    return collect(gradient(itp, query_tuple))
+    return collect(gradient(itp, query_tuple; hint=hint))
 end
 
 """
@@ -91,7 +93,8 @@ See also: [`gradient`](@ref), [`hessian!`](@ref)
 @generated function gradient!(
     G::AbstractVector,
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::NTuple{N, <:Real}
+    query::Tuple{Vararg{Real, N}};
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     stmts = [begin
         deriv_spec = ntuple(j -> j == i ? 1 : 0, N)
@@ -103,7 +106,7 @@ See also: [`gradient`](@ref), [`hessian!`](@ref)
             "gradient output vector must have at least $($N) elements, got $(length(G))"
         ))
         search = _resolve_search_nd(itp.searches, Val($N))
-        cell = _locate_cell(itp, query, search)
+        cell = _locate_cell(itp, query, search, hint)
         @inbounds begin
             $(stmts...)
         end
@@ -115,13 +118,14 @@ end
 @inline function gradient!(
     G::AbstractVector,
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::AbstractVector{<:Real}
+    query::AbstractVector{<:Real};
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     length(query) == N || throw(DimensionMismatch(
         "expected $N-element query vector, got $(length(query))-element vector"
     ))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-    return gradient!(G, itp, query_tuple)
+    return gradient!(G, itp, query_tuple; hint=hint)
 end
 
 # ========================================
@@ -152,7 +156,8 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
 """
 @generated function hessian(
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::NTuple{N, <:Real}
+    query::Tuple{Vararg{Real, N}};
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     stmts = Expr[]
 
@@ -176,7 +181,7 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
         Tq = promote_type(eltype(query), $Tg, $Tv)
         H = Matrix{Tq}(undef, $N, $N)
         search = _resolve_search_nd(itp.searches, Val($N))
-        cell = _locate_cell(itp, query, search)
+        cell = _locate_cell(itp, query, search, hint)
         @inbounds begin
             $(stmts...)
         end
@@ -187,13 +192,14 @@ end
 # Vector API
 function hessian(
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::AbstractVector{<:Real}
+    query::AbstractVector{<:Real};
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     length(query) == N || throw(DimensionMismatch(
         "expected $N-element vector, got $(length(query))-element vector"
     ))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-    return hessian(itp, query_tuple)
+    return hessian(itp, query_tuple; hint=hint)
 end
 
 """
@@ -220,7 +226,8 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
 @generated function hessian!(
     H::AbstractMatrix,
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::NTuple{N, <:Real}
+    query::Tuple{Vararg{Real, N}};
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     stmts = Expr[]
 
@@ -245,7 +252,7 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
             "Hessian output matrix must be $($N)×$($N), got $(size(H))"
         ))
         search = _resolve_search_nd(itp.searches, Val($N))
-        cell = _locate_cell(itp, query, search)
+        cell = _locate_cell(itp, query, search, hint)
         @inbounds begin
             $(stmts...)
         end
@@ -257,13 +264,14 @@ end
 @inline function hessian!(
     H::AbstractMatrix,
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::AbstractVector{<:Real}
+    query::AbstractVector{<:Real};
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     length(query) == N || throw(DimensionMismatch(
         "expected $N-element query vector, got $(length(query))-element vector"
     ))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-    return hessian!(H, itp, query_tuple)
+    return hessian!(H, itp, query_tuple; hint=hint)
 end
 
 # ========================================
@@ -299,7 +307,8 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
 """
 @generated function laplacian(
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::NTuple{N, <:Real}
+    query::Tuple{Vararg{Real, N}};
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     deriv_calls = [begin
         deriv_spec = ntuple(j -> j == i ? 2 : 0, N)
@@ -308,7 +317,7 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
 
     return quote
         search = _resolve_search_nd(itp.searches, Val($N))
-        cell = _locate_cell(itp, query, search)
+        cell = _locate_cell(itp, query, search, hint)
         return +($(deriv_calls...))
     end
 end
@@ -316,11 +325,12 @@ end
 # Vector API
 @inline function laplacian(
     itp::AbstractInterpolantND{Tg, Tv, N},
-    query::AbstractVector{<:Real}
+    query::AbstractVector{<:Real};
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     length(query) == N || throw(DimensionMismatch(
         "expected $N-element vector, got $(length(query))-element vector"
     ))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-    return laplacian(itp, query_tuple)
+    return laplacian(itp, query_tuple; hint=hint)
 end

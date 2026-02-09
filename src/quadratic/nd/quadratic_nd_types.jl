@@ -113,26 +113,3 @@ num_partials(::Type{<:QuadraticInterpolantND{Tg, Tv, N}}) where {Tg, Tv, N} = 1 
 @inline _extrap(itp::QuadraticInterpolantND, ::Val{D}) where {D} = itp.extraps[D]
 @inline _search(itp::QuadraticInterpolantND, ::Val{D}) where {D} = itp.searches[D]
 
-# ========================================
-# @generated Tuple Extractors (zero-allocation)
-# ========================================
-
-@inline @generated function _get_grids(itp::QuadraticInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
-    exprs = [:(itp.grids[$d]) for d in 1:N]
-    return :(tuple($(exprs...)))
-end
-
-@inline @generated function _get_spacings(itp::QuadraticInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
-    exprs = [:(itp.spacings[$d]) for d in 1:N]
-    return :(tuple($(exprs...)))
-end
-
-@inline @generated function _get_extraps(itp::QuadraticInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
-    exprs = [:(itp.extraps[$d]) for d in 1:N]
-    return :(tuple($(exprs...)))
-end
-
-@inline @generated function _get_searches(itp::QuadraticInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
-    exprs = [:(itp.searches[$d]) for d in 1:N]
-    return :(tuple($(exprs...)))
-end

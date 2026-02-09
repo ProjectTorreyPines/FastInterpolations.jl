@@ -11,46 +11,77 @@
 
 # Scalar tuple query
 @inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
-    query::NTuple{N, <:Real};
+    query::Tuple{Vararg{Real, N}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-    return _eval_constant_nd(itp, query, ops, search_tuple)
+    return _eval_constant_nd(itp, query, ops, search_tuple, hint)
 end
 
-# Vector query (for ForwardDiff/Optim compatibility)
-@inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
-    query::AbstractVector{<:Real};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches
-) where {Tg, Tv, N}
-    length(query) == N || throw(ArgumentError("Query vector must have $N elements, got $(length(query))"))
-    query_tuple = ntuple(i -> query[i], Val(N))
-    return itp(query_tuple; deriv=deriv, search=search)
-end
+# ========================================
+# IN-PLACE BATCH EVALUATION
+# ========================================
 
-# Batch SoA query: tuple of vectors
-@inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
+"""
+    (itp::ConstantInterpolantND)(output, queries::NTuple{N,AbstractVector}; ...)
+
+In-place SoA batch evaluation. Writes results into pre-allocated `output`.
+Returns `output` for chaining.
+"""
+function (itp::ConstantInterpolantND{Tg,Tv,N})(
+    output::AbstractVector,
     queries::NTuple{N, AbstractVector{<:Real}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
+    n_queries = length(queries[1])
+    length(output) == n_queries || throw(DimensionMismatch(
+        "output length $(length(output)) must match query length $n_queries"
+    ))
+    for d in 2:N
+        length(queries[d]) == n_queries || throw(DimensionMismatch(
+            "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
+        ))
+    end
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-    return _eval_constant_nd_batch_soa(itp, queries, ops, search_tuple)
+    if _has_any_derivative(ops, Val(N))
+        fill!(output, zero(eltype(output)))
+        return output
+    end
+    _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
+    return output
 end
 
-# Batch AoS query: vector of tuples
-@inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
-    queries::AbstractVector{<:NTuple{N, <:Real}};
+"""
+    (itp::ConstantInterpolantND)(output, queries::AbstractVector{<:NTuple}; ...)
+
+In-place AoS batch evaluation. Writes results into pre-allocated `output`.
+Returns `output` for chaining.
+"""
+function (itp::ConstantInterpolantND{Tg,Tv,N})(
+    output::AbstractVector,
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches
+    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
+    n_queries = length(queries)
+    length(output) == n_queries || throw(DimensionMismatch(
+        "output length $(length(output)) must match query length $n_queries"
+    ))
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-    return _eval_constant_nd_batch_aos(itp, queries, ops, search_tuple)
+    if _has_any_derivative(ops, Val(N))
+        fill!(output, zero(eltype(output)))
+        return output
+    end
+    _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
+    return output
 end
 
 # ========================================
@@ -69,30 +100,32 @@ For constant interpolation:
 # Generic N-dimensional version (uses _locate_cell + _eval_at_cell)
 @inline function _eval_constant_nd(
     itp::ConstantInterpolantND{Tg,Tv,N},
-    query::NTuple{N, <:Real},
+    query::Tuple{Vararg{Real, N}},
     ops::NTuple{N, AbstractEvalOp},
-    search_tuple::NTuple{N, AbstractSearchPolicy}
+    search_tuple::NTuple{N, AbstractSearchPolicy},
+    hints=nothing
 ) where {Tg, Tv, N}
     if _has_any_derivative(ops, Val(N))
         return zero(Tv)
     end
-    cell = _locate_cell(itp, query, search_tuple)
+    cell = _locate_cell(itp, query, search_tuple, hints)
     return _eval_at_cell(itp, cell, ops)
 end
 
 # N=2 specialization: dispatches to N=2 _locate_cell via type
 @inline function _eval_constant_nd(
     itp::ConstantInterpolantND{Tg,Tv,2},
-    query::NTuple{2, <:Real},
+    query::Tuple{Vararg{Real, 2}},
     ops::NTuple{2, AbstractEvalOp},
-    search_tuple::NTuple{2, AbstractSearchPolicy}
+    search_tuple::NTuple{2, AbstractSearchPolicy},
+    hints=nothing
 ) where {Tg, Tv}
     op_x, op_y = ops
     if op_x isa EvalDeriv1 || op_x isa EvalDeriv2 || op_x isa EvalDeriv3 ||
        op_y isa EvalDeriv1 || op_y isa EvalDeriv2 || op_y isa EvalDeriv3
         return zero(Tv)
     end
-    cell = _locate_cell(itp, query, search_tuple)
+    cell = _locate_cell(itp, query, search_tuple, hints)
     return _eval_at_cell(itp, cell, ops)
 end
 
@@ -103,33 +136,24 @@ end
 # Generic N-dimensional
 @inline function _locate_cell(
     itp::ConstantInterpolantND{Tg,Tv,N},
-    query::NTuple{N, <:Real},
-    search_tuple::NTuple{N, AbstractSearchPolicy}
+    query::Tuple{Vararg{Real, N}},
+    search_tuple::NTuple{N, AbstractSearchPolicy},
+    hints=nothing
 ) where {Tg, Tv, N}
     q_eval = _handle_all_extraps(query, itp.grids, itp.extraps)
-    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple)
+    indices, Ls, _ = _search_all_intervals(q_eval, itp.grids, itp.spacings, search_tuple, hints)
     return (itp.data, itp.spacings, itp.sides, indices, q_eval, Ls)
 end
 
 # N=2 specialization: direct destructuring eliminates ntuple closure overhead
 @inline function _locate_cell(
     itp::ConstantInterpolantND{Tg,Tv,2},
-    query::NTuple{2, <:Real},
-    search_tuple::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy}
+    query::Tuple{Vararg{Real, 2}},
+    search_tuple::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+    hints=nothing
 ) where {Tg, Tv}
-    xq, yq = query
-    grid_x, grid_y = itp.grids
-    spacing_x, spacing_y = itp.spacings
-    extrap_x, extrap_y = itp.extraps
-    search_x, search_y = search_tuple
-
-    x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
-    y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
-
-    searcher_x = _to_searcher(search_x)
-    searcher_y = _to_searcher(search_y)
-    ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
-    iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
+    x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
+        query, itp.grids, itp.spacings, itp.extraps, search_tuple, hints)
 
     return (itp.data, itp.spacings, itp.sides, (ix, iy), (x_eval, y_eval), (xL, yL))
 end
@@ -175,8 +199,8 @@ Computes cell widths, distances from left edge, side-based offsets, and returns 
     spacings::NTuple{N, AbstractGridSpacing},
     sides::NTuple{N, SideVal},
     indices::NTuple{N, Int},
-    q_eval::NTuple{N},
-    Ls::NTuple{N}
+    q_eval::Tuple{Vararg{Real, N}},
+    Ls::Tuple{Vararg{Real, N}}
 ) where {Tv, N}
     # Build list of expressions at compile-time (loops here are fine)
     exprs = Expr[]
@@ -234,62 +258,3 @@ end
     return dL_primal <= h / 2 ? 0 : 1
 end
 
-# ========================================
-# Batch Evaluation - SoA
-# ========================================
-
-@inline function _eval_constant_nd_batch_soa(
-    itp::ConstantInterpolantND{Tg,Tv,N},
-    queries::NTuple{N, <:AbstractVector{Tq}},
-    ops::OPS,
-    search_tuple::SEARCH
-) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
-    n = length(queries[1])
-    for d in 2:N
-        length(queries[d]) == n || throw(ArgumentError(
-            "All query vectors must have same length, got $(length(queries[d])) at dimension $d vs $n at dimension 1"
-        ))
-    end
-
-    # Determine output type (include Tq for AD support)
-    Tout = promote_type(Tv, Tg, Tq)
-
-    # Early return: any derivative order > 0 returns zeros
-    if _has_any_derivative(ops, Val(N))
-        return zeros(Tout, n)
-    end
-
-    results = Vector{Tout}(undef, n)
-    @inbounds for i in 1:n
-        query = ntuple(d -> queries[d][i], Val(N))
-        results[i] = _eval_constant_nd(itp, query, ops, search_tuple)
-    end
-    return results
-end
-
-# ========================================
-# Batch Evaluation - AoS
-# ========================================
-
-@inline function _eval_constant_nd_batch_aos(
-    itp::ConstantInterpolantND{Tg,Tv,N},
-    queries::AbstractVector{<:NTuple{N, Tq}},
-    ops::OPS,
-    search_tuple::SEARCH
-) where {Tg, Tv, Tq<:Real, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
-    n = length(queries)
-
-    # Determine output type (include Tq for AD support)
-    Tout = promote_type(Tv, Tg, Tq)
-
-    # Early return: any derivative order > 0 returns zeros
-    if _has_any_derivative(ops, Val(N))
-        return zeros(Tout, n)
-    end
-
-    results = Vector{Tout}(undef, n)
-    @inbounds for i in 1:n
-        results[i] = _eval_constant_nd(itp, queries[i], ops, search_tuple)
-    end
-    return results
-end

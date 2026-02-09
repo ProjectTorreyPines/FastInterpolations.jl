@@ -243,4 +243,76 @@ using FastInterpolations
         @test result ≈ itp((1.0, 0.5); deriv=(1, 0))
         @test hints[1][] >= 1
     end
+
+    # ========================================
+    # Vector Calculus with Hint
+    # ========================================
+    @testset "gradient with hint" begin
+        itp = cubic_interp((x, y), data_2d)
+        q = (1.0, 0.5)
+        hints = (Ref(1), Ref(1))
+
+        ref = gradient(itp, q)
+        @test gradient(itp, q; hint=hints) == ref
+        @test hints[1][] >= 1
+        @test hints[2][] >= 1
+
+        # Vector API
+        hints2 = (Ref(1), Ref(1))
+        @test gradient(itp, [1.0, 0.5]; hint=hints2) ≈ collect(ref)
+    end
+
+    @testset "gradient! with hint" begin
+        itp = cubic_interp((x, y), data_2d)
+        q = (1.0, 0.5)
+        hints = (Ref(1), Ref(1))
+
+        G_ref = zeros(2)
+        G_hint = zeros(2)
+        gradient!(G_ref, itp, q)
+        gradient!(G_hint, itp, q; hint=hints)
+        @test G_hint ≈ G_ref
+        @test hints[1][] >= 1
+    end
+
+    @testset "hessian with hint" begin
+        itp = cubic_interp((x, y), data_2d)
+        q = (1.0, 0.5)
+        hints = (Ref(1), Ref(1))
+
+        ref = hessian(itp, q)
+        @test hessian(itp, q; hint=hints) ≈ ref
+        @test hints[1][] >= 1
+
+        # Vector API
+        hints2 = (Ref(1), Ref(1))
+        @test hessian(itp, [1.0, 0.5]; hint=hints2) ≈ ref
+    end
+
+    @testset "hessian! with hint" begin
+        itp = cubic_interp((x, y), data_2d)
+        q = (1.0, 0.5)
+        hints = (Ref(1), Ref(1))
+
+        H_ref = zeros(2, 2)
+        H_hint = zeros(2, 2)
+        hessian!(H_ref, itp, q)
+        hessian!(H_hint, itp, q; hint=hints)
+        @test H_hint ≈ H_ref
+        @test hints[1][] >= 1
+    end
+
+    @testset "laplacian with hint" begin
+        itp = cubic_interp((x, y), data_2d)
+        q = (1.0, 0.5)
+        hints = (Ref(1), Ref(1))
+
+        ref = laplacian(itp, q)
+        @test laplacian(itp, q; hint=hints) ≈ ref
+        @test hints[1][] >= 1
+
+        # Vector API
+        hints2 = (Ref(1), Ref(1))
+        @test laplacian(itp, [1.0, 0.5]; hint=hints2) ≈ ref
+    end
 end

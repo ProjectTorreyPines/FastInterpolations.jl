@@ -11,6 +11,10 @@ using FastInterpolations
 
 @testset "ND Hint Support" begin
 
+    # Helper: compute expected interval index for a query on a grid
+    # Mirrors what search_interval does: searchsortedlast clamped to [1, n-1]
+    expected_interval(grid, q) = clamp(searchsortedlast(grid, q), 1, length(grid) - 1)
+
     # ========================================
     # Test Data Setup
     # ========================================
@@ -38,9 +42,9 @@ using FastInterpolations
             hints = (Ref(1), Ref(1))
             result = itp((qx, qy); hint=hints)
             @test result ≈ itp((qx, qy))
-            # Refs should have been updated to point near the queried interval
-            @test hints[1][] >= 1
-            @test hints[2][] >= 1
+            # Verify hint points to exact interval containing the query
+            @test hints[1][] == expected_interval(x, qx)
+            @test hints[2][] == expected_interval(y, qy)
         end
 
         @testset "Repeated call is idempotent" begin
@@ -56,7 +60,8 @@ using FastInterpolations
             hints = (Ref(1), Ref(1))
             result = itp([qx, qy]; hint=hints)
             @test result ≈ itp((qx, qy))
-            @test hints[1][] >= 1
+            @test hints[1][] == expected_interval(x, qx)
+            @test hints[2][] == expected_interval(y, qy)
         end
 
         @testset "SoA batch with hint" begin
@@ -100,8 +105,8 @@ using FastInterpolations
             hints = (Ref(1), Ref(1))
             result = itp((qx, qy); hint=hints)
             @test result ≈ itp((qx, qy))
-            @test hints[1][] >= 1
-            @test hints[2][] >= 1
+            @test hints[1][] == expected_interval(x, qx)
+            @test hints[2][] == expected_interval(y, qy)
         end
 
         @testset "SoA batch with hint" begin
@@ -133,8 +138,8 @@ using FastInterpolations
             hints = (Ref(1), Ref(1))
             result = itp((qx, qy); hint=hints)
             @test result ≈ itp((qx, qy))
-            @test hints[1][] >= 1
-            @test hints[2][] >= 1
+            @test hints[1][] == expected_interval(x, qx)
+            @test hints[2][] == expected_interval(y, qy)
         end
 
         @testset "SoA batch with hint" begin
@@ -166,8 +171,8 @@ using FastInterpolations
             hints = (Ref(1), Ref(1))
             result = itp((qx, qy); hint=hints)
             @test result == itp((qx, qy))
-            @test hints[1][] >= 1
-            @test hints[2][] >= 1
+            @test hints[1][] == expected_interval(x, qx)
+            @test hints[2][] == expected_interval(y, qy)
         end
 
         @testset "SoA batch with hint" begin
@@ -194,10 +199,10 @@ using FastInterpolations
         hints = (Ref(1), Ref(1), Ref(1))
         result = itp(q; hint=hints)
         @test result ≈ itp(q)
-        # All 3 axes should be updated
-        @test hints[1][] >= 1
-        @test hints[2][] >= 1
-        @test hints[3][] >= 1
+        # Verify exact interval for all 3 axes
+        @test hints[1][] == expected_interval(x, q[1])
+        @test hints[2][] == expected_interval(y, q[2])
+        @test hints[3][] == expected_interval(z, q[3])
     end
 
     # ========================================
@@ -210,9 +215,9 @@ using FastInterpolations
 
         result = itp((qx, qy); hint=hints)
         @test result ≈ itp((qx, qy))
-        # Hint Refs should have been updated, proving HintedBinary was used
-        @test hints[1][] > 1  # 1.5 is well past interval 1
-        @test hints[2][] > 1  # 0.7 is well past interval 1
+        # Verify exact interval, proving HintedBinary was used
+        @test hints[1][] == expected_interval(x, qx)
+        @test hints[2][] == expected_interval(y, qy)
     end
 
     # ========================================
@@ -223,12 +228,13 @@ using FastInterpolations
         hints = (Ref(1), Ref(1))
 
         # Monotonically increasing queries — hint should advance
-        for xi in range(0.1, 1.9, 10)
+        xs_mono = collect(range(0.1, 1.9, 10))
+        for xi in xs_mono
             itp((xi, 0.5); hint=hints)
         end
-        # After scanning x from 0.1 to 1.9 on a grid 0..2 with 21 points,
-        # the x-hint should be near the end
-        @test hints[1][] > 10
+        # After the full scan, hint should be at the interval of the last query
+        @test hints[1][] == expected_interval(x, xs_mono[end])
+        @test hints[2][] == expected_interval(y, 0.5)
     end
 
     # ========================================
@@ -241,7 +247,8 @@ using FastInterpolations
         hints = (Ref(1), Ref(1))
         result = dv((1.0, 0.5); hint=hints)
         @test result ≈ itp((1.0, 0.5); deriv=(1, 0))
-        @test hints[1][] >= 1
+        @test hints[1][] == expected_interval(x, 1.0)
+        @test hints[2][] == expected_interval(y, 0.5)
     end
 
     # ========================================
@@ -254,8 +261,8 @@ using FastInterpolations
 
         ref = gradient(itp, q)
         @test gradient(itp, q; hint=hints) == ref
-        @test hints[1][] >= 1
-        @test hints[2][] >= 1
+        @test hints[1][] == expected_interval(x, q[1])
+        @test hints[2][] == expected_interval(y, q[2])
 
         # Vector API
         hints2 = (Ref(1), Ref(1))
@@ -272,7 +279,8 @@ using FastInterpolations
         gradient!(G_ref, itp, q)
         gradient!(G_hint, itp, q; hint=hints)
         @test G_hint ≈ G_ref
-        @test hints[1][] >= 1
+        @test hints[1][] == expected_interval(x, q[1])
+        @test hints[2][] == expected_interval(y, q[2])
     end
 
     @testset "hessian with hint" begin
@@ -282,7 +290,8 @@ using FastInterpolations
 
         ref = hessian(itp, q)
         @test hessian(itp, q; hint=hints) ≈ ref
-        @test hints[1][] >= 1
+        @test hints[1][] == expected_interval(x, q[1])
+        @test hints[2][] == expected_interval(y, q[2])
 
         # Vector API
         hints2 = (Ref(1), Ref(1))
@@ -299,7 +308,8 @@ using FastInterpolations
         hessian!(H_ref, itp, q)
         hessian!(H_hint, itp, q; hint=hints)
         @test H_hint ≈ H_ref
-        @test hints[1][] >= 1
+        @test hints[1][] == expected_interval(x, q[1])
+        @test hints[2][] == expected_interval(y, q[2])
     end
 
     @testset "laplacian with hint" begin
@@ -309,7 +319,8 @@ using FastInterpolations
 
         ref = laplacian(itp, q)
         @test laplacian(itp, q; hint=hints) ≈ ref
-        @test hints[1][] >= 1
+        @test hints[1][] == expected_interval(x, q[1])
+        @test hints[2][] == expected_interval(y, q[2])
 
         # Vector API
         hints2 = (Ref(1), Ref(1))

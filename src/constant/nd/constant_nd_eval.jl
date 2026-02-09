@@ -11,7 +11,7 @@
 
 # Scalar tuple query
 @inline function (itp::ConstantInterpolantND{Tg,Tv,N})(
-    query::NTuple{N, <:Real};
+    query::Tuple{Vararg{Real, N}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
@@ -47,7 +47,7 @@ end
 
 # Batch AoS query: vector of tuples
 function (itp::ConstantInterpolantND{Tg,Tv,N})(
-    queries::AbstractVector{<:NTuple{N, <:Real}};
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
@@ -101,7 +101,7 @@ Returns `output` for chaining.
 """
 function (itp::ConstantInterpolantND{Tg,Tv,N})(
     output::AbstractVector,
-    queries::AbstractVector{<:NTuple{N, <:Real}};
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
@@ -136,7 +136,7 @@ For constant interpolation:
 # Generic N-dimensional version (uses _locate_cell + _eval_at_cell)
 @inline function _eval_constant_nd(
     itp::ConstantInterpolantND{Tg,Tv,N},
-    query::NTuple{N, <:Real},
+    query::Tuple{Vararg{Real, N}},
     ops::NTuple{N, AbstractEvalOp},
     search_tuple::NTuple{N, AbstractSearchPolicy},
     hints=nothing
@@ -151,7 +151,7 @@ end
 # N=2 specialization: dispatches to N=2 _locate_cell via type
 @inline function _eval_constant_nd(
     itp::ConstantInterpolantND{Tg,Tv,2},
-    query::NTuple{2, <:Real},
+    query::Tuple{Vararg{Real, 2}},
     ops::NTuple{2, AbstractEvalOp},
     search_tuple::NTuple{2, AbstractSearchPolicy},
     hints=nothing
@@ -172,7 +172,7 @@ end
 # Generic N-dimensional
 @inline function _locate_cell(
     itp::ConstantInterpolantND{Tg,Tv,N},
-    query::NTuple{N, <:Real},
+    query::Tuple{Vararg{Real, N}},
     search_tuple::NTuple{N, AbstractSearchPolicy},
     hints=nothing
 ) where {Tg, Tv, N}
@@ -184,7 +184,7 @@ end
 # N=2 specialization: direct destructuring eliminates ntuple closure overhead
 @inline function _locate_cell(
     itp::ConstantInterpolantND{Tg,Tv,2},
-    query::NTuple{2, <:Real},
+    query::Tuple{Vararg{Real, 2}},
     search_tuple::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
     hints=nothing
 ) where {Tg, Tv}
@@ -246,8 +246,8 @@ Computes cell widths, distances from left edge, side-based offsets, and returns 
     spacings::NTuple{N, AbstractGridSpacing},
     sides::NTuple{N, SideVal},
     indices::NTuple{N, Int},
-    q_eval::NTuple{N},
-    Ls::NTuple{N}
+    q_eval::Tuple{Vararg{Real, N}},
+    Ls::Tuple{Vararg{Real, N}}
 ) where {Tv, N}
     # Build list of expressions at compile-time (loops here are fine)
     exprs = Expr[]

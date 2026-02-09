@@ -15,7 +15,7 @@
 
 # Scalar tuple query
 @inline function (itp::LinearInterpolantND{Tg,Tv,N})(
-    query::NTuple{N, <:Real};
+    query::Tuple{Vararg{Real, N}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy,N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
@@ -51,7 +51,7 @@ end
 
 # Batch AoS query: vector of tuples
 function (itp::LinearInterpolantND{Tg,Tv,N})(
-    queries::AbstractVector{<:NTuple{N, <:Real}};
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy,N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
@@ -105,7 +105,7 @@ Returns `output` for chaining.
 """
 function (itp::LinearInterpolantND{Tg,Tv,N})(
     output::AbstractVector,
-    queries::AbstractVector{<:NTuple{N, <:Real}};
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}} = 0,
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy,N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
@@ -131,7 +131,7 @@ end
 # Generic N-dimensional
 @inline function _locate_cell(
     itp::LinearInterpolantND{Tg,Tv,N},
-    query::NTuple{N, <:Real},
+    query::Tuple{Vararg{Real, N}},
     search_tuple::NTuple{N, AbstractSearchPolicy},
     hints=nothing
 ) where {Tg, Tv, N}
@@ -144,7 +144,7 @@ end
 # N=2 specialization: direct destructuring eliminates ntuple closure overhead
 @inline function _locate_cell(
     itp::LinearInterpolantND{Tg,Tv,2},
-    query::NTuple{2, <:Real},
+    query::Tuple{Vararg{Real, 2}},
     search_tuple::NTuple{2, AbstractSearchPolicy},
     hints=nothing
 ) where {Tg, Tv}
@@ -190,7 +190,7 @@ end
 # Generic N-dimensional version (uses _locate_cell + _eval_at_cell)
 @inline function _eval_linear_nd(
     itp::LinearInterpolantND{Tg,Tv,N},
-    query::NTuple{N, <:Real},
+    query::Tuple{Vararg{Real, N}},
     ops::NTuple{N, AbstractEvalOp},
     search_tuple::NTuple{N, AbstractSearchPolicy},
     hints=nothing
@@ -205,7 +205,7 @@ end
 # N=2 specialization: dispatches to N=2 _locate_cell via type
 @inline function _eval_linear_nd(
     itp::LinearInterpolantND{Tg,Tv,2},
-    query::NTuple{2, <:Real},
+    query::Tuple{Vararg{Real, 2}},
     ops::NTuple{2, AbstractEvalOp},
     search_tuple::NTuple{2, AbstractSearchPolicy},
     hints=nothing
@@ -279,7 +279,7 @@ The weight function depends on the evaluation operation:
     data::Array{Tv, N},
     indices::NTuple{N, Int},
     hs::NTuple{N},
-    αs::NTuple{N},
+    αs::Tuple{Vararg{Real, N}},
     ops::NTuple{N, AbstractEvalOp},
     ::Val{N}
 ) where {Tv, N}

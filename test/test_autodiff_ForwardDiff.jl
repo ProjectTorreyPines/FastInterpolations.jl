@@ -1109,4 +1109,64 @@ const FI = FastInterpolations
         end
     end
 
+    # ========================================
+    # ND Interpolant ForwardDiff Tests
+    # ========================================
+    # These test heterogeneous tuple queries: (Dual, Float64)
+    # which arise when computing partial derivatives via ForwardDiff.
+
+    @testset "LinearInterpolantND with ForwardDiff" begin
+        x = collect(range(0.0, 2.0, 11))
+        y = collect(range(0.0, 1.0, 6))
+        data = [xi + 2yi for xi in x, yi in y]  # f(x,y) = x + 2y
+
+        itp = linear_interp((x, y), data; extrap=:extension)
+
+        @testset "partial derivative via heterogeneous tuple" begin
+            # (Dual, Float64) tuple — requires Tuple{Vararg{Real,N}} not NTuple{N,<:Real}
+            df_dx = ForwardDiff.derivative(t -> itp((t, 0.5)), 1.0)
+            @test df_dx ≈ 1.0 atol=1e-10  # ∂f/∂x = 1
+
+            df_dy = ForwardDiff.derivative(t -> itp((1.0, t)), 0.5)
+            @test df_dy ≈ 2.0 atol=1e-10  # ∂f/∂y = 2
+        end
+
+        @testset "gradient via vector query" begin
+            grad = ForwardDiff.gradient(v -> itp(v), [1.0, 0.5])
+            @test grad ≈ [1.0, 2.0] atol=1e-10
+        end
+
+        @testset "value preserved under Dual" begin
+            result = itp((ForwardDiff.Dual(1.0, 1.0), 0.5))
+            @test ForwardDiff.value(result) ≈ itp((1.0, 0.5)) atol=1e-10
+        end
+    end
+
+    @testset "ConstantInterpolantND with ForwardDiff" begin
+        x = collect(range(0.0, 2.0, 11))
+        y = collect(range(0.0, 1.0, 6))
+        data = [xi + 2yi for xi in x, yi in y]
+
+        itp = constant_interp((x, y), data; extrap=:extension)
+
+        @testset "partial derivative via heterogeneous tuple" begin
+            # Constant interpolation derivative is 0 (step function)
+            df_dx = ForwardDiff.derivative(t -> itp((t, 0.5)), 1.0)
+            @test df_dx ≈ 0.0 atol=1e-10
+
+            df_dy = ForwardDiff.derivative(t -> itp((1.0, t)), 0.5)
+            @test df_dy ≈ 0.0 atol=1e-10
+        end
+
+        @testset "gradient via vector query" begin
+            grad = ForwardDiff.gradient(v -> itp(v), [1.0, 0.5])
+            @test grad ≈ [0.0, 0.0] atol=1e-10
+        end
+
+        @testset "value preserved under Dual" begin
+            result = itp((ForwardDiff.Dual(1.0, 1.0), 0.5))
+            @test ForwardDiff.value(result) ≈ itp((1.0, 0.5)) atol=1e-10
+        end
+    end
+
 end  # testset "AutoDiff Support"

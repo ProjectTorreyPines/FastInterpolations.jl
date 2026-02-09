@@ -322,6 +322,184 @@ end
     return _integrate_cubic_nd_in_domain(itp, lo, hi; search=search, hint=hint)
 end
 
+# ═══════════════════════════════════════════════════════════════
+# ND Linear Integration
+# ═══════════════════════════════════════════════════════════════
+
+@inline function _integrate_linear_nd_in_domain(
+    itp::LinearInterpolantND{Tg,Tv,N},
+    lo::NTuple{N,<:Real},
+    hi::NTuple{N,<:Real};
+    search=itp.searches,
+    hint=nothing
+) where {Tg,Tv,N}
+    sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)
+    sign == 0 && return zero(promote_type(Tv, Tg))
+
+    @inbounds for d in 1:N
+        _check_domain(itp.grids[d], lo2[d], Val(:none))
+        _check_domain(itp.grids[d], hi2[d], Val(:none))
+    end
+
+    search_tuple = _resolve_search_nd(search, Val(N))
+    idx_lo, idx_hi = _nd_cell_ranges(itp.grids, itp.spacings, lo2, hi2, search_tuple, hint)
+
+    total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
+    for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
+        idx = ntuple(d -> I[d], Val(N))
+        hs = ntuple(d -> _get_h(itp.spacings[d], idx[d]), Val(N))
+        Ls = ntuple(d -> itp.grids[d][idx[d]], Val(N))
+        Rs = ntuple(d -> itp.grids[d][idx[d] + 1], Val(N))
+        ulos = ntuple(d -> max(lo2[d], Ls[d]) - Ls[d], Val(N))
+        uhis = ntuple(d -> min(hi2[d], Rs[d]) - Ls[d], Val(N))
+        if all(d -> uhis[d] > ulos[d], 1:N)
+            total += _integrate_linear_nd_cell(itp.data, idx, hs, ulos, uhis)
+        end
+    end
+    return sign * total
+end
+
+# ── LinearInterpolantND API ──
+
+@inline function integrate(
+    itp::LinearInterpolantND{Tg,Tv,N};
+    search=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
+) where {Tg,Tv,N}
+    lo = ntuple(d -> first(itp.grids[d]), Val(N))
+    hi = ntuple(d -> last(itp.grids[d]), Val(N))
+    return integrate(itp, lo, hi; search=search, hint=hint)
+end
+
+@inline function integrate(
+    itp::LinearInterpolantND{Tg,Tv,N},
+    lo::NTuple{N,<:Real},
+    hi::NTuple{N,<:Real};
+    search=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
+) where {Tg,Tv,N}
+    return _integrate_linear_nd_in_domain(itp, lo, hi; search=search, hint=hint)
+end
+
+# ═══════════════════════════════════════════════════════════════
+# ND Quadratic Integration
+# ═══════════════════════════════════════════════════════════════
+
+@inline function _integrate_quadratic_nd_in_domain(
+    itp::QuadraticInterpolantND{Tg,Tv,N},
+    lo::NTuple{N,<:Real},
+    hi::NTuple{N,<:Real};
+    search=itp.searches,
+    hint=nothing
+) where {Tg,Tv,N}
+    sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)
+    sign == 0 && return zero(promote_type(Tv, Tg))
+
+    @inbounds for d in 1:N
+        _check_domain(itp.grids[d], lo2[d], Val(:none))
+        _check_domain(itp.grids[d], hi2[d], Val(:none))
+    end
+
+    search_tuple = _resolve_search_nd(search, Val(N))
+    idx_lo, idx_hi = _nd_cell_ranges(itp.grids, itp.spacings, lo2, hi2, search_tuple, hint)
+
+    total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
+    for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
+        idx = ntuple(d -> I[d], Val(N))
+        hs = ntuple(d -> _get_h(itp.spacings[d], idx[d]), Val(N))
+        inv_hs = ntuple(d -> _get_inv_h(itp.spacings[d], idx[d]), Val(N))
+        Ls = ntuple(d -> itp.grids[d][idx[d]], Val(N))
+        Rs = ntuple(d -> itp.grids[d][idx[d] + 1], Val(N))
+        ulos = ntuple(d -> max(lo2[d], Ls[d]) - Ls[d], Val(N))
+        uhis = ntuple(d -> min(hi2[d], Rs[d]) - Ls[d], Val(N))
+        if all(d -> uhis[d] > ulos[d], 1:N)
+            total += _integrate_nd_quad_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, uhis)
+        end
+    end
+    return sign * total
+end
+
+# ── QuadraticInterpolantND API ──
+
+@inline function integrate(
+    itp::QuadraticInterpolantND{Tg,Tv,N};
+    search=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
+) where {Tg,Tv,N}
+    lo = ntuple(d -> first(itp.grids[d]), Val(N))
+    hi = ntuple(d -> last(itp.grids[d]), Val(N))
+    return integrate(itp, lo, hi; search=search, hint=hint)
+end
+
+@inline function integrate(
+    itp::QuadraticInterpolantND{Tg,Tv,N},
+    lo::NTuple{N,<:Real},
+    hi::NTuple{N,<:Real};
+    search=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
+) where {Tg,Tv,N}
+    return _integrate_quadratic_nd_in_domain(itp, lo, hi; search=search, hint=hint)
+end
+
+# ═══════════════════════════════════════════════════════════════
+# ND Constant Integration
+# ═══════════════════════════════════════════════════════════════
+
+@inline function _integrate_constant_nd_in_domain(
+    itp::ConstantInterpolantND{Tg,Tv,N},
+    lo::NTuple{N,<:Real},
+    hi::NTuple{N,<:Real};
+    search=itp.searches,
+    hint=nothing
+) where {Tg,Tv,N}
+    sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)
+    sign == 0 && return zero(promote_type(Tv, Tg))
+
+    @inbounds for d in 1:N
+        _check_domain(itp.grids[d], lo2[d], Val(:none))
+        _check_domain(itp.grids[d], hi2[d], Val(:none))
+    end
+
+    search_tuple = _resolve_search_nd(search, Val(N))
+    idx_lo, idx_hi = _nd_cell_ranges(itp.grids, itp.spacings, lo2, hi2, search_tuple, hint)
+
+    total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
+    for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
+        idx = ntuple(d -> I[d], Val(N))
+        hs = ntuple(d -> _get_h(itp.spacings[d], idx[d]), Val(N))
+        Ls = ntuple(d -> itp.grids[d][idx[d]], Val(N))
+        Rs = ntuple(d -> itp.grids[d][idx[d] + 1], Val(N))
+        ulos = ntuple(d -> max(lo2[d], Ls[d]) - Ls[d], Val(N))
+        uhis = ntuple(d -> min(hi2[d], Rs[d]) - Ls[d], Val(N))
+        if all(d -> uhis[d] > ulos[d], 1:N)
+            total += _integrate_constant_nd_cell(itp.data, idx, hs, ulos, uhis, itp.sides)
+        end
+    end
+    return sign * total
+end
+
+# ── ConstantInterpolantND API ──
+
+@inline function integrate(
+    itp::ConstantInterpolantND{Tg,Tv,N};
+    search=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
+) where {Tg,Tv,N}
+    lo = ntuple(d -> first(itp.grids[d]), Val(N))
+    hi = ntuple(d -> last(itp.grids[d]), Val(N))
+    return integrate(itp, lo, hi; search=search, hint=hint)
+end
+
+@inline function integrate(
+    itp::ConstantInterpolantND{Tg,Tv,N},
+    lo::NTuple{N,<:Real},
+    hi::NTuple{N,<:Real};
+    search=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
+) where {Tg,Tv,N}
+    return _integrate_constant_nd_in_domain(itp, lo, hi; search=search, hint=hint)
+end
+
 # ── ND Fallback stubs ──
 
 function integrate(itp::AbstractInterpolantND{Tg,Tv,N}) where {Tg,Tv,N}

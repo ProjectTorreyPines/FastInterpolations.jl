@@ -133,10 +133,11 @@ end
 # Used by the @generated ND tensor-product cell integral kernel.
 # ═══════════════════════════════════════════════════════════════
 
-@inline _IH00(t) = t - t^3 + t^4 / 2
-@inline _IH10(t) = t^2 / 2 - 2t^3 / 3 + t^4 / 4
-@inline _IH01(t) = t^3 - t^4 / 2
-@inline _IH11(t) = -t^3 / 3 + t^4 / 4
+# Horner form: F(t) = t · @evalpoly(t, c₁, c₂, c₃) — eliminates explicit t^3, t^4.
+@inline _IH00(t) = t * @evalpoly(t, 1, 0, -1, 1 / 2)
+@inline _IH10(t) = t * @evalpoly(t, 0, 1 / 2, -2 / 3, 1 / 4)
+@inline _IH01(t) = t * @evalpoly(t, 0, 0, 1, -1 / 2)
+@inline _IH11(t) = t * @evalpoly(t, 0, 0, -1 / 3, 1 / 4)
 
 # --- 1D Hermite integral over [u0, u1] in local coordinates ---
 # Computes ∫_{u0}^{u1} P(x) dx where P is the cubic Hermite polynomial:
@@ -153,7 +154,9 @@ end
     dH10 = _IH10(t1) - _IH10(t0)
     dH01 = _IH01(t1) - _IH01(t0)
     dH11 = _IH11(t1) - _IH11(t0)
-    return h * (fL * dH00 + fR * dH01 + h * (dfL * dH10 + dfR * dH11))
+    inner = muladd(dfR, dH11, dfL * dH10)      # dfL·ΔH₁₀ + dfR·ΔH₁₁
+    outer = muladd(fR, dH01, fL * dH00)        # fL·ΔH₀₀ + fR·ΔH₀₁
+    return h * muladd(h, inner, outer)
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -164,8 +167,16 @@ end
 #   w₁(u0,u1,h) = ∫(u/h) du     = (u1²-u0²)/(2h)
 # ═══════════════════════════════════════════════════════════════
 
-@inline _w0_int(u0, u1, h) = (u1 - u0) - (u1^2 - u0^2) / (2h)
-@inline _w1_int(u0, u1, h) = (u1^2 - u0^2) / (2h)
+# Factored form: u1²-u0² = (u1-u0)(u1+u0), then muladd to avoid explicit squaring.
+@inline function _w0_int(u0, u1, h)
+    du = u1 - u0
+    su = u1 + u0
+    return du * muladd(-su, inv(2h), one(su))   # du·(1 - (u1+u0)/(2h))
+end
+@inline function _w1_int(u0, u1, h)
+    du = u1 - u0
+    return du * (u1 + u0) / (2h)
+end
 
 @inline @generated function _integrate_linear_nd_cell(
     data::Array{Tv, N},
@@ -200,10 +211,13 @@ end
 # Integral: ∫_{u0}^{u1} S(u) du = a/3·(u1³-u0³) + dfL/2·(u1²-u0²) + fL·(u1-u0)
 # ═══════════════════════════════════════════════════════════════
 
+# Horner form: F(u) = u · @evalpoly(u, fL, dfL/2, a/3)
 @inline function _quadratic_integral_kernel_nd(fL, fR, dfL, h, inv_h, u0, u1)
     s = (fR - fL) * inv_h
-    a = (s - dfL) * inv_h
-    return (a / 3) * (u1^3 - u0^3) + (dfL / 2) * (u1^2 - u0^2) + fL * (u1 - u0)
+    a_3 = (s - dfL) * inv_h / 3   # a/3
+    d_2 = dfL / 2                   # dfL/2
+    return u1 * @evalpoly(u1, fL, d_2, a_3) -
+           u0 * @evalpoly(u0, fL, d_2, a_3)
 end
 
 # @generated tensor-product cell integral for quadratic ND

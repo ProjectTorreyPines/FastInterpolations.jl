@@ -108,3 +108,41 @@ end
 
     return sign * total
 end
+
+# ═══════════════════════════════════════════════════════════════
+# Full-domain integration helpers (no search, all cells full)
+# ═══════════════════════════════════════════════════════════════
+
+# Scalar accumulator: ∫ over entire grid using full-cell kernel only.
+# `full_fn(i, h)` — same closure signature as _integrate_1d_cellwise.
+@inline function _integrate_1d_fulldomain(
+    x::AbstractVector, full_fn::F, ::Type{Tout}
+) where {F, Tout}
+    n = length(x)
+    total = zero(Tout)
+    @inbounds for i in 1:(n - 1)
+        total += full_fn(i, x[i + 1] - x[i])
+    end
+    return total
+end
+
+# Prefix-sum (in-place): write cumulative integral into pre-allocated buffer.
+# `out` must have length ≥ length(x). Works with Vector or @view(matrix[:, k]).
+function _cumulative_integrate_1d!(
+    out::AbstractVector, x::AbstractVector, full_fn::F
+) where {F}
+    n = length(x)
+    out[1] = zero(eltype(out))
+    @inbounds for i in 1:(n - 1)
+        out[i + 1] = out[i] + full_fn(i, x[i + 1] - x[i])
+    end
+    return out
+end
+
+# Allocating wrapper: creates a fresh Vector and fills it.
+function _cumulative_integrate_1d(
+    x::AbstractVector, full_fn::F, ::Type{Tout}
+) where {F, Tout}
+    result = Vector{Tout}(undef, length(x))
+    return _cumulative_integrate_1d!(result, x, full_fn)
+end

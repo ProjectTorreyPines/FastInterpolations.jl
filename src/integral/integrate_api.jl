@@ -3,16 +3,6 @@
 @inline _grid_1d(itp::CubicSeriesInterpolant) = itp.cache.x
 @inline _grid_1d(itp::AbstractInterpolant) = itp.x
 
-# ── Unified 1D full-domain: replaces 4 identical per-type methods ──
-@inline function integrate(
-    itp::AbstractInterpolant{Tg,Tv};
-    search=itp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv}
-    x = _grid_1d(itp)
-    return integrate(itp, first(x), last(x); search=search, hint=hint)
-end
-
 # ── Fallback stub (bounded 1D) ──
 function integrate(itp::AbstractInterpolant, x0::Real, x1::Real; search=nothing, hint=nothing)
     throw(ArgumentError("integrate(itp, x0, x1) is not implemented for $(typeof(itp)) yet"))
@@ -276,17 +266,6 @@ end
 # ═══════════════════════════════════════════════════════════════
 # ND Integration
 # ═══════════════════════════════════════════════════════════════
-
-# ── Unified ND full-domain: replaces 4 identical per-type methods ──
-@inline function integrate(
-    itp::AbstractInterpolantND{Tg,Tv,N};
-    search=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg,Tv,N}
-    lo = ntuple(d -> first(itp.grids[d]), Val(N))
-    hi = ntuple(d -> last(itp.grids[d]), Val(N))
-    return integrate(itp, lo, hi; search=search, hint=hint)
-end
 
 # ── Fallback stub (bounded ND) ──
 function integrate(

@@ -29,6 +29,7 @@ include("integral/integrate_common_1d.jl")
 include("integral/integrate_common_nd.jl")
 include("integral/integrate_kernels.jl")
 include("integral/integrate_api.jl")
+include("integral/integrate_fulldomain.jl")
 
 # Polynomial coefficient extraction (depends on all interpolant types)
 include("coeffs.jl")
@@ -62,7 +63,7 @@ export deriv1, deriv2, deriv3, deriv_view, AbstractDerivativeView, DerivativeVie
 export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3
 
 # Integration
-export integrate
+export integrate, cumulative_integrate
 
 # Polynomial coefficient extraction
 export CellPoly, coeffs

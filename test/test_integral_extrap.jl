@@ -32,6 +32,32 @@ using FastInterpolations
         @test integrate(itp, 1.0, 1.3) ≈ y[end] * 0.3 atol=1e-12
     end
 
+    @testset ":constant tails (constant interp, side=:left)" begin
+        # y[1]=1.0, y[2]≈1.001, y[end-1]≈1.999, y[end]=2.0
+        # With side=:left, extrap=:constant must use y[1] (left) and y[end] (right)
+        y = @. x^2 + 1.0
+        itp = constant_interp(x, y; side=:left, extrap=:constant)
+        # pure left tail
+        @test integrate(itp, -0.4, 0.0) ≈ y[1] * 0.4 atol=1e-12
+        # pure right tail
+        @test integrate(itp, 1.0, 1.6) ≈ y[end] * 0.6 atol=1e-12
+        # mixed: left tail + in-domain
+        in_part = integrate(constant_interp(x, y; side=:left, extrap=:none), 0.0, 0.5)
+        @test integrate(itp, -0.3, 0.5) ≈ y[1] * 0.3 + in_part atol=1e-12
+    end
+
+    @testset ":constant tails (constant interp, side=:right)" begin
+        y = @. x^2 + 1.0
+        itp = constant_interp(x, y; side=:right, extrap=:constant)
+        # pure left tail — must use y[1], NOT y[2]
+        @test integrate(itp, -0.4, 0.0) ≈ y[1] * 0.4 atol=1e-12
+        # pure right tail — must use y[end], NOT y[end-1]
+        @test integrate(itp, 1.0, 1.6) ≈ y[end] * 0.6 atol=1e-12
+        # mixed: right tail + in-domain
+        in_part = integrate(constant_interp(x, y; side=:right, extrap=:none), 0.5, 1.0)
+        @test integrate(itp, 0.5, 1.3) ≈ in_part + y[end] * 0.3 atol=1e-12
+    end
+
     @testset ":constant signed orientation" begin
         y = @. x^2 + 1.0
         itp = linear_interp(x, y; extrap=:constant)

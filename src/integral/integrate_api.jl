@@ -143,8 +143,8 @@ end
         )
     end
     in_domain = @inline (a, b) -> _integrate_1d_cellwise(x, a, b, searcher, partial, full, Tout)
-    y_left = side === Val(:right) ? (@inbounds y[2]) : (@inbounds y[1])
-    y_right = side === Val(:left) ? (@inbounds y[end-1]) : (@inbounds y[end])
+    y_left = @inbounds y[1]
+    y_right = @inbounds y[end]
     return _dispatch_extrap_integrate_1d(extrap, in_domain, x, y_left, y_right, x0, x1, Tout)
 end
 

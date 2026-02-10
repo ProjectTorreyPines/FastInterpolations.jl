@@ -72,11 +72,11 @@ end
     return sign * total
 end
 
-# :extension — not yet implemented
+# :extension — extend boundary cell polynomial beyond domain
 @inline function _dispatch_extrap_integrate_1d(
     ::Val{:extension}, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
 ) where Tout
-    throw(ArgumentError("integrate with extrap=:extension is not yet implemented"))
+    return in_domain_fn(x0, x1)
 end
 
 # Generic 1D split-accumulate: split [a,b] into cells, call partial/full kernels.

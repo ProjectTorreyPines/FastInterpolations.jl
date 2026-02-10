@@ -31,15 +31,30 @@ end
     return idx_lo, idx_hi
 end
 
+# ND domain check for integration bounds.
+# :none — strict domain check (existing DomainError behavior).
+@inline _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::Val{:none}) =
+    _check_domain(x, xi, Val(:none))
+
+# Non-:none — ND extrap integration is not yet implemented; throw clear ArgumentError.
+@inline function _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::Val{E}) where E
+    x_min, x_max = first(x), last(x)
+    (xi < x_min || xi > x_max) && throw(ArgumentError(
+        "ND integration only supports in-domain bounds (extrapolation is not yet implemented). " *
+        "Bound $xi is outside the grid domain [$x_min, $x_max]."
+    ))
+    return nothing
+end
+
 # Shared ND preamble: normalize bounds, domain checks, cell range computation.
 @inline function _integrate_nd_preamble(
-    grids, spacings, lo::Tuple{Vararg{Real,N}}, hi::Tuple{Vararg{Real,N}},
+    grids, spacings, extraps, lo::Tuple{Vararg{Real,N}}, hi::Tuple{Vararg{Real,N}},
     search, hint
 ) where {N}
     sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)
     @inbounds for d in 1:N
-        _check_domain(grids[d], lo2[d], Val(:none))
-        _check_domain(grids[d], hi2[d], Val(:none))
+        _check_nd_integrate_domain(grids[d], lo2[d], extraps[d])
+        _check_nd_integrate_domain(grids[d], hi2[d], extraps[d])
     end
     search_tuple = _resolve_search_nd(search, Val(N))
     idx_lo, idx_hi = _nd_cell_ranges(grids, spacings, lo2, hi2, search_tuple, hint)

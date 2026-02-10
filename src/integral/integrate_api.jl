@@ -264,7 +264,7 @@ end
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg,Tv,N}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.spacings, lo, hi, search, hint
+        itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
     sign == 0 && return zero(promote_type(Tv, Tg))
 
@@ -291,7 +291,7 @@ end
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg,Tv,N}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.spacings, lo, hi, search, hint
+        itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
     sign == 0 && return zero(promote_type(Tv, Tg))
 
@@ -317,7 +317,7 @@ end
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg,Tv,N}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.spacings, lo, hi, search, hint
+        itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
     sign == 0 && return zero(promote_type(Tv, Tg))
 
@@ -344,7 +344,7 @@ end
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg,Tv,N}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
-        itp.grids, itp.spacings, lo, hi, search, hint
+        itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
     sign == 0 && return zero(promote_type(Tv, Tg))
 

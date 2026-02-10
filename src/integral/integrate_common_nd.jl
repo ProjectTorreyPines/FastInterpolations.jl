@@ -1,4 +1,4 @@
-@inline function _normalize_bounds_nd(lo::NTuple{N,<:Real}, hi::NTuple{N,<:Real}) where {N}
+@inline function _normalize_bounds_nd(lo::Tuple{Vararg{Real,N}}, hi::Tuple{Vararg{Real,N}}) where {N}
     nflips = 0
     @inbounds for d in 1:N
         nflips += (lo[d] > hi[d])
@@ -13,8 +13,8 @@ end
 @inline function _nd_cell_ranges(
     grids::NTuple{N,AbstractVector},
     spacings,
-    lo::NTuple{N,<:Real},
-    hi::NTuple{N,<:Real},
+    lo::Tuple{Vararg{Real,N}},
+    hi::Tuple{Vararg{Real,N}},
     search_tuple,
     hint
 ) where {N}
@@ -33,7 +33,7 @@ end
 
 # Shared ND preamble: normalize bounds, domain checks, cell range computation.
 @inline function _integrate_nd_preamble(
-    grids, spacings, lo::NTuple{N,<:Real}, hi::NTuple{N,<:Real},
+    grids, spacings, lo::Tuple{Vararg{Real,N}}, hi::Tuple{Vararg{Real,N}},
     search, hint
 ) where {N}
     sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)

@@ -1,23 +1,23 @@
-# ── Fallback stubs (not-yet-implemented methods) ──
+# ── 1D grid accessor (CubicInterpolant stores x in cache) ──
+@inline _grid_1d(itp::CubicInterpolant) = itp.cache.x
+@inline _grid_1d(itp::AbstractInterpolant) = itp.x
 
-function integrate(itp::AbstractInterpolant)
-    throw(ArgumentError("integrate(itp) is not implemented for $(typeof(itp)) yet"))
+# ── Unified 1D full-domain: replaces 4 identical per-type methods ──
+@inline function integrate(
+    itp::AbstractInterpolant{Tg,Tv};
+    search=itp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tg<:AbstractFloat, Tv}
+    x = _grid_1d(itp)
+    return integrate(itp, first(x), last(x); search=search, hint=hint)
 end
 
+# ── Fallback stub (bounded 1D) ──
 function integrate(itp::AbstractInterpolant, x0::Real, x1::Real; search=nothing, hint=nothing)
     throw(ArgumentError("integrate(itp, x0, x1) is not implemented for $(typeof(itp)) yet"))
 end
 
 # ── CubicInterpolant 1D ──
-
-@inline function integrate(
-    itp::CubicInterpolant{Tg,Tv};
-    search=itp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv}
-    x = itp.cache.x
-    return integrate(itp, first(x), last(x); search=search, hint=hint)
-end
 
 @inline function integrate(
     itp::CubicInterpolant{Tg,Tv},
@@ -50,14 +50,6 @@ end
 # ── LinearInterpolant 1D ──
 
 @inline function integrate(
-    itp::LinearInterpolant{Tg,Tv};
-    search=itp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv}
-    return integrate(itp, first(itp.x), last(itp.x); search=search, hint=hint)
-end
-
-@inline function integrate(
     itp::LinearInterpolant{Tg,Tv},
     x0::Real, x1::Real;
     search=itp.search_policy,
@@ -85,14 +77,6 @@ end
 end
 
 # ── QuadraticInterpolant 1D ──
-
-@inline function integrate(
-    itp::QuadraticInterpolant{Tg,Tv};
-    search=itp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv}
-    return integrate(itp, first(itp.x), last(itp.x); search=search, hint=hint)
-end
 
 @inline function integrate(
     itp::QuadraticInterpolant{Tg,Tv},
@@ -123,50 +107,6 @@ end
 # ── ConstantInterpolant 1D ──
 
 @inline function integrate(
-    itp::ConstantInterpolant{Tg,Tv};
-    search=itp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv}
-    return integrate(itp, first(itp.x), last(itp.x); search=search, hint=hint)
-end
-
-# Flat 1D constant cellwise integral — no nested closures.
-@inline function _integrate_constant_1d_cellwise(
-    x::AbstractVector, y::AbstractVector, side::Val{S},
-    a::Real, b::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
-) where {S, SR<:Searcher, Tg, Tout}
-    sign, lo, hi = _normalize_bounds_1d(a, b)
-    sign == 0 && return zero(Tout)
-
-    i0, xL0, _ = search_interval(searcher, x, lo)
-    i1, xL1, _ = search_interval(searcher, x, hi)
-
-    if i0 == i1
-        @inbounds h = x[i0 + 1] - x[i0]
-        return sign * @inbounds(_constant_integral_kernel(
-            _EvalIntegralPartial(), y[i0], y[i0+1], h, lo - xL0, hi - xL0, side
-        ))
-    end
-
-    @inbounds h0 = x[i0 + 1] - x[i0]
-    total = @inbounds _constant_integral_kernel(
-        _EvalIntegralPartial(), y[i0], y[i0+1], h0, lo - xL0, h0, side
-    )
-    @inbounds for i in (i0 + 1):(i1 - 1)
-        h = x[i + 1] - x[i]
-        total += _constant_integral_kernel(
-            _EvalIntegralPartial(), y[i], y[i+1], h, zero(Tg), h, side
-        )
-    end
-    @inbounds h1 = x[i1 + 1] - x[i1]
-    total += @inbounds _constant_integral_kernel(
-        _EvalIntegralPartial(), y[i1], y[i1+1], h1, zero(Tg), hi - xL1, side
-    )
-
-    return sign * total
-end
-
-@inline function integrate(
     itp::ConstantInterpolant{Tg,Tv},
     x0::Real, x1::Real;
     search=itp.search_policy,
@@ -187,16 +127,51 @@ end
 end
 
 # Receives concrete side Val{S} + union extrap (4-way, within union-split limit).
+# Uses the generic _integrate_1d_cellwise path — side is already concrete here.
 @inline function _integrate_constant_1d_impl(
     x::AbstractVector, y::AbstractVector, side::Val{S}, extrap::ExtrapVal,
     x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
 ) where {S, SR<:Searcher, Tg, Tout}
-    in_domain = @inline (a, b) -> _integrate_constant_1d_cellwise(
-        x, y, side, a, b, searcher, Tg, Tout
-    )
+    partial = @inline (i, xL, h, a2, b2) -> begin
+        @inbounds _constant_integral_kernel(
+            _EvalIntegralPartial(), y[i], y[i+1], h, a2 - xL, b2 - xL, side
+        )
+    end
+    full = @inline (i, h) -> begin
+        @inbounds _constant_integral_kernel(
+            _EvalIntegralPartial(), y[i], y[i+1], h, zero(Tg), h, side
+        )
+    end
+    in_domain = @inline (a, b) -> _integrate_1d_cellwise(x, a, b, searcher, partial, full, Tout)
     y_left = side === Val(:right) ? (@inbounds y[2]) : (@inbounds y[1])
     y_right = side === Val(:left) ? (@inbounds y[end-1]) : (@inbounds y[end])
     return _dispatch_extrap_integrate_1d(extrap, in_domain, x, y_left, y_right, x0, x1, Tout)
+end
+
+# ═══════════════════════════════════════════════════════════════
+# ND Integration
+# ═══════════════════════════════════════════════════════════════
+
+# ── Unified ND full-domain: replaces 4 identical per-type methods ──
+@inline function integrate(
+    itp::AbstractInterpolantND{Tg,Tv,N};
+    search=itp.searches,
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
+) where {Tg,Tv,N}
+    lo = ntuple(d -> first(itp.grids[d]), Val(N))
+    hi = ntuple(d -> last(itp.grids[d]), Val(N))
+    return integrate(itp, lo, hi; search=search, hint=hint)
+end
+
+# ── Fallback stub (bounded ND) ──
+function integrate(
+    itp::AbstractInterpolantND{Tg,Tv,N},
+    lo::Tuple{Vararg{Real,N}},
+    hi::Tuple{Vararg{Real,N}};
+    search=nothing,
+    hint=nothing
+) where {Tg,Tv,N}
+    throw(ArgumentError("integrate(itp_nd, lo, hi) is not implemented for $(typeof(itp)) yet"))
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -279,13 +254,14 @@ end
     end
 end
 
-# In-domain ND cubic integration over a bounding box
-@inline function _integrate_cubic_nd_in_domain(
+# ── CubicInterpolantND bounded ──
+
+@inline function integrate(
     itp::CubicInterpolantND{Tg,Tv,N},
-    lo::NTuple{N,<:Real},
-    hi::NTuple{N,<:Real};
+    lo::Tuple{Vararg{Real,N}},
+    hi::Tuple{Vararg{Real,N}};
     search=itp.searches,
-    hint=nothing
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg,Tv,N}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.spacings, lo, hi, search, hint
@@ -303,38 +279,16 @@ end
     return sign * total
 end
 
-# ── CubicInterpolantND API ──
-
-@inline function integrate(
-    itp::CubicInterpolantND{Tg,Tv,N};
-    search=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg,Tv,N}
-    lo = ntuple(d -> first(itp.grids[d]), Val(N))
-    hi = ntuple(d -> last(itp.grids[d]), Val(N))
-    return integrate(itp, lo, hi; search=search, hint=hint)
-end
-
-@inline function integrate(
-    itp::CubicInterpolantND{Tg,Tv,N},
-    lo::NTuple{N,<:Real},
-    hi::NTuple{N,<:Real};
-    search=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg,Tv,N}
-    return _integrate_cubic_nd_in_domain(itp, lo, hi; search=search, hint=hint)
-end
-
 # ═══════════════════════════════════════════════════════════════
 # ND Linear Integration
 # ═══════════════════════════════════════════════════════════════
 
-@inline function _integrate_linear_nd_in_domain(
+@inline function integrate(
     itp::LinearInterpolantND{Tg,Tv,N},
-    lo::NTuple{N,<:Real},
-    hi::NTuple{N,<:Real};
+    lo::Tuple{Vararg{Real,N}},
+    hi::Tuple{Vararg{Real,N}};
     search=itp.searches,
-    hint=nothing
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg,Tv,N}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.spacings, lo, hi, search, hint
@@ -351,38 +305,16 @@ end
     return sign * total
 end
 
-# ── LinearInterpolantND API ──
-
-@inline function integrate(
-    itp::LinearInterpolantND{Tg,Tv,N};
-    search=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg,Tv,N}
-    lo = ntuple(d -> first(itp.grids[d]), Val(N))
-    hi = ntuple(d -> last(itp.grids[d]), Val(N))
-    return integrate(itp, lo, hi; search=search, hint=hint)
-end
-
-@inline function integrate(
-    itp::LinearInterpolantND{Tg,Tv,N},
-    lo::NTuple{N,<:Real},
-    hi::NTuple{N,<:Real};
-    search=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg,Tv,N}
-    return _integrate_linear_nd_in_domain(itp, lo, hi; search=search, hint=hint)
-end
-
 # ═══════════════════════════════════════════════════════════════
 # ND Quadratic Integration
 # ═══════════════════════════════════════════════════════════════
 
-@inline function _integrate_quadratic_nd_in_domain(
+@inline function integrate(
     itp::QuadraticInterpolantND{Tg,Tv,N},
-    lo::NTuple{N,<:Real},
-    hi::NTuple{N,<:Real};
+    lo::Tuple{Vararg{Real,N}},
+    hi::Tuple{Vararg{Real,N}};
     search=itp.searches,
-    hint=nothing
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg,Tv,N}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.spacings, lo, hi, search, hint
@@ -400,38 +332,16 @@ end
     return sign * total
 end
 
-# ── QuadraticInterpolantND API ──
-
-@inline function integrate(
-    itp::QuadraticInterpolantND{Tg,Tv,N};
-    search=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg,Tv,N}
-    lo = ntuple(d -> first(itp.grids[d]), Val(N))
-    hi = ntuple(d -> last(itp.grids[d]), Val(N))
-    return integrate(itp, lo, hi; search=search, hint=hint)
-end
-
-@inline function integrate(
-    itp::QuadraticInterpolantND{Tg,Tv,N},
-    lo::NTuple{N,<:Real},
-    hi::NTuple{N,<:Real};
-    search=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg,Tv,N}
-    return _integrate_quadratic_nd_in_domain(itp, lo, hi; search=search, hint=hint)
-end
-
 # ═══════════════════════════════════════════════════════════════
 # ND Constant Integration
 # ═══════════════════════════════════════════════════════════════
 
-@inline function _integrate_constant_nd_in_domain(
+@inline function integrate(
     itp::ConstantInterpolantND{Tg,Tv,N},
-    lo::NTuple{N,<:Real},
-    hi::NTuple{N,<:Real};
+    lo::Tuple{Vararg{Real,N}},
+    hi::Tuple{Vararg{Real,N}};
     search=itp.searches,
-    hint=nothing
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg,Tv,N}
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.spacings, lo, hi, search, hint
@@ -446,42 +356,4 @@ end
         end
     end
     return sign * total
-end
-
-# ── ConstantInterpolantND API ──
-
-@inline function integrate(
-    itp::ConstantInterpolantND{Tg,Tv,N};
-    search=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg,Tv,N}
-    lo = ntuple(d -> first(itp.grids[d]), Val(N))
-    hi = ntuple(d -> last(itp.grids[d]), Val(N))
-    return integrate(itp, lo, hi; search=search, hint=hint)
-end
-
-@inline function integrate(
-    itp::ConstantInterpolantND{Tg,Tv,N},
-    lo::NTuple{N,<:Real},
-    hi::NTuple{N,<:Real};
-    search=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg,Tv,N}
-    return _integrate_constant_nd_in_domain(itp, lo, hi; search=search, hint=hint)
-end
-
-# ── ND Fallback stubs ──
-
-function integrate(itp::AbstractInterpolantND{Tg,Tv,N}) where {Tg,Tv,N}
-    throw(ArgumentError("integrate(itp_nd) is not implemented for $(typeof(itp)) yet"))
-end
-
-function integrate(
-    itp::AbstractInterpolantND{Tg,Tv,N},
-    lo::NTuple{N,<:Real},
-    hi::NTuple{N,<:Real};
-    search=nothing,
-    hint=nothing
-) where {Tg,Tv,N}
-    throw(ArgumentError("integrate(itp_nd, lo, hi) is not implemented for $(typeof(itp)) yet"))
 end

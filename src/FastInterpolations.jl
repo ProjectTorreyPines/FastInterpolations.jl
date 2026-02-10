@@ -30,6 +30,9 @@ include("integral/integrate_common_nd.jl")
 include("integral/integrate_kernels.jl")
 include("integral/integrate_api.jl")
 
+# Polynomial coefficient extraction (depends on all interpolant types)
+include("coeffs.jl")
+
 # Exports
 export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
@@ -60,6 +63,9 @@ export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3
 
 # Integration
 export integrate
+
+# Polynomial coefficient extraction
+export CellPoly, coeffs
 
 # Plot recipe helpers (re-exported from HelpPlots)
 export help_plot, help_plot!

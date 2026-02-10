@@ -104,16 +104,22 @@ function coeffs end
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg,Tv}
     x = itp.cache.x
+    spacing = itp.cache.spacing
     searcher = _to_searcher(search, hint)
-    i, xL, xR = search_interval(searcher, x, xq)
-    h = xR - xL
+    i, xL, xR = search_interval(searcher, x, spacing, xq)
+    h = _get_h(spacing, i)
+    inv_h = _get_inv_h(spacing, i)
+    inv6 = inv(Tg(6))    # const-folded
+    inv_6h = inv_h * inv6 # 1/(6h), shared factor         fmul
+    h_inv6 = h * inv6     # h/6                           fmul
     @inbounds begin
         zL, zR = itp.z[i], itp.z[i+1]
         yL, yR = itp.y[i], itp.y[i+1]
     end
-    a = (zR - zL) / (6h)
-    b = zL / 2
-    c = (yR - yL) / h - h * (2zL + zR) / 6
+    z_sum = muladd(Tg(2), zL, zR)                       # 2zL + zR       fmadd
+    a = (zR - zL) * inv_6h                               # (zR-zL)/(6h)   fsub, fmul
+    b = zL * inv(Tg(2))                                  # zL/2           fmul
+    c = muladd(-h_inv6, z_sum, (yR - yL) * inv_h)        # (yR-yL)/h - h(2zL+zR)/6  fsub, fmul, fnmsub
     d = yL
     return CellPoly{4, Tv, Tg}((d, c, b, a), xL, xR)
 end

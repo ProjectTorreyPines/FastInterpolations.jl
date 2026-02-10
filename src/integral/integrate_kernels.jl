@@ -8,19 +8,20 @@
 #   d = yL
 
 # --- Partial-cell integral: ∫_{u0}^{u1} S(u) du ---
+# Horner form of antiderivative: F(u) = u·@evalpoly(u, d, c2, b3, a4)
+# with pre-absorbed coefficients a4=a/4, b3=b/3, c2=c/2.
 @inline function _cubic_integral_kernel(
     ::_EvalIntegralPartial,
     zL::Tv, zR::Tv, yL::Tv, yR::Tv,
     h::Tg, u0::Td, u1::Td
 ) where {Tv, Tg<:AbstractFloat, Td<:Real}
-    a = (zR - zL) / (6h)
-    b = zL / 2
-    c = (yR - yL) / h - h * (2zL + zR) / 6
-    d = yL
-    return (a / 4) * (u1^4 - u0^4) +
-           (b / 3) * (u1^3 - u0^3) +
-           (c / 2) * (u1^2 - u0^2) +
-            d      * (u1 - u0)
+    inv_h = inv(h)
+    a4 = (zR - zL) * inv_h / 24            # a/4 = (zR-zL)/(6h·4)
+    b3 = zL / 6                              # b/3 = (zL/2)/3
+    c2 = (yR - yL) * inv_h / 2 - h * (2zL + zR) / 12  # c/2
+    d  = yL
+    return u1 * @evalpoly(u1, d, c2, b3, a4) -
+           u0 * @evalpoly(u0, d, c2, b3, a4)
 end
 
 # --- Full-cell integral: ∫_0^h S(u) du = h/2·(yL+yR) - h³/24·(zL+zR) ---
@@ -28,7 +29,8 @@ end
     ::_EvalIntegralCell,
     zL::Tv, zR::Tv, yL::Tv, yR::Tv, h::Tg
 ) where {Tv, Tg<:AbstractFloat}
-    return h / 2 * (yL + yR) - h^3 / 24 * (zL + zR)
+    h2 = h * h
+    return h * muladd(-h2, (zL + zR) / 24, (yL + yR) / 2)
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -38,11 +40,14 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 # --- Partial-cell integral: ∫_{u0}^{u1} S(u) du ---
+# Uses u1²-u0² = (u1-u0)(u1+u0) factorization + muladd.
 @inline function _linear_integral_kernel(
     ::_EvalIntegralPartial,
     yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td
 ) where {Tv, Tg<:AbstractFloat, Td<:Real}
-    return yL * (u1 - u0) + (yR - yL) / (2h) * (u1^2 - u0^2)
+    du = u1 - u0
+    half_slope = (yR - yL) / (2h)
+    return du * muladd(half_slope, u1 + u0, yL)
 end
 
 # --- Full-cell integral: ∫_0^h S(u) du = h/2·(yL + yR) ---
@@ -61,11 +66,15 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 # --- Partial-cell integral: ∫_{u0}^{u1} S(u) du ---
+# Horner form: F(u) = u·@evalpoly(u, y0, d/2, a/3)
 @inline function _quadratic_integral_kernel(
     ::_EvalIntegralPartial,
     a::Tv, d::Tv, y0::Tv, u0::Td, u1::Td
 ) where {Tv, Td<:Real}
-    return (a / 3) * (u1^3 - u0^3) + (d / 2) * (u1^2 - u0^2) + y0 * (u1 - u0)
+    a_3 = a / 3
+    d_2 = d / 2
+    return u1 * @evalpoly(u1, y0, d_2, a_3) -
+           u0 * @evalpoly(u0, y0, d_2, a_3)
 end
 
 # --- Full-cell integral: ∫_0^h S(u) du = a/3·h³ + d/2·h² + y₀·h ---
@@ -73,7 +82,7 @@ end
     ::_EvalIntegralCell,
     a::Tv, d::Tv, y0::Tv, h::Tg
 ) where {Tv, Tg<:AbstractFloat}
-    return (a / 3) * h^3 + (d / 2) * h^2 + y0 * h
+    return h * @evalpoly(h, y0, d / 2, a / 3)
 end
 
 # ═══════════════════════════════════════════════════════════════

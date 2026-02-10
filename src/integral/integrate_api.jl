@@ -1,5 +1,6 @@
-# ── 1D grid accessor (CubicInterpolant stores x in cache) ──
+# ── 1D grid accessor (CubicInterpolant/CubicSeriesInterpolant store x in cache) ──
 @inline _grid_1d(itp::CubicInterpolant) = itp.cache.x
+@inline _grid_1d(itp::CubicSeriesInterpolant) = itp.cache.x
 @inline _grid_1d(itp::AbstractInterpolant) = itp.x
 
 # ── Unified 1D full-domain: replaces 4 identical per-type methods ──
@@ -146,6 +147,130 @@ end
     y_left = @inbounds y[1]
     y_right = @inbounds y[end]
     return _dispatch_extrap_integrate_1d(extrap, in_domain, x, y_left, y_right, x0, x1, Tout)
+end
+
+# ═══════════════════════════════════════════════════════════════
+# 1D Series Integration
+# ═══════════════════════════════════════════════════════════════
+
+# ── CubicSeriesInterpolant 1D ──
+
+@inline function integrate(
+    sitp::CubicSeriesInterpolant{Tg,Tv},
+    x0::Real, x1::Real;
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tg<:AbstractFloat, Tv}
+    x = sitp.cache.x
+    y = sitp.y
+    z = sitp.z
+    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    searcher = _to_searcher(search, hint)
+    n = n_series(sitp)
+    results = Vector{Tout}(undef, n)
+    @inbounds for k in 1:n
+        partial = @inline (i, xL, h, a2, b2) -> _cubic_integral_kernel(
+            _EvalIntegralPartial(), z[i,k], z[i+1,k], y[i,k], y[i+1,k], h, a2 - xL, b2 - xL
+        )
+        full = @inline (i, h) -> _cubic_integral_kernel(
+            _EvalIntegralCell(), z[i,k], z[i+1,k], y[i,k], y[i+1,k], h
+        )
+        in_domain = @inline (a, b) -> _integrate_1d_cellwise(x, a, b, searcher, partial, full, Tout)
+        results[k] = _dispatch_extrap_integrate_1d(sitp.extrap, in_domain, x, y[1,k], y[end,k], x0, x1, Tout)
+    end
+    return results
+end
+
+# ── LinearSeriesInterpolant 1D ──
+
+@inline function integrate(
+    sitp::LinearSeriesInterpolant{Tg,Tv},
+    x0::Real, x1::Real;
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tg<:AbstractFloat, Tv}
+    x = sitp.x
+    y = sitp.y
+    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    searcher = _to_searcher(search, hint)
+    n = n_series(sitp)
+    results = Vector{Tout}(undef, n)
+    @inbounds for k in 1:n
+        partial = @inline (i, xL, h, a2, b2) -> _linear_integral_kernel(
+            _EvalIntegralPartial(), y[i,k], y[i+1,k], h, a2 - xL, b2 - xL
+        )
+        full = @inline (i, h) -> _linear_integral_kernel(
+            _EvalIntegralCell(), y[i,k], y[i+1,k], h
+        )
+        in_domain = @inline (a, b) -> _integrate_1d_cellwise(x, a, b, searcher, partial, full, Tout)
+        results[k] = _dispatch_extrap_integrate_1d(sitp.extrap, in_domain, x, y[1,k], y[end,k], x0, x1, Tout)
+    end
+    return results
+end
+
+# ── QuadraticSeriesInterpolant 1D ──
+
+@inline function integrate(
+    sitp::QuadraticSeriesInterpolant{Tg,Tv},
+    x0::Real, x1::Real;
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tg<:AbstractFloat, Tv}
+    x = sitp.x
+    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    searcher = _to_searcher(search, hint)
+    n = n_series(sitp)
+    results = Vector{Tout}(undef, n)
+    @inbounds for k in 1:n
+        partial = @inline (i, xL, h, a2, b2) -> _quadratic_integral_kernel(
+            _EvalIntegralPartial(), sitp.a[i,k], sitp.d[i,k], sitp.y[i,k], a2 - xL, b2 - xL
+        )
+        full = @inline (i, h) -> _quadratic_integral_kernel(
+            _EvalIntegralCell(), sitp.a[i,k], sitp.d[i,k], sitp.y[i,k], h
+        )
+        in_domain = @inline (a, b) -> _integrate_1d_cellwise(x, a, b, searcher, partial, full, Tout)
+        results[k] = _dispatch_extrap_integrate_1d(sitp.extrap, in_domain, x, sitp.y[1,k], sitp.y[end,k], x0, x1, Tout)
+    end
+    return results
+end
+
+# ── ConstantSeriesInterpolant 1D ──
+
+@inline function integrate(
+    sitp::ConstantSeriesInterpolant{Tg,Tv},
+    x0::Real, x1::Real;
+    search=sitp.search_policy,
+    hint::Union{Nothing,Base.RefValue{Int}}=nothing
+) where {Tg<:AbstractFloat, Tv}
+    Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    searcher = _to_searcher(search, hint)
+    side = sitp.side
+    if side === Val(:left)
+        return _integrate_constant_series_1d(sitp.x, sitp.y, Val(:left), sitp.extrap, x0, x1, searcher, Tg, Tout)
+    elseif side === Val(:right)
+        return _integrate_constant_series_1d(sitp.x, sitp.y, Val(:right), sitp.extrap, x0, x1, searcher, Tg, Tout)
+    else
+        return _integrate_constant_series_1d(sitp.x, sitp.y, Val(:nearest), sitp.extrap, x0, x1, searcher, Tg, Tout)
+    end
+end
+
+@inline function _integrate_constant_series_1d(
+    x::AbstractVector, y::AbstractMatrix, side::Val{S}, extrap::ExtrapVal,
+    x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
+) where {S, SR<:Searcher, Tg, Tout}
+    n = size(y, 2)
+    results = Vector{Tout}(undef, n)
+    @inbounds for k in 1:n
+        partial = @inline (i, xL, h, a2, b2) -> _constant_integral_kernel(
+            _EvalIntegralPartial(), y[i,k], y[i+1,k], h, a2 - xL, b2 - xL, side
+        )
+        full = @inline (i, h) -> _constant_integral_kernel(
+            _EvalIntegralPartial(), y[i,k], y[i+1,k], h, zero(Tg), h, side
+        )
+        in_domain = @inline (a, b) -> _integrate_1d_cellwise(x, a, b, searcher, partial, full, Tout)
+        results[k] = _dispatch_extrap_integrate_1d(extrap, in_domain, x, y[1,k], y[end,k], x0, x1, Tout)
+    end
+    return results
 end
 
 # ═══════════════════════════════════════════════════════════════

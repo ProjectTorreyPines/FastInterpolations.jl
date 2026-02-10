@@ -6,6 +6,7 @@
     sign = iseven(nflips) ? 1 : -1
     lo2 = ntuple(d -> @inbounds(min(lo[d], hi[d])), Val(N))
     hi2 = ntuple(d -> @inbounds(max(lo[d], hi[d])), Val(N))
+    lo2 == hi2 && return (0, lo2, hi2)
     return sign, lo2, hi2
 end
 

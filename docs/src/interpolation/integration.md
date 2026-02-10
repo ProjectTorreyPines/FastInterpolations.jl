@@ -34,7 +34,7 @@ integrate(itp, a, b; search=LinearBinary(), hint=nothing)
 nothing #hide
 ```
 
-- **`search`**: Search policy for locating the bounds in the grid (e.g., `Binary()`, `Hunt()`). Defaults to the interpolant`s policy.
+- **`search`**: Search policy for locating the bounds in the grid (e.g., `Binary()`, `Hunt()`). Defaults to the interpolant's policy.
 - **`hint`**: A `Ref{Int}` to speed up sequential queries by remembering the last search index.
 
 ---

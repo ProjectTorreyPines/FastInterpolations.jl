@@ -24,12 +24,7 @@ include("vector_calculus.jl")
 include("core/show.jl")
 
 # Integration API (depends on all interpolant types)
-include("integral/integrate_ops.jl")
-include("integral/integrate_common_1d.jl")
-include("integral/integrate_common_nd.jl")
-include("integral/integrate_kernels.jl")
-include("integral/integrate_api.jl")
-include("integral/integrate_fulldomain.jl")
+include("integral/integral.jl")
 
 # Polynomial coefficient extraction (depends on all interpolant types)
 include("coeffs.jl")

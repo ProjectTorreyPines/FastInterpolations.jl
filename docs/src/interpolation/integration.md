@@ -89,6 +89,9 @@ size(cum)
 Integration respects the `extrap` keyword used during interpolant creation.
 
 ```@example integ
+x = range(0.0, 2π, 50)
+y = sin.(x)
+
 # Constant extrapolation means f(x) = f(x₁) for x < x₁
 itp_flat = cubic_interp(x, y; extrap=:constant)
 

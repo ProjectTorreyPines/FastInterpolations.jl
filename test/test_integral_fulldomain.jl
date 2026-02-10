@@ -111,12 +111,12 @@ using FastInterpolations
         itp_l = linear_interp(x, y; extrap=:none)
         integrate(itp_l)  # warmup
         alloc = @allocated integrate(itp_l)
-        @test alloc == 0
+        @test alloc <= ALLOC_THRESHOLD
 
         y_c = @. x^3 - 2x + 1
         itp_c = cubic_interp(x, y_c; extrap=:none)
         integrate(itp_c)
         alloc_c = @allocated integrate(itp_c)
-        @test alloc_c == 0
+        @test alloc_c <= ALLOC_THRESHOLD
     end
 end

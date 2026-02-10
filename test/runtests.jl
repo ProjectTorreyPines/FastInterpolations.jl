@@ -73,6 +73,7 @@ else
     include("test_integral_1d.jl")
     include("test_integral_nd_cubic.jl")
     include("test_integral_nd.jl")
+    include("test_integral_nd_exactness.jl")
     include("test_integral_extrap.jl")
     include("test_integral_allocation.jl")
 

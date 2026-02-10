@@ -26,6 +26,7 @@ itp = cubic_interp((x, y), data)
 
 # ∫∫ xy dx dy over [0,1]×[0,1] = 0.25
 integrate(itp, (0.0, 0.0), (1.0, 1.0))
+nothing #hide
 ```
 
 ---
@@ -36,6 +37,7 @@ Omit bounds to integrate over the entire domain:
 
 ```@example nd_integ
 integrate(itp)
+nothing #hide
 ```
 
 !!! tip "Performance"

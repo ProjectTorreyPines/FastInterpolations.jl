@@ -15,6 +15,7 @@ itp = cubic_interp(x, y)
 
 # Compute ∫₀^π sin(x) dx
 integrate(itp, 0.0, π)   # ≈ 2.0
+nothing #hide
 ```
 
 The bounds $a$ and $b$ can be any real numbers within the domain (or outside, if extrapolation is enabled). They do not need to be grid points.
@@ -23,12 +24,14 @@ Swapping bounds behaves consistently with calculus rules: $\int_a^b = -\int_b^a$
 
 ```@example integ
 integrate(itp, π, 0.0)   # ≈ -2.0
+nothing #hide
 ```
 
 ### Keyword Arguments
 
 ```julia
 integrate(itp, a, b; search=LinearBinary(), hint=nothing)
+nothing #hide
 ```
 
 - **`search`**: Search policy for locating the bounds in the grid (e.g., `Binary()`, `Hunt()`). Defaults to the interpolant`s policy.
@@ -42,6 +45,7 @@ To integrate over the entire domain $[x_1, x_n]$, simply omit the bounds:
 
 ```@example integ
 integrate(itp)
+nothing #hide
 ```
 
 !!! tip "Performance"
@@ -65,6 +69,7 @@ sitp = cubic_interp(x, Y)
 
 # Returns [∫ sin, ∫ cos]
 integrate(sitp, 0.0, 1.0)
+nothing #hide
 ```
 
 ### Cumulative Integration
@@ -76,7 +81,7 @@ integrate(sitp, 0.0, 1.0)
 ```@example integ
 # Result is (30 × 2) matrix, matching logic of sitp.y
 cum = cumulative_integrate(sitp)
-size(cum)
+nothing #hide
 ```
 
 !!! note "Matrix Output"
@@ -97,6 +102,7 @@ itp_flat = cubic_interp(x, y; extrap=:constant)
 
 # Integrates the constant value outside the domain
 integrate(itp_flat, -1.0, 10.0)
+nothing #hide
 ```
 
 | Mode | Effect on Integration |

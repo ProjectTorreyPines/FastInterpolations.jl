@@ -80,28 +80,31 @@ end
 end
 
 # Generic 1D split-accumulate: split [a,b] into cells, call partial/full kernels.
-# `partial_fn(i, xL, a, b)` — integrate cell i from local a to b
-# `full_fn(i)` — integrate full cell i
+# `partial_fn(i, xL, h, a2, b2)` — integrate cell i from a2 to b2, with cell width h
+# `full_fn(i, h)` — integrate full cell i with cell width h
+# Uses no-spacing search_interval variant (avoids VectorSpacing allocation).
 @inline function _integrate_1d_cellwise(
-    x, spacing, a::Real, b::Real;
-    search, hint, partial_fn, full_fn, Tout
-)
+    x::AbstractVector, a::Real, b::Real,
+    searcher::S, partial_fn::PF, full_fn::FF, ::Type{Tout}
+) where {S<:Searcher, PF, FF, Tout}
     sign, lo, hi = _normalize_bounds_1d(a, b)
     sign == 0 && return zero(Tout)
 
-    searcher = _to_searcher(search, hint)
-    i0, xL0, _ = search_interval(searcher, x, spacing, lo)
-    i1, xL1, _ = search_interval(searcher, x, spacing, hi)
+    i0, xL0, _ = search_interval(searcher, x, lo)
+    i1, xL1, _ = search_interval(searcher, x, hi)
 
     if i0 == i1
-        return sign * partial_fn(i0, xL0, lo, hi)
+        @inbounds h = x[i0 + 1] - x[i0]
+        return sign * partial_fn(i0, xL0, h, lo, hi)
     end
 
-    total = partial_fn(i0, xL0, lo, xL0 + _get_h(spacing, i0))
+    @inbounds h0 = x[i0 + 1] - x[i0]
+    total = partial_fn(i0, xL0, h0, lo, xL0 + h0)
     @inbounds for i in (i0 + 1):(i1 - 1)
-        total += full_fn(i)
+        total += full_fn(i, x[i + 1] - x[i])
     end
-    total += partial_fn(i1, xL1, xL1, hi)
+    @inbounds h1 = x[i1 + 1] - x[i1]
+    total += partial_fn(i1, xL1, h1, xL1, hi)
 
     return sign * total
 end

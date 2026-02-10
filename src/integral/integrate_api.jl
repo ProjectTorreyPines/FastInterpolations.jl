@@ -26,28 +26,23 @@ end
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.cache.x
-    spacing = itp.cache.spacing
     y = itp.y
     z = itp.z
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    searcher = _to_searcher(search, hint)
 
-    in_domain = @inline (a, b) -> _integrate_1d_cellwise(
-        x, spacing, a, b;
-        search=search, hint=hint,
-        partial_fn=@inline((i, xL, a2, b2) -> begin
-            h = _get_h(spacing, i)
-            @inbounds _cubic_integral_kernel(
-                _EvalIntegralPartial(), z[i], z[i+1], y[i], y[i+1], h, a2 - xL, b2 - xL
-            )
-        end),
-        full_fn=@inline((i) -> begin
-            h = _get_h(spacing, i)
-            @inbounds _cubic_integral_kernel(
-                _EvalIntegralCell(), z[i], z[i+1], y[i], y[i+1], h
-            )
-        end),
-        Tout=Tout
-    )
+    partial = @inline (i, xL, h, a2, b2) -> begin
+        @inbounds _cubic_integral_kernel(
+            _EvalIntegralPartial(), z[i], z[i+1], y[i], y[i+1], h, a2 - xL, b2 - xL
+        )
+    end
+    full = @inline (i, h) -> begin
+        @inbounds _cubic_integral_kernel(
+            _EvalIntegralCell(), z[i], z[i+1], y[i], y[i+1], h
+        )
+    end
+
+    in_domain = @inline (a, b) -> _integrate_1d_cellwise(x, a, b, searcher, partial, full, Tout)
 
     return _dispatch_extrap_integrate_1d(itp.extrap, in_domain, x, y[1], y[end], x0, x1, Tout)
 end
@@ -70,26 +65,21 @@ end
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.x
     y = itp.y
-    spacing = _create_spacing(x)
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    searcher = _to_searcher(search, hint)
 
-    in_domain = @inline (a, b) -> _integrate_1d_cellwise(
-        x, spacing, a, b;
-        search=search, hint=hint,
-        partial_fn=@inline((i, xL, a2, b2) -> begin
-            h = _get_h(spacing, i)
-            @inbounds _linear_integral_kernel(
-                _EvalIntegralPartial(), y[i], y[i+1], h, a2 - xL, b2 - xL
-            )
-        end),
-        full_fn=@inline((i) -> begin
-            h = _get_h(spacing, i)
-            @inbounds _linear_integral_kernel(
-                _EvalIntegralCell(), y[i], y[i+1], h
-            )
-        end),
-        Tout=Tout
-    )
+    partial = @inline (i, xL, h, a2, b2) -> begin
+        @inbounds _linear_integral_kernel(
+            _EvalIntegralPartial(), y[i], y[i+1], h, a2 - xL, b2 - xL
+        )
+    end
+    full = @inline (i, h) -> begin
+        @inbounds _linear_integral_kernel(
+            _EvalIntegralCell(), y[i], y[i+1], h
+        )
+    end
+
+    in_domain = @inline (a, b) -> _integrate_1d_cellwise(x, a, b, searcher, partial, full, Tout)
 
     return _dispatch_extrap_integrate_1d(itp.extrap, in_domain, x, y[1], y[end], x0, x1, Tout)
 end
@@ -111,25 +101,21 @@ end
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.x
-    spacing = _create_spacing(x)
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    searcher = _to_searcher(search, hint)
 
-    in_domain = @inline (a, b) -> _integrate_1d_cellwise(
-        x, spacing, a, b;
-        search=search, hint=hint,
-        partial_fn=@inline((i, xL, a2, b2) -> begin
-            @inbounds _quadratic_integral_kernel(
-                _EvalIntegralPartial(), itp.a[i], itp.d[i], itp.y[i], a2 - xL, b2 - xL
-            )
-        end),
-        full_fn=@inline((i) -> begin
-            h = _get_h(spacing, i)
-            @inbounds _quadratic_integral_kernel(
-                _EvalIntegralCell(), itp.a[i], itp.d[i], itp.y[i], h
-            )
-        end),
-        Tout=Tout
-    )
+    partial = @inline (i, xL, h, a2, b2) -> begin
+        @inbounds _quadratic_integral_kernel(
+            _EvalIntegralPartial(), itp.a[i], itp.d[i], itp.y[i], a2 - xL, b2 - xL
+        )
+    end
+    full = @inline (i, h) -> begin
+        @inbounds _quadratic_integral_kernel(
+            _EvalIntegralCell(), itp.a[i], itp.d[i], itp.y[i], h
+        )
+    end
+
+    in_domain = @inline (a, b) -> _integrate_1d_cellwise(x, a, b, searcher, partial, full, Tout)
 
     return _dispatch_extrap_integrate_1d(itp.extrap, in_domain, x, itp.y[1], itp.y[end], x0, x1, Tout)
 end
@@ -144,40 +130,73 @@ end
     return integrate(itp, first(itp.x), last(itp.x); search=search, hint=hint)
 end
 
+# Flat 1D constant cellwise integral — no nested closures.
+@inline function _integrate_constant_1d_cellwise(
+    x::AbstractVector, y::AbstractVector, side::Val{S},
+    a::Real, b::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
+) where {S, SR<:Searcher, Tg, Tout}
+    sign, lo, hi = _normalize_bounds_1d(a, b)
+    sign == 0 && return zero(Tout)
+
+    i0, xL0, _ = search_interval(searcher, x, lo)
+    i1, xL1, _ = search_interval(searcher, x, hi)
+
+    if i0 == i1
+        @inbounds h = x[i0 + 1] - x[i0]
+        return sign * @inbounds(_constant_integral_kernel(
+            _EvalIntegralPartial(), y[i0], y[i0+1], h, lo - xL0, hi - xL0, side
+        ))
+    end
+
+    @inbounds h0 = x[i0 + 1] - x[i0]
+    total = @inbounds _constant_integral_kernel(
+        _EvalIntegralPartial(), y[i0], y[i0+1], h0, lo - xL0, h0, side
+    )
+    @inbounds for i in (i0 + 1):(i1 - 1)
+        h = x[i + 1] - x[i]
+        total += _constant_integral_kernel(
+            _EvalIntegralPartial(), y[i], y[i+1], h, zero(Tg), h, side
+        )
+    end
+    @inbounds h1 = x[i1 + 1] - x[i1]
+    total += @inbounds _constant_integral_kernel(
+        _EvalIntegralPartial(), y[i1], y[i1+1], h1, zero(Tg), hi - xL1, side
+    )
+
+    return sign * total
+end
+
 @inline function integrate(
     itp::ConstantInterpolant{Tg,Tv},
     x0::Real, x1::Real;
     search=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
-    x = itp.x
-    y = itp.y
-    side = itp.side
-    spacing = _create_spacing(x)
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
+    searcher = _to_searcher(search, hint)
+    # Manual if-else on side to avoid >4 union combinations.
+    # Each branch has concrete side → _integrate_constant_1d_impl is fully typed.
+    side = itp.side
+    if side === Val(:left)
+        return _integrate_constant_1d_impl(itp.x, itp.y, Val(:left), itp.extrap, x0, x1, searcher, Tg, Tout)
+    elseif side === Val(:right)
+        return _integrate_constant_1d_impl(itp.x, itp.y, Val(:right), itp.extrap, x0, x1, searcher, Tg, Tout)
+    else
+        return _integrate_constant_1d_impl(itp.x, itp.y, Val(:nearest), itp.extrap, x0, x1, searcher, Tg, Tout)
+    end
+end
 
-    in_domain = @inline (a, b) -> _integrate_1d_cellwise(
-        x, spacing, a, b;
-        search=search, hint=hint,
-        partial_fn=@inline((i, xL, a2, b2) -> begin
-            h = _get_h(spacing, i)
-            @inbounds _constant_integral_kernel(
-                _EvalIntegralPartial(), y[i], y[i+1], h, a2 - xL, b2 - xL, side
-            )
-        end),
-        full_fn=@inline((i) -> begin
-            h = _get_h(spacing, i)
-            @inbounds _constant_integral_kernel(
-                _EvalIntegralPartial(), y[i], y[i+1], h, zero(Tg), h, side
-            )
-        end),
-        Tout=Tout
+# Receives concrete side Val{S} + union extrap (4-way, within union-split limit).
+@inline function _integrate_constant_1d_impl(
+    x::AbstractVector, y::AbstractVector, side::Val{S}, extrap::ExtrapVal,
+    x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
+) where {S, SR<:Searcher, Tg, Tout}
+    in_domain = @inline (a, b) -> _integrate_constant_1d_cellwise(
+        x, y, side, a, b, searcher, Tg, Tout
     )
-
-    # Boundary values for constant extrap depend on side mode
     y_left = side === Val(:right) ? (@inbounds y[2]) : (@inbounds y[1])
     y_right = side === Val(:left) ? (@inbounds y[end-1]) : (@inbounds y[end])
-    return _dispatch_extrap_integrate_1d(itp.extrap, in_domain, x, y_left, y_right, x0, x1, Tout)
+    return _dispatch_extrap_integrate_1d(extrap, in_domain, x, y_left, y_right, x0, x1, Tout)
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -268,27 +287,16 @@ end
     search=itp.searches,
     hint=nothing
 ) where {Tg,Tv,N}
-    sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)
+    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
+        itp.grids, itp.spacings, lo, hi, search, hint
+    )
     sign == 0 && return zero(promote_type(Tv, Tg))
-
-    @inbounds for d in 1:N
-        _check_domain(itp.grids[d], lo2[d], Val(:none))
-        _check_domain(itp.grids[d], hi2[d], Val(:none))
-    end
-
-    search_tuple = _resolve_search_nd(search, Val(N))
-    idx_lo, idx_hi = _nd_cell_ranges(itp.grids, itp.spacings, lo2, hi2, search_tuple, hint)
 
     total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
-        idx = ntuple(d -> I[d], Val(N))
-        hs = ntuple(d -> _get_h(itp.spacings[d], idx[d]), Val(N))
-        inv_hs = ntuple(d -> _get_inv_h(itp.spacings[d], idx[d]), Val(N))
-        Ls = ntuple(d -> itp.grids[d][idx[d]], Val(N))
-        Rs = ntuple(d -> itp.grids[d][idx[d] + 1], Val(N))
-        ulos = ntuple(d -> max(lo2[d], Ls[d]) - Ls[d], Val(N))
-        uhis = ntuple(d -> min(hi2[d], Rs[d]) - Ls[d], Val(N))
+        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
+            inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.spacings[d], idx[d])), Val(N))
             total += _integrate_nd_cubic_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, uhis)
         end
     end
@@ -328,25 +336,14 @@ end
     search=itp.searches,
     hint=nothing
 ) where {Tg,Tv,N}
-    sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)
+    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
+        itp.grids, itp.spacings, lo, hi, search, hint
+    )
     sign == 0 && return zero(promote_type(Tv, Tg))
-
-    @inbounds for d in 1:N
-        _check_domain(itp.grids[d], lo2[d], Val(:none))
-        _check_domain(itp.grids[d], hi2[d], Val(:none))
-    end
-
-    search_tuple = _resolve_search_nd(search, Val(N))
-    idx_lo, idx_hi = _nd_cell_ranges(itp.grids, itp.spacings, lo2, hi2, search_tuple, hint)
 
     total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
-        idx = ntuple(d -> I[d], Val(N))
-        hs = ntuple(d -> _get_h(itp.spacings[d], idx[d]), Val(N))
-        Ls = ntuple(d -> itp.grids[d][idx[d]], Val(N))
-        Rs = ntuple(d -> itp.grids[d][idx[d] + 1], Val(N))
-        ulos = ntuple(d -> max(lo2[d], Ls[d]) - Ls[d], Val(N))
-        uhis = ntuple(d -> min(hi2[d], Rs[d]) - Ls[d], Val(N))
+        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
             total += _integrate_linear_nd_cell(itp.data, idx, hs, ulos, uhis)
         end
@@ -387,27 +384,16 @@ end
     search=itp.searches,
     hint=nothing
 ) where {Tg,Tv,N}
-    sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)
+    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
+        itp.grids, itp.spacings, lo, hi, search, hint
+    )
     sign == 0 && return zero(promote_type(Tv, Tg))
-
-    @inbounds for d in 1:N
-        _check_domain(itp.grids[d], lo2[d], Val(:none))
-        _check_domain(itp.grids[d], hi2[d], Val(:none))
-    end
-
-    search_tuple = _resolve_search_nd(search, Val(N))
-    idx_lo, idx_hi = _nd_cell_ranges(itp.grids, itp.spacings, lo2, hi2, search_tuple, hint)
 
     total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
-        idx = ntuple(d -> I[d], Val(N))
-        hs = ntuple(d -> _get_h(itp.spacings[d], idx[d]), Val(N))
-        inv_hs = ntuple(d -> _get_inv_h(itp.spacings[d], idx[d]), Val(N))
-        Ls = ntuple(d -> itp.grids[d][idx[d]], Val(N))
-        Rs = ntuple(d -> itp.grids[d][idx[d] + 1], Val(N))
-        ulos = ntuple(d -> max(lo2[d], Ls[d]) - Ls[d], Val(N))
-        uhis = ntuple(d -> min(hi2[d], Rs[d]) - Ls[d], Val(N))
+        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
+            inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.spacings[d], idx[d])), Val(N))
             total += _integrate_nd_quad_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, uhis)
         end
     end
@@ -447,25 +433,14 @@ end
     search=itp.searches,
     hint=nothing
 ) where {Tg,Tv,N}
-    sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)
+    sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
+        itp.grids, itp.spacings, lo, hi, search, hint
+    )
     sign == 0 && return zero(promote_type(Tv, Tg))
-
-    @inbounds for d in 1:N
-        _check_domain(itp.grids[d], lo2[d], Val(:none))
-        _check_domain(itp.grids[d], hi2[d], Val(:none))
-    end
-
-    search_tuple = _resolve_search_nd(search, Val(N))
-    idx_lo, idx_hi = _nd_cell_ranges(itp.grids, itp.spacings, lo2, hi2, search_tuple, hint)
 
     total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
-        idx = ntuple(d -> I[d], Val(N))
-        hs = ntuple(d -> _get_h(itp.spacings[d], idx[d]), Val(N))
-        Ls = ntuple(d -> itp.grids[d][idx[d]], Val(N))
-        Rs = ntuple(d -> itp.grids[d][idx[d] + 1], Val(N))
-        ulos = ntuple(d -> max(lo2[d], Ls[d]) - Ls[d], Val(N))
-        uhis = ntuple(d -> min(hi2[d], Rs[d]) - Ls[d], Val(N))
+        idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
             total += _integrate_constant_nd_cell(itp.data, idx, hs, ulos, uhis, itp.sides)
         end

@@ -74,6 +74,7 @@ else
     include("test_integral_nd_cubic.jl")
     include("test_integral_nd.jl")
     include("test_integral_extrap.jl")
+    include("test_integral_allocation.jl")
 
     # # Auto-differentiation tests (ForwardDiff, Zygote, Enzyme)
     include("test_autodiff_ForwardDiff.jl")

@@ -37,6 +37,13 @@ EvalDeriv2
 EvalDeriv3
 ```
 
+## Polynomial Coefficients
+
+```@docs
+coeffs
+CellPoly
+```
+
 ## Vector Calculus (ND)
 
 ```@docs

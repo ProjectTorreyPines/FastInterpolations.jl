@@ -13,7 +13,7 @@ A high-performance **N-dimensional** interpolation package for Julia, optimized 
 - 🚀 **Fast**: Optimized algorithms that outperform other packages.
 - ✅ **Zero-Allocation**: No GC pressure on hot loops.
 - 🎯 **Explicit BCs**: Support custom physical boundary conditions.
-- 📐 **Derivatives**: Analytical differential operators (gradient, hessian, etc.)
+- 📐 **Analytic Derivatives & Integration**: Analytical differential operators (gradient, hessian, etc.) and exact spline integration.
 - 🌌 **Generic**: Supports **Complex** values and **AD (AutoDiff)** — ForwardDiff, Zygote, Enzyme.
 - 🧵 **Thread-Safe**: Lock-free concurrent access across multiple threads.
 

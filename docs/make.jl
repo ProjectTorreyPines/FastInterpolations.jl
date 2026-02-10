@@ -119,6 +119,7 @@ makedocs(
             "Quadratic" => "interpolation/quadratic.md",
             "Cubic" => "interpolation/cubic.md",
             "Derivatives" => "interpolation/derivatives.md",
+            "Integration" => "interpolation/integration.md",
             "Visual Comparison" => "interpolation/comparison.md",
         ],
         "Boundary Conditions" => [
@@ -131,6 +132,7 @@ makedocs(
             "Overview" => "nd/overview.md",
             "Boundary Conditions" => "nd/boundary_conditions.md",
             "Derivatives" => "nd/derivatives.md",
+            "Integration" => "nd/integration.md",
             "Extrapolation" => "nd/extrapolation.md",
         ],
         "Advanced Usage" => [

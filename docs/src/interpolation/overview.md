@@ -49,3 +49,4 @@ To balance convenience and maximum performance, three API patterns are available
 - **[Cubic](cubic.md)**: C² with various boundary conditions
 - **[Visual Comparison](comparison.md)**: Side-by-side plots of all methods
 - **[Derivatives](derivatives.md)**: Detailed derivative documentation
+- **[Integration](integration.md)**: Analytical integration over splines

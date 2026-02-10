@@ -23,6 +23,12 @@ include("vector_calculus.jl")
 # Custom show methods (depends on all interpolant types and DerivativeView)
 include("core/show.jl")
 
+# Integration API (depends on all interpolant types)
+include("integral/integral.jl")
+
+# Polynomial coefficient extraction (depends on all interpolant types)
+include("coeffs.jl")
+
 # Exports
 export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
@@ -50,6 +56,12 @@ export deriv1, deriv2, deriv3, deriv_view, AbstractDerivativeView, DerivativeVie
 
 # Operation types (for derivative dispatch)
 export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3
+
+# Integration
+export integrate, cumulative_integrate
+
+# Polynomial coefficient extraction
+export CellPoly, coeffs
 
 # Plot recipe helpers (re-exported from HelpPlots)
 export help_plot, help_plot!

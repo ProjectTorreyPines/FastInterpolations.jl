@@ -67,6 +67,22 @@ else
     include("test_nd_batch_inplace.jl")
     include("test_gradient_hessian.jl")
 
+    # Coefficients API
+    include("test_coeffs.jl")
+
+    # Integration API
+    include("test_integral_api.jl")
+    include("test_integral_cubic_1d.jl")
+    include("test_integral_1d.jl")
+    include("test_integral_nd_cubic.jl")
+    include("test_integral_nd.jl")
+    include("test_integral_nd_exactness.jl")
+    include("test_integral_extrap.jl")
+    include("test_integral_allocation.jl")
+    include("test_integral_series.jl")
+    include("test_integral_fulldomain.jl")
+    include("test_cumulative_integrate.jl")
+
     # # Auto-differentiation tests (ForwardDiff, Zygote, Enzyme)
     include("test_autodiff_ForwardDiff.jl")
     include("test_autodiff_Zygote.jl")

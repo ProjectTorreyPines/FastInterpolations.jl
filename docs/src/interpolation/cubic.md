@@ -51,16 +51,23 @@ S(x) = S(x + \tau), \quad S'(x) = S'(x + \tau), \quad S''(x) = S''(x + \tau)
 ```
 
 ```julia
+# Inclusive endpoint (default): y[1] ≈ y[end] required
 PeriodicBC()
+
+# Exclusive endpoint: no redundant last point (e.g., FFT grids)
+PeriodicBC(endpoint=:exclusive)              # Range grid → period auto-inferred
+PeriodicBC(endpoint=:exclusive, period=2π)   # any grid → explicit period
 ```
 
 !!! warning "Periodicity Requirement"
-    Your data must satisfy `y[1] ≈ y[end]`. If this condition is violated, the spline
-    will still be computed but won't represent a truly periodic function.
+    For inclusive endpoints, your data must satisfy `y[1] ≈ y[end]`.
+    For exclusive endpoints, the data is extended internally — no manual duplication needed.
 
 !!! note "Different Algorithm"
     PeriodicBC uses the **Sherman-Morrison formula** to solve a cyclic tridiagonal system.
     This is fundamentally different from BCPair's standard tridiagonal solver.
+
+👉 See [PeriodicBC Details](../boundary-conditions/periodicbc.md) for endpoint conventions, period inference, and comparison with `extrap=:wrap`.
 
 ---
 

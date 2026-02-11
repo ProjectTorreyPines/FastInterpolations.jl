@@ -128,7 +128,9 @@ _format_search(::LinearBinary{MAX}) where {MAX} = "LinearBinary{$MAX}"
 """Format boundary condition for display."""
 _format_bc(::NaturalBC) = "Natural (S''=0 at ends)"
 _format_bc(::ClampedBC) = "Clamped (S'=0 at ends)"
-_format_bc(::PeriodicBC) = "Periodic"
+_format_bc(bc::PeriodicBC{:inclusive}) = bc.period === nothing ? "Periodic" : "Periodic (period≈$(Printf.@sprintf("%.4g", bc.period)))"
+_format_bc(bc::PeriodicBC{:exclusive}) = bc.period === nothing ? "Periodic (exclusive)" : "Periodic (exclusive, period≈$(Printf.@sprintf("%.4g", bc.period)))"
+_format_bc(::PeriodicData) = "Periodic"
 _format_bc(bc::Deriv1) = "Deriv1($(bc.val))"
 _format_bc(bc::Deriv2) = "Deriv2($(bc.val))"
 _format_bc(bc::Deriv3) = "Deriv3($(bc.val))"
@@ -307,7 +309,9 @@ function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolant{Tg, Tv}) wh
 end
 
 # Short BC name for compact display
-_short_bc_name(::PeriodicBC) = "Periodic"
+_short_bc_name(::PeriodicBC{:inclusive}) = "Periodic"
+_short_bc_name(::PeriodicBC{:exclusive}) = "Periodic(excl)"
+_short_bc_name(::PeriodicData) = "Periodic"
 _short_bc_name(::MinCurvFit) = "MinCurvFit"
 _short_bc_name(bc::Left) = "Left($(_format_bc_point(bc.bc)))"
 _short_bc_name(bc::Right) = "Right($(_format_bc_point(bc.bc)))"

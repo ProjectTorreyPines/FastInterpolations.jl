@@ -131,29 +131,58 @@ end
 """
 Core implementation for PeriodicBC boundary conditions (vector output).
 Thread-safe: uses _get_cubic_cache + @with_pool pattern.
+Pool-based exclusive extension: zero-alloc after warmup.
 """
 @inline @with_pool pool function _cubic_interp_periodic!(
     output::AbstractVector{Tv},
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg},
+    bc::PeriodicBC,
     autocache::Bool,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
-    @assert length(y) == length(x) "y length must match x"
-    @assert length(output) == length(x_query) "output length must match x_query"
 
-    _check_periodic_endpoints(y)
-    cache = _get_cubic_cache(x, PeriodicBC(), autocache)
-    z = similar!(pool, y)
-    _solve_system!(z, cache, y, cache.bc_config)
+    @assert length(x) == length(y) "x and y must have the same length"
 
-    # Periodic BC always uses :wrap extrapolation
-    @_dispatch_extrap :wrap => ev begin
-        _cubic_vector_loop!(output, cache, y, z, x_query, ev, op, searcher)
+    # ── Extend exclusive → inclusive (pool-based) ──
+    if bc isa PeriodicBC{:exclusive}
+        period = _resolve_exclusive_period(x, bc)
+        x_end  = first(x) + Tg(period)
+        last(x) < x_end || throw(ArgumentError(
+            "period=$period places virtual endpoint at $x_end, " *
+            "not after last grid point x[end]=$(last(x))"))
+
+        n = length(x)
+        # Grid: Range → direct construction (type-stable, O(1)), Vector → pool
+        # Note: _resolve_exclusive_period guarantees period = step(x) * length(x) for Range,
+        # so x_end == last(x) + step(x) and direct Range extension is always valid.
+        if x isa AbstractRange
+            x_p = range(first(x), step=step(x), length=n + 1)
+        else
+            x_p = unsafe_acquire!(pool, Tg, n + 1)
+            @inbounds copyto!(x_p, 1, x, 1, n)
+            @inbounds x_p[n + 1] = x_end
+        end
+        y_p = acquire!(pool, Tv, n + 1)
+        @inbounds copyto!(y_p, 1, y, 1, n)
+        @inbounds y_p[n + 1] = y[1]
+    else
+        x_p, y_p = x, y
     end
 
+    @assert length(output) == length(x_query) "output length must match x_query"
+
+    # ── Standard periodic solve + vector eval ──
+    _check_periodic_endpoints(y_p)
+    cache = _get_cubic_cache(x_p, PeriodicBC(), autocache)
+    z = acquire!(pool, Tv, length(y_p))
+    _solve_system!(z, cache, y_p, cache.bc_config)
+
+    @_dispatch_extrap :wrap => ev begin
+        _cubic_vector_loop!(output, cache, y_p, z, x_query, ev, op, searcher)
+    end
     return output
 end
 
@@ -161,24 +190,56 @@ end
 Core implementation for PeriodicBC boundary conditions (scalar query).
 Thread-safe: uses _get_cubic_cache + @with_pool pattern.
 AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
+Pool-based exclusive extension: zero-alloc after warmup.
 """
 @inline @with_pool pool function _cubic_interp_periodic_scalar(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq,  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
+    bc::PeriodicBC,
     autocache::Bool,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real, O<:AbstractEvalOp, S<:Searcher}
-    _check_periodic_endpoints(y)
-    cache = _get_cubic_cache(x, PeriodicBC(), autocache)
-    z = similar!(pool, y)
-    _solve_system!(z, cache, y, cache.bc_config)
 
-    # Periodic BC always uses :wrap extrapolation
+    @assert length(x) == length(y) "x and y must have the same length"
+
+    # ── Extend exclusive → inclusive (pool-based, zero-alloc after warmup) ──
+    if bc isa PeriodicBC{:exclusive}
+        period = _resolve_exclusive_period(x, bc)
+        x_end  = first(x) + Tg(period)
+        last(x) < x_end || throw(ArgumentError(
+            "period=$period places virtual endpoint at $x_end, " *
+            "not after last grid point x[end]=$(last(x))"))
+
+        n = length(x)
+        # Grid: Range → direct construction (type-stable, O(1)), Vector → pool
+        # Note: _resolve_exclusive_period guarantees period = step(x) * length(x) for Range,
+        # so x_end == last(x) + step(x) and direct Range extension is always valid.
+        if x isa AbstractRange
+            x_p = range(first(x), step=step(x), length=n + 1)
+        else
+            x_p = unsafe_acquire!(pool, Tg, n + 1)
+            @inbounds copyto!(x_p, 1, x, 1, n)
+            @inbounds x_p[n + 1] = x_end
+        end
+        # Values: always pool
+        y_p = acquire!(pool, Tv, n + 1)
+        @inbounds copyto!(y_p, 1, y, 1, n)
+        @inbounds y_p[n + 1] = y[1]
+    else
+        x_p, y_p = x, y
+    end
+
+    # ── Standard periodic solve + eval (unchanged) ──
+    _check_periodic_endpoints(y_p)
+    cache = _get_cubic_cache(x_p, PeriodicBC(), autocache)
+    z = acquire!(pool, Tv, length(y_p))
+    _solve_system!(z, cache, y_p, cache.bc_config)
+
     @_dispatch_extrap :wrap => ev begin
         _check_domain(cache.x, xq, ev)
-        return _eval_with_bc(cache, y, z, xq, ev, op, searcher)
+        return _eval_with_bc(cache, y_p, z, xq, ev, op, searcher)
     end
 end
 
@@ -204,7 +265,7 @@ In-place cubic spline interpolation with optional automatic caching.
     @_dispatch_deriv deriv => op begin
         # Periodic BC
         if _is_periodic_bc(bc)
-            return _cubic_interp_periodic!(output, x, y, x_query, autocache, op, searcher)
+            return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, op, searcher)
         end
 
         # Normalize to BCPair and dispatch to core
@@ -247,7 +308,7 @@ end
     searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         if _is_periodic_bc(bc)
-            output[1] = _cubic_interp_periodic_scalar(x, y, x_query, autocache, op, searcher)
+            output[1] = _cubic_interp_periodic_scalar(x, y, x_query, bc, autocache, op, searcher)
         else
             bc_pair = _normalize_bc(bc, Tv)
             output[1] = _cubic_interp_bcpair_scalar(x, y, x_query, bc_pair, extrap, autocache, op, searcher)
@@ -339,7 +400,7 @@ function cubic_interp(
     searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         if _is_periodic_bc(bc)
-            return _cubic_interp_periodic!(output, x, y, x_query, autocache, op, searcher)
+            return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, op, searcher)
         end
 
         bc_pair = _normalize_bc(bc, Tv)
@@ -370,7 +431,7 @@ function cubic_interp(
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         if _is_periodic_bc(bc)
-            return _cubic_interp_periodic_scalar(x, y, xq, autocache, op, searcher)
+            return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, op, searcher)
         end
 
         bc_pair = _normalize_bc(bc, Tv)

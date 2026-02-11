@@ -125,6 +125,7 @@ makedocs(
         "Boundary Conditions" => [
             "Overview" => "boundary-conditions/overview.md",
             "PointBC & PolyFit" => "boundary-conditions/pointbc.md",
+            "PeriodicBC" => "boundary-conditions/periodicbc.md",
         ],
         "Extrapolation" => "extrapolation.md",
         "Visualization" => "visualization.md",

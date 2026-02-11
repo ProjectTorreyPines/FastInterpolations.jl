@@ -121,7 +121,7 @@ function _resolve_exclusive_period(x, bc::PeriodicBC)
         if inferred !== nothing && !(bc.period ≈ inferred)
             x0 = first(x); x1 = x0 + inferred
             throw(ArgumentError(
-                "PeriodicBC's period=$(bc.period) conflicts with Range-inferred period = $x1 − $x0 = $inferred. " *
+                "PeriodicBC's period=$(bc.period) conflicts with Range-inferred period = $x1 - $x0 = $inferred. " *
                 "Either adjust `period` or omit it for auto-inference."))
         end
         return bc.period

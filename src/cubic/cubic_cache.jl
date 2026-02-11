@@ -43,6 +43,13 @@ function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC=NaturalBC()) wher
 
     # Periodic BC
     if _is_periodic_bc(bc)
+        if bc isa PeriodicBC{:exclusive}
+            throw(ArgumentError(
+                "CubicSplineCache does not support PeriodicBC(endpoint=:exclusive) because " *
+                "the cache is grid-only and cannot extend data values. " *
+                "Use cubic_interp(x, y, xq; bc=PeriodicBC(endpoint=:exclusive)) or " *
+                "CubicInterpolant(x, y; bc=PeriodicBC(endpoint=:exclusive)) instead."))
+        end
         return _build_periodic_cache(x)
     end
 

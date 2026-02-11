@@ -144,6 +144,8 @@ Pool-based exclusive extension: zero-alloc after warmup.
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
 
+    @assert length(x) == length(y) "x and y must have the same length"
+
     # ── Extend exclusive → inclusive (pool-based) ──
     if bc isa PeriodicBC{:exclusive}
         period = _resolve_exclusive_period(x, bc)
@@ -152,7 +154,7 @@ Pool-based exclusive extension: zero-alloc after warmup.
             "period=$period places virtual endpoint at $x_end, " *
             "not after last grid point x[end]=$(last(x))"))
 
-        n = length(y)
+        n = length(x)
         # Grid: Range → direct construction (type-stable, O(1)), Vector → pool
         # Note: _resolve_exclusive_period guarantees period = step(x) * length(x) for Range,
         # so x_end == last(x) + step(x) and direct Range extension is always valid.
@@ -170,7 +172,6 @@ Pool-based exclusive extension: zero-alloc after warmup.
         x_p, y_p = x, y
     end
 
-    @assert length(y_p) == length(x_p) "y length must match x"
     @assert length(output) == length(x_query) "output length must match x_query"
 
     # ── Standard periodic solve + vector eval ──
@@ -201,6 +202,8 @@ Pool-based exclusive extension: zero-alloc after warmup.
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real, O<:AbstractEvalOp, S<:Searcher}
 
+    @assert length(x) == length(y) "x and y must have the same length"
+
     # ── Extend exclusive → inclusive (pool-based, zero-alloc after warmup) ──
     if bc isa PeriodicBC{:exclusive}
         period = _resolve_exclusive_period(x, bc)
@@ -209,7 +212,7 @@ Pool-based exclusive extension: zero-alloc after warmup.
             "period=$period places virtual endpoint at $x_end, " *
             "not after last grid point x[end]=$(last(x))"))
 
-        n = length(y)
+        n = length(x)
         # Grid: Range → direct construction (type-stable, O(1)), Vector → pool
         # Note: _resolve_exclusive_period guarantees period = step(x) * length(x) for Range,
         # so x_end == last(x) + step(x) and direct Range extension is always valid.

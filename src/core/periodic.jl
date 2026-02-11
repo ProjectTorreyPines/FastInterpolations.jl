@@ -231,16 +231,19 @@ function _prepare_periodic_nd(
     end
     has_exclusive || return (grids, data, bcs)
 
-    # Extend each exclusive axis sequentially
-    grids_vec = Any[grids...]
-    bcs_vec = Any[bcs...]
-    data_cur = data
+    # Resolve periods, extend grids, and validate — use typed vectors
+    grids_vec = Vector{AbstractVector{Tg}}(undef, N)
+    bcs_vec = Vector{AbstractBC}(undef, N)
+    for d in 1:N
+        grids_vec[d] = grids[d]
+        bcs_vec[d] = bcs[d]
+    end
 
     for d in 1:N
         bc_d = bcs[d]
         bc_d isa PeriodicBC{:exclusive} || continue
 
-        grid_d = grids_vec[d]::AbstractVector{Tg}
+        grid_d = grids_vec[d]
         period = _resolve_exclusive_period(grid_d, bc_d)
         x_end = first(grid_d) + Tg(period)
 
@@ -249,17 +252,40 @@ function _prepare_periodic_nd(
             "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
             "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"))
 
-        # Extend grid (reuse 1D helper)
         grids_vec[d] = _extend_grid(grid_d, x_end)
-
-        # Extend data: append first slice along dim d
-        data_cur = cat(data_cur, selectdim(data_cur, d, 1:1); dims=d)
-
-        # Store resolved period for display
         bcs_vec[d] = _with_resolved_period(bc_d, period)
+    end
+
+    # Extend data: allocate final shape once, then fill slices (avoids O(k) cat copies)
+    final_sizes = ntuple(Val(N)) do d
+        bcs[d] isa PeriodicBC{:exclusive} ? size(data, d) + 1 : size(data, d)
+    end
+    data_out = Array{Tv, N}(undef, final_sizes)
+
+    # Copy original data into the sub-array
+    orig_inds = ntuple(d -> 1:size(data, d), Val(N))
+    copyto!(view(data_out, orig_inds...), data)
+
+    # Fill extended slices dim-by-dim (earlier extensions are visible to later dims)
+    for d in 1:N
+        bcs[d] isa PeriodicBC{:exclusive} || continue
+        nd = size(data, d)  # original size in this dim
+        # Build valid ranges: already-extended dims use full size, others use original
+        cur_ranges = ntuple(Val(N)) do i
+            if i == d
+                1:1  # placeholder, overridden below
+            elseif i < d && bcs[i] isa PeriodicBC{:exclusive}
+                1:(size(data, i) + 1)  # already extended
+            else
+                1:size(data, i)
+            end
+        end
+        src_inds = ntuple(i -> i == d ? (1:1) : cur_ranges[i], Val(N))
+        dst_inds = ntuple(i -> i == d ? (nd+1:nd+1) : cur_ranges[i], Val(N))
+        copyto!(view(data_out, dst_inds...), view(data_out, src_inds...))
     end
 
     grids_out = ntuple(d -> grids_vec[d]::AbstractVector{Tg}, Val(N))
     bcs_out = ntuple(d -> bcs_vec[d]::AbstractBC, Val(N))
-    return (grids_out, data_cur, bcs_out)
+    return (grids_out, data_out, bcs_out)
 end

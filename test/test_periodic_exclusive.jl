@@ -230,6 +230,41 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         end
     end
 
+    @testset "Oneshot API — Exclusive endpoint (Vector grid)" begin
+        # Build inclusive reference from a non-uniform grid
+        x_incl = [0.0, 0.5, 1.5, 3.0, 5.0, 2π]
+        y_incl = sin.(x_incl)
+        x_excl = x_incl[1:end-1]
+        y_excl = y_incl[1:end-1]
+        bc_excl = PeriodicBC(endpoint=:exclusive, period=2π)
+
+        itp_ref = cubic_interp(x_incl, y_incl; bc=PeriodicBC())
+
+        @testset "Scalar query" begin
+            for xq in [0.1, 1.0, π, 5.5]
+                val = cubic_interp(x_excl, y_excl, xq; bc=bc_excl)
+                @test val ≈ itp_ref(xq) atol=1e-14
+            end
+        end
+
+        @testset "Vector query" begin
+            xq = [0.1, 1.0, π, 5.5]
+            vals = cubic_interp(x_excl, y_excl, xq; bc=bc_excl)
+            for i in eachindex(xq)
+                @test vals[i] ≈ itp_ref(xq[i]) atol=1e-14
+            end
+        end
+
+        @testset "In-place vector query" begin
+            xq = [0.1, 1.0, π, 5.5]
+            output = zeros(4)
+            cubic_interp!(output, x_excl, y_excl, xq; bc=bc_excl)
+            for i in eachindex(xq)
+                @test output[i] ≈ itp_ref(xq[i]) atol=1e-14
+            end
+        end
+    end
+
     # ========================================
     # Series Interpolant Tests
     # ========================================
@@ -384,6 +419,25 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
             alloc = @allocated cubic_interp!(out, x, y, xq; bc=bc)
             @test alloc <= ALLOC_THRESHOLD
         end
+
+        # Vector grid path uses pool-based unsafe_acquire! + copyto!
+        x_vec = [0.0, 0.5, 1.5, 3.0, 5.0]
+        y_vec = sin.(x_vec)
+        bc_vec = PeriodicBC(endpoint=:exclusive, period=2π)
+
+        @testset "scalar (Vector grid)" begin
+            cubic_interp(x_vec, y_vec, 1.0; bc=bc_vec)  # warmup
+            alloc = @allocated cubic_interp(x_vec, y_vec, 1.0; bc=bc_vec)
+            @test alloc <= ALLOC_THRESHOLD
+        end
+
+        @testset "vector in-place (Vector grid)" begin
+            xq_v = [0.5, 1.0, 2.0]
+            out_v = similar(xq_v)
+            cubic_interp!(out_v, x_vec, y_vec, xq_v; bc=bc_vec)  # warmup
+            alloc = @allocated cubic_interp!(out_v, x_vec, y_vec, xq_v; bc=bc_vec)
+            @test alloc <= ALLOC_THRESHOLD
+        end
     end
 
     # ========================================
@@ -415,6 +469,11 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
             y = sin.(x)
             itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive))
             @test itp(1f0) isa Float32
+        end
+
+        @testset "CubicSplineCache rejects exclusive PeriodicBC" begin
+            x = range(0.0, step=0.1, length=10)
+            @test_throws ArgumentError CubicSplineCache(x; bc=PeriodicBC(endpoint=:exclusive))
         end
     end
 

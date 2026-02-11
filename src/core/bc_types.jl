@@ -28,7 +28,7 @@
 #   │       ├── QuadraticFit = PolyFit{2}  (3 points, O(h²))
 #   │       └── CubicFit    = PolyFit{3}  (4 points, O(h³))
 #   ├── BCPair{L,R}           # Both endpoints (L, R are PointBC subtypes)
-#   ├── PeriodicBC            # Periodic BC (singleton, structure-only)
+#   ├── PeriodicBC{E,P}       # Periodic BC (inclusive/exclusive endpoint)
 #   ├── NaturalBC             # Natural BC (singleton, normalized to Deriv2{Tv})
 #   ├── ClampedBC             # Clamped BC (singleton, normalized to Deriv1{Tv})
 #   ├── MinCurvFit            # Minimum curvature BC (singleton, quadratic splines)
@@ -45,7 +45,7 @@ Concrete subtypes with values (Deriv1, Deriv2, Deriv3) carry their own Tv parame
 # Subtypes
 - `NaturalBC`: Natural BC (zero curvature at both ends) - singleton
 - `ClampedBC`: Clamped BC (zero slope at both ends) - singleton
-- `PeriodicBC`: Periodic boundary condition - singleton
+- `PeriodicBC{E,P}`: Periodic boundary condition (inclusive/exclusive endpoint)
 - `PointBC`: Single-point derivative conditions (abstract)
 - `BCPair{L,R}`: Pair of left/right boundary conditions
 - `Left{B}`: Endpoint wrapper for BC at left (x[1]) - used by quadratic splines
@@ -169,19 +169,65 @@ BCPair(t::Tuple{L, R}) where {L<:PointBC, R<:PointBC} =
 
 
 """
-    PeriodicBC <: AbstractBC
+    PeriodicBC{E, P} <: AbstractBC
 
 Periodic boundary condition: S(x_0) = S(x_n), S'(x_0) = S'(x_n), S''(x_0) = S''(x_n)
 
-This is a singleton type (structure-only, no value parameter).
 Internally, periodic BC uses Sherman-Morrison solver with `PeriodicData{T}` for the cache.
 
-# Example
+# Type Parameters
+- `E::Symbol`: `:inclusive` or `:exclusive` (compile-time endpoint convention)
+- `P`: `Nothing` (inclusive or auto-infer) or `<:AbstractFloat` (explicit period)
+
+# Endpoint Conventions
+- **Inclusive** (`endpoint=:inclusive`, default): `y[1] ≈ y[end]` required (standard convention)
+- **Exclusive** (`endpoint=:exclusive`): `y[end]` is the last unique data point; the period boundary
+  is handled internally. For `AbstractRange` grids, the period is inferred from `step(x) * length(x)`.
+  For non-uniform grids, `period` must be provided explicitly.
+
+# Examples
 ```julia
+# Inclusive (default, backward compatible)
 cache = CubicSplineCache(x; bc=PeriodicBC())
+
+# Exclusive with explicit period
+itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive, period=2π))
+
+# Exclusive with Range grid (period auto-inferred)
+x = range(0, step=2π/64, length=64)
+itp = cubic_interp(x, sin.(x); bc=PeriodicBC(endpoint=:exclusive))
 ```
 """
-struct PeriodicBC <: AbstractBC end
+struct PeriodicBC{E, P} <: AbstractBC
+    period::P         # Nothing or AbstractFloat
+    function PeriodicBC{E, P}(period::P) where {E, P}
+        E isa Symbol || error("PeriodicBC type parameter E must be a Symbol")
+        E in (:inclusive, :exclusive) || error("PeriodicBC type parameter E must be :inclusive or :exclusive")
+        new{E, P}(period)
+    end
+end
+
+# Accessor for endpoint (from type parameter, zero-cost)
+@inline endpoint(::PeriodicBC{E}) where {E} = E
+
+# Keyword constructor with validation (also serves as zero-arg constructor via defaults)
+function PeriodicBC(; endpoint::Symbol=:inclusive, period::Union{Real,Nothing}=nothing)
+    endpoint in (:inclusive, :exclusive) || throw(ArgumentError(
+        "endpoint must be :inclusive or :exclusive, got :$endpoint"))
+    if endpoint == :inclusive
+        period === nothing || throw(ArgumentError(
+            "period is not applicable for endpoint=:inclusive (y[1]≈y[end] convention)"))
+        return PeriodicBC{:inclusive, Nothing}(nothing)
+    else # :exclusive
+        if period !== nothing
+            p = float(period)
+            p > 0 || throw(ArgumentError("period must be positive, got $period"))
+            return PeriodicBC{:exclusive, typeof(p)}(p)
+        else
+            return PeriodicBC{:exclusive, Nothing}(nothing)  # infer from Range at build time
+        end
+    end
+end
 
 """
     NaturalBC <: AbstractBC
@@ -612,7 +658,7 @@ Type alias for boundary conditions accepted by cubic spline interpolants.
 With the Type-Free design, this is a simple union without type parameters:
 - `PointBC`: Single-point BC (Deriv1{Tv}, Deriv2{Tv}, Deriv3{Tv}, PolyFit{D}) - promoted to BCPair internally
 - `BCPair{L,R}`: Left/right BC pair (L, R are PointBC subtypes)
-- `PeriodicBC`: Periodic boundary condition (singleton)
+- `PeriodicBC{E,P}`: Periodic boundary condition (inclusive or exclusive endpoint)
 
 This type is used as a constraint for the `bc` field in `CubicInterpolant`,
 ensuring type safety while allowing all valid cubic spline BC types.

@@ -255,6 +255,109 @@ Throws `ArgumentError` if endpoints differ significantly.
     return nothing
 end
 
+# ========================================
+# Exclusive Endpoint Extension
+# ========================================
+
+"""
+    _prepare_periodic(x, y, bc::PeriodicBC)
+
+Prepare grid and values for periodic interpolation.
+- Inclusive endpoint (default): no-op, returns `(x, y)` unchanged.
+- Exclusive endpoint: extends `x` and `y` with a virtual endpoint at `x[1] + period`.
+
+Called once at construction time before the periodic solver pipeline.
+Uses dispatch on PeriodicBC{E} type parameter for type stability.
+"""
+@inline _prepare_periodic(x, y, ::PeriodicBC{:inclusive}) = (x, y)
+@inline _prepare_periodic(x, y, bc::PeriodicBC{:exclusive}) = _extend_exclusive(x, y, bc)
+
+"""
+    _can_infer_period(x) -> Bool
+
+Check if the period can be inferred from the grid (true for AbstractRange).
+"""
+@inline _can_infer_period(::AbstractRange) = true
+@inline _can_infer_period(::AbstractVector) = false
+
+"""
+    _resolve_exclusive_period(x, bc::PeriodicBC)
+
+Resolve the period for exclusive endpoint PeriodicBC:
+- If `bc.period` is provided, cross-validate against Range inference when applicable.
+- If `bc.period` is nothing, infer from Range or error for non-uniform grids.
+"""
+function _resolve_exclusive_period(x, bc::PeriodicBC)
+    inferred = _can_infer_period(x) ? step(x) * length(x) : nothing
+
+    if bc.period !== nothing
+        # User provided period — cross-validate against Range inference
+        if inferred !== nothing && !(bc.period ≈ inferred)
+            throw(ArgumentError(
+                "PeriodicBC period=$(bc.period) conflicts with Range-inferred period=$inferred. " *
+                "For Range grids, period must equal step(x)*length(x), or omit period for auto-inference."))
+        end
+        return bc.period
+    end
+
+    # No user period — must infer from Range
+    inferred !== nothing || throw(ArgumentError(
+        "PeriodicBC(endpoint=:exclusive) requires `period` for non-uniform grids. " *
+        "Use PeriodicBC(endpoint=:exclusive, period=T)."))
+    return inferred
+end
+
+"""
+    _extend_exclusive(x, y, bc::PeriodicBC) -> (x_ext, y_ext)
+
+Extend grid and values for exclusive endpoint periodic data.
+Appends a virtual endpoint at `x[1] + period` with value `y[1]`.
+Preserves Range type when the virtual endpoint matches the next range step.
+"""
+function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
+    period = _resolve_exclusive_period(x, bc)
+    Tg = eltype(x)
+    x_end = first(x) + Tg(period)
+
+    # Validate: virtual endpoint must be strictly after last grid point
+    last(x) < x_end || throw(ArgumentError(
+        "period=$period places virtual endpoint at $x_end, " *
+        "not after last grid point x[end]=$(last(x))"))
+
+    x_ext = _extend_grid(x, x_end)
+    y_ext = _extend_values(y)
+    return x_ext, y_ext
+end
+
+# Matrix overload for CubicSeriesInterpolant
+function _extend_exclusive(x::AbstractVector, y_mat::AbstractMatrix, bc::PeriodicBC)
+    period = _resolve_exclusive_period(x, bc)
+    Tg = eltype(x)
+    x_end = first(x) + Tg(period)
+
+    last(x) < x_end || throw(ArgumentError(
+        "period=$period places virtual endpoint at $x_end, " *
+        "not after last grid point x[end]=$(last(x))"))
+
+    x_ext = _extend_grid(x, x_end)
+    y_ext = vcat(y_mat, y_mat[1:1, :])
+    return x_ext, y_ext
+end
+
+# Grid extension: preserve Range if step matches
+function _extend_grid(x::AbstractRange, x_end)
+    expected_next = last(x) + step(x)
+    if x_end ≈ expected_next
+        return range(first(x), step=step(x), length=length(x) + 1)
+    else
+        return vcat(collect(x), [x_end])
+    end
+end
+_extend_grid(x::AbstractVector, x_end) = vcat(x, [x_end])
+
+# Value extension: append first element
+_extend_values(y::AbstractVector) = vcat(y, [first(y)])
+
 
 # ========================================
 # AD Support Helpers

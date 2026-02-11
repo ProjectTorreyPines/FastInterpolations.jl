@@ -364,6 +364,29 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
     end
 
     # ========================================
+    # Zero-Allocation Tests (One-Shot, Pool-Based)
+    # ========================================
+    @testset "One-shot exclusive zero-alloc" begin
+        x = range(0.0, step=2π/16, length=16)
+        y = sin.(x)
+        bc = PeriodicBC(endpoint=:exclusive)
+
+        @testset "scalar (Range grid)" begin
+            cubic_interp(x, y, 1.0; bc=bc)  # warmup
+            alloc = @allocated cubic_interp(x, y, 1.0; bc=bc)
+            @test alloc <= ALLOC_THRESHOLD
+        end
+
+        @testset "vector in-place (Range grid)" begin
+            xq = [0.5, 1.0, 2.0]
+            out = similar(xq)
+            cubic_interp!(out, x, y, xq; bc=bc)  # warmup
+            alloc = @allocated cubic_interp!(out, x, y, xq; bc=bc)
+            @test alloc <= ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
     # Edge Cases
     # ========================================
     @testset "Edge cases" begin

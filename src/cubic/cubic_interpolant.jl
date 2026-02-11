@@ -352,7 +352,8 @@ so the pool memory can be safely reused after this function returns.
     cache = _get_cubic_cache(x, PeriodicBC(), autocache)
     tmp_z = similar!(pool, y)
     _solve_system!(tmp_z, cache, y, cache.bc_config)
-    return CubicInterpolant(cache, y, tmp_z, PeriodicBC(), Val(:wrap), search)
+    bc_display = _with_resolved_period(bc, cache.bc_config.period)
+    return CubicInterpolant(cache, y, tmp_z, bc_display, Val(:wrap), search)
 end
 
 # ========================================

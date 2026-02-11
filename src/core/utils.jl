@@ -311,6 +311,17 @@ function _resolve_exclusive_period(x, bc::PeriodicBC)
 end
 
 """
+    _with_resolved_period(bc::PeriodicBC, period) -> PeriodicBC
+
+Return a copy of `bc` with the resolved period baked in.
+Used so that `itp.bc` always carries the actual period for display/introspection.
+Uses the inner constructor directly to bypass keyword-constructor validation
+(which rejects `period` for inclusive BCs).
+"""
+@inline _with_resolved_period(::PeriodicBC{E}, period::T) where {E, T} =
+    PeriodicBC{E, T}(period)
+
+"""
     _extend_exclusive(x, y, bc::PeriodicBC) -> (x_ext, y_ext)
 
 Extend grid and values for exclusive endpoint periodic data.

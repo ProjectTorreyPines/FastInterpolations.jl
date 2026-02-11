@@ -315,6 +315,43 @@ using FastInterpolations: _prepare_periodic, _resolve_exclusive_period, _extend_
         show(buf, MIME"text/plain"(), sitp)
         @test occursin("Periodic", String(take!(buf)))
 
+        # itp.bc preserves original user-specified BC with resolved period
+        @testset "itp.bc preserves endpoint and resolves period" begin
+            N_bc = 16
+            dx_bc = 2π / N_bc
+
+            # Exclusive with explicit period
+            x_bc = range(0.0, step=dx_bc, length=N_bc)
+            y_bc = sin.(x_bc)
+            itp_excl = cubic_interp(collect(x_bc), y_bc; bc=PeriodicBC(endpoint=:exclusive, period=2π))
+            @test itp_excl.bc isa PeriodicBC{:exclusive}
+            @test itp_excl.bc.period ≈ 2π
+
+            # Exclusive without period (auto-inferred from Range) — period should still be resolved
+            itp_excl_auto = cubic_interp(x_bc, y_bc; bc=PeriodicBC(endpoint=:exclusive))
+            @test itp_excl_auto.bc isa PeriodicBC{:exclusive}
+            @test itp_excl_auto.bc.period ≈ 2π
+
+            # show output should reflect exclusive with period
+            buf_bc = IOBuffer()
+            show(buf_bc, MIME"text/plain"(), itp_excl_auto)
+            s = String(take!(buf_bc))
+            @test occursin("exclusive", s)
+            @test occursin("period≈", s)
+
+            # Inclusive — period should also be resolved from grid
+            x_incl_bc = range(0.0, step=dx_bc, length=N_bc + 1)
+            y_incl_bc = sin.(x_incl_bc)
+            itp_incl = cubic_interp(collect(x_incl_bc), y_incl_bc; bc=PeriodicBC())
+            @test itp_incl.bc isa PeriodicBC{:inclusive}
+            @test itp_incl.bc.period ≈ 2π
+
+            # show output should show period for inclusive too
+            show(buf_bc, MIME"text/plain"(), itp_incl)
+            s_incl = String(take!(buf_bc))
+            @test occursin("period≈", s_incl)
+        end
+
         # Also test exclusive series interpolant show
         x_excl = range(0.0, step=dx, length=N)
         y_excl = sin.(x_excl)

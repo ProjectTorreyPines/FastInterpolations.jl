@@ -455,7 +455,7 @@ using FastInterpolations
             catch e
                 @test e isa ArgumentError
                 msg = e.msg
-                @test occursin("Periodic BC", msg)
+                @test occursin("PeriodicBC", msg)
                 @test occursin("y[1]", msg)
                 @test occursin("y[end]", msg)
                 @test occursin("diff", msg)

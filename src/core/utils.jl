@@ -373,6 +373,73 @@ _extend_grid(x::AbstractVector, x_end) = vcat(x, [x_end])
 # Value extension: append first element
 _extend_values(y::AbstractVector) = vcat(y, [first(y)])
 
+# ========================================
+# ND Exclusive Endpoint Extension
+# ========================================
+
+"""
+    _prepare_periodic_nd(grids, data, bcs) -> (grids_ext, data_ext, bcs_resolved)
+
+Prepare N-dimensional grids and data for periodic interpolation.
+
+For each axis with `PeriodicBC(endpoint=:exclusive)`, extends the grid and data
+along that dimension by appending a virtual endpoint (same pattern as 1D `_prepare_periodic`).
+Axes with inclusive or non-periodic BCs are left unchanged.
+
+Called once at build time before `_build_nd_coeffs`.
+
+# Returns
+- `grids_ext`: Grids with exclusive axes extended (Range type preserved when possible)
+- `data_ext`: Data with first slice appended along each exclusive axis
+- `bcs_resolved`: BCs with resolved period for exclusive axes (for display/introspection)
+"""
+function _prepare_periodic_nd(
+    grids::NTuple{N, AbstractVector{Tg}},
+    data::AbstractArray{Tv, N},
+    bcs::NTuple{N, AbstractBC}
+) where {Tg<:AbstractFloat, Tv, N}
+    # Fast path: no exclusive axes
+    has_exclusive = false
+    for d in 1:N
+        if bcs[d] isa PeriodicBC{:exclusive}
+            has_exclusive = true
+            break
+        end
+    end
+    has_exclusive || return (grids, data, bcs)
+
+    # Extend each exclusive axis sequentially
+    grids_vec = Any[grids...]
+    bcs_vec = Any[bcs...]
+    data_cur = data
+
+    for d in 1:N
+        bc_d = bcs[d]
+        bc_d isa PeriodicBC{:exclusive} || continue
+
+        grid_d = grids_vec[d]::AbstractVector{Tg}
+        period = _resolve_exclusive_period(grid_d, bc_d)
+        x_end = first(grid_d) + Tg(period)
+
+        # Validate: virtual endpoint must be strictly after last grid point
+        last(grid_d) < x_end || throw(ArgumentError(
+            "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
+            "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"))
+
+        # Extend grid (reuse 1D helper)
+        grids_vec[d] = _extend_grid(grid_d, x_end)
+
+        # Extend data: append first slice along dim d
+        data_cur = cat(data_cur, selectdim(data_cur, d, 1:1); dims=d)
+
+        # Store resolved period for display
+        bcs_vec[d] = _with_resolved_period(bc_d, period)
+    end
+
+    grids_out = ntuple(d -> grids_vec[d]::AbstractVector{Tg}, Val(N))
+    bcs_out = ntuple(d -> bcs_vec[d]::AbstractBC, Val(N))
+    return (grids_out, data_cur, bcs_out)
+end
 
 # ========================================
 # AD Support Helpers

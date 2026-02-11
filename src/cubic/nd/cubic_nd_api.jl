@@ -170,15 +170,24 @@ function _build_nd_interpolant(
     # Validate periodic BC + extrap compatibility (Val recursion to avoid hetero tuple boxing)
     _check_periodic_extrap(bcs, extraps, Val(N))
 
+    # Extend grids/data for exclusive periodic axes (build-time only)
+    # After this, all periodic axes have inclusive-form data.
+    grids, data, bcs = _prepare_periodic_nd(grids, data, bcs)
+
     # Build nodal derivatives using generic ND builder
     nodal_derivs = _build_nd_coeffs(grids, data, bcs)
 
     # Create spacings (uses @generated to avoid closure boxing for heterogeneous grids)
     spacings = _create_spacings_typed(grids)
 
-    # Normalize BCs for storage (use Tv for value-typed BCs)
+    # Normalize BCs for storage — preserve endpoint and resolved period for periodic axes
     bcs_store = ntuple(Val(N)) do d
-        _is_periodic_bc(bcs[d]) ? PeriodicBC() : _normalize_bc(bcs[d], Tv)
+        if _is_periodic_bc(bcs[d])
+            period = last(grids[d]) - first(grids[d])
+            _with_resolved_period(bcs[d], period)
+        else
+            _normalize_bc(bcs[d], Tv)
+        end
     end
 
     # Convert extrap symbols to Val types

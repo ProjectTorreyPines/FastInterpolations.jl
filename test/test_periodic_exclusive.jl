@@ -1,6 +1,7 @@
 using Test
 using FastInterpolations
-using FastInterpolations: _prepare_periodic, _resolve_exclusive_period, _extend_exclusive,
+using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
+    _resolve_exclusive_period, _extend_exclusive,
     _can_infer_period, _is_periodic_bc, endpoint
 
 @testset "PeriodicBC Exclusive Endpoint" begin
@@ -391,6 +392,252 @@ using FastInterpolations: _prepare_periodic, _resolve_exclusive_period, _extend_
             y = sin.(x)
             itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive))
             @test itp(1f0) isa Float32
+        end
+    end
+
+end
+
+# ========================================
+# ND Exclusive Endpoint Tests
+# ========================================
+
+@testset "PeriodicBC Exclusive Endpoint — ND" begin
+
+    # ========================================
+    # _prepare_periodic_nd unit tests
+    # ========================================
+    @testset "_prepare_periodic_nd" begin
+        @testset "No exclusive axes → no-op" begin
+            x = range(0.0, 2π, 11)
+            y = range(0.0, π, 9)
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            bcs = (PeriodicBC(), NaturalBC())
+
+            grids_out, data_out, bcs_out = _prepare_periodic_nd((x, y), data, bcs)
+            @test grids_out === (x, y)
+            @test data_out === data
+            @test bcs_out === bcs
+        end
+
+        @testset "Single exclusive axis extends correctly" begin
+            N = 8
+            x = range(0.0, step=2π/N, length=N)
+            y = range(0.0, π, 5)
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            bcs = (PeriodicBC(endpoint=:exclusive), NaturalBC())
+
+            grids_out, data_out, bcs_out = _prepare_periodic_nd((x, y), data, bcs)
+
+            @test length(grids_out[1]) == N + 1         # extended
+            @test length(grids_out[2]) == 5              # unchanged
+            @test size(data_out) == (N + 1, 5)
+            @test data_out[end, :] ≈ data_out[1, :]      # first slice copied
+            @test grids_out[2] === y                      # unchanged reference
+            @test bcs_out[1] isa PeriodicBC{:exclusive}   # preserved endpoint
+            @test bcs_out[1].period ≈ 2π                  # resolved period
+            @test bcs_out[2] === NaturalBC()              # unchanged
+        end
+
+        @testset "Both axes exclusive" begin
+            Nx, Ny = 8, 6
+            x = range(0.0, step=2π/Nx, length=Nx)
+            y = range(0.0, step=π/Ny, length=Ny)
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            bcs = (PeriodicBC(endpoint=:exclusive), PeriodicBC(endpoint=:exclusive))
+
+            grids_out, data_out, bcs_out = _prepare_periodic_nd((x, y), data, bcs)
+
+            @test size(data_out) == (Nx + 1, Ny + 1)
+            @test data_out[end, :] ≈ data_out[1, :]       # dim 1 wrap
+            @test data_out[:, end] ≈ data_out[:, 1]        # dim 2 wrap
+            @test data_out[end, end] ≈ data_out[1, 1]      # corner
+            @test bcs_out[1].period ≈ 2π
+            @test bcs_out[2].period ≈ π
+        end
+
+        @testset "Range preserved after extension" begin
+            x = range(0.0, step=0.5, length=4)
+            y = range(0.0, 1.0, 5)
+            data = zeros(4, 5)
+            bcs = (PeriodicBC(endpoint=:exclusive), NaturalBC())
+
+            grids_out, _, _ = _prepare_periodic_nd((x, y), data, bcs)
+            @test grids_out[1] isa AbstractRange
+        end
+    end
+
+    # ========================================
+    # 2D Functional Tests: Exclusive vs Inclusive equivalence
+    # ========================================
+    @testset "2D CubicInterpolantND — Exclusive vs Inclusive equivalence" begin
+        @testset "Both axes periodic (Range, period inferred)" begin
+            Nx, Ny = 32, 24
+            dx, dy = 2π / Nx, 2π / Ny
+            x_excl = range(0.0, step=dx, length=Nx)
+            y_excl = range(0.0, step=dy, length=Ny)
+            data_excl = [sin(xi) * cos(yj) for xi in x_excl, yj in y_excl]
+
+            x_incl = range(0.0, step=dx, length=Nx + 1)
+            y_incl = range(0.0, step=dy, length=Ny + 1)
+            data_incl = [sin(xi) * cos(yj) for xi in x_incl, yj in y_incl]
+
+            itp_excl = cubic_interp(
+                (x_excl, y_excl), data_excl;
+                bc=PeriodicBC(endpoint=:exclusive))
+            itp_incl = cubic_interp(
+                (x_incl, y_incl), data_incl;
+                bc=PeriodicBC())
+
+            for (xq, yq) in [(0.5, 0.5), (π, 1.0), (1.0, π), (5.0, 5.0)]
+                @test itp_excl((xq, yq)) ≈ itp_incl((xq, yq)) atol=1e-12
+            end
+        end
+
+        @testset "One axis periodic, one NaturalBC" begin
+            Nx = 32
+            dx = 2π / Nx
+            x_excl = range(0.0, step=dx, length=Nx)
+            y = range(0.0, 1.0, 10)
+            data_excl = [sin(xi) * yj for xi in x_excl, yj in y]
+
+            x_incl = range(0.0, step=dx, length=Nx + 1)
+            data_incl = [sin(xi) * yj for xi in x_incl, yj in y]
+
+            itp_excl = cubic_interp(
+                (x_excl, y), data_excl;
+                bc=(PeriodicBC(endpoint=:exclusive), NaturalBC()))
+            itp_incl = cubic_interp(
+                (x_incl, y), data_incl;
+                bc=(PeriodicBC(), NaturalBC()))
+
+            for (xq, yq) in [(0.5, 0.3), (π, 0.5), (5.0, 0.8)]
+                @test itp_excl((xq, yq)) ≈ itp_incl((xq, yq)) atol=1e-12
+            end
+        end
+
+        @testset "Explicit period (Vector grid)" begin
+            x_incl = [0.0, 0.5, 1.5, 3.0, 5.0, 2π]
+            y = range(0.0, 1.0, 6)
+            data_incl = [sin(xi) * yj for xi in x_incl, yj in y]
+
+            x_excl = x_incl[1:end-1]
+            data_excl = data_incl[1:end-1, :]
+
+            itp_incl = cubic_interp(
+                (x_incl, y), data_incl;
+                bc=(PeriodicBC(), NaturalBC()))
+            itp_excl = cubic_interp(
+                (x_excl, y), data_excl;
+                bc=(PeriodicBC(endpoint=:exclusive, period=2π), NaturalBC()))
+
+            for (xq, yq) in [(0.5, 0.3), (π, 0.5), (5.0, 0.8)]
+                @test itp_excl((xq, yq)) ≈ itp_incl((xq, yq)) atol=1e-12
+            end
+        end
+    end
+
+    # ========================================
+    # Accuracy against analytic function
+    # ========================================
+    @testset "2D Accuracy" begin
+        Nx, Ny = 64, 48
+        dx, dy = 2π / Nx, 2π / Ny
+        x = range(0.0, step=dx, length=Nx)
+        y = range(0.0, step=dy, length=Ny)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+
+        itp = cubic_interp(
+            (x, y), data;
+            bc=PeriodicBC(endpoint=:exclusive))
+
+        # Value accuracy
+        for (xq, yq) in [(0.3, 0.7), (π/2, π/3), (4.0, 3.0)]
+            @test itp((xq, yq)) ≈ sin(xq) * cos(yq) atol=1e-4
+        end
+    end
+
+    # ========================================
+    # Derivatives
+    # ========================================
+    @testset "2D Derivatives" begin
+        Nx, Ny = 64, 48
+        dx, dy = 2π / Nx, 2π / Ny
+        x = range(0.0, step=dx, length=Nx)
+        y = range(0.0, step=dy, length=Ny)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+
+        itp = cubic_interp(
+            (x, y), data;
+            bc=PeriodicBC(endpoint=:exclusive))
+
+        xq, yq = π/4, π/3
+
+        # ∂/∂x [sin(x)cos(y)] = cos(x)cos(y)
+        @test itp((xq, yq); deriv=Val((1, 0))) ≈ cos(xq) * cos(yq) atol=1e-3
+
+        # ∂/∂y [sin(x)cos(y)] = -sin(x)sin(y)
+        @test itp((xq, yq); deriv=Val((0, 1))) ≈ -sin(xq) * sin(yq) atol=1e-3
+    end
+
+    # ========================================
+    # 3D Test
+    # ========================================
+    @testset "3D Exclusive endpoint" begin
+        Nx, Ny, Nz = 16, 12, 10
+        x = range(0.0, step=2π/Nx, length=Nx)
+        y = range(0.0, step=2π/Ny, length=Ny)
+        z = range(0.0, 1.0, Nz)
+        data = [sin(xi) * cos(yj) * zk for xi in x, yj in y, zk in z]
+
+        itp = cubic_interp(
+            (x, y, z), data;
+            bc=(PeriodicBC(endpoint=:exclusive),
+                PeriodicBC(endpoint=:exclusive),
+                NaturalBC()))
+
+        @test itp isa CubicInterpolantND
+        xq, yq, zq = 1.0, 0.5, 0.3
+        @test itp((xq, yq, zq)) ≈ sin(xq) * cos(yq) * zq atol=1e-2
+    end
+
+    # ========================================
+    # bcs_store preserves endpoint info
+    # ========================================
+    @testset "bcs_store preserves endpoint and period" begin
+        Nx = 16
+        x = range(0.0, step=2π/Nx, length=Nx)
+        y = range(0.0, 1.0, 8)
+        data = [sin(xi) * yj for xi in x, yj in y]
+
+        itp = cubic_interp(
+            (x, y), data;
+            bc=(PeriodicBC(endpoint=:exclusive), NaturalBC()))
+
+        # Exclusive axis preserves endpoint symbol and resolved period
+        @test itp.bcs[1] isa PeriodicBC{:exclusive}
+        @test itp.bcs[1].period ≈ 2π
+    end
+
+    # ========================================
+    # Error Cases
+    # ========================================
+    @testset "ND Error cases" begin
+        @testset "Vector grid without period → error" begin
+            x = [0.0, 1.0, 2.0, 3.0]
+            y = range(0.0, 1.0, 5)
+            data = zeros(4, 5)
+            @test_throws ArgumentError cubic_interp(
+                (x, y), data;
+                bc=(PeriodicBC(endpoint=:exclusive), NaturalBC()))
+        end
+
+        @testset "Range grid with conflicting period → error" begin
+            x = range(0.0, step=0.1, length=10)
+            y = range(0.0, 1.0, 5)
+            data = zeros(10, 5)
+            @test_throws ArgumentError cubic_interp(
+                (x, y), data;
+                bc=(PeriodicBC(endpoint=:exclusive, period=2.0), NaturalBC()))
         end
     end
 

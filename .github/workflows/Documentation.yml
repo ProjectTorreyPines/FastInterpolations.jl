@@ -24,11 +24,34 @@ jobs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve ref for docs build
+        id: release_ref
+        shell: bash
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "repository_dispatch" ]; then
+            # TagBot payload is a mapping from version tag -> commit SHA.
+            TAG="$(jq -r '.client_payload | keys[0] // empty' "$GITHUB_EVENT_PATH")"
+            SHA="$(jq -r --arg tag "$TAG" '.client_payload[$tag] // empty' "$GITHUB_EVENT_PATH")"
+
+            if [ -z "$TAG" ] || [ -z "$SHA" ]; then
+              echo "Failed to resolve TagBot payload (tag/sha missing)."
+              cat "$GITHUB_EVENT_PATH"
+              exit 1
+            fi
+
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "ref=$SHA" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=$GITHUB_REF" >> "$GITHUB_OUTPUT"
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+              echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
       - uses: actions/checkout@v4
         with:
-          # For repository_dispatch from TagBot, checkout the tag
-          # For push/PR events, use default behavior
-          ref: ${{ github.event.client_payload.tag || github.ref }}
+          # For repository_dispatch from TagBot, checkout the tagged SHA.
+          ref: ${{ steps.release_ref.outputs.ref || github.ref }}
 
       - uses: julia-actions/setup-julia@latest
 
@@ -56,4 +79,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+          # Documenter deploy checks currently expect push/workflow_dispatch/schedule.
+          # For TagBot repository_dispatch, emulate a tag push context.
+          GITHUB_EVENT_NAME: ${{ github.event_name == 'repository_dispatch' && 'push' || github.event_name }}
+          GITHUB_REF: ${{ github.event_name == 'repository_dispatch' && steps.release_ref.outputs.tag && format('refs/tags/{0}', steps.release_ref.outputs.tag) || github.ref }}
+          GITHUB_SHA: ${{ github.event_name == 'repository_dispatch' && steps.release_ref.outputs.ref || github.sha }}
         run: julia --project=docs/ docs/make.jl

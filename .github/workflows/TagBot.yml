@@ -16,6 +16,11 @@ jobs:
     steps:
       - uses: JuliaRegistries/TagBot@v1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Prefer PAT when available (recommended by TagBot for dispatch hooks).
+          token: ${{ secrets.TAGBOT_PAT || secrets.GITHUB_TOKEN }}
           ssh: ${{ secrets.DOCUMENTER_KEY }}
           dispatch: true
+          dispatch_delay: 0
+          # Keep GitHub release body exactly as provided in Registrator custom notes.
+          changelog: |
+            {% if custom %}{{ custom }}{% endif %}

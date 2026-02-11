@@ -249,7 +249,10 @@ Throws `ArgumentError` if endpoints differ significantly.
     atol = Tr === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
     if !isapprox(y1, yn; atol=atol)
         throw(ArgumentError(
-            "Periodic BC requires y[1] ≈ y[end], got y[1]=$y1, y[end]=$yn (diff=$(abs(yn-y1)))"
+            "PeriodicBC (inclusive endpoint) requires y[1] ≈ y[end], " *
+            "got y[1]=$y1, y[end]=$yn (diff=$(abs(yn-y1))). " *
+            "If your data does not repeat the first point, use " *
+            "PeriodicBC(endpoint=:exclusive) instead."
         ))
     end
     return nothing

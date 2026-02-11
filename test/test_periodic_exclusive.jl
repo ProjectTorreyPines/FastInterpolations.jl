@@ -302,6 +302,27 @@ using FastInterpolations: _prepare_periodic, _resolve_exclusive_period, _extend_
         bc_excl = PeriodicBC(endpoint=:exclusive, period=2π)
         @test occursin("exclusive", FastInterpolations._format_bc(bc_excl))
         @test FastInterpolations._short_bc_name(bc_excl) == "Periodic(excl)"
+
+        # Series interpolant show (bc_for_solve is PeriodicData, not PeriodicBC)
+        N = 16
+        dx = 2π / N
+        x_incl = range(0.0, step=dx, length=N + 1)
+        y_incl = sin.(x_incl)
+        sitp = cubic_interp(x_incl, [y_incl, cos.(x_incl)]; bc=PeriodicBC())
+        buf = IOBuffer()
+        show(buf, sitp)
+        @test occursin("Periodic", String(take!(buf)))
+        show(buf, MIME"text/plain"(), sitp)
+        @test occursin("Periodic", String(take!(buf)))
+
+        # Also test exclusive series interpolant show
+        x_excl = range(0.0, step=dx, length=N)
+        y_excl = sin.(x_excl)
+        sitp_excl = cubic_interp(x_excl, [y_excl, cos.(x_excl)]; bc=PeriodicBC(endpoint=:exclusive))
+        show(buf, sitp_excl)
+        @test occursin("Periodic", String(take!(buf)))
+        show(buf, MIME"text/plain"(), sitp_excl)
+        @test occursin("Periodic", String(take!(buf)))
     end
 
     # ========================================

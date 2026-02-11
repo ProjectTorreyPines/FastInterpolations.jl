@@ -657,8 +657,10 @@ function _build_series_periodic(
         y_last = y_mat[n_pts, k]
         if !isapprox(y_first, y_last; atol=atol)
             throw(ArgumentError(
-                "Periodic BC requires y[1] ≈ y[end] for series $k, " *
-                "got y[1]=$y_first, y[end]=$y_last (diff=$(abs(y_last-y_first)))"
+                "PeriodicBC (inclusive endpoint) requires y[1] ≈ y[end] for series $k, " *
+                "got y[1]=$y_first, y[end]=$y_last (diff=$(abs(y_last-y_first))). " *
+                "If your data does not repeat the first point, use " *
+                "PeriodicBC(endpoint=:exclusive) instead."
             ))
         end
     end

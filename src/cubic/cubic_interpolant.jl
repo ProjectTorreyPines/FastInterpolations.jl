@@ -343,9 +343,11 @@ so the pool memory can be safely reused after this function returns.
 @inline @with_pool pool function _build_interpolant_periodic(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
+    bc::PeriodicBC,
     autocache::Bool,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
+    x, y = _prepare_periodic(x, y, bc)
     _check_periodic_endpoints(y)
     cache = _get_cubic_cache(x, PeriodicBC(), autocache)
     tmp_z = similar!(pool, y)
@@ -366,7 +368,7 @@ Handles conversion of Real BC values to Complex when needed.
 @inline _promote_bc(bc::BCPair, ::Type{Tv}) where {Tv} = _normalize_bc(bc, Tv)
 @inline _promote_bc(::NaturalBC, ::Type{Tv}) where {Tv} = NaturalBC()
 @inline _promote_bc(::ClampedBC, ::Type{Tv}) where {Tv} = ClampedBC()
-@inline _promote_bc(::PeriodicBC, ::Type{Tv}) where {Tv} = PeriodicBC()
+@inline _promote_bc(bc::PeriodicBC, ::Type{Tv}) where {Tv} = bc
 @inline _promote_bc(bc::PointBC, ::Type{Tv}) where {Tv} = _promote_pointbc(bc, Tv)
 
 # ========================================
@@ -419,7 +421,7 @@ val = itp(0.5)  # returns ComplexF64
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     if _is_periodic_bc(bc)
-        return _build_interpolant_periodic(x, y, autocache, search)
+        return _build_interpolant_periodic(x, y, bc, autocache, search)
     else
         bc_pair = _normalize_bc(bc, Tv)
         return _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache, search)
@@ -493,7 +495,7 @@ function cubic_interp(
     bc_promoted = _promote_bc(bc, Tv)
 
     if _is_periodic_bc(bc)
-        return _build_interpolant_periodic(x_p, y_p, autocache, search)
+        return _build_interpolant_periodic(x_p, y_p, bc, autocache, search)
     else
         bc_pair = _normalize_bc(bc_promoted, Tv)
         return _build_interpolant_bcpair(x_p, y_p, bc_pair, extrap, autocache, search)

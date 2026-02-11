@@ -137,10 +137,12 @@ Thread-safe: uses _get_cubic_cache + @with_pool pattern.
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg},
+    bc::PeriodicBC,
     autocache::Bool,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
+    x, y = _prepare_periodic(x, y, bc)
     @assert length(y) == length(x) "y length must match x"
     @assert length(output) == length(x_query) "output length must match x_query"
 
@@ -166,10 +168,12 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq,  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
+    bc::PeriodicBC,
     autocache::Bool,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real, O<:AbstractEvalOp, S<:Searcher}
+    x, y = _prepare_periodic(x, y, bc)
     _check_periodic_endpoints(y)
     cache = _get_cubic_cache(x, PeriodicBC(), autocache)
     z = similar!(pool, y)
@@ -204,7 +208,7 @@ In-place cubic spline interpolation with optional automatic caching.
     @_dispatch_deriv deriv => op begin
         # Periodic BC
         if _is_periodic_bc(bc)
-            return _cubic_interp_periodic!(output, x, y, x_query, autocache, op, searcher)
+            return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, op, searcher)
         end
 
         # Normalize to BCPair and dispatch to core
@@ -247,7 +251,7 @@ end
     searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         if _is_periodic_bc(bc)
-            output[1] = _cubic_interp_periodic_scalar(x, y, x_query, autocache, op, searcher)
+            output[1] = _cubic_interp_periodic_scalar(x, y, x_query, bc, autocache, op, searcher)
         else
             bc_pair = _normalize_bc(bc, Tv)
             output[1] = _cubic_interp_bcpair_scalar(x, y, x_query, bc_pair, extrap, autocache, op, searcher)
@@ -339,7 +343,7 @@ function cubic_interp(
     searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         if _is_periodic_bc(bc)
-            return _cubic_interp_periodic!(output, x, y, x_query, autocache, op, searcher)
+            return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, op, searcher)
         end
 
         bc_pair = _normalize_bc(bc, Tv)
@@ -370,7 +374,7 @@ function cubic_interp(
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         if _is_periodic_bc(bc)
-            return _cubic_interp_periodic_scalar(x, y, xq, autocache, op, searcher)
+            return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, op, searcher)
         end
 
         bc_pair = _normalize_bc(bc, Tv)

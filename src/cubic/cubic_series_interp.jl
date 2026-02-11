@@ -598,7 +598,7 @@ function cubic_interp(
 
     # Handle periodic BC separately (only for scalar BC)
     if bc isa AbstractBC && _is_periodic_bc(bc)
-        return _build_series_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose, search)
+        return _build_series_periodic(x, y_mat, bc, n_pts, n_series_count, autocache, precompute_transpose, search)
     end
 
     # Build z matrix by solving systems
@@ -639,12 +639,17 @@ Internal helper for periodic BC multi-interpolant construction.
 function _build_series_periodic(
     x::AbstractVector{Tg},
     y_mat::Matrix{Tv},
+    bc::PeriodicBC,
     n_pts::Int,
     n_series_count::Int,
     autocache::Bool,
     precompute_transpose::Bool,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
+    # Extend data for exclusive endpoint
+    x, y_mat = _prepare_periodic(x, y_mat, bc)
+    n_pts = size(y_mat, 1)
+
     # Validate periodic endpoints for all series
     atol = Tg === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
     @inbounds for k in 1:n_series_count
@@ -719,7 +724,7 @@ function cubic_interp(
 
     # Handle periodic BC separately (only for scalar BC)
     if bc isa AbstractBC && _is_periodic_bc(bc)
-        return _build_series_periodic(x, y_mat, n_pts, n_series_count, autocache, precompute_transpose, search)
+        return _build_series_periodic(x, y_mat, bc, n_pts, n_series_count, autocache, precompute_transpose, search)
     end
 
     # Build z matrix by solving systems

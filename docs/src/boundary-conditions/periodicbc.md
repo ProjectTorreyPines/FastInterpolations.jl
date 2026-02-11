@@ -1,6 +1,6 @@
 # PeriodicBC
 
-True periodic boundary conditions for cubic splines with C² continuity at the wrap point.
+True periodic boundary conditions for cubic splines, ensuring C² continuity (value, slope, and curvature) at the period boundary.
 
 ---
 
@@ -21,60 +21,60 @@ These two features sound similar but solve fundamentally different problems:
 
 ---
 
-## Endpoint Conventions
+## Endpoint Policy
 
-### Inclusive (default)
+`PeriodicBC` supports two conventions for defining the periodic domain.
 
-The classic convention: the last data point **repeats** the first value.
+### Inclusive Mode (Default)
+
+The grid includes the repeated start point at the end: `y[1] ≈ y[end]`. This is the standard definition in most spline libraries.
 
 ```julia
-# Grid covers [0, 2π] with y[1] = y[end]
-x = range(0, 2π, 65)    # 65 points, last point = 2π
-y = sin.(x)              # sin(0) ≈ sin(2π)
+# Grid covers [0, 2π], with repeated endpoint
+x = range(0, 2π, 65)  # 65 points, last point is 2π
+y = sin.(x)           # y[1] ≈ y[end]
 
 itp = cubic_interp(x, y; bc=PeriodicBC())
 ```
 
-The period is ``\tau = x_{\text{end}} - x_1``. The redundant last point is used by the solver but carries no new information.
+### Exclusive Mode
 
-### Exclusive (new)
+The grid contains only **unique** points. The theoretical "next" point would be the start of the next period. This is common in FFT-based applications or simulation grids.
 
-The last data point is the **last unique** sample — no redundant endpoint. Common in FFT grids, uniform angular discretizations, and simulation output.
+!!! note "Internal Mechanism"
+    Internally, the solver handles this by virtually appending the start point to the end of the data. The user does not need to allocate extra memory for this repeated point.
 
 ```julia
-# Grid covers [0, 2π) — no repeated endpoint
+# Grid covers [0, 2π), no repeated endpoint
 N = 64
-x = range(0, step=2π/N, length=N)   # 64 points, last point = 2π - Δx
+x = range(0, step=2π/N, length=N)
 y = sin.(x)
 
+# Automatically infers period from step for ranges
 itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive))
 ```
 
-Internally, the data is extended to inclusive form before entering the solver — the algorithm and evaluation are identical. The exclusive convention simply saves the user from doing this manually.
+#### Determining the Period
 
----
+When `endpoint=:exclusive` is used, the full period length is determined based on the grid type:
 
-## Period Resolution
+- **Uniform Grids (`AbstractRange`)**: The period is automatically inferred because the step size is known and constant.
+- **Arbitrary Grids (`Vector`)**: The grid might be non-uniform, so the period cannot be safely guessed. You must provide the `period` keyword explicitly.
 
-For exclusive endpoints, the period is determined as follows:
-
-| Grid type | `period` omitted | `period` provided |
-|-----------|-----------------|-------------------|
-| `AbstractRange` | Auto-inferred: `step(x) * length(x)` | Cross-validated against inference; error if mismatch |
-| `Vector` | **Error** — period cannot be inferred | Used directly |
+| Grid Type | Period Handling |
+|---|---|
+| `AbstractRange` | **Auto-inferred** (from step & length) |
+| `Vector` | **User-specified** (via `period` keyword) |
 
 ```julia
-# Range grid: period auto-inferred from step(x) * length(x)
-x = range(0, step=0.1, length=10)  # period = 0.1 * 10 = 1.0
-itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive))
+# 1. Range (Auto-inferred)
+# Input length is 10, step is 0.1 → Period = 1.0
+itp = cubic_interp(0:0.1:0.9, y; bc=PeriodicBC(endpoint=:exclusive)) 
 
-# Range grid: explicit period (must match inference)
-itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive, period=1.0))  # OK
-itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive, period=2.0))  # ERROR
-
-# Vector grid: period required
-x = [0.0, 0.3, 0.7, 1.5, 3.0, 5.0]
-itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive, period=2π))
+# 2. Vector (Explicit)
+# Non-uniform grid requires explicit period
+x = [0.1, 0.4, 0.8] 
+itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive, period=1.0))
 ```
 
 ---
@@ -82,64 +82,12 @@ itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive, period=2π))
 ## API Summary
 
 ```julia
-# Inclusive (backward compatible)
+# 1. Standard (Inclusive) - y[1] must match y[end]
 PeriodicBC()
 
-# Exclusive with auto-inferred period (Range grids only)
+# 2. Exclusive (Auto-period) - Ranges only
 PeriodicBC(endpoint=:exclusive)
 
-# Exclusive with explicit period (any grid)
+# 3. Exclusive (Explicit period) - Required for Vectors
 PeriodicBC(endpoint=:exclusive, period=2π)
 ```
-
-Works with all cubic spline entry points:
-
-```julia
-# 2-arg form (reusable interpolant)
-itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive))
-itp(1.0)           # evaluate
-itp(1.0; deriv=1)  # first derivative
-
-# 3/4-arg oneshot
-cubic_interp(x, y, xq; bc=PeriodicBC(endpoint=:exclusive))
-cubic_interp!(out, x, y, xq; bc=PeriodicBC(endpoint=:exclusive))
-
-# Series interpolant
-mitp = cubic_interp(x, [y1, y2]; bc=PeriodicBC(endpoint=:exclusive))
-```
-
----
-
-## Example: Inclusive vs Exclusive Equivalence
-
-The two conventions produce identical interpolants when given the same underlying function:
-
-```@example periodicbc
-using FastInterpolations
-
-N = 64
-dx = 2π / N
-f(x) = sin(x)
-
-# Inclusive: N+1 points on [0, 2π]
-x_incl = range(0, step=dx, length=N+1)
-itp_incl = cubic_interp(x_incl, f.(x_incl); bc=PeriodicBC())
-
-# Exclusive: N points on [0, 2π)
-x_excl = range(0, step=dx, length=N)
-itp_excl = cubic_interp(x_excl, f.(x_excl); bc=PeriodicBC(endpoint=:exclusive))
-
-# They agree everywhere
-xq = [0.1, 1.0, π, 5.5]
-for x in xq
-    println("x=$x:  inclusive=$(round(itp_incl(x), digits=10)),  exclusive=$(round(itp_excl(x), digits=10))")
-end
-```
-
----
-
-## See Also
-
-- [Boundary Conditions Overview](overview.md) — Full BC type hierarchy
-- [Cubic Interpolation](../interpolation/cubic.md) — PeriodicBC visual comparison with NaturalBC
-- [Extrapolation](../extrapolation.md) — `extrap=:wrap` coordinate mapping (no smoothness)

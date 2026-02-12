@@ -538,7 +538,7 @@ end
     _is_uniform_extrap_no_periodic(extraps, bcs) -> Bool
 
 Check if all extraps are the same symbol and no axes have periodic BCs.
-Used by `@_dispatch_extrap` for the zero-alloc fast path.
+Used by `@_dispatch_extrap_nd` for the zero-alloc fast path.
 """
 @inline function _is_uniform_extrap_no_periodic(
     extraps::NTuple{N, Symbol}, bcs::NTuple{N, AbstractBC}
@@ -565,10 +565,13 @@ Check if all axes have periodic BCs.
 end
 
 """
-    @_dispatch_extrap extraps bcs Val(N) => ev body
+    @_dispatch_extrap_nd extraps bcs Val(N) => ev body
 
 Dispatch extrap symbols to concrete `Val` tuples for type-stable ND evaluation.
 Creates if/else branches, each with a concrete `ev` binding (similar to `@_dispatch_deriv`).
+
+This is the ND counterpart of `@_dispatch_extrap(sym => varname, body)` (1D).
+The 1D version dispatches a single Symbol; this version dispatches `NTuple{N,Symbol}` + BCs.
 
 **Fast paths** (zero-alloc):
 - Uniform extrap + no periodic BCs: dispatches to one of 4 branches
@@ -580,15 +583,15 @@ Creates if/else branches, each with a concrete `ev` binding (similar to `@_dispa
 
 # Example
 ```julia
-@_dispatch_extrap extraps bcs Val(N) => extraps_val begin
+@_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
     return _cubic_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops)
 end
 ```
 """
-macro _dispatch_extrap(extraps_expr, bcs_expr, pair, body)
+macro _dispatch_extrap_nd(extraps_expr, bcs_expr, pair, body)
     # Parse pair: Val(N) => ev_sym
     pair.head === :call && pair.args[1] === :(=>) ||
-        error("@_dispatch_extrap expects `Val(N) => binding`, got: $pair")
+        error("@_dispatch_extrap_nd expects `Val(N) => binding`, got: $pair")
     valn_expr = pair.args[2]
     ev_sym = pair.args[3]
 

@@ -151,18 +151,18 @@ function cubic_interp(
     if deriv isa Int
         @_dispatch_deriv deriv => op begin
             ops = ntuple(_ -> op, Val(N))
-            @_dispatch_extrap extraps bcs Val(N) => extraps_val begin
+            @_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
                 return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tv
             end
         end
     elseif deriv isa Val
         ops = _resolve_deriv_nd(deriv, Val(N))
-        @_dispatch_extrap extraps bcs Val(N) => extraps_val begin
+        @_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
             return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tv
         end
     else
         ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        @_dispatch_extrap extraps bcs Val(N) => extraps_val begin
+        @_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
             return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tv
         end
     end
@@ -198,18 +198,18 @@ function cubic_interp(
     if deriv isa Int
         @_dispatch_deriv deriv => op begin
             ops = ntuple(_ -> op, Val(N))
-            @_dispatch_extrap extraps bcs Val(N) => extraps_val begin
+            @_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
                 return _cubic_interp_nd_oneshot_soa(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
             end
         end
     elseif deriv isa Val
         ops = _resolve_deriv_nd(deriv, Val(N))
-        @_dispatch_extrap extraps bcs Val(N) => extraps_val begin
+        @_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
             return _cubic_interp_nd_oneshot_soa(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
         end
     else
         ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        @_dispatch_extrap extraps bcs Val(N) => extraps_val begin
+        @_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
             return _cubic_interp_nd_oneshot_soa(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
         end
     end
@@ -332,14 +332,14 @@ Computes 2^N partial derivatives in a pool buffer and evaluates at a single poin
 Zero-allocation after warmup (pool reuse).
 
 `extraps_val` must be a pre-resolved tuple of `Val` types (e.g., `(Val(:none), Val(:none))`),
-computed via `@_dispatch_extrap` in the API layer for type stability.
+computed via `@_dispatch_extrap_nd` in the API layer for type stability.
 """
 @with_pool pool function _cubic_interp_nd_oneshot(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}},
     bcs::NTuple{N, AbstractBC},
-    extraps_val,  # Pre-resolved Val tuple from @_dispatch_extrap
+    extraps_val::NTuple{N, Val},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -380,7 +380,7 @@ Output vector is heap-allocated (return value).
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
     bcs::NTuple{N, AbstractBC},
-    extraps_val,  # Pre-resolved Val tuple from @_dispatch_extrap
+    extraps_val::NTuple{N, Val},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}

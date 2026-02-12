@@ -576,6 +576,25 @@ Check if all axes have periodic BCs.
     return true
 end
 
+# ── Nothing overloads for BC-free methods (linear, constant) ─────────
+# Allows @_dispatch_extrap_nd to be reused with `nothing` as BCs.
+# With nothing BCs, fast path 1 always fires for uniform extraps (>99% of cases).
+
+@inline _is_uniform_extrap_no_periodic(extraps::NTuple{N, Symbol}, ::Nothing) where {N} =
+    _is_uniform_extrap(extraps)
+
+@inline _is_all_periodic(::Nothing) = false
+
+# Dead code path — fast path 3 is unreachable when bcs=nothing
+# (uniform extrap always hits fast path 1 instead)
+@inline _resolve_uniform_extrap_with_periodic(::Nothing, ::Val) =
+    throw(ErrorException("unreachable: uniform extrap with nothing BCs should hit fast path 1"))
+
+@generated function _resolve_mixed_extrap_vals(extraps::NTuple{N, Symbol}, ::Nothing) where {N}
+    exprs = [:(FastInterpolations._symbol_to_extrap_val(extraps[$d])) for d in 1:N]
+    :(($(exprs...),))
+end
+
 """
     _resolve_uniform_extrap_with_periodic(bcs, ::Val{S}) -> NTuple{N, Val}
 

@@ -408,4 +408,98 @@ using FastInterpolations
             @test linear_interp((x, y), data, (0.5, 0.5)) ≈ _f_lin(0.5, 0.5)
         end
     end
+
+    # ========================================
+    # Zero-Allocation One-Shot Tests
+    # ========================================
+    #
+    # Each test uses a full function barrier: setup + warmup + @allocated
+    # all inside one function. This avoids @testset-scope boxing artifacts.
+
+    function _alloc_test_linear_default()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 11)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        query = (1.5, 0.8)
+        linear_interp((x, y), data, query)
+        linear_interp((x, y), data, query)
+        @allocated linear_interp((x, y), data, query)
+    end
+
+    function _alloc_test_linear_deriv()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 11)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        query = (1.5, 0.8)
+        linear_interp((x, y), data, query; deriv=1)
+        linear_interp((x, y), data, query; deriv=1)
+        @allocated linear_interp((x, y), data, query; deriv=1)
+    end
+
+    function _alloc_test_linear_deriv_val()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 11)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        query = (1.5, 0.8)
+        linear_interp((x, y), data, query; deriv=Val((1, 0)))
+        linear_interp((x, y), data, query; deriv=Val((1, 0)))
+        @allocated linear_interp((x, y), data, query; deriv=Val((1, 0)))
+    end
+
+    function _alloc_test_linear_extrap_constant()
+        x = range(0.0, 2.0, 15)
+        y = range(0.0, 1.0, 10)
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        linear_interp((x, y), data, query; extrap=:constant)
+        linear_interp((x, y), data, query; extrap=:constant)
+        @allocated linear_interp((x, y), data, query; extrap=:constant)
+    end
+
+    function _alloc_test_linear_extrap_extension()
+        x = range(0.0, 2.0, 15)
+        y = range(0.0, 1.0, 10)
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        linear_interp((x, y), data, query; extrap=:extension)
+        linear_interp((x, y), data, query; extrap=:extension)
+        @allocated linear_interp((x, y), data, query; extrap=:extension)
+    end
+
+    function _alloc_test_linear_3d()
+        x = range(0.0, 2.0, 10)
+        y = range(0.0, 1.0, 8)
+        z = range(0.0, 3.0, 6)
+        data = [xi + yj + zk for xi in x, yj in y, zk in z]
+        query = (1.0, 0.5, 1.5)
+        linear_interp((x, y, z), data, query)
+        linear_interp((x, y, z), data, query)
+        @allocated linear_interp((x, y, z), data, query)
+    end
+
+    @testset "Zero-Allocation One-Shot" begin
+        @testset "zero-alloc scalar (Range grids, default)" begin
+            @test _alloc_test_linear_default() == 0
+        end
+
+        @testset "zero-alloc scalar (Range grids, deriv=1)" begin
+            @test _alloc_test_linear_deriv() == 0
+        end
+
+        @testset "zero-alloc scalar (Range grids, deriv=Val)" begin
+            @test _alloc_test_linear_deriv_val() == 0
+        end
+
+        @testset "zero-alloc scalar (Range grids, extrap=:constant)" begin
+            @test _alloc_test_linear_extrap_constant() == 0
+        end
+
+        @testset "zero-alloc scalar (Range grids, extrap=:extension)" begin
+            @test _alloc_test_linear_extrap_extension() == 0
+        end
+
+        @testset "zero-alloc scalar (3D Range grids)" begin
+            @test _alloc_test_linear_3d() == 0
+        end
+    end
 end

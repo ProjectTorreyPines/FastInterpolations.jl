@@ -379,4 +379,84 @@ using FastInterpolations
             @test constant_interp(([0, 1, 2], [0, 1, 2]), data, (0.5, 0.5)) == 11.0
         end
     end
+
+    # ========================================
+    # Zero-Allocation One-Shot Tests
+    # ========================================
+    #
+    # Each test uses a full function barrier: setup + warmup + @allocated
+    # all inside one function. This avoids @testset-scope boxing artifacts.
+
+    function _alloc_test_constant_default()
+        x = range(0.0, 2.0, 11)
+        y = range(0.0, 1.0, 6)
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        constant_interp((x, y), data, query)
+        constant_interp((x, y), data, query)
+        @allocated constant_interp((x, y), data, query)
+    end
+
+    function _alloc_test_constant_left()
+        x = range(0.0, 2.0, 11)
+        y = range(0.0, 1.0, 6)
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        constant_interp((x, y), data, query; side=:left)
+        constant_interp((x, y), data, query; side=:left)
+        @allocated constant_interp((x, y), data, query; side=:left)
+    end
+
+    function _alloc_test_constant_right()
+        x = range(0.0, 2.0, 11)
+        y = range(0.0, 1.0, 6)
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        constant_interp((x, y), data, query; side=:right)
+        constant_interp((x, y), data, query; side=:right)
+        @allocated constant_interp((x, y), data, query; side=:right)
+    end
+
+    function _alloc_test_constant_extrap_constant()
+        x = range(0.0, 2.0, 11)
+        y = range(0.0, 1.0, 6)
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        constant_interp((x, y), data, query; extrap=:constant)
+        constant_interp((x, y), data, query; extrap=:constant)
+        @allocated constant_interp((x, y), data, query; extrap=:constant)
+    end
+
+    function _alloc_test_constant_3d()
+        x = range(0.0, 2.0, 8)
+        y = range(0.0, 1.0, 6)
+        z = range(0.0, 3.0, 5)
+        data = [xi + yj + zk for xi in x, yj in y, zk in z]
+        query = (1.0, 0.5, 1.5)
+        constant_interp((x, y, z), data, query)
+        constant_interp((x, y, z), data, query)
+        @allocated constant_interp((x, y, z), data, query)
+    end
+
+    @testset "Zero-Allocation One-Shot" begin
+        @testset "zero-alloc scalar (Range grids, default)" begin
+            @test _alloc_test_constant_default() == 0
+        end
+
+        @testset "zero-alloc scalar (Range grids, side=:left)" begin
+            @test _alloc_test_constant_left() == 0
+        end
+
+        @testset "zero-alloc scalar (Range grids, side=:right)" begin
+            @test _alloc_test_constant_right() == 0
+        end
+
+        @testset "zero-alloc scalar (Range grids, extrap=:constant)" begin
+            @test _alloc_test_constant_extrap_constant() == 0
+        end
+
+        @testset "zero-alloc scalar (3D Range grids)" begin
+            @test _alloc_test_constant_3d() == 0
+        end
+    end
 end

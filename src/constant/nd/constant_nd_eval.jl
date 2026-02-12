@@ -195,7 +195,7 @@ end
 Computes cell widths, distances from left edge, side-based offsets, and returns data value.
 """
 @generated function _constant_nd_kernel(
-    data::Array{Tv, N},
+    data::AbstractArray{Tv, N},
     spacings::NTuple{N, AbstractGridSpacing},
     sides::NTuple{N, SideVal},
     indices::NTuple{N, Int},

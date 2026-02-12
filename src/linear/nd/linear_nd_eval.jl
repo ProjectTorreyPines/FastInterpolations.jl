@@ -229,7 +229,7 @@ The weight function depends on the evaluation operation:
 - EvalDeriv1: -1/h if b=0, 1/h if b=1
 """
 @generated function _multilinear_sum(
-    data::Array{Tv, N},
+    data::AbstractArray{Tv, N},
     indices::NTuple{N, Int},
     hs::NTuple{N},
     αs::Tuple{Vararg{Real, N}},

@@ -473,4 +473,98 @@ using FastInterpolations
         @test length(itp.extraps) == 2
         @test length(itp.searches) == 2
     end
+
+    # ========================================
+    # Zero-Allocation One-Shot Tests
+    # ========================================
+    #
+    # Each test uses a full function barrier: setup + warmup + @allocated
+    # all inside one function. This avoids @testset-scope boxing artifacts.
+
+    function _alloc_test_quadratic_default()
+        x = range(0.0, 2.0, 20)
+        y = range(0.0, 1.0, 15)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        query = (1.0, 0.5)
+        quadratic_interp((x, y), data, query)
+        quadratic_interp((x, y), data, query)
+        @allocated quadratic_interp((x, y), data, query)
+    end
+
+    function _alloc_test_quadratic_deriv()
+        x = range(0.0, 2.0, 20)
+        y = range(0.0, 1.0, 15)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        query = (1.0, 0.5)
+        quadratic_interp((x, y), data, query; deriv=1)
+        quadratic_interp((x, y), data, query; deriv=1)
+        @allocated quadratic_interp((x, y), data, query; deriv=1)
+    end
+
+    function _alloc_test_quadratic_deriv_val()
+        x = range(0.0, 2.0, 20)
+        y = range(0.0, 1.0, 15)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        query = (1.0, 0.5)
+        quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
+        quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
+        @allocated quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
+    end
+
+    function _alloc_test_quadratic_natural_bc()
+        x = range(0.0, 2.0, 20)
+        y = range(0.0, 1.0, 15)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        query = (1.0, 0.5)
+        quadratic_interp((x, y), data, query; bc=NaturalBC())
+        quadratic_interp((x, y), data, query; bc=NaturalBC())
+        @allocated quadratic_interp((x, y), data, query; bc=NaturalBC())
+    end
+
+    function _alloc_test_quadratic_extrap_constant()
+        x = range(0.0, 2.0, 20)
+        y = range(0.0, 1.0, 15)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        query = (1.0, 0.5)
+        quadratic_interp((x, y), data, query; extrap=:constant)
+        quadratic_interp((x, y), data, query; extrap=:constant)
+        @allocated quadratic_interp((x, y), data, query; extrap=:constant)
+    end
+
+    function _alloc_test_quadratic_3d()
+        x = range(0.0, 2.0, 10)
+        y = range(0.0, 1.0, 8)
+        z = range(0.0, 3.0, 6)
+        data = [xi^2 + yj + zk for xi in x, yj in y, zk in z]
+        query = (1.0, 0.5, 1.5)
+        quadratic_interp((x, y, z), data, query)
+        quadratic_interp((x, y, z), data, query)
+        @allocated quadratic_interp((x, y, z), data, query)
+    end
+
+    @testset "Zero-Allocation One-Shot" begin
+        @testset "zero-alloc scalar (Range grids, default BC)" begin
+            @test _alloc_test_quadratic_default() == 0
+        end
+
+        @testset "zero-alloc scalar (Range grids, deriv=1)" begin
+            @test _alloc_test_quadratic_deriv() == 0
+        end
+
+        @testset "zero-alloc scalar (Range grids, deriv=Val)" begin
+            @test _alloc_test_quadratic_deriv_val() == 0
+        end
+
+        @testset "zero-alloc scalar (Range grids, NaturalBC)" begin
+            @test _alloc_test_quadratic_natural_bc() == 0
+        end
+
+        @testset "zero-alloc scalar (Range grids, extrap=:constant)" begin
+            @test _alloc_test_quadratic_extrap_constant() == 0
+        end
+
+        @testset "zero-alloc scalar (3D Range grids)" begin
+            @test _alloc_test_quadratic_3d() == 0
+        end
+    end
 end

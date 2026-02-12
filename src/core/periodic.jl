@@ -339,18 +339,11 @@ via `unsafe_acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
             "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"))
 
         # Extend grid: Range → direct construction (O(1)), Vector → pool
+        # IMPORTANT: Range branch returns Range unconditionally to prevent Union return type.
+        # _resolve_exclusive_period already validates period ≈ step(x)*length(x) for Range grids,
+        # so the extended Range always has the correct step and endpoint.
         if grid_d isa AbstractRange
-            expected_next = last(grid_d) + step(grid_d)
-            if x_end ≈ expected_next
-                return range(first(grid_d), step=step(grid_d), length=length(grid_d) + 1)
-            end
-            n = length(grid_d)
-            g_ext = unsafe_acquire!(pool, Tg, n + 1)
-            @inbounds for k in 1:n
-                g_ext[k] = grid_d[k]
-            end
-            @inbounds g_ext[n + 1] = x_end
-            return g_ext
+            return range(first(grid_d), step=step(grid_d), length=length(grid_d) + 1)
         else
             n = length(grid_d)
             g_ext = unsafe_acquire!(pool, Tg, n + 1)

@@ -240,17 +240,28 @@ using FastInterpolations
         @test _alloc_test_cubicfit() == 0
     end
 
-    @testset "Low-alloc scalar one-shot (Periodic BC inclusive, Range grids)" begin
-        # Periodic BC allocates in _compute_nd_partials! (cyclic tridiagonal solver).
-        # The oneshot eval pipeline itself is zero-alloc; the build phase is not yet pooled
-        # for periodic BCs. Bound: < 4 KiB for 2D 21×21 grid.
-        @test _alloc_test_periodic_inclusive() < 4096
+    @testset "Zero-alloc scalar one-shot (Periodic BC inclusive, Range grids)" begin
+        @test _alloc_test_periodic_inclusive() == 0
     end
 
-    @testset "Low-alloc scalar one-shot (Periodic BC exclusive, Range grids)" begin
-        # Exclusive endpoint adds grid/data extension allocation on top of periodic solver.
-        # Bound: < 8 KiB for 2D 20×20 grid.
-        @test _alloc_test_periodic_exclusive() < 8192
+    @testset "Zero-alloc scalar one-shot (Periodic BC exclusive, Range grids)" begin
+        @test _alloc_test_periodic_exclusive() == 0
+    end
+
+    function _alloc_test_mixed_periodic()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, 1.0, 11)
+        data = [sin(xi) * yj^2 for xi in x, yj in y]
+        data[end, :] .= data[1, :]
+        query = (1.5, 0.5)
+        bc = (PeriodicBC(), NaturalBC())
+        cubic_interp((x, y), data, query; bc=bc)
+        cubic_interp((x, y), data, query; bc=bc)
+        @allocated cubic_interp((x, y), data, query; bc=bc)
+    end
+
+    @testset "Zero-alloc scalar one-shot (Mixed periodic/NaturalBC, Range grids)" begin
+        @test _alloc_test_mixed_periodic() == 0
     end
 
 end

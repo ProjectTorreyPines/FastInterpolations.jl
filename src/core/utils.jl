@@ -565,6 +565,19 @@ Check if all axes have periodic BCs.
 end
 
 """
+    _resolve_mixed_extrap_vals(extraps, bcs) -> NTuple{N, Val}
+
+Zero-allocation per-axis extrap resolution for mixed periodic/non-periodic BCs.
+Uses `@generated` to unroll the loop at compile time, avoiding closure captures.
+"""
+@generated function _resolve_mixed_extrap_vals(
+    extraps::NTuple{N, Symbol}, bcs::NTuple{N, AbstractBC}
+) where {N}
+    exprs = [:(FastInterpolations._is_periodic_bc(bcs[$d]) ? Val(:wrap) : FastInterpolations._symbol_to_extrap_val(extraps[$d])) for d in 1:N]
+    :(($(exprs...),))
+end
+
+"""
     @_dispatch_extrap_nd extraps bcs => ev body
 
 Dispatch extrap symbols to concrete `Val` tuples for type-stable ND evaluation.
@@ -579,8 +592,8 @@ The 1D version dispatches a single Symbol; this version dispatches `NTuple{N,Sym
   (:none, :constant, :extension, :wrap) → `ntuple(_ -> Val(:sym), vn)`
 - All periodic BCs (uniform extrap): all axes → `Val(:wrap)`
 
-**Slow path** (may allocate for mixed periodic/non-periodic):
-- Per-axis resolution via `ntuple` with `_is_periodic_bc` check
+**Mixed path** (zero-alloc via `@generated`):
+- Per-axis resolution via `_resolve_mixed_extrap_vals` (compile-time unrolled)
 
 # Example
 ```julia
@@ -628,10 +641,8 @@ macro _dispatch_extrap_nd(extraps_expr, pair, body)
                 $(esc(body))
             end
         else
-            # Mixed periodic/non-periodic: per-axis resolution (may allocate)
-            let $(esc(ev_sym)) = ntuple($(valn_var)) do __d
-                _is_periodic_bc($(bcs_var)[__d]) ? Val(:wrap) : _symbol_to_extrap_val($(extraps_var)[__d])
-            end
+            # Mixed periodic/non-periodic: per-axis resolution via @generated (zero-alloc)
+            let $(esc(ev_sym)) = _resolve_mixed_extrap_vals($(extraps_var), $(bcs_var))
                 $(esc(body))
             end
         end

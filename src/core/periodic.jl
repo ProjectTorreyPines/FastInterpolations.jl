@@ -307,7 +307,7 @@ via `unsafe_acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
 - Extended grids are used for spacing/search within the same pool scope
 - Pool rewind in the outer `@with_pool` automatically releases all buffers
 """
-function _prepare_periodic_nd_pooled(
+@inline function _prepare_periodic_nd_pooled(
     pool,
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
@@ -323,19 +323,13 @@ function _prepare_periodic_nd_pooled(
     end
     has_exclusive || return (grids, data, bcs)
 
-    # Resolve periods, extend grids, and validate
-    grids_vec = Vector{AbstractVector{Tg}}(undef, N)
-    bcs_vec = Vector{AbstractBC}(undef, N)
-    for d in 1:N
-        grids_vec[d] = grids[d]
-        bcs_vec[d] = bcs[d]
-    end
-
-    for d in 1:N
+    # Build extended grids tuple directly (no heap Vector intermediary)
+    # Grid extensions are independent per dimension: grids[d] is unmodified input
+    grids_out = ntuple(Val(N)) do d
         bc_d = bcs[d]
-        bc_d isa PeriodicBC{:exclusive} || continue
+        bc_d isa PeriodicBC{:exclusive} || return grids[d]
 
-        grid_d = grids_vec[d]
+        grid_d = grids[d]
         period = _resolve_exclusive_period(grid_d, bc_d)
         x_end = first(grid_d) + Tg(period)
 
@@ -348,25 +342,33 @@ function _prepare_periodic_nd_pooled(
         if grid_d isa AbstractRange
             expected_next = last(grid_d) + step(grid_d)
             if x_end ≈ expected_next
-                grids_vec[d] = range(first(grid_d), step=step(grid_d), length=length(grid_d) + 1)
-            else
-                n = length(grid_d)
-                g_ext = unsafe_acquire!(pool, Tg, n + 1)
-                @inbounds for k in 1:n
-                    g_ext[k] = grid_d[k]
-                end
-                @inbounds g_ext[n + 1] = x_end
-                grids_vec[d] = g_ext
+                return range(first(grid_d), step=step(grid_d), length=length(grid_d) + 1)
             end
+            n = length(grid_d)
+            g_ext = unsafe_acquire!(pool, Tg, n + 1)
+            @inbounds for k in 1:n
+                g_ext[k] = grid_d[k]
+            end
+            @inbounds g_ext[n + 1] = x_end
+            return g_ext
         else
             n = length(grid_d)
             g_ext = unsafe_acquire!(pool, Tg, n + 1)
             @inbounds copyto!(g_ext, 1, grid_d, 1, n)
             @inbounds g_ext[n + 1] = x_end
-            grids_vec[d] = g_ext
+            return g_ext
         end
+    end
 
-        bcs_vec[d] = _with_resolved_period(bc_d, period)
+    # Build extended BCs tuple
+    bcs_out = ntuple(Val(N)) do d
+        bc_d = bcs[d]
+        if bc_d isa PeriodicBC{:exclusive}
+            period = _resolve_exclusive_period(grids[d], bc_d)
+            return _with_resolved_period(bc_d, period)
+        else
+            return bc_d
+        end
     end
 
     # Extend data: pool-allocate final shape, then fill slices
@@ -397,7 +399,5 @@ function _prepare_periodic_nd_pooled(
         copyto!(view(data_out, dst_inds...), view(data_out, src_inds...))
     end
 
-    grids_out = ntuple(d -> grids_vec[d]::AbstractVector{Tg}, Val(N))
-    bcs_out = ntuple(d -> bcs_vec[d]::AbstractBC, Val(N))
     return (grids_out, data_out, bcs_out)
 end

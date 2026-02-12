@@ -443,7 +443,7 @@ function _compute_nd_partials!(
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, AbstractBC}
 ) where {Tv, Tg<:AbstractFloat, N, NP1}
-    # Validate dimensions
+    # Validate dimensions (fast, no allocation)
     @boundscheck begin
         NP1 == N + 1 || throw(DimensionMismatch("partials must have N+1 dimensions"))
         n_partials = 1 << N  # 2^N
@@ -452,9 +452,6 @@ function _compute_nd_partials!(
         ))
         _validate_nd_partials_dims!(partials, grids, data, Val(N))
     end
-
-    # Validate periodic BCs and PolyFit requirements
-    _validate_nd_bcs!(grids, bcs, data, Val(N))
 
     # Stage 0: Copy f (the function values) into partials[1, ...]
     f_partial = selectdim(partials, 1, 1)
@@ -492,6 +489,9 @@ function _build_nd_coeffs(
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, AbstractBC}
 ) where {Tg<:AbstractFloat, Tv, N}
+    # Validate periodic BCs and PolyFit requirements (runs once at construction time)
+    _validate_nd_bcs!(grids, bcs, data, Val(N))
+
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
     n_partials = 1 << N
     partials_shape = (n_partials, size(data)...)

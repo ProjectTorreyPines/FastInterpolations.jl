@@ -24,4 +24,5 @@ include("constant_nd_eval.jl")   # Scalar and batch evaluation
 # ========================================
 # 3. Public API
 # ========================================
-include("constant_nd_api.jl")    # constant_interp() for ND
+include("constant_nd_interpolant.jl")  # constant_interp() constructor + grid conversion
+include("constant_nd_oneshot.jl")      # constant_interp() one-shot + zero-alloc backends

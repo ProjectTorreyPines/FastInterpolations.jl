@@ -454,7 +454,7 @@ import FastInterpolations:
     # ========================================
     # QuadraticND API Coverage
     # ========================================
-    @testset "quadratic_nd_api.jl" begin
+    @testset "quadratic_nd_interpolant.jl" begin
         import FastInterpolations:
             _resolve_bcs_nd_quadratic,
             _to_quadratic_bc

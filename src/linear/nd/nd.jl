@@ -24,4 +24,5 @@ include("linear_nd_eval.jl")     # Multilinear interpolation kernel
 # ========================================
 # 3. Public API
 # ========================================
-include("linear_nd_api.jl")      # linear_interp() for ND
+include("linear_nd_interpolant.jl")  # linear_interp() constructor + grid conversion
+include("linear_nd_oneshot.jl")      # linear_interp() one-shot + zero-alloc backends

@@ -33,4 +33,5 @@ include("quadratic_nd_eval.jl")      # Callable interface + @generated tensor pr
 # ========================================
 # 4. Public API
 # ========================================
-include("quadratic_nd_api.jl")       # quadratic_interp() for ND
+include("quadratic_nd_interpolant.jl")  # quadratic_interp() constructor + BC resolution + builder
+include("quadratic_nd_oneshot.jl")      # quadratic_interp() one-shot + pool-based backends

@@ -6,31 +6,6 @@
 # One-shot evaluation is in cubic_nd_oneshot.jl.
 
 # ========================================
-# HELPER FUNCTIONS
-# ========================================
-
-"""
-    _convert_grid(x, Tg) -> AbstractVector{Tg}
-
-Convert grid to target float type, preserving Range type where possible.
-"""
-function _convert_grid(x::AbstractRange, ::Type{Tg}) where {Tg}
-    if eltype(x) === Tg
-        return x
-    else
-        return range(Tg(first(x)), Tg(last(x)), length(x))
-    end
-end
-
-function _convert_grid(x::AbstractVector, ::Type{Tg}) where {Tg}
-    if eltype(x) === Tg
-        return x
-    else
-        return Tg.(x)
-    end
-end
-
-# ========================================
 # GENERIC ND: N-ARGUMENT FORM (Constructor)
 # ========================================
 

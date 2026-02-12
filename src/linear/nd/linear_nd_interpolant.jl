@@ -6,25 +6,6 @@
 # One-shot evaluation is in linear_nd_oneshot.jl.
 
 # ========================================
-# Grid Conversion Helpers
-# ========================================
-
-"""
-    _convert_grid_linear(x, Tg) -> AbstractVector{Tg}
-
-Convert grid to target element type, preserving Range structure.
-"""
-function _convert_grid_linear(x::AbstractRange, ::Type{Tg}) where {Tg}
-    eltype(x) === Tg && return x
-    return range(Tg(first(x)), Tg(last(x)), length(x))
-end
-
-function _convert_grid_linear(x::AbstractVector, ::Type{Tg}) where {Tg}
-    eltype(x) === Tg && return x
-    return Tg.(x)
-end
-
-# ========================================
 # Constructor API
 # ========================================
 
@@ -91,7 +72,7 @@ function linear_interp(
     Tg = Tg <: AbstractFloat ? Tg : Float64
 
     # Convert grids to target type (preserving Range structure)
-    grids_typed = _convert_grids_typed_linear(grids, Tg)
+    grids_typed = _convert_grids_typed(grids, Tg)
 
     # Create spacings
     spacings = _create_spacings_typed(grids_typed)
@@ -105,27 +86,10 @@ function linear_interp(
     searches = _resolve_search_nd(search, Val(N))
 
     # Convert symbols to Val types
-    extrap_vals = _to_extrap_vals_linear(extraps)
+    extrap_vals = _to_extrap_vals(extraps)
 
     return LinearInterpolantND{Tg, Tv, N,
         typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches)}(
         grids_typed, spacings, Array(data_typed), extrap_vals, searches
     )
-end
-
-# ========================================
-# Grid Conversion (Generated for Zero-Alloc)
-# ========================================
-
-@generated function _convert_grids_typed_linear(grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
-    exprs = [:(FastInterpolations._convert_grid_linear(grids[$i], Tg)) for i in 1:N]
-    :(($(exprs...),))
-end
-
-# ========================================
-# Val Type Conversion
-# ========================================
-
-@inline function _to_extrap_vals_linear(extraps::NTuple{N, Symbol}) where {N}
-    return ntuple(i -> Val(extraps[i]), Val(N))
 end

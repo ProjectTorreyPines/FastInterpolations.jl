@@ -83,6 +83,20 @@ using FastInterpolations
         end
     end
 
+    @testset "AoS batch one-shot matches Interpolant" begin
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 11)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+
+        itp = cubic_interp((x, y), data)
+        points = [(0.5, 0.2), (1.0, 0.4), (1.5, 0.6), (2.0, 0.8), (3.0, 1.0)]
+
+        vals_oneshot = cubic_interp((x, y), data, points)
+        for k in 1:5
+            @test vals_oneshot[k] ≈ itp(points[k]) atol=1e-14
+        end
+    end
+
     @testset "Complex-valued one-shot" begin
         x = range(0.0, 2π, 21)
         y = range(0.0, π, 11)

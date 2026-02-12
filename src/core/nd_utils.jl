@@ -122,6 +122,20 @@ end
 end
 
 # ========================================
+# Symbol → Val Conversion
+# ========================================
+
+"""
+    _to_extrap_vals(extraps::NTuple{N, Symbol}) -> NTuple{N, Val}
+
+Convert extrapolation symbol tuple to Val tuple for type-stable dispatch.
+Used by Interpolant constructors (linear, constant) that store extrap as Val types.
+"""
+@inline function _to_extrap_vals(extraps::NTuple{N, Symbol}) where {N}
+    return ntuple(i -> Val(extraps[i]), Val(N))
+end
+
+# ========================================
 # Derivative Order → EvalOp Conversion
 # ========================================
 #
@@ -561,12 +575,26 @@ Generates unrolled `promote_type(eltype(grids[1]), eltype(grids[2]), ...)` at co
 end
 
 """
+    _convert_grid(x, Tg) -> AbstractVector{Tg}
+
+Convert grid to target float type, preserving Range type where possible.
+Used by all ND interpolation methods via `_convert_grids_typed`.
+"""
+function _convert_grid(x::AbstractRange, ::Type{Tg}) where {Tg}
+    eltype(x) === Tg && return x
+    return range(Tg(first(x)), Tg(last(x)), length(x))
+end
+
+function _convert_grid(x::AbstractVector, ::Type{Tg}) where {Tg}
+    eltype(x) === Tg && return x
+    return Tg.(x)
+end
+
+"""
     _convert_grids_typed(grids::NTuple{N, AbstractVector}, ::Type{Tg}) -> NTuple{N}
 
 Zero-allocation grid conversion to target element type.
 Generates unrolled `(_convert_grid(grids[1], Tg), _convert_grid(grids[2], Tg), ...)` at compile time.
-
-Requires `_convert_grid(grid, Type)` to be defined.
 """
 @generated function _convert_grids_typed(grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
     exprs = [:(FastInterpolations._convert_grid(grids[$i], Tg)) for i in 1:N]

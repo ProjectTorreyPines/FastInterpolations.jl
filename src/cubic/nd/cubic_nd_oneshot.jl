@@ -104,6 +104,49 @@ function cubic_interp(
     end
 end
 
+"""
+    cubic_interp(grids, data, queries::AbstractVector{<:NTuple}; deriv=0, kwargs...)
+
+One-shot ND cubic interpolation at multiple points (AoS batch).
+Zero-allocation for workspace after warmup; output vector is heap-allocated.
+"""
+function cubic_interp(
+    grids::NTuple{N, AbstractVector},
+    data::AbstractArray{Tv, N},
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
+    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
+    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
+    coeffs::AbstractCoeffStrategy=PreCompute()
+) where {Tv, N}
+    Tg = _promote_grid_eltype(grids)
+    Tg = Tg <: AbstractFloat ? Tg : Float64
+    grids_typed = _convert_grids_typed(grids, Tg)
+    _validate_nd_grids(grids_typed, data)
+
+    bcs = _resolve_bcs_nd(bc, Val(N))
+    extraps = _resolve_extrap_nd(extrap, Val(N))
+    searches = _resolve_search_nd(search, Val(N))
+
+    _check_periodic_extrap(bcs, extraps, Val(N))
+
+    @_dispatch_extrap_nd extraps bcs => extraps_val begin
+        if deriv isa Int
+            @_dispatch_deriv deriv => op begin
+                ops = ntuple(_ -> op, Val(N))
+                return _cubic_interp_nd_oneshot_aos(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
+            end
+        elseif deriv isa Val
+            ops = _resolve_deriv_nd(deriv, Val(N))
+            return _cubic_interp_nd_oneshot_aos(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
+        else
+            ops = _resolve_deriv_nd(Val(deriv), Val(N))
+            return _cubic_interp_nd_oneshot_aos(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
+        end
+    end
+end
+
 # ========================================
 # POOL-BASED ND ONE-SHOT IMPLEMENTATION
 # ========================================
@@ -199,6 +242,47 @@ Output vector is heap-allocated (return value).
         q_evals = _handle_all_extraps(query_k, grids_p, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_evals, grids_p, spacings, searches)
         hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
+        output[k] = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
+    end
+    return output
+end
+
+"""
+    _cubic_interp_nd_oneshot_aos(grids, data, queries, bcs, extraps_val, searches, ops)
+
+Pool-based AoS batch one-shot ND cubic Hermite evaluation.
+Computes partials ONCE, then evaluates at all query points.
+Output vector is heap-allocated (return value).
+
+`extraps_val` must be a pre-resolved tuple of `Val` types.
+"""
+@with_pool pool function _cubic_interp_nd_oneshot_aos(
+    grids::NTuple{N, AbstractVector{Tg}},
+    data::AbstractArray{Tv, N},
+    queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
+    bcs::NTuple{N, AbstractBC},
+    extraps_val::NTuple{N, Val},
+    searches::NTuple{N, AbstractSearchPolicy},
+    ops::NTuple{N, AbstractEvalOp}
+) where {Tg<:AbstractFloat, Tv, N}
+    n_queries = length(queries)
+
+    # Build phase (same as scalar, done once)
+    grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
+    n_partials = 1 << N
+    partials = unsafe_acquire!(pool, Tv, (n_partials, size(data_p)...))
+    _compute_nd_partials!(partials, grids_p, data_p, bcs_p)
+    spacings = _create_spacings_typed(grids_p)
+
+    # Allocate output (heap — this IS the return value)
+    output = Vector{Tv}(undef, n_queries)
+
+    # Eval loop: search + kernel per query point
+    @inbounds for k in 1:n_queries
+        query_k = queries[k]
+        q_eval = _handle_all_extraps(query_k, grids_p, extraps_val)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches)
+        hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
         output[k] = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
     end
     return output

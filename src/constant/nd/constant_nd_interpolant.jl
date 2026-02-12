@@ -6,25 +6,6 @@
 # One-shot evaluation is in constant_nd_oneshot.jl.
 
 # ========================================
-# Grid Conversion Helpers
-# ========================================
-
-"""
-    _convert_grid_constant(x, Tg) -> AbstractVector{Tg}
-
-Convert grid to target element type, preserving Range structure.
-"""
-function _convert_grid_constant(x::AbstractRange, ::Type{Tg}) where {Tg}
-    eltype(x) === Tg && return x
-    return range(Tg(first(x)), Tg(last(x)), length(x))
-end
-
-function _convert_grid_constant(x::AbstractVector, ::Type{Tg}) where {Tg}
-    eltype(x) === Tg && return x
-    return Tg.(x)
-end
-
-# ========================================
 # Constructor API
 # ========================================
 
@@ -80,7 +61,7 @@ function constant_interp(
     Tg = Tg <: AbstractFloat ? Tg : Float64
 
     # Convert grids to target type (preserving Range structure)
-    grids_typed = _convert_grids_typed_constant(grids, Tg)
+    grids_typed = _convert_grids_typed(grids, Tg)
 
     # Create spacings
     spacings = _create_spacings_typed(grids_typed)
@@ -105,23 +86,8 @@ function constant_interp(
 end
 
 # ========================================
-# Grid Conversion (Generated for Zero-Alloc)
-# ========================================
-
-@generated function _convert_grids_typed_constant(grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
-    exprs = [:(FastInterpolations._convert_grid_constant(grids[$i], Tg)) for i in 1:N]
-    :(($(exprs...),))
-end
-
-# ========================================
 # Val Type Conversion
 # ========================================
-
-@inline function _to_extrap_vals(extraps::NTuple{N, Symbol}) where {N}
-    return ntuple(i -> _to_extrap_val(extraps[i]), Val(N))
-end
-
-@inline _to_extrap_val(s::Symbol) = Val(s)
 
 @inline function _to_side_vals(sides::NTuple{N, Symbol}) where {N}
     return ntuple(i -> _to_side_val(sides[i]), Val(N))

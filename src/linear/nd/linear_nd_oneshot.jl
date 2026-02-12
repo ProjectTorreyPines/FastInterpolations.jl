@@ -113,7 +113,7 @@ function linear_interp(
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
-    grids_typed = _convert_grids_typed_linear(grids, Tg)
+    grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
     extraps = _resolve_extrap_nd(extrap, Val(N))
@@ -151,7 +151,7 @@ function linear_interp(
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
-    grids_typed = _convert_grids_typed_linear(grids, Tg)
+    grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
     extraps = _resolve_extrap_nd(extrap, Val(N))
@@ -189,7 +189,7 @@ function linear_interp(
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
-    grids_typed = _convert_grids_typed_linear(grids, Tg)
+    grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
     extraps = _resolve_extrap_nd(extrap, Val(N))

@@ -79,9 +79,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
-          # Documenter deploy checks currently expect push/workflow_dispatch/schedule.
-          # For TagBot repository_dispatch, emulate a tag push context.
-          GITHUB_EVENT_NAME: ${{ github.event_name == 'repository_dispatch' && 'push' || github.event_name }}
-          GITHUB_REF: ${{ github.event_name == 'repository_dispatch' && steps.release_ref.outputs.tag && format('refs/tags/{0}', steps.release_ref.outputs.tag) || github.ref }}
-          GITHUB_SHA: ${{ github.event_name == 'repository_dispatch' && steps.release_ref.outputs.ref || github.sha }}
-        run: julia --project=docs/ docs/make.jl
+          GOOGLE_SITE_VERIFICATION: ${{ secrets.GOOGLE_SITE_VERIFICATION }}
+          TAGBOT_DOCS_TAG: ${{ steps.release_ref.outputs.tag }}
+          TAGBOT_DOCS_SHA: ${{ steps.release_ref.outputs.ref }}
+        run: |
+          julia --project=docs/ -e '
+            if get(ENV, "GITHUB_EVENT_NAME", "") == "repository_dispatch"
+              tag = get(ENV, "TAGBOT_DOCS_TAG", "")
+              sha = get(ENV, "TAGBOT_DOCS_SHA", "")
+              isempty(tag) && error("TAGBOT_DOCS_TAG is required for repository_dispatch.")
+              isempty(sha) && error("TAGBOT_DOCS_SHA is required for repository_dispatch.")
+
+              # Documenter deploy checks require push-like env for tag deployments.
+              ENV["GITHUB_EVENT_NAME"] = "push"
+              ENV["GITHUB_REF"] = "refs/tags/$(tag)"
+              ENV["GITHUB_SHA"] = sha
+            end
+
+            include("docs/make.jl")
+          '

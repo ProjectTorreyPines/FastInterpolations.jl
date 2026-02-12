@@ -529,3 +529,107 @@ macro _dispatch_side(pair, body)
         end
     end
 end
+
+# ========================================
+# ND Extrap Dispatch Helpers
+# ========================================
+
+"""
+    _is_uniform_extrap_no_periodic(extraps, bcs) -> Bool
+
+Check if all extraps are the same symbol and no axes have periodic BCs.
+Used by `@_dispatch_extrap` for the zero-alloc fast path.
+"""
+@inline function _is_uniform_extrap_no_periodic(
+    extraps::NTuple{N, Symbol}, bcs::NTuple{N, AbstractBC}
+) where {N}
+    for d in 1:N
+        _is_periodic_bc(bcs[d]) && return false
+    end
+    for d in 2:N
+        extraps[d] !== extraps[1] && return false
+    end
+    return true
+end
+
+"""
+    _is_all_periodic(bcs) -> Bool
+
+Check if all axes have periodic BCs.
+"""
+@inline function _is_all_periodic(bcs::NTuple{N, AbstractBC}) where {N}
+    for d in 1:N
+        _is_periodic_bc(bcs[d]) || return false
+    end
+    return true
+end
+
+"""
+    @_dispatch_extrap extraps bcs Val(N) => ev body
+
+Dispatch extrap symbols to concrete `Val` tuples for type-stable ND evaluation.
+Creates if/else branches, each with a concrete `ev` binding (similar to `@_dispatch_deriv`).
+
+**Fast paths** (zero-alloc):
+- Uniform extrap + no periodic BCs: dispatches to one of 4 branches
+  (:none, :constant, :extension, :wrap) → `ntuple(_ -> Val(:sym), vn)`
+- All periodic BCs (uniform extrap): all axes → `Val(:wrap)`
+
+**Slow path** (may allocate for mixed periodic/non-periodic):
+- Per-axis resolution via `ntuple` with `_is_periodic_bc` check
+
+# Example
+```julia
+@_dispatch_extrap extraps bcs Val(N) => extraps_val begin
+    return _cubic_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops)
+end
+```
+"""
+macro _dispatch_extrap(extraps_expr, bcs_expr, pair, body)
+    # Parse pair: Val(N) => ev_sym
+    pair.head === :call && pair.args[1] === :(=>) ||
+        error("@_dispatch_extrap expects `Val(N) => binding`, got: $pair")
+    valn_expr = pair.args[2]
+    ev_sym = pair.args[3]
+
+    extraps_var = gensym(:extraps)
+    bcs_var = gensym(:bcs)
+    valn_var = gensym(:valn)
+
+    quote
+        local $(extraps_var) = $(esc(extraps_expr))
+        local $(bcs_var) = $(esc(bcs_expr))
+        local $(valn_var) = $(esc(valn_expr))
+
+        if _is_uniform_extrap_no_periodic($(extraps_var), $(bcs_var))
+            if $(extraps_var)[1] === :none
+                let $(esc(ev_sym)) = ntuple(_ -> Val(:none), $(valn_var))
+                    $(esc(body))
+                end
+            elseif $(extraps_var)[1] === :constant
+                let $(esc(ev_sym)) = ntuple(_ -> Val(:constant), $(valn_var))
+                    $(esc(body))
+                end
+            elseif $(extraps_var)[1] === :extension
+                let $(esc(ev_sym)) = ntuple(_ -> Val(:extension), $(valn_var))
+                    $(esc(body))
+                end
+            else
+                let $(esc(ev_sym)) = ntuple(_ -> Val(:wrap), $(valn_var))
+                    $(esc(body))
+                end
+            end
+        elseif _is_all_periodic($(bcs_var))
+            let $(esc(ev_sym)) = ntuple(_ -> Val(:wrap), $(valn_var))
+                $(esc(body))
+            end
+        else
+            # Mixed periodic/non-periodic: per-axis resolution (may allocate)
+            let $(esc(ev_sym)) = ntuple($(valn_var)) do __d
+                _is_periodic_bc($(bcs_var)[__d]) ? Val(:wrap) : _symbol_to_extrap_val($(extraps_var)[__d])
+            end
+                $(esc(body))
+            end
+        end
+    end
+end

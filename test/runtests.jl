@@ -61,6 +61,7 @@ else
     include("test_nd_linear.jl")        # Linear ND interpolation (phase 3)
     include("test_nd_quadratic.jl")     # Quadratic ND interpolation
     include("test_cubic_nd.jl")
+    include("test_cubic_nd_oneshot.jl")  # Cubic ND one-shot (pool-based, zero-alloc)
     include("test_nd_comprehensive.jl")
     include("test_nd_coverage.jl")
     include("test_nd_heterogeneous_grids.jl")

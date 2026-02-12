@@ -565,13 +565,14 @@ Check if all axes have periodic BCs.
 end
 
 """
-    @_dispatch_extrap_nd extraps bcs Val(N) => ev body
+    @_dispatch_extrap_nd extraps bcs => ev body
 
 Dispatch extrap symbols to concrete `Val` tuples for type-stable ND evaluation.
 Creates if/else branches, each with a concrete `ev` binding (similar to `@_dispatch_deriv`).
 
 This is the ND counterpart of `@_dispatch_extrap(sym => varname, body)` (1D).
 The 1D version dispatches a single Symbol; this version dispatches `NTuple{N,Symbol}` + BCs.
+`N` is derived automatically from `length(extraps)` (compile-time constant for NTuple).
 
 **Fast paths** (zero-alloc):
 - Uniform extrap + no periodic BCs: dispatches to one of 4 branches
@@ -583,16 +584,16 @@ The 1D version dispatches a single Symbol; this version dispatches `NTuple{N,Sym
 
 # Example
 ```julia
-@_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
+@_dispatch_extrap_nd extraps bcs => extraps_val begin
     return _cubic_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops)
 end
 ```
 """
-macro _dispatch_extrap_nd(extraps_expr, bcs_expr, pair, body)
-    # Parse pair: Val(N) => ev_sym
+macro _dispatch_extrap_nd(extraps_expr, pair, body)
+    # Parse pair: bcs => ev_sym
     pair.head === :call && pair.args[1] === :(=>) ||
-        error("@_dispatch_extrap_nd expects `Val(N) => binding`, got: $pair")
-    valn_expr = pair.args[2]
+        error("@_dispatch_extrap_nd expects `bcs => binding`, got: $pair")
+    bcs_expr = pair.args[2]
     ev_sym = pair.args[3]
 
     extraps_var = gensym(:extraps)
@@ -602,7 +603,7 @@ macro _dispatch_extrap_nd(extraps_expr, bcs_expr, pair, body)
     quote
         local $(extraps_var) = $(esc(extraps_expr))
         local $(bcs_var) = $(esc(bcs_expr))
-        local $(valn_var) = $(esc(valn_expr))
+        local $(valn_var) = Val(length($(extraps_var)))
 
         if _is_uniform_extrap_no_periodic($(extraps_var), $(bcs_var))
             if $(extraps_var)[1] === :none

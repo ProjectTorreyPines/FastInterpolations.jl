@@ -145,24 +145,20 @@ function cubic_interp(
     # Validate periodic+extrap compatibility (once, before dispatch)
     _check_periodic_extrap(bcs, extraps, Val(N))
 
-    # Dispatch deriv → concrete ops, then extrap → concrete Val tuple
+    # Dispatch extrap → concrete Val tuple, then deriv → concrete ops
     # Both dispatches happen BEFORE entering @with_pool for type stability
     # Type assertion (::Tv) prevents boxing from multi-branch return type inference failure
-    if deriv isa Int
-        @_dispatch_deriv deriv => op begin
-            ops = ntuple(_ -> op, Val(N))
-            @_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
+    @_dispatch_extrap_nd extraps bcs => extraps_val begin
+        if deriv isa Int
+            @_dispatch_deriv deriv => op begin
+                ops = ntuple(_ -> op, Val(N))
                 return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tv
             end
-        end
-    elseif deriv isa Val
-        ops = _resolve_deriv_nd(deriv, Val(N))
-        @_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
+        elseif deriv isa Val
+            ops = _resolve_deriv_nd(deriv, Val(N))
             return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tv
-        end
-    else
-        ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        @_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
+        else
+            ops = _resolve_deriv_nd(Val(deriv), Val(N))
             return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tv
         end
     end
@@ -195,21 +191,17 @@ function cubic_interp(
 
     _check_periodic_extrap(bcs, extraps, Val(N))
 
-    if deriv isa Int
-        @_dispatch_deriv deriv => op begin
-            ops = ntuple(_ -> op, Val(N))
-            @_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
+    @_dispatch_extrap_nd extraps bcs => extraps_val begin
+        if deriv isa Int
+            @_dispatch_deriv deriv => op begin
+                ops = ntuple(_ -> op, Val(N))
                 return _cubic_interp_nd_oneshot_soa(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
             end
-        end
-    elseif deriv isa Val
-        ops = _resolve_deriv_nd(deriv, Val(N))
-        @_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
+        elseif deriv isa Val
+            ops = _resolve_deriv_nd(deriv, Val(N))
             return _cubic_interp_nd_oneshot_soa(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
-        end
-    else
-        ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        @_dispatch_extrap_nd extraps bcs Val(N) => extraps_val begin
+        else
+            ops = _resolve_deriv_nd(Val(deriv), Val(N))
             return _cubic_interp_nd_oneshot_soa(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
         end
     end

@@ -57,6 +57,38 @@ function rewrite_readme_paths(content::String; from_root::Bool=true)
 end
 
 # ============================================
+# Helper: Inject Google site verification tag
+# ============================================
+
+"""
+Inject Google Search Console verification meta tag into generated HTML files.
+This is enabled only when `ENV["GOOGLE_SITE_VERIFICATION"]` is set.
+"""
+function inject_google_site_verification!(build_dir::String)
+    token = strip(get(ENV, "GOOGLE_SITE_VERIFICATION", ""))
+    isempty(token) && return
+
+    safe_token = replace(token, '"' => "&quot;")
+    meta_tag = "<meta name=\"google-site-verification\" content=\"$(safe_token)\" />"
+    injected = 0
+
+    for (root, _, files) in walkdir(build_dir)
+        for file in files
+            endswith(file, ".html") || continue
+            path = joinpath(root, file)
+            html = read(path, String)
+            occursin("google-site-verification", html) && continue
+            occursin("</head>", html) || continue
+
+            write_if_changed(path, replace(html, "</head>" => "$(meta_tag)\n</head>"; count=1))
+            injected += 1
+        end
+    end
+
+    @info "Injected google-site-verification meta tag" files=injected build_dir=build_dir
+end
+
+# ============================================
 # Step 1: Setup directories and content
 # ============================================
 
@@ -172,6 +204,8 @@ makedocs(
     doctest = true,
     checkdocs = :exports,
 )
+
+inject_google_site_verification!(joinpath(@__DIR__, "build"))
 
 deploydocs(
     repo = "github.com/ProjectTorreyPines/FastInterpolations.jl.git",

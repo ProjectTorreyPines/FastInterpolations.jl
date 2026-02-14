@@ -616,6 +616,57 @@ when grids is a heterogeneous tuple (e.g., mix of Range and Vector).
 end
 
 # ========================================
+# Pool-Based Spacing Creation (ND Oneshot)
+# ========================================
+#
+# Variants of _create_spacing that acquire h/inv_h vectors from an
+# AdaptiveArrayPools pool instead of heap-allocating.
+# Used exclusively inside @with_pool scopes in ND oneshot paths.
+# Range grids (ScalarSpacing) are zero-alloc regardless.
+
+"""
+    _create_spacing_pooled(pool, x::AbstractRange{T}) -> ScalarSpacing{T}
+
+Pool-aware spacing for Range grids. Delegates to `_create_spacing` since
+ScalarSpacing is already zero-allocation (two scalar values).
+"""
+@inline _create_spacing_pooled(pool, x::AbstractRange{T}) where {T<:AbstractFloat} = _create_spacing(x)
+@inline _create_spacing_pooled(pool, x::LinRange{T}) where {T<:AbstractFloat} = _create_spacing(x)
+
+"""
+    _create_spacing_pooled(pool, x::AbstractVector{T}) -> VectorSpacing{T}
+
+Pool-aware spacing for Vector grids. Acquires `h` and `inv_h` arrays
+from the pool instead of heap-allocating. The pool buffers are released
+automatically when the enclosing `@with_pool` scope exits.
+"""
+@inline function _create_spacing_pooled(pool, x::AbstractVector{T}) where {T<:AbstractFloat}
+    n = length(x)
+    h = unsafe_acquire!(pool, T, n - 1)
+    inv_h = unsafe_acquire!(pool, T, n - 1)
+
+    @inbounds for i in 1:(n-1)
+        h[i] = x[i+1] - x[i]
+        inv_h[i] = one(T) / h[i]
+    end
+
+    return VectorSpacing{T}(h, inv_h)
+end
+
+"""
+    _create_spacings_pooled(pool, grids::NTuple{N, AbstractVector}) -> NTuple{N}
+
+Pool-aware spacing creation from grid tuple.
+Generates unrolled per-axis calls to `_create_spacing_pooled` at compile time.
+For Range grids, no pool touch (ScalarSpacing is zero-alloc).
+For Vector grids, h/inv_h are acquired from pool (zero heap alloc).
+"""
+@generated function _create_spacings_pooled(pool, grids::NTuple{N, AbstractVector}) where {N}
+    exprs = [:(FastInterpolations._create_spacing_pooled(pool, grids[$i])) for i in 1:N]
+    :(($(exprs...),))
+end
+
+# ========================================
 # In-Place Batch Evaluation (Generic ND)
 # ========================================
 #

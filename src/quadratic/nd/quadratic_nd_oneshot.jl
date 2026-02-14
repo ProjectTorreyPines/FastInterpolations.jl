@@ -37,7 +37,7 @@ Zero-allocation after warmup (pool reuse).
     _compute_nd_partials_quadratic!(partials, grids, data, bcs)
 
     # 3. Create spacings (ScalarSpacing for Range grids = zero alloc)
-    spacings = _create_spacings_typed(grids)
+    spacings = _create_spacings_pooled(pool, grids)
 
     # 4. Eval pipeline (all standalone functions, no Interpolant needed)
     q_eval = _handle_all_extraps(query, grids, extraps_val)
@@ -75,7 +75,7 @@ Output vector is heap-allocated (return value).
     n_partials = 1 << N
     partials = unsafe_acquire!(pool, Tv, (n_partials, size(data)...))
     _compute_nd_partials_quadratic!(partials, grids, data, bcs)
-    spacings = _create_spacings_typed(grids)
+    spacings = _create_spacings_pooled(pool, grids)
 
     # Allocate output (heap — this IS the return value)
     output = Vector{Tv}(undef, n_queries)
@@ -113,7 +113,7 @@ Output vector is heap-allocated (return value).
     n_partials = 1 << N
     partials = unsafe_acquire!(pool, Tv, (n_partials, size(data)...))
     _compute_nd_partials_quadratic!(partials, grids, data, bcs)
-    spacings = _create_spacings_typed(grids)
+    spacings = _create_spacings_pooled(pool, grids)
 
     # Allocate output (heap — this IS the return value)
     output = Vector{Tv}(undef, n_queries)

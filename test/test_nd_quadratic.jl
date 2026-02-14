@@ -567,4 +567,56 @@ using FastInterpolations
             @test _alloc_test_quadratic_3d() == 0
         end
     end
+
+    # ========================================
+    # Vector-Grid Allocation Tests
+    # ========================================
+    #
+    # Pool-based spacing: VectorSpacing h/inv_h acquired from pool,
+    # zero heap allocation for Vector grids after warmup.
+
+    function _alloc_test_quadratic_vector_default()
+        x = collect(range(0.0, 2.0, 20))
+        y = collect(range(0.0, 1.0, 15))
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        query = (1.0, 0.5)
+        quadratic_interp((x, y), data, query)
+        quadratic_interp((x, y), data, query)
+        @allocated quadratic_interp((x, y), data, query)
+    end
+
+    function _alloc_test_quadratic_vector_deriv()
+        x = collect(range(0.0, 2.0, 20))
+        y = collect(range(0.0, 1.0, 15))
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        query = (1.0, 0.5)
+        quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
+        quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
+        @allocated quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
+    end
+
+    function _alloc_test_quadratic_vector_3d()
+        x = collect(range(0.0, 2.0, 10))
+        y = collect(range(0.0, 1.0, 8))
+        z = collect(range(0.0, 3.0, 6))
+        data = [xi^2 + yj + zk for xi in x, yj in y, zk in z]
+        query = (1.0, 0.5, 1.5)
+        quadratic_interp((x, y, z), data, query)
+        quadratic_interp((x, y, z), data, query)
+        @allocated quadratic_interp((x, y, z), data, query)
+    end
+
+    @testset "Zero-Allocation One-Shot (Vector grids)" begin
+        @testset "zero-alloc scalar (Vector grids, default BC)" begin
+            @test _alloc_test_quadratic_vector_default() == 0
+        end
+
+        @testset "zero-alloc scalar (Vector grids, deriv=Val)" begin
+            @test _alloc_test_quadratic_vector_deriv() == 0
+        end
+
+        @testset "zero-alloc scalar (3D Vector grids)" begin
+            @test _alloc_test_quadratic_vector_3d() == 0
+        end
+    end
 end

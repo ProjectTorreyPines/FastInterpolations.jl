@@ -278,4 +278,53 @@ using FastInterpolations
         @test _alloc_test_mixed_periodic() == 0
     end
 
+    # ========================================
+    # Vector-Grid Allocation Tests
+    # ========================================
+    #
+    # Pool-based spacing: VectorSpacing h/inv_h acquired from pool,
+    # zero heap allocation for Vector grids after warmup.
+
+    function _alloc_test_vector_natural()
+        x = collect(range(0.0, 2.0, 15))
+        y = collect(range(0.0, 1.0, 11))
+        data = [xi^3 + yj^2 for xi in x, yj in y]
+        query = (1.0, 0.5)
+        cubic_interp((x, y), data, query)
+        cubic_interp((x, y), data, query)
+        @allocated cubic_interp((x, y), data, query)
+    end
+
+    function _alloc_test_vector_cubicfit()
+        x = collect(range(0.0, 2.0, 15))
+        y = collect(range(0.0, 1.0, 11))
+        data = [xi^3 + yj^2 for xi in x, yj in y]
+        query = (1.0, 0.5)
+        cubic_interp((x, y), data, query; bc=CubicFit())
+        cubic_interp((x, y), data, query; bc=CubicFit())
+        @allocated cubic_interp((x, y), data, query; bc=CubicFit())
+    end
+
+    function _alloc_test_vector_deriv()
+        x = collect(range(0.0, 2.0, 15))
+        y = collect(range(0.0, 1.0, 11))
+        data = [xi^3 + yj^2 for xi in x, yj in y]
+        query = (1.0, 0.5)
+        cubic_interp((x, y), data, query; deriv=Val((1, 0)))
+        cubic_interp((x, y), data, query; deriv=Val((1, 0)))
+        @allocated cubic_interp((x, y), data, query; deriv=Val((1, 0)))
+    end
+
+    @testset "Zero-alloc scalar one-shot (Vector grids, NaturalBC)" begin
+        @test _alloc_test_vector_natural() == 0
+    end
+
+    @testset "Zero-alloc scalar one-shot (Vector grids, CubicFit)" begin
+        @test _alloc_test_vector_cubicfit() == 0
+    end
+
+    @testset "Zero-alloc scalar one-shot (Vector grids, deriv)" begin
+        @test _alloc_test_vector_deriv() == 0
+    end
+
 end

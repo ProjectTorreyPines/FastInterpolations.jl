@@ -189,7 +189,7 @@ computed via `@_dispatch_extrap_nd` in the API layer for type stability.
     _compute_nd_partials!(partials, grids_p, data_p, bcs_p)
 
     # 4. Create spacings (ScalarSpacing for Range grids = zero alloc)
-    spacings = _create_spacings_typed(grids_p)
+    spacings = _create_spacings_pooled(pool, grids_p)
 
     # 5. Eval pipeline (all standalone functions, no Interpolant needed)
     q_evals = _handle_all_extraps(query, grids_p, extraps_val)
@@ -231,7 +231,7 @@ Output vector is heap-allocated (return value).
     n_partials = 1 << N
     partials = unsafe_acquire!(pool, Tv, (n_partials, size(data_p)...))
     _compute_nd_partials!(partials, grids_p, data_p, bcs_p)
-    spacings = _create_spacings_typed(grids_p)
+    spacings = _create_spacings_pooled(pool, grids_p)
 
     # Allocate output (heap — this IS the return value)
     output = Vector{Tv}(undef, n_queries)
@@ -272,7 +272,7 @@ Output vector is heap-allocated (return value).
     n_partials = 1 << N
     partials = unsafe_acquire!(pool, Tv, (n_partials, size(data_p)...))
     _compute_nd_partials!(partials, grids_p, data_p, bcs_p)
-    spacings = _create_spacings_typed(grids_p)
+    spacings = _create_spacings_pooled(pool, grids_p)
 
     # Allocate output (heap — this IS the return value)
     output = Vector{Tv}(undef, n_queries)

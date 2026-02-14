@@ -130,15 +130,15 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             end
         end
 
-        @testset "Range Ignores Hint" begin
+        @testset "Range Updates Hint" begin
             x_range = range(0.0, 1.0, 101)
             hint = Ref(50)
             policy = Searcher{HintedBinary,RefHint}(RefHint(hint))
 
-            # Range path always uses O(1) calculation, hint not updated
+            # Range path: hint checked first, then O(1) fallback + hint update
             idx, _, _ = search_interval(policy, x_range, 0.1)
             @test idx == 11  # Direct O(1) calculation
-            @test hint[] == 50  # Hint unchanged for ranges
+            @test hint[] == 11  # Hint updated to found index
         end
     end
 
@@ -194,14 +194,14 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             end
         end
 
-        @testset "Range Uses O(1) Direct" begin
+        @testset "Range Updates Hint" begin
             x_range = range(0.0, 1.0, 101)
             hint = Ref(50)
             policy = Searcher{Linear,RefHint}(RefHint(hint))
 
             idx, _, _ = search_interval(policy, x_range, 0.25)
             @test idx == 26
-            @test hint[] == 50  # Hint unchanged for ranges
+            @test hint[] == 26  # Hint updated to found index
         end
 
         @testset "Spacing-aware Search" begin
@@ -218,12 +218,12 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test idx == 56
             @test hint[] == 56
 
-            # Range with spacing (O(1) direct, hint unchanged)
+            # Range with spacing: hint checked first, then O(1) fallback + hint update
             hint2 = Ref(30)
             policy2 = Searcher{Linear,RefHint}(RefHint(hint2))
             idx2, _, _ = search_interval(policy2, x_range, spacing_scalar, 0.75)
             @test idx2 == 76
-            @test hint2[] == 30  # Unchanged for ranges
+            @test hint2[] == 76  # Hint updated to found index
         end
 
         @testset "Integration with Interpolants" begin
@@ -583,14 +583,13 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         hint = Ref(50)
         policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
 
-        @testset "Range Uses O(1) - Ignores Hint" begin
-            # Range path should use direct O(1) calculation
+        @testset "Range Updates Hint" begin
+            # Range path: hint checked first, then O(1) fallback + hint update
             idx, xL, xR = search_interval(policy, x_range, 0.25)
             @test idx == 26
             @test xL ≈ 0.25 atol=1e-12
             @test xR ≈ 0.26 atol=1e-12
-            # Hint should NOT be updated for ranges
-            @test hint[] == 50
+            @test hint[] == 26  # Hint updated to found index
         end
 
         @testset "Range Multiple Queries" begin
@@ -607,10 +606,10 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         hint = Ref(80)
         policy = Searcher{HintedBinary,RefHint}(RefHint(hint))
 
-        @testset "Range Uses O(1) - Ignores Hint" begin
+        @testset "Range Updates Hint" begin
             idx, xL, xR = search_interval(policy, x_range, 0.15)
             @test idx == 16
-            @test hint[] == 80  # Hint unchanged for ranges
+            @test hint[] == 16  # Hint updated to found index
         end
 
         @testset "Range with ScalarSpacing" begin
@@ -619,7 +618,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test idx == 26
             @test xL ≈ 0.25 atol=1e-12
             @test xR ≈ 0.26 atol=1e-12
-            @test hint[] == 80  # Hint unchanged for ranges with spacing
+            @test hint[] == 26  # Hint updated to found index
         end
     end
 
@@ -629,12 +628,12 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         hint = Ref(50)
         policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
 
-        @testset "Range with ScalarSpacing Uses O(1)" begin
+        @testset "Range with ScalarSpacing Updates Hint" begin
             idx, xL, xR = search_interval(policy, x_range, spacing, 0.35)
             @test idx == 36
             @test xL ≈ 0.35 atol=1e-12
             @test xR ≈ 0.36 atol=1e-12
-            @test hint[] == 50  # Hint unchanged for ranges with spacing
+            @test hint[] == 36  # Hint updated to found index
         end
     end
 

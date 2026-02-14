@@ -135,8 +135,7 @@ using FastInterpolations
     # ========================================
     @testset "Heterogeneous grid hint support" begin
         # Range (ScalarSpacing) × Vector (IrregularSpacing)
-        # NOTE: Range axes use O(1) _search_direct — hint Refs are NOT updated for Range axes.
-        # Only Vector axes (IrregularSpacing) update the hint Ref.
+        # Both Range and Vector axes update hint Refs.
         x_range = range(0.0, 2.0, 21)
         y_vec   = [0.0, 0.1, 0.25, 0.4, 0.6, 0.8, 1.0]
         hdata_2d = [sin(xi) * cos(yj) for xi in x_range, yj in y_vec]
@@ -156,7 +155,8 @@ using FastInterpolations
                 hints = (Ref(1), Ref(1))
                 ref = itp((qx, qy))
                 @test itp((qx, qy); hint=hints) ≈ ref
-                # Only Vector axis (y) updates the hint; Range axis (x) uses O(1) direct
+                # Both axes update hints
+                @test hints[1][] == expected_interval(x_range, qx)
                 @test hints[2][] == expected_interval(y_vec, qy)
             end
 
@@ -165,12 +165,17 @@ using FastInterpolations
                 ys = [0.2, 0.5, 0.8]
                 hints = (Ref(1), Ref(1))
                 @test itp((xs, ys); hint=hints) ≈ itp((xs, ys))
+                # After batch, hints point to last query's intervals
+                @test hints[1][] == expected_interval(x_range, xs[end])
+                @test hints[2][] == expected_interval(y_vec, ys[end])
             end
 
             @testset "AoS batch with hint" begin
                 queries = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
                 hints = (Ref(1), Ref(1))
                 @test itp(queries; hint=hints) ≈ itp(queries)
+                @test hints[1][] == expected_interval(x_range, queries[end][1])
+                @test hints[2][] == expected_interval(y_vec, queries[end][2])
             end
         end
 
@@ -183,8 +188,10 @@ using FastInterpolations
             q = (1.0, 0.5, 0.7)
             hints = (Ref(1), Ref(1), Ref(1))
             @test itp(q; hint=hints) ≈ itp(q)
-            # Only Vector axis (y, dim 2) updates hint; Range axes use O(1) direct
+            # All axes update hints (Range and Vector alike)
+            @test hints[1][] == expected_interval(x_range, q[1])
             @test hints[2][] == expected_interval(y_vec, q[2])
+            @test hints[3][] == expected_interval(z_range, q[3])
         end
 
         # Gradient/Hessian with heterogeneous grid + hint
@@ -194,7 +201,64 @@ using FastInterpolations
             hints = (Ref(1), Ref(1))
             ref = gradient(itp, q)
             @test gradient(itp, q; hint=hints) == ref
+            @test hints[1][] == expected_interval(x_range, q[1])
             @test hints[2][] == expected_interval(y_vec, q[2])
+        end
+    end
+
+    # ========================================
+    # All-Range Grid Hint Support
+    # ========================================
+    @testset "All-Range grid hint support" begin
+        x_range = range(0.0, 2.0, 21)
+        y_range = range(0.0, 1.0, 11)
+        rdata_2d = [sin(xi) * cos(yj) for xi in x_range, yj in y_range]
+
+        range_configs = [
+            ("CubicInterpolantND",     cubic_interp,     rdata_2d, (bc=CubicFit(),)),
+            ("LinearInterpolantND",    linear_interp,    rdata_2d, NamedTuple()),
+            ("QuadraticInterpolantND", quadratic_interp, rdata_2d, (bc=Right(QuadraticFit()),)),
+            ("ConstantInterpolantND",  constant_interp,  rdata_2d, NamedTuple()),
+        ]
+
+        @testset "$name" for (name, interp_fn, data, kwargs) in range_configs
+            itp = interp_fn((x_range, y_range), data; kwargs...)
+            qx, qy = 1.0, 0.5
+
+            @testset "scalar with hint" begin
+                hints = (Ref(1), Ref(1))
+                ref = itp((qx, qy))
+                @test itp((qx, qy); hint=hints) ≈ ref
+                @test hints[1][] == expected_interval(x_range, qx)
+                @test hints[2][] == expected_interval(y_range, qy)
+            end
+
+            @testset "hint cache hit returns same result" begin
+                hints = (Ref(1), Ref(1))
+                itp((qx, qy); hint=hints)  # first call sets hint
+                ix, iy = hints[1][], hints[2][]
+                @test itp((qx, qy); hint=hints) ≈ itp((qx, qy))
+                # hint stays the same (cache hit)
+                @test hints[1][] == ix
+                @test hints[2][] == iy
+            end
+
+            @testset "SoA batch with hint" begin
+                xs = [0.5, 1.0, 1.5]
+                ys = [0.2, 0.5, 0.8]
+                hints = (Ref(1), Ref(1))
+                @test itp((xs, ys); hint=hints) ≈ itp((xs, ys))
+                @test hints[1][] == expected_interval(x_range, xs[end])
+                @test hints[2][] == expected_interval(y_range, ys[end])
+            end
+
+            @testset "AoS batch with hint" begin
+                queries = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
+                hints = (Ref(1), Ref(1))
+                @test itp(queries; hint=hints) ≈ itp(queries)
+                @test hints[1][] == expected_interval(x_range, queries[end][1])
+                @test hints[2][] == expected_interval(y_range, queries[end][2])
+            end
         end
     end
 

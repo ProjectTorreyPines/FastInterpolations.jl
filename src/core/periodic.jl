@@ -308,7 +308,7 @@ via `unsafe_acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
 - Pool rewind in the outer `@with_pool` automatically releases all buffers
 """
 @inline function _prepare_periodic_nd_pooled(
-    pool,
+    pool::AbstractArrayPool,
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, AbstractBC}

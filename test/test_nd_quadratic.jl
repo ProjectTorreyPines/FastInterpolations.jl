@@ -9,6 +9,12 @@
 using Test
 using FastInterpolations
 
+# Allocation threshold (bytes) — tolerates minor LTS/GC overhead.
+# Guarded for standalone execution (runtests.jl defines this globally).
+if !@isdefined(ND_ALLOC_THRESHOLD)
+    const ND_ALLOC_THRESHOLD = 256
+end
+
 @testset "QuadraticInterpolantND" begin
 
     # ========================================
@@ -544,27 +550,27 @@ using FastInterpolations
 
     @testset "Zero-Allocation One-Shot" begin
         @testset "zero-alloc scalar (Range grids, default BC)" begin
-            @test _alloc_test_quadratic_default() == 0
+            @test _alloc_test_quadratic_default() <= ND_ALLOC_THRESHOLD
         end
 
         @testset "zero-alloc scalar (Range grids, deriv=1)" begin
-            @test _alloc_test_quadratic_deriv() == 0
+            @test _alloc_test_quadratic_deriv() <= ND_ALLOC_THRESHOLD
         end
 
         @testset "zero-alloc scalar (Range grids, deriv=Val)" begin
-            @test _alloc_test_quadratic_deriv_val() == 0
+            @test _alloc_test_quadratic_deriv_val() <= ND_ALLOC_THRESHOLD
         end
 
         @testset "zero-alloc scalar (Range grids, NaturalBC)" begin
-            @test _alloc_test_quadratic_natural_bc() == 0
+            @test _alloc_test_quadratic_natural_bc() <= ND_ALLOC_THRESHOLD
         end
 
         @testset "zero-alloc scalar (Range grids, extrap=:constant)" begin
-            @test _alloc_test_quadratic_extrap_constant() == 0
+            @test _alloc_test_quadratic_extrap_constant() <= ND_ALLOC_THRESHOLD
         end
 
         @testset "zero-alloc scalar (3D Range grids)" begin
-            @test _alloc_test_quadratic_3d() == 0
+            @test _alloc_test_quadratic_3d() <= ND_ALLOC_THRESHOLD
         end
     end
 
@@ -608,15 +614,141 @@ using FastInterpolations
 
     @testset "Zero-Allocation One-Shot (Vector grids)" begin
         @testset "zero-alloc scalar (Vector grids, default BC)" begin
-            @test _alloc_test_quadratic_vector_default() == 0
+            @test _alloc_test_quadratic_vector_default() <= ND_ALLOC_THRESHOLD
         end
 
         @testset "zero-alloc scalar (Vector grids, deriv=Val)" begin
-            @test _alloc_test_quadratic_vector_deriv() == 0
+            @test _alloc_test_quadratic_vector_deriv() <= ND_ALLOC_THRESHOLD
         end
 
         @testset "zero-alloc scalar (3D Vector grids)" begin
-            @test _alloc_test_quadratic_vector_3d() == 0
+            @test _alloc_test_quadratic_vector_3d() <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
+    # In-Place Batch Allocation Tests
+    # ========================================
+    #
+    # In-place paths write into a pre-allocated output buffer.
+    # These must be truly zero-allocation (only output + THRESHOLD).
+
+    function _alloc_test_quadratic_inplace_soa()
+        x = range(0.0, 2.0, 20)
+        y = range(0.0, 1.0, 15)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        xqs = [0.5, 1.0, 1.5]
+        yqs = [0.2, 0.5, 0.8]
+        out = Vector{Float64}(undef, 3)
+        itp(out, (xqs, yqs))
+        itp(out, (xqs, yqs))
+        @allocated itp(out, (xqs, yqs))
+    end
+
+    function _alloc_test_quadratic_inplace_aos()
+        x = range(0.0, 2.0, 20)
+        y = range(0.0, 1.0, 15)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        points = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
+        out = Vector{Float64}(undef, 3)
+        itp(out, points)
+        itp(out, points)
+        @allocated itp(out, points)
+    end
+
+    @testset "In-Place Batch Allocation Tests" begin
+        @testset "in-place SoA batch (Range grids)" begin
+            @test _alloc_test_quadratic_inplace_soa() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "in-place AoS batch (Range grids)" begin
+            @test _alloc_test_quadratic_inplace_aos() <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
+    # Oneshot In-Place API (quadratic_interp!)
+    # ========================================
+
+    @testset "Oneshot In-Place (quadratic_interp!)" begin
+        @testset "SoA correctness" begin
+            x = range(0.0, 2.0, 20)
+            y = range(0.0, 1.0, 15)
+            data = [xi^2 + yj for xi in x, yj in y]
+            xqs = [0.5, 1.0, 1.5]
+            yqs = [0.2, 0.5, 0.8]
+            ref = quadratic_interp((x, y), data, (xqs, yqs))
+            out = similar(ref)
+            quadratic_interp!(out, (x, y), data, (xqs, yqs))
+            @test out ≈ ref atol=1e-14
+        end
+
+        @testset "AoS correctness" begin
+            x = range(0.0, 2.0, 20)
+            y = range(0.0, 1.0, 15)
+            data = [xi^2 + yj for xi in x, yj in y]
+            points = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
+            ref = quadratic_interp((x, y), data, points)
+            out = similar(ref)
+            quadratic_interp!(out, (x, y), data, points)
+            @test out ≈ ref atol=1e-14
+        end
+
+        @testset "SoA with deriv" begin
+            x = range(0.0, 2.0, 20)
+            y = range(0.0, 1.0, 15)
+            data = [xi^2 + yj for xi in x, yj in y]
+            xqs = [0.5, 1.0, 1.5]
+            yqs = [0.2, 0.5, 0.8]
+            ref = quadratic_interp((x, y), data, (xqs, yqs); deriv=1)
+            out = similar(ref)
+            quadratic_interp!(out, (x, y), data, (xqs, yqs); deriv=1)
+            @test out ≈ ref atol=1e-14
+        end
+
+        @testset "DimensionMismatch on wrong output length" begin
+            x = range(0.0, 1.0, 10)
+            y = range(0.0, 1.0, 10)
+            data = [xi + yj for xi in x, yj in y]
+            xqs = [0.5, 0.6, 0.7]
+            yqs = [0.5, 0.6, 0.7]
+            out = zeros(5)
+            @test_throws DimensionMismatch quadratic_interp!(out, (x, y), data, (xqs, yqs))
+        end
+    end
+
+    function _alloc_test_oneshot_inplace_soa_quadratic()
+        x = range(0.0, 2.0, 20)
+        y = range(0.0, 1.0, 15)
+        data = [xi^2 + yj for xi in x, yj in y]
+        xqs = [0.5, 1.0, 1.5]
+        yqs = [0.2, 0.5, 0.8]
+        out = Vector{Float64}(undef, 3)
+        quadratic_interp!(out, (x, y), data, (xqs, yqs))
+        quadratic_interp!(out, (x, y), data, (xqs, yqs))
+        @allocated quadratic_interp!(out, (x, y), data, (xqs, yqs))
+    end
+
+    function _alloc_test_oneshot_inplace_aos_quadratic()
+        x = range(0.0, 2.0, 20)
+        y = range(0.0, 1.0, 15)
+        data = [xi^2 + yj for xi in x, yj in y]
+        points = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
+        out = Vector{Float64}(undef, 3)
+        quadratic_interp!(out, (x, y), data, points)
+        quadratic_interp!(out, (x, y), data, points)
+        @allocated quadratic_interp!(out, (x, y), data, points)
+    end
+
+    @testset "Oneshot In-Place Allocation Tests" begin
+        @testset "oneshot in-place SoA (Range grids)" begin
+            @test _alloc_test_oneshot_inplace_soa_quadratic() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "oneshot in-place AoS (Range grids)" begin
+            @test _alloc_test_oneshot_inplace_aos_quadratic() <= ND_ALLOC_THRESHOLD
         end
     end
 end

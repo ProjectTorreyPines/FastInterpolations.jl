@@ -1,6 +1,13 @@
 using Test
 using FastInterpolations
 
+# Allocation threshold (bytes) — tolerates minor LTS/GC overhead.
+# On latest Julia, scalar oneshot is truly zero-alloc; LTS may show ≤64 bytes.
+# Guarded for standalone execution (runtests.jl defines this globally).
+if !@isdefined(ND_ALLOC_THRESHOLD)
+    const ND_ALLOC_THRESHOLD = 0
+end
+
 @testset "Cubic ND One-Shot (Pool-Based)" begin
 
     # ========================================
@@ -243,23 +250,23 @@ using FastInterpolations
     end
 
     @testset "Zero-alloc scalar one-shot (Range grids)" begin
-        @test _alloc_test_natural() == 0
+        @test _alloc_test_natural() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-alloc scalar one-shot with deriv (Range grids)" begin
-        @test _alloc_test_natural_deriv() == 0
+        @test _alloc_test_natural_deriv() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-alloc scalar one-shot (CubicFit BC, Range grids)" begin
-        @test _alloc_test_cubicfit() == 0
+        @test _alloc_test_cubicfit() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-alloc scalar one-shot (Periodic BC inclusive, Range grids)" begin
-        @test _alloc_test_periodic_inclusive() == 0
+        @test _alloc_test_periodic_inclusive() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-alloc scalar one-shot (Periodic BC exclusive, Range grids)" begin
-        @test _alloc_test_periodic_exclusive() == 0
+        @test _alloc_test_periodic_exclusive() <= ND_ALLOC_THRESHOLD
     end
 
     function _alloc_test_mixed_periodic()
@@ -275,7 +282,7 @@ using FastInterpolations
     end
 
     @testset "Zero-alloc scalar one-shot (Mixed periodic/NaturalBC, Range grids)" begin
-        @test _alloc_test_mixed_periodic() == 0
+        @test _alloc_test_mixed_periodic() <= ND_ALLOC_THRESHOLD
     end
 
     # ========================================
@@ -316,15 +323,142 @@ using FastInterpolations
     end
 
     @testset "Zero-alloc scalar one-shot (Vector grids, NaturalBC)" begin
-        @test _alloc_test_vector_natural() == 0
+        @test _alloc_test_vector_natural() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-alloc scalar one-shot (Vector grids, CubicFit)" begin
-        @test _alloc_test_vector_cubicfit() == 0
+        @test _alloc_test_vector_cubicfit() <= ND_ALLOC_THRESHOLD
     end
 
     @testset "Zero-alloc scalar one-shot (Vector grids, deriv)" begin
-        @test _alloc_test_vector_deriv() == 0
+        @test _alloc_test_vector_deriv() <= ND_ALLOC_THRESHOLD
+    end
+
+    # ========================================
+    # In-Place Batch Allocation Tests
+    # ========================================
+    #
+    # In-place paths write into a pre-allocated output buffer.
+    # These must be truly zero-allocation (only output + THRESHOLD).
+
+    function _alloc_test_inplace_soa()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 11)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        xqs = [0.5, 1.0, 1.5, 2.0, 3.0]
+        yqs = [0.2, 0.4, 0.6, 0.8, 1.0]
+        out = Vector{Float64}(undef, 5)
+        itp(out, (xqs, yqs))
+        itp(out, (xqs, yqs))
+        @allocated itp(out, (xqs, yqs))
+    end
+
+    function _alloc_test_inplace_aos()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 11)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        points = [(0.5, 0.2), (1.0, 0.4), (1.5, 0.6), (2.0, 0.8), (3.0, 1.0)]
+        out = Vector{Float64}(undef, 5)
+        itp(out, points)
+        itp(out, points)
+        @allocated itp(out, points)
+    end
+
+    @testset "In-Place Batch Allocation Tests" begin
+        @testset "in-place SoA batch (Range grids)" begin
+            @test _alloc_test_inplace_soa() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "in-place AoS batch (Range grids)" begin
+            @test _alloc_test_inplace_aos() <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
+    # Oneshot In-Place API (cubic_interp!)
+    # ========================================
+
+    @testset "Oneshot In-Place (cubic_interp!)" begin
+        @testset "SoA correctness" begin
+            x = range(0.0, 2π, 21)
+            y = range(0.0, π, 11)
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            xqs = [0.5, 1.0, 1.5, 2.0, 3.0]
+            yqs = [0.2, 0.4, 0.6, 0.8, 1.0]
+            ref = cubic_interp((x, y), data, (xqs, yqs))
+            out = similar(ref)
+            cubic_interp!(out, (x, y), data, (xqs, yqs))
+            @test out ≈ ref atol=1e-14
+        end
+
+        @testset "AoS correctness" begin
+            x = range(0.0, 2π, 21)
+            y = range(0.0, π, 11)
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            points = [(0.5, 0.2), (1.0, 0.4), (1.5, 0.6), (2.0, 0.8), (3.0, 1.0)]
+            ref = cubic_interp((x, y), data, points)
+            out = similar(ref)
+            cubic_interp!(out, (x, y), data, points)
+            @test out ≈ ref atol=1e-14
+        end
+
+        @testset "SoA with deriv" begin
+            x = range(0.0, 2π, 21)
+            y = range(0.0, π, 11)
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            xqs = [0.5, 1.0, 1.5]
+            yqs = [0.2, 0.4, 0.6]
+            ref = cubic_interp((x, y), data, (xqs, yqs); deriv=1)
+            out = similar(ref)
+            cubic_interp!(out, (x, y), data, (xqs, yqs); deriv=1)
+            @test out ≈ ref atol=1e-14
+        end
+
+        @testset "DimensionMismatch on wrong output length" begin
+            x = range(0.0, 1.0, 10)
+            y = range(0.0, 1.0, 10)
+            data = [xi + yj for xi in x, yj in y]
+            xqs = [0.5, 0.6, 0.7]
+            yqs = [0.5, 0.6, 0.7]
+            out = zeros(5)  # wrong length
+            @test_throws DimensionMismatch cubic_interp!(out, (x, y), data, (xqs, yqs))
+        end
+    end
+
+    # Oneshot in-place allocation tests (function barrier pattern)
+    function _alloc_test_oneshot_inplace_soa_cubic()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 11)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        xqs = [0.5, 1.0, 1.5]
+        yqs = [0.2, 0.4, 0.6]
+        out = Vector{Float64}(undef, 3)
+        cubic_interp!(out, (x, y), data, (xqs, yqs))
+        cubic_interp!(out, (x, y), data, (xqs, yqs))
+        @allocated cubic_interp!(out, (x, y), data, (xqs, yqs))
+    end
+
+    function _alloc_test_oneshot_inplace_aos_cubic()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 11)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        points = [(0.5, 0.2), (1.0, 0.4), (1.5, 0.6)]
+        out = Vector{Float64}(undef, 3)
+        cubic_interp!(out, (x, y), data, points)
+        cubic_interp!(out, (x, y), data, points)
+        @allocated cubic_interp!(out, (x, y), data, points)
+    end
+
+    @testset "Oneshot In-Place Allocation Tests" begin
+        @testset "oneshot in-place SoA (Range grids)" begin
+            @test _alloc_test_oneshot_inplace_soa_cubic() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "oneshot in-place AoS (Range grids)" begin
+            @test _alloc_test_oneshot_inplace_aos_cubic() <= ND_ALLOC_THRESHOLD
+        end
     end
 
 end

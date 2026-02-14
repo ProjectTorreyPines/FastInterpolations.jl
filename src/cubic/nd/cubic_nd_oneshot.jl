@@ -77,31 +77,9 @@ function cubic_interp(
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
-    Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
-    grids_typed = _convert_grids_typed(grids, Tg)
-    _validate_nd_grids(grids_typed, data)
-
-    bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps = _resolve_extrap_nd(extrap, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
-
-    _check_periodic_extrap(bcs, extraps, Val(N))
-
-    @_dispatch_extrap_nd extraps bcs => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _cubic_interp_nd_oneshot_soa(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
-            end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _cubic_interp_nd_oneshot_soa(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _cubic_interp_nd_oneshot_soa(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
-        end
-    end
+    output = Vector{Tv}(undef, length(queries[1]))
+    cubic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs)
+    return output
 end
 
 """
@@ -120,31 +98,9 @@ function cubic_interp(
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
-    Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
-    grids_typed = _convert_grids_typed(grids, Tg)
-    _validate_nd_grids(grids_typed, data)
-
-    bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps = _resolve_extrap_nd(extrap, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
-
-    _check_periodic_extrap(bcs, extraps, Val(N))
-
-    @_dispatch_extrap_nd extraps bcs => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _cubic_interp_nd_oneshot_aos(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
-            end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _cubic_interp_nd_oneshot_aos(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _cubic_interp_nd_oneshot_aos(grids_typed, data, queries, bcs, extraps_val, searches, ops)::Vector{Tv}
-        end
-    end
+    output = Vector{Tv}(undef, length(queries))
+    cubic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs)
+    return output
 end
 
 # ========================================
@@ -247,24 +203,6 @@ Computes partials ONCE, then evaluates at all query points into `output`.
 end
 
 """
-    _cubic_interp_nd_oneshot_soa(grids, data, queries_soa, bcs, extraps_val, searches, ops)
-
-Allocating wrapper: creates output vector, delegates to in-place `_soa!`.
-"""
-function _cubic_interp_nd_oneshot_soa(
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    bcs::NTuple{N, AbstractBC},
-    extraps_val::NTuple{N, Val},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
-) where {Tg<:AbstractFloat, Tv, N}
-    output = Vector{Tv}(undef, length(queries[1]))
-    return _cubic_interp_nd_oneshot_soa!(output, grids, data, queries, bcs, extraps_val, searches, ops)
-end
-
-"""
     _cubic_interp_nd_oneshot_aos!(output, grids, data, queries, bcs, extraps_val, searches, ops)
 
 Pool-based in-place AoS batch one-shot ND cubic Hermite evaluation.
@@ -302,24 +240,6 @@ Computes partials ONCE, then evaluates at all query points into `output`.
         output[k] = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
     end
     return output
-end
-
-"""
-    _cubic_interp_nd_oneshot_aos(grids, data, queries, bcs, extraps_val, searches, ops)
-
-Allocating wrapper: creates output vector, delegates to in-place `_aos!`.
-"""
-function _cubic_interp_nd_oneshot_aos(
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-    bcs::NTuple{N, AbstractBC},
-    extraps_val::NTuple{N, Val},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
-) where {Tg<:AbstractFloat, Tv, N}
-    output = Vector{Tv}(undef, length(queries))
-    return _cubic_interp_nd_oneshot_aos!(output, grids, data, queries, bcs, extraps_val, searches, ops)
 end
 
 # ========================================

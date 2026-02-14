@@ -69,23 +69,6 @@ function _linear_interp_nd_oneshot_soa!(
 end
 
 """
-    _linear_interp_nd_oneshot_soa(grids, data, queries, extraps_val, searches, ops)
-
-Allocating wrapper: creates output vector, delegates to in-place `_soa!`.
-"""
-function _linear_interp_nd_oneshot_soa(
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    extraps_val::NTuple{N, Val},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
-) where {Tg<:AbstractFloat, Tv, N}
-    output = Vector{Tv}(undef, length(queries[1]))
-    return _linear_interp_nd_oneshot_soa!(output, grids, data, queries, extraps_val, searches, ops)
-end
-
-"""
     _linear_interp_nd_oneshot_aos!(output, grids, data, queries, extraps_val, searches, ops)
 
 In-place AoS batch one-shot ND multilinear evaluation.
@@ -112,23 +95,6 @@ function _linear_interp_nd_oneshot_aos!(
         output[k] = _multilinear_sum(data, indices, hs, αs, ops, Val(N))
     end
     return output
-end
-
-"""
-    _linear_interp_nd_oneshot_aos(grids, data, queries, extraps_val, searches, ops)
-
-Allocating wrapper: creates output vector, delegates to in-place `_aos!`.
-"""
-function _linear_interp_nd_oneshot_aos(
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-    extraps_val::NTuple{N, Val},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
-) where {Tg<:AbstractFloat, Tv, N}
-    output = Vector{Tv}(undef, length(queries))
-    return _linear_interp_nd_oneshot_aos!(output, grids, data, queries, extraps_val, searches, ops)
 end
 
 # ========================================
@@ -187,28 +153,9 @@ function linear_interp(
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
-    Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
-    grids_typed = _convert_grids_typed(grids, Tg)
-    _validate_nd_grids(grids_typed, data)
-
-    extraps = _resolve_extrap_nd(extrap, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
-
-    @_dispatch_extrap_nd extraps nothing => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _linear_interp_nd_oneshot_soa(grids_typed, data, queries, extraps_val, searches, ops)::Vector{Tv}
-            end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _linear_interp_nd_oneshot_soa(grids_typed, data, queries, extraps_val, searches, ops)::Vector{Tv}
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _linear_interp_nd_oneshot_soa(grids_typed, data, queries, extraps_val, searches, ops)::Vector{Tv}
-        end
-    end
+    output = Vector{Tv}(undef, length(queries[1]))
+    linear_interp!(output, grids, data, queries; extrap, search, deriv)
+    return output
 end
 
 """
@@ -225,28 +172,9 @@ function linear_interp(
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
-    Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
-    grids_typed = _convert_grids_typed(grids, Tg)
-    _validate_nd_grids(grids_typed, data)
-
-    extraps = _resolve_extrap_nd(extrap, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
-
-    @_dispatch_extrap_nd extraps nothing => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _linear_interp_nd_oneshot_aos(grids_typed, data, queries, extraps_val, searches, ops)::Vector{Tv}
-            end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _linear_interp_nd_oneshot_aos(grids_typed, data, queries, extraps_val, searches, ops)::Vector{Tv}
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _linear_interp_nd_oneshot_aos(grids_typed, data, queries, extraps_val, searches, ops)::Vector{Tv}
-        end
-    end
+    output = Vector{Tv}(undef, length(queries))
+    linear_interp!(output, grids, data, queries; extrap, search, deriv)
+    return output
 end
 
 # ========================================

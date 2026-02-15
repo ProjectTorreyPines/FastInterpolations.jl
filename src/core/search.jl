@@ -572,9 +572,47 @@ Optimal for monotonic query sequences.
     return idx, xL, xR
 end
 
+"""
+    _search_direct!(x::AbstractRange, xq, hint_ref) -> (idx, xL, xR)
+
+Mutating variant of `_search_direct`: O(1) arithmetic + hint update.
+The hint is not used for computation (Range arithmetic is already O(1)),
+but updated for correct state tracking in heterogeneous ND grids.
+"""
+@inline function _search_direct!(
+    x::AbstractRange{T}, xq::T, hint_ref::Base.RefValue{Int}
+) where {T<:AbstractFloat}
+    idx, xL, xR = _search_direct(x, xq)
+    hint_ref[] = idx
+    return idx, xL, xR
+end
+
+"""
+    _search_direct!(x::AbstractRange, spacing, xq, hint_ref) -> (idx, xL, xR)
+
+Spacing-aware mutating variant for ND paths: O(1) arithmetic + hint update.
+"""
+@inline function _search_direct!(
+    x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::T, hint_ref::Base.RefValue{Int}
+) where {T<:AbstractFloat}
+    idx, xL, xR = _search_direct(x, spacing, xq)
+    hint_ref[] = idx
+    return idx, xL, xR
+end
+
 # ----------------------------------------
 # Generic wrappers for hinted search (type-mismatched)
 # ----------------------------------------
+
+"""Generic wrapper for mutating direct search."""
+@inline function _search_direct!(x::AbstractRange{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg<:AbstractFloat, Tq<:Real}
+    return _search_direct!(x, _to_grid_type(xq, Tg), hint_ref)
+end
+
+"""Generic wrapper for mutating direct search with spacing."""
+@inline function _search_direct!(x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg<:AbstractFloat, Tq<:Real}
+    return _search_direct!(x, spacing, _to_grid_type(xq, Tg), hint_ref)
+end
 
 """Generic wrapper for hinted binary search."""
 @inline function _search_hinted_binary!(x::AbstractVector{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg<:Real, Tq<:Real}
@@ -624,9 +662,9 @@ end
     return _search_hinted_binary!(x, xq, p.hint.idx)
 end
 
-# Range always uses O(1) direct - hint ignored
-@inline search_interval(::Searcher{HintedBinary,RefHint}, x::AbstractRange, xq::Real) =
-    _search_direct(x, xq)
+# Range: O(1) direct + hint update
+@inline search_interval(p::Searcher{HintedBinary,RefHint}, x::AbstractRange, xq::Real) =
+    _search_direct!(x, xq, p.hint.idx)
 
 # --- Linear + RefHint ---
 
@@ -634,9 +672,9 @@ end
     return _search_linear!(x, xq, p.hint.idx)
 end
 
-# Range always uses O(1) direct - hint ignored
-@inline search_interval(::Searcher{Linear,RefHint}, x::AbstractRange, xq::Real) =
-    _search_direct(x, xq)
+# Range: O(1) direct + hint update
+@inline search_interval(p::Searcher{Linear,RefHint}, x::AbstractRange, xq::Real) =
+    _search_direct!(x, xq, p.hint.idx)
 
 # --- LinearBinary{MAX} + RefHint ---
 
@@ -644,8 +682,8 @@ end
     return _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 end
 
-@inline search_interval(::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange, xq::Real) where {MAX} =
-    _search_direct(x, xq)
+@inline search_interval(p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange, xq::Real) where {MAX} =
+    _search_direct!(x, xq, p.hint.idx)
 
 # --- Spacing-aware overloads ---
 # For uniform grids (AbstractRange + ScalarSpacing): always O(1) direct
@@ -655,22 +693,22 @@ end
 @inline search_interval(p::Searcher{HintedBinary,RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) =
     _search_hinted_binary!(x, xq, p.hint.idx)
 
-@inline search_interval(::Searcher{HintedBinary,RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) =
-    _search_direct(x, spacing, xq)
+@inline search_interval(p::Searcher{HintedBinary,RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) =
+    _search_direct!(x, spacing, xq, p.hint.idx)
 
 # Linear + spacing
 @inline search_interval(p::Searcher{Linear,RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) =
     _search_linear!(x, xq, p.hint.idx)
 
-@inline search_interval(::Searcher{Linear,RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) =
-    _search_direct(x, spacing, xq)
+@inline search_interval(p::Searcher{Linear,RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) =
+    _search_direct!(x, spacing, xq, p.hint.idx)
 
 # LinearBinary + spacing
 @inline search_interval(p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) where {MAX} =
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 
-@inline search_interval(::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) where {MAX} =
-    _search_direct(x, spacing, xq)
+@inline search_interval(p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) where {MAX} =
+    _search_direct!(x, spacing, xq, p.hint.idx)
 
 # ========================================
 # 5. Internal Aliases (for module-internal use)

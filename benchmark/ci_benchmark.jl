@@ -21,13 +21,13 @@ const GRID_SIZES = [10, 100, 1000]        # grids: small, medium, large
 
 # Benchmark parameters for noise reduction in CI
 # BenchmarkTools stops when EITHER limit is reached (whichever comes first)
-BenchmarkTools.DEFAULT_PARAMETERS.seconds = 10.0
-BenchmarkTools.DEFAULT_PARAMETERS.samples = 100_000
+BenchmarkTools.DEFAULT_PARAMETERS.seconds = 3.0
+BenchmarkTools.DEFAULT_PARAMETERS.samples = 10_000
 
 # Fixed evals by speed category (skip tuning for faster CI)
 # Higher evals = more stable ns-level measurements
-const EVALS_FAST = 100      # ~10-50ns benchmarks (reduced for more stable minimum)
-const EVALS_MED  = 100       # ~500ns-2μs benchmarks
+const EVALS_FAST = 100      # ~10-50ns benchmarks
+const EVALS_MED  = 50        # ~500ns-2μs benchmarks (50 evals still < 1% timer overhead)
 const EVALS_SLOW = 10       # ~30-100μs benchmarks
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -62,7 +62,7 @@ const xq_scalar = 5.0
 println("Setting up cubic benchmarks...")
 
 # 1. Cubic One-Shot (construct + evaluate)
-for nq in QUERY_SIZES
+for nq in (1, 10_000)  # scalar + large batch (skip q100)
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
     clear_cubic_cache!()
     cubic_interp(x, y, xi)  # prime cache
@@ -73,7 +73,7 @@ for nq in QUERY_SIZES
 end
 
 # 2. Cubic Construction (varying grid size)
-for ng in GRID_SIZES
+for ng in (100, 1000)  # medium + large (skip trivial g=10)
     x_grid = range(0.0, 10.0, ng)
     y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
     clear_cubic_cache!()
@@ -102,7 +102,7 @@ end
 println("Setting up linear benchmarks...")
 
 # 4. Linear One-Shot (construct + evaluate)
-for nq in QUERY_SIZES
+for nq in (1, 10_000)  # scalar + large batch (skip q100)
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
     label = lpad(nq, 5, '0')
     b = @benchmarkable linear_interp($x, $y, $xi) setup=(GC.gc())
@@ -111,7 +111,7 @@ for nq in QUERY_SIZES
 end
 
 # 5. Linear Construction (varying grid size) - nearly instant, use high evals
-for ng in GRID_SIZES
+for ng in (100, 1000)  # medium + large (skip trivial g=10)
     x_grid = range(0.0, 10.0, ng)
     y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
     label = lpad(ng, 4, '0')
@@ -133,34 +133,20 @@ for nq in QUERY_SIZES
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Cubic Scalar vs Vector(1) Comparison
+# Cubic Scalar Dispatch Comparison
 # ══════════════════════════════════════════════════════════════════════════════
 
-println("Setting up cubic scalar vs vec1 benchmarks...")
+println("Setting up cubic scalar dispatch benchmarks...")
 
-const xq_vec1 = [5.0]  # 1-element vector for comparison
-const out_vec1 = Vector{Float64}(undef, 1)  # Pre-allocated output for vec1
-
-# 7. Cubic: Range grid - scalar vs vec1
+# 7. Cubic: Range grid vs Vector grid scalar dispatch
 let b = @benchmarkable $itp_cubic($xq_scalar) setup=(GC.gc())
     b.params.evals = EVALS_FAST
     suite["7_cubic_range"]["scalar_query"] = b
 end
 
-let b = @benchmarkable $itp_cubic($out_vec1, $xq_vec1) setup=(GC.gc())
-    b.params.evals = EVALS_FAST
-    suite["7_cubic_range"]["vec1_query"] = b
-end
-
-# 7. Cubic: Vector grid - scalar vs vec1
 let b = @benchmarkable $itp_cubic_vec($xq_scalar) setup=(GC.gc())
     b.params.evals = EVALS_FAST
     suite["7_cubic_vec"]["scalar_query"] = b
-end
-
-let b = @benchmarkable $itp_cubic_vec($out_vec1, $xq_vec1) setup=(GC.gc())
-    b.params.evals = EVALS_FAST
-    suite["7_cubic_vec"]["vec1_query"] = b
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -198,15 +184,132 @@ for ns in MULTI_SERIES
 
     # Scalar loop evaluation benchmark (tests SIMD scalar kernel in realistic usage)
     # Pattern: for xq in queries; mitp(out, xq); end - like ODE solver callbacks
-    out_scalar = zeros(ns)
-    let b = @benchmarkable begin
-            for xq in $xq_multi
-                $mitp($out_scalar, xq)
-            end
-        end setup=(GC.gc())
-        b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
-        suite["8_cubic_multi"]["eval_s$(slabel)_q$(qlabel)_scalar_loop"] = b
+    if ns > 1  # skip s=1 (equivalent to normal cubic eval)
+        out_scalar = zeros(ns)
+        let b = @benchmarkable begin
+                for xq in $xq_multi
+                    $mitp($out_scalar, xq)
+                end
+            end setup=(GC.gc())
+            b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
+            suite["8_cubic_multi"]["eval_s$(slabel)_q$(qlabel)_scalar_loop"] = b
+        end
     end
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ND Interpolation Benchmarks
+# ══════════════════════════════════════════════════════════════════════════════
+
+println("Setting up ND benchmarks...")
+
+# --- 2D Setup (50×50 = 2,500 grid points) ---
+const x2d = range(0.0, 10.0, 50)
+const y2d = range(0.0, 6.0, 50)
+const data2d = [sin(xi) * cos(yj) for xi in x2d, yj in y2d]
+
+const itp_linear_2d = linear_interp((x2d, y2d), data2d)
+clear_cubic_cache!()
+const itp_cubic_2d = cubic_interp((x2d, y2d), data2d)
+
+# --- 3D Setup (20×20×20 = 8,000 grid points) ---
+const x3d = range(0.0, 10.0, 20)
+const y3d = range(0.0, 6.0, 20)
+const z3d = range(0.0, 4.0, 20)
+const data3d = [sin(xi) * cos(yj) + zk for xi in x3d, yj in y3d, zk in z3d]
+
+const itp_linear_3d = linear_interp((x3d, y3d, z3d), data3d)
+clear_cubic_cache!()
+const itp_cubic_3d = cubic_interp((x3d, y3d, z3d), data3d)
+
+# --- ND Query Points ---
+const N_ND_QUERY = 100
+const xqs_2d = collect(range(0.1, 9.9, N_ND_QUERY))
+const yqs_2d = collect(range(0.1, 5.9, N_ND_QUERY))
+const xqs_3d = collect(range(0.1, 9.9, N_ND_QUERY))
+const yqs_3d = collect(range(0.1, 5.9, N_ND_QUERY))
+const zqs_3d = collect(range(0.1, 3.9, N_ND_QUERY))
+const pt_2d = (5.0, 3.0)
+const pt_3d = (5.0, 3.0, 2.0)
+const out_nd = Vector{Float64}(undef, N_ND_QUERY)
+
+# 9. ND One-Shot (construct + evaluate, separate code path)
+let b = @benchmarkable linear_interp(($x2d, $y2d), $data2d, ($xqs_2d, $yqs_2d)) setup=(GC.gc())
+    b.params.evals = EVALS_MED
+    suite["9_nd_oneshot"]["bilinear_2d"] = b
+end
+
+let b = @benchmarkable linear_interp(($x3d, $y3d, $z3d), $data3d, ($xqs_3d, $yqs_3d, $zqs_3d)) setup=(GC.gc())
+    b.params.evals = EVALS_SLOW
+    suite["9_nd_oneshot"]["trilinear_3d"] = b
+end
+
+clear_cubic_cache!()
+cubic_interp((x2d, y2d), data2d, (xqs_2d, yqs_2d))  # prime cache
+let b = @benchmarkable cubic_interp(($x2d, $y2d), $data2d, ($xqs_2d, $yqs_2d)) setup=(GC.gc())
+    b.params.evals = EVALS_SLOW
+    suite["9_nd_oneshot"]["bicubic_2d"] = b
+end
+
+clear_cubic_cache!()
+cubic_interp((x3d, y3d, z3d), data3d, (xqs_3d, yqs_3d, zqs_3d))  # prime cache
+let b = @benchmarkable cubic_interp(($x3d, $y3d, $z3d), $data3d, ($xqs_3d, $yqs_3d, $zqs_3d)) setup=(GC.gc())
+    b.params.evals = EVALS_SLOW
+    suite["9_nd_oneshot"]["tricubic_3d"] = b
+end
+
+# 10. ND Construction (varying dimensionality and method)
+let b = @benchmarkable linear_interp(($x2d, $y2d), $data2d) setup=(GC.gc())
+    b.params.evals = EVALS_MED
+    suite["10_nd_construct"]["bilinear_2d"] = b
+end
+
+let b = @benchmarkable linear_interp(($x3d, $y3d, $z3d), $data3d) setup=(GC.gc())
+    b.params.evals = EVALS_MED
+    suite["10_nd_construct"]["trilinear_3d"] = b
+end
+
+# Cubic ND construction: clear cache in setup + evals=1 to measure full construction
+# (ND API lacks autocache=false, so we emulate it with per-sample cache clearing)
+let b = @benchmarkable cubic_interp(($x2d, $y2d), $data2d) setup=(clear_cubic_cache!(); GC.gc())
+    b.params.evals = 1
+    suite["10_nd_construct"]["bicubic_2d"] = b
+end
+
+let b = @benchmarkable cubic_interp(($x3d, $y3d, $z3d), $data3d) setup=(clear_cubic_cache!(); GC.gc())
+    b.params.evals = 1
+    suite["10_nd_construct"]["tricubic_3d"] = b
+end
+
+# 11. ND Evaluation (scalar = hot-loop, batch = vectorized SoA in-place)
+let b = @benchmarkable $itp_linear_2d($pt_2d) setup=(GC.gc())
+    b.params.evals = EVALS_FAST
+    suite["11_nd_eval"]["bilinear_2d_scalar"] = b
+end
+
+let b = @benchmarkable $itp_linear_3d($pt_3d) setup=(GC.gc())
+    b.params.evals = EVALS_FAST
+    suite["11_nd_eval"]["trilinear_3d_scalar"] = b
+end
+
+let b = @benchmarkable $itp_cubic_2d($pt_2d) setup=(GC.gc())
+    b.params.evals = EVALS_FAST
+    suite["11_nd_eval"]["bicubic_2d_scalar"] = b
+end
+
+let b = @benchmarkable $itp_cubic_3d($pt_3d) setup=(GC.gc())
+    b.params.evals = EVALS_FAST
+    suite["11_nd_eval"]["tricubic_3d_scalar"] = b
+end
+
+let b = @benchmarkable $itp_cubic_2d($out_nd, ($xqs_2d, $yqs_2d)) setup=(GC.gc())
+    b.params.evals = EVALS_SLOW
+    suite["11_nd_eval"]["bicubic_2d_batch"] = b
+end
+
+let b = @benchmarkable $itp_cubic_3d($out_nd, ($xqs_3d, $yqs_3d, $zqs_3d)) setup=(GC.gc())
+    b.params.evals = EVALS_SLOW
+    suite["11_nd_eval"]["tricubic_3d_batch"] = b
 end
 
 # ══════════════════════════════════════════════════════════════════════════════

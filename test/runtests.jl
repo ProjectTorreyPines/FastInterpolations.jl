@@ -9,7 +9,7 @@ const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
 
 # ND oneshot dispatch has higher fixed overhead from tuple construction/resolution.
 # This is O(1) overhead, not O(n), so a separate higher threshold is appropriate.
-const ND_ALLOC_THRESHOLD = 256
+const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
 
 # Check if specific test files are requested via ARGS
 if !isempty(ARGS)

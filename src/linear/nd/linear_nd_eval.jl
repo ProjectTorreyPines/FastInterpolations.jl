@@ -51,13 +51,32 @@ function (itp::LinearInterpolantND{Tg,Tv,N})(
             "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
         ))
     end
-    ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-    if _has_second_or_higher_derivative(ops, Val(N))
-        fill!(output, zero(eltype(output)))
-        return output
+
+    if deriv isa Int
+        @_dispatch_deriv deriv => op begin
+            ops = ntuple(_ -> op, Val(N))
+            if _has_second_or_higher_derivative(ops, Val(N))
+                fill!(output, zero(eltype(output)))
+                return output
+            end
+            _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
+        end
+    elseif deriv isa Val
+        ops = _resolve_deriv_nd(deriv, Val(N))
+        if _has_second_or_higher_derivative(ops, Val(N))
+            fill!(output, zero(eltype(output)))
+            return output
+        end
+        _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
+    else
+        ops = _resolve_deriv_nd(Val(deriv), Val(N))
+        if _has_second_or_higher_derivative(ops, Val(N))
+            fill!(output, zero(eltype(output)))
+            return output
+        end
+        _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
     end
-    _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
     return output
 end
 
@@ -78,13 +97,32 @@ function (itp::LinearInterpolantND{Tg,Tv,N})(
     length(output) == n_queries || throw(DimensionMismatch(
         "output length $(length(output)) must match query length $n_queries"
     ))
-    ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-    if _has_second_or_higher_derivative(ops, Val(N))
-        fill!(output, zero(eltype(output)))
-        return output
+
+    if deriv isa Int
+        @_dispatch_deriv deriv => op begin
+            ops = ntuple(_ -> op, Val(N))
+            if _has_second_or_higher_derivative(ops, Val(N))
+                fill!(output, zero(eltype(output)))
+                return output
+            end
+            _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
+        end
+    elseif deriv isa Val
+        ops = _resolve_deriv_nd(deriv, Val(N))
+        if _has_second_or_higher_derivative(ops, Val(N))
+            fill!(output, zero(eltype(output)))
+            return output
+        end
+        _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
+    else
+        ops = _resolve_deriv_nd(Val(deriv), Val(N))
+        if _has_second_or_higher_derivative(ops, Val(N))
+            fill!(output, zero(eltype(output)))
+            return output
+        end
+        _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
     end
-    _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
     return output
 end
 

@@ -7,11 +7,12 @@
 
 using Test
 using FastInterpolations
+using FastInterpolations: get_task_local_pool
 
 # Allocation threshold (bytes) — tolerates minor LTS/GC overhead.
 # Guarded for standalone execution (runtests.jl defines this globally).
 if !@isdefined(ND_ALLOC_THRESHOLD)
-    const ND_ALLOC_THRESHOLD = 256
+    const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
 end
 
 @testset "LinearInterpolantND" begin
@@ -510,6 +511,57 @@ end
     end
 
     # ========================================
+    # Zero-Allocation One-Shot (Vector grids)
+    # ========================================
+    #
+    # Vector grids must also be zero-allocation via pool-based spacing.
+
+    function _alloc_test_linear_vector_default()
+        x = collect(range(0.0, 2.0, 20))
+        y = collect(range(0.0, 1.0, 15))
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        linear_interp((x, y), data, query)
+        linear_interp((x, y), data, query)
+        @allocated linear_interp((x, y), data, query)
+    end
+
+    function _alloc_test_linear_vector_deriv()
+        x = collect(range(0.0, 2.0, 20))
+        y = collect(range(0.0, 1.0, 15))
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        linear_interp((x, y), data, query; deriv=Val((1, 0)))
+        linear_interp((x, y), data, query; deriv=Val((1, 0)))
+        @allocated linear_interp((x, y), data, query; deriv=Val((1, 0)))
+    end
+
+    function _alloc_test_linear_vector_3d()
+        x = collect(range(0.0, 2.0, 10))
+        y = collect(range(0.0, 1.0, 8))
+        z = collect(range(0.0, 3.0, 6))
+        data = [xi + yj + zk for xi in x, yj in y, zk in z]
+        query = (1.0, 0.5, 1.5)
+        linear_interp((x, y, z), data, query)
+        linear_interp((x, y, z), data, query)
+        @allocated linear_interp((x, y, z), data, query)
+    end
+
+    @testset "Zero-Allocation One-Shot (Vector grids)" begin
+        @testset "zero-alloc scalar (Vector grids, default)" begin
+            @test _alloc_test_linear_vector_default() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (Vector grids, deriv=Val)" begin
+            @test _alloc_test_linear_vector_deriv() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (3D Vector grids)" begin
+            @test _alloc_test_linear_vector_3d() <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
     # In-Place Batch Allocation Tests
     # ========================================
     #
@@ -632,6 +684,97 @@ end
 
         @testset "oneshot in-place AoS (Range grids)" begin
             @test _alloc_test_oneshot_inplace_aos_linear() <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
+    # Oneshot In-Place Allocation Tests (Vector grids)
+    # ========================================
+
+    function _alloc_test_oneshot_inplace_soa_linear_vec()
+        x = collect(range(0.0, 2.0, 20))
+        y = collect(range(0.0, 1.0, 15))
+        data = [xi + yj for xi in x, yj in y]
+        xqs = [0.5, 1.0, 1.5]
+        yqs = [0.2, 0.5, 0.8]
+        out = Vector{Float64}(undef, 3)
+        linear_interp!(out, (x, y), data, (xqs, yqs))
+        linear_interp!(out, (x, y), data, (xqs, yqs))
+        @allocated linear_interp!(out, (x, y), data, (xqs, yqs))
+    end
+
+    function _alloc_test_oneshot_inplace_aos_linear_vec()
+        x = collect(range(0.0, 2.0, 20))
+        y = collect(range(0.0, 1.0, 15))
+        data = [xi + yj for xi in x, yj in y]
+        points = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
+        out = Vector{Float64}(undef, 3)
+        linear_interp!(out, (x, y), data, points)
+        linear_interp!(out, (x, y), data, points)
+        @allocated linear_interp!(out, (x, y), data, points)
+    end
+
+    @testset "Oneshot In-Place Allocation Tests (Vector grids)" begin
+        @testset "oneshot in-place SoA (Vector grids)" begin
+            @test _alloc_test_oneshot_inplace_soa_linear_vec() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "oneshot in-place AoS (Vector grids)" begin
+            @test _alloc_test_oneshot_inplace_aos_linear_vec() <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
+    # Pool Rewind Verification
+    # ========================================
+
+    @testset "Pool rewind after oneshot (linear)" begin
+        xv = collect(range(0.0, 2π, 21))
+        yv = collect(range(0.0, π, 11))
+        data = [sin(xi) * cos(yj) for xi in xv, yj in yv]
+        query = (1.0, 0.5)
+        xqs = [0.5, 1.0, 1.5, 2.0, 3.0]
+        yqs = [0.2, 0.4, 0.6, 0.8, 1.0]
+        pts = [(xqs[i], yqs[i]) for i in 1:5]
+
+        # Warmup
+        linear_interp((xv, yv), data, query)
+        linear_interp((xv, yv), data, (xqs, yqs))
+        linear_interp((xv, yv), data, pts)
+        out = Vector{Float64}(undef, 5)
+        linear_interp!(out, (xv, yv), data, (xqs, yqs))
+        linear_interp!(out, (xv, yv), data, pts)
+
+        pool = get_task_local_pool()
+
+        @testset "scalar oneshot" begin
+            n_before = pool.float64.n_active
+            linear_interp((xv, yv), data, query)
+            @test pool.float64.n_active == n_before
+        end
+
+        @testset "SoA batch oneshot" begin
+            n_before = pool.float64.n_active
+            linear_interp((xv, yv), data, (xqs, yqs))
+            @test pool.float64.n_active == n_before
+        end
+
+        @testset "AoS batch oneshot" begin
+            n_before = pool.float64.n_active
+            linear_interp((xv, yv), data, pts)
+            @test pool.float64.n_active == n_before
+        end
+
+        @testset "SoA in-place oneshot" begin
+            n_before = pool.float64.n_active
+            linear_interp!(out, (xv, yv), data, (xqs, yqs))
+            @test pool.float64.n_active == n_before
+        end
+
+        @testset "AoS in-place oneshot" begin
+            n_before = pool.float64.n_active
+            linear_interp!(out, (xv, yv), data, pts)
+            @test pool.float64.n_active == n_before
         end
     end
 end

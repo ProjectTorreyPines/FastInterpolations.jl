@@ -19,7 +19,7 @@
 Zero-allocation scalar one-shot ND multilinear evaluation.
 Evaluates directly from grids + data without constructing a LinearInterpolantND.
 """
-@inline function _linear_interp_nd_oneshot(
+@with_pool pool function _linear_interp_nd_oneshot(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}},
@@ -27,7 +27,7 @@ Evaluates directly from grids + data without constructing a LinearInterpolantND.
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
-    spacings = _create_spacings_typed(grids)
+    spacings = _create_spacings_pooled(pool, grids)
     q_eval = _handle_all_extraps(query, grids, extraps_val)
     indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches)
     hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
@@ -40,7 +40,7 @@ end
 In-place SoA batch one-shot ND multilinear evaluation.
 Writes results into `output`. No heap allocation beyond spacings.
 """
-function _linear_interp_nd_oneshot_soa!(
+@with_pool pool function _linear_interp_nd_oneshot_soa!(
     output::AbstractVector{Tv},
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
@@ -57,7 +57,7 @@ function _linear_interp_nd_oneshot_soa!(
     end
     length(output) == n_queries || throw(DimensionMismatch(
         "output length ($(length(output))) must match query length ($n_queries)"))
-    spacings = _create_spacings_typed(grids)
+    spacings = _create_spacings_pooled(pool, grids)
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
@@ -74,7 +74,7 @@ end
 In-place AoS batch one-shot ND multilinear evaluation.
 Writes results into `output`. No heap allocation beyond spacings.
 """
-function _linear_interp_nd_oneshot_aos!(
+@with_pool pool function _linear_interp_nd_oneshot_aos!(
     output::AbstractVector{Tv},
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
@@ -86,7 +86,7 @@ function _linear_interp_nd_oneshot_aos!(
     n_queries = length(queries)
     length(output) == n_queries || throw(DimensionMismatch(
         "output length ($(length(output))) must match query length ($n_queries)"))
-    spacings = _create_spacings_typed(grids)
+    spacings = _create_spacings_pooled(pool, grids)
     @inbounds for k in 1:n_queries
         query_k = queries[k]
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)

@@ -10,11 +10,12 @@
 
 using Test
 using FastInterpolations
+using FastInterpolations: get_task_local_pool
 
 # Allocation threshold (bytes) — tolerates minor LTS/GC overhead.
 # Guarded for standalone execution (runtests.jl defines this globally).
 if !@isdefined(ND_ALLOC_THRESHOLD)
-    const ND_ALLOC_THRESHOLD = 256
+    const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
 end
 
 @testset "ConstantInterpolantND" begin
@@ -467,6 +468,57 @@ end
     end
 
     # ========================================
+    # Zero-Allocation One-Shot (Vector grids)
+    # ========================================
+    #
+    # Vector grids must also be zero-allocation via pool-based spacing.
+
+    function _alloc_test_constant_vector_default()
+        x = collect(range(0.0, 2.0, 20))
+        y = collect(range(0.0, 1.0, 15))
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        constant_interp((x, y), data, query)
+        constant_interp((x, y), data, query)
+        @allocated constant_interp((x, y), data, query)
+    end
+
+    function _alloc_test_constant_vector_left()
+        x = collect(range(0.0, 2.0, 20))
+        y = collect(range(0.0, 1.0, 15))
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        constant_interp((x, y), data, query; side=:left)
+        constant_interp((x, y), data, query; side=:left)
+        @allocated constant_interp((x, y), data, query; side=:left)
+    end
+
+    function _alloc_test_constant_vector_3d()
+        x = collect(range(0.0, 2.0, 10))
+        y = collect(range(0.0, 1.0, 8))
+        z = collect(range(0.0, 3.0, 6))
+        data = [xi + yj + zk for xi in x, yj in y, zk in z]
+        query = (1.0, 0.5, 1.5)
+        constant_interp((x, y, z), data, query)
+        constant_interp((x, y, z), data, query)
+        @allocated constant_interp((x, y, z), data, query)
+    end
+
+    @testset "Zero-Allocation One-Shot (Vector grids)" begin
+        @testset "zero-alloc scalar (Vector grids, default)" begin
+            @test _alloc_test_constant_vector_default() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (Vector grids, side=:left)" begin
+            @test _alloc_test_constant_vector_left() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (3D Vector grids)" begin
+            @test _alloc_test_constant_vector_3d() <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
     # In-Place Batch Allocation Tests
     # ========================================
     #
@@ -588,6 +640,97 @@ end
 
         @testset "oneshot in-place AoS (Range grids)" begin
             @test _alloc_test_oneshot_inplace_aos_constant() <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
+    # Oneshot In-Place Allocation Tests (Vector grids)
+    # ========================================
+
+    function _alloc_test_oneshot_inplace_soa_constant_vec()
+        x = collect(range(0.0, 2.0, 20))
+        y = collect(range(0.0, 1.0, 15))
+        data = [xi + yj for xi in x, yj in y]
+        xqs = [0.5, 1.0, 1.5]
+        yqs = [0.2, 0.5, 0.8]
+        out = Vector{Float64}(undef, 3)
+        constant_interp!(out, (x, y), data, (xqs, yqs))
+        constant_interp!(out, (x, y), data, (xqs, yqs))
+        @allocated constant_interp!(out, (x, y), data, (xqs, yqs))
+    end
+
+    function _alloc_test_oneshot_inplace_aos_constant_vec()
+        x = collect(range(0.0, 2.0, 20))
+        y = collect(range(0.0, 1.0, 15))
+        data = [xi + yj for xi in x, yj in y]
+        points = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
+        out = Vector{Float64}(undef, 3)
+        constant_interp!(out, (x, y), data, points)
+        constant_interp!(out, (x, y), data, points)
+        @allocated constant_interp!(out, (x, y), data, points)
+    end
+
+    @testset "Oneshot In-Place Allocation Tests (Vector grids)" begin
+        @testset "oneshot in-place SoA (Vector grids)" begin
+            @test _alloc_test_oneshot_inplace_soa_constant_vec() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "oneshot in-place AoS (Vector grids)" begin
+            @test _alloc_test_oneshot_inplace_aos_constant_vec() <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
+    # Pool Rewind Verification
+    # ========================================
+
+    @testset "Pool rewind after oneshot (constant)" begin
+        xv = collect(range(0.0, 3.0, 10))
+        yv = collect(range(0.0, 2.0, 8))
+        data = [Float64(xi + yi) for xi in xv, yi in yv]
+        query = (1.0, 0.5)
+        xqs = [0.5, 1.0, 1.5, 2.0, 2.5]
+        yqs = [0.2, 0.4, 0.6, 0.8, 1.0]
+        pts = [(xqs[i], yqs[i]) for i in 1:5]
+
+        # Warmup
+        constant_interp((xv, yv), data, query)
+        constant_interp((xv, yv), data, (xqs, yqs))
+        constant_interp((xv, yv), data, pts)
+        out = Vector{Float64}(undef, 5)
+        constant_interp!(out, (xv, yv), data, (xqs, yqs))
+        constant_interp!(out, (xv, yv), data, pts)
+
+        pool = get_task_local_pool()
+
+        @testset "scalar oneshot" begin
+            n_before = pool.float64.n_active
+            constant_interp((xv, yv), data, query)
+            @test pool.float64.n_active == n_before
+        end
+
+        @testset "SoA batch oneshot" begin
+            n_before = pool.float64.n_active
+            constant_interp((xv, yv), data, (xqs, yqs))
+            @test pool.float64.n_active == n_before
+        end
+
+        @testset "AoS batch oneshot" begin
+            n_before = pool.float64.n_active
+            constant_interp((xv, yv), data, pts)
+            @test pool.float64.n_active == n_before
+        end
+
+        @testset "SoA in-place oneshot" begin
+            n_before = pool.float64.n_active
+            constant_interp!(out, (xv, yv), data, (xqs, yqs))
+            @test pool.float64.n_active == n_before
+        end
+
+        @testset "AoS in-place oneshot" begin
+            n_before = pool.float64.n_active
+            constant_interp!(out, (xv, yv), data, pts)
+            @test pool.float64.n_active == n_before
         end
     end
 end

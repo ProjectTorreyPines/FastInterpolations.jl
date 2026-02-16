@@ -1,11 +1,12 @@
 using Test
 using FastInterpolations
+using FastInterpolations: get_task_local_pool
 
 # Allocation threshold (bytes) — tolerates minor LTS/GC overhead.
 # On latest Julia, scalar oneshot is truly zero-alloc; LTS may show ≤64 bytes.
 # Guarded for standalone execution (runtests.jl defines this globally).
 if !@isdefined(ND_ALLOC_THRESHOLD)
-    const ND_ALLOC_THRESHOLD = 0
+    const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
 end
 
 @testset "Cubic ND One-Shot (Pool-Based)" begin
@@ -458,6 +459,99 @@ end
 
         @testset "oneshot in-place AoS (Range grids)" begin
             @test _alloc_test_oneshot_inplace_aos_cubic() <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
+    # Oneshot In-Place Allocation Tests (Vector grids)
+    # ========================================
+
+    function _alloc_test_oneshot_inplace_soa_cubic_vec()
+        x = collect(range(0.0, 2.0, 15))
+        y = collect(range(0.0, 1.0, 11))
+        data = [xi^3 + yj^2 for xi in x, yj in y]
+        xqs = [0.5, 1.0, 1.5]
+        yqs = [0.2, 0.5, 0.8]
+        out = Vector{Float64}(undef, 3)
+        cubic_interp!(out, (x, y), data, (xqs, yqs))
+        cubic_interp!(out, (x, y), data, (xqs, yqs))
+        @allocated cubic_interp!(out, (x, y), data, (xqs, yqs))
+    end
+
+    function _alloc_test_oneshot_inplace_aos_cubic_vec()
+        x = collect(range(0.0, 2.0, 15))
+        y = collect(range(0.0, 1.0, 11))
+        data = [xi^3 + yj^2 for xi in x, yj in y]
+        points = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
+        out = Vector{Float64}(undef, 3)
+        cubic_interp!(out, (x, y), data, points)
+        cubic_interp!(out, (x, y), data, points)
+        @allocated cubic_interp!(out, (x, y), data, points)
+    end
+
+    @testset "Oneshot In-Place Allocation Tests (Vector grids)" begin
+        @testset "oneshot in-place SoA (Vector grids)" begin
+            @test _alloc_test_oneshot_inplace_soa_cubic_vec() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "oneshot in-place AoS (Vector grids)" begin
+            @test _alloc_test_oneshot_inplace_aos_cubic_vec() <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
+    # Pool Rewind Verification
+    # ========================================
+    # Verify that @with_pool properly rewinds after oneshot API calls.
+    # After each call, pool.float64.n_active must return to its pre-call value.
+
+    @testset "Pool rewind after oneshot (cubic)" begin
+        xv = collect(range(0.0, 2π, 21))
+        yv = collect(range(0.0, π, 11))
+        data = [sin(xi) * cos(yj) for xi in xv, yj in yv]
+        query = (1.0, 0.5)
+        xqs = [0.5, 1.0, 1.5, 2.0, 3.0]
+        yqs = [0.2, 0.4, 0.6, 0.8, 1.0]
+        pts = [(xqs[i], yqs[i]) for i in 1:5]
+
+        # Warmup all paths
+        cubic_interp((xv, yv), data, query)
+        cubic_interp((xv, yv), data, (xqs, yqs))
+        cubic_interp((xv, yv), data, pts)
+        out = Vector{Float64}(undef, 5)
+        cubic_interp!(out, (xv, yv), data, (xqs, yqs))
+        cubic_interp!(out, (xv, yv), data, pts)
+
+        pool = get_task_local_pool()
+
+        @testset "scalar oneshot" begin
+            n_before = pool.float64.n_active
+            cubic_interp((xv, yv), data, query)
+            @test pool.float64.n_active == n_before
+        end
+
+        @testset "SoA batch oneshot" begin
+            n_before = pool.float64.n_active
+            cubic_interp((xv, yv), data, (xqs, yqs))
+            @test pool.float64.n_active == n_before
+        end
+
+        @testset "AoS batch oneshot" begin
+            n_before = pool.float64.n_active
+            cubic_interp((xv, yv), data, pts)
+            @test pool.float64.n_active == n_before
+        end
+
+        @testset "SoA in-place oneshot" begin
+            n_before = pool.float64.n_active
+            cubic_interp!(out, (xv, yv), data, (xqs, yqs))
+            @test pool.float64.n_active == n_before
+        end
+
+        @testset "AoS in-place oneshot" begin
+            n_before = pool.float64.n_active
+            cubic_interp!(out, (xv, yv), data, pts)
+            @test pool.float64.n_active == n_before
         end
     end
 

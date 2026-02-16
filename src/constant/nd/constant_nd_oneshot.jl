@@ -18,7 +18,7 @@
 Zero-allocation scalar one-shot ND constant evaluation.
 Evaluates directly from grids + data without constructing a ConstantInterpolantND.
 """
-@inline function _constant_interp_nd_oneshot(
+@with_pool pool function _constant_interp_nd_oneshot(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}},
@@ -26,7 +26,7 @@ Evaluates directly from grids + data without constructing a ConstantInterpolantN
     side_vals::NTuple{N, SideVal},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
-    spacings = _create_spacings_typed(grids)
+    spacings = _create_spacings_pooled(pool, grids)
     q_eval = _handle_all_extraps(query, grids, extraps_val)
     indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches)
     return _constant_nd_kernel(data, spacings, side_vals, indices, q_eval, Ls)
@@ -38,7 +38,7 @@ end
 In-place SoA batch one-shot ND constant evaluation.
 Writes results into `output`. No heap allocation beyond spacings.
 """
-function _constant_interp_nd_oneshot_soa!(
+@with_pool pool function _constant_interp_nd_oneshot_soa!(
     output::AbstractVector{Tv},
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
@@ -55,7 +55,7 @@ function _constant_interp_nd_oneshot_soa!(
     end
     length(output) == n_queries || throw(DimensionMismatch(
         "output length ($(length(output))) must match query length ($n_queries)"))
-    spacings = _create_spacings_typed(grids)
+    spacings = _create_spacings_pooled(pool, grids)
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
@@ -88,7 +88,7 @@ end
 In-place AoS batch one-shot ND constant evaluation.
 Writes results into `output`. No heap allocation beyond spacings.
 """
-function _constant_interp_nd_oneshot_aos!(
+@with_pool pool function _constant_interp_nd_oneshot_aos!(
     output::AbstractVector{Tv},
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
@@ -100,7 +100,7 @@ function _constant_interp_nd_oneshot_aos!(
     n_queries = length(queries)
     length(output) == n_queries || throw(DimensionMismatch(
         "output length ($(length(output))) must match query length ($n_queries)"))
-    spacings = _create_spacings_typed(grids)
+    spacings = _create_spacings_pooled(pool, grids)
     @inbounds for k in 1:n_queries
         query_k = queries[k]
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
@@ -167,11 +167,12 @@ function constant_interp(
     extraps = _resolve_extrap_nd(extrap, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
-    side_vals = _to_side_vals(sides)
 
     @_dispatch_extrap_nd extraps nothing => extraps_val begin
-        return _constant_interp_nd_oneshot(
-            grids_typed, data, query, extraps_val, side_vals, searches)::Tv
+        @_dispatch_side_nd sides => side_vals begin
+            return _constant_interp_nd_oneshot(
+                grids_typed, data, query, extraps_val, side_vals, searches)::Tv
+        end
     end
 end
 
@@ -203,11 +204,12 @@ function constant_interp(
     extraps = _resolve_extrap_nd(extrap, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
-    side_vals = _to_side_vals(sides)
 
     @_dispatch_extrap_nd extraps nothing => extraps_val begin
-        return _constant_interp_nd_oneshot_soa(
-            grids_typed, data, queries, extraps_val, side_vals, searches)::Vector{Tv}
+        @_dispatch_side_nd sides => side_vals begin
+            return _constant_interp_nd_oneshot_soa(
+                grids_typed, data, queries, extraps_val, side_vals, searches)::Vector{Tv}
+        end
     end
 end
 
@@ -239,11 +241,12 @@ function constant_interp(
     extraps = _resolve_extrap_nd(extrap, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
-    side_vals = _to_side_vals(sides)
 
     @_dispatch_extrap_nd extraps nothing => extraps_val begin
-        return _constant_interp_nd_oneshot_aos(
-            grids_typed, data, queries, extraps_val, side_vals, searches)::Vector{Tv}
+        @_dispatch_side_nd sides => side_vals begin
+            return _constant_interp_nd_oneshot_aos(
+                grids_typed, data, queries, extraps_val, side_vals, searches)::Vector{Tv}
+        end
     end
 end
 
@@ -280,11 +283,12 @@ function constant_interp!(
     extraps = _resolve_extrap_nd(extrap, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
-    side_vals = _to_side_vals(sides)
 
     @_dispatch_extrap_nd extraps nothing => extraps_val begin
-        return _constant_interp_nd_oneshot_soa!(
-            output, grids_typed, data, queries, extraps_val, side_vals, searches)
+        @_dispatch_side_nd sides => side_vals begin
+            return _constant_interp_nd_oneshot_soa!(
+                output, grids_typed, data, queries, extraps_val, side_vals, searches)
+        end
     end
 end
 
@@ -317,10 +321,11 @@ function constant_interp!(
     extraps = _resolve_extrap_nd(extrap, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
-    side_vals = _to_side_vals(sides)
 
     @_dispatch_extrap_nd extraps nothing => extraps_val begin
-        return _constant_interp_nd_oneshot_aos!(
-            output, grids_typed, data, queries, extraps_val, side_vals, searches)
+        @_dispatch_side_nd sides => side_vals begin
+            return _constant_interp_nd_oneshot_aos!(
+                output, grids_typed, data, queries, extraps_val, side_vals, searches)
+        end
     end
 end

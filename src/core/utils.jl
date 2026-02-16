@@ -531,6 +531,53 @@ macro _dispatch_side(pair, body)
 end
 
 # ========================================
+# ND Side Dispatch
+# ========================================
+
+@inline _is_uniform_side(sides::NTuple{N, Symbol}) where {N} = all(==(sides[1]), sides)
+
+"""
+    @_dispatch_side_nd sides => side_vals begin ... end
+
+Compile-time dispatch for ND side selection. Converts `NTuple{N, Symbol}` into
+concrete `NTuple{N, Val{:...}}` to avoid Union boxing at function boundaries.
+
+Handles the common uniform case (all sides equal) with 3 branches.
+Falls back to `_to_side_vals` for the rare mixed-side case.
+"""
+macro _dispatch_side_nd(pair, body)
+    pair.head === :call && pair.args[1] === :(=>) ||
+        error("@_dispatch_side_nd expects `sides => varname`, got: $pair")
+    sides_expr = pair.args[2]
+    varname = pair.args[3]
+    svs = esc(varname)
+
+    quote
+        let _sides_nd = $(esc(sides_expr)), _valn_side = Val(length($(esc(sides_expr))))
+            if _is_uniform_side(_sides_nd)
+                if _sides_nd[1] === :nearest
+                    let $svs = ntuple(_ -> Val(:nearest), _valn_side)
+                        $(esc(body))
+                    end
+                elseif _sides_nd[1] === :left
+                    let $svs = ntuple(_ -> Val(:left), _valn_side)
+                        $(esc(body))
+                    end
+                else
+                    let $svs = ntuple(_ -> Val(:right), _valn_side)
+                        $(esc(body))
+                    end
+                end
+            else
+                let $svs = _to_side_vals(_sides_nd)
+                    $(esc(body))
+                end
+            end
+        end
+    end
+end
+
+# ========================================
 # ND Extrap Dispatch Helpers
 # ========================================
 

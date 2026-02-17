@@ -562,6 +562,21 @@ end
     end
 
     # ========================================
+    # Integer Data Type Promotion (P1-B verification)
+    # ========================================
+
+    @testset "Integer data type promotion" begin
+        x = range(0.0, 4.0, 5)
+        y = range(0.0, 4.0, 5)
+        data = [i + j for i in 0:4, j in 0:4]  # Matrix{Int}
+        result = linear_interp((x, y), data, (1.5, 2.5))
+        @test result isa Float64
+        @test result ≈ 4.0
+        results = linear_interp((x, y), data, ([1.5], [2.5]))
+        @test eltype(results) == Float64
+    end
+
+    # ========================================
     # In-Place Batch Allocation Tests
     # ========================================
     #

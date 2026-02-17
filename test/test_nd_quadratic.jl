@@ -602,6 +602,16 @@ end
         @allocated quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
     end
 
+    function _alloc_test_quadratic_vector_deriv_int()
+        x = collect(range(0.0, 2.0, 20))
+        y = collect(range(0.0, 1.0, 15))
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        query = (1.0, 0.5)
+        quadratic_interp((x, y), data, query; deriv=1)
+        quadratic_interp((x, y), data, query; deriv=1)
+        @allocated quadratic_interp((x, y), data, query; deriv=1)
+    end
+
     function _alloc_test_quadratic_vector_3d()
         x = collect(range(0.0, 2.0, 10))
         y = collect(range(0.0, 1.0, 8))
@@ -620,6 +630,10 @@ end
 
         @testset "zero-alloc scalar (Vector grids, deriv=Val)" begin
             @test _alloc_test_quadratic_vector_deriv() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (Vector grids, deriv=1 Int)" begin
+            @test _alloc_test_quadratic_vector_deriv_int() <= ND_ALLOC_THRESHOLD
         end
 
         @testset "zero-alloc scalar (3D Vector grids)" begin

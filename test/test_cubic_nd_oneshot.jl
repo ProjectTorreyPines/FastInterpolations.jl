@@ -335,6 +335,21 @@ end
         @test _alloc_test_vector_deriv() <= ND_ALLOC_THRESHOLD
     end
 
+    function _alloc_test_vector_3d()
+        x = collect(range(0.0, 2.0, 10))
+        y = collect(range(0.0, 1.0, 8))
+        z = collect(range(0.0, 3.0, 6))
+        data = [xi^3 + yj^2 + zk for xi in x, yj in y, zk in z]
+        query = (1.0, 0.5, 1.5)
+        cubic_interp((x, y, z), data, query)
+        cubic_interp((x, y, z), data, query)
+        @allocated cubic_interp((x, y, z), data, query)
+    end
+
+    @testset "Zero-alloc scalar one-shot (3D Vector grids)" begin
+        @test _alloc_test_vector_3d() <= ND_ALLOC_THRESHOLD
+    end
+
     # ========================================
     # In-Place Batch Allocation Tests
     # ========================================

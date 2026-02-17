@@ -251,4 +251,27 @@ using FastInterpolations
         @test_throws DimensionMismatch cubic_interp((x, y), data2)
     end
 
+    @testset "PolyFit BC with insufficient grid points" begin
+        # CubicFit is PolyFit{3} — requires at least 4 grid points.
+        # Using 3 points triggers the ArgumentError in _validate_nd_bcs!.
+        y = range(0.0, 1.0, 11)
+
+        # Dim-1 too short (3 points < 4 required for CubicFit)
+        x_short = range(0.0, 1.0, 3)
+        data_short = [xi + yj for xi in x_short, yj in y]
+        @test_throws ArgumentError cubic_interp((x_short, y), data_short; bc=CubicFit())
+
+        # Dim-2 too short (per-axis BC tuple)
+        x = range(0.0, 1.0, 11)
+        y_short = range(0.0, 1.0, 3)
+        data_short2 = [xi + yj for xi in x, yj in y_short]
+        @test_throws ArgumentError cubic_interp((x, y_short), data_short2;
+            bc=(NaturalBC(), CubicFit()))
+
+        # Oneshot path also validates (triggers _validate_nd_bcs! in cubic_interp)
+        @test_throws ArgumentError cubic_interp(
+            (x_short, y), data_short, (0.5, 0.5); bc=CubicFit()
+        )
+    end
+
 end

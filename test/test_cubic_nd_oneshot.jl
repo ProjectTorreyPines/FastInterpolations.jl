@@ -636,6 +636,69 @@ end
     # Verify that @with_pool properly rewinds after oneshot API calls.
     # After each call, pool.float64.n_active must return to its pre-call value.
 
+    # ========================================
+    # Val/NTuple deriv branches in cubic_interp! batch
+    # ========================================
+    #
+    # Covers the `elseif deriv isa Val` and `else` (NTuple) branches in the
+    # SoA and AoS `cubic_interp!` functions, plus the scalar NTuple else branch.
+    # These are distinct dispatch paths from the default `if deriv isa Int` branch.
+
+    @testset "Val/NTuple deriv branches in cubic_interp! batch" begin
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 11)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        query = (1.5, 0.8)
+        xqs = [0.5, 1.0, 1.5]
+        yqs = [0.2, 0.4, 0.6]
+        points = [(0.5, 0.2), (1.0, 0.4), (1.5, 0.6)]
+        out = Vector{Float64}(undef, 3)
+
+        # Scalar: NTuple deriv → triggers the `else` branch
+        val_ntuple = cubic_interp((x, y), data, query; deriv=(1, 0))
+        val_val    = cubic_interp((x, y), data, query; deriv=Val((1, 0)))
+        @test val_ntuple ≈ val_val atol=1e-14
+
+        # SoA cubic_interp!: Val deriv → triggers `elseif deriv isa Val` branch
+        ref_soa = cubic_interp((x, y), data, (xqs, yqs); deriv=Val((1, 0)))
+        cubic_interp!(out, (x, y), data, (xqs, yqs); deriv=Val((1, 0)))
+        @test out ≈ ref_soa atol=1e-14
+
+        # SoA cubic_interp!: NTuple deriv → triggers `else` branch
+        ref_soa2 = cubic_interp((x, y), data, (xqs, yqs); deriv=(1, 0))
+        cubic_interp!(out, (x, y), data, (xqs, yqs); deriv=(1, 0))
+        @test out ≈ ref_soa2 atol=1e-14
+
+        # AoS cubic_interp!: Val deriv → triggers `elseif deriv isa Val` branch
+        ref_aos = cubic_interp((x, y), data, points; deriv=Val((1, 0)))
+        cubic_interp!(out, (x, y), data, points; deriv=Val((1, 0)))
+        @test out ≈ ref_aos atol=1e-14
+
+        # AoS cubic_interp!: NTuple deriv → triggers `else` branch
+        ref_aos2 = cubic_interp((x, y), data, points; deriv=(1, 0))
+        cubic_interp!(out, (x, y), data, points; deriv=(1, 0))
+        @test out ≈ ref_aos2 atol=1e-14
+
+        # Confirm NTuple result agrees with interpolant
+        @test val_ntuple ≈ itp(query; deriv=Val((1, 0))) atol=1e-14
+    end
+
+    # ========================================
+    # SoA DimensionMismatch for mismatched query lengths
+    # ========================================
+
+    @testset "SoA DimensionMismatch for mismatched query vector lengths" begin
+        x = range(0.0, 1.0, 10)
+        y = range(0.0, 1.0, 10)
+        data = [xi + yj for xi in x, yj in y]
+        out = zeros(3)
+        # dim-1 query has 3 pts, dim-2 has 2 pts → should throw
+        @test_throws DimensionMismatch cubic_interp!(
+            out, (x, y), data, ([0.5, 0.6, 0.7], [0.5, 0.6])
+        )
+    end
+
     @testset "Pool rewind after oneshot (cubic)" begin
         xv = collect(range(0.0, 2π, 21))
         yv = collect(range(0.0, π, 11))

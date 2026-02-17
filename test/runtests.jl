@@ -7,6 +7,10 @@ using Random
 # Note: 4-way Val dispatch (extrap modes) increases overhead on older Julia (~160 bytes).
 const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
 
+# ND oneshot dispatch has higher fixed overhead from tuple construction/resolution.
+# This is O(1) overhead, not O(n), so a separate higher threshold is appropriate.
+const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
+
 # Check if specific test files are requested via ARGS
 if !isempty(ARGS)
     for testfile in ARGS
@@ -61,6 +65,7 @@ else
     include("test_nd_linear.jl")        # Linear ND interpolation (phase 3)
     include("test_nd_quadratic.jl")     # Quadratic ND interpolation
     include("test_cubic_nd.jl")
+    include("test_cubic_nd_oneshot.jl")  # Cubic ND one-shot (pool-based, zero-alloc)
     include("test_nd_comprehensive.jl")
     include("test_nd_coverage.jl")
     include("test_nd_heterogeneous_grids.jl")

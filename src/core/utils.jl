@@ -529,3 +529,237 @@ macro _dispatch_side(pair, body)
         end
     end
 end
+
+# ========================================
+# ND Side Dispatch
+# ========================================
+
+@inline _is_uniform_side(sides::NTuple{N, Symbol}) where {N} = all(==(sides[1]), sides)
+
+"""
+    @_dispatch_side_nd sides => side_vals begin ... end
+
+Compile-time dispatch for ND side selection. Converts `NTuple{N, Symbol}` into
+concrete `NTuple{N, Val{:...}}` to avoid Union boxing at function boundaries.
+
+Handles the common uniform case (all sides equal) with 3 branches.
+Falls back to `_to_side_vals` for the rare mixed-side case.
+"""
+macro _dispatch_side_nd(pair, body)
+    pair.head === :call && pair.args[1] === :(=>) ||
+        error("@_dispatch_side_nd expects `sides => varname`, got: $pair")
+    sides_expr = pair.args[2]
+    varname = pair.args[3]
+    svs = esc(varname)
+
+    quote
+        let _sides_nd = $(esc(sides_expr)), _valn_side = Val(length($(esc(sides_expr))))
+            if _is_uniform_side(_sides_nd)
+                if _sides_nd[1] === :nearest
+                    let $svs = ntuple(_ -> Val(:nearest), _valn_side)
+                        $(esc(body))
+                    end
+                elseif _sides_nd[1] === :left
+                    let $svs = ntuple(_ -> Val(:left), _valn_side)
+                        $(esc(body))
+                    end
+                else
+                    let $svs = ntuple(_ -> Val(:right), _valn_side)
+                        $(esc(body))
+                    end
+                end
+            else
+                let $svs = _to_side_vals(_sides_nd)
+                    $(esc(body))
+                end
+            end
+        end
+    end
+end
+
+# ========================================
+# ND Extrap Dispatch Helpers
+# ========================================
+
+"""
+    _is_uniform_extrap_no_periodic(extraps, bcs) -> Bool
+
+Check if all extraps are the same symbol and no axes have periodic BCs.
+Used by `@_dispatch_extrap_nd` for the zero-alloc fast path.
+"""
+@inline function _is_uniform_extrap_no_periodic(
+    extraps::NTuple{N, Symbol}, bcs::NTuple{N, AbstractBC}
+) where {N}
+    for d in 1:N
+        _is_periodic_bc(bcs[d]) && return false
+    end
+    for d in 2:N
+        extraps[d] !== extraps[1] && return false
+    end
+    return true
+end
+
+"""
+    _is_uniform_extrap(extraps) -> Bool
+
+Check if all extraps are the same symbol (ignoring BCs).
+"""
+@inline function _is_uniform_extrap(extraps::NTuple{N, Symbol}) where {N}
+    for d in 2:N
+        extraps[d] !== extraps[1] && return false
+    end
+    return true
+end
+
+"""
+    _is_all_periodic(bcs) -> Bool
+
+Check if all axes have periodic BCs.
+"""
+@inline function _is_all_periodic(bcs::NTuple{N, AbstractBC}) where {N}
+    for d in 1:N
+        _is_periodic_bc(bcs[d]) || return false
+    end
+    return true
+end
+
+# ── Nothing overloads for BC-free methods (linear, constant) ─────────
+# Allows @_dispatch_extrap_nd to be reused with `nothing` as BCs.
+# With nothing BCs, fast path 1 always fires for uniform extraps (>99% of cases).
+
+@inline _is_uniform_extrap_no_periodic(extraps::NTuple{N, Symbol}, ::Nothing) where {N} =
+    _is_uniform_extrap(extraps)
+
+@inline _is_all_periodic(::Nothing) = false
+
+@generated function _resolve_mixed_extrap_vals(extraps::NTuple{N, Symbol}, ::Nothing) where {N}
+    exprs = [:(FastInterpolations._symbol_to_extrap_val(extraps[$d])) for d in 1:N]
+    :(($(exprs...),))
+end
+
+"""
+    _resolve_uniform_extrap_with_periodic(bcs, ::Val{S}) -> NTuple{N, Val}
+
+Zero-allocation per-axis extrap resolution for uniform extrap with mixed BCs.
+Uses `@generated` to inspect BC types at compile time:
+- Periodic axes → `Val(:wrap)` (hardcoded at compile time)
+- Non-periodic axes → `Val(S)` (known from static parameter)
+
+This avoids the Union return type from `_symbol_to_extrap_val` because both the
+BC type check and the extrap symbol are resolved at compile time.
+"""
+@generated function _resolve_uniform_extrap_with_periodic(
+    bcs::B, ::Val{S}
+) where {B<:Tuple{Vararg{AbstractBC}}, S}
+    N = fieldcount(B)
+    exprs = map(1:N) do d
+        if fieldtype(B, d) <: PeriodicBC
+            :(Val(:wrap))
+        else
+            :(Val($(QuoteNode(S))))
+        end
+    end
+    :(($(exprs...),))
+end
+
+"""
+    _resolve_mixed_extrap_vals(extraps, bcs) -> NTuple{N, Val}
+
+Per-axis extrap resolution for truly heterogeneous extraps (different Symbols per axis).
+Falls back to runtime `_symbol_to_extrap_val` which produces Union return types.
+Only used when extraps are non-uniform (extremely rare in practice).
+"""
+@generated function _resolve_mixed_extrap_vals(
+    extraps::NTuple{N, Symbol}, bcs::NTuple{N, AbstractBC}
+) where {N}
+    exprs = [:(FastInterpolations._is_periodic_bc(bcs[$d]) ? Val(:wrap) : FastInterpolations._symbol_to_extrap_val(extraps[$d])) for d in 1:N]
+    :(($(exprs...),))
+end
+
+"""
+    @_dispatch_extrap_nd extraps bcs => ev body
+
+Dispatch extrap symbols to concrete `Val` tuples for type-stable ND evaluation.
+Creates if/else branches, each with a concrete `ev` binding (similar to `@_dispatch_deriv`).
+
+This is the ND counterpart of `@_dispatch_extrap(sym => varname, body)` (1D).
+The 1D version dispatches a single Symbol; this version dispatches `NTuple{N,Symbol}` + BCs.
+`N` is derived automatically from `length(extraps)` (compile-time constant for NTuple).
+
+**Fast paths** (zero-alloc, covers >99% of use cases):
+1. Uniform extrap + no periodic BCs → `ntuple(_ -> Val(:sym), vn)`
+2. All periodic BCs → all axes `Val(:wrap)`
+3. Uniform extrap + mixed BCs → `@generated` per-axis resolution using BC types
+
+**Fallback** (small alloc, extremely rare):
+4. Non-uniform extraps + mixed BCs → runtime `_symbol_to_extrap_val` (Union return)
+
+# Example
+```julia
+@_dispatch_extrap_nd extraps bcs => extraps_val begin
+    return _cubic_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops)
+end
+```
+"""
+macro _dispatch_extrap_nd(extraps_expr, pair, body)
+    # Parse pair: bcs => ev_sym
+    pair.head === :call && pair.args[1] === :(=>) ||
+        error("@_dispatch_extrap_nd expects `bcs => binding`, got: $pair")
+    bcs_expr = pair.args[2]
+    ev_sym = pair.args[3]
+
+    extraps_var = gensym(:extraps)
+    bcs_var = gensym(:bcs)
+    valn_var = gensym(:valn)
+
+    quote
+        local $(extraps_var) = $(esc(extraps_expr))
+        local $(bcs_var) = $(esc(bcs_expr))
+        local $(valn_var) = Val(length($(extraps_var)))
+
+        if _is_uniform_extrap_no_periodic($(extraps_var), $(bcs_var))
+            # Fast path 1: uniform extrap, no periodic → concrete Val tuple
+            if $(extraps_var)[1] === :none
+                let $(esc(ev_sym)) = ntuple(_ -> Val(:none), $(valn_var))
+                    $(esc(body))
+                end
+            elseif $(extraps_var)[1] === :constant
+                let $(esc(ev_sym)) = ntuple(_ -> Val(:constant), $(valn_var))
+                    $(esc(body))
+                end
+            elseif $(extraps_var)[1] === :extension
+                let $(esc(ev_sym)) = ntuple(_ -> Val(:extension), $(valn_var))
+                    $(esc(body))
+                end
+            else
+                let $(esc(ev_sym)) = ntuple(_ -> Val(:wrap), $(valn_var))
+                    $(esc(body))
+                end
+            end
+        elseif _is_all_periodic($(bcs_var))
+            # Fast path 2: all periodic → all Val(:wrap)
+            let $(esc(ev_sym)) = ntuple(_ -> Val(:wrap), $(valn_var))
+                $(esc(body))
+            end
+        elseif _is_uniform_extrap($(extraps_var))
+            # Fast path 3: uniform extrap + mixed BCs (some periodic axes) → @generated per-axis
+            # BC types are known at compile time; extrap dispatched via Val(sym).
+            # Only :none and :wrap are valid here: _check_periodic_extrap ensures :constant/:extension
+            # cannot coexist with PeriodicBC (throws at construction), making those branches dead.
+            if $(extraps_var)[1] === :none
+                let $(esc(ev_sym)) = _resolve_uniform_extrap_with_periodic($(bcs_var), Val(:none))
+                    $(esc(body))
+                end
+            else  # :wrap (only other valid option with mixed periodic BCs)
+                let $(esc(ev_sym)) = _resolve_uniform_extrap_with_periodic($(bcs_var), Val(:wrap))
+                    $(esc(body))
+                end
+            end
+        else
+            # Fallback: non-uniform extraps + mixed BCs (extremely rare)
+            let $(esc(ev_sym)) = _resolve_mixed_extrap_vals($(extraps_var), $(bcs_var))
+                $(esc(body))
+            end
+        end
+    end
+end

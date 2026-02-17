@@ -129,24 +129,22 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
 end
 
 """
-Core implementation for PeriodicBC boundary conditions (vector output).
-Thread-safe: uses _get_cubic_cache + @with_pool pattern.
-Pool-based exclusive extension: zero-alloc after warmup.
+    _cubic_periodic_solve!(pool, x, y, bc, autocache) -> (cache, y_p, z)
+
+Shared periodic setup: extend exclusive→inclusive grid, then solve tridiagonal system.
+Pool buffers (x_p, y_p, z) are acquired from `pool` — caller's @with_pool scope
+manages their lifetime. Follows the `_create_spacing_pooled(pool, ...)` pattern.
 """
-@inline @with_pool pool function _cubic_interp_periodic!(
-    output::AbstractVector{Tv},
+@inline function _cubic_periodic_solve!(
+    pool::AbstractArrayPool,
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
-    x_query::AbstractVector{Tg},
     bc::PeriodicBC,
-    autocache::Bool,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
-
+    autocache::Bool
+) where {Tg<:AbstractFloat, Tv}
     @assert length(x) == length(y) "x and y must have the same length"
 
-    # ── Extend exclusive → inclusive (pool-based) ──
+    # ── Extend exclusive → inclusive (pool-based, zero-alloc after warmup) ──
     if bc isa PeriodicBC{:exclusive}
         period = _resolve_exclusive_period(x, bc)
         x_end  = first(x) + Tg(period)
@@ -172,13 +170,33 @@ Pool-based exclusive extension: zero-alloc after warmup.
         x_p, y_p = x, y
     end
 
-    @assert length(output) == length(x_query) "output length must match x_query"
-
-    # ── Standard periodic solve + vector eval ──
+    # ── Solve periodic tridiagonal system ──
     _check_periodic_endpoints(y_p)
     cache = _get_cubic_cache(x_p, PeriodicBC(), autocache)
     z = acquire!(pool, Tv, length(y_p))
     _solve_system!(z, cache, y_p, cache.bc_config)
+
+    return cache, y_p, z
+end
+
+"""
+Core implementation for PeriodicBC boundary conditions (vector output).
+Thread-safe: uses _get_cubic_cache + @with_pool pattern.
+Pool-based exclusive extension: zero-alloc after warmup.
+"""
+@inline @with_pool pool function _cubic_interp_periodic!(
+    output::AbstractVector{Tv},
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    x_query::AbstractVector{Tg},
+    bc::PeriodicBC,
+    autocache::Bool,
+    op::O,
+    searcher::S
+) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
+    @assert length(output) == length(x_query) "output length must match x_query"
+
+    cache, y_p, z = _cubic_periodic_solve!(pool, x, y, bc, autocache)
 
     @_dispatch_extrap :wrap => ev begin
         _cubic_vector_loop!(output, cache, y_p, z, x_query, ev, op, searcher)
@@ -201,41 +219,7 @@ Pool-based exclusive extension: zero-alloc after warmup.
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real, O<:AbstractEvalOp, S<:Searcher}
-
-    @assert length(x) == length(y) "x and y must have the same length"
-
-    # ── Extend exclusive → inclusive (pool-based, zero-alloc after warmup) ──
-    if bc isa PeriodicBC{:exclusive}
-        period = _resolve_exclusive_period(x, bc)
-        x_end  = first(x) + Tg(period)
-        last(x) < x_end || throw(ArgumentError(
-            "period=$period places virtual endpoint at $x_end, " *
-            "not after last grid point x[end]=$(last(x))"))
-
-        n = length(x)
-        # Grid: Range → direct construction (type-stable, O(1)), Vector → pool
-        # Note: _resolve_exclusive_period guarantees period = step(x) * length(x) for Range,
-        # so x_end == last(x) + step(x) and direct Range extension is always valid.
-        if x isa AbstractRange
-            x_p = range(first(x), step=step(x), length=n + 1)
-        else
-            x_p = unsafe_acquire!(pool, Tg, n + 1)
-            @inbounds copyto!(x_p, 1, x, 1, n)
-            @inbounds x_p[n + 1] = x_end
-        end
-        # Values: always pool
-        y_p = acquire!(pool, Tv, n + 1)
-        @inbounds copyto!(y_p, 1, y, 1, n)
-        @inbounds y_p[n + 1] = y[1]
-    else
-        x_p, y_p = x, y
-    end
-
-    # ── Standard periodic solve + eval (unchanged) ──
-    _check_periodic_endpoints(y_p)
-    cache = _get_cubic_cache(x_p, PeriodicBC(), autocache)
-    z = acquire!(pool, Tv, length(y_p))
-    _solve_system!(z, cache, y_p, cache.bc_config)
+    cache, y_p, z = _cubic_periodic_solve!(pool, x, y, bc, autocache)
 
     @_dispatch_extrap :wrap => ev begin
         _check_domain(cache.x, xq, ev)
@@ -302,19 +286,7 @@ end
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(output) >= 1 "output must have at least 1 element"
-
-    _validate_extrap(extrap)
-
-    searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        if _is_periodic_bc(bc)
-            output[1] = _cubic_interp_periodic_scalar(x, y, x_query, bc, autocache, op, searcher)
-        else
-            bc_pair = _normalize_bc(bc, Tv)
-            output[1] = _cubic_interp_bcpair_scalar(x, y, x_query, bc_pair, extrap, autocache, op, searcher)
-        end
-    end
-
+    output[1] = cubic_interp(x, y, x_query; bc, extrap, autocache, deriv, search)
     return output
 end
 
@@ -393,19 +365,9 @@ function cubic_interp(
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
-    _validate_extrap(extrap)
-
     output = Vector{Tv}(undef, length(x_query))
-
-    searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        if _is_periodic_bc(bc)
-            return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, op, searcher)
-        end
-
-        bc_pair = _normalize_bc(bc, Tv)
-        return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache, op, searcher)
-    end
+    cubic_interp!(output, x, y, x_query; bc, extrap, autocache, deriv, search)
+    return output
 end
 
 # Scalar query - zero allocation

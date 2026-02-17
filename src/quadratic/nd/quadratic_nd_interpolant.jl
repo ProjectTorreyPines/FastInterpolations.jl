@@ -1,9 +1,9 @@
 # ========================================
-# ND Quadratic Interpolation Public API
+# ND Quadratic Interpolation — Interpolant Construction
 # ========================================
 #
-# Extends quadratic_interp() to support tuple grid inputs for ND.
-# Follows the same pattern as cubic_nd_api.jl.
+# BC resolution, constructor API, and internal builder for QuadraticInterpolantND.
+# One-shot evaluation is in quadratic_nd_oneshot.jl.
 
 # ========================================
 # BC Resolution for Quadratic ND
@@ -65,7 +65,7 @@ Convert an AbstractBC to its QuadraticBC equivalent.
 ))
 
 # ========================================
-# GENERIC ND: N-ARGUMENT FORM
+# GENERIC ND: N-ARGUMENT FORM (Constructor)
 # ========================================
 
 """
@@ -124,38 +124,6 @@ function quadratic_interp(
 
     # Build interpolant
     return _build_nd_quadratic_interpolant(grids_typed, data, bcs, extraps, searches)
-end
-
-"""
-    quadratic_interp(grids, data, query; deriv=0, kwargs...)
-
-One-shot ND quadratic interpolation at a single point.
-"""
-function quadratic_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{<:Any, N},
-    queries::Tuple{Vararg{Real, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    kwargs...
-) where {N}
-    itp = quadratic_interp(grids, data; kwargs...)
-    return itp(queries; deriv=deriv)
-end
-
-"""
-    quadratic_interp(grids, data, queries; deriv=0, kwargs...)
-
-One-shot ND quadratic interpolation at multiple points (batch).
-"""
-function quadratic_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{<:Any, N},
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    kwargs...
-) where {N}
-    itp = quadratic_interp(grids, data; kwargs...)
-    return itp(queries; deriv=deriv)
 end
 
 # ========================================

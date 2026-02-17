@@ -241,7 +241,7 @@ end
 # The quadratic coefficient `a` is computed on-the-fly in the kernel.
 
 @inline @generated function _eval_nd_quad_cell(
-    partials::Array{Tv, NP1},
+    partials::AbstractArray{Tv, NP1},
     indices::NTuple{N, Int},
     hs::NTuple{N, Tg},
     inv_hs::NTuple{N, Tg},

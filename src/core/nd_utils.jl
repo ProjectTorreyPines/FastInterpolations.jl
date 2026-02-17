@@ -122,6 +122,20 @@ end
 end
 
 # ========================================
+# Symbol → Val Conversion
+# ========================================
+
+"""
+    _to_extrap_vals(extraps::NTuple{N, Symbol}) -> NTuple{N, Val}
+
+Convert extrapolation symbol tuple to Val tuple for type-stable dispatch.
+Used by Interpolant constructors (linear, constant) that store extrap as Val types.
+"""
+@inline function _to_extrap_vals(extraps::NTuple{N, Symbol}) where {N}
+    return ntuple(i -> Val(extraps[i]), Val(N))
+end
+
+# ========================================
 # Derivative Order → EvalOp Conversion
 # ========================================
 #
@@ -267,13 +281,15 @@ Apply extrapolation handling to all query coordinates.
 Returns tuple of processed query values ready for interpolation.
 
 Accepts heterogeneous tuples (e.g., mixed grid types, per-axis extrap modes).
+Uses map over named helper so each axis receives its concrete type directly,
+avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
+@inline _extrap_axis(q, grid, extrap) = @inbounds _handle_axis_extrap(q, grid, extrap)
+
 @inline function _handle_all_extraps(
     queries::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}}, extraps::Tuple{Vararg{Val,N}}
 ) where {N}
-    ntuple(Val(N)) do d
-        @inbounds _handle_axis_extrap(queries[d], grids[d], extraps[d])
-    end
+    map(_extrap_axis, queries, grids, extraps)
 end
 
 # Extrapolation handlers for each mode
@@ -315,20 +331,27 @@ Perform interval search on all axes.
 Returns tuples of: indices (cell index), Ls (left bounds), Rs (right bounds).
 
 Accepts heterogeneous tuples (e.g., mixed grid types, spacing types, search policies).
+Uses map over named helpers so each axis receives its concrete type directly,
+avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
+
+# Named helpers for map-based search — each receives concrete types per axis.
+# search_interval returns (idx, L, R) with the same concrete element type regardless
+# of spacing type (ScalarSpacing or VectorSpacing), so results is homogeneous.
+@inline _search_axis(q, grid, spacing, search) =
+    @inbounds search_interval(_to_searcher(search), grid, spacing, q)
+@inline _search_axis_hint(q, grid, spacing, search, hint) =
+    @inbounds search_interval(_to_searcher(search, hint), grid, spacing, q)
+@inline _getidx(r) = r[1]
+@inline _getL(r)   = r[2]
+@inline _getR(r)   = r[3]
+
 @inline function _search_all_intervals(
     q_evals::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
     spacings::Tuple{Vararg{AbstractGridSpacing,N}}, searches::Tuple{Vararg{AbstractSearchPolicy,N}}
 ) where {N}
-    results = ntuple(Val(N)) do d
-        searcher = @inbounds _to_searcher(searches[d])
-        @inbounds search_interval(searcher, grids[d], spacings[d], q_evals[d])
-    end
-    # Restructure (idx, L, R) tuples into separate tuples
-    indices = ntuple(d -> @inbounds(results[d][1]), Val(N))
-    Ls = ntuple(d -> @inbounds(results[d][2]), Val(N))
-    Rs = ntuple(d -> @inbounds(results[d][3]), Val(N))
-    return (indices, Ls, Rs)
+    results = map(_search_axis, q_evals, grids, spacings, searches)
+    return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
 
 # ----------------------------------------
@@ -359,14 +382,8 @@ end
     spacings::Tuple{Vararg{AbstractGridSpacing,N}}, searches::Tuple{Vararg{AbstractSearchPolicy,N}},
     hints::Tuple{Vararg{Base.RefValue{Int},N}}
 ) where {N}
-    results = ntuple(Val(N)) do d
-        searcher = @inbounds _to_searcher(searches[d], hints[d])
-        @inbounds search_interval(searcher, grids[d], spacings[d], q_evals[d])
-    end
-    indices = ntuple(d -> @inbounds(results[d][1]), Val(N))
-    Ls = ntuple(d -> @inbounds(results[d][2]), Val(N))
-    Rs = ntuple(d -> @inbounds(results[d][3]), Val(N))
-    return (indices, Ls, Rs)
+    results = map(_search_axis_hint, q_evals, grids, spacings, searches, hints)
+    return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
 
 # ========================================
@@ -561,12 +578,26 @@ Generates unrolled `promote_type(eltype(grids[1]), eltype(grids[2]), ...)` at co
 end
 
 """
+    _convert_grid(x, Tg) -> AbstractVector{Tg}
+
+Convert grid to target float type, preserving Range type where possible.
+Used by all ND interpolation methods via `_convert_grids_typed`.
+"""
+function _convert_grid(x::AbstractRange, ::Type{Tg}) where {Tg}
+    eltype(x) === Tg && return x
+    return range(Tg(first(x)), Tg(last(x)), length(x))
+end
+
+function _convert_grid(x::AbstractVector, ::Type{Tg}) where {Tg}
+    eltype(x) === Tg && return x
+    return Tg.(x)
+end
+
+"""
     _convert_grids_typed(grids::NTuple{N, AbstractVector}, ::Type{Tg}) -> NTuple{N}
 
 Zero-allocation grid conversion to target element type.
 Generates unrolled `(_convert_grid(grids[1], Tg), _convert_grid(grids[2], Tg), ...)` at compile time.
-
-Requires `_convert_grid(grid, Type)` to be defined.
 """
 @generated function _convert_grids_typed(grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
     exprs = [:(FastInterpolations._convert_grid(grids[$i], Tg)) for i in 1:N]
@@ -584,6 +615,57 @@ when grids is a heterogeneous tuple (e.g., mix of Range and Vector).
 """
 @generated function _create_spacings_typed(grids::NTuple{N, AbstractVector}) where {N}
     exprs = [:(FastInterpolations._create_spacing(grids[$i])) for i in 1:N]
+    :(($(exprs...),))
+end
+
+# ========================================
+# Pool-Based Spacing Creation (ND Oneshot)
+# ========================================
+#
+# Variants of _create_spacing that acquire h/inv_h vectors from an
+# AdaptiveArrayPools pool instead of heap-allocating.
+# Used exclusively inside @with_pool scopes in ND oneshot paths.
+# Range grids (ScalarSpacing) are zero-alloc regardless.
+
+"""
+    _create_spacing_pooled(pool, x::AbstractRange{T}) -> ScalarSpacing{T}
+
+Pool-aware spacing for Range grids. Delegates to `_create_spacing` since
+ScalarSpacing is already zero-allocation (two scalar values).
+"""
+@inline _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractRange{T}) where {T<:AbstractFloat} = _create_spacing(x)
+@inline _create_spacing_pooled(pool::AbstractArrayPool, x::LinRange{T}) where {T<:AbstractFloat} = _create_spacing(x)
+
+"""
+    _create_spacing_pooled(pool, x::AbstractVector{T}) -> VectorSpacing{T}
+
+Pool-aware spacing for Vector grids. Acquires `h` and `inv_h` arrays
+from the pool instead of heap-allocating. The pool buffers are released
+automatically when the enclosing `@with_pool` scope exits.
+"""
+@inline function _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractVector{T}) where {T<:AbstractFloat}
+    n = length(x)
+    h = unsafe_acquire!(pool, T, n - 1)
+    inv_h = unsafe_acquire!(pool, T, n - 1)
+
+    @inbounds for i in 1:(n-1)
+        h[i] = x[i+1] - x[i]
+        inv_h[i] = one(T) / h[i]
+    end
+
+    return VectorSpacing{T}(h, inv_h)
+end
+
+"""
+    _create_spacings_pooled(pool, grids::NTuple{N, AbstractVector}) -> NTuple{N}
+
+Pool-aware spacing creation from grid tuple.
+Generates unrolled per-axis calls to `_create_spacing_pooled` at compile time.
+For Range grids, no pool touch (ScalarSpacing is zero-alloc).
+For Vector grids, h/inv_h are acquired from pool (zero heap alloc).
+"""
+@generated function _create_spacings_pooled(pool::AbstractArrayPool, grids::NTuple{N, AbstractVector}) where {N}
+    exprs = [:(FastInterpolations._create_spacing_pooled(pool, grids[$i])) for i in 1:N]
     :(($(exprs...),))
 end
 

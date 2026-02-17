@@ -257,6 +257,63 @@ function _check_periodic_data_nd(data::AbstractArray{Tv, N}, d::Int) where {Tv, 
     return nothing
 end
 
+"""
+    _check_periodic_data_noalloc!(data::AbstractArray{Tv, N}, ::Val{D})
+
+Zero-allocation periodic data validation for dimension D.
+
+Validates `data[..., 1, ...] ≈ data[..., end, ...]` along compile-time dimension D.
+
+Uses `@generated` to emit explicit nested for-loops with direct array indexing
+(`data[i1, ..., 1, ..., iN]` vs `data[i1, ..., n_D, ..., iN]`) — no closures,
+no `SubArray`, no `CartesianIndex` construction from runtime tuples.  Closure-based
+approaches (`ntuple(i -> f(runtime_val, i), Val(N))`) would heap-allocate a closure
+box for each captured runtime variable; `@generated` avoids this entirely by baking
+the index expressions into the method body at specialization time.
+"""
+@generated function _check_periodic_data_noalloc!(
+    data::AbstractArray{Tv, N},
+    ::Val{D}
+) where {Tv, N, D}
+    # Symbolic loop variables: i1, i2, ..., iN
+    idx_vars = [Symbol("i", d) for d in 1:N]
+
+    # Direct indexing expressions for first and last slice along dim D.
+    # D is a compile-time constant here, so the literal 1 / :n_D are baked in.
+    first_idx = [d == D ? 1    : idx_vars[d] for d in 1:N]
+    last_idx  = [d == D ? :n_D : idx_vars[d] for d in 1:N]
+
+    # Inner comparison body: direct indexing, no intermediary objects
+    check = quote
+        v1 = @inbounds data[$(first_idx...)]
+        vn = @inbounds data[$(last_idx...)]
+        if !isapprox(v1, vn; atol=atol)
+            throw(ArgumentError(
+                "Periodic BC on dim $D requires data to match at first/last indices, " *
+                "but found diff=$(abs(v1 - vn))"
+            ))
+        end
+    end
+
+    # Wrap in nested loops over all dims except D (outermost = N, innermost = 1)
+    body = check
+    for d in N:-1:1
+        d == D && continue
+        body = quote
+            for $(idx_vars[d]) in axes(data, $d)
+                $body
+            end
+        end
+    end
+
+    return quote
+        n_D  = size(data, $D)
+        atol = real(Tv) === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
+        $body
+        return nothing
+    end
+end
+
 # ========================================
 # Effective BC Selection for Mixed Partials
 # ========================================
@@ -347,8 +404,12 @@ end
     ::Val{D},
     ::Val{N}
 ) where {Tv, Tg<:AbstractFloat, D, N}
-    if _is_periodic_bc(bcs[D])
-        _check_periodic_data_nd(data, D)
+    # Only validate inclusive PeriodicBC: for exclusive, the endpoint is not yet present
+    # in the data (it is added by _prepare_periodic_nd/_prepare_periodic_nd_pooled after
+    # this validation).  Checking data[1] ≈ data[end] on unextended exclusive data would
+    # produce false positives for perfectly valid periodic inputs.
+    if bcs[D] isa PeriodicBC{:inclusive}
+        _check_periodic_data_noalloc!(data, Val(D))
     end
     polyfit_deg = get_polyfit_degree(bcs[D])
     if polyfit_deg > 0 && length(grids[D]) < polyfit_deg + 1
@@ -356,6 +417,31 @@ end
     end
     if D < N
         _validate_nd_bcs!(grids, bcs, data, Val(D + 1), Val(N))
+    end
+    return nothing
+end
+
+# PolyFit-only validation (zero-alloc). Kept for callers that have no `data` array.
+# One-shot paths now use _validate_nd_bcs! directly (also zero-alloc after the
+# _check_periodic_data_noalloc! refactor).
+@inline _validate_polyfit_bcs(
+    grids::NTuple{N, AbstractVector},
+    bcs::NTuple{N, AbstractBC},
+    ::Val{N}
+) where {N} = _validate_polyfit_bcs(grids, bcs, Val(1), Val(N))
+
+@inline function _validate_polyfit_bcs(
+    grids::NTuple{N, AbstractVector},
+    bcs::NTuple{N, AbstractBC},
+    ::Val{D},
+    ::Val{N}
+) where {D, N}
+    polyfit_deg = get_polyfit_degree(bcs[D])
+    if polyfit_deg > 0 && length(grids[D]) < polyfit_deg + 1
+        throw(ArgumentError("PolyFit BC on dimension $D requires at least $(polyfit_deg+1) points"))
+    end
+    if D < N
+        _validate_polyfit_bcs(grids, bcs, Val(D + 1), Val(N))
     end
     return nothing
 end
@@ -443,7 +529,7 @@ function _compute_nd_partials!(
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, AbstractBC}
 ) where {Tv, Tg<:AbstractFloat, N, NP1}
-    # Validate dimensions
+    # Validate dimensions (fast, no allocation)
     @boundscheck begin
         NP1 == N + 1 || throw(DimensionMismatch("partials must have N+1 dimensions"))
         n_partials = 1 << N  # 2^N
@@ -452,9 +538,6 @@ function _compute_nd_partials!(
         ))
         _validate_nd_partials_dims!(partials, grids, data, Val(N))
     end
-
-    # Validate periodic BCs and PolyFit requirements
-    _validate_nd_bcs!(grids, bcs, data, Val(N))
 
     # Stage 0: Copy f (the function values) into partials[1, ...]
     f_partial = selectdim(partials, 1, 1)
@@ -492,6 +575,9 @@ function _build_nd_coeffs(
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, AbstractBC}
 ) where {Tg<:AbstractFloat, Tv, N}
+    # Validate periodic BCs and PolyFit requirements (runs once at construction time)
+    _validate_nd_bcs!(grids, bcs, data, Val(N))
+
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
     n_partials = 1 << N
     partials_shape = (n_partials, size(data)...)

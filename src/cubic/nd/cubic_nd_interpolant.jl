@@ -1,37 +1,12 @@
 # ========================================
-# ND Cubic Interpolation Public API
+# ND Cubic Interpolation — Interpolant Construction
 # ========================================
 #
-# Unified public API for N-dimensional cubic interpolation.
-# Extends cubic_interp() to support tuple grid inputs.
+# Constructor API and internal builders for CubicInterpolantND.
+# One-shot evaluation is in cubic_nd_oneshot.jl.
 
 # ========================================
-# HELPER FUNCTIONS
-# ========================================
-
-"""
-    _convert_grid(x, Tg) -> AbstractVector{Tg}
-
-Convert grid to target float type, preserving Range type where possible.
-"""
-function _convert_grid(x::AbstractRange, ::Type{Tg}) where {Tg}
-    if eltype(x) === Tg
-        return x
-    else
-        return range(Tg(first(x)), Tg(last(x)), length(x))
-    end
-end
-
-function _convert_grid(x::AbstractVector, ::Type{Tg}) where {Tg}
-    if eltype(x) === Tg
-        return x
-    else
-        return Tg.(x)
-    end
-end
-
-# ========================================
-# GENERIC ND: N-ARGUMENT FORM
+# GENERIC ND: N-ARGUMENT FORM (Constructor)
 # ========================================
 
 """
@@ -93,7 +68,7 @@ function cubic_interp(
     # Zero-allocation type promotion (uses @generated function)
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64  # Ensure AbstractFloat
-    
+
     # Zero-allocation grid conversion (uses @generated function)
     grids_typed = _convert_grids_typed(grids, Tg)
 
@@ -110,44 +85,6 @@ function cubic_interp(
 
     # Dispatch on strategy
     return _build_nd_interpolant(grids_typed, data, bcs, extraps, searches, coeffs)
-end
-
-"""
-    cubic_interp(grids, data, query; deriv=0, kwargs...)
-
-One-shot ND cubic interpolation at a single point.
-
-# Keywords
-- `deriv`: `Int` (0-3) or `Val((d1,d2,...))` for mixed partials
-"""
-function cubic_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{<:Any, N},
-    queries::Tuple{Vararg{Real, N}};  # Allow heterogeneous Real types (AD support)
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    kwargs...
-) where {N}
-    itp = cubic_interp(grids, data; kwargs...)
-    return itp(queries; deriv=deriv)
-end
-
-"""
-    cubic_interp(grids, data, queries; deriv=0, kwargs...)
-
-One-shot ND cubic interpolation at multiple points (batch).
-
-# Keywords
-- `deriv`: `Int` (0-3) or `Val((d1,d2,...))` for mixed partials
-"""
-function cubic_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{<:Any, N},
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
-    kwargs...
-) where {N}
-    itp = cubic_interp(grids, data; kwargs...)
-    return itp(queries; deriv=deriv)
 end
 
 # ========================================
@@ -247,9 +184,3 @@ function _build_nd_interpolant(
 ) where {Tg<:AbstractFloat, Tv, N}
     throw(ArgumentError("OnTheFly strategy is not yet implemented for ND. Use PreCompute() (default)."))
 end
-
-# ========================================
-# EXPORTS
-# ========================================
-# Note: Exports are handled in the main module file (FastInterpolations.jl)
-# Types: CubicInterpolantND, PreCompute, OnTheFly, AbstractCoeffStrategy

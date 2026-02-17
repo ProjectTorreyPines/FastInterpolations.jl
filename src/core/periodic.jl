@@ -289,3 +289,108 @@ function _prepare_periodic_nd(
     bcs_out = ntuple(d -> bcs_vec[d]::AbstractBC, Val(N))
     return (grids_out, data_out, bcs_out)
 end
+
+# ========================================
+# Pool-Based ND Exclusive Endpoint Extension
+# ========================================
+
+"""
+    _prepare_periodic_nd_pooled(pool, grids, data, bcs) -> (grids_ext, data_ext, bcs_resolved)
+
+Pool-based variant of `_prepare_periodic_nd` for zero-allocation one-shot evaluation.
+
+All temporary arrays (extended grids, extended data) are acquired from the pool
+via `unsafe_acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
+
+# Safety
+- Extended data is consumed by `_compute_nd_partials!` within the same pool scope
+- Extended grids are used for spacing/search within the same pool scope
+- Pool rewind in the outer `@with_pool` automatically releases all buffers
+"""
+@inline function _prepare_periodic_nd_pooled(
+    pool::AbstractArrayPool,
+    grids::NTuple{N, AbstractVector{Tg}},
+    data::AbstractArray{Tv, N},
+    bcs::NTuple{N, AbstractBC}
+) where {Tg<:AbstractFloat, Tv, N}
+    # Fast path: no exclusive axes
+    has_exclusive = false
+    for d in 1:N
+        if bcs[d] isa PeriodicBC{:exclusive}
+            has_exclusive = true
+            break
+        end
+    end
+    has_exclusive || return (grids, data, bcs)
+
+    # Build extended grids tuple directly (no heap Vector intermediary)
+    # Grid extensions are independent per dimension: grids[d] is unmodified input
+    grids_out = ntuple(Val(N)) do d
+        bc_d = bcs[d]
+        bc_d isa PeriodicBC{:exclusive} || return grids[d]
+
+        grid_d = grids[d]
+        period = _resolve_exclusive_period(grid_d, bc_d)
+        x_end = first(grid_d) + Tg(period)
+
+        # Validate: virtual endpoint must be strictly after last grid point
+        last(grid_d) < x_end || throw(ArgumentError(
+            "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
+            "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"))
+
+        # Extend grid: Range → direct construction (O(1)), Vector → pool
+        # IMPORTANT: Range branch returns Range unconditionally to prevent Union return type.
+        # _resolve_exclusive_period already validates period ≈ step(x)*length(x) for Range grids,
+        # so the extended Range always has the correct step and endpoint.
+        if grid_d isa AbstractRange
+            return range(first(grid_d), step=step(grid_d), length=length(grid_d) + 1)
+        else
+            n = length(grid_d)
+            g_ext = unsafe_acquire!(pool, Tg, n + 1)
+            @inbounds copyto!(g_ext, 1, grid_d, 1, n)
+            @inbounds g_ext[n + 1] = x_end
+            return g_ext
+        end
+    end
+
+    # Build extended BCs tuple
+    bcs_out = ntuple(Val(N)) do d
+        bc_d = bcs[d]
+        if bc_d isa PeriodicBC{:exclusive}
+            period = _resolve_exclusive_period(grids[d], bc_d)
+            return _with_resolved_period(bc_d, period)
+        else
+            return bc_d
+        end
+    end
+
+    # Extend data: pool-allocate final shape, then fill slices
+    final_sizes = ntuple(Val(N)) do d
+        bcs[d] isa PeriodicBC{:exclusive} ? size(data, d) + 1 : size(data, d)
+    end
+    data_out = unsafe_acquire!(pool, Tv, final_sizes)
+
+    # Copy original data into the sub-array
+    orig_inds = ntuple(d -> 1:size(data, d), Val(N))
+    copyto!(view(data_out, orig_inds...), data)
+
+    # Fill extended slices dim-by-dim (earlier extensions are visible to later dims)
+    for d in 1:N
+        bcs[d] isa PeriodicBC{:exclusive} || continue
+        nd = size(data, d)  # original size in this dim
+        cur_ranges = ntuple(Val(N)) do i
+            if i == d
+                1:1
+            elseif i < d && bcs[i] isa PeriodicBC{:exclusive}
+                1:(size(data, i) + 1)
+            else
+                1:size(data, i)
+            end
+        end
+        src_inds = ntuple(i -> i == d ? (1:1) : cur_ranges[i], Val(N))
+        dst_inds = ntuple(i -> i == d ? (nd+1:nd+1) : cur_ranges[i], Val(N))
+        copyto!(view(data_out, dst_inds...), view(data_out, src_inds...))
+    end
+
+    return (grids_out, data_out, bcs_out)
+end

@@ -223,42 +223,6 @@ import FastInterpolations:
             @test _search(itp, Val(2)) isa FastInterpolations.AbstractSearchPolicy
         end
 
-        @testset "@generated alternatives (performance variants)" begin
-            x = range(0.0, 1.0, 10)
-            y = range(0.0, 2.0, 15)
-            data = rand(10, 15)
-            itp = cubic_interp((x, y), data)
-
-            grids = itp.grids
-            spacings = itp.spacings
-            searches = itp.searches
-            extraps = itp.extraps
-
-            query = (0.5, 1.0)
-
-            # Test _handle_all_extraps_gen
-            result_gen = _handle_all_extraps_gen(query, grids, extraps)
-            result_std = _handle_all_extraps(query, grids, extraps)
-            @test result_gen == result_std
-
-            # Test _search_all_intervals_gen
-            q_evals = (0.5, 1.0)
-            (indices_gen, Ls_gen, Rs_gen) = _search_all_intervals_gen(q_evals, grids, spacings, searches)
-            (indices_std, Ls_std, Rs_std) = _search_all_intervals(q_evals, grids, spacings, searches)
-            @test indices_gen == indices_std
-            @test Ls_gen == Ls_std
-            @test Rs_gen == Rs_std
-
-            # Test _compute_all_local_params_gen
-            indices = indices_std
-            Ls = Ls_std
-            (hs_gen, inv_hs_gen, dLs_gen) = _compute_all_local_params_gen(q_evals, spacings, indices, Ls)
-            (hs_std, inv_hs_std, dLs_std) = _compute_all_local_params(q_evals, spacings, indices, Ls)
-            @test hs_gen == hs_std
-            @test inv_hs_gen == inv_hs_std
-            @test dLs_gen == dLs_std
-        end
-
         @testset "num_partials on type" begin
             x = range(0.0, 1.0, 10)
             y = range(0.0, 2.0, 15)
@@ -454,7 +418,7 @@ import FastInterpolations:
     # ========================================
     # QuadraticND API Coverage
     # ========================================
-    @testset "quadratic_nd_api.jl" begin
+    @testset "quadratic_nd_interpolant.jl" begin
         import FastInterpolations:
             _resolve_bcs_nd_quadratic,
             _to_quadratic_bc
@@ -646,4 +610,299 @@ import FastInterpolations:
         end
     end
 
+end
+
+# ========================================
+# Targeted Coverage: Val/NTuple deriv branches in ND batch eval
+# ========================================
+#
+# These tests cover the `elseif deriv isa Val` and `else` (NTuple) branches
+# in SoA/AoS batch evaluation for ConstantInterpolantND, LinearInterpolantND,
+# and the oneshot APIs for linear/quadratic.
+# They also cover core/utils.jl dispatch paths not exercised by default tests.
+
+@testset "Val/NTuple deriv branches — ConstantInterpolantND batch" begin
+    x = [0.0, 1.0, 2.0]
+    y = [0.0, 1.0, 2.0, 3.0]
+    data = [10.0 * i + j for i in 1:3, j in 1:4]
+    itp = constant_interp((x, y), data)
+
+    xs = [0.5, 1.5, 0.5]
+    ys = [0.5, 0.5, 1.5]
+    ref = zeros(3)
+    itp(ref, (xs, ys))
+
+    @testset "SoA batch — Val(0) deriv" begin
+        out = zeros(3)
+        itp(out, (xs, ys); deriv=Val(0))
+        @test out ≈ ref
+    end
+
+    @testset "SoA batch — NTuple (0,0) deriv" begin
+        out = zeros(3)
+        itp(out, (xs, ys); deriv=(0, 0))
+        @test out ≈ ref
+    end
+
+    @testset "SoA batch — Val(1) deriv (zero for constant)" begin
+        out = ones(3)
+        itp(out, (xs, ys); deriv=Val(1))
+        @test all(iszero, out)
+    end
+
+    @testset "SoA batch — NTuple (1,0) deriv (zero for constant)" begin
+        out = ones(3)
+        itp(out, (xs, ys); deriv=(1, 0))
+        @test all(iszero, out)
+    end
+
+    queries = [(0.5, 0.5), (1.5, 0.5), (0.5, 1.5)]
+    ref_aos = zeros(3)
+    itp(ref_aos, queries)
+
+    @testset "AoS batch — Val(0) deriv" begin
+        out = zeros(3)
+        itp(out, queries; deriv=Val(0))
+        @test out ≈ ref_aos
+    end
+
+    @testset "AoS batch — NTuple (0,0) deriv" begin
+        out = zeros(3)
+        itp(out, queries; deriv=(0, 0))
+        @test out ≈ ref_aos
+    end
+
+    @testset "AoS batch — Val(1) deriv (zero for constant)" begin
+        out = ones(3)
+        itp(out, queries; deriv=Val(1))
+        @test all(iszero, out)
+    end
+
+    @testset "AoS batch — NTuple (1,0) deriv (zero for constant)" begin
+        out = ones(3)
+        itp(out, queries; deriv=(1, 0))
+        @test all(iszero, out)
+    end
+end
+
+@testset "Val/NTuple deriv branches — LinearInterpolantND batch" begin
+    x = collect(range(0.0, 1.0, 5))
+    y = collect(range(0.0, 1.0, 5))
+    data = [2xi + 3yj for xi in x, yj in y]
+    itp = linear_interp((x, y), data)
+
+    xs = [0.25, 0.75, 0.5]
+    ys = [0.25, 0.75, 0.5]
+    ref = zeros(3)
+    itp(ref, (xs, ys))
+
+    @testset "SoA batch — Val(0) deriv" begin
+        out = zeros(3)
+        itp(out, (xs, ys); deriv=Val(0))
+        @test out ≈ ref
+    end
+
+    @testset "SoA batch — NTuple (0,0) deriv" begin
+        out = zeros(3)
+        itp(out, (xs, ys); deriv=(0, 0))
+        @test out ≈ ref
+    end
+
+    @testset "SoA batch — Val(2) deriv (zero for linear)" begin
+        out = ones(3)
+        itp(out, (xs, ys); deriv=Val(2))
+        @test all(iszero, out)
+    end
+
+    @testset "SoA batch — NTuple (2,0) deriv (zero for linear)" begin
+        out = ones(3)
+        itp(out, (xs, ys); deriv=(2, 0))
+        @test all(iszero, out)
+    end
+
+    queries = [(0.25, 0.25), (0.75, 0.75), (0.5, 0.5)]
+    ref_aos = zeros(3)
+    itp(ref_aos, queries)
+
+    @testset "AoS batch — Val(0) deriv" begin
+        out = zeros(3)
+        itp(out, queries; deriv=Val(0))
+        @test out ≈ ref_aos
+    end
+
+    @testset "AoS batch — NTuple (0,0) deriv" begin
+        out = zeros(3)
+        itp(out, queries; deriv=(0, 0))
+        @test out ≈ ref_aos
+    end
+
+    @testset "AoS batch — Val((1,0)) deriv" begin
+        out = zeros(3)
+        itp(out, queries; deriv=Val((1, 0)))
+        @test all(≈(2.0, atol=1e-10), out)  # ∂/∂x(2x+3y) = 2
+    end
+
+    @testset "AoS batch — NTuple (2,0) deriv (zero for linear)" begin
+        out = ones(3)
+        itp(out, queries; deriv=(2, 0))
+        @test all(iszero, out)
+    end
+end
+
+@testset "Val/NTuple deriv branches — linear_interp oneshot" begin
+    grids = (collect(range(0.0, 1.0, 6)), collect(range(0.0, 1.0, 6)))
+    data = [2xi + 3yj for xi in grids[1], yj in grids[2]]
+
+    @testset "scalar — NTuple (1,0) deriv (else branch)" begin
+        result = linear_interp(grids, data, (0.5, 0.5); deriv=(1, 0))
+        @test result ≈ 2.0 atol=1e-10
+    end
+
+    @testset "scalar — NTuple (0,1) deriv (else branch)" begin
+        result = linear_interp(grids, data, (0.5, 0.5); deriv=(0, 1))
+        @test result ≈ 3.0 atol=1e-10
+    end
+
+    @testset "linear_interp! SoA — Val(0) deriv (elseif branch)" begin
+        xs = [0.25, 0.75]
+        ys = [0.25, 0.75]
+        out = zeros(2)
+        linear_interp!(out, grids, data, (xs, ys); deriv=Val(0))
+        ref = [2xi + 3yj for (xi, yj) in zip(xs, ys)]
+        @test out ≈ ref atol=1e-10
+    end
+
+    @testset "linear_interp! SoA — NTuple (0,0) deriv (else branch)" begin
+        xs = [0.25, 0.75]
+        ys = [0.25, 0.75]
+        out = zeros(2)
+        linear_interp!(out, grids, data, (xs, ys); deriv=(0, 0))
+        ref = [2xi + 3yj for (xi, yj) in zip(xs, ys)]
+        @test out ≈ ref atol=1e-10
+    end
+
+    @testset "linear_interp! AoS — Val(0) deriv (elseif branch)" begin
+        queries = [(0.25, 0.25), (0.75, 0.75)]
+        out = zeros(2)
+        linear_interp!(out, grids, data, queries; deriv=Val(0))
+        ref = [2xi + 3yj for (xi, yj) in queries]
+        @test out ≈ ref atol=1e-10
+    end
+
+    @testset "linear_interp! AoS — NTuple (0,0) deriv (else branch)" begin
+        queries = [(0.25, 0.25), (0.75, 0.75)]
+        out = zeros(2)
+        linear_interp!(out, grids, data, queries; deriv=(0, 0))
+        ref = [2xi + 3yj for (xi, yj) in queries]
+        @test out ≈ ref atol=1e-10
+    end
+end
+
+@testset "Val/NTuple deriv branches — quadratic_interp oneshot" begin
+    grids = (collect(range(0.0, 1.0, 7)), collect(range(0.0, 1.0, 7)))
+    data = [2xi + 3yj for xi in grids[1], yj in grids[2]]
+
+    @testset "scalar — NTuple (1,0) deriv (else branch)" begin
+        result = quadratic_interp(grids, data, (0.5, 0.5); deriv=(1, 0))
+        @test result ≈ 2.0 atol=1e-6
+    end
+
+    @testset "scalar — NTuple (0,1) deriv (else branch)" begin
+        result = quadratic_interp(grids, data, (0.5, 0.5); deriv=(0, 1))
+        @test result ≈ 3.0 atol=1e-6
+    end
+
+    @testset "quadratic_interp! SoA — Val(0) deriv (elseif branch)" begin
+        xs = [0.25, 0.75]
+        ys = [0.25, 0.75]
+        out = zeros(2)
+        quadratic_interp!(out, grids, data, (xs, ys); deriv=Val(0))
+        ref = [2xi + 3yj for (xi, yj) in zip(xs, ys)]
+        @test out ≈ ref atol=1e-6
+    end
+
+    @testset "quadratic_interp! SoA — NTuple (0,0) deriv (else branch)" begin
+        xs = [0.25, 0.75]
+        ys = [0.25, 0.75]
+        out = zeros(2)
+        quadratic_interp!(out, grids, data, (xs, ys); deriv=(0, 0))
+        ref = [2xi + 3yj for (xi, yj) in zip(xs, ys)]
+        @test out ≈ ref atol=1e-6
+    end
+
+    @testset "quadratic_interp! AoS — Val(0) deriv (elseif branch)" begin
+        queries = [(0.25, 0.25), (0.75, 0.75)]
+        out = zeros(2)
+        quadratic_interp!(out, grids, data, queries; deriv=Val(0))
+        ref = [2xi + 3yj for (xi, yj) in queries]
+        @test out ≈ ref atol=1e-6
+    end
+
+    @testset "quadratic_interp! AoS — NTuple (0,0) deriv (else branch)" begin
+        queries = [(0.25, 0.25), (0.75, 0.75)]
+        out = zeros(2)
+        quadratic_interp!(out, grids, data, queries; deriv=(0, 0))
+        ref = [2xi + 3yj for (xi, yj) in queries]
+        @test out ≈ ref atol=1e-6
+    end
+end
+
+@testset "core/utils.jl — @_dispatch_extrap_nd paths" begin
+    grids = (collect(range(0.0, 1.0, 6)), collect(range(0.0, 1.0, 6)))
+    data = [xi + yj for xi in grids[1], yj in grids[2]]
+
+    @testset "fast path 1: :wrap extrap with bcs=nothing (linear oneshot)" begin
+        # Exercises the `ntuple(_ -> Val(:wrap), valn)` branch (fast path 1 :wrap)
+        result = linear_interp(grids, data, (0.5, 0.5); extrap=:wrap)
+        @test result ≈ 1.0 atol=1e-10
+    end
+
+    @testset "fallback: non-uniform extraps with bcs=nothing (linear oneshot)" begin
+        # Exercises _resolve_mixed_extrap_vals(extraps, ::Nothing) + fallback path
+        result = linear_interp(grids, data, (0.5, 0.5); extrap=(:none, :constant))
+        @test result ≈ 1.0 atol=1e-10
+    end
+
+    @testset "fast path 3: :wrap extrap with mixed BCs (cubic oneshot)" begin
+        # bc=(PeriodicBC(), NaturalBC()) + extrap=:wrap → fast path 3 :wrap branch
+        # (some periodic, not all → not fast path 2; uniform extrap → fast path 3)
+        x = collect(range(0.0, 2π, 9))
+        y = collect(range(0.0, 1.0, 9))
+        data_p = [cos(xi) + yj for xi in x, yj in y]
+        data_p[end, :] = data_p[1, :]  # ensure periodicity in x
+
+        # Query is interior: cos(π/2) + 0.5 ≈ 0.5
+        result = cubic_interp((x, y), data_p, (π/2, 0.5);
+            bc=(PeriodicBC(), NaturalBC()), extrap=:wrap)
+        @test result ≈ 0.5 atol=0.01
+    end
+
+    @testset "fallback: non-uniform extraps with mixed BCs (cubic oneshot)" begin
+        # bc=(PeriodicBC(), NaturalBC()) + extrap=(:none,:constant) → fallback path
+        # Exercises _resolve_mixed_extrap_vals(extraps, bcs::NTuple{N,AbstractBC})
+        x = collect(range(0.0, 2π, 9))
+        y = collect(range(0.0, 1.0, 9))
+        data_p = [cos(xi) + yj for xi in x, yj in y]
+        data_p[end, :] = data_p[1, :]
+
+        # Query is interior: cos(π/2) + 0.5 ≈ 0.5 (extrap mode doesn't affect interior)
+        result = cubic_interp((x, y), data_p, (π/2, 0.5);
+            bc=(PeriodicBC(), NaturalBC()), extrap=(:none, :constant))
+        @test result ≈ 0.5 atol=0.01
+    end
+end
+
+@testset "core/utils.jl — @_dispatch_side_nd mixed-sides fallback" begin
+    # Mixed side=(:left, :right) triggers the _to_side_vals fallback in @_dispatch_side_nd
+    # (the `else` branch when _is_uniform_side returns false)
+    grids = (collect(range(0.0, 2.0, 4)), collect(range(0.0, 3.0, 5)))
+    data = [Float64(10i + j) for i in 1:4, j in 1:5]
+
+    result_left  = constant_interp(grids, data, (0.5, 0.5); side=:left)
+    result_right = constant_interp(grids, data, (0.5, 0.5); side=:right)
+    result_mixed = constant_interp(grids, data, (0.5, 0.5); side=(:left, :right))
+
+    @test result_mixed isa Float64
+    @test result_mixed != result_left   # x picks left, y picks right corner
+    @test result_mixed != result_right  # different from uniform-right
 end

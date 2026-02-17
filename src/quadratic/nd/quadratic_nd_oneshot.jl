@@ -150,7 +150,7 @@ function quadratic_interp(
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
-    Tr = promote_type(Tv, Tg)
+    Tr = promote_type(Tv, Tg, typeof.(query)...)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
     extraps = _resolve_extrap_nd(extrap, Val(N))
@@ -192,7 +192,7 @@ function quadratic_interp(
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
-    Tr = promote_type(Tv, Tg)
+    Tr = promote_type(Tv, Tg, _promote_grid_eltype(queries))
     output = Vector{Tr}(undef, length(queries[1]))
     quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search)
     return output

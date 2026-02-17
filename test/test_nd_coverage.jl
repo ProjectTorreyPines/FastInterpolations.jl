@@ -907,9 +907,10 @@ end
         data_p = [cos(xi) + yj for xi in x, yj in y]
         data_p[end, :] = data_p[1, :]  # ensure periodicity in x
 
+        # Query is interior: cos(π/2) + 0.5 ≈ 0.5
         result = cubic_interp((x, y), data_p, (π/2, 0.5);
             bc=(PeriodicBC(), NaturalBC()), extrap=:wrap)
-        @test result isa Float64
+        @test result ≈ 0.5 atol=0.01
     end
 
     @testset "fallback: non-uniform extraps with mixed BCs (cubic oneshot)" begin
@@ -920,9 +921,10 @@ end
         data_p = [cos(xi) + yj for xi in x, yj in y]
         data_p[end, :] = data_p[1, :]
 
+        # Query is interior: cos(π/2) + 0.5 ≈ 0.5 (extrap mode doesn't affect interior)
         result = cubic_interp((x, y), data_p, (π/2, 0.5);
             bc=(PeriodicBC(), NaturalBC()), extrap=(:none, :constant))
-        @test result isa Float64
+        @test result ≈ 0.5 atol=0.01
     end
 end
 

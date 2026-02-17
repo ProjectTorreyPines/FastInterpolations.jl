@@ -632,11 +632,6 @@ end
 
 @inline _is_all_periodic(::Nothing) = false
 
-# Dead code path — fast path 3 is unreachable when bcs=nothing
-# (uniform extrap always hits fast path 1 instead)
-@inline _resolve_uniform_extrap_with_periodic(::Nothing, ::Val) =
-    throw(ErrorException("unreachable: uniform extrap with nothing BCs should hit fast path 1"))
-
 @generated function _resolve_mixed_extrap_vals(extraps::NTuple{N, Symbol}, ::Nothing) where {N}
     exprs = [:(FastInterpolations._symbol_to_extrap_val(extraps[$d])) for d in 1:N]
     :(($(exprs...),))
@@ -747,21 +742,15 @@ macro _dispatch_extrap_nd(extraps_expr, pair, body)
                 $(esc(body))
             end
         elseif _is_uniform_extrap($(extraps_var))
-            # Fast path 3: uniform extrap + mixed BCs → @generated per-axis resolution
-            # BC types are known at compile time; extrap is dispatched via Val(sym)
+            # Fast path 3: uniform extrap + mixed BCs (some periodic axes) → @generated per-axis
+            # BC types are known at compile time; extrap dispatched via Val(sym).
+            # Only :none and :wrap are valid here: _check_periodic_extrap ensures :constant/:extension
+            # cannot coexist with PeriodicBC (throws at construction), making those branches dead.
             if $(extraps_var)[1] === :none
                 let $(esc(ev_sym)) = _resolve_uniform_extrap_with_periodic($(bcs_var), Val(:none))
                     $(esc(body))
                 end
-            elseif $(extraps_var)[1] === :constant
-                let $(esc(ev_sym)) = _resolve_uniform_extrap_with_periodic($(bcs_var), Val(:constant))
-                    $(esc(body))
-                end
-            elseif $(extraps_var)[1] === :extension
-                let $(esc(ev_sym)) = _resolve_uniform_extrap_with_periodic($(bcs_var), Val(:extension))
-                    $(esc(body))
-                end
-            else
+            else  # :wrap (only other valid option with mixed periodic BCs)
                 let $(esc(ev_sym)) = _resolve_uniform_extrap_with_periodic($(bcs_var), Val(:wrap))
                     $(esc(body))
                 end

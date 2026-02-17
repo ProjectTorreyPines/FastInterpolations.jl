@@ -190,6 +190,86 @@ end
     end
 
     # ========================================
+    # Periodic BC Data Validation (one-shot path)
+    # ========================================
+    #
+    # Verifies that the one-shot API validates periodic data integrity
+    # (data[...,1,...] ≈ data[...,end,...]) before entering the pool-based kernel,
+    # matching the behaviour of the CubicInterpolant constructor.
+
+    @testset "Periodic BC data validation — one-shot" begin
+        x = range(0.0, 2π, 21)
+        y = range(0.0, 2π, 21)
+
+        # Canonical valid periodic data: pin endpoints to match
+        data_ok = [sin(xi) * cos(yj) for xi in x, yj in y]
+        data_ok[end, :] .= data_ok[1, :]
+        data_ok[:, end] .= data_ok[:, 1]
+
+        @testset "valid data passes (no error)" begin
+            @test_nowarn cubic_interp((x, y), data_ok, (1.5, 0.8); bc=PeriodicBC())
+        end
+
+        @testset "non-periodic dim-1 throws ArgumentError (scalar)" begin
+            data_bad = copy(data_ok)
+            data_bad[1, 5] = 999.0  # data[1,5] ≠ data[end,5]
+            @test_throws ArgumentError cubic_interp((x, y), data_bad, (1.5, 0.8); bc=PeriodicBC())
+        end
+
+        @testset "non-periodic dim-2 throws ArgumentError (mixed BCs)" begin
+            data_bad = copy(data_ok)
+            data_bad[3, end] = 999.0  # break dim-2 match while dim-1 is still ok
+            bc_mixed = (NaturalBC(), PeriodicBC())
+            @test_throws ArgumentError cubic_interp((x, y), data_bad, (1.5, 0.8); bc=bc_mixed)
+        end
+
+        @testset "SoA batch also validates" begin
+            data_bad = copy(data_ok)
+            data_bad[1, 5] = 999.0
+            @test_throws ArgumentError cubic_interp((x, y), data_bad, ([0.5, 1.0], [0.5, 1.0]); bc=PeriodicBC())
+        end
+
+        @testset "in-place (cubic_interp!) also validates" begin
+            data_bad = copy(data_ok)
+            data_bad[1, 5] = 999.0
+            out = zeros(2)
+            @test_throws ArgumentError cubic_interp!(out, (x, y), data_bad, ([0.5, 1.0], [0.5, 1.0]); bc=PeriodicBC())
+        end
+
+        @testset "exclusive PeriodicBC: no false positive on valid data" begin
+            # For exclusive BC the endpoint is added by the pool extension, so
+            # data[end] is NOT expected to match data[1] in the user-supplied array.
+            n = 20
+            xe = range(0.0, 2π, n + 1)[1:n]
+            ye = range(0.0, 2π, n + 1)[1:n]
+            data_excl = [sin(xi) * cos(yj) for xi in xe, yj in ye]
+            # sin(xe[end]) ≈ sin(19π/10) ≠ 0 = sin(xe[1]) — valid exclusive input
+            bc_excl = PeriodicBC(endpoint=:exclusive)
+            @test_nowarn cubic_interp((xe, ye), data_excl, (1.5, 0.8); bc=bc_excl)
+        end
+
+        @testset "3D: validation across all periodic dims" begin
+            x3 = range(0.0, 2π, 11)
+            y3 = range(0.0, 2π, 11)
+            z3 = range(0.0, 1.0, 6)
+            data_3d = [sin(xi) * cos(yj) + zk for xi in x3, yj in y3, zk in z3]
+            data_3d[end, :, :] .= data_3d[1, :, :]   # pin dim 1
+            data_3d[:, end, :] .= data_3d[:, 1, :]   # pin dim 2
+            bc3 = (PeriodicBC(), PeriodicBC(), NaturalBC())
+
+            @testset "valid 3D data passes" begin
+                @test_nowarn cubic_interp((x3, y3, z3), data_3d, (1.5, 0.8, 0.5); bc=bc3)
+            end
+
+            @testset "broken dim-2 throws in 3D" begin
+                data_3d_bad = copy(data_3d)
+                data_3d_bad[2, end, 1] = 999.0  # break dim-2 match
+                @test_throws ArgumentError cubic_interp((x3, y3, z3), data_3d_bad, (1.5, 0.8, 0.5); bc=bc3)
+            end
+        end
+    end
+
+    # ========================================
     # Allocation Tests
     # ========================================
     #

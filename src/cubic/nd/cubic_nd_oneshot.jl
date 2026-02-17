@@ -18,6 +18,12 @@ Zero-allocation after warmup: uses pool-based partials instead of constructing a
 # Keywords
 - `deriv`: `Int` (0-3) or `Val((d1,d2,...))` for mixed partials
 - `bc`, `extrap`, `search`, `coeffs`: Same as the Interpolant constructor form
+
+!!! note "Periodic BC validation"
+    Periodic data integrity (`data[..., 1, ...] ≈ data[..., end, ...]`) **is** validated
+    for `PeriodicBC` dimensions, just as in the `CubicInterpolant` constructor.
+    The check is zero-allocation: it uses a `@generated` nested loop with direct indexing
+    instead of `selectdim` (which would heap-allocate a `SubArray`).
 """
 function cubic_interp(
     grids::NTuple{N, AbstractVector},
@@ -40,9 +46,11 @@ function cubic_interp(
     extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    # Validate periodic+extrap compatibility and BC requirements (once, before dispatch)
+    # Validate periodic+extrap compatibility and all BC requirements (once, before dispatch).
+    # _validate_nd_bcs! is now zero-alloc: periodic data check uses @generated indexing,
+    # not selectdim, so no SubArray is created.
     _check_periodic_extrap(bcs, extraps, Val(N))
-    _validate_polyfit_bcs(grids_typed, bcs, Val(N))
+    _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
     # Dispatch extrap → concrete Val tuple, then deriv → concrete ops
     # Both dispatches happen BEFORE entering @with_pool for type stability
@@ -281,7 +289,7 @@ function cubic_interp!(
     searches = _resolve_search_nd(search, Val(N))
 
     _check_periodic_extrap(bcs, extraps, Val(N))
-    _validate_polyfit_bcs(grids_typed, bcs, Val(N))
+    _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
     @_dispatch_extrap_nd extraps bcs => extraps_val begin
         if deriv isa Int
@@ -326,7 +334,7 @@ function cubic_interp!(
     searches = _resolve_search_nd(search, Val(N))
 
     _check_periodic_extrap(bcs, extraps, Val(N))
-    _validate_polyfit_bcs(grids_typed, bcs, Val(N))
+    _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
     @_dispatch_extrap_nd extraps bcs => extraps_val begin
         if deriv isa Int

@@ -20,9 +20,20 @@
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy,N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
-    ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-    return _eval_linear_nd(itp, query, ops, search_tuple, hint)
+
+    if deriv isa Int
+        @_dispatch_deriv deriv => op begin
+            ops = ntuple(_ -> op, Val(N))
+            return _eval_linear_nd(itp, query, ops, search_tuple, hint)
+        end
+    elseif deriv isa Val
+        ops = _resolve_deriv_nd(deriv, Val(N))
+        return _eval_linear_nd(itp, query, ops, search_tuple, hint)
+    else
+        ops = _resolve_deriv_nd(Val(deriv), Val(N))
+        return _eval_linear_nd(itp, query, ops, search_tuple, hint)
+    end
 end
 
 # ========================================

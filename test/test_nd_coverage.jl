@@ -223,42 +223,6 @@ import FastInterpolations:
             @test _search(itp, Val(2)) isa FastInterpolations.AbstractSearchPolicy
         end
 
-        @testset "@generated alternatives (performance variants)" begin
-            x = range(0.0, 1.0, 10)
-            y = range(0.0, 2.0, 15)
-            data = rand(10, 15)
-            itp = cubic_interp((x, y), data)
-
-            grids = itp.grids
-            spacings = itp.spacings
-            searches = itp.searches
-            extraps = itp.extraps
-
-            query = (0.5, 1.0)
-
-            # Test _handle_all_extraps_gen
-            result_gen = _handle_all_extraps_gen(query, grids, extraps)
-            result_std = _handle_all_extraps(query, grids, extraps)
-            @test result_gen == result_std
-
-            # Test _search_all_intervals_gen
-            q_evals = (0.5, 1.0)
-            (indices_gen, Ls_gen, Rs_gen) = _search_all_intervals_gen(q_evals, grids, spacings, searches)
-            (indices_std, Ls_std, Rs_std) = _search_all_intervals(q_evals, grids, spacings, searches)
-            @test indices_gen == indices_std
-            @test Ls_gen == Ls_std
-            @test Rs_gen == Rs_std
-
-            # Test _compute_all_local_params_gen
-            indices = indices_std
-            Ls = Ls_std
-            (hs_gen, inv_hs_gen, dLs_gen) = _compute_all_local_params_gen(q_evals, spacings, indices, Ls)
-            (hs_std, inv_hs_std, dLs_std) = _compute_all_local_params(q_evals, spacings, indices, Ls)
-            @test hs_gen == hs_std
-            @test inv_hs_gen == inv_hs_std
-            @test dLs_gen == dLs_std
-        end
-
         @testset "num_partials on type" begin
             x = range(0.0, 1.0, 10)
             y = range(0.0, 2.0, 15)

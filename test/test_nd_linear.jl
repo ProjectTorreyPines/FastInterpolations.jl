@@ -562,6 +562,44 @@ end
     end
 
     # ========================================
+    # Mixed-Grid Allocation Tests (Range + Vector)
+    # ========================================
+    #
+    # Heterogeneous grid tuples (ScalarSpacing + VectorSpacing) must be zero-allocation.
+    # Catches ntuple closure boxing on heterogeneous inputs.
+
+    function _alloc_test_linear_mixed_2d()
+        x = range(0.0, 2.0, 20)          # Range → ScalarSpacing
+        y = collect(range(0.0, 1.0, 15)) # Vector → VectorSpacing
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        linear_interp((x, y), data, query)
+        linear_interp((x, y), data, query)
+        @allocated linear_interp((x, y), data, query)
+    end
+
+    function _alloc_test_linear_mixed_3d()
+        x = range(0.0, 2.0, 10)          # Range → ScalarSpacing
+        y = collect(range(0.0, 1.0, 8))  # Vector → VectorSpacing
+        z = range(0.0, 3.0, 6)           # Range → ScalarSpacing
+        data = [xi + yj + zk for xi in x, yj in y, zk in z]
+        query = (1.0, 0.5, 1.5)
+        linear_interp((x, y, z), data, query)
+        linear_interp((x, y, z), data, query)
+        @allocated linear_interp((x, y, z), data, query)
+    end
+
+    @testset "Zero-Allocation One-Shot (Mixed grids: Range + Vector)" begin
+        @testset "zero-alloc scalar (2D mixed grid)" begin
+            @test _alloc_test_linear_mixed_2d() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (3D mixed grid)" begin
+            @test _alloc_test_linear_mixed_3d() <= ND_ALLOC_THRESHOLD
+        end
+    end
+
+    # ========================================
     # Integer Data Type Promotion (P1-B verification)
     # ========================================
 

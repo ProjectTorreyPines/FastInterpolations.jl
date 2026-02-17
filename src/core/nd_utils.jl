@@ -281,13 +281,15 @@ Apply extrapolation handling to all query coordinates.
 Returns tuple of processed query values ready for interpolation.
 
 Accepts heterogeneous tuples (e.g., mixed grid types, per-axis extrap modes).
+Uses map over named helper so each axis receives its concrete type directly,
+avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
+@inline _extrap_axis(q, grid, extrap) = @inbounds _handle_axis_extrap(q, grid, extrap)
+
 @inline function _handle_all_extraps(
     queries::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}}, extraps::Tuple{Vararg{Val,N}}
 ) where {N}
-    ntuple(Val(N)) do d
-        @inbounds _handle_axis_extrap(queries[d], grids[d], extraps[d])
-    end
+    map(_extrap_axis, queries, grids, extraps)
 end
 
 # Extrapolation handlers for each mode
@@ -329,20 +331,27 @@ Perform interval search on all axes.
 Returns tuples of: indices (cell index), Ls (left bounds), Rs (right bounds).
 
 Accepts heterogeneous tuples (e.g., mixed grid types, spacing types, search policies).
+Uses map over named helpers so each axis receives its concrete type directly,
+avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
+
+# Named helpers for map-based search — each receives concrete types per axis.
+# search_interval returns (idx, L, R) with the same concrete element type regardless
+# of spacing type (ScalarSpacing or VectorSpacing), so results is homogeneous.
+@inline _search_axis(q, grid, spacing, search) =
+    @inbounds search_interval(_to_searcher(search), grid, spacing, q)
+@inline _search_axis_hint(q, grid, spacing, search, hint) =
+    @inbounds search_interval(_to_searcher(search, hint), grid, spacing, q)
+@inline _getidx(r) = r[1]
+@inline _getL(r)   = r[2]
+@inline _getR(r)   = r[3]
+
 @inline function _search_all_intervals(
     q_evals::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
     spacings::Tuple{Vararg{AbstractGridSpacing,N}}, searches::Tuple{Vararg{AbstractSearchPolicy,N}}
 ) where {N}
-    results = ntuple(Val(N)) do d
-        searcher = @inbounds _to_searcher(searches[d])
-        @inbounds search_interval(searcher, grids[d], spacings[d], q_evals[d])
-    end
-    # Restructure (idx, L, R) tuples into separate tuples
-    indices = ntuple(d -> @inbounds(results[d][1]), Val(N))
-    Ls = ntuple(d -> @inbounds(results[d][2]), Val(N))
-    Rs = ntuple(d -> @inbounds(results[d][3]), Val(N))
-    return (indices, Ls, Rs)
+    results = map(_search_axis, q_evals, grids, spacings, searches)
+    return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
 
 # ----------------------------------------
@@ -373,14 +382,8 @@ end
     spacings::Tuple{Vararg{AbstractGridSpacing,N}}, searches::Tuple{Vararg{AbstractSearchPolicy,N}},
     hints::Tuple{Vararg{Base.RefValue{Int},N}}
 ) where {N}
-    results = ntuple(Val(N)) do d
-        searcher = @inbounds _to_searcher(searches[d], hints[d])
-        @inbounds search_interval(searcher, grids[d], spacings[d], q_evals[d])
-    end
-    indices = ntuple(d -> @inbounds(results[d][1]), Val(N))
-    Ls = ntuple(d -> @inbounds(results[d][2]), Val(N))
-    Rs = ntuple(d -> @inbounds(results[d][3]), Val(N))
-    return (indices, Ls, Rs)
+    results = map(_search_axis_hint, q_evals, grids, spacings, searches, hints)
+    return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
 
 # ========================================

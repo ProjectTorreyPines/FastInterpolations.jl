@@ -34,29 +34,31 @@ function cubic_interp(
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
+    Tr = promote_type(Tv, Tg)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    # Validate periodic+extrap compatibility (once, before dispatch)
+    # Validate periodic+extrap compatibility and BC requirements (once, before dispatch)
     _check_periodic_extrap(bcs, extraps, Val(N))
+    _validate_polyfit_bcs(grids_typed, bcs, Val(N))
 
     # Dispatch extrap → concrete Val tuple, then deriv → concrete ops
     # Both dispatches happen BEFORE entering @with_pool for type stability
-    # Type assertion (::Tv) prevents boxing from multi-branch return type inference failure
+    # Type assertion (::Tr) prevents boxing from multi-branch return type inference failure
     @_dispatch_extrap_nd extraps bcs => extraps_val begin
         if deriv isa Int
             @_dispatch_deriv deriv => op begin
                 ops = ntuple(_ -> op, Val(N))
-                return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tv
+                return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
             end
         elseif deriv isa Val
             ops = _resolve_deriv_nd(deriv, Val(N))
-            return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tv
+            return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
         else
             ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tv
+            return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
         end
     end
 end
@@ -77,7 +79,10 @@ function cubic_interp(
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
-    output = Vector{Tv}(undef, length(queries[1]))
+    Tg = _promote_grid_eltype(grids)
+    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tr = promote_type(Tv, Tg)
+    output = Vector{Tr}(undef, length(queries[1]))
     cubic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs)
     return output
 end
@@ -98,7 +103,10 @@ function cubic_interp(
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
-    output = Vector{Tv}(undef, length(queries))
+    Tg = _promote_grid_eltype(grids)
+    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tr = promote_type(Tv, Tg)
+    output = Vector{Tr}(undef, length(queries))
     cubic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs)
     return output
 end
@@ -165,7 +173,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
 `extraps_val` must be a pre-resolved tuple of `Val` types.
 """
 @with_pool pool function _cubic_interp_nd_oneshot_soa!(
-    output::AbstractVector{Tv},
+    output::AbstractVector,
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
@@ -211,7 +219,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
 `extraps_val` must be a pre-resolved tuple of `Val` types.
 """
 @with_pool pool function _cubic_interp_nd_oneshot_aos!(
-    output::AbstractVector{Tv},
+    output::AbstractVector,
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
@@ -273,6 +281,7 @@ function cubic_interp!(
     searches = _resolve_search_nd(search, Val(N))
 
     _check_periodic_extrap(bcs, extraps, Val(N))
+    _validate_polyfit_bcs(grids_typed, bcs, Val(N))
 
     @_dispatch_extrap_nd extraps bcs => extraps_val begin
         if deriv isa Int
@@ -317,6 +326,7 @@ function cubic_interp!(
     searches = _resolve_search_nd(search, Val(N))
 
     _check_periodic_extrap(bcs, extraps, Val(N))
+    _validate_polyfit_bcs(grids_typed, bcs, Val(N))
 
     @_dispatch_extrap_nd extraps bcs => extraps_val begin
         if deriv isa Int

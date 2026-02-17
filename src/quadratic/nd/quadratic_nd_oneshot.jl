@@ -55,7 +55,7 @@ Pool-based in-place SoA batch one-shot ND quadratic evaluation.
 Computes partials ONCE, then evaluates at all query points into `output`.
 """
 @with_pool pool function _quadratic_interp_nd_oneshot_soa!(
-    output::AbstractVector{Tv},
+    output::AbstractVector,
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
@@ -97,7 +97,7 @@ Pool-based in-place AoS batch one-shot ND quadratic evaluation.
 Computes partials ONCE, then evaluates at all query points into `output`.
 """
 @with_pool pool function _quadratic_interp_nd_oneshot_aos!(
-    output::AbstractVector{Tv},
+    output::AbstractVector,
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
@@ -150,6 +150,7 @@ function quadratic_interp(
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
+    Tr = promote_type(Tv, Tg)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
     extraps = _resolve_extrap_nd(extrap, Val(N))
@@ -160,16 +161,16 @@ function quadratic_interp(
             @_dispatch_deriv deriv => op begin
                 ops = ntuple(_ -> op, Val(N))
                 return _quadratic_interp_nd_oneshot(
-                    grids_typed, data, query, bcs, extraps_val, searches, ops)::Tv
+                    grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
             end
         elseif deriv isa Val
             ops = _resolve_deriv_nd(deriv, Val(N))
             return _quadratic_interp_nd_oneshot(
-                grids_typed, data, query, bcs, extraps_val, searches, ops)::Tv
+                grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
         else
             ops = _resolve_deriv_nd(Val(deriv), Val(N))
             return _quadratic_interp_nd_oneshot(
-                grids_typed, data, query, bcs, extraps_val, searches, ops)::Tv
+                grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
         end
     end
 end
@@ -189,7 +190,10 @@ function quadratic_interp(
     extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
 ) where {Tv, N}
-    output = Vector{Tv}(undef, length(queries[1]))
+    Tg = _promote_grid_eltype(grids)
+    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tr = promote_type(Tv, Tg)
+    output = Vector{Tr}(undef, length(queries[1]))
     quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search)
     return output
 end
@@ -209,7 +213,10 @@ function quadratic_interp(
     extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
 ) where {Tv, N}
-    output = Vector{Tv}(undef, length(queries))
+    Tg = _promote_grid_eltype(grids)
+    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tr = promote_type(Tv, Tg)
+    output = Vector{Tr}(undef, length(queries))
     quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search)
     return output
 end

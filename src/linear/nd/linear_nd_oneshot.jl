@@ -41,7 +41,7 @@ In-place SoA batch one-shot ND multilinear evaluation.
 Writes results into `output`. No heap allocation beyond spacings.
 """
 @with_pool pool function _linear_interp_nd_oneshot_soa!(
-    output::AbstractVector{Tv},
+    output::AbstractVector,
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
@@ -75,7 +75,7 @@ In-place AoS batch one-shot ND multilinear evaluation.
 Writes results into `output`. No heap allocation beyond spacings.
 """
 @with_pool pool function _linear_interp_nd_oneshot_aos!(
-    output::AbstractVector{Tv},
+    output::AbstractVector,
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
@@ -119,6 +119,7 @@ function linear_interp(
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
+    Tr = promote_type(Tv, Tg)
 
     extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
@@ -127,14 +128,14 @@ function linear_interp(
         if deriv isa Int
             @_dispatch_deriv deriv => op begin
                 ops = ntuple(_ -> op, Val(N))
-                return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops)::Tv
+                return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops)::Tr
             end
         elseif deriv isa Val
             ops = _resolve_deriv_nd(deriv, Val(N))
-            return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops)::Tv
+            return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops)::Tr
         else
             ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops)::Tv
+            return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops)::Tr
         end
     end
 end
@@ -153,7 +154,10 @@ function linear_interp(
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
-    output = Vector{Tv}(undef, length(queries[1]))
+    Tg = _promote_grid_eltype(grids)
+    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tr = promote_type(Tv, Tg)
+    output = Vector{Tr}(undef, length(queries[1]))
     linear_interp!(output, grids, data, queries; extrap, search, deriv)
     return output
 end
@@ -172,7 +176,10 @@ function linear_interp(
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
-    output = Vector{Tv}(undef, length(queries))
+    Tg = _promote_grid_eltype(grids)
+    Tg = Tg <: AbstractFloat ? Tg : Float64
+    Tr = promote_type(Tv, Tg)
+    output = Vector{Tr}(undef, length(queries))
     linear_interp!(output, grids, data, queries; extrap, search, deriv)
     return output
 end

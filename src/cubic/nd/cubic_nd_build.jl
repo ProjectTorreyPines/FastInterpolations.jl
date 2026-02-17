@@ -360,6 +360,30 @@ end
     return nothing
 end
 
+# PolyFit-only validation (zero-alloc) for oneshot paths.
+# Skips periodic data matching (which allocates via selectdim).
+@inline _validate_polyfit_bcs(
+    grids::NTuple{N, AbstractVector},
+    bcs::NTuple{N, AbstractBC},
+    ::Val{N}
+) where {N} = _validate_polyfit_bcs(grids, bcs, Val(1), Val(N))
+
+@inline function _validate_polyfit_bcs(
+    grids::NTuple{N, AbstractVector},
+    bcs::NTuple{N, AbstractBC},
+    ::Val{D},
+    ::Val{N}
+) where {D, N}
+    polyfit_deg = get_polyfit_degree(bcs[D])
+    if polyfit_deg > 0 && length(grids[D]) < polyfit_deg + 1
+        throw(ArgumentError("PolyFit BC on dimension $D requires at least $(polyfit_deg+1) points"))
+    end
+    if D < N
+        _validate_polyfit_bcs(grids, bcs, Val(D + 1), Val(N))
+    end
+    return nothing
+end
+
 @inline _build_nd_partials_dim!(
     partials::AbstractArray{Tv, NP1},
     grids::NTuple{N, AbstractVector{Tg}},

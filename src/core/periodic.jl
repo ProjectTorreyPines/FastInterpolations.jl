@@ -233,7 +233,7 @@ function _prepare_periodic_nd(
 
     # Per-axis grid extension + BC resolution via map (preserves concrete types per-element,
     # unlike Vector{AbstractVector} intermediary which erases concrete grid types)
-    processed = map(grids, bcs) do grid_d, bc_d
+    processed = map(ntuple(identity, Val(N)), grids, bcs) do d, grid_d, bc_d
         bc_d isa PeriodicBC{:exclusive} || return (grid_d, bc_d)
 
         period = _resolve_exclusive_period(grid_d, bc_d)
@@ -241,7 +241,7 @@ function _prepare_periodic_nd(
 
         # Validate: virtual endpoint must be strictly after last grid point
         last(grid_d) < x_end || throw(ArgumentError(
-            "PeriodicBC(endpoint=:exclusive): period=$period places " *
+            "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
             "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"))
 
         # Type-stable grid extension: branch explicitly to avoid Union return from _extend_grid

@@ -1,7 +1,7 @@
 # Type stability tests using @inferred
 using Test
 using FastInterpolations
-using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, ClampedBC, CubicSplineCache, CubicFit
+using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, ClampedBC, CubicSplineCache
 
 @testset "Type Stability" begin
     x = collect(range(0.0, 2π, 10))

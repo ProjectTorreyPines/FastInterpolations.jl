@@ -231,30 +231,31 @@ function _prepare_periodic_nd(
     end
     has_exclusive || return (grids, data, bcs)
 
-    # Resolve periods, extend grids, and validate — use typed vectors
-    grids_vec = Vector{AbstractVector{Tg}}(undef, N)
-    bcs_vec = Vector{AbstractBC}(undef, N)
-    for d in 1:N
-        grids_vec[d] = grids[d]
-        bcs_vec[d] = bcs[d]
-    end
+    # Per-axis grid extension + BC resolution via map (preserves concrete types per-element,
+    # unlike Vector{AbstractVector} intermediary which erases concrete grid types)
+    processed = map(grids, bcs) do grid_d, bc_d
+        bc_d isa PeriodicBC{:exclusive} || return (grid_d, bc_d)
 
-    for d in 1:N
-        bc_d = bcs[d]
-        bc_d isa PeriodicBC{:exclusive} || continue
-
-        grid_d = grids_vec[d]
         period = _resolve_exclusive_period(grid_d, bc_d)
         x_end = first(grid_d) + Tg(period)
 
         # Validate: virtual endpoint must be strictly after last grid point
         last(grid_d) < x_end || throw(ArgumentError(
-            "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
+            "PeriodicBC(endpoint=:exclusive): period=$period places " *
             "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"))
 
-        grids_vec[d] = _extend_grid(grid_d, x_end)
-        bcs_vec[d] = _with_resolved_period(bc_d, period)
+        # Type-stable grid extension: branch explicitly to avoid Union return from _extend_grid
+        # (Range → Range, Vector → Vector — concrete type preserved per element)
+        grid_ext = if grid_d isa AbstractRange
+            range(first(grid_d), step=step(grid_d), length=length(grid_d) + 1)
+        else
+            vcat(grid_d, [x_end])
+        end
+        bc_ext = _with_resolved_period(bc_d, period)
+        return (grid_ext, bc_ext)
     end
+    grids_out = map(first, processed)
+    bcs_out = map(last, processed)
 
     # Extend data: allocate final shape once, then fill slices (avoids O(k) cat copies)
     final_sizes = ntuple(Val(N)) do d
@@ -285,8 +286,6 @@ function _prepare_periodic_nd(
         copyto!(view(data_out, dst_inds...), view(data_out, src_inds...))
     end
 
-    grids_out = ntuple(d -> grids_vec[d]::AbstractVector{Tg}, Val(N))
-    bcs_out = ntuple(d -> bcs_vec[d]::AbstractBC, Val(N))
     return (grids_out, data_out, bcs_out)
 end
 

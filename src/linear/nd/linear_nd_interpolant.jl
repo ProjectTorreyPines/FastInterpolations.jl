@@ -89,7 +89,7 @@ function linear_interp(
     extrap_vals = _to_extrap_vals(extraps)
 
     return LinearInterpolantND{Tg, Tv, N,
-        typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches)}(
+        typeof(grids_typed), typeof(spacings), typeof(searches)}(
         grids_typed, spacings, Array(data_typed), extrap_vals, searches
     )
 end

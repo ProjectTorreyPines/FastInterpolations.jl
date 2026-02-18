@@ -80,7 +80,7 @@ function constant_interp(
     side_vals = _to_side_vals(sides)
 
     return ConstantInterpolantND{Tg, Tv, N,
-        typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(side_vals), typeof(searches)}(
+        typeof(grids_typed), typeof(spacings), typeof(searches)}(
         grids_typed, spacings, Array(data_typed), extrap_vals, side_vals, searches
     )
 end

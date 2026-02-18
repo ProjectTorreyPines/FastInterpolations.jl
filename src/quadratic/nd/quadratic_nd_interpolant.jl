@@ -156,6 +156,6 @@ function _build_nd_quadratic_interpolant(
     return QuadraticInterpolantND{
         Tg, Tv, N, NP1,
         typeof(grids), typeof(spacings), typeof(bcs_store),
-        typeof(extraps_val), typeof(searches)
+        typeof(searches)
     }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)
 end

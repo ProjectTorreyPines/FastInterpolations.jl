@@ -17,7 +17,7 @@
 # ========================================
 
 """
-    QuadraticInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}
+    QuadraticInterpolantND{Tg, Tv, N, NP1, G, S, B, P}
 
 Generic N-dimensional quadratic interpolant with precomputed partial derivatives.
 
@@ -32,7 +32,6 @@ ultra-fast O(1) evaluation via tensor-product quadratic polynomials.
 - `G`: Tuple type for grids
 - `S`: Tuple type for spacings
 - `B`: Tuple type for boundary conditions
-- `E`: Tuple type for extrapolation modes
 - `P`: Tuple type for search policies
 
 # Fields
@@ -70,22 +69,21 @@ struct QuadraticInterpolantND{
     G<:Tuple{Vararg{AbstractVector, N}},
     S<:Tuple{Vararg{AbstractGridSpacing, N}},
     B<:Tuple{Vararg{AbstractBC, N}},
-    E<:Tuple{Vararg{ExtrapVal, N}},
     P<:Tuple{Vararg{AbstractSearchPolicy, N}},
 } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
     spacings::S
     nodal_derivs::NodalDerivativesND{Tv, N, NP1}
     bcs::B
-    extraps::E
+    extraps::NTuple{N, ExtrapVal}
     searches::P
 
-    function QuadraticInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}(
+    function QuadraticInterpolantND{Tg, Tv, N, NP1, G, S, B, P}(
         grids::G, spacings::S, nodal_derivs::NodalDerivativesND{Tv, N, NP1},
-        bcs::B, extraps::E, searches::P
-    ) where {Tg, Tv, N, NP1, G, S, B, E, P}
+        bcs::B, extraps::NTuple{N, ExtrapVal}, searches::P
+    ) where {Tg, Tv, N, NP1, G, S, B, P}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
-        new{Tg, Tv, N, NP1, G, S, B, E, P}(grids, spacings, nodal_derivs, bcs, extraps, searches)
+        new{Tg, Tv, N, NP1, G, S, B, P}(grids, spacings, nodal_derivs, bcs, extraps, searches)
     end
 end
 

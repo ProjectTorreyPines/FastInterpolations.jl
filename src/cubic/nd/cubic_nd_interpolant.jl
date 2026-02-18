@@ -118,19 +118,20 @@ function _build_nd_interpolant(
     spacings = _create_spacings_typed(grids)
 
     # Normalize BCs for storage — preserve endpoint and resolved period for periodic axes
-    bcs_store = ntuple(Val(N)) do d
-        if _is_periodic_bc(bcs[d])
-            period = last(grids[d]) - first(grids[d])
-            _with_resolved_period(bcs[d], period)
+    # Uses map instead of ntuple so each bc element gets its concrete type
+    # (ntuple indexes with Int → Union return; map dispatches per-element → compile-time branch)
+    bcs_store = map(bcs, grids) do bc, grid
+        if _is_periodic_bc(bc)
+            period = last(grid) - first(grid)
+            _with_resolved_period(bc, period)
         else
-            _normalize_bc(bcs[d], Tv)
+            _normalize_bc(bc, Tv)
         end
     end
 
     # Convert extrap symbols to Val types
-    extraps_val = ntuple(Val(N)) do d
-        is_periodic = _is_periodic_bc(bcs[d])
-        is_periodic ? Val(:wrap) : _symbol_to_extrap_val(extraps[d])
+    extraps_val = map(bcs, extraps) do bc, ext
+        _is_periodic_bc(bc) ? Val(:wrap) : _symbol_to_extrap_val(ext)
     end
 
     # Construct the interpolant
@@ -138,7 +139,7 @@ function _build_nd_interpolant(
     return CubicInterpolantND{
         Tg, Tv, N, NP1,
         typeof(grids), typeof(spacings), typeof(bcs_store),
-        typeof(extraps_val), typeof(searches)
+        typeof(searches)
     }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)
 end
 

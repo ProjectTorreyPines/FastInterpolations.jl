@@ -1,7 +1,7 @@
 # Type stability tests using @inferred
 using Test
 using FastInterpolations
-using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, ClampedBC, CubicSplineCache
+using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, ClampedBC, CubicSplineCache, CubicFit
 
 @testset "Type Stability" begin
     x = collect(range(0.0, 2π, 10))
@@ -337,5 +337,138 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
             @test typeof(cbitp_none) === typeof(cbitp_ext)
             @test typeof(cbitp_none) === typeof(cbitp_wrap)
         end
+    end
+
+    # =========================================================================
+    # ND interpolant type stability
+    # =========================================================================
+
+    # Shared 2D test data
+    x_nd = range(0.0, 1.0, 11)
+    y_nd = range(0.0, 2.0, 15)
+    data2d = [sin(xi) * cos(yj) for xi in x_nd, yj in y_nd]
+
+    @testset "ND cubic_interp constructor @inferred" begin
+        # Basic constructor — should infer concrete CubicInterpolantND type
+        @test @inferred(cubic_interp((x_nd, y_nd), data2d)) isa CubicInterpolantND
+
+        # Different extrap values must produce SAME concrete type (E not a type param)
+        itp_none = cubic_interp((x_nd, y_nd), data2d; extrap=:none)
+        itp_const = cubic_interp((x_nd, y_nd), data2d; extrap=:constant)
+        itp_ext = cubic_interp((x_nd, y_nd), data2d; extrap=:extension)
+        @test typeof(itp_none) === typeof(itp_const)
+        @test typeof(itp_none) === typeof(itp_ext)
+
+        # Mixed per-axis extrap also same type
+        itp_mixed = cubic_interp((x_nd, y_nd), data2d; extrap=(:none, :constant))
+        @test typeof(itp_none) === typeof(itp_mixed)
+    end
+
+    @testset "ND cubic_interp heterogeneous BC @inferred" begin
+        # User's real use case: CubicFit + PeriodicBC with mixed extrap
+        # y-axis periodic: cos(y) wraps naturally on [0, 2π] since cos(0)==cos(2π)
+        x_periodic = range(0.0, 2π, 20)
+        y_periodic = range(0.0, 2π, 15)
+        data_p = [sin(xi) * cos(yj) for xi in x_periodic, yj in y_periodic]
+
+        @test @inferred(cubic_interp((x_periodic, y_periodic), data_p;
+            bc=(NaturalBC(), PeriodicBC()), extrap=(:extension, :wrap))) isa CubicInterpolantND
+
+        # Homogeneous vs heterogeneous BC must give same type (B stays typed, but E doesn't)
+        itp_homo = cubic_interp((x_nd, y_nd), data2d; bc=NaturalBC())
+        itp_hetero = cubic_interp((x_nd, y_nd), data2d; bc=(NaturalBC(), NaturalBC()))
+        @test typeof(itp_homo) === typeof(itp_hetero)
+    end
+
+    @testset "ND cubic_interp exclusive periodic @inferred" begin
+        # Exclusive endpoint: data does NOT repeat at boundary
+        # Range grid: period auto-inferred from step(x)*length(x)
+        x_excl = range(0.0, step=0.1, length=10)
+        y_excl = range(0.0, step=0.2, length=8)
+        data_excl = [sin(2π*xi) * cos(2π*yj) for xi in x_excl, yj in y_excl]
+
+        # Both axes exclusive periodic
+        @test @inferred(cubic_interp((x_excl, y_excl), data_excl;
+            bc=PeriodicBC(; endpoint=:exclusive))) isa CubicInterpolantND
+
+        # Mixed: one axis exclusive periodic, other natural
+        @test @inferred(cubic_interp((x_excl, y_excl), data_excl;
+            bc=(NaturalBC(), PeriodicBC(; endpoint=:exclusive)))) isa CubicInterpolantND
+
+        # Exclusive with explicit per-axis period (x: 0.1*10=1.0, y: 0.2*8=1.6)
+        @test @inferred(cubic_interp((x_excl, y_excl), data_excl;
+            bc=(PeriodicBC(; endpoint=:exclusive, period=1.0),
+                PeriodicBC(; endpoint=:exclusive, period=1.6)))) isa CubicInterpolantND
+
+        # Vector grid (non-uniform) with explicit period
+        x_vec = collect(x_excl)
+        y_vec = collect(y_excl)
+        data_vec = [sin(2π*xi) * cos(2π*yj) for xi in x_vec, yj in y_vec]
+        @test @inferred(cubic_interp((x_vec, y_vec), data_vec;
+            bc=(PeriodicBC(; endpoint=:exclusive, period=1.0),
+                PeriodicBC(; endpoint=:exclusive, period=1.6)))) isa CubicInterpolantND
+
+        # Callable with exclusive periodic should also be inferable
+        itp_excl = cubic_interp((x_excl, y_excl), data_excl;
+            bc=PeriodicBC(; endpoint=:exclusive))
+        @test @inferred(itp_excl((0.05, 0.1))) isa Float64
+    end
+
+    @testset "ND quadratic_interp constructor @inferred" begin
+        @test @inferred(quadratic_interp((x_nd, y_nd), data2d)) isa QuadraticInterpolantND
+
+        itp_none = quadratic_interp((x_nd, y_nd), data2d; extrap=:none)
+        itp_const = quadratic_interp((x_nd, y_nd), data2d; extrap=:constant)
+        @test typeof(itp_none) === typeof(itp_const)
+
+        itp_mixed = quadratic_interp((x_nd, y_nd), data2d; extrap=(:none, :extension))
+        @test typeof(itp_none) === typeof(itp_mixed)
+    end
+
+    @testset "ND linear_interp constructor @inferred" begin
+        @test @inferred(linear_interp((x_nd, y_nd), data2d)) isa LinearInterpolantND
+
+        itp_none = linear_interp((x_nd, y_nd), data2d; extrap=:none)
+        itp_const = linear_interp((x_nd, y_nd), data2d; extrap=:constant)
+        @test typeof(itp_none) === typeof(itp_const)
+
+        itp_mixed = linear_interp((x_nd, y_nd), data2d; extrap=(:none, :wrap))
+        @test typeof(itp_none) === typeof(itp_mixed)
+    end
+
+    @testset "ND constant_interp constructor @inferred" begin
+        @test @inferred(constant_interp((x_nd, y_nd), data2d)) isa ConstantInterpolantND
+
+        itp_none = constant_interp((x_nd, y_nd), data2d; extrap=:none)
+        itp_const = constant_interp((x_nd, y_nd), data2d; extrap=:constant)
+        @test typeof(itp_none) === typeof(itp_const)
+
+        itp_mixed = constant_interp((x_nd, y_nd), data2d; extrap=(:none, :extension))
+        @test typeof(itp_none) === typeof(itp_mixed)
+    end
+
+    @testset "ND callable @inferred" begin
+        q = (0.5, 1.0)
+
+        itp_c = cubic_interp((x_nd, y_nd), data2d)
+        @test @inferred(itp_c(q)) isa Float64
+
+        itp_q = quadratic_interp((x_nd, y_nd), data2d)
+        @test @inferred(itp_q(q)) isa Float64
+
+        itp_l = linear_interp((x_nd, y_nd), data2d)
+        @test @inferred(itp_l(q)) isa Float64
+
+        itp_k = constant_interp((x_nd, y_nd), data2d)
+        @test @inferred(itp_k(q)) isa Float64
+    end
+
+    @testset "ND oneshot scalar @inferred" begin
+        q = (0.5, 1.0)
+
+        @test @inferred(cubic_interp((x_nd, y_nd), data2d, q)) isa Float64
+        @test @inferred(quadratic_interp((x_nd, y_nd), data2d, q)) isa Float64
+        @test @inferred(linear_interp((x_nd, y_nd), data2d, q)) isa Float64
+        @test @inferred(constant_interp((x_nd, y_nd), data2d, q)) isa Float64
     end
 end

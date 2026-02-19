@@ -750,4 +750,381 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
             bc=(NaturalBC(), PeriodicBC(; endpoint=:exclusive)),
             extrap=NoExtrap())) isa Float64
     end
+
+    # =========================================================================
+    # 1D Quadratic/Constant — vector eval and derivatives (gap coverage)
+    # =========================================================================
+
+    @testset "QuadraticInterpolant vector eval @inferred" begin
+        qitp = quadratic_interp(x, y)
+
+        # Vector eval
+        @test @inferred(qitp(x_query)) isa Vector{Float64}
+
+        # Vector eval with derivatives
+        @test @inferred(qitp(x_query; deriv=0)) isa Vector{Float64}
+        @test @inferred(qitp(x_query; deriv=1)) isa Vector{Float64}
+        @test @inferred(qitp(x_query; deriv=2)) isa Vector{Float64}
+
+        # In-place
+        out = similar(x_query)
+        @test @inferred(qitp(out, x_query)) === out
+        @test @inferred(qitp(out, x_query; deriv=1)) === out
+
+        # Float32 scalar
+        x32 = Float32.(x); y32 = Float32.(y)
+        qitp32 = quadratic_interp(x32, y32)
+        @test @inferred(qitp32(Float32(0.5))) isa Float32
+        @test @inferred(qitp32(Float32(0.5); deriv=1)) isa Float32
+    end
+
+    @testset "ConstantInterpolant vector eval @inferred" begin
+        citp = constant_interp(x, y)
+
+        # Vector eval
+        @test @inferred(citp(x_query)) isa Vector{Float64}
+
+        # Vector eval with derivatives
+        @test @inferred(citp(x_query; deriv=0)) isa Vector{Float64}
+        @test @inferred(citp(x_query; deriv=1)) isa Vector{Float64}
+
+        # In-place
+        out = similar(x_query)
+        @test @inferred(citp(out, x_query)) === out
+        @test @inferred(citp(out, x_query; deriv=1)) === out
+    end
+
+    # =========================================================================
+    # SeriesInterpolant — construction, eval, vector, derivatives
+    # =========================================================================
+
+    @testset "SeriesInterpolant type stability" begin
+        xs = collect(range(0.0, 2π, 20))
+        y1 = sin.(xs)
+        y2 = cos.(xs)
+        ys = [y1, y2]
+        xq_vec = [0.5, 1.0, 1.5]
+
+        @testset "CubicSeriesInterpolant" begin
+            sitp = cubic_interp(xs, ys)
+
+            # Construction
+            @test @inferred(cubic_interp(xs, ys)) isa CubicSeriesInterpolant
+
+            # Scalar eval → Vector{Float64}
+            @test @inferred(sitp(0.5)) isa Vector{Float64}
+            @test @inferred(sitp(1)) isa Vector{Float64}  # Int input
+
+            # Vector eval → Vector{Vector{Float64}}
+            @test @inferred(sitp(xq_vec)) isa Vector{Vector{Float64}}
+
+            # Derivatives
+            @test @inferred(sitp(0.5; deriv=0)) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=1)) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=2)) isa Vector{Float64}
+
+            # Vector + derivative
+            @test @inferred(sitp(xq_vec; deriv=1)) isa Vector{Vector{Float64}}
+
+            # Extrap variants
+            sitp_ext = cubic_interp(xs, ys; extrap=ExtendExtrap())
+            @test @inferred(sitp_ext(0.5)) isa Vector{Float64}
+        end
+
+        @testset "LinearSeriesInterpolant" begin
+            sitp = linear_interp(xs, ys)
+
+            # Construction
+            @test @inferred(linear_interp(xs, ys)) isa LinearSeriesInterpolant
+
+            # Scalar eval
+            @test @inferred(sitp(0.5)) isa Vector{Float64}
+
+            # Vector eval
+            @test @inferred(sitp(xq_vec)) isa Vector{Vector{Float64}}
+
+            # Derivatives
+            @test @inferred(sitp(0.5; deriv=0)) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=1)) isa Vector{Float64}
+
+            # Vector + derivative
+            @test @inferred(sitp(xq_vec; deriv=1)) isa Vector{Vector{Float64}}
+        end
+
+        @testset "QuadraticSeriesInterpolant" begin
+            sitp = quadratic_interp(xs, ys)
+
+            # Construction
+            @test @inferred(quadratic_interp(xs, ys)) isa QuadraticSeriesInterpolant
+
+            # Scalar eval
+            @test @inferred(sitp(0.5)) isa Vector{Float64}
+
+            # Vector eval
+            @test @inferred(sitp(xq_vec)) isa Vector{Vector{Float64}}
+
+            # Derivatives
+            @test @inferred(sitp(0.5; deriv=0)) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=1)) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=2)) isa Vector{Float64}
+
+            # Vector + derivative
+            @test @inferred(sitp(xq_vec; deriv=1)) isa Vector{Vector{Float64}}
+        end
+
+        @testset "ConstantSeriesInterpolant" begin
+            sitp = constant_interp(xs, ys)
+
+            # Construction
+            @test @inferred(constant_interp(xs, ys)) isa ConstantSeriesInterpolant
+
+            # Scalar eval
+            @test @inferred(sitp(0.5)) isa Vector{Float64}
+
+            # Vector eval
+            @test @inferred(sitp(xq_vec)) isa Vector{Vector{Float64}}
+
+            # Derivatives (returns zeros for constant)
+            @test @inferred(sitp(0.5; deriv=0)) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=1)) isa Vector{Float64}
+
+            # Vector + derivative
+            @test @inferred(sitp(xq_vec; deriv=1)) isa Vector{Vector{Float64}}
+        end
+
+        @testset "SeriesInterpolant Float32" begin
+            xs32 = Float32.(xs)
+            y1_32 = Float32.(y1)
+            y2_32 = Float32.(y2)
+            ys32 = [y1_32, y2_32]
+
+            for (name, builder) in [
+                ("cubic", cubic_interp),
+                ("linear", linear_interp),
+                ("quadratic", quadratic_interp),
+                ("constant", constant_interp),
+            ]
+                sitp32 = builder(xs32, ys32)
+                @test @inferred(sitp32(Float32(0.5))) isa Vector{Float32}
+            end
+        end
+    end
+
+    # =========================================================================
+    # Integration API type stability
+    # =========================================================================
+
+    @testset "Integration type stability" begin
+        xi = collect(range(0.0, 2π, 30))
+        yi = sin.(xi)
+
+        @testset "1D full-domain integrate" begin
+            for (name, builder) in [
+                ("cubic", cubic_interp),
+                ("linear", linear_interp),
+                ("quadratic", quadratic_interp),
+                ("constant", constant_interp),
+            ]
+                itp = builder(xi, yi)
+                @test @inferred(integrate(itp)) isa Float64
+            end
+        end
+
+        @testset "1D bounded integrate" begin
+            for (name, builder) in [
+                ("cubic", cubic_interp),
+                ("linear", linear_interp),
+                ("quadratic", quadratic_interp),
+                ("constant", constant_interp),
+            ]
+                itp = builder(xi, yi)
+                @test @inferred(integrate(itp, 0.5, 2.0)) isa Float64
+            end
+        end
+
+        @testset "1D cumulative_integrate" begin
+            for (name, builder) in [
+                ("cubic", cubic_interp),
+                ("linear", linear_interp),
+                ("quadratic", quadratic_interp),
+                ("constant", constant_interp),
+            ]
+                itp = builder(xi, yi)
+                @test @inferred(cumulative_integrate(itp)) isa Vector{Float64}
+            end
+        end
+
+        @testset "Series integrate" begin
+            y1s = sin.(xi)
+            y2s = cos.(xi)
+            ys = [y1s, y2s]
+
+            for (name, builder) in [
+                ("cubic", cubic_interp),
+                ("linear", linear_interp),
+                ("quadratic", quadratic_interp),
+                ("constant", constant_interp),
+            ]
+                sitp = builder(xi, ys)
+
+                # Full-domain
+                @test @inferred(integrate(sitp)) isa Vector{Float64}
+
+                # Bounded
+                @test @inferred(integrate(sitp, 0.5, 2.0)) isa Vector{Float64}
+
+                # Cumulative
+                @test @inferred(cumulative_integrate(sitp)) isa Matrix{Float64}
+            end
+        end
+
+        @testset "ND integrate" begin
+            x_i = range(0.0, 1.0, 11)
+            y_i = range(0.0, 2.0, 15)
+            data_i = [sin(xi) * cos(yj) for xi in x_i, yj in y_i]
+
+            for (name, builder) in [
+                ("cubic", cubic_interp),
+                ("linear", linear_interp),
+                ("quadratic", quadratic_interp),
+                ("constant", constant_interp),
+            ]
+                itp_nd = builder((x_i, y_i), data_i)
+
+                # Full-domain
+                @test @inferred(integrate(itp_nd)) isa Float64
+
+                # Bounded
+                @test @inferred(integrate(itp_nd, (0.2, 0.3), (0.8, 1.5))) isa Float64
+            end
+        end
+    end
+
+    # =========================================================================
+    # ND batch, in-place, and derivative eval type stability
+    # =========================================================================
+
+    @testset "ND batch/in-place/deriv type stability" begin
+        x_b = range(0.0, 1.0, 11)
+        y_b = range(0.0, 2.0, 15)
+        data_b = [sin(xi) * cos(yj) for xi in x_b, yj in y_b]
+
+        @testset "ND scalar deriv @inferred" begin
+            q = (0.5, 1.0)
+            for (name, builder) in [
+                ("cubic", cubic_interp),
+                ("quadratic", quadratic_interp),
+                ("linear", linear_interp),
+                ("constant", constant_interp),
+            ]
+                itp = builder((x_b, y_b), data_b)
+
+                # Int deriv — fully inferrable
+                @test @inferred(itp(q; deriv=0)) isa Float64
+                @test @inferred(itp(q; deriv=1)) isa Float64
+
+                # Val-wrapped NTuple deriv — compile-time dispatch, inferrable
+                @test @inferred(itp(q; deriv=Val((1, 0)))) isa Float64
+                @test @inferred(itp(q; deriv=Val((0, 1)))) isa Float64
+            end
+
+            # NTuple deriv (runtime) — known limitation for non-constant types:
+            # _resolve_deriv_nd multi-method dispatch prevents inference for
+            # cubic/quadratic/linear. Constant is stable (early zero-return path).
+            q = (0.5, 1.0)
+            itp_c = constant_interp((x_b, y_b), data_b)
+            @test @inferred(itp_c(q; deriv=(1, 0))) isa Float64
+            @test @inferred(itp_c(q; deriv=(0, 1))) isa Float64
+
+            for builder in [cubic_interp, quadratic_interp, linear_interp]
+                itp = builder((x_b, y_b), data_b)
+                @test_broken (@inferred(itp(q; deriv=(1, 0))) isa Float64)
+                @test_broken (@inferred(itp(q; deriv=(0, 1))) isa Float64)
+            end
+        end
+
+        @testset "ND batch SoA @inferred" begin
+            qs_soa = (collect(range(0.2, 0.8, 5)), collect(range(0.5, 1.5, 5)))
+
+            for (name, builder) in [
+                ("cubic", cubic_interp),
+                ("quadratic", quadratic_interp),
+                ("linear", linear_interp),
+                ("constant", constant_interp),
+            ]
+                itp = builder((x_b, y_b), data_b)
+                @test @inferred(itp(qs_soa)) isa Vector{Float64}
+            end
+        end
+
+        @testset "ND batch in-place @inferred" begin
+            qs_soa = (collect(range(0.2, 0.8, 5)), collect(range(0.5, 1.5, 5)))
+
+            for (name, builder) in [
+                ("cubic", cubic_interp),
+                ("quadratic", quadratic_interp),
+                ("linear", linear_interp),
+                ("constant", constant_interp),
+            ]
+                itp = builder((x_b, y_b), data_b)
+                out = zeros(5)
+                @test @inferred(itp(out, qs_soa)) === out
+            end
+        end
+    end
+
+    # =========================================================================
+    # Gradient, Hessian, Laplacian type stability
+    # =========================================================================
+
+    @testset "gradient/hessian/laplacian type stability" begin
+        x_g = range(0.0, 1.0, 11)
+        y_g = range(0.0, 2.0, 15)
+        data_g = [sin(xi) * cos(yj) for xi in x_g, yj in y_g]
+        q = (0.5, 1.0)
+
+        @testset "CubicInterpolantND" begin
+            itp = cubic_interp((x_g, y_g), data_g)
+
+            # gradient → NTuple{2, Float64} (tuple query)
+            @test @inferred(gradient(itp, q)) isa NTuple{2, Float64}
+
+            # hessian → Matrix{Float64}
+            @test @inferred(hessian(itp, q)) isa Matrix{Float64}
+
+            # laplacian → Float64
+            @test @inferred(laplacian(itp, q)) isa Float64
+
+            # In-place gradient
+            G = zeros(2)
+            @test @inferred(gradient!(G, itp, q)) === G
+
+            # In-place hessian
+            H = zeros(2, 2)
+            @test @inferred(hessian!(H, itp, q)) === H
+        end
+
+        @testset "QuadraticInterpolantND" begin
+            itp = quadratic_interp((x_g, y_g), data_g)
+            @test @inferred(gradient(itp, q)) isa NTuple{2, Float64}
+            @test @inferred(hessian(itp, q)) isa Matrix{Float64}
+            @test @inferred(laplacian(itp, q)) isa Float64
+        end
+
+        @testset "LinearInterpolantND" begin
+            itp = linear_interp((x_g, y_g), data_g)
+            @test @inferred(gradient(itp, q)) isa NTuple{2, Float64}
+            # linear hessian → all zeros
+            @test @inferred(hessian(itp, q)) isa Matrix{Float64}
+            @test @inferred(laplacian(itp, q)) isa Float64
+        end
+
+        @testset "ConstantInterpolantND" begin
+            itp = constant_interp((x_g, y_g), data_g)
+            # constant gradient → all zeros
+            @test @inferred(gradient(itp, q)) isa NTuple{2, Float64}
+            @test @inferred(hessian(itp, q)) isa Matrix{Float64}
+            @test @inferred(laplacian(itp, q)) isa Float64
+        end
+    end
 end

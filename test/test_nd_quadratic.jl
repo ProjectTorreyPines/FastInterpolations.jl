@@ -538,6 +538,26 @@ end
         @allocated quadratic_interp((x, y), data, query; extrap=ConstExtrap())
     end
 
+    function _alloc_test_quadratic_extrap_wrap_periodic()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, 2π, 21)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        query = (1.5, 0.8)
+        quadratic_interp((x, y), data, query; bc=NaturalBC(), extrap=WrapExtrap())
+        quadratic_interp((x, y), data, query; bc=NaturalBC(), extrap=WrapExtrap())
+        @allocated quadratic_interp((x, y), data, query; bc=NaturalBC(), extrap=WrapExtrap())
+    end
+
+    function _alloc_test_quadratic_mixed_mode()
+        x = range(0.0, 2.0, 20)
+        y = range(0.0, 1.0, 15)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        query = (1.0, 0.5)
+        quadratic_interp((x, y), data, query; extrap=(NoExtrap(), ConstExtrap()))
+        quadratic_interp((x, y), data, query; extrap=(NoExtrap(), ConstExtrap()))
+        @allocated quadratic_interp((x, y), data, query; extrap=(NoExtrap(), ConstExtrap()))
+    end
+
     function _alloc_test_quadratic_3d()
         x = range(0.0, 2.0, 10)
         y = range(0.0, 1.0, 8)
@@ -568,6 +588,14 @@ end
 
         @testset "zero-alloc scalar (Range grids, extrap=:constant)" begin
             @test _alloc_test_quadratic_extrap_constant() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (Range grids, extrap=WrapExtrap+PeriodicBC)" begin
+            @test _alloc_test_quadratic_extrap_wrap_periodic() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (Range grids, per-axis mixed Mode)" begin
+            @test _alloc_test_quadratic_mixed_mode() <= ND_ALLOC_THRESHOLD
         end
 
         @testset "zero-alloc scalar (3D Range grids)" begin

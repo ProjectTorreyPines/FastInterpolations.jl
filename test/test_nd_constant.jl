@@ -434,6 +434,26 @@ end
         @allocated constant_interp((x, y), data, query; extrap=ConstExtrap())
     end
 
+    function _alloc_test_constant_extrap_wrap()
+        x = range(0.0, 2.0, 11)
+        y = range(0.0, 1.0, 6)
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        constant_interp((x, y), data, query; extrap=WrapExtrap())
+        constant_interp((x, y), data, query; extrap=WrapExtrap())
+        @allocated constant_interp((x, y), data, query; extrap=WrapExtrap())
+    end
+
+    function _alloc_test_constant_mixed_mode()
+        x = range(0.0, 2.0, 11)
+        y = range(0.0, 1.0, 6)
+        data = [xi + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        constant_interp((x, y), data, query; extrap=(NoExtrap(), ConstExtrap()))
+        constant_interp((x, y), data, query; extrap=(NoExtrap(), ConstExtrap()))
+        @allocated constant_interp((x, y), data, query; extrap=(NoExtrap(), ConstExtrap()))
+    end
+
     function _alloc_test_constant_3d()
         x = range(0.0, 2.0, 8)
         y = range(0.0, 1.0, 6)
@@ -460,6 +480,14 @@ end
 
         @testset "zero-alloc scalar (Range grids, extrap=:constant)" begin
             @test _alloc_test_constant_extrap_constant() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (Range grids, extrap=WrapExtrap)" begin
+            @test _alloc_test_constant_extrap_wrap() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (Range grids, per-axis mixed Mode)" begin
+            @test _alloc_test_constant_mixed_mode() <= ND_ALLOC_THRESHOLD
         end
 
         @testset "zero-alloc scalar (3D Range grids)" begin

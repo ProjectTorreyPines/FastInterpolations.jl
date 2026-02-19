@@ -21,7 +21,7 @@ FastInterpolationsForwardDiffExt = "ForwardDiff"
 FastInterpolationsRecipesBaseExt = "RecipesBase"
 
 [compat]
-AdaptiveArrayPools = "0.1"
+AdaptiveArrayPools = "0"
 ChainRulesCore = "1"
 ForwardDiff = "1"
 HelpPlots = "1"

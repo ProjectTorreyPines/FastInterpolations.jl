@@ -623,6 +623,7 @@ function cubic_interp(
     end
 
     # Convert extrap symbol to mode
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
 
     sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, mode, search)
@@ -751,6 +752,7 @@ function cubic_interp(
     end
 
     # Convert extrap symbol to mode
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
 
     sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, mode, search)

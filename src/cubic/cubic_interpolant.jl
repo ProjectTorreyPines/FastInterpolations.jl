@@ -410,6 +410,7 @@ val = itp(0.5)  # returns ComplexF64
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x, y, bc, autocache, search)
     else
+        extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
         mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
         bc_pair = _normalize_bc(bc, Tv)
         return _build_interpolant_bcpair(x, y, bc_pair, mode, autocache, search)
@@ -465,6 +466,7 @@ so the pool memory can be safely reused after this function returns.
     end
 
     # cache.bc_config is BCPair - use it directly
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     return CubicInterpolant(cache, y, tmp_z, cache.bc_config, mode, search)
 end
@@ -485,6 +487,7 @@ function cubic_interp(
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x_p, y_p, bc, autocache, search)
     else
+        extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
         mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
         bc_pair = _normalize_bc(bc_promoted, Tv)
         return _build_interpolant_bcpair(x_p, y_p, bc_pair, mode, autocache, search)

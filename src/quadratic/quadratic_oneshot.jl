@@ -218,6 +218,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _to_searcher(search, hint)
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
         _quadratic_eval_at_point(x, y, h, a, d, xq, mode, op, searcher)
@@ -275,6 +276,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _to_searcher(search)
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp!)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
         @boundscheck _check_domain(x, x_targets, mode)

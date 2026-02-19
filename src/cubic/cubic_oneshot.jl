@@ -43,6 +43,7 @@ Thread-safe: workspaces allocated from task-local pool.
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
@@ -234,6 +235,7 @@ In-place cubic spline interpolation with optional automatic caching.
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp!)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
 
     searcher = _to_searcher(search)
@@ -379,6 +381,7 @@ function cubic_interp(
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp!)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
 
     searcher = _to_searcher(search, hint)

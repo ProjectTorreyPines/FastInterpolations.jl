@@ -422,6 +422,7 @@ function quadratic_interp(
         end
     end
 
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, h, mode, search)
 end

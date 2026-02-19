@@ -281,6 +281,7 @@ Uses task-local pool for workspace allocation.
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin

@@ -367,6 +367,7 @@ function constant_interp(
         y_mat[:, k] .= Tv_out.(ys[k])
     end
 
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_side side => side_val begin
         return ConstantSeriesInterpolant(x, y_mat, mode, side_val, search)
@@ -420,6 +421,7 @@ function constant_interp(
     Tv_out = _value_type(Tv, Tg)
     y_mat = Tv_out === Tv ? copy(Y) : Tv_out.(Y)
 
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_side side => side_val begin
         return ConstantSeriesInterpolant(x, y_mat, mode, side_val, search)

@@ -355,6 +355,7 @@ function linear_interp(
         y_mat[:, k] .= Tv_out.(ys[k])
     end
 
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     return LinearSeriesInterpolant(x, y_mat, mode, search)
 end
@@ -409,6 +410,7 @@ function linear_interp(
     Tv_out = _value_type(Tv, Tg)
     y_mat = Tv_out === Tv ? copy(Y) : Tv_out.(Y)
 
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     return LinearSeriesInterpolant(x, y_mat, mode, search)
 end

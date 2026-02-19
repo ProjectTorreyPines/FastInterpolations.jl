@@ -55,6 +55,98 @@ end
 end
 
 # ========================================
+# Typed ExtrapMode Resolution (3-arg form)
+# ========================================
+#
+# 3-arg _resolve_extrap_nd(extrap, bcs, Val(N)):
+# - Mode types → NTuple{N, Val} directly (fast path, compile-time resolvable)
+# - Symbol types → NTuple{N, Symbol} with Base.depwarn (legacy path)
+#
+# The `bcs` argument enables periodic BC validation and override:
+# - `nothing` for constant/linear (no BCs)
+# - NTuple{N, AbstractBC} for quadratic/cubic
+
+# ── Mode → Mode tuple (fast path) ────────────────────────────────────
+
+@inline function _resolve_extrap_nd(extrap::AbstractExtrapMode, ::Nothing, ::Val{N}) where {N}
+    ntuple(_ -> extrap, Val(N))
+end
+
+@inline function _resolve_extrap_nd(extrap::AbstractExtrapMode, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+    _check_mode_periodic_compat(extrap, bcs, Val(N))
+    return _mode_to_modes_with_periodic(extrap, bcs)
+end
+
+@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrapMode,N}}, ::Nothing, ::Val{N}) where {N}
+    extrap
+end
+
+@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrapMode,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+    _check_modes_periodic_compat(extrap, bcs, Val(N))
+    return _modes_to_modes_with_periodic(extrap, bcs)
+end
+
+@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrapMode}}, ::Any, ::Val{N}) where {N}
+    throw(ArgumentError("extrap tuple must have $N elements to match grid dimensions, got $(length(extrap))"))
+end
+
+# ── Periodic BC compatibility checks for Mode types ──────────────────
+
+@inline function _check_mode_periodic_compat(extrap::AbstractExtrapMode, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+    # NoExtrap and WrapExtrap are always compatible with PeriodicBC
+    (extrap isa NoExtrap || extrap isa WrapExtrap) && return nothing
+    for d in 1:N
+        if _is_periodic_bc(bcs[d])
+            throw(ArgumentError(
+                "Periodic BC on dim $d only supports NoExtrap() or WrapExtrap(), got $(typeof(extrap))()"
+            ))
+        end
+    end
+    return nothing
+end
+
+@inline function _check_modes_periodic_compat(extraps::Tuple{Vararg{AbstractExtrapMode,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+    for d in 1:N
+        if _is_periodic_bc(bcs[d]) && !(extraps[d] isa NoExtrap || extraps[d] isa WrapExtrap)
+            throw(ArgumentError(
+                "Periodic BC on dim $d only supports NoExtrap() or WrapExtrap(), got $(typeof(extraps[d]))()"
+            ))
+        end
+    end
+    return nothing
+end
+
+# ── @generated periodic override (compile-time Mode tuple construction) ──
+
+@generated function _mode_to_modes_with_periodic(extrap::M, bcs::B) where {M<:AbstractExtrapMode, B<:Tuple{Vararg{AbstractBC}}}
+    N = fieldcount(B)
+    exprs = map(1:N) do d
+        if fieldtype(B, d) <: PeriodicBC
+            :(WrapExtrap())
+        else
+            :(extrap)
+        end
+    end
+    :(($(exprs...),))
+end
+
+@generated function _modes_to_modes_with_periodic(extraps::E, bcs::B) where {E<:Tuple{Vararg{AbstractExtrapMode}}, B<:Tuple{Vararg{AbstractBC}}}
+    N = fieldcount(E)
+    exprs = map(1:N) do d
+        if fieldtype(B, d) <: PeriodicBC
+            :(WrapExtrap())
+        else
+            :(extraps[$d])
+        end
+    end
+    :(($(exprs...),))
+end
+
+# ── Legacy Symbol depwarn constant (used by public API functions) ──────
+
+const _EXTRAP_SYMBOL_DEPWARN = "Passing `extrap` as Symbol is deprecated. Use NoExtrap(), ConstExtrap(), ExtendExtrap(), or WrapExtrap() instead."
+
+# ========================================
 # Search Policy Resolution
 # ========================================
 
@@ -210,6 +302,31 @@ end
     end
 end
 
+# ========================================
+# ND Deriv Dispatch Helper
+# ========================================
+#
+# Closure-based dispatch on deriv specification to avoid duplicating the
+# 3-branch (Int / Val / NTuple) pattern in every ND public API function.
+# The function `f` receives the resolved NTuple{N, AbstractEvalOp}.
+
+"""
+    _dispatch_deriv_nd(f, deriv, Val(N))
+
+Dispatch on derivative specification and call `f(ops::NTuple{N, AbstractEvalOp})`.
+Used by ND public API functions to DRY up the 3-branch deriv dispatch pattern.
+"""
+@inline function _dispatch_deriv_nd(f, deriv, ::Val{N}) where {N}
+    if deriv isa Int
+        @_dispatch_deriv deriv => op begin
+            return f(ntuple(_ -> op, Val(N)))
+        end
+    elseif deriv isa Val
+        return f(_resolve_deriv_nd(deriv, Val(N)))
+    else
+        return f(_resolve_deriv_nd(Val(deriv), Val(N)))
+    end
+end
 
 # ========================================
 # PolyFit BC Helpers
@@ -315,6 +432,36 @@ end
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::Val{:wrap})
     return _wrap_to_domain(q, first(axis), last(axis))  # already handles AD via _extract_primal
+end
+
+# ── AbstractExtrapMode dispatch (ND storage uses Mode types directly) ──
+
+@inline function _handle_all_extraps(
+    queries::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
+    extraps::Tuple{Vararg{AbstractExtrapMode,N}}
+) where {N}
+    map(_extrap_axis, queries, grids, extraps)
+end
+
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::NoExtrap)
+    @boundscheck _check_domain(axis, q, Val(:none))
+    return q
+end
+
+@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::ConstExtrap) where {Tg}
+    q_primal = _extract_primal(q)
+    lo, hi = first(axis), last(axis)
+    q_primal < lo && return oftype(q, lo)
+    q_primal > hi && return oftype(q, hi)
+    return q
+end
+
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::ExtendExtrap)
+    return q
+end
+
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::WrapExtrap)
+    return _wrap_to_domain(q, first(axis), last(axis))
 end
 
 # ========================================

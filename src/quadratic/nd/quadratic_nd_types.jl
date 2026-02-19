@@ -70,7 +70,7 @@ struct QuadraticInterpolantND{
     G<:Tuple{Vararg{AbstractVector, N}},
     S<:Tuple{Vararg{AbstractGridSpacing, N}},
     B<:Tuple{Vararg{AbstractBC, N}},
-    E<:Tuple{Vararg{ExtrapVal, N}},
+    E<:Tuple{Vararg{AbstractExtrapMode, N}},
     P<:Tuple{Vararg{AbstractSearchPolicy, N}},
 } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
@@ -110,6 +110,11 @@ num_partials(::Type{<:QuadraticInterpolantND{Tg, Tv, N}}) where {Tg, Tv, N} = 1 
 @inline _grid(itp::QuadraticInterpolantND, ::Val{D}) where {D} = itp.grids[D]
 @inline _spacing(itp::QuadraticInterpolantND, ::Val{D}) where {D} = itp.spacings[D]
 @inline _bc(itp::QuadraticInterpolantND, ::Val{D}) where {D} = itp.bcs[D]
+"""
+    _extrap(itp, Val(d)) -> AbstractExtrapMode
+
+Get extrapolation mode for dimension `d`.
+"""
 @inline _extrap(itp::QuadraticInterpolantND, ::Val{D}) where {D} = itp.extraps[D]
 @inline _search(itp::QuadraticInterpolantND, ::Val{D}) where {D} = itp.searches[D]
 

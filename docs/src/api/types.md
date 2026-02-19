@@ -87,6 +87,16 @@ Left
 Right
 ```
 
+## Extrapolation Modes
+
+```@docs
+AbstractExtrapMode
+NoExtrap
+ConstExtrap
+ExtendExtrap
+WrapExtrap
+```
+
 ## Search Policies
 
 Search policies control how the interpolant finds the correct interval for a query point. Different policies offer trade-offs between simplicity, performance for sequential queries, and thread safety.

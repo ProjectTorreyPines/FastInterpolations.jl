@@ -223,10 +223,10 @@
         itp_ext = linear_interp(x, y; extrap=:extension)
         itp_wrap = linear_interp(x, y; extrap=:wrap)
 
-        @test occursin(":none", sprint(show, MIME("text/plain"), itp_none))
-        @test occursin(":constant", sprint(show, MIME("text/plain"), itp_const))
-        @test occursin(":extension", sprint(show, MIME("text/plain"), itp_ext))
-        @test occursin(":wrap", sprint(show, MIME("text/plain"), itp_wrap))
+        @test occursin("NoExtrap", sprint(show, MIME("text/plain"), itp_none))
+        @test occursin("ConstExtrap", sprint(show, MIME("text/plain"), itp_const))
+        @test occursin("ExtendExtrap", sprint(show, MIME("text/plain"), itp_ext))
+        @test occursin("WrapExtrap", sprint(show, MIME("text/plain"), itp_wrap))
     end
 
     @testset "Grid type display" begin
@@ -630,8 +630,8 @@
         # Verbose show should display tuple format for extrapolation
         verbose_str = sprint(show, MIME("text/plain"), itp_mixed_extrap)
         @test occursin("Extrap:", verbose_str)
-        @test occursin(":none", verbose_str)
-        @test occursin(":constant", verbose_str)
+        @test occursin("NoExtrap", verbose_str)
+        @test occursin("ConstExtrap", verbose_str)
     end
 
     @testset "CubicInterpolantND show with heterogeneous search policies" begin
@@ -757,23 +757,23 @@
         # Test with heterogeneous tuple (different values per axis)
         io = IOBuffer()
         configs = (Val(:none), Val(:constant), Val(:extension))
-        FI._show_nd_config_row(io, false, "Extrap:", configs, FI._format_extrap; value_color=:magenta)
+        FI._show_nd_config_row(io, false, "Extrap:", configs, FI._format_extrap)
         output = String(take!(io))
 
         # Should show tuple format since values differ
         @test occursin("(", output)
-        @test occursin(":none", output)
-        @test occursin(":constant", output)
-        @test occursin(":extension", output)
+        @test occursin("NoExtrap", output)
+        @test occursin("ConstExtrap", output)
+        @test occursin("ExtendExtrap", output)
 
         # Test with homogeneous tuple (same values)
         io2 = IOBuffer()
         configs_same = (Val(:none), Val(:none))
-        FI._show_nd_config_row(io2, true, "Extrap:", configs_same, FI._format_extrap; value_color=:magenta)
+        FI._show_nd_config_row(io2, true, "Extrap:", configs_same, FI._format_extrap)
         output2 = String(take!(io2))
 
         # Should show single value with "(all axes)"
-        @test occursin(":none", output2)
+        @test occursin("NoExtrap", output2)
         @test occursin("(all axes)", output2)
     end
 
@@ -870,8 +870,8 @@
 
         verbose_str = sprint(show, MIME("text/plain"), itp)
         @test occursin("Extrap:", verbose_str)
-        @test occursin(":none", verbose_str)
-        @test occursin(":constant", verbose_str)
+        @test occursin("NoExtrap", verbose_str)
+        @test occursin("ConstExtrap", verbose_str)
     end
 
     @testset "ConstantInterpolantND show with complex values (Tv ≠ Tg)" begin

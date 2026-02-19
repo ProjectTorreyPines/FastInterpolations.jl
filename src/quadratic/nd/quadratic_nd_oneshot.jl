@@ -25,7 +25,7 @@ Zero-allocation after warmup (pool reuse).
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}},
     bcs::NTuple{N, QuadraticBC},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -60,7 +60,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
     bcs::NTuple{N, QuadraticBC},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -102,7 +102,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
     bcs::NTuple{N, QuadraticBC},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -143,7 +143,7 @@ function quadratic_interp(
     query::Tuple{Vararg{Real, N}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
-    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -153,24 +153,22 @@ function quadratic_interp(
     Tr = promote_type(Tv, Tg, typeof.(query)...)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    @_dispatch_extrap_nd extraps bcs => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _quadratic_interp_nd_oneshot(
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+        return _dispatch_deriv_nd(deriv, Val(N)) do ops
+            _quadratic_interp_nd_oneshot(
+                grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps bcs => extraps_val begin
+            return _dispatch_deriv_nd(deriv, Val(N)) do ops
+                _quadratic_interp_nd_oneshot(
                     grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
             end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _quadratic_interp_nd_oneshot(
-                grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _quadratic_interp_nd_oneshot(
-                grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
         end
     end
 end
@@ -187,7 +185,7 @@ function quadratic_interp(
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
-    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -210,7 +208,7 @@ function quadratic_interp(
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
-    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -238,7 +236,7 @@ function quadratic_interp!(
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
-    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -247,24 +245,22 @@ function quadratic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    @_dispatch_extrap_nd extraps bcs => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _quadratic_interp_nd_oneshot_soa!(
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+        return _dispatch_deriv_nd(deriv, Val(N)) do ops
+            _quadratic_interp_nd_oneshot_soa!(
+                output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp!)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps bcs => extraps_val begin
+            return _dispatch_deriv_nd(deriv, Val(N)) do ops
+                _quadratic_interp_nd_oneshot_soa!(
                     output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
             end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _quadratic_interp_nd_oneshot_soa!(
-                output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _quadratic_interp_nd_oneshot_soa!(
-                output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
         end
     end
 end
@@ -282,7 +278,7 @@ function quadratic_interp!(
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
-    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -291,24 +287,22 @@ function quadratic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    @_dispatch_extrap_nd extraps bcs => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _quadratic_interp_nd_oneshot_aos!(
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+        return _dispatch_deriv_nd(deriv, Val(N)) do ops
+            _quadratic_interp_nd_oneshot_aos!(
+                output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp!)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps bcs => extraps_val begin
+            return _dispatch_deriv_nd(deriv, Val(N)) do ops
+                _quadratic_interp_nd_oneshot_aos!(
                     output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
             end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _quadratic_interp_nd_oneshot_aos!(
-                output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _quadratic_interp_nd_oneshot_aos!(
-                output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
         end
     end
 end

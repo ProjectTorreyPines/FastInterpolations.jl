@@ -555,7 +555,7 @@ using FastInterpolations
             @test FastInterpolations._grid(itp, Val(1)) === x
             @test FastInterpolations._grid(itp, Val(2)) === y
             @test FastInterpolations._bc(itp, Val(1)) isa FastInterpolations.AbstractBC
-            @test FastInterpolations._extrap(itp, Val(1)) === Val(:none)
+            @test FastInterpolations._extrap(itp, Val(1)) === FastInterpolations.NoExtrap()
             @test FastInterpolations._search(itp, Val(1)) isa FastInterpolations.AbstractSearchPolicy
         end
     end

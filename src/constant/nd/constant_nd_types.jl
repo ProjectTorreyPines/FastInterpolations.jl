@@ -16,7 +16,7 @@ N-dimensional constant (step) interpolation with per-axis configuration.
 - `N`: Number of dimensions
 - `G<:NTuple{N, AbstractVector{Tg}}`: Grid tuple type
 - `S<:NTuple{N, AbstractGridSpacing{Tg}}`: Spacing tuple type
-- `E<:NTuple{N, ExtrapVal}`: Extrapolation mode tuple type
+- `E<:Tuple{Vararg{AbstractExtrapMode, N}}`: Extrapolation mode tuple type
 - `SD<:NTuple{N, SideVal}`: Side selection tuple type
 - `P<:NTuple{N, AbstractSearchPolicy}`: Search policy tuple type
 
@@ -51,7 +51,7 @@ struct ConstantInterpolantND{
     N,
     G<:NTuple{N, AbstractVector{Tg}},
     S<:NTuple{N, AbstractGridSpacing{Tg}},
-    E<:NTuple{N, ExtrapVal},
+    E<:Tuple{Vararg{AbstractExtrapMode, N}},
     SD<:NTuple{N, SideVal},
     P<:NTuple{N, AbstractSearchPolicy},
 } <: AbstractInterpolantND{Tg, Tv, N}
@@ -65,7 +65,7 @@ struct ConstantInterpolantND{
     function ConstantInterpolantND{Tg,Tv,N,G,S,E,SD,P}(
         grids::G, spacings::S, data::Array{Tv,N}, extraps::E, sides::SD, searches::P
     ) where {Tg<:AbstractFloat, Tv, N, G<:NTuple{N,AbstractVector{Tg}},
-             S<:NTuple{N,AbstractGridSpacing{Tg}}, E<:NTuple{N,ExtrapVal},
+             S<:NTuple{N,AbstractGridSpacing{Tg}}, E,
              SD<:NTuple{N,SideVal}, P<:NTuple{N,AbstractSearchPolicy}}
         new{Tg,Tv,N,G,S,E,SD,P}(grids, spacings, data, extraps, sides, searches)
     end

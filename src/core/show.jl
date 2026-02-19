@@ -102,12 +102,18 @@ function _show_grid_row(io::IO, is_last::Bool, x::AbstractVector)
     print(io, ", $n points ∈ [$x_min_str, $x_max_str]")
 end
 
-"""Format extrapolation mode from ExtrapVal."""
+"""Format extrapolation mode from AbstractExtrapMode or ExtrapVal."""
 function _format_extrap(mode)
-    mode === Val(:none) && return ":none"
-    mode === Val(:constant) && return ":constant"
-    mode === Val(:extension) && return ":extension"
-    mode === Val(:wrap) && return ":wrap"
+    # AbstractExtrapMode (ND structs)
+    mode isa NoExtrap && return "NoExtrap"
+    mode isa ConstExtrap && return "ConstExtrap"
+    mode isa ExtendExtrap && return "ExtendExtrap"
+    mode isa WrapExtrap && return "WrapExtrap"
+    # Val fallback (1D/series structs)
+    mode === Val(:none) && return "NoExtrap"
+    mode === Val(:constant) && return "ConstExtrap"
+    mode === Val(:extension) && return "ExtendExtrap"
+    mode === Val(:wrap) && return "WrapExtrap"
     return "unknown"
 end
 
@@ -233,7 +239,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolant{Tg, Tv}) w
     is_range = itp.x isa AbstractRange
     _show_grid_row(io, false, itp.x)
     println(io)
-    _show_row(io, is_range, "Extrap:", _format_extrap(itp.extrap); value_color=:magenta)
+    _show_row(io, is_range, "Extrap:", _format_extrap(itp.extrap))
     if !is_range
         println(io)
         _show_row(io, true, "Search:", _format_search(itp.search_policy))
@@ -254,7 +260,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::ConstantInterpolant{Tg, Tv})
     is_range = itp.x isa AbstractRange
     _show_grid_row(io, false, itp.x)
     println(io)
-    _show_row(io, false, "Extrap:", _format_extrap(itp.extrap); value_color=:magenta)
+    _show_row(io, false, "Extrap:", _format_extrap(itp.extrap))
     println(io)
     _show_row(io, is_range, "Side:  ", _format_side(itp.side); value_color=:magenta)
     if !is_range
@@ -277,7 +283,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolant{Tg, Tv}
     is_range = itp.x isa AbstractRange
     _show_grid_row(io, false, itp.x)
     println(io)
-    _show_row(io, is_range, "Extrap:", _format_extrap(itp.extrap); value_color=:magenta)
+    _show_row(io, is_range, "Extrap:", _format_extrap(itp.extrap))
     if !is_range
         println(io)
         _show_row(io, true, "Search:", _format_search(itp.search_policy))
@@ -299,7 +305,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolant{Tg, Tv}) wh
     is_range = itp.cache.x isa AbstractRange
     _show_grid_row(io, false, itp.cache.x)
     println(io)
-    _show_row(io, false, "Extrap:", _format_extrap(itp.extrap); value_color=:magenta)
+    _show_row(io, false, "Extrap:", _format_extrap(itp.extrap))
     if !is_range
         println(io)
         _show_row(io, false, "Search:", _format_search(itp.search_policy))
@@ -348,7 +354,7 @@ function Base.show(io::IO, ::MIME"text/plain", sitp::LinearSeriesInterpolant{Tg,
     println(io)
     _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)")
     println(io)
-    _show_row(io, is_range, "Extrap:", _format_extrap(sitp.extrap); value_color=:magenta)
+    _show_row(io, is_range, "Extrap:", _format_extrap(sitp.extrap))
     if !is_range
         println(io)
         _show_row(io, true, "Search:", _format_search(sitp.search_policy))
@@ -372,7 +378,7 @@ function Base.show(io::IO, ::MIME"text/plain", sitp::ConstantSeriesInterpolant{T
     println(io)
     _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)")
     println(io)
-    _show_row(io, false, "Extrap:", _format_extrap(sitp.extrap); value_color=:magenta)
+    _show_row(io, false, "Extrap:", _format_extrap(sitp.extrap))
     println(io)
     _show_row(io, is_range, "Side:  ", _format_side(sitp.side); value_color=:magenta)
     if !is_range
@@ -398,7 +404,7 @@ function Base.show(io::IO, ::MIME"text/plain", sitp::QuadraticSeriesInterpolant{
     println(io)
     _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)")
     println(io)
-    _show_row(io, is_range, "Extrap:", _format_extrap(sitp.extrap); value_color=:magenta)
+    _show_row(io, is_range, "Extrap:", _format_extrap(sitp.extrap))
     if !is_range
         println(io)
         _show_row(io, true, "Search:", _format_search(sitp.search_policy))
@@ -423,7 +429,7 @@ function Base.show(io::IO, ::MIME"text/plain", sitp::CubicSeriesInterpolant{Tg, 
     println(io)
     _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)")
     println(io)
-    _show_row(io, false, "Extrap:", _format_extrap(sitp.extrap); value_color=:magenta)
+    _show_row(io, false, "Extrap:", _format_extrap(sitp.extrap))
     if !is_range
         println(io)
         _show_row(io, false, "Search:", _format_search(sitp.search_policy))
@@ -652,7 +658,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolantND{Tg, Tv, N
     println(io)
 
     # Extrapolation modes
-    _show_nd_config_row(io, false, "Extrap:", itp.extraps, _format_extrap; value_color=:magenta)
+    _show_nd_config_row(io, false, "Extrap:", itp.extraps, _format_extrap)
     println(io)
 
     # Search policies (only if any axis has non-Range grid)
@@ -737,7 +743,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::ConstantInterpolantND{Tg, Tv
     println(io)
 
     # Extrapolation modes
-    _show_nd_config_row(io, false, "Extrap:", itp.extraps, _format_extrap; value_color=:magenta)
+    _show_nd_config_row(io, false, "Extrap:", itp.extraps, _format_extrap)
     println(io)
 
     # Side selection
@@ -786,7 +792,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolantND{Tg, Tv, 
     println(io)
 
     # Extrapolation modes
-    _show_nd_config_row(io, false, "Extrap:", itp.extraps, _format_extrap; value_color=:magenta)
+    _show_nd_config_row(io, false, "Extrap:", itp.extraps, _format_extrap)
     println(io)
 
     # Search policies (only if any axis has non-Range grid)
@@ -816,7 +822,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolantND{Tg, T
     println(io)
 
     # Extrapolation modes
-    _show_nd_config_row(io, false, "Extrap:", itp.extraps, _format_extrap; value_color=:magenta)
+    _show_nd_config_row(io, false, "Extrap:", itp.extraps, _format_extrap)
     println(io)
 
     # Search policies (only if any axis has non-Range grid)

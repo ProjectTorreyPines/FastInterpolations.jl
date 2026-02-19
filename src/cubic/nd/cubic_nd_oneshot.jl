@@ -31,7 +31,7 @@ function cubic_interp(
     query::Tuple{Vararg{Real, N}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
@@ -43,30 +43,26 @@ function cubic_interp(
     Tr = promote_type(Tv, Tg, typeof.(query)...)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    # Validate periodic+extrap compatibility and all BC requirements (once, before dispatch).
-    # _validate_nd_bcs! is now zero-alloc: periodic data check uses @generated indexing,
-    # not selectdim, so no SubArray is created.
-    _check_periodic_extrap(bcs, extraps, Val(N))
+    # Validate BC requirements (once, before dispatch).
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    # Dispatch extrap → concrete Val tuple, then deriv → concrete ops
-    # Both dispatches happen BEFORE entering @with_pool for type stability
-    # Type assertion (::Tr) prevents boxing from multi-branch return type inference failure
-    @_dispatch_extrap_nd extraps bcs => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        # ── Fast path: typed ExtrapMode → direct Val tuple (zero-alloc) ──
+        extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+        return _dispatch_deriv_nd(deriv, Val(N)) do ops
+            _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
+        end
+    else
+        # ── Legacy path: Symbol → macro dispatch (backward compat, may allocate) ──
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        _check_periodic_extrap(bcs, extraps, Val(N))
+        @_dispatch_extrap_nd extraps bcs => extraps_val begin
+            return _dispatch_deriv_nd(deriv, Val(N)) do ops
+                _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
             end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
         end
     end
 end
@@ -83,7 +79,7 @@ function cubic_interp(
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
@@ -107,7 +103,7 @@ function cubic_interp(
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
@@ -145,7 +141,7 @@ computed via `@_dispatch_extrap_nd` in the API layer for type stability.
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}},
     bcs::NTuple{N, AbstractBC},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -186,7 +182,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
     bcs::NTuple{N, AbstractBC},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -232,7 +228,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
     bcs::NTuple{N, AbstractBC},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -275,7 +271,7 @@ function cubic_interp!(
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
@@ -285,24 +281,23 @@ function cubic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    _check_periodic_extrap(bcs, extraps, Val(N))
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    @_dispatch_extrap_nd extraps bcs => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _cubic_interp_nd_oneshot_soa!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+        return _dispatch_deriv_nd(deriv, Val(N)) do ops
+            _cubic_interp_nd_oneshot_soa!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp!)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        _check_periodic_extrap(bcs, extraps, Val(N))
+        @_dispatch_extrap_nd extraps bcs => extraps_val begin
+            return _dispatch_deriv_nd(deriv, Val(N)) do ops
+                _cubic_interp_nd_oneshot_soa!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
             end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _cubic_interp_nd_oneshot_soa!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _cubic_interp_nd_oneshot_soa!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
         end
     end
 end
@@ -320,7 +315,7 @@ function cubic_interp!(
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{Int, Val, NTuple{N,Int}}=0,
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
@@ -330,24 +325,23 @@ function cubic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    _check_periodic_extrap(bcs, extraps, Val(N))
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    @_dispatch_extrap_nd extraps bcs => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _cubic_interp_nd_oneshot_aos!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+        return _dispatch_deriv_nd(deriv, Val(N)) do ops
+            _cubic_interp_nd_oneshot_aos!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp!)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        _check_periodic_extrap(bcs, extraps, Val(N))
+        @_dispatch_extrap_nd extraps bcs => extraps_val begin
+            return _dispatch_deriv_nd(deriv, Val(N)) do ops
+                _cubic_interp_nd_oneshot_aos!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
             end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _cubic_interp_nd_oneshot_aos!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _cubic_interp_nd_oneshot_aos!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
         end
     end
 end

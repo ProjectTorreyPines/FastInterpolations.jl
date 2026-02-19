@@ -101,7 +101,7 @@ function quadratic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
-    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
 ) where {N, Tv_raw}
     # Zero-allocation type promotion
@@ -119,11 +119,18 @@ function quadratic_interp(
 
     # Resolve per-axis options
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    # Build interpolant
-    return _build_nd_quadratic_interpolant(grids_typed, data, bcs, extraps, searches)
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+        return _build_nd_quadratic_interpolant(grids_typed, data, bcs, extraps_val, searches)
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps bcs => extraps_val begin
+            return _build_nd_quadratic_interpolant(grids_typed, data, bcs, extraps_val, searches)
+        end
+    end
 end
 
 # ========================================
@@ -134,7 +141,7 @@ function _build_nd_quadratic_interpolant(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, QuadraticBC},
-    extraps::NTuple{N, Symbol},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
     # Build nodal derivatives using quadratic recurrence
@@ -146,10 +153,8 @@ function _build_nd_quadratic_interpolant(
     # Store BCs as-is (already QuadraticBC)
     bcs_store = bcs
 
-    # Convert extrap symbols to Val types
-    extraps_val = ntuple(Val(N)) do d
-        _symbol_to_extrap_val(extraps[d])
-    end
+    # extraps_val already dispatched to concrete Val types at API boundary
+    # (via @_dispatch_extrap_nd in quadratic_interp)
 
     # Construct the interpolant
     NP1 = N + 1

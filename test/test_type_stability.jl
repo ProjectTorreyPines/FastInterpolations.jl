@@ -338,4 +338,416 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
             @test typeof(cbitp_none) === typeof(cbitp_wrap)
         end
     end
+
+    # =========================================================================
+    # ND interpolant type stability
+    # =========================================================================
+
+    # Shared 2D test data
+    x_nd = range(0.0, 1.0, 11)
+    y_nd = range(0.0, 2.0, 15)
+    data2d = [sin(xi) * cos(yj) for xi in x_nd, yj in y_nd]
+
+    @testset "ND cubic_interp constructor type correctness" begin
+        # Construction works for all extrap modes
+        itp_none = cubic_interp((x_nd, y_nd), data2d)
+        @test itp_none isa CubicInterpolantND
+
+        itp_const = cubic_interp((x_nd, y_nd), data2d; extrap=:constant)
+        @test itp_const isa CubicInterpolantND
+
+        itp_ext = cubic_interp((x_nd, y_nd), data2d; extrap=:extension)
+        @test itp_ext isa CubicInterpolantND
+
+        itp_mixed = cubic_interp((x_nd, y_nd), data2d; extrap=(:none, :constant))
+        @test itp_mixed isa CubicInterpolantND
+
+        # E type parameter: different extrap → different concrete types
+        # (compiler specializes eval per extrap mode, avoiding runtime union-split)
+        @test typeof(itp_none) !== typeof(itp_const)
+        @test typeof(itp_none) !== typeof(itp_mixed)
+
+        # Eval IS @inferred for all extrap modes (the performance-critical property)
+        q = (0.5, 1.0)
+        @test @inferred(itp_none(q)) isa Float64
+        @test @inferred(itp_const(q)) isa Float64
+        @test @inferred(itp_ext(q)) isa Float64
+        @test @inferred(itp_mixed(q)) isa Float64
+    end
+
+    @testset "ND cubic_interp heterogeneous BC" begin
+        # User's real use case: NaturalBC + PeriodicBC with mixed extrap
+        x_periodic = range(0.0, 2π, 20)
+        y_periodic = range(0.0, 2π, 15)
+        data_p = [sin(xi) * cos(yj) for xi in x_periodic, yj in y_periodic]
+
+        itp_mixed_bc = cubic_interp((x_periodic, y_periodic), data_p;
+            bc=(NaturalBC(), PeriodicBC()), extrap=(:extension, :wrap))
+        @test itp_mixed_bc isa CubicInterpolantND
+        @test @inferred(itp_mixed_bc((1.0, 1.0))) isa Float64
+
+        # Homogeneous vs heterogeneous BC must give same type
+        itp_homo = cubic_interp((x_nd, y_nd), data2d; bc=NaturalBC())
+        itp_hetero = cubic_interp((x_nd, y_nd), data2d; bc=(NaturalBC(), NaturalBC()))
+        @test typeof(itp_homo) === typeof(itp_hetero)
+    end
+
+    @testset "ND cubic_interp exclusive periodic" begin
+        # Exclusive endpoint: data does NOT repeat at boundary
+        x_excl = range(0.0, step=0.1, length=10)
+        y_excl = range(0.0, step=0.2, length=8)
+        data_excl = [sin(2π*xi) * cos(2π*yj) for xi in x_excl, yj in y_excl]
+
+        # Both axes exclusive periodic
+        itp_excl = cubic_interp((x_excl, y_excl), data_excl;
+            bc=PeriodicBC(; endpoint=:exclusive))
+        @test itp_excl isa CubicInterpolantND
+
+        # Mixed: one axis exclusive periodic, other natural
+        itp_mixed_excl = cubic_interp((x_excl, y_excl), data_excl;
+            bc=(NaturalBC(), PeriodicBC(; endpoint=:exclusive)))
+        @test itp_mixed_excl isa CubicInterpolantND
+
+        # Exclusive with explicit per-axis period
+        itp_period = cubic_interp((x_excl, y_excl), data_excl;
+            bc=(PeriodicBC(; endpoint=:exclusive, period=1.0),
+                PeriodicBC(; endpoint=:exclusive, period=1.6)))
+        @test itp_period isa CubicInterpolantND
+
+        # Vector grid (non-uniform) with explicit period
+        x_vec = collect(x_excl)
+        y_vec = collect(y_excl)
+        data_vec = [sin(2π*xi) * cos(2π*yj) for xi in x_vec, yj in y_vec]
+        itp_vec = cubic_interp((x_vec, y_vec), data_vec;
+            bc=(PeriodicBC(; endpoint=:exclusive, period=1.0),
+                PeriodicBC(; endpoint=:exclusive, period=1.6)))
+        @test itp_vec isa CubicInterpolantND
+
+        # Eval with exclusive periodic should be @inferred
+        @test @inferred(itp_excl((0.05, 0.1))) isa Float64
+    end
+
+    @testset "ND quadratic_interp constructor type correctness" begin
+        itp_none = quadratic_interp((x_nd, y_nd), data2d)
+        @test itp_none isa QuadraticInterpolantND
+
+        itp_const = quadratic_interp((x_nd, y_nd), data2d; extrap=:constant)
+        @test itp_const isa QuadraticInterpolantND
+
+        itp_mixed = quadratic_interp((x_nd, y_nd), data2d; extrap=(:none, :extension))
+        @test itp_mixed isa QuadraticInterpolantND
+
+        # E type parameter: different extrap → different concrete types
+        @test typeof(itp_none) !== typeof(itp_const)
+
+        # Eval @inferred
+        q = (0.5, 1.0)
+        @test @inferred(itp_none(q)) isa Float64
+        @test @inferred(itp_const(q)) isa Float64
+        @test @inferred(itp_mixed(q)) isa Float64
+    end
+
+    @testset "ND linear_interp constructor type correctness" begin
+        itp_none = linear_interp((x_nd, y_nd), data2d)
+        @test itp_none isa LinearInterpolantND
+
+        itp_const = linear_interp((x_nd, y_nd), data2d; extrap=:constant)
+        @test itp_const isa LinearInterpolantND
+
+        itp_mixed = linear_interp((x_nd, y_nd), data2d; extrap=(:none, :wrap))
+        @test itp_mixed isa LinearInterpolantND
+
+        # E type parameter: different extrap → different concrete types
+        @test typeof(itp_none) !== typeof(itp_const)
+
+        # Eval @inferred
+        q = (0.5, 1.0)
+        @test @inferred(itp_none(q)) isa Float64
+        @test @inferred(itp_const(q)) isa Float64
+        @test @inferred(itp_mixed(q)) isa Float64
+    end
+
+    @testset "ND constant_interp constructor type correctness" begin
+        itp_none = constant_interp((x_nd, y_nd), data2d)
+        @test itp_none isa ConstantInterpolantND
+
+        itp_const = constant_interp((x_nd, y_nd), data2d; extrap=:constant)
+        @test itp_const isa ConstantInterpolantND
+
+        itp_mixed = constant_interp((x_nd, y_nd), data2d; extrap=(:none, :extension))
+        @test itp_mixed isa ConstantInterpolantND
+
+        # E type parameter: different extrap → different concrete types
+        @test typeof(itp_none) !== typeof(itp_const)
+
+        # Eval @inferred
+        q = (0.5, 1.0)
+        @test @inferred(itp_none(q)) isa Float64
+        @test @inferred(itp_const(q)) isa Float64
+        @test @inferred(itp_mixed(q)) isa Float64
+    end
+
+    # =========================================================================
+    # Typed AbstractExtrapMode for ND constructors
+    # =========================================================================
+
+    @testset "ND typed extrap — cubic_interp" begin
+        # All 4 mode types should produce @inferred constructors
+        @test @inferred(cubic_interp((x_nd, y_nd), data2d; extrap=NoExtrap())) isa CubicInterpolantND
+        @test @inferred(cubic_interp((x_nd, y_nd), data2d; extrap=ConstExtrap())) isa CubicInterpolantND
+        @test @inferred(cubic_interp((x_nd, y_nd), data2d; extrap=ExtendExtrap())) isa CubicInterpolantND
+        @test @inferred(cubic_interp((x_nd, y_nd), data2d; extrap=WrapExtrap())) isa CubicInterpolantND
+
+        # Per-axis mode tuple
+        itp_mixed = @inferred cubic_interp((x_nd, y_nd), data2d; extrap=(NoExtrap(), ConstExtrap()))
+        @test itp_mixed isa CubicInterpolantND
+        @test itp_mixed.extraps === (NoExtrap(), ConstExtrap())
+
+        # Typed extrap produces identical struct to Symbol extrap
+        itp_typed = cubic_interp((x_nd, y_nd), data2d; extrap=NoExtrap())
+        itp_sym = cubic_interp((x_nd, y_nd), data2d; extrap=:none)
+        @test typeof(itp_typed) === typeof(itp_sym)
+
+        # Eval equivalence
+        q = (0.5, 1.0)
+        @test @inferred(itp_typed(q)) ≈ itp_sym(q)
+    end
+
+    @testset "ND typed extrap — cubic periodic override" begin
+        x_p = range(0.0, 2π, 20)
+        y_p = range(0.0, 2π, 15)
+        data_p = [sin(xi) * cos(yj) for xi in x_p, yj in y_p]
+
+        # PeriodicBC + NoExtrap → axis auto-overridden to WrapExtrap()
+        itp = cubic_interp((x_p, y_p), data_p;
+            bc=(NaturalBC(), PeriodicBC()), extrap=NoExtrap())
+        @test itp.extraps[1] === NoExtrap()
+        @test itp.extraps[2] === WrapExtrap()
+
+        # PeriodicBC + ConstExtrap → should throw (incompatible)
+        @test_throws ArgumentError cubic_interp((x_p, y_p), data_p;
+            bc=(NaturalBC(), PeriodicBC()), extrap=ConstExtrap())
+    end
+
+    @testset "ND typed extrap — quadratic_interp" begin
+        @test @inferred(quadratic_interp((x_nd, y_nd), data2d; extrap=NoExtrap())) isa QuadraticInterpolantND
+        @test @inferred(quadratic_interp((x_nd, y_nd), data2d; extrap=ConstExtrap())) isa QuadraticInterpolantND
+
+        # Per-axis mode tuple
+        itp = @inferred quadratic_interp((x_nd, y_nd), data2d; extrap=(NoExtrap(), ExtendExtrap()))
+        @test itp.extraps === (NoExtrap(), ExtendExtrap())
+
+        # Typed vs Symbol equivalence
+        itp_typed = quadratic_interp((x_nd, y_nd), data2d; extrap=ExtendExtrap())
+        itp_sym = quadratic_interp((x_nd, y_nd), data2d; extrap=:extension)
+        @test typeof(itp_typed) === typeof(itp_sym)
+        @test @inferred(itp_typed((0.5, 1.0))) ≈ itp_sym((0.5, 1.0))
+    end
+
+    @testset "ND typed extrap — linear_interp" begin
+        @test @inferred(linear_interp((x_nd, y_nd), data2d; extrap=NoExtrap())) isa LinearInterpolantND
+        @test @inferred(linear_interp((x_nd, y_nd), data2d; extrap=WrapExtrap())) isa LinearInterpolantND
+
+        # Per-axis mode tuple
+        itp = @inferred linear_interp((x_nd, y_nd), data2d; extrap=(ConstExtrap(), WrapExtrap()))
+        @test itp.extraps === (ConstExtrap(), WrapExtrap())
+
+        # Typed vs Symbol equivalence
+        itp_typed = linear_interp((x_nd, y_nd), data2d; extrap=ConstExtrap())
+        itp_sym = linear_interp((x_nd, y_nd), data2d; extrap=:constant)
+        @test typeof(itp_typed) === typeof(itp_sym)
+        @test @inferred(itp_typed((0.5, 1.0))) ≈ itp_sym((0.5, 1.0))
+    end
+
+    @testset "ND typed extrap — constant_interp" begin
+        # constant_interp has nested @_dispatch_side_nd, so constructor isn't @inferred
+        # (same limitation as Symbol path). Test construction + eval separately.
+        itp_none = constant_interp((x_nd, y_nd), data2d; extrap=NoExtrap())
+        @test itp_none isa ConstantInterpolantND
+
+        itp_const = constant_interp((x_nd, y_nd), data2d; extrap=ConstExtrap())
+        @test itp_const isa ConstantInterpolantND
+
+        itp_ext = constant_interp((x_nd, y_nd), data2d; extrap=ExtendExtrap())
+        @test itp_ext isa ConstantInterpolantND
+
+        itp_wrap = constant_interp((x_nd, y_nd), data2d; extrap=WrapExtrap())
+        @test itp_wrap isa ConstantInterpolantND
+
+        # Per-axis mode tuple
+        itp = constant_interp((x_nd, y_nd), data2d; extrap=(NoExtrap(), ConstExtrap()))
+        @test itp.extraps === (NoExtrap(), ConstExtrap())
+
+        # Typed vs Symbol equivalence
+        itp_typed = constant_interp((x_nd, y_nd), data2d; extrap=NoExtrap())
+        itp_sym = constant_interp((x_nd, y_nd), data2d; extrap=:none)
+        @test typeof(itp_typed) === typeof(itp_sym)
+        @test @inferred(itp_typed((0.5, 1.0))) ≈ itp_sym((0.5, 1.0))
+    end
+
+    @testset "ND oneshot scalar @inferred" begin
+        q = (0.5, 1.0)
+
+        @test @inferred(cubic_interp((x_nd, y_nd), data2d, q)) isa Float64
+        @test @inferred(quadratic_interp((x_nd, y_nd), data2d, q)) isa Float64
+        @test @inferred(linear_interp((x_nd, y_nd), data2d, q)) isa Float64
+        @test @inferred(constant_interp((x_nd, y_nd), data2d, q)) isa Float64
+    end
+
+    # =========================================================================
+    # Typed AbstractExtrapMode for ND oneshot functions
+    # =========================================================================
+
+    @testset "ND oneshot typed extrap — scalar @inferred" begin
+        q = (0.5, 1.0)
+
+        # All 4 algorithms with typed extrap
+        @test @inferred(cubic_interp((x_nd, y_nd), data2d, q; extrap=NoExtrap())) isa Float64
+        @test @inferred(cubic_interp((x_nd, y_nd), data2d, q; extrap=ConstExtrap())) isa Float64
+        @test @inferred(quadratic_interp((x_nd, y_nd), data2d, q; extrap=NoExtrap())) isa Float64
+        @test @inferred(quadratic_interp((x_nd, y_nd), data2d, q; extrap=ExtendExtrap())) isa Float64
+        @test @inferred(linear_interp((x_nd, y_nd), data2d, q; extrap=NoExtrap())) isa Float64
+        @test @inferred(linear_interp((x_nd, y_nd), data2d, q; extrap=WrapExtrap())) isa Float64
+
+        # constant_interp: eval is @inferred even though constructor isn't
+        @test @inferred(constant_interp((x_nd, y_nd), data2d, q; extrap=NoExtrap())) isa Float64
+    end
+
+    @testset "ND oneshot typed extrap — equivalence with Symbol" begin
+        q = (0.5, 1.0)
+
+        # Typed vs Symbol should produce identical results
+        @test cubic_interp((x_nd, y_nd), data2d, q; extrap=NoExtrap()) ≈
+              cubic_interp((x_nd, y_nd), data2d, q; extrap=:none)
+        @test cubic_interp((x_nd, y_nd), data2d, q; extrap=ConstExtrap()) ≈
+              cubic_interp((x_nd, y_nd), data2d, q; extrap=:constant)
+
+        @test quadratic_interp((x_nd, y_nd), data2d, q; extrap=ExtendExtrap()) ≈
+              quadratic_interp((x_nd, y_nd), data2d, q; extrap=:extension)
+
+        @test linear_interp((x_nd, y_nd), data2d, q; extrap=WrapExtrap()) ≈
+              linear_interp((x_nd, y_nd), data2d, q; extrap=:wrap)
+
+        @test constant_interp((x_nd, y_nd), data2d, q; extrap=ConstExtrap()) ≈
+              constant_interp((x_nd, y_nd), data2d, q; extrap=:constant)
+    end
+
+    @testset "ND oneshot typed extrap — per-axis mode tuple" begin
+        q = (0.5, 1.0)
+
+        # Per-axis typed mode tuple
+        @test @inferred(cubic_interp((x_nd, y_nd), data2d, q;
+            extrap=(NoExtrap(), ConstExtrap()))) isa Float64
+        @test @inferred(linear_interp((x_nd, y_nd), data2d, q;
+            extrap=(ConstExtrap(), WrapExtrap()))) isa Float64
+    end
+
+    @testset "ND oneshot typed extrap — batch SoA" begin
+        qs = (collect(range(0.2, 0.8, 5)), collect(range(0.5, 1.5, 5)))
+
+        # SoA batch with typed extrap
+        result_typed = cubic_interp((x_nd, y_nd), data2d, qs; extrap=NoExtrap())
+        result_sym = cubic_interp((x_nd, y_nd), data2d, qs; extrap=:none)
+        @test result_typed ≈ result_sym
+
+        result_typed = linear_interp((x_nd, y_nd), data2d, qs; extrap=ConstExtrap())
+        result_sym = linear_interp((x_nd, y_nd), data2d, qs; extrap=:constant)
+        @test result_typed ≈ result_sym
+    end
+
+    # =========================================================================
+    # PeriodicBC + Mode type: type stability for constructors and oneshot
+    # =========================================================================
+
+    @testset "ND PeriodicBC + Mode — constructor type stability" begin
+        x_p = range(0.0, 2π, 21)
+        y_p = range(0.0, 2π, 21)
+        data_p = [sin(xi) * cos(yj) for xi in x_p, yj in y_p]
+
+        # Both axes periodic + NoExtrap (auto-overrides to wrap)
+        itp = @inferred cubic_interp((x_p, y_p), data_p;
+            bc=PeriodicBC(), extrap=NoExtrap())
+        @test itp.extraps === (WrapExtrap(), WrapExtrap())
+
+        # Mixed: one periodic, one natural
+        itp_mixed = @inferred cubic_interp((x_p, y_p), data_p;
+            bc=(NaturalBC(), PeriodicBC()), extrap=NoExtrap())
+        @test itp_mixed.extraps[1] === NoExtrap()
+        @test itp_mixed.extraps[2] === WrapExtrap()
+
+        # Quadratic: PeriodicBC + WrapExtrap
+        itp_q = @inferred quadratic_interp((x_p, y_p), data_p;
+            bc=NaturalBC(), extrap=WrapExtrap())
+        @test itp_q.extraps === (WrapExtrap(), WrapExtrap())
+    end
+
+    @testset "ND PeriodicBC exclusive + Mode — constructor type stability" begin
+        x_excl = range(0.0, step=0.1, length=20)
+        y_excl = range(0.0, step=0.2, length=10)
+        data_excl = [sin(2π*xi) * cos(2π*yj) for xi in x_excl, yj in y_excl]
+
+        # Exclusive periodic + WrapExtrap
+        itp = @inferred cubic_interp((x_excl, y_excl), data_excl;
+            bc=PeriodicBC(; endpoint=:exclusive), extrap=WrapExtrap())
+        @test itp isa CubicInterpolantND
+        @test @inferred(itp((0.05, 0.1))) isa Float64
+
+        # Mixed: exclusive periodic axis + natural axis + NoExtrap
+        itp_mixed = @inferred cubic_interp((x_excl, y_excl), data_excl;
+            bc=(NaturalBC(), PeriodicBC(; endpoint=:exclusive)),
+            extrap=NoExtrap())
+        @test itp_mixed isa CubicInterpolantND
+        @test itp_mixed.extraps[1] === NoExtrap()
+        @test itp_mixed.extraps[2] === WrapExtrap()
+
+        # Exclusive with explicit period + Mode
+        itp_period = @inferred cubic_interp((x_excl, y_excl), data_excl;
+            bc=(PeriodicBC(; endpoint=:exclusive, period=2.0),
+                PeriodicBC(; endpoint=:exclusive, period=2.0)),
+            extrap=WrapExtrap())
+        @test itp_period isa CubicInterpolantND
+    end
+
+    @testset "ND PeriodicBC + Mode — oneshot type stability" begin
+        x_p = range(0.0, 2π, 21)
+        y_p = range(0.0, 2π, 21)
+        data_p = [sin(xi) * cos(yj) for xi in x_p, yj in y_p]
+        q = (1.5, 0.8)
+
+        # Cubic: PeriodicBC + WrapExtrap oneshot
+        @test @inferred(cubic_interp((x_p, y_p), data_p, q;
+            bc=PeriodicBC(), extrap=WrapExtrap())) isa Float64
+
+        # Cubic: mixed BC + NoExtrap oneshot (periodic auto-override)
+        @test @inferred(cubic_interp((x_p, y_p), data_p, q;
+            bc=(NaturalBC(), PeriodicBC()), extrap=NoExtrap())) isa Float64
+
+        # Quadratic: PeriodicBC + WrapExtrap oneshot
+        @test @inferred(quadratic_interp((x_p, y_p), data_p, q;
+            bc=NaturalBC(), extrap=WrapExtrap())) isa Float64
+
+        # Linear: WrapExtrap oneshot (no BC for linear)
+        @test @inferred(linear_interp((x_p, y_p), data_p, q;
+            extrap=WrapExtrap())) isa Float64
+
+        # Constant: WrapExtrap oneshot (no BC for constant)
+        @test @inferred(constant_interp((x_p, y_p), data_p, q;
+            extrap=WrapExtrap())) isa Float64
+    end
+
+    @testset "ND PeriodicBC exclusive + Mode — oneshot type stability" begin
+        x_excl = range(0.0, step=0.1, length=20)
+        y_excl = range(0.0, step=0.2, length=10)
+        data_excl = [sin(2π*xi) * cos(2π*yj) for xi in x_excl, yj in y_excl]
+        q = (0.5, 0.5)
+
+        # Cubic: exclusive periodic + WrapExtrap oneshot
+        @test @inferred(cubic_interp((x_excl, y_excl), data_excl, q;
+            bc=PeriodicBC(; endpoint=:exclusive), extrap=WrapExtrap())) isa Float64
+
+        # Cubic: mixed BC exclusive + NoExtrap oneshot
+        @test @inferred(cubic_interp((x_excl, y_excl), data_excl, q;
+            bc=(NaturalBC(), PeriodicBC(; endpoint=:exclusive)),
+            extrap=NoExtrap())) isa Float64
+    end
 end

@@ -715,14 +715,14 @@ _default_2d_margin(grid) = eltype(grid)(0.15) * (last(grid) - first(grid))
 
 Check if any axis of an ND interpolant has extrapolation enabled (not `:none`).
 """
-_has_extrap(itp::AbstractInterpolantND) = any(e -> e !== Val(:none), itp.extraps)
+_has_extrap(itp::AbstractInterpolantND) = any(e -> !(e isa FastInterpolations.NoExtrap), itp.extraps)
 
 """
     _axis_has_extrap(itp::AbstractInterpolantND, d::Int) -> Bool
 
 Check if axis `d` has extrapolation enabled.
 """
-_axis_has_extrap(itp::AbstractInterpolantND, d::Int) = itp.extraps[d] !== Val(:none)
+_axis_has_extrap(itp::AbstractInterpolantND, d::Int) = !(itp.extraps[d] isa FastInterpolations.NoExtrap)
 
 """
 Recipe for 2D N-dimensional interpolants (AbstractInterpolantND with N=2).

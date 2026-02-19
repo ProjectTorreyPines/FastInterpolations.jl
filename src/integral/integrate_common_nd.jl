@@ -47,6 +47,19 @@ end
     return nothing
 end
 
+# ── AbstractExtrapMode dispatch (ND structs store Mode types directly) ──
+@inline _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::NoExtrap) =
+    _check_domain(x, xi, Val(:none))
+
+@inline function _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::AbstractExtrapMode)
+    x_min, x_max = first(x), last(x)
+    (xi < x_min || xi > x_max) && throw(ArgumentError(
+        "ND integration only supports in-domain bounds (extrapolation is not yet implemented). " *
+        "Bound $xi is outside the grid domain [$x_min, $x_max]."
+    ))
+    return nothing
+end
+
 # Shared ND preamble: normalize bounds, domain checks, cell range computation.
 @inline function _integrate_nd_preamble(
     grids, spacings, extraps, lo::Tuple{Vararg{Real,N}}, hi::Tuple{Vararg{Real,N}},

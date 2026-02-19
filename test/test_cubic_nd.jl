@@ -1,6 +1,11 @@
 using Test
 using FastInterpolations
 
+# Allocation threshold (bytes) — tolerates minor LTS/GC overhead.
+if !@isdefined(ND_ALLOC_THRESHOLD)
+    const ND_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
+end
+
 @testset "ND Cubic Interpolation (2D)" begin
 
     @testset "Basic 2D Interpolation" begin
@@ -272,6 +277,143 @@ using FastInterpolations
         @test_throws ArgumentError cubic_interp(
             (x_short, y), data_short, (0.5, 0.5); bc=CubicFit()
         )
+    end
+
+    # ========================================
+    # Zero-Allocation One-Shot Tests
+    # ========================================
+    #
+    # Each test uses a full function barrier: setup + warmup + @allocated
+    # all inside one function. This avoids @testset-scope boxing artifacts.
+
+    function _alloc_test_cubic_default()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 11)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        query = (1.5, 0.8)
+        cubic_interp((x, y), data, query)
+        cubic_interp((x, y), data, query)
+        @allocated cubic_interp((x, y), data, query)
+    end
+
+    function _alloc_test_cubic_deriv()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 11)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        query = (1.5, 0.8)
+        cubic_interp((x, y), data, query; deriv=1)
+        cubic_interp((x, y), data, query; deriv=1)
+        @allocated cubic_interp((x, y), data, query; deriv=1)
+    end
+
+    function _alloc_test_cubic_deriv_val()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, π, 11)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        query = (1.5, 0.8)
+        cubic_interp((x, y), data, query; deriv=Val((1, 0)))
+        cubic_interp((x, y), data, query; deriv=Val((1, 0)))
+        @allocated cubic_interp((x, y), data, query; deriv=Val((1, 0)))
+    end
+
+    function _alloc_test_cubic_extrap_const()
+        x = range(0.0, 2.0, 15)
+        y = range(0.0, 1.0, 10)
+        data = [xi^2 + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        cubic_interp((x, y), data, query; extrap=ConstExtrap())
+        cubic_interp((x, y), data, query; extrap=ConstExtrap())
+        @allocated cubic_interp((x, y), data, query; extrap=ConstExtrap())
+    end
+
+    function _alloc_test_cubic_extrap_extend()
+        x = range(0.0, 2.0, 15)
+        y = range(0.0, 1.0, 10)
+        data = [xi^2 + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        cubic_interp((x, y), data, query; extrap=ExtendExtrap())
+        cubic_interp((x, y), data, query; extrap=ExtendExtrap())
+        @allocated cubic_interp((x, y), data, query; extrap=ExtendExtrap())
+    end
+
+    function _alloc_test_cubic_extrap_wrap_periodic()
+        x = range(0.0, 2π, 21)
+        y = range(0.0, 2π, 21)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        query = (1.5, 0.8)
+        cubic_interp((x, y), data, query; bc=PeriodicBC(), extrap=WrapExtrap())
+        cubic_interp((x, y), data, query; bc=PeriodicBC(), extrap=WrapExtrap())
+        @allocated cubic_interp((x, y), data, query; bc=PeriodicBC(), extrap=WrapExtrap())
+    end
+
+    function _alloc_test_cubic_mixed_mode()
+        x = range(0.0, 2.0, 15)
+        y = range(0.0, 1.0, 10)
+        data = [xi^2 + yj for xi in x, yj in y]
+        query = (1.0, 0.5)
+        cubic_interp((x, y), data, query; extrap=(NoExtrap(), ConstExtrap()))
+        cubic_interp((x, y), data, query; extrap=(NoExtrap(), ConstExtrap()))
+        @allocated cubic_interp((x, y), data, query; extrap=(NoExtrap(), ConstExtrap()))
+    end
+
+    function _alloc_test_cubic_periodic_exclusive()
+        x = range(0.0, step=0.1, length=20)
+        y = range(0.0, step=0.2, length=10)
+        data = [sin(2π*xi) * cos(2π*yj) for xi in x, yj in y]
+        query = (0.5, 0.5)
+        bc = PeriodicBC(; endpoint=:exclusive, period=2.0)
+        cubic_interp((x, y), data, query; bc=bc, extrap=WrapExtrap())
+        cubic_interp((x, y), data, query; bc=bc, extrap=WrapExtrap())
+        @allocated cubic_interp((x, y), data, query; bc=bc, extrap=WrapExtrap())
+    end
+
+    function _alloc_test_cubic_3d()
+        x = range(0.0, 2.0, 10)
+        y = range(0.0, 1.0, 8)
+        z = range(0.0, 3.0, 6)
+        data = [xi^2 + yj + zk for xi in x, yj in y, zk in z]
+        query = (1.0, 0.5, 1.5)
+        cubic_interp((x, y, z), data, query)
+        cubic_interp((x, y, z), data, query)
+        @allocated cubic_interp((x, y, z), data, query)
+    end
+
+    @testset "Zero-Allocation One-Shot" begin
+        @testset "zero-alloc scalar (Range grids, default)" begin
+            @test _alloc_test_cubic_default() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (Range grids, deriv=1)" begin
+            @test _alloc_test_cubic_deriv() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (Range grids, deriv=Val)" begin
+            @test _alloc_test_cubic_deriv_val() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (Range grids, extrap=ConstExtrap)" begin
+            @test _alloc_test_cubic_extrap_const() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (Range grids, extrap=ExtendExtrap)" begin
+            @test _alloc_test_cubic_extrap_extend() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (PeriodicBC + WrapExtrap)" begin
+            @test _alloc_test_cubic_extrap_wrap_periodic() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (per-axis mixed Mode)" begin
+            @test _alloc_test_cubic_mixed_mode() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (PeriodicBC exclusive + WrapExtrap)" begin
+            @test _alloc_test_cubic_periodic_exclusive() <= ND_ALLOC_THRESHOLD
+        end
+
+        @testset "zero-alloc scalar (3D Range grids)" begin
+            @test _alloc_test_cubic_3d() <= ND_ALLOC_THRESHOLD
+        end
     end
 
 end

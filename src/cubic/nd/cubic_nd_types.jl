@@ -133,7 +133,7 @@ struct CubicInterpolantND{
     G<:NTuple{N, AbstractVector{Tg}},
     S<:NTuple{N, AbstractGridSpacing{Tg}},
     B<:NTuple{N, AbstractBC},
-    E<:NTuple{N, ExtrapVal},
+    E<:Tuple{Vararg{AbstractExtrapMode, N}},
     P<:NTuple{N, AbstractSearchPolicy},
 } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
@@ -210,7 +210,7 @@ Get boundary condition for dimension `d`.
 @inline _bc(itp::CubicInterpolantND, ::Val{D}) where {D} = itp.bcs[D]
 
 """
-    _extrap(itp, Val(d)) -> ExtrapVal
+    _extrap(itp, Val(d)) -> AbstractExtrapMode
 
 Get extrapolation mode for dimension `d`.
 """

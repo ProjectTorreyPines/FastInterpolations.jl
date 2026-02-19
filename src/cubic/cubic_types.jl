@@ -82,7 +82,7 @@ end
 # ExtrapVal is defined in ops.jl (shared between linear and cubic)
 
 """
-    CubicInterpolant{Tg,Tv,C,P,BC}
+    CubicInterpolant{Tg,Tv,C,E,P,BC}
 
 Lightweight callable interpolant for broadcast fusion optimization.
 Returned by `cubic_interp(x, y)` (2-argument form).
@@ -91,6 +91,7 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 - `Tg<:AbstractFloat`: Grid type (Float32 or Float64) for x-coordinates
 - `Tv`: Value type for y-values (can be Tg, Complex{Tg}, or other Number)
 - `C`: CubicSplineCache type (preserves grid type info for O(1) vs O(log n) lookup)
+- `E`: Extrapolation mode type (compile-time specialized)
 - `P`: Search policy type (Binary, HintedBinary, LinearBinary, etc.)
 - `BC`: Boundary condition type (BCPair or PeriodicBC)
 
@@ -99,7 +100,7 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 - `y::Vector{Tv}`: y-values (function values at grid points)
 - `z::Vector{Tv}`: Pre-computed second derivative coefficients (solves system once!)
 - `bc::BC`: Boundary condition used for this interpolant
-- `extrap::ExtrapVal`: Extrapolation mode (union-split for efficient dispatch)
+- `extrap::E`: Extrapolation mode (compile-time specialized via type parameter)
 - `search_policy::P`: Default search policy for interval lookup
 
 # Usage
@@ -124,30 +125,30 @@ val = itp(0.5)  # returns ComplexF64
 - System solved ONCE at construction -> z coefficients pre-computed
 - Each scalar call just evaluates cubic polynomial (zero-allocation!)
 - Broadcast operations are perfectly fused (no intermediate arrays)
-- Extrapolation mode uses union-splitting for near-zero overhead dispatch
+- Extrapolation mode uses type-parametrized dispatch for zero overhead
 """
-struct CubicInterpolant{Tg<:AbstractFloat,Tv,C<:CubicSplineCache{Tg},P<:AbstractSearchPolicy,BC<:CubicBC} <: AbstractInterpolant{Tg, Tv}
+struct CubicInterpolant{Tg<:AbstractFloat,Tv,C<:CubicSplineCache{Tg},E<:AbstractExtrapMode,P<:AbstractSearchPolicy,BC<:CubicBC} <: AbstractInterpolant{Tg, Tv}
     cache::C
     y::Vector{Tv}
     z::Vector{Tv}  # Pre-computed second derivative coefficients (value type)
     bc::BC  # Boundary condition used for this interpolant
-    extrap::ExtrapVal  # Extrapolation mode (concrete union for union-splitting)
+    extrap::E  # Extrapolation mode (compile-time specialized via type parameter)
     search_policy::P  # Default search policy (immutable, thread-safe)
     function CubicInterpolant(
         cache::C,
         y::AbstractVector{Tv},
         z::AbstractVector{Tv},
         bc::BC,
-        extrap::ExtrapVal,
+        extrap::E,
         search::P=Binary()
-    ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, P<:AbstractSearchPolicy, BC<:CubicBC}
+    ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, BC<:CubicBC}
         @assert length(cache.x) == length(y) "cache grid and y must have same length"
         @assert length(cache.x) == length(z) "z coefficients must match grid length"
         # Always copy to ensure immutability: once constructed, the interpolant
         # owns its data and always returns identical results for the same query.
         # Without copying, external modifications to y or cache reuse could
         # silently corrupt results.
-        new{Tg,Tv,C,P,BC}(cache, Vector{Tv}(y), Vector{Tv}(z), bc, extrap, search)
+        new{Tg,Tv,C,E,P,BC}(cache, Vector{Tv}(y), Vector{Tv}(z), bc, extrap, search)
     end
 end
 

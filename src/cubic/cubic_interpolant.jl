@@ -25,7 +25,7 @@
 # Default search is now the stored policy in itp.search_policy
 # Tg = grid type, Tv = value type (can be Complex)
 # Unified method: accepts any query type (Tg, Real, or Dual for AD)
-@inline function (itp::CubicInterpolant{Tg,Tv,C,P})(xq; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P}
+@inline function (itp::CubicInterpolant{Tg,Tv})(xq; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @boundscheck _check_domain(itp.cache.x, xq, itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
@@ -37,7 +37,7 @@ end
 # Vector call with deriv keyword support
 # Now supports hint for ODE/streaming patterns - hint is updated during loop
 # Output type is promoted to wider type for precision preservation.
-function (itp::CubicInterpolant{Tg,Tv,C,P})(xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P, Tq<:Real}
+function (itp::CubicInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
     searcher = _to_searcher(search, hint)
@@ -48,7 +48,7 @@ function (itp::CubicInterpolant{Tg,Tv,C,P})(xq::AbstractVector{Tq}; deriv::Int=0
 end
 
 # In-place vector call with deriv keyword support
-function (itp::CubicInterpolant{Tg,Tv,C,P})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, C, P, Tq<:Real}
+function (itp::CubicInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
@@ -159,37 +159,37 @@ end
 # Anchored Extrapolation Handlers
 # ========================================
 
-# :none - throw DomainError
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::Val{:none}, ::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+# NoExtrap - throw DomainError
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::NoExtrap, ::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     x_min, x_max = first(itp.cache.x), last(itp.cache.x)
     throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
 end
 
-# :constant for value - return boundary y value
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::Val{:constant}, ::EvalValue) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+# ConstExtrap for value - return boundary y value
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalValue) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return aq.side == 0x01 ? @inbounds(itp.y[1]) : @inbounds(itp.y[end])
 end
 
-# :constant for derivatives - return zero (preserves Tv type for Complex)
-@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::Val{:constant}, ::EvalDeriv1) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+# ConstExtrap for derivatives - return zero (preserves Tv type for Complex)
+@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv1) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return zero(Tv)
 end
 
-@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::Val{:constant}, ::EvalDeriv2) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv2) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return zero(Tv)
 end
 
-@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::Val{:constant}, ::EvalDeriv3) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv3) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return zero(Tv)
 end
 
-# :extension - use precomputed weights (boundary polynomial extrapolation)
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::Val{:extension}, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+# ExtendExtrap - use precomputed weights (boundary polynomial extrapolation)
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::ExtendExtrap, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return _eval_anchored_kernel(itp, aq, op)
 end
 
-# :wrap - use precomputed weights (already wrapped at anchor construction if needed)
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::Val{:wrap}, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+# WrapExtrap - use precomputed weights (already wrapped at anchor construction if needed)
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::WrapExtrap, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return _eval_anchored_kernel(itp, aq, op)
 end
 
@@ -289,18 +289,7 @@ end
 # These helpers unify the interpolant construction logic,
 # using the cache helpers from cubic_interp.jl.
 
-"""
-    _symbol_to_extrap_val(extrap::Symbol) -> Val
-
-Convert extrapolation symbol to Val type for storage in CubicInterpolant.
-"""
-@inline function _symbol_to_extrap_val(extrap::Symbol)
-    extrap === :none && return Val(:none)
-    extrap === :constant && return Val(:constant)
-    extrap === :extension && return Val(:extension)
-    extrap === :wrap && return Val(:wrap)
-    throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
-end
+## _symbol_to_extrap_val removed — replaced by shared _symbol_to_extrap_mode from eval_ops.jl
 
 """
     _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache, search) -> CubicInterpolant
@@ -316,17 +305,16 @@ so the pool memory can be safely reused after this function returns.
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     bc_pair::BCPair{L,R},
-    extrap::Symbol,
+    extrap::AbstractExtrapMode,
     autocache::Bool,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv, L<:PointBC, R<:PointBC}
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc_pair, autocache)
-    ev = _symbol_to_extrap_val(extrap)
     tmp_z = similar!(pool, y)
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc_pair)
-    return CubicInterpolant(cache, y, tmp_z, bc_pair, ev, search)
+    return CubicInterpolant(cache, y, tmp_z, bc_pair, extrap, search)
 end
 
 """
@@ -353,7 +341,7 @@ so the pool memory can be safely reused after this function returns.
     tmp_z = similar!(pool, y)
     _solve_system!(tmp_z, cache, y, cache.bc_config)
     bc_display = _with_resolved_period(bc, cache.bc_config.period)
-    return CubicInterpolant(cache, y, tmp_z, bc_display, Val(:wrap), search)
+    return CubicInterpolant(cache, y, tmp_z, bc_display, WrapExtrap(), search)
 end
 
 # ========================================
@@ -417,15 +405,16 @@ val = itp(0.5)  # returns ComplexF64
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     bc::AbstractBC,
-    extrap::Symbol,
+    extrap::Union{Symbol,AbstractExtrapMode},
     autocache::Bool,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x, y, bc, autocache, search)
     else
+        mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
         bc_pair = _normalize_bc(bc, Tv)
-        return _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache, search)
+        return _build_interpolant_bcpair(x, y, bc_pair, mode, autocache, search)
     end
 end
 
@@ -434,7 +423,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv};
     bc::AbstractBC=NaturalBC(),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     autocache::Bool=true,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
@@ -466,7 +455,7 @@ so the pool memory can be safely reused after this function returns.
 @with_pool pool function cubic_interp(
     cache::CubicSplineCache{Tg},
     y::AbstractVector{Tv};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     tmp_z = similar!(pool, y)
@@ -474,12 +463,12 @@ so the pool memory can be safely reused after this function returns.
 
     if cache.bc_config isa PeriodicData
         _check_periodic_endpoints(y)
-        return CubicInterpolant(cache, y, tmp_z, PeriodicBC(), Val(:wrap), search)
+        return CubicInterpolant(cache, y, tmp_z, PeriodicBC(), WrapExtrap(), search)
     end
 
     # cache.bc_config is BCPair - use it directly
-    ev = _symbol_to_extrap_val(extrap)
-    return CubicInterpolant(cache, y, tmp_z, cache.bc_config, ev, search)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
+    return CubicInterpolant(cache, y, tmp_z, cache.bc_config, mode, search)
 end
 
 # Generic Real wrapper for 2-argument form (handles Integer grids, etc.)
@@ -487,7 +476,7 @@ function cubic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY};
     bc::AbstractBC=NaturalBC(),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     autocache::Bool=true,
     search::P=Binary()
 ) where {TX<:Real, TY, P<:AbstractSearchPolicy}
@@ -498,7 +487,8 @@ function cubic_interp(
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x_p, y_p, bc, autocache, search)
     else
+        mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
         bc_pair = _normalize_bc(bc_promoted, Tv)
-        return _build_interpolant_bcpair(x_p, y_p, bc_pair, extrap, autocache, search)
+        return _build_interpolant_bcpair(x_p, y_p, bc_pair, mode, autocache, search)
     end
 end

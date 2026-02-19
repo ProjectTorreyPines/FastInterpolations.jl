@@ -715,50 +715,61 @@ macro _dispatch_extrap_nd(extraps_expr, pair, body)
     quote
         local $(extraps_var) = $(esc(extraps_expr))
         local $(bcs_var) = $(esc(bcs_expr))
-        local $(valn_var) = Val(length($(extraps_var)))
 
-        if _is_uniform_extrap_no_periodic($(extraps_var), $(bcs_var))
-            # Fast path 1: uniform extrap, no periodic → concrete Val tuple
-            if $(extraps_var)[1] === :none
-                let $(esc(ev_sym)) = ntuple(_ -> Val(:none), $(valn_var))
-                    $(esc(body))
+        if $(extraps_var) isa Tuple{Vararg{Val}}
+            # Fast path 0: pre-resolved Val tuple (from typed AbstractExtrapMode path).
+            # _resolve_extrap_nd(::AbstractExtrapMode, bcs, Val(N)) returns Val tuples directly,
+            # so we pass through without any Symbol dispatch.
+            let $(esc(ev_sym)) = $(extraps_var)
+                $(esc(body))
+            end
+        else
+            # Symbol dispatch paths (legacy)
+            local $(valn_var) = Val(length($(extraps_var)))
+
+            if _is_uniform_extrap_no_periodic($(extraps_var), $(bcs_var))
+                # Fast path 1: uniform extrap, no periodic → concrete Val tuple
+                if $(extraps_var)[1] === :none
+                    let $(esc(ev_sym)) = ntuple(_ -> Val(:none), $(valn_var))
+                        $(esc(body))
+                    end
+                elseif $(extraps_var)[1] === :constant
+                    let $(esc(ev_sym)) = ntuple(_ -> Val(:constant), $(valn_var))
+                        $(esc(body))
+                    end
+                elseif $(extraps_var)[1] === :extension
+                    let $(esc(ev_sym)) = ntuple(_ -> Val(:extension), $(valn_var))
+                        $(esc(body))
+                    end
+                else
+                    let $(esc(ev_sym)) = ntuple(_ -> Val(:wrap), $(valn_var))
+                        $(esc(body))
+                    end
                 end
-            elseif $(extraps_var)[1] === :constant
-                let $(esc(ev_sym)) = ntuple(_ -> Val(:constant), $(valn_var))
-                    $(esc(body))
-                end
-            elseif $(extraps_var)[1] === :extension
-                let $(esc(ev_sym)) = ntuple(_ -> Val(:extension), $(valn_var))
-                    $(esc(body))
-                end
-            else
+            elseif _is_all_periodic($(bcs_var))
+                # Fast path 2: all periodic → all Val(:wrap)
                 let $(esc(ev_sym)) = ntuple(_ -> Val(:wrap), $(valn_var))
                     $(esc(body))
                 end
-            end
-        elseif _is_all_periodic($(bcs_var))
-            # Fast path 2: all periodic → all Val(:wrap)
-            let $(esc(ev_sym)) = ntuple(_ -> Val(:wrap), $(valn_var))
-                $(esc(body))
-            end
-        elseif _is_uniform_extrap($(extraps_var))
-            # Fast path 3: uniform extrap + mixed BCs (some periodic axes) → @generated per-axis
-            # BC types are known at compile time; extrap dispatched via Val(sym).
-            # Only :none and :wrap are valid here: _check_periodic_extrap ensures :constant/:extension
-            # cannot coexist with PeriodicBC (throws at construction), making those branches dead.
-            if $(extraps_var)[1] === :none
-                let $(esc(ev_sym)) = _resolve_uniform_extrap_with_periodic($(bcs_var), Val(:none))
+            elseif _is_uniform_extrap($(extraps_var))
+                # Fast path 3: uniform extrap + mixed BCs (some periodic axes) → @generated per-axis
+                # BC types are known at compile time; extrap dispatched via Val(sym).
+                # Only :none and :wrap are valid here: _check_periodic_extrap ensures :constant/:extension
+                # cannot coexist with PeriodicBC (throws at construction), making those branches dead.
+                if $(extraps_var)[1] === :none
+                    let $(esc(ev_sym)) = _resolve_uniform_extrap_with_periodic($(bcs_var), Val(:none))
+                        $(esc(body))
+                    end
+                else  # :wrap (only other valid option with mixed periodic BCs)
+                    let $(esc(ev_sym)) = _resolve_uniform_extrap_with_periodic($(bcs_var), Val(:wrap))
+                        $(esc(body))
+                    end
+                end
+            else
+                # Fallback: non-uniform extraps + mixed BCs (extremely rare)
+                let $(esc(ev_sym)) = _resolve_mixed_extrap_vals($(extraps_var), $(bcs_var))
                     $(esc(body))
                 end
-            else  # :wrap (only other valid option with mixed periodic BCs)
-                let $(esc(ev_sym)) = _resolve_uniform_extrap_with_periodic($(bcs_var), Val(:wrap))
-                    $(esc(body))
-                end
-            end
-        else
-            # Fallback: non-uniform extraps + mixed BCs (extremely rare)
-            let $(esc(ev_sym)) = _resolve_mixed_extrap_vals($(extraps_var), $(bcs_var))
-                $(esc(body))
             end
         end
     end

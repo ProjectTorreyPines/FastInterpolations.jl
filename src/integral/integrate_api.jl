@@ -117,10 +117,10 @@ end
     end
 end
 
-# Receives concrete side Val{S} + union extrap (4-way, within union-split limit).
+# Receives concrete side Val{S} + extrap mode.
 # Uses the generic _integrate_1d_cellwise path — side is already concrete here.
 @inline function _integrate_constant_1d_impl(
-    x::AbstractVector, y::AbstractVector, side::Val{S}, extrap::ExtrapVal,
+    x::AbstractVector, y::AbstractVector, side::Val{S}, extrap::AbstractExtrapMode,
     x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
 ) where {S, SR<:Searcher, Tg, Tout}
     partial = @inline (i, xL, h, a2, b2) -> begin
@@ -245,7 +245,7 @@ end
 end
 
 @inline function _integrate_constant_series_1d(
-    x::AbstractVector, y::AbstractMatrix, side::Val{S}, extrap::ExtrapVal,
+    x::AbstractVector, y::AbstractMatrix, side::Val{S}, extrap::AbstractExtrapMode,
     x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
 ) where {S, SR<:Searcher, Tg, Tout}
     n = size(y, 2)

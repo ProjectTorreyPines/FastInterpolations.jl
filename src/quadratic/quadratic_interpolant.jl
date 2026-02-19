@@ -12,7 +12,7 @@
 # Type parameters: Tg = grid type, Tv = value type (can be Complex)
 # Unified method: accepts any query type (Tg, Real, or Dual for AD)
 # ─────────────────────────────────────────────────────────────
-@inline function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(xq; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
+@inline function (itp::QuadraticInterpolant{Tg,Tv})(xq; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
@@ -26,7 +26,7 @@ end
 # Now supports hint for ODE/streaming patterns
 # Output type is promoted to wider type for precision preservation
 # ─────────────────────────────────────────────────────────────
-function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P, S<:Real}
+function (itp::QuadraticInterpolant{Tg,Tv})(xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, S<:Real}
     T_out = promote_type(Tv, S)    # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xi))
     searcher = _to_searcher(search, hint)
@@ -43,7 +43,7 @@ end
 # In-place vector call
 # Unified: accepts any Real query type (Tg, Float32, Dual, etc.)
 # ─────────────────────────────────────────────────────────────
-function (itp::QuadraticInterpolant{Tg,Tv,X,Y,P})(output::AbstractVector, xi::AbstractVector{<:Real}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, P}
+function (itp::QuadraticInterpolant{Tg,Tv})(output::AbstractVector, xi::AbstractVector{<:Real}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @assert length(output) == length(xi) "output length must match xi length"
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
@@ -61,7 +61,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=:none, search=Binary()) -> QuadraticInterpolant
+    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=NoExtrap(), search=Binary()) -> QuadraticInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -69,7 +69,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (can be Real or Complex)
 - `bc`: Boundary condition (Left, Right, MinCurvFit, or Left/Right with QuadraticFit)
-- `extrap::Symbol`: Extrapolation mode
+- `extrap::AbstractExtrapMode`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
 
 # Returns
@@ -120,7 +120,7 @@ end
     x::AbstractVector{TX},
     y::AbstractVector{TY};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {TX<:Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)

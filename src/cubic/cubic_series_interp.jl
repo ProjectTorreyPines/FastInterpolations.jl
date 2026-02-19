@@ -33,7 +33,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 - `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
 - `z::Matrix{Tv}`: Second derivatives (n_points × n_series) series-contiguous
 - `_point_snapshot`: Atomic field for lazy point-contiguous layout
-- `extrap::ExtrapVal`: Extrapolation mode
+- `extrap::E`: Extrapolation mode (compile-time specialized via type parameter)
 
 # Memory Layout
 Primary storage is series-contiguous (n_points × n_series):
@@ -82,6 +82,7 @@ mutable struct CubicSeriesInterpolant{
     Tv,
     C<:CubicSplineCache{Tg},
     B,
+    E<:AbstractExtrapMode,
     P<:AbstractSearchPolicy
 } <: AbstractSeriesInterpolant{Tg, Tv}
     const cache::C                    # Shared cache with LU factorization
@@ -89,7 +90,7 @@ mutable struct CubicSeriesInterpolant{
     const y::Matrix{Tv}               # Series-contiguous y (n_points × n_series)
     const z::Matrix{Tv}               # Series-contiguous z (n_points × n_series)
     const _transpose::LazyTransposePair{Tv}  # Lazy point-contiguous layout (shared infra)
-    const extrap::ExtrapVal           # Extrapolation mode
+    const extrap::E                   # Extrapolation mode (compile-time specialized)
     const search_policy::P            # Default search policy (immutable, thread-safe)
 
     function CubicSeriesInterpolant(
@@ -97,10 +98,10 @@ mutable struct CubicSeriesInterpolant{
         bc_for_solve::B,
         y::Matrix{Tv},
         z::Matrix{Tv},
-        extrap::ExtrapVal,
+        extrap::E,
         search::P=Binary()
-    ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, B, P<:AbstractSearchPolicy}
-        new{Tg, Tv, C, B, P}(
+    ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, B, E<:AbstractExtrapMode, P<:AbstractSearchPolicy}
+        new{Tg, Tv, C, B, E, P}(
             cache, bc_for_solve, y, z,
             LazyTransposePair{Tv}(),
             extrap, search
@@ -113,7 +114,7 @@ end
 # ========================================
 
 """Check if wrap mode is active (for anchor construction)."""
-@inline _should_wrap(sitp::CubicSeriesInterpolant) = sitp.extrap === Val(:wrap)
+@inline _should_wrap(sitp::CubicSeriesInterpolant) = sitp.extrap isa WrapExtrap
 
 """Number of series in the interpolant."""
 @inline n_series(sitp::CubicSeriesInterpolant) = size(sitp.y, 2)
@@ -304,7 +305,7 @@ SIMD evaluation with extrapolation handling for multi-series.
     x_min::Tg,
     x_max::Tg,
     aq::_CubicAnchoredQuery{Tg,Tq},
-    extrap::ExtrapVal,
+    extrap::AbstractExtrapMode,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     # Inside domain: normal evaluation
@@ -316,7 +317,7 @@ SIMD evaluation with extrapolation handling for multi-series.
     _eval_series_point_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op, aq.side)
 end
 
-# :none - throw DomainError
+# NoExtrap - throw DomainError
 @inline function _eval_series_point_extrap!(
     ::AbstractVector,
     ::Matrix{Tv},
@@ -325,14 +326,14 @@ end
     x_min::Tg,
     x_max::Tg,
     aq::_CubicAnchoredQuery{Tg,Tq},
-    ::Val{:none},
+    ::NoExtrap,
     ::AbstractEvalOp,
     ::UInt8
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
-# :constant - clamp to boundary (value only, derivatives are zero)
+# ConstExtrap - clamp to boundary (value only, derivatives are zero)
 @inline function _eval_series_point_extrap!(
     out::AbstractVector,
     y_point::Matrix{Tv},
@@ -341,14 +342,14 @@ end
     ::Tg,
     ::Tg,
     ::_CubicAnchoredQuery{Tg,Tq},
-    ::Val{:constant},
+    ::ConstExtrap,
     op::AbstractEvalOp,
     side::UInt8
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
-# :extension - extend polynomial (EvalValue)
+# ExtendExtrap - extend polynomial (EvalValue)
 @inline function _eval_series_point_extrap!(
     out::AbstractVector,
     y_point::Matrix{Tv},
@@ -357,7 +358,7 @@ end
     ::Tg,
     ::Tg,
     aq::_CubicAnchoredQuery{Tg,Tq},
-    ::Val{:extension},
+    ::ExtendExtrap,
     ::EvalValue,
     side::UInt8
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
@@ -375,7 +376,7 @@ end
     return out
 end
 
-# :extension - extend polynomial (EvalDeriv1)
+# ExtendExtrap - extend polynomial (EvalDeriv1)
 @inline function _eval_series_point_extrap!(
     out::AbstractVector,
     y_point::Matrix{Tv},
@@ -384,7 +385,7 @@ end
     ::Tg,
     ::Tg,
     aq::_CubicAnchoredQuery{Tg,Tq},
-    ::Val{:extension},
+    ::ExtendExtrap,
     ::EvalDeriv1,
     side::UInt8
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
@@ -402,7 +403,7 @@ end
     return out
 end
 
-# :extension - extend polynomial (EvalDeriv2) - optimized, no y-loads
+# ExtendExtrap - extend polynomial (EvalDeriv2) - optimized, no y-loads
 @inline function _eval_series_point_extrap!(
     out::AbstractVector,
     y_point::Matrix{Tv},
@@ -411,7 +412,7 @@ end
     ::Tg,
     ::Tg,
     aq::_CubicAnchoredQuery{Tg,Tq},
-    ::Val{:extension},
+    ::ExtendExtrap,
     ::EvalDeriv2,
     side::UInt8
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
@@ -427,7 +428,7 @@ end
     return out
 end
 
-# :extension - extend polynomial (EvalDeriv3) - optimized, no y-loads
+# ExtendExtrap - extend polynomial (EvalDeriv3) - optimized, no y-loads
 @inline function _eval_series_point_extrap!(
     out::AbstractVector,
     y_point::Matrix{Tv},
@@ -436,7 +437,7 @@ end
     ::Tg,
     ::Tg,
     aq::_CubicAnchoredQuery{Tg,Tq},
-    ::Val{:extension},
+    ::ExtendExtrap,
     ::EvalDeriv3,
     side::UInt8
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
@@ -532,7 +533,7 @@ end
 # ========================================
 
 """
-    cubic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=NaturalBC(), extrap=:none, autocache=true, precompute_transpose=false)
+    cubic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, precompute_transpose=false)
 
 Create a multi-Y cubic spline interpolant for multiple y-data series sharing the same x-grid.
 
@@ -540,7 +541,7 @@ Create a multi-Y cubic spline interpolant for multiple y-data series sharing the
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
 - `bc`: Boundary condition (NaturalBC, ClampedBC, PeriodicBC, or Vector of BC for per-series)
-- `extrap`: Extrapolation mode (:none, :constant, :extension, :wrap)
+- `extrap::AbstractExtrapMode`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `autocache`: If true, reuse cached LU factorization (default: true)
 - `precompute_transpose`: If true, build point-contiguous layout immediately
 
@@ -570,7 +571,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::P=Binary()
@@ -621,10 +622,11 @@ function cubic_interp(
         bc_representative = bc_pair
     end
 
-    # Convert extrap symbol to Val
-    extrap_val = _symbol_to_extrap_val(extrap)
+    # Convert extrap symbol to mode
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
 
-    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap_val, search)
+    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, mode, search)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)
@@ -672,8 +674,8 @@ function _build_series_periodic(
     z_mat = Matrix{Tv}(undef, n_pts, n_series_count)
     _solve_series_coefficients!(z_mat, y_mat, cache, cache.bc_config)
 
-    # Periodic BC always uses :wrap extrapolation
-    sitp = CubicSeriesInterpolant(cache, cache.bc_config, y_mat, z_mat, Val(:wrap), search)
+    # Periodic BC always uses wrap extrapolation
+    sitp = CubicSeriesInterpolant(cache, cache.bc_config, y_mat, z_mat, WrapExtrap(), search)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)
@@ -684,7 +686,7 @@ end
 
 # Matrix input: columns as y-series
 """
-    cubic_interp(x, Y::AbstractMatrix; bc=NaturalBC(), extrap=:none, autocache=true, precompute_transpose=false)
+    cubic_interp(x, Y::AbstractMatrix; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, precompute_transpose=false)
 
 Create a multi-Y cubic spline interpolant from a matrix where each column is a y-series.
 
@@ -705,7 +707,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=Binary()
@@ -749,10 +751,11 @@ function cubic_interp(
         bc_representative = bc_pair
     end
 
-    # Convert extrap symbol to Val
-    extrap_val = _symbol_to_extrap_val(extrap)
+    # Convert extrap symbol to mode
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
 
-    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap_val, search)
+    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, mode, search)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)
@@ -766,7 +769,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=Binary()
@@ -784,7 +787,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=Binary()
@@ -812,12 +815,12 @@ Returns a vector of values, one per y-series.
 When `xq` is a ForwardDiff.Dual, the output type is promoted to preserve
 derivatives. Output type is `promote_type(Tv, Tq)`.
 """
-function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
-    xq::Tq; 
-    deriv::Int=0, 
-    search=sitp.search_policy, 
+function (sitp::CubicSeriesInterpolant{Tg,Tv})(
+    xq::Tq;
+    deriv::Int=0,
+    search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, C, B, P, Tq<:Real}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
     T_out = promote_type(Tv, typeof(xq_promoted))
@@ -841,13 +844,13 @@ Evaluate multi-Y interpolant at scalar query point (in-place).
 Note: For AD support with ForwardDiff.Dual, use the out-of-place version
 which automatically promotes the output type.
 """
-function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
+function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
     xq::Tq;
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, C, B, P, Tq<:Real}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     _validate_scalar_output(output, n_series(sitp))
 
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
@@ -878,12 +881,12 @@ Returns a vector of vectors: one vector per y-series, each containing results fo
 For mixed-type queries (e.g., Float64 queries on Float32 grid), output type is
 `promote_type(Tv, Tq)` to preserve precision and match scalar/broadcast semantics.
 """
-function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
+function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     xq::AbstractVector{Tq};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, C, B, P, Tq<:Real}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
     T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
@@ -916,13 +919,13 @@ When `eltype(xq) !== Tg`, allocates anchor vector with precision-preserving weig
 # Precision Preservation
 Builds anchors from original `xq` (preserving precision in weights) for scalar/vector symmetry.
 """
-@with_pool pool function (sitp::CubicSeriesInterpolant{Tg,Tv,C,B,P})(
+@with_pool pool function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     outputs::AbstractVector{<:AbstractVector},
     xq::AbstractVector{Tq};
     deriv::Int=0,
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, C, B, P, Tq<:Real}
+) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
 
@@ -1037,7 +1040,7 @@ Uses argument-passing pattern for optimal performance (avoids struct field acces
     x_max::Tg,
     k::Int,
     aq_vec::AbstractVector{<:_CubicAnchoredQuery{Tg}},
-    extrap::ExtrapVal,
+    extrap::AbstractExtrapMode,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     @inbounds for j in eachindex(out, aq_vec)
@@ -1058,7 +1061,7 @@ Takes matrices as arguments for optimal performance.
     x_max::Tg,
     k::Int,
     aq::_CubicAnchoredQuery{Tg},
-    extrap::ExtrapVal,
+    extrap::AbstractExtrapMode,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     # Inside domain: normal evaluation
@@ -1067,9 +1070,9 @@ Takes matrices as arguments for optimal performance.
     end
 
     # Outside domain: dispatch on extrap mode
-    if extrap === Val(:extension) || extrap === Val(:wrap)
+    if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_series_anchored(y, z, k, aq, op)
-    elseif extrap === Val(:constant)
+    elseif extrap isa ConstExtrap
         return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)

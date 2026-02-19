@@ -56,7 +56,7 @@ end
     a::AbstractVector{Tv},
     d::AbstractVector{Tv},
     xq::Tq,
-    ::Val{:none},
+    ::NoExtrap,
     op::AbstractEvalOp,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
@@ -70,7 +70,7 @@ end
     a::AbstractVector{Tv},
     d::AbstractVector{Tv},
     xq::Tq,
-    ::Val{:constant},
+    ::ConstExtrap,
     op::AbstractEvalOp,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
@@ -88,7 +88,7 @@ end
     a::AbstractVector{Tv},
     d::AbstractVector{Tv},
     xq::Tq,
-    ::Val{:extension},
+    ::ExtendExtrap,
     op::AbstractEvalOp,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
@@ -103,7 +103,7 @@ end
     a::AbstractVector{Tv},
     d::AbstractVector{Tv},
     xq::Tq,
-    ::Val{:wrap},
+    ::WrapExtrap,
     op::AbstractEvalOp,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
@@ -130,7 +130,7 @@ Note: `h` parameter kept for API compatibility but not used (interval info from 
     a::AbstractVector{Tv},
     d::AbstractVector{Tv},
     xq::Tq,
-    extrap::ExtrapVal,
+    extrap::AbstractExtrapMode,
     op::AbstractEvalOp,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
@@ -149,7 +149,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y, xi; bc=Left(QuadraticFit()), extrap=:none, deriv=0, search=Binary())
+    quadratic_interp(x, y, xi; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=0, search=Binary())
 
 C1 piecewise quadratic spline interpolation at a single point.
 
@@ -165,10 +165,10 @@ C1 piecewise quadratic spline interpolation at a single point.
   - `Right(Deriv1(v))`: First derivative = v at right endpoint
   - `Right(Deriv2(v))`: Second derivative = v at right endpoint
   - `MinCurvFit()`: Minimize total curvature (globally smooth)
-- `extrap::Symbol`: Extrapolation mode
-  - `:none` (default): throws DomainError if outside domain
-  - `:constant`: clamp to boundary values
-  - `:extension`: extend the boundary polynomial
+- `extrap::AbstractExtrapMode`: Extrapolation mode (Symbol args deprecated)
+  - `NoExtrap()` (default): throws DomainError if outside domain
+  - `ConstExtrap()`: clamp to boundary values
+  - `ExtendExtrap()`: extend the boundary polynomial
 - `deriv::Int`: Derivative order (0, 1, or 2)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
@@ -200,7 +200,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     y::AbstractVector{Tv},
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -218,11 +218,10 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _to_searcher(search, hint)
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            # xq passed as-is to preserve Dual type for AD
-            _quadratic_eval_at_point(x, y, h, a, d, xq, ev, op, searcher)
-        end
+        _quadratic_eval_at_point(x, y, h, a, d, xq, mode, op, searcher)
     end
 end
 
@@ -231,7 +230,7 @@ end
 # ========================================
 
 """
-    quadratic_interp!(output, x, y, x_targets; bc=Left(QuadraticFit()), extrap=:none, deriv=0, search=Binary())
+    quadratic_interp!(output, x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=0, search=Binary())
 
 In-place quadratic spline interpolation for multiple query points.
 
@@ -259,7 +258,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -277,12 +276,12 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _to_searcher(search)
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp!)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            @boundscheck _check_domain(x, x_targets, ev)
-            @inbounds for i in eachindex(x_targets, output)
-                output[i] = _quadratic_eval_at_point(x, y, h, a, d, x_targets[i], ev, op, searcher)
-            end
+        @boundscheck _check_domain(x, x_targets, mode)
+        @inbounds for i in eachindex(x_targets, output)
+            output[i] = _quadratic_eval_at_point(x, y, h, a, d, x_targets[i], mode, op, searcher)
         end
     end
     return output
@@ -293,7 +292,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y, x_targets; bc=Left(QuadraticFit()), extrap=:none, deriv=0, search=Binary())
+    quadratic_interp(x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=0, search=Binary())
 
 Quadratic spline interpolation for multiple query points (allocating version).
 
@@ -314,7 +313,7 @@ function quadratic_interp(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -369,7 +368,7 @@ end
     y::AbstractVector{Tv},
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -391,7 +390,7 @@ function quadratic_interp(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
@@ -413,7 +412,7 @@ function quadratic_interp!(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}

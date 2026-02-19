@@ -16,7 +16,7 @@
 # ========================================
 
 """
-    linear_interp!(output, x, y, x_targets; extrap=:none, deriv=0, search=Binary())
+    linear_interp!(output, x, y, x_targets; extrap=NoExtrap(), deriv=0, search=Binary())
 
 Zero-allocation linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -24,7 +24,7 @@ Zero-allocation linear interpolation with automatic dispatch:
 
 # Arguments
 - `output`: Pre-allocated output vector (must be floating-point type)
-- `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, `:extension`, or `:wrap`
+- `extrap::AbstractExtrapMode`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `deriv::Int`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
@@ -37,7 +37,7 @@ rho = 0.0:0.01:1.0  # Uniform grid → fast O(1) path
 y = sin.(rho)
 out = Vector{Float64}(undef, 2)
 linear_interp!(out, rho, y, [0.55, 0.77])  # throws error if outside domain
-linear_interp!(out, rho, y, [-0.1, 1.2]; extrap=:extension)  # linear extrapolation
+linear_interp!(out, rho, y, [-0.1, 1.2]; extrap=ExtendExtrap())  # linear extrapolation
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
@@ -60,7 +60,7 @@ function linear_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -68,22 +68,22 @@ function linear_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _to_searcher(search)
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp!)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            @boundscheck _check_domain(x, x_targets, ev)
-            _linear_interp_loop!(output, x, y, x_targets, ev, op, searcher)
-        end
+        @boundscheck _check_domain(x, x_targets, mode)
+        _linear_interp_loop!(output, x, y, x_targets, mode, op, searcher)
     end
 end
 
-# Internal loop with Val dispatch and Searcher (type-stable)
+# Internal loop with AbstractExtrapMode dispatch and Searcher (type-stable)
 # Supports mixed types: Tg for grid, Tv for values
 @inline function _linear_interp_loop!(
     output::AbstractVector{Tv},
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg},
-    extrap_val::Val,
+    extrap_val::AbstractExtrapMode,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
@@ -102,7 +102,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg},
-    ::Val{:wrap},
+    ::WrapExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
@@ -112,13 +112,13 @@ end
     if qmin >= x_min && qmax < x_max
         # Fast path: all queries inside domain - use extension (no wrap overhead)
         @inbounds for i in eachindex(x_targets, output)
-            output[i] = _linear_eval_at_point(x, y, x_targets[i], Val(:extension), op, searcher)
+            output[i] = _linear_eval_at_point(x, y, x_targets[i], ExtendExtrap(), op, searcher)
         end
     else
         # Slow path: some queries outside - per-element wrap
         @inbounds for i in eachindex(x_targets, output)
             xi_wrapped = _wrap_to_domain(x_targets[i], x_min, x_max)
-            output[i] = _linear_eval_at_point(x, y, xi_wrapped, Val(:extension), op, searcher)
+            output[i] = _linear_eval_at_point(x, y, xi_wrapped, ExtendExtrap(), op, searcher)
         end
     end
     return output
@@ -130,7 +130,7 @@ end
     x::AbstractRange{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg},
-    ::Val{:wrap},
+    ::WrapExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
@@ -139,12 +139,12 @@ end
 
     if qmin >= x_min && qmax < x_max
         @inbounds for i in eachindex(x_targets, output)
-            output[i] = _linear_eval_at_point(x, y, x_targets[i], Val(:extension), op, searcher)
+            output[i] = _linear_eval_at_point(x, y, x_targets[i], ExtendExtrap(), op, searcher)
         end
     else
         @inbounds for i in eachindex(x_targets, output)
             xi_wrapped = _wrap_to_domain(x_targets[i], x_min, x_max)
-            output[i] = _linear_eval_at_point(x, y, xi_wrapped, Val(:extension), op, searcher)
+            output[i] = _linear_eval_at_point(x, y, xi_wrapped, ExtendExtrap(), op, searcher)
         end
     end
     return output
@@ -157,7 +157,7 @@ end
     x::AbstractRange{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -165,11 +165,11 @@ end
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _to_searcher(search)
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp!)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            @boundscheck _check_domain(x, x_targets, ev)
-            _linear_interp_loop!(output, x, y, x_targets, ev, op, searcher)
-        end
+        @boundscheck _check_domain(x, x_targets, mode)
+        _linear_interp_loop!(output, x, y, x_targets, mode, op, searcher)
     end
 end
 
@@ -178,7 +178,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xq::Real; extrap=:none, deriv=0, search=Binary()) -> AbstractFloat
+    linear_interp(x, y, xq::Real; extrap=NoExtrap(), deriv=0, search=Binary()) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -186,7 +186,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 
 # Arguments
 - `xq::Real`: Single interpolation query point
-- `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, `:extension`, or `:wrap`
+- `extrap::AbstractExtrapMode`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `deriv::Int`: Derivative order (0=value, 1=first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
@@ -201,7 +201,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 rho = 0.0:0.01:1.0  # Uniform grid → fast O(1) path
 y = sin.(rho)
 value = linear_interp(rho, y, 0.55)  # Returns Float64, zero allocation
-value = linear_interp(rho, y, 1.5; extrap=:wrap)  # wraps to domain
+value = linear_interp(rho, y, 1.5; extrap=WrapExtrap())  # wraps to domain
 
 # Integer inputs auto-promoted to Float
 x_int = 0:10
@@ -249,7 +249,7 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq,
-    extrap::Val,
+    extrap::AbstractExtrapMode,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
@@ -315,29 +315,29 @@ Query type `Tq` is unconstrained to support ForwardDiff.Dual:
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq,
-    ::Val{:none},
+    ::NoExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
-    _linear_eval_at_point(x, y, xq, Val(:none), op, searcher)
+    _linear_eval_at_point(x, y, xq, NoExtrap(), op, searcher)
 end
 
 @inline function _linear_with_extrap(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq,
-    ::Val{:extension},
+    ::ExtendExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
-    _linear_eval_at_point(x, y, xq, Val(:extension), op, searcher)
+    _linear_eval_at_point(x, y, xq, ExtendExtrap(), op, searcher)
 end
 
 @inline function _linear_with_extrap(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq,
-    ::Val{:constant},
+    ::ConstExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
@@ -349,7 +349,7 @@ end
     elseif xq_primal > x_max
         return _linear_eval_constant_extrap(y, false, op)
     else
-        return _linear_eval_at_point(x, y, xq, Val(:extension), op, searcher)
+        return _linear_eval_at_point(x, y, xq, ExtendExtrap(), op, searcher)
     end
 end
 
@@ -357,26 +357,26 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq,
-    ::Val{:wrap},
+    ::WrapExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
     xi_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    _linear_eval_at_point(x, y, xi_wrapped, Val(:extension), op, searcher)
+    _linear_eval_at_point(x, y, xi_wrapped, ExtendExtrap(), op, searcher)
 end
 
 
 # ========================================
-# Core implementation with Val dispatch
+# Core implementation with AbstractExtrapMode dispatch
 # ========================================
 
-# Core implementation with Val + op + searcher dispatch
+# Core implementation with AbstractExtrapMode + op + searcher dispatch
 # Supports mixed types: Tg for grid, Tv for values, Tq for query (including Dual)
 @inline function linear_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq,
-    extrap::Val,
+    extrap::AbstractExtrapMode,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
@@ -391,7 +391,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq;
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -399,10 +399,10 @@ end
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _to_searcher(search, hint)
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            linear_interp(x, y, xq, ev, op, searcher)
-        end
+        linear_interp(x, y, xq, mode, op, searcher)
     end
 end
 
@@ -422,7 +422,7 @@ function linear_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -443,7 +443,7 @@ function linear_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
@@ -475,7 +475,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq;
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -493,7 +493,7 @@ function linear_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}

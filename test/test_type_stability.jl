@@ -22,16 +22,16 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
     end
 
     @testset "cubic_interp 2-arg extrap variations" begin
-        # Different extrap values should all return the SAME type
-        itp_none = @inferred cubic_interp(x, y; extrap=:none)
-        itp_ext = @inferred cubic_interp(x, y; extrap=:extension)
-        itp_const = @inferred cubic_interp(x, y; extrap=:constant)
-        itp_wrap = @inferred cubic_interp(x, y; extrap=:wrap)
+        # Different extrap values produce DIFFERENT concrete types (E type parameter)
+        itp_none = @inferred cubic_interp(x, y; extrap=NoExtrap())
+        itp_ext = @inferred cubic_interp(x, y; extrap=ExtendExtrap())
+        itp_const = @inferred cubic_interp(x, y; extrap=ConstExtrap())
+        itp_wrap = @inferred cubic_interp(x, y; extrap=WrapExtrap())
 
-        # All should be the same concrete type (no E parameter anymore)
-        @test typeof(itp_none) === typeof(itp_ext)
-        @test typeof(itp_none) === typeof(itp_const)
-        @test typeof(itp_none) === typeof(itp_wrap)
+        # Different extrap modes → different concrete types (E parameter differs)
+        @test typeof(itp_none) !== typeof(itp_ext)
+        @test typeof(itp_none) !== typeof(itp_const)
+        @test typeof(itp_none) !== typeof(itp_wrap)
 
         # Type parameters should be {Float64, CubicSplineCache{...}}
         @test itp_none isa CubicInterpolant{Float64}
@@ -40,13 +40,13 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
 
     @testset "cubic_interp 2-arg BC + extrap combinations" begin
         # Various BC + extrap combinations
-        @test @inferred(cubic_interp(x, y; bc=NaturalBC(), extrap=:extension)) isa CubicInterpolant
-        @test @inferred(cubic_interp(x, y; bc=ClampedBC(), extrap=:constant)) isa CubicInterpolant
-        @test @inferred(cubic_interp(x, y; bc=BCPair(Deriv1(0.5), Deriv2(-0.5)), extrap=:wrap)) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=NaturalBC(), extrap=ExtendExtrap())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=ClampedBC(), extrap=ConstExtrap())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=BCPair(Deriv1(0.5), Deriv2(-0.5)), extrap=WrapExtrap())) isa CubicInterpolant
 
-        # Periodic BC always uses :wrap internally
+        # Periodic BC always uses WrapExtrap internally
         itp_periodic = @inferred cubic_interp(x, y; bc=PeriodicBC())
-        @test itp_periodic.extrap === Val(:wrap)
+        @test itp_periodic.extrap === WrapExtrap()
     end
 
     # =========================================================================
@@ -65,20 +65,20 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
 
     @testset "cubic_interp 4-arg extrap variations" begin
         # All extrap values return same Vector type
-        @test @inferred(cubic_interp(x, y, x_query; extrap=:none)) isa Vector{Float64}
-        @test @inferred(cubic_interp(x, y, x_query; extrap=:extension)) isa Vector{Float64}
-        @test @inferred(cubic_interp(x, y, x_query; extrap=:constant)) isa Vector{Float64}
-        @test @inferred(cubic_interp(x, y, x_query; extrap=:wrap)) isa Vector{Float64}
+        @test @inferred(cubic_interp(x, y, x_query; extrap=NoExtrap())) isa Vector{Float64}
+        @test @inferred(cubic_interp(x, y, x_query; extrap=ExtendExtrap())) isa Vector{Float64}
+        @test @inferred(cubic_interp(x, y, x_query; extrap=ConstExtrap())) isa Vector{Float64}
+        @test @inferred(cubic_interp(x, y, x_query; extrap=WrapExtrap())) isa Vector{Float64}
 
         # Scalar
-        @test @inferred(cubic_interp(x, y, 0.5; extrap=:extension)) isa Float64
+        @test @inferred(cubic_interp(x, y, 0.5; extrap=ExtendExtrap())) isa Float64
     end
 
     @testset "cubic_interp! in-place" begin
         out = similar(x_query)
         @test @inferred(cubic_interp!(out, x, y, x_query)) === out
         @test @inferred(cubic_interp!(out, x, y, x_query; bc=ClampedBC())) === out
-        @test @inferred(cubic_interp!(out, x, y, x_query; extrap=:extension)) === out
+        @test @inferred(cubic_interp!(out, x, y, x_query; extrap=ExtendExtrap())) === out
     end
 
     # =========================================================================
@@ -86,11 +86,11 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
     # =========================================================================
     @testset "Cache-based API" begin
         cache = CubicSplineCache(x; bc=NaturalBC())
-        @test @inferred(cubic_interp(cache, y, 0.5; extrap=:none)) isa Float64
-        @test @inferred(cubic_interp(cache, y, 0.5; extrap=:extension)) isa Float64
+        @test @inferred(cubic_interp(cache, y, 0.5; extrap=NoExtrap())) isa Float64
+        @test @inferred(cubic_interp(cache, y, 0.5; extrap=ExtendExtrap())) isa Float64
 
         out = similar(x_query)
-        @test @inferred(cubic_interp!(out, cache, y, x_query; extrap=:none)) === out
+        @test @inferred(cubic_interp!(out, cache, y, x_query; extrap=NoExtrap())) === out
 
         # 2-arg with cache
         itp = @inferred cubic_interp(cache, y)
@@ -117,8 +117,8 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
 
     @testset "CubicInterpolant with different extrap" begin
         # Create interpolants with different extrap modes
-        itp_none = cubic_interp(x, y; extrap=:none)
-        itp_ext = cubic_interp(x, y; extrap=:extension)
+        itp_none = cubic_interp(x, y; extrap=NoExtrap())
+        itp_ext = cubic_interp(x, y; extrap=ExtendExtrap())
 
         # Both should be callable with same return types
         @test @inferred(itp_none(0.5)) isa Float64
@@ -126,10 +126,10 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
         @test @inferred(itp_none(x_query)) isa Vector{Float64}
         @test @inferred(itp_ext(x_query)) isa Vector{Float64}
 
-        # extrap field is different but type is same
-        @test itp_none.extrap === Val(:none)
-        @test itp_ext.extrap === Val(:extension)
-        @test typeof(itp_none) === typeof(itp_ext)
+        # extrap field stores typed mode; different modes → different concrete types
+        @test itp_none.extrap === NoExtrap()
+        @test itp_ext.extrap === ExtendExtrap()
+        @test typeof(itp_none) !== typeof(itp_ext)
     end
 
     # =========================================================================
@@ -271,71 +271,71 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
     # =========================================================================
     @testset "Unified extrap field naming" begin
         @testset "LinearInterpolant extrap field" begin
-            litp_none = linear_interp(x, y; extrap=:none)
-            litp_const = linear_interp(x, y; extrap=:constant)
-            litp_ext = linear_interp(x, y; extrap=:extension)
-            litp_wrap = linear_interp(x, y; extrap=:wrap)
+            litp_none = linear_interp(x, y; extrap=NoExtrap())
+            litp_const = linear_interp(x, y; extrap=ConstExtrap())
+            litp_ext = linear_interp(x, y; extrap=ExtendExtrap())
+            litp_wrap = linear_interp(x, y; extrap=WrapExtrap())
 
-            @test litp_none.extrap === Val(:none)
-            @test litp_const.extrap === Val(:constant)
-            @test litp_ext.extrap === Val(:extension)
-            @test litp_wrap.extrap === Val(:wrap)
+            @test litp_none.extrap === NoExtrap()
+            @test litp_const.extrap === ConstExtrap()
+            @test litp_ext.extrap === ExtendExtrap()
+            @test litp_wrap.extrap === WrapExtrap()
 
-            # All should be same concrete type
-            @test typeof(litp_none) === typeof(litp_const)
-            @test typeof(litp_none) === typeof(litp_ext)
-            @test typeof(litp_none) === typeof(litp_wrap)
+            # Different extrap modes → different concrete types (E parameter)
+            @test typeof(litp_none) !== typeof(litp_const)
+            @test typeof(litp_none) !== typeof(litp_ext)
+            @test typeof(litp_none) !== typeof(litp_wrap)
         end
 
         @testset "ConstantInterpolant extrap field" begin
-            citp_none = constant_interp(x, y; extrap=:none)
-            citp_const = constant_interp(x, y; extrap=:constant)
-            citp_ext = constant_interp(x, y; extrap=:extension)
-            citp_wrap = constant_interp(x, y; extrap=:wrap)
+            citp_none = constant_interp(x, y; extrap=NoExtrap())
+            citp_const = constant_interp(x, y; extrap=ConstExtrap())
+            citp_ext = constant_interp(x, y; extrap=ExtendExtrap())
+            citp_wrap = constant_interp(x, y; extrap=WrapExtrap())
 
-            @test citp_none.extrap === Val(:none)
-            @test citp_const.extrap === Val(:constant)
-            @test citp_ext.extrap === Val(:extension)
-            @test citp_wrap.extrap === Val(:wrap)
+            @test citp_none.extrap === NoExtrap()
+            @test citp_const.extrap === ConstExtrap()
+            @test citp_ext.extrap === ExtendExtrap()
+            @test citp_wrap.extrap === WrapExtrap()
 
-            # All should be same concrete type
-            @test typeof(citp_none) === typeof(citp_const)
-            @test typeof(citp_none) === typeof(citp_ext)
-            @test typeof(citp_none) === typeof(citp_wrap)
+            # Different extrap modes → different concrete types (E parameter)
+            @test typeof(citp_none) !== typeof(citp_const)
+            @test typeof(citp_none) !== typeof(citp_ext)
+            @test typeof(citp_none) !== typeof(citp_wrap)
         end
 
         @testset "QuadraticInterpolant extrap field" begin
-            qitp_none = quadratic_interp(x, y; extrap=:none)
-            qitp_const = quadratic_interp(x, y; extrap=:constant)
-            qitp_ext = quadratic_interp(x, y; extrap=:extension)
-            qitp_wrap = quadratic_interp(x, y; extrap=:wrap)
+            qitp_none = quadratic_interp(x, y; extrap=NoExtrap())
+            qitp_const = quadratic_interp(x, y; extrap=ConstExtrap())
+            qitp_ext = quadratic_interp(x, y; extrap=ExtendExtrap())
+            qitp_wrap = quadratic_interp(x, y; extrap=WrapExtrap())
 
-            @test qitp_none.extrap === Val(:none)
-            @test qitp_const.extrap === Val(:constant)
-            @test qitp_ext.extrap === Val(:extension)
-            @test qitp_wrap.extrap === Val(:wrap)
+            @test qitp_none.extrap === NoExtrap()
+            @test qitp_const.extrap === ConstExtrap()
+            @test qitp_ext.extrap === ExtendExtrap()
+            @test qitp_wrap.extrap === WrapExtrap()
 
-            # All should be same concrete type
-            @test typeof(qitp_none) === typeof(qitp_const)
-            @test typeof(qitp_none) === typeof(qitp_ext)
-            @test typeof(qitp_none) === typeof(qitp_wrap)
+            # Different extrap modes → different concrete types (E parameter)
+            @test typeof(qitp_none) !== typeof(qitp_const)
+            @test typeof(qitp_none) !== typeof(qitp_ext)
+            @test typeof(qitp_none) !== typeof(qitp_wrap)
         end
 
         @testset "CubicInterpolant extrap field" begin
-            cbitp_none = cubic_interp(x, y; extrap=:none)
-            cbitp_const = cubic_interp(x, y; extrap=:constant)
-            cbitp_ext = cubic_interp(x, y; extrap=:extension)
-            cbitp_wrap = cubic_interp(x, y; extrap=:wrap)
+            cbitp_none = cubic_interp(x, y; extrap=NoExtrap())
+            cbitp_const = cubic_interp(x, y; extrap=ConstExtrap())
+            cbitp_ext = cubic_interp(x, y; extrap=ExtendExtrap())
+            cbitp_wrap = cubic_interp(x, y; extrap=WrapExtrap())
 
-            @test cbitp_none.extrap === Val(:none)
-            @test cbitp_const.extrap === Val(:constant)
-            @test cbitp_ext.extrap === Val(:extension)
-            @test cbitp_wrap.extrap === Val(:wrap)
+            @test cbitp_none.extrap === NoExtrap()
+            @test cbitp_const.extrap === ConstExtrap()
+            @test cbitp_ext.extrap === ExtendExtrap()
+            @test cbitp_wrap.extrap === WrapExtrap()
 
-            # All should be same concrete type
-            @test typeof(cbitp_none) === typeof(cbitp_const)
-            @test typeof(cbitp_none) === typeof(cbitp_ext)
-            @test typeof(cbitp_none) === typeof(cbitp_wrap)
+            # Different extrap modes → different concrete types (E parameter)
+            @test typeof(cbitp_none) !== typeof(cbitp_const)
+            @test typeof(cbitp_none) !== typeof(cbitp_ext)
+            @test typeof(cbitp_none) !== typeof(cbitp_wrap)
         end
     end
 

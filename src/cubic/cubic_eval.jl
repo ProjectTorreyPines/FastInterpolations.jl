@@ -119,7 +119,7 @@ end
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
     xq::Tq,
-    ::Val{:none},
+    ::NoExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
@@ -133,7 +133,7 @@ end
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
     xq::Tq,
-    ::Val{:constant},
+    ::ConstExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
@@ -151,7 +151,7 @@ end
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
     xq::Tq,
-    ::Val{:extension},
+    ::ExtendExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
@@ -165,7 +165,7 @@ end
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
     xq::Tq,
-    ::Val{:wrap},
+    ::WrapExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
@@ -186,7 +186,7 @@ end
     y::AbstractVector{Tv},
     z::AbstractVector{Tv},
     xq::Tq,
-    ::Val,  # extrapolation ignored for periodic
+    ::AbstractExtrapMode,  # extrapolation ignored for periodic
     op::O,
     searcher::P
 ) where {Tg<:AbstractFloat, Tv, Tq, X, F, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
@@ -199,7 +199,7 @@ end
     y::AbstractVector{Tv},
     z::AbstractVector{Tv},
     xq::Tq,
-    extrap::Val,
+    extrap::AbstractExtrapMode,
     op::O,
     searcher::P
 ) where {Tg<:AbstractFloat, Tv, Tq, X, F, L<:PointBC, R<:PointBC, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
@@ -218,7 +218,7 @@ end
     y::AbstractVector{Tv},
     z::AbstractVector{Tv},
     x_query::AbstractVector{<:Real},
-    ev::Val,
+    ev::AbstractExtrapMode,
     op::O,
     searcher::P
 ) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
@@ -235,7 +235,7 @@ end
     y::AbstractVector{Tv},
     z::AbstractVector{Tv},
     x_query::AbstractVector{<:Real},
-    ::Val,  # extrap ignored for periodic
+    ::AbstractExtrapMode,  # extrap ignored for periodic
     op::O,
     searcher::P
 ) where {Tg<:AbstractFloat, Tv, X, F, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
@@ -271,7 +271,7 @@ Uses task-local pool for workspace allocation.
     cache::CubicSplineCache{Tg,X,F,BC,S},
     y::AbstractVector{Tv},
     x_query::Tg;
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -281,11 +281,11 @@ Uses task-local pool for workspace allocation.
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            @boundscheck _check_domain(cache.x, x_query, ev)
-            _eval_with_bc(cache, y, z, x_query, ev, op, searcher)
-        end
+        @boundscheck _check_domain(cache.x, x_query, mode)
+        _eval_with_bc(cache, y, z, x_query, mode, op, searcher)
     end
 end

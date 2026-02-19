@@ -275,21 +275,21 @@ end # Derivative Kernels
             searcher = _to_searcher(Binary())
 
             # Outside left boundary: should return 0 for derivatives
-            left_val = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:constant), EvalValue(), searcher)
+            left_val = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, ConstExtrap(), EvalValue(), searcher)
             @test left_val ≈ y[1]  # y[1] = 0.0
 
-            left_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:constant), EvalDeriv1(), searcher)
+            left_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, ConstExtrap(), EvalDeriv1(), searcher)
             @test left_deriv1 === 0.0  # Constant extrap → derivative = 0
 
-            left_deriv2 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:constant), EvalDeriv2(), searcher  )
+            left_deriv2 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, ConstExtrap(), EvalDeriv2(), searcher  )
             @test left_deriv2 === 0.0
 
             # Inside domain: should use normal evaluation
-            mid_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, 1.0, Val(:constant), EvalDeriv1(), searcher)
+            mid_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, 1.0, ConstExtrap(), EvalDeriv1(), searcher)
             @test mid_deriv1 ≈ 2.0 atol=0.1
 
             # Extension extrapolation: use boundary polynomial
-            ext_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, Val(:extension), EvalDeriv1(), searcher)
+            ext_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, ExtendExtrap(), EvalDeriv1(), searcher)
             @test ext_deriv1 isa Float64  # Should not throw
         end
 

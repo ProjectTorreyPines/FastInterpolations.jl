@@ -370,8 +370,8 @@ end
     @testset "constant_interp! with extrap option" begin
         out = zeros(5)
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
-        constant_interp!(out, x, y, xq; extrap=:constant)
-        allocs = @allocated constant_interp!(out, x, y, xq; extrap=:constant)
+        constant_interp!(out, x, y, xq; extrap=ConstExtrap())
+        allocs = @allocated constant_interp!(out, x, y, xq; extrap=ConstExtrap())
         @test allocs <= ALLOC_THRESHOLD
     end
 

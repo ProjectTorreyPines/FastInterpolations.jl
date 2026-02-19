@@ -17,7 +17,7 @@ using FastInterpolations
 import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_nd,
     _resolve_deriv_nd, _resolve_side_nd, _validate_nd_grids,
     _promote_grid_eltype, _convert_grids_typed, _create_spacings_typed,
-    _extrap_to_val, _check_mode_periodic_compat, _check_modes_periodic_compat,
+    _check_mode_periodic_compat, _check_modes_periodic_compat,
     _mode_to_modes_with_periodic, _modes_to_modes_with_periodic
 
 @testset "Shared ND Utilities" begin
@@ -282,13 +282,6 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
     # Typed ExtrapMode Resolution (3-arg form)
     # ========================================
     @testset "Typed ExtrapMode resolution" begin
-        @testset "_extrap_to_val conversion" begin
-            @test _extrap_to_val(NoExtrap()) === Val(:none)
-            @test _extrap_to_val(ConstExtrap()) === Val(:constant)
-            @test _extrap_to_val(ExtendExtrap()) === Val(:extension)
-            @test _extrap_to_val(WrapExtrap()) === Val(:wrap)
-        end
-
         @testset "single mode → Mode tuple, no BCs" begin
             @test _resolve_extrap_nd(NoExtrap(), nothing, Val(2)) === (NoExtrap(), NoExtrap())
             @test _resolve_extrap_nd(ConstExtrap(), nothing, Val(3)) === (ConstExtrap(), ConstExtrap(), ConstExtrap())

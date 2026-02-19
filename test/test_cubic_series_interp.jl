@@ -48,7 +48,7 @@ end
 
         @test FI.n_series(sitp) == 2
         @test FI._get_grid(sitp) ≈ x
-        @test FI._get_extrap(sitp) isa FI.ExtrapVal
+        @test FI._get_extrap(sitp) isa FI.AbstractExtrapMode
         @test FI._should_wrap(sitp) == false
         @test FI._method_kind(typeof(sitp)) === Val(:cubic)
 end
@@ -104,12 +104,12 @@ end
         @test mitp.cache isa FI.CubicSplineCache{Float64}
     end
 
-    @testset "Extrap is Val type" begin
+    @testset "Extrap is AbstractExtrapMode type" begin
         mitp_ext = cubic_interp(x, [y1, y2]; extrap=:extension)
-        @test mitp_ext.extrap === Val(:extension)
+        @test mitp_ext.extrap === ExtendExtrap()
 
         mitp_const = cubic_interp(x, [y1, y2]; extrap=:constant)
-        @test mitp_const.extrap === Val(:constant)
+        @test mitp_const.extrap === ConstExtrap()
     end
 end
 
@@ -202,11 +202,11 @@ end
         y_periodic = sin.(2π .* x)  # sin(0) = sin(2π) = 0
 
         mitp = cubic_interp(x, [y_periodic]; bc=PeriodicBC(), extrap=:none)
-        @test mitp.extrap === Val(:wrap)
+        @test mitp.extrap === WrapExtrap()
 
         # Even if user requests :extension, periodic BC should override to :wrap
         mitp2 = cubic_interp(x, [y_periodic]; bc=PeriodicBC(), extrap=:extension)
-        @test mitp2.extrap === Val(:wrap)
+        @test mitp2.extrap === WrapExtrap()
     end
 end
 
@@ -474,7 +474,7 @@ end
         Y_periodic[end, 2] = Y_periodic[1, 2]  # Fix endpoint
 
         mitp = cubic_interp(x, Y_periodic; bc=PeriodicBC())
-        @test mitp.extrap === Val(:wrap)
+        @test mitp.extrap === WrapExtrap()
     end
 
     @testset "Matrix input with precompute_transpose" begin
@@ -713,10 +713,12 @@ end
     end
 
     @testset "Extrap propagation" begin
+        expected = Dict(:none => NoExtrap(), :constant => ConstExtrap(),
+                        :extension => ExtendExtrap(), :wrap => WrapExtrap())
         for extrap_mode in (:none, :constant, :extension, :wrap)
             mitp = cubic_interp(x, [y1, y2]; extrap=extrap_mode)
-            # Unified struct has single extrap field
-            @test mitp.extrap === Val(extrap_mode)
+            # Unified struct stores AbstractExtrapMode singleton
+            @test mitp.extrap === expected[extrap_mode]
         end
     end
 end

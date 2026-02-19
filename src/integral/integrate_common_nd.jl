@@ -33,23 +33,8 @@ end
 end
 
 # ND domain check for integration bounds.
-# :none — strict domain check (existing DomainError behavior).
-@inline _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::Val{:none}) =
-    _check_domain(x, xi, Val(:none))
-
-# Non-:none — ND extrap integration is not yet implemented; throw clear ArgumentError.
-@inline function _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::Val{E}) where E
-    x_min, x_max = first(x), last(x)
-    (xi < x_min || xi > x_max) && throw(ArgumentError(
-        "ND integration only supports in-domain bounds (extrapolation is not yet implemented). " *
-        "Bound $xi is outside the grid domain [$x_min, $x_max]."
-    ))
-    return nothing
-end
-
-# ── AbstractExtrapMode dispatch (ND structs store Mode types directly) ──
 @inline _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::NoExtrap) =
-    _check_domain(x, xi, Val(:none))
+    _check_domain(x, xi, NoExtrap())
 
 @inline function _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::AbstractExtrapMode)
     x_min, x_max = first(x), last(x)

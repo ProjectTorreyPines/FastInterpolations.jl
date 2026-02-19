@@ -29,7 +29,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 - `x::X`: Shared x-grid (Vector or Range)
 - `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
 - `_transpose::LazyTranspose{Tv}`: Lazy point-contiguous layout for scalar SIMD
-- `extrap::ExtrapVal`: Extrapolation mode
+- `extrap::AbstractExtrapMode`: Extrapolation mode
 - `side::SideVal`: Side selection (:nearest, :left, :right)
 
 # Memory Layout
@@ -64,22 +64,22 @@ sitp_complex = constant_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct ConstantSeriesInterpolant{Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct ConstantSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                            # Shared x-grid (Range or Vector)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
-    const extrap::ExtrapVal               # Extrapolation mode
+    const extrap::E                        # Extrapolation mode (compile-time specialized)
     const side::SideVal                   # Side selection
     const search_policy::P                # Default search policy
 
     function ConstantSeriesInterpolant(
         x::X,
         y::Matrix{Tv},
-        extrap::ExtrapVal,
+        extrap::E,
         side::SideVal,
         search::P=Binary()
-    ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
-        new{Tg,Tv,P,X}(x, y, LazyTranspose{Tv}(), extrap, side, search)
+    ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
+        new{Tg,Tv,E,P,X}(x, y, LazyTranspose{Tv}(), extrap, side, search)
     end
 end
 
@@ -88,7 +88,7 @@ end
 # ========================================
 
 """Check if wrap mode is active (for anchor construction)."""
-@inline _should_wrap(sitp::ConstantSeriesInterpolant) = sitp.extrap === Val(:wrap)
+@inline _should_wrap(sitp::ConstantSeriesInterpolant) = sitp.extrap isa WrapExtrap
 
 """Number of series in the interpolant."""
 @inline n_series(sitp::ConstantSeriesInterpolant) = size(sitp.y, 2)
@@ -234,7 +234,7 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
     return output
 end
 
-# :none - throw DomainError
+# NoExtrap - throw DomainError
 @inline function _eval_constant_series_point_extrap!(
     ::AbstractVector{Tv},
     ::Matrix{Tv},
@@ -243,7 +243,7 @@ end
     x_min::Tg,
     x_max::Tg,
     aq::_ConstantAnchoredQuery{Tg},
-    ::Val{:none},
+    ::NoExtrap,
     ::SideVal,
     ::AbstractEvalOp,
     ::UInt8
@@ -251,7 +251,7 @@ end
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
-# :constant - clamp to boundary
+# ConstExtrap - clamp to boundary
 @inline function _eval_constant_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -260,7 +260,7 @@ end
     ::Tg,
     ::Tg,
     ::_ConstantAnchoredQuery{Tg},
-    ::Val{:constant},
+    ::ConstExtrap,
     ::SideVal,
     op::AbstractEvalOp,
     side::UInt8
@@ -268,7 +268,7 @@ end
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
-# :extension - extend using same constant value at boundary interval
+# ExtendExtrap - extend using same constant value at boundary interval
 @inline function _eval_constant_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -277,7 +277,7 @@ end
     ::Tg,
     ::Tg,
     aq::_ConstantAnchoredQuery{Tg},
-    ::Val{:extension},
+    ::ExtendExtrap,
     side_val::SideVal,
     op::AbstractEvalOp,
     ::UInt8
@@ -303,7 +303,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, ys::AbstractVector{<:AbstractVector}; side=:nearest, extrap=:none)
+    constant_interp(x, ys::AbstractVector{<:AbstractVector}; side=:nearest, extrap=NoExtrap())
 
 Create a multi-Y constant interpolant for multiple y-data series sharing the same x-grid.
 
@@ -311,7 +311,7 @@ Create a multi-Y constant interpolant for multiple y-data series sharing the sam
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
 - `side`: Side for discontinuities (:left, :right, :nearest)
-- `extrap`: Extrapolation mode (:none, :constant, :extension, :wrap)
+- `extrap::AbstractExtrapMode`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 
 # Returns
 `ConstantSeriesInterpolant` object with matrix storage.
@@ -332,7 +332,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     side::Symbol=:nearest,
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Check if Tv's float base requires grid widening (not for Int types)
@@ -367,17 +367,16 @@ function constant_interp(
         y_mat[:, k] .= Tv_out.(ys[k])
     end
 
-    # Convert symbols to Val types
-    extrap_val = _symbol_to_extrap_val(extrap)
-
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_side side => side_val begin
-        return ConstantSeriesInterpolant(x, y_mat, extrap_val, side_val, search)
+        return ConstantSeriesInterpolant(x, y_mat, mode, side_val, search)
     end
 end
 
 # Matrix input: columns as y-series
 """
-    constant_interp(x, Y::AbstractMatrix; side=:nearest, extrap=:none)
+    constant_interp(x, Y::AbstractMatrix; side=:nearest, extrap=NoExtrap())
 
 Create a multi-Y constant interpolant from a matrix where each column is a y-series.
 
@@ -398,7 +397,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     side::Symbol=:nearest,
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     # Check if Tv's float base requires grid widening
@@ -422,11 +421,10 @@ function constant_interp(
     Tv_out = _value_type(Tv, Tg)
     y_mat = Tv_out === Tv ? copy(Y) : Tv_out.(Y)
 
-    # Convert symbols to Val types
-    extrap_val = _symbol_to_extrap_val(extrap)
-
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_side side => side_val begin
-        return ConstantSeriesInterpolant(x, y_mat, extrap_val, side_val, search)
+        return ConstantSeriesInterpolant(x, y_mat, mode, side_val, search)
     end
 end
 
@@ -440,7 +438,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     side::Symbol=:nearest,
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
@@ -454,7 +452,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     side::Symbol=:nearest,
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
@@ -627,7 +625,7 @@ Uses argument-passing pattern for optimal performance.
     x_max::Tg,
     k::Int,
     aq_vec::AbstractVector{<:_ConstantAnchoredQuery{Tg}},
-    extrap::ExtrapVal,
+    extrap::AbstractExtrapMode,
     side_val::SideVal,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
@@ -648,7 +646,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
     x_max::Tg,
     k::Int,
     aq::_ConstantAnchoredQuery{Tg},
-    extrap::ExtrapVal,
+    extrap::AbstractExtrapMode,
     side_val::SideVal,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
@@ -667,9 +665,9 @@ Internal: Evaluate single series at single query point with extrapolation handli
     end
 
     # Outside domain: dispatch on extrap mode
-    if extrap === Val(:extension) || extrap === Val(:wrap)
+    if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_constant_series_anchored(y, k, aq, side_val, op)
-    elseif extrap === Val(:constant)
+    elseif extrap isa ConstExtrap
         return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)

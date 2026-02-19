@@ -12,18 +12,16 @@ end
 # Extrapolation-aware dispatch for 1D integrate
 # ═══════════════════════════════════════════════════════════════
 
-# :none — strict domain check
 @inline function _dispatch_extrap_integrate_1d(
-    ::Val{:none}, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+    ::NoExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
 ) where Tout
-    _check_domain(x, min(x0, x1), Val(:none))
-    _check_domain(x, max(x0, x1), Val(:none))
+    _check_domain(x, min(x0, x1), NoExtrap())
+    _check_domain(x, max(x0, x1), NoExtrap())
     return in_domain_fn(x0, x1)
 end
 
-# :constant — flat tails outside domain
 @inline function _dispatch_extrap_integrate_1d(
-    ::Val{:constant}, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+    ::ConstExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
 ) where Tout
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)
@@ -43,9 +41,8 @@ end
     return sign * total
 end
 
-# :wrap — periodic decomposition
 @inline function _dispatch_extrap_integrate_1d(
-    ::Val{:wrap}, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+    ::WrapExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
 ) where Tout
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)
@@ -72,9 +69,8 @@ end
     return sign * total
 end
 
-# :extension — extend boundary cell polynomial beyond domain
 @inline function _dispatch_extrap_integrate_1d(
-    ::Val{:extension}, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+    ::ExtendExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
 ) where Tout
     return in_domain_fn(x0, x1)
 end

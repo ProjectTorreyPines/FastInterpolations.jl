@@ -325,6 +325,32 @@ No-op vector domain check for extrapolation modes other than `:none`.
 """
 @inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, ::Val) = nothing
 
+# --- AbstractExtrapMode overloads (used by refactored 1D + ND code) ---
+
+"Scalar domain check for NoExtrap: throws DomainError if out of domain."
+@inline function _check_domain(x::AbstractVector, xi::Real, ::NoExtrap)
+    x_min, x_max = first(x), last(x)
+    (xi < x_min || xi > x_max) && throw(DomainError(xi, "query point outside interpolation domain [$x_min, $x_max]"))
+    return nothing
+end
+
+"No-op scalar domain check for non-NoExtrap modes."
+@inline _check_domain(::AbstractVector, ::Real, ::AbstractExtrapMode) = nothing
+
+"Vector domain check for NoExtrap: throws DomainError if any point out of domain."
+@inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap)
+    x_min, x_max = first(x), last(x)
+    xq_min, xq_max = minimum(xi), maximum(xi)
+    (xq_min < x_min || xq_max > x_max) && throw(DomainError(
+        xq_min < x_min ? xq_min : xq_max,
+        "query point outside interpolation domain [$x_min, $x_max]"
+    ))
+    return nothing
+end
+
+"No-op vector domain check for non-NoExtrap modes."
+@inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, ::AbstractExtrapMode) = nothing
+
 # ========================================
 # Validation Utilities
 # ========================================
@@ -354,11 +380,11 @@ end
 """
     @_dispatch_extrap sym => varname body
 
-Dispatch on runtime extrapolation symbol, executing body with concrete Val type.
+Dispatch on runtime extrapolation symbol, executing body with concrete AbstractExtrapMode type.
 
 # Arguments
-- `sym => varname`: Pair of symbol variable and binding name for Val type
-- `body`: Expression to execute with `varname` bound to concrete Val
+- `sym => varname`: Pair of symbol variable and binding name for AbstractExtrapMode
+- `body`: Expression to execute with `varname` bound to concrete mode
 
 # Example
 ```julia
@@ -371,7 +397,7 @@ Expands to:
 ```julia
 let _mode = extrap
     if _mode === :none
-        ev = Val(:none)
+        ev = NoExtrap()
         _cubic_interp_impl!(output, cache, y, x_query, ev)
     elseif _mode === :constant
         ...
@@ -389,16 +415,16 @@ macro _dispatch_extrap(pair, body)
     quote
         let _mode = $(esc(sym))
             if _mode === :none
-                $evs = Val(:none)
+                $evs = NoExtrap()
                 $(esc(body))
             elseif _mode === :constant
-                $evs = Val(:constant)
+                $evs = ConstExtrap()
                 $(esc(body))
             elseif _mode === :extension
-                $evs = Val(:extension)
+                $evs = ExtendExtrap()
                 $(esc(body))
             elseif _mode === :wrap
-                $evs = Val(:wrap)
+                $evs = WrapExtrap()
                 $(esc(body))
             else
                 throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$_mode"))

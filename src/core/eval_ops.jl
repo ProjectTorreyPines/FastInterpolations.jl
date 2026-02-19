@@ -73,7 +73,9 @@ const ExtrapVal = Union{Val{:none}, Val{:constant}, Val{:extension}, Val{:wrap}}
 # These replace runtime Symbol dispatch (:none, :constant, etc.)
 # with zero-cost type dispatch at the API boundary.
 #
-# Flow: User passes NoExtrap() → _extrap_to_val → Val(:none) → internal dispatch
+# 1D: Structs store E<:AbstractExtrapMode, dispatch on concrete subtypes
+# ND: Structs store NTuple{N,AbstractExtrapMode}; @_dispatch_extrap_nd resolves
+#     Symbol specs into concrete mode tuples at the API boundary
 
 """
     AbstractExtrapMode
@@ -87,6 +89,11 @@ instead of runtime Symbol comparison.
 - [`ConstExtrap`](@ref): Clamp to nearest boundary value
 - [`ExtendExtrap`](@ref): Extend interpolation polynomial beyond domain
 - [`WrapExtrap`](@ref): Wrap queries into domain (periodic)
+
+!!! warning "Union-splitting invariant"
+    Keep exactly 4 concrete subtypes. Julia's compiler union-splits up to 4 types
+    on hot paths; adding a 5th subtype would cause dynamic dispatch and allocation
+    in all oneshot/eval code paths.
 """
 abstract type AbstractExtrapMode end
 
@@ -141,17 +148,6 @@ itp = cubic_interp((x, y), data; extrap=WrapExtrap())
 ```
 """
 struct WrapExtrap <: AbstractExtrapMode end
-
-"""
-    _extrap_to_val(::AbstractExtrapMode) -> Val
-
-Convert an `AbstractExtrapMode` singleton to the corresponding internal `Val` type.
-Each method returns a concrete type, enabling compile-time specialization.
-"""
-@inline _extrap_to_val(::NoExtrap) = Val(:none)
-@inline _extrap_to_val(::ConstExtrap) = Val(:constant)
-@inline _extrap_to_val(::ExtendExtrap) = Val(:extension)
-@inline _extrap_to_val(::WrapExtrap) = Val(:wrap)
 
 """
     _symbol_to_extrap_mode(extrap::Symbol) -> AbstractExtrapMode

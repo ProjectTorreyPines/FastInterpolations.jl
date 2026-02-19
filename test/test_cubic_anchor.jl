@@ -27,11 +27,12 @@
         for xq in [0.15, 0.5, 0.85]
             aq = FI._anchor_query(x, xq, Val(:cubic))
 
-            # First derivative
-            @test itp(aq; deriv=1) ≈ itp(xq; deriv=1) atol=1e-14
+            # First derivative (1e-13: anchor precomputes weights, direct computes
+            # on-the-fly — different FMA fusion across JIT sessions → sub-ULP drift)
+            @test itp(aq; deriv=1) ≈ itp(xq; deriv=1) atol=1e-13
 
-            # Second derivative
-            @test itp(aq; deriv=2) ≈ itp(xq; deriv=2) atol=1e-14
+            # Second derivative (same reasoning as above)
+            @test itp(aq; deriv=2) ≈ itp(xq; deriv=2) atol=1e-13
         end
     end
 

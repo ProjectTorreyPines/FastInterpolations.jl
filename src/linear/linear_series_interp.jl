@@ -29,7 +29,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 - `x::X`: Shared x-grid (Vector or Range)
 - `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
 - `_transpose::LazyTranspose{Tv}`: Lazy point-contiguous layout for scalar SIMD
-- `extrap::ExtrapVal`: Extrapolation mode
+- `extrap::E`: Extrapolation mode (compile-time specialized via type parameter)
 
 # Memory Layout
 Primary storage is series-contiguous (n_points × n_series):
@@ -67,20 +67,20 @@ sitp_complex = linear_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct LinearSeriesInterpolant{Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct LinearSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                            # Shared x-grid (Range or Vector)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
-    const extrap::ExtrapVal               # Extrapolation mode
+    const extrap::E                        # Extrapolation mode (compile-time specialized)
     const search_policy::P                # Default search policy (immutable, thread-safe)
 
     function LinearSeriesInterpolant(
         x::X,
         y::Matrix{Tv},
-        extrap::ExtrapVal,
+        extrap::E,
         search::P=Binary()
-    ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
-        new{Tg,Tv,P,X}(x, y, LazyTranspose{Tv}(), extrap, search)
+    ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
+        new{Tg,Tv,E,P,X}(x, y, LazyTranspose{Tv}(), extrap, search)
     end
 end
 
@@ -89,7 +89,7 @@ end
 # ========================================
 
 """Check if wrap mode is active (for anchor construction)."""
-@inline _should_wrap(sitp::LinearSeriesInterpolant) = sitp.extrap === Val(:wrap)
+@inline _should_wrap(sitp::LinearSeriesInterpolant) = sitp.extrap isa WrapExtrap
 
 """Number of series in the interpolant."""
 @inline n_series(sitp::LinearSeriesInterpolant) = size(sitp.y, 2)
@@ -167,7 +167,7 @@ end
 # SIMD Scalar Evaluation Kernels
 # ========================================
 
-# :none - throw DomainError
+# NoExtrap - throw DomainError
 @inline function _eval_linear_series_point_extrap!(
     ::AbstractVector{Tv},
     ::Matrix{Tv},
@@ -176,14 +176,14 @@ end
     x_min::Tg,
     x_max::Tg,
     aq::_LinearAnchoredQuery{Tg},
-    ::Val{:none},
+    ::NoExtrap,
     ::AbstractEvalOp,
     ::UInt8
 ) where {Tg<:AbstractFloat, Tv}
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
-# :constant - clamp to boundary (value only, derivatives are zero)
+# ConstExtrap - clamp to boundary (value only, derivatives are zero)
 @inline function _eval_linear_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -192,14 +192,14 @@ end
     ::Tg,
     ::Tg,
     ::_LinearAnchoredQuery{Tg},
-    ::Val{:constant},
+    ::ConstExtrap,
     op::AbstractEvalOp,
     side::UInt8
 ) where {Tg<:AbstractFloat, Tv}
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
-# :extension - extend linear polynomial
+# ExtendExtrap - extend linear polynomial
 @inline function _eval_linear_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -208,7 +208,7 @@ end
     ::Tg,
     ::Tg,
     aq::_LinearAnchoredQuery{Tg},
-    ::Val{:extension},
+    ::ExtendExtrap,
     op::AbstractEvalOp,
     side::UInt8
 ) where {Tg<:AbstractFloat, Tv}
@@ -289,14 +289,14 @@ end
 # ========================================
 
 """
-    linear_interp(x, ys::AbstractVector{<:AbstractVector}; extrap=:none)
+    linear_interp(x, ys::AbstractVector{<:AbstractVector}; extrap=NoExtrap())
 
 Create a multi-Y linear interpolant for multiple y-data series sharing the same x-grid.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
-- `extrap`: Extrapolation mode (:none, :constant, :extension, :wrap)
+- `extrap::AbstractExtrapMode`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 
 # Returns
 `LinearSeriesInterpolant` object with matrix storage.
@@ -320,7 +320,7 @@ sitp_complex = linear_interp(x, y_complex)
 function linear_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Check if Tv's float base requires grid widening (not for Int types)
@@ -355,15 +355,14 @@ function linear_interp(
         y_mat[:, k] .= Tv_out.(ys[k])
     end
 
-    # Convert extrap symbol to Val
-    extrap_val = _symbol_to_extrap_val(extrap)
-
-    return LinearSeriesInterpolant(x, y_mat, extrap_val, search)
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
+    return LinearSeriesInterpolant(x, y_mat, mode, search)
 end
 
 # Matrix input: columns as y-series
 """
-    linear_interp(x, Y::AbstractMatrix; extrap=:none)
+    linear_interp(x, Y::AbstractMatrix; extrap=NoExtrap())
 
 Create a multi-Y linear interpolant from a matrix where each column is a y-series.
 
@@ -387,7 +386,7 @@ sitp_complex = linear_interp(x, Y_complex)
 function linear_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     # Check if Tv's float base requires grid widening
@@ -411,10 +410,9 @@ function linear_interp(
     Tv_out = _value_type(Tv, Tg)
     y_mat = Tv_out === Tv ? copy(Y) : Tv_out.(Y)
 
-    # Convert extrap symbol to Val
-    extrap_val = _symbol_to_extrap_val(extrap)
-
-    return LinearSeriesInterpolant(x, y_mat, extrap_val, search)
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
+    return LinearSeriesInterpolant(x, y_mat, mode, search)
 end
 
 # ========================================
@@ -426,7 +424,7 @@ end
 function linear_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
@@ -439,7 +437,7 @@ end
 function linear_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
@@ -606,7 +604,7 @@ computed as `(xq - xL) / h` with the query's original precision.
     x_max::Tg,
     k::Int,
     aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg}},
-    extrap::ExtrapVal,
+    extrap::AbstractExtrapMode,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     @inbounds for j in eachindex(out, aq_vec)
@@ -630,7 +628,7 @@ Uses anchor's `xq` for domain error messages.
     x_max::Tg,
     k::Int,
     aq::_LinearAnchoredQuery{Tg},
-    extrap::ExtrapVal,
+    extrap::AbstractExtrapMode,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     # Inside domain: normal evaluation
@@ -639,9 +637,9 @@ Uses anchor's `xq` for domain error messages.
     end
 
     # Outside domain: dispatch on extrap mode
-    if extrap === Val(:extension) || extrap === Val(:wrap)
+    if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_linear_series_anchored(y, x, k, aq, op)
-    elseif extrap === Val(:constant)
+    elseif extrap isa ConstExtrap
         return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)

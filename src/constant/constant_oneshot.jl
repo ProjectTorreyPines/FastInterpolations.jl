@@ -31,7 +31,7 @@ Type parameters:
 """
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
-    ::Val{:constant}, ::SideVal, ::EvalValue
+    ::ConstExtrap, ::SideVal, ::EvalValue
 ) where {Tg<:AbstractFloat, Tv}
     if xi < x_min
         return @inbounds y[1]
@@ -42,21 +42,21 @@ end
 
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
-    ::Val{:constant}, ::SideVal, ::EvalDeriv1
+    ::ConstExtrap, ::SideVal, ::EvalDeriv1
 ) where {Tg<:AbstractFloat, Tv}
     return zero(Tv)
 end
 
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
-    ::Val{:constant}, ::SideVal, ::EvalDeriv2
+    ::ConstExtrap, ::SideVal, ::EvalDeriv2
 ) where {Tg<:AbstractFloat, Tv}
     return zero(Tv)
 end
 
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
-    ::Val{:constant}, ::SideVal, ::EvalDeriv3
+    ::ConstExtrap, ::SideVal, ::EvalDeriv3
 ) where {Tg<:AbstractFloat, Tv}
     return zero(Tv)
 end
@@ -64,9 +64,9 @@ end
 # :extension delegates to :constant (slope=0 for constant function)
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
-    ::Val{:extension}, side::SideVal, op::AbstractEvalOp
+    ::ExtendExtrap, side::SideVal, op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
-    return _constant_eval_extrap(y, xi, x_min, x_max, Val(:constant), side, op)
+    return _constant_eval_extrap(y, xi, x_min, x_max, ConstExtrap(), side, op)
 end
 
 
@@ -95,7 +95,7 @@ AD Support:
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xi::Tq,
-    extrap::ExtrapVal,
+    extrap::AbstractExtrapMode,
     side::SideVal,
     op::AbstractEvalOp,
     searcher::S
@@ -112,7 +112,7 @@ AD Support:
     # :wrap mode handles all cases (inside and outside domain)
     # For :wrap, the query is wrapped to domain, so use wrapped position for dL
     # (AD derivative is zero for constant interp regardless)
-    if extrap === Val(:wrap)
+    if extrap isa WrapExtrap
         xi_wrapped = _wrap_to_domain(xi_typed, x_min, x_max)
         idx, xL, xR = search_interval(searcher, x, xi_wrapped)
         h = xR - xL
@@ -149,7 +149,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, xi; extrap=:none, side=:nearest, deriv=0, search=Binary())
+    constant_interp(x, y, xi; extrap=NoExtrap(), side=:nearest, deriv=0, search=Binary())
 
 Constant (step/piecewise constant) interpolation at a single point.
 
@@ -157,11 +157,11 @@ Constant (step/piecewise constant) interpolation at a single point.
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (same length as x)
 - `xi::Real`: Query point
-- `extrap::Symbol`: Extrapolation mode
-  - `:none` (default): throws DomainError if outside domain
-  - `:constant`: clamp to boundary values
-  - `:extension`: same as :constant (slope=0)
-  - `:wrap`: wrap to [x_min, x_max)
+- `extrap::AbstractExtrapMode`: Extrapolation mode (Symbol args deprecated)
+  - `NoExtrap()` (default): throws DomainError if outside domain
+  - `ConstExtrap()`: clamp to boundary values
+  - `ExtendExtrap()`: same as ConstExtrap (slope=0)
+  - `WrapExtrap()`: wrap to [x_min, x_max)
 - `side::Symbol`: Side selection
   - `:nearest` (default): nearest neighbor (left tie-breaking at midpoint)
   - `:left`: always use left value
@@ -184,7 +184,7 @@ constant_interp(x, y, 0.5)                    # 10.0 (nearest to left)
 constant_interp(x, y, 0.5; side=:left)        # 10.0
 constant_interp(x, y, 0.5; side=:right)       # 20.0
 constant_interp(x, y, 1.0)                    # 20.0 (grid point)
-constant_interp(x, y, -1.0; extrap=:constant) # 10.0 (clamped)
+constant_interp(x, y, -1.0; extrap=ConstExtrap()) # 10.0 (clamped)
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
@@ -197,7 +197,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xi::Tq;
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search=Binary(),
@@ -206,11 +206,11 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _to_searcher(search, hint)
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            @_dispatch_side side => sv begin
-                _constant_eval_at_point(x, y, xi, ev, sv, op, searcher)
-            end
+        @_dispatch_side side => sv begin
+            _constant_eval_at_point(x, y, xi, mode, sv, op, searcher)
         end
     end
 end
@@ -249,7 +249,7 @@ function constant_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -258,13 +258,13 @@ function constant_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _to_searcher(search)
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp!)
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
-        @_dispatch_extrap extrap => ev begin
-            @_dispatch_side side => sv begin
-                @boundscheck _check_domain(x, x_targets, ev)
-                @inbounds for i in eachindex(x_targets, output)
-                    output[i] = _constant_eval_at_point(x, y, x_targets[i], ev, sv, op, searcher)
-                end
+        @_dispatch_side side => sv begin
+            @boundscheck _check_domain(x, x_targets, mode)
+            @inbounds for i in eachindex(x_targets, output)
+                output[i] = _constant_eval_at_point(x, y, x_targets[i], mode, sv, op, searcher)
             end
         end
     end
@@ -296,7 +296,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -323,7 +323,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xi::Tq;
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search=Binary(),
@@ -343,7 +343,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -364,7 +364,7 @@ function constant_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()

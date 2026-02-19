@@ -479,15 +479,15 @@ import FastInterpolations: _get_cubic_cache
         clear_cubic_cache!()
         cubic_interp(x, y, 0.5)
 
-        # Warmup with extrapolation (explicit :extension mode)
-        cubic_interp(x, y, -0.1; extrap=:extension)
-        cubic_interp(x, y, 1.1; extrap=:extension)
+        # Warmup with extrapolation (typed AbstractExtrapMode)
+        cubic_interp(x, y, -0.1; extrap=ExtendExtrap())
+        cubic_interp(x, y, 1.1; extrap=ExtendExtrap())
 
         # Extrapolation should still be zero-allocation on 1.12+
-        allocs = @allocated cubic_interp(x, y, -0.1; extrap=:extension)
+        allocs = @allocated cubic_interp(x, y, -0.1; extrap=ExtendExtrap())
         @test allocs <= ALLOC_THRESHOLD
 
-        allocs = @allocated cubic_interp(x, y, 1.1; extrap=:extension)
+        allocs = @allocated cubic_interp(x, y, 1.1; extrap=ExtendExtrap())
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -611,12 +611,10 @@ import FastInterpolations: _get_cubic_cache
     end
 
     @testset "Wrap extrap: LinearInterpolant callable is zero-allocation" begin
-        # Wrap data
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
 
-        # Create callable
-        itp = LinearInterpolant(x, y; extrap=:wrap)
+        itp = LinearInterpolant(x, y; extrap=WrapExtrap())
 
         # Warmup
         itp(1.0)
@@ -632,128 +630,107 @@ import FastInterpolations: _get_cubic_cache
     end
 
     @testset "Wrap extrap: linear_interp functional API is zero-allocation" begin
-        # Linear wrap doesn't need cache, so it should be zero-alloc
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
 
         # Warmup
-        linear_interp(x, y, 1.0; extrap=:wrap)
-        linear_interp(x, y, 1.0; extrap=:wrap)
+        linear_interp(x, y, 1.0; extrap=WrapExtrap())
+        linear_interp(x, y, 1.0; extrap=WrapExtrap())
 
         # Linear interpolation is simple - should be zero-allocation
-        allocs = @allocated linear_interp(x, y, 1.0; extrap=:wrap)
+        allocs = @allocated linear_interp(x, y, 1.0; extrap=WrapExtrap())
         @test allocs <= ALLOC_THRESHOLD
 
         # Outside domain
-        allocs = @allocated linear_interp(x, y, 7.0; extrap=:wrap)
+        allocs = @allocated linear_interp(x, y, 7.0; extrap=WrapExtrap())
         @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "Wrap extrap: linear_interp! in-place is zero-allocation" begin
-        # Linear wrap in-place - most accurate zero-alloc test
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
         x_query = [1.0, 3.0, 7.0]  # includes out-of-domain (7.0 > 2π)
         output = similar(x_query)
 
         # Warmup
-        linear_interp!(output, x, y, x_query; extrap=:wrap)
-        linear_interp!(output, x, y, x_query; extrap=:wrap)
+        linear_interp!(output, x, y, x_query; extrap=WrapExtrap())
+        linear_interp!(output, x, y, x_query; extrap=WrapExtrap())
 
         # In-place linear wrap - MUST be zero allocation
-        allocs = @allocated linear_interp!(output, x, y, x_query; extrap=:wrap)
+        allocs = @allocated linear_interp!(output, x, y, x_query; extrap=WrapExtrap())
         @test allocs <= ALLOC_THRESHOLD
     end
 
     # =========================================================================
-    # Runtime Symbol Keyword API Tests
+    # Typed Extrapolation Mode Tests (AbstractExtrapMode)
     # =========================================================================
-    # These tests verify that passing symbols as runtime variables (not literals)
-    # doesn't cause extra allocations. This validates the Val pattern refactoring
-    # from Val(symbol_var) to direct branching with Val literals.
+    # These tests verify zero-allocation for all 4 extrapolation modes
+    # when passed as typed AbstractExtrapMode singletons (the recommended API).
 
-    @testset "Runtime symbol: linear_interp scalar" begin
+    @testset "Typed extrap: linear_interp scalar" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
 
-        # Simulate user code passing runtime symbol
-        function with_runtime_extrapolation(mode::Symbol)
+        function linear_typed_extrap(mode::AbstractExtrapMode)
             linear_interp(x, y, 0.5; extrap=mode)
         end
 
-        # Warmup
-        with_runtime_extrapolation(:extension)
-        with_runtime_extrapolation(:extension)
-        with_runtime_extrapolation(:wrap)
-        with_runtime_extrapolation(:wrap)
+        # Warmup all modes
+        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+            linear_typed_extrap(mode)
+            linear_typed_extrap(mode)
+        end
 
-        # Runtime extrapolation symbol - zero allocation on 1.12+
-        allocs = @allocated with_runtime_extrapolation(:extension)
-        @test allocs <= ALLOC_THRESHOLD
-
-        allocs = @allocated with_runtime_extrapolation(:constant)
-        @test allocs <= ALLOC_THRESHOLD
-
-        # Runtime wrap extrap - zero allocation on 1.12+
-        allocs = @allocated with_runtime_extrapolation(:wrap)
-        @test allocs <= ALLOC_THRESHOLD
+        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+            allocs = @allocated linear_typed_extrap(mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
     end
 
-    @testset "Runtime symbol: linear_interp! in-place" begin
+    @testset "Typed extrap: linear_interp! in-place" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
         x_query = [0.25, 0.5, 0.75]
         output = similar(x_query)
 
-        function inplace_runtime_extrapolation!(out, mode::Symbol)
+        function linear_typed_extrap!(out, mode::AbstractExtrapMode)
             linear_interp!(out, x, y, x_query; extrap=mode)
         end
 
-        # Warmup
-        inplace_runtime_extrapolation!(output, :extension)
-        inplace_runtime_extrapolation!(output, :extension)
-        inplace_runtime_extrapolation!(output, :wrap)
-        inplace_runtime_extrapolation!(output, :wrap)
+        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+            linear_typed_extrap!(output, mode)
+            linear_typed_extrap!(output, mode)
+        end
 
-        # Runtime extrapolation - MUST be zero allocation
-        allocs = @allocated inplace_runtime_extrapolation!(output, :extension)
-        @test allocs <= ALLOC_THRESHOLD
-
-        allocs = @allocated inplace_runtime_extrapolation!(output, :constant)
-        @test allocs <= ALLOC_THRESHOLD
-
-        # Runtime wrap - MUST be zero allocation
-        allocs = @allocated inplace_runtime_extrapolation!(output, :wrap)
-        @test allocs <= ALLOC_THRESHOLD
+        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+            allocs = @allocated linear_typed_extrap!(output, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
     end
 
-    @testset "Runtime symbol: cubic_interp scalar" begin
+    @testset "Typed extrap: cubic_interp scalar" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
 
         clear_cubic_cache!()
-
-        # Prime cache
         cubic_interp(x, y, 0.5)
 
-        function cubic_runtime_extrapolation(mode::Symbol)
+        function cubic_typed_extrap(mode::AbstractExtrapMode)
             cubic_interp(x, y, 0.5; extrap=mode)
         end
 
-        # Warmup ALL extrap modes (each mode = separate JIT path due to @_dispatch_extrap)
-        for mode in (:none, :constant, :extension, :wrap)
-            cubic_runtime_extrapolation(mode)
+        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+            cubic_typed_extrap(mode)
+            cubic_typed_extrap(mode)
         end
 
-        # Runtime extrapolation - zero allocation on 1.12+
-        allocs = @allocated cubic_runtime_extrapolation(:extension)
-        @test allocs <= ALLOC_THRESHOLD
-
-        allocs = @allocated cubic_runtime_extrapolation(:constant)
-        @test allocs <= ALLOC_THRESHOLD
+        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+            allocs = @allocated cubic_typed_extrap(mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
     end
 
-    @testset "Runtime symbol: cubic_interp! in-place" begin
+    @testset "Typed extrap: cubic_interp! in-place" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
         x_query = [0.25, 0.5, 0.75]
@@ -761,24 +738,19 @@ import FastInterpolations: _get_cubic_cache
 
         clear_cubic_cache!()
 
-        function cubic_inplace_runtime_extrapolation!(out, mode::Symbol)
+        function cubic_typed_extrap!(out, mode::AbstractExtrapMode)
             cubic_interp!(out, x, y, x_query; extrap=mode)
         end
 
-        # Warmup ALL extrap modes (each mode = separate JIT path due to @_dispatch_extrap)
-        for mode in (:none, :constant, :extension, :wrap)
-            cubic_inplace_runtime_extrapolation!(output, mode)
+        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+            cubic_typed_extrap!(output, mode)
+            cubic_typed_extrap!(output, mode)
         end
 
-        # Runtime extrapolation - MUST be zero allocation
-        allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :extension)
-        @test allocs <= ALLOC_THRESHOLD
-
-        allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :constant)
-        @test allocs <= ALLOC_THRESHOLD
-
-        allocs = @allocated cubic_inplace_runtime_extrapolation!(output, :wrap)
-        @test allocs <= ALLOC_THRESHOLD
+        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+            allocs = @allocated cubic_typed_extrap!(output, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
     end
 
     @testset "Runtime symbol: _get_cubic_cache" begin
@@ -822,27 +794,25 @@ import FastInterpolations: _get_cubic_cache
         @test allocs_periodic <= 128   # Periodic BC cache hit
     end
 
-    @testset "Runtime symbol: LinearInterpolant construction" begin
+    @testset "Typed extrap: LinearInterpolant construction" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
 
-        function itp_runtime_extrapolation(mode::Symbol)
+        function itp_typed_extrap(mode::AbstractExtrapMode)
             LinearInterpolant(x, y; extrap=mode)
         end
 
-        # Warmup ALL extrap modes (each mode = separate JIT path due to @_dispatch_extrap)
-        for mode in (:none, :constant, :extension, :wrap)
-            itp_runtime_extrapolation(mode)
-            itp_runtime_extrapolation(mode)
+        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+            itp_typed_extrap(mode)
+            itp_typed_extrap(mode)
         end
 
-        # Construction allocates the struct itself, but no extra from Val pattern
-        # Just verify it's reasonably small (struct + references only)
-        allocs_ext = @allocated itp_runtime_extrapolation(:extension)
-        allocs_const = @allocated itp_runtime_extrapolation(:constant)
-        allocs_wrap = @allocated itp_runtime_extrapolation(:wrap)
+        # Construction allocates the struct itself, but no extra from mode dispatch
+        allocs_ext = @allocated itp_typed_extrap(ExtendExtrap())
+        allocs_const = @allocated itp_typed_extrap(ConstExtrap())
+        allocs_wrap = @allocated itp_typed_extrap(WrapExtrap())
 
-        # All modes should have same allocation (no extra from runtime symbol)
+        # All modes should have same allocation
         @test allocs_ext == allocs_const
         @test allocs_ext == allocs_wrap
         @test allocs_ext <= ALLOC_THRESHOLD + 64  # Struct (~48 bytes) + dispatch overhead

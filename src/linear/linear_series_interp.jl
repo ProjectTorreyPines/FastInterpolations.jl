@@ -67,7 +67,7 @@ sitp_complex = linear_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct LinearSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct LinearSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                            # Shared x-grid (Range or Vector)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
@@ -79,7 +79,7 @@ mutable struct LinearSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrapM
         y::Matrix{Tv},
         extrap::E,
         search::P=Binary()
-    ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
+    ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
         new{Tg,Tv,E,P,X}(x, y, LazyTranspose{Tv}(), extrap, search)
     end
 end
@@ -296,7 +296,7 @@ Create a multi-Y linear interpolant for multiple y-data series sharing the same 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
-- `extrap::AbstractExtrapMode`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 
 # Returns
 `LinearSeriesInterpolant` object with matrix storage.
@@ -320,7 +320,7 @@ sitp_complex = linear_interp(x, y_complex)
 function linear_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Check if Tv's float base requires grid widening (not for Int types)
@@ -386,7 +386,7 @@ sitp_complex = linear_interp(x, Y_complex)
 function linear_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     # Check if Tv's float base requires grid widening
@@ -424,7 +424,7 @@ end
 function linear_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
@@ -437,7 +437,7 @@ end
 function linear_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
@@ -604,7 +604,7 @@ computed as `(xq - xL) / h` with the query's original precision.
     x_max::Tg,
     k::Int,
     aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg}},
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     @inbounds for j in eachindex(out, aq_vec)
@@ -628,7 +628,7 @@ Uses anchor's `xq` for domain error messages.
     x_max::Tg,
     k::Int,
     aq::_LinearAnchoredQuery{Tg},
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     # Inside domain: normal evaluation

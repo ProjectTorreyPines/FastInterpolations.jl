@@ -325,7 +325,7 @@ No-op vector domain check for extrapolation modes other than `:none`.
 """
 @inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, ::Val) = nothing
 
-# --- AbstractExtrapMode overloads (used by refactored 1D + ND code) ---
+# --- AbstractExtrap overloads (used by refactored 1D + ND code) ---
 
 "Scalar domain check for NoExtrap: throws DomainError if out of domain."
 @inline function _check_domain(x::AbstractVector, xi::Real, ::NoExtrap)
@@ -335,7 +335,7 @@ No-op vector domain check for extrapolation modes other than `:none`.
 end
 
 "No-op scalar domain check for non-NoExtrap modes."
-@inline _check_domain(::AbstractVector, ::Real, ::AbstractExtrapMode) = nothing
+@inline _check_domain(::AbstractVector, ::Real, ::AbstractExtrap) = nothing
 
 "Vector domain check for NoExtrap: throws DomainError if any point out of domain."
 @inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap)
@@ -349,7 +349,7 @@ end
 end
 
 "No-op vector domain check for non-NoExtrap modes."
-@inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, ::AbstractExtrapMode) = nothing
+@inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, ::AbstractExtrap) = nothing
 
 # ========================================
 # Validation Utilities
@@ -380,10 +380,10 @@ end
 """
     @_dispatch_extrap sym => varname body
 
-Dispatch on runtime extrapolation symbol, executing body with concrete AbstractExtrapMode type.
+Dispatch on runtime extrapolation symbol, executing body with concrete AbstractExtrap type.
 
 # Arguments
-- `sym => varname`: Pair of symbol variable and binding name for AbstractExtrapMode
+- `sym => varname`: Pair of symbol variable and binding name for AbstractExtrap
 - `body`: Expression to execute with `varname` bound to concrete mode
 
 # Example
@@ -664,7 +664,7 @@ end
 end
 
 """
-    _resolve_uniform_extrap_with_periodic(bcs, ::Val{S}) -> NTuple{N, AbstractExtrapMode}
+    _resolve_uniform_extrap_with_periodic(bcs, ::Val{S}) -> NTuple{N, AbstractExtrap}
 
 Zero-allocation per-axis extrap resolution for uniform extrap with mixed BCs.
 Uses `@generated` to inspect BC types at compile time:
@@ -692,7 +692,7 @@ symbol are resolved at compile time.
 end
 
 """
-    _resolve_mixed_extrap_vals(extraps, bcs) -> NTuple{N, AbstractExtrapMode}
+    _resolve_mixed_extrap_vals(extraps, bcs) -> NTuple{N, AbstractExtrap}
 
 Per-axis extrap resolution for truly heterogeneous extraps (different Symbols per axis).
 Falls back to runtime `_symbol_to_extrap_mode` which produces Union return types.
@@ -708,7 +708,7 @@ end
 """
     @_dispatch_extrap_nd extraps bcs => ev body
 
-Dispatch extrap symbols to concrete `AbstractExtrapMode` tuples for type-stable ND evaluation.
+Dispatch extrap symbols to concrete `AbstractExtrap` tuples for type-stable ND evaluation.
 Creates if/else branches, each with a concrete `ev` binding (similar to `@_dispatch_deriv`).
 
 This is the ND counterpart of `@_dispatch_extrap(sym => varname, body)` (1D).
@@ -745,9 +745,9 @@ macro _dispatch_extrap_nd(extraps_expr, pair, body)
         local $(extraps_var) = $(esc(extraps_expr))
         local $(bcs_var) = $(esc(bcs_expr))
 
-        if $(extraps_var) isa Tuple{Vararg{AbstractExtrapMode}}
-            # Fast path 0: pre-resolved Mode tuple (from typed AbstractExtrapMode path).
-            # _resolve_extrap_nd(::AbstractExtrapMode, bcs, Val(N)) returns Mode tuples directly,
+        if $(extraps_var) isa Tuple{Vararg{AbstractExtrap}}
+            # Fast path 0: pre-resolved Mode tuple (from typed AbstractExtrap path).
+            # _resolve_extrap_nd(::AbstractExtrap, bcs, Val(N)) returns Mode tuples directly,
             # so we pass through without any Symbol dispatch.
             let $(esc(ev_sym)) = $(extraps_var)
                 $(esc(body))

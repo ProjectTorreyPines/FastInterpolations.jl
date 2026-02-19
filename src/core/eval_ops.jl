@@ -73,12 +73,12 @@ const ExtrapVal = Union{Val{:none}, Val{:constant}, Val{:extension}, Val{:wrap}}
 # These replace runtime Symbol dispatch (:none, :constant, etc.)
 # with zero-cost type dispatch at the API boundary.
 #
-# 1D: Structs store E<:AbstractExtrapMode, dispatch on concrete subtypes
-# ND: Structs store NTuple{N,AbstractExtrapMode}; @_dispatch_extrap_nd resolves
+# 1D: Structs store E<:AbstractExtrap, dispatch on concrete subtypes
+# ND: Structs store NTuple{N,AbstractExtrap}; @_dispatch_extrap_nd resolves
 #     Symbol specs into concrete mode tuples at the API boundary
 
 """
-    AbstractExtrapMode
+    AbstractExtrap
 
 Abstract type for typed extrapolation mode specification.
 Use concrete subtypes at the API boundary for compile-time dispatch
@@ -95,10 +95,10 @@ instead of runtime Symbol comparison.
     on hot paths; adding a 5th subtype would cause dynamic dispatch and allocation
     in all oneshot/eval code paths.
 """
-abstract type AbstractExtrapMode end
+abstract type AbstractExtrap end
 
 """
-    NoExtrap <: AbstractExtrapMode
+    NoExtrap <: AbstractExtrap
 
 No extrapolation — throws `DomainError` for out-of-domain queries.
 Replaces `extrap=:none`.
@@ -108,10 +108,10 @@ Replaces `extrap=:none`.
 itp = cubic_interp((x, y), data; extrap=NoExtrap())
 ```
 """
-struct NoExtrap <: AbstractExtrapMode end
+struct NoExtrap <: AbstractExtrap end
 
 """
-    ConstExtrap <: AbstractExtrapMode
+    ConstExtrap <: AbstractExtrap
 
 Constant extrapolation — clamps queries to the nearest boundary value.
 Replaces `extrap=:constant`.
@@ -121,10 +121,10 @@ Replaces `extrap=:constant`.
 itp = cubic_interp((x, y), data; extrap=ConstExtrap())
 ```
 """
-struct ConstExtrap <: AbstractExtrapMode end
+struct ConstExtrap <: AbstractExtrap end
 
 """
-    ExtendExtrap <: AbstractExtrapMode
+    ExtendExtrap <: AbstractExtrap
 
 Extension extrapolation — extends the interpolation polynomial beyond the domain.
 Replaces `extrap=:extension`.
@@ -134,10 +134,10 @@ Replaces `extrap=:extension`.
 itp = cubic_interp((x, y), data; extrap=ExtendExtrap())
 ```
 """
-struct ExtendExtrap <: AbstractExtrapMode end
+struct ExtendExtrap <: AbstractExtrap end
 
 """
-    WrapExtrap <: AbstractExtrapMode
+    WrapExtrap <: AbstractExtrap
 
 Wrap extrapolation — wraps queries into the domain using modular arithmetic.
 For periodic data. Replaces `extrap=:wrap`.
@@ -147,12 +147,12 @@ For periodic data. Replaces `extrap=:wrap`.
 itp = cubic_interp((x, y), data; extrap=WrapExtrap())
 ```
 """
-struct WrapExtrap <: AbstractExtrapMode end
+struct WrapExtrap <: AbstractExtrap end
 
 """
-    _symbol_to_extrap_mode(extrap::Symbol) -> AbstractExtrapMode
+    _symbol_to_extrap_mode(extrap::Symbol) -> AbstractExtrap
 
-Convert a Symbol extrapolation specifier to the corresponding `AbstractExtrapMode` singleton.
+Convert a Symbol extrapolation specifier to the corresponding `AbstractExtrap` singleton.
 Used in the legacy Symbol → Mode conversion path.
 """
 @inline function _symbol_to_extrap_mode(extrap::Symbol)

@@ -215,8 +215,8 @@ import FastInterpolations:
             @test _bc(itp, Val(2)) isa FastInterpolations.AbstractBC
 
             # Test _extrap accessor
-            @test _extrap(itp, Val(1)) isa FastInterpolations.AbstractExtrapMode
-            @test _extrap(itp, Val(2)) isa FastInterpolations.AbstractExtrapMode
+            @test _extrap(itp, Val(1)) isa FastInterpolations.AbstractExtrap
+            @test _extrap(itp, Val(2)) isa FastInterpolations.AbstractExtrap
 
             # Test _search accessor
             @test _search(itp, Val(1)) isa FastInterpolations.AbstractSearchPolicy

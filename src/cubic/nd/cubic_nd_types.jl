@@ -95,7 +95,7 @@ ultra-fast O(1) evaluation via tensor-product Hermite polynomials.
 - `G`: Tuple type for grids, `NTuple{N, <:AbstractVector{Tg}}`
 - `S`: Tuple type for spacings, `NTuple{N, <:AbstractGridSpacing{Tg}}`
 - `B`: Tuple type for boundary conditions, `NTuple{N, <:AbstractBC}`
-- `E`: Tuple type for extrapolation modes, `Tuple{Vararg{AbstractExtrapMode, N}}`
+- `E`: Tuple type for extrapolation modes, `Tuple{Vararg{AbstractExtrap, N}}`
 - `P`: Tuple type for search policies, `NTuple{N, <:AbstractSearchPolicy}`
 
 # Fields
@@ -133,7 +133,7 @@ struct CubicInterpolantND{
     G<:NTuple{N, AbstractVector{Tg}},
     S<:NTuple{N, AbstractGridSpacing{Tg}},
     B<:NTuple{N, AbstractBC},
-    E<:Tuple{Vararg{AbstractExtrapMode, N}},
+    E<:Tuple{Vararg{AbstractExtrap, N}},
     P<:NTuple{N, AbstractSearchPolicy},
 } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
@@ -210,7 +210,7 @@ Get boundary condition for dimension `d`.
 @inline _bc(itp::CubicInterpolantND, ::Val{D}) where {D} = itp.bcs[D]
 
 """
-    _extrap(itp, Val(d)) -> AbstractExtrapMode
+    _extrap(itp, Val(d)) -> AbstractExtrap
 
 Get extrapolation mode for dimension `d`.
 """

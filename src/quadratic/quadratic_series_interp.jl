@@ -76,7 +76,7 @@ sitp_complex = quadratic_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct QuadraticSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct QuadraticSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                                # Grid points (Range or Vector)
     const y::Matrix{Tv}                       # Series-contiguous y (n_points × n_series)
     const a::Matrix{Tv}                       # Series-contiguous a (n_points × n_series)
@@ -94,7 +94,7 @@ mutable struct QuadraticSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtr
         h::Vector{Tg},
         extrap::E,
         search::P=Binary()
-    ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
+    ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
         new{Tg,Tv,E,P,X}(x, y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
     end
 end
@@ -217,7 +217,7 @@ end
     x_min::Tg,
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Tq},
-    extrap::AbstractExtrapMode,  # ExtendExtrap, WrapExtrap, or anything else
+    extrap::AbstractExtrap,  # ExtendExtrap, WrapExtrap, or anything else
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
@@ -345,7 +345,7 @@ Create a multi-Y quadratic series interpolant for multiple y-data series sharing
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
 - `bc`: Boundary condition (Left/Right with QuadraticFit, Deriv1, Deriv2, MinCurvFit)
-- `extrap::AbstractExtrapMode`: `NoExtrap()`, `ConstExtrap()`, or `ExtendExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, or `ExtendExtrap()` (Symbol args deprecated)
 
 # Returns
 `QuadraticSeriesInterpolant` object with unified matrix storage.
@@ -366,7 +366,7 @@ function quadratic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Check if Tv's float base requires grid widening (not for Int types)
@@ -450,7 +450,7 @@ function quadratic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     ys = [Y[:, k] for k in axes(Y, 2)]
@@ -467,7 +467,7 @@ function quadratic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
@@ -482,7 +482,7 @@ function quadratic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     bc=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
@@ -725,7 +725,7 @@ end
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Taq},
     dL::Tq,
-    extrap::AbstractExtrapMode,  # ExtendExtrap, WrapExtrap, etc.
+    extrap::AbstractExtrap,  # ExtendExtrap, WrapExtrap, etc.
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
     return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)

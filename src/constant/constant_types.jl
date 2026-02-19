@@ -16,7 +16,7 @@ Returned by `constant_interp(x, y)` (2-argument form).
 - `Tv`: Value type for y-values (can be Tg, Complex{Tg}, or other Number)
 - `X<:AbstractVector{Tg}`: Type of x-coordinates
 - `Y<:AbstractVector{Tv}`: Type of y-values
-- `E<:AbstractExtrapMode`: Extrapolation mode type (compile-time specialized)
+- `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
 - `P<:AbstractSearchPolicy`: Search policy type
 
 # Fields
@@ -48,7 +48,7 @@ val = itp(0.5)               # uses LinearBinary() by default
 val = itp(0.5; search=Binary())  # override with Binary()
 ```
 """
-struct ConstantInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrapMode, P<:AbstractSearchPolicy} <: AbstractInterpolant{Tg, Tv}
+struct ConstantInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, P<:AbstractSearchPolicy} <: AbstractInterpolant{Tg, Tv}
     x::X
     y::Y
     extrap::E        # Extrapolation mode (compile-time specialized)
@@ -58,7 +58,7 @@ struct ConstantInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:Abst
     # Inner constructor: parametric, only calls new (handles validation only)
     function ConstantInterpolant{Tg,Tv,X,Y,E,P}(
         x::X, y::Y, ev::E, sv::SideVal, search::P
-    ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrapMode, P<:AbstractSearchPolicy}
+    ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, P<:AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         @assert length(x) >= 2 "x must have at least 2 elements"
         new{Tg,Tv,X,Y,E,P}(x, y, ev, sv, search)
@@ -76,7 +76,7 @@ end
 @inline function ConstantInterpolant(
     x::X,
     y::Y;
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     side::Symbol=:nearest,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}

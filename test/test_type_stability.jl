@@ -488,7 +488,7 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
     end
 
     # =========================================================================
-    # Typed AbstractExtrapMode for ND constructors
+    # Typed AbstractExtrap for ND constructors
     # =========================================================================
 
     @testset "ND typed extrap — cubic_interp" begin
@@ -595,7 +595,7 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
     end
 
     # =========================================================================
-    # Typed AbstractExtrapMode for ND oneshot functions
+    # Typed AbstractExtrap for ND oneshot functions
     # =========================================================================
 
     @testset "ND oneshot typed extrap — scalar @inferred" begin

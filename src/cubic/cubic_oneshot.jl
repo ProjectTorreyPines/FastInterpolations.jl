@@ -24,7 +24,7 @@ Thread-safe: workspaces allocated from task-local pool.
 - `cache::CubicSplineCache{T}`: Pre-computed cache with LU factorization
 - `y::AbstractVector{T}`: Function values at grid points
 - `x_query::AbstractVector{T}`: Query points
-- `extrap::AbstractExtrapMode`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `deriv::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy=Binary()`: Search algorithm for interval finding
 """
@@ -33,7 +33,7 @@ Thread-safe: workspaces allocated from task-local pool.
     cache::CubicSplineCache{Tg,X,F,BC},
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv, X, F, BC}
@@ -78,7 +78,7 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg},
     bc::BCPair{L,R},
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     autocache::Bool,
     op::O,
     searcher::S
@@ -109,7 +109,7 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
     y::AbstractVector{Tv},
     xq::Tq,  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::BCPair{L,R},
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     autocache::Bool,
     op::O,
     searcher::S
@@ -230,7 +230,7 @@ In-place cubic spline interpolation with optional automatic caching.
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg};
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -258,7 +258,7 @@ end
     cache::CubicSplineCache{Tg,X,F,BC},
     y::AbstractVector{Tv},
     x_query::Tg;
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv, X, F, BC}
@@ -273,7 +273,7 @@ end
     y::AbstractVector{Tv},
     x_query::Tg;
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -312,7 +312,7 @@ function cubic_interp(
     cache::CubicSplineCache{Tg},
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -353,7 +353,7 @@ function cubic_interp(
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg};
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -365,7 +365,7 @@ end
 
 # Scalar query - zero allocation
 cubic_interp(cache::CubicSplineCache{Tg}, y::AbstractVector{Tv},
-             x_query::Tg; extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(), deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv} =
+             x_query::Tg; extrap::Union{Symbol,AbstractExtrap}=NoExtrap(), deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv} =
     cubic_interp_scalar(cache, y, x_query; extrap=extrap, deriv=deriv, search=search, hint=hint)
 
 # Primary scalar method - AD-compatible
@@ -375,7 +375,7 @@ function cubic_interp(
     y::AbstractVector{Tv},
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search=Binary(),
@@ -409,7 +409,7 @@ function cubic_interp(
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tq};
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -425,7 +425,7 @@ function cubic_interp(
     y::AbstractVector{Tv},
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search=Binary(),
@@ -443,7 +443,7 @@ function cubic_interp!(
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tq};
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -474,7 +474,7 @@ function cubic_interp!(
     y::AbstractVector{Tv},
     x_query::Tq;
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()

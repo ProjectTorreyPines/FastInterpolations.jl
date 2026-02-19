@@ -95,7 +95,7 @@ AD Support:
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xi::Tq,
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     side::SideVal,
     op::AbstractEvalOp,
     searcher::S
@@ -157,7 +157,7 @@ Constant (step/piecewise constant) interpolation at a single point.
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (same length as x)
 - `xi::Real`: Query point
-- `extrap::AbstractExtrapMode`: Extrapolation mode (Symbol args deprecated)
+- `extrap::AbstractExtrap`: Extrapolation mode (Symbol args deprecated)
   - `NoExtrap()` (default): throws DomainError if outside domain
   - `ConstExtrap()`: clamp to boundary values
   - `ExtendExtrap()`: same as ConstExtrap (slope=0)
@@ -197,7 +197,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xi::Tq;
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search=Binary(),
@@ -249,7 +249,7 @@ function constant_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -296,7 +296,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -323,7 +323,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xi::Tq;
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search=Binary(),
@@ -343,7 +343,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -364,7 +364,7 @@ function constant_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()

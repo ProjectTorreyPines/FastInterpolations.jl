@@ -303,7 +303,7 @@ so the pool memory can be safely reused after this function returns.
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     bc_pair::BCPair{L,R},
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     autocache::Bool,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv, L<:PointBC, R<:PointBC}
@@ -374,7 +374,7 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values (can be Real or Complex)
 - `bc::AbstractBC`: Boundary condition (default: `NaturalBC()`)
-- `extrap::AbstractExtrapMode`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `autocache::Bool`: Enable automatic caching (default: `true`)
 - `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
 
@@ -403,7 +403,7 @@ val = itp(0.5)  # returns ComplexF64
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     bc::AbstractBC,
-    extrap::Union{Symbol,AbstractExtrapMode},
+    extrap::Union{Symbol,AbstractExtrap},
     autocache::Bool,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
@@ -422,7 +422,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv};
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
@@ -454,7 +454,7 @@ so the pool memory can be safely reused after this function returns.
 @with_pool pool function cubic_interp(
     cache::CubicSplineCache{Tg},
     y::AbstractVector{Tv};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     tmp_z = similar!(pool, y)
@@ -476,7 +476,7 @@ function cubic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY};
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     search::P=Binary()
 ) where {TX<:Real, TY, P<:AbstractSearchPolicy}

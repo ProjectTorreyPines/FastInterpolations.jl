@@ -61,7 +61,7 @@ function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {N, Tv_raw}
@@ -82,7 +82,7 @@ function cubic_interp(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
         extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
         return _build_nd_interpolant(grids_typed, data, bcs, extraps_val, searches, coeffs)
     else
@@ -108,7 +108,7 @@ function _build_nd_interpolant(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, AbstractBC},
-    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
+    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ::PreCompute
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -182,7 +182,7 @@ function _build_nd_interpolant(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, AbstractBC},
-    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
+    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ::OnTheFly
 ) where {Tg<:AbstractFloat, Tv, N}

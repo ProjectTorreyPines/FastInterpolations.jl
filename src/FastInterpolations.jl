@@ -58,7 +58,7 @@ export deriv1, deriv2, deriv3, deriv_view, AbstractDerivativeView, DerivativeVie
 export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3
 
 # Extrapolation mode types (typed API for ND extrap)
-export AbstractExtrapMode, NoExtrap, ConstExtrap, ExtendExtrap, WrapExtrap
+export AbstractExtrap, NoExtrap, ConstExtrap, ExtendExtrap, WrapExtrap
 
 # Integration
 export integrate, cumulative_integrate

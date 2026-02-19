@@ -50,7 +50,7 @@ function constant_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary()
 ) where {N, Tv_raw}
     # Validate grid dimensions
@@ -74,7 +74,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
         extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N))
         @_dispatch_side_nd sides => side_vals begin
             return ConstantInterpolantND{Tg, Tv, N,

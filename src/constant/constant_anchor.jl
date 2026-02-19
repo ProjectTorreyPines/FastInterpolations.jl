@@ -295,7 +295,7 @@ end
     itp::ConstantInterpolant{T},
     aq::_ConstantAnchoredQuery{T},
     op::O,
-    ::AbstractExtrapMode
+    ::AbstractExtrap
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     # Special case: at right boundary (x_max)
     if aq.xq == last(itp.x)

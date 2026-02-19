@@ -64,7 +64,7 @@ const FI = FastInterpolations
 
         @test FI.n_series(sitp) == 2
         @test FI._get_grid(sitp) ≈ x
-        @test FI._get_extrap(sitp) isa FI.AbstractExtrapMode
+        @test FI._get_extrap(sitp) isa FI.AbstractExtrap
         @test FI._should_wrap(sitp) == false
         @test FI._method_kind(typeof(sitp)) === Val(:constant)
     end

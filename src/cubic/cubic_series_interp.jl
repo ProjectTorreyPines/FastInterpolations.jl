@@ -82,7 +82,7 @@ mutable struct CubicSeriesInterpolant{
     Tv,
     C<:CubicSplineCache{Tg},
     B,
-    E<:AbstractExtrapMode,
+    E<:AbstractExtrap,
     P<:AbstractSearchPolicy
 } <: AbstractSeriesInterpolant{Tg, Tv}
     const cache::C                    # Shared cache with LU factorization
@@ -100,7 +100,7 @@ mutable struct CubicSeriesInterpolant{
         z::Matrix{Tv},
         extrap::E,
         search::P=Binary()
-    ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, B, E<:AbstractExtrapMode, P<:AbstractSearchPolicy}
+    ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, B, E<:AbstractExtrap, P<:AbstractSearchPolicy}
         new{Tg, Tv, C, B, E, P}(
             cache, bc_for_solve, y, z,
             LazyTransposePair{Tv}(),
@@ -305,7 +305,7 @@ SIMD evaluation with extrapolation handling for multi-series.
     x_min::Tg,
     x_max::Tg,
     aq::_CubicAnchoredQuery{Tg,Tq},
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     # Inside domain: normal evaluation
@@ -541,7 +541,7 @@ Create a multi-Y cubic spline interpolant for multiple y-data series sharing the
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
 - `bc`: Boundary condition (NaturalBC, ClampedBC, PeriodicBC, or Vector of BC for per-series)
-- `extrap::AbstractExtrapMode`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `autocache`: If true, reuse cached LU factorization (default: true)
 - `precompute_transpose`: If true, build point-contiguous layout immediately
 
@@ -571,7 +571,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::P=Binary()
@@ -707,7 +707,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=Binary()
@@ -769,7 +769,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=Binary()
@@ -787,7 +787,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=Binary()
@@ -1040,7 +1040,7 @@ Uses argument-passing pattern for optimal performance (avoids struct field acces
     x_max::Tg,
     k::Int,
     aq_vec::AbstractVector{<:_CubicAnchoredQuery{Tg}},
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     @inbounds for j in eachindex(out, aq_vec)
@@ -1061,7 +1061,7 @@ Takes matrices as arguments for optimal performance.
     x_max::Tg,
     k::Int,
     aq::_CubicAnchoredQuery{Tg},
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     # Inside domain: normal evaluation

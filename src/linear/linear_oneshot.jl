@@ -24,7 +24,7 @@ Zero-allocation linear interpolation with automatic dispatch:
 
 # Arguments
 - `output`: Pre-allocated output vector (must be floating-point type)
-- `extrap::AbstractExtrapMode`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `deriv::Int`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
@@ -60,7 +60,7 @@ function linear_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -76,14 +76,14 @@ function linear_interp!(
     end
 end
 
-# Internal loop with AbstractExtrapMode dispatch and Searcher (type-stable)
+# Internal loop with AbstractExtrap dispatch and Searcher (type-stable)
 # Supports mixed types: Tg for grid, Tv for values
 @inline function _linear_interp_loop!(
     output::AbstractVector{Tv},
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg},
-    extrap_val::AbstractExtrapMode,
+    extrap_val::AbstractExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
@@ -157,7 +157,7 @@ end
     x::AbstractRange{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -186,7 +186,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 
 # Arguments
 - `xq::Real`: Single interpolation query point
-- `extrap::AbstractExtrapMode`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `deriv::Int`: Derivative order (0=value, 1=first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
@@ -249,7 +249,7 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq,
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
@@ -367,16 +367,16 @@ end
 
 
 # ========================================
-# Core implementation with AbstractExtrapMode dispatch
+# Core implementation with AbstractExtrap dispatch
 # ========================================
 
-# Core implementation with AbstractExtrapMode + op + searcher dispatch
+# Core implementation with AbstractExtrap + op + searcher dispatch
 # Supports mixed types: Tg for grid, Tv for values, Tq for query (including Dual)
 @inline function linear_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq,
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
@@ -391,7 +391,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq;
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -422,7 +422,7 @@ function linear_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -443,7 +443,7 @@ function linear_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
@@ -475,7 +475,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq;
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -493,7 +493,7 @@ function linear_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}

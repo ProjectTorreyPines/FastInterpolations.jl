@@ -101,7 +101,7 @@ function quadratic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
-    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
 ) where {N, Tv_raw}
     # Zero-allocation type promotion
@@ -121,7 +121,7 @@ function quadratic_interp(
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
         extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
         return _build_nd_quadratic_interpolant(grids_typed, data, bcs, extraps_val, searches)
     else
@@ -141,7 +141,7 @@ function _build_nd_quadratic_interpolant(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, QuadraticBC},
-    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
+    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
     # Build nodal derivatives using quadratic recurrence

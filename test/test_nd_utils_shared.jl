@@ -279,9 +279,9 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
     end
 
     # ========================================
-    # Typed ExtrapMode Resolution (3-arg form)
+    # Typed Extrap Resolution (3-arg form)
     # ========================================
-    @testset "Typed ExtrapMode resolution" begin
+    @testset "Typed Extrap resolution" begin
         @testset "single mode → Mode tuple, no BCs" begin
             @test _resolve_extrap_nd(NoExtrap(), nothing, Val(2)) === (NoExtrap(), NoExtrap())
             @test _resolve_extrap_nd(ConstExtrap(), nothing, Val(3)) === (ConstExtrap(), ConstExtrap(), ConstExtrap())

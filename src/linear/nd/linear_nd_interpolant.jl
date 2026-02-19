@@ -61,7 +61,7 @@ itp = linear_interp((x, y), data;
 function linear_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
-    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary()
 ) where {N, Tv_raw}
     # Validate grid dimensions
@@ -84,7 +84,7 @@ function linear_interp(
     # Resolve per-axis configuration
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
         extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N))
         return LinearInterpolantND{Tg, Tv, N,
             typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches)}(

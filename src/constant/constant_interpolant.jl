@@ -64,7 +64,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (can be Real or Complex)
-- `extrap::AbstractExtrapMode`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `side::Symbol`: Side selection
 - `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
 
@@ -113,7 +113,7 @@ end
 @inline function constant_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY};
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     side::Symbol=:nearest,
     search::AbstractSearchPolicy=Binary()
 ) where {TX<:Real, TY}

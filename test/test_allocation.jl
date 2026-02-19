@@ -479,7 +479,7 @@ import FastInterpolations: _get_cubic_cache
         clear_cubic_cache!()
         cubic_interp(x, y, 0.5)
 
-        # Warmup with extrapolation (typed AbstractExtrapMode)
+        # Warmup with extrapolation (typed AbstractExtrap)
         cubic_interp(x, y, -0.1; extrap=ExtendExtrap())
         cubic_interp(x, y, 1.1; extrap=ExtendExtrap())
 
@@ -662,16 +662,16 @@ import FastInterpolations: _get_cubic_cache
     end
 
     # =========================================================================
-    # Typed Extrapolation Mode Tests (AbstractExtrapMode)
+    # Typed Extrapolation Mode Tests (AbstractExtrap)
     # =========================================================================
     # These tests verify zero-allocation for all 4 extrapolation modes
-    # when passed as typed AbstractExtrapMode singletons (the recommended API).
+    # when passed as typed AbstractExtrap singletons (the recommended API).
 
     @testset "Typed extrap: linear_interp scalar" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
 
-        function linear_typed_extrap(mode::AbstractExtrapMode)
+        function linear_typed_extrap(mode::AbstractExtrap)
             linear_interp(x, y, 0.5; extrap=mode)
         end
 
@@ -693,7 +693,7 @@ import FastInterpolations: _get_cubic_cache
         x_query = [0.25, 0.5, 0.75]
         output = similar(x_query)
 
-        function linear_typed_extrap!(out, mode::AbstractExtrapMode)
+        function linear_typed_extrap!(out, mode::AbstractExtrap)
             linear_interp!(out, x, y, x_query; extrap=mode)
         end
 
@@ -715,7 +715,7 @@ import FastInterpolations: _get_cubic_cache
         clear_cubic_cache!()
         cubic_interp(x, y, 0.5)
 
-        function cubic_typed_extrap(mode::AbstractExtrapMode)
+        function cubic_typed_extrap(mode::AbstractExtrap)
             cubic_interp(x, y, 0.5; extrap=mode)
         end
 
@@ -738,7 +738,7 @@ import FastInterpolations: _get_cubic_cache
 
         clear_cubic_cache!()
 
-        function cubic_typed_extrap!(out, mode::AbstractExtrapMode)
+        function cubic_typed_extrap!(out, mode::AbstractExtrap)
             cubic_interp!(out, x, y, x_query; extrap=mode)
         end
 
@@ -798,7 +798,7 @@ import FastInterpolations: _get_cubic_cache
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
 
-        function itp_typed_extrap(mode::AbstractExtrapMode)
+        function itp_typed_extrap(mode::AbstractExtrap)
             LinearInterpolant(x, y; extrap=mode)
         end
 

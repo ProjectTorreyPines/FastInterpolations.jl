@@ -48,7 +48,7 @@ end
 
         @test FI.n_series(sitp) == 2
         @test FI._get_grid(sitp) ≈ x
-        @test FI._get_extrap(sitp) isa FI.AbstractExtrapMode
+        @test FI._get_extrap(sitp) isa FI.AbstractExtrap
         @test FI._should_wrap(sitp) == false
         @test FI._method_kind(typeof(sitp)) === Val(:cubic)
 end
@@ -104,7 +104,7 @@ end
         @test mitp.cache isa FI.CubicSplineCache{Float64}
     end
 
-    @testset "Extrap is AbstractExtrapMode type" begin
+    @testset "Extrap is AbstractExtrap type" begin
         mitp_ext = cubic_interp(x, [y1, y2]; extrap=:extension)
         @test mitp_ext.extrap === ExtendExtrap()
 
@@ -717,7 +717,7 @@ end
                         :extension => ExtendExtrap(), :wrap => WrapExtrap())
         for extrap_mode in (:none, :constant, :extension, :wrap)
             mitp = cubic_interp(x, [y1, y2]; extrap=extrap_mode)
-            # Unified struct stores AbstractExtrapMode singleton
+            # Unified struct stores AbstractExtrap singleton
             @test mitp.extrap === expected[extrap_mode]
         end
     end

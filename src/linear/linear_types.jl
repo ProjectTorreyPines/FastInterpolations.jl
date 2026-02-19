@@ -15,7 +15,7 @@ Returned by `linear_interp(x, y)` (2-argument form).
 - `Tv`: Value type - element type of y (can be Tg, Complex{Tg}, or other Number)
 - `X<:AbstractVector{Tg}`: Grid vector type (preserves Range for O(1) lookup)
 - `Y<:AbstractVector{Tv}`: Values vector type
-- `E<:AbstractExtrapMode`: Extrapolation mode type (compile-time specialized)
+- `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
 - `P<:AbstractSearchPolicy`: Search policy type
 
 # Fields
@@ -58,7 +58,7 @@ struct LinearInterpolant{
     Tv,
     X<:AbstractVector{Tg},
     Y<:AbstractVector{Tv},
-    E<:AbstractExtrapMode,
+    E<:AbstractExtrap,
     P<:AbstractSearchPolicy
 } <: AbstractInterpolant{Tg, Tv}
     x::X
@@ -69,7 +69,7 @@ struct LinearInterpolant{
     # Inner constructor: parametric, only calls new (handles validation only)
     function LinearInterpolant{Tg,Tv,X,Y,E,P}(
         x::X, y::Y, ev::E, search::P
-    ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrapMode, P<:AbstractSearchPolicy}
+    ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, P<:AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         new{Tg,Tv,X,Y,E,P}(x, y, ev, search)
     end
@@ -86,7 +86,7 @@ end
 @inline function LinearInterpolant(
     x::X,
     y::Y;
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
     extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp)

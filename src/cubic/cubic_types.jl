@@ -79,7 +79,7 @@ struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC,S<:AbstractGr
     bc_config::BC
 end
 
-# AbstractExtrapMode types are defined in eval_ops.jl (shared across all interpolants)
+# AbstractExtrap types are defined in eval_ops.jl (shared across all interpolants)
 
 """
     CubicInterpolant{Tg,Tv,C,E,P,BC}
@@ -127,7 +127,7 @@ val = itp(0.5)  # returns ComplexF64
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Extrapolation mode uses type-parametrized dispatch for zero overhead
 """
-struct CubicInterpolant{Tg<:AbstractFloat,Tv,C<:CubicSplineCache{Tg},E<:AbstractExtrapMode,P<:AbstractSearchPolicy,BC<:CubicBC} <: AbstractInterpolant{Tg, Tv}
+struct CubicInterpolant{Tg<:AbstractFloat,Tv,C<:CubicSplineCache{Tg},E<:AbstractExtrap,P<:AbstractSearchPolicy,BC<:CubicBC} <: AbstractInterpolant{Tg, Tv}
     cache::C
     y::Vector{Tv}
     z::Vector{Tv}  # Pre-computed second derivative coefficients (value type)
@@ -141,7 +141,7 @@ struct CubicInterpolant{Tg<:AbstractFloat,Tv,C<:CubicSplineCache{Tg},E<:Abstract
         bc::BC,
         extrap::E,
         search::P=Binary()
-    ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, BC<:CubicBC}
+    ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, E<:AbstractExtrap, P<:AbstractSearchPolicy, BC<:CubicBC}
         @assert length(cache.x) == length(y) "cache grid and y must have same length"
         @assert length(cache.x) == length(z) "z coefficients must match grid length"
         # Always copy to ensure immutability: once constructed, the interpolant

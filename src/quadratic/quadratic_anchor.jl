@@ -302,7 +302,7 @@ end
     itp::QuadraticInterpolant{T},
     aq::_QuadraticAnchoredQuery{T,Tq},
     op::O,
-    ::AbstractExtrapMode
+    ::AbstractExtrap
 ) where {T<:AbstractFloat, Tq<:Real, O<:AbstractEvalOp}
     @inbounds return _quadratic_kernel(op, itp.a[aq.idx], itp.d[aq.idx], itp.y[aq.idx], aq.dL)
 end

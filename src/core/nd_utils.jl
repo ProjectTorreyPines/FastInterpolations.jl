@@ -55,7 +55,7 @@ end
 end
 
 # ========================================
-# Typed ExtrapMode Resolution (3-arg form)
+# Typed Extrap Resolution (3-arg form)
 # ========================================
 #
 # 3-arg _resolve_extrap_nd(extrap, bcs, Val(N)):
@@ -68,31 +68,31 @@ end
 
 # ── Mode → Mode tuple (fast path) ────────────────────────────────────
 
-@inline function _resolve_extrap_nd(extrap::AbstractExtrapMode, ::Nothing, ::Val{N}) where {N}
+@inline function _resolve_extrap_nd(extrap::AbstractExtrap, ::Nothing, ::Val{N}) where {N}
     ntuple(_ -> extrap, Val(N))
 end
 
-@inline function _resolve_extrap_nd(extrap::AbstractExtrapMode, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+@inline function _resolve_extrap_nd(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
     _check_mode_periodic_compat(extrap, bcs, Val(N))
     return _mode_to_modes_with_periodic(extrap, bcs)
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrapMode,N}}, ::Nothing, ::Val{N}) where {N}
+@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap,N}}, ::Nothing, ::Val{N}) where {N}
     extrap
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrapMode,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
     _check_modes_periodic_compat(extrap, bcs, Val(N))
     return _modes_to_modes_with_periodic(extrap, bcs)
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrapMode}}, ::Any, ::Val{N}) where {N}
+@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap}}, ::Any, ::Val{N}) where {N}
     throw(ArgumentError("extrap tuple must have $N elements to match grid dimensions, got $(length(extrap))"))
 end
 
 # ── Periodic BC compatibility checks for Mode types ──────────────────
 
-@inline function _check_mode_periodic_compat(extrap::AbstractExtrapMode, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+@inline function _check_mode_periodic_compat(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
     # NoExtrap and WrapExtrap are always compatible with PeriodicBC
     (extrap isa NoExtrap || extrap isa WrapExtrap) && return nothing
     for d in 1:N
@@ -105,7 +105,7 @@ end
     return nothing
 end
 
-@inline function _check_modes_periodic_compat(extraps::Tuple{Vararg{AbstractExtrapMode,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+@inline function _check_modes_periodic_compat(extraps::Tuple{Vararg{AbstractExtrap,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
     for d in 1:N
         if _is_periodic_bc(bcs[d]) && !(extraps[d] isa NoExtrap || extraps[d] isa WrapExtrap)
             throw(ArgumentError(
@@ -118,7 +118,7 @@ end
 
 # ── @generated periodic override (compile-time Mode tuple construction) ──
 
-@generated function _mode_to_modes_with_periodic(extrap::M, bcs::B) where {M<:AbstractExtrapMode, B<:Tuple{Vararg{AbstractBC}}}
+@generated function _mode_to_modes_with_periodic(extrap::M, bcs::B) where {M<:AbstractExtrap, B<:Tuple{Vararg{AbstractBC}}}
     N = fieldcount(B)
     exprs = map(1:N) do d
         if fieldtype(B, d) <: PeriodicBC
@@ -130,7 +130,7 @@ end
     :(($(exprs...),))
 end
 
-@generated function _modes_to_modes_with_periodic(extraps::E, bcs::B) where {E<:Tuple{Vararg{AbstractExtrapMode}}, B<:Tuple{Vararg{AbstractBC}}}
+@generated function _modes_to_modes_with_periodic(extraps::E, bcs::B) where {E<:Tuple{Vararg{AbstractExtrap}}, B<:Tuple{Vararg{AbstractBC}}}
     N = fieldcount(E)
     exprs = map(1:N) do d
         if fieldtype(B, d) <: PeriodicBC
@@ -434,11 +434,11 @@ end
     return _wrap_to_domain(q, first(axis), last(axis))  # already handles AD via _extract_primal
 end
 
-# ── AbstractExtrapMode dispatch (ND storage uses Mode types directly) ──
+# ── AbstractExtrap dispatch (ND storage uses Mode types directly) ──
 
 @inline function _handle_all_extraps(
     queries::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
-    extraps::Tuple{Vararg{AbstractExtrapMode,N}}
+    extraps::Tuple{Vararg{AbstractExtrap,N}}
 ) where {N}
     map(_extrap_axis, queries, grids, extraps)
 end

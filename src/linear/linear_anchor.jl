@@ -327,7 +327,7 @@ end
     itp::LinearInterpolant{Tg},
     aq::_LinearAnchoredQuery{Tg, Tq},
     op::AbstractEvalOp,
-    ::AbstractExtrapMode
+    ::AbstractExtrap
 ) where {Tg<:AbstractFloat, Tq<:Real}
     @inbounds begin
         yL = itp.y[aq.idx]

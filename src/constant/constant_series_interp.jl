@@ -29,7 +29,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 - `x::X`: Shared x-grid (Vector or Range)
 - `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
 - `_transpose::LazyTranspose{Tv}`: Lazy point-contiguous layout for scalar SIMD
-- `extrap::AbstractExtrapMode`: Extrapolation mode
+- `extrap::AbstractExtrap`: Extrapolation mode
 - `side::SideVal`: Side selection (:nearest, :left, :right)
 
 # Memory Layout
@@ -64,7 +64,7 @@ sitp_complex = constant_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct ConstantSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct ConstantSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                            # Shared x-grid (Range or Vector)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
@@ -78,7 +78,7 @@ mutable struct ConstantSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtra
         extrap::E,
         side::SideVal,
         search::P=Binary()
-    ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
+    ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
         new{Tg,Tv,E,P,X}(x, y, LazyTranspose{Tv}(), extrap, side, search)
     end
 end
@@ -311,7 +311,7 @@ Create a multi-Y constant interpolant for multiple y-data series sharing the sam
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
 - `side`: Side for discontinuities (:left, :right, :nearest)
-- `extrap::AbstractExtrapMode`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 
 # Returns
 `ConstantSeriesInterpolant` object with matrix storage.
@@ -332,7 +332,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     side::Symbol=:nearest,
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Check if Tv's float base requires grid widening (not for Int types)
@@ -397,7 +397,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     side::Symbol=:nearest,
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     # Check if Tv's float base requires grid widening
@@ -438,7 +438,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     side::Symbol=:nearest,
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
@@ -452,7 +452,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     side::Symbol=:nearest,
-    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
+    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
@@ -625,7 +625,7 @@ Uses argument-passing pattern for optimal performance.
     x_max::Tg,
     k::Int,
     aq_vec::AbstractVector{<:_ConstantAnchoredQuery{Tg}},
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     side_val::SideVal,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
@@ -646,7 +646,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
     x_max::Tg,
     k::Int,
     aq::_ConstantAnchoredQuery{Tg},
-    extrap::AbstractExtrapMode,
+    extrap::AbstractExtrap,
     side_val::SideVal,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}

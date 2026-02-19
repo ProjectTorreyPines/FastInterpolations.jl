@@ -16,7 +16,7 @@ N-dimensional constant (step) interpolation with per-axis configuration.
 - `N`: Number of dimensions
 - `G<:NTuple{N, AbstractVector{Tg}}`: Grid tuple type
 - `S<:NTuple{N, AbstractGridSpacing{Tg}}`: Spacing tuple type
-- `E<:Tuple{Vararg{AbstractExtrapMode, N}}`: Extrapolation mode tuple type
+- `E<:Tuple{Vararg{AbstractExtrap, N}}`: Extrapolation mode tuple type
 - `SD<:NTuple{N, SideVal}`: Side selection tuple type
 - `P<:NTuple{N, AbstractSearchPolicy}`: Search policy tuple type
 
@@ -51,7 +51,7 @@ struct ConstantInterpolantND{
     N,
     G<:NTuple{N, AbstractVector{Tg}},
     S<:NTuple{N, AbstractGridSpacing{Tg}},
-    E<:Tuple{Vararg{AbstractExtrapMode, N}},
+    E<:Tuple{Vararg{AbstractExtrap, N}},
     SD<:NTuple{N, SideVal},
     P<:NTuple{N, AbstractSearchPolicy},
 } <: AbstractInterpolantND{Tg, Tv, N}

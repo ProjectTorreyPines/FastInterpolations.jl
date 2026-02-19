@@ -22,7 +22,7 @@ Evaluates directly from grids + data without constructing a ConstantInterpolantN
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}},
-    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
+    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     side_vals::NTuple{N, SideVal},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -43,7 +43,7 @@ Writes results into `output`. No heap allocation beyond spacings.
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
+    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     side_vals::NTuple{N, SideVal},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -74,7 +74,7 @@ function _constant_interp_nd_oneshot_soa(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
+    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     side_vals::NTuple{N, SideVal},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -93,7 +93,7 @@ Writes results into `output`. No heap allocation beyond spacings.
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
+    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     side_vals::NTuple{N, SideVal},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -119,7 +119,7 @@ function _constant_interp_nd_oneshot_aos(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
+    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     side_vals::NTuple{N, SideVal},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -150,7 +150,7 @@ function constant_interp(
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -167,7 +167,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
         extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
         @_dispatch_side_nd sides => side_vals begin
             return _constant_interp_nd_oneshot(
@@ -196,7 +196,7 @@ function constant_interp(
     data::AbstractArray{Tv, N},
     queries::NTuple{N, AbstractVector{<:Real}};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -213,7 +213,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
         extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
         @_dispatch_side_nd sides => side_vals begin
             return _constant_interp_nd_oneshot_soa(
@@ -242,7 +242,7 @@ function constant_interp(
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -259,7 +259,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
         extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
         @_dispatch_side_nd sides => side_vals begin
             return _constant_interp_nd_oneshot_aos(
@@ -293,7 +293,7 @@ function constant_interp!(
     data::AbstractArray{Tv, N},
     queries::NTuple{N, AbstractVector{<:Real}};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -310,7 +310,7 @@ function constant_interp!(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
         extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
         @_dispatch_side_nd sides => side_vals begin
             return _constant_interp_nd_oneshot_soa!(
@@ -340,7 +340,7 @@ function constant_interp!(
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -357,7 +357,7 @@ function constant_interp!(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
         extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
         @_dispatch_side_nd sides => side_vals begin
             return _constant_interp_nd_oneshot_aos!(

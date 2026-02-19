@@ -36,7 +36,7 @@ end
 @inline _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::NoExtrap) =
     _check_domain(x, xi, NoExtrap())
 
-@inline function _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::AbstractExtrapMode)
+@inline function _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::AbstractExtrap)
     x_min, x_max = first(x), last(x)
     (xi < x_min || xi > x_max) && throw(ArgumentError(
         "ND integration only supports in-domain bounds (extrapolation is not yet implemented). " *

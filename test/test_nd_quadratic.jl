@@ -533,9 +533,9 @@ end
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; extrap=:constant)
-        quadratic_interp((x, y), data, query; extrap=:constant)
-        @allocated quadratic_interp((x, y), data, query; extrap=:constant)
+        quadratic_interp((x, y), data, query; extrap=ConstExtrap())
+        quadratic_interp((x, y), data, query; extrap=ConstExtrap())
+        @allocated quadratic_interp((x, y), data, query; extrap=ConstExtrap())
     end
 
     function _alloc_test_quadratic_3d()

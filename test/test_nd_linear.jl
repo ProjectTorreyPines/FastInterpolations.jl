@@ -458,9 +458,9 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        linear_interp((x, y), data, query; extrap=:constant)
-        linear_interp((x, y), data, query; extrap=:constant)
-        @allocated linear_interp((x, y), data, query; extrap=:constant)
+        linear_interp((x, y), data, query; extrap=ConstExtrap())
+        linear_interp((x, y), data, query; extrap=ConstExtrap())
+        @allocated linear_interp((x, y), data, query; extrap=ConstExtrap())
     end
 
     function _alloc_test_linear_extrap_extension()
@@ -468,9 +468,9 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        linear_interp((x, y), data, query; extrap=:extension)
-        linear_interp((x, y), data, query; extrap=:extension)
-        @allocated linear_interp((x, y), data, query; extrap=:extension)
+        linear_interp((x, y), data, query; extrap=ExtendExtrap())
+        linear_interp((x, y), data, query; extrap=ExtendExtrap())
+        @allocated linear_interp((x, y), data, query; extrap=ExtendExtrap())
     end
 
     function _alloc_test_linear_3d()

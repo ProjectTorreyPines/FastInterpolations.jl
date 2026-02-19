@@ -429,9 +429,9 @@ end
         y = range(0.0, 1.0, 6)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        constant_interp((x, y), data, query; extrap=:constant)
-        constant_interp((x, y), data, query; extrap=:constant)
-        @allocated constant_interp((x, y), data, query; extrap=:constant)
+        constant_interp((x, y), data, query; extrap=ConstExtrap())
+        constant_interp((x, y), data, query; extrap=ConstExtrap())
+        @allocated constant_interp((x, y), data, query; extrap=ConstExtrap())
     end
 
     function _alloc_test_constant_3d()

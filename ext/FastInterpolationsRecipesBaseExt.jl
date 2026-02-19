@@ -23,7 +23,7 @@ import FastInterpolations:
     LinearInterpolant, ConstantInterpolant, QuadraticInterpolant, CubicInterpolant,
     LinearSeriesInterpolant, ConstantSeriesInterpolant,
     QuadraticSeriesInterpolant, CubicSeriesInterpolant,
-    DerivativeView
+    DerivativeView, NoExtrap
 
 # ========================================
 # Helper Functions
@@ -191,7 +191,7 @@ Generates multiple series:
     visual_margin = T(0.02) * (x_max - x_min)
 
     # Compute curve evaluation range (xq) and display range (xlims) separately
-    if extrap === Val(:none)
+    if extrap isa NoExtrap
         # Curve stays within domain, but xlims has small margin for visibility
         xq_min, xq_max = x_min, x_max
         default_xlim_min = x_min - visual_margin
@@ -203,7 +203,7 @@ Generates multiple series:
     end
 
     # If user provides xlims and extrap is enabled, use wider range for curve evaluation
-    if !isnothing(user_xlims) && extrap !== Val(:none)
+    if !isnothing(user_xlims) && !(extrap isa NoExtrap)
         xq_min = min(T(first(user_xlims)), xq_min)
         xq_max = max(T(last(user_xlims)), xq_max)
     end
@@ -235,7 +235,7 @@ Generates multiple series:
     if !isnothing(user_ylims)
         y_lim_min, y_lim_max = T(first(user_ylims)), T(last(user_ylims))
     else
-        if extrap === Val(:none)
+        if extrap isa NoExtrap
             y_for_lims = y_vec
         else
             y_for_lims = vcat(y_vec, yq)
@@ -249,7 +249,7 @@ Generates multiple series:
     # Series 1 & 2: Out-of-domain shading (only when extrapolation is enabled)
     # Use large values so shading auto-clips to actual xlims/ylims
     shade_min, shade_max = T(-1e10), T(1e10)
-    if show_outside && extrap !== Val(:none)
+    if show_outside && !(extrap isa NoExtrap)
         @series begin
             seriestype := :shape
             fillcolor --> :gray
@@ -365,7 +365,7 @@ end
     visual_margin = T(0.02) * (x_max - x_min)
 
     # Compute curve evaluation range (xq) and display range (xlims) separately
-    if extrap === Val(:none)
+    if extrap isa NoExtrap
         # Curve stays within domain, but xlims has small margin for visibility
         xq_min, xq_max = x_min, x_max
         default_xlim_min = x_min - visual_margin
@@ -377,7 +377,7 @@ end
     end
 
     # If user provides xlims and extrap is enabled, use wider range for curve evaluation
-    if !isnothing(user_xlims) && extrap !== Val(:none)
+    if !isnothing(user_xlims) && !(extrap isa NoExtrap)
         xq_min = min(T(first(user_xlims)), xq_min)
         xq_max = max(T(last(user_xlims)), xq_max)
     end
@@ -400,7 +400,7 @@ end
     if !isnothing(user_ylims)
         y_lim_min, y_lim_max = T(first(user_ylims)), T(last(user_ylims))
     else
-        if extrap === Val(:none)
+        if extrap isa NoExtrap
             y_for_lims = vec(Y)
         else
             y_for_lims = vcat(vec(Y), vec(yq_matrix))
@@ -425,7 +425,7 @@ end
     # Use large values so shading auto-clips to actual xlims/ylims
     shade_min, shade_max = T(-1e10), T(1e10)
     if show_outside && length(series_indices) > 0
-        if extrap !== Val(:none)
+        if !(extrap isa NoExtrap)
             @series begin
                 seriestype := :shape
                 fillcolor --> :gray
@@ -547,7 +547,7 @@ end
     visual_margin = ElType(0.02) * (x_max - x_min)
 
     # Compute curve evaluation range (xq) and display range (xlims) separately
-    if extrap === Val(:none)
+    if extrap isa NoExtrap
         # Curve stays within domain, but xlims has small margin for visibility
         xq_min, xq_max = x_min, x_max
         default_xlim_min = x_min - visual_margin
@@ -559,7 +559,7 @@ end
     end
 
     # If user provides xlims and extrap is enabled, use wider range for curve evaluation
-    if !isnothing(user_xlims) && extrap !== Val(:none)
+    if !isnothing(user_xlims) && !(extrap isa NoExtrap)
         xq_min = min(ElType(first(user_xlims)), xq_min)
         xq_max = max(ElType(last(user_xlims)), xq_max)
     end
@@ -596,7 +596,7 @@ end
 
     # Out-of-domain shading - use large values so shading auto-clips to actual xlims/ylims
     shade_min, shade_max = ElType(-1e10), ElType(1e10)
-    if show_outside && extrap !== Val(:none)
+    if show_outside && !(extrap isa NoExtrap)
         @series begin
             seriestype := :shape
             fillcolor --> :gray
@@ -715,14 +715,14 @@ _default_2d_margin(grid) = eltype(grid)(0.15) * (last(grid) - first(grid))
 
 Check if any axis of an ND interpolant has extrapolation enabled (not `:none`).
 """
-_has_extrap(itp::AbstractInterpolantND) = any(e -> !(e isa FastInterpolations.NoExtrap), itp.extraps)
+_has_extrap(itp::AbstractInterpolantND) = any(e -> !(e isa NoExtrap), itp.extraps)
 
 """
     _axis_has_extrap(itp::AbstractInterpolantND, d::Int) -> Bool
 
 Check if axis `d` has extrapolation enabled.
 """
-_axis_has_extrap(itp::AbstractInterpolantND, d::Int) = !(itp.extraps[d] isa FastInterpolations.NoExtrap)
+_axis_has_extrap(itp::AbstractInterpolantND, d::Int) = !(itp.extraps[d] isa NoExtrap)
 
 """
 Recipe for 2D N-dimensional interpolants (AbstractInterpolantND with N=2).

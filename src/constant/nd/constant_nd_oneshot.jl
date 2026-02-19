@@ -22,7 +22,7 @@ Evaluates directly from grids + data without constructing a ConstantInterpolantN
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     side_vals::NTuple{N, SideVal},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -43,7 +43,7 @@ Writes results into `output`. No heap allocation beyond spacings.
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     side_vals::NTuple{N, SideVal},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -74,7 +74,7 @@ function _constant_interp_nd_oneshot_soa(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     side_vals::NTuple{N, SideVal},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -93,7 +93,7 @@ Writes results into `output`. No heap allocation beyond spacings.
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     side_vals::NTuple{N, SideVal},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -119,7 +119,7 @@ function _constant_interp_nd_oneshot_aos(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     side_vals::NTuple{N, SideVal},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}

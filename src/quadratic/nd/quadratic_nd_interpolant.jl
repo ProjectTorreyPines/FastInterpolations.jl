@@ -141,7 +141,7 @@ function _build_nd_quadratic_interpolant(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, QuadraticBC},
-    extraps_val::Tuple{Vararg{Val, N}},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy}
 ) where {Tg<:AbstractFloat, Tv, N}
     # Build nodal derivatives using quadratic recurrence

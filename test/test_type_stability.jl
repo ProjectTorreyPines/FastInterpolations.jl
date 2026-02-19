@@ -501,7 +501,7 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
         # Per-axis mode tuple
         itp_mixed = @inferred cubic_interp((x_nd, y_nd), data2d; extrap=(NoExtrap(), ConstExtrap()))
         @test itp_mixed isa CubicInterpolantND
-        @test itp_mixed.extraps === (Val(:none), Val(:constant))
+        @test itp_mixed.extraps === (NoExtrap(), ConstExtrap())
 
         # Typed extrap produces identical struct to Symbol extrap
         itp_typed = cubic_interp((x_nd, y_nd), data2d; extrap=NoExtrap())
@@ -518,11 +518,11 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
         y_p = range(0.0, 2π, 15)
         data_p = [sin(xi) * cos(yj) for xi in x_p, yj in y_p]
 
-        # PeriodicBC + NoExtrap → axis auto-overridden to Val(:wrap)
+        # PeriodicBC + NoExtrap → axis auto-overridden to WrapExtrap()
         itp = cubic_interp((x_p, y_p), data_p;
             bc=(NaturalBC(), PeriodicBC()), extrap=NoExtrap())
-        @test itp.extraps[1] === Val(:none)
-        @test itp.extraps[2] === Val(:wrap)
+        @test itp.extraps[1] === NoExtrap()
+        @test itp.extraps[2] === WrapExtrap()
 
         # PeriodicBC + ConstExtrap → should throw (incompatible)
         @test_throws ArgumentError cubic_interp((x_p, y_p), data_p;
@@ -535,7 +535,7 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
 
         # Per-axis mode tuple
         itp = @inferred quadratic_interp((x_nd, y_nd), data2d; extrap=(NoExtrap(), ExtendExtrap()))
-        @test itp.extraps === (Val(:none), Val(:extension))
+        @test itp.extraps === (NoExtrap(), ExtendExtrap())
 
         # Typed vs Symbol equivalence
         itp_typed = quadratic_interp((x_nd, y_nd), data2d; extrap=ExtendExtrap())
@@ -550,7 +550,7 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
 
         # Per-axis mode tuple
         itp = @inferred linear_interp((x_nd, y_nd), data2d; extrap=(ConstExtrap(), WrapExtrap()))
-        @test itp.extraps === (Val(:constant), Val(:wrap))
+        @test itp.extraps === (ConstExtrap(), WrapExtrap())
 
         # Typed vs Symbol equivalence
         itp_typed = linear_interp((x_nd, y_nd), data2d; extrap=ConstExtrap())
@@ -576,7 +576,7 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
 
         # Per-axis mode tuple
         itp = constant_interp((x_nd, y_nd), data2d; extrap=(NoExtrap(), ConstExtrap()))
-        @test itp.extraps === (Val(:none), Val(:constant))
+        @test itp.extraps === (NoExtrap(), ConstExtrap())
 
         # Typed vs Symbol equivalence
         itp_typed = constant_interp((x_nd, y_nd), data2d; extrap=NoExtrap())
@@ -667,18 +667,18 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
         # Both axes periodic + NoExtrap (auto-overrides to wrap)
         itp = @inferred cubic_interp((x_p, y_p), data_p;
             bc=PeriodicBC(), extrap=NoExtrap())
-        @test itp.extraps === (Val(:wrap), Val(:wrap))
+        @test itp.extraps === (WrapExtrap(), WrapExtrap())
 
         # Mixed: one periodic, one natural
         itp_mixed = @inferred cubic_interp((x_p, y_p), data_p;
             bc=(NaturalBC(), PeriodicBC()), extrap=NoExtrap())
-        @test itp_mixed.extraps[1] === Val(:none)
-        @test itp_mixed.extraps[2] === Val(:wrap)
+        @test itp_mixed.extraps[1] === NoExtrap()
+        @test itp_mixed.extraps[2] === WrapExtrap()
 
         # Quadratic: PeriodicBC + WrapExtrap
         itp_q = @inferred quadratic_interp((x_p, y_p), data_p;
             bc=NaturalBC(), extrap=WrapExtrap())
-        @test itp_q.extraps === (Val(:wrap), Val(:wrap))
+        @test itp_q.extraps === (WrapExtrap(), WrapExtrap())
     end
 
     @testset "ND PeriodicBC exclusive + Mode — constructor type stability" begin
@@ -697,8 +697,8 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
             bc=(NaturalBC(), PeriodicBC(; endpoint=:exclusive)),
             extrap=NoExtrap())
         @test itp_mixed isa CubicInterpolantND
-        @test itp_mixed.extraps[1] === Val(:none)
-        @test itp_mixed.extraps[2] === Val(:wrap)
+        @test itp_mixed.extraps[1] === NoExtrap()
+        @test itp_mixed.extraps[2] === WrapExtrap()
 
         # Exclusive with explicit period + Mode
         itp_period = @inferred cubic_interp((x_excl, y_excl), data_excl;

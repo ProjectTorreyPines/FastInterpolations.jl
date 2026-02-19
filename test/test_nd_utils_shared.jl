@@ -18,7 +18,7 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
     _resolve_deriv_nd, _resolve_side_nd, _validate_nd_grids,
     _promote_grid_eltype, _convert_grids_typed, _create_spacings_typed,
     _extrap_to_val, _check_mode_periodic_compat, _check_modes_periodic_compat,
-    _mode_to_vals_with_periodic, _modes_to_vals_with_periodic
+    _mode_to_modes_with_periodic, _modes_to_modes_with_periodic
 
 @testset "Shared ND Utilities" begin
     # ========================================
@@ -289,17 +289,17 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
             @test _extrap_to_val(WrapExtrap()) === Val(:wrap)
         end
 
-        @testset "single mode → Val tuple, no BCs" begin
-            @test _resolve_extrap_nd(NoExtrap(), nothing, Val(2)) === (Val(:none), Val(:none))
-            @test _resolve_extrap_nd(ConstExtrap(), nothing, Val(3)) === (Val(:constant), Val(:constant), Val(:constant))
-            @test _resolve_extrap_nd(ExtendExtrap(), nothing, Val(1)) === (Val(:extension),)
-            @test _resolve_extrap_nd(WrapExtrap(), nothing, Val(2)) === (Val(:wrap), Val(:wrap))
+        @testset "single mode → Mode tuple, no BCs" begin
+            @test _resolve_extrap_nd(NoExtrap(), nothing, Val(2)) === (NoExtrap(), NoExtrap())
+            @test _resolve_extrap_nd(ConstExtrap(), nothing, Val(3)) === (ConstExtrap(), ConstExtrap(), ConstExtrap())
+            @test _resolve_extrap_nd(ExtendExtrap(), nothing, Val(1)) === (ExtendExtrap(),)
+            @test _resolve_extrap_nd(WrapExtrap(), nothing, Val(2)) === (WrapExtrap(), WrapExtrap())
         end
 
-        @testset "mode tuple → Val tuple, no BCs" begin
-            @test _resolve_extrap_nd((NoExtrap(), WrapExtrap()), nothing, Val(2)) === (Val(:none), Val(:wrap))
+        @testset "mode tuple → Mode tuple, no BCs" begin
+            @test _resolve_extrap_nd((NoExtrap(), WrapExtrap()), nothing, Val(2)) === (NoExtrap(), WrapExtrap())
             @test _resolve_extrap_nd((ConstExtrap(), ExtendExtrap(), NoExtrap()), nothing, Val(3)) ===
-                (Val(:constant), Val(:extension), Val(:none))
+                (ConstExtrap(), ExtendExtrap(), NoExtrap())
         end
 
         @testset "wrong-length mode tuple → error" begin
@@ -309,10 +309,10 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
 
         @testset "single mode + periodic BC override" begin
             bcs = (NaturalBC(), PeriodicBC())
-            # NoExtrap: axis 2 (periodic) overridden to Val(:wrap)
-            @test _resolve_extrap_nd(NoExtrap(), bcs, Val(2)) === (Val(:none), Val(:wrap))
-            # WrapExtrap: all axes get Val(:wrap) — compatible with PeriodicBC
-            @test _resolve_extrap_nd(WrapExtrap(), bcs, Val(2)) === (Val(:wrap), Val(:wrap))
+            # NoExtrap: axis 2 (periodic) overridden to WrapExtrap()
+            @test _resolve_extrap_nd(NoExtrap(), bcs, Val(2)) === (NoExtrap(), WrapExtrap())
+            # WrapExtrap: all axes get WrapExtrap() — compatible with PeriodicBC
+            @test _resolve_extrap_nd(WrapExtrap(), bcs, Val(2)) === (WrapExtrap(), WrapExtrap())
         end
 
         @testset "single mode + periodic BC rejection" begin
@@ -324,7 +324,7 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
         @testset "per-axis mode tuple + periodic BC" begin
             bcs = (NaturalBC(), PeriodicBC())
             # ExtendExtrap on non-periodic axis is OK; periodic axis gets wrap
-            @test _resolve_extrap_nd((ExtendExtrap(), WrapExtrap()), bcs, Val(2)) === (Val(:extension), Val(:wrap))
+            @test _resolve_extrap_nd((ExtendExtrap(), WrapExtrap()), bcs, Val(2)) === (ExtendExtrap(), WrapExtrap())
             # ConstExtrap on periodic axis → error
             @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(), ConstExtrap()), bcs, Val(2))
         end
@@ -354,13 +354,13 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
 
         @testset "@generated periodic override" begin
             bcs = (NaturalBC(), PeriodicBC(), NaturalBC())
-            # Single mode broadcast: periodic axis → Val(:wrap), others → Val(:none)
-            @test _mode_to_vals_with_periodic(NoExtrap(), bcs) === (Val(:none), Val(:wrap), Val(:none))
-            @test _mode_to_vals_with_periodic(WrapExtrap(), bcs) === (Val(:wrap), Val(:wrap), Val(:wrap))
+            # Single mode broadcast: periodic axis → WrapExtrap(), others → original mode
+            @test _mode_to_modes_with_periodic(NoExtrap(), bcs) === (NoExtrap(), WrapExtrap(), NoExtrap())
+            @test _mode_to_modes_with_periodic(WrapExtrap(), bcs) === (WrapExtrap(), WrapExtrap(), WrapExtrap())
 
-            # Per-axis mode tuple: periodic axis → Val(:wrap)
+            # Per-axis mode tuple: periodic axis → WrapExtrap()
             modes = (ExtendExtrap(), WrapExtrap(), ConstExtrap())
-            @test _modes_to_vals_with_periodic(modes, bcs) === (Val(:extension), Val(:wrap), Val(:constant))
+            @test _modes_to_modes_with_periodic(modes, bcs) === (ExtendExtrap(), WrapExtrap(), ConstExtrap())
         end
     end
 end

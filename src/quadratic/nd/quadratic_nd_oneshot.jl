@@ -25,7 +25,7 @@ Zero-allocation after warmup (pool reuse).
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}},
     bcs::NTuple{N, QuadraticBC},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -60,7 +60,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
     bcs::NTuple{N, QuadraticBC},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -102,7 +102,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
     bcs::NTuple{N, QuadraticBC},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}

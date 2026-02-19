@@ -58,6 +58,7 @@ function cubic_interp(
         # ── Legacy path: Symbol → macro dispatch (backward compat, may allocate) ──
         Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
         extraps = _resolve_extrap_nd(extrap, Val(N))
+        _check_periodic_extrap(bcs, extraps, Val(N))
         @_dispatch_extrap_nd extraps bcs => extraps_val begin
             return _dispatch_deriv_nd(deriv, Val(N)) do ops
                 _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
@@ -140,7 +141,7 @@ computed via `@_dispatch_extrap_nd` in the API layer for type stability.
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}},
     bcs::NTuple{N, AbstractBC},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -181,7 +182,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
     bcs::NTuple{N, AbstractBC},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -227,7 +228,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
     bcs::NTuple{N, AbstractBC},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -292,6 +293,7 @@ function cubic_interp!(
     else
         Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp!)
         extraps = _resolve_extrap_nd(extrap, Val(N))
+        _check_periodic_extrap(bcs, extraps, Val(N))
         @_dispatch_extrap_nd extraps bcs => extraps_val begin
             return _dispatch_deriv_nd(deriv, Val(N)) do ops
                 _cubic_interp_nd_oneshot_soa!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
@@ -335,6 +337,7 @@ function cubic_interp!(
     else
         Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp!)
         extraps = _resolve_extrap_nd(extrap, Val(N))
+        _check_periodic_extrap(bcs, extraps, Val(N))
         @_dispatch_extrap_nd extraps bcs => extraps_val begin
             return _dispatch_deriv_nd(deriv, Val(N)) do ops
                 _cubic_interp_nd_oneshot_aos!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)

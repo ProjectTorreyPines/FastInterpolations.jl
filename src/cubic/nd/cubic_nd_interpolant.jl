@@ -88,6 +88,7 @@ function cubic_interp(
     else
         Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
         extraps = _resolve_extrap_nd(extrap, Val(N))
+        _check_periodic_extrap(bcs, extraps, Val(N))
         @_dispatch_extrap_nd extraps bcs => extraps_val begin
             return _build_nd_interpolant(grids_typed, data, bcs, extraps_val, searches, coeffs)
         end
@@ -107,7 +108,7 @@ function _build_nd_interpolant(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, AbstractBC},
-    extraps_val::Tuple{Vararg{Val, N}},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ::PreCompute
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -181,7 +182,7 @@ function _build_nd_interpolant(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, AbstractBC},
-    extraps_val::Tuple{Vararg{Val, N}},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ::OnTheFly
 ) where {Tg<:AbstractFloat, Tv, N}

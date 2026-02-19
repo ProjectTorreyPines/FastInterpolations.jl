@@ -102,8 +102,14 @@ function _show_grid_row(io::IO, is_last::Bool, x::AbstractVector)
     print(io, ", $n points ∈ [$x_min_str, $x_max_str]")
 end
 
-"""Format extrapolation mode from ExtrapVal."""
+"""Format extrapolation mode from AbstractExtrapMode or ExtrapVal."""
 function _format_extrap(mode)
+    # AbstractExtrapMode (ND structs)
+    mode isa NoExtrap && return ":none"
+    mode isa ConstExtrap && return ":constant"
+    mode isa ExtendExtrap && return ":extension"
+    mode isa WrapExtrap && return ":wrap"
+    # Val fallback (1D/series structs)
     mode === Val(:none) && return ":none"
     mode === Val(:constant) && return ":constant"
     mode === Val(:extension) && return ":extension"

@@ -23,7 +23,7 @@ Evaluates directly from grids + data without constructing a LinearInterpolantND.
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -45,7 +45,7 @@ Writes results into `output`. No heap allocation beyond spacings.
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}
@@ -79,7 +79,7 @@ Writes results into `output`. No heap allocation beyond spacings.
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-    extraps_val::NTuple{N, Val},
+    extraps_val::Tuple{Vararg{AbstractExtrapMode, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg<:AbstractFloat, Tv, N}

@@ -24,7 +24,7 @@ The interpolation is exact at grid points and linearly blended between them.
 - `N`: Number of dimensions
 - `G<:Tuple{Vararg{AbstractVector,N}}`: Grid tuple type (supports heterogeneous grids)
 - `S<:Tuple{Vararg{AbstractGridSpacing,N}}`: Spacing tuple type
-- `E<:Tuple{Vararg{ExtrapVal,N}}`: Extrapolation mode tuple type
+- `E<:Tuple{Vararg{AbstractExtrapMode,N}}`: Extrapolation mode tuple type
 - `P<:Tuple{Vararg{AbstractSearchPolicy,N}}`: Search policy tuple type
 
 # Fields
@@ -73,7 +73,7 @@ struct LinearInterpolantND{
     N,
     G<:Tuple{Vararg{AbstractVector,N}},
     S<:Tuple{Vararg{AbstractGridSpacing,N}},
-    E<:Tuple{Vararg{ExtrapVal,N}},
+    E<:Tuple{Vararg{AbstractExtrapMode,N}},
     P<:Tuple{Vararg{AbstractSearchPolicy,N}},
 } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G

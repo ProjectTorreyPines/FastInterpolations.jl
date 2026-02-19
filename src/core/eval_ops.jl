@@ -154,6 +154,20 @@ Each method returns a concrete type, enabling compile-time specialization.
 @inline _extrap_to_val(::WrapExtrap) = Val(:wrap)
 
 """
+    _symbol_to_extrap_mode(extrap::Symbol) -> AbstractExtrapMode
+
+Convert a Symbol extrapolation specifier to the corresponding `AbstractExtrapMode` singleton.
+Used in the legacy Symbol → Mode conversion path.
+"""
+@inline function _symbol_to_extrap_mode(extrap::Symbol)
+    extrap === :none && return NoExtrap()
+    extrap === :constant && return ConstExtrap()
+    extrap === :extension && return ExtendExtrap()
+    extrap === :wrap && return WrapExtrap()
+    throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
+end
+
+"""
     SideVal
 
 Union type for side selection mode values (constant interpolation).

@@ -66,24 +66,24 @@ end
 # - `nothing` for constant/linear (no BCs)
 # - NTuple{N, AbstractBC} for quadratic/cubic
 
-# ── Mode → Val tuple (fast path) ─────────────────────────────────────
+# ── Mode → Mode tuple (fast path) ────────────────────────────────────
 
 @inline function _resolve_extrap_nd(extrap::AbstractExtrapMode, ::Nothing, ::Val{N}) where {N}
-    ntuple(_ -> _extrap_to_val(extrap), Val(N))
+    ntuple(_ -> extrap, Val(N))
 end
 
 @inline function _resolve_extrap_nd(extrap::AbstractExtrapMode, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
     _check_mode_periodic_compat(extrap, bcs, Val(N))
-    return _mode_to_vals_with_periodic(extrap, bcs)
+    return _mode_to_modes_with_periodic(extrap, bcs)
 end
 
 @inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrapMode,N}}, ::Nothing, ::Val{N}) where {N}
-    map(_extrap_to_val, extrap)
+    extrap
 end
 
 @inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrapMode,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
     _check_modes_periodic_compat(extrap, bcs, Val(N))
-    return _modes_to_vals_with_periodic(extrap, bcs)
+    return _modes_to_modes_with_periodic(extrap, bcs)
 end
 
 @inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrapMode}}, ::Any, ::Val{N}) where {N}
@@ -116,27 +116,27 @@ end
     return nothing
 end
 
-# ── @generated periodic override (compile-time Val tuple construction) ──
+# ── @generated periodic override (compile-time Mode tuple construction) ──
 
-@generated function _mode_to_vals_with_periodic(extrap::M, bcs::B) where {M<:AbstractExtrapMode, B<:Tuple{Vararg{AbstractBC}}}
+@generated function _mode_to_modes_with_periodic(extrap::M, bcs::B) where {M<:AbstractExtrapMode, B<:Tuple{Vararg{AbstractBC}}}
     N = fieldcount(B)
     exprs = map(1:N) do d
         if fieldtype(B, d) <: PeriodicBC
-            :(Val(:wrap))
+            :(WrapExtrap())
         else
-            :(FastInterpolations._extrap_to_val(extrap))
+            :(extrap)
         end
     end
     :(($(exprs...),))
 end
 
-@generated function _modes_to_vals_with_periodic(extraps::E, bcs::B) where {E<:Tuple{Vararg{AbstractExtrapMode}}, B<:Tuple{Vararg{AbstractBC}}}
+@generated function _modes_to_modes_with_periodic(extraps::E, bcs::B) where {E<:Tuple{Vararg{AbstractExtrapMode}}, B<:Tuple{Vararg{AbstractBC}}}
     N = fieldcount(E)
     exprs = map(1:N) do d
         if fieldtype(B, d) <: PeriodicBC
-            :(Val(:wrap))
+            :(WrapExtrap())
         else
-            :(FastInterpolations._extrap_to_val(extraps[$d]))
+            :(extraps[$d])
         end
     end
     :(($(exprs...),))
@@ -432,6 +432,36 @@ end
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::Val{:wrap})
     return _wrap_to_domain(q, first(axis), last(axis))  # already handles AD via _extract_primal
+end
+
+# ── AbstractExtrapMode dispatch (ND storage uses Mode types directly) ──
+
+@inline function _handle_all_extraps(
+    queries::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
+    extraps::Tuple{Vararg{AbstractExtrapMode,N}}
+) where {N}
+    map(_extrap_axis, queries, grids, extraps)
+end
+
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::NoExtrap)
+    @boundscheck _check_domain(axis, q, Val(:none))
+    return q
+end
+
+@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::ConstExtrap) where {Tg}
+    q_primal = _extract_primal(q)
+    lo, hi = first(axis), last(axis)
+    q_primal < lo && return oftype(q, lo)
+    q_primal > hi && return oftype(q, hi)
+    return q
+end
+
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::ExtendExtrap)
+    return q
+end
+
+@inline function _handle_axis_extrap(q, axis::AbstractVector, ::WrapExtrap)
+    return _wrap_to_domain(q, first(axis), last(axis))
 end
 
 # ========================================

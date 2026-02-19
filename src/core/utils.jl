@@ -633,53 +633,56 @@ end
 @inline _is_all_periodic(::Nothing) = false
 
 @generated function _resolve_mixed_extrap_vals(extraps::NTuple{N, Symbol}, ::Nothing) where {N}
-    exprs = [:(FastInterpolations._symbol_to_extrap_val(extraps[$d])) for d in 1:N]
+    exprs = [:(FastInterpolations._symbol_to_extrap_mode(extraps[$d])) for d in 1:N]
     :(($(exprs...),))
 end
 
 """
-    _resolve_uniform_extrap_with_periodic(bcs, ::Val{S}) -> NTuple{N, Val}
+    _resolve_uniform_extrap_with_periodic(bcs, ::Val{S}) -> NTuple{N, AbstractExtrapMode}
 
 Zero-allocation per-axis extrap resolution for uniform extrap with mixed BCs.
 Uses `@generated` to inspect BC types at compile time:
-- Periodic axes → `Val(:wrap)` (hardcoded at compile time)
-- Non-periodic axes → `Val(S)` (known from static parameter)
+- Periodic axes → `WrapExtrap()` (hardcoded at compile time)
+- Non-periodic axes → Mode type corresponding to `S` (known from static parameter)
 
-This avoids the Union return type from `_symbol_to_extrap_val` because both the
-BC type check and the extrap symbol are resolved at compile time.
+This avoids Union return types because both the BC type check and the extrap
+symbol are resolved at compile time.
 """
 @generated function _resolve_uniform_extrap_with_periodic(
     bcs::B, ::Val{S}
 ) where {B<:Tuple{Vararg{AbstractBC}}, S}
     N = fieldcount(B)
+    mode_expr = S === :none ? :(NoExtrap()) :
+                S === :constant ? :(ConstExtrap()) :
+                S === :extension ? :(ExtendExtrap()) : :(WrapExtrap())
     exprs = map(1:N) do d
         if fieldtype(B, d) <: PeriodicBC
-            :(Val(:wrap))
+            :(WrapExtrap())
         else
-            :(Val($(QuoteNode(S))))
+            mode_expr
         end
     end
     :(($(exprs...),))
 end
 
 """
-    _resolve_mixed_extrap_vals(extraps, bcs) -> NTuple{N, Val}
+    _resolve_mixed_extrap_vals(extraps, bcs) -> NTuple{N, AbstractExtrapMode}
 
 Per-axis extrap resolution for truly heterogeneous extraps (different Symbols per axis).
-Falls back to runtime `_symbol_to_extrap_val` which produces Union return types.
+Falls back to runtime `_symbol_to_extrap_mode` which produces Union return types.
 Only used when extraps are non-uniform (extremely rare in practice).
 """
 @generated function _resolve_mixed_extrap_vals(
     extraps::NTuple{N, Symbol}, bcs::NTuple{N, AbstractBC}
 ) where {N}
-    exprs = [:(FastInterpolations._is_periodic_bc(bcs[$d]) ? Val(:wrap) : FastInterpolations._symbol_to_extrap_val(extraps[$d])) for d in 1:N]
+    exprs = [:(FastInterpolations._is_periodic_bc(bcs[$d]) ? WrapExtrap() : FastInterpolations._symbol_to_extrap_mode(extraps[$d])) for d in 1:N]
     :(($(exprs...),))
 end
 
 """
     @_dispatch_extrap_nd extraps bcs => ev body
 
-Dispatch extrap symbols to concrete `Val` tuples for type-stable ND evaluation.
+Dispatch extrap symbols to concrete `AbstractExtrapMode` tuples for type-stable ND evaluation.
 Creates if/else branches, each with a concrete `ev` binding (similar to `@_dispatch_deriv`).
 
 This is the ND counterpart of `@_dispatch_extrap(sym => varname, body)` (1D).
@@ -687,12 +690,12 @@ The 1D version dispatches a single Symbol; this version dispatches `NTuple{N,Sym
 `N` is derived automatically from `length(extraps)` (compile-time constant for NTuple).
 
 **Fast paths** (zero-alloc, covers >99% of use cases):
-1. Uniform extrap + no periodic BCs → `ntuple(_ -> Val(:sym), vn)`
-2. All periodic BCs → all axes `Val(:wrap)`
+1. Uniform extrap + no periodic BCs → `ntuple(_ -> NoExtrap(), vn)` etc.
+2. All periodic BCs → all axes `WrapExtrap()`
 3. Uniform extrap + mixed BCs → `@generated` per-axis resolution using BC types
 
 **Fallback** (small alloc, extremely rare):
-4. Non-uniform extraps + mixed BCs → runtime `_symbol_to_extrap_val` (Union return)
+4. Non-uniform extraps + mixed BCs → runtime `_symbol_to_extrap_mode` (Union return)
 
 # Example
 ```julia
@@ -716,9 +719,9 @@ macro _dispatch_extrap_nd(extraps_expr, pair, body)
         local $(extraps_var) = $(esc(extraps_expr))
         local $(bcs_var) = $(esc(bcs_expr))
 
-        if $(extraps_var) isa Tuple{Vararg{Val}}
-            # Fast path 0: pre-resolved Val tuple (from typed AbstractExtrapMode path).
-            # _resolve_extrap_nd(::AbstractExtrapMode, bcs, Val(N)) returns Val tuples directly,
+        if $(extraps_var) isa Tuple{Vararg{AbstractExtrapMode}}
+            # Fast path 0: pre-resolved Mode tuple (from typed AbstractExtrapMode path).
+            # _resolve_extrap_nd(::AbstractExtrapMode, bcs, Val(N)) returns Mode tuples directly,
             # so we pass through without any Symbol dispatch.
             let $(esc(ev_sym)) = $(extraps_var)
                 $(esc(body))
@@ -728,27 +731,27 @@ macro _dispatch_extrap_nd(extraps_expr, pair, body)
             local $(valn_var) = Val(length($(extraps_var)))
 
             if _is_uniform_extrap_no_periodic($(extraps_var), $(bcs_var))
-                # Fast path 1: uniform extrap, no periodic → concrete Val tuple
+                # Fast path 1: uniform extrap, no periodic → concrete Mode tuple
                 if $(extraps_var)[1] === :none
-                    let $(esc(ev_sym)) = ntuple(_ -> Val(:none), $(valn_var))
+                    let $(esc(ev_sym)) = ntuple(_ -> NoExtrap(), $(valn_var))
                         $(esc(body))
                     end
                 elseif $(extraps_var)[1] === :constant
-                    let $(esc(ev_sym)) = ntuple(_ -> Val(:constant), $(valn_var))
+                    let $(esc(ev_sym)) = ntuple(_ -> ConstExtrap(), $(valn_var))
                         $(esc(body))
                     end
                 elseif $(extraps_var)[1] === :extension
-                    let $(esc(ev_sym)) = ntuple(_ -> Val(:extension), $(valn_var))
+                    let $(esc(ev_sym)) = ntuple(_ -> ExtendExtrap(), $(valn_var))
                         $(esc(body))
                     end
                 else
-                    let $(esc(ev_sym)) = ntuple(_ -> Val(:wrap), $(valn_var))
+                    let $(esc(ev_sym)) = ntuple(_ -> WrapExtrap(), $(valn_var))
                         $(esc(body))
                     end
                 end
             elseif _is_all_periodic($(bcs_var))
-                # Fast path 2: all periodic → all Val(:wrap)
-                let $(esc(ev_sym)) = ntuple(_ -> Val(:wrap), $(valn_var))
+                # Fast path 2: all periodic → all WrapExtrap()
+                let $(esc(ev_sym)) = ntuple(_ -> WrapExtrap(), $(valn_var))
                     $(esc(body))
                 end
             elseif _is_uniform_extrap($(extraps_var))

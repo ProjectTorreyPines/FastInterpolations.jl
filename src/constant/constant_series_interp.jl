@@ -234,7 +234,7 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
     return output
 end
 
-# :none - throw DomainError
+# NoExtrap - throw DomainError
 @inline function _eval_constant_series_point_extrap!(
     ::AbstractVector{Tv},
     ::Matrix{Tv},
@@ -251,7 +251,7 @@ end
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
-# :constant - clamp to boundary
+# ConstExtrap - clamp to boundary
 @inline function _eval_constant_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -268,7 +268,7 @@ end
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
-# :extension - extend using same constant value at boundary interval
+# ExtendExtrap - extend using same constant value at boundary interval
 @inline function _eval_constant_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -303,7 +303,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, ys::AbstractVector{<:AbstractVector}; side=:nearest, extrap=:none)
+    constant_interp(x, ys::AbstractVector{<:AbstractVector}; side=:nearest, extrap=NoExtrap())
 
 Create a multi-Y constant interpolant for multiple y-data series sharing the same x-grid.
 
@@ -311,7 +311,7 @@ Create a multi-Y constant interpolant for multiple y-data series sharing the sam
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
 - `side`: Side for discontinuities (:left, :right, :nearest)
-- `extrap`: Extrapolation mode (:none, :constant, :extension, :wrap)
+- `extrap::AbstractExtrapMode`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 
 # Returns
 `ConstantSeriesInterpolant` object with matrix storage.
@@ -376,7 +376,7 @@ end
 
 # Matrix input: columns as y-series
 """
-    constant_interp(x, Y::AbstractMatrix; side=:nearest, extrap=:none)
+    constant_interp(x, Y::AbstractMatrix; side=:nearest, extrap=NoExtrap())
 
 Create a multi-Y constant interpolant from a matrix where each column is a y-series.
 

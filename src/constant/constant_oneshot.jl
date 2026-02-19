@@ -149,7 +149,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, xi; extrap=:none, side=:nearest, deriv=0, search=Binary())
+    constant_interp(x, y, xi; extrap=NoExtrap(), side=:nearest, deriv=0, search=Binary())
 
 Constant (step/piecewise constant) interpolation at a single point.
 
@@ -157,11 +157,11 @@ Constant (step/piecewise constant) interpolation at a single point.
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (same length as x)
 - `xi::Real`: Query point
-- `extrap::Symbol`: Extrapolation mode
-  - `:none` (default): throws DomainError if outside domain
-  - `:constant`: clamp to boundary values
-  - `:extension`: same as :constant (slope=0)
-  - `:wrap`: wrap to [x_min, x_max)
+- `extrap::AbstractExtrapMode`: Extrapolation mode (Symbol args deprecated)
+  - `NoExtrap()` (default): throws DomainError if outside domain
+  - `ConstExtrap()`: clamp to boundary values
+  - `ExtendExtrap()`: same as ConstExtrap (slope=0)
+  - `WrapExtrap()`: wrap to [x_min, x_max)
 - `side::Symbol`: Side selection
   - `:nearest` (default): nearest neighbor (left tie-breaking at midpoint)
   - `:left`: always use left value
@@ -184,7 +184,7 @@ constant_interp(x, y, 0.5)                    # 10.0 (nearest to left)
 constant_interp(x, y, 0.5; side=:left)        # 10.0
 constant_interp(x, y, 0.5; side=:right)       # 20.0
 constant_interp(x, y, 1.0)                    # 20.0 (grid point)
-constant_interp(x, y, -1.0; extrap=:constant) # 10.0 (clamped)
+constant_interp(x, y, -1.0; extrap=ConstExtrap()) # 10.0 (clamped)
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))

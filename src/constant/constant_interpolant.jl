@@ -57,14 +57,14 @@ end
 # ========================================
 
 """
-    constant_interp(x, y; extrap=:none, side=:nearest, search=Binary()) -> ConstantInterpolant
+    constant_interp(x, y; extrap=NoExtrap(), side=:nearest, search=Binary()) -> ConstantInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (can be Real or Complex)
-- `extrap::Symbol`: Extrapolation mode
+- `extrap::AbstractExtrapMode`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `side::Symbol`: Side selection
 - `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
 

@@ -30,7 +30,7 @@ import FastInterpolations:
 # ========================================
 
 """
-    _get_recipe_data(itp) -> (x::AbstractVector, y::AbstractVector, extrap::Val)
+    _get_recipe_data(itp) -> (x::AbstractVector, y::AbstractVector, extrap::AbstractExtrapMode)
 
 Extract grid, values, and extrapolation mode from any single-series interpolant.
 Unified interface handles field name differences across types.

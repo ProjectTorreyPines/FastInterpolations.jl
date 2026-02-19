@@ -12,7 +12,7 @@
 # ========================================
 
 """
-    cubic_interp!(output, cache, y, x_query; extrap=:none, deriv=0, search=Binary())
+    cubic_interp!(output, cache, y, x_query; extrap=NoExtrap(), deriv=0, search=Binary())
 
 In-place cubic spline interpolation using cached LU factorization.
 
@@ -24,7 +24,7 @@ Thread-safe: workspaces allocated from task-local pool.
 - `cache::CubicSplineCache{T}`: Pre-computed cache with LU factorization
 - `y::AbstractVector{T}`: Function values at grid points
 - `x_query::AbstractVector{T}`: Query points
-- `extrap::Symbol=:none`: Extrapolation mode (`:none`, `:constant`, `:extension`, `:wrap`)
+- `extrap::AbstractExtrapMode`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `deriv::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy=Binary()`: Search algorithm for interval finding
 """
@@ -220,7 +220,7 @@ Pool-based exclusive extension: zero-alloc after warmup.
 end
 
 """
-    cubic_interp!(output, x, y, x_query; bc=NaturalBC(), extrap=:none, autocache=true, deriv=0, search=Binary())
+    cubic_interp!(output, x, y, x_query; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, deriv=0, search=Binary())
 
 In-place cubic spline interpolation with optional automatic caching.
 """
@@ -322,7 +322,7 @@ function cubic_interp(
 end
 
 """
-    cubic_interp(x, y, x_query; bc=NaturalBC(), extrap=:none, autocache=true, deriv=0, search=Binary()) -> Vector{T}
+    cubic_interp(x, y, x_query; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, deriv=0, search=Binary()) -> Vector{T}
 
 Cubic spline interpolation with optional automatic caching.
 
@@ -330,18 +330,18 @@ Cubic spline interpolation with optional automatic caching.
 - `deriv::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy=Binary()`: Search algorithm for interval finding
 
-# Extrapolation Modes
-- `:none` (default): Throws DomainError if query point is outside domain
-- `:constant`: Returns boundary values outside domain (0 for derivatives)
-- `:extension`: Extends boundary polynomial outside domain
-- `:wrap`: Wraps coordinates to domain (for sawtooth/triangle patterns)
+# Extrapolation Modes (Symbol args deprecated)
+- `NoExtrap()` (default): Throws DomainError if query point is outside domain
+- `ConstExtrap()`: Returns boundary values outside domain (0 for derivatives)
+- `ExtendExtrap()`: Extends boundary polynomial outside domain
+- `WrapExtrap()`: Wraps coordinates to domain (for sawtooth/triangle patterns)
 - For `bc=PeriodicBC()`: extrapolation is ignored (coordinates are always wrapped)
 
 # Example
 ```julia
 result = cubic_interp(x, y, x_query)                     # Auto-cached (default)
 derivs = cubic_interp(x, y, x_query; deriv=1)            # First derivative
-result = cubic_interp(x, y, x_query; extrap=:extension)  # Extend beyond domain
+result = cubic_interp(x, y, x_query; extrap=ExtendExtrap())  # Extend beyond domain
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
@@ -381,7 +381,7 @@ function cubic_interp(
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp!)
+    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
     mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
 
     searcher = _to_searcher(search, hint)

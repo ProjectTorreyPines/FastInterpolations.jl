@@ -337,7 +337,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=Left(QuadraticFit()), extrap=:none)
+    quadratic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=Left(QuadraticFit()), extrap=NoExtrap())
 
 Create a multi-Y quadratic series interpolant for multiple y-data series sharing the same x-grid.
 
@@ -345,7 +345,7 @@ Create a multi-Y quadratic series interpolant for multiple y-data series sharing
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
 - `bc`: Boundary condition (Left/Right with QuadraticFit, Deriv1, Deriv2, MinCurvFit)
-- `extrap`: Extrapolation mode (:none, :constant, :extension)
+- `extrap::AbstractExtrapMode`: `NoExtrap()`, `ConstExtrap()`, or `ExtendExtrap()` (Symbol args deprecated)
 
 # Returns
 `QuadraticSeriesInterpolant` object with unified matrix storage.
@@ -429,7 +429,7 @@ end
 
 # Matrix input: columns as y-series
 """
-    quadratic_interp(x, Y::AbstractMatrix; bc=Left(QuadraticFit()), extrap=:none)
+    quadratic_interp(x, Y::AbstractMatrix; bc=Left(QuadraticFit()), extrap=NoExtrap())
 
 Create a multi-Y quadratic series interpolant from a matrix where each column is a y-series.
 

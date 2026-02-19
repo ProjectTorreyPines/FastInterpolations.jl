@@ -61,7 +61,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=:none, search=Binary()) -> QuadraticInterpolant
+    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=NoExtrap(), search=Binary()) -> QuadraticInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -69,7 +69,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (can be Real or Complex)
 - `bc`: Boundary condition (Left, Right, MinCurvFit, or Left/Right with QuadraticFit)
-- `extrap::Symbol`: Extrapolation mode
+- `extrap::AbstractExtrapMode`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
 
 # Returns

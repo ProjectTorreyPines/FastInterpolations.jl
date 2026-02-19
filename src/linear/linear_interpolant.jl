@@ -67,14 +67,14 @@ end
 # ========================================
 
 """
-    linear_interp(x, y; extrap=:none, search=Binary()) -> LinearInterpolant
+    linear_interp(x, y; extrap=NoExtrap(), search=Binary()) -> LinearInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values (can be real or complex)
-- `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, `:extension`, or `:wrap`
+- `extrap::AbstractExtrapMode`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `search::AbstractSearchPolicy`: Default search policy for interval lookup (default: `Binary()`)
 
 # Type Handling
@@ -122,7 +122,7 @@ vals = itp.(query_points)
 result = @. coefficient * itp(rho) * ne / Te^2
 
 # Wrap to domain (for periodic-like data)
-itp_wrap = linear_interp(x_data, y_data; extrap=:wrap)
+itp_wrap = linear_interp(x_data, y_data; extrap=WrapExtrap())
 val_wrap = itp_wrap(2.5)  # wraps to domain
 
 # Compare with 3-argument form (returns array immediately)

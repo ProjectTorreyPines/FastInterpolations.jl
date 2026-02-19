@@ -95,7 +95,7 @@ ultra-fast O(1) evaluation via tensor-product Hermite polynomials.
 - `G`: Tuple type for grids, `NTuple{N, <:AbstractVector{Tg}}`
 - `S`: Tuple type for spacings, `NTuple{N, <:AbstractGridSpacing{Tg}}`
 - `B`: Tuple type for boundary conditions, `NTuple{N, <:AbstractBC}`
-- `E`: Tuple type for extrapolation modes, `NTuple{N, <:ExtrapVal}`
+- `E`: Tuple type for extrapolation modes, `Tuple{Vararg{AbstractExtrapMode, N}}`
 - `P`: Tuple type for search policies, `NTuple{N, <:AbstractSearchPolicy}`
 
 # Fields

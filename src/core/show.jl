@@ -108,7 +108,7 @@ function _format_extrap(mode)
     mode isa ConstExtrap && return "ConstExtrap"
     mode isa ExtendExtrap && return "ExtendExtrap"
     mode isa WrapExtrap && return "WrapExtrap"
-    # Val fallback (ND oneshot/integration code still uses ExtrapVal)
+    # Val fallback for legacy/internal callers
     mode === Val(:none) && return "NoExtrap"
     mode === Val(:constant) && return "ConstExtrap"
     mode === Val(:extension) && return "ExtendExtrap"
@@ -216,8 +216,8 @@ end
 @inline function _superscript_int(n::Int)
     n < 0 && return "^$(n)"
     n < 10 && return _superscript_digit(n)
-    digits = reverse(digits(n))
-    return join((_superscript_digit(d) for d in digits))
+    ds = reverse(Base.digits(n))
+    return join((_superscript_digit(d) for d in ds))
 end
 
 # ========================================

@@ -167,7 +167,7 @@ end
 # SIMD Scalar Evaluation Kernels
 # ========================================
 
-# :none - throw DomainError
+# NoExtrap - throw DomainError
 @inline function _eval_linear_series_point_extrap!(
     ::AbstractVector{Tv},
     ::Matrix{Tv},
@@ -183,7 +183,7 @@ end
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
-# :constant - clamp to boundary (value only, derivatives are zero)
+# ConstExtrap - clamp to boundary (value only, derivatives are zero)
 @inline function _eval_linear_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -199,7 +199,7 @@ end
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
-# :extension - extend linear polynomial
+# ExtendExtrap - extend linear polynomial
 @inline function _eval_linear_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -289,14 +289,14 @@ end
 # ========================================
 
 """
-    linear_interp(x, ys::AbstractVector{<:AbstractVector}; extrap=:none)
+    linear_interp(x, ys::AbstractVector{<:AbstractVector}; extrap=NoExtrap())
 
 Create a multi-Y linear interpolant for multiple y-data series sharing the same x-grid.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
-- `extrap`: Extrapolation mode (:none, :constant, :extension, :wrap)
+- `extrap::AbstractExtrapMode`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 
 # Returns
 `LinearSeriesInterpolant` object with matrix storage.
@@ -362,7 +362,7 @@ end
 
 # Matrix input: columns as y-series
 """
-    linear_interp(x, Y::AbstractMatrix; extrap=:none)
+    linear_interp(x, Y::AbstractMatrix; extrap=NoExtrap())
 
 Create a multi-Y linear interpolant from a matrix where each column is a y-series.
 

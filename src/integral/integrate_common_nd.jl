@@ -34,7 +34,7 @@ end
 
 # ND domain check for integration bounds.
 @inline _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::NoExtrap) =
-    _check_domain(x, xi, Val(:none))
+    _check_domain(x, xi, NoExtrap())
 
 @inline function _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::AbstractExtrapMode)
     x_min, x_max = first(x), last(x)

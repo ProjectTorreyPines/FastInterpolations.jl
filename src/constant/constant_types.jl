@@ -28,7 +28,7 @@ Returned by `constant_interp(x, y)` (2-argument form).
 
 # Usage
 ```julia
-itp = constant_interp(x, y)  # default: extrap=:none, side=:nearest
+itp = constant_interp(x, y)  # default: extrap=NoExtrap(), side=:nearest
 val = itp(0.5)               # scalar evaluation
 vals = itp.(query_points)    # broadcast
 
@@ -40,7 +40,7 @@ val = itp(0.5)  # returns ComplexF64
 
 # With options
 itp_left = constant_interp(x, y; side=:left)
-itp_wrap = constant_interp(x, y; extrap=:wrap, side=:right)
+itp_wrap = constant_interp(x, y; extrap=WrapExtrap(), side=:right)
 
 # Custom search policy
 itp = constant_interp(x, y; search=LinearBinary())

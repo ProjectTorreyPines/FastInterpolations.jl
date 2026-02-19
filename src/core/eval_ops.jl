@@ -74,7 +74,8 @@ const ExtrapVal = Union{Val{:none}, Val{:constant}, Val{:extension}, Val{:wrap}}
 # with zero-cost type dispatch at the API boundary.
 #
 # 1D: Structs store E<:AbstractExtrapMode, dispatch on concrete subtypes
-# ND: Uses ExtrapVal (Val-based) via @_dispatch_extrap_nd macro
+# ND: Structs store NTuple{N,AbstractExtrapMode}; @_dispatch_extrap_nd resolves
+#     Symbol specs into concrete mode tuples at the API boundary
 
 """
     AbstractExtrapMode
@@ -88,6 +89,11 @@ instead of runtime Symbol comparison.
 - [`ConstExtrap`](@ref): Clamp to nearest boundary value
 - [`ExtendExtrap`](@ref): Extend interpolation polynomial beyond domain
 - [`WrapExtrap`](@ref): Wrap queries into domain (periodic)
+
+!!! warning "Union-splitting invariant"
+    Keep exactly 4 concrete subtypes. Julia's compiler union-splits up to 4 types
+    on hot paths; adding a 5th subtype would cause dynamic dispatch and allocation
+    in all oneshot/eval code paths.
 """
 abstract type AbstractExtrapMode end
 

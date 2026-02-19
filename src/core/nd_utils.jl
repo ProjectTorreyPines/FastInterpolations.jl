@@ -444,7 +444,7 @@ end
 end
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::NoExtrap)
-    @boundscheck _check_domain(axis, q, Val(:none))
+    @boundscheck _check_domain(axis, q, NoExtrap())
     return q
 end
 

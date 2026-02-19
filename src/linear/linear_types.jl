@@ -27,7 +27,7 @@ Returned by `linear_interp(x, y)` (2-argument form).
 # Usage
 ```julia
 # Create interpolator (minimal allocation)
-itp = linear_interp(x, y)  # default extrap=:none, search=Binary()
+itp = linear_interp(x, y)  # default extrap=NoExtrap(), search=Binary()
 
 # Create with custom search policy (baked-in default)
 itp = linear_interp(x, y; search=LinearBinary())
@@ -44,9 +44,9 @@ vals1 = itp.(query_points1)
 vals2 = @. compute(itp(query_points2))
 
 # Extrapolation options
-itp_ext = linear_interp(x, y; extrap=:extension)  # linear extrap
-itp_const = linear_interp(x, y; extrap=:constant)  # clamp to boundary values
-itp_wrap = linear_interp(x, y; extrap=:wrap)  # wrap to domain
+itp_ext = linear_interp(x, y; extrap=ExtendExtrap())  # linear extrap
+itp_const = linear_interp(x, y; extrap=ConstExtrap())  # clamp to boundary values
+itp_wrap = linear_interp(x, y; extrap=WrapExtrap())  # wrap to domain
 val = itp_wrap(2.5)  # wraps to domain
 
 # Override search policy at call time

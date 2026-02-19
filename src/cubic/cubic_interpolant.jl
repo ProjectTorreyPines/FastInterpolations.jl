@@ -363,7 +363,7 @@ Handles conversion of Real BC values to Complex when needed.
 # ========================================
 
 """
-    cubic_interp(x, y; bc=NaturalBC(), extrap=:none, autocache=true, search=Binary()) -> CubicInterpolant
+    cubic_interp(x, y; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, search=Binary()) -> CubicInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -374,7 +374,7 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values (can be Real or Complex)
 - `bc::AbstractBC`: Boundary condition (default: `NaturalBC()`)
-- `extrap::Symbol`: `:none` (default), `:constant`, `:extension`, or `:wrap`
+- `extrap::AbstractExtrapMode`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `autocache::Bool`: Enable automatic caching (default: `true`)
 - `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
 
@@ -433,7 +433,7 @@ function cubic_interp(
 end
 
 """
-    cubic_interp(cache, y; extrap=:none, search=Binary()) -> CubicInterpolant
+    cubic_interp(cache, y; extrap=NoExtrap(), search=Binary()) -> CubicInterpolant
 
 Create a callable interpolant from a pre-built cache.
 

@@ -16,7 +16,7 @@
 # ========================================
 
 """
-    linear_interp!(output, x, y, x_targets; extrap=:none, deriv=0, search=Binary())
+    linear_interp!(output, x, y, x_targets; extrap=NoExtrap(), deriv=0, search=Binary())
 
 Zero-allocation linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -24,7 +24,7 @@ Zero-allocation linear interpolation with automatic dispatch:
 
 # Arguments
 - `output`: Pre-allocated output vector (must be floating-point type)
-- `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, `:extension`, or `:wrap`
+- `extrap::AbstractExtrapMode`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `deriv::Int`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
@@ -37,7 +37,7 @@ rho = 0.0:0.01:1.0  # Uniform grid → fast O(1) path
 y = sin.(rho)
 out = Vector{Float64}(undef, 2)
 linear_interp!(out, rho, y, [0.55, 0.77])  # throws error if outside domain
-linear_interp!(out, rho, y, [-0.1, 1.2]; extrap=:extension)  # linear extrapolation
+linear_interp!(out, rho, y, [-0.1, 1.2]; extrap=ExtendExtrap())  # linear extrapolation
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
@@ -178,7 +178,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xq::Real; extrap=:none, deriv=0, search=Binary()) -> AbstractFloat
+    linear_interp(x, y, xq::Real; extrap=NoExtrap(), deriv=0, search=Binary()) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -186,7 +186,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 
 # Arguments
 - `xq::Real`: Single interpolation query point
-- `extrap::Symbol`: `:none` (default, throws DomainError), `:constant`, `:extension`, or `:wrap`
+- `extrap::AbstractExtrapMode`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `deriv::Int`: Derivative order (0=value, 1=first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
@@ -201,7 +201,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 rho = 0.0:0.01:1.0  # Uniform grid → fast O(1) path
 y = sin.(rho)
 value = linear_interp(rho, y, 0.55)  # Returns Float64, zero allocation
-value = linear_interp(rho, y, 1.5; extrap=:wrap)  # wraps to domain
+value = linear_interp(rho, y, 1.5; extrap=WrapExtrap())  # wraps to domain
 
 # Integer inputs auto-promoted to Float
 x_int = 0:10

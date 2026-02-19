@@ -317,7 +317,7 @@ SIMD evaluation with extrapolation handling for multi-series.
     _eval_series_point_extrap!(out, y_point, z_point, n_pts, x_min, x_max, aq, extrap, op, aq.side)
 end
 
-# :none - throw DomainError
+# NoExtrap - throw DomainError
 @inline function _eval_series_point_extrap!(
     ::AbstractVector,
     ::Matrix{Tv},
@@ -333,7 +333,7 @@ end
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
-# :constant - clamp to boundary (value only, derivatives are zero)
+# ConstExtrap - clamp to boundary (value only, derivatives are zero)
 @inline function _eval_series_point_extrap!(
     out::AbstractVector,
     y_point::Matrix{Tv},
@@ -349,7 +349,7 @@ end
     return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
 end
 
-# :extension - extend polynomial (EvalValue)
+# ExtendExtrap - extend polynomial (EvalValue)
 @inline function _eval_series_point_extrap!(
     out::AbstractVector,
     y_point::Matrix{Tv},
@@ -376,7 +376,7 @@ end
     return out
 end
 
-# :extension - extend polynomial (EvalDeriv1)
+# ExtendExtrap - extend polynomial (EvalDeriv1)
 @inline function _eval_series_point_extrap!(
     out::AbstractVector,
     y_point::Matrix{Tv},
@@ -403,7 +403,7 @@ end
     return out
 end
 
-# :extension - extend polynomial (EvalDeriv2) - optimized, no y-loads
+# ExtendExtrap - extend polynomial (EvalDeriv2) - optimized, no y-loads
 @inline function _eval_series_point_extrap!(
     out::AbstractVector,
     y_point::Matrix{Tv},
@@ -428,7 +428,7 @@ end
     return out
 end
 
-# :extension - extend polynomial (EvalDeriv3) - optimized, no y-loads
+# ExtendExtrap - extend polynomial (EvalDeriv3) - optimized, no y-loads
 @inline function _eval_series_point_extrap!(
     out::AbstractVector,
     y_point::Matrix{Tv},
@@ -533,7 +533,7 @@ end
 # ========================================
 
 """
-    cubic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=NaturalBC(), extrap=:none, autocache=true, precompute_transpose=false)
+    cubic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, precompute_transpose=false)
 
 Create a multi-Y cubic spline interpolant for multiple y-data series sharing the same x-grid.
 
@@ -541,7 +541,7 @@ Create a multi-Y cubic spline interpolant for multiple y-data series sharing the
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
 - `bc`: Boundary condition (NaturalBC, ClampedBC, PeriodicBC, or Vector of BC for per-series)
-- `extrap`: Extrapolation mode (:none, :constant, :extension, :wrap)
+- `extrap::AbstractExtrapMode`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
 - `autocache`: If true, reuse cached LU factorization (default: true)
 - `precompute_transpose`: If true, build point-contiguous layout immediately
 
@@ -686,7 +686,7 @@ end
 
 # Matrix input: columns as y-series
 """
-    cubic_interp(x, Y::AbstractMatrix; bc=NaturalBC(), extrap=:none, autocache=true, precompute_transpose=false)
+    cubic_interp(x, Y::AbstractMatrix; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, precompute_transpose=false)
 
 Create a multi-Y cubic spline interpolant from a matrix where each column is a y-series.
 

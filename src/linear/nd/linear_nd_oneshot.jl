@@ -111,7 +111,7 @@ function linear_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}};
-    extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -121,21 +121,20 @@ function linear_interp(
     _validate_nd_grids(grids_typed, data)
     Tr = promote_type(Tv, Tg, typeof.(query)...)
 
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    @_dispatch_extrap_nd extraps nothing => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops)::Tr
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
+        return _dispatch_deriv_nd(deriv, Val(N)) do ops
+            _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops)::Tr
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps nothing => extraps_val begin
+            return _dispatch_deriv_nd(deriv, Val(N)) do ops
+                _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops)::Tr
             end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops)::Tr
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops)::Tr
         end
     end
 end
@@ -150,7 +149,7 @@ function linear_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::NTuple{N, AbstractVector{<:Real}};
-    extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -172,7 +171,7 @@ function linear_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -199,7 +198,7 @@ function linear_interp!(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::NTuple{N, AbstractVector{<:Real}};
-    extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -208,21 +207,20 @@ function linear_interp!(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    @_dispatch_extrap_nd extraps nothing => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _linear_interp_nd_oneshot_soa!(output, grids_typed, data, queries, extraps_val, searches, ops)
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
+        return _dispatch_deriv_nd(deriv, Val(N)) do ops
+            _linear_interp_nd_oneshot_soa!(output, grids_typed, data, queries, extraps_val, searches, ops)
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp!)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps nothing => extraps_val begin
+            return _dispatch_deriv_nd(deriv, Val(N)) do ops
+                _linear_interp_nd_oneshot_soa!(output, grids_typed, data, queries, extraps_val, searches, ops)
             end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _linear_interp_nd_oneshot_soa!(output, grids_typed, data, queries, extraps_val, searches, ops)
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _linear_interp_nd_oneshot_soa!(output, grids_typed, data, queries, extraps_val, searches, ops)
         end
     end
 end
@@ -238,7 +236,7 @@ function linear_interp!(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -247,21 +245,20 @@ function linear_interp!(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    @_dispatch_extrap_nd extraps nothing => extraps_val begin
-        if deriv isa Int
-            @_dispatch_deriv deriv => op begin
-                ops = ntuple(_ -> op, Val(N))
-                return _linear_interp_nd_oneshot_aos!(output, grids_typed, data, queries, extraps_val, searches, ops)
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
+        return _dispatch_deriv_nd(deriv, Val(N)) do ops
+            _linear_interp_nd_oneshot_aos!(output, grids_typed, data, queries, extraps_val, searches, ops)
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp!)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps nothing => extraps_val begin
+            return _dispatch_deriv_nd(deriv, Val(N)) do ops
+                _linear_interp_nd_oneshot_aos!(output, grids_typed, data, queries, extraps_val, searches, ops)
             end
-        elseif deriv isa Val
-            ops = _resolve_deriv_nd(deriv, Val(N))
-            return _linear_interp_nd_oneshot_aos!(output, grids_typed, data, queries, extraps_val, searches, ops)
-        else
-            ops = _resolve_deriv_nd(Val(deriv), Val(N))
-            return _linear_interp_nd_oneshot_aos!(output, grids_typed, data, queries, extraps_val, searches, ops)
         end
     end
 end

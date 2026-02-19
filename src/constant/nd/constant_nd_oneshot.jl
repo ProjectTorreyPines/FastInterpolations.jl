@@ -150,7 +150,7 @@ function constant_interp(
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -164,14 +164,23 @@ function constant_interp(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    @_dispatch_extrap_nd extraps nothing => extraps_val begin
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
         @_dispatch_side_nd sides => side_vals begin
             return _constant_interp_nd_oneshot(
                 grids_typed, data, query, extraps_val, side_vals, searches)::Tv
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps nothing => extraps_val begin
+            @_dispatch_side_nd sides => side_vals begin
+                return _constant_interp_nd_oneshot(
+                    grids_typed, data, query, extraps_val, side_vals, searches)::Tv
+            end
         end
     end
 end
@@ -187,7 +196,7 @@ function constant_interp(
     data::AbstractArray{Tv, N},
     queries::NTuple{N, AbstractVector{<:Real}};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -201,14 +210,23 @@ function constant_interp(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    @_dispatch_extrap_nd extraps nothing => extraps_val begin
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
         @_dispatch_side_nd sides => side_vals begin
             return _constant_interp_nd_oneshot_soa(
                 grids_typed, data, queries, extraps_val, side_vals, searches)::Vector{Tv}
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps nothing => extraps_val begin
+            @_dispatch_side_nd sides => side_vals begin
+                return _constant_interp_nd_oneshot_soa(
+                    grids_typed, data, queries, extraps_val, side_vals, searches)::Vector{Tv}
+            end
         end
     end
 end
@@ -224,7 +242,7 @@ function constant_interp(
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -238,14 +256,23 @@ function constant_interp(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    @_dispatch_extrap_nd extraps nothing => extraps_val begin
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
         @_dispatch_side_nd sides => side_vals begin
             return _constant_interp_nd_oneshot_aos(
                 grids_typed, data, queries, extraps_val, side_vals, searches)::Vector{Tv}
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps nothing => extraps_val begin
+            @_dispatch_side_nd sides => side_vals begin
+                return _constant_interp_nd_oneshot_aos(
+                    grids_typed, data, queries, extraps_val, side_vals, searches)::Vector{Tv}
+            end
         end
     end
 end
@@ -266,7 +293,7 @@ function constant_interp!(
     data::AbstractArray{Tv, N},
     queries::NTuple{N, AbstractVector{<:Real}};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -280,14 +307,23 @@ function constant_interp!(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    @_dispatch_extrap_nd extraps nothing => extraps_val begin
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
         @_dispatch_side_nd sides => side_vals begin
             return _constant_interp_nd_oneshot_soa!(
                 output, grids_typed, data, queries, extraps_val, side_vals, searches)
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp!)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps nothing => extraps_val begin
+            @_dispatch_side_nd sides => side_vals begin
+                return _constant_interp_nd_oneshot_soa!(
+                    output, grids_typed, data, queries, extraps_val, side_vals, searches)
+            end
         end
     end
 end
@@ -304,7 +340,7 @@ function constant_interp!(
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
     deriv::Union{Int, Val, NTuple{N,Int}} = 0
 ) where {Tv, N}
@@ -318,14 +354,23 @@ function constant_interp!(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    @_dispatch_extrap_nd extraps nothing => extraps_val begin
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
         @_dispatch_side_nd sides => side_vals begin
             return _constant_interp_nd_oneshot_aos!(
                 output, grids_typed, data, queries, extraps_val, side_vals, searches)
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp!)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps nothing => extraps_val begin
+            @_dispatch_side_nd sides => side_vals begin
+                return _constant_interp_nd_oneshot_aos!(
+                    output, grids_typed, data, queries, extraps_val, side_vals, searches)
+            end
         end
     end
 end

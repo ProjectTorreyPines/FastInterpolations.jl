@@ -79,6 +79,71 @@ end
     return in_domain_fn(x0, x1)
 end
 
+# --- AbstractExtrapMode overloads (used by refactored 1D interpolants) ---
+
+@inline function _dispatch_extrap_integrate_1d(
+    ::NoExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+) where Tout
+    _check_domain(x, min(x0, x1), NoExtrap())
+    _check_domain(x, max(x0, x1), NoExtrap())
+    return in_domain_fn(x0, x1)
+end
+
+@inline function _dispatch_extrap_integrate_1d(
+    ::ConstExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+) where Tout
+    sign, lo, hi = _normalize_bounds_1d(x0, x1)
+    sign == 0 && return zero(Tout)
+    xmin, xmax = first(x), last(x)
+    total = zero(Tout)
+    if lo < xmin
+        total += y_left * (min(hi, xmin) - lo)
+    end
+    lo_in = max(lo, xmin)
+    hi_in = min(hi, xmax)
+    if hi_in > lo_in
+        total += in_domain_fn(lo_in, hi_in)
+    end
+    if hi > xmax
+        total += y_right * (hi - max(lo, xmax))
+    end
+    return sign * total
+end
+
+@inline function _dispatch_extrap_integrate_1d(
+    ::WrapExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+) where Tout
+    sign, lo, hi = _normalize_bounds_1d(x0, x1)
+    sign == 0 && return zero(Tout)
+    xmin, xmax = first(x), last(x)
+    period = xmax - xmin
+    len = hi - lo
+
+    n_full = floor(Int, len / period)
+    rem = len - n_full * period
+
+    I_period = in_domain_fn(xmin, xmax)
+    total = Tout(n_full) * I_period
+
+    if rem > zero(rem)
+        start = _wrap_to_domain(lo, xmin, xmax)
+        stop = start + rem
+        if stop <= xmax
+            total += in_domain_fn(start, stop)
+        else
+            total += in_domain_fn(start, xmax)
+            total += in_domain_fn(xmin, xmin + (stop - xmax))
+        end
+    end
+    return sign * total
+end
+
+@inline function _dispatch_extrap_integrate_1d(
+    ::ExtendExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+) where Tout
+    return in_domain_fn(x0, x1)
+end
+
 # Generic 1D split-accumulate: split [a,b] into cells, call partial/full kernels.
 # `partial_fn(i, xL, h, a2, b2)` — integrate cell i from a2 to b2, with cell width h
 # `full_fn(i, h)` — integrate full cell i with cell width h

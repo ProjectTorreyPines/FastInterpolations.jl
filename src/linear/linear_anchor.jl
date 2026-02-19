@@ -327,7 +327,7 @@ end
     itp::LinearInterpolant{Tg},
     aq::_LinearAnchoredQuery{Tg, Tq},
     op::AbstractEvalOp,
-    ::Val
+    ::AbstractExtrapMode
 ) where {Tg<:AbstractFloat, Tq<:Real}
     @inbounds begin
         yL = itp.y[aq.idx]
@@ -341,7 +341,7 @@ end
     itp::LinearInterpolant{Tg},
     aq::_LinearAnchoredQuery{Tg, Tq},
     op::AbstractEvalOp,
-    ::Val{:none}
+    ::NoExtrap
 ) where {Tg<:AbstractFloat, Tq<:Real}
     if aq.side != 0x00  # outside domain
         x_min, x_max = first(itp.x), last(itp.x)
@@ -359,7 +359,7 @@ end
     itp::LinearInterpolant{Tg},
     aq::_LinearAnchoredQuery{Tg, Tq},
     op::AbstractEvalOp,
-    ::Val{:constant}
+    ::ConstExtrap
 ) where {Tg<:AbstractFloat, Tq<:Real}
     if aq.side != 0x00  # outside domain
         return _linear_eval_constant_extrap(itp.y, aq.side == 0x01, op)

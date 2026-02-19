@@ -273,7 +273,7 @@ end
     itp::ConstantInterpolant{T},
     aq::_ConstantAnchoredQuery{T},
     op::O,
-    ::Val{:none}
+    ::NoExtrap
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     if aq.side != 0x00  # outside domain
         x_min, x_max = first(itp.x), last(itp.x)
@@ -295,7 +295,7 @@ end
     itp::ConstantInterpolant{T},
     aq::_ConstantAnchoredQuery{T},
     op::O,
-    ::Val
+    ::AbstractExtrapMode
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     # Special case: at right boundary (x_max)
     if aq.xq == last(itp.x)
@@ -313,7 +313,7 @@ end
     itp::ConstantInterpolant{T},
     aq::_ConstantAnchoredQuery{T},
     op::O,
-    ::Val{:constant}
+    ::ConstExtrap
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     if aq.side == 0x01  # below domain
         return op isa EvalValue ? (@inbounds itp.y[1]) : zero(T)

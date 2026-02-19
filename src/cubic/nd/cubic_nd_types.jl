@@ -80,7 +80,7 @@ struct OnTheFly <: AbstractCoeffStrategy end
 # ========================================
 
 """
-    CubicInterpolantND{Tg, Tv, N, NP1, G, S, B, P}
+    CubicInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}
 
 Generic N-dimensional cubic Hermite interpolant with precomputed partial derivatives.
 
@@ -95,6 +95,7 @@ ultra-fast O(1) evaluation via tensor-product Hermite polynomials.
 - `G`: Tuple type for grids, `NTuple{N, <:AbstractVector{Tg}}`
 - `S`: Tuple type for spacings, `NTuple{N, <:AbstractGridSpacing{Tg}}`
 - `B`: Tuple type for boundary conditions, `NTuple{N, <:AbstractBC}`
+- `E`: Tuple type for extrapolation modes, `NTuple{N, <:ExtrapVal}`
 - `P`: Tuple type for search policies, `NTuple{N, <:AbstractSearchPolicy}`
 
 # Fields
@@ -132,21 +133,22 @@ struct CubicInterpolantND{
     G<:NTuple{N, AbstractVector{Tg}},
     S<:NTuple{N, AbstractGridSpacing{Tg}},
     B<:NTuple{N, AbstractBC},
+    E<:Tuple{Vararg{ExtrapVal, N}},
     P<:NTuple{N, AbstractSearchPolicy},
 } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
     spacings::S
     nodal_derivs::NodalDerivativesND{Tv, N, NP1}
     bcs::B
-    extraps::NTuple{N, ExtrapVal}
+    extraps::E
     searches::P
 
-    function CubicInterpolantND{Tg, Tv, N, NP1, G, S, B, P}(
+    function CubicInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}(
         grids::G, spacings::S, nodal_derivs::NodalDerivativesND{Tv, N, NP1},
-        bcs::B, extraps::NTuple{N, ExtrapVal}, searches::P
-    ) where {Tg, Tv, N, NP1, G, S, B, P}
+        bcs::B, extraps::E, searches::P
+    ) where {Tg, Tv, N, NP1, G, S, B, E, P}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
-        new{Tg, Tv, N, NP1, G, S, B, P}(grids, spacings, nodal_derivs, bcs, extraps, searches)
+        new{Tg, Tv, N, NP1, G, S, B, E, P}(grids, spacings, nodal_derivs, bcs, extraps, searches)
     end
 end
 

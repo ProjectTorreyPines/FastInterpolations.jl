@@ -50,7 +50,7 @@ function constant_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary()
 ) where {N, Tv_raw}
     # Validate grid dimensions
@@ -71,18 +71,29 @@ function constant_interp(
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
     # Resolve per-axis configuration
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    # Convert symbols to Val types
-    extrap_vals = _to_extrap_vals(extraps)
-    side_vals = _to_side_vals(sides)
-
-    return ConstantInterpolantND{Tg, Tv, N,
-        typeof(grids_typed), typeof(spacings), typeof(searches)}(
-        grids_typed, spacings, Array(data_typed), extrap_vals, side_vals, searches
-    )
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N))
+        @_dispatch_side_nd sides => side_vals begin
+            return ConstantInterpolantND{Tg, Tv, N,
+                typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(side_vals), typeof(searches)}(
+                grids_typed, spacings, Array(data_typed), extrap_vals, side_vals, searches
+            )
+        end
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps nothing => extrap_vals begin
+            @_dispatch_side_nd sides => side_vals begin
+                return ConstantInterpolantND{Tg, Tv, N,
+                    typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(side_vals), typeof(searches)}(
+                    grids_typed, spacings, Array(data_typed), extrap_vals, side_vals, searches
+                )
+            end
+        end
+    end
 end
 
 # ========================================

@@ -61,7 +61,7 @@ itp = linear_interp((x, y), data;
 function linear_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
-    extrap::Union{Symbol, NTuple{N, Symbol}} = :none,
+    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrapMode, NTuple{N, AbstractExtrapMode}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary()
 ) where {N, Tv_raw}
     # Validate grid dimensions
@@ -82,14 +82,22 @@ function linear_interp(
     data_typed = Tv === Tv_raw ? data : Tv.(data)
 
     # Resolve per-axis configuration
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    # Convert symbols to Val types
-    extrap_vals = _to_extrap_vals(extraps)
-
-    return LinearInterpolantND{Tg, Tv, N,
-        typeof(grids_typed), typeof(spacings), typeof(searches)}(
-        grids_typed, spacings, Array(data_typed), extrap_vals, searches
-    )
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N))
+        return LinearInterpolantND{Tg, Tv, N,
+            typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches)}(
+            grids_typed, spacings, Array(data_typed), extrap_vals, searches
+        )
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps nothing => extrap_vals begin
+            return LinearInterpolantND{Tg, Tv, N,
+                typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches)}(
+                grids_typed, spacings, Array(data_typed), extrap_vals, searches
+            )
+        end
+    end
 end

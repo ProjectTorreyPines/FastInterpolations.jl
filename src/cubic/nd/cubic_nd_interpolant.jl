@@ -61,7 +61,7 @@ function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol, NTuple{N,Symbol}}=:none,
+    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrapMode, NTuple{N,AbstractExtrapMode}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {N, Tv_raw}
@@ -80,11 +80,18 @@ function cubic_interp(
 
     # Resolve per-axis options
     bcs = _resolve_bcs_nd(bc, Val(N))
-    extraps = _resolve_extrap_nd(extrap, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    # Dispatch on strategy
-    return _build_nd_interpolant(grids_typed, data, bcs, extraps, searches, coeffs)
+    if extrap isa AbstractExtrapMode || extrap isa Tuple{Vararg{AbstractExtrapMode}}
+        extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+        return _build_nd_interpolant(grids_typed, data, bcs, extraps_val, searches, coeffs)
+    else
+        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
+        extraps = _resolve_extrap_nd(extrap, Val(N))
+        @_dispatch_extrap_nd extraps bcs => extraps_val begin
+            return _build_nd_interpolant(grids_typed, data, bcs, extraps_val, searches, coeffs)
+        end
+    end
 end
 
 # ========================================
@@ -100,13 +107,10 @@ function _build_nd_interpolant(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, AbstractBC},
-    extraps::NTuple{N, Symbol},
+    extraps_val::Tuple{Vararg{Val, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ::PreCompute
 ) where {Tg<:AbstractFloat, Tv, N}
-    # Validate periodic BC + extrap compatibility (Val recursion to avoid hetero tuple boxing)
-    _check_periodic_extrap(bcs, extraps, Val(N))
-
     # Extend grids/data for exclusive periodic axes (build-time only)
     # After this, all periodic axes have inclusive-form data.
     grids, data, bcs = _prepare_periodic_nd(grids, data, bcs)
@@ -129,17 +133,15 @@ function _build_nd_interpolant(
         end
     end
 
-    # Convert extrap symbols to Val types
-    extraps_val = map(bcs, extraps) do bc, ext
-        _is_periodic_bc(bc) ? Val(:wrap) : _symbol_to_extrap_val(ext)
-    end
+    # extraps_val already dispatched to concrete Val types at API boundary
+    # (via @_dispatch_extrap_nd in cubic_interp)
 
     # Construct the interpolant
     NP1 = N + 1
     return CubicInterpolantND{
         Tg, Tv, N, NP1,
         typeof(grids), typeof(spacings), typeof(bcs_store),
-        typeof(searches)
+        typeof(extraps_val), typeof(searches)
     }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)
 end
 
@@ -179,7 +181,7 @@ function _build_nd_interpolant(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     bcs::NTuple{N, AbstractBC},
-    extraps::NTuple{N, Symbol},
+    extraps_val::Tuple{Vararg{Val, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ::OnTheFly
 ) where {Tg<:AbstractFloat, Tv, N}

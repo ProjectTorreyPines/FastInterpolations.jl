@@ -288,7 +288,7 @@ end
     itp::QuadraticInterpolant{T},
     aq::_QuadraticAnchoredQuery{T,Tq},
     op::O,
-    ::Val{:none}
+    ::NoExtrap
 ) where {T<:AbstractFloat, Tq<:Real, O<:AbstractEvalOp}
     if aq.side != 0x00  # outside domain
         x_min, x_max = first(itp.x), last(itp.x)
@@ -302,7 +302,7 @@ end
     itp::QuadraticInterpolant{T},
     aq::_QuadraticAnchoredQuery{T,Tq},
     op::O,
-    ::Val
+    ::AbstractExtrapMode
 ) where {T<:AbstractFloat, Tq<:Real, O<:AbstractEvalOp}
     @inbounds return _quadratic_kernel(op, itp.a[aq.idx], itp.d[aq.idx], itp.y[aq.idx], aq.dL)
 end
@@ -312,7 +312,7 @@ end
     itp::QuadraticInterpolant{T},
     aq::_QuadraticAnchoredQuery{T,Tq},
     op::O,
-    ::Val{:constant}
+    ::ConstExtrap
 ) where {T<:AbstractFloat, Tq<:Real, O<:AbstractEvalOp}
     if aq.side == 0x01  # below domain
         return _constant_extrap_result(op, @inbounds itp.y[1])

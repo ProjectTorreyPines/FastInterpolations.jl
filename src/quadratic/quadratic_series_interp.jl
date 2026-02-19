@@ -14,7 +14,7 @@
 # ========================================
 
 """
-    QuadraticSeriesInterpolant{Tg, Tv, P, X}
+    QuadraticSeriesInterpolant{Tg, Tv, E, P, X}
 
 Multi-series quadratic spline interpolant with unified matrix storage and SIMD optimization.
 Shares a single x-grid across N y-series for efficient batch evaluation.
@@ -22,6 +22,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 # Type Parameters
 - `Tg`: Grid type (Float32 or Float64)
 - `Tv`: Value type (Tg for real, Complex{Tg} for complex)
+- `E`: Extrapolation mode type (compile-time specialized)
 - `P`: Search policy type
 - `X`: Grid container type (Vector or Range)
 
@@ -75,14 +76,14 @@ sitp_complex = quadratic_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct QuadraticSeriesInterpolant{Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct QuadraticSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                                # Grid points (Range or Vector)
     const y::Matrix{Tv}                       # Series-contiguous y (n_points × n_series)
     const a::Matrix{Tv}                       # Series-contiguous a (n_points × n_series)
     const d::Matrix{Tv}                       # Series-contiguous d (n_points × n_series)
     const h::Vector{Tg}                       # Grid spacing (shared, always real)
     const _transpose::LazyTransposeTriple{Tv} # Lazy point-contiguous layout
-    const extrap::ExtrapVal                   # Extrapolation mode
+    const extrap::E                           # Extrapolation mode (compile-time specialized)
     const search_policy::P                    # Default search policy
 
     function QuadraticSeriesInterpolant(
@@ -91,10 +92,10 @@ mutable struct QuadraticSeriesInterpolant{Tg<:AbstractFloat, Tv, P<:AbstractSear
         a::Matrix{Tv},
         d::Matrix{Tv},
         h::Vector{Tg},
-        extrap::ExtrapVal,
+        extrap::E,
         search::P=Binary()
-    ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
-        new{Tg,Tv,P,X}(x, y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
+    ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrapMode, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
+        new{Tg,Tv,E,P,X}(x, y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
     end
 end
 
@@ -115,7 +116,7 @@ end
 @inline _get_extrap(sitp::QuadraticSeriesInterpolant) = sitp.extrap
 
 """Check if wrap mode is active."""
-@inline _should_wrap(sitp::QuadraticSeriesInterpolant) = sitp.extrap === Val(:wrap)
+@inline _should_wrap(sitp::QuadraticSeriesInterpolant) = sitp.extrap isa WrapExtrap
 
 """Return the interpolation method kind for dispatch."""
 @inline _method_kind(::Type{<:QuadraticSeriesInterpolant}) = Val(:quadratic)
@@ -178,7 +179,7 @@ SIMD kernel for evaluating all series at a single anchor point with extrapolatio
     x_min::Tg,
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Tq},
-    extrap::Val{:none},
+    extrap::NoExtrap,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     if aq.side != 0x00
@@ -196,7 +197,7 @@ end
     x_min::Tg,
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Tq},
-    extrap::Val{:constant},
+    extrap::ConstExtrap,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     if aq.side != 0x00  # outside domain
@@ -216,7 +217,7 @@ end
     x_min::Tg,
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Tq},
-    extrap::Val,  # :extension, :wrap, or anything else
+    extrap::AbstractExtrapMode,  # ExtendExtrap, WrapExtrap, or anything else
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
@@ -365,7 +366,7 @@ function quadratic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Check if Tv's float base requires grid widening (not for Int types)
@@ -421,9 +422,8 @@ function quadratic_interp(
         end
     end
 
-    @_dispatch_extrap extrap => ev begin
-        return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, h, ev, search)
-    end
+    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
+    return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, h, mode, search)
 end
 
 # Matrix input: columns as y-series
@@ -449,7 +449,7 @@ function quadratic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     ys = [Y[:, k] for k in axes(Y, 2)]
@@ -466,7 +466,7 @@ function quadratic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc=Left(QuadraticFit()),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
@@ -481,7 +481,7 @@ function quadratic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     bc=Left(QuadraticFit()),
-    extrap::Symbol=:none,
+    extrap::Union{Symbol,AbstractExtrapMode}=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
@@ -667,7 +667,7 @@ Takes `dL` as a parameter to allow caller to compute with original xq precision.
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Taq},
     dL::Tq,  # Passed by caller for precision control
-    extrap::Val{:none},
+    extrap::NoExtrap,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
     if aq.side != 0x00
@@ -685,7 +685,7 @@ end
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Taq},
     dL::Tq,
-    extrap::Val{:constant},
+    extrap::ConstExtrap,
     op::EvalValue
 ) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
     if aq.side != 0x00  # outside domain
@@ -705,7 +705,7 @@ end
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Taq},
     dL::Tq,
-    extrap::Val{:constant},
+    extrap::ConstExtrap,
     op::Union{EvalDeriv1, EvalDeriv2}
 ) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
     if aq.side != 0x00  # outside domain
@@ -724,7 +724,7 @@ end
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Taq},
     dL::Tq,
-    extrap::Val,  # :extension, :wrap, etc.
+    extrap::AbstractExtrapMode,  # ExtendExtrap, WrapExtrap, etc.
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
     return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)

@@ -90,7 +90,7 @@ Right
 ## Extrapolation Modes
 
 ```@docs
-AbstractExtrapMode
+AbstractExtrap
 NoExtrap
 ConstExtrap
 ExtendExtrap

@@ -33,7 +33,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 - `d::Matrix{Tv}`: Slope coefficients (n_points × n_series) series-contiguous
 - `h::Vector{Tg}`: Grid spacing (shared across all series, always real)
 - `_transpose::LazyTransposeTriple{Tv}`: Lazy point-contiguous layout for SIMD
-- `extrap::ExtrapVal`: Extrapolation mode
+- `extrap::E`: Extrapolation mode (compile-time specialized via type parameter)
 
 # Memory Layout
 Primary storage is series-contiguous (n_points × n_series):

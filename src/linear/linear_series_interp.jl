@@ -29,7 +29,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 - `x::X`: Shared x-grid (Vector or Range)
 - `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
 - `_transpose::LazyTranspose{Tv}`: Lazy point-contiguous layout for scalar SIMD
-- `extrap::ExtrapVal`: Extrapolation mode
+- `extrap::E`: Extrapolation mode (compile-time specialized via type parameter)
 
 # Memory Layout
 Primary storage is series-contiguous (n_points × n_series):

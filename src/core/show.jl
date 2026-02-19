@@ -104,12 +104,11 @@ end
 
 """Format extrapolation mode from AbstractExtrapMode or ExtrapVal."""
 function _format_extrap(mode)
-    # AbstractExtrapMode (ND structs)
     mode isa NoExtrap && return "NoExtrap"
     mode isa ConstExtrap && return "ConstExtrap"
     mode isa ExtendExtrap && return "ExtendExtrap"
     mode isa WrapExtrap && return "WrapExtrap"
-    # Val fallback (1D/series structs)
+    # Val fallback (ND oneshot/integration code still uses ExtrapVal)
     mode === Val(:none) && return "NoExtrap"
     mode === Val(:constant) && return "ConstExtrap"
     mode === Val(:extension) && return "ExtendExtrap"

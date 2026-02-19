@@ -289,8 +289,6 @@ end
 # These helpers unify the interpolant construction logic,
 # using the cache helpers from cubic_interp.jl.
 
-## _symbol_to_extrap_val removed — replaced by shared _symbol_to_extrap_mode from eval_ops.jl
-
 """
     _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache, search) -> CubicInterpolant
 

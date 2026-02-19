@@ -79,7 +79,7 @@ struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC,S<:AbstractGr
     bc_config::BC
 end
 
-# ExtrapVal is defined in ops.jl (shared between linear and cubic)
+# AbstractExtrapMode types are defined in eval_ops.jl (shared across all interpolants)
 
 """
     CubicInterpolant{Tg,Tv,C,E,P,BC}

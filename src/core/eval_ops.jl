@@ -73,7 +73,8 @@ const ExtrapVal = Union{Val{:none}, Val{:constant}, Val{:extension}, Val{:wrap}}
 # These replace runtime Symbol dispatch (:none, :constant, etc.)
 # with zero-cost type dispatch at the API boundary.
 #
-# Flow: User passes NoExtrap() → _extrap_to_val → Val(:none) → internal dispatch
+# 1D: Structs store E<:AbstractExtrapMode, dispatch on concrete subtypes
+# ND: Uses ExtrapVal (Val-based) via @_dispatch_extrap_nd macro
 
 """
     AbstractExtrapMode
@@ -141,17 +142,6 @@ itp = cubic_interp((x, y), data; extrap=WrapExtrap())
 ```
 """
 struct WrapExtrap <: AbstractExtrapMode end
-
-"""
-    _extrap_to_val(::AbstractExtrapMode) -> Val
-
-Convert an `AbstractExtrapMode` singleton to the corresponding internal `Val` type.
-Each method returns a concrete type, enabling compile-time specialization.
-"""
-@inline _extrap_to_val(::NoExtrap) = Val(:none)
-@inline _extrap_to_val(::ConstExtrap) = Val(:constant)
-@inline _extrap_to_val(::ExtendExtrap) = Val(:extension)
-@inline _extrap_to_val(::WrapExtrap) = Val(:wrap)
 
 """
     _symbol_to_extrap_mode(extrap::Symbol) -> AbstractExtrapMode

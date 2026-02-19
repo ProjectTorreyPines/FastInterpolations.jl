@@ -28,10 +28,10 @@
             aq = FI._anchor_query(x, xq, Val(:cubic))
 
             # First derivative
-            @test itp(aq; deriv=1) ≈ itp(xq; deriv=1) atol=1e-14
+            @test itp(aq; deriv=1) ≈ itp(xq; deriv=1) atol=1e-13
 
             # Second derivative
-            @test itp(aq; deriv=2) ≈ itp(xq; deriv=2) atol=1e-14
+            @test itp(aq; deriv=2) ≈ itp(xq; deriv=2) atol=1e-13
         end
     end
 

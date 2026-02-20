@@ -581,6 +581,22 @@ end
     return _get_derivative_cache_impl(x, bc_pair)
 end
 
+# BCPair + autocache API.
+# Keep cache representation structural (PolyFit → Deriv1) regardless of autocache.
+# Solve/eval still use original bc from caller via _solve_system!.
+@inline function _get_cubic_cache(
+    x::AbstractVector{T},
+    bc::BCPair{L,R},
+    autocache::Bool
+) where {T<:AbstractFloat, L<:PointBC, R<:PointBC}
+    bc_cache = _cache_bc_pair(bc, T)
+    if autocache
+        return _get_derivative_cache_impl(x, bc_cache)
+    else
+        return _build_derivative_bc_cache(x, bc_cache.left, bc_cache.right)
+    end
+end
+
 @inline function _get_cubic_cache(
     x::AbstractVector{T},
     bc::AbstractBC,

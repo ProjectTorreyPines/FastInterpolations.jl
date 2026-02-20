@@ -20,10 +20,10 @@ All interpolation methods (`linear_interp`, `quadratic_interp`, `cubic_interp`, 
 
 | Type | Behavior |
 |------|----------|
-| [`NoExtrap()`](@ref) | Throws `DomainError` (default) |
-| [`ConstExtrap()`](@ref) | Returns boundary values |
-| [`ExtendExtrap()`](@ref) | Extends boundary polynomial |
-| [`WrapExtrap()`](@ref) | Wraps coordinates periodically (no smoothness enforced) |
+| [`NoExtrap()`](@ref NoExtrap) | Throws `DomainError` (default) |
+| [`ConstExtrap()`](@ref ConstExtrap) | Returns boundary values |
+| [`ExtendExtrap()`](@ref ExtendExtrap) | Extends boundary polynomial |
+| [`WrapExtrap()`](@ref WrapExtrap) | Wraps coordinates periodically (no smoothness enforced) |
 
 ```
 AbstractExtrap

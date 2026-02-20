@@ -42,15 +42,15 @@ const PLOT_PATH = joinpath(PROJECT_ROOT, "docs", "images", "benchmark_oneshot_de
 const BENCH_SAMPLES = 10_000
 BenchmarkTools.DEFAULT_PARAMETERS.samples = BENCH_SAMPLES
 
-const EVALS_TINY = 200      # nq ≤ 20
-const EVALS_SMALL = 100     # nq ≤ 100
+const EVALS_TINY = 10       # nq ≤ 20
+const EVALS_SMALL = 10      # nq ≤ 100
 const EVALS_MED = 10        # nq ≤ 2000
 const EVALS_LARGE = 1       # nq > 2000
 
-const SECS_TINY = 10.0
-const SECS_SMALL = 10.0
-const SECS_MED = 5.0
-const SECS_LARGE = 5.0
+const SECS_TINY = 3.0
+const SECS_SMALL = 3.0
+const SECS_MED = 3.0
+const SECS_LARGE = 3.0
 
 const QUERY_SIZES = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10_000, 20_000, 50_000, 100_000]
 const N_GRID = 100

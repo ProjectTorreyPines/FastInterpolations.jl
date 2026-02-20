@@ -42,13 +42,6 @@ jobs:
       # ──────────────────────────────────────────────────────────────
       # Benchmark Execution
       # ──────────────────────────────────────────────────────────────
-      - name: Add registries
-        run: |
-          julia -e 'using Pkg
-            Pkg.Registry.add(RegistrySpec(url="https://github.com/ProjectTorreyPines/FuseRegistry.jl.git"))
-            Pkg.Registry.add("General")
-            Pkg.Registry.update()'
-
       - name: Install benchmark dependencies
         run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
 

@@ -573,7 +573,6 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
     end
 
     @testset "ND typed extrap — constant_interp" begin
-        # constant_interp has nested @_dispatch_side_nd, so constructor isn't @inferred
         # (same limitation as Symbol path). Test construction + eval separately.
         itp_none = constant_interp((x_nd, y_nd), data2d; extrap=NoExtrap())
         @test itp_none isa ConstantInterpolantND

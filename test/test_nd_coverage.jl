@@ -892,9 +892,8 @@ end
     end
 end
 
-@testset "core/utils.jl — @_dispatch_side_nd mixed-sides fallback" begin
-    # Mixed side=(LeftSide(), RightSide()) triggers the _to_side_vals fallback in @_dispatch_side_nd
-    # (the `else` branch when _is_uniform_side returns false)
+@testset "mixed-sides fallback" begin
+    # Mixed side=(LeftSide(), RightSide()) 
     grids = (collect(range(0.0, 2.0, 4)), collect(range(0.0, 3.0, 5)))
     data = [Float64(10i + j) for i in 1:4, j in 1:5]
 

@@ -1554,16 +1554,16 @@ end
             D = length(x_tuple) - 1
             N = D + 1
 
-            for side in (:left, :right)
+            for side in (LeftSide(), RightSide())
                 # Specialized path (NTuple-returning, for D=1,2,3)
                 c_specialized = FastInterpolations._compute_deriv1_coeffs(
-                    PolyFit{D}(), Val(side), x_tuple
+                    PolyFit{D}(), side, x_tuple
                 )
 
                 # Generic barycentric path (in-place, x as NTuple)
                 c_barycentric = Vector{Float64}(undef, N)
                 β_barycentric = Vector{Float64}(undef, N)
-                k = (side === :left) ? 1 : N
+                k = (side isa LeftSide) ? 1 : N
                 FastInterpolations._d1_coeffs_at_node!(c_barycentric, β_barycentric, x_tuple, k, Val(N))
 
                 # Compare element-wise (NTuple vs Vector)

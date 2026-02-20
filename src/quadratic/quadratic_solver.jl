@@ -237,7 +237,7 @@ For Complex y values, materialize_bc returns Deriv1{ComplexF64} naturally.
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
                                bc::Left{PolyFit{D}}, x::AbstractVector{Tg}, y::AbstractVector{Tv}) where {D, Tv, Tg<:AbstractFloat}
     # Materialize PolyFit{D} → Deriv1{Tv} using estimated derivative
-    concrete_bc = materialize_bc(bc.bc, x, y, Val(:left))
+    concrete_bc = materialize_bc(bc.bc, x, y, LeftSide())
     d1 = concrete_bc.val  # Already Tv type from polynomial fit on y values
     _forward_recurrence!(d, s, d1)
 end
@@ -253,7 +253,7 @@ estimated derivative directly.
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
                                bc::Right{PolyFit{D}}, x::AbstractVector{Tg}, y::AbstractVector{Tv}) where {D, Tv, Tg<:AbstractFloat}
     # Materialize PolyFit{D} → Deriv1{Tv} using estimated derivative
-    concrete_bc = materialize_bc(bc.bc, x, y, Val(:right))
+    concrete_bc = materialize_bc(bc.bc, x, y, RightSide())
     dn = concrete_bc.val  # Already Tv type from polynomial fit on y values
     _backward_recurrence!(d, s, dn)
 end

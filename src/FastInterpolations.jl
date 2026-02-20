@@ -48,7 +48,6 @@ export AbstractSearchPolicy, Binary, HintedBinary, Linear, LinearBinary
 export AbstractBC, PointBC, Deriv1, Deriv2, Deriv3, BCPair
 export NaturalBC, ClampedBC, PeriodicBC, MinCurvFit
 export PolyFit, LinearFit, QuadraticFit, CubicFit  # Polynomial fitting BCs
-export ParabolaFit # Deprecated alias of QuadraticFit
 export Left, Right
 
 # Derivative view functions and types

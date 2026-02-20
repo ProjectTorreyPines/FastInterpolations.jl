@@ -128,20 +128,20 @@ const FI = FastInterpolations
         x = collect(0.0:0.1:1.0)
         ys = [sin.(2π .* x)]
 
-        @testset "extrap=:none throws" begin
-            sitp = linear_interp(x, ys; extrap=:none)
+        @testset "extrap=NoExtrap() throws" begin
+            sitp = linear_interp(x, ys; extrap=NoExtrap())
             @test_throws DomainError sitp(-0.1)
             @test_throws DomainError sitp(1.1)
         end
 
-        @testset "extrap=:constant returns boundary" begin
-            sitp = linear_interp(x, ys; extrap=:constant)
+        @testset "extrap=ConstExtrap() returns boundary" begin
+            sitp = linear_interp(x, ys; extrap=ConstExtrap())
             @test sitp(-0.1)[1] ≈ sin(0.0) atol=1e-6
             @test sitp(1.1)[1] ≈ sin(2π) atol=1e-6
         end
 
-        @testset "extrap=:extension extrapolates" begin
-            sitp = linear_interp(x, ys; extrap=:extension)
+        @testset "extrap=ExtendExtrap() extrapolates" begin
+            sitp = linear_interp(x, ys; extrap=ExtendExtrap())
             @test sitp(-0.1) isa Vector{Float64}
             @test sitp(1.1) isa Vector{Float64}
         end
@@ -368,15 +368,15 @@ const FI = FastInterpolations
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
 
-        @testset "vector :none extrapolation throws" begin
-            sitp = linear_interp(x, [y1, y2]; extrap=:none)
+        @testset "vector NoExtrap() extrapolation throws" begin
+            sitp = linear_interp(x, [y1, y2]; extrap=NoExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             @test_throws DomainError sitp(xq)
         end
 
-        @testset "vector :constant extrapolation" begin
-            sitp = linear_interp(x, [y1, y2]; extrap=:constant)
+        @testset "vector ConstExtrap() extrapolation" begin
+            sitp = linear_interp(x, [y1, y2]; extrap=ConstExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             outputs = [zeros(3), zeros(3)]
@@ -387,8 +387,8 @@ const FI = FastInterpolations
             @test outputs[1][3] ≈ y1[end] atol=1e-10
         end
 
-        @testset "vector :extension extrapolation" begin
-            sitp = linear_interp(x, [y1, y2]; extrap=:extension)
+        @testset "vector ExtendExtrap() extrapolation" begin
+            sitp = linear_interp(x, [y1, y2]; extrap=ExtendExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             outputs = [zeros(3), zeros(3)]
@@ -398,8 +398,8 @@ const FI = FastInterpolations
             @test !any(isnan, outputs[2])
         end
 
-        @testset "vector :constant extrapolation with derivatives" begin
-            sitp = linear_interp(x, [y1, y2]; extrap=:constant)
+        @testset "vector ConstExtrap() extrapolation with derivatives" begin
+            sitp = linear_interp(x, [y1, y2]; extrap=ConstExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             # deriv=1 outside domain should be zero for constant extrap

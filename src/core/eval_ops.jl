@@ -57,32 +57,21 @@ interval endpoints, and h is the interval width.
 """
 struct EvalDeriv3 <: AbstractEvalOp end
 
-"""
-    ExtrapVal
-
-Union type for extrapolation mode values.
-Using concrete Union enables Julia's union-splitting optimization.
-"""
-const ExtrapVal = Union{Val{:none}, Val{:constant}, Val{:extension}, Val{:wrap}}
-
 # ========================================
 # Typed Extrapolation Mode Tags
 # ========================================
 #
 # Compile-time type tags for extrapolation mode selection.
-# These replace runtime Symbol dispatch (:none, :constant, etc.)
-# with zero-cost type dispatch at the API boundary.
+# Zero-cost type dispatch at the API boundary.
 #
 # 1D: Structs store E<:AbstractExtrap, dispatch on concrete subtypes
-# ND: Structs store NTuple{N,AbstractExtrap}; @_dispatch_extrap_nd resolves
-#     Symbol specs into concrete mode tuples at the API boundary
+# ND: Structs store NTuple{N,AbstractExtrap}, resolved via _resolve_extrap_nd
 
 """
     AbstractExtrap
 
 Abstract type for typed extrapolation mode specification.
-Use concrete subtypes at the API boundary for compile-time dispatch
-instead of runtime Symbol comparison.
+Use concrete subtypes at the API boundary for compile-time dispatch.
 
 # Concrete subtypes
 - [`NoExtrap`](@ref): Throw `DomainError` for out-of-domain queries
@@ -101,7 +90,6 @@ abstract type AbstractExtrap end
     NoExtrap <: AbstractExtrap
 
 No extrapolation — throws `DomainError` for out-of-domain queries.
-Replaces `extrap=:none`.
 
 # Example
 ```julia
@@ -114,7 +102,6 @@ struct NoExtrap <: AbstractExtrap end
     ConstExtrap <: AbstractExtrap
 
 Constant extrapolation — clamps queries to the nearest boundary value.
-Replaces `extrap=:constant`.
 
 # Example
 ```julia
@@ -127,7 +114,6 @@ struct ConstExtrap <: AbstractExtrap end
     ExtendExtrap <: AbstractExtrap
 
 Extension extrapolation — extends the interpolation polynomial beyond the domain.
-Replaces `extrap=:extension`.
 
 # Example
 ```julia
@@ -140,7 +126,7 @@ struct ExtendExtrap <: AbstractExtrap end
     WrapExtrap <: AbstractExtrap
 
 Wrap extrapolation — wraps queries into the domain using modular arithmetic.
-For periodic data. Replaces `extrap=:wrap`.
+For periodic data.
 
 # Example
 ```julia
@@ -148,20 +134,6 @@ itp = cubic_interp((x, y), data; extrap=WrapExtrap())
 ```
 """
 struct WrapExtrap <: AbstractExtrap end
-
-"""
-    _symbol_to_extrap_mode(extrap::Symbol) -> AbstractExtrap
-
-Convert a Symbol extrapolation specifier to the corresponding `AbstractExtrap` singleton.
-Used in the legacy Symbol → Mode conversion path.
-"""
-@inline function _symbol_to_extrap_mode(extrap::Symbol)
-    extrap === :none && return NoExtrap()
-    extrap === :constant && return ConstExtrap()
-    extrap === :extension && return ExtendExtrap()
-    extrap === :wrap && return WrapExtrap()
-    throw(ArgumentError("`extrap` must be :none, :constant, :extension, or :wrap, got :$extrap"))
-end
 
 """
     SideVal

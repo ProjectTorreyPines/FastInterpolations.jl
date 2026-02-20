@@ -22,9 +22,9 @@ Create an N-dimensional cubic Hermite interpolant from grid vectors and data arr
 - `bc=NaturalBC()`: Boundary condition(s). Can be:
   - Single `AbstractBC`: Applied to all axes
   - `NTuple{N,AbstractBC}`: Per-axis BCs
-- `extrap=:none`: Extrapolation mode(s). Can be:
-  - Single `Symbol`: Applied to all axes (`:none`, `:constant`, `:wrap`)
-  - `NTuple{N,Symbol}`: Per-axis modes
+- `extrap=NoExtrap()`: Extrapolation mode(s). Can be:
+  - Single `AbstractExtrap`: Applied to all axes (`NoExtrap()`, `ConstExtrap()`, `WrapExtrap()`)
+  - `NTuple{N,AbstractExtrap}`: Per-axis modes
 - `search=Binary()`: Search policy(s). Can be:
   - Single `AbstractSearchPolicy`: Applied to all axes
   - `NTuple{N,AbstractSearchPolicy}`: Per-axis policies
@@ -50,7 +50,7 @@ itp((1.0, 0.5, 0.3))  # Evaluate at (1.0, 0.5, 0.3)
 # With per-axis options
 itp = cubic_interp((x, y, z), data;
     bc=(NaturalBC(), PeriodicBC(), NaturalBC()),
-    extrap=(:none, :wrap, :constant))
+    extrap=(NoExtrap(), WrapExtrap(), ConstExtrap()))
 
 # Complex-valued data
 data_c = [sin(xi) * cos(yj) * zk + im * cos(xi) for xi in x, yj in y, zk in z]
@@ -61,7 +61,7 @@ function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
+    extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {N, Tv_raw}
@@ -82,17 +82,8 @@ function cubic_interp(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
-        extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-        return _build_nd_interpolant(grids_typed, data, bcs, extraps_val, searches, coeffs)
-    else
-        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
-        extraps = _resolve_extrap_nd(extrap, Val(N))
-        _check_periodic_extrap(bcs, extraps, Val(N))
-        @_dispatch_extrap_nd extraps bcs => extraps_val begin
-            return _build_nd_interpolant(grids_typed, data, bcs, extraps_val, searches, coeffs)
-        end
-    end
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+    return _build_nd_interpolant(grids_typed, data, bcs, extraps_val, searches, coeffs)
 end
 
 # ========================================
@@ -134,8 +125,8 @@ function _build_nd_interpolant(
         end
     end
 
-    # extraps_val already dispatched to concrete Val types at API boundary
-    # (via @_dispatch_extrap_nd in cubic_interp)
+    # extraps_val already resolved to concrete AbstractExtrap instances at API boundary
+    # (via _resolve_extrap_nd in cubic_interp)
 
     # Construct the interpolant
     NP1 = N + 1
@@ -144,32 +135,6 @@ function _build_nd_interpolant(
         typeof(grids), typeof(spacings), typeof(bcs_store),
         typeof(extraps_val), typeof(searches)
     }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)
-end
-
-# ========================================
-# ND Internal Helpers (Val-recursive)
-# ========================================
-
-@inline _check_periodic_extrap(
-    bcs::NTuple{N, AbstractBC},
-    extraps::NTuple{N, Symbol},
-    ::Val{N}
-) where {N} = _check_periodic_extrap(bcs, extraps, Val(1), Val(N))
-
-@inline function _check_periodic_extrap(
-    bcs::NTuple{N, AbstractBC},
-    extraps::NTuple{N, Symbol},
-    ::Val{D},
-    ::Val{N}
-) where {D, N}
-    is_periodic = _is_periodic_bc(bcs[D])
-    if is_periodic && extraps[D] != :none && extraps[D] != :wrap
-        throw(ArgumentError("Periodic BC on dim $D only supports extrap=:none or :wrap, got :$(extraps[D])"))
-    end
-    if D < N
-        _check_periodic_extrap(bcs, extraps, Val(D + 1), Val(N))
-    end
-    return nothing
 end
 
 """

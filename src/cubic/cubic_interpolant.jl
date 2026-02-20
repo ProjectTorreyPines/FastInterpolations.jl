@@ -206,7 +206,7 @@ Iterates through anchor vector, dispatching each to existing scalar kernels:
 - `_eval_anchored_kernel` for inside-domain (side == 0x00)
 - `_eval_anchored_extrap` for outside-domain (side != 0x00)
 
-For extrap=:none, throws DomainError on first out-of-domain anchor.
+For extrap=NoExtrap(), throws DomainError on first out-of-domain anchor.
 """
 @inline function _eval_anchored_vector_loop!(
     output::AbstractVector{Tv},
@@ -220,7 +220,7 @@ For extrap=:none, throws DomainError on first out-of-domain anchor.
             # Fast path: inside domain
             output[k] = _eval_anchored_kernel(itp, aq_k, op)
         else
-            # Extrapolation path (may throw for :none)
+            # Extrapolation path (may throw for NoExtrap)
             output[k] = _eval_anchored_extrap(itp, aq_k, itp.extrap, op)
         end
     end
@@ -233,10 +233,10 @@ end
 Evaluate cubic spline at multiple anchored query points (allocating).
 
 # Extrapolation Behavior
-- `:none`: Throws `DomainError` on **first** out-of-domain anchor
-- `:constant`: Returns boundary value (or zero for derivatives)
-- `:extension`: Uses boundary polynomial extrapolation
-- `:wrap`: Uses pre-wrapped coordinates from anchor construction
+- `NoExtrap()`: Throws `DomainError` on **first** out-of-domain anchor
+- `ConstExtrap()`: Returns boundary value (or zero for derivatives)
+- `ExtendExtrap()`: Uses boundary polynomial extrapolation
+- `WrapExtrap()`: Uses pre-wrapped coordinates from anchor construction
 
 # Example
 ```julia
@@ -319,7 +319,7 @@ end
     _build_interpolant_periodic(x, y, autocache, search) -> CubicInterpolant
 
 Build a CubicInterpolant for PeriodicBC boundary conditions.
-Periodic BC always uses :wrap extrapolation.
+Periodic BC always uses WrapExtrap extrapolation.
 Tg = grid type, Tv = value type (can be Complex)
 
 # Thread-Safety
@@ -374,7 +374,7 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values (can be Real or Complex)
 - `bc::AbstractBC`: Boundary condition (default: `NaturalBC()`)
-- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache::Bool`: Enable automatic caching (default: `true`)
 - `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
 
@@ -403,17 +403,15 @@ val = itp(0.5)  # returns ComplexF64
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     bc::AbstractBC,
-    extrap::Union{Symbol,AbstractExtrap},
+    extrap::AbstractExtrap,
     autocache::Bool,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x, y, bc, autocache, search)
     else
-        extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
-        mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
         bc_pair = _normalize_bc(bc, Tv)
-        return _build_interpolant_bcpair(x, y, bc_pair, mode, autocache, search)
+        return _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache, search)
     end
 end
 
@@ -422,7 +420,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv};
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
@@ -454,7 +452,7 @@ so the pool memory can be safely reused after this function returns.
 @with_pool pool function cubic_interp(
     cache::CubicSplineCache{Tg},
     y::AbstractVector{Tv};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     tmp_z = similar!(pool, y)
@@ -466,9 +464,7 @@ so the pool memory can be safely reused after this function returns.
     end
 
     # cache.bc_config is BCPair - use it directly
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
-    return CubicInterpolant(cache, y, tmp_z, cache.bc_config, mode, search)
+    return CubicInterpolant(cache, y, tmp_z, cache.bc_config, extrap, search)
 end
 
 # Generic Real wrapper for 2-argument form (handles Integer grids, etc.)
@@ -476,7 +472,7 @@ function cubic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY};
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     search::P=Binary()
 ) where {TX<:Real, TY, P<:AbstractSearchPolicy}

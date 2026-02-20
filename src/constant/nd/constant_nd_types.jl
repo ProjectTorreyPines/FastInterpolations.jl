@@ -35,14 +35,14 @@ x = [0.0, 1.0, 2.0]
 y = [0.0, 1.0, 2.0, 3.0]
 data = rand(3, 4)
 
-itp = constant_interp((x, y), data)  # Default: side=:nearest, extrap=:none
+itp = constant_interp((x, y), data)  # Default: side=:nearest, extrap=NoExtrap()
 val = itp((0.5, 1.5))                # Single query
 
 # With configuration
-itp = constant_interp((x, y), data; side=:left, extrap=:constant)
+itp = constant_interp((x, y), data; side=:left, extrap=ConstExtrap())
 
 # Per-axis configuration
-itp = constant_interp((x, y), data; side=(:left, :right), extrap=(:none, :wrap))
+itp = constant_interp((x, y), data; side=(:left, :right), extrap=(NoExtrap(), WrapExtrap()))
 ```
 """
 struct ConstantInterpolantND{

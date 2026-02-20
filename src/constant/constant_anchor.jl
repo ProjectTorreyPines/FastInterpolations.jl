@@ -66,7 +66,7 @@ Create an anchored query for ultra-fast constant interpolation at a fixed point.
 - `xq`: Query point (scalar)
 - `::Val{:constant}`: Type tag to distinguish from other anchor types
 - `wrap`: If true, wrap `xq` to domain [x[1], x[end]) before anchoring.
-          Used for `extrap=:wrap` mode.
+          Used for `extrap=WrapExtrap()` mode.
 
 # Returns
 `_ConstantAnchoredQuery{T}` with precomputed geometry.
@@ -196,7 +196,7 @@ Internal implementation of _anchor_query for constant interpolation.
 ) where {T<:AbstractFloat, P<:Searcher}
     x_min, x_max = first(x), last(x)
 
-    # Handle wrapping (for extrap=:wrap mode)
+    # Handle wrapping (for extrap=WrapExtrap() mode)
     if wrap && (xq < x_min || xq >= x_max)
         xq = _wrap_to_domain(xq, x_min, x_max)
     end

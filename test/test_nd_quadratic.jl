@@ -180,7 +180,7 @@ end
         f(xi, yi) = xi^2 + yi^2
         data = [f(xi, yi) for xi in x, yi in y]
 
-        @testset "extrap=:none (default)" begin
+        @testset "extrap=NoExtrap() (default)" begin
             itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
             @test_throws DomainError itp((-0.1, 0.5))
             @test_throws DomainError itp((0.5, -0.1))
@@ -188,18 +188,18 @@ end
             @test_throws DomainError itp((0.5, 1.1))
         end
 
-        @testset "extrap=:constant" begin
+        @testset "extrap=ConstExtrap()" begin
             itp = quadratic_interp((x, y), data;
-                bc=Right(QuadraticFit()), extrap=:constant)
+                bc=Right(QuadraticFit()), extrap=ConstExtrap())
             @test itp((-0.1, 0.5)) ≈ itp((0.0, 0.5))
             @test itp((2.1, 0.5)) ≈ itp((2.0, 0.5))
             @test itp((0.5, 1.1)) ≈ itp((0.5, 1.0))
             @test itp((0.5, -0.1)) ≈ itp((0.5, 0.0))
         end
 
-        @testset "extrap=:extension" begin
+        @testset "extrap=ExtendExtrap()" begin
             itp = quadratic_interp((x, y), data;
-                bc=Right(QuadraticFit()), extrap=:extension)
+                bc=Right(QuadraticFit()), extrap=ExtendExtrap())
             @test isfinite(itp((-0.1, 0.5)))
             @test isfinite(itp((2.5, 1.5)))
         end
@@ -207,7 +207,7 @@ end
         @testset "per-axis extrap" begin
             itp = quadratic_interp((x, y), data;
                 bc=Right(QuadraticFit()),
-                extrap=(:constant, :extension))
+                extrap=(ConstExtrap(), ExtendExtrap()))
             @test itp((-0.1, 0.5)) ≈ itp((0.0, 0.5)) rtol=1e-10
             @test isfinite(itp((1.0, 1.5)))
         end
@@ -586,7 +586,7 @@ end
             @test _alloc_test_quadratic_natural_bc() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, extrap=:constant)" begin
+        @testset "zero-alloc scalar (Range grids, extrap=ConstExtrap())" begin
             @test _alloc_test_quadratic_extrap_constant() <= ND_ALLOC_THRESHOLD
         end
 

@@ -200,19 +200,19 @@ end
     end
 
     @testset "Extrapolation modes" begin
-        @test_throws DomainError constant_interp(x, y, -1.0; extrap=:none)
-        @test_throws DomainError constant_interp(x, y, 5.0; extrap=:none)
+        @test_throws DomainError constant_interp(x, y, -1.0; extrap=NoExtrap())
+        @test_throws DomainError constant_interp(x, y, 5.0; extrap=NoExtrap())
 
-        @test constant_interp(x, y, -1.0; extrap=:constant) == 10.0
-        @test constant_interp(x, y, 5.0; extrap=:constant) == 50.0
+        @test constant_interp(x, y, -1.0; extrap=ConstExtrap()) == 10.0
+        @test constant_interp(x, y, 5.0; extrap=ConstExtrap()) == 50.0
 
-        @test constant_interp(x, y, -1.0; extrap=:extension) == 10.0
-        @test constant_interp(x, y, 5.0; extrap=:extension) == 50.0
+        @test constant_interp(x, y, -1.0; extrap=ExtendExtrap()) == 10.0
+        @test constant_interp(x, y, 5.0; extrap=ExtendExtrap()) == 50.0
 
-        @test constant_interp(x, y, 4.0; extrap=:wrap) == 10.0
-        @test constant_interp(x, y, 4.5; extrap=:wrap) == 10.0
+        @test constant_interp(x, y, 4.0; extrap=WrapExtrap()) == 10.0
+        @test constant_interp(x, y, 4.5; extrap=WrapExtrap()) == 10.0
 
-        @test constant_interp(x, y, -1.0; extrap=:constant, deriv=1) == 0.0
+        @test constant_interp(x, y, -1.0; extrap=ConstExtrap(), deriv=1) == 0.0
     end
 
     @testset "Real type wrapper (Integer input)" begin
@@ -264,18 +264,18 @@ end
         # Test options pass through the wrappers correctly
         @test constant_interp(x_int, y_int, 0; side=:right) == 10.0
         @test constant_interp(x_int, y_int, 0; side=:left) == 10.0
-        @test constant_interp(x_int, y_int, -1; extrap=:constant) == 10.0
-        @test constant_interp(x_int, y_int, 5; extrap=:constant) == 50.0
+        @test constant_interp(x_int, y_int, -1; extrap=ConstExtrap()) == 10.0
+        @test constant_interp(x_int, y_int, 5; extrap=ConstExtrap()) == 50.0
 
         # Test in-place wrapper with options
         out3 = zeros(2)
-        constant_interp!(out3, x_int, y_int, [-1, 5]; extrap=:constant)
+        constant_interp!(out3, x_int, y_int, [-1, 5]; extrap=ConstExtrap())
         @test out3 ≈ [10.0, 50.0]
 
         # Test 2-arg callable with options
         itp_left = constant_interp(x_int, y_int; side=:left)
         @test itp_left(0.9) == 10.0
-        itp_wrap = constant_interp(x_int, y_int; extrap=:wrap)
+        itp_wrap = constant_interp(x_int, y_int; extrap=WrapExtrap())
         @test itp_wrap(4.0) == 10.0
     end
 
@@ -311,10 +311,10 @@ end
     end
 
     @testset "ConstantInterpolant - Options" begin
-        itp_wrap = constant_interp(x, y; extrap=:wrap)
+        itp_wrap = constant_interp(x, y; extrap=WrapExtrap())
         @test itp_wrap(4.0) == 10.0
 
-        itp_const = constant_interp(x, y; extrap=:constant)
+        itp_const = constant_interp(x, y; extrap=ConstExtrap())
         @test itp_const(-1.0) == 10.0
         @test itp_const(5.0) == 50.0
 
@@ -330,7 +330,7 @@ end
         @test @inferred(itp(0.5)) isa Float64
         @test @inferred(constant_interp(x, y, 0.5)) isa Float64
         @test @inferred(constant_interp(x, y, 0.5; side=:left)) isa Float64
-        @test @inferred(constant_interp(x, y, 0.5; extrap=:constant)) isa Float64
+        @test @inferred(constant_interp(x, y, 0.5; extrap=ConstExtrap())) isa Float64
         @test @inferred(constant_interp(x, y, 0.5; deriv=1)) isa Float64
     end
 
@@ -400,8 +400,8 @@ end
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "ConstantInterpolant with extrap=:wrap in-place" begin
-        itp = constant_interp(x, y; extrap=:wrap)
+    @testset "ConstantInterpolant with extrap=WrapExtrap() in-place" begin
+        itp = constant_interp(x, y; extrap=WrapExtrap())
         out = zeros(5)
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
         itp(out, xq)
@@ -504,12 +504,12 @@ end
     end
 
     @testset "DerivativeView - with options" begin
-        itp_const = constant_interp(x, y; extrap=:constant)
+        itp_const = constant_interp(x, y; extrap=ConstExtrap())
         d1 = deriv1(itp_const)
         @test d1(-1.0) == 0.0
         @test d1(5.0) == 0.0
 
-        itp_wrap = constant_interp(x, y; extrap=:wrap)
+        itp_wrap = constant_interp(x, y; extrap=WrapExtrap())
         d2 = deriv2(itp_wrap)
         @test d2(4.5) == 0.0
 
@@ -531,26 +531,26 @@ end
     end
 
     @testset "Edge: xi == x[end] with extrap modes" begin
-        @test constant_interp(x, y, 4.0; extrap=:none) == 50.0
-        @test constant_interp(x, y, 4.0; extrap=:constant) == 50.0
-        @test constant_interp(x, y, 4.0; extrap=:extension) == 50.0
-        @test constant_interp(x, y, 4.0; extrap=:wrap) == 10.0
+        @test constant_interp(x, y, 4.0; extrap=NoExtrap()) == 50.0
+        @test constant_interp(x, y, 4.0; extrap=ConstExtrap()) == 50.0
+        @test constant_interp(x, y, 4.0; extrap=ExtendExtrap()) == 50.0
+        @test constant_interp(x, y, 4.0; extrap=WrapExtrap()) == 10.0
     end
 
     @testset "Edge: Wrap boundary cases" begin
-        @test constant_interp(x, y, 4.0; extrap=:wrap, side=:left) == 10.0
-        @test constant_interp(x, y, 4.0; extrap=:wrap, side=:right) == 10.0
-        @test constant_interp(x, y, 4.0; extrap=:wrap, side=:nearest) == 10.0
-        @test constant_interp(x, y, 4.5; extrap=:wrap, side=:nearest) == 10.0
-        @test constant_interp(x, y, 5.0; extrap=:wrap, side=:nearest) == 20.0
+        @test constant_interp(x, y, 4.0; extrap=WrapExtrap(), side=:left) == 10.0
+        @test constant_interp(x, y, 4.0; extrap=WrapExtrap(), side=:right) == 10.0
+        @test constant_interp(x, y, 4.0; extrap=WrapExtrap(), side=:nearest) == 10.0
+        @test constant_interp(x, y, 4.5; extrap=WrapExtrap(), side=:nearest) == 10.0
+        @test constant_interp(x, y, 5.0; extrap=WrapExtrap(), side=:nearest) == 20.0
     end
 
     @testset "Edge: Extrapolation + deriv" begin
-        @test constant_interp(x, y, -1.0; extrap=:constant, deriv=1) == 0.0
-        @test constant_interp(x, y, 5.0; extrap=:constant, deriv=2) == 0.0
-        @test constant_interp(x, y, -1.0; extrap=:extension, deriv=1) == 0.0
-        @test constant_interp(x, y, 5.0; extrap=:extension, deriv=2) == 0.0
-        @test constant_interp(x, y, 4.5; extrap=:wrap, deriv=1) == 0.0
+        @test constant_interp(x, y, -1.0; extrap=ConstExtrap(), deriv=1) == 0.0
+        @test constant_interp(x, y, 5.0; extrap=ConstExtrap(), deriv=2) == 0.0
+        @test constant_interp(x, y, -1.0; extrap=ExtendExtrap(), deriv=1) == 0.0
+        @test constant_interp(x, y, 5.0; extrap=ExtendExtrap(), deriv=2) == 0.0
+        @test constant_interp(x, y, 4.5; extrap=WrapExtrap(), deriv=1) == 0.0
     end
 
     @testset "Edge: Midpoint tie-breaking" begin

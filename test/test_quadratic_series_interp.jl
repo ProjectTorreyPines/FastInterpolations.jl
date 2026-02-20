@@ -136,14 +136,14 @@ const FI = FastInterpolations
         x = collect(0.0:0.1:1.0)
         ys = [sin.(2π .* x)]
 
-        @testset "extrap=:none throws" begin
-            sitp = quadratic_interp(x, ys; extrap=:none)
+        @testset "extrap=NoExtrap() throws" begin
+            sitp = quadratic_interp(x, ys; extrap=NoExtrap())
             @test_throws DomainError sitp(-0.1)
             @test_throws DomainError sitp(1.1)
         end
 
         @testset "domain error message format" begin
-            sitp = quadratic_interp(x, ys; extrap=:none)
+            sitp = quadratic_interp(x, ys; extrap=NoExtrap())
             err = try
                 sitp(-0.5)
                 nothing
@@ -154,14 +154,14 @@ const FI = FastInterpolations
             @test occursin("outside domain", string(err))
         end
 
-        @testset "extrap=:constant returns boundary" begin
-            sitp = quadratic_interp(x, ys; extrap=:constant)
+        @testset "extrap=ConstExtrap() returns boundary" begin
+            sitp = quadratic_interp(x, ys; extrap=ConstExtrap())
             @test sitp(-0.1)[1] ≈ sin(0.0) atol=1e-6
             @test sitp(1.1)[1] ≈ sin(2π) atol=1e-6
         end
 
-        @testset "extrap=:extension extrapolates" begin
-            sitp = quadratic_interp(x, ys; extrap=:extension)
+        @testset "extrap=ExtendExtrap() extrapolates" begin
+            sitp = quadratic_interp(x, ys; extrap=ExtendExtrap())
             @test sitp(-0.1) isa Vector{Float64}
             @test sitp(1.1) isa Vector{Float64}
         end
@@ -394,15 +394,15 @@ const FI = FastInterpolations
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
 
-        @testset "vector :none extrapolation throws" begin
-            sitp = quadratic_interp(x, [y1, y2]; extrap=:none)
+        @testset "vector NoExtrap() extrapolation throws" begin
+            sitp = quadratic_interp(x, [y1, y2]; extrap=NoExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             @test_throws DomainError sitp(xq)
         end
 
-        @testset "vector :constant extrapolation" begin
-            sitp = quadratic_interp(x, [y1, y2]; extrap=:constant)
+        @testset "vector ConstExtrap() extrapolation" begin
+            sitp = quadratic_interp(x, [y1, y2]; extrap=ConstExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             outputs = [zeros(3), zeros(3)]
@@ -413,8 +413,8 @@ const FI = FastInterpolations
             @test outputs[1][3] ≈ y1[end] atol=1e-10
         end
 
-        @testset "vector :extension extrapolation" begin
-            sitp = quadratic_interp(x, [y1, y2]; extrap=:extension)
+        @testset "vector ExtendExtrap() extrapolation" begin
+            sitp = quadratic_interp(x, [y1, y2]; extrap=ExtendExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             outputs = [zeros(3), zeros(3)]
@@ -424,8 +424,8 @@ const FI = FastInterpolations
             @test !any(isnan, outputs[2])
         end
 
-        @testset "vector :constant extrapolation with derivatives" begin
-            sitp = quadratic_interp(x, [y1, y2]; extrap=:constant)
+        @testset "vector ConstExtrap() extrapolation with derivatives" begin
+            sitp = quadratic_interp(x, [y1, y2]; extrap=ConstExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             # deriv=1 outside domain should be zero for constant extrap
@@ -447,20 +447,20 @@ const FI = FastInterpolations
     # ========================================
 
     @testset "scalar constant extrap inside domain" begin
-        # Test that :constant extrap still works correctly inside domain
+        # Test that ConstExtrap() extrap still works correctly inside domain
         x = collect(0.0:0.1:1.0)
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp_const = quadratic_interp(x, [y1, y2]; extrap=:constant)
-        sitp_none = quadratic_interp(x, [y1, y2]; extrap=:none)
+        sitp_const = quadratic_interp(x, [y1, y2]; extrap=ConstExtrap())
+        sitp_none = quadratic_interp(x, [y1, y2]; extrap=NoExtrap())
 
-        @testset "value inside domain same as :none extrap" begin
+        @testset "value inside domain same as NoExtrap() extrap" begin
             result_const = sitp_const(0.5)
             result_none = sitp_none(0.5)
             @test result_const ≈ result_none atol=1e-10
         end
 
-        @testset "deriv inside domain same as :none extrap" begin
+        @testset "deriv inside domain same as NoExtrap() extrap" begin
             result_const = sitp_const(0.5; deriv=1)
             result_none = sitp_none(0.5; deriv=1)
             @test result_const ≈ result_none atol=1e-10
@@ -471,7 +471,7 @@ const FI = FastInterpolations
         x = collect(0.0:0.1:1.0)
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp = quadratic_interp(x, [y1, y2]; extrap=:constant)
+        sitp = quadratic_interp(x, [y1, y2]; extrap=ConstExtrap())
 
         @testset "deriv=1 outside domain returns zero" begin
             result_below = sitp(-0.1; deriv=1)

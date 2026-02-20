@@ -165,7 +165,7 @@ C1 piecewise quadratic spline interpolation at a single point.
   - `Right(Deriv1(v))`: First derivative = v at right endpoint
   - `Right(Deriv2(v))`: Second derivative = v at right endpoint
   - `MinCurvFit()`: Minimize total curvature (globally smooth)
-- `extrap::AbstractExtrap`: Extrapolation mode (Symbol args deprecated)
+- `extrap::AbstractExtrap`: Extrapolation mode
   - `NoExtrap()` (default): throws DomainError if outside domain
   - `ConstExtrap()`: clamp to boundary values
   - `ExtendExtrap()`: extend the boundary polynomial
@@ -200,7 +200,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     y::AbstractVector{Tv},
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -218,10 +218,8 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _to_searcher(search, hint)
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
-        _quadratic_eval_at_point(x, y, h, a, d, xq, mode, op, searcher)
+        _quadratic_eval_at_point(x, y, h, a, d, xq, extrap, op, searcher)
     end
 end
 
@@ -258,7 +256,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -276,12 +274,10 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _to_searcher(search)
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp!)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(x, x_targets, mode)
+        @boundscheck _check_domain(x, x_targets, extrap)
         @inbounds for i in eachindex(x_targets, output)
-            output[i] = _quadratic_eval_at_point(x, y, h, a, d, x_targets[i], mode, op, searcher)
+            output[i] = _quadratic_eval_at_point(x, y, h, a, d, x_targets[i], extrap, op, searcher)
         end
     end
     return output
@@ -313,7 +309,7 @@ function quadratic_interp(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -368,7 +364,7 @@ end
     y::AbstractVector{Tv},
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -390,7 +386,7 @@ function quadratic_interp(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
@@ -412,7 +408,7 @@ function quadratic_interp!(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}

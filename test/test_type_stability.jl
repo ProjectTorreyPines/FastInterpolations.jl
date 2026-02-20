@@ -366,13 +366,13 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         itp_none = cubic_interp((x_nd, y_nd), data2d)
         @test itp_none isa CubicInterpolantND
 
-        itp_const = cubic_interp((x_nd, y_nd), data2d; extrap=:constant)
+        itp_const = cubic_interp((x_nd, y_nd), data2d; extrap=ConstExtrap())
         @test itp_const isa CubicInterpolantND
 
-        itp_ext = cubic_interp((x_nd, y_nd), data2d; extrap=:extension)
+        itp_ext = cubic_interp((x_nd, y_nd), data2d; extrap=ExtendExtrap())
         @test itp_ext isa CubicInterpolantND
 
-        itp_mixed = cubic_interp((x_nd, y_nd), data2d; extrap=(:none, :constant))
+        itp_mixed = cubic_interp((x_nd, y_nd), data2d; extrap=(NoExtrap(), ConstExtrap()))
         @test itp_mixed isa CubicInterpolantND
 
         # E type parameter: different extrap → different concrete types
@@ -395,7 +395,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         data_p = [sin(xi) * cos(yj) for xi in x_periodic, yj in y_periodic]
 
         itp_mixed_bc = cubic_interp((x_periodic, y_periodic), data_p;
-            bc=(NaturalBC(), PeriodicBC()), extrap=(:extension, :wrap))
+            bc=(NaturalBC(), PeriodicBC()), extrap=(ExtendExtrap(), WrapExtrap()))
         @test itp_mixed_bc isa CubicInterpolantND
         @test @inferred(itp_mixed_bc((1.0, 1.0))) isa Float64
 
@@ -444,10 +444,10 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         itp_none = quadratic_interp((x_nd, y_nd), data2d)
         @test itp_none isa QuadraticInterpolantND
 
-        itp_const = quadratic_interp((x_nd, y_nd), data2d; extrap=:constant)
+        itp_const = quadratic_interp((x_nd, y_nd), data2d; extrap=ConstExtrap())
         @test itp_const isa QuadraticInterpolantND
 
-        itp_mixed = quadratic_interp((x_nd, y_nd), data2d; extrap=(:none, :extension))
+        itp_mixed = quadratic_interp((x_nd, y_nd), data2d; extrap=(NoExtrap(), ExtendExtrap()))
         @test itp_mixed isa QuadraticInterpolantND
 
         # E type parameter: different extrap → different concrete types
@@ -464,10 +464,10 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         itp_none = linear_interp((x_nd, y_nd), data2d)
         @test itp_none isa LinearInterpolantND
 
-        itp_const = linear_interp((x_nd, y_nd), data2d; extrap=:constant)
+        itp_const = linear_interp((x_nd, y_nd), data2d; extrap=ConstExtrap())
         @test itp_const isa LinearInterpolantND
 
-        itp_mixed = linear_interp((x_nd, y_nd), data2d; extrap=(:none, :wrap))
+        itp_mixed = linear_interp((x_nd, y_nd), data2d; extrap=(NoExtrap(), WrapExtrap()))
         @test itp_mixed isa LinearInterpolantND
 
         # E type parameter: different extrap → different concrete types
@@ -484,10 +484,10 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         itp_none = constant_interp((x_nd, y_nd), data2d)
         @test itp_none isa ConstantInterpolantND
 
-        itp_const = constant_interp((x_nd, y_nd), data2d; extrap=:constant)
+        itp_const = constant_interp((x_nd, y_nd), data2d; extrap=ConstExtrap())
         @test itp_const isa ConstantInterpolantND
 
-        itp_mixed = constant_interp((x_nd, y_nd), data2d; extrap=(:none, :extension))
+        itp_mixed = constant_interp((x_nd, y_nd), data2d; extrap=(NoExtrap(), ExtendExtrap()))
         @test itp_mixed isa ConstantInterpolantND
 
         # E type parameter: different extrap → different concrete types
@@ -518,7 +518,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # Typed extrap produces identical struct to Symbol extrap
         itp_typed = cubic_interp((x_nd, y_nd), data2d; extrap=NoExtrap())
-        itp_sym = cubic_interp((x_nd, y_nd), data2d; extrap=:none)
+        itp_sym = cubic_interp((x_nd, y_nd), data2d; extrap=NoExtrap())
         @test typeof(itp_typed) === typeof(itp_sym)
 
         # Eval equivalence
@@ -552,7 +552,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # Typed vs Symbol equivalence
         itp_typed = quadratic_interp((x_nd, y_nd), data2d; extrap=ExtendExtrap())
-        itp_sym = quadratic_interp((x_nd, y_nd), data2d; extrap=:extension)
+        itp_sym = quadratic_interp((x_nd, y_nd), data2d; extrap=ExtendExtrap())
         @test typeof(itp_typed) === typeof(itp_sym)
         @test @inferred(itp_typed((0.5, 1.0))) ≈ itp_sym((0.5, 1.0))
     end
@@ -567,7 +567,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # Typed vs Symbol equivalence
         itp_typed = linear_interp((x_nd, y_nd), data2d; extrap=ConstExtrap())
-        itp_sym = linear_interp((x_nd, y_nd), data2d; extrap=:constant)
+        itp_sym = linear_interp((x_nd, y_nd), data2d; extrap=ConstExtrap())
         @test typeof(itp_typed) === typeof(itp_sym)
         @test @inferred(itp_typed((0.5, 1.0))) ≈ itp_sym((0.5, 1.0))
     end
@@ -593,7 +593,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # Typed vs Symbol equivalence
         itp_typed = constant_interp((x_nd, y_nd), data2d; extrap=NoExtrap())
-        itp_sym = constant_interp((x_nd, y_nd), data2d; extrap=:none)
+        itp_sym = constant_interp((x_nd, y_nd), data2d; extrap=NoExtrap())
         @test typeof(itp_typed) === typeof(itp_sym)
         @test @inferred(itp_typed((0.5, 1.0))) ≈ itp_sym((0.5, 1.0))
     end
@@ -631,18 +631,18 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # Typed vs Symbol should produce identical results
         @test cubic_interp((x_nd, y_nd), data2d, q; extrap=NoExtrap()) ≈
-              cubic_interp((x_nd, y_nd), data2d, q; extrap=:none)
+              cubic_interp((x_nd, y_nd), data2d, q; extrap=NoExtrap())
         @test cubic_interp((x_nd, y_nd), data2d, q; extrap=ConstExtrap()) ≈
-              cubic_interp((x_nd, y_nd), data2d, q; extrap=:constant)
+              cubic_interp((x_nd, y_nd), data2d, q; extrap=ConstExtrap())
 
         @test quadratic_interp((x_nd, y_nd), data2d, q; extrap=ExtendExtrap()) ≈
-              quadratic_interp((x_nd, y_nd), data2d, q; extrap=:extension)
+              quadratic_interp((x_nd, y_nd), data2d, q; extrap=ExtendExtrap())
 
         @test linear_interp((x_nd, y_nd), data2d, q; extrap=WrapExtrap()) ≈
-              linear_interp((x_nd, y_nd), data2d, q; extrap=:wrap)
+              linear_interp((x_nd, y_nd), data2d, q; extrap=WrapExtrap())
 
         @test constant_interp((x_nd, y_nd), data2d, q; extrap=ConstExtrap()) ≈
-              constant_interp((x_nd, y_nd), data2d, q; extrap=:constant)
+              constant_interp((x_nd, y_nd), data2d, q; extrap=ConstExtrap())
     end
 
     @testset "ND oneshot typed extrap — per-axis mode tuple" begin
@@ -660,11 +660,11 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # SoA batch with typed extrap
         result_typed = cubic_interp((x_nd, y_nd), data2d, qs; extrap=NoExtrap())
-        result_sym = cubic_interp((x_nd, y_nd), data2d, qs; extrap=:none)
+        result_sym = cubic_interp((x_nd, y_nd), data2d, qs; extrap=NoExtrap())
         @test result_typed ≈ result_sym
 
         result_typed = linear_interp((x_nd, y_nd), data2d, qs; extrap=ConstExtrap())
-        result_sym = linear_interp((x_nd, y_nd), data2d, qs; extrap=:constant)
+        result_sym = linear_interp((x_nd, y_nd), data2d, qs; extrap=ConstExtrap())
         @test result_typed ≈ result_sym
     end
 

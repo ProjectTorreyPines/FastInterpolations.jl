@@ -165,7 +165,7 @@ Create an anchored query for ultra-fast cubic spline evaluation at a fixed point
 - `xq`: Query point (scalar, can be Float or ForwardDiff.Dual for AD)
 - `::Val{:cubic}`: Type tag to distinguish from other anchor types
 - `wrap`: If true, wrap `xq` to domain [x[1], x[end]) before anchoring.
-          Used for `extrap=:wrap` mode. Distinct from `PeriodicBC` (boundary condition).
+          Used for `extrap=WrapExtrap()` mode. Distinct from `PeriodicBC` (boundary condition).
 
 # Returns
 `_CubicAnchoredQuery{Tg, Tq}` with precomputed geometry weights for value and derivatives.
@@ -216,7 +216,7 @@ the grid used for interpolant construction.
 - `xq`: Query points (any Real type, auto-promoted to T)
 - `::Val{:cubic}`: Type tag to distinguish from other anchor types
 - `wrap`: If true, wrap query points to domain [x[1], x[end]) before anchoring.
-          Used for `extrap=:wrap` mode. Distinct from `PeriodicBC` (boundary condition).
+          Used for `extrap=WrapExtrap()` mode. Distinct from `PeriodicBC` (boundary condition).
 
 # Example
 ```julia
@@ -317,7 +317,7 @@ while preserving the full Dual value for weight computation.
     # Use primal value for comparisons (supports ForwardDiff.Dual)
     xq_primal = _extract_primal(xq)
 
-    # Handle wrapping (for extrap=:wrap mode)
+    # Handle wrapping (for extrap=WrapExtrap() mode)
     # Generic _wrap_to_domain handles AD primal extraction and returns Tg
     if wrap && (xq_primal < x_min || xq_primal >= x_max)
         xq = _wrap_to_domain(xq, x_min, x_max)

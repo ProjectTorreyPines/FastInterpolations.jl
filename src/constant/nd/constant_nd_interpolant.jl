@@ -20,7 +20,7 @@ Create an N-dimensional constant interpolant with tuple-grid API.
 
 # Keyword Arguments
 - `side=:nearest`: Side selection mode (`:nearest`, `:left`, `:right`) or per-axis tuple
-- `extrap=:none`: Extrapolation mode (`:none`, `:constant`, `:extension`, `:wrap`) or per-axis tuple
+- `extrap=NoExtrap()`: Extrapolation mode (`NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, `WrapExtrap()`) or per-axis tuple
 - `search=Binary()`: Search policy or per-axis tuple
 
 # Returns
@@ -41,7 +41,7 @@ vals = itp(points)              # Batch AoS
 # Per-axis configuration
 itp = constant_interp((x, y), data;
     side=(:left, :right),
-    extrap=(:none, :wrap),
+    extrap=(NoExtrap(), WrapExtrap()),
     search=(Binary(), LinearBinary())
 )
 ```
@@ -50,7 +50,7 @@ function constant_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
     side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
-    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+    extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary()
 ) where {N, Tv_raw}
     # Validate grid dimensions
@@ -74,25 +74,12 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
-        extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N))
-        @_dispatch_side_nd sides => side_vals begin
-            return ConstantInterpolantND{Tg, Tv, N,
-                typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(side_vals), typeof(searches)}(
-                grids_typed, spacings, Array(data_typed), extrap_vals, side_vals, searches
-            )
-        end
-    else
-        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
-        extraps = _resolve_extrap_nd(extrap, Val(N))
-        @_dispatch_extrap_nd extraps nothing => extrap_vals begin
-            @_dispatch_side_nd sides => side_vals begin
-                return ConstantInterpolantND{Tg, Tv, N,
-                    typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(side_vals), typeof(searches)}(
-                    grids_typed, spacings, Array(data_typed), extrap_vals, side_vals, searches
-                )
-            end
-        end
+    extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N))
+    @_dispatch_side_nd sides => side_vals begin
+        return ConstantInterpolantND{Tg, Tv, N,
+            typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(side_vals), typeof(searches)}(
+            grids_typed, spacings, Array(data_typed), extrap_vals, side_vals, searches
+        )
     end
 end
 

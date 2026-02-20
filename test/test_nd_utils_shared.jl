@@ -24,38 +24,10 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
     # ========================================
     # _resolve_extrap_nd
     # ========================================
-    @testset "_resolve_extrap_nd" begin
-        @testset "broadcast single symbol to N-tuple" begin
-            # Single symbol should broadcast to all axes
-            result = _resolve_extrap_nd(:none, Val(3))
-            @test result === (:none, :none, :none)
-
-            result = _resolve_extrap_nd(:wrap, Val(2))
-            @test result === (:wrap, :wrap)
-
-            result = _resolve_extrap_nd(:constant, Val(4))
-            @test result === (:constant, :constant, :constant, :constant)
-        end
-
-        @testset "passthrough matching tuple" begin
-            # Matching N-tuple should pass through
-            result = _resolve_extrap_nd((:none, :wrap, :constant), Val(3))
-            @test result === (:none, :wrap, :constant)
-        end
-
-        @testset "reject wrong-length tuple" begin
-            # Wrong-length tuple should throw ArgumentError
-            @test_throws ArgumentError _resolve_extrap_nd((:none, :wrap), Val(3))
-            @test_throws ArgumentError _resolve_extrap_nd((:none, :wrap, :constant, :extension), Val(3))
-            @test_throws ArgumentError _resolve_extrap_nd((:none,), Val(2))
-        end
-
-        @testset "reject invalid symbol" begin
-            # Invalid symbol should throw ArgumentError
-            @test_throws ArgumentError _resolve_extrap_nd(:invalid, Val(2))
-            @test_throws ArgumentError _resolve_extrap_nd((:none, :invalid), Val(2))
-        end
-    end
+    # NOTE: Old 2-arg _resolve_extrap_nd(extrap, Val(N)) tests removed.
+    # Symbol-based extrap was removed in v0.3.0.
+    # The 3-arg form _resolve_extrap_nd(extrap, bcs, Val(N)) is tested below
+    # in "Typed Extrap resolution".
 
     # ========================================
     # _resolve_search_nd
@@ -322,9 +294,8 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
             @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(), ConstExtrap()), bcs, Val(2))
         end
 
-        # Note: Symbol 3-arg _resolve_extrap_nd was removed in the fast/legacy refactor.
-        # Symbol dispatch now happens at the public API level (constructor/oneshot),
-        # which calls the 2-arg _resolve_extrap_nd(extrap, Val(N)) internally.
+        # Symbol-based extrap was fully removed in v0.3.0.
+        # Only AbstractExtrap types are accepted.
 
         @testset "_check_mode_periodic_compat" begin
             bcs = (NaturalBC(), PeriodicBC(), NaturalBC())

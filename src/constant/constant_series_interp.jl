@@ -311,7 +311,7 @@ Create a multi-Y constant interpolant for multiple y-data series sharing the sam
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
 - `side`: Side for discontinuities (:left, :right, :nearest)
-- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 
 # Returns
 `ConstantSeriesInterpolant` object with matrix storage.
@@ -332,7 +332,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     side::Symbol=:nearest,
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Check if Tv's float base requires grid widening (not for Int types)
@@ -367,10 +367,8 @@ function constant_interp(
         y_mat[:, k] .= Tv_out.(ys[k])
     end
 
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_side side => side_val begin
-        return ConstantSeriesInterpolant(x, y_mat, mode, side_val, search)
+        return ConstantSeriesInterpolant(x, y_mat, extrap, side_val, search)
     end
 end
 
@@ -397,7 +395,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     side::Symbol=:nearest,
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     # Check if Tv's float base requires grid widening
@@ -421,10 +419,8 @@ function constant_interp(
     Tv_out = _value_type(Tv, Tg)
     y_mat = Tv_out === Tv ? copy(Y) : Tv_out.(Y)
 
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_side side => side_val begin
-        return ConstantSeriesInterpolant(x, y_mat, mode, side_val, search)
+        return ConstantSeriesInterpolant(x, y_mat, extrap, side_val, search)
     end
 end
 
@@ -438,7 +434,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     side::Symbol=:nearest,
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
@@ -452,7 +448,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     side::Symbol=:nearest,
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))

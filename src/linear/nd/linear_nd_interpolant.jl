@@ -22,7 +22,7 @@ The interpolation is exact at grid points and linearly blended between them.
 - `data`: N-dimensional data array where `size(data, d) == length(grids[d])`
 
 # Keyword Arguments
-- `extrap=:none`: Extrapolation mode (`:none`, `:constant`, `:extension`, `:wrap`) or per-axis tuple
+- `extrap=NoExtrap()`: Extrapolation mode (`NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, `WrapExtrap()`) or per-axis tuple
 - `search=Binary()`: Search policy or per-axis tuple
 
 # Returns
@@ -53,7 +53,7 @@ val3d = itp3d((0.5, 1.0, 0.3))
 
 # Per-axis configuration
 itp = linear_interp((x, y), data;
-    extrap=(:none, :wrap),
+    extrap=(NoExtrap(), WrapExtrap()),
     search=(Binary(), LinearBinary())
 )
 ```
@@ -61,7 +61,7 @@ itp = linear_interp((x, y), data;
 function linear_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
-    extrap::Union{Symbol, NTuple{N, Symbol}, AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+    extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary()
 ) where {N, Tv_raw}
     # Validate grid dimensions
@@ -84,20 +84,9 @@ function linear_interp(
     # Resolve per-axis configuration
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
-        extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N))
-        return LinearInterpolantND{Tg, Tv, N,
-            typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches)}(
-            grids_typed, spacings, Array(data_typed), extrap_vals, searches
-        )
-    else
-        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp)
-        extraps = _resolve_extrap_nd(extrap, Val(N))
-        @_dispatch_extrap_nd extraps nothing => extrap_vals begin
-            return LinearInterpolantND{Tg, Tv, N,
-                typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches)}(
-                grids_typed, spacings, Array(data_typed), extrap_vals, searches
-            )
-        end
-    end
+    extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N))
+    return LinearInterpolantND{Tg, Tv, N,
+        typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches)}(
+        grids_typed, spacings, Array(data_typed), extrap_vals, searches
+    )
 end

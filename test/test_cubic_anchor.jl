@@ -10,7 +10,7 @@
     @testset "Anchored evaluation - exact agreement" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:extension)
+        itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
         # Test multiple query points
         for xq in [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
@@ -22,7 +22,7 @@
     @testset "Anchored evaluation - derivatives" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:extension)
+        itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
         for xq in [0.15, 0.5, 0.85]
             aq = FI._anchor_query(x, xq, Val(:cubic))
@@ -36,10 +36,10 @@
         end
     end
 
-    @testset "Anchored evaluation - extrap :none" begin
+    @testset "Anchored evaluation - extrap NoExtrap()" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:none)
+        itp = cubic_interp(x, y; extrap=NoExtrap())
 
         # Inside domain should work
         aq_inside = FI._anchor_query(x, 0.5, Val(:cubic))
@@ -53,10 +53,10 @@
         @test_throws DomainError itp(aq_above)
     end
 
-    @testset "Anchored evaluation - extrap :constant" begin
+    @testset "Anchored evaluation - extrap ConstExtrap()" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:constant)
+        itp = cubic_interp(x, y; extrap=ConstExtrap())
 
         # Below domain returns y[1]
         aq_below = FI._anchor_query(x, -0.5, Val(:cubic))
@@ -71,10 +71,10 @@
         @test itp(aq_above; deriv=2) == 0.0
     end
 
-    @testset "Anchored evaluation - extrap :extension" begin
+    @testset "Anchored evaluation - extrap ExtendExtrap()" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:extension)
+        itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
         # Outside domain uses boundary polynomial
         aq_below = FI._anchor_query(x, -0.1, Val(:cubic))
@@ -84,10 +84,10 @@
         @test itp(aq_above) ≈ itp(1.1) atol=1e-14
     end
 
-    @testset "Anchored evaluation - extrap :wrap" begin
+    @testset "Anchored evaluation - extrap WrapExtrap()" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:wrap)
+        itp = cubic_interp(x, y; extrap=WrapExtrap())
 
         # Wrap extrapolation - anchor must be created with wrap=true
         # to pre-wrap coordinates for :wrap mode
@@ -102,7 +102,7 @@
         y[end] = y[1]  # Ensure periodic
         itp = cubic_interp(x, y; bc=PeriodicBC())
 
-        # Wrap at anchor construction (for extrap=:wrap mode)
+        # Wrap at anchor construction (for extrap=WrapExtrap() mode)
         aq_wrapped = FI._anchor_query(x, 2π + 1.0, Val(:cubic); wrap=true)
         @test itp(aq_wrapped) ≈ itp(1.0) atol=1e-10
     end
@@ -110,7 +110,7 @@
     @testset "Anchored evaluation - Float32" begin
         x32 = Float32.(collect(range(Float32(0), Float32(1), 101)))
         y32 = sin.(Float32(2π) .* x32)
-        itp = cubic_interp(x32, y32; extrap=:extension)
+        itp = cubic_interp(x32, y32; extrap=ExtendExtrap())
 
         xq = Float32(0.35)
         aq = FI._anchor_query(x32, xq, Val(:cubic))
@@ -122,7 +122,7 @@
     @testset "Anchored evaluation - zero allocation" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:extension)
+        itp = cubic_interp(x, y; extrap=ExtendExtrap())
         aq = FI._anchor_query(x, 0.5, Val(:cubic))
 
         # Warmup
@@ -139,9 +139,9 @@
         y2 = cos.(2π .* x)
         y3 = exp.(-3 .* x)
 
-        itp1 = cubic_interp(x, y1; extrap=:extension)
-        itp2 = cubic_interp(x, y2; extrap=:extension)
-        itp3 = cubic_interp(x, y3; extrap=:extension)
+        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
 
         # Create anchor once
         aq = FI._anchor_query(x, 0.35, Val(:cubic))
@@ -321,7 +321,7 @@
     @testset "Vector evaluation - allocating" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:extension)
+        itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
         xq = [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
@@ -333,9 +333,9 @@
         end
     end
 
-    @testset "Vector evaluation - extrap :none" begin
+    @testset "Vector evaluation - extrap NoExtrap()" begin
         x = collect(range(0.0, 1.0, 101))
-        itp = cubic_interp(x, sin.(x); extrap=:none)
+        itp = cubic_interp(x, sin.(x); extrap=NoExtrap())
 
         xq = [-0.1, 0.5, 1.1]  # First is out of domain
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
@@ -343,10 +343,10 @@
         @test_throws DomainError itp(aq_vec)
     end
 
-    @testset "Vector evaluation - extrap :constant" begin
+    @testset "Vector evaluation - extrap ConstExtrap()" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:constant)
+        itp = cubic_interp(x, y; extrap=ConstExtrap())
 
         xq = [-0.5, 0.5, 1.5]
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
@@ -357,10 +357,10 @@
         @test vals[3] ≈ y[end]
     end
 
-    @testset "Vector evaluation - extrap :extension" begin
+    @testset "Vector evaluation - extrap ExtendExtrap()" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:extension)
+        itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
         xq = [-0.1, 0.5, 1.1]
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
@@ -374,7 +374,7 @@
     @testset "Vector evaluation - in-place" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:extension)
+        itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
         xq = [0.15, 0.35, 0.5, 0.75]
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
@@ -391,7 +391,7 @@
     @testset "Vector evaluation - derivatives" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:extension)
+        itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
         xq = [0.15, 0.5, 0.85]
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
@@ -414,10 +414,10 @@
         @test_throws AssertionError itp(output, aq_vec)
     end
 
-    @testset "Vector evaluation - extrap :constant derivatives" begin
+    @testset "Vector evaluation - extrap ConstExtrap() derivatives" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:constant)
+        itp = cubic_interp(x, y; extrap=ConstExtrap())
 
         xq = [-0.5, 0.5, 1.5]
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
@@ -460,7 +460,7 @@
     @testset "Vector evaluation - wrap=true" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:wrap)
+        itp = cubic_interp(x, y; extrap=WrapExtrap())
 
         xq = [-0.3, 1.3, 2.5]
         aq_vec = FI._anchor_query(x, xq, Val(:cubic); wrap=true)
@@ -479,7 +479,7 @@
     @testset "Scalar anchored derivatives - zero allocation" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:extension)
+        itp = cubic_interp(x, y; extrap=ExtendExtrap())
         aq = FI._anchor_query(x, 0.5, Val(:cubic))
 
         # Warmup all derivative orders
@@ -503,7 +503,7 @@
     @testset "Vector in-place derivatives - zero allocation" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:extension)
+        itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
         xq = collect(range(0.1, 0.9, 50))
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
@@ -652,7 +652,7 @@
         @testset "Deriv2/3 correctness with anchored query" begin
             x = collect(range(0.0, 1.0, 101))
             y = sin.(2π .* x)
-            itp = cubic_interp(x, y; extrap=:extension)
+            itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
             # Test multiple query points including boundaries and interior
             test_points = [0.0, 0.15, 0.35, 0.5, 0.75, 0.99, 1.0]
@@ -676,7 +676,7 @@
         @testset "Type stability for deriv2/3" begin
             x = collect(range(0.0, 1.0, 101))
             y = sin.(2π .* x)
-            itp = cubic_interp(x, y; extrap=:extension)
+            itp = cubic_interp(x, y; extrap=ExtendExtrap())
             aq = FI._anchor_query(x, 0.5, Val(:cubic))
 
             # Scalar anchored evaluation should be type-stable
@@ -702,7 +702,7 @@
             y = sin.(2π .* x)
 
             # Test :extension mode
-            itp_ext = cubic_interp(x, y; extrap=:extension)
+            itp_ext = cubic_interp(x, y; extrap=ExtendExtrap())
             aq_below = FI._anchor_query(x, -0.1, Val(:cubic))
             aq_above = FI._anchor_query(x, 1.1, Val(:cubic))
 
@@ -710,7 +710,7 @@
             @test itp_ext(aq_above; deriv=3) ≈ itp_ext(1.1; deriv=3) atol=1e-12
 
             # Test :constant mode (derivatives should be zero outside domain)
-            itp_const = cubic_interp(x, y; extrap=:constant)
+            itp_const = cubic_interp(x, y; extrap=ConstExtrap())
             @test itp_const(aq_below; deriv=2) == 0.0
             @test itp_const(aq_above; deriv=3) == 0.0
         end
@@ -719,7 +719,7 @@
         @testset "Zero allocation for deriv2/3 anchored evaluation" begin
             x = collect(range(0.0, 1.0, 101))
             y = sin.(2π .* x)
-            itp = cubic_interp(x, y; extrap=:extension)
+            itp = cubic_interp(x, y; extrap=ExtendExtrap())
             aq = FI._anchor_query(x, 0.5, Val(:cubic))
 
             # Warmup

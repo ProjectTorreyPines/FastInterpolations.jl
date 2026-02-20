@@ -1895,14 +1895,7 @@ end
 end
 
 @testset "BC Types Coverage (bc_types.jl)" begin
-    # 1. ParabolaFit deprecation
-    # Check that it warns and returns a QuadraticFit
-    @test_logs (:warn, r"ParabolaFit is deprecated") begin
-        bc = FastInterpolations.ParabolaFit()
-        @test bc isa FastInterpolations.QuadraticFit
-    end
-
-    # 2. _is_periodic_bc
+    # 1. _is_periodic_bc
     @test FastInterpolations._is_periodic_bc(PeriodicBC())
     @test !FastInterpolations._is_periodic_bc(NaturalBC())
     @test !FastInterpolations._is_periodic_bc(LinearFit())

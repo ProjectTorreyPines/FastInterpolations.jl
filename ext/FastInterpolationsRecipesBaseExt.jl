@@ -6,7 +6,7 @@
 #
 # Usage:
 #   using FastInterpolations, Plots
-#   itp = cubic_interp(x, y; extrap=:constant)
+#   itp = cubic_interp(x, y; extrap=ConstExtrap())
 #   plot(itp)  # automatic documentation-style visualization
 
 module FastInterpolationsRecipesBaseExt
@@ -229,7 +229,7 @@ Generates multiple series:
     show_data = isnothing(show_data_opt) ? (n_data < SCATTER_THRESHOLD) : show_data_opt
 
     # Compute ylims based on extrapolation mode:
-    # - extrap=:none → use only original data (y_vec)
+    # - extrap=NoExtrap() → use only original data (y_vec)
     # - extrap enabled → use both data and extrapolated curve (yq) for balanced view
     # User-provided ylims override auto-computed limits
     if !isnothing(user_ylims)
@@ -394,7 +394,7 @@ end
     yq_matrix = reduce(hcat, yq_all)'  # n_samples x n_series
 
     # Compute ylims based on extrapolation mode:
-    # - extrap=:none → use only original data (Y)
+    # - extrap=NoExtrap() → use only original data (Y)
     # - extrap enabled → use both data and extrapolated curve for balanced view
     # User-provided ylims override auto-computed limits
     if !isnothing(user_ylims)
@@ -713,7 +713,7 @@ _default_2d_margin(grid) = eltype(grid)(0.15) * (last(grid) - first(grid))
 """
     _has_extrap(itp::AbstractInterpolantND) -> Bool
 
-Check if any axis of an ND interpolant has extrapolation enabled (not `:none`).
+Check if any axis of an ND interpolant has extrapolation enabled (not `NoExtrap`).
 """
 _has_extrap(itp::AbstractInterpolantND) = any(e -> !(e isa NoExtrap), itp.extraps)
 

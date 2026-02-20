@@ -270,7 +270,7 @@ end
         x = Float32.(collect(range(0.0, 1.0, 11)))
         y = Float32.(x .^ 2)
 
-        itp = linear_interp(x, y; extrap=:none)
+        itp = linear_interp(x, y; extrap=NoExtrap())
 
         # Float64 query in domain
         xq_in = [0.1, 0.5, 0.9]

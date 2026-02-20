@@ -79,7 +79,7 @@
         x_query_small = [-0.5, 0.25, 0.75, 1.5]
 
         cache_small = CubicSplineCache(x_small)
-        result = cubic_interp(cache_small, y_small, x_query_small; extrap=:extension)
+        result = cubic_interp(cache_small, y_small, x_query_small; extrap=ExtendExtrap())
         @test all(isfinite, result)
 
         # Query at grid points (should return close to exact values)
@@ -100,13 +100,13 @@
         x = collect(range(0.0, 1.0, 11))
         y = sin.(2π .* x)
 
-        # Default extrapolation is :none, should throw DomainError
+        # Default extrapolation is NoExtrap(), should throw DomainError
         @test_throws DomainError cubic_interp(x, y, -0.1)
         @test_throws DomainError cubic_interp(x, y, 1.1)
 
         # Explicit :none also throws
-        @test_throws DomainError cubic_interp(x, y, -0.5; extrap=:none)
-        @test_throws DomainError cubic_interp(x, y, 1.5; extrap=:none)
+        @test_throws DomainError cubic_interp(x, y, -0.5; extrap=NoExtrap())
+        @test_throws DomainError cubic_interp(x, y, 1.5; extrap=NoExtrap())
 
         # Vector query - first out-of-domain point throws
         @test_throws DomainError cubic_interp(x, y, [-0.1, 0.5])
@@ -140,53 +140,31 @@
         @test cubic_interp(x, y, 1.0) ≈ y[end]
     end
 
-    @testset "Invalid extrap symbol - ArgumentError" begin
-        x = collect(range(0.0, 1.0, 11))
-        y = sin.(2π .* x)
-
-        # Invalid extrap symbol should throw ArgumentError
-        @test_throws ArgumentError cubic_interp(x, y, 0.5; extrap=:invalid)
-        @test_throws ArgumentError cubic_interp(x, y, 0.5; extrap=:foo)
-        @test_throws ArgumentError cubic_interp(x, y, [0.5]; extrap=:invalid)
-
-        # With cache
-        cache = CubicSplineCache(x)
-        @test_throws ArgumentError cubic_interp(cache, y, 0.5; extrap=:invalid)
-        @test_throws ArgumentError cubic_interp(cache, y, [0.5]; extrap=:invalid)
-
-        # In-place version
-        output = zeros(1)
-        @test_throws ArgumentError cubic_interp!(output, x, y, [0.5]; extrap=:invalid)
-        @test_throws ArgumentError cubic_interp!(output, cache, y, [0.5]; extrap=:invalid)
-
-        # Interpolant via cubic_interp(x, y)
-        @test_throws ArgumentError cubic_interp(x, y; extrap=:invalid)
-    end
 
     @testset "Extrapolation :constant" begin
         x = collect(range(0.0, 1.0, 11))
         y = sin.(2π .* x)
 
         # Left boundary - returns y[1]
-        result_left = cubic_interp(x, y, -0.5; extrap=:constant)
+        result_left = cubic_interp(x, y, -0.5; extrap=ConstExtrap())
         @test result_left ≈ y[1]
 
         # Right boundary - returns y[end]
-        result_right = cubic_interp(x, y, 1.5; extrap=:constant)
+        result_right = cubic_interp(x, y, 1.5; extrap=ConstExtrap())
         @test result_right ≈ y[end]
 
         # Vector query
-        result = cubic_interp(x, y, [-0.5, 0.5, 1.5]; extrap=:constant)
+        result = cubic_interp(x, y, [-0.5, 0.5, 1.5]; extrap=ConstExtrap())
         @test result[1] ≈ y[1]
         @test result[3] ≈ y[end]
 
         # With cache
         cache = CubicSplineCache(x)
-        @test cubic_interp(cache, y, -0.5; extrap=:constant) ≈ y[1]
-        @test cubic_interp(cache, y, 1.5; extrap=:constant) ≈ y[end]
+        @test cubic_interp(cache, y, -0.5; extrap=ConstExtrap()) ≈ y[1]
+        @test cubic_interp(cache, y, 1.5; extrap=ConstExtrap()) ≈ y[end]
 
         # Callable interpolant with :constant
-        itp = cubic_interp(x, y; extrap=:constant)
+        itp = cubic_interp(x, y; extrap=ConstExtrap())
         @test itp(-0.5) ≈ y[1]
         @test itp(1.5) ≈ y[end]
     end
@@ -404,14 +382,14 @@ end
         y_int = [sin(2π * i / 10) for i in x_int]
         x_extrap = [-1.0, 11.0]
 
-        result = cubic_interp(x_int, y_int, x_extrap; extrap=:extension)
+        result = cubic_interp(x_int, y_int, x_extrap; extrap=ExtendExtrap())
         @test result isa Vector{Float64}
         @test all(isfinite, result)
 
         x_float = collect(Float64.(x_int))
         y_float = Float64.(y_int)
 
-        result_ref = cubic_interp(x_float, y_float, x_extrap; extrap=:extension)
+        result_ref = cubic_interp(x_float, y_float, x_extrap; extrap=ExtendExtrap())
         @test result == result_ref
     end
 
@@ -482,13 +460,13 @@ end
         @test output[1] ≈ sin(π) atol=1e-6
 
         # Test with different extrap modes
-        cubic_interp!(output, cache, y, 0.25; extrap=:none)
+        cubic_interp!(output, cache, y, 0.25; extrap=NoExtrap())
         @test isfinite(output[1])
 
-        cubic_interp!(output, cache, y, -0.1; extrap=:constant)
+        cubic_interp!(output, cache, y, -0.1; extrap=ConstExtrap())
         @test output[1] ≈ y[1]
 
-        cubic_interp!(output, cache, y, 1.1; extrap=:extension)
+        cubic_interp!(output, cache, y, 1.1; extrap=ExtendExtrap())
         @test isfinite(output[1])
     end
 

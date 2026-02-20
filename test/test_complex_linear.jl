@@ -146,19 +146,19 @@ using FastInterpolations
         y = (1.0 + 2.0im) .* x
 
         # Extension mode
-        itp_ext = linear_interp(x, y; extrap=:extension)
+        itp_ext = linear_interp(x, y; extrap=ExtendExtrap())
         val_ext = itp_ext(1.5)  # Beyond domain
         @test val_ext isa ComplexF64
         @test isapprox(val_ext, (1.0 + 2.0im) * 1.5, rtol=1e-10)
 
         # Constant mode
-        itp_const = linear_interp(x, y; extrap=:constant)
+        itp_const = linear_interp(x, y; extrap=ConstExtrap())
         val_const = itp_const(1.5)  # Beyond domain
         @test val_const isa ComplexF64
         @test isapprox(val_const, y[end], rtol=1e-10)
 
         # Wrap mode
-        itp_wrap = linear_interp(x, y; extrap=:wrap)
+        itp_wrap = linear_interp(x, y; extrap=WrapExtrap())
         val_wrap = itp_wrap(1.5)  # Should wrap to 0.5
         @test val_wrap isa ComplexF64
     end

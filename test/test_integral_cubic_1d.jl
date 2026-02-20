@@ -4,7 +4,7 @@ using FastInterpolations
 @testset "integrate cubic 1d in-domain" begin
     x = collect(range(0.0, 1.0, length=41))
     y = @. x^3 - 2x + 1
-    itp = cubic_interp(x, y; extrap=:none)
+    itp = cubic_interp(x, y; extrap=NoExtrap())
 
     @testset "full-domain parity" begin
         @test integrate(itp) ≈ integrate(itp, first(x), last(x)) atol=1e-12

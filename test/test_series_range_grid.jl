@@ -150,7 +150,7 @@ const FI = FastInterpolations
     # ========================================
 
     @testset "extrapolation modes" begin
-        for extrap in [:constant, :extension]
+        for extrap in [ConstExtrap(), ExtendExtrap()]
             @testset "LinearSeriesInterpolant extrap=$extrap" begin
                 sitp = linear_interp(x_range, ys; extrap=extrap)
 

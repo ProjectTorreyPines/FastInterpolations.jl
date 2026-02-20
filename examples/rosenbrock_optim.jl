@@ -25,8 +25,8 @@ xg = range(-0.7, 1.5, length=101)
 yg = range(-0.7, 1.5, length=101)
 zg = [rosenbrock(xi, yi) for xi in xg, yi in yg]
 
-# extrap=:extension allows trust-region steps outside the grid without error
-itp = cubic_interp((xg, yg), zg; extrap=:extension, bc=CubicFit())
+# ExtendExtrap() allows trust-region steps outside the grid without error
+itp = cubic_interp((xg, yg), zg; extrap=ExtendExtrap(), bc=CubicFit())
 
 x0 = [-0.15, 0.6]
 

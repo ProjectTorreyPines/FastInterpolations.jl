@@ -21,9 +21,9 @@ Handle extrapolation for constant interpolation.
 - EvalValue: returns boundary value (y[1] or y[end])
 - EvalDeriv1/EvalDeriv2: returns zero (constant function)
 
-Note: :none and :wrap modes never reach this function.
-- :none throws DomainError via _check_domain
-- :wrap is handled in _constant_eval_at_point before extrap check
+Note: NoExtrap and WrapExtrap modes never reach this function.
+- NoExtrap throws DomainError via _check_domain
+- WrapExtrap is handled in _constant_eval_at_point before extrap check
 
 Type parameters:
 - Tg: Grid type (AbstractFloat) for xi, x_min, x_max
@@ -61,7 +61,7 @@ end
     return zero(Tv)
 end
 
-# :extension delegates to :constant (slope=0 for constant function)
+# ExtendExtrap delegates to ConstExtrap (slope=0 for constant function)
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
     ::ExtendExtrap, side::SideVal, op::AbstractEvalOp
@@ -76,8 +76,8 @@ end
 Core constant interpolation evaluation with search policy.
 
 Evaluation flow:
-1. Domain check (:none mode → DomainError if outside)
-2. :wrap mode → wrap to [x_min, x_max) and evaluate
+1. Domain check (NoExtrap → DomainError if outside)
+2. WrapExtrap → wrap to [x_min, x_max) and evaluate
 3. Boundary check (xi == x_max → y[end] for non-wrap modes)
 4. Extrapolation check (xi outside domain → extrap handling)
 5. Interval search → kernel evaluation
@@ -104,13 +104,13 @@ AD Support:
     xi_primal = _extract_primal(xi)
     xi_typed = Tg(xi_primal)
 
-    # Domain check for :none mode (throws DomainError)
+    # Domain check for NoExtrap mode (throws DomainError)
     @boundscheck _check_domain(x, xi_typed, extrap)
 
     x_min, x_max = first(x), last(x)
 
-    # :wrap mode handles all cases (inside and outside domain)
-    # For :wrap, the query is wrapped to domain, so use wrapped position for dL
+    # WrapExtrap mode handles all cases (inside and outside domain)
+    # For WrapExtrap, the query is wrapped to domain, so use wrapped position for dL
     # (AD derivative is zero for constant interp regardless)
     if extrap isa WrapExtrap
         xi_wrapped = _wrap_to_domain(xi_typed, x_min, x_max)
@@ -126,7 +126,7 @@ AD Support:
         return op isa EvalValue ? (@inbounds y[end]) : zero(Tv)
     end
 
-    # Extrapolation handling (:constant, :extension)
+    # Extrapolation handling (ConstExtrap, ExtendExtrap)
     if xi_typed < x_min || xi_typed > x_max
         return _constant_eval_extrap(y, xi_typed, x_min, x_max, extrap, side, op)
     end
@@ -157,7 +157,7 @@ Constant (step/piecewise constant) interpolation at a single point.
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (same length as x)
 - `xi::Real`: Query point
-- `extrap::AbstractExtrap`: Extrapolation mode (Symbol args deprecated)
+- `extrap::AbstractExtrap`: Extrapolation mode
   - `NoExtrap()` (default): throws DomainError if outside domain
   - `ConstExtrap()`: clamp to boundary values
   - `ExtendExtrap()`: same as ConstExtrap (slope=0)
@@ -197,7 +197,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xi::Tq;
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search=Binary(),
@@ -206,11 +206,9 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _to_searcher(search, hint)
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
         @_dispatch_side side => sv begin
-            _constant_eval_at_point(x, y, xi, mode, sv, op, searcher)
+            _constant_eval_at_point(x, y, xi, extrap, sv, op, searcher)
         end
     end
 end
@@ -220,7 +218,7 @@ end
 # ========================================
 
 """
-    constant_interp!(output, x, y, x_targets; extrap=:none, side=:nearest, deriv=0, search=Binary())
+    constant_interp!(output, x, y, x_targets; extrap=NoExtrap(), side=:nearest, deriv=0, search=Binary())
 
 Zero-allocation constant interpolation for multiple query points.
 
@@ -249,7 +247,7 @@ function constant_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -258,13 +256,11 @@ function constant_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _to_searcher(search)
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp!)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
         @_dispatch_side side => sv begin
-            @boundscheck _check_domain(x, x_targets, mode)
+            @boundscheck _check_domain(x, x_targets, extrap)
             @inbounds for i in eachindex(x_targets, output)
-                output[i] = _constant_eval_at_point(x, y, x_targets[i], mode, sv, op, searcher)
+                output[i] = _constant_eval_at_point(x, y, x_targets[i], extrap, sv, op, searcher)
             end
         end
     end
@@ -276,7 +272,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, x_targets; extrap=:none, side=:nearest, deriv=0, search=Binary())
+    constant_interp(x, y, x_targets; extrap=NoExtrap(), side=:nearest, deriv=0, search=Binary())
 
 Constant interpolation for multiple query points (allocating version).
 
@@ -296,7 +292,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -323,7 +319,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xi::Tq;
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search=Binary(),
@@ -343,7 +339,7 @@ function constant_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -364,7 +360,7 @@ function constant_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     side::Symbol=:nearest,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()

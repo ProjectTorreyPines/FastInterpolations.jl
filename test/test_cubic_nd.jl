@@ -146,12 +146,12 @@ end
         data = [xi * yj for xi in x, yj in y]
 
         # :none (default) - should throw outside domain
-        itp_none = cubic_interp((x, y), data; extrap=:none)
+        itp_none = cubic_interp((x, y), data; extrap=NoExtrap())
         @test_throws DomainError itp_none((-0.1, 0.5))
         @test_throws DomainError itp_none((0.5, -0.1))
 
         # :constant - clamp to boundary
-        itp_const = cubic_interp((x, y), data; extrap=:constant)
+        itp_const = cubic_interp((x, y), data; extrap=ConstExtrap())
         @test itp_const((-0.1, 0.5)) ≈ itp_const((0.0, 0.5))
         @test itp_const((2.1, 0.5)) ≈ itp_const((2.0, 0.5))
     end

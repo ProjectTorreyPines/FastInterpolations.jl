@@ -12,7 +12,7 @@
 # - Type param (Float64): light_blue
 # - Labels & box chars: light_black
 # - Values (Grid, Search, BC, etc.): default (terminal text color)
-# - Symbols only (:none, :wrap, etc.): magenta
+# - Extrap types (NoExtrap, WrapExtrap, etc.): magenta
 
 # ========================================
 # Helper Functions
@@ -102,17 +102,12 @@ function _show_grid_row(io::IO, is_last::Bool, x::AbstractVector)
     print(io, ", $n points ∈ [$x_min_str, $x_max_str]")
 end
 
-"""Format extrapolation mode from AbstractExtrap or ExtrapVal."""
+"""Format extrapolation mode from AbstractExtrap."""
 function _format_extrap(mode)
     mode isa NoExtrap && return "NoExtrap"
     mode isa ConstExtrap && return "ConstExtrap"
     mode isa ExtendExtrap && return "ExtendExtrap"
     mode isa WrapExtrap && return "WrapExtrap"
-    # Val fallback for legacy/internal callers
-    mode === Val(:none) && return "NoExtrap"
-    mode === Val(:constant) && return "ConstExtrap"
-    mode === Val(:extension) && return "ExtendExtrap"
-    mode === Val(:wrap) && return "WrapExtrap"
     return "unknown"
 end
 

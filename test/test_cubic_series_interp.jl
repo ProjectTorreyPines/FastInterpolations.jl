@@ -105,10 +105,10 @@ end
     end
 
     @testset "Extrap is AbstractExtrap type" begin
-        mitp_ext = cubic_interp(x, [y1, y2]; extrap=:extension)
+        mitp_ext = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
         @test mitp_ext.extrap === ExtendExtrap()
 
-        mitp_const = cubic_interp(x, [y1, y2]; extrap=:constant)
+        mitp_const = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
         @test mitp_const.extrap === ConstExtrap()
     end
 end
@@ -197,15 +197,15 @@ end
         @test mitp.cache.x isa AbstractRange
     end
 
-    @testset "PeriodicBC forces :wrap extrap" begin
+    @testset "PeriodicBC forces WrapExtrap() extrap" begin
         # Create periodic data (endpoints match)
         y_periodic = sin.(2π .* x)  # sin(0) = sin(2π) = 0
 
-        mitp = cubic_interp(x, [y_periodic]; bc=PeriodicBC(), extrap=:none)
+        mitp = cubic_interp(x, [y_periodic]; bc=PeriodicBC(), extrap=NoExtrap())
         @test mitp.extrap === WrapExtrap()
 
         # Even if user requests :extension, periodic BC should override to :wrap
-        mitp2 = cubic_interp(x, [y_periodic]; bc=PeriodicBC(), extrap=:extension)
+        mitp2 = cubic_interp(x, [y_periodic]; bc=PeriodicBC(), extrap=ExtendExtrap())
         @test mitp2.extrap === WrapExtrap()
     end
 end
@@ -431,7 +431,7 @@ end
         @test snap_after !== nothing
     end
 
-    @testset ":wrap extrapolation scalar SIMD path" begin
+    @testset "WrapExtrap() extrapolation scalar SIMD path" begin
         # Create periodic data (endpoints match)
         y_periodic = sin.(2π .* x)  # sin(0) = sin(2π) = 0
         y_periodic2 = cos.(2π .* x)  # cos(0) = cos(2π) = 1
@@ -439,7 +439,7 @@ end
 
         mitp = cubic_interp(x, [y_periodic, y_periodic2]; bc=PeriodicBC())
 
-        # Query outside domain triggers :wrap extrapolation
+        # Query outside domain triggers WrapExtrap() extrapolation
         out = zeros(2)
         mitp(out, -0.1)  # Below domain
         @test !any(isnan, out)
@@ -499,8 +499,8 @@ end
         @test_throws DimensionMismatch mitp(outputs_bad_len, aq_vec)
     end
 
-    @testset "Vector extrapolation :extension mode" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=:extension)
+    @testset "Vector extrapolation ExtendExtrap() mode" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
@@ -510,8 +510,8 @@ end
         @test !any(isnan, outputs[2])
     end
 
-    @testset "Vector extrapolation :constant mode" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=:constant)
+    @testset "Vector extrapolation ConstExtrap() mode" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
@@ -522,7 +522,7 @@ end
         @test outputs[1][3] ≈ y1[end] atol=1e-10  # Above domain → last value
     end
 
-    @testset "Vector extrapolation :wrap mode (periodic)" begin
+    @testset "Vector extrapolation WrapExtrap() mode (periodic)" begin
         y_periodic = sin.(2π .* x)
         y_periodic2 = cos.(2π .* x)
         y_periodic2[end] = y_periodic2[1]
@@ -537,8 +537,8 @@ end
         @test !any(isnan, outputs[2])
     end
 
-    @testset "Scalar extrapolation :constant with derivative" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=:constant)
+    @testset "Scalar extrapolation ConstExtrap() with derivative" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
 
         # First derivative outside domain should be zero
         out1 = zeros(2)
@@ -567,8 +567,8 @@ end
         @test out_val[2] ≈ y2[1] atol=1e-10
     end
 
-    @testset "Vector extrapolation :constant with derivative" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=:constant)
+    @testset "Vector extrapolation ConstExtrap() with derivative" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
@@ -580,7 +580,7 @@ end
     end
 
     @testset "DomainError message includes bounds" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=:none)
+        mitp = cubic_interp(x, [y1, y2]; extrap=NoExtrap())
 
         # Scalar path
         err = try
@@ -713,12 +713,9 @@ end
     end
 
     @testset "Extrap propagation" begin
-        expected = Dict(:none => NoExtrap(), :constant => ConstExtrap(),
-                        :extension => ExtendExtrap(), :wrap => WrapExtrap())
-        for extrap_mode in (:none, :constant, :extension, :wrap)
+        for extrap_mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
             mitp = cubic_interp(x, [y1, y2]; extrap=extrap_mode)
-            # Unified struct stores AbstractExtrap singleton
-            @test mitp.extrap === expected[extrap_mode]
+            @test mitp.extrap === extrap_mode
         end
     end
 end
@@ -735,7 +732,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=:extension)
+    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
 
     @testset "Returns Vector with correct values" begin
         result = mitp(0.35)
@@ -743,9 +740,9 @@ end
         @test length(result) == 3
 
         # Individual results match standalone interpolants
-        itp1 = cubic_interp(x, y1; extrap=:extension)
-        itp2 = cubic_interp(x, y2; extrap=:extension)
-        itp3 = cubic_interp(x, y3; extrap=:extension)
+        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
 
         @test result[1] ≈ itp1(0.35) atol=1e-14
         @test result[2] ≈ itp2(0.35) atol=1e-14
@@ -753,9 +750,9 @@ end
     end
 
     @testset "Derivatives via deriv keyword" begin
-        itp1 = cubic_interp(x, y1; extrap=:extension)
-        itp2 = cubic_interp(x, y2; extrap=:extension)
-        itp3 = cubic_interp(x, y3; extrap=:extension)
+        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
 
         # First derivative
         d1 = mitp(0.5; deriv=1)
@@ -786,7 +783,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=:extension)
+    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
 
     @testset "Fills output correctly" begin
         output = Vector{Float64}(undef, 3)
@@ -794,9 +791,9 @@ end
 
         @test result === output  # Returns same reference
 
-        itp1 = cubic_interp(x, y1; extrap=:extension)
-        itp2 = cubic_interp(x, y2; extrap=:extension)
-        itp3 = cubic_interp(x, y3; extrap=:extension)
+        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
 
         @test output[1] ≈ itp1(0.35) atol=1e-14
         @test output[2] ≈ itp2(0.35) atol=1e-14
@@ -812,7 +809,7 @@ end
         output = Vector{Float64}(undef, 3)
         mitp(output, 0.5; deriv=1)
 
-        itp1 = cubic_interp(x, y1; extrap=:extension)
+        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
         @test output[1] ≈ itp1(0.5; deriv=1) atol=1e-14
     end
 end
@@ -824,8 +821,8 @@ end
     y1 = sin.(2π .* x)
     y2 = cos.(2π .* x)
 
-    @testset "extrap=:none - throws DomainError" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=:none)
+    @testset "extrap=NoExtrap() - throws DomainError" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=NoExtrap())
 
         # Inside domain works
         @test isfinite(mitp(0.5)[1])
@@ -835,8 +832,8 @@ end
         @test_throws DomainError mitp(1.1)
     end
 
-    @testset "extrap=:constant - boundary values" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=:constant)
+    @testset "extrap=ConstExtrap() - boundary values" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
 
         below = mitp(-0.5)
         @test below[1] ≈ y1[1]
@@ -847,10 +844,10 @@ end
         @test above[2] ≈ y2[end]
     end
 
-    @testset "extrap=:extension - boundary polynomial" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=:extension)
-        itp1 = cubic_interp(x, y1; extrap=:extension)
-        itp2 = cubic_interp(x, y2; extrap=:extension)
+    @testset "extrap=ExtendExtrap() - boundary polynomial" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
 
         below = mitp(-0.1)
         @test below[1] ≈ itp1(-0.1) atol=1e-14
@@ -861,13 +858,13 @@ end
         @test above[2] ≈ itp2(1.1) atol=1e-14
     end
 
-    @testset "extrap=:wrap - wrapped coordinates" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=:wrap)
+    @testset "extrap=WrapExtrap() - wrapped coordinates" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=WrapExtrap())
 
         # Query outside domain should wrap
         result = mitp(1.35)  # wraps to 0.35
-        expected1 = cubic_interp(x, y1; extrap=:wrap)(1.35)
-        expected2 = cubic_interp(x, y2; extrap=:wrap)(1.35)
+        expected1 = cubic_interp(x, y1; extrap=WrapExtrap())(1.35)
+        expected2 = cubic_interp(x, y2; extrap=WrapExtrap())(1.35)
 
         @test result[1] ≈ expected1 atol=1e-14
         @test result[2] ≈ expected2 atol=1e-14
@@ -886,7 +883,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=:extension)
+    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
     xq = [0.15, 0.35, 0.5, 0.75]
 
     @testset "Returns container of Vector{T}" begin
@@ -900,9 +897,9 @@ end
     @testset "Results match individual interpolants" begin
         result = mitp(xq)
 
-        itp1 = cubic_interp(x, y1; extrap=:extension)
-        itp2 = cubic_interp(x, y2; extrap=:extension)
-        itp3 = cubic_interp(x, y3; extrap=:extension)
+        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
 
         @test result[1] ≈ itp1(xq) atol=1e-14
         @test result[2] ≈ itp2(xq) atol=1e-14
@@ -910,10 +907,10 @@ end
     end
 
     @testset "Derivatives with vector queries" begin
-        itp1 = cubic_interp(x, y1; extrap=:extension)
-        itp2 = cubic_interp(x, y2; extrap=:extension)
+        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
 
-        mitp2 = cubic_interp(x, [y1, y2]; extrap=:extension)
+        mitp2 = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
 
         d1 = mitp2(xq; deriv=1)
         @test d1[1] ≈ itp1(xq; deriv=1) atol=1e-14
@@ -933,7 +930,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=:extension)
+    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
     xq = collect(range(0.1, 0.9, 50))
 
     @testset "Fills all buffers correctly" begin
@@ -946,9 +943,9 @@ end
 
         @test result === outputs  # Returns same reference
 
-        itp1 = cubic_interp(x, y1; extrap=:extension)
-        itp2 = cubic_interp(x, y2; extrap=:extension)
-        itp3 = cubic_interp(x, y3; extrap=:extension)
+        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
 
         @test out1 ≈ itp1(xq) atol=1e-14
         @test out2 ≈ itp2(xq) atol=1e-14
@@ -994,7 +991,7 @@ end
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
         mitp(outputs, aq_vec; deriv=1)
 
-        itp1 = cubic_interp(x, y1; extrap=:extension)
+        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
         # Use same anchored path for comparison
         expected = Vector{Float64}(undef, 50)
         itp1(expected, aq_vec; deriv=1)
@@ -1009,15 +1006,15 @@ end
     y1 = sin.(2π .* x)
     y2 = cos.(2π .* x)
 
-    @testset "extrap=:none - throws on out-of-domain" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=:none)
+    @testset "extrap=NoExtrap() - throws on out-of-domain" begin
+        mitp = cubic_interp(x, [y1, y2]; extrap=NoExtrap())
         xq_bad = [-0.1, 0.5, 1.1]
 
         @test_throws DomainError mitp(xq_bad)
     end
 
     @testset "All extrap modes work with vector" begin
-        for mode in (:constant, :extension, :wrap)
+        for mode in (ConstExtrap(), ExtendExtrap(), WrapExtrap())
             mitp = cubic_interp(x, [y1, y2]; extrap=mode)
             xq = [0.15, 0.5, 0.85]
             result = mitp(xq)
@@ -1220,7 +1217,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=:extension)
+    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
 
     @testset "zero allocation after warmup (same size)" begin
         xq = collect(range(0.1, 0.9, 100))
@@ -1313,18 +1310,18 @@ end
 @testset "CubicSeriesInterpolant - Scalar Extension Extrapolation with Derivatives" begin
     FI = FastInterpolations
 
-    # Setup: create interpolant with :extension extrapolation
+    # Setup: create interpolant with ExtendExtrap() extrapolation
     x = collect(range(0.0, 1.0, 101))
     y1 = sin.(2π .* x)
     y2 = cos.(2π .* x)
     y3 = x .^ 3 .- 2 .* x .^ 2 .+ x  # polynomial for easy derivative verification
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=:extension)
+    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
 
     # Create individual interpolants for reference comparison
-    itp1 = cubic_interp(x, y1; extrap=:extension)
-    itp2 = cubic_interp(x, y2; extrap=:extension)
-    itp3 = cubic_interp(x, y3; extrap=:extension)
+    itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
+    itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
+    itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
 
     @testset "deriv=1 outside domain (left side, xq < 0)" begin
         xq = -0.15  # Outside domain on left
@@ -1470,7 +1467,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=:extension)
+    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
     xq = collect(range(0.1, 0.9, 50))
 
     @testset "Container in-place with derivatives - zero allocation (deriv=1)" begin
@@ -1519,9 +1516,9 @@ end
         mitp(outputs, aq_vec; deriv=1)
 
         # Compare with individual interpolants
-        itp1 = cubic_interp(x, y1; extrap=:extension)
-        itp2 = cubic_interp(x, y2; extrap=:extension)
-        itp3 = cubic_interp(x, y3; extrap=:extension)
+        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
 
         expected1 = Vector{Float64}(undef, 50)
         expected2 = Vector{Float64}(undef, 50)
@@ -1899,7 +1896,7 @@ end
     xq_out = [-0.15, -0.05, 0.5, 1.05, 1.15]
 
     @testset ":extension mode with pre-built anchors" begin
-        mitp = cubic_interp(x, [y1, y2, y3]; extrap=:extension)
+        mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
 
         # Pre-build anchors (will have side != 0x00 for out-of-domain points)
         aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
@@ -1929,7 +1926,7 @@ end
     end
 
     @testset ":constant mode with pre-built anchors" begin
-        mitp = cubic_interp(x, [y1, y2, y3]; extrap=:constant)
+        mitp = cubic_interp(x, [y1, y2, y3]; extrap=ConstExtrap())
 
         aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
         outputs = [similar(xq_out) for _ in 1:3]
@@ -1961,7 +1958,7 @@ end
     end
 
     @testset ":none mode with pre-built anchors throws DomainError" begin
-        mitp = cubic_interp(x, [y1, y2, y3]; extrap=:none)
+        mitp = cubic_interp(x, [y1, y2, y3]; extrap=NoExtrap())
 
         aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
         outputs = [similar(xq_out) for _ in 1:3]

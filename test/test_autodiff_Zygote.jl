@@ -42,7 +42,7 @@ end
         y_complex = (2.0 + 1.0im) .* x .+ (1.0 - 1.0im)
 
         @testset "Single Interpolant - Real" begin
-            itp = linear_interp(x, y_linear; extrap=:extension)
+            itp = linear_interp(x, y_linear; extrap=ExtendExtrap())
 
             @testset "gradient matches ForwardDiff" begin
                 for xq in [0.25, 1.0, 2.5, 3.75, 4.5]
@@ -72,7 +72,7 @@ end
         @testset "Single Interpolant - Complex via real/imag" begin
             # Zygote doesn't support complex output directly
             # Must use real() or imag() for scalar output
-            itp = linear_interp(x, y_complex; extrap=:extension)
+            itp = linear_interp(x, y_complex; extrap=ExtendExtrap())
 
             @testset "complex gradient via real/imag" begin
                 xq = 2.25
@@ -93,7 +93,7 @@ end
         end
 
         @testset "Vector input gradient (broadcast)" begin
-            itp = linear_interp(x, y_sin; extrap=:extension)
+            itp = linear_interp(x, y_sin; extrap=ExtendExtrap())
             xqv = [0.3, 0.8, 1.2]
 
             g(v) = sum(itp.(v))
@@ -124,7 +124,7 @@ end
         @testset "Series Interpolant (broken - array mutation)" begin
             y1 = sin.(x)
             y2 = cos.(x)
-            sitp = linear_interp(x, [y1, y2]; extrap=:extension)
+            sitp = linear_interp(x, [y1, y2]; extrap=ExtendExtrap())
 
             @test_broken begin
                 f(xq) = sum(sitp(xq))
@@ -144,7 +144,7 @@ end
 
         @testset "Single Interpolant - gradient is nothing (not 0)" begin
             # Zygote returns `nothing` for constant functions, not 0
-            itp = constant_interp(x, y; side=:left, extrap=:extension)
+            itp = constant_interp(x, y; side=:left, extrap=ExtendExtrap())
 
             for xq in [0.5, 1.5, 2.5, 3.5]
                 zy_grad = Zygote.gradient(itp, xq)[1]
@@ -155,7 +155,7 @@ end
 
         @testset "All side modes" begin
             for side_mode in [:left, :right, :nearest]
-                itp = constant_interp(x, y; side=side_mode, extrap=:extension)
+                itp = constant_interp(x, y; side=side_mode, extrap=ExtendExtrap())
                 zy_grad = Zygote.gradient(itp, 2.5)[1]
                 @test (zy_grad === nothing) || isapprox(zy_grad, 0.0; atol=1e-10)
             end
@@ -172,7 +172,7 @@ end
         y_complex = (1.0 + 1.0im) .* x .^ 2
 
         @testset "Single Interpolant - Real" begin
-            itp = quadratic_interp(x, y_quad; extrap=:extension)
+            itp = quadratic_interp(x, y_quad; extrap=ExtendExtrap())
 
             @testset "gradient matches ForwardDiff" begin
                 for xq in [0.25, 1.0, 2.5, 3.75, 4.5]
@@ -193,7 +193,7 @@ end
         end
 
         @testset "Single Interpolant - Complex via real/imag" begin
-            itp = quadratic_interp(x, y_complex; extrap=:extension)
+            itp = quadratic_interp(x, y_complex; extrap=ExtendExtrap())
             xq = 2.25
 
             zy_real = Zygote.gradient(q -> real(itp(q)), xq)[1]
@@ -217,7 +217,7 @@ end
         @testset "Series Interpolant (broken - array mutation)" begin
             y1 = x .^ 2
             y2 = 2.0 .* x .^ 2
-            sitp = quadratic_interp(x, [y1, y2]; extrap=:extension)
+            sitp = quadratic_interp(x, [y1, y2]; extrap=ExtendExtrap())
 
             @test_broken begin
                 f(xq) = sum(sitp(xq))
@@ -238,7 +238,7 @@ end
         y_complex = (1.0 + 1.0im) .* x .^ 3
 
         @testset "Single Interpolant - Real" begin
-            itp = cubic_interp(x, y_cubic; extrap=:extension)
+            itp = cubic_interp(x, y_cubic; extrap=ExtendExtrap())
 
             @testset "gradient matches ForwardDiff" begin
                 for xq in [0.25, 1.0, 2.5, 3.75, 4.5]
@@ -259,14 +259,14 @@ end
         end
 
         @testset "Single Interpolant - Sine data" begin
-            itp = cubic_interp(x, y_sin; extrap=:extension)
+            itp = cubic_interp(x, y_sin; extrap=ExtendExtrap())
             xq = 1.5
             zy_grad = Zygote.gradient(itp, xq)[1]
             @test zy_grad ≈ cos(1.5) rtol=0.01  # d/dx(sin(x)) = cos(x)
         end
 
         @testset "Single Interpolant - Complex via real/imag" begin
-            itp = cubic_interp(x, y_complex; extrap=:extension)
+            itp = cubic_interp(x, y_complex; extrap=ExtendExtrap())
             xq = 2.25
 
             zy_real = Zygote.gradient(q -> real(itp(q)), xq)[1]
@@ -282,7 +282,7 @@ end
 
         @testset "Different BC types" begin
             for bc in [NaturalBC(), ClampedBC()]
-                itp = cubic_interp(x, y_cubic; bc=bc, extrap=:extension)
+                itp = cubic_interp(x, y_cubic; bc=bc, extrap=ExtendExtrap())
                 xq = 2.25
                 zy_grad = Zygote.gradient(itp, xq)[1]
                 fd_grad = ForwardDiff.derivative(itp, xq)
@@ -301,7 +301,7 @@ end
         @testset "Series Interpolant (broken - array mutation)" begin
             y1 = sin.(x)
             y2 = cos.(x)
-            sitp = cubic_interp(x, [y1, y2]; extrap=:extension)
+            sitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
 
             @test_broken begin
                 f(xq) = sum(sitp(xq))
@@ -320,7 +320,7 @@ end
         y = x .^ 2
 
         @testset "Loss function gradient" begin
-            itp = linear_interp(x, y; extrap=:extension)
+            itp = linear_interp(x, y; extrap=ExtendExtrap())
 
             function loss(params)
                 xq = params[1]
@@ -341,7 +341,7 @@ end
         end
 
         @testset "Vector input gradient" begin
-            itp = linear_interp(x, y; extrap=:extension)
+            itp = linear_interp(x, y; extrap=ExtendExtrap())
             xqv = [0.3, 0.8, 1.2]
 
             g(v) = sum(itp.(v))
@@ -361,7 +361,7 @@ end
         y32 = 2.0f0 .* x32 .+ 1.0f0
 
         @testset "Linear Float32" begin
-            itp = linear_interp(x32, y32; extrap=:extension)
+            itp = linear_interp(x32, y32; extrap=ExtendExtrap())
             xq = 2.25f0
             zy_grad = Zygote.gradient(itp, xq)[1]
             @test zy_grad ≈ 2.0f0 atol=1e-5
@@ -370,7 +370,7 @@ end
 
         @testset "Quadratic Float32" begin
             y32_quad = x32 .^ 2
-            itp = quadratic_interp(x32, y32_quad; extrap=:extension)
+            itp = quadratic_interp(x32, y32_quad; extrap=ExtendExtrap())
             xq = 2.25f0
             zy_grad = Zygote.gradient(itp, xq)[1]
             @test zy_grad ≈ 2.0f0 * xq atol=1e-4
@@ -379,7 +379,7 @@ end
 
         @testset "Cubic Float32" begin
             y32_cubic = x32 .^ 3
-            itp = cubic_interp(x32, y32_cubic; extrap=:extension)
+            itp = cubic_interp(x32, y32_cubic; extrap=ExtendExtrap())
             xq = 2.25f0
             zy_grad = Zygote.gradient(itp, xq)[1]
             expected = 3.0f0 * xq^2

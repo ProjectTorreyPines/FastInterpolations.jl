@@ -134,17 +134,17 @@ using FastInterpolations
         y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
 
         # :constant mode
-        itp_const = constant_interp(x, y; extrap=:constant)
+        itp_const = constant_interp(x, y; extrap=ConstExtrap())
         @test itp_const(-1.0) == 1.0+1.0im  # Clamped to first
         @test itp_const(5.0) == 4.0+4.0im   # Clamped to last
 
         # :extension mode (same as constant for step functions)
-        itp_ext = constant_interp(x, y; extrap=:extension)
+        itp_ext = constant_interp(x, y; extrap=ExtendExtrap())
         @test itp_ext(-1.0) == 1.0+1.0im
         @test itp_ext(5.0) == 4.0+4.0im
 
         # :wrap mode
-        itp_wrap = constant_interp(x, y; extrap=:wrap)
+        itp_wrap = constant_interp(x, y; extrap=WrapExtrap())
         val_wrap = itp_wrap(4.5)
         @test val_wrap isa ComplexF64
     end

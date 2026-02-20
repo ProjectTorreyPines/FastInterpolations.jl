@@ -345,7 +345,7 @@ Create a multi-Y quadratic series interpolant for multiple y-data series sharing
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
 - `bc`: Boundary condition (Left/Right with QuadraticFit, Deriv1, Deriv2, MinCurvFit)
-- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, or `ExtendExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, or `ExtendExtrap()`
 
 # Returns
 `QuadraticSeriesInterpolant` object with unified matrix storage.
@@ -366,7 +366,7 @@ function quadratic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Check if Tv's float base requires grid widening (not for Int types)
@@ -422,9 +422,7 @@ function quadratic_interp(
         end
     end
 
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
-    return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, h, mode, search)
+    return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, h, extrap, search)
 end
 
 # Matrix input: columns as y-series
@@ -450,7 +448,7 @@ function quadratic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     ys = [Y[:, k] for k in axes(Y, 2)]
@@ -467,7 +465,7 @@ function quadratic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
@@ -482,7 +480,7 @@ function quadratic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     bc=Left(QuadraticFit()),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))

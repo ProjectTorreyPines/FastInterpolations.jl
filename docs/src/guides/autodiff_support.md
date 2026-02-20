@@ -41,7 +41,7 @@ using ForwardDiff, FastInterpolations
 
 x = 0.0:0.5:5.0
 y = sin.(x)
-itp = cubic_interp(x, y; extrap=:extension)
+itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
 # Compute derivative via AD
 grad = ForwardDiff.derivative(itp, 1.5)
@@ -57,7 +57,7 @@ nothing #hide
 ```@example ad
 # Series interpolant support
 y1, y2 = sin.(x), cos.(x)
-sitp = cubic_interp(x, [y1, y2]; extrap=:extension)
+sitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
 grad_series = ForwardDiff.derivative(q -> sum(sitp(q)), 1.5)
 nothing #hide
 ```
@@ -85,7 +85,7 @@ using Zygote, FastInterpolations
 # Note: Use collect() to convert range to Vector for Zygote compatibility
 x = collect(0.0:0.5:5.0)
 y = 2.0 .* x .+ 1.0
-itp = linear_interp(x, y; extrap=:extension)
+itp = linear_interp(x, y; extrap=ExtendExtrap())
 
 # Single interpolant works
 grad = Zygote.gradient(itp, 1.5)[1]  # Returns 2.0
@@ -97,7 +97,7 @@ nothing #hide
 - **Complex output**: Must use `real()` or `imag()` wrapper
   ```@example zygote
   y_complex = (2.0 + 1.0im) .* x
-  itp_complex = linear_interp(x, y_complex; extrap=:extension)
+  itp_complex = linear_interp(x, y_complex; extrap=ExtendExtrap())
 
   # ❌ Zygote.gradient(itp_complex, 1.5) fails on complex output
   # ✅ Use this instead:
@@ -117,7 +117,7 @@ using Enzyme, FastInterpolations
 
 x = 0.0:0.5:5.0
 y = x .^ 2
-itp = quadratic_interp(x, y; extrap=:extension)
+itp = quadratic_interp(x, y; extrap=ExtendExtrap())
 
 # Use autodiff API
 f(xq) = itp(xq)

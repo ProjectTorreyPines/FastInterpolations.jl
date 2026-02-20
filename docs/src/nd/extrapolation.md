@@ -8,10 +8,10 @@ Extrapolation in ND works per-axis, using the same modes as [1D extrapolation](.
 
 | Mode | Behavior |
 |:-----|:---------|
-| `:none` | `DomainError` (default) |
-| `:constant` | Clamp to boundary value |
-| `:extension` | Extend boundary polynomial |
-| `:wrap` | Wrap coordinates periodically |
+| `NoExtrap()` | `DomainError` (default) |
+| `ConstExtrap()` | Clamp to boundary value |
+| `ExtendExtrap()` | Extend boundary polynomial |
+| `WrapExtrap()` | Wrap coordinates periodically |
 
 ---
 
@@ -34,51 +34,51 @@ kw = (size=(480, 400), xlims=(-0.3,1.3), ylims=(-0.3,1.3))
 nothing # hide
 ```
 
-### `extrap=:none` (Default)
+### `NoExtrap()` (Default)
 
 Domain-only view — queries outside ``[0, 1]^2`` throw `DomainError`:
 
 ```@example nd_extrap
-itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=:none)
+itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=NoExtrap())
 plot(itp; kw...)
 ```
 
-### `extrap=:constant`
+### `ConstExtrap()`
 
 Boundary values are held constant — flat color bands extend from each edge:
 
 ```@example nd_extrap
-itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=:constant)
+itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=ConstExtrap())
 plot(itp; kw...)
 ```
 
-### `extrap=:extension`
+### `ExtendExtrap()`
 
 Boundary polynomials extend beyond the domain — the cubic pieces continue their natural curvature:
 
 ```@example nd_extrap
-itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=:extension)
+itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=ExtendExtrap())
 plot(itp; kw...)
 ```
 
-### `extrap=:wrap`
+### `WrapExtrap()`
 
 Coordinates wrap periodically. Since the data is not periodic, a visible **seam** appears at the boundaries:
 
 ```@example nd_extrap
-itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=:wrap)
+itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=WrapExtrap())
 plot(itp; kw...)
 ```
 
 !!! tip "Wrap vs Periodic — coordinate repetition is not periodic interpolation"
-    `:wrap` alone simply maps coordinates back into the domain via modular arithmetic.
+    `WrapExtrap()` simply maps coordinates back into the domain via modular arithmetic.
     The interpolant itself is **unaware** of periodicity, so a C⁰ seam (jump in derivatives) is expected at the boundary.
 
     For **true periodic interpolation**, use [`PeriodicBC()`](boundary_conditions.md) with cubic splines.
     `PeriodicBC()` enforces **C² continuity** at the wrap boundary — matching function value,
     first derivative, and second derivative across the period — producing a seamless, smooth result.
 
-    When `bc=PeriodicBC()` is set on an axis, `extrap=:wrap` is automatically applied for that axis.
+    When `bc=PeriodicBC()` is set on an axis, `WrapExtrap()` is automatically applied for that axis.
 
 ---
 
@@ -87,7 +87,7 @@ plot(itp; kw...)
 Different extrapolation modes can be assigned independently to each axis via a tuple:
 
 ```julia
-itp = cubic_interp((x, y), data; extrap=(:constant, :extension))
+itp = cubic_interp((x, y), data; extrap=(ConstExtrap(), ExtendExtrap()))
 ```
 
 ### Constant × None
@@ -95,7 +95,7 @@ itp = cubic_interp((x, y), data; extrap=(:constant, :extension))
 Constant extrapolation on x₁, strict domain on x₂ — the heatmap extends **only horizontally**:
 
 ```@example nd_extrap
-itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=(:constant, :none))
+itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=(ConstExtrap(), NoExtrap()))
 plot(itp; kw...)
 ```
 
@@ -104,7 +104,7 @@ plot(itp; kw...)
 Constant extrapolation on x₁, wrap periodically on x₂:
 
 ```@example nd_extrap
-itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=(:constant, :wrap))
+itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=(ConstExtrap(), WrapExtrap()))
 plot(itp; kw...)
 ```
 

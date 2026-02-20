@@ -37,7 +37,7 @@ Every 1D argument becomes a Tuple in ND. This applies uniformly:
 | Query (scalar) | `xq` | `(xq, yq)` |
 | Query (batch) | `xqs::Vector` | `(xqs, yqs)` |
 | BC | `bc=NaturalBC()` | `bc=(NaturalBC(), PeriodicBC())` |
-| Extrap | `extrap=:constant` | `extrap=(:constant, :wrap)` |
+| Extrap | `extrap=ConstExtrap()` | `extrap=(ConstExtrap(), WrapExtrap())` |
 | Derivative | `deriv=1` | `deriv=(1, 0)` for ∂f/∂x |
 | Search | `search=Binary()` | `search=(Binary(), LinearBinary())` |
 

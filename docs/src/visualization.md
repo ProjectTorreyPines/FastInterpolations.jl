@@ -13,7 +13,7 @@ x = [0.0, 0.7, 1.5, 2.3, 3.0, 4.2, 5.0, 6.0]
 y = [0.2, 1.1, 0.6, 1.8, 1.2, 0.4, 1.5, 0.8]
 
 # Create interpolant and plot
-itp = cubic_interp(x, y; extrap=:constant)
+itp = cubic_interp(x, y; extrap=ConstExtrap())
 plot(itp)
 ```
 
@@ -42,7 +42,7 @@ plot(
 x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
 Y = [sin.(x) cos.(x) sin.(x .+ 1)]  # 3 series
 
-sitp = cubic_interp(x, Y; extrap=:extension)
+sitp = cubic_interp(x, Y; extrap=ExtendExtrap())
 plot(sitp, title="Multi-Series")
 ```
 
@@ -50,7 +50,7 @@ plot(sitp, title="Multi-Series")
 
 ```@example viz
 x = range(0, 2π, 15)
-itp = cubic_interp(collect(x), sin.(x); extrap=:extension)
+itp = cubic_interp(collect(x), sin.(x); extrap=ExtendExtrap())
 
 plot(
     plot(itp, title="S(x)"),
@@ -68,10 +68,10 @@ x = [0.0, 1.0, 2.0, 3.0, 4.0]
 y = sin.(x)
 
 plot(
-    plot(cubic_interp(x, y; extrap=:none), title="extrap=:none"),
-    plot(cubic_interp(x, y; extrap=:constant), title="extrap=:constant"),
-    plot(cubic_interp(x, y; extrap=:extension), title="extrap=:extension"),
-    plot(cubic_interp(x, y; extrap=:wrap), title="extrap=:wrap"),
+    plot(cubic_interp(x, y; extrap=NoExtrap()), title="extrap=NoExtrap()"),
+    plot(cubic_interp(x, y; extrap=ConstExtrap()), title="extrap=ConstExtrap()"),
+    plot(cubic_interp(x, y; extrap=ExtendExtrap()), title="extrap=ExtendExtrap()"),
+    plot(cubic_interp(x, y; extrap=WrapExtrap()), title="extrap=WrapExtrap()"),
     layout=(2, 2), size=(900, 600)
 )
 ```
@@ -85,7 +85,7 @@ All standard Plots.jl attributes work alongside our custom recipe options.
 ```@example viz
 x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
 y = [0.0, 0.8, 0.9, 0.4, 0.2, 0.6]
-itp = cubic_interp(x, y; extrap=:constant)
+itp = cubic_interp(x, y; extrap=ConstExtrap())
 
 plot(itp;
     title="Styled Interpolant",
@@ -129,7 +129,7 @@ For detailed usage, see [HelpPlots.jl](https://github.com/ProjectTorreyPines/Hel
 ### Customization Examples
 
 ```@example viz
-itp = cubic_interp(x, y; extrap=:extension)
+itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
 plot(
     plot(itp; show_data=false, show_bounds=false, show_outside=false, title="Curve only"),
@@ -142,9 +142,9 @@ plot(
 ### Overlaying Interpolants
 
 ```@example viz
-p = plot(constant_interp(x, y; extrap=:extension); color=:black, alpha=0.7, lw=2)
-plot!(p, linear_interp(x, y; extrap=:extension); show_data=false, show_bounds=false, show_outside=false, color=:blue, alpha=0.7, lw=2)
-plot!(p, cubic_interp(x, y; extrap=:extension); show_data=false, show_bounds=false, show_outside=false, color=:red, alpha=0.7, lw=2)
+p = plot(constant_interp(x, y; extrap=ExtendExtrap()); color=:black, alpha=0.7, lw=2)
+plot!(p, linear_interp(x, y; extrap=ExtendExtrap()); show_data=false, show_bounds=false, show_outside=false, color=:blue, alpha=0.7, lw=2)
+plot!(p, cubic_interp(x, y; extrap=ExtendExtrap()); show_data=false, show_bounds=false, show_outside=false, color=:red, alpha=0.7, lw=2)
 plot!(p; title="Method Comparison", legend=:outertopright, xlims=(-1.5, 6.5), ylims=(-1.0, 2.0), size=(900,500))
 ```
 
@@ -153,7 +153,7 @@ plot!(p; title="Method Comparison", legend=:outertopright, xlims=(-1.5, 6.5), yl
 ```@example viz
 x = range(0, 2π, 10)
 Y = [sin.(x) cos.(x) tan.(x) ./ 5]
-sitp = cubic_interp(collect(x), Y; extrap=:extension)
+sitp = cubic_interp(collect(x), Y; extrap=ExtendExtrap())
 
 plot(
     plot(sitp; series_idx=:all, title="All series"),

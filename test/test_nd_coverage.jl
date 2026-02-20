@@ -847,25 +847,25 @@ end
     end
 end
 
-@testset "core/utils.jl — @_dispatch_extrap_nd paths" begin
+@testset "ND extrapolation dispatch paths" begin
     grids = (collect(range(0.0, 1.0, 6)), collect(range(0.0, 1.0, 6)))
     data = [xi + yj for xi in grids[1], yj in grids[2]]
 
     @testset "fast path 1: WrapExtrap() extrap with bcs=nothing (linear oneshot)" begin
-        # Exercises the `ntuple(_ -> Val(:wrap), valn)` branch (fast path 1 :wrap)
+        # Uniform WrapExtrap on all dims — exercises periodic wrap fast path
         result = linear_interp(grids, data, (0.5, 0.5); extrap=WrapExtrap())
         @test result ≈ 1.0 atol=1e-10
     end
 
     @testset "fallback: non-uniform extraps with bcs=nothing (linear oneshot)" begin
-        # Exercises _resolve_mixed_extrap_vals(extraps, ::Nothing) + fallback path
+        # Mixed extrap types per dim — exercises per-dim extrap dispatch fallback
         result = linear_interp(grids, data, (0.5, 0.5); extrap=(NoExtrap(), ConstExtrap()))
         @test result ≈ 1.0 atol=1e-10
     end
 
     @testset "fast path 3: WrapExtrap() extrap with mixed BCs (cubic oneshot)" begin
-        # bc=(PeriodicBC(), NaturalBC()) + extrap=WrapExtrap() → fast path 3 WrapExtrap() branch
-        # (some periodic, not all → not fast path 2; uniform extrap → fast path 3)
+        # bc=(PeriodicBC(), NaturalBC()) + extrap=WrapExtrap()
+        # Some periodic, not all → not fast path 2; uniform extrap → fast path 3
         x = collect(range(0.0, 2π, 9))
         y = collect(range(0.0, 1.0, 9))
         data_p = [cos(xi) + yj for xi in x, yj in y]
@@ -878,8 +878,8 @@ end
     end
 
     @testset "fallback: non-uniform extraps with mixed BCs (cubic oneshot)" begin
-        # bc=(PeriodicBC(), NaturalBC()) + extrap=(NoExtrap(),ConstExtrap()) → fallback path
-        # Exercises _resolve_mixed_extrap_vals(extraps, bcs::NTuple{N,AbstractBC})
+        # bc=(PeriodicBC(), NaturalBC()) + extrap=(NoExtrap(),ConstExtrap())
+        # Mixed extrap types per dim — exercises per-dim extrap dispatch fallback
         x = collect(range(0.0, 2π, 9))
         y = collect(range(0.0, 1.0, 9))
         data_p = [cos(xi) + yj for xi in x, yj in y]

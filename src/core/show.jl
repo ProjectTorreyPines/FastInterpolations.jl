@@ -111,13 +111,10 @@ function _format_extrap(mode)
     return "unknown"
 end
 
-"""Format side selection from SideVal."""
-function _format_side(side)
-    side === Val(:nearest) && return ":nearest"
-    side === Val(:left) && return ":left"
-    side === Val(:right) && return ":right"
-    return "unknown"
-end
+"""Format side selection from AbstractSide."""
+_format_side(::NearestSide) = "NearestSide"
+_format_side(::LeftSide) = "LeftSide"
+_format_side(::RightSide) = "RightSide"
 
 """Format search policy name."""
 _format_search(::Binary) = "Binary"

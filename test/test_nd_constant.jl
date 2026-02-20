@@ -31,8 +31,8 @@ end
                 21.0 22.0 23.0 24.0;
                 31.0 32.0 33.0 34.0]
 
-        @testset "side=:left (default)" begin
-            itp = constant_interp((x, y), data; side=:left)
+        @testset "side=LeftSide() (default)" begin
+            itp = constant_interp((x, y), data; side=LeftSide())
 
             # At grid points, returns left value of the interval containing the point
             # At (0,0): interval idx=(1,1), data[1,1]=11
@@ -40,30 +40,30 @@ end
             # At (1,2): x in interval 2, y in interval 3, data[2,3]=23
             @test itp((1.0, 2.0)) == 23.0  # Interior point
             # At boundary (2,3): last intervals, data[2,3]=23 (not 34!)
-            # Because side=:left always returns left corner of interval
+            # Because side=LeftSide() always returns left corner of interval
             @test itp((2.0, 3.0)) == 23.0  # Far corner (in last interval)
 
-            # Between grid points with :left, always select left neighbor
+            # Between grid points with LeftSide(), always select left neighbor
             @test itp((0.5, 0.5)) == 11.0  # Cell (1,1) - left corner
             @test itp((1.5, 2.5)) == 23.0  # Cell (2,3) - left corner
             @test itp((0.9, 0.9)) == 11.0  # Still left corner
         end
 
-        @testset "side=:right" begin
-            itp = constant_interp((x, y), data; side=:right)
+        @testset "side=RightSide()" begin
+            itp = constant_interp((x, y), data; side=RightSide())
 
             # At grid points, still returns left value (dL == 0)
             @test itp((0.0, 0.0)) == 11.0
             @test itp((1.0, 2.0)) == 23.0
 
-            # Between grid points with :right, select right neighbor
+            # Between grid points with RightSide(), select right neighbor
             @test itp((0.5, 0.5)) == 22.0  # Right corner of cell (1,1) → data[2,2]
             @test itp((0.1, 0.1)) == 22.0  # Any offset → right
             @test itp((1.5, 2.5)) == 34.0  # Cell (2,3) → data[3,4]
         end
 
-        @testset "side=:nearest" begin
-            itp = constant_interp((x, y), data; side=:nearest)
+        @testset "side=NearestSide()" begin
+            itp = constant_interp((x, y), data; side=NearestSide())
 
             # At grid points
             @test itp((0.0, 0.0)) == 11.0
@@ -79,8 +79,8 @@ end
         end
 
         @testset "per-axis side configuration" begin
-            # side=(:left, :right) → left on x-axis, right on y-axis
-            itp = constant_interp((x, y), data; side=(:left, :right))
+            # side=(LeftSide(), RightSide()) → left on x-axis, right on y-axis
+            itp = constant_interp((x, y), data; side=(LeftSide(), RightSide()))
 
             @test itp((0.5, 0.5)) == 12.0  # x: left (idx=1), y: right (idx=2) → data[1,2]
             @test itp((1.5, 0.5)) == 22.0  # x: left (idx=2), y: right (idx=2) → data[2,2]
@@ -100,14 +100,14 @@ end
             data[i, j, k] = 100.0 * i + 10.0 * j + k
         end
 
-        itp = constant_interp((x, y, z), data; side=:left)
+        itp = constant_interp((x, y, z), data; side=LeftSide())
 
         # At origin: all indices = 1
         @test itp((0.0, 0.0, 0.0)) == 111.0  # data[1,1,1]
-        # At boundary (1,1,1): still in interval [0,1], side=:left → data[1,1,1]
+        # At boundary (1,1,1): still in interval [0,1], side=LeftSide() → data[1,1,1]
         @test itp((1.0, 1.0, 1.0)) == 111.0  # data[1,1,1] (left of each interval)
 
-        # Interior points with :left
+        # Interior points with LeftSide()
         @test itp((0.5, 0.5, 0.5)) == 111.0  # All left → data[1,1,1]
         @test itp((0.9, 0.9, 0.9)) == 111.0  # Still all left
     end
@@ -147,7 +147,7 @@ end
         y = [0.0, 1.0, 2.0]
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
-        itp = constant_interp((x, y), data; side=:left)
+        itp = constant_interp((x, y), data; side=LeftSide())
 
         # Query with vector instead of tuple
         @test itp([0.5, 0.5]) == itp((0.5, 0.5))
@@ -162,7 +162,7 @@ end
         y = [0.0, 1.0, 2.0]
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
-        itp = constant_interp((x, y), data; side=:left)
+        itp = constant_interp((x, y), data; side=LeftSide())
 
         # Batch query: tuple of vectors
         xs = [0.5, 1.5, 0.5]
@@ -183,7 +183,7 @@ end
         y = [0.0, 1.0, 2.0]
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
-        itp = constant_interp((x, y), data; side=:left)
+        itp = constant_interp((x, y), data; side=LeftSide())
 
         # Batch query: vector of tuples
         points = [(0.5, 0.5), (1.5, 0.5), (0.5, 1.5)]
@@ -217,7 +217,7 @@ end
         end
 
         @testset "extrap=ConstExtrap()" begin
-            itp = constant_interp((x, y), data; extrap=ConstExtrap(), side=:left)
+            itp = constant_interp((x, y), data; extrap=ConstExtrap(), side=LeftSide())
 
             # In domain
             @test itp((0.5, 0.5)) == 1.0
@@ -226,15 +226,15 @@ end
             @test itp((-0.5, 0.5)) == 1.0   # Clamp x to 0 → data[1,1] = 1
             @test itp((0.5, -0.5)) == 1.0   # Clamp y to 0 → data[1,1] = 1
             # Clamp x to 2.0, which is at last interval boundary
-            # With side=:left, we get data[2, 1] = 4.0
+            # With side=LeftSide(), we get data[2, 1] = 4.0
             @test itp((2.5, 0.5)) == 4.0    # Clamp x to 2 → interval 2, data[2,1]
             # Clamp y to 2.0, which is at last interval boundary
-            # With side=:left, we get data[1, 2] = 2.0
+            # With side=LeftSide(), we get data[1, 2] = 2.0
             @test itp((0.5, 2.5)) == 2.0    # Clamp y to 2 → interval 2, data[1,2]
         end
 
         @testset "extrap=WrapExtrap()" begin
-            itp = constant_interp((x, y), data; extrap=WrapExtrap(), side=:left)
+            itp = constant_interp((x, y), data; extrap=WrapExtrap(), side=LeftSide())
 
             # In domain
             @test itp((0.5, 0.5)) == 1.0
@@ -246,7 +246,7 @@ end
 
         @testset "per-axis extrap configuration" begin
             # extrap=(NoExtrap(), ConstExtrap()) → strict on x, clamp on y
-            itp = constant_interp((x, y), data; extrap=(NoExtrap(), ConstExtrap()), side=:left)
+            itp = constant_interp((x, y), data; extrap=(NoExtrap(), ConstExtrap()), side=LeftSide())
 
             # y clamped to 2.0 → data[1, 2] = 2.0
             @test itp((0.5, 2.5)) == 2.0  # y clamped to last interval
@@ -262,7 +262,7 @@ end
         y = range(0.0, 2.0, 3)  # [0, 1, 2]
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
-        itp = constant_interp((x, y), data; side=:left)
+        itp = constant_interp((x, y), data; side=LeftSide())
 
         @test itp((0.5, 0.5)) == 1.0
         @test itp((1.5, 0.5)) == 4.0
@@ -276,7 +276,7 @@ end
         y = [0.0, 0.5, 2.0]     # Non-uniform Vector
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
-        itp = constant_interp((x, y), data; side=:left)
+        itp = constant_interp((x, y), data; side=LeftSide())
 
         @test itp((0.5, 0.3)) == 1.0  # First cell
         @test itp((1.5, 1.0)) == 5.0  # y in [0.5, 2.0) → idx 2
@@ -312,13 +312,13 @@ end
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
         # Scalar one-shot
-        result = constant_interp((x, y), data, (0.5, 0.5); side=:left)
+        result = constant_interp((x, y), data, (0.5, 0.5); side=LeftSide())
         @test result == 1.0
 
         # Batch one-shot (SoA)
         xs = [0.5, 1.5]
         ys = [0.5, 0.5]
-        results = constant_interp((x, y), data, (xs, ys); side=:left)
+        results = constant_interp((x, y), data, (xs, ys); side=LeftSide())
         @test results[1] == 1.0
         @test results[2] == 4.0
     end
@@ -346,7 +346,7 @@ end
         y = [0.0, 1.0, 2.0]
         data = ComplexF64[1+1im 2+2im 3+3im; 4+4im 5+5im 6+6im; 7+7im 8+8im 9+9im]
 
-        itp = constant_interp((x, y), data; side=:left)
+        itp = constant_interp((x, y), data; side=LeftSide())
 
         @test itp((0.5, 0.5)) == 1.0 + 1.0im
         @test itp((1.5, 1.5)) == 5.0 + 5.0im
@@ -409,9 +409,9 @@ end
         y = range(0.0, 1.0, 6)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        constant_interp((x, y), data, query; side=:left)
-        constant_interp((x, y), data, query; side=:left)
-        @allocated constant_interp((x, y), data, query; side=:left)
+        constant_interp((x, y), data, query; side=LeftSide())
+        constant_interp((x, y), data, query; side=LeftSide())
+        @allocated constant_interp((x, y), data, query; side=LeftSide())
     end
 
     function _alloc_test_constant_right()
@@ -419,9 +419,9 @@ end
         y = range(0.0, 1.0, 6)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        constant_interp((x, y), data, query; side=:right)
-        constant_interp((x, y), data, query; side=:right)
-        @allocated constant_interp((x, y), data, query; side=:right)
+        constant_interp((x, y), data, query; side=RightSide())
+        constant_interp((x, y), data, query; side=RightSide())
+        @allocated constant_interp((x, y), data, query; side=RightSide())
     end
 
     function _alloc_test_constant_extrap_constant()
@@ -470,11 +470,11 @@ end
             @test _alloc_test_constant_default() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, side=:left)" begin
+        @testset "zero-alloc scalar (Range grids, side=LeftSide())" begin
             @test _alloc_test_constant_left() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, side=:right)" begin
+        @testset "zero-alloc scalar (Range grids, side=RightSide())" begin
             @test _alloc_test_constant_right() <= ND_ALLOC_THRESHOLD
         end
 
@@ -554,9 +554,9 @@ end
         y = collect(range(0.0, 1.0, 15))
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        constant_interp((x, y), data, query; side=:left)
-        constant_interp((x, y), data, query; side=:left)
-        @allocated constant_interp((x, y), data, query; side=:left)
+        constant_interp((x, y), data, query; side=LeftSide())
+        constant_interp((x, y), data, query; side=LeftSide())
+        @allocated constant_interp((x, y), data, query; side=LeftSide())
     end
 
     function _alloc_test_constant_vector_3d()
@@ -575,7 +575,7 @@ end
             @test _alloc_test_constant_vector_default() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Vector grids, side=:left)" begin
+        @testset "zero-alloc scalar (Vector grids, side=LeftSide())" begin
             @test _alloc_test_constant_vector_left() <= ND_ALLOC_THRESHOLD
         end
 

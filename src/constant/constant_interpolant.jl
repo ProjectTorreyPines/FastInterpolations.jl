@@ -57,7 +57,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y; extrap=NoExtrap(), side=:nearest, search=Binary()) -> ConstantInterpolant
+    constant_interp(x, y; extrap=NoExtrap(), side=NearestSide(), search=Binary()) -> ConstantInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -65,7 +65,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values (can be Real or Complex)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
-- `side::Symbol`: Side selection
+- `side::AbstractSide`: Side selection (NearestSide(), LeftSide(), RightSide())
 - `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
 
 # Returns
@@ -114,7 +114,7 @@ end
     x::AbstractVector{TX},
     y::AbstractVector{TY};
     extrap::AbstractExtrap=NoExtrap(),
-    side::Symbol=:nearest,
+    side::AbstractSide=NearestSide(),
     search::AbstractSearchPolicy=Binary()
 ) where {TX<:Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)

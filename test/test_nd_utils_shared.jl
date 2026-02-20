@@ -85,31 +85,31 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
     # _resolve_side_nd (NEW - for ConstantInterpolantND)
     # ========================================
     @testset "_resolve_side_nd" begin
-        @testset "broadcast single symbol to N-tuple" begin
-            result = _resolve_side_nd(:nearest, Val(3))
-            @test result === (:nearest, :nearest, :nearest)
+        @testset "broadcast single AbstractSide to N-tuple" begin
+            result = _resolve_side_nd(NearestSide(), Val(3))
+            @test result === (NearestSide(), NearestSide(), NearestSide())
 
-            result = _resolve_side_nd(:left, Val(2))
-            @test result === (:left, :left)
+            result = _resolve_side_nd(LeftSide(), Val(2))
+            @test result === (LeftSide(), LeftSide())
 
-            result = _resolve_side_nd(:right, Val(4))
-            @test result === (:right, :right, :right, :right)
+            result = _resolve_side_nd(RightSide(), Val(4))
+            @test result === (RightSide(), RightSide(), RightSide(), RightSide())
         end
 
         @testset "passthrough matching tuple" begin
-            result = _resolve_side_nd((:nearest, :left, :right), Val(3))
-            @test result === (:nearest, :left, :right)
+            result = _resolve_side_nd((NearestSide(), LeftSide(), RightSide()), Val(3))
+            @test result === (NearestSide(), LeftSide(), RightSide())
         end
 
         @testset "reject wrong-length tuple" begin
-            @test_throws ArgumentError _resolve_side_nd((:nearest, :left), Val(3))
-            @test_throws ArgumentError _resolve_side_nd((:nearest, :left, :right, :nearest), Val(3))
+            @test_throws ArgumentError _resolve_side_nd((NearestSide(), LeftSide()), Val(3))
+            @test_throws ArgumentError _resolve_side_nd((NearestSide(), LeftSide(), RightSide(), NearestSide()), Val(3))
         end
 
-        @testset "reject invalid symbol" begin
-            @test_throws ArgumentError _resolve_side_nd(:invalid, Val(2))
-            @test_throws ArgumentError _resolve_side_nd((:nearest, :invalid), Val(2))
-            @test_throws ArgumentError _resolve_side_nd(:center, Val(2))
+        @testset "reject non-AbstractSide via MethodError" begin
+            @test_throws MethodError _resolve_side_nd(:invalid, Val(2))
+            @test_throws MethodError _resolve_side_nd(:nearest, Val(2))
+            @test_throws MethodError _resolve_side_nd(:center, Val(2))
         end
     end
 

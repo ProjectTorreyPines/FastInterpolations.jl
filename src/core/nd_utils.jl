@@ -11,21 +11,6 @@
 # - NTuple{N} → passthrough (with optional validation)
 # - Wrong-sized tuple → ArgumentError
 
-# ========================================
-# Side Validation (for Constant ND)
-# ========================================
-
-"""
-    _validate_side(side::Symbol) -> Nothing
-
-Validate side selection symbol. Throws `ArgumentError` if invalid.
-
-Valid options: `:nearest`, `:left`, `:right`
-"""
-@inline function _validate_side(side::Symbol)
-    side in (:nearest, :left, :right) && return nothing
-    throw(ArgumentError("`side` must be :nearest, :left, or :right, got :$side"))
-end
 
 # ========================================
 # Extrapolation Resolution
@@ -157,27 +142,17 @@ end
 # ========================================
 
 """
-    _resolve_side_nd(side, Val(N)) -> NTuple{N, Symbol}
+    _resolve_side_nd(side, Val(N)) -> NTuple{N, AbstractSide}
 
 Resolve side selection to canonical N-tuple.
-- Single `Symbol` → broadcast to all N axes (validated)
-- `NTuple{N, Symbol}` → validate each and passthrough
-
-Valid side options: `:nearest`, `:left`, `:right`
+- Single `AbstractSide` → broadcast to all N axes
+- `NTuple{N, AbstractSide}` → passthrough
 """
-@inline function _resolve_side_nd(side::Symbol, ::Val{N}) where {N}
-    _validate_side(side)
-    return ntuple(_ -> side, Val(N))
-end
+@inline _resolve_side_nd(side::AbstractSide, ::Val{N}) where {N} = ntuple(_ -> side, Val(N))
 
-@inline function _resolve_side_nd(side::NTuple{N,Symbol}, ::Val{N}) where {N}
-    @inbounds for i in 1:N
-        _validate_side(side[i])
-    end
-    return side
-end
+@inline _resolve_side_nd(side::NTuple{N,AbstractSide}, ::Val{N}) where {N} = side
 
-@inline function _resolve_side_nd(side::Tuple{Vararg{Symbol}}, ::Val{N}) where {N}
+@inline function _resolve_side_nd(side::Tuple{Vararg{AbstractSide}}, ::Val{N}) where {N}
     throw(ArgumentError("side tuple must have $N elements to match grid dimensions, got $(length(side))"))
 end
 

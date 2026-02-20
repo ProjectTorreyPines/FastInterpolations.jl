@@ -59,6 +59,9 @@ export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3
 # Extrapolation mode types (typed API for ND extrap)
 export AbstractExtrap, NoExtrap, ConstExtrap, ExtendExtrap, WrapExtrap
 
+# Side selection types (constant interpolation)
+export AbstractSide, NearestSide, LeftSide, RightSide
+
 # Integration
 export integrate, cumulative_integrate
 

@@ -6,7 +6,7 @@
 # Internal evaluation functions are in constant_oneshot.jl.
 
 """
-    ConstantInterpolant{Tg,Tv,X,Y,E,P}
+    ConstantInterpolant{Tg,Tv,X,Y,E,SD,P}
 
 Lightweight callable interpolant for constant (step) interpolation.
 Returned by `constant_interp(x, y)` (2-argument form).
@@ -17,18 +17,19 @@ Returned by `constant_interp(x, y)` (2-argument form).
 - `X<:AbstractVector{Tg}`: Type of x-coordinates
 - `Y<:AbstractVector{Tv}`: Type of y-values
 - `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
+- `SD<:AbstractSide`: Side selection type (compile-time specialized)
 - `P<:AbstractSearchPolicy`: Search policy type
 
 # Fields
 - `x::X`: x-coordinates (sorted)
 - `y::Y`: y-values
 - `extrap::E`: Extrapolation mode (NoExtrap(), ExtendExtrap(), ConstExtrap(), or WrapExtrap())
-- `side::SideVal`: Side selection (:nearest, :left, :right)
+- `side::SD`: Side selection (NearestSide(), LeftSide(), RightSide())
 - `search_policy::P`: Default search policy for interval lookup
 
 # Usage
 ```julia
-itp = constant_interp(x, y)  # default: extrap=NoExtrap(), side=:nearest
+itp = constant_interp(x, y)  # default: extrap=NoExtrap(), side=NearestSide()
 val = itp(0.5)               # scalar evaluation
 vals = itp.(query_points)    # broadcast
 
@@ -39,8 +40,8 @@ itp = constant_interp(x, y)
 val = itp(0.5)  # returns ComplexF64
 
 # With options
-itp_left = constant_interp(x, y; side=:left)
-itp_wrap = constant_interp(x, y; extrap=WrapExtrap(), side=:right)
+itp_left = constant_interp(x, y; side=LeftSide())
+itp_wrap = constant_interp(x, y; extrap=WrapExtrap(), side=RightSide())
 
 # Custom search policy
 itp = constant_interp(x, y; search=LinearBinary())
@@ -48,20 +49,20 @@ val = itp(0.5)               # uses LinearBinary() by default
 val = itp(0.5; search=Binary())  # override with Binary()
 ```
 """
-struct ConstantInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, P<:AbstractSearchPolicy} <: AbstractInterpolant{Tg, Tv}
+struct ConstantInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, SD<:AbstractSide, P<:AbstractSearchPolicy} <: AbstractInterpolant{Tg, Tv}
     x::X
     y::Y
     extrap::E        # Extrapolation mode (compile-time specialized)
-    side::SideVal
+    side::SD         # Side selection (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
     # Inner constructor: parametric, only calls new (handles validation only)
-    function ConstantInterpolant{Tg,Tv,X,Y,E,P}(
-        x::X, y::Y, ev::E, sv::SideVal, search::P
-    ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, P<:AbstractSearchPolicy}
+    function ConstantInterpolant{Tg,Tv,X,Y,E,SD,P}(
+        x::X, y::Y, ev::E, sv::SD, search::P
+    ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, SD<:AbstractSide, P<:AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         @assert length(x) >= 2 "x must have at least 2 elements"
-        new{Tg,Tv,X,Y,E,P}(x, y, ev, sv, search)
+        new{Tg,Tv,X,Y,E,SD,P}(x, y, ev, sv, search)
     end
 end
 
@@ -76,11 +77,10 @@ end
     x::X,
     y::Y;
     extrap::AbstractExtrap=NoExtrap(),
-    side::Symbol=:nearest,
+    side::AbstractSide=NearestSide(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
     E = typeof(extrap)
-    @_dispatch_side side => sv begin
-        return ConstantInterpolant{Tg,Tv,X,Y,E,P}(x, y, extrap, sv, search)
-    end
+    SD = typeof(side)
+    return ConstantInterpolant{Tg,Tv,X,Y,E,SD,P}(x, y, extrap, side, search)
 end

@@ -22,7 +22,7 @@ using FastInterpolations
 
     @testset "constant finite by side mode" begin
         y = collect(1.0:length(x))
-        for side in (:left, :right, :nearest)
+        for side in (LeftSide(), RightSide(), NearestSide())
             itp = constant_interp(x, y; side=side, extrap=NoExtrap())
             I = integrate(itp, 0.2, 0.7)
             @test isfinite(I)

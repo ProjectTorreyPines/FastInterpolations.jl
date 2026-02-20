@@ -87,29 +87,29 @@ end
 
 # ═══════════════════════════════════════════════════════════════
 # Constant integration kernels
-# Piecewise constant: value depends on side mode (:left, :right, :nearest)
+# Piecewise constant: value depends on side mode (LeftSide, RightSide, NearestSide)
 # ═══════════════════════════════════════════════════════════════
 
-# --- :left side — always use left value yL ---
+# --- LeftSide — always use left value yL ---
 @inline function _constant_integral_kernel(
     ::_EvalIntegralPartial,
-    yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::Val{:left}
+    yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::LeftSide
 ) where {Tv, Tg<:AbstractFloat, Td<:Real}
     return yL * (u1 - u0)
 end
 
-# --- :right side — always use right value yR ---
+# --- RightSide — always use right value yR ---
 @inline function _constant_integral_kernel(
     ::_EvalIntegralPartial,
-    yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::Val{:right}
+    yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::RightSide
 ) where {Tv, Tg<:AbstractFloat, Td<:Real}
     return yR * (u1 - u0)
 end
 
-# --- :nearest side — split at midpoint h/2 ---
+# --- NearestSide — split at midpoint h/2 ---
 @inline function _constant_integral_kernel(
     ::_EvalIntegralPartial,
-    yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::Val{:nearest}
+    yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::NearestSide
 ) where {Tv, Tg<:AbstractFloat, Td<:Real}
     mid = h / 2
     if u1 <= mid
@@ -372,17 +372,17 @@ end
 # ND Constant integration kernel
 #
 # Per-axis weight functions for side-dependent integration:
-#   :left   → all weight to left corner
-#   :right  → all weight to right corner
-#   :nearest → split at midpoint h/2
+#   LeftSide    → all weight to left corner
+#   RightSide   → all weight to right corner
+#   NearestSide → split at midpoint h/2
 # ═══════════════════════════════════════════════════════════════
 
-@inline _cw0(u0, u1, h, ::Val{:left}) = u1 - u0
-@inline _cw1(u0, u1, h, ::Val{:left}) = zero(u1 - u0)
-@inline _cw0(u0, u1, h, ::Val{:right}) = zero(u1 - u0)
-@inline _cw1(u0, u1, h, ::Val{:right}) = u1 - u0
-@inline _cw0(u0, u1, h, ::Val{:nearest}) = max(zero(u0), min(u1, h / 2) - u0)
-@inline _cw1(u0, u1, h, ::Val{:nearest}) = max(zero(u0), u1 - max(u0, h / 2))
+@inline _cw0(u0, u1, h, ::LeftSide) = u1 - u0
+@inline _cw1(u0, u1, h, ::LeftSide) = zero(u1 - u0)
+@inline _cw0(u0, u1, h, ::RightSide) = zero(u1 - u0)
+@inline _cw1(u0, u1, h, ::RightSide) = u1 - u0
+@inline _cw0(u0, u1, h, ::NearestSide) = max(zero(u0), min(u1, h / 2) - u0)
+@inline _cw1(u0, u1, h, ::NearestSide) = max(zero(u0), u1 - max(u0, h / 2))
 
 @inline @generated function _integrate_constant_nd_cell(
     data::Array{Tv, N},
@@ -390,7 +390,7 @@ end
     hs::NTuple{N},
     ulo::NTuple{N},
     uhi::NTuple{N},
-    sides::NTuple{N, SideVal}
+    sides::Tuple{Vararg{AbstractSide, N}}
 ) where {Tv, N}
     nc = 1 << N
     terms = Expr[]

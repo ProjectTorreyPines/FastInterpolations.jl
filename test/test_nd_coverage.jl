@@ -893,14 +893,14 @@ end
 end
 
 @testset "core/utils.jl — @_dispatch_side_nd mixed-sides fallback" begin
-    # Mixed side=(:left, :right) triggers the _to_side_vals fallback in @_dispatch_side_nd
+    # Mixed side=(LeftSide(), RightSide()) triggers the _to_side_vals fallback in @_dispatch_side_nd
     # (the `else` branch when _is_uniform_side returns false)
     grids = (collect(range(0.0, 2.0, 4)), collect(range(0.0, 3.0, 5)))
     data = [Float64(10i + j) for i in 1:4, j in 1:5]
 
-    result_left  = constant_interp(grids, data, (0.5, 0.5); side=:left)
-    result_right = constant_interp(grids, data, (0.5, 0.5); side=:right)
-    result_mixed = constant_interp(grids, data, (0.5, 0.5); side=(:left, :right))
+    result_left  = constant_interp(grids, data, (0.5, 0.5); side=LeftSide())
+    result_right = constant_interp(grids, data, (0.5, 0.5); side=RightSide())
+    result_mixed = constant_interp(grids, data, (0.5, 0.5); side=(LeftSide(), RightSide()))
 
     @test result_mixed isa Float64
     @test result_mixed != result_left   # x picks left, y picks right corner

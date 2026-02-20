@@ -28,7 +28,7 @@ using FastInterpolations
 
         @testset "constant" begin
             y_const = collect(1.0:length(x))
-            for side in (:left, :right, :nearest)
+            for side in (LeftSide(), RightSide(), NearestSide())
                 itp_k = constant_interp(x, y_const; side=side, extrap=NoExtrap())
                 cum = cumulative_integrate(itp_k)
                 @test cum[1] == 0.0
@@ -80,7 +80,7 @@ using FastInterpolations
         @testset "constant series" begin
             y_c1 = collect(1.0:length(x))
             y_c2 = collect(length(x):-1.0:1.0)
-            for side in (:left, :right, :nearest)
+            for side in (LeftSide(), RightSide(), NearestSide())
                 sitp = constant_interp(x, [y_c1, y_c2]; side=side)
                 itp1 = constant_interp(x, y_c1; side=side)
                 itp2 = constant_interp(x, y_c2; side=side)

@@ -68,7 +68,7 @@ using FastInterpolations
         @test vals isa Vector{ComplexF64}
 
         # Constant interpolation returns step value (nearest by default)
-        # At 5.5 with :nearest, rounds to index 6 (x=5) → value 5+10i
+        # At 5.5 with NearestSide(), rounds to index 6 (x=5) → value 5+10i
         @test isapprox(vals[1], 5.0 + 10.0im, rtol=1e-10)
     end
 
@@ -105,21 +105,21 @@ using FastInterpolations
     end
 
     # ========================================
-    # Side Options (:nearest, :left, :right)
+    # Side Options (NearestSide, LeftSide, RightSide)
     # ========================================
     @testset "Side options with Complex values" begin
         x = collect(0.0:1.0:5.0)  # [0, 1, 2, 3, 4, 5]
         y1 = ComplexF64[1+1im, 2+2im, 3+3im, 4+4im, 5+5im, 6+6im]
 
-        # Test :left side
-        sitp_left = constant_interp(x, [y1]; side=:left)
+        # Test LeftSide()
+        sitp_left = constant_interp(x, [y1]; side=LeftSide())
         @test sitp_left isa ConstantSeriesInterpolant{Float64, ComplexF64}
         vals_left = sitp_left(2.5)  # Between 2 and 3
         @test vals_left isa Vector{ComplexF64}
         @test isapprox(vals_left[1], 3.0 + 3.0im, rtol=1e-10)  # Left value at x=2
 
-        # Test :right side
-        sitp_right = constant_interp(x, [y1]; side=:right)
+        # Test RightSide()
+        sitp_right = constant_interp(x, [y1]; side=RightSide())
         vals_right = sitp_right(2.5)
         @test isapprox(vals_right[1], 4.0 + 4.0im, rtol=1e-10)  # Right value at x=3
     end

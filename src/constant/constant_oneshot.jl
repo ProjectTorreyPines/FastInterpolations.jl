@@ -31,7 +31,7 @@ Type parameters:
 """
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
-    ::ConstExtrap, ::SideVal, ::EvalValue
+    ::ConstExtrap, ::AbstractSide, ::EvalValue
 ) where {Tg<:AbstractFloat, Tv}
     if xi < x_min
         return @inbounds y[1]
@@ -42,21 +42,21 @@ end
 
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
-    ::ConstExtrap, ::SideVal, ::EvalDeriv1
+    ::ConstExtrap, ::AbstractSide, ::EvalDeriv1
 ) where {Tg<:AbstractFloat, Tv}
     return zero(Tv)
 end
 
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
-    ::ConstExtrap, ::SideVal, ::EvalDeriv2
+    ::ConstExtrap, ::AbstractSide, ::EvalDeriv2
 ) where {Tg<:AbstractFloat, Tv}
     return zero(Tv)
 end
 
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
-    ::ConstExtrap, ::SideVal, ::EvalDeriv3
+    ::ConstExtrap, ::AbstractSide, ::EvalDeriv3
 ) where {Tg<:AbstractFloat, Tv}
     return zero(Tv)
 end
@@ -64,7 +64,7 @@ end
 # ExtendExtrap delegates to ConstExtrap (slope=0 for constant function)
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
-    ::ExtendExtrap, side::SideVal, op::AbstractEvalOp
+    ::ExtendExtrap, side::AbstractSide, op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     return _constant_eval_extrap(y, xi, x_min, x_max, ConstExtrap(), side, op)
 end
@@ -96,7 +96,7 @@ AD Support:
     y::AbstractVector{Tv},
     xi::Tq,
     extrap::AbstractExtrap,
-    side::SideVal,
+    side::AbstractSide,
     op::AbstractEvalOp,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real, S<:Searcher}
@@ -149,7 +149,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, xi; extrap=NoExtrap(), side=:nearest, deriv=0, search=Binary())
+    constant_interp(x, y, xi; extrap=NoExtrap(), side=NearestSide(), deriv=0, search=Binary())
 
 Constant (step/piecewise constant) interpolation at a single point.
 
@@ -162,10 +162,10 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `ConstExtrap()`: clamp to boundary values
   - `ExtendExtrap()`: same as ConstExtrap (slope=0)
   - `WrapExtrap()`: wrap to [x_min, x_max)
-- `side::Symbol`: Side selection
-  - `:nearest` (default): nearest neighbor (left tie-breaking at midpoint)
-  - `:left`: always use left value
-  - `:right`: use right value (except at grid points)
+- `side::AbstractSide`: Side selection
+  - `NearestSide()` (default): nearest neighbor (left tie-breaking at midpoint)
+  - `LeftSide()`: always use left value
+  - `RightSide()`: use right value (except at grid points)
 - `deriv::Int`: Derivative order (0, 1, or 2). Derivatives are always 0.
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
@@ -181,8 +181,8 @@ x = [0.0, 1.0, 2.0, 3.0]
 y = [10.0, 20.0, 30.0, 40.0]
 
 constant_interp(x, y, 0.5)                    # 10.0 (nearest to left)
-constant_interp(x, y, 0.5; side=:left)        # 10.0
-constant_interp(x, y, 0.5; side=:right)       # 20.0
+constant_interp(x, y, 0.5; side=LeftSide())    # 10.0
+constant_interp(x, y, 0.5; side=RightSide())  # 20.0
 constant_interp(x, y, 1.0)                    # 20.0 (grid point)
 constant_interp(x, y, -1.0; extrap=ConstExtrap()) # 10.0 (clamped)
 
@@ -198,7 +198,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
     y::AbstractVector{Tv},
     xi::Tq;
     extrap::AbstractExtrap=NoExtrap(),
-    side::Symbol=:nearest,
+    side::AbstractSide=NearestSide(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -207,9 +207,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
 
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @_dispatch_side side => sv begin
-            _constant_eval_at_point(x, y, xi, extrap, sv, op, searcher)
-        end
+        _constant_eval_at_point(x, y, xi, extrap, side, op, searcher)
     end
 end
 
@@ -218,7 +216,7 @@ end
 # ========================================
 
 """
-    constant_interp!(output, x, y, x_targets; extrap=NoExtrap(), side=:nearest, deriv=0, search=Binary())
+    constant_interp!(output, x, y, x_targets; extrap=NoExtrap(), side=NearestSide(), deriv=0, search=Binary())
 
 Zero-allocation constant interpolation for multiple query points.
 
@@ -248,7 +246,7 @@ function constant_interp!(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
-    side::Symbol=:nearest,
+    side::AbstractSide=NearestSide(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -257,11 +255,9 @@ function constant_interp!(
 
     searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
-        @_dispatch_side side => sv begin
-            @boundscheck _check_domain(x, x_targets, extrap)
-            @inbounds for i in eachindex(x_targets, output)
-                output[i] = _constant_eval_at_point(x, y, x_targets[i], extrap, sv, op, searcher)
-            end
+        @boundscheck _check_domain(x, x_targets, extrap)
+        @inbounds for i in eachindex(x_targets, output)
+            output[i] = _constant_eval_at_point(x, y, x_targets[i], extrap, side, op, searcher)
         end
     end
     return output
@@ -272,7 +268,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, x_targets; extrap=NoExtrap(), side=:nearest, deriv=0, search=Binary())
+    constant_interp(x, y, x_targets; extrap=NoExtrap(), side=NearestSide(), deriv=0, search=Binary())
 
 Constant interpolation for multiple query points (allocating version).
 
@@ -293,7 +289,7 @@ function constant_interp(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
-    side::Symbol=:nearest,
+    side::AbstractSide=NearestSide(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -320,7 +316,7 @@ end
     y::AbstractVector{Tv},
     xi::Tq;
     extrap::AbstractExtrap=NoExtrap(),
-    side::Symbol=:nearest,
+    side::AbstractSide=NearestSide(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -340,7 +336,7 @@ function constant_interp(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
     extrap::AbstractExtrap=NoExtrap(),
-    side::Symbol=:nearest,
+    side::AbstractSide=NearestSide(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
@@ -361,7 +357,7 @@ function constant_interp!(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
     extrap::AbstractExtrap=NoExtrap(),
-    side::Symbol=:nearest,
+    side::AbstractSide=NearestSide(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}

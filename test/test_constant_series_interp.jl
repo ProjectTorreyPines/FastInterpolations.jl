@@ -47,9 +47,9 @@ const FI = FastInterpolations
         end
 
         @testset "side parameter preserved" begin
-            for side_mode in (:nearest, :left, :right)
+            for side_mode in (NearestSide(), LeftSide(), RightSide())
                 sitp = constant_interp(x, ys; side=side_mode)
-                @test sitp.side === Val(side_mode)
+                @test sitp.side === side_mode
             end
         end
     end
@@ -78,7 +78,7 @@ const FI = FastInterpolations
         x = [0.0, 1.0, 2.0, 3.0]
         y1 = [1.0, 2.0, 3.0, 4.0]  # step function
         y2 = [5.0, 5.0, 5.0, 5.0]  # constant
-        sitp = constant_interp(x, [y1, y2]; side=:left)
+        sitp = constant_interp(x, [y1, y2]; side=LeftSide())
 
         @testset "at grid points" begin
             for i in 1:(length(x)-1)
@@ -88,14 +88,14 @@ const FI = FastInterpolations
             end
         end
 
-        @testset "midpoints with side=:left" begin
+        @testset "midpoints with side=LeftSide()" begin
             result = sitp(0.5)
             @test result[1] == 1.0  # Left value in [0,1)
             @test result[2] == 5.0  # Constant
         end
 
-        @testset "midpoints with side=:nearest" begin
-            sitp_nearest = constant_interp(x, [y1, y2]; side=:nearest)
+        @testset "midpoints with side=NearestSide()" begin
+            sitp_nearest = constant_interp(x, [y1, y2]; side=NearestSide())
             # At 0.4, closer to 0 -> y[1]=1.0
             result = sitp_nearest(0.4)
             @test result[1] == 1.0
@@ -276,7 +276,7 @@ const FI = FastInterpolations
         ys = [y1, y2]
 
         # Both should give same results
-        sitp = constant_interp(x, ys; side=:nearest)
+        sitp = constant_interp(x, ys; side=NearestSide())
 
         # Compare at multiple points
         xq = [0.15, 0.35, 0.55, 0.75, 0.95]

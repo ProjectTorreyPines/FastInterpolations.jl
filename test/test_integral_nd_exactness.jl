@@ -265,7 +265,7 @@ using FastInterpolations
         y = collect(range(0.0, 3.0, length=9))
         z = collect(range(0.0, 1.0, length=7))
         data = fill(7.0, length(x), length(y), length(z))
-        for side in (:left, :right, :nearest)
+        for side in (LeftSide(), RightSide(), NearestSide())
             itp = constant_interp((x, y, z), data; side=side, extrap=NoExtrap())
             lo, hi = (0.3, 0.5, 0.1), (1.7, 2.4, 0.8)
             expected = 7.0 * (hi[1]-lo[1]) * (hi[2]-lo[2]) * (hi[3]-lo[3])
@@ -278,7 +278,7 @@ using FastInterpolations
         y = collect(range(0.0, 3.0, length=9))
         z = collect(range(0.0, 1.0, length=7))
         data = [sin(xi) + cos(yj) + zk for xi in x, yj in y, zk in z]
-        for side in (:left, :right, :nearest)
+        for side in (LeftSide(), RightSide(), NearestSide())
             itp = constant_interp((x, y, z), data; side=side, extrap=NoExtrap())
             @test isfinite(integrate(itp, (0.3, 0.5, 0.1), (1.7, 2.4, 0.8)))
         end

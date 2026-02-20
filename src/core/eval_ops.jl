@@ -135,12 +135,67 @@ itp = cubic_interp((x, y), data; extrap=WrapExtrap())
 """
 struct WrapExtrap <: AbstractExtrap end
 
-"""
-    SideVal
+# ========================================
+# Typed Side Selection Tags (Constant Interpolation)
+# ========================================
+#
+# Compile-time type tags for side mode selection.
+# Zero-cost type dispatch — no macros needed with proper types.
+#
+# 1D: Structs store SD<:AbstractSide, dispatch on concrete subtypes
+# ND: Structs store Tuple{Vararg{AbstractSide, N}}, resolved via _resolve_side_nd
 
-Union type for side selection mode values (constant interpolation).
-Using concrete Union enables Julia's union-splitting optimization.
-
-Valid values: `Val(:nearest)`, `Val(:left)`, `Val(:right)`
 """
-const SideVal = Union{Val{:nearest}, Val{:left}, Val{:right}}
+    AbstractSide
+
+Abstract type for side selection mode in constant interpolation.
+Determines which neighbor value to use at non-grid-point locations.
+
+# Concrete subtypes
+- [`NearestSide`](@ref): Nearest neighbor with left tie-breaking at midpoint
+- [`LeftSide`](@ref): Always use left (floor) value
+- [`RightSide`](@ref): Use right (ceiling) value, except at grid points
+
+!!! info "Union-splitting guarantee"
+    With exactly 3 concrete subtypes (< 4 limit), Julia union-splits
+    automatically on hot paths. No manual dispatch macros needed.
+"""
+abstract type AbstractSide end
+
+"""
+    NearestSide <: AbstractSide
+
+Nearest-neighbor side selection with left tie-breaking at midpoint.
+Returns left value if distance <= h/2, right value otherwise.
+
+# Example
+```julia
+itp = constant_interp(x, y; side=NearestSide())
+```
+"""
+struct NearestSide <: AbstractSide end
+
+"""
+    LeftSide <: AbstractSide
+
+Left-continuous (floor) side selection. Always returns the left boundary value.
+
+# Example
+```julia
+itp = constant_interp(x, y; side=LeftSide())
+```
+"""
+struct LeftSide <: AbstractSide end
+
+"""
+    RightSide <: AbstractSide
+
+Right-continuous (ceiling) side selection.
+Returns right value except at grid points (where it returns left value).
+
+# Example
+```julia
+itp = constant_interp(x, y; side=RightSide())
+```
+"""
+struct RightSide <: AbstractSide end

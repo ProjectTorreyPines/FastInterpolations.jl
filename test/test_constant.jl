@@ -1,88 +1,34 @@
 # Tests for constant (step/piecewise constant) interpolation
 
 # Import internal items for testing
-import FastInterpolations: @_dispatch_side, _constant_kernel, EvalValue, EvalDeriv1, EvalDeriv2
+import FastInterpolations: _constant_kernel, EvalValue, EvalDeriv1, EvalDeriv2
 
 # ============================================================================
 # Group 1: Infrastructure Tests (Phase 1)
 # ============================================================================
 @testset "Constant Interpolation - Infrastructure" begin
 
-    @testset "@_dispatch_side macro" begin
-        @testset "dispatch :nearest" begin
-            result = @_dispatch_side :nearest => sv begin
-                sv
-            end
-            @test result === Val(:nearest)
+    @testset "AbstractSide type hierarchy" begin
+        @testset "AbstractSide is abstract" begin
+            @test isabstracttype(FastInterpolations.AbstractSide)
         end
 
-        @testset "dispatch :left" begin
-            result = @_dispatch_side :left => sv begin
-                sv
-            end
-            @test result === Val(:left)
+        @testset "concrete subtypes" begin
+            @test NearestSide() isa FastInterpolations.AbstractSide
+            @test LeftSide() isa FastInterpolations.AbstractSide
+            @test RightSide() isa FastInterpolations.AbstractSide
         end
 
-        @testset "dispatch :right" begin
-            result = @_dispatch_side :right => sv begin
-                sv
-            end
-            @test result === Val(:right)
+        @testset "singleton identity" begin
+            @test NearestSide() === NearestSide()
+            @test LeftSide() === LeftSide()
+            @test RightSide() === RightSide()
         end
 
-        @testset "dispatch from variable" begin
-            for sym in (:nearest, :left, :right)
-                result = @_dispatch_side sym => sv begin
-                    sv
-                end
-                @test result === Val(sym)
-            end
-        end
-
-        @testset "invalid symbol throws ArgumentError" begin
-            @test_throws ArgumentError begin
-                @_dispatch_side :invalid => sv begin
-                    sv
-                end
-            end
-        end
-
-        @testset "body execution with binding" begin
-            x = 10
-            result = @_dispatch_side :left => sv begin
-                (sv, x * 2)
-            end
-            @test result === (Val(:left), 20)
-        end
-
-        @testset "type stability" begin
-            function test_dispatch(side::Symbol)
-                @_dispatch_side side => sv begin
-                    sv
-                end
-            end
-            @test test_dispatch(:nearest) === Val(:nearest)
-            @test test_dispatch(:left) === Val(:left)
-            @test test_dispatch(:right) === Val(:right)
-        end
-    end
-
-    @testset "SideVal type" begin
-        @testset "SideVal definition" begin
-            @test isdefined(FastInterpolations, :SideVal)
-            @test FastInterpolations.SideVal isa Union
-        end
-
-        @testset "SideVal members" begin
-            @test Val(:nearest) isa FastInterpolations.SideVal
-            @test Val(:left) isa FastInterpolations.SideVal
-            @test Val(:right) isa FastInterpolations.SideVal
-        end
-
-        @testset "SideVal exclusions" begin
-            @test !(Val(:none) isa FastInterpolations.SideVal)
-            @test !(Val(:constant) isa FastInterpolations.SideVal)
-            @test !(Val(:other) isa FastInterpolations.SideVal)
+        @testset "type distinctness" begin
+            @test typeof(NearestSide()) !== typeof(LeftSide())
+            @test typeof(LeftSide()) !== typeof(RightSide())
+            @test typeof(NearestSide()) !== typeof(RightSide())
         end
     end
 
@@ -98,27 +44,27 @@ end
     y_right = 20.0
     h = 1.0
 
-    @testset "EvalValue - side=:left" begin
+    @testset "EvalValue - side=LeftSide()" begin
         op = EvalValue()
-        sv = Val(:left)
+        sv = LeftSide()
         @test _constant_kernel(op, y_left, y_right, h, 0.0, sv) == 10.0
         @test _constant_kernel(op, y_left, y_right, h, 0.3, sv) == 10.0
         @test _constant_kernel(op, y_left, y_right, h, 0.7, sv) == 10.0
         @test _constant_kernel(op, y_left, y_right, h, 0.99, sv) == 10.0
     end
 
-    @testset "EvalValue - side=:right" begin
+    @testset "EvalValue - side=RightSide()" begin
         op = EvalValue()
-        sv = Val(:right)
+        sv = RightSide()
         @test _constant_kernel(op, y_left, y_right, h, 0.0, sv) == 10.0  # grid point
         @test _constant_kernel(op, y_left, y_right, h, 0.3, sv) == 20.0
         @test _constant_kernel(op, y_left, y_right, h, 0.7, sv) == 20.0
         @test _constant_kernel(op, y_left, y_right, h, 0.99, sv) == 20.0
     end
 
-    @testset "EvalValue - side=:nearest" begin
+    @testset "EvalValue - side=NearestSide()" begin
         op = EvalValue()
-        sv = Val(:nearest)
+        sv = NearestSide()
         @test _constant_kernel(op, y_left, y_right, h, 0.0, sv) == 10.0
         @test _constant_kernel(op, y_left, y_right, h, 0.4, sv) == 10.0
         @test _constant_kernel(op, y_left, y_right, h, 0.5, sv) == 10.0  # tie-breaking
@@ -128,30 +74,30 @@ end
 
     @testset "EvalDeriv1 - all sides return zero" begin
         op = EvalDeriv1()
-        @test _constant_kernel(op, y_left, y_right, h, 0.5, Val(:nearest)) == 0.0
-        @test _constant_kernel(op, y_left, y_right, h, 0.5, Val(:left)) == 0.0
-        @test _constant_kernel(op, y_left, y_right, h, 0.5, Val(:right)) == 0.0
+        @test _constant_kernel(op, y_left, y_right, h, 0.5, NearestSide()) == 0.0
+        @test _constant_kernel(op, y_left, y_right, h, 0.5, LeftSide()) == 0.0
+        @test _constant_kernel(op, y_left, y_right, h, 0.5, RightSide()) == 0.0
     end
 
     @testset "EvalDeriv2 - all sides return zero" begin
         op = EvalDeriv2()
-        @test _constant_kernel(op, y_left, y_right, h, 0.5, Val(:nearest)) == 0.0
-        @test _constant_kernel(op, y_left, y_right, h, 0.5, Val(:left)) == 0.0
-        @test _constant_kernel(op, y_left, y_right, h, 0.5, Val(:right)) == 0.0
+        @test _constant_kernel(op, y_left, y_right, h, 0.5, NearestSide()) == 0.0
+        @test _constant_kernel(op, y_left, y_right, h, 0.5, LeftSide()) == 0.0
+        @test _constant_kernel(op, y_left, y_right, h, 0.5, RightSide()) == 0.0
     end
 
     @testset "Type preservation" begin
-        @test _constant_kernel(EvalValue(), 1.0, 2.0, 1.0, 0.5, Val(:left)) isa Float64
-        @test _constant_kernel(EvalDeriv1(), 1.0, 2.0, 1.0, 0.5, Val(:left)) isa Float64
-        @test _constant_kernel(EvalValue(), 1.0f0, 2.0f0, 1.0f0, 0.5f0, Val(:nearest)) isa Float32
-        @test _constant_kernel(EvalDeriv1(), 1.0f0, 2.0f0, 1.0f0, 0.5f0, Val(:nearest)) isa Float32
+        @test _constant_kernel(EvalValue(), 1.0, 2.0, 1.0, 0.5, LeftSide()) isa Float64
+        @test _constant_kernel(EvalDeriv1(), 1.0, 2.0, 1.0, 0.5, LeftSide()) isa Float64
+        @test _constant_kernel(EvalValue(), 1.0f0, 2.0f0, 1.0f0, 0.5f0, NearestSide()) isa Float32
+        @test _constant_kernel(EvalDeriv1(), 1.0f0, 2.0f0, 1.0f0, 0.5f0, NearestSide()) isa Float32
     end
 
     @testset "Non-uniform grid (h != 1)" begin
         op = EvalValue()
-        @test _constant_kernel(op, 100.0, 200.0, 2.0, 0.9, Val(:nearest)) == 100.0
-        @test _constant_kernel(op, 100.0, 200.0, 2.0, 1.0, Val(:nearest)) == 100.0  # tie
-        @test _constant_kernel(op, 100.0, 200.0, 2.0, 1.1, Val(:nearest)) == 200.0
+        @test _constant_kernel(op, 100.0, 200.0, 2.0, 0.9, NearestSide()) == 100.0
+        @test _constant_kernel(op, 100.0, 200.0, 2.0, 1.0, NearestSide()) == 100.0  # tie
+        @test _constant_kernel(op, 100.0, 200.0, 2.0, 1.1, NearestSide()) == 200.0
     end
 
 end
@@ -169,15 +115,15 @@ end
         @test constant_interp(x, y, 1.5) == 20.0
         @test constant_interp(x, y, 2.5) == 30.0
 
-        @test constant_interp(x, y, 0.9; side=:left) == 10.0
-        @test constant_interp(x, y, 1.1; side=:left) == 20.0
+        @test constant_interp(x, y, 0.9; side=LeftSide()) == 10.0
+        @test constant_interp(x, y, 1.1; side=LeftSide()) == 20.0
 
-        @test constant_interp(x, y, 0.0; side=:right) == 10.0
-        @test constant_interp(x, y, 0.1; side=:right) == 20.0
+        @test constant_interp(x, y, 0.0; side=RightSide()) == 10.0
+        @test constant_interp(x, y, 0.1; side=RightSide()) == 20.0
 
-        @test constant_interp(x, y, 1.0; side=:nearest) == 20.0
-        @test constant_interp(x, y, 1.0; side=:left) == 20.0
-        @test constant_interp(x, y, 1.0; side=:right) == 20.0
+        @test constant_interp(x, y, 1.0; side=NearestSide()) == 20.0
+        @test constant_interp(x, y, 1.0; side=LeftSide()) == 20.0
+        @test constant_interp(x, y, 1.0; side=RightSide()) == 20.0
 
         @test constant_interp(x, y, 4.0) == 50.0
 
@@ -189,7 +135,7 @@ end
         result = constant_interp(x, y, [0.5, 1.5, 2.5])
         @test result ≈ [10.0, 20.0, 30.0]
 
-        result_left = constant_interp(x, y, [0.5, 1.5]; side=:left)
+        result_left = constant_interp(x, y, [0.5, 1.5]; side=LeftSide())
         @test result_left ≈ [10.0, 20.0]
     end
 
@@ -262,8 +208,8 @@ end
         @test itp_int(1.5) == 20.0
 
         # Test options pass through the wrappers correctly
-        @test constant_interp(x_int, y_int, 0; side=:right) == 10.0
-        @test constant_interp(x_int, y_int, 0; side=:left) == 10.0
+        @test constant_interp(x_int, y_int, 0; side=RightSide()) == 10.0
+        @test constant_interp(x_int, y_int, 0; side=LeftSide()) == 10.0
         @test constant_interp(x_int, y_int, -1; extrap=ConstExtrap()) == 10.0
         @test constant_interp(x_int, y_int, 5; extrap=ConstExtrap()) == 50.0
 
@@ -273,7 +219,7 @@ end
         @test out3 ≈ [10.0, 50.0]
 
         # Test 2-arg callable with options
-        itp_left = constant_interp(x_int, y_int; side=:left)
+        itp_left = constant_interp(x_int, y_int; side=LeftSide())
         @test itp_left(0.9) == 10.0
         itp_wrap = constant_interp(x_int, y_int; extrap=WrapExtrap())
         @test itp_wrap(4.0) == 10.0
@@ -318,10 +264,10 @@ end
         @test itp_const(-1.0) == 10.0
         @test itp_const(5.0) == 50.0
 
-        itp_left = constant_interp(x, y; side=:left)
+        itp_left = constant_interp(x, y; side=LeftSide())
         @test itp_left(0.9) == 10.0
 
-        itp_right = constant_interp(x, y; side=:right)
+        itp_right = constant_interp(x, y; side=RightSide())
         @test itp_right(0.1) == 20.0
     end
 
@@ -329,16 +275,16 @@ end
         itp = constant_interp(x, y)
         @test @inferred(itp(0.5)) isa Float64
         @test @inferred(constant_interp(x, y, 0.5)) isa Float64
-        @test @inferred(constant_interp(x, y, 0.5; side=:left)) isa Float64
+        @test @inferred(constant_interp(x, y, 0.5; side=LeftSide())) isa Float64
         @test @inferred(constant_interp(x, y, 0.5; extrap=ConstExtrap())) isa Float64
         @test @inferred(constant_interp(x, y, 0.5; deriv=1)) isa Float64
     end
 
-    @testset "Invalid side argument throws ArgumentError" begin
-        @test_throws ArgumentError constant_interp(x, y, 0.5; side=:invalid)
-        @test_throws ArgumentError constant_interp(x, y, [0.5, 1.5]; side=:foo)
+    @testset "Invalid side argument throws TypeError" begin
+        @test_throws TypeError constant_interp(x, y, 0.5; side=:invalid)
+        @test_throws TypeError constant_interp(x, y, [0.5, 1.5]; side=:foo)
         out = zeros(2)
-        @test_throws ArgumentError constant_interp!(out, x, y, [0.5, 1.5]; side=:bar)
+        @test_throws TypeError constant_interp!(out, x, y, [0.5, 1.5]; side=:bar)
     end
 
 end
@@ -362,8 +308,8 @@ end
     @testset "constant_interp! with side option" begin
         out = zeros(5)
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
-        constant_interp!(out, x, y, xq; side=:left)
-        allocs = @allocated constant_interp!(out, x, y, xq; side=:left)
+        constant_interp!(out, x, y, xq; side=LeftSide())
+        allocs = @allocated constant_interp!(out, x, y, xq; side=LeftSide())
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -409,8 +355,8 @@ end
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "ConstantInterpolant with side=:left in-place" begin
-        itp = constant_interp(x, y; side=:left)
+    @testset "ConstantInterpolant with side=LeftSide() in-place" begin
+        itp = constant_interp(x, y; side=LeftSide())
         out = zeros(5)
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
         itp(out, xq)
@@ -513,15 +459,15 @@ end
         d2 = deriv2(itp_wrap)
         @test d2(4.5) == 0.0
 
-        itp_left = constant_interp(x, y; side=:left)
+        itp_left = constant_interp(x, y; side=LeftSide())
         @test deriv1(itp_left)(0.5) == 0.0
 
-        itp_right = constant_interp(x, y; side=:right)
+        itp_right = constant_interp(x, y; side=RightSide())
         @test deriv2(itp_right)(0.5) == 0.0
     end
 
     @testset "Edge: Grid point behavior" begin
-        for side in (:nearest, :left, :right)
+        for side in (NearestSide(), LeftSide(), RightSide())
             @test constant_interp(x, y, 0.0; side=side) == 10.0
             @test constant_interp(x, y, 1.0; side=side) == 20.0
             @test constant_interp(x, y, 2.0; side=side) == 30.0
@@ -538,11 +484,11 @@ end
     end
 
     @testset "Edge: Wrap boundary cases" begin
-        @test constant_interp(x, y, 4.0; extrap=WrapExtrap(), side=:left) == 10.0
-        @test constant_interp(x, y, 4.0; extrap=WrapExtrap(), side=:right) == 10.0
-        @test constant_interp(x, y, 4.0; extrap=WrapExtrap(), side=:nearest) == 10.0
-        @test constant_interp(x, y, 4.5; extrap=WrapExtrap(), side=:nearest) == 10.0
-        @test constant_interp(x, y, 5.0; extrap=WrapExtrap(), side=:nearest) == 20.0
+        @test constant_interp(x, y, 4.0; extrap=WrapExtrap(), side=LeftSide()) == 10.0
+        @test constant_interp(x, y, 4.0; extrap=WrapExtrap(), side=RightSide()) == 10.0
+        @test constant_interp(x, y, 4.0; extrap=WrapExtrap(), side=NearestSide()) == 10.0
+        @test constant_interp(x, y, 4.5; extrap=WrapExtrap(), side=NearestSide()) == 10.0
+        @test constant_interp(x, y, 5.0; extrap=WrapExtrap(), side=NearestSide()) == 20.0
     end
 
     @testset "Edge: Extrapolation + deriv" begin
@@ -554,17 +500,17 @@ end
     end
 
     @testset "Edge: Midpoint tie-breaking" begin
-        @test constant_interp(x, y, 0.5; side=:nearest) == 10.0
-        @test constant_interp(x, y, 1.5; side=:nearest) == 20.0
-        @test constant_interp(x, y, 2.5; side=:nearest) == 30.0
+        @test constant_interp(x, y, 0.5; side=NearestSide()) == 10.0
+        @test constant_interp(x, y, 1.5; side=NearestSide()) == 20.0
+        @test constant_interp(x, y, 2.5; side=NearestSide()) == 30.0
     end
 
     @testset "Edge: Non-uniform grid" begin
         x_nu = [0.0, 0.5, 2.0, 2.5, 4.0]
         y_nu = [10.0, 20.0, 30.0, 40.0, 50.0]
-        @test constant_interp(x_nu, y_nu, 0.25; side=:nearest) == 10.0
-        @test constant_interp(x_nu, y_nu, 1.0; side=:nearest) == 20.0
-        @test constant_interp(x_nu, y_nu, 1.5; side=:nearest) == 30.0
+        @test constant_interp(x_nu, y_nu, 0.25; side=NearestSide()) == 10.0
+        @test constant_interp(x_nu, y_nu, 1.0; side=NearestSide()) == 20.0
+        @test constant_interp(x_nu, y_nu, 1.5; side=NearestSide()) == 30.0
     end
 
     @testset "Edge: Float32 type preservation" begin
@@ -583,9 +529,9 @@ end
     @testset "Edge: Minimum grid size (2 points)" begin
         x_min = [0.0, 1.0]
         y_min = [10.0, 20.0]
-        @test constant_interp(x_min, y_min, 0.5; side=:nearest) == 10.0
-        @test constant_interp(x_min, y_min, 0.5; side=:left) == 10.0
-        @test constant_interp(x_min, y_min, 0.5; side=:right) == 20.0
+        @test constant_interp(x_min, y_min, 0.5; side=NearestSide()) == 10.0
+        @test constant_interp(x_min, y_min, 0.5; side=LeftSide()) == 10.0
+        @test constant_interp(x_min, y_min, 0.5; side=RightSide()) == 20.0
         @test constant_interp(x_min, y_min, 0.0) == 10.0
         @test constant_interp(x_min, y_min, 1.0) == 20.0
     end
@@ -593,8 +539,8 @@ end
     @testset "Edge: Range input (O(1) path)" begin
         x_range = 0.0:0.5:4.0
         y_range = collect(10.0:10.0:90.0)
-        @test constant_interp(x_range, y_range, 0.25; side=:nearest) == 10.0
-        @test constant_interp(x_range, y_range, 0.75; side=:nearest) == 20.0
+        @test constant_interp(x_range, y_range, 0.25; side=NearestSide()) == 10.0
+        @test constant_interp(x_range, y_range, 0.75; side=NearestSide()) == 20.0
 
         itp_range = constant_interp(x_range, y_range)
         @test itp_range(0.25) == 10.0

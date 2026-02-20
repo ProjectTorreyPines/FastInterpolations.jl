@@ -17,7 +17,7 @@ N-dimensional constant (step) interpolation with per-axis configuration.
 - `G<:NTuple{N, AbstractVector{Tg}}`: Grid tuple type
 - `S<:NTuple{N, AbstractGridSpacing{Tg}}`: Spacing tuple type
 - `E<:Tuple{Vararg{AbstractExtrap, N}}`: Extrapolation mode tuple type
-- `SD<:NTuple{N, SideVal}`: Side selection tuple type
+- `SD<:Tuple{Vararg{AbstractSide, N}}`: Side selection tuple type
 - `P<:NTuple{N, AbstractSearchPolicy}`: Search policy tuple type
 
 # Fields
@@ -25,7 +25,7 @@ N-dimensional constant (step) interpolation with per-axis configuration.
 - `spacings`: Tuple of spacing objects for efficient interval lookup
 - `data`: N-dimensional data array
 - `extraps`: Per-axis extrapolation modes
-- `sides`: Per-axis side selection (:nearest, :left, :right)
+- `sides`: Per-axis side selection (NearestSide(), LeftSide(), RightSide())
 - `searches`: Per-axis search policies
 
 # Usage
@@ -35,14 +35,14 @@ x = [0.0, 1.0, 2.0]
 y = [0.0, 1.0, 2.0, 3.0]
 data = rand(3, 4)
 
-itp = constant_interp((x, y), data)  # Default: side=:nearest, extrap=NoExtrap()
+itp = constant_interp((x, y), data)  # Default: side=NearestSide(), extrap=NoExtrap()
 val = itp((0.5, 1.5))                # Single query
 
 # With configuration
-itp = constant_interp((x, y), data; side=:left, extrap=ConstExtrap())
+itp = constant_interp((x, y), data; side=LeftSide(), extrap=ConstExtrap())
 
 # Per-axis configuration
-itp = constant_interp((x, y), data; side=(:left, :right), extrap=(NoExtrap(), WrapExtrap()))
+itp = constant_interp((x, y), data; side=(LeftSide(), RightSide()), extrap=(NoExtrap(), WrapExtrap()))
 ```
 """
 struct ConstantInterpolantND{
@@ -52,7 +52,7 @@ struct ConstantInterpolantND{
     G<:NTuple{N, AbstractVector{Tg}},
     S<:NTuple{N, AbstractGridSpacing{Tg}},
     E<:Tuple{Vararg{AbstractExtrap, N}},
-    SD<:NTuple{N, SideVal},
+    SD<:Tuple{Vararg{AbstractSide, N}},
     P<:NTuple{N, AbstractSearchPolicy},
 } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
@@ -66,7 +66,7 @@ struct ConstantInterpolantND{
         grids::G, spacings::S, data::Array{Tv,N}, extraps::E, sides::SD, searches::P
     ) where {Tg<:AbstractFloat, Tv, N, G<:NTuple{N,AbstractVector{Tg}},
              S<:NTuple{N,AbstractGridSpacing{Tg}}, E,
-             SD<:NTuple{N,SideVal}, P<:NTuple{N,AbstractSearchPolicy}}
+             SD<:Tuple{Vararg{AbstractSide, N}}, P<:NTuple{N,AbstractSearchPolicy}}
         new{Tg,Tv,N,G,S,E,SD,P}(grids, spacings, data, extraps, sides, searches)
     end
 end

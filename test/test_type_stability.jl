@@ -2,6 +2,7 @@
 using Test
 using FastInterpolations
 using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, ClampedBC, CubicSplineCache
+using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
 @testset "Type Stability" begin
     x = collect(range(0.0, 2π, 10))
@@ -19,6 +20,18 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
         @test @inferred(cubic_interp(x, y; bc=PeriodicBC())) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=BCPair(Deriv1(0.0), Deriv2(0.0)))) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=Deriv2(0.0))) isa CubicInterpolant  # PointBC
+    end
+
+    @testset "cubic_interp 2-arg PolyFit BC @inferred" begin
+        @test @inferred(cubic_interp(x, y; bc=LinearFit())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=QuadraticFit())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=CubicFit())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=PolyFit{4}())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=BCPair(CubicFit(), Deriv2(0.0)))) isa CubicInterpolant
+
+        @test @inferred(cubic_interp(x, y; bc=CubicFit(), autocache=true)) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=CubicFit(), autocache=false)) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=BCPair(CubicFit(), Deriv2(0.0)), autocache=false)) isa CubicInterpolant
     end
 
     @testset "cubic_interp 2-arg extrap variations" begin
@@ -810,6 +823,13 @@ using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, Clamped
 
             # Construction
             @test @inferred(cubic_interp(xs, ys)) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, ys; bc=LinearFit())) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, ys; bc=QuadraticFit())) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, ys; bc=CubicFit())) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, ys; bc=PolyFit{4}())) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, ys; bc=BCPair(CubicFit(), Deriv2(0.0)))) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, ys; bc=CubicFit(), autocache=true)) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, ys; bc=CubicFit(), autocache=false)) isa CubicSeriesInterpolant
 
             # Scalar eval → Vector{Float64}
             @test @inferred(sitp(0.5)) isa Vector{Float64}

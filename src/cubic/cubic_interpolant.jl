@@ -481,15 +481,6 @@ function cubic_interp(
     search::P=Binary()
 ) where {TX<:Real, TY, P<:AbstractSearchPolicy}
     x_p, y_p = _promote_itp_inputs(x, y)
-    Tv = eltype(y_p)
-    bc_promoted = _promote_bc(bc, Tv)
-
-    if _is_periodic_bc(bc)
-        return _build_interpolant_periodic(x_p, y_p, bc, autocache, search)
-    else
-        extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
-        mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
-        bc_pair = _normalize_bc(bc_promoted, Tv)
-        return _build_interpolant_bcpair(x_p, y_p, bc_pair, mode, autocache, search)
-    end
+    bc_promoted = _promote_bc(bc, eltype(y_p))
+    return _cubic_interp_impl(x_p, y_p, bc_promoted, extrap, autocache, search)
 end

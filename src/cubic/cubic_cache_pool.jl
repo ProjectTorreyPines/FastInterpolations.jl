@@ -577,8 +577,8 @@ end
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_t = _promote_pointbc(bc, FT)
-    bc_pair = BCPair(bc_t, bc_t)
-    return _get_derivative_cache_impl(x, bc_pair)
+    bc_cache = _cache_bc_pair(BCPair(bc_t, bc_t), FT)
+    return _get_derivative_cache_impl(x, bc_cache)
 end
 
 # BCPair + autocache API.

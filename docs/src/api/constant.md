@@ -46,6 +46,15 @@ ConstantInterpolant
 ConstantInterpolantND
 ```
 
+## Side Selection Types
+
+```@docs
+AbstractSide
+NearestSide
+LeftSide
+RightSide
+```
+
 ## Derivative Views
 
 See [Derivatives](../interpolation/derivatives.md) for `deriv1`, `deriv2`, `deriv3` API reference.

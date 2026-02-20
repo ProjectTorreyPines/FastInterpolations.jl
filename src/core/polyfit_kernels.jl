@@ -291,7 +291,7 @@ end
 # Returns NTuple for compatibility with _weighted_sum.
 # Julia dispatch ensures D=1,2,3 use the specialized methods above.
 @inline @with_pool pool function _compute_deriv1_coeffs(
-    pf::PolyFit{D}, side::AbstractSide, x::NTuple{N,T}
+    pf::PolyFit{D}, side::Union{LeftSide,RightSide}, x::NTuple{N,T}
 ) where {D, N, T<:AbstractFloat}
     c = acquire!(pool, T, N)
     β = acquire!(pool, T, N)
@@ -417,7 +417,7 @@ This is the generic fallback for D > 3. For D = 1, 2, 3, the specialized
 """
 @inline function _compute_deriv1_coeffs!(
     coeffs::AbstractVector{T}, β::AbstractVector{T},
-    ::PolyFit{D}, side::AbstractSide, x::NTuple{N,T}
+    ::PolyFit{D}, side::Union{LeftSide,RightSide}, x::NTuple{N,T}
 ) where {D,N,T<:AbstractFloat}
     k = side isa LeftSide ? 1 : N
     _d1_coeffs_at_node!(coeffs, β, x, k, Val(N))
@@ -430,7 +430,7 @@ end
 # Higher-level API using LeftSide/RightSide and PolyFit{D} dispatch.
 # Handles both uniform (Range) and non-uniform (Vector) grids.
 #
-# API signature: _estimate_endpoint_derivative(xs, ys, Val(:left/:right), PolyFit{D}())
+# API signature: _estimate_endpoint_derivative(xs, ys, LeftSide()/RightSide(), PolyFit{D}())
 #
 # Supported polynomial degrees:
 #   - PolyFit{1} (LinearFit):   2-point, O(h)  accuracy

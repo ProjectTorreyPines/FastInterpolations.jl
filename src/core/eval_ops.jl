@@ -156,9 +156,11 @@ Determines which neighbor value to use at non-grid-point locations.
 - [`LeftSide`](@ref): Always use left (floor) value
 - [`RightSide`](@ref): Use right (ceiling) value, except at grid points
 
-!!! info "Union-splitting guarantee"
-    With exactly 3 concrete subtypes (< 4 limit), Julia union-splits
-    automatically on hot paths. No manual dispatch macros needed.
+!!! info "Type dispatch mechanism"
+    Interpolant structs store `side` as a type parameter `SD<:AbstractSide`,
+    so dispatch is fully monomorphized at compile time — zero overhead.
+    For oneshot paths where `side` appears in a Union, Julia union-splits
+    automatically (3 concrete subtypes < 4 limit).
 """
 abstract type AbstractSide end
 

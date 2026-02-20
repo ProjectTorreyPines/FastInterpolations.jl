@@ -115,6 +115,7 @@ end
 _format_side(::NearestSide) = "NearestSide"
 _format_side(::LeftSide) = "LeftSide"
 _format_side(::RightSide) = "RightSide"
+_format_side(side::AbstractSide) = string(typeof(side))
 
 """Format search policy name."""
 _format_search(::Binary) = "Binary"

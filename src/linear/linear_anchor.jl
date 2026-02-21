@@ -308,9 +308,7 @@ d1 = itp(aq; deriv=1)   # First derivative
 ```
 """
 @inline function (itp::LinearInterpolant{Tg})(aq::_LinearAnchoredQuery{Tg}; deriv::DerivOp=EvalValue()) where {Tg<:AbstractFloat}
-    @_dispatch_deriv deriv => op begin
-        _linear_eval_with_anchor(itp, aq, op)
-    end
+    _linear_eval_with_anchor(itp, aq, deriv)
 end
 
 @inline function _linear_eval_with_anchor(
@@ -387,10 +385,8 @@ function (itp::LinearInterpolant{Tg,Tv})(
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     T_out = promote_type(Tv, Tq)
     output = Vector{T_out}(undef, length(aq_vec))
-    @_dispatch_deriv deriv => op begin
-        @inbounds for i in eachindex(aq_vec)
-            output[i] = _linear_eval_with_anchor(itp, aq_vec[i], op)
-        end
+    @inbounds for i in eachindex(aq_vec)
+        output[i] = _linear_eval_with_anchor(itp, aq_vec[i], deriv)
     end
     return output
 end
@@ -406,10 +402,8 @@ function (itp::LinearInterpolant{Tg})(
     deriv::DerivOp=EvalValue()
 ) where {Tg<:AbstractFloat}
     @assert length(output) == length(aq_vec) "output length must match aq_vec length"
-    @_dispatch_deriv deriv => op begin
-        @inbounds for i in eachindex(aq_vec)
-            output[i] = _linear_eval_with_anchor(itp, aq_vec[i], op)
-        end
+    @inbounds for i in eachindex(aq_vec)
+        output[i] = _linear_eval_with_anchor(itp, aq_vec[i], deriv)
     end
     return output
 end

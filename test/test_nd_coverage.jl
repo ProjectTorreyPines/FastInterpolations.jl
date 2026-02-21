@@ -46,7 +46,6 @@ import FastInterpolations:
     _resolve_extrap_nd,
     _resolve_search_nd,
     _resolve_bcs_nd,
-    _int_to_evalop,
     _get_polyfit_bc,
     _make_polyfit,
     _validate_nd_grids,
@@ -275,13 +274,6 @@ import FastInterpolations:
             # Wrong size should throw
             @test_throws ArgumentError _resolve_bcs_nd((NaturalBC(),), Val(2))
             @test_throws ArgumentError _resolve_bcs_nd((NaturalBC(), NaturalBC(), NaturalBC()), Val(2))
-        end
-
-        @testset "_int_to_evalop" begin
-            @test _int_to_evalop(Val(0)) isa EvalValue
-            @test _int_to_evalop(Val(1)) isa EvalDeriv1
-            @test _int_to_evalop(Val(2)) isa EvalDeriv2
-            @test _int_to_evalop(Val(3)) isa EvalDeriv3
         end
 
         @testset "DerivOp constructors" begin

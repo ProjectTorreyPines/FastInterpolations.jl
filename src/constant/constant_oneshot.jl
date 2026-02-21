@@ -206,9 +206,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        _constant_eval_at_point(x, y, xi, extrap, side, op, searcher)
-    end
+    _constant_eval_at_point(x, y, xi, extrap, side, deriv, searcher)
 end
 
 # ========================================
@@ -254,11 +252,9 @@ function constant_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(x, x_targets, extrap)
-        @inbounds for i in eachindex(x_targets, output)
-            output[i] = _constant_eval_at_point(x, y, x_targets[i], extrap, side, op, searcher)
-        end
+    @boundscheck _check_domain(x, x_targets, extrap)
+    @inbounds for i in eachindex(x_targets, output)
+        output[i] = _constant_eval_at_point(x, y, x_targets[i], extrap, side, deriv, searcher)
     end
     return output
 end

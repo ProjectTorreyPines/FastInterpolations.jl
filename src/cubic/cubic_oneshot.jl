@@ -44,9 +44,7 @@ Thread-safe: workspaces allocated from task-local pool.
     _solve_system!(z, cache, y, cache.bc_config)
 
     searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        _cubic_vector_loop!(output, cache, y, z, x_query, extrap, op, searcher)
-    end
+    _cubic_vector_loop!(output, cache, y, z, x_query, extrap, deriv, searcher)
 
     return output
 end
@@ -234,16 +232,14 @@ In-place cubic spline interpolation with optional automatic caching.
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        # Periodic BC
-        if _is_periodic_bc(bc)
-            return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, op, searcher)
-        end
-
-        # Normalize to BCPair and dispatch to core
-        bc_pair = _normalize_bc(bc, Tv)
-        return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache, op, searcher)
+    # Periodic BC
+    if _is_periodic_bc(bc)
+        return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, deriv, searcher)
     end
+
+    # Normalize to BCPair and dispatch to core
+    bc_pair = _normalize_bc(bc, Tv)
+    return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache, deriv, searcher)
 end
 
 
@@ -377,14 +373,12 @@ function cubic_interp(
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        if _is_periodic_bc(bc)
-            return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, op, searcher)
-        end
-
-        bc_pair = _normalize_bc(bc, Tv)
-        return _cubic_interp_bcpair_scalar(x, y, xq, bc_pair, extrap, autocache, op, searcher)
+    if _is_periodic_bc(bc)
+        return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, deriv, searcher)
     end
+
+    bc_pair = _normalize_bc(bc, Tv)
+    return _cubic_interp_bcpair_scalar(x, y, xq, bc_pair, extrap, autocache, deriv, searcher)
 end
 
 

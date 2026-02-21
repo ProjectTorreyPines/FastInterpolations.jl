@@ -821,10 +821,7 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     # Build anchor preserving Dual type in xq
     aq = _make_anchor(sitp, xq_promoted, _to_searcher(search, hint))
 
-    # Dispatch on derivative order
-    @_dispatch_deriv deriv => op begin
-        _eval_series_at_anchor!(output, sitp, aq, op)
-    end
+    _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output
 end
 
@@ -851,10 +848,7 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     # Build anchor preserving Dual type in xq (for AD)
     aq = _make_anchor(sitp, xq_promoted, _to_searcher(search, hint))
 
-    # Dispatch on derivative order
-    @_dispatch_deriv deriv => op begin
-        _eval_series_at_anchor!(output, sitp, aq, op)
-    end
+    _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output
 end
 
@@ -952,10 +946,8 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
     x_min, x_max = Tg(first(sitp.cache.x)), Tg(last(sitp.cache.x))
 
     # Evaluate all series using series-contiguous layout
-    @_dispatch_deriv deriv => op begin
-        @inbounds for k in 1:n
-            _eval_series_vector!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, op)
-        end
+    @inbounds for k in 1:n
+        _eval_series_vector!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, deriv)
     end
     return outputs
 end
@@ -1011,10 +1003,8 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     x_min, x_max = Tg(first(sitp.cache.x)), Tg(last(sitp.cache.x))
 
     # Evaluate all series
-    @_dispatch_deriv deriv => op begin
-        @inbounds for k in 1:n
-            _eval_series_vector!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, op)
-        end
+    @inbounds for k in 1:n
+        _eval_series_vector!(outputs[k], y, z, n_pts, x_min, x_max, k, aq_vec, extrap, deriv)
     end
     return outputs
 end

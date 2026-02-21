@@ -157,27 +157,8 @@ Resolve side selection to canonical N-tuple.
 end
 
 # ========================================
-# Derivative Order → EvalOp Conversion
+# Derivative Order Resolution (ND)
 # ========================================
-#
-# Design: Strict API for Performance
-# -----------------------------------
-# Accepts only:
-#   1. Int (0-3): Broadcast to all axes via @_dispatch_deriv
-#   2. Val{D}: Compile-time spec → type-stable ntuple
-#
-# Raw Tuple rejected to prevent Union type performance traps.
-
-"""
-    _int_to_evalop(::Val{d}) -> DerivOp
-
-Convert compile-time derivative order to DerivOp singleton.
-Val-based dispatch ensures type stability.
-"""
-@inline _int_to_evalop(::Val{0}) = DerivOp{0}()
-@inline _int_to_evalop(::Val{1}) = DerivOp{1}()
-@inline _int_to_evalop(::Val{2}) = DerivOp{2}()
-@inline _int_to_evalop(::Val{3}) = DerivOp{3}()
 
 """
     _resolve_deriv_nd(deriv, Val(N)) -> NTuple{N, DerivOp}

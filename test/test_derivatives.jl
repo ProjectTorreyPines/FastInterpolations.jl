@@ -1,14 +1,14 @@
 # ========================================
 # Derivative Tests for FastInterpolations.jl
 # ========================================
-# Phase 1: Foundation tests for EvalOp types and @_dispatch_deriv macro
+# Phase 1: Foundation tests for EvalOp types (DerivOp)
 # Phase 2+: Kernel functions, cubic/linear derivative evaluation
 
 using Test
 using FastInterpolations
 
 # Import internal types/macros for testing
-using FastInterpolations: @_dispatch_deriv, _linear_kernel, _cubic_kernel
+using FastInterpolations: _linear_kernel, _cubic_kernel
 using FastInterpolations: _eval_cubic_at_point, _eval_cubic_with_extrap, _get_cubic_cache, _solve_system!
 using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
 using FastInterpolations: _to_searcher
@@ -38,74 +38,14 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
         @test fieldcount(EvalDeriv2) == 0
     end
 
-    @testset "@_dispatch_deriv macro" begin
-        # deriv=DerivOp(0) → EvalValue
-        result0 = @_dispatch_deriv 0 => op begin
-            typeof(op)
-        end
-        @test result0 === EvalValue
-
-        # deriv=DerivOp(1) → EvalDeriv1
-        result1 = @_dispatch_deriv 1 => op begin
-            typeof(op)
-        end
-        @test result1 === EvalDeriv1
-
-        # deriv=DerivOp(2) → EvalDeriv2
-        result2 = @_dispatch_deriv 2 => op begin
-            typeof(op)
-        end
-        @test result2 === EvalDeriv2
-
-        # Invalid deriv throws ArgumentError (macro-level)
-        @test_throws ArgumentError @_dispatch_deriv 4 => op begin
-            typeof(op)
-        end
-        @test_throws ArgumentError @_dispatch_deriv -1 => op begin
-            typeof(op)
-        end
-
-        # Invalid deriv throws ArgumentError (public API - for coverage)
+    @testset "DerivOp type rejection for Int" begin
+        # Public API rejects Int for deriv (must use DerivOp)
         x = [0.0, 0.5, 1.0]
         y = [0.0, 0.25, 1.0]
         @test_throws TypeError cubic_interp(x, y, 0.5; deriv=4)
         @test_throws TypeError cubic_interp(x, y, 0.5; deriv=-1)
         @test_throws TypeError linear_interp(x, y, 0.5; deriv=4)
         @test_throws TypeError linear_interp(x, y, 0.5; deriv=-1)
-    end
-
-    @testset "@_dispatch_deriv with runtime variable" begin
-        # Test that macro works with runtime-determined deriv (Int path)
-        for deriv in 0:2
-            result = @_dispatch_deriv deriv => op begin
-                op
-            end
-            if deriv == 0
-                @test result isa EvalValue
-            elseif deriv == 1
-                @test result isa EvalDeriv1
-            else
-                @test result isa EvalDeriv2
-            end
-        end
-    end
-
-    @testset "@_dispatch_deriv type stability" begin
-        # The dispatched function should maintain type stability
-        function test_dispatch(deriv::Int)
-            @_dispatch_deriv deriv => op begin
-                # Return something that depends on op type
-                op isa EvalValue ? 1.0 :
-                op isa EvalDeriv1 ? 2.0 : 3.0
-            end
-        end
-
-        @test test_dispatch(0) === 1.0
-        @test test_dispatch(1) === 2.0
-        @test test_dispatch(2) === 3.0
-
-        # Type inference should work
-        @test @inferred(test_dispatch(0)) === 1.0
     end
 
 end # Derivative Core
@@ -1769,20 +1709,6 @@ end # DerivativeView Wrapper
         @test isdefined(FastInterpolations, :EvalDeriv3)
         @test FastInterpolations.EvalDeriv3 <: FastInterpolations.AbstractEvalOp
         @test FastInterpolations.EvalDeriv3() isa FastInterpolations.AbstractEvalOp
-    end
-
-    @testset "@_dispatch_deriv handles deriv=DerivOp(3)" begin
-        result = FastInterpolations.@_dispatch_deriv 3 => op begin
-            op
-        end
-        @test result isa FastInterpolations.EvalDeriv3
-
-        # Invalid deriv values should throw
-        @test_throws ArgumentError begin
-            FastInterpolations.@_dispatch_deriv 4 => op begin
-                op
-            end
-        end
     end
 
     @testset "Cubic kernel - S'''(x) = (zR - zL) / h" begin

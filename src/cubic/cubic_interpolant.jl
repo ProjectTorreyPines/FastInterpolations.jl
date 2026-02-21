@@ -28,10 +28,8 @@
 @inline function (itp::CubicInterpolant{Tg,Tv})(xq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @boundscheck _check_domain(itp.cache.x, xq, itp.extrap)
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        # Pass original xq to preserve Dual type for AD
-        _eval_with_bc(itp.cache, itp.y, itp.z, xq, itp.extrap, op, searcher)
-    end
+    # Pass original xq to preserve Dual type for AD
+    _eval_with_bc(itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)
 end
 
 # Vector call with deriv keyword support
@@ -41,9 +39,7 @@ function (itp::CubicInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=E
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, op, searcher)
-    end
+    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)
     return output
 end
 
@@ -51,9 +47,7 @@ end
 function (itp::CubicInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, op, searcher)
-    end
+    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)
     return output
 end
 
@@ -87,15 +81,13 @@ itp(aq)  # Ultra-fast evaluation
 ```
 """
 @inline function (itp::CubicInterpolant{Tg,Tv})(aq::_CubicAnchoredQuery{Tg,Tq}; deriv::DerivOp=EvalValue()) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    @_dispatch_deriv deriv => op begin
-        # Fast path: inside domain (most common case)
-        if aq.side == 0x00
-            return _eval_anchored_kernel(itp, aq, op)
-        end
-
-        # Outside domain: dispatch on extrapolation mode
-        return _eval_anchored_extrap(itp, aq, itp.extrap, op)
+    # Fast path: inside domain (most common case)
+    if aq.side == 0x00
+        return _eval_anchored_kernel(itp, aq, deriv)
     end
+
+    # Outside domain: dispatch on extrapolation mode
+    return _eval_anchored_extrap(itp, aq, itp.extrap, deriv)
 end
 
 """
@@ -254,9 +246,7 @@ function (itp::CubicInterpolant{Tg,Tv})(
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss from anchor
     output = Vector{T_out}(undef, length(aq))
-    @_dispatch_deriv deriv => op begin
-        _eval_anchored_vector_loop!(output, itp, aq, op)
-    end
+    _eval_anchored_vector_loop!(output, itp, aq, deriv)
     return output
 end
 
@@ -277,9 +267,7 @@ function (itp::CubicInterpolant{Tg,Tv})(
     deriv::DerivOp=EvalValue()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(output) == length(aq) "output length ($(length(output))) must match aq length ($(length(aq)))"
-    @_dispatch_deriv deriv => op begin
-        _eval_anchored_vector_loop!(output, itp, aq, op)
-    end
+    _eval_anchored_vector_loop!(output, itp, aq, deriv)
     return output
 end
 

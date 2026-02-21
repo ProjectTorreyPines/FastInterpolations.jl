@@ -493,9 +493,7 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
 
     # Dispatch on derivative order with Dual-aware evaluation
-    @_dispatch_deriv deriv => op begin
-        _eval_linear_series_point!(output, sitp, aq, xq, op)  # Pass original xq
-    end
+    _eval_linear_series_point!(output, sitp, aq, xq, deriv)  # Pass original xq
     return output
 end
 
@@ -575,10 +573,8 @@ Pool handles both same-type and mixed-type cases efficiently.
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
     # Evaluate all series - anchor already has correct alpha precision
-    @_dispatch_deriv deriv => op begin
-        @inbounds for k in 1:n_ser
-            _eval_linear_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, op)
-        end
+    @inbounds for k in 1:n_ser
+        _eval_linear_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, deriv)
     end
     return outputs
 end

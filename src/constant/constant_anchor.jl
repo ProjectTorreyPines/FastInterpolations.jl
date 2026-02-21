@@ -254,9 +254,7 @@ val = itp(aq)           # Value
 ```
 """
 @inline function (itp::ConstantInterpolant{T})(aq::_ConstantAnchoredQuery{T}; deriv::DerivOp=EvalValue()) where {T<:AbstractFloat}
-    @_dispatch_deriv deriv => op begin
-        _constant_eval_with_anchor(itp, aq, op)
-    end
+    _constant_eval_with_anchor(itp, aq, deriv)
 end
 
 @inline function _constant_eval_with_anchor(
@@ -347,10 +345,8 @@ function (itp::ConstantInterpolant{T})(
     deriv::DerivOp=EvalValue()
 ) where {T<:AbstractFloat}
     output = Vector{T}(undef, length(aq_vec))
-    @_dispatch_deriv deriv => op begin
-        @inbounds for i in eachindex(aq_vec)
-            output[i] = _constant_eval_with_anchor(itp, aq_vec[i], op)
-        end
+    @inbounds for i in eachindex(aq_vec)
+        output[i] = _constant_eval_with_anchor(itp, aq_vec[i], deriv)
     end
     return output
 end
@@ -366,10 +362,8 @@ function (itp::ConstantInterpolant{T})(
     deriv::DerivOp=EvalValue()
 ) where {T<:AbstractFloat}
     @assert length(output) == length(aq_vec) "output length must match aq_vec length"
-    @_dispatch_deriv deriv => op begin
-        @inbounds for i in eachindex(aq_vec)
-            output[i] = _constant_eval_with_anchor(itp, aq_vec[i], op)
-        end
+    @inbounds for i in eachindex(aq_vec)
+        output[i] = _constant_eval_with_anchor(itp, aq_vec[i], deriv)
     end
     return output
 end

@@ -507,9 +507,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
 
     # Dispatch on derivative order - pass original xq for AD support
-    @_dispatch_deriv deriv => op begin
-        _eval_constant_series_point!(output, sitp, aq, xq, op)
-    end
+    _eval_constant_series_point!(output, sitp, aq, xq, deriv)
     return output
 end
 
@@ -584,10 +582,8 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
     # Evaluate all series with derivative dispatch
-    @_dispatch_deriv deriv => op begin
-        @inbounds for k in 1:n
-            _eval_constant_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, side_val, op)
-        end
+    @inbounds for k in 1:n
+        _eval_constant_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, side_val, deriv)
     end
     return outputs
 end

@@ -68,10 +68,8 @@ function linear_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(x, x_targets, extrap)
-        _linear_interp_loop!(output, x, y, x_targets, extrap, op, searcher)
-    end
+    @boundscheck _check_domain(x, x_targets, extrap)
+    _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
 end
 
 # Internal loop with AbstractExtrap dispatch and Searcher (type-stable)
@@ -163,10 +161,8 @@ end
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(x, x_targets, extrap)
-        _linear_interp_loop!(output, x, y, x_targets, extrap, op, searcher)
-    end
+    @boundscheck _check_domain(x, x_targets, extrap)
+    _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
 end
 
 # ========================================
@@ -395,9 +391,7 @@ end
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        linear_interp(x, y, xq, extrap, op, searcher)
-    end
+    linear_interp(x, y, xq, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗

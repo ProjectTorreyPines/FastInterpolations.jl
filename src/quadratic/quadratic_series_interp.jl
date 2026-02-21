@@ -515,9 +515,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     output = Vector{T_out}(undef, n_series(sitp))
-    @_dispatch_deriv deriv => op begin
-        _eval_series_at_anchor!(output, sitp, aq, op)
-    end
+    _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output
 end
 
@@ -544,9 +542,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
 
     aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
-    @_dispatch_deriv deriv => op begin
-        _eval_series_at_anchor!(output, sitp, aq, op)
-    end
+    _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output
 end
 
@@ -613,9 +609,7 @@ Pool handles both same-type and mixed-type cases efficiently.
     end
 
     # Evaluate all series - anchor already has correct dL precision
-    @_dispatch_deriv deriv => op begin
-        _eval_series_anchored!(outputs, sitp, aq_vec, op)
-    end
+    _eval_series_anchored!(outputs, sitp, aq_vec, deriv)
     return outputs
 end
 
@@ -745,8 +739,6 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv})(
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     _validate_series_outputs(outputs, n_series(sitp), length(aq_vec))
 
-    @_dispatch_deriv deriv => op begin
-        _eval_series_anchored!(outputs, sitp, aq_vec, op)
-    end
+    _eval_series_anchored!(outputs, sitp, aq_vec, deriv)
     return outputs
 end

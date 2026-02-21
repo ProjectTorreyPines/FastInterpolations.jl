@@ -144,7 +144,6 @@ d1(-0.5)  # Uses ExtendExtrap extrapolation
 ## API Reference
 
 ```@docs
-DerivOp
 deriv1
 deriv2
 deriv3

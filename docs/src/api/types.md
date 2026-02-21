@@ -32,6 +32,7 @@ eval_type
 ```@docs
 AbstractEvalOp
 DerivOp
+deriv_order
 EvalValue
 EvalDeriv1
 EvalDeriv2

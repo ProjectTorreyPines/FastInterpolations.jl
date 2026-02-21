@@ -45,8 +45,8 @@ See also: [`gradient!`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     deriv_calls = [begin
-        deriv_spec = ntuple(j -> j == i ? 1 : 0, N)
-        :(_eval_at_cell(itp, cell, _resolve_deriv_nd(Val($deriv_spec), Val($N))))
+        ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+        :(_eval_at_cell(itp, cell, $ops))
     end for i in 1:N]
 
     return quote
@@ -97,8 +97,8 @@ See also: [`gradient`](@ref), [`hessian!`](@ref)
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     stmts = [begin
-        deriv_spec = ntuple(j -> j == i ? 1 : 0, N)
-        :(G[$i] = _eval_at_cell(itp, cell, _resolve_deriv_nd(Val($deriv_spec), Val($N))))
+        ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+        :(G[$i] = _eval_at_cell(itp, cell, $ops))
     end for i in 1:N]
 
     return quote
@@ -163,15 +163,15 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
 
     # Diagonal: ∂²f/∂xᵢ²
     for i in 1:N
-        deriv_spec = ntuple(j -> j == i ? 2 : 0, N)
-        push!(stmts, :(H[$i, $i] = _eval_at_cell(itp, cell, _resolve_deriv_nd(Val($deriv_spec), Val($N)))))
+        ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+        push!(stmts, :(H[$i, $i] = _eval_at_cell(itp, cell, $ops)))
     end
 
     # Off-diagonal (exploit symmetry): ∂²f/∂xᵢ∂xⱼ
     for i in 1:N, j in (i+1):N
-        deriv_spec = ntuple(k -> (k == i || k == j) ? 1 : 0, N)
+        ops = ntuple(k -> (k == i || k == j) ? DerivOp{1}() : DerivOp{0}(), N)
         push!(stmts, quote
-            val = _eval_at_cell(itp, cell, _resolve_deriv_nd(Val($deriv_spec), Val($N)))
+            val = _eval_at_cell(itp, cell, $ops)
             H[$i, $j] = val
             H[$j, $i] = val
         end)
@@ -233,15 +233,15 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
 
     # Diagonal: ∂²f/∂xᵢ²
     for i in 1:N
-        deriv_spec = ntuple(j -> j == i ? 2 : 0, N)
-        push!(stmts, :(H[$i, $i] = _eval_at_cell(itp, cell, _resolve_deriv_nd(Val($deriv_spec), Val($N)))))
+        ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+        push!(stmts, :(H[$i, $i] = _eval_at_cell(itp, cell, $ops)))
     end
 
     # Off-diagonal (exploit symmetry): ∂²f/∂xᵢ∂xⱼ
     for i in 1:N, j in (i+1):N
-        deriv_spec = ntuple(k -> (k == i || k == j) ? 1 : 0, N)
+        ops = ntuple(k -> (k == i || k == j) ? DerivOp{1}() : DerivOp{0}(), N)
         push!(stmts, quote
-            val = _eval_at_cell(itp, cell, _resolve_deriv_nd(Val($deriv_spec), Val($N)))
+            val = _eval_at_cell(itp, cell, $ops)
             H[$i, $j] = val
             H[$j, $i] = val
         end)
@@ -311,8 +311,8 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     deriv_calls = [begin
-        deriv_spec = ntuple(j -> j == i ? 2 : 0, N)
-        :(_eval_at_cell(itp, cell, _resolve_deriv_nd(Val($deriv_spec), Val($N))))
+        ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
+        :(_eval_at_cell(itp, cell, $ops))
     end for i in 1:N]
 
     return quote

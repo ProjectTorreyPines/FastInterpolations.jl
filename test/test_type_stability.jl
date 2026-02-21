@@ -774,20 +774,20 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         @test @inferred(qitp(x_query)) isa Vector{Float64}
 
         # Vector eval with derivatives
-        @test @inferred(qitp(x_query; deriv=0)) isa Vector{Float64}
-        @test @inferred(qitp(x_query; deriv=1)) isa Vector{Float64}
-        @test @inferred(qitp(x_query; deriv=2)) isa Vector{Float64}
+        @test @inferred(qitp(x_query; deriv=DerivOp(0))) isa Vector{Float64}
+        @test @inferred(qitp(x_query; deriv=DerivOp(1))) isa Vector{Float64}
+        @test @inferred(qitp(x_query; deriv=DerivOp(2))) isa Vector{Float64}
 
         # In-place
         out = similar(x_query)
         @test @inferred(qitp(out, x_query)) === out
-        @test @inferred(qitp(out, x_query; deriv=1)) === out
+        @test @inferred(qitp(out, x_query; deriv=DerivOp(1))) === out
 
         # Float32 scalar
         x32 = Float32.(x); y32 = Float32.(y)
         qitp32 = quadratic_interp(x32, y32)
         @test @inferred(qitp32(Float32(0.5))) isa Float32
-        @test @inferred(qitp32(Float32(0.5); deriv=1)) isa Float32
+        @test @inferred(qitp32(Float32(0.5); deriv=DerivOp(1))) isa Float32
     end
 
     @testset "ConstantInterpolant vector eval @inferred" begin
@@ -797,13 +797,13 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         @test @inferred(citp(x_query)) isa Vector{Float64}
 
         # Vector eval with derivatives
-        @test @inferred(citp(x_query; deriv=0)) isa Vector{Float64}
-        @test @inferred(citp(x_query; deriv=1)) isa Vector{Float64}
+        @test @inferred(citp(x_query; deriv=DerivOp(0))) isa Vector{Float64}
+        @test @inferred(citp(x_query; deriv=DerivOp(1))) isa Vector{Float64}
 
         # In-place
         out = similar(x_query)
         @test @inferred(citp(out, x_query)) === out
-        @test @inferred(citp(out, x_query; deriv=1)) === out
+        @test @inferred(citp(out, x_query; deriv=DerivOp(1))) === out
     end
 
     # =========================================================================
@@ -838,12 +838,12 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             @test @inferred(sitp(xq_vec)) isa Vector{Vector{Float64}}
 
             # Derivatives
-            @test @inferred(sitp(0.5; deriv=0)) isa Vector{Float64}
-            @test @inferred(sitp(0.5; deriv=1)) isa Vector{Float64}
-            @test @inferred(sitp(0.5; deriv=2)) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=DerivOp(0))) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=DerivOp(1))) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=DerivOp(2))) isa Vector{Float64}
 
             # Vector + derivative
-            @test @inferred(sitp(xq_vec; deriv=1)) isa Vector{Vector{Float64}}
+            @test @inferred(sitp(xq_vec; deriv=DerivOp(1))) isa Vector{Vector{Float64}}
 
             # Extrap variants
             sitp_ext = cubic_interp(xs, ys; extrap=ExtendExtrap())
@@ -863,11 +863,11 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             @test @inferred(sitp(xq_vec)) isa Vector{Vector{Float64}}
 
             # Derivatives
-            @test @inferred(sitp(0.5; deriv=0)) isa Vector{Float64}
-            @test @inferred(sitp(0.5; deriv=1)) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=DerivOp(0))) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=DerivOp(1))) isa Vector{Float64}
 
             # Vector + derivative
-            @test @inferred(sitp(xq_vec; deriv=1)) isa Vector{Vector{Float64}}
+            @test @inferred(sitp(xq_vec; deriv=DerivOp(1))) isa Vector{Vector{Float64}}
         end
 
         @testset "QuadraticSeriesInterpolant" begin
@@ -883,12 +883,12 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             @test @inferred(sitp(xq_vec)) isa Vector{Vector{Float64}}
 
             # Derivatives
-            @test @inferred(sitp(0.5; deriv=0)) isa Vector{Float64}
-            @test @inferred(sitp(0.5; deriv=1)) isa Vector{Float64}
-            @test @inferred(sitp(0.5; deriv=2)) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=DerivOp(0))) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=DerivOp(1))) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=DerivOp(2))) isa Vector{Float64}
 
             # Vector + derivative
-            @test @inferred(sitp(xq_vec; deriv=1)) isa Vector{Vector{Float64}}
+            @test @inferred(sitp(xq_vec; deriv=DerivOp(1))) isa Vector{Vector{Float64}}
         end
 
         @testset "ConstantSeriesInterpolant" begin
@@ -904,11 +904,11 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             @test @inferred(sitp(xq_vec)) isa Vector{Vector{Float64}}
 
             # Derivatives (returns zeros for constant)
-            @test @inferred(sitp(0.5; deriv=0)) isa Vector{Float64}
-            @test @inferred(sitp(0.5; deriv=1)) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=DerivOp(0))) isa Vector{Float64}
+            @test @inferred(sitp(0.5; deriv=DerivOp(1))) isa Vector{Float64}
 
             # Vector + derivative
-            @test @inferred(sitp(xq_vec; deriv=1)) isa Vector{Vector{Float64}}
+            @test @inferred(sitp(xq_vec; deriv=DerivOp(1))) isa Vector{Vector{Float64}}
         end
 
         @testset "SeriesInterpolant Float32" begin
@@ -1038,27 +1038,26 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             ]
                 itp = builder((x_b, y_b), data_b)
 
-                # Int deriv — fully inferrable
-                @test @inferred(itp(q; deriv=0)) isa Float64
-                @test @inferred(itp(q; deriv=1)) isa Float64
+                # Scalar DerivOp broadcast — fully inferrable
+                @test @inferred(itp(q; deriv=DerivOp(0, 0))) isa Float64
+                @test @inferred(itp(q; deriv=DerivOp(1, 0))) isa Float64
 
-                # Val-wrapped NTuple deriv — compile-time dispatch, inferrable
-                @test @inferred(itp(q; deriv=Val((1, 0)))) isa Float64
-                @test @inferred(itp(q; deriv=Val((0, 1)))) isa Float64
+                # DerivOp tuple — compile-time dispatch, inferrable
+                @test @inferred(itp(q; deriv=DerivOp(1, 0))) isa Float64
+                @test @inferred(itp(q; deriv=DerivOp(0, 1))) isa Float64
             end
 
-            # NTuple deriv (runtime) — known limitation for non-constant types:
-            # _resolve_deriv_nd multi-method dispatch prevents inference for
-            # cubic/quadratic/linear. Constant is stable (early zero-return path).
+            # DerivOp tuple outside @inferred loop — may be inferrable now
+            # that DerivOp carries type info (unlike old NTuple{N,Int}).
             q = (0.5, 1.0)
             itp_c = constant_interp((x_b, y_b), data_b)
-            @test @inferred(itp_c(q; deriv=(1, 0))) isa Float64
-            @test @inferred(itp_c(q; deriv=(0, 1))) isa Float64
+            @test @inferred(itp_c(q; deriv=DerivOp(1, 0))) isa Float64
+            @test @inferred(itp_c(q; deriv=DerivOp(0, 1))) isa Float64
 
             for builder in [cubic_interp, quadratic_interp, linear_interp]
                 itp = builder((x_b, y_b), data_b)
-                @test_broken (@inferred(itp(q; deriv=(1, 0))) isa Float64)
-                @test_broken (@inferred(itp(q; deriv=(0, 1))) isa Float64)
+                @test @inferred(itp(q; deriv=DerivOp(1, 0))) isa Float64
+                @test @inferred(itp(q; deriv=DerivOp(0, 1))) isa Float64
             end
         end
 

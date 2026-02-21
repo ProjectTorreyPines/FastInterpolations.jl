@@ -29,10 +29,10 @@
 
             # First derivative (1e-13: anchor precomputes weights, direct computes
             # on-the-fly — different FMA fusion across JIT sessions → sub-ULP drift)
-            @test itp(aq; deriv=1) ≈ itp(xq; deriv=1) atol=1e-13
+            @test itp(aq; deriv=DerivOp(1)) ≈ itp(xq; deriv=DerivOp(1)) atol=1e-13
 
             # Second derivative (same reasoning as above)
-            @test itp(aq; deriv=2) ≈ itp(xq; deriv=2) atol=1e-13
+            @test itp(aq; deriv=DerivOp(2)) ≈ itp(xq; deriv=DerivOp(2)) atol=1e-13
         end
     end
 
@@ -67,8 +67,8 @@
         @test itp(aq_above) ≈ y[end]
 
         # Derivatives of constant are zero
-        @test itp(aq_below; deriv=1) == 0.0
-        @test itp(aq_above; deriv=2) == 0.0
+        @test itp(aq_below; deriv=DerivOp(1)) == 0.0
+        @test itp(aq_above; deriv=DerivOp(2)) == 0.0
     end
 
     @testset "Anchored evaluation - extrap ExtendExtrap()" begin
@@ -272,8 +272,8 @@
         x = collect(range(0.0, 1.0, 101))
         aq = FI._anchor_query(x, 0.5, Val(:cubic))
         itp = cubic_interp(x, sin.(2π .* x))
-        @test_throws ArgumentError itp(aq; deriv=-1)
-        @test_throws ArgumentError itp(aq; deriv=4)
+        @test_throws TypeError itp(aq; deriv=-1)
+        @test_throws TypeError itp(aq; deriv=4)
     end
 
     # ========================================
@@ -396,10 +396,10 @@
         xq = [0.15, 0.5, 0.85]
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
-        for deriv in [1, 2]
-            vals = itp(aq_vec; deriv=deriv)
+        for d in [DerivOp(1), DerivOp(2)]
+            vals = itp(aq_vec; deriv=d)
             for (i, xq_i) in enumerate(xq)
-                @test vals[i] ≈ itp(xq_i; deriv=deriv) atol=1e-14
+                @test vals[i] ≈ itp(xq_i; deriv=d) atol=1e-14
             end
         end
     end
@@ -422,7 +422,7 @@
         xq = [-0.5, 0.5, 1.5]
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
-        derivs = itp(aq_vec; deriv=1)
+        derivs = itp(aq_vec; deriv=DerivOp(1))
         @test derivs[1] == 0.0
         @test derivs[3] == 0.0
     end
@@ -484,19 +484,19 @@
 
         # Warmup all derivative orders
         itp(aq)
-        itp(aq; deriv=1)
-        itp(aq; deriv=2)
+        itp(aq; deriv=DerivOp(1))
+        itp(aq; deriv=DerivOp(2))
 
-        # Value (deriv=0) - already tested, but include for completeness
+        # Value (deriv=DerivOp(0)) - already tested, but include for completeness
         allocs_d0 = @allocated itp(aq)
         @test allocs_d0 <= ALLOC_THRESHOLD
 
         # First derivative
-        allocs_d1 = @allocated itp(aq; deriv=1)
+        allocs_d1 = @allocated itp(aq; deriv=DerivOp(1))
         @test allocs_d1 <= ALLOC_THRESHOLD
 
         # Second derivative
-        allocs_d2 = @allocated itp(aq; deriv=2)
+        allocs_d2 = @allocated itp(aq; deriv=DerivOp(2))
         @test allocs_d2 <= ALLOC_THRESHOLD
     end
 
@@ -511,19 +511,19 @@
 
         # Warmup all derivative orders
         itp(output, aq_vec)
-        itp(output, aq_vec; deriv=1)
-        itp(output, aq_vec; deriv=2)
+        itp(output, aq_vec; deriv=DerivOp(1))
+        itp(output, aq_vec; deriv=DerivOp(2))
 
-        # Value (deriv=0)
+        # Value (deriv=DerivOp(0))
         allocs_d0 = @allocated itp(output, aq_vec)
         @test allocs_d0 <= ALLOC_THRESHOLD
 
         # First derivative - zero allocation
-        allocs_d1 = @allocated itp(output, aq_vec; deriv=1)
+        allocs_d1 = @allocated itp(output, aq_vec; deriv=DerivOp(1))
         @test allocs_d1 <= ALLOC_THRESHOLD
 
         # Second derivative - zero allocation
-        allocs_d2 = @allocated itp(output, aq_vec; deriv=2)
+        allocs_d2 = @allocated itp(output, aq_vec; deriv=DerivOp(2))
         @test allocs_d2 <= ALLOC_THRESHOLD
     end
 
@@ -661,13 +661,13 @@
                 aq = FI._anchor_query(x, xq, Val(:cubic))
 
                 # Second derivative
-                anchored_d2 = itp(aq; deriv=2)
-                direct_d2 = itp(xq; deriv=2)
+                anchored_d2 = itp(aq; deriv=DerivOp(2))
+                direct_d2 = itp(xq; deriv=DerivOp(2))
                 @test anchored_d2 ≈ direct_d2 atol=1e-14
 
                 # Third derivative
-                anchored_d3 = itp(aq; deriv=3)
-                direct_d3 = itp(xq; deriv=3)
+                anchored_d3 = itp(aq; deriv=DerivOp(3))
+                direct_d3 = itp(xq; deriv=DerivOp(3))
                 @test anchored_d3 ≈ direct_d3 atol=1e-12
             end
         end
@@ -680,18 +680,18 @@
             aq = FI._anchor_query(x, 0.5, Val(:cubic))
 
             # Scalar anchored evaluation should be type-stable
-            @test (@inferred itp(aq; deriv=2)) isa Float64
-            @test (@inferred itp(aq; deriv=3)) isa Float64
+            @test (@inferred itp(aq; deriv=DerivOp(2))) isa Float64
+            @test (@inferred itp(aq; deriv=DerivOp(3))) isa Float64
 
             # Vector evaluation should also be type-stable
             xq_vec = [0.15, 0.5, 0.85]
             aq_vec = FI._anchor_query(x, xq_vec, Val(:cubic))
 
-            d2_vec = @inferred itp(aq_vec; deriv=2)
+            d2_vec = @inferred itp(aq_vec; deriv=DerivOp(2))
             @test d2_vec isa Vector{Float64}
             @test length(d2_vec) == 3
 
-            d3_vec = @inferred itp(aq_vec; deriv=3)
+            d3_vec = @inferred itp(aq_vec; deriv=DerivOp(3))
             @test d3_vec isa Vector{Float64}
             @test length(d3_vec) == 3
         end
@@ -706,13 +706,13 @@
             aq_below = FI._anchor_query(x, -0.1, Val(:cubic))
             aq_above = FI._anchor_query(x, 1.1, Val(:cubic))
 
-            @test itp_ext(aq_below; deriv=2) ≈ itp_ext(-0.1; deriv=2) atol=1e-12
-            @test itp_ext(aq_above; deriv=3) ≈ itp_ext(1.1; deriv=3) atol=1e-12
+            @test itp_ext(aq_below; deriv=DerivOp(2)) ≈ itp_ext(-0.1; deriv=DerivOp(2)) atol=1e-12
+            @test itp_ext(aq_above; deriv=DerivOp(3)) ≈ itp_ext(1.1; deriv=DerivOp(3)) atol=1e-12
 
             # Test :constant mode (derivatives should be zero outside domain)
             itp_const = cubic_interp(x, y; extrap=ConstExtrap())
-            @test itp_const(aq_below; deriv=2) == 0.0
-            @test itp_const(aq_above; deriv=3) == 0.0
+            @test itp_const(aq_below; deriv=DerivOp(2)) == 0.0
+            @test itp_const(aq_above; deriv=DerivOp(3)) == 0.0
         end
 
         # Additional test: Zero allocation for deriv2/3
@@ -723,11 +723,11 @@
             aq = FI._anchor_query(x, 0.5, Val(:cubic))
 
             # Warmup
-            itp(aq; deriv=2)
-            itp(aq; deriv=3)
+            itp(aq; deriv=DerivOp(2))
+            itp(aq; deriv=DerivOp(3))
 
             # Third derivative should have zero allocation
-            allocs_d3 = @allocated itp(aq; deriv=3)
+            allocs_d3 = @allocated itp(aq; deriv=DerivOp(3))
             @test allocs_d3 <= ALLOC_THRESHOLD
 
             # Vector in-place should also have zero allocation
@@ -736,10 +736,10 @@
             output = similar(xq_vec)
 
             # Warmup
-            itp(output, aq_vec; deriv=3)
+            itp(output, aq_vec; deriv=DerivOp(3))
 
             # Measure
-            allocs_vec_d3 = @allocated itp(output, aq_vec; deriv=3)
+            allocs_vec_d3 = @allocated itp(output, aq_vec; deriv=DerivOp(3))
             @test allocs_vec_d3 <= ALLOC_THRESHOLD
         end
     end

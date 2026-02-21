@@ -66,7 +66,7 @@ else
             @test isfinite(result[1][1])
 
             # Cross-validate with analytical
-            analytical = itp(x0; deriv=1)
+            analytical = itp(x0; deriv=DerivOp(1))
             @test result[1][1] ≈ analytical atol=1e-10
         end
 

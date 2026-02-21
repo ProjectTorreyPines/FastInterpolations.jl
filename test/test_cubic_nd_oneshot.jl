@@ -60,20 +60,20 @@ end
         itp = cubic_interp((x, y), data)
         query = (1.5, 0.8)
 
-        # deriv=0 (value)
-        @test cubic_interp((x, y), data, query; deriv=0) ≈ itp(query; deriv=0) atol=1e-14
+        # deriv=DerivOp(0) (value)
+        @test cubic_interp((x, y), data, query; deriv=DerivOp(0, 0)) ≈ itp(query; deriv=DerivOp(0, 0)) atol=1e-14
 
-        # deriv=1 (all first derivatives)
-        @test cubic_interp((x, y), data, query; deriv=1) ≈ itp(query; deriv=1) atol=1e-14
+        # deriv=DerivOp(1) (all first derivatives)
+        @test cubic_interp((x, y), data, query; deriv=DerivOp(1, 1)) ≈ itp(query; deriv=DerivOp(1, 1)) atol=1e-14
 
         # Mixed partial: ∂f/∂x
-        @test cubic_interp((x, y), data, query; deriv=Val((1,0))) ≈ itp(query; deriv=Val((1,0))) atol=1e-14
+        @test cubic_interp((x, y), data, query; deriv=DerivOp(1,0)) ≈ itp(query; deriv=DerivOp(1,0)) atol=1e-14
 
         # Mixed partial: ∂f/∂y
-        @test cubic_interp((x, y), data, query; deriv=Val((0,1))) ≈ itp(query; deriv=Val((0,1))) atol=1e-14
+        @test cubic_interp((x, y), data, query; deriv=DerivOp(0,1)) ≈ itp(query; deriv=DerivOp(0,1)) atol=1e-14
 
         # Mixed partial: ∂²f/∂x∂y
-        @test cubic_interp((x, y), data, query; deriv=Val((1,1))) ≈ itp(query; deriv=Val((1,1))) atol=1e-14
+        @test cubic_interp((x, y), data, query; deriv=DerivOp(1,1)) ≈ itp(query; deriv=DerivOp(1,1)) atol=1e-14
     end
 
     @testset "SoA batch one-shot matches Interpolant" begin
@@ -291,9 +291,9 @@ end
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
         query = (1.5, 0.8)
-        cubic_interp((x, y), data, query; deriv=1)
-        cubic_interp((x, y), data, query; deriv=1)
-        @allocated cubic_interp((x, y), data, query; deriv=1)
+        cubic_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        cubic_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        @allocated cubic_interp((x, y), data, query; deriv=DerivOp(1, 1))
     end
 
     function _alloc_test_cubicfit()
@@ -398,9 +398,9 @@ end
         y = collect(range(0.0, 1.0, 11))
         data = [xi^3 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        cubic_interp((x, y), data, query; deriv=Val((1, 0)))
-        cubic_interp((x, y), data, query; deriv=Val((1, 0)))
-        @allocated cubic_interp((x, y), data, query; deriv=Val((1, 0)))
+        cubic_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        cubic_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        @allocated cubic_interp((x, y), data, query; deriv=DerivOp(1, 0))
     end
 
     @testset "Zero-alloc scalar one-shot (Vector grids, NaturalBC)" begin
@@ -542,9 +542,9 @@ end
             data = [sin(xi) * cos(yj) for xi in x, yj in y]
             xqs = [0.5, 1.0, 1.5]
             yqs = [0.2, 0.4, 0.6]
-            ref = cubic_interp((x, y), data, (xqs, yqs); deriv=1)
+            ref = cubic_interp((x, y), data, (xqs, yqs); deriv=DerivOp(1, 1))
             out = similar(ref)
-            cubic_interp!(out, (x, y), data, (xqs, yqs); deriv=1)
+            cubic_interp!(out, (x, y), data, (xqs, yqs); deriv=DerivOp(1, 1))
             @test out ≈ ref atol=1e-14
         end
 
@@ -637,14 +637,13 @@ end
     # After each call, pool.float64.n_active must return to its pre-call value.
 
     # ========================================
-    # Val/NTuple deriv branches in cubic_interp! batch
+    # DerivOp deriv paths in cubic_interp! batch
     # ========================================
     #
-    # Covers the `elseif deriv isa Val` and `else` (NTuple) branches in the
-    # SoA and AoS `cubic_interp!` functions, plus the scalar NTuple else branch.
-    # These are distinct dispatch paths from the default `if deriv isa Int` branch.
+    # Covers the DerivOp tuple path in SoA and AoS `cubic_interp!` functions.
+    # This is distinct from the `deriv::Int` broadcast path.
 
-    @testset "Val/NTuple deriv branches in cubic_interp! batch" begin
+    @testset "DerivOp deriv paths in cubic_interp! batch" begin
         x = range(0.0, 2π, 21)
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
@@ -655,33 +654,33 @@ end
         points = [(0.5, 0.2), (1.0, 0.4), (1.5, 0.6)]
         out = Vector{Float64}(undef, 3)
 
-        # Scalar: NTuple deriv → triggers the `else` branch
-        val_ntuple = cubic_interp((x, y), data, query; deriv=(1, 0))
-        val_val    = cubic_interp((x, y), data, query; deriv=Val((1, 0)))
+        # Scalar: DerivOp tuple deriv → triggers the `else` branch
+        val_ntuple = cubic_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        val_val    = cubic_interp((x, y), data, query; deriv=DerivOp(1, 0))
         @test val_ntuple ≈ val_val atol=1e-14
 
-        # SoA cubic_interp!: Val deriv → triggers `elseif deriv isa Val` branch
-        ref_soa = cubic_interp((x, y), data, (xqs, yqs); deriv=Val((1, 0)))
-        cubic_interp!(out, (x, y), data, (xqs, yqs); deriv=Val((1, 0)))
+        # SoA cubic_interp!: DerivOp deriv → triggers `elseif deriv isa Val` branch
+        ref_soa = cubic_interp((x, y), data, (xqs, yqs); deriv=DerivOp(1, 0))
+        cubic_interp!(out, (x, y), data, (xqs, yqs); deriv=DerivOp(1, 0))
         @test out ≈ ref_soa atol=1e-14
 
-        # SoA cubic_interp!: NTuple deriv → triggers `else` branch
-        ref_soa2 = cubic_interp((x, y), data, (xqs, yqs); deriv=(1, 0))
-        cubic_interp!(out, (x, y), data, (xqs, yqs); deriv=(1, 0))
+        # SoA cubic_interp!: DerivOp deriv → triggers `else` branch
+        ref_soa2 = cubic_interp((x, y), data, (xqs, yqs); deriv=DerivOp(1, 0))
+        cubic_interp!(out, (x, y), data, (xqs, yqs); deriv=DerivOp(1, 0))
         @test out ≈ ref_soa2 atol=1e-14
 
-        # AoS cubic_interp!: Val deriv → triggers `elseif deriv isa Val` branch
-        ref_aos = cubic_interp((x, y), data, points; deriv=Val((1, 0)))
-        cubic_interp!(out, (x, y), data, points; deriv=Val((1, 0)))
+        # AoS cubic_interp!: DerivOp deriv → triggers `elseif deriv isa Val` branch
+        ref_aos = cubic_interp((x, y), data, points; deriv=DerivOp(1, 0))
+        cubic_interp!(out, (x, y), data, points; deriv=DerivOp(1, 0))
         @test out ≈ ref_aos atol=1e-14
 
-        # AoS cubic_interp!: NTuple deriv → triggers `else` branch
-        ref_aos2 = cubic_interp((x, y), data, points; deriv=(1, 0))
-        cubic_interp!(out, (x, y), data, points; deriv=(1, 0))
+        # AoS cubic_interp!: DerivOp deriv → triggers `else` branch
+        ref_aos2 = cubic_interp((x, y), data, points; deriv=DerivOp(1, 0))
+        cubic_interp!(out, (x, y), data, points; deriv=DerivOp(1, 0))
         @test out ≈ ref_aos2 atol=1e-14
 
         # Confirm NTuple result agrees with interpolant
-        @test val_ntuple ≈ itp(query; deriv=Val((1, 0))) atol=1e-14
+        @test val_ntuple ≈ itp(query; deriv=DerivOp(1, 0)) atol=1e-14
     end
 
     # ========================================

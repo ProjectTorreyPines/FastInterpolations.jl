@@ -107,7 +107,7 @@ end
         @testset "One-shot API - Real" begin
             xq = 2.25
             zy_grad = Zygote.gradient(q -> linear_interp(x, y_linear, q), xq)[1]
-            analytical = linear_interp(x, y_linear, xq; deriv=1)
+            analytical = linear_interp(x, y_linear, xq; deriv=DerivOp(1))
             @test zy_grad ≈ analytical atol=1e-10
             @test zy_grad ≈ 2.0 atol=1e-10
         end
@@ -116,7 +116,7 @@ end
             xq = 2.25
             zy_real = Zygote.gradient(q -> real(linear_interp(x, y_complex, q)), xq)[1]
             zy_imag = Zygote.gradient(q -> imag(linear_interp(x, y_complex, q)), xq)[1]
-            analytical = linear_interp(x, y_complex, xq; deriv=1)
+            analytical = linear_interp(x, y_complex, xq; deriv=DerivOp(1))
             @test zy_real ≈ real(analytical) atol=1e-10
             @test zy_imag ≈ imag(analytical) atol=1e-10
         end
@@ -335,7 +335,7 @@ end
 
             # Manual calculation: d/d(xq)[itp(xq)²] = 2 * itp(xq) * itp'(xq)
             val = itp(2.25)
-            deriv = itp(2.25; deriv=1)
+            deriv = itp(2.25; deriv=DerivOp(1))
             expected_grad = 2 * val * deriv
             @test zy_grad[1] ≈ expected_grad atol=1e-10
         end

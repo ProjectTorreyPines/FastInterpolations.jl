@@ -34,17 +34,17 @@ using FastInterpolations
 
     configs = [
         ("CubicInterpolantND", cubic_interp,
-         [(queries_soa, 1), (queries_soa, (1, 0)), (queries_soa, Val(1)), (queries_aos, 1)],
+         [(queries_soa, DerivOp(1, 0)), (queries_soa, DerivOp(1, 0)), (queries_aos, DerivOp(1, 0))],
          nothing),
         ("QuadraticInterpolantND", quadratic_interp,
-         [(queries_soa, 1), (queries_soa, (1, 0)), (queries_aos, Val(1))],
+         [(queries_soa, DerivOp(1, 0)), (queries_soa, DerivOp(1, 0)), (queries_aos, DerivOp(1, 0))],
          nothing),
         ("LinearInterpolantND", linear_interp,
-         [(queries_soa, 1), (queries_aos, (1, 0))],
-         2),
+         [(queries_soa, DerivOp(1, 0)), (queries_aos, DerivOp(1, 0))],
+         DerivOp(2, 0)),
         ("ConstantInterpolantND", constant_interp,
          [],
-         1),
+         DerivOp(1, 0)),
     ]
 
     @testset "$name" for (name, interp_fn, deriv_cases, zero_deriv) in configs

@@ -238,12 +238,12 @@ using FastInterpolations
         sitp = constant_interp(x, [y1])
 
         # First derivative should be zero (step function)
-        d1 = sitp(0.5; deriv=1)
+        d1 = sitp(0.5; deriv=DerivOp(1))
         @test d1 isa Vector{ComplexF64}
         @test d1[1] == zero(ComplexF64)
 
         # Second derivative should be zero
-        d2 = sitp(0.5; deriv=2)
+        d2 = sitp(0.5; deriv=DerivOp(2))
         @test d2 isa Vector{ComplexF64}
         @test d2[1] == zero(ComplexF64)
     end

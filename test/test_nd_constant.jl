@@ -123,20 +123,20 @@ end
         itp = constant_interp((x, y), data)
 
         # First derivative (any direction)
-        @test itp((0.5, 0.5); deriv=1) == 0.0
-        @test itp((0.5, 0.5); deriv=Val(1)) == 0.0
+        @test itp((0.5, 0.5); deriv=DerivOp(1, 1)) == 0.0
+        @test itp((0.5, 0.5); deriv=DerivOp(1, 1)) == 0.0
 
         # Mixed partials
-        @test itp((0.5, 0.5); deriv=Val((1, 0))) == 0.0  # ∂f/∂x
-        @test itp((0.5, 0.5); deriv=Val((0, 1))) == 0.0  # ∂f/∂y
-        @test itp((0.5, 0.5); deriv=Val((1, 1))) == 0.0  # ∂²f/∂x∂y
+        @test itp((0.5, 0.5); deriv=DerivOp(1, 0)) == 0.0  # ∂f/∂x
+        @test itp((0.5, 0.5); deriv=DerivOp(0, 1)) == 0.0  # ∂f/∂y
+        @test itp((0.5, 0.5); deriv=DerivOp(1, 1)) == 0.0  # ∂²f/∂x∂y
 
         # Second derivatives
-        @test itp((0.5, 0.5); deriv=2) == 0.0
-        @test itp((0.5, 0.5); deriv=Val((2, 0))) == 0.0
+        @test itp((0.5, 0.5); deriv=DerivOp(2, 2)) == 0.0
+        @test itp((0.5, 0.5); deriv=DerivOp(2, 0)) == 0.0
 
         # Third derivatives
-        @test itp((0.5, 0.5); deriv=3) == 0.0
+        @test itp((0.5, 0.5); deriv=DerivOp(3, 3)) == 0.0
     end
 
     # ========================================
@@ -352,7 +352,7 @@ end
         @test itp((1.5, 1.5)) == 5.0 + 5.0im
 
         # Derivatives still zero
-        @test itp((0.5, 0.5); deriv=1) == 0.0 + 0.0im
+        @test itp((0.5, 0.5); deriv=DerivOp(1, 1)) == 0.0 + 0.0im
     end
 
     # ========================================
@@ -661,7 +661,7 @@ end
             xqs = [0.5, 0.6, 0.7]
             yqs = [0.5, 0.6, 0.7]
             out = ones(3)  # non-zero before call
-            constant_interp!(out, (x, y), data, (xqs, yqs); deriv=1)
+            constant_interp!(out, (x, y), data, (xqs, yqs); deriv=DerivOp(1, 1))
             @test all(out .== 0.0)
         end
 

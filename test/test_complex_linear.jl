@@ -35,11 +35,11 @@ using FastInterpolations
         @test isapprox(imag(val), imag(exp(2im * π * 0.5)), rtol=0.1)
 
         # First derivative also returns ComplexF64
-        d1 = itp(0.5; deriv=1)
+        d1 = itp(0.5; deriv=DerivOp(1))
         @test d1 isa ComplexF64
 
         # Second derivative returns zero (linear interpolation)
-        d2 = itp(0.5; deriv=2)
+        d2 = itp(0.5; deriv=DerivOp(2))
         @test d2 isa ComplexF64
         @test d2 == zero(ComplexF64)
     end
@@ -175,7 +175,7 @@ using FastInterpolations
         @test @inferred(itp(0.5)) isa ComplexF64
 
         # First derivative should be type-stable
-        @test @inferred(itp(0.5; deriv=1)) isa ComplexF64
+        @test @inferred(itp(0.5; deriv=DerivOp(1))) isa ComplexF64
     end
 
     # ========================================
@@ -248,11 +248,11 @@ using FastInterpolations
         itp = linear_interp(x, y)
 
         # First derivative should be the complex slope
-        d1 = itp(0.5; deriv=1)
+        d1 = itp(0.5; deriv=DerivOp(1))
         @test isapprox(d1, slope, rtol=1e-10)
 
         # Second derivative should be zero
-        d2 = itp(0.5; deriv=2)
+        d2 = itp(0.5; deriv=DerivOp(2))
         @test d2 == zero(ComplexF64)
     end
 
@@ -275,7 +275,7 @@ using FastInterpolations
         val = itp(0.5)
         @test val isa Float64
 
-        d1 = itp(0.5; deriv=1)
+        d1 = itp(0.5; deriv=DerivOp(1))
         @test d1 isa Float64
     end
 

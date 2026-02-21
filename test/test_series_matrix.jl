@@ -105,7 +105,7 @@ end
 
     @testset "derivatives unchanged" begin
         # First derivative at x=0.5
-        deriv1 = sitp(0.5; deriv=1)
+        deriv1 = sitp(0.5; deriv=DerivOp(1))
         @test length(deriv1) == 3
         @test deriv1[1] ≈ 2π * cos(π) atol=0.1  # d/dx sin(2πx) = 2π cos(2πx)
     end

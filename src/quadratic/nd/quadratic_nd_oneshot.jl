@@ -141,7 +141,7 @@ function quadratic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
@@ -156,10 +156,9 @@ function quadratic_interp(
     searches = _resolve_search_nd(search, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    return _dispatch_deriv_nd(deriv, Val(N)) do ops
-        _quadratic_interp_nd_oneshot(
-            grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
-    end
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    return _quadratic_interp_nd_oneshot(
+        grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
 end
 
 """
@@ -172,7 +171,7 @@ function quadratic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
@@ -195,7 +194,7 @@ function quadratic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
@@ -223,7 +222,7 @@ function quadratic_interp!(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
@@ -237,10 +236,9 @@ function quadratic_interp!(
     searches = _resolve_search_nd(search, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    return _dispatch_deriv_nd(deriv, Val(N)) do ops
-        _quadratic_interp_nd_oneshot_soa!(
-            output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
-    end
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    return _quadratic_interp_nd_oneshot_soa!(
+        output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
 end
 
 """
@@ -254,7 +252,7 @@ function quadratic_interp!(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
@@ -268,8 +266,7 @@ function quadratic_interp!(
     searches = _resolve_search_nd(search, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    return _dispatch_deriv_nd(deriv, Val(N)) do ops
-        _quadratic_interp_nd_oneshot_aos!(
-            output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
-    end
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    return _quadratic_interp_nd_oneshot_aos!(
+        output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
 end

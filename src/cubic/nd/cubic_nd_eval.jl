@@ -36,27 +36,14 @@ itp((1.0, 0.5); deriv=(1,0)) # ∂f/∂x only
 # Single-point evaluation
 @inline function (itp::CubicInterpolantND{Tg, Tv, N})(
     query::Tuple{Vararg{Real, N}};  # Allow heterogeneous Real types (AD: Dual + Float64)
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     # Note: Don't convert to Tg - preserve query type for AD support
+    ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-
-    if deriv isa Int
-        # Int path: macro dispatch ensures concrete op type
-        @_dispatch_deriv deriv => op begin
-            ops = ntuple(_ -> op, Val(N))
-            return _eval_nd_hermite(itp, query, ops, search_tuple, hint)
-        end
-    elseif deriv isa Val
-        # Val path: compile-time resolution
-        ops = _resolve_deriv_nd(deriv, Val(N))
-        return _eval_nd_hermite(itp, query, ops, search_tuple, hint)
-    else
-        ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        return _eval_nd_hermite(itp, query, ops, search_tuple, hint)
-    end
+    return _eval_nd_hermite(itp, query, ops, search_tuple, hint)
 end
 
 # ========================================
@@ -72,7 +59,7 @@ Returns `output` for chaining.
 function (itp::CubicInterpolantND{Tg, Tv, N})(
     output::AbstractVector,
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
@@ -85,20 +72,9 @@ function (itp::CubicInterpolantND{Tg, Tv, N})(
             "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
         ))
     end
+    ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-
-    if deriv isa Int
-        @_dispatch_deriv deriv => op begin
-            ops = ntuple(_ -> op, Val(N))
-            _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
-        end
-    elseif deriv isa Val
-        ops = _resolve_deriv_nd(deriv, Val(N))
-        _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
-    else
-        ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
-    end
+    _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
     return output
 end
 
@@ -111,7 +87,7 @@ Returns `output` for chaining.
 function (itp::CubicInterpolantND{Tg, Tv, N})(
     output::AbstractVector,
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
@@ -119,20 +95,9 @@ function (itp::CubicInterpolantND{Tg, Tv, N})(
     length(output) == n_queries || throw(DimensionMismatch(
         "output length $(length(output)) must match query length $n_queries"
     ))
+    ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-
-    if deriv isa Int
-        @_dispatch_deriv deriv => op begin
-            ops = ntuple(_ -> op, Val(N))
-            _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
-        end
-    elseif deriv isa Val
-        ops = _resolve_deriv_nd(deriv, Val(N))
-        _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
-    else
-        ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
-    end
+    _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
     return output
 end
 

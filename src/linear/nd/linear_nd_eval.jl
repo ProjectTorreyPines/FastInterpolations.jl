@@ -16,24 +16,13 @@
 # Scalar tuple query
 @inline function (itp::LinearInterpolantND{Tg,Tv,N})(
     query::Tuple{Vararg{Real, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy,N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
+    ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-
-    if deriv isa Int
-        @_dispatch_deriv deriv => op begin
-            ops = ntuple(_ -> op, Val(N))
-            return _eval_linear_nd(itp, query, ops, search_tuple, hint)
-        end
-    elseif deriv isa Val
-        ops = _resolve_deriv_nd(deriv, Val(N))
-        return _eval_linear_nd(itp, query, ops, search_tuple, hint)
-    else
-        ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        return _eval_linear_nd(itp, query, ops, search_tuple, hint)
-    end
+    return _eval_linear_nd(itp, query, ops, search_tuple, hint)
 end
 
 # ========================================
@@ -49,7 +38,7 @@ Returns `output` for chaining.
 function (itp::LinearInterpolantND{Tg,Tv,N})(
     output::AbstractVector,
     queries::NTuple{N, AbstractVector{<:Real}};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy,N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
@@ -62,32 +51,13 @@ function (itp::LinearInterpolantND{Tg,Tv,N})(
             "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
         ))
     end
+    ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-
-    if deriv isa Int
-        @_dispatch_deriv deriv => op begin
-            ops = ntuple(_ -> op, Val(N))
-            if _has_second_or_higher_derivative(ops, Val(N))
-                fill!(output, zero(eltype(output)))
-                return output
-            end
-            _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
-        end
-    elseif deriv isa Val
-        ops = _resolve_deriv_nd(deriv, Val(N))
-        if _has_second_or_higher_derivative(ops, Val(N))
-            fill!(output, zero(eltype(output)))
-            return output
-        end
-        _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
-    else
-        ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        if _has_second_or_higher_derivative(ops, Val(N))
-            fill!(output, zero(eltype(output)))
-            return output
-        end
-        _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
+    if _has_second_or_higher_derivative(ops, Val(N))
+        fill!(output, zero(eltype(output)))
+        return output
     end
+    _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
     return output
 end
 
@@ -100,7 +70,7 @@ Returns `output` for chaining.
 function (itp::LinearInterpolantND{Tg,Tv,N})(
     output::AbstractVector,
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy,N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
@@ -108,32 +78,13 @@ function (itp::LinearInterpolantND{Tg,Tv,N})(
     length(output) == n_queries || throw(DimensionMismatch(
         "output length $(length(output)) must match query length $n_queries"
     ))
+    ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
-
-    if deriv isa Int
-        @_dispatch_deriv deriv => op begin
-            ops = ntuple(_ -> op, Val(N))
-            if _has_second_or_higher_derivative(ops, Val(N))
-                fill!(output, zero(eltype(output)))
-                return output
-            end
-            _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
-        end
-    elseif deriv isa Val
-        ops = _resolve_deriv_nd(deriv, Val(N))
-        if _has_second_or_higher_derivative(ops, Val(N))
-            fill!(output, zero(eltype(output)))
-            return output
-        end
-        _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
-    else
-        ops = _resolve_deriv_nd(Val(deriv), Val(N))
-        if _has_second_or_higher_derivative(ops, Val(N))
-            fill!(output, zero(eltype(output)))
-            return output
-        end
-        _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
+    if _has_second_or_higher_derivative(ops, Val(N))
+        fill!(output, zero(eltype(output)))
+        return output
     end
+    _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
     return output
 end
 

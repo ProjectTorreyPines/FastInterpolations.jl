@@ -54,7 +54,8 @@ export Left, Right
 export deriv1, deriv2, deriv3, deriv_view, AbstractDerivativeView, DerivativeView
 
 # Operation types (for derivative dispatch)
-export AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3
+export AbstractEvalOp, DerivOp, deriv_order
+export EvalValue, EvalDeriv1, EvalDeriv2, EvalDeriv3  # backward-compat aliases
 
 # Extrapolation mode types (typed API for ND extrap)
 export AbstractExtrap, NoExtrap, ConstExtrap, ExtendExtrap, WrapExtrap

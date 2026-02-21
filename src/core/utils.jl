@@ -355,7 +355,12 @@ macro _dispatch_deriv(pair, body)
     deriv_var = gensym(:deriv)
     quote
         local $(deriv_var) = $(esc(deriv_expr))
-        if $(deriv_var) == 0
+        if $(deriv_var) isa AbstractEvalOp
+            # DerivOp passthrough: already a concrete typed tag
+            let $(esc(op_sym)) = $(deriv_var)
+                $(esc(body))
+            end
+        elseif $(deriv_var) == 0
             let $(esc(op_sym)) = EvalValue()
                 $(esc(body))
             end
@@ -372,7 +377,7 @@ macro _dispatch_deriv(pair, body)
                 $(esc(body))
             end
         else
-            throw(ArgumentError("deriv must be 0, 1, 2, or 3; got $($(deriv_var))"))
+            throw(ArgumentError("deriv must be 0, 1, 2, or 3 (or a DerivOp); got $($(deriv_var))"))
         end
     end
 end

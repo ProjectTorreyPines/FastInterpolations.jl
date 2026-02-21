@@ -36,7 +36,7 @@ out = similar(xq)
 constant_interp!(out, x, y, xq)
 
 # Derivatives (always 0 for step function)
-constant_interp(x, y, 1.5; deriv=1)  # → 0.0
+constant_interp(x, y, 1.5; deriv=DerivOp(1))  # → 0.0
 d1 = deriv1(itp); d1(1.5)            # → 0.0
 ```
 

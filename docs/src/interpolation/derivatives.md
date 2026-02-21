@@ -14,6 +14,20 @@ FastInterpolations.jl provides **analytical derivatives** computed directly from
 | Quadratic | Continuous (C¹) | Piecewise constant | 0 |
 | Cubic | Smooth (C¹) | Continuous (C²) | Piecewise constant |
 
+## `DerivOp{N}` — Derivative Order Type
+
+Derivative orders are specified via `DerivOp{N}`, a parametric singleton type that encodes the derivative order as a **type parameter**. This enables compile-time specialization — the Julia compiler generates a dedicated kernel for each derivative order with zero runtime overhead.
+
+```julia
+DerivOp(0)          # value evaluation (alias: EvalValue())
+DerivOp(1)          # 1st derivative   (alias: EvalDeriv1())
+DerivOp(2)          # 2nd derivative   (alias: EvalDeriv2())
+DerivOp(3)          # 3rd derivative   (alias: EvalDeriv3())
+```
+
+!!! note "Backward-compatible aliases"
+    `EvalValue`, `EvalDeriv1`, `EvalDeriv2`, `EvalDeriv3` are const aliases for `DerivOp{0}` through `DerivOp{3}`.
+
 ## Usage
 
 ### One-Shot API
@@ -24,9 +38,9 @@ using FastInterpolations
 x = range(0.0, 2π, 50)
 y = sin.(x)
 
-cubic_interp(x, y, 1.0)           # value at x=1.0
-cubic_interp(x, y, 1.0; deriv=1)  # 1st derivative at x=1.0
-cubic_interp(x, y, 1.0; deriv=2)  # 2nd derivative at x=1.0
+cubic_interp(x, y, 1.0)                    # value at x=1.0
+cubic_interp(x, y, 1.0; deriv=DerivOp(1))  # 1st derivative at x=1.0
+cubic_interp(x, y, 1.0; deriv=DerivOp(2))  # 2nd derivative at x=1.0
 nothing # hide
 ```
 
@@ -35,14 +49,14 @@ nothing # hide
 ```@example deriv
 itp = cubic_interp(x, y)
 
-itp(1.0; deriv=1)  # 1st derivative at x=1.0
-itp(1.0; deriv=2)  # 2nd derivative at x=1.0
+itp(1.0; deriv=DerivOp(1))  # 1st derivative at x=1.0
+itp(1.0; deriv=DerivOp(2))  # 2nd derivative at x=1.0
 nothing # hide
 ```
 
 ## DerivativeView
 
-`deriv1(itp)`, `deriv2(itp)`, `deriv3(itp)` create lightweight **callable wrappers** with the derivative order fixed at construction. Calling `d1(x)` is equivalent to `itp(x; deriv=1)`. Same performance, cleaner syntax.
+`deriv1(itp)`, `deriv2(itp)`, `deriv3(itp)` create lightweight **callable wrappers** with the derivative order fixed at construction. Calling `d1(x)` is equivalent to `itp(x; deriv=DerivOp(1))`. Same performance, cleaner syntax.
 
 !!! note "All interpolants support all derivative orders"
     `deriv1`, `deriv2`, `deriv3` work with **all** interpolant types (constant, linear, quadratic, cubic). Higher-order derivatives simply return 0 for lower-order methods.
@@ -53,7 +67,7 @@ d1 = deriv1(itp)
 d2 = deriv2(itp)
 d3 = deriv3(itp)
 
-d1(1.0)  # 1st derivative at x=1.0 (same as itp(1.0; deriv=1))
+d1(1.0)  # 1st derivative at x=1.0 (same as itp(1.0; deriv=DerivOp(1)))
 d2(1.0)  # 2nd derivative at x=1.0
 d3(1.0)  # 3rd derivative at x=1.0
 nothing # hide
@@ -121,7 +135,7 @@ d1(-0.5)  # Uses ExtendExtrap extrapolation
 
 | Method | Description |
 |--------|-------------|
-| `itp(xq; deriv=N)` | Direct derivative evaluation |
+| `itp(xq; deriv=DerivOp(N))` | Direct derivative evaluation |
 | `deriv1(itp)`, `deriv2(itp)`, `deriv3(itp)` | Convenience wrappers (all interpolants) |
 | `d.(xq)` | Broadcast evaluation |
 | `d(output, xq)` | In-place vector evaluation |
@@ -130,6 +144,7 @@ d1(-0.5)  # Uses ExtendExtrap extrapolation
 ## API Reference
 
 ```@docs
+DerivOp
 deriv1
 deriv2
 deriv3

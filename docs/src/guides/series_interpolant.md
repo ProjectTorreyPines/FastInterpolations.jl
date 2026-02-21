@@ -57,8 +57,8 @@ output = Vector{Float64}(undef, 4)
 sitp(output, 0.5)
 
 # With derivatives
-sitp(0.5; deriv=1)        # 1st derivative
-sitp(output, 0.5; deriv=2) # 2nd derivative, in-place
+sitp(0.5; deriv=DerivOp(1))        # 1st derivative
+sitp(output, 0.5; deriv=DerivOp(2)) # 2nd derivative, in-place
 ```
 
 ---

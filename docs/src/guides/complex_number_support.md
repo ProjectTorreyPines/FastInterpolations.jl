@@ -4,7 +4,7 @@ All interpolation methods support complex-valued data natively. The type system 
 
 ## Basic Usage
 
-When interpolating complex data, the interpolant will return complex values. Analytic derivatives (`deriv=1`, `deriv=2`) also return complex values corresponding to the derivative of the real and imaginary parts respectively.
+When interpolating complex data, the interpolant will return complex values. Analytic derivatives (`deriv=DerivOp(1)`, `deriv=DerivOp(2)`) also return complex values corresponding to the derivative of the real and imaginary parts respectively.
 
 ```julia
 using FastInterpolations

@@ -53,19 +53,19 @@ p  # hide
 ## First Derivative: ``\frac{dS}{dx}``
 
 ```julia
-constant_interp(x, y, xq; deriv=1)   # always 0
-linear_interp(x, y, xq; deriv=1)     # piecewise constant
-quadratic_interp(x, y, xq; deriv=1)  # continuous
-cubic_interp(x, y, xq; deriv=1)      # smooth
+constant_interp(x, y, xq; deriv=DerivOp(1))   # always 0
+linear_interp(x, y, xq; deriv=DerivOp(1))     # piecewise constant
+quadratic_interp(x, y, xq; deriv=DerivOp(1))  # continuous
+cubic_interp(x, y, xq; deriv=DerivOp(1))      # smooth
 ```
 
 ```@example comparison
 p = plot(layout=(2,2), size=(800, 600), legend=:bottomleft, dpi=250)  # hide
 methods_d1 = [  # hide
-    ("Constant", xq -> constant_interp(x, y, xq; deriv=1)),  # hide
-    ("Linear", xq -> linear_interp(x, y, xq; deriv=1)),  # hide
-    ("Quadratic", xq -> quadratic_interp(x, y, xq; deriv=1)),  # hide
-    ("Cubic", xq -> cubic_interp(x, y, xq; deriv=1))  # hide
+    ("Constant", xq -> constant_interp(x, y, xq; deriv=DerivOp(1))),  # hide
+    ("Linear", xq -> linear_interp(x, y, xq; deriv=DerivOp(1))),  # hide
+    ("Quadratic", xq -> quadratic_interp(x, y, xq; deriv=DerivOp(1))),  # hide
+    ("Cubic", xq -> cubic_interp(x, y, xq; deriv=DerivOp(1)))  # hide
 ]  # hide
 for (i, (name, interp)) in enumerate(methods_d1)  # hide
     yq = interp(xq)  # hide
@@ -84,19 +84,19 @@ p  # hide
 ## Second Derivative: ``\frac{d^2S}{dx^2}``
 
 ```julia
-constant_interp(x, y, xq; deriv=2)   # always 0
-linear_interp(x, y, xq; deriv=2)     # always 0
-quadratic_interp(x, y, xq; deriv=2)  # piecewise constant
-cubic_interp(x, y, xq; deriv=2)      # continuous
+constant_interp(x, y, xq; deriv=DerivOp(2))   # always 0
+linear_interp(x, y, xq; deriv=DerivOp(2))     # always 0
+quadratic_interp(x, y, xq; deriv=DerivOp(2))  # piecewise constant
+cubic_interp(x, y, xq; deriv=DerivOp(2))      # continuous
 ```
 
 ```@example comparison
 p = plot(layout=(2,2), size=(800, 600), legend=:bottomleft, dpi=250)  # hide
 methods_d2 = [  # hide
-    ("Constant", xq -> constant_interp(x, y, xq; deriv=2)),  # hide
-    ("Linear", xq -> linear_interp(x, y, xq; deriv=2)),  # hide
-    ("Quadratic", xq -> quadratic_interp(x, y, xq; deriv=2)),  # hide
-    ("Cubic", xq -> cubic_interp(x, y, xq; deriv=2))  # hide
+    ("Constant", xq -> constant_interp(x, y, xq; deriv=DerivOp(2))),  # hide
+    ("Linear", xq -> linear_interp(x, y, xq; deriv=DerivOp(2))),  # hide
+    ("Quadratic", xq -> quadratic_interp(x, y, xq; deriv=DerivOp(2))),  # hide
+    ("Cubic", xq -> cubic_interp(x, y, xq; deriv=DerivOp(2)))  # hide
 ]  # hide
 for (i, (name, interp)) in enumerate(methods_d2)  # hide
     yq = interp(xq)  # hide

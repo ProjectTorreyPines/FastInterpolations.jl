@@ -31,6 +31,7 @@ eval_type
 
 ```@docs
 AbstractEvalOp
+DerivOp
 EvalValue
 EvalDeriv1
 EvalDeriv2

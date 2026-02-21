@@ -39,7 +39,7 @@ Parametric singleton for derivative order dispatch.
 ```julia
 # 1D scalar evaluation
 itp(x; deriv=DerivOp(1))        # first derivative
-itp(x; deriv=1)                  # also works (Int path via macro)
+itp(x; deriv=EvalDeriv2())      # second derivative (using alias)
 
 # ND mixed partials
 itp(q; deriv=DerivOp(1, 0))     # ∂f/∂x

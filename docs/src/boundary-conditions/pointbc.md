@@ -128,7 +128,7 @@ for (title, bc, color) in bcs
     # for xi in [xs[1], xs[end]]
         xi=xs[1]
         yi = itp(xi)
-        slope_est = itp(xi; deriv=1)
+        slope_est = itp(xi; deriv=DerivOp(1))
 
         # Draw estimated tangent
         len = 0.8
@@ -138,7 +138,7 @@ for (title, bc, color) in bcs
 
         xi=xs[end]
         yi = itp(xi)
-        slope_est = itp(xi; deriv=1)
+        slope_est = itp(xi; deriv=DerivOp(1))
 
         # Draw estimated tangent
         xt = [xi - len, xi + len]

@@ -44,7 +44,7 @@ itp(1.0)    # evaluate at single point
 itp(xq)     # evaluate at multiple points
 
 # Derivatives
-quadratic_interp(x, y, 1.0; deriv=1)  # continuous first derivative
+quadratic_interp(x, y, 1.0; deriv=DerivOp(1))  # continuous first derivative
 d1 = deriv1(itp); d1(1.0)             # same via interpolant
 d2 = deriv2(itp); d2(1.0)             # piecewise constant
 ```

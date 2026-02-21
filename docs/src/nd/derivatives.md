@@ -6,26 +6,26 @@ ND interpolants support analytical partial derivatives via the `deriv` keyword, 
 
 ## Partial Derivatives with `deriv`
 
-The `deriv` keyword accepts a Tuple specifying the derivative order for each axis:
+The `deriv` keyword accepts a `DerivOp` Tuple specifying the derivative order for each axis:
 
 ```julia
 itp = cubic_interp((x, y), data)
 
-# Partial derivatives
-itp((0.5, 1.0); deriv=(1, 0))   # ∂f/∂x
-itp((0.5, 1.0); deriv=(0, 1))   # ∂f/∂y
-itp((0.5, 1.0); deriv=(2, 0))   # ∂²f/∂x²
-itp((0.5, 1.0); deriv=(1, 1))   # ∂²f/∂x∂y (mixed partial)
-itp((0.5, 1.0); deriv=(0, 2))   # ∂²f/∂y²
-itp((0.5, 1.0); deriv=Val((1, 0)))  # Val wrapping — more type-stable
+# Partial derivatives — use DerivOp(n1, n2) convenience constructor
+itp((0.5, 1.0); deriv=DerivOp(1, 0))   # ∂f/∂x
+itp((0.5, 1.0); deriv=DerivOp(0, 1))   # ∂f/∂y
+itp((0.5, 1.0); deriv=DerivOp(2, 0))   # ∂²f/∂x²
+itp((0.5, 1.0); deriv=DerivOp(1, 1))   # ∂²f/∂x∂y (mixed partial)
+itp((0.5, 1.0); deriv=DerivOp(0, 2))   # ∂²f/∂y²
 ```
 
-**Scalar shorthand** — a plain `Int` broadcasts to all axes:
+The multi-argument `DerivOp(n1, n2, ...)` constructor returns a Tuple of `DerivOp` singletons. You can also construct the Tuple explicitly:
 
 ```julia
-itp((0.5, 1.0); deriv=1)  # same as deriv=(1, 1) → ∂²f/∂x∂y
-itp((0.5, 1.0); deriv=2)  # same as deriv=(2, 2) → ∂⁴f/∂x²∂y²
-itp((0.5, 1.0); deriv=3)  # same as deriv=(3, 3) → ∂⁶f/∂x³∂y³
+# Equivalent forms:
+itp((0.5, 1.0); deriv=DerivOp(1, 0))                    # convenience constructor
+itp((0.5, 1.0); deriv=(DerivOp(1), DerivOp(0)))          # explicit Tuple
+itp((0.5, 1.0); deriv=(EvalDeriv1(), EvalValue()))       # using aliases
 ```
 
 ---
@@ -43,11 +43,7 @@ dy  = deriv_view(itp, (0, 1))   # ∂f/∂y
 dxx = deriv_view(itp, (2, 0))   # ∂²f/∂x²
 dxy = deriv_view(itp, (1, 1))   # ∂²f/∂x∂y
 
-# Int shorthand 
-# deriv_view(itp, n) applies order `n` to **all** axes
-dxy = deriv_view(itp, 1) # same as passing (1, 1) → ∂²f/∂x∂y
-
-# Evaluate — equivalent to itp((0.5, 1.0); deriv=(1, 0))
+# Evaluate — equivalent to itp((0.5, 1.0); deriv=DerivOp(1, 0))
 dx((0.5, 1.0))
 
 # Broadcast over points

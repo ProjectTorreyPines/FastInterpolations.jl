@@ -473,7 +473,7 @@ derivatives. Output type is `promote_type(Tv, Tq)`.
 """
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     xq::Tq;
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -490,7 +490,7 @@ Evaluate multi-Y interpolant at scalar query point (in-place).
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
     xq::Tq;
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -526,7 +526,7 @@ Returns a vector of vectors: one vector per y-series, each containing results fo
 """
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     xq::AbstractVector{Tq};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -560,7 +560,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 @with_pool pool function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector{Tv}},
     xq::AbstractVector{Tg};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P}
@@ -596,7 +596,7 @@ end
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector{Tv}},
     xq::AbstractVector{Tq};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}

@@ -201,7 +201,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
@@ -257,7 +257,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     x_targets::AbstractVector{Tg};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
@@ -310,7 +310,7 @@ function quadratic_interp(
     x_targets::AbstractVector{Tg};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_targets))
@@ -365,7 +365,7 @@ end
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
@@ -387,7 +387,7 @@ function quadratic_interp(
     x_targets::AbstractVector{Tq};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
@@ -409,7 +409,7 @@ function quadratic_interp!(
     x_targets::AbstractVector{Tq};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"

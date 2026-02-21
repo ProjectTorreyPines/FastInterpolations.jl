@@ -809,7 +809,7 @@ derivatives. Output type is `promote_type(Tv, Tq)`.
 """
 function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     xq::Tq;
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
@@ -839,7 +839,7 @@ which automatically promotes the output type.
 function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
     xq::Tq;
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
@@ -875,7 +875,7 @@ For mixed-type queries (e.g., Float64 queries on Float32 grid), output type is
 """
 function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     xq::AbstractVector{Tq};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
@@ -914,7 +914,7 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
 @with_pool pool function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     outputs::AbstractVector{<:AbstractVector},
     xq::AbstractVector{Tq};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
@@ -984,7 +984,7 @@ end
 function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     outputs::AbstractVector{<:AbstractVector{Tv}},
     aq_vec::AbstractVector{<:_CubicAnchoredQuery{Tg}};
-    deriv::Int=0
+    deriv::DerivOp=EvalValue()
 ) where {Tg<:AbstractFloat, Tv}
     n_query = length(aq_vec)
     n_ser = n_series(sitp)

@@ -250,7 +250,7 @@ end
 # ========================================
 
 """
-    (itp::QuadraticInterpolant)(aq::_QuadraticAnchoredQuery; deriv::Int=0)
+    (itp::QuadraticInterpolant)(aq::_QuadraticAnchoredQuery; deriv::DerivOp=EvalValue())
 
 Evaluate quadratic interpolant at anchored query point. Ultra-fast path that
 skips interval search.
@@ -268,7 +268,7 @@ d1 = itp(aq; deriv=1)   # First derivative
 d2 = itp(aq; deriv=2)   # Second derivative
 ```
 """
-@inline function (itp::QuadraticInterpolant{T})(aq::_QuadraticAnchoredQuery{T,Tq}; deriv::Int=0) where {T<:AbstractFloat, Tq<:Real}
+@inline function (itp::QuadraticInterpolant{T})(aq::_QuadraticAnchoredQuery{T,Tq}; deriv::DerivOp=EvalValue()) where {T<:AbstractFloat, Tq<:Real}
     @_dispatch_deriv deriv => op begin
         _quadratic_eval_with_anchor(itp, aq, op)
     end
@@ -328,14 +328,14 @@ end
 # ========================================
 
 """
-    (itp::QuadraticInterpolant)(aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}}; deriv::Int=0)
+    (itp::QuadraticInterpolant)(aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}}; deriv::DerivOp=EvalValue())
 
 Evaluate quadratic interpolant at multiple anchored query points.
 Returns newly allocated vector.
 """
 function (itp::QuadraticInterpolant{T})(
     aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}};
-    deriv::Int=0
+    deriv::DerivOp=EvalValue()
 ) where {T<:AbstractFloat}
     output = Vector{T}(undef, length(aq_vec))
     @_dispatch_deriv deriv => op begin
@@ -347,14 +347,14 @@ function (itp::QuadraticInterpolant{T})(
 end
 
 """
-    (itp::QuadraticInterpolant)(output::AbstractVector{T}, aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}}; deriv::Int=0)
+    (itp::QuadraticInterpolant)(output::AbstractVector{T}, aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}}; deriv::DerivOp=EvalValue())
 
 In-place evaluation at multiple anchored query points. Zero allocation.
 """
 function (itp::QuadraticInterpolant{T})(
     output::AbstractVector{T},
     aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}};
-    deriv::Int=0
+    deriv::DerivOp=EvalValue()
 ) where {T<:AbstractFloat}
     @assert length(output) == length(aq_vec) "output length must match aq_vec length"
     @_dispatch_deriv deriv => op begin

@@ -272,7 +272,7 @@ Uses task-local pool for workspace allocation.
     y::AbstractVector{Tv},
     x_query::Tg;
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}}

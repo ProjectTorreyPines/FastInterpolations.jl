@@ -505,7 +505,7 @@ The anchor preserves the Dual type in `xq` and `dL` fields for AD propagation.
 """
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     xq::Tq;
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -533,7 +533,7 @@ The anchor preserves the Dual type in `xq` and `dL` fields for AD propagation.
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     output::AbstractVector,  # Relaxed: allows Dual vector
     xq::Tq;
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -563,7 +563,7 @@ Output type is promoted to wider type for precision preservation.
 """
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     xq::AbstractVector{Tq};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -594,7 +594,7 @@ Pool handles both same-type and mixed-type cases efficiently.
 @with_pool pool function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector},
     xq::AbstractVector{Tq};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -741,7 +741,7 @@ Evaluate with pre-built anchors (TRUE zero-allocation).
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv})(
     outputs::AbstractVector{<:AbstractVector{Tv}},
     aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{Tg, Tq}};
-    deriv::Int=0
+    deriv::DerivOp=EvalValue()
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     _validate_series_outputs(outputs, n_series(sitp), length(aq_vec))
 

@@ -25,7 +25,7 @@ Thread-safe: workspaces allocated from task-local pool.
 - `y::AbstractVector{T}`: Function values at grid points
 - `x_query::AbstractVector{T}`: Query points
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
-- `deriv::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
+- `deriv::DerivOp=EvalValue()`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy=Binary()`: Search algorithm for interval finding
 """
 @inline @with_pool pool function cubic_interp!(
@@ -34,7 +34,7 @@ Thread-safe: workspaces allocated from task-local pool.
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
@@ -230,7 +230,7 @@ In-place cubic spline interpolation with optional automatic caching.
     bc::AbstractBC=NaturalBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     searcher = _to_searcher(search)
@@ -254,7 +254,7 @@ end
     y::AbstractVector{Tv},
     x_query::Tg;
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv, X, F, BC}
     @assert length(output) >= 1 "output must have at least 1 element"
@@ -270,7 +270,7 @@ end
     bc::AbstractBC=NaturalBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(output) >= 1 "output must have at least 1 element"
@@ -288,7 +288,7 @@ end
 Allocating version of cubic spline interpolation using cached LU factorization.
 
 # Arguments
-- `deriv::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
+- `deriv::DerivOp=EvalValue()`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy=Binary()`: Search algorithm for interval finding
 
 # Example
@@ -308,7 +308,7 @@ function cubic_interp(
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_query))
@@ -322,7 +322,7 @@ end
 Cubic spline interpolation with optional automatic caching.
 
 # Arguments
-- `deriv::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
+- `deriv::DerivOp=EvalValue()`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy=Binary()`: Search algorithm for interval finding
 
 # Extrapolation Modes
@@ -350,7 +350,7 @@ function cubic_interp(
     bc::AbstractBC=NaturalBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_query))
@@ -360,7 +360,7 @@ end
 
 # Scalar query - zero allocation
 cubic_interp(cache::CubicSplineCache{Tg}, y::AbstractVector{Tv},
-             x_query::Tg; extrap::AbstractExtrap=NoExtrap(), deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv} =
+             x_query::Tg; extrap::AbstractExtrap=NoExtrap(), deriv::DerivOp=EvalValue(), search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv} =
     cubic_interp_scalar(cache, y, x_query; extrap=extrap, deriv=deriv, search=search, hint=hint)
 
 # Primary scalar method - AD-compatible
@@ -372,7 +372,7 @@ function cubic_interp(
     bc::AbstractBC=NaturalBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
@@ -403,7 +403,7 @@ function cubic_interp(
     bc::AbstractBC=NaturalBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_query)
@@ -419,7 +419,7 @@ function cubic_interp(
     bc::AbstractBC=NaturalBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
@@ -437,7 +437,7 @@ function cubic_interp!(
     bc::AbstractBC=NaturalBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"
@@ -468,7 +468,7 @@ function cubic_interp!(
     bc::AbstractBC=NaturalBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
     @assert length(output) >= 1 "output must have at least 1 element"

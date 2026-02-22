@@ -103,7 +103,7 @@ Create a callable, zero-allocation derivative view of the interpolant.
 - DerivOp: `deriv_view(itp, DerivOp(1, 0))` for type-stable ND mixed partials.
 
 `DerivativeView` is a lightweight wrapper that delegates all evaluation calls to the underlying interpolant
-using the `deriv` keyword argument (e.g., `itp(xq; deriv=1)`). This enables a more functional syntax
+using the `deriv` keyword argument (e.g., `itp(xq; deriv=DerivOp(1))`). This enables a more functional syntax
 without the overhead of full object copying.
 
 # Keyword Arguments
@@ -185,12 +185,16 @@ dx((0.5, 0.5))                         # ∂f/∂x
 dxy.([(0.1, 0.2), (0.3, 0.4)])          # broadcast over points
 ```
 """
-@inline deriv_view(itp::AbstractInterpolant, order::Int) = DerivativeView{order, typeof(itp)}(itp)
+@inline function deriv_view(itp::AbstractInterpolant, order::Int)
+    _make_derivop(order)  # validate order ∈ [0,3]
+    DerivativeView{order, typeof(itp)}(itp)
+end
 
 @inline function deriv_view(
     itp::AbstractInterpolantND{Tg, Tv, N},
     order::Int
 ) where {Tg, Tv, N}
+    _make_derivop(order)  # validate order ∈ [0,3]
     return DerivativeView{ntuple(_ -> order, Val(N)), typeof(itp)}(itp)
 end
 
@@ -198,6 +202,7 @@ end
     itp::AbstractInterpolantND{Tg, Tv, N},
     order::NTuple{N, Int}
 ) where {Tg, Tv, N}
+    foreach(_make_derivop, order)  # validate each order ∈ [0,3]
     return DerivativeView{order, typeof(itp)}(itp)
 end
 
@@ -243,7 +248,7 @@ end
     "or deriv_view(itp, (d1, d2, ...)) for ND."
 ))
 
-@inline _deriv_kw(::Val{Order}) where {Order} = Order isa Tuple ? DerivOp(Order...) : DerivOp{Order}()
+@inline _deriv_kw(::Val{Order}) where {Order} = Order isa Tuple ? DerivOp(Order...) : DerivOp(Order)
 
 # Out-of-place calls (Scalar or Vector)
 @inline function (d::DerivativeView{Order, ITP})(

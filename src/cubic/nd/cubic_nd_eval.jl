@@ -15,22 +15,21 @@ const _DEBUG_GENERATED_CELL = Ref(false)  # Debug: inspect @generated code
 # ========================================
 
 """
-    (itp::CubicInterpolantND)(query; deriv=0, search=itp.searches)
+    (itp::CubicInterpolantND)(query; deriv=EvalValue(), search=itp.searches)
 
 Evaluate N-dimensional cubic Hermite interpolant.
 
 # Keywords
 - `deriv`: Derivative specification
-  - `Int` (0-3): same order for all axes (fastest)
-  - `NTuple{N,Int}`: per-axis orders, e.g. `(1,0)` for ∂f/∂x
-  - `Val(...)`: compile-time version for minimal allocation
+  - `DerivOp`: same order for all axes (fastest), e.g. `DerivOp(1)`
+  - `NTuple{N,DerivOp}`: per-axis orders, e.g. `(DerivOp(1), EvalValue())` for ∂f/∂x
 - `search`: Override search policy (single or per-axis tuple)
 
 # Examples
 ```julia
-itp((1.0, 0.5))              # value
-itp((1.0, 0.5); deriv=1)     # all first derivatives
-itp((1.0, 0.5); deriv=(1,0)) # ∂f/∂x only
+itp((1.0, 0.5))                                  # value
+itp((1.0, 0.5); deriv=DerivOp(1))                # all first derivatives
+itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))  # ∂f/∂x only
 ```
 """
 # Single-point evaluation

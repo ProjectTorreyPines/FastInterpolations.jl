@@ -149,7 +149,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y, xi; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=0, search=Binary())
+    quadratic_interp(x, y, xi; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
 
 C1 piecewise quadratic spline interpolation at a single point.
 
@@ -169,7 +169,7 @@ C1 piecewise quadratic spline interpolation at a single point.
   - `NoExtrap()` (default): throws DomainError if outside domain
   - `ConstExtrap()`: clamp to boundary values
   - `ExtendExtrap()`: extend the boundary polynomial
-- `deriv::Int`: Derivative order (0, 1, or 2)
+- `deriv::DerivOp`: Derivative order -- use `EvalValue()` (default), `DerivOp(1)`, or `DerivOp(2)`
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
   - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
@@ -226,7 +226,7 @@ end
 # ========================================
 
 """
-    quadratic_interp!(output, x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=0, search=Binary())
+    quadratic_interp!(output, x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
 
 In-place quadratic spline interpolation for multiple query points.
 
@@ -284,7 +284,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=0, search=Binary())
+    quadratic_interp(x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
 
 Quadratic spline interpolation for multiple query points (allocating version).
 

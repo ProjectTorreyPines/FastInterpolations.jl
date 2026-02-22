@@ -149,7 +149,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, xi; extrap=NoExtrap(), side=NearestSide(), deriv=0, search=Binary())
+    constant_interp(x, y, xi; extrap=NoExtrap(), side=NearestSide(), deriv=EvalValue(), search=Binary())
 
 Constant (step/piecewise constant) interpolation at a single point.
 
@@ -166,7 +166,7 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `NearestSide()` (default): nearest neighbor (left tie-breaking at midpoint)
   - `LeftSide()`: always use left value
   - `RightSide()`: use right value (except at grid points)
-- `deriv::Union{Int, DerivOp}`: Derivative order (0, 1, or 2). Derivatives are always 0.
+- `deriv::DerivOp`: Derivative order (`EvalValue()`, `DerivOp(1)`, or `DerivOp(2)`). Derivatives are always 0.
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
   - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
@@ -214,7 +214,7 @@ end
 # ========================================
 
 """
-    constant_interp!(output, x, y, x_targets; extrap=NoExtrap(), side=NearestSide(), deriv=0, search=Binary())
+    constant_interp!(output, x, y, x_targets; extrap=NoExtrap(), side=NearestSide(), deriv=EvalValue(), search=Binary())
 
 Zero-allocation constant interpolation for multiple query points.
 
@@ -264,7 +264,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, x_targets; extrap=NoExtrap(), side=NearestSide(), deriv=0, search=Binary())
+    constant_interp(x, y, x_targets; extrap=NoExtrap(), side=NearestSide(), deriv=EvalValue(), search=Binary())
 
 Constant interpolation for multiple query points (allocating version).
 

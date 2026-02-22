@@ -16,7 +16,7 @@
 # ========================================
 
 """
-    linear_interp!(output, x, y, x_targets; extrap=NoExtrap(), deriv=0, search=Binary())
+    linear_interp!(output, x, y, x_targets; extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
 
 Zero-allocation linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -25,7 +25,7 @@ Zero-allocation linear interpolation with automatic dispatch:
 # Arguments
 - `output`: Pre-allocated output vector (must be floating-point type)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
-- `deriv::Union{Int, DerivOp}`: Derivative order (0=value, 1=first derivative, 2=second derivative)
+- `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative, `DerivOp(2)` second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
   - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
@@ -170,7 +170,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xq::Real; extrap=NoExtrap(), deriv=0, search=Binary()) -> AbstractFloat
+    linear_interp(x, y, xq::Real; extrap=NoExtrap(), deriv=EvalValue(), search=Binary()) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -179,7 +179,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 # Arguments
 - `xq::Real`: Single interpolation query point
 - `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
-- `deriv::Union{Int, DerivOp}`: Derivative order (0=value, 1=first derivative)
+- `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
   - `HintedBinary()`: O(1) if hint valid, O(log n) fallback

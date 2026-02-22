@@ -10,13 +10,13 @@
 # ========================================
 
 """
-    cubic_interp(grids, data, query; deriv=0, kwargs...)
+    cubic_interp(grids, data, query; deriv=EvalValue(), kwargs...)
 
 One-shot ND cubic interpolation at a single point.
 Zero-allocation after warmup: uses pool-based partials instead of constructing an Interpolant.
 
 # Keywords
-- `deriv`: `Int` (0-3) or `Val((d1,d2,...))` for mixed partials
+- `deriv`: `DerivOp` or `NTuple{N,DerivOp}` for mixed partials
 - `bc`, `extrap`, `search`, `coeffs`: Same as the Interpolant constructor form
 
 !!! note "Periodic BC validation"
@@ -54,7 +54,7 @@ function cubic_interp(
 end
 
 """
-    cubic_interp(grids, data, queries::NTuple{N,AbstractVector}; deriv=0, kwargs...)
+    cubic_interp(grids, data, queries::NTuple{N,AbstractVector}; deriv=EvalValue(), kwargs...)
 
 One-shot ND cubic interpolation at multiple points (SoA batch).
 Zero-allocation for workspace after warmup; output vector is heap-allocated.
@@ -78,7 +78,7 @@ function cubic_interp(
 end
 
 """
-    cubic_interp(grids, data, queries::AbstractVector{<:NTuple}; deriv=0, kwargs...)
+    cubic_interp(grids, data, queries::AbstractVector{<:NTuple}; deriv=EvalValue(), kwargs...)
 
 One-shot ND cubic interpolation at multiple points (AoS batch).
 Zero-allocation for workspace after warmup; output vector is heap-allocated.
@@ -245,7 +245,7 @@ end
 # ========================================
 
 """
-    cubic_interp!(output, grids, data, queries::NTuple{N,AbstractVector}; deriv=0, kwargs...)
+    cubic_interp!(output, grids, data, queries::NTuple{N,AbstractVector}; deriv=EvalValue(), kwargs...)
 
 In-place one-shot ND cubic interpolation at multiple points (SoA batch).
 Writes results into pre-allocated `output` vector.
@@ -277,7 +277,7 @@ function cubic_interp!(
 end
 
 """
-    cubic_interp!(output, grids, data, queries::AbstractVector{<:NTuple}; deriv=0, kwargs...)
+    cubic_interp!(output, grids, data, queries::AbstractVector{<:NTuple}; deriv=EvalValue(), kwargs...)
 
 In-place one-shot ND cubic interpolation at multiple points (AoS batch).
 Writes results into pre-allocated `output` vector.

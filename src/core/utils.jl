@@ -297,11 +297,4 @@ end
 "No-op vector domain check for non-NoExtrap modes."
 @inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, ::AbstractExtrap) = nothing
 
-# ========================================
-# Validation Utilities
-# ========================================
-#
-# Centralized validation for keyword arguments.
-# @inline ensures zero overhead - compiler inlines the check.
-
 

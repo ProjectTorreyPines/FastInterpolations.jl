@@ -132,7 +132,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(grids, data, query; deriv=0, kwargs...)
+    quadratic_interp(grids, data, query; deriv=EvalValue(), kwargs...)
 
 One-shot ND quadratic interpolation at a single point.
 Zero-allocation after warmup.
@@ -162,7 +162,7 @@ function quadratic_interp(
 end
 
 """
-    quadratic_interp(grids, data, queries::NTuple{N,AbstractVector}; deriv=0, kwargs...)
+    quadratic_interp(grids, data, queries::NTuple{N,AbstractVector}; deriv=EvalValue(), kwargs...)
 
 One-shot ND quadratic interpolation at multiple points (batch SoA).
 Only allocates the output vector.
@@ -185,7 +185,7 @@ function quadratic_interp(
 end
 
 """
-    quadratic_interp(grids, data, queries::AbstractVector{<:NTuple}; deriv=0, kwargs...)
+    quadratic_interp(grids, data, queries::AbstractVector{<:NTuple}; deriv=EvalValue(), kwargs...)
 
 One-shot ND quadratic interpolation at multiple points (batch AoS).
 Only allocates the output vector.
@@ -212,7 +212,7 @@ end
 # ========================================
 
 """
-    quadratic_interp!(output, grids, data, queries::NTuple{N,AbstractVector}; deriv=0, kwargs...)
+    quadratic_interp!(output, grids, data, queries::NTuple{N,AbstractVector}; deriv=EvalValue(), kwargs...)
 
 In-place one-shot ND quadratic interpolation at multiple points (SoA batch).
 Writes results into pre-allocated `output` vector.
@@ -242,7 +242,7 @@ function quadratic_interp!(
 end
 
 """
-    quadratic_interp!(output, grids, data, queries::AbstractVector{<:NTuple}; deriv=0, kwargs...)
+    quadratic_interp!(output, grids, data, queries::AbstractVector{<:NTuple}; deriv=EvalValue(), kwargs...)
 
 In-place one-shot ND quadratic interpolation at multiple points (AoS batch).
 Writes results into pre-allocated `output` vector.

@@ -237,7 +237,7 @@ itp = cubic_interp(x, sin.(2π .* x))
 aq_vec = _anchor_query(x, [0.15, 0.35, 0.5], Val(:cubic))
 
 vals = itp(aq_vec)            # Value
-derivs = itp(aq_vec; deriv=1) # First derivative
+derivs = itp(aq_vec; deriv=DerivOp(1)) # First derivative
 ```
 """
 function (itp::CubicInterpolant{Tg,Tv})(
@@ -258,7 +258,7 @@ Evaluate cubic spline at multiple anchored query points (in-place, zero-allocati
 # Example
 ```julia
 output = Vector{Float64}(undef, length(aq_vec))
-itp(output, aq_vec; deriv=1)  # Zero allocation after warmup
+itp(output, aq_vec; deriv=DerivOp(1))  # Zero allocation after warmup
 ```
 """
 function (itp::CubicInterpolant{Tg,Tv})(

@@ -12,7 +12,7 @@
 # ========================================
 
 """
-    cubic_interp!(output, cache, y, x_query; extrap=NoExtrap(), deriv=0, search=Binary())
+    cubic_interp!(output, cache, y, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
 
 In-place cubic spline interpolation using cached LU factorization.
 
@@ -216,7 +216,7 @@ Pool-based exclusive extension: zero-alloc after warmup.
 end
 
 """
-    cubic_interp!(output, x, y, x_query; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, deriv=0, search=Binary())
+    cubic_interp!(output, x, y, x_query; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, deriv=EvalValue(), search=Binary())
 
 In-place cubic spline interpolation with optional automatic caching.
 """
@@ -279,7 +279,7 @@ end
 # ========================================
 
 """
-    cubic_interp(cache, y, x_query; extrap=NoExtrap(), deriv=0, search=Binary()) -> Vector{T}
+    cubic_interp(cache, y, x_query; extrap=NoExtrap(), deriv=EvalValue(), search=Binary()) -> Vector{T}
 
 Allocating version of cubic spline interpolation using cached LU factorization.
 
@@ -292,7 +292,7 @@ Allocating version of cubic spline interpolation using cached LU factorization.
 cache = CubicSplineCache(collect(range(0.0, 1.0, 51)))
 y = sin.(cache.x)
 result = cubic_interp(cache, y, [0.25, 0.5, 0.75])
-derivs = cubic_interp(cache, y, [0.25, 0.5, 0.75]; deriv=1)  # First derivative
+derivs = cubic_interp(cache, y, [0.25, 0.5, 0.75]; deriv=DerivOp(1))  # First derivative
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
@@ -313,7 +313,7 @@ function cubic_interp(
 end
 
 """
-    cubic_interp(x, y, x_query; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, deriv=0, search=Binary()) -> Vector{T}
+    cubic_interp(x, y, x_query; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, deriv=EvalValue(), search=Binary()) -> Vector{T}
 
 Cubic spline interpolation with optional automatic caching.
 
@@ -331,7 +331,7 @@ Cubic spline interpolation with optional automatic caching.
 # Example
 ```julia
 result = cubic_interp(x, y, x_query)                     # Auto-cached (default)
-derivs = cubic_interp(x, y, x_query; deriv=1)            # First derivative
+derivs = cubic_interp(x, y, x_query; deriv=DerivOp(1))    # First derivative
 result = cubic_interp(x, y, x_query; extrap=ExtendExtrap())  # Extend beyond domain
 
 # Optimized for sorted queries

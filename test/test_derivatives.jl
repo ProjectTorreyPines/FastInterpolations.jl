@@ -48,6 +48,36 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
         @test_throws TypeError linear_interp(x, y, 0.5; deriv=-1)
     end
 
+    @testset "DerivOp order range validation" begin
+        # _make_derivop rejects orders outside [0, 3]
+        @test_throws ArgumentError DerivOp(4)
+        @test_throws ArgumentError DerivOp(-1)
+        @test_throws ArgumentError DerivOp(100)
+
+        # ND constructor validates each element
+        @test_throws ArgumentError DerivOp(1, 4)
+        @test_throws ArgumentError DerivOp(0, -1)
+
+        # Valid orders still work
+        @test DerivOp(0) === DerivOp{0}()
+        @test DerivOp(1) === DerivOp{1}()
+        @test DerivOp(2) === DerivOp{2}()
+        @test DerivOp(3) === DerivOp{3}()
+    end
+
+    @testset "deriv_view order validation" begin
+        # 1D: deriv_view rejects invalid orders
+        x = [0.0, 0.5, 1.0]
+        y = [0.0, 0.25, 1.0]
+        itp = cubic_interp(x, y)
+        @test_throws ArgumentError deriv_view(itp, 4)
+        @test_throws ArgumentError deriv_view(itp, -1)
+
+        # Valid orders work
+        @test deriv_view(itp, 1) isa FastInterpolations.DerivativeView
+        @test deriv_view(itp, 0) isa FastInterpolations.DerivativeView
+    end
+
 end # Derivative Core
 
 # ========================================

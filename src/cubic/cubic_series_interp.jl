@@ -797,7 +797,7 @@ end
 # ========================================
 
 """
-    (sitp::CubicSeriesInterpolant)(xq::Real; deriv=0, search=Binary())
+    (sitp::CubicSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
@@ -826,7 +826,7 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
 end
 
 """
-    (sitp::CubicSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
+    (sitp::CubicSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 
@@ -857,7 +857,7 @@ end
 # ========================================
 
 """
-    (sitp::CubicSeriesInterpolant)(xq::AbstractVector; deriv=0)
+    (sitp::CubicSeriesInterpolant)(xq::AbstractVector; deriv=EvalValue())
 
 Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
@@ -889,14 +889,14 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
 end
 
 """
-    (sitp::CubicSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector{Tq}; deriv=0, search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tq<:Real}
+    (sitp::CubicSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector{Tq}; deriv=EvalValue(), search=sitp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tq<:Real}
 
 Evaluate multi-Y interpolant at multiple query points (in-place).
 
 # Arguments
 - `outputs`: Vector of pre-allocated output buffers (one per y-series)
 - `xq`: Query points (any Real type)
-- `deriv`: Derivative order (0, 1, 2, or 3)
+- `deriv`: Derivative order (`EvalValue()`, `DerivOp(1)`, `DerivOp(2)`, or `DerivOp(3)`)
 
 # Zero Allocation (Hot Path)
 When `eltype(xq) === Tg`, uses task-local pool for anchors → zero allocation after warmup.
@@ -953,7 +953,7 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
 end
 
 """
-    (sitp::CubicSeriesInterpolant)(outputs, aq_vec::AbstractVector{<:_CubicAnchoredQuery{Tg,Tq}}; deriv=0) where {Tg<:AbstractFloat, Tq<:Real}
+    (sitp::CubicSeriesInterpolant)(outputs, aq_vec::AbstractVector{<:_CubicAnchoredQuery{Tg,Tq}}; deriv=EvalValue()) where {Tg<:AbstractFloat, Tq<:Real}
 
 Evaluate multi-Y interpolant with pre-built anchors (TRUE zero-allocation).
 

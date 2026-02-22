@@ -59,8 +59,8 @@ vals = sitp([0.1, 0.5, 0.9])    # Returns Vector of Vectors
 sitp([out1, out2, out3], xq)    # In-place (zero allocation)
 
 # Derivatives
-d1 = sitp(0.5; deriv=1)     # First derivatives
-d2 = sitp(0.5; deriv=2)     # Second derivatives
+d1 = sitp(0.5; deriv=DerivOp(1))     # First derivatives
+d2 = sitp(0.5; deriv=DerivOp(2))     # Second derivatives
 
 # Complex values are also supported
 y_complex = [exp.(2im * π * x), (1.0+2.0im) .* x]
@@ -495,7 +495,7 @@ end
 
 # Scalar evaluation (explicit implementation for deriv keyword support)
 """
-    (sitp::QuadraticSeriesInterpolant)(xq::Real; deriv=0, search=Binary())
+    (sitp::QuadraticSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate all series at scalar query point (out-of-place).
 
@@ -520,7 +520,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::QuadraticSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
+    (sitp::QuadraticSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate all series at scalar query point (in-place, zero allocation).
 
@@ -551,7 +551,7 @@ end
 # ========================================
 
 """
-    (sitp::QuadraticSeriesInterpolant)(xq::AbstractVector; deriv=0)
+    (sitp::QuadraticSeriesInterpolant)(xq::AbstractVector; deriv=EvalValue())
 
 Evaluate all series at multiple query points (out-of-place).
 Returns a vector of vectors: one vector per y-series.
@@ -579,7 +579,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::QuadraticSeriesInterpolant)(outputs, xq::AbstractVector; deriv=0)
+    (sitp::QuadraticSeriesInterpolant)(outputs, xq::AbstractVector; deriv=EvalValue())
 
 Evaluate all series at multiple query points (in-place, zero allocation when types match).
 
@@ -728,7 +728,7 @@ end
 # ========================================
 
 """
-    (sitp::QuadraticSeriesInterpolant)(outputs, aq_vec::AbstractVector{<:_QuadraticAnchoredQuery}; deriv=0)
+    (sitp::QuadraticSeriesInterpolant)(outputs, aq_vec::AbstractVector{<:_QuadraticAnchoredQuery}; deriv=EvalValue())
 
 Evaluate with pre-built anchors (TRUE zero-allocation).
 """

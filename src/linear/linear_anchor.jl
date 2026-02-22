@@ -39,7 +39,7 @@ itp1 = linear_interp(x, sin.(2π .* x))
 itp2 = linear_interp(x, cos.(2π .* x))
 
 itp1(aq)              # Ultra-fast: skips interval search
-itp2(aq; deriv=1)     # Reuses same anchor for derivative
+itp2(aq; deriv=DerivOp(1))     # Reuses same anchor for derivative
 ```
 
 # Performance
@@ -124,7 +124,7 @@ itp2 = linear_interp(collect(x), cos.(2π .* x))
 aq = _anchor_query(collect(x), 0.35, Val(:linear))
 
 itp1(aq)              # Ultra-fast: skips interval search
-itp2(aq; deriv=1)     # Reuses same anchor for derivative
+itp2(aq; deriv=DerivOp(1))     # Reuses same anchor for derivative
 ```
 """
 @inline function _anchor_query(
@@ -304,7 +304,7 @@ skips interval search.
 itp = linear_interp(x, y)
 aq = _anchor_query(x, 0.5, Val(:linear))
 val = itp(aq)           # Value
-d1 = itp(aq; deriv=1)   # First derivative
+d1 = itp(aq; deriv=DerivOp(1))   # First derivative
 ```
 """
 @inline function (itp::LinearInterpolant{Tg})(aq::_LinearAnchoredQuery{Tg}; deriv::DerivOp=EvalValue()) where {Tg<:AbstractFloat}

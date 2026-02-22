@@ -37,7 +37,7 @@ itp1 = quadratic_interp(x, sin.(2π .* x))
 itp2 = quadratic_interp(x, cos.(2π .* x))
 
 itp1(aq)              # Ultra-fast: skips interval search
-itp2(aq; deriv=1)     # Reuses same anchor for derivative
+itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
 ```
 
 # Performance
@@ -84,7 +84,7 @@ itp2 = quadratic_interp(collect(x), cos.(2π .* x))
 aq = _anchor_query(collect(x), 0.35, Val(:quadratic))
 
 itp1(aq)              # Ultra-fast: skips interval search
-itp2(aq; deriv=1)     # Reuses same anchor for derivative
+itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
 ```
 """
 @inline function _anchor_query(
@@ -263,9 +263,9 @@ skips interval search.
 ```julia
 itp = quadratic_interp(x, y)
 aq = _anchor_query(x, 0.5, Val(:quadratic))
-val = itp(aq)           # Value
-d1 = itp(aq; deriv=1)   # First derivative
-d2 = itp(aq; deriv=2)   # Second derivative
+val = itp(aq)                    # Value
+d1 = itp(aq; deriv=DerivOp(1))   # First derivative
+d2 = itp(aq; deriv=DerivOp(2))   # Second derivative
 ```
 """
 @inline function (itp::QuadraticInterpolant{T})(aq::_QuadraticAnchoredQuery{T,Tq}; deriv::DerivOp=EvalValue()) where {T<:AbstractFloat, Tq<:Real}

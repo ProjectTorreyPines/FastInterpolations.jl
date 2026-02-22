@@ -457,15 +457,15 @@ end
 # ========================================
 
 """
-    (sitp::ConstantSeriesInterpolant)(xq::Real; deriv=0, search=Binary())
+    (sitp::ConstantSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
 Returns a vector of values, one per y-series.
 
 # Derivative support
-- `deriv=0`: Returns function values
-- `deriv=1,2`: Returns zeros (step function derivative is zero everywhere)
+- `deriv=EvalValue()`: Returns function values
+- `deriv=DerivOp(1),DerivOp(2)`: Returns zeros (step function derivative is zero everywhere)
 
 # AD Support
 When `xq` is a ForwardDiff.Dual, the output type is promoted to preserve
@@ -483,7 +483,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::ConstantSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
+    (sitp::ConstantSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
@@ -516,7 +516,7 @@ end
 # ========================================
 
 """
-    (sitp::ConstantSeriesInterpolant)(xq::AbstractVector; deriv=0)
+    (sitp::ConstantSeriesInterpolant)(xq::AbstractVector; deriv=EvalValue())
 
 Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
@@ -543,7 +543,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::ConstantSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=0)
+    (sitp::ConstantSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=EvalValue())
 
 Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation).
 

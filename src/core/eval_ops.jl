@@ -66,8 +66,11 @@ const EvalDeriv3 = DerivOp{3}
     n == 1 && return DerivOp{1}()
     n == 2 && return DerivOp{2}()
     n == 3 && return DerivOp{3}()
-    return DerivOp{n}()
+    _derivop_order_error(n)
 end
+
+@noinline _derivop_order_error(n::Int) =
+    throw(ArgumentError("unsupported derivative order $n; must be 0, 1, 2, or 3"))
 
 """
     deriv_order(::DerivOp{N}) -> Int

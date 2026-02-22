@@ -41,22 +41,21 @@ end
 # ========================================
 
 """
-    (itp::QuadraticInterpolantND)(query; deriv=0, search=itp.searches)
+    (itp::QuadraticInterpolantND)(query; deriv=EvalValue(), search=itp.searches)
 
 Evaluate N-dimensional quadratic interpolant.
 
 # Keywords
 - `deriv`: Derivative specification
-  - `Int` (0-3): same order for all axes
-  - `NTuple{N,Int}`: per-axis orders, e.g. `(1,0)` for ∂f/∂x
-  - `Val(...)`: compile-time version
+  - `DerivOp`: same order for all axes, e.g. `EvalValue()`, `DerivOp(1)`
+  - `NTuple{N,DerivOp}`: per-axis orders, e.g. `(DerivOp(1),EvalValue())` for ∂f/∂x
 - `search`: Override search policy (single or per-axis tuple)
 
 # Examples
 ```julia
-itp((1.0, 0.5))              # value
-itp((1.0, 0.5); deriv=1)     # all first derivatives
-itp((1.0, 0.5); deriv=(1,0)) # ∂f/∂x only
+itp((1.0, 0.5))                                      # value
+itp((1.0, 0.5); deriv=DerivOp(1))                     # all first derivatives
+itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))      # ∂f/∂x only
 ```
 """
 # Single-point evaluation

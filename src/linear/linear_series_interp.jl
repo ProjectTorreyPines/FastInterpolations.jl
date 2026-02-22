@@ -446,7 +446,7 @@ end
 # ========================================
 
 """
-    (sitp::LinearSeriesInterpolant)(xq::Real; deriv=0, search=Binary())
+    (sitp::LinearSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
@@ -465,7 +465,7 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::LinearSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
+    (sitp::LinearSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 
@@ -502,7 +502,7 @@ end
 # ========================================
 
 """
-    (sitp::LinearSeriesInterpolant)(xq::AbstractVector; deriv=0)
+    (sitp::LinearSeriesInterpolant)(xq::AbstractVector; deriv=EvalValue())
 
 Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
@@ -531,7 +531,7 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::LinearSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=0)
+    (sitp::LinearSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=EvalValue())
 
 Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation).
 

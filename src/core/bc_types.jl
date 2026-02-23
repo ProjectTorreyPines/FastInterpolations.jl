@@ -723,7 +723,7 @@ end
 # ========================================
 
 """
-    materialize_bc(bc::PolyFit{D}, xs, ys, endpoint::Val{:left/:right}) -> Deriv1{Tv}
+    materialize_bc(bc::PolyFit{D}, xs, ys, endpoint::LeftSide/RightSide) -> Deriv1{Tv}
 
 Convert a polynomial-fit BC to a concrete `Deriv1` by estimating the derivative from data.
 
@@ -734,7 +734,7 @@ allowing all existing `Deriv1` code paths to work unchanged.
 - `bc::PolyFit{D}`: Polynomial fit BC to materialize (lazy, no value type)
 - `xs::AbstractVector{Tg}`: Grid coordinates (real-valued)
 - `ys::AbstractVector{Tv}`: Function values at grid points (can be Complex)
-- `endpoint::Val{:left}` or `Val{:right}`: Which endpoint to estimate
+- `endpoint::LeftSide` or `::RightSide`: Which endpoint to estimate
 
 # Returns
 - `Deriv1{Tv}(estimated_value)`: Concrete first derivative BC with value type from ys
@@ -742,26 +742,26 @@ allowing all existing `Deriv1` code paths to work unchanged.
 # Example
 ```julia
 bc = QuadraticFit()  # = PolyFit{2}
-concrete_bc = materialize_bc(bc, xs, ys, Val(:left))  # → Deriv1{Float64}(computed_value)
+concrete_bc = materialize_bc(bc, xs, ys, LeftSide())  # → Deriv1{Float64}(computed_value)
 
 # Complex values
 y_complex = [1.0+2.0im, 3.0+4.0im, ...]
-concrete_bc = materialize_bc(bc, xs, y_complex, Val(:left))  # → Deriv1{ComplexF64}(...)
+concrete_bc = materialize_bc(bc, xs, y_complex, LeftSide())  # → Deriv1{ComplexF64}(...)
 ```
 
 See also: [`PolyFit`](@ref), [`_estimate_endpoint_derivative`](@ref)
 """
 @inline function materialize_bc(
-    ::PolyFit{D}, xs::AbstractVector{Tg}, ys::AbstractVector{Tv}, endpoint::Val
+    ::PolyFit{D}, xs::AbstractVector{Tg}, ys::AbstractVector{Tv}, endpoint::AbstractSide
 ) where {D, Tg<:AbstractFloat, Tv}
     val = _estimate_endpoint_derivative(xs, ys, endpoint, PolyFit{D}())
     return Deriv1{Tv}(val)  # Natural Deriv1{Tv} return - no workaround needed!
 end
 
 # Passthrough for already-concrete BCs (no materialization needed)
-@inline materialize_bc(bc::Deriv1, ::AbstractVector, ::AbstractVector, ::Val) = bc
-@inline materialize_bc(bc::Deriv2, ::AbstractVector, ::AbstractVector, ::Val) = bc
-@inline materialize_bc(bc::Deriv3, ::AbstractVector, ::AbstractVector, ::Val) = bc
+@inline materialize_bc(bc::Deriv1, ::AbstractVector, ::AbstractVector, ::AbstractSide) = bc
+@inline materialize_bc(bc::Deriv2, ::AbstractVector, ::AbstractVector, ::AbstractSide) = bc
+@inline materialize_bc(bc::Deriv3, ::AbstractVector, ::AbstractVector, ::AbstractSide) = bc
 
 
 # ========================================

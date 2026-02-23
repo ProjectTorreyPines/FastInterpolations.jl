@@ -279,7 +279,7 @@ const FI = FastInterpolations
         y = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
 
         @testset "interpolant callable AD - derivative is zero" begin
-            itp = constant_interp(x, y; side=:left, extrap=ExtendExtrap())
+            itp = constant_interp(x, y; side=LeftSide(), extrap=ExtendExtrap())
 
             # Constant interpolation derivative should be 0 (step function)
             for xq in [0.5, 1.5, 2.5, 3.5]
@@ -293,12 +293,12 @@ const FI = FastInterpolations
         @testset "one-shot API AD" begin
             # Verify one-shot API works with ForwardDiff
             xq = 2.5
-            fd_deriv = ForwardDiff.derivative(q -> constant_interp(x, y, q; side=:left), xq)
+            fd_deriv = ForwardDiff.derivative(q -> constant_interp(x, y, q; side=LeftSide()), xq)
             @test fd_deriv ≈ 0.0 atol=1e-10
         end
 
         @testset "value is preserved" begin
-            itp = constant_interp(x, y; side=:left, extrap=ExtendExtrap())
+            itp = constant_interp(x, y; side=LeftSide(), extrap=ExtendExtrap())
             test_points = [0.5, 1.5, 2.5, 3.5]
 
             for xq in test_points
@@ -310,7 +310,7 @@ const FI = FastInterpolations
 
         @testset "side modes" begin
             # Test all side modes work with AD
-            for side_mode in [:left, :right, :nearest]
+            for side_mode in [LeftSide(), RightSide(), NearestSide()]
                 itp = constant_interp(x, y; side=side_mode, extrap=ExtendExtrap())
                 fd_deriv = ForwardDiff.derivative(itp, 2.5)
                 @test fd_deriv ≈ 0.0 atol=1e-10
@@ -326,7 +326,7 @@ const FI = FastInterpolations
         x = collect(0.0:1.0:5.0)
         y1 = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
         y2 = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        sitp = constant_interp(x, [y1, y2]; side=:left, extrap=ExtendExtrap())
+        sitp = constant_interp(x, [y1, y2]; side=LeftSide(), extrap=ExtendExtrap())
 
         @testset "series derivative is zero" begin
             # ForwardDiff.derivative on series returns vector of derivatives
@@ -356,7 +356,7 @@ const FI = FastInterpolations
         x = collect(0.0:1.0:5.0)
         y_complex = [10.0+1.0im, 20.0+2.0im, 30.0+3.0im, 40.0+4.0im, 50.0+5.0im, 60.0+6.0im]
 
-        itp = constant_interp(x, y_complex; side=:left, extrap=ExtendExtrap())
+        itp = constant_interp(x, y_complex; side=LeftSide(), extrap=ExtendExtrap())
 
         @testset "complex derivative" begin
             xq = 2.5
@@ -378,7 +378,7 @@ const FI = FastInterpolations
     @testset "Constant gradient composition" begin
         x = collect(0.0:1.0:5.0)
         y = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
-        itp = constant_interp(x, y; side=:left, extrap=ExtendExtrap())
+        itp = constant_interp(x, y; side=LeftSide(), extrap=ExtendExtrap())
 
         @testset "gradient through loss function" begin
             function loss(params)

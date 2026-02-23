@@ -19,7 +19,7 @@ Create an N-dimensional constant interpolant with tuple-grid API.
 - `data`: N-dimensional data array where `size(data, d) == length(grids[d])`
 
 # Keyword Arguments
-- `side=:nearest`: Side selection mode (`:nearest`, `:left`, `:right`) or per-axis tuple
+- `side=NearestSide()`: Side selection mode (`NearestSide()`, `LeftSide()`, `RightSide()`) or per-axis tuple
 - `extrap=NoExtrap()`: Extrapolation mode (`NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, `WrapExtrap()`) or per-axis tuple
 - `search=Binary()`: Search policy or per-axis tuple
 
@@ -40,7 +40,7 @@ vals = itp(points)              # Batch AoS
 
 # Per-axis configuration
 itp = constant_interp((x, y), data;
-    side=(:left, :right),
+    side=(LeftSide(), RightSide()),
     extrap=(NoExtrap(), WrapExtrap()),
     search=(Binary(), LinearBinary())
 )
@@ -49,7 +49,7 @@ itp = constant_interp((x, y), data;
 function constant_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
-    side::Union{Symbol, NTuple{N, Symbol}} = :nearest,
+    side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary()
 ) where {N, Tv_raw}
@@ -75,20 +75,8 @@ function constant_interp(
     searches = _resolve_search_nd(search, Val(N))
 
     extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N))
-    @_dispatch_side_nd sides => side_vals begin
-        return ConstantInterpolantND{Tg, Tv, N,
-            typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(side_vals), typeof(searches)}(
-            grids_typed, spacings, Array(data_typed), extrap_vals, side_vals, searches
-        )
-    end
+    return ConstantInterpolantND{Tg, Tv, N,
+        typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(sides), typeof(searches)}(
+        grids_typed, spacings, Array(data_typed), extrap_vals, sides, searches
+    )
 end
-
-# ========================================
-# Val Type Conversion
-# ========================================
-
-@inline function _to_side_vals(sides::NTuple{N, Symbol}) where {N}
-    return ntuple(i -> _to_side_val(sides[i]), Val(N))
-end
-
-@inline _to_side_val(s::Symbol) = Val(s)

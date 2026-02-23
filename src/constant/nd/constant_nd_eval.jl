@@ -235,7 +235,7 @@ Computes cell widths, distances from left edge, side-based offsets, and returns 
 @generated function _constant_nd_kernel(
     data::AbstractArray{Tv, N},
     spacings::NTuple{N, AbstractGridSpacing},
-    sides::NTuple{N, SideVal},
+    sides::Tuple{Vararg{AbstractSide, N}},
     indices::NTuple{N, Int},
     q_eval::Tuple{Vararg{Real, N}},
     Ls::Tuple{Vararg{Real, N}}
@@ -282,16 +282,16 @@ end
 # Side Offset Computation (dispatch helpers for @generated kernel)
 # ========================================
 
-@inline function _compute_single_offset(::Val{:left}, h, dL)
+@inline function _compute_single_offset(::LeftSide, h, dL)
     return 0
 end
 
-@inline function _compute_single_offset(::Val{:right}, h, dL)
+@inline function _compute_single_offset(::RightSide, h, dL)
     dL_primal = _extract_primal(dL)
     return iszero(dL_primal) ? 0 : 1
 end
 
-@inline function _compute_single_offset(::Val{:nearest}, h, dL)
+@inline function _compute_single_offset(::NearestSide, h, dL)
     dL_primal = _extract_primal(dL)
     return dL_primal <= h / 2 ? 0 : 1
 end

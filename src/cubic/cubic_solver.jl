@@ -278,7 +278,7 @@ end
     d::AbstractVector{Tv}, bc::PolyFit{D}, y::AbstractVector{Tv}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
 ) where {D, Tg<:AbstractFloat, Tv}
     # Materialize PolyFit{D} → Deriv1 using estimated derivative
-    concrete_bc = materialize_bc(bc, x, y, Val(:left))
+    concrete_bc = materialize_bc(bc, x, y, LeftSide())
     # Delegate to existing Deriv1 code path
     _compute_rhs_first!(d, concrete_bc, y, x, spacing)
     return nothing
@@ -289,7 +289,7 @@ end
     d::AbstractVector{Tv}, bc::PolyFit{D}, y::AbstractVector{Tv}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
 ) where {D, Tg<:AbstractFloat, Tv}
     # Materialize PolyFit{D} → Deriv1 using estimated derivative
-    concrete_bc = materialize_bc(bc, x, y, Val(:right))
+    concrete_bc = materialize_bc(bc, x, y, RightSide())
     # Delegate to existing Deriv1 code path
     _compute_rhs_last!(d, concrete_bc, y, x, spacing)
     return nothing

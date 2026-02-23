@@ -284,18 +284,18 @@
         @test occursin("[1, 10]", verbose)  # Integer bounds
     end
 
-    @testset "Side options (:left, :right)" begin
+    @testset "Side options (LeftSide, RightSide)" begin
         x_vec = collect(range(0.0, 1.0, 11))
         y_short = sin.(x_vec)
 
-        itp_left = constant_interp(x_vec, y_short; side=:left)
-        itp_right = constant_interp(x_vec, y_short; side=:right)
+        itp_left = constant_interp(x_vec, y_short; side=LeftSide())
+        itp_right = constant_interp(x_vec, y_short; side=RightSide())
 
         verbose_left = sprint(show, MIME("text/plain"), itp_left)
         verbose_right = sprint(show, MIME("text/plain"), itp_right)
 
-        @test occursin(":left", verbose_left)
-        @test occursin(":right", verbose_right)
+        @test occursin("LeftSide", verbose_left)
+        @test occursin("RightSide", verbose_right)
     end
 
     @testset "Search policy formatting (direct)" begin
@@ -463,7 +463,6 @@
 
         # Access internal formatting functions directly to ensure full coverage
         @test FI._format_extrap(Val(:unknown_mode)) == "unknown"
-        @test FI._format_side(Val(:unknown_side)) == "unknown"
         @test FI._format_deriv_order(4) == "4th"
 
         @test FI._format_search(Linear()) == "Linear"
@@ -819,7 +818,7 @@
         compact_str = sprint(show, itp)
         @test occursin("ConstantInterpolantND", compact_str)
         @test occursin("11×15", compact_str)
-        @test occursin(":nearest", compact_str)
+        @test occursin("NearestSide", compact_str)
 
         # Verbose show (Range grids → no Search row)
         verbose_str = sprint(show, MIME("text/plain"), itp)
@@ -849,16 +848,16 @@
         x2 = range(0.0, 2.0, 15)
         data = [Float64(i + j) for i in 1:11, j in 1:15]
 
-        itp = constant_interp((x1, x2), data; side=(:left, :right))
+        itp = constant_interp((x1, x2), data; side=(LeftSide(), RightSide()))
 
         # Compact: heterogeneous sides shown as comma-separated
         compact_str = sprint(show, itp)
-        @test occursin(":left,:right", compact_str)
+        @test occursin("LeftSide,RightSide", compact_str)
 
         # Verbose: should show tuple format for sides
         verbose_str = sprint(show, MIME("text/plain"), itp)
-        @test occursin(":left", verbose_str)
-        @test occursin(":right", verbose_str)
+        @test occursin("LeftSide", verbose_str)
+        @test occursin("RightSide", verbose_str)
     end
 
     @testset "ConstantInterpolantND show with heterogeneous extrapolation" begin
@@ -916,20 +915,20 @@
         FI = FastInterpolations
 
         # All same sides → single value
-        sides_same = (Val(:nearest), Val(:nearest))
-        @test FI._short_side_name_nd(sides_same) == ":nearest"
+        sides_same = (NearestSide(), NearestSide())
+        @test FI._short_side_name_nd(sides_same) == "NearestSide"
 
         # Different sides → comma-joined
-        sides_diff = (Val(:left), Val(:right))
-        @test FI._short_side_name_nd(sides_diff) == ":left,:right"
+        sides_diff = (LeftSide(), RightSide())
+        @test FI._short_side_name_nd(sides_diff) == "LeftSide,RightSide"
 
         # Three axes, all same
-        sides_3d_same = (Val(:left), Val(:left), Val(:left))
-        @test FI._short_side_name_nd(sides_3d_same) == ":left"
+        sides_3d_same = (LeftSide(), LeftSide(), LeftSide())
+        @test FI._short_side_name_nd(sides_3d_same) == "LeftSide"
 
         # Three axes, mixed
-        sides_3d_mixed = (Val(:left), Val(:nearest), Val(:right))
-        @test FI._short_side_name_nd(sides_3d_mixed) == ":left,:nearest,:right"
+        sides_3d_mixed = (LeftSide(), NearestSide(), RightSide())
+        @test FI._short_side_name_nd(sides_3d_mixed) == "LeftSide,NearestSide,RightSide"
     end
 
     @testset "LinearInterpolantND show with Vector grids (Search row)" begin

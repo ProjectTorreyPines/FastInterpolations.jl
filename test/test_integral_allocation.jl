@@ -48,7 +48,7 @@ using FastInterpolations
     @testset "constant 1D: zero allocation" begin
         x = collect(range(0.0, 1.0, length=21))
         y = collect(1.0:length(x))
-        for side in (:left, :right, :nearest)
+        for side in (LeftSide(), RightSide(), NearestSide())
             itp = constant_interp(x, y; side=side, extrap=NoExtrap())
             a, b = 0.2, 0.7
 

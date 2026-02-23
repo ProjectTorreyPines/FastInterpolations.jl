@@ -139,9 +139,9 @@ cubic_interp(x, y, 5.0; deriv=2)   # 2nd derivative at x=5.0
 cubic_interp(x, y, 5.0; deriv=3)   # 3rd derivative at x=5.0
 
 # Constant interpolation — choose which side to sample
-constant_interp(x, y, xq; side=:nearest) # nearest neighbor (default)
-constant_interp(x, y, xq; side=:left)    # left-continuous 
-constant_interp(x, y, xq; side=:right)   # right-continuous
+constant_interp(x, y, xq; side=NearestSide()) # nearest neighbor (default)
+constant_interp(x, y, xq; side=LeftSide())    # left-continuous
+constant_interp(x, y, xq; side=RightSide())   # right-continuous
 
 # Quadratic boundary condition — single endpoint constraint
 quadratic_interp(x, y, xq; bc=Left(Deriv1(0.0)))   # S'(left) = 0
@@ -154,9 +154,9 @@ cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv2(-5.0)))  # custom (left, ri
 cubic_interp(x, y, xq; bc=CubicFit())     # Estimate derivatives using 4-point fit at both ends 
 
 # Extrapolation modes — all methods support these
-linear_interp(x, y, xq; extrap=:constant)    # clamp to boundary values
-quadratic_interp(x, y, xq; extrap=:wrap)     # wrap around (periodic data)
-cubic_interp(x, y, xq; extrap=:extension)    # extend boundary polynomial
+linear_interp(x, y, xq; extrap=ConstExtrap())    # clamp to boundary values
+quadratic_interp(x, y, xq; extrap=WrapExtrap())  # wrap around (periodic data)
+cubic_interp(x, y, xq; extrap=ExtendExtrap())    # extend boundary polynomial
 ```
 
 ## Documentation

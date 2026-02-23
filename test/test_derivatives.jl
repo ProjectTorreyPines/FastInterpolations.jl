@@ -1824,7 +1824,7 @@ end # DerivativeView Wrapper
 
         # Constant kernel
         @test FastInterpolations._constant_kernel(
-            FastInterpolations.EvalDeriv3(), 5.0, 5.0, 0.5, 0.2, Val(:left)
+            FastInterpolations.EvalDeriv3(), 5.0, 5.0, 0.5, 0.2, LeftSide()
         ) === zero(Float64)
     end
 

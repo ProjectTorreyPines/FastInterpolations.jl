@@ -319,8 +319,8 @@ end
     n = length(values)
     @assert n >= 4 "Need at least 4 points for CubicFit"
 
-    deriv_left = _estimate_endpoint_derivative(grid, values, Val(:left), CubicFit())
-    deriv_right = _estimate_endpoint_derivative(grid, values, Val(:right), CubicFit())
+    deriv_left = _estimate_endpoint_derivative(grid, values, LeftSide(), CubicFit())
+    deriv_right = _estimate_endpoint_derivative(grid, values, RightSide(), CubicFit())
 
     # BC values are Tv type (can be Complex)
     bc = BCPair(Deriv1(Tv(deriv_left)), Deriv1(Tv(deriv_right)))

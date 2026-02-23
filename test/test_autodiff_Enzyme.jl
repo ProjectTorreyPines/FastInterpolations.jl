@@ -128,7 +128,7 @@ else
             y = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
 
             @testset "Single Interpolant" begin
-                itp = constant_interp(x, y; side=:left, extrap=ExtendExtrap())
+                itp = constant_interp(x, y; side=LeftSide(), extrap=ExtendExtrap())
 
                 f(xq) = itp(xq)
                 result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(2.5))

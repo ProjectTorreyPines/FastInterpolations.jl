@@ -74,12 +74,12 @@ using FastInterpolations
     end
 
     # ========================================
-    # Evaluation Tests - :nearest mode
+    # Evaluation Tests - NearestSide() mode
     # ========================================
-    @testset "itp(aq) for :nearest mode" begin
+    @testset "itp(aq) for NearestSide() mode" begin
         x = collect(range(0.0, 1.0, 11))
         y = collect(1.0:11.0)
-        itp = constant_interp(x, y; side=:nearest, extrap=ExtendExtrap())
+        itp = constant_interp(x, y; side=NearestSide(), extrap=ExtendExtrap())
 
         xq_points = [0.05, 0.15, 0.35, 0.65, 0.95]
 
@@ -90,12 +90,12 @@ using FastInterpolations
     end
 
     # ========================================
-    # Evaluation Tests - :left mode
+    # Evaluation Tests - LeftSide() mode
     # ========================================
-    @testset "itp(aq) for :left mode" begin
+    @testset "itp(aq) for LeftSide() mode" begin
         x = collect(range(0.0, 1.0, 11))
         y = collect(1.0:11.0)
-        itp = constant_interp(x, y; side=:left, extrap=ExtendExtrap())
+        itp = constant_interp(x, y; side=LeftSide(), extrap=ExtendExtrap())
 
         xq_points = [0.05, 0.15, 0.35, 0.65, 0.95]
 
@@ -106,12 +106,12 @@ using FastInterpolations
     end
 
     # ========================================
-    # Evaluation Tests - :right mode
+    # Evaluation Tests - RightSide() mode
     # ========================================
-    @testset "itp(aq) for :right mode" begin
+    @testset "itp(aq) for RightSide() mode" begin
         x = collect(range(0.0, 1.0, 11))
         y = collect(1.0:11.0)
-        itp = constant_interp(x, y; side=:right, extrap=ExtendExtrap())
+        itp = constant_interp(x, y; side=RightSide(), extrap=ExtendExtrap())
 
         xq_points = [0.05, 0.15, 0.35, 0.65, 0.95]
 

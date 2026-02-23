@@ -144,7 +144,7 @@ end
 
         @testset "Single Interpolant - gradient is nothing (not 0)" begin
             # Zygote returns `nothing` for constant functions, not 0
-            itp = constant_interp(x, y; side=:left, extrap=ExtendExtrap())
+            itp = constant_interp(x, y; side=LeftSide(), extrap=ExtendExtrap())
 
             for xq in [0.5, 1.5, 2.5, 3.5]
                 zy_grad = Zygote.gradient(itp, xq)[1]
@@ -154,7 +154,7 @@ end
         end
 
         @testset "All side modes" begin
-            for side_mode in [:left, :right, :nearest]
+            for side_mode in [LeftSide(), RightSide(), NearestSide()]
                 itp = constant_interp(x, y; side=side_mode, extrap=ExtendExtrap())
                 zy_grad = Zygote.gradient(itp, 2.5)[1]
                 @test (zy_grad === nothing) || isapprox(zy_grad, 0.0; atol=1e-10)

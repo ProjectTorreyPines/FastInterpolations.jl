@@ -291,7 +291,7 @@ end
         # First 4 points: x = 0.0, 0.1, 0.2, 0.3
         fvals = (f(0.0), f(0.1), f(0.2), f(0.3))
 
-        d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), fvals, inv_h)
+        d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), fvals, inv_h)
         @test d_left ≈ 0.0 atol=1e-10  # f'(0) = 0
     end
 
@@ -305,7 +305,7 @@ end
         # Last 4 points: x = 0.7, 0.8, 0.9, 1.0
         fvals = (f(0.7), f(0.8), f(0.9), f(1.0))
 
-        d_right = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:right), fvals, inv_h)
+        d_right = FastInterpolations._compute_deriv1(PolyFit{3}(), RightSide(), fvals, inv_h)
         @test d_right ≈ 3.0 atol=1e-10  # f'(1) = 3
     end
 
@@ -317,7 +317,7 @@ end
         f = x -> x^2 - 2x + 1
 
         fvals = (f(0.0), f(0.25), f(0.5), f(0.75))
-        d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), fvals, inv_h)
+        d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), fvals, inv_h)
         @test d_left ≈ -2.0 atol=1e-10
     end
 
@@ -328,7 +328,7 @@ end
         f = x -> x^2 - 2x + 1
 
         fvals = (f(1.25), f(1.5), f(1.75), f(2.0))
-        d_right = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:right), fvals, inv_h)
+        d_right = FastInterpolations._compute_deriv1(PolyFit{3}(), RightSide(), fvals, inv_h)
         @test d_right ≈ 2.0 atol=1e-10
     end
 
@@ -339,11 +339,11 @@ end
         f = x -> 3x + 2
 
         fvals_left = (f(0.0), f(0.5), f(1.0), f(1.5))
-        d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), fvals_left, inv_h)
+        d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), fvals_left, inv_h)
         @test d_left ≈ 3.0 atol=1e-14  # Exact for linear
 
         fvals_right = (f(1.5), f(2.0), f(2.5), f(3.0))
-        d_right = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:right), fvals_right, inv_h)
+        d_right = FastInterpolations._compute_deriv1(PolyFit{3}(), RightSide(), fvals_right, inv_h)
         @test d_right ≈ 3.0 atol=1e-14
     end
 
@@ -353,7 +353,7 @@ end
         f = x -> x^2
 
         fvals = NTuple{4, Float32}(Float32.(f.([0.0, 0.1, 0.2, 0.3])))
-        d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), fvals, inv_h)
+        d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), fvals, inv_h)
         @test d_left isa Float32
         @test d_left ≈ Float32(0.0) atol=1e-5  # f'(0) = 0
     end
@@ -369,7 +369,7 @@ end
     @testset "Coefficient Precomputation: Left Endpoint" begin
         # Non-uniform grid: [0, 0.1, 0.3, 0.6]
         xvals = (0.0, 0.1, 0.3, 0.6)
-        coeffs = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), xvals)
+        coeffs = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), xvals)
 
         # Test: coefficients should be finite
         @test all(isfinite, coeffs)
@@ -384,7 +384,7 @@ end
     @testset "Coefficient Precomputation: Right Endpoint" begin
         # Non-uniform grid: [0.4, 0.7, 0.9, 1.0]
         xvals = (0.4, 0.7, 0.9, 1.0)
-        coeffs = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:right), xvals)
+        coeffs = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), RightSide(), xvals)
 
         # Test: coefficients should be finite
         @test all(isfinite, coeffs)
@@ -403,13 +403,13 @@ end
         f_lin(x) = 2x + 3
 
         # Left endpoint
-        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x_left)
+        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x_left)
         f_left = NTuple{4}(f_lin.(collect(x_left)))
         d_left = FastInterpolations._weighted_sum(c_left, f_left)
         @test d_left ≈ 2.0 atol=1e-13
 
         # Right endpoint
-        c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:right), x_right)
+        c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), RightSide(), x_right)
         f_right = NTuple{4}(f_lin.(collect(x_right)))
         d_right = FastInterpolations._weighted_sum(c_right, f_right)
         @test d_right ≈ 2.0 atol=1e-13
@@ -423,13 +423,13 @@ end
         f_quad(x) = x^2 - 3x + 2
 
         # Left endpoint: f'(0) = -3
-        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x_left)
+        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x_left)
         f_left = NTuple{4}(f_quad.(collect(x_left)))
         d_left = FastInterpolations._weighted_sum(c_left, f_left)
         @test d_left ≈ -3.0 atol=1e-12
 
         # Right endpoint: f'(1) = -1
-        c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:right), x_right)
+        c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), RightSide(), x_right)
         f_right = NTuple{4}(f_quad.(collect(x_right)))
         d_right = FastInterpolations._weighted_sum(c_right, f_right)
         @test d_right ≈ -1.0 atol=1e-12
@@ -443,13 +443,13 @@ end
         f_cub(x) = x^3
 
         # Left endpoint: f'(0) = 0
-        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x_left)
+        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x_left)
         f_left = NTuple{4}(f_cub.(collect(x_left)))
         d_left = FastInterpolations._weighted_sum(c_left, f_left)
         @test d_left ≈ 0.0 atol=1e-12
 
         # Right endpoint: f'(1) = 3
-        c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:right), x_right)
+        c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), RightSide(), x_right)
         f_right = NTuple{4}(f_cub.(collect(x_right)))
         d_right = FastInterpolations._weighted_sum(c_right, f_right)
         @test d_right ≈ 3.0 atol=1e-11
@@ -463,22 +463,22 @@ end
 
         # Left endpoint using precomputed coefficients
         x_left = (xs[1], xs[2], xs[3], xs[4])
-        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x_left)
+        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x_left)
         f_left = (ys[1], ys[2], ys[3], ys[4])
         d_left_precomp = FastInterpolations._weighted_sum(c_left, f_left)
 
         # Left endpoint using unified API (4-arg with PolyFit{3})
-        d_left_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:left), PolyFit{3}())
+        d_left_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, LeftSide(), PolyFit{3}())
 
         @test d_left_precomp ≈ d_left_onfly rtol=1e-14
 
         # Right endpoint
         n = length(xs)
         x_right = (xs[n-3], xs[n-2], xs[n-1], xs[n])
-        c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:right), x_right)
+        c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), RightSide(), x_right)
         f_right = (ys[n-3], ys[n-2], ys[n-1], ys[n])
         d_right_precomp = FastInterpolations._weighted_sum(c_right, f_right)
-        d_right_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, Val(:right), PolyFit{3}())
+        d_right_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, RightSide(), PolyFit{3}())
 
         @test d_right_precomp ≈ d_right_onfly rtol=1e-14
     end
@@ -492,20 +492,20 @@ end
 
         # Precomputed (non-uniform kernel with uniform data)
         x_left = (xs_uniform[1], xs_uniform[2], xs_uniform[3], xs_uniform[4])
-        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x_left)
+        c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x_left)
         f_left = (ys[1], ys[2], ys[3], ys[4])
         d_precomp = FastInterpolations._weighted_sum(c_left, f_left)
 
         # Direct uniform kernel
         inv_h = 1 / h
-        d_direct = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), f_left, inv_h)
+        d_direct = FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), f_left, inv_h)
 
         @test d_precomp ≈ d_direct rtol=1e-13
     end
 
     @testset "Float32 Precision" begin
         xvals = NTuple{4, Float32}((0.0f0, 0.1f0, 0.3f0, 0.6f0))
-        coeffs = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), xvals)
+        coeffs = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), xvals)
 
         @test coeffs[1] isa Float32
         @test coeffs[2] isa Float32
@@ -786,12 +786,12 @@ end
 
         # Left endpoint: f'(0) = -2
         fvals_left = (y[1], y[2], y[3])
-        d_left = FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:left), fvals_left, inv_h)
+        d_left = FastInterpolations._compute_deriv1(PolyFit{2}(), LeftSide(), fvals_left, inv_h)
         @test d_left ≈ df_quad(x[1]) rtol=1e-12
 
         # Right endpoint: f'(2) = 2
         fvals_right = (y[end-2], y[end-1], y[end])
-        d_right = FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:right), fvals_right, inv_h)
+        d_right = FastInterpolations._compute_deriv1(PolyFit{2}(), RightSide(), fvals_right, inv_h)
         @test d_right ≈ df_quad(x[end]) rtol=1e-12
     end
 
@@ -806,8 +806,8 @@ end
 
         fvals_left = (y[1], y[2], y[3])
         fvals_right = (y[end-2], y[end-1], y[end])
-        d_left = FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:left), fvals_left, inv_h)
-        d_right = FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:right), fvals_right, inv_h)
+        d_left = FastInterpolations._compute_deriv1(PolyFit{2}(), LeftSide(), fvals_left, inv_h)
+        d_right = FastInterpolations._compute_deriv1(PolyFit{2}(), RightSide(), fvals_right, inv_h)
 
         @test d_left ≈ df_linear rtol=1e-12
         @test d_right ≈ df_linear rtol=1e-12
@@ -824,14 +824,14 @@ end
         # Left endpoint via coefficient kernels
         x_left = (x[1], x[2], x[3])
         f_left = (y[1], y[2], y[3])
-        coeffs_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), Val(:left), x_left)
+        coeffs_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), LeftSide(), x_left)
         d_left = FastInterpolations._weighted_sum(coeffs_left, f_left)
         @test d_left ≈ df_quad(x[1]) rtol=1e-12
 
         # Right endpoint via coefficient kernels
         x_right = (x[end-2], x[end-1], x[end])
         f_right = (y[end-2], y[end-1], y[end])
-        coeffs_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), Val(:right), x_right)
+        coeffs_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), RightSide(), x_right)
         d_right = FastInterpolations._weighted_sum(coeffs_right, f_right)
         @test d_right ≈ df_quad(x[end]) rtol=1e-12
     end
@@ -844,8 +844,8 @@ end
         x_range = range(0.0, 2.0, 11)
         y_range = collect(f_quad.(x_range))
 
-        d_left_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, Val(:left), PolyFit{2}())
-        d_right_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, Val(:right), PolyFit{2}())
+        d_left_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, LeftSide(), PolyFit{2}())
+        d_right_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, RightSide(), PolyFit{2}())
 
         @test d_left_range ≈ df_quad(x_range[1]) rtol=1e-12
         @test d_right_range ≈ df_quad(x_range[end]) rtol=1e-12
@@ -854,8 +854,8 @@ end
         x_vec = [0.0, 0.3, 0.8, 1.5, 2.0]
         y_vec = f_quad.(x_vec)
 
-        d_left_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, Val(:left), PolyFit{2}())
-        d_right_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, Val(:right), PolyFit{2}())
+        d_left_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, LeftSide(), PolyFit{2}())
+        d_right_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, RightSide(), PolyFit{2}())
 
         @test d_left_vec ≈ df_quad(x_vec[1]) rtol=1e-12
         @test d_right_vec ≈ df_quad(x_vec[end]) rtol=1e-12
@@ -869,8 +869,8 @@ end
         x_range = range(0.0, 2.0, 21)
         y_range = collect(f_cubic.(x_range))
 
-        d_left = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, Val(:left), PolyFit{3}())
-        d_right = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, Val(:right), PolyFit{3}())
+        d_left = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, LeftSide(), PolyFit{3}())
+        d_right = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, RightSide(), PolyFit{3}())
 
         @test d_left ≈ df_cubic(x_range[1]) rtol=1e-10
         @test d_right ≈ df_cubic(x_range[end]) rtol=1e-10
@@ -884,8 +884,8 @@ end
         x = range(0.0, 1.0, 11)
         y = collect(f_cubic.(x))
 
-        d2_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{2}())
-        d3_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{3}())
+        d2_left = FastInterpolations._estimate_endpoint_derivative(x, y, LeftSide(), PolyFit{2}())
+        d3_left = FastInterpolations._estimate_endpoint_derivative(x, y, LeftSide(), PolyFit{3}())
 
         exact = df_cubic(x[1])  # = 0
 
@@ -903,12 +903,12 @@ end
         inv_h = inv(step(x))
 
         fvals = (y[1], y[2], y[3])
-        d_left = FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:left), fvals, inv_h)
+        d_left = FastInterpolations._compute_deriv1(PolyFit{2}(), LeftSide(), fvals, inv_h)
         @test d_left isa Float32
         @test isfinite(d_left)
 
         # Unified API
-        d_api = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{2}())
+        d_api = FastInterpolations._estimate_endpoint_derivative(x, y, LeftSide(), PolyFit{2}())
         @test d_api isa Float32
         @test isfinite(d_api)
     end
@@ -933,12 +933,12 @@ end
 
         # Left endpoint: f'(0) = 3
         fvals_left = (y[1], y[2])
-        d_left = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:left), fvals_left, inv_h)
+        d_left = FastInterpolations._compute_deriv1(PolyFit{1}(), LeftSide(), fvals_left, inv_h)
         @test d_left ≈ df_linear rtol=1e-14
 
         # Right endpoint: f'(2) = 3
         fvals_right = (y[end-1], y[end])
-        d_right = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:right), fvals_right, inv_h)
+        d_right = FastInterpolations._compute_deriv1(PolyFit{1}(), RightSide(), fvals_right, inv_h)
         @test d_right ≈ df_linear rtol=1e-14
     end
 
@@ -955,13 +955,13 @@ end
 
         # Left endpoint: exact f'(0) = 0, but LinearFit will have O(h) error
         fvals_left = (y[1], y[2])
-        d_left = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:left), fvals_left, inv_h)
+        d_left = FastInterpolations._compute_deriv1(PolyFit{1}(), LeftSide(), fvals_left, inv_h)
         # Forward difference: (f(h) - f(0)) / h = h ≈ 0.1
         @test abs(d_left - df_quad(x[1])) ≈ h atol=1e-12
 
         # Right endpoint: exact f'(1) = 2
         fvals_right = (y[end-1], y[end])
-        d_right = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:right), fvals_right, inv_h)
+        d_right = FastInterpolations._compute_deriv1(PolyFit{1}(), RightSide(), fvals_right, inv_h)
         # Backward difference: (f(1) - f(1-h)) / h = (1 - (1-h)²) / h = 2 - h
         @test d_right ≈ df_quad(x[end]) - h atol=1e-12
     end
@@ -978,14 +978,14 @@ end
         # Left endpoint via coefficient kernels
         x_left = (x[1], x[2])
         f_left = (y[1], y[2])
-        coeffs_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:left), x_left)
+        coeffs_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), LeftSide(), x_left)
         d_left = FastInterpolations._weighted_sum(coeffs_left, f_left)
         @test d_left ≈ df_linear rtol=1e-13
 
         # Right endpoint via coefficient kernels
         x_right = (x[end-1], x[end])
         f_right = (y[end-1], y[end])
-        coeffs_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:right), x_right)
+        coeffs_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), RightSide(), x_right)
         d_right = FastInterpolations._weighted_sum(coeffs_right, f_right)
         @test d_right ≈ df_linear rtol=1e-13
     end
@@ -997,13 +997,13 @@ end
 
         x_left = (x[1], x[2])
         f_left = (y[1], y[2])
-        coeffs_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:left), x_left)
+        coeffs_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), LeftSide(), x_left)
         d_left = FastInterpolations._weighted_sum(coeffs_left, f_left)
         @test d_left ≈ 0.0 atol=1e-14
 
         x_right = (x[end-1], x[end])
         f_right = (y[end-1], y[end])
-        coeffs_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:right), x_right)
+        coeffs_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), RightSide(), x_right)
         d_right = FastInterpolations._weighted_sum(coeffs_right, f_right)
         @test d_right ≈ 0.0 atol=1e-14
     end
@@ -1016,8 +1016,8 @@ end
         x_range = range(0.0, 2.0, 11)
         y_range = collect(f_linear.(x_range))
 
-        d_left_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, Val(:left), PolyFit{1}())
-        d_right_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, Val(:right), PolyFit{1}())
+        d_left_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, LeftSide(), PolyFit{1}())
+        d_right_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, RightSide(), PolyFit{1}())
 
         @test d_left_range ≈ df_linear rtol=1e-14
         @test d_right_range ≈ df_linear rtol=1e-14
@@ -1026,8 +1026,8 @@ end
         x_vec = [0.0, 0.3, 0.8, 1.5, 2.0]
         y_vec = f_linear.(x_vec)
 
-        d_left_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, Val(:left), PolyFit{1}())
-        d_right_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, Val(:right), PolyFit{1}())
+        d_left_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, LeftSide(), PolyFit{1}())
+        d_right_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, RightSide(), PolyFit{1}())
 
         @test d_left_vec ≈ df_linear rtol=1e-13
         @test d_right_vec ≈ df_linear rtol=1e-13
@@ -1042,9 +1042,9 @@ end
         y = collect(f_quad.(x))
         h = step(x)
 
-        d1_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{1}())
-        d2_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{2}())
-        d3_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{3}())
+        d1_left = FastInterpolations._estimate_endpoint_derivative(x, y, LeftSide(), PolyFit{1}())
+        d2_left = FastInterpolations._estimate_endpoint_derivative(x, y, LeftSide(), PolyFit{2}())
+        d3_left = FastInterpolations._estimate_endpoint_derivative(x, y, LeftSide(), PolyFit{3}())
 
         exact = df_quad(x[1])  # = 0
 
@@ -1062,12 +1062,12 @@ end
         inv_h = inv(step(x))
 
         fvals = (y[1], y[2])
-        d_left = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:left), fvals, inv_h)
+        d_left = FastInterpolations._compute_deriv1(PolyFit{1}(), LeftSide(), fvals, inv_h)
         @test d_left isa Float32
         @test d_left ≈ 3.0f0 rtol=1e-6
 
         # Unified API
-        d_api = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{1}())
+        d_api = FastInterpolations._estimate_endpoint_derivative(x, y, LeftSide(), PolyFit{1}())
         @test d_api isa Float32
         @test d_api ≈ 3.0f0 rtol=1e-6
     end
@@ -1299,27 +1299,27 @@ end
 
     @testset "PolyFit{D} → Deriv1 Conversion" begin
         # LinearFit
-        bc_p1 = FastInterpolations.materialize_bc(LinearFit(), x, y, Val(:left))
+        bc_p1 = FastInterpolations.materialize_bc(LinearFit(), x, y, LeftSide())
         @test bc_p1 isa Deriv1{Float64}
         @test isfinite(bc_p1.val)
 
         # QuadraticFit
-        bc_p2 = FastInterpolations.materialize_bc(QuadraticFit(), x, y, Val(:left))
+        bc_p2 = FastInterpolations.materialize_bc(QuadraticFit(), x, y, LeftSide())
         @test bc_p2 isa Deriv1{Float64}
         @test isfinite(bc_p2.val)
 
         # CubicFit
-        bc_p3 = FastInterpolations.materialize_bc(CubicFit(), x, y, Val(:left))
+        bc_p3 = FastInterpolations.materialize_bc(CubicFit(), x, y, LeftSide())
         @test bc_p3 isa Deriv1{Float64}
         @test isfinite(bc_p3.val)
 
         # Right endpoint
-        bc_right = FastInterpolations.materialize_bc(QuadraticFit(), x, y, Val(:right))
+        bc_right = FastInterpolations.materialize_bc(QuadraticFit(), x, y, RightSide())
         @test bc_right isa Deriv1{Float64}
         @test isfinite(bc_right.val)
 
         # LinearFit right endpoint
-        bc_linear_right = FastInterpolations.materialize_bc(LinearFit(), x, y, Val(:right))
+        bc_linear_right = FastInterpolations.materialize_bc(LinearFit(), x, y, RightSide())
         @test bc_linear_right isa Deriv1{Float64}
         @test isfinite(bc_linear_right.val)
     end
@@ -1327,19 +1327,19 @@ end
     @testset "Passthrough for Concrete BCs" begin
         # Deriv1 should pass through unchanged
         bc_d1 = Deriv1(1.5)
-        result_d1 = FastInterpolations.materialize_bc(bc_d1, x, y, Val(:left))
+        result_d1 = FastInterpolations.materialize_bc(bc_d1, x, y, LeftSide())
         @test result_d1 === bc_d1
 
         # Deriv2 should pass through unchanged
         bc_d2 = Deriv2(0.0)
-        result_d2 = FastInterpolations.materialize_bc(bc_d2, x, y, Val(:left))
+        result_d2 = FastInterpolations.materialize_bc(bc_d2, x, y, LeftSide())
         @test result_d2 === bc_d2
     end
 
     @testset "Estimated Values Match Direct API" begin
         # materialize_bc should produce same values as _estimate_endpoint_derivative
-        direct_left = FastInterpolations._estimate_endpoint_derivative(x, y, Val(:left), PolyFit{2}())
-        materialized = FastInterpolations.materialize_bc(QuadraticFit(), x, y, Val(:left))
+        direct_left = FastInterpolations._estimate_endpoint_derivative(x, y, LeftSide(), PolyFit{2}())
+        materialized = FastInterpolations.materialize_bc(QuadraticFit(), x, y, LeftSide())
 
         @test materialized.val ≈ direct_left rtol=1e-14
     end
@@ -1405,7 +1405,7 @@ end
         # Compute coefficients using in-place API (x as NTuple)
         c_left = Vector{Float64}(undef, 5)
         β_left = Vector{Float64}(undef, 5)
-        FastInterpolations._compute_deriv1_coeffs!(c_left, β_left, PolyFit{4}(), Val(:left), x)
+        FastInterpolations._compute_deriv1_coeffs!(c_left, β_left, PolyFit{4}(), LeftSide(), x)
 
         for i in 1:5
             @test c_left[i] ≈ expected_left[i] rtol=1e-12
@@ -1416,7 +1416,7 @@ end
         expected_right = (3.0, -16.0, 36.0, -48.0, 25.0) ./ 12.0 .* inv_h
         c_right = Vector{Float64}(undef, 5)
         β_right = Vector{Float64}(undef, 5)
-        FastInterpolations._compute_deriv1_coeffs!(c_right, β_right, PolyFit{4}(), Val(:right), x)
+        FastInterpolations._compute_deriv1_coeffs!(c_right, β_right, PolyFit{4}(), RightSide(), x)
 
         for i in 1:5
             @test c_right[i] ≈ expected_right[i] rtol=1e-12
@@ -1433,7 +1433,7 @@ end
 
         c_left = Vector{Float64}(undef, 6)
         β_left = Vector{Float64}(undef, 6)
-        FastInterpolations._compute_deriv1_coeffs!(c_left, β_left, PolyFit{5}(), Val(:left), x)
+        FastInterpolations._compute_deriv1_coeffs!(c_left, β_left, PolyFit{5}(), LeftSide(), x)
 
         for i in 1:6
             @test c_left[i] ≈ expected_left[i] rtol=1e-12
@@ -1453,7 +1453,7 @@ end
 
             # Left endpoint: f'(0) = 0
             deriv_left = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:left), PolyFit{D}()
+                xs, ys, LeftSide(), PolyFit{D}()
             )
             @test deriv_left ≈ 0.0 atol=1e-10
 
@@ -1461,7 +1461,7 @@ end
             x_end = xs[end]
             expected_right = D * x_end^(D - 1)
             deriv_right = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:right), PolyFit{D}()
+                xs, ys, RightSide(), PolyFit{D}()
             )
             @test deriv_right ≈ expected_right rtol=1e-10
         end
@@ -1476,7 +1476,7 @@ end
 
             # f'(0) = 0 for D > 1
             deriv_left = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:left), PolyFit{D}()
+                xs, ys, LeftSide(), PolyFit{D}()
             )
             @test deriv_left ≈ 0.0 atol=1e-10
 
@@ -1484,7 +1484,7 @@ end
             x_end = xs[end]
             expected_right = D * x_end^(D - 1)
             deriv_right = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:right), PolyFit{D}()
+                xs, ys, RightSide(), PolyFit{D}()
             )
             @test deriv_right ≈ expected_right rtol=1e-9
         end
@@ -1520,21 +1520,21 @@ end
         inv_h = inv(0.1)
         expected_d1_left = (ys[2] - ys[1]) * inv_h
         result_d1_left = FastInterpolations._estimate_endpoint_derivative(
-            xs, ys, Val(:left), PolyFit{1}()
+            xs, ys, LeftSide(), PolyFit{1}()
         )
         @test result_d1_left ≈ expected_d1_left rtol=1e-14
 
         # D=2: (-3f₁ + 4f₂ - f₃) / (2h)
         expected_d2_left = (-3 * ys[1] + 4 * ys[2] - ys[3]) / (2 * 0.1)
         result_d2_left = FastInterpolations._estimate_endpoint_derivative(
-            xs, ys, Val(:left), PolyFit{2}()
+            xs, ys, LeftSide(), PolyFit{2}()
         )
         @test result_d2_left ≈ expected_d2_left rtol=1e-14
 
         # D=3: (-11f₁ + 18f₂ - 9f₃ + 2f₄) / (6h)
         expected_d3_left = (-11 * ys[1] + 18 * ys[2] - 9 * ys[3] + 2 * ys[4]) / (6 * 0.1)
         result_d3_left = FastInterpolations._estimate_endpoint_derivative(
-            xs, ys, Val(:left), PolyFit{3}()
+            xs, ys, LeftSide(), PolyFit{3}()
         )
         @test result_d3_left ≈ expected_d3_left rtol=1e-14
     end
@@ -1554,16 +1554,16 @@ end
             D = length(x_tuple) - 1
             N = D + 1
 
-            for side in (:left, :right)
+            for side in (LeftSide(), RightSide())
                 # Specialized path (NTuple-returning, for D=1,2,3)
                 c_specialized = FastInterpolations._compute_deriv1_coeffs(
-                    PolyFit{D}(), Val(side), x_tuple
+                    PolyFit{D}(), side, x_tuple
                 )
 
                 # Generic barycentric path (in-place, x as NTuple)
                 c_barycentric = Vector{Float64}(undef, N)
                 β_barycentric = Vector{Float64}(undef, N)
-                k = (side === :left) ? 1 : N
+                k = (side isa LeftSide) ? 1 : N
                 FastInterpolations._d1_coeffs_at_node!(c_barycentric, β_barycentric, x_tuple, k, Val(N))
 
                 # Compare element-wise (NTuple vs Vector)
@@ -1631,59 +1631,59 @@ end
 
         @testset "_compute_deriv1 (Uniform Grid)" begin
             # Warmup calls (trigger compilation)
-            FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:left), f2, inv_h)
-            FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:left), f3, inv_h)
-            FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), f4, inv_h)
+            FastInterpolations._compute_deriv1(PolyFit{1}(), LeftSide(), f2, inv_h)
+            FastInterpolations._compute_deriv1(PolyFit{2}(), LeftSide(), f3, inv_h)
+            FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), f4, inv_h)
 
             # D=1 (LinearFit)
-            alloc_d1_left = @allocated FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:left), f2, inv_h)
-            alloc_d1_right = @allocated FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:right), f2, inv_h)
+            alloc_d1_left = @allocated FastInterpolations._compute_deriv1(PolyFit{1}(), LeftSide(), f2, inv_h)
+            alloc_d1_right = @allocated FastInterpolations._compute_deriv1(PolyFit{1}(), RightSide(), f2, inv_h)
             @test alloc_d1_left <= ALLOC_THRESHOLD
             @test alloc_d1_right <= ALLOC_THRESHOLD
 
             # D=2 (QuadraticFit)
-            alloc_d2_left = @allocated FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:left), f3, inv_h)
-            alloc_d2_right = @allocated FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:right), f3, inv_h)
+            alloc_d2_left = @allocated FastInterpolations._compute_deriv1(PolyFit{2}(), LeftSide(), f3, inv_h)
+            alloc_d2_right = @allocated FastInterpolations._compute_deriv1(PolyFit{2}(), RightSide(), f3, inv_h)
             @test alloc_d2_left <= ALLOC_THRESHOLD
             @test alloc_d2_right <= ALLOC_THRESHOLD
 
             # D=3 (CubicFit)
-            alloc_d3_left = @allocated FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), f4, inv_h)
-            alloc_d3_right = @allocated FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:right), f4, inv_h)
+            alloc_d3_left = @allocated FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), f4, inv_h)
+            alloc_d3_right = @allocated FastInterpolations._compute_deriv1(PolyFit{3}(), RightSide(), f4, inv_h)
             @test alloc_d3_left <= ALLOC_THRESHOLD
             @test alloc_d3_right <= ALLOC_THRESHOLD
         end
 
         @testset "_compute_deriv1_coeffs (Non-Uniform Grid)" begin
             # Warmup calls
-            FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:left), x2)
-            FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), Val(:left), x3)
-            FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x4)
+            FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), LeftSide(), x2)
+            FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), LeftSide(), x3)
+            FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x4)
 
             # D=1 (LinearFit)
-            alloc_d1_left = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:left), x2)
-            alloc_d1_right = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:right), x2)
+            alloc_d1_left = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), LeftSide(), x2)
+            alloc_d1_right = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), RightSide(), x2)
             @test alloc_d1_left <= ALLOC_THRESHOLD
             @test alloc_d1_right <= ALLOC_THRESHOLD
 
             # D=2 (QuadraticFit)
-            alloc_d2_left = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), Val(:left), x3)
-            alloc_d2_right = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), Val(:right), x3)
+            alloc_d2_left = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), LeftSide(), x3)
+            alloc_d2_right = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), RightSide(), x3)
             @test alloc_d2_left <= ALLOC_THRESHOLD
             @test alloc_d2_right <= ALLOC_THRESHOLD
 
             # D=3 (CubicFit)
-            alloc_d3_left = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x4)
-            alloc_d3_right = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:right), x4)
+            alloc_d3_left = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x4)
+            alloc_d3_right = @allocated FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), RightSide(), x4)
             @test alloc_d3_left <= ALLOC_THRESHOLD
             @test alloc_d3_right <= ALLOC_THRESHOLD
         end
 
         @testset "_weighted_sum (NTuple)" begin
             # Precompute coefficients for weighted_sum tests
-            c2 = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), Val(:left), x2)
-            c3 = FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), Val(:left), x3)
-            c4 = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x4)
+            c2 = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), LeftSide(), x2)
+            c3 = FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), LeftSide(), x3)
+            c4 = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x4)
 
             # Warmup calls
             FastInterpolations._weighted_sum(c2, f2)
@@ -1706,49 +1706,49 @@ end
         @testset "_estimate_endpoint_derivative (Unified API, D≤3)" begin
             # Test with uniform grid (Range)
             # Warmup
-            FastInterpolations._estimate_endpoint_derivative(xs_uniform, ys, Val(:left), PolyFit{1}())
-            FastInterpolations._estimate_endpoint_derivative(xs_uniform, ys, Val(:left), PolyFit{2}())
-            FastInterpolations._estimate_endpoint_derivative(xs_uniform, ys, Val(:left), PolyFit{3}())
+            FastInterpolations._estimate_endpoint_derivative(xs_uniform, ys, LeftSide(), PolyFit{1}())
+            FastInterpolations._estimate_endpoint_derivative(xs_uniform, ys, LeftSide(), PolyFit{2}())
+            FastInterpolations._estimate_endpoint_derivative(xs_uniform, ys, LeftSide(), PolyFit{3}())
 
             # D=1 uniform
             alloc_d1_uniform = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_uniform, ys, Val(:left), PolyFit{1}()
+                xs_uniform, ys, LeftSide(), PolyFit{1}()
             )
             @test alloc_d1_uniform <= ALLOC_THRESHOLD
 
             # D=2 uniform
             alloc_d2_uniform = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_uniform, ys, Val(:left), PolyFit{2}()
+                xs_uniform, ys, LeftSide(), PolyFit{2}()
             )
             @test alloc_d2_uniform <= ALLOC_THRESHOLD
 
             # D=3 uniform
             alloc_d3_uniform = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_uniform, ys, Val(:left), PolyFit{3}()
+                xs_uniform, ys, LeftSide(), PolyFit{3}()
             )
             @test alloc_d3_uniform <= ALLOC_THRESHOLD
 
             # Test with non-uniform grid (Vector) - also should be zero for D≤3
             # Warmup
-            FastInterpolations._estimate_endpoint_derivative(xs_nonuniform, ys_nonuniform, Val(:left), PolyFit{1}())
-            FastInterpolations._estimate_endpoint_derivative(xs_nonuniform, ys_nonuniform, Val(:left), PolyFit{2}())
-            FastInterpolations._estimate_endpoint_derivative(xs_nonuniform, ys_nonuniform, Val(:left), PolyFit{3}())
+            FastInterpolations._estimate_endpoint_derivative(xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{1}())
+            FastInterpolations._estimate_endpoint_derivative(xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{2}())
+            FastInterpolations._estimate_endpoint_derivative(xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{3}())
 
             # D=1 non-uniform
             alloc_d1_nonuniform = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_nonuniform, ys_nonuniform, Val(:left), PolyFit{1}()
+                xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{1}()
             )
             @test alloc_d1_nonuniform <= ALLOC_THRESHOLD
 
             # D=2 non-uniform
             alloc_d2_nonuniform = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_nonuniform, ys_nonuniform, Val(:left), PolyFit{2}()
+                xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{2}()
             )
             @test alloc_d2_nonuniform <= ALLOC_THRESHOLD
 
             # D=3 non-uniform
             alloc_d3_nonuniform = @allocated FastInterpolations._estimate_endpoint_derivative(
-                xs_nonuniform, ys_nonuniform, Val(:left), PolyFit{3}()
+                xs_nonuniform, ys_nonuniform, LeftSide(), PolyFit{3}()
             )
             @test alloc_d3_nonuniform <= ALLOC_THRESHOLD
         end
@@ -1766,22 +1766,22 @@ end
 
         @testset "_compute_deriv1 (Uniform Grid, D>3)" begin
             # D=4 (QuarticFit) - verify correct result
-            result_d4 = FastInterpolations._compute_deriv1(PolyFit{4}(), Val(:left), f5, inv_h)
+            result_d4 = FastInterpolations._compute_deriv1(PolyFit{4}(), LeftSide(), f5, inv_h)
             @test isfinite(result_d4)
 
             # D=5 (QuinticFit) - verify correct result
-            result_d5 = FastInterpolations._compute_deriv1(PolyFit{5}(), Val(:left), f6, inv_h)
+            result_d5 = FastInterpolations._compute_deriv1(PolyFit{5}(), LeftSide(), f6, inv_h)
             @test isfinite(result_d5)
         end
 
         @testset "_compute_deriv1_coeffs (Non-Uniform Grid, D>3)" begin
             # D=4 - verify coefficients are finite
-            coeffs_d4 = FastInterpolations._compute_deriv1_coeffs(PolyFit{4}(), Val(:left), x5)
+            coeffs_d4 = FastInterpolations._compute_deriv1_coeffs(PolyFit{4}(), LeftSide(), x5)
             @test all(isfinite, coeffs_d4)
             @test length(coeffs_d4) == 5
 
             # D=5 - verify coefficients are finite
-            coeffs_d5 = FastInterpolations._compute_deriv1_coeffs(PolyFit{5}(), Val(:left), x6)
+            coeffs_d5 = FastInterpolations._compute_deriv1_coeffs(PolyFit{5}(), LeftSide(), x6)
             @test all(isfinite, coeffs_d5)
             @test length(coeffs_d5) == 6
         end
@@ -1793,13 +1793,13 @@ end
 
             # D=4 uniform - verify correctness
             result_d4 = FastInterpolations._estimate_endpoint_derivative(
-                xs_large, ys_large, Val(:right), PolyFit{4}()
+                xs_large, ys_large, RightSide(), PolyFit{4}()
             )
             @test result_d4 ≈ 2.0 atol=1e-10  # f'(0) = 0
 
             # D=5 uniform - verify correctness
             result_d5 = FastInterpolations._estimate_endpoint_derivative(
-                xs_large, ys_large, Val(:right), PolyFit{5}()
+                xs_large, ys_large, RightSide(), PolyFit{5}()
             )
             @test result_d5 ≈ 2.0 atol=1e-10
 
@@ -1809,10 +1809,10 @@ end
             end
 
             # Report allocations
-            alloc_d4 = alloc_est( xs_large, ys_large, Val(:right), PolyFit{4}())
-            alloc_d4 = alloc_est( xs_large, ys_large, Val(:right), PolyFit{4}())
-            alloc_d5 = alloc_est( xs_large, ys_large, Val(:right), PolyFit{5}())
-            alloc_d5 = alloc_est( xs_large, ys_large, Val(:right), PolyFit{5}())
+            alloc_d4 = alloc_est( xs_large, ys_large, RightSide(), PolyFit{4}())
+            alloc_d4 = alloc_est( xs_large, ys_large, RightSide(), PolyFit{4}())
+            alloc_d5 = alloc_est( xs_large, ys_large, RightSide(), PolyFit{5}())
+            alloc_d5 = alloc_est( xs_large, ys_large, RightSide(), PolyFit{5}())
 
             @test alloc_d4 <= ALLOC_THRESHOLD
             @test alloc_d5 <= ALLOC_THRESHOLD
@@ -1823,11 +1823,11 @@ end
             ys_nonuniform_large = xs_nonuniform_large .^ 2
 
             result_d4_nu = FastInterpolations._estimate_endpoint_derivative(
-                xs_nonuniform_large, ys_nonuniform_large, Val(:right), PolyFit{4}()
+                xs_nonuniform_large, ys_nonuniform_large, RightSide(), PolyFit{4}()
             )
             @test result_d4_nu ≈ 2.0 atol=1e-10
 
-            alloc_d4_nu = alloc_est( xs_nonuniform_large, ys_nonuniform_large, Val(:right), PolyFit{4}())
+            alloc_d4_nu = alloc_est( xs_nonuniform_large, ys_nonuniform_large, RightSide(), PolyFit{4}())
             @test alloc_d4_nu <= ALLOC_THRESHOLD
         end
 
@@ -1912,7 +1912,7 @@ end
     y = [0.0, 1.0]
     bc_d3 = Deriv3(1.0)
     # Should passthrough unchanged
-    @test FastInterpolations.materialize_bc(bc_d3, x, y, Val(:left)) === bc_d3
+    @test FastInterpolations.materialize_bc(bc_d3, x, y, LeftSide()) === bc_d3
     
     # 5. Type promotion helpers
     @test FastInterpolations._promote_pointbc(Deriv1(1), Float64) isa Deriv1{Float64}
@@ -1957,12 +1957,12 @@ end
             inv_h = 1.0
 
             # Left endpoint
-            result_left = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:left), f2, inv_h)
+            result_left = FastInterpolations._compute_deriv1(PolyFit{1}(), LeftSide(), f2, inv_h)
             @test result_left isa ComplexF64
             @test result_left ≈ (f2[2] - f2[1]) * inv_h
 
             # Right endpoint
-            result_right = FastInterpolations._compute_deriv1(PolyFit{1}(), Val(:right), f2, inv_h)
+            result_right = FastInterpolations._compute_deriv1(PolyFit{1}(), RightSide(), f2, inv_h)
             @test result_right isa ComplexF64
             @test result_right ≈ (f2[2] - f2[1]) * inv_h
         end
@@ -1973,7 +1973,7 @@ end
             inv_h = 1.0
 
             # Right endpoint: (1, -4, 3) / 2
-            result_right = FastInterpolations._compute_deriv1(PolyFit{2}(), Val(:right), f3, inv_h)
+            result_right = FastInterpolations._compute_deriv1(PolyFit{2}(), RightSide(), f3, inv_h)
             @test result_right isa ComplexF64
             expected = (1 * f3[1] + (-4) * f3[2] + 3 * f3[3]) * (inv_h / 2)
             @test result_right ≈ expected
@@ -1985,13 +1985,13 @@ end
             inv_h = 1.0
 
             # Left endpoint: (-11, 18, -9, 2) / 6
-            result_left = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:left), f4, inv_h)
+            result_left = FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), f4, inv_h)
             @test result_left isa ComplexF64
             expected_left = (-11 * f4[1] + 18 * f4[2] + (-9) * f4[3] + 2 * f4[4]) * (inv_h / 6)
             @test result_left ≈ expected_left
 
             # Right endpoint: (-2, 9, -18, 11) / 6
-            result_right = FastInterpolations._compute_deriv1(PolyFit{3}(), Val(:right), f4, inv_h)
+            result_right = FastInterpolations._compute_deriv1(PolyFit{3}(), RightSide(), f4, inv_h)
             @test result_right isa ComplexF64
             expected_right = (-2 * f4[1] + 9 * f4[2] + (-18) * f4[3] + 11 * f4[4]) * (inv_h / 6)
             @test result_right ≈ expected_right
@@ -2065,37 +2065,37 @@ end
 
             # LinearFit (D=1) - uniform + Complex
             d1_left = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:left), PolyFit{1}()
+                xs, ys, LeftSide(), PolyFit{1}()
             )
             @test d1_left isa ComplexF64
 
             d1_right = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:right), PolyFit{1}()
+                xs, ys, RightSide(), PolyFit{1}()
             )
             @test d1_right isa ComplexF64
 
             # QuadraticFit (D=2) should be exact for quadratic
             d2_left = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:left), PolyFit{2}()
+                xs, ys, LeftSide(), PolyFit{2}()
             )
             @test d2_left isa ComplexF64
             @test d2_left ≈ f_deriv(xs[1]) rtol=1e-10
 
             d2_right = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:right), PolyFit{2}()
+                xs, ys, RightSide(), PolyFit{2}()
             )
             @test d2_right isa ComplexF64
             @test d2_right ≈ f_deriv(xs[end]) rtol=1e-10
 
             # CubicFit (D=3) - uniform + Complex
             d3_left = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:left), PolyFit{3}()
+                xs, ys, LeftSide(), PolyFit{3}()
             )
             @test d3_left isa ComplexF64
             @test d3_left ≈ f_deriv(xs[1]) rtol=1e-8
 
             d3_right = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:right), PolyFit{3}()
+                xs, ys, RightSide(), PolyFit{3}()
             )
             @test d3_right isa ComplexF64
             @test d3_right ≈ f_deriv(xs[end]) rtol=1e-8
@@ -2112,39 +2112,39 @@ end
 
             # LinearFit (D=1) - non-uniform + Complex (covers N=2 _weighted_sum)
             d1_left = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:left), PolyFit{1}()
+                xs, ys, LeftSide(), PolyFit{1}()
             )
             @test d1_left isa ComplexF64
 
             # QuadraticFit (D=2) should be exact for quadratic
             d2_left = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:left), PolyFit{2}()
+                xs, ys, LeftSide(), PolyFit{2}()
             )
             @test d2_left isa ComplexF64
             @test d2_left ≈ f_deriv(xs[1]) rtol=1e-10
 
             # CubicFit (D=3) - non-uniform + Complex (covers N=4 _weighted_sum)
             d3_left = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:left), PolyFit{3}()
+                xs, ys, LeftSide(), PolyFit{3}()
             )
             @test d3_left isa ComplexF64
             @test d3_left ≈ f_deriv(xs[1]) rtol=1e-8
 
             d3_right = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:right), PolyFit{3}()
+                xs, ys, RightSide(), PolyFit{3}()
             )
             @test d3_right isa ComplexF64
             @test d3_right ≈ f_deriv(xs[end]) rtol=1e-8
 
             # PolyFit{4} - non-uniform + Complex (covers N=5 _weighted_sum generic)
             d4_left = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:left), PolyFit{4}()
+                xs, ys, LeftSide(), PolyFit{4}()
             )
             @test d4_left isa ComplexF64
 
             # PolyFit{5} - non-uniform + Complex (covers N=6 _weighted_sum generic)
             d5_left = FastInterpolations._estimate_endpoint_derivative(
-                xs, ys, Val(:left), PolyFit{5}()
+                xs, ys, LeftSide(), PolyFit{5}()
             )
             @test d5_left isa ComplexF64
         end

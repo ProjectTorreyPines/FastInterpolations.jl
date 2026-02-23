@@ -30,7 +30,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 - `y::Matrix{Tv}`: Function values (n_points × n_series) series-contiguous
 - `_transpose::LazyTranspose{Tv}`: Lazy point-contiguous layout for scalar SIMD
 - `extrap::AbstractExtrap`: Extrapolation mode
-- `side::SideVal`: Side selection (:nearest, :left, :right)
+- `side::SD`: Side selection (NearestSide(), LeftSide(), RightSide())
 
 # Memory Layout
 Primary storage is series-contiguous (n_points × n_series):
@@ -64,22 +64,22 @@ sitp_complex = constant_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct ConstantSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct ConstantSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrap, SD<:AbstractSide, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                            # Shared x-grid (Range or Vector)
     const y::Matrix{Tv}                   # Series-contiguous y (n_points × n_series)
     const _transpose::LazyTranspose{Tv}   # Lazy point-contiguous layout
     const extrap::E                        # Extrapolation mode (compile-time specialized)
-    const side::SideVal                   # Side selection
+    const side::SD                        # Side selection (compile-time specialized)
     const search_policy::P                # Default search policy
 
     function ConstantSeriesInterpolant(
         x::X,
         y::Matrix{Tv},
         extrap::E,
-        side::SideVal,
+        side::SD,
         search::P=Binary()
-    ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
-        new{Tg,Tv,E,P,X}(x, y, LazyTranspose{Tv}(), extrap, side, search)
+    ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrap, SD<:AbstractSide, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
+        new{Tg,Tv,E,SD,P,X}(x, y, LazyTranspose{Tv}(), extrap, side, search)
     end
 end
 
@@ -244,7 +244,7 @@ end
     x_max::Tg,
     aq::_ConstantAnchoredQuery{Tg},
     ::NoExtrap,
-    ::SideVal,
+    ::AbstractSide,
     ::AbstractEvalOp,
     ::UInt8
 ) where {Tg<:AbstractFloat, Tv}
@@ -261,7 +261,7 @@ end
     ::Tg,
     ::_ConstantAnchoredQuery{Tg},
     ::ConstExtrap,
-    ::SideVal,
+    ::AbstractSide,
     op::AbstractEvalOp,
     side::UInt8
 ) where {Tg<:AbstractFloat, Tv}
@@ -278,7 +278,7 @@ end
     ::Tg,
     aq::_ConstantAnchoredQuery{Tg},
     ::ExtendExtrap,
-    side_val::SideVal,
+    side_val::AbstractSide,
     op::AbstractEvalOp,
     ::UInt8
 ) where {Tg<:AbstractFloat, Tv}
@@ -303,14 +303,14 @@ end
 # ========================================
 
 """
-    constant_interp(x, ys::AbstractVector{<:AbstractVector}; side=:nearest, extrap=NoExtrap())
+    constant_interp(x, ys::AbstractVector{<:AbstractVector}; side=NearestSide(), extrap=NoExtrap())
 
 Create a multi-Y constant interpolant for multiple y-data series sharing the same x-grid.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
-- `side`: Side for discontinuities (:left, :right, :nearest)
+- `side`: Side for discontinuities (LeftSide(), RightSide(), NearestSide())
 - `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 
 # Returns
@@ -331,7 +331,7 @@ vals = sitp(0.5)
 function constant_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
-    side::Symbol=:nearest,
+    side::AbstractSide=NearestSide(),
     extrap::AbstractExtrap=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
@@ -367,14 +367,12 @@ function constant_interp(
         y_mat[:, k] .= Tv_out.(ys[k])
     end
 
-    @_dispatch_side side => side_val begin
-        return ConstantSeriesInterpolant(x, y_mat, extrap, side_val, search)
-    end
+    return ConstantSeriesInterpolant(x, y_mat, extrap, side, search)
 end
 
 # Matrix input: columns as y-series
 """
-    constant_interp(x, Y::AbstractMatrix; side=:nearest, extrap=NoExtrap())
+    constant_interp(x, Y::AbstractMatrix; side=NearestSide(), extrap=NoExtrap())
 
 Create a multi-Y constant interpolant from a matrix where each column is a y-series.
 
@@ -394,7 +392,7 @@ sitp = constant_interp(x, Y)
 function constant_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
-    side::Symbol=:nearest,
+    side::AbstractSide=NearestSide(),
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -419,9 +417,7 @@ function constant_interp(
     Tv_out = _value_type(Tv, Tg)
     y_mat = Tv_out === Tv ? copy(Y) : Tv_out.(Y)
 
-    @_dispatch_side side => side_val begin
-        return ConstantSeriesInterpolant(x, y_mat, extrap, side_val, search)
-    end
+    return ConstantSeriesInterpolant(x, y_mat, extrap, side, search)
 end
 
 # ========================================
@@ -433,7 +429,7 @@ end
 function constant_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
-    side::Symbol=:nearest,
+    side::AbstractSide=NearestSide(),
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
@@ -447,7 +443,7 @@ end
 function constant_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
-    side::Symbol=:nearest,
+    side::AbstractSide=NearestSide(),
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv}
@@ -622,7 +618,7 @@ Uses argument-passing pattern for optimal performance.
     k::Int,
     aq_vec::AbstractVector{<:_ConstantAnchoredQuery{Tg}},
     extrap::AbstractExtrap,
-    side_val::SideVal,
+    side_val::AbstractSide,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     @inbounds for j in eachindex(out, aq_vec)
@@ -643,7 +639,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
     k::Int,
     aq::_ConstantAnchoredQuery{Tg},
     extrap::AbstractExtrap,
-    side_val::SideVal,
+    side_val::AbstractSide,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     # Special case: at right boundary (MUST be preserved!)
@@ -677,7 +673,7 @@ Internal: Core constant evaluation for series k at anchored query point.
     y::Matrix{Tv},
     k::Int,
     aq::_ConstantAnchoredQuery{Tg},
-    side_val::SideVal,
+    side_val::AbstractSide,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     # Derivatives of constant (step) function are zero

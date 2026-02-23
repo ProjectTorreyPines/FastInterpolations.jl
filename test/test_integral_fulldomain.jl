@@ -18,7 +18,7 @@ using FastInterpolations
         @test integrate(itp_l) ≈ integrate(itp_l, first(x), last(x)) atol=1e-14
         @test integrate(itp_q) ≈ integrate(itp_q, first(x), last(x)) atol=1e-14
 
-        for side in (:left, :right, :nearest)
+        for side in (LeftSide(), RightSide(), NearestSide())
             itp_k = constant_interp(x, y_const; side=side, extrap=NoExtrap())
             @test integrate(itp_k) ≈ integrate(itp_k, first(x), last(x)) atol=1e-14
         end
@@ -59,7 +59,7 @@ using FastInterpolations
 
         @testset "constant series" begin
             y_c = hcat(collect(1.0:length(x)), collect(length(x):-1.0:1.0))
-            for side in (:left, :right, :nearest)
+            for side in (LeftSide(), RightSide(), NearestSide())
                 sitp = constant_interp(x, [y_c[:, 1], y_c[:, 2]]; side=side)
                 itp1 = constant_interp(x, y_c[:, 1]; side=side)
                 itp2 = constant_interp(x, y_c[:, 2]; side=side)
@@ -97,7 +97,7 @@ using FastInterpolations
         end
 
         @testset "constant ND" begin
-            for side in ((:left, :left), (:right, :right), (:nearest, :nearest))
+            for side in ((LeftSide(), LeftSide()), (RightSide(), RightSide()), (NearestSide(), NearestSide()))
                 itp = constant_interp((xg, yg), data_2d; side=side, extrap=(NoExtrap(), NoExtrap()))
                 lo = (first(xg), first(yg))
                 hi = (last(xg), last(yg))

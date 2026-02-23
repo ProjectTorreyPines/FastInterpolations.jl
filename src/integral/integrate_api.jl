@@ -105,24 +105,15 @@ end
 ) where {Tg<:AbstractFloat, Tv}
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
     searcher = _to_searcher(search, hint)
-    # Manual if-else on side to avoid >4 union combinations.
-    # Each branch has concrete side → _integrate_constant_1d_impl is fully typed.
-    side = itp.side
-    if side === Val(:left)
-        return _integrate_constant_1d_impl(itp.x, itp.y, Val(:left), itp.extrap, x0, x1, searcher, Tg, Tout)
-    elseif side === Val(:right)
-        return _integrate_constant_1d_impl(itp.x, itp.y, Val(:right), itp.extrap, x0, x1, searcher, Tg, Tout)
-    else
-        return _integrate_constant_1d_impl(itp.x, itp.y, Val(:nearest), itp.extrap, x0, x1, searcher, Tg, Tout)
-    end
+    return _integrate_constant_1d_impl(itp.x, itp.y, itp.side, itp.extrap, x0, x1, searcher, Tg, Tout)
 end
 
-# Receives concrete side Val{S} + extrap mode.
+# Receives concrete side (parametric from struct) + extrap mode.
 # Uses the generic _integrate_1d_cellwise path — side is already concrete here.
 @inline function _integrate_constant_1d_impl(
-    x::AbstractVector, y::AbstractVector, side::Val{S}, extrap::AbstractExtrap,
+    x::AbstractVector, y::AbstractVector, side::AbstractSide, extrap::AbstractExtrap,
     x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
-) where {S, SR<:Searcher, Tg, Tout}
+) where {SR<:Searcher, Tg, Tout}
     partial = @inline (i, xL, h, a2, b2) -> begin
         @inbounds _constant_integral_kernel(
             _EvalIntegralPartial(), y[i], y[i+1], h, a2 - xL, b2 - xL, side
@@ -234,20 +225,13 @@ end
 ) where {Tg<:AbstractFloat, Tv}
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
     searcher = _to_searcher(search, hint)
-    side = sitp.side
-    if side === Val(:left)
-        return _integrate_constant_series_1d(sitp.x, sitp.y, Val(:left), sitp.extrap, x0, x1, searcher, Tg, Tout)
-    elseif side === Val(:right)
-        return _integrate_constant_series_1d(sitp.x, sitp.y, Val(:right), sitp.extrap, x0, x1, searcher, Tg, Tout)
-    else
-        return _integrate_constant_series_1d(sitp.x, sitp.y, Val(:nearest), sitp.extrap, x0, x1, searcher, Tg, Tout)
-    end
+    return _integrate_constant_series_1d(sitp.x, sitp.y, sitp.side, sitp.extrap, x0, x1, searcher, Tg, Tout)
 end
 
 @inline function _integrate_constant_series_1d(
-    x::AbstractVector, y::AbstractMatrix, side::Val{S}, extrap::AbstractExtrap,
+    x::AbstractVector, y::AbstractMatrix, side::AbstractSide, extrap::AbstractExtrap,
     x0::Real, x1::Real, searcher::SR, ::Type{Tg}, ::Type{Tout}
-) where {S, SR<:Searcher, Tg, Tout}
+) where {SR<:Searcher, Tg, Tout}
     n = size(y, 2)
     results = Vector{Tout}(undef, n)
     @inbounds for k in 1:n

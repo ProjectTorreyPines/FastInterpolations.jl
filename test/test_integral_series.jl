@@ -87,7 +87,7 @@ using FastInterpolations
     end
 
     @testset "ConstantSeriesInterpolant" begin
-        for side in (:left, :right, :nearest)
+        for side in (LeftSide(), RightSide(), NearestSide())
             @testset "side=$side" begin
                 sitp = constant_interp(x, [y1, y2]; side=side)
                 itp1 = constant_interp(x, y1; side=side)

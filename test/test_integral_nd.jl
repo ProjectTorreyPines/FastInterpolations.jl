@@ -28,7 +28,7 @@ using FastInterpolations
 
     @testset "constant nd finite by side mode" begin
         data = [sin(xi) + cos(yj) for xi in x, yj in y]
-        for side in ((:left, :left), (:right, :right), (:nearest, :nearest))
+        for side in ((LeftSide(), LeftSide()), (RightSide(), RightSide()), (NearestSide(), NearestSide()))
             itp = constant_interp((x, y), data; side=side, extrap=(NoExtrap(), NoExtrap()))
             @test isfinite(integrate(itp, (0.2, 0.3), (0.8, 1.7)))
         end

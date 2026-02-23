@@ -214,8 +214,8 @@ using FastInterpolations
     # Constant coeffs
     # ────────────────────────────────────────────
     @testset "constant coeffs" begin
-        @testset "side=:left" begin
-            itp = constant_interp(x_vec, y_const; side=:left)
+        @testset "side=LeftSide()" begin
+            itp = constant_interp(x_vec, y_const; side=LeftSide())
             for xq in [0.05, 0.5, 1.5, 2.5]
                 cell = coeffs(itp, xq)
                 @test cell(xq) ≈ itp(xq) atol=1e-12
@@ -223,16 +223,16 @@ using FastInterpolations
             end
         end
 
-        @testset "side=:right" begin
-            itp = constant_interp(x_vec, y_const; side=:right)
+        @testset "side=RightSide()" begin
+            itp = constant_interp(x_vec, y_const; side=RightSide())
             for xq in [0.05, 0.5, 1.5, 2.5]
                 cell = coeffs(itp, xq)
                 @test cell(xq) ≈ itp(xq) atol=1e-12
             end
         end
 
-        @testset "side=:nearest" begin
-            itp = constant_interp(x_vec, y_const; side=:nearest)
+        @testset "side=NearestSide()" begin
+            itp = constant_interp(x_vec, y_const; side=NearestSide())
             for xq in [0.05, 0.5, 1.5, 2.5]
                 cell = coeffs(itp, xq)
                 @test cell(xq) ≈ itp(xq) atol=1e-12

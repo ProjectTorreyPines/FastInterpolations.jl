@@ -90,17 +90,17 @@ using FastInterpolations
         y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
 
         # :left mode
-        itp_left = constant_interp(x, y; side=:left)
+        itp_left = constant_interp(x, y; side=LeftSide())
         @test itp_left(0.5) == 1.0+1.0im
         @test itp_left(1.5) == 2.0+2.0im
 
         # :right mode
-        itp_right = constant_interp(x, y; side=:right)
+        itp_right = constant_interp(x, y; side=RightSide())
         @test itp_right(0.5) == 2.0+2.0im
         @test itp_right(1.0) == 2.0+2.0im  # At grid point, still gets left value
 
         # :nearest mode
-        itp_nearest = constant_interp(x, y; side=:nearest)
+        itp_nearest = constant_interp(x, y; side=NearestSide())
         @test itp_nearest(0.4) == 1.0+1.0im  # Closer to left
         @test itp_nearest(0.6) == 2.0+2.0im  # Closer to right
         @test itp_nearest(0.5) == 1.0+1.0im  # Midpoint → left (tie-breaking)
@@ -156,7 +156,7 @@ using FastInterpolations
         x = [0.0, 1.0, 2.0, 3.0]
         y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
 
-        itp = constant_interp(x, y; side=:left)
+        itp = constant_interp(x, y; side=LeftSide())
 
         xq = [0.5, 1.5, 2.5]
         vals = itp(xq)
@@ -175,7 +175,7 @@ using FastInterpolations
         x = [0.0, 1.0, 2.0, 3.0]
         y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
 
-        itp = constant_interp(x, y; side=:left)
+        itp = constant_interp(x, y; side=LeftSide())
 
         xq = [0.5, 1.5, 2.5]
         vals = itp.(xq)
@@ -224,7 +224,7 @@ using FastInterpolations
         x = [0.0, 1.0, 2.0, 3.0]
         y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
 
-        itp = constant_interp(x, y; side=:left)
+        itp = constant_interp(x, y; side=LeftSide())
 
         xq = [0.5, 1.5, 2.5]
         output = Vector{ComplexF64}(undef, 3)

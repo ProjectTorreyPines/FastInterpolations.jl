@@ -7,7 +7,7 @@
 | Function | Description |
 |----------|-------------|
 | `constant_interp(x, y, xq)` | Constant interpolation at point(s) `xq` |
-| `constant_interp(x, y, xq; side=:left)` | With side mode (`:nearest`, `:left`, `:right`) |
+| `constant_interp(x, y, xq; side=LeftSide())` | With side mode (`NearestSide()`, `LeftSide()`, `RightSide()`) |
 | `constant_interp!(out, x, y, xq)` | In-place constant interpolation |
 | `constant_interp!(out, x, y, xq; side)` | In-place with side mode |
 
@@ -16,7 +16,7 @@
 | Function | Description |
 |----------|-------------|
 | `itp = constant_interp(x, y)` | Create constant interpolant |
-| `itp = constant_interp(x, y; side=:left)` | Create with side mode |
+| `itp = constant_interp(x, y; side=LeftSide())` | Create with side mode |
 | `itp(xq)` | Evaluate at point(s) `xq` |
 | `itp(out, xq)` | Evaluate at `xq`, store result in `out` |
 
@@ -44,6 +44,15 @@ constant_interp!
 ```@docs
 ConstantInterpolant
 ConstantInterpolantND
+```
+
+## Side Selection Types
+
+```@docs
+AbstractSide
+NearestSide
+LeftSide
+RightSide
 ```
 
 ## Derivative Views

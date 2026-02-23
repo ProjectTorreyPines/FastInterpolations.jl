@@ -26,7 +26,7 @@ end
     @inline (i, h) -> @inbounds _quadratic_integral_kernel(_EvalIntegralCell(), a[i], d[i], y[i], h)
 end
 
-@inline function _full_cell_fn(itp::ConstantInterpolant{Tg}, side::Val{S}) where {Tg, S}
+@inline function _full_cell_fn(itp::ConstantInterpolant{Tg}, side::AbstractSide) where {Tg}
     y = itp.y
     @inline (i, h) -> @inbounds _constant_integral_kernel(_EvalIntegralPartial(), y[i], y[i+1], h, zero(Tg), h, side)
 end
@@ -48,7 +48,7 @@ end
     @inline (i, h) -> @inbounds _quadratic_integral_kernel(_EvalIntegralCell(), a[i,k], d[i,k], y[i,k], h)
 end
 
-@inline function _full_cell_fn(sitp::ConstantSeriesInterpolant{Tg}, k::Int, side::Val{S}) where {Tg, S}
+@inline function _full_cell_fn(sitp::ConstantSeriesInterpolant{Tg}, k::Int, side::AbstractSide) where {Tg}
     y = sitp.y
     @inline (i, h) -> @inbounds _constant_integral_kernel(_EvalIntegralPartial(), y[i,k], y[i+1,k], h, zero(Tg), h, side)
 end
@@ -67,21 +67,14 @@ end
     return _integrate_1d_fulldomain(x, _full_cell_fn(itp), Tout)
 end
 
-# Constant override: resolve side union before entering loop
+# Constant override: side is parametric → compiler knows concrete type
 @inline function integrate(
     itp::ConstantInterpolant{Tg,Tv};
     search=nothing, hint=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.x
     Tout = promote_type(Tv, Tg)
-    side = itp.side
-    if side === Val(:left)
-        return _integrate_1d_fulldomain(x, _full_cell_fn(itp, Val(:left)), Tout)
-    elseif side === Val(:right)
-        return _integrate_1d_fulldomain(x, _full_cell_fn(itp, Val(:right)), Tout)
-    else
-        return _integrate_1d_fulldomain(x, _full_cell_fn(itp, Val(:nearest)), Tout)
-    end
+    return _integrate_1d_fulldomain(x, _full_cell_fn(itp, itp.side), Tout)
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -103,7 +96,7 @@ end
     return results
 end
 
-# Constant Series override: resolve side union
+# Constant Series override: side is parametric → compiler knows concrete type
 @inline function integrate(
     sitp::ConstantSeriesInterpolant{Tg,Tv};
     search=nothing, hint=nothing
@@ -112,19 +105,8 @@ end
     Tout = promote_type(Tv, Tg)
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
-    side = sitp.side
-    if side === Val(:left)
-        @inbounds for k in 1:n
-            results[k] = _integrate_1d_fulldomain(x, _full_cell_fn(sitp, k, Val(:left)), Tout)
-        end
-    elseif side === Val(:right)
-        @inbounds for k in 1:n
-            results[k] = _integrate_1d_fulldomain(x, _full_cell_fn(sitp, k, Val(:right)), Tout)
-        end
-    else
-        @inbounds for k in 1:n
-            results[k] = _integrate_1d_fulldomain(x, _full_cell_fn(sitp, k, Val(:nearest)), Tout)
-        end
+    @inbounds for k in 1:n
+        results[k] = _integrate_1d_fulldomain(x, _full_cell_fn(sitp, k, sitp.side), Tout)
     end
     return results
 end
@@ -195,20 +177,13 @@ function cumulative_integrate(
     return _cumulative_integrate_1d(x, _full_cell_fn(itp), Tout)
 end
 
-# Constant override: resolve side union
+# Constant override: side is parametric → compiler knows concrete type
 function cumulative_integrate(
     itp::ConstantInterpolant{Tg,Tv}
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.x
     Tout = promote_type(Tv, Tg)
-    side = itp.side
-    if side === Val(:left)
-        return _cumulative_integrate_1d(x, _full_cell_fn(itp, Val(:left)), Tout)
-    elseif side === Val(:right)
-        return _cumulative_integrate_1d(x, _full_cell_fn(itp, Val(:right)), Tout)
-    else
-        return _cumulative_integrate_1d(x, _full_cell_fn(itp, Val(:nearest)), Tout)
-    end
+    return _cumulative_integrate_1d(x, _full_cell_fn(itp, itp.side), Tout)
 end
 
 # Generic Series: catches Cubic, Linear, Quadratic series
@@ -226,7 +201,7 @@ function cumulative_integrate(
     return result
 end
 
-# Constant Series override: resolve side union
+# Constant Series override: side is parametric → compiler knows concrete type
 function cumulative_integrate(
     sitp::ConstantSeriesInterpolant{Tg,Tv}
 ) where {Tg<:AbstractFloat, Tv}
@@ -235,16 +210,8 @@ function cumulative_integrate(
     n_pts = length(x)
     n_ser = n_series(sitp)
     result = Matrix{Tout}(undef, n_pts, n_ser)
-    side = sitp.side
-    if side === Val(:left)
-        _side = Val(:left)
-    elseif side === Val(:right)
-        _side = Val(:right)
-    else
-        _side = Val(:nearest)
-    end
     @inbounds for k in 1:n_ser
-        _cumulative_integrate_1d!(@view(result[:, k]), x, _full_cell_fn(sitp, k, _side))
+        _cumulative_integrate_1d!(@view(result[:, k]), x, _full_cell_fn(sitp, k, sitp.side))
     end
     return result
 end

@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1771810164881,
+  "lastUpdate": 1771810555599,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -16246,6 +16246,258 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 3321.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "159e61b441577f46ee819a7097560b3e9c1a9f64",
+          "message": "Merge pull request #42 from ProjectTorreyPines/feat/DerivOp\n\n(refactor!): replace deriv::Int with DerivOp{N} parametric dispatch",
+          "timestamp": "2026-02-22T17:26:30-08:00",
+          "tree_id": "2295dea626bc3a8e435826c0d1112fa3084febce",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/159e61b441577f46ee819a7097560b3e9c1a9f64"
+        },
+        "date": 1771810551402,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 100287,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=85864\nallocs=42\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 2446.44,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 598866,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=517416\nallocs=62\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 6279.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1943.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 34.03,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 36.29,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3465.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 51.03,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 30.75,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 588.92,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 68203.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1896.92,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 18331.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 42.09,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 594.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 54217.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 36.88,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 42069.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 11.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 11.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 20.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 441.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 39607,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 31.23,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 15.21,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 1492.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2064\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 6480.34,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16352\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 52017.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160352\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 1879.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 3204.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 4266.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 18148.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 6125,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 74966.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 1559.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 557122.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 3365.2,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

@@ -127,8 +127,8 @@ end
 
         @test constant_interp(x, y, 4.0) == 50.0
 
-        @test constant_interp(x, y, 1.5; deriv=1) == 0.0
-        @test constant_interp(x, y, 2.5; deriv=2) == 0.0
+        @test constant_interp(x, y, 1.5; deriv=DerivOp(1)) == 0.0
+        @test constant_interp(x, y, 2.5; deriv=DerivOp(2)) == 0.0
     end
 
     @testset "Vector API (allocating)" begin
@@ -158,7 +158,7 @@ end
         @test constant_interp(x, y, 4.0; extrap=WrapExtrap()) == 10.0
         @test constant_interp(x, y, 4.5; extrap=WrapExtrap()) == 10.0
 
-        @test constant_interp(x, y, -1.0; extrap=ConstExtrap(), deriv=1) == 0.0
+        @test constant_interp(x, y, -1.0; extrap=ConstExtrap(), deriv=DerivOp(1)) == 0.0
     end
 
     @testset "Real type wrapper (Integer input)" begin
@@ -235,8 +235,8 @@ end
         @test itp(0.5) == 10.0
         @test itp(1.5) == 20.0
         @test itp(4.0) == 50.0
-        @test itp(1.5; deriv=1) == 0.0
-        @test itp(2.5; deriv=2) == 0.0
+        @test itp(1.5; deriv=DerivOp(1)) == 0.0
+        @test itp(2.5; deriv=DerivOp(2)) == 0.0
     end
 
     @testset "ConstantInterpolant - Vector call" begin
@@ -277,7 +277,7 @@ end
         @test @inferred(constant_interp(x, y, 0.5)) isa Float64
         @test @inferred(constant_interp(x, y, 0.5; side=LeftSide())) isa Float64
         @test @inferred(constant_interp(x, y, 0.5; extrap=ConstExtrap())) isa Float64
-        @test @inferred(constant_interp(x, y, 0.5; deriv=1)) isa Float64
+        @test @inferred(constant_interp(x, y, 0.5; deriv=DerivOp(1))) isa Float64
     end
 
     @testset "Invalid side argument throws TypeError" begin
@@ -341,8 +341,8 @@ end
         itp = constant_interp(x, y)
         out = zeros(5)
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
-        itp(out, xq; deriv=1)
-        allocs = @allocated itp(out, xq; deriv=1)
+        itp(out, xq; deriv=DerivOp(1))
+        allocs = @allocated itp(out, xq; deriv=DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -492,11 +492,11 @@ end
     end
 
     @testset "Edge: Extrapolation + deriv" begin
-        @test constant_interp(x, y, -1.0; extrap=ConstExtrap(), deriv=1) == 0.0
-        @test constant_interp(x, y, 5.0; extrap=ConstExtrap(), deriv=2) == 0.0
-        @test constant_interp(x, y, -1.0; extrap=ExtendExtrap(), deriv=1) == 0.0
-        @test constant_interp(x, y, 5.0; extrap=ExtendExtrap(), deriv=2) == 0.0
-        @test constant_interp(x, y, 4.5; extrap=WrapExtrap(), deriv=1) == 0.0
+        @test constant_interp(x, y, -1.0; extrap=ConstExtrap(), deriv=DerivOp(1)) == 0.0
+        @test constant_interp(x, y, 5.0; extrap=ConstExtrap(), deriv=DerivOp(2)) == 0.0
+        @test constant_interp(x, y, -1.0; extrap=ExtendExtrap(), deriv=DerivOp(1)) == 0.0
+        @test constant_interp(x, y, 5.0; extrap=ExtendExtrap(), deriv=DerivOp(2)) == 0.0
+        @test constant_interp(x, y, 4.5; extrap=WrapExtrap(), deriv=DerivOp(1)) == 0.0
     end
 
     @testset "Edge: Midpoint tie-breaking" begin

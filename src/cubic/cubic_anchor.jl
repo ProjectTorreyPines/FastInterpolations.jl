@@ -40,7 +40,7 @@ itp1 = cubic_interp(x, sin.(2π .* x))
 itp2 = cubic_interp(x, cos.(2π .* x))
 
 itp1(aq)              # Ultra-fast: skips interval search
-itp2(aq; deriv=1)     # Reuses same anchor for derivative
+itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
 ```
 
 # Performance
@@ -179,7 +179,7 @@ itp2 = cubic_interp(collect(x), cos.(2π .* x))
 aq = _anchor_query(collect(x), 0.35, Val(:cubic))
 
 itp1(aq)              # Ultra-fast: skips interval search
-itp2(aq; deriv=1)     # Reuses same anchor for derivative
+itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
 ```
 
 # Performance

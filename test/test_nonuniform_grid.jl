@@ -170,7 +170,7 @@ const LINEAR = TestPolynomial{Float64}(
         xi = range(x_min + 0.1, x_max - 0.1, 5) |> collect
 
         for t in xi
-            @test itp(t; deriv=1) ≈ LINEAR.f_prime(t) rtol=POLY_RTOL atol=POLY_ATOL
+            @test itp(t; deriv=DerivOp(1)) ≈ LINEAR.f_prime(t) rtol=POLY_RTOL atol=POLY_ATOL
         end
     end
 
@@ -280,8 +280,8 @@ end
 
         for t in xi
             # Looser tolerance since NaturalBC is an approximation
-            @test itp(t; deriv=1) ≈ QUADRATIC.f_prime(t) rtol=0.1 atol=0.5
-            @test isfinite(itp(t; deriv=2))
+            @test itp(t; deriv=DerivOp(1)) ≈ QUADRATIC.f_prime(t) rtol=0.1 atol=0.5
+            @test isfinite(itp(t; deriv=DerivOp(2)))
         end
     end
 
@@ -295,8 +295,8 @@ end
         xi = range(x_min + 0.1, x_max - 0.1, 5) |> collect
 
         for t in xi
-            @test itp(t; deriv=1) ≈ LINEAR.f_prime(t) rtol=POLY_RTOL atol=POLY_ATOL
-            @test itp(t; deriv=2) ≈ LINEAR.f_double_prime(t) atol=POLY_ATOL  # f''=0
+            @test itp(t; deriv=DerivOp(1)) ≈ LINEAR.f_prime(t) rtol=POLY_RTOL atol=POLY_ATOL
+            @test itp(t; deriv=DerivOp(2)) ≈ LINEAR.f_double_prime(t) atol=POLY_ATOL  # f''=0
         end
     end
 
@@ -382,8 +382,8 @@ end
         # Test derivatives too
         itp = cubic_interp(x, y; bc=NaturalBC())
         for t in xi
-            @test itp(t; deriv=1) ≈ natural_piecewise_deriv1(t) rtol=POLY_RTOL atol=POLY_ATOL
-            @test itp(t; deriv=2) ≈ natural_piecewise_deriv2(t) rtol=POLY_RTOL atol=POLY_ATOL
+            @test itp(t; deriv=DerivOp(1)) ≈ natural_piecewise_deriv1(t) rtol=POLY_RTOL atol=POLY_ATOL
+            @test itp(t; deriv=DerivOp(2)) ≈ natural_piecewise_deriv2(t) rtol=POLY_RTOL atol=POLY_ATOL
         end
     end
 end
@@ -446,8 +446,8 @@ end
         @test abs(val_left - val_right) < 1e-3
 
         # First derivative continuity
-        deriv_left = itp(x[1] + h; deriv=1)
-        deriv_right = itp(x[end] - h; deriv=1)
+        deriv_left = itp(x[1] + h; deriv=DerivOp(1))
+        deriv_right = itp(x[end] - h; deriv=DerivOp(1))
         @test abs(deriv_left - deriv_right) < 0.1  # Relaxed for numerical precision
     end
 
@@ -522,8 +522,8 @@ end
 
         # Derivative at boundaries should match specified values
         h = 1e-10
-        @test itp(x0 + h; deriv=1) ≈ CUBIC.f_prime(x0) rtol=1e-6 atol=1e-8
-        @test itp(xn - h; deriv=1) ≈ CUBIC.f_prime(xn) rtol=1e-6 atol=1e-8
+        @test itp(x0 + h; deriv=DerivOp(1)) ≈ CUBIC.f_prime(x0) rtol=1e-6 atol=1e-8
+        @test itp(xn - h; deriv=DerivOp(1)) ≈ CUBIC.f_prime(xn) rtol=1e-6 atol=1e-8
     end
 
     @testset "Single Deriv1 BC (symmetric)" begin
@@ -671,7 +671,7 @@ end
     end
 
     @testset "Deriv3 boundary derivative accuracy" begin
-        # Verify that deriv=3 evaluation matches the specified BC value
+        # Verify that deriv=DerivOp(3) evaluation matches the specified BC value
         x = grid_geometric()
         y = CUBIC.f.(x)
         x0, xn = first(x), last(x)
@@ -681,8 +681,8 @@ end
 
         # Third derivative should be constant = 6 in first and last intervals
         h = 1e-10
-        @test itp(x0 + h; deriv=3) ≈ 6.0 rtol=1e-6 atol=1e-8
-        @test itp(xn - h; deriv=3) ≈ 6.0 rtol=1e-6 atol=1e-8
+        @test itp(x0 + h; deriv=DerivOp(3)) ≈ 6.0 rtol=1e-6 atol=1e-8
+        @test itp(xn - h; deriv=DerivOp(3)) ≈ 6.0 rtol=1e-6 atol=1e-8
     end
 end
 
@@ -877,7 +877,7 @@ end
         @test itp.(xi) ≈ LINEAR.f.(xi) rtol=POLY_RTOL
 
         # Derivative
-        @test itp(1.0; deriv=1) ≈ LINEAR.f_prime(1.0) rtol=POLY_RTOL
+        @test itp(1.0; deriv=DerivOp(1)) ≈ LINEAR.f_prime(1.0) rtol=POLY_RTOL
     end
 
     @testset "CubicInterpolant with various BC" begin
@@ -904,8 +904,8 @@ end
                 @test all(isfinite, results)
 
                 # Derivatives
-                @test isfinite(itp(5.0; deriv=1))
-                @test isfinite(itp(5.0; deriv=2))
+                @test isfinite(itp(5.0; deriv=DerivOp(1)))
+                @test isfinite(itp(5.0; deriv=DerivOp(2)))
             end
         end
     end

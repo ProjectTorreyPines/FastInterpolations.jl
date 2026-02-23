@@ -40,8 +40,8 @@ vals = itp.([0.5, 1.5])      # broadcast
 vals = itp([0.5, 1.5])       # vector call
 
 # Derivatives
-d1 = itp(0.5; deriv=1)       # first derivative
-d2 = itp(0.5; deriv=2)       # second derivative
+d1 = itp(0.5; deriv=DerivOp(1))       # first derivative
+d2 = itp(0.5; deriv=DerivOp(2))       # second derivative
 
 # Complex values
 x = [0.0, 1.0, 2.0, 3.0]

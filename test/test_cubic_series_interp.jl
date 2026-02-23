@@ -269,7 +269,7 @@ end
 
     @testset "Invalid deriv=4 throws" begin
         mitp = cubic_interp(x, [y1])
-        @test_throws ArgumentError mitp(0.5; deriv=4)
+        @test_throws TypeError mitp(0.5; deriv=4)
     end
 end
 
@@ -326,7 +326,7 @@ end
         h = 1e-6
 
         fd1 = (mitp(xq + h) .- mitp(xq - h)) ./ (2h)
-        d1 = mitp(xq; deriv=1)
+        d1 = mitp(xq; deriv=DerivOp(1))
         @test d1 ≈ fd1 atol=1e-5
     end
 
@@ -335,8 +335,8 @@ end
             mitp = cubic_interp(x, [y1, y2]; bc=bc)
             itp1 = cubic_interp(x, y1; bc=bc)
 
-            d1_multi = mitp(0.5; deriv=1)
-            @test d1_multi[1] ≈ itp1(0.5; deriv=1) atol=1e-14
+            d1_multi = mitp(0.5; deriv=DerivOp(1))
+            @test d1_multi[1] ≈ itp1(0.5; deriv=DerivOp(1)) atol=1e-14
         end
 
         # PeriodicBC requires matching endpoints
@@ -345,8 +345,8 @@ end
         mitp_periodic = cubic_interp(x, [y1_periodic, y2_periodic]; bc=PeriodicBC())
         itp1_periodic = cubic_interp(x, y1_periodic; bc=PeriodicBC())
 
-        d1_multi = mitp_periodic(0.5; deriv=1)
-        @test d1_multi[1] ≈ itp1_periodic(0.5; deriv=1) atol=1e-14
+        d1_multi = mitp_periodic(0.5; deriv=DerivOp(1))
+        @test d1_multi[1] ≈ itp1_periodic(0.5; deriv=DerivOp(1)) atol=1e-14
     end
 end
 
@@ -382,24 +382,24 @@ end
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "Scalar deriv=1 zero-alloc" begin
+    @testset "Scalar deriv=DerivOp(1) zero-alloc" begin
         mitp = cubic_interp(x, [y1, y2]; precompute_transpose=true)
         out = zeros(2)
-        mitp(out, 0.5; deriv=1)  # Warmup
+        mitp(out, 0.5; deriv=DerivOp(1))  # Warmup
 
-        allocs = @allocated mitp(out, 0.5; deriv=1)
+        allocs = @allocated mitp(out, 0.5; deriv=DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "Vector deriv=1 zero-alloc with pool" begin
+    @testset "Vector deriv=DerivOp(1) zero-alloc with pool" begin
         mitp = cubic_interp(x, [y1, y2])
         xq = collect(range(0.1, 0.9, 100))
         outputs = [zeros(100) for _ in 1:2]
 
-        mitp(outputs, xq; deriv=1)  # Warmup × 2
-        mitp(outputs, xq; deriv=1)
+        mitp(outputs, xq; deriv=DerivOp(1))  # Warmup × 2
+        mitp(outputs, xq; deriv=DerivOp(1))
 
-        allocs = @allocated mitp(outputs, xq; deriv=1)
+        allocs = @allocated mitp(outputs, xq; deriv=DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 end
@@ -542,21 +542,21 @@ end
 
         # First derivative outside domain should be zero
         out1 = zeros(2)
-        mitp(out1, -0.1; deriv=1)
+        mitp(out1, -0.1; deriv=DerivOp(1))
         @test out1[1] ≈ 0.0 atol=1e-10
         @test out1[2] ≈ 0.0 atol=1e-10
 
-        mitp(out1, 1.1; deriv=1)
+        mitp(out1, 1.1; deriv=DerivOp(1))
         @test out1[1] ≈ 0.0 atol=1e-10
         @test out1[2] ≈ 0.0 atol=1e-10
 
         # Second derivative outside domain should be zero
         out2 = zeros(2)
-        mitp(out2, -0.1; deriv=2)
+        mitp(out2, -0.1; deriv=DerivOp(2))
         @test out2[1] ≈ 0.0 atol=1e-10
         @test out2[2] ≈ 0.0 atol=1e-10
 
-        mitp(out2, 1.1; deriv=2)
+        mitp(out2, 1.1; deriv=DerivOp(2))
         @test out2[1] ≈ 0.0 atol=1e-10
         @test out2[2] ≈ 0.0 atol=1e-10
 
@@ -572,7 +572,7 @@ end
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
-        mitp(outputs, xq; deriv=1)
+        mitp(outputs, xq; deriv=DerivOp(1))
 
         # Derivatives outside domain should be zero for :constant
         @test outputs[1][1] ≈ 0.0 atol=1e-10
@@ -755,16 +755,16 @@ end
         itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
 
         # First derivative
-        d1 = mitp(0.5; deriv=1)
-        @test d1[1] ≈ itp1(0.5; deriv=1) atol=1e-14
-        @test d1[2] ≈ itp2(0.5; deriv=1) atol=1e-14
-        @test d1[3] ≈ itp3(0.5; deriv=1) atol=1e-14
+        d1 = mitp(0.5; deriv=DerivOp(1))
+        @test d1[1] ≈ itp1(0.5; deriv=DerivOp(1)) atol=1e-14
+        @test d1[2] ≈ itp2(0.5; deriv=DerivOp(1)) atol=1e-14
+        @test d1[3] ≈ itp3(0.5; deriv=DerivOp(1)) atol=1e-14
 
         # Second derivative
-        d2 = mitp(0.5; deriv=2)
-        @test d2[1] ≈ itp1(0.5; deriv=2) atol=1e-14
-        @test d2[2] ≈ itp2(0.5; deriv=2) atol=1e-14
-        @test d2[3] ≈ itp3(0.5; deriv=2) atol=1e-14
+        d2 = mitp(0.5; deriv=DerivOp(2))
+        @test d2[1] ≈ itp1(0.5; deriv=DerivOp(2)) atol=1e-14
+        @test d2[2] ≈ itp2(0.5; deriv=DerivOp(2)) atol=1e-14
+        @test d2[3] ≈ itp3(0.5; deriv=DerivOp(2)) atol=1e-14
     end
 
     @testset "Multiple query points" begin
@@ -807,10 +807,10 @@ end
 
     @testset "In-place with derivatives" begin
         output = Vector{Float64}(undef, 3)
-        mitp(output, 0.5; deriv=1)
+        mitp(output, 0.5; deriv=DerivOp(1))
 
         itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
-        @test output[1] ≈ itp1(0.5; deriv=1) atol=1e-14
+        @test output[1] ≈ itp1(0.5; deriv=DerivOp(1)) atol=1e-14
     end
 end
 
@@ -912,13 +912,13 @@ end
 
         mitp2 = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
 
-        d1 = mitp2(xq; deriv=1)
-        @test d1[1] ≈ itp1(xq; deriv=1) atol=1e-14
-        @test d1[2] ≈ itp2(xq; deriv=1) atol=1e-14
+        d1 = mitp2(xq; deriv=DerivOp(1))
+        @test d1[1] ≈ itp1(xq; deriv=DerivOp(1)) atol=1e-14
+        @test d1[2] ≈ itp2(xq; deriv=DerivOp(1)) atol=1e-14
 
-        d2 = mitp2(xq; deriv=2)
-        @test d2[1] ≈ itp1(xq; deriv=2) atol=1e-14
-        @test d2[2] ≈ itp2(xq; deriv=2) atol=1e-14
+        d2 = mitp2(xq; deriv=DerivOp(2))
+        @test d2[1] ≈ itp1(xq; deriv=DerivOp(2)) atol=1e-14
+        @test d2[2] ≈ itp2(xq; deriv=DerivOp(2)) atol=1e-14
     end
 end
 
@@ -989,12 +989,12 @@ end
 
         # Pre-build anchors
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
-        mitp(outputs, aq_vec; deriv=1)
+        mitp(outputs, aq_vec; deriv=DerivOp(1))
 
         itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
         # Use same anchored path for comparison
         expected = Vector{Float64}(undef, 50)
-        itp1(expected, aq_vec; deriv=1)
+        itp1(expected, aq_vec; deriv=DerivOp(1))
         @test out1 ≈ expected atol=1e-14
     end
 end
@@ -1272,7 +1272,7 @@ end
         @test out3 == result_oop[3]
     end
 
-    @testset "zero allocation with deriv=1" begin
+    @testset "zero allocation with deriv=DerivOp(1)" begin
         xq = collect(range(0.1, 0.9, 100))
         out1 = Vector{Float64}(undef, 100)
         out2 = Vector{Float64}(undef, 100)
@@ -1280,14 +1280,14 @@ end
         outputs = [out1, out2, out3]
 
         # Warmup
-        mitp(outputs, xq; deriv=1)
-        mitp(outputs, xq; deriv=1)
+        mitp(outputs, xq; deriv=DerivOp(1))
+        mitp(outputs, xq; deriv=DerivOp(1))
 
-        allocs = @allocated mitp(outputs, xq; deriv=1)
+        allocs = @allocated mitp(outputs, xq; deriv=DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "zero allocation with deriv=2" begin
+    @testset "zero allocation with deriv=DerivOp(2)" begin
         xq = collect(range(0.1, 0.9, 100))
         out1 = Vector{Float64}(undef, 100)
         out2 = Vector{Float64}(undef, 100)
@@ -1295,10 +1295,10 @@ end
         outputs = [out1, out2, out3]
 
         # Warmup
-        mitp(outputs, xq; deriv=2)
-        mitp(outputs, xq; deriv=2)
+        mitp(outputs, xq; deriv=DerivOp(2))
+        mitp(outputs, xq; deriv=DerivOp(2))
 
-        allocs = @allocated mitp(outputs, xq; deriv=2)
+        allocs = @allocated mitp(outputs, xq; deriv=DerivOp(2))
         @test allocs <= ALLOC_THRESHOLD
     end
 end
@@ -1323,87 +1323,87 @@ end
     itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
     itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
 
-    @testset "deriv=1 outside domain (left side, xq < 0)" begin
+    @testset "deriv=DerivOp(1) outside domain (left side, xq < 0)" begin
         xq = -0.15  # Outside domain on left
 
         out = zeros(3)
-        mitp(out, xq; deriv=1)
+        mitp(out, xq; deriv=DerivOp(1))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv=1) atol=1e-12
-        @test out[2] ≈ itp2(xq; deriv=1) atol=1e-12
-        @test out[3] ≈ itp3(xq; deriv=1) atol=1e-12
+        @test out[1] ≈ itp1(xq; deriv=DerivOp(1)) atol=1e-12
+        @test out[2] ≈ itp2(xq; deriv=DerivOp(1)) atol=1e-12
+        @test out[3] ≈ itp3(xq; deriv=DerivOp(1)) atol=1e-12
 
         # Verify values are finite and non-zero (extension continues the slope)
         @test all(isfinite, out)
     end
 
-    @testset "deriv=1 outside domain (right side, xq > 1)" begin
+    @testset "deriv=DerivOp(1) outside domain (right side, xq > 1)" begin
         xq = 1.15  # Outside domain on right
 
         out = zeros(3)
-        mitp(out, xq; deriv=1)
+        mitp(out, xq; deriv=DerivOp(1))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv=1) atol=1e-12
-        @test out[2] ≈ itp2(xq; deriv=1) atol=1e-12
-        @test out[3] ≈ itp3(xq; deriv=1) atol=1e-12
+        @test out[1] ≈ itp1(xq; deriv=DerivOp(1)) atol=1e-12
+        @test out[2] ≈ itp2(xq; deriv=DerivOp(1)) atol=1e-12
+        @test out[3] ≈ itp3(xq; deriv=DerivOp(1)) atol=1e-12
 
         @test all(isfinite, out)
     end
 
-    @testset "deriv=2 outside domain (left side)" begin
+    @testset "deriv=DerivOp(2) outside domain (left side)" begin
         xq = -0.2
 
         out = zeros(3)
-        mitp(out, xq; deriv=2)
+        mitp(out, xq; deriv=DerivOp(2))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv=2) atol=1e-12
-        @test out[2] ≈ itp2(xq; deriv=2) atol=1e-12
-        @test out[3] ≈ itp3(xq; deriv=2) atol=1e-12
+        @test out[1] ≈ itp1(xq; deriv=DerivOp(2)) atol=1e-12
+        @test out[2] ≈ itp2(xq; deriv=DerivOp(2)) atol=1e-12
+        @test out[3] ≈ itp3(xq; deriv=DerivOp(2)) atol=1e-12
 
         @test all(isfinite, out)
     end
 
-    @testset "deriv=2 outside domain (right side)" begin
+    @testset "deriv=DerivOp(2) outside domain (right side)" begin
         xq = 1.2
 
         out = zeros(3)
-        mitp(out, xq; deriv=2)
+        mitp(out, xq; deriv=DerivOp(2))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv=2) atol=1e-12
-        @test out[2] ≈ itp2(xq; deriv=2) atol=1e-12
-        @test out[3] ≈ itp3(xq; deriv=2) atol=1e-12
+        @test out[1] ≈ itp1(xq; deriv=DerivOp(2)) atol=1e-12
+        @test out[2] ≈ itp2(xq; deriv=DerivOp(2)) atol=1e-12
+        @test out[3] ≈ itp3(xq; deriv=DerivOp(2)) atol=1e-12
 
         @test all(isfinite, out)
     end
 
-    @testset "deriv=3 outside domain (left side)" begin
+    @testset "deriv=DerivOp(3) outside domain (left side)" begin
         xq = -0.1
 
         out = zeros(3)
-        mitp(out, xq; deriv=3)
+        mitp(out, xq; deriv=DerivOp(3))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv=3) atol=1e-12
-        @test out[2] ≈ itp2(xq; deriv=3) atol=1e-12
-        @test out[3] ≈ itp3(xq; deriv=3) atol=1e-12
+        @test out[1] ≈ itp1(xq; deriv=DerivOp(3)) atol=1e-12
+        @test out[2] ≈ itp2(xq; deriv=DerivOp(3)) atol=1e-12
+        @test out[3] ≈ itp3(xq; deriv=DerivOp(3)) atol=1e-12
 
         @test all(isfinite, out)
     end
 
-    @testset "deriv=3 outside domain (right side)" begin
+    @testset "deriv=DerivOp(3) outside domain (right side)" begin
         xq = 1.1
 
         out = zeros(3)
-        mitp(out, xq; deriv=3)
+        mitp(out, xq; deriv=DerivOp(3))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv=3) atol=1e-12
-        @test out[2] ≈ itp2(xq; deriv=3) atol=1e-12
-        @test out[3] ≈ itp3(xq; deriv=3) atol=1e-12
+        @test out[1] ≈ itp1(xq; deriv=DerivOp(3)) atol=1e-12
+        @test out[2] ≈ itp2(xq; deriv=DerivOp(3)) atol=1e-12
+        @test out[3] ≈ itp3(xq; deriv=DerivOp(3)) atol=1e-12
 
         @test all(isfinite, out)
     end
@@ -1414,23 +1414,23 @@ end
         xq_right = 1.1
 
         # deriv=1
-        d1_left = mitp(xq_left; deriv=1)
-        d1_right = mitp(xq_right; deriv=1)
+        d1_left = mitp(xq_left; deriv=DerivOp(1))
+        d1_right = mitp(xq_right; deriv=DerivOp(1))
         @test length(d1_left) == 3
         @test length(d1_right) == 3
-        @test d1_left[1] ≈ itp1(xq_left; deriv=1) atol=1e-12
+        @test d1_left[1] ≈ itp1(xq_left; deriv=DerivOp(1)) atol=1e-12
 
         # deriv=2
-        d2_left = mitp(xq_left; deriv=2)
-        d2_right = mitp(xq_right; deriv=2)
+        d2_left = mitp(xq_left; deriv=DerivOp(2))
+        d2_right = mitp(xq_right; deriv=DerivOp(2))
         @test length(d2_left) == 3
-        @test d2_left[2] ≈ itp2(xq_left; deriv=2) atol=1e-12
+        @test d2_left[2] ≈ itp2(xq_left; deriv=DerivOp(2)) atol=1e-12
 
         # deriv=3
-        d3_left = mitp(xq_left; deriv=3)
-        d3_right = mitp(xq_right; deriv=3)
+        d3_left = mitp(xq_left; deriv=DerivOp(3))
+        d3_right = mitp(xq_right; deriv=DerivOp(3))
         @test length(d3_left) == 3
-        @test d3_right[3] ≈ itp3(xq_right; deriv=3) atol=1e-12
+        @test d3_right[3] ≈ itp3(xq_right; deriv=DerivOp(3)) atol=1e-12
     end
 
     @testset "Polynomial accuracy check (extension preserves cubic)" begin
@@ -1444,9 +1444,9 @@ end
 
         # At interior point for sanity check
         xq_interior = 0.5
-        d1_interior = mitp(xq_interior; deriv=1)[3]
-        d2_interior = mitp(xq_interior; deriv=2)[3]
-        d3_interior = mitp(xq_interior; deriv=3)[3]
+        d1_interior = mitp(xq_interior; deriv=DerivOp(1))[3]
+        d2_interior = mitp(xq_interior; deriv=DerivOp(2))[3]
+        d3_interior = mitp(xq_interior; deriv=DerivOp(3))[3]
 
         exact_d1 = 3 * xq_interior^2 - 4 * xq_interior + 1
         exact_d2 = 6 * xq_interior - 4
@@ -1470,7 +1470,7 @@ end
     mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
     xq = collect(range(0.1, 0.9, 50))
 
-    @testset "Container in-place with derivatives - zero allocation (deriv=1)" begin
+    @testset "Container in-place with derivatives - zero allocation (deriv=DerivOp(1))" begin
         out1 = Vector{Float64}(undef, 50)
         out2 = Vector{Float64}(undef, 50)
         out3 = Vector{Float64}(undef, 50)
@@ -1480,14 +1480,14 @@ end
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Warmup
-        mitp(outputs, aq_vec; deriv=1)
-        mitp(outputs, aq_vec; deriv=1)
+        mitp(outputs, aq_vec; deriv=DerivOp(1))
+        mitp(outputs, aq_vec; deriv=DerivOp(1))
 
-        allocs = @allocated mitp(outputs, aq_vec; deriv=1)
+        allocs = @allocated mitp(outputs, aq_vec; deriv=DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "Container in-place with derivatives - zero allocation (deriv=2)" begin
+    @testset "Container in-place with derivatives - zero allocation (deriv=DerivOp(2))" begin
         out1 = Vector{Float64}(undef, 50)
         out2 = Vector{Float64}(undef, 50)
         out3 = Vector{Float64}(undef, 50)
@@ -1497,10 +1497,10 @@ end
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Warmup
-        mitp(outputs, aq_vec; deriv=2)
-        mitp(outputs, aq_vec; deriv=2)
+        mitp(outputs, aq_vec; deriv=DerivOp(2))
+        mitp(outputs, aq_vec; deriv=DerivOp(2))
 
-        allocs = @allocated mitp(outputs, aq_vec; deriv=2)
+        allocs = @allocated mitp(outputs, aq_vec; deriv=DerivOp(2))
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -1513,7 +1513,7 @@ end
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Get derivatives via anchored path
-        mitp(outputs, aq_vec; deriv=1)
+        mitp(outputs, aq_vec; deriv=DerivOp(1))
 
         # Compare with individual interpolants
         itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
@@ -1524,9 +1524,9 @@ end
         expected2 = Vector{Float64}(undef, 50)
         expected3 = Vector{Float64}(undef, 50)
 
-        itp1(expected1, aq_vec; deriv=1)
-        itp2(expected2, aq_vec; deriv=1)
-        itp3(expected3, aq_vec; deriv=1)
+        itp1(expected1, aq_vec; deriv=DerivOp(1))
+        itp2(expected2, aq_vec; deriv=DerivOp(1))
+        itp3(expected3, aq_vec; deriv=DerivOp(1))
 
         @test out1 ≈ expected1 atol=1e-14
         @test out2 ≈ expected2 atol=1e-14
@@ -1669,12 +1669,12 @@ end
         ])
 
         # First derivative of linear function = slope
-        d1 = sitp(0.5; deriv=1)
+        d1 = sitp(0.5; deriv=DerivOp(1))
         @test d1[1] ≈ 1.0 atol=1e-12
         @test d1[2] ≈ 2.0 atol=1e-12
 
         # Second derivative of linear function = 0
-        d2 = sitp(0.5; deriv=2)
+        d2 = sitp(0.5; deriv=DerivOp(2))
         @test d2[1] ≈ 0.0 atol=1e-10
         @test d2[2] ≈ 0.0 atol=1e-10
     end
@@ -1748,17 +1748,17 @@ end
         out = zeros(2)
 
         # Warmup deriv=1
-        sitp(out, 0.5; deriv=1)
-        sitp(out, 0.5; deriv=1)
+        sitp(out, 0.5; deriv=DerivOp(1))
+        sitp(out, 0.5; deriv=DerivOp(1))
 
-        allocs = @allocated sitp(out, 0.5; deriv=1)
+        allocs = @allocated sitp(out, 0.5; deriv=DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
 
         # Warmup deriv=2
-        sitp(out, 0.5; deriv=2)
-        sitp(out, 0.5; deriv=2)
+        sitp(out, 0.5; deriv=DerivOp(2))
+        sitp(out, 0.5; deriv=DerivOp(2))
 
-        allocs = @allocated sitp(out, 0.5; deriv=2)
+        allocs = @allocated sitp(out, 0.5; deriv=DerivOp(2))
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -1808,13 +1808,13 @@ end
 end
 
 # ============================================================================
-# Pre-built Anchor Tests for Coverage (deriv=3 and extrapolation)
+# Pre-built Anchor Tests for Coverage (deriv=DerivOp(3) and extrapolation)
 # ============================================================================
 
-@testset "CubicSeriesInterpolant - Pre-built Anchor with deriv=3" begin
+@testset "CubicSeriesInterpolant - Pre-built Anchor with deriv=DerivOp(3)" begin
     FI = FastInterpolations
 
-    @testset "deriv=3 correctness with pre-built anchors" begin
+    @testset "deriv=DerivOp(3) correctness with pre-built anchors" begin
         x = collect(range(0.0, 1.0, 21))
         # Use polynomial functions where 3rd derivative is analytically known
         y1 = x .^ 4       # d³/dx³ = 24x
@@ -1828,18 +1828,18 @@ end
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         outputs = [similar(xq) for _ in 1:3]
-        mitp(outputs, aq_vec; deriv=3)
+        mitp(outputs, aq_vec; deriv=DerivOp(3))
 
         # Compare with scalar evaluation
         for (j, q) in enumerate(xq)
-            scalar_result = mitp(q; deriv=3)
+            scalar_result = mitp(q; deriv=DerivOp(3))
             @test outputs[1][j] ≈ scalar_result[1] atol=1e-10
             @test outputs[2][j] ≈ scalar_result[2] atol=1e-10
             @test outputs[3][j] ≈ scalar_result[3] atol=1e-10
         end
     end
 
-    @testset "deriv=3 zero allocation with pre-built anchors" begin
+    @testset "deriv=DerivOp(3) zero allocation with pre-built anchors" begin
         x = collect(range(0.0, 1.0, 51))
         y1 = x .^ 4
         y2 = x .^ 3
@@ -1852,14 +1852,14 @@ end
         outputs = [similar(xq) for _ in 1:2]
 
         # Warmup
-        mitp(outputs, aq_vec; deriv=3)
-        mitp(outputs, aq_vec; deriv=3)
+        mitp(outputs, aq_vec; deriv=DerivOp(3))
+        mitp(outputs, aq_vec; deriv=DerivOp(3))
 
-        allocs = @allocated mitp(outputs, aq_vec; deriv=3)
+        allocs = @allocated mitp(outputs, aq_vec; deriv=DerivOp(3))
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "deriv=3 matches individual interpolants" begin
+    @testset "deriv=DerivOp(3) matches individual interpolants" begin
         x = collect(range(0.0, 1.0, 31))
         y1 = exp.(-x)
         y2 = x .^ 5
@@ -1875,9 +1875,9 @@ end
         expected1 = similar(xq)
         expected2 = similar(xq)
 
-        mitp(outputs, aq_vec; deriv=3)
-        itp1(expected1, aq_vec; deriv=3)
-        itp2(expected2, aq_vec; deriv=3)
+        mitp(outputs, aq_vec; deriv=DerivOp(3))
+        itp1(expected1, aq_vec; deriv=DerivOp(3))
+        itp2(expected2, aq_vec; deriv=DerivOp(3))
 
         @test outputs[1] ≈ expected1 atol=1e-14
         @test outputs[2] ≈ expected2 atol=1e-14
@@ -1914,7 +1914,7 @@ end
         end
 
         # Test derivatives with extension
-        for deriv in 1:3
+        for deriv in [DerivOp(1), DerivOp(2), DerivOp(3)]
             mitp(outputs, aq_vec; deriv=deriv)
             for (j, q) in enumerate(xq_out)
                 scalar_result = mitp(q; deriv=deriv)

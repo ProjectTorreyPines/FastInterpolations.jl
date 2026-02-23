@@ -83,7 +83,7 @@ using FastInterpolations
                 d, c, b, a = cell.p
                 u = xq - cell.xL
                 deriv_from_coeffs = c + 2b * u + 3a * u^2
-                @test deriv_from_coeffs ≈ itp(xq; deriv=1) atol=1e-10
+                @test deriv_from_coeffs ≈ itp(xq; deriv=DerivOp(1)) atol=1e-10
             end
         end
 

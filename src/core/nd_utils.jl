@@ -157,104 +157,28 @@ Resolve side selection to canonical N-tuple.
 end
 
 # ========================================
-# Derivative Order → EvalOp Conversion
+# Derivative Order Resolution (ND)
 # ========================================
-#
-# Design: Strict API for Performance
-# -----------------------------------
-# Accepts only:
-#   1. Int (0-3): Broadcast to all axes via @_dispatch_deriv
-#   2. Val{D}: Compile-time spec → type-stable ntuple
-#
-# Raw Tuple rejected to prevent Union type performance traps.
 
 """
-    _int_to_evalop(::Val{d}) -> AbstractEvalOp
+    _resolve_deriv_nd(deriv, Val(N)) -> NTuple{N, DerivOp}
 
-Convert compile-time derivative order to evaluation operation singleton.
-Val-based dispatch ensures type stability.
+Resolve derivative specification to canonical N-tuple of DerivOp singletons.
+- Single `DerivOp` → broadcast to all N axes
+- `Tuple{Vararg{DerivOp, N}}` → passthrough
+
+# Examples
+```julia
+_resolve_deriv_nd(DerivOp(1), Val(2))        # → (DerivOp{1}(), DerivOp{1}())
+_resolve_deriv_nd(DerivOp(1, 0), Val(2))     # → (DerivOp{1}(), DerivOp{0}())  passthrough
+```
 """
-@inline _int_to_evalop(::Val{0}) = EvalValue()
-@inline _int_to_evalop(::Val{1}) = EvalDeriv1()
-@inline _int_to_evalop(::Val{2}) = EvalDeriv2()
-@inline _int_to_evalop(::Val{3}) = EvalDeriv3()
+@inline _resolve_deriv_nd(op::DerivOp, ::Val{N}) where {N} = ntuple(_ -> op, Val(N))
 
-"""
-    _resolve_deriv_nd(deriv, Val(N)) -> NTuple{N, AbstractEvalOp}
+@inline _resolve_deriv_nd(ops::Tuple{Vararg{DerivOp, N}}, ::Val{N}) where {N} = ops
 
-Resolve derivative specification to N-tuple of EvalOp singletons.
-
-# Accepted
-- `Int` (0-3): Broadcast to all axes
-- `Val{Int}`: Compile-time broadcast (e.g., `Val(1)`)
-- `Val{Tuple}`: Mixed partials, compile-time (e.g., `Val((1,0))` for ∂f/∂x)
-- `NTuple{N,Int}`: Mixed partials, runtime (e.g., `(1,0)` for ∂f/∂x)
-
-Note: `Val((1,0))` is slightly faster than `(1,0)` due to compile-time dispatch,
-but the difference is negligible (~0.3 KiB extra allocation per batch call).
-"""
-# Int path: macro dispatch at call site ensures concrete type
-@inline function _resolve_deriv_nd(d::Int, ::Val{N}) where {N}
-    if d == 0
-        return ntuple(_ -> EvalValue(), Val(N))
-    elseif d == 1
-        return ntuple(_ -> EvalDeriv1(), Val(N))
-    elseif d == 2
-        return ntuple(_ -> EvalDeriv2(), Val(N))
-    elseif d == 3
-        return ntuple(_ -> EvalDeriv3(), Val(N))
-    else
-        throw(ArgumentError(
-            "Integer deriv must be 0, 1, 2, or 3. " *
-            "For higher derivatives or mixed partials, use Val(d) or Val((d1,d2,...))."
-        ))
-    end
-end
-
-# Tuple{Int,...} path: runtime per-axis specification (e.g., (1, 0) for ∂f/∂x)
-# Wraps in Val and delegates to the compile-time path (consistent with cubic_nd_eval.jl)
-@inline _resolve_deriv_nd(d::Tuple{Vararg{Int,N}}, ::Val{N}) where {N} = _resolve_deriv_nd(Val(d), Val(N))
-
-# Val{Int}: Compile-time broadcast
-@inline function _resolve_deriv_nd(::Val{D}, ::Val{N}) where {D, N}
-    if D isa Int
-        # Val(1) → broadcast to all axes
-        return ntuple(_ -> _int_to_evalop(Val(D)), Val(N))
-    elseif D isa Tuple
-        # Val((1,0)) → per-axis specification
-        length(D) == N || throw(ArgumentError(
-            "Val tuple must have $N elements, got $(length(D))"
-        ))
-        return ntuple(i -> _int_to_evalop(Val(D[i])), Val(N))
-    else
-        throw(ArgumentError("Val parameter must be Int or Tuple{Vararg{Int}}, got $(typeof(D))"))
-    end
-end
-
-# ========================================
-# ND Deriv Dispatch Helper
-# ========================================
-#
-# Closure-based dispatch on deriv specification to avoid duplicating the
-# 3-branch (Int / Val / NTuple) pattern in every ND public API function.
-# The function `f` receives the resolved NTuple{N, AbstractEvalOp}.
-
-"""
-    _dispatch_deriv_nd(f, deriv, Val(N))
-
-Dispatch on derivative specification and call `f(ops::NTuple{N, AbstractEvalOp})`.
-Used by ND public API functions to DRY up the 3-branch deriv dispatch pattern.
-"""
-@inline function _dispatch_deriv_nd(f, deriv, ::Val{N}) where {N}
-    if deriv isa Int
-        @_dispatch_deriv deriv => op begin
-            return f(ntuple(_ -> op, Val(N)))
-        end
-    elseif deriv isa Val
-        return f(_resolve_deriv_nd(deriv, Val(N)))
-    else
-        return f(_resolve_deriv_nd(Val(deriv), Val(N)))
-    end
+@inline function _resolve_deriv_nd(ops::Tuple{Vararg{DerivOp}}, ::Val{N}) where {N}
+    throw(ArgumentError("deriv tuple must have $N elements to match grid dimensions, got $(length(ops))"))
 end
 
 # ========================================
@@ -772,7 +696,7 @@ end
 # Vector query → tuple conversion for ForwardDiff/Optim compatibility
 @inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
     query::AbstractVector{<:Real};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
@@ -786,7 +710,7 @@ end
 # SoA batch: allocate output + delegate to in-place
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
@@ -798,7 +722,7 @@ end
 # AoS batch: allocate output + delegate to in-place
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}

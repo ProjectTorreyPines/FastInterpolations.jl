@@ -46,8 +46,6 @@ import FastInterpolations:
     _resolve_extrap_nd,
     _resolve_search_nd,
     _resolve_bcs_nd,
-    _resolve_deriv_nd,
-    _int_to_evalop,
     _get_polyfit_bc,
     _make_polyfit,
     _validate_nd_grids,
@@ -278,35 +276,25 @@ import FastInterpolations:
             @test_throws ArgumentError _resolve_bcs_nd((NaturalBC(), NaturalBC(), NaturalBC()), Val(2))
         end
 
-        @testset "_int_to_evalop" begin
-            @test _int_to_evalop(Val(0)) isa EvalValue
-            @test _int_to_evalop(Val(1)) isa EvalDeriv1
-            @test _int_to_evalop(Val(2)) isa EvalDeriv2
-            @test _int_to_evalop(Val(3)) isa EvalDeriv3
-        end
+        @testset "DerivOp constructors" begin
+            # 1D constructors
+            @test DerivOp(0) === DerivOp{0}()
+            @test DerivOp(1) === DerivOp{1}()
+            @test DerivOp(2) === DerivOp{2}()
+            @test DerivOp(3) === DerivOp{3}()
 
-        @testset "_resolve_deriv_nd runtime Int path" begin
-            # Val{Int} path (already tested in comprehensive)
-            @test _resolve_deriv_nd(Val((0, 0)), Val(2)) == (EvalValue(), EvalValue())
-            @test _resolve_deriv_nd(Val((1, 0)), Val(2)) == (EvalDeriv1(), EvalValue())
-            @test _resolve_deriv_nd(Val((0, 1)), Val(2)) == (EvalValue(), EvalDeriv1())
-            @test _resolve_deriv_nd(Val((2, 1)), Val(2)) == (EvalDeriv2(), EvalDeriv1())
+            # ND constructors return tuple
+            @test DerivOp(1, 0) == (DerivOp{1}(), DerivOp{0}())
+            @test DerivOp(0, 1) == (DerivOp{0}(), DerivOp{1}())
+            @test DerivOp(2, 1) == (DerivOp{2}(), DerivOp{1}())
+            @test DerivOp(0, 0, 0) == (DerivOp{0}(), DerivOp{0}(), DerivOp{0}())
+            @test DerivOp(1, 2, 3) == (DerivOp{1}(), DerivOp{2}(), DerivOp{3}())
 
-            # Runtime Int path (uncovered!)
-            @test _resolve_deriv_nd(0, Val(2)) == (EvalValue(), EvalValue())
-            @test _resolve_deriv_nd(1, Val(2)) == (EvalDeriv1(), EvalDeriv1())
-            @test _resolve_deriv_nd(2, Val(2)) == (EvalDeriv2(), EvalDeriv2())
-            @test _resolve_deriv_nd(3, Val(2)) == (EvalDeriv3(), EvalDeriv3())
-
-            # Invalid Int should throw
-            @test_throws ArgumentError _resolve_deriv_nd(4, Val(2))
-            @test_throws ArgumentError _resolve_deriv_nd(-1, Val(2))
-        end
-
-        @testset "_resolve_deriv_nd Val tuple size mismatch" begin
-            # Wrong-sized tuple in Val
-            @test_throws ArgumentError _resolve_deriv_nd(Val((1,)), Val(2))  # 1 element for 2D
-            @test_throws ArgumentError _resolve_deriv_nd(Val((1, 2, 3)), Val(2))  # 3 for 2D
+            # deriv_order accessor
+            @test deriv_order(DerivOp{0}()) == 0
+            @test deriv_order(DerivOp{1}()) == 1
+            @test deriv_order(DerivOp{2}()) == 2
+            @test deriv_order(DerivOp{3}()) == 3
         end
 
         @testset "PolyFit BC helpers" begin
@@ -613,15 +601,14 @@ import FastInterpolations:
 end
 
 # ========================================
-# Targeted Coverage: Val/NTuple deriv branches in ND batch eval
+# Targeted Coverage: DerivOp deriv paths in ND batch eval
 # ========================================
 #
-# These tests cover the `elseif deriv isa Val` and `else` (NTuple) branches
-# in SoA/AoS batch evaluation for ConstantInterpolantND, LinearInterpolantND,
-# and the oneshot APIs for linear/quadratic.
-# They also cover core/utils.jl dispatch paths not exercised by default tests.
+# These tests cover the DerivOp tuple path in SoA/AoS batch evaluation
+# for ConstantInterpolantND, LinearInterpolantND, and the oneshot APIs
+# for linear/quadratic. Distinct from the `deriv::Int` broadcast path.
 
-@testset "Val/NTuple deriv branches — ConstantInterpolantND batch" begin
+@testset "DerivOp deriv paths — ConstantInterpolantND batch" begin
     x = [0.0, 1.0, 2.0]
     y = [0.0, 1.0, 2.0, 3.0]
     data = [10.0 * i + j for i in 1:3, j in 1:4]
@@ -632,27 +619,27 @@ end
     ref = zeros(3)
     itp(ref, (xs, ys))
 
-    @testset "SoA batch — Val(0) deriv" begin
+    @testset "SoA batch — Int(0) deriv" begin
         out = zeros(3)
-        itp(out, (xs, ys); deriv=Val(0))
+        itp(out, (xs, ys); deriv=DerivOp(0, 0))
         @test out ≈ ref
     end
 
-    @testset "SoA batch — NTuple (0,0) deriv" begin
+    @testset "SoA batch — DerivOp(0,0) deriv" begin
         out = zeros(3)
-        itp(out, (xs, ys); deriv=(0, 0))
+        itp(out, (xs, ys); deriv=DerivOp(0, 0))
         @test out ≈ ref
     end
 
-    @testset "SoA batch — Val(1) deriv (zero for constant)" begin
+    @testset "SoA batch — Int(1) deriv (zero for constant)" begin
         out = ones(3)
-        itp(out, (xs, ys); deriv=Val(1))
+        itp(out, (xs, ys); deriv=DerivOp(1, 1))
         @test all(iszero, out)
     end
 
-    @testset "SoA batch — NTuple (1,0) deriv (zero for constant)" begin
+    @testset "SoA batch — DerivOp(1,0) deriv (zero for constant)" begin
         out = ones(3)
-        itp(out, (xs, ys); deriv=(1, 0))
+        itp(out, (xs, ys); deriv=DerivOp(1, 0))
         @test all(iszero, out)
     end
 
@@ -660,32 +647,32 @@ end
     ref_aos = zeros(3)
     itp(ref_aos, queries)
 
-    @testset "AoS batch — Val(0) deriv" begin
+    @testset "AoS batch — Int(0) deriv" begin
         out = zeros(3)
-        itp(out, queries; deriv=Val(0))
+        itp(out, queries; deriv=DerivOp(0, 0))
         @test out ≈ ref_aos
     end
 
-    @testset "AoS batch — NTuple (0,0) deriv" begin
+    @testset "AoS batch — DerivOp(0,0) deriv" begin
         out = zeros(3)
-        itp(out, queries; deriv=(0, 0))
+        itp(out, queries; deriv=DerivOp(0, 0))
         @test out ≈ ref_aos
     end
 
-    @testset "AoS batch — Val(1) deriv (zero for constant)" begin
+    @testset "AoS batch — Int(1) deriv (zero for constant)" begin
         out = ones(3)
-        itp(out, queries; deriv=Val(1))
+        itp(out, queries; deriv=DerivOp(1, 1))
         @test all(iszero, out)
     end
 
-    @testset "AoS batch — NTuple (1,0) deriv (zero for constant)" begin
+    @testset "AoS batch — DerivOp(1,0) deriv (zero for constant)" begin
         out = ones(3)
-        itp(out, queries; deriv=(1, 0))
+        itp(out, queries; deriv=DerivOp(1, 0))
         @test all(iszero, out)
     end
 end
 
-@testset "Val/NTuple deriv branches — LinearInterpolantND batch" begin
+@testset "DerivOp deriv paths — LinearInterpolantND batch" begin
     x = collect(range(0.0, 1.0, 5))
     y = collect(range(0.0, 1.0, 5))
     data = [2xi + 3yj for xi in x, yj in y]
@@ -696,27 +683,27 @@ end
     ref = zeros(3)
     itp(ref, (xs, ys))
 
-    @testset "SoA batch — Val(0) deriv" begin
+    @testset "SoA batch — Int(0) deriv" begin
         out = zeros(3)
-        itp(out, (xs, ys); deriv=Val(0))
+        itp(out, (xs, ys); deriv=DerivOp(0, 0))
         @test out ≈ ref
     end
 
-    @testset "SoA batch — NTuple (0,0) deriv" begin
+    @testset "SoA batch — DerivOp(0,0) deriv" begin
         out = zeros(3)
-        itp(out, (xs, ys); deriv=(0, 0))
+        itp(out, (xs, ys); deriv=DerivOp(0, 0))
         @test out ≈ ref
     end
 
-    @testset "SoA batch — Val(2) deriv (zero for linear)" begin
+    @testset "SoA batch — Int(2) deriv (zero for linear)" begin
         out = ones(3)
-        itp(out, (xs, ys); deriv=Val(2))
+        itp(out, (xs, ys); deriv=DerivOp(2, 2))
         @test all(iszero, out)
     end
 
-    @testset "SoA batch — NTuple (2,0) deriv (zero for linear)" begin
+    @testset "SoA batch — DerivOp(2,0) deriv (zero for linear)" begin
         out = ones(3)
-        itp(out, (xs, ys); deriv=(2, 0))
+        itp(out, (xs, ys); deriv=DerivOp(2, 0))
         @test all(iszero, out)
     end
 
@@ -724,124 +711,124 @@ end
     ref_aos = zeros(3)
     itp(ref_aos, queries)
 
-    @testset "AoS batch — Val(0) deriv" begin
+    @testset "AoS batch — Int(0) deriv" begin
         out = zeros(3)
-        itp(out, queries; deriv=Val(0))
+        itp(out, queries; deriv=DerivOp(0, 0))
         @test out ≈ ref_aos
     end
 
-    @testset "AoS batch — NTuple (0,0) deriv" begin
+    @testset "AoS batch — DerivOp(0,0) deriv" begin
         out = zeros(3)
-        itp(out, queries; deriv=(0, 0))
+        itp(out, queries; deriv=DerivOp(0, 0))
         @test out ≈ ref_aos
     end
 
-    @testset "AoS batch — Val((1,0)) deriv" begin
+    @testset "AoS batch — DerivOp(1,0) deriv" begin
         out = zeros(3)
-        itp(out, queries; deriv=Val((1, 0)))
+        itp(out, queries; deriv=DerivOp(1, 0))
         @test all(≈(2.0, atol=1e-10), out)  # ∂/∂x(2x+3y) = 2
     end
 
-    @testset "AoS batch — NTuple (2,0) deriv (zero for linear)" begin
+    @testset "AoS batch — DerivOp(2,0) deriv (zero for linear)" begin
         out = ones(3)
-        itp(out, queries; deriv=(2, 0))
+        itp(out, queries; deriv=DerivOp(2, 0))
         @test all(iszero, out)
     end
 end
 
-@testset "Val/NTuple deriv branches — linear_interp oneshot" begin
+@testset "DerivOp deriv paths — linear_interp oneshot" begin
     grids = (collect(range(0.0, 1.0, 6)), collect(range(0.0, 1.0, 6)))
     data = [2xi + 3yj for xi in grids[1], yj in grids[2]]
 
-    @testset "scalar — NTuple (1,0) deriv (else branch)" begin
-        result = linear_interp(grids, data, (0.5, 0.5); deriv=(1, 0))
+    @testset "scalar — DerivOp(1,0) deriv (else branch)" begin
+        result = linear_interp(grids, data, (0.5, 0.5); deriv=DerivOp(1, 0))
         @test result ≈ 2.0 atol=1e-10
     end
 
     @testset "scalar — NTuple (0,1) deriv (else branch)" begin
-        result = linear_interp(grids, data, (0.5, 0.5); deriv=(0, 1))
+        result = linear_interp(grids, data, (0.5, 0.5); deriv=DerivOp(0, 1))
         @test result ≈ 3.0 atol=1e-10
     end
 
-    @testset "linear_interp! SoA — Val(0) deriv (elseif branch)" begin
+    @testset "linear_interp! SoA — Int(0) deriv (elseif branch)" begin
         xs = [0.25, 0.75]
         ys = [0.25, 0.75]
         out = zeros(2)
-        linear_interp!(out, grids, data, (xs, ys); deriv=Val(0))
+        linear_interp!(out, grids, data, (xs, ys); deriv=DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in zip(xs, ys)]
         @test out ≈ ref atol=1e-10
     end
 
-    @testset "linear_interp! SoA — NTuple (0,0) deriv (else branch)" begin
+    @testset "linear_interp! SoA — DerivOp(0,0) deriv (else branch)" begin
         xs = [0.25, 0.75]
         ys = [0.25, 0.75]
         out = zeros(2)
-        linear_interp!(out, grids, data, (xs, ys); deriv=(0, 0))
+        linear_interp!(out, grids, data, (xs, ys); deriv=DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in zip(xs, ys)]
         @test out ≈ ref atol=1e-10
     end
 
-    @testset "linear_interp! AoS — Val(0) deriv (elseif branch)" begin
+    @testset "linear_interp! AoS — Int(0) deriv (elseif branch)" begin
         queries = [(0.25, 0.25), (0.75, 0.75)]
         out = zeros(2)
-        linear_interp!(out, grids, data, queries; deriv=Val(0))
+        linear_interp!(out, grids, data, queries; deriv=DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in queries]
         @test out ≈ ref atol=1e-10
     end
 
-    @testset "linear_interp! AoS — NTuple (0,0) deriv (else branch)" begin
+    @testset "linear_interp! AoS — DerivOp(0,0) deriv (else branch)" begin
         queries = [(0.25, 0.25), (0.75, 0.75)]
         out = zeros(2)
-        linear_interp!(out, grids, data, queries; deriv=(0, 0))
+        linear_interp!(out, grids, data, queries; deriv=DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in queries]
         @test out ≈ ref atol=1e-10
     end
 end
 
-@testset "Val/NTuple deriv branches — quadratic_interp oneshot" begin
+@testset "DerivOp deriv paths — quadratic_interp oneshot" begin
     grids = (collect(range(0.0, 1.0, 7)), collect(range(0.0, 1.0, 7)))
     data = [2xi + 3yj for xi in grids[1], yj in grids[2]]
 
-    @testset "scalar — NTuple (1,0) deriv (else branch)" begin
-        result = quadratic_interp(grids, data, (0.5, 0.5); deriv=(1, 0))
+    @testset "scalar — DerivOp(1,0) deriv (else branch)" begin
+        result = quadratic_interp(grids, data, (0.5, 0.5); deriv=DerivOp(1, 0))
         @test result ≈ 2.0 atol=1e-6
     end
 
     @testset "scalar — NTuple (0,1) deriv (else branch)" begin
-        result = quadratic_interp(grids, data, (0.5, 0.5); deriv=(0, 1))
+        result = quadratic_interp(grids, data, (0.5, 0.5); deriv=DerivOp(0, 1))
         @test result ≈ 3.0 atol=1e-6
     end
 
-    @testset "quadratic_interp! SoA — Val(0) deriv (elseif branch)" begin
+    @testset "quadratic_interp! SoA — Int(0) deriv (elseif branch)" begin
         xs = [0.25, 0.75]
         ys = [0.25, 0.75]
         out = zeros(2)
-        quadratic_interp!(out, grids, data, (xs, ys); deriv=Val(0))
+        quadratic_interp!(out, grids, data, (xs, ys); deriv=DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in zip(xs, ys)]
         @test out ≈ ref atol=1e-6
     end
 
-    @testset "quadratic_interp! SoA — NTuple (0,0) deriv (else branch)" begin
+    @testset "quadratic_interp! SoA — DerivOp(0,0) deriv (else branch)" begin
         xs = [0.25, 0.75]
         ys = [0.25, 0.75]
         out = zeros(2)
-        quadratic_interp!(out, grids, data, (xs, ys); deriv=(0, 0))
+        quadratic_interp!(out, grids, data, (xs, ys); deriv=DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in zip(xs, ys)]
         @test out ≈ ref atol=1e-6
     end
 
-    @testset "quadratic_interp! AoS — Val(0) deriv (elseif branch)" begin
+    @testset "quadratic_interp! AoS — Int(0) deriv (elseif branch)" begin
         queries = [(0.25, 0.25), (0.75, 0.75)]
         out = zeros(2)
-        quadratic_interp!(out, grids, data, queries; deriv=Val(0))
+        quadratic_interp!(out, grids, data, queries; deriv=DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in queries]
         @test out ≈ ref atol=1e-6
     end
 
-    @testset "quadratic_interp! AoS — NTuple (0,0) deriv (else branch)" begin
+    @testset "quadratic_interp! AoS — DerivOp(0,0) deriv (else branch)" begin
         queries = [(0.25, 0.25), (0.75, 0.75)]
         out = zeros(2)
-        quadratic_interp!(out, grids, data, queries; deriv=(0, 0))
+        quadratic_interp!(out, grids, data, queries; deriv=DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in queries]
         @test out ≈ ref atol=1e-6
     end

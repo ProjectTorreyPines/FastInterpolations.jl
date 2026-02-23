@@ -9,7 +9,7 @@
 # Key insight: For AD to work, the Dual type must flow through:
 #   1. Query point input → 2. Interval arithmetic → 3. Output value
 #
-# The analytical derivative (deriv=1) should match ForwardDiff.derivative().
+# The analytical derivative (deriv=DerivOp(1)) should match ForwardDiff.derivative().
 #
 
 using Test
@@ -40,7 +40,7 @@ const FI = FastInterpolations
                 fd_deriv = ForwardDiff.derivative(itp, xq)
 
                 # Analytical derivative from interpolant
-                analytical = itp(xq; deriv=1)
+                analytical = itp(xq; deriv=DerivOp(1))
 
                 @test fd_deriv ≈ analytical atol=1e-10
                 @test fd_deriv ≈ 2.0 atol=1e-10  # Known slope
@@ -83,7 +83,7 @@ const FI = FastInterpolations
             expected_slope = (6.25 - 4.0) / (2.5 - 2.0)  # = 4.5
 
             fd_deriv = ForwardDiff.derivative(itp_quad, xq)
-            analytical = itp_quad(xq; deriv=1)
+            analytical = itp_quad(xq; deriv=DerivOp(1))
 
             @test fd_deriv ≈ expected_slope atol=1e-10
             @test fd_deriv ≈ analytical atol=1e-10
@@ -93,7 +93,7 @@ const FI = FastInterpolations
             # One-shot API should also support ForwardDiff
             xq = 2.25
             fd_deriv = ForwardDiff.derivative(q -> linear_interp(x, y, q), xq)
-            analytical = linear_interp(x, y, xq; deriv=1)
+            analytical = linear_interp(x, y, xq; deriv=DerivOp(1))
             @test fd_deriv ≈ analytical atol=1e-10
             @test fd_deriv ≈ 2.0 atol=1e-10  # Known slope for y = 2x + 1
         end
@@ -117,7 +117,7 @@ const FI = FastInterpolations
             for xq in test_points
                 # ForwardDiff computes derivative of entire vector at once
                 fd_derivs = ForwardDiff.derivative(sitp, xq)
-                analytical = sitp(xq; deriv=1)
+                analytical = sitp(xq; deriv=DerivOp(1))
 
                 @test fd_derivs ≈ analytical atol=1e-10
             end
@@ -151,7 +151,7 @@ const FI = FastInterpolations
 
             xq = 2.25
             fd_derivs = ForwardDiff.derivative(sitp_lin, xq)
-            analytical = sitp_lin(xq; deriv=1)
+            analytical = sitp_lin(xq; deriv=DerivOp(1))
 
             @test fd_derivs ≈ analytical atol=1e-10
             @test fd_derivs ≈ [2.0, -1.0] atol=1e-10  # d/dx(2x)=2, d/dx(-x+5)=-1
@@ -178,7 +178,7 @@ const FI = FastInterpolations
             fd_deriv = ForwardDiff.derivative(itp, xq)
 
             # Analytical
-            analytical = itp(xq; deriv=1)
+            analytical = itp(xq; deriv=DerivOp(1))
 
             @test fd_deriv ≈ analytical atol=1e-10
             @test real(fd_deriv) ≈ 2.0 atol=1e-10  # d/dx(2x+1)
@@ -188,7 +188,7 @@ const FI = FastInterpolations
         @testset "one-shot API AD with complex" begin
             xq = 2.25
             fd_deriv = ForwardDiff.derivative(q -> linear_interp(x, y_complex, q), xq)
-            analytical = linear_interp(x, y_complex, xq; deriv=1)
+            analytical = linear_interp(x, y_complex, xq; deriv=DerivOp(1))
             @test fd_deriv ≈ analytical atol=1e-10
         end
     end
@@ -243,7 +243,7 @@ const FI = FastInterpolations
 
             # Manual calculation
             val = itp(2.25)
-            deriv = itp(2.25; deriv=1)
+            deriv = itp(2.25; deriv=DerivOp(1))
             expected_grad = 2 * val * deriv
 
             @test grad[1] ≈ expected_grad atol=1e-10
@@ -263,7 +263,7 @@ const FI = FastInterpolations
         @testset "Float32 derivative" begin
             xq = 2.25f0
             fd_deriv = ForwardDiff.derivative(itp32, xq)
-            analytical = itp32(xq; deriv=1)
+            analytical = itp32(xq; deriv=DerivOp(1))
 
             @test fd_deriv ≈ analytical atol=1e-5
             @test fd_deriv isa Float32
@@ -284,7 +284,7 @@ const FI = FastInterpolations
             # Constant interpolation derivative should be 0 (step function)
             for xq in [0.5, 1.5, 2.5, 3.5]
                 fd_deriv = ForwardDiff.derivative(itp, xq)
-                analytical = itp(xq; deriv=1)
+                analytical = itp(xq; deriv=DerivOp(1))
                 @test fd_deriv ≈ 0.0 atol=1e-10
                 @test fd_deriv ≈ analytical atol=1e-10
             end
@@ -332,7 +332,7 @@ const FI = FastInterpolations
             # ForwardDiff.derivative on series returns vector of derivatives
             for xq in [0.5, 1.5, 2.5]
                 fd_derivs = ForwardDiff.derivative(sitp, xq)
-                analytical = sitp(xq; deriv=1)
+                analytical = sitp(xq; deriv=DerivOp(1))
 
                 @test all(fd_derivs .≈ 0.0)
                 @test fd_derivs ≈ analytical atol=1e-10
@@ -362,7 +362,7 @@ const FI = FastInterpolations
             xq = 2.5
 
             fd_deriv = ForwardDiff.derivative(itp, xq)
-            analytical = itp(xq; deriv=1)
+            analytical = itp(xq; deriv=DerivOp(1))
 
             # Derivative should be zero for both real and imaginary parts
             @test real(fd_deriv) ≈ 0.0 atol=1e-10
@@ -412,7 +412,7 @@ const FI = FastInterpolations
                 fd_deriv = ForwardDiff.derivative(itp, xq)
 
                 # Analytical derivative from interpolant
-                analytical = itp(xq; deriv=1)
+                analytical = itp(xq; deriv=DerivOp(1))
 
                 @test fd_deriv ≈ analytical atol=1e-10
             end
@@ -449,7 +449,7 @@ const FI = FastInterpolations
             xq = 2.25
 
             fd_deriv = ForwardDiff.derivative(itp_cubic, xq)
-            analytical = itp_cubic(xq; deriv=1)
+            analytical = itp_cubic(xq; deriv=DerivOp(1))
 
             # ForwardDiff and analytical should still match
             @test fd_deriv ≈ analytical atol=1e-10
@@ -468,7 +468,7 @@ const FI = FastInterpolations
 
             xq = 2.25f0
             fd_deriv = ForwardDiff.derivative(itp32, xq)
-            analytical = itp32(xq; deriv=1)
+            analytical = itp32(xq; deriv=DerivOp(1))
 
             @test fd_deriv ≈ analytical atol=1e-5
             @test fd_deriv isa Float32
@@ -485,7 +485,7 @@ const FI = FastInterpolations
 
             # d/d(xq)[itp(xq)²] = 2 * itp(xq) * itp'(xq)
             val = itp(2.25)
-            deriv = itp(2.25; deriv=1)
+            deriv = itp(2.25; deriv=DerivOp(1))
             expected_grad = 2 * val * deriv
 
             @test grad[1] ≈ expected_grad atol=1e-10
@@ -495,7 +495,7 @@ const FI = FastInterpolations
             # One-shot API should also support ForwardDiff
             xq = 2.25
             fd_deriv = ForwardDiff.derivative(q -> quadratic_interp(x, y, q), xq)
-            analytical = quadratic_interp(x, y, xq; deriv=1)
+            analytical = quadratic_interp(x, y, xq; deriv=DerivOp(1))
             @test fd_deriv ≈ analytical atol=1e-10
         end
     end
@@ -511,7 +511,7 @@ const FI = FastInterpolations
             xq = 2.25
 
             fd_deriv = ForwardDiff.derivative(itp, xq)
-            analytical = itp(xq; deriv=1)
+            analytical = itp(xq; deriv=DerivOp(1))
 
             @test fd_deriv ≈ analytical atol=1e-10
             # For (1+i)x², derivative is (1+i)*2x = (2+2i)*x
@@ -523,7 +523,7 @@ const FI = FastInterpolations
         @testset "one-shot API AD with complex" begin
             xq = 2.25
             fd_deriv = ForwardDiff.derivative(q -> quadratic_interp(x, y_complex, q), xq)
-            analytical = quadratic_interp(x, y_complex, xq; deriv=1)
+            analytical = quadratic_interp(x, y_complex, xq; deriv=DerivOp(1))
             @test fd_deriv ≈ analytical atol=1e-10
         end
     end
@@ -548,7 +548,7 @@ const FI = FastInterpolations
                 fd_deriv = ForwardDiff.derivative(itp, xq)
 
                 # Analytical derivative from interpolant
-                analytical = itp(xq; deriv=1)
+                analytical = itp(xq; deriv=DerivOp(1))
 
                 @test fd_deriv ≈ analytical atol=1e-10
             end
@@ -586,7 +586,7 @@ const FI = FastInterpolations
             xq = 1.5
 
             fd_deriv = ForwardDiff.derivative(itp_sin, xq)
-            analytical = itp_sin(xq; deriv=1)
+            analytical = itp_sin(xq; deriv=DerivOp(1))
 
             # ForwardDiff and analytical should match
             @test fd_deriv ≈ analytical atol=1e-10
@@ -607,7 +607,7 @@ const FI = FastInterpolations
 
             xq = 2.25f0
             fd_deriv = ForwardDiff.derivative(itp32, xq)
-            analytical = itp32(xq; deriv=1)
+            analytical = itp32(xq; deriv=DerivOp(1))
 
             @test fd_deriv ≈ analytical atol=1e-4
             @test fd_deriv isa Float32
@@ -624,7 +624,7 @@ const FI = FastInterpolations
 
             # d/d(xq)[itp(xq)²] = 2 * itp(xq) * itp'(xq)
             val = itp(2.25)
-            deriv = itp(2.25; deriv=1)
+            deriv = itp(2.25; deriv=DerivOp(1))
             expected_grad = 2 * val * deriv
 
             @test grad[1] ≈ expected_grad atol=1e-10
@@ -637,7 +637,7 @@ const FI = FastInterpolations
 
                 xq = 2.25
                 fd_deriv = ForwardDiff.derivative(itp_bc, xq)
-                analytical = itp_bc(xq; deriv=1)
+                analytical = itp_bc(xq; deriv=DerivOp(1))
 
                 @test fd_deriv ≈ analytical atol=1e-10
             end
@@ -647,7 +647,7 @@ const FI = FastInterpolations
             # One-shot API should also support ForwardDiff
             xq = 2.25
             fd_deriv = ForwardDiff.derivative(q -> cubic_interp(x, y, q), xq)
-            analytical = cubic_interp(x, y, xq; deriv=1)
+            analytical = cubic_interp(x, y, xq; deriv=DerivOp(1))
             @test fd_deriv ≈ analytical atol=1e-10
         end
     end
@@ -663,7 +663,7 @@ const FI = FastInterpolations
             xq = 2.25
 
             fd_deriv = ForwardDiff.derivative(itp, xq)
-            analytical = itp(xq; deriv=1)
+            analytical = itp(xq; deriv=DerivOp(1))
 
             @test fd_deriv ≈ analytical atol=1e-10
             # For (1+i)x³, derivative is (1+i)*3x²
@@ -676,7 +676,7 @@ const FI = FastInterpolations
         @testset "one-shot API AD with complex" begin
             xq = 2.25
             fd_deriv = ForwardDiff.derivative(q -> cubic_interp(x, y_complex, q), xq)
-            analytical = cubic_interp(x, y_complex, xq; deriv=1)
+            analytical = cubic_interp(x, y_complex, xq; deriv=DerivOp(1))
             @test fd_deriv ≈ analytical atol=1e-10
         end
     end
@@ -699,7 +699,7 @@ const FI = FastInterpolations
             for xq in test_points
                 # ForwardDiff computes derivative of entire vector at once
                 fd_derivs = ForwardDiff.derivative(sitp, xq)
-                analytical = sitp(xq; deriv=1)
+                analytical = sitp(xq; deriv=DerivOp(1))
 
                 @test fd_derivs ≈ analytical atol=1e-10
             end
@@ -733,7 +733,7 @@ const FI = FastInterpolations
 
             xq = 2.25
             fd_derivs = ForwardDiff.derivative(sitp_quad, xq)
-            analytical = sitp_quad(xq; deriv=1)
+            analytical = sitp_quad(xq; deriv=DerivOp(1))
 
             @test fd_derivs ≈ analytical atol=1e-10
             # Derivative of x² is 2x, derivative of 2x² is 4x
@@ -748,7 +748,7 @@ const FI = FastInterpolations
 
             xq = 1.5f0
             fd_derivs = ForwardDiff.derivative(sitp32, xq)
-            analytical = sitp32(xq; deriv=1)
+            analytical = sitp32(xq; deriv=DerivOp(1))
 
             @test fd_derivs ≈ analytical atol=1e-5
             @test eltype(fd_derivs) == Float32
@@ -767,7 +767,7 @@ const FI = FastInterpolations
 
             # d/d(xq)[sum(f_i(xq)²)] = 2 * sum(f_i(xq) * f_i'(xq))
             vals = sitp(2.25)
-            derivs = sitp(2.25; deriv=1)
+            derivs = sitp(2.25; deriv=DerivOp(1))
             expected_grad = 2 * sum(vals .* derivs)
 
             @test grad[1] ≈ expected_grad atol=1e-10
@@ -785,7 +785,7 @@ const FI = FastInterpolations
             xq = 1.5
 
             fd_derivs = ForwardDiff.derivative(sitp, xq)
-            analytical = sitp(xq; deriv=1)
+            analytical = sitp(xq; deriv=DerivOp(1))
 
             @test fd_derivs ≈ analytical atol=1e-10
         end
@@ -817,7 +817,7 @@ const FI = FastInterpolations
             for xq in test_points
                 # ForwardDiff computes derivative of entire vector at once
                 fd_derivs = ForwardDiff.derivative(sitp, xq)
-                analytical = sitp(xq; deriv=1)
+                analytical = sitp(xq; deriv=DerivOp(1))
 
                 @test fd_derivs ≈ analytical atol=1e-10
             end
@@ -851,7 +851,7 @@ const FI = FastInterpolations
 
             xq = 2.25
             fd_derivs = ForwardDiff.derivative(sitp_cub, xq)
-            analytical = sitp_cub(xq; deriv=1)
+            analytical = sitp_cub(xq; deriv=DerivOp(1))
 
             @test fd_derivs ≈ analytical atol=1e-10
             # Derivative of x³ is 3x², derivative of 2x³ is 6x²
@@ -866,7 +866,7 @@ const FI = FastInterpolations
 
             xq = 1.5f0
             fd_derivs = ForwardDiff.derivative(sitp32, xq)
-            analytical = sitp32(xq; deriv=1)
+            analytical = sitp32(xq; deriv=DerivOp(1))
 
             @test fd_derivs ≈ analytical atol=1e-5
             @test eltype(fd_derivs) == Float32
@@ -885,7 +885,7 @@ const FI = FastInterpolations
 
             # d/d(xq)[sum(f_i(xq)²)] = 2 * sum(f_i(xq) * f_i'(xq))
             vals = sitp(2.25)
-            derivs = sitp(2.25; deriv=1)
+            derivs = sitp(2.25; deriv=DerivOp(1))
             expected_grad = 2 * sum(vals .* derivs)
 
             @test grad[1] ≈ expected_grad atol=1e-10
@@ -903,7 +903,7 @@ const FI = FastInterpolations
             xq = 1.5
 
             fd_derivs = ForwardDiff.derivative(sitp, xq)
-            analytical = sitp(xq; deriv=1)
+            analytical = sitp(xq; deriv=DerivOp(1))
 
             @test fd_derivs ≈ analytical atol=1e-10
         end
@@ -937,12 +937,12 @@ const FI = FastInterpolations
 
                 # In-domain
                 fd = ForwardDiff.derivative(itp, 2.25)
-                an = itp(2.25; deriv=1)
+                an = itp(2.25; deriv=DerivOp(1))
                 @test fd ≈ an atol=1e-10
 
                 # Outside domain (extends linearly)
                 fd_out = ForwardDiff.derivative(itp, 6.5)
-                an_out = itp(6.5; deriv=1)
+                an_out = itp(6.5; deriv=DerivOp(1))
                 @test fd_out ≈ an_out atol=1e-10
             end
 
@@ -951,18 +951,18 @@ const FI = FastInterpolations
 
                 # In-domain
                 fd = ForwardDiff.derivative(itp, 2.25)
-                an = itp(2.25; deriv=1)
+                an = itp(2.25; deriv=DerivOp(1))
                 @test fd ≈ an atol=1e-10
 
                 # Outside domain right: derivative is 0 for constant extrap
                 fd_right = ForwardDiff.derivative(itp, 6.5)
-                an_right = itp(6.5; deriv=1)
+                an_right = itp(6.5; deriv=DerivOp(1))
                 @test fd_right ≈ 0.0 atol=1e-10
                 @test fd_right ≈ an_right atol=1e-10
 
                 # Outside domain left: derivative is also 0
                 fd_left = ForwardDiff.derivative(itp, -1.0)
-                an_left = itp(-1.0; deriv=1)
+                an_left = itp(-1.0; deriv=DerivOp(1))
                 @test fd_left ≈ 0.0 atol=1e-10
                 @test fd_left ≈ an_left atol=1e-10
             end
@@ -972,19 +972,19 @@ const FI = FastInterpolations
 
                 # In-domain: AD must preserve Dual type
                 fd_in = ForwardDiff.derivative(itp, 2.25)
-                an_in = itp(2.25; deriv=1)
+                an_in = itp(2.25; deriv=DerivOp(1))
                 @test fd_in ≈ an_in atol=1e-10
 
                 # Out-of-domain positive: wraps via mod(), AD must work
                 fd_pos = ForwardDiff.derivative(itp, 6.5)
-                an_pos = itp(6.5; deriv=1)
+                an_pos = itp(6.5; deriv=DerivOp(1))
                 @test fd_pos ≈ an_pos atol=1e-10
                 # 6.5 mod 5.0 = 1.5 → in interval [1.0, 1.5]
                 @test fd_pos ≈ 3.5 atol=1e-10  # slope at x=1.5
 
                 # Out-of-domain negative: wraps correctly
                 fd_neg = ForwardDiff.derivative(itp, -1.0)
-                an_neg = itp(-1.0; deriv=1)
+                an_neg = itp(-1.0; deriv=DerivOp(1))
                 @test fd_neg ≈ an_neg atol=1e-10
                 # -1.0 mod 5.0 = 4.0 → in interval [4.0, 4.5]
                 @test fd_neg ≈ 8.5 atol=1e-10  # slope at x=4.5
@@ -999,11 +999,11 @@ const FI = FastInterpolations
                 itp = cubic_interp(x, y_cubic; extrap=ExtendExtrap())
 
                 fd = ForwardDiff.derivative(itp, 2.25)
-                an = itp(2.25; deriv=1)
+                an = itp(2.25; deriv=DerivOp(1))
                 @test fd ≈ an atol=1e-10
 
                 fd_out = ForwardDiff.derivative(itp, 6.5)
-                an_out = itp(6.5; deriv=1)
+                an_out = itp(6.5; deriv=DerivOp(1))
                 @test fd_out ≈ an_out atol=1e-10
             end
 
@@ -1011,17 +1011,17 @@ const FI = FastInterpolations
                 itp = cubic_interp(x, y_cubic; extrap=ConstExtrap())
 
                 fd = ForwardDiff.derivative(itp, 2.25)
-                an = itp(2.25; deriv=1)
+                an = itp(2.25; deriv=DerivOp(1))
                 @test fd ≈ an atol=1e-10
 
                 # Out-of-domain: derivative is 0 for constant extrap
                 fd_right = ForwardDiff.derivative(itp, 6.5)
-                an_right = itp(6.5; deriv=1)
+                an_right = itp(6.5; deriv=DerivOp(1))
                 @test fd_right ≈ 0.0 atol=1e-10
                 @test fd_right ≈ an_right atol=1e-10
 
                 fd_left = ForwardDiff.derivative(itp, -1.0)
-                an_left = itp(-1.0; deriv=1)
+                an_left = itp(-1.0; deriv=DerivOp(1))
                 @test fd_left ≈ 0.0 atol=1e-10
                 @test fd_left ≈ an_left atol=1e-10
             end
@@ -1031,12 +1031,12 @@ const FI = FastInterpolations
 
                 # In-domain
                 fd_in = ForwardDiff.derivative(itp, 2.25)
-                an_in = itp(2.25; deriv=1)
+                an_in = itp(2.25; deriv=DerivOp(1))
                 @test fd_in ≈ an_in atol=1e-10
 
                 # Out-of-domain: wraps and AD still works
                 fd_out = ForwardDiff.derivative(itp, 6.5)
-                an_out = itp(6.5; deriv=1)
+                an_out = itp(6.5; deriv=DerivOp(1))
                 @test fd_out ≈ an_out atol=1e-10
             end
         end
@@ -1049,11 +1049,11 @@ const FI = FastInterpolations
                 itp = quadratic_interp(x, y_quad; extrap=ExtendExtrap())
 
                 fd = ForwardDiff.derivative(itp, 2.25)
-                an = itp(2.25; deriv=1)
+                an = itp(2.25; deriv=DerivOp(1))
                 @test fd ≈ an atol=1e-10
 
                 fd_out = ForwardDiff.derivative(itp, 6.5)
-                an_out = itp(6.5; deriv=1)
+                an_out = itp(6.5; deriv=DerivOp(1))
                 @test fd_out ≈ an_out atol=1e-10
             end
 
@@ -1061,17 +1061,17 @@ const FI = FastInterpolations
                 itp = quadratic_interp(x, y_quad; extrap=ConstExtrap())
 
                 fd = ForwardDiff.derivative(itp, 2.25)
-                an = itp(2.25; deriv=1)
+                an = itp(2.25; deriv=DerivOp(1))
                 @test fd ≈ an atol=1e-10
 
                 # Out-of-domain: derivative is 0 for constant extrap
                 fd_right = ForwardDiff.derivative(itp, 6.5)
-                an_right = itp(6.5; deriv=1)
+                an_right = itp(6.5; deriv=DerivOp(1))
                 @test fd_right ≈ 0.0 atol=1e-10
                 @test fd_right ≈ an_right atol=1e-10
 
                 fd_left = ForwardDiff.derivative(itp, -1.0)
-                an_left = itp(-1.0; deriv=1)
+                an_left = itp(-1.0; deriv=DerivOp(1))
                 @test fd_left ≈ 0.0 atol=1e-10
                 @test fd_left ≈ an_left atol=1e-10
             end
@@ -1081,12 +1081,12 @@ const FI = FastInterpolations
 
                 # In-domain
                 fd_in = ForwardDiff.derivative(itp, 2.25)
-                an_in = itp(2.25; deriv=1)
+                an_in = itp(2.25; deriv=DerivOp(1))
                 @test fd_in ≈ an_in atol=1e-10
 
                 # Out-of-domain: wraps and AD still works
                 fd_out = ForwardDiff.derivative(itp, 6.5)
-                an_out = itp(6.5; deriv=1)
+                an_out = itp(6.5; deriv=DerivOp(1))
                 @test fd_out ≈ an_out atol=1e-10
 
                 # Value preservation after wrapping

@@ -1,14 +1,14 @@
 # ========================================
 # Derivative Tests for FastInterpolations.jl
 # ========================================
-# Phase 1: Foundation tests for EvalOp types and @_dispatch_deriv macro
+# Phase 1: Foundation tests for EvalOp types (DerivOp)
 # Phase 2+: Kernel functions, cubic/linear derivative evaluation
 
 using Test
 using FastInterpolations
 
 # Import internal types/macros for testing
-using FastInterpolations: @_dispatch_deriv, _linear_kernel, _cubic_kernel
+using FastInterpolations: _linear_kernel, _cubic_kernel
 using FastInterpolations: _eval_cubic_at_point, _eval_cubic_with_extrap, _get_cubic_cache, _solve_system!
 using FastInterpolations: AbstractEvalOp, EvalValue, EvalDeriv1, EvalDeriv2
 using FastInterpolations: _to_searcher
@@ -38,74 +38,44 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
         @test fieldcount(EvalDeriv2) == 0
     end
 
-    @testset "@_dispatch_deriv macro" begin
-        # deriv=0 → EvalValue
-        result0 = @_dispatch_deriv 0 => op begin
-            typeof(op)
-        end
-        @test result0 === EvalValue
-
-        # deriv=1 → EvalDeriv1
-        result1 = @_dispatch_deriv 1 => op begin
-            typeof(op)
-        end
-        @test result1 === EvalDeriv1
-
-        # deriv=2 → EvalDeriv2
-        result2 = @_dispatch_deriv 2 => op begin
-            typeof(op)
-        end
-        @test result2 === EvalDeriv2
-
-        # Invalid deriv throws ArgumentError (macro-level)
-        @test_throws ArgumentError @_dispatch_deriv 4 => op begin
-            typeof(op)
-        end
-        @test_throws ArgumentError @_dispatch_deriv -1 => op begin
-            typeof(op)
-        end
-
-        # Invalid deriv throws ArgumentError (public API - for coverage)
+    @testset "DerivOp type rejection for Int" begin
+        # Public API rejects Int for deriv (must use DerivOp)
         x = [0.0, 0.5, 1.0]
         y = [0.0, 0.25, 1.0]
-        @test_throws ArgumentError cubic_interp(x, y, 0.5; deriv=4)
-        @test_throws ArgumentError cubic_interp(x, y, 0.5; deriv=-1)
-        @test_throws ArgumentError linear_interp(x, y, 0.5; deriv=4)
-        @test_throws ArgumentError linear_interp(x, y, 0.5; deriv=-1)
+        @test_throws TypeError cubic_interp(x, y, 0.5; deriv=4)
+        @test_throws TypeError cubic_interp(x, y, 0.5; deriv=-1)
+        @test_throws TypeError linear_interp(x, y, 0.5; deriv=4)
+        @test_throws TypeError linear_interp(x, y, 0.5; deriv=-1)
     end
 
-    @testset "@_dispatch_deriv with runtime variable" begin
-        # Test that macro works with runtime-determined deriv
-        for deriv in 0:2
-            result = @_dispatch_deriv deriv => op begin
-                op
-            end
-            if deriv == 0
-                @test result isa EvalValue
-            elseif deriv == 1
-                @test result isa EvalDeriv1
-            else
-                @test result isa EvalDeriv2
-            end
-        end
+    @testset "DerivOp order range validation" begin
+        # _make_derivop rejects orders outside [0, 3]
+        @test_throws ArgumentError DerivOp(4)
+        @test_throws ArgumentError DerivOp(-1)
+        @test_throws ArgumentError DerivOp(100)
+
+        # ND constructor validates each element
+        @test_throws ArgumentError DerivOp(1, 4)
+        @test_throws ArgumentError DerivOp(0, -1)
+
+        # Valid orders still work
+        @test DerivOp(0) === DerivOp{0}()
+        @test DerivOp(1) === DerivOp{1}()
+        @test DerivOp(2) === DerivOp{2}()
+        @test DerivOp(3) === DerivOp{3}()
     end
 
-    @testset "@_dispatch_deriv type stability" begin
-        # The dispatched function should maintain type stability
-        function test_dispatch(deriv::Int)
-            @_dispatch_deriv deriv => op begin
-                # Return something that depends on op type
-                op isa EvalValue ? 1.0 :
-                op isa EvalDeriv1 ? 2.0 : 3.0
-            end
-        end
+    @testset "deriv_view order validation" begin
+        # 1D: deriv_view rejects invalid orders
+        x = [0.0, 0.5, 1.0]
+        y = [0.0, 0.25, 1.0]
+        itp = cubic_interp(x, y)
+        @test_throws ArgumentError deriv_view(itp, 4)
+        @test_throws ArgumentError deriv_view(itp, -1)
 
-        @test test_dispatch(0) === 1.0
-        @test test_dispatch(1) === 2.0
-        @test test_dispatch(2) === 3.0
-
-        # Type inference should work
-        @test @inferred(test_dispatch(0)) === 1.0
+        # Valid orders work
+        @test deriv_view(itp, 1) isa FastInterpolations.DerivativeView
+        @test deriv_view(itp, 0) isa FastInterpolations.DerivativeView
     end
 
 end # Derivative Core
@@ -318,13 +288,13 @@ end # Derivative Kernels
             xi = 0.5
 
             # Value: f(0.5) = 0.25
-            @test cubic_interp(x, y, xi; bc=bc, deriv=0) ≈ 0.25 atol=1e-10
+            @test cubic_interp(x, y, xi; bc=bc, deriv=DerivOp(0)) ≈ 0.25 atol=1e-10
 
             # First derivative: f'(0.5) = 2*0.5 = 1.0
-            @test cubic_interp(x, y, xi; bc=bc, deriv=1) ≈ 1.0 atol=1e-10
+            @test cubic_interp(x, y, xi; bc=bc, deriv=DerivOp(1)) ≈ 1.0 atol=1e-10
 
             # Second derivative: f''(x) = 2.0
-            @test cubic_interp(x, y, xi; bc=bc, deriv=2) ≈ 2.0 atol=1e-10
+            @test cubic_interp(x, y, xi; bc=bc, deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
         end
 
         @testset "Cubic polynomial exactness" begin
@@ -335,13 +305,13 @@ end # Derivative Kernels
             xi = 0.5
 
             # Value: f(0.5) = 0.125
-            @test cubic_interp(x, y, xi; bc=bc, deriv=0) ≈ 0.125 atol=1e-10
+            @test cubic_interp(x, y, xi; bc=bc, deriv=DerivOp(0)) ≈ 0.125 atol=1e-10
 
             # First derivative: f'(0.5) = 3*(0.5)² = 0.75
-            @test cubic_interp(x, y, xi; bc=bc, deriv=1) ≈ 0.75 atol=1e-10
+            @test cubic_interp(x, y, xi; bc=bc, deriv=DerivOp(1)) ≈ 0.75 atol=1e-10
 
             # Second derivative: f''(0.5) = 6*0.5 = 3.0
-            @test cubic_interp(x, y, xi; bc=bc, deriv=2) ≈ 3.0 atol=1e-10
+            @test cubic_interp(x, y, xi; bc=bc, deriv=DerivOp(2)) ≈ 3.0 atol=1e-10
         end
 
         @testset "Backward compatibility (no deriv arg)" begin
@@ -351,7 +321,7 @@ end # Derivative Kernels
 
             # Without deriv parameter should work as before
             val_old = cubic_interp(x, y, xi)
-            val_new = cubic_interp(x, y, xi; deriv=0)
+            val_new = cubic_interp(x, y, xi; deriv=DerivOp(0))
             @test val_old ≈ val_new atol=1e-14
         end
 
@@ -362,15 +332,15 @@ end # Derivative Kernels
             x_query = [0.25, 0.5, 0.75]
 
             # Values
-            vals = cubic_interp(x, y, x_query; bc=bc, deriv=0)
+            vals = cubic_interp(x, y, x_query; bc=bc, deriv=DerivOp(0))
             @test vals ≈ x_query .^ 2 atol=1e-10
 
             # First derivatives: f'(x) = 2x
-            derivs = cubic_interp(x, y, x_query; bc=bc, deriv=1)
+            derivs = cubic_interp(x, y, x_query; bc=bc, deriv=DerivOp(1))
             @test derivs ≈ 2.0 .* x_query atol=1e-10
 
             # Second derivatives: f''(x) = 2
-            derivs2 = cubic_interp(x, y, x_query; bc=bc, deriv=2)
+            derivs2 = cubic_interp(x, y, x_query; bc=bc, deriv=DerivOp(2))
             @test all(d ≈ 2.0 for d in derivs2)
         end
 
@@ -380,9 +350,9 @@ end # Derivative Kernels
             y = x .^ 2
             xi = 0.5
 
-            @test cubic_interp(cache, y, xi; deriv=0) ≈ 0.25 atol=1e-10
-            @test cubic_interp(cache, y, xi; deriv=1) ≈ 1.0 atol=1e-10
-            @test cubic_interp(cache, y, xi; deriv=2) ≈ 2.0 atol=1e-10
+            @test cubic_interp(cache, y, xi; deriv=DerivOp(0)) ≈ 0.25 atol=1e-10
+            @test cubic_interp(cache, y, xi; deriv=DerivOp(1)) ≈ 1.0 atol=1e-10
+            @test cubic_interp(cache, y, xi; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
         end
 
         @testset "Type stability with deriv" begin
@@ -391,9 +361,9 @@ end # Derivative Kernels
             bc = BCPair(Deriv2(2.0), Deriv2(2.0))
             xi = 0.5
 
-            @test @inferred(cubic_interp(x, y, xi; bc=bc, deriv=0)) isa Float64
-            @test @inferred(cubic_interp(x, y, xi; bc=bc, deriv=1)) isa Float64
-            @test @inferred(cubic_interp(x, y, xi; bc=bc, deriv=2)) isa Float64
+            @test @inferred(cubic_interp(x, y, xi; bc=bc, deriv=DerivOp(0))) isa Float64
+            @test @inferred(cubic_interp(x, y, xi; bc=bc, deriv=DerivOp(1))) isa Float64
+            @test @inferred(cubic_interp(x, y, xi; bc=bc, deriv=DerivOp(2))) isa Float64
         end
     end
 
@@ -404,26 +374,26 @@ end # Derivative Kernels
 
         @testset "Constant extrapolation" begin
             # Left boundary constant extrap: returns y[1] for value, 0 for derivatives
-            @test cubic_interp(x, y, -0.5; bc=bc, extrap=ConstExtrap(), deriv=0) ≈ 0.0
-            @test cubic_interp(x, y, -0.5; bc=bc, extrap=ConstExtrap(), deriv=1) ≈ 0.0
-            @test cubic_interp(x, y, -0.5; bc=bc, extrap=ConstExtrap(), deriv=2) ≈ 0.0
+            @test cubic_interp(x, y, -0.5; bc=bc, extrap=ConstExtrap(), deriv=DerivOp(0)) ≈ 0.0
+            @test cubic_interp(x, y, -0.5; bc=bc, extrap=ConstExtrap(), deriv=DerivOp(1)) ≈ 0.0
+            @test cubic_interp(x, y, -0.5; bc=bc, extrap=ConstExtrap(), deriv=DerivOp(2)) ≈ 0.0
 
             # Right boundary
-            @test cubic_interp(x, y, 1.5; bc=bc, extrap=ConstExtrap(), deriv=0) ≈ 1.0
-            @test cubic_interp(x, y, 1.5; bc=bc, extrap=ConstExtrap(), deriv=1) ≈ 0.0
-            @test cubic_interp(x, y, 1.5; bc=bc, extrap=ConstExtrap(), deriv=2) ≈ 0.0
+            @test cubic_interp(x, y, 1.5; bc=bc, extrap=ConstExtrap(), deriv=DerivOp(0)) ≈ 1.0
+            @test cubic_interp(x, y, 1.5; bc=bc, extrap=ConstExtrap(), deriv=DerivOp(1)) ≈ 0.0
+            @test cubic_interp(x, y, 1.5; bc=bc, extrap=ConstExtrap(), deriv=DerivOp(2)) ≈ 0.0
         end
 
         @testset "Extension extrapolation" begin
             # Extension: continue boundary polynomial
             # For x², extension should give approximately correct derivatives
-            val = cubic_interp(x, y, 1.5; bc=bc, extrap=ExtendExtrap(), deriv=0)
+            val = cubic_interp(x, y, 1.5; bc=bc, extrap=ExtendExtrap(), deriv=DerivOp(0))
             @test val ≈ 2.25 atol=0.1  # (1.5)² ≈ 2.25
 
-            deriv1 = cubic_interp(x, y, 1.5; bc=bc, extrap=ExtendExtrap(), deriv=1)
+            deriv1 = cubic_interp(x, y, 1.5; bc=bc, extrap=ExtendExtrap(), deriv=DerivOp(1))
             @test deriv1 ≈ 3.0 atol=0.2  # 2*1.5 ≈ 3.0
 
-            deriv2 = cubic_interp(x, y, 1.5; bc=bc, extrap=ExtendExtrap(), deriv=2)
+            deriv2 = cubic_interp(x, y, 1.5; bc=bc, extrap=ExtendExtrap(), deriv=DerivOp(2))
             @test deriv2 ≈ 2.0 atol=0.1  # f''(x) = 2
         end
     end
@@ -434,41 +404,41 @@ end # Derivative Kernels
         bc = BCPair(Deriv2(2.0), Deriv2(2.0))
         itp = cubic_interp(x, y; bc=bc)
 
-        @testset "deriv=1 scalar" begin
-            @test itp(0.5; deriv=1) ≈ 1.0 atol=1e-10
-            @test itp(0.0; deriv=1) ≈ 0.0 atol=1e-10
-            @test itp(1.0; deriv=1) ≈ 2.0 atol=1e-10
+        @testset "deriv=DerivOp(1) scalar" begin
+            @test itp(0.5; deriv=DerivOp(1)) ≈ 1.0 atol=1e-10
+            @test itp(0.0; deriv=DerivOp(1)) ≈ 0.0 atol=1e-10
+            @test itp(1.0; deriv=DerivOp(1)) ≈ 2.0 atol=1e-10
         end
 
-        @testset "deriv=2 scalar" begin
-            @test itp(0.5; deriv=2) ≈ 2.0 atol=1e-10
-            @test itp(0.0; deriv=2) ≈ 2.0 atol=1e-10
-            @test itp(1.0; deriv=2) ≈ 2.0 atol=1e-10
+        @testset "deriv=DerivOp(2) scalar" begin
+            @test itp(0.5; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
+            @test itp(0.0; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
+            @test itp(1.0; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
         end
 
-        @testset "deriv=1 vector" begin
+        @testset "deriv=DerivOp(1) vector" begin
             x_query = [0.25, 0.5, 0.75]
-            derivs = itp(x_query; deriv=1)
+            derivs = itp(x_query; deriv=DerivOp(1))
             @test derivs ≈ 2.0 .* x_query atol=1e-10
         end
 
-        @testset "deriv=2 vector" begin
+        @testset "deriv=DerivOp(2) vector" begin
             x_query = [0.25, 0.5, 0.75]
-            derivs2 = itp(x_query; deriv=2)
+            derivs2 = itp(x_query; deriv=DerivOp(2))
             @test all(d ≈ 2.0 for d in derivs2)
         end
 
-        @testset "in-place deriv=1" begin
+        @testset "in-place deriv=DerivOp(1)" begin
             x_query = [0.25, 0.5, 0.75]
             output = zeros(3)
-            itp(output, x_query; deriv=1)
+            itp(output, x_query; deriv=DerivOp(1))
             @test output ≈ 2.0 .* x_query atol=1e-10
         end
 
-        @testset "in-place deriv=2" begin
+        @testset "in-place deriv=DerivOp(2)" begin
             x_query = [0.25, 0.5, 0.75]
             output = zeros(3)
-            itp(output, x_query; deriv=2)
+            itp(output, x_query; deriv=DerivOp(2))
             @test all(d ≈ 2.0 for d in output)
         end
     end
@@ -479,47 +449,47 @@ end # Derivative Kernels
         bc = BCPair(Deriv2(2.0), Deriv2(2.0))
         itp = cubic_interp(x, y; bc=bc)
 
-        @testset "deriv=0 matches default call" begin
-            @test itp(0.5) == itp(0.5; deriv=0)
-            @test itp(0.25) == itp(0.25; deriv=0)
-            @test itp(0.75) == itp(0.75; deriv=0)
+        @testset "deriv=DerivOp(0) matches default call" begin
+            @test itp(0.5) == itp(0.5; deriv=DerivOp(0))
+            @test itp(0.25) == itp(0.25; deriv=DerivOp(0))
+            @test itp(0.75) == itp(0.75; deriv=DerivOp(0))
         end
 
-        @testset "deriv=1 returns first derivative" begin
+        @testset "deriv=DerivOp(1) returns first derivative" begin
             # f(x) = x², f'(x) = 2x
-            @test itp(0.5; deriv=1) ≈ 1.0 atol=1e-10
-            @test itp(0.0; deriv=1) ≈ 0.0 atol=1e-10
-            @test itp(1.0; deriv=1) ≈ 2.0 atol=1e-10
+            @test itp(0.5; deriv=DerivOp(1)) ≈ 1.0 atol=1e-10
+            @test itp(0.0; deriv=DerivOp(1)) ≈ 0.0 atol=1e-10
+            @test itp(1.0; deriv=DerivOp(1)) ≈ 2.0 atol=1e-10
         end
 
-        @testset "deriv=2 returns second derivative" begin
+        @testset "deriv=DerivOp(2) returns second derivative" begin
             # f(x) = x², f''(x) = 2
-            @test itp(0.5; deriv=2) ≈ 2.0 atol=1e-10
-            @test itp(0.0; deriv=2) ≈ 2.0 atol=1e-10
-            @test itp(1.0; deriv=2) ≈ 2.0 atol=1e-10
+            @test itp(0.5; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
+            @test itp(0.0; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
+            @test itp(1.0; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
         end
 
         @testset "Real input works with deriv keyword" begin
             # Integer input should work (exact equality - same code path after conversion)
-            @test itp(1; deriv=0) == itp(1.0; deriv=0)
-            @test itp(1; deriv=1) == itp(1.0; deriv=1)
-            @test itp(1; deriv=2) == itp(1.0; deriv=2)
+            @test itp(1; deriv=DerivOp(0)) == itp(1.0; deriv=DerivOp(0))
+            @test itp(1; deriv=DerivOp(1)) == itp(1.0; deriv=DerivOp(1))
+            @test itp(1; deriv=DerivOp(2)) == itp(1.0; deriv=DerivOp(2))
 
             # Float32 input should work (exact equality - 0.5f0 converts exactly to 0.5)
-            @test itp(0.5f0; deriv=1) == itp(0.5; deriv=1)
+            @test itp(0.5f0; deriv=DerivOp(1)) == itp(0.5; deriv=DerivOp(1))
         end
 
         @testset "Type stability with deriv keyword" begin
-            @test @inferred(itp(0.5; deriv=0)) isa Float64
-            @test @inferred(itp(0.5; deriv=1)) isa Float64
-            @test @inferred(itp(0.5; deriv=2)) isa Float64
+            @test @inferred(itp(0.5; deriv=DerivOp(0))) isa Float64
+            @test @inferred(itp(0.5; deriv=DerivOp(1))) isa Float64
+            @test @inferred(itp(0.5; deriv=DerivOp(2))) isa Float64
         end
 
         @testset "Polynomial exactness" begin
             # f(x) = x², f'(x) = 2x, f''(x) = 2
-            @test itp(0.5; deriv=0) ≈ 0.25 atol=1e-10
-            @test itp(0.5; deriv=1) ≈ 1.0 atol=1e-10
-            @test itp(0.5; deriv=2) ≈ 2.0 atol=1e-10
+            @test itp(0.5; deriv=DerivOp(0)) ≈ 0.25 atol=1e-10
+            @test itp(0.5; deriv=DerivOp(1)) ≈ 1.0 atol=1e-10
+            @test itp(0.5; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
         end
     end
 
@@ -537,12 +507,12 @@ end # Derivative Kernels
             itp = cubic_interp(x, y; bc=bc)
 
             # Should work without errors
-            @test itp(0.5; deriv=0) isa Float64
-            @test itp(0.5; deriv=1) isa Float64
-            @test itp(0.5; deriv=2) isa Float64
+            @test itp(0.5; deriv=DerivOp(0)) isa Float64
+            @test itp(0.5; deriv=DerivOp(1)) isa Float64
+            @test itp(0.5; deriv=DerivOp(2)) isa Float64
 
-            # deriv=1 gives first derivative (approximately cos(0.5) for sin)
-            @test itp(0.5; deriv=1) ≈ cos(0.5) atol=0.01
+            # deriv=DerivOp(1) gives first derivative (approximately cos(0.5) for sin)
+            @test itp(0.5; deriv=DerivOp(1)) ≈ cos(0.5) atol=0.01
         end
     end
 
@@ -553,15 +523,15 @@ end # Derivative Kernels
         itp = cubic_interp(x, y; bc=PeriodicBC())
 
         # Should work with periodic BC
-        @test itp(1.0; deriv=0) isa Float64
-        @test itp(1.0; deriv=1) isa Float64
-        @test itp(1.0; deriv=2) isa Float64
+        @test itp(1.0; deriv=DerivOp(0)) isa Float64
+        @test itp(1.0; deriv=DerivOp(1)) isa Float64
+        @test itp(1.0; deriv=DerivOp(2)) isa Float64
 
-        # deriv=1 gives first derivative (cos(1.0) for sin)
-        @test itp(1.0; deriv=1) ≈ cos(1.0) atol=0.01
+        # deriv=DerivOp(1) gives first derivative (cos(1.0) for sin)
+        @test itp(1.0; deriv=DerivOp(1)) ≈ cos(1.0) atol=0.01
 
         # Wrap around domain works
-        @test itp(7.0; deriv=1) ≈ cos(7.0 - 2π) atol=0.01
+        @test itp(7.0; deriv=DerivOp(1)) ≈ cos(7.0 - 2π) atol=0.01
     end
 
 end # Cubic Derivatives
@@ -579,18 +549,18 @@ end # Cubic Derivatives
             y = [0.0, 2.0, 4.0]  # slopes: 2.0 (first), 1.0 (second)
 
             # Values
-            @test linear_interp(x, y, 0.5; deriv=0) ≈ 1.0  # midpoint first segment
-            @test linear_interp(x, y, 2.0; deriv=0) ≈ 3.0  # midpoint second segment
+            @test linear_interp(x, y, 0.5; deriv=DerivOp(0)) ≈ 1.0  # midpoint first segment
+            @test linear_interp(x, y, 2.0; deriv=DerivOp(0)) ≈ 3.0  # midpoint second segment
 
             # First derivatives (constant within segment)
-            @test linear_interp(x, y, 0.5; deriv=1) ≈ 2.0  # first segment slope
-            @test linear_interp(x, y, 2.0; deriv=1) ≈ 1.0  # second segment slope
-            @test linear_interp(x, y, 0.0; deriv=1) ≈ 2.0  # at left boundary
-            @test linear_interp(x, y, 1.0; deriv=1) ≈ 1.0  # at knot (use right segment)
+            @test linear_interp(x, y, 0.5; deriv=DerivOp(1)) ≈ 2.0  # first segment slope
+            @test linear_interp(x, y, 2.0; deriv=DerivOp(1)) ≈ 1.0  # second segment slope
+            @test linear_interp(x, y, 0.0; deriv=DerivOp(1)) ≈ 2.0  # at left boundary
+            @test linear_interp(x, y, 1.0; deriv=DerivOp(1)) ≈ 1.0  # at knot (use right segment)
 
             # Second derivatives (always zero for linear)
-            @test linear_interp(x, y, 0.5; deriv=2) ≈ 0.0
-            @test linear_interp(x, y, 2.0; deriv=2) ≈ 0.0
+            @test linear_interp(x, y, 0.5; deriv=DerivOp(2)) ≈ 0.0
+            @test linear_interp(x, y, 2.0; deriv=DerivOp(2)) ≈ 0.0
         end
 
         @testset "Backward compatibility (no deriv arg)" begin
@@ -599,7 +569,7 @@ end # Cubic Derivatives
             xi = 0.5
 
             val_old = linear_interp(x, y, xi)
-            val_new = linear_interp(x, y, xi; deriv=0)
+            val_new = linear_interp(x, y, xi; deriv=DerivOp(0))
             @test val_old ≈ val_new atol=1e-14
         end
 
@@ -609,21 +579,21 @@ end # Cubic Derivatives
             x_query = [0.25, 0.75, 1.5, 2.5]
 
             # Values
-            vals = linear_interp(x, y, x_query; deriv=0)
+            vals = linear_interp(x, y, x_query; deriv=DerivOp(0))
             @test vals[1] ≈ 0.5   # 0 + 2.0*0.25
             @test vals[2] ≈ 1.5   # 0 + 2.0*0.75
             @test vals[3] ≈ 2.5   # 2 + 1.0*0.5
             @test vals[4] ≈ 3.5   # 2 + 1.0*1.5
 
             # First derivatives
-            derivs = linear_interp(x, y, x_query; deriv=1)
+            derivs = linear_interp(x, y, x_query; deriv=DerivOp(1))
             @test derivs[1] ≈ 2.0  # first segment
             @test derivs[2] ≈ 2.0  # first segment
             @test derivs[3] ≈ 1.0  # second segment
             @test derivs[4] ≈ 1.0  # second segment
 
             # Second derivatives (all zero)
-            derivs2 = linear_interp(x, y, x_query; deriv=2)
+            derivs2 = linear_interp(x, y, x_query; deriv=DerivOp(2))
             @test all(d ≈ 0.0 for d in derivs2)
         end
 
@@ -634,17 +604,17 @@ end # Cubic Derivatives
             output = zeros(2)
 
             # Value
-            linear_interp!(output, x, y, x_query; deriv=0)
+            linear_interp!(output, x, y, x_query; deriv=DerivOp(0))
             @test output[1] ≈ 1.0
             @test output[2] ≈ 4.0
 
             # First derivative
-            linear_interp!(output, x, y, x_query; deriv=1)
+            linear_interp!(output, x, y, x_query; deriv=DerivOp(1))
             @test output[1] ≈ 2.0
             @test output[2] ≈ 4.0
 
             # Second derivative
-            linear_interp!(output, x, y, x_query; deriv=2)
+            linear_interp!(output, x, y, x_query; deriv=DerivOp(2))
             @test all(o ≈ 0.0 for o in output)
         end
 
@@ -653,9 +623,9 @@ end # Cubic Derivatives
             y = [0.0, 1.0, 4.0]
             xi = 0.5
 
-            @test @inferred(linear_interp(x, y, xi; deriv=0)) isa Float64
-            @test @inferred(linear_interp(x, y, xi; deriv=1)) isa Float64
-            @test @inferred(linear_interp(x, y, xi; deriv=2)) isa Float64
+            @test @inferred(linear_interp(x, y, xi; deriv=DerivOp(0))) isa Float64
+            @test @inferred(linear_interp(x, y, xi; deriv=DerivOp(1))) isa Float64
+            @test @inferred(linear_interp(x, y, xi; deriv=DerivOp(2))) isa Float64
         end
     end
 
@@ -665,33 +635,33 @@ end # Cubic Derivatives
 
         @testset "Constant extrapolation" begin
             # Left boundary: returns y[1], derivatives = 0
-            @test linear_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=0) ≈ 0.0
-            @test linear_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=1) ≈ 0.0
-            @test linear_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=2) ≈ 0.0
+            @test linear_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=DerivOp(0)) ≈ 0.0
+            @test linear_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=DerivOp(1)) ≈ 0.0
+            @test linear_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=DerivOp(2)) ≈ 0.0
 
             # Right boundary: returns y[end], derivatives = 0
-            @test linear_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=0) ≈ 6.0
-            @test linear_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=1) ≈ 0.0
-            @test linear_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=2) ≈ 0.0
+            @test linear_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=DerivOp(0)) ≈ 6.0
+            @test linear_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=DerivOp(1)) ≈ 0.0
+            @test linear_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=DerivOp(2)) ≈ 0.0
         end
 
         @testset "Extension extrapolation" begin
             # Left: extends first segment (slope 2.0)
-            @test linear_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=0) ≈ -1.0
-            @test linear_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=1) ≈ 2.0
-            @test linear_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=2) ≈ 0.0
+            @test linear_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=DerivOp(0)) ≈ -1.0
+            @test linear_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=DerivOp(1)) ≈ 2.0
+            @test linear_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=DerivOp(2)) ≈ 0.0
 
             # Right: extends last segment (slope 4.0)
-            @test linear_interp(x, y, 2.5; extrap=ExtendExtrap(), deriv=0) ≈ 8.0
-            @test linear_interp(x, y, 2.5; extrap=ExtendExtrap(), deriv=1) ≈ 4.0
-            @test linear_interp(x, y, 2.5; extrap=ExtendExtrap(), deriv=2) ≈ 0.0
+            @test linear_interp(x, y, 2.5; extrap=ExtendExtrap(), deriv=DerivOp(0)) ≈ 8.0
+            @test linear_interp(x, y, 2.5; extrap=ExtendExtrap(), deriv=DerivOp(1)) ≈ 4.0
+            @test linear_interp(x, y, 2.5; extrap=ExtendExtrap(), deriv=DerivOp(2)) ≈ 0.0
         end
 
         @testset "Wrap extrapolation" begin
             # Domain [0, 2), wrap 2.5 -> 0.5 (first segment)
-            @test linear_interp(x, y, 2.5; extrap=WrapExtrap(), deriv=0) ≈ 1.0  # same as 0.5
-            @test linear_interp(x, y, 2.5; extrap=WrapExtrap(), deriv=1) ≈ 2.0  # first segment slope
-            @test linear_interp(x, y, 2.5; extrap=WrapExtrap(), deriv=2) ≈ 0.0
+            @test linear_interp(x, y, 2.5; extrap=WrapExtrap(), deriv=DerivOp(0)) ≈ 1.0  # same as 0.5
+            @test linear_interp(x, y, 2.5; extrap=WrapExtrap(), deriv=DerivOp(1)) ≈ 2.0  # first segment slope
+            @test linear_interp(x, y, 2.5; extrap=WrapExtrap(), deriv=DerivOp(2)) ≈ 0.0
         end
     end
 
@@ -700,47 +670,47 @@ end # Cubic Derivatives
         y = [0.0, 2.0, 4.0]  # slopes: 2.0, 1.0
         itp = linear_interp(x, y)
 
-        @testset "deriv=1 scalar" begin
-            @test itp(0.5; deriv=1) ≈ 2.0   # first segment
-            @test itp(2.0; deriv=1) ≈ 1.0   # second segment
-            @test itp(0.0; deriv=1) ≈ 2.0   # left boundary
+        @testset "deriv=DerivOp(1) scalar" begin
+            @test itp(0.5; deriv=DerivOp(1)) ≈ 2.0   # first segment
+            @test itp(2.0; deriv=DerivOp(1)) ≈ 1.0   # second segment
+            @test itp(0.0; deriv=DerivOp(1)) ≈ 2.0   # left boundary
         end
 
-        @testset "deriv=2 scalar" begin
+        @testset "deriv=DerivOp(2) scalar" begin
             # Always zero for linear
-            @test itp(0.5; deriv=2) ≈ 0.0
-            @test itp(2.0; deriv=2) ≈ 0.0
+            @test itp(0.5; deriv=DerivOp(2)) ≈ 0.0
+            @test itp(2.0; deriv=DerivOp(2)) ≈ 0.0
         end
 
-        @testset "deriv=1 vector" begin
+        @testset "deriv=DerivOp(1) vector" begin
             x_query = [0.25, 0.75, 1.5, 2.5]
-            derivs = itp(x_query; deriv=1)
+            derivs = itp(x_query; deriv=DerivOp(1))
             @test derivs[1] ≈ 2.0
             @test derivs[2] ≈ 2.0
             @test derivs[3] ≈ 1.0
             @test derivs[4] ≈ 1.0
         end
 
-        @testset "deriv=2 vector" begin
+        @testset "deriv=DerivOp(2) vector" begin
             x_query = [0.25, 0.75, 1.5, 2.5]
-            derivs2 = itp(x_query; deriv=2)
+            derivs2 = itp(x_query; deriv=DerivOp(2))
             @test all(d ≈ 0.0 for d in derivs2)
         end
 
-        @testset "in-place deriv=1" begin
+        @testset "in-place deriv=DerivOp(1)" begin
             x_query = [0.25, 0.75, 1.5, 2.5]
             output = zeros(4)
-            itp(output, x_query; deriv=1)
+            itp(output, x_query; deriv=DerivOp(1))
             @test output[1] ≈ 2.0
             @test output[2] ≈ 2.0
             @test output[3] ≈ 1.0
             @test output[4] ≈ 1.0
         end
 
-        @testset "in-place deriv=2" begin
+        @testset "in-place deriv=DerivOp(2)" begin
             x_query = [0.25, 0.75, 1.5, 2.5]
             output = zeros(4)
-            itp(output, x_query; deriv=2)
+            itp(output, x_query; deriv=DerivOp(2))
             @test all(d ≈ 0.0 for d in output)
         end
     end
@@ -751,9 +721,9 @@ end # Cubic Derivatives
         y = collect(x) .^ 2
         xi = 0.55
 
-        @test linear_interp(x, y, xi; deriv=0) ≈ linear_interp(collect(x), y, xi; deriv=0)
-        @test linear_interp(x, y, xi; deriv=1) ≈ linear_interp(collect(x), y, xi; deriv=1)
-        @test linear_interp(x, y, xi; deriv=2) ≈ 0.0
+        @test linear_interp(x, y, xi; deriv=DerivOp(0)) ≈ linear_interp(collect(x), y, xi; deriv=DerivOp(0))
+        @test linear_interp(x, y, xi; deriv=DerivOp(1)) ≈ linear_interp(collect(x), y, xi; deriv=DerivOp(1))
+        @test linear_interp(x, y, xi; deriv=DerivOp(2)) ≈ 0.0
     end
 
     # ========================================
@@ -767,57 +737,57 @@ end # Cubic Derivatives
         y = [0.0, 2.0, 6.0]
         litp = linear_interp(x, y)
 
-        @testset "deriv=0 matches default call" begin
-            @test litp(0.5) == litp(0.5; deriv=0)
-            @test litp(0.25) == litp(0.25; deriv=0)
-            @test litp(1.5) == litp(1.5; deriv=0)
+        @testset "deriv=DerivOp(0) matches default call" begin
+            @test litp(0.5) == litp(0.5; deriv=DerivOp(0))
+            @test litp(0.25) == litp(0.25; deriv=DerivOp(0))
+            @test litp(1.5) == litp(1.5; deriv=DerivOp(0))
         end
 
-        @testset "deriv=1 returns correct slopes" begin
+        @testset "deriv=DerivOp(1) returns correct slopes" begin
             # Interval [0,1]: slope = (2-0)/(1-0) = 2.0
-            @test litp(0.5; deriv=1) ≈ 2.0
-            @test litp(0.25; deriv=1) ≈ 2.0
+            @test litp(0.5; deriv=DerivOp(1)) ≈ 2.0
+            @test litp(0.25; deriv=DerivOp(1)) ≈ 2.0
             # Interval [1,2]: slope = (6-2)/(2-1) = 4.0
-            @test litp(1.5; deriv=1) ≈ 4.0
+            @test litp(1.5; deriv=DerivOp(1)) ≈ 4.0
         end
 
-        @testset "deriv=2 returns zero" begin
+        @testset "deriv=DerivOp(2) returns zero" begin
             # Linear interpolation has no curvature
-            @test litp(0.5; deriv=2) === 0.0
-            @test litp(1.0; deriv=2) === 0.0
-            @test litp(1.5; deriv=2) === 0.0
+            @test litp(0.5; deriv=DerivOp(2)) === 0.0
+            @test litp(1.0; deriv=DerivOp(2)) === 0.0
+            @test litp(1.5; deriv=DerivOp(2)) === 0.0
         end
 
-        @testset "deriv=1 returns correct slopes" begin
+        @testset "deriv=DerivOp(1) returns correct slopes" begin
             # Interval [0,1]: slope = (2-0)/(1-0) = 2.0
-            @test litp(0.5; deriv=1) ≈ 2.0
-            @test litp(0.0; deriv=1) ≈ 2.0
+            @test litp(0.5; deriv=DerivOp(1)) ≈ 2.0
+            @test litp(0.0; deriv=DerivOp(1)) ≈ 2.0
             # Interval [1,2]: slope = (6-2)/(2-1) = 4.0
-            @test litp(1.5; deriv=1) ≈ 4.0
-            @test litp(2.0; deriv=1) ≈ 4.0
+            @test litp(1.5; deriv=DerivOp(1)) ≈ 4.0
+            @test litp(2.0; deriv=DerivOp(1)) ≈ 4.0
         end
 
-        @testset "deriv=2 returns zero" begin
+        @testset "deriv=DerivOp(2) returns zero" begin
             # Linear interpolation has no curvature
-            @test litp(0.5; deriv=2) === 0.0
-            @test litp(1.0; deriv=2) === 0.0
-            @test litp(1.5; deriv=2) === 0.0
+            @test litp(0.5; deriv=DerivOp(2)) === 0.0
+            @test litp(1.0; deriv=DerivOp(2)) === 0.0
+            @test litp(1.5; deriv=DerivOp(2)) === 0.0
         end
 
         @testset "Real input works with deriv keyword" begin
             # Integer input should work (exact equality - same code path after conversion)
-            @test litp(1; deriv=0) == litp(1.0; deriv=0)
-            @test litp(1; deriv=1) == litp(1.0; deriv=1)
-            @test litp(1; deriv=2) == litp(1.0; deriv=2)
+            @test litp(1; deriv=DerivOp(0)) == litp(1.0; deriv=DerivOp(0))
+            @test litp(1; deriv=DerivOp(1)) == litp(1.0; deriv=DerivOp(1))
+            @test litp(1; deriv=DerivOp(2)) == litp(1.0; deriv=DerivOp(2))
 
             # Float32 input should work (exact equality - 0.5f0 converts exactly to 0.5)
-            @test litp(0.5f0; deriv=1) == litp(0.5; deriv=1)
+            @test litp(0.5f0; deriv=DerivOp(1)) == litp(0.5; deriv=DerivOp(1))
         end
 
         @testset "Type stability with deriv keyword" begin
-            @test @inferred(litp(0.5; deriv=0)) isa Float64
-            @test @inferred(litp(0.5; deriv=1)) isa Float64
-            @test @inferred(litp(0.5; deriv=2)) isa Float64
+            @test @inferred(litp(0.5; deriv=DerivOp(0))) isa Float64
+            @test @inferred(litp(0.5; deriv=DerivOp(1))) isa Float64
+            @test @inferred(litp(0.5; deriv=DerivOp(2))) isa Float64
         end
     end
 
@@ -833,9 +803,9 @@ end # Cubic Derivatives
             litp = linear_interp(x, y; extrap=mode)
             @testset "extrap=$mode" begin
                 # In-domain tests work for all modes
-                @test litp(0.5; deriv=0) ≈ 1.0
-                @test litp(0.5; deriv=1) ≈ 2.0
-                @test litp(0.5; deriv=2) === 0.0
+                @test litp(0.5; deriv=DerivOp(0)) ≈ 1.0
+                @test litp(0.5; deriv=DerivOp(1)) ≈ 2.0
+                @test litp(0.5; deriv=DerivOp(2)) === 0.0
             end
         end
     end
@@ -858,36 +828,36 @@ end # Linear Derivatives
 
         @testset "First derivative continuity at boundaries" begin
             # Derivative at left boundary should match derivative at right boundary
-            d_left = itp(ε; deriv=1)
-            d_right = itp(2π - ε; deriv=1)
+            d_left = itp(ε; deriv=DerivOp(1))
+            d_right = itp(2π - ε; deriv=DerivOp(1))
 
             # For sin(x), d/dx = cos(x), so cos(0) ≈ cos(2π) ≈ 1
             @test d_left ≈ d_right atol=1e-4
 
             # Also test using 4-arg API
-            d_left_4arg = cubic_interp(x, y, ε; bc=PeriodicBC(), deriv=1)
-            d_right_4arg = cubic_interp(x, y, 2π - ε; bc=PeriodicBC(), deriv=1)
+            d_left_4arg = cubic_interp(x, y, ε; bc=PeriodicBC(), deriv=DerivOp(1))
+            d_right_4arg = cubic_interp(x, y, 2π - ε; bc=PeriodicBC(), deriv=DerivOp(1))
             @test d_left_4arg ≈ d_right_4arg atol=1e-4
         end
 
         @testset "Second derivative continuity at boundaries" begin
-            d2_left = itp(ε; deriv=2)
-            d2_right = itp(2π - ε; deriv=2)
+            d2_left = itp(ε; deriv=DerivOp(2))
+            d2_right = itp(2π - ε; deriv=DerivOp(2))
 
             # For sin(x), d²/dx² = -sin(x), so -sin(0) ≈ -sin(2π) ≈ 0
             @test d2_left ≈ d2_right atol=1e-4
 
             # Also test using 4-arg API
-            d2_left_4arg = cubic_interp(x, y, ε; bc=PeriodicBC(), deriv=2)
-            d2_right_4arg = cubic_interp(x, y, 2π - ε; bc=PeriodicBC(), deriv=2)
+            d2_left_4arg = cubic_interp(x, y, ε; bc=PeriodicBC(), deriv=DerivOp(2))
+            d2_right_4arg = cubic_interp(x, y, 2π - ε; bc=PeriodicBC(), deriv=DerivOp(2))
             @test d2_left_4arg ≈ d2_right_4arg atol=1e-4
         end
 
         @testset "Derivative at wrap point" begin
             # Test querying exactly at 0 and 2π (they should be equivalent)
-            d_at_zero = itp(0.0; deriv=1)
+            d_at_zero = itp(0.0; deriv=DerivOp(1))
             # Query outside domain wraps to inside
-            d_at_2pi_plus = itp(2π + ε; deriv=1)
+            d_at_2pi_plus = itp(2π + ε; deriv=DerivOp(1))
 
             @test d_at_zero ≈ d_at_2pi_plus atol=1e-4
         end
@@ -900,13 +870,13 @@ end # Linear Derivatives
 
             # At x = π/2: cos(π/2) = 0, cos'(π/2) = -sin(π/2) = -1, cos''(π/2) = -cos(π/2) = 0
             @test itp_cos(π/2) ≈ 0.0 atol=1e-3
-            @test itp_cos(π/2; deriv=1) ≈ -1.0 atol=1e-2
-            @test itp_cos(π/2; deriv=2) ≈ 0.0 atol=1e-2
+            @test itp_cos(π/2; deriv=DerivOp(1)) ≈ -1.0 atol=1e-2
+            @test itp_cos(π/2; deriv=DerivOp(2)) ≈ 0.0 atol=1e-2
 
             # At x = π: cos(π) = -1, cos'(π) = 0, cos''(π) = 1
             @test itp_cos(π) ≈ -1.0 atol=1e-3
-            @test itp_cos(π; deriv=1) ≈ 0.0 atol=1e-2
-            @test itp_cos(π; deriv=2) ≈ 1.0 atol=1e-2
+            @test itp_cos(π; deriv=DerivOp(1)) ≈ 0.0 atol=1e-2
+            @test itp_cos(π; deriv=DerivOp(2)) ≈ 1.0 atol=1e-2
         end
     end
 
@@ -920,16 +890,16 @@ end # Linear Derivatives
             itp = cubic_interp(x, y; bc=bc)
 
             # At interior knot (x=0.5), derivative should be well-defined
-            @test itp(0.5; deriv=1) ≈ 1.0 atol=1e-10  # f'(0.5) = 2*0.5 = 1
+            @test itp(0.5; deriv=DerivOp(1)) ≈ 1.0 atol=1e-10  # f'(0.5) = 2*0.5 = 1
 
             # At boundaries
-            @test itp(0.0; deriv=1) ≈ 0.0 atol=1e-10  # f'(0) = 0
-            @test itp(1.0; deriv=1) ≈ 2.0 atol=1e-10  # f'(1) = 2
+            @test itp(0.0; deriv=DerivOp(1)) ≈ 0.0 atol=1e-10  # f'(0) = 0
+            @test itp(1.0; deriv=DerivOp(1)) ≈ 2.0 atol=1e-10  # f'(1) = 2
 
             # Second derivative should be constant (=2) for quadratic
-            @test itp(0.0; deriv=2) ≈ 2.0 atol=1e-10
-            @test itp(0.5; deriv=2) ≈ 2.0 atol=1e-10
-            @test itp(1.0; deriv=2) ≈ 2.0 atol=1e-10
+            @test itp(0.0; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
+            @test itp(0.5; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
+            @test itp(1.0; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
         end
 
         @testset "Linear at knot points" begin
@@ -938,12 +908,12 @@ end # Linear Derivatives
             itp = linear_interp(x, y)
 
             # At interior knots, derivative uses the right segment
-            @test itp(1.0; deriv=1) ≈ 3.0  # slope of [1,2] segment
-            @test itp(2.0; deriv=1) ≈ 5.0  # slope of [2,3] segment
+            @test itp(1.0; deriv=DerivOp(1)) ≈ 3.0  # slope of [1,2] segment
+            @test itp(2.0; deriv=DerivOp(1)) ≈ 5.0  # slope of [2,3] segment
 
             # At boundaries
-            @test itp(0.0; deriv=1) ≈ 1.0  # slope of first segment
-            @test itp(3.0; deriv=1) ≈ 5.0  # slope of last segment (at right boundary)
+            @test itp(0.0; deriv=DerivOp(1)) ≈ 1.0  # slope of first segment
+            @test itp(3.0; deriv=DerivOp(1)) ≈ 5.0  # slope of last segment (at right boundary)
         end
 
         @testset "Derivative consistency across knots" begin
@@ -955,9 +925,9 @@ end # Linear Derivatives
 
             ε = 1e-8
             # At x=1: f'(1) = 3*1² = 3
-            d_before = itp(1.0 - ε; deriv=1)
-            d_after = itp(1.0 + ε; deriv=1)
-            d_at = itp(1.0; deriv=1)
+            d_before = itp(1.0 - ε; deriv=DerivOp(1))
+            d_after = itp(1.0 + ε; deriv=DerivOp(1))
+            d_at = itp(1.0; deriv=DerivOp(1))
 
             # All should be approximately equal (C1 continuity)
             @test d_before ≈ d_at atol=1e-4
@@ -978,17 +948,17 @@ end # Derivative Boundary Behavior
         itp = cubic_interp(x, y)
 
         # Scalar queries
-        @test @inferred(itp(0.5; deriv=1)) isa Float64
-        @test @inferred(itp(0.5; deriv=2)) isa Float64
+        @test @inferred(itp(0.5; deriv=DerivOp(1))) isa Float64
+        @test @inferred(itp(0.5; deriv=DerivOp(2))) isa Float64
 
         # With different input type (converts)
-        @test @inferred(itp(0.5f0; deriv=1)) isa Float64
-        @test @inferred(itp(0.5f0; deriv=2)) isa Float64
+        @test @inferred(itp(0.5f0; deriv=DerivOp(1))) isa Float64
+        @test @inferred(itp(0.5f0; deriv=DerivOp(2))) isa Float64
 
         # Vector queries
         x_query = [0.25, 0.5, 0.75]
-        @test @inferred(itp(x_query; deriv=1)) isa Vector{Float64}
-        @test @inferred(itp(x_query; deriv=2)) isa Vector{Float64}
+        @test @inferred(itp(x_query; deriv=DerivOp(1))) isa Vector{Float64}
+        @test @inferred(itp(x_query; deriv=DerivOp(2))) isa Vector{Float64}
     end
 
     @testset "Linear derivative type inference" begin
@@ -997,17 +967,17 @@ end # Derivative Boundary Behavior
         itp = linear_interp(x, y)
 
         # Scalar queries
-        @test @inferred(itp(0.5; deriv=1)) isa Float64
-        @test @inferred(itp(0.5; deriv=2)) isa Float64
+        @test @inferred(itp(0.5; deriv=DerivOp(1))) isa Float64
+        @test @inferred(itp(0.5; deriv=DerivOp(2))) isa Float64
 
         # With different input type
-        @test @inferred(itp(0.5f0; deriv=1)) isa Float64
-        @test @inferred(itp(0.5f0; deriv=2)) isa Float64
+        @test @inferred(itp(0.5f0; deriv=DerivOp(1))) isa Float64
+        @test @inferred(itp(0.5f0; deriv=DerivOp(2))) isa Float64
 
         # Vector queries
         x_query = [0.25, 0.5, 1.5]
-        @test @inferred(itp(x_query; deriv=1)) isa Vector{Float64}
-        @test @inferred(itp(x_query; deriv=2)) isa Vector{Float64}
+        @test @inferred(itp(x_query; deriv=DerivOp(1))) isa Vector{Float64}
+        @test @inferred(itp(x_query; deriv=DerivOp(2))) isa Vector{Float64}
     end
 
     @testset "Float32 type preservation" begin
@@ -1016,13 +986,13 @@ end # Derivative Boundary Behavior
 
         # Cubic
         itp_cubic = cubic_interp(x, y)
-        @test @inferred(itp_cubic(0.5f0; deriv=1)) isa Float32
-        @test @inferred(itp_cubic(0.5f0; deriv=2)) isa Float32
+        @test @inferred(itp_cubic(0.5f0; deriv=DerivOp(1))) isa Float32
+        @test @inferred(itp_cubic(0.5f0; deriv=DerivOp(2))) isa Float32
 
         # Linear
         itp_linear = linear_interp(x, y)
-        @test @inferred(itp_linear(0.5f0; deriv=1)) isa Float32
-        @test @inferred(itp_linear(0.5f0; deriv=2)) isa Float32
+        @test @inferred(itp_linear(0.5f0; deriv=DerivOp(1))) isa Float32
+        @test @inferred(itp_linear(0.5f0; deriv=DerivOp(2))) isa Float32
     end
 
     @testset "Order parameter type inference" begin
@@ -1030,14 +1000,14 @@ end # Derivative Boundary Behavior
         y = x .^ 2
 
         # Cubic with deriv
-        @test @inferred(cubic_interp(x, y, 0.5; deriv=0)) isa Float64
-        @test @inferred(cubic_interp(x, y, 0.5; deriv=1)) isa Float64
-        @test @inferred(cubic_interp(x, y, 0.5; deriv=2)) isa Float64
+        @test @inferred(cubic_interp(x, y, 0.5; deriv=DerivOp(0))) isa Float64
+        @test @inferred(cubic_interp(x, y, 0.5; deriv=DerivOp(1))) isa Float64
+        @test @inferred(cubic_interp(x, y, 0.5; deriv=DerivOp(2))) isa Float64
 
         # Linear with deriv
-        @test @inferred(linear_interp(x, y, 0.5; deriv=0)) isa Float64
-        @test @inferred(linear_interp(x, y, 0.5; deriv=1)) isa Float64
-        @test @inferred(linear_interp(x, y, 0.5; deriv=2)) isa Float64
+        @test @inferred(linear_interp(x, y, 0.5; deriv=DerivOp(0))) isa Float64
+        @test @inferred(linear_interp(x, y, 0.5; deriv=DerivOp(1))) isa Float64
+        @test @inferred(linear_interp(x, y, 0.5; deriv=DerivOp(2))) isa Float64
     end
 
     @testset "Cache-based type inference" begin
@@ -1045,9 +1015,9 @@ end # Derivative Boundary Behavior
         cache = CubicSplineCache(x)
         y = x .^ 2
 
-        @test @inferred(cubic_interp(cache, y, 0.5; deriv=0)) isa Float64
-        @test @inferred(cubic_interp(cache, y, 0.5; deriv=1)) isa Float64
-        @test @inferred(cubic_interp(cache, y, 0.5; deriv=2)) isa Float64
+        @test @inferred(cubic_interp(cache, y, 0.5; deriv=DerivOp(0))) isa Float64
+        @test @inferred(cubic_interp(cache, y, 0.5; deriv=DerivOp(1))) isa Float64
+        @test @inferred(cubic_interp(cache, y, 0.5; deriv=DerivOp(2))) isa Float64
     end
 
 end # Derivative Type Stability
@@ -1064,16 +1034,16 @@ end # Derivative Type Stability
         itp = cubic_interp(x, y)
 
         # Should work without errors
-        @test itp(0.25; deriv=1) isa Float64
-        @test itp(0.25; deriv=2) isa Float64
+        @test itp(0.25; deriv=DerivOp(1)) isa Float64
+        @test itp(0.25; deriv=DerivOp(2)) isa Float64
 
         # Linear minimum: 2 points
         x_lin = [0.0, 1.0]
         y_lin = [0.0, 2.0]
         itp_lin = linear_interp(x_lin, y_lin)
 
-        @test itp_lin(0.5; deriv=1) ≈ 2.0  # slope
-        @test itp_lin(0.5; deriv=2) ≈ 0.0  # always zero
+        @test itp_lin(0.5; deriv=DerivOp(1)) ≈ 2.0  # slope
+        @test itp_lin(0.5; deriv=DerivOp(2)) ≈ 0.0  # always zero
     end
 
     @testset "Query at domain boundaries" begin
@@ -1082,12 +1052,12 @@ end # Derivative Type Stability
         itp = cubic_interp(x, y)
 
         # Exactly at left boundary
-        @test itp(0.0; deriv=1) isa Float64
-        @test itp(0.0; deriv=2) isa Float64
+        @test itp(0.0; deriv=DerivOp(1)) isa Float64
+        @test itp(0.0; deriv=DerivOp(2)) isa Float64
 
         # Exactly at right boundary
-        @test itp(1.0; deriv=1) isa Float64
-        @test itp(1.0; deriv=2) isa Float64
+        @test itp(1.0; deriv=DerivOp(1)) isa Float64
+        @test itp(1.0; deriv=DerivOp(2)) isa Float64
     end
 
     @testset "Constant function" begin
@@ -1095,12 +1065,12 @@ end # Derivative Type Stability
         y = ones(length(x)) * 5.0  # f(x) = 5
 
         itp_cubic = cubic_interp(x, y)
-        @test itp_cubic(0.5; deriv=1) ≈ 0.0 atol=1e-10
-        @test itp_cubic(0.5; deriv=2) ≈ 0.0 atol=1e-10
+        @test itp_cubic(0.5; deriv=DerivOp(1)) ≈ 0.0 atol=1e-10
+        @test itp_cubic(0.5; deriv=DerivOp(2)) ≈ 0.0 atol=1e-10
 
         itp_linear = linear_interp(x, y)
-        @test itp_linear(0.5; deriv=1) ≈ 0.0 atol=1e-10
-        @test itp_linear(0.5; deriv=2) ≈ 0.0 atol=1e-10
+        @test itp_linear(0.5; deriv=DerivOp(1)) ≈ 0.0 atol=1e-10
+        @test itp_linear(0.5; deriv=DerivOp(2)) ≈ 0.0 atol=1e-10
     end
 
     @testset "Linear function" begin
@@ -1109,13 +1079,13 @@ end # Derivative Type Stability
 
         # Cubic should reproduce linear exactly
         itp_cubic = cubic_interp(x, y)
-        @test itp_cubic(0.5; deriv=1) ≈ 2.0 atol=1e-10
-        @test itp_cubic(0.5; deriv=2) ≈ 0.0 atol=1e-10
+        @test itp_cubic(0.5; deriv=DerivOp(1)) ≈ 2.0 atol=1e-10
+        @test itp_cubic(0.5; deriv=DerivOp(2)) ≈ 0.0 atol=1e-10
 
         # Linear should be exact
         itp_linear = linear_interp(x, y)
-        @test itp_linear(0.5; deriv=1) ≈ 2.0 atol=1e-10
-        @test itp_linear(0.5; deriv=2) ≈ 0.0 atol=1e-10
+        @test itp_linear(0.5; deriv=DerivOp(1)) ≈ 2.0 atol=1e-10
+        @test itp_linear(0.5; deriv=DerivOp(2)) ≈ 0.0 atol=1e-10
     end
 
     @testset "Non-uniform grid" begin
@@ -1125,8 +1095,8 @@ end # Derivative Type Stability
         itp = cubic_interp(x, y)
 
         # Should still work reasonably
-        @test itp(0.5; deriv=1) ≈ 1.0 atol=0.1  # f'(0.5) = 2*0.5 = 1
-        @test itp(0.5; deriv=2) ≈ 2.0 atol=0.2  # f''(x) = 2
+        @test itp(0.5; deriv=DerivOp(1)) ≈ 1.0 atol=0.1  # f'(0.5) = 2*0.5 = 1
+        @test itp(0.5; deriv=DerivOp(2)) ≈ 2.0 atol=0.2  # f''(x) = 2
     end
 
     @testset "Large grid" begin
@@ -1135,8 +1105,8 @@ end # Derivative Type Stability
         itp = cubic_interp(x, y)
 
         # Should handle large grids efficiently
-        @test itp(5.0; deriv=1) ≈ cos(5.0) atol=1e-3
-        @test itp(5.0; deriv=2) ≈ -sin(5.0) atol=1e-3
+        @test itp(5.0; deriv=DerivOp(1)) ≈ cos(5.0) atol=1e-3
+        @test itp(5.0; deriv=DerivOp(2)) ≈ -sin(5.0) atol=1e-3
 
         # Note: Allocation tests are in the dedicated "Derivative Allocations" section
     end
@@ -1155,14 +1125,14 @@ end # Derivative Edge Cases
         xi = 0.5
 
         # Warm-up
-        cubic_interp(cache, y, xi; deriv=0)
-        cubic_interp(cache, y, xi; deriv=1)
-        cubic_interp(cache, y, xi; deriv=2)
+        cubic_interp(cache, y, xi; deriv=DerivOp(0))
+        cubic_interp(cache, y, xi; deriv=DerivOp(1))
+        cubic_interp(cache, y, xi; deriv=DerivOp(2))
 
         # Check allocations (scalar query should be zero-allocation)
-        alloc0 = @allocated cubic_interp(cache, y, xi; deriv=0)
-        alloc1 = @allocated cubic_interp(cache, y, xi; deriv=1)
-        alloc2 = @allocated cubic_interp(cache, y, xi; deriv=2)
+        alloc0 = @allocated cubic_interp(cache, y, xi; deriv=DerivOp(0))
+        alloc1 = @allocated cubic_interp(cache, y, xi; deriv=DerivOp(1))
+        alloc2 = @allocated cubic_interp(cache, y, xi; deriv=DerivOp(2))
 
         @test alloc0 <= DERIV_ALLOC_THRESHOLD
         @test alloc1 <= DERIV_ALLOC_THRESHOLD
@@ -1176,11 +1146,11 @@ end # Derivative Edge Cases
         itp = cubic_interp(x, y; bc=bc)
 
         # Warm-up
-        itp(0.5; deriv=1)
-        itp(0.5; deriv=2)
+        itp(0.5; deriv=DerivOp(1))
+        itp(0.5; deriv=DerivOp(2))
 
-        alloc1 = @allocated itp(0.5; deriv=1)
-        alloc2 = @allocated itp(0.5; deriv=2)
+        alloc1 = @allocated itp(0.5; deriv=DerivOp(1))
+        alloc2 = @allocated itp(0.5; deriv=DerivOp(2))
 
         @test alloc1 <= DERIV_ALLOC_THRESHOLD
         @test alloc2 <= DERIV_ALLOC_THRESHOLD
@@ -1193,14 +1163,14 @@ end # Derivative Edge Cases
 
         # Warmup
         for _ in 1:5
-            itp(0.5; deriv=0)
-            itp(0.5; deriv=1)
-            itp(0.5; deriv=2)
+            itp(0.5; deriv=DerivOp(0))
+            itp(0.5; deriv=DerivOp(1))
+            itp(0.5; deriv=DerivOp(2))
         end
 
-        @test @allocated(itp(0.5; deriv=0)) <= DERIV_ALLOC_THRESHOLD
-        @test @allocated(itp(0.5; deriv=1)) <= DERIV_ALLOC_THRESHOLD
-        @test @allocated(itp(0.5; deriv=2)) <= DERIV_ALLOC_THRESHOLD
+        @test @allocated(itp(0.5; deriv=DerivOp(0))) <= DERIV_ALLOC_THRESHOLD
+        @test @allocated(itp(0.5; deriv=DerivOp(1))) <= DERIV_ALLOC_THRESHOLD
+        @test @allocated(itp(0.5; deriv=DerivOp(2))) <= DERIV_ALLOC_THRESHOLD
     end
 
     @testset "Linear allocation with deriv" begin
@@ -1209,14 +1179,14 @@ end # Derivative Edge Cases
         xi = 0.5
 
         # Warm-up
-        linear_interp(x, y, xi; deriv=0)
-        linear_interp(x, y, xi; deriv=1)
-        linear_interp(x, y, xi; deriv=2)
+        linear_interp(x, y, xi; deriv=DerivOp(0))
+        linear_interp(x, y, xi; deriv=DerivOp(1))
+        linear_interp(x, y, xi; deriv=DerivOp(2))
 
         # Check allocations (scalar query should be zero-allocation)
-        alloc0 = @allocated linear_interp(x, y, xi; deriv=0)
-        alloc1 = @allocated linear_interp(x, y, xi; deriv=1)
-        alloc2 = @allocated linear_interp(x, y, xi; deriv=2)
+        alloc0 = @allocated linear_interp(x, y, xi; deriv=DerivOp(0))
+        alloc1 = @allocated linear_interp(x, y, xi; deriv=DerivOp(1))
+        alloc2 = @allocated linear_interp(x, y, xi; deriv=DerivOp(2))
 
         @test alloc0 <= DERIV_ALLOC_THRESHOLD
         @test alloc1 <= DERIV_ALLOC_THRESHOLD
@@ -1229,11 +1199,11 @@ end # Derivative Edge Cases
         itp = linear_interp(x, y)
 
         # Warm-up
-        itp(0.5; deriv=1)
-        itp(0.5; deriv=2)
+        itp(0.5; deriv=DerivOp(1))
+        itp(0.5; deriv=DerivOp(2))
 
-        alloc1 = @allocated itp(0.5; deriv=1)
-        alloc2 = @allocated itp(0.5; deriv=2)
+        alloc1 = @allocated itp(0.5; deriv=DerivOp(1))
+        alloc2 = @allocated itp(0.5; deriv=DerivOp(2))
 
         @test alloc1 <= DERIV_ALLOC_THRESHOLD
         @test alloc2 <= DERIV_ALLOC_THRESHOLD
@@ -1246,27 +1216,27 @@ end # Derivative Edge Cases
 
         # Warmup
         for _ in 1:5
-            litp(0.5; deriv=0)
-            litp(0.5; deriv=1)
-            litp(0.5; deriv=2)
+            litp(0.5; deriv=DerivOp(0))
+            litp(0.5; deriv=DerivOp(1))
+            litp(0.5; deriv=DerivOp(2))
         end
 
-        @test @allocated(litp(0.5; deriv=0)) <= DERIV_ALLOC_THRESHOLD
-        @test @allocated(litp(0.5; deriv=1)) <= DERIV_ALLOC_THRESHOLD
-        @test @allocated(litp(0.5; deriv=2)) <= DERIV_ALLOC_THRESHOLD
+        @test @allocated(litp(0.5; deriv=DerivOp(0))) <= DERIV_ALLOC_THRESHOLD
+        @test @allocated(litp(0.5; deriv=DerivOp(1))) <= DERIV_ALLOC_THRESHOLD
+        @test @allocated(litp(0.5; deriv=DerivOp(2))) <= DERIV_ALLOC_THRESHOLD
     end
 
     @testset "Function-wrapped allocation tests" begin
         # Function-wrapped tests for type stability
         function test_deriv1_alloc(itp, xi::T) where {T}
-            itp(xi; deriv=1)
+            itp(xi; deriv=DerivOp(1))
         end
 
         function test_deriv2_alloc(itp, xi::T) where {T}
-            itp(xi; deriv=2)
+            itp(xi; deriv=DerivOp(2))
         end
 
-        function test_deriv_alloc(cache, y, xi, deriv::Int)
+        function test_deriv_alloc(cache, y, xi, deriv::DerivOp)
             cubic_interp(cache, y, xi; deriv=deriv)
         end
 
@@ -1298,13 +1268,13 @@ end # Derivative Edge Cases
 
             # Multiple warmup
             for _ in 1:5
-                test_deriv_alloc(cache, y, 0.5, 0)
-                test_deriv_alloc(cache, y, 0.5, 1)
-                test_deriv_alloc(cache, y, 0.5, 2)
+                test_deriv_alloc(cache, y, 0.5, EvalValue())
+                test_deriv_alloc(cache, y, 0.5, DerivOp(1))
+                test_deriv_alloc(cache, y, 0.5, DerivOp(2))
             end
 
             # All deriv values should be zero-allocation
-            for deriv in 0:2
+            for deriv in [EvalValue(), DerivOp(1), DerivOp(2)]
                 for xi in [0.25, 0.5, 0.75]
                     allocs = @allocated test_deriv_alloc(cache, y, xi, deriv)
                     @test allocs <= DERIV_ALLOC_THRESHOLD
@@ -1320,16 +1290,16 @@ end # Derivative Edge Cases
 
         # Warmup
         for _ in 1:10
-            itp(0.5; deriv=1)
-            itp(0.5; deriv=2)
+            itp(0.5; deriv=DerivOp(1))
+            itp(0.5; deriv=DerivOp(2))
         end
 
         # 100 repeated calls should all be zero-allocation
         total_alloc1 = 0
         total_alloc2 = 0
         for _ in 1:100
-            total_alloc1 += @allocated itp(0.5; deriv=1)
-            total_alloc2 += @allocated itp(0.5; deriv=2)
+            total_alloc1 += @allocated itp(0.5; deriv=DerivOp(1))
+            total_alloc2 += @allocated itp(0.5; deriv=DerivOp(2))
         end
 
         @test total_alloc1 <= DERIV_ALLOC_THRESHOLD * 100
@@ -1343,12 +1313,12 @@ end # Derivative Edge Cases
 
         # Warmup
         for _ in 1:5
-            itp(0.5f0; deriv=1)
-            itp(0.5f0; deriv=2)
+            itp(0.5f0; deriv=DerivOp(1))
+            itp(0.5f0; deriv=DerivOp(2))
         end
 
-        alloc1 = @allocated itp(0.5f0; deriv=1)
-        alloc2 = @allocated itp(0.5f0; deriv=2)
+        alloc1 = @allocated itp(0.5f0; deriv=DerivOp(1))
+        alloc2 = @allocated itp(0.5f0; deriv=DerivOp(2))
 
         @test alloc1 <= DERIV_ALLOC_THRESHOLD
         @test alloc2 <= DERIV_ALLOC_THRESHOLD
@@ -1369,13 +1339,13 @@ end # Derivative Edge Cases
             itp = cubic_interp(x, y; bc=bc)
 
             # Warmup
-            itp(0.5; deriv=1)
-            itp(0.5; deriv=2)
-            itp(0.5; deriv=1)
-            itp(0.5; deriv=2)
+            itp(0.5; deriv=DerivOp(1))
+            itp(0.5; deriv=DerivOp(2))
+            itp(0.5; deriv=DerivOp(1))
+            itp(0.5; deriv=DerivOp(2))
 
-            alloc1 = @allocated itp(0.5; deriv=1)
-            alloc2 = @allocated itp(0.5; deriv=2)
+            alloc1 = @allocated itp(0.5; deriv=DerivOp(1))
+            alloc2 = @allocated itp(0.5; deriv=DerivOp(2))
 
             @test alloc1 <= DERIV_ALLOC_THRESHOLD
             @test alloc2 <= DERIV_ALLOC_THRESHOLD
@@ -1390,13 +1360,13 @@ end # Derivative Edge Cases
             itp = cubic_interp(x, y; extrap=extrap)
 
             # Warmup
-            itp(0.5; deriv=1)
-            itp(0.5; deriv=2)
-            itp(0.5; deriv=1)
-            itp(0.5; deriv=2)
+            itp(0.5; deriv=DerivOp(1))
+            itp(0.5; deriv=DerivOp(2))
+            itp(0.5; deriv=DerivOp(1))
+            itp(0.5; deriv=DerivOp(2))
 
-            alloc1 = @allocated itp(0.5; deriv=1)
-            alloc2 = @allocated itp(0.5; deriv=2)
+            alloc1 = @allocated itp(0.5; deriv=DerivOp(1))
+            alloc2 = @allocated itp(0.5; deriv=DerivOp(2))
 
             @test alloc1 <= DERIV_ALLOC_THRESHOLD
             @test alloc2 <= DERIV_ALLOC_THRESHOLD
@@ -1411,19 +1381,19 @@ end # Derivative Edge Cases
 
         # Warmup
         for _ in 1:5
-            itp(1.0; deriv=1)
-            itp(1.0; deriv=2)
+            itp(1.0; deriv=DerivOp(1))
+            itp(1.0; deriv=DerivOp(2))
         end
 
-        alloc1 = @allocated itp(1.0; deriv=1)
-        alloc2 = @allocated itp(1.0; deriv=2)
+        alloc1 = @allocated itp(1.0; deriv=DerivOp(1))
+        alloc2 = @allocated itp(1.0; deriv=DerivOp(2))
 
         @test alloc1 <= DERIV_ALLOC_THRESHOLD
         @test alloc2 <= DERIV_ALLOC_THRESHOLD
 
         # Query outside domain (wraps)
-        alloc1_wrap = @allocated itp(7.0; deriv=1)
-        alloc2_wrap = @allocated itp(7.0; deriv=2)
+        alloc1_wrap = @allocated itp(7.0; deriv=DerivOp(1))
+        alloc2_wrap = @allocated itp(7.0; deriv=DerivOp(2))
 
         @test alloc1_wrap <= DERIV_ALLOC_THRESHOLD
         @test alloc2_wrap <= DERIV_ALLOC_THRESHOLD
@@ -1453,7 +1423,7 @@ end # Derivative Allocations
 
         for (bc, bc_name) in bc_types
             for extrap in extrap_modes
-                for deriv in 0:2
+                for deriv in [EvalValue(), DerivOp(1), DerivOp(2)]
                     itp = cubic_interp(x, y; bc=bc, extrap=extrap)
 
                     # Warmup
@@ -1476,7 +1446,7 @@ end # Derivative Allocations
         y[end] = y[1]
         itp = cubic_interp(x, y; bc=PeriodicBC())
 
-        for deriv in 0:2
+        for deriv in [EvalValue(), DerivOp(1), DerivOp(2)]
             # Warmup
             for _ in 1:3
                 itp(1.0; deriv=deriv)
@@ -1498,7 +1468,7 @@ end # Derivative Allocations
         for extrap in extrap_modes
             itp = linear_interp(x, y; extrap=extrap)
 
-            for deriv in 0:2
+            for deriv in [EvalValue(), DerivOp(1), DerivOp(2)]
                 # Warmup
                 for _ in 1:3
                     itp(0.5; deriv=deriv)
@@ -1521,14 +1491,14 @@ end # Derivative Allocations
 
             # Warmup
             for _ in 1:3
-                itp(0.5; deriv=0)
-                itp(0.5; deriv=1)
-                itp(0.5; deriv=2)
+                itp(0.5; deriv=DerivOp(0))
+                itp(0.5; deriv=DerivOp(1))
+                itp(0.5; deriv=DerivOp(2))
             end
 
-            alloc0 = @allocated itp(0.5; deriv=0)
-            alloc1 = @allocated itp(0.5; deriv=1)
-            alloc2 = @allocated itp(0.5; deriv=2)
+            alloc0 = @allocated itp(0.5; deriv=DerivOp(0))
+            alloc1 = @allocated itp(0.5; deriv=DerivOp(1))
+            alloc2 = @allocated itp(0.5; deriv=DerivOp(2))
 
             @test alloc0 <= DERIV_ALLOC_THRESHOLD
             @test alloc1 <= DERIV_ALLOC_THRESHOLD
@@ -1549,7 +1519,7 @@ end # Derivative Allocations
         y = x .^ 2
 
         for cache in bc_types
-            for deriv in 0:2
+            for deriv in [EvalValue(), DerivOp(1), DerivOp(2)]
                 # Warmup
                 for _ in 1:3
                     cubic_interp(cache, y, 0.5; deriv=deriv)
@@ -1581,13 +1551,13 @@ end # Derivative Comprehensive Coverage
         @test d2 isa FastInterpolations.DerivativeView
 
         # Callable equivalence
-        @test d1(0.5) ≈ itp(0.5; deriv=1)
-        @test d2(0.5) ≈ itp(0.5; deriv=2)
+        @test d1(0.5) ≈ itp(0.5; deriv=DerivOp(1))
+        @test d2(0.5) ≈ itp(0.5; deriv=DerivOp(2))
 
         # Multiple points
-        @test d1(0.25) ≈ itp(0.25; deriv=1)
-        @test d1(1.5) ≈ itp(1.5; deriv=1)
-        @test d2(1.0) ≈ itp(1.0; deriv=2)
+        @test d1(0.25) ≈ itp(0.25; deriv=DerivOp(1))
+        @test d1(1.5) ≈ itp(1.5; deriv=DerivOp(1))
+        @test d2(1.0) ≈ itp(1.0; deriv=DerivOp(2))
 
         # Real input works (Integer → Float64)
         @test d1(1) ≈ d1(1.0)
@@ -1610,8 +1580,8 @@ end # Derivative Comprehensive Coverage
         @test d2 isa FastInterpolations.DerivativeView
 
         # Callable equivalence
-        @test d1(0.5) ≈ litp(0.5; deriv=1)
-        @test d2(0.5) === litp(0.5; deriv=2)
+        @test d1(0.5) ≈ litp(0.5; deriv=DerivOp(1))
+        @test d2(0.5) === litp(0.5; deriv=DerivOp(2))
 
         # Correct slope values
         @test d1(0.5) ≈ 2.0
@@ -1631,7 +1601,7 @@ end # Derivative Comprehensive Coverage
 
         # Broadcast works
         xs = [0.25, 0.5, 0.75, 1.0]
-        @test d1.(xs) ≈ [itp(xi; deriv=1) for xi in xs]
+        @test d1.(xs) ≈ [itp(xi; deriv=DerivOp(1)) for xi in xs]
 
         # Fused broadcast works
         @test (@. 2.0 * d1(xs)) ≈ 2.0 .* d1.(xs)
@@ -1650,14 +1620,14 @@ end # Derivative Comprehensive Coverage
         @test dxy isa FastInterpolations.DerivativeView
 
         q = (0.35, 0.6)
-        @test dx(q) ≈ itp(q; deriv=(1, 0))
-        @test dxy(q) ≈ itp(q; deriv=(1, 1))
+        @test dx(q) ≈ itp(q; deriv=DerivOp(1, 0))
+        @test dxy(q) ≈ itp(q; deriv=DerivOp(1, 1))
 
         pts = [(0.1, 0.2), (0.3, 0.4), (0.7, 0.9)]
-        @test dx.(pts) ≈ [itp(p; deriv=(1, 0)) for p in pts]
-        @test dxy.(pts) ≈ [itp(p; deriv=(1, 1)) for p in pts]
+        @test dx.(pts) ≈ [itp(p; deriv=DerivOp(1, 0)) for p in pts]
+        @test dxy.(pts) ≈ [itp(p; deriv=DerivOp(1, 1)) for p in pts]
 
-        @test_throws ArgumentError dx(q; deriv=(0, 0))
+        @test_throws ArgumentError dx(q; deriv=DerivOp(0, 0))
     end
 
     @testset "DerivativeView wrapper - ND int order" begin
@@ -1673,10 +1643,8 @@ end # Derivative Comprehensive Coverage
         @test d2 isa FastInterpolations.DerivativeView
 
         q = (0.25, 0.6)
-        @test d1(q) ≈ itp(q; deriv=1)
-        @test d1(q) ≈ itp(q; deriv=(1, 1))
-        @test d2(q) ≈ itp(q; deriv=2)
-        @test d2(q) ≈ itp(q; deriv=(2, 2))
+        @test d1(q) ≈ itp(q; deriv=DerivOp(1, 1))
+        @test d2(q) ≈ itp(q; deriv=DerivOp(2, 2))
     end
 
     @testset "DerivativeView wrapper - ND deriv1/2/3 errors" begin
@@ -1701,8 +1669,8 @@ end # Derivative Comprehensive Coverage
         @test d1 isa FastInterpolations.DerivativeView
         @test d2 isa FastInterpolations.DerivativeView
 
-        @test d1(0.5) ≈ itp(0.5; deriv=1)
-        @test d2(0.5) ≈ itp(0.5; deriv=2)
+        @test d1(0.5) ≈ itp(0.5; deriv=DerivOp(1))
+        @test d2(0.5) ≈ itp(0.5; deriv=DerivOp(2))
     end
 
     @testset "DerivativeView allocation" begin
@@ -1737,8 +1705,8 @@ end # Derivative Comprehensive Coverage
                 @test d2(0.5) isa Float64
 
                 # Should match deriv keyword
-                @test d1(0.5) == itp(0.5; deriv=1)
-                @test d2(0.5) == itp(0.5; deriv=2)
+                @test d1(0.5) == itp(0.5; deriv=DerivOp(1))
+                @test d2(0.5) == itp(0.5; deriv=DerivOp(2))
             end
         end
 
@@ -1756,8 +1724,8 @@ end # Derivative Comprehensive Coverage
             @test d2(π/4) isa Float64
 
             # Should match deriv keyword
-            @test d1(π/4) == itp(π/4; deriv=1)
-            @test d2(π/4) == itp(π/4; deriv=2)
+            @test d1(π/4) == itp(π/4; deriv=DerivOp(1))
+            @test d2(π/4) == itp(π/4; deriv=DerivOp(2))
         end
     end
 end # DerivativeView Wrapper
@@ -1771,20 +1739,6 @@ end # DerivativeView Wrapper
         @test isdefined(FastInterpolations, :EvalDeriv3)
         @test FastInterpolations.EvalDeriv3 <: FastInterpolations.AbstractEvalOp
         @test FastInterpolations.EvalDeriv3() isa FastInterpolations.AbstractEvalOp
-    end
-
-    @testset "@_dispatch_deriv handles deriv=3" begin
-        result = FastInterpolations.@_dispatch_deriv 3 => op begin
-            op
-        end
-        @test result isa FastInterpolations.EvalDeriv3
-
-        # Invalid deriv values should throw
-        @test_throws ArgumentError begin
-            FastInterpolations.@_dispatch_deriv 4 => op begin
-                op
-            end
-        end
     end
 
     @testset "Cubic kernel - S'''(x) = (zR - zL) / h" begin
@@ -1828,7 +1782,7 @@ end # DerivativeView Wrapper
         ) === zero(Float64)
     end
 
-    @testset "Anchor weight computation for deriv=3" begin
+    @testset "Anchor weight computation for deriv=DerivOp(3)" begin
         FI = FastInterpolations
         h, inv_h = 0.1, 10.0
         dL, dR = 0.03, 0.07
@@ -1848,7 +1802,7 @@ end # DerivativeView Wrapper
         itp = cubic_interp(x, y; bc=bc)
 
         for xq in [0.1, 0.25, 0.5, 0.75, 0.9]
-            @test itp(xq; deriv=3) ≈ 6.0 atol=1e-8
+            @test itp(xq; deriv=DerivOp(3)) ≈ 6.0 atol=1e-8
         end
     end
 
@@ -1860,11 +1814,11 @@ end # DerivativeView Wrapper
         xq = 0.5
         h = 1e-5
 
-        d2_plus = itp(xq + h; deriv=2)
-        d2_minus = itp(xq - h; deriv=2)
+        d2_plus = itp(xq + h; deriv=DerivOp(2))
+        d2_minus = itp(xq - h; deriv=DerivOp(2))
         fd_approx = (d2_plus - d2_minus) / (2h)
 
-        analytical = itp(xq; deriv=3)
+        analytical = itp(xq; deriv=DerivOp(3))
 
         @test analytical ≈ fd_approx rtol=1e-4
     end
@@ -1880,9 +1834,9 @@ end # DerivativeView Wrapper
             mid2 = x[i] + 0.50 * (x[i+1] - x[i])
             mid3 = x[i] + 0.75 * (x[i+1] - x[i])
 
-            val1 = itp(mid1; deriv=3)
-            val2 = itp(mid2; deriv=3)
-            val3 = itp(mid3; deriv=3)
+            val1 = itp(mid1; deriv=DerivOp(3))
+            val2 = itp(mid2; deriv=DerivOp(3))
+            val3 = itp(mid3; deriv=DerivOp(3))
 
             @test val1 ≈ val2 ≈ val3
         end
@@ -1897,86 +1851,86 @@ end # DerivativeView Wrapper
 
         @test d3 isa FastInterpolations.DerivativeView{3}
         @test d3.parent === itp
-        @test d3(0.5) == itp(0.5; deriv=3)
+        @test d3(0.5) == itp(0.5; deriv=DerivOp(3))
     end
 
-    @testset "Lower-order interpolants return zero for deriv=3" begin
+    @testset "Lower-order interpolants return zero for deriv=DerivOp(3)" begin
         x = collect(range(0.0, 1.0, 11))
 
         # Linear
         litp = linear_interp(x, 2.0 .* x)
-        @test litp(0.5; deriv=3) === 0.0
+        @test litp(0.5; deriv=DerivOp(3)) === 0.0
         @test deriv3(litp)(0.5) === 0.0
 
         # Quadratic
         qitp = quadratic_interp(x, x.^2)
-        @test qitp(0.5; deriv=3) === 0.0
+        @test qitp(0.5; deriv=DerivOp(3)) === 0.0
         @test deriv3(qitp)(0.5) === 0.0
 
         # Constant
         citp = constant_interp(x, fill(5.0, length(x)))
-        @test citp(0.5; deriv=3) === 0.0
+        @test citp(0.5; deriv=DerivOp(3)) === 0.0
         @test deriv3(citp)(0.5) === 0.0
     end
 
-    @testset "Extrapolation modes with deriv=3" begin
+    @testset "Extrapolation modes with deriv=DerivOp(3)" begin
         x = collect(range(0.0, 1.0, 11))
         y = x.^3
 
         # Constant extrapolation
         itp_const = cubic_interp(x, y; extrap=ConstExtrap())
-        @test itp_const(-0.5; deriv=3) === 0.0
-        @test itp_const(1.5; deriv=3) === 0.0
+        @test itp_const(-0.5; deriv=DerivOp(3)) === 0.0
+        @test itp_const(1.5; deriv=DerivOp(3)) === 0.0
 
         # Extension extrapolation
         itp_ext = cubic_interp(x, y; extrap=ExtendExtrap())
-        val_below = itp_ext(-0.5; deriv=3)
-        val_first = itp_ext(0.05; deriv=3)
+        val_below = itp_ext(-0.5; deriv=DerivOp(3))
+        val_first = itp_ext(0.05; deriv=DerivOp(3))
         @test val_below ≈ val_first
 
         # None throws
         itp_none = cubic_interp(x, y; extrap=NoExtrap())
-        @test_throws DomainError itp_none(-0.5; deriv=3)
+        @test_throws DomainError itp_none(-0.5; deriv=DerivOp(3))
     end
 
-    @testset "Linear/Constant oneshot deriv=3 with constant extrapolation" begin
+    @testset "Linear/Constant oneshot deriv=DerivOp(3) with constant extrapolation" begin
         # This tests the _linear_eval_constant_extrap and _constant_eval_extrap
         # dispatch for EvalDeriv3, which returns zero outside domain
         x = collect(range(0.0, 1.0, 11))
         y_linear = 2.0 .* x
         y_const = fill(5.0, length(x))
 
-        # Linear interpolation: deriv=3 with ConstExtrap() extrap outside domain
-        @test linear_interp(x, y_linear, -0.5; extrap=ConstExtrap(), deriv=3) === 0.0
-        @test linear_interp(x, y_linear, 1.5; extrap=ConstExtrap(), deriv=3) === 0.0
+        # Linear interpolation: deriv=DerivOp(3) with ConstExtrap() extrap outside domain
+        @test linear_interp(x, y_linear, -0.5; extrap=ConstExtrap(), deriv=DerivOp(3)) === 0.0
+        @test linear_interp(x, y_linear, 1.5; extrap=ConstExtrap(), deriv=DerivOp(3)) === 0.0
 
-        # Constant interpolation: deriv=3 with ConstExtrap() extrap outside domain
-        @test constant_interp(x, y_const, -0.5; extrap=ConstExtrap(), deriv=3) === 0.0
-        @test constant_interp(x, y_const, 1.5; extrap=ConstExtrap(), deriv=3) === 0.0
+        # Constant interpolation: deriv=DerivOp(3) with ConstExtrap() extrap outside domain
+        @test constant_interp(x, y_const, -0.5; extrap=ConstExtrap(), deriv=DerivOp(3)) === 0.0
+        @test constant_interp(x, y_const, 1.5; extrap=ConstExtrap(), deriv=DerivOp(3)) === 0.0
     end
 
-    @testset "Type stability for deriv=3" begin
+    @testset "Type stability for deriv=DerivOp(3)" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
         itp = cubic_interp(x, y)
 
-        @test @inferred(itp(0.5; deriv=3)) isa Float64
+        @test @inferred(itp(0.5; deriv=DerivOp(3))) isa Float64
         @test @inferred(deriv3(itp)) isa FastInterpolations.DerivativeView{3}
         @test @inferred(deriv3(itp)(0.5)) isa Float64
     end
 
-    @testset "Zero-allocation for deriv=3" begin
+    @testset "Zero-allocation for deriv=DerivOp(3)" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
         itp = cubic_interp(x, y)
 
         # Warmup
-        itp(0.5; deriv=3)
+        itp(0.5; deriv=DerivOp(3))
         d3 = deriv3(itp)
         d3(0.5)
 
         # Measure
-        alloc_direct = @allocated itp(0.5; deriv=3)
+        alloc_direct = @allocated itp(0.5; deriv=DerivOp(3))
         alloc_view = @allocated d3(0.5)
 
         @test alloc_direct <= DERIV_ALLOC_THRESHOLD
@@ -2017,9 +1971,9 @@ end # Deriv=3 Extensions
         @test vals3 ≈ [d3(xq) for xq in x_query]
 
         # Should match itp(x_query; deriv=N)
-        @test vals1 ≈ itp(x_query; deriv=1)
-        @test vals2 ≈ itp(x_query; deriv=2)
-        @test vals3 ≈ itp(x_query; deriv=3)
+        @test vals1 ≈ itp(x_query; deriv=DerivOp(1))
+        @test vals2 ≈ itp(x_query; deriv=DerivOp(2))
+        @test vals3 ≈ itp(x_query; deriv=DerivOp(3))
     end
 
     @testset "DerivativeView accepts vector queries - Linear" begin
@@ -2037,9 +1991,9 @@ end # Deriv=3 Extensions
         vals2 = d2(x_query)
         vals3 = d3(x_query)
 
-        @test vals1 ≈ itp(x_query; deriv=1)
-        @test vals2 ≈ itp(x_query; deriv=2)
-        @test vals3 ≈ itp(x_query; deriv=3)
+        @test vals1 ≈ itp(x_query; deriv=DerivOp(1))
+        @test vals2 ≈ itp(x_query; deriv=DerivOp(2))
+        @test vals3 ≈ itp(x_query; deriv=DerivOp(3))
     end
 
     @testset "DerivativeView vector query type stability" begin
@@ -2066,11 +2020,11 @@ end # DerivativeView Vector Queries
         y2 = cos.(2π .* x)
         sitp = cubic_interp(x, [y1, y2])
 
-        # Scalar queries with deriv=0,1,2,3
-        vals0 = sitp(0.5; deriv=0)
-        vals1 = sitp(0.5; deriv=1)
-        vals2 = sitp(0.5; deriv=2)
-        vals3 = sitp(0.5; deriv=3)
+        # Scalar queries with deriv=DerivOp(0),1,2,3
+        vals0 = sitp(0.5; deriv=DerivOp(0))
+        vals1 = sitp(0.5; deriv=DerivOp(1))
+        vals2 = sitp(0.5; deriv=DerivOp(2))
+        vals3 = sitp(0.5; deriv=DerivOp(3))
 
         @test length(vals0) == 2
         @test length(vals1) == 2
@@ -2091,11 +2045,11 @@ end # DerivativeView Vector Queries
 
         x_query = [0.1, 0.5, 0.9]
 
-        # Vector queries with deriv=0,1,2,3
-        results0 = sitp(x_query; deriv=0)
-        results1 = sitp(x_query; deriv=1)
-        results2 = sitp(x_query; deriv=2)
-        results3 = sitp(x_query; deriv=3)
+        # Vector queries with deriv=DerivOp(0),1,2,3
+        results0 = sitp(x_query; deriv=DerivOp(0))
+        results1 = sitp(x_query; deriv=DerivOp(1))
+        results2 = sitp(x_query; deriv=DerivOp(2))
+        results3 = sitp(x_query; deriv=DerivOp(3))
 
         @test length(results0) == 2
         @test length(results1) == 2
@@ -2116,15 +2070,15 @@ end # DerivativeView Vector Queries
 
         # Scalar in-place
         out_scalar = similar([0.0, 0.0])
-        sitp(out_scalar, 0.5; deriv=1)
-        @test out_scalar ≈ sitp(0.5; deriv=1)
+        sitp(out_scalar, 0.5; deriv=DerivOp(1))
+        @test out_scalar ≈ sitp(0.5; deriv=DerivOp(1))
 
         # Vector in-place
         x_query = [0.1, 0.5, 0.9]
         outputs = [similar(x_query) for _ in 1:2]
-        sitp(outputs, x_query; deriv=1)
+        sitp(outputs, x_query; deriv=DerivOp(1))
 
-        results = sitp(x_query; deriv=1)
+        results = sitp(x_query; deriv=DerivOp(1))
         @test outputs[1] ≈ results[1]
         @test outputs[2] ≈ results[2]
     end
@@ -2135,19 +2089,19 @@ end # DerivativeView Vector Queries
         y2 = 3.0 .* x
         sitp = linear_interp(x, [y1, y2])
 
-        # deriv=0: values
-        vals0 = sitp(0.5; deriv=0)
+        # deriv=DerivOp(0): values
+        vals0 = sitp(0.5; deriv=DerivOp(0))
         @test vals0[1] ≈ 1.0
         @test vals0[2] ≈ 1.5
 
-        # deriv=1: slopes
-        vals1 = sitp(0.5; deriv=1)
+        # deriv=DerivOp(1): slopes
+        vals1 = sitp(0.5; deriv=DerivOp(1))
         @test vals1[1] ≈ 2.0
         @test vals1[2] ≈ 3.0
 
-        # deriv=2,3: zero
-        vals2 = sitp(0.5; deriv=2)
-        vals3 = sitp(0.5; deriv=3)
+        # deriv=DerivOp(2),3: zero
+        vals2 = sitp(0.5; deriv=DerivOp(2))
+        vals3 = sitp(0.5; deriv=DerivOp(3))
         @test all(v === 0.0 for v in vals2)
         @test all(v === 0.0 for v in vals3)
     end
@@ -2159,8 +2113,8 @@ end # DerivativeView Vector Queries
         sitp = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
 
         # Outside domain with deriv=3
-        vals_below = sitp(-0.5; deriv=3)
-        vals_above = sitp(1.5; deriv=3)
+        vals_below = sitp(-0.5; deriv=DerivOp(3))
+        vals_above = sitp(1.5; deriv=DerivOp(3))
 
         @test vals_below[1] === 0.0
         @test vals_below[2] === 0.0
@@ -2188,9 +2142,9 @@ end # DerivativeView Vector Queries
         vals2 = d2(0.5)
         vals3 = d3(0.5)
 
-        @test vals1 ≈ sitp(0.5; deriv=1)
-        @test vals2 ≈ sitp(0.5; deriv=2)
-        @test vals3 ≈ sitp(0.5; deriv=3)
+        @test vals1 ≈ sitp(0.5; deriv=DerivOp(1))
+        @test vals2 ≈ sitp(0.5; deriv=DerivOp(2))
+        @test vals3 ≈ sitp(0.5; deriv=DerivOp(3))
     end
 
     @testset "SeriesInterpolant DerivativeView vector queries" begin
@@ -2209,8 +2163,8 @@ end # DerivativeView Vector Queries
         @test length(results[1]) == 3
         @test length(results[2]) == 3
 
-        # Should match itp(x_query; deriv=1)
-        expected = sitp(x_query; deriv=1)
+        # Should match itp(x_query; deriv=DerivOp(1))
+        expected = sitp(x_query; deriv=DerivOp(1))
         @test results[1] ≈ expected[1]
         @test results[2] ≈ expected[2]
     end
@@ -2244,11 +2198,11 @@ end # DerivativeView Vector Queries
         # In-place scalar query: d(out, xq)
         out1 = zeros(2)
         d1(out1, 0.5)
-        @test out1 ≈ sitp(0.5; deriv=1)
+        @test out1 ≈ sitp(0.5; deriv=DerivOp(1))
 
         out2 = zeros(2)
         d2(out2, 0.5)
-        @test out2 ≈ sitp(0.5; deriv=2)
+        @test out2 ≈ sitp(0.5; deriv=DerivOp(2))
     end
 
     @testset "SeriesInterpolant DerivativeView in-place vector query" begin
@@ -2265,7 +2219,7 @@ end # DerivativeView Vector Queries
         out = [zeros(3), zeros(3)]  # Vector of vectors
         d1(out, x_query)
 
-        expected = sitp(x_query; deriv=1)
+        expected = sitp(x_query; deriv=DerivOp(1))
         @test out[1] ≈ expected[1]
         @test out[2] ≈ expected[2]
     end
@@ -2276,8 +2230,8 @@ end # DerivativeView Vector Queries
         y2 = cos.(2π .* x)
         sitp = cubic_interp(x, [y1, y2])
 
-        @test @inferred(sitp(0.5; deriv=1)) isa Vector{Float64}
-        @test @inferred(sitp([0.1, 0.5]; deriv=1)) isa Vector{Vector{Float64}}
+        @test @inferred(sitp(0.5; deriv=DerivOp(1))) isa Vector{Float64}
+        @test @inferred(sitp([0.1, 0.5]; deriv=DerivOp(1))) isa Vector{Vector{Float64}}
     end
 
     @testset "SeriesInterpolant zero-allocation for scalar queries" begin
@@ -2287,12 +2241,12 @@ end # DerivativeView Vector Queries
         sitp = cubic_interp(x, [y1, y2])
 
         # Warmup
-        out = sitp(0.5; deriv=1)
+        out = sitp(0.5; deriv=DerivOp(1))
         output = similar(out)
-        sitp(output, 0.5; deriv=1)
+        sitp(output, 0.5; deriv=DerivOp(1))
 
         # In-place should be zero-allocation
-        alloc = @allocated sitp(output, 0.5; deriv=1)
+        alloc = @allocated sitp(output, 0.5; deriv=DerivOp(1))
         @test alloc <= DERIV_ALLOC_THRESHOLD
     end
 
@@ -2314,13 +2268,13 @@ end # SeriesInterpolant Derivatives
         d2 = deriv2(itp)
 
         # Default uses parent's search_policy
-        @test d1(0.5) ≈ itp(0.5; deriv=1)
-        @test d2(0.5) ≈ itp(0.5; deriv=2)
+        @test d1(0.5) ≈ itp(0.5; deriv=DerivOp(1))
+        @test d2(0.5) ≈ itp(0.5; deriv=DerivOp(2))
 
         # Explicit search override
-        @test d1(0.5; search=Linear()) ≈ itp(0.5; deriv=1, search=Linear())
-        @test d1(0.5; search=LinearBinary()) ≈ itp(0.5; deriv=1, search=LinearBinary())
-        @test d2(0.5; search=Linear()) ≈ itp(0.5; deriv=2, search=Linear())
+        @test d1(0.5; search=Linear()) ≈ itp(0.5; deriv=DerivOp(1), search=Linear())
+        @test d1(0.5; search=LinearBinary()) ≈ itp(0.5; deriv=DerivOp(1), search=LinearBinary())
+        @test d2(0.5; search=Linear()) ≈ itp(0.5; deriv=DerivOp(2), search=Linear())
     end
 
     @testset "Cubic - hint keyword passthrough" begin
@@ -2329,7 +2283,7 @@ end # SeriesInterpolant Derivatives
 
         hint = Ref(1)
         result = d1(0.5; hint=hint)
-        @test result ≈ itp(0.5; deriv=1)
+        @test result ≈ itp(0.5; deriv=DerivOp(1))
 
         # Hint should be updated after call
         @test hint[] >= 1
@@ -2341,11 +2295,11 @@ end # SeriesInterpolant Derivatives
         itp = linear_interp(x, y)
         d1 = deriv1(itp)
 
-        @test d1(0.5; search=Binary()) ≈ itp(0.5; deriv=1, search=Binary())
-        @test d1(1.5; search=Linear()) ≈ itp(1.5; deriv=1, search=Linear())
+        @test d1(0.5; search=Binary()) ≈ itp(0.5; deriv=DerivOp(1), search=Binary())
+        @test d1(1.5; search=Linear()) ≈ itp(1.5; deriv=DerivOp(1), search=Linear())
 
         hint = Ref(1)
-        @test d1(2.5; hint=hint) ≈ itp(2.5; deriv=1)
+        @test d1(2.5; hint=hint) ≈ itp(2.5; deriv=DerivOp(1))
     end
 
     @testset "Vector query with search and hint" begin
@@ -2354,7 +2308,7 @@ end # SeriesInterpolant Derivatives
 
         hint = Ref(1)
         result = d1(xq; search=LinearBinary(), hint=hint)
-        expected = itp(xq; deriv=1, search=LinearBinary())
+        expected = itp(xq; deriv=DerivOp(1), search=LinearBinary())
         @test result ≈ expected
     end
 
@@ -2362,8 +2316,8 @@ end # SeriesInterpolant Derivatives
         itp = cubic_interp(x_cubic, y_cubic)
         d1 = deriv1(itp)
 
-        @test_throws ArgumentError d1(0.5; deriv=2)
-        @test_throws ArgumentError d1(xq; deriv=3)
+        @test_throws ArgumentError d1(0.5; deriv=DerivOp(2))
+        @test_throws ArgumentError d1(xq; deriv=DerivOp(3))
     end
 end # DerivativeView search/hint keywords
 
@@ -2384,8 +2338,8 @@ end # DerivativeView search/hint keywords
         d1(output1, xq)
         d2(output2, xq)
 
-        @test output1 ≈ itp(xq; deriv=1)
-        @test output2 ≈ itp(xq; deriv=2)
+        @test output1 ≈ itp(xq; deriv=DerivOp(1))
+        @test output2 ≈ itp(xq; deriv=DerivOp(2))
     end
 
     @testset "LinearInterpolant in-place vector" begin
@@ -2398,7 +2352,7 @@ end # DerivativeView search/hint keywords
         output = zeros(3)
         d1(output, xq_lin)
 
-        @test output ≈ itp(xq_lin; deriv=1)
+        @test output ≈ itp(xq_lin; deriv=DerivOp(1))
     end
 
     @testset "QuadraticInterpolant in-place vector" begin
@@ -2408,7 +2362,7 @@ end # DerivativeView search/hint keywords
         output = zeros(3)
         d1(output, xq)
 
-        @test output ≈ itp(xq; deriv=1)
+        @test output ≈ itp(xq; deriv=DerivOp(1))
     end
 
     @testset "In-place vector with search and hint" begin
@@ -2419,7 +2373,7 @@ end # DerivativeView search/hint keywords
         hint = Ref(1)
 
         d1(output, xq; search=LinearBinary(), hint=hint)
-        @test output ≈ itp(xq; deriv=1, search=LinearBinary())
+        @test output ≈ itp(xq; deriv=DerivOp(1), search=LinearBinary())
     end
 
     @testset "In-place vector zero allocation" begin
@@ -2449,12 +2403,12 @@ end # DerivativeView single-series in-place vector
         d1 = deriv1(sitp)
 
         # Scalar with search and hint
-        @test d1(0.5; search=Binary()) ≈ sitp(0.5; deriv=1, search=Binary())
-        @test d1(0.5; search=Linear()) ≈ sitp(0.5; deriv=1, search=Linear())
+        @test d1(0.5; search=Binary()) ≈ sitp(0.5; deriv=DerivOp(1), search=Binary())
+        @test d1(0.5; search=Linear()) ≈ sitp(0.5; deriv=DerivOp(1), search=Linear())
 
         hint = Ref(1)
         result = d1(0.5; hint=hint)
-        @test result ≈ sitp(0.5; deriv=1)
+        @test result ≈ sitp(0.5; deriv=DerivOp(1))
     end
 
     @testset "SeriesInterpolant in-place scalar with keywords" begin
@@ -2462,7 +2416,7 @@ end # DerivativeView single-series in-place vector
 
         out = zeros(2)
         d1(out, 0.5; search=Linear(), hint=Ref(1))
-        @test out ≈ sitp(0.5; deriv=1)
+        @test out ≈ sitp(0.5; deriv=DerivOp(1))
     end
 
     @testset "SeriesInterpolant in-place vector with keywords" begin
@@ -2471,7 +2425,7 @@ end # DerivativeView single-series in-place vector
         outputs = [zeros(3), zeros(3)]
         d1(outputs, xq; search=LinearBinary(), hint=Ref(1))
 
-        expected = sitp(xq; deriv=1)
+        expected = sitp(xq; deriv=DerivOp(1))
         @test outputs[1] ≈ expected[1]
         @test outputs[2] ≈ expected[2]
     end
@@ -2613,14 +2567,14 @@ end # DerivativeView SeriesInterpolant search/hint keywords
 
             # Scalar
             dv_result = d1(0.5; search=search_policy, hint=hint)
-            itp_result = itp(0.5; deriv=1, search=search_policy, hint=hint2)
+            itp_result = itp(0.5; deriv=DerivOp(1), search=search_policy, hint=hint2)
             @test dv_result ≈ itp_result
 
             # Vector
             hint = Ref(1)
             hint2 = Ref(1)
             dv_result = d1(xq; search=search_policy, hint=hint)
-            itp_result = itp(xq; deriv=1, search=search_policy, hint=hint2)
+            itp_result = itp(xq; deriv=DerivOp(1), search=search_policy, hint=hint2)
             @test dv_result ≈ itp_result
         end
     end

@@ -132,7 +132,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(grids, data, query; deriv=0, kwargs...)
+    quadratic_interp(grids, data, query; deriv=EvalValue(), kwargs...)
 
 One-shot ND quadratic interpolation at a single point.
 Zero-allocation after warmup.
@@ -141,7 +141,7 @@ function quadratic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
@@ -156,14 +156,13 @@ function quadratic_interp(
     searches = _resolve_search_nd(search, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    return _dispatch_deriv_nd(deriv, Val(N)) do ops
-        _quadratic_interp_nd_oneshot(
-            grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
-    end
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    return _quadratic_interp_nd_oneshot(
+        grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
 end
 
 """
-    quadratic_interp(grids, data, queries::NTuple{N,AbstractVector}; deriv=0, kwargs...)
+    quadratic_interp(grids, data, queries::NTuple{N,AbstractVector}; deriv=EvalValue(), kwargs...)
 
 One-shot ND quadratic interpolation at multiple points (batch SoA).
 Only allocates the output vector.
@@ -172,7 +171,7 @@ function quadratic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
@@ -186,7 +185,7 @@ function quadratic_interp(
 end
 
 """
-    quadratic_interp(grids, data, queries::AbstractVector{<:NTuple}; deriv=0, kwargs...)
+    quadratic_interp(grids, data, queries::AbstractVector{<:NTuple}; deriv=EvalValue(), kwargs...)
 
 One-shot ND quadratic interpolation at multiple points (batch AoS).
 Only allocates the output vector.
@@ -195,7 +194,7 @@ function quadratic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
@@ -213,7 +212,7 @@ end
 # ========================================
 
 """
-    quadratic_interp!(output, grids, data, queries::NTuple{N,AbstractVector}; deriv=0, kwargs...)
+    quadratic_interp!(output, grids, data, queries::NTuple{N,AbstractVector}; deriv=EvalValue(), kwargs...)
 
 In-place one-shot ND quadratic interpolation at multiple points (SoA batch).
 Writes results into pre-allocated `output` vector.
@@ -223,7 +222,7 @@ function quadratic_interp!(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
@@ -237,14 +236,13 @@ function quadratic_interp!(
     searches = _resolve_search_nd(search, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    return _dispatch_deriv_nd(deriv, Val(N)) do ops
-        _quadratic_interp_nd_oneshot_soa!(
-            output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
-    end
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    return _quadratic_interp_nd_oneshot_soa!(
+        output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
 end
 
 """
-    quadratic_interp!(output, grids, data, queries::AbstractVector{<:NTuple}; deriv=0, kwargs...)
+    quadratic_interp!(output, grids, data, queries::AbstractVector{<:NTuple}; deriv=EvalValue(), kwargs...)
 
 In-place one-shot ND quadratic interpolation at multiple points (AoS batch).
 Writes results into pre-allocated `output` vector.
@@ -254,7 +252,7 @@ function quadratic_interp!(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
@@ -268,8 +266,7 @@ function quadratic_interp!(
     searches = _resolve_search_nd(search, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    return _dispatch_deriv_nd(deriv, Val(N)) do ops
-        _quadratic_interp_nd_oneshot_aos!(
-            output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
-    end
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    return _quadratic_interp_nd_oneshot_aos!(
+        output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
 end

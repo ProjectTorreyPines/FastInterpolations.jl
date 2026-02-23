@@ -457,15 +457,15 @@ end
 # ========================================
 
 """
-    (sitp::ConstantSeriesInterpolant)(xq::Real; deriv=0, search=Binary())
+    (sitp::ConstantSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
 Returns a vector of values, one per y-series.
 
 # Derivative support
-- `deriv=0`: Returns function values
-- `deriv=1,2`: Returns zeros (step function derivative is zero everywhere)
+- `deriv=EvalValue()`: Returns function values
+- `deriv=DerivOp(1),DerivOp(2)`: Returns zeros (step function derivative is zero everywhere)
 
 # AD Support
 When `xq` is a ForwardDiff.Dual, the output type is promoted to preserve
@@ -473,7 +473,7 @@ derivatives. Output type is `promote_type(Tv, Tq)`.
 """
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     xq::Tq;
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -483,14 +483,14 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::ConstantSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
+    (sitp::ConstantSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
     xq::Tq;
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -507,9 +507,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
 
     # Dispatch on derivative order - pass original xq for AD support
-    @_dispatch_deriv deriv => op begin
-        _eval_constant_series_point!(output, sitp, aq, xq, op)
-    end
+    _eval_constant_series_point!(output, sitp, aq, xq, deriv)
     return output
 end
 
@@ -518,7 +516,7 @@ end
 # ========================================
 
 """
-    (sitp::ConstantSeriesInterpolant)(xq::AbstractVector; deriv=0)
+    (sitp::ConstantSeriesInterpolant)(xq::AbstractVector; deriv=EvalValue())
 
 Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
@@ -526,7 +524,7 @@ Returns a vector of vectors: one vector per y-series, each containing results fo
 """
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     xq::AbstractVector{Tq};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -545,7 +543,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::ConstantSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=0)
+    (sitp::ConstantSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=EvalValue())
 
 Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation).
 
@@ -560,7 +558,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 @with_pool pool function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector{Tv}},
     xq::AbstractVector{Tg};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P}
@@ -584,10 +582,8 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
     # Evaluate all series with derivative dispatch
-    @_dispatch_deriv deriv => op begin
-        @inbounds for k in 1:n
-            _eval_constant_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, side_val, op)
-        end
+    @inbounds for k in 1:n
+        _eval_constant_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, side_val, deriv)
     end
     return outputs
 end
@@ -596,7 +592,7 @@ end
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector{Tv}},
     xq::AbstractVector{Tq};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}

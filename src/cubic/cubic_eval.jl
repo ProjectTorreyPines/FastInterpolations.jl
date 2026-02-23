@@ -272,7 +272,7 @@ Uses task-local pool for workspace allocation.
     y::AbstractVector{Tv},
     x_query::Tg;
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}}
@@ -282,8 +282,6 @@ Uses task-local pool for workspace allocation.
     _solve_system!(z, cache, y, cache.bc_config)
 
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(cache.x, x_query, extrap)
-        _eval_with_bc(cache, y, z, x_query, extrap, op, searcher)
-    end
+    @boundscheck _check_domain(cache.x, x_query, extrap)
+    _eval_with_bc(cache, y, z, x_query, extrap, deriv, searcher)
 end

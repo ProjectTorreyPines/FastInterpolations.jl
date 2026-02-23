@@ -11,51 +11,75 @@ Abstract type for evaluation operations (value, derivatives).
 Used for compile-time dispatch to select appropriate kernel.
 
 Subtypes:
-- `EvalValue`: Evaluate function value f(x)
-- `EvalDeriv1`: Evaluate first derivative f'(x)
-- `EvalDeriv2`: Evaluate second derivative f''(x)
-- `EvalDeriv3`: Evaluate third derivative f'''(x)
+- `DerivOp{0}` (alias `EvalValue`): Evaluate function value f(x)
+- `DerivOp{1}` (alias `EvalDeriv1`): Evaluate first derivative f'(x)
+- `DerivOp{2}` (alias `EvalDeriv2`): Evaluate second derivative f''(x)
+- `DerivOp{3}` (alias `EvalDeriv3`): Evaluate third derivative f'''(x)
 """
 abstract type AbstractEvalOp end
 
 """
-    EvalValue <: AbstractEvalOp
+    DerivOp{N} <: AbstractEvalOp
 
-Singleton type indicating evaluation of function value f(x).
+Parametric singleton for derivative order dispatch.
+`N` is the derivative order (0 = value, 1 = first derivative, etc.).
+
+# Construction
+- `DerivOp{0}()`, `DerivOp{1}()` — direct parametric construction
+- `DerivOp(n::Int)` — convenience: `DerivOp(1)` → `DerivOp{1}()`
+- `DerivOp(n1, n2, ...)` — ND: `DerivOp(1, 0)` → `(DerivOp{1}(), DerivOp{0}())`
+
+# Backward-compatible aliases
+- `EvalValue  = DerivOp{0}`
+- `EvalDeriv1 = DerivOp{1}`
+- `EvalDeriv2 = DerivOp{2}`
+- `EvalDeriv3 = DerivOp{3}`
+
+# Examples
+```julia
+# 1D scalar evaluation
+itp(x; deriv=DerivOp(1))        # first derivative
+itp(x; deriv=EvalDeriv2())      # second derivative (using alias)
+
+# ND mixed partials
+itp(q; deriv=DerivOp(1, 0))     # ∂f/∂x
+itp(q; deriv=DerivOp(0, 2))     # ∂²f/∂y²
+```
 """
-struct EvalValue <: AbstractEvalOp end
+struct DerivOp{N} <: AbstractEvalOp end
+
+# Backward-compatible const aliases (zero changes needed in kernel code)
+const EvalValue  = DerivOp{0}
+const EvalDeriv1 = DerivOp{1}
+const EvalDeriv2 = DerivOp{2}
+const EvalDeriv3 = DerivOp{3}
+
+# 1D constructor: DerivOp(1) → DerivOp{1}()
+@inline DerivOp(n::Int) = _make_derivop(n)
+
+# ND constructor: DerivOp(1, 0) → (DerivOp{1}(), DerivOp{0}())
+@inline DerivOp(n1::Int, n2::Int, rest::Int...) = map(_make_derivop, (n1, n2, rest...))
+
+# Internal: Int → concrete DerivOp singleton (union-split friendly for 0-3)
+@inline function _make_derivop(n::Int)
+    n == 0 && return DerivOp{0}()
+    n == 1 && return DerivOp{1}()
+    n == 2 && return DerivOp{2}()
+    n == 3 && return DerivOp{3}()
+    _derivop_order_error(n)
+end
+
+@noinline _derivop_order_error(n::Int) =
+    throw(ArgumentError("unsupported derivative order $n; must be 0, 1, 2, or 3"))
 
 """
-    EvalDeriv1 <: AbstractEvalOp
+    deriv_order(::DerivOp{N}) -> Int
 
-Singleton type indicating evaluation of first derivative f'(x).
+Extract derivative order from a `DerivOp` instance.
 """
-struct EvalDeriv1 <: AbstractEvalOp end
+@inline deriv_order(::DerivOp{N}) where {N} = N
 
-"""
-    EvalDeriv2 <: AbstractEvalOp
-
-Singleton type indicating evaluation of second derivative f''(x).
-"""
-struct EvalDeriv2 <: AbstractEvalOp end
-
-"""
-    EvalDeriv3 <: AbstractEvalOp
-
-Singleton type indicating evaluation of third derivative f'''(x).
-
-# Note
-For cubic splines, S'''(x) is constant within each interval.
-Linear/quadratic/constant interpolants always return zero.
-
-# Mathematical Background
-The cubic spline third derivative is:
-    S'''(x) = (zR - zL) / h
-
-where zL and zR are the second derivative values (moments) at the
-interval endpoints, and h is the interval width.
-"""
-struct EvalDeriv3 <: AbstractEvalOp end
+Base.show(io::IO, ::DerivOp{N}) where {N} = print(io, "DerivOp{", N, "}()")
 
 # ========================================
 # Typed Extrapolation Mode Tags

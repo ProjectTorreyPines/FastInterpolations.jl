@@ -10,13 +10,13 @@
 # ========================================
 
 """
-    cubic_interp(grids, data, query; deriv=0, kwargs...)
+    cubic_interp(grids, data, query; deriv=EvalValue(), kwargs...)
 
 One-shot ND cubic interpolation at a single point.
 Zero-allocation after warmup: uses pool-based partials instead of constructing an Interpolant.
 
 # Keywords
-- `deriv`: `Int` (0-3) or `Val((d1,d2,...))` for mixed partials
+- `deriv`: `DerivOp` or `NTuple{N,DerivOp}` for mixed partials
 - `bc`, `extrap`, `search`, `coeffs`: Same as the Interpolant constructor form
 
 !!! note "Periodic BC validation"
@@ -29,7 +29,7 @@ function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
@@ -49,13 +49,12 @@ function cubic_interp(
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    return _dispatch_deriv_nd(deriv, Val(N)) do ops
-        _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
-    end
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
 end
 
 """
-    cubic_interp(grids, data, queries::NTuple{N,AbstractVector}; deriv=0, kwargs...)
+    cubic_interp(grids, data, queries::NTuple{N,AbstractVector}; deriv=EvalValue(), kwargs...)
 
 One-shot ND cubic interpolation at multiple points (SoA batch).
 Zero-allocation for workspace after warmup; output vector is heap-allocated.
@@ -64,7 +63,7 @@ function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
@@ -79,7 +78,7 @@ function cubic_interp(
 end
 
 """
-    cubic_interp(grids, data, queries::AbstractVector{<:NTuple}; deriv=0, kwargs...)
+    cubic_interp(grids, data, queries::AbstractVector{<:NTuple}; deriv=EvalValue(), kwargs...)
 
 One-shot ND cubic interpolation at multiple points (AoS batch).
 Zero-allocation for workspace after warmup; output vector is heap-allocated.
@@ -88,7 +87,7 @@ function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
@@ -246,7 +245,7 @@ end
 # ========================================
 
 """
-    cubic_interp!(output, grids, data, queries::NTuple{N,AbstractVector}; deriv=0, kwargs...)
+    cubic_interp!(output, grids, data, queries::NTuple{N,AbstractVector}; deriv=EvalValue(), kwargs...)
 
 In-place one-shot ND cubic interpolation at multiple points (SoA batch).
 Writes results into pre-allocated `output` vector.
@@ -256,7 +255,7 @@ function cubic_interp!(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
@@ -273,13 +272,12 @@ function cubic_interp!(
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    return _dispatch_deriv_nd(deriv, Val(N)) do ops
-        _cubic_interp_nd_oneshot_soa!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
-    end
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    return _cubic_interp_nd_oneshot_soa!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
 end
 
 """
-    cubic_interp!(output, grids, data, queries::AbstractVector{<:NTuple}; deriv=0, kwargs...)
+    cubic_interp!(output, grids, data, queries::AbstractVector{<:NTuple}; deriv=EvalValue(), kwargs...)
 
 In-place one-shot ND cubic interpolation at multiple points (AoS batch).
 Writes results into pre-allocated `output` vector.
@@ -289,7 +287,7 @@ function cubic_interp!(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{Int, Val, NTuple{N,Int}}=0,
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
@@ -306,7 +304,6 @@ function cubic_interp!(
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    return _dispatch_deriv_nd(deriv, Val(N)) do ops
-        _cubic_interp_nd_oneshot_aos!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
-    end
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    return _cubic_interp_nd_oneshot_aos!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
 end

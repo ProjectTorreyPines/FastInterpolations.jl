@@ -103,16 +103,16 @@ end
         itp = linear_interp((x, y), data)
 
         # Test ∂f/∂x at various points
-        @test itp((0.5, 0.5); deriv=Val((1,0))) ≈ 2.0 atol=1e-12
-        @test itp((1.3, 2.1); deriv=Val((1,0))) ≈ 2.0 atol=1e-12
+        @test itp((0.5, 0.5); deriv=DerivOp(1,0)) ≈ 2.0 atol=1e-12
+        @test itp((1.3, 2.1); deriv=DerivOp(1,0)) ≈ 2.0 atol=1e-12
 
         # Test ∂f/∂y at various points
-        @test itp((0.5, 0.5); deriv=Val((0,1))) ≈ 3.0 atol=1e-12
-        @test itp((1.3, 2.1); deriv=Val((0,1))) ≈ 3.0 atol=1e-12
+        @test itp((0.5, 0.5); deriv=DerivOp(0,1)) ≈ 3.0 atol=1e-12
+        @test itp((1.3, 2.1); deriv=DerivOp(0,1)) ≈ 3.0 atol=1e-12
 
         # Test that ∂²f/∂x² = 0 (linear has no second derivative)
-        @test itp((0.5, 0.5); deriv=Val((2,0))) ≈ 0.0 atol=1e-14
-        @test itp((0.5, 0.5); deriv=Val((0,2))) ≈ 0.0 atol=1e-14
+        @test itp((0.5, 0.5); deriv=DerivOp(2,0)) ≈ 0.0 atol=1e-14
+        @test itp((0.5, 0.5); deriv=DerivOp(0,2)) ≈ 0.0 atol=1e-14
     end
 
     @testset "3D first derivatives" begin
@@ -125,9 +125,9 @@ end
         itp = linear_interp((x, y, z), data)
 
         # ∂f/∂x = 1, ∂f/∂y = 2, ∂f/∂z = 3
-        @test itp((0.5, 0.5, 0.5); deriv=Val((1,0,0))) ≈ 1.0 atol=1e-12
-        @test itp((0.5, 0.5, 0.5); deriv=Val((0,1,0))) ≈ 2.0 atol=1e-12
-        @test itp((0.5, 0.5, 0.5); deriv=Val((0,0,1))) ≈ 3.0 atol=1e-12
+        @test itp((0.5, 0.5, 0.5); deriv=DerivOp(1,0,0)) ≈ 1.0 atol=1e-12
+        @test itp((0.5, 0.5, 0.5); deriv=DerivOp(0,1,0)) ≈ 2.0 atol=1e-12
+        @test itp((0.5, 0.5, 0.5); deriv=DerivOp(0,0,1)) ≈ 3.0 atol=1e-12
     end
 
     @testset "second+ derivatives return zero" begin
@@ -138,9 +138,9 @@ end
 
         # Same-axis second derivatives should be zero for linear
         # (linear interpolation has constant slope per axis)
-        @test itp((0.5, 0.5); deriv=Val((2,0))) == 0.0
-        @test itp((0.5, 0.5); deriv=Val((0,2))) == 0.0
-        @test itp((0.5, 0.5); deriv=2) == 0.0
+        @test itp((0.5, 0.5); deriv=DerivOp(2,0)) == 0.0
+        @test itp((0.5, 0.5); deriv=DerivOp(0,2)) == 0.0
+        @test itp((0.5, 0.5); deriv=DerivOp(2, 2)) == 0.0
 
         # Note: Mixed cross-derivatives Val((1,1)) are NOT zero for bilinear!
         # ∂²f/∂x∂y = (f₁₁ - f₁₀ - f₀₁ + f₀₀)/(h·k) which is non-zero in general
@@ -319,8 +319,8 @@ end
         @test itp((0.25, 0.75)) ≈ complex(0.25, 0.75)
 
         # Complex derivatives
-        @test itp((0.5, 0.5); deriv=Val((1,0))) ≈ complex(1.0, 0.0)
-        @test itp((0.5, 0.5); deriv=Val((0,1))) ≈ complex(0.0, 1.0)
+        @test itp((0.5, 0.5); deriv=DerivOp(1,0)) ≈ complex(1.0, 0.0)
+        @test itp((0.5, 0.5); deriv=DerivOp(0,1)) ≈ complex(0.0, 1.0)
     end
 
     # ========================================
@@ -438,9 +438,9 @@ end
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
         query = (1.5, 0.8)
-        linear_interp((x, y), data, query; deriv=1)
-        linear_interp((x, y), data, query; deriv=1)
-        @allocated linear_interp((x, y), data, query; deriv=1)
+        linear_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        linear_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        @allocated linear_interp((x, y), data, query; deriv=DerivOp(1, 1))
     end
 
     function _alloc_test_linear_deriv_val()
@@ -448,9 +448,9 @@ end
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
         query = (1.5, 0.8)
-        linear_interp((x, y), data, query; deriv=Val((1, 0)))
-        linear_interp((x, y), data, query; deriv=Val((1, 0)))
-        @allocated linear_interp((x, y), data, query; deriv=Val((1, 0)))
+        linear_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        linear_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        @allocated linear_interp((x, y), data, query; deriv=DerivOp(1, 0))
     end
 
     function _alloc_test_linear_extrap_constant()
@@ -509,7 +509,7 @@ end
             @test _alloc_test_linear_default() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, deriv=1)" begin
+        @testset "zero-alloc scalar (Range grids, deriv=DerivOp(1, 1))" begin
             @test _alloc_test_linear_deriv() <= ND_ALLOC_THRESHOLD
         end
 
@@ -559,9 +559,9 @@ end
         y = collect(range(0.0, 1.0, 15))
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        linear_interp((x, y), data, query; deriv=Val((1, 0)))
-        linear_interp((x, y), data, query; deriv=Val((1, 0)))
-        @allocated linear_interp((x, y), data, query; deriv=Val((1, 0)))
+        linear_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        linear_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        @allocated linear_interp((x, y), data, query; deriv=DerivOp(1, 0))
     end
 
     function _alloc_test_linear_vector_3d()
@@ -718,9 +718,9 @@ end
             data = [sin(xi) * cos(yj) for xi in x, yj in y]
             xqs = [0.5, 1.0, 1.5]
             yqs = [0.2, 0.4, 0.6]
-            ref = linear_interp((x, y), data, (xqs, yqs); deriv=1)
+            ref = linear_interp((x, y), data, (xqs, yqs); deriv=DerivOp(1, 1))
             out = similar(ref)
-            linear_interp!(out, (x, y), data, (xqs, yqs); deriv=1)
+            linear_interp!(out, (x, y), data, (xqs, yqs); deriv=DerivOp(1, 1))
             @test out ≈ ref atol=1e-14
         end
 

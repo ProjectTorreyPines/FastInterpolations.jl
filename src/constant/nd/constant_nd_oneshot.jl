@@ -131,9 +131,8 @@ end
 # Derivative Check Helper
 # ========================================
 
-@inline _is_any_deriv(d::Int) = d != 0
-@inline _is_any_deriv(::Val{T}) where {T} = any(!=(0), T)
-@inline _is_any_deriv(d::NTuple{N, Int}) where {N} = any(!=(0), d)
+@inline _is_any_deriv(op::DerivOp) = !(op isa DerivOp{0})
+@inline _is_any_deriv(ops::Tuple{Vararg{DerivOp}}) = any(op -> !(op isa DerivOp{0}), ops)
 
 # ========================================
 # ONE-SHOT PUBLIC API
@@ -152,7 +151,7 @@ function constant_interp(
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     # Any derivative of constant interpolation is zero
     if _is_any_deriv(deriv)
@@ -185,7 +184,7 @@ function constant_interp(
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     if _is_any_deriv(deriv)
         n_queries = length(queries[1])
@@ -218,7 +217,7 @@ function constant_interp(
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     if _is_any_deriv(deriv)
         n_queries = length(queries)
@@ -256,7 +255,7 @@ function constant_interp!(
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     if _is_any_deriv(deriv)
         fill!(output, zero(Tv))
@@ -290,7 +289,7 @@ function constant_interp!(
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
-    deriv::Union{Int, Val, NTuple{N,Int}} = 0
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     if _is_any_deriv(deriv)
         fill!(output, zero(Tv))

@@ -113,10 +113,10 @@ using FastInterpolations
         itp = cubic_interp(x, y)
 
         # All derivatives return ComplexF64
-        @test itp(0.5; deriv=0) isa ComplexF64
-        @test itp(0.5; deriv=1) isa ComplexF64
-        @test itp(0.5; deriv=2) isa ComplexF64
-        @test itp(0.5; deriv=3) isa ComplexF64
+        @test itp(0.5; deriv=DerivOp(0)) isa ComplexF64
+        @test itp(0.5; deriv=DerivOp(1)) isa ComplexF64
+        @test itp(0.5; deriv=DerivOp(2)) isa ComplexF64
+        @test itp(0.5; deriv=DerivOp(3)) isa ComplexF64
     end
 
     # ========================================
@@ -139,10 +139,10 @@ using FastInterpolations
 
         # Test at interior point
         t = 1.5
-        @test itp(t; deriv=0) ≈ f(t) atol=1e-10
-        @test itp(t; deriv=1) ≈ f1(t) atol=1e-10
-        @test itp(t; deriv=2) ≈ f2(t) atol=1e-10
-        @test itp(t; deriv=3) ≈ f3(t) atol=1e-10
+        @test itp(t; deriv=DerivOp(0)) ≈ f(t) atol=1e-10
+        @test itp(t; deriv=DerivOp(1)) ≈ f1(t) atol=1e-10
+        @test itp(t; deriv=DerivOp(2)) ≈ f2(t) atol=1e-10
+        @test itp(t; deriv=DerivOp(3)) ≈ f3(t) atol=1e-10
     end
 
     # ========================================
@@ -206,7 +206,7 @@ using FastInterpolations
 
         # Type-stable scalar evaluation
         @test (@inferred itp(0.5)) isa ComplexF64
-        @test (@inferred itp(0.5; deriv=1)) isa ComplexF64
+        @test (@inferred itp(0.5; deriv=DerivOp(1))) isa ComplexF64
     end
 
     # ========================================

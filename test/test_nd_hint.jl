@@ -92,10 +92,10 @@ using FastInterpolations
 
         @testset "Derivatives with hint" begin
             hints = (Ref(1), Ref(1))
-            ref_d1 = itp((qx, qy); deriv=1)
-            @test itp((qx, qy); deriv=1, hint=hints) ≈ ref_d1
-            ref_dx = itp((qx, qy); deriv=(1,0))
-            @test itp((qx, qy); deriv=(1,0), hint=hints) ≈ ref_dx
+            ref_d1 = itp((qx, qy); deriv=DerivOp(1, 1))
+            @test itp((qx, qy); deriv=DerivOp(1, 1), hint=hints) ≈ ref_d1
+            ref_dx = itp((qx, qy); deriv=DerivOp(1,0))
+            @test itp((qx, qy); deriv=DerivOp(1,0), hint=hints) ≈ ref_dx
         end
     end
 
@@ -288,7 +288,7 @@ using FastInterpolations
 
         hints = (Ref(1), Ref(1))
         result = dv((1.0, 0.5); hint=hints)
-        @test result ≈ itp((1.0, 0.5); deriv=(1, 0))
+        @test result ≈ itp((1.0, 0.5); deriv=DerivOp(1, 0))
         @test hints[1][] == expected_interval(x, 1.0)
         @test hints[2][] == expected_interval(y, 0.5)
     end

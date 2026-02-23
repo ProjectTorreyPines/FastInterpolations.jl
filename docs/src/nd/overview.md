@@ -38,7 +38,7 @@ Every 1D argument becomes a Tuple in ND. This applies uniformly:
 | Query (batch) | `xqs::Vector` | `(xqs, yqs)` |
 | BC | `bc=NaturalBC()` | `bc=(NaturalBC(), PeriodicBC())` |
 | Extrap | `extrap=ConstExtrap()` | `extrap=(ConstExtrap(), WrapExtrap())` |
-| Derivative | `deriv=1` | `deriv=(1, 0)` for ∂f/∂x |
+| Derivative | `deriv=DerivOp(1)` | `deriv=DerivOp(1, 0)` for ∂f/∂x |
 | Search | `search=Binary()` | `search=(Binary(), LinearBinary())` |
 
 **Broadcast rule**: A scalar value is broadcast to all axes. `bc=NaturalBC()` is equivalent to `bc=(NaturalBC(), NaturalBC())` in 2D.

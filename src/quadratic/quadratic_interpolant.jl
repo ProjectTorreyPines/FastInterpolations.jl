@@ -12,13 +12,11 @@
 # Type parameters: Tg = grid type, Tv = value type (can be Complex)
 # Unified method: accepts any query type (Tg, Real, or Dual for AD)
 # ─────────────────────────────────────────────────────────────
-@inline function (itp::QuadraticInterpolant{Tg,Tv})(xq; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
+@inline function (itp::QuadraticInterpolant{Tg,Tv})(xq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        # Pass original xq to preserve Dual type for AD
-        _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xq, itp.extrap, op, searcher)
-    end
+    # Pass original xq to preserve Dual type for AD
+    _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xq, itp.extrap, deriv, searcher)
 end
 
 # ─────────────────────────────────────────────────────────────
@@ -26,15 +24,13 @@ end
 # Now supports hint for ODE/streaming patterns
 # Output type is promoted to wider type for precision preservation
 # ─────────────────────────────────────────────────────────────
-function (itp::QuadraticInterpolant{Tg,Tv})(xi::AbstractVector{S}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, S<:Real}
+function (itp::QuadraticInterpolant{Tg,Tv})(xi::AbstractVector{S}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, S<:Real}
     T_out = promote_type(Tv, S)    # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xi))
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi, itp.extrap)
-        @inbounds for i in eachindex(xi, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.extrap, op, searcher)
-        end
+    @boundscheck _check_domain(itp.x, xi, itp.extrap)
+    @inbounds for i in eachindex(xi, output)
+        output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.extrap, deriv, searcher)
     end
     return output
 end
@@ -43,14 +39,12 @@ end
 # In-place vector call
 # Unified: accepts any Real query type (Tg, Float32, Dual, etc.)
 # ─────────────────────────────────────────────────────────────
-function (itp::QuadraticInterpolant{Tg,Tv})(output::AbstractVector, xi::AbstractVector{<:Real}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
+function (itp::QuadraticInterpolant{Tg,Tv})(output::AbstractVector, xi::AbstractVector{<:Real}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @assert length(output) == length(xi) "output length must match xi length"
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(itp.x, xi, itp.extrap)
-        @inbounds for i in eachindex(xi, output)
-            output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.extrap, op, searcher)
-        end
+    @boundscheck _check_domain(itp.x, xi, itp.extrap)
+    @inbounds for i in eachindex(xi, output)
+        output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.extrap, deriv, searcher)
     end
     return output
 end

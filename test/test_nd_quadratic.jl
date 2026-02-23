@@ -70,27 +70,27 @@ end
         xq, yq = 1.23, 0.67
 
         # Value
-        @test itp((xq, yq); deriv=(0, 0)) ≈ f(xq, yq) rtol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(0, 0)) ≈ f(xq, yq) rtol=1e-10
 
         # First derivatives: df/dx = 2x, df/dy = 2y
-        @test itp((xq, yq); deriv=(1, 0)) ≈ 2xq rtol=1e-10
-        @test itp((xq, yq); deriv=(0, 1)) ≈ 2yq rtol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ 2xq rtol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ 2yq rtol=1e-10
 
         # Second derivatives: d²f/dx² = 2, d²f/dy² = 2
-        @test itp((xq, yq); deriv=(2, 0)) ≈ 2.0 rtol=1e-6
-        @test itp((xq, yq); deriv=(0, 2)) ≈ 2.0 rtol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(2, 0)) ≈ 2.0 rtol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(0, 2)) ≈ 2.0 rtol=1e-6
 
         # Mixed derivative: d²f/dxdy = 0 for x²+y²
-        @test abs(itp((xq, yq); deriv=(1, 1))) < 1e-10
+        @test abs(itp((xq, yq); deriv=DerivOp(1, 1))) < 1e-10
 
-        # Val-based derivative spec (compile-time)
-        @test itp((xq, yq); deriv=Val((1, 0))) ≈ 2xq rtol=1e-10
-        @test itp((xq, yq); deriv=Val((0, 1))) ≈ 2yq rtol=1e-10
-        @test itp((xq, yq); deriv=Val((2, 0))) ≈ 2.0 rtol=1e-6
+        # DerivOp derivative spec (compile-time)
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ 2xq rtol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ 2yq rtol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(2, 0)) ≈ 2.0 rtol=1e-6
 
         # Integer derivative (all axes same order)
-        @test itp((xq, yq); deriv=1) isa Float64
-        @test itp((xq, yq); deriv=2) isa Float64
+        @test itp((xq, yq); deriv=DerivOp(1, 1)) isa Float64
+        @test itp((xq, yq); deriv=DerivOp(2, 2)) isa Float64
     end
 
     @testset "2D non-zero mixed derivative" begin
@@ -103,7 +103,7 @@ end
         xq, yq = 1.0, 0.5
 
         # d²f/dxdy = 1 for x² + xy + y²
-        @test itp((xq, yq); deriv=(1, 1)) ≈ 1.0 atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(1, 1)) ≈ 1.0 atol=1e-6
     end
 
     # ========================================
@@ -238,7 +238,7 @@ end
         @testset "SoA with derivatives" begin
             xs = [0.5, 1.0, 1.5]
             ys = [0.2, 0.5, 0.8]
-            dvals = itp((xs, ys); deriv=(1, 0))
+            dvals = itp((xs, ys); deriv=DerivOp(1, 0))
             for i in 1:3
                 @test dvals[i] ≈ 2xs[i] rtol=1e-10
             end
@@ -257,7 +257,7 @@ end
 
         @testset "AoS with derivatives" begin
             queries = [(0.5, 0.2), (1.0, 0.5)]
-            dvals = itp(queries; deriv=(1, 0))
+            dvals = itp(queries; deriv=DerivOp(1, 0))
             @test dvals[1] ≈ 2 * 0.5 rtol=1e-10
             @test dvals[2] ≈ 2 * 1.0 rtol=1e-10
         end
@@ -286,7 +286,7 @@ end
 
         @testset "single point with derivative" begin
             val = quadratic_interp((x, y), data, (1.0, 0.5);
-                bc=Right(QuadraticFit()), deriv=Val((1, 0)))
+                bc=Right(QuadraticFit()), deriv=DerivOp(1, 0))
             @test val ≈ 2.0 rtol=1e-10  # df/dx = 2x = 2
         end
 
@@ -321,14 +321,14 @@ end
         @test itp((xq, yq, zq)) ≈ f(xq, yq, zq) rtol=1e-8
 
         # First derivatives
-        @test itp((xq, yq, zq); deriv=(1, 0, 0)) ≈ 2xq rtol=1e-6
-        @test itp((xq, yq, zq); deriv=(0, 1, 0)) ≈ 2yq rtol=1e-6
-        @test itp((xq, yq, zq); deriv=(0, 0, 1)) ≈ 2zq rtol=1e-6
+        @test itp((xq, yq, zq); deriv=DerivOp(1, 0, 0)) ≈ 2xq rtol=1e-6
+        @test itp((xq, yq, zq); deriv=DerivOp(0, 1, 0)) ≈ 2yq rtol=1e-6
+        @test itp((xq, yq, zq); deriv=DerivOp(0, 0, 1)) ≈ 2zq rtol=1e-6
 
         # Second derivatives
-        @test itp((xq, yq, zq); deriv=(2, 0, 0)) ≈ 2.0 rtol=1e-4
-        @test itp((xq, yq, zq); deriv=(0, 2, 0)) ≈ 2.0 rtol=1e-4
-        @test itp((xq, yq, zq); deriv=(0, 0, 2)) ≈ 2.0 rtol=1e-4
+        @test itp((xq, yq, zq); deriv=DerivOp(2, 0, 0)) ≈ 2.0 rtol=1e-4
+        @test itp((xq, yq, zq); deriv=DerivOp(0, 2, 0)) ≈ 2.0 rtol=1e-4
+        @test itp((xq, yq, zq); deriv=DerivOp(0, 0, 2)) ≈ 2.0 rtol=1e-4
     end
 
     # ========================================
@@ -503,9 +503,9 @@ end
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; deriv=1)
-        quadratic_interp((x, y), data, query; deriv=1)
-        @allocated quadratic_interp((x, y), data, query; deriv=1)
+        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        @allocated quadratic_interp((x, y), data, query; deriv=DerivOp(1, 1))
     end
 
     function _alloc_test_quadratic_deriv_val()
@@ -513,9 +513,9 @@ end
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
-        quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
-        @allocated quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
+        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        @allocated quadratic_interp((x, y), data, query; deriv=DerivOp(1, 0))
     end
 
     function _alloc_test_quadratic_natural_bc()
@@ -574,7 +574,7 @@ end
             @test _alloc_test_quadratic_default() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, deriv=1)" begin
+        @testset "zero-alloc scalar (Range grids, deriv=DerivOp(1, 1))" begin
             @test _alloc_test_quadratic_deriv() <= ND_ALLOC_THRESHOLD
         end
 
@@ -663,9 +663,9 @@ end
         y = collect(range(0.0, 1.0, 15))
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
-        quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
-        @allocated quadratic_interp((x, y), data, query; deriv=Val((1, 0)))
+        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        @allocated quadratic_interp((x, y), data, query; deriv=DerivOp(1, 0))
     end
 
     function _alloc_test_quadratic_vector_deriv_int()
@@ -673,9 +673,9 @@ end
         y = collect(range(0.0, 1.0, 15))
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; deriv=1)
-        quadratic_interp((x, y), data, query; deriv=1)
-        @allocated quadratic_interp((x, y), data, query; deriv=1)
+        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        @allocated quadratic_interp((x, y), data, query; deriv=DerivOp(1, 1))
     end
 
     function _alloc_test_quadratic_vector_3d()
@@ -698,7 +698,7 @@ end
             @test _alloc_test_quadratic_vector_deriv() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Vector grids, deriv=1 Int)" begin
+        @testset "zero-alloc scalar (Vector grids, deriv=DerivOp(1) Int)" begin
             @test _alloc_test_quadratic_vector_deriv_int() <= ND_ALLOC_THRESHOLD
         end
 
@@ -783,9 +783,9 @@ end
             data = [xi^2 + yj for xi in x, yj in y]
             xqs = [0.5, 1.0, 1.5]
             yqs = [0.2, 0.5, 0.8]
-            ref = quadratic_interp((x, y), data, (xqs, yqs); deriv=1)
+            ref = quadratic_interp((x, y), data, (xqs, yqs); deriv=DerivOp(1, 1))
             out = similar(ref)
-            quadratic_interp!(out, (x, y), data, (xqs, yqs); deriv=1)
+            quadratic_interp!(out, (x, y), data, (xqs, yqs); deriv=DerivOp(1, 1))
             @test out ≈ ref atol=1e-14
         end
 

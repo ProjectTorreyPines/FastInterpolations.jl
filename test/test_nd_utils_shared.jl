@@ -15,7 +15,7 @@ using FastInterpolations
 
 # Access internal functions for testing
 import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_nd,
-    _resolve_deriv_nd, _resolve_side_nd, _validate_nd_grids,
+    _resolve_side_nd, _validate_nd_grids,
     _promote_grid_eltype, _convert_grids_typed, _create_spacings_typed,
     _check_mode_periodic_compat, _check_modes_periodic_compat,
     _mode_to_modes_with_periodic, _modes_to_modes_with_periodic
@@ -114,60 +114,43 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
     end
 
     # ========================================
-    # _resolve_deriv_nd
+    # DerivOp constructors
     # ========================================
-    @testset "_resolve_deriv_nd" begin
-        @testset "Int broadcast to uniform EvalOp tuple" begin
-            result = _resolve_deriv_nd(0, Val(3))
-            @test length(result) == 3
-            @test all(op -> op isa EvalValue, result)
-
-            result = _resolve_deriv_nd(1, Val(2))
-            @test length(result) == 2
-            @test all(op -> op isa EvalDeriv1, result)
-
-            result = _resolve_deriv_nd(2, Val(4))
-            @test length(result) == 4
-            @test all(op -> op isa EvalDeriv2, result)
-
-            result = _resolve_deriv_nd(3, Val(2))
-            @test length(result) == 2
-            @test all(op -> op isa EvalDeriv3, result)
+    @testset "DerivOp constructors" begin
+        @testset "1D: DerivOp(n) returns singleton" begin
+            @test DerivOp(0) === DerivOp{0}()
+            @test DerivOp(1) === DerivOp{1}()
+            @test DerivOp(2) === DerivOp{2}()
+            @test DerivOp(3) === DerivOp{3}()
         end
 
-        @testset "Val{Int} compile-time broadcast" begin
-            result = _resolve_deriv_nd(Val(0), Val(3))
-            @test length(result) == 3
-            @test all(op -> op isa EvalValue, result)
-
-            result = _resolve_deriv_nd(Val(1), Val(2))
-            @test length(result) == 2
-            @test all(op -> op isa EvalDeriv1, result)
-        end
-
-        @testset "Val{Tuple} mixed partials" begin
-            # ∂f/∂x: deriv=1 on axis 1, deriv=0 on axis 2
-            result = _resolve_deriv_nd(Val((1, 0)), Val(2))
+        @testset "ND: DerivOp(n1, n2, ...) returns tuple" begin
+            result = DerivOp(1, 0)
+            @test result == (DerivOp{1}(), DerivOp{0}())
             @test result[1] isa EvalDeriv1
             @test result[2] isa EvalValue
 
-            # ∂²f/∂x∂y: deriv=1 on both axes
-            result = _resolve_deriv_nd(Val((1, 1)), Val(2))
+            result = DerivOp(1, 1)
             @test all(op -> op isa EvalDeriv1, result)
 
-            # ∂²f/∂x²: deriv=2 on axis 1, deriv=0 on axis 2
-            result = _resolve_deriv_nd(Val((2, 0)), Val(2))
-            @test result[1] isa EvalDeriv2
-            @test result[2] isa EvalValue
+            result = DerivOp(0, 1, 0)
+            @test result == (DerivOp{0}(), DerivOp{1}(), DerivOp{0}())
         end
 
-        @testset "reject invalid deriv values" begin
-            @test_throws ArgumentError _resolve_deriv_nd(4, Val(2))
-            @test_throws ArgumentError _resolve_deriv_nd(-1, Val(2))
+        @testset "backward-compat aliases" begin
+            @test DerivOp{0}() isa EvalValue
+            @test DerivOp{1}() isa EvalDeriv1
+            @test DerivOp{2}() isa EvalDeriv2
+            @test DerivOp{3}() isa EvalDeriv3
+            @test EvalValue() === DerivOp{0}()
+            @test EvalDeriv1() === DerivOp{1}()
+        end
 
-            # Wrong-length Val tuple
-            @test_throws ArgumentError _resolve_deriv_nd(Val((1, 0)), Val(3))
-            @test_throws ArgumentError _resolve_deriv_nd(Val((1, 0, 1, 0)), Val(3))
+        @testset "deriv_order" begin
+            @test deriv_order(DerivOp{0}()) == 0
+            @test deriv_order(DerivOp{1}()) == 1
+            @test deriv_order(DerivOp{2}()) == 2
+            @test deriv_order(DerivOp{3}()) == 3
         end
     end
 

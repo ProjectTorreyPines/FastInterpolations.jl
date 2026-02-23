@@ -302,28 +302,28 @@ const FI = FastInterpolations
         ys = [[1.0, 2.0, 3.0, 4.0], [10.0, 20.0, 30.0, 40.0]]
         sitp = constant_interp(x, ys)
 
-        @testset "deriv=0 returns values (existing behavior)" begin
-            @test sitp(0.5; deriv=0) == sitp(0.5)
-            @test sitp(1.5; deriv=0) == sitp(1.5)
+        @testset "deriv=DerivOp(0) returns values (existing behavior)" begin
+            @test sitp(0.5; deriv=DerivOp(0)) == sitp(0.5)
+            @test sitp(1.5; deriv=DerivOp(0)) == sitp(1.5)
         end
 
-        @testset "deriv=1 returns zeros" begin
-            @test sitp(0.5; deriv=1) == [0.0, 0.0]
-            @test sitp(1.5; deriv=1) == [0.0, 0.0]
-            @test sitp(2.5; deriv=1) == [0.0, 0.0]
+        @testset "deriv=DerivOp(1) returns zeros" begin
+            @test sitp(0.5; deriv=DerivOp(1)) == [0.0, 0.0]
+            @test sitp(1.5; deriv=DerivOp(1)) == [0.0, 0.0]
+            @test sitp(2.5; deriv=DerivOp(1)) == [0.0, 0.0]
         end
 
-        @testset "deriv=2 returns zeros" begin
-            @test sitp(0.5; deriv=2) == [0.0, 0.0]
-            @test sitp(1.5; deriv=2) == [0.0, 0.0]
+        @testset "deriv=DerivOp(2) returns zeros" begin
+            @test sitp(0.5; deriv=DerivOp(2)) == [0.0, 0.0]
+            @test sitp(1.5; deriv=DerivOp(2)) == [0.0, 0.0]
         end
 
         @testset "vector evaluation with deriv" begin
             xq = [0.5, 1.5, 2.5]
-            results_d1 = sitp(xq; deriv=1)
+            results_d1 = sitp(xq; deriv=DerivOp(1))
             @test all(r -> r == zeros(3), results_d1)
 
-            results_d2 = sitp(xq; deriv=2)
+            results_d2 = sitp(xq; deriv=DerivOp(2))
             @test all(r -> r == zeros(3), results_d2)
         end
     end
@@ -334,10 +334,10 @@ const FI = FastInterpolations
         sitp = constant_interp(x, ys; extrap=ConstExtrap())
 
         @testset "outside boundaries derivative is zero" begin
-            @test sitp(-0.5; deriv=1) == [0.0]
-            @test sitp(2.5; deriv=1) == [0.0]
-            @test sitp(-0.5; deriv=2) == [0.0]
-            @test sitp(2.5; deriv=2) == [0.0]
+            @test sitp(-0.5; deriv=DerivOp(1)) == [0.0]
+            @test sitp(2.5; deriv=DerivOp(1)) == [0.0]
+            @test sitp(-0.5; deriv=DerivOp(2)) == [0.0]
+            @test sitp(2.5; deriv=DerivOp(2)) == [0.0]
         end
     end
 
@@ -349,15 +349,15 @@ const FI = FastInterpolations
         @testset "x_max returns last value (CRITICAL)" begin
             # CRITICAL: x_max should return last value, not second-to-last
             @test sitp(2.0) == [3.0]  # Must be 3.0, not 2.0
-            @test sitp(2.0; deriv=0) == [3.0]
-            @test sitp(2.0; deriv=1) == [0.0]
-            @test sitp(2.0; deriv=2) == [0.0]
+            @test sitp(2.0; deriv=DerivOp(0)) == [3.0]
+            @test sitp(2.0; deriv=DerivOp(1)) == [0.0]
+            @test sitp(2.0; deriv=DerivOp(2)) == [0.0]
         end
 
         @testset "x_max derivative in vector query" begin
             xq = [1.5, 2.0]  # Include x_max in vector query
             outputs_d1 = [zeros(2)]
-            sitp(outputs_d1, xq; deriv=1)
+            sitp(outputs_d1, xq; deriv=DerivOp(1))
             @test outputs_d1[1][2] ≈ 0.0 atol=1e-10  # deriv at x_max should be 0
         end
     end
@@ -487,15 +487,15 @@ const FI = FastInterpolations
             sitp = constant_interp(x, [y1, y2]; extrap=ConstExtrap())
             xq = [-0.1, 0.5, 1.1]
 
-            # deriv=1 outside domain should be zero for constant extrap
+            # deriv=DerivOp(1) outside domain should be zero for constant extrap
             outputs_d1 = [zeros(3), zeros(3)]
-            sitp(outputs_d1, xq; deriv=1)
+            sitp(outputs_d1, xq; deriv=DerivOp(1))
             @test outputs_d1[1][1] ≈ 0.0 atol=1e-10  # Left boundary
             @test outputs_d1[1][3] ≈ 0.0 atol=1e-10  # Right boundary
 
-            # deriv=2 outside domain should be zero
+            # deriv=DerivOp(2) outside domain should be zero
             outputs_d2 = [zeros(3), zeros(3)]
-            sitp(outputs_d2, xq; deriv=2)
+            sitp(outputs_d2, xq; deriv=DerivOp(2))
             @test outputs_d2[1][1] ≈ 0.0 atol=1e-10
             @test outputs_d2[1][3] ≈ 0.0 atol=1e-10
         end

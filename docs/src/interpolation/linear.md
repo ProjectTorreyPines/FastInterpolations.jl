@@ -34,7 +34,7 @@ itp(1.0)    # evaluate at single point
 itp(xq)     # evaluate at multiple points
 
 # Derivatives
-linear_interp(x, y, 1.0; deriv=1)  # piecewise constant slope
+linear_interp(x, y, 1.0; deriv=DerivOp(1))  # piecewise constant slope
 d1 = deriv1(itp); d1(1.0)          # same via interpolant
 d2 = deriv2(itp); d2(1.0)          # always 0
 ```

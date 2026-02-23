@@ -295,16 +295,16 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
 
         # C2 continuity at wrap point: derivatives should match across boundary
         ε = 1e-6
-        d1_left = itp(ε; deriv=1)
-        d1_right = itp(2π - ε; deriv=1)
+        d1_left = itp(ε; deriv=DerivOp(1))
+        d1_right = itp(2π - ε; deriv=DerivOp(1))
         # sin'(0) ≈ sin'(2π) ≈ cos(0) = 1.0
         @test d1_left ≈ d1_right atol=1e-3
 
         # First derivative accuracy
-        @test itp(π / 4; deriv=1) ≈ cos(π / 4) atol=1e-3
+        @test itp(π / 4; deriv=DerivOp(1)) ≈ cos(π / 4) atol=1e-3
 
         # Second derivative
-        @test itp(π / 2; deriv=2) ≈ -sin(π / 2) atol=0.1
+        @test itp(π / 2; deriv=DerivOp(2)) ≈ -sin(π / 2) atol=0.1
     end
 
     # ========================================
@@ -655,10 +655,10 @@ end
         xq, yq = π/4, π/3
 
         # ∂/∂x [sin(x)cos(y)] = cos(x)cos(y)
-        @test itp((xq, yq); deriv=Val((1, 0))) ≈ cos(xq) * cos(yq) atol=1e-3
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ cos(xq) * cos(yq) atol=1e-3
 
         # ∂/∂y [sin(x)cos(y)] = -sin(x)sin(y)
-        @test itp((xq, yq); deriv=Val((0, 1))) ≈ -sin(xq) * sin(yq) atol=1e-3
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ -sin(xq) * sin(yq) atol=1e-3
     end
 
     # ========================================

@@ -22,9 +22,9 @@
 
 | Function | Description |
 |----------|-------------|
-| `cubic_interp(x, y, xq; deriv=1)` | First derivative (continuous) |
-| `cubic_interp(x, y, xq; deriv=2)` | Second derivative (continuous) |
-| `cubic_interp(x, y, xq; deriv=3)` | Third derivative (piecewise constant) |
+| `cubic_interp(x, y, xq; deriv=DerivOp(1))` | First derivative (continuous) |
+| `cubic_interp(x, y, xq; deriv=DerivOp(2))` | Second derivative (continuous) |
+| `cubic_interp(x, y, xq; deriv=DerivOp(3))` | Third derivative (piecewise constant) |
 | `deriv1(itp)` | First derivative view |
 | `deriv2(itp)` | Second derivative view |
 | `deriv3(itp)` | Third derivative view |

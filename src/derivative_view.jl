@@ -94,14 +94,16 @@ end
     deriv_view(itp::AbstractInterpolant, order::Int)
     deriv_view(itp::AbstractInterpolantND, order::Int)
     deriv_view(itp::AbstractInterpolantND, order::NTuple{N,Int})
+    deriv_view(itp::AbstractInterpolantND, ops::Tuple{Vararg{DerivOp, N}})
 
 Create a callable, zero-allocation derivative view of the interpolant.
 
 - 1D convenience: `deriv1/deriv2/deriv3` for the 1st/2nd/3rd derivatives.
 - Generic: `deriv_view(itp, order)` for 1D derivative orders and ND mixed partials.
+- DerivOp: `deriv_view(itp, DerivOp(1, 0))` for type-stable ND mixed partials.
 
 `DerivativeView` is a lightweight wrapper that delegates all evaluation calls to the underlying interpolant
-using the `deriv` keyword argument (e.g., `itp(xq; deriv=1)`). This enables a more functional syntax
+using the `deriv` keyword argument (e.g., `itp(xq; deriv=DerivOp(1))`). This enables a more functional syntax
 without the overhead of full object copying.
 
 # Keyword Arguments
@@ -161,32 +163,38 @@ d1(output, query_pts; search=LinearBinary())
     deriv_view(itp::AbstractInterpolant, order::Int)
     deriv_view(itp::AbstractInterpolantND, order::Int)
     deriv_view(itp::AbstractInterpolantND, order::NTuple{N,Int})
+    deriv_view(itp::AbstractInterpolantND, ops::Tuple{Vararg{DerivOp, N}})
 
 Create a derivative view for 1D or N-dimensional interpolants.
 - 1D: `order::Int` maps to `deriv=order`.
 - ND: `order::Int` applies the same order to all axes (e.g., `1` → `(1,1,...,1)`), i.e. a mixed partial with order `order` along every axis.
 - ND: `order::NTuple{N,Int}` specifies mixed partials.
-The ND view forwards `deriv=Val(order)` to enable compile-time dispatch.
+- ND: `ops::Tuple{Vararg{DerivOp, N}}` specifies mixed partials via DerivOp tuples (e.g., `DerivOp(1, 0)`).
+The ND view forwards `deriv=DerivOp(...)` to enable compile-time dispatch.
 
 # Examples
 ```julia
 itp = cubic_interp((x, y), data)
 
 # In 2D, `order::Int` is shorthand for the mixed partial `(order, order)`.
-dxy = deriv_view(itp, 1)        # same as (1, 1) => ∂²f/∂x∂y
+dxy = deriv_view(itp, 1)              # same as (1, 1) => ∂²f/∂x∂y
 dx = deriv_view(itp, (1, 0))
-dy = deriv_view(itp, (0, 1))
+dy = deriv_view(itp, DerivOp(0, 1))   # DerivOp syntax
 
 dx((0.5, 0.5))                         # ∂f/∂x
 dxy.([(0.1, 0.2), (0.3, 0.4)])          # broadcast over points
 ```
 """
-@inline deriv_view(itp::AbstractInterpolant, order::Int) = DerivativeView{order, typeof(itp)}(itp)
+@inline function deriv_view(itp::AbstractInterpolant, order::Int)
+    _make_derivop(order)  # validate order ∈ [0,3]
+    DerivativeView{order, typeof(itp)}(itp)
+end
 
 @inline function deriv_view(
     itp::AbstractInterpolantND{Tg, Tv, N},
     order::Int
 ) where {Tg, Tv, N}
+    _make_derivop(order)  # validate order ∈ [0,3]
     return DerivativeView{ntuple(_ -> order, Val(N)), typeof(itp)}(itp)
 end
 
@@ -194,6 +202,15 @@ end
     itp::AbstractInterpolantND{Tg, Tv, N},
     order::NTuple{N, Int}
 ) where {Tg, Tv, N}
+    foreach(_make_derivop, order)  # validate each order ∈ [0,3]
+    return DerivativeView{order, typeof(itp)}(itp)
+end
+
+@inline function deriv_view(
+    itp::AbstractInterpolantND{Tg, Tv, N},
+    ops::Tuple{Vararg{DerivOp, N}}
+) where {Tg, Tv, N}
+    order = ntuple(i -> deriv_order(ops[i]), Val(N))
     return DerivativeView{order, typeof(itp)}(itp)
 end
 
@@ -202,8 +219,8 @@ end
     throw(ArgumentError(
         "deriv$order is not supported for $(N)D interpolants. " *
         "For N-dimensional interpolants, use:\n" *
-        "  • deriv_view(itp, (d1, d2, ...))  for mixed partial derivatives\n" *
-        "  • itp(x; deriv=(1,0,...))         for mixed partial derivatives\n" *
+        "  • deriv_view(itp, DerivOp(d1, d2, ...))  for mixed partial derivatives\n" *
+        "  • itp(x; deriv=DerivOp(1,0,...))          for mixed partial derivatives\n" *
         "  • gradient(itp, x)                for ∇f\n" *
         "  • hessian(itp, x)                 for H(f)\n" *
         "  • laplacian(itp, x)               for ∇²f"
@@ -231,7 +248,7 @@ end
     "or deriv_view(itp, (d1, d2, ...)) for ND."
 ))
 
-@inline _deriv_kw(::Val{Order}) where {Order} = Order isa Tuple ? Val(Order) : Order
+@inline _deriv_kw(::Val{Order}) where {Order} = Order isa Tuple ? DerivOp(Order...) : DerivOp(Order)
 
 # Out-of-place calls (Scalar or Vector)
 @inline function (d::DerivativeView{Order, ITP})(

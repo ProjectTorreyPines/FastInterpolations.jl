@@ -59,8 +59,8 @@ vals = sitp([0.1, 0.5, 0.9])    # Returns Vector of Vectors
 sitp([out1, out2, out3], xq)    # In-place (zero allocation)
 
 # Derivatives
-d1 = sitp(0.5; deriv=1)     # First derivatives
-d2 = sitp(0.5; deriv=2)     # Second derivatives
+d1 = sitp(0.5; deriv=DerivOp(1))     # First derivatives
+d2 = sitp(0.5; deriv=DerivOp(2))     # Second derivatives
 
 # Complex values are also supported
 y_complex = [exp.(2im * π * x), (1.0+2.0im) .* x]
@@ -495,7 +495,7 @@ end
 
 # Scalar evaluation (explicit implementation for deriv keyword support)
 """
-    (sitp::QuadraticSeriesInterpolant)(xq::Real; deriv=0, search=Binary())
+    (sitp::QuadraticSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate all series at scalar query point (out-of-place).
 
@@ -505,7 +505,7 @@ The anchor preserves the Dual type in `xq` and `dL` fields for AD propagation.
 """
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     xq::Tq;
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -515,14 +515,12 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
     output = Vector{T_out}(undef, n_series(sitp))
-    @_dispatch_deriv deriv => op begin
-        _eval_series_at_anchor!(output, sitp, aq, op)
-    end
+    _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output
 end
 
 """
-    (sitp::QuadraticSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
+    (sitp::QuadraticSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate all series at scalar query point (in-place, zero allocation).
 
@@ -533,7 +531,7 @@ The anchor preserves the Dual type in `xq` and `dL` fields for AD propagation.
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     output::AbstractVector,  # Relaxed: allows Dual vector
     xq::Tq;
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -544,9 +542,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
 
     aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
 
-    @_dispatch_deriv deriv => op begin
-        _eval_series_at_anchor!(output, sitp, aq, op)
-    end
+    _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output
 end
 
@@ -555,7 +551,7 @@ end
 # ========================================
 
 """
-    (sitp::QuadraticSeriesInterpolant)(xq::AbstractVector; deriv=0)
+    (sitp::QuadraticSeriesInterpolant)(xq::AbstractVector; deriv=EvalValue())
 
 Evaluate all series at multiple query points (out-of-place).
 Returns a vector of vectors: one vector per y-series.
@@ -563,7 +559,7 @@ Output type is promoted to wider type for precision preservation.
 """
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     xq::AbstractVector{Tq};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -583,7 +579,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::QuadraticSeriesInterpolant)(outputs, xq::AbstractVector; deriv=0)
+    (sitp::QuadraticSeriesInterpolant)(outputs, xq::AbstractVector; deriv=EvalValue())
 
 Evaluate all series at multiple query points (in-place, zero allocation when types match).
 
@@ -594,7 +590,7 @@ Pool handles both same-type and mixed-type cases efficiently.
 @with_pool pool function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector},
     xq::AbstractVector{Tq};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -613,9 +609,7 @@ Pool handles both same-type and mixed-type cases efficiently.
     end
 
     # Evaluate all series - anchor already has correct dL precision
-    @_dispatch_deriv deriv => op begin
-        _eval_series_anchored!(outputs, sitp, aq_vec, op)
-    end
+    _eval_series_anchored!(outputs, sitp, aq_vec, deriv)
     return outputs
 end
 
@@ -734,19 +728,17 @@ end
 # ========================================
 
 """
-    (sitp::QuadraticSeriesInterpolant)(outputs, aq_vec::AbstractVector{<:_QuadraticAnchoredQuery}; deriv=0)
+    (sitp::QuadraticSeriesInterpolant)(outputs, aq_vec::AbstractVector{<:_QuadraticAnchoredQuery}; deriv=EvalValue())
 
 Evaluate with pre-built anchors (TRUE zero-allocation).
 """
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv})(
     outputs::AbstractVector{<:AbstractVector{Tv}},
     aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{Tg, Tq}};
-    deriv::Int=0
+    deriv::DerivOp=EvalValue()
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     _validate_series_outputs(outputs, n_series(sitp), length(aq_vec))
 
-    @_dispatch_deriv deriv => op begin
-        _eval_series_anchored!(outputs, sitp, aq_vec, op)
-    end
+    _eval_series_anchored!(outputs, sitp, aq_vec, deriv)
     return outputs
 end

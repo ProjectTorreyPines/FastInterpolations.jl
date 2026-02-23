@@ -558,12 +558,12 @@ end
         x = [0.0, 1.0, 2.0, 3.0]
         y = [0.0, 1.0, 4.0, 9.0]
 
-        # deriv=1: S'(1.5) = 3.0 (for f(x)=x², f'(x)=2x)
-        d1 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)), deriv=1)
+        # deriv=DerivOp(1): S'(1.5) = 3.0 (for f(x)=x², f'(x)=2x)
+        d1 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)), deriv=DerivOp(1))
         @test d1 ≈ 3.0 rtol=1e-10
 
-        # deriv=2: S''(x) = 2 for f(x)=x²
-        d2 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)), deriv=2)
+        # deriv=DerivOp(2): S''(x) = 2 for f(x)=x²
+        d2 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)), deriv=DerivOp(2))
         @test d2 ≈ 2.0 rtol=1e-10
     end
 
@@ -583,10 +583,10 @@ end
         @test quadratic_interp(x, y, 1.0; extrap=ConstExtrap()) ≈ 1.0
 
         # :constant - derivatives return zero outside domain
-        @test quadratic_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=1) ≈ 0.0
-        @test quadratic_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=1) ≈ 0.0
-        @test quadratic_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=2) ≈ 0.0
-        @test quadratic_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=2) ≈ 0.0
+        @test quadratic_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=DerivOp(1)) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=DerivOp(1)) ≈ 0.0
+        @test quadratic_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=DerivOp(2)) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=DerivOp(2)) ≈ 0.0
 
         # :extension - extend the polynomial (right side)
         v_ext_right = quadratic_interp(x, y, 2.5; extrap=ExtendExtrap())
@@ -597,8 +597,8 @@ end
         @test isfinite(v_ext_left)
 
         # :extension derivatives
-        d1_left = quadratic_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=1)
-        d2_left = quadratic_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=2)
+        d1_left = quadratic_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=DerivOp(1))
+        d2_left = quadratic_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=DerivOp(2))
         @test isfinite(d1_left)
         @test isfinite(d2_left)
     end
@@ -618,8 +618,8 @@ end
         y = [0.0, 1.0, 4.0, 9.0]
 
         @test @inferred(quadratic_interp(x, y, 0.5)) isa Float64
-        @test @inferred(quadratic_interp(x, y, 0.5; deriv=1)) isa Float64
-        @test @inferred(quadratic_interp(x, y, 0.5; deriv=2)) isa Float64
+        @test @inferred(quadratic_interp(x, y, 0.5; deriv=DerivOp(1))) isa Float64
+        @test @inferred(quadratic_interp(x, y, 0.5; deriv=DerivOp(2))) isa Float64
     end
 
     @testset "quadratic_interp non-uniform grid" begin
@@ -716,8 +716,8 @@ end
         itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
 
         # deriv keyword
-        @test itp(1.5; deriv=1) ≈ 3.0 rtol=1e-10
-        @test itp(1.5; deriv=2) ≈ 2.0 rtol=1e-10
+        @test itp(1.5; deriv=DerivOp(1)) ≈ 3.0 rtol=1e-10
+        @test itp(1.5; deriv=DerivOp(2)) ≈ 2.0 rtol=1e-10
     end
 
     @testset "QuadraticInterpolant Float32" begin
@@ -765,11 +765,11 @@ end
 
         # Derivative calls should also be zero-allocation
         for _ in 1:10
-            itp(0.5; deriv=1)
-            itp(0.5; deriv=2)
+            itp(0.5; deriv=DerivOp(1))
+            itp(0.5; deriv=DerivOp(2))
         end
-        allocs_d1 = @allocated itp(0.5; deriv=1)
-        allocs_d2 = @allocated itp(0.5; deriv=2)
+        allocs_d1 = @allocated itp(0.5; deriv=DerivOp(1))
+        allocs_d2 = @allocated itp(0.5; deriv=DerivOp(2))
         @test allocs_d1 <= ALLOC_THRESHOLD
         @test allocs_d2 <= ALLOC_THRESHOLD
     end
@@ -819,10 +819,10 @@ end
         x = collect(range(0.0, 1.0, 51))
         y = x.^2
 
-        # warm-up all code paths (deriv=0, 1, 2)
+        # warm-up all code paths (deriv=DerivOp(0), 1, 2)
         quadratic_interp(x, y, 0.5)
-        quadratic_interp(x, y, 0.5; deriv=1)
-        quadratic_interp(x, y, 0.5; deriv=2)
+        quadratic_interp(x, y, 0.5; deriv=DerivOp(1))
+        quadratic_interp(x, y, 0.5; deriv=DerivOp(2))
 
         # Measure allocation for scalar one-shot
         allocs = @allocated quadratic_interp(x, y, 0.5)
@@ -833,8 +833,8 @@ end
         @test allocs_other <= ALLOC_THRESHOLD
 
         # Derivative calls should also be zero-allocation
-        allocs_d1 = @allocated quadratic_interp(x, y, 0.5; deriv=1)
-        allocs_d2 = @allocated quadratic_interp(x, y, 0.5; deriv=2)
+        allocs_d1 = @allocated quadratic_interp(x, y, 0.5; deriv=DerivOp(1))
+        allocs_d2 = @allocated quadratic_interp(x, y, 0.5; deriv=DerivOp(2))
         @test allocs_d1 <= ALLOC_THRESHOLD
         @test allocs_d2 <= ALLOC_THRESHOLD
     end
@@ -851,8 +851,8 @@ end
         quadratic_interp!(out, x, y, xq; bc = Left(Deriv2(1.0)))
         quadratic_interp!(out, x, y, xq; bc = Right(Deriv1(2.0)))
         quadratic_interp!(out, x, y, xq; bc = Right(Deriv2(1.0)))
-        quadratic_interp!(out, x, y, xq; deriv=1)
-        quadratic_interp!(out, x, y, xq; deriv=2)
+        quadratic_interp!(out, x, y, xq; deriv=DerivOp(1))
+        quadratic_interp!(out, x, y, xq; deriv=DerivOp(2))
 
         # In-place version - all BC types
         alloc1 = @allocated quadratic_interp!(out, x, y, xq)
@@ -879,8 +879,8 @@ end
         @test alloc5 <= ALLOC_THRESHOLD
 
         # Derivative evaluations
-        alloc_d1 = @allocated quadratic_interp!(out, x, y, xq; deriv=1)
-        alloc_d2 = @allocated quadratic_interp!(out, x, y, xq; deriv=2)
+        alloc_d1 = @allocated quadratic_interp!(out, x, y, xq; deriv=DerivOp(1))
+        alloc_d2 = @allocated quadratic_interp!(out, x, y, xq; deriv=DerivOp(2))
 
         @test alloc_d1 <= ALLOC_THRESHOLD
         @test alloc_d2 <= ALLOC_THRESHOLD
@@ -991,7 +991,7 @@ end
         @test result3 ≈ 4.0
 
         # Derivatives with Int data
-        d1 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)), deriv=1)
+        d1 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)), deriv=DerivOp(1))
         @test d1 ≈ 3.0 rtol=1e-10
     end
 
@@ -1039,7 +1039,7 @@ end
         @test result ≈ 4.0
 
         # Derivative with Int query
-        d1 = itp(2; deriv=1)
+        d1 = itp(2; deriv=DerivOp(1))
         @test d1 ≈ 4.0 rtol=1e-10
     end
 
@@ -1057,7 +1057,7 @@ end
 
         # Derivative with type conversion
         out2 = zeros(2)
-        itp(out2, [1, 2]; deriv=1)
+        itp(out2, [1, 2]; deriv=DerivOp(1))
         @test out2 ≈ [2.0, 4.0] rtol=1e-10
     end
 
@@ -1184,11 +1184,11 @@ end
                 @test result ≈ expected rtol=1e-12 atol=1e-14
 
                 # First derivative
-                result_d1 = quadratic_interp(x, y, xq; bc=bc, deriv=1)
+                result_d1 = quadratic_interp(x, y, xq; bc=bc, deriv=DerivOp(1))
                 @test result_d1 ≈ expected_d1 rtol=1e-12 atol=1e-14
 
                 # Second derivative
-                result_d2 = quadratic_interp(x, y, xq; bc=bc, deriv=2)
+                result_d2 = quadratic_interp(x, y, xq; bc=bc, deriv=DerivOp(2))
                 @test result_d2 ≈ expected_d2 rtol=1e-12 atol=1e-14
             end
         end
@@ -1352,16 +1352,16 @@ end
 
                 # Left extrapolation - derivatives
                 for xi in xq_left
-                    d1 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=1)
-                    d2 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=2)
+                    d1 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=DerivOp(1))
+                    d2 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=DerivOp(2))
                     @test d1 ≈ f_d1(xi) rtol=1e-12 atol=1e-14
                     @test d2 ≈ f_d2 rtol=1e-12 atol=1e-14
                 end
 
                 # Right extrapolation - derivatives
                 for xi in xq_right
-                    d1 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=1)
-                    d2 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=2)
+                    d1 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=DerivOp(1))
+                    d2 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=DerivOp(2))
                     @test d1 ≈ f_d1(xi) rtol=1e-12 atol=1e-14
                     @test d2 ≈ f_d2 rtol=1e-12 atol=1e-14
                 end
@@ -1497,17 +1497,17 @@ end
         y = x.^2
 
         # First derivative (should be finite)
-        d1 = quadratic_interp(x, y, 1.5; bc=MinCurvFit(), deriv=1)
+        d1 = quadratic_interp(x, y, 1.5; bc=MinCurvFit(), deriv=DerivOp(1))
         @test isfinite(d1)
 
         # Second derivative (should be finite)
-        d2 = quadratic_interp(x, y, 1.5; bc=MinCurvFit(), deriv=2)
+        d2 = quadratic_interp(x, y, 1.5; bc=MinCurvFit(), deriv=DerivOp(2))
         @test isfinite(d2)
 
         # Interpolant derivatives
         itp = quadratic_interp(x, y; bc=MinCurvFit())
-        @test isfinite(itp(1.5; deriv=1))
-        @test isfinite(itp(1.5; deriv=2))
+        @test isfinite(itp(1.5; deriv=DerivOp(1)))
+        @test isfinite(itp(1.5; deriv=DerivOp(2)))
     end
 
     @testset "MinCurvFit type promotion (Real → Float)" begin
@@ -1715,7 +1715,7 @@ end
             @test result ≈ expected rtol=1e-12
 
             # Second derivative should be zero (linear function)
-            d2 = quadratic_interp(x, y, xq; bc=MinCurvFit(), deriv=2)
+            d2 = quadratic_interp(x, y, xq; bc=MinCurvFit(), deriv=DerivOp(2))
             @test all(abs.(d2) .< 1e-12)
         end
 
@@ -1731,8 +1731,8 @@ end
             @test result ≈ expected rtol=1e-12
 
             # All derivatives should be zero
-            d1 = quadratic_interp(x, y, xq; bc=MinCurvFit(), deriv=1)
-            d2 = quadratic_interp(x, y, xq; bc=MinCurvFit(), deriv=2)
+            d1 = quadratic_interp(x, y, xq; bc=MinCurvFit(), deriv=DerivOp(1))
+            d2 = quadratic_interp(x, y, xq; bc=MinCurvFit(), deriv=DerivOp(2))
             @test all(abs.(d1) .< 1e-12)
             @test all(abs.(d2) .< 1e-12)
         end
@@ -2059,12 +2059,12 @@ end
         itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
 
         # First derivative should match 2x
-        @test itp(1.5; deriv=1) ≈ 2*1.5 atol=1e-11
-        @test itp(2.5; deriv=1) ≈ 2*2.5 atol=1e-11
+        @test itp(1.5; deriv=DerivOp(1)) ≈ 2*1.5 atol=1e-11
+        @test itp(2.5; deriv=DerivOp(1)) ≈ 2*2.5 atol=1e-11
 
         # Second derivative should be constant = 2
-        @test itp(1.5; deriv=2) ≈ 2.0 atol=1e-11
-        @test itp(2.5; deriv=2) ≈ 2.0 atol=1e-11
+        @test itp(1.5; deriv=DerivOp(2)) ≈ 2.0 atol=1e-11
+        @test itp(2.5; deriv=DerivOp(2)) ≈ 2.0 atol=1e-11
     end
 
     @testset "Float32 support" begin

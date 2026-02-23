@@ -5,7 +5,7 @@
 # Regression tests for the NTuple type constraint bug:
 #   - Heterogeneous grids (Range + Vector) create Tuple{ScalarSpacing, VectorSpacing}
 #     which doesn't match NTuple{N, <:AbstractGridSpacing} (requires same concrete type)
-#   - Mixed derivatives (e.g., deriv=(2,0)) create Tuple{EvalDeriv2, EvalValue}
+#   - Mixed derivatives (e.g., deriv=DerivOp(2,0)) create Tuple{EvalDeriv2, EvalValue}
 #     which doesn't match NTuple{N, <:AbstractEvalOp}
 #
 # These tests cover the specific combination that was previously untested and
@@ -44,20 +44,20 @@ using FastInterpolations
         xq, yq = 1.0, 0.5
 
         # Value
-        @test itp((xq, yq); deriv=(0, 0)) ≈ f(xq, yq) atol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(0, 0)) ≈ f(xq, yq) atol=1e-10
 
         # First derivatives (mixed derivative orders: one axis differentiated, one not)
-        @test itp((xq, yq); deriv=(1, 0)) ≈ df_dx(xq, yq)   atol=1e-8
-        @test itp((xq, yq); deriv=(0, 1)) ≈ df_dy(xq, yq)   atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ df_dx(xq, yq)   atol=1e-8
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ df_dy(xq, yq)   atol=1e-6
 
         # Second derivatives — these are the cases that triggered the original bug
-        @test itp((xq, yq); deriv=(2, 0)) ≈ d2f_dx2(xq, yq) atol=1e-6
-        @test itp((xq, yq); deriv=(0, 2)) ≈ d2f_dy2(xq, yq) atol=1e-4
-        @test itp((xq, yq); deriv=(1, 1)) ≈ d2f_dxdy(xq, yq) atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(2, 0)) ≈ d2f_dx2(xq, yq) atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(0, 2)) ≈ d2f_dy2(xq, yq) atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(1, 1)) ≈ d2f_dxdy(xq, yq) atol=1e-6
 
         # Third derivatives
-        @test itp((xq, yq); deriv=(3, 0)) ≈ d3f_dx3(xq, yq) atol=1e-4
-        @test itp((xq, yq); deriv=(0, 3)) ≈ d3f_dy3(xq, yq) atol=1e-2
+        @test itp((xq, yq); deriv=DerivOp(3, 0)) ≈ d3f_dx3(xq, yq) atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(0, 3)) ≈ d3f_dy3(xq, yq) atol=1e-2
     end
 
     @testset "2D Cubic: Vector × Range with CubicFit — reversed heterogeneous" begin
@@ -76,12 +76,12 @@ using FastInterpolations
         itp = cubic_interp((x_vec, y_range), data; bc=CubicFit())
         xq, yq = 0.8, 0.6
 
-        @test itp((xq, yq); deriv=(0, 0)) ≈ f(xq, yq)         atol=1e-10
-        @test itp((xq, yq); deriv=(1, 0)) ≈ df_dx(xq, yq)     atol=1e-6
-        @test itp((xq, yq); deriv=(0, 1)) ≈ df_dy(xq, yq)     atol=1e-8
-        @test itp((xq, yq); deriv=(2, 0)) ≈ d2f_dx2(xq, yq)   atol=1e-4
-        @test itp((xq, yq); deriv=(0, 2)) ≈ d2f_dy2(xq, yq)   atol=1e-6
-        @test itp((xq, yq); deriv=(1, 1)) ≈ d2f_dxdy(xq, yq)  atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(0, 0)) ≈ f(xq, yq)         atol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ df_dx(xq, yq)     atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ df_dy(xq, yq)     atol=1e-8
+        @test itp((xq, yq); deriv=DerivOp(2, 0)) ≈ d2f_dx2(xq, yq)   atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(0, 2)) ≈ d2f_dy2(xq, yq)   atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(1, 1)) ≈ d2f_dxdy(xq, yq)  atol=1e-6
     end
 
     @testset "2D Cubic: Vector × Vector (both non-uniform)" begin
@@ -99,11 +99,11 @@ using FastInterpolations
         itp = cubic_interp((x_vec, y_vec), data; bc=CubicFit())
         xq, yq = 0.8, 0.6
 
-        @test itp((xq, yq); deriv=(1, 0)) ≈ df_dx(xq, yq)     atol=1e-6
-        @test itp((xq, yq); deriv=(0, 1)) ≈ df_dy(xq, yq)     atol=1e-6
-        @test itp((xq, yq); deriv=(2, 0)) ≈ 2yq                atol=1e-4
-        @test itp((xq, yq); deriv=(0, 2)) ≈ 2xq                atol=1e-4
-        @test itp((xq, yq); deriv=(1, 1)) ≈ d2f_dxdy(xq, yq)  atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ df_dx(xq, yq)     atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ df_dy(xq, yq)     atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(2, 0)) ≈ 2yq                atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(0, 2)) ≈ 2xq                atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(1, 1)) ≈ d2f_dxdy(xq, yq)  atol=1e-4
     end
 
     # ========================================
@@ -135,14 +135,14 @@ using FastInterpolations
         @test itp((xq, yq, zq)) ≈ f(xq, yq, zq) atol=1e-10
 
         # First derivatives — each is a mixed derivative order tuple like (1,0,0)
-        @test itp((xq, yq, zq); deriv=(1, 0, 0)) ≈ df_dx(xq, yq, zq) atol=1e-6
-        @test itp((xq, yq, zq); deriv=(0, 1, 0)) ≈ df_dy(xq, yq, zq) atol=1e-6
-        @test itp((xq, yq, zq); deriv=(0, 0, 1)) ≈ df_dz(xq, yq, zq) atol=1e-6
+        @test itp((xq, yq, zq); deriv=DerivOp(1, 0, 0)) ≈ df_dx(xq, yq, zq) atol=1e-6
+        @test itp((xq, yq, zq); deriv=DerivOp(0, 1, 0)) ≈ df_dy(xq, yq, zq) atol=1e-6
+        @test itp((xq, yq, zq); deriv=DerivOp(0, 0, 1)) ≈ df_dz(xq, yq, zq) atol=1e-6
 
         # Second derivatives — mixed orders across 3 axes
-        @test itp((xq, yq, zq); deriv=(2, 0, 0)) ≈ d2f_dx2(xq, yq, zq) atol=1e-4
-        @test itp((xq, yq, zq); deriv=(0, 2, 0)) ≈ d2f_dy2(xq, yq, zq) atol=1e-4
-        @test itp((xq, yq, zq); deriv=(0, 0, 2)) ≈ d2f_dz2(xq, yq, zq) atol=1e-4
+        @test itp((xq, yq, zq); deriv=DerivOp(2, 0, 0)) ≈ d2f_dx2(xq, yq, zq) atol=1e-4
+        @test itp((xq, yq, zq); deriv=DerivOp(0, 2, 0)) ≈ d2f_dy2(xq, yq, zq) atol=1e-4
+        @test itp((xq, yq, zq); deriv=DerivOp(0, 0, 2)) ≈ d2f_dz2(xq, yq, zq) atol=1e-4
     end
 
     # ========================================
@@ -161,8 +161,8 @@ using FastInterpolations
         xq, yq = 1.0, 0.5
 
         @test itp((xq, yq))              ≈ f(xq, yq) atol=1e-12
-        @test itp((xq, yq); deriv=(1, 0)) ≈ 3.0       atol=1e-10
-        @test itp((xq, yq); deriv=(0, 1)) ≈ 2.0       atol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ 3.0       atol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ 2.0       atol=1e-10
     end
 
     # ========================================
@@ -198,12 +198,12 @@ using FastInterpolations
         itp = quadratic_interp((x_range, y_vec), data; bc=Right(QuadraticFit()))
         xq, yq = 1.0, 0.5
 
-        @test itp((xq, yq); deriv=(0, 0)) ≈ f(xq, yq)          atol=1e-10
-        @test itp((xq, yq); deriv=(1, 0)) ≈ df_dx(xq, yq)      atol=1e-8
-        @test itp((xq, yq); deriv=(0, 1)) ≈ df_dy(xq, yq)      atol=1e-6
-        @test itp((xq, yq); deriv=(2, 0)) ≈ d2f_dx2(xq, yq)    atol=1e-6
-        @test itp((xq, yq); deriv=(0, 2)) ≈ d2f_dy2(xq, yq)    atol=1e-4
-        @test itp((xq, yq); deriv=(1, 1)) ≈ d2f_dxdy(xq, yq)   atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(0, 0)) ≈ f(xq, yq)          atol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ df_dx(xq, yq)      atol=1e-8
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ df_dy(xq, yq)      atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(2, 0)) ≈ d2f_dx2(xq, yq)    atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(0, 2)) ≈ d2f_dy2(xq, yq)    atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(1, 1)) ≈ d2f_dxdy(xq, yq)   atol=1e-6
     end
 
     @testset "2D Quadratic: Vector × Range — reversed heterogeneous" begin
@@ -219,10 +219,10 @@ using FastInterpolations
         itp = quadratic_interp((x_vec, y_range), data; bc=Right(QuadraticFit()))
         xq, yq = 0.8, 0.6
 
-        @test itp((xq, yq); deriv=(0, 0)) ≈ f(xq, yq)          atol=1e-10
-        @test itp((xq, yq); deriv=(1, 0)) ≈ df_dx(xq, yq)      atol=1e-6
-        @test itp((xq, yq); deriv=(0, 1)) ≈ df_dy(xq, yq)      atol=1e-8
-        @test itp((xq, yq); deriv=(1, 1)) ≈ d2f_dxdy(xq, yq)   atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(0, 0)) ≈ f(xq, yq)          atol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ df_dx(xq, yq)      atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ df_dy(xq, yq)      atol=1e-8
+        @test itp((xq, yq); deriv=DerivOp(1, 1)) ≈ d2f_dxdy(xq, yq)   atol=1e-4
     end
 
     @testset "2D Quadratic: Vector × Vector (both non-uniform)" begin
@@ -238,9 +238,9 @@ using FastInterpolations
         itp = quadratic_interp((x_vec, y_vec), data; bc=Right(QuadraticFit()))
         xq, yq = 0.8, 0.6
 
-        @test itp((xq, yq); deriv=(1, 0)) ≈ df_dx(xq, yq)      atol=1e-6
-        @test itp((xq, yq); deriv=(0, 1)) ≈ df_dy(xq, yq)       atol=1e-6
-        @test itp((xq, yq); deriv=(1, 1)) ≈ d2f_dxdy(xq, yq)   atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ df_dx(xq, yq)      atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ df_dy(xq, yq)       atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(1, 1)) ≈ d2f_dxdy(xq, yq)   atol=1e-4
     end
 
     # ========================================
@@ -266,17 +266,17 @@ using FastInterpolations
         xq, yq, zq = 1.0, 0.5, 0.7
 
         @test itp((xq, yq, zq)) ≈ f(xq, yq, zq) atol=1e-8
-        @test itp((xq, yq, zq); deriv=(1, 0, 0)) ≈ df_dx(xq, yq, zq) atol=1e-6
-        @test itp((xq, yq, zq); deriv=(0, 1, 0)) ≈ df_dy(xq, yq, zq) atol=1e-6
-        @test itp((xq, yq, zq); deriv=(0, 0, 1)) ≈ df_dz(xq, yq, zq) atol=1e-6
-        @test itp((xq, yq, zq); deriv=(2, 0, 0)) ≈ d2f_dx2(xq, yq, zq) atol=1e-4
+        @test itp((xq, yq, zq); deriv=DerivOp(1, 0, 0)) ≈ df_dx(xq, yq, zq) atol=1e-6
+        @test itp((xq, yq, zq); deriv=DerivOp(0, 1, 0)) ≈ df_dy(xq, yq, zq) atol=1e-6
+        @test itp((xq, yq, zq); deriv=DerivOp(0, 0, 1)) ≈ df_dz(xq, yq, zq) atol=1e-6
+        @test itp((xq, yq, zq); deriv=DerivOp(2, 0, 0)) ≈ d2f_dx2(xq, yq, zq) atol=1e-4
     end
 
     # ========================================
     # QUADRATIC: VAL-BASED DERIVATIVE + BATCH WITH HETEROGENEOUS GRIDS
     # ========================================
 
-    @testset "2D Quadratic: heterogeneous grid + Val derivative spec" begin
+    @testset "2D Quadratic: heterogeneous grid + DerivOp derivative spec" begin
         f(x, y) = x^2 + y^2
         x_range = range(0.0, 2.0, 15)
         y_vec   = [0.0, 0.2, 0.5, 0.8, 1.0]
@@ -285,9 +285,9 @@ using FastInterpolations
         itp = quadratic_interp((x_range, y_vec), data; bc=Right(QuadraticFit()))
         xq, yq = 1.0, 0.5
 
-        @test itp((xq, yq); deriv=Val((1, 0))) ≈ 2xq   atol=1e-8
-        @test itp((xq, yq); deriv=Val((0, 1))) ≈ 2yq   atol=1e-6
-        @test itp((xq, yq); deriv=Val((2, 0))) ≈ 2.0    atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ 2xq   atol=1e-8
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ 2yq   atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(2, 0)) ≈ 2.0    atol=1e-4
     end
 
     @testset "2D Quadratic: heterogeneous grid + batch evaluation" begin
@@ -305,7 +305,7 @@ using FastInterpolations
             @test vals[k] ≈ f(xqs[k], yqs[k]) atol=1e-8
         end
 
-        dvals = itp((xqs, yqs); deriv=(1, 0))
+        dvals = itp((xqs, yqs); deriv=DerivOp(1, 0))
         for k in 1:3
             @test dvals[k] ≈ 2xqs[k] atol=1e-6
         end
@@ -355,10 +355,10 @@ using FastInterpolations
 
         xq, yq = 1.0, 0.6
         @test itp((xq, yq))              ≈ f(xq, yq)     atol=1e-10
-        @test itp((xq, yq); deriv=(1, 0)) ≈ 2xq * yq     atol=1e-6
-        @test itp((xq, yq); deriv=(0, 1)) ≈ xq^2          atol=1e-6
-        @test itp((xq, yq); deriv=(2, 0)) ≈ 2yq           atol=1e-4
-        @test itp((xq, yq); deriv=(0, 2)) ≈ 0.0           atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ 2xq * yq     atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ xq^2          atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(2, 0)) ≈ 2yq           atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(0, 2)) ≈ 0.0           atol=1e-4
     end
 
     # ========================================
@@ -377,8 +377,8 @@ using FastInterpolations
                            extrap=(ConstExtrap(), ExtendExtrap()))
 
         # Interior should work normally
-        @test itp((1.0, 0.5); deriv=(1, 0)) ≈ 0.5 atol=1e-6
-        @test itp((1.0, 0.5); deriv=(0, 1)) ≈ 1.0 atol=1e-6
+        @test itp((1.0, 0.5); deriv=DerivOp(1, 0)) ≈ 0.5 atol=1e-6
+        @test itp((1.0, 0.5); deriv=DerivOp(0, 1)) ≈ 1.0 atol=1e-6
     end
 
     # ========================================
@@ -396,16 +396,16 @@ using FastInterpolations
         xq, yq = 1.0, 0.5
 
         @test itp((xq, yq))              ≈ f(xq, yq)         rtol=1e-10
-        @test itp((xq, yq); deriv=(1, 0)) ≈ 2xq * yq^2       rtol=1e-10
-        @test itp((xq, yq); deriv=(0, 1)) ≈ 2xq^2 * yq       rtol=1e-10
-        @test itp((xq, yq); deriv=(2, 0)) ≈ 2yq^2            rtol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ 2xq * yq^2       rtol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ 2xq^2 * yq       rtol=1e-10
+        @test itp((xq, yq); deriv=DerivOp(2, 0)) ≈ 2yq^2            rtol=1e-10
     end
 
     # ========================================
     # VAL-BASED DERIVATIVE SPECIFICATION
     # ========================================
 
-    @testset "2D Cubic: heterogeneous grid + Val derivative spec" begin
+    @testset "2D Cubic: heterogeneous grid + DerivOp derivative spec" begin
         f(x, y) = x^2 + y^2
         x_range = range(0.0, 2.0, 15)
         y_vec   = [0.0, 0.2, 0.5, 0.8, 1.0]
@@ -414,11 +414,11 @@ using FastInterpolations
         itp = cubic_interp((x_range, y_vec), data; bc=CubicFit())
         xq, yq = 1.0, 0.5
 
-        # Val-based (compile-time) mixed derivatives
-        @test itp((xq, yq); deriv=Val((1, 0))) ≈ 2xq   atol=1e-8
-        @test itp((xq, yq); deriv=Val((0, 1))) ≈ 2yq   atol=1e-6
-        @test itp((xq, yq); deriv=Val((2, 0))) ≈ 2.0    atol=1e-4
-        @test itp((xq, yq); deriv=Val((0, 2))) ≈ 2.0    atol=1e-4
+        # DerivOp-based mixed derivatives
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ 2xq   atol=1e-8
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ 2yq   atol=1e-6
+        @test itp((xq, yq); deriv=DerivOp(2, 0)) ≈ 2.0    atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(0, 2)) ≈ 2.0    atol=1e-4
     end
 
     # ========================================
@@ -443,7 +443,7 @@ using FastInterpolations
         end
 
         # Batch derivative
-        dvals = itp((xqs, yqs); deriv=(1, 0))
+        dvals = itp((xqs, yqs); deriv=DerivOp(1, 0))
         for k in 1:3
             @test dvals[k] ≈ 2xqs[k] * yqs[k] atol=1e-6
         end

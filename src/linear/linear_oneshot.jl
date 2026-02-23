@@ -16,7 +16,7 @@
 # ========================================
 
 """
-    linear_interp!(output, x, y, x_targets; extrap=NoExtrap(), deriv=0, search=Binary())
+    linear_interp!(output, x, y, x_targets; extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
 
 Zero-allocation linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -25,7 +25,7 @@ Zero-allocation linear interpolation with automatic dispatch:
 # Arguments
 - `output`: Pre-allocated output vector (must be floating-point type)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
-- `deriv::Int`: Derivative order (0=value, 1=first derivative, 2=second derivative)
+- `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative, `DerivOp(2)` second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
   - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
@@ -61,17 +61,15 @@ function linear_interp!(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(x, x_targets, extrap)
-        _linear_interp_loop!(output, x, y, x_targets, extrap, op, searcher)
-    end
+    @boundscheck _check_domain(x, x_targets, extrap)
+    _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
 end
 
 # Internal loop with AbstractExtrap dispatch and Searcher (type-stable)
@@ -156,17 +154,15 @@ end
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(x, x_targets, extrap)
-        _linear_interp_loop!(output, x, y, x_targets, extrap, op, searcher)
-    end
+    @boundscheck _check_domain(x, x_targets, extrap)
+    _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
 end
 
 # ========================================
@@ -174,7 +170,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xq::Real; extrap=NoExtrap(), deriv=0, search=Binary()) -> AbstractFloat
+    linear_interp(x, y, xq::Real; extrap=NoExtrap(), deriv=EvalValue(), search=Binary()) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -183,7 +179,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 # Arguments
 - `xq::Real`: Single interpolation query point
 - `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
-- `deriv::Int`: Derivative order (0=value, 1=first derivative)
+- `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
   - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
@@ -388,16 +384,14 @@ end
     y::AbstractVector{Tv},
     xq::Tq;
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        linear_interp(x, y, xq, extrap, op, searcher)
-    end
+    linear_interp(x, y, xq, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
@@ -417,7 +411,7 @@ function linear_interp(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_targets))
@@ -438,7 +432,7 @@ function linear_interp!(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"
@@ -470,7 +464,7 @@ end
     y::AbstractVector{Tv},
     xq::Tq;
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
@@ -488,7 +482,7 @@ function linear_interp(
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)

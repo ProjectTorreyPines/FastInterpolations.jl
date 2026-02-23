@@ -110,15 +110,15 @@ using FastInterpolations
         itp = quadratic_interp(x, y)
 
         # First derivative should return ComplexF64
-        d1 = itp(0.5; deriv=1)
+        d1 = itp(0.5; deriv=DerivOp(1))
         @test d1 isa ComplexF64
 
         # Second derivative should return ComplexF64
-        d2 = itp(0.5; deriv=2)
+        d2 = itp(0.5; deriv=DerivOp(2))
         @test d2 isa ComplexF64
 
         # Third derivative should be zero (quadratic)
-        d3 = itp(0.5; deriv=3)
+        d3 = itp(0.5; deriv=DerivOp(3))
         @test d3 isa ComplexF64
         @test d3 == zero(ComplexF64)
     end
@@ -142,12 +142,12 @@ using FastInterpolations
         itp = quadratic_interp(x, y)
 
         # Check first derivative
-        @test itp(0.5; deriv=1) ≈ df(0.5) atol=1e-12
-        @test itp(1.5; deriv=1) ≈ df(1.5) atol=1e-12
+        @test itp(0.5; deriv=DerivOp(1)) ≈ df(0.5) atol=1e-12
+        @test itp(1.5; deriv=DerivOp(1)) ≈ df(1.5) atol=1e-12
 
         # Check second derivative
-        @test itp(0.5; deriv=2) ≈ d2f(0.5) atol=1e-12
-        @test itp(1.5; deriv=2) ≈ d2f(1.5) atol=1e-12
+        @test itp(0.5; deriv=DerivOp(2)) ≈ d2f(0.5) atol=1e-12
+        @test itp(1.5; deriv=DerivOp(2)) ≈ d2f(1.5) atol=1e-12
     end
 
     # ========================================
@@ -212,7 +212,7 @@ using FastInterpolations
         @test @inferred(itp(0.5)) isa ComplexF64
 
         # First derivative should be type-stable
-        @test @inferred(itp(0.5; deriv=1)) isa ComplexF64
+        @test @inferred(itp(0.5; deriv=DerivOp(1))) isa ComplexF64
     end
 
     # ========================================
@@ -280,7 +280,7 @@ using FastInterpolations
         val = itp(0.5)
         @test val isa ComplexF64
 
-        d1 = itp(0.5; deriv=1)
+        d1 = itp(0.5; deriv=DerivOp(1))
         @test d1 isa ComplexF64
     end
 
@@ -318,7 +318,7 @@ using FastInterpolations
         val = itp(0.5)
         @test val isa Float64
 
-        d1 = itp(0.5; deriv=1)
+        d1 = itp(0.5; deriv=DerivOp(1))
         @test d1 isa Float64
     end
 
@@ -342,7 +342,7 @@ using FastInterpolations
             @test val isa ComplexF64
 
             # Derivative should be promoted to Complex (with zero imaginary)
-            d1 = itp(x[1]; deriv=1)
+            d1 = itp(x[1]; deriv=DerivOp(1))
             @test d1 isa ComplexF64
             @test real(d1) ≈ 2.0
             @test imag(d1) ≈ 0.0 atol=1e-14
@@ -361,7 +361,7 @@ using FastInterpolations
             @test val isa Float64
 
             # Derivative should be Real (Complex BC converted)
-            d1 = itp(x[1]; deriv=1)
+            d1 = itp(x[1]; deriv=DerivOp(1))
             @test d1 isa Float64
             @test d1 ≈ 2.0
         end
@@ -386,7 +386,7 @@ using FastInterpolations
             itp = quadratic_interp(x, y_complex; bc=bc)
 
             @test value_type(itp) == ComplexF64
-            d1 = itp(x[1]; deriv=1)
+            d1 = itp(x[1]; deriv=DerivOp(1))
             @test d1 ≈ 2.0 + 1.0im
 
             # Deriv2 with explicit Complex value
@@ -402,7 +402,7 @@ using FastInterpolations
             bc = Right(Deriv1(3.0))  # Float64
             itp = quadratic_interp(x, y_complex; bc=bc)
 
-            d_end = itp(x[end]; deriv=1)
+            d_end = itp(x[end]; deriv=DerivOp(1))
             @test d_end isa ComplexF64
             @test real(d_end) ≈ 3.0
             @test imag(d_end) ≈ 0.0 atol=1e-14
@@ -461,7 +461,7 @@ using FastInterpolations
             itp = quadratic_interp(x32, y32; bc=bc)
 
             @test value_type(itp) == ComplexF32
-            d1 = itp(x32[1]; deriv=1)
+            d1 = itp(x32[1]; deriv=DerivOp(1))
             @test d1 isa ComplexF32
         end
     end

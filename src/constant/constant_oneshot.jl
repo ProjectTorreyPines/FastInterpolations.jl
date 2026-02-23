@@ -149,7 +149,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, xi; extrap=NoExtrap(), side=NearestSide(), deriv=0, search=Binary())
+    constant_interp(x, y, xi; extrap=NoExtrap(), side=NearestSide(), deriv=EvalValue(), search=Binary())
 
 Constant (step/piecewise constant) interpolation at a single point.
 
@@ -166,7 +166,7 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `NearestSide()` (default): nearest neighbor (left tie-breaking at midpoint)
   - `LeftSide()`: always use left value
   - `RightSide()`: use right value (except at grid points)
-- `deriv::Int`: Derivative order (0, 1, or 2). Derivatives are always 0.
+- `deriv::DerivOp`: Derivative order (`EvalValue()`, `DerivOp(1)`, or `DerivOp(2)`). Derivatives are always 0.
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
   - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
@@ -199,16 +199,14 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
     xi::Tq;
     extrap::AbstractExtrap=NoExtrap(),
     side::AbstractSide=NearestSide(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        _constant_eval_at_point(x, y, xi, extrap, side, op, searcher)
-    end
+    _constant_eval_at_point(x, y, xi, extrap, side, deriv, searcher)
 end
 
 # ========================================
@@ -216,7 +214,7 @@ end
 # ========================================
 
 """
-    constant_interp!(output, x, y, x_targets; extrap=NoExtrap(), side=NearestSide(), deriv=0, search=Binary())
+    constant_interp!(output, x, y, x_targets; extrap=NoExtrap(), side=NearestSide(), deriv=EvalValue(), search=Binary())
 
 Zero-allocation constant interpolation for multiple query points.
 
@@ -247,18 +245,16 @@ function constant_interp!(
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
     side::AbstractSide=NearestSide(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(x, x_targets, extrap)
-        @inbounds for i in eachindex(x_targets, output)
-            output[i] = _constant_eval_at_point(x, y, x_targets[i], extrap, side, op, searcher)
-        end
+    @boundscheck _check_domain(x, x_targets, extrap)
+    @inbounds for i in eachindex(x_targets, output)
+        output[i] = _constant_eval_at_point(x, y, x_targets[i], extrap, side, deriv, searcher)
     end
     return output
 end
@@ -268,7 +264,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y, x_targets; extrap=NoExtrap(), side=NearestSide(), deriv=0, search=Binary())
+    constant_interp(x, y, x_targets; extrap=NoExtrap(), side=NearestSide(), deriv=EvalValue(), search=Binary())
 
 Constant interpolation for multiple query points (allocating version).
 
@@ -290,7 +286,7 @@ function constant_interp(
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
     side::AbstractSide=NearestSide(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_targets))
@@ -317,7 +313,7 @@ end
     xi::Tq;
     extrap::AbstractExtrap=NoExtrap(),
     side::AbstractSide=NearestSide(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
@@ -337,7 +333,7 @@ function constant_interp(
     x_targets::AbstractVector{Tq};
     extrap::AbstractExtrap=NoExtrap(),
     side::AbstractSide=NearestSide(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
@@ -358,7 +354,7 @@ function constant_interp!(
     x_targets::AbstractVector{Tq};
     extrap::AbstractExtrap=NoExtrap(),
     side::AbstractSide=NearestSide(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"

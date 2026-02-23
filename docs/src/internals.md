@@ -13,9 +13,8 @@ The following documents are available directly in the GitHub repository:
 
 FastInterpolations.jl internal architecture:
 
-- **Operation Types** (`src/ops.jl`): `EvalValue`, `EvalDeriv1`, `EvalDeriv2` traits for dispatch
+- **Operation Types** (`src/core/eval_ops.jl`): `DerivOp{N}` parametric singleton for compile-time derivative dispatch (aliases: `EvalValue`, `EvalDeriv1`, `EvalDeriv2`, `EvalDeriv3`)
 - **Kernel Functions** (`src/*_kernels.jl`): Pure math functions for interpolation and derivatives
-- **Dispatch Macros** (`src/utils.jl`): Runtime-to-compile-time conversion via `@_dispatch_deriv`
 - **Boundary Conditions** (`src/bc_types.jl`): `NaturalBC`, `ClampedBC`, `PeriodicBC` types
 
 ## Anchored Queries (Internal API)

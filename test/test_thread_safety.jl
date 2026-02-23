@@ -319,7 +319,7 @@ end
         @test max_err[] < 1f-5
     end
 
-    @testset "First derivative evaluation (deriv=1)" begin
+    @testset "First derivative evaluation (deriv=DerivOp(1))" begin
         FastInterpolations.clear_cubic_cache!()
         x = collect(range(0.0, 1.0, 51))
         x_query = [0.25, 0.5, 0.75]
@@ -332,8 +332,8 @@ end
             amplitude = Float64(mod1(i, 10))
             y = amplitude .* sin.(2π .* x)
 
-            result_cached = cubic_interp(x, y, x_query; autocache=true, deriv=1)
-            result_nocache = cubic_interp(x, y, x_query; autocache=false, deriv=1)
+            result_cached = cubic_interp(x, y, x_query; autocache=true, deriv=DerivOp(1))
+            result_nocache = cubic_interp(x, y, x_query; autocache=false, deriv=DerivOp(1))
 
             err = maximum(abs.(result_cached .- result_nocache))
             lock(lk) do
@@ -344,7 +344,7 @@ end
         @test max_err[] < 1e-10
     end
 
-    @testset "deriv=2" begin
+    @testset "deriv=DerivOp(2)" begin
         FastInterpolations.clear_cubic_cache!()
         x = collect(range(0.0, 1.0, 51))
         x_query = [0.25, 0.5, 0.75]
@@ -357,8 +357,8 @@ end
             amplitude = Float64(mod1(i, 10))
             y = amplitude .* sin.(2π .* x)
 
-            result_cached = cubic_interp(x, y, x_query; autocache=true, deriv=2)
-            result_nocache = cubic_interp(x, y, x_query; autocache=false, deriv=2)
+            result_cached = cubic_interp(x, y, x_query; autocache=true, deriv=DerivOp(2))
+            result_nocache = cubic_interp(x, y, x_query; autocache=false, deriv=DerivOp(2))
 
             err = maximum(abs.(result_cached .- result_nocache))
             lock(lk) do

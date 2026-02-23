@@ -149,7 +149,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y, xi; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=0, search=Binary())
+    quadratic_interp(x, y, xi; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
 
 C1 piecewise quadratic spline interpolation at a single point.
 
@@ -169,7 +169,7 @@ C1 piecewise quadratic spline interpolation at a single point.
   - `NoExtrap()` (default): throws DomainError if outside domain
   - `ConstExtrap()`: clamp to boundary values
   - `ExtendExtrap()`: extend the boundary polynomial
-- `deriv::Int`: Derivative order (0, 1, or 2)
+- `deriv::DerivOp`: Derivative order -- use `EvalValue()` (default), `DerivOp(1)`, or `DerivOp(2)`
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
   - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
@@ -201,7 +201,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
@@ -218,9 +218,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        _quadratic_eval_at_point(x, y, h, a, d, xq, extrap, op, searcher)
-    end
+    _quadratic_eval_at_point(x, y, h, a, d, xq, extrap, deriv, searcher)
 end
 
 # ========================================
@@ -228,7 +226,7 @@ end
 # ========================================
 
 """
-    quadratic_interp!(output, x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=0, search=Binary())
+    quadratic_interp!(output, x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
 
 In-place quadratic spline interpolation for multiple query points.
 
@@ -257,7 +255,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     x_targets::AbstractVector{Tg};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
@@ -274,11 +272,9 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _to_searcher(search)
-    @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(x, x_targets, extrap)
-        @inbounds for i in eachindex(x_targets, output)
-            output[i] = _quadratic_eval_at_point(x, y, h, a, d, x_targets[i], extrap, op, searcher)
-        end
+    @boundscheck _check_domain(x, x_targets, extrap)
+    @inbounds for i in eachindex(x_targets, output)
+        output[i] = _quadratic_eval_at_point(x, y, h, a, d, x_targets[i], extrap, deriv, searcher)
     end
     return output
 end
@@ -288,7 +284,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=0, search=Binary())
+    quadratic_interp(x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
 
 Quadratic spline interpolation for multiple query points (allocating version).
 
@@ -310,7 +306,7 @@ function quadratic_interp(
     x_targets::AbstractVector{Tg};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_targets))
@@ -365,7 +361,7 @@ end
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
@@ -387,7 +383,7 @@ function quadratic_interp(
     x_targets::AbstractVector{Tq};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
@@ -409,7 +405,7 @@ function quadratic_interp!(
     x_targets::AbstractVector{Tq};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"

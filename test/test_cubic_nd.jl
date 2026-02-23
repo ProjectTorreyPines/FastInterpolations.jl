@@ -167,19 +167,19 @@ end
         xq, yq = 1.0, 0.5
 
         # Value
-        @test itp((xq, yq); deriv=(0, 0)) ≈ xq^2 * yq^2 atol=1e-4
+        @test itp((xq, yq); deriv=DerivOp(0, 0)) ≈ xq^2 * yq^2 atol=1e-4
 
         # ∂f/∂x = 2xy²
         dfdx_expected = 2 * xq * yq^2
-        @test itp((xq, yq); deriv=(1, 0)) ≈ dfdx_expected atol=1e-3
+        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ dfdx_expected atol=1e-3
 
         # ∂f/∂y = 2x²y
         dfdy_expected = 2 * xq^2 * yq
-        @test itp((xq, yq); deriv=(0, 1)) ≈ dfdy_expected atol=1e-3
+        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ dfdy_expected atol=1e-3
 
         # ∂²f/∂x∂y = 4xy
         d2fdxdy_expected = 4 * xq * yq
-        @test itp((xq, yq); deriv=(1, 1)) ≈ d2fdxdy_expected atol=1e-2
+        @test itp((xq, yq); deriv=DerivOp(1, 1)) ≈ d2fdxdy_expected atol=1e-2
     end
 
     @testset "Non-uniform Grids" begin
@@ -301,9 +301,9 @@ end
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
         query = (1.5, 0.8)
-        cubic_interp((x, y), data, query; deriv=1)
-        cubic_interp((x, y), data, query; deriv=1)
-        @allocated cubic_interp((x, y), data, query; deriv=1)
+        cubic_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        cubic_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        @allocated cubic_interp((x, y), data, query; deriv=DerivOp(1, 1))
     end
 
     function _alloc_test_cubic_deriv_val()
@@ -311,9 +311,9 @@ end
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
         query = (1.5, 0.8)
-        cubic_interp((x, y), data, query; deriv=Val((1, 0)))
-        cubic_interp((x, y), data, query; deriv=Val((1, 0)))
-        @allocated cubic_interp((x, y), data, query; deriv=Val((1, 0)))
+        cubic_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        cubic_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        @allocated cubic_interp((x, y), data, query; deriv=DerivOp(1, 0))
     end
 
     function _alloc_test_cubic_extrap_const()
@@ -383,7 +383,7 @@ end
             @test _alloc_test_cubic_default() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, deriv=1)" begin
+        @testset "zero-alloc scalar (Range grids, deriv=DerivOp(1, 1))" begin
             @test _alloc_test_cubic_deriv() <= ND_ALLOC_THRESHOLD
         end
 

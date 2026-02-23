@@ -25,35 +25,29 @@
 # Default search is now the stored policy in itp.search_policy
 # Tg = grid type, Tv = value type (can be Complex)
 # Unified method: accepts any query type (Tg, Real, or Dual for AD)
-@inline function (itp::CubicInterpolant{Tg,Tv})(xq; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
+@inline function (itp::CubicInterpolant{Tg,Tv})(xq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @boundscheck _check_domain(itp.cache.x, xq, itp.extrap)
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        # Pass original xq to preserve Dual type for AD
-        _eval_with_bc(itp.cache, itp.y, itp.z, xq, itp.extrap, op, searcher)
-    end
+    # Pass original xq to preserve Dual type for AD
+    _eval_with_bc(itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)
 end
 
 # Vector call with deriv keyword support
 # Now supports hint for ODE/streaming patterns - hint is updated during loop
 # Output type is promoted to wider type for precision preservation.
-function (itp::CubicInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+function (itp::CubicInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, op, searcher)
-    end
+    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)
     return output
 end
 
 # In-place vector call with deriv keyword support
-function (itp::CubicInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::Int=0, search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+function (itp::CubicInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
     searcher = _to_searcher(search, hint)
-    @_dispatch_deriv deriv => op begin
-        _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, op, searcher)
-    end
+    _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)
     return output
 end
 
@@ -62,7 +56,7 @@ end
 # ========================================
 
 """
-    (itp::CubicInterpolant)(aq::_CubicAnchoredQuery; deriv::Int=0) -> Tv
+    (itp::CubicInterpolant)(aq::_CubicAnchoredQuery; deriv::DerivOp=EvalValue()) -> Tv
 
 Evaluate cubic spline using precomputed anchor weights.
 
@@ -86,16 +80,14 @@ aq = _anchor_query(x, 0.35, Val(:cubic))
 itp(aq)  # Ultra-fast evaluation
 ```
 """
-@inline function (itp::CubicInterpolant{Tg,Tv})(aq::_CubicAnchoredQuery{Tg,Tq}; deriv::Int=0) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    @_dispatch_deriv deriv => op begin
-        # Fast path: inside domain (most common case)
-        if aq.side == 0x00
-            return _eval_anchored_kernel(itp, aq, op)
-        end
-
-        # Outside domain: dispatch on extrapolation mode
-        return _eval_anchored_extrap(itp, aq, itp.extrap, op)
+@inline function (itp::CubicInterpolant{Tg,Tv})(aq::_CubicAnchoredQuery{Tg,Tq}; deriv::DerivOp=EvalValue()) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+    # Fast path: inside domain (most common case)
+    if aq.side == 0x00
+        return _eval_anchored_kernel(itp, aq, deriv)
     end
+
+    # Outside domain: dispatch on extrapolation mode
+    return _eval_anchored_extrap(itp, aq, itp.extrap, deriv)
 end
 
 """
@@ -228,7 +220,7 @@ For extrap=NoExtrap(), throws DomainError on first out-of-domain anchor.
 end
 
 """
-    (itp::CubicInterpolant{Tg,Tv})(aq::AbstractVector{<:_CubicAnchoredQuery{Tg}}; deriv::Int=0) -> Vector{Tv}
+    (itp::CubicInterpolant{Tg,Tv})(aq::AbstractVector{<:_CubicAnchoredQuery{Tg}}; deriv::DerivOp=EvalValue()) -> Vector{Tv}
 
 Evaluate cubic spline at multiple anchored query points (allocating).
 
@@ -245,41 +237,37 @@ itp = cubic_interp(x, sin.(2π .* x))
 aq_vec = _anchor_query(x, [0.15, 0.35, 0.5], Val(:cubic))
 
 vals = itp(aq_vec)            # Value
-derivs = itp(aq_vec; deriv=1) # First derivative
+derivs = itp(aq_vec; deriv=DerivOp(1)) # First derivative
 ```
 """
 function (itp::CubicInterpolant{Tg,Tv})(
     aq::AbstractVector{<:_CubicAnchoredQuery{Tg, Tq}};
-    deriv::Int=0
+    deriv::DerivOp=EvalValue()
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss from anchor
     output = Vector{T_out}(undef, length(aq))
-    @_dispatch_deriv deriv => op begin
-        _eval_anchored_vector_loop!(output, itp, aq, op)
-    end
+    _eval_anchored_vector_loop!(output, itp, aq, deriv)
     return output
 end
 
 """
-    (itp::CubicInterpolant{Tg,Tv})(output::AbstractVector{Tv}, aq::AbstractVector{<:_CubicAnchoredQuery{Tg}}; deriv::Int=0) -> AbstractVector{Tv}
+    (itp::CubicInterpolant{Tg,Tv})(output::AbstractVector{Tv}, aq::AbstractVector{<:_CubicAnchoredQuery{Tg}}; deriv::DerivOp=EvalValue()) -> AbstractVector{Tv}
 
 Evaluate cubic spline at multiple anchored query points (in-place, zero-allocation).
 
 # Example
 ```julia
 output = Vector{Float64}(undef, length(aq_vec))
-itp(output, aq_vec; deriv=1)  # Zero allocation after warmup
+itp(output, aq_vec; deriv=DerivOp(1))  # Zero allocation after warmup
 ```
 """
 function (itp::CubicInterpolant{Tg,Tv})(
     output::AbstractVector{Tv},
     aq::AbstractVector{<:_CubicAnchoredQuery{Tg}};
-    deriv::Int=0
+    deriv::DerivOp=EvalValue()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(output) == length(aq) "output length ($(length(output))) must match aq length ($(length(aq)))"
-    @_dispatch_deriv deriv => op begin
-        _eval_anchored_vector_loop!(output, itp, aq, op)
-    end
+    _eval_anchored_vector_loop!(output, itp, aq, deriv)
     return output
 end
 

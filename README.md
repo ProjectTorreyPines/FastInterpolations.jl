@@ -134,9 +134,9 @@ One-shot (construction + evaluation) time per call with fixed grid size $n=100$.
 
 ```julia
 # Analytical derivatives — all methods support 1st, 2nd, 3rd derivatives
-cubic_interp(x, y, 5.0; deriv=1)   # 1st derivative at x=5.0
-cubic_interp(x, y, 5.0; deriv=2)   # 2nd derivative at x=5.0
-cubic_interp(x, y, 5.0; deriv=3)   # 3rd derivative at x=5.0
+cubic_interp(x, y, 5.0; deriv=DerivOp(1))   # 1st derivative at x=5.0
+cubic_interp(x, y, 5.0; deriv=DerivOp(2))   # 2nd derivative at x=5.0
+cubic_interp(x, y, 5.0; deriv=DerivOp(3))   # 3rd derivative at x=5.0
 
 # Constant interpolation — choose which side to sample
 constant_interp(x, y, xq; side=NearestSide()) # nearest neighbor (default)

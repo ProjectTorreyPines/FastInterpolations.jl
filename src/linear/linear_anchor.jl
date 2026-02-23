@@ -39,7 +39,7 @@ itp1 = linear_interp(x, sin.(2π .* x))
 itp2 = linear_interp(x, cos.(2π .* x))
 
 itp1(aq)              # Ultra-fast: skips interval search
-itp2(aq; deriv=1)     # Reuses same anchor for derivative
+itp2(aq; deriv=DerivOp(1))     # Reuses same anchor for derivative
 ```
 
 # Performance
@@ -124,7 +124,7 @@ itp2 = linear_interp(collect(x), cos.(2π .* x))
 aq = _anchor_query(collect(x), 0.35, Val(:linear))
 
 itp1(aq)              # Ultra-fast: skips interval search
-itp2(aq; deriv=1)     # Reuses same anchor for derivative
+itp2(aq; deriv=DerivOp(1))     # Reuses same anchor for derivative
 ```
 """
 @inline function _anchor_query(
@@ -290,7 +290,7 @@ end
 # ========================================
 
 """
-    (itp::LinearInterpolant)(aq::_LinearAnchoredQuery; deriv::Int=0)
+    (itp::LinearInterpolant)(aq::_LinearAnchoredQuery; deriv::DerivOp=EvalValue())
 
 Evaluate linear interpolant at anchored query point. Ultra-fast path that
 skips interval search.
@@ -304,13 +304,11 @@ skips interval search.
 itp = linear_interp(x, y)
 aq = _anchor_query(x, 0.5, Val(:linear))
 val = itp(aq)           # Value
-d1 = itp(aq; deriv=1)   # First derivative
+d1 = itp(aq; deriv=DerivOp(1))   # First derivative
 ```
 """
-@inline function (itp::LinearInterpolant{Tg})(aq::_LinearAnchoredQuery{Tg}; deriv::Int=0) where {Tg<:AbstractFloat}
-    @_dispatch_deriv deriv => op begin
-        _linear_eval_with_anchor(itp, aq, op)
-    end
+@inline function (itp::LinearInterpolant{Tg})(aq::_LinearAnchoredQuery{Tg}; deriv::DerivOp=EvalValue()) where {Tg<:AbstractFloat}
+    _linear_eval_with_anchor(itp, aq, deriv)
 end
 
 @inline function _linear_eval_with_anchor(
@@ -376,40 +374,36 @@ end
 # ========================================
 
 """
-    (itp::LinearInterpolant)(aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg}}; deriv::Int=0)
+    (itp::LinearInterpolant)(aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg}}; deriv::DerivOp=EvalValue())
 
 Evaluate linear interpolant at multiple anchored query points.
 Returns newly allocated vector with output type promoted from Tv and Tq.
 """
 function (itp::LinearInterpolant{Tg,Tv})(
     aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg,Tq}};
-    deriv::Int=0
+    deriv::DerivOp=EvalValue()
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     T_out = promote_type(Tv, Tq)
     output = Vector{T_out}(undef, length(aq_vec))
-    @_dispatch_deriv deriv => op begin
-        @inbounds for i in eachindex(aq_vec)
-            output[i] = _linear_eval_with_anchor(itp, aq_vec[i], op)
-        end
+    @inbounds for i in eachindex(aq_vec)
+        output[i] = _linear_eval_with_anchor(itp, aq_vec[i], deriv)
     end
     return output
 end
 
 """
-    (itp::LinearInterpolant)(output::AbstractVector, aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg}}; deriv::Int=0)
+    (itp::LinearInterpolant)(output::AbstractVector, aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg}}; deriv::DerivOp=EvalValue())
 
 In-place evaluation at multiple anchored query points. Zero allocation.
 """
 function (itp::LinearInterpolant{Tg})(
     output::AbstractVector,
     aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg}};
-    deriv::Int=0
+    deriv::DerivOp=EvalValue()
 ) where {Tg<:AbstractFloat}
     @assert length(output) == length(aq_vec) "output length must match aq_vec length"
-    @_dispatch_deriv deriv => op begin
-        @inbounds for i in eachindex(aq_vec)
-            output[i] = _linear_eval_with_anchor(itp, aq_vec[i], op)
-        end
+    @inbounds for i in eachindex(aq_vec)
+        output[i] = _linear_eval_with_anchor(itp, aq_vec[i], deriv)
     end
     return output
 end

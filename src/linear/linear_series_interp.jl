@@ -446,7 +446,7 @@ end
 # ========================================
 
 """
-    (sitp::LinearSeriesInterpolant)(xq::Real; deriv=0, search=Binary())
+    (sitp::LinearSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
@@ -455,7 +455,7 @@ Supports ForwardDiff.Dual input: output type is promoted to include Dual.
 """
 function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     xq::Tq; 
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -465,7 +465,7 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::LinearSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=0, search=Binary())
+    (sitp::LinearSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=Binary())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 
@@ -476,7 +476,7 @@ The anchor is built from primal value, but original xq is used for arithmetic.
 function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     output::AbstractVector,  # Relaxed: allows Dual vector
     xq::Tq;
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -493,9 +493,7 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     aq = _make_anchor(sitp, xq_typed, _to_searcher(search, hint))
 
     # Dispatch on derivative order with Dual-aware evaluation
-    @_dispatch_deriv deriv => op begin
-        _eval_linear_series_point!(output, sitp, aq, xq, op)  # Pass original xq
-    end
+    _eval_linear_series_point!(output, sitp, aq, xq, deriv)  # Pass original xq
     return output
 end
 
@@ -504,7 +502,7 @@ end
 # ========================================
 
 """
-    (sitp::LinearSeriesInterpolant)(xq::AbstractVector; deriv=0)
+    (sitp::LinearSeriesInterpolant)(xq::AbstractVector; deriv=EvalValue())
 
 Evaluate multi-Y interpolant at multiple query points (out-of-place).
 
@@ -513,7 +511,7 @@ Output type is promoted to wider type for precision preservation.
 """
 function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     xq::AbstractVector{Tq};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -533,7 +531,7 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::LinearSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=0)
+    (sitp::LinearSeriesInterpolant)(outputs::AbstractVector{<:AbstractVector}, xq::AbstractVector; deriv=EvalValue())
 
 Evaluate multi-Y interpolant at multiple query points (in-place, zero allocation).
 
@@ -552,7 +550,7 @@ Pool handles both same-type and mixed-type cases efficiently.
 @with_pool pool function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector},
     xq::AbstractVector{Tq};
-    deriv::Int=0,
+    deriv::DerivOp=EvalValue(),
     search=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
@@ -575,10 +573,8 @@ Pool handles both same-type and mixed-type cases efficiently.
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
 
     # Evaluate all series - anchor already has correct alpha precision
-    @_dispatch_deriv deriv => op begin
-        @inbounds for k in 1:n_ser
-            _eval_linear_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, op)
-        end
+    @inbounds for k in 1:n_ser
+        _eval_linear_series_vector!(outputs[k], y, x_grid, n_pts, x_min, x_max, k, aq_vec, extrap, deriv)
     end
     return outputs
 end

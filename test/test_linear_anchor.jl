@@ -101,7 +101,7 @@ using FastInterpolations
     # ========================================
     # Evaluation Tests - Derivative
     # ========================================
-    @testset "itp(aq; deriv=1) derivative evaluation" begin
+    @testset "itp(aq; deriv=DerivOp(1)) derivative evaluation" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
         itp = linear_interp(x, y; extrap=ExtendExtrap())
@@ -110,7 +110,7 @@ using FastInterpolations
 
         for xq in xq_points
             aq = FastInterpolations._anchor_query(x, xq, Val(:linear))
-            @test itp(aq; deriv=1) ≈ itp(xq; deriv=1)
+            @test itp(aq; deriv=DerivOp(1)) ≈ itp(xq; deriv=DerivOp(1))
         end
     end
 
@@ -271,8 +271,8 @@ using FastInterpolations
         @test_throws DomainError itp(aq_above)
 
         # Derivatives also throw
-        @test_throws DomainError itp(aq_below; deriv=1)
-        @test_throws DomainError itp(aq_above; deriv=1)
+        @test_throws DomainError itp(aq_below; deriv=DerivOp(1))
+        @test_throws DomainError itp(aq_above; deriv=DerivOp(1))
     end
 
     # ========================================
@@ -335,7 +335,7 @@ using FastInterpolations
     # ========================================
     # Zero-Allocation with deriv=1
     # ========================================
-    @testset "zero-allocation with deriv=1" begin
+    @testset "zero-allocation with deriv=DerivOp(1)" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
         itp = linear_interp(x, y; extrap=ExtendExtrap())
@@ -345,10 +345,10 @@ using FastInterpolations
         output = zeros(Float64, 100)
 
         # Warm-up call
-        itp(output, aq_vec; deriv=1)
+        itp(output, aq_vec; deriv=DerivOp(1))
 
         # Allocation test
-        allocs = @allocated itp(output, aq_vec; deriv=1)
+        allocs = @allocated itp(output, aq_vec; deriv=DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 

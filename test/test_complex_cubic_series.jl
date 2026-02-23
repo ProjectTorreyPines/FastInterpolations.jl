@@ -243,13 +243,13 @@ using FastInterpolations
 
         # First derivative: 3ax^2 + 2bx + c
         xq = 0.5
-        d1 = sitp(xq; deriv=1)
+        d1 = sitp(xq; deriv=DerivOp(1))
         expected_d1 = 3*a*xq^2 + 2*b*xq + c
         @test d1 isa Vector{ComplexF64}
         @test isapprox(d1[1], expected_d1, rtol=0.1)  # Spline approximation
 
         # Second derivative: 6ax + 2b
-        d2 = sitp(xq; deriv=2)
+        d2 = sitp(xq; deriv=DerivOp(2))
         expected_d2 = 6*a*xq + 2*b
         @test d2 isa Vector{ComplexF64}
         @test isapprox(d2[1], expected_d2, rtol=0.2)  # Spline approximation

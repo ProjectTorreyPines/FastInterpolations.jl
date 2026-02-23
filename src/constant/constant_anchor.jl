@@ -236,7 +236,7 @@ end
 # ========================================
 
 """
-    (itp::ConstantInterpolant)(aq::_ConstantAnchoredQuery; deriv::Int=0)
+    (itp::ConstantInterpolant)(aq::_ConstantAnchoredQuery; deriv::DerivOp=EvalValue())
 
 Evaluate constant interpolant at anchored query point. Ultra-fast path that
 skips interval search.
@@ -253,10 +253,8 @@ aq = _anchor_query(x, 0.5, Val(:constant))
 val = itp(aq)           # Value
 ```
 """
-@inline function (itp::ConstantInterpolant{T})(aq::_ConstantAnchoredQuery{T}; deriv::Int=0) where {T<:AbstractFloat}
-    @_dispatch_deriv deriv => op begin
-        _constant_eval_with_anchor(itp, aq, op)
-    end
+@inline function (itp::ConstantInterpolant{T})(aq::_ConstantAnchoredQuery{T}; deriv::DerivOp=EvalValue()) where {T<:AbstractFloat}
+    _constant_eval_with_anchor(itp, aq, deriv)
 end
 
 @inline function _constant_eval_with_anchor(
@@ -337,39 +335,35 @@ end
 # ========================================
 
 """
-    (itp::ConstantInterpolant)(aq_vec::AbstractVector{_ConstantAnchoredQuery{T}}; deriv::Int=0)
+    (itp::ConstantInterpolant)(aq_vec::AbstractVector{_ConstantAnchoredQuery{T}}; deriv::DerivOp=EvalValue())
 
 Evaluate constant interpolant at multiple anchored query points.
 Returns newly allocated vector.
 """
 function (itp::ConstantInterpolant{T})(
     aq_vec::AbstractVector{_ConstantAnchoredQuery{T}};
-    deriv::Int=0
+    deriv::DerivOp=EvalValue()
 ) where {T<:AbstractFloat}
     output = Vector{T}(undef, length(aq_vec))
-    @_dispatch_deriv deriv => op begin
-        @inbounds for i in eachindex(aq_vec)
-            output[i] = _constant_eval_with_anchor(itp, aq_vec[i], op)
-        end
+    @inbounds for i in eachindex(aq_vec)
+        output[i] = _constant_eval_with_anchor(itp, aq_vec[i], deriv)
     end
     return output
 end
 
 """
-    (itp::ConstantInterpolant)(output::AbstractVector{T}, aq_vec::AbstractVector{_ConstantAnchoredQuery{T}}; deriv::Int=0)
+    (itp::ConstantInterpolant)(output::AbstractVector{T}, aq_vec::AbstractVector{_ConstantAnchoredQuery{T}}; deriv::DerivOp=EvalValue())
 
 In-place evaluation at multiple anchored query points. Zero allocation.
 """
 function (itp::ConstantInterpolant{T})(
     output::AbstractVector{T},
     aq_vec::AbstractVector{_ConstantAnchoredQuery{T}};
-    deriv::Int=0
+    deriv::DerivOp=EvalValue()
 ) where {T<:AbstractFloat}
     @assert length(output) == length(aq_vec) "output length must match aq_vec length"
-    @_dispatch_deriv deriv => op begin
-        @inbounds for i in eachindex(aq_vec)
-            output[i] = _constant_eval_with_anchor(itp, aq_vec[i], op)
-        end
+    @inbounds for i in eachindex(aq_vec)
+        output[i] = _constant_eval_with_anchor(itp, aq_vec[i], deriv)
     end
     return output
 end

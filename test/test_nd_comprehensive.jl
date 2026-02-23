@@ -184,15 +184,15 @@ using FastInterpolations
             yqs = collect(range(0.2, 1.5, 5))
 
             # First derivative ∂f/∂x
-            vals_dx = itp((xqs, yqs); deriv=(1, 0))
+            vals_dx = itp((xqs, yqs); deriv=DerivOp(1, 0))
             @test length(vals_dx) == 5
 
-            # Val-based derivative spec
-            vals_dx_val = itp((xqs, yqs); deriv=Val((1, 0)))
+            # DerivOp derivative spec
+            vals_dx_val = itp((xqs, yqs); deriv=DerivOp(1, 0))
             @test vals_dx ≈ vals_dx_val
 
             # Integer derivative (all axes same order)
-            vals_d1 = itp((xqs, yqs); deriv=1)
+            vals_d1 = itp((xqs, yqs); deriv=DerivOp(1, 1))
             @test length(vals_d1) == 5
         end
 
@@ -213,10 +213,10 @@ using FastInterpolations
         @testset "AoS with derivatives" begin
             points = [(0.5, 0.3), (1.0, 0.5), (1.5, 0.8)]
 
-            vals_dx = itp(points; deriv=(1, 0))
+            vals_dx = itp(points; deriv=DerivOp(1, 0))
             @test length(vals_dx) == 3
 
-            vals_dx_val = itp(points; deriv=Val((1, 0)))
+            vals_dx_val = itp(points; deriv=DerivOp(1, 0))
             @test vals_dx ≈ vals_dx_val
         end
 
@@ -333,19 +333,19 @@ using FastInterpolations
         xq, yq = 1.0, 0.5
 
         # ∂³f/∂x³ = 6y
-        d3x = itp((xq, yq); deriv=(3, 0))
+        d3x = itp((xq, yq); deriv=DerivOp(3, 0))
         @test d3x ≈ 6 * yq atol=0.5  # Third derivative has lower accuracy
 
         # ∂³f/∂y³ = 6x
-        d3y = itp((xq, yq); deriv=(0, 3))
+        d3y = itp((xq, yq); deriv=DerivOp(0, 3))
         @test d3y ≈ 6 * xq atol=0.5
 
         # Using Val
-        d3x_val = itp((xq, yq); deriv=Val((3, 0)))
+        d3x_val = itp((xq, yq); deriv=DerivOp(3, 0))
         @test d3x_val ≈ d3x atol=1e-12
 
-        # All axes deriv=3 via Int
-        d3_all = itp((xq, yq); deriv=3)
+        # All axes deriv=DerivOp(3) via Int
+        d3_all = itp((xq, yq); deriv=DerivOp(3, 3))
         @test d3_all isa Float64
     end
 
@@ -364,19 +364,19 @@ using FastInterpolations
             @test dx isa FastInterpolations.DerivativeView
 
             result = dx((1.0, 0.5))
-            expected = itp((1.0, 0.5); deriv=(1, 0))
+            expected = itp((1.0, 0.5); deriv=DerivOp(1, 0))
             @test result ≈ expected
 
             # ∂f/∂y
             dy = deriv_view(itp, (0, 1))
             result_y = dy((1.0, 0.5))
-            expected_y = itp((1.0, 0.5); deriv=(0, 1))
+            expected_y = itp((1.0, 0.5); deriv=DerivOp(0, 1))
             @test result_y ≈ expected_y
 
             # Mixed partial ∂²f/∂x∂y
             dxy = deriv_view(itp, (1, 1))
             result_xy = dxy((1.0, 0.5))
-            expected_xy = itp((1.0, 0.5); deriv=(1, 1))
+            expected_xy = itp((1.0, 0.5); deriv=DerivOp(1, 1))
             @test result_xy ≈ expected_xy
         end
 
@@ -384,7 +384,7 @@ using FastInterpolations
             # order=1 for ND → (1, 1) all axes
             d_all = deriv_view(itp, 1)
             result = d_all((1.0, 0.5))
-            expected = itp((1.0, 0.5); deriv=(1, 1))
+            expected = itp((1.0, 0.5); deriv=DerivOp(1, 1))
             @test result ≈ expected
         end
 
@@ -409,7 +409,7 @@ using FastInterpolations
         @testset "DerivativeView deriv kwarg rejection" begin
             dx = deriv_view(itp, (1, 0))
             # Attempting to override deriv should throw
-            @test_throws ArgumentError dx((1.0, 0.5); deriv=(0, 1))
+            @test_throws ArgumentError dx((1.0, 0.5); deriv=DerivOp(0, 1))
         end
     end
 
@@ -674,11 +674,11 @@ using FastInterpolations
             @test dx isa FastInterpolations.DerivativeView
 
             result = dx((1.0, 0.5))
-            expected = itp((1.0, 0.5); deriv=(1, 0))
+            expected = itp((1.0, 0.5); deriv=DerivOp(1, 0))
             @test result ≈ expected
 
             dy = deriv_view(itp, (0, 1))
-            @test dy((1.0, 0.5)) ≈ itp((1.0, 0.5); deriv=(0, 1))
+            @test dy((1.0, 0.5)) ≈ itp((1.0, 0.5); deriv=DerivOp(0, 1))
         end
 
         @testset "deriv_view broadcast" begin
@@ -714,11 +714,11 @@ using FastInterpolations
                 @test vals[k] ≈ itp((xqs[k], yqs[k])) atol=1e-12
             end
 
-            vals_dx = itp((xqs, yqs); deriv=(1, 0))
-            vals_dx_val = itp((xqs, yqs); deriv=Val((1, 0)))
+            vals_dx = itp((xqs, yqs); deriv=DerivOp(1, 0))
+            vals_dx_val = itp((xqs, yqs); deriv=DerivOp(1, 0))
             @test vals_dx ≈ vals_dx_val
 
-            vals_d1 = itp((xqs, yqs); deriv=1)
+            vals_d1 = itp((xqs, yqs); deriv=DerivOp(1, 1))
             @test length(vals_d1) == 5
         end
 
@@ -727,8 +727,8 @@ using FastInterpolations
             vals = itp(points)
             @test length(vals) == 3
 
-            vals_dx = itp(points; deriv=(1, 0))
-            vals_dx_val = itp(points; deriv=Val((1, 0)))
+            vals_dx = itp(points; deriv=DerivOp(1, 0))
+            vals_dx_val = itp(points; deriv=DerivOp(1, 0))
             @test vals_dx ≈ vals_dx_val
         end
 
@@ -786,7 +786,7 @@ using FastInterpolations
 
         @testset "Single point oneshot with derivative" begin
             # ∂f/∂x = y
-            val_dx = cubic_interp((x, y), data, (1.0, 0.5); deriv=Val((1, 0)))
+            val_dx = cubic_interp((x, y), data, (1.0, 0.5); deriv=DerivOp(1, 0))
             @test val_dx ≈ 0.5 atol=1e-3
         end
 

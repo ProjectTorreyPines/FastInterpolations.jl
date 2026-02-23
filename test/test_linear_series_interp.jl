@@ -88,7 +88,7 @@ const FI = FastInterpolations
         end
 
         @testset "first derivative" begin
-            deriv = sitp(0.5; deriv=1)
+            deriv = sitp(0.5; deriv=DerivOp(1))
             @test deriv[1] ≈ 2.0  # Slope of y = 2x
             @test deriv[2] ≈ 0.0 atol=1e-10  # Slope of constant
         end
@@ -402,9 +402,9 @@ const FI = FastInterpolations
             sitp = linear_interp(x, [y1, y2]; extrap=ConstExtrap())
             xq = [-0.1, 0.5, 1.1]
 
-            # deriv=1 outside domain should be zero for constant extrap
+            # deriv=DerivOp(1) outside domain should be zero for constant extrap
             outputs_d1 = [zeros(3), zeros(3)]
-            sitp(outputs_d1, xq; deriv=1)
+            sitp(outputs_d1, xq; deriv=DerivOp(1))
             @test outputs_d1[1][1] ≈ 0.0 atol=1e-10  # Left boundary
             @test outputs_d1[1][3] ≈ 0.0 atol=1e-10  # Right boundary
         end
@@ -420,22 +420,22 @@ const FI = FastInterpolations
         y2 = [1.0, 1.0, 1.0, 1.0]  # y = 1 (constant)
         sitp = linear_interp(x, [y1, y2])
 
-        @testset "deriv=0 same as default" begin
-            @test sitp(0.5; deriv=0) == sitp(0.5)
+        @testset "deriv=DerivOp(0) same as default" begin
+            @test sitp(0.5; deriv=DerivOp(0)) == sitp(0.5)
         end
 
-        @testset "deriv=1 with vector query" begin
+        @testset "deriv=DerivOp(1) with vector query" begin
             xq = [0.5, 1.5, 2.5]
-            result = sitp(xq; deriv=1)
+            result = sitp(xq; deriv=DerivOp(1))
             @test length(result) == 2
             @test all(d -> d ≈ 2.0, result[1])  # Slope of y = 2x
             @test all(d -> d ≈ 0.0, result[2])  # Slope of constant
         end
 
-        @testset "deriv=1 in-place vector" begin
+        @testset "deriv=DerivOp(1) in-place vector" begin
             xq = [0.5, 1.5, 2.5]
             outputs = [zeros(3), zeros(3)]
-            sitp(outputs, xq; deriv=1)
+            sitp(outputs, xq; deriv=DerivOp(1))
             @test all(d -> d ≈ 2.0, outputs[1])
             @test all(d -> d ≈ 0.0, outputs[2])
         end

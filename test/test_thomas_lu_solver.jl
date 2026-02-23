@@ -131,7 +131,7 @@ const LA = FI.LinearAlgebra
                 ("nonuniform", _x_nonuniform(T, 101; seed=1)),
                 ("strongly-nonuniform", _x_strongly_nonuniform(T, 101; strength=:strong)),
             )
-                for bc_in in (NaturalBC(), ClampedBC(), FI.BCPair(FI.Deriv1(T(0.25)), FI.Deriv2(T(0))))
+                for bc_in in (ZeroCurvBC(), ZeroSlopeBC(), FI.BCPair(FI.Deriv1(T(0.25)), FI.Deriv2(T(0))))
                     bc = FI._normalize_bc(bc_in, T)
                     spacing, A = _build_tridiagonal_derivative_bc(x, bc)
 
@@ -252,7 +252,7 @@ const LA = FI.LinearAlgebra
     @testset "Batch _ldiv_along_dim!" begin
         @testset "Val(1) throws ArgumentError" begin
             x = collect(range(0.0, 1.0, 20))
-            cache = FI.CubicSplineCache(x; bc=NaturalBC())
+            cache = FI.CubicSplineCache(x; bc=ZeroCurvBC())
             z = rand(20, 5)
 
             @test_throws ArgumentError FI._ldiv_along_dim!(z, cache.thomas, Val(1))
@@ -262,7 +262,7 @@ const LA = FI.LinearAlgebra
             for T in (Float64, Float32)
                 for n in (10, 50, 101)
                     x = collect(range(T(0), T(1), n))
-                    cache = FI.CubicSplineCache(x; bc=NaturalBC())
+                    cache = FI.CubicSplineCache(x; bc=ZeroCurvBC())
 
                     n_batch = 20
                     z_batch = rand(T, n_batch, n)

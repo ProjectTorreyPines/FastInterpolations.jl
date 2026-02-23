@@ -331,7 +331,7 @@ end
     end
 
     @testset "Derivatives with all BC types" begin
-        for bc in [NaturalBC(), ClampedBC()]
+        for bc in [ZeroCurvBC(), ZeroSlopeBC()]
             mitp = cubic_interp(x, [y1, y2]; bc=bc)
             itp1 = cubic_interp(x, y1; bc=bc)
 
@@ -670,7 +670,7 @@ end
     end
 
     @testset "Cache sharing with different BC types" begin
-        # NaturalBC (default)
+        # CubicFit (default)
         mitp_natural = cubic_interp(x, [y1, y2])
         @test mitp_natural.cache isa FI.CubicSplineCache
         @test mitp_natural.cache.bc_config isa BCPair
@@ -701,7 +701,7 @@ end
     end
 
     @testset "BC propagation" begin
-        # NaturalBC (default) - check bc_config field (unified struct)
+        # CubicFit (default) - check bc_config field (unified struct)
         mitp_natural = cubic_interp(x, [y1, y2])
         @test mitp_natural.cache.bc_config isa BCPair
 
@@ -1576,8 +1576,8 @@ end
 
         # Different BC types for each series
         sitp = cubic_interp(x, [y1, y2, y3]; bc=[
-            NaturalBC(),                           # Natural BC
-            BCPair(Deriv1(0.0), Deriv1(0.0)),      # Clamped BC
+            ZeroCurvBC(),                          # Zero-Curvature BC
+            BCPair(Deriv1(0.0), Deriv1(0.0)),      # Zero-Slope BC
             BCPair(Deriv2(2.0), Deriv2(2.0)),      # Constant curvature = 2
         ])
 
@@ -1586,7 +1586,7 @@ end
         @test length(sitp(0.5)) == 3
 
         # Compare with individual interpolants using same BC
-        itp1 = cubic_interp(x, y1; bc=NaturalBC())
+        itp1 = cubic_interp(x, y1; bc=ZeroCurvBC())
         itp2 = cubic_interp(x, y2; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
         itp3 = cubic_interp(x, y3; bc=BCPair(Deriv2(2.0), Deriv2(2.0)))
 
@@ -1642,8 +1642,8 @@ end
         y1, y2 = sin.(x), cos.(x)
 
         # Length mismatch → DimensionMismatch
-        @test_throws DimensionMismatch cubic_interp(x, [y1, y2]; bc=[NaturalBC()])
-        @test_throws DimensionMismatch cubic_interp(x, [y1, y2]; bc=[NaturalBC(), NaturalBC(), NaturalBC()])
+        @test_throws DimensionMismatch cubic_interp(x, [y1, y2]; bc=[ZeroCurvBC()])
+        @test_throws DimensionMismatch cubic_interp(x, [y1, y2]; bc=[ZeroCurvBC(), ZeroCurvBC(), ZeroCurvBC()])
     end
 
     @testset "PeriodicBC in array - not supported" begin
@@ -1654,7 +1654,7 @@ end
         # PeriodicBC not supported in arrays
         @test_throws ArgumentError cubic_interp(x, [y1, y2]; bc=[
             PeriodicBC(),
-            NaturalBC(),
+            ZeroCurvBC(),
         ])
     end
 
@@ -1693,7 +1693,7 @@ end
 
         # Create with per-series BC (mixed types)
         sitp = cubic_interp(x, [y1, y2, y3]; bc=[
-            NaturalBC(),
+            ZeroCurvBC(),
             BCPair(Deriv1(0.0), Deriv1(0.0)),
             BCPair(Deriv2(0.0), Deriv2(0.0)),
         ], precompute_transpose=true)
@@ -1741,7 +1741,7 @@ end
 
         # Create with mixed BC types
         sitp = cubic_interp(x, [y1, y2]; bc=[
-            NaturalBC(),
+            ZeroCurvBC(),
             BCPair(Deriv1(0.0), Deriv1(0.0)),
         ], precompute_transpose=true)
 
@@ -1789,9 +1789,9 @@ end
         # Note: With the new type system, singleton BCs are AbstractBC{Nothing},
         # so we use a concrete type array or Any
         mixed_bcs = [
-            NaturalBC(),
+            ZeroCurvBC(),
             BCPair(Deriv1(0.0), Deriv2(3.0)),
-            ClampedBC()
+            ZeroSlopeBC()
         ]
 
         result = FastInterpolations._normalize_bc_array(mixed_bcs, Float64, 3)
@@ -1801,9 +1801,9 @@ end
         @test result !== mixed_bcs  # Different object
 
         # Values should be correctly normalized (uses Julia's default structural equality for BCPair)
-        @test result[1] == BCPair(Deriv2(0.0), Deriv2(0.0))  # NaturalBC
+        @test result[1] == BCPair(Deriv2(0.0), Deriv2(0.0))  # ZeroCurvBC
         @test result[2] == BCPair(Deriv1(0.0), Deriv2(3.0))  # Already BCPair
-        @test result[3] == BCPair(Deriv1(0.0), Deriv1(0.0))  # ClampedBC
+        @test result[3] == BCPair(Deriv1(0.0), Deriv1(0.0))  # ZeroSlopeBC
     end
 end
 

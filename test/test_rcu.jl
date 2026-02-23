@@ -82,7 +82,7 @@ const BankType = FI.CacheBank{EntryType}
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; autocache=true)
+            FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
 
             x2 = collect(range(0.0, 2.0, 51))
             bc = FI.BCPair(FI.Deriv2(0.0), FI.Deriv2(0.0))
@@ -98,7 +98,7 @@ const BankType = FI.CacheBank{EntryType}
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; autocache=true)
+            FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
 
             bc = FI.BCPair(FI.Deriv2(0.0), FI.Deriv2(0.0))
             bank = FI._get_derivative_bank(x, bc)
@@ -113,7 +113,7 @@ const BankType = FI.CacheBank{EntryType}
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; autocache=true)
+            FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
 
             x_copy = collect(range(0.0, 1.0, 51))
             @test x_copy !== x  # Different object
@@ -143,7 +143,7 @@ const BankType = FI.CacheBank{EntryType}
             snap_before = @atomic :acquire bank.snapshot
             @test snap_before.count == 0
 
-            FI.cubic_interp(x, y, 0.5; autocache=true)
+            FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
 
             snap_after = @atomic :acquire bank.snapshot
             @test snap_after.count == 1
@@ -157,7 +157,7 @@ const BankType = FI.CacheBank{EntryType}
             y = sin.(2π .* grids[1])
 
             for x in grids
-                FI.cubic_interp(x, y, 0.5; autocache=true)
+                FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
             end
 
             bc = FI.BCPair(FI.Deriv2(0.0), FI.Deriv2(0.0))
@@ -175,7 +175,7 @@ const BankType = FI.CacheBank{EntryType}
             y = sin.(2π .* grids[1])
 
             for x in grids
-                FI.cubic_interp(x, y, 0.5; autocache=true)
+                FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
             end
 
             bc = FI.BCPair(FI.Deriv2(0.0), FI.Deriv2(0.0))
@@ -344,7 +344,7 @@ end  # RCU Bank
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; autocache=true)
+            FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
 
             result = FI._registry_lookup(FI._DERIVATIVE_REGISTRY, BankType)
             @test result !== nothing
@@ -356,7 +356,7 @@ end  # RCU Bank
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; autocache=true)
+            FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
 
             snap = @atomic :acquire FI._DERIVATIVE_REGISTRY.snapshot
 
@@ -387,12 +387,12 @@ end  # RCU Bank
         @testset "Multiple bank types create multiple entries" begin
             FI.clear_cubic_cache!()
 
-            # Natural BC (Deriv2)
+            # ZeroCurvBC (Deriv2)
             x1 = collect(range(0.0, 1.0, 51))
             y1 = sin.(2π .* x1)
-            FI.cubic_interp(x1, y1, 0.5; autocache=true)
+            FI.cubic_interp(x1, y1, 0.5; bc=ZeroCurvBC(), autocache=true)
 
-            # Clamped BC (Deriv1)
+            # Custom Deriv1 BC
             x2 = collect(range(0.0, 1.0, 51))
             y2 = cos.(2π .* x2)
             bc_pair = FI.BCPair(FI.Deriv1(1.0), FI.Deriv1(-1.0))
@@ -405,10 +405,10 @@ end  # RCU Bank
         @testset "Periodic BC uses separate registry" begin
             FI.clear_cubic_cache!()
 
-            # Derivative BC
+            # Derivative BC (explicit ZeroCurvBC)
             x1 = collect(range(0.0, 1.0, 51))
             y1 = sin.(2π .* x1)
-            FI.cubic_interp(x1, y1, 0.5; autocache=true)
+            FI.cubic_interp(x1, y1, 0.5; bc=ZeroCurvBC(), autocache=true)
 
             # Periodic BC
             x2 = collect(range(0.0, 2π, 51))

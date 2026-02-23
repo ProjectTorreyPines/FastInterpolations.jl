@@ -28,7 +28,7 @@ The canonical API uses an `deriv` keyword argument on the interpolant functor:
 
 ```julia
 # Construction (unchanged)
-itp = cubic_interp(x, y; bc=NaturalBC(), extrap=:none)
+itp = cubic_interp(x, y; bc=ZeroCurvBC(), extrap=:none)
 
 # Scalar Evaluation
 itp(xi)              # value (deriv=0, default)

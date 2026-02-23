@@ -67,8 +67,8 @@ Deriv1
 Deriv2
 Deriv3
 BCPair
-NaturalBC
-ClampedBC
+ZeroCurvBC
+ZeroSlopeBC
 PeriodicBC
 ```
 

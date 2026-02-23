@@ -586,7 +586,7 @@ end
 
 @testset "CubicFit Mixed with Other BCs" begin
 
-    @testset "CubicFit Left, Deriv2(0) Right (Natural)" begin
+    @testset "CubicFit Left, Deriv2(0) Right (ZeroCurv)" begin
         f_mixed1(x) = sin(π * x)
         x_m1 = range(0.0, 1.0, 17)
         y_m1 = f_mixed1.(x_m1)
@@ -1124,7 +1124,7 @@ end
         y = collect(f_quad.(x))
         xi = [0.5, 1.0, 1.5]
 
-        # QuadraticFit left, Natural (Deriv2(0)) right
+        # QuadraticFit left, ZeroCurv (Deriv2(0)) right
         result_pn = cubic_interp(x, y, xi; bc=BCPair(QuadraticFit(), Deriv2(0.0)))
         @test all(isfinite.(result_pn))
 
@@ -1897,12 +1897,12 @@ end
 @testset "BC Types Coverage (bc_types.jl)" begin
     # 1. _is_periodic_bc
     @test FastInterpolations._is_periodic_bc(PeriodicBC())
-    @test !FastInterpolations._is_periodic_bc(NaturalBC())
+    @test !FastInterpolations._is_periodic_bc(ZeroCurvBC())
     @test !FastInterpolations._is_periodic_bc(LinearFit())
     @test !FastInterpolations._is_periodic_bc(Deriv1(0.0))
 
     # 3. get_polyfit_degree fallbacks (for coverage)
-    @test FastInterpolations.get_polyfit_degree(NaturalBC()) == 0
+    @test FastInterpolations.get_polyfit_degree(ZeroCurvBC()) == 0
     @test FastInterpolations.get_polyfit_degree(Deriv1(0.0)) == 0
     @test FastInterpolations.get_polyfit_degree(Deriv2(0.0)) == 0
     @test FastInterpolations.get_polyfit_degree(Deriv3(0.0)) == 0

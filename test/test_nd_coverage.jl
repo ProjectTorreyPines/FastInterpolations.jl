@@ -53,7 +53,7 @@ import FastInterpolations:
     _convert_grids_typed,
     _create_spacings_typed,
     # BC types
-    NaturalBC,
+    ZeroCurvBC,
     PeriodicBC,
     PolyFit,
     CubicFit,
@@ -82,7 +82,7 @@ import FastInterpolations:
 
             # Test along dimension 1
             out1 = similar(data)
-            _differentiate_nd_along_dim!(out1, data, x, NaturalBC(), 1)
+            _differentiate_nd_along_dim!(out1, data, x, ZeroCurvBC(), 1)
 
             # Derivative of sin(x)*cos(y) w.r.t. x is cos(x)*cos(y)
             # Check at interior points
@@ -95,7 +95,7 @@ import FastInterpolations:
 
             # Test along dimension 2
             out2 = similar(data)
-            _differentiate_nd_along_dim!(out2, data, y, NaturalBC(), 2)
+            _differentiate_nd_along_dim!(out2, data, y, ZeroCurvBC(), 2)
 
             # Derivative of sin(x)*cos(y) w.r.t. y is -sin(x)*sin(y)
             for j in 2:length(y)-1
@@ -113,16 +113,16 @@ import FastInterpolations:
             out = similar(data)
 
             # Dimension out of range
-            @test_throws ArgumentError _differentiate_nd_along_dim!(out, data, x, NaturalBC(), 0)
-            @test_throws ArgumentError _differentiate_nd_along_dim!(out, data, x, NaturalBC(), 3)
+            @test_throws ArgumentError _differentiate_nd_along_dim!(out, data, x, ZeroCurvBC(), 0)
+            @test_throws ArgumentError _differentiate_nd_along_dim!(out, data, x, ZeroCurvBC(), 3)
 
             # Size mismatch between out and data
             out_wrong = rand(4, 4)
-            @test_throws DimensionMismatch _differentiate_nd_along_dim!(out_wrong, data, x, NaturalBC(), 1)
+            @test_throws DimensionMismatch _differentiate_nd_along_dim!(out_wrong, data, x, ZeroCurvBC(), 1)
 
             # Grid length mismatch
             wrong_grid = collect(range(0.0, 1.0, 6))  # 6 points but dim 1 has 5
-            @test_throws DimensionMismatch _differentiate_nd_along_dim!(out, data, wrong_grid, NaturalBC(), 1)
+            @test_throws DimensionMismatch _differentiate_nd_along_dim!(out, data, wrong_grid, ZeroCurvBC(), 1)
         end
 
         @testset "_check_periodic_data_nd error path" begin
@@ -156,17 +156,17 @@ import FastInterpolations:
             grid_long = collect(1.0:10.0)   # 10 points
 
             # p_src == 1: always return original BC
-            @test _get_effective_bc(NaturalBC(), 1, grid_long) isa NaturalBC
+            @test _get_effective_bc(ZeroCurvBC(), 1, grid_long) isa ZeroCurvBC
             @test _get_effective_bc(PeriodicBC(), 1, grid_long) isa PeriodicBC
 
             # p_src > 1 with PeriodicBC: propagate periodic
             @test _get_effective_bc(PeriodicBC(), 2, grid_long) isa PeriodicBC
 
-            # p_src > 1 with short grid (< 4 points): fallback to NaturalBC
-            @test _get_effective_bc(NaturalBC(), 2, grid_short) isa NaturalBC
+            # p_src > 1 with short grid (< 4 points): fallback to ZeroCurvBC
+            @test _get_effective_bc(ZeroCurvBC(), 2, grid_short) isa ZeroCurvBC
 
             # p_src > 1 with long grid: use CubicFit
-            @test _get_effective_bc(NaturalBC(), 2, grid_long) isa CubicFit
+            @test _get_effective_bc(ZeroCurvBC(), 2, grid_long) isa CubicFit
         end
     end
 
@@ -268,12 +268,12 @@ import FastInterpolations:
 
         @testset "_resolve_bcs_nd wrong-sized tuple error" begin
             # Correct size should work
-            @test _resolve_bcs_nd(NaturalBC(), Val(2)) == (NaturalBC(), NaturalBC())
-            @test _resolve_bcs_nd((NaturalBC(), PeriodicBC()), Val(2)) == (NaturalBC(), PeriodicBC())
+            @test _resolve_bcs_nd(ZeroCurvBC(), Val(2)) == (ZeroCurvBC(), ZeroCurvBC())
+            @test _resolve_bcs_nd((ZeroCurvBC(), PeriodicBC()), Val(2)) == (ZeroCurvBC(), PeriodicBC())
 
             # Wrong size should throw
-            @test_throws ArgumentError _resolve_bcs_nd((NaturalBC(),), Val(2))
-            @test_throws ArgumentError _resolve_bcs_nd((NaturalBC(), NaturalBC(), NaturalBC()), Val(2))
+            @test_throws ArgumentError _resolve_bcs_nd((ZeroCurvBC(),), Val(2))
+            @test_throws ArgumentError _resolve_bcs_nd((ZeroCurvBC(), ZeroCurvBC(), ZeroCurvBC()), Val(2))
         end
 
         @testset "DerivOp constructors" begin
@@ -300,7 +300,7 @@ import FastInterpolations:
         @testset "PolyFit BC helpers" begin
             # _get_polyfit_bc returns the PolyFit BC or constructs one
             @test _get_polyfit_bc(PolyFit{3}(), 2) isa PolyFit{3}  # Already PolyFit, return as-is
-            @test _get_polyfit_bc(NaturalBC(), 3) isa PolyFit{3}   # Construct from degree
+            @test _get_polyfit_bc(ZeroCurvBC(), 3) isa PolyFit{3}   # Construct from degree
 
             # BCPair with PolyFit on one side (BCPair requires PointBC subtypes)
             # PolyFit is a PointBC, so we can use BCPair(PolyFit, PolyFit)
@@ -421,8 +421,8 @@ import FastInterpolations:
             bcs_tuple = (Left(QuadraticFit()), Right(QuadraticFit()))
             @test _resolve_bcs_nd_quadratic(bcs_tuple, Val(2)) === bcs_tuple
 
-            # NaturalBC conversion
-            bcs_nat = _resolve_bcs_nd_quadratic(NaturalBC(), Val(2))
+            # ZeroCurvBC conversion
+            bcs_nat = _resolve_bcs_nd_quadratic(ZeroCurvBC(), Val(2))
             @test length(bcs_nat) == 2
             @test all(b -> b isa Right, bcs_nat)
 
@@ -431,19 +431,19 @@ import FastInterpolations:
             @test length(bcs_poly) == 2
 
             # Heterogeneous AbstractBC tuple
-            bcs_hetero = _resolve_bcs_nd_quadratic((NaturalBC(), CubicFit()), Val(2))
+            bcs_hetero = _resolve_bcs_nd_quadratic((ZeroCurvBC(), CubicFit()), Val(2))
             @test length(bcs_hetero) == 2
         end
 
         @testset "_to_quadratic_bc" begin
             @test _to_quadratic_bc(Right(QuadraticFit())) isa Right
             @test _to_quadratic_bc(MinCurvFit()) isa MinCurvFit
-            @test _to_quadratic_bc(NaturalBC()) isa Right
+            @test _to_quadratic_bc(ZeroCurvBC()) isa Right
             @test _to_quadratic_bc(CubicFit()) isa Right
 
             # Unsupported BC
             @test_throws ArgumentError _to_quadratic_bc(PeriodicBC())
-            @test_throws ArgumentError _to_quadratic_bc(ClampedBC())
+            @test_throws ArgumentError _to_quadratic_bc(ZeroSlopeBC())
         end
     end
 
@@ -490,7 +490,7 @@ import FastInterpolations:
             data[end, :] = data[1, :]
 
             # Should not throw
-            itp = cubic_interp((x, y), data, bc=(PeriodicBC(), NaturalBC()))
+            itp = cubic_interp((x, y), data, bc=(PeriodicBC(), ZeroCurvBC()))
             @test itp isa FastInterpolations.CubicInterpolantND
         end
     end
@@ -851,7 +851,7 @@ end
     end
 
     @testset "fast path 3: WrapExtrap() extrap with mixed BCs (cubic oneshot)" begin
-        # bc=(PeriodicBC(), NaturalBC()) + extrap=WrapExtrap()
+        # bc=(PeriodicBC(), ZeroCurvBC()) + extrap=WrapExtrap()
         # Some periodic, not all → not fast path 2; uniform extrap → fast path 3
         x = collect(range(0.0, 2π, 9))
         y = collect(range(0.0, 1.0, 9))
@@ -860,12 +860,12 @@ end
 
         # Query is interior: cos(π/2) + 0.5 ≈ 0.5
         result = cubic_interp((x, y), data_p, (π/2, 0.5);
-            bc=(PeriodicBC(), NaturalBC()), extrap=WrapExtrap())
+            bc=(PeriodicBC(), ZeroCurvBC()), extrap=WrapExtrap())
         @test result ≈ 0.5 atol=0.01
     end
 
     @testset "fallback: non-uniform extraps with mixed BCs (cubic oneshot)" begin
-        # bc=(PeriodicBC(), NaturalBC()) + extrap=(NoExtrap(),ConstExtrap())
+        # bc=(PeriodicBC(), ZeroCurvBC()) + extrap=(NoExtrap(),ConstExtrap())
         # Mixed extrap types per dim — exercises per-dim extrap dispatch fallback
         x = collect(range(0.0, 2π, 9))
         y = collect(range(0.0, 1.0, 9))
@@ -874,7 +874,7 @@ end
 
         # Query is interior: cos(π/2) + 0.5 ≈ 0.5 (extrap mode doesn't affect interior)
         result = cubic_interp((x, y), data_p, (π/2, 0.5);
-            bc=(PeriodicBC(), NaturalBC()), extrap=(NoExtrap(), ConstExtrap()))
+            bc=(PeriodicBC(), ZeroCurvBC()), extrap=(NoExtrap(), ConstExtrap()))
         @test result ≈ 0.5 atol=0.01
     end
 end

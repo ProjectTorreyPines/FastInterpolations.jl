@@ -21,8 +21,8 @@ using FastInterpolations
     # ========================================
     @testset "cubic_interp" begin
         # Core BC types (representative selection)
-        @testset "BC=$bc" for bc in [NaturalBC(), Deriv1(0.0), Deriv2(0.5),
-                                      ClampedBC(), LinearFit(), QuadraticFit()]
+        @testset "BC=$bc" for bc in [ZeroCurvBC(), Deriv1(0.0), Deriv2(0.5),
+                                      ZeroSlopeBC(), LinearFit(), QuadraticFit()]
             itp = cubic_interp(x, y_cint; bc=bc)
             @test itp isa CubicInterpolant{Float64, ComplexF64}
             @test itp(1.5) isa ComplexF64

@@ -66,10 +66,10 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
     end
 
     @testset "deriv_view order validation" begin
-        # 1D: deriv_view rejects invalid orders
+        # 1D: deriv_view rejects invalid orders (3-point grid needs ZeroCurvBC; CubicFit requires 4+)
         x = [0.0, 0.5, 1.0]
         y = [0.0, 0.25, 1.0]
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x, y; bc=ZeroCurvBC())
         @test_throws ArgumentError deriv_view(itp, 4)
         @test_throws ArgumentError deriv_view(itp, -1)
 
@@ -134,7 +134,7 @@ end # Derivative Core
     @testset "Cubic kernels" begin
         # Test with known quadratic: f(x) = x² on [0, 1]
         # f(0) = 0, f(1) = 1, f'(x) = 2x, f''(x) = 2
-        # For natural spline on x² with enough points, z values approximate f''
+        # For zero-curvature spline on x² with enough points, z values approximate f''
         h = 1.0
         inv_h = inv(h)  # Precomputed reciprocal for kernel
         yL, yR = 0.0, 1.0
@@ -498,8 +498,8 @@ end # Derivative Kernels
         y = sin.(x)
 
         bc_types = [
-            NaturalBC(),
-            ClampedBC(),
+            ZeroCurvBC(),
+            ZeroSlopeBC(),
             BCPair(Deriv1(1.0), Deriv1(cos(1.0))),
         ]
 
@@ -1028,10 +1028,10 @@ end # Derivative Type Stability
 @testset "Derivative Edge Cases" begin
 
     @testset "Very small grid (minimum size)" begin
-        # Minimum for cubic: 3 points (can we still get derivatives?)
+        # Minimum for cubic: 3 points (needs ZeroCurvBC; CubicFit requires 4+)
         x = [0.0, 0.5, 1.0]
         y = x .^ 2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x, y; bc=ZeroCurvBC())
 
         # Should work without errors
         @test itp(0.25; deriv=DerivOp(1)) isa Float64
@@ -1329,8 +1329,8 @@ end # Derivative Edge Cases
         y = x .^ 2
 
         bc_types = [
-            NaturalBC(),
-            ClampedBC(),
+            ZeroCurvBC(),
+            ZeroSlopeBC(),
             BCPair(Deriv1(1.0), Deriv1(1.0)),
             BCPair(Deriv2(2.0), Deriv2(0.0)),
         ]
@@ -1412,8 +1412,8 @@ end # Derivative Allocations
         y = x .^ 2
 
         bc_types = [
-            (NaturalBC(), "Natural"),
-            (ClampedBC(), "Clamped"),
+            (ZeroCurvBC(), "ZeroCurv"),
+            (ZeroSlopeBC(), "ZeroSlope"),
             (BCPair(Deriv1(0.5), Deriv1(1.5)), "Deriv1-Deriv1"),
             (BCPair(Deriv2(2.0), Deriv2(2.0)), "Deriv2-Deriv2"),
             (BCPair(Deriv1(0.5), Deriv2(2.0)), "Deriv1-Deriv2"),
@@ -1511,7 +1511,7 @@ end # Derivative Allocations
 
         bc_types = [
             CubicSplineCache(x),
-            CubicSplineCache(x; bc=ClampedBC()),
+            CubicSplineCache(x; bc=ZeroSlopeBC()),
             CubicSplineCache(x; bc=BCPair(Deriv2(2.0), Deriv2(2.0))),
             CubicSplineCache(x; bc=PeriodicBC()),
         ]
@@ -1694,7 +1694,7 @@ end # Derivative Comprehensive Coverage
         y = sin.(x)
 
         # Non-periodic BCs work with regular sin data
-        for bc in [NaturalBC(), ClampedBC()]
+        for bc in [ZeroCurvBC(), ZeroSlopeBC()]
             itp = cubic_interp(x, y; bc=bc)
             d1 = deriv1(itp)
             d2 = deriv2(itp)

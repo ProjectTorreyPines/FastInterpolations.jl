@@ -391,7 +391,7 @@ using FastInterpolations
         y_vec   = [0.0, 0.1, 0.25, 0.4, 0.6, 0.8, 1.0]
         data = [f(xi, yj) for xi in x_range, yj in y_vec]
 
-        # Mixed BC: CubicFit on x-axis, NaturalBC on y-axis
+        # Mixed BC: CubicFit on x-axis, ZeroCurvBC on y-axis
         itp = cubic_interp((x_range, y_vec), data; bc=(CubicFit(), QuadraticFit()))
         xq, yq = 1.0, 0.5
 

@@ -78,7 +78,7 @@
         y_small = [1.0, 2.0, 1.5]
         x_query_small = [-0.5, 0.25, 0.75, 1.5]
 
-        cache_small = CubicSplineCache(x_small)
+        cache_small = CubicSplineCache(x_small; bc=ZeroCurvBC())
         result = cubic_interp(cache_small, y_small, x_query_small; extrap=ExtendExtrap())
         @test all(isfinite, result)
 
@@ -88,12 +88,12 @@
         cache = CubicSplineCache(x)
 
         result = cubic_interp(cache, y, x)
-        @test result ≈ y
+        @test result ≈ y atol=1e-14
 
-        # Query at boundaries
+        # Query at boundaries (CubicFit materializes slopes → tiny numerical offset)
         x_boundary = [x[1], x[end]]
         result_boundary = cubic_interp(cache, y, x_boundary)
-        @test result_boundary ≈ [y[1], y[end]]
+        @test result_boundary ≈ [y[1], y[end]] atol=1e-14
     end
 
     @testset "Extrapolation :none - DomainError" begin
@@ -135,9 +135,9 @@
         @test isfinite(cubic_interp(x, y, 0.25))
         @test isfinite(cubic_interp(x, y, 0.75))
 
-        # Boundary points should work
-        @test cubic_interp(x, y, 0.0) ≈ y[1]
-        @test cubic_interp(x, y, 1.0) ≈ y[end]
+        # Boundary points should work (CubicFit materializes slopes → tiny numerical offset)
+        @test cubic_interp(x, y, 0.0) ≈ y[1] atol=1e-14
+        @test cubic_interp(x, y, 1.0) ≈ y[end] atol=1e-14
     end
 
 
@@ -280,29 +280,29 @@
         cache = CubicSplineCache(x)
 
         for (xi, yi) in zip(x, y)
-            @test cubic_interp(cache, y, xi) ≈ yi
+            @test cubic_interp(cache, y, xi) ≈ yi atol=1e-14
         end
     end
 
     @testset "Regression test - Reference values" begin
         # Captured reference values to detect unintended changes
-        # These values are from the current implementation (Natural boundary condition)
+        # These values are from the current implementation (CubicFit boundary condition)
 
         # sin(2π*x) on [0,1] with 11 points
         x = collect(range(0.0, 1.0, 11))
         y_sin = sin.(2π .* x)
 
-        @test cubic_interp(x, y_sin, 0.15) ≈ 0.8086551555800082
-        @test cubic_interp(x, y_sin, 0.33) ≈ 0.8760692639427288
-        @test cubic_interp(x, y_sin, 0.67) ≈ -0.876069263942729
-        @test cubic_interp(x, y_sin, 0.89) ≈ -0.6373475686689355
+        @test cubic_interp(x, y_sin, 0.15) ≈ 0.8075491120315496
+        @test cubic_interp(x, y_sin, 0.33) ≈ 0.8759861757932349
+        @test cubic_interp(x, y_sin, 0.67) ≈ -0.8759861757932349
+        @test cubic_interp(x, y_sin, 0.89) ≈ -0.6367655199957271
 
         # exp(-x) on [0,1] with 11 points
         y_exp = exp.(-x)
 
-        @test cubic_interp(x, y_exp, 0.25) ≈ 0.7788333860015754
+        @test cubic_interp(x, y_exp, 0.25) ≈ 0.7788008325696137
         @test cubic_interp(x, y_exp, 0.5) ≈ 0.6065306597126333
-        @test cubic_interp(x, y_exp, 0.75) ≈ 0.47237845915507926
+        @test cubic_interp(x, y_exp, 0.75) ≈ 0.47236654805406686
     end
 end
 
@@ -322,7 +322,7 @@ end
         @test all(isfinite, result)
 
         result_ref = cubic_interp(x_float, y_float, x_query_ref)
-        @test result == result_ref
+        @test result ≈ result_ref
     end
 
     @testset "Integer input → Float output (scalar)" begin
@@ -337,7 +337,7 @@ end
         y_float = Float64.(y_int)
 
         result_ref = cubic_interp(x_float, y_float, 5.5)
-        @test result_scalar == result_ref
+        @test result_scalar ≈ result_ref
 
         # Integer query point
         result_int_query = cubic_interp(x_int, y_int, 5)
@@ -390,7 +390,7 @@ end
         y_float = Float64.(y_int)
 
         result_ref = cubic_interp(x_float, y_float, x_extrap; extrap=ExtendExtrap())
-        @test result == result_ref
+        @test result ≈ result_ref
     end
 
     @testset "cubic_interp! with autocache (x, y, x_query)" begin

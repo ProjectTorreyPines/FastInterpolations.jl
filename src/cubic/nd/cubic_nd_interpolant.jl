@@ -19,7 +19,7 @@ Create an N-dimensional cubic Hermite interpolant from grid vectors and data arr
 - `data::AbstractArray{<:Any,N}`: Function values at grid points
 
 # Keywords
-- `bc=NaturalBC()`: Boundary condition(s). Can be:
+- `bc=CubicFit()`: Boundary condition(s). Can be:
   - Single `AbstractBC`: Applied to all axes
   - `NTuple{N,AbstractBC}`: Per-axis BCs
 - `extrap=NoExtrap()`: Extrapolation mode(s). Can be:
@@ -49,7 +49,7 @@ itp((1.0, 0.5, 0.3))  # Evaluate at (1.0, 0.5, 0.3)
 
 # With per-axis options
 itp = cubic_interp((x, y, z), data;
-    bc=(NaturalBC(), PeriodicBC(), NaturalBC()),
+    bc=(CubicFit(), PeriodicBC(), CubicFit()),
     extrap=(NoExtrap(), WrapExtrap(), ConstExtrap()))
 
 # Complex-valued data
@@ -60,7 +60,7 @@ itp_c = cubic_interp((x, y, z), data_c)
 function cubic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
+    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()

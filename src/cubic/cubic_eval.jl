@@ -8,7 +8,7 @@
 # Core Evaluation Functions
 # ========================================
 
-"Evaluate natural cubic spline at a single point with operation dispatch and search policy."
+"Evaluate cubic spline at a single point with operation dispatch and search policy."
 @inline function _eval_cubic_at_point(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},

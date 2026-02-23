@@ -492,7 +492,7 @@ end
 # ===============================================================
 
 """
-    _get_cubic_cache(x; bc=NaturalBC()) -> CubicSplineCache  [Internal]
+    _get_cubic_cache(x; bc=CubicFit()) -> CubicSplineCache  [Internal]
 
 Get or create a cached CubicSplineCache for the given x-grid.
 
@@ -512,7 +512,7 @@ because they have the same type signature.
 LU factorization depends only on matrix structure (x-grid + BC type),
 not RHS values (y-data + BC values).
 """
-@inline function _get_cubic_cache(x; bc::AbstractBC=NaturalBC())
+@inline function _get_cubic_cache(x; bc::AbstractBC=CubicFit())
     # Handle periodic BC
     if _is_periodic_bc(bc)
         return _get_periodic_cache_impl(x)
@@ -534,14 +534,14 @@ end
 # ===============================================================
 
 # Typed BC API - direct path, no Union
-@inline function _get_cubic_cache(x, ::NaturalBC)
+@inline function _get_cubic_cache(x, ::ZeroCurvBC)
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_pair = BCPair(Deriv2(zero(FT)), Deriv2(zero(FT)))
     return _get_derivative_cache_impl(x, bc_pair)
 end
 
-@inline function _get_cubic_cache(x, ::ClampedBC)
+@inline function _get_cubic_cache(x, ::ZeroSlopeBC)
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
     bc_pair = BCPair(Deriv1(zero(FT)), Deriv1(zero(FT)))

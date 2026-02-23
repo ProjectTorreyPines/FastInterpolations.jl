@@ -148,10 +148,10 @@ quadratic_interp(x, y, xq; bc=Left(Deriv1(0.0)))   # S'(left) = 0
 quadratic_interp(x, y, xq; bc=Right(Deriv1(1.0)))  # S'(right) = 1
 
 # Cubic boundary conditions — paired endpoint constraints
-cubic_interp(x, y, xq; bc=NaturalBC())    # S''=0 at both ends (default)
-cubic_interp(x, y, xq; bc=PeriodicBC())   # C²-continuous periodic spline
+cubic_interp(x, y, xq; bc=CubicFit())     # 4-point polynomial fit at both ends (default)
+cubic_interp(x, y, xq; bc=ZeroCurvBC())  # S''=0 at both ends
+cubic_interp(x, y, xq; bc=PeriodicBC())  # C²-continuous periodic spline
 cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv2(-5.0)))  # custom (left, right) BC
-cubic_interp(x, y, xq; bc=CubicFit())     # Estimate derivatives using 4-point fit at both ends 
 
 # Extrapolation modes — all methods support these
 linear_interp(x, y, xq; extrap=ConstExtrap())    # clamp to boundary values

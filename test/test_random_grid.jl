@@ -180,10 +180,10 @@
 
             @test all(isfinite, result)
 
-            # Verify knot passage
+            # Verify knot passage (CubicFit → tiny boundary offset)
             cache = CubicSplineCache(x_clustered)
             for (xi, yi) in zip(x_clustered, y)
-                @test cubic_interp(cache, y, xi) ≈ yi
+                @test cubic_interp(cache, y, xi) ≈ yi atol=1e-14
             end
         end
     end
@@ -231,11 +231,11 @@
         end
 
         @testset "Cubic interpolation" begin
-            result = cubic_interp(x_small, y_small, 0.35)
+            result = cubic_interp(x_small, y_small, 0.35; bc=ZeroCurvBC())
             @test isfinite(result)
 
-            # Verify knot passage
-            cache = CubicSplineCache(x_small)
+            # Verify knot passage (3-point grid needs ZeroCurvBC; CubicFit requires 4+)
+            cache = CubicSplineCache(x_small; bc=ZeroCurvBC())
             for (xi, yi) in zip(x_small, y_small)
                 @test cubic_interp(cache, y_small, xi) ≈ yi
             end

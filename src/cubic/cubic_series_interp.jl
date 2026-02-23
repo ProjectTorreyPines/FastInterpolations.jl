@@ -533,14 +533,14 @@ end
 # ========================================
 
 """
-    cubic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, precompute_transpose=false)
+    cubic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=CubicFit(), extrap=NoExtrap(), autocache=true, precompute_transpose=false)
 
 Create a multi-Y cubic spline interpolant for multiple y-data series sharing the same x-grid.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
-- `bc`: Boundary condition (NaturalBC, ClampedBC, PeriodicBC, or Vector of BC for per-series)
+- `bc`: Boundary condition (CubicFit, ZeroCurvBC, ZeroSlopeBC, PeriodicBC, or Vector of BC for per-series)
 - `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache`: If true, reuse cached LU factorization (default: true)
 - `precompute_transpose`: If true, build point-contiguous layout immediately
@@ -561,7 +561,7 @@ vals = sitp(0.5)  # [sin(π), cos(π), exp(-0.5)]
 
 # Per-series BC (each series can have different BC)
 sitp = cubic_interp(x, [y1, y2, y3]; bc=[
-    NaturalBC(),
+    ZeroCurvBC(),
     BCPair(Deriv1(2.0), Deriv1(0.0)),
     BCPair(Deriv2(0.0), Deriv3(5.0)),
 ])
@@ -570,7 +570,7 @@ sitp = cubic_interp(x, [y1, y2, y3]; bc=[
 function cubic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
-    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
+    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=CubicFit(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
@@ -682,7 +682,7 @@ end
 
 # Matrix input: columns as y-series
 """
-    cubic_interp(x, Y::AbstractMatrix; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, precompute_transpose=false)
+    cubic_interp(x, Y::AbstractMatrix; bc=CubicFit(), extrap=NoExtrap(), autocache=true, precompute_transpose=false)
 
 Create a multi-Y cubic spline interpolant from a matrix where each column is a y-series.
 
@@ -702,7 +702,7 @@ sitp = cubic_interp(x, Y)
 function cubic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
-    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
+    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=CubicFit(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
@@ -760,7 +760,7 @@ end
 function cubic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
-    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
+    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=CubicFit(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
@@ -778,7 +778,7 @@ end
 function cubic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
-    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
+    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=CubicFit(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,

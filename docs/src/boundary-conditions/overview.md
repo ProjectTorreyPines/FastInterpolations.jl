@@ -23,8 +23,8 @@ AbstractBC{T}
 │       └── CubicFit        # = PolyFit{3} (4 points, O(h³))
 ├── BCPair{T,L,R}           # Both endpoints (cubic only)
 ├── PeriodicBC{T}           # Periodic BC (cubic only)
-├── NaturalBC{T}            # Zero curvature at both ends (cubic only)
-├── ClampedBC{T}            # Zero slope at both ends (cubic only)
+├── ZeroCurvBC{T}            # Zero curvature at both ends (cubic only)
+├── ZeroSlopeBC{T}            # Zero slope at both ends (cubic only)
 ├── MinCurvFit{T}           # Minimum curvature (quadratic only)
 ├── Left{T,B}               # Wrapper: apply BC at left endpoint
 └── Right{T,B}              # Wrapper: apply BC at right endpoint
@@ -75,13 +75,14 @@ Cubic splines need constraints at **both** endpoints:
 
 ```julia
 # BCPair: independent constraints at each endpoint
-BCPair(Deriv2(0), Deriv2(0))      # Natural BC
-BCPair(Deriv1(0), Deriv1(0))      # Clamped BC
+BCPair(Deriv2(0), Deriv2(0))      # Zero-Curvature BC
+BCPair(Deriv1(0), Deriv1(0))      # Zero-Slope BC
 BCPair(Deriv1(1.0), Deriv2(0))    # Mixed
 
 # Convenience shortcuts
-NaturalBC()      # = BCPair(Deriv2(0), Deriv2(0))  [default]
-ClampedBC()      # = BCPair(Deriv1(0), Deriv1(0))
+CubicFit()        # = BCPair(PolyFit{3}(), PolyFit{3}())  [default]
+ZeroCurvBC()      # = BCPair(Deriv2(0), Deriv2(0))
+ZeroSlopeBC()      # = BCPair(Deriv1(0), Deriv1(0))
 
 # True periodicity (requires y[1] ≈ y[end])
 PeriodicBC()     # S(x) = S(x + τ) with C² continuity
@@ -104,8 +105,9 @@ PeriodicBC()     # S(x) = S(x + τ) with C² continuity
 
 | BC | Description | Best For |
 |----|-------------|----------|
-| `NaturalBC()` | S''=0 at both ends | **Default** - general data |
-| `ClampedBC()` | S'=0 at both ends | Flat endpoints |
+| `CubicFit()` | 4-point polynomial fit | **Default** - general data |
+| `ZeroCurvBC()` | S''=0 at both ends | Zero-curvature assumption |
+| `ZeroSlopeBC()` | S'=0 at both ends | Flat endpoints |
 | `BCPair(...)` | Custom at each end | Known derivatives |
 | `PeriodicBC()` | True periodicity (inclusive) | Cyclic data with `y[1] ≈ y[end]` |
 | `PeriodicBC(endpoint=:exclusive)` | True periodicity (exclusive) | FFT grids, `[0, 2π)` data |

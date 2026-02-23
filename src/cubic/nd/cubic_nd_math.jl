@@ -291,7 +291,7 @@ end
     _deriv_1d!(deriv, values, grid, bc)
 
 Differentiate 1D vector using cubic splines. BC type determines the method:
-- `AbstractBC` (NaturalBC, ClampedBC, PeriodicBC, etc.): Use specified BC
+- `AbstractBC` (ZeroCurvBC, ZeroSlopeBC, PeriodicBC, etc.): Use specified BC
 - `CubicFit`: Estimate endpoint derivatives via polynomial fitting
 """
 @with_pool pool function _deriv_1d!(

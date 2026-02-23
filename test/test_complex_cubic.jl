@@ -245,12 +245,12 @@ using FastInterpolations
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
 
-        # NaturalBC (default)
-        itp_natural = cubic_interp(x, y; bc=NaturalBC())
+        # ZeroCurvBC
+        itp_natural = cubic_interp(x, y; bc=ZeroCurvBC())
         @test value_type(itp_natural) == ComplexF64
 
-        # ClampedBC
-        itp_clamped = cubic_interp(x, y; bc=ClampedBC())
+        # ZeroSlopeBC
+        itp_clamped = cubic_interp(x, y; bc=ZeroSlopeBC())
         @test value_type(itp_clamped) == ComplexF64
 
         # CubicFit

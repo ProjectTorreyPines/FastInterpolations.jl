@@ -101,10 +101,10 @@ ys = f.(xs)
 x_dense = range(minimum(xs), maximum(xs), length=200)
 # BCs to compare
 bcs = [
-    ("NaturalBC (default)", NaturalBC(), :gray),
+    ("CubicFit (default)", CubicFit(), :darkorange),
+    ("ZeroCurvBC", ZeroCurvBC(), :gray),
     ("LinearFit", LinearFit(), :royalblue),
     ("QuadraticFit", QuadraticFit(), :green3),
-    ("CubicFit", CubicFit(), :darkorange),
 ]
 
 plots_list = []
@@ -157,7 +157,7 @@ plot(plots_list..., layout=(2, 2), size=(800, 600), xlims=(-2.5, 3.5)) # hide
 ```
 
 **Key observations:**
-- **NaturalBC**: Zero-curvature assumption causes deviation from the true cubic
+- **ZeroCurvBC**: Zero-curvature assumption causes deviation from the true cubic
 - **LinearFit / QuadraticFit**: Slightly underestimate the boundary slope
 - **CubicFit**: Computes the **exact boundary derivative**, enabling perfect reproduction ✓
 
@@ -189,10 +189,10 @@ plots_list = []
 
 # (bc, title, color, n_highlight) - n_highlight is number of points used for derivative estimation
 for (bc, title, color, n_highlight) in [
-    (NaturalBC(), "NaturalBC (default)", :gray, 0),
+    (CubicFit(), "CubicFit (default)", :darkorange, 4),
+    (ZeroCurvBC(), "ZeroCurvBC", :gray, 0),
     (LinearFit(), "LinearFit (D=1)", :royalblue, 2),
     (QuadraticFit(), "QuadraticFit (D=2)", :green3, 3),
-    (CubicFit(), "CubicFit (D=3)", :darkorange, 4),
     (PolyFit{4}(), "PolyFit (D=4)", :mediumorchid, 5),
     (PolyFit{5}(), "PolyFit (D=5)", :mediumorchid, 6),
     (PolyFit{6}(), "PolyFit (D=6)", :mediumorchid, 7),
@@ -277,11 +277,11 @@ using FastInterpolations
 x = range(0.0, 2π, 15)
 y = sin.(x)
 
-# Default: NaturalBC (zero curvature)
+# Default: CubicFit (4-point polynomial fit)
 cubic_interp(x, y, 1.0)
 
-# Use CubicFit for better polynomial reproduction
-cubic_interp(x, y, 1.0; bc=CubicFit())
+# Use ZeroCurvBC for zero-curvature endpoints
+cubic_interp(x, y, 1.0; bc=ZeroCurvBC())
 
 # Mix PolyFit with known derivative
 cubic_interp(x, y, 1.0; bc=BCPair(CubicFit(), Deriv1(0.0)))

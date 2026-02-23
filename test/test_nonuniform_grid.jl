@@ -7,9 +7,9 @@
 #
 # Organization (separate top-level testsets for reduced compilation overhead):
 # 1. Linear Interpolation
-# 2. Cubic - Natural BC
+# 2. Cubic - Zero-Curvature BC
 # 3. Cubic - Periodic BC
-# 4. Cubic - Clamped/Deriv1 BC
+# 4. Cubic - ZeroSlope/Deriv1 BC
 # 5. Cubic - Deriv2 BC
 # 6. Cubic - Mixed BCPair combinations
 # 7. Interpolant callable forms
@@ -186,17 +186,17 @@ const LINEAR = TestPolynomial{Float64}(
 end
 
 # ========================================
-# 2. Cubic Interpolation - Natural BC
+# 2. Cubic Interpolation - Zero-Curvature BC
 # ========================================
-@testset "Non-uniform Grid: Cubic - NaturalBC" begin
+@testset "Non-uniform Grid: Cubic - ZeroCurvBC" begin
 
-    # Note: NaturalBC sets f''(x₀) = f''(xₙ) = 0 at boundaries.
+    # Note: ZeroCurvBC sets f''(x₀) = f''(xₙ) = 0 at boundaries.
     # This ONLY guarantees exact polynomial reproduction when the polynomial
     # itself has f'' = 0 at the boundaries (i.e., LINEAR polynomial).
-    # For QUADRATIC (f''=4) and CUBIC (f''=6t-4), NaturalBC is an approximation.
+    # For QUADRATIC (f''=4) and CUBIC (f''=6t-4), ZeroCurvBC is an approximation.
 
     @testset "Linear polynomial reproduction (exact)" begin
-        # LINEAR has f''=0 everywhere, so NaturalBC matches perfectly
+        # LINEAR has f''=0 everywhere, so ZeroCurvBC matches perfectly
         for (grid_name, grid_fn) in [
             ("large_last", grid_large_last),
             ("small_last", grid_small_last),
@@ -209,10 +209,10 @@ end
                 x_min, x_max = extrema(x)
                 xi = range(x_min + 0.1, x_max - 0.1, 10) |> collect
 
-                result = cubic_interp(x, y, xi; bc=NaturalBC())
+                result = cubic_interp(x, y, xi; bc=ZeroCurvBC())
                 expected = LINEAR.f.(xi)
 
-                # Should exactly reproduce (f''=0 matches NaturalBC)
+                # Should exactly reproduce (f''=0 matches ZeroCurvBC)
                 @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
             end
         end
@@ -220,7 +220,7 @@ end
 
     @testset "Higher-order polynomial approximation quality" begin
         # QUADRATIC and CUBIC have non-zero f'' at boundaries,
-        # so NaturalBC only provides an approximation (not exact reproduction).
+        # so ZeroCurvBC only provides an approximation (not exact reproduction).
         # On extreme grids (large spacing differences), errors can be significant.
         for poly in [QUADRATIC, CUBIC]
             @testset "$(poly.name) polynomial" begin
@@ -236,10 +236,10 @@ end
                         x_min, x_max = extrema(x)
                         xi = range(x_min + 0.1, x_max - 0.1, 10) |> collect
 
-                        result = cubic_interp(x, y, xi; bc=NaturalBC())
+                        result = cubic_interp(x, y, xi; bc=ZeroCurvBC())
                         expected = poly.f.(xi)
 
-                        # NaturalBC is an approximation - only test basic sanity:
+                        # ZeroCurvBC is an approximation - only test basic sanity:
                         # 1. Results are finite
                         # 2. Results are in the same order of magnitude
                         # On extreme grids with conflicting f'' values, errors can exceed 50%
@@ -263,33 +263,33 @@ end
         x = grid_asymmetric()
         y = sin.(x)
 
-        cache = CubicSplineCache(x; bc=NaturalBC())
+        cache = CubicSplineCache(x; bc=ZeroCurvBC())
         for (xi, yi) in zip(x, y)
             @test cubic_interp(cache, y, xi) ≈ yi rtol=POLY_RTOL atol=POLY_ATOL
         end
     end
 
     @testset "Derivative evaluation (approximation)" begin
-        # Note: NaturalBC with QUADRATIC won't give exact derivatives since f''≠0
+        # Note: ZeroCurvBC with QUADRATIC won't give exact derivatives since f''≠0
         x = grid_geometric()
         y = QUADRATIC.f.(x)
-        itp = cubic_interp(x, y; bc=NaturalBC())
+        itp = cubic_interp(x, y; bc=ZeroCurvBC())
 
         x_min, x_max = extrema(x)
         xi = range(x_min + 0.1, x_max - 0.1, 5) |> collect
 
         for t in xi
-            # Looser tolerance since NaturalBC is an approximation
+            # Looser tolerance since ZeroCurvBC is an approximation
             @test itp(t; deriv=DerivOp(1)) ≈ QUADRATIC.f_prime(t) rtol=0.1 atol=0.5
             @test isfinite(itp(t; deriv=DerivOp(2)))
         end
     end
 
     @testset "Linear derivative evaluation (exact)" begin
-        # LINEAR has f''=0, so NaturalBC should give exact derivatives
+        # LINEAR has f''=0, so ZeroCurvBC should give exact derivatives
         x = grid_geometric()
         y = LINEAR.f.(x)
-        itp = cubic_interp(x, y; bc=NaturalBC())
+        itp = cubic_interp(x, y; bc=ZeroCurvBC())
 
         x_min, x_max = extrema(x)
         xi = range(x_min + 0.1, x_max - 0.1, 5) |> collect
@@ -306,7 +306,7 @@ end
         # 2. Has f''(x₀) = 0 and f''(xₙ) = 0 at boundaries
         # 3. Analytically known
         #
-        # This IS exactly what NaturalBC produces, so it should reproduce exactly!
+        # This IS exactly what ZeroCurvBC produces, so it should reproduce exactly!
         #
         # Grid: [0, 1, 2, 3, 13]
         # Piece 1 [0,1]:  f(x) = x³                              → f''(0) = 0
@@ -371,16 +371,16 @@ end
         # Get y values at grid points
         y = natural_piecewise.(x)
 
-        # NaturalBC should exactly reproduce this piecewise cubic
+        # ZeroCurvBC should exactly reproduce this piecewise cubic
         xi = [0.5, 1.5, 2.5, 5.0, 10.0, 12.5]
 
-        result = cubic_interp(x, y, xi; bc=NaturalBC())
+        result = cubic_interp(x, y, xi; bc=ZeroCurvBC())
         expected = natural_piecewise.(xi)
 
         @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
 
         # Test derivatives too
-        itp = cubic_interp(x, y; bc=NaturalBC())
+        itp = cubic_interp(x, y; bc=ZeroCurvBC())
         for t in xi
             @test itp(t; deriv=DerivOp(1)) ≈ natural_piecewise_deriv1(t) rtol=POLY_RTOL atol=POLY_ATOL
             @test itp(t; deriv=DerivOp(2)) ≈ natural_piecewise_deriv2(t) rtol=POLY_RTOL atol=POLY_ATOL
@@ -466,7 +466,7 @@ end
 end
 
 # ========================================
-# 4. Cubic Interpolation - Clamped/Deriv1 BC
+# 4. Cubic Interpolation - ZeroSlope/Deriv1 BC
 # ========================================
 @testset "Non-uniform Grid: Cubic - Deriv1 BC" begin
 
@@ -500,13 +500,13 @@ end
         end
     end
 
-    @testset "ClampedBC() equivalence (zero slope at boundaries)" begin
+    @testset "ZeroSlopeBC() equivalence (zero slope at boundaries)" begin
         x = grid_large_last()
         y = sin.(x)
 
         xi = [2.0, 7.0, 12.0]
 
-        result_clamped = cubic_interp(x, y, xi; bc=ClampedBC())
+        result_clamped = cubic_interp(x, y, xi; bc=ZeroSlopeBC())
         result_d1_zero = cubic_interp(x, y, xi; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
 
         @test result_clamped ≈ result_d1_zero rtol=POLY_RTOL atol=POLY_ATOL
@@ -572,13 +572,13 @@ end
         end
     end
 
-    @testset "NaturalBC() equivalence (zero curvature at boundaries)" begin
+    @testset "ZeroCurvBC() equivalence (zero curvature at boundaries)" begin
         x = grid_asymmetric()
         y = sin.(x)
 
         xi = [0.05, 5.0, 10.2]
 
-        result_natural = cubic_interp(x, y, xi; bc=NaturalBC())
+        result_natural = cubic_interp(x, y, xi; bc=ZeroCurvBC())
         result_d2_zero = cubic_interp(x, y, xi; bc=BCPair(Deriv2(0.0), Deriv2(0.0)))
 
         @test result_natural ≈ result_d2_zero rtol=POLY_RTOL atol=POLY_ATOL
@@ -833,8 +833,8 @@ end
         results = Dict{String, Float64}()
 
         for (name, bc) in [
-            ("Natural", NaturalBC()),
-            ("Clamped", ClampedBC()),
+            ("ZeroCurv", ZeroCurvBC()),
+            ("ZeroSlope", ZeroSlopeBC()),
             ("D1-D1", BCPair(Deriv1(1.0), Deriv1(0.5))),
             ("D2-D2", BCPair(Deriv2(0.0), Deriv2(-1.0))),
             ("D3-D3", BCPair(Deriv3(0.0), Deriv3(1.0))),
@@ -886,8 +886,8 @@ end
         x0, xn = first(x), last(x)
 
         for (name, bc) in [
-            ("Natural", NaturalBC()),
-            ("Clamped", ClampedBC()),
+            ("ZeroCurv", ZeroCurvBC()),
+            ("ZeroSlope", ZeroSlopeBC()),
             ("Deriv1", BCPair(Deriv1(CUBIC.f_prime(x0)), Deriv1(CUBIC.f_prime(xn)))),
             ("Deriv2", BCPair(Deriv2(CUBIC.f_double_prime(x0)), Deriv2(CUBIC.f_double_prime(xn)))),
         ]
@@ -912,7 +912,7 @@ end
 
     @testset "CubicSplineCache reuse" begin
         x = grid_small_last()
-        cache = CubicSplineCache(x; bc=NaturalBC())
+        cache = CubicSplineCache(x; bc=ZeroCurvBC())
 
         # Multiple y vectors on same grid
         y1 = sin.(x)
@@ -943,8 +943,8 @@ end
         y = x .^ 2
 
         @test isfinite(linear_interp(x, y, 1.5))
-        @test isfinite(cubic_interp(x, y, 1.5; bc=NaturalBC()))
-        @test isfinite(cubic_interp(x, y, 1.5; bc=ClampedBC()))
+        @test isfinite(cubic_interp(x, y, 1.5; bc=ZeroCurvBC()))
+        @test isfinite(cubic_interp(x, y, 1.5; bc=ZeroSlopeBC()))
     end
 
     @testset "Very small intervals" begin
@@ -959,7 +959,7 @@ end
         x = grid_clustered()
         y = sin.(x)
 
-        for bc in [NaturalBC(), ClampedBC(), PeriodicBC()]
+        for bc in [ZeroCurvBC(), ZeroSlopeBC(), PeriodicBC()]
             if bc isa PeriodicBC
                 y_periodic = copy(y)
                 y_periodic[end] = y_periodic[1]
@@ -983,8 +983,8 @@ end
         y = Float32.(sin.(x))
 
         for bc in [
-            NaturalBC(),
-            ClampedBC(),
+            ZeroCurvBC(),
+            ZeroSlopeBC(),
             BCPair(Deriv1(Float32(0.5)), Deriv2(Float32(0.0))),
             BCPair(Deriv3(Float32(0.0)), Deriv1(Float32(0.5))),
             Deriv3(Float32(0.0)),
@@ -1005,7 +1005,7 @@ end
         @test all(isfinite, output)
 
         output_cubic = zeros(3)
-        cubic_interp!(output_cubic, x, y, xi; bc=NaturalBC())
+        cubic_interp!(output_cubic, x, y, xi; bc=ZeroCurvBC())
         @test all(isfinite, output_cubic)
     end
 
@@ -1016,7 +1016,7 @@ end
         xi_scalar = 5.0
         xi_vec = [5.0]
 
-        for bc in [NaturalBC(), ClampedBC()]
+        for bc in [ZeroCurvBC(), ZeroSlopeBC()]
             result_scalar = cubic_interp(x, y, xi_scalar; bc=bc)
             result_vec = cubic_interp(x, y, xi_vec; bc=bc)
 

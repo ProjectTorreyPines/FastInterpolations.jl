@@ -5,7 +5,7 @@ In ND, boundary conditions are specified **per-axis** via Tuples. A single BC va
 !!! note "Method Applicability"
     - **Constant** / **Linear**: No BC needed
     - **Quadratic**: One BC per axis (`Left(...)` or `Right(...)`)
-    - **Cubic**: Paired BCs per axis (`ZeroCurvBC()`, `PeriodicBC()`, `BCPair(...)`, etc.)
+    - **Cubic**: Paired BCs per axis (`CubicFit()`, `ZeroCurvBC()`, `PeriodicBC()`, `BCPair(...)`, etc.)
 
     For BC type details, see the [1D Boundary Conditions](../boundary-conditions/overview.md).
 
@@ -25,15 +25,15 @@ nothing #hide
 ## Broadcast vs Per-Axis
 
 ```@example nd_boundary
-# Broadcast: same BC on all axes
-itp = cubic_interp((x, y, z), data3d; bc=ZeroCurvBC())
-# Equivalent to: bc=(ZeroCurvBC(), ZeroCurvBC(), ZeroCurvBC())
+# Broadcast: same BC on all axes (CubicFit is default, so this is equivalent to no bc kwarg)
+itp = cubic_interp((x, y, z), data3d; bc=CubicFit())
+# Equivalent to: bc=(CubicFit(), CubicFit(), CubicFit())
 ```
 
 ```@example nd_boundary
 # Per-axis: different BC per axis
 itp = cubic_interp((x, y, z), data3d;
-    bc=(ZeroCurvBC(), PeriodicBC(), CubicFit()))
+    bc=(CubicFit(), PeriodicBC(), ZeroCurvBC()))
 ```
 
 ---

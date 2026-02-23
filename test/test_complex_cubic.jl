@@ -245,7 +245,7 @@ using FastInterpolations
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
 
-        # ZeroCurvBC (default)
+        # ZeroCurvBC
         itp_natural = cubic_interp(x, y; bc=ZeroCurvBC())
         @test value_type(itp_natural) == ComplexF64
 

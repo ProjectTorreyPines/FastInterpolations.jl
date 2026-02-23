@@ -509,7 +509,7 @@ d1.(xs)        # Broadcast over vector
 ### 6.1. Mathematical Accuracy
 
 > **Note**: Cubic spline reproduces polynomials exactly only when BCs match the actual function.
-> Natural BC (z=0) is exact only for functions with f''(boundary)=0. General polynomials require explicit Deriv2 BC.
+> Zero-Curvature BC (z=0) is exact only for functions with f''(boundary)=0. General polynomials require explicit Deriv2 BC.
 
 ```julia
 @testset "Polynomial exactness - quadratic" begin

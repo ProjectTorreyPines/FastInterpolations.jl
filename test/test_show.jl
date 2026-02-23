@@ -57,22 +57,22 @@
     end
 
     @testset "CubicInterpolant show" begin
-        # Zero-Curvature BC (default)
-        itp_natural = cubic_interp(x, y)
+        # CubicFit BC (default)
+        itp_default = cubic_interp(x, y)
 
-        compact_str = sprint(show, itp_natural)
+        compact_str = sprint(show, itp_default)
         @test occursin("CubicInterpolant", compact_str)
         @test occursin("101 pts", compact_str)
-        @test occursin("ZeroCurv", compact_str)
+        @test occursin("CubicFit", compact_str)
 
         # Verbose show (Range grid → no Search row)
-        verbose_str = sprint(show, MIME("text/plain"), itp_natural)
+        verbose_str = sprint(show, MIME("text/plain"), itp_default)
         @test occursin("CubicInterpolant", verbose_str)
         @test occursin("Grid:", verbose_str)
         @test occursin("Extrap:", verbose_str)
         @test !occursin("Search:", verbose_str)  # Range → no Search
         @test occursin("BC:", verbose_str)
-        @test occursin("ZeroCurv", verbose_str)
+        @test occursin("CubicFit", verbose_str)
 
         # Custom BC
         itp_custom = cubic_interp(x, y; bc=BCPair(Deriv1(0.5), Deriv2(0.0)))
@@ -159,7 +159,7 @@
         compact_str = sprint(show, sitp)
         @test occursin("CubicSeriesInterpolant", compact_str)
         @test occursin("101 × 3", compact_str)
-        @test occursin("ZeroCurv", compact_str)
+        @test occursin("CubicFit", compact_str)
 
         # Verbose show
         verbose_str = sprint(show, MIME("text/plain"), sitp)

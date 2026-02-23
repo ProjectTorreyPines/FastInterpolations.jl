@@ -80,7 +80,8 @@ BCPair(Deriv1(0), Deriv1(0))      # Zero-Slope BC
 BCPair(Deriv1(1.0), Deriv2(0))    # Mixed
 
 # Convenience shortcuts
-ZeroCurvBC()      # = BCPair(Deriv2(0), Deriv2(0))  [default]
+CubicFit()        # = BCPair(PolyFit{3}(), PolyFit{3}())  [default]
+ZeroCurvBC()      # = BCPair(Deriv2(0), Deriv2(0))
 ZeroSlopeBC()      # = BCPair(Deriv1(0), Deriv1(0))
 
 # True periodicity (requires y[1] ≈ y[end])
@@ -104,7 +105,8 @@ PeriodicBC()     # S(x) = S(x + τ) with C² continuity
 
 | BC | Description | Best For |
 |----|-------------|----------|
-| `ZeroCurvBC()` | S''=0 at both ends | **Default** - general data |
+| `CubicFit()` | 4-point polynomial fit | **Default** - general data |
+| `ZeroCurvBC()` | S''=0 at both ends | Zero-curvature assumption |
 | `ZeroSlopeBC()` | S'=0 at both ends | Flat endpoints |
 | `BCPair(...)` | Custom at each end | Known derivatives |
 | `PeriodicBC()` | True periodicity (inclusive) | Cyclic data with `y[1] ≈ y[end]` |

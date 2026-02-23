@@ -66,10 +66,10 @@ const DERIV_ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 600
     end
 
     @testset "deriv_view order validation" begin
-        # 1D: deriv_view rejects invalid orders
+        # 1D: deriv_view rejects invalid orders (3-point grid needs ZeroCurvBC; CubicFit requires 4+)
         x = [0.0, 0.5, 1.0]
         y = [0.0, 0.25, 1.0]
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x, y; bc=ZeroCurvBC())
         @test_throws ArgumentError deriv_view(itp, 4)
         @test_throws ArgumentError deriv_view(itp, -1)
 
@@ -1028,10 +1028,10 @@ end # Derivative Type Stability
 @testset "Derivative Edge Cases" begin
 
     @testset "Very small grid (minimum size)" begin
-        # Minimum for cubic: 3 points (can we still get derivatives?)
+        # Minimum for cubic: 3 points (needs ZeroCurvBC; CubicFit requires 4+)
         x = [0.0, 0.5, 1.0]
         y = x .^ 2
-        itp = cubic_interp(x, y)
+        itp = cubic_interp(x, y; bc=ZeroCurvBC())
 
         # Should work without errors
         @test itp(0.25; deriv=DerivOp(1)) isa Float64

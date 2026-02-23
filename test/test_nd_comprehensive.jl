@@ -464,7 +464,7 @@ using FastInterpolations
             x_vec = [0.0, 0.1, 0.3, 0.6, 1.0]
             y_vec = [0.0, 0.5, 1.0]
             data_nu = [xi * yj for xi in x_vec, yj in y_vec]
-            itp_nu = cubic_interp((x_vec, y_vec), data_nu)
+            itp_nu = cubic_interp((x_vec, y_vec), data_nu; bc=ZeroCurvBC())
 
             buf = IOBuffer()
             show(buf, MIME("text/plain"), itp_nu)
@@ -480,7 +480,7 @@ using FastInterpolations
             y = range(0.0, 1.0, 4)
             z = range(0.0, 1.0, 3)
             data3d = [xi + yj + zk for xi in x, yj in y, zk in z]
-            itp3d = cubic_interp((x, y, z), data3d)
+            itp3d = cubic_interp((x, y, z), data3d; bc=ZeroCurvBC())
 
             buf = IOBuffer()
             show(buf, MIME("text/plain"), itp3d)
@@ -546,7 +546,7 @@ using FastInterpolations
             y3 = range(0.0, 1.0, 4)
             z3 = range(0.0, 1.0, 3)
             data3d = [xi + yj + zk for xi in x3, yj in y3, zk in z3]
-            itp3d = cubic_interp((x3, y3, z3), data3d)
+            itp3d = cubic_interp((x3, y3, z3), data3d; bc=ZeroCurvBC())
             @test FastInterpolations.num_partials(itp3d) == 8  # 2^3
         end
 

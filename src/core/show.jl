@@ -148,6 +148,8 @@ function _format_bc(bc::BCPair)
         return "ZeroCurv (S''=0 at ends)"
     elseif bc.left isa Deriv1 && bc.right isa Deriv1 && bc.left.val == 0 && bc.right.val == 0
         return "ZeroSlope (S'=0 at ends)"
+    elseif bc.left isa PolyFit && bc.right isa PolyFit && typeof(bc.left) === typeof(bc.right)
+        return _format_bc_point(bc.left)
     else
         return "$left_str | $right_str"
     end
@@ -320,6 +322,9 @@ function _short_bc_name(bc::BCPair)
     # Check for ZeroSlope: both ends have Deriv1 with val=0
     elseif bc.left isa Deriv1 && bc.right isa Deriv1 && bc.left.val == 0 && bc.right.val == 0
         return "ZeroSlope"
+    # Check for symmetric PolyFit (e.g., CubicFit, QuadraticFit)
+    elseif bc.left isa PolyFit && bc.right isa PolyFit && typeof(bc.left) === typeof(bc.right)
+        return _format_bc_point(bc.left)
     else
         return "Custom"
     end

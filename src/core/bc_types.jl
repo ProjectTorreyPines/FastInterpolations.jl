@@ -240,8 +240,7 @@ This is a singleton type (structure-only). Normalized to `BCPair` with
 
 # Example
 ```julia
-itp = cubic_interp(x, y; bc=ZeroCurvBC())  # Default
-itp = cubic_interp(x, y)                   # Same as above
+itp = cubic_interp(x, y; bc=ZeroCurvBC())  # Explicit zero-curvature BC
 ```
 """
 struct ZeroCurvBC <: AbstractBC end

@@ -5,7 +5,7 @@
 # Creates cache with pre-computed LU factorization.
 
 """
-    CubicSplineCache(x::AbstractVector{T}; bc=ZeroCurvBC()) where {T<:AbstractFloat}
+    CubicSplineCache(x::AbstractVector{T}; bc=CubicFit()) where {T<:AbstractFloat}
 
 Construct a cubic spline cache for grid points `x`.
 
@@ -15,7 +15,8 @@ This factorization can be reused for interpolating different y vectors.
 # Arguments
 - `x::AbstractVector{T}`: Grid points (must be sorted, length >= 3)
 - `bc`: Boundary condition specification:
-  - `ZeroCurvBC()`: Zero curvature at both ends (default)
+  - `CubicFit()`: Cubic polynomial endpoint fitting (default)
+  - `ZeroCurvBC()`: Zero curvature at both ends
   - `ZeroSlopeBC()`: Zero slope at both ends
   - `PeriodicBC()`: Periodic boundary condition
   - `Deriv1(val)` or `Deriv2(val)`: Symmetric BC (same at both ends)
@@ -24,7 +25,7 @@ This factorization can be reused for interpolating different y vectors.
 # Example
 ```julia
 x = range(0.0, 1.0, 51)
-cache = CubicSplineCache(x)                              # Zero-Curvature BC (default)
+cache = CubicSplineCache(x)                              # CubicFit (default)
 cache = CubicSplineCache(x; bc=ZeroSlopeBC())              # Zero slope at both ends
 cache = CubicSplineCache(x; bc=Deriv1(0.5))              # Slope=0.5 at both ends
 cache = CubicSplineCache(x; bc=BCPair(Deriv1(0.5), Deriv2(0)))   # Mixed: slope left, zero-curvature right
@@ -37,7 +38,7 @@ result1 = cubic_interp(cache, y1, [0.25, 0.75])
 result2 = cubic_interp(cache, y2, [0.25, 0.75])
 ```
 """
-function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC=ZeroCurvBC()) where {T<:AbstractFloat}
+function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC=CubicFit()) where {T<:AbstractFloat}
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
     validate_polyfit_points(bc, length(x))
 

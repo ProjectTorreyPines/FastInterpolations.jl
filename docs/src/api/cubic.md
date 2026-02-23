@@ -6,7 +6,7 @@
 
 | Function | Description |
 |----------|-------------|
-| `cubic_interp(x, y, xq)` | Cubic spline at point(s) `xq` (default: ZeroCurvBC) |
+| `cubic_interp(x, y, xq)` | Cubic spline at point(s) `xq` (default: CubicFit) |
 | `cubic_interp(x, y, xq; bc=...)` | With specified BC |
 | `cubic_interp!(out, x, y, xq; bc=...)` | In-place version |
 

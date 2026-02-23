@@ -132,8 +132,8 @@ const APPROX_REL_TOLERANCCE = 1e-14
                 @testset "Grid: $grid_name" begin
                     y = target_f.(x)
 
-                    # FastInterpolations
-                    result_fast = cubic_interp(x, y, xq_interior)
+                    # FastInterpolations — explicit ZeroCurvBC to match natural BC
+                    result_fast = cubic_interp(x, y, xq_interior; bc=ZeroCurvBC())
 
                     # Interpolations.jl - Cubic spline with natural BC
                     x_vec = collect(x)
@@ -155,10 +155,10 @@ const APPROX_REL_TOLERANCCE = 1e-14
                 @testset "Grid: $grid_name" begin
                     y = target_f.(x)
 
-                    # FastInterpolations
-                    result_fast = cubic_interp(x, y, xq_interior)
+                    # FastInterpolations — explicit ZeroCurvBC to match natural BC
+                    result_fast = cubic_interp(x, y, xq_interior; bc=ZeroCurvBC())
 
-                    # DataInterpolations.jl - CubicSpline
+                    # DataInterpolations.jl - CubicSpline (natural BC)
                     itp = DI.CubicSpline(y, x)
                     result_data = itp(xq_interior)
 
@@ -173,8 +173,8 @@ const APPROX_REL_TOLERANCCE = 1e-14
                 @testset "Grid: $grid_name" begin
                     y = target_f.(x)
 
-                    # FastInterpolations (explicit extrap=ExtendExtrap())
-                    result_fast = cubic_interp(x, y, xq_with_extrap; extrap=ExtendExtrap())
+                    # FastInterpolations — explicit ZeroCurvBC to match natural BC
+                    result_fast = cubic_interp(x, y, xq_with_extrap; bc=ZeroCurvBC(), extrap=ExtendExtrap())
 
                     # DataInterpolations.jl with extrapolation
                     itp = DI.CubicSpline(y, x; extrapolation=DI.ExtrapolationType.Extension)

@@ -372,15 +372,15 @@ end
         x = collect(range(0.0, 1.0, 51))
 
         # Keyword API should work
-        cache1 = _get_cubic_cache(x)  # default bc=ZeroCurvBC()
-        cache2 = _get_cubic_cache(x; bc=ZeroCurvBC())
+        cache1 = _get_cubic_cache(x)  # default bc=CubicFit()
+        cache2 = _get_cubic_cache(x; bc=CubicFit())
         cache3 = _get_cubic_cache(x; bc=PeriodicBC())
 
         @test cache1 isa CubicSplineCache
         @test cache2 isa CubicSplineCache
         @test cache3 isa CubicSplineCache
 
-        # ZeroCurv and periodic caches should be different types
+        # CubicFit and periodic caches should be different types
         @test typeof(cache1) == typeof(cache2)
         @test typeof(cache1) != typeof(cache3)
     end

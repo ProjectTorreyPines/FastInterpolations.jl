@@ -39,7 +39,7 @@ BCPair(Deriv2(-2.0), Deriv1(0.5)) # Mixed: curvature=-2 at left, slope=0.5 at ri
 
 | Shortcut | Equivalent | Meaning |
 |----------|------------|---------|
-| `ZeroCurvBC()` | `BCPair(Deriv2(0), Deriv2(0))` | S''=0 at both ends — **default** |
+| `ZeroCurvBC()` | `BCPair(Deriv2(0), Deriv2(0))` | S''=0 at both ends |
 | `ZeroSlopeBC()` | `BCPair(Deriv1(0), Deriv1(0))` | S'=0 at both ends (flat) |
 
 ### 2. PeriodicBC: True Periodic C² Continuity
@@ -79,8 +79,9 @@ using FastInterpolations
 x = range(0.0, 2π, 15)
 y = sin.(x)
 
-# One-shot evaluation (default: ZeroCurvBC)
+# One-shot evaluation (default: CubicFit)
 cubic_interp(x, y, 1.0)
+cubic_interp(x, y, 1.0; bc=ZeroCurvBC())             # zero curvature at endpoints
 cubic_interp(x, y, 1.0; bc=ZeroSlopeBC())            # flat endpoints
 cubic_interp(x, y, 1.0; bc=BCPair(Deriv1(1), Deriv2(0)))  # custom
 
@@ -93,7 +94,7 @@ out = similar(xq)
 cubic_interp!(out, x, y, xq)
 
 # Create reusable interpolant
-itp = cubic_interp(x, y; bc=ZeroCurvBC())
+itp = cubic_interp(x, y)              # CubicFit (default)
 itp(1.0)    # evaluate at single point
 itp(xq)     # evaluate at multiple points
 
@@ -109,7 +110,7 @@ d2 = deriv2(itp); d2(1.0)         # continuous second derivative
 
 | Situation | Recommended BC |
 |-----------|----------------|
-| General data, unknown endpoint behavior | `ZeroCurvBC()` (default) |
+| General data, unknown endpoint behavior | `CubicFit()` (default) |
 | Endpoints should be flat (zero slope) | `ZeroSlopeBC()` |
 | Known endpoint derivatives (physics) | `BCPair(Deriv1(...), Deriv1(...))` |
 | Cyclic data (angles, phases, time-of-day) | `PeriodicBC()` |

@@ -108,7 +108,7 @@ end
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
-        # ZeroCurvBC (default)
+        # ZeroCurvBC
         itp_natural = cubic_interp((x, y), data; bc=ZeroCurvBC())
         @test itp_natural((1.0, 0.5)) isa Float64
 

@@ -351,7 +351,7 @@ Handles conversion of Real BC values to Complex when needed.
 # ========================================
 
 """
-    cubic_interp(x, y; bc=ZeroCurvBC(), extrap=NoExtrap(), autocache=true, search=Binary()) -> CubicInterpolant
+    cubic_interp(x, y; bc=CubicFit(), extrap=NoExtrap(), autocache=true, search=Binary()) -> CubicInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -361,7 +361,7 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 # Arguments
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values (can be Real or Complex)
-- `bc::AbstractBC`: Boundary condition (default: `ZeroCurvBC()`)
+- `bc::AbstractBC`: Boundary condition (default: `CubicFit()`)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache::Bool`: Enable automatic caching (default: `true`)
 - `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
@@ -407,7 +407,7 @@ end
 function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv};
-    bc::AbstractBC=ZeroCurvBC(),
+    bc::AbstractBC=CubicFit(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     search::P=Binary()
@@ -459,7 +459,7 @@ end
 function cubic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY};
-    bc::AbstractBC=ZeroCurvBC(),
+    bc::AbstractBC=CubicFit(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     search::P=Binary()

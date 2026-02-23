@@ -670,7 +670,7 @@ end
     end
 
     @testset "Cache sharing with different BC types" begin
-        # ZeroCurvBC (default)
+        # CubicFit (default)
         mitp_natural = cubic_interp(x, [y1, y2])
         @test mitp_natural.cache isa FI.CubicSplineCache
         @test mitp_natural.cache.bc_config isa BCPair
@@ -701,7 +701,7 @@ end
     end
 
     @testset "BC propagation" begin
-        # ZeroCurvBC (default) - check bc_config field (unified struct)
+        # CubicFit (default) - check bc_config field (unified struct)
         mitp_natural = cubic_interp(x, [y1, y2])
         @test mitp_natural.cache.bc_config isa BCPair
 

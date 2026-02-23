@@ -101,10 +101,10 @@ ys = f.(xs)
 x_dense = range(minimum(xs), maximum(xs), length=200)
 # BCs to compare
 bcs = [
-    ("ZeroCurvBC (default)", ZeroCurvBC(), :gray),
+    ("CubicFit (default)", CubicFit(), :darkorange),
+    ("ZeroCurvBC", ZeroCurvBC(), :gray),
     ("LinearFit", LinearFit(), :royalblue),
     ("QuadraticFit", QuadraticFit(), :green3),
-    ("CubicFit", CubicFit(), :darkorange),
 ]
 
 plots_list = []
@@ -189,10 +189,10 @@ plots_list = []
 
 # (bc, title, color, n_highlight) - n_highlight is number of points used for derivative estimation
 for (bc, title, color, n_highlight) in [
-    (ZeroCurvBC(), "ZeroCurvBC (default)", :gray, 0),
+    (CubicFit(), "CubicFit (default)", :darkorange, 4),
+    (ZeroCurvBC(), "ZeroCurvBC", :gray, 0),
     (LinearFit(), "LinearFit (D=1)", :royalblue, 2),
     (QuadraticFit(), "QuadraticFit (D=2)", :green3, 3),
-    (CubicFit(), "CubicFit (D=3)", :darkorange, 4),
     (PolyFit{4}(), "PolyFit (D=4)", :mediumorchid, 5),
     (PolyFit{5}(), "PolyFit (D=5)", :mediumorchid, 6),
     (PolyFit{6}(), "PolyFit (D=6)", :mediumorchid, 7),
@@ -277,11 +277,11 @@ using FastInterpolations
 x = range(0.0, 2π, 15)
 y = sin.(x)
 
-# Default: ZeroCurvBC (zero curvature)
+# Default: CubicFit (4-point polynomial fit)
 cubic_interp(x, y, 1.0)
 
-# Use CubicFit for better polynomial reproduction
-cubic_interp(x, y, 1.0; bc=CubicFit())
+# Use ZeroCurvBC for zero-curvature endpoints
+cubic_interp(x, y, 1.0; bc=ZeroCurvBC())
 
 # Mix PolyFit with known derivative
 cubic_interp(x, y, 1.0; bc=BCPair(CubicFit(), Deriv1(0.0)))

@@ -492,7 +492,7 @@ end
 # ===============================================================
 
 """
-    _get_cubic_cache(x; bc=ZeroCurvBC()) -> CubicSplineCache  [Internal]
+    _get_cubic_cache(x; bc=CubicFit()) -> CubicSplineCache  [Internal]
 
 Get or create a cached CubicSplineCache for the given x-grid.
 
@@ -512,7 +512,7 @@ because they have the same type signature.
 LU factorization depends only on matrix structure (x-grid + BC type),
 not RHS values (y-data + BC values).
 """
-@inline function _get_cubic_cache(x; bc::AbstractBC=ZeroCurvBC())
+@inline function _get_cubic_cache(x; bc::AbstractBC=CubicFit())
     # Handle periodic BC
     if _is_periodic_bc(bc)
         return _get_periodic_cache_impl(x)

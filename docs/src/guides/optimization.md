@@ -18,12 +18,12 @@ xg = range(-0.7, 1.5, length=101)
 yg = range(-0.7, 1.5, length=101)
 zg = [rosenbrock(xi, yi) for xi in xg, yi in yg]
 
-itp = cubic_interp((xg, yg), zg; extrap=:extension, bc=CubicFit())
+itp = cubic_interp((xg, yg), zg; extrap=ExtendExtrap(), bc=CubicFit())
 ```
 
-!!! tip "Why `extrap=:extension`?"
+!!! tip "Why `ExtendExtrap()`?"
     Trust-region and line-search methods may evaluate points outside the grid during
-    intermediate steps. `:extension` extrapolates smoothly from the boundary, preventing
+    intermediate steps. `ExtendExtrap()` extrapolates smoothly from the boundary, preventing
     errors without distorting the objective landscape near the boundary.
 
 ## Three Ways to Run Optimization

@@ -57,7 +57,7 @@ else
     @testset "Enzyme Compatibility Status" begin
         x = collect(0.0:0.5:2.0)
         y = sin.(x)
-        itp = linear_interp(x, y; extrap=:extension)
+        itp = linear_interp(x, y; extrap=ExtendExtrap())
 
         @testset "basic autodiff works" begin
             f(xq) = itp(xq)
@@ -90,7 +90,7 @@ else
         y_linear = 2.0 .* x .+ 1.0
 
         @testset "Single Interpolant - Real" begin
-            itp = linear_interp(x, y_linear; extrap=:extension)
+            itp = linear_interp(x, y_linear; extrap=ExtendExtrap())
 
             f(xq) = itp(xq)
             result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(2.25))
@@ -106,7 +106,7 @@ else
         @testset "Series Interpolant (broken - array mutation)" begin
             y1 = sin.(x)
             y2 = cos.(x)
-            sitp = linear_interp(x, [y1, y2]; extrap=:extension)
+            sitp = linear_interp(x, [y1, y2]; extrap=ExtendExtrap())
 
             @test_broken begin
                 f(xq) = sum(sitp(xq))
@@ -128,7 +128,7 @@ else
             y = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
 
             @testset "Single Interpolant" begin
-                itp = constant_interp(x, y; side=:left, extrap=:extension)
+                itp = constant_interp(x, y; side=:left, extrap=ExtendExtrap())
 
                 f(xq) = itp(xq)
                 result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(2.5))
@@ -146,7 +146,7 @@ else
         y_quad = x .^ 2
 
         @testset "Single Interpolant" begin
-            itp = quadratic_interp(x, y_quad; extrap=:extension)
+            itp = quadratic_interp(x, y_quad; extrap=ExtendExtrap())
 
             f(xq) = itp(xq)
             xq = 2.25
@@ -164,7 +164,7 @@ else
         y_cubic = x .^ 3
 
         @testset "Single Interpolant" begin
-            itp = cubic_interp(x, y_cubic; extrap=:extension)
+            itp = cubic_interp(x, y_cubic; extrap=ExtendExtrap())
 
             f(xq) = itp(xq)
             xq = 2.25
@@ -183,7 +183,7 @@ else
         y_complex = (2.0 + 1.0im) .* x .+ (1.0 - 1.0im)
 
         @testset "Linear Complex (via real)" begin
-            itp = linear_interp(x, y_complex; extrap=:extension)
+            itp = linear_interp(x, y_complex; extrap=ExtendExtrap())
 
             f(xq) = real(itp(xq))
             result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(2.25))
@@ -191,7 +191,7 @@ else
         end
 
         @testset "Linear Complex (via imag)" begin
-            itp = linear_interp(x, y_complex; extrap=:extension)
+            itp = linear_interp(x, y_complex; extrap=ExtendExtrap())
 
             f(xq) = imag(itp(xq))
             result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(2.25))
@@ -208,7 +208,7 @@ else
 
         x = collect(0.0:0.5:5.0)
         y = sin.(x)
-        itp = cubic_interp(x, y; extrap=:extension)
+        itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
         @testset "Enzyme matches ForwardDiff" begin
             for xq in [0.5, 1.5, 2.5, 3.5]

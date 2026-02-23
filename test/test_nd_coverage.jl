@@ -243,13 +243,13 @@ import FastInterpolations:
     @testset "nd_utils.jl" begin
 
         @testset "_resolve_extrap_nd wrong-sized tuple error" begin
-            # Correct size should work
-            @test _resolve_extrap_nd(:none, Val(2)) == (:none, :none)
-            @test _resolve_extrap_nd((:none, :constant), Val(2)) == (:none, :constant)
+            # Correct size should work (3-arg form: extrap, bcs, Val(N))
+            @test _resolve_extrap_nd(NoExtrap(), nothing, Val(2)) == (NoExtrap(), NoExtrap())
+            @test _resolve_extrap_nd((NoExtrap(), ConstExtrap()), nothing, Val(2)) == (NoExtrap(), ConstExtrap())
 
             # Wrong size should throw
-            @test_throws ArgumentError _resolve_extrap_nd((:none,), Val(2))  # 1 element for 2D
-            @test_throws ArgumentError _resolve_extrap_nd((:none, :none, :none), Val(2))  # 3 for 2D
+            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(),), nothing, Val(2))  # 1 element for 2D
+            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(), NoExtrap(), NoExtrap()), nothing, Val(2))  # 3 for 2D
         end
 
         @testset "_resolve_search_nd wrong-sized tuple error" begin
@@ -847,25 +847,25 @@ end
     end
 end
 
-@testset "core/utils.jl — @_dispatch_extrap_nd paths" begin
+@testset "ND extrapolation dispatch paths" begin
     grids = (collect(range(0.0, 1.0, 6)), collect(range(0.0, 1.0, 6)))
     data = [xi + yj for xi in grids[1], yj in grids[2]]
 
-    @testset "fast path 1: :wrap extrap with bcs=nothing (linear oneshot)" begin
-        # Exercises the `ntuple(_ -> Val(:wrap), valn)` branch (fast path 1 :wrap)
-        result = linear_interp(grids, data, (0.5, 0.5); extrap=:wrap)
+    @testset "fast path 1: WrapExtrap() extrap with bcs=nothing (linear oneshot)" begin
+        # Uniform WrapExtrap on all dims — exercises periodic wrap fast path
+        result = linear_interp(grids, data, (0.5, 0.5); extrap=WrapExtrap())
         @test result ≈ 1.0 atol=1e-10
     end
 
     @testset "fallback: non-uniform extraps with bcs=nothing (linear oneshot)" begin
-        # Exercises _resolve_mixed_extrap_vals(extraps, ::Nothing) + fallback path
-        result = linear_interp(grids, data, (0.5, 0.5); extrap=(:none, :constant))
+        # Mixed extrap types per dim — exercises per-dim extrap dispatch fallback
+        result = linear_interp(grids, data, (0.5, 0.5); extrap=(NoExtrap(), ConstExtrap()))
         @test result ≈ 1.0 atol=1e-10
     end
 
-    @testset "fast path 3: :wrap extrap with mixed BCs (cubic oneshot)" begin
-        # bc=(PeriodicBC(), NaturalBC()) + extrap=:wrap → fast path 3 :wrap branch
-        # (some periodic, not all → not fast path 2; uniform extrap → fast path 3)
+    @testset "fast path 3: WrapExtrap() extrap with mixed BCs (cubic oneshot)" begin
+        # bc=(PeriodicBC(), NaturalBC()) + extrap=WrapExtrap()
+        # Some periodic, not all → not fast path 2; uniform extrap → fast path 3
         x = collect(range(0.0, 2π, 9))
         y = collect(range(0.0, 1.0, 9))
         data_p = [cos(xi) + yj for xi in x, yj in y]
@@ -873,13 +873,13 @@ end
 
         # Query is interior: cos(π/2) + 0.5 ≈ 0.5
         result = cubic_interp((x, y), data_p, (π/2, 0.5);
-            bc=(PeriodicBC(), NaturalBC()), extrap=:wrap)
+            bc=(PeriodicBC(), NaturalBC()), extrap=WrapExtrap())
         @test result ≈ 0.5 atol=0.01
     end
 
     @testset "fallback: non-uniform extraps with mixed BCs (cubic oneshot)" begin
-        # bc=(PeriodicBC(), NaturalBC()) + extrap=(:none,:constant) → fallback path
-        # Exercises _resolve_mixed_extrap_vals(extraps, bcs::NTuple{N,AbstractBC})
+        # bc=(PeriodicBC(), NaturalBC()) + extrap=(NoExtrap(),ConstExtrap())
+        # Mixed extrap types per dim — exercises per-dim extrap dispatch fallback
         x = collect(range(0.0, 2π, 9))
         y = collect(range(0.0, 1.0, 9))
         data_p = [cos(xi) + yj for xi in x, yj in y]
@@ -887,7 +887,7 @@ end
 
         # Query is interior: cos(π/2) + 0.5 ≈ 0.5 (extrap mode doesn't affect interior)
         result = cubic_interp((x, y), data_p, (π/2, 0.5);
-            bc=(PeriodicBC(), NaturalBC()), extrap=(:none, :constant))
+            bc=(PeriodicBC(), NaturalBC()), extrap=(NoExtrap(), ConstExtrap()))
         @test result ≈ 0.5 atol=0.01
     end
 end

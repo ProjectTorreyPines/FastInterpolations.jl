@@ -57,15 +57,6 @@ jobs:
 
       - uses: julia-actions/cache@v2
 
-      - name: Add FuseRegistry
-        run: |
-          rm -rf ~/.julia/registries/FuseRegistry
-          julia -e 'using Pkg; Pkg.Registry.add(RegistrySpec(url="https://github.com/ProjectTorreyPines/FuseRegistry.jl.git")); Pkg.Registry.add("General"); Pkg.Registry.update()'
-
-      - name: Replace git@github.com with https in Package.toml files
-        run: |
-          find ~/.julia/registries/FuseRegistry -type f -name 'Package.toml' -exec sed -i 's|git@github.com:|https://project-torrey-pines:${{secrets.PTP_READ_TOKEN}}@github.com/|g' {} +
-
       - name: Install dependencies
         run: |
           julia --project=docs -e '

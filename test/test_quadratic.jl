@@ -576,29 +576,29 @@ end
         @test_throws DomainError quadratic_interp(x, y, 2.5)
 
         # :constant - clamp to boundary values (outside domain)
-        @test quadratic_interp(x, y, -0.5; extrap=:constant) ≈ 0.0
-        @test quadratic_interp(x, y, 2.5; extrap=:constant) ≈ 4.0
+        @test quadratic_interp(x, y, -0.5; extrap=ConstExtrap()) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap=ConstExtrap()) ≈ 4.0
 
         # :constant - inside domain should work normally (coverage for eval_core path)
-        @test quadratic_interp(x, y, 1.0; extrap=:constant) ≈ 1.0
+        @test quadratic_interp(x, y, 1.0; extrap=ConstExtrap()) ≈ 1.0
 
         # :constant - derivatives return zero outside domain
-        @test quadratic_interp(x, y, -0.5; extrap=:constant, deriv=1) ≈ 0.0
-        @test quadratic_interp(x, y, 2.5; extrap=:constant, deriv=1) ≈ 0.0
-        @test quadratic_interp(x, y, -0.5; extrap=:constant, deriv=2) ≈ 0.0
-        @test quadratic_interp(x, y, 2.5; extrap=:constant, deriv=2) ≈ 0.0
+        @test quadratic_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=1) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=1) ≈ 0.0
+        @test quadratic_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=2) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=2) ≈ 0.0
 
         # :extension - extend the polynomial (right side)
-        v_ext_right = quadratic_interp(x, y, 2.5; extrap=:extension)
+        v_ext_right = quadratic_interp(x, y, 2.5; extrap=ExtendExtrap())
         @test isfinite(v_ext_right)
 
         # :extension - extend the polynomial (left side)
-        v_ext_left = quadratic_interp(x, y, -0.5; extrap=:extension)
+        v_ext_left = quadratic_interp(x, y, -0.5; extrap=ExtendExtrap())
         @test isfinite(v_ext_left)
 
         # :extension derivatives
-        d1_left = quadratic_interp(x, y, -0.5; extrap=:extension, deriv=1)
-        d2_left = quadratic_interp(x, y, -0.5; extrap=:extension, deriv=2)
+        d1_left = quadratic_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=1)
+        d2_left = quadratic_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=2)
         @test isfinite(d1_left)
         @test isfinite(d2_left)
     end
@@ -1340,35 +1340,35 @@ end
             @testset "$name - one-shot API" begin
                 # Left extrapolation - value
                 for xi in xq_left
-                    result = quadratic_interp(x, y, xi; bc=bc, extrap=:extension)
+                    result = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap())
                     @test result ≈ f(xi) rtol=1e-12 atol=1e-14
                 end
 
                 # Right extrapolation - value
                 for xi in xq_right
-                    result = quadratic_interp(x, y, xi; bc=bc, extrap=:extension)
+                    result = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap())
                     @test result ≈ f(xi) rtol=1e-12 atol=1e-14
                 end
 
                 # Left extrapolation - derivatives
                 for xi in xq_left
-                    d1 = quadratic_interp(x, y, xi; bc=bc, extrap=:extension, deriv=1)
-                    d2 = quadratic_interp(x, y, xi; bc=bc, extrap=:extension, deriv=2)
+                    d1 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=1)
+                    d2 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=2)
                     @test d1 ≈ f_d1(xi) rtol=1e-12 atol=1e-14
                     @test d2 ≈ f_d2 rtol=1e-12 atol=1e-14
                 end
 
                 # Right extrapolation - derivatives
                 for xi in xq_right
-                    d1 = quadratic_interp(x, y, xi; bc=bc, extrap=:extension, deriv=1)
-                    d2 = quadratic_interp(x, y, xi; bc=bc, extrap=:extension, deriv=2)
+                    d1 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=1)
+                    d2 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=2)
                     @test d1 ≈ f_d1(xi) rtol=1e-12 atol=1e-14
                     @test d2 ≈ f_d2 rtol=1e-12 atol=1e-14
                 end
             end
 
             @testset "$name - interpolant API" begin
-                itp = quadratic_interp(x, y; bc=bc, extrap=:extension)
+                itp = quadratic_interp(x, y; bc=bc, extrap=ExtendExtrap())
                 d1_view = deriv1(itp)
                 d2_view = deriv2(itp)
 
@@ -1398,12 +1398,12 @@ end
 
         # Value at boundary should match from both sides
         val_inside = quadratic_interp(x, y, 3.0; bc=bc)
-        val_outside = quadratic_interp(x, y, 3.0 + 1e-10; bc=bc, extrap=:extension)
+        val_outside = quadratic_interp(x, y, 3.0 + 1e-10; bc=bc, extrap=ExtendExtrap())
         @test val_inside ≈ val_outside rtol=1e-8
 
         # Left boundary (value is 0.0, so use atol instead of rtol)
         val_inside_left = quadratic_interp(x, y, 0.0; bc=bc)
-        val_outside_left = quadratic_interp(x, y, -1e-10; bc=bc, extrap=:extension)
+        val_outside_left = quadratic_interp(x, y, -1e-10; bc=bc, extrap=ExtendExtrap())
         @test val_inside_left ≈ val_outside_left atol=1e-8
     end
 
@@ -1419,16 +1419,16 @@ end
         expected = f.(xq)
 
         # One-shot vector API
-        result = quadratic_interp(x, y, xq; bc=bc, extrap=:extension)
+        result = quadratic_interp(x, y, xq; bc=bc, extrap=ExtendExtrap())
         @test result ≈ expected rtol=1e-12
 
         # In-place API
         out = zeros(length(xq))
-        quadratic_interp!(out, x, y, xq; bc=bc, extrap=:extension)
+        quadratic_interp!(out, x, y, xq; bc=bc, extrap=ExtendExtrap())
         @test out ≈ expected rtol=1e-12
 
         # Interpolant vector call
-        itp = quadratic_interp(x, y; bc=bc, extrap=:extension)
+        itp = quadratic_interp(x, y; bc=bc, extrap=ExtendExtrap())
         @test itp(xq) ≈ expected rtol=1e-12
     end
 
@@ -1541,12 +1541,12 @@ end
         y = x.^2
 
         # :extension mode
-        itp_ext = quadratic_interp(x, y; bc=MinCurvFit(), extrap=:extension)
+        itp_ext = quadratic_interp(x, y; bc=MinCurvFit(), extrap=ExtendExtrap())
         @test isfinite(itp_ext(-0.5))  # outside left
         @test isfinite(itp_ext(3.5))   # outside right
 
         # :constant mode
-        itp_const = quadratic_interp(x, y; bc=MinCurvFit(), extrap=:constant)
+        itp_const = quadratic_interp(x, y; bc=MinCurvFit(), extrap=ConstExtrap())
         @test itp_const(-0.5) ≈ 0.0    # clamps to y[1]
         @test itp_const(3.5) ≈ 9.0     # clamps to y[end]
     end

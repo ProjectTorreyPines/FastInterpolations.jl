@@ -193,15 +193,15 @@ end
         y = [0.0, 1.0, 2.0]
         data = [xi + yj for xi in x, yj in y]
 
-        @testset "extrap=:none (domain error)" begin
-            itp = linear_interp((x, y), data; extrap=:none)
+        @testset "extrap=NoExtrap() (domain error)" begin
+            itp = linear_interp((x, y), data; extrap=NoExtrap())
             @test_throws DomainError itp((-0.1, 0.5))
             @test_throws DomainError itp((0.5, 2.1))
             @test_throws DomainError itp((-0.1, -0.1))
         end
 
-        @testset "extrap=:constant" begin
-            itp = linear_interp((x, y), data; extrap=:constant)
+        @testset "extrap=ConstExtrap()" begin
+            itp = linear_interp((x, y), data; extrap=ConstExtrap())
             # Query beyond domain should clamp to boundary
             @test itp((-0.5, 0.5)) ≈ itp((0.0, 0.5))
             @test itp((2.5, 0.5)) ≈ itp((2.0, 0.5))
@@ -209,21 +209,21 @@ end
             @test itp((0.5, 2.5)) ≈ itp((0.5, 2.0))
         end
 
-        @testset "extrap=:extension" begin
-            itp = linear_interp((x, y), data; extrap=:extension)
+        @testset "extrap=ExtendExtrap()" begin
+            itp = linear_interp((x, y), data; extrap=ExtendExtrap())
             # Linear extension beyond domain
             @test itp((-0.5, 0.5)) ≈ -0.5 + 0.5  # Linear extrapolation
             @test itp((2.5, 0.5)) ≈ 2.5 + 0.5
         end
 
-        @testset "extrap=:wrap" begin
-            itp = linear_interp((x, y), data; extrap=:wrap)
+        @testset "extrap=WrapExtrap()" begin
+            itp = linear_interp((x, y), data; extrap=WrapExtrap())
             # Wrapping should work
             @test itp((2.5, 0.5)) ≈ itp((0.5, 0.5))  # 2.5 wraps to 0.5
         end
 
         @testset "per-axis extrap configuration" begin
-            itp = linear_interp((x, y), data; extrap=(:none, :constant))
+            itp = linear_interp((x, y), data; extrap=(NoExtrap(), ConstExtrap()))
             # x has :none, y has :constant
             @test itp((0.5, 2.5)) == itp((0.5, 2.0))  # y clamped
             @test_throws DomainError itp((2.5, 0.5))   # x throws
@@ -517,11 +517,11 @@ end
             @test _alloc_test_linear_deriv_val() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, extrap=:constant)" begin
+        @testset "zero-alloc scalar (Range grids, extrap=ConstExtrap())" begin
             @test _alloc_test_linear_extrap_constant() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, extrap=:extension)" begin
+        @testset "zero-alloc scalar (Range grids, extrap=ExtendExtrap())" begin
             @test _alloc_test_linear_extrap_extension() <= ND_ALLOC_THRESHOLD
         end
 

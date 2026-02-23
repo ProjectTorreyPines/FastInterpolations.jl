@@ -9,9 +9,9 @@ using FastInterpolations
         y_linear = @. 3x + 1
         y_quad = @. 2x^2 - x + 4
 
-        itp_c = cubic_interp(x, y_cubic; extrap=:none)
-        itp_l = linear_interp(x, y_linear; extrap=:none)
-        itp_q = quadratic_interp(x, y_quad; extrap=:none)
+        itp_c = cubic_interp(x, y_cubic; extrap=NoExtrap())
+        itp_l = linear_interp(x, y_linear; extrap=NoExtrap())
+        itp_q = quadratic_interp(x, y_quad; extrap=NoExtrap())
 
         for (name, itp) in [("cubic", itp_c), ("linear", itp_l), ("quadratic", itp_q)]
             @testset "$name" begin
@@ -29,7 +29,7 @@ using FastInterpolations
         @testset "constant" begin
             y_const = collect(1.0:length(x))
             for side in (:left, :right, :nearest)
-                itp_k = constant_interp(x, y_const; side=side, extrap=:none)
+                itp_k = constant_interp(x, y_const; side=side, extrap=NoExtrap())
                 cum = cumulative_integrate(itp_k)
                 @test cum[1] == 0.0
                 @test cum[end] ≈ integrate(itp_k) atol=1e-12
@@ -40,7 +40,7 @@ using FastInterpolations
     @testset "1D analytical" begin
         # f(x) = 3x + 1, F(x) = 1.5x² + x
         y_linear = @. 3x + 1
-        itp_l = linear_interp(x, y_linear; extrap=:none)
+        itp_l = linear_interp(x, y_linear; extrap=NoExtrap())
         cum = cumulative_integrate(itp_l)
         for (j, xj) in enumerate(x)
             expected = 1.5 * xj^2 + xj - (1.5 * first(x)^2 + first(x))

@@ -70,7 +70,7 @@ Create an anchored query for ultra-fast quadratic interpolation at a fixed point
 - `xq`: Query point (scalar, can be Float or ForwardDiff.Dual for AD)
 - `::Val{:quadratic}`: Type tag to distinguish from other anchor types
 - `wrap`: If true, wrap `xq` to domain [x[1], x[end]) before anchoring.
-          Used for `extrap=:wrap` mode.
+          Used for `extrap=WrapExtrap()` mode.
 
 # Returns
 `_QuadraticAnchoredQuery{Tg, Tq}` with precomputed geometry.
@@ -208,7 +208,7 @@ while preserving the full Dual value for `dL` computation.
     # Use primal value for comparisons (supports ForwardDiff.Dual)
     xq_primal = _extract_primal(xq)
 
-    # Handle wrapping (for extrap=:wrap mode)
+    # Handle wrapping (for extrap=WrapExtrap() mode)
     if wrap && (xq_primal < x_min || xq_primal >= x_max)
         xq = _wrap_to_domain(xq, x_min, x_max)
         xq_primal = xq  # xq is now Tg, no need for _extract_primal

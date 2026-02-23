@@ -6,7 +6,7 @@
 #
 # Usage:
 #   using FastInterpolations, ForwardDiff
-#   itp = linear_interp(x, y; extrap=:extension)
+#   itp = linear_interp(x, y; extrap=ExtendExtrap())
 #   ForwardDiff.derivative(itp, 2.5)  # AD through interpolation
 
 module FastInterpolationsForwardDiffExt

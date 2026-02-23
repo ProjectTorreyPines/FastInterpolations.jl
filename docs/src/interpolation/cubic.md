@@ -67,7 +67,7 @@ PeriodicBC(endpoint=:exclusive, period=2π)   # any grid → explicit period
     PeriodicBC uses the **Sherman-Morrison formula** to solve a cyclic tridiagonal system.
     This is fundamentally different from BCPair's standard tridiagonal solver.
 
-👉 See [PeriodicBC Details](../boundary-conditions/periodicbc.md) for endpoint conventions, period inference, and comparison with `extrap=:wrap`.
+👉 See [PeriodicBC Details](../boundary-conditions/periodicbc.md) for endpoint conventions, period inference, and comparison with `WrapExtrap()`.
 
 ---
 

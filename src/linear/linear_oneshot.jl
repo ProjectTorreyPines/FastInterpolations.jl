@@ -24,7 +24,7 @@ Zero-allocation linear interpolation with automatic dispatch:
 
 # Arguments
 - `output`: Pre-allocated output vector (must be floating-point type)
-- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::Int`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
@@ -60,7 +60,7 @@ function linear_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -68,11 +68,9 @@ function linear_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _to_searcher(search)
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp!)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(x, x_targets, mode)
-        _linear_interp_loop!(output, x, y, x_targets, mode, op, searcher)
+        @boundscheck _check_domain(x, x_targets, extrap)
+        _linear_interp_loop!(output, x, y, x_targets, extrap, op, searcher)
     end
 end
 
@@ -94,7 +92,7 @@ end
 end
 
 
-# Optimized loop for :wrap - uses 2-stage strategy
+# Optimized loop for WrapExtrap - uses 2-stage strategy
 # Stage 1: Check if ALL queries are inside domain (cheap: ~150ns for 1000 elements)
 # Stage 2: If all inside, use extension path (no wrap needed); otherwise per-element wrap
 @inline function _linear_interp_loop!(
@@ -157,7 +155,7 @@ end
     x::AbstractRange{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -165,11 +163,9 @@ end
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _to_searcher(search)
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp!)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(x, x_targets, mode)
-        _linear_interp_loop!(output, x, y, x_targets, mode, op, searcher)
+        @boundscheck _check_domain(x, x_targets, extrap)
+        _linear_interp_loop!(output, x, y, x_targets, extrap, op, searcher)
     end
 end
 
@@ -186,7 +182,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 
 # Arguments
 - `xq::Real`: Single interpolation query point
-- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::Int`: Derivative order (0=value, 1=first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
@@ -383,7 +379,7 @@ end
     _linear_with_extrap(x, y, xq, extrap, op, searcher)
 end
 
-# Public API - Symbol dispatch (converts to Val)
+# Public API - AbstractExtrap dispatch
 # Unified for real and complex y via Tv parameter
 # AD Support: Tq can be Tg or Dual{Tg} (both are <:Real)
 # Note: Tq<:Real constraint resolves method ambiguity with the generic Real wrapper
@@ -391,7 +387,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq;
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -399,10 +395,8 @@ end
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _to_searcher(search, hint)
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     @_dispatch_deriv deriv => op begin
-        linear_interp(x, y, xq, mode, op, searcher)
+        linear_interp(x, y, xq, extrap, op, searcher)
     end
 end
 
@@ -422,7 +416,7 @@ function linear_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -443,7 +437,7 @@ function linear_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}
@@ -475,7 +469,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq;
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -493,7 +487,7 @@ function linear_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_targets::AbstractVector{Tq};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:Real, Tv, Tq<:Real}

@@ -24,7 +24,7 @@ Thread-safe: workspaces allocated from task-local pool.
 - `cache::CubicSplineCache{T}`: Pre-computed cache with LU factorization
 - `y::AbstractVector{T}`: Function values at grid points
 - `x_query::AbstractVector{T}`: Query points
-- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy=Binary()`: Search algorithm for interval finding
 """
@@ -33,7 +33,7 @@ Thread-safe: workspaces allocated from task-local pool.
     cache::CubicSplineCache{Tg,X,F,BC},
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv, X, F, BC}
@@ -43,11 +43,9 @@ Thread-safe: workspaces allocated from task-local pool.
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
-        _cubic_vector_loop!(output, cache, y, z, x_query, mode, op, searcher)
+        _cubic_vector_loop!(output, cache, y, z, x_query, extrap, op, searcher)
     end
 
     return output
@@ -57,7 +55,7 @@ end
 # Core Fallback Functions (Type-Stable Dispatch)
 # ========================================
 #
-# These are the two core implementations that all Symbol-based APIs
+# These are the two core implementations that all public APIs
 # dispatch to after normalizing BC to concrete types.
 #
 # Key insight: LU factorization depends only on BC **types** (Deriv1 vs Deriv2),
@@ -230,14 +228,11 @@ In-place cubic spline interpolation with optional automatic caching.
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg};
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp!)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
-
     searcher = _to_searcher(search)
     @_dispatch_deriv deriv => op begin
         # Periodic BC
@@ -247,7 +242,7 @@ In-place cubic spline interpolation with optional automatic caching.
 
         # Normalize to BCPair and dispatch to core
         bc_pair = _normalize_bc(bc, Tv)
-        return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, mode, autocache, op, searcher)
+        return _cubic_interp_bcpair!(output, x, y, x_query, bc_pair, extrap, autocache, op, searcher)
     end
 end
 
@@ -258,7 +253,7 @@ end
     cache::CubicSplineCache{Tg,X,F,BC},
     y::AbstractVector{Tv},
     x_query::Tg;
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv, X, F, BC}
@@ -273,7 +268,7 @@ end
     y::AbstractVector{Tv},
     x_query::Tg;
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -312,7 +307,7 @@ function cubic_interp(
     cache::CubicSplineCache{Tg},
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
 ) where {Tg<:AbstractFloat, Tv}
@@ -330,7 +325,7 @@ Cubic spline interpolation with optional automatic caching.
 - `deriv::Int=0`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy=Binary()`: Search algorithm for interval finding
 
-# Extrapolation Modes (Symbol args deprecated)
+# Extrapolation Modes
 - `NoExtrap()` (default): Throws DomainError if query point is outside domain
 - `ConstExtrap()`: Returns boundary values outside domain (0 for derivatives)
 - `ExtendExtrap()`: Extends boundary polynomial outside domain
@@ -353,7 +348,7 @@ function cubic_interp(
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg};
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -365,7 +360,7 @@ end
 
 # Scalar query - zero allocation
 cubic_interp(cache::CubicSplineCache{Tg}, y::AbstractVector{Tv},
-             x_query::Tg; extrap::Union{Symbol,AbstractExtrap}=NoExtrap(), deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv} =
+             x_query::Tg; extrap::AbstractExtrap=NoExtrap(), deriv::Int=0, search=Binary(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv} =
     cubic_interp_scalar(cache, y, x_query; extrap=extrap, deriv=deriv, search=search, hint=hint)
 
 # Primary scalar method - AD-compatible
@@ -375,15 +370,12 @@ function cubic_interp(
     y::AbstractVector{Tv},
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
-
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
         if _is_periodic_bc(bc)
@@ -391,7 +383,7 @@ function cubic_interp(
         end
 
         bc_pair = _normalize_bc(bc, Tv)
-        return _cubic_interp_bcpair_scalar(x, y, xq, bc_pair, mode, autocache, op, searcher)
+        return _cubic_interp_bcpair_scalar(x, y, xq, bc_pair, extrap, autocache, op, searcher)
     end
 end
 
@@ -409,7 +401,7 @@ function cubic_interp(
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tq};
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -425,7 +417,7 @@ function cubic_interp(
     y::AbstractVector{Tv},
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search=Binary(),
@@ -443,7 +435,7 @@ function cubic_interp!(
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tq};
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()
@@ -474,7 +466,7 @@ function cubic_interp!(
     y::AbstractVector{Tv},
     x_query::Tq;
     bc::AbstractBC=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::Int=0,
     search::AbstractSearchPolicy=Binary()

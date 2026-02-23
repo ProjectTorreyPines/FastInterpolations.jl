@@ -218,10 +218,10 @@
     end
 
     @testset "Extrapolation mode display" begin
-        itp_none = linear_interp(x, y; extrap=:none)
-        itp_const = linear_interp(x, y; extrap=:constant)
-        itp_ext = linear_interp(x, y; extrap=:extension)
-        itp_wrap = linear_interp(x, y; extrap=:wrap)
+        itp_none = linear_interp(x, y; extrap=NoExtrap())
+        itp_const = linear_interp(x, y; extrap=ConstExtrap())
+        itp_ext = linear_interp(x, y; extrap=ExtendExtrap())
+        itp_wrap = linear_interp(x, y; extrap=WrapExtrap())
 
         @test occursin("NoExtrap", sprint(show, MIME("text/plain"), itp_none))
         @test occursin("ConstExtrap", sprint(show, MIME("text/plain"), itp_const))
@@ -625,7 +625,7 @@
         f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
 
         # Different extrapolation modes per axis
-        itp_mixed_extrap = cubic_interp((x1, x2), f; extrap=(:none, :constant))
+        itp_mixed_extrap = cubic_interp((x1, x2), f; extrap=(NoExtrap(), ConstExtrap()))
 
         # Verbose show should display tuple format for extrapolation
         verbose_str = sprint(show, MIME("text/plain"), itp_mixed_extrap)
@@ -756,7 +756,7 @@
 
         # Test with heterogeneous tuple (different values per axis)
         io = IOBuffer()
-        configs = (Val(:none), Val(:constant), Val(:extension))
+        configs = (NoExtrap(), ConstExtrap(), ExtendExtrap())
         FI._show_nd_config_row(io, false, "Extrap:", configs, FI._format_extrap)
         output = String(take!(io))
 
@@ -768,7 +768,7 @@
 
         # Test with homogeneous tuple (same values)
         io2 = IOBuffer()
-        configs_same = (Val(:none), Val(:none))
+        configs_same = (NoExtrap(), NoExtrap())
         FI._show_nd_config_row(io2, true, "Extrap:", configs_same, FI._format_extrap)
         output2 = String(take!(io2))
 
@@ -866,7 +866,7 @@
         x2 = range(0.0, 2.0, 15)
         data = [Float64(i + j) for i in 1:11, j in 1:15]
 
-        itp = constant_interp((x1, x2), data; extrap=(:none, :constant))
+        itp = constant_interp((x1, x2), data; extrap=(NoExtrap(), ConstExtrap()))
 
         verbose_str = sprint(show, MIME("text/plain"), itp)
         @test occursin("Extrap:", verbose_str)

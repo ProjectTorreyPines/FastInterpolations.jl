@@ -12,7 +12,7 @@ using FastInterpolations
     @testset "linear 1D: zero allocation" begin
         x = collect(range(0.0, 1.0, length=21))
         y = @. 3x - 1
-        itp = linear_interp(x, y; extrap=:none)
+        itp = linear_interp(x, y; extrap=NoExtrap())
         a, b = 0.15, 0.85
 
         # Warmup
@@ -30,7 +30,7 @@ using FastInterpolations
     @testset "quadratic 1D: zero allocation" begin
         x = collect(range(0.0, 1.0, length=21))
         y = @. 2x^2 - x + 4
-        itp = quadratic_interp(x, y; extrap=:none)
+        itp = quadratic_interp(x, y; extrap=NoExtrap())
         a, b = 0.1, 0.9
 
         # Warmup
@@ -49,7 +49,7 @@ using FastInterpolations
         x = collect(range(0.0, 1.0, length=21))
         y = collect(1.0:length(x))
         for side in (:left, :right, :nearest)
-            itp = constant_interp(x, y; side=side, extrap=:none)
+            itp = constant_interp(x, y; side=side, extrap=NoExtrap())
             a, b = 0.2, 0.7
 
             # Warmup
@@ -87,7 +87,7 @@ using FastInterpolations
     @testset "cubic 1D: zero allocation (baseline)" begin
         x = collect(range(0.0, 1.0, length=21))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=:none)
+        itp = cubic_interp(x, y; extrap=NoExtrap())
         a, b = 0.15, 0.85
 
         # Warmup

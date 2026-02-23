@@ -10,28 +10,28 @@ using FastInterpolations
         y_quad = @. 2x^2 - x + 4
         y_const = collect(1.0:length(x))
 
-        itp_c = cubic_interp(x, y_cubic; extrap=:none)
-        itp_l = linear_interp(x, y_linear; extrap=:none)
-        itp_q = quadratic_interp(x, y_quad; extrap=:none)
+        itp_c = cubic_interp(x, y_cubic; extrap=NoExtrap())
+        itp_l = linear_interp(x, y_linear; extrap=NoExtrap())
+        itp_q = quadratic_interp(x, y_quad; extrap=NoExtrap())
 
         @test integrate(itp_c) ≈ integrate(itp_c, first(x), last(x)) atol=1e-14
         @test integrate(itp_l) ≈ integrate(itp_l, first(x), last(x)) atol=1e-14
         @test integrate(itp_q) ≈ integrate(itp_q, first(x), last(x)) atol=1e-14
 
         for side in (:left, :right, :nearest)
-            itp_k = constant_interp(x, y_const; side=side, extrap=:none)
+            itp_k = constant_interp(x, y_const; side=side, extrap=NoExtrap())
             @test integrate(itp_k) ≈ integrate(itp_k, first(x), last(x)) atol=1e-14
         end
     end
 
     @testset "1D analytical exactness" begin
         y_linear = @. 3x + 1
-        itp_l = linear_interp(x, y_linear; extrap=:none)
+        itp_l = linear_interp(x, y_linear; extrap=NoExtrap())
         expected_linear = 1.5 * last(x)^2 + last(x) - (1.5 * first(x)^2 + first(x))
         @test integrate(itp_l) ≈ expected_linear atol=1e-12
 
         y_cubic = @. x^3 - 2x + 1
-        itp_c = cubic_interp(x, y_cubic; bc=CubicFit(), extrap=:none)
+        itp_c = cubic_interp(x, y_cubic; bc=CubicFit(), extrap=NoExtrap())
         expected_cubic = (last(x)^4/4 - last(x)^2 + last(x)) - (first(x)^4/4 - first(x)^2 + first(x))
         @test integrate(itp_c) ≈ expected_cubic atol=1e-10
     end
@@ -76,21 +76,21 @@ using FastInterpolations
         data_2d = [sin(xi) * cos(yj) for xi in xg, yj in yg]
 
         @testset "cubic ND" begin
-            itp = cubic_interp((xg, yg), data_2d; extrap=(:none, :none))
+            itp = cubic_interp((xg, yg), data_2d; extrap=(NoExtrap(), NoExtrap()))
             lo = (first(xg), first(yg))
             hi = (last(xg), last(yg))
             @test integrate(itp) ≈ integrate(itp, lo, hi) atol=1e-10
         end
 
         @testset "linear ND" begin
-            itp = linear_interp((xg, yg), data_2d; extrap=(:none, :none))
+            itp = linear_interp((xg, yg), data_2d; extrap=(NoExtrap(), NoExtrap()))
             lo = (first(xg), first(yg))
             hi = (last(xg), last(yg))
             @test integrate(itp) ≈ integrate(itp, lo, hi) atol=1e-10
         end
 
         @testset "quadratic ND" begin
-            itp = quadratic_interp((xg, yg), data_2d; extrap=(:none, :none))
+            itp = quadratic_interp((xg, yg), data_2d; extrap=(NoExtrap(), NoExtrap()))
             lo = (first(xg), first(yg))
             hi = (last(xg), last(yg))
             @test integrate(itp) ≈ integrate(itp, lo, hi) atol=1e-10
@@ -98,7 +98,7 @@ using FastInterpolations
 
         @testset "constant ND" begin
             for side in ((:left, :left), (:right, :right), (:nearest, :nearest))
-                itp = constant_interp((xg, yg), data_2d; side=side, extrap=(:none, :none))
+                itp = constant_interp((xg, yg), data_2d; side=side, extrap=(NoExtrap(), NoExtrap()))
                 lo = (first(xg), first(yg))
                 hi = (last(xg), last(yg))
                 @test integrate(itp) ≈ integrate(itp, lo, hi) atol=1e-10
@@ -108,13 +108,13 @@ using FastInterpolations
 
     @testset "1D zero-allocation" begin
         y = @. 3x + 1
-        itp_l = linear_interp(x, y; extrap=:none)
+        itp_l = linear_interp(x, y; extrap=NoExtrap())
         integrate(itp_l)  # warmup
         alloc = @allocated integrate(itp_l)
         @test alloc <= ALLOC_THRESHOLD
 
         y_c = @. x^3 - 2x + 1
-        itp_c = cubic_interp(x, y_c; extrap=:none)
+        itp_c = cubic_interp(x, y_c; extrap=NoExtrap())
         integrate(itp_c)
         alloc_c = @allocated integrate(itp_c)
         @test alloc_c <= ALLOC_THRESHOLD

@@ -541,7 +541,7 @@ Create a multi-Y cubic spline interpolant for multiple y-data series sharing the
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `ys`: Vector of y-value vectors (all same length as x)
 - `bc`: Boundary condition (NaturalBC, ClampedBC, PeriodicBC, or Vector of BC for per-series)
-- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()` (Symbol args deprecated)
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache`: If true, reuse cached LU factorization (default: true)
 - `precompute_transpose`: If true, build point-contiguous layout immediately
 
@@ -571,7 +571,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::P=Binary()
@@ -622,11 +622,7 @@ function cubic_interp(
         bc_representative = bc_pair
     end
 
-    # Convert extrap symbol to mode
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
-
-    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, mode, search)
+    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap, search)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)
@@ -707,7 +703,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=Binary()
@@ -751,11 +747,7 @@ function cubic_interp(
         bc_representative = bc_pair
     end
 
-    # Convert extrap symbol to mode
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
-
-    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, mode, search)
+    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap, search)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)
@@ -769,7 +761,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=Binary()
@@ -787,7 +779,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=NaturalBC(),
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=Binary()

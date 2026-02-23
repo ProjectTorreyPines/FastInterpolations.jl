@@ -30,7 +30,7 @@ const FI = FastInterpolations
         x = collect(0.0:0.5:5.0)
         y = 2.0 .* x .+ 1.0
 
-        itp = linear_interp(x, y; extrap=:extension)
+        itp = linear_interp(x, y; extrap=ExtendExtrap())
 
         @testset "derivative matches analytical" begin
             test_points = [0.25, 1.0, 2.5, 3.75, 4.5]
@@ -54,7 +54,7 @@ const FI = FastInterpolations
             @test fd_d2 ≈ 0.0 atol=1e-10
 
             # Also cover Float32-grid interpolants (previously hit Float32(::Dual) errors).
-            itp32 = linear_interp(Float32.(x), Float32.(y); extrap=:extension)
+            itp32 = linear_interp(Float32.(x), Float32.(y); extrap=ExtendExtrap())
             fd_d2_32 = ForwardDiff.derivative(q -> ForwardDiff.derivative(itp32, q), xq)
             @test fd_d2_32 ≈ 0.0 atol=1e-6
         end
@@ -73,7 +73,7 @@ const FI = FastInterpolations
         @testset "works with nonlinear data" begin
             # Quadratic data: y = x²
             y_quad = x .^ 2
-            itp_quad = linear_interp(x, y_quad; extrap=:extension)
+            itp_quad = linear_interp(x, y_quad; extrap=ExtendExtrap())
 
             # At x=2.0 (grid point), linear interp between x=1.5 and x=2.0
             # or between x=2.0 and x=2.5 depending on interval
@@ -108,7 +108,7 @@ const FI = FastInterpolations
         x = collect(range(0.0, 2π, 21))
         y1 = sin.(x)
         y2 = cos.(x)
-        sitp = linear_interp(x, [y1, y2]; extrap=:extension)
+        sitp = linear_interp(x, [y1, y2]; extrap=ExtendExtrap())
 
         @testset "derivative matches analytical (interior points)" begin
             # Test at interior points only (not at grid points)
@@ -147,7 +147,7 @@ const FI = FastInterpolations
             x_lin = collect(0.0:0.5:5.0)
             y1_lin = 2.0 .* x_lin
             y2_lin = -x_lin .+ 5.0
-            sitp_lin = linear_interp(x_lin, [y1_lin, y2_lin]; extrap=:extension)
+            sitp_lin = linear_interp(x_lin, [y1_lin, y2_lin]; extrap=ExtendExtrap())
 
             xq = 2.25
             fd_derivs = ForwardDiff.derivative(sitp_lin, xq)
@@ -169,7 +169,7 @@ const FI = FastInterpolations
         # Imag part: x - 1, derivative = 1
         y_complex = (2.0 + 1.0im) .* x .+ (1.0 - 1.0im)
 
-        itp = linear_interp(x, y_complex; extrap=:extension)
+        itp = linear_interp(x, y_complex; extrap=ExtendExtrap())
 
         @testset "complex derivative" begin
             xq = 2.25
@@ -200,7 +200,7 @@ const FI = FastInterpolations
     @testset "type stability" begin
         x = collect(0.0:0.5:5.0)
         y = sin.(x)
-        itp = linear_interp(x, y; extrap=:extension)
+        itp = linear_interp(x, y; extrap=ExtendExtrap())
 
         @testset "Dual output type for Dual input" begin
             xq = ForwardDiff.Dual(2.5, 1.0)
@@ -227,7 +227,7 @@ const FI = FastInterpolations
         x = collect(0.0:0.5:5.0)
         y = x .^ 2  # y = x²
 
-        itp = linear_interp(x, y; extrap=:extension)
+        itp = linear_interp(x, y; extrap=ExtendExtrap())
 
         @testset "ForwardDiff.gradient on function using interpolant" begin
             # Function that uses interpolation
@@ -258,7 +258,7 @@ const FI = FastInterpolations
         x32 = Float32.(collect(0.0:0.5:5.0))
         y32 = Float32.(2.0 .* x32 .+ 1.0)
 
-        itp32 = linear_interp(x32, y32; extrap=:extension)
+        itp32 = linear_interp(x32, y32; extrap=ExtendExtrap())
 
         @testset "Float32 derivative" begin
             xq = 2.25f0
@@ -279,7 +279,7 @@ const FI = FastInterpolations
         y = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
 
         @testset "interpolant callable AD - derivative is zero" begin
-            itp = constant_interp(x, y; side=:left, extrap=:extension)
+            itp = constant_interp(x, y; side=:left, extrap=ExtendExtrap())
 
             # Constant interpolation derivative should be 0 (step function)
             for xq in [0.5, 1.5, 2.5, 3.5]
@@ -298,7 +298,7 @@ const FI = FastInterpolations
         end
 
         @testset "value is preserved" begin
-            itp = constant_interp(x, y; side=:left, extrap=:extension)
+            itp = constant_interp(x, y; side=:left, extrap=ExtendExtrap())
             test_points = [0.5, 1.5, 2.5, 3.5]
 
             for xq in test_points
@@ -311,7 +311,7 @@ const FI = FastInterpolations
         @testset "side modes" begin
             # Test all side modes work with AD
             for side_mode in [:left, :right, :nearest]
-                itp = constant_interp(x, y; side=side_mode, extrap=:extension)
+                itp = constant_interp(x, y; side=side_mode, extrap=ExtendExtrap())
                 fd_deriv = ForwardDiff.derivative(itp, 2.5)
                 @test fd_deriv ≈ 0.0 atol=1e-10
             end
@@ -326,7 +326,7 @@ const FI = FastInterpolations
         x = collect(0.0:1.0:5.0)
         y1 = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
         y2 = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        sitp = constant_interp(x, [y1, y2]; side=:left, extrap=:extension)
+        sitp = constant_interp(x, [y1, y2]; side=:left, extrap=ExtendExtrap())
 
         @testset "series derivative is zero" begin
             # ForwardDiff.derivative on series returns vector of derivatives
@@ -356,7 +356,7 @@ const FI = FastInterpolations
         x = collect(0.0:1.0:5.0)
         y_complex = [10.0+1.0im, 20.0+2.0im, 30.0+3.0im, 40.0+4.0im, 50.0+5.0im, 60.0+6.0im]
 
-        itp = constant_interp(x, y_complex; side=:left, extrap=:extension)
+        itp = constant_interp(x, y_complex; side=:left, extrap=ExtendExtrap())
 
         @testset "complex derivative" begin
             xq = 2.5
@@ -378,7 +378,7 @@ const FI = FastInterpolations
     @testset "Constant gradient composition" begin
         x = collect(0.0:1.0:5.0)
         y = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
-        itp = constant_interp(x, y; side=:left, extrap=:extension)
+        itp = constant_interp(x, y; side=:left, extrap=ExtendExtrap())
 
         @testset "gradient through loss function" begin
             function loss(params)
@@ -402,7 +402,7 @@ const FI = FastInterpolations
         x = collect(0.0:0.5:5.0)
         y = x .^ 2
 
-        itp = quadratic_interp(x, y; extrap=:extension)
+        itp = quadratic_interp(x, y; extrap=ExtendExtrap())
 
         @testset "derivative matches analytical" begin
             test_points = [0.25, 1.0, 2.5, 3.75, 4.5]
@@ -444,7 +444,7 @@ const FI = FastInterpolations
         @testset "works with cubic data" begin
             # Cubic data: y = x³ - piecewise quadratic won't be exact
             y_cubic = x .^ 3
-            itp_cubic = quadratic_interp(x, y_cubic; extrap=:extension)
+            itp_cubic = quadratic_interp(x, y_cubic; extrap=ExtendExtrap())
 
             xq = 2.25
 
@@ -464,7 +464,7 @@ const FI = FastInterpolations
         @testset "Float32 support" begin
             x32 = Float32.(collect(0.0:0.5:5.0))
             y32 = x32 .^ 2
-            itp32 = quadratic_interp(x32, y32; extrap=:extension)
+            itp32 = quadratic_interp(x32, y32; extrap=ExtendExtrap())
 
             xq = 2.25f0
             fd_deriv = ForwardDiff.derivative(itp32, xq)
@@ -505,7 +505,7 @@ const FI = FastInterpolations
         # Complex quadratic: z = (1 + i)x²
         y_complex = (1.0 + 1.0im) .* x .^ 2
 
-        itp = quadratic_interp(x, y_complex; extrap=:extension)
+        itp = quadratic_interp(x, y_complex; extrap=ExtendExtrap())
 
         @testset "complex derivative" begin
             xq = 2.25
@@ -538,7 +538,7 @@ const FI = FastInterpolations
         x = collect(0.0:0.5:5.0)
         y = x .^ 3
 
-        itp = cubic_interp(x, y; extrap=:extension)
+        itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
         @testset "derivative matches analytical" begin
             test_points = [0.25, 1.0, 2.5, 3.75, 4.5]
@@ -581,7 +581,7 @@ const FI = FastInterpolations
         @testset "works with sine data" begin
             # Sin data: more realistic use case
             y_sin = sin.(x)
-            itp_sin = cubic_interp(x, y_sin; extrap=:extension)
+            itp_sin = cubic_interp(x, y_sin; extrap=ExtendExtrap())
 
             xq = 1.5
 
@@ -603,7 +603,7 @@ const FI = FastInterpolations
         @testset "Float32 support" begin
             x32 = Float32.(collect(0.0:0.5:5.0))
             y32 = x32 .^ 3
-            itp32 = cubic_interp(x32, y32; extrap=:extension)
+            itp32 = cubic_interp(x32, y32; extrap=ExtendExtrap())
 
             xq = 2.25f0
             fd_deriv = ForwardDiff.derivative(itp32, xq)
@@ -633,7 +633,7 @@ const FI = FastInterpolations
         @testset "different BC types" begin
             # Test different boundary conditions work with AD
             for bc in [NaturalBC(), ClampedBC()]
-                itp_bc = cubic_interp(x, y; bc=bc, extrap=:extension)
+                itp_bc = cubic_interp(x, y; bc=bc, extrap=ExtendExtrap())
 
                 xq = 2.25
                 fd_deriv = ForwardDiff.derivative(itp_bc, xq)
@@ -657,7 +657,7 @@ const FI = FastInterpolations
         # Complex cubic: z = (1 + i)x³
         y_complex = (1.0 + 1.0im) .* x .^ 3
 
-        itp = cubic_interp(x, y_complex; extrap=:extension)
+        itp = cubic_interp(x, y_complex; extrap=ExtendExtrap())
 
         @testset "complex derivative" begin
             xq = 2.25
@@ -690,7 +690,7 @@ const FI = FastInterpolations
         x = collect(range(0.0, 2π, 21))
         y1 = sin.(x)
         y2 = cos.(x)
-        sitp = quadratic_interp(x, [y1, y2]; extrap=:extension)
+        sitp = quadratic_interp(x, [y1, y2]; extrap=ExtendExtrap())
 
         @testset "derivative matches analytical (interior points)" begin
             # Test at interior points only (not at grid points)
@@ -729,7 +729,7 @@ const FI = FastInterpolations
             x_quad = collect(0.0:0.5:5.0)
             y1_quad = x_quad .^ 2
             y2_quad = 2.0 .* x_quad .^ 2
-            sitp_quad = quadratic_interp(x_quad, [y1_quad, y2_quad]; extrap=:extension)
+            sitp_quad = quadratic_interp(x_quad, [y1_quad, y2_quad]; extrap=ExtendExtrap())
 
             xq = 2.25
             fd_derivs = ForwardDiff.derivative(sitp_quad, xq)
@@ -744,7 +744,7 @@ const FI = FastInterpolations
             x32 = Float32.(collect(range(0.0, 2π, 21)))
             y1_32 = sin.(x32)
             y2_32 = cos.(x32)
-            sitp32 = quadratic_interp(x32, [y1_32, y2_32]; extrap=:extension)
+            sitp32 = quadratic_interp(x32, [y1_32, y2_32]; extrap=ExtendExtrap())
 
             xq = 1.5f0
             fd_derivs = ForwardDiff.derivative(sitp32, xq)
@@ -779,7 +779,7 @@ const FI = FastInterpolations
         # Complex series
         y1_complex = (1.0 + 1.0im) .* sin.(x)
         y2_complex = (2.0 - 1.0im) .* cos.(x)
-        sitp = quadratic_interp(x, [y1_complex, y2_complex]; extrap=:extension)
+        sitp = quadratic_interp(x, [y1_complex, y2_complex]; extrap=ExtendExtrap())
 
         @testset "complex derivative" begin
             xq = 1.5
@@ -808,7 +808,7 @@ const FI = FastInterpolations
         x = collect(range(0.0, 2π, 21))
         y1 = sin.(x)
         y2 = cos.(x)
-        sitp = cubic_interp(x, [y1, y2]; extrap=:extension)
+        sitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
 
         @testset "derivative matches analytical (interior points)" begin
             # Test at interior points only (not at grid points)
@@ -847,7 +847,7 @@ const FI = FastInterpolations
             x_cub = collect(0.0:0.5:5.0)
             y1_cub = x_cub .^ 3
             y2_cub = 2.0 .* x_cub .^ 3
-            sitp_cub = cubic_interp(x_cub, [y1_cub, y2_cub]; extrap=:extension, bc=CubicFit())
+            sitp_cub = cubic_interp(x_cub, [y1_cub, y2_cub]; extrap=ExtendExtrap(), bc=CubicFit())
 
             xq = 2.25
             fd_derivs = ForwardDiff.derivative(sitp_cub, xq)
@@ -862,7 +862,7 @@ const FI = FastInterpolations
             x32 = Float32.(collect(range(0.0, 2π, 21)))
             y1_32 = sin.(x32)
             y2_32 = cos.(x32)
-            sitp32 = cubic_interp(x32, [y1_32, y2_32]; extrap=:extension)
+            sitp32 = cubic_interp(x32, [y1_32, y2_32]; extrap=ExtendExtrap())
 
             xq = 1.5f0
             fd_derivs = ForwardDiff.derivative(sitp32, xq)
@@ -897,7 +897,7 @@ const FI = FastInterpolations
         # Complex series
         y1_complex = (1.0 + 1.0im) .* sin.(x)
         y2_complex = (2.0 - 1.0im) .* cos.(x)
-        sitp = cubic_interp(x, [y1_complex, y2_complex]; extrap=:extension)
+        sitp = cubic_interp(x, [y1_complex, y2_complex]; extrap=ExtendExtrap())
 
         @testset "complex derivative" begin
             xq = 1.5
@@ -932,8 +932,8 @@ const FI = FastInterpolations
             x = collect(0.0:0.5:5.0)
             y_quad = x .^ 2  # y = x², slope at interval [2.0,2.5] is (6.25-4)/0.5 = 4.5
 
-            @testset "extrap=:extension" begin
-                itp = linear_interp(x, y_quad; extrap=:extension)
+            @testset "extrap=ExtendExtrap()" begin
+                itp = linear_interp(x, y_quad; extrap=ExtendExtrap())
 
                 # In-domain
                 fd = ForwardDiff.derivative(itp, 2.25)
@@ -946,8 +946,8 @@ const FI = FastInterpolations
                 @test fd_out ≈ an_out atol=1e-10
             end
 
-            @testset "extrap=:constant" begin
-                itp = linear_interp(x, y_quad; extrap=:constant)
+            @testset "extrap=ConstExtrap()" begin
+                itp = linear_interp(x, y_quad; extrap=ConstExtrap())
 
                 # In-domain
                 fd = ForwardDiff.derivative(itp, 2.25)
@@ -967,8 +967,8 @@ const FI = FastInterpolations
                 @test fd_left ≈ an_left atol=1e-10
             end
 
-            @testset "extrap=:wrap" begin
-                itp = linear_interp(x, y_quad; extrap=:wrap)
+            @testset "extrap=WrapExtrap()" begin
+                itp = linear_interp(x, y_quad; extrap=WrapExtrap())
 
                 # In-domain: AD must preserve Dual type
                 fd_in = ForwardDiff.derivative(itp, 2.25)
@@ -995,8 +995,8 @@ const FI = FastInterpolations
             x = collect(0.0:0.5:5.0)
             y_cubic = x .^ 3
 
-            @testset "extrap=:extension" begin
-                itp = cubic_interp(x, y_cubic; extrap=:extension)
+            @testset "extrap=ExtendExtrap()" begin
+                itp = cubic_interp(x, y_cubic; extrap=ExtendExtrap())
 
                 fd = ForwardDiff.derivative(itp, 2.25)
                 an = itp(2.25; deriv=1)
@@ -1007,8 +1007,8 @@ const FI = FastInterpolations
                 @test fd_out ≈ an_out atol=1e-10
             end
 
-            @testset "extrap=:constant" begin
-                itp = cubic_interp(x, y_cubic; extrap=:constant)
+            @testset "extrap=ConstExtrap()" begin
+                itp = cubic_interp(x, y_cubic; extrap=ConstExtrap())
 
                 fd = ForwardDiff.derivative(itp, 2.25)
                 an = itp(2.25; deriv=1)
@@ -1026,8 +1026,8 @@ const FI = FastInterpolations
                 @test fd_left ≈ an_left atol=1e-10
             end
 
-            @testset "extrap=:wrap" begin
-                itp = cubic_interp(x, y_cubic; extrap=:wrap)
+            @testset "extrap=WrapExtrap()" begin
+                itp = cubic_interp(x, y_cubic; extrap=WrapExtrap())
 
                 # In-domain
                 fd_in = ForwardDiff.derivative(itp, 2.25)
@@ -1045,8 +1045,8 @@ const FI = FastInterpolations
             x = collect(0.0:0.5:5.0)
             y_quad = x .^ 2
 
-            @testset "extrap=:extension" begin
-                itp = quadratic_interp(x, y_quad; extrap=:extension)
+            @testset "extrap=ExtendExtrap()" begin
+                itp = quadratic_interp(x, y_quad; extrap=ExtendExtrap())
 
                 fd = ForwardDiff.derivative(itp, 2.25)
                 an = itp(2.25; deriv=1)
@@ -1057,8 +1057,8 @@ const FI = FastInterpolations
                 @test fd_out ≈ an_out atol=1e-10
             end
 
-            @testset "extrap=:constant" begin
-                itp = quadratic_interp(x, y_quad; extrap=:constant)
+            @testset "extrap=ConstExtrap()" begin
+                itp = quadratic_interp(x, y_quad; extrap=ConstExtrap())
 
                 fd = ForwardDiff.derivative(itp, 2.25)
                 an = itp(2.25; deriv=1)
@@ -1076,8 +1076,8 @@ const FI = FastInterpolations
                 @test fd_left ≈ an_left atol=1e-10
             end
 
-            @testset "extrap=:wrap" begin
-                itp = quadratic_interp(x, y_quad; extrap=:wrap)
+            @testset "extrap=WrapExtrap()" begin
+                itp = quadratic_interp(x, y_quad; extrap=WrapExtrap())
 
                 # In-domain
                 fd_in = ForwardDiff.derivative(itp, 2.25)
@@ -1098,7 +1098,7 @@ const FI = FastInterpolations
             x = collect(0.0:1.0:10.0)
             y = 2.0 .* x .+ 1.0  # y = 2x + 1
 
-            for ext in [:extension, :constant, :wrap]
+            for ext in (ExtendExtrap(), ConstExtrap(), WrapExtrap())
                 itp = linear_interp(x, y; extrap=ext)
 
                 # In-domain value test
@@ -1120,7 +1120,7 @@ const FI = FastInterpolations
         y = collect(range(0.0, 1.0, 6))
         data = [xi + 2yi for xi in x, yi in y]  # f(x,y) = x + 2y
 
-        itp = linear_interp((x, y), data; extrap=:extension)
+        itp = linear_interp((x, y), data; extrap=ExtendExtrap())
 
         @testset "partial derivative via heterogeneous tuple" begin
             # (Dual, Float64) tuple — requires Tuple{Vararg{Real,N}} not NTuple{N,<:Real}
@@ -1147,7 +1147,7 @@ const FI = FastInterpolations
         y = collect(range(0.0, 1.0, 6))
         data = [xi + 2yi for xi in x, yi in y]
 
-        itp = constant_interp((x, y), data; extrap=:extension)
+        itp = constant_interp((x, y), data; extrap=ExtendExtrap())
 
         @testset "partial derivative via heterogeneous tuple" begin
             # Constant interpolation derivative is 0 (step function)

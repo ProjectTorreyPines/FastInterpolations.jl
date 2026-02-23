@@ -78,21 +78,17 @@ end
 # ========================================
 # Outer Constructor: typed inputs only
 # ========================================
-# - Symbol → Val dispatch
-# - Call inner constructor
 #
 # PERFORMANCE: Typed signature + @inline enables compile-time specialization.
 # Use linear_interp() for automatic type promotion from Real inputs.
 @inline function LinearInterpolant(
     x::X,
     y::Y;
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :linear_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
-    E = typeof(mode)
-    return LinearInterpolant{Tg,Tv,X,Y,E,P}(x, y, mode, search)
+    E = typeof(extrap)
+    return LinearInterpolant{Tg,Tv,X,Y,E,P}(x, y, extrap, search)
 end
 
 # ========================================

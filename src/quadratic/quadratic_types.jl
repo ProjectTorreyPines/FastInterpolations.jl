@@ -77,7 +77,6 @@ end
 # ========================================
 # Outer Constructor: typed inputs only
 # ========================================
-# - Symbol → AbstractExtrap dispatch
 # - Call inner constructor
 #
 # PERFORMANCE: Typed signature + @inline enables compile-time specialization.
@@ -88,11 +87,9 @@ end
     h::Vector{Tg},
     a::Vector{Tv},
     d::Vector{Tv};
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
-    E = typeof(mode)
-    return QuadraticInterpolant{Tg,Tv,X,Y,E,P}(x, y, h, a, d, mode, search)
+    E = typeof(extrap)
+    return QuadraticInterpolant{Tg,Tv,X,Y,E,P}(x, y, h, a, d, extrap, search)
 end

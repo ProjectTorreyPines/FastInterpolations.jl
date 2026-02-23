@@ -396,15 +396,6 @@ itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
 """
 const QuadraticFit = PolyFit{2}
 
-"""
-    ParabolaFit
-
-Deprecated alias for [`QuadraticFit`](@ref).
-"""
-function ParabolaFit(args...)
-    Base.depwarn("ParabolaFit is deprecated and has been renamed to QuadraticFit; please use QuadraticFit instead.", :ParabolaFit)
-    QuadraticFit(args...)
-end
 
 
 """

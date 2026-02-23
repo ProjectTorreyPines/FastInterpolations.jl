@@ -68,7 +68,6 @@ end
 # ========================================
 # Outer Constructor: typed inputs only
 # ========================================
-# - Symbol → Val dispatch
 # - Call inner constructor
 #
 # PERFORMANCE: Typed signature + @inline enables compile-time specialization.
@@ -76,14 +75,12 @@ end
 @inline function ConstantInterpolant(
     x::X,
     y::Y;
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     side::Symbol=:nearest,
     search::P=Binary()
 ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :constant_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
-    E = typeof(mode)
+    E = typeof(extrap)
     @_dispatch_side side => sv begin
-        return ConstantInterpolant{Tg,Tv,X,Y,E,P}(x, y, mode, sv, search)
+        return ConstantInterpolant{Tg,Tv,X,Y,E,P}(x, y, extrap, sv, search)
     end
 end

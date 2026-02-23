@@ -149,13 +149,13 @@ const LINEAR = TestPolynomial{Float64}(
 
         @testset "extension" begin
             xi_extrap = [x_min - 1.0, x_max + 1.0]
-            result = linear_interp(x, y, xi_extrap; extrap=:extension)
+            result = linear_interp(x, y, xi_extrap; extrap=ExtendExtrap())
             @test all(isfinite, result)
         end
 
         @testset "constant" begin
             xi_extrap = [x_min - 1.0, x_max + 1.0]
-            result = linear_interp(x, y, xi_extrap; extrap=:constant)
+            result = linear_interp(x, y, xi_extrap; extrap=ConstExtrap())
             @test result[1] ≈ y[1]
             @test result[2] ≈ y[end]
         end
@@ -456,7 +456,7 @@ end
         y = sin.(x)
         y[end] = y[1]
 
-        itp = cubic_interp(x, y; bc=PeriodicBC(), extrap=:wrap)
+        itp = cubic_interp(x, y; bc=PeriodicBC(), extrap=WrapExtrap())
 
         # Query outside domain should wrap
         period = x[end] - x[1]

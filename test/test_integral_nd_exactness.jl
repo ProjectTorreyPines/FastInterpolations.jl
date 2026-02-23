@@ -19,7 +19,7 @@ using FastInterpolations
         x = collect(range(0.0, 2.0, length=21))
         y = collect(range(0.0, 3.0, length=17))
         data = [xi*yj + 2xi - 3yj + 5 for xi in x, yj in y]
-        itp = linear_interp((x, y), data; extrap=:none)
+        itp = linear_interp((x, y), data; extrap=NoExtrap())
 
         lo, hi = (0.3, 0.5), (1.7, 2.4)
         X1 = hi[1] - lo[1];  X2 = (hi[1]^2 - lo[1]^2) / 2
@@ -33,7 +33,7 @@ using FastInterpolations
         x = collect(range(0.0, 2.0, length=21))
         y = collect(range(0.0, 3.0, length=17))
         data = [xi*yj + 2xi - 3yj + 5 for xi in x, yj in y]
-        itp = linear_interp((x, y), data; extrap=:none)
+        itp = linear_interp((x, y), data; extrap=NoExtrap())
 
         lo = (first(x), first(y))
         hi = (last(x), last(y))
@@ -47,7 +47,7 @@ using FastInterpolations
         x = collect(range(0.0, 2.0, length=31))
         y = collect(range(0.0, 3.0, length=25))
         data = [(xi^2 + 1) * (yj^2 + 1) for xi in x, yj in y]
-        itp = quadratic_interp((x, y), data; extrap=:none)
+        itp = quadratic_interp((x, y), data; extrap=NoExtrap())
 
         lo, hi = (0.2, 0.4), (1.6, 2.5)
         Ix = (hi[1]^3 - lo[1]^3) / 3 + (hi[1] - lo[1])
@@ -60,7 +60,7 @@ using FastInterpolations
         x = collect(range(0.0, 2.0, length=31))
         y = collect(range(0.0, 3.0, length=25))
         data = [xi^2 + xi*yj + yj^2 for xi in x, yj in y]
-        itp = quadratic_interp((x, y), data; extrap=:none)
+        itp = quadratic_interp((x, y), data; extrap=NoExtrap())
 
         lo, hi = (0.2, 0.4), (1.6, 2.5)
         X1 = hi[1] - lo[1];  X2 = (hi[1]^2 - lo[1]^2) / 2;  X3 = (hi[1]^3 - lo[1]^3) / 3
@@ -74,7 +74,7 @@ using FastInterpolations
         x = collect(range(0.0, 2.0, length=41))
         y = collect(range(0.0, 3.0, length=37))
         data = [(xi^3 - xi) * (yj^3 - yj) for xi in x, yj in y]
-        itp = cubic_interp((x, y), data; bc=CubicFit(), extrap=:none)
+        itp = cubic_interp((x, y), data; bc=CubicFit(), extrap=NoExtrap())
 
         lo, hi = (0.3, 0.4), (1.7, 2.6)
         Ix = (hi[1]^4 - lo[1]^4) / 4 - (hi[1]^2 - lo[1]^2) / 2
@@ -87,7 +87,7 @@ using FastInterpolations
         x = collect(range(0.0, 2.0, length=41))
         y = collect(range(0.0, 3.0, length=37))
         data = [xi^2*yj + xi*yj^2 + xi + yj for xi in x, yj in y]
-        itp = cubic_interp((x, y), data; bc=CubicFit(), extrap=:none)
+        itp = cubic_interp((x, y), data; bc=CubicFit(), extrap=NoExtrap())
 
         lo, hi = (0.3, 0.4), (1.7, 2.6)
         X1 = hi[1] - lo[1];  X2 = (hi[1]^2 - lo[1]^2) / 2
@@ -103,7 +103,7 @@ using FastInterpolations
         x = collect(range(0.0, 2.0, length=51))
         y = collect(range(0.0, 2.0, length=51))
         data = [xi^3 * yj^3 for xi in x, yj in y]
-        itp = cubic_interp((x, y), data; bc=CubicFit(), extrap=:none)
+        itp = cubic_interp((x, y), data; bc=CubicFit(), extrap=NoExtrap())
 
         lo, hi = (0.3, 0.3), (1.7, 1.7)
         X4 = (hi[1]^4 - lo[1]^4) / 4
@@ -121,7 +121,7 @@ using FastInterpolations
         y = collect(range(0.0, 3.0, length=13))
         z = collect(range(0.0, 1.0, length=9))
         data = [2xi + 3yj - zk + 4 for xi in x, yj in y, zk in z]
-        itp = linear_interp((x, y, z), data; extrap=:none)
+        itp = linear_interp((x, y, z), data; extrap=NoExtrap())
 
         lo, hi = (0.3, 0.5, 0.1), (1.7, 2.4, 0.8)
         X1 = hi[1] - lo[1];  X2 = (hi[1]^2 - lo[1]^2) / 2
@@ -136,7 +136,7 @@ using FastInterpolations
         y = collect(range(0.0, 3.0, length=13))
         z = collect(range(0.0, 1.0, length=9))
         data = [xi*yj*zk + xi*yj + yj*zk + xi*zk for xi in x, yj in y, zk in z]
-        itp = linear_interp((x, y, z), data; extrap=:none)
+        itp = linear_interp((x, y, z), data; extrap=NoExtrap())
 
         lo, hi = (0.3, 0.5, 0.1), (1.7, 2.4, 0.8)
         X1 = hi[1] - lo[1];  X2 = (hi[1]^2 - lo[1]^2) / 2
@@ -152,7 +152,7 @@ using FastInterpolations
         y = collect(range(0.0, 3.0, length=13))
         z = collect(range(0.0, 1.0, length=9))
         data = [2xi + 3yj - zk + 4 for xi in x, yj in y, zk in z]
-        itp = linear_interp((x, y, z), data; extrap=:none)
+        itp = linear_interp((x, y, z), data; extrap=NoExtrap())
 
         lo = (first(x), first(y), first(z))
         hi = (last(x), last(y), last(z))
@@ -168,7 +168,7 @@ using FastInterpolations
         y = collect(range(0.0, 3.0, length=15))
         z = collect(range(0.0, 1.0, length=11))
         data = [xi^2 + 2yj^2 + 3zk^2 for xi in x, yj in y, zk in z]
-        itp = quadratic_interp((x, y, z), data; extrap=:none)
+        itp = quadratic_interp((x, y, z), data; extrap=NoExtrap())
 
         lo, hi = (0.2, 0.4, 0.1), (1.8, 2.5, 0.9)
         X1 = hi[1] - lo[1];  X3 = (hi[1]^3 - lo[1]^3) / 3
@@ -184,7 +184,7 @@ using FastInterpolations
         z = collect(range(0.0, 1.0, length=11))
         data = [xi*yj + yj*zk + xi*zk + xi^2 + yj^2 + zk^2
                 for xi in x, yj in y, zk in z]
-        itp = quadratic_interp((x, y, z), data; extrap=:none)
+        itp = quadratic_interp((x, y, z), data; extrap=NoExtrap())
 
         lo, hi = (0.2, 0.4, 0.1), (1.8, 2.5, 0.9)
         X1 = hi[1] - lo[1];  X2 = (hi[1]^2 - lo[1]^2) / 2;  X3 = (hi[1]^3 - lo[1]^3) / 3
@@ -200,7 +200,7 @@ using FastInterpolations
         y = collect(range(0.0, 3.0, length=15))
         z = collect(range(0.0, 1.0, length=11))
         data = [xi^2 * yj^2 * zk^2 for xi in x, yj in y, zk in z]
-        itp = quadratic_interp((x, y, z), data; extrap=:none)
+        itp = quadratic_interp((x, y, z), data; extrap=NoExtrap())
 
         lo, hi = (0.2, 0.4, 0.1), (1.8, 2.5, 0.9)
         X3 = (hi[1]^3 - lo[1]^3) / 3
@@ -215,7 +215,7 @@ using FastInterpolations
         y = collect(range(0.0, 2.0, length=21))
         z = collect(range(0.0, 1.0, length=17))
         data = [xi^3 + yj^3 + zk^3 for xi in x, yj in y, zk in z]
-        itp = cubic_interp((x, y, z), data; bc=CubicFit(), extrap=:none)
+        itp = cubic_interp((x, y, z), data; bc=CubicFit(), extrap=NoExtrap())
 
         lo, hi = (0.2, 0.3, 0.1), (1.8, 1.7, 0.9)
         X1 = hi[1] - lo[1];  X4 = (hi[1]^4 - lo[1]^4) / 4
@@ -230,7 +230,7 @@ using FastInterpolations
         y = collect(range(0.0, 2.0, length=21))
         z = collect(range(0.0, 1.0, length=17))
         data = [xi^2*yj + yj^2*zk + zk^2*xi for xi in x, yj in y, zk in z]
-        itp = cubic_interp((x, y, z), data; bc=CubicFit(), extrap=:none)
+        itp = cubic_interp((x, y, z), data; bc=CubicFit(), extrap=NoExtrap())
 
         lo, hi = (0.2, 0.3, 0.1), (1.8, 1.7, 0.9)
         X1 = hi[1] - lo[1];  X2 = (hi[1]^2 - lo[1]^2) / 2;  X3 = (hi[1]^3 - lo[1]^3) / 3
@@ -246,7 +246,7 @@ using FastInterpolations
         y = collect(range(0.0, 2.0, length=25))
         z = collect(range(0.0, 1.0, length=17))
         data = [xi^2 * yj^2 * zk^2 for xi in x, yj in y, zk in z]
-        itp = cubic_interp((x, y, z), data; bc=CubicFit(), extrap=:none)
+        itp = cubic_interp((x, y, z), data; bc=CubicFit(), extrap=NoExtrap())
 
         lo, hi = (0.2, 0.3, 0.1), (1.8, 1.7, 0.9)
         X3 = (hi[1]^3 - lo[1]^3) / 3
@@ -266,7 +266,7 @@ using FastInterpolations
         z = collect(range(0.0, 1.0, length=7))
         data = fill(7.0, length(x), length(y), length(z))
         for side in (:left, :right, :nearest)
-            itp = constant_interp((x, y, z), data; side=side, extrap=:none)
+            itp = constant_interp((x, y, z), data; side=side, extrap=NoExtrap())
             lo, hi = (0.3, 0.5, 0.1), (1.7, 2.4, 0.8)
             expected = 7.0 * (hi[1]-lo[1]) * (hi[2]-lo[2]) * (hi[3]-lo[3])
             @test integrate(itp, lo, hi) ≈ expected atol=1e-12
@@ -279,7 +279,7 @@ using FastInterpolations
         z = collect(range(0.0, 1.0, length=7))
         data = [sin(xi) + cos(yj) + zk for xi in x, yj in y, zk in z]
         for side in (:left, :right, :nearest)
-            itp = constant_interp((x, y, z), data; side=side, extrap=:none)
+            itp = constant_interp((x, y, z), data; side=side, extrap=NoExtrap())
             @test isfinite(integrate(itp, (0.3, 0.5, 0.1), (1.7, 2.4, 0.8)))
         end
     end
@@ -293,7 +293,7 @@ using FastInterpolations
         y = collect(range(-1.0, 1.0, length=15))
         z = collect(range(0.0, 1.5, length=13))
         data = [sin(xi) * cos(yj) * exp(zk/2) for xi in x, yj in y, zk in z]
-        itp = cubic_interp((x, y, z), data; extrap=:none)
+        itp = cubic_interp((x, y, z), data; extrap=NoExtrap())
 
         @testset "full-domain parity" begin
             lo = (first(x), first(y), first(z))
@@ -357,7 +357,7 @@ using FastInterpolations
         y = collect(range(0.0, 3.0, length=13))
         z = collect(range(0.0, 1.0, length=9))
         data = [sin(xi) * cos(yj) + zk^2 for xi in x, yj in y, zk in z]
-        itp = linear_interp((x, y, z), data; extrap=:none)
+        itp = linear_interp((x, y, z), data; extrap=NoExtrap())
 
         @testset "antisymmetry" begin
             lo, hi = (0.3, 0.5, 0.1), (1.7, 2.4, 0.8)
@@ -383,7 +383,7 @@ using FastInterpolations
         y = collect(range(0.0, 3.0, length=15))
         z = collect(range(0.0, 1.0, length=11))
         data = [sin(xi) * cos(yj) + zk^2 for xi in x, yj in y, zk in z]
-        itp = quadratic_interp((x, y, z), data; extrap=:none)
+        itp = quadratic_interp((x, y, z), data; extrap=NoExtrap())
 
         @testset "antisymmetry" begin
             lo, hi = (0.2, 0.4, 0.1), (1.8, 2.5, 0.9)

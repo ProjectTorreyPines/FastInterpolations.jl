@@ -30,38 +30,9 @@ end
 # ========================================
 # Extrapolation Resolution
 # ========================================
-
-"""
-    _resolve_extrap_nd(extrap, Val(N)) -> NTuple{N, Symbol}
-
-Resolve extrapolation mode to canonical N-tuple.
-- Single `Symbol` → broadcast to all N axes (validated)
-- `NTuple{N, Symbol}` → validate each and passthrough
-"""
-@inline function _resolve_extrap_nd(extrap::Symbol, ::Val{N}) where {N}
-    _validate_extrap(extrap)
-    return ntuple(_ -> extrap, Val(N))
-end
-
-@inline function _resolve_extrap_nd(extrap::NTuple{N,Symbol}, ::Val{N}) where {N}
-    @inbounds for i in 1:N
-        _validate_extrap(extrap[i])
-    end
-    return extrap
-end
-
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{Symbol}}, ::Val{N}) where {N}
-    throw(ArgumentError("extrap tuple must have $N elements to match grid dimensions, got $(length(extrap))"))
-end
-
-# ========================================
-# Typed Extrap Resolution (3-arg form)
-# ========================================
 #
-# 3-arg _resolve_extrap_nd(extrap, bcs, Val(N)):
-# - Mode types → NTuple{N, Val} directly (fast path, compile-time resolvable)
-# - Symbol types → NTuple{N, Symbol} with Base.depwarn (legacy path)
-#
+# _resolve_extrap_nd(extrap, bcs, Val(N)):
+# Converts user-facing extrap input to NTuple{N, AbstractExtrap}.
 # The `bcs` argument enables periodic BC validation and override:
 # - `nothing` for constant/linear (no BCs)
 # - NTuple{N, AbstractBC} for quadratic/cubic
@@ -142,9 +113,6 @@ end
     :(($(exprs...),))
 end
 
-# ── Legacy Symbol depwarn constant (used by public API functions) ──────
-
-const _EXTRAP_SYMBOL_DEPWARN = "Passing `extrap` as Symbol is deprecated. Use NoExtrap(), ConstExtrap(), ExtendExtrap(), or WrapExtrap() instead."
 
 # ========================================
 # Search Policy Resolution
@@ -211,20 +179,6 @@ end
 
 @inline function _resolve_side_nd(side::Tuple{Vararg{Symbol}}, ::Val{N}) where {N}
     throw(ArgumentError("side tuple must have $N elements to match grid dimensions, got $(length(side))"))
-end
-
-# ========================================
-# Symbol → Val Conversion
-# ========================================
-
-"""
-    _to_extrap_vals(extraps::NTuple{N, Symbol}) -> NTuple{N, Val}
-
-Convert extrapolation symbol tuple to Val tuple for type-stable dispatch.
-Used by Interpolant constructors (linear, constant) that store extrap as Val types.
-"""
-@inline function _to_extrap_vals(extraps::NTuple{N, Symbol}) where {N}
-    return ntuple(i -> Val(extraps[i]), Val(N))
 end
 
 # ========================================
@@ -402,39 +356,6 @@ Uses map over named helper so each axis receives its concrete type directly,
 avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 """
 @inline _extrap_axis(q, grid, extrap) = @inbounds _handle_axis_extrap(q, grid, extrap)
-
-@inline function _handle_all_extraps(
-    queries::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}}, extraps::Tuple{Vararg{Val,N}}
-) where {N}
-    map(_extrap_axis, queries, grids, extraps)
-end
-
-# Extrapolation handlers for each mode
-# Note: Preserve query type (don't convert to Tg) for AD support (ForwardDiff.Dual)
-
-@inline function _handle_axis_extrap(q, axis::AbstractVector, ::Val{:none})
-    @boundscheck _check_domain(axis, q, Val(:none))
-    return q  # preserve original type for AD
-end
-
-@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::Val{:constant}) where {Tg}
-    # For AD: use primal for comparison, preserve type when in domain
-    q_primal = _extract_primal(q)
-    lo, hi = first(axis), last(axis)
-    q_primal < lo && return oftype(q, lo)  # outside domain: return boundary
-    q_primal > hi && return oftype(q, hi)
-    return q  # in domain: preserve original type for AD
-end
-
-@inline function _handle_axis_extrap(q, axis::AbstractVector, ::Val{:extension})
-    return q  # Allow queries outside domain (for polynomial/constant extension)
-end
-
-@inline function _handle_axis_extrap(q, axis::AbstractVector, ::Val{:wrap})
-    return _wrap_to_domain(q, first(axis), last(axis))  # already handles AD via _extract_primal
-end
-
-# ── AbstractExtrap dispatch (ND storage uses Mode types directly) ──
 
 @inline function _handle_all_extraps(
     queries::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},

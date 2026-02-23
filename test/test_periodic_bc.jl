@@ -11,23 +11,23 @@ using FastInterpolations
 
         @testset "Basic wrapping" begin
             # Interior point
-            @test linear_interp(x, y, π/4; extrap=:wrap) ≈ sin(π/4) atol=1e-3
+            @test linear_interp(x, y, π/4; extrap=WrapExtrap()) ≈ sin(π/4) atol=1e-3
 
             # Outside domain - should wrap
             # xi = 2π + 0.5 wraps to 0.5
-            @test linear_interp(x, y, 2π + 0.5; extrap=:wrap) ≈ linear_interp(x, y, 0.5; extrap=:wrap) atol=1e-10
+            @test linear_interp(x, y, 2π + 0.5; extrap=WrapExtrap()) ≈ linear_interp(x, y, 0.5; extrap=WrapExtrap()) atol=1e-10
 
             # Negative - should wrap
             # xi = -0.5 wraps to 2π - 0.5
-            @test linear_interp(x, y, -0.5; extrap=:wrap) ≈ linear_interp(x, y, 2π - 0.5; extrap=:wrap) atol=1e-10
+            @test linear_interp(x, y, -0.5; extrap=WrapExtrap()) ≈ linear_interp(x, y, 2π - 0.5; extrap=WrapExtrap()) atol=1e-10
 
             # Multiple periods
-            @test linear_interp(x, y, 4π + 1.0; extrap=:wrap) ≈ linear_interp(x, y, 1.0; extrap=:wrap) atol=1e-10
+            @test linear_interp(x, y, 4π + 1.0; extrap=WrapExtrap()) ≈ linear_interp(x, y, 1.0; extrap=WrapExtrap()) atol=1e-10
         end
 
         @testset "Vector interface" begin
             x_query = [0.5, 2π + 0.5, -0.5, 4π + 1.0]
-            result = linear_interp(x, y, x_query; extrap=:wrap)
+            result = linear_interp(x, y, x_query; extrap=WrapExtrap())
 
             @test result[1] ≈ sin(0.5) atol=1e-3
             @test result[2] ≈ sin(0.5) atol=1e-3  # 2π + 0.5 wraps to 0.5
@@ -35,21 +35,21 @@ using FastInterpolations
 
             # Fast path: all queries inside domain [x_min, x_max) → uses extension path
             inside_query = [0.5, 1.0, 2.0]
-            inside_result = linear_interp(x, y, inside_query; extrap=:wrap)
+            inside_result = linear_interp(x, y, inside_query; extrap=WrapExtrap())
             @test inside_result ≈ sin.(inside_query) atol=1e-3
         end
 
         @testset "In-place interface" begin
             out = Vector{Float64}(undef, 3)
             x_query = [0.5, 2π + 0.5, -0.5]
-            linear_interp!(out, x, y, x_query; extrap=:wrap)
+            linear_interp!(out, x, y, x_query; extrap=WrapExtrap())
 
             @test out[1] ≈ sin(0.5) atol=1e-3
             @test out[2] ≈ out[1] atol=1e-10  # Wrapped to same position
         end
 
         @testset "LinearInterpolant with wrap extrap" begin
-            itp = linear_interp(x, y; extrap=:wrap)
+            itp = linear_interp(x, y; extrap=WrapExtrap())
 
             # Test scalar calls
             @test itp(0.5) ≈ sin(0.5) atol=1e-3
@@ -63,8 +63,8 @@ using FastInterpolations
         @testset "Continuity at boundary" begin
             # Check values just before and after boundary
             ε = 1e-6
-            val_before = linear_interp(x, y, 2π - ε; extrap=:wrap)
-            val_after = linear_interp(x, y, 0.0 + ε; extrap=:wrap)
+            val_before = linear_interp(x, y, 2π - ε; extrap=WrapExtrap())
+            val_after = linear_interp(x, y, 0.0 + ε; extrap=WrapExtrap())
 
             # For sin, both should be close to 0
             @test abs(val_before) < 1e-3
@@ -73,7 +73,7 @@ using FastInterpolations
     end
 
     @testset "Cubic Natural BC with Wrap Extrapolation" begin
-        # bc=NaturalBC() uses natural BC coefficients, but extrap=:wrap wraps coordinates
+        # bc=NaturalBC() uses natural BC coefficients, but extrap=WrapExtrap() wraps coordinates
         # Unlike bc=PeriodicBC(), this does NOT check y[1] ≈ y[end]
 
         N = 101
@@ -82,25 +82,25 @@ using FastInterpolations
 
         @testset "Basic wrapping with natural BC" begin
             # Interior point
-            @test cubic_interp(x, y_sin, π/4; bc=NaturalBC(), extrap=:wrap) ≈ sin(π/4) atol=1e-4
+            @test cubic_interp(x, y_sin, π/4; bc=NaturalBC(), extrap=WrapExtrap()) ≈ sin(π/4) atol=1e-4
 
             # Outside domain - should wrap
-            val_in = cubic_interp(x, y_sin, 0.5; bc=NaturalBC(), extrap=:wrap)
-            val_wrapped = cubic_interp(x, y_sin, 2π + 0.5; bc=NaturalBC(), extrap=:wrap)
+            val_in = cubic_interp(x, y_sin, 0.5; bc=NaturalBC(), extrap=WrapExtrap())
+            val_wrapped = cubic_interp(x, y_sin, 2π + 0.5; bc=NaturalBC(), extrap=WrapExtrap())
             @test val_in ≈ val_wrapped atol=1e-10
 
             # Negative - should wrap
-            val_neg = cubic_interp(x, y_sin, -0.5; bc=NaturalBC(), extrap=:wrap)
-            val_equiv = cubic_interp(x, y_sin, 2π - 0.5; bc=NaturalBC(), extrap=:wrap)
+            val_neg = cubic_interp(x, y_sin, -0.5; bc=NaturalBC(), extrap=WrapExtrap())
+            val_equiv = cubic_interp(x, y_sin, 2π - 0.5; bc=NaturalBC(), extrap=WrapExtrap())
             @test val_neg ≈ val_equiv atol=1e-10
 
             # Multiple periods
-            @test cubic_interp(x, y_sin, 4π + 1.0; bc=NaturalBC(), extrap=:wrap) ≈ cubic_interp(x, y_sin, 1.0; bc=NaturalBC(), extrap=:wrap) atol=1e-10
+            @test cubic_interp(x, y_sin, 4π + 1.0; bc=NaturalBC(), extrap=WrapExtrap()) ≈ cubic_interp(x, y_sin, 1.0; bc=NaturalBC(), extrap=WrapExtrap()) atol=1e-10
         end
 
         @testset "Vector and in-place interface" begin
             x_query = [0.5, 2π + 0.5, -0.5, 4π + 1.0]
-            result = cubic_interp(x, y_sin, x_query; bc=NaturalBC(), extrap=:wrap)
+            result = cubic_interp(x, y_sin, x_query; bc=NaturalBC(), extrap=WrapExtrap())
 
             @test result[1] ≈ sin(0.5) atol=1e-4
             @test result[2] ≈ result[1] atol=1e-10  # 2π + 0.5 wraps to 0.5
@@ -108,12 +108,12 @@ using FastInterpolations
             # In-place
             cache = CubicSplineCache(x; bc=NaturalBC())
             out = similar(result)
-            cubic_interp!(out, cache, collect(y_sin), x_query; extrap=:wrap)
+            cubic_interp!(out, cache, collect(y_sin), x_query; extrap=WrapExtrap())
             @test out ≈ result atol=1e-10
         end
 
         @testset "CubicInterpolant with wrap extrap" begin
-            itp = cubic_interp(x, y_sin; bc=NaturalBC(), extrap=:wrap)
+            itp = cubic_interp(x, y_sin; bc=NaturalBC(), extrap=WrapExtrap())
 
             # Test scalar calls
             @test itp(π/4) ≈ sin(π/4) atol=1e-4
@@ -126,14 +126,14 @@ using FastInterpolations
 
         @testset "Sawtooth/triangle wave pattern (y[1] != y[end])" begin
             # Linear ramp: y[1] = 0, y[end] = 2π (NOT equal)
-            # This is the key use case for bc=NaturalBC() + extrap=:wrap
+            # This is the key use case for bc=NaturalBC() + extrap=WrapExtrap()
             x_ramp = range(0.0, 1.0, 51)
             y_ramp = collect(x_ramp)  # [0, 0.02, ..., 1.0]
 
             @test y_ramp[1] != y_ramp[end]  # Confirm endpoints differ
 
             # Should NOT throw (unlike bc=PeriodicBC() which requires y[1] ≈ y[end])
-            itp = cubic_interp(x_ramp, y_ramp; bc=NaturalBC(), extrap=:wrap)
+            itp = cubic_interp(x_ramp, y_ramp; bc=NaturalBC(), extrap=WrapExtrap())
 
             # Test wrap behavior
             @test itp(0.5) ≈ 0.5 atol=1e-4
@@ -154,7 +154,7 @@ using FastInterpolations
             # but they use DIFFERENT spline coefficients (different BC)
 
             # Create interpolants with different BCs
-            itp_nat = cubic_interp(x, y_sin; bc=NaturalBC(), extrap=:wrap)
+            itp_nat = cubic_interp(x, y_sin; bc=NaturalBC(), extrap=WrapExtrap())
             itp_per = cubic_interp(x, y_sin; bc=PeriodicBC())
 
             # Interior values are similar for periodic functions
@@ -175,10 +175,10 @@ using FastInterpolations
             cache = CubicSplineCache(x; bc=PeriodicBC())
 
             # All extrap values should give the same result
-            itp_none = cubic_interp(cache, collect(y_sin); extrap=:none)
-            itp_const = cubic_interp(cache, collect(y_sin); extrap=:constant)
-            itp_ext = cubic_interp(cache, collect(y_sin); extrap=:extension)
-            itp_wrap = cubic_interp(cache, collect(y_sin); extrap=:wrap)
+            itp_none = cubic_interp(cache, collect(y_sin); extrap=NoExtrap())
+            itp_const = cubic_interp(cache, collect(y_sin); extrap=ConstExtrap())
+            itp_ext = cubic_interp(cache, collect(y_sin); extrap=ExtendExtrap())
+            itp_wrap = cubic_interp(cache, collect(y_sin); extrap=WrapExtrap())
 
             # Test outside domain - all should wrap
             xi_outside = 2π + 0.5
@@ -353,7 +353,7 @@ using FastInterpolations
         y_base = sin.(x_base)
 
         # Linear wrap should still work
-        @test linear_interp(x_base, y_base, 2π + 0.5; extrap=:wrap) ≈ linear_interp(x_base, y_base, 0.5; extrap=:wrap) atol=1e-10
+        @test linear_interp(x_base, y_base, 2π + 0.5; extrap=WrapExtrap()) ≈ linear_interp(x_base, y_base, 0.5; extrap=WrapExtrap()) atol=1e-10
 
         # Cubic periodic should work with Vector grid
         cache = CubicSplineCache(collect(x_base); bc=PeriodicBC())
@@ -363,7 +363,7 @@ using FastInterpolations
     end
 
     @testset "_check_periodic_endpoints validation (Cubic only)" begin
-        # NOTE: Linear interpolation with extrap=:wrap does NOT check endpoints!
+        # NOTE: Linear interpolation with extrap=WrapExtrap() does NOT check endpoints!
         # Only cubic bc=PeriodicBC() checks that y[1] ≈ y[end]
         x = range(0.0, 2π, 101)
 
@@ -373,19 +373,19 @@ using FastInterpolations
             @test y_sin[1] ≈ y_sin[end] atol=1e-12  # Confirm endpoints match
 
             # Linear wrap works regardless of endpoint matching
-            @test linear_interp(x, y_sin, 0.5; extrap=:wrap) isa Float64
+            @test linear_interp(x, y_sin, 0.5; extrap=WrapExtrap()) isa Float64
 
             # Cubic bc=PeriodicBC() should not throw for valid periodic data
             @test cubic_interp(x, y_sin, 0.5; bc=PeriodicBC()) isa Float64
 
             # cos(0) = cos(2π) = 1
             y_cos = cos.(x)
-            @test linear_interp(x, y_cos, 0.5; extrap=:wrap) isa Float64
+            @test linear_interp(x, y_cos, 0.5; extrap=WrapExtrap()) isa Float64
 
             # Exactly equal endpoints
             y_exact = collect(sin.(x))
             y_exact[end] = y_exact[1]  # Force exact equality
-            @test linear_interp(x, y_exact, 0.5; extrap=:wrap) isa Float64
+            @test linear_interp(x, y_exact, 0.5; extrap=WrapExtrap()) isa Float64
         end
 
         @testset "Valid periodic data (Float32)" begin
@@ -396,7 +396,7 @@ using FastInterpolations
             @test abs(y_f32[1] - y_f32[end]) < 1f-6
 
             # Should not throw
-            @test linear_interp(x_f32, y_f32, 0.5f0; extrap=:wrap) isa Float32
+            @test linear_interp(x_f32, y_f32, 0.5f0; extrap=WrapExtrap()) isa Float32
             @test cubic_interp(x_f32, y_f32, 0.5f0; bc=PeriodicBC()) isa Float32
         end
 
@@ -407,8 +407,8 @@ using FastInterpolations
             @test abs(y_invalid[1] - y_invalid[end]) > 1e-12  # Confirm mismatch
 
             # Linear wrap does NOT check endpoints - works fine (sawtooth pattern)
-            @test linear_interp(x, y_invalid, 0.5; extrap=:wrap) isa Float64
-            @test LinearInterpolant(collect(x), y_invalid; extrap=:wrap) isa LinearInterpolant
+            @test linear_interp(x, y_invalid, 0.5; extrap=WrapExtrap()) isa Float64
+            @test LinearInterpolant(collect(x), y_invalid; extrap=WrapExtrap()) isa LinearInterpolant
 
             # Cubic bc=PeriodicBC() DOES check endpoints - throws ArgumentError
             @test_throws ArgumentError cubic_interp(x, y_invalid, 0.5; bc=PeriodicBC())

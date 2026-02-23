@@ -81,7 +81,7 @@ Create an N-dimensional quadratic interpolant from grid vectors and data array.
 - `bc=Left(QuadraticFit())`: Boundary condition(s). Can be:
   - Single BC: Applied to all axes
   - `NTuple{N}`: Per-axis BCs
-- `extrap=:none`: Extrapolation mode(s)
+- `extrap=NoExtrap()`: Extrapolation mode(s)
 - `search=Binary()`: Search policy(s)
 
 # Returns
@@ -101,7 +101,7 @@ function quadratic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
-    extrap::Union{Symbol, NTuple{N,Symbol}, AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
+    extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
 ) where {N, Tv_raw}
     # Zero-allocation type promotion
@@ -121,16 +121,8 @@ function quadratic_interp(
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    if extrap isa AbstractExtrap || extrap isa Tuple{Vararg{AbstractExtrap}}
-        extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-        return _build_nd_quadratic_interpolant(grids_typed, data, bcs, extraps_val, searches)
-    else
-        Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :quadratic_interp)
-        extraps = _resolve_extrap_nd(extrap, Val(N))
-        @_dispatch_extrap_nd extraps bcs => extraps_val begin
-            return _build_nd_quadratic_interpolant(grids_typed, data, bcs, extraps_val, searches)
-        end
-    end
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+    return _build_nd_quadratic_interpolant(grids_typed, data, bcs, extraps_val, searches)
 end
 
 # ========================================
@@ -153,8 +145,7 @@ function _build_nd_quadratic_interpolant(
     # Store BCs as-is (already QuadraticBC)
     bcs_store = bcs
 
-    # extraps_val already dispatched to concrete Val types at API boundary
-    # (via @_dispatch_extrap_nd in quadratic_interp)
+    # extraps_val already resolved to concrete types at API boundary
 
     # Construct the interpolant
     NP1 = N + 1

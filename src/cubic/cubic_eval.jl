@@ -271,7 +271,7 @@ Uses task-local pool for workspace allocation.
     cache::CubicSplineCache{Tg,X,F,BC,S},
     y::AbstractVector{Tv},
     x_query::Tg;
-    extrap::Union{Symbol,AbstractExtrap}=NoExtrap(),
+    extrap::AbstractExtrap=NoExtrap(),
     deriv::Int=0,
     search=Binary(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
@@ -281,11 +281,9 @@ Uses task-local pool for workspace allocation.
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
-    extrap isa Symbol && Base.depwarn(_EXTRAP_SYMBOL_DEPWARN, :cubic_interp)
-    mode = extrap isa Symbol ? _symbol_to_extrap_mode(extrap) : extrap
     searcher = _to_searcher(search, hint)
     @_dispatch_deriv deriv => op begin
-        @boundscheck _check_domain(cache.x, x_query, mode)
-        _eval_with_bc(cache, y, z, x_query, mode, op, searcher)
+        @boundscheck _check_domain(cache.x, x_query, extrap)
+        _eval_with_bc(cache, y, z, x_query, extrap, op, searcher)
     end
 end

@@ -116,6 +116,6 @@ PeriodicBC()     # S(x) = S(x + τ) with C² continuity
 ## See Also
 
 - [PointBC Details](pointbc.md) — In-depth explanation of PolyFit with visualizations
-- [PeriodicBC Details](periodicbc.md) — Inclusive vs exclusive endpoints, period inference, comparison with `extrap=:wrap`
+- [PeriodicBC Details](periodicbc.md) — Inclusive vs exclusive endpoints, period inference, comparison with `WrapExtrap()`
 - [Quadratic Interpolation](../interpolation/quadratic.md) — BC examples in context
 - [Cubic Interpolation](../interpolation/cubic.md) — BCPair and PeriodicBC details

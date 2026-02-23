@@ -48,7 +48,7 @@ bc = (NaturalBC(), PeriodicBC())
 itp = cubic_interp((x, y), data2d; bc=bc)
 ```
 !!! note "PeriodicBC + Extrapolation"
-    `PeriodicBC()` on an axis automatically forces `extrap=:wrap` on that axis.
+    `PeriodicBC()` on an axis automatically forces `WrapExtrap()` on that axis.
 
 ```@example nd_boundary
 # Custom: known slope at x-left, auto-fit in y

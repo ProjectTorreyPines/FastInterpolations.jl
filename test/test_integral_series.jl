@@ -113,43 +113,43 @@ using FastInterpolations
         y1 = sin.(x)
         y2 = cos.(x)
 
-        @testset "extrap=:none throws DomainError" begin
-            sitp = cubic_interp(x, [y1, y2]; extrap=:none)
+        @testset "extrap=NoExtrap() throws DomainError" begin
+            sitp = cubic_interp(x, [y1, y2]; extrap=NoExtrap())
             @test_throws DomainError integrate(sitp, -0.1, 0.5)
             @test_throws DomainError integrate(sitp, 0.5, 1.1)
         end
 
-        @testset "extrap=:constant" begin
-            sitp = cubic_interp(x, [y1, y2]; extrap=:constant)
-            itp1 = cubic_interp(x, y1; extrap=:constant)
-            itp2 = cubic_interp(x, y2; extrap=:constant)
+        @testset "extrap=ConstExtrap()" begin
+            sitp = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
+            itp1 = cubic_interp(x, y1; extrap=ConstExtrap())
+            itp2 = cubic_interp(x, y2; extrap=ConstExtrap())
             result = integrate(sitp, -0.5, 1.5)
             @test result[1] ≈ integrate(itp1, -0.5, 1.5)
             @test result[2] ≈ integrate(itp2, -0.5, 1.5)
         end
 
-        @testset "extrap=:extension" begin
-            sitp = cubic_interp(x, [y1, y2]; extrap=:extension)
-            itp1 = cubic_interp(x, y1; extrap=:extension)
-            itp2 = cubic_interp(x, y2; extrap=:extension)
+        @testset "extrap=ExtendExtrap()" begin
+            sitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+            itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
+            itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
             result = integrate(sitp, -0.1, 1.1)
             @test result[1] ≈ integrate(itp1, -0.1, 1.1)
             @test result[2] ≈ integrate(itp2, -0.1, 1.1)
         end
 
-        @testset "extrap=:wrap" begin
-            sitp = cubic_interp(x, [y1, y2]; extrap=:wrap)
-            itp1 = cubic_interp(x, y1; extrap=:wrap)
-            itp2 = cubic_interp(x, y2; extrap=:wrap)
+        @testset "extrap=WrapExtrap()" begin
+            sitp = cubic_interp(x, [y1, y2]; extrap=WrapExtrap())
+            itp1 = cubic_interp(x, y1; extrap=WrapExtrap())
+            itp2 = cubic_interp(x, y2; extrap=WrapExtrap())
             result = integrate(sitp, -0.5, 2.5)
             @test result[1] ≈ integrate(itp1, -0.5, 2.5)
             @test result[2] ≈ integrate(itp2, -0.5, 2.5)
         end
 
-        @testset "linear extrap=:constant" begin
-            sitp = linear_interp(x, [y1, y2]; extrap=:constant)
-            itp1 = linear_interp(x, y1; extrap=:constant)
-            itp2 = linear_interp(x, y2; extrap=:constant)
+        @testset "linear extrap=ConstExtrap()" begin
+            sitp = linear_interp(x, [y1, y2]; extrap=ConstExtrap())
+            itp1 = linear_interp(x, y1; extrap=ConstExtrap())
+            itp2 = linear_interp(x, y2; extrap=ConstExtrap())
             result = integrate(sitp, -0.5, 1.5)
             @test result[1] ≈ integrate(itp1, -0.5, 1.5)
             @test result[2] ≈ integrate(itp2, -0.5, 1.5)

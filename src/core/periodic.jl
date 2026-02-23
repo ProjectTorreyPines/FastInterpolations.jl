@@ -15,7 +15,7 @@
     _wrap_to_domain(xi::FT, x_min::FT, x_max::FT) where {FT<:AbstractFloat}
 
 Wrap a query point `xi` to the domain [x_min, x_max).
-Used for periodic boundary conditions and extrap=:wrap.
+Used for periodic boundary conditions and extrap=WrapExtrap().
 
 Optimized: skips expensive `mod()` when xi is already in domain.
 """

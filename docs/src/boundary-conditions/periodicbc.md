@@ -4,11 +4,11 @@ True periodic boundary conditions for cubic splines, ensuring C² continuity (va
 
 ---
 
-## PeriodicBC vs `extrap=:wrap`
+## PeriodicBC vs `WrapExtrap()`
 
 These two features sound similar but solve fundamentally different problems:
 
-| | `PeriodicBC()` | `extrap=:wrap` |
+| | `PeriodicBC()` | `WrapExtrap()` |
 |---|---|---|
 | **What it does** | Solves a cyclic tridiagonal system (Sherman-Morrison) so the spline is **C² continuous** at the period boundary | Maps out-of-domain queries back into `[x₁, xₙ]` via modular arithmetic |
 | **Smoothness** | ``S, S', S''`` all match at the wrap point | No smoothness guarantee — may have jumps in value, slope, or curvature |
@@ -17,7 +17,7 @@ These two features sound similar but solve fundamentally different problems:
 | **Use case** | Physically periodic signals (angles, phases, Fourier-sampled data) | Quick "repeat" behavior without physical periodicity |
 
 !!! tip "Rule of Thumb"
-    If your data is truly periodic (e.g., one full period of `sin(x)`), use `PeriodicBC`. If you just want out-of-domain queries to wrap around, use `extrap=:wrap`.
+    If your data is truly periodic (e.g., one full period of `sin(x)`), use `PeriodicBC`. If you just want out-of-domain queries to wrap around, use `extrap=WrapExtrap()`.
 
 ---
 

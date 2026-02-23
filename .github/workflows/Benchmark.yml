@@ -41,9 +41,6 @@ jobs:
       - name: Cache Julia artifacts
         uses: julia-actions/cache@v2
 
-      - name: Add FuseRegistry
-        run: julia -e 'using Pkg; Pkg.Registry.add(RegistrySpec(url="https://github.com/ProjectTorreyPines/FuseRegistry.jl.git")); Pkg.Registry.add("General"); Pkg.Registry.update()'
-
       - name: Install dependencies
         run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
 

@@ -112,9 +112,9 @@ root = find_zero(d1, 0.5)  # Find where derivative = 0
 - **Extrapolation** settings are inherited by derivatives:
 
 ```julia
-itp = cubic_interp(x, y; extrap=:extension)
+itp = cubic_interp(x, y; extrap=ExtendExtrap())
 d1 = deriv1(itp)
-d1(-0.5)  # Uses :extension extrapolation
+d1(-0.5)  # Uses ExtendExtrap extrapolation
 ```
 
 ## API Summary

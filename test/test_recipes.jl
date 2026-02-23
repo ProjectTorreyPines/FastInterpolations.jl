@@ -48,7 +48,7 @@ using RecipesBase
     # Extrapolation Modes
     # ========================================
     @testset "Extrapolation Modes" begin
-        for extrap in [:none, :constant, :extension, :wrap]
+        for extrap in [NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap()]
             @testset "extrap=:$extrap" begin
                 itp = cubic_interp(x, y; extrap=extrap)
                 recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
@@ -278,7 +278,7 @@ using RecipesBase
 
         @testset "ND extrapolation extension" begin
             # extrap on both axes — should produce boundary rectangle series
-            itp_ext = linear_interp((x1, x2), data_2d; extrap=:extension)
+            itp_ext = linear_interp((x1, x2), data_2d; extrap=ExtendExtrap())
             recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp_ext)
             @test !isempty(recipes)
 
@@ -306,8 +306,8 @@ using RecipesBase
             @test first(hm_x) < first(x1)  # extended left
             @test last(hm_x) > last(x1)    # extended right
 
-            # extrap=:none — should NOT produce boundary series
-            itp_none = linear_interp((x1, x2), data_2d; extrap=:none)
+            # extrap=NoExtrap() — should NOT produce boundary series
+            itp_none = linear_interp((x1, x2), data_2d; extrap=NoExtrap())
             recipes_none = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp_none)
             boundary_none = filter(recipes_none) do r
                 get(r.plotattributes, :seriestype, nothing) === :path &&
@@ -315,7 +315,7 @@ using RecipesBase
             end
             @test isempty(boundary_none)
 
-            # Heatmap should stay within domain when extrap=:none
+            # Heatmap should stay within domain when extrap=NoExtrap()
             hm_none = filter(recipes_none) do r
                 get(r.plotattributes, :seriestype, nothing) === :heatmap
             end
@@ -346,7 +346,7 @@ using RecipesBase
         end
 
         @testset "ND extrap with CubicInterpolantND" begin
-            itp_ext = cubic_interp((x1, x2), data_2d; extrap=:constant)
+            itp_ext = cubic_interp((x1, x2), data_2d; extrap=ConstExtrap())
             recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp_ext)
             @test !isempty(recipes)
             boundary_series = filter(recipes) do r

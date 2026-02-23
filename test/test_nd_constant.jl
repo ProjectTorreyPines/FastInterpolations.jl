@@ -203,8 +203,8 @@ end
         y = [0.0, 1.0, 2.0]
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
-        @testset "extrap=:none (domain error)" begin
-            itp = constant_interp((x, y), data; extrap=:none)
+        @testset "extrap=NoExtrap() (domain error)" begin
+            itp = constant_interp((x, y), data; extrap=NoExtrap())
 
             # In domain - OK
             @test itp((0.5, 0.5)) == 1.0
@@ -216,8 +216,8 @@ end
             @test_throws DomainError itp((0.5, 2.1))
         end
 
-        @testset "extrap=:constant" begin
-            itp = constant_interp((x, y), data; extrap=:constant, side=:left)
+        @testset "extrap=ConstExtrap()" begin
+            itp = constant_interp((x, y), data; extrap=ConstExtrap(), side=:left)
 
             # In domain
             @test itp((0.5, 0.5)) == 1.0
@@ -233,8 +233,8 @@ end
             @test itp((0.5, 2.5)) == 2.0    # Clamp y to 2 → interval 2, data[1,2]
         end
 
-        @testset "extrap=:wrap" begin
-            itp = constant_interp((x, y), data; extrap=:wrap, side=:left)
+        @testset "extrap=WrapExtrap()" begin
+            itp = constant_interp((x, y), data; extrap=WrapExtrap(), side=:left)
 
             # In domain
             @test itp((0.5, 0.5)) == 1.0
@@ -245,8 +245,8 @@ end
         end
 
         @testset "per-axis extrap configuration" begin
-            # extrap=(:none, :constant) → strict on x, clamp on y
-            itp = constant_interp((x, y), data; extrap=(:none, :constant), side=:left)
+            # extrap=(NoExtrap(), ConstExtrap()) → strict on x, clamp on y
+            itp = constant_interp((x, y), data; extrap=(NoExtrap(), ConstExtrap()), side=:left)
 
             # y clamped to 2.0 → data[1, 2] = 2.0
             @test itp((0.5, 2.5)) == 2.0  # y clamped to last interval
@@ -478,7 +478,7 @@ end
             @test _alloc_test_constant_right() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, extrap=:constant)" begin
+        @testset "zero-alloc scalar (Range grids, extrap=ConstExtrap())" begin
             @test _alloc_test_constant_extrap_constant() <= ND_ALLOC_THRESHOLD
         end
 

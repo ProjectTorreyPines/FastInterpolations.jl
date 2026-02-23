@@ -5,7 +5,7 @@ using FastInterpolations
     x = collect(range(0.0, 2.0, length=31))
     y = collect(range(-1.0, 1.0, length=29))
     data = [sin(xi) * cos(yj) for xi in x, yj in y]
-    itp = cubic_interp((x, y), data; extrap=(:none, :none))
+    itp = cubic_interp((x, y), data; extrap=(NoExtrap(), NoExtrap()))
 
     @testset "full-domain parity" begin
         lo = (first(x), first(y))

@@ -240,8 +240,8 @@ using FastInterpolations
         y = range(0.0, 1.0, 6)
         data = [xi + yj for xi in x, yj in y]  # Simple linear function
 
-        @testset ":constant extrapolation" begin
-            itp = cubic_interp((x, y), data; extrap=:constant)
+        @testset "ConstExtrap() extrapolation" begin
+            itp = cubic_interp((x, y), data; extrap=ConstExtrap())
 
             # Left boundary clamp
             @test itp((-0.5, 0.5)) ≈ itp((0.0, 0.5))
@@ -257,7 +257,7 @@ using FastInterpolations
 
         @testset "Per-axis extrapolation" begin
             # :constant on x, :none on y
-            itp = cubic_interp((x, y), data; extrap=(:constant, :none))
+            itp = cubic_interp((x, y), data; extrap=(ConstExtrap(), NoExtrap()))
 
             # x outside domain should clamp
             @test itp((-0.5, 0.5)) ≈ itp((0.0, 0.5))
@@ -265,7 +265,7 @@ using FastInterpolations
             @test_throws DomainError itp((1.0, 1.5))
         end
 
-        @testset ":wrap extrapolation (with PeriodicBC)" begin
+        @testset "WrapExtrap() extrapolation (with PeriodicBC)" begin
             # Periodic data that wraps correctly
             x = range(0.0, 2π, 21)  # First and last are same modulo 2π
             y = range(0.0, 2π, 21)
@@ -273,7 +273,7 @@ using FastInterpolations
             # sin and cos are periodic
             data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
-            itp = cubic_interp((x, y), data; bc=PeriodicBC(), extrap=:wrap)
+            itp = cubic_interp((x, y), data; bc=PeriodicBC(), extrap=WrapExtrap())
 
             # Should wrap around
             xq = 2π + 0.5  # Past domain
@@ -309,8 +309,8 @@ using FastInterpolations
 
         @testset "Extrap resolution error paths" begin
             # Wrong number of extrap modes - rejected by keyword type assertion
-            @test_throws TypeError cubic_interp((x, y), data; extrap=(:none,))
-            @test_throws TypeError cubic_interp((x, y), data; extrap=(:none, :none, :none))
+            @test_throws TypeError cubic_interp((x, y), data; extrap=(NoExtrap(),))
+            @test_throws TypeError cubic_interp((x, y), data; extrap=(NoExtrap(), NoExtrap(), NoExtrap()))
         end
 
         @testset "Search resolution error paths" begin
@@ -811,7 +811,7 @@ using FastInterpolations
         data = rand(11, 6)
         itp = cubic_interp((x, y), data)
 
-        @testset "Domain errors with :none extrap" begin
+        @testset "Domain errors with NoExtrap() extrap" begin
             @test_throws DomainError itp((-0.1, 0.5))
             @test_throws DomainError itp((1.1, 0.5))
             @test_throws DomainError itp((0.5, -0.1))

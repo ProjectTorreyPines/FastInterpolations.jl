@@ -24,10 +24,10 @@ This factorization can be reused for interpolating different y vectors.
 # Example
 ```julia
 x = range(0.0, 1.0, 51)
-cache = CubicSplineCache(x)                              # Natural BC (default)
+cache = CubicSplineCache(x)                              # Zero-Curvature BC (default)
 cache = CubicSplineCache(x; bc=ZeroSlopeBC())              # Zero slope at both ends
 cache = CubicSplineCache(x; bc=Deriv1(0.5))              # Slope=0.5 at both ends
-cache = CubicSplineCache(x; bc=BCPair(Deriv1(0.5), Deriv2(0)))   # Mixed: slope left, natural right
+cache = CubicSplineCache(x; bc=BCPair(Deriv1(0.5), Deriv2(0)))   # Mixed: slope left, zero-curvature right
 cache_periodic = CubicSplineCache(x; bc=PeriodicBC())   # Periodic BC
 
 # Reuse for multiple y vectors

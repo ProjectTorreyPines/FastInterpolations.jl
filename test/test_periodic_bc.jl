@@ -72,15 +72,15 @@ using FastInterpolations
         end
     end
 
-    @testset "Cubic Natural BC with Wrap Extrapolation" begin
-        # bc=ZeroCurvBC() uses natural BC coefficients, but extrap=WrapExtrap() wraps coordinates
+    @testset "Cubic Zero-Curvature BC with Wrap Extrapolation" begin
+        # bc=ZeroCurvBC() uses zero-curvature BC coefficients, but extrap=WrapExtrap() wraps coordinates
         # Unlike bc=PeriodicBC(), this does NOT check y[1] ≈ y[end]
 
         N = 101
         x = range(0.0, 2π, N)
         y_sin = sin.(x)
 
-        @testset "Basic wrapping with natural BC" begin
+        @testset "Basic wrapping with ZeroCurv BC" begin
             # Interior point
             @test cubic_interp(x, y_sin, π/4; bc=ZeroCurvBC(), extrap=WrapExtrap()) ≈ sin(π/4) atol=1e-4
 
@@ -165,9 +165,9 @@ using FastInterpolations
             @test itp_nat(2π + 0.5) ≈ itp_per(2π + 0.5) atol=1e-3
 
             # However, at boundaries the second derivatives differ:
-            # - natural BC forces S''(x₁) = S''(xₙ) = 0
+            # - ZeroCurv BC forces S''(x₁) = S''(xₙ) = 0
             # - periodic BC forces S''(x₁) = S''(xₙ) and continuity
-            # For sin(x), natural BC happens to be close, but they're computed differently
+            # For sin(x), ZeroCurv BC happens to be close, but they're computed differently
         end
 
         @testset "bc=PeriodicBC() ignores extrap parameter" begin
@@ -280,17 +280,17 @@ using FastInterpolations
             @test deriv2_left ≈ deriv2_right atol=0.5    # S''(x₁) = S''(xₙ) - KEY C2 TEST
             @test abs(deriv2_left) < 1.0                 # Should be -sin(0) ≈ 0
 
-            # ===== Compare with natural BC (should differ at boundaries) =====
+            # ===== Compare with ZeroCurv BC (should differ at boundaries) =====
             cache_natural = CubicSplineCache(x_dense; bc=ZeroCurvBC())
             f_nat(t) = cubic_interp(cache_natural, y_dense, [t])[1]
 
-            # Natural BC forces S''(x_min) = S''(x_max) = 0, which matches sin(x)
+            # Zero-Curvature BC forces S''(x_min) = S''(x_max) = 0, which matches sin(x)
             # but the derivatives approaching the boundary may differ
             # For a true periodic function, periodic BC should be more accurate overall
             deriv2_natural_left = (f_nat(2π - h) - 2*f_nat(2π - 2h) + f_nat(2π - 3h)) / h^2
             deriv2_natural_right = (f_nat(2h) - 2*f_nat(h) + f_nat(0.0)) / h^2
 
-            # Natural BC also happens to give S''≈0 at boundaries for sin, so check interior accuracy
+            # Zero-Curvature BC also happens to give S''≈0 at boundaries for sin, so check interior accuracy
             # At x = π, sin''(π) = -sin(π) = 0, both should match well
             π_f = Float64(π)
             deriv2_periodic_mid = (f(π_f + h) - 2*f(π_f) + f(π_f - h)) / h^2
@@ -327,7 +327,7 @@ using FastInterpolations
         end
     end
 
-    @testset "Periodic BC vs Natural BC" begin
+    @testset "Periodic BC vs Zero-Curvature BC" begin
         N = 51
         x = range(0.0, 2π, N)
         y = sin.(x)

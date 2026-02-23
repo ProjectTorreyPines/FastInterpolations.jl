@@ -162,7 +162,7 @@ const APPROX_REL_TOLERANCCE = 1e-14
                     itp = DI.CubicSpline(y, x)
                     result_data = itp(xq_interior)
 
-                    # Natural cubic spline should match closely
+                    # ZeroCurv cubic spline should match closely
                     @test isapprox(result_fast, result_data; rtol=APPROX_REL_TOLERANCCE)
                 end
             end
@@ -205,7 +205,7 @@ const APPROX_REL_TOLERANCCE = 1e-14
     #
     # Note: Linear and Cubic comparisons work because:
     # - Linear: No BC needed (unique solution)
-    # - Cubic: DataInterpolations.jl CubicSpline uses tridiagonal system with Natural BC,
+    # - Cubic: DataInterpolations.jl CubicSpline uses tridiagonal system with Zero-Curvature BC,
     #          same algorithm as FastInterpolations
     # =========================================================================
 

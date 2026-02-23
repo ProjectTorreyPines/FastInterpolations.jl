@@ -103,7 +103,7 @@ end
 
 """
 Initialize Interpolations.jl cubic splines for all (m, m') pairs.
-Uses `cubic_spline_interpolation` which wraps BSpline(Cubic) with natural BC.
+Uses `cubic_spline_interpolation` which wraps BSpline(Cubic) with zero-curvature BC.
 """
 function init_interpolations_splines(psi_grid::AbstractRange, data::Array{Float64,3})
     _, mpert, _ = size(data)
@@ -147,7 +147,7 @@ end
 
 """
 Initialize FastInterpolations.jl cubic splines for all (m, m') pairs.
-Uses `cubic_interp` which provides C² continuous with Natural boundary conditions.
+Uses `cubic_interp` which provides C² continuous with Zero-curvature boundary conditions.
 """
 function init_fast_interpolations_splines(psi_grid, data::Array{Float64,3})
     _, mpert, _ = size(data)

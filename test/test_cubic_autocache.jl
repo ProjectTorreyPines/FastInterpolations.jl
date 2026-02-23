@@ -380,7 +380,7 @@ end
         @test cache2 isa CubicSplineCache
         @test cache3 isa CubicSplineCache
 
-        # Natural and periodic caches should be different types
+        # ZeroCurv and periodic caches should be different types
         @test typeof(cache1) == typeof(cache2)
         @test typeof(cache1) != typeof(cache3)
     end
@@ -756,7 +756,7 @@ end
 @testset "Cubic Cache: Analytic Correctness" begin
     @testset "Analytic correctness: cubic polynomial with ZeroSlopeBC after mutation" begin
         # Cubic splines with CLAMPED BC (exact endpoint derivatives) reproduce
-        # cubic polynomials EXACTLY. Natural BC only reproduces linears.
+        # cubic polynomials EXACTLY. Zero-Curvature BC only reproduces linears.
         # This verifies autocache produces correct results after mutation.
 
         clear_cubic_cache!()
@@ -771,13 +771,13 @@ end
         y = f.(x)
         xq = [0.5, 1.25, 2.75, 4.0]
 
-        # Use Clamped BC with exact derivatives for polynomial exactness
+        # Use Zero-Slope BC with exact derivatives for polynomial exactness
         bc = BCPair(Deriv1(df(x[1])), Deriv1(df(x[end])))
 
         # Prime cache
         result1 = cubic_interp(x, y, xq; bc=bc, autocache=true)
 
-        # Verify initial result is exact (cubic spline reproduces cubics with clamped BC)
+        # Verify initial result is exact (cubic spline reproduces cubics with exact-derivative BC)
         expected1 = f.(xq)
         @test result1 ≈ expected1 atol=1e-12
 
@@ -803,7 +803,7 @@ end
 
     @testset "Analytic correctness: quadratic polynomial with ZeroSlopeBC" begin
         # Quadratic: f(x) = x² - 2x + 3, f'(x) = 2x - 2
-        # Clamped BC with correct derivatives should give exact results
+        # Zero-Slope BC with correct derivatives should give exact results
 
         clear_cubic_cache!()
 
@@ -814,7 +814,7 @@ end
         y = f.(x)
         xq = [-0.5, 0.5, 1.5, 2.5]
 
-        # Use clamped BC with exact derivatives
+        # Use Deriv1 BC with exact derivatives
         bc = BCPair(Deriv1(df(x[1])), Deriv1(df(x[end])))
 
         result1 = cubic_interp(x, y, xq; bc=bc, autocache=true)
@@ -833,7 +833,7 @@ end
 
     @testset "Analytic correctness: linear function with ZeroCurvBC" begin
         # Linear: f(x) = 3x + 2
-        # Natural BC (f''=0 at endpoints) is exact for linear functions
+        # Zero-Curvature BC (f''=0 at endpoints) is exact for linear functions
 
         clear_cubic_cache!()
 

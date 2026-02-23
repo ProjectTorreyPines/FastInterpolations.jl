@@ -124,8 +124,8 @@ _format_search(::Linear) = "Linear"
 _format_search(::LinearBinary{MAX}) where {MAX} = "LinearBinary{$MAX}"
 
 """Format boundary condition for display."""
-_format_bc(::ZeroCurvBC) = "Natural (S''=0 at ends)"
-_format_bc(::ZeroSlopeBC) = "Clamped (S'=0 at ends)"
+_format_bc(::ZeroCurvBC) = "ZeroCurv (S''=0 at ends)"
+_format_bc(::ZeroSlopeBC) = "ZeroSlope (S'=0 at ends)"
 _format_bc(bc::PeriodicBC{:inclusive}) = bc.period === nothing ? "Periodic" : "Periodic (period≈$(Printf.@sprintf("%.4g", bc.period)))"
 _format_bc(bc::PeriodicBC{:exclusive}) = bc.period === nothing ? "Periodic (exclusive)" : "Periodic (exclusive, period≈$(Printf.@sprintf("%.4g", bc.period)))"
 _format_bc(::PeriodicData) = "Periodic"
@@ -145,9 +145,9 @@ function _format_bc(bc::BCPair)
     right_str = _format_bc_point(bc.right)
     # Check for common named patterns
     if bc.left isa Deriv2 && bc.right isa Deriv2 && bc.left.val == 0 && bc.right.val == 0
-        return "Natural (S''=0 at ends)"
+        return "ZeroCurv (S''=0 at ends)"
     elseif bc.left isa Deriv1 && bc.right isa Deriv1 && bc.left.val == 0 && bc.right.val == 0
-        return "Clamped (S'=0 at ends)"
+        return "ZeroSlope (S'=0 at ends)"
     else
         return "$left_str | $right_str"
     end
@@ -314,12 +314,12 @@ _short_bc_name(::MinCurvFit) = "MinCurvFit"
 _short_bc_name(bc::Left) = "Left($(_format_bc_point(bc.bc)))"
 _short_bc_name(bc::Right) = "Right($(_format_bc_point(bc.bc)))"
 function _short_bc_name(bc::BCPair)
-    # Check for Natural: both ends have Deriv2 with val=0
+    # Check for ZeroCurv: both ends have Deriv2 with val=0
     if bc.left isa Deriv2 && bc.right isa Deriv2 && bc.left.val == 0 && bc.right.val == 0
-        return "Natural"
-    # Check for Clamped: both ends have Deriv1 with val=0
+        return "ZeroCurv"
+    # Check for ZeroSlope: both ends have Deriv1 with val=0
     elseif bc.left isa Deriv1 && bc.right isa Deriv1 && bc.left.val == 0 && bc.right.val == 0
-        return "Clamped"
+        return "ZeroSlope"
     else
         return "Custom"
     end
@@ -671,7 +671,7 @@ Print BC summary. If all axes have the same BC, show single line with "(all axes
 Otherwise show per-axis details in hierarchical format.
 
 Example output (all same):
-  └─ BC: Natural (S''=0 at ends) (all axes)
+  └─ BC: ZeroCurv (S''=0 at ends) (all axes)
 
 Example output (different):
   └─ BC:

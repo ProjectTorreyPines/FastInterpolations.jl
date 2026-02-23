@@ -593,7 +593,7 @@ import FastInterpolations: _get_cubic_cache
         cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
         cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
 
-        # Natural BC with autocache for comparison (in-place)
+        # Zero-Curvature BC with autocache for comparison (in-place)
         x_natural = collect(range(0.0, 1.0, 101))
         y_natural = sin.(2π .* x_natural)
         x_query_nat = [0.5]
@@ -605,7 +605,7 @@ import FastInterpolations: _get_cubic_cache
         # Periodic BC with autocache (cache hit - zero allocation)
         periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
 
-        # Both natural and periodic BC should be zero-allocation with autocache
+        # Both ZeroCurv and periodic BC should be zero-allocation with autocache
         @test natural_allocs <= ALLOC_THRESHOLD
         @test periodic_allocs <= ALLOC_THRESHOLD
     end
@@ -790,7 +790,7 @@ import FastInterpolations: _get_cubic_cache
         @test allocs_periodic == allocs_periodic2
 
         # Reasonable budget (cache lookup overhead)
-        @test allocs_natural <= 128    # Natural BC cache hit
+        @test allocs_natural <= 128    # Zero-Curvature BC cache hit
         @test allocs_periodic <= 128   # Periodic BC cache hit
     end
 

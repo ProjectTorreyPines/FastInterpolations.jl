@@ -36,7 +36,7 @@ Abstract supertype for all interpolant objects.
 - `LinearInterpolant{Tg, Tv}`: Piecewise linear interpolation
 - `ConstantInterpolant{Tg, Tv}`: Piecewise constant (step) interpolation
 - `QuadraticInterpolant{Tg, Tv}`: C1 piecewise quadratic spline
-- `CubicInterpolant{Tg, Tv}`: C2 natural/clamped/periodic cubic spline
+- `CubicInterpolant{Tg, Tv}`: C2 zero-curvature/zero-slope/periodic cubic spline
 
 # Note
 This is a pure type hierarchy - no methods are defined on `AbstractInterpolant` itself.

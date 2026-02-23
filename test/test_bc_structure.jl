@@ -86,13 +86,13 @@ using FastInterpolations: bc_structure
     # Singleton BC Types
     # ========================================
     @testset "ZeroCurvBC bc_structure" begin
-        @test bc_structure(ZeroCurvBC()) === Val(:natural)
+        @test bc_structure(ZeroCurvBC()) === Val(:zero_curv)
         # Multiple instances have same structure
         @test bc_structure(ZeroCurvBC()) === bc_structure(ZeroCurvBC())
     end
 
     @testset "ZeroSlopeBC bc_structure" begin
-        @test bc_structure(ZeroSlopeBC()) === Val(:clamped)
+        @test bc_structure(ZeroSlopeBC()) === Val(:zero_slope)
         @test bc_structure(ZeroSlopeBC()) === bc_structure(ZeroSlopeBC())
     end
 

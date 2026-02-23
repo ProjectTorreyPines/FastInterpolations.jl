@@ -34,7 +34,7 @@ Boundary conditions (`BCPair`) can specify complex values for derivatives. You c
 
 ```julia
 # Left: First derivative = 1.0 + 2.0im (Complex)
-# Right: Natural boundary (Second derivative = 0.0) (Real)
+# Right: Zero-curvature boundary (Second derivative = 0.0) (Real)
 bc = BCPair(Deriv1(1.0 + 2.0im), Deriv2(0.0))
 
 itp = cubic_interp(x, y; bc=bc)

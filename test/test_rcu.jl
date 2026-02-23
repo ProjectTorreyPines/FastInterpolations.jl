@@ -387,12 +387,12 @@ end  # RCU Bank
         @testset "Multiple bank types create multiple entries" begin
             FI.clear_cubic_cache!()
 
-            # Natural BC (Deriv2)
+            # Zero-Curvature BC (Deriv2)
             x1 = collect(range(0.0, 1.0, 51))
             y1 = sin.(2π .* x1)
             FI.cubic_interp(x1, y1, 0.5; autocache=true)
 
-            # Clamped BC (Deriv1)
+            # Zero-Slope BC (Deriv1)
             x2 = collect(range(0.0, 1.0, 51))
             y2 = cos.(2π .* x2)
             bc_pair = FI.BCPair(FI.Deriv1(1.0), FI.Deriv1(-1.0))

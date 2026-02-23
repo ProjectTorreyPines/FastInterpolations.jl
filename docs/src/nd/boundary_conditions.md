@@ -43,7 +43,7 @@ itp = cubic_interp((x, y, z), data3d;
 All [1D cubic BCs](../boundary-conditions/overview.md) are available per-axis:
 
 ```@example nd_boundary
-# Natural in x, periodic in y
+# ZeroCurv in x, periodic in y
 bc = (ZeroCurvBC(), PeriodicBC())
 itp = cubic_interp((x, y), data2d; bc=bc)
 ```

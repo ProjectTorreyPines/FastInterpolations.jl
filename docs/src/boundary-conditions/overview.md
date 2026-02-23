@@ -75,8 +75,8 @@ Cubic splines need constraints at **both** endpoints:
 
 ```julia
 # BCPair: independent constraints at each endpoint
-BCPair(Deriv2(0), Deriv2(0))      # Natural BC
-BCPair(Deriv1(0), Deriv1(0))      # Clamped BC
+BCPair(Deriv2(0), Deriv2(0))      # Zero-Curvature BC
+BCPair(Deriv1(0), Deriv1(0))      # Zero-Slope BC
 BCPair(Deriv1(1.0), Deriv2(0))    # Mixed
 
 # Convenience shortcuts

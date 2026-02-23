@@ -586,7 +586,7 @@ end
 
 @testset "CubicFit Mixed with Other BCs" begin
 
-    @testset "CubicFit Left, Deriv2(0) Right (Natural)" begin
+    @testset "CubicFit Left, Deriv2(0) Right (ZeroCurv)" begin
         f_mixed1(x) = sin(π * x)
         x_m1 = range(0.0, 1.0, 17)
         y_m1 = f_mixed1.(x_m1)
@@ -1124,7 +1124,7 @@ end
         y = collect(f_quad.(x))
         xi = [0.5, 1.0, 1.5]
 
-        # QuadraticFit left, Natural (Deriv2(0)) right
+        # QuadraticFit left, ZeroCurv (Deriv2(0)) right
         result_pn = cubic_interp(x, y, xi; bc=BCPair(QuadraticFit(), Deriv2(0.0)))
         @test all(isfinite.(result_pn))
 

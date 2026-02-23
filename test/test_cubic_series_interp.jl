@@ -1576,8 +1576,8 @@ end
 
         # Different BC types for each series
         sitp = cubic_interp(x, [y1, y2, y3]; bc=[
-            ZeroCurvBC(),                           # Natural BC
-            BCPair(Deriv1(0.0), Deriv1(0.0)),      # Clamped BC
+            ZeroCurvBC(),                          # Zero-Curvature BC
+            BCPair(Deriv1(0.0), Deriv1(0.0)),      # Zero-Slope BC
             BCPair(Deriv2(2.0), Deriv2(2.0)),      # Constant curvature = 2
         ])
 

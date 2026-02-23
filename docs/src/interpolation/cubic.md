@@ -29,8 +29,8 @@ Deriv2(v)   # S''(endpoint) = v  (curvature)
 
 **Examples**:
 ```julia
-BCPair(Deriv2(0), Deriv2(0))      # Natural: zero curvature at both ends
-BCPair(Deriv1(0), Deriv1(0))      # Clamped: zero slope at both ends
+BCPair(Deriv2(0), Deriv2(0))      # ZeroCurv: zero curvature at both ends
+BCPair(Deriv1(0), Deriv1(0))      # ZeroSlope: zero slope at both ends
 BCPair(Deriv1(1.0), Deriv2(0))    # Mixed: slope=1 at left, curvature=0 at right
 BCPair(Deriv2(-2.0), Deriv1(0.5)) # Mixed: curvature=-2 at left, slope=0.5 at right
 ```
@@ -129,15 +129,15 @@ x = range(0, 2π, 9)
 y = cos.(x)
 xq = range(0, 2π, 500)
 
-itp_natural = cubic_interp(x, y; bc=ZeroCurvBC())
+itp_zerocurv = cubic_interp(x, y; bc=ZeroCurvBC())
 itp_periodic = cubic_interp(x, y; bc=PeriodicBC())
 
 # Compare: S(x), S'(x), S''(x) for both BCs
-d1_nat, d2_nat = deriv1(itp_natural), deriv2(itp_natural)
+d1_nat, d2_nat = deriv1(itp_zerocurv), deriv2(itp_zerocurv)
 d1_per, d2_per = deriv1(itp_periodic), deriv2(itp_periodic)
 
 p = plot(layout=(3, 2), size=(900, 700), legend=:topright) # hide
-plot!(p[1], xq, itp_natural.(xq), label="ZeroCurvBC", linewidth=2) # hide
+plot!(p[1], xq, itp_zerocurv.(xq), label="ZeroCurvBC", linewidth=2) # hide
 plot!(p[1], xq, cos.(xq), label="cos(x)", linestyle=:dash, color=:black, alpha=0.7) # hide
 scatter!(p[1], x, y, label="data", markersize=5, color=:black) # hide
 title!(p[1], "ZeroCurvBC: S(x)") # hide

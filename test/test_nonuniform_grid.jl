@@ -7,9 +7,9 @@
 #
 # Organization (separate top-level testsets for reduced compilation overhead):
 # 1. Linear Interpolation
-# 2. Cubic - Natural BC
+# 2. Cubic - Zero-Curvature BC
 # 3. Cubic - Periodic BC
-# 4. Cubic - Clamped/Deriv1 BC
+# 4. Cubic - ZeroSlope/Deriv1 BC
 # 5. Cubic - Deriv2 BC
 # 6. Cubic - Mixed BCPair combinations
 # 7. Interpolant callable forms
@@ -186,7 +186,7 @@ const LINEAR = TestPolynomial{Float64}(
 end
 
 # ========================================
-# 2. Cubic Interpolation - Natural BC
+# 2. Cubic Interpolation - Zero-Curvature BC
 # ========================================
 @testset "Non-uniform Grid: Cubic - ZeroCurvBC" begin
 
@@ -466,7 +466,7 @@ end
 end
 
 # ========================================
-# 4. Cubic Interpolation - Clamped/Deriv1 BC
+# 4. Cubic Interpolation - ZeroSlope/Deriv1 BC
 # ========================================
 @testset "Non-uniform Grid: Cubic - Deriv1 BC" begin
 
@@ -833,8 +833,8 @@ end
         results = Dict{String, Float64}()
 
         for (name, bc) in [
-            ("Natural", ZeroCurvBC()),
-            ("Clamped", ZeroSlopeBC()),
+            ("ZeroCurv", ZeroCurvBC()),
+            ("ZeroSlope", ZeroSlopeBC()),
             ("D1-D1", BCPair(Deriv1(1.0), Deriv1(0.5))),
             ("D2-D2", BCPair(Deriv2(0.0), Deriv2(-1.0))),
             ("D3-D3", BCPair(Deriv3(0.0), Deriv3(1.0))),
@@ -886,8 +886,8 @@ end
         x0, xn = first(x), last(x)
 
         for (name, bc) in [
-            ("Natural", ZeroCurvBC()),
-            ("Clamped", ZeroSlopeBC()),
+            ("ZeroCurv", ZeroCurvBC()),
+            ("ZeroSlope", ZeroSlopeBC()),
             ("Deriv1", BCPair(Deriv1(CUBIC.f_prime(x0)), Deriv1(CUBIC.f_prime(xn)))),
             ("Deriv2", BCPair(Deriv2(CUBIC.f_double_prime(x0)), Deriv2(CUBIC.f_double_prime(xn)))),
         ]

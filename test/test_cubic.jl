@@ -286,7 +286,7 @@
 
     @testset "Regression test - Reference values" begin
         # Captured reference values to detect unintended changes
-        # These values are from the current implementation (Natural boundary condition)
+        # These values are from the current implementation (Zero-curvature boundary condition)
 
         # sin(2π*x) on [0,1] with 11 points
         x = collect(range(0.0, 1.0, 11))

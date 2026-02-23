@@ -506,7 +506,7 @@ end
         x = [0.0, 1.0, 2.0, 3.0]
         y = [0.0, 1.0, 4.0, 9.0]
 
-        # Left(Deriv2(0)) - natural at left (default)
+        # Left(Deriv2(0)) - zero curvature at left (default)
         v1 = quadratic_interp(x, y, 0.5; bc=Left(Deriv2(0.0)))
         @test isfinite(v1)
         @test 0.0 < v1 < 1.0  # between y[1] and y[2]
@@ -515,7 +515,7 @@ end
         v2 = quadratic_interp(x, y, 0.5; bc=Left(Deriv1(0.0)))
         @test isfinite(v2)
 
-        # Right(Deriv2(0)) - natural at right
+        # Right(Deriv2(0)) - zero curvature at right
         v3 = quadratic_interp(x, y, 0.5; bc=Right(Deriv2(0.0)))
         @test isfinite(v3)
 

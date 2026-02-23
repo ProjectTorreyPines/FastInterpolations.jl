@@ -134,7 +134,7 @@ end # Derivative Core
     @testset "Cubic kernels" begin
         # Test with known quadratic: f(x) = x² on [0, 1]
         # f(0) = 0, f(1) = 1, f'(x) = 2x, f''(x) = 2
-        # For natural spline on x² with enough points, z values approximate f''
+        # For zero-curvature spline on x² with enough points, z values approximate f''
         h = 1.0
         inv_h = inv(h)  # Precomputed reciprocal for kernel
         yL, yR = 0.0, 1.0
@@ -1412,8 +1412,8 @@ end # Derivative Allocations
         y = x .^ 2
 
         bc_types = [
-            (ZeroCurvBC(), "Natural"),
-            (ZeroSlopeBC(), "Clamped"),
+            (ZeroCurvBC(), "ZeroCurv"),
+            (ZeroSlopeBC(), "ZeroSlope"),
             (BCPair(Deriv1(0.5), Deriv1(1.5)), "Deriv1-Deriv1"),
             (BCPair(Deriv2(2.0), Deriv2(2.0)), "Deriv2-Deriv2"),
             (BCPair(Deriv1(0.5), Deriv2(2.0)), "Deriv1-Deriv2"),

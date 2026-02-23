@@ -57,13 +57,13 @@
     end
 
     @testset "CubicInterpolant show" begin
-        # Natural BC (default)
+        # Zero-Curvature BC (default)
         itp_natural = cubic_interp(x, y)
 
         compact_str = sprint(show, itp_natural)
         @test occursin("CubicInterpolant", compact_str)
         @test occursin("101 pts", compact_str)
-        @test occursin("Natural", compact_str)
+        @test occursin("ZeroCurv", compact_str)
 
         # Verbose show (Range grid → no Search row)
         verbose_str = sprint(show, MIME("text/plain"), itp_natural)
@@ -72,7 +72,7 @@
         @test occursin("Extrap:", verbose_str)
         @test !occursin("Search:", verbose_str)  # Range → no Search
         @test occursin("BC:", verbose_str)
-        @test occursin("Natural", verbose_str)
+        @test occursin("ZeroCurv", verbose_str)
 
         # Custom BC
         itp_custom = cubic_interp(x, y; bc=BCPair(Deriv1(0.5), Deriv2(0.0)))
@@ -159,7 +159,7 @@
         compact_str = sprint(show, sitp)
         @test occursin("CubicSeriesInterpolant", compact_str)
         @test occursin("101 × 3", compact_str)
-        @test occursin("Natural", compact_str)
+        @test occursin("ZeroCurv", compact_str)
 
         # Verbose show
         verbose_str = sprint(show, MIME("text/plain"), sitp)
@@ -313,10 +313,10 @@
         x_vec = collect(range(0.0, 1.0, 11))
         y_short = sin.(x_vec)
 
-        # Clamped BC (Deriv1(0) at both ends)
+        # Zero-Slope BC (Deriv1(0) at both ends)
         itp_clamped = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
         verbose_clamped = sprint(show, MIME("text/plain"), itp_clamped)
-        @test occursin("Clamped", verbose_clamped)
+        @test occursin("ZeroSlope", verbose_clamped)
 
         # Periodic BC (use PeriodicBC() API, internally becomes PeriodicData)
         y_periodic = sin.(2π .* x_vec)
@@ -344,7 +344,7 @@
         # Clamped (Deriv1)
         itp_clamped = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
         compact_clamped = sprint(show, itp_clamped)
-        @test occursin("Clamped", compact_clamped)
+        @test occursin("ZeroSlope", compact_clamped)
 
         # Periodic (use PeriodicBC() API)
         y_periodic = sin.(2π .* x_vec)
@@ -362,14 +362,14 @@
         itp_deriv2_nonzero = cubic_interp(x_vec, y_short; bc=BCPair(Deriv2(1.0), Deriv2(0.0)))
         compact_deriv2_nonzero = sprint(show, itp_deriv2_nonzero)
         @test occursin("Custom", compact_deriv2_nonzero)
-        @test !occursin("Natural", compact_deriv2_nonzero)
+        @test !occursin("ZeroCurv", compact_deriv2_nonzero)
 
-        # Bug fix: Deriv1 type but non-zero values should show "Custom", not "Clamped"
+        # Bug fix: Deriv1 type but non-zero values should show "Custom", not "ZeroSlope"
         # Note: autocache=false to avoid cache sharing with previous BC of same type
         itp_deriv1_nonzero = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(0.5), Deriv1(1.0)))
         compact_deriv1_nonzero = sprint(show, itp_deriv1_nonzero)
         @test occursin("Custom", compact_deriv1_nonzero)
-        @test !occursin("Clamped", compact_deriv1_nonzero)
+        @test !occursin("ZeroSlope", compact_deriv1_nonzero)
     end
 
     @testset "3rd+ derivative order formatting" begin
@@ -448,10 +448,10 @@
         @test occursin("Deriv2(1.0) | Deriv3(-5.0)", sprint(show, MIME("text/plain"), itp))
 
         itp = cubic_interp(x, y; bc=ZeroCurvBC())
-        @test occursin("Natural (S''=0 at ends)", sprint(show, MIME("text/plain"), itp))
+        @test occursin("ZeroCurv (S''=0 at ends)", sprint(show, MIME("text/plain"), itp))
 
         itp = cubic_interp(x, y; bc=ZeroSlopeBC())
-        @test occursin("Clamped (S'=0 at ends)", sprint(show, MIME("text/plain"), itp))
+        @test occursin("ZeroSlope (S'=0 at ends)", sprint(show, MIME("text/plain"), itp))
 
         itp = cubic_interp(x, y; bc=PeriodicBC())
         @test occursin("Periodic", sprint(show, MIME("text/plain"), itp))
@@ -485,8 +485,8 @@
         @test occursin("Right", FI._format_bc(Right(Deriv1(0.0))))
 
         # Direct verification of single-BC formatters (bypassed by BCPair logic)
-        @test FI._format_bc(ZeroCurvBC()) == "Natural (S''=0 at ends)"
-        @test FI._format_bc(ZeroSlopeBC()) == "Clamped (S'=0 at ends)"
+        @test FI._format_bc(ZeroCurvBC()) == "ZeroCurv (S''=0 at ends)"
+        @test FI._format_bc(ZeroSlopeBC()) == "ZeroSlope (S'=0 at ends)"
         @test FI._format_bc(PeriodicBC()) == "Periodic"
         @test FI._format_bc(Deriv1(1.0)) == "Deriv1(1.0)"
         @test FI._format_bc(Deriv2(2.0)) == "Deriv2(2.0)"
@@ -598,9 +598,9 @@
         x2 = range(0.0, 2.0, 15)
         f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
 
-        # Mixed BCs: Natural on axis 1, Clamped on axis 2
+        # Mixed BCs: ZeroCurv on axis 1, ZeroSlope on axis 2
         bc_natural = ZeroCurvBC()
-        bc_clamped = BCPair(Deriv1(0.0), Deriv1(0.0))  # Clamped
+        bc_clamped = BCPair(Deriv1(0.0), Deriv1(0.0))  # ZeroSlope
         itp_mixed = cubic_interp((x1, x2), f; bc=(bc_natural, bc_clamped))
 
         # Compact show should say "Mixed"
@@ -613,8 +613,8 @@
         @test occursin("BC:", verbose_str)
         @test occursin("x₁", verbose_str)
         @test occursin("x₂", verbose_str)
-        @test occursin("Natural", verbose_str)
-        @test occursin("Clamped", verbose_str)
+        @test occursin("ZeroCurv", verbose_str)
+        @test occursin("ZeroSlope", verbose_str)
     end
 
     @testset "CubicInterpolantND show with heterogeneous extrapolation modes" begin
@@ -779,12 +779,12 @@
     @testset "Direct test of _short_bc_name_nd" begin
         FI = FastInterpolations
 
-        # Same BCs on all axes (Natural = Deriv2(0) at both ends)
+        # Same BCs on all axes (ZeroCurv = Deriv2(0) at both ends)
         bc_natural = BCPair(Deriv2(0.0), Deriv2(0.0))
         bcs_same = (bc_natural, bc_natural)
-        @test FI._short_bc_name_nd(bcs_same) == "Natural"
+        @test FI._short_bc_name_nd(bcs_same) == "ZeroCurv"
 
-        # Different BCs on axes (Natural vs Clamped)
+        # Different BCs on axes (ZeroCurv vs ZeroSlope)
         bc_clamped = BCPair(Deriv1(0.0), Deriv1(0.0))
         bcs_mixed = (bc_natural, bc_clamped)
         @test FI._short_bc_name_nd(bcs_mixed) == "Mixed"

@@ -262,11 +262,11 @@ using FastInterpolations
         x = range(0.0, 1.0, 11)
         y = exp.(2im .* π .* x)  # Complex exponential
 
-        # Natural BC (default)
+        # Zero-Curvature BC (default)
         sitp_natural = cubic_interp(x, [y]; bc=ZeroCurvBC())
         @test sitp_natural isa CubicSeriesInterpolant{Float64, ComplexF64}
 
-        # Clamped BC
+        # Zero-Slope BC
         sitp_clamped = cubic_interp(x, [y]; bc=ZeroSlopeBC())
         @test sitp_clamped isa CubicSeriesInterpolant{Float64, ComplexF64}
 

@@ -416,7 +416,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             bc=PeriodicBC(; endpoint=:exclusive))
         @test itp_excl isa CubicInterpolantND
 
-        # Mixed: one axis exclusive periodic, other natural
+        # Mixed: one axis exclusive periodic, other ZeroCurv
         itp_mixed_excl = cubic_interp((x_excl, y_excl), data_excl;
             bc=(ZeroCurvBC(), PeriodicBC(; endpoint=:exclusive)))
         @test itp_mixed_excl isa CubicInterpolantND
@@ -681,7 +681,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             bc=PeriodicBC(), extrap=NoExtrap())
         @test itp.extraps === (WrapExtrap(), WrapExtrap())
 
-        # Mixed: one periodic, one natural
+        # Mixed: one periodic, one ZeroCurv
         itp_mixed = @inferred cubic_interp((x_p, y_p), data_p;
             bc=(ZeroCurvBC(), PeriodicBC()), extrap=NoExtrap())
         @test itp_mixed.extraps[1] === NoExtrap()
@@ -704,7 +704,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         @test itp isa CubicInterpolantND
         @test @inferred(itp((0.05, 0.1))) isa Float64
 
-        # Mixed: exclusive periodic axis + natural axis + NoExtrap
+        # Mixed: exclusive periodic axis + ZeroCurv axis + NoExtrap
         itp_mixed = @inferred cubic_interp((x_excl, y_excl), data_excl;
             bc=(ZeroCurvBC(), PeriodicBC(; endpoint=:exclusive)),
             extrap=NoExtrap())

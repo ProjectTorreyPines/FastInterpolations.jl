@@ -1,6 +1,7 @@
 using Test
 using FastInterpolations
 import DataInterpolations as DI
+import Dierckx
 import Interpolations as Itp
 using Random
 
@@ -181,6 +182,71 @@ const APPROX_REL_TOLERANCCE = 1e-14
                     result_data = itp(xq_with_extrap)
 
                     @test isapprox(result_fast, result_data; rtol=APPROX_REL_TOLERANCCE)
+                end
+            end
+        end
+
+        # Dierckx.jl wraps FITPACK which uses not-a-knot BC (s=0.0):
+        #   - Not-a-knot removes the 2nd and (n-1)th interior knots, forcing the first
+        #     two intervals (and last two) to share a single cubic polynomial.
+        #   - CubicFit (PolyFit{3}) fits a cubic through the first/last 4 points and
+        #     uses its derivative at the boundary as a clamped BC.
+        #   - These are NOT mathematically equivalent. They converge in the interior
+        #     (BC effects decay exponentially) but differ near boundaries by O(1e-4).
+        #   - Extrapolation diverges substantially (~6%) so is not compared.
+        @testset "vs Dierckx.jl (interior only, general function)" begin
+            # Interior query points excluding near-boundary regions
+            xq_deep_interior = [xi for xi in xq_interior if 0.1 ≤ xi ≤ 0.9]
+
+            for (grid_name, x) in pairs(grids)
+                @testset "Grid: $grid_name" begin
+                    y = target_f.(x)
+
+                    # FastInterpolations — default CubicFit BC
+                    result_fast = cubic_interp(x, y, xq_deep_interior)
+
+                    # Dierckx.jl — FITPACK not-a-knot cubic spline
+                    x_vec = collect(x)
+                    y_vec = collect(y)
+                    itp = Dierckx.Spline1D(x_vec, y_vec; k=3, s=0.0)
+                    result_dierckx = [itp(xi) for xi in xq_deep_interior]
+
+                    # Different BCs → interior values converge but residual BC influence
+                    # decays exponentially from boundaries (~1e-9 at 10% from edge)
+                    @test isapprox(result_fast, result_dierckx; rtol=1e-8)
+                end
+            end
+        end
+
+        # Both CubicFit and not-a-knot reproduce a global cubic polynomial exactly:
+        #   - CubicFit: 4-point fit on cubic data recovers the exact polynomial → exact slope
+        #   - Not-a-knot: first/last two intervals share one cubic → trivially satisfied
+        #   - Natural BC (ZeroCurvBC) does NOT satisfy this since f''(boundary) ≠ 0 in general
+        # Both CubicFit and not-a-knot reproduce a global cubic polynomial exactly:
+        #   - CubicFit: 4-point fit on cubic data recovers the exact polynomial → exact slope
+        #   - Not-a-knot: first/last two intervals share one cubic → trivially satisfied
+        #   - Natural BC (ZeroCurvBC) does NOT satisfy this since f''(boundary) ≠ 0 in general
+        # Interior + boundary points match at machine precision; extrapolation omitted
+        # because different FP arithmetic paths (FITPACK Fortran vs Julia Horner) amplify
+        # rounding errors with distance from the data range.
+        @testset "vs Dierckx.jl (cubic polynomial — exact reproduction)" begin
+            cubic_poly(x) = 2.0x^3 - 1.5x^2 + 0.7x - 0.3
+
+            for (grid_name, x) in pairs(grids)
+                @testset "Grid: $grid_name" begin
+                    y = cubic_poly.(x)
+
+                    # FastInterpolations — default CubicFit BC
+                    result_fast = cubic_interp(x, y, xq_interior)
+
+                    # Dierckx.jl — FITPACK not-a-knot
+                    x_vec = collect(x)
+                    y_vec = collect(y)
+                    itp = Dierckx.Spline1D(x_vec, y_vec; k=3, s=0.0)
+                    result_dierckx = [itp(xi) for xi in xq_interior]
+
+                    # Both reproduce cubic polynomials exactly → machine precision match
+                    @test isapprox(result_fast, result_dierckx; rtol=APPROX_REL_TOLERANCCE)
                 end
             end
         end

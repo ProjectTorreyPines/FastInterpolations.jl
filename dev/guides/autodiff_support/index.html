@@ -4,13 +4,13 @@
 
 x = 0.0:0.5:5.0
 y = sin.(x)
-itp = cubic_interp(x, y; extrap=:extension)
+itp = cubic_interp(x, y; extrap=ExtendExtrap())
 
 # Compute derivative via AD
 grad = ForwardDiff.derivative(itp, 1.5)</code></pre><pre><code class="language-julia hljs"># Works with one-shot API too
 grad_oneshot = ForwardDiff.derivative(q -&gt; cubic_interp(x, y, q), 1.5)</code></pre><pre><code class="language-julia hljs"># Series interpolant support
 y1, y2 = sin.(x), cos.(x)
-sitp = cubic_interp(x, [y1, y2]; extrap=:extension)
+sitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
 grad_series = ForwardDiff.derivative(q -&gt; sum(sitp(q)), 1.5)</code></pre><pre><code class="language-julia hljs"># Vector query: use broadcast + gradient (not derivative)
 xq = [0.5, 1.0, 1.5]
 grads = ForwardDiff.gradient(v -&gt; sum(itp.(v)), xq)</code></pre><p><strong>Supported:</strong></p><ul><li>Single interpolants (all types)</li><li>Series interpolants</li><li>One-shot API</li><li>Real and Complex values</li></ul><h2 id="Zygote.jl"><a class="docs-heading-anchor" href="#Zygote.jl">Zygote.jl</a><a id="Zygote.jl-1"></a><a class="docs-heading-anchor-permalink" href="#Zygote.jl" title="Permalink"></a></h2><p>Zygote uses source-to-source transformation for reverse-mode AD.</p><pre><code class="language-julia hljs">using Zygote, FastInterpolations
@@ -18,11 +18,11 @@ grads = ForwardDiff.gradient(v -&gt; sum(itp.(v)), xq)</code></pre><p><strong>Su
 # Note: Use collect() to convert range to Vector for Zygote compatibility
 x = collect(0.0:0.5:5.0)
 y = 2.0 .* x .+ 1.0
-itp = linear_interp(x, y; extrap=:extension)
+itp = linear_interp(x, y; extrap=ExtendExtrap())
 
 # Single interpolant works
 grad = Zygote.gradient(itp, 1.5)[1]  # Returns 2.0</code></pre><p><strong>Limitations:</strong></p><ul><li><p><strong>Coordinate arrays</strong>: Must use <code>Vector</code> (use <code>collect(range)</code> instead of <code>range</code>)</p></li><li><p><strong>Complex output</strong>: Must use <code>real()</code> or <code>imag()</code> wrapper</p><pre><code class="language-julia hljs">y_complex = (2.0 + 1.0im) .* x
-itp_complex = linear_interp(x, y_complex; extrap=:extension)
+itp_complex = linear_interp(x, y_complex; extrap=ExtendExtrap())
 
 # ❌ Zygote.gradient(itp_complex, 1.5) fails on complex output
 # ✅ Use this instead:
@@ -31,9 +31,9 @@ grad_imag = Zygote.gradient(q -&gt; imag(itp_complex(q)), 1.5)[1]</code></pre></
 
 x = 0.0:0.5:5.0
 y = x .^ 2
-itp = quadratic_interp(x, y; extrap=:extension)
+itp = quadratic_interp(x, y; extrap=ExtendExtrap())
 
 # Use autodiff API
 f(xq) = itp(xq)
 result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(2.25))
-grad = result[1][1]  # Returns 4.5 (= 2 * 2.25)</code></pre><p><strong>Supported:</strong></p><ul><li>Single interpolants (Linear, Constant, Quadratic, Cubic)</li><li>Linear one-shot API</li><li>Complex values via <code>real()</code>/<code>imag()</code></li></ul><p><strong>Not Supported:</strong></p><ul><li>Series interpolants (array mutation)</li><li><code>Enzyme.gradient</code> API</li></ul><div class="admonition is-warning" id="Platform-Compatibility-80ae6809f2f0b7f5"><header class="admonition-header">Platform Compatibility<a class="admonition-anchor" href="#Platform-Compatibility-80ae6809f2f0b7f5" title="Permalink"></a></header><div class="admonition-body"><p>Enzyme has known LLVM codegen issues on <strong>Windows + Julia 1.12+</strong> that can cause Access Violations. If you need Enzyme on this combination, please test your specific use case manually. Other platforms (Linux, macOS) work as expected.</p></div></div><h2 id="See-Also"><a class="docs-heading-anchor" href="#See-Also">See Also</a><a id="See-Also-1"></a><a class="docs-heading-anchor-permalink" href="#See-Also" title="Permalink"></a></h2><ul><li><a href="../autodiff_nd/">AD Support for N-Dimensional Interpolants</a> - ForwardDiff, Zygote, and optimization with <code>CubicInterpolantND</code></li></ul></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../complex_number_support/">« Complex Numbers</a><a class="docs-footer-nextpage" href="../autodiff_nd/">ND Interpolants »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.16.1 on <span class="colophon-date" title="Friday 20 February 2026 18:55">Friday 20 February 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+grad = result[1][1]  # Returns 4.5 (= 2 * 2.25)</code></pre><p><strong>Supported:</strong></p><ul><li>Single interpolants (Linear, Constant, Quadratic, Cubic)</li><li>Linear one-shot API</li><li>Complex values via <code>real()</code>/<code>imag()</code></li></ul><p><strong>Not Supported:</strong></p><ul><li>Series interpolants (array mutation)</li><li><code>Enzyme.gradient</code> API</li></ul><div class="admonition is-warning" id="Platform-Compatibility-80ae6809f2f0b7f5"><header class="admonition-header">Platform Compatibility<a class="admonition-anchor" href="#Platform-Compatibility-80ae6809f2f0b7f5" title="Permalink"></a></header><div class="admonition-body"><p>Enzyme has known LLVM codegen issues on <strong>Windows + Julia 1.12+</strong> that can cause Access Violations. If you need Enzyme on this combination, please test your specific use case manually. Other platforms (Linux, macOS) work as expected.</p></div></div><h2 id="See-Also"><a class="docs-heading-anchor" href="#See-Also">See Also</a><a id="See-Also-1"></a><a class="docs-heading-anchor-permalink" href="#See-Also" title="Permalink"></a></h2><ul><li><a href="../autodiff_nd/">AD Support for N-Dimensional Interpolants</a> - ForwardDiff, Zygote, and optimization with <code>CubicInterpolantND</code></li></ul></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../complex_number_support/">« Complex Numbers</a><a class="docs-footer-nextpage" href="../autodiff_nd/">ND Interpolants »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Monday 23 February 2026 01:35">Monday 23 February 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

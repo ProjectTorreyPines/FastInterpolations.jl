@@ -36,12 +36,12 @@ Every 1D argument becomes a Tuple in ND. This applies uniformly:
 | Grid | `x` | `(x, y)` or `(x, y, z)` |
 | Query (scalar) | `xq` | `(xq, yq)` |
 | Query (batch) | `xqs::Vector` | `(xqs, yqs)` |
-| BC | `bc=NaturalBC()` | `bc=(NaturalBC(), PeriodicBC())` |
+| BC | `bc=ZeroCurvBC()` | `bc=(ZeroCurvBC(), PeriodicBC())` |
 | Extrap | `extrap=ConstExtrap()` | `extrap=(ConstExtrap(), WrapExtrap())` |
 | Derivative | `deriv=DerivOp(1)` | `deriv=DerivOp(1, 0)` for ∂f/∂x |
 | Search | `search=Binary()` | `search=(Binary(), LinearBinary())` |
 
-**Broadcast rule**: A scalar value is broadcast to all axes. `bc=NaturalBC()` is equivalent to `bc=(NaturalBC(), NaturalBC())` in 2D.
+**Broadcast rule**: A scalar value is broadcast to all axes. `bc=ZeroCurvBC()` is equivalent to `bc=(ZeroCurvBC(), ZeroCurvBC())` in 2D.
 
 ---
 

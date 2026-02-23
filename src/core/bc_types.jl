@@ -29,8 +29,8 @@
 #   │       └── CubicFit    = PolyFit{3}  (4 points, O(h³))
 #   ├── BCPair{L,R}           # Both endpoints (L, R are PointBC subtypes)
 #   ├── PeriodicBC{E,P}       # Periodic BC (inclusive/exclusive endpoint)
-#   ├── NaturalBC             # Natural BC (singleton, normalized to Deriv2{Tv})
-#   ├── ClampedBC             # Clamped BC (singleton, normalized to Deriv1{Tv})
+#   ├── ZeroCurvBC             # Natural BC (singleton, normalized to Deriv2{Tv})
+#   ├── ZeroSlopeBC             # Clamped BC (singleton, normalized to Deriv1{Tv})
 #   ├── MinCurvFit            # Minimum curvature BC (singleton, quadratic splines)
 #   ├── Left{B}               # Endpoint wrapper: BC at left (x[1])
 #   └── Right{B}              # Endpoint wrapper: BC at right (x[end])
@@ -43,8 +43,8 @@ Type-free design: no type parameter on the abstract type.
 Concrete subtypes with values (Deriv1, Deriv2, Deriv3) carry their own Tv parameter.
 
 # Subtypes
-- `NaturalBC`: Natural BC (zero curvature at both ends) - singleton
-- `ClampedBC`: Clamped BC (zero slope at both ends) - singleton
+- `ZeroCurvBC`: Natural BC (zero curvature at both ends) - singleton
+- `ZeroSlopeBC`: Clamped BC (zero slope at both ends) - singleton
 - `PeriodicBC{E,P}`: Periodic boundary condition (inclusive/exclusive endpoint)
 - `PointBC`: Single-point derivative conditions (abstract)
 - `BCPair{L,R}`: Pair of left/right boundary conditions
@@ -230,7 +230,7 @@ function PeriodicBC(; endpoint::Symbol=:inclusive, period::Union{Real,Nothing}=n
 end
 
 """
-    NaturalBC <: AbstractBC
+    ZeroCurvBC <: AbstractBC
 
 Natural boundary condition: S''(endpoints) = 0 (zero curvature at both ends).
 Equivalent to `BCPair(Deriv2(0), Deriv2(0))`.
@@ -240,14 +240,14 @@ This is a singleton type (structure-only). Normalized to `BCPair` with
 
 # Example
 ```julia
-itp = cubic_interp(x, y; bc=NaturalBC())  # Default
+itp = cubic_interp(x, y; bc=ZeroCurvBC())  # Default
 itp = cubic_interp(x, y)                   # Same as above
 ```
 """
-struct NaturalBC <: AbstractBC end
+struct ZeroCurvBC <: AbstractBC end
 
 """
-    ClampedBC <: AbstractBC
+    ZeroSlopeBC <: AbstractBC
 
 Clamped boundary condition: S'(endpoints) = 0 (zero slope at both ends).
 Equivalent to `BCPair(Deriv1(0), Deriv1(0))`.
@@ -257,10 +257,10 @@ This is a singleton type (structure-only). Normalized to `BCPair` with
 
 # Example
 ```julia
-itp = cubic_interp(x, y; bc=ClampedBC())
+itp = cubic_interp(x, y; bc=ZeroSlopeBC())
 ```
 """
-struct ClampedBC <: AbstractBC end
+struct ZeroSlopeBC <: AbstractBC end
 
 """
     MinCurvFit <: AbstractBC
@@ -451,8 +451,8 @@ bc_structure(PolyFit{2}())               # → Val(:polyfit_2)
 @inline bc_structure(::Deriv2) = Val(:deriv2)
 @inline bc_structure(::Deriv3) = Val(:deriv3)
 @inline bc_structure(::PolyFit{D}) where {D} = Val(Symbol(:polyfit_, D))
-@inline bc_structure(::NaturalBC) = Val(:natural)
-@inline bc_structure(::ClampedBC) = Val(:clamped)
+@inline bc_structure(::ZeroCurvBC) = Val(:natural)
+@inline bc_structure(::ZeroSlopeBC) = Val(:clamped)
 @inline bc_structure(::PeriodicBC) = Val(:periodic)
 @inline bc_structure(::MinCurvFit) = Val(:mincurvfit)
 @inline bc_structure(bc::BCPair) = (bc_structure(bc.left), bc_structure(bc.right))
@@ -492,19 +492,19 @@ Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 `_normalize_bc` is called. This function only handles derivative BCs.
 
 # Accepted Input Types
-- `NaturalBC`: Natural BC (zero curvature) → BCPair(Deriv2(0), Deriv2(0))
-- `ClampedBC`: Clamped BC (zero slope) → BCPair(Deriv1(0), Deriv1(0))
+- `ZeroCurvBC`: Natural BC (zero curvature) → BCPair(Deriv2(0), Deriv2(0))
+- `ZeroSlopeBC`: Clamped BC (zero slope) → BCPair(Deriv1(0), Deriv1(0))
 - `BCPair`: Left/right BC pair (passed through with type promotion)
 - `PointBC` (Deriv1/Deriv2): Single BC applied symmetrically to both ends
 
 # Returns
 - `BCPair{L,R}`: Normalized boundary condition pair
 """
-# NaturalBC → BCPair(Deriv2(0), Deriv2(0))
-@inline _normalize_bc(::NaturalBC, ::Type{Tv}) where {Tv} = BCPair(Deriv2(zero(Tv)), Deriv2(zero(Tv)))
+# ZeroCurvBC → BCPair(Deriv2(0), Deriv2(0))
+@inline _normalize_bc(::ZeroCurvBC, ::Type{Tv}) where {Tv} = BCPair(Deriv2(zero(Tv)), Deriv2(zero(Tv)))
 
-# ClampedBC → BCPair(Deriv1(0), Deriv1(0))
-@inline _normalize_bc(::ClampedBC, ::Type{Tv}) where {Tv} = BCPair(Deriv1(zero(Tv)), Deriv1(zero(Tv)))
+# ZeroSlopeBC → BCPair(Deriv1(0), Deriv1(0))
+@inline _normalize_bc(::ZeroSlopeBC, ::Type{Tv}) where {Tv} = BCPair(Deriv1(zero(Tv)), Deriv1(zero(Tv)))
 
 # BCPair with type promotion (general case - promotes inner BCs to Tv)
 @inline function _normalize_bc(bc::BCPair, ::Type{Tv}) where {Tv}
@@ -656,7 +656,7 @@ ensuring type safety while allowing all valid cubic spline BC types.
 
 # Example
 ```julia
-itp = cubic_interp(x, y; bc=NaturalBC())   # NaturalBC → BCPair stored
+itp = cubic_interp(x, y; bc=ZeroCurvBC())   # ZeroCurvBC → BCPair stored
 itp.bc  # BCPair{Deriv2{Float64}, Deriv2{Float64}}
 
 itp = cubic_interp(x, y; bc=CubicFit())    # CubicFit → BCPair stored

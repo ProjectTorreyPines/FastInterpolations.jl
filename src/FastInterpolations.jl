@@ -46,7 +46,7 @@ export AbstractSearchPolicy, Binary, HintedBinary, Linear, LinearBinary
 
 # Boundary condition types
 export AbstractBC, PointBC, Deriv1, Deriv2, Deriv3, BCPair
-export NaturalBC, ClampedBC, PeriodicBC, MinCurvFit
+export ZeroCurvBC, ZeroSlopeBC, PeriodicBC, MinCurvFit
 export PolyFit, LinearFit, QuadraticFit, CubicFit  # Polynomial fitting BCs
 export Left, Right
 

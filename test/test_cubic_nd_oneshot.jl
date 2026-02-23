@@ -15,7 +15,7 @@ end
     # Correctness: One-shot vs Interpolant
     # ========================================
 
-    @testset "Scalar one-shot matches Interpolant (2D, NaturalBC)" begin
+    @testset "Scalar one-shot matches Interpolant (2D, ZeroCurvBC)" begin
         x = range(0.0, 2π, 21)
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
@@ -40,7 +40,7 @@ end
         @test val_oneshot ≈ val_interp atol=1e-14
     end
 
-    @testset "Scalar one-shot matches Interpolant (3D, NaturalBC)" begin
+    @testset "Scalar one-shot matches Interpolant (3D, ZeroCurvBC)" begin
         x = range(0.0, 2.0, 10)
         y = range(0.0, 1.0, 8)
         z = range(0.0, 3.0, 6)
@@ -182,7 +182,7 @@ end
         data = [sin(xi) * yj^2 for xi in x, yj in y]
         data[end, :] .= data[1, :]
 
-        bc = (PeriodicBC(), NaturalBC())
+        bc = (PeriodicBC(), ZeroCurvBC())
         itp = cubic_interp((x, y), data; bc=bc)
         val_oneshot = cubic_interp((x, y), data, (1.5, 0.5); bc=bc)
         val_interp = itp((1.5, 0.5))
@@ -219,7 +219,7 @@ end
         @testset "non-periodic dim-2 throws ArgumentError (mixed BCs)" begin
             data_bad = copy(data_ok)
             data_bad[3, end] = 999.0  # break dim-2 match while dim-1 is still ok
-            bc_mixed = (NaturalBC(), PeriodicBC())
+            bc_mixed = (ZeroCurvBC(), PeriodicBC())
             @test_throws ArgumentError cubic_interp((x, y), data_bad, (1.5, 0.8); bc=bc_mixed)
         end
 
@@ -255,7 +255,7 @@ end
             data_3d = [sin(xi) * cos(yj) + zk for xi in x3, yj in y3, zk in z3]
             data_3d[end, :, :] .= data_3d[1, :, :]   # pin dim 1
             data_3d[:, end, :] .= data_3d[:, 1, :]   # pin dim 2
-            bc3 = (PeriodicBC(), PeriodicBC(), NaturalBC())
+            bc3 = (PeriodicBC(), PeriodicBC(), ZeroCurvBC())
 
             @testset "valid 3D data passes" begin
                 @test_nowarn cubic_interp((x3, y3, z3), data_3d, (1.5, 0.8, 0.5); bc=bc3)
@@ -356,13 +356,13 @@ end
         data = [sin(xi) * yj^2 for xi in x, yj in y]
         data[end, :] .= data[1, :]
         query = (1.5, 0.5)
-        bc = (PeriodicBC(), NaturalBC())
+        bc = (PeriodicBC(), ZeroCurvBC())
         cubic_interp((x, y), data, query; bc=bc)
         cubic_interp((x, y), data, query; bc=bc)
         @allocated cubic_interp((x, y), data, query; bc=bc)
     end
 
-    @testset "Zero-alloc scalar one-shot (Mixed periodic/NaturalBC, Range grids)" begin
+    @testset "Zero-alloc scalar one-shot (Mixed periodic/ZeroCurvBC, Range grids)" begin
         @test _alloc_test_mixed_periodic() <= ND_ALLOC_THRESHOLD
     end
 
@@ -403,7 +403,7 @@ end
         @allocated cubic_interp((x, y), data, query; deriv=DerivOp(1, 0))
     end
 
-    @testset "Zero-alloc scalar one-shot (Vector grids, NaturalBC)" begin
+    @testset "Zero-alloc scalar one-shot (Vector grids, ZeroCurvBC)" begin
         @test _alloc_test_vector_natural() <= ND_ALLOC_THRESHOLD
     end
 

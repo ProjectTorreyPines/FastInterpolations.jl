@@ -216,7 +216,7 @@ Pool-based exclusive extension: zero-alloc after warmup.
 end
 
 """
-    cubic_interp!(output, x, y, x_query; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, deriv=EvalValue(), search=Binary())
+    cubic_interp!(output, x, y, x_query; bc=ZeroCurvBC(), extrap=NoExtrap(), autocache=true, deriv=EvalValue(), search=Binary())
 
 In-place cubic spline interpolation with optional automatic caching.
 """
@@ -225,7 +225,7 @@ In-place cubic spline interpolation with optional automatic caching.
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg};
-    bc::AbstractBC=NaturalBC(),
+    bc::AbstractBC=ZeroCurvBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::DerivOp=EvalValue(),
@@ -263,7 +263,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_query::Tg;
-    bc::AbstractBC=NaturalBC(),
+    bc::AbstractBC=ZeroCurvBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::DerivOp=EvalValue(),
@@ -313,7 +313,7 @@ function cubic_interp(
 end
 
 """
-    cubic_interp(x, y, x_query; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, deriv=EvalValue(), search=Binary()) -> Vector{T}
+    cubic_interp(x, y, x_query; bc=ZeroCurvBC(), extrap=NoExtrap(), autocache=true, deriv=EvalValue(), search=Binary()) -> Vector{T}
 
 Cubic spline interpolation with optional automatic caching.
 
@@ -343,7 +343,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tg};
-    bc::AbstractBC=NaturalBC(),
+    bc::AbstractBC=ZeroCurvBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::DerivOp=EvalValue(),
@@ -365,7 +365,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
-    bc::AbstractBC=NaturalBC(),
+    bc::AbstractBC=ZeroCurvBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::DerivOp=EvalValue(),
@@ -394,7 +394,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tq};
-    bc::AbstractBC=NaturalBC(),
+    bc::AbstractBC=ZeroCurvBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::DerivOp=EvalValue(),
@@ -410,7 +410,7 @@ function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
-    bc::AbstractBC=NaturalBC(),
+    bc::AbstractBC=ZeroCurvBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::DerivOp=EvalValue(),
@@ -428,7 +428,7 @@ function cubic_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_query::AbstractVector{Tq};
-    bc::AbstractBC=NaturalBC(),
+    bc::AbstractBC=ZeroCurvBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::DerivOp=EvalValue(),
@@ -459,7 +459,7 @@ function cubic_interp!(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     x_query::Tq;
-    bc::AbstractBC=NaturalBC(),
+    bc::AbstractBC=ZeroCurvBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::DerivOp=EvalValue(),

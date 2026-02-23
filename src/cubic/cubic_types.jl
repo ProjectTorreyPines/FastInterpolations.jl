@@ -69,7 +69,7 @@ On ARM64 (Apple Silicon), this reduces per-evaluation latency from ~10 cycles (f
 to ~4 cycles (fmul) — a 2.5× speedup in the inner loop.
 
 # Boundary Conditions
-- `bc=NaturalBC()` (default): Natural spline with z[1] = z[n+1] = 0
+- `bc=ZeroCurvBC()` (default): Natural spline with z[1] = z[n+1] = 0
 - `bc=PeriodicBC()`: Periodic spline with C2 continuity at boundaries
 """
 struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC,S<:AbstractGridSpacing{T}}

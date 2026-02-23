@@ -108,21 +108,21 @@ end
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
-        # NaturalBC (default)
-        itp_natural = cubic_interp((x, y), data; bc=NaturalBC())
+        # ZeroCurvBC (default)
+        itp_natural = cubic_interp((x, y), data; bc=ZeroCurvBC())
         @test itp_natural((1.0, 0.5)) isa Float64
 
-        # ClampedBC
-        itp_clamped = cubic_interp((x, y), data; bc=ClampedBC())
+        # ZeroSlopeBC
+        itp_clamped = cubic_interp((x, y), data; bc=ZeroSlopeBC())
         @test itp_clamped((1.0, 0.5)) isa Float64
 
         # Per-axis BC
-        itp_mixed = cubic_interp((x, y), data; bc=(NaturalBC(), ClampedBC()))
+        itp_mixed = cubic_interp((x, y), data; bc=(ZeroCurvBC(), ZeroSlopeBC()))
         @test itp_mixed((1.0, 0.5)) isa Float64
 
         # BCPair with specific derivatives
         itp_deriv = cubic_interp((x, y), data;
-            bc=(BCPair(Deriv1(0.0), Deriv1(0.0)), NaturalBC()))
+            bc=(BCPair(Deriv1(0.0), Deriv1(0.0)), ZeroCurvBC()))
         @test itp_deriv((1.0, 0.5)) isa Float64
     end
 
@@ -271,7 +271,7 @@ end
         y_short = range(0.0, 1.0, 3)
         data_short2 = [xi + yj for xi in x, yj in y_short]
         @test_throws ArgumentError cubic_interp((x, y_short), data_short2;
-            bc=(NaturalBC(), CubicFit()))
+            bc=(ZeroCurvBC(), CubicFit()))
 
         # Oneshot path also validates (triggers _validate_nd_bcs! in cubic_interp)
         @test_throws ArgumentError cubic_interp(

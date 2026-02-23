@@ -598,9 +598,9 @@ import FastInterpolations: _get_cubic_cache
         y_natural = sin.(2π .* x_natural)
         x_query_nat = [0.5]
         output_nat = similar(x_query_nat)
-        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=NaturalBC())  # Prime autocache
-        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=NaturalBC())  # Warmup
-        natural_allocs = @allocated cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=NaturalBC())
+        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=ZeroCurvBC())  # Prime autocache
+        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=ZeroCurvBC())  # Warmup
+        natural_allocs = @allocated cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=ZeroCurvBC())
 
         # Periodic BC with autocache (cache hit - zero allocation)
         periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
@@ -759,12 +759,12 @@ import FastInterpolations: _get_cubic_cache
         x = collect(range(0.0, 1.0, 51))
 
         # Prime cache for both BC types (using typed BC API)
-        _get_cubic_cache(x, NaturalBC())
+        _get_cubic_cache(x, ZeroCurvBC())
         _get_cubic_cache(x, PeriodicBC())
 
         # Runtime BC type version (simulating user code passing runtime variable)
         function cache_runtime_bc_natural()
-            _get_cubic_cache(x, NaturalBC())
+            _get_cubic_cache(x, ZeroCurvBC())
         end
         function cache_runtime_bc_periodic()
             _get_cubic_cache(x, PeriodicBC())
@@ -942,7 +942,7 @@ import FastInterpolations: _get_cubic_cache
         @test allocs <= ALLOC_THRESHOLD
     end
 
-    @testset "Dynamic BCPair values: symmetric Deriv1-Deriv1 type (ClampedBC equivalent)" begin
+    @testset "Dynamic BCPair values: symmetric Deriv1-Deriv1 type (ZeroSlopeBC equivalent)" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
         xi = 0.5

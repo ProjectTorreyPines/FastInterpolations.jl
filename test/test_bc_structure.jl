@@ -85,15 +85,15 @@ using FastInterpolations: bc_structure
     # ========================================
     # Singleton BC Types
     # ========================================
-    @testset "NaturalBC bc_structure" begin
-        @test bc_structure(NaturalBC()) === Val(:natural)
+    @testset "ZeroCurvBC bc_structure" begin
+        @test bc_structure(ZeroCurvBC()) === Val(:natural)
         # Multiple instances have same structure
-        @test bc_structure(NaturalBC()) === bc_structure(NaturalBC())
+        @test bc_structure(ZeroCurvBC()) === bc_structure(ZeroCurvBC())
     end
 
-    @testset "ClampedBC bc_structure" begin
-        @test bc_structure(ClampedBC()) === Val(:clamped)
-        @test bc_structure(ClampedBC()) === bc_structure(ClampedBC())
+    @testset "ZeroSlopeBC bc_structure" begin
+        @test bc_structure(ZeroSlopeBC()) === Val(:clamped)
+        @test bc_structure(ZeroSlopeBC()) === bc_structure(ZeroSlopeBC())
     end
 
     @testset "PeriodicBC bc_structure" begin
@@ -213,10 +213,10 @@ using FastInterpolations: bc_structure
         @test bc_structure(Deriv2(0.0)) !== bc_structure(Deriv3(0.0))
 
         # Singletons are distinct
-        @test bc_structure(NaturalBC()) !== bc_structure(ClampedBC())
-        @test bc_structure(NaturalBC()) !== bc_structure(PeriodicBC())
-        @test bc_structure(ClampedBC()) !== bc_structure(PeriodicBC())
-        @test bc_structure(MinCurvFit()) !== bc_structure(NaturalBC())
+        @test bc_structure(ZeroCurvBC()) !== bc_structure(ZeroSlopeBC())
+        @test bc_structure(ZeroCurvBC()) !== bc_structure(PeriodicBC())
+        @test bc_structure(ZeroSlopeBC()) !== bc_structure(PeriodicBC())
+        @test bc_structure(MinCurvFit()) !== bc_structure(ZeroCurvBC())
 
         # PolyFit degrees are distinct
         @test bc_structure(PolyFit{1}()) !== bc_structure(PolyFit{2}())

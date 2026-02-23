@@ -498,8 +498,8 @@ end # Derivative Kernels
         y = sin.(x)
 
         bc_types = [
-            NaturalBC(),
-            ClampedBC(),
+            ZeroCurvBC(),
+            ZeroSlopeBC(),
             BCPair(Deriv1(1.0), Deriv1(cos(1.0))),
         ]
 
@@ -1329,8 +1329,8 @@ end # Derivative Edge Cases
         y = x .^ 2
 
         bc_types = [
-            NaturalBC(),
-            ClampedBC(),
+            ZeroCurvBC(),
+            ZeroSlopeBC(),
             BCPair(Deriv1(1.0), Deriv1(1.0)),
             BCPair(Deriv2(2.0), Deriv2(0.0)),
         ]
@@ -1412,8 +1412,8 @@ end # Derivative Allocations
         y = x .^ 2
 
         bc_types = [
-            (NaturalBC(), "Natural"),
-            (ClampedBC(), "Clamped"),
+            (ZeroCurvBC(), "Natural"),
+            (ZeroSlopeBC(), "Clamped"),
             (BCPair(Deriv1(0.5), Deriv1(1.5)), "Deriv1-Deriv1"),
             (BCPair(Deriv2(2.0), Deriv2(2.0)), "Deriv2-Deriv2"),
             (BCPair(Deriv1(0.5), Deriv2(2.0)), "Deriv1-Deriv2"),
@@ -1511,7 +1511,7 @@ end # Derivative Allocations
 
         bc_types = [
             CubicSplineCache(x),
-            CubicSplineCache(x; bc=ClampedBC()),
+            CubicSplineCache(x; bc=ZeroSlopeBC()),
             CubicSplineCache(x; bc=BCPair(Deriv2(2.0), Deriv2(2.0))),
             CubicSplineCache(x; bc=PeriodicBC()),
         ]
@@ -1694,7 +1694,7 @@ end # Derivative Comprehensive Coverage
         y = sin.(x)
 
         # Non-periodic BCs work with regular sin data
-        for bc in [NaturalBC(), ClampedBC()]
+        for bc in [ZeroCurvBC(), ZeroSlopeBC()]
             itp = cubic_interp(x, y; bc=bc)
             d1 = deriv1(itp)
             d2 = deriv2(itp)

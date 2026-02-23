@@ -447,10 +447,10 @@
         itp = cubic_interp(x, y; bc=BCPair(Deriv2(1.0), Deriv3(-5.0)))
         @test occursin("Deriv2(1.0) | Deriv3(-5.0)", sprint(show, MIME("text/plain"), itp))
 
-        itp = cubic_interp(x, y; bc=NaturalBC())
+        itp = cubic_interp(x, y; bc=ZeroCurvBC())
         @test occursin("Natural (S''=0 at ends)", sprint(show, MIME("text/plain"), itp))
 
-        itp = cubic_interp(x, y; bc=ClampedBC())
+        itp = cubic_interp(x, y; bc=ZeroSlopeBC())
         @test occursin("Clamped (S'=0 at ends)", sprint(show, MIME("text/plain"), itp))
 
         itp = cubic_interp(x, y; bc=PeriodicBC())
@@ -485,8 +485,8 @@
         @test occursin("Right", FI._format_bc(Right(Deriv1(0.0))))
 
         # Direct verification of single-BC formatters (bypassed by BCPair logic)
-        @test FI._format_bc(NaturalBC()) == "Natural (S''=0 at ends)"
-        @test FI._format_bc(ClampedBC()) == "Clamped (S'=0 at ends)"
+        @test FI._format_bc(ZeroCurvBC()) == "Natural (S''=0 at ends)"
+        @test FI._format_bc(ZeroSlopeBC()) == "Clamped (S'=0 at ends)"
         @test FI._format_bc(PeriodicBC()) == "Periodic"
         @test FI._format_bc(Deriv1(1.0)) == "Deriv1(1.0)"
         @test FI._format_bc(Deriv2(2.0)) == "Deriv2(2.0)"
@@ -599,7 +599,7 @@
         f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
 
         # Mixed BCs: Natural on axis 1, Clamped on axis 2
-        bc_natural = NaturalBC()
+        bc_natural = ZeroCurvBC()
         bc_clamped = BCPair(Deriv1(0.0), Deriv1(0.0))  # Clamped
         itp_mixed = cubic_interp((x1, x2), f; bc=(bc_natural, bc_clamped))
 

@@ -293,7 +293,7 @@ using FastInterpolations
 
         @testset "NTuple BC resolution" begin
             # Per-axis BCs
-            itp = cubic_interp((x, y), data; bc=(NaturalBC(), ClampedBC()))
+            itp = cubic_interp((x, y), data; bc=(ZeroCurvBC(), ZeroSlopeBC()))
             @test itp((1.0, 0.5)) isa Float64
 
             # Per-axis with different PolyFit
@@ -303,8 +303,8 @@ using FastInterpolations
 
         @testset "BC resolution error paths" begin
             # Wrong number of BCs - rejected by keyword type assertion
-            @test_throws TypeError cubic_interp((x, y), data; bc=(NaturalBC(),))
-            @test_throws TypeError cubic_interp((x, y), data; bc=(NaturalBC(), NaturalBC(), NaturalBC()))
+            @test_throws TypeError cubic_interp((x, y), data; bc=(ZeroCurvBC(),))
+            @test_throws TypeError cubic_interp((x, y), data; bc=(ZeroCurvBC(), ZeroCurvBC(), ZeroCurvBC()))
         end
 
         @testset "Extrap resolution error paths" begin
@@ -451,7 +451,7 @@ using FastInterpolations
         end
 
         @testset "Show with mixed BCs" begin
-            itp_mixed = cubic_interp((x, y), data; bc=(NaturalBC(), ClampedBC()))
+            itp_mixed = cubic_interp((x, y), data; bc=(ZeroCurvBC(), ZeroSlopeBC()))
 
             buf = IOBuffer()
             show(buf, MIME("text/plain"), itp_mixed)

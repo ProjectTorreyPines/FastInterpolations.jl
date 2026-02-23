@@ -73,7 +73,7 @@ using FastInterpolations
     end
 
     @testset "Cubic Natural BC with Wrap Extrapolation" begin
-        # bc=NaturalBC() uses natural BC coefficients, but extrap=WrapExtrap() wraps coordinates
+        # bc=ZeroCurvBC() uses natural BC coefficients, but extrap=WrapExtrap() wraps coordinates
         # Unlike bc=PeriodicBC(), this does NOT check y[1] ≈ y[end]
 
         N = 101
@@ -82,38 +82,38 @@ using FastInterpolations
 
         @testset "Basic wrapping with natural BC" begin
             # Interior point
-            @test cubic_interp(x, y_sin, π/4; bc=NaturalBC(), extrap=WrapExtrap()) ≈ sin(π/4) atol=1e-4
+            @test cubic_interp(x, y_sin, π/4; bc=ZeroCurvBC(), extrap=WrapExtrap()) ≈ sin(π/4) atol=1e-4
 
             # Outside domain - should wrap
-            val_in = cubic_interp(x, y_sin, 0.5; bc=NaturalBC(), extrap=WrapExtrap())
-            val_wrapped = cubic_interp(x, y_sin, 2π + 0.5; bc=NaturalBC(), extrap=WrapExtrap())
+            val_in = cubic_interp(x, y_sin, 0.5; bc=ZeroCurvBC(), extrap=WrapExtrap())
+            val_wrapped = cubic_interp(x, y_sin, 2π + 0.5; bc=ZeroCurvBC(), extrap=WrapExtrap())
             @test val_in ≈ val_wrapped atol=1e-10
 
             # Negative - should wrap
-            val_neg = cubic_interp(x, y_sin, -0.5; bc=NaturalBC(), extrap=WrapExtrap())
-            val_equiv = cubic_interp(x, y_sin, 2π - 0.5; bc=NaturalBC(), extrap=WrapExtrap())
+            val_neg = cubic_interp(x, y_sin, -0.5; bc=ZeroCurvBC(), extrap=WrapExtrap())
+            val_equiv = cubic_interp(x, y_sin, 2π - 0.5; bc=ZeroCurvBC(), extrap=WrapExtrap())
             @test val_neg ≈ val_equiv atol=1e-10
 
             # Multiple periods
-            @test cubic_interp(x, y_sin, 4π + 1.0; bc=NaturalBC(), extrap=WrapExtrap()) ≈ cubic_interp(x, y_sin, 1.0; bc=NaturalBC(), extrap=WrapExtrap()) atol=1e-10
+            @test cubic_interp(x, y_sin, 4π + 1.0; bc=ZeroCurvBC(), extrap=WrapExtrap()) ≈ cubic_interp(x, y_sin, 1.0; bc=ZeroCurvBC(), extrap=WrapExtrap()) atol=1e-10
         end
 
         @testset "Vector and in-place interface" begin
             x_query = [0.5, 2π + 0.5, -0.5, 4π + 1.0]
-            result = cubic_interp(x, y_sin, x_query; bc=NaturalBC(), extrap=WrapExtrap())
+            result = cubic_interp(x, y_sin, x_query; bc=ZeroCurvBC(), extrap=WrapExtrap())
 
             @test result[1] ≈ sin(0.5) atol=1e-4
             @test result[2] ≈ result[1] atol=1e-10  # 2π + 0.5 wraps to 0.5
 
             # In-place
-            cache = CubicSplineCache(x; bc=NaturalBC())
+            cache = CubicSplineCache(x; bc=ZeroCurvBC())
             out = similar(result)
             cubic_interp!(out, cache, collect(y_sin), x_query; extrap=WrapExtrap())
             @test out ≈ result atol=1e-10
         end
 
         @testset "CubicInterpolant with wrap extrap" begin
-            itp = cubic_interp(x, y_sin; bc=NaturalBC(), extrap=WrapExtrap())
+            itp = cubic_interp(x, y_sin; bc=ZeroCurvBC(), extrap=WrapExtrap())
 
             # Test scalar calls
             @test itp(π/4) ≈ sin(π/4) atol=1e-4
@@ -126,14 +126,14 @@ using FastInterpolations
 
         @testset "Sawtooth/triangle wave pattern (y[1] != y[end])" begin
             # Linear ramp: y[1] = 0, y[end] = 2π (NOT equal)
-            # This is the key use case for bc=NaturalBC() + extrap=WrapExtrap()
+            # This is the key use case for bc=ZeroCurvBC() + extrap=WrapExtrap()
             x_ramp = range(0.0, 1.0, 51)
             y_ramp = collect(x_ramp)  # [0, 0.02, ..., 1.0]
 
             @test y_ramp[1] != y_ramp[end]  # Confirm endpoints differ
 
             # Should NOT throw (unlike bc=PeriodicBC() which requires y[1] ≈ y[end])
-            itp = cubic_interp(x_ramp, y_ramp; bc=NaturalBC(), extrap=WrapExtrap())
+            itp = cubic_interp(x_ramp, y_ramp; bc=ZeroCurvBC(), extrap=WrapExtrap())
 
             # Test wrap behavior
             @test itp(0.5) ≈ 0.5 atol=1e-4
@@ -149,12 +149,12 @@ using FastInterpolations
             @test val_after ≈ 0.0 atol=1e-3   # Wraps to beginning
         end
 
-        @testset "Comparison: bc=NaturalBC()+wrap vs bc=PeriodicBC()" begin
+        @testset "Comparison: bc=ZeroCurvBC()+wrap vs bc=PeriodicBC()" begin
             # For truly periodic functions (sin), both give similar results
             # but they use DIFFERENT spline coefficients (different BC)
 
             # Create interpolants with different BCs
-            itp_nat = cubic_interp(x, y_sin; bc=NaturalBC(), extrap=WrapExtrap())
+            itp_nat = cubic_interp(x, y_sin; bc=ZeroCurvBC(), extrap=WrapExtrap())
             itp_per = cubic_interp(x, y_sin; bc=PeriodicBC())
 
             # Interior values are similar for periodic functions
@@ -281,7 +281,7 @@ using FastInterpolations
             @test abs(deriv2_left) < 1.0                 # Should be -sin(0) ≈ 0
 
             # ===== Compare with natural BC (should differ at boundaries) =====
-            cache_natural = CubicSplineCache(x_dense; bc=NaturalBC())
+            cache_natural = CubicSplineCache(x_dense; bc=ZeroCurvBC())
             f_nat(t) = cubic_interp(cache_natural, y_dense, [t])[1]
 
             # Natural BC forces S''(x_min) = S''(x_max) = 0, which matches sin(x)
@@ -332,7 +332,7 @@ using FastInterpolations
         x = range(0.0, 2π, N)
         y = sin.(x)
 
-        cache_natural = CubicSplineCache(x; bc=NaturalBC())
+        cache_natural = CubicSplineCache(x; bc=ZeroCurvBC())
         cache_periodic = CubicSplineCache(x; bc=PeriodicBC())
 
         # Interior values should be similar

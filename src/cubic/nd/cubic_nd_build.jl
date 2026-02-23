@@ -330,7 +330,7 @@ When computing higher-order mixed partials (e.g., ∂²f/∂x∂y from ∂f/∂x
 1. `p_src == 1` (pure derivative, source is f): Use specified BC unchanged
 2. `_is_periodic_bc(bc)`: Always propagate periodic BC for consistency
 3. `length(grid) ≥ 4` and PolyFit available: Use CubicFit for better edge accuracy
-4. Fallback: Use NaturalBC
+4. Fallback: Use ZeroCurvBC
 
 # Arguments
 - `bc::AbstractBC`: User-specified boundary condition
@@ -356,8 +356,8 @@ When computing higher-order mixed partials (e.g., ∂²f/∂x∂y from ∂f/∂x
         return CubicFit()
     end
 
-    # Fallback: NaturalBC
-    return NaturalBC()
+    # Fallback: ZeroCurvBC
+    return ZeroCurvBC()
 end
 
 # ========================================
@@ -521,7 +521,7 @@ For d = 1 to N:
 
 # Notes
 - Validates periodic data if PeriodicBC is specified
-- Uses batch SIMD optimization for d≥2 with NaturalBC
+- Uses batch SIMD optimization for d≥2 with ZeroCurvBC
 """
 function _compute_nd_partials!(
     partials::AbstractArray{Tv, NP1},

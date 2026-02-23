@@ -70,9 +70,9 @@ else
                 y = sin.(2π .* x)
 
                 bc = if i % 3 == 0
-                    NaturalBC()
+                    ZeroCurvBC()
                 elseif i % 3 == 1
-                    ClampedBC()
+                    ZeroSlopeBC()
                 else
                     y[end] = y[1]
                     PeriodicBC()
@@ -197,7 +197,7 @@ end
         FastInterpolations.clear_cubic_cache!()
         x = collect(range(0.0, 1.0, 51))
         x_query = [0.25, 0.5, 0.75]
-        cache = FastInterpolations._get_cubic_cache(x, NaturalBC())
+        cache = FastInterpolations._get_cubic_cache(x, ZeroCurvBC())
         n_iter = 300
 
         max_err = Ref(0.0)

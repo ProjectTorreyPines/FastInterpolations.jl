@@ -16,7 +16,7 @@ Resolve boundary condition input to canonical N-tuple of QuadraticBC.
 
 Converts common BC types to their quadratic equivalents:
 - `QuadraticBC` (Left, Right, MinCurvFit): pass through
-- `NaturalBC()`: → Right(Deriv2(0)) (zero curvature at right endpoint)
+- `ZeroCurvBC()`: → Right(Deriv2(0)) (zero curvature at right endpoint)
 - `CubicFit()`: → Right(CubicFit())
 - `QuadraticFit()`: → Right(QuadraticFit())
 - `LinearFit()`: → Right(LinearFit())
@@ -30,7 +30,7 @@ end
 end
 
 # Convert common non-quadratic BCs to quadratic equivalents
-@inline function _resolve_bcs_nd_quadratic(bc::NaturalBC, ::Val{N}) where {N}
+@inline function _resolve_bcs_nd_quadratic(bc::ZeroCurvBC, ::Val{N}) where {N}
     ntuple(_ -> Right(Deriv2(0.0)), Val(N))
 end
 
@@ -57,11 +57,11 @@ end
 Convert an AbstractBC to its QuadraticBC equivalent.
 """
 @inline _to_quadratic_bc(bc::QuadraticBC) = bc
-@inline _to_quadratic_bc(::NaturalBC) = Right(Deriv2(0.0))
+@inline _to_quadratic_bc(::ZeroCurvBC) = Right(Deriv2(0.0))
 @inline _to_quadratic_bc(bc::PolyFit) = Right(bc)
 @inline _to_quadratic_bc(bc::AbstractBC) = throw(ArgumentError(
     "Unsupported BC for quadratic ND: $(typeof(bc)). " *
-    "Use Left(...), Right(...), MinCurvFit, NaturalBC(), or PolyFit variants."
+    "Use Left(...), Right(...), MinCurvFit, ZeroCurvBC(), or PolyFit variants."
 ))
 
 # ========================================

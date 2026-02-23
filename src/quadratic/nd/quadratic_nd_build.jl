@@ -152,7 +152,7 @@ Select the effective boundary condition for computing a quadratic mixed partial.
 1. `p_src == 1` (pure derivative, source is f): Use specified BC unchanged
 2. Periodic BC: Always propagate
 3. With enough grid points (≥3): Use Right(QuadraticFit()) for mixed partials
-4. Fallback: Right(NaturalBC()) → Right(Deriv2(0))
+4. Fallback: Right(ZeroCurvBC()) → Right(Deriv2(0))
 """
 @inline function _get_effective_bc_quadratic(bc::QuadraticBC, p_src::Int, grid::AbstractVector)
     p_src == 1 && return bc

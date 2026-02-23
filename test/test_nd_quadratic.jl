@@ -125,9 +125,9 @@ end
             @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol=1e-10
         end
 
-        @testset "NaturalBC()" begin
+        @testset "ZeroCurvBC()" begin
             data_sin = [sin(xi) * cos(yi) for xi in x, yi in y]
-            itp = quadratic_interp((x, y), data_sin; bc=NaturalBC())
+            itp = quadratic_interp((x, y), data_sin; bc=ZeroCurvBC())
             @test isapprox(itp((1.0, 0.5)), sin(1.0) * cos(0.5); atol=2e-3)
         end
 
@@ -523,9 +523,9 @@ end
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; bc=NaturalBC())
-        quadratic_interp((x, y), data, query; bc=NaturalBC())
-        @allocated quadratic_interp((x, y), data, query; bc=NaturalBC())
+        quadratic_interp((x, y), data, query; bc=ZeroCurvBC())
+        quadratic_interp((x, y), data, query; bc=ZeroCurvBC())
+        @allocated quadratic_interp((x, y), data, query; bc=ZeroCurvBC())
     end
 
     function _alloc_test_quadratic_extrap_constant()
@@ -543,9 +543,9 @@ end
         y = range(0.0, 2π, 21)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
         query = (1.5, 0.8)
-        quadratic_interp((x, y), data, query; bc=NaturalBC(), extrap=WrapExtrap())
-        quadratic_interp((x, y), data, query; bc=NaturalBC(), extrap=WrapExtrap())
-        @allocated quadratic_interp((x, y), data, query; bc=NaturalBC(), extrap=WrapExtrap())
+        quadratic_interp((x, y), data, query; bc=ZeroCurvBC(), extrap=WrapExtrap())
+        quadratic_interp((x, y), data, query; bc=ZeroCurvBC(), extrap=WrapExtrap())
+        @allocated quadratic_interp((x, y), data, query; bc=ZeroCurvBC(), extrap=WrapExtrap())
     end
 
     function _alloc_test_quadratic_mixed_mode()
@@ -582,7 +582,7 @@ end
             @test _alloc_test_quadratic_deriv_val() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, NaturalBC)" begin
+        @testset "zero-alloc scalar (Range grids, ZeroCurvBC)" begin
             @test _alloc_test_quadratic_natural_bc() <= ND_ALLOC_THRESHOLD
         end
 

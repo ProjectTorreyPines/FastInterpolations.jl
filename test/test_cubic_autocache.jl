@@ -334,7 +334,7 @@ end
         x_view = @view x_full[1:51]
         y_view = @view y_full[1:51]
 
-        cache = _get_cubic_cache(x_view, NaturalBC())
+        cache = _get_cubic_cache(x_view, ZeroCurvBC())
         @test cache isa CubicSplineCache
 
         # Cache should store collected Vector, not the view
@@ -348,7 +348,7 @@ end
         x_full = Float32.(collect(range(0.0, 1.0, 101)))
         x_view = @view x_full[1:51]
 
-        cache = _get_cubic_cache(x_view, NaturalBC())
+        cache = _get_cubic_cache(x_view, ZeroCurvBC())
         @test cache isa CubicSplineCache{Float32}
     end
 
@@ -357,12 +357,12 @@ end
 
         # Integer range → should convert to Float64
         x_int = 0:10
-        cache_int = _get_cubic_cache(x_int, NaturalBC())
+        cache_int = _get_cubic_cache(x_int, ZeroCurvBC())
         @test cache_int isa CubicSplineCache{Float64}
 
         # Float16 vector → kept as Float16 (native AbstractFloat)
         x_f16 = Float16.(collect(range(0.0, 1.0, 11)))
-        cache_f16 = _get_cubic_cache(x_f16, NaturalBC())
+        cache_f16 = _get_cubic_cache(x_f16, ZeroCurvBC())
         @test cache_f16 isa CubicSplineCache{Float16}
     end
 
@@ -372,8 +372,8 @@ end
         x = collect(range(0.0, 1.0, 51))
 
         # Keyword API should work
-        cache1 = _get_cubic_cache(x)  # default bc=NaturalBC()
-        cache2 = _get_cubic_cache(x; bc=NaturalBC())
+        cache1 = _get_cubic_cache(x)  # default bc=ZeroCurvBC()
+        cache2 = _get_cubic_cache(x; bc=ZeroCurvBC())
         cache3 = _get_cubic_cache(x; bc=PeriodicBC())
 
         @test cache1 isa CubicSplineCache
@@ -393,9 +393,9 @@ end
         x_range = range(0.0, 1.0, 51)
 
         # All input types should work with Val API
-        c1 = _get_cubic_cache(x64, NaturalBC())
-        c2 = _get_cubic_cache(x32, NaturalBC())
-        c3 = _get_cubic_cache(x_range, NaturalBC())
+        c1 = _get_cubic_cache(x64, ZeroCurvBC())
+        c2 = _get_cubic_cache(x32, ZeroCurvBC())
+        c3 = _get_cubic_cache(x_range, ZeroCurvBC())
         c4 = _get_cubic_cache(x64, PeriodicBC())
 
         @test c1 isa CubicSplineCache{Float64}
@@ -412,13 +412,13 @@ end
 # TESTSET 4: Boundary Condition Coverage
 # =============================================================================
 @testset "Cubic Cache: Boundary Condition Coverage" begin
-    @testset "_get_cubic_cache with ClampedBC (typed API)" begin
+    @testset "_get_cubic_cache with ZeroSlopeBC (typed API)" begin
         clear_cubic_cache!()
 
         x = collect(range(0.0, 1.0, 51))
 
-        # ClampedBC typed API - previously uncovered
-        cache = _get_cubic_cache(x, ClampedBC())
+        # ZeroSlopeBC typed API - previously uncovered
+        cache = _get_cubic_cache(x, ZeroSlopeBC())
         @test cache isa CubicSplineCache{Float64}
 
         # Cache should be created with BCPair(Deriv1(0), Deriv1(0))
@@ -426,13 +426,13 @@ end
 
         # Should work for Float32 as well
         x32 = Float32.(x)
-        cache32 = _get_cubic_cache(x32, ClampedBC())
+        cache32 = _get_cubic_cache(x32, ZeroSlopeBC())
         @test cache32 isa CubicSplineCache{Float32}
         @test cache32.bc_config isa BCPair{Deriv1{Float32}, Deriv1{Float32}}
 
         # Range input
         x_range = range(0.0, 1.0, 51)
-        cache_range = _get_cubic_cache(x_range, ClampedBC())
+        cache_range = _get_cubic_cache(x_range, ZeroSlopeBC())
         @test cache_range isa CubicSplineCache{Float64}
     end
 
@@ -654,14 +654,14 @@ end
         y = sin.(x)
 
         # Prime cache and get cache object
-        cache_before = _get_cubic_cache(x, NaturalBC())
+        cache_before = _get_cubic_cache(x, ZeroCurvBC())
         cache_id_before = objectid(cache_before)
 
         # Mutate x in-place
         x[6] = 5.5
 
         # Get cache again - should be a DIFFERENT cache object
-        cache_after = _get_cubic_cache(x, NaturalBC())
+        cache_after = _get_cubic_cache(x, ZeroCurvBC())
         cache_id_after = objectid(cache_after)
 
         # Key assertion: cache objects must be different after mutation
@@ -754,7 +754,7 @@ end
 # TESTSET 6: Analytic Correctness After Mutation
 # =============================================================================
 @testset "Cubic Cache: Analytic Correctness" begin
-    @testset "Analytic correctness: cubic polynomial with ClampedBC after mutation" begin
+    @testset "Analytic correctness: cubic polynomial with ZeroSlopeBC after mutation" begin
         # Cubic splines with CLAMPED BC (exact endpoint derivatives) reproduce
         # cubic polynomials EXACTLY. Natural BC only reproduces linears.
         # This verifies autocache produces correct results after mutation.
@@ -801,7 +801,7 @@ end
         @test result2 ≈ fresh atol=1e-14
     end
 
-    @testset "Analytic correctness: quadratic polynomial with ClampedBC" begin
+    @testset "Analytic correctness: quadratic polynomial with ZeroSlopeBC" begin
         # Quadratic: f(x) = x² - 2x + 3, f'(x) = 2x - 2
         # Clamped BC with correct derivatives should give exact results
 
@@ -831,7 +831,7 @@ end
         @test result2 ≈ expected atol=1e-12
     end
 
-    @testset "Analytic correctness: linear function with NaturalBC" begin
+    @testset "Analytic correctness: linear function with ZeroCurvBC" begin
         # Linear: f(x) = 3x + 2
         # Natural BC (f''=0 at endpoints) is exact for linear functions
 

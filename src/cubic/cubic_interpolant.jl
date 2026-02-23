@@ -341,8 +341,8 @@ Promote BC to target value type Tv for cubic splines.
 Handles conversion of Real BC values to Complex when needed.
 """
 @inline _promote_bc(bc::BCPair, ::Type{Tv}) where {Tv} = _normalize_bc(bc, Tv)
-@inline _promote_bc(::NaturalBC, ::Type{Tv}) where {Tv} = NaturalBC()
-@inline _promote_bc(::ClampedBC, ::Type{Tv}) where {Tv} = ClampedBC()
+@inline _promote_bc(::ZeroCurvBC, ::Type{Tv}) where {Tv} = ZeroCurvBC()
+@inline _promote_bc(::ZeroSlopeBC, ::Type{Tv}) where {Tv} = ZeroSlopeBC()
 @inline _promote_bc(bc::PeriodicBC, ::Type{Tv}) where {Tv} = bc
 @inline _promote_bc(bc::PointBC, ::Type{Tv}) where {Tv} = _promote_pointbc(bc, Tv)
 
@@ -351,7 +351,7 @@ Handles conversion of Real BC values to Complex when needed.
 # ========================================
 
 """
-    cubic_interp(x, y; bc=NaturalBC(), extrap=NoExtrap(), autocache=true, search=Binary()) -> CubicInterpolant
+    cubic_interp(x, y; bc=ZeroCurvBC(), extrap=NoExtrap(), autocache=true, search=Binary()) -> CubicInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -361,7 +361,7 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 # Arguments
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values (can be Real or Complex)
-- `bc::AbstractBC`: Boundary condition (default: `NaturalBC()`)
+- `bc::AbstractBC`: Boundary condition (default: `ZeroCurvBC()`)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache::Bool`: Enable automatic caching (default: `true`)
 - `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
@@ -407,7 +407,7 @@ end
 function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv};
-    bc::AbstractBC=NaturalBC(),
+    bc::AbstractBC=ZeroCurvBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     search::P=Binary()
@@ -426,7 +426,7 @@ Create a callable interpolant from a pre-built cache.
 # Note on BC Values
 Uses `cache.bc_config` for boundary condition values. This is correct when:
 - Cache was built via `CubicSplineCache(x; bc=...)` with actual BC values
-- BC is NaturalBC/ClampedBC/PeriodicBC (values are always zero)
+- BC is ZeroCurvBC/ZeroSlopeBC/PeriodicBC (values are always zero)
 
 **Warning**: Caches from `get_cubic_cache` contain placeholder zeros in `bc_config`.
 For non-zero BC values, use the full API: `cubic_interp(x, y; bc=Deriv1(val))`.
@@ -459,7 +459,7 @@ end
 function cubic_interp(
     x::AbstractVector{TX},
     y::AbstractVector{TY};
-    bc::AbstractBC=NaturalBC(),
+    bc::AbstractBC=ZeroCurvBC(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     search::P=Binary()

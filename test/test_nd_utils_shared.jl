@@ -60,9 +60,9 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
     # ========================================
     @testset "_resolve_bcs_nd" begin
         @testset "broadcast single BC to N-tuple" begin
-            result = _resolve_bcs_nd(NaturalBC(), Val(3))
+            result = _resolve_bcs_nd(ZeroCurvBC(), Val(3))
             @test length(result) == 3
-            @test all(bc -> bc isa NaturalBC, result)
+            @test all(bc -> bc isa ZeroCurvBC, result)
 
             result = _resolve_bcs_nd(PolyFit{3}(), Val(2))
             @test length(result) == 2
@@ -70,14 +70,14 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
         end
 
         @testset "passthrough matching tuple" begin
-            bcs = (NaturalBC(), PolyFit{3}(), ClampedBC())
+            bcs = (ZeroCurvBC(), PolyFit{3}(), ZeroSlopeBC())
             result = _resolve_bcs_nd(bcs, Val(3))
             @test result === bcs
         end
 
         @testset "reject wrong-length tuple" begin
-            @test_throws ArgumentError _resolve_bcs_nd((NaturalBC(), PolyFit{3}()), Val(3))
-            @test_throws ArgumentError _resolve_bcs_nd((NaturalBC(),), Val(2))
+            @test_throws ArgumentError _resolve_bcs_nd((ZeroCurvBC(), PolyFit{3}()), Val(3))
+            @test_throws ArgumentError _resolve_bcs_nd((ZeroCurvBC(),), Val(2))
         end
     end
 
@@ -256,7 +256,7 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
         end
 
         @testset "single mode + periodic BC override" begin
-            bcs = (NaturalBC(), PeriodicBC())
+            bcs = (ZeroCurvBC(), PeriodicBC())
             # NoExtrap: axis 2 (periodic) overridden to WrapExtrap()
             @test _resolve_extrap_nd(NoExtrap(), bcs, Val(2)) === (NoExtrap(), WrapExtrap())
             # WrapExtrap: all axes get WrapExtrap() — compatible with PeriodicBC
@@ -264,13 +264,13 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
         end
 
         @testset "single mode + periodic BC rejection" begin
-            bcs = (NaturalBC(), PeriodicBC())
+            bcs = (ZeroCurvBC(), PeriodicBC())
             @test_throws ArgumentError _resolve_extrap_nd(ConstExtrap(), bcs, Val(2))
             @test_throws ArgumentError _resolve_extrap_nd(ExtendExtrap(), bcs, Val(2))
         end
 
         @testset "per-axis mode tuple + periodic BC" begin
-            bcs = (NaturalBC(), PeriodicBC())
+            bcs = (ZeroCurvBC(), PeriodicBC())
             # ExtendExtrap on non-periodic axis is OK; periodic axis gets wrap
             @test _resolve_extrap_nd((ExtendExtrap(), WrapExtrap()), bcs, Val(2)) === (ExtendExtrap(), WrapExtrap())
             # ConstExtrap on periodic axis → error
@@ -281,26 +281,26 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
         # Only AbstractExtrap types are accepted.
 
         @testset "_check_mode_periodic_compat" begin
-            bcs = (NaturalBC(), PeriodicBC(), NaturalBC())
+            bcs = (ZeroCurvBC(), PeriodicBC(), ZeroCurvBC())
             @test _check_mode_periodic_compat(NoExtrap(), bcs, Val(3)) === nothing
             @test _check_mode_periodic_compat(WrapExtrap(), bcs, Val(3)) === nothing
             @test_throws ArgumentError _check_mode_periodic_compat(ConstExtrap(), bcs, Val(3))
             @test_throws ArgumentError _check_mode_periodic_compat(ExtendExtrap(), bcs, Val(3))
 
             # No periodic BCs — all modes are compatible
-            bcs_none = (NaturalBC(), NaturalBC())
+            bcs_none = (ZeroCurvBC(), ZeroCurvBC())
             @test _check_mode_periodic_compat(ConstExtrap(), bcs_none, Val(2)) === nothing
         end
 
         @testset "_check_modes_periodic_compat" begin
-            bcs = (NaturalBC(), PeriodicBC())
+            bcs = (ZeroCurvBC(), PeriodicBC())
             @test _check_modes_periodic_compat((NoExtrap(), WrapExtrap()), bcs, Val(2)) === nothing
             @test _check_modes_periodic_compat((ConstExtrap(), WrapExtrap()), bcs, Val(2)) === nothing
             @test_throws ArgumentError _check_modes_periodic_compat((NoExtrap(), ConstExtrap()), bcs, Val(2))
         end
 
         @testset "@generated periodic override" begin
-            bcs = (NaturalBC(), PeriodicBC(), NaturalBC())
+            bcs = (ZeroCurvBC(), PeriodicBC(), ZeroCurvBC())
             # Single mode broadcast: periodic axis → WrapExtrap(), others → original mode
             @test _mode_to_modes_with_periodic(NoExtrap(), bcs) === (NoExtrap(), WrapExtrap(), NoExtrap())
             @test _mode_to_modes_with_periodic(WrapExtrap(), bcs) === (WrapExtrap(), WrapExtrap(), WrapExtrap())

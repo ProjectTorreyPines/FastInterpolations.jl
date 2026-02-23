@@ -1897,12 +1897,12 @@ end
 @testset "BC Types Coverage (bc_types.jl)" begin
     # 1. _is_periodic_bc
     @test FastInterpolations._is_periodic_bc(PeriodicBC())
-    @test !FastInterpolations._is_periodic_bc(NaturalBC())
+    @test !FastInterpolations._is_periodic_bc(ZeroCurvBC())
     @test !FastInterpolations._is_periodic_bc(LinearFit())
     @test !FastInterpolations._is_periodic_bc(Deriv1(0.0))
 
     # 3. get_polyfit_degree fallbacks (for coverage)
-    @test FastInterpolations.get_polyfit_degree(NaturalBC()) == 0
+    @test FastInterpolations.get_polyfit_degree(ZeroCurvBC()) == 0
     @test FastInterpolations.get_polyfit_degree(Deriv1(0.0)) == 0
     @test FastInterpolations.get_polyfit_degree(Deriv2(0.0)) == 0
     @test FastInterpolations.get_polyfit_degree(Deriv3(0.0)) == 0

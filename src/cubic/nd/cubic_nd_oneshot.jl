@@ -30,7 +30,7 @@ function cubic_interp(
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}};
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
+    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=ZeroCurvBC(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
@@ -64,7 +64,7 @@ function cubic_interp(
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
+    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=ZeroCurvBC(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
@@ -88,7 +88,7 @@ function cubic_interp(
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
+    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=ZeroCurvBC(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
@@ -256,7 +256,7 @@ function cubic_interp!(
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
+    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=ZeroCurvBC(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()
@@ -288,7 +288,7 @@ function cubic_interp!(
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=NaturalBC(),
+    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=ZeroCurvBC(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
     coeffs::AbstractCoeffStrategy=PreCompute()

@@ -23,8 +23,8 @@ AbstractBC{T}
 │       └── CubicFit        # = PolyFit{3} (4 points, O(h³))
 ├── BCPair{T,L,R}           # Both endpoints (cubic only)
 ├── PeriodicBC{T}           # Periodic BC (cubic only)
-├── NaturalBC{T}            # Zero curvature at both ends (cubic only)
-├── ClampedBC{T}            # Zero slope at both ends (cubic only)
+├── ZeroCurvBC{T}            # Zero curvature at both ends (cubic only)
+├── ZeroSlopeBC{T}            # Zero slope at both ends (cubic only)
 ├── MinCurvFit{T}           # Minimum curvature (quadratic only)
 ├── Left{T,B}               # Wrapper: apply BC at left endpoint
 └── Right{T,B}              # Wrapper: apply BC at right endpoint
@@ -80,8 +80,8 @@ BCPair(Deriv1(0), Deriv1(0))      # Clamped BC
 BCPair(Deriv1(1.0), Deriv2(0))    # Mixed
 
 # Convenience shortcuts
-NaturalBC()      # = BCPair(Deriv2(0), Deriv2(0))  [default]
-ClampedBC()      # = BCPair(Deriv1(0), Deriv1(0))
+ZeroCurvBC()      # = BCPair(Deriv2(0), Deriv2(0))  [default]
+ZeroSlopeBC()      # = BCPair(Deriv1(0), Deriv1(0))
 
 # True periodicity (requires y[1] ≈ y[end])
 PeriodicBC()     # S(x) = S(x + τ) with C² continuity
@@ -104,8 +104,8 @@ PeriodicBC()     # S(x) = S(x + τ) with C² continuity
 
 | BC | Description | Best For |
 |----|-------------|----------|
-| `NaturalBC()` | S''=0 at both ends | **Default** - general data |
-| `ClampedBC()` | S'=0 at both ends | Flat endpoints |
+| `ZeroCurvBC()` | S''=0 at both ends | **Default** - general data |
+| `ZeroSlopeBC()` | S'=0 at both ends | Flat endpoints |
 | `BCPair(...)` | Custom at each end | Known derivatives |
 | `PeriodicBC()` | True periodicity (inclusive) | Cyclic data with `y[1] ≈ y[end]` |
 | `PeriodicBC(endpoint=:exclusive)` | True periodicity (exclusive) | FFT grids, `[0, 2π)` data |

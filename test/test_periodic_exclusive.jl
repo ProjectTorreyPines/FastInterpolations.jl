@@ -493,7 +493,7 @@ end
             x = range(0.0, 2π, 11)
             y = range(0.0, π, 9)
             data = [sin(xi) * cos(yj) for xi in x, yj in y]
-            bcs = (PeriodicBC(), NaturalBC())
+            bcs = (PeriodicBC(), ZeroCurvBC())
 
             grids_out, data_out, bcs_out = _prepare_periodic_nd((x, y), data, bcs)
             @test grids_out === (x, y)
@@ -506,7 +506,7 @@ end
             x = range(0.0, step=2π/N, length=N)
             y = range(0.0, π, 5)
             data = [sin(xi) * cos(yj) for xi in x, yj in y]
-            bcs = (PeriodicBC(endpoint=:exclusive), NaturalBC())
+            bcs = (PeriodicBC(endpoint=:exclusive), ZeroCurvBC())
 
             grids_out, data_out, bcs_out = _prepare_periodic_nd((x, y), data, bcs)
 
@@ -517,7 +517,7 @@ end
             @test grids_out[2] === y                      # unchanged reference
             @test bcs_out[1] isa PeriodicBC{:exclusive}   # preserved endpoint
             @test bcs_out[1].period ≈ 2π                  # resolved period
-            @test bcs_out[2] === NaturalBC()              # unchanged
+            @test bcs_out[2] === ZeroCurvBC()              # unchanged
         end
 
         @testset "Both axes exclusive" begin
@@ -541,7 +541,7 @@ end
             x = range(0.0, step=0.5, length=4)
             y = range(0.0, 1.0, 5)
             data = zeros(4, 5)
-            bcs = (PeriodicBC(endpoint=:exclusive), NaturalBC())
+            bcs = (PeriodicBC(endpoint=:exclusive), ZeroCurvBC())
 
             grids_out, _, _ = _prepare_periodic_nd((x, y), data, bcs)
             @test grids_out[1] isa AbstractRange
@@ -575,7 +575,7 @@ end
             end
         end
 
-        @testset "One axis periodic, one NaturalBC" begin
+        @testset "One axis periodic, one ZeroCurvBC" begin
             Nx = 32
             dx = 2π / Nx
             x_excl = range(0.0, step=dx, length=Nx)
@@ -587,10 +587,10 @@ end
 
             itp_excl = cubic_interp(
                 (x_excl, y), data_excl;
-                bc=(PeriodicBC(endpoint=:exclusive), NaturalBC()))
+                bc=(PeriodicBC(endpoint=:exclusive), ZeroCurvBC()))
             itp_incl = cubic_interp(
                 (x_incl, y), data_incl;
-                bc=(PeriodicBC(), NaturalBC()))
+                bc=(PeriodicBC(), ZeroCurvBC()))
 
             for (xq, yq) in [(0.5, 0.3), (π, 0.5), (5.0, 0.8)]
                 @test itp_excl((xq, yq)) ≈ itp_incl((xq, yq)) atol=1e-12
@@ -607,10 +607,10 @@ end
 
             itp_incl = cubic_interp(
                 (x_incl, y), data_incl;
-                bc=(PeriodicBC(), NaturalBC()))
+                bc=(PeriodicBC(), ZeroCurvBC()))
             itp_excl = cubic_interp(
                 (x_excl, y), data_excl;
-                bc=(PeriodicBC(endpoint=:exclusive, period=2π), NaturalBC()))
+                bc=(PeriodicBC(endpoint=:exclusive, period=2π), ZeroCurvBC()))
 
             for (xq, yq) in [(0.5, 0.3), (π, 0.5), (5.0, 0.8)]
                 @test itp_excl((xq, yq)) ≈ itp_incl((xq, yq)) atol=1e-12
@@ -675,7 +675,7 @@ end
             (x, y, z), data;
             bc=(PeriodicBC(endpoint=:exclusive),
                 PeriodicBC(endpoint=:exclusive),
-                NaturalBC()))
+                ZeroCurvBC()))
 
         @test itp isa CubicInterpolantND
         xq, yq, zq = 1.0, 0.5, 0.3
@@ -693,7 +693,7 @@ end
 
         itp = cubic_interp(
             (x, y), data;
-            bc=(PeriodicBC(endpoint=:exclusive), NaturalBC()))
+            bc=(PeriodicBC(endpoint=:exclusive), ZeroCurvBC()))
 
         # Exclusive axis preserves endpoint symbol and resolved period
         @test itp.bcs[1] isa PeriodicBC{:exclusive}
@@ -710,7 +710,7 @@ end
             data = zeros(4, 5)
             @test_throws ArgumentError cubic_interp(
                 (x, y), data;
-                bc=(PeriodicBC(endpoint=:exclusive), NaturalBC()))
+                bc=(PeriodicBC(endpoint=:exclusive), ZeroCurvBC()))
         end
 
         @testset "Range grid with conflicting period → error" begin
@@ -719,7 +719,7 @@ end
             data = zeros(10, 5)
             @test_throws ArgumentError cubic_interp(
                 (x, y), data;
-                bc=(PeriodicBC(endpoint=:exclusive, period=2.0), NaturalBC()))
+                bc=(PeriodicBC(endpoint=:exclusive, period=2.0), ZeroCurvBC()))
         end
     end
 

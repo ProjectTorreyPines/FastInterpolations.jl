@@ -80,11 +80,11 @@ The cache is keyed by:
 
 ```julia
 # These share the same cache entry (same BC type)
-cubic_interp(x, y; bc=NaturalBC())
-cubic_interp(x, y; bc=NaturalBC())  # cache hit
+cubic_interp(x, y; bc=ZeroCurvBC())
+cubic_interp(x, y; bc=ZeroCurvBC())  # cache hit
 
 # Different BC type → different cache entry
-cubic_interp(x, y; bc=ClampedBC())  # new cache entry
+cubic_interp(x, y; bc=ZeroSlopeBC())  # new cache entry
 ```
 
 !!! note "BC Values vs Types"

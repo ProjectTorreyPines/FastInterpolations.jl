@@ -5,7 +5,7 @@ In ND, boundary conditions are specified **per-axis** via Tuples. A single BC va
 !!! note "Method Applicability"
     - **Constant** / **Linear**: No BC needed
     - **Quadratic**: One BC per axis (`Left(...)` or `Right(...)`)
-    - **Cubic**: Paired BCs per axis (`NaturalBC()`, `PeriodicBC()`, `BCPair(...)`, etc.)
+    - **Cubic**: Paired BCs per axis (`ZeroCurvBC()`, `PeriodicBC()`, `BCPair(...)`, etc.)
 
     For BC type details, see the [1D Boundary Conditions](../boundary-conditions/overview.md).
 
@@ -26,14 +26,14 @@ nothing #hide
 
 ```@example nd_boundary
 # Broadcast: same BC on all axes
-itp = cubic_interp((x, y, z), data3d; bc=NaturalBC())
-# Equivalent to: bc=(NaturalBC(), NaturalBC(), NaturalBC())
+itp = cubic_interp((x, y, z), data3d; bc=ZeroCurvBC())
+# Equivalent to: bc=(ZeroCurvBC(), ZeroCurvBC(), ZeroCurvBC())
 ```
 
 ```@example nd_boundary
 # Per-axis: different BC per axis
 itp = cubic_interp((x, y, z), data3d;
-    bc=(NaturalBC(), PeriodicBC(), CubicFit()))
+    bc=(ZeroCurvBC(), PeriodicBC(), CubicFit()))
 ```
 
 ---
@@ -44,7 +44,7 @@ All [1D cubic BCs](../boundary-conditions/overview.md) are available per-axis:
 
 ```@example nd_boundary
 # Natural in x, periodic in y
-bc = (NaturalBC(), PeriodicBC())
+bc = (ZeroCurvBC(), PeriodicBC())
 itp = cubic_interp((x, y), data2d; bc=bc)
 ```
 !!! note "PeriodicBC + Extrapolation"

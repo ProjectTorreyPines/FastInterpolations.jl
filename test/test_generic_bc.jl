@@ -101,11 +101,11 @@ const ATOL = 1e-14
         @test d3_f32 isa Deriv3{Float32}
         @test d3_f32.val == Float32(6.0)
 
-        # PeriodicBC, NaturalBC, ClampedBC are now non-parametric singletons
+        # PeriodicBC, ZeroCurvBC, ZeroSlopeBC are now non-parametric singletons
         # No type conversion needed - they're type-agnostic
         @test PeriodicBC() isa PeriodicBC
-        @test NaturalBC() isa NaturalBC
-        @test ClampedBC() isa ClampedBC
+        @test ZeroCurvBC() isa ZeroCurvBC
+        @test ZeroSlopeBC() isa ZeroSlopeBC
     end
 
     # ========================================
@@ -140,8 +140,8 @@ const ATOL = 1e-14
     # ========================================
     @testset "_is_periodic_bc Predicate" begin
         @test FastInterpolations._is_periodic_bc(PeriodicBC()) == true
-        @test FastInterpolations._is_periodic_bc(NaturalBC()) == false
-        @test FastInterpolations._is_periodic_bc(ClampedBC()) == false
+        @test FastInterpolations._is_periodic_bc(ZeroCurvBC()) == false
+        @test FastInterpolations._is_periodic_bc(ZeroSlopeBC()) == false
         @test FastInterpolations._is_periodic_bc(BCPair(Deriv1(0.0), Deriv2(0.0))) == false
         @test FastInterpolations._is_periodic_bc(Deriv1(0.0)) == false
         @test FastInterpolations._is_periodic_bc(Deriv2(0.0)) == false
@@ -197,13 +197,13 @@ const ATOL = 1e-14
         y = sin.(π .* x)
         xi = 0.5
 
-        # NaturalBC() == Deriv2(0), Deriv2(0)
-        r_natural = cubic_interp(x, y, xi; bc=NaturalBC())
+        # ZeroCurvBC() == Deriv2(0), Deriv2(0)
+        r_natural = cubic_interp(x, y, xi; bc=ZeroCurvBC())
         r_d2_zero = cubic_interp(x, y, xi; bc=BCPair(Deriv2(0.0), Deriv2(0.0)))
         @test r_natural ≈ r_d2_zero rtol=RTOL atol=ATOL
 
-        # ClampedBC() == Deriv1(0), Deriv1(0)
-        r_clamped = cubic_interp(x, y, xi; bc=ClampedBC())
+        # ZeroSlopeBC() == Deriv1(0), Deriv1(0)
+        r_clamped = cubic_interp(x, y, xi; bc=ZeroSlopeBC())
         r_d1_zero = cubic_interp(x, y, xi; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
         @test r_clamped ≈ r_d1_zero rtol=RTOL atol=ATOL
 
@@ -380,8 +380,8 @@ const ATOL = 1e-14
         xi = [0.3, 1.5, 2.7]
         expected = g.(xi)
 
-        @test cubic_interp(x, y, xi; bc=NaturalBC()) ≈ expected rtol=RTOL atol=ATOL
-        @test cubic_interp(x, y, xi; bc=ClampedBC()) ≈ expected rtol=RTOL atol=ATOL
+        @test cubic_interp(x, y, xi; bc=ZeroCurvBC()) ≈ expected rtol=RTOL atol=ATOL
+        @test cubic_interp(x, y, xi; bc=ZeroSlopeBC()) ≈ expected rtol=RTOL atol=ATOL
         @test cubic_interp(x, y, xi; bc=BCPair(Deriv1(slope), Deriv1(slope))) ≈ expected rtol=RTOL atol=ATOL
         @test cubic_interp(x, y, xi; bc=BCPair(Deriv2(0.0), Deriv2(0.0))) ≈ expected rtol=RTOL atol=ATOL
         @test cubic_interp(x, y, xi; bc=BCPair(Deriv1(slope), Deriv2(0.0))) ≈ expected rtol=RTOL atol=ATOL

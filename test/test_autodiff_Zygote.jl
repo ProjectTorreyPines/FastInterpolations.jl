@@ -281,7 +281,7 @@ end
         end
 
         @testset "Different BC types" begin
-            for bc in [NaturalBC(), ClampedBC()]
+            for bc in [ZeroCurvBC(), ZeroSlopeBC()]
                 itp = cubic_interp(x, y_cubic; bc=bc, extrap=ExtendExtrap())
                 xq = 2.25
                 zy_grad = Zygote.gradient(itp, xq)[1]

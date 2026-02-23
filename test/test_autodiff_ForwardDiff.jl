@@ -632,7 +632,7 @@ const FI = FastInterpolations
 
         @testset "different BC types" begin
             # Test different boundary conditions work with AD
-            for bc in [NaturalBC(), ClampedBC()]
+            for bc in [ZeroCurvBC(), ZeroSlopeBC()]
                 itp_bc = cubic_interp(x, y; bc=bc, extrap=ExtendExtrap())
 
                 xq = 2.25

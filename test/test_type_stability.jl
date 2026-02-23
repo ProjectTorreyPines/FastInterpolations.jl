@@ -1,7 +1,7 @@
 # Type stability tests using @inferred
 using Test
 using FastInterpolations
-using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, NaturalBC, ClampedBC, CubicSplineCache
+using FastInterpolations: BCPair, Deriv1, Deriv2, PeriodicBC, ZeroCurvBC, ZeroSlopeBC, CubicSplineCache
 using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
 @testset "Type Stability" begin
@@ -15,8 +15,8 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
     @testset "cubic_interp 2-arg @inferred" begin
         # All BC types should be inferrable
         @test @inferred(cubic_interp(x, y)) isa CubicInterpolant
-        @test @inferred(cubic_interp(x, y; bc=NaturalBC())) isa CubicInterpolant
-        @test @inferred(cubic_interp(x, y; bc=ClampedBC())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=ZeroCurvBC())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=ZeroSlopeBC())) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=PeriodicBC())) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=BCPair(Deriv1(0.0), Deriv2(0.0)))) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=Deriv2(0.0))) isa CubicInterpolant  # PointBC
@@ -53,8 +53,8 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
     @testset "cubic_interp 2-arg BC + extrap combinations" begin
         # Various BC + extrap combinations
-        @test @inferred(cubic_interp(x, y; bc=NaturalBC(), extrap=ExtendExtrap())) isa CubicInterpolant
-        @test @inferred(cubic_interp(x, y; bc=ClampedBC(), extrap=ConstExtrap())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=ZeroCurvBC(), extrap=ExtendExtrap())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y; bc=ZeroSlopeBC(), extrap=ConstExtrap())) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=BCPair(Deriv1(0.5), Deriv2(-0.5)), extrap=WrapExtrap())) isa CubicInterpolant
 
         # Periodic BC always uses WrapExtrap internally
@@ -66,14 +66,14 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
     # 4-arg form: Vector/scalar return types
     # =========================================================================
     @testset "cubic_interp 4-arg Typed BC" begin
-        @test @inferred(cubic_interp(x, y, x_query; bc=NaturalBC())) isa Vector{Float64}
-        @test @inferred(cubic_interp(x, y, x_query; bc=ClampedBC())) isa Vector{Float64}
+        @test @inferred(cubic_interp(x, y, x_query; bc=ZeroCurvBC())) isa Vector{Float64}
+        @test @inferred(cubic_interp(x, y, x_query; bc=ZeroSlopeBC())) isa Vector{Float64}
         @test @inferred(cubic_interp(x, y, x_query; bc=PeriodicBC())) isa Vector{Float64}
         @test @inferred(cubic_interp(x, y, x_query; bc=BCPair(Deriv1(0.0), Deriv2(0.0)))) isa Vector{Float64}
 
         # Scalar query
-        @test @inferred(cubic_interp(x, y, 0.5; bc=NaturalBC())) isa Float64
-        @test @inferred(cubic_interp(x, y, 0.5; bc=ClampedBC())) isa Float64
+        @test @inferred(cubic_interp(x, y, 0.5; bc=ZeroCurvBC())) isa Float64
+        @test @inferred(cubic_interp(x, y, 0.5; bc=ZeroSlopeBC())) isa Float64
     end
 
     @testset "cubic_interp 4-arg extrap variations" begin
@@ -90,7 +90,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
     @testset "cubic_interp! in-place" begin
         out = similar(x_query)
         @test @inferred(cubic_interp!(out, x, y, x_query)) === out
-        @test @inferred(cubic_interp!(out, x, y, x_query; bc=ClampedBC())) === out
+        @test @inferred(cubic_interp!(out, x, y, x_query; bc=ZeroSlopeBC())) === out
         @test @inferred(cubic_interp!(out, x, y, x_query; extrap=ExtendExtrap())) === out
     end
 
@@ -98,7 +98,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
     # Cache-based API
     # =========================================================================
     @testset "Cache-based API" begin
-        cache = CubicSplineCache(x; bc=NaturalBC())
+        cache = CubicSplineCache(x; bc=ZeroCurvBC())
         @test @inferred(cubic_interp(cache, y, 0.5; extrap=NoExtrap())) isa Float64
         @test @inferred(cubic_interp(cache, y, 0.5; extrap=ExtendExtrap())) isa Float64
 
@@ -114,7 +114,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
     # CubicInterpolant callable
     # =========================================================================
     @testset "CubicInterpolant callable" begin
-        itp = cubic_interp(x, y; bc=NaturalBC())
+        itp = cubic_interp(x, y; bc=ZeroCurvBC())
 
         # Scalar call
         @test @inferred(itp(0.5)) isa Float64
@@ -389,19 +389,19 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
     end
 
     @testset "ND cubic_interp heterogeneous BC" begin
-        # User's real use case: NaturalBC + PeriodicBC with mixed extrap
+        # User's real use case: ZeroCurvBC + PeriodicBC with mixed extrap
         x_periodic = range(0.0, 2π, 20)
         y_periodic = range(0.0, 2π, 15)
         data_p = [sin(xi) * cos(yj) for xi in x_periodic, yj in y_periodic]
 
         itp_mixed_bc = cubic_interp((x_periodic, y_periodic), data_p;
-            bc=(NaturalBC(), PeriodicBC()), extrap=(ExtendExtrap(), WrapExtrap()))
+            bc=(ZeroCurvBC(), PeriodicBC()), extrap=(ExtendExtrap(), WrapExtrap()))
         @test itp_mixed_bc isa CubicInterpolantND
         @test @inferred(itp_mixed_bc((1.0, 1.0))) isa Float64
 
         # Homogeneous vs heterogeneous BC must give same type
-        itp_homo = cubic_interp((x_nd, y_nd), data2d; bc=NaturalBC())
-        itp_hetero = cubic_interp((x_nd, y_nd), data2d; bc=(NaturalBC(), NaturalBC()))
+        itp_homo = cubic_interp((x_nd, y_nd), data2d; bc=ZeroCurvBC())
+        itp_hetero = cubic_interp((x_nd, y_nd), data2d; bc=(ZeroCurvBC(), ZeroCurvBC()))
         @test typeof(itp_homo) === typeof(itp_hetero)
     end
 
@@ -418,7 +418,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # Mixed: one axis exclusive periodic, other natural
         itp_mixed_excl = cubic_interp((x_excl, y_excl), data_excl;
-            bc=(NaturalBC(), PeriodicBC(; endpoint=:exclusive)))
+            bc=(ZeroCurvBC(), PeriodicBC(; endpoint=:exclusive)))
         @test itp_mixed_excl isa CubicInterpolantND
 
         # Exclusive with explicit per-axis period
@@ -533,13 +533,13 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # PeriodicBC + NoExtrap → axis auto-overridden to WrapExtrap()
         itp = cubic_interp((x_p, y_p), data_p;
-            bc=(NaturalBC(), PeriodicBC()), extrap=NoExtrap())
+            bc=(ZeroCurvBC(), PeriodicBC()), extrap=NoExtrap())
         @test itp.extraps[1] === NoExtrap()
         @test itp.extraps[2] === WrapExtrap()
 
         # PeriodicBC + ConstExtrap → should throw (incompatible)
         @test_throws ArgumentError cubic_interp((x_p, y_p), data_p;
-            bc=(NaturalBC(), PeriodicBC()), extrap=ConstExtrap())
+            bc=(ZeroCurvBC(), PeriodicBC()), extrap=ConstExtrap())
     end
 
     @testset "ND typed extrap — quadratic_interp" begin
@@ -683,13 +683,13 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # Mixed: one periodic, one natural
         itp_mixed = @inferred cubic_interp((x_p, y_p), data_p;
-            bc=(NaturalBC(), PeriodicBC()), extrap=NoExtrap())
+            bc=(ZeroCurvBC(), PeriodicBC()), extrap=NoExtrap())
         @test itp_mixed.extraps[1] === NoExtrap()
         @test itp_mixed.extraps[2] === WrapExtrap()
 
         # Quadratic: PeriodicBC + WrapExtrap
         itp_q = @inferred quadratic_interp((x_p, y_p), data_p;
-            bc=NaturalBC(), extrap=WrapExtrap())
+            bc=ZeroCurvBC(), extrap=WrapExtrap())
         @test itp_q.extraps === (WrapExtrap(), WrapExtrap())
     end
 
@@ -706,7 +706,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # Mixed: exclusive periodic axis + natural axis + NoExtrap
         itp_mixed = @inferred cubic_interp((x_excl, y_excl), data_excl;
-            bc=(NaturalBC(), PeriodicBC(; endpoint=:exclusive)),
+            bc=(ZeroCurvBC(), PeriodicBC(; endpoint=:exclusive)),
             extrap=NoExtrap())
         @test itp_mixed isa CubicInterpolantND
         @test itp_mixed.extraps[1] === NoExtrap()
@@ -732,11 +732,11 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # Cubic: mixed BC + NoExtrap oneshot (periodic auto-override)
         @test @inferred(cubic_interp((x_p, y_p), data_p, q;
-            bc=(NaturalBC(), PeriodicBC()), extrap=NoExtrap())) isa Float64
+            bc=(ZeroCurvBC(), PeriodicBC()), extrap=NoExtrap())) isa Float64
 
         # Quadratic: PeriodicBC + WrapExtrap oneshot
         @test @inferred(quadratic_interp((x_p, y_p), data_p, q;
-            bc=NaturalBC(), extrap=WrapExtrap())) isa Float64
+            bc=ZeroCurvBC(), extrap=WrapExtrap())) isa Float64
 
         # Linear: WrapExtrap oneshot (no BC for linear)
         @test @inferred(linear_interp((x_p, y_p), data_p, q;
@@ -759,7 +759,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 
         # Cubic: mixed BC exclusive + NoExtrap oneshot
         @test @inferred(cubic_interp((x_excl, y_excl), data_excl, q;
-            bc=(NaturalBC(), PeriodicBC(; endpoint=:exclusive)),
+            bc=(ZeroCurvBC(), PeriodicBC(; endpoint=:exclusive)),
             extrap=NoExtrap())) isa Float64
     end
 

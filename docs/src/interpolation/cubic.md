@@ -39,8 +39,8 @@ BCPair(Deriv2(-2.0), Deriv1(0.5)) # Mixed: curvature=-2 at left, slope=0.5 at ri
 
 | Shortcut | Equivalent | Meaning |
 |----------|------------|---------|
-| `NaturalBC()` | `BCPair(Deriv2(0), Deriv2(0))` | S''=0 at both ends — **default** |
-| `ClampedBC()` | `BCPair(Deriv1(0), Deriv1(0))` | S'=0 at both ends (flat) |
+| `ZeroCurvBC()` | `BCPair(Deriv2(0), Deriv2(0))` | S''=0 at both ends — **default** |
+| `ZeroSlopeBC()` | `BCPair(Deriv1(0), Deriv1(0))` | S'=0 at both ends (flat) |
 
 ### 2. PeriodicBC: True Periodic C² Continuity
 
@@ -79,9 +79,9 @@ using FastInterpolations
 x = range(0.0, 2π, 15)
 y = sin.(x)
 
-# One-shot evaluation (default: NaturalBC)
+# One-shot evaluation (default: ZeroCurvBC)
 cubic_interp(x, y, 1.0)
-cubic_interp(x, y, 1.0; bc=ClampedBC())            # flat endpoints
+cubic_interp(x, y, 1.0; bc=ZeroSlopeBC())            # flat endpoints
 cubic_interp(x, y, 1.0; bc=BCPair(Deriv1(1), Deriv2(0)))  # custom
 
 # Periodic (closed curve) - requires y[1] ≈ y[end]
@@ -93,7 +93,7 @@ out = similar(xq)
 cubic_interp!(out, x, y, xq)
 
 # Create reusable interpolant
-itp = cubic_interp(x, y; bc=NaturalBC())
+itp = cubic_interp(x, y; bc=ZeroCurvBC())
 itp(1.0)    # evaluate at single point
 itp(xq)     # evaluate at multiple points
 
@@ -109,14 +109,14 @@ d2 = deriv2(itp); d2(1.0)         # continuous second derivative
 
 | Situation | Recommended BC |
 |-----------|----------------|
-| General data, unknown endpoint behavior | `NaturalBC()` (default) |
-| Endpoints should be flat (zero slope) | `ClampedBC()` |
+| General data, unknown endpoint behavior | `ZeroCurvBC()` (default) |
+| Endpoints should be flat (zero slope) | `ZeroSlopeBC()` |
 | Known endpoint derivatives (physics) | `BCPair(Deriv1(...), Deriv1(...))` |
 | Cyclic data (angles, phases, time-of-day) | `PeriodicBC()` |
 
 ---
 
-## Visual Comparison: NaturalBC vs PeriodicBC
+## Visual Comparison: ZeroCurvBC vs PeriodicBC
 
 Comparing `cos(x)` interpolation — note that `cos''(x) = -cos(x) ≠ 0` at endpoints:
 
@@ -129,7 +129,7 @@ x = range(0, 2π, 9)
 y = cos.(x)
 xq = range(0, 2π, 500)
 
-itp_natural = cubic_interp(x, y; bc=NaturalBC())
+itp_natural = cubic_interp(x, y; bc=ZeroCurvBC())
 itp_periodic = cubic_interp(x, y; bc=PeriodicBC())
 
 # Compare: S(x), S'(x), S''(x) for both BCs
@@ -137,10 +137,10 @@ d1_nat, d2_nat = deriv1(itp_natural), deriv2(itp_natural)
 d1_per, d2_per = deriv1(itp_periodic), deriv2(itp_periodic)
 
 p = plot(layout=(3, 2), size=(900, 700), legend=:topright) # hide
-plot!(p[1], xq, itp_natural.(xq), label="NaturalBC", linewidth=2) # hide
+plot!(p[1], xq, itp_natural.(xq), label="ZeroCurvBC", linewidth=2) # hide
 plot!(p[1], xq, cos.(xq), label="cos(x)", linestyle=:dash, color=:black, alpha=0.7) # hide
 scatter!(p[1], x, y, label="data", markersize=5, color=:black) # hide
-title!(p[1], "NaturalBC: S(x)") # hide
+title!(p[1], "ZeroCurvBC: S(x)") # hide
 ylims!(p[1], -1.3, 1.3) # hide
 plot!(p[2], xq, itp_periodic.(xq), label="PeriodicBC", linewidth=2, color=:red) # hide
 plot!(p[2], xq, cos.(xq), label="cos(x)", linestyle=:dash, color=:black, alpha=0.7) # hide
@@ -150,7 +150,7 @@ ylims!(p[2], -1.3, 1.3) # hide
 plot!(p[3], xq, d1_nat.(xq), label="S'(x)", linewidth=2) # hide
 plot!(p[3], xq, -sin.(xq), label="-sin(x)", linestyle=:dash, linewidth=2, color=:black, alpha=0.7) # hide
 scatter!(p[3], x, -sin.(x), label=nothing, markersize=5, color=:black) # hide
-title!(p[3], "NaturalBC: S'(x)") # hide
+title!(p[3], "ZeroCurvBC: S'(x)") # hide
 ylims!(p[3], -1.3, 1.3) # hide
 plot!(p[4], xq, d1_per.(xq), label="S'(x)", linewidth=2, color=:red) # hide
 plot!(p[4], xq, -sin.(xq), label="-sin(x)", linestyle=:dash, linewidth=2, color=:black, alpha=0.7) # hide
@@ -161,7 +161,7 @@ plot!(p[5], xq, d2_nat.(xq), label="S''(x)", linewidth=2) # hide
 plot!(p[5], xq, -cos.(xq), label="-cos(x)", linestyle=:dash, linewidth=2, color=:black, alpha=0.7) # hide
 scatter!(p[5], x, -cos.(x), label=nothing, markersize=5, color=:black) # hide
 hline!(p[5], [0], color=:gray, linestyle=:dot, label=nothing) # hide
-title!(p[5], "NaturalBC: S''(x) — forced 0 at ends") # hide
+title!(p[5], "ZeroCurvBC: S''(x) — forced 0 at ends") # hide
 ylims!(p[5], -1.5, 1.5) # hide
 plot!(p[6], xq, d2_per.(xq), label="S''(x)", linewidth=2, color=:red) # hide
 plot!(p[6], xq, -cos.(xq), label="-cos(x)", linestyle=:dash, linewidth=2, color=:black, alpha=0.7) # hide
@@ -173,5 +173,5 @@ p # hide
 ```
 
 !!! tip "Key Observation"
-    - **NaturalBC** forces `S''(0) = S''(2π) = 0`, but true `cos''(x) = -cos(x) = -1` at endpoints → mismatch
+    - **ZeroCurvBC** forces `S''(0) = S''(2π) = 0`, but true `cos''(x) = -cos(x) = -1` at endpoints → mismatch
     - **PeriodicBC** allows `S''(0) = S''(2π)` to match naturally through cyclic continuity

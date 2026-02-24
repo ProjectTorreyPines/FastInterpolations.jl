@@ -12,7 +12,8 @@
 # Type parameters: Tg = grid type, Tv = value type, Tq = query type
 # ─────────────────────────────────────────────────────────────
 @inline function (itp::ConstantInterpolant{Tg,Tv})(xq::Tq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     _constant_eval_at_point(itp.x, itp.y, xq, itp.extrap, itp.side, deriv, searcher)
 end
 
@@ -24,7 +25,8 @@ end
 function (itp::ConstantInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     @inbounds for i in eachindex(xq, output)
         output[i] = _constant_eval_at_point(itp.x, itp.y, xq[i], itp.extrap, itp.side, deriv, searcher)
@@ -37,7 +39,8 @@ end
 # ─────────────────────────────────────────────────────────────
 function (itp::ConstantInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     @inbounds for i in eachindex(xq, output)
         output[i] = _constant_eval_at_point(itp.x, itp.y, xq[i], itp.extrap, itp.side, deriv, searcher)

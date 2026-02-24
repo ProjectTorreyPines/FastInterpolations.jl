@@ -512,7 +512,8 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
     T_out = promote_type(Tv, typeof(xq_promoted))
-    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+    resolved = _resolve_search(search, xq)
+    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
 
     output = Vector{T_out}(undef, n_series(sitp))
     _eval_series_at_anchor!(output, sitp, aq, deriv)
@@ -540,7 +541,8 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
     xq_promoted = _promote_for_anchor(xq, Tg)
 
-    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+    resolved = _resolve_search(search, xq)
+    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
 
     _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output
@@ -600,12 +602,13 @@ Pool handles both same-type and mixed-type cases efficiently.
     # Build anchors - pool handles both same-type and mixed-type cases
     Tq_eff = promote_type(Tq, Tg)
     aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg, Tq_eff}, n_query)
+    resolved = _resolve_search(search, xq)
     if Tq === Tg
-        _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+        _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
     else
         # Mixed type: convert query points to preserve precision
         xq_promoted = _promote_for_anchor.(xq, Tg)
-        _fill_anchors!(aq_vec, sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+        _fill_anchors!(aq_vec, sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
     end
 
     # Evaluate all series - anchor already has correct dL precision

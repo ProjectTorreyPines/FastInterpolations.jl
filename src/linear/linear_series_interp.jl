@@ -78,7 +78,7 @@ mutable struct LinearSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrap,
         x::X,
         y::Matrix{Tv},
         extrap::E,
-        search::P=Binary()
+        search::P=LinearBinary()
     ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
         new{Tg,Tv,E,P,X}(x, y, LazyTranspose{Tv}(), extrap, search)
     end
@@ -321,7 +321,7 @@ function linear_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     extrap::AbstractExtrap=NoExtrap(),
-    search::P=Binary()
+    search::P=LinearBinary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Check if Tv's float base requires grid widening (not for Int types)
     # Int-based types (Complex{Int}) are handled by internal _value_type conversion
@@ -385,7 +385,7 @@ function linear_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=LinearBinary()
 ) where {Tg<:AbstractFloat, Tv}
     # Check if Tv's float base requires grid widening
     Tv_real = _real_eltype(Tv)
@@ -421,7 +421,7 @@ function linear_interp(
     x::AbstractVector{Tg},
     ys::AbstractVector{<:AbstractVector{Tv}};
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=LinearBinary()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
@@ -434,7 +434,7 @@ function linear_interp(
     x::AbstractVector{Tg},
     Y::AbstractMatrix{Tv};
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=LinearBinary()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
     x_typed = _to_float(x, Tg_float)
@@ -446,7 +446,7 @@ end
 # ========================================
 
 """
-    (sitp::LinearSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=Binary())
+    (sitp::LinearSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=LinearBinary())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
@@ -465,7 +465,7 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::LinearSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=Binary())
+    (sitp::LinearSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=LinearBinary())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 

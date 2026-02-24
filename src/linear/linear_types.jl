@@ -27,7 +27,7 @@ Returned by `linear_interp(x, y)` (2-argument form).
 # Usage
 ```julia
 # Create interpolator (minimal allocation)
-itp = linear_interp(x, y)  # default extrap=NoExtrap(), search=Binary()
+itp = linear_interp(x, y)  # default extrap=NoExtrap(), search=LinearBinary()
 
 # Create with custom search policy (baked-in default)
 itp = linear_interp(x, y; search=LinearBinary())
@@ -85,7 +85,7 @@ end
     x::X,
     y::Y;
     extrap::AbstractExtrap=NoExtrap(),
-    search::P=Binary()
+    search::P=LinearBinary()
 ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
     E = typeof(extrap)
     return LinearInterpolant{Tg,Tv,X,Y,E,P}(x, y, extrap, search)

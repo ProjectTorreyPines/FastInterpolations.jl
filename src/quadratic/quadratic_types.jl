@@ -88,7 +88,7 @@ end
     a::Vector{Tv},
     d::Vector{Tv};
     extrap::AbstractExtrap=NoExtrap(),
-    search::P=Binary()
+    search::P=LinearBinary()
 ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
     E = typeof(extrap)
     return QuadraticInterpolant{Tg,Tv,X,Y,E,P}(x, y, h, a, d, extrap, search)

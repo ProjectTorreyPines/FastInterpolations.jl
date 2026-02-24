@@ -293,7 +293,7 @@ so the pool memory can be safely reused after this function returns.
     bc_pair::BCPair{L,R},
     extrap::AbstractExtrap,
     autocache::Bool,
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=LinearBinary()
 ) where {Tg<:AbstractFloat, Tv, L<:PointBC, R<:PointBC}
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc_pair, autocache)
@@ -319,7 +319,7 @@ so the pool memory can be safely reused after this function returns.
     y::AbstractVector{Tv},
     bc::PeriodicBC,
     autocache::Bool,
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=LinearBinary()
 ) where {Tg<:AbstractFloat, Tv}
     x, y = _prepare_periodic(x, y, bc)
     _check_periodic_endpoints(y)
@@ -351,7 +351,7 @@ Handles conversion of Real BC values to Complex when needed.
 # ========================================
 
 """
-    cubic_interp(x, y; bc=CubicFit(), extrap=NoExtrap(), autocache=true, search=Binary()) -> CubicInterpolant
+    cubic_interp(x, y; bc=CubicFit(), extrap=NoExtrap(), autocache=true, search=LinearBinary()) -> CubicInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -364,7 +364,7 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 - `bc::AbstractBC`: Boundary condition (default: `CubicFit()`)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache::Bool`: Enable automatic caching (default: `true`)
-- `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
+- `search::AbstractSearchPolicy`: Default search policy (default: `LinearBinary()`)
 
 # Example
 ```julia
@@ -393,7 +393,7 @@ val = itp(0.5)  # returns ComplexF64
     bc::AbstractBC,
     extrap::AbstractExtrap,
     autocache::Bool,
-    search::P=Binary()
+    search::P=LinearBinary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x, y, bc, autocache, search)
@@ -410,7 +410,7 @@ function cubic_interp(
     bc::AbstractBC=CubicFit(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
-    search::P=Binary()
+    search::P=LinearBinary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Auto-promote x/y types (zero allocation if already compatible)
     x_p, y_p = _promote_itp_inputs(x, y)
@@ -419,7 +419,7 @@ function cubic_interp(
 end
 
 """
-    cubic_interp(cache, y; extrap=NoExtrap(), search=Binary()) -> CubicInterpolant
+    cubic_interp(cache, y; extrap=NoExtrap(), search=LinearBinary()) -> CubicInterpolant
 
 Create a callable interpolant from a pre-built cache.
 
@@ -441,7 +441,7 @@ so the pool memory can be safely reused after this function returns.
     cache::CubicSplineCache{Tg},
     y::AbstractVector{Tv};
     extrap::AbstractExtrap=NoExtrap(),
-    search::P=Binary()
+    search::P=LinearBinary()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     tmp_z = similar!(pool, y)
     _solve_system!(tmp_z, cache, y, cache.bc_config)
@@ -462,7 +462,7 @@ function cubic_interp(
     bc::AbstractBC=CubicFit(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
-    search::P=Binary()
+    search::P=LinearBinary()
 ) where {TX<:Real, TY, P<:AbstractSearchPolicy}
     x_p, y_p = _promote_itp_inputs(x, y)
     bc_promoted = _promote_bc(bc, eltype(y_p))

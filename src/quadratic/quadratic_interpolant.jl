@@ -55,7 +55,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=NoExtrap(), search=Binary()) -> QuadraticInterpolant
+    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=NoExtrap(), search=LinearBinary()) -> QuadraticInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -64,7 +64,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `y::AbstractVector`: y-values (can be Real or Complex)
 - `bc`: Boundary condition (Left, Right, MinCurvFit, or Left/Right with QuadraticFit)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
-- `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
+- `search::AbstractSearchPolicy`: Default search policy (default: `LinearBinary()`)
 
 # Returns
 `QuadraticInterpolant{Tg, Tv}` object for scalar/broadcast evaluation.
@@ -115,7 +115,7 @@ end
     y::AbstractVector{TY};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=LinearBinary()
 ) where {TX<:Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     bc_p = _promote_bc(bc, eltype(x_p))

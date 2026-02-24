@@ -78,7 +78,7 @@ end
     y::Y;
     extrap::AbstractExtrap=NoExtrap(),
     side::AbstractSide=NearestSide(),
-    search::P=Binary()
+    search::P=LinearBinary()
 ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
     E = typeof(extrap)
     SD = typeof(side)

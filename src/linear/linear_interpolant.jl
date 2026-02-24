@@ -61,7 +61,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y; extrap=NoExtrap(), search=Binary()) -> LinearInterpolant
+    linear_interp(x, y; extrap=NoExtrap(), search=LinearBinary()) -> LinearInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -69,7 +69,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values (can be real or complex)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
-- `search::AbstractSearchPolicy`: Default search policy for interval lookup (default: `Binary()`)
+- `search::AbstractSearchPolicy`: Default search policy for interval lookup (default: `LinearBinary()`)
 
 # Type Handling
 - x: Grid coordinates → converted to AbstractFloat, Range structure preserved
@@ -91,7 +91,7 @@ Can be:
 
 # Examples
 ```julia
-# Create with default Binary() search policy
+# Create with default LinearBinary() search policy
 itp = linear_interp(x_data, y_data)
 
 # Create with LinearBinary() as default policy (optimal for sorted queries)
@@ -143,7 +143,7 @@ function linear_interp end
     x::AbstractVector{TX},
     y::AbstractVector{TY};
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=LinearBinary()
 ) where {TX<:Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     return LinearInterpolant(x_p, y_p; extrap, search)

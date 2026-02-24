@@ -211,7 +211,7 @@
         @test occursin("HintedBinary", verbose_hinted)
 
         verbose_lb = sprint(show, MIME("text/plain"), itp_linear_binary)
-        @test occursin("LinearBinary{8}", verbose_lb)
+        @test occursin("LinearBinary{2}", verbose_lb)
 
         verbose_lb16 = sprint(show, MIME("text/plain"), itp_linear_binary_16)
         @test occursin("LinearBinary{16}", verbose_lb16)
@@ -468,7 +468,7 @@
         @test FI._format_search(Linear()) == "Linear"
         @test FI._format_search(Binary()) == "Binary"
         @test FI._format_search(HintedBinary()) == "HintedBinary"
-        @test FI._format_search(LinearBinary()) == "LinearBinary{8}"
+        @test FI._format_search(LinearBinary()) == "LinearBinary{2}"
         @test FI._format_search(LinearBinary(linear_window=4)) == "LinearBinary{4}"
 
         # DerivativeView with unknown parent type (no .x or .cache.x)

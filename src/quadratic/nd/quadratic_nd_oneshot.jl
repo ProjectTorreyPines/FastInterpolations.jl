@@ -144,7 +144,7 @@ function quadratic_interp(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=LinearBinary()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -174,7 +174,7 @@ function quadratic_interp(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=LinearBinary()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -197,7 +197,7 @@ function quadratic_interp(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=LinearBinary()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -225,7 +225,7 @@ function quadratic_interp!(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=LinearBinary()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -255,7 +255,7 @@ function quadratic_interp!(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=LinearBinary()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64

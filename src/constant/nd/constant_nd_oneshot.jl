@@ -150,7 +150,7 @@ function constant_interp(
     query::Tuple{Vararg{Real, N}};
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     # Any derivative of constant interpolation is zero
@@ -183,7 +183,7 @@ function constant_interp(
     queries::NTuple{N, AbstractVector{<:Real}};
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     if _is_any_deriv(deriv)
@@ -216,7 +216,7 @@ function constant_interp(
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     if _is_any_deriv(deriv)
@@ -254,7 +254,7 @@ function constant_interp!(
     queries::NTuple{N, AbstractVector{<:Real}};
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     if _is_any_deriv(deriv)
@@ -288,7 +288,7 @@ function constant_interp!(
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     if _is_any_deriv(deriv)

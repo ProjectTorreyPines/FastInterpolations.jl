@@ -32,7 +32,7 @@ function cubic_interp(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
     # Type promotion + validation (same as constructor path)
@@ -66,7 +66,7 @@ function cubic_interp(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -90,7 +90,7 @@ function cubic_interp(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -258,7 +258,7 @@ function cubic_interp!(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -290,7 +290,7 @@ function cubic_interp!(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)

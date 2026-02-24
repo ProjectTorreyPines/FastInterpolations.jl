@@ -141,7 +141,7 @@ struct CubicInterpolant{Tg<:AbstractFloat,Tv,C<:CubicSplineCache{Tg},E<:Abstract
         z::AbstractVector{Tv},
         bc::BC,
         extrap::E,
-        search::P=LinearBinary()
+        search::P=AutoSearch()
     ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, E<:AbstractExtrap, P<:AbstractSearchPolicy, BC<:CubicBC}
         @assert length(cache.x) == length(y) "cache grid and y must have same length"
         @assert length(cache.x) == length(z) "z coefficients must match grid length"

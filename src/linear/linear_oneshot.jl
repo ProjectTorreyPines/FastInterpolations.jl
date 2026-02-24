@@ -16,7 +16,7 @@
 # ========================================
 
 """
-    linear_interp!(output, x, y, x_targets; extrap=NoExtrap(), deriv=EvalValue(), search=LinearBinary())
+    linear_interp!(output, x, y, x_targets; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
 
 Zero-allocation linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -62,7 +62,7 @@ function linear_interp!(
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -155,7 +155,7 @@ end
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -170,7 +170,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xq::Real; extrap=NoExtrap(), deriv=EvalValue(), search=LinearBinary()) -> AbstractFloat
+    linear_interp(x, y, xq::Real; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch()) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -385,7 +385,7 @@ end
     xq::Tq;
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=LinearBinary(),
+    search=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
@@ -412,7 +412,7 @@ function linear_interp(
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_targets))
     linear_interp!(output, x, y, x_targets; extrap, deriv, search)
@@ -433,7 +433,7 @@ function linear_interp!(
     x_targets::AbstractVector{Tq};
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -465,7 +465,7 @@ end
     xq::Tq;
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=LinearBinary(),
+    search=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
@@ -483,7 +483,7 @@ function linear_interp(
     x_targets::AbstractVector{Tq};
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
     Tv_float = eltype(y_typed)

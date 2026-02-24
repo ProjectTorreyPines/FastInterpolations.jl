@@ -77,7 +77,7 @@ mutable struct ConstantSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtra
         y::Matrix{Tv},
         extrap::E,
         side::SD,
-        search::P=LinearBinary()
+        search::P=AutoSearch()
     ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrap, SD<:AbstractSide, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
         new{Tg,Tv,E,SD,P,X}(x, y, LazyTranspose{Tv}(), extrap, side, search)
     end
@@ -333,7 +333,7 @@ function constant_interp(
     ys::AbstractVector{<:AbstractVector{Tv}};
     side::AbstractSide=NearestSide(),
     extrap::AbstractExtrap=NoExtrap(),
-    search::P=LinearBinary()
+    search::P=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Check if Tv's float base requires grid widening (not for Int types)
     # Int-based types (Complex{Int}) are handled by internal _value_type conversion
@@ -394,7 +394,7 @@ function constant_interp(
     Y::AbstractMatrix{Tv};
     side::AbstractSide=NearestSide(),
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     # Check if Tv's float base requires grid widening
     Tv_real = _real_eltype(Tv)
@@ -431,7 +431,7 @@ function constant_interp(
     ys::AbstractVector{<:AbstractVector{Tv}};
     side::AbstractSide=NearestSide(),
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
@@ -445,7 +445,7 @@ function constant_interp(
     Y::AbstractMatrix{Tv};
     side::AbstractSide=NearestSide(),
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
     x_typed = _to_float(x, Tg_float)
@@ -457,7 +457,7 @@ end
 # ========================================
 
 """
-    (sitp::ConstantSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=LinearBinary())
+    (sitp::ConstantSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=AutoSearch())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
@@ -483,7 +483,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::ConstantSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=LinearBinary())
+    (sitp::ConstantSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=AutoSearch())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 """

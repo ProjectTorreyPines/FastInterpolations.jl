@@ -93,7 +93,7 @@ mutable struct QuadraticSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtr
         d::Matrix{Tv},
         h::Vector{Tg},
         extrap::E,
-        search::P=LinearBinary()
+        search::P=AutoSearch()
     ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
         new{Tg,Tv,E,P,X}(x, y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
     end
@@ -367,7 +367,7 @@ function quadratic_interp(
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    search::P=LinearBinary()
+    search::P=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Check if Tv's float base requires grid widening (not for Int types)
     # Int-based types (Complex{Int}) are handled by internal _value_type conversion
@@ -449,7 +449,7 @@ function quadratic_interp(
     Y::AbstractMatrix{Tv};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     ys = [Y[:, k] for k in axes(Y, 2)]
     return quadratic_interp(x, ys; bc=bc, extrap=extrap, search=search)
@@ -466,7 +466,7 @@ function quadratic_interp(
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
@@ -481,7 +481,7 @@ function quadratic_interp(
     Y::AbstractMatrix{Tv};
     bc=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
     x_typed = _to_float(x, Tg_float)
@@ -495,7 +495,7 @@ end
 
 # Scalar evaluation (explicit implementation for deriv keyword support)
 """
-    (sitp::QuadraticSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=LinearBinary())
+    (sitp::QuadraticSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=AutoSearch())
 
 Evaluate all series at scalar query point (out-of-place).
 
@@ -520,7 +520,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::QuadraticSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=LinearBinary())
+    (sitp::QuadraticSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=AutoSearch())
 
 Evaluate all series at scalar query point (in-place, zero allocation).
 

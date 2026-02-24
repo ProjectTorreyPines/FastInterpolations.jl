@@ -112,7 +112,7 @@ function linear_interp(
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -139,7 +139,7 @@ function linear_interp(
     data::AbstractArray{Tv, N},
     queries::NTuple{N, AbstractVector{<:Real}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -161,7 +161,7 @@ function linear_interp(
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -188,7 +188,7 @@ function linear_interp!(
     data::AbstractArray{Tv, N},
     queries::NTuple{N, AbstractVector{<:Real}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -215,7 +215,7 @@ function linear_interp!(
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = LinearBinary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)

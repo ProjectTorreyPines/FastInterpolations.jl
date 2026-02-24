@@ -23,7 +23,7 @@ The interpolation is exact at grid points and linearly blended between them.
 
 # Keyword Arguments
 - `extrap=NoExtrap()`: Extrapolation mode (`NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, `WrapExtrap()`) or per-axis tuple
-- `search=LinearBinary()`: Search policy or per-axis tuple
+- `search=AutoSearch()`: Search policy or per-axis tuple
 
 # Returns
 - `LinearInterpolantND{Tg,Tv,N}`: Callable interpolant object
@@ -62,7 +62,7 @@ function linear_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv_raw, N};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = LinearBinary()
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch()
 ) where {N, Tv_raw}
     # Validate grid dimensions
     _validate_nd_grids(grids, data)

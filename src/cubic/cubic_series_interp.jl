@@ -99,7 +99,7 @@ mutable struct CubicSeriesInterpolant{
         y::Matrix{Tv},
         z::Matrix{Tv},
         extrap::E,
-        search::P=LinearBinary()
+        search::P=AutoSearch()
     ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, B, E<:AbstractExtrap, P<:AbstractSearchPolicy}
         new{Tg, Tv, C, B, E, P}(
             cache, bc_for_solve, y, z,
@@ -574,7 +574,7 @@ function cubic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
-    search::P=LinearBinary()
+    search::P=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Validate input
     @assert !isempty(ys) "ys must not be empty"
@@ -642,7 +642,7 @@ function _build_series_periodic(
     n_series_count::Int,
     autocache::Bool,
     precompute_transpose::Bool,
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     # Extend data for exclusive endpoint
     x, y_mat = _prepare_periodic(x, y_mat, bc)
@@ -706,7 +706,7 @@ function cubic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     n_pts = length(x)
 
@@ -764,7 +764,7 @@ function cubic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
@@ -782,7 +782,7 @@ function cubic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
-    search::AbstractSearchPolicy=LinearBinary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
     Tv_float = _value_type(Tv, Tg_float)
@@ -797,7 +797,7 @@ end
 # ========================================
 
 """
-    (sitp::CubicSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=LinearBinary())
+    (sitp::CubicSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=AutoSearch())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
@@ -826,7 +826,7 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
 end
 
 """
-    (sitp::CubicSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=LinearBinary())
+    (sitp::CubicSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=AutoSearch())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 

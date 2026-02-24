@@ -97,8 +97,8 @@ Can be:
 # Create with default AutoSearch() search policy
 itp = linear_interp(x_data, y_data)
 
-# Create with LinearBinary() as default policy (optimal for sorted queries)
-itp = linear_interp(x_data, y_data; search=LinearBinary())
+# Default AutoSearch: scalar→Binary, vector→LinearBinary
+itp = linear_interp(x_data, y_data)
 
 # Scalar call (uses stored policy)
 val = itp(0.5)
@@ -129,7 +129,8 @@ vals_direct = linear_interp(x_data, y_data, query_points)
 # Performance Notes
 - Returns lightweight callable (~56 bytes), best for reuse and broadcast fusion
 - 3-argument form returns array immediately, best for single use
-- Use `search=LinearBinary()` for sorted query sequences
+- Default `AutoSearch()` adapts: scalar→`Binary()`, vector→`LinearBinary()`
+- Use `search=LinearBinary()` to force linear-binary for all query types
 - Use `hint=Ref(idx)` for ODE/streaming patterns with persistent hint
 """
 function linear_interp end

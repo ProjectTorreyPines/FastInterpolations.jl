@@ -43,10 +43,11 @@ val = itp(0.5)  # returns ComplexF64
 itp_left = constant_interp(x, y; side=LeftSide())
 itp_wrap = constant_interp(x, y; extrap=WrapExtrap(), side=RightSide())
 
-# Custom search policy
-itp = constant_interp(x, y; search=LinearBinary())
-val = itp(0.5)               # uses LinearBinary() by default
-val = itp(0.5; search=Binary())  # override with Binary()
+# Search policy: AutoSearch adapts to query type (scalar→Binary, vector→LinearBinary)
+itp = constant_interp(x, y)
+val = itp(0.5)               # AutoSearch resolves to Binary() for scalar
+itp = constant_interp(x, y; search=LinearBinary())  # explicit override
+val = itp(0.5; search=Binary())  # per-call override
 ```
 """
 struct ConstantInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, SD<:AbstractSide, P<:AbstractSearchPolicy} <: AbstractInterpolant{Tg, Tv}

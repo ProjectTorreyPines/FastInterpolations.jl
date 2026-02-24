@@ -49,10 +49,11 @@ y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im]
 itp = quadratic_interp(x, y)
 val = itp(0.5)  # returns ComplexF64
 
-# Custom search policy
-itp = quadratic_interp(x, y; search=LinearBinary())
-val = itp(0.5)               # uses LinearBinary() by default
-val = itp(0.5; search=Binary())  # override with Binary()
+# Search policy: AutoSearch adapts to query type (scalar→Binary, vector→LinearBinary)
+itp = quadratic_interp(x, y)
+val = itp(0.5)               # AutoSearch resolves to Binary() for scalar
+itp = quadratic_interp(x, y; search=LinearBinary())  # explicit override
+val = itp(0.5; search=Binary())  # per-call override
 ```
 """
 struct QuadraticInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, P<:AbstractSearchPolicy} <: AbstractInterpolant{Tg, Tv}

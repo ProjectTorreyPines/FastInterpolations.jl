@@ -41,7 +41,7 @@ pure binary search is used.
 # Example
 ```julia
 val = linear_interp(x, y, 0.5; search=Binary())  # explicit binary search
-val = linear_interp(x, y, 0.5)                    # default: LinearBinary()
+val = linear_interp(x, y, 0.5)                    # default: AutoSearch()
 
 # With hint: auto-upgrades to HintedBinary behavior
 hint = Ref(1)

@@ -93,7 +93,7 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 - `Tv`: Value type for y-values (can be Tg, Complex{Tg}, or other Number)
 - `C`: CubicSplineCache type (preserves grid type info for O(1) vs O(log n) lookup)
 - `E`: Extrapolation mode type (compile-time specialized)
-- `P`: Search policy type (Binary, HintedBinary, LinearBinary, etc.)
+- `P`: Search policy type (AutoSearch, Binary, HintedBinary, LinearBinary, etc.)
 - `BC`: Boundary condition type (BCPair or PeriodicBC)
 
 # Fields
@@ -110,10 +110,11 @@ itp = cubic_interp(x, y)
 result = @. coef * itp(rho) * other_terms  # fused, zero-allocation per call
 val = itp(0.5)                              # scalar (zero-allocation)
 
-# Create with custom search policy
-itp = cubic_interp(x, y; search=LinearBinary())
-val = itp(0.5)                              # uses LinearBinary() by default
-val = itp(0.5; search=Binary())             # override with Binary()
+# Search policy: AutoSearch adapts to query type (scalar→Binary, vector→LinearBinary)
+itp = cubic_interp(x, y)
+val = itp(0.5)                              # AutoSearch resolves to Binary() for scalar
+itp = cubic_interp(x, y; search=LinearBinary())  # explicit override
+val = itp(0.5; search=Binary())             # per-call override
 
 # Complex values
 x = [0.0, 1.0, 2.0, 3.0, 4.0]

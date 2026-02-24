@@ -131,7 +131,7 @@ d1 = deriv1(itp)
 val = d1(0.5)
 
 # Override search policy
-val = d1(0.5; search=LinearBinary())
+val = d1(0.5; search=Binary())
 
 # Use hint for sequential access
 hint = Ref(1)
@@ -150,7 +150,7 @@ results = @. itp(query_pts) + 0.1 * d1(query_pts)
 # In-place evaluation (single-series)
 output = similar(query_pts)
 d1(output, query_pts)
-d1(output, query_pts; search=LinearBinary())
+d1(output, query_pts; search=LinearBinary())  # explicit: LinearBinary for sorted vectors
 ```
 """
 (deriv1, deriv2, deriv3)

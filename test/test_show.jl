@@ -215,6 +215,11 @@
 
         verbose_lb16 = sprint(show, MIME("text/plain"), itp_linear_binary_16)
         @test occursin("LinearBinary{16}", verbose_lb16)
+
+        # Default-constructed interpolant uses AutoSearch
+        itp_default = linear_interp(x_vec, y)
+        verbose_default = sprint(show, MIME("text/plain"), itp_default)
+        @test occursin("AutoSearch", verbose_default)
     end
 
     @testset "Extrapolation mode display" begin
@@ -470,6 +475,7 @@
         @test FI._format_search(HintedBinary()) == "HintedBinary"
         @test FI._format_search(LinearBinary()) == "LinearBinary{2}"
         @test FI._format_search(LinearBinary(linear_window=4)) == "LinearBinary{4}"
+        @test FI._format_search(AutoSearch()) == "AutoSearch (scalar→Binary, vector→LinearBinary)"
 
         # DerivativeView with unknown parent type (no .x or .cache.x)
         struct DummyInterpolant{T} <: FastInterpolations.AbstractInterpolant{T, T} end

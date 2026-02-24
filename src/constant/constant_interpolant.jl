@@ -85,9 +85,10 @@ y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im]
 itp = constant_interp(x, y)
 itp(0.5)           # 1.0+2.0im (ComplexF64)
 
-# Create with custom search policy
-itp = constant_interp(x, y; search=LinearBinary())
-val = itp(0.5)     # uses LinearBinary() by default
+# Search policy: AutoSearch adapts to query type (scalar→Binary, vector→LinearBinary)
+itp = constant_interp(x, y)
+val = itp(0.5)     # AutoSearch resolves to Binary() for scalar
+itp = constant_interp(x, y; search=LinearBinary())  # explicit override
 
 # Fused broadcast (optimal)
 result = @. coef * itp(query)

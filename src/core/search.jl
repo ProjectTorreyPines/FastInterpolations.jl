@@ -40,8 +40,8 @@ pure binary search is used.
 
 # Example
 ```julia
-val = linear_interp(x, y, 0.5; search=Binary())  # pure binary search
-val = linear_interp(x, y, 0.5)                    # same (default)
+val = linear_interp(x, y, 0.5; search=Binary())  # explicit binary search
+val = linear_interp(x, y, 0.5)                    # default: LinearBinary()
 
 # With hint: auto-upgrades to HintedBinary behavior
 hint = Ref(1)
@@ -126,7 +126,7 @@ fall in adjacent or nearby intervals.
 # Construction
 Use the factory function (recommended) to construct with a curated set of values:
 ```julia
-LinearBinary()               # default MAX=8
+LinearBinary()               # default MAX=2
 LinearBinary(linear_window=4)    # custom MAX=4
 ```
 
@@ -147,7 +147,7 @@ struct LinearBinary{MAX} <: AbstractSearchPolicy end
 
 """
     LinearBinary(linear_window::Integer)
-    LinearBinary(; linear_window::Integer=8)
+    LinearBinary(; linear_window::Integer=2)
 
 Factory constructor for `LinearBinary{MAX}` with a **curated set of `linear_window` values**.
 
@@ -160,7 +160,7 @@ By restricting to powers of 2, we limit specialization to just 7 variants while
 covering the practical range of use cases.
 
 # Arguments
-- `linear_window::Integer=8`: Size of the linear search window before binary fallback.
+- `linear_window::Integer=2`: Size of the linear search window before binary fallback.
   **Allowed values**: `1, 2, 4, 8, 16, 32, 64, 128` (powers of 2 from 2⁰ to 2⁷)
 
 # Throws
@@ -168,15 +168,15 @@ covering the practical range of use cases.
 
 # Example
 ```julia
-policy = LinearBinary()              # LinearBinary{8}()  (default)
+policy = LinearBinary()                  # LinearBinary{2}()  (default)
 policy = LinearBinary(linear_window=4)   # LinearBinary{4}()
-policy = LinearBinary(linear_window=16)  # LinearBinary{16}()
+policy = LinearBinary(linear_window=8)   # LinearBinary{8}()
 policy = LinearBinary(linear_window=3)   # ERROR: ArgumentError
 ```
 
 # Choosing `linear_window`
-- **Small values (1–4)**: Lower overhead, but more frequent binary fallbacks
-- **Medium values (8–16)**: Good balance for typical sorted query patterns
+- **Small values (1–2)**: Minimal overhead, best for default usage and mixed query patterns
+- **Medium values (4–16)**: Good balance for known-sorted query patterns
 - **Large values (32–128)**: For highly localized queries or very large datasets
 """
 function LinearBinary(linear_window::Integer)
@@ -190,7 +190,7 @@ function LinearBinary(linear_window::Integer)
     linear_window == 128 && return LinearBinary{128}()
     throw(ArgumentError("`linear_window` must be one of (1, 2, 4, 8, 16, 32, 64, 128), got $linear_window"))
 end
-LinearBinary(; linear_window::Integer=8) = LinearBinary(linear_window)
+LinearBinary(; linear_window::Integer=2) = LinearBinary(linear_window)
 
 # ----------------------------------------
 # Hint Types (Internal)
@@ -532,6 +532,11 @@ end
 
 Bounded linear search within MAX-sized window, then binary fallback.
 Optimal for monotonic query sequences.
+
+# Optimizations over naive implementation:
+- No hint clamp: internal hints are always valid (initialized to 1, updated to valid idx)
+- No hint write on direct hit: `ix` is unchanged, skip redundant `hint_ref[] = ix`
+- Single comparison per linear step: direction already determines one bound
 """
 @inline function _search_linear_binary!(
     x::AbstractVector{T},
@@ -542,31 +547,32 @@ Optimal for monotonic query sequences.
     ix = hint_ref[]
     n = length(x)
     @inbounds begin
-        ix = clamp(ix, 1, n - 1)
-        if x[ix] <= xq < x[ix + 1]
-            hint_ref[] = ix
-            return ix, x[ix], x[ix + 1]
-        end
-        if xq < x[ix]
-            for _ in 1:MAX
+        # Direct hit — most common for sorted/monotonic queries
+        xL = x[ix]
+        xR = x[ix + 1]
+        xL <= xq < xR && return ix, xL, xR  # no hint write (ix unchanged)
+
+        if xq < xL
+            # Walk left: xq < x[ix] guaranteed ⟹ after ix-=1,
+            # x[ix+1] = old x[ix] > xq — right bound already satisfied.
+            # Only need: x[ix] <= xq  (single comparison per step)
+            lo = max(1, ix - MAX)
+            while ix > lo
                 ix -= 1
-                ix < 1 && break
-                if x[ix] <= xq < x[ix + 1]
-                    hint_ref[] = ix
-                    return ix, x[ix], x[ix + 1]
-                end
+                x[ix] <= xq && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
             end
-        else
-            for _ in 1:MAX
+        else  # xq >= xR
+            # Walk right: xq >= x[ix+1] guaranteed ⟹ after ix+=1,
+            # x[ix] = old x[ix+1] <= xq — left bound already satisfied.
+            # Only need: xq < x[ix+1]  (single comparison per step)
+            hi = min(n - 1, ix + MAX)
+            while ix < hi
                 ix += 1
-                ix > n - 1 && break
-                if x[ix] <= xq < x[ix + 1]
-                    hint_ref[] = ix
-                    return ix, x[ix], x[ix + 1]
-                end
+                xq < x[ix + 1] && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
             end
         end
     end
+    # Binary fallback — full range (narrowing saves < 1 iteration, not worth extra branches)
     idx, xL, xR = _search_binary(x, xq)
     hint_ref[] = idx
     return idx, xL, xR

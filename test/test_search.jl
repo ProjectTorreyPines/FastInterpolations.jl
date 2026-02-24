@@ -738,7 +738,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         # Ref(n) — above valid range [1, n-1]
         big_hint = Ref(200)
         @test isfinite(itp(0.5; hint=big_hint))
-        @test big_hint[] <= 100  # hint was clamped then updated
+        @test big_hint[] <= 100  # valid range [1, n-1]=[1,100]; query 0.5 → idx ≈ 50
     end
 
     @testset "Integrated test" begin
@@ -1258,7 +1258,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             hint = Ref(1)
             xq_sorted = collect(range(0.1, 0.9, 100))
             itp(zeros(100), xq_sorted; hint=hint)
-            # LinearBinary leaves hint near last query (~900)
+            # 1001-point grid, last query at x=0.9 → idx ≈ 901; margin of 50
             @test hint[] >= 850
 
             # Scalar call without hint: AutoSearch → Binary → correct value
@@ -1419,7 +1419,8 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
                 # Vector call: AutoSearch → LinearBinary → hint tracks
                 sitp(xq_sorted; hint=hint)
-                @test hint[] >= 170   # near end of sorted queries
+                # 201-point grid, last query at x=0.9 → idx ≈ 181; margin of 21
+                @test hint[] >= 160
             end
         end
 

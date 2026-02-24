@@ -95,7 +95,7 @@ function (itp::CubicInterpolantND{Tg, Tv, N})(
         "output length $(length(output)) must match query length $n_queries"
     ))
     ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), queries)
+    search_tuple = _resolve_search_nd(search, Val(N), queries)  # AoS: AbstractVector{<:Tuple} <: AbstractVector → LinearBinary
     _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
     return output
 end

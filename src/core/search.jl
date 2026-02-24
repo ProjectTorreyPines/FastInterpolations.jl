@@ -229,7 +229,8 @@ struct AutoSearch <: AbstractSearchPolicy end
 @inline _resolve_search(::AutoSearch, ::AbstractVector) = LinearBinary()
 
 # ND SoA batch: tuple of vectors → LinearBinary per axis
-# NOTE: must be above Tuple{Vararg{Real}} to avoid ambiguity (AbstractVector <: Any)
+# NOTE: must precede the bare ::Tuple fallback — Tuple{Vararg{AbstractVector}} <: Tuple,
+# so Julia's specificity rules handle ordering correctly, but explicit ordering avoids confusion.
 @inline _resolve_search(::AutoSearch, ::Tuple{Vararg{AbstractVector}}) = LinearBinary()
 
 # ND scalar: tuple of reals → Binary per axis
@@ -615,6 +616,7 @@ Optimal for monotonic query sequences.
     ix = hint_ref[]
     n = length(x)
     ix = clamp(ix, 1, n - 1)  # guard against user-provided bad hints (e.g. Ref(0), stale)
+                               # Precondition: n >= 2 (enforced by all interpolant constructors)
     @inbounds begin
         # Direct hit — most common for sorted/monotonic queries
         xL = x[ix]

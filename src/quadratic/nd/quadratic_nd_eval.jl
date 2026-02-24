@@ -67,6 +67,7 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))      # ∂f/∂x only
 ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
+    search_tuple = map(p -> _resolve_search(p, first(query)), search_tuple)
     return _eval_nd_quadratic(itp, query, ops, search_tuple, hint)
 end
 
@@ -98,6 +99,7 @@ function (itp::QuadraticInterpolantND{Tg, Tv, N})(
     end
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
+    search_tuple = map(p -> _resolve_search(p, first(queries)), search_tuple)
     _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
     return output
 end
@@ -121,6 +123,7 @@ function (itp::QuadraticInterpolantND{Tg, Tv, N})(
     ))
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
+    search_tuple = map(p -> _resolve_search(p, queries), search_tuple)
     _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
     return output
 end

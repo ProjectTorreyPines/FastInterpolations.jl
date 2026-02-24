@@ -22,6 +22,7 @@
 ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
+    search_tuple = map(p -> _resolve_search(p, first(query)), search_tuple)
     return _eval_linear_nd(itp, query, ops, search_tuple, hint)
 end
 
@@ -53,6 +54,7 @@ function (itp::LinearInterpolantND{Tg,Tv,N})(
     end
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
+    search_tuple = map(p -> _resolve_search(p, first(queries)), search_tuple)
     if _has_second_or_higher_derivative(ops, Val(N))
         fill!(output, zero(eltype(output)))
         return output
@@ -80,6 +82,7 @@ function (itp::LinearInterpolantND{Tg,Tv,N})(
     ))
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N))
+    search_tuple = map(p -> _resolve_search(p, queries), search_tuple)
     if _has_second_or_higher_derivative(ops, Val(N))
         fill!(output, zero(eltype(output)))
         return output

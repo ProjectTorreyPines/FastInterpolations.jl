@@ -165,6 +165,7 @@ function constant_interp(
 
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
+    searches = map(p -> _resolve_search(p, first(query)), searches)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot(
@@ -198,6 +199,7 @@ function constant_interp(
 
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
+    searches = map(p -> _resolve_search(p, first(queries)), searches)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_soa(
@@ -231,6 +233,7 @@ function constant_interp(
 
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
+    searches = map(p -> _resolve_search(p, queries), searches)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_aos(
@@ -269,6 +272,7 @@ function constant_interp!(
 
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
+    searches = map(p -> _resolve_search(p, first(queries)), searches)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_soa!(
@@ -303,6 +307,7 @@ function constant_interp!(
 
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
+    searches = map(p -> _resolve_search(p, queries), searches)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_aos!(

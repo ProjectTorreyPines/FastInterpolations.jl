@@ -154,6 +154,7 @@ function quadratic_interp(
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
+    searches = map(p -> _resolve_search(p, first(query)), searches)
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -234,6 +235,7 @@ function quadratic_interp!(
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
+    searches = map(p -> _resolve_search(p, first(queries)), searches)
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -264,6 +266,7 @@ function quadratic_interp!(
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
+    searches = map(p -> _resolve_search(p, queries), searches)
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))

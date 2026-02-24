@@ -44,6 +44,7 @@ function cubic_interp(
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
+    searches = map(p -> _resolve_search(p, first(query)), searches)
 
     # Validate BC requirements (once, before dispatch).
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
@@ -268,6 +269,7 @@ function cubic_interp!(
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
+    searches = map(p -> _resolve_search(p, first(queries)), searches)
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
@@ -300,6 +302,7 @@ function cubic_interp!(
 
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
+    searches = map(p -> _resolve_search(p, queries), searches)
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 

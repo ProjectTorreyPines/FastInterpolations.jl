@@ -153,8 +153,7 @@ function quadratic_interp(
     Tr = promote_type(Tv, Tg, typeof.(query)...)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
-    searches = map(p -> _resolve_search(p, first(query)), searches)
+    searches = _resolve_search_nd(search, Val(N), first(query))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -234,8 +233,7 @@ function quadratic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
-    searches = map(p -> _resolve_search(p, first(queries)), searches)
+    searches = _resolve_search_nd(search, Val(N), first(queries))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -265,8 +263,7 @@ function quadratic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
-    searches = map(p -> _resolve_search(p, queries), searches)
+    searches = _resolve_search_nd(search, Val(N), queries)
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))

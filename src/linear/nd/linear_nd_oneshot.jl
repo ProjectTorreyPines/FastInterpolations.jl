@@ -121,8 +121,7 @@ function linear_interp(
     _validate_nd_grids(grids_typed, data)
     Tr = promote_type(Tv, Tg, typeof.(query)...)
 
-    searches = _resolve_search_nd(search, Val(N))
-    searches = map(p -> _resolve_search(p, first(query)), searches)
+    searches = _resolve_search_nd(search, Val(N), first(query))
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -197,8 +196,7 @@ function linear_interp!(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    searches = _resolve_search_nd(search, Val(N))
-    searches = map(p -> _resolve_search(p, first(queries)), searches)
+    searches = _resolve_search_nd(search, Val(N), first(queries))
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -225,8 +223,7 @@ function linear_interp!(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    searches = _resolve_search_nd(search, Val(N))
-    searches = map(p -> _resolve_search(p, queries), searches)
+    searches = _resolve_search_nd(search, Val(N), queries)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))

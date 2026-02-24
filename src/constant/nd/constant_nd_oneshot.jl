@@ -164,8 +164,7 @@ function constant_interp(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
-    searches = map(p -> _resolve_search(p, first(query)), searches)
+    searches = _resolve_search_nd(search, Val(N), first(query))
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot(
@@ -198,8 +197,7 @@ function constant_interp(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
-    searches = map(p -> _resolve_search(p, first(queries)), searches)
+    searches = _resolve_search_nd(search, Val(N), first(queries))
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_soa(
@@ -232,8 +230,7 @@ function constant_interp(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
-    searches = map(p -> _resolve_search(p, queries), searches)
+    searches = _resolve_search_nd(search, Val(N), queries)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_aos(
@@ -271,8 +268,7 @@ function constant_interp!(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
-    searches = map(p -> _resolve_search(p, first(queries)), searches)
+    searches = _resolve_search_nd(search, Val(N), first(queries))
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_soa!(
@@ -306,8 +302,7 @@ function constant_interp!(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
-    searches = map(p -> _resolve_search(p, queries), searches)
+    searches = _resolve_search_nd(search, Val(N), queries)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_aos!(

@@ -773,9 +773,9 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             itp_hb = linear_interp(x, y; search=HintedBinary())
             @test itp_hb.search_policy isa HintedBinary
 
-            # Create with default (LinearBinary)
-            itp_bin = linear_interp(x, y)
-            @test itp_bin.search_policy isa LinearBinary{2}
+            # Create with default (AutoSearch)
+            itp_auto = linear_interp(x, y)
+            @test itp_auto.search_policy isa AutoSearch
         end
 
         @testset "Baked-in policy with hint: hint updates when policy supports it" begin

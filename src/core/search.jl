@@ -307,6 +307,10 @@ struct Searcher{P<:AbstractSearchPolicy,H<:AbstractHint}
     hint::H
 end
 
+# Searcher passthrough for _resolve_search: pre-built Searcher objects skip resolution.
+# Must be defined after Searcher struct (Julia requires types to be defined before use).
+@inline _resolve_search(s::Searcher, _) = s
+
 """
     DEFAULT_SEARCHER
 

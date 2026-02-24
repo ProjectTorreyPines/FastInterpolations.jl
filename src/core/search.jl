@@ -600,7 +600,9 @@ Bounded linear search within MAX-sized window, then binary fallback.
 Optimal for monotonic query sequences.
 
 # Optimizations over naive implementation:
-- No hint clamp: internal hints are always valid (initialized to 1, updated to valid idx)
+- Hint clamped once at start: guards against user-provided out-of-range hints (e.g. Ref(0),
+  stale hints from a different grid). Internal hints (initialized to 1, updated to valid idx)
+  are already valid, so the clamp is a no-op on the hot path.
 - No hint write on direct hit: `ix` is unchanged, skip redundant `hint_ref[] = ix`
 - Single comparison per linear step: direction already determines one bound
 """
@@ -612,6 +614,7 @@ Optimal for monotonic query sequences.
 ) where {T<:Real,MAX}
     ix = hint_ref[]
     n = length(x)
+    ix = clamp(ix, 1, n - 1)  # guard against user-provided bad hints (e.g. Ref(0), stale)
     @inbounds begin
         # Direct hit — most common for sorted/monotonic queries
         xL = x[ix]

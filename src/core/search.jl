@@ -192,6 +192,56 @@ function LinearBinary(linear_window::Integer)
 end
 LinearBinary(; linear_window::Integer=2) = LinearBinary(linear_window)
 
+"""
+    AutoSearch <: AbstractSearchPolicy
+
+Adaptive search policy that resolves at call time based on query type:
+- **Scalar** queries (`Real`, `Tuple{Vararg{Real}}`) → `Binary()` — no hint locality to exploit
+- **Vector** queries (`AbstractVector`, `Tuple{Vararg{AbstractVector}}`) → `LinearBinary()` — hint continuity benefits sorted sequences
+- **Broadcast** (`itp.(xs)`) → `Binary()` per element — fresh searcher each call
+
+This is the default search policy for all interpolants. For known query patterns,
+specify `Binary()` or `LinearBinary()` explicitly for optimal performance.
+
+# Example
+```julia
+itp = linear_interp(x, y)              # stores AutoSearch()
+itp(0.5)                               # → Binary() internally (scalar)
+itp([0.1, 0.5, 0.9])                   # → LinearBinary() internally (vector)
+itp(0.5; search=LinearBinary())        # override: use LinearBinary explicitly
+```
+
+See also: [`Binary`](@ref), [`LinearBinary`](@ref)
+"""
+struct AutoSearch <: AbstractSearchPolicy end
+
+# ----------------------------------------
+# AutoSearch Resolution (query-type adaptive)
+# ----------------------------------------
+# Resolves AutoSearch to a concrete policy based on query type.
+# For non-AutoSearch policies, passes through unchanged (user override honored).
+# Must be called BEFORE _to_searcher in all eval paths.
+
+# 1D scalar: no hint locality → pure binary search
+@inline _resolve_search(::AutoSearch, ::Real) = Binary()
+
+# 1D vector: sorted locality → linear window with binary fallback
+@inline _resolve_search(::AutoSearch, ::AbstractVector) = LinearBinary()
+
+# ND SoA batch: tuple of vectors → LinearBinary per axis
+# NOTE: must be above Tuple{Vararg{Real}} to avoid ambiguity (AbstractVector <: Any)
+@inline _resolve_search(::AutoSearch, ::Tuple{Vararg{AbstractVector}}) = LinearBinary()
+
+# ND scalar: tuple of reals → Binary per axis
+@inline _resolve_search(::AutoSearch, ::Tuple) = Binary()
+
+# Passthrough: explicit policies are honored as-is
+@inline _resolve_search(p::AbstractSearchPolicy, _) = p
+
+# Tuple of policies: resolve each element (for ND per-axis storage)
+@inline _resolve_search(ps::Tuple{Vararg{AbstractSearchPolicy}}, query) =
+    map(p -> _resolve_search(p, query), ps)
+
 # ----------------------------------------
 # Hint Types (Internal)
 # ----------------------------------------
@@ -296,6 +346,12 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(::LinearBinary{MAX}, ::Nothing) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint())
 @inline _to_searcher(::LinearBinary{MAX}, hint::Base.RefValue{Int}) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint(hint))
 
+# AutoSearch fallbacks: _resolve_search should be called first, but if any
+# code path misses resolution, fall back to Binary (safe stateless default).
+@inline _to_searcher(::AutoSearch) = Searcher{Binary,NoHint}(NoHint())
+@inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
+@inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = Searcher{HintedBinary,RefHint}(RefHint(hint))
+
 # ----------------------------------------
 # Searcher passthrough (advanced usage)
 # ----------------------------------------
@@ -355,6 +411,10 @@ end
     _search_binary(x::AbstractVector{T}, xq::T) where {T<:Real}
 
 O(log n) binary search for non-uniform grids (AbstractVector).
+
+Uses branchless `for` loop with precomputed iteration count via `leading_zeros`
+for predictable loop exit on modern CPUs. The inner comparison uses `ifelse` to
+compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
 """
 @inline function _search_binary(x::AbstractVector{T}, xq::T) where {T<:Real}
     n = length(x)
@@ -365,13 +425,15 @@ O(log n) binary search for non-uniform grids (AbstractVector).
             idx = n - 1
         else
             lo, hi = 1, n
-            while hi - lo > 1
+            # Precompute exact iteration count: ceil(log2(hi - lo)) via CLZ
+            # n >= 2 guaranteed (grid has ≥2 points), so hi - lo - 1 >= 0
+            # Use %UInt64 (bit reinterpret) to avoid InexactError cold path in ASM
+            iters = 64 - leading_zeros((hi - lo - 1) % UInt64)
+            for _ in 1:iters
                 mid = (lo + hi) >> 1
-                if x[mid] <= xq
-                    lo = mid
-                else
-                    hi = mid
-                end
+                cond = x[mid] <= xq
+                lo = ifelse(cond, mid, lo)
+                hi = ifelse(cond, hi, mid)
             end
             idx = lo
         end

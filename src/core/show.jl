@@ -119,7 +119,6 @@ _format_side(side::AbstractSide) = string(typeof(side))
 
 """Format search policy name."""
 _format_search(::Binary) = "Binary"
-_format_search(::HintedBinary) = "HintedBinary"
 _format_search(::Linear) = "Linear"
 _format_search(::LinearBinary{MAX}) where {MAX} = "LinearBinary{$MAX}"
 _format_search(::AutoSearch) = "AutoSearch (scalar→Binary, vector→LinearBinary)"

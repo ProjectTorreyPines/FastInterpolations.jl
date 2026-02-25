@@ -161,13 +161,17 @@ LinearBinary(linear_window=16)  # larger bound for sparser-spaced sorted queries
 
 | Query Pattern | `AutoSearch()` | `Binary()` | `LinearBinary()` | `Linear()` |
 |:--------------|:---------------|:-----------|:-----------------|:-----------|
-| **Random** | ✅ Same as `Binary()` | ✅ Best | ~2-3x slower | ❌ Up to 7x slower |
-| **Monotonic** | ✅ Same as `LinearBinary()` | Baseline | ✅ ~5x faster | ✅ ~6x faster |
+| **Random** | ✅ Same as `Binary()` | ✅ Best | ~2.5-3x slower | ❌ Up to 7x slower |
+| **Monotonic** | ✅ Same as `LinearBinary()` | Baseline | ✅ ~4-6x faster | ✅ ~6x faster |
 
 `AutoSearch()` has negligible overhead — it dispatches to the same underlying code as the resolved policy, so you only pay for the type dispatch, not for any extra search work.
 
 !!! note "Results Vary"
-    These are approximate results from a 500-point grid with 1000 queries. Actual performance depends on your **grid size** and **query spacing**. Run benchmark with your own data to find the best policy.
+    These are approximate results from **vector batch calls** (`itp(out, queries)`) on 500–2000 point grids.
+    The random penalty (~2.5-3x) comes from the hint walk landing at the wrong position before falling back to
+    binary. The monotonic speedup grows with grid size (larger grids benefit more from hint locality).
+    For **scalar calls** without a persistent hint, the difference is much smaller (~1.2x).
+    Run benchmark with your own data to find the best policy.
 
 ---
 

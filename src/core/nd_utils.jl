@@ -112,13 +112,10 @@ Resolve search policy input to canonical N-tuple (broadcast only, no AutoSearch 
 
     _resolve_search_nd(search, Val(N), query_sample) -> NTuple{N, AbstractSearchPolicy}
 
-Broadcast + resolve AutoSearch in one step. `query_sample` determines scalar vs vector resolution:
-- `query_sample::Real` (from `first(query)`) → `Binary()` per axis
-- `query_sample::AbstractVector` → `LinearBinary()` per axis
-  - SoA batch: pass `first(queries)` where `queries::NTuple{N,AbstractVector}`
-  - AoS batch: pass `queries` directly where `queries::AbstractVector{<:Tuple}`;
-    `AbstractVector{<:Tuple} <: AbstractVector` so resolves to `LinearBinary()` — correct
-    because AoS batches have the same sorted-locality property as SoA batches.
+Broadcast + resolve AutoSearch in one step. Pass the query container directly — no `first()` extraction needed:
+- `query_sample::NTuple{N,Real}` (scalar ND query) → `Tuple` arm → `Binary()` per axis
+- `query_sample::NTuple{N,AbstractVector}` (SoA batch) → `Tuple{Vararg{AbstractVector}}` arm → `LinearBinary()` per axis
+- `query_sample::AbstractVector{<:Tuple}` (AoS batch) → `AbstractVector` arm → `LinearBinary()` per axis
 - Explicit policies pass through unchanged.
 """
 @inline _resolve_search_nd(s::AbstractSearchPolicy, ::Val{N}) where {N} = ntuple(_ -> s, Val(N))

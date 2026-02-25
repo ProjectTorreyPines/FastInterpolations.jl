@@ -121,7 +121,7 @@ function linear_interp(
     _validate_nd_grids(grids_typed, data)
     Tr = promote_type(Tv, Tg, typeof.(query)...)
 
-    searches = _resolve_search_nd(search, Val(N), first(query))
+    searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -196,7 +196,7 @@ function linear_interp!(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    searches = _resolve_search_nd(search, Val(N), first(queries))
+    searches = _resolve_search_nd(search, Val(N), queries)  # NTuple{N,AbstractVector} <: Tuple{Vararg{AbstractVector}} → LinearBinary/axis
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))

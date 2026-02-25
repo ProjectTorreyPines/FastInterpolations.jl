@@ -66,7 +66,7 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))      # ∂f/∂x only
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), first(query))
+    search_tuple = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
     return _eval_nd_quadratic(itp, query, ops, search_tuple, hint)
 end
 
@@ -97,7 +97,7 @@ function (itp::QuadraticInterpolantND{Tg, Tv, N})(
         ))
     end
     ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), first(queries))
+    search_tuple = _resolve_search_nd(search, Val(N), queries)  # NTuple{N,AbstractVector} <: Tuple{Vararg{AbstractVector}} → LinearBinary/axis
     _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
     return output
 end

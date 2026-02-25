@@ -43,7 +43,7 @@ function cubic_interp(
     Tr = promote_type(Tv, Tg, typeof.(query)...)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N), first(query))
+    searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
 
     # Validate BC requirements (once, before dispatch).
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
@@ -267,7 +267,7 @@ function cubic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N), first(queries))
+    searches = _resolve_search_nd(search, Val(N), queries)  # NTuple{N,AbstractVector} <: Tuple{Vararg{AbstractVector}} → LinearBinary/axis
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 

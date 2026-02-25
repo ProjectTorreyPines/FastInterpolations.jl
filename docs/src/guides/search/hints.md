@@ -30,18 +30,18 @@ External hints are particularly useful for:
 
 ## Auto-Upgrade Behavior
 
-When you provide a `hint` argument with `Binary()`, the search automatically upgrades to `LinearBinary{2}`:
+When you provide a `hint` argument with `Binary()`, the search automatically upgrades to `LinearBinary()` (default window):
 
 ```julia
 hint = Ref(1)
-val = itp(0.5; search=Binary(), hint=hint)  # auto-upgrades to LinearBinary{2}
+val = itp(0.5; search=Binary(), hint=hint)  # auto-upgrades to LinearBinary{8}
 ```
 
-This also works with the default `AutoSearch()` — scalar queries resolve to `Binary()`, and if a hint is provided, they auto-upgrade to `LinearBinary{2}`:
+This also works with the default `AutoSearch()` — scalar queries resolve to `Binary()`, and if a hint is provided, they auto-upgrade to `LinearBinary()`:
 
 ```julia
 hint = Ref(1)
-val = itp(0.5; hint=hint)  # AutoSearch → Binary() → auto-upgrades to LinearBinary{2}
+val = itp(0.5; hint=hint)  # AutoSearch → Binary() → auto-upgrades to LinearBinary{8}
 ```
 
 Without a hint, binary search is used (no hint tracking).

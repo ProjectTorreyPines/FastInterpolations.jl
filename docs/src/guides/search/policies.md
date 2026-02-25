@@ -120,17 +120,18 @@ vals = itp(sorted_queries)  # O(1) amortized for sorted input
 You can tune the linear search window size before falling back to binary search:
 
 ```julia
-LinearBinary()                   # default: linear_window=2
+LinearBinary()                   # default: linear_window=8
 LinearBinary(linear_window=0)    # hint check only, no walk (minimal random overhead)
-LinearBinary(linear_window=4)    # moderate bound for known-sorted sequences
-LinearBinary(linear_window=16)   # larger bound for sparser-spaced sorted queries
+LinearBinary(linear_window=4)    # narrow window for tight jitter patterns
+LinearBinary(linear_window=16)   # wider window for sparser-spaced sorted queries
 ```
 
 **Guidelines**:
 - **Zero (0)**: Hint check only, no walk — minimal random-query overhead. Good when queries cluster in the same interval.
-- **Small `linear_window` (1–2)**: Minimal overhead; best for mixed or unknown patterns. The default `LinearBinary()` uses `2`.
-- **Medium `linear_window` (4–16)**: Good balance when queries are known-sorted
-- **Large `linear_window` (32–128)**: For highly localized queries or very large datasets
+- **Small `linear_window` (1–2)**: Minimal overhead for mixed query patterns
+- **Medium values (4)**: Good for narrow jitter patterns (step size < 2 intervals)
+- **Default (8)**: Best balance — +2.5ns random overhead, covers jitter up to ~6 intervals
+- **Large `linear_window` (16–128)**: For wide jitter, highly localized queries, or very large datasets
 
 !!! note "Type Parameter Restriction"
     `linear_window` is restricted to `0` plus powers of 2 (1, 2, 4, 8, 16, 32, 64, 128) to prevent type parameter explosion. Each unique value creates a specialized method, so limiting choices keeps compile times reasonable.

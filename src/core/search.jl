@@ -112,8 +112,8 @@ fall in adjacent or nearby intervals.
 # Construction
 Use the factory function (recommended) to construct with a curated set of values:
 ```julia
-LinearBinary()                   # default MAX=2
-LinearBinary(linear_window=0)    # hint check only, no walk 
+LinearBinary()                   # default MAX=8
+LinearBinary(linear_window=0)    # hint check only, no walk
 LinearBinary(linear_window=4)    # custom MAX=4
 ```
 

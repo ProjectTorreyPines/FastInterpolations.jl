@@ -35,7 +35,7 @@ Stateless and thread-safe. This is the default search policy.
 
 # Hint Behavior
 When a `hint` argument is provided with `Binary()`, the search automatically
-upgrades to `LinearBinary{2}` to utilize the hint for locality. Without a hint,
+upgrades to `LinearBinary()` (default window) to utilize the hint for locality. Without a hint,
 pure binary search is used.
 
 # Example
@@ -43,9 +43,9 @@ pure binary search is used.
 val = linear_interp(x, y, 0.5; search=Binary())  # explicit binary search
 val = linear_interp(x, y, 0.5)                    # default: AutoSearch()
 
-# With hint: auto-upgrades to LinearBinary{2}
+# With hint: auto-upgrades to LinearBinary() (default window)
 hint = Ref(1)
-val = itp(0.5; search=Binary(), hint=hint)  # uses LinearBinary{2} internally
+val = itp(0.5; search=Binary(), hint=hint)  # uses LinearBinary() internally
 ```
 
 See also: [`LinearBinary`](@ref)
@@ -331,7 +331,7 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 # When hint=Ref{Int}, stateful policies use the external Ref for persistence.
 
 @inline _to_searcher(::Binary, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
-@inline _to_searcher(::Binary, hint::Base.RefValue{Int}) = Searcher{LinearBinary{2},RefHint}(RefHint(hint))  # auto-upgrade to LinearBinary{2}
+@inline _to_searcher(::Binary, hint::Base.RefValue{Int}) = _to_searcher(LinearBinary(), hint)  # auto-upgrade to default LinearBinary
 @inline _to_searcher(::Linear, ::Nothing) = Searcher{Linear,RefHint}(RefHint())
 @inline _to_searcher(::Linear, hint::Base.RefValue{Int}) = Searcher{Linear,RefHint}(RefHint(hint))
 @inline _to_searcher(::LinearBinary{MAX}, ::Nothing) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint())
@@ -341,7 +341,7 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 # code path misses resolution, fall back to Binary (safe stateless default).
 @inline _to_searcher(::AutoSearch) = Searcher{Binary,NoHint}(NoHint())
 @inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
-@inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = Searcher{LinearBinary{2},RefHint}(RefHint(hint))
+@inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = _to_searcher(LinearBinary(), hint)  # auto-upgrade to default LinearBinary
 
 # ----------------------------------------
 # Searcher passthrough (advanced usage)

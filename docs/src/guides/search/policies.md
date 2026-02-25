@@ -2,7 +2,41 @@
 
 This page explains each search policy in detail, including when to use it and how it works internally.
 
-## Binary (Default)
+## AutoSearch (Default)
+
+Automatically selects `Binary()` or `LinearBinary()` based on query type at call time. This is the **default** for all interpolants — no configuration needed.
+
+**Resolution rules**:
+
+| Query type | Resolved policy | Rationale |
+|:-----------|:----------------|:----------|
+| Scalar (`Real`) | `Binary()` | Stateless; no hint locality to exploit |
+| Vector (`AbstractVector`) | `LinearBinary()` | Exploits hint locality for sorted sequences |
+| ND scalar (`Tuple{Vararg{Real}}`) | `Binary()` per axis | Same as 1D scalar |
+| ND SoA batch (`NTuple{N, AbstractVector}`) | `LinearBinary()` per axis | Same as 1D vector |
+| Broadcast (`itp.(xs)`) | `Binary()` per element | Each broadcast call is independent |
+
+```julia
+itp = linear_interp(x, y)      # stores AutoSearch (the default)
+itp(0.5)                       # → Binary() internally (scalar query)
+itp([0.1, 0.5, 0.9])           # → LinearBinary() internally (vector query)
+itp.(xs)                       # → Binary() per element (broadcast)
+
+# Override when you know the pattern in advance:
+itp(0.5; search=Binary())              # force Binary for all calls
+itp(sorted_xs; search=LinearBinary())  # force LinearBinary for all calls
+```
+
+**How it works**: `AutoSearch` is resolved at the call site, not at construction time. The interpolant stores `AutoSearch()` and dispatches on the query argument's concrete type each time the interpolant is called.
+
+**When to override with an explicit policy**:
+- You know queries are **always random** → explicit `Binary()` skips the dispatch check
+- You know queries are **always sorted** → explicit `LinearBinary()` skips the dispatch check
+- For most use cases, keeping `AutoSearch()` is the right choice
+
+---
+
+## Binary
 
 Pure binary search. Stateless, thread-safe, no setup required.
 
@@ -11,12 +45,12 @@ Pure binary search. Stateless, thread-safe, no setup required.
 **When to use**:
 - Random access patterns
 - One-off queries
-- When you don't know the query pattern in advance
+- When you want consistent O(log n) for any query order
 
 ```julia
 itp = linear_interp(x, y)
-val = itp(0.5)                    # uses Binary() by default
-val = itp(0.5; search=Binary())   # explicit
+val = itp(0.5)                    # AutoSearch → Binary() for scalar queries
+val = itp(0.5; search=Binary())   # explicit Binary
 ```
 
 **How it works**: Standard binary search on the grid. Each query starts fresh with no memory of previous queries.
@@ -108,15 +142,15 @@ vals = itp(sorted_queries)  # O(1) amortized for sorted input
 You can tune the linear search window size before falling back to binary search:
 
 ```julia
-LinearBinary()             # default: linear_window=8
-LinearBinary(linear_window=4)  # smaller bound for tightly spaced queries
-LinearBinary(linear_window=16) # larger bound for sparser queries
+LinearBinary()              # default: linear_window=2
+LinearBinary(linear_window=4)   # moderate bound for known-sorted sequences
+LinearBinary(linear_window=16)  # larger bound for sparser-spaced sorted queries
 ```
 
 **Guidelines**:
-- **Small `linear_window` (4)**: Better when queries are very close together
-- **Large `linear_window` (16-32)**: Better when queries might skip a few intervals
-- **Default (8)**: Good balance for most use cases
+- **Small `linear_window` (1–2)**: Minimal overhead; best for mixed or unknown patterns. The default `LinearBinary()` uses `2`.
+- **Medium `linear_window` (4–16)**: Good balance when queries are known-sorted
+- **Large `linear_window` (32–128)**: For highly localized queries or very large datasets
 
 !!! note "Type Parameter Restriction"
     `linear_window` is restricted to powers of 2 (1, 2, 4, 8, 16, 32, 64) to prevent type parameter explosion. Each unique value creates a specialized method, so limiting choices keeps compile times reasonable.
@@ -125,10 +159,12 @@ LinearBinary(linear_window=16) # larger bound for sparser queries
 
 ## Performance Summary
 
-| Query Pattern | `Binary()` | `LinearBinary()` | `Linear()` |
-|:--------------|:-----------|:-----------------|:-----------|
-| **Random** | ✅ Best | ~2-3x slower | ❌ Up to 7x slower |
-| **Monotonic** | Baseline | ✅ ~5x faster | ✅ ~6x faster |
+| Query Pattern | `AutoSearch()` | `Binary()` | `LinearBinary()` | `Linear()` |
+|:--------------|:---------------|:-----------|:-----------------|:-----------|
+| **Random** | ✅ Same as `Binary()` | ✅ Best | ~2-3x slower | ❌ Up to 7x slower |
+| **Monotonic** | ✅ Same as `LinearBinary()` | Baseline | ✅ ~5x faster | ✅ ~6x faster |
+
+`AutoSearch()` has negligible overhead — it dispatches to the same underlying code as the resolved policy, so you only pay for the type dispatch, not for any extra search work.
 
 !!! note "Results Vary"
     These are approximate results from a 500-point grid with 1000 queries. Actual performance depends on your **grid size** and **query spacing**. Run benchmark with your own data to find the best policy.
@@ -139,23 +175,24 @@ LinearBinary(linear_window=16) # larger bound for sparser queries
 
 ### Baked-in Policy (Constructor)
 
-Set the default policy when creating the interpolant:
+Override the default `AutoSearch` when creating the interpolant. The stored policy applies to all subsequent calls:
 
 ```julia
-# All queries use LinearBinary by default
-itp = linear_interp(x, y; search=LinearBinary())
-val = itp(0.5)  # uses LinearBinary
+itp = linear_interp(x, y)                    # stores AutoSearch() — adapts per call
+itp = linear_interp(x, y; search=Binary())   # always Binary(), regardless of query type
+itp = linear_interp(x, y; search=LinearBinary())  # always LinearBinary()
 ```
 
 ### Override at Call Time
 
-Override the baked-in policy for specific queries:
+Override the stored policy for a single call without changing the interpolant:
 
 ```julia
-itp = linear_interp(x, y; search=LinearBinary())
+itp = linear_interp(x, y)  # stores AutoSearch (default)
 
-# Override for a single call
-val = itp(0.5; search=Binary())  # uses Binary for this call only
+# Call-site override — does not change itp.search_policy
+val  = itp(0.5; search=Binary())              # force Binary for this call only
+vals = itp(sorted_xs; search=LinearBinary())  # force LinearBinary for this call only
 ```
 
 This is useful when most queries benefit from one policy, but occasional queries need different behavior.

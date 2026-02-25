@@ -1188,7 +1188,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
                 xq = [0.1, 0.3, 0.7]
                 vals = itp(xq)
                 @test length(vals) == 3
-                @test all(vals .≈ sin.(2π .* xq) .|| abs.(vals .- sin.(2π .* xq)) .< 0.02)
+                @test vals ≈ sin.(2π .* xq) atol=0.02
 
                 # In-place vector call
                 out = zeros(3)

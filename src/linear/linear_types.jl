@@ -29,8 +29,8 @@ Returned by `linear_interp(x, y)` (2-argument form).
 # Create interpolator (minimal allocation)
 itp = linear_interp(x, y)  # default extrap=NoExtrap(), search=AutoSearch()
 
-# Create with custom search policy (baked-in default)
-itp = linear_interp(x, y; search=AutoSearch())
+# Create with custom search policy (overrides default AutoSearch)
+itp = linear_interp(x, y; search=Binary())
 
 # Complex-valued interpolation
 y_complex = exp.(2im .* x)

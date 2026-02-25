@@ -1,8 +1,9 @@
 using Test
 using FastInterpolations
 using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
-    Searcher, Binary, HintedBinary, Linear, LinearBinary,
-    NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, _create_spacing, _to_searcher
+    Searcher, Binary, HintedBinary, Linear, LinearBinary, AutoSearch,
+    NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, _create_spacing, _to_searcher,
+    _resolve_search
 
 @testset "Search Module" begin
 
@@ -711,8 +712,8 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test LinearBinary(4) isa LinearBinary{4}
             @test LinearBinary(16) isa LinearBinary{16}
 
-            # Default is 8
-            @test LinearBinary() isa LinearBinary{8}
+            # Default is 2
+            @test LinearBinary() isa LinearBinary{2}
         end
 
         @testset "Invalid linear_window Throws ArgumentError" begin
@@ -722,6 +723,22 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
                 @test_throws ArgumentError LinearBinary(ms)
             end
         end
+    end
+
+    @testset "LinearBinary: out-of-range hint is clamped safely" begin
+        x = collect(range(0.0, 1.0, 101))
+        y = x .^ 2
+        itp = linear_interp(x, y; search=LinearBinary())
+
+        # Ref(0) — below valid range [1, n-1]
+        bad_hint = Ref(0)
+        @test isfinite(itp(0.5; hint=bad_hint))
+        @test bad_hint[] >= 1   # hint was clamped then updated to valid index
+
+        # Ref(n) — above valid range [1, n-1]
+        big_hint = Ref(200)
+        @test isfinite(itp(0.5; hint=big_hint))
+        @test big_hint[] <= 100  # valid range [1, n-1]=[1,100]; query 0.5 → idx ≈ 50
     end
 
     @testset "Integrated test" begin
@@ -767,15 +784,15 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @testset "Single Interpolant: stored policy is used by default" begin
             # Create with LinearBinary as default
             itp_lb = linear_interp(x, y; search=LinearBinary())
-            @test itp_lb.search_policy isa LinearBinary{8}
+            @test itp_lb.search_policy isa LinearBinary{2}
 
             # Create with HintedBinary as default
             itp_hb = linear_interp(x, y; search=HintedBinary())
             @test itp_hb.search_policy isa HintedBinary
 
-            # Create with default (Binary)
-            itp_bin = linear_interp(x, y)
-            @test itp_bin.search_policy isa Binary
+            # Create with default (AutoSearch)
+            itp_auto = linear_interp(x, y)
+            @test itp_auto.search_policy isa AutoSearch
         end
 
         @testset "Baked-in policy with hint: hint updates when policy supports it" begin
@@ -846,7 +863,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
         @testset "LinearSeriesInterpolant stored policy" begin
             sitp = linear_interp(x, [y1, y2]; search=LinearBinary())
-            @test sitp.search_policy isa LinearBinary{8}
+            @test sitp.search_policy isa LinearBinary{2}
 
             # Scalar call uses stored policy
             hint = Ref(400)
@@ -1096,5 +1113,442 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test ext_ref[] >= 590 && ext_ref[] <= 610
         end
     end
+
+    # ============================================================================
+    # AutoSearch Resolution Tests
+    # ============================================================================
+    # Verifies that AutoSearch resolves to the correct concrete policy at every
+    # API layer: unit dispatch, interpolant callable, oneshot, and series.
+
+    @testset "AutoSearch Resolution" begin
+
+        # ========================================
+        # Unit Tests: _resolve_search dispatch
+        # ========================================
+        @testset "_resolve_search dispatch" begin
+            auto = AutoSearch()
+
+            # 1D scalar → Binary
+            @test _resolve_search(auto, 0.5) isa Binary
+            @test _resolve_search(auto, 1) isa Binary       # Int <: Real
+            @test _resolve_search(auto, Float32(0.5)) isa Binary
+
+            # 1D vector → LinearBinary
+            @test _resolve_search(auto, [0.1, 0.5]) isa LinearBinary
+            @test _resolve_search(auto, 0.0:0.1:1.0) isa LinearBinary   # Range <: AbstractVector
+            @test _resolve_search(auto, Float32[1.0, 2.0]) isa LinearBinary
+
+            # ND scalar (Tuple of Reals) → Binary
+            @test _resolve_search(auto, (0.5, 0.3)) isa Binary
+            @test _resolve_search(auto, (0.1, 0.2, 0.3)) isa Binary
+
+            # ND vector (Tuple of Vectors) → LinearBinary
+            @test _resolve_search(auto, ([0.1, 0.2], [0.3, 0.4])) isa LinearBinary
+            @test _resolve_search(auto, (0.0:0.1:1.0, [0.5])) isa LinearBinary
+
+            # Passthrough: explicit policies are returned unchanged
+            @test _resolve_search(Binary(), 0.5) === Binary()
+            @test _resolve_search(Binary(), [0.1]) === Binary()
+            @test _resolve_search(LinearBinary(), 0.5) isa LinearBinary
+            @test _resolve_search(LinearBinary(), [0.1]) isa LinearBinary
+            @test _resolve_search(HintedBinary(), 0.5) === HintedBinary()
+            @test _resolve_search(Linear(), [0.1]) === Linear()
+
+            # Tuple of policies: each resolved independently
+            mixed = (AutoSearch(), Binary(), AutoSearch())
+            resolved_scalar = _resolve_search(mixed, 0.5)
+            @test resolved_scalar == (Binary(), Binary(), Binary())
+            resolved_vec = _resolve_search(mixed, [0.1, 0.2])
+            @test resolved_vec[1] isa LinearBinary
+            @test resolved_vec[2] === Binary()
+            @test resolved_vec[3] isa LinearBinary
+
+            # Searcher passthrough: pre-built Searcher skips resolution
+            s = Searcher{Binary,NoHint}(NoHint())
+            @test _resolve_search(s, 0.5) === s
+            @test _resolve_search(s, [0.1]) === s
+        end
+
+        # ========================================
+        # Interpolant API: AutoSearch resolves per query type
+        # ========================================
+        @testset "Interpolant API" begin
+            x = collect(range(0.0, 1.0, 201))
+            y = sin.(2π .* x)
+
+            @testset "Linear" begin
+                itp = linear_interp(x, y)
+                @test itp.search_policy isa AutoSearch
+
+                # Scalar call → correct result (AutoSearch → Binary internally)
+                val = itp(0.25)
+                @test val ≈ sin(2π * 0.25) atol=1e-3
+
+                # Vector call → correct results (AutoSearch → LinearBinary internally)
+                xq = [0.1, 0.3, 0.7]
+                vals = itp(xq)
+                @test length(vals) == 3
+                @test vals ≈ sin.(2π .* xq) atol=0.02
+
+                # In-place vector call
+                out = zeros(3)
+                itp(out, xq)
+                @test out ≈ vals
+            end
+
+            @testset "Cubic" begin
+                itp = cubic_interp(x, y)
+                @test itp.search_policy isa AutoSearch
+
+                val = itp(0.25)
+                @test val ≈ sin(2π * 0.25) atol=1e-5
+
+                xq = [0.1, 0.3, 0.7]
+                vals = itp(xq)
+                @test length(vals) == 3
+                for i in 1:3
+                    @test vals[i] ≈ sin(2π * xq[i]) atol=1e-4
+                end
+            end
+
+            @testset "Quadratic" begin
+                itp = quadratic_interp(x, y)
+                @test itp.search_policy isa AutoSearch
+
+                val = itp(0.25)
+                @test val ≈ sin(2π * 0.25) atol=1e-3
+
+                xq = [0.1, 0.3, 0.7]
+                vals = itp(xq)
+                @test length(vals) == 3
+                for i in 1:3
+                    @test vals[i] ≈ sin(2π * xq[i]) atol=1e-2
+                end
+            end
+
+            @testset "Constant" begin
+                itp = constant_interp(x, y)
+                @test itp.search_policy isa AutoSearch
+
+                # Constant interpolation snaps to nearest grid point
+                val = itp(0.25)
+                @test isfinite(val)
+
+                xq = [0.1, 0.3, 0.7]
+                vals = itp(xq)
+                @test length(vals) == 3
+                @test all(isfinite, vals)
+            end
+        end
+
+        # ========================================
+        # Interpolant API: hint behavior verifies resolved policy
+        # ========================================
+        # LinearBinary with hint tracks sequentially through sorted queries.
+        # Binary (no hint) doesn't update the hint.
+        # AutoSearch + vector → LinearBinary → hint should track.
+        # AutoSearch + scalar → Binary → hint unchanged (no hint used).
+        @testset "Interpolant hint tracking reveals resolved policy" begin
+            x = collect(range(0.0, 1.0, 1001))
+            y = x .^ 2
+
+            itp = linear_interp(x, y)  # default AutoSearch
+
+            # Vector call with hint: AutoSearch → LinearBinary → hint tracks
+            hint = Ref(1)
+            xq_sorted = collect(range(0.1, 0.9, 100))
+            itp(zeros(100), xq_sorted; hint=hint)
+            # 1001-point grid, last query at x=0.9 → idx ≈ 901; margin of 50
+            @test hint[] >= 850
+
+            # Scalar call without hint: AutoSearch → Binary → correct value
+            # y = x^2, so itp(0.5) ≈ 0.25
+            @test itp(0.5) ≈ 0.25 atol=1e-6
+
+            # Scalar call with hint: Binary+hint auto-upgrades to HintedBinary → hint updates
+            hint_scalar = Ref(1)
+            itp(0.5; hint=hint_scalar)
+            @test hint_scalar[] >= 490 && hint_scalar[] <= 510  # hint moved to ~500
+        end
+
+        # ========================================
+        # Oneshot API: AutoSearch resolves per query type
+        # ========================================
+        @testset "Oneshot API" begin
+            x = collect(range(0.0, 1.0, 201))
+            y = sin.(2π .* x)
+
+            @testset "linear_interp scalar oneshot (AutoSearch default)" begin
+                val = linear_interp(x, y, 0.25)
+                @test val ≈ sin(2π * 0.25) atol=1e-3
+            end
+
+            @testset "linear_interp vector oneshot (AutoSearch default)" begin
+                xq = collect(range(0.1, 0.9, 50))
+                vals = linear_interp(x, y, xq)
+                @test length(vals) == 50
+                for i in 1:50
+                    @test vals[i] ≈ sin(2π * xq[i]) atol=1e-2
+                end
+            end
+
+            @testset "linear_interp! vector oneshot (AutoSearch default)" begin
+                xq = collect(range(0.1, 0.9, 50))
+                out = zeros(50)
+                linear_interp!(out, x, y, xq)
+                for i in 1:50
+                    @test out[i] ≈ sin(2π * xq[i]) atol=1e-2
+                end
+            end
+
+            @testset "cubic_interp scalar oneshot" begin
+                val = cubic_interp(x, y, 0.25)
+                @test val ≈ sin(2π * 0.25) atol=1e-5
+            end
+
+            @testset "cubic_interp! vector oneshot" begin
+                xq = collect(range(0.1, 0.9, 50))
+                out = zeros(50)
+                cubic_interp!(out, x, y, xq)
+                for i in 1:50
+                    @test out[i] ≈ sin(2π * xq[i]) atol=1e-3
+                end
+            end
+
+            @testset "quadratic_interp scalar oneshot" begin
+                val = quadratic_interp(x, y, 0.25)
+                @test val ≈ sin(2π * 0.25) atol=1e-3
+            end
+
+            @testset "quadratic_interp! vector oneshot" begin
+                xq = collect(range(0.1, 0.9, 50))
+                out = zeros(50)
+                quadratic_interp!(out, x, y, xq)
+                for i in 1:50
+                    @test out[i] ≈ sin(2π * xq[i]) atol=1e-2
+                end
+            end
+
+            @testset "constant_interp scalar oneshot" begin
+                val = constant_interp(x, y, 0.25)
+                @test isfinite(val)
+            end
+
+            @testset "constant_interp! vector oneshot" begin
+                xq = collect(range(0.1, 0.9, 50))
+                out = zeros(50)
+                constant_interp!(out, x, y, xq)
+                @test all(isfinite, out)
+            end
+        end
+
+        # ========================================
+        # Series Interpolant API: AutoSearch resolves per query type
+        # ========================================
+        @testset "Series API" begin
+            x = collect(range(0.0, 1.0, 201))
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            @testset "LinearSeries" begin
+                sitp = linear_interp(x, [y1, y2])
+                @test sitp.search_policy isa AutoSearch
+
+                # Scalar call → AutoSearch → Binary
+                vals = sitp(0.25)
+                @test length(vals) == 2
+                @test vals[1] ≈ sin(2π * 0.25) atol=1e-3
+                @test vals[2] ≈ cos(2π * 0.25) atol=1e-3
+
+                # Vector call → AutoSearch → LinearBinary
+                xq = [0.1, 0.3, 0.7]
+                result = sitp(xq)
+                @test length(result) == 2       # 2 series
+                @test length(result[1]) == 3    # 3 query points
+                @test result[1][1] ≈ sin(2π * 0.1) atol=1e-2
+                @test result[2][1] ≈ cos(2π * 0.1) atol=1e-2
+            end
+
+            @testset "CubicSeries" begin
+                sitp = cubic_interp(x, [y1, y2])
+                @test sitp.search_policy isa AutoSearch
+
+                vals = sitp(0.25)
+                @test vals[1] ≈ sin(2π * 0.25) atol=1e-5
+                @test vals[2] ≈ cos(2π * 0.25) atol=1e-5
+
+                xq = [0.1, 0.3, 0.7]
+                result = sitp(xq)
+                @test length(result) == 2
+                for i in 1:3
+                    @test result[1][i] ≈ sin(2π * xq[i]) atol=1e-3
+                end
+            end
+
+            @testset "QuadraticSeries" begin
+                sitp = quadratic_interp(x, [y1, y2])
+                @test sitp.search_policy isa AutoSearch
+
+                vals = sitp(0.25)
+                @test vals[1] ≈ sin(2π * 0.25) atol=1e-3
+
+                xq = [0.1, 0.3, 0.7]
+                result = sitp(xq)
+                @test length(result) == 2
+                @test length(result[1]) == 3
+            end
+
+            @testset "ConstantSeries" begin
+                sitp = constant_interp(x, [y1, y2])
+                @test sitp.search_policy isa AutoSearch
+
+                vals = sitp(0.25)
+                @test length(vals) == 2
+                @test all(isfinite, vals)
+
+                xq = [0.1, 0.3, 0.7]
+                result = sitp(xq)
+                @test length(result) == 2
+                @test length(result[1]) == 3
+            end
+
+            @testset "Series hint tracking (vector → LinearBinary)" begin
+                sitp = linear_interp(x, [y1, y2])
+                hint = Ref(1)
+                xq_sorted = collect(range(0.1, 0.9, 100))
+
+                # Vector call: AutoSearch → LinearBinary → hint tracks
+                sitp(xq_sorted; hint=hint)
+                # 201-point grid, last query at x=0.9 → idx ≈ 181; margin of 21
+                @test hint[] >= 160
+            end
+        end
+
+        # ========================================
+        # Explicit User Override: policy honored across all APIs
+        # ========================================
+        @testset "Explicit user override" begin
+            x = collect(range(0.0, 1.0, 201))
+            y = sin.(2π .* x)
+            y1 = sin.(2π .* x)
+            y2 = cos.(2π .* x)
+
+            @testset "Interpolant: explicit Binary on vector call" begin
+                itp = linear_interp(x, y; search=Binary())
+                @test itp.search_policy isa Binary
+
+                # Vector call with Binary baked in → still works correctly
+                xq = [0.1, 0.5, 0.9]
+                vals = itp(xq)
+                for i in 1:3
+                    @test vals[i] ≈ sin(2π * xq[i]) atol=1e-2
+                end
+            end
+
+            @testset "Interpolant: explicit LinearBinary on scalar call" begin
+                itp = linear_interp(x, y; search=LinearBinary())
+                @test itp.search_policy isa LinearBinary
+
+                # Scalar call with LinearBinary baked in → still works
+                val = itp(0.25)
+                @test val ≈ sin(2π * 0.25) atol=1e-3
+            end
+
+            @testset "Interpolant: call-site override trumps stored policy" begin
+                itp = linear_interp(x, y)  # AutoSearch stored
+                @test itp.search_policy isa AutoSearch
+
+                # Override with explicit Binary at call-site
+                val = itp(0.25; search=Binary())
+                @test val ≈ sin(2π * 0.25) atol=1e-3
+
+                # Override with explicit LinearBinary at call-site
+                vals = itp([0.1, 0.5]; search=LinearBinary())
+                @test length(vals) == 2
+            end
+
+            @testset "Oneshot: explicit policy" begin
+                xq = collect(range(0.1, 0.9, 50))
+                out = zeros(50)
+
+                # Explicit Binary
+                linear_interp!(out, x, y, xq; search=Binary())
+                @test all(isfinite, out)
+
+                # Explicit LinearBinary
+                linear_interp!(out, x, y, xq; search=LinearBinary())
+                @test all(isfinite, out)
+
+                # Scalar oneshot with explicit policy
+                val = linear_interp(x, y, 0.25; search=LinearBinary())
+                @test val ≈ sin(2π * 0.25) atol=1e-3
+            end
+
+            @testset "Series: explicit policy" begin
+                sitp = linear_interp(x, [y1, y2]; search=Binary())
+                @test sitp.search_policy isa Binary
+
+                # Scalar call
+                vals = sitp(0.25)
+                @test vals[1] ≈ sin(2π * 0.25) atol=1e-3
+
+                # Vector call
+                xq = [0.1, 0.3]
+                result = sitp(xq)
+                @test length(result) == 2
+                @test length(result[1]) == 2
+            end
+
+            @testset "Series: call-site override" begin
+                sitp = linear_interp(x, [y1, y2])  # AutoSearch
+                @test sitp.search_policy isa AutoSearch
+
+                # Override at call-site
+                vals = sitp(0.25; search=Binary())
+                @test length(vals) == 2
+
+                result = sitp([0.1, 0.3]; search=LinearBinary())
+                @test length(result) == 2
+            end
+        end
+
+        # ========================================
+        # ND vector calculus: gradient/hessian/laplacian resolve AutoSearch
+        # ========================================
+        @testset "gradient/hessian/laplacian resolve AutoSearch" begin
+            x = collect(range(0.0, 1.0, 21))
+            y = collect(range(0.0, 1.0, 21))
+            data = [xi^2 + yi^2 for xi in x, yi in y]
+            itp = cubic_interp((x, y), data)  # AutoSearch stored on each axis
+            @test itp.searches[1] isa AutoSearch
+            @test itp.searches[2] isa AutoSearch
+
+            q = (0.5, 0.5)
+
+            # gradient: ∇(x²+y²) = (2x, 2y)
+            g = gradient(itp, q)
+            @test all(isfinite, g)
+            @test g[1] ≈ 2 * 0.5 atol=0.05
+            @test g[2] ≈ 2 * 0.5 atol=0.05
+
+            # gradient! (in-place)
+            G = zeros(2)
+            gradient!(G, itp, q)
+            @test G ≈ collect(g)
+
+            # hessian: H(x²+y²) = [[2,0],[0,2]]
+            h = hessian(itp, q)
+            @test all(isfinite, h)
+            @test h[1, 1] ≈ 2.0 atol=0.1
+            @test h[2, 2] ≈ 2.0 atol=0.1
+            @test abs(h[1, 2]) < 0.05  # off-diagonal ≈ 0
+
+            # laplacian: ∇²(x²+y²) = 4
+            lap = laplacian(itp, q)
+            @test isfinite(lap)
+            @test lap ≈ 4.0 atol=0.1
+        end
+
+    end  # @testset "AutoSearch Resolution"
 
 end  # @testset "Search Module"

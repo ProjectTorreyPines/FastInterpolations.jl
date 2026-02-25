@@ -112,7 +112,7 @@ function linear_interp(
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -121,7 +121,7 @@ function linear_interp(
     _validate_nd_grids(grids_typed, data)
     Tr = promote_type(Tv, Tg, typeof.(query)...)
 
-    searches = _resolve_search_nd(search, Val(N))
+    searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -139,7 +139,7 @@ function linear_interp(
     data::AbstractArray{Tv, N},
     queries::NTuple{N, AbstractVector{<:Real}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -161,7 +161,7 @@ function linear_interp(
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -188,7 +188,7 @@ function linear_interp!(
     data::AbstractArray{Tv, N},
     queries::NTuple{N, AbstractVector{<:Real}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -196,7 +196,7 @@ function linear_interp!(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    searches = _resolve_search_nd(search, Val(N))
+    searches = _resolve_search_nd(search, Val(N), queries)  # NTuple{N,AbstractVector} <: Tuple{Vararg{AbstractVector}} → LinearBinary/axis
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -215,7 +215,7 @@ function linear_interp!(
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
@@ -223,7 +223,7 @@ function linear_interp!(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    searches = _resolve_search_nd(search, Val(N))
+    searches = _resolve_search_nd(search, Val(N), queries)  # AoS: AbstractVector{<:Tuple} <: AbstractVector → LinearBinary
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))

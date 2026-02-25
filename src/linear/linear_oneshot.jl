@@ -16,7 +16,7 @@
 # ========================================
 
 """
-    linear_interp!(output, x, y, x_targets; extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
+    linear_interp!(output, x, y, x_targets; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
 
 Zero-allocation linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -62,12 +62,13 @@ function linear_interp!(
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    searcher = _to_searcher(search)
+    resolved = _resolve_search(search, x_targets)
+    searcher = _to_searcher(resolved)
     @boundscheck _check_domain(x, x_targets, extrap)
     _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
 end
@@ -155,12 +156,13 @@ end
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    searcher = _to_searcher(search)
+    resolved = _resolve_search(search, x_targets)
+    searcher = _to_searcher(resolved)
     @boundscheck _check_domain(x, x_targets, extrap)
     _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
 end
@@ -170,7 +172,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y, xq::Real; extrap=NoExtrap(), deriv=EvalValue(), search=Binary()) -> AbstractFloat
+    linear_interp(x, y, xq::Real; extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch()) -> AbstractFloat
 
 Zero-allocation scalar linear interpolation with automatic dispatch:
 - For `AbstractRange` x: O(1) direct indexing
@@ -385,12 +387,13 @@ end
     xq::Tq;
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=Binary(),
+    search=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     linear_interp(x, y, xq, extrap, deriv, searcher)
 end
 
@@ -412,7 +415,7 @@ function linear_interp(
     x_targets::AbstractVector{Tg};
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_targets))
     linear_interp!(output, x, y, x_targets; extrap, deriv, search)
@@ -433,7 +436,7 @@ function linear_interp!(
     x_targets::AbstractVector{Tq};
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -465,7 +468,7 @@ end
     xq::Tq;
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=Binary(),
+    search=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
@@ -483,7 +486,7 @@ function linear_interp(
     x_targets::AbstractVector{Tq};
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
     Tv_float = eltype(y_typed)

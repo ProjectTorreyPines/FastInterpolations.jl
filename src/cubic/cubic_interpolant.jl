@@ -27,7 +27,8 @@
 # Unified method: accepts any query type (Tg, Real, or Dual for AD)
 @inline function (itp::CubicInterpolant{Tg,Tv})(xq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @boundscheck _check_domain(itp.cache.x, xq, itp.extrap)
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     # Pass original xq to preserve Dual type for AD
     _eval_with_bc(itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)
 end
@@ -38,7 +39,8 @@ end
 function (itp::CubicInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)
     return output
 end
@@ -46,7 +48,8 @@ end
 # In-place vector call with deriv keyword support
 function (itp::CubicInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)
     return output
 end
@@ -293,7 +296,7 @@ so the pool memory can be safely reused after this function returns.
     bc_pair::BCPair{L,R},
     extrap::AbstractExtrap,
     autocache::Bool,
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv, L<:PointBC, R<:PointBC}
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc_pair, autocache)
@@ -319,7 +322,7 @@ so the pool memory can be safely reused after this function returns.
     y::AbstractVector{Tv},
     bc::PeriodicBC,
     autocache::Bool,
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     x, y = _prepare_periodic(x, y, bc)
     _check_periodic_endpoints(y)
@@ -351,7 +354,7 @@ Handles conversion of Real BC values to Complex when needed.
 # ========================================
 
 """
-    cubic_interp(x, y; bc=CubicFit(), extrap=NoExtrap(), autocache=true, search=Binary()) -> CubicInterpolant
+    cubic_interp(x, y; bc=CubicFit(), extrap=NoExtrap(), autocache=true, search=AutoSearch()) -> CubicInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -364,7 +367,7 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 - `bc::AbstractBC`: Boundary condition (default: `CubicFit()`)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache::Bool`: Enable automatic caching (default: `true`)
-- `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
+- `search::AbstractSearchPolicy`: Default search policy (default: `AutoSearch()`)
 
 # Example
 ```julia
@@ -373,10 +376,11 @@ val = itp(0.5)                      # Scalar (zero-allocation)
 vals = itp.(query_points)           # Broadcast
 result = @. coef * itp(rho) * ne    # Fused broadcast
 
-# Create with custom search policy
-itp = cubic_interp(x, y; search=LinearBinary())
-val = itp(0.5)                      # Uses LinearBinary() by default
-val = itp(0.5; search=Binary())     # Override with Binary()
+# Search policy: AutoSearch adapts to query type (scalar→Binary, vector→LinearBinary)
+itp = cubic_interp(x, y)
+val = itp(0.5)                      # AutoSearch resolves to Binary() for scalar
+itp = cubic_interp(x, y; search=LinearBinary())  # explicit override
+val = itp(0.5; search=Binary())     # per-call override
 
 # Complex values
 x = [0.0, 1.0, 2.0, 3.0, 4.0]
@@ -393,7 +397,7 @@ val = itp(0.5)  # returns ComplexF64
     bc::AbstractBC,
     extrap::AbstractExtrap,
     autocache::Bool,
-    search::P=Binary()
+    search::P=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x, y, bc, autocache, search)
@@ -410,7 +414,7 @@ function cubic_interp(
     bc::AbstractBC=CubicFit(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
-    search::P=Binary()
+    search::P=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Auto-promote x/y types (zero allocation if already compatible)
     x_p, y_p = _promote_itp_inputs(x, y)
@@ -419,7 +423,7 @@ function cubic_interp(
 end
 
 """
-    cubic_interp(cache, y; extrap=NoExtrap(), search=Binary()) -> CubicInterpolant
+    cubic_interp(cache, y; extrap=NoExtrap(), search=AutoSearch()) -> CubicInterpolant
 
 Create a callable interpolant from a pre-built cache.
 
@@ -441,7 +445,7 @@ so the pool memory can be safely reused after this function returns.
     cache::CubicSplineCache{Tg},
     y::AbstractVector{Tv};
     extrap::AbstractExtrap=NoExtrap(),
-    search::P=Binary()
+    search::P=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     tmp_z = similar!(pool, y)
     _solve_system!(tmp_z, cache, y, cache.bc_config)
@@ -462,7 +466,7 @@ function cubic_interp(
     bc::AbstractBC=CubicFit(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
-    search::P=Binary()
+    search::P=AutoSearch()
 ) where {TX<:Real, TY, P<:AbstractSearchPolicy}
     x_p, y_p = _promote_itp_inputs(x, y)
     bc_promoted = _promote_bc(bc, eltype(y_p))

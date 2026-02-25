@@ -37,12 +37,14 @@ hint = Ref(1)
 val = itp(0.5; search=Binary(), hint=hint)  # auto-upgrades to HintedBinary
 ```
 
-This means you can:
-- Keep `Binary()` as your default policy
-- Pass a hint only when beneficial
-- Get hinted behavior automatically when a hint is provided
+This also works with the default `AutoSearch()` — scalar queries resolve to `Binary()`, and if a hint is provided, they auto-upgrade to `HintedBinary`:
 
-Without a hint, pure binary search is used.
+```julia
+hint = Ref(1)
+val = itp(0.5; hint=hint)  # AutoSearch → Binary() → auto-upgrades to HintedBinary
+```
+
+Without a hint, binary search is used (no hint tracking).
 
 ## Thread Safety
 
@@ -108,16 +110,17 @@ results = itp(queries)  # O(n) total instead of O(n log n)
 
 ### Random Access Pattern
 
-For random access, hints provide no benefit. Use the default `Binary()`:
+For random access, hints provide no benefit. The default `AutoSearch()` already resolves to `Binary()` for vector queries on random data — or use `Binary()` explicitly:
 
 ```julia
 x = collect(range(0.0, 10.0, 10001))
 y = sin.(2π .* x)
-itp = linear_interp(x, y)  # default Binary()
+itp = linear_interp(x, y)  # stores AutoSearch (default)
 
-# Random queries → Binary search is optimal
+# Random queries → AutoSearch resolves to LinearBinary, but explicit Binary is faster for random
 random_queries = rand(100_000) .* 10
-results = itp(random_queries)
+results = itp(random_queries)                          # AutoSearch → LinearBinary
+results = itp(random_queries; search=Binary())         # explicit Binary — better for random
 ```
 
 ### Shared Hint Across Multiple Interpolants

@@ -144,7 +144,7 @@ function quadratic_interp(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -153,7 +153,7 @@ function quadratic_interp(
     Tr = promote_type(Tv, Tg, typeof.(query)...)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
+    searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -174,7 +174,7 @@ function quadratic_interp(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -197,7 +197,7 @@ function quadratic_interp(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -225,7 +225,7 @@ function quadratic_interp!(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -233,7 +233,7 @@ function quadratic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
+    searches = _resolve_search_nd(search, Val(N), queries)  # NTuple{N,AbstractVector} <: Tuple{Vararg{AbstractVector}} → LinearBinary/axis
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
@@ -255,7 +255,7 @@ function quadratic_interp!(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -263,7 +263,7 @@ function quadratic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
+    searches = _resolve_search_nd(search, Val(N), queries)  # AoS: AbstractVector{<:Tuple} <: AbstractVector → LinearBinary
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))

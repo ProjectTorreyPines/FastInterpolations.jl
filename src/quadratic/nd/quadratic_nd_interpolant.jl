@@ -82,7 +82,7 @@ Create an N-dimensional quadratic interpolant from grid vectors and data array.
   - Single BC: Applied to all axes
   - `NTuple{N}`: Per-axis BCs
 - `extrap=NoExtrap()`: Extrapolation mode(s)
-- `search=Binary()`: Search policy(s)
+- `search=AutoSearch()`: Search policy(s)
 
 # Returns
 - `QuadraticInterpolantND{Tg, Tv, N, ...}`: Callable interpolant object
@@ -102,7 +102,7 @@ function quadratic_interp(
     data::AbstractArray{Tv_raw, N};
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
 ) where {N, Tv_raw}
     # Zero-allocation type promotion
     Tg = _promote_grid_eltype(grids)

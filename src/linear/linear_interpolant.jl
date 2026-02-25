@@ -23,7 +23,8 @@
 # - ForwardDiff.Dual queries (automatic differentiation)
 @inline function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(xq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P}
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     # Pass original xq to preserve Dual type for AD
     _linear_with_extrap(itp.x, itp.y, xq, itp.extrap, deriv, searcher)
 end
@@ -36,7 +37,8 @@ function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(xq::AbstractVector{Tq}; deriv::
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     @inbounds for i in eachindex(xq, output)
         output[i] = _linear_with_extrap(itp.x, itp.y, xq[i], itp.extrap, deriv, searcher)
     end
@@ -49,7 +51,8 @@ end
 function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     @inbounds for i in eachindex(xq, output)
         output[i] = _linear_with_extrap(itp.x, itp.y, xq[i], itp.extrap, deriv, searcher)
     end
@@ -61,7 +64,7 @@ end
 # ========================================
 
 """
-    linear_interp(x, y; extrap=NoExtrap(), search=Binary()) -> LinearInterpolant
+    linear_interp(x, y; extrap=NoExtrap(), search=AutoSearch()) -> LinearInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -69,7 +72,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values (can be real or complex)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
-- `search::AbstractSearchPolicy`: Default search policy for interval lookup (default: `Binary()`)
+- `search::AbstractSearchPolicy`: Default search policy for interval lookup (default: `AutoSearch()`)
 
 # Type Handling
 - x: Grid coordinates → converted to AbstractFloat, Range structure preserved
@@ -91,11 +94,11 @@ Can be:
 
 # Examples
 ```julia
-# Create with default Binary() search policy
+# Create with default AutoSearch() search policy
 itp = linear_interp(x_data, y_data)
 
-# Create with LinearBinary() as default policy (optimal for sorted queries)
-itp = linear_interp(x_data, y_data; search=LinearBinary())
+# Default AutoSearch: scalar→Binary, vector→LinearBinary
+itp = linear_interp(x_data, y_data)
 
 # Scalar call (uses stored policy)
 val = itp(0.5)
@@ -126,7 +129,8 @@ vals_direct = linear_interp(x_data, y_data, query_points)
 # Performance Notes
 - Returns lightweight callable (~56 bytes), best for reuse and broadcast fusion
 - 3-argument form returns array immediately, best for single use
-- Use `search=LinearBinary()` for sorted query sequences
+- Default `AutoSearch()` adapts: scalar→`Binary()`, vector→`LinearBinary()`
+- Use `search=LinearBinary()` to force linear-binary for all query types
 - Use `hint=Ref(idx)` for ODE/streaming patterns with persistent hint
 """
 function linear_interp end
@@ -143,7 +147,7 @@ function linear_interp end
     x::AbstractVector{TX},
     y::AbstractVector{TY};
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {TX<:Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     return LinearInterpolant(x_p, y_p; extrap, search)

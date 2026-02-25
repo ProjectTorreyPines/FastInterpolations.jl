@@ -106,9 +106,17 @@ end
 """
     _resolve_search_nd(search, Val(N)) -> NTuple{N, AbstractSearchPolicy}
 
-Resolve search policy input to canonical N-tuple.
+Resolve search policy input to canonical N-tuple (broadcast only, no AutoSearch resolution).
 - Single `AbstractSearchPolicy` → broadcast to all N axes
 - `NTuple{N, AbstractSearchPolicy}` → passthrough
+
+    _resolve_search_nd(search, Val(N), query_sample) -> NTuple{N, AbstractSearchPolicy}
+
+Broadcast + resolve AutoSearch in one step. Pass the query container directly — no `first()` extraction needed:
+- `query_sample::NTuple{N,Real}` (scalar ND query) → `Tuple` arm → `Binary()` per axis
+- `query_sample::NTuple{N,AbstractVector}` (SoA batch) → `Tuple{Vararg{AbstractVector}}` arm → `LinearBinary()` per axis
+- `query_sample::AbstractVector{<:Tuple}` (AoS batch) → `AbstractVector` arm → `LinearBinary()` per axis
+- Explicit policies pass through unchanged.
 """
 @inline _resolve_search_nd(s::AbstractSearchPolicy, ::Val{N}) where {N} = ntuple(_ -> s, Val(N))
 
@@ -116,6 +124,12 @@ Resolve search policy input to canonical N-tuple.
 
 @inline function _resolve_search_nd(s::Tuple{Vararg{AbstractSearchPolicy}}, ::Val{N}) where {N}
     throw(ArgumentError("search tuple must have $N elements to match grid dimensions, got $(length(s))"))
+end
+
+# 3-arg: broadcast + resolve AutoSearch per-axis in one step
+@inline function _resolve_search_nd(s, ::Val{N}, query_sample) where {N}
+    tuple = _resolve_search_nd(s, Val(N))
+    return map(p -> _resolve_search(p, query_sample), tuple)
 end
 
 # ========================================

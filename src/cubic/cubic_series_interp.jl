@@ -99,7 +99,7 @@ mutable struct CubicSeriesInterpolant{
         y::Matrix{Tv},
         z::Matrix{Tv},
         extrap::E,
-        search::P=Binary()
+        search::P=AutoSearch()
     ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, B, E<:AbstractExtrap, P<:AbstractSearchPolicy}
         new{Tg, Tv, C, B, E, P}(
             cache, bc_for_solve, y, z,
@@ -574,7 +574,7 @@ function cubic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
-    search::P=Binary()
+    search::P=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Validate input
     @assert !isempty(ys) "ys must not be empty"
@@ -642,7 +642,7 @@ function _build_series_periodic(
     n_series_count::Int,
     autocache::Bool,
     precompute_transpose::Bool,
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     # Extend data for exclusive endpoint
     x, y_mat = _prepare_periodic(x, y_mat, bc)
@@ -706,7 +706,7 @@ function cubic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     n_pts = length(x)
 
@@ -764,7 +764,7 @@ function cubic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
@@ -782,7 +782,7 @@ function cubic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
     Tv_float = _value_type(Tv, Tg_float)
@@ -797,7 +797,7 @@ end
 # ========================================
 
 """
-    (sitp::CubicSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=Binary())
+    (sitp::CubicSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=AutoSearch())
 
 Evaluate multi-Y interpolant at scalar query point (out-of-place).
 
@@ -819,14 +819,15 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     output = Vector{T_out}(undef, n_series(sitp))
 
     # Build anchor preserving Dual type in xq
-    aq = _make_anchor(sitp, xq_promoted, _to_searcher(search, hint))
+    resolved = _resolve_search(search, xq)
+    aq = _make_anchor(sitp, xq_promoted, _to_searcher(resolved, hint))
 
     _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output
 end
 
 """
-    (sitp::CubicSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=Binary())
+    (sitp::CubicSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=AutoSearch())
 
 Evaluate multi-Y interpolant at scalar query point (in-place).
 
@@ -846,7 +847,8 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     xq_promoted = _promote_for_anchor(xq, Tg)
 
     # Build anchor preserving Dual type in xq (for AD)
-    aq = _make_anchor(sitp, xq_promoted, _to_searcher(search, hint))
+    resolved = _resolve_search(search, xq)
+    aq = _make_anchor(sitp, xq_promoted, _to_searcher(resolved, hint))
 
     _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output
@@ -931,8 +933,9 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
 
     # Build anchors - pool handles both Tq===Tg and mixed-type cases
     # Each unique type combination gets its own pool slot
+    resolved = _resolve_search(search, xq)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg,Tq}, n_query)
-    _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+    _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
 
     # Extract matrices for argument-passing pattern (series-contiguous layout)
     # This is faster than point-contiguous for vector queries because:

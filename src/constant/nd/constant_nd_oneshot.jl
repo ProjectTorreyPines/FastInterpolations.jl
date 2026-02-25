@@ -150,7 +150,7 @@ function constant_interp(
     query::Tuple{Vararg{Real, N}};
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     # Any derivative of constant interpolation is zero
@@ -164,7 +164,7 @@ function constant_interp(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
+    searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot(
@@ -183,7 +183,7 @@ function constant_interp(
     queries::NTuple{N, AbstractVector{<:Real}};
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     if _is_any_deriv(deriv)
@@ -197,7 +197,7 @@ function constant_interp(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
+    searches = _resolve_search_nd(search, Val(N), queries)  # NTuple{N,AbstractVector} <: Tuple{Vararg{AbstractVector}} → LinearBinary/axis
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_soa(
@@ -216,7 +216,7 @@ function constant_interp(
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     if _is_any_deriv(deriv)
@@ -230,7 +230,7 @@ function constant_interp(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
+    searches = _resolve_search_nd(search, Val(N), queries)  # AoS: AbstractVector{<:Tuple} <: AbstractVector → LinearBinary
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_aos(
@@ -254,7 +254,7 @@ function constant_interp!(
     queries::NTuple{N, AbstractVector{<:Real}};
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     if _is_any_deriv(deriv)
@@ -268,7 +268,7 @@ function constant_interp!(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
+    searches = _resolve_search_nd(search, Val(N), queries)  # NTuple{N,AbstractVector} <: Tuple{Vararg{AbstractVector}} → LinearBinary/axis
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_soa!(
@@ -288,7 +288,7 @@ function constant_interp!(
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary(),
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
 ) where {Tv, N}
     if _is_any_deriv(deriv)
@@ -302,7 +302,7 @@ function constant_interp!(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N))
+    searches = _resolve_search_nd(search, Val(N), queries)  # AoS: AbstractVector{<:Tuple} <: AbstractVector → LinearBinary
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_aos!(

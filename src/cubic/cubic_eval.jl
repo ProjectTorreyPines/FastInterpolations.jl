@@ -273,7 +273,7 @@ Uses task-local pool for workspace allocation.
     x_query::Tg;
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=Binary(),
+    search=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}}
     @assert length(y) == length(cache.x) "y length must match cache grid"
@@ -281,7 +281,8 @@ Uses task-local pool for workspace allocation.
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, x_query)
+    searcher = _to_searcher(resolved, hint)
     @boundscheck _check_domain(cache.x, x_query, extrap)
     _eval_with_bc(cache, y, z, x_query, extrap, deriv, searcher)
 end

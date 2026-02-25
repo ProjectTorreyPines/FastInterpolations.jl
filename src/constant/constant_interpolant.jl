@@ -12,7 +12,8 @@
 # Type parameters: Tg = grid type, Tv = value type, Tq = query type
 # ─────────────────────────────────────────────────────────────
 @inline function (itp::ConstantInterpolant{Tg,Tv})(xq::Tq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     _constant_eval_at_point(itp.x, itp.y, xq, itp.extrap, itp.side, deriv, searcher)
 end
 
@@ -24,7 +25,8 @@ end
 function (itp::ConstantInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     @inbounds for i in eachindex(xq, output)
         output[i] = _constant_eval_at_point(itp.x, itp.y, xq[i], itp.extrap, itp.side, deriv, searcher)
@@ -37,7 +39,8 @@ end
 # ─────────────────────────────────────────────────────────────
 function (itp::ConstantInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     @inbounds for i in eachindex(xq, output)
         output[i] = _constant_eval_at_point(itp.x, itp.y, xq[i], itp.extrap, itp.side, deriv, searcher)
@@ -51,7 +54,7 @@ end
 # ========================================
 
 """
-    constant_interp(x, y; extrap=NoExtrap(), side=NearestSide(), search=Binary()) -> ConstantInterpolant
+    constant_interp(x, y; extrap=NoExtrap(), side=NearestSide(), search=AutoSearch()) -> ConstantInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -60,7 +63,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `y::AbstractVector`: y-values (can be Real or Complex)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `side::AbstractSide`: Side selection (NearestSide(), LeftSide(), RightSide())
-- `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
+- `search::AbstractSearchPolicy`: Default search policy (default: `AutoSearch()`)
 
 # Returns
 `ConstantInterpolant{Tg, Tv}` object for scalar/broadcast evaluation.
@@ -82,9 +85,10 @@ y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im]
 itp = constant_interp(x, y)
 itp(0.5)           # 1.0+2.0im (ComplexF64)
 
-# Create with custom search policy
-itp = constant_interp(x, y; search=LinearBinary())
-val = itp(0.5)     # uses LinearBinary() by default
+# Search policy: AutoSearch adapts to query type (scalar→Binary, vector→LinearBinary)
+itp = constant_interp(x, y)
+val = itp(0.5)     # AutoSearch resolves to Binary() for scalar
+itp = constant_interp(x, y; search=LinearBinary())  # explicit override
 
 # Fused broadcast (optimal)
 result = @. coef * itp(query)
@@ -109,7 +113,7 @@ end
     y::AbstractVector{TY};
     extrap::AbstractExtrap=NoExtrap(),
     side::AbstractSide=NearestSide(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {TX<:Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     return ConstantInterpolant(x_p, y_p; extrap, side, search)

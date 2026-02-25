@@ -93,7 +93,7 @@ mutable struct QuadraticSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtr
         d::Matrix{Tv},
         h::Vector{Tg},
         extrap::E,
-        search::P=Binary()
+        search::P=AutoSearch()
     ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
         new{Tg,Tv,E,P,X}(x, y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
     end
@@ -367,7 +367,7 @@ function quadratic_interp(
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    search::P=Binary()
+    search::P=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
     # Check if Tv's float base requires grid widening (not for Int types)
     # Int-based types (Complex{Int}) are handled by internal _value_type conversion
@@ -449,7 +449,7 @@ function quadratic_interp(
     Y::AbstractMatrix{Tv};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     ys = [Y[:, k] for k in axes(Y, 2)]
     return quadratic_interp(x, ys; bc=bc, extrap=extrap, search=search)
@@ -466,7 +466,7 @@ function quadratic_interp(
     ys::AbstractVector{<:AbstractVector{Tv}};
     bc=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv}
     # Compute promoted grid type (Tg may be Int, promotes to Float)
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
@@ -481,7 +481,7 @@ function quadratic_interp(
     Y::AbstractMatrix{Tv};
     bc=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv}
     Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
     x_typed = _to_float(x, Tg_float)
@@ -495,7 +495,7 @@ end
 
 # Scalar evaluation (explicit implementation for deriv keyword support)
 """
-    (sitp::QuadraticSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=Binary())
+    (sitp::QuadraticSeriesInterpolant)(xq::Real; deriv=EvalValue(), search=AutoSearch())
 
 Evaluate all series at scalar query point (out-of-place).
 
@@ -512,7 +512,8 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
     T_out = promote_type(Tv, typeof(xq_promoted))
-    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+    resolved = _resolve_search(search, xq)
+    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
 
     output = Vector{T_out}(undef, n_series(sitp))
     _eval_series_at_anchor!(output, sitp, aq, deriv)
@@ -520,7 +521,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
 end
 
 """
-    (sitp::QuadraticSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=Binary())
+    (sitp::QuadraticSeriesInterpolant)(output::AbstractVector, xq::Real; deriv=EvalValue(), search=AutoSearch())
 
 Evaluate all series at scalar query point (in-place, zero allocation).
 
@@ -540,7 +541,8 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
     xq_promoted = _promote_for_anchor(xq, Tg)
 
-    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+    resolved = _resolve_search(search, xq)
+    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
 
     _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output
@@ -600,12 +602,13 @@ Pool handles both same-type and mixed-type cases efficiently.
     # Build anchors - pool handles both same-type and mixed-type cases
     Tq_eff = promote_type(Tq, Tg)
     aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg, Tq_eff}, n_query)
+    resolved = _resolve_search(search, xq)
     if Tq === Tg
-        _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+        _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
     else
         # Mixed type: convert query points to preserve precision
         xq_promoted = _promote_for_anchor.(xq, Tg)
-        _fill_anchors!(aq_vec, sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(search, hint))
+        _fill_anchors!(aq_vec, sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
     end
 
     # Evaluate all series - anchor already has correct dL precision

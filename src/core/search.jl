@@ -40,8 +40,8 @@ pure binary search is used.
 
 # Example
 ```julia
-val = linear_interp(x, y, 0.5; search=Binary())  # pure binary search
-val = linear_interp(x, y, 0.5)                    # same (default)
+val = linear_interp(x, y, 0.5; search=Binary())  # explicit binary search
+val = linear_interp(x, y, 0.5)                    # default: AutoSearch()
 
 # With hint: auto-upgrades to HintedBinary behavior
 hint = Ref(1)
@@ -126,7 +126,7 @@ fall in adjacent or nearby intervals.
 # Construction
 Use the factory function (recommended) to construct with a curated set of values:
 ```julia
-LinearBinary()               # default MAX=8
+LinearBinary()               # default MAX=2
 LinearBinary(linear_window=4)    # custom MAX=4
 ```
 
@@ -147,7 +147,7 @@ struct LinearBinary{MAX} <: AbstractSearchPolicy end
 
 """
     LinearBinary(linear_window::Integer)
-    LinearBinary(; linear_window::Integer=8)
+    LinearBinary(; linear_window::Integer=2)
 
 Factory constructor for `LinearBinary{MAX}` with a **curated set of `linear_window` values**.
 
@@ -160,7 +160,7 @@ By restricting to powers of 2, we limit specialization to just 7 variants while
 covering the practical range of use cases.
 
 # Arguments
-- `linear_window::Integer=8`: Size of the linear search window before binary fallback.
+- `linear_window::Integer=2`: Size of the linear search window before binary fallback.
   **Allowed values**: `1, 2, 4, 8, 16, 32, 64, 128` (powers of 2 from 2⁰ to 2⁷)
 
 # Throws
@@ -168,15 +168,15 @@ covering the practical range of use cases.
 
 # Example
 ```julia
-policy = LinearBinary()              # LinearBinary{8}()  (default)
+policy = LinearBinary()                  # LinearBinary{2}()  (default)
 policy = LinearBinary(linear_window=4)   # LinearBinary{4}()
-policy = LinearBinary(linear_window=16)  # LinearBinary{16}()
+policy = LinearBinary(linear_window=8)   # LinearBinary{8}()
 policy = LinearBinary(linear_window=3)   # ERROR: ArgumentError
 ```
 
 # Choosing `linear_window`
-- **Small values (1–4)**: Lower overhead, but more frequent binary fallbacks
-- **Medium values (8–16)**: Good balance for typical sorted query patterns
+- **Small values (1–2)**: Minimal overhead, best for default usage and mixed query patterns
+- **Medium values (4–16)**: Good balance for known-sorted query patterns
 - **Large values (32–128)**: For highly localized queries or very large datasets
 """
 function LinearBinary(linear_window::Integer)
@@ -190,7 +190,58 @@ function LinearBinary(linear_window::Integer)
     linear_window == 128 && return LinearBinary{128}()
     throw(ArgumentError("`linear_window` must be one of (1, 2, 4, 8, 16, 32, 64, 128), got $linear_window"))
 end
-LinearBinary(; linear_window::Integer=8) = LinearBinary(linear_window)
+LinearBinary(; linear_window::Integer=2) = LinearBinary(linear_window)
+
+"""
+    AutoSearch <: AbstractSearchPolicy
+
+Adaptive search policy that resolves at call time based on query type:
+- **Scalar** queries (`Real`, `Tuple{Vararg{Real}}`) → `Binary()` — no hint locality to exploit
+- **Vector** queries (`AbstractVector`, `Tuple{Vararg{AbstractVector}}`) → `LinearBinary()` — hint continuity benefits sorted sequences
+- **Broadcast** (`itp.(xs)`) → `Binary()` per element — fresh searcher each call
+
+This is the default search policy for all interpolants. For known query patterns,
+specify `Binary()` or `LinearBinary()` explicitly for optimal performance.
+
+# Example
+```julia
+itp = linear_interp(x, y)              # stores AutoSearch()
+itp(0.5)                               # → Binary() internally (scalar)
+itp([0.1, 0.5, 0.9])                   # → LinearBinary() internally (vector)
+itp(0.5; search=LinearBinary())        # override: use LinearBinary explicitly
+```
+
+See also: [`Binary`](@ref), [`LinearBinary`](@ref)
+"""
+struct AutoSearch <: AbstractSearchPolicy end
+
+# ----------------------------------------
+# AutoSearch Resolution (query-type adaptive)
+# ----------------------------------------
+# Resolves AutoSearch to a concrete policy based on query type.
+# For non-AutoSearch policies, passes through unchanged (user override honored).
+# Must be called BEFORE _to_searcher in all eval paths.
+
+# 1D scalar: no hint locality → pure binary search
+@inline _resolve_search(::AutoSearch, ::Real) = Binary()
+
+# 1D vector: sorted locality → linear window with binary fallback
+@inline _resolve_search(::AutoSearch, ::AbstractVector) = LinearBinary()
+
+# ND SoA batch: tuple of vectors → LinearBinary per axis
+# NOTE: must precede the bare ::Tuple fallback — Tuple{Vararg{AbstractVector}} <: Tuple,
+# so Julia's specificity rules handle ordering correctly, but explicit ordering avoids confusion.
+@inline _resolve_search(::AutoSearch, ::Tuple{Vararg{AbstractVector}}) = LinearBinary()
+
+# ND scalar: tuple of reals → Binary per axis
+@inline _resolve_search(::AutoSearch, ::Tuple) = Binary()
+
+# Passthrough: explicit policies are honored as-is
+@inline _resolve_search(p::AbstractSearchPolicy, _) = p
+
+# Tuple of policies: resolve each element (for ND per-axis storage)
+@inline _resolve_search(ps::Tuple{Vararg{AbstractSearchPolicy}}, query) =
+    map(p -> _resolve_search(p, query), ps)
 
 # ----------------------------------------
 # Hint Types (Internal)
@@ -257,6 +308,10 @@ struct Searcher{P<:AbstractSearchPolicy,H<:AbstractHint}
     hint::H
 end
 
+# Searcher passthrough for _resolve_search: pre-built Searcher objects skip resolution.
+# Must be defined after Searcher struct (Julia requires types to be defined before use).
+@inline _resolve_search(s::Searcher, _) = s
+
 """
     DEFAULT_SEARCHER
 
@@ -295,6 +350,12 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(::Linear, hint::Base.RefValue{Int}) = Searcher{Linear,RefHint}(RefHint(hint))
 @inline _to_searcher(::LinearBinary{MAX}, ::Nothing) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint())
 @inline _to_searcher(::LinearBinary{MAX}, hint::Base.RefValue{Int}) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint(hint))
+
+# AutoSearch fallbacks: _resolve_search should be called first, but if any
+# code path misses resolution, fall back to Binary (safe stateless default).
+@inline _to_searcher(::AutoSearch) = Searcher{Binary,NoHint}(NoHint())
+@inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
+@inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = Searcher{HintedBinary,RefHint}(RefHint(hint))
 
 # ----------------------------------------
 # Searcher passthrough (advanced usage)
@@ -355,6 +416,10 @@ end
     _search_binary(x::AbstractVector{T}, xq::T) where {T<:Real}
 
 O(log n) binary search for non-uniform grids (AbstractVector).
+
+Uses branchless `for` loop with precomputed iteration count via `leading_zeros`
+for predictable loop exit on modern CPUs. The inner comparison uses `ifelse` to
+compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
 """
 @inline function _search_binary(x::AbstractVector{T}, xq::T) where {T<:Real}
     n = length(x)
@@ -365,13 +430,15 @@ O(log n) binary search for non-uniform grids (AbstractVector).
             idx = n - 1
         else
             lo, hi = 1, n
-            while hi - lo > 1
+            # Precompute exact iteration count: ceil(log2(hi - lo)) via CLZ
+            # n >= 2 guaranteed (grid has ≥2 points), so hi - lo - 1 >= 0
+            # Use %UInt64 (bit reinterpret) to avoid InexactError cold path in ASM
+            iters = 64 - leading_zeros((hi - lo - 1) % UInt64)
+            for _ in 1:iters
                 mid = (lo + hi) >> 1
-                if x[mid] <= xq
-                    lo = mid
-                else
-                    hi = mid
-                end
+                cond = x[mid] <= xq
+                lo = ifelse(cond, mid, lo)
+                hi = ifelse(cond, hi, mid)
             end
             idx = lo
         end
@@ -532,6 +599,13 @@ end
 
 Bounded linear search within MAX-sized window, then binary fallback.
 Optimal for monotonic query sequences.
+
+# Optimizations over naive implementation:
+- Hint clamped once at start: guards against user-provided out-of-range hints (e.g. Ref(0),
+  stale hints from a different grid). Internal hints (initialized to 1, updated to valid idx)
+  are already valid, so the clamp is a no-op on the hot path.
+- No hint write on direct hit: `ix` is unchanged, skip redundant `hint_ref[] = ix`
+- Single comparison per linear step: direction already determines one bound
 """
 @inline function _search_linear_binary!(
     x::AbstractVector{T},
@@ -541,32 +615,35 @@ Optimal for monotonic query sequences.
 ) where {T<:Real,MAX}
     ix = hint_ref[]
     n = length(x)
+    ix = clamp(ix, 1, n - 1)  # guard against user-provided bad hints (e.g. Ref(0), stale)
+                               # Precondition: n >= 2 (enforced by all interpolant constructors)
     @inbounds begin
-        ix = clamp(ix, 1, n - 1)
-        if x[ix] <= xq < x[ix + 1]
-            hint_ref[] = ix
-            return ix, x[ix], x[ix + 1]
-        end
-        if xq < x[ix]
-            for _ in 1:MAX
+        # Direct hit — most common for sorted/monotonic queries
+        xL = x[ix]
+        xR = x[ix + 1]
+        xL <= xq < xR && return ix, xL, xR  # no hint write (ix unchanged)
+
+        if xq < xL
+            # Walk left: xq < x[ix] guaranteed ⟹ after ix-=1,
+            # x[ix+1] = old x[ix] > xq — right bound already satisfied.
+            # Only need: x[ix] <= xq  (single comparison per step)
+            lo = max(1, ix - MAX)
+            while ix > lo
                 ix -= 1
-                ix < 1 && break
-                if x[ix] <= xq < x[ix + 1]
-                    hint_ref[] = ix
-                    return ix, x[ix], x[ix + 1]
-                end
+                x[ix] <= xq && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
             end
-        else
-            for _ in 1:MAX
+        else  # xq >= xR
+            # Walk right: xq >= x[ix+1] guaranteed ⟹ after ix+=1,
+            # x[ix] = old x[ix+1] <= xq — left bound already satisfied.
+            # Only need: xq < x[ix+1]  (single comparison per step)
+            hi = min(n - 1, ix + MAX)
+            while ix < hi
                 ix += 1
-                ix > n - 1 && break
-                if x[ix] <= xq < x[ix + 1]
-                    hint_ref[] = ix
-                    return ix, x[ix], x[ix + 1]
-                end
+                xq < x[ix + 1] && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
             end
         end
     end
+    # Binary fallback — full range (narrowing saves < 1 iteration, not worth extra branches)
     idx, xL, xR = _search_binary(x, xq)
     hint_ref[] = idx
     return idx, xL, xR

@@ -149,7 +149,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y, xi; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
+    quadratic_interp(x, y, xi; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
 
 C1 piecewise quadratic spline interpolation at a single point.
 
@@ -202,7 +202,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=Binary(),
+    search=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
@@ -217,7 +217,8 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     bc_promoted = _promote_bc(bc, Tv)
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     _quadratic_eval_at_point(x, y, h, a, d, xq, extrap, deriv, searcher)
 end
 
@@ -226,7 +227,7 @@ end
 # ========================================
 
 """
-    quadratic_interp!(output, x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
+    quadratic_interp!(output, x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
 
 In-place quadratic spline interpolation for multiple query points.
 
@@ -256,7 +257,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
@@ -271,7 +272,8 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     bc_promoted = _promote_bc(bc, Tv)
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
-    searcher = _to_searcher(search)
+    resolved = _resolve_search(search, x_targets)
+    searcher = _to_searcher(resolved)
     @boundscheck _check_domain(x, x_targets, extrap)
     @inbounds for i in eachindex(x_targets, output)
         output[i] = _quadratic_eval_at_point(x, y, h, a, d, x_targets[i], extrap, deriv, searcher)
@@ -284,7 +286,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=EvalValue(), search=Binary())
+    quadratic_interp(x, y, x_targets; bc=Left(QuadraticFit()), extrap=NoExtrap(), deriv=EvalValue(), search=AutoSearch())
 
 Quadratic spline interpolation for multiple query points (allocating version).
 
@@ -307,7 +309,7 @@ function quadratic_interp(
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_targets))
     quadratic_interp!(output, x, y, x_targets; bc, extrap, deriv, search)
@@ -362,7 +364,7 @@ end
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=Binary(),
+    search=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
@@ -384,7 +386,7 @@ function quadratic_interp(
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
     Tv_float = eltype(y_typed)
@@ -406,7 +408,7 @@ function quadratic_interp!(
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real, Tv, Tq<:Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"

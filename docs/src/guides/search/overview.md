@@ -17,15 +17,15 @@ using FastInterpolations
 x = collect(range(0, 1.0, length=1000))
 y = x.^3
 
-# For random queries
+# AutoSearch is the default — resolves automatically per call
 xq = rand(1000)
-linear_interp(x, y, xq; search=Binary())         # Default: optimal for random access
-linear_interp(x, y, xq; search=LinearBinary())  # Could be slower
+linear_interp(x, y, xq)                         # AutoSearch → LinearBinary() for vector
+linear_interp(x, y, xq; search=Binary())         # Explicit: optimal for random access
 
 # For sorted/monotonic queries
 xq_sorted = sort(xq)
-linear_interp(x, y, xq_sorted; search=Binary())         # Same as random
-linear_interp(x, y, xq_sorted; search=LinearBinary())  # Much faster!
+linear_interp(x, y, xq_sorted)                   # AutoSearch → LinearBinary() — already fast!
+linear_interp(x, y, xq_sorted; search=LinearBinary())  # Same result, explicit
 nothing # hide
 ```
 
@@ -33,9 +33,10 @@ nothing # hide
 
 | Policy | Best For | Complexity | Thread Safety |
 |:-------|:---------|:-----------|:--------------|
-| [`Binary()`](@ref search_policies) | Random access (default) | O(log n) | ✓ Stateless |
+| [`AutoSearch()`](@ref search_policies) | **General use (default)** — adapts per query type | Delegates to Binary/LinearBinary | ✓ Stateless |
+| [`Binary()`](@ref search_policies) | Random access (explicit) | O(log n) | ✓ Stateless |
 | [`HintedBinary()`](@ref search_policies) | Repeated queries in same region | O(1) hit, O(log n) miss | ✓ With hint |
-| [`LinearBinary()`](@ref search_policies) | **Monotonic queries (recommended)** | O(1) local, O(log n) fallback | ✓ With hint |
+| [`LinearBinary()`](@ref search_policies) | **Monotonic queries (explicit)** | O(1) local, O(log n) fallback | ✓ With hint |
 | [`Linear()`](@ref search_policies) | Close + monotonic queries (expert) | O(1) amortized | ✓ With hint |
 
 !!! note "Why No Hunt Algorithm?"
@@ -47,9 +48,10 @@ nothing # hide
 
 **Which policy should I use?**
 
-- **Random access / general use** → `Binary()` (default, most consistent performance)
+- **General use / unknown pattern** → `AutoSearch()` ✅ **default** — adapts scalar→`Binary()`, vector→`LinearBinary()`
+- **Known random access** → `Binary()` (explicit; skips AutoSearch dispatch)
 - **Queries cluster in same region** → `HintedBinary()`
-- **Monotonic queries (sorted, streaming, ODE)** → `LinearBinary()` ✅ **recommended**
+- **Known monotonic queries (sorted, streaming, ODE)** → `LinearBinary()` (explicit)
 - **Strictly monotonic, performance-critical** → `Linear()` (benchmark first! see below)
 
 !!! note "Benchmark Before Choosing Linear()"

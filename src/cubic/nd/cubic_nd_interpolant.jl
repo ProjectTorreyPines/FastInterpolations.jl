@@ -25,7 +25,7 @@ Create an N-dimensional cubic Hermite interpolant from grid vectors and data arr
 - `extrap=NoExtrap()`: Extrapolation mode(s). Can be:
   - Single `AbstractExtrap`: Applied to all axes (`NoExtrap()`, `ConstExtrap()`, `WrapExtrap()`)
   - `NTuple{N,AbstractExtrap}`: Per-axis modes
-- `search=Binary()`: Search policy(s). Can be:
+- `search=AutoSearch()`: Search policy(s). Can be:
   - Single `AbstractSearchPolicy`: Applied to all axes
   - `NTuple{N,AbstractSearchPolicy}`: Per-axis policies
 - `coeffs=PreCompute()`: Coefficient computation strategy
@@ -62,7 +62,7 @@ function cubic_interp(
     data::AbstractArray{Tv_raw, N};
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=Binary(),
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
     coeffs::AbstractCoeffStrategy=PreCompute()
 ) where {N, Tv_raw}
     # Zero-allocation type promotion (uses @generated function)

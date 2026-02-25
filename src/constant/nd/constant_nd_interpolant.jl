@@ -21,7 +21,7 @@ Create an N-dimensional constant interpolant with tuple-grid API.
 # Keyword Arguments
 - `side=NearestSide()`: Side selection mode (`NearestSide()`, `LeftSide()`, `RightSide()`) or per-axis tuple
 - `extrap=NoExtrap()`: Extrapolation mode (`NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, `WrapExtrap()`) or per-axis tuple
-- `search=Binary()`: Search policy or per-axis tuple
+- `search=AutoSearch()`: Search policy or per-axis tuple
 
 # Returns
 - `ConstantInterpolantND{Tg,Tv,N}`: Callable interpolant object
@@ -51,7 +51,7 @@ function constant_interp(
     data::AbstractArray{Tv_raw, N};
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = Binary()
+    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch()
 ) where {N, Tv_raw}
     # Validate grid dimensions
     _validate_nd_grids(grids, data)

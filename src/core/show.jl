@@ -122,6 +122,7 @@ _format_search(::Binary) = "Binary"
 _format_search(::HintedBinary) = "HintedBinary"
 _format_search(::Linear) = "Linear"
 _format_search(::LinearBinary{MAX}) where {MAX} = "LinearBinary{$MAX}"
+_format_search(::AutoSearch) = "AutoSearch (scalar→Binary, vector→LinearBinary)"
 
 """Format boundary condition for display."""
 _format_bc(::ZeroCurvBC) = "ZeroCurv (S''=0 at ends)"

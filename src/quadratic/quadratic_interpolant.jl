@@ -14,7 +14,8 @@
 # ─────────────────────────────────────────────────────────────
 @inline function (itp::QuadraticInterpolant{Tg,Tv})(xq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xq)
+    searcher = _to_searcher(resolved, hint)
     # Pass original xq to preserve Dual type for AD
     _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xq, itp.extrap, deriv, searcher)
 end
@@ -27,7 +28,8 @@ end
 function (itp::QuadraticInterpolant{Tg,Tv})(xi::AbstractVector{S}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, S<:Real}
     T_out = promote_type(Tv, S)    # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xi))
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xi)
+    searcher = _to_searcher(resolved, hint)
     @boundscheck _check_domain(itp.x, xi, itp.extrap)
     @inbounds for i in eachindex(xi, output)
         output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.extrap, deriv, searcher)
@@ -41,7 +43,8 @@ end
 # ─────────────────────────────────────────────────────────────
 function (itp::QuadraticInterpolant{Tg,Tv})(output::AbstractVector, xi::AbstractVector{<:Real}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @assert length(output) == length(xi) "output length must match xi length"
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(search, xi)
+    searcher = _to_searcher(resolved, hint)
     @boundscheck _check_domain(itp.x, xi, itp.extrap)
     @inbounds for i in eachindex(xi, output)
         output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.extrap, deriv, searcher)
@@ -55,7 +58,7 @@ end
 # ========================================
 
 """
-    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=NoExtrap(), search=Binary()) -> QuadraticInterpolant
+    quadratic_interp(x, y; bc=Left(QuadraticFit()), extrap=NoExtrap(), search=AutoSearch()) -> QuadraticInterpolant
 
 Create a callable interpolant for broadcast fusion and reuse.
 
@@ -64,7 +67,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `y::AbstractVector`: y-values (can be Real or Complex)
 - `bc`: Boundary condition (Left, Right, MinCurvFit, or Left/Right with QuadraticFit)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
-- `search::AbstractSearchPolicy`: Default search policy (default: `Binary()`)
+- `search::AbstractSearchPolicy`: Default search policy (default: `AutoSearch()`)
 
 # Returns
 `QuadraticInterpolant{Tg, Tv}` object for scalar/broadcast evaluation.
@@ -87,9 +90,10 @@ y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im]
 itp = quadratic_interp(x, y)
 itp(0.5)           # returns ComplexF64
 
-# Create with custom search policy
-itp = quadratic_interp(x, y; search=LinearBinary())
-val = itp(0.5)     # uses LinearBinary() by default
+# Search policy: AutoSearch adapts to query type (scalar→Binary, vector→LinearBinary)
+itp = quadratic_interp(x, y)
+val = itp(0.5)     # AutoSearch resolves to Binary() for scalar
+itp = quadratic_interp(x, y; search=LinearBinary())  # explicit override
 
 # Fused broadcast (optimal)
 result = @. coef * itp(query)
@@ -115,7 +119,7 @@ end
     y::AbstractVector{TY};
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=Binary()
+    search::AbstractSearchPolicy=AutoSearch()
 ) where {TX<:Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
     bc_p = _promote_bc(bc, eltype(x_p))

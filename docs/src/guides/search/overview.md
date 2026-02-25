@@ -35,7 +35,6 @@ nothing # hide
 |:-------|:---------|:-----------|:--------------|
 | [`AutoSearch()`](@ref search_policies) | **General use (default)** — adapts per query type | Delegates to Binary/LinearBinary | ✓ Stateless |
 | [`Binary()`](@ref search_policies) | Random access (explicit) | O(log n) | ✓ Stateless |
-| [`HintedBinary()`](@ref search_policies) | Repeated queries in same region | O(1) hit, O(log n) miss | ✓ With hint |
 | [`LinearBinary()`](@ref search_policies) | **Monotonic queries (explicit)** | O(1) local, O(log n) fallback | ✓ With hint |
 | [`Linear()`](@ref search_policies) | Close + monotonic queries (expert) | O(1) amortized | ✓ With hint |
 
@@ -50,7 +49,7 @@ nothing # hide
 
 - **General use / unknown pattern** → `AutoSearch()` ✅ **default** — adapts scalar→`Binary()`, vector→`LinearBinary()`
 - **Known random access** → `Binary()` (explicit; skips AutoSearch dispatch)
-- **Queries cluster in same region** → `HintedBinary()`
+- **Queries cluster in same region** → `LinearBinary(linear_window=0)` (hint check only)
 - **Known monotonic queries (sorted, streaming, ODE)** → `LinearBinary()` (explicit)
 - **Strictly monotonic, performance-critical** → `Linear()` (benchmark first! see below)
 

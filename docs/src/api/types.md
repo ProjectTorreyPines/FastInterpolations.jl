@@ -108,7 +108,6 @@ Search policies control how the interpolant finds the correct interval for a que
 AbstractSearchPolicy
 AutoSearch
 Binary
-HintedBinary
 Linear
 LinearBinary
 ```

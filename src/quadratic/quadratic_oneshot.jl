@@ -172,7 +172,7 @@ C1 piecewise quadratic spline interpolation at a single point.
 - `deriv::DerivOp`: Derivative order -- use `EvalValue()` (default), `DerivOp(1)`, or `DerivOp(2)`
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
-  - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
+  - `LinearBinary(linear_window=0)`: O(1) if hint valid, O(log n) fallback
   - `LinearBinary(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns

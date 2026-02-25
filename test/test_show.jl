@@ -200,7 +200,7 @@
 
         # Test different search policies
         itp_binary = linear_interp(x_vec, y; search=Binary())
-        itp_hinted = linear_interp(x_vec, y; search=HintedBinary())
+        itp_hinted = linear_interp(x_vec, y; search=LinearBinary(linear_window=0))
         itp_linear_binary = linear_interp(x_vec, y; search=LinearBinary())
         itp_linear_binary_16 = linear_interp(x_vec, y; search=LinearBinary(linear_window=16))
 
@@ -208,7 +208,7 @@
         @test occursin("Binary", verbose_binary)
 
         verbose_hinted = sprint(show, MIME("text/plain"), itp_hinted)
-        @test occursin("HintedBinary", verbose_hinted)
+        @test occursin("LinearBinary{0}", verbose_hinted)
 
         verbose_lb = sprint(show, MIME("text/plain"), itp_linear_binary)
         @test occursin("LinearBinary{2}", verbose_lb)
@@ -472,7 +472,7 @@
 
         @test FI._format_search(Linear()) == "Linear"
         @test FI._format_search(Binary()) == "Binary"
-        @test FI._format_search(HintedBinary()) == "HintedBinary"
+        @test FI._format_search(LinearBinary(linear_window=0)) == "LinearBinary{0}"
         @test FI._format_search(LinearBinary()) == "LinearBinary{2}"
         @test FI._format_search(LinearBinary(linear_window=4)) == "LinearBinary{4}"
         @test FI._format_search(AutoSearch()) == "AutoSearch (scalar→Binary, vector→LinearBinary)"

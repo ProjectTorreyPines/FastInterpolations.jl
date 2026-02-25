@@ -23,7 +23,7 @@
 Abstract supertype for user-facing search policy selection.
 Concrete subtypes encode the search algorithm choice.
 
-See also: [`Binary`](@ref), [`HintedBinary`](@ref), [`LinearBinary`](@ref)
+See also: [`Binary`](@ref), [`LinearBinary`](@ref)
 """
 abstract type AbstractSearchPolicy end
 
@@ -35,7 +35,7 @@ Stateless and thread-safe. This is the default search policy.
 
 # Hint Behavior
 When a `hint` argument is provided with `Binary()`, the search automatically
-upgrades to `HintedBinary` behavior to utilize the hint. Without a hint,
+upgrades to `LinearBinary()` (default window) to utilize the hint for locality. Without a hint,
 pure binary search is used.
 
 # Example
@@ -43,28 +43,14 @@ pure binary search is used.
 val = linear_interp(x, y, 0.5; search=Binary())  # explicit binary search
 val = linear_interp(x, y, 0.5)                    # default: AutoSearch()
 
-# With hint: auto-upgrades to HintedBinary behavior
+# With hint: auto-upgrades to LinearBinary() (default window)
 hint = Ref(1)
-val = itp(0.5; search=Binary(), hint=hint)  # uses hinted binary internally
+val = itp(0.5; search=Binary(), hint=hint)  # uses LinearBinary() internally
 ```
 
-See also: [`HintedBinary`](@ref), [`LinearBinary`](@ref)
+See also: [`LinearBinary`](@ref)
 """
 struct Binary <: AbstractSearchPolicy end
-
-"""
-    HintedBinary <: AbstractSearchPolicy
-
-Hinted binary search: O(1) if query hits cached interval, O(log n) fallback.
-Useful when queries repeatedly access the same interval region.
-
-# Example
-```julia
-itp = linear_interp(x, y)
-vals = itp(query_points; search=HintedBinary())
-```
-"""
-struct HintedBinary <: AbstractSearchPolicy end
 
 """
     Linear <: AbstractSearchPolicy
@@ -103,7 +89,7 @@ for t in t_values  # strictly increasing
 end
 ```
 
-See also: [`LinearBinary`](@ref), [`Binary`](@ref), [`HintedBinary`](@ref)
+See also: [`LinearBinary`](@ref), [`Binary`](@ref)
 """
 struct Linear <: AbstractSearchPolicy end
 
@@ -126,7 +112,8 @@ fall in adjacent or nearby intervals.
 # Construction
 Use the factory function (recommended) to construct with a curated set of values:
 ```julia
-LinearBinary()               # default MAX=2
+LinearBinary()                   # default MAX=2
+LinearBinary(linear_window=0)    # hint check only, no walk 
 LinearBinary(linear_window=4)    # custom MAX=4
 ```
 
@@ -141,7 +128,7 @@ sorted_queries = sort(rand(1000))
 vals = linear_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
 ```
 
-See also: [`Binary`](@ref), [`HintedBinary`](@ref)
+See also: [`Binary`](@ref)
 """
 struct LinearBinary{MAX} <: AbstractSearchPolicy end
 
@@ -161,7 +148,7 @@ covering the practical range of use cases.
 
 # Arguments
 - `linear_window::Integer=2`: Size of the linear search window before binary fallback.
-  **Allowed values**: `1, 2, 4, 8, 16, 32, 64, 128` (powers of 2 from 2⁰ to 2⁷)
+  **Allowed values**: `0, 1, 2, 4, 8, 16, 32, 64, 128`
 
 # Throws
 - `ArgumentError`: If `linear_window` is not one of the allowed values.
@@ -175,11 +162,13 @@ policy = LinearBinary(linear_window=3)   # ERROR: ArgumentError
 ```
 
 # Choosing `linear_window`
+- **Zero (0)**: Hint check only, no walk — minimal random-query overhead.
 - **Small values (1–2)**: Minimal overhead, best for default usage and mixed query patterns
 - **Medium values (4–16)**: Good balance for known-sorted query patterns
 - **Large values (32–128)**: For highly localized queries or very large datasets
 """
 function LinearBinary(linear_window::Integer)
+    linear_window == 0  && return LinearBinary{0}()
     linear_window == 1  && return LinearBinary{1}()
     linear_window == 2  && return LinearBinary{2}()
     linear_window == 4  && return LinearBinary{4}()
@@ -188,7 +177,7 @@ function LinearBinary(linear_window::Integer)
     linear_window == 32 && return LinearBinary{32}()
     linear_window == 64 && return LinearBinary{64}()
     linear_window == 128 && return LinearBinary{128}()
-    throw(ArgumentError("`linear_window` must be one of (1, 2, 4, 8, 16, 32, 64, 128), got $linear_window"))
+    throw(ArgumentError("`linear_window` must be one of (0, 1, 2, 4, 8, 16, 32, 64, 128), got $linear_window"))
 end
 LinearBinary(; linear_window::Integer=2) = LinearBinary(linear_window)
 
@@ -294,7 +283,7 @@ Internal searcher type combining search policy with hint state.
 Type parameters enable compile-time dispatch with zero runtime overhead.
 
 # Type Parameters
-- `P`: Search policy type (`Binary`, `HintedBinary`, `LinearBinary{N}`)
+- `P`: Search policy type (`Binary`, `LinearBinary{N}`)
 - `H`: Hint type (`NoHint`, `RefHint`)
 
 # Fields
@@ -302,7 +291,7 @@ Type parameters enable compile-time dispatch with zero runtime overhead.
 
 # Note
 Users should not construct Searcher directly. Use the policy types (`Binary()`,
-`HintedBinary()`, `LinearBinary()`) with the `search` keyword argument instead.
+`LinearBinary()`) with the `search` keyword argument instead.
 """
 struct Searcher{P<:AbstractSearchPolicy,H<:AbstractHint}
     hint::H
@@ -331,7 +320,6 @@ Convert user-facing policy to internal Searcher with fresh hint state.
 Creates a new RefHint for stateful policies, ensuring thread safety.
 """
 @inline _to_searcher(::Binary) = Searcher{Binary,NoHint}(NoHint())
-@inline _to_searcher(::HintedBinary) = Searcher{HintedBinary,RefHint}(RefHint())
 @inline _to_searcher(::Linear) = Searcher{Linear,RefHint}(RefHint())
 @inline _to_searcher(::LinearBinary{MAX}) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint())
 
@@ -343,9 +331,7 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 # When hint=Ref{Int}, stateful policies use the external Ref for persistence.
 
 @inline _to_searcher(::Binary, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
-@inline _to_searcher(::Binary, hint::Base.RefValue{Int}) = Searcher{HintedBinary,RefHint}(RefHint(hint))  # auto-upgrade to hinted
-@inline _to_searcher(::HintedBinary, ::Nothing) = Searcher{HintedBinary,RefHint}(RefHint())
-@inline _to_searcher(::HintedBinary, hint::Base.RefValue{Int}) = Searcher{HintedBinary,RefHint}(RefHint(hint))
+@inline _to_searcher(::Binary, hint::Base.RefValue{Int}) = _to_searcher(LinearBinary(), hint)  # auto-upgrade to default LinearBinary
 @inline _to_searcher(::Linear, ::Nothing) = Searcher{Linear,RefHint}(RefHint())
 @inline _to_searcher(::Linear, hint::Base.RefValue{Int}) = Searcher{Linear,RefHint}(RefHint(hint))
 @inline _to_searcher(::LinearBinary{MAX}, ::Nothing) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint())
@@ -355,7 +341,7 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 # code path misses resolution, fall back to Binary (safe stateless default).
 @inline _to_searcher(::AutoSearch) = Searcher{Binary,NoHint}(NoHint())
 @inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
-@inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = Searcher{HintedBinary,RefHint}(RefHint(hint))
+@inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = _to_searcher(LinearBinary(), hint)  # auto-upgrade to default LinearBinary
 
 # ----------------------------------------
 # Searcher passthrough (advanced usage)
@@ -534,25 +520,6 @@ end
 # ----------------------------------------
 
 """
-    _search_hinted_binary!(x, xq, hint_ref) -> (idx, xL, xR)
-
-Cached binary search: O(1) if hint valid, O(log n) fallback.
-Updates `hint_ref` with the found interval index.
-"""
-@inline function _search_hinted_binary!(
-    x::AbstractVector{T}, xq::T, hint_ref::Base.RefValue{Int}
-) where {T<:Real}
-    ix = hint_ref[]
-    n = length(x)
-    @inbounds if 1 <= ix <= n - 1 && x[ix] <= xq < x[ix + 1]
-        return ix, x[ix], x[ix + 1]
-    end
-    idx, xL, xR = _search_binary(x, xq)
-    hint_ref[] = idx
-    return idx, xL, xR
-end
-
-"""
     _search_linear!(x, xq, hint_ref) -> (idx, xL, xR)
 
 Pure linear search: walks from hint until interval found.
@@ -691,11 +658,6 @@ end
     return _search_direct!(x, spacing, _to_grid_type(xq, Tg), hint_ref)
 end
 
-"""Generic wrapper for hinted binary search."""
-@inline function _search_hinted_binary!(x::AbstractVector{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg<:Real, Tq<:Real}
-    return _search_hinted_binary!(x, _to_grid_type(xq, Tg), hint_ref)
-end
-
 """Generic wrapper for linear search."""
 @inline function _search_linear!(x::AbstractVector{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg<:Real, Tq<:Real}
     return _search_linear!(x, _to_grid_type(xq, Tg), hint_ref)
@@ -733,16 +695,6 @@ end
 @inline search_interval(::Searcher{Binary,NoHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
     _search_direct(x, spacing, xq)
 
-# --- HintedBinary + RefHint ---
-
-@inline function search_interval(p::Searcher{HintedBinary,RefHint}, x::AbstractVector, xq::Real)
-    return _search_hinted_binary!(x, xq, p.hint.idx)
-end
-
-# Range: O(1) direct + hint update
-@inline search_interval(p::Searcher{HintedBinary,RefHint}, x::AbstractRange, xq::Real) =
-    _search_direct!(x, xq, p.hint.idx)
-
 # --- Linear + RefHint ---
 
 @inline function search_interval(p::Searcher{Linear,RefHint}, x::AbstractVector, xq::Real)
@@ -765,13 +717,6 @@ end
 # --- Spacing-aware overloads ---
 # For uniform grids (AbstractRange + ScalarSpacing): always O(1) direct
 # For non-uniform grids (AbstractVector + VectorSpacing): delegate to standard search
-
-# HintedBinary + spacing
-@inline search_interval(p::Searcher{HintedBinary,RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) =
-    _search_hinted_binary!(x, xq, p.hint.idx)
-
-@inline search_interval(p::Searcher{HintedBinary,RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) =
-    _search_direct!(x, spacing, xq, p.hint.idx)
 
 # Linear + spacing
 @inline search_interval(p::Searcher{Linear,RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) =

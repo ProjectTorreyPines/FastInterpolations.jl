@@ -93,7 +93,7 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 - `Tv`: Value type for y-values (can be Tg, Complex{Tg}, or other Number)
 - `C`: CubicSplineCache type (preserves grid type info for O(1) vs O(log n) lookup)
 - `E`: Extrapolation mode type (compile-time specialized)
-- `P`: Search policy type (AutoSearch, Binary, HintedBinary, LinearBinary, etc.)
+- `P`: Search policy type (AutoSearch, Binary, LinearBinary, etc.)
 - `BC`: Boundary condition type (BCPair or PeriodicBC)
 
 # Fields

@@ -51,7 +51,7 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
 
         @testset "reject wrong-length tuple" begin
             @test_throws ArgumentError _resolve_search_nd((Binary(), LinearBinary()), Val(3))
-            @test_throws ArgumentError _resolve_search_nd((Binary(), LinearBinary(), Linear(), HintedBinary()), Val(3))
+            @test_throws ArgumentError _resolve_search_nd((Binary(), LinearBinary(), Linear(), LinearBinary(linear_window=0)), Val(3))
         end
     end
 

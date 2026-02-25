@@ -4,7 +4,7 @@ Hints allow you to persist search state across calls, enabling O(1) lookup for s
 
 ## Basic Usage
 
-For stateful policies (`HintedBinary`, `Linear`, `LinearBinary`), provide an external `Ref{Int}` to persist the hint:
+For stateful policies (`Linear`, `LinearBinary`), provide an external `Ref{Int}` to persist the hint:
 
 ```julia
 itp = linear_interp(x, y)
@@ -30,18 +30,18 @@ External hints are particularly useful for:
 
 ## Auto-Upgrade Behavior
 
-When you provide a `hint` argument with `Binary()`, the search automatically upgrades to `HintedBinary` behavior:
+When you provide a `hint` argument with `Binary()`, the search automatically upgrades to `LinearBinary{2}`:
 
 ```julia
 hint = Ref(1)
-val = itp(0.5; search=Binary(), hint=hint)  # auto-upgrades to HintedBinary
+val = itp(0.5; search=Binary(), hint=hint)  # auto-upgrades to LinearBinary{2}
 ```
 
-This also works with the default `AutoSearch()` — scalar queries resolve to `Binary()`, and if a hint is provided, they auto-upgrade to `HintedBinary`:
+This also works with the default `AutoSearch()` — scalar queries resolve to `Binary()`, and if a hint is provided, they auto-upgrade to `LinearBinary{2}`:
 
 ```julia
 hint = Ref(1)
-val = itp(0.5; hint=hint)  # AutoSearch → Binary() → auto-upgrades to HintedBinary
+val = itp(0.5; hint=hint)  # AutoSearch → Binary() → auto-upgrades to LinearBinary{2}
 ```
 
 Without a hint, binary search is used (no hint tracking).

@@ -28,7 +28,7 @@ Zero-allocation linear interpolation with automatic dispatch:
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative, `DerivOp(2)` second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
-  - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
+  - `LinearBinary(linear_window=0)`: O(1) if hint valid, O(log n) fallback
   - `LinearBinary(linear_window=8)`: Linear search within window, then binary fallback
 
 # Example
@@ -184,7 +184,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `Binary()` (default): O(log n) binary search, stateless
-  - `HintedBinary()`: O(1) if hint valid, O(log n) fallback
+  - `LinearBinary(linear_window=0)`: O(1) if hint valid, O(log n) fallback
   - `LinearBinary(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns

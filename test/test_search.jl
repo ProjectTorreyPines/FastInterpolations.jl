@@ -678,8 +678,8 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test LinearBinary(4) isa LinearBinary{4}
             @test LinearBinary(16) isa LinearBinary{16}
 
-            # Default is 2
-            @test LinearBinary() isa LinearBinary{2}
+            # Default is 8
+            @test LinearBinary() isa LinearBinary{8}
         end
 
         @testset "Invalid linear_window Throws ArgumentError" begin
@@ -750,7 +750,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @testset "Single Interpolant: stored policy is used by default" begin
             # Create with LinearBinary as default
             itp_lb = linear_interp(x, y; search=LinearBinary())
-            @test itp_lb.search_policy isa LinearBinary{2}
+            @test itp_lb.search_policy isa LinearBinary{8}
 
             # Create with LinearBinary{0} as default
             itp_hb = linear_interp(x, y; search=LinearBinary(linear_window=0))
@@ -829,7 +829,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
         @testset "LinearSeriesInterpolant stored policy" begin
             sitp = linear_interp(x, [y1, y2]; search=LinearBinary())
-            @test sitp.search_policy isa LinearBinary{2}
+            @test sitp.search_policy isa LinearBinary{8}
 
             # Scalar call uses stored policy
             hint = Ref(400)

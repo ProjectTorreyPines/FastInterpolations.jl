@@ -2561,7 +2561,7 @@ end # DerivativeView SeriesInterpolant search/hint keywords
         d1 = deriv1(itp)
 
         # DerivativeView with kwargs should match direct itp call with kwargs
-        for search_policy in [Binary(), Linear(), LinearBinary(), HintedBinary()]
+        for search_policy in [Binary(), Linear(), LinearBinary(), LinearBinary(linear_window=0)]
             hint = Ref(1)
             hint2 = Ref(1)
 

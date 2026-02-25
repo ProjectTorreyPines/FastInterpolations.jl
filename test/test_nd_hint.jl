@@ -125,7 +125,7 @@ using FastInterpolations
 
         result = itp((qx, qy); hint=hints)
         @test result ≈ itp((qx, qy))
-        # Verify exact interval, proving HintedBinary was used
+        # Verify exact interval, proving hint-based search was used
         @test hints[1][] == expected_interval(x, qx)
         @test hints[2][] == expected_interval(y, qy)
     end

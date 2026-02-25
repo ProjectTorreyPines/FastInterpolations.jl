@@ -648,7 +648,7 @@ end
         @test all(isfinite, results)
     end
 
-    @testset "HintedBinary concurrent access" begin
+    @testset "LinearBinary{0} concurrent access" begin
         x = collect(range(0.0, 1.0, 1001))
         y = sin.(2π .* x)
         itp = linear_interp(x, y)
@@ -658,7 +658,7 @@ end
 
         @threads for i in eachindex(results)
             try
-                results[i] = itp(rand(); search=HintedBinary())
+                results[i] = itp(rand(); search=LinearBinary(linear_window=0))
             catch
                 atomic_add!(errors, 1)
             end

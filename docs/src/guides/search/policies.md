@@ -57,28 +57,6 @@ val = itp(0.5; search=Binary())   # explicit Binary
 
 ---
 
-## HintedBinary
-
-Caches the last-found interval. If the next query falls in the same interval, lookup is O(1).
-
-**Complexity**: O(1) cache hit, O(log n) cache miss
-
-**When to use**:
-- Queries that cluster in the same region
-- Monte Carlo sampling within a subregion
-- Iterative refinement around a point
-
-```julia
-itp = linear_interp(x, y; search=HintedBinary())
-for xi in query_points
-    val = itp(xi)  # O(1) when consecutive queries hit same interval
-end
-```
-
-**How it works**: Before binary search, checks if the query falls in the cached interval. If yes, returns immediately. If no, performs full binary search and updates the cache.
-
----
-
 ## Linear
 
 Maximum-speed linear search for **strictly monotonic, closely-spaced queries**. Scans the grid sequentially one interval at a time from the hint until the target is found—no binary fallback, no window limit.
@@ -142,18 +120,20 @@ vals = itp(sorted_queries)  # O(1) amortized for sorted input
 You can tune the linear search window size before falling back to binary search:
 
 ```julia
-LinearBinary()              # default: linear_window=2
-LinearBinary(linear_window=4)   # moderate bound for known-sorted sequences
-LinearBinary(linear_window=16)  # larger bound for sparser-spaced sorted queries
+LinearBinary()                   # default: linear_window=2
+LinearBinary(linear_window=0)    # hint check only, no walk (minimal random overhead)
+LinearBinary(linear_window=4)    # moderate bound for known-sorted sequences
+LinearBinary(linear_window=16)   # larger bound for sparser-spaced sorted queries
 ```
 
 **Guidelines**:
+- **Zero (0)**: Hint check only, no walk — minimal random-query overhead. Good when queries cluster in the same interval.
 - **Small `linear_window` (1–2)**: Minimal overhead; best for mixed or unknown patterns. The default `LinearBinary()` uses `2`.
 - **Medium `linear_window` (4–16)**: Good balance when queries are known-sorted
 - **Large `linear_window` (32–128)**: For highly localized queries or very large datasets
 
 !!! note "Type Parameter Restriction"
-    `linear_window` is restricted to powers of 2 (1, 2, 4, 8, 16, 32, 64) to prevent type parameter explosion. Each unique value creates a specialized method, so limiting choices keeps compile times reasonable.
+    `linear_window` is restricted to `0` plus powers of 2 (1, 2, 4, 8, 16, 32, 64, 128) to prevent type parameter explosion. Each unique value creates a specialized method, so limiting choices keeps compile times reasonable.
 
 ---
 

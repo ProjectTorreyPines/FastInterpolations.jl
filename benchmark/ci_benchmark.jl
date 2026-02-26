@@ -10,6 +10,7 @@ Usage:
 
 using BenchmarkTools
 using FastInterpolations
+using Random
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Configuration
@@ -310,6 +311,31 @@ end
 let b = @benchmarkable $itp_cubic_3d($out_nd, ($xqs_3d, $yqs_3d, $zqs_3d)) setup=(GC.gc())
     b.params.evals = EVALS_SLOW
     suite["11_nd_eval"]["tricubic_3d_batch"] = b
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Cubic Grid Type × Query Pattern Benchmarks (Range vs Vector × Sorted vs Random)
+# ══════════════════════════════════════════════════════════════════════════════
+
+println("Setting up cubic grid×query pattern benchmarks...")
+
+# Fixed seed: ensures identical random query sequence across CI runs
+const BENCH_RNG_SEED = 12345
+
+# 12. Cubic Eval: Grid type × Query pattern (reuse interpolant)
+# Range grid → LinearBinary (O(1) arithmetic), Vector grid → binary search
+const N_QUERY_GQ = 1000
+const xq_sorted_gq = collect(range(0.1, 9.9, N_QUERY_GQ))
+const xq_random_gq = shuffle(MersenneTwister(BENCH_RNG_SEED), copy(xq_sorted_gq))
+const out_gq = Vector{Float64}(undef, N_QUERY_GQ)
+
+for (glabel, itp) in [("range", itp_cubic), ("vec", itp_cubic_vec)]
+    for (qlbl, xq) in [("sorted", xq_sorted_gq), ("random", xq_random_gq)]
+        let b = @benchmarkable $itp($out_gq, $xq) setup=(GC.gc())
+            b.params.evals = EVALS_MED
+            suite["12_cubic_eval_gridquery"]["$(glabel)_$(qlbl)"] = b
+        end
+    end
 end
 
 # ══════════════════════════════════════════════════════════════════════════════

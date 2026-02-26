@@ -206,6 +206,37 @@ See also: [`Binary`](@ref), [`LinearBinary`](@ref)
 struct AutoSearch <: AbstractSearchPolicy end
 
 # ----------------------------------------
+# Prefix Monotonicity Check (for adaptive AutoSearch)
+# ----------------------------------------
+
+"""
+    _is_likely_monotone(xq::AbstractVector{<:Real}, ::Val{K}=Val(8)) -> Bool
+
+Check if the first K elements of `xq` are monotonically ordered (ascending or descending).
+Used by adaptive AutoSearch to choose between LinearBinary and Binary for vector queries.
+Returns `false` for short vectors (length < K) since LinearBinary offers negligible benefit.
+
+False positive rate: 1/K! ≈ 2.5e-5 for K=8 (random data appearing sorted in first K elements).
+"""
+@inline function _is_likely_monotone(xq::AbstractVector{<:Real}, ::Val{K}=Val(8)) where {K}
+    n = length(xq)
+    n < K && return false
+    @inbounds begin
+        ascending = xq[2] >= xq[1]
+        if ascending
+            for i in 2:K
+                xq[i] < xq[i-1] && return false
+            end
+        else
+            for i in 2:K
+                xq[i] > xq[i-1] && return false
+            end
+        end
+    end
+    return true
+end
+
+# ----------------------------------------
 # AutoSearch Resolution (query-type adaptive)
 # ----------------------------------------
 # Resolves AutoSearch to a concrete policy based on query type.
@@ -232,6 +263,21 @@ struct AutoSearch <: AbstractSearchPolicy end
 # Tuple of policies: resolve each element (for ND per-axis storage)
 @inline _resolve_search(ps::Tuple{Vararg{AbstractSearchPolicy}}, query) =
     map(p -> _resolve_search(p, query), ps)
+
+# ----------------------------------------
+# Adaptive Search Resolution (vector eval only)
+# ----------------------------------------
+# Wraps _resolve_search with monotonicity-based policy selection.
+# Only activates for AutoSearch + Real vector + no hint.
+# All other cases (explicit policy, hint present) delegate to _resolve_search unchanged.
+
+# Default: delegate to _resolve_search (explicit policies, hint present, etc.)
+@inline _resolve_search_adaptive(search, xq, hint) = _resolve_search(search, xq)
+
+# Adaptive case: AutoSearch + Real vector + no hint → check prefix monotonicity
+@inline function _resolve_search_adaptive(::AutoSearch, xq::AbstractVector{<:Real}, ::Nothing)
+    _is_likely_monotone(xq) ? LinearBinary() : Binary()
+end
 
 # ----------------------------------------
 # Hint Types (Internal)

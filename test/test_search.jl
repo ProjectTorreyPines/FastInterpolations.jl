@@ -3,7 +3,7 @@ using FastInterpolations
 using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
     Searcher, Binary, Linear, LinearBinary, AutoSearch,
     NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, _create_spacing, _to_searcher,
-    _resolve_search
+    _resolve_search, _is_likely_monotone, _resolve_search_adaptive
 
 @testset "Search Module" begin
 
@@ -1505,6 +1505,159 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             lap = laplacian(itp, q)
             @test isfinite(lap)
             @test lap ≈ 4.0 atol=0.1
+        end
+
+        # ========================================
+        # Unit Tests: _is_likely_monotone
+        # ========================================
+        @testset "_is_likely_monotone" begin
+            # Ascending → true
+            @test _is_likely_monotone(collect(1.0:100.0))
+            @test _is_likely_monotone(collect(1.0:0.5:50.0))
+
+            # Descending → true
+            @test _is_likely_monotone(collect(100.0:-1.0:1.0))
+            @test _is_likely_monotone(collect(50.0:-0.5:1.0))
+
+            # Random → false (with overwhelming probability)
+            rng_data = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0]
+            @test !_is_likely_monotone(rng_data)
+
+            # Too short (< K=8) → false
+            @test !_is_likely_monotone([1.0, 2.0, 3.0])
+            @test !_is_likely_monotone([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+
+            # Exactly K=8 elements → true if sorted
+            @test _is_likely_monotone(collect(1.0:8.0))
+            @test _is_likely_monotone(collect(8.0:-1.0:1.0))
+
+            # Exactly K=8 elements → false if not sorted
+            @test !_is_likely_monotone([1.0, 3.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+
+            # Flat (all equal) → ascending path returns true
+            @test _is_likely_monotone(fill(5.0, 10))
+
+            # Monotone prefix but unsorted later → still true (only checks first K)
+            v = collect(1.0:20.0)
+            v[15] = 0.0  # break monotonicity beyond K=8
+            @test _is_likely_monotone(v)
+        end
+
+        # ========================================
+        # Unit Tests: _resolve_search_adaptive
+        # ========================================
+        @testset "_resolve_search_adaptive" begin
+            auto = AutoSearch()
+            sorted = collect(1.0:100.0)
+            random = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0]
+
+            @testset "AutoSearch + sorted + no hint → LinearBinary" begin
+                @test _resolve_search_adaptive(auto, sorted, nothing) isa LinearBinary
+            end
+
+            @testset "AutoSearch + random + no hint → Binary" begin
+                @test _resolve_search_adaptive(auto, random, nothing) isa Binary
+            end
+
+            @testset "AutoSearch + short vector + no hint → Binary (too short for monotone check)" begin
+                @test _resolve_search_adaptive(auto, [1.0, 2.0, 3.0], nothing) isa Binary
+            end
+
+            @testset "AutoSearch + hint present → fallback to _resolve_search (LinearBinary)" begin
+                # When hint is present, generic fallback delegates to _resolve_search
+                # _resolve_search(AutoSearch(), vector) → LinearBinary
+                @test _resolve_search_adaptive(auto, random, Ref(1)) isa LinearBinary
+                @test _resolve_search_adaptive(auto, sorted, Ref(1)) isa LinearBinary
+            end
+
+            @testset "Explicit policy passthrough" begin
+                @test _resolve_search_adaptive(Binary(), sorted, nothing) === Binary()
+                @test _resolve_search_adaptive(Binary(), random, Ref(1)) === Binary()
+                @test _resolve_search_adaptive(LinearBinary(), random, nothing) isa LinearBinary
+                @test _resolve_search_adaptive(Linear(), sorted, nothing) === Linear()
+            end
+
+            @testset "Scalar query → fallback to _resolve_search" begin
+                # Scalar: _resolve_search(AutoSearch(), scalar) → Binary
+                @test _resolve_search_adaptive(auto, 0.5, nothing) isa Binary
+                @test _resolve_search_adaptive(auto, 0.5, Ref(1)) isa Binary
+            end
+        end
+
+        # ========================================
+        # Correctness Regression: sorted vs random produce same results
+        # ========================================
+        @testset "Adaptive search correctness (sorted vs random same values)" begin
+            x = collect(range(0.0, 10.0, 1001))
+            y = sin.(x)
+            itp = linear_interp(x, y)
+
+            # Same query points, different orderings
+            xq_values = [0.5, 1.3, 2.7, 4.1, 5.5, 6.8, 7.2, 8.9, 9.1, 3.3]
+            xq_sorted = sort(xq_values)
+            xq_random = xq_values  # unsorted
+
+            vals_sorted = itp(xq_sorted)
+            vals_random = itp(xq_random)
+
+            # Results should match value-for-value (reorder sorted results to match random order)
+            perm = sortperm(xq_values)
+            for (i, p) in enumerate(perm)
+                @test vals_sorted[i] ≈ vals_random[p]
+            end
+
+            # Also test oneshot API
+            vals_sorted_os = linear_interp(x, y, xq_sorted)
+            vals_random_os = linear_interp(x, y, xq_random)
+            for (i, p) in enumerate(perm)
+                @test vals_sorted_os[i] ≈ vals_random_os[p]
+            end
+
+            # Cubic interpolant
+            itp_c = cubic_interp(x, y)
+            vals_sorted_c = itp_c(xq_sorted)
+            vals_random_c = itp_c(xq_random)
+            for (i, p) in enumerate(perm)
+                @test vals_sorted_c[i] ≈ vals_random_c[p]
+            end
+        end
+
+        # ========================================
+        # Zero-allocation: AutoSearch vector eval
+        # ========================================
+        @testset "AutoSearch vector eval zero-allocation" begin
+            function _test_adaptive_alloc_sorted()
+                x = collect(range(0.0, 10.0, 1001))
+                y = sin.(x)
+                itp = linear_interp(x, y)
+                xq = collect(range(0.1, 9.9, 1000))
+                out = Vector{Float64}(undef, 1000)
+
+                # Warmup
+                itp(out, xq)
+
+                # Measure
+                alloc = @allocated itp(out, xq)
+                return alloc
+            end
+
+            function _test_adaptive_alloc_random()
+                x = collect(range(0.0, 10.0, 1001))
+                y = sin.(x)
+                itp = linear_interp(x, y)
+                xq = [mod(i * 7.3, 9.8) + 0.1 for i in 1:1000]  # deterministic pseudo-random
+                out = Vector{Float64}(undef, 1000)
+
+                # Warmup
+                itp(out, xq)
+
+                # Measure
+                alloc = @allocated itp(out, xq)
+                return alloc
+            end
+
+            @test _test_adaptive_alloc_sorted() == 0
+            @test _test_adaptive_alloc_random() == 0
         end
 
     end  # @testset "AutoSearch Resolution"

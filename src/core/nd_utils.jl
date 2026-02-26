@@ -132,6 +132,25 @@ end
     return map(p -> _resolve_search(p, query_sample), tuple)
 end
 
+# ----------------------------------------
+# Adaptive ND Search Resolution (batch eval only)
+# ----------------------------------------
+# Only activates for AutoSearch + SoA Real vectors + no hints.
+# Checks first axis for monotonicity, broadcasts result to all axes.
+
+# Default: delegate to _resolve_search_nd (non-adaptive cases)
+@inline _resolve_search_nd_adaptive(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
+
+# Adaptive: AutoSearch + SoA Real vectors + no hints → check first axis
+@inline function _resolve_search_nd_adaptive(
+    s::AutoSearch, ::Val{N},
+    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+    ::Nothing
+) where {N}
+    policy = _resolve_search_adaptive(s, queries[1], nothing)
+    return ntuple(_ -> policy, Val(N))
+end
+
 # ========================================
 # Boundary Condition Resolution
 # ========================================

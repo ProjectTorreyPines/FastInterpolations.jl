@@ -267,7 +267,7 @@ function cubic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N), queries)  # NTuple{N,AbstractVector} <: Tuple{Vararg{AbstractVector}} → LinearBinary/axis
+    searches = _resolve_search_nd(search, Val(N), queries)  # type-based: avoids Union return for zero-alloc
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 

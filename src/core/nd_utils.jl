@@ -133,18 +133,25 @@ end
 end
 
 # 4-arg form: adaptive ND resolution with hint awareness.
-# AutoSearch + SoA Real vectors + no hints → check first axis monotonicity.
-# All other cases fall through to the 3-arg form above.
+# All non-SoA or hinted cases fall through to the 3-arg form above.
 @inline _resolve_search_nd(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
 
+# SoA Real vectors + no hint → per-axis adaptive resolution.
+# Each axis independently checks monotonicity via 1D _resolve_search(policy, vec, nothing):
+#   AutoSearch axes → _is_likely_monotone per axis → Binary or LinearBinary
+#   Explicit policy axes → passthrough unchanged
+# Uses map (not ntuple closure) to avoid closure heap allocation.
 @inline function _resolve_search_nd(
-    s::AutoSearch, ::Val{N},
+    s, ::Val{N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
     ::Nothing
 ) where {N}
-    policy = _resolve_search(s, queries[1], nothing)
-    return ntuple(_ -> policy, Val(N))
+    tuple = _resolve_search_nd(s, Val(N))
+    return map(_resolve_search_adaptive, tuple, queries)
 end
+
+# Named helper for map — avoids closure capture in _resolve_search_nd.
+@inline _resolve_search_adaptive(p, q) = _resolve_search(p, q, nothing)
 
 # ========================================
 # Boundary Condition Resolution

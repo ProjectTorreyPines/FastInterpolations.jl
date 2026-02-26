@@ -197,7 +197,7 @@ function constant_interp(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N), queries)  # NTuple{N,AbstractVector} <: Tuple{Vararg{AbstractVector}} → LinearBinary/axis
+    searches = _resolve_search_nd(search, Val(N), queries)  # type-based: avoids Union return for zero-alloc
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_soa(
@@ -268,7 +268,7 @@ function constant_interp!(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N), queries)  # NTuple{N,AbstractVector} <: Tuple{Vararg{AbstractVector}} → LinearBinary/axis
+    searches = _resolve_search_nd(search, Val(N), queries)  # type-based: avoids Union return for zero-alloc
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot_soa!(

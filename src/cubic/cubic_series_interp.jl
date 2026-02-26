@@ -143,8 +143,8 @@ Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
 # AD Support
 When `xq` is a ForwardDiff.Dual, the returned anchor preserves the Dual type.
 """
-@inline function _make_anchor(sitp::CubicSeriesInterpolant{Tg}, xq::Tq, searcher::Searcher=DEFAULT_SEARCHER) where {Tg, Tq<:Real}
-    return _anchor_query(sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=searcher)
+@inline function _make_anchor(sitp::CubicSeriesInterpolant{Tg}, xq::Tq, searcher::P=DEFAULT_SEARCHER) where {Tg, Tq<:Real, P<:Searcher}
+    return _anchor_query(sitp.cache.x, xq, Val(:cubic), _should_wrap(sitp), searcher)
 end
 
 """

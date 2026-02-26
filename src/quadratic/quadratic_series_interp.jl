@@ -513,7 +513,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     xq_promoted = _promote_for_anchor(xq, Tg)
     T_out = promote_type(Tv, typeof(xq_promoted))
     resolved = _resolve_search(search, xq, hint)
-    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
+    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic), _should_wrap(sitp), _to_searcher(resolved, hint))
 
     output = Vector{T_out}(undef, n_series(sitp))
     _eval_series_at_anchor!(output, sitp, aq, deriv)
@@ -542,7 +542,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     xq_promoted = _promote_for_anchor(xq, Tg)
 
     resolved = _resolve_search(search, xq, hint)
-    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
+    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic), _should_wrap(sitp), _to_searcher(resolved, hint))
 
     _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output

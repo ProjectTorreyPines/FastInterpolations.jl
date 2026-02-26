@@ -159,7 +159,7 @@ using FastInterpolations
         itp = constant_interp(x, y; extrap=WrapExtrap())
 
         # Query outside domain with wrap=true
-        aq_wrap = FastInterpolations._anchor_query(x, 1.5, Val(:constant); wrap=true)
+        aq_wrap = FastInterpolations._anchor_query(x, 1.5, Val(:constant), true)
         @test aq_wrap.xq ≈ 0.5
         @test aq_wrap.side == 0x00
 
@@ -378,7 +378,7 @@ using FastInterpolations
             x = collect(range(0.0, 1.0, 101))
             xq = [-0.3, 0.5, 1.3, 2.5]
 
-            expected = FI._anchor_query(x, xq, Val(:constant); wrap=true)
+            expected = FI._anchor_query(x, xq, Val(:constant), true)
             buffer = Vector{FI._ConstantAnchoredQuery{Float64}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:constant), true)
 

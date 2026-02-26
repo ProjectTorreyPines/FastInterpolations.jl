@@ -1976,7 +1976,7 @@ end
 
         # Query points outside domain should wrap
         xq_wrap = [-0.5, 0.5, 2π + 0.5, 4π + 0.5]
-        aq_vec = FI._anchor_query(x_per, xq_wrap, Val(:cubic); wrap=true)
+        aq_vec = FI._anchor_query(x_per, xq_wrap, Val(:cubic), true)
         outputs = [similar(xq_wrap) for _ in 1:2]
 
         mitp(outputs, aq_vec)

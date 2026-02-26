@@ -86,10 +86,10 @@ itp2(aq)              # Reuses same anchor
 @inline function _anchor_query(
     x::AbstractVector{T},
     xq::T,
-    ::Val{:constant};
+    ::Val{:constant},
     wrap::Bool=false,
-    searcher::Searcher=DEFAULT_SEARCHER
-) where {T<:AbstractFloat}
+    searcher::P=DEFAULT_SEARCHER
+) where {T<:AbstractFloat, P<:Searcher}
     return _constant_anchor_query_impl(x, xq, wrap, searcher)
 end
 
@@ -97,11 +97,11 @@ end
 @inline function _anchor_query(
     x::AbstractVector{T},
     xq::Tq,
-    tag::Val{:constant};
+    tag::Val{:constant},
     wrap::Bool=false,
-    searcher::Searcher=DEFAULT_SEARCHER
-) where {T<:AbstractFloat, Tq<:Real}
-    _anchor_query(x, T(xq), tag; wrap=wrap, searcher=searcher)
+    searcher::P=DEFAULT_SEARCHER
+) where {T<:AbstractFloat, Tq<:Real, P<:Searcher}
+    _anchor_query(x, T(xq), tag, wrap, searcher)
 end
 
 """
@@ -133,10 +133,10 @@ vals2 = itp2(aq_vec)  # Reuse same anchors
 function _anchor_query(
     x::AbstractVector{T},
     xq::AbstractVector{S},
-    ::Val{:constant};
+    ::Val{:constant},
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBinary())
-) where {T<:AbstractFloat, S<:Real}
+    searcher::P=_to_searcher(LinearBinary())
+) where {T<:AbstractFloat, S<:Real, P<:Searcher}
     output = Vector{_ConstantAnchoredQuery{T}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)

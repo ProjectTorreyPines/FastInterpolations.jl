@@ -90,10 +90,10 @@ itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
 @inline function _anchor_query(
     x::AbstractVector{Tg},
     xq::Tq,
-    ::Val{:quadratic};
+    ::Val{:quadratic},
     wrap::Bool=false,
-    searcher::Searcher=DEFAULT_SEARCHER
-) where {Tg<:AbstractFloat, Tq<:Real}
+    searcher::P=DEFAULT_SEARCHER
+) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
     return _quadratic_anchor_query_impl(x, xq, wrap, searcher)
 end
 
@@ -130,10 +130,10 @@ AD is not supported for vector queries (use scalar queries for ForwardDiff).
 function _anchor_query(
     x::AbstractVector{T},
     xq::AbstractVector{S},
-    ::Val{:quadratic};
+    ::Val{:quadratic},
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBinary())
-) where {T<:AbstractFloat, S<:Real}
+    searcher::P=_to_searcher(LinearBinary())
+) where {T<:AbstractFloat, S<:Real, P<:Searcher}
     output = Vector{_QuadraticAnchoredQuery{T,T}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)

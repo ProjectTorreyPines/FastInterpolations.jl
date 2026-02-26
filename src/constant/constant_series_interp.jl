@@ -114,7 +114,7 @@ end
 
 Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
 """
-@inline function _make_anchor(sitp::ConstantSeriesInterpolant{Tg}, xq::Tg, searcher::Searcher=DEFAULT_SEARCHER) where Tg
+@inline function _make_anchor(sitp::ConstantSeriesInterpolant{Tg}, xq::Tg, searcher::P=DEFAULT_SEARCHER) where {Tg, P<:Searcher}
     return _constant_anchor_query_impl(sitp.x, xq, _should_wrap(sitp), searcher)
 end
 

@@ -394,12 +394,12 @@ using FastInterpolations
         x = collect(range(0.0, 1.0, 11))
 
         # Query outside domain with wrap=true
-        aq_wrap = FastInterpolations._anchor_query(x, 1.5, Val(:quadratic); wrap=true)
+        aq_wrap = FastInterpolations._anchor_query(x, 1.5, Val(:quadratic), true)
         @test aq_wrap.xq ≈ 0.5  # 1.5 wraps to 0.5
         @test aq_wrap.side == 0x00  # inside after wrap
 
         # Below domain with wrap=true
-        aq_wrap_neg = FastInterpolations._anchor_query(x, -0.3, Val(:quadratic); wrap=true)
+        aq_wrap_neg = FastInterpolations._anchor_query(x, -0.3, Val(:quadratic), true)
         @test aq_wrap_neg.xq ≈ 0.7  # -0.3 + 1.0 = 0.7
         @test aq_wrap_neg.side == 0x00
     end
@@ -431,7 +431,7 @@ using FastInterpolations
             x = collect(range(0.0, 1.0, 101))
             xq = [-0.3, 0.5, 1.3, 2.5]
 
-            expected = FI._anchor_query(x, xq, Val(:quadratic); wrap=true)
+            expected = FI._anchor_query(x, xq, Val(:quadratic), true)
             buffer = Vector{FI._QuadraticAnchoredQuery{Float64, Float64}}(undef, length(xq))
             FI._fill_anchors!(buffer, x, xq, Val(:quadratic), true)
 

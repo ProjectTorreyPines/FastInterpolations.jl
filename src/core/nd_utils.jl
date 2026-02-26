@@ -147,11 +147,13 @@ end
     ::Nothing
 ) where {N}
     tuple = _resolve_search_nd(s, Val(N))
-    return map(_resolve_search_adaptive, tuple, queries)
+    return map(_resolve_search_nohint, tuple, queries)
 end
 
 # Named helper for map — avoids closure capture in _resolve_search_nd.
-@inline _resolve_search_adaptive(p, q) = _resolve_search(p, q, nothing)
+# Forwards to 3-arg _resolve_search with hint=nothing, triggering adaptive
+# monotonicity check for AutoSearch axes.
+@inline _resolve_search_nohint(p, q) = _resolve_search(p, q, nothing)
 
 # ----------------------------------------
 # All-or-Nothing Adaptive Resolution (Oneshot SoA)

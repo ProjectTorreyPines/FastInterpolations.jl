@@ -267,7 +267,10 @@ end
 # 3-arg form: adaptive vector resolution with hint awareness.
 # When hint=nothing + AutoSearch + Real vector, checks prefix monotonicity
 # to choose Binary (random) vs LinearBinary (sorted).
-# All other cases fall through to the 2-arg form above.
+# When hint IS provided, the caller already has state tied to a specific search
+# strategy, so we skip adaptive resolution and defer to the 2-arg form —
+# AutoSearch+vector already resolves to LinearBinary there, which is correct
+# because hinted callers expect walk-based locality.
 @inline _resolve_search(search, xq, hint) = _resolve_search(search, xq)
 
 @inline function _resolve_search(::AutoSearch, xq::AbstractVector{<:Real}, ::Nothing)

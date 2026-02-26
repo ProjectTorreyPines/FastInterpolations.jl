@@ -5,11 +5,15 @@ Benchmark script for GitHub Actions CI.
 Outputs JSON compatible with github-action-benchmark.
 
 Usage:
-    julia --project=benchmark benchmark/ci_benchmark.jl
+    julia --project=benchmark benchmark/ci_benchmark.jl            # all groups (CI mode)
+    julia --project=benchmark benchmark/ci_benchmark.jl 12         # group 12 only
+    julia --project=benchmark benchmark/ci_benchmark.jl 3 12       # groups 3 and 12
+    julia --project=benchmark benchmark/ci_benchmark.jl --list     # show available groups
 """
 
 using BenchmarkTools
 using FastInterpolations
+using Random
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Configuration
@@ -313,6 +317,66 @@ let b = @benchmarkable $itp_cubic_3d($out_nd, ($xqs_3d, $yqs_3d, $zqs_3d)) setup
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Cubic Grid Type × Query Pattern Benchmarks (Range vs Vector × Sorted vs Random)
+# ══════════════════════════════════════════════════════════════════════════════
+
+println("Setting up cubic grid×query pattern benchmarks...")
+
+# Fixed seed: ensures identical random query sequence across CI runs
+const BENCH_RNG_SEED = 12345
+
+# 12. Cubic Eval: Grid type × Query pattern (reuse interpolant)
+# Range grid → LinearBinary (O(1) arithmetic), Vector grid → binary search
+const N_QUERY_GQ = 1000
+const xq_sorted_gq = collect(range(0.1, 9.9, N_QUERY_GQ))
+const xq_random_gq = shuffle(MersenneTwister(BENCH_RNG_SEED), copy(xq_sorted_gq))
+const out_gq = Vector{Float64}(undef, N_QUERY_GQ)
+
+for (glabel, itp) in [("range", itp_cubic), ("vec", itp_cubic_vec)]
+    for (qlbl, xq) in [("sorted", xq_sorted_gq), ("random", xq_random_gq)]
+        let b = @benchmarkable $itp($out_gq, $xq) setup=(GC.gc())
+            b.params.evals = EVALS_MED
+            suite["12_cubic_eval_gridquery"]["$(glabel)_$(qlbl)"] = b
+        end
+    end
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Group Filtering (CLI argument support)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# --list: show available groups and exit
+if "--list" in ARGS
+    println("Available benchmark groups:")
+    for key in sort(collect(keys(suite)))
+        n = length(suite[key])
+        println("  $key  ($n benchmarks)")
+    end
+    exit(0)
+end
+
+# Parse group numbers from ARGS to filter suite
+const FILTER_GROUPS = let nums = Int[]
+    for arg in ARGS
+        n = tryparse(Int, arg)
+        isnothing(n) && error("Unknown argument: $arg (expected group number or --list)")
+        push!(nums, n)
+    end
+    nums
+end
+const IS_FILTERED = !isempty(FILTER_GROUPS)
+
+if IS_FILTERED
+    for key in collect(keys(suite))
+        group_num = tryparse(Int, split(key, '_')[1])
+        if isnothing(group_num) || group_num ∉ FILTER_GROUPS
+            delete!(suite, key)
+        end
+    end
+    println("\nFiltered to groups: $(join(FILTER_GROUPS, ", ")) → $(length(suite)) group(s)")
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Run and Save
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -320,34 +384,36 @@ end
 println("\nRunning benchmarks (evals preset, no tuning)...")
 results = run(suite, verbose=true)
 
-println("\nSaving results to output.json...")
-BenchmarkTools.save("output.json", minimum(results))
+# Save JSON only in CI mode (no filtering)
+if !IS_FILTERED
+    println("\nSaving results to output.json...")
+    BenchmarkTools.save("output.json", minimum(results))
 
-# Sort JSON keys recursively for consistent dashboard ordering
-println("Sorting JSON keys for dashboard display...")
-using JSON
-using OrderedCollections
+    println("Sorting JSON keys for dashboard display...")
+    using JSON
+    using OrderedCollections
 
-function sort_keys_recursive(obj)
-    if obj isa AbstractDict
-        sorted = OrderedDict{String,Any}()
-        for k in sort(collect(keys(obj)); by=string)
-            sorted[string(k)] = sort_keys_recursive(obj[k])
+    function sort_keys_recursive(obj)
+        if obj isa AbstractDict
+            sorted = OrderedDict{String,Any}()
+            for k in sort(collect(keys(obj)); by=string)
+                sorted[string(k)] = sort_keys_recursive(obj[k])
+            end
+            return sorted
+        elseif obj isa AbstractVector
+            return [sort_keys_recursive(item) for item in obj]
+        else
+            return obj
         end
-        return sorted
-    elseif obj isa AbstractVector
-        return [sort_keys_recursive(item) for item in obj]
-    else
-        return obj
     end
-end
 
-json_data = JSON.parsefile("output.json")
-sorted_data = sort_keys_recursive(json_data)
-open("output.json", "w") do io
-    JSON.print(io, sorted_data)
+    json_data = JSON.parsefile("output.json")
+    sorted_data = sort_keys_recursive(json_data)
+    open("output.json", "w") do io
+        JSON.print(io, sorted_data)
+    end
+    println("Saved $(length(collect(BenchmarkTools.leaves(minimum(results))))) benchmarks (sorted)")
 end
-println("Saved $(length(collect(BenchmarkTools.leaves(minimum(results))))) benchmarks (sorted)")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Print Summary
@@ -364,7 +430,11 @@ function format_time(ns::Float64)
 end
 
 println("\n" * "="^70)
-println("BENCHMARK SUMMARY (Detailed)")
+if IS_FILTERED
+    println("BENCHMARK RESULTS (groups: $(join(FILTER_GROUPS, ", ")))")
+else
+    println("BENCHMARK SUMMARY")
+end
 println("="^70)
 
 for group_name in sort(collect(keys(results)))
@@ -372,18 +442,27 @@ for group_name in sort(collect(keys(results)))
     println("\n[$group_name]")
     for bench_name in sort(collect(keys(group)))
         trial = group[bench_name]
-        
+
         t_min = minimum(trial).time
         t_med = median(trial).time
-        
+        t_mean = mean(trial).time
+        n_samples = length(trial.times)
+        n_evals = trial.params.evals
+
         total_time = sum(trial.times)
         total_gc = sum(trial.gctimes)
         gc_pct = total_time > 0 ? round(100 * total_gc / total_time, digits=1) : 0.0
 
-        n_samples = length(trial.times)
-        n_evals = trial.params.evals
-        
-        println("  $(rpad(bench_name, 20)) min: $(rpad(format_time(t_min), 9)) | med: $(rpad(format_time(t_med), 9)) | gc: $(lpad(string(gc_pct), 4))% | mem: $(trial.memory) B | samples: $(n_samples) | evals: $(n_evals)")
+        if IS_FILTERED
+            # Detailed output for local runs
+            t_std = std(trial).time
+            cv = t_med > 0 ? round(100 * t_std / t_med, digits=1) : 0.0
+            println("  $(rpad(bench_name, 30)) min: $(rpad(format_time(t_min), 10)) med: $(rpad(format_time(t_med), 10)) mean: $(rpad(format_time(t_mean), 10)) std: $(rpad(format_time(t_std), 10)) cv: $(lpad(string(cv), 4))%")
+            println("  $(rpad("", 30)) gc: $(lpad(string(gc_pct), 4))%  mem: $(trial.memory) B  allocs: $(trial.allocs)  samples: $(n_samples)  evals: $(n_evals)")
+        else
+            # Compact output for CI
+            println("  $(rpad(bench_name, 20)) min: $(rpad(format_time(t_min), 9)) | med: $(rpad(format_time(t_med), 9)) | gc: $(lpad(string(gc_pct), 4))% | mem: $(trial.memory) B | samples: $(n_samples) | evals: $(n_evals)")
+        end
     end
 end
 

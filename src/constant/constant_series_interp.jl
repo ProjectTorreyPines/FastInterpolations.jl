@@ -504,7 +504,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     xq_typed = Tg(xq_primal)
 
     # Build anchor using primal value
-    resolved = _resolve_search_adaptive(search, xq, hint)
+    resolved = _resolve_search(search, xq, hint)
     aq = _make_anchor(sitp, xq_typed, _to_searcher(resolved, hint))
 
     # Dispatch on derivative order - pass original xq for AD support
@@ -571,7 +571,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 
     # Build anchors from pool (zero allocation after warmup)
     aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg}, length(xq))
-    resolved = _resolve_search_adaptive(search, xq, hint)
+    resolved = _resolve_search(search, xq, hint)
     searcher = _to_searcher(resolved, hint)
     _fill_anchors!(aq_vec, sitp.x, xq, Val(:constant), _should_wrap(sitp), searcher)
 

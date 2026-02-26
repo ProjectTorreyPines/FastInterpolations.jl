@@ -132,22 +132,17 @@ end
     return map(p -> _resolve_search(p, query_sample), tuple)
 end
 
-# ----------------------------------------
-# Adaptive ND Search Resolution (batch eval only)
-# ----------------------------------------
-# Only activates for AutoSearch + SoA Real vectors + no hints.
-# Checks first axis for monotonicity, broadcasts result to all axes.
+# 4-arg form: adaptive ND resolution with hint awareness.
+# AutoSearch + SoA Real vectors + no hints → check first axis monotonicity.
+# All other cases fall through to the 3-arg form above.
+@inline _resolve_search_nd(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
 
-# Default: delegate to _resolve_search_nd (non-adaptive cases)
-@inline _resolve_search_nd_adaptive(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
-
-# Adaptive: AutoSearch + SoA Real vectors + no hints → check first axis
-@inline function _resolve_search_nd_adaptive(
+@inline function _resolve_search_nd(
     s::AutoSearch, ::Val{N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
     ::Nothing
 ) where {N}
-    policy = _resolve_search_adaptive(s, queries[1], nothing)
+    policy = _resolve_search(s, queries[1], nothing)
     return ntuple(_ -> policy, Val(N))
 end
 

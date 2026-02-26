@@ -264,18 +264,13 @@ end
 @inline _resolve_search(ps::Tuple{Vararg{AbstractSearchPolicy}}, query) =
     map(p -> _resolve_search(p, query), ps)
 
-# ----------------------------------------
-# Adaptive Search Resolution (vector eval only)
-# ----------------------------------------
-# Wraps _resolve_search with monotonicity-based policy selection.
-# Only activates for AutoSearch + Real vector + no hint.
-# All other cases (explicit policy, hint present) delegate to _resolve_search unchanged.
+# 3-arg form: adaptive vector resolution with hint awareness.
+# When hint=nothing + AutoSearch + Real vector, checks prefix monotonicity
+# to choose Binary (random) vs LinearBinary (sorted).
+# All other cases fall through to the 2-arg form above.
+@inline _resolve_search(search, xq, hint) = _resolve_search(search, xq)
 
-# Default: delegate to _resolve_search (explicit policies, hint present, etc.)
-@inline _resolve_search_adaptive(search, xq, hint) = _resolve_search(search, xq)
-
-# Adaptive case: AutoSearch + Real vector + no hint → check prefix monotonicity
-@inline function _resolve_search_adaptive(::AutoSearch, xq::AbstractVector{<:Real}, ::Nothing)
+@inline function _resolve_search(::AutoSearch, xq::AbstractVector{<:Real}, ::Nothing)
     _is_likely_monotone(xq) ? LinearBinary() : Binary()
 end
 

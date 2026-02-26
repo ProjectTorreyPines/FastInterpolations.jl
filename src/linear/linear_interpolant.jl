@@ -58,7 +58,7 @@ function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(xq::AbstractVector{Tq}; deriv::
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
-    resolved = _resolve_search_adaptive(search, xq, hint)
+    resolved = _resolve_search(search, xq, hint)
     searcher = _to_searcher(resolved, hint)
     _linear_vector_loop!(output, itp.x, itp.y, xq, itp.extrap, deriv, searcher)
     return output
@@ -70,7 +70,7 @@ end
 function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    resolved = _resolve_search_adaptive(search, xq, hint)
+    resolved = _resolve_search(search, xq, hint)
     searcher = _to_searcher(resolved, hint)
     _linear_vector_loop!(output, itp.x, itp.y, xq, itp.extrap, deriv, searcher)
     return output

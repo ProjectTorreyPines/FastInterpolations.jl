@@ -3,7 +3,7 @@ using FastInterpolations
 using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
     Searcher, Binary, Linear, LinearBinary, AutoSearch,
     NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, _create_spacing, _to_searcher,
-    _resolve_search, _is_likely_monotone, _resolve_search_adaptive
+    _resolve_search, _is_likely_monotone
 
 @testset "Search Module" begin
 
@@ -1544,43 +1544,43 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         # ========================================
-        # Unit Tests: _resolve_search_adaptive
+        # Unit Tests: _resolve_search 3-arg (adaptive)
         # ========================================
-        @testset "_resolve_search_adaptive" begin
+        @testset "_resolve_search 3-arg adaptive" begin
             auto = AutoSearch()
             sorted = collect(1.0:100.0)
             random = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0]
 
             @testset "AutoSearch + sorted + no hint → LinearBinary" begin
-                @test _resolve_search_adaptive(auto, sorted, nothing) isa LinearBinary
+                @test _resolve_search(auto, sorted, nothing) isa LinearBinary
             end
 
             @testset "AutoSearch + random + no hint → Binary" begin
-                @test _resolve_search_adaptive(auto, random, nothing) isa Binary
+                @test _resolve_search(auto, random, nothing) isa Binary
             end
 
             @testset "AutoSearch + short vector + no hint → Binary (too short for monotone check)" begin
-                @test _resolve_search_adaptive(auto, [1.0, 2.0, 3.0], nothing) isa Binary
+                @test _resolve_search(auto, [1.0, 2.0, 3.0], nothing) isa Binary
             end
 
             @testset "AutoSearch + hint present → fallback to _resolve_search (LinearBinary)" begin
                 # When hint is present, generic fallback delegates to _resolve_search
                 # _resolve_search(AutoSearch(), vector) → LinearBinary
-                @test _resolve_search_adaptive(auto, random, Ref(1)) isa LinearBinary
-                @test _resolve_search_adaptive(auto, sorted, Ref(1)) isa LinearBinary
+                @test _resolve_search(auto, random, Ref(1)) isa LinearBinary
+                @test _resolve_search(auto, sorted, Ref(1)) isa LinearBinary
             end
 
             @testset "Explicit policy passthrough" begin
-                @test _resolve_search_adaptive(Binary(), sorted, nothing) === Binary()
-                @test _resolve_search_adaptive(Binary(), random, Ref(1)) === Binary()
-                @test _resolve_search_adaptive(LinearBinary(), random, nothing) isa LinearBinary
-                @test _resolve_search_adaptive(Linear(), sorted, nothing) === Linear()
+                @test _resolve_search(Binary(), sorted, nothing) === Binary()
+                @test _resolve_search(Binary(), random, Ref(1)) === Binary()
+                @test _resolve_search(LinearBinary(), random, nothing) isa LinearBinary
+                @test _resolve_search(Linear(), sorted, nothing) === Linear()
             end
 
             @testset "Scalar query → fallback to _resolve_search" begin
                 # Scalar: _resolve_search(AutoSearch(), scalar) → Binary
-                @test _resolve_search_adaptive(auto, 0.5, nothing) isa Binary
-                @test _resolve_search_adaptive(auto, 0.5, Ref(1)) isa Binary
+                @test _resolve_search(auto, 0.5, nothing) isa Binary
+                @test _resolve_search(auto, 0.5, Ref(1)) isa Binary
             end
         end
 

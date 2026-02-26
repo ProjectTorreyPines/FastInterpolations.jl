@@ -433,7 +433,7 @@ using FastInterpolations
 
             expected = FI._anchor_query(x, xq, Val(:quadratic); wrap=true)
             buffer = Vector{FI._QuadraticAnchoredQuery{Float64, Float64}}(undef, length(xq))
-            FI._fill_anchors!(buffer, x, xq, Val(:quadratic); wrap=true)
+            FI._fill_anchors!(buffer, x, xq, Val(:quadratic), true)
 
             for i in eachindex(xq)
                 @test buffer[i].idx == expected[i].idx

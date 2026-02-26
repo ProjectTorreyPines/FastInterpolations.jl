@@ -603,12 +603,13 @@ Pool handles both same-type and mixed-type cases efficiently.
     Tq_eff = promote_type(Tq, Tg)
     aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg, Tq_eff}, n_query)
     resolved = _resolve_search_adaptive(search, xq, hint)
+    searcher = _to_searcher(resolved, hint)
     if Tq === Tg
-        _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
+        _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic), _should_wrap(sitp), searcher)
     else
         # Mixed type: convert query points to preserve precision
         xq_promoted = _promote_for_anchor.(xq, Tg)
-        _fill_anchors!(aq_vec, sitp.x, xq_promoted, Val(:quadratic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
+        _fill_anchors!(aq_vec, sitp.x, xq_promoted, Val(:quadratic), _should_wrap(sitp), searcher)
     end
 
     # Evaluate all series - anchor already has correct dL precision

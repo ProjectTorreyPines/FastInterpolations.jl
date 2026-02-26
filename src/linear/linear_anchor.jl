@@ -206,10 +206,10 @@ Uses `_promote_for_anchor` to preserve wider precision when `S` differs from `Tg
     buffer::AbstractVector{_LinearAnchoredQuery{Tg, Tq}},
     x::AbstractVector{Tg},
     xq::AbstractVector{S},
-    ::Val{:linear};
+    ::Val{:linear},
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBinary())
-) where {Tg<:AbstractFloat, Tq<:Real, S<:Real}
+    searcher::P=_to_searcher(LinearBinary())
+) where {Tg<:AbstractFloat, Tq<:Real, S<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 
     @inbounds for k in eachindex(xq)

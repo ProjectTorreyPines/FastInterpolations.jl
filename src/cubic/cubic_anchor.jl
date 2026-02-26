@@ -277,10 +277,10 @@ _fill_anchors!(buffer, x, xq, Val(:cubic))
     buffer::AbstractVector{_CubicAnchoredQuery{Tg,Tq}},
     x::AbstractVector{Tg},
     xq::AbstractVector{Tq},
-    ::Val{:cubic};
+    ::Val{:cubic},
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBinary())
-) where {Tg<:AbstractFloat, Tq<:Real}
+    searcher::P=_to_searcher(LinearBinary())
+) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 
     # Use original xq[k] directly (no conversion) to preserve precision in weights

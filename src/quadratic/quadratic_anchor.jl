@@ -167,10 +167,10 @@ When buffer element type is `{Tg, Tq}` and `xq` element type is `S`:
     buffer::AbstractVector{_QuadraticAnchoredQuery{Tg, Tq}},
     x::AbstractVector{Tg},
     xq::AbstractVector{S},
-    ::Val{:quadratic};
+    ::Val{:quadratic},
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBinary())
-) where {Tg<:AbstractFloat, Tq<:Real, S<:Real}
+    searcher::P=_to_searcher(LinearBinary())
+) where {Tg<:AbstractFloat, Tq<:Real, S<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 
     @inbounds for k in eachindex(xq)

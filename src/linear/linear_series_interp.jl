@@ -565,7 +565,8 @@ Pool handles both same-type and mixed-type cases efficiently.
     Tq_eff = promote_type(Tq, Tg)
     aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tq_eff}, n_query)
     resolved = _resolve_search_adaptive(search, xq, hint)
-    _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
+    searcher = _to_searcher(resolved, hint)
+    _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear), _should_wrap(sitp), searcher)
 
     # Extract matrices for argument-passing pattern
     y = sitp.y

@@ -570,9 +570,10 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     _validate_series_outputs(outputs, n_ser, n_query)
 
     # Build anchors from pool (zero allocation after warmup)
-    resolved = _resolve_search_adaptive(search, xq, hint)
     aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg}, length(xq))
-    _fill_anchors!(aq_vec, sitp.x, xq, Val(:constant); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
+    resolved = _resolve_search_adaptive(search, xq, hint)
+    searcher = _to_searcher(resolved, hint)
+    _fill_anchors!(aq_vec, sitp.x, xq, Val(:constant), _should_wrap(sitp), searcher)
 
     # Extract matrices for argument-passing pattern
     y = sitp.y

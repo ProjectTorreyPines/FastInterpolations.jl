@@ -933,9 +933,10 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
 
     # Build anchors - pool handles both Tq===Tg and mixed-type cases
     # Each unique type combination gets its own pool slot
-    resolved = _resolve_search_adaptive(search, xq, hint)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg,Tq}, n_query)
-    _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
+    resolved = _resolve_search_adaptive(search, xq, hint)
+    searcher = _to_searcher(resolved, hint)
+    _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic), _should_wrap(sitp), searcher)
 
     # Extract matrices for argument-passing pattern (series-contiguous layout)
     # This is faster than point-contiguous for vector queries because:

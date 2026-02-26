@@ -563,7 +563,7 @@
 
             # In-place
             buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64}}(undef, length(xq))
-            FI._fill_anchors!(buffer, x, xq, Val(:cubic); wrap=true)
+            FI._fill_anchors!(buffer, x, xq, Val(:cubic), true)
 
             for i in eachindex(xq)
                 @test buffer[i].idx == expected[i].idx

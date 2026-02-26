@@ -387,7 +387,7 @@ using FastInterpolations
 
             expected = FI._anchor_query(x, xq, Val(:linear); wrap=true)
             buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64}}(undef, length(xq))
-            FI._fill_anchors!(buffer, x, xq, Val(:linear); wrap=true)
+            FI._fill_anchors!(buffer, x, xq, Val(:linear), true)
 
             for i in eachindex(xq)
                 @test buffer[i].idx == expected[i].idx

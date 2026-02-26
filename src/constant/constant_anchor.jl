@@ -165,10 +165,10 @@ The same `buffer` object, filled with anchored queries.
     buffer::AbstractVector{_ConstantAnchoredQuery{T}},
     x::AbstractVector{T},
     xq::AbstractVector{S},
-    ::Val{:constant};
+    ::Val{:constant},
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBinary())
-) where {T<:AbstractFloat, S<:Real}
+    searcher::P=_to_searcher(LinearBinary())
+) where {T<:AbstractFloat, S<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 
     @inbounds for k in eachindex(xq)

@@ -14,7 +14,7 @@
 # ─────────────────────────────────────────────────────────────
 @inline function (itp::QuadraticInterpolant{Tg,Tv})(xq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    resolved = _resolve_search(search, xq)
+    resolved = _resolve_search(itp.x, xq, search, nothing)
     searcher = _to_searcher(resolved, hint)
     # Pass original xq to preserve Dual type for AD
     _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xq, itp.extrap, deriv, searcher)
@@ -53,7 +53,7 @@ end
 function (itp::QuadraticInterpolant{Tg,Tv})(xi::AbstractVector{S}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, S<:Real}
     T_out = promote_type(Tv, S)    # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xi))
-    resolved = _resolve_search(search, xi, hint)
+    resolved = _resolve_search(itp.x, xi, search, hint)
     searcher = _to_searcher(resolved, hint)
     _quadratic_vector_loop!(output, itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.extrap, deriv, searcher)
     return output
@@ -65,7 +65,7 @@ end
 # ─────────────────────────────────────────────────────────────
 function (itp::QuadraticInterpolant{Tg,Tv})(output::AbstractVector, xi::AbstractVector{<:Real}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @assert length(output) == length(xi) "output length must match xi length"
-    resolved = _resolve_search(search, xi, hint)
+    resolved = _resolve_search(itp.x, xi, search, hint)
     searcher = _to_searcher(resolved, hint)
     _quadratic_vector_loop!(output, itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.extrap, deriv, searcher)
     return output

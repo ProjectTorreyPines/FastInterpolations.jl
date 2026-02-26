@@ -1,7 +1,7 @@
 using Test
 using FastInterpolations
 using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
-    Searcher, Binary, Linear, LinearBinary, AutoSearch,
+    Searcher, Binary, Linear, LinearBinary, AutoSearch, DirectSearch,
     NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, _create_spacing, _to_searcher,
     _resolve_search, _is_likely_monotone
 
@@ -1661,5 +1661,89 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
     end  # @testset "AutoSearch Resolution"
+
+    # ========================================
+    # DirectSearch: Range Grid Short-Circuit
+    # ========================================
+    @testset "DirectSearch Range Short-Circuit" begin
+
+        @testset "4-arg _resolve_search dispatch" begin
+            x_range = 0.0:0.1:1.0
+            x_vec   = collect(x_range)
+
+            # Range grid → DirectSearch (regardless of policy)
+            @test _resolve_search(x_range, 0.5, AutoSearch(), nothing) isa DirectSearch
+            @test _resolve_search(x_range, 0.5, Binary(), nothing)    isa DirectSearch
+            @test _resolve_search(x_range, 0.5, LinearBinary(), nothing) isa DirectSearch
+            @test _resolve_search(x_range, [0.1, 0.5], AutoSearch(), Ref(1)) isa DirectSearch
+
+            # Vector grid → delegates to 3-arg (NOT DirectSearch)
+            @test !(_resolve_search(x_vec, 0.5, AutoSearch(), nothing) isa DirectSearch)
+            @test _resolve_search(x_vec, 0.5, Binary(), nothing) === Binary()
+
+            # Pre-built Searcher passthrough (4-arg)
+            s = Searcher{Binary,NoHint}(NoHint())
+            @test _resolve_search(x_range, 0.5, s, nothing) === s
+            @test _resolve_search(x_vec, 0.5, s, nothing) === s
+        end
+
+        @testset "_to_searcher(DirectSearch())" begin
+            # NoHint variants
+            @test _to_searcher(DirectSearch()) isa Searcher{Binary,NoHint}
+            @test _to_searcher(DirectSearch(), nothing) isa Searcher{Binary,NoHint}
+
+            # RefHint variant
+            ref = Ref(5)
+            s = _to_searcher(DirectSearch(), ref)
+            @test s isa Searcher{DirectSearch,RefHint}
+            @test s.hint.idx === ref
+        end
+
+        @testset "search_interval DirectSearch+RefHint correctness" begin
+            x = 0.0:0.25:1.0  # 5 points: [0.0, 0.25, 0.5, 0.75, 1.0]
+            hint_ref = Ref(1)
+            s = _to_searcher(DirectSearch(), hint_ref)
+
+            # search_interval returns (idx, xL, xR) tuple
+            # Query in middle → should find interval 2 (0.25..0.5)
+            result = search_interval(s, x, 0.3)
+            @test result[1] == 2
+            @test hint_ref[] == 2  # hint updated
+
+            # Query near end → should find interval 4 (0.75..1.0)
+            result2 = search_interval(s, x, 0.9)
+            @test result2[1] == 4
+            @test hint_ref[] == 4
+
+            # Query at start → interval 1
+            result3 = search_interval(s, x, 0.0)
+            @test result3[1] == 1
+            @test hint_ref[] == 1
+        end
+
+        @testset "search_interval DirectSearch+RefHint with spacing" begin
+            x = 0.0:0.5:2.0  # 5 points
+            spacing = _create_spacing(x)
+            hint_ref = Ref(1)
+            s = _to_searcher(DirectSearch(), hint_ref)
+
+            result = search_interval(s, x, spacing, 1.3)
+            @test result[1] == 3
+            @test hint_ref[] == 3
+        end
+
+        @testset "Type inference: no Union leakage" begin
+            x_range = 0.0:0.1:1.0
+            # 4-arg resolve on Range → DirectSearch (concrete, not Union)
+            @test @inferred(_resolve_search(x_range, 0.5, AutoSearch(), nothing)) isa DirectSearch
+            @test @inferred(_resolve_search(x_range, [0.1], AutoSearch(), Ref(1))) isa DirectSearch
+
+            # _to_searcher on DirectSearch → concrete Searcher types
+            @test @inferred(_to_searcher(DirectSearch())) isa Searcher{Binary,NoHint}
+            @test @inferred(_to_searcher(DirectSearch(), nothing)) isa Searcher{Binary,NoHint}
+            @test @inferred(_to_searcher(DirectSearch(), Ref(1))) isa Searcher{DirectSearch,RefHint}
+        end
+
+    end  # @testset "DirectSearch Range Short-Circuit"
 
 end  # @testset "Search Module"

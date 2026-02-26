@@ -67,7 +67,7 @@ function linear_interp!(
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    resolved = _resolve_search(search, x_targets, nothing)
+    resolved = _resolve_search(x, x_targets, search, nothing)
     searcher = _to_searcher(resolved)
     @boundscheck _check_domain(x, x_targets, extrap)
     _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
@@ -161,7 +161,7 @@ end
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    resolved = _resolve_search(search, x_targets, nothing)
+    resolved = _resolve_search(x, x_targets, search, nothing)
     searcher = _to_searcher(resolved)
     @boundscheck _check_domain(x, x_targets, extrap)
     _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
@@ -392,7 +392,7 @@ end
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    resolved = _resolve_search(search, xq, hint)
+    resolved = _resolve_search(x, xq, search, hint)
     searcher = _to_searcher(resolved, hint)
     linear_interp(x, y, xq, extrap, deriv, searcher)
 end

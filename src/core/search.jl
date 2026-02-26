@@ -205,6 +205,17 @@ See also: [`Binary`](@ref), [`LinearBinary`](@ref)
 """
 struct AutoSearch <: AbstractSearchPolicy end
 
+"""
+    DirectSearch <: AbstractSearchPolicy
+
+Internal policy for Range grids where interval lookup is always O(1) direct computation.
+Short-circuits the adaptive resolution pipeline to avoid Union type propagation from
+`_resolve_search(::AutoSearch, ::Vector, ::Nothing)` → `Union{Binary, LinearBinary{N}}`.
+
+Not exported. Created automatically by the 4-arg `_resolve_search` when the grid is `AbstractRange`.
+"""
+struct DirectSearch <: AbstractSearchPolicy end
+
 # ----------------------------------------
 # Prefix Monotonicity Check (for adaptive AutoSearch)
 # ----------------------------------------
@@ -278,6 +289,17 @@ end
 end
 
 # ----------------------------------------
+# 4-arg form: grid-aware resolution (Range short-circuit)
+# ----------------------------------------
+# Range grids always use O(1) _search_direct — no search resolution needed.
+# Returning DirectSearch() avoids Union{Binary, LinearBinary{N}} from adaptive
+# resolution, eliminating LLVM union-splitting in hot loops.
+
+@inline _resolve_search(::AbstractRange, xq, ::AbstractSearchPolicy, hint) = DirectSearch()
+@inline _resolve_search(_, xq, search, hint) = _resolve_search(search, xq, hint)
+# Searcher passthrough for 4-arg form: defined after Searcher struct (see below)
+
+# ----------------------------------------
 # Hint Types (Internal)
 # ----------------------------------------
 
@@ -345,6 +367,7 @@ end
 # Searcher passthrough for _resolve_search: pre-built Searcher objects skip resolution.
 # Must be defined after Searcher struct (Julia requires types to be defined before use).
 @inline _resolve_search(s::Searcher, _) = s
+@inline _resolve_search(_, _, s::Searcher, _) = s  # 4-arg form passthrough
 
 """
     DEFAULT_SEARCHER
@@ -387,6 +410,13 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(::AutoSearch) = Searcher{Binary,NoHint}(NoHint())
 @inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
 @inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = _to_searcher(LinearBinary(), hint)  # auto-upgrade to default LinearBinary
+
+# DirectSearch: Range grids only. NoHint → reuse Searcher{Binary,NoHint} (existing
+# Range dispatch handles _search_direct). RefHint → Searcher{DirectSearch,RefHint}
+# for hint-updating direct search.
+@inline _to_searcher(::DirectSearch) = Searcher{Binary,NoHint}(NoHint())
+@inline _to_searcher(::DirectSearch, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
+@inline _to_searcher(::DirectSearch, hint::Base.RefValue{Int}) = Searcher{DirectSearch,RefHint}(RefHint(hint))
 
 # ----------------------------------------
 # Searcher passthrough (advanced usage)
@@ -852,6 +882,15 @@ end
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 
 @inline search_interval(p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) where {MAX} =
+    _search_direct!(x, spacing, xq, p.hint.idx)
+
+# --- DirectSearch + RefHint (Range grids with persistent hint) ---
+# DirectSearch is only created for Range grids, so only Range methods are needed.
+
+@inline search_interval(p::Searcher{DirectSearch,RefHint}, x::AbstractRange, xq::Real) =
+    _search_direct!(x, xq, p.hint.idx)
+
+@inline search_interval(p::Searcher{DirectSearch,RefHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
     _search_direct!(x, spacing, xq, p.hint.idx)
 
 # ========================================

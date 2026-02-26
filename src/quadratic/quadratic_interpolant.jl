@@ -21,6 +21,31 @@
 end
 
 # ─────────────────────────────────────────────────────────────
+# Vector loop (function barrier)
+# Julia specializes on concrete Searcher type P, eliminating Union-split
+# overhead when adaptive AutoSearch resolves to Binary or LinearBinary.
+# CRITICAL: All arguments must be fully typed — untyped args prevent SROA
+# of RefHint's Ref, causing 16-byte heap allocation per call.
+# ─────────────────────────────────────────────────────────────
+@inline function _quadratic_vector_loop!(
+    output::AbstractVector,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    h::AbstractVector{Tg},
+    a::AbstractVector{Tv},
+    d::AbstractVector{Tv},
+    xq::AbstractVector{<:Real},
+    extrap::E,
+    deriv::O,
+    searcher::P
+) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrap, O<:AbstractEvalOp, P<:Searcher}
+    @boundscheck _check_domain(x, xq, extrap)
+    @inbounds for i in eachindex(xq, output)
+        output[i] = _quadratic_eval_at_point(x, y, h, a, d, xq[i], extrap, deriv, searcher)
+    end
+end
+
+# ─────────────────────────────────────────────────────────────
 # Vector call (allocating)
 # Now supports hint for ODE/streaming patterns
 # Output type is promoted to wider type for precision preservation
@@ -28,12 +53,9 @@ end
 function (itp::QuadraticInterpolant{Tg,Tv})(xi::AbstractVector{S}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, S<:Real}
     T_out = promote_type(Tv, S)    # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xi))
-    resolved = _resolve_search(search, xi)
+    resolved = _resolve_search_adaptive(search, xi, hint)
     searcher = _to_searcher(resolved, hint)
-    @boundscheck _check_domain(itp.x, xi, itp.extrap)
-    @inbounds for i in eachindex(xi, output)
-        output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.extrap, deriv, searcher)
-    end
+    _quadratic_vector_loop!(output, itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.extrap, deriv, searcher)
     return output
 end
 
@@ -43,12 +65,9 @@ end
 # ─────────────────────────────────────────────────────────────
 function (itp::QuadraticInterpolant{Tg,Tv})(output::AbstractVector, xi::AbstractVector{<:Real}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @assert length(output) == length(xi) "output length must match xi length"
-    resolved = _resolve_search(search, xi)
+    resolved = _resolve_search_adaptive(search, xi, hint)
     searcher = _to_searcher(resolved, hint)
-    @boundscheck _check_domain(itp.x, xi, itp.extrap)
-    @inbounds for i in eachindex(xi, output)
-        output[i] = _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xi[i], itp.extrap, deriv, searcher)
-    end
+    _quadratic_vector_loop!(output, itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.extrap, deriv, searcher)
     return output
 end
 

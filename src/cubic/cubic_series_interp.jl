@@ -819,7 +819,7 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     output = Vector{T_out}(undef, n_series(sitp))
 
     # Build anchor preserving Dual type in xq
-    resolved = _resolve_search(search, xq)
+    resolved = _resolve_search_adaptive(search, xq, hint)
     aq = _make_anchor(sitp, xq_promoted, _to_searcher(resolved, hint))
 
     _eval_series_at_anchor!(output, sitp, aq, deriv)
@@ -847,7 +847,7 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     xq_promoted = _promote_for_anchor(xq, Tg)
 
     # Build anchor preserving Dual type in xq (for AD)
-    resolved = _resolve_search(search, xq)
+    resolved = _resolve_search_adaptive(search, xq, hint)
     aq = _make_anchor(sitp, xq_promoted, _to_searcher(resolved, hint))
 
     _eval_series_at_anchor!(output, sitp, aq, deriv)
@@ -933,7 +933,7 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
 
     # Build anchors - pool handles both Tq===Tg and mixed-type cases
     # Each unique type combination gets its own pool slot
-    resolved = _resolve_search(search, xq)
+    resolved = _resolve_search_adaptive(search, xq, hint)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg,Tq}, n_query)
     _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
 

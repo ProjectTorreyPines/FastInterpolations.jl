@@ -14,7 +14,7 @@
 # Zero heap allocation for scalar queries after warmup.
 
 """
-    _linear_interp_nd_oneshot(grids, data, query, extraps_val, searches, ops)
+    _linear_interp_nd_oneshot(grids, data, query, extraps_val, searches, ops, hints=nothing)
 
 Zero-allocation scalar one-shot ND multilinear evaluation.
 Evaluates directly from grids + data without constructing a LinearInterpolantND.
@@ -25,17 +25,18 @@ Evaluates directly from grids + data without constructing a LinearInterpolantND.
     query::Tuple{Vararg{Real, N}},
     extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
+    ops::NTuple{N, AbstractEvalOp},
+    hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
     spacings = _create_spacings_pooled(pool, grids)
     q_eval = _handle_all_extraps(query, grids, extraps_val)
-    indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches)
+    indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
     hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
     return _multilinear_sum(data, indices, hs, αs, ops, Val(N))
 end
 
 """
-    _linear_interp_nd_oneshot_soa!(output, grids, data, queries, extraps_val, searches, ops)
+    _linear_interp_nd_oneshot_soa!(output, grids, data, queries, extraps_val, searches, ops, hints=nothing)
 
 In-place SoA batch one-shot ND multilinear evaluation.
 Writes results into `output`. No heap allocation beyond spacings.
@@ -47,7 +48,8 @@ Writes results into `output`. No heap allocation beyond spacings.
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
     extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
+    ops::NTuple{N, AbstractEvalOp},
+    hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
     n_queries = length(queries[1])
     for d in 2:N
@@ -61,7 +63,7 @@ Writes results into `output`. No heap allocation beyond spacings.
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
         hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
         output[k] = _multilinear_sum(data, indices, hs, αs, ops, Val(N))
     end
@@ -69,7 +71,7 @@ Writes results into `output`. No heap allocation beyond spacings.
 end
 
 """
-    _linear_interp_nd_oneshot_aos!(output, grids, data, queries, extraps_val, searches, ops)
+    _linear_interp_nd_oneshot_aos!(output, grids, data, queries, extraps_val, searches, ops, hints=nothing)
 
 In-place AoS batch one-shot ND multilinear evaluation.
 Writes results into `output`. No heap allocation beyond spacings.
@@ -81,7 +83,8 @@ Writes results into `output`. No heap allocation beyond spacings.
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
     extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
+    ops::NTuple{N, AbstractEvalOp},
+    hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
     n_queries = length(queries)
     length(output) == n_queries || throw(DimensionMismatch(
@@ -90,11 +93,18 @@ Writes results into `output`. No heap allocation beyond spacings.
     @inbounds for k in 1:n_queries
         query_k = queries[k]
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
         hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
         output[k] = _multilinear_sum(data, indices, hs, αs, ops, Val(N))
     end
     return output
+end
+
+# Function barrier for SoA paths: forces Julia to runtime-dispatch on the concrete
+# searches tuple type, resolving per-element Union{Binary,LinearBinary} before
+# entering the @with_pool boundary. NOT @inline — specialization requires real call.
+function _linear_nd_soa_dispatch!(output, grids, data, queries, extraps, searches, ops, hints)
+    _linear_interp_nd_oneshot_soa!(output, grids, data, queries, extraps, searches, ops, hints)
 end
 
 # ========================================
@@ -113,7 +123,8 @@ function linear_interp(
     query::Tuple{Vararg{Real, N}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -121,11 +132,11 @@ function linear_interp(
     _validate_nd_grids(grids_typed, data)
     Tr = promote_type(Tv, Tg, typeof.(query)...)
 
-    searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
+    searches = _resolve_search_nd(search, Val(N), query)  # scalar: type-based (no monotonicity check)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops)::Tr
+    return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops, hint)::Tr
 end
 
 """
@@ -140,13 +151,14 @@ function linear_interp(
     queries::NTuple{N, AbstractVector{<:Real}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     Tr = promote_type(Tv, Tg, _promote_grid_eltype(queries))
     output = Vector{Tr}(undef, length(queries[1]))
-    linear_interp!(output, grids, data, queries; extrap, search, deriv)
+    linear_interp!(output, grids, data, queries; extrap, search, deriv, hint)
     return output
 end
 
@@ -162,13 +174,14 @@ function linear_interp(
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     Tr = promote_type(Tv, Tg)
     output = Vector{Tr}(undef, length(queries))
-    linear_interp!(output, grids, data, queries; extrap, search, deriv)
+    linear_interp!(output, grids, data, queries; extrap, search, deriv, hint)
     return output
 end
 
@@ -189,18 +202,19 @@ function linear_interp!(
     queries::NTuple{N, AbstractVector{<:Real}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    searches = _resolve_search_nd(search, Val(N), queries)  # type-based: avoids Union return for zero-alloc
+    searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)  # all-or-nothing adaptive for zero-alloc
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _linear_interp_nd_oneshot_soa!(output, grids_typed, data, queries, extraps_val, searches, ops)
+    return _linear_nd_soa_dispatch!(output, grids_typed, data, queries, extraps_val, searches, ops, hint)
 end
 
 """
@@ -216,16 +230,17 @@ function linear_interp!(
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    searches = _resolve_search_nd(search, Val(N), queries)  # AoS: AbstractVector{<:Tuple} <: AbstractVector → LinearBinary
+    searches = _resolve_search_nd(search, Val(N), queries)  # AoS: type-based (no per-axis SoA check)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _linear_interp_nd_oneshot_aos!(output, grids_typed, data, queries, extraps_val, searches, ops)
+    return _linear_interp_nd_oneshot_aos!(output, grids_typed, data, queries, extraps_val, searches, ops, hint)
 end

@@ -33,7 +33,8 @@ function cubic_interp(
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    coeffs::AbstractCoeffStrategy=PreCompute()
+    coeffs::AbstractCoeffStrategy=PreCompute(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     # Type promotion + validation (same as constructor path)
     Tg = _promote_grid_eltype(grids)
@@ -50,7 +51,7 @@ function cubic_interp(
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
+    return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
 
 """
@@ -67,13 +68,14 @@ function cubic_interp(
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    coeffs::AbstractCoeffStrategy=PreCompute()
+    coeffs::AbstractCoeffStrategy=PreCompute(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     Tr = promote_type(Tv, Tg, _promote_grid_eltype(queries))
     output = Vector{Tr}(undef, length(queries[1]))
-    cubic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs)
+    cubic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output
 end
 
@@ -91,13 +93,14 @@ function cubic_interp(
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    coeffs::AbstractCoeffStrategy=PreCompute()
+    coeffs::AbstractCoeffStrategy=PreCompute(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     Tr = promote_type(Tv, Tg)
     output = Vector{Tr}(undef, length(queries))
-    cubic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs)
+    cubic_interp!(output, grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
     return output
 end
 
@@ -129,7 +132,8 @@ Zero-allocation after warmup (pool reuse).
     bcs::NTuple{N, AbstractBC},
     extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
+    ops::NTuple{N, AbstractEvalOp},
+    hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
     # 1. Extend exclusive periodic axes (pool-based, zero heap alloc)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
@@ -147,7 +151,7 @@ Zero-allocation after warmup (pool reuse).
 
     # 5. Eval pipeline (all standalone functions, no Interpolant needed)
     q_evals = _handle_all_extraps(query, grids_p, extraps_val)
-    indices, Ls, _ = _search_all_intervals(q_evals, grids_p, spacings, searches)
+    indices, Ls, _ = _search_all_intervals(q_evals, grids_p, spacings, searches, hints)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
 
     # 6. Tensor-product kernel evaluation
@@ -170,7 +174,8 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     bcs::NTuple{N, AbstractBC},
     extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
+    ops::NTuple{N, AbstractEvalOp},
+    hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
     # Validate query lengths
     n_queries = length(queries[1])
@@ -193,7 +198,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
         q_evals = _handle_all_extraps(query_k, grids_p, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_evals, grids_p, spacings, searches)
+        indices, Ls, _ = _search_all_intervals(q_evals, grids_p, spacings, searches, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
         output[k] = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
     end
@@ -216,7 +221,8 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     bcs::NTuple{N, AbstractBC},
     extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
+    ops::NTuple{N, AbstractEvalOp},
+    hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
     n_queries = length(queries)
     length(output) == n_queries || throw(DimensionMismatch(
@@ -233,11 +239,18 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     @inbounds for k in 1:n_queries
         query_k = queries[k]
         q_eval = _handle_all_extraps(query_k, grids_p, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
         output[k] = _eval_nd_cell(partials, indices, hs, inv_hs, dLs, ops)
     end
     return output
+end
+
+# Function barrier for SoA paths: forces Julia to runtime-dispatch on the concrete
+# searches tuple type, resolving per-element Union{Binary,LinearBinary} before
+# entering the @with_pool boundary. NOT @inline — specialization requires real call.
+function _cubic_nd_soa_dispatch!(output, grids, data, queries, bcs, extraps, searches, ops, hints)
+    _cubic_interp_nd_oneshot_soa!(output, grids, data, queries, bcs, extraps, searches, ops, hints)
 end
 
 # ========================================
@@ -259,7 +272,8 @@ function cubic_interp!(
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    coeffs::AbstractCoeffStrategy=PreCompute()
+    coeffs::AbstractCoeffStrategy=PreCompute(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -267,13 +281,13 @@ function cubic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N), queries)  # type-based: avoids Union return for zero-alloc
+    searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)  # all-or-nothing adaptive for zero-alloc
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _cubic_interp_nd_oneshot_soa!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
+    return _cubic_nd_soa_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops, hint)
 end
 
 """
@@ -291,7 +305,8 @@ function cubic_interp!(
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    coeffs::AbstractCoeffStrategy=PreCompute()
+    coeffs::AbstractCoeffStrategy=PreCompute(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -299,11 +314,11 @@ function cubic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N), queries)  # AoS: AbstractVector{<:Tuple} <: AbstractVector → LinearBinary
+    searches = _resolve_search_nd(search, Val(N), queries)  # AoS: type-based (no per-axis SoA check)
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _cubic_interp_nd_oneshot_aos!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
+    return _cubic_interp_nd_oneshot_aos!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops, hint)
 end

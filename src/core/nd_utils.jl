@@ -153,6 +153,43 @@ end
 # Named helper for map — avoids closure capture in _resolve_search_nd.
 @inline _resolve_search_adaptive(p, q) = _resolve_search(p, q, nothing)
 
+# ----------------------------------------
+# All-or-Nothing Adaptive Resolution (Oneshot SoA)
+# ----------------------------------------
+#
+# For oneshot SoA paths, per-axis adaptive creates Tuple{Union{Binary,LB}, ...}
+# — per-element Union that Julia boxes during tuple construction (144+ bytes).
+#
+# Solution: all-or-nothing — check all AutoSearch axes, return uniform type.
+# If ALL AutoSearch axes are monotone → all AutoSearch → LinearBinary.
+# If ANY AutoSearch axis is non-monotone → all AutoSearch → Binary.
+# Explicit (non-AutoSearch) policies pass through unchanged.
+#
+# Return type is Union{ConcreteA, ConcreteB} — a 2-way Union of concrete tuple
+# types that Julia union-splits at the function barrier.
+
+# Named helpers for map — avoid closure capture.
+@inline _autosearch_to_lb(::AutoSearch) = LinearBinary()
+@inline _autosearch_to_lb(p::AbstractSearchPolicy) = p
+@inline _autosearch_to_binary(::AutoSearch) = Binary()
+@inline _autosearch_to_binary(p::AbstractSearchPolicy) = p
+@inline _check_axis_monotone(::AutoSearch, q) = _is_likely_monotone(q)
+@inline _check_axis_monotone(::AbstractSearchPolicy, _) = true
+
+# SoA Real vectors + no hint → all-or-nothing adaptive resolution.
+@inline function _resolve_search_nd_uniform(
+    s, ::Val{N},
+    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+    ::Nothing
+) where {N}
+    tuple = _resolve_search_nd(s, Val(N))  # broadcast only, no resolution
+    all_mono = all(map(_check_axis_monotone, tuple, queries))
+    return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
+end
+
+# Non-SoA, hinted, or other → standard 3-arg type-based (already concrete).
+@inline _resolve_search_nd_uniform(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
+
 # ========================================
 # Boundary Condition Resolution
 # ========================================

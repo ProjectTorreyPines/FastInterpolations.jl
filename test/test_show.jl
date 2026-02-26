@@ -475,7 +475,7 @@
         @test FI._format_search(LinearBinary(linear_window=0)) == "LinearBinary{0}"
         @test FI._format_search(LinearBinary()) == "LinearBinary{8}"
         @test FI._format_search(LinearBinary(linear_window=4)) == "LinearBinary{4}"
-        @test FI._format_search(AutoSearch()) == "AutoSearch (scalar→Binary, vector→LinearBinary)"
+        @test FI._format_search(AutoSearch()) == "AutoSearch (scalar→Binary, vector→adaptive)"
 
         # DerivativeView with unknown parent type (no .x or .cache.x)
         struct DummyInterpolant{T} <: FastInterpolations.AbstractInterpolant{T, T} end

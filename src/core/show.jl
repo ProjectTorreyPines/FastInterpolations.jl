@@ -121,7 +121,7 @@ _format_side(side::AbstractSide) = string(typeof(side))
 _format_search(::Binary) = "Binary"
 _format_search(::Linear) = "Linear"
 _format_search(::LinearBinary{MAX}) where {MAX} = "LinearBinary{$MAX}"
-_format_search(::AutoSearch) = "AutoSearch (scalar→Binary, vector→LinearBinary)"
+_format_search(::AutoSearch) = "AutoSearch (scalar→Binary, vector→adaptive)"
 
 """Format boundary condition for display."""
 _format_bc(::ZeroCurvBC) = "ZeroCurv (S''=0 at ends)"

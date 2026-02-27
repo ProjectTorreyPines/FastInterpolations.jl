@@ -239,7 +239,7 @@ function _anchor_query(
     xq::AbstractVector{S},
     ::Val{:cubic},
     wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinary())
+    searcher::P=_to_searcher(LinearBinarySearch())
 ) where {T<:AbstractFloat, S<:Real, P<:Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     output = Vector{_CubicAnchoredQuery{T,T}}(undef, length(xq))
@@ -280,7 +280,7 @@ _fill_anchors!(buffer, x, xq, Val(:cubic))
     xq::AbstractVector{Tq},
     ::Val{:cubic},
     wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinary())
+    searcher::P=_to_searcher(LinearBinarySearch())
 ) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)

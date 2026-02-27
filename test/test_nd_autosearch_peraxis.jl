@@ -1,7 +1,7 @@
 using Test
 using FastInterpolations
 using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resolve_search_policy,
-    AutoSearch, Binary, LinearBinary
+    AutoSearch, BinarySearch, LinearBinarySearch
 
 @testset "ND Per-Axis Adaptive AutoSearch Resolution" begin
 
@@ -14,36 +14,36 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
         random = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0,
                   7.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0]
 
-        @testset "both sorted → both LinearBinary" begin
+        @testset "both sorted → both LinearBinarySearch" begin
             result = _resolve_search_nd(AutoSearch(), Val(2), (sorted, sorted), nothing)
-            @test result[1] isa LinearBinary
-            @test result[2] isa LinearBinary
+            @test result[1] isa LinearBinarySearch
+            @test result[2] isa LinearBinarySearch
         end
 
-        @testset "both random → both Binary" begin
+        @testset "both random → both BinarySearch" begin
             result = _resolve_search_nd(AutoSearch(), Val(2), (random, random), nothing)
-            @test result[1] isa Binary
-            @test result[2] isa Binary
+            @test result[1] isa BinarySearch
+            @test result[2] isa BinarySearch
         end
 
         @testset "axis 1 sorted, axis 2 random → mixed policies" begin
             result = _resolve_search_nd(AutoSearch(), Val(2), (sorted, random), nothing)
-            @test result[1] isa LinearBinary
-            @test result[2] isa Binary
+            @test result[1] isa LinearBinarySearch
+            @test result[2] isa BinarySearch
         end
 
         @testset "axis 1 random, axis 2 sorted → mixed policies (reversed)" begin
             result = _resolve_search_nd(AutoSearch(), Val(2), (random, sorted), nothing)
-            @test result[1] isa Binary
-            @test result[2] isa LinearBinary
+            @test result[1] isa BinarySearch
+            @test result[2] isa LinearBinarySearch
         end
 
         @testset "3D: mixed pattern" begin
             descending = collect(100.0:-1.0:1.0)
             result = _resolve_search_nd(AutoSearch(), Val(3), (sorted, random, descending), nothing)
-            @test result[1] isa LinearBinary
-            @test result[2] isa Binary
-            @test result[3] isa LinearBinary
+            @test result[1] isa LinearBinarySearch
+            @test result[2] isa BinarySearch
+            @test result[3] isa LinearBinarySearch
         end
     end
 
@@ -55,8 +55,8 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
         @testset "(AutoSearch, AutoSearch) per-axis independent" begin
             result = _resolve_search_nd((AutoSearch(), AutoSearch()), Val(2),
                                         (sorted, random), nothing)
-            @test result[1] isa LinearBinary
-            @test result[2] isa Binary
+            @test result[1] isa LinearBinarySearch
+            @test result[2] isa BinarySearch
         end
     end
 
@@ -65,18 +65,18 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
         random = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0,
                   7.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0]
 
-        @testset "(AutoSearch, Binary) → axis 1 checked, axis 2 passthrough" begin
-            result = _resolve_search_nd((AutoSearch(), Binary()), Val(2),
+        @testset "(AutoSearch, BinarySearch) → axis 1 checked, axis 2 passthrough" begin
+            result = _resolve_search_nd((AutoSearch(), BinarySearch()), Val(2),
                                         (sorted, sorted), nothing)
-            @test result[1] isa LinearBinary   # AutoSearch resolved via monotonicity
-            @test result[2] isa Binary         # explicit Binary unchanged
+            @test result[1] isa LinearBinarySearch   # AutoSearch resolved via monotonicity
+            @test result[2] isa BinarySearch         # explicit BinarySearch unchanged
         end
 
-        @testset "(Binary, AutoSearch) → axis 1 passthrough, axis 2 checked" begin
-            result = _resolve_search_nd((Binary(), AutoSearch()), Val(2),
+        @testset "(BinarySearch, AutoSearch) → axis 1 passthrough, axis 2 checked" begin
+            result = _resolve_search_nd((BinarySearch(), AutoSearch()), Val(2),
                                         (random, sorted), nothing)
-            @test result[1] isa Binary         # explicit Binary unchanged
-            @test result[2] isa LinearBinary   # AutoSearch resolved via monotonicity
+            @test result[1] isa BinarySearch         # explicit BinarySearch unchanged
+            @test result[2] isa LinearBinarySearch   # AutoSearch resolved via monotonicity
         end
     end
 
@@ -84,17 +84,17 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
         sorted = collect(1.0:100.0)
         hints = (Ref(1), Ref(1))
 
-        # With hint, falls through to 3-arg → type-based → LinearBinary for vectors
+        # With hint, falls through to 3-arg → type-based → LinearBinarySearch for vectors
         result = _resolve_search_nd(AutoSearch(), Val(2), (sorted, sorted), hints)
-        @test result[1] isa LinearBinary
-        @test result[2] isa LinearBinary
+        @test result[1] isa LinearBinarySearch
+        @test result[2] isa LinearBinarySearch
     end
 
     # ========================================
     # Oneshot SoA: verify adaptive resolution through public API
     # ========================================
     # These tests verify correctness (values) to ensure the search policy
-    # changes don't break results. Both Binary and LinearBinary produce
+    # changes don't break results. Both BinarySearch and LinearBinarySearch produce
     # identical results — this confirms the plumbing works end-to-end.
 
     @testset "Oneshot SoA correctness with sorted queries" begin
@@ -118,7 +118,7 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
         ys = 0.0:1.0:10.0
         data = [Float64(x + y) for x in xs, y in ys]
 
-        # Random (non-monotone) queries — AutoSearch should pick Binary
+        # Random (non-monotone) queries — AutoSearch should pick BinarySearch
         random_xq = [3.2, 1.5, 7.8, 0.3, 9.1, 4.6, 6.0, 2.4, 8.7, 5.5]
         random_yq = [8.1, 2.3, 5.7, 9.0, 0.5, 6.8, 3.4, 7.2, 1.1, 4.9]
         n = length(random_xq)
@@ -150,58 +150,58 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
     # All-or-Nothing _resolve_search_nd_uniform (Oneshot SoA)
     # ========================================
     # Unlike per-axis _resolve_search_nd, _resolve_search_nd_uniform returns
-    # uniform types for all AutoSearch axes: if ANY is non-monotone, ALL get Binary.
+    # uniform types for all AutoSearch axes: if ANY is non-monotone, ALL get BinarySearch.
 
     @testset "All-or-nothing: _resolve_search_nd_uniform" begin
         sorted = collect(1.0:100.0)
         random = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0,
                   7.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0]
 
-        @testset "both sorted → both LinearBinary" begin
+        @testset "both sorted → both LinearBinarySearch" begin
             result = _resolve_search_nd_uniform(AutoSearch(), Val(2), (sorted, sorted), nothing)
-            @test result[1] isa LinearBinary
-            @test result[2] isa LinearBinary
+            @test result[1] isa LinearBinarySearch
+            @test result[2] isa LinearBinarySearch
         end
 
-        @testset "both random → both Binary" begin
+        @testset "both random → both BinarySearch" begin
             result = _resolve_search_nd_uniform(AutoSearch(), Val(2), (random, random), nothing)
-            @test result[1] isa Binary
-            @test result[2] isa Binary
+            @test result[1] isa BinarySearch
+            @test result[2] isa BinarySearch
         end
 
-        @testset "mixed sorted/random → ALL Binary (unlike per-axis)" begin
+        @testset "mixed sorted/random → ALL BinarySearch (unlike per-axis)" begin
             result = _resolve_search_nd_uniform(AutoSearch(), Val(2), (sorted, random), nothing)
-            @test result[1] isa Binary   # per-axis would give LB here
-            @test result[2] isa Binary
+            @test result[1] isa BinarySearch   # per-axis would give LB here
+            @test result[2] isa BinarySearch
         end
 
-        @testset "3D: all sorted → all LinearBinary" begin
+        @testset "3D: all sorted → all LinearBinarySearch" begin
             descending = collect(100.0:-1.0:1.0)
             result = _resolve_search_nd_uniform(AutoSearch(), Val(3), (sorted, sorted, descending), nothing)
-            @test result[1] isa LinearBinary
-            @test result[2] isa LinearBinary
-            @test result[3] isa LinearBinary
+            @test result[1] isa LinearBinarySearch
+            @test result[2] isa LinearBinarySearch
+            @test result[3] isa LinearBinarySearch
         end
 
-        @testset "3D: one random → all Binary" begin
+        @testset "3D: one random → all BinarySearch" begin
             descending = collect(100.0:-1.0:1.0)
             result = _resolve_search_nd_uniform(AutoSearch(), Val(3), (sorted, random, descending), nothing)
-            @test result[1] isa Binary
-            @test result[2] isa Binary
-            @test result[3] isa Binary
+            @test result[1] isa BinarySearch
+            @test result[2] isa BinarySearch
+            @test result[3] isa BinarySearch
         end
 
         @testset "explicit policies pass through" begin
-            result = _resolve_search_nd_uniform((Binary(), AutoSearch()), Val(2), (sorted, sorted), nothing)
-            @test result[1] isa Binary        # explicit Binary preserved
-            @test result[2] isa LinearBinary   # AutoSearch resolved (both mono → LB)
+            result = _resolve_search_nd_uniform((BinarySearch(), AutoSearch()), Val(2), (sorted, sorted), nothing)
+            @test result[1] isa BinarySearch        # explicit BinarySearch preserved
+            @test result[2] isa LinearBinarySearch   # AutoSearch resolved (both mono → LB)
         end
 
         @testset "hint present → fallback to type-based" begin
             hints = (Ref(1), Ref(1))
             result = _resolve_search_nd_uniform(AutoSearch(), Val(2), (sorted, sorted), hints)
-            @test result[1] isa LinearBinary
-            @test result[2] isa LinearBinary
+            @test result[1] isa LinearBinarySearch
+            @test result[2] isa LinearBinarySearch
         end
     end
 
@@ -357,7 +357,7 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
         @testset "linear sorted (→ LB)" begin
             @test _alloc_test_linear_soa_sorted() == 0
         end
-        @testset "linear random (→ Binary)" begin
+        @testset "linear random (→ BinarySearch)" begin
             @test _alloc_test_linear_soa_random() == 0
         end
         @testset "linear with hint (→ LB, type-based)" begin

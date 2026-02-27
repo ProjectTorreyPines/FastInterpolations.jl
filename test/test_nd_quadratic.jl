@@ -159,14 +159,14 @@ end
 
         @testset "uniform search" begin
             itp = quadratic_interp((x, y), data;
-                bc=Right(QuadraticFit()), search=Binary())
+                bc=Right(QuadraticFit()), search=BinarySearch())
             @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol=1e-10
         end
 
         @testset "mixed search policies" begin
             itp = quadratic_interp((x, y), data;
                 bc=Right(QuadraticFit()),
-                search=(Binary(), LinearBinary{4}()))
+                search=(BinarySearch(), LinearBinarySearch{4}()))
             @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol=1e-10
         end
     end

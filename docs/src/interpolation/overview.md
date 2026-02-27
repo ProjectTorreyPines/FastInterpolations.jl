@@ -21,7 +21,7 @@ All interpolation methods support both uniform and non-uniform grids, but perfor
 | Grid Type | Lookup Complexity | Recommendation |
 |-----------|-------------------|----------------|
 | `AbstractRange` | **O(1)** (Direct) | Best for uniform grids |
-| `AbstractVector` | O(log n) (Binary Search) | Use only for non-uniform data |
+| `AbstractVector` | O(log n) (BinarySearch Search) | Use only for non-uniform data |
 
 !!! tip "Performance Guide"
     For details on minimizing allocations and choosing the right grid, see [Memory & Allocation](../guides/memory_allocation.md).

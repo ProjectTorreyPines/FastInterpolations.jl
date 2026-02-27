@@ -140,7 +140,7 @@ end
 @inline _is_any_deriv(ops::Tuple{Vararg{DerivOp}}) = any(op -> !(op isa DerivOp{0}), ops)
 
 # Function barrier for SoA paths: forces Julia to runtime-dispatch on the concrete
-# searches tuple type, resolving per-element Union{Binary,LinearBinary} before
+# searches tuple type, resolving per-element Union{BinarySearch,LinearBinarySearch} before
 # entering the @with_pool boundary. NOT @inline — specialization requires real call.
 function _constant_nd_soa_dispatch!(output, grids, data, queries, extraps, sides, searches, hints)
     _constant_interp_nd_oneshot_soa!(output, grids, data, queries, extraps, sides, searches, hints)
@@ -180,7 +180,7 @@ function constant_interp(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
+    searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
     return _constant_interp_nd_oneshot(

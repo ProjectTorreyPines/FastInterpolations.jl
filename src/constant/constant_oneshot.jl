@@ -168,9 +168,9 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `RightSide()`: use right value (except at grid points)
 - `deriv::DerivOp`: Derivative order (`EvalValue()`, `DerivOp(1)`, or `DerivOp(2)`). Derivatives are always 0.
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
-  - `Binary()` (default): O(log n) binary search, stateless
-  - `LinearBinary(linear_window=0)`: O(1) if hint valid, O(log n) fallback
-  - `LinearBinary(linear_window=8)`: Linear search within window, then binary fallback
+  - `BinarySearch()` (default): O(log n) binary search, stateless
+  - `LinearBinarySearch(linear_window=0)`: O(1) if hint valid, O(log n) fallback
+  - `LinearBinarySearch(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns
 - Interpolated value (Float type)
@@ -188,7 +188,7 @@ constant_interp(x, y, -1.0; extrap=ConstExtrap()) # 10.0 (clamped)
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
+vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
 # AD Support: xi can be any Real (including ForwardDiff.Dual)
@@ -235,7 +235,7 @@ constant_interp!(out, x, y, [0.5, 1.5, 2.5])
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
 output = zeros(1000)
-constant_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_window=8))
+constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
 function constant_interp!(
@@ -275,7 +275,7 @@ result = constant_interp(x, y, [0.5, 1.5, 2.5])
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
+vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
 function constant_interp(

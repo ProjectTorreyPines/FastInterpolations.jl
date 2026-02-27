@@ -85,7 +85,7 @@ end # Derivative Core
 # ========================================
 @testset "Derivative Kernels" begin
 
-    @testset "Linear kernels" begin
+    @testset "LinearSearch kernels" begin
         # Test case: L(x) = 1 + 2x on [0, 1]
         # yL = L(0) = 1, yR = L(1) = 3
         # L(0.5) = 2, L'(x) = 2, L''(x) = 0
@@ -242,7 +242,7 @@ end # Derivative Kernels
         @testset "_eval_cubic_with_extrap with op" begin
             # Test constant extrapolation with derivatives
 
-            searcher = _to_searcher(Binary())
+            searcher = _to_searcher(BinarySearch())
 
             # Outside left boundary: should return 0 for derivatives
             left_val = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, ConstExtrap(), EvalValue(), searcher)
@@ -537,11 +537,11 @@ end # Derivative Kernels
 end # Cubic Derivatives
 
 # ========================================
-# Group 4: Linear Derivative API
+# Group 4: LinearSearch Derivative API
 # ========================================
-@testset "Linear Derivatives" begin
+@testset "LinearSearch Derivatives" begin
 
-    @testset "Linear public API with deriv" begin
+    @testset "LinearSearch public API with deriv" begin
 
         @testset "Constant slope segments" begin
             # Two segments with different slopes
@@ -629,7 +629,7 @@ end # Cubic Derivatives
         end
     end
 
-    @testset "Linear extrapolation with deriv" begin
+    @testset "LinearSearch extrapolation with deriv" begin
         x = [0.0, 1.0, 2.0]
         y = [0.0, 2.0, 6.0]  # slopes: 2.0, 4.0
 
@@ -715,7 +715,7 @@ end # Cubic Derivatives
         end
     end
 
-    @testset "Linear Range optimization with deriv" begin
+    @testset "LinearSearch Range optimization with deriv" begin
         # Range should use O(1) path
         x = 0.0:0.1:1.0
         y = collect(x) .^ 2
@@ -731,7 +731,7 @@ end # Cubic Derivatives
     # ========================================
 
     @testset "LinearInterpolant deriv keyword" begin
-        # Linear function: y = 2x on [0,1] and y = 4x - 2 on [1,2]
+        # LinearSearch function: y = 2x on [0,1] and y = 4x - 2 on [1,2]
         # Slopes: 2.0 on [0,1], 4.0 on [1,2]
         x = [0.0, 1.0, 2.0]
         y = [0.0, 2.0, 6.0]
@@ -752,7 +752,7 @@ end # Cubic Derivatives
         end
 
         @testset "deriv=DerivOp(2) returns zero" begin
-            # Linear interpolation has no curvature
+            # LinearSearch interpolation has no curvature
             @test litp(0.5; deriv=DerivOp(2)) === 0.0
             @test litp(1.0; deriv=DerivOp(2)) === 0.0
             @test litp(1.5; deriv=DerivOp(2)) === 0.0
@@ -768,7 +768,7 @@ end # Cubic Derivatives
         end
 
         @testset "deriv=DerivOp(2) returns zero" begin
-            # Linear interpolation has no curvature
+            # LinearSearch interpolation has no curvature
             @test litp(0.5; deriv=DerivOp(2)) === 0.0
             @test litp(1.0; deriv=DerivOp(2)) === 0.0
             @test litp(1.5; deriv=DerivOp(2)) === 0.0
@@ -810,7 +810,7 @@ end # Cubic Derivatives
         end
     end
 
-end # Linear Derivatives
+end # LinearSearch Derivatives
 
 # ========================================
 # Group 5: Periodic and Boundary Behavior
@@ -902,7 +902,7 @@ end # Linear Derivatives
             @test itp(1.0; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
         end
 
-        @testset "Linear at knot points" begin
+        @testset "LinearSearch at knot points" begin
             x = [0.0, 1.0, 2.0, 3.0]
             y = [0.0, 1.0, 4.0, 9.0]  # slopes: 1, 3, 5
             itp = linear_interp(x, y)
@@ -961,7 +961,7 @@ end # Derivative Boundary Behavior
         @test @inferred(itp(x_query; deriv=DerivOp(2))) isa Vector{Float64}
     end
 
-    @testset "Linear derivative type inference" begin
+    @testset "LinearSearch derivative type inference" begin
         x = [0.0, 1.0, 2.0]
         y = [0.0, 1.0, 4.0]
         itp = linear_interp(x, y)
@@ -1004,7 +1004,7 @@ end # Derivative Boundary Behavior
         @test @inferred(cubic_interp(x, y, 0.5; deriv=DerivOp(1))) isa Float64
         @test @inferred(cubic_interp(x, y, 0.5; deriv=DerivOp(2))) isa Float64
 
-        # Linear with deriv
+        # LinearSearch with deriv
         @test @inferred(linear_interp(x, y, 0.5; deriv=DerivOp(0))) isa Float64
         @test @inferred(linear_interp(x, y, 0.5; deriv=DerivOp(1))) isa Float64
         @test @inferred(linear_interp(x, y, 0.5; deriv=DerivOp(2))) isa Float64
@@ -1037,7 +1037,7 @@ end # Derivative Type Stability
         @test itp(0.25; deriv=DerivOp(1)) isa Float64
         @test itp(0.25; deriv=DerivOp(2)) isa Float64
 
-        # Linear minimum: 2 points
+        # LinearSearch minimum: 2 points
         x_lin = [0.0, 1.0]
         y_lin = [0.0, 2.0]
         itp_lin = linear_interp(x_lin, y_lin)
@@ -1073,7 +1073,7 @@ end # Derivative Type Stability
         @test itp_linear(0.5; deriv=DerivOp(2)) ≈ 0.0 atol=1e-10
     end
 
-    @testset "Linear function" begin
+    @testset "LinearSearch function" begin
         x = collect(0.0:0.1:1.0)
         y = 2.0 .* x .+ 3.0  # f(x) = 2x + 3
 
@@ -1082,7 +1082,7 @@ end # Derivative Type Stability
         @test itp_cubic(0.5; deriv=DerivOp(1)) ≈ 2.0 atol=1e-10
         @test itp_cubic(0.5; deriv=DerivOp(2)) ≈ 0.0 atol=1e-10
 
-        # Linear should be exact
+        # LinearSearch should be exact
         itp_linear = linear_interp(x, y)
         @test itp_linear(0.5; deriv=DerivOp(1)) ≈ 2.0 atol=1e-10
         @test itp_linear(0.5; deriv=DerivOp(2)) ≈ 0.0 atol=1e-10
@@ -1173,7 +1173,7 @@ end # Derivative Edge Cases
         @test @allocated(itp(0.5; deriv=DerivOp(2))) <= DERIV_ALLOC_THRESHOLD
     end
 
-    @testset "Linear allocation with deriv" begin
+    @testset "LinearSearch allocation with deriv" begin
         x = collect(range(0.0, 1.0, 51))
         y = x .^ 2
         xi = 0.5
@@ -1482,7 +1482,7 @@ end # Derivative Allocations
         end
     end
 
-    @testset "Linear Range path zero-allocation" begin
+    @testset "LinearSearch Range path zero-allocation" begin
         x = 0.0:0.02:1.0
         y = collect(x) .^ 2
 
@@ -1766,7 +1766,7 @@ end # DerivativeView Wrapper
     end
 
     @testset "Lower-order kernels return zero" begin
-        # Linear kernel (h=0.5, dL=0.2)
+        # LinearSearch kernel (h=0.5, dL=0.2)
         @test FastInterpolations._linear_kernel(
             FastInterpolations.EvalDeriv3(), 1.0, 5.0, 0.5, 0.2
         ) === zero(Float64)
@@ -1893,14 +1893,14 @@ end # DerivativeView Wrapper
         @test_throws DomainError itp_none(-0.5; deriv=DerivOp(3))
     end
 
-    @testset "Linear/Constant oneshot deriv=DerivOp(3) with constant extrapolation" begin
+    @testset "LinearSearch/Constant oneshot deriv=DerivOp(3) with constant extrapolation" begin
         # This tests the _linear_eval_constant_extrap and _constant_eval_extrap
         # dispatch for EvalDeriv3, which returns zero outside domain
         x = collect(range(0.0, 1.0, 11))
         y_linear = 2.0 .* x
         y_const = fill(5.0, length(x))
 
-        # Linear interpolation: deriv=DerivOp(3) with ConstExtrap() extrap outside domain
+        # LinearSearch interpolation: deriv=DerivOp(3) with ConstExtrap() extrap outside domain
         @test linear_interp(x, y_linear, -0.5; extrap=ConstExtrap(), deriv=DerivOp(3)) === 0.0
         @test linear_interp(x, y_linear, 1.5; extrap=ConstExtrap(), deriv=DerivOp(3)) === 0.0
 
@@ -1976,7 +1976,7 @@ end # Deriv=3 Extensions
         @test vals3 ≈ itp(x_query; deriv=DerivOp(3))
     end
 
-    @testset "DerivativeView accepts vector queries - Linear" begin
+    @testset "DerivativeView accepts vector queries - LinearSearch" begin
         x = [0.0, 1.0, 2.0]
         y = [0.0, 2.0, 6.0]
         itp = linear_interp(x, y)
@@ -2263,7 +2263,7 @@ end # SeriesInterpolant Derivatives
     xq = [0.25, 0.5, 0.75]
 
     @testset "Cubic - search keyword passthrough" begin
-        itp = cubic_interp(x_cubic, y_cubic; search=Binary())
+        itp = cubic_interp(x_cubic, y_cubic; search=BinarySearch())
         d1 = deriv1(itp)
         d2 = deriv2(itp)
 
@@ -2272,9 +2272,9 @@ end # SeriesInterpolant Derivatives
         @test d2(0.5) ≈ itp(0.5; deriv=DerivOp(2))
 
         # Explicit search override
-        @test d1(0.5; search=Linear()) ≈ itp(0.5; deriv=DerivOp(1), search=Linear())
-        @test d1(0.5; search=LinearBinary()) ≈ itp(0.5; deriv=DerivOp(1), search=LinearBinary())
-        @test d2(0.5; search=Linear()) ≈ itp(0.5; deriv=DerivOp(2), search=Linear())
+        @test d1(0.5; search=LinearSearch()) ≈ itp(0.5; deriv=DerivOp(1), search=LinearSearch())
+        @test d1(0.5; search=LinearBinarySearch()) ≈ itp(0.5; deriv=DerivOp(1), search=LinearBinarySearch())
+        @test d2(0.5; search=LinearSearch()) ≈ itp(0.5; deriv=DerivOp(2), search=LinearSearch())
     end
 
     @testset "Cubic - hint keyword passthrough" begin
@@ -2289,14 +2289,14 @@ end # SeriesInterpolant Derivatives
         @test hint[] >= 1
     end
 
-    @testset "Linear - search and hint keywords" begin
+    @testset "LinearSearch - search and hint keywords" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y = [0.0, 2.0, 6.0, 12.0, 20.0]
         itp = linear_interp(x, y)
         d1 = deriv1(itp)
 
-        @test d1(0.5; search=Binary()) ≈ itp(0.5; deriv=DerivOp(1), search=Binary())
-        @test d1(1.5; search=Linear()) ≈ itp(1.5; deriv=DerivOp(1), search=Linear())
+        @test d1(0.5; search=BinarySearch()) ≈ itp(0.5; deriv=DerivOp(1), search=BinarySearch())
+        @test d1(1.5; search=LinearSearch()) ≈ itp(1.5; deriv=DerivOp(1), search=LinearSearch())
 
         hint = Ref(1)
         @test d1(2.5; hint=hint) ≈ itp(2.5; deriv=DerivOp(1))
@@ -2307,8 +2307,8 @@ end # SeriesInterpolant Derivatives
         d1 = deriv1(itp)
 
         hint = Ref(1)
-        result = d1(xq; search=LinearBinary(), hint=hint)
-        expected = itp(xq; deriv=DerivOp(1), search=LinearBinary())
+        result = d1(xq; search=LinearBinarySearch(), hint=hint)
+        expected = itp(xq; deriv=DerivOp(1), search=LinearBinarySearch())
         @test result ≈ expected
     end
 
@@ -2372,8 +2372,8 @@ end # DerivativeView search/hint keywords
         output = zeros(3)
         hint = Ref(1)
 
-        d1(output, xq; search=LinearBinary(), hint=hint)
-        @test output ≈ itp(xq; deriv=DerivOp(1), search=LinearBinary())
+        d1(output, xq; search=LinearBinarySearch(), hint=hint)
+        @test output ≈ itp(xq; deriv=DerivOp(1), search=LinearBinarySearch())
     end
 
     @testset "In-place vector zero allocation" begin
@@ -2403,8 +2403,8 @@ end # DerivativeView single-series in-place vector
         d1 = deriv1(sitp)
 
         # Scalar with search and hint
-        @test d1(0.5; search=Binary()) ≈ sitp(0.5; deriv=DerivOp(1), search=Binary())
-        @test d1(0.5; search=Linear()) ≈ sitp(0.5; deriv=DerivOp(1), search=Linear())
+        @test d1(0.5; search=BinarySearch()) ≈ sitp(0.5; deriv=DerivOp(1), search=BinarySearch())
+        @test d1(0.5; search=LinearSearch()) ≈ sitp(0.5; deriv=DerivOp(1), search=LinearSearch())
 
         hint = Ref(1)
         result = d1(0.5; hint=hint)
@@ -2415,7 +2415,7 @@ end # DerivativeView single-series in-place vector
         d1 = deriv1(sitp)
 
         out = zeros(2)
-        d1(out, 0.5; search=Linear(), hint=Ref(1))
+        d1(out, 0.5; search=LinearSearch(), hint=Ref(1))
         @test out ≈ sitp(0.5; deriv=DerivOp(1))
     end
 
@@ -2423,7 +2423,7 @@ end # DerivativeView single-series in-place vector
         d1 = deriv1(sitp)
 
         outputs = [zeros(3), zeros(3)]
-        d1(outputs, xq; search=LinearBinary(), hint=Ref(1))
+        d1(outputs, xq; search=LinearBinarySearch(), hint=Ref(1))
 
         expected = sitp(xq; deriv=DerivOp(1))
         @test outputs[1] ≈ expected[1]
@@ -2448,16 +2448,16 @@ end # DerivativeView SeriesInterpolant search/hint keywords
         @test @inferred(d2(0.5)) isa Float64
 
         # With search keyword
-        @test @inferred(d1(0.5; search=Binary())) isa Float64
-        @test @inferred(d1(0.5; search=Linear())) isa Float64
-        @test @inferred(d1(0.5; search=LinearBinary())) isa Float64
+        @test @inferred(d1(0.5; search=BinarySearch())) isa Float64
+        @test @inferred(d1(0.5; search=LinearSearch())) isa Float64
+        @test @inferred(d1(0.5; search=LinearBinarySearch())) isa Float64
 
         # With hint keyword
         hint = Ref(1)
         @test @inferred(d1(0.5; hint=hint)) isa Float64
 
         # With both keywords
-        @test @inferred(d1(0.5; search=LinearBinary(), hint=Ref(1))) isa Float64
+        @test @inferred(d1(0.5; search=LinearBinarySearch(), hint=Ref(1))) isa Float64
     end
 
     @testset "Type stability - vector evaluation" begin
@@ -2468,8 +2468,8 @@ end # DerivativeView SeriesInterpolant search/hint keywords
         @test @inferred(d1(xq)) isa Vector{Float64}
 
         # With keywords
-        @test @inferred(d1(xq; search=Binary())) isa Vector{Float64}
-        @test @inferred(d1(xq; search=LinearBinary(), hint=Ref(1))) isa Vector{Float64}
+        @test @inferred(d1(xq; search=BinarySearch())) isa Vector{Float64}
+        @test @inferred(d1(xq; search=LinearBinarySearch(), hint=Ref(1))) isa Vector{Float64}
     end
 
     @testset "Type stability - in-place evaluation" begin
@@ -2483,18 +2483,18 @@ end # DerivativeView SeriesInterpolant search/hint keywords
         @test result === output
 
         # With keywords
-        result2 = @inferred d1(output, xq; search=LinearBinary())
+        result2 = @inferred d1(output, xq; search=LinearBinarySearch())
         @test result2 === output
     end
 
-    @testset "Type stability - Linear interpolant" begin
+    @testset "Type stability - LinearSearch interpolant" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y = [0.0, 2.0, 6.0, 12.0, 20.0]
         itp = linear_interp(x, y)
         d1 = deriv1(itp)
 
         @test @inferred(d1(0.5)) isa Float64
-        @test @inferred(d1(0.5; search=Binary())) isa Float64
+        @test @inferred(d1(0.5; search=BinarySearch())) isa Float64
         @test @inferred(d1([0.5, 1.5])) isa Vector{Float64}
     end
 
@@ -2504,7 +2504,7 @@ end # DerivativeView SeriesInterpolant search/hint keywords
 
         # Scalar returns Vector
         @test @inferred(d1(0.5)) isa Vector{Float64}
-        @test @inferred(d1(0.5; search=Binary())) isa Vector{Float64}
+        @test @inferred(d1(0.5; search=BinarySearch())) isa Vector{Float64}
 
         # Vector returns Vector of Vectors
         @test @inferred(d1(xq)) isa Vector{Vector{Float64}}
@@ -2516,13 +2516,13 @@ end # DerivativeView SeriesInterpolant search/hint keywords
 
         # Warmup
         d1(0.5)
-        d1(0.5; search=Binary())
+        d1(0.5; search=BinarySearch())
         hint = Ref(1)
         d1(0.5; hint=hint)
 
         # Test allocations
         alloc_basic = @allocated d1(0.5)
-        alloc_search = @allocated d1(0.5; search=Binary())
+        alloc_search = @allocated d1(0.5; search=BinarySearch())
         alloc_hint = @allocated d1(0.5; hint=hint)
 
         @test alloc_basic <= DERIV_ALLOC_THRESHOLD
@@ -2540,15 +2540,15 @@ end # DerivativeView SeriesInterpolant search/hint keywords
 
         # Warmup
         d1(output, xq_alloc)
-        d1(output, xq_alloc; search=Binary())
+        d1(output, xq_alloc; search=BinarySearch())
         d1(output, xq_alloc; hint=hint)
-        d1(output, xq_alloc; search=LinearBinary(), hint=hint)
+        d1(output, xq_alloc; search=LinearBinarySearch(), hint=hint)
 
         # Test allocations
         alloc_basic = @allocated d1(output, xq_alloc)
-        alloc_search = @allocated d1(output, xq_alloc; search=Binary())
+        alloc_search = @allocated d1(output, xq_alloc; search=BinarySearch())
         alloc_hint = @allocated d1(output, xq_alloc; hint=hint)
-        alloc_both = @allocated d1(output, xq_alloc; search=LinearBinary(), hint=hint)
+        alloc_both = @allocated d1(output, xq_alloc; search=LinearBinarySearch(), hint=hint)
 
         @test alloc_basic <= DERIV_ALLOC_THRESHOLD
         @test alloc_search <= DERIV_ALLOC_THRESHOLD
@@ -2561,7 +2561,7 @@ end # DerivativeView SeriesInterpolant search/hint keywords
         d1 = deriv1(itp)
 
         # DerivativeView with kwargs should match direct itp call with kwargs
-        for search_policy in [Binary(), Linear(), LinearBinary(), LinearBinary(linear_window=0)]
+        for search_policy in [BinarySearch(), LinearSearch(), LinearBinarySearch(), LinearBinarySearch(linear_window=0)]
             hint = Ref(1)
             hint2 = Ref(1)
 
@@ -2640,7 +2640,7 @@ end # DerivativeView type stability and performance
         # All interpolant types produce AbstractDerivativeView
         for (name, itp) in [
             ("Cubic", cubic_itp),
-            ("Linear", linear_itp),
+            ("LinearSearch", linear_itp),
             ("Quadratic", quad_itp),
             ("Constant", const_itp)
         ]

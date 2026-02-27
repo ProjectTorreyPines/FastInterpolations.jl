@@ -4,7 +4,7 @@ Hints allow you to persist search state across calls, enabling O(1) lookup for s
 
 ## Basic Usage
 
-For stateful policies (`Linear`, `LinearBinary`), provide an external `Ref{Int}` to persist the hint:
+For stateful policies (`LinearSearch`, `LinearBinarySearch`), provide an external `Ref{Int}` to persist the hint:
 
 ```julia
 itp = linear_interp(x, y)
@@ -12,7 +12,7 @@ hint = Ref(1)  # external hint storage
 
 # Hint persists across calls
 for xi in streaming_data
-    val = itp(xi; search=LinearBinary(), hint=hint)
+    val = itp(xi; search=LinearBinarySearch(), hint=hint)
 end
 ```
 
@@ -30,18 +30,18 @@ External hints are particularly useful for:
 
 ## Auto-Upgrade Behavior
 
-When you provide a `hint` argument with `Binary()`, the search automatically upgrades to `LinearBinary()` (default window):
+When you provide a `hint` argument with `BinarySearch()`, the search automatically upgrades to `LinearBinarySearch()` (default window):
 
 ```julia
 hint = Ref(1)
-val = itp(0.5; search=Binary(), hint=hint)  # auto-upgrades to LinearBinary{8}
+val = itp(0.5; search=BinarySearch(), hint=hint)  # auto-upgrades to LinearBinarySearch{8}
 ```
 
-This also works with the default `AutoSearch()` — scalar queries resolve to `Binary()`, and if a hint is provided, they auto-upgrade to `LinearBinary()`:
+This also works with the default `AutoSearch()` — scalar queries resolve to `BinarySearch()`, and if a hint is provided, they auto-upgrade to `LinearBinarySearch()`:
 
 ```julia
 hint = Ref(1)
-val = itp(0.5; hint=hint)  # AutoSearch → Binary() → auto-upgrades to LinearBinary{8}
+val = itp(0.5; hint=hint)  # AutoSearch → BinarySearch() → auto-upgrades to LinearBinarySearch{8}
 ```
 
 Without a hint, binary search is used (no hint tracking).
@@ -55,7 +55,7 @@ Each thread must have its own hint to avoid data races:
 Threads.@threads for i in 1:n
     local_hint = Ref(1)  # per-thread hint
     for xi in chunks[i]
-        val = itp(xi; search=LinearBinary(), hint=local_hint)
+        val = itp(xi; search=LinearBinarySearch(), hint=local_hint)
     end
 end
 ```
@@ -66,7 +66,7 @@ end
 **Safe patterns**:
 - Create hint inside the threaded loop (per-thread)
 - Use thread-local storage
-- Use `Binary()` without hints (stateless, inherently thread-safe)
+- Use `BinarySearch()` without hints (stateless, inherently thread-safe)
 
 ---
 
@@ -77,7 +77,7 @@ end
 ```julia
 using FastInterpolations
 
-# Create interpolant (Linear is fastest for strictly monotonic time)
+# Create interpolant (LinearSearch is fastest for strictly monotonic time)
 x = 0.0:0.01:10.0
 y = sin.(x)
 itp = linear_interp(x, y)
@@ -86,22 +86,22 @@ itp = linear_interp(x, y)
 hint = Ref(1)
 
 function ode_callback!(du, u, p, t)
-    # t increases monotonically → O(1) lookup with Linear()
-    forcing = itp(t; search=Linear(), hint=hint)
+    # t increases monotonically → O(1) lookup with LinearSearch()
+    forcing = itp(t; search=LinearSearch(), hint=hint)
     du[1] = -u[1] + forcing
 end
 ```
 
-!!! tip "Linear vs LinearBinary for ODE"
-    Use `Linear()` when time is strictly monotonic (typical ODE case).
-    Use `LinearBinary()` if queries might occasionally jump or exceed bounds.
+!!! tip "LinearSearch vs LinearBinarySearch for ODE"
+    Use `LinearSearch()` when time is strictly monotonic (typical ODE case).
+    Use `LinearBinarySearch()` if queries might occasionally jump or exceed bounds.
 
 ### Batch Processing with Sorted Queries
 
 ```julia
 x = collect(range(0.0, 10.0, 10001))
 y = sin.(2π .* x)
-itp = linear_interp(x, y; search=LinearBinary())
+itp = linear_interp(x, y; search=LinearBinarySearch())
 
 # Sort queries for optimal performance
 queries = sort(rand(100_000) .* 10)
@@ -110,17 +110,17 @@ results = itp(queries)  # O(n) total instead of O(n log n)
 
 ### Random Access Pattern
 
-For random access, hints provide no benefit. The default `AutoSearch()` detects random patterns via a prefix monotonicity check and resolves to `Binary()` automatically:
+For random access, hints provide no benefit. The default `AutoSearch()` detects random patterns via a prefix monotonicity check and resolves to `BinarySearch()` automatically:
 
 ```julia
 x = collect(range(0.0, 10.0, 10001))
 y = sin.(2π .* x)
 itp = linear_interp(x, y)  # stores AutoSearch (default)
 
-# Random queries → AutoSearch detects non-monotonic prefix → Binary()
+# Random queries → AutoSearch detects non-monotonic prefix → BinarySearch()
 random_queries = rand(100_000) .* 10
-results = itp(random_queries)                          # AutoSearch → Binary (adaptive)
-results = itp(random_queries; search=Binary())         # explicit Binary — same result
+results = itp(random_queries)                          # AutoSearch → BinarySearch (adaptive)
+results = itp(random_queries; search=BinarySearch())         # explicit BinarySearch — same result
 ```
 
 ### Shared Hint Across Multiple Interpolants
@@ -137,9 +137,9 @@ hint = Ref(1)  # shared hint for same x-grid
 
 for t in time_points
     # All three use same hint since they share the x-grid
-    T = itp_temp(t; search=LinearBinary(), hint=hint)
-    P = itp_pressure(t; search=LinearBinary(), hint=hint)
-    ρ = itp_density(t; search=LinearBinary(), hint=hint)
+    T = itp_temp(t; search=LinearBinarySearch(), hint=hint)
+    P = itp_pressure(t; search=LinearBinarySearch(), hint=hint)
+    ρ = itp_density(t; search=LinearBinarySearch(), hint=hint)
 end
 ```
 

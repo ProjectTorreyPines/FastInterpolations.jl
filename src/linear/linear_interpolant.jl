@@ -32,7 +32,7 @@ end
 # Vector Loop (Function Barrier)
 # ========================================
 # Julia specializes on concrete Searcher type P, eliminating Union-split
-# overhead when adaptive AutoSearch resolves to Binary or LinearBinary.
+# overhead when adaptive AutoSearch resolves to BinarySearch or LinearBinarySearch.
 # CRITICAL: All arguments must be fully typed — untyped args prevent SROA
 # of RefHint's Ref, causing 16-byte heap allocation per call.
 @inline function _linear_vector_loop!(
@@ -102,7 +102,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 
 Can be:
 - Called with scalar: `itp(0.5)` (uses stored search policy)
-- Called with search override: `itp(0.5; search=Binary())` (override stored policy)
+- Called with search override: `itp(0.5; search=BinarySearch())` (override stored policy)
 - Broadcasted: `itp.(rho)` or `@. coef * itp(rho)`
 - Reused multiple times without re-creating
 
@@ -111,14 +111,14 @@ Can be:
 # Create with default AutoSearch() search policy
 itp = linear_interp(x_data, y_data)
 
-# Default AutoSearch: scalar→Binary, vector→LinearBinary
+# Default AutoSearch: scalar→BinarySearch, vector→LinearBinarySearch
 itp = linear_interp(x_data, y_data)
 
 # Scalar call (uses stored policy)
 val = itp(0.5)
 
 # Scalar call with search policy override
-val = itp(0.5; search=Binary())
+val = itp(0.5; search=BinarySearch())
 
 # Vector call with hint for ODE/streaming patterns
 hint = Ref(1)
@@ -143,8 +143,8 @@ vals_direct = linear_interp(x_data, y_data, query_points)
 # Performance Notes
 - Returns lightweight callable (~56 bytes), best for reuse and broadcast fusion
 - 3-argument form returns array immediately, best for single use
-- Default `AutoSearch()` adapts: scalar→`Binary()`, vector→`LinearBinary()`
-- Use `search=LinearBinary()` to force linear-binary for all query types
+- Default `AutoSearch()` adapts: scalar→`BinarySearch()`, vector→`LinearBinarySearch()`
+- Use `search=LinearBinarySearch()` to force linear-binary for all query types
 - Use `hint=Ref(idx)` for ODE/streaming patterns with persistent hint
 """
 function linear_interp end

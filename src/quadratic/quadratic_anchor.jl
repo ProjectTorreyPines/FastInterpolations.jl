@@ -132,7 +132,7 @@ function _anchor_query(
     xq::AbstractVector{S},
     ::Val{:quadratic},
     wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinary())
+    searcher::P=_to_searcher(LinearBinarySearch())
 ) where {T<:AbstractFloat, S<:Real, P<:Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     output = Vector{_QuadraticAnchoredQuery{T,T}}(undef, length(xq))
@@ -170,7 +170,7 @@ When buffer element type is `{Tg, Tq}` and `xq` element type is `S`:
     xq::AbstractVector{S},
     ::Val{:quadratic},
     wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinary())
+    searcher::P=_to_searcher(LinearBinarySearch())
 ) where {Tg<:AbstractFloat, Tq<:Real, S<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)

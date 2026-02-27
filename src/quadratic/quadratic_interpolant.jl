@@ -22,7 +22,7 @@ end
 # ─────────────────────────────────────────────────────────────
 # Vector loop (function barrier)
 # Julia specializes on concrete Searcher type P, eliminating Union-split
-# overhead when adaptive AutoSearch resolves to Binary or LinearBinary.
+# overhead when adaptive AutoSearch resolves to BinarySearch or LinearBinarySearch.
 # CRITICAL: All arguments must be fully typed — untyped args prevent SROA
 # of RefHint's Ref, causing 16-byte heap allocation per call.
 # ─────────────────────────────────────────────────────────────
@@ -106,10 +106,10 @@ y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im]
 itp = quadratic_interp(x, y)
 itp(0.5)           # returns ComplexF64
 
-# Search policy: AutoSearch adapts to query type (scalar→Binary, vector→LinearBinary)
+# Search policy: AutoSearch adapts to query type (scalar→BinarySearch, vector→LinearBinarySearch)
 itp = quadratic_interp(x, y)
-val = itp(0.5)     # AutoSearch resolves to Binary() for scalar
-itp = quadratic_interp(x, y; search=LinearBinary())  # explicit override
+val = itp(0.5)     # AutoSearch resolves to BinarySearch() for scalar
+itp = quadratic_interp(x, y; search=LinearBinarySearch())  # explicit override
 
 # Fused broadcast (optimal)
 result = @. coef * itp(query)

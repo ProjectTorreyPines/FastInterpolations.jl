@@ -131,7 +131,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
 end
 
 # Function barrier for SoA paths: forces Julia to runtime-dispatch on the concrete
-# searches tuple type, resolving per-element Union{Binary,LinearBinary} before
+# searches tuple type, resolving per-element Union{BinarySearch,LinearBinarySearch} before
 # entering the @with_pool boundary. NOT @inline — specialization requires real call.
 function _quadratic_nd_soa_dispatch!(output, grids, data, queries, bcs, extraps, searches, ops, hints)
     _quadratic_interp_nd_oneshot_soa!(output, grids, data, queries, bcs, extraps, searches, ops, hints)
@@ -164,7 +164,7 @@ function quadratic_interp(
     Tr = promote_type(Tv, Tg, typeof.(query)...)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
+    searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))

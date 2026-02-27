@@ -30,7 +30,7 @@ Returned by `linear_interp(x, y)` (2-argument form).
 itp = linear_interp(x, y)  # default extrap=NoExtrap(), search=AutoSearch()
 
 # Create with custom search policy (overrides default AutoSearch)
-itp = linear_interp(x, y; search=Binary())
+itp = linear_interp(x, y; search=BinarySearch())
 
 # Complex-valued interpolation
 y_complex = exp.(2im .* x)
@@ -50,7 +50,7 @@ itp_wrap = linear_interp(x, y; extrap=WrapExtrap())  # wrap to domain
 val = itp_wrap(2.5)  # wraps to domain
 
 # Override search policy at call time
-itp(0.5; search=Binary())  # override stored policy
+itp(0.5; search=BinarySearch())  # override stored policy
 ```
 """
 struct LinearInterpolant{

@@ -116,9 +116,9 @@ using FastInterpolations
         end
 
         @testset "search keyword" begin
-            cell1 = coeffs(itp, 1.5; search=Binary())
+            cell1 = coeffs(itp, 1.5; search=BinarySearch())
             hint = Ref(1)
-            cell2 = coeffs(itp, 1.5; search=LinearBinary(linear_window=0), hint=hint)
+            cell2 = coeffs(itp, 1.5; search=LinearBinarySearch(linear_window=0), hint=hint)
             @test cell1.p == cell2.p
             @test cell1.xL == cell2.xL
         end

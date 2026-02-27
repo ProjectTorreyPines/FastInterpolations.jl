@@ -373,11 +373,11 @@ val = itp(0.5)                      # Scalar (zero-allocation)
 vals = itp.(query_points)           # Broadcast
 result = @. coef * itp(rho) * ne    # Fused broadcast
 
-# Search policy: AutoSearch adapts to query type (scalar→Binary, vector→LinearBinary)
+# Search policy: AutoSearch adapts to query type (scalar→BinarySearch, vector→LinearBinarySearch)
 itp = cubic_interp(x, y)
-val = itp(0.5)                      # AutoSearch resolves to Binary() for scalar
-itp = cubic_interp(x, y; search=LinearBinary())  # explicit override
-val = itp(0.5; search=Binary())     # per-call override
+val = itp(0.5)                      # AutoSearch resolves to BinarySearch() for scalar
+itp = cubic_interp(x, y; search=LinearBinarySearch())  # explicit override
+val = itp(0.5; search=BinarySearch())     # per-call override
 
 # Complex values
 x = [0.0, 1.0, 2.0, 3.0, 4.0]

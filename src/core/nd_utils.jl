@@ -113,9 +113,9 @@ Resolve search policy input to canonical N-tuple (broadcast only, no AutoSearch 
     _resolve_search_nd(search, Val(N), query_sample) -> NTuple{N, AbstractSearchPolicy}
 
 Broadcast + resolve AutoSearch in one step. Pass the query container directly — no `first()` extraction needed:
-- `query_sample::NTuple{N,Real}` (scalar ND query) → `Tuple` arm → `Binary()` per axis
-- `query_sample::NTuple{N,AbstractVector}` (SoA batch) → `Tuple{Vararg{AbstractVector}}` arm → `LinearBinary()` per axis
-- `query_sample::AbstractVector{<:Tuple}` (AoS batch) → `AbstractVector` arm → `LinearBinary()` per axis
+- `query_sample::NTuple{N,Real}` (scalar ND query) → `Tuple` arm → `BinarySearch()` per axis
+- `query_sample::NTuple{N,AbstractVector}` (SoA batch) → `Tuple{Vararg{AbstractVector}}` arm → `LinearBinarySearch()` per axis
+- `query_sample::AbstractVector{<:Tuple}` (AoS batch) → `AbstractVector` arm → `LinearBinarySearch()` per axis
 - Explicit policies pass through unchanged.
 """
 @inline _resolve_search_nd(s::AbstractSearchPolicy, ::Val{N}) where {N} = ntuple(_ -> s, Val(N))
@@ -138,7 +138,7 @@ end
 
 # SoA Real vectors + no hint → per-axis adaptive resolution.
 # Each axis independently checks monotonicity via 1D _resolve_search_policy(policy, vec, nothing):
-#   AutoSearch axes → _is_likely_monotone per axis → Binary or LinearBinary
+#   AutoSearch axes → _is_likely_monotone per axis → BinarySearch or LinearBinarySearch
 #   Explicit policy axes → passthrough unchanged
 # Uses map (not ntuple closure) to avoid closure heap allocation.
 @inline function _resolve_search_nd(
@@ -159,21 +159,21 @@ end
 # All-or-Nothing Adaptive Resolution (Oneshot SoA)
 # ----------------------------------------
 #
-# For oneshot SoA paths, per-axis adaptive creates Tuple{Union{Binary,LB}, ...}
+# For oneshot SoA paths, per-axis adaptive creates Tuple{Union{BinarySearch,LB}, ...}
 # — per-element Union that Julia boxes during tuple construction (144+ bytes).
 #
 # Solution: all-or-nothing — check all AutoSearch axes, return uniform type.
-# If ALL AutoSearch axes are monotone → all AutoSearch → LinearBinary.
-# If ANY AutoSearch axis is non-monotone → all AutoSearch → Binary.
+# If ALL AutoSearch axes are monotone → all AutoSearch → LinearBinarySearch.
+# If ANY AutoSearch axis is non-monotone → all AutoSearch → BinarySearch.
 # Explicit (non-AutoSearch) policies pass through unchanged.
 #
 # Return type is Union{ConcreteA, ConcreteB} — a 2-way Union of concrete tuple
 # types that Julia union-splits at the function barrier.
 
 # Named helpers for map — avoid closure capture.
-@inline _autosearch_to_lb(::AutoSearch) = LinearBinary()
+@inline _autosearch_to_lb(::AutoSearch) = LinearBinarySearch()
 @inline _autosearch_to_lb(p::AbstractSearchPolicy) = p
-@inline _autosearch_to_binary(::AutoSearch) = Binary()
+@inline _autosearch_to_binary(::AutoSearch) = BinarySearch()
 @inline _autosearch_to_binary(p::AbstractSearchPolicy) = p
 @inline _check_axis_monotone(::AutoSearch, q) = _is_likely_monotone(q)
 @inline _check_axis_monotone(::AbstractSearchPolicy, _) = true

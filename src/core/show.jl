@@ -118,10 +118,10 @@ _format_side(::RightSide) = "RightSide"
 _format_side(side::AbstractSide) = string(typeof(side))
 
 """Format search policy name."""
-_format_search(::Binary) = "Binary"
-_format_search(::Linear) = "Linear"
-_format_search(::LinearBinary{MAX}) where {MAX} = "LinearBinary{$MAX}"
-_format_search(::AutoSearch) = "AutoSearch (scalar→Binary, vector→adaptive)"
+_format_search(::BinarySearch) = "BinarySearch"
+_format_search(::LinearSearch) = "LinearSearch"
+_format_search(::LinearBinarySearch{MAX}) where {MAX} = "LinearBinarySearch{$MAX}"
+_format_search(::AutoSearch) = "AutoSearch (scalar→BinarySearch, vector→adaptive)"
 
 """Format boundary condition for display."""
 _format_bc(::ZeroCurvBC) = "ZeroCurv (S''=0 at ends)"

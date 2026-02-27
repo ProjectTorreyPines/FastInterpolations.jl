@@ -261,14 +261,14 @@ using FastInterpolations
     # Hint with Explicit Search Policy
     # ========================================
 
-    @testset "Hint with explicit LinearBinary policy — linear" begin
+    @testset "Hint with explicit LinearBinarySearch policy — linear" begin
         xs = collect([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
         ys = collect([0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
         data = [Float64(x + y) for x in xs, y in ys]
         hints = (Ref(1), Ref(1))
 
         val = linear_interp((xs, ys), data, (5.5, 6.5);
-            search=FastInterpolations.LinearBinary(), hint=hints)
+            search=FastInterpolations.LinearBinarySearch(), hint=hints)
         @test val ≈ 12.0 atol=1e-12
         @test hints[1][] == 6
         @test hints[2][] == 7

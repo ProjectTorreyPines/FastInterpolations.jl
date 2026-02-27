@@ -174,7 +174,7 @@ function _anchor_query(
     xq::AbstractVector{Tq},
     ::Val{:linear},
     wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinary())
+    searcher::P=_to_searcher(LinearBinarySearch())
 ) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     Tq_promoted = promote_type(Tq, Tg)
@@ -209,7 +209,7 @@ Uses `_promote_for_anchor` to preserve wider precision when `S` differs from `Tg
     xq::AbstractVector{S},
     ::Val{:linear},
     wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinary())
+    searcher::P=_to_searcher(LinearBinarySearch())
 ) where {Tg<:AbstractFloat, Tq<:Real, S<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)

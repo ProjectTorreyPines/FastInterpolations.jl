@@ -135,7 +135,7 @@ function _anchor_query(
     xq::AbstractVector{S},
     ::Val{:constant},
     wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinary())
+    searcher::P=_to_searcher(LinearBinarySearch())
 ) where {T<:AbstractFloat, S<:Real, P<:Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     output = Vector{_ConstantAnchoredQuery{T}}(undef, length(xq))
@@ -168,7 +168,7 @@ The same `buffer` object, filled with anchored queries.
     xq::AbstractVector{S},
     ::Val{:constant},
     wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinary())
+    searcher::P=_to_searcher(LinearBinarySearch())
 ) where {T<:AbstractFloat, S<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)

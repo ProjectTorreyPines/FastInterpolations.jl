@@ -102,14 +102,14 @@ WrapExtrap
 
 Search policies control how the interpolant finds the correct interval for a query point. Different policies offer trade-offs between simplicity, performance for sequential queries, and thread safety.
 
-`AutoSearch` is the **default** for all interpolants. It resolves to `Binary()` for scalar queries and `LinearBinary()` for vector queries at call time.
+`AutoSearch` is the **default** for all interpolants. It resolves to `BinarySearch()` for scalar queries and `LinearBinarySearch()` for vector queries at call time.
 
 ```@docs
 AbstractSearchPolicy
 AutoSearch
-Binary
-Linear
-LinearBinary
+BinarySearch
+LinearSearch
+LinearBinarySearch
 ```
 
 ## Series Interpolant Types

@@ -54,7 +54,7 @@ val3d = itp3d((0.5, 1.0, 0.3))
 # Per-axis configuration
 itp = linear_interp((x, y), data;
     extrap=(NoExtrap(), WrapExtrap()),
-    search=(Binary(), LinearBinary())
+    search=(BinarySearch(), LinearBinarySearch())
 )
 ```
 """

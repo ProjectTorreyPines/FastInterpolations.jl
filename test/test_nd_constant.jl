@@ -290,16 +290,16 @@ end
         y = [0.0, 1.0, 2.0]
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
-        # Default Binary
+        # Default BinarySearch
         itp = constant_interp((x, y), data)
         @test itp((0.5, 0.5)) == 1.0
 
-        # LinearBinary
-        itp_lb = constant_interp((x, y), data; search=LinearBinary())
+        # LinearBinarySearch
+        itp_lb = constant_interp((x, y), data; search=LinearBinarySearch())
         @test itp_lb((0.5, 0.5)) == 1.0
 
         # Per-axis search
-        itp_mixed = constant_interp((x, y), data; search=(Binary(), LinearBinary()))
+        itp_mixed = constant_interp((x, y), data; search=(BinarySearch(), LinearBinarySearch()))
         @test itp_mixed((0.5, 0.5)) == 1.0
     end
 

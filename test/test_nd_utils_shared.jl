@@ -34,24 +34,24 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
     # ========================================
     @testset "_resolve_search_nd" begin
         @testset "broadcast single policy to N-tuple" begin
-            result = _resolve_search_nd(Binary(), Val(3))
+            result = _resolve_search_nd(BinarySearch(), Val(3))
             @test length(result) == 3
-            @test all(s -> s isa Binary, result)
+            @test all(s -> s isa BinarySearch, result)
 
-            result = _resolve_search_nd(LinearBinary(), Val(2))
+            result = _resolve_search_nd(LinearBinarySearch(), Val(2))
             @test length(result) == 2
-            @test all(s -> s isa LinearBinary, result)
+            @test all(s -> s isa LinearBinarySearch, result)
         end
 
         @testset "passthrough matching tuple" begin
-            policies = (Binary(), LinearBinary(), Linear())
+            policies = (BinarySearch(), LinearBinarySearch(), LinearSearch())
             result = _resolve_search_nd(policies, Val(3))
             @test result === policies
         end
 
         @testset "reject wrong-length tuple" begin
-            @test_throws ArgumentError _resolve_search_nd((Binary(), LinearBinary()), Val(3))
-            @test_throws ArgumentError _resolve_search_nd((Binary(), LinearBinary(), Linear(), LinearBinary(linear_window=0)), Val(3))
+            @test_throws ArgumentError _resolve_search_nd((BinarySearch(), LinearBinarySearch()), Val(3))
+            @test_throws ArgumentError _resolve_search_nd((BinarySearch(), LinearBinarySearch(), LinearSearch(), LinearBinarySearch(linear_window=0)), Val(3))
         end
     end
 

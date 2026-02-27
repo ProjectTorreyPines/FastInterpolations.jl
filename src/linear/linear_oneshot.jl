@@ -27,9 +27,9 @@ Zero-allocation linear interpolation with automatic dispatch:
 - `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative, `DerivOp(2)` second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
-  - `Binary()` (default): O(log n) binary search, stateless
-  - `LinearBinary(linear_window=0)`: O(1) if hint valid, O(log n) fallback
-  - `LinearBinary(linear_window=8)`: Linear search within window, then binary fallback
+  - `BinarySearch()` (default): O(log n) binary search, stateless
+  - `LinearBinarySearch(linear_window=0)`: O(1) if hint valid, O(log n) fallback
+  - `LinearBinarySearch(linear_window=8)`: Linear search within window, then binary fallback
 
 # Example
 ```julia
@@ -42,7 +42,7 @@ linear_interp!(out, rho, y, [-0.1, 1.2]; extrap=ExtendExtrap())  # linear extrap
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
 output = zeros(1000)
-linear_interp!(output, x_vec, y_vec, sorted_queries; search=LinearBinary(linear_window=8))
+linear_interp!(output, x_vec, y_vec, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 
 # Implementation Note
@@ -181,9 +181,9 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 - `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
-  - `Binary()` (default): O(log n) binary search, stateless
-  - `LinearBinary(linear_window=0)`: O(1) if hint valid, O(log n) fallback
-  - `LinearBinary(linear_window=8)`: Linear search within window, then binary fallback
+  - `BinarySearch()` (default): O(log n) binary search, stateless
+  - `LinearBinarySearch(linear_window=0)`: O(1) if hint valid, O(log n) fallback
+  - `LinearBinarySearch(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns
 - Always returns a floating-point type (Integer inputs auto-promoted to Float)

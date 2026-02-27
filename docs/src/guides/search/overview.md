@@ -19,13 +19,13 @@ y = x.^3
 
 # AutoSearch is the default — adapts automatically per call
 xq = rand(1000)
-linear_interp(x, y, xq)                         # AutoSearch → Binary() (random detected)
-linear_interp(x, y, xq; search=Binary())         # Explicit: same result
+linear_interp(x, y, xq)                         # AutoSearch → BinarySearch() (random detected)
+linear_interp(x, y, xq; search=BinarySearch())         # Explicit: same result
 
 # For sorted/monotonic queries
 xq_sorted = sort(xq)
-linear_interp(x, y, xq_sorted)                   # AutoSearch → LinearBinary() (sorted detected)
-linear_interp(x, y, xq_sorted; search=LinearBinary())  # Same result, explicit
+linear_interp(x, y, xq_sorted)                   # AutoSearch → LinearBinarySearch() (sorted detected)
+linear_interp(x, y, xq_sorted; search=LinearBinarySearch())  # Same result, explicit
 nothing # hide
 ```
 
@@ -33,10 +33,10 @@ nothing # hide
 
 | Policy | Best For | Complexity | Thread Safety |
 |:-------|:---------|:-----------|:--------------|
-| [`AutoSearch()`](@ref search_policies) | **General use (default)** — adapts per query type | Delegates to Binary/LinearBinary | ✓ Stateless |
-| [`Binary()`](@ref search_policies) | Random access (explicit) | O(log n) | ✓ Stateless |
-| [`LinearBinary()`](@ref search_policies) | **Monotonic queries (explicit)** | O(1) local, O(log n) fallback | ✓ With hint |
-| [`Linear()`](@ref search_policies) | Close + monotonic queries (expert) | O(1) amortized | ✓ With hint |
+| [`AutoSearch()`](@ref search_policies) | **General use (default)** — adapts per query type | Delegates to BinarySearch/LinearBinarySearch | ✓ Stateless |
+| [`BinarySearch()`](@ref search_policies) | Random access (explicit) | O(log n) | ✓ Stateless |
+| [`LinearBinarySearch()`](@ref search_policies) | **Monotonic queries (explicit)** | O(1) local, O(log n) fallback | ✓ With hint |
+| [`LinearSearch()`](@ref search_policies) | Close + monotonic queries (expert) | O(1) amortized | ✓ With hint |
 
 !!! note "Why No Hunt Algorithm?"
     The Hunt (correlated) algorithm offers *theoretical* O(log k) for nearby queries and O(log n) worst-case.
@@ -47,14 +47,14 @@ nothing # hide
 
 **Which policy should I use?**
 
-- **General use / unknown pattern** → `AutoSearch()` ✅ **default** — adapts per query type and access pattern (sorted→`LinearBinary`, random→`Binary`)
-- **Known random access** → `Binary()` (explicit; skips AutoSearch dispatch)
-- **Queries cluster in same region** → `LinearBinary(linear_window=0)` (hint check only)
-- **Known monotonic queries (sorted, streaming, ODE)** → `LinearBinary()` (explicit)
-- **Strictly monotonic, performance-critical** → `Linear()` (benchmark first! see below)
+- **General use / unknown pattern** → `AutoSearch()` ✅ **default** — adapts per query type and access pattern (sorted→`LinearBinarySearch`, random→`BinarySearch`)
+- **Known random access** → `BinarySearch()` (explicit; skips AutoSearch dispatch)
+- **Queries cluster in same region** → `LinearBinarySearch(linear_window=0)` (hint check only)
+- **Known monotonic queries (sorted, streaming, ODE)** → `LinearBinarySearch()` (explicit)
+- **Strictly monotonic, performance-critical** → `LinearSearch()` (benchmark first! see below)
 
-!!! note "Benchmark Before Choosing Linear()"
-    `Linear()` can be faster for some monotonic patterns but slower for others. Always benchmark with your actual query patterns.
+!!! note "Benchmark Before Choosing LinearSearch()"
+    `LinearSearch()` can be faster for some monotonic patterns but slower for others. Always benchmark with your actual query patterns.
 
 ## Next Steps
 

@@ -101,7 +101,7 @@ Writes results into `output`. No heap allocation beyond spacings.
 end
 
 # Function barrier for SoA paths: forces Julia to runtime-dispatch on the concrete
-# searches tuple type, resolving per-element Union{Binary,LinearBinary} before
+# searches tuple type, resolving per-element Union{BinarySearch,LinearBinarySearch} before
 # entering the @with_pool boundary. NOT @inline — specialization requires real call.
 function _linear_nd_soa_dispatch!(output, grids, data, queries, extraps, searches, ops, hints)
     _linear_interp_nd_oneshot_soa!(output, grids, data, queries, extraps, searches, ops, hints)

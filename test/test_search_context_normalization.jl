@@ -1,6 +1,6 @@
 using Test
 using FastInterpolations
-using FastInterpolations: search_interval, Searcher, Binary, Linear, LinearBinary,
+using FastInterpolations: search_interval, Searcher, BinarySearch, LinearSearch, LinearBinarySearch,
     AutoSearch, DirectSearch, NoHint, RefHint, DEFAULT_SEARCHER,
     _to_searcher, _resolve_search, _resolve_search_policy,
     _resolve_searcher_for_grid, ScalarSpacing, _create_spacing
@@ -21,9 +21,9 @@ using FastInterpolations: search_interval, Searcher, Binary, Linear, LinearBinar
 
     @testset "_resolve_searcher_for_grid (grid adaptation)" begin
         searchers = [
-            Searcher{Binary,NoHint}(NoHint()),
-            Searcher{LinearBinary{8},RefHint}(RefHint()),
-            Searcher{Linear,RefHint}(RefHint()),
+            Searcher{BinarySearch,NoHint}(NoHint()),
+            Searcher{LinearBinarySearch{8},RefHint}(RefHint()),
+            Searcher{LinearSearch,RefHint}(RefHint()),
             Searcher{DirectSearch,NoHint}(NoHint()),
         ]
 
@@ -40,7 +40,7 @@ using FastInterpolations: search_interval, Searcher, Binary, Linear, LinearBinar
 
         @testset "RefHint preservation on Range" begin
             hint_ref = Ref(42)
-            s = Searcher{LinearBinary{8},RefHint}(RefHint(hint_ref))
+            s = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint_ref))
             result = _resolve_searcher_for_grid(x_range, s)
             @test result isa Searcher{DirectSearch,RefHint}
             @test result.hint.idx === hint_ref
@@ -58,7 +58,7 @@ using FastInterpolations: search_interval, Searcher, Binary, Linear, LinearBinar
             # the same Searcher type as the 2-step resolve_policy+to_searcher chain.
             for grid in (x_vec, x_range)
                 for query in (xq_scalar, xq_sorted)
-                    for policy in (AutoSearch(), Binary(), LinearBinary(), Linear())
+                    for policy in (AutoSearch(), BinarySearch(), LinearBinarySearch(), LinearSearch())
                         for hint in (nothing, Ref(1))
                             resolved = _resolve_search_policy(grid, query, policy, hint)
                             expected = _to_searcher(resolved, hint)
@@ -71,7 +71,7 @@ using FastInterpolations: search_interval, Searcher, Binary, Linear, LinearBinar
         end
 
         @testset "Range grid → DirectSearch (all policies)" begin
-            for policy in (AutoSearch(), Binary(), LinearBinary(), Linear())
+            for policy in (AutoSearch(), BinarySearch(), LinearBinarySearch(), LinearSearch())
                 for hint in (nothing, Ref(1))
                     searcher = _resolve_search(x_range, xq_scalar, policy, hint)
                     @test searcher isa Searcher{DirectSearch}
@@ -79,24 +79,24 @@ using FastInterpolations: search_interval, Searcher, Binary, Linear, LinearBinar
             end
         end
 
-        @testset "Vector grid + explicit Binary + no hint → Binary" begin
-            s = _resolve_search(x_vec, xq_scalar, Binary(), nothing)
-            @test s isa Searcher{Binary,NoHint}
+        @testset "Vector grid + explicit BinarySearch + no hint → BinarySearch" begin
+            s = _resolve_search(x_vec, xq_scalar, BinarySearch(), nothing)
+            @test s isa Searcher{BinarySearch,NoHint}
         end
 
-        @testset "Vector grid + explicit Binary + hint → auto-upgrade to LinearBinary" begin
-            s = _resolve_search(x_vec, xq_scalar, Binary(), Ref(1))
-            @test s isa Searcher{LinearBinary{8},RefHint}
+        @testset "Vector grid + explicit BinarySearch + hint → auto-upgrade to LinearBinarySearch" begin
+            s = _resolve_search(x_vec, xq_scalar, BinarySearch(), Ref(1))
+            @test s isa Searcher{LinearBinarySearch{8},RefHint}
         end
 
-        @testset "Vector grid + AutoSearch + scalar → Binary" begin
+        @testset "Vector grid + AutoSearch + scalar → BinarySearch" begin
             s = _resolve_search(x_vec, xq_scalar, AutoSearch(), nothing)
-            @test s isa Searcher{Binary,NoHint}
+            @test s isa Searcher{BinarySearch,NoHint}
         end
 
-        @testset "Vector grid + AutoSearch + sorted vec → LinearBinary" begin
+        @testset "Vector grid + AutoSearch + sorted vec → LinearBinarySearch" begin
             s = _resolve_search(x_vec, xq_sorted, AutoSearch(), nothing)
-            @test s isa Searcher{LinearBinary{8},RefHint}
+            @test s isa Searcher{LinearBinarySearch{8},RefHint}
         end
     end
 
@@ -141,14 +141,14 @@ using FastInterpolations: search_interval, Searcher, Binary, Linear, LinearBinar
     @testset "Type inference" begin
         @testset "_resolve_search is inferrable" begin
             # Range: always DirectSearch (no Union)
-            @test @inferred(_resolve_search(x_range, 0.5, Binary(), nothing)) isa Searcher{DirectSearch,NoHint}
+            @test @inferred(_resolve_search(x_range, 0.5, BinarySearch(), nothing)) isa Searcher{DirectSearch,NoHint}
             @test @inferred(_resolve_search(x_range, 0.5, AutoSearch(), nothing)) isa Searcher{DirectSearch,NoHint}
-            @test @inferred(_resolve_search(x_range, 0.5, LinearBinary(), Ref(1))) isa Searcher{DirectSearch,RefHint}
+            @test @inferred(_resolve_search(x_range, 0.5, LinearBinarySearch(), Ref(1))) isa Searcher{DirectSearch,RefHint}
 
             # Vector + explicit policy: concrete type
-            @test @inferred(_resolve_search(x_vec, 0.5, Binary(), nothing)) isa Searcher{Binary,NoHint}
-            @test @inferred(_resolve_search(x_vec, 0.5, LinearBinary(), nothing)) isa Searcher{LinearBinary{8},RefHint}
-            @test @inferred(_resolve_search(x_vec, 0.5, Linear(), Ref(1))) isa Searcher{Linear,RefHint}
+            @test @inferred(_resolve_search(x_vec, 0.5, BinarySearch(), nothing)) isa Searcher{BinarySearch,NoHint}
+            @test @inferred(_resolve_search(x_vec, 0.5, LinearBinarySearch(), nothing)) isa Searcher{LinearBinarySearch{8},RefHint}
+            @test @inferred(_resolve_search(x_vec, 0.5, LinearSearch(), Ref(1))) isa Searcher{LinearSearch,RefHint}
         end
 
         @testset "_resolve_search_policy is inferrable" begin

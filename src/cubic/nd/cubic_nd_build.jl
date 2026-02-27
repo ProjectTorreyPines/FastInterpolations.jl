@@ -502,7 +502,7 @@ For d = 1 to N:
 
 # Partial Index Encoding (Example for N=3)
 
-| Index | BinarySearch | Partial Derivative | Built From |
+| Index | Binary | Partial Derivative | Built From |
 |-------|--------|-------------------|------------|
 | 1     | 000    | f                 | data (copy)|
 | 2     | 001    | ∂f/∂x₁            | d=1: diff f |

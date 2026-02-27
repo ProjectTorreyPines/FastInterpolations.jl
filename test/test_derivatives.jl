@@ -85,7 +85,7 @@ end # Derivative Core
 # ========================================
 @testset "Derivative Kernels" begin
 
-    @testset "LinearSearch kernels" begin
+    @testset "Linear kernels" begin
         # Test case: L(x) = 1 + 2x on [0, 1]
         # yL = L(0) = 1, yR = L(1) = 3
         # L(0.5) = 2, L'(x) = 2, L''(x) = 0
@@ -537,11 +537,11 @@ end # Derivative Kernels
 end # Cubic Derivatives
 
 # ========================================
-# Group 4: LinearSearch Derivative API
+# Group 4: Linear Derivative API
 # ========================================
-@testset "LinearSearch Derivatives" begin
+@testset "Linear Derivatives" begin
 
-    @testset "LinearSearch public API with deriv" begin
+    @testset "Linear public API with deriv" begin
 
         @testset "Constant slope segments" begin
             # Two segments with different slopes
@@ -629,7 +629,7 @@ end # Cubic Derivatives
         end
     end
 
-    @testset "LinearSearch extrapolation with deriv" begin
+    @testset "Linear extrapolation with deriv" begin
         x = [0.0, 1.0, 2.0]
         y = [0.0, 2.0, 6.0]  # slopes: 2.0, 4.0
 
@@ -715,7 +715,7 @@ end # Cubic Derivatives
         end
     end
 
-    @testset "LinearSearch Range optimization with deriv" begin
+    @testset "Linear Range optimization with deriv" begin
         # Range should use O(1) path
         x = 0.0:0.1:1.0
         y = collect(x) .^ 2
@@ -731,7 +731,7 @@ end # Cubic Derivatives
     # ========================================
 
     @testset "LinearInterpolant deriv keyword" begin
-        # LinearSearch function: y = 2x on [0,1] and y = 4x - 2 on [1,2]
+        # Linear function: y = 2x on [0,1] and y = 4x - 2 on [1,2]
         # Slopes: 2.0 on [0,1], 4.0 on [1,2]
         x = [0.0, 1.0, 2.0]
         y = [0.0, 2.0, 6.0]
@@ -752,7 +752,7 @@ end # Cubic Derivatives
         end
 
         @testset "deriv=DerivOp(2) returns zero" begin
-            # LinearSearch interpolation has no curvature
+            # Linear interpolation has no curvature
             @test litp(0.5; deriv=DerivOp(2)) === 0.0
             @test litp(1.0; deriv=DerivOp(2)) === 0.0
             @test litp(1.5; deriv=DerivOp(2)) === 0.0
@@ -768,7 +768,7 @@ end # Cubic Derivatives
         end
 
         @testset "deriv=DerivOp(2) returns zero" begin
-            # LinearSearch interpolation has no curvature
+            # Linear interpolation has no curvature
             @test litp(0.5; deriv=DerivOp(2)) === 0.0
             @test litp(1.0; deriv=DerivOp(2)) === 0.0
             @test litp(1.5; deriv=DerivOp(2)) === 0.0
@@ -810,7 +810,7 @@ end # Cubic Derivatives
         end
     end
 
-end # LinearSearch Derivatives
+end # Linear Derivatives
 
 # ========================================
 # Group 5: Periodic and Boundary Behavior
@@ -902,7 +902,7 @@ end # LinearSearch Derivatives
             @test itp(1.0; deriv=DerivOp(2)) ≈ 2.0 atol=1e-10
         end
 
-        @testset "LinearSearch at knot points" begin
+        @testset "Linear at knot points" begin
             x = [0.0, 1.0, 2.0, 3.0]
             y = [0.0, 1.0, 4.0, 9.0]  # slopes: 1, 3, 5
             itp = linear_interp(x, y)
@@ -961,7 +961,7 @@ end # Derivative Boundary Behavior
         @test @inferred(itp(x_query; deriv=DerivOp(2))) isa Vector{Float64}
     end
 
-    @testset "LinearSearch derivative type inference" begin
+    @testset "Linear derivative type inference" begin
         x = [0.0, 1.0, 2.0]
         y = [0.0, 1.0, 4.0]
         itp = linear_interp(x, y)
@@ -1004,7 +1004,7 @@ end # Derivative Boundary Behavior
         @test @inferred(cubic_interp(x, y, 0.5; deriv=DerivOp(1))) isa Float64
         @test @inferred(cubic_interp(x, y, 0.5; deriv=DerivOp(2))) isa Float64
 
-        # LinearSearch with deriv
+        # Linear with deriv
         @test @inferred(linear_interp(x, y, 0.5; deriv=DerivOp(0))) isa Float64
         @test @inferred(linear_interp(x, y, 0.5; deriv=DerivOp(1))) isa Float64
         @test @inferred(linear_interp(x, y, 0.5; deriv=DerivOp(2))) isa Float64
@@ -1037,7 +1037,7 @@ end # Derivative Type Stability
         @test itp(0.25; deriv=DerivOp(1)) isa Float64
         @test itp(0.25; deriv=DerivOp(2)) isa Float64
 
-        # LinearSearch minimum: 2 points
+        # Linear minimum: 2 points
         x_lin = [0.0, 1.0]
         y_lin = [0.0, 2.0]
         itp_lin = linear_interp(x_lin, y_lin)
@@ -1073,7 +1073,7 @@ end # Derivative Type Stability
         @test itp_linear(0.5; deriv=DerivOp(2)) ≈ 0.0 atol=1e-10
     end
 
-    @testset "LinearSearch function" begin
+    @testset "Linear function" begin
         x = collect(0.0:0.1:1.0)
         y = 2.0 .* x .+ 3.0  # f(x) = 2x + 3
 
@@ -1082,7 +1082,7 @@ end # Derivative Type Stability
         @test itp_cubic(0.5; deriv=DerivOp(1)) ≈ 2.0 atol=1e-10
         @test itp_cubic(0.5; deriv=DerivOp(2)) ≈ 0.0 atol=1e-10
 
-        # LinearSearch should be exact
+        # Linear should be exact
         itp_linear = linear_interp(x, y)
         @test itp_linear(0.5; deriv=DerivOp(1)) ≈ 2.0 atol=1e-10
         @test itp_linear(0.5; deriv=DerivOp(2)) ≈ 0.0 atol=1e-10
@@ -1173,7 +1173,7 @@ end # Derivative Edge Cases
         @test @allocated(itp(0.5; deriv=DerivOp(2))) <= DERIV_ALLOC_THRESHOLD
     end
 
-    @testset "LinearSearch allocation with deriv" begin
+    @testset "Linear allocation with deriv" begin
         x = collect(range(0.0, 1.0, 51))
         y = x .^ 2
         xi = 0.5
@@ -1482,7 +1482,7 @@ end # Derivative Allocations
         end
     end
 
-    @testset "LinearSearch Range path zero-allocation" begin
+    @testset "Linear Range path zero-allocation" begin
         x = 0.0:0.02:1.0
         y = collect(x) .^ 2
 
@@ -1766,7 +1766,7 @@ end # DerivativeView Wrapper
     end
 
     @testset "Lower-order kernels return zero" begin
-        # LinearSearch kernel (h=0.5, dL=0.2)
+        # Linear kernel (h=0.5, dL=0.2)
         @test FastInterpolations._linear_kernel(
             FastInterpolations.EvalDeriv3(), 1.0, 5.0, 0.5, 0.2
         ) === zero(Float64)
@@ -1893,14 +1893,14 @@ end # DerivativeView Wrapper
         @test_throws DomainError itp_none(-0.5; deriv=DerivOp(3))
     end
 
-    @testset "LinearSearch/Constant oneshot deriv=DerivOp(3) with constant extrapolation" begin
+    @testset "Linear/Constant oneshot deriv=DerivOp(3) with constant extrapolation" begin
         # This tests the _linear_eval_constant_extrap and _constant_eval_extrap
         # dispatch for EvalDeriv3, which returns zero outside domain
         x = collect(range(0.0, 1.0, 11))
         y_linear = 2.0 .* x
         y_const = fill(5.0, length(x))
 
-        # LinearSearch interpolation: deriv=DerivOp(3) with ConstExtrap() extrap outside domain
+        # Linear interpolation: deriv=DerivOp(3) with ConstExtrap() extrap outside domain
         @test linear_interp(x, y_linear, -0.5; extrap=ConstExtrap(), deriv=DerivOp(3)) === 0.0
         @test linear_interp(x, y_linear, 1.5; extrap=ConstExtrap(), deriv=DerivOp(3)) === 0.0
 
@@ -1976,7 +1976,7 @@ end # Deriv=3 Extensions
         @test vals3 ≈ itp(x_query; deriv=DerivOp(3))
     end
 
-    @testset "DerivativeView accepts vector queries - LinearSearch" begin
+    @testset "DerivativeView accepts vector queries - Linear" begin
         x = [0.0, 1.0, 2.0]
         y = [0.0, 2.0, 6.0]
         itp = linear_interp(x, y)
@@ -2289,7 +2289,7 @@ end # SeriesInterpolant Derivatives
         @test hint[] >= 1
     end
 
-    @testset "LinearSearch - search and hint keywords" begin
+    @testset "Linear - search and hint keywords" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y = [0.0, 2.0, 6.0, 12.0, 20.0]
         itp = linear_interp(x, y)
@@ -2487,7 +2487,7 @@ end # DerivativeView SeriesInterpolant search/hint keywords
         @test result2 === output
     end
 
-    @testset "Type stability - LinearSearch interpolant" begin
+    @testset "Type stability - Linear interpolant" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y = [0.0, 2.0, 6.0, 12.0, 20.0]
         itp = linear_interp(x, y)
@@ -2640,7 +2640,7 @@ end # DerivativeView type stability and performance
         # All interpolant types produce AbstractDerivativeView
         for (name, itp) in [
             ("Cubic", cubic_itp),
-            ("LinearSearch", linear_itp),
+            ("Linear", linear_itp),
             ("Quadratic", quad_itp),
             ("Constant", const_itp)
         ]

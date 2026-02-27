@@ -30,7 +30,7 @@ abstract type AbstractSearchPolicy end
 """
     BinarySearch <: AbstractSearchPolicy
 
-BinarySearch search algorithm. O(log n) per query for vectors, O(1) for ranges.
+Binary search algorithm. O(log n) per query for vectors, O(1) for ranges.
 Stateless and thread-safe. This is the default search policy.
 
 # Hint Behavior

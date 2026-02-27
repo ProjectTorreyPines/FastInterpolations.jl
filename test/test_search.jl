@@ -92,7 +92,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
     end
 
     # ========================================
-    # Hinted BinarySearch Search Tests
+    # Hinted Binary Search Tests
     # ========================================
 
     @testset "LinearBinarySearch{0} with RefHint" begin
@@ -143,7 +143,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
     end
 
     # ========================================
-    # Pure LinearSearch Search Tests
+    # Pure Linear Search Tests
     # ========================================
 
     @testset "LinearSearch (Pure) with RefHint" begin
@@ -243,13 +243,13 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
     end
 
     # ========================================
-    # LinearSearch BinarySearch Search Tests
+    # LinearBinarySearch Tests
     # ========================================
 
     @testset "LinearBinarySearch with RefHint" begin
         x = collect(range(0.0, 1.0, 101))
 
-        @testset "LinearSearch Search Success" begin
+        @testset "Linear Walk Success" begin
             hint = Ref(50)
             policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
 
@@ -269,7 +269,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test hint[] == 91
         end
 
-        @testset "Backward LinearSearch Search" begin
+        @testset "Backward Linear Walk" begin
             hint = Ref(60)
             policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
 
@@ -496,7 +496,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
     end
 
-    @testset "Coverage: Backward LinearSearch Search Hit" begin
+    @testset "Coverage: Backward Linear Walk Hit" begin
         # Grid: [0.0, 0.01, 0.02, ..., 1.0] - 101 points, 100 intervals
         # Interval i spans [x[i], x[i+1]) = [(i-1)*0.01, i*0.01)
         x = collect(range(0.0, 1.0, 101))
@@ -629,10 +629,10 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
     end
 
-    @testset "Coverage: Edge Cases in LinearSearch Search" begin
+    @testset "Coverage: Edge Cases in LinearBinarySearch" begin
         x = collect(range(0.0, 1.0, 101))
 
-        @testset "LinearSearch Search at Domain Boundaries" begin
+        @testset "LinearBinarySearch at Domain Boundaries" begin
             # Near left boundary
             hint = Ref(5)
             policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
@@ -648,7 +648,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test hint2[] == 100
         end
 
-        @testset "LinearSearch Search Backward at Left Edge" begin
+        @testset "LinearBinarySearch Backward at Left Edge" begin
             # Hint at 3, query at 0.0 - should clamp and handle
             hint = Ref(3)
             policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))

@@ -70,6 +70,7 @@ else
     include("test_nd_coverage.jl")
     include("test_nd_heterogeneous_grids.jl")
     include("test_nd_hint.jl")
+    include("test_nd_autosearch_peraxis.jl")
     include("test_nd_batch_inplace.jl")
     include("test_gradient_hessian.jl")
 

@@ -130,10 +130,10 @@ itp2(aq; deriv=DerivOp(1))     # Reuses same anchor for derivative
 @inline function _anchor_query(
     x::AbstractVector{T},
     xq::T,
-    ::Val{:linear};
+    ::Val{:linear},
     wrap::Bool=false,
-    searcher::Searcher=DEFAULT_SEARCHER
-) where {T<:AbstractFloat}
+    searcher::P=DEFAULT_SEARCHER
+) where {T<:AbstractFloat, P<:Searcher}
     return _linear_anchor_query_impl(x, xq, wrap, searcher)
 end
 
@@ -141,10 +141,10 @@ end
 @inline function _anchor_query(
     x::AbstractVector{Tg},
     xq::Tq,
-    tag::Val{:linear};
+    tag::Val{:linear},
     wrap::Bool=false,
-    searcher::Searcher=DEFAULT_SEARCHER
-) where {Tg<:AbstractFloat, Tq<:Real}
+    searcher::P=DEFAULT_SEARCHER
+) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
     xq_promoted = _promote_for_anchor(xq, Tg)
     return _linear_anchor_query_impl(x, xq_promoted, wrap, searcher)
 end
@@ -172,10 +172,10 @@ vals2 = itp2(aq_vec)  # Reuse same anchors
 function _anchor_query(
     x::AbstractVector{Tg},
     xq::AbstractVector{Tq},
-    ::Val{:linear};
+    ::Val{:linear},
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBinary())
-) where {Tg<:AbstractFloat, Tq<:Real}
+    searcher::P=_to_searcher(LinearBinary())
+) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
     Tq_promoted = promote_type(Tq, Tg)
     output = Vector{_LinearAnchoredQuery{Tg, Tq_promoted}}(undef, length(xq))
 
@@ -206,10 +206,10 @@ Uses `_promote_for_anchor` to preserve wider precision when `S` differs from `Tg
     buffer::AbstractVector{_LinearAnchoredQuery{Tg, Tq}},
     x::AbstractVector{Tg},
     xq::AbstractVector{S},
-    ::Val{:linear};
+    ::Val{:linear},
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBinary())
-) where {Tg<:AbstractFloat, Tq<:Real, S<:Real}
+    searcher::P=_to_searcher(LinearBinary())
+) where {Tg<:AbstractFloat, Tq<:Real, S<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 
     @inbounds for k in eachindex(xq)
@@ -273,7 +273,7 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
         @inbounds (n - 1, x[n-1], x[n])
     else
         # Inside domain: use policy-based interval search
-        search_interval(policy, x, xq_primal)
+        search_interval(_resolve_searcher(x, policy), x, xq_primal)
     end
 
     # Compute geometry

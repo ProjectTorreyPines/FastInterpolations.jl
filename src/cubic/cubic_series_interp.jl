@@ -143,8 +143,8 @@ Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
 # AD Support
 When `xq` is a ForwardDiff.Dual, the returned anchor preserves the Dual type.
 """
-@inline function _make_anchor(sitp::CubicSeriesInterpolant{Tg}, xq::Tq, searcher::Searcher=DEFAULT_SEARCHER) where {Tg, Tq<:Real}
-    return _anchor_query(sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=searcher)
+@inline function _make_anchor(sitp::CubicSeriesInterpolant{Tg}, xq::Tq, searcher::P=DEFAULT_SEARCHER) where {Tg, Tq<:Real, P<:Searcher}
+    return _anchor_query(sitp.cache.x, xq, Val(:cubic), _should_wrap(sitp), searcher)
 end
 
 """
@@ -810,7 +810,7 @@ derivatives. Output type is `promote_type(Tv, Tq)`.
 function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     xq::Tq;
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
@@ -819,7 +819,7 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     output = Vector{T_out}(undef, n_series(sitp))
 
     # Build anchor preserving Dual type in xq
-    resolved = _resolve_search(search, xq)
+    resolved = _resolve_search(sitp.cache.x, xq, search, hint)
     aq = _make_anchor(sitp, xq_promoted, _to_searcher(resolved, hint))
 
     _eval_series_at_anchor!(output, sitp, aq, deriv)
@@ -838,7 +838,7 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
     xq::Tq;
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     _validate_scalar_output(output, n_series(sitp))
@@ -847,7 +847,7 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     xq_promoted = _promote_for_anchor(xq, Tg)
 
     # Build anchor preserving Dual type in xq (for AD)
-    resolved = _resolve_search(search, xq)
+    resolved = _resolve_search(sitp.cache.x, xq, search, hint)
     aq = _make_anchor(sitp, xq_promoted, _to_searcher(resolved, hint))
 
     _eval_series_at_anchor!(output, sitp, aq, deriv)
@@ -872,7 +872,7 @@ For mixed-type queries (e.g., Float64 queries on Float32 grid), output type is
 function (sitp::CubicSeriesInterpolant{Tg,Tv})(
     xq::AbstractVector{Tq};
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     n_query = length(xq)
@@ -911,7 +911,7 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
     outputs::AbstractVector{<:AbstractVector},
     xq::AbstractVector{Tq};
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     n_query = length(xq)
@@ -933,9 +933,10 @@ Builds anchors from original `xq` (preserving precision in weights) for scalar/v
 
     # Build anchors - pool handles both Tq===Tg and mixed-type cases
     # Each unique type combination gets its own pool slot
-    resolved = _resolve_search(search, xq)
     aq_vec = acquire!(pool, _CubicAnchoredQuery{Tg,Tq}, n_query)
-    _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic); wrap=_should_wrap(sitp), searcher=_to_searcher(resolved, hint))
+    resolved = _resolve_search(sitp.cache.x, xq, search, hint)
+    searcher = _to_searcher(resolved, hint)
+    _fill_anchors!(aq_vec, sitp.cache.x, xq, Val(:cubic), _should_wrap(sitp), searcher)
 
     # Extract matrices for argument-passing pattern (series-contiguous layout)
     # This is faster than point-contiguous for vector queries because:

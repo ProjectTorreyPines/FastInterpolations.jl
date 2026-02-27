@@ -1,9 +1,9 @@
 using Test
 using FastInterpolations
 using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
-    Searcher, Binary, Linear, LinearBinary, AutoSearch,
+    Searcher, Binary, Linear, LinearBinary, AutoSearch, DirectSearch,
     NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, _create_spacing, _to_searcher,
-    _resolve_search
+    _resolve_search, _is_likely_monotone
 
 @testset "Search Module" begin
 
@@ -678,8 +678,8 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test LinearBinary(4) isa LinearBinary{4}
             @test LinearBinary(16) isa LinearBinary{16}
 
-            # Default is 2
-            @test LinearBinary() isa LinearBinary{2}
+            # Default is 8
+            @test LinearBinary() isa LinearBinary{8}
         end
 
         @testset "Invalid linear_window Throws ArgumentError" begin
@@ -750,7 +750,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @testset "Single Interpolant: stored policy is used by default" begin
             # Create with LinearBinary as default
             itp_lb = linear_interp(x, y; search=LinearBinary())
-            @test itp_lb.search_policy isa LinearBinary{2}
+            @test itp_lb.search_policy isa LinearBinary{8}
 
             # Create with LinearBinary{0} as default
             itp_hb = linear_interp(x, y; search=LinearBinary(linear_window=0))
@@ -829,7 +829,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
         @testset "LinearSeriesInterpolant stored policy" begin
             sitp = linear_interp(x, [y1, y2]; search=LinearBinary())
-            @test sitp.search_policy isa LinearBinary{2}
+            @test sitp.search_policy isa LinearBinary{8}
 
             # Scalar call uses stored policy
             hint = Ref(400)
@@ -1507,6 +1507,255 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test lap ≈ 4.0 atol=0.1
         end
 
+        # ========================================
+        # Unit Tests: _is_likely_monotone
+        # ========================================
+        @testset "_is_likely_monotone" begin
+            # Ascending → true
+            @test _is_likely_monotone(collect(1.0:100.0))
+            @test _is_likely_monotone(collect(1.0:0.5:50.0))
+
+            # Descending → true
+            @test _is_likely_monotone(collect(100.0:-1.0:1.0))
+            @test _is_likely_monotone(collect(50.0:-0.5:1.0))
+
+            # Random → false (with overwhelming probability)
+            rng_data = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0]
+            @test !_is_likely_monotone(rng_data)
+
+            # Too short (< K=8) → false
+            @test !_is_likely_monotone([1.0, 2.0, 3.0])
+            @test !_is_likely_monotone([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+
+            # Exactly K=8 elements → true if sorted
+            @test _is_likely_monotone(collect(1.0:8.0))
+            @test _is_likely_monotone(collect(8.0:-1.0:1.0))
+
+            # Exactly K=8 elements → false if not sorted
+            @test !_is_likely_monotone([1.0, 3.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+
+            # Flat (all equal) → ascending path returns true
+            @test _is_likely_monotone(fill(5.0, 10))
+
+            # Monotone prefix but unsorted later → still true (only checks first K)
+            v = collect(1.0:20.0)
+            v[15] = 0.0  # break monotonicity beyond K=8
+            @test _is_likely_monotone(v)
+        end
+
+        # ========================================
+        # Unit Tests: _resolve_search 3-arg (adaptive)
+        # ========================================
+        @testset "_resolve_search 3-arg adaptive" begin
+            auto = AutoSearch()
+            sorted = collect(1.0:100.0)
+            random = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0]
+
+            @testset "AutoSearch + sorted + no hint → LinearBinary" begin
+                @test _resolve_search(auto, sorted, nothing) isa LinearBinary
+            end
+
+            @testset "AutoSearch + random + no hint → Binary" begin
+                @test _resolve_search(auto, random, nothing) isa Binary
+            end
+
+            @testset "AutoSearch + short vector + no hint → Binary (too short for monotone check)" begin
+                @test _resolve_search(auto, [1.0, 2.0, 3.0], nothing) isa Binary
+            end
+
+            @testset "AutoSearch + hint present → fallback to _resolve_search (LinearBinary)" begin
+                # When hint is present, generic fallback delegates to _resolve_search
+                # _resolve_search(AutoSearch(), vector) → LinearBinary
+                @test _resolve_search(auto, random, Ref(1)) isa LinearBinary
+                @test _resolve_search(auto, sorted, Ref(1)) isa LinearBinary
+            end
+
+            @testset "Explicit policy passthrough" begin
+                @test _resolve_search(Binary(), sorted, nothing) === Binary()
+                @test _resolve_search(Binary(), random, Ref(1)) === Binary()
+                @test _resolve_search(LinearBinary(), random, nothing) isa LinearBinary
+                @test _resolve_search(Linear(), sorted, nothing) === Linear()
+            end
+
+            @testset "Scalar query → fallback to _resolve_search" begin
+                # Scalar: _resolve_search(AutoSearch(), scalar) → Binary
+                @test _resolve_search(auto, 0.5, nothing) isa Binary
+                @test _resolve_search(auto, 0.5, Ref(1)) isa Binary
+            end
+        end
+
+        # ========================================
+        # Correctness Regression: sorted vs random produce same results
+        # ========================================
+        @testset "Adaptive search correctness (sorted vs random same values)" begin
+            x = collect(range(0.0, 10.0, 1001))
+            y = sin.(x)
+            itp = linear_interp(x, y)
+
+            # Same query points, different orderings
+            xq_values = [0.5, 1.3, 2.7, 4.1, 5.5, 6.8, 7.2, 8.9, 9.1, 3.3]
+            xq_sorted = sort(xq_values)
+            xq_random = xq_values  # unsorted
+
+            vals_sorted = itp(xq_sorted)
+            vals_random = itp(xq_random)
+
+            # Results should match value-for-value (reorder sorted results to match random order)
+            perm = sortperm(xq_values)
+            for (i, p) in enumerate(perm)
+                @test vals_sorted[i] ≈ vals_random[p]
+            end
+
+            # Also test oneshot API
+            vals_sorted_os = linear_interp(x, y, xq_sorted)
+            vals_random_os = linear_interp(x, y, xq_random)
+            for (i, p) in enumerate(perm)
+                @test vals_sorted_os[i] ≈ vals_random_os[p]
+            end
+
+            # Cubic interpolant
+            itp_c = cubic_interp(x, y)
+            vals_sorted_c = itp_c(xq_sorted)
+            vals_random_c = itp_c(xq_random)
+            for (i, p) in enumerate(perm)
+                @test vals_sorted_c[i] ≈ vals_random_c[p]
+            end
+        end
+
+        # ========================================
+        # Zero-allocation: AutoSearch vector eval
+        # ========================================
+        @testset "AutoSearch vector eval zero-allocation" begin
+            function _test_adaptive_alloc_sorted()
+                x = collect(range(0.0, 10.0, 1001))
+                y = sin.(x)
+                itp = linear_interp(x, y)
+                xq = collect(range(0.1, 9.9, 1000))
+                out = Vector{Float64}(undef, 1000)
+
+                # Warmup
+                itp(out, xq)
+
+                # Measure
+                alloc = @allocated itp(out, xq)
+                return alloc
+            end
+
+            function _test_adaptive_alloc_random()
+                x = collect(range(0.0, 10.0, 1001))
+                y = sin.(x)
+                itp = linear_interp(x, y)
+                xq = [mod(i * 7.3, 9.8) + 0.1 for i in 1:1000]  # deterministic pseudo-random
+                out = Vector{Float64}(undef, 1000)
+
+                # Warmup
+                itp(out, xq)
+
+                # Measure
+                alloc = @allocated itp(out, xq)
+                return alloc
+            end
+
+            @test _test_adaptive_alloc_sorted() == 0
+            @test _test_adaptive_alloc_random() == 0
+        end
+
     end  # @testset "AutoSearch Resolution"
+
+    # ========================================
+    # DirectSearch: Range Grid Short-Circuit
+    # ========================================
+    @testset "DirectSearch Range Short-Circuit" begin
+
+        @testset "4-arg _resolve_search dispatch" begin
+            x_range = 0.0:0.1:1.0
+            x_vec   = collect(x_range)
+
+            # Range grid → DirectSearch (regardless of policy)
+            @test _resolve_search(x_range, 0.5, AutoSearch(), nothing) isa DirectSearch
+            @test _resolve_search(x_range, 0.5, Binary(), nothing)    isa DirectSearch
+            @test _resolve_search(x_range, 0.5, LinearBinary(), nothing) isa DirectSearch
+            @test _resolve_search(x_range, [0.1, 0.5], AutoSearch(), Ref(1)) isa DirectSearch
+
+            # Vector grid → delegates to 3-arg (NOT DirectSearch)
+            @test !(_resolve_search(x_vec, 0.5, AutoSearch(), nothing) isa DirectSearch)
+            @test _resolve_search(x_vec, 0.5, Binary(), nothing) === Binary()
+
+            # Pre-built Searcher passthrough (4-arg)
+            s = Searcher{Binary,NoHint}(NoHint())
+            @test _resolve_search(x_range, 0.5, s, nothing) === s
+            @test _resolve_search(x_vec, 0.5, s, nothing) === s
+        end
+
+        @testset "_to_searcher(DirectSearch())" begin
+            # NoHint variants — carries DirectSearch through
+            @test _to_searcher(DirectSearch()) isa Searcher{DirectSearch,NoHint}
+            @test _to_searcher(DirectSearch(), nothing) isa Searcher{DirectSearch,NoHint}
+
+            # RefHint variant
+            ref = Ref(5)
+            s = _to_searcher(DirectSearch(), ref)
+            @test s isa Searcher{DirectSearch,RefHint}
+            @test s.hint.idx === ref
+        end
+
+        @testset "search_interval DirectSearch+NoHint correctness" begin
+            x = 0.0:0.25:1.0
+            s = _to_searcher(DirectSearch())
+            result = search_interval(s, x, 0.3)
+            @test result[1] == 2
+            result2 = search_interval(s, x, 0.9)
+            @test result2[1] == 4
+            spacing = _create_spacing(x)
+            result3 = search_interval(s, x, spacing, 0.6)
+            @test result3[1] == 3
+        end
+
+        @testset "search_interval DirectSearch+RefHint correctness" begin
+            x = 0.0:0.25:1.0  # 5 points: [0.0, 0.25, 0.5, 0.75, 1.0]
+            hint_ref = Ref(1)
+            s = _to_searcher(DirectSearch(), hint_ref)
+
+            # search_interval returns (idx, xL, xR) tuple
+            # Query in middle → should find interval 2 (0.25..0.5)
+            result = search_interval(s, x, 0.3)
+            @test result[1] == 2
+            @test hint_ref[] == 2  # hint updated
+
+            # Query near end → should find interval 4 (0.75..1.0)
+            result2 = search_interval(s, x, 0.9)
+            @test result2[1] == 4
+            @test hint_ref[] == 4
+
+            # Query at start → interval 1
+            result3 = search_interval(s, x, 0.0)
+            @test result3[1] == 1
+            @test hint_ref[] == 1
+        end
+
+        @testset "search_interval DirectSearch+RefHint with spacing" begin
+            x = 0.0:0.5:2.0  # 5 points
+            spacing = _create_spacing(x)
+            hint_ref = Ref(1)
+            s = _to_searcher(DirectSearch(), hint_ref)
+
+            result = search_interval(s, x, spacing, 1.3)
+            @test result[1] == 3
+            @test hint_ref[] == 3
+        end
+
+        @testset "Type inference: no Union leakage" begin
+            x_range = 0.0:0.1:1.0
+            # 4-arg resolve on Range → DirectSearch (concrete, not Union)
+            @test @inferred(_resolve_search(x_range, 0.5, AutoSearch(), nothing)) isa DirectSearch
+            @test @inferred(_resolve_search(x_range, [0.1], AutoSearch(), Ref(1))) isa DirectSearch
+
+            # _to_searcher on DirectSearch → concrete Searcher types
+            @test @inferred(_to_searcher(DirectSearch())) isa Searcher{DirectSearch,NoHint}
+            @test @inferred(_to_searcher(DirectSearch(), nothing)) isa Searcher{DirectSearch,NoHint}
+            @test @inferred(_to_searcher(DirectSearch(), Ref(1))) isa Searcher{DirectSearch,RefHint}
+        end
+
+    end  # @testset "DirectSearch Range Short-Circuit"
 
 end  # @testset "Search Module"

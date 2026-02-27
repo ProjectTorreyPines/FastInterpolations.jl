@@ -12,9 +12,31 @@
 # Type parameters: Tg = grid type, Tv = value type, Tq = query type
 # ─────────────────────────────────────────────────────────────
 @inline function (itp::ConstantInterpolant{Tg,Tv})(xq::Tq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    resolved = _resolve_search(search, xq)
+    resolved = _resolve_search(itp.x, xq, search, nothing)
     searcher = _to_searcher(resolved, hint)
     _constant_eval_at_point(itp.x, itp.y, xq, itp.extrap, itp.side, deriv, searcher)
+end
+
+# ─────────────────────────────────────────────────────────────
+# Vector loop (function barrier)
+# Julia specializes on concrete Searcher type P, eliminating Union-split
+# overhead when adaptive AutoSearch resolves to Binary or LinearBinary.
+# CRITICAL: All arguments must be fully typed — untyped args prevent SROA
+# of RefHint's Ref, causing 16-byte heap allocation per call.
+# ─────────────────────────────────────────────────────────────
+@inline function _constant_vector_loop!(
+    output::AbstractVector,
+    x::AbstractVector{Tg},
+    y::AbstractVector{Tv},
+    xq::AbstractVector{<:Real},
+    extrap::E,
+    side::SD,
+    deriv::O,
+    searcher::P
+) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrap, SD<:AbstractSide, O<:AbstractEvalOp, P<:Searcher}
+    @inbounds for i in eachindex(xq, output)
+        output[i] = _constant_eval_at_point(x, y, xq[i], extrap, side, deriv, searcher)
+    end
 end
 
 # ─────────────────────────────────────────────────────────────
@@ -25,12 +47,10 @@ end
 function (itp::ConstantInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
-    resolved = _resolve_search(search, xq)
+    resolved = _resolve_search(itp.x, xq, search, hint)
     searcher = _to_searcher(resolved, hint)
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    @inbounds for i in eachindex(xq, output)
-        output[i] = _constant_eval_at_point(itp.x, itp.y, xq[i], itp.extrap, itp.side, deriv, searcher)
-    end
+    _constant_vector_loop!(output, itp.x, itp.y, xq, itp.extrap, itp.side, deriv, searcher)
     return output
 end
 
@@ -39,12 +59,10 @@ end
 # ─────────────────────────────────────────────────────────────
 function (itp::ConstantInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
-    resolved = _resolve_search(search, xq)
+    resolved = _resolve_search(itp.x, xq, search, hint)
     searcher = _to_searcher(resolved, hint)
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    @inbounds for i in eachindex(xq, output)
-        output[i] = _constant_eval_at_point(itp.x, itp.y, xq[i], itp.extrap, itp.side, deriv, searcher)
-    end
+    _constant_vector_loop!(output, itp.x, itp.y, xq, itp.extrap, itp.side, deriv, searcher)
     return output
 end
 

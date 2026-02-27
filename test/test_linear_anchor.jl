@@ -121,19 +121,19 @@ using FastInterpolations
         x = collect(range(0.0, 1.0, 11))  # domain [0, 1]
 
         # Query outside domain with wrap=true
-        aq_wrap = FastInterpolations._anchor_query(x, 1.5, Val(:linear); wrap=true)
+        aq_wrap = FastInterpolations._anchor_query(x, 1.5, Val(:linear), true)
         @test aq_wrap.xq ≈ 0.5  # 1.5 wraps to 0.5
         @test aq_wrap.side == 0x00  # inside after wrap
 
         # Query below domain with wrap=true
-        aq_wrap_neg = FastInterpolations._anchor_query(x, -0.3, Val(:linear); wrap=true)
+        aq_wrap_neg = FastInterpolations._anchor_query(x, -0.3, Val(:linear), true)
         @test aq_wrap_neg.xq ≈ 0.7  # -0.3 + 1.0 = 0.7
         @test aq_wrap_neg.side == 0x00
 
         # Verify wrapped evaluation matches
         y = sin.(2π .* x)
         itp = linear_interp(x, y; extrap=WrapExtrap())
-        aq = FastInterpolations._anchor_query(x, 1.5, Val(:linear); wrap=true)
+        aq = FastInterpolations._anchor_query(x, 1.5, Val(:linear), true)
         @test itp(aq) ≈ itp(1.5)
     end
 
@@ -385,9 +385,9 @@ using FastInterpolations
             x = collect(range(0.0, 1.0, 101))
             xq = [-0.3, 0.5, 1.3, 2.5]
 
-            expected = FI._anchor_query(x, xq, Val(:linear); wrap=true)
+            expected = FI._anchor_query(x, xq, Val(:linear), true)
             buffer = Vector{FI._LinearAnchoredQuery{Float64, Float64}}(undef, length(xq))
-            FI._fill_anchors!(buffer, x, xq, Val(:linear); wrap=true)
+            FI._fill_anchors!(buffer, x, xq, Val(:linear), true)
 
             for i in eachindex(xq)
                 @test buffer[i].idx == expected[i].idx

@@ -90,10 +90,10 @@ itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
 @inline function _anchor_query(
     x::AbstractVector{Tg},
     xq::Tq,
-    ::Val{:quadratic};
+    ::Val{:quadratic},
     wrap::Bool=false,
-    searcher::Searcher=DEFAULT_SEARCHER
-) where {Tg<:AbstractFloat, Tq<:Real}
+    searcher::P=DEFAULT_SEARCHER
+) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
     return _quadratic_anchor_query_impl(x, xq, wrap, searcher)
 end
 
@@ -130,10 +130,10 @@ AD is not supported for vector queries (use scalar queries for ForwardDiff).
 function _anchor_query(
     x::AbstractVector{T},
     xq::AbstractVector{S},
-    ::Val{:quadratic};
+    ::Val{:quadratic},
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBinary())
-) where {T<:AbstractFloat, S<:Real}
+    searcher::P=_to_searcher(LinearBinary())
+) where {T<:AbstractFloat, S<:Real, P<:Searcher}
     output = Vector{_QuadraticAnchoredQuery{T,T}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
@@ -167,10 +167,10 @@ When buffer element type is `{Tg, Tq}` and `xq` element type is `S`:
     buffer::AbstractVector{_QuadraticAnchoredQuery{Tg, Tq}},
     x::AbstractVector{Tg},
     xq::AbstractVector{S},
-    ::Val{:quadratic};
+    ::Val{:quadratic},
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBinary())
-) where {Tg<:AbstractFloat, Tq<:Real, S<:Real}
+    searcher::P=_to_searcher(LinearBinary())
+) where {Tg<:AbstractFloat, Tq<:Real, S<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 
     @inbounds for k in eachindex(xq)
@@ -235,7 +235,7 @@ while preserving the full Dual value for `dL` computation.
         @inbounds (n - 1, x[n-1], x[n])
     else
         # Inside domain: use policy-based interval search
-        search_interval(policy, x, xq_primal)
+        search_interval(_resolve_searcher(x, policy), x, xq_primal)
     end
 
     # Compute dL: offset from interval start

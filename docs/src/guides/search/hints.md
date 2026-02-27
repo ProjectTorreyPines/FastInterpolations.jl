@@ -30,18 +30,18 @@ External hints are particularly useful for:
 
 ## Auto-Upgrade Behavior
 
-When you provide a `hint` argument with `Binary()`, the search automatically upgrades to `LinearBinary{2}`:
+When you provide a `hint` argument with `Binary()`, the search automatically upgrades to `LinearBinary()` (default window):
 
 ```julia
 hint = Ref(1)
-val = itp(0.5; search=Binary(), hint=hint)  # auto-upgrades to LinearBinary{2}
+val = itp(0.5; search=Binary(), hint=hint)  # auto-upgrades to LinearBinary{8}
 ```
 
-This also works with the default `AutoSearch()` — scalar queries resolve to `Binary()`, and if a hint is provided, they auto-upgrade to `LinearBinary{2}`:
+This also works with the default `AutoSearch()` — scalar queries resolve to `Binary()`, and if a hint is provided, they auto-upgrade to `LinearBinary()`:
 
 ```julia
 hint = Ref(1)
-val = itp(0.5; hint=hint)  # AutoSearch → Binary() → auto-upgrades to LinearBinary{2}
+val = itp(0.5; hint=hint)  # AutoSearch → Binary() → auto-upgrades to LinearBinary{8}
 ```
 
 Without a hint, binary search is used (no hint tracking).
@@ -110,17 +110,17 @@ results = itp(queries)  # O(n) total instead of O(n log n)
 
 ### Random Access Pattern
 
-For random access, hints provide no benefit. The default `AutoSearch()` already resolves to `Binary()` for vector queries on random data — or use `Binary()` explicitly:
+For random access, hints provide no benefit. The default `AutoSearch()` detects random patterns via a prefix monotonicity check and resolves to `Binary()` automatically:
 
 ```julia
 x = collect(range(0.0, 10.0, 10001))
 y = sin.(2π .* x)
 itp = linear_interp(x, y)  # stores AutoSearch (default)
 
-# Random queries → AutoSearch resolves to LinearBinary, but explicit Binary is faster for random
+# Random queries → AutoSearch detects non-monotonic prefix → Binary()
 random_queries = rand(100_000) .* 10
-results = itp(random_queries)                          # AutoSearch → LinearBinary
-results = itp(random_queries; search=Binary())         # explicit Binary — better for random
+results = itp(random_queries)                          # AutoSearch → Binary (adaptive)
+results = itp(random_queries; search=Binary())         # explicit Binary — same result
 ```
 
 ### Shared Hint Across Multiple Interpolants

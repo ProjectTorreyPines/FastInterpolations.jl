@@ -112,8 +112,8 @@ fall in adjacent or nearby intervals.
 # Construction
 Use the factory function (recommended) to construct with a curated set of values:
 ```julia
-LinearBinary()                   # default MAX=2
-LinearBinary(linear_window=0)    # hint check only, no walk 
+LinearBinary()                   # default MAX=8
+LinearBinary(linear_window=0)    # hint check only, no walk
 LinearBinary(linear_window=4)    # custom MAX=4
 ```
 
@@ -134,7 +134,7 @@ struct LinearBinary{MAX} <: AbstractSearchPolicy end
 
 """
     LinearBinary(linear_window::Integer)
-    LinearBinary(; linear_window::Integer=2)
+    LinearBinary(; linear_window::Integer=8)
 
 Factory constructor for `LinearBinary{MAX}` with a **curated set of `linear_window` values**.
 
@@ -147,7 +147,7 @@ By restricting to powers of 2, we limit specialization to just 7 variants while
 covering the practical range of use cases.
 
 # Arguments
-- `linear_window::Integer=2`: Size of the linear search window before binary fallback.
+- `linear_window::Integer=8`: Size of the linear search window before binary fallback.
   **Allowed values**: `0, 1, 2, 4, 8, 16, 32, 64, 128`
 
 # Throws
@@ -155,17 +155,18 @@ covering the practical range of use cases.
 
 # Example
 ```julia
-policy = LinearBinary()                  # LinearBinary{2}()  (default)
-policy = LinearBinary(linear_window=4)   # LinearBinary{4}()
-policy = LinearBinary(linear_window=8)   # LinearBinary{8}()
+policy = LinearBinary()                  # LinearBinary{8}()  (default)
+policy = LinearBinary(linear_window=2)   # LinearBinary{2}()
+policy = LinearBinary(linear_window=16)  # LinearBinary{16}()
 policy = LinearBinary(linear_window=3)   # ERROR: ArgumentError
 ```
 
 # Choosing `linear_window`
 - **Zero (0)**: Hint check only, no walk — minimal random-query overhead.
-- **Small values (1–2)**: Minimal overhead, best for default usage and mixed query patterns
-- **Medium values (4–16)**: Good balance for known-sorted query patterns
-- **Large values (32–128)**: For highly localized queries or very large datasets
+- **Small values (1–2)**: Minimal overhead for mixed query patterns
+- **Medium values (4)**: Good for narrow jitter patterns (step size < 2 intervals)
+- **Default (8)**: Best balance — +2.5ns random overhead, covers jitter up to ~6 intervals
+- **Large values (16–128)**: For wide jitter, highly localized, or very large datasets
 """
 function LinearBinary(linear_window::Integer)
     linear_window == 0  && return LinearBinary{0}()
@@ -179,7 +180,7 @@ function LinearBinary(linear_window::Integer)
     linear_window == 128 && return LinearBinary{128}()
     throw(ArgumentError("`linear_window` must be one of (0, 1, 2, 4, 8, 16, 32, 64, 128), got $linear_window"))
 end
-LinearBinary(; linear_window::Integer=2) = LinearBinary(linear_window)
+LinearBinary(; linear_window::Integer=8) = LinearBinary(linear_window)
 
 """
     AutoSearch <: AbstractSearchPolicy
@@ -203,6 +204,48 @@ itp(0.5; search=LinearBinary())        # override: use LinearBinary explicitly
 See also: [`Binary`](@ref), [`LinearBinary`](@ref)
 """
 struct AutoSearch <: AbstractSearchPolicy end
+
+"""
+    DirectSearch <: AbstractSearchPolicy
+
+Internal policy for Range grids where interval lookup is always O(1) direct computation.
+Short-circuits the adaptive resolution pipeline to avoid Union type propagation from
+`_resolve_search(::AutoSearch, ::Vector, ::Nothing)` → `Union{Binary, LinearBinary{N}}`.
+
+Not exported. Created automatically by the 4-arg `_resolve_search` when the grid is `AbstractRange`.
+"""
+struct DirectSearch <: AbstractSearchPolicy end
+
+# ----------------------------------------
+# Prefix Monotonicity Check (for adaptive AutoSearch)
+# ----------------------------------------
+
+"""
+    _is_likely_monotone(xq::AbstractVector{<:Real}, ::Val{K}=Val(8)) -> Bool
+
+Check if the first K elements of `xq` are monotonically ordered (ascending or descending).
+Used by adaptive AutoSearch to choose between LinearBinary and Binary for vector queries.
+Returns `false` for short vectors (length < K) since LinearBinary offers negligible benefit.
+
+False positive rate: 1/K! ≈ 2.5e-5 for K=8 (random data appearing sorted in first K elements).
+"""
+@inline function _is_likely_monotone(xq::AbstractVector{<:Real}, ::Val{K}=Val(8)) where {K}
+    n = length(xq)
+    n < K && return false
+    @inbounds begin
+        ascending = xq[2] >= xq[1]
+        if ascending
+            for i in 2:K
+                xq[i] < xq[i-1] && return false
+            end
+        else
+            for i in 2:K
+                xq[i] > xq[i-1] && return false
+            end
+        end
+    end
+    return true
+end
 
 # ----------------------------------------
 # AutoSearch Resolution (query-type adaptive)
@@ -231,6 +274,30 @@ struct AutoSearch <: AbstractSearchPolicy end
 # Tuple of policies: resolve each element (for ND per-axis storage)
 @inline _resolve_search(ps::Tuple{Vararg{AbstractSearchPolicy}}, query) =
     map(p -> _resolve_search(p, query), ps)
+
+# 3-arg form: adaptive vector resolution with hint awareness.
+# When hint=nothing + AutoSearch + Real vector, checks prefix monotonicity
+# to choose Binary (random) vs LinearBinary (sorted).
+# When hint IS provided, the caller already has state tied to a specific search
+# strategy, so we skip adaptive resolution and defer to the 2-arg form —
+# AutoSearch+vector already resolves to LinearBinary there, which is correct
+# because hinted callers expect walk-based locality.
+@inline _resolve_search(search, xq, hint) = _resolve_search(search, xq)
+
+@inline function _resolve_search(::AutoSearch, xq::AbstractVector{<:Real}, ::Nothing)
+    _is_likely_monotone(xq) ? LinearBinary() : Binary()
+end
+
+# ----------------------------------------
+# 4-arg form: grid-aware resolution (Range short-circuit)
+# ----------------------------------------
+# Range grids always use O(1) _search_direct — no search resolution needed.
+# Returning DirectSearch() avoids Union{Binary, LinearBinary{N}} from adaptive
+# resolution, eliminating LLVM union-splitting in hot loops.
+
+@inline _resolve_search(::AbstractRange, xq, ::AbstractSearchPolicy, hint) = DirectSearch()
+@inline _resolve_search(::AbstractVector, xq, search::AbstractSearchPolicy, hint) = _resolve_search(search, xq, hint)
+# Searcher passthrough for 4-arg form: defined after Searcher struct (see below)
 
 # ----------------------------------------
 # Hint Types (Internal)
@@ -300,6 +367,7 @@ end
 # Searcher passthrough for _resolve_search: pre-built Searcher objects skip resolution.
 # Must be defined after Searcher struct (Julia requires types to be defined before use).
 @inline _resolve_search(s::Searcher, _) = s
+@inline _resolve_search(_, _, s::Searcher, _) = s  # 4-arg form passthrough
 
 """
     DEFAULT_SEARCHER
@@ -343,6 +411,12 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
 @inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = _to_searcher(LinearBinary(), hint)  # auto-upgrade to default LinearBinary
 
+# DirectSearch: Range grids only. Carries DirectSearch through to Searcher
+# so search_interval dispatches on policy type alone (no grid-type branching).
+@inline _to_searcher(::DirectSearch) = Searcher{DirectSearch,NoHint}(NoHint())
+@inline _to_searcher(::DirectSearch, ::Nothing) = Searcher{DirectSearch,NoHint}(NoHint())
+@inline _to_searcher(::DirectSearch, hint::Base.RefValue{Int}) = Searcher{DirectSearch,RefHint}(RefHint(hint))
+
 # ----------------------------------------
 # Searcher passthrough (advanced usage)
 # ----------------------------------------
@@ -352,6 +426,16 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(s::Searcher) = s
 @inline _to_searcher(s::Searcher, ::Nothing) = s
 @inline _to_searcher(s::Searcher, ::Base.RefValue{Int}) = s  # already configured, hint ignored
+
+# ----------------------------------------
+# Searcher resolution for pre-baked Searchers (anchor paths)
+# ----------------------------------------
+# Converts any Searcher to DirectSearch variant when grid is AbstractRange.
+# Used by anchor paths where the Searcher is constructed before the grid type is known.
+# P<:AbstractSearchPolicy bound required to avoid method ambiguity with the catchall.
+@inline _resolve_searcher(::AbstractRange, ::Searcher{P,NoHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,NoHint}(NoHint())
+@inline _resolve_searcher(::AbstractRange, s::Searcher{P,RefHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,RefHint}(s.hint)
+@inline _resolve_searcher(_, s::Searcher) = s
 
 # ========================================
 # 2. Base Implementations
@@ -561,6 +645,88 @@ No bounds checking (except initial clamp), no binary fallback.
     end
 end
 
+# --- Walk helpers: @generated manual unroll (avoids LLVM loop peeling bloat) ---
+#
+# @generated produces flat, loop-free code at compile time. This prevents LLVM's
+# loop peeling/splitting that inflates `for _ in 1:N` from 59 to 160 instructions for N=2.
+#
+# For MAX ≤ 16: fully unrolled flat code (optimal for common window sizes).
+# For MAX > 16: while-loop (avoids excessive code size; these are rare explicit opt-in values).
+#
+# Bounds checks (ix <= 1 / ix >= n-1) are kept per-step rather than factored out to a
+# call-site guard. Benchmarking showed that a `ix > MAX ? unchecked() : checked()` ternary
+# at the call site prevents LLVM from inlining both paths, costing more than the bounds
+# checks save. The per-step checks are nearly free: branch predictor is 99%+ accurate
+# when hint is not near grid boundary (the common case).
+
+const _WALK_UNROLL_THRESHOLD = 16
+
+"""
+Walk left up to MAX steps. Returns `(ix, found)`.
+
+- MAX ≤ $_WALK_UNROLL_THRESHOLD: flat unrolled code (no loops, forward branches only)
+- MAX > $_WALK_UNROLL_THRESHOLD: while-loop (bounded code size for large windows)
+"""
+@generated function _walk_left(x::AbstractVector, xq, ix::Int, ::Val{MAX}) where {MAX}
+    MAX == 0 && return :(return (ix, false))
+    if MAX <= _WALK_UNROLL_THRESHOLD
+        # Flat unroll: prevents LLVM loop peeling bloat
+        stmts = Expr[]
+        for _ in 1:MAX
+            push!(stmts, quote
+                ix <= 1 && return (ix, false)
+                ix -= 1
+                @inbounds x[ix] <= xq && return (ix, true)
+            end)
+        end
+        quote
+            $(stmts...)
+            return (ix, false)
+        end
+    else
+        # While-loop for large windows (avoids excessive code size)
+        quote
+            lo = max(1, ix - $MAX)
+            @inbounds while ix > lo
+                ix -= 1
+                x[ix] <= xq && return (ix, true)
+            end
+            return (ix, false)
+        end
+    end
+end
+
+"""
+Walk right up to MAX steps. Returns `(ix, found)`.
+Same @generated strategy as `_walk_left`.
+"""
+@generated function _walk_right(x::AbstractVector, xq, ix::Int, n::Int, ::Val{MAX}) where {MAX}
+    MAX == 0 && return :(return (ix, false))
+    if MAX <= _WALK_UNROLL_THRESHOLD
+        stmts = Expr[]
+        for _ in 1:MAX
+            push!(stmts, quote
+                ix >= n - 1 && return (ix, false)
+                ix += 1
+                @inbounds xq < x[ix + 1] && return (ix, true)
+            end)
+        end
+        quote
+            $(stmts...)
+            return (ix, false)
+        end
+    else
+        quote
+            hi = min(n - 1, ix + $MAX)
+            @inbounds while ix < hi
+                ix += 1
+                xq < x[ix + 1] && return (ix, true)
+            end
+            return (ix, false)
+        end
+    end
+end
+
 """
     _search_linear_binary!(x, xq, hint_ref, ::Val{MAX}) -> (idx, xL, xR)
 
@@ -573,6 +739,7 @@ Optimal for monotonic query sequences.
   are already valid, so the clamp is a no-op on the hot path.
 - No hint write on direct hit: `ix` is unchanged, skip redundant `hint_ref[] = ix`
 - Single comparison per linear step: direction already determines one bound
+- @generated walk helpers produce flat, loop-free code to avoid LLVM loop peeling bloat
 """
 @inline function _search_linear_binary!(
     x::AbstractVector{T},
@@ -594,20 +761,14 @@ Optimal for monotonic query sequences.
             # Walk left: xq < x[ix] guaranteed ⟹ after ix-=1,
             # x[ix+1] = old x[ix] > xq — right bound already satisfied.
             # Only need: x[ix] <= xq  (single comparison per step)
-            lo = max(1, ix - MAX)
-            while ix > lo
-                ix -= 1
-                x[ix] <= xq && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
-            end
+            ix, found = _walk_left(x, xq, ix, Val(MAX))
+            found && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
         else  # xq >= xR
             # Walk right: xq >= x[ix+1] guaranteed ⟹ after ix+=1,
             # x[ix] = old x[ix+1] <= xq — left bound already satisfied.
             # Only need: xq < x[ix+1]  (single comparison per step)
-            hi = min(n - 1, ix + MAX)
-            while ix < hi
-                ix += 1
-                xq < x[ix + 1] && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
-            end
+            ix, found = _walk_right(x, xq, ix, n, Val(MAX))
+            found && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
         end
     end
     # Binary fallback — full range (narrowing saves < 1 iteration, not worth extra branches)
@@ -730,6 +891,22 @@ end
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 
 @inline search_interval(p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) where {MAX} =
+    _search_direct!(x, spacing, xq, p.hint.idx)
+
+# --- DirectSearch + NoHint (Range grids, zero-overhead) ---
+@inline search_interval(::Searcher{DirectSearch,NoHint}, x::AbstractRange, xq::Real) =
+    _search_direct(x, xq)
+
+@inline search_interval(::Searcher{DirectSearch,NoHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
+    _search_direct(x, spacing, xq)
+
+# --- DirectSearch + RefHint (Range grids with persistent hint) ---
+# DirectSearch is only created for Range grids, so only Range methods are needed.
+
+@inline search_interval(p::Searcher{DirectSearch,RefHint}, x::AbstractRange, xq::Real) =
+    _search_direct!(x, xq, p.hint.idx)
+
+@inline search_interval(p::Searcher{DirectSearch,RefHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
     _search_direct!(x, spacing, xq, p.hint.idx)
 
 # ========================================

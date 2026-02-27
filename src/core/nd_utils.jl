@@ -132,6 +132,66 @@ end
     return map(p -> _resolve_search(p, query_sample), tuple)
 end
 
+# 4-arg form: adaptive ND resolution with hint awareness.
+# All non-SoA or hinted cases fall through to the 3-arg form above.
+@inline _resolve_search_nd(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
+
+# SoA Real vectors + no hint → per-axis adaptive resolution.
+# Each axis independently checks monotonicity via 1D _resolve_search(policy, vec, nothing):
+#   AutoSearch axes → _is_likely_monotone per axis → Binary or LinearBinary
+#   Explicit policy axes → passthrough unchanged
+# Uses map (not ntuple closure) to avoid closure heap allocation.
+@inline function _resolve_search_nd(
+    s, ::Val{N},
+    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+    ::Nothing
+) where {N}
+    tuple = _resolve_search_nd(s, Val(N))
+    return map(_resolve_search_nohint, tuple, queries)
+end
+
+# Named helper for map — avoids closure capture in _resolve_search_nd.
+# Forwards to 3-arg _resolve_search with hint=nothing, triggering adaptive
+# monotonicity check for AutoSearch axes.
+@inline _resolve_search_nohint(p, q) = _resolve_search(p, q, nothing)
+
+# ----------------------------------------
+# All-or-Nothing Adaptive Resolution (Oneshot SoA)
+# ----------------------------------------
+#
+# For oneshot SoA paths, per-axis adaptive creates Tuple{Union{Binary,LB}, ...}
+# — per-element Union that Julia boxes during tuple construction (144+ bytes).
+#
+# Solution: all-or-nothing — check all AutoSearch axes, return uniform type.
+# If ALL AutoSearch axes are monotone → all AutoSearch → LinearBinary.
+# If ANY AutoSearch axis is non-monotone → all AutoSearch → Binary.
+# Explicit (non-AutoSearch) policies pass through unchanged.
+#
+# Return type is Union{ConcreteA, ConcreteB} — a 2-way Union of concrete tuple
+# types that Julia union-splits at the function barrier.
+
+# Named helpers for map — avoid closure capture.
+@inline _autosearch_to_lb(::AutoSearch) = LinearBinary()
+@inline _autosearch_to_lb(p::AbstractSearchPolicy) = p
+@inline _autosearch_to_binary(::AutoSearch) = Binary()
+@inline _autosearch_to_binary(p::AbstractSearchPolicy) = p
+@inline _check_axis_monotone(::AutoSearch, q) = _is_likely_monotone(q)
+@inline _check_axis_monotone(::AbstractSearchPolicy, _) = true
+
+# SoA Real vectors + no hint → all-or-nothing adaptive resolution.
+@inline function _resolve_search_nd_uniform(
+    s, ::Val{N},
+    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+    ::Nothing
+) where {N}
+    tuple = _resolve_search_nd(s, Val(N))  # broadcast only, no resolution
+    all_mono = all(map(_check_axis_monotone, tuple, queries))
+    return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
+end
+
+# Non-SoA, hinted, or other → standard 3-arg type-based (already concrete).
+@inline _resolve_search_nd_uniform(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
+
 # ========================================
 # Boundary Condition Resolution
 # ========================================
@@ -320,9 +380,9 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 # search_interval returns (idx, L, R) with the same concrete element type regardless
 # of spacing type (ScalarSpacing or VectorSpacing), so results is homogeneous.
 @inline _search_axis(q, grid, spacing, search) =
-    @inbounds search_interval(_to_searcher(search), grid, spacing, q)
+    @inbounds search_interval(_to_searcher(_resolve_search(grid, q, search, nothing)), grid, spacing, q)
 @inline _search_axis_hint(q, grid, spacing, search, hint) =
-    @inbounds search_interval(_to_searcher(search, hint), grid, spacing, q)
+    @inbounds search_interval(_to_searcher(_resolve_search(grid, q, search, hint), hint), grid, spacing, q)
 @inline _getidx(r) = r[1]
 @inline _getL(r)   = r[2]
 @inline _getR(r)   = r[3]
@@ -399,8 +459,10 @@ interpolant type then post-processes into its kernel-specific cell tuple.
     x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
     y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
 
-    searcher_x = _to_searcher(search_x, _get_axis_hint(hints, 1))
-    searcher_y = _to_searcher(search_y, _get_axis_hint(hints, 2))
+    hint_x = _get_axis_hint(hints, 1)
+    hint_y = _get_axis_hint(hints, 2)
+    searcher_x = _to_searcher(_resolve_search(grid_x, x_eval, search_x, hint_x), hint_x)
+    searcher_y = _to_searcher(_resolve_search(grid_y, y_eval, search_y, hint_y), hint_y)
     ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
     iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
 

@@ -193,10 +193,10 @@ in `xq` and weight fields, enabling automatic differentiation.
 @inline function _anchor_query(
     x::AbstractVector{Tg},
     xq::Tq,
-    ::Val{:cubic};
+    ::Val{:cubic},
     wrap::Bool=false,
-    searcher::Searcher=DEFAULT_SEARCHER
-) where {Tg<:AbstractFloat, Tq<:Real}
+    searcher::P=DEFAULT_SEARCHER
+) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
     # Promote query for anchor: preserve Dual, promote Int/Rational to grid type
     # Cubic anchors store weight tuples with complex arithmetic that requires Float
     xq_promoted = _promote_for_anchor(xq, Tg)
@@ -237,10 +237,10 @@ AD is not supported for vector queries (use scalar queries for ForwardDiff).
 function _anchor_query(
     x::AbstractVector{T},
     xq::AbstractVector{S},
-    ::Val{:cubic};
+    ::Val{:cubic},
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBinary())
-) where {T<:AbstractFloat, S<:Real}
+    searcher::P=_to_searcher(LinearBinary())
+) where {T<:AbstractFloat, S<:Real, P<:Searcher}
     output = Vector{_CubicAnchoredQuery{T,T}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
@@ -277,10 +277,10 @@ _fill_anchors!(buffer, x, xq, Val(:cubic))
     buffer::AbstractVector{_CubicAnchoredQuery{Tg,Tq}},
     x::AbstractVector{Tg},
     xq::AbstractVector{Tq},
-    ::Val{:cubic};
+    ::Val{:cubic},
     wrap::Bool=false,
-    searcher::Searcher=_to_searcher(LinearBinary())
-) where {Tg<:AbstractFloat, Tq<:Real}
+    searcher::P=_to_searcher(LinearBinary())
+) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
 
     # Use original xq[k] directly (no conversion) to preserve precision in weights
@@ -345,7 +345,7 @@ while preserving the full Dual value for weight computation.
         @inbounds (n - 1, x[n-1], x[n])
     else
         # Inside domain: use policy-based interval search
-        search_interval(policy, x, xq_primal)
+        search_interval(_resolve_searcher(x, policy), x, xq_primal)
     end
 
     # Compute geometry

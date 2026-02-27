@@ -14,7 +14,7 @@
 # Zero heap allocation for scalar queries after warmup.
 
 """
-    _quadratic_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops)
+    _quadratic_interp_nd_oneshot(grids, data, query, bcs, extraps_val, searches, ops, hints=nothing)
 
 Pool-based scalar one-shot ND quadratic evaluation.
 Computes 2^N partial derivatives in a pool buffer and evaluates at a single point.
@@ -27,7 +27,8 @@ Zero-allocation after warmup (pool reuse).
     bcs::NTuple{N, QuadraticBC},
     extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
+    ops::NTuple{N, AbstractEvalOp},
+    hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
     # 1. Pool-allocate partials array (THE KEY: pool instead of heap)
     n_partials = 1 << N
@@ -41,7 +42,7 @@ Zero-allocation after warmup (pool reuse).
 
     # 4. Eval pipeline (all standalone functions, no Interpolant needed)
     q_eval = _handle_all_extraps(query, grids, extraps_val)
-    indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches)
+    indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
     hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
 
     # 5. Tensor-product kernel evaluation
@@ -49,7 +50,7 @@ Zero-allocation after warmup (pool reuse).
 end
 
 """
-    _quadratic_interp_nd_oneshot_soa!(output, grids, data, queries, bcs, extraps_val, searches, ops)
+    _quadratic_interp_nd_oneshot_soa!(output, grids, data, queries, bcs, extraps_val, searches, ops, hints=nothing)
 
 Pool-based in-place SoA batch one-shot ND quadratic evaluation.
 Computes partials ONCE, then evaluates at all query points into `output`.
@@ -62,7 +63,8 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     bcs::NTuple{N, QuadraticBC},
     extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
+    ops::NTuple{N, AbstractEvalOp},
+    hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
     n_queries = length(queries[1])
     for d in 2:N
@@ -83,7 +85,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
         output[k] = _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
     end
@@ -91,7 +93,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
 end
 
 """
-    _quadratic_interp_nd_oneshot_aos!(output, grids, data, queries, bcs, extraps_val, searches, ops)
+    _quadratic_interp_nd_oneshot_aos!(output, grids, data, queries, bcs, extraps_val, searches, ops, hints=nothing)
 
 Pool-based in-place AoS batch one-shot ND quadratic evaluation.
 Computes partials ONCE, then evaluates at all query points into `output`.
@@ -104,7 +106,8 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     bcs::NTuple{N, QuadraticBC},
     extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp}
+    ops::NTuple{N, AbstractEvalOp},
+    hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
     n_queries = length(queries)
     length(output) == n_queries || throw(DimensionMismatch(
@@ -120,11 +123,18 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     @inbounds for k in 1:n_queries
         query_k = queries[k]
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches)
+        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
         output[k] = _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
     end
     return output
+end
+
+# Function barrier for SoA paths: forces Julia to runtime-dispatch on the concrete
+# searches tuple type, resolving per-element Union{Binary,LinearBinary} before
+# entering the @with_pool boundary. NOT @inline — specialization requires real call.
+function _quadratic_nd_soa_dispatch!(output, grids, data, queries, bcs, extraps, searches, ops, hints)
+    _quadratic_interp_nd_oneshot_soa!(output, grids, data, queries, bcs, extraps, searches, ops, hints)
 end
 
 # ========================================
@@ -144,7 +154,8 @@ function quadratic_interp(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -158,7 +169,7 @@ function quadratic_interp(
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _quadratic_interp_nd_oneshot(
-        grids_typed, data, query, bcs, extraps_val, searches, ops)::Tr
+        grids_typed, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
 
 """
@@ -174,13 +185,14 @@ function quadratic_interp(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     Tr = promote_type(Tv, Tg, _promote_grid_eltype(queries))
     output = Vector{Tr}(undef, length(queries[1]))
-    quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search)
+    quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search, hint)
     return output
 end
 
@@ -197,13 +209,14 @@ function quadratic_interp(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     Tr = promote_type(Tv, Tg)
     output = Vector{Tr}(undef, length(queries))
-    quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search)
+    quadratic_interp!(output, grids, data, queries; deriv, bc, extrap, search, hint)
     return output
 end
 
@@ -225,7 +238,8 @@ function quadratic_interp!(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -233,12 +247,11 @@ function quadratic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N), queries)  # NTuple{N,AbstractVector} <: Tuple{Vararg{AbstractVector}} → LinearBinary/axis
+    searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)  # all-or-nothing adaptive for zero-alloc
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
-    return _quadratic_interp_nd_oneshot_soa!(
-        output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
+    return _quadratic_nd_soa_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops, hint)
 end
 
 """
@@ -255,7 +268,8 @@ function quadratic_interp!(
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
+    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
+    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -263,10 +277,10 @@ function quadratic_interp!(
     _validate_nd_grids(grids_typed, data)
 
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
-    searches = _resolve_search_nd(search, Val(N), queries)  # AoS: AbstractVector{<:Tuple} <: AbstractVector → LinearBinary
+    searches = _resolve_search_nd(search, Val(N), queries)  # AoS: type-based (no per-axis SoA check)
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _quadratic_interp_nd_oneshot_aos!(
-        output, grids_typed, data, queries, bcs, extraps_val, searches, ops)
+        output, grids_typed, data, queries, bcs, extraps_val, searches, ops, hint)
 end

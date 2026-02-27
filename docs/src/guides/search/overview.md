@@ -17,14 +17,14 @@ using FastInterpolations
 x = collect(range(0, 1.0, length=1000))
 y = x.^3
 
-# AutoSearch is the default — resolves automatically per call
+# AutoSearch is the default — adapts automatically per call
 xq = rand(1000)
-linear_interp(x, y, xq)                         # AutoSearch → LinearBinary() for vector
-linear_interp(x, y, xq; search=Binary())         # Explicit: optimal for random access
+linear_interp(x, y, xq)                         # AutoSearch → Binary() (random detected)
+linear_interp(x, y, xq; search=Binary())         # Explicit: same result
 
 # For sorted/monotonic queries
 xq_sorted = sort(xq)
-linear_interp(x, y, xq_sorted)                   # AutoSearch → LinearBinary() — already fast!
+linear_interp(x, y, xq_sorted)                   # AutoSearch → LinearBinary() (sorted detected)
 linear_interp(x, y, xq_sorted; search=LinearBinary())  # Same result, explicit
 nothing # hide
 ```
@@ -47,7 +47,7 @@ nothing # hide
 
 **Which policy should I use?**
 
-- **General use / unknown pattern** → `AutoSearch()` ✅ **default** — adapts scalar→`Binary()`, vector→`LinearBinary()`
+- **General use / unknown pattern** → `AutoSearch()` ✅ **default** — adapts per query type and access pattern (sorted→`LinearBinary`, random→`Binary`)
 - **Known random access** → `Binary()` (explicit; skips AutoSearch dispatch)
 - **Queries cluster in same region** → `LinearBinary(linear_window=0)` (hint check only)
 - **Known monotonic queries (sorted, streaming, ODE)** → `LinearBinary()` (explicit)

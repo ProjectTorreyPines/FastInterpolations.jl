@@ -91,7 +91,7 @@
 
         # Wrap extrapolation - anchor must be created with wrap=true
         # to pre-wrap coordinates for :wrap mode
-        aq_above = FI._anchor_query(x, 1.3, Val(:cubic); wrap=true)
+        aq_above = FI._anchor_query(x, 1.3, Val(:cubic), true)
         wrapped_xq = mod(1.3, 1.0)  # 0.3
         @test itp(aq_above) ≈ itp(wrapped_xq) atol=1e-14
     end
@@ -103,7 +103,7 @@
         itp = cubic_interp(x, y; bc=PeriodicBC())
 
         # Wrap at anchor construction (for extrap=WrapExtrap() mode)
-        aq_wrapped = FI._anchor_query(x, 2π + 1.0, Val(:cubic); wrap=true)
+        aq_wrapped = FI._anchor_query(x, 2π + 1.0, Val(:cubic), true)
         @test itp(aq_wrapped) ≈ itp(1.0) atol=1e-10
     end
 
@@ -257,14 +257,14 @@
 
         # Query outside domain with wrap=true should wrap
         xq_outside = 2π + 1.0  # wraps to ~1.0
-        aq_wrapped = FI._anchor_query(x, xq_outside, Val(:cubic); wrap=true)
+        aq_wrapped = FI._anchor_query(x, xq_outside, Val(:cubic), true)
 
         # Should be inside after wrapping
         @test aq_wrapped.side == 0x00
         @test aq_wrapped.xq != xq_outside  # xq is wrapped value
 
         # Without wrap, should be outside
-        aq_nowrap = FI._anchor_query(x, xq_outside, Val(:cubic); wrap=false)
+        aq_nowrap = FI._anchor_query(x, xq_outside, Val(:cubic), false)
         @test aq_nowrap.side == 0x02  # above max
     end
 
@@ -302,7 +302,7 @@
     @testset "Vector anchor - wrap=true" begin
         x = collect(range(0.0, 1.0, 101))
         xq = [-0.3, 1.3, 2.5]
-        aq_vec = FI._anchor_query(x, xq, Val(:cubic); wrap=true)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic), true)
 
         @test all(aq -> aq.side == 0x00, aq_vec)  # All wrapped to inside
     end
@@ -463,7 +463,7 @@
         itp = cubic_interp(x, y; extrap=WrapExtrap())
 
         xq = [-0.3, 1.3, 2.5]
-        aq_vec = FI._anchor_query(x, xq, Val(:cubic); wrap=true)
+        aq_vec = FI._anchor_query(x, xq, Val(:cubic), true)
         vals = itp(aq_vec)
 
         for (i, xq_i) in enumerate(xq)
@@ -559,11 +559,11 @@
             xq = [-0.3, 0.5, 1.3, 2.5]  # First and last two outside domain
 
             # Reference
-            expected = FI._anchor_query(x, xq, Val(:cubic); wrap=true)
+            expected = FI._anchor_query(x, xq, Val(:cubic), true)
 
             # In-place
             buffer = Vector{FI._CubicAnchoredQuery{Float64, Float64}}(undef, length(xq))
-            FI._fill_anchors!(buffer, x, xq, Val(:cubic); wrap=true)
+            FI._fill_anchors!(buffer, x, xq, Val(:cubic), true)
 
             for i in eachindex(xq)
                 @test buffer[i].idx == expected[i].idx

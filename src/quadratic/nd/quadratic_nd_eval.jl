@@ -97,7 +97,7 @@ function (itp::QuadraticInterpolantND{Tg, Tv, N})(
         ))
     end
     ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), queries)  # NTuple{N,AbstractVector} <: Tuple{Vararg{AbstractVector}} → LinearBinary/axis
+    search_tuple = _resolve_search_nd(search, Val(N), queries, hint)  # adaptive: check monotonicity for AutoSearch+no hint
     _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
     return output
 end
@@ -120,7 +120,7 @@ function (itp::QuadraticInterpolantND{Tg, Tv, N})(
         "output length $(length(output)) must match query length $n_queries"
     ))
     ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), queries)  # AoS: AbstractVector{<:Tuple} <: AbstractVector → LinearBinary
+    search_tuple = _resolve_search_nd(search, Val(N), queries, hint)  # AoS: falls through to _resolve_search_nd
     _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
     return output
 end

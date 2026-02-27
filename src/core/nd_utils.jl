@@ -380,9 +380,9 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 # search_interval returns (idx, L, R) with the same concrete element type regardless
 # of spacing type (ScalarSpacing or VectorSpacing), so results is homogeneous.
 @inline _search_axis(q, grid, spacing, search) =
-    @inbounds search_interval(_to_searcher(search), grid, spacing, q)
+    @inbounds search_interval(_to_searcher(_resolve_search(grid, q, search, nothing)), grid, spacing, q)
 @inline _search_axis_hint(q, grid, spacing, search, hint) =
-    @inbounds search_interval(_to_searcher(search, hint), grid, spacing, q)
+    @inbounds search_interval(_to_searcher(_resolve_search(grid, q, search, hint), hint), grid, spacing, q)
 @inline _getidx(r) = r[1]
 @inline _getL(r)   = r[2]
 @inline _getR(r)   = r[3]
@@ -459,8 +459,10 @@ interpolant type then post-processes into its kernel-specific cell tuple.
     x_eval = _handle_axis_extrap(xq, grid_x, extrap_x)
     y_eval = _handle_axis_extrap(yq, grid_y, extrap_y)
 
-    searcher_x = _to_searcher(search_x, _get_axis_hint(hints, 1))
-    searcher_y = _to_searcher(search_y, _get_axis_hint(hints, 2))
+    hint_x = _get_axis_hint(hints, 1)
+    hint_y = _get_axis_hint(hints, 2)
+    searcher_x = _to_searcher(_resolve_search(grid_x, x_eval, search_x, hint_x), hint_x)
+    searcher_y = _to_searcher(_resolve_search(grid_y, y_eval, search_y, hint_y), hint_y)
     ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
     iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
 

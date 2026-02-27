@@ -221,7 +221,7 @@ Internal implementation of _anchor_query for constant interpolation.
         @inbounds (n - 1, x[n-1], x[n])
     else
         # Inside domain: use policy-based interval search
-        search_interval(policy, x, xq)
+        search_interval(_resolve_searcher(x, policy), x, xq)
     end
 
     # Compute geometry

@@ -411,11 +411,10 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
 @inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = _to_searcher(LinearBinary(), hint)  # auto-upgrade to default LinearBinary
 
-# DirectSearch: Range grids only. NoHint → reuse Searcher{Binary,NoHint} (existing
-# Range dispatch handles _search_direct). RefHint → Searcher{DirectSearch,RefHint}
-# for hint-updating direct search.
-@inline _to_searcher(::DirectSearch) = Searcher{Binary,NoHint}(NoHint())
-@inline _to_searcher(::DirectSearch, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
+# DirectSearch: Range grids only. Carries DirectSearch through to Searcher
+# so search_interval dispatches on policy type alone (no grid-type branching).
+@inline _to_searcher(::DirectSearch) = Searcher{DirectSearch,NoHint}(NoHint())
+@inline _to_searcher(::DirectSearch, ::Nothing) = Searcher{DirectSearch,NoHint}(NoHint())
 @inline _to_searcher(::DirectSearch, hint::Base.RefValue{Int}) = Searcher{DirectSearch,RefHint}(RefHint(hint))
 
 # ----------------------------------------
@@ -427,6 +426,16 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(s::Searcher) = s
 @inline _to_searcher(s::Searcher, ::Nothing) = s
 @inline _to_searcher(s::Searcher, ::Base.RefValue{Int}) = s  # already configured, hint ignored
+
+# ----------------------------------------
+# Searcher resolution for pre-baked Searchers (anchor paths)
+# ----------------------------------------
+# Converts any Searcher to DirectSearch variant when grid is AbstractRange.
+# Used by anchor paths where the Searcher is constructed before the grid type is known.
+# P<:AbstractSearchPolicy bound required to avoid method ambiguity with the catchall.
+@inline _resolve_searcher(::AbstractRange, ::Searcher{P,NoHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,NoHint}(NoHint())
+@inline _resolve_searcher(::AbstractRange, s::Searcher{P,RefHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,RefHint}(s.hint)
+@inline _resolve_searcher(_, s::Searcher) = s
 
 # ========================================
 # 2. Base Implementations
@@ -883,6 +892,13 @@ end
 
 @inline search_interval(p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) where {MAX} =
     _search_direct!(x, spacing, xq, p.hint.idx)
+
+# --- DirectSearch + NoHint (Range grids, zero-overhead) ---
+@inline search_interval(::Searcher{DirectSearch,NoHint}, x::AbstractRange, xq::Real) =
+    _search_direct(x, xq)
+
+@inline search_interval(::Searcher{DirectSearch,NoHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
+    _search_direct(x, spacing, xq)
 
 # --- DirectSearch + RefHint (Range grids with persistent hint) ---
 # DirectSearch is only created for Range grids, so only Range methods are needed.

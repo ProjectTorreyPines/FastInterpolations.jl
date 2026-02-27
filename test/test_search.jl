@@ -1688,15 +1688,27 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "_to_searcher(DirectSearch())" begin
-            # NoHint variants
-            @test _to_searcher(DirectSearch()) isa Searcher{Binary,NoHint}
-            @test _to_searcher(DirectSearch(), nothing) isa Searcher{Binary,NoHint}
+            # NoHint variants — carries DirectSearch through
+            @test _to_searcher(DirectSearch()) isa Searcher{DirectSearch,NoHint}
+            @test _to_searcher(DirectSearch(), nothing) isa Searcher{DirectSearch,NoHint}
 
             # RefHint variant
             ref = Ref(5)
             s = _to_searcher(DirectSearch(), ref)
             @test s isa Searcher{DirectSearch,RefHint}
             @test s.hint.idx === ref
+        end
+
+        @testset "search_interval DirectSearch+NoHint correctness" begin
+            x = 0.0:0.25:1.0
+            s = _to_searcher(DirectSearch())
+            result = search_interval(s, x, 0.3)
+            @test result[1] == 2
+            result2 = search_interval(s, x, 0.9)
+            @test result2[1] == 4
+            spacing = _create_spacing(x)
+            result3 = search_interval(s, x, spacing, 0.6)
+            @test result3[1] == 3
         end
 
         @testset "search_interval DirectSearch+RefHint correctness" begin
@@ -1739,8 +1751,8 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test @inferred(_resolve_search(x_range, [0.1], AutoSearch(), Ref(1))) isa DirectSearch
 
             # _to_searcher on DirectSearch → concrete Searcher types
-            @test @inferred(_to_searcher(DirectSearch())) isa Searcher{Binary,NoHint}
-            @test @inferred(_to_searcher(DirectSearch(), nothing)) isa Searcher{Binary,NoHint}
+            @test @inferred(_to_searcher(DirectSearch())) isa Searcher{DirectSearch,NoHint}
+            @test @inferred(_to_searcher(DirectSearch(), nothing)) isa Searcher{DirectSearch,NoHint}
             @test @inferred(_to_searcher(DirectSearch(), Ref(1))) isa Searcher{DirectSearch,RefHint}
         end
 

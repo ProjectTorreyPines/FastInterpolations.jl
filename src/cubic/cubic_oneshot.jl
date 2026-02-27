@@ -45,7 +45,6 @@ Thread-safe: workspaces allocated from task-local pool.
 
     resolved = _resolve_search(cache.x, x_query, search, nothing)
     searcher = _to_searcher(resolved)
-    @boundscheck _check_domain(cache.x, x_query, extrap)
     _cubic_vector_loop!(output, cache, y, z, x_query, extrap, deriv, searcher)
 
     return output
@@ -90,7 +89,6 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
     # Solve uses original BC for proper RHS materialization
     _solve_system!(z, cache, y, bc)
 
-    @boundscheck _check_domain(cache.x, x_query, extrap)
     _cubic_vector_loop!(output, cache, y, z, x_query, extrap, op, searcher)
 
     return output

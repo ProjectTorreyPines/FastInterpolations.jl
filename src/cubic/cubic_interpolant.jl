@@ -37,7 +37,6 @@ end
 # Now supports hint for ODE/streaming patterns - hint is updated during loop
 # Output type is promoted to wider type for precision preservation.
 function (itp::CubicInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    @boundscheck _check_domain(itp.cache.x, xq, itp.extrap)
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
     resolved = _resolve_search(itp.cache.x, xq, search, hint)
@@ -49,7 +48,6 @@ end
 # In-place vector call with deriv keyword support
 function (itp::CubicInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
-    @boundscheck _check_domain(itp.cache.x, xq, itp.extrap)
     resolved = _resolve_search(itp.cache.x, xq, search, hint)
     searcher = _to_searcher(resolved, hint)
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)

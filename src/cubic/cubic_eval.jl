@@ -222,6 +222,7 @@ end
     op::O,
     searcher::P
 ) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}, E<:AbstractExtrap, O<:AbstractEvalOp, P<:Searcher}
+    @boundscheck _check_domain(cache.x, x_query, ev)
     @inbounds for k in eachindex(x_query, output)
         output[k] = _eval_with_bc(cache, y, z, x_query[k], ev, op, searcher)
     end

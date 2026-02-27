@@ -100,7 +100,7 @@ function coeffs end
 
 @inline function coeffs(
     itp::CubicInterpolant{Tg,Tv}, xq::Real;
-    search=itp.search_policy,
+    search::AbstractSearchPolicy=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg,Tv}
     x = itp.cache.x
@@ -128,7 +128,7 @@ end
 
 @inline function coeffs(
     itp::QuadraticInterpolant{Tg,Tv}, xq::Real;
-    search=itp.search_policy,
+    search::AbstractSearchPolicy=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg,Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)
@@ -140,7 +140,7 @@ end
 
 @inline function coeffs(
     itp::LinearInterpolant{Tg,Tv}, xq::Real;
-    search=itp.search_policy,
+    search::AbstractSearchPolicy=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg,Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)
@@ -156,7 +156,7 @@ end
 
 @inline function coeffs(
     itp::ConstantInterpolant{Tg,Tv}, xq::Real;
-    search=itp.search_policy,
+    search::AbstractSearchPolicy=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg,Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)

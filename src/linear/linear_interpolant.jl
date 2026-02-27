@@ -21,7 +21,7 @@
 # - Tg queries (hot path)
 # - Int/Float32 queries (type promotion)
 # - ForwardDiff.Dual queries (automatic differentiation)
-@inline function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(xq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P}
+@inline function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(xq; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P}
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     searcher = _resolve_search(itp.x, xq, search, hint)
     # Pass original xq to preserve Dual type for AD
@@ -53,7 +53,7 @@ end
 # Vector Call - Allocating
 # ========================================
 # Output type is promoted to wider type for precision preservation.
-function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P, Tq<:Real}
+function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P, Tq<:Real}
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
@@ -65,7 +65,7 @@ end
 # ========================================
 # In-Place Vector Call
 # ========================================
-function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P, Tq<:Real}
+function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     searcher = _resolve_search(itp.x, xq, search, hint)

@@ -13,7 +13,7 @@ end
 @inline function integrate(
     itp::CubicInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=itp.search_policy,
+    search::AbstractSearchPolicy=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.cache.x
@@ -43,7 +43,7 @@ end
 @inline function integrate(
     itp::LinearInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=itp.search_policy,
+    search::AbstractSearchPolicy=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.x
@@ -72,7 +72,7 @@ end
 @inline function integrate(
     itp::QuadraticInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=itp.search_policy,
+    search::AbstractSearchPolicy=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.x
@@ -100,7 +100,7 @@ end
 @inline function integrate(
     itp::ConstantInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=itp.search_policy,
+    search::AbstractSearchPolicy=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
@@ -139,7 +139,7 @@ end
 @inline function integrate(
     sitp::CubicSeriesInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = sitp.cache.x
@@ -167,7 +167,7 @@ end
 @inline function integrate(
     sitp::LinearSeriesInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = sitp.x
@@ -194,7 +194,7 @@ end
 @inline function integrate(
     sitp::QuadraticSeriesInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = sitp.x
@@ -220,7 +220,7 @@ end
 @inline function integrate(
     sitp::ConstantSeriesInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))

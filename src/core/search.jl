@@ -440,11 +440,9 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 
 # _resolve_search: one-liner entry point for all eval paths.
 # Composes policy resolution + searcher creation + grid adaptation.
-# When `search` is already a Searcher (user-injected), skip resolution and adapt to grid.
+# User API accepts AbstractSearchPolicy only (enforced by kwarg type constraints).
 @inline _resolve_search(grid, q, search, hint) =
     _to_searcher(_resolve_search_policy(grid, q, search, hint), hint)
-@inline _resolve_search(grid, _, s::Searcher, _) =
-    _resolve_searcher_for_grid(grid, s)
 
 # ========================================
 # 2. Base Implementations

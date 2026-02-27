@@ -25,7 +25,7 @@
 # Default search is now the stored policy in itp.search_policy
 # Tg = grid type, Tv = value type (can be Complex)
 # Unified method: accepts any query type (Tg, Real, or Dual for AD)
-@inline function (itp::CubicInterpolant{Tg,Tv})(xq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
+@inline function (itp::CubicInterpolant{Tg,Tv})(xq; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
     @boundscheck _check_domain(itp.cache.x, xq, itp.extrap)
     searcher = _resolve_search(itp.cache.x, xq, search, hint)
     # Pass original xq to preserve Dual type for AD
@@ -35,7 +35,7 @@ end
 # Vector call with deriv keyword support
 # Now supports hint for ODE/streaming patterns - hint is updated during loop
 # Output type is promoted to wider type for precision preservation.
-function (itp::CubicInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+function (itp::CubicInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
     searcher = _resolve_search(itp.cache.x, xq, search, hint)
@@ -44,7 +44,7 @@ function (itp::CubicInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=E
 end
 
 # In-place vector call with deriv keyword support
-function (itp::CubicInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+function (itp::CubicInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
     searcher = _resolve_search(itp.cache.x, xq, search, hint)
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)

@@ -202,7 +202,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
+    search::AbstractSearchPolicy=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
@@ -359,7 +359,7 @@ end
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
+    search::AbstractSearchPolicy=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)

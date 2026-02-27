@@ -1052,27 +1052,6 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
     end
 
-    @testset "Searcher Direct Injection (Advanced Usage)" begin
-        x = collect(range(0.0, 1.0, 1001))
-        y = x.^3
-        itp = linear_interp(x, y)
-
-        @testset "Pre-built Searcher avoids _to_searcher overhead" begin
-            ext_ref = Ref(500)
-            searcher = Searcher{LinearBinary{8},RefHint}(RefHint(ext_ref))
-
-            # Directly inject searcher (no _to_searcher call at runtime)
-            xi = 0.5
-            for _ in 1:100
-                xi += 1e-3
-                yi = itp(xi; search=searcher)
-            end
-
-            # External ref should be updated
-            @test ext_ref[] >= 590 && ext_ref[] <= 610
-        end
-    end
-
     # ============================================================================
     # AutoSearch Resolution Tests
     # ============================================================================

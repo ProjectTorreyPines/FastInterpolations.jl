@@ -356,7 +356,7 @@ end
 
 # Scalar query - zero allocation
 cubic_interp(cache::CubicSplineCache{Tg}, y::AbstractVector{Tv},
-             x_query::Tg; extrap::AbstractExtrap=NoExtrap(), deriv::DerivOp=EvalValue(), search=AutoSearch(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv} =
+             x_query::Tg; extrap::AbstractExtrap=NoExtrap(), deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=AutoSearch(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv} =
     cubic_interp_scalar(cache, y, x_query; extrap=extrap, deriv=deriv, search=search, hint=hint)
 
 # Primary scalar method - AD-compatible
@@ -369,7 +369,7 @@ function cubic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
+    search::AbstractSearchPolicy=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     searcher = _resolve_search(x, xq, search, hint)
@@ -414,7 +414,7 @@ function cubic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
+    search::AbstractSearchPolicy=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)

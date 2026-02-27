@@ -456,7 +456,7 @@ Supports ForwardDiff.Dual input: output type is promoted to include Dual.
 function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     xq::Tq; 
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     T_out = promote_type(Tv, Tq)  # Dual input → Dual output
@@ -477,7 +477,7 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     output::AbstractVector,  # Relaxed: allows Dual vector
     xq::Tq;
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_ser = n_series(sitp)
@@ -513,7 +513,7 @@ Output type is promoted to wider type for precision preservation.
 function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     xq::AbstractVector{Tq};
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_query = length(xq)
@@ -552,7 +552,7 @@ Pool handles both same-type and mixed-type cases efficiently.
     outputs::AbstractVector{<:AbstractVector},
     xq::AbstractVector{Tq};
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_query = length(xq)

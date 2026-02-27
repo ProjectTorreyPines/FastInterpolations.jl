@@ -121,6 +121,18 @@ end
 """Return the interpolation method kind for dispatch."""
 @inline _method_kind(::Type{<:QuadraticSeriesInterpolant}) = Val(:quadratic)
 
+"""
+    _make_anchor(sitp::QuadraticSeriesInterpolant, xq::Tq, searcher) -> _QuadraticAnchoredQuery
+
+Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
+
+# AD Support
+When `xq` is a ForwardDiff.Dual, the returned anchor preserves the Dual type.
+"""
+@inline function _make_anchor(sitp::QuadraticSeriesInterpolant{Tg}, xq::Tq, searcher::P=DEFAULT_SEARCHER) where {Tg, Tq<:Real, P<:Searcher}
+    return _anchor_query(sitp.x, xq, Val(:quadratic), _should_wrap(sitp), searcher)
+end
+
 # ========================================
 # SIMD Evaluation Kernel
 # ========================================
@@ -506,14 +518,14 @@ The anchor preserves the Dual type in `xq` and `dL` fields for AD propagation.
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     xq::Tq;
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
     T_out = promote_type(Tv, typeof(xq_promoted))
     resolved = _resolve_search(sitp.x, xq, search, hint)
-    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic), _should_wrap(sitp), _to_searcher(resolved, hint))
+    aq = _make_anchor(sitp, xq_promoted, _to_searcher(resolved, hint))
 
     output = Vector{T_out}(undef, n_series(sitp))
     _eval_series_at_anchor!(output, sitp, aq, deriv)
@@ -533,7 +545,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     output::AbstractVector,  # Relaxed: allows Dual vector
     xq::Tq;
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     _validate_scalar_output(output, n_series(sitp))
@@ -542,7 +554,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     xq_promoted = _promote_for_anchor(xq, Tg)
 
     resolved = _resolve_search(sitp.x, xq, search, hint)
-    aq = _anchor_query(sitp.x, xq_promoted, Val(:quadratic), _should_wrap(sitp), _to_searcher(resolved, hint))
+    aq = _make_anchor(sitp, xq_promoted, _to_searcher(resolved, hint))
 
     _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output
@@ -562,7 +574,7 @@ Output type is promoted to wider type for precision preservation.
 function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     xq::AbstractVector{Tq};
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_query = length(xq)
@@ -593,7 +605,7 @@ Pool handles both same-type and mixed-type cases efficiently.
     outputs::AbstractVector{<:AbstractVector},
     xq::AbstractVector{Tq};
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_query = length(xq)

@@ -274,6 +274,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
 
     resolved = _resolve_search(x, x_targets, search, nothing)
     searcher = _to_searcher(resolved)
+    @boundscheck _check_domain(x, x_targets, extrap)
     _quadratic_vector_loop!(output, x, y, h, a, d, x_targets, extrap, deriv, searcher)
     return output
 end

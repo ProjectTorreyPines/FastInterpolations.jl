@@ -218,10 +218,10 @@ end
     y::AbstractVector{Tv},
     z::AbstractVector{Tv},
     x_query::AbstractVector{<:Real},
-    ev::AbstractExtrap,
+    ev::E,
     op::O,
     searcher::P
-) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
+) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}, E<:AbstractExtrap, O<:AbstractEvalOp, P<:Searcher}
     @boundscheck _check_domain(cache.x, x_query, ev)
     @inbounds for k in eachindex(x_query, output)
         output[k] = _eval_with_bc(cache, y, z, x_query[k], ev, op, searcher)
@@ -281,7 +281,7 @@ Uses task-local pool for workspace allocation.
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
-    resolved = _resolve_search(search, x_query)
+    resolved = _resolve_search(cache.x, x_query, search, nothing)
     searcher = _to_searcher(resolved, hint)
     @boundscheck _check_domain(cache.x, x_query, extrap)
     _eval_with_bc(cache, y, z, x_query, extrap, deriv, searcher)

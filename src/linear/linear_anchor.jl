@@ -273,7 +273,7 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
         @inbounds (n - 1, x[n-1], x[n])
     else
         # Inside domain: use policy-based interval search
-        search_interval(policy, x, xq_primal)
+        search_interval(_resolve_searcher(x, policy), x, xq_primal)
     end
 
     # Compute geometry

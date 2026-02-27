@@ -20,7 +20,7 @@ end
     y = itp.y
     z = itp.z
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(search, x0)
+    resolved = _resolve_search(x, x0, search, hint)
     searcher = _to_searcher(resolved, hint)
 
     partial = @inline (i, xL, h, a2, b2) -> begin
@@ -50,7 +50,7 @@ end
     x = itp.x
     y = itp.y
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(search, x0)
+    resolved = _resolve_search(x, x0, search, hint)
     searcher = _to_searcher(resolved, hint)
 
     partial = @inline (i, xL, h, a2, b2) -> begin
@@ -79,7 +79,7 @@ end
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.x
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(search, x0)
+    resolved = _resolve_search(x, x0, search, hint)
     searcher = _to_searcher(resolved, hint)
 
     partial = @inline (i, xL, h, a2, b2) -> begin
@@ -107,7 +107,7 @@ end
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(search, x0)
+    resolved = _resolve_search(itp.x, x0, search, hint)
     searcher = _to_searcher(resolved, hint)
     return _integrate_constant_1d_impl(itp.x, itp.y, itp.side, itp.extrap, x0, x1, searcher, Tg, Tout)
 end
@@ -150,7 +150,7 @@ end
     y = sitp.y
     z = sitp.z
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(search, x0)
+    resolved = _resolve_search(x, x0, search, hint)
     searcher = _to_searcher(resolved, hint)
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
@@ -178,7 +178,7 @@ end
     x = sitp.x
     y = sitp.y
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(search, x0)
+    resolved = _resolve_search(x, x0, search, hint)
     searcher = _to_searcher(resolved, hint)
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
@@ -205,7 +205,7 @@ end
 ) where {Tg<:AbstractFloat, Tv}
     x = sitp.x
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(search, x0)
+    resolved = _resolve_search(x, x0, search, hint)
     searcher = _to_searcher(resolved, hint)
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
@@ -231,7 +231,7 @@ end
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(search, x0)
+    resolved = _resolve_search(sitp.x, x0, search, hint)
     searcher = _to_searcher(resolved, hint)
     return _integrate_constant_series_1d(sitp.x, sitp.y, sitp.side, sitp.extrap, x0, x1, searcher, Tg, Tout)
 end

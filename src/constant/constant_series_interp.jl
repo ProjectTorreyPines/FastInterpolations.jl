@@ -474,7 +474,7 @@ derivatives. Output type is `promote_type(Tv, Tq)`.
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     xq::Tq;
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
@@ -491,7 +491,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     output::AbstractVector,  # Relaxed: accepts any element type for lossless promotion
     xq::Tq;
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_ser = n_series(sitp)
@@ -504,7 +504,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     xq_typed = Tg(xq_primal)
 
     # Build anchor using primal value
-    resolved = _resolve_search(search, xq, hint)
+    resolved = _resolve_search(sitp.x, xq, search, hint)
     aq = _make_anchor(sitp, xq_typed, _to_searcher(resolved, hint))
 
     # Dispatch on derivative order - pass original xq for AD support
@@ -526,7 +526,7 @@ Returns a vector of vectors: one vector per y-series, each containing results fo
 function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     xq::AbstractVector{Tq};
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     xq_typed = _to_float(xq, Tg)
@@ -560,7 +560,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
     outputs::AbstractVector{<:AbstractVector{Tv}},
     xq::AbstractVector{Tg};
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P}
     n_query = length(xq)
@@ -571,7 +571,7 @@ Uses task-local pool for anchor vector to achieve zero allocation after warmup.
 
     # Build anchors from pool (zero allocation after warmup)
     aq_vec = acquire!(pool, _ConstantAnchoredQuery{Tg}, length(xq))
-    resolved = _resolve_search(search, xq, hint)
+    resolved = _resolve_search(sitp.x, xq, search, hint)
     searcher = _to_searcher(resolved, hint)
     _fill_anchors!(aq_vec, sitp.x, xq, Val(:constant), _should_wrap(sitp), searcher)
 
@@ -596,7 +596,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     outputs::AbstractVector{<:AbstractVector{Tv}},
     xq::AbstractVector{Tq};
     deriv::DerivOp=EvalValue(),
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     xq_typed = _to_float(xq, Tg)

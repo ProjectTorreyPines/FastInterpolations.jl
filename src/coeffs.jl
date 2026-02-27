@@ -105,7 +105,8 @@ function coeffs end
 ) where {Tg,Tv}
     x = itp.cache.x
     spacing = itp.cache.spacing
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(x, xq, search, hint)
+    searcher = _to_searcher(resolved, hint)
     i, xL, xR = search_interval(searcher, x, spacing, xq)
     h = _get_h(spacing, i)
     inv_h = _get_inv_h(spacing, i)
@@ -131,7 +132,8 @@ end
     search=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg,Tv}
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(itp.x, xq, search, hint)
+    searcher = _to_searcher(resolved, hint)
     i, xL, xR = search_interval(searcher, itp.x, xq)
     @inbounds return CellPoly{3, Tv, Tg}((itp.y[i], itp.d[i], itp.a[i]), xL, xR)
 end
@@ -143,7 +145,8 @@ end
     search=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg,Tv}
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(itp.x, xq, search, hint)
+    searcher = _to_searcher(resolved, hint)
     i, xL, xR = search_interval(searcher, itp.x, xq)
     h = xR - xL
     @inbounds begin
@@ -159,7 +162,8 @@ end
     search=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg,Tv}
-    searcher = _to_searcher(search, hint)
+    resolved = _resolve_search(itp.x, xq, search, hint)
+    searcher = _to_searcher(resolved, hint)
     i, xL, xR = search_interval(searcher, itp.x, xq)
     # Reuse the constant kernel directly for correct side/grid-point behavior
     @inbounds y0 = _constant_kernel(EvalValue(), itp.y[i], itp.y[i+1], xR - xL, xq - xL, itp.side)

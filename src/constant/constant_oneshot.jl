@@ -255,9 +255,7 @@ function constant_interp!(
     resolved = _resolve_search(x, x_targets, search, nothing)
     searcher = _to_searcher(resolved)
     @boundscheck _check_domain(x, x_targets, extrap)
-    @inbounds for i in eachindex(x_targets, output)
-        output[i] = _constant_eval_at_point(x, y, x_targets[i], extrap, side, deriv, searcher)
-    end
+    _constant_vector_loop!(output, x, y, x_targets, extrap, side, deriv, searcher)
     return output
 end
 

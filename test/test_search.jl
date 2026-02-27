@@ -929,20 +929,9 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test s2.hint isa NoHint
         end
 
-        @testset "Searcher direct injection passthrough" begin
-            # Pre-built Searcher should pass through unchanged
-            ext_ref = Ref(42)
-            pre_built = Searcher{LinearBinarySearch{8},RefHint}(RefHint(ext_ref))
-
-            s1 = _to_searcher(pre_built)
-            @test s1 === pre_built
-
-            s2 = _to_searcher(pre_built, nothing)
-            @test s2 === pre_built
-
-            s3 = _to_searcher(pre_built, Ref(99))
-            @test s3 === pre_built  # Ignores new hint
-        end
+        # Searcher direct injection passthrough removed:
+        # API sealing (::AbstractSearchPolicy on all user kwargs) makes
+        # _to_searcher(::Searcher, ...) unreachable — no test needed.
     end
 
     @testset "ODE-style Persistent Hint Pattern" begin

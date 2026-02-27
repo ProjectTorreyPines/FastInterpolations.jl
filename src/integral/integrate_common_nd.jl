@@ -20,12 +20,12 @@ end
     hint
 ) where {N}
     idx_lo = ntuple(Val(N)) do d
-        s = _to_searcher(search_tuple[d], isnothing(hint) ? nothing : hint[d])
+        s = _resolve_search(grids[d], lo[d], search_tuple[d], isnothing(hint) ? nothing : hint[d])
         i, _, _ = search_interval(s, grids[d], spacings[d], lo[d])
         i
     end
     idx_hi = ntuple(Val(N)) do d
-        s = _to_searcher(search_tuple[d], isnothing(hint) ? nothing : hint[d])
+        s = _resolve_search(grids[d], hi[d], search_tuple[d], isnothing(hint) ? nothing : hint[d])
         i, _, _ = search_interval(s, grids[d], spacings[d], hi[d])
         i
     end

@@ -412,16 +412,6 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(::DirectSearch, hint::Base.RefValue{Int}) = Searcher{DirectSearch,RefHint}(RefHint(hint))
 
 # ----------------------------------------
-# Searcher passthrough (advanced usage)
-# ----------------------------------------
-# Allows direct Searcher injection for zero _to_searcher overhead in tight loops.
-# Users can pre-construct a Searcher and reuse it across calls.
-
-@inline _to_searcher(s::Searcher) = s
-@inline _to_searcher(s::Searcher, ::Nothing) = s
-@inline _to_searcher(s::Searcher, ::Base.RefValue{Int}) = s  # already configured, hint ignored
-
-# ----------------------------------------
 # Canonical resolver APIs
 # ----------------------------------------
 # Resolution pipeline:
@@ -854,14 +844,8 @@ end
 @inline search_interval(::Searcher{BinarySearch,NoHint}, x::AbstractVector, xq::Real) =
     _search_binary(x, xq)
 
-@inline search_interval(::Searcher{BinarySearch,NoHint}, x::AbstractRange, xq::Real) =
-    _search_direct(x, xq)
-
 @inline search_interval(::Searcher{BinarySearch,NoHint}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg} =
     _search_binary(x, spacing, xq)
-
-@inline search_interval(::Searcher{BinarySearch,NoHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
-    _search_direct(x, spacing, xq)
 
 # --- LinearSearch + RefHint ---
 
@@ -869,36 +853,23 @@ end
     return _search_linear!(x, xq, p.hint.idx)
 end
 
-# Range: O(1) direct + hint update
-@inline search_interval(p::Searcher{LinearSearch,RefHint}, x::AbstractRange, xq::Real) =
-    _search_direct!(x, xq, p.hint.idx)
-
 # --- LinearBinarySearch{MAX} + RefHint ---
 
 @inline function search_interval(p::Searcher{LinearBinarySearch{MAX},RefHint}, x::AbstractVector, xq::Real) where {MAX}
     return _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 end
 
-@inline search_interval(p::Searcher{LinearBinarySearch{MAX},RefHint}, x::AbstractRange, xq::Real) where {MAX} =
-    _search_direct!(x, xq, p.hint.idx)
-
 # --- Spacing-aware overloads ---
-# For uniform grids (AbstractRange + ScalarSpacing): always O(1) direct
-# For non-uniform grids (AbstractVector + VectorSpacing): delegate to standard search
+# Non-uniform grids (AbstractVector + VectorSpacing): delegate to standard search.
+# Range grids are handled by DirectSearch methods below.
 
 # LinearSearch + spacing
 @inline search_interval(p::Searcher{LinearSearch,RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) =
     _search_linear!(x, xq, p.hint.idx)
 
-@inline search_interval(p::Searcher{LinearSearch,RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) =
-    _search_direct!(x, spacing, xq, p.hint.idx)
-
 # LinearBinarySearch + spacing
 @inline search_interval(p::Searcher{LinearBinarySearch{MAX},RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) where {MAX} =
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
-
-@inline search_interval(p::Searcher{LinearBinarySearch{MAX},RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) where {MAX} =
-    _search_direct!(x, spacing, xq, p.hint.idx)
 
 # --- DirectSearch + NoHint (Range grids, zero-overhead) ---
 @inline search_interval(::Searcher{DirectSearch,NoHint}, x::AbstractRange, xq::Real) =

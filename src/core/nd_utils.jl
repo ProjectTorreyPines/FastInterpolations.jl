@@ -129,7 +129,7 @@ end
 # 3-arg: broadcast + resolve AutoSearch per-axis in one step
 @inline function _resolve_search_nd(s, ::Val{N}, query_sample) where {N}
     tuple = _resolve_search_nd(s, Val(N))
-    return map(p -> _resolve_search(p, query_sample), tuple)
+    return map(p -> _resolve_search_policy(p, query_sample), tuple)
 end
 
 # 4-arg form: adaptive ND resolution with hint awareness.
@@ -137,7 +137,7 @@ end
 @inline _resolve_search_nd(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
 
 # SoA Real vectors + no hint → per-axis adaptive resolution.
-# Each axis independently checks monotonicity via 1D _resolve_search(policy, vec, nothing):
+# Each axis independently checks monotonicity via 1D _resolve_search_policy(policy, vec, nothing):
 #   AutoSearch axes → _is_likely_monotone per axis → Binary or LinearBinary
 #   Explicit policy axes → passthrough unchanged
 # Uses map (not ntuple closure) to avoid closure heap allocation.
@@ -151,9 +151,9 @@ end
 end
 
 # Named helper for map — avoids closure capture in _resolve_search_nd.
-# Forwards to 3-arg _resolve_search with hint=nothing, triggering adaptive
+# Forwards to 3-arg _resolve_search_policy with hint=nothing, triggering adaptive
 # monotonicity check for AutoSearch axes.
-@inline _resolve_search_nohint(p, q) = _resolve_search(p, q, nothing)
+@inline _resolve_search_nohint(p, q) = _resolve_search_policy(p, q, nothing)
 
 # ----------------------------------------
 # All-or-Nothing Adaptive Resolution (Oneshot SoA)
@@ -380,9 +380,9 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 # search_interval returns (idx, L, R) with the same concrete element type regardless
 # of spacing type (ScalarSpacing or VectorSpacing), so results is homogeneous.
 @inline _search_axis(q, grid, spacing, search) =
-    @inbounds search_interval(_to_searcher(_resolve_search(grid, q, search, nothing)), grid, spacing, q)
+    @inbounds search_interval(_resolve_search(grid, q, search, nothing), grid, spacing, q)
 @inline _search_axis_hint(q, grid, spacing, search, hint) =
-    @inbounds search_interval(_to_searcher(_resolve_search(grid, q, search, hint), hint), grid, spacing, q)
+    @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, spacing, q)
 @inline _getidx(r) = r[1]
 @inline _getL(r)   = r[2]
 @inline _getR(r)   = r[3]
@@ -461,8 +461,8 @@ interpolant type then post-processes into its kernel-specific cell tuple.
 
     hint_x = _get_axis_hint(hints, 1)
     hint_y = _get_axis_hint(hints, 2)
-    searcher_x = _to_searcher(_resolve_search(grid_x, x_eval, search_x, hint_x), hint_x)
-    searcher_y = _to_searcher(_resolve_search(grid_y, y_eval, search_y, hint_y), hint_y)
+    searcher_x = _resolve_search(grid_x, x_eval, search_x, hint_x)
+    searcher_y = _resolve_search(grid_y, y_eval, search_y, hint_y)
     ix, xL, _ = search_interval(searcher_x, grid_x, spacing_x, x_eval)
     iy, yL, _ = search_interval(searcher_y, grid_y, spacing_y, y_eval)
 

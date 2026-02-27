@@ -200,7 +200,7 @@ in `xq` and weight fields, enabling automatic differentiation.
     # Promote query for anchor: preserve Dual, promote Int/Rational to grid type
     # Cubic anchors store weight tuples with complex arithmetic that requires Float
     xq_promoted = _promote_for_anchor(xq, Tg)
-    return _anchor_query_impl(x, xq_promoted, wrap, searcher)
+    return _anchor_query_impl(x, xq_promoted, wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
 """
@@ -241,10 +241,11 @@ function _anchor_query(
     wrap::Bool=false,
     searcher::P=_to_searcher(LinearBinary())
 ) where {T<:AbstractFloat, S<:Real, P<:Searcher}
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     output = Vector{_CubicAnchoredQuery{T,T}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
-        output[k] = _anchor_query_impl(x, T(xq[k]), wrap, searcher)
+        output[k] = _anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
     end
     return output
 end
@@ -282,10 +283,11 @@ _fill_anchors!(buffer, x, xq, Val(:cubic))
     searcher::P=_to_searcher(LinearBinary())
 ) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
     # Use original xq[k] directly (no conversion) to preserve precision in weights
     @inbounds for k in eachindex(xq)
-        buffer[k] = _anchor_query_impl(x, xq[k], wrap, searcher)
+        buffer[k] = _anchor_query_impl(x, xq[k], wrap, searcher_resolved)
     end
     return buffer
 end
@@ -345,7 +347,7 @@ while preserving the full Dual value for weight computation.
         @inbounds (n - 1, x[n-1], x[n])
     else
         # Inside domain: use policy-based interval search
-        search_interval(_resolve_searcher(x, policy), x, xq_primal)
+        search_interval(policy, x, xq_primal)
     end
 
     # Compute geometry

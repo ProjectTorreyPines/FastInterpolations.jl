@@ -490,8 +490,7 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     xq_typed = Tg(xq_primal)
 
     # Build anchor from primal
-    resolved = _resolve_search(sitp.x, xq, search, hint)
-    aq = _make_anchor(sitp, xq_typed, _to_searcher(resolved, hint))
+    aq = _make_anchor(sitp, xq_typed, _resolve_search(sitp.x, xq, search, hint))
 
     # Dispatch on derivative order with Dual-aware evaluation
     _eval_linear_series_point!(output, sitp, aq, xq, deriv)  # Pass original xq
@@ -564,8 +563,7 @@ Pool handles both same-type and mixed-type cases efficiently.
     # Build anchors - pool handles both same-type and mixed-type cases
     Tq_eff = promote_type(Tq, Tg)
     aq_vec = acquire!(pool, _LinearAnchoredQuery{Tg, Tq_eff}, n_query)
-    resolved = _resolve_search(sitp.x, xq, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(sitp.x, xq, search, hint)
     _fill_anchors!(aq_vec, sitp.x, xq, Val(:linear), _should_wrap(sitp), searcher)
 
     # Extract matrices for argument-passing pattern

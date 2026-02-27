@@ -281,8 +281,7 @@ Uses task-local pool for workspace allocation.
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
-    resolved = _resolve_search(cache.x, x_query, search, nothing)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(cache.x, x_query, search, hint)
     @boundscheck _check_domain(cache.x, x_query, extrap)
     _eval_with_bc(cache, y, z, x_query, extrap, deriv, searcher)
 end

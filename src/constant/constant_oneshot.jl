@@ -205,8 +205,7 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    resolved = _resolve_search(x, xi, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, xi, search, hint)
     _constant_eval_at_point(x, y, xi, extrap, side, deriv, searcher)
 end
 
@@ -252,8 +251,7 @@ function constant_interp!(
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    resolved = _resolve_search(x, x_targets, search, nothing)
-    searcher = _to_searcher(resolved)
+    searcher = _resolve_search(x, x_targets, search, nothing)
     @boundscheck _check_domain(x, x_targets, extrap)
     _constant_vector_loop!(output, x, y, x_targets, extrap, side, deriv, searcher)
     return output

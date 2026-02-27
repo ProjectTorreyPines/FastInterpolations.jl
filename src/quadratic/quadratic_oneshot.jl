@@ -217,8 +217,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     bc_promoted = _promote_bc(bc, Tv)
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
-    resolved = _resolve_search(x, xq, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, xq, search, hint)
     _quadratic_eval_at_point(x, y, h, a, d, xq, extrap, deriv, searcher)
 end
 
@@ -272,8 +271,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     bc_promoted = _promote_bc(bc, Tv)
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
-    resolved = _resolve_search(x, x_targets, search, nothing)
-    searcher = _to_searcher(resolved)
+    searcher = _resolve_search(x, x_targets, search, nothing)
     _quadratic_vector_loop!(output, x, y, h, a, d, x_targets, extrap, deriv, searcher)
     return output
 end

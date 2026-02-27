@@ -1,6 +1,6 @@
 using Test
 using FastInterpolations
-using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resolve_search,
+using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resolve_search_policy,
     AutoSearch, Binary, LinearBinary
 
 @testset "ND Per-Axis Adaptive AutoSearch Resolution" begin

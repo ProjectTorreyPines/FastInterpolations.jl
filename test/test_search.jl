@@ -3,7 +3,7 @@ using FastInterpolations
 using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
     Searcher, Binary, Linear, LinearBinary, AutoSearch, DirectSearch,
     NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, _create_spacing, _to_searcher,
-    _resolve_search, _is_likely_monotone
+    _resolve_search_policy, _is_likely_monotone
 
 @testset "Search Module" begin
 
@@ -1088,43 +1088,39 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             auto = AutoSearch()
 
             # 1D scalar → Binary
-            @test _resolve_search(auto, 0.5) isa Binary
-            @test _resolve_search(auto, 1) isa Binary       # Int <: Real
-            @test _resolve_search(auto, Float32(0.5)) isa Binary
+            @test _resolve_search_policy(auto, 0.5) isa Binary
+            @test _resolve_search_policy(auto, 1) isa Binary       # Int <: Real
+            @test _resolve_search_policy(auto, Float32(0.5)) isa Binary
 
             # 1D vector → LinearBinary
-            @test _resolve_search(auto, [0.1, 0.5]) isa LinearBinary
-            @test _resolve_search(auto, 0.0:0.1:1.0) isa LinearBinary   # Range <: AbstractVector
-            @test _resolve_search(auto, Float32[1.0, 2.0]) isa LinearBinary
+            @test _resolve_search_policy(auto, [0.1, 0.5]) isa LinearBinary
+            @test _resolve_search_policy(auto, 0.0:0.1:1.0) isa LinearBinary   # Range <: AbstractVector
+            @test _resolve_search_policy(auto, Float32[1.0, 2.0]) isa LinearBinary
 
             # ND scalar (Tuple of Reals) → Binary
-            @test _resolve_search(auto, (0.5, 0.3)) isa Binary
-            @test _resolve_search(auto, (0.1, 0.2, 0.3)) isa Binary
+            @test _resolve_search_policy(auto, (0.5, 0.3)) isa Binary
+            @test _resolve_search_policy(auto, (0.1, 0.2, 0.3)) isa Binary
 
             # ND vector (Tuple of Vectors) → LinearBinary
-            @test _resolve_search(auto, ([0.1, 0.2], [0.3, 0.4])) isa LinearBinary
-            @test _resolve_search(auto, (0.0:0.1:1.0, [0.5])) isa LinearBinary
+            @test _resolve_search_policy(auto, ([0.1, 0.2], [0.3, 0.4])) isa LinearBinary
+            @test _resolve_search_policy(auto, (0.0:0.1:1.0, [0.5])) isa LinearBinary
 
             # Passthrough: explicit policies are returned unchanged
-            @test _resolve_search(Binary(), 0.5) === Binary()
-            @test _resolve_search(Binary(), [0.1]) === Binary()
-            @test _resolve_search(LinearBinary(), 0.5) isa LinearBinary
-            @test _resolve_search(LinearBinary(), [0.1]) isa LinearBinary
-            @test _resolve_search(Linear(), [0.1]) === Linear()
+            @test _resolve_search_policy(Binary(), 0.5) === Binary()
+            @test _resolve_search_policy(Binary(), [0.1]) === Binary()
+            @test _resolve_search_policy(LinearBinary(), 0.5) isa LinearBinary
+            @test _resolve_search_policy(LinearBinary(), [0.1]) isa LinearBinary
+            @test _resolve_search_policy(Linear(), [0.1]) === Linear()
 
             # Tuple of policies: each resolved independently
             mixed = (AutoSearch(), Binary(), AutoSearch())
-            resolved_scalar = _resolve_search(mixed, 0.5)
+            resolved_scalar = _resolve_search_policy(mixed, 0.5)
             @test resolved_scalar == (Binary(), Binary(), Binary())
-            resolved_vec = _resolve_search(mixed, [0.1, 0.2])
+            resolved_vec = _resolve_search_policy(mixed, [0.1, 0.2])
             @test resolved_vec[1] isa LinearBinary
             @test resolved_vec[2] === Binary()
             @test resolved_vec[3] isa LinearBinary
 
-            # Searcher passthrough: pre-built Searcher skips resolution
-            s = Searcher{Binary,NoHint}(NoHint())
-            @test _resolve_search(s, 0.5) === s
-            @test _resolve_search(s, [0.1]) === s
         end
 
         # ========================================
@@ -1552,35 +1548,35 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             random = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0]
 
             @testset "AutoSearch + sorted + no hint → LinearBinary" begin
-                @test _resolve_search(auto, sorted, nothing) isa LinearBinary
+                @test _resolve_search_policy(auto, sorted, nothing) isa LinearBinary
             end
 
             @testset "AutoSearch + random + no hint → Binary" begin
-                @test _resolve_search(auto, random, nothing) isa Binary
+                @test _resolve_search_policy(auto, random, nothing) isa Binary
             end
 
             @testset "AutoSearch + short vector + no hint → Binary (too short for monotone check)" begin
-                @test _resolve_search(auto, [1.0, 2.0, 3.0], nothing) isa Binary
+                @test _resolve_search_policy(auto, [1.0, 2.0, 3.0], nothing) isa Binary
             end
 
             @testset "AutoSearch + hint present → fallback to _resolve_search (LinearBinary)" begin
                 # When hint is present, generic fallback delegates to _resolve_search
-                # _resolve_search(AutoSearch(), vector) → LinearBinary
-                @test _resolve_search(auto, random, Ref(1)) isa LinearBinary
-                @test _resolve_search(auto, sorted, Ref(1)) isa LinearBinary
+                # _resolve_search_policy(AutoSearch(), vector) → LinearBinary
+                @test _resolve_search_policy(auto, random, Ref(1)) isa LinearBinary
+                @test _resolve_search_policy(auto, sorted, Ref(1)) isa LinearBinary
             end
 
             @testset "Explicit policy passthrough" begin
-                @test _resolve_search(Binary(), sorted, nothing) === Binary()
-                @test _resolve_search(Binary(), random, Ref(1)) === Binary()
-                @test _resolve_search(LinearBinary(), random, nothing) isa LinearBinary
-                @test _resolve_search(Linear(), sorted, nothing) === Linear()
+                @test _resolve_search_policy(Binary(), sorted, nothing) === Binary()
+                @test _resolve_search_policy(Binary(), random, Ref(1)) === Binary()
+                @test _resolve_search_policy(LinearBinary(), random, nothing) isa LinearBinary
+                @test _resolve_search_policy(Linear(), sorted, nothing) === Linear()
             end
 
             @testset "Scalar query → fallback to _resolve_search" begin
-                # Scalar: _resolve_search(AutoSearch(), scalar) → Binary
-                @test _resolve_search(auto, 0.5, nothing) isa Binary
-                @test _resolve_search(auto, 0.5, Ref(1)) isa Binary
+                # Scalar: _resolve_search_policy(AutoSearch(), scalar) → Binary
+                @test _resolve_search_policy(auto, 0.5, nothing) isa Binary
+                @test _resolve_search_policy(auto, 0.5, Ref(1)) isa Binary
             end
         end
 
@@ -1672,19 +1668,15 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             x_vec   = collect(x_range)
 
             # Range grid → DirectSearch (regardless of policy)
-            @test _resolve_search(x_range, 0.5, AutoSearch(), nothing) isa DirectSearch
-            @test _resolve_search(x_range, 0.5, Binary(), nothing)    isa DirectSearch
-            @test _resolve_search(x_range, 0.5, LinearBinary(), nothing) isa DirectSearch
-            @test _resolve_search(x_range, [0.1, 0.5], AutoSearch(), Ref(1)) isa DirectSearch
+            @test _resolve_search_policy(x_range, 0.5, AutoSearch(), nothing) isa DirectSearch
+            @test _resolve_search_policy(x_range, 0.5, Binary(), nothing)    isa DirectSearch
+            @test _resolve_search_policy(x_range, 0.5, LinearBinary(), nothing) isa DirectSearch
+            @test _resolve_search_policy(x_range, [0.1, 0.5], AutoSearch(), Ref(1)) isa DirectSearch
 
             # Vector grid → delegates to 3-arg (NOT DirectSearch)
-            @test !(_resolve_search(x_vec, 0.5, AutoSearch(), nothing) isa DirectSearch)
-            @test _resolve_search(x_vec, 0.5, Binary(), nothing) === Binary()
+            @test !(_resolve_search_policy(x_vec, 0.5, AutoSearch(), nothing) isa DirectSearch)
+            @test _resolve_search_policy(x_vec, 0.5, Binary(), nothing) === Binary()
 
-            # Pre-built Searcher passthrough (4-arg)
-            s = Searcher{Binary,NoHint}(NoHint())
-            @test _resolve_search(x_range, 0.5, s, nothing) === s
-            @test _resolve_search(x_vec, 0.5, s, nothing) === s
         end
 
         @testset "_to_searcher(DirectSearch())" begin
@@ -1747,8 +1739,8 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @testset "Type inference: no Union leakage" begin
             x_range = 0.0:0.1:1.0
             # 4-arg resolve on Range → DirectSearch (concrete, not Union)
-            @test @inferred(_resolve_search(x_range, 0.5, AutoSearch(), nothing)) isa DirectSearch
-            @test @inferred(_resolve_search(x_range, [0.1], AutoSearch(), Ref(1))) isa DirectSearch
+            @test @inferred(_resolve_search_policy(x_range, 0.5, AutoSearch(), nothing)) isa DirectSearch
+            @test @inferred(_resolve_search_policy(x_range, [0.1], AutoSearch(), Ref(1))) isa DirectSearch
 
             # _to_searcher on DirectSearch → concrete Searcher types
             @test @inferred(_to_searcher(DirectSearch())) isa Searcher{DirectSearch,NoHint}

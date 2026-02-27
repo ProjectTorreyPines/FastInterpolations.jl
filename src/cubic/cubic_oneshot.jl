@@ -43,8 +43,7 @@ Thread-safe: workspaces allocated from task-local pool.
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
-    resolved = _resolve_search(cache.x, x_query, search, nothing)
-    searcher = _to_searcher(resolved)
+    searcher = _resolve_search(cache.x, x_query, search, nothing)
     _cubic_vector_loop!(output, cache, y, z, x_query, extrap, deriv, searcher)
 
     return output
@@ -232,8 +231,7 @@ In-place cubic spline interpolation with optional automatic caching.
     deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
-    resolved = _resolve_search(x, x_query, search, nothing)
-    searcher = _to_searcher(resolved)
+    searcher = _resolve_search(x, x_query, search, nothing)
     # Periodic BC
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, deriv, searcher)
@@ -374,8 +372,7 @@ function cubic_interp(
     search=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    resolved = _resolve_search(x, xq, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, deriv, searcher)
     end

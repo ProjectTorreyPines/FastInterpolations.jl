@@ -90,7 +90,7 @@ itp2(aq)              # Reuses same anchor
     wrap::Bool=false,
     searcher::P=DEFAULT_SEARCHER
 ) where {T<:AbstractFloat, P<:Searcher}
-    return _constant_anchor_query_impl(x, xq, wrap, searcher)
+    return _constant_anchor_query_impl(x, xq, wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
 # Real wrapper for convenience (scalar)
@@ -137,10 +137,11 @@ function _anchor_query(
     wrap::Bool=false,
     searcher::P=_to_searcher(LinearBinary())
 ) where {T<:AbstractFloat, S<:Real, P<:Searcher}
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     output = Vector{_ConstantAnchoredQuery{T}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
-        output[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap, searcher)
+        output[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
     end
     return output
 end
@@ -170,9 +171,10 @@ The same `buffer` object, filled with anchored queries.
     searcher::P=_to_searcher(LinearBinary())
 ) where {T<:AbstractFloat, S<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
     @inbounds for k in eachindex(xq)
-        buffer[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap, searcher)
+        buffer[k] = _constant_anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
     end
     return buffer
 end
@@ -221,7 +223,7 @@ Internal implementation of _anchor_query for constant interpolation.
         @inbounds (n - 1, x[n-1], x[n])
     else
         # Inside domain: use policy-based interval search
-        search_interval(_resolve_searcher(x, policy), x, xq)
+        search_interval(policy, x, xq)
     end
 
     # Compute geometry

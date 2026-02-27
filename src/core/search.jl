@@ -210,7 +210,7 @@ struct AutoSearch <: AbstractSearchPolicy end
 
 Internal policy for Range grids where interval lookup is always O(1) direct computation.
 Short-circuits the adaptive resolution pipeline to avoid Union type propagation from
-`_resolve_search(::AutoSearch, ::Vector, ::Nothing)` → `Union{Binary, LinearBinary{N}}`.
+`_resolve_search_policy(::AutoSearch, ::Vector, ::Nothing)` → `Union{Binary, LinearBinary{N}}`.
 
 Not exported. Created automatically by the 4-arg `_resolve_search` when the grid is `AbstractRange`.
 """
@@ -255,25 +255,25 @@ end
 # Must be called BEFORE _to_searcher in all eval paths.
 
 # 1D scalar: no hint locality → pure binary search
-@inline _resolve_search(::AutoSearch, ::Real) = Binary()
+@inline _resolve_search_policy(::AutoSearch, ::Real) = Binary()
 
 # 1D vector: sorted locality → linear window with binary fallback
-@inline _resolve_search(::AutoSearch, ::AbstractVector) = LinearBinary()
+@inline _resolve_search_policy(::AutoSearch, ::AbstractVector) = LinearBinary()
 
 # ND SoA batch: tuple of vectors → LinearBinary per axis
 # NOTE: must precede the bare ::Tuple fallback — Tuple{Vararg{AbstractVector}} <: Tuple,
 # so Julia's specificity rules handle ordering correctly, but explicit ordering avoids confusion.
-@inline _resolve_search(::AutoSearch, ::Tuple{Vararg{AbstractVector}}) = LinearBinary()
+@inline _resolve_search_policy(::AutoSearch, ::Tuple{Vararg{AbstractVector}}) = LinearBinary()
 
 # ND scalar: tuple of reals → Binary per axis
-@inline _resolve_search(::AutoSearch, ::Tuple) = Binary()
+@inline _resolve_search_policy(::AutoSearch, ::Tuple) = Binary()
 
 # Passthrough: explicit policies are honored as-is
-@inline _resolve_search(p::AbstractSearchPolicy, _) = p
+@inline _resolve_search_policy(p::AbstractSearchPolicy, _) = p
 
 # Tuple of policies: resolve each element (for ND per-axis storage)
-@inline _resolve_search(ps::Tuple{Vararg{AbstractSearchPolicy}}, query) =
-    map(p -> _resolve_search(p, query), ps)
+@inline _resolve_search_policy(ps::Tuple{Vararg{AbstractSearchPolicy}}, query) =
+    map(p -> _resolve_search_policy(p, query), ps)
 
 # 3-arg form: adaptive vector resolution with hint awareness.
 # When hint=nothing + AutoSearch + Real vector, checks prefix monotonicity
@@ -282,9 +282,9 @@ end
 # strategy, so we skip adaptive resolution and defer to the 2-arg form —
 # AutoSearch+vector already resolves to LinearBinary there, which is correct
 # because hinted callers expect walk-based locality.
-@inline _resolve_search(search, xq, hint) = _resolve_search(search, xq)
+@inline _resolve_search_policy(search, xq, hint) = _resolve_search_policy(search, xq)
 
-@inline function _resolve_search(::AutoSearch, xq::AbstractVector{<:Real}, ::Nothing)
+@inline function _resolve_search_policy(::AutoSearch, xq::AbstractVector{<:Real}, ::Nothing)
     _is_likely_monotone(xq) ? LinearBinary() : Binary()
 end
 
@@ -295,9 +295,8 @@ end
 # Returning DirectSearch() avoids Union{Binary, LinearBinary{N}} from adaptive
 # resolution, eliminating LLVM union-splitting in hot loops.
 
-@inline _resolve_search(::AbstractRange, xq, ::AbstractSearchPolicy, hint) = DirectSearch()
-@inline _resolve_search(::AbstractVector, xq, search::AbstractSearchPolicy, hint) = _resolve_search(search, xq, hint)
-# Searcher passthrough for 4-arg form: defined after Searcher struct (see below)
+@inline _resolve_search_policy(::AbstractRange, xq, ::AbstractSearchPolicy, hint) = DirectSearch()
+@inline _resolve_search_policy(::AbstractVector, xq, search::AbstractSearchPolicy, hint) = _resolve_search_policy(search, xq, hint)
 
 # ----------------------------------------
 # Hint Types (Internal)
@@ -364,11 +363,6 @@ struct Searcher{P<:AbstractSearchPolicy,H<:AbstractHint}
     hint::H
 end
 
-# Searcher passthrough for _resolve_search: pre-built Searcher objects skip resolution.
-# Must be defined after Searcher struct (Julia requires types to be defined before use).
-@inline _resolve_search(s::Searcher, _) = s
-@inline _resolve_search(_, _, s::Searcher, _) = s  # 4-arg form passthrough
-
 """
     DEFAULT_SEARCHER
 
@@ -405,7 +399,7 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(::LinearBinary{MAX}, ::Nothing) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint())
 @inline _to_searcher(::LinearBinary{MAX}, hint::Base.RefValue{Int}) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint(hint))
 
-# AutoSearch fallbacks: _resolve_search should be called first, but if any
+# AutoSearch fallbacks: _resolve_search_policy should be called first, but if any
 # code path misses resolution, fall back to Binary (safe stateless default).
 @inline _to_searcher(::AutoSearch) = Searcher{Binary,NoHint}(NoHint())
 @inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
@@ -428,14 +422,29 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(s::Searcher, ::Base.RefValue{Int}) = s  # already configured, hint ignored
 
 # ----------------------------------------
-# Searcher resolution for pre-baked Searchers (anchor paths)
+# Canonical resolver APIs
 # ----------------------------------------
+# Resolution pipeline:
+#   _resolve_search_policy     — AutoSearch/tuple → concrete policy (Binary, LinearBinary, DirectSearch)
+#   _resolve_search            — policy + grid + hint → concrete Searcher (THE entry point)
+#   _resolve_searcher_for_grid — pre-built Searcher → grid-adapted Searcher (Range → DirectSearch)
+#
+# _to_searcher is preserved as the policy→Searcher converter used internally.
+
+# _resolve_searcher_for_grid: adapt pre-built Searcher to grid type.
 # Converts any Searcher to DirectSearch variant when grid is AbstractRange.
-# Used by anchor paths where the Searcher is constructed before the grid type is known.
 # P<:AbstractSearchPolicy bound required to avoid method ambiguity with the catchall.
-@inline _resolve_searcher(::AbstractRange, ::Searcher{P,NoHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,NoHint}(NoHint())
-@inline _resolve_searcher(::AbstractRange, s::Searcher{P,RefHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,RefHint}(s.hint)
-@inline _resolve_searcher(_, s::Searcher) = s
+@inline _resolve_searcher_for_grid(::AbstractRange, ::Searcher{P,NoHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,NoHint}(NoHint())
+@inline _resolve_searcher_for_grid(::AbstractRange, s::Searcher{P,RefHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,RefHint}(s.hint)
+@inline _resolve_searcher_for_grid(_, s::Searcher) = s
+
+# _resolve_search: one-liner entry point for all eval paths.
+# Composes policy resolution + searcher creation + grid adaptation.
+# When `search` is already a Searcher (user-injected), skip resolution and adapt to grid.
+@inline _resolve_search(grid, q, search, hint) =
+    _to_searcher(_resolve_search_policy(grid, q, search, hint), hint)
+@inline _resolve_search(grid, _, s::Searcher, _) =
+    _resolve_searcher_for_grid(grid, s)
 
 # ========================================
 # 2. Base Implementations

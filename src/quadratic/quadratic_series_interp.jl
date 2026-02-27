@@ -524,8 +524,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
     T_out = promote_type(Tv, typeof(xq_promoted))
-    resolved = _resolve_search(sitp.x, xq, search, hint)
-    aq = _make_anchor(sitp, xq_promoted, _to_searcher(resolved, hint))
+    aq = _make_anchor(sitp, xq_promoted, _resolve_search(sitp.x, xq, search, hint))
 
     output = Vector{T_out}(undef, n_series(sitp))
     _eval_series_at_anchor!(output, sitp, aq, deriv)
@@ -553,8 +552,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
     xq_promoted = _promote_for_anchor(xq, Tg)
 
-    resolved = _resolve_search(sitp.x, xq, search, hint)
-    aq = _make_anchor(sitp, xq_promoted, _to_searcher(resolved, hint))
+    aq = _make_anchor(sitp, xq_promoted, _resolve_search(sitp.x, xq, search, hint))
 
     _eval_series_at_anchor!(output, sitp, aq, deriv)
     return output
@@ -614,8 +612,7 @@ Pool handles both same-type and mixed-type cases efficiently.
     # Build anchors - pool handles both same-type and mixed-type cases
     Tq_eff = promote_type(Tq, Tg)
     aq_vec = acquire!(pool, _QuadraticAnchoredQuery{Tg, Tq_eff}, n_query)
-    resolved = _resolve_search(sitp.x, xq, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(sitp.x, xq, search, hint)
     if Tq === Tg
         _fill_anchors!(aq_vec, sitp.x, xq, Val(:quadratic), _should_wrap(sitp), searcher)
     else

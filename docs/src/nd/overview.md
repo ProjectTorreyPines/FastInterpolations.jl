@@ -39,7 +39,7 @@ Every 1D argument becomes a Tuple in ND. This applies uniformly:
 | BC | `bc=CubicFit()` | `bc=(CubicFit(), PeriodicBC())` |
 | Extrap | `extrap=ConstExtrap()` | `extrap=(ConstExtrap(), WrapExtrap())` |
 | Derivative | `deriv=DerivOp(1)` | `deriv=DerivOp(1, 0)` for ∂f/∂x |
-| Search | `search=AutoSearch()` (default) | `search=AutoSearch()` (default) or `search=(Binary(), LinearBinary())` |
+| Search | `search=AutoSearch()` (default) | `search=AutoSearch()` (default) or `search=(BinarySearch(), LinearBinarySearch())` |
 
 **Broadcast rule**: A scalar value is broadcast to all axes. `bc=CubicFit()` is equivalent to `bc=(CubicFit(), CubicFit())` in 2D.
 

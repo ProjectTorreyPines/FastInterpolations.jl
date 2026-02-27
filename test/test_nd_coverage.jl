@@ -251,11 +251,11 @@ import FastInterpolations:
         end
 
         @testset "_resolve_search_nd wrong-sized tuple error" begin
-            # Note: Search policy types are Binary, Linear, etc. (not exported)
-            Binary = FastInterpolations.Binary
-            Linear = FastInterpolations.Linear
-            bs = Binary()
-            ls = Linear()
+            # Note: Search policy types are BinarySearch, LinearSearch, etc. (not exported)
+            BinarySearch = FastInterpolations.BinarySearch
+            LinearSearch = FastInterpolations.LinearSearch
+            bs = BinarySearch()
+            ls = LinearSearch()
 
             # Correct size should work
             @test _resolve_search_nd(bs, Val(2)) == (bs, bs)

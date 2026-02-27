@@ -81,7 +81,7 @@ DerivativeView forwards all keyword arguments to the parent interpolant (`deriv`
 d1 = deriv1(itp)
 
 # Override search policy
-d1(0.5; search=LinearBinary())
+d1(0.5; search=LinearBinarySearch())
 
 # Use hint for sequential access
 hint = Ref(1)

@@ -168,9 +168,9 @@ Constant (step/piecewise constant) interpolation at a single point.
   - `RightSide()`: use right value (except at grid points)
 - `deriv::DerivOp`: Derivative order (`EvalValue()`, `DerivOp(1)`, or `DerivOp(2)`). Derivatives are always 0.
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
-  - `Binary()` (default): O(log n) binary search, stateless
-  - `LinearBinary(linear_window=0)`: O(1) if hint valid, O(log n) fallback
-  - `LinearBinary(linear_window=8)`: Linear search within window, then binary fallback
+  - `BinarySearch()` (default): O(log n) binary search, stateless
+  - `LinearBinarySearch(linear_window=0)`: O(1) if hint valid, O(log n) fallback
+  - `LinearBinarySearch(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns
 - Interpolated value (Float type)
@@ -188,7 +188,7 @@ constant_interp(x, y, -1.0; extrap=ConstExtrap()) # 10.0 (clamped)
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
+vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
 # AD Support: xi can be any Real (including ForwardDiff.Dual)
@@ -200,13 +200,12 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8
     extrap::AbstractExtrap=NoExtrap(),
     side::AbstractSide=NearestSide(),
     deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
+    search::AbstractSearchPolicy=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    resolved = _resolve_search(x, xi, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, xi, search, hint)
     _constant_eval_at_point(x, y, xi, extrap, side, deriv, searcher)
 end
 
@@ -236,7 +235,7 @@ constant_interp!(out, x, y, [0.5, 1.5, 2.5])
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
 output = zeros(1000)
-constant_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_window=8))
+constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
 function constant_interp!(
@@ -252,8 +251,7 @@ function constant_interp!(
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    resolved = _resolve_search(x, x_targets, search, nothing)
-    searcher = _to_searcher(resolved)
+    searcher = _resolve_search(x, x_targets, search, nothing)
     @boundscheck _check_domain(x, x_targets, extrap)
     _constant_vector_loop!(output, x, y, x_targets, extrap, side, deriv, searcher)
     return output
@@ -277,7 +275,7 @@ result = constant_interp(x, y, [0.5, 1.5, 2.5])
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = constant_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
+vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
 function constant_interp(
@@ -314,7 +312,7 @@ end
     extrap::AbstractExtrap=NoExtrap(),
     side::AbstractSide=NearestSide(),
     deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
+    search::AbstractSearchPolicy=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)

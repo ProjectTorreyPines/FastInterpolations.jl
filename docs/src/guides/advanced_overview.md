@@ -44,4 +44,4 @@ For **Vector grids**, see [**Search & Hints**](@ref search_hints) section help o
 - **"I need zero allocations in my hot loop"** → [Memory & Allocation](@ref memory_allocation)
 - **"I want to minimize/optimize over an interpolated surface"** → [Optimization (Optim.jl)](@ref optimization_guide)
 
-These features can be combined. For example, a Series Interpolant can use `LinearBinary` search policy with external hints for maximum performance in ODE integrator callbacks.
+These features can be combined. For example, a Series Interpolant can use `LinearBinarySearch` search policy with external hints for maximum performance in ODE integrator callbacks.

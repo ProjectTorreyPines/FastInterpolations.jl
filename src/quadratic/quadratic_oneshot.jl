@@ -171,9 +171,9 @@ C1 piecewise quadratic spline interpolation at a single point.
   - `ExtendExtrap()`: extend the boundary polynomial
 - `deriv::DerivOp`: Derivative order -- use `EvalValue()` (default), `DerivOp(1)`, or `DerivOp(2)`
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
-  - `Binary()` (default): O(log n) binary search, stateless
-  - `LinearBinary(linear_window=0)`: O(1) if hint valid, O(log n) fallback
-  - `LinearBinary(linear_window=8)`: Linear search within window, then binary fallback
+  - `BinarySearch()` (default): O(log n) binary search, stateless
+  - `LinearBinarySearch(linear_window=0)`: O(1) if hint valid, O(log n) fallback
+  - `LinearBinarySearch(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns
 - Interpolated value (Float type)
@@ -192,7 +192,7 @@ quadratic_interp(x, y, 1.5; bc=MinCurvFit())        # minimize curvature
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
+vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
 @inline @with_pool pool function quadratic_interp(
@@ -202,7 +202,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
+    search::AbstractSearchPolicy=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
@@ -217,8 +217,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=
     bc_promoted = _promote_bc(bc, Tv)
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
-    resolved = _resolve_search(x, xq, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, xq, search, hint)
     _quadratic_eval_at_point(x, y, h, a, d, xq, extrap, deriv, searcher)
 end
 
@@ -246,7 +245,7 @@ quadratic_interp!(out, x, y, [0.5, 1.5, 2.5])
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
 output = zeros(1000)
-quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_window=8))
+quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
 @with_pool pool function quadratic_interp!(
@@ -272,8 +271,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinary(linear_windo
     bc_promoted = _promote_bc(bc, Tv)
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
-    resolved = _resolve_search(x, x_targets, search, nothing)
-    searcher = _to_searcher(resolved)
+    searcher = _resolve_search(x, x_targets, search, nothing)
     _quadratic_vector_loop!(output, x, y, h, a, d, x_targets, extrap, deriv, searcher)
     return output
 end
@@ -296,7 +294,7 @@ result = quadratic_interp(x, y, [0.5, 1.5, 2.5])
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = quadratic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
+vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
 function quadratic_interp(
@@ -361,7 +359,7 @@ end
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
+    search::AbstractSearchPolicy=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)

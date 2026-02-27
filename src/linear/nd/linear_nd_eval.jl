@@ -21,7 +21,7 @@
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
+    search_tuple = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
     return _eval_linear_nd(itp, query, ops, search_tuple, hint)
 end
 

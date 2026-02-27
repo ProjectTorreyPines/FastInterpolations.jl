@@ -23,37 +23,37 @@
 Abstract supertype for user-facing search policy selection.
 Concrete subtypes encode the search algorithm choice.
 
-See also: [`Binary`](@ref), [`LinearBinary`](@ref)
+See also: [`BinarySearch`](@ref), [`LinearBinarySearch`](@ref)
 """
 abstract type AbstractSearchPolicy end
 
 """
-    Binary <: AbstractSearchPolicy
+    BinarySearch <: AbstractSearchPolicy
 
 Binary search algorithm. O(log n) per query for vectors, O(1) for ranges.
 Stateless and thread-safe. This is the default search policy.
 
 # Hint Behavior
-When a `hint` argument is provided with `Binary()`, the search automatically
-upgrades to `LinearBinary()` (default window) to utilize the hint for locality. Without a hint,
+When a `hint` argument is provided with `BinarySearch()`, the search automatically
+upgrades to `LinearBinarySearch()` (default window) to utilize the hint for locality. Without a hint,
 pure binary search is used.
 
 # Example
 ```julia
-val = linear_interp(x, y, 0.5; search=Binary())  # explicit binary search
+val = linear_interp(x, y, 0.5; search=BinarySearch())  # explicit binary search
 val = linear_interp(x, y, 0.5)                    # default: AutoSearch()
 
-# With hint: auto-upgrades to LinearBinary() (default window)
+# With hint: auto-upgrades to LinearBinarySearch() (default window)
 hint = Ref(1)
-val = itp(0.5; search=Binary(), hint=hint)  # uses LinearBinary() internally
+val = itp(0.5; search=BinarySearch(), hint=hint)  # uses LinearBinarySearch() internally
 ```
 
-See also: [`LinearBinary`](@ref)
+See also: [`LinearBinarySearch`](@ref)
 """
-struct Binary <: AbstractSearchPolicy end
+struct BinarySearch <: AbstractSearchPolicy end
 
 """
-    Linear <: AbstractSearchPolicy
+    LinearSearch <: AbstractSearchPolicy
 
 Pure linear search for **strictly monotonic query sequences**.
 Maximum speed with no binary fallback and minimal bounds checking.
@@ -76,25 +76,25 @@ Maximum speed with no binary fallback and minimal bounds checking.
 - Performance-critical loops where ALL inputs are controlled
 
 # When NOT to Use
-- Random access patterns (use [`Binary`](@ref))
-- Queries that might exceed domain bounds (use [`LinearBinary`](@ref))
-- Untrusted input data (use [`LinearBinary`](@ref))
+- Random access patterns (use [`BinarySearch`](@ref))
+- Queries that might exceed domain bounds (use [`LinearBinarySearch`](@ref))
+- Untrusted input data (use [`LinearBinarySearch`](@ref))
 
 # Example
 ```julia
 # ODE-style monotonic evaluation
 hint = Ref(1)
 for t in t_values  # strictly increasing
-    y = itp(t; search=Linear(), hint=hint)
+    y = itp(t; search=LinearSearch(), hint=hint)
 end
 ```
 
-See also: [`LinearBinary`](@ref), [`Binary`](@ref)
+See also: [`LinearBinarySearch`](@ref), [`BinarySearch`](@ref)
 """
-struct Linear <: AbstractSearchPolicy end
+struct LinearSearch <: AbstractSearchPolicy end
 
 """
-    LinearBinary{MAX} <: AbstractSearchPolicy
+    LinearBinarySearch{MAX} <: AbstractSearchPolicy
 
 Bounded linear search within a window of `MAX` positions from hint, then binary fallback.
 Optimal for **sorted/monotonic query sequences** where consecutive queries tend to
@@ -112,31 +112,31 @@ fall in adjacent or nearby intervals.
 # Construction
 Use the factory function (recommended) to construct with a curated set of values:
 ```julia
-LinearBinary()                   # default MAX=8
-LinearBinary(linear_window=0)    # hint check only, no walk
-LinearBinary(linear_window=4)    # custom MAX=4
+LinearBinarySearch()                   # default MAX=8
+LinearBinarySearch(linear_window=0)    # hint check only, no walk
+LinearBinarySearch(linear_window=4)    # custom MAX=4
 ```
 
 Or construct the parametric type directly (advanced):
 ```julia
-LinearBinary{8}()            # explicit type parameter
+LinearBinarySearch{8}()            # explicit type parameter
 ```
 
 # Example
 ```julia
 sorted_queries = sort(rand(1000))
-vals = linear_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
+vals = linear_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 
-See also: [`Binary`](@ref)
+See also: [`BinarySearch`](@ref)
 """
-struct LinearBinary{MAX} <: AbstractSearchPolicy end
+struct LinearBinarySearch{MAX} <: AbstractSearchPolicy end
 
 """
-    LinearBinary(linear_window::Integer)
-    LinearBinary(; linear_window::Integer=8)
+    LinearBinarySearch(linear_window::Integer)
+    LinearBinarySearch(; linear_window::Integer=8)
 
-Factory constructor for `LinearBinary{MAX}` with a **curated set of `linear_window` values**.
+Factory constructor for `LinearBinarySearch{MAX}` with a **curated set of `linear_window` values**.
 
 # Why Restricted Values?
 Julia compiles a specialized method for each unique type parameter `MAX`. Allowing
@@ -155,10 +155,10 @@ covering the practical range of use cases.
 
 # Example
 ```julia
-policy = LinearBinary()                  # LinearBinary{8}()  (default)
-policy = LinearBinary(linear_window=2)   # LinearBinary{2}()
-policy = LinearBinary(linear_window=16)  # LinearBinary{16}()
-policy = LinearBinary(linear_window=3)   # ERROR: ArgumentError
+policy = LinearBinarySearch()                  # LinearBinarySearch{8}()  (default)
+policy = LinearBinarySearch(linear_window=2)   # LinearBinarySearch{2}()
+policy = LinearBinarySearch(linear_window=16)  # LinearBinarySearch{16}()
+policy = LinearBinarySearch(linear_window=3)   # ERROR: ArgumentError
 ```
 
 # Choosing `linear_window`
@@ -168,40 +168,40 @@ policy = LinearBinary(linear_window=3)   # ERROR: ArgumentError
 - **Default (8)**: Best balance — +2.5ns random overhead, covers jitter up to ~6 intervals
 - **Large values (16–128)**: For wide jitter, highly localized, or very large datasets
 """
-function LinearBinary(linear_window::Integer)
-    linear_window == 0  && return LinearBinary{0}()
-    linear_window == 1  && return LinearBinary{1}()
-    linear_window == 2  && return LinearBinary{2}()
-    linear_window == 4  && return LinearBinary{4}()
-    linear_window == 8  && return LinearBinary{8}()
-    linear_window == 16 && return LinearBinary{16}()
-    linear_window == 32 && return LinearBinary{32}()
-    linear_window == 64 && return LinearBinary{64}()
-    linear_window == 128 && return LinearBinary{128}()
+function LinearBinarySearch(linear_window::Integer)
+    linear_window == 0  && return LinearBinarySearch{0}()
+    linear_window == 1  && return LinearBinarySearch{1}()
+    linear_window == 2  && return LinearBinarySearch{2}()
+    linear_window == 4  && return LinearBinarySearch{4}()
+    linear_window == 8  && return LinearBinarySearch{8}()
+    linear_window == 16 && return LinearBinarySearch{16}()
+    linear_window == 32 && return LinearBinarySearch{32}()
+    linear_window == 64 && return LinearBinarySearch{64}()
+    linear_window == 128 && return LinearBinarySearch{128}()
     throw(ArgumentError("`linear_window` must be one of (0, 1, 2, 4, 8, 16, 32, 64, 128), got $linear_window"))
 end
-LinearBinary(; linear_window::Integer=8) = LinearBinary(linear_window)
+LinearBinarySearch(; linear_window::Integer=8) = LinearBinarySearch(linear_window)
 
 """
     AutoSearch <: AbstractSearchPolicy
 
 Adaptive search policy that resolves at call time based on query type:
-- **Scalar** queries (`Real`, `Tuple{Vararg{Real}}`) → `Binary()` — no hint locality to exploit
-- **Vector** queries (`AbstractVector`, `Tuple{Vararg{AbstractVector}}`) → `LinearBinary()` — hint continuity benefits sorted sequences
-- **Broadcast** (`itp.(xs)`) → `Binary()` per element — fresh searcher each call
+- **Scalar** queries (`Real`, `Tuple{Vararg{Real}}`) → `BinarySearch()` — no hint locality to exploit
+- **Vector** queries (`AbstractVector`, `Tuple{Vararg{AbstractVector}}`) → `LinearBinarySearch()` — hint continuity benefits sorted sequences
+- **Broadcast** (`itp.(xs)`) → `BinarySearch()` per element — fresh searcher each call
 
 This is the default search policy for all interpolants. For known query patterns,
-specify `Binary()` or `LinearBinary()` explicitly for optimal performance.
+specify `BinarySearch()` or `LinearBinarySearch()` explicitly for optimal performance.
 
 # Example
 ```julia
 itp = linear_interp(x, y)              # stores AutoSearch()
-itp(0.5)                               # → Binary() internally (scalar)
-itp([0.1, 0.5, 0.9])                   # → LinearBinary() internally (vector)
-itp(0.5; search=LinearBinary())        # override: use LinearBinary explicitly
+itp(0.5)                               # → BinarySearch() internally (scalar)
+itp([0.1, 0.5, 0.9])                   # → LinearBinarySearch() internally (vector)
+itp(0.5; search=LinearBinarySearch())        # override: use LinearBinarySearch explicitly
 ```
 
-See also: [`Binary`](@ref), [`LinearBinary`](@ref)
+See also: [`BinarySearch`](@ref), [`LinearBinarySearch`](@ref)
 """
 struct AutoSearch <: AbstractSearchPolicy end
 
@@ -210,7 +210,7 @@ struct AutoSearch <: AbstractSearchPolicy end
 
 Internal policy for Range grids where interval lookup is always O(1) direct computation.
 Short-circuits the adaptive resolution pipeline to avoid Union type propagation from
-`_resolve_search(::AutoSearch, ::Vector, ::Nothing)` → `Union{Binary, LinearBinary{N}}`.
+`_resolve_search_policy(::AutoSearch, ::Vector, ::Nothing)` → `Union{BinarySearch, LinearBinarySearch{N}}`.
 
 Not exported. Created automatically by the 4-arg `_resolve_search` when the grid is `AbstractRange`.
 """
@@ -224,8 +224,8 @@ struct DirectSearch <: AbstractSearchPolicy end
     _is_likely_monotone(xq::AbstractVector{<:Real}, ::Val{K}=Val(8)) -> Bool
 
 Check if the first K elements of `xq` are monotonically ordered (ascending or descending).
-Used by adaptive AutoSearch to choose between LinearBinary and Binary for vector queries.
-Returns `false` for short vectors (length < K) since LinearBinary offers negligible benefit.
+Used by adaptive AutoSearch to choose between LinearBinarySearch and BinarySearch for vector queries.
+Returns `false` for short vectors (length < K) since LinearBinarySearch offers negligible benefit.
 
 False positive rate: 1/K! ≈ 2.5e-5 for K=8 (random data appearing sorted in first K elements).
 """
@@ -255,49 +255,48 @@ end
 # Must be called BEFORE _to_searcher in all eval paths.
 
 # 1D scalar: no hint locality → pure binary search
-@inline _resolve_search(::AutoSearch, ::Real) = Binary()
+@inline _resolve_search_policy(::AutoSearch, ::Real) = BinarySearch()
 
 # 1D vector: sorted locality → linear window with binary fallback
-@inline _resolve_search(::AutoSearch, ::AbstractVector) = LinearBinary()
+@inline _resolve_search_policy(::AutoSearch, ::AbstractVector) = LinearBinarySearch()
 
-# ND SoA batch: tuple of vectors → LinearBinary per axis
+# ND SoA batch: tuple of vectors → LinearBinarySearch per axis
 # NOTE: must precede the bare ::Tuple fallback — Tuple{Vararg{AbstractVector}} <: Tuple,
 # so Julia's specificity rules handle ordering correctly, but explicit ordering avoids confusion.
-@inline _resolve_search(::AutoSearch, ::Tuple{Vararg{AbstractVector}}) = LinearBinary()
+@inline _resolve_search_policy(::AutoSearch, ::Tuple{Vararg{AbstractVector}}) = LinearBinarySearch()
 
-# ND scalar: tuple of reals → Binary per axis
-@inline _resolve_search(::AutoSearch, ::Tuple) = Binary()
+# ND scalar: tuple of reals → BinarySearch per axis
+@inline _resolve_search_policy(::AutoSearch, ::Tuple) = BinarySearch()
 
 # Passthrough: explicit policies are honored as-is
-@inline _resolve_search(p::AbstractSearchPolicy, _) = p
+@inline _resolve_search_policy(p::AbstractSearchPolicy, _) = p
 
 # Tuple of policies: resolve each element (for ND per-axis storage)
-@inline _resolve_search(ps::Tuple{Vararg{AbstractSearchPolicy}}, query) =
-    map(p -> _resolve_search(p, query), ps)
+@inline _resolve_search_policy(ps::Tuple{Vararg{AbstractSearchPolicy}}, query) =
+    map(p -> _resolve_search_policy(p, query), ps)
 
 # 3-arg form: adaptive vector resolution with hint awareness.
 # When hint=nothing + AutoSearch + Real vector, checks prefix monotonicity
-# to choose Binary (random) vs LinearBinary (sorted).
+# to choose BinarySearch (random) vs LinearBinarySearch (sorted).
 # When hint IS provided, the caller already has state tied to a specific search
 # strategy, so we skip adaptive resolution and defer to the 2-arg form —
-# AutoSearch+vector already resolves to LinearBinary there, which is correct
+# AutoSearch+vector already resolves to LinearBinarySearch there, which is correct
 # because hinted callers expect walk-based locality.
-@inline _resolve_search(search, xq, hint) = _resolve_search(search, xq)
+@inline _resolve_search_policy(search, xq, hint) = _resolve_search_policy(search, xq)
 
-@inline function _resolve_search(::AutoSearch, xq::AbstractVector{<:Real}, ::Nothing)
-    _is_likely_monotone(xq) ? LinearBinary() : Binary()
+@inline function _resolve_search_policy(::AutoSearch, xq::AbstractVector{<:Real}, ::Nothing)
+    _is_likely_monotone(xq) ? LinearBinarySearch() : BinarySearch()
 end
 
 # ----------------------------------------
 # 4-arg form: grid-aware resolution (Range short-circuit)
 # ----------------------------------------
 # Range grids always use O(1) _search_direct — no search resolution needed.
-# Returning DirectSearch() avoids Union{Binary, LinearBinary{N}} from adaptive
+# Returning DirectSearch() avoids Union{BinarySearch, LinearBinarySearch{N}} from adaptive
 # resolution, eliminating LLVM union-splitting in hot loops.
 
-@inline _resolve_search(::AbstractRange, xq, ::AbstractSearchPolicy, hint) = DirectSearch()
-@inline _resolve_search(::AbstractVector, xq, search::AbstractSearchPolicy, hint) = _resolve_search(search, xq, hint)
-# Searcher passthrough for 4-arg form: defined after Searcher struct (see below)
+@inline _resolve_search_policy(::AbstractRange, xq, ::AbstractSearchPolicy, hint) = DirectSearch()
+@inline _resolve_search_policy(::AbstractVector, xq, search::AbstractSearchPolicy, hint) = _resolve_search_policy(search, xq, hint)
 
 # ----------------------------------------
 # Hint Types (Internal)
@@ -313,7 +312,7 @@ abstract type AbstractHint end
 """
     NoHint <: AbstractHint
 
-No state maintained. Used with `Binary` for stateless search.
+No state maintained. Used with `BinarySearch` for stateless search.
 """
 struct NoHint <: AbstractHint end
 
@@ -350,24 +349,19 @@ Internal searcher type combining search policy with hint state.
 Type parameters enable compile-time dispatch with zero runtime overhead.
 
 # Type Parameters
-- `P`: Search policy type (`Binary`, `LinearBinary{N}`)
+- `P`: Search policy type (`BinarySearch`, `LinearBinarySearch{N}`)
 - `H`: Hint type (`NoHint`, `RefHint`)
 
 # Fields
 - `hint::H`: The hint instance (NoHint singleton or RefHint with mutable Ref)
 
 # Note
-Users should not construct Searcher directly. Use the policy types (`Binary()`,
-`LinearBinary()`) with the `search` keyword argument instead.
+Users should not construct Searcher directly. Use the policy types (`BinarySearch()`,
+`LinearBinarySearch()`) with the `search` keyword argument instead.
 """
 struct Searcher{P<:AbstractSearchPolicy,H<:AbstractHint}
     hint::H
 end
-
-# Searcher passthrough for _resolve_search: pre-built Searcher objects skip resolution.
-# Must be defined after Searcher struct (Julia requires types to be defined before use).
-@inline _resolve_search(s::Searcher, _) = s
-@inline _resolve_search(_, _, s::Searcher, _) = s  # 4-arg form passthrough
 
 """
     DEFAULT_SEARCHER
@@ -375,7 +369,7 @@ end
 Default internal searcher: stateless binary search with no hint.
 Compiles to identical code as direct `_search_interval` call.
 """
-const DEFAULT_SEARCHER = Searcher{Binary,NoHint}(NoHint())
+const DEFAULT_SEARCHER = Searcher{BinarySearch,NoHint}(NoHint())
 
 # ----------------------------------------
 # Policy → Searcher Conversion (Thread-Safe)
@@ -387,9 +381,9 @@ const DEFAULT_SEARCHER = Searcher{Binary,NoHint}(NoHint())
 Convert user-facing policy to internal Searcher with fresh hint state.
 Creates a new RefHint for stateful policies, ensuring thread safety.
 """
-@inline _to_searcher(::Binary) = Searcher{Binary,NoHint}(NoHint())
-@inline _to_searcher(::Linear) = Searcher{Linear,RefHint}(RefHint())
-@inline _to_searcher(::LinearBinary{MAX}) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint())
+@inline _to_searcher(::BinarySearch) = Searcher{BinarySearch,NoHint}(NoHint())
+@inline _to_searcher(::LinearSearch) = Searcher{LinearSearch,RefHint}(RefHint())
+@inline _to_searcher(::LinearBinarySearch{MAX}) where {MAX} = Searcher{LinearBinarySearch{MAX},RefHint}(RefHint())
 
 # ----------------------------------------
 # 2-arg overloads: Policy + External Hint
@@ -398,18 +392,18 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 # When hint=nothing, behaves identically to 1-arg version.
 # When hint=Ref{Int}, stateful policies use the external Ref for persistence.
 
-@inline _to_searcher(::Binary, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
-@inline _to_searcher(::Binary, hint::Base.RefValue{Int}) = _to_searcher(LinearBinary(), hint)  # auto-upgrade to default LinearBinary
-@inline _to_searcher(::Linear, ::Nothing) = Searcher{Linear,RefHint}(RefHint())
-@inline _to_searcher(::Linear, hint::Base.RefValue{Int}) = Searcher{Linear,RefHint}(RefHint(hint))
-@inline _to_searcher(::LinearBinary{MAX}, ::Nothing) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint())
-@inline _to_searcher(::LinearBinary{MAX}, hint::Base.RefValue{Int}) where {MAX} = Searcher{LinearBinary{MAX},RefHint}(RefHint(hint))
+@inline _to_searcher(::BinarySearch, ::Nothing) = Searcher{BinarySearch,NoHint}(NoHint())
+@inline _to_searcher(::BinarySearch, hint::Base.RefValue{Int}) = _to_searcher(LinearBinarySearch(), hint)  # auto-upgrade to default LinearBinarySearch
+@inline _to_searcher(::LinearSearch, ::Nothing) = Searcher{LinearSearch,RefHint}(RefHint())
+@inline _to_searcher(::LinearSearch, hint::Base.RefValue{Int}) = Searcher{LinearSearch,RefHint}(RefHint(hint))
+@inline _to_searcher(::LinearBinarySearch{MAX}, ::Nothing) where {MAX} = Searcher{LinearBinarySearch{MAX},RefHint}(RefHint())
+@inline _to_searcher(::LinearBinarySearch{MAX}, hint::Base.RefValue{Int}) where {MAX} = Searcher{LinearBinarySearch{MAX},RefHint}(RefHint(hint))
 
-# AutoSearch fallbacks: _resolve_search should be called first, but if any
-# code path misses resolution, fall back to Binary (safe stateless default).
-@inline _to_searcher(::AutoSearch) = Searcher{Binary,NoHint}(NoHint())
-@inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{Binary,NoHint}(NoHint())
-@inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = _to_searcher(LinearBinary(), hint)  # auto-upgrade to default LinearBinary
+# AutoSearch fallbacks: _resolve_search_policy should be called first, but if any
+# code path misses resolution, fall back to BinarySearch (safe stateless default).
+@inline _to_searcher(::AutoSearch) = Searcher{BinarySearch,NoHint}(NoHint())
+@inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{BinarySearch,NoHint}(NoHint())
+@inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = _to_searcher(LinearBinarySearch(), hint)  # auto-upgrade to default LinearBinarySearch
 
 # DirectSearch: Range grids only. Carries DirectSearch through to Searcher
 # so search_interval dispatches on policy type alone (no grid-type branching).
@@ -418,24 +412,27 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 @inline _to_searcher(::DirectSearch, hint::Base.RefValue{Int}) = Searcher{DirectSearch,RefHint}(RefHint(hint))
 
 # ----------------------------------------
-# Searcher passthrough (advanced usage)
+# Canonical resolver APIs
 # ----------------------------------------
-# Allows direct Searcher injection for zero _to_searcher overhead in tight loops.
-# Users can pre-construct a Searcher and reuse it across calls.
+# Resolution pipeline:
+#   _resolve_search_policy     — AutoSearch/tuple → concrete policy (BinarySearch, LinearBinarySearch, DirectSearch)
+#   _resolve_search            — policy + grid + hint → concrete Searcher (THE entry point)
+#   _resolve_searcher_for_grid — pre-built Searcher → grid-adapted Searcher (Range → DirectSearch)
+#
+# _to_searcher is preserved as the policy→Searcher converter used internally.
 
-@inline _to_searcher(s::Searcher) = s
-@inline _to_searcher(s::Searcher, ::Nothing) = s
-@inline _to_searcher(s::Searcher, ::Base.RefValue{Int}) = s  # already configured, hint ignored
-
-# ----------------------------------------
-# Searcher resolution for pre-baked Searchers (anchor paths)
-# ----------------------------------------
+# _resolve_searcher_for_grid: adapt pre-built Searcher to grid type.
 # Converts any Searcher to DirectSearch variant when grid is AbstractRange.
-# Used by anchor paths where the Searcher is constructed before the grid type is known.
 # P<:AbstractSearchPolicy bound required to avoid method ambiguity with the catchall.
-@inline _resolve_searcher(::AbstractRange, ::Searcher{P,NoHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,NoHint}(NoHint())
-@inline _resolve_searcher(::AbstractRange, s::Searcher{P,RefHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,RefHint}(s.hint)
-@inline _resolve_searcher(_, s::Searcher) = s
+@inline _resolve_searcher_for_grid(::AbstractRange, ::Searcher{P,NoHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,NoHint}(NoHint())
+@inline _resolve_searcher_for_grid(::AbstractRange, s::Searcher{P,RefHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,RefHint}(s.hint)
+@inline _resolve_searcher_for_grid(_, s::Searcher) = s
+
+# _resolve_search: one-liner entry point for all eval paths.
+# Composes policy resolution + searcher creation + grid adaptation.
+# User API accepts AbstractSearchPolicy only (enforced by kwarg type constraints).
+@inline _resolve_search(grid, q, search, hint) =
+    _to_searcher(_resolve_search_policy(grid, q, search, hint), hint)
 
 # ========================================
 # 2. Base Implementations
@@ -630,7 +627,7 @@ No bounds checking (except initial clamp), no binary fallback.
             return ix, x[ix], x[ix + 1]
         end
 
-        # Linear walk - NO bounds check, NO fallback
+        # LinearSearch walk - NO bounds check, NO fallback
         if xq < x[ix]
             while x[ix] > xq
                 ix -= 1
@@ -771,7 +768,7 @@ Optimal for monotonic query sequences.
             found && (hint_ref[] = ix; return ix, x[ix], x[ix + 1])
         end
     end
-    # Binary fallback — full range (narrowing saves < 1 iteration, not worth extra branches)
+    # BinarySearch fallback — full range (narrowing saves < 1 iteration, not worth extra branches)
     idx, xL, xR = _search_binary(x, xq)
     hint_ref[] = idx
     return idx, xL, xR
@@ -842,56 +839,37 @@ end
 #   - Tq: Query type (can be Float, Int, Dual, etc.)
 #   - xq: Query point (x query)
 
-# --- Default: Binary + NoHint (zero-overhead) ---
+# --- Default: BinarySearch + NoHint (zero-overhead) ---
 
-@inline search_interval(::Searcher{Binary,NoHint}, x::AbstractVector, xq::Real) =
+@inline search_interval(::Searcher{BinarySearch,NoHint}, x::AbstractVector, xq::Real) =
     _search_binary(x, xq)
 
-@inline search_interval(::Searcher{Binary,NoHint}, x::AbstractRange, xq::Real) =
-    _search_direct(x, xq)
-
-@inline search_interval(::Searcher{Binary,NoHint}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg} =
+@inline search_interval(::Searcher{BinarySearch,NoHint}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg} =
     _search_binary(x, spacing, xq)
 
-@inline search_interval(::Searcher{Binary,NoHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
-    _search_direct(x, spacing, xq)
+# --- LinearSearch + RefHint ---
 
-# --- Linear + RefHint ---
-
-@inline function search_interval(p::Searcher{Linear,RefHint}, x::AbstractVector, xq::Real)
+@inline function search_interval(p::Searcher{LinearSearch,RefHint}, x::AbstractVector, xq::Real)
     return _search_linear!(x, xq, p.hint.idx)
 end
 
-# Range: O(1) direct + hint update
-@inline search_interval(p::Searcher{Linear,RefHint}, x::AbstractRange, xq::Real) =
-    _search_direct!(x, xq, p.hint.idx)
+# --- LinearBinarySearch{MAX} + RefHint ---
 
-# --- LinearBinary{MAX} + RefHint ---
-
-@inline function search_interval(p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractVector, xq::Real) where {MAX}
+@inline function search_interval(p::Searcher{LinearBinarySearch{MAX},RefHint}, x::AbstractVector, xq::Real) where {MAX}
     return _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 end
 
-@inline search_interval(p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange, xq::Real) where {MAX} =
-    _search_direct!(x, xq, p.hint.idx)
-
 # --- Spacing-aware overloads ---
-# For uniform grids (AbstractRange + ScalarSpacing): always O(1) direct
-# For non-uniform grids (AbstractVector + VectorSpacing): delegate to standard search
+# Non-uniform grids (AbstractVector + VectorSpacing): delegate to standard search.
+# Range grids are handled by DirectSearch methods below.
 
-# Linear + spacing
-@inline search_interval(p::Searcher{Linear,RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) =
+# LinearSearch + spacing
+@inline search_interval(p::Searcher{LinearSearch,RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) =
     _search_linear!(x, xq, p.hint.idx)
 
-@inline search_interval(p::Searcher{Linear,RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) =
-    _search_direct!(x, spacing, xq, p.hint.idx)
-
-# LinearBinary + spacing
-@inline search_interval(p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) where {MAX} =
+# LinearBinarySearch + spacing
+@inline search_interval(p::Searcher{LinearBinarySearch{MAX},RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) where {MAX} =
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
-
-@inline search_interval(p::Searcher{LinearBinary{MAX},RefHint}, x::AbstractRange, spacing::ScalarSpacing, xq::Real) where {MAX} =
-    _search_direct!(x, spacing, xq, p.hint.idx)
 
 # --- DirectSearch + NoHint (Range grids, zero-overhead) ---
 @inline search_interval(::Searcher{DirectSearch,NoHint}, x::AbstractRange, xq::Real) =

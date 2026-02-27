@@ -13,15 +13,14 @@ end
 @inline function integrate(
     itp::CubicInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=itp.search_policy,
+    search::AbstractSearchPolicy=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.cache.x
     y = itp.y
     z = itp.z
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(x, x0, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, x0, search, hint)
 
     partial = @inline (i, xL, h, a2, b2) -> begin
         @inbounds _cubic_integral_kernel(
@@ -44,14 +43,13 @@ end
 @inline function integrate(
     itp::LinearInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=itp.search_policy,
+    search::AbstractSearchPolicy=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.x
     y = itp.y
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(x, x0, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, x0, search, hint)
 
     partial = @inline (i, xL, h, a2, b2) -> begin
         @inbounds _linear_integral_kernel(
@@ -74,13 +72,12 @@ end
 @inline function integrate(
     itp::QuadraticInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=itp.search_policy,
+    search::AbstractSearchPolicy=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = itp.x
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(x, x0, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, x0, search, hint)
 
     partial = @inline (i, xL, h, a2, b2) -> begin
         @inbounds _quadratic_integral_kernel(
@@ -103,12 +100,11 @@ end
 @inline function integrate(
     itp::ConstantInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=itp.search_policy,
+    search::AbstractSearchPolicy=itp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(itp.x, x0, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(itp.x, x0, search, hint)
     return _integrate_constant_1d_impl(itp.x, itp.y, itp.side, itp.extrap, x0, x1, searcher, Tg, Tout)
 end
 
@@ -143,15 +139,14 @@ end
 @inline function integrate(
     sitp::CubicSeriesInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = sitp.cache.x
     y = sitp.y
     z = sitp.z
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(x, x0, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, x0, search, hint)
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
     @inbounds for k in 1:n
@@ -172,14 +167,13 @@ end
 @inline function integrate(
     sitp::LinearSeriesInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = sitp.x
     y = sitp.y
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(x, x0, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, x0, search, hint)
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
     @inbounds for k in 1:n
@@ -200,13 +194,12 @@ end
 @inline function integrate(
     sitp::QuadraticSeriesInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     x = sitp.x
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(x, x0, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, x0, search, hint)
     n = n_series(sitp)
     results = Vector{Tout}(undef, n)
     @inbounds for k in 1:n
@@ -227,12 +220,11 @@ end
 @inline function integrate(
     sitp::ConstantSeriesInterpolant{Tg,Tv},
     x0::Real, x1::Real;
-    search=sitp.search_policy,
+    search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv}
     Tout = promote_type(Tv, Tg, typeof(x0), typeof(x1))
-    resolved = _resolve_search(sitp.x, x0, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(sitp.x, x0, search, hint)
     return _integrate_constant_series_1d(sitp.x, sitp.y, sitp.side, sitp.extrap, x0, x1, searcher, Tg, Tout)
 end
 

@@ -256,12 +256,12 @@ end
         y = collect(range(0.0, 1.0, 11))
         data = [xi + yj for xi in x, yj in y]
 
-        # Default Binary
+        # Default BinarySearch
         itp_default = linear_interp((x, y), data)
         @test itp_default((0.5, 0.5)) ≈ 1.0
 
         # Mixed search policies
-        itp_mixed = linear_interp((x, y), data; search=(Binary(), LinearBinary{8}()))
+        itp_mixed = linear_interp((x, y), data; search=(BinarySearch(), LinearBinarySearch{8}()))
         @test itp_mixed((0.5, 0.5)) ≈ 1.0
     end
 

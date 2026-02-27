@@ -319,7 +319,7 @@ using FastInterpolations
 
         itp = quadratic_interp((x_range, y_vec), data;
                                bc=Right(QuadraticFit()),
-                               search=(Binary(), LinearBinary{4}()))
+                               search=(BinarySearch(), LinearBinarySearch{4}()))
         xq, yq = 1.0, 0.6
         @test itp((xq, yq)) ≈ f(xq, yq) atol=1e-8
     end
@@ -348,10 +348,10 @@ using FastInterpolations
         y_vec   = [0.0, 0.2, 0.5, 0.8, 1.0]
         data = [f(xi, yj) for xi in x_range, yj in y_vec]
 
-        # Mixed search: Binary for uniform axis, LinearBinary for non-uniform
+        # Mixed search: BinarySearch for uniform axis, LinearBinarySearch for non-uniform
         itp = cubic_interp((x_range, y_vec), data;
                            bc=CubicFit(),
-                           search=(Binary(), LinearBinary{4}()))
+                           search=(BinarySearch(), LinearBinarySearch{4}()))
 
         xq, yq = 1.0, 0.6
         @test itp((xq, yq))              ≈ f(xq, yq)     atol=1e-10

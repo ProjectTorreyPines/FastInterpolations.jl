@@ -1,9 +1,9 @@
 using Test
 using FastInterpolations
 using FastInterpolations: search_interval, _search_binary, _search_direct, _search_interval,
-    Searcher, Binary, Linear, LinearBinary, AutoSearch, DirectSearch,
+    Searcher, BinarySearch, LinearSearch, LinearBinarySearch, AutoSearch, DirectSearch,
     NoHint, RefHint, DEFAULT_SEARCHER, ScalarSpacing, _create_spacing, _to_searcher,
-    _resolve_search, _is_likely_monotone
+    _resolve_search_policy, _is_likely_monotone
 
 @testset "Search Module" begin
 
@@ -13,9 +13,9 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
     @testset "Search Policy Types" begin
         @testset "Type Hierarchy" begin
-            @test Binary <: FastInterpolations.AbstractSearchPolicy
-            @test Linear <: FastInterpolations.AbstractSearchPolicy
-            @test LinearBinary{8} <: FastInterpolations.AbstractSearchPolicy
+            @test BinarySearch <: FastInterpolations.AbstractSearchPolicy
+            @test LinearSearch <: FastInterpolations.AbstractSearchPolicy
+            @test LinearBinarySearch{8} <: FastInterpolations.AbstractSearchPolicy
 
             @test NoHint <: FastInterpolations.AbstractHint
             @test RefHint <: FastInterpolations.AbstractHint
@@ -23,7 +23,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
         @testset "Searcher Construction" begin
             # Default searcher
-            @test DEFAULT_SEARCHER isa Searcher{Binary,NoHint}
+            @test DEFAULT_SEARCHER isa Searcher{BinarySearch,NoHint}
 
             # RefHint construction
             hint = RefHint()
@@ -33,7 +33,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test hint2.idx[] == 50
 
             # Full searcher construction
-            searcher = Searcher{LinearBinary{0},RefHint}(RefHint(Ref(10)))
+            searcher = Searcher{LinearBinarySearch{0},RefHint}(RefHint(Ref(10)))
             @test searcher.hint.idx[] == 10
         end
     end
@@ -95,12 +95,12 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
     # Hinted Binary Search Tests
     # ========================================
 
-    @testset "LinearBinary{0} with RefHint" begin
+    @testset "LinearBinarySearch{0} with RefHint" begin
         x = collect(range(0.0, 1.0, 101))
 
         @testset "Hint Update" begin
             hint = Ref(1)
-            policy = Searcher{LinearBinary{0},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{0},RefHint}(RefHint(hint))
 
             # Query far from hint - should update
             idx, _, _ = search_interval(policy, x, 0.75)
@@ -110,7 +110,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
         @testset "Hint Hit (O(1) path)" begin
             hint = Ref(50)
-            policy = Searcher{LinearBinary{0},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{0},RefHint}(RefHint(hint))
 
             # Query within hint interval - should hit O(1) path
             # Interval 50 covers [0.49, 0.50)
@@ -121,7 +121,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
         @testset "Monotonic Query Sequence" begin
             hint = Ref(1)
-            policy = Searcher{LinearBinary{0},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{0},RefHint}(RefHint(hint))
 
             # Monotonically increasing queries
             for xi in range(0.1, 0.9, 10)
@@ -133,7 +133,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @testset "Range Updates Hint" begin
             x_range = range(0.0, 1.0, 101)
             hint = Ref(50)
-            policy = Searcher{LinearBinary{0},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{0},RefHint}(RefHint(hint))
 
             # Range path: hint checked first, then O(1) fallback + hint update
             idx, _, _ = search_interval(policy, x_range, 0.1)
@@ -146,24 +146,24 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
     # Pure Linear Search Tests
     # ========================================
 
-    @testset "Linear (Pure) with RefHint" begin
+    @testset "LinearSearch (Pure) with RefHint" begin
         x = collect(range(0.0, 1.0, 101))
 
         @testset "Type Construction" begin
-            @test Linear() isa Linear
-            @test _to_searcher(Linear()) isa Searcher{Linear,RefHint}
-            @test _to_searcher(Linear(), nothing) isa Searcher{Linear,RefHint}
+            @test LinearSearch() isa LinearSearch
+            @test _to_searcher(LinearSearch()) isa Searcher{LinearSearch,RefHint}
+            @test _to_searcher(LinearSearch(), nothing) isa Searcher{LinearSearch,RefHint}
 
             ext_ref = Ref(42)
-            s = _to_searcher(Linear(), ext_ref)
+            s = _to_searcher(LinearSearch(), ext_ref)
             @test s.hint.idx === ext_ref
         end
 
         @testset "Monotonic Forward Sequence" begin
             hint = Ref(1)
-            policy = Searcher{Linear,RefHint}(RefHint(hint))
+            policy = Searcher{LinearSearch,RefHint}(RefHint(hint))
 
-            # Strictly increasing queries (Linear's intended use case)
+            # Strictly increasing queries (LinearSearch's intended use case)
             for xi in range(0.05, 0.95, 20)
                 idx, xL, xR = search_interval(policy, x, xi)
                 @test xL <= xi < xR
@@ -173,7 +173,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
         @testset "Monotonic Backward Sequence" begin
             hint = Ref(95)
-            policy = Searcher{Linear,RefHint}(RefHint(hint))
+            policy = Searcher{LinearSearch,RefHint}(RefHint(hint))
 
             # Strictly decreasing queries
             for xi in range(0.95, 0.05, 20)
@@ -185,7 +185,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
         @testset "Direct Hit Optimization" begin
             hint = Ref(50)
-            policy = Searcher{Linear,RefHint}(RefHint(hint))
+            policy = Searcher{LinearSearch,RefHint}(RefHint(hint))
 
             # Query in same interval multiple times - O(1) each time
             for xi in [0.495, 0.496, 0.497]
@@ -197,7 +197,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @testset "Range Updates Hint" begin
             x_range = range(0.0, 1.0, 101)
             hint = Ref(50)
-            policy = Searcher{Linear,RefHint}(RefHint(hint))
+            policy = Searcher{LinearSearch,RefHint}(RefHint(hint))
 
             idx, _, _ = search_interval(policy, x_range, 0.25)
             @test idx == 26
@@ -211,7 +211,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             spacing_scalar = _create_spacing(x_range)
 
             hint = Ref(30)
-            policy = Searcher{Linear,RefHint}(RefHint(hint))
+            policy = Searcher{LinearSearch,RefHint}(RefHint(hint))
 
             # Vector with spacing
             idx, xL, xR = search_interval(policy, x_vec, spacing_vector, 0.55)
@@ -220,7 +220,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
             # Range with spacing: hint checked first, then O(1) fallback + hint update
             hint2 = Ref(30)
-            policy2 = Searcher{Linear,RefHint}(RefHint(hint2))
+            policy2 = Searcher{LinearSearch,RefHint}(RefHint(hint2))
             idx2, _, _ = search_interval(policy2, x_range, spacing_scalar, 0.75)
             @test idx2 == 76
             @test hint2[] == 76  # Hint updated to found index
@@ -234,7 +234,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             # ODE-style monotonic evaluation
             xi = 0.1
             for _ in 1:50
-                yi = itp(xi; search=Linear(), hint=hint)
+                yi = itp(xi; search=LinearSearch(), hint=hint)
                 @test yi ≈ xi^3 atol=1e-4
                 xi += 0.016
             end
@@ -243,15 +243,15 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
     end
 
     # ========================================
-    # Linear Binary Search Tests
+    # LinearBinarySearch Tests
     # ========================================
 
-    @testset "LinearBinary with RefHint" begin
+    @testset "LinearBinarySearch with RefHint" begin
         x = collect(range(0.0, 1.0, 101))
 
-        @testset "Linear Search Success" begin
+        @testset "Linear Walk Success" begin
             hint = Ref(50)
-            policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
 
             # Query near hint (within 8 steps)
             idx, _, _ = search_interval(policy, x, 0.55)
@@ -259,9 +259,9 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test hint[] == 56
         end
 
-        @testset "Fallback to Binary" begin
+        @testset "Fallback to BinarySearch" begin
             hint = Ref(10)
-            policy = Searcher{LinearBinary{4},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{4},RefHint}(RefHint(hint))
 
             # Query far from hint (> 4 steps away) - should fall back to binary
             idx, _, _ = search_interval(policy, x, 0.90)
@@ -269,9 +269,9 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test hint[] == 91
         end
 
-        @testset "Backward Linear Search" begin
+        @testset "Backward Linear Walk" begin
             hint = Ref(60)
-            policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
 
             # Query backward from hint
             idx, _, _ = search_interval(policy, x, 0.55)
@@ -282,7 +282,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @testset "Range Ignores Hint" begin
             x_range = range(0.0, 1.0, 101)
             hint = Ref(50)
-            policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
 
             idx, _, _ = search_interval(policy, x_range, 0.1)
             @test idx == 11  # Direct O(1)
@@ -417,7 +417,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
         @testset "Hinted Search on Non-Uniform" begin
             hint = Ref(1)
-            policy_hint = Searcher{LinearBinary{0},RefHint}(RefHint(hint))
+            policy_hint = Searcher{LinearBinarySearch{0},RefHint}(RefHint(hint))
 
             # Sequential queries
             queries = [0.005, 0.015, 0.05, 0.2, 0.5, 0.8, 0.95]
@@ -466,7 +466,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
     # ========================================
     # These tests specifically target uncovered code paths
 
-    @testset "Coverage: LinearBinaryAlg Direct Hit" begin
+    @testset "Coverage: LinearBinarySearchAlg Direct Hit" begin
         # Test the early return path when hint already points to correct interval
         x = collect(range(0.0, 1.0, 101))
 
@@ -474,7 +474,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             # Hint at 50: interval [0.49, 0.50)
             # Query 0.495 is in interval 50, so direct hit (no search needed)
             hint = Ref(50)
-            policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
 
             idx, xL, xR = search_interval(policy, x, 0.495)
             @test idx == 50
@@ -485,7 +485,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
         @testset "Direct Hit - Multiple Queries Same Interval" begin
             hint = Ref(30)
-            policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
 
             # Multiple queries in interval 30: [0.29, 0.30)
             for xi in [0.291, 0.295, 0.299]
@@ -496,7 +496,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
     end
 
-    @testset "Coverage: Backward Linear Search Hit" begin
+    @testset "Coverage: Backward Linear Walk Hit" begin
         # Grid: [0.0, 0.01, 0.02, ..., 1.0] - 101 points, 100 intervals
         # Interval i spans [x[i], x[i+1]) = [(i-1)*0.01, i*0.01)
         x = collect(range(0.0, 1.0, 101))
@@ -506,7 +506,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             # Query 0.585 < x[60]=0.59, so enters backward search
             # After 1 decrement: ix=59, interval [0.58, 0.59) contains 0.585 ✓
             hint = Ref(60)
-            policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
 
             idx, xL, xR = search_interval(policy, x, 0.585)
             @test idx == 59
@@ -521,7 +521,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             # Need to find interval containing 0.665 = interval 67 [0.66, 0.67)
             # Steps: 70→69→68→67 (3 decrements)
             hint = Ref(70)
-            policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
 
             idx, xL, xR = search_interval(policy, x, 0.665)
             @test idx == 67
@@ -535,7 +535,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             # Hint at 52: interval [0.51, 0.52)
             # Query 0.505 < x[52]=0.51, backward 1 step to interval 51 [0.50, 0.51)
             hint = Ref(52)
-            policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
 
             idx, xL, xR = search_interval(policy, x, 0.505)
             @test idx == 51
@@ -545,10 +545,10 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
     end
 
-    @testset "Coverage: LinearBinaryAlg with Range" begin
+    @testset "Coverage: LinearBinarySearchAlg with Range" begin
         x_range = range(0.0, 1.0, 101)
         hint = Ref(50)
-        policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
+        policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
 
         @testset "Range Updates Hint" begin
             # Range path: hint checked first, then O(1) fallback + hint update
@@ -568,10 +568,10 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
     end
 
-    @testset "Coverage: LinearBinary{0} with Range" begin
+    @testset "Coverage: LinearBinarySearch{0} with Range" begin
         x_range = range(0.0, 1.0, 101)
         hint = Ref(80)
-        policy = Searcher{LinearBinary{0},RefHint}(RefHint(hint))
+        policy = Searcher{LinearBinarySearch{0},RefHint}(RefHint(hint))
 
         @testset "Range Updates Hint" begin
             idx, xL, xR = search_interval(policy, x_range, 0.15)
@@ -589,11 +589,11 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
     end
 
-    @testset "Coverage: LinearBinaryAlg with Range and Spacing" begin
+    @testset "Coverage: LinearBinarySearchAlg with Range and Spacing" begin
         x_range = range(0.0, 1.0, 101)
         spacing = _create_spacing(x_range)
         hint = Ref(50)
-        policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
+        policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
 
         @testset "Range with ScalarSpacing Updates Hint" begin
             idx, xL, xR = search_interval(policy, x_range, spacing, 0.35)
@@ -629,72 +629,72 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
     end
 
-    @testset "Coverage: Edge Cases in Linear Search" begin
+    @testset "Coverage: Edge Cases in LinearBinarySearch" begin
         x = collect(range(0.0, 1.0, 101))
 
-        @testset "Linear Search at Domain Boundaries" begin
+        @testset "LinearBinarySearch at Domain Boundaries" begin
             # Near left boundary
             hint = Ref(5)
-            policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
             idx, _, _ = search_interval(policy, x, 0.005)
             @test idx == 1
             @test hint[] == 1
 
             # Near right boundary
             hint2 = Ref(95)
-            policy2 = Searcher{LinearBinary{8},RefHint}(RefHint(hint2))
+            policy2 = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint2))
             idx2, _, _ = search_interval(policy2, x, 0.995)
             @test idx2 == 100
             @test hint2[] == 100
         end
 
-        @testset "Linear Search Backward at Left Edge" begin
+        @testset "LinearBinarySearch Backward at Left Edge" begin
             # Hint at 3, query at 0.0 - should clamp and handle
             hint = Ref(3)
-            policy = Searcher{LinearBinary{8},RefHint}(RefHint(hint))
+            policy = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint))
             idx, _, _ = search_interval(policy, x, 0.0)
             @test idx == 1
         end
     end
 
     # ========================================
-    # LinearBinary Constructor Tests
+    # LinearBinarySearch Constructor Tests
     # ========================================
 
-    @testset "LinearBinary Constructor" begin
+    @testset "LinearBinarySearch Constructor" begin
         @testset "Valid linear_window Values" begin
             # All allowed linear_window values
-            @test LinearBinary(linear_window=0) isa LinearBinary{0}
-            @test LinearBinary(linear_window=1) isa LinearBinary{1}
-            @test LinearBinary(linear_window=2) isa LinearBinary{2}
-            @test LinearBinary(linear_window=4) isa LinearBinary{4}
-            @test LinearBinary(linear_window=8) isa LinearBinary{8}
-            @test LinearBinary(linear_window=16) isa LinearBinary{16}
-            @test LinearBinary(linear_window=32) isa LinearBinary{32}
-            @test LinearBinary(linear_window=64) isa LinearBinary{64}
-            @test LinearBinary(linear_window=128) isa LinearBinary{128}
+            @test LinearBinarySearch(linear_window=0) isa LinearBinarySearch{0}
+            @test LinearBinarySearch(linear_window=1) isa LinearBinarySearch{1}
+            @test LinearBinarySearch(linear_window=2) isa LinearBinarySearch{2}
+            @test LinearBinarySearch(linear_window=4) isa LinearBinarySearch{4}
+            @test LinearBinarySearch(linear_window=8) isa LinearBinarySearch{8}
+            @test LinearBinarySearch(linear_window=16) isa LinearBinarySearch{16}
+            @test LinearBinarySearch(linear_window=32) isa LinearBinarySearch{32}
+            @test LinearBinarySearch(linear_window=64) isa LinearBinarySearch{64}
+            @test LinearBinarySearch(linear_window=128) isa LinearBinarySearch{128}
 
             # Test positional argument
-            @test LinearBinary(4) isa LinearBinary{4}
-            @test LinearBinary(16) isa LinearBinary{16}
+            @test LinearBinarySearch(4) isa LinearBinarySearch{4}
+            @test LinearBinarySearch(16) isa LinearBinarySearch{16}
 
             # Default is 8
-            @test LinearBinary() isa LinearBinary{8}
+            @test LinearBinarySearch() isa LinearBinarySearch{8}
         end
 
         @testset "Invalid linear_window Throws ArgumentError" begin
             invalid_steps = (3, 5, 6, 7, 9, 10, 15, 17, 100, 256)
             for ms in invalid_steps
-                @test_throws ArgumentError LinearBinary(linear_window=ms)
-                @test_throws ArgumentError LinearBinary(ms)
+                @test_throws ArgumentError LinearBinarySearch(linear_window=ms)
+                @test_throws ArgumentError LinearBinarySearch(ms)
             end
         end
     end
 
-    @testset "LinearBinary: out-of-range hint is clamped safely" begin
+    @testset "LinearBinarySearch: out-of-range hint is clamped safely" begin
         x = collect(range(0.0, 1.0, 101))
         y = x .^ 2
-        itp = linear_interp(x, y; search=LinearBinary())
+        itp = linear_interp(x, y; search=LinearBinarySearch())
 
         # Ref(0) — below valid range [1, n-1]
         bad_hint = Ref(0)
@@ -712,7 +712,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         y = x.^3
 
         xq = 0.5
-        xq_vec = sort(rand(10))  # Sort for Linear() compatibility
+        xq_vec = sort(rand(10))  # Sort for LinearSearch() compatibility
 
         out_vec1 = similar(xq_vec)
         out_vec2 = similar(xq_vec)
@@ -723,12 +723,12 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
         itp = cubic_interp(x, y)
 
-        itp(out_vec1, xq_vec) # Default search (Binary)
-        itp(out_vec2, xq_vec; search=Binary()) # Binary
-        itp(out_vec3, xq_vec; search=LinearBinary(linear_window=0)) # LinearBinary{0}
-        itp(out_vec4, xq_vec; search=Linear()) # Linear (pure)
-        itp(out_vec5, xq_vec; search=LinearBinary()) # LinearBinary{8}
-        itp(out_vec6, xq_vec; search=LinearBinary{2}()) # LinearBinary{2}
+        itp(out_vec1, xq_vec) # Default search (BinarySearch)
+        itp(out_vec2, xq_vec; search=BinarySearch()) # BinarySearch
+        itp(out_vec3, xq_vec; search=LinearBinarySearch(linear_window=0)) # LinearBinarySearch{0}
+        itp(out_vec4, xq_vec; search=LinearSearch()) # LinearSearch (pure)
+        itp(out_vec5, xq_vec; search=LinearBinarySearch()) # LinearBinarySearch{8}
+        itp(out_vec6, xq_vec; search=LinearBinarySearch{2}()) # LinearBinarySearch{2}
 
         @test out_vec1 == out_vec2
         @test out_vec1 == out_vec3
@@ -748,13 +748,13 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         y = sin.(2π .* x)
 
         @testset "Single Interpolant: stored policy is used by default" begin
-            # Create with LinearBinary as default
-            itp_lb = linear_interp(x, y; search=LinearBinary())
-            @test itp_lb.search_policy isa LinearBinary{8}
+            # Create with LinearBinarySearch as default
+            itp_lb = linear_interp(x, y; search=LinearBinarySearch())
+            @test itp_lb.search_policy isa LinearBinarySearch{8}
 
-            # Create with LinearBinary{0} as default
-            itp_hb = linear_interp(x, y; search=LinearBinary(linear_window=0))
-            @test itp_hb.search_policy isa LinearBinary{0}
+            # Create with LinearBinarySearch{0} as default
+            itp_hb = linear_interp(x, y; search=LinearBinarySearch(linear_window=0))
+            @test itp_hb.search_policy isa LinearBinarySearch{0}
 
             # Create with default (AutoSearch)
             itp_auto = linear_interp(x, y)
@@ -762,44 +762,44 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "Baked-in policy with hint: hint updates when policy supports it" begin
-            # Create interpolant with LinearBinary as default
-            itp = linear_interp(x, y; search=LinearBinary())
+            # Create interpolant with LinearBinarySearch as default
+            itp = linear_interp(x, y; search=LinearBinarySearch())
             hint = Ref(500)
 
-            # Call WITHOUT search= override → uses stored LinearBinary → hint should update
+            # Call WITHOUT search= override → uses stored LinearBinarySearch → hint should update
             xi = 0.5
             for _ in 1:50
                 xi += 1e-3
-                yi = itp(xi; hint=hint)  # Uses itp.search_policy (LinearBinary)
+                yi = itp(xi; hint=hint)  # Uses itp.search_policy (LinearBinarySearch)
             end
 
             # hint should have tracked the position (~550-560)
             @test hint[] >= 540 && hint[] <= 570
         end
 
-        @testset "Override with Binary + hint auto-upgrades to LinearBinary{2}" begin
-            # Create with LinearBinary default, but override with Binary at call time
-            itp = linear_interp(x, y; search=LinearBinary())
+        @testset "Override with BinarySearch + hint auto-upgrades to LinearBinarySearch{2}" begin
+            # Create with LinearBinarySearch default, but override with BinarySearch at call time
+            itp = linear_interp(x, y; search=LinearBinarySearch())
             hint = Ref(100)
 
-            # Override with Binary + hint → auto-upgrades to LinearBinary{2}
+            # Override with BinarySearch + hint → auto-upgrades to LinearBinarySearch{2}
             for xi in range(0.5, 0.6, 10)
-                yi = itp(xi; search=Binary(), hint=hint)
+                yi = itp(xi; search=BinarySearch(), hint=hint)
             end
 
-            # hint should be updated (auto-upgraded to LinearBinary{2})
+            # hint should be updated (auto-upgraded to LinearBinarySearch{2})
             @test hint[] >= 500 && hint[] <= 610
         end
 
         @testset "Cubic interpolant baked-in policy" begin
-            itp = cubic_interp(x, y; search=LinearBinary(linear_window=4))
-            @test itp.search_policy isa LinearBinary{4}
+            itp = cubic_interp(x, y; search=LinearBinarySearch(linear_window=4))
+            @test itp.search_policy isa LinearBinarySearch{4}
 
             hint = Ref(200)
             xi = 0.2
             for _ in 1:30
                 xi += 2e-3
-                yi = itp(xi; hint=hint)  # Uses baked-in LinearBinary{4}
+                yi = itp(xi; hint=hint)  # Uses baked-in LinearBinarySearch{4}
             end
 
             # hint should track position (~260)
@@ -807,18 +807,18 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "Quadratic interpolant baked-in policy" begin
-            itp = quadratic_interp(x, y; search=LinearBinary(linear_window=0))
-            @test itp.search_policy isa LinearBinary{0}
+            itp = quadratic_interp(x, y; search=LinearBinarySearch(linear_window=0))
+            @test itp.search_policy isa LinearBinarySearch{0}
 
             hint = Ref(300)
             yi = itp(0.35; hint=hint)
-            # LinearBinary{0} updates hint
+            # LinearBinarySearch{0} updates hint
             @test hint[] >= 340 && hint[] <= 360
         end
 
         @testset "Constant interpolant baked-in policy" begin
-            itp = constant_interp(x, y; search=LinearBinary(linear_window=16))
-            @test itp.search_policy isa LinearBinary{16}
+            itp = constant_interp(x, y; search=LinearBinarySearch(linear_window=16))
+            @test itp.search_policy isa LinearBinarySearch{16}
         end
     end
 
@@ -828,8 +828,8 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         y2 = cos.(2π .* x)
 
         @testset "LinearSeriesInterpolant stored policy" begin
-            sitp = linear_interp(x, [y1, y2]; search=LinearBinary())
-            @test sitp.search_policy isa LinearBinary{8}
+            sitp = linear_interp(x, [y1, y2]; search=LinearBinarySearch())
+            @test sitp.search_policy isa LinearBinarySearch{8}
 
             # Scalar call uses stored policy
             hint = Ref(400)
@@ -842,8 +842,8 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "CubicSeriesInterpolant stored policy" begin
-            sitp = cubic_interp(x, [y1, y2]; search=LinearBinary(linear_window=0))
-            @test sitp.search_policy isa LinearBinary{0}
+            sitp = cubic_interp(x, [y1, y2]; search=LinearBinarySearch(linear_window=0))
+            @test sitp.search_policy isa LinearBinarySearch{0}
 
             hint = Ref(600)
             yi = sitp(0.65; hint=hint)
@@ -851,12 +851,12 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "Series vector call with baked-in policy and hint" begin
-            sitp = linear_interp(x, [y1, y2]; search=LinearBinary())
+            sitp = linear_interp(x, [y1, y2]; search=LinearBinarySearch())
             hint = Ref(1)
 
             # Vector call with sorted queries
             xq = collect(range(0.1, 0.5, 100))
-            outputs = sitp(xq; hint=hint)  # Uses stored LinearBinary
+            outputs = sitp(xq; hint=hint)  # Uses stored LinearBinarySearch
 
             # hint should track to end of query range (~500)
             @test hint[] >= 490 && hint[] <= 510
@@ -864,14 +864,14 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             @test length(outputs[1]) == 100
         end
 
-        @testset "Series override with Binary + hint auto-upgrades" begin
-            sitp = linear_interp(x, [y1, y2]; search=LinearBinary())
+        @testset "Series override with BinarySearch + hint auto-upgrades" begin
+            sitp = linear_interp(x, [y1, y2]; search=LinearBinarySearch())
             hint = Ref(250)
 
-            # Override with Binary + hint → auto-upgrades to LinearBinary{2}
-            yi = sitp(0.75; search=Binary(), hint=hint)
+            # Override with BinarySearch + hint → auto-upgrades to LinearBinarySearch{2}
+            yi = sitp(0.75; search=BinarySearch(), hint=hint)
 
-            # hint should be updated (auto-upgraded to LinearBinary{2})
+            # hint should be updated (auto-upgraded to LinearBinarySearch{2})
             @test hint[] >= 740 && hint[] <= 760
         end
     end
@@ -882,13 +882,13 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
     @testset "_to_searcher 1-arg coverage" begin
         # These are used by oneshot functions like linear_interp!(output, x, y, xq_vec; search=...)
-        s1 = _to_searcher(Binary())
+        s1 = _to_searcher(BinarySearch())
         @test s1.hint isa NoHint
 
-        s3 = _to_searcher(Linear())
+        s3 = _to_searcher(LinearSearch())
         @test s3.hint isa RefHint
 
-        s4 = _to_searcher(LinearBinary())
+        s4 = _to_searcher(LinearBinarySearch())
         @test s4.hint isa RefHint
     end
 
@@ -898,51 +898,40 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
     @testset "Persistent Hint via _to_searcher 2-arg" begin
         @testset "hint=nothing creates fresh RefHint" begin
-            s1 = _to_searcher(LinearBinary(), nothing)
+            s1 = _to_searcher(LinearBinarySearch(), nothing)
             @test s1.hint.idx[] == 1
 
-            s3 = _to_searcher(Linear(), nothing)
+            s3 = _to_searcher(LinearSearch(), nothing)
             @test s3.hint.idx[] == 1
         end
 
         @testset "hint=Ref uses external Ref" begin
             ext_ref = Ref(50)
-            s = _to_searcher(LinearBinary(), ext_ref)
+            s = _to_searcher(LinearBinarySearch(), ext_ref)
             @test s.hint.idx === ext_ref
             @test s.hint.idx[] == 50
 
             ext_ref2 = Ref(75)
-            s2 = _to_searcher(Linear(), ext_ref2)
+            s2 = _to_searcher(LinearSearch(), ext_ref2)
             @test s2.hint.idx === ext_ref2
             @test s2.hint.idx[] == 75
         end
 
-        @testset "Binary with hint auto-upgrades to LinearBinary{2}" begin
-            # Binary policy with hint auto-upgrades to LinearBinary{2}
+        @testset "BinarySearch with hint auto-upgrades to LinearBinarySearch{2}" begin
+            # BinarySearch policy with hint auto-upgrades to LinearBinarySearch{2}
             ext_ref = Ref(100)
-            s1 = _to_searcher(Binary(), ext_ref)
+            s1 = _to_searcher(BinarySearch(), ext_ref)
             @test s1.hint isa RefHint
             @test s1.hint.idx === ext_ref  # Uses external Ref
 
-            # Binary without hint stays pure Binary
-            s2 = _to_searcher(Binary(), nothing)
+            # BinarySearch without hint stays pure BinarySearch
+            s2 = _to_searcher(BinarySearch(), nothing)
             @test s2.hint isa NoHint
         end
 
-        @testset "Searcher direct injection passthrough" begin
-            # Pre-built Searcher should pass through unchanged
-            ext_ref = Ref(42)
-            pre_built = Searcher{LinearBinary{8},RefHint}(RefHint(ext_ref))
-
-            s1 = _to_searcher(pre_built)
-            @test s1 === pre_built
-
-            s2 = _to_searcher(pre_built, nothing)
-            @test s2 === pre_built
-
-            s3 = _to_searcher(pre_built, Ref(99))
-            @test s3 === pre_built  # Ignores new hint
-        end
+        # Searcher direct injection passthrough removed:
+        # API sealing (::AbstractSearchPolicy on all user kwargs) makes
+        # _to_searcher(::Searcher, ...) unreachable — no test needed.
     end
 
     @testset "ODE-style Persistent Hint Pattern" begin
@@ -957,7 +946,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             xi = 0.5
             for _ in 1:100
                 xi += 1e-3
-                yi = itp(xi; search=LinearBinary(), hint=hint)
+                yi = itp(xi; search=LinearBinarySearch(), hint=hint)
             end
 
             # hint should be near xi position (0.6 → index ~601)
@@ -971,7 +960,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             xi = 0.2
             for _ in 1:50
                 xi += 2e-3
-                yi = itp(xi; search=LinearBinary(linear_window=0), hint=hint)
+                yi = itp(xi; search=LinearBinarySearch(linear_window=0), hint=hint)
             end
 
             # hint should track xi position (0.3 → index ~301)
@@ -982,8 +971,8 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             itp = linear_interp(x, y)
 
             # Without hint kwarg, each call gets fresh state
-            y1 = itp(0.1; search=LinearBinary())
-            y2 = itp(0.9; search=LinearBinary())
+            y1 = itp(0.1; search=LinearBinarySearch())
+            y2 = itp(0.9; search=LinearBinarySearch())
 
             @test y1 ≈ sin(2π * 0.1) atol=1e-4
             @test y2 ≈ sin(2π * 0.9) atol=1e-4
@@ -997,7 +986,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @testset "linear_interp oneshot" begin
             hint = Ref(1)
             for xi in range(0.1, 0.5, 10)
-                yi = linear_interp(x, y, xi; search=LinearBinary(), hint=hint)
+                yi = linear_interp(x, y, xi; search=LinearBinarySearch(), hint=hint)
                 @test yi ≈ xi^2 atol=1e-4
             end
             # hint should have updated
@@ -1007,7 +996,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @testset "quadratic_interp oneshot" begin
             hint = Ref(50)
             for xi in range(0.5, 0.9, 10)
-                yi = quadratic_interp(x, y, xi; search=LinearBinary(linear_window=0), hint=hint)
+                yi = quadratic_interp(x, y, xi; search=LinearBinarySearch(linear_window=0), hint=hint)
                 @test yi ≈ xi^2 atol=1e-4
             end
             @test hint[] > 50
@@ -1015,7 +1004,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
         @testset "constant_interp oneshot" begin
             hint = Ref(10)
-            yi = constant_interp(x, y, 0.55; search=LinearBinary(), hint=hint)
+            yi = constant_interp(x, y, 0.55; search=LinearBinarySearch(), hint=hint)
             @test hint[] == 56 || hint[] == 55  # Depends on side selection
         end
     end
@@ -1031,14 +1020,14 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
 
             # Scalar query evaluates all series, returns first by default
             for xi in range(0.1, 0.4, 5)
-                yi = sitp(xi; search=LinearBinary(), hint=hint)
+                yi = sitp(xi; search=LinearBinarySearch(), hint=hint)
             end
             @test hint[] >= 35 && hint[] <= 45
 
             # Continue with more queries (hint preserved)
             old_hint = hint[]
             for xi in range(0.5, 0.8, 5)
-                yi = sitp(xi; search=LinearBinary(), hint=hint)
+                yi = sitp(xi; search=LinearBinarySearch(), hint=hint)
             end
             @test hint[] > old_hint
         end
@@ -1047,29 +1036,8 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             sitp = cubic_interp(x, [y1, y2])
             hint = Ref(50)
 
-            yi = sitp(0.55; search=LinearBinary(linear_window=0), hint=hint)
+            yi = sitp(0.55; search=LinearBinarySearch(linear_window=0), hint=hint)
             @test hint[] >= 54 && hint[] <= 57
-        end
-    end
-
-    @testset "Searcher Direct Injection (Advanced Usage)" begin
-        x = collect(range(0.0, 1.0, 1001))
-        y = x.^3
-        itp = linear_interp(x, y)
-
-        @testset "Pre-built Searcher avoids _to_searcher overhead" begin
-            ext_ref = Ref(500)
-            searcher = Searcher{LinearBinary{8},RefHint}(RefHint(ext_ref))
-
-            # Directly inject searcher (no _to_searcher call at runtime)
-            xi = 0.5
-            for _ in 1:100
-                xi += 1e-3
-                yi = itp(xi; search=searcher)
-            end
-
-            # External ref should be updated
-            @test ext_ref[] >= 590 && ext_ref[] <= 610
         end
     end
 
@@ -1087,44 +1055,40 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @testset "_resolve_search dispatch" begin
             auto = AutoSearch()
 
-            # 1D scalar → Binary
-            @test _resolve_search(auto, 0.5) isa Binary
-            @test _resolve_search(auto, 1) isa Binary       # Int <: Real
-            @test _resolve_search(auto, Float32(0.5)) isa Binary
+            # 1D scalar → BinarySearch
+            @test _resolve_search_policy(auto, 0.5) isa BinarySearch
+            @test _resolve_search_policy(auto, 1) isa BinarySearch       # Int <: Real
+            @test _resolve_search_policy(auto, Float32(0.5)) isa BinarySearch
 
-            # 1D vector → LinearBinary
-            @test _resolve_search(auto, [0.1, 0.5]) isa LinearBinary
-            @test _resolve_search(auto, 0.0:0.1:1.0) isa LinearBinary   # Range <: AbstractVector
-            @test _resolve_search(auto, Float32[1.0, 2.0]) isa LinearBinary
+            # 1D vector → LinearBinarySearch
+            @test _resolve_search_policy(auto, [0.1, 0.5]) isa LinearBinarySearch
+            @test _resolve_search_policy(auto, 0.0:0.1:1.0) isa LinearBinarySearch   # Range <: AbstractVector
+            @test _resolve_search_policy(auto, Float32[1.0, 2.0]) isa LinearBinarySearch
 
-            # ND scalar (Tuple of Reals) → Binary
-            @test _resolve_search(auto, (0.5, 0.3)) isa Binary
-            @test _resolve_search(auto, (0.1, 0.2, 0.3)) isa Binary
+            # ND scalar (Tuple of Reals) → BinarySearch
+            @test _resolve_search_policy(auto, (0.5, 0.3)) isa BinarySearch
+            @test _resolve_search_policy(auto, (0.1, 0.2, 0.3)) isa BinarySearch
 
-            # ND vector (Tuple of Vectors) → LinearBinary
-            @test _resolve_search(auto, ([0.1, 0.2], [0.3, 0.4])) isa LinearBinary
-            @test _resolve_search(auto, (0.0:0.1:1.0, [0.5])) isa LinearBinary
+            # ND vector (Tuple of Vectors) → LinearBinarySearch
+            @test _resolve_search_policy(auto, ([0.1, 0.2], [0.3, 0.4])) isa LinearBinarySearch
+            @test _resolve_search_policy(auto, (0.0:0.1:1.0, [0.5])) isa LinearBinarySearch
 
             # Passthrough: explicit policies are returned unchanged
-            @test _resolve_search(Binary(), 0.5) === Binary()
-            @test _resolve_search(Binary(), [0.1]) === Binary()
-            @test _resolve_search(LinearBinary(), 0.5) isa LinearBinary
-            @test _resolve_search(LinearBinary(), [0.1]) isa LinearBinary
-            @test _resolve_search(Linear(), [0.1]) === Linear()
+            @test _resolve_search_policy(BinarySearch(), 0.5) === BinarySearch()
+            @test _resolve_search_policy(BinarySearch(), [0.1]) === BinarySearch()
+            @test _resolve_search_policy(LinearBinarySearch(), 0.5) isa LinearBinarySearch
+            @test _resolve_search_policy(LinearBinarySearch(), [0.1]) isa LinearBinarySearch
+            @test _resolve_search_policy(LinearSearch(), [0.1]) === LinearSearch()
 
             # Tuple of policies: each resolved independently
-            mixed = (AutoSearch(), Binary(), AutoSearch())
-            resolved_scalar = _resolve_search(mixed, 0.5)
-            @test resolved_scalar == (Binary(), Binary(), Binary())
-            resolved_vec = _resolve_search(mixed, [0.1, 0.2])
-            @test resolved_vec[1] isa LinearBinary
-            @test resolved_vec[2] === Binary()
-            @test resolved_vec[3] isa LinearBinary
+            mixed = (AutoSearch(), BinarySearch(), AutoSearch())
+            resolved_scalar = _resolve_search_policy(mixed, 0.5)
+            @test resolved_scalar == (BinarySearch(), BinarySearch(), BinarySearch())
+            resolved_vec = _resolve_search_policy(mixed, [0.1, 0.2])
+            @test resolved_vec[1] isa LinearBinarySearch
+            @test resolved_vec[2] === BinarySearch()
+            @test resolved_vec[3] isa LinearBinarySearch
 
-            # Searcher passthrough: pre-built Searcher skips resolution
-            s = Searcher{Binary,NoHint}(NoHint())
-            @test _resolve_search(s, 0.5) === s
-            @test _resolve_search(s, [0.1]) === s
         end
 
         # ========================================
@@ -1134,15 +1098,15 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             x = collect(range(0.0, 1.0, 201))
             y = sin.(2π .* x)
 
-            @testset "Linear" begin
+            @testset "LinearSearch" begin
                 itp = linear_interp(x, y)
                 @test itp.search_policy isa AutoSearch
 
-                # Scalar call → correct result (AutoSearch → Binary internally)
+                # Scalar call → correct result (AutoSearch → BinarySearch internally)
                 val = itp(0.25)
                 @test val ≈ sin(2π * 0.25) atol=1e-3
 
-                # Vector call → correct results (AutoSearch → LinearBinary internally)
+                # Vector call → correct results (AutoSearch → LinearBinarySearch internally)
                 xq = [0.1, 0.3, 0.7]
                 vals = itp(xq)
                 @test length(vals) == 3
@@ -1202,28 +1166,28 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         # ========================================
         # Interpolant API: hint behavior verifies resolved policy
         # ========================================
-        # LinearBinary with hint tracks sequentially through sorted queries.
-        # Binary (no hint) doesn't update the hint.
-        # AutoSearch + vector → LinearBinary → hint should track.
-        # AutoSearch + scalar → Binary → hint unchanged (no hint used).
+        # LinearBinarySearch with hint tracks sequentially through sorted queries.
+        # BinarySearch (no hint) doesn't update the hint.
+        # AutoSearch + vector → LinearBinarySearch → hint should track.
+        # AutoSearch + scalar → BinarySearch → hint unchanged (no hint used).
         @testset "Interpolant hint tracking reveals resolved policy" begin
             x = collect(range(0.0, 1.0, 1001))
             y = x .^ 2
 
             itp = linear_interp(x, y)  # default AutoSearch
 
-            # Vector call with hint: AutoSearch → LinearBinary → hint tracks
+            # Vector call with hint: AutoSearch → LinearBinarySearch → hint tracks
             hint = Ref(1)
             xq_sorted = collect(range(0.1, 0.9, 100))
             itp(zeros(100), xq_sorted; hint=hint)
             # 1001-point grid, last query at x=0.9 → idx ≈ 901; margin of 50
             @test hint[] >= 850
 
-            # Scalar call without hint: AutoSearch → Binary → correct value
+            # Scalar call without hint: AutoSearch → BinarySearch → correct value
             # y = x^2, so itp(0.5) ≈ 0.25
             @test itp(0.5) ≈ 0.25 atol=1e-6
 
-            # Scalar call with hint: Binary+hint auto-upgrades to LinearBinary{2} → hint updates
+            # Scalar call with hint: BinarySearch+hint auto-upgrades to LinearBinarySearch{2} → hint updates
             hint_scalar = Ref(1)
             itp(0.5; hint=hint_scalar)
             @test hint_scalar[] >= 490 && hint_scalar[] <= 510  # hint moved to ~500
@@ -1312,13 +1276,13 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
                 sitp = linear_interp(x, [y1, y2])
                 @test sitp.search_policy isa AutoSearch
 
-                # Scalar call → AutoSearch → Binary
+                # Scalar call → AutoSearch → BinarySearch
                 vals = sitp(0.25)
                 @test length(vals) == 2
                 @test vals[1] ≈ sin(2π * 0.25) atol=1e-3
                 @test vals[2] ≈ cos(2π * 0.25) atol=1e-3
 
-                # Vector call → AutoSearch → LinearBinary
+                # Vector call → AutoSearch → LinearBinarySearch
                 xq = [0.1, 0.3, 0.7]
                 result = sitp(xq)
                 @test length(result) == 2       # 2 series
@@ -1370,12 +1334,12 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
                 @test length(result[1]) == 3
             end
 
-            @testset "Series hint tracking (vector → LinearBinary)" begin
+            @testset "Series hint tracking (vector → LinearBinarySearch)" begin
                 sitp = linear_interp(x, [y1, y2])
                 hint = Ref(1)
                 xq_sorted = collect(range(0.1, 0.9, 100))
 
-                # Vector call: AutoSearch → LinearBinary → hint tracks
+                # Vector call: AutoSearch → LinearBinarySearch → hint tracks
                 sitp(xq_sorted; hint=hint)
                 # 201-point grid, last query at x=0.9 → idx ≈ 181; margin of 21
                 @test hint[] >= 160
@@ -1391,11 +1355,11 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             y1 = sin.(2π .* x)
             y2 = cos.(2π .* x)
 
-            @testset "Interpolant: explicit Binary on vector call" begin
-                itp = linear_interp(x, y; search=Binary())
-                @test itp.search_policy isa Binary
+            @testset "Interpolant: explicit BinarySearch on vector call" begin
+                itp = linear_interp(x, y; search=BinarySearch())
+                @test itp.search_policy isa BinarySearch
 
-                # Vector call with Binary baked in → still works correctly
+                # Vector call with BinarySearch baked in → still works correctly
                 xq = [0.1, 0.5, 0.9]
                 vals = itp(xq)
                 for i in 1:3
@@ -1403,11 +1367,11 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
                 end
             end
 
-            @testset "Interpolant: explicit LinearBinary on scalar call" begin
-                itp = linear_interp(x, y; search=LinearBinary())
-                @test itp.search_policy isa LinearBinary
+            @testset "Interpolant: explicit LinearBinarySearch on scalar call" begin
+                itp = linear_interp(x, y; search=LinearBinarySearch())
+                @test itp.search_policy isa LinearBinarySearch
 
-                # Scalar call with LinearBinary baked in → still works
+                # Scalar call with LinearBinarySearch baked in → still works
                 val = itp(0.25)
                 @test val ≈ sin(2π * 0.25) atol=1e-3
             end
@@ -1416,12 +1380,12 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
                 itp = linear_interp(x, y)  # AutoSearch stored
                 @test itp.search_policy isa AutoSearch
 
-                # Override with explicit Binary at call-site
-                val = itp(0.25; search=Binary())
+                # Override with explicit BinarySearch at call-site
+                val = itp(0.25; search=BinarySearch())
                 @test val ≈ sin(2π * 0.25) atol=1e-3
 
-                # Override with explicit LinearBinary at call-site
-                vals = itp([0.1, 0.5]; search=LinearBinary())
+                # Override with explicit LinearBinarySearch at call-site
+                vals = itp([0.1, 0.5]; search=LinearBinarySearch())
                 @test length(vals) == 2
             end
 
@@ -1429,22 +1393,22 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
                 xq = collect(range(0.1, 0.9, 50))
                 out = zeros(50)
 
-                # Explicit Binary
-                linear_interp!(out, x, y, xq; search=Binary())
+                # Explicit BinarySearch
+                linear_interp!(out, x, y, xq; search=BinarySearch())
                 @test all(isfinite, out)
 
-                # Explicit LinearBinary
-                linear_interp!(out, x, y, xq; search=LinearBinary())
+                # Explicit LinearBinarySearch
+                linear_interp!(out, x, y, xq; search=LinearBinarySearch())
                 @test all(isfinite, out)
 
                 # Scalar oneshot with explicit policy
-                val = linear_interp(x, y, 0.25; search=LinearBinary())
+                val = linear_interp(x, y, 0.25; search=LinearBinarySearch())
                 @test val ≈ sin(2π * 0.25) atol=1e-3
             end
 
             @testset "Series: explicit policy" begin
-                sitp = linear_interp(x, [y1, y2]; search=Binary())
-                @test sitp.search_policy isa Binary
+                sitp = linear_interp(x, [y1, y2]; search=BinarySearch())
+                @test sitp.search_policy isa BinarySearch
 
                 # Scalar call
                 vals = sitp(0.25)
@@ -1462,10 +1426,10 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
                 @test sitp.search_policy isa AutoSearch
 
                 # Override at call-site
-                vals = sitp(0.25; search=Binary())
+                vals = sitp(0.25; search=BinarySearch())
                 @test length(vals) == 2
 
-                result = sitp([0.1, 0.3]; search=LinearBinary())
+                result = sitp([0.1, 0.3]; search=LinearBinarySearch())
                 @test length(result) == 2
             end
         end
@@ -1551,36 +1515,36 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             sorted = collect(1.0:100.0)
             random = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0]
 
-            @testset "AutoSearch + sorted + no hint → LinearBinary" begin
-                @test _resolve_search(auto, sorted, nothing) isa LinearBinary
+            @testset "AutoSearch + sorted + no hint → LinearBinarySearch" begin
+                @test _resolve_search_policy(auto, sorted, nothing) isa LinearBinarySearch
             end
 
-            @testset "AutoSearch + random + no hint → Binary" begin
-                @test _resolve_search(auto, random, nothing) isa Binary
+            @testset "AutoSearch + random + no hint → BinarySearch" begin
+                @test _resolve_search_policy(auto, random, nothing) isa BinarySearch
             end
 
-            @testset "AutoSearch + short vector + no hint → Binary (too short for monotone check)" begin
-                @test _resolve_search(auto, [1.0, 2.0, 3.0], nothing) isa Binary
+            @testset "AutoSearch + short vector + no hint → BinarySearch (too short for monotone check)" begin
+                @test _resolve_search_policy(auto, [1.0, 2.0, 3.0], nothing) isa BinarySearch
             end
 
-            @testset "AutoSearch + hint present → fallback to _resolve_search (LinearBinary)" begin
+            @testset "AutoSearch + hint present → fallback to _resolve_search (LinearBinarySearch)" begin
                 # When hint is present, generic fallback delegates to _resolve_search
-                # _resolve_search(AutoSearch(), vector) → LinearBinary
-                @test _resolve_search(auto, random, Ref(1)) isa LinearBinary
-                @test _resolve_search(auto, sorted, Ref(1)) isa LinearBinary
+                # _resolve_search_policy(AutoSearch(), vector) → LinearBinarySearch
+                @test _resolve_search_policy(auto, random, Ref(1)) isa LinearBinarySearch
+                @test _resolve_search_policy(auto, sorted, Ref(1)) isa LinearBinarySearch
             end
 
             @testset "Explicit policy passthrough" begin
-                @test _resolve_search(Binary(), sorted, nothing) === Binary()
-                @test _resolve_search(Binary(), random, Ref(1)) === Binary()
-                @test _resolve_search(LinearBinary(), random, nothing) isa LinearBinary
-                @test _resolve_search(Linear(), sorted, nothing) === Linear()
+                @test _resolve_search_policy(BinarySearch(), sorted, nothing) === BinarySearch()
+                @test _resolve_search_policy(BinarySearch(), random, Ref(1)) === BinarySearch()
+                @test _resolve_search_policy(LinearBinarySearch(), random, nothing) isa LinearBinarySearch
+                @test _resolve_search_policy(LinearSearch(), sorted, nothing) === LinearSearch()
             end
 
             @testset "Scalar query → fallback to _resolve_search" begin
-                # Scalar: _resolve_search(AutoSearch(), scalar) → Binary
-                @test _resolve_search(auto, 0.5, nothing) isa Binary
-                @test _resolve_search(auto, 0.5, Ref(1)) isa Binary
+                # Scalar: _resolve_search_policy(AutoSearch(), scalar) → BinarySearch
+                @test _resolve_search_policy(auto, 0.5, nothing) isa BinarySearch
+                @test _resolve_search_policy(auto, 0.5, Ref(1)) isa BinarySearch
             end
         end
 
@@ -1672,19 +1636,15 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             x_vec   = collect(x_range)
 
             # Range grid → DirectSearch (regardless of policy)
-            @test _resolve_search(x_range, 0.5, AutoSearch(), nothing) isa DirectSearch
-            @test _resolve_search(x_range, 0.5, Binary(), nothing)    isa DirectSearch
-            @test _resolve_search(x_range, 0.5, LinearBinary(), nothing) isa DirectSearch
-            @test _resolve_search(x_range, [0.1, 0.5], AutoSearch(), Ref(1)) isa DirectSearch
+            @test _resolve_search_policy(x_range, 0.5, AutoSearch(), nothing) isa DirectSearch
+            @test _resolve_search_policy(x_range, 0.5, BinarySearch(), nothing)    isa DirectSearch
+            @test _resolve_search_policy(x_range, 0.5, LinearBinarySearch(), nothing) isa DirectSearch
+            @test _resolve_search_policy(x_range, [0.1, 0.5], AutoSearch(), Ref(1)) isa DirectSearch
 
             # Vector grid → delegates to 3-arg (NOT DirectSearch)
-            @test !(_resolve_search(x_vec, 0.5, AutoSearch(), nothing) isa DirectSearch)
-            @test _resolve_search(x_vec, 0.5, Binary(), nothing) === Binary()
+            @test !(_resolve_search_policy(x_vec, 0.5, AutoSearch(), nothing) isa DirectSearch)
+            @test _resolve_search_policy(x_vec, 0.5, BinarySearch(), nothing) === BinarySearch()
 
-            # Pre-built Searcher passthrough (4-arg)
-            s = Searcher{Binary,NoHint}(NoHint())
-            @test _resolve_search(x_range, 0.5, s, nothing) === s
-            @test _resolve_search(x_vec, 0.5, s, nothing) === s
         end
 
         @testset "_to_searcher(DirectSearch())" begin
@@ -1747,8 +1707,8 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         @testset "Type inference: no Union leakage" begin
             x_range = 0.0:0.1:1.0
             # 4-arg resolve on Range → DirectSearch (concrete, not Union)
-            @test @inferred(_resolve_search(x_range, 0.5, AutoSearch(), nothing)) isa DirectSearch
-            @test @inferred(_resolve_search(x_range, [0.1], AutoSearch(), Ref(1))) isa DirectSearch
+            @test @inferred(_resolve_search_policy(x_range, 0.5, AutoSearch(), nothing)) isa DirectSearch
+            @test @inferred(_resolve_search_policy(x_range, [0.1], AutoSearch(), Ref(1))) isa DirectSearch
 
             # _to_searcher on DirectSearch → concrete Searcher types
             @test @inferred(_to_searcher(DirectSearch())) isa Searcher{DirectSearch,NoHint}

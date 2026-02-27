@@ -20,12 +20,12 @@ end
     hint
 ) where {N}
     idx_lo = ntuple(Val(N)) do d
-        s = _to_searcher(search_tuple[d], isnothing(hint) ? nothing : hint[d])
+        s = _resolve_search(grids[d], lo[d], search_tuple[d], isnothing(hint) ? nothing : hint[d])
         i, _, _ = search_interval(s, grids[d], spacings[d], lo[d])
         i
     end
     idx_hi = ntuple(Val(N)) do d
-        s = _to_searcher(search_tuple[d], isnothing(hint) ? nothing : hint[d])
+        s = _resolve_search(grids[d], hi[d], search_tuple[d], isnothing(hint) ? nothing : hint[d])
         i, _, _ = search_interval(s, grids[d], spacings[d], hi[d])
         i
     end
@@ -55,7 +55,7 @@ end
         _check_nd_integrate_domain(grids[d], lo2[d], extraps[d])
         _check_nd_integrate_domain(grids[d], hi2[d], extraps[d])
     end
-    search_tuple = _resolve_search_nd(search, Val(N), lo)  # NTuple{N,Real} <: Tuple → Binary/axis
+    search_tuple = _resolve_search_nd(search, Val(N), lo)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
     idx_lo, idx_hi = _nd_cell_ranges(grids, spacings, lo2, hi2, search_tuple, hint)
     return (sign, lo2, hi2, idx_lo, idx_hi)
 end

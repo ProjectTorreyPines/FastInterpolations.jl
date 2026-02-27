@@ -21,10 +21,9 @@
 # - Tg queries (hot path)
 # - Int/Float32 queries (type promotion)
 # - ForwardDiff.Dual queries (automatic differentiation)
-@inline function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(xq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P}
+@inline function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(xq; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P}
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    resolved = _resolve_search(itp.x, xq, search, nothing)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(itp.x, xq, search, hint)
     # Pass original xq to preserve Dual type for AD
     _linear_with_extrap(itp.x, itp.y, xq, itp.extrap, deriv, searcher)
 end
@@ -33,7 +32,7 @@ end
 # Vector Loop (Function Barrier)
 # ========================================
 # Julia specializes on concrete Searcher type P, eliminating Union-split
-# overhead when adaptive AutoSearch resolves to Binary or LinearBinary.
+# overhead when adaptive AutoSearch resolves to BinarySearch or LinearBinarySearch.
 # CRITICAL: All arguments must be fully typed — untyped args prevent SROA
 # of RefHint's Ref, causing 16-byte heap allocation per call.
 @inline function _linear_vector_loop!(
@@ -54,12 +53,11 @@ end
 # Vector Call - Allocating
 # ========================================
 # Output type is promoted to wider type for precision preservation.
-function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P, Tq<:Real}
+function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P, Tq<:Real}
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
-    resolved = _resolve_search(itp.x, xq, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(itp.x, xq, search, hint)
     _linear_vector_loop!(output, itp.x, itp.y, xq, itp.extrap, deriv, searcher)
     return output
 end
@@ -67,11 +65,10 @@ end
 # ========================================
 # In-Place Vector Call
 # ========================================
-function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P, Tq<:Real}
+function (itp::LinearInterpolant{Tg,Tv,X,Y,E,P})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, X, Y, E, P, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    resolved = _resolve_search(itp.x, xq, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(itp.x, xq, search, hint)
     _linear_vector_loop!(output, itp.x, itp.y, xq, itp.extrap, deriv, searcher)
     return output
 end
@@ -105,7 +102,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 
 Can be:
 - Called with scalar: `itp(0.5)` (uses stored search policy)
-- Called with search override: `itp(0.5; search=Binary())` (override stored policy)
+- Called with search override: `itp(0.5; search=BinarySearch())` (override stored policy)
 - Broadcasted: `itp.(rho)` or `@. coef * itp(rho)`
 - Reused multiple times without re-creating
 
@@ -114,14 +111,14 @@ Can be:
 # Create with default AutoSearch() search policy
 itp = linear_interp(x_data, y_data)
 
-# Default AutoSearch: scalar→Binary, vector→LinearBinary
+# Default AutoSearch: scalar→BinarySearch, vector→LinearBinarySearch
 itp = linear_interp(x_data, y_data)
 
 # Scalar call (uses stored policy)
 val = itp(0.5)
 
 # Scalar call with search policy override
-val = itp(0.5; search=Binary())
+val = itp(0.5; search=BinarySearch())
 
 # Vector call with hint for ODE/streaming patterns
 hint = Ref(1)
@@ -146,8 +143,8 @@ vals_direct = linear_interp(x_data, y_data, query_points)
 # Performance Notes
 - Returns lightweight callable (~56 bytes), best for reuse and broadcast fusion
 - 3-argument form returns array immediately, best for single use
-- Default `AutoSearch()` adapts: scalar→`Binary()`, vector→`LinearBinary()`
-- Use `search=LinearBinary()` to force linear-binary for all query types
+- Default `AutoSearch()` adapts: scalar→`BinarySearch()`, vector→`LinearBinarySearch()`
+- Use `search=LinearBinarySearch()` to force linear-binary for all query types
 - Use `hint=Ref(idx)` for ODE/streaming patterns with persistent hint
 """
 function linear_interp end

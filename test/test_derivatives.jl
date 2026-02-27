@@ -242,7 +242,7 @@ end # Derivative Kernels
         @testset "_eval_cubic_with_extrap with op" begin
             # Test constant extrapolation with derivatives
 
-            searcher = _to_searcher(Binary())
+            searcher = _to_searcher(BinarySearch())
 
             # Outside left boundary: should return 0 for derivatives
             left_val = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, ConstExtrap(), EvalValue(), searcher)
@@ -2263,7 +2263,7 @@ end # SeriesInterpolant Derivatives
     xq = [0.25, 0.5, 0.75]
 
     @testset "Cubic - search keyword passthrough" begin
-        itp = cubic_interp(x_cubic, y_cubic; search=Binary())
+        itp = cubic_interp(x_cubic, y_cubic; search=BinarySearch())
         d1 = deriv1(itp)
         d2 = deriv2(itp)
 
@@ -2272,9 +2272,9 @@ end # SeriesInterpolant Derivatives
         @test d2(0.5) ≈ itp(0.5; deriv=DerivOp(2))
 
         # Explicit search override
-        @test d1(0.5; search=Linear()) ≈ itp(0.5; deriv=DerivOp(1), search=Linear())
-        @test d1(0.5; search=LinearBinary()) ≈ itp(0.5; deriv=DerivOp(1), search=LinearBinary())
-        @test d2(0.5; search=Linear()) ≈ itp(0.5; deriv=DerivOp(2), search=Linear())
+        @test d1(0.5; search=LinearSearch()) ≈ itp(0.5; deriv=DerivOp(1), search=LinearSearch())
+        @test d1(0.5; search=LinearBinarySearch()) ≈ itp(0.5; deriv=DerivOp(1), search=LinearBinarySearch())
+        @test d2(0.5; search=LinearSearch()) ≈ itp(0.5; deriv=DerivOp(2), search=LinearSearch())
     end
 
     @testset "Cubic - hint keyword passthrough" begin
@@ -2295,8 +2295,8 @@ end # SeriesInterpolant Derivatives
         itp = linear_interp(x, y)
         d1 = deriv1(itp)
 
-        @test d1(0.5; search=Binary()) ≈ itp(0.5; deriv=DerivOp(1), search=Binary())
-        @test d1(1.5; search=Linear()) ≈ itp(1.5; deriv=DerivOp(1), search=Linear())
+        @test d1(0.5; search=BinarySearch()) ≈ itp(0.5; deriv=DerivOp(1), search=BinarySearch())
+        @test d1(1.5; search=LinearSearch()) ≈ itp(1.5; deriv=DerivOp(1), search=LinearSearch())
 
         hint = Ref(1)
         @test d1(2.5; hint=hint) ≈ itp(2.5; deriv=DerivOp(1))
@@ -2307,8 +2307,8 @@ end # SeriesInterpolant Derivatives
         d1 = deriv1(itp)
 
         hint = Ref(1)
-        result = d1(xq; search=LinearBinary(), hint=hint)
-        expected = itp(xq; deriv=DerivOp(1), search=LinearBinary())
+        result = d1(xq; search=LinearBinarySearch(), hint=hint)
+        expected = itp(xq; deriv=DerivOp(1), search=LinearBinarySearch())
         @test result ≈ expected
     end
 
@@ -2372,8 +2372,8 @@ end # DerivativeView search/hint keywords
         output = zeros(3)
         hint = Ref(1)
 
-        d1(output, xq; search=LinearBinary(), hint=hint)
-        @test output ≈ itp(xq; deriv=DerivOp(1), search=LinearBinary())
+        d1(output, xq; search=LinearBinarySearch(), hint=hint)
+        @test output ≈ itp(xq; deriv=DerivOp(1), search=LinearBinarySearch())
     end
 
     @testset "In-place vector zero allocation" begin
@@ -2403,8 +2403,8 @@ end # DerivativeView single-series in-place vector
         d1 = deriv1(sitp)
 
         # Scalar with search and hint
-        @test d1(0.5; search=Binary()) ≈ sitp(0.5; deriv=DerivOp(1), search=Binary())
-        @test d1(0.5; search=Linear()) ≈ sitp(0.5; deriv=DerivOp(1), search=Linear())
+        @test d1(0.5; search=BinarySearch()) ≈ sitp(0.5; deriv=DerivOp(1), search=BinarySearch())
+        @test d1(0.5; search=LinearSearch()) ≈ sitp(0.5; deriv=DerivOp(1), search=LinearSearch())
 
         hint = Ref(1)
         result = d1(0.5; hint=hint)
@@ -2415,7 +2415,7 @@ end # DerivativeView single-series in-place vector
         d1 = deriv1(sitp)
 
         out = zeros(2)
-        d1(out, 0.5; search=Linear(), hint=Ref(1))
+        d1(out, 0.5; search=LinearSearch(), hint=Ref(1))
         @test out ≈ sitp(0.5; deriv=DerivOp(1))
     end
 
@@ -2423,7 +2423,7 @@ end # DerivativeView single-series in-place vector
         d1 = deriv1(sitp)
 
         outputs = [zeros(3), zeros(3)]
-        d1(outputs, xq; search=LinearBinary(), hint=Ref(1))
+        d1(outputs, xq; search=LinearBinarySearch(), hint=Ref(1))
 
         expected = sitp(xq; deriv=DerivOp(1))
         @test outputs[1] ≈ expected[1]
@@ -2448,16 +2448,16 @@ end # DerivativeView SeriesInterpolant search/hint keywords
         @test @inferred(d2(0.5)) isa Float64
 
         # With search keyword
-        @test @inferred(d1(0.5; search=Binary())) isa Float64
-        @test @inferred(d1(0.5; search=Linear())) isa Float64
-        @test @inferred(d1(0.5; search=LinearBinary())) isa Float64
+        @test @inferred(d1(0.5; search=BinarySearch())) isa Float64
+        @test @inferred(d1(0.5; search=LinearSearch())) isa Float64
+        @test @inferred(d1(0.5; search=LinearBinarySearch())) isa Float64
 
         # With hint keyword
         hint = Ref(1)
         @test @inferred(d1(0.5; hint=hint)) isa Float64
 
         # With both keywords
-        @test @inferred(d1(0.5; search=LinearBinary(), hint=Ref(1))) isa Float64
+        @test @inferred(d1(0.5; search=LinearBinarySearch(), hint=Ref(1))) isa Float64
     end
 
     @testset "Type stability - vector evaluation" begin
@@ -2468,8 +2468,8 @@ end # DerivativeView SeriesInterpolant search/hint keywords
         @test @inferred(d1(xq)) isa Vector{Float64}
 
         # With keywords
-        @test @inferred(d1(xq; search=Binary())) isa Vector{Float64}
-        @test @inferred(d1(xq; search=LinearBinary(), hint=Ref(1))) isa Vector{Float64}
+        @test @inferred(d1(xq; search=BinarySearch())) isa Vector{Float64}
+        @test @inferred(d1(xq; search=LinearBinarySearch(), hint=Ref(1))) isa Vector{Float64}
     end
 
     @testset "Type stability - in-place evaluation" begin
@@ -2483,7 +2483,7 @@ end # DerivativeView SeriesInterpolant search/hint keywords
         @test result === output
 
         # With keywords
-        result2 = @inferred d1(output, xq; search=LinearBinary())
+        result2 = @inferred d1(output, xq; search=LinearBinarySearch())
         @test result2 === output
     end
 
@@ -2494,7 +2494,7 @@ end # DerivativeView SeriesInterpolant search/hint keywords
         d1 = deriv1(itp)
 
         @test @inferred(d1(0.5)) isa Float64
-        @test @inferred(d1(0.5; search=Binary())) isa Float64
+        @test @inferred(d1(0.5; search=BinarySearch())) isa Float64
         @test @inferred(d1([0.5, 1.5])) isa Vector{Float64}
     end
 
@@ -2504,7 +2504,7 @@ end # DerivativeView SeriesInterpolant search/hint keywords
 
         # Scalar returns Vector
         @test @inferred(d1(0.5)) isa Vector{Float64}
-        @test @inferred(d1(0.5; search=Binary())) isa Vector{Float64}
+        @test @inferred(d1(0.5; search=BinarySearch())) isa Vector{Float64}
 
         # Vector returns Vector of Vectors
         @test @inferred(d1(xq)) isa Vector{Vector{Float64}}
@@ -2516,13 +2516,13 @@ end # DerivativeView SeriesInterpolant search/hint keywords
 
         # Warmup
         d1(0.5)
-        d1(0.5; search=Binary())
+        d1(0.5; search=BinarySearch())
         hint = Ref(1)
         d1(0.5; hint=hint)
 
         # Test allocations
         alloc_basic = @allocated d1(0.5)
-        alloc_search = @allocated d1(0.5; search=Binary())
+        alloc_search = @allocated d1(0.5; search=BinarySearch())
         alloc_hint = @allocated d1(0.5; hint=hint)
 
         @test alloc_basic <= DERIV_ALLOC_THRESHOLD
@@ -2540,15 +2540,15 @@ end # DerivativeView SeriesInterpolant search/hint keywords
 
         # Warmup
         d1(output, xq_alloc)
-        d1(output, xq_alloc; search=Binary())
+        d1(output, xq_alloc; search=BinarySearch())
         d1(output, xq_alloc; hint=hint)
-        d1(output, xq_alloc; search=LinearBinary(), hint=hint)
+        d1(output, xq_alloc; search=LinearBinarySearch(), hint=hint)
 
         # Test allocations
         alloc_basic = @allocated d1(output, xq_alloc)
-        alloc_search = @allocated d1(output, xq_alloc; search=Binary())
+        alloc_search = @allocated d1(output, xq_alloc; search=BinarySearch())
         alloc_hint = @allocated d1(output, xq_alloc; hint=hint)
-        alloc_both = @allocated d1(output, xq_alloc; search=LinearBinary(), hint=hint)
+        alloc_both = @allocated d1(output, xq_alloc; search=LinearBinarySearch(), hint=hint)
 
         @test alloc_basic <= DERIV_ALLOC_THRESHOLD
         @test alloc_search <= DERIV_ALLOC_THRESHOLD
@@ -2561,7 +2561,7 @@ end # DerivativeView SeriesInterpolant search/hint keywords
         d1 = deriv1(itp)
 
         # DerivativeView with kwargs should match direct itp call with kwargs
-        for search_policy in [Binary(), Linear(), LinearBinary(), LinearBinary(linear_window=0)]
+        for search_policy in [BinarySearch(), LinearSearch(), LinearBinarySearch(), LinearBinarySearch(linear_window=0)]
             hint = Ref(1)
             hint2 = Ref(1)
 

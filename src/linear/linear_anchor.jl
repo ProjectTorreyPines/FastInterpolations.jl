@@ -134,7 +134,7 @@ itp2(aq; deriv=DerivOp(1))     # Reuses same anchor for derivative
     wrap::Bool=false,
     searcher::P=DEFAULT_SEARCHER
 ) where {T<:AbstractFloat, P<:Searcher}
-    return _linear_anchor_query_impl(x, xq, wrap, searcher)
+    return _linear_anchor_query_impl(x, xq, wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
 # Real wrapper for convenience (scalar) - preserves precision
@@ -146,7 +146,7 @@ end
     searcher::P=DEFAULT_SEARCHER
 ) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
     xq_promoted = _promote_for_anchor(xq, Tg)
-    return _linear_anchor_query_impl(x, xq_promoted, wrap, searcher)
+    return _linear_anchor_query_impl(x, xq_promoted, wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
 """
@@ -174,14 +174,15 @@ function _anchor_query(
     xq::AbstractVector{Tq},
     ::Val{:linear},
     wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinary())
+    searcher::P=_to_searcher(LinearBinarySearch())
 ) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     Tq_promoted = promote_type(Tq, Tg)
     output = Vector{_LinearAnchoredQuery{Tg, Tq_promoted}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
         xq_promoted = _promote_for_anchor(xq[k], Tg)
-        output[k] = _linear_anchor_query_impl(x, xq_promoted, wrap, searcher)
+        output[k] = _linear_anchor_query_impl(x, xq_promoted, wrap, searcher_resolved)
     end
     return output
 end
@@ -208,14 +209,15 @@ Uses `_promote_for_anchor` to preserve wider precision when `S` differs from `Tg
     xq::AbstractVector{S},
     ::Val{:linear},
     wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinary())
+    searcher::P=_to_searcher(LinearBinarySearch())
 ) where {Tg<:AbstractFloat, Tq<:Real, S<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
     @inbounds for k in eachindex(xq)
         # Promote query point: preserves precision when S is wider than Tg
         xq_promoted = _promote_for_anchor(xq[k], Tg)
-        buffer[k] = _linear_anchor_query_impl(x, xq_promoted, wrap, searcher)
+        buffer[k] = _linear_anchor_query_impl(x, xq_promoted, wrap, searcher_resolved)
     end
     return buffer
 end
@@ -273,7 +275,7 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
         @inbounds (n - 1, x[n-1], x[n])
     else
         # Inside domain: use policy-based interval search
-        search_interval(_resolve_searcher(x, policy), x, xq_primal)
+        search_interval(policy, x, xq_primal)
     end
 
     # Compute geometry

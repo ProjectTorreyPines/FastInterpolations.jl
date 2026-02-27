@@ -11,16 +11,15 @@
 # AD Support: xq can be any Real (including ForwardDiff.Dual)
 # Type parameters: Tg = grid type, Tv = value type, Tq = query type
 # ─────────────────────────────────────────────────────────────
-@inline function (itp::ConstantInterpolant{Tg,Tv})(xq::Tq; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    resolved = _resolve_search(itp.x, xq, search, nothing)
-    searcher = _to_searcher(resolved, hint)
+@inline function (itp::ConstantInterpolant{Tg,Tv})(xq::Tq; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+    searcher = _resolve_search(itp.x, xq, search, hint)
     _constant_eval_at_point(itp.x, itp.y, xq, itp.extrap, itp.side, deriv, searcher)
 end
 
 # ─────────────────────────────────────────────────────────────
 # Vector loop (function barrier)
 # Julia specializes on concrete Searcher type P, eliminating Union-split
-# overhead when adaptive AutoSearch resolves to Binary or LinearBinary.
+# overhead when adaptive AutoSearch resolves to BinarySearch or LinearBinarySearch.
 # CRITICAL: All arguments must be fully typed — untyped args prevent SROA
 # of RefHint's Ref, causing 16-byte heap allocation per call.
 # ─────────────────────────────────────────────────────────────
@@ -44,11 +43,10 @@ end
 # Supports hint for ODE/streaming patterns
 # Output type is promoted to wider type for precision preservation
 # ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+function (itp::ConstantInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
-    resolved = _resolve_search(itp.x, xq, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(itp.x, xq, search, hint)
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     _constant_vector_loop!(output, itp.x, itp.y, xq, itp.extrap, itp.side, deriv, searcher)
     return output
@@ -57,10 +55,9 @@ end
 # ─────────────────────────────────────────────────────────────
 # In-place vector call
 # ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+function (itp::ConstantInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @assert length(output) == length(xq) "output length must match xq length"
-    resolved = _resolve_search(itp.x, xq, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(itp.x, xq, search, hint)
     @boundscheck _check_domain(itp.x, xq, itp.extrap)
     _constant_vector_loop!(output, itp.x, itp.y, xq, itp.extrap, itp.side, deriv, searcher)
     return output
@@ -103,10 +100,10 @@ y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im]
 itp = constant_interp(x, y)
 itp(0.5)           # 1.0+2.0im (ComplexF64)
 
-# Search policy: AutoSearch adapts to query type (scalar→Binary, vector→LinearBinary)
+# Search policy: AutoSearch adapts to query type (scalar→BinarySearch, vector→LinearBinarySearch)
 itp = constant_interp(x, y)
-val = itp(0.5)     # AutoSearch resolves to Binary() for scalar
-itp = constant_interp(x, y; search=LinearBinary())  # explicit override
+val = itp(0.5)     # AutoSearch resolves to BinarySearch() for scalar
+itp = constant_interp(x, y; search=LinearBinarySearch())  # explicit override
 
 # Fused broadcast (optimal)
 result = @. coef * itp(query)

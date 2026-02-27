@@ -50,7 +50,7 @@ See also: [`gradient!`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
     end for i in 1:N]
 
     return quote
-        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
+        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
         cell = _locate_cell(itp, query, search, hint)
         return tuple($(deriv_calls...))
     end
@@ -105,7 +105,7 @@ See also: [`gradient`](@ref), [`hessian!`](@ref)
         @boundscheck length(G) >= $N || throw(DimensionMismatch(
             "gradient output vector must have at least $($N) elements, got $(length(G))"
         ))
-        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
+        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
         cell = _locate_cell(itp, query, search, hint)
         @inbounds begin
             $(stmts...)
@@ -180,7 +180,7 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
     return quote
         Tq = promote_type(eltype(query), $Tg, $Tv)
         H = Matrix{Tq}(undef, $N, $N)
-        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
+        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
         cell = _locate_cell(itp, query, search, hint)
         @inbounds begin
             $(stmts...)
@@ -251,7 +251,7 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
         @boundscheck size(H) == ($N, $N) || throw(DimensionMismatch(
             "Hessian output matrix must be $($N)×$($N), got $(size(H))"
         ))
-        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
+        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
         cell = _locate_cell(itp, query, search, hint)
         @inbounds begin
             $(stmts...)
@@ -316,7 +316,7 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
     end for i in 1:N]
 
     return quote
-        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → Binary/axis
+        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
         cell = _locate_cell(itp, query, search, hint)
         return +($(deriv_calls...))
     end

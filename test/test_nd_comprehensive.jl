@@ -315,8 +315,8 @@ using FastInterpolations
 
         @testset "Search resolution error paths" begin
             # Wrong number of search policies - rejected by keyword type assertion
-            @test_throws TypeError cubic_interp((x, y), data; search=(Binary(),))
-            @test_throws TypeError cubic_interp((x, y), data; search=(Binary(), Binary(), Binary()))
+            @test_throws TypeError cubic_interp((x, y), data; search=(BinarySearch(),))
+            @test_throws TypeError cubic_interp((x, y), data; search=(BinarySearch(), BinarySearch(), BinarySearch()))
         end
     end
 

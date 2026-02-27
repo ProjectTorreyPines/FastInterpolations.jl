@@ -43,8 +43,7 @@ Thread-safe: workspaces allocated from task-local pool.
     z = similar!(pool, y)
     _solve_system!(z, cache, y, cache.bc_config)
 
-    resolved = _resolve_search(cache.x, x_query, search, nothing)
-    searcher = _to_searcher(resolved)
+    searcher = _resolve_search(cache.x, x_query, search, nothing)
     _cubic_vector_loop!(output, cache, y, z, x_query, extrap, deriv, searcher)
 
     return output
@@ -232,8 +231,7 @@ In-place cubic spline interpolation with optional automatic caching.
     deriv::DerivOp=EvalValue(),
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
-    resolved = _resolve_search(x, x_query, search, nothing)
-    searcher = _to_searcher(resolved)
+    searcher = _resolve_search(x, x_query, search, nothing)
     # Periodic BC
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic!(output, x, y, x_query, bc, autocache, deriv, searcher)
@@ -298,7 +296,7 @@ derivs = cubic_interp(cache, y, [0.25, 0.5, 0.75]; deriv=DerivOp(1))  # First de
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = cubic_interp(cache, y, sorted_queries; search=LinearBinary(linear_window=8))
+vals = cubic_interp(cache, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
 function cubic_interp(
@@ -338,7 +336,7 @@ result = cubic_interp(x, y, x_query; extrap=ExtendExtrap())  # Extend beyond dom
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
-vals = cubic_interp(x, y, sorted_queries; search=LinearBinary(linear_window=8))
+vals = cubic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 """
 function cubic_interp(
@@ -358,7 +356,7 @@ end
 
 # Scalar query - zero allocation
 cubic_interp(cache::CubicSplineCache{Tg}, y::AbstractVector{Tv},
-             x_query::Tg; extrap::AbstractExtrap=NoExtrap(), deriv::DerivOp=EvalValue(), search=AutoSearch(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv} =
+             x_query::Tg; extrap::AbstractExtrap=NoExtrap(), deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=AutoSearch(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv} =
     cubic_interp_scalar(cache, y, x_query; extrap=extrap, deriv=deriv, search=search, hint=hint)
 
 # Primary scalar method - AD-compatible
@@ -371,11 +369,10 @@ function cubic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
+    search::AbstractSearchPolicy=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    resolved = _resolve_search(x, xq, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, deriv, searcher)
     end
@@ -417,7 +414,7 @@ function cubic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
+    search::AbstractSearchPolicy=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)

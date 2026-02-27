@@ -94,7 +94,7 @@ itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
     wrap::Bool=false,
     searcher::P=DEFAULT_SEARCHER
 ) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
-    return _quadratic_anchor_query_impl(x, xq, wrap, searcher)
+    return _quadratic_anchor_query_impl(x, xq, wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
 """
@@ -132,12 +132,13 @@ function _anchor_query(
     xq::AbstractVector{S},
     ::Val{:quadratic},
     wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinary())
+    searcher::P=_to_searcher(LinearBinarySearch())
 ) where {T<:AbstractFloat, S<:Real, P<:Searcher}
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     output = Vector{_QuadraticAnchoredQuery{T,T}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
-        output[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap, searcher)
+        output[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
     end
     return output
 end
@@ -169,14 +170,15 @@ When buffer element type is `{Tg, Tq}` and `xq` element type is `S`:
     xq::AbstractVector{S},
     ::Val{:quadratic},
     wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinary())
+    searcher::P=_to_searcher(LinearBinarySearch())
 ) where {Tg<:AbstractFloat, Tq<:Real, S<:Real, P<:Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
+    searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
     @inbounds for k in eachindex(xq)
         # Promote query point: preserves precision when S is wider than Tg
         xq_promoted = _promote_for_anchor(xq[k], Tg)
-        buffer[k] = _quadratic_anchor_query_impl(x, xq_promoted, wrap, searcher)
+        buffer[k] = _quadratic_anchor_query_impl(x, xq_promoted, wrap, searcher_resolved)
     end
     return buffer
 end
@@ -235,7 +237,7 @@ while preserving the full Dual value for `dL` computation.
         @inbounds (n - 1, x[n-1], x[n])
     else
         # Inside domain: use policy-based interval search
-        search_interval(_resolve_searcher(x, policy), x, xq_primal)
+        search_interval(policy, x, xq_primal)
     end
 
     # Compute dL: offset from interval start

@@ -42,7 +42,7 @@ vals = itp(points)              # Batch AoS
 itp = constant_interp((x, y), data;
     side=(LeftSide(), RightSide()),
     extrap=(NoExtrap(), WrapExtrap()),
-    search=(Binary(), LinearBinary())
+    search=(BinarySearch(), LinearBinarySearch())
 )
 ```
 """

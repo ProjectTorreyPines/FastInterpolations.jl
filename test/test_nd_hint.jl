@@ -116,10 +116,10 @@ using FastInterpolations
     end
 
     # ========================================
-    # Binary Auto-Upgrade with Hint
+    # BinarySearch Auto-Upgrade with Hint
     # ========================================
-    @testset "Binary auto-upgrade with hint" begin
-        itp = cubic_interp((x, y), data_2d; search=Binary())
+    @testset "BinarySearch auto-upgrade with hint" begin
+        itp = cubic_interp((x, y), data_2d; search=BinarySearch())
         qx, qy = 1.5, 0.7
         hints = (Ref(1), Ref(1))
 

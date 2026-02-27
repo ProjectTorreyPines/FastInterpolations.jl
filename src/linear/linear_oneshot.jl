@@ -27,9 +27,9 @@ Zero-allocation linear interpolation with automatic dispatch:
 - `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative, `DerivOp(2)` second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
-  - `Binary()` (default): O(log n) binary search, stateless
-  - `LinearBinary(linear_window=0)`: O(1) if hint valid, O(log n) fallback
-  - `LinearBinary(linear_window=8)`: Linear search within window, then binary fallback
+  - `BinarySearch()` (default): O(log n) binary search, stateless
+  - `LinearBinarySearch(linear_window=0)`: O(1) if hint valid, O(log n) fallback
+  - `LinearBinarySearch(linear_window=8)`: Linear search within window, then binary fallback
 
 # Example
 ```julia
@@ -42,7 +42,7 @@ linear_interp!(out, rho, y, [-0.1, 1.2]; extrap=ExtendExtrap())  # linear extrap
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))
 output = zeros(1000)
-linear_interp!(output, x_vec, y_vec, sorted_queries; search=LinearBinary(linear_window=8))
+linear_interp!(output, x_vec, y_vec, sorted_queries; search=LinearBinarySearch(linear_window=8))
 ```
 
 # Implementation Note
@@ -67,8 +67,7 @@ function linear_interp!(
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    resolved = _resolve_search(x, x_targets, search, nothing)
-    searcher = _to_searcher(resolved)
+    searcher = _resolve_search(x, x_targets, search, nothing)
     @boundscheck _check_domain(x, x_targets, extrap)
     _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
 end
@@ -161,8 +160,7 @@ end
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
-    resolved = _resolve_search(x, x_targets, search, nothing)
-    searcher = _to_searcher(resolved)
+    searcher = _resolve_search(x, x_targets, search, nothing)
     @boundscheck _check_domain(x, x_targets, extrap)
     _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
 end
@@ -183,9 +181,9 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 - `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
-  - `Binary()` (default): O(log n) binary search, stateless
-  - `LinearBinary(linear_window=0)`: O(1) if hint valid, O(log n) fallback
-  - `LinearBinary(linear_window=8)`: Linear search within window, then binary fallback
+  - `BinarySearch()` (default): O(log n) binary search, stateless
+  - `LinearBinarySearch(linear_window=0)`: O(1) if hint valid, O(log n) fallback
+  - `LinearBinarySearch(linear_window=8)`: Linear search within window, then binary fallback
 
 # Returns
 - Always returns a floating-point type (Integer inputs auto-promoted to Float)
@@ -387,13 +385,12 @@ end
     xq::Tq;
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
+    search::AbstractSearchPolicy=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
-    resolved = _resolve_search(x, xq, search, hint)
-    searcher = _to_searcher(resolved, hint)
+    searcher = _resolve_search(x, xq, search, hint)
     linear_interp(x, y, xq, extrap, deriv, searcher)
 end
 
@@ -468,7 +465,7 @@ end
     xq::Tq;
     extrap::AbstractExtrap=NoExtrap(),
     deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
+    search::AbstractSearchPolicy=AutoSearch(),
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)

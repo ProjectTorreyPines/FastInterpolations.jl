@@ -199,22 +199,22 @@
         x_vec = collect(x)
 
         # Test different search policies
-        itp_binary = linear_interp(x_vec, y; search=Binary())
-        itp_hinted = linear_interp(x_vec, y; search=LinearBinary(linear_window=0))
-        itp_linear_binary = linear_interp(x_vec, y; search=LinearBinary())
-        itp_linear_binary_16 = linear_interp(x_vec, y; search=LinearBinary(linear_window=16))
+        itp_binary = linear_interp(x_vec, y; search=BinarySearch())
+        itp_hinted = linear_interp(x_vec, y; search=LinearBinarySearch(linear_window=0))
+        itp_linear_binary = linear_interp(x_vec, y; search=LinearBinarySearch())
+        itp_linear_binary_16 = linear_interp(x_vec, y; search=LinearBinarySearch(linear_window=16))
 
         verbose_binary = sprint(show, MIME("text/plain"), itp_binary)
-        @test occursin("Binary", verbose_binary)
+        @test occursin("BinarySearch", verbose_binary)
 
         verbose_hinted = sprint(show, MIME("text/plain"), itp_hinted)
-        @test occursin("LinearBinary{0}", verbose_hinted)
+        @test occursin("LinearBinarySearch{0}", verbose_hinted)
 
         verbose_lb = sprint(show, MIME("text/plain"), itp_linear_binary)
-        @test occursin("LinearBinary{8}", verbose_lb)
+        @test occursin("LinearBinarySearch{8}", verbose_lb)
 
         verbose_lb16 = sprint(show, MIME("text/plain"), itp_linear_binary_16)
-        @test occursin("LinearBinary{16}", verbose_lb16)
+        @test occursin("LinearBinarySearch{16}", verbose_lb16)
 
         # Default-constructed interpolant uses AutoSearch
         itp_default = linear_interp(x_vec, y)
@@ -257,10 +257,10 @@
 
         # Vector grid → Search row shown (binary search needed)
         x_vector = collect(x_range)
-        itp_vector = linear_interp(x_vector, y; search=Binary())
+        itp_vector = linear_interp(x_vector, y; search=BinarySearch())
         verbose_vector = sprint(show, MIME("text/plain"), itp_vector)
         @test occursin("Search:", verbose_vector)
-        @test occursin("Binary", verbose_vector)
+        @test occursin("BinarySearch", verbose_vector)
     end
 
     # ========================================
@@ -307,11 +307,11 @@
         x_vec = collect(range(0.0, 1.0, 11))
         y_short = sin.(x_vec)
 
-        # Linear search policy
-        itp_linear = linear_interp(x_vec, y_short; search=Linear())
+        # LinearSearch search policy
+        itp_linear = linear_interp(x_vec, y_short; search=LinearSearch())
         verbose_linear = sprint(show, MIME("text/plain"), itp_linear)
-        @test occursin("Linear", verbose_linear)
-        @test !occursin("LinearBinary", verbose_linear)  # Should be just "Linear"
+        @test occursin("LinearSearch", verbose_linear)
+        @test !occursin("LinearBinarySearch", verbose_linear)  # Should be just "LinearSearch"
     end
 
     @testset "BC type formatting" begin
@@ -391,39 +391,39 @@
         y_matrix_short = [sin.(x_vec) cos.(x_vec)]
 
         # ConstantInterpolant with Vector grid
-        itp_const = constant_interp(x_vec, y_short; search=Binary())
+        itp_const = constant_interp(x_vec, y_short; search=BinarySearch())
         verbose_const = sprint(show, MIME("text/plain"), itp_const)
         @test occursin("Search:", verbose_const)
-        @test occursin("Binary", verbose_const)
+        @test occursin("BinarySearch", verbose_const)
 
         # QuadraticInterpolant with Vector grid
-        itp_quad = quadratic_interp(x_vec, y_short; search=Binary())
+        itp_quad = quadratic_interp(x_vec, y_short; search=BinarySearch())
         verbose_quad = sprint(show, MIME("text/plain"), itp_quad)
         @test occursin("Search:", verbose_quad)
 
         # CubicInterpolant with Vector grid
-        itp_cubic = cubic_interp(x_vec, y_short; search=Binary())
+        itp_cubic = cubic_interp(x_vec, y_short; search=BinarySearch())
         verbose_cubic = sprint(show, MIME("text/plain"), itp_cubic)
         @test occursin("Search:", verbose_cubic)
 
         # CubicSeriesInterpolant with Vector grid
-        sitp_cubic = cubic_interp(x_vec, y_matrix_short; search=Binary())
+        sitp_cubic = cubic_interp(x_vec, y_matrix_short; search=BinarySearch())
         verbose_sitp = sprint(show, MIME("text/plain"), sitp_cubic)
         @test occursin("Search:", verbose_sitp)
 
         # LinearSeriesInterpolant with Vector grid
-        sitp_linear = linear_interp(x_vec, y_matrix_short; search=Binary())
+        sitp_linear = linear_interp(x_vec, y_matrix_short; search=BinarySearch())
         verbose_sitp_linear = sprint(show, MIME("text/plain"), sitp_linear)
         @test occursin("Search:", verbose_sitp_linear)
-        @test occursin("Binary", verbose_sitp_linear)
+        @test occursin("BinarySearch", verbose_sitp_linear)
 
         # ConstantSeriesInterpolant with Vector grid
-        sitp_const = constant_interp(x_vec, y_matrix_short; search=Binary())
+        sitp_const = constant_interp(x_vec, y_matrix_short; search=BinarySearch())
         verbose_sitp_const = sprint(show, MIME("text/plain"), sitp_const)
         @test occursin("Search:", verbose_sitp_const)
 
         # QuadraticSeriesInterpolant with Vector grid
-        sitp_quad = quadratic_interp(x_vec, y_matrix_short; search=Binary())
+        sitp_quad = quadratic_interp(x_vec, y_matrix_short; search=BinarySearch())
         verbose_sitp_quad = sprint(show, MIME("text/plain"), sitp_quad)
         @test occursin("Search:", verbose_sitp_quad)
     end
@@ -470,12 +470,12 @@
         @test FI._format_extrap(Val(:unknown_mode)) == "unknown"
         @test FI._format_deriv_order(4) == "4th"
 
-        @test FI._format_search(Linear()) == "Linear"
-        @test FI._format_search(Binary()) == "Binary"
-        @test FI._format_search(LinearBinary(linear_window=0)) == "LinearBinary{0}"
-        @test FI._format_search(LinearBinary()) == "LinearBinary{8}"
-        @test FI._format_search(LinearBinary(linear_window=4)) == "LinearBinary{4}"
-        @test FI._format_search(AutoSearch()) == "AutoSearch (scalar→Binary, vector→adaptive)"
+        @test FI._format_search(LinearSearch()) == "LinearSearch"
+        @test FI._format_search(BinarySearch()) == "BinarySearch"
+        @test FI._format_search(LinearBinarySearch(linear_window=0)) == "LinearBinarySearch{0}"
+        @test FI._format_search(LinearBinarySearch()) == "LinearBinarySearch{8}"
+        @test FI._format_search(LinearBinarySearch(linear_window=4)) == "LinearBinarySearch{4}"
+        @test FI._format_search(AutoSearch()) == "AutoSearch (scalar→BinarySearch, vector→adaptive)"
 
         # DerivativeView with unknown parent type (no .x or .cache.x)
         struct DummyInterpolant{T} <: FastInterpolations.AbstractInterpolant{T, T} end
@@ -646,13 +646,13 @@
         f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
 
         # Different search policies per axis
-        itp_mixed_search = cubic_interp((x1, x2), f; search=(Binary(), Linear()))
+        itp_mixed_search = cubic_interp((x1, x2), f; search=(BinarySearch(), LinearSearch()))
 
         # Verbose show should display tuple format for search policies
         verbose_str = sprint(show, MIME("text/plain"), itp_mixed_search)
         @test occursin("Search:", verbose_str)
-        @test occursin("Binary", verbose_str)
-        @test occursin("Linear", verbose_str)
+        @test occursin("BinarySearch", verbose_str)
+        @test occursin("LinearSearch", verbose_str)
     end
 
     @testset "CubicInterpolantND show with complex values (Tv ≠ Tg)" begin
@@ -841,11 +841,11 @@
         x2 = collect(range(0.0, 2.0, 15))
         data = [Float64(i + j) for i in 1:11, j in 1:15]
 
-        itp = constant_interp((x1, x2), data; search=Binary())
+        itp = constant_interp((x1, x2), data; search=BinarySearch())
 
         verbose_str = sprint(show, MIME("text/plain"), itp)
         @test occursin("Search:", verbose_str)
-        @test occursin("Binary", verbose_str)
+        @test occursin("BinarySearch", verbose_str)
         @test occursin("Vector", verbose_str)
     end
 
@@ -942,11 +942,11 @@
         x2 = collect(range(0.0, 2.0, 15))
         data = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
 
-        itp = linear_interp((x1, x2), data; search=Binary())
+        itp = linear_interp((x1, x2), data; search=BinarySearch())
 
         verbose_str = sprint(show, MIME("text/plain"), itp)
         @test occursin("Search:", verbose_str)
-        @test occursin("Binary", verbose_str)
+        @test occursin("BinarySearch", verbose_str)
         @test occursin("Vector", verbose_str)
     end
 end

@@ -296,7 +296,7 @@ end
 # resolution, eliminating LLVM union-splitting in hot loops.
 
 @inline _resolve_search(::AbstractRange, xq, ::AbstractSearchPolicy, hint) = DirectSearch()
-@inline _resolve_search(_, xq, search, hint) = _resolve_search(search, xq, hint)
+@inline _resolve_search(::AbstractVector, xq, search::AbstractSearchPolicy, hint) = _resolve_search(search, xq, hint)
 # Searcher passthrough for 4-arg form: defined after Searcher struct (see below)
 
 # ----------------------------------------

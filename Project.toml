@@ -14,11 +14,14 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
+SymbolicUtils = "d1185830-fcd6-423d-90d6-eec64667417b"
+Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
 
 [extensions]
 FastInterpolationsChainRulesCoreExt = "ChainRulesCore"
 FastInterpolationsForwardDiffExt = "ForwardDiff"
 FastInterpolationsRecipesBaseExt = "RecipesBase"
+FastInterpolationsSymbolicsExt = ["Symbolics", "SymbolicUtils"]
 
 [compat]
 AdaptiveArrayPools = "0.2"
@@ -29,4 +32,6 @@ LinearAlgebra = "1"
 Preferences = "1"
 Printf = "1"
 RecipesBase = "1"
+SymbolicUtils = "3, 4"
+Symbolics = "7"
 julia = "1.10"

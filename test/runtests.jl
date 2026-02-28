@@ -96,4 +96,7 @@ else
     include("test_autodiff_ForwardDiff.jl")
     include("test_autodiff_Zygote.jl")
     include("test_autodiff_Enzyme.jl")
+
+    # Symbolics registration
+    include("test_symbolics.jl")
 end

@@ -69,14 +69,14 @@ result = itp(xq)               # evaluate at multiple points
 ```
 
 ### 2.1 SeriesInterpolant (Multiple Series)
-When multiple y-series share the same x-grid, use SeriesInterpolant. It leverages **SIMD** and **cache locality** for **10-100× faster** evaluation compared to looping over individual interpolants.
+When multiple y-series share the same x-grid, use SeriesInterpolant. It leverages **SIMD** and **cache locality** for **>10× faster** evaluation compared to looping over individual interpolants.
 
 ```julia
 x = range(0, 10, 100)
 y1, y2, y3, y4 = sin.(x), cos.(x), tan.(x), exp.(-x)  # 4 series, same grid
 
 sitp = cubic_interp(x, [y1, y2, y3, y4])   # create SeriesInterpolant
-sitp(0.5)  # → 4-element Vector: interpolated values for each series
+sitp(0.5)  # → 4-element Vector: [≈sin(0.5), ≈cos(0.5), ≈tan(0.5), ≈exp(-0.5)]
 ```
 
 For detailed usage and performance trade-offs, see the [API Selection Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/api_selection/).
@@ -132,20 +132,33 @@ One-shot (construction + evaluation) time per call with fixed grid size $n=100$.
 ## More Features
 
 ### Analytic Derivatives
-Exact 1st–3rd order derivatives from spline coefficients — no finite differences.
+Exact 1st–3rd order derivatives from spline coefficients — no finite differences. ND interpolants support `gradient`, `hessian`, and `laplacian`.
 ```julia
-cubic_interp(x, y, 5.0; deriv=DerivOp(1))   # 1st derivative
-cubic_interp(x, y, 5.0; deriv=DerivOp(2))   # 2nd derivative
+# 1D example
+cubic_interp(x, y, 5.0; deriv=DerivOp(1))   # 1D: f'(x)
+
+# 2D example 
+itp2d = cubic_interp((x, y), data2D)
+
+point = (0.5, 1.0)                       # query point (x, y)
+itp2d(point; deriv=DerivOp(1, 0))        # ∂f/∂x
+itp2d(point; deriv=DerivOp(1, 1))        # ∂²f/∂x∂y (mixed partial)
+gradient(itp2d, point)                   # (∂f/∂x, ∂f/∂y)
+hessian(itp2d, point)                    # 2×2 Hessian matrix
 ```
-→ [Derivative Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/derivatives/)
+→ [1D Derivatives](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/derivatives/) · [ND Derivatives](https://projecttorreypines.github.io/FastInterpolations.jl/dev/nd/derivatives/)
 
 ### Analytic Integration
 Exact definite integration from spline coefficients — no numerical quadrature.
 ```julia
 itp = cubic_interp(x, y)
-integrate(itp, 0.0, π)   # ∫₀^π f(x) dx ≈ 2.0
+integrate(itp, 0.0, π)                       # 1D: ∫₀^π f(x) dx
+
+itp2d = cubic_interp((x, y), data2D)
+integrate(itp2d, (0.0, 0.0), (1.0, 1.0))    # 2D: ∫∫ f dA over [0,1]²
+integrate(itp2d)                              # 2D: full-domain integral
 ```
-→ [Integration Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/integration/)
+→ [1D Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/integration/) · [ND Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/nd/integration/)
 
 ### Boundary Conditions
 Rich type system for physical BCs — natural, periodic, and custom per-endpoint derivatives.

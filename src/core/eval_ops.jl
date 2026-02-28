@@ -54,23 +54,7 @@ const EvalDeriv1 = DerivOp{1}
 const EvalDeriv2 = DerivOp{2}
 const EvalDeriv3 = DerivOp{3}
 
-# 1D constructor: DerivOp(1) → DerivOp{1}()
-@inline DerivOp(n::Int) = _make_derivop(n)
-
-# ND constructor: DerivOp(1, 0) → (DerivOp{1}(), DerivOp{0}())
-@inline DerivOp(n1::Int, n2::Int, rest::Int...) = map(_make_derivop, (n1, n2, rest...))
-
-# Internal: Int → concrete DerivOp singleton (union-split friendly for 0-3)
-@inline function _make_derivop(n::Int)
-    n == 0 && return DerivOp{0}()
-    n == 1 && return DerivOp{1}()
-    n == 2 && return DerivOp{2}()
-    n == 3 && return DerivOp{3}()
-    _derivop_order_error(n)
-end
-
-@noinline _derivop_order_error(n::Int) =
-    throw(ArgumentError("unsupported derivative order $n; must be 0, 1, 2, or 3"))
+# Factory constructors DerivOp(n) and DerivOp(n1, n2, ...) are in factory.jl
 
 """
     deriv_order(::DerivOp{N}) -> Int

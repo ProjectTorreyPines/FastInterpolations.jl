@@ -66,10 +66,16 @@ itp = cubic_interp(x, y; bc=ZeroCurvBC())  # explicitly specify old default
 | v0.2 (removed) | v0.3 (factory) | v0.3 (direct type) |
 |:----------------|:----------------|:--------------------|
 | `Binary()` | `Search(:binary)` | `BinarySearch()` |
-| `Linear()` | `Search(:linear)` | `LinearSearch()` |
+| `Linear()` | `Search(:linear)` | `LinearSearch()` ⚠️ |
 | `LinearBinary()` | `Search(:linear_binary)` | `LinearBinarySearch()` |
 | `LinearBinary{4}()` | `Search(:linear_binary; linear_window=4)` | `LinearBinarySearch{4}()` |
 | `HintedBinary()` | — | `LinearBinarySearch(linear_window=0)` |
+
+!!! tip "Recommended: just use the default"
+    In v0.3, `AutoSearch()` is the default for all interpolants and adapts automatically. If you were using `Linear()` / `LinearBinary()` in v0.2, consider **removing the explicit search policy entirely** and relying on `AutoSearch()` + `hint=Ref(1)` for sequential patterns. See [Search & Hints](@ref search_hints).
+
+!!! warning "LinearSearch() is no longer recommended"
+    The old `Linear()` (now `LinearSearch()`) has no binary fallback and degrades to O(n) for distant queries. Use `LinearBinarySearch()` or `AutoSearch()` (default) instead — they provide the same O(1) performance for monotonic data with a safe O(log n) fallback.
 
 ## Behavioral Changes (Non-Breaking)
 
@@ -157,7 +163,10 @@ cubic_interp(x, y; bc=ZeroSlopeBC())   # S'=0
 linear_interp(x, y, xq; search=Binary())
 linear_interp(x, y, xq; search=LinearBinary())
 
-# ─── v0.3 (recommended: factory) ─────────────────
+# ─── v0.3 (recommended: just use the default) ────
+linear_interp(x, y, xq)                    # AutoSearch() adapts automatically
+
+# ─── v0.3 (explicit override, if needed) ─────────
 linear_interp(x, y, xq; search=Search(:binary))
 linear_interp(x, y, xq; search=Search(:linear_binary))
 
@@ -200,5 +209,5 @@ ERROR: ArgumentError: unknown search policy :bianry;
 4. **Update BC types** — `NaturalBC` → `ZeroCurvBC`, `ClampedBC` → `ZeroSlopeBC`
 5. **Update search types** — `Binary` → `BinarySearch`, etc.
 6. **Check default BC** — if you relied on the implicit `ZeroCurvBC` default, specify it explicitly
-7. **Check vector query performance** — if using random access patterns, set `search=BinarySearch()` or `Search(:binary)`
+7. **Check search policy usage** — `AutoSearch()` is now the recommended default; if you were using `Linear()`, switch to `AutoSearch()` + `hint=Ref(1)` (see [Search & Hints](@ref search_hints))
 8. **Run tests** — all changes produce compile-time errors, so tests catch everything

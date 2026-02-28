@@ -170,14 +170,36 @@ cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv2(0.0)))  # mixed: slope left
 ```
 → [Boundary Conditions Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/boundary-conditions/overview/)
 
-### Extrapolation, Search & More
-Factory functions provide a single discoverable entry point for all configuration.
+### Extrapolation
+Queries outside the data domain throw `DomainError` by default. Use `Extrap()` to allow them:
 ```julia
-cubic_interp(x, y, xq; extrap=Extrap(:constant)) # :none (default) | :constant | :extend | :wrap
-linear_interp(x, y, xq; search=Search(:auto))    # :auto (default) | :binary | :linear_binary
-constant_interp(x, y, xq; side=Side(:nearest))   # :nearest | :left | :right
+cubic_interp(x, y; extrap=Extrap(:constant))  # clamp to boundary value
+cubic_interp(x, y; extrap=Extrap(:extend))    # extend boundary polynomial
+# also :wrap (periodic) and :none (default, throws DomainError)
 ```
-→ [Extrapolation](https://projecttorreypines.github.io/FastInterpolations.jl/dev/extrapolation/) · [Search Policies](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/search/overview/) · [Factory Functions](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/factory_functions/)
+→ [Extrapolation Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/extrapolation/) · [Factory Functions](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/factory_functions/)
+
+### Search
+Non-uniform (`Vector`) grids require an interval search. The default `AutoSearch()` picks the best strategy per-call:
+```julia
+itp = linear_interp(x_vec, y_vec; search=AutoSearch())  # default, adapts per-call
+itp(0.5)          # scalar → binary search
+itp(sorted_xq)    # sorted detected → linear walk + binary fallback
+itp(rand_xq)      # random detected → binary search
+itp(0.5; search=BinarySearch())  # manual override (rarely needed)
+```
+→ [Search Policies](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/search/policies/)
+
+### Hints
+Give the search a positional hint to speed up lookup — enables O(1) sequential access (ODE solvers, streaming):
+```julia
+itp = cubic_interp(x, y)
+hint = Ref(1)  # grid interval index, updated automatically
+for t in time_steps  # monotonic or streaming
+    val = itp(t; hint=hint)  # hint is reused & updated each call
+end
+```
+→ [Using Hints](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/search/hints/)
 
 **See also:** [Complex Numbers](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/complex_number_support/) · [AutoDiff](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/autodiff_support/) · [Thread Safety](https://projecttorreypines.github.io/FastInterpolations.jl/dev/architecture/thread_safety/) · [Optim.jl Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/optimization/)
 

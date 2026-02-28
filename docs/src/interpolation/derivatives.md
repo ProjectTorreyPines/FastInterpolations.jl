@@ -80,10 +80,7 @@ DerivativeView forwards all keyword arguments to the parent interpolant (`deriv`
 ```julia
 d1 = deriv1(itp)
 
-# Override search policy
-d1(0.5; search=LinearBinarySearch())
-
-# Use hint for sequential access
+# Use hint for sequential access (AutoSearch auto-upgrades to LinearBinarySearch)
 hint = Ref(1)
 for xq in sorted_queries
     val = d1(xq; hint=hint)

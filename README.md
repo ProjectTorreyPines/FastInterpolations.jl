@@ -177,7 +177,7 @@ cubic_interp(x, y; extrap=Extrap(:constant))  # clamp to boundary value
 cubic_interp(x, y; extrap=Extrap(:extend))    # extend boundary polynomial
 # also :wrap (periodic) and :none (default, throws DomainError)
 ```
-→ [Extrapolation Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/extrapolation/) · [Factory Functions](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/factory_functions/)
+→ [Extrapolation Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/extrapolation/) · 
 
 ### Search
 Non-uniform (`Vector`) grids require an interval search. The default `AutoSearch()` picks the best strategy per-call:
@@ -201,7 +201,7 @@ end
 ```
 → [Using Hints](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/search/hints/)
 
-**See also:** [Complex Numbers](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/complex_number_support/) · [AutoDiff](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/autodiff_support/) · [Thread Safety](https://projecttorreypines.github.io/FastInterpolations.jl/dev/architecture/thread_safety/) · [Optim.jl Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/optimization/)
+**See also:** [Factory Functions](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/factory_functions/) · [Complex Numbers](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/complex_number_support/) · [AutoDiff](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/autodiff_support/) · [Thread Safety](https://projecttorreypines.github.io/FastInterpolations.jl/dev/architecture/thread_safety/) · [Optim.jl Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/optimization/)
 
 ## Documentation
 

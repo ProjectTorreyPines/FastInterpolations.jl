@@ -55,7 +55,7 @@ creates a Tuple for ND per-axis configuration (same pattern as `DerivOp(1, 0)`).
 
 # Keywords (single-arg `:linear_binary` only)
 - `linear_window::Integer=8`: maximum linear walk steps before binary fallback.
-  Must be a power of 2 from (0, 1, 2, 4, 8, 16, 32, 64, 128).
+  Must be 0 or a power of 2 from (1, 2, 4, 8, 16, 32, 64, 128).
 
 # Examples
 ```julia

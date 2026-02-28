@@ -168,6 +168,7 @@ makedocs(
             "Integration" => "nd/integration.md",
             "Extrapolation" => "nd/extrapolation.md",
         ],
+        "Factory Functions" => "guides/factory_functions.md",
         "Advanced Usage" => [
             "Overview" => "guides/advanced_overview.md",
             "Complex Numbers" => "guides/complex_number_support.md",

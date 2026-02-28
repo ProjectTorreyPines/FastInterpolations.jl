@@ -21,6 +21,7 @@ else
     # Default behavior: run all tests
     include("test_grid_spacing.jl")
     include("test_search.jl")
+    include("test_factory.jl")
     include("test_constant.jl")
     include("test_complex_constant.jl")
     include("test_linear.jl")

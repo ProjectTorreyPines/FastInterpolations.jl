@@ -138,25 +138,29 @@ cubic_interp(x, y, 5.0; deriv=DerivOp(1))   # 1st derivative at x=5.0
 cubic_interp(x, y, 5.0; deriv=DerivOp(2))   # 2nd derivative at x=5.0
 cubic_interp(x, y, 5.0; deriv=DerivOp(3))   # 3rd derivative at x=5.0
 
-# Constant interpolation — choose which side to sample
-constant_interp(x, y, xq; side=NearestSide()) # nearest neighbor (default)
-constant_interp(x, y, xq; side=LeftSide())    # left-continuous
-constant_interp(x, y, xq; side=RightSide())   # right-continuous
+# Extrapolation modes — Extrap() factory for discoverability
+cubic_interp(x, y, xq; extrap=Extrap(:constant))  # clamp to boundary values
+cubic_interp(x, y, xq; extrap=Extrap(:extend))    # extend boundary polynomial
+cubic_interp(x, y, xq; extrap=Extrap(:wrap))      # wrap around (periodic data)
 
-# Quadratic boundary condition — single endpoint constraint
-quadratic_interp(x, y, xq; bc=Left(Deriv1(0.0)))   # S'(left) = 0
-quadratic_interp(x, y, xq; bc=Right(Deriv1(1.0)))  # S'(right) = 1
+# Search policies — Search() factory for interval lookup strategy
+linear_interp(x, y, xq; search=Search(:binary))                      # O(log n)
+linear_interp(x, y, xq; search=Search(:linear_binary; linear_window=4))  # O(1) amortized
 
-# Cubic boundary conditions — paired endpoint constraints
-cubic_interp(x, y, xq; bc=CubicFit())     # 4-point polynomial fit at both ends (default)
-cubic_interp(x, y, xq; bc=ZeroCurvBC())  # S''=0 at both ends
+# Constant interpolation — Side() factory for side selection
+constant_interp(x, y, xq; side=Side(:nearest))  # nearest neighbor (default)
+constant_interp(x, y, xq; side=Side(:left))      # left-continuous
+constant_interp(x, y, xq; side=Side(:right))     # right-continuous
+
+# ND: multi-arg factories create per-axis tuples
+cubic_interp((x, y, z), data; extrap=Extrap(:extend, :constant, :none))
+cubic_interp((x, y, z), data; search=Search(:binary, :linear_binary, :auto))
+
+# Boundary conditions — rich type system for physical BCs
+cubic_interp(x, y, xq; bc=CubicFit())     # 4-point polynomial fit (default)
+cubic_interp(x, y, xq; bc=ZeroCurvBC())  # S''=0 at both ends (natural spline)
 cubic_interp(x, y, xq; bc=PeriodicBC())  # C²-continuous periodic spline
-cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv2(-5.0)))  # custom (left, right) BC
-
-# Extrapolation modes — all methods support these
-linear_interp(x, y, xq; extrap=ConstExtrap())    # clamp to boundary values
-quadratic_interp(x, y, xq; extrap=WrapExtrap())  # wrap around (periodic data)
-cubic_interp(x, y, xq; extrap=ExtendExtrap())    # extend boundary polynomial
+cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv2(-5.0)))  # custom per-endpoint
 ```
 
 ## Documentation

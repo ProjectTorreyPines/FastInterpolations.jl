@@ -7,6 +7,7 @@ include("bc_types.jl")         # 3. Boundary condition types
 include("polyfit_kernels.jl")       # 4. Boundary condition computation kernels (Lagrange, etc.)
 include("grid_spacing.jl")     # 5. ScalarSpacing, VectorSpacing
 include("search.jl")           # 6. Search policy + interval search
+include("factory.jl")          # 6b. User-facing factory functions (Search, Extrap, Side)
 include("utils.jl")            # 7. Shared utilities (1D)
 include("periodic.jl")         # 8. Periodic BC helpers (wrapping, validation, exclusive endpoint)
 include("nd_utils.jl")         # 9. ND-specific utilities (shared by constant/linear/cubic ND)

@@ -63,6 +63,9 @@ export AbstractExtrap, NoExtrap, ConstExtrap, ExtendExtrap, WrapExtrap
 # Side selection types (constant interpolation)
 export AbstractSide, NearestSide, LeftSide, RightSide
 
+# Factory functions (high-level convenience API)
+export Search, Extrap, Side
+
 # Integration
 export integrate, cumulative_integrate
 

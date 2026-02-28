@@ -7,14 +7,21 @@ Extrapolation controls behavior when query points fall outside the data domain `
 All extrapolation modes are concrete subtypes of [`AbstractExtrap`](@ref). Pass them via the `extrap` keyword argument:
 
 ```julia-repl
-# One-shot: specify extrap per call
+# Using Extrap() factory (recommended)
+cubic_interp(x, y, xq; extrap=Extrap(:constant))
+linear_interp(x, y, xq; extrap=Extrap(:extend))
+
+# Using direct types (also supported)
 cubic_interp(x, y, xq; extrap=ConstExtrap())
 linear_interp(x, y, xq; extrap=ExtendExtrap())
 
 # Interpolant: extrap is fixed at creation
-itp = cubic_interp(x, y; extrap=ExtendExtrap())  # all future calls use ExtendExtrap
+itp = cubic_interp(x, y; extrap=Extrap(:extend))
 itp(xq)  # uses ExtendExtrap
 ```
+
+!!! tip "Factory Functions"
+    The [`Extrap()`](@ref factory_functions) factory provides a single discoverable entry point. For ND per-axis configuration, use the multi-arg form: `Extrap(:extend, :constant, :none)`. See [Factory Functions](@ref factory_functions) for details.
 
 All interpolation methods (`linear_interp`, `quadratic_interp`, `cubic_interp`, `constant_interp`) support the same extrapolation modes.
 

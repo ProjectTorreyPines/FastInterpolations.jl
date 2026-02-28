@@ -19,15 +19,18 @@ y = x.^3
 
 # AutoSearch is the default — adapts automatically per call
 xq = rand(1000)
-linear_interp(x, y, xq)                         # AutoSearch → BinarySearch() (random detected)
-linear_interp(x, y, xq; search=BinarySearch())         # Explicit: same result
+linear_interp(x, y, xq)                              # AutoSearch → BinarySearch()
+linear_interp(x, y, xq; search=Search(:binary))      # Explicit via factory
 
 # For sorted/monotonic queries
 xq_sorted = sort(xq)
-linear_interp(x, y, xq_sorted)                   # AutoSearch → LinearBinarySearch() (sorted detected)
-linear_interp(x, y, xq_sorted; search=LinearBinarySearch())  # Same result, explicit
+linear_interp(x, y, xq_sorted)                                   # AutoSearch → LinearBinarySearch()
+linear_interp(x, y, xq_sorted; search=Search(:linear_binary))    # Explicit via factory
 nothing # hide
 ```
+
+!!! tip "Factory Functions"
+    The [`Search()`](@ref factory_functions) factory provides a single discoverable entry point for all search policies. For ND per-axis configuration, use the multi-arg form: `Search(:binary, :linear_binary, :auto)`. See [Factory Functions](@ref factory_functions) for details.
 
 ## Decision Matrix
 

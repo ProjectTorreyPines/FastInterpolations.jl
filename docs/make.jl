@@ -201,6 +201,9 @@ makedocs(
             "Overview" => "internals.md",
             "Benchmarks" => "guides/performance.md",
         ],
+        "Migration Guides" => [
+            "v0.2 → v0.3" => "migration/to_v0.3.md",
+        ],
     ],
     doctest = true,
     checkdocs = :exports,

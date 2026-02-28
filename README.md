@@ -161,19 +161,21 @@ integrate(itp2d)                              # 2D: full-domain integral
 → [1D Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/integration/) · [ND Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/nd/integration/)
 
 ### Boundary Conditions
-Rich type system for physical BCs — natural, periodic, and custom per-endpoint derivatives.
+Rich type system for physical BCs — Neumann, periodic, polynomial fit, and custom per-endpoint.
 ```julia
-cubic_interp(x, y, xq; bc=ZeroCurvBC())   # natural spline (S''=0)
-cubic_interp(x, y, xq; bc=PeriodicBC())   # C²-continuous periodic
+cubic_interp(x, y, xq; bc=CubicFit())                        # cubic polynomial fit (default)
+cubic_interp(x, y, xq; bc=PeriodicBC())                      # C²-continuous periodic
+cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv1(0.0)))  # Neumann: specify f' at each end
+cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv2(0.0)))  # mixed: slope left, curvature right
 ```
 → [Boundary Conditions Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/boundary-conditions/overview/)
 
 ### Extrapolation, Search & More
 Factory functions provide a single discoverable entry point for all configuration.
 ```julia
-cubic_interp(x, y, xq; extrap=Extrap(:constant))  # :constant | :extend | :wrap
-linear_interp(x, y, xq; search=Search(:binary))    # :binary | :linear_binary | :auto
-constant_interp(x, y, xq; side=Side(:nearest))     # :nearest | :left | :right
+cubic_interp(x, y, xq; extrap=Extrap(:constant)) # :none (default) | :constant | :extend | :wrap
+linear_interp(x, y, xq; search=Search(:auto))    # :auto (default) | :binary | :linear_binary
+constant_interp(x, y, xq; side=Side(:nearest))   # :nearest | :left | :right
 ```
 → [Extrapolation](https://projecttorreypines.github.io/FastInterpolations.jl/dev/extrapolation/) · [Search Policies](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/search/overview/) · [Factory Functions](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/factory_functions/)
 

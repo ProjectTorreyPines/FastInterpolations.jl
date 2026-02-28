@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="docs/images/github_banner.png" alt="FastInterpolations.jl" />
-</p>
+![FastInterpolations.jl](docs/images/github_banner.png)
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://projecttorreypines.github.io/FastInterpolations.jl/stable/)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://projecttorreypines.github.io/FastInterpolations.jl/dev/)
@@ -63,9 +61,6 @@ end
 Best for **fixed lookup tables** where both `x` and `y` are constant.
 
 ```julia
-x = range(0.0, 10.0, 100)
-y = sin.(x)
-
 itp = cubic_interp(x, y)       # pre-compute spline coefficients once
 
 result = itp(5.5)              # evaluate at single point
@@ -136,36 +131,40 @@ One-shot (construction + evaluation) time per call with fixed grid size $n=100$.
 
 ## More Features
 
+### Analytic Derivatives
+Exact 1st–3rd order derivatives from spline coefficients — no finite differences.
 ```julia
-# Analytical derivatives — all methods support 1st, 2nd, 3rd derivatives
-cubic_interp(x, y, 5.0; deriv=DerivOp(1))   # 1st derivative at x=5.0
-cubic_interp(x, y, 5.0; deriv=DerivOp(2))   # 2nd derivative at x=5.0
-cubic_interp(x, y, 5.0; deriv=DerivOp(3))   # 3rd derivative at x=5.0
-
-# Extrapolation modes — Extrap() factory for discoverability
-cubic_interp(x, y, xq; extrap=Extrap(:constant))  # clamp to boundary values
-cubic_interp(x, y, xq; extrap=Extrap(:extend))    # extend boundary polynomial
-cubic_interp(x, y, xq; extrap=Extrap(:wrap))      # wrap around (periodic data)
-
-# Search policies — Search() factory for interval lookup strategy
-linear_interp(x, y, xq; search=Search(:binary))                      # O(log n)
-linear_interp(x, y, xq; search=Search(:linear_binary; linear_window=4))  # O(1) amortized
-
-# Constant interpolation — Side() factory for side selection
-constant_interp(x, y, xq; side=Side(:nearest))  # nearest neighbor (default)
-constant_interp(x, y, xq; side=Side(:left))      # left-continuous
-constant_interp(x, y, xq; side=Side(:right))     # right-continuous
-
-# ND: multi-arg factories create per-axis tuples
-cubic_interp((x, y, z), data; extrap=Extrap(:extend, :constant, :none))
-cubic_interp((x, y, z), data; search=Search(:binary, :linear_binary, :auto))
-
-# Boundary conditions — rich type system for physical BCs
-cubic_interp(x, y, xq; bc=CubicFit())     # 4-point polynomial fit (default)
-cubic_interp(x, y, xq; bc=ZeroCurvBC())  # S''=0 at both ends (natural spline)
-cubic_interp(x, y, xq; bc=PeriodicBC())  # C²-continuous periodic spline
-cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv2(-5.0)))  # custom per-endpoint
+cubic_interp(x, y, 5.0; deriv=DerivOp(1))   # 1st derivative
+cubic_interp(x, y, 5.0; deriv=DerivOp(2))   # 2nd derivative
 ```
+→ [Derivative Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/derivatives/)
+
+### Analytic Integration
+Exact definite integration from spline coefficients — no numerical quadrature.
+```julia
+itp = cubic_interp(x, y)
+integrate(itp, 0.0, π)   # ∫₀^π f(x) dx ≈ 2.0
+```
+→ [Integration Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/interpolation/integration/)
+
+### Boundary Conditions
+Rich type system for physical BCs — natural, periodic, and custom per-endpoint derivatives.
+```julia
+cubic_interp(x, y, xq; bc=ZeroCurvBC())   # natural spline (S''=0)
+cubic_interp(x, y, xq; bc=PeriodicBC())   # C²-continuous periodic
+```
+→ [Boundary Conditions Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/boundary-conditions/overview/)
+
+### Extrapolation, Search & More
+Factory functions provide a single discoverable entry point for all configuration.
+```julia
+cubic_interp(x, y, xq; extrap=Extrap(:constant))  # :constant | :extend | :wrap
+linear_interp(x, y, xq; search=Search(:binary))    # :binary | :linear_binary | :auto
+constant_interp(x, y, xq; side=Side(:nearest))     # :nearest | :left | :right
+```
+→ [Extrapolation](https://projecttorreypines.github.io/FastInterpolations.jl/dev/extrapolation/) · [Search Policies](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/search/overview/) · [Factory Functions](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/factory_functions/)
+
+**See also:** [Complex Numbers](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/complex_number_support/) · [AutoDiff](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/autodiff_support/) · [Thread Safety](https://projecttorreypines.github.io/FastInterpolations.jl/dev/architecture/thread_safety/) · [Optim.jl Integration](https://projecttorreypines.github.io/FastInterpolations.jl/dev/guides/optimization/)
 
 ## Documentation
 

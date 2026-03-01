@@ -20,9 +20,7 @@ concurrency:
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 permissions:
-  contents: write
-  pull-requests: write
-  deployments: write
+  contents: read
 
 jobs:
   benchmark:
@@ -47,18 +45,20 @@ jobs:
       - name: Run benchmarks
         run: julia --project=benchmark benchmark/ci_benchmark.jl
 
-      - name: Store benchmark result
-        continue-on-error: true
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: output.json
+
+      - name: Store benchmark result (push only)
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_results == true)
         uses: benchmark-action/github-action-benchmark@v1
         with:
           name: FastInterpolations.jl Benchmarks
           tool: 'julia'
           output-file-path: output.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_results == true) }}
-          alert-threshold: '110%'
-          comment-always: true
-          comment-on-alert: true
-          fail-on-alert: false
+          auto-push: true
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: bench

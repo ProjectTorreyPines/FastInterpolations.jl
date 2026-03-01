@@ -166,6 +166,35 @@ using FastInterpolations
     end
 
     # ────────────────────────────────────────────
+    # Series wrapper zero allocation
+    # ────────────────────────────────────────────
+    @testset "Series wrapper zero allocation" begin
+        # Function barriers to avoid @testset try/catch type-instability artifacts.
+
+        function _test_series_alloc_varargs()
+            y1 = collect(1.0:10.0)
+            y2 = collect(11.0:20.0)
+            Series(y1, y2); Series(y1, y2)
+            return @allocated Series(y1, y2)
+        end
+        @test _test_series_alloc_varargs() == 0
+
+        function _test_series_alloc_vecvec()
+            ys = [collect(1.0:10.0), collect(11.0:20.0)]
+            Series(ys); Series(ys)
+            return @allocated Series(ys)
+        end
+        @test _test_series_alloc_vecvec() == 0
+
+        function _test_series_alloc_matrix()
+            Y = hcat(collect(1.0:10.0), collect(11.0:20.0))
+            Series(Y); Series(Y)
+            return @allocated Series(Y)
+        end
+        @test _test_series_alloc_matrix() == 0
+    end
+
+    # ────────────────────────────────────────────
     # show methods
     # ────────────────────────────────────────────
     @testset "show" begin

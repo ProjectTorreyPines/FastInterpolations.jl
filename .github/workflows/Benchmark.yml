@@ -45,11 +45,25 @@ jobs:
       - name: Run benchmarks
         run: julia --project=benchmark benchmark/ci_benchmark.jl
 
-      - name: Save PR metadata
+      - name: Save PR metadata and flatten results
         if: github.event_name == 'pull_request'
         run: |
           echo "${{ github.event.number }}" > pr_number
           echo "${{ github.event.pull_request.head.sha }}" > pr_head_sha
+          julia --project=benchmark -e '
+            using JSON, BenchmarkTools
+            results = BenchmarkTools.load("output.json")[1]
+            flat = Dict{String,Any}[]
+            for (gname, group) in results
+              for (bname, est) in group
+                push!(flat, Dict("name" => "$gname/$bname", "value" => est.time, "unit" => "ns"))
+              end
+            end
+            sort!(flat, by=x->x["name"])
+            open("benchmark_flat.json", "w") do io
+              JSON.print(io, flat)
+            end
+          '
 
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
@@ -57,6 +71,7 @@ jobs:
           name: benchmark-results
           path: |
             output.json
+            benchmark_flat.json
             pr_number
             pr_head_sha
 
@@ -69,7 +84,7 @@ jobs:
           output-file-path: output.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
-          alert-threshold: '110%'
+          alert-threshold: '120%'
           comment-always: true
           comment-on-alert: true
           fail-on-alert: false

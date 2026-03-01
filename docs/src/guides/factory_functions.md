@@ -22,19 +22,25 @@ Search(BinarySearch())  # → BinarySearch()  (passthrough)
 
 This is useful in generic code where inputs may be either symbols or pre-constructed types.
 
-## Search
+## [Search](@id factory_search)
 
 Controls how interpolants find the correct grid interval for a query point.
 
 ```julia
-Search(:auto)            # AutoSearch() — adapts per query type (default)
+Search(:auto)            # AutoSearch() — adapts per query type (default, recommended)
 Search(:binary)          # BinarySearch() — O(log n), stateless
-Search(:linear)          # LinearSearch() — O(1) amortized (monotonic queries only)
 Search(:linear_binary)   # LinearBinarySearch{8}() — linear walk with binary fallback
+Search(:linear)          # LinearSearch() — expert only, no fallback (see warning below)
 
 # LinearBinarySearch supports a keyword argument
 Search(:linear_binary; linear_window=4)   # LinearBinarySearch{4}()
 ```
+
+!!! tip "Most users don't need to call `Search()` at all"
+    The default `AutoSearch()` handles random, sorted, and streaming patterns automatically. For sequential/ODE patterns, just pass `hint=Ref(1)` — no need to set a search policy.
+
+!!! warning "`:linear` is for experts only"
+    `LinearSearch()` has **no binary fallback** — it degrades to O(n) for non-monotonic or distant queries. Use `:linear_binary` (or just the default `:auto`) instead. See [Search Policies](@ref search_policies) for details.
 
 !!! note "Keywords are only for `:linear_binary`"
     Passing keywords to other policies raises an `ArgumentError`:

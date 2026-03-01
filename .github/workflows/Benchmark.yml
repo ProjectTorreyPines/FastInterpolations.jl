@@ -48,6 +48,7 @@ jobs:
         run: julia --project=benchmark benchmark/ci_benchmark.jl
 
       - name: Store benchmark result
+        continue-on-error: true
         uses: benchmark-action/github-action-benchmark@v1
         with:
           name: FastInterpolations.jl Benchmarks

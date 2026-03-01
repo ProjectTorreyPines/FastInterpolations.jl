@@ -2,9 +2,12 @@
 
 This page explains each search policy in detail, including when to use it and how it works internally.
 
-## AutoSearch (Default)
+## AutoSearch (Default) — Recommended for All Use Cases
 
 Automatically selects `BinarySearch()` or `LinearBinarySearch()` based on query type, hint presence, and data access pattern at call time. This is the **default** for all interpolants — no configuration needed.
+
+!!! tip "This is the right choice for almost everyone"
+    `AutoSearch()` adapts per-call to your actual query pattern. It handles random, sorted, streaming, and mixed patterns correctly with near-optimal performance. **You only need to set a search policy explicitly if you have benchmarked and confirmed a measurable benefit.**
 
 **Resolution rules**:
 
@@ -19,19 +22,19 @@ Automatically selects `BinarySearch()` or `LinearBinarySearch()` based on query 
 | Broadcast (`itp.(xs)`) | — | `BinarySearch()` per element | Each broadcast call is independent |
 
 ```julia
-itp = linear_interp(x, y)      # stores AutoSearch (the default)
-itp(0.5)                       # → BinarySearch() internally (scalar query)
-itp(sorted_xs)                 # → LinearBinarySearch() (sorted detected)
-itp(rand_xs)                   # → BinarySearch() (random detected)
-itp.(xs)                       # → BinarySearch() per element (broadcast)
+itp = linear_interp(x, y)  # stores AutoSearch (the default)
+itp(0.5)          # → BinarySearch() (scalar query)
+itp(sorted_xs)    # → LinearBinarySearch() (sorted detected)
+itp(rand_xs)      # → BinarySearch() (random detected)
+itp.(xs)          # → BinarySearch() per element (broadcast)
 
 # Hint auto-upgrade (scalar + hint → LinearBinarySearch)
 hint = Ref(1)
-itp(0.5; hint=hint)            # → LinearBinarySearch() (hint implies locality)
+itp(0.5; hint=hint)  # → LinearBinarySearch() (hint implies locality)
 
 # Override when you know the pattern in advance:
-itp(0.5; search=BinarySearch())              # force BinarySearch for all calls
-itp(sorted_xs; search=LinearBinarySearch())  # force LinearBinarySearch for all calls
+itp(0.5; search=BinarySearch())             # force BinarySearch
+itp(sorted_xs; search=LinearBinarySearch()) # force LinearBinarySearch
 ```
 
 **How it works**: `AutoSearch` is resolved in two phases at the call site, not at construction time:
@@ -40,9 +43,9 @@ itp(sorted_xs; search=LinearBinarySearch())  # force LinearBinarySearch for all 
 2. **Searcher creation** (`_to_searcher`): When a `Ref{Int}` hint is provided alongside `BinarySearch`, it auto-upgrades to `LinearBinarySearch` — because the hint implies the caller expects walk-based locality (e.g., `SeriesInterpolant` scalar evaluation).
 
 **When to override with an explicit policy**:
-- You know queries are **always random** → explicit `BinarySearch()` skips the adaptive check
-- You know queries are **always sorted** → explicit `LinearBinarySearch()` skips the adaptive check
-- For most use cases, keeping `AutoSearch()` is the right choice
+- You know queries are **always random** → explicit `BinarySearch()` skips the adaptive check (marginal benefit)
+- You know queries are **always sorted** → explicit `LinearBinarySearch()` skips the adaptive check (marginal benefit)
+- **For most use cases, keeping `AutoSearch()` is the right choice** — the adaptive overhead is negligible
 
 ---
 
@@ -59,7 +62,7 @@ Pure binary search. Stateless, thread-safe, no setup required.
 
 ```julia
 itp = linear_interp(x, y)
-val = itp(0.5)                    # AutoSearch → BinarySearch() for scalar queries
+val = itp(0.5)                          # AutoSearch → BinarySearch() for scalar
 val = itp(0.5; search=BinarySearch())   # explicit BinarySearch
 ```
 
@@ -67,55 +70,17 @@ val = itp(0.5; search=BinarySearch())   # explicit BinarySearch
 
 ---
 
-## Linear
-
-Maximum-speed linear search for **strictly monotonic, closely-spaced queries**. Scans the grid sequentially one interval at a time from the hint until the target is found—no binary fallback, no window limit.
-
-**Complexity**: O(1) amortized for monotonic, closely-spaced sequences
-
-!!! warning "Performance Warning"
-    `LinearSearch()` walks the grid one interval at a time without any fallback. This delivers **best performance** when consecutive queries are close together (typical in ODE integration), but can become **extremely slow** if:
-
-    1. Queries are far apart (sparse sampling across a large grid)
-    2. Queries jump around randomly
-    3. Query direction reverses frequently
-
-    In these cases, `LinearSearch()` degrades to **O(n)** per query, making it much slower than `BinarySearch()` or `LinearBinarySearch()`.
-
-**When to use**:
-- ODE integration with strictly monotonic, fine-grained time stepping
-- Streaming evaluation where consecutive queries are close together
-- Performance-critical loops with **guaranteed** closely-spaced, monotonic queries
-
-**When NOT to use**:
-- Random access patterns → use `BinarySearch()`
-- Queries that may be far apart → use `LinearBinarySearch()`
-- Large grids with sparse query spacing → use `LinearBinarySearch()`
-- General use cases → use `LinearBinarySearch()` (safer default)
-
-```julia
-# ODE-style monotonic evaluation (fastest for closely-spaced queries)
-itp = linear_interp(x, y)
-hint = Ref(1)
-for t in t_values  # strictly increasing, closely-spaced
-    y = itp(t; search=LinearSearch(), hint=hint)
-end
-```
-
-**How it works**: Walks linearly from the hint position one interval at a time. Without a step limit, it will traverse the entire grid if necessary—which is optimal for close queries but catastrophic for distant ones.
-
----
-
 ## LinearBinarySearch
 
-Performs a bounded linear search from the hint position. Ideal for **sorted or monotonic queries**.
+Performs a bounded linear search from the hint position, with **automatic binary fallback**. This is the safe explicit choice for sorted or monotonic queries — and what `AutoSearch` resolves to when it detects sorted data.
 
-**Complexity**: O(1) within bounds, O(log n) fallback
+**Complexity**: O(1) within the linear window, O(log n) fallback
 
 **When to use**:
 - Sorted query sequences
 - Monotonically increasing time (ODE solvers)
 - Streaming data with local continuity
+- Any case where you'd consider `LinearSearch()` — `LinearBinarySearch()` is almost always the better choice
 
 ```julia
 sorted_queries = sort(rand(1000))
@@ -123,7 +88,7 @@ itp = linear_interp(x, y; search=LinearBinarySearch())
 vals = itp(sorted_queries)  # O(1) amortized for sorted input
 ```
 
-**How it works**: Starting from the hint position, walks linearly left or right (up to `linear_window`). If the target interval isn't found within bounds, falls back to binary search.
+**How it works**: Starting from the hint position, walks linearly left or right (up to `linear_window`). If the target interval isn't found within bounds, falls back to binary search. This fallback guarantees O(log n) worst-case — making it safe for any query pattern.
 
 ### Tuning linear_window
 
@@ -148,15 +113,59 @@ LinearBinarySearch(linear_window=16)   # wider window for sparser-spaced sorted 
 
 ---
 
+## LinearSearch (Expert Only)
+
+!!! danger "Not Recommended for General Use"
+    `LinearSearch()` has **no binary fallback**. If queries are far apart, jump around, or reverse direction, it walks the **entire grid** — degrading to **O(n) per query**. This can be **orders of magnitude slower** than `BinarySearch()` or `LinearBinarySearch()`.
+
+    **Use `LinearBinarySearch()` instead** — it provides the same O(1) performance for close, monotonic queries but with a safe O(log n) fallback when things go wrong.
+
+Pure linear search for **strictly monotonic, closely-spaced queries**. Scans the grid one interval at a time from the hint until the target is found — no fallback, no window limit.
+
+**Complexity**: O(1) amortized for monotonic, closely-spaced sequences; **O(n) worst case**
+
+**The only case where `LinearSearch()` may be justified**:
+- Tight inner loops where every nanosecond matters
+- Queries are **guaranteed** to be strictly monotonic and closely-spaced (e.g., fixed-step ODE with small dt)
+- You have **benchmarked** and confirmed a measurable advantage over `LinearBinarySearch()`
+
+**When NOT to use** (use `LinearBinarySearch()` or `AutoSearch()` instead):
+- Random access patterns
+- Queries that may be far apart
+- Large grids with sparse query spacing
+- Adaptive-step ODE solvers (step size can vary widely)
+- Any general-purpose code
+
+```julia
+# ONLY if you have benchmarked and confirmed this is faster for your specific case
+itp = linear_interp(x, y)
+hint = Ref(1)
+for t in t_values  # MUST be strictly monotonic and closely-spaced
+    y = itp(t; search=LinearSearch(), hint=hint)
+end
+
+# Safer alternative that is equally fast for monotonic data:
+for t in t_values
+    y = itp(t; search=LinearBinarySearch(), hint=hint)
+end
+```
+
+**How it works**: Walks linearly from the hint position one interval at a time. Without a step limit, it will traverse the entire grid if necessary — which is optimal for close queries but catastrophic for distant ones.
+
+---
+
 ## Performance Summary
 
 | Query Pattern | `AutoSearch()` | `BinarySearch()` | `LinearBinarySearch{8}()` | `LinearSearch()` |
 |:--------------|:---------------|:-----------|:--------------------|:-----------|
-| **Random** | ✅ Same as `BinarySearch()` | ✅ Best | ~2-3x slower | ❌ Up to 7x slower |
+| **Random** | ✅ Same as `BinarySearch()` | ✅ Best | ~2-3x slower | ❌ **Up to O(n) — dangerous** |
 | **Sorted** | ✅ Same as `LinearBinarySearch()` | Baseline | ✅ ~5x faster (~2 ns) | ✅ ~5x faster |
-| **Jittered** | ✅ Same as `LinearBinarySearch()` | Baseline | ✅ ~2-5x faster | ✅ ~2-5x faster |
+| **Jittered** | ✅ Same as `LinearBinarySearch()` | Baseline | ✅ ~2-5x faster | ⚠️ Unpredictable |
 
 `AutoSearch()` **adapts to your data**: it detects sorted queries and uses `LinearBinarySearch`, detects random queries and falls back to `BinarySearch`. You get near-optimal performance for both patterns without choosing manually.
+
+!!! tip "The Takeaway"
+    `AutoSearch()` gives you near-optimal performance for **every** query pattern. The only reason to set an explicit policy is to skip the adaptive prefix check — which saves a few nanoseconds at most.
 
 !!! note "Results Vary"
     Approximate results from vector batch calls for a specific test case. Run benchmarks with your own data for accurate numbers.
@@ -170,9 +179,9 @@ LinearBinarySearch(linear_window=16)   # wider window for sparser-spaced sorted 
 Override the default `AutoSearch` when creating the interpolant. The stored policy applies to all subsequent calls:
 
 ```julia
-itp = linear_interp(x, y)                    # stores AutoSearch() — adapts per call
-itp = linear_interp(x, y; search=BinarySearch())   # always BinarySearch(), regardless of query type
-itp = linear_interp(x, y; search=LinearBinarySearch())  # always LinearBinarySearch()
+itp = linear_interp(x, y)                              # AutoSearch() — adapts per call
+itp = linear_interp(x, y; search=BinarySearch())       # always BinarySearch()
+itp = linear_interp(x, y; search=LinearBinarySearch()) # always LinearBinarySearch()
 ```
 
 ### Override at Call Time
@@ -183,8 +192,8 @@ Override the stored policy for a single call without changing the interpolant:
 itp = linear_interp(x, y)  # stores AutoSearch (default)
 
 # Call-site override — does not change itp.search_policy
-val  = itp(0.5; search=BinarySearch())              # force BinarySearch for this call only
-vals = itp(sorted_xs; search=LinearBinarySearch())  # force LinearBinarySearch for this call only
+val  = itp(0.5; search=BinarySearch())             # force BinarySearch for this call
+vals = itp(sorted_xs; search=LinearBinarySearch()) # force LinearBinarySearch for this call
 ```
 
 This is useful when most queries benefit from one policy, but occasional queries need different behavior.

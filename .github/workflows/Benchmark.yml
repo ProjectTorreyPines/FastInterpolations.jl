@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   benchmark:
@@ -45,11 +45,20 @@ jobs:
       - name: Run benchmarks
         run: julia --project=benchmark benchmark/ci_benchmark.jl
 
+      - name: Save PR metadata
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "${{ github.event.number }}" > pr_number
+          echo "${{ github.event.pull_request.head.sha }}" > pr_head_sha
+
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
-          path: output.json
+          path: |
+            output.json
+            pr_number
+            pr_head_sha
 
       - name: Store benchmark result (push only)
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.push_results == true)
@@ -60,5 +69,6 @@ jobs:
           output-file-path: output.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
+          comment-always: true
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: bench

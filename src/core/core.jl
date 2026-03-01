@@ -14,3 +14,4 @@ include("nd_utils.jl")         # 9. ND-specific utilities (shared by constant/li
 include("thomas_lu_solver.jl") # 10. Thomas algorithm (TDMA) solvers for tridiagonal systems
 include("series_utils.jl")     # 11. Series validation helpers
 include("series_matrix.jl")    # 12. Lazy transpose infrastructure
+include("series_wrapper.jl")   # 13. Series input wrapper + NamedSeriesInterpolant

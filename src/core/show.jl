@@ -436,6 +436,20 @@ function Base.show(io::IO, ::MIME"text/plain", sitp::CubicSeriesInterpolant{Tg, 
 end
 
 # ========================================
+# Show Methods: Series Input Wrapper
+# ========================================
+
+function Base.show(io::IO, s::Series)
+    n = _series_count(s)
+    _show_print(io, "Series", :cyan; bold=true)
+    print(io, "($n series)")
+end
+
+_series_count(s::Series{<:Tuple}) = length(s.data)
+_series_count(s::Series{<:AbstractVector{<:AbstractVector}}) = length(s.data)
+_series_count(s::Series{<:AbstractMatrix}) = size(s.data, 2)
+
+# ========================================
 # Show Methods: DerivativeView
 # ========================================
 

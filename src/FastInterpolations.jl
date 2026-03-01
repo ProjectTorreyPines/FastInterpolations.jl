@@ -31,6 +31,7 @@ include("coeffs.jl")
 
 # Exports
 export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND
+export Series
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
 export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant, LinearInterpolantND
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant, ConstantInterpolantND

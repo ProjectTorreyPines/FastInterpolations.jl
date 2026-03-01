@@ -169,8 +169,8 @@ using FastInterpolations
     # Series wrapper zero allocation
     # ────────────────────────────────────────────
     # Julia 1.10 LTS heap-allocates varargs tuples (32 bytes) due to limited
-    # escape analysis; Julia 1.11+ elides it entirely via improved EA.
-    alloc_threshold = VERSION ≥ v"1.11-" ? 0 : 32
+    # escape analysis; Julia 1.12+ elides it entirely via improved EA.
+    alloc_threshold = VERSION ≥ v"1.12" ? 0 : 32
 
     @testset "Series wrapper zero allocation" begin
         # Function barriers to avoid @testset try/catch type-instability artifacts.

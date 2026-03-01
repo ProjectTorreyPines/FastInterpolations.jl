@@ -440,14 +440,9 @@ end
 # ========================================
 
 function Base.show(io::IO, s::Series)
-    n = _series_count(s)
     _show_print(io, "Series", :cyan; bold=true)
-    print(io, "($n series)")
+    print(io, "($(n_series(s)) series)")
 end
-
-_series_count(s::Series{<:Tuple}) = length(s.data)
-_series_count(s::Series{<:AbstractVector{<:AbstractVector}}) = length(s.data)
-_series_count(s::Series{<:AbstractMatrix}) = size(s.data, 2)
 
 # ========================================
 # Show Methods: DerivativeView

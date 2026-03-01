@@ -335,8 +335,8 @@ function linear_interp(
     # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
     Tv_real = _real_eltype(Tv)
-    if Tv_real !== Tg && Tv_real <: AbstractFloat
-        Tg_new = promote_type(Tg, Tv_real)
+    Tg_new = Tv_real <: AbstractFloat ? promote_type(Tg, Tv_real) : Tg
+    if Tg_new !== Tg
         return linear_interp(_to_float(x, Tg_new), s; extrap, search)
     end
 
@@ -354,7 +354,8 @@ function linear_interp(
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real}
-    return linear_interp(_to_float(x, float(Tg)), s; extrap, search)
+    Tg_float = float(promote_type(Tg, _real_eltype(_series_eltype(s))))
+    return linear_interp(_to_float(x, Tg_float), s; extrap, search)
 end
 
 # ========================================

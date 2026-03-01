@@ -585,8 +585,8 @@ function cubic_interp(
     # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
     Tv_real = _real_eltype(Tv)
-    if Tv_real !== Tg && Tv_real <: AbstractFloat
-        Tg_new = promote_type(Tg, Tv_real)
+    Tg_new = Tv_real <: AbstractFloat ? promote_type(Tg, Tv_real) : Tg
+    if Tg_new !== Tg
         return cubic_interp(_to_float(x, Tg_new), s;
             bc=_promote_bc(bc, Tg_new), extrap, autocache, precompute_transpose, search)
     end
@@ -636,8 +636,9 @@ function cubic_interp(
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real}
-    return cubic_interp(_to_float(x, float(Tg)), s;
-        bc, extrap, autocache, precompute_transpose, search)
+    Tg_float = float(promote_type(Tg, _real_eltype(_series_eltype(s))))
+    return cubic_interp(_to_float(x, Tg_float), s;
+        bc=_promote_bc(bc, Tg_float), extrap, autocache, precompute_transpose, search)
 end
 
 """

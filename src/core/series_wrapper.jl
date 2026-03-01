@@ -54,7 +54,7 @@ end
 # ─── Series data access helpers ───────────────────────────────────────────────
 #
 # _series_vectors:  iterable of column vectors (zero-alloc for all forms)
-# _series_nvecs:    number of series
+# n_series:         number of series (extends existing n_series for interpolants)
 # _series_eltype:   element type of series data (for type promotion)
 # _build_series_mat: build owned Matrix{Tv_out}(n_pts, n_ser) from any form
 
@@ -69,9 +69,9 @@ Zero-allocation for all forms (Tuple, Vector-of-Vectors, Matrix via `eachcol`).
 @inline _series_vectors(s::Series{<:AbstractMatrix}) = eachcol(s.data)
 
 """Number of series in a Series wrapper."""
-@inline _series_nvecs(s::Series{<:Tuple}) = length(s.data)
-@inline _series_nvecs(s::Series{<:AbstractVector{<:AbstractVector}}) = length(s.data)
-@inline _series_nvecs(s::Series{<:AbstractMatrix}) = size(s.data, 2)
+@inline n_series(s::Series{<:Tuple}) = length(s.data)
+@inline n_series(s::Series{<:AbstractVector{<:AbstractVector}}) = length(s.data)
+@inline n_series(s::Series{<:AbstractMatrix}) = size(s.data, 2)
 
 """Element type of the series data (for type promotion at construction time)."""
 @inline _series_eltype(::Series{<:AbstractMatrix{Tv}}) where {Tv} = Tv
@@ -103,7 +103,7 @@ end
 
 function _build_series_mat(s::Series, n_pts::Int, ::Type{Tv_out}) where {Tv_out}
     vecs = _series_vectors(s)
-    n_ser = _series_nvecs(s)
+    n_ser = n_series(s)
     n_ser > 0 || throw(ArgumentError("Series data must contain at least one series"))
     y_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
     @inbounds for (k, v) in enumerate(vecs)

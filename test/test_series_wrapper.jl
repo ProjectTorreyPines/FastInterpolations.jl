@@ -168,6 +168,10 @@ using FastInterpolations
     # ────────────────────────────────────────────
     # Series wrapper zero allocation
     # ────────────────────────────────────────────
+    # Julia 1.10 LTS heap-allocates varargs tuples (32 bytes) due to limited
+    # escape analysis; Julia 1.11+ elides it entirely via improved EA.
+    alloc_threshold = VERSION ≥ v"1.11-" ? 0 : 32
+
     @testset "Series wrapper zero allocation" begin
         # Function barriers to avoid @testset try/catch type-instability artifacts.
 
@@ -177,7 +181,7 @@ using FastInterpolations
             Series(y1, y2); Series(y1, y2)
             return @allocated Series(y1, y2)
         end
-        @test _test_series_alloc_varargs() == 0
+        @test _test_series_alloc_varargs() ≤ alloc_threshold
 
         function _test_series_alloc_vecvec()
             ys = [collect(1.0:10.0), collect(11.0:20.0)]
@@ -192,6 +196,106 @@ using FastInterpolations
             return @allocated Series(Y)
         end
         @test _test_series_alloc_matrix() == 0
+    end
+
+    # ────────────────────────────────────────────
+    # Int grid + Float32 values: grid narrows to Float32
+    # ────────────────────────────────────────────
+    @testset "Int grid + Float32 values promotion" begin
+        x_int = collect(1:10)
+        y_f32a = Float32.(1:10) .^ 2
+        y_f32b = Float32.(1:10) .^ 3
+
+        sitp_lin = linear_interp(x_int, Series(y_f32a, y_f32b))
+        @test grid_type(sitp_lin) == Float32
+
+        sitp_cst = constant_interp(x_int, Series(y_f32a, y_f32b))
+        @test grid_type(sitp_cst) == Float32
+
+        sitp_quad = quadratic_interp(x_int, Series(y_f32a, y_f32b))
+        @test grid_type(sitp_quad) == Float32
+
+        sitp_cub = cubic_interp(x_int, Series(y_f32a, y_f32b))
+        @test grid_type(sitp_cub) == Float32
+    end
+
+    # ────────────────────────────────────────────
+    # Single-vector Series(y) works for all interp types
+    # ────────────────────────────────────────────
+    @testset "Single-vector Series(y)" begin
+        x_sv = collect(range(0.0, 1.0, 11))
+        y_sv = sin.(2π .* x_sv)
+
+        for (method, SType) in [
+            (linear_interp, LinearSeriesInterpolant),
+            (cubic_interp, CubicSeriesInterpolant),
+            (quadratic_interp, QuadraticSeriesInterpolant),
+            (constant_interp, ConstantSeriesInterpolant),
+        ]
+            sitp = method(x_sv, Series(y_sv))
+            @test sitp isa SType
+            @test length(sitp(0.5)) == 1
+        end
+    end
+
+    # ────────────────────────────────────────────
+    # Heterogeneous precision varargs (Float32 + Float64)
+    # ────────────────────────────────────────────
+    @testset "Heterogeneous varargs precision" begin
+        x_he = collect(range(0.0, 1.0, 11))
+        y_f32 = Float32.(sin.(2π .* x_he))
+        y_f64 = cos.(2π .* x_he)   # Float64
+
+        for method in [linear_interp, cubic_interp, quadratic_interp, constant_interp]
+            sitp = method(x_he, Series(y_f32, y_f64))
+            @test grid_type(sitp) == Float64
+            @test value_type(sitp) == Float64
+            vals = sitp(0.5)
+            @test length(vals) == 2
+            @test eltype(vals) == Float64
+        end
+    end
+
+    # ────────────────────────────────────────────
+    # n_series dispatches on Series wrapper
+    # ────────────────────────────────────────────
+    @testset "n_series on Series wrapper" begin
+        a = collect(1.0:5.0)
+        b = collect(6.0:10.0)
+        c = collect(11.0:15.0)
+        @test FastInterpolations.n_series(Series(a, b, c)) == 3
+        @test FastInterpolations.n_series(Series([a, b])) == 2
+        @test FastInterpolations.n_series(Series(hcat(a, b, c))) == 3
+    end
+
+    # ────────────────────────────────────────────
+    # Wider grid + narrower values (P1 regression: no infinite recursion)
+    # ────────────────────────────────────────────
+    @testset "Float64 grid + Float32 values (no infinite recursion)" begin
+        x_f64 = collect(range(0.0, 1.0, 11))
+        y_f32a = Float32.(sin.(2π .* x_f64))
+        y_f32b = Float32.(cos.(2π .* x_f64))
+
+        for method in [linear_interp, cubic_interp, quadratic_interp, constant_interp]
+            sitp = method(x_f64, Series(y_f32a, y_f32b))
+            @test grid_type(sitp) == Float64
+            vals = sitp(0.5)
+            @test length(vals) == 2
+        end
+    end
+
+    # ────────────────────────────────────────────
+    # Per-series BC vector with grid widening (P2 regression)
+    # ────────────────────────────────────────────
+    @testset "Per-series BC vector + Int grid (cubic)" begin
+        x_int = collect(1:10)
+        y_a = Float64.(1:10) .^ 2
+        y_b = Float64.(1:10) .^ 3
+
+        bc_vec = [ZeroCurvBC(), CubicFit()]
+        sitp = cubic_interp(x_int, Series(y_a, y_b); bc=bc_vec)
+        @test sitp isa CubicSeriesInterpolant
+        @test length(sitp(5.5)) == 2
     end
 
     # ────────────────────────────────────────────

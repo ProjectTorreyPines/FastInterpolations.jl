@@ -379,12 +379,12 @@ function quadratic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat}
+    # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
     Tv_real = _real_eltype(Tv)
-    if Tv_real !== Tg && Tv_real <: AbstractFloat
-        Tg_new = promote_type(Tg, Tv_real)
-        bc_typed = _promote_bc(bc, Tg_new)
-        return quadratic_interp(_to_float(x, Tg_new), s; bc=bc_typed, extrap, search)
+    Tg_new = Tv_real <: AbstractFloat ? promote_type(Tg, Tv_real) : Tg
+    if Tg_new !== Tg
+        return quadratic_interp(_to_float(x, Tg_new), s; bc=_promote_bc(bc, Tg_new), extrap, search)
     end
 
     n_pts = length(x)
@@ -425,7 +425,8 @@ function quadratic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real}
-    return quadratic_interp(_to_float(x, float(Tg)), s; bc, extrap, search)
+    Tg_float = float(promote_type(Tg, _real_eltype(_series_eltype(s))))
+    return quadratic_interp(_to_float(x, Tg_float), s; bc=_promote_bc(bc, Tg_float), extrap, search)
 end
 
 # ========================================

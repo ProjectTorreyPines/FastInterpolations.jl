@@ -333,10 +333,11 @@ function constant_interp(
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat}
+    # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
     Tv_real = _real_eltype(Tv)
-    if Tv_real !== Tg && Tv_real <: AbstractFloat
-        Tg_new = promote_type(Tg, Tv_real)
+    Tg_new = Tv_real <: AbstractFloat ? promote_type(Tg, Tv_real) : Tg
+    if Tg_new !== Tg
         return constant_interp(_to_float(x, Tg_new), s; side, extrap, search)
     end
 
@@ -355,7 +356,8 @@ function constant_interp(
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real}
-    return constant_interp(_to_float(x, float(Tg)), s; side, extrap, search)
+    Tg_float = float(promote_type(Tg, _real_eltype(_series_eltype(s))))
+    return constant_interp(_to_float(x, Tg_float), s; side, extrap, search)
 end
 
 # ========================================

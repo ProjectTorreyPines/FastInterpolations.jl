@@ -7,33 +7,6 @@
 #
 
 # ========================================
-# Input Validation
-# ========================================
-
-"""
-    _validate_series_inputs(x, ys)
-
-Validate input y-series dimensions match x-grid.
-
-# Throws
-- `ArgumentError` if `ys` is empty
-- `DimensionMismatch` if any y-series has different length than `x`
-"""
-function _validate_series_inputs(
-    x::AbstractVector,
-    ys::AbstractVector{<:AbstractVector}
-)
-    isempty(ys) && throw(ArgumentError("ys must not be empty"))
-    n = length(x)
-    for (k, y) in enumerate(ys)
-        length(y) != n && throw(DimensionMismatch(
-            "y-series $k has length $(length(y)), expected $n"
-        ))
-    end
-    return nothing
-end
-
-# ========================================
 # Output Validation
 # ========================================
 

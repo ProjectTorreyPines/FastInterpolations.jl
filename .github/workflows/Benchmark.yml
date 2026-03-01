@@ -69,6 +69,9 @@ jobs:
           output-file-path: output.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
+          alert-threshold: '110%'
           comment-always: true
+          comment-on-alert: true
+          fail-on-alert: false
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: bench

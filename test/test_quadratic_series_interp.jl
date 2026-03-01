@@ -24,34 +24,34 @@ const FI = FastInterpolations
         ys = [y1, y2]
 
         @testset "from vector of vectors" begin
-            sitp = quadratic_interp(x, ys)
+            sitp = quadratic_interp(x, Series(ys))
             @test sitp isa FI.QuadraticSeriesInterpolant{Float64}
             @test FI.n_series(sitp) == 2
         end
 
         @testset "from matrix" begin
             Y = hcat(y1, y2)
-            sitp = quadratic_interp(x, Y)
+            sitp = quadratic_interp(x, Series(Y))
             @test sitp isa FI.QuadraticSeriesInterpolant{Float64}
             @test FI.n_series(sitp) == 2
         end
 
         @testset "validates input dimensions" begin
             bad_y = [y1[1:end-1], y2]  # Wrong length
-            @test_throws Exception quadratic_interp(x, bad_y)
+            @test_throws Exception quadratic_interp(x, Series(bad_y))
         end
 
         @testset "single series" begin
-            sitp = quadratic_interp(x, [y1])
+            sitp = quadratic_interp(x, Series(y1))
             @test FI.n_series(sitp) == 1
         end
 
         @testset "boundary conditions preserved" begin
             # Test with different BC types
-            sitp_left = quadratic_interp(x, ys; bc=FI.Left(FI.QuadraticFit()))
+            sitp_left = quadratic_interp(x, Series(ys); bc=FI.Left(FI.QuadraticFit()))
             @test sitp_left isa FI.QuadraticSeriesInterpolant{Float64}
 
-            sitp_right = quadratic_interp(x, ys; bc=FI.Right(FI.QuadraticFit()))
+            sitp_right = quadratic_interp(x, Series(ys); bc=FI.Right(FI.QuadraticFit()))
             @test sitp_right isa FI.QuadraticSeriesInterpolant{Float64}
         end
     end
@@ -62,7 +62,7 @@ const FI = FastInterpolations
 
     @testset "trait implementations" begin
         x = collect(0.0:0.1:1.0)
-        sitp = quadratic_interp(x, [sin.(2π .* x), cos.(2π .* x)])
+        sitp = quadratic_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
 
         @test FI.n_series(sitp) == 2
         @test FI._get_grid(sitp) ≈ x
@@ -80,7 +80,7 @@ const FI = FastInterpolations
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y1 = x .^ 2              # Quadratic: should be exact
         y2 = 2.0 .* x .+ 1.0    # Linear: should also be exact
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
 
         @testset "at grid points" begin
             for (i, xi) in enumerate(x)
@@ -108,7 +108,7 @@ const FI = FastInterpolations
 
     @testset "zero allocation" begin
         x = collect(0.0:0.1:1.0)
-        sitp = quadratic_interp(x, [sin.(2π .* x), cos.(2π .* x)])
+        sitp = quadratic_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
 
         @testset "scalar in-place" begin
             output = zeros(2)
@@ -137,13 +137,13 @@ const FI = FastInterpolations
         ys = [sin.(2π .* x)]
 
         @testset "extrap=NoExtrap() throws" begin
-            sitp = quadratic_interp(x, ys; extrap=NoExtrap())
+            sitp = quadratic_interp(x, Series(ys); extrap=NoExtrap())
             @test_throws DomainError sitp(-0.1)
             @test_throws DomainError sitp(1.1)
         end
 
         @testset "domain error message format" begin
-            sitp = quadratic_interp(x, ys; extrap=NoExtrap())
+            sitp = quadratic_interp(x, Series(ys); extrap=NoExtrap())
             err = try
                 sitp(-0.5)
                 nothing
@@ -155,13 +155,13 @@ const FI = FastInterpolations
         end
 
         @testset "extrap=ConstExtrap() returns boundary" begin
-            sitp = quadratic_interp(x, ys; extrap=ConstExtrap())
+            sitp = quadratic_interp(x, Series(ys); extrap=ConstExtrap())
             @test sitp(-0.1)[1] ≈ sin(0.0) atol=1e-6
             @test sitp(1.1)[1] ≈ sin(2π) atol=1e-6
         end
 
         @testset "extrap=ExtendExtrap() extrapolates" begin
-            sitp = quadratic_interp(x, ys; extrap=ExtendExtrap())
+            sitp = quadratic_interp(x, Series(ys); extrap=ExtendExtrap())
             @test sitp(-0.1) isa Vector{Float64}
             @test sitp(1.1) isa Vector{Float64}
         end
@@ -178,8 +178,8 @@ const FI = FastInterpolations
         x64 = collect(0.0:0.1:1.0)
         ys64 = [sin.(2π .* x64)]
 
-        sitp32 = quadratic_interp(x32, ys32)
-        sitp64 = quadratic_interp(x64, ys64)
+        sitp32 = quadratic_interp(x32, Series(ys32))
+        sitp64 = quadratic_interp(x64, Series(ys64))
 
         @test sitp32(0.5f0) isa Vector{Float32}
         @test sitp64(0.5) isa Vector{Float64}
@@ -193,7 +193,7 @@ const FI = FastInterpolations
 
     @testset "callable signatures" begin
         x = collect(0.0:0.1:1.0)
-        sitp = quadratic_interp(x, [sin.(2π .* x), cos.(2π .* x)])
+        sitp = quadratic_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
 
         @testset "scalar out-of-place" begin
             result = sitp(0.5)
@@ -229,7 +229,7 @@ const FI = FastInterpolations
     @testset "derivative evaluation" begin
         x = collect(0.0:0.1:1.0)
         y = x .^ 2  # Simple quadratic for testing
-        sitp = quadratic_interp(x, [y, 2.0 .* y])
+        sitp = quadratic_interp(x, Series(y, 2.0 .* y))
 
         @testset "first derivative" begin
             # For y = x², dy/dx = 2x at x=0.5 → expect ~1.0
@@ -263,7 +263,7 @@ const FI = FastInterpolations
         ys = [y1, y2]
 
         # Both should give same results
-        sitp = quadratic_interp(x, ys)
+        sitp = quadratic_interp(x, Series(ys))
 
         # Compare at multiple points
         xq = [0.15, 0.35, 0.55, 0.75, 0.95]
@@ -285,7 +285,7 @@ const FI = FastInterpolations
         x = collect(0.0:0.1:1.0)
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
 
         @testset "coefficient matrices exist" begin
             # Should have a, d coefficient matrices
@@ -313,7 +313,7 @@ const FI = FastInterpolations
             y1 = sin.(Float64.(x_int))
             y2 = cos.(Float64.(x_int))
 
-            sitp = quadratic_interp(x_int, [y1, y2])
+            sitp = quadratic_interp(x_int, Series(y1, y2))
             @test sitp isa FI.QuadraticSeriesInterpolant{Float64}
 
             result = sitp(5.5)
@@ -326,7 +326,7 @@ const FI = FastInterpolations
             y1_int = collect(1:10)
             y2_int = collect(10:-1:1)
 
-            sitp = quadratic_interp(x_int, [y1_int, y2_int])
+            sitp = quadratic_interp(x_int, Series(y1_int, y2_int))
             @test sitp isa FI.QuadraticSeriesInterpolant{Float64}
 
             result = sitp(5.5)
@@ -337,7 +337,7 @@ const FI = FastInterpolations
             x_int = collect(1:10)
             Y_int = [i * j for i in 1:10, j in 1:3]
 
-            sitp = quadratic_interp(x_int, Y_int)
+            sitp = quadratic_interp(x_int, Series(Y_int))
             @test sitp isa FI.QuadraticSeriesInterpolant{Float64}
             @test FI.n_series(sitp) == 3
 
@@ -351,7 +351,7 @@ const FI = FastInterpolations
             y1 = sin.(2π .* x)
             y2 = cos.(2π .* x)
 
-            sitp = quadratic_interp(x, [y1, y2])
+            sitp = quadratic_interp(x, Series(y1, y2))
 
             # Float32 query points with Float64 interpolant
             xq_f32 = Float32[0.1, 0.3, 0.5, 0.7, 0.9]
@@ -381,7 +381,7 @@ const FI = FastInterpolations
 
         @testset "Matrix input with row dimension mismatch" begin
             Y_wrong = rand(5, 3)  # 5 rows but x has 11 points
-            @test_throws Exception quadratic_interp(x, Y_wrong)
+            @test_throws Exception quadratic_interp(x, Series(Y_wrong))
         end
     end
 
@@ -395,14 +395,14 @@ const FI = FastInterpolations
         y2 = cos.(2π .* x)
 
         @testset "vector NoExtrap() extrapolation throws" begin
-            sitp = quadratic_interp(x, [y1, y2]; extrap=NoExtrap())
+            sitp = quadratic_interp(x, Series(y1, y2); extrap=NoExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             @test_throws DomainError sitp(xq)
         end
 
         @testset "vector ConstExtrap() extrapolation" begin
-            sitp = quadratic_interp(x, [y1, y2]; extrap=ConstExtrap())
+            sitp = quadratic_interp(x, Series(y1, y2); extrap=ConstExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             outputs = [zeros(3), zeros(3)]
@@ -414,7 +414,7 @@ const FI = FastInterpolations
         end
 
         @testset "vector ExtendExtrap() extrapolation" begin
-            sitp = quadratic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+            sitp = quadratic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             outputs = [zeros(3), zeros(3)]
@@ -425,7 +425,7 @@ const FI = FastInterpolations
         end
 
         @testset "vector ConstExtrap() extrapolation with derivatives" begin
-            sitp = quadratic_interp(x, [y1, y2]; extrap=ConstExtrap())
+            sitp = quadratic_interp(x, Series(y1, y2); extrap=ConstExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             # deriv=DerivOp(1) outside domain should be zero for constant extrap
@@ -451,8 +451,8 @@ const FI = FastInterpolations
         x = collect(0.0:0.1:1.0)
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp_const = quadratic_interp(x, [y1, y2]; extrap=ConstExtrap())
-        sitp_none = quadratic_interp(x, [y1, y2]; extrap=NoExtrap())
+        sitp_const = quadratic_interp(x, Series(y1, y2); extrap=ConstExtrap())
+        sitp_none = quadratic_interp(x, Series(y1, y2); extrap=NoExtrap())
 
         @testset "value inside domain same as NoExtrap() extrap" begin
             result_const = sitp_const(0.5)
@@ -471,7 +471,7 @@ const FI = FastInterpolations
         x = collect(0.0:0.1:1.0)
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp = quadratic_interp(x, [y1, y2]; extrap=ConstExtrap())
+        sitp = quadratic_interp(x, Series(y1, y2); extrap=ConstExtrap())
 
         @testset "deriv=DerivOp(1) outside domain returns zero" begin
             result_below = sitp(-0.1; deriv=DerivOp(1))
@@ -527,7 +527,7 @@ const FI = FastInterpolations
     @testset "pre-built anchor evaluation" begin
         x = collect(0.0:0.1:1.0)
         y1, y2 = sin.(2π .* x), cos.(2π .* x)
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
         xq = [0.15, 0.35, 0.75]
 
         # Build anchors manually

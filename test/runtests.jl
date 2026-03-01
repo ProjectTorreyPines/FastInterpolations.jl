@@ -42,6 +42,7 @@ else
     include("test_complex_quadratic_series.jl")
     include("test_complex_cubic_series.jl")
     include("test_series_range_grid.jl")
+    include("test_series_wrapper.jl")
     include("test_allocation.jl")
     include("test_random_grid.jl")
     include("test_periodic_bc.jl")

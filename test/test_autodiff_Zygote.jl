@@ -124,7 +124,7 @@ end
         @testset "Series Interpolant (broken - array mutation)" begin
             y1 = sin.(x)
             y2 = cos.(x)
-            sitp = linear_interp(x, [y1, y2]; extrap=ExtendExtrap())
+            sitp = linear_interp(x, Series(y1, y2); extrap=ExtendExtrap())
 
             @test_broken begin
                 f(xq) = sum(sitp(xq))
@@ -217,7 +217,7 @@ end
         @testset "Series Interpolant (broken - array mutation)" begin
             y1 = x .^ 2
             y2 = 2.0 .* x .^ 2
-            sitp = quadratic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+            sitp = quadratic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
 
             @test_broken begin
                 f(xq) = sum(sitp(xq))
@@ -301,7 +301,7 @@ end
         @testset "Series Interpolant (broken - array mutation)" begin
             y1 = sin.(x)
             y2 = cos.(x)
-            sitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+            sitp = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
 
             @test_broken begin
                 f(xq) = sum(sitp(xq))

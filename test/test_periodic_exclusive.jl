@@ -275,7 +275,7 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         y1 = sin.(x)
         y2 = cos.(x)
 
-        mitp = cubic_interp(x, [y1, y2]; bc=PeriodicBC(endpoint=:exclusive))
+        mitp = cubic_interp(x, Series(y1, y2); bc=PeriodicBC(endpoint=:exclusive))
 
         vals = mitp(1.0)
         @test vals[1] ≈ sin(1.0) atol=1e-4
@@ -344,7 +344,7 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         dx = 2π / N
         x_incl = range(0.0, step=dx, length=N + 1)
         y_incl = sin.(x_incl)
-        sitp = cubic_interp(x_incl, [y_incl, cos.(x_incl)]; bc=PeriodicBC())
+        sitp = cubic_interp(x_incl, Series(y_incl, cos.(x_incl)); bc=PeriodicBC())
         buf = IOBuffer()
         show(buf, sitp)
         @test occursin("Periodic", String(take!(buf)))
@@ -391,7 +391,7 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         # Also test exclusive series interpolant show
         x_excl = range(0.0, step=dx, length=N)
         y_excl = sin.(x_excl)
-        sitp_excl = cubic_interp(x_excl, [y_excl, cos.(x_excl)]; bc=PeriodicBC(endpoint=:exclusive))
+        sitp_excl = cubic_interp(x_excl, Series(y_excl, cos.(x_excl)); bc=PeriodicBC(endpoint=:exclusive))
         show(buf, sitp_excl)
         @test occursin("Periodic", String(take!(buf)))
         show(buf, MIME"text/plain"(), sitp_excl)

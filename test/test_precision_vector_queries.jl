@@ -162,7 +162,7 @@ end
         y1 = Float32.(2.0 .* x .+ 1.0)  # y = 2x + 1
         y2 = Float32.(x .^ 2)            # y = x^2
 
-        sitp = linear_interp(x, [y1, y2])
+        sitp = linear_interp(x, Series(y1, y2))
 
         # Float64 query points
         xq = [0.123456789, 1.234567890, 2.345678901, 3.456789012]
@@ -187,7 +187,7 @@ end
         y1 = Float32[10.0, 20.0, 30.0, 40.0, 50.0]
         y2 = Float32[1.0, 2.0, 3.0, 4.0, 5.0]
 
-        sitp = constant_interp(x, [y1, y2])
+        sitp = constant_interp(x, Series(y1, y2))
 
         xq = [0.5, 1.5, 2.5, 3.5]
 
@@ -208,7 +208,7 @@ end
         y1 = Float32.(x .^ 2)
         y2 = Float32.(sin.(x))
 
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
 
         xq = [0.123456789, 1.234567890, 2.345678901, 3.456789012]
 
@@ -229,7 +229,7 @@ end
         y1 = Float32.(sin.(x))
         y2 = Float32.(cos.(x))
 
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         xq = [0.5, 1.0, π/2, 2.0, π, 4.0, 5.0]
 
@@ -409,7 +409,7 @@ end
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
 
-        sitp = linear_interp(x, [y1, y2])
+        sitp = linear_interp(x, Series(y1, y2))
         precompute_transpose!(sitp)
 
         xq = collect(range(0.25, 3.75, 10))

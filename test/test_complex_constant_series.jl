@@ -18,7 +18,7 @@ using FastInterpolations
         y1 = exp.(2im .* π .* x)
         y2 = (1.0 + 2.0im) .* collect(x)
 
-        sitp = constant_interp(x, [y1, y2])
+        sitp = constant_interp(x, Series(y1, y2))
 
         # Type checks
         @test sitp isa ConstantSeriesInterpolant{Float64, ComplexF64}
@@ -40,7 +40,7 @@ using FastInterpolations
         y1 = Complex{Float32}.(exp.(2im .* π .* Float32.(x)))
         y2 = Complex{Float32}.((1.0f0 + 2.0f0im) .* collect(x))
 
-        sitp = constant_interp(x, [y1, y2])
+        sitp = constant_interp(x, Series(y1, y2))
 
         @test sitp isa ConstantSeriesInterpolant{Float32, ComplexF32}
         @test grid_type(sitp) == Float32
@@ -59,7 +59,7 @@ using FastInterpolations
         y1 = Complex{Int}[i + 2im*i for i in 0:10]
         y2 = Complex{Int}[2i + 1im*i for i in 0:10]
 
-        sitp = constant_interp(x, [y1, y2])
+        sitp = constant_interp(x, Series(y1, y2))
 
         # x promoted to Float64, y promoted to ComplexF64
         @test sitp isa ConstantSeriesInterpolant{Float64, ComplexF64}
@@ -80,7 +80,7 @@ using FastInterpolations
         y1 = ComplexF64.(exp.(2im .* π .* x))  # ComplexF64
         y2 = ComplexF64.((1.0 + 2.0im) .* x)
 
-        sitp = constant_interp(x, [y1, y2])
+        sitp = constant_interp(x, Series(y1, y2))
 
         # Grid promoted to Float64 to match Complex{Float64}
         @test sitp isa ConstantSeriesInterpolant{Float64, ComplexF64}
@@ -98,7 +98,7 @@ using FastInterpolations
         y2 = (1.0 + 2.0im) .* collect(x)
         Y = hcat(collect(y1), y2)  # 11×2 matrix
 
-        sitp = constant_interp(x, Y)
+        sitp = constant_interp(x, Series(Y))
 
         @test sitp isa ConstantSeriesInterpolant{Float64, ComplexF64}
         @test length(sitp(0.5)) == 2  # Two series
@@ -112,14 +112,14 @@ using FastInterpolations
         y1 = ComplexF64[1+1im, 2+2im, 3+3im, 4+4im, 5+5im, 6+6im]
 
         # Test LeftSide()
-        sitp_left = constant_interp(x, [y1]; side=LeftSide())
+        sitp_left = constant_interp(x, Series(y1); side=LeftSide())
         @test sitp_left isa ConstantSeriesInterpolant{Float64, ComplexF64}
         vals_left = sitp_left(2.5)  # Between 2 and 3
         @test vals_left isa Vector{ComplexF64}
         @test isapprox(vals_left[1], 3.0 + 3.0im, rtol=1e-10)  # Left value at x=2
 
         # Test RightSide()
-        sitp_right = constant_interp(x, [y1]; side=RightSide())
+        sitp_right = constant_interp(x, Series(y1); side=RightSide())
         vals_right = sitp_right(2.5)
         @test isapprox(vals_right[1], 4.0 + 4.0im, rtol=1e-10)  # Right value at x=3
     end
@@ -132,7 +132,7 @@ using FastInterpolations
         y1 = (1.0 + 2.0im) .* collect(x)  # Linear complex function
         y2 = (2.0 - 1.0im) .* collect(x)
 
-        sitp = constant_interp(x, [y1, y2])
+        sitp = constant_interp(x, Series(y1, y2))
 
         # Vector query
         xq = [0.25, 0.5, 0.75]
@@ -151,7 +151,7 @@ using FastInterpolations
         y1 = (1.0 + 2.0im) .* collect(x)
         y2 = (2.0 - 1.0im) .* collect(x)
 
-        sitp = constant_interp(x, [y1, y2])
+        sitp = constant_interp(x, Series(y1, y2))
 
         output = Vector{ComplexF64}(undef, 2)
         sitp(output, 0.5)
@@ -164,7 +164,7 @@ using FastInterpolations
         y1 = (1.0 + 2.0im) .* collect(x)
         y2 = (2.0 - 1.0im) .* collect(x)
 
-        sitp = constant_interp(collect(x), [y1, y2])
+        sitp = constant_interp(collect(x), Series(y1, y2))
 
         xq = collect(range(0.1, 0.9, 5))
         outputs = [Vector{ComplexF64}(undef, 5) for _ in 1:2]
@@ -183,12 +183,12 @@ using FastInterpolations
         y2 = (2.0 - 1.0im) .* collect(x)
 
         # Extension mode
-        sitp_ext = constant_interp(x, [y1, y2]; extrap=ExtendExtrap())
+        sitp_ext = constant_interp(x, Series(y1, y2); extrap=ExtendExtrap())
         vals_ext = sitp_ext(1.5)  # Beyond domain
         @test vals_ext isa Vector{ComplexF64}
 
         # Constant mode
-        sitp_const = constant_interp(x, [y1, y2]; extrap=ConstExtrap())
+        sitp_const = constant_interp(x, Series(y1, y2); extrap=ConstExtrap())
         vals_const = sitp_const(1.5)  # Beyond domain
         @test vals_const isa Vector{ComplexF64}
         @test isapprox(vals_const[1], y1[end], rtol=1e-10)
@@ -202,7 +202,7 @@ using FastInterpolations
         y1 = rand(ComplexF64, 11)
         y2 = rand(ComplexF64, 11)
 
-        sitp = constant_interp(x, [y1, y2])
+        sitp = constant_interp(x, Series(y1, y2))
 
         # Scalar evaluation should be type-stable
         @test @inferred(sitp(0.5)) isa Vector{ComplexF64}
@@ -216,7 +216,7 @@ using FastInterpolations
         y1 = rand(ComplexF64, 101)
         y2 = rand(ComplexF64, 101)
 
-        sitp = constant_interp(x, [y1, y2])
+        sitp = constant_interp(x, Series(y1, y2))
         output = Vector{ComplexF64}(undef, 2)
 
         # Warmup
@@ -235,7 +235,7 @@ using FastInterpolations
         x = range(0.0, 1.0, 11)
         y1 = (1.0 + 2.0im) .* collect(x)
 
-        sitp = constant_interp(x, [y1])
+        sitp = constant_interp(x, Series(y1))
 
         # First derivative should be zero (step function)
         d1 = sitp(0.5; deriv=DerivOp(1))
@@ -257,7 +257,7 @@ using FastInterpolations
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
 
-        sitp = constant_interp(x, [y1, y2])
+        sitp = constant_interp(x, Series(y1, y2))
 
         # Type checks for backward compatibility
         @test sitp isa ConstantSeriesInterpolant{Float64, Float64}
@@ -278,7 +278,7 @@ using FastInterpolations
         y1 = sin.(x32)
         y2 = cos.(x32)
 
-        sitp = constant_interp(x32, [y1, y2])
+        sitp = constant_interp(x32, Series(y1, y2))
         @test sitp isa ConstantSeriesInterpolant{Float32, Float32}
 
         # Float64 query promotes output to Float64 (lossless - wider type)

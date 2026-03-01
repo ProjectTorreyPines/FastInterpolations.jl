@@ -31,8 +31,8 @@ struct Series{D}
     data::D
 end
 
-# Single vector: Series(y1) — single series
-function Series(y::AbstractVector{<:Number})
+# Single vector: Series(y1) — single series (no element type constraint for duck-typing)
+function Series(y::AbstractVector)
     return Series{typeof((y,))}((y,))
 end
 
@@ -76,6 +76,8 @@ Zero-allocation for all forms (Tuple, Vector-of-Vectors, Matrix via `eachcol`).
 """Element type of the series data (for type promotion at construction time)."""
 @inline _series_eltype(::Series{<:AbstractMatrix{Tv}}) where {Tv} = Tv
 @inline _series_eltype(::Series{<:AbstractVector{<:AbstractVector{Tv}}}) where {Tv} = Tv
+@inline _series_eltype(s::Series{<:AbstractVector{<:AbstractVector}}) =
+    promote_type(map(eltype, s.data)...)
 @inline _series_eltype(s::Series{<:Tuple}) = promote_type(map(eltype, s.data)...)
 
 # ─── Core builder: Series → owned Matrix ──────────────────────────────────────

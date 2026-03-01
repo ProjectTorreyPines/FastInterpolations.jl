@@ -29,9 +29,6 @@ include("integral/integral.jl")
 # Polynomial coefficient extraction (depends on all interpolant types)
 include("coeffs.jl")
 
-# Symbolic-compatible derivative function (used by Symbolics extension)
-include("symbolic_derivative.jl")
-
 # Exports
 export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
@@ -74,9 +71,6 @@ export integrate, cumulative_integrate
 
 # Polynomial coefficient extraction
 export CellPoly, coeffs
-
-# Symbolic-compatible derivative function
-export derivative
 
 # Plot recipe helpers (re-exported from HelpPlots)
 export help_plot, help_plot!

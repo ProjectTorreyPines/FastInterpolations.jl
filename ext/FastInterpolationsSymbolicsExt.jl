@@ -23,7 +23,6 @@ using FastInterpolations: AbstractInterpolant, AbstractInterpolantND,
     LinearInterpolant, CubicInterpolant, QuadraticInterpolant, ConstantInterpolant,
     LinearInterpolantND, CubicInterpolantND, QuadraticInterpolantND, ConstantInterpolantND,
     DerivOp
-import FastInterpolations: derivative
 using Symbolics
 using Symbolics: Num, unwrap, wrap
 import SymbolicUtils
@@ -35,16 +34,17 @@ import SymbolicUtils
 # Wrapper function for symbolic registration. Using a regular function
 # (not a callable struct) avoids method ambiguity with concrete interpolant types.
 _fast_interp_eval(itp::AbstractInterpolant, t) = itp(t)
+_derivative_symbolic(itp::AbstractInterpolant, t, order::Integer) = itp(t; deriv=DerivOp(order))
 
 # Register the wrapper and derivative functions with Symbolics
 @register_symbolic _fast_interp_eval(itp::AbstractInterpolant, t)
-@register_symbolic derivative(itp::AbstractInterpolant, t, order::Integer) false
+@register_symbolic _derivative_symbolic(itp::AbstractInterpolant, t, order::Integer) false
 
 Base.nameof(itp::AbstractInterpolant) = :FastInterpolation
 
-# Type/shape promotions for derivative
+# Type/shape promotions for _derivative_symbolic
 function SymbolicUtils.promote_symtype(
-    ::typeof(derivative), Ti::SymbolicUtils.TypeT,
+    ::typeof(_derivative_symbolic), Ti::SymbolicUtils.TypeT,
     Tt::SymbolicUtils.TypeT,
     To::SymbolicUtils.TypeT
 )
@@ -55,7 +55,7 @@ function SymbolicUtils.promote_symtype(
 end
 
 function SymbolicUtils.promote_shape(
-    ::typeof(derivative),
+    ::typeof(_derivative_symbolic),
     @nospecialize(shi::SymbolicUtils.ShapeT),
     @nospecialize(sht::SymbolicUtils.ShapeT),
     @nospecialize(sho::SymbolicUtils.ShapeT)
@@ -67,10 +67,10 @@ function SymbolicUtils.promote_shape(
 end
 
 # Derivative chain rules:
-# d/dt _fast_interp_eval(itp, t) = derivative(itp, t, 1)
-@register_derivative _fast_interp_eval(itp, t) 2 derivative(itp, t, 1)
-# d/dt derivative(itp, t, n) = derivative(itp, t, n+1)
-@register_derivative derivative(itp, t, ord) 2 derivative(itp, t, ord + 1)
+# d/dt _fast_interp_eval(itp, t) = _derivative_symbolic(itp, t, 1)
+@register_derivative _fast_interp_eval(itp, t) 2 _derivative_symbolic(itp, t, 1)
+# d/dt _derivative_symbolic(itp, t, n) = _derivative_symbolic(itp, t, n+1)
+@register_derivative _derivative_symbolic(itp, t, ord) 2 _derivative_symbolic(itp, t, ord + 1)
 
 # Redirect concrete interpolant callable methods to the registered wrapper.
 # This is needed because concrete types have (itp::ConcreteType)(xq; ...) methods

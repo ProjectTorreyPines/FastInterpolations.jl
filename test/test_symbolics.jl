@@ -54,7 +54,7 @@ using Symbolics
         # Compile derivative and compare to numeric
         df = build_function(dexpr, t; expression=Val{false})
         t_val = 0.3
-        numeric_deriv = derivative(itp, t_val, 1)
+        numeric_deriv = itp(t_val; deriv=DerivOp(1))
         compiled_deriv = df(t_val)
         @test compiled_deriv ≈ numeric_deriv
 
@@ -63,24 +63,9 @@ using Symbolics
         @test d2expr isa Num
 
         d2f = build_function(d2expr, t; expression=Val{false})
-        numeric_d2 = derivative(itp, t_val, 2)
+        numeric_d2 = itp(t_val; deriv=DerivOp(2))
         compiled_d2 = d2f(t_val)
         @test compiled_d2 ≈ numeric_d2
-    end
-
-    # ========================================
-    # 1D derivative() function (numeric)
-    # ========================================
-    @testset "derivative() function" begin
-        x = collect(range(0.0, 1.0, 101))
-        y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=ExtendExtrap())
-
-        t_val = 0.5
-        @test derivative(itp, t_val) ≈ itp(t_val; deriv=DerivOp(1))
-        @test derivative(itp, t_val, 1) ≈ itp(t_val; deriv=DerivOp(1))
-        @test derivative(itp, t_val, 2) ≈ itp(t_val; deriv=DerivOp(2))
-        @test derivative(itp, t_val, 3) ≈ itp(t_val; deriv=DerivOp(3))
     end
 
     # ========================================

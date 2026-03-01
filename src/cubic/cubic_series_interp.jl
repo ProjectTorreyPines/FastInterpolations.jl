@@ -529,21 +529,24 @@ Groups series by BC type for cache efficiency.
 end
 
 # ========================================
-# Constructors
+# Series Constructor (canonical entry point)
 # ========================================
 
 """
-    cubic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=CubicFit(), extrap=NoExtrap(), autocache=true, precompute_transpose=false)
+    cubic_interp(x, Series(y1, y2, ...); bc=CubicFit(), extrap=NoExtrap(), autocache=true, precompute_transpose=false)
+    cubic_interp(x, Series([y1, y2, ...]); ...)
+    cubic_interp(x, Series(Y::AbstractMatrix); ...)
 
 Create a multi-Y cubic spline interpolant for multiple y-data series sharing the same x-grid.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
-- `ys`: Vector of y-value vectors (all same length as x)
+- `s::Series`: Wrapped series data (varargs, vector-of-vectors, or matrix)
 - `bc`: Boundary condition (CubicFit, ZeroCurvBC, ZeroSlopeBC, PeriodicBC, or Vector of BC for per-series)
 - `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache`: If true, reuse cached LU factorization (default: true)
 - `precompute_transpose`: If true, build point-contiguous layout immediately
+- `search::AbstractSearchPolicy`: Search policy for interval lookup
 
 # Returns
 `CubicSeriesInterpolant` object with matrix storage.
@@ -555,63 +558,55 @@ y1 = sin.(2π .* x)
 y2 = cos.(2π .* x)
 y3 = exp.(-x)
 
-# Uniform BC for all series
-sitp = cubic_interp(x, [y1, y2, y3])
+sitp = cubic_interp(x, Series(y1, y2, y3))
 vals = sitp(0.5)  # [sin(π), cos(π), exp(-0.5)]
 
 # Per-series BC (each series can have different BC)
-sitp = cubic_interp(x, [y1, y2, y3]; bc=[
+sitp = cubic_interp(x, Series(y1, y2, y3); bc=[
     ZeroCurvBC(),
     BCPair(Deriv1(2.0), Deriv1(0.0)),
     BCPair(Deriv2(0.0), Deriv3(5.0)),
 ])
+
+# Matrix form
+Y = hcat(y1, y2)
+sitp = cubic_interp(x, Series(Y))
 ```
 """
 function cubic_interp(
     x::AbstractVector{Tg},
-    ys::AbstractVector{<:AbstractVector{Tv}};
+    s::Series;
     bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=CubicFit(),
     extrap::AbstractExtrap=NoExtrap(),
     autocache::Bool=true,
     precompute_transpose::Bool=false,
-    search::P=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
-    # Validate input
-    @assert !isempty(ys) "ys must not be empty"
+    search::AbstractSearchPolicy=AutoSearch()
+) where {Tg<:AbstractFloat}
+    # Type promotion: widen grid if y's float base is wider than Tg
+    Tv = _series_eltype(s)
+    Tv_real = _real_eltype(Tv)
+    if Tv_real !== Tg && Tv_real <: AbstractFloat
+        Tg_new = promote_type(Tg, Tv_real)
+        return cubic_interp(_to_float(x, Tg_new), s;
+            bc=_promote_bc(bc, Tg_new), extrap, autocache, precompute_transpose, search)
+    end
 
     n_pts = length(x)
-    n_series_count = length(ys)
-
-    # Validate all y-series have same length as x
-    for (k, y) in enumerate(ys)
-        if length(y) != n_pts
-            throw(DimensionMismatch(
-                "y-series $k has length $(length(y)), expected $n_pts (length of x)"
-            ))
-        end
-    end
-
-    # Build y matrix (n_points × n_series) series-contiguous
-    y_mat = Matrix{Tv}(undef, n_pts, n_series_count)
-    @inbounds for k in 1:n_series_count
-        y_mat[:, k] .= ys[k]
-    end
+    Tv_out = _value_type(Tv, Tg)
+    y_mat, n_ser = _build_series_mat(s, n_pts, Tv_out)
 
     # Handle periodic BC separately (only for scalar BC)
     if bc isa AbstractBC && _is_periodic_bc(bc)
-        return _build_series_periodic(x, y_mat, bc, n_pts, n_series_count, autocache, precompute_transpose, search)
+        return _build_series_periodic(x, y_mat, bc, n_pts, n_ser, autocache, precompute_transpose, search)
     end
 
-    # Build z matrix by solving systems
-    z_mat = Matrix{Tv}(undef, n_pts, n_series_count)
+    # Build z matrix by solving tridiagonal systems
+    z_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
 
     if bc isa AbstractVector
         # Per-series BC array
-        bc_array = _normalize_bc_array(bc, Tg, n_series_count)
+        bc_array = _normalize_bc_array(bc, Tg, n_ser)
         _solve_series_with_bc_array!(z_mat, y_mat, x, bc_array, autocache)
-        # All per-series caches share the same x-grid, so any BC's cache is valid here.
-        # We store the first BC as a "representative" for struct compatibility and
-        # x-grid access via _get_grid(cache); the specific BC chosen does not affect evaluation.
         bc_representative = bc_array[1]
         cache = _get_cubic_cache(x, bc_representative, autocache)
     else
@@ -629,6 +624,20 @@ function cubic_interp(
     end
 
     return sitp
+end
+
+# Real grid promotion (Int, etc.) → convert to float and delegate
+function cubic_interp(
+    x::AbstractVector{Tg},
+    s::Series;
+    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=CubicFit(),
+    extrap::AbstractExtrap=NoExtrap(),
+    autocache::Bool=true,
+    precompute_transpose::Bool=false,
+    search::AbstractSearchPolicy=AutoSearch()
+) where {Tg<:Real}
+    return cubic_interp(_to_float(x, float(Tg)), s;
+        bc, extrap, autocache, precompute_transpose, search)
 end
 
 """
@@ -678,118 +687,6 @@ function _build_series_periodic(
     end
 
     return sitp
-end
-
-# Matrix input: columns as y-series
-"""
-    cubic_interp(x, Y::AbstractMatrix; bc=CubicFit(), extrap=NoExtrap(), autocache=true, precompute_transpose=false)
-
-Create a multi-Y cubic spline interpolant from a matrix where each column is a y-series.
-
-# Arguments
-- `x::AbstractVector`: x-coordinates (length n)
-- `Y::AbstractMatrix`: n×m matrix, each column is a y-series
-- `bc`, `extrap`, `autocache`, `precompute_transpose`: Same as vector form
-
-# Example
-```julia
-x = collect(range(0.0, 1.0, 101))
-Y = hcat(sin.(2π .* x), cos.(2π .* x))  # 101×2 matrix
-
-sitp = cubic_interp(x, Y)
-```
-"""
-function cubic_interp(
-    x::AbstractVector{Tg},
-    Y::AbstractMatrix{Tv};
-    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    precompute_transpose::Bool=false,
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
-    n_pts = length(x)
-
-    # Validate dimensions
-    if size(Y, 1) != n_pts
-        throw(DimensionMismatch(
-            "Y has $(size(Y, 1)) rows but x has $n_pts points (expected n_points × n_series matrix)"
-        ))
-    end
-
-    n_series_count = size(Y, 2)
-
-    # Copy to ensure ownership
-    y_mat = copy(Y)
-
-    # Handle periodic BC separately (only for scalar BC)
-    if bc isa AbstractBC && _is_periodic_bc(bc)
-        return _build_series_periodic(x, y_mat, bc, n_pts, n_series_count, autocache, precompute_transpose, search)
-    end
-
-    # Build z matrix by solving systems
-    z_mat = Matrix{Tv}(undef, n_pts, n_series_count)
-
-    if bc isa AbstractVector
-        # Per-series BC array
-        bc_array = _normalize_bc_array(bc, Tg, n_series_count)
-        _solve_series_with_bc_array!(z_mat, y_mat, x, bc_array, autocache)
-        # All per-series caches share the same x-grid, so any BC's cache is valid here.
-        # We store the first BC as a "representative" for struct compatibility and
-        # x-grid access via _get_grid(cache); the specific BC chosen does not affect evaluation.
-        bc_representative = bc_array[1]
-        cache = _get_cubic_cache(x, bc_representative, autocache)
-    else
-        # Uniform BC (original path)
-        bc_pair = _normalize_bc(bc, Tg)
-        cache = _get_cubic_cache(x, bc_pair, autocache)
-        _solve_series_coefficients!(z_mat, y_mat, cache, bc_pair)
-        bc_representative = bc_pair
-    end
-
-    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap, search)
-
-    if precompute_transpose
-        _ensure_point_layout!(sitp)
-    end
-
-    return sitp
-end
-
-# Type promotion wrappers (auto-promote to Float, handle Complex)
-function cubic_interp(
-    x::AbstractVector{Tg},
-    ys::AbstractVector{<:AbstractVector{Tv}};
-    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    precompute_transpose::Bool=false,
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv}
-    # Compute promoted grid type (Tg may be Int, promotes to Float)
-    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
-    Tv_float = _value_type(Tv, Tg_float)
-    x_typed = _to_float(x, Tg_float)
-    ys_typed = [Tv_float.(y) for y in ys]
-    bc_typed = _promote_bc(bc, Tg_float)
-    return cubic_interp(x_typed, ys_typed; bc=bc_typed, extrap=extrap, autocache=autocache, precompute_transpose=precompute_transpose, search=search)
-end
-
-function cubic_interp(
-    x::AbstractVector{Tg},
-    Y::AbstractMatrix{Tv};
-    bc::Union{AbstractBC, AbstractVector{<:AbstractBC}}=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    precompute_transpose::Bool=false,
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv}
-    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
-    Tv_float = _value_type(Tv, Tg_float)
-    x_typed = _to_float(x, Tg_float)
-    Y_typed = Tv_float.(Y)
-    bc_typed = _promote_bc(bc, Tg_float)
-    return cubic_interp(x_typed, Y_typed; bc=bc_typed, extrap=extrap, autocache=autocache, precompute_transpose=precompute_transpose, search=search)
 end
 
 # ========================================

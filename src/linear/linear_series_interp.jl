@@ -288,15 +288,22 @@ end
 # Constructors
 # ========================================
 
+# ========================================
+# Series Constructor (canonical entry point)
+# ========================================
+
 """
-    linear_interp(x, ys::AbstractVector{<:AbstractVector}; extrap=NoExtrap())
+    linear_interp(x, Series(y1, y2, ...); extrap=NoExtrap(), search=AutoSearch())
+    linear_interp(x, Series([y1, y2, ...]); ...)
+    linear_interp(x, Series(Y::AbstractMatrix); ...)
 
 Create a multi-Y linear interpolant for multiple y-data series sharing the same x-grid.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
-- `ys`: Vector of y-value vectors (all same length as x)
+- `s::Series`: Wrapped series data (varargs, vector-of-vectors, or matrix)
 - `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `search::AbstractSearchPolicy`: Search policy for interval lookup
 
 # Returns
 `LinearSeriesInterpolant` object with matrix storage.
@@ -306,139 +313,48 @@ Create a multi-Y linear interpolant for multiple y-data series sharing the same 
 x = collect(range(0.0, 1.0, 101))
 y1 = sin.(2π .* x)
 y2 = cos.(2π .* x)
-y3 = exp.(-x)
 
-sitp = linear_interp(x, [y1, y2, y3])
-vals = sitp(0.5)  # [sin(π), cos(π), exp(-0.5)]
+sitp = linear_interp(x, Series(y1, y2))
+vals = sitp(0.5)  # [sin(π), cos(π)]
 
-# Complex values are also supported
-y_complex = [exp.(2im * π * x), (1.0+2.0im) .* x]
-sitp_complex = linear_interp(x, y_complex)
-```
-"""
-# Hot path: x is AbstractFloat, ys elements can be Tg or Complex{Tg}
-function linear_interp(
-    x::AbstractVector{Tg},
-    ys::AbstractVector{<:AbstractVector{Tv}};
-    extrap::AbstractExtrap=NoExtrap(),
-    search::P=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
-    # Check if Tv's float base requires grid widening (not for Int types)
-    # Int-based types (Complex{Int}) are handled by internal _value_type conversion
-    Tv_real = _real_eltype(Tv)
-    if Tv_real !== Tg && Tv_real <: AbstractFloat
-        Tg_new = promote_type(Tg, Tv_real)
-        x_promoted = _to_float(x, Tg_new)
-        return linear_interp(x_promoted, ys; extrap, search)
-    end
+# Matrix form
+Y = hcat(y1, y2)
+sitp = linear_interp(x, Series(Y))
 
-    # Validate input
-    @assert !isempty(ys) "ys must not be empty"
-
-    n_pts = length(x)
-    n_series_count = length(ys)
-
-    # Validate all y-series have same length as x
-    for (k, y) in enumerate(ys)
-        if length(y) != n_pts
-            throw(DimensionMismatch(
-                "y-series $k has length $(length(y)), expected $n_pts (length of x)"
-            ))
-        end
-    end
-
-    # Build y matrix (n_points × n_series) series-contiguous
-    # Promote Tv to appropriate type based on Tg
-    Tv_out = _value_type(Tv, Tg)
-    y_mat = Matrix{Tv_out}(undef, n_pts, n_series_count)
-    @inbounds for k in 1:n_series_count
-        y_mat[:, k] .= Tv_out.(ys[k])
-    end
-
-    return LinearSeriesInterpolant(x, y_mat, extrap, search)
-end
-
-# Matrix input: columns as y-series
-"""
-    linear_interp(x, Y::AbstractMatrix; extrap=NoExtrap())
-
-Create a multi-Y linear interpolant from a matrix where each column is a y-series.
-
-# Arguments
-- `x::AbstractVector`: x-coordinates (length n)
-- `Y::AbstractMatrix`: n×m matrix, each column is a y-series
-- `extrap`: Extrapolation mode
-
-# Example
-```julia
-x = collect(range(0.0, 1.0, 101))
-Y = hcat(sin.(2π .* x), cos.(2π .* x))  # 101×2 matrix
-
-sitp = linear_interp(x, Y)
-
-# Complex matrix also supported
-Y_complex = hcat(exp.(2im * π * x), (1.0+2.0im) .* x)
-sitp_complex = linear_interp(x, Y_complex)
+# Complex values
+y_complex = exp.(2im * π * x)
+sitp = linear_interp(x, Series(y_complex, y1))
 ```
 """
 function linear_interp(
     x::AbstractVector{Tg},
-    Y::AbstractMatrix{Tv};
+    s::Series;
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
-    # Check if Tv's float base requires grid widening
+) where {Tg<:AbstractFloat}
+    # Type promotion: widen grid if y's float base is wider than Tg
+    Tv = _series_eltype(s)
     Tv_real = _real_eltype(Tv)
     if Tv_real !== Tg && Tv_real <: AbstractFloat
         Tg_new = promote_type(Tg, Tv_real)
-        x_promoted = _to_float(x, Tg_new)
-        return linear_interp(x_promoted, Y; extrap, search)
+        return linear_interp(_to_float(x, Tg_new), s; extrap, search)
     end
 
     n_pts = length(x)
-
-    # Validate dimensions
-    if size(Y, 1) != n_pts
-        throw(DimensionMismatch(
-            "Y has $(size(Y, 1)) rows but x has $n_pts points (expected n_points × n_series matrix)"
-        ))
-    end
-
-    # Promote Tv to appropriate type based on Tg
     Tv_out = _value_type(Tv, Tg)
-    y_mat = Tv_out === Tv ? copy(Y) : Tv_out.(Y)
+    y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
 
     return LinearSeriesInterpolant(x, y_mat, extrap, search)
 end
 
-# ========================================
-# Type Promotion Wrappers (Int, mixed types)
-# ========================================
-# POLICY: Tg is computed from x and real part of y element types
-
-# Vector-of-vectors wrapper for non-AbstractFloat x
+# Real grid promotion (Int, etc.) → convert to float and delegate
 function linear_interp(
     x::AbstractVector{Tg},
-    ys::AbstractVector{<:AbstractVector{Tv}};
+    s::Series;
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv}
-    # Compute promoted grid type (Tg may be Int, promotes to Float)
-    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
-    x_typed = _to_float(x, Tg_float)
-    return linear_interp(x_typed, ys; extrap, search)
-end
-
-# Matrix wrapper for non-AbstractFloat x
-function linear_interp(
-    x::AbstractVector{Tg},
-    Y::AbstractMatrix{Tv};
-    extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv}
-    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
-    x_typed = _to_float(x, Tg_float)
-    return linear_interp(x_typed, Y; extrap, search)
+) where {Tg<:Real}
+    return linear_interp(_to_float(x, float(Tg)), s; extrap, search)
 end
 
 # ========================================

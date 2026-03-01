@@ -923,7 +923,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
                 ("quadratic", quadratic_interp),
                 ("constant", constant_interp),
             ]
-                sitp32 = builder(xs32, ys32)
+                sitp32 = builder(xs32, Series(ys32))
                 @test @inferred(sitp32(Float32(0.5))) isa Vector{Float32}
             end
         end
@@ -984,7 +984,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
                 ("quadratic", quadratic_interp),
                 ("constant", constant_interp),
             ]
-                sitp = builder(xi, ys)
+                sitp = builder(xi, Series(ys))
 
                 # Full-domain
                 @test @inferred(integrate(sitp)) isa Vector{Float64}

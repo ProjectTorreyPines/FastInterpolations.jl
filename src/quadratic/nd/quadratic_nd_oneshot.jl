@@ -24,7 +24,7 @@ Zero-allocation after warmup (pool reuse).
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     query::Tuple{Vararg{Real, N}},
-    bcs::NTuple{N, QuadraticBC},
+    bcs::NTuple{N, AbstractBC},
     extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp},
@@ -60,7 +60,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    bcs::NTuple{N, QuadraticBC},
+    bcs::NTuple{N, AbstractBC},
     extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp},
@@ -103,7 +103,7 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-    bcs::NTuple{N, QuadraticBC},
+    bcs::NTuple{N, AbstractBC},
     extraps_val::Tuple{Vararg{AbstractExtrap, N}},
     searches::NTuple{N, AbstractSearchPolicy},
     ops::NTuple{N, AbstractEvalOp},
@@ -163,7 +163,7 @@ function quadratic_interp(
     _validate_nd_grids(grids_typed, data)
     Tr = promote_type(Tv, Tg, typeof.(query)...)
 
-    bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
+    bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
@@ -246,7 +246,7 @@ function quadratic_interp!(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
+    bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)  # all-or-nothing adaptive for zero-alloc
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
@@ -276,7 +276,7 @@ function quadratic_interp!(
     grids_typed = _convert_grids_typed(grids, Tg)
     _validate_nd_grids(grids_typed, data)
 
-    bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
+    bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), queries)  # AoS: type-based (no per-axis SoA check)
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))

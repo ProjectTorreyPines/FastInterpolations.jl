@@ -138,7 +138,7 @@ end
     search::AbstractSearchPolicy=AutoSearch()
 ) where {TX<:Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
-    bc_p = _promote_bc(bc, eltype(y_p))
+    bc_p = _normalize_bc(bc, eltype(y_p))
 
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
     validate_polyfit_points(bc_p, length(x_p))

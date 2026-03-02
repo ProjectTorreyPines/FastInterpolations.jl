@@ -521,6 +521,8 @@ end
     return BCPair(bc_t, bc_t)
 end
 
+# NOTE: _normalize_bc methods for Left/Right/MinCurvFit are defined after Left/Right structs below.
+
 
 # ========================================
 # Cache-Compatible BC Conversion
@@ -721,6 +723,12 @@ end
 # bc_structure for Left/Right (must be after type definitions)
 @inline bc_structure(bc::Left) = bc_structure(bc.bc)
 @inline bc_structure(bc::Right) = bc_structure(bc.bc)
+
+# Quadratic BC normalization (Left/Right/MinCurvFit → same type with Tv-promoted values)
+# Used by both 1D quadratic (interpolant construction) and ND quadratic (lazy normalization)
+@inline _normalize_bc(bc::Left, ::Type{Tv}) where {Tv} = Left(_promote_pointbc(bc.bc, Tv))
+@inline _normalize_bc(bc::Right, ::Type{Tv}) where {Tv} = Right(_promote_pointbc(bc.bc, Tv))
+@inline _normalize_bc(::MinCurvFit, ::Type{Tv}) where {Tv} = MinCurvFit()
 
 
 # ========================================

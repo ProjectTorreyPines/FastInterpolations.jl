@@ -384,7 +384,7 @@ function quadratic_interp(
     Tv_real = _real_eltype(Tv)
     Tg_new = Tv_real <: AbstractFloat ? promote_type(Tg, Tv_real) : Tg
     if Tg_new !== Tg
-        return quadratic_interp(_to_float(x, Tg_new), s; bc=_promote_bc(bc, Tg_new), extrap, search)
+        return quadratic_interp(_to_float(x, Tg_new), s; bc=_normalize_bc(bc, Tg_new), extrap, search)
     end
 
     n_pts = length(x)
@@ -397,7 +397,7 @@ function quadratic_interp(
     h = Vector{Tg}(undef, n_pts - 1)
 
     # Promote BC values to Tv_out for convert(Tv, bc.val) compatibility
-    bc_promoted = _promote_bc(bc, Tv_out)
+    bc_promoted = _normalize_bc(bc, Tv_out)
 
     # Compute coefficients for each series from y_mat columns
     for k in 1:n_ser
@@ -430,7 +430,7 @@ function quadratic_interp(
 ) where {Tg<:Real}
     Tv_base = _real_eltype(_series_eltype(s))
     Tg_float = Tv_base <: Real ? float(promote_type(Tg, Tv_base)) : float(Tg)
-    return quadratic_interp(_to_float(x, Tg_float), s; bc=_promote_bc(bc, Tg_float), extrap, search)
+    return quadratic_interp(_to_float(x, Tg_float), s; bc=_normalize_bc(bc, Tg_float), extrap, search)
 end
 
 # ========================================

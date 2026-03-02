@@ -386,7 +386,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
-    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
+    T_out = _series_output_type(Tv, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end

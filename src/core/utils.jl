@@ -82,6 +82,22 @@ Determine the output value type from y element type and grid type.
 # Duck-typing fallback: custom types preserved as-is (no promotion to grid type)
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg<:AbstractFloat} = T
 
+"""
+    _series_output_type(::Type{Tv}, ::Type{Tq}) -> Type
+
+Compute output element type for series evaluation.
+
+For standard numerics, uses `promote_type(Tv, Tq)` to widen correctly
+(e.g., Float64 + Dual → Dual for AD support).
+
+For custom Tv without `promote_rule`, `promote_type` falls back to an
+abstract typejoin (e.g., Number), which makes the output vector untyped.
+In that case, falls back to Tv since the kernel always returns Tv.
+"""
+@inline function _series_output_type(::Type{Tv}, ::Type{Tq}) where {Tv, Tq}
+    Tout = promote_type(Tv, Tq)
+    return isconcretetype(Tout) ? Tout : Tv
+end
 
 """
     _promote_value_type(y, ::Type{Tg}) -> (Tv, y_converted)

@@ -31,7 +31,7 @@ end
 
 # Convert common non-quadratic BCs to quadratic equivalents
 @inline function _resolve_bcs_nd_quadratic(bc::ZeroCurvBC, ::Val{N}) where {N}
-    ntuple(_ -> Right(Deriv2(0.0)), Val(N))
+    ntuple(_ -> Right(Deriv2(0)), Val(N))
 end
 
 @inline function _resolve_bcs_nd_quadratic(bc::PolyFit{D}, ::Val{N}) where {D, N}
@@ -57,7 +57,7 @@ end
 Convert an AbstractBC to its QuadraticBC equivalent.
 """
 @inline _to_quadratic_bc(bc::QuadraticBC) = bc
-@inline _to_quadratic_bc(::ZeroCurvBC) = Right(Deriv2(0.0))
+@inline _to_quadratic_bc(::ZeroCurvBC) = Right(Deriv2(0))
 @inline _to_quadratic_bc(bc::PolyFit) = Right(bc)
 @inline _to_quadratic_bc(bc::AbstractBC) = throw(ArgumentError(
     "Unsupported BC for quadratic ND: $(typeof(bc)). " *

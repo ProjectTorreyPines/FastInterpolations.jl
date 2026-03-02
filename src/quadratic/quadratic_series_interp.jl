@@ -284,7 +284,7 @@ end
         a_k = a_point[k, idx]
         d_k = d_point[k, idx]
         # First derivative: 2*a*dL + d
-        output[k] = muladd(Tg(2)*a_k, dL, d_k)
+        output[k] = muladd(a_k + a_k, dL, d_k)
     end
     return output
 end
@@ -302,7 +302,7 @@ end
     @inbounds @simd for k in eachindex(output)
         a_k = a_point[k, idx]
         # Second derivative: 2*a (constant within interval)
-        output[k] = Tg(2) * a_k
+        output[k] = a_k + a_k
     end
     return output
 end
@@ -396,10 +396,13 @@ function quadratic_interp(
     d_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
     h = Vector{Tg}(undef, n_pts - 1)
 
+    # Promote BC values to Tv_out for convert(Tv, bc.val) compatibility
+    bc_promoted = _promote_bc(bc, Tv_out)
+
     # Compute coefficients for each series from y_mat columns
     for k in 1:n_ser
         y_col = @view y_mat[:, k]
-        h_k, d_k, a_k = _compute_quadratic_coeffs(x, y_col, bc)
+        h_k, d_k, a_k = _compute_quadratic_coeffs(x, y_col, bc_promoted)
 
         @inbounds for i in 1:n_pts
             d_mat[i, k] = d_k[i]
@@ -452,7 +455,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
-    T_out = promote_type(Tv, typeof(xq_promoted))
+    T_out = _series_output_type(Tv, typeof(xq_promoted))
     aq = _make_anchor(sitp, xq_promoted, _resolve_search(sitp.x, xq, search, hint))
 
     output = Vector{T_out}(undef, n_series(sitp))
@@ -506,7 +509,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
+    T_out = _series_output_type(Tv, Tq)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)

@@ -349,6 +349,87 @@ Base.:>(a::MeasuredFloat, b::MeasuredFloat) = a.val > b.val
     end
 
     # ================================================================
+    # Series — ScaledFloat (tests BC promotion to Tv_out)
+    # ================================================================
+    @testset "ScaledFloat Series" begin
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y1_sf = ScaledFloat.([1.0, 4.0, 2.0, 5.0, 3.0])
+        y2_sf = ScaledFloat.([2.0, 1.0, 5.0, 3.0, 4.0])
+
+        @testset "Quadratic Series (default BC)" begin
+            sitp = quadratic_interp(x, Series(y1_sf, y2_sf))
+            result = sitp(1.5)
+            @test length(result) == 2
+            @test eltype(result) === ScaledFloat
+        end
+
+        @testset "Quadratic Series (Deriv1 BC)" begin
+            bc = Left(Deriv1(ScaledFloat(0.0)))
+            sitp = quadratic_interp(x, Series(y1_sf, y2_sf); bc=bc)
+            result = sitp(1.5)
+            @test eltype(result) === ScaledFloat
+        end
+
+        @testset "Cubic Series (default BC)" begin
+            sitp = cubic_interp(x, Series(y1_sf, y2_sf))
+            result = sitp(1.5)
+            @test length(result) == 2
+            @test eltype(result) === ScaledFloat
+        end
+
+        @testset "Cubic Series (ZeroCurvBC)" begin
+            sitp = cubic_interp(x, Series(y1_sf, y2_sf); bc=ZeroCurvBC())
+            result = sitp(1.5)
+            @test eltype(result) === ScaledFloat
+        end
+
+        @testset "Linear Series" begin
+            sitp = linear_interp(x, Series(y1_sf, y2_sf))
+            result = sitp(1.5)
+            @test length(result) == 2
+            @test eltype(result) === ScaledFloat
+        end
+
+        @testset "Constant Series" begin
+            sitp = constant_interp(x, Series(y1_sf, y2_sf))
+            result = sitp(1.5)
+            @test length(result) == 2
+            @test eltype(result) === ScaledFloat
+        end
+    end
+
+    # ================================================================
+    # Series — MeasuredFloat (tests uncertainty propagation through series)
+    # ================================================================
+    @testset "MeasuredFloat Series" begin
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y1_mf = [MeasuredFloat(v, 0.1) for v in [1.0, 4.0, 2.0, 5.0, 3.0]]
+        y2_mf = [MeasuredFloat(v, 0.2) for v in [2.0, 1.0, 5.0, 3.0, 4.0]]
+
+        @testset "Linear Series" begin
+            sitp = linear_interp(x, Series(y1_mf, y2_mf))
+            result = sitp(1.5)
+            @test length(result) == 2
+            @test all(r -> r isa MeasuredFloat, result)
+            @test all(r -> r.err > 0, result)
+        end
+
+        @testset "Quadratic Series" begin
+            sitp = quadratic_interp(x, Series(y1_mf, y2_mf))
+            result = sitp(1.5)
+            @test all(r -> r isa MeasuredFloat, result)
+            @test all(r -> r.err > 0, result)
+        end
+
+        @testset "Cubic Series" begin
+            sitp = cubic_interp(x, Series(y1_mf, y2_mf))
+            result = sitp(1.5)
+            @test all(r -> r isa MeasuredFloat, result)
+            @test all(r -> r.err > 0, result)
+        end
+    end
+
+    # ================================================================
     # Standard promotion (regression tests)
     # ================================================================
     @testset "Standard promotion unchanged" begin

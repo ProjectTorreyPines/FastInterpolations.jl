@@ -111,18 +111,19 @@ function quadratic_interp(
     # Zero-allocation grid conversion
     grids_typed = _convert_grids_typed(grids, Tg)
 
-    # Get value type
-    Tv = eltype(data)
+    # Promote data type (Int→Float64, Complex{T}→Complex{Tg}, custom types preserved)
+    Tv = _value_type(Tv_raw, Tg)
+    data_typed = Tv === Tv_raw ? data : Tv.(data)
 
     # Validate dimensions
-    _validate_nd_grids(grids_typed, data)
+    _validate_nd_grids(grids_typed, data_typed)
 
     # Resolve per-axis options
     bcs = _resolve_bcs_nd_quadratic(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    return _build_nd_quadratic_interpolant(grids_typed, data, bcs, extraps_val, searches)
+    return _build_nd_quadratic_interpolant(grids_typed, data_typed, bcs, extraps_val, searches)
 end
 
 # ========================================

@@ -130,7 +130,7 @@ end
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg, Tv, N}
     if _has_second_or_higher_derivative(ops, Val(N))
-        return zero(promote_type(Tv, Tg))
+        return zero(Tv)
     end
     data, indices, hs, αs = cell
     return _multilinear_sum(data, indices, hs, αs, ops, Val(N))
@@ -149,7 +149,7 @@ end
     hints=nothing
 ) where {Tg, Tv, N}
     if _has_second_or_higher_derivative(ops, Val(N))
-        return zero(promote_type(Tv, Tg))
+        return zero(Tv)
     end
     cell = _locate_cell(itp, query, search_tuple, hints)
     return _eval_at_cell(itp, cell, ops)
@@ -165,7 +165,7 @@ end
 ) where {Tg, Tv}
     op_x, op_y = ops
     if op_x isa EvalDeriv2 || op_x isa EvalDeriv3 || op_y isa EvalDeriv2 || op_y isa EvalDeriv3
-        return zero(promote_type(Tv, Tg))
+        return zero(Tv)
     end
     cell = _locate_cell(itp, query, search_tuple, hints)
     return _eval_at_cell(itp, cell, ops)

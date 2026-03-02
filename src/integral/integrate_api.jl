@@ -274,9 +274,9 @@ end
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
-    sign == 0 && return zero(promote_type(Tv, Tg))
+    sign == 0 && return zero(Tv)
 
-    total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
+    total = zero(Tv)
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
@@ -301,9 +301,9 @@ end
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
-    sign == 0 && return zero(promote_type(Tv, Tg))
+    sign == 0 && return zero(Tv)
 
-    total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
+    total = zero(Tv)
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
@@ -327,9 +327,9 @@ end
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
-    sign == 0 && return zero(promote_type(Tv, Tg))
+    sign == 0 && return zero(Tv)
 
-    total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
+    total = zero(Tv)
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
@@ -354,9 +354,9 @@ end
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
-    sign == 0 && return zero(promote_type(Tv, Tg))
+    sign == 0 && return zero(Tv)
 
-    total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
+    total = zero(Tv)
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)

@@ -132,7 +132,7 @@ end
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
                                bc::Left{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
     κ = convert(Tv, bc.bc.val)
-    d1 = s[1] - (κ / 2) * h[1]  # Tv - Tv*Tg → Tv
+    d1 = s[1] - κ * (h[1] / 2)  # Tv - Tv*Tg → Tv (no /(Tv,Int) needed)
     _forward_recurrence!(d, s, d1)
 end
 
@@ -148,7 +148,7 @@ end
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
                                bc::Right{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
     κ = convert(Tv, bc.bc.val)
-    dn = s[end] + (κ / 2) * h[end]  # Tv + Tv*Tg → Tv
+    dn = s[end] + κ * (h[end] / 2)  # Tv + Tv*Tg → Tv (no /(Tv,Int) needed)
     _backward_recurrence!(d, s, dn)
 end
 

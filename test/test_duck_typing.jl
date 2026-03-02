@@ -241,19 +241,14 @@ Base.:/(a::BareMinFloat, b::Float64) = BareMinFloat(a.val / b)
             end
         end
 
-        @testset "/(Tv, Int) — only for quadratic Deriv2 BC" begin
+        @testset "quadratic Deriv2 BC works with core 7" begin
             y_bare = BareMinFloat.([1.0, 4.0, 2.0, 5.0, 3.0])
 
-            # Default BC (QuadraticFit) doesn't use /(Tv, Int) → works
-            @testset "QuadraticFit BC works without /(Tv,Int)" begin
-                itp = quadratic_interp(x, y_bare)
-                @test itp(xq) isa BareMinFloat
-            end
-
-            # Explicit Deriv2 BC → _fill_slopes! does κ/2 → /(Tv, Int) → fails
-            @testset "Deriv2 BC fails without /(Tv,Int)" begin
+            # Deriv2 BC now uses κ*(h/2) instead of (κ/2)*h → only *(Tv,Tg), no /(Tv,Int)
+            @testset "Deriv2(Tv_value)" begin
                 bc = Left(Deriv2(BareMinFloat(0.0)))
-                @test_throws MethodError quadratic_interp(x, y_bare; bc=bc)
+                itp = quadratic_interp(x, y_bare; bc=bc)
+                @test itp(xq) isa BareMinFloat
             end
         end
 

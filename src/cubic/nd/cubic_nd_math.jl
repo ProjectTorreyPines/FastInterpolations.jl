@@ -227,25 +227,25 @@ function _moments_to_derivatives_1d!(
     @assert length(m) == n "m length mismatch"
     @assert n >= 2 "Need at least 2 points"
 
-    inv_6 = Tv(1) / Tv(6)
+    inv_6 = inv(Tg(6))
 
     # First point (using right derivative from first interval)
     @inbounds begin
-        h1 = Tv(_get_h(spacing, 1))
-        inv_h1 = Tv(_get_inv_h(spacing, 1))
+        h1 = _get_h(spacing, 1)
+        inv_h1 = _get_inv_h(spacing, 1)
         h_over_6 = h1 * inv_6
         linear_slope = (y[2] - y[1]) * inv_h1
-        moment_sum = muladd(Tv(2), m[1], m[2])
+        moment_sum = muladd(Tg(2), m[1], m[2])
         dydx[1] = muladd(-h_over_6, moment_sum, linear_slope)
     end
 
     # Interior and last points (using left derivative from each interval)
     @inbounds for i in 1:(n-1)
-        h = Tv(_get_h(spacing, i))
-        inv_h = Tv(_get_inv_h(spacing, i))
+        h = _get_h(spacing, i)
+        inv_h = _get_inv_h(spacing, i)
         h_over_6 = h * inv_6
         linear_slope = (y[i+1] - y[i]) * inv_h
-        moment_sum = muladd(Tv(2), m[i+1], m[i])
+        moment_sum = muladd(Tg(2), m[i+1], m[i])
         dydx[i+1] = muladd(h_over_6, moment_sum, linear_slope)
     end
 
@@ -260,17 +260,17 @@ Called after _moments_to_derivatives_1d! to enforce specific BC values.
 """
 function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::BCPair, args...) where {Tv}
     if bc.left isa Deriv1
-        @inbounds dydx[1] = Tv(bc.left.val)
+        @inbounds dydx[1] = bc.left.val
     end
     if bc.right isa Deriv1
-        @inbounds dydx[end] = Tv(bc.right.val)
+        @inbounds dydx[end] = bc.right.val
     end
     return nothing
 end
 
 function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::PeriodicData, args...) where {Tv}
     # Enforce periodic: dydx[1] == dydx[end]
-    avg = (dydx[1] + dydx[end]) / Tv(2)
+    avg = (dydx[1] + dydx[end]) / 2
     @inbounds dydx[1] = avg
     @inbounds dydx[end] = avg
     return nothing
@@ -323,7 +323,7 @@ end
     deriv_right = _estimate_endpoint_derivative(grid, values, RightSide(), CubicFit())
 
     # BC values are Tv type (can be Complex)
-    bc = BCPair(Deriv1(Tv(deriv_left)), Deriv1(Tv(deriv_right)))
+    bc = BCPair(Deriv1(deriv_left), Deriv1(deriv_right))
     # Cache uses grid type Tg for matrix structure
     bc_cache = BCPair(Deriv1(zero(Tg)), Deriv1(zero(Tg)))
     cache = _get_cubic_cache(grid, bc_cache, true)
@@ -377,22 +377,22 @@ This enables @simd vectorization over the contiguous dimension.
 
     # Forward substitution: transposed loop order for contiguous access
     @inbounds for k in 2:n_sys
-        factor = Tv(-dl[k-1])
+        factor = -dl[k-1]
         @simd for i in 1:n_batch
             z[i, k] = muladd(factor, z[i, k-1], z[i, k])
         end
     end
 
     # Backward substitution: final column
-    inv_d_n = Tv(inv_d[n_sys])
+    inv_d_n = inv_d[n_sys]
     @inbounds @simd for i in 1:n_batch
         z[i, n_sys] *= inv_d_n
     end
 
     # Backward substitution: remaining columns
     @inbounds for k in (n_sys-1):-1:1
-        u_factor = Tv(-du[k])
-        d_factor = Tv(inv_d[k])
+        u_factor = -du[k]
+        d_factor = inv_d[k]
         @simd for i in 1:n_batch
             z[i, k] = muladd(u_factor, z[i, k+1], z[i, k]) * d_factor
         end

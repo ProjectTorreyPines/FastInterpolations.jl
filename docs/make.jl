@@ -136,9 +136,13 @@ makedocs(
     sitename = "FastInterpolations.jl",
     authors = "Min-Gu Yoo",
     modules = [FastInterpolations],
+    # Disable git remote detection — servedocs() runs from docs/ which breaks
+    # git root detection. Source links are handled by deploydocs() in CI.
+    remotes = nothing,
     format = Documenter.HTML(
         prettyurls = get(ENV, "CI", nothing) == "true",
         canonical = "https://projecttorreypines.github.io/FastInterpolations.jl",
+        edit_link = "master",
         assets = String[],
     ),
     pages = [

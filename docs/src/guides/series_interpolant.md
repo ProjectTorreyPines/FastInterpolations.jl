@@ -17,6 +17,12 @@ Instead of creating N separate interpolants and querying them in a loop, SeriesI
 
 ---
 
+## API Reference
+
+```@docs
+Series
+```
+
 ## Creating a SeriesInterpolant
 
 ```julia

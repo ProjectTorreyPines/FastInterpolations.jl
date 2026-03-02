@@ -13,7 +13,7 @@
 # ========================================
 
 """Standard Julia numeric types that should be auto-promoted in convenience wrappers."""
-const _PromotableValue = Union{Integer, AbstractFloat, Complex}
+const _PromotableValue = Union{Integer, AbstractFloat, Rational, Complex}
 
 # ========================================
 # Type Conversion Helpers
@@ -336,5 +336,4 @@ end
 
 "No-op vector domain check for non-NoExtrap modes."
 @inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, ::AbstractExtrap) = nothing
-
 

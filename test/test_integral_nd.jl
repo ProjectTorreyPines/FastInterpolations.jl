@@ -34,3 +34,24 @@ using FastInterpolations
         end
     end
 end
+
+@testset "integrate nd output type promotion" begin
+    x = Float32[0, 1, 2, 3]
+    y = Float32[0, 1, 2, 3]
+    constructors = (
+        ("linear", linear_interp, [Float32(xi + 2yj) for xi in x, yj in y]),
+        ("quadratic", quadratic_interp, [Float32(xi^2 + yj^2) for xi in x, yj in y]),
+        ("cubic", cubic_interp, [Float32(sin(xi) + cos(yj)) for xi in x, yj in y]),
+        ("constant", constant_interp, [Float32(xi - yj) for xi in x, yj in y]),
+    )
+
+    for (name, constructor, data) in constructors
+        @testset "$name" begin
+            itp = constructor((x, y), data; extrap=(NoExtrap(), NoExtrap()))
+            @test integrate(itp, (0.5f0, 0.5f0), (2.5f0, 2.5f0)) isa Float32
+            @test integrate(itp, (0.5, 0.5), (2.5, 2.5)) isa Float64
+            # Zero-measure bounds should return the same promoted output type.
+            @test integrate(itp, (0.5, 0.5), (0.5, 0.5)) isa Float64
+        end
+    end
+end

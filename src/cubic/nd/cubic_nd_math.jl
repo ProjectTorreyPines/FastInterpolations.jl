@@ -268,9 +268,9 @@ function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::BCPair, args...) wh
     return nothing
 end
 
-function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::PeriodicData, args...) where {Tv}
+function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::PeriodicData{Tg}, args...) where {Tv, Tg<:AbstractFloat}
     # Enforce periodic: dydx[1] == dydx[end]
-    avg = (dydx[1] + dydx[end]) / 2
+    avg = (dydx[1] + dydx[end]) / Tg(2)
     @inbounds dydx[1] = avg
     @inbounds dydx[end] = avg
     return nothing

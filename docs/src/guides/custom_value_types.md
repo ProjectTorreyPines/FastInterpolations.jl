@@ -11,22 +11,41 @@ Internally, every interpolant separates two type roles:
 
 ## Quick Example
 
+This is a **path interpolation with `SVector`** example.
+Using `SVector{2,Float64}` waypoints, you can interpolate an arbitrary 2D path directly with one-shot APIs (`linear_interp`, `cubic_interp`) and visualize the result.
+
 ```@example duck_typing
 using FastInterpolations
 using StaticArrays
+using Plots
 
-# Interpolate 3D vector fields with SVector
-x = range(0.0, 1.0, 10)
-y = [SVector(sin(xi), cos(xi), xi^2) for xi in x]
+# 9 waypoints in 2D (spiral-like path)
+t = [0.0, 0.6, 1.2, 1.8, 2.4, 3.0, 3.6, 4.2, 4.8]
+pts = SVector{2, Float64}[
+    SVector(0.2, 0.0), SVector(0.5, 0.5),
+    SVector(0.1, 1.0), SVector(-0.8, 0.9),
+    SVector(-1.4, 0.0), SVector(-1.0, -1.1),
+    SVector(0.1, -1.8), SVector(1.5, -1.2),
+    SVector(2.0, 0.2),
+]
 
-itp = linear_interp(x, y)
-itp(0.5)  # → SVector{3,Float64}
+tq = range(first(t), last(t), length=200) # dense query points for smooth curves
 
-# Works with all methods and BCs
-itp_cubic = cubic_interp(x, y)
-itp_cubic(0.5)  # → SVector{3,Float64}
-itp_cubic(0.5; deriv=EvalDeriv1())  # → first derivative, also SVector
-nothing  #hide
+# Duck typing lets us interpolate Vector{SVector{2,Float64}} directly.
+linear_path = linear_interp(t, pts, tq)
+cubic_path = cubic_interp(t, pts, tq)
+
+# Split Vector{SVector{2}} into x/y arrays for plotting
+linear_x = getindex.(linear_path, 1)
+linear_y = getindex.(linear_path, 2)
+cubic_x = getindex.(cubic_path, 1)
+cubic_y = getindex.(cubic_path, 2)
+pts_x = getindex.(pts, 1)
+pts_y = getindex.(pts, 2)
+
+p = plot(linear_x, linear_y; label="linear_interp", lw=2, aspect_ratio=:equal);
+plot!(p, cubic_x, cubic_y; label="cubic_interp", lw=2);
+scatter!(p, pts_x, pts_y; label="control points", ms=6, color=:black);
 ```
 
 ## Core Operations (7 — sufficient for all methods and BCs)

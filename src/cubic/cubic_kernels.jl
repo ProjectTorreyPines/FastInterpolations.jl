@@ -83,7 +83,7 @@ Formula:
     dR_sq = dR * dR
 
     # zR*dL^2 - zL*dR^2
-    z_mix   = muladd(zR, dL_sq, -zL * dR_sq)
+    z_mix   = muladd(zR, dL_sq, (-dR_sq) * zL)
 
     # z_term = (z_mix)/(2h) + (zL - zR)*(h/6)
     z_term  = muladd(inv_2h, z_mix, (zL - zR) * h_div6)

@@ -134,6 +134,43 @@ Base.:/(a::BareMinFloat, b::Float64) = BareMinFloat(a.val / b)
             end
         end
 
+        # Range grids exercise _compute_deriv1 stencils (uniform-grid fast path).
+        # Vector grids go through _weighted_sum (precomputed Tg coefficients).
+        # Both paths must work with core 7 ops only — no unary negation on Tv.
+        @testset "1D Range grid" begin
+            xr = range(0.0, 4.0, 5)
+            yr = BareMinFloat.([1.0, 4.0, 2.0, 5.0, 3.0])
+            xrq = 1.5
+            @testset "Constant" begin
+                itp = constant_interp(xr, yr)
+                @test itp(xrq) isa BareMinFloat
+            end
+            @testset "Linear" begin
+                itp = linear_interp(xr, yr)
+                result = itp(xrq)
+                @test result isa BareMinFloat
+                @test result.val ≈ 3.0
+            end
+            @testset "Quadratic (default BC=QuadraticFit)" begin
+                itp = quadratic_interp(xr, yr)
+                @test itp(xrq) isa BareMinFloat
+            end
+            @testset "Cubic (default BC=CubicFit)" begin
+                itp = cubic_interp(xr, yr)
+                @test itp(xrq) isa BareMinFloat
+            end
+            @testset "Quadratic explicit BCs" begin
+                itp = quadratic_interp(xr, yr; bc=Left(Deriv1(BareMinFloat(0.0))))
+                @test itp(xrq) isa BareMinFloat
+            end
+            @testset "Cubic explicit BCs" begin
+                itp = cubic_interp(xr, yr; bc=Deriv1(BareMinFloat(0.0)))
+                @test itp(xrq) isa BareMinFloat
+                itp2 = cubic_interp(xr, yr; bc=ZeroCurvBC())
+                @test itp2(xrq) isa BareMinFloat
+            end
+        end
+
         @testset "2D ND" begin
             xg = [0.0, 1.0, 2.0, 3.0]
             yg = [0.0, 1.0, 2.0, 3.0]
@@ -154,6 +191,30 @@ Base.:/(a::BareMinFloat, b::Float64) = BareMinFloat(a.val / b)
             end
             @testset "Cubic" begin
                 itp = cubic_interp((xg, yg), data)
+                @test itp((0.5, 1.5)) isa BareMinFloat
+            end
+        end
+
+        @testset "2D ND Range grid" begin
+            xgr = range(0.0, 3.0, 4)
+            ygr = range(0.0, 3.0, 4)
+            data_r = [BareMinFloat(xi + 2yj) for xi in xgr, yj in ygr]
+            @testset "Constant" begin
+                itp = constant_interp((xgr, ygr), data_r)
+                @test itp((0.5, 1.5)) isa BareMinFloat
+            end
+            @testset "Linear" begin
+                itp = linear_interp((xgr, ygr), data_r)
+                result = itp((0.5, 1.5))
+                @test result isa BareMinFloat
+                @test result.val ≈ 0.5 + 2 * 1.5
+            end
+            @testset "Quadratic" begin
+                itp = quadratic_interp((xgr, ygr), data_r)
+                @test itp((0.5, 1.5)) isa BareMinFloat
+            end
+            @testset "Cubic" begin
+                itp = cubic_interp((xgr, ygr), data_r)
                 @test itp((0.5, 1.5)) isa BareMinFloat
             end
         end

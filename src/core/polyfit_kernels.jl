@@ -170,7 +170,7 @@ end
 @inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3,Tv}, inv_h::Tg) where {Tv, Tg<:AbstractFloat}
     # Coefficients: (-3, 4, -1) / 2
     coeff = inv_h / 2
-    return muladd(-3, f[1], muladd(4, f[2], -f[3])) * coeff  # Int * Tv → Tv, Tv * Tg → Tv
+    return muladd(-3, f[1], muladd(4, f[2], (-1) * f[3])) * coeff  # Int * Tv → Tv, Tv * Tg → Tv
 end
 
 @inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3,Tv}, inv_h::Tg) where {Tv, Tg<:AbstractFloat}

@@ -9,9 +9,9 @@ Internally, every interpolant separates two type roles:
 * **Grid type (`Tg`)**: Always `<: AbstractFloat` (`Float64`, `Float32`). Used for grid coordinates, spacings, and search. Must be ordered and real-valued.
 * **Value type (`Tv`)**: Unconstrained. Used for function values (`y`), derivatives, and coefficients. Can be any type supporting the required operations.
 
-## Quick Start
+## Quick Example
 
-```julia
+```@example duck_typing
 using FastInterpolations
 using StaticArrays
 
@@ -26,6 +26,7 @@ itp(0.5)  # → SVector{3,Float64}
 itp_cubic = cubic_interp(x, y)
 itp_cubic(0.5)  # → SVector{3,Float64}
 itp_cubic(0.5; deriv=EvalDeriv1())  # → first derivative, also SVector
+nothing  #hide
 ```
 
 ## Core Operations (7 — sufficient for all methods and BCs)
@@ -83,7 +84,7 @@ cubic_interp(x, y; bc=PeriodicBC())  # if y[1] === y[end] exactly
 
 ## Defining a Custom Type
 
-```julia
+```@example duck_typing
 struct MyValue
     val::Float64
 end
@@ -97,17 +98,18 @@ Base.:*(a::MyValue, b::Float64) = MyValue(a.val * b)
 Base.:*(a::Integer, b::MyValue) = MyValue(a * b.val)
 Base.:/(a::MyValue, b::Float64) = MyValue(a.val / b)
 
-# Use it — all methods and BCs work
+# Use it — all methods and BCs work (oneshot API)
 x = range(0.0, 1.0, 10)
 y = [MyValue(sin(xi)) for xi in x]
 
-constant_interp(x, y)(0.5)                                     # → MyValue(...)
-linear_interp(x, y)(0.5)                                       # → MyValue(...)
-quadratic_interp(x, y)(0.5)                                    # → MyValue(...)
-quadratic_interp(x, y; bc=Left(Deriv1(MyValue(0.0))))(0.5)     # → MyValue(...)
-cubic_interp(x, y)(0.5)                                        # → MyValue(...)
-cubic_interp(x, y; bc=Deriv1(MyValue(0.0)))(0.5)               # → MyValue(...)
-cubic_interp(x, y; bc=ZeroCurvBC())(0.5)                       # → MyValue(...)
+constant_interp(x, y, 0.5)                                     # → MyValue(...)
+linear_interp(x, y, 0.5)                                       # → MyValue(...)
+quadratic_interp(x, y, 0.5)                                    # → MyValue(...)
+quadratic_interp(x, y, 0.5; bc=Left(Deriv1(zero(MyValue))))    # → MyValue(...)
+cubic_interp(x, y, 0.5)                                        # → MyValue(...)
+cubic_interp(x, y, 0.5; bc=Deriv1(zero(MyValue)))              # → MyValue(...)
+cubic_interp(x, y, 0.5; bc=ZeroCurvBC())                       # → MyValue(...)
+nothing #hide
 ```
 
 ### Optional: `isapprox` for PeriodicBC

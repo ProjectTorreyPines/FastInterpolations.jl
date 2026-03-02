@@ -664,17 +664,13 @@ function _build_series_periodic(
     n_pts = size(y_mat, 1)
 
     # Validate periodic endpoints for all series
-    atol = Tg === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
+    atol = _periodic_atol(Tg)
+    rtol = _periodic_rtol(Tg)
     @inbounds for k in 1:n_series_count
         y_first = y_mat[1, k]
         y_last = y_mat[n_pts, k]
-        if !isapprox(y_first, y_last; atol=atol)
-            throw(ArgumentError(
-                "PeriodicBC (inclusive endpoint) requires y[1] ≈ y[end] for series $k, " *
-                "got y[1]=$y_first, y[end]=$y_last (diff=$(abs(y_last-y_first))). " *
-                "If your data does not repeat the first point, use " *
-                "PeriodicBC(endpoint=:exclusive) instead."
-            ))
+        if !_periodic_match(y_first, y_last, atol, rtol)
+            _throw_periodic_series_error(k, y_first, y_last)
         end
     end
 

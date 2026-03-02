@@ -322,7 +322,7 @@ so the pool memory can be safely reused after this function returns.
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:AbstractFloat, Tv}
     x, y = _prepare_periodic(x, y, bc)
-    _check_periodic_endpoints(y)
+    _check_periodic_endpoints(y, Tg)
     cache = _get_cubic_cache(x, PeriodicBC(), autocache)
     tmp_z = similar!(pool, y)
     _solve_system!(tmp_z, cache, y, cache.bc_config)
@@ -450,7 +450,7 @@ so the pool memory can be safely reused after this function returns.
     _solve_system!(tmp_z, cache, y, cache.bc_config)
 
     if cache.bc_config isa PeriodicData
-        _check_periodic_endpoints(y)
+        _check_periodic_endpoints(y, Tg)
         return CubicInterpolant(cache, y, tmp_z, PeriodicBC(), WrapExtrap(), search)
     end
 

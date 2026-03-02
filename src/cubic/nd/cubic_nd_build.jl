@@ -220,44 +220,6 @@ end
 # ========================================
 
 """
-    _check_periodic_data_nd(data::AbstractArray{Tv, N}, d::Int)
-
-Validate that data is periodic along dimension `d`.
-
-Checks that `data[..., 1, ...] ≈ data[..., end, ...]` for the given dimension.
-Uses `selectdim` for clean N-D slice comparison.
-
-# Arguments
-- `data::AbstractArray{Tv,N}`: N-dimensional array to validate
-- `d::Int`: Dimension to check for periodicity (1 ≤ d ≤ N)
-
-# Throws
-- `ArgumentError`: If first and last slices along dimension d differ significantly
-"""
-function _check_periodic_data_nd(data::AbstractArray{Tv, N}, d::Int) where {Tv, N}
-    @boundscheck 1 ≤ d ≤ N || throw(ArgumentError("dimension d=$d out of range 1:$N"))
-
-    n_d = size(data, d)
-    atol = real(Tv) === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
-
-    # selectdim returns views: data[:,...,1,...,:] and data[:,...,end,...,:]
-    slice_first = selectdim(data, d, 1)
-    slice_last = selectdim(data, d, n_d)
-
-    # Element-wise comparison with tolerance
-    @inbounds for i in eachindex(slice_first, slice_last)
-        if !isapprox(slice_first[i], slice_last[i]; atol=atol)
-            throw(ArgumentError(
-                "Periodic BC on dim $d requires data to match at first/last indices, " *
-                "but found diff=$(abs(slice_last[i] - slice_first[i])) at linear index $i"
-            ))
-        end
-    end
-
-    return nothing
-end
-
-"""
     _check_periodic_data_noalloc!(data::AbstractArray{Tv, N}, ::Val{D})
 
 Zero-allocation periodic data validation for dimension D.
@@ -273,8 +235,9 @@ the index expressions into the method body at specialization time.
 """
 @generated function _check_periodic_data_noalloc!(
     data::AbstractArray{Tv, N},
-    ::Val{D}
-) where {Tv, N, D}
+    ::Val{D},
+    ::Type{Tg}
+) where {Tv, N, D, Tg<:AbstractFloat}
     # Symbolic loop variables: i1, i2, ..., iN
     idx_vars = [Symbol("i", d) for d in 1:N]
 
@@ -287,11 +250,8 @@ the index expressions into the method body at specialization time.
     check = quote
         v1 = @inbounds data[$(first_idx...)]
         vn = @inbounds data[$(last_idx...)]
-        if !isapprox(v1, vn; atol=atol)
-            throw(ArgumentError(
-                "Periodic BC on dim $D requires data to match at first/last indices, " *
-                "but found diff=$(abs(v1 - vn))"
-            ))
+        if !_periodic_match(v1, vn, atol, rtol)
+            _throw_periodic_nd_error($D, v1, vn)
         end
     end
 
@@ -308,7 +268,8 @@ the index expressions into the method body at specialization time.
 
     return quote
         n_D  = size(data, $D)
-        atol = real(Tv) === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
+        atol = _periodic_atol(Tg)
+        rtol = _periodic_rtol(Tg)
         $body
         return nothing
     end
@@ -409,7 +370,7 @@ end
     # this validation).  Checking data[1] ≈ data[end] on unextended exclusive data would
     # produce false positives for perfectly valid periodic inputs.
     if bcs[D] isa PeriodicBC{:inclusive}
-        _check_periodic_data_noalloc!(data, Val(D))
+        _check_periodic_data_noalloc!(data, Val(D), Tg)
     end
     polyfit_deg = get_polyfit_degree(bcs[D])
     if polyfit_deg > 0 && length(grids[D]) < polyfit_deg + 1

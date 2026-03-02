@@ -22,7 +22,6 @@ import FastInterpolations:
     # nd_build.jl
     _differentiate_nd_along_dim!,
     _differentiate_nd_along_dim_batch!,
-    _check_periodic_data_nd,
     _get_effective_bc,
     _compute_nd_partials!,
     _build_nd_coeffs,
@@ -123,32 +122,6 @@ import FastInterpolations:
             # Grid length mismatch
             wrong_grid = collect(range(0.0, 1.0, 6))  # 6 points but dim 1 has 5
             @test_throws DimensionMismatch _differentiate_nd_along_dim!(out, data, wrong_grid, ZeroCurvBC(), 1)
-        end
-
-        @testset "_check_periodic_data_nd error path" begin
-            # Test with data that violates periodicity
-            x = collect(range(0.0, 2π, 11))
-            y = collect(range(0.0, π, 9))
-
-            # Data where first and last slices don't match along dimension 1
-            data_non_periodic = zeros(11, 9)
-            data_non_periodic[1, :] .= 1.0   # First slice
-            data_non_periodic[end, :] .= 0.0  # Last slice (different!)
-
-            @test_throws ArgumentError _check_periodic_data_nd(data_non_periodic, 1)
-
-            # Data where first and last slices don't match along dimension 2
-            data_non_periodic2 = zeros(11, 9)
-            data_non_periodic2[:, 1] .= 1.0
-            data_non_periodic2[:, end] .= 0.0
-
-            @test_throws ArgumentError _check_periodic_data_nd(data_non_periodic2, 2)
-
-            # Valid periodic data should not throw
-            data_periodic = zeros(11, 9)
-            data_periodic[1, :] .= 1.0
-            data_periodic[end, :] .= 1.0  # Matches!
-            @test _check_periodic_data_nd(data_periodic, 1) === nothing
         end
 
         @testset "_get_effective_bc edge cases" begin

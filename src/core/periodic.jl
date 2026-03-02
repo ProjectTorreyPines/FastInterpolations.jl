@@ -48,37 +48,65 @@ end
 # Endpoint Validation
 # ========================================
 
-# Tolerance for periodic endpoint check
-# Use sqrt(eps) which is ~1e-8 for Float64, allowing for typical floating point errors
-# (e.g., sin(2π) ≈ 2.45e-16 should pass)
-const _PERIODIC_ATOL_F64 = 1e-12
-const _PERIODIC_ATOL_F32 = 1f-6
+# ── Periodic endpoint tolerance ──
+# eps^(3/4): tight enough to catch real mismatches, loose enough for floating-point noise.
+# Constant-folded by LLVM when Tg is concrete (ret double <literal>).
+@inline _periodic_atol(::Type{Tg}) where {Tg<:AbstractFloat} = eps(Tg)^(3/4)
+@inline _periodic_rtol(::Type{Tg}) where {Tg<:AbstractFloat} = sqrt(eps(Tg))
 
 """
-    _check_periodic_endpoints(y::AbstractVector)
+    _periodic_match(a, b, atol, rtol) -> Bool
+
+Check if two values match for periodic endpoint validation.
+Uses `==` first (covers exact match and duck-typed values without `isapprox`),
+then falls back to `isapprox` with both absolute and relative tolerance.
+"""
+@inline _periodic_match(a, b, atol, rtol) = a == b || isapprox(a, b; atol=atol, rtol=rtol)
+
+"""
+    _check_periodic_endpoints(y::AbstractVector, ::Type{Tg})
 
 Validate that y[1] ≈ y[end] for periodic boundary conditions.
 Called once at construction time (zero runtime overhead).
 
-Supports both Real and Complex value types.
-For Complex, uses the underlying real type to determine tolerance.
+Supports arbitrary value types via `_periodic_match`: types that define `isapprox`
+get approximate comparison; types with only `==` get exact equality check.
 
 Throws `ArgumentError` if endpoints differ significantly.
 """
-@inline function _check_periodic_endpoints(y::AbstractVector{Tv}) where {Tv}
+@inline function _check_periodic_endpoints(y::AbstractVector, ::Type{Tg}) where {Tg<:AbstractFloat}
     y1, yn = first(y), last(y)
-    # Use _real_eltype to extract Float32/Float64 from Complex{T} or Real
-    Tr = _real_eltype(Tv)
-    atol = Tr === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
-    if !isapprox(y1, yn; atol=atol)
-        throw(ArgumentError(
-            "PeriodicBC (inclusive endpoint) requires y[1] ≈ y[end], " *
-            "got y[1]=$y1, y[end]=$yn (diff=$(abs(yn-y1))). " *
-            "If your data does not repeat the first point, use " *
-            "PeriodicBC(endpoint=:exclusive) instead."
-        ))
+    atol = _periodic_atol(Tg)
+    rtol = _periodic_rtol(Tg)
+    if !_periodic_match(y1, yn, atol, rtol)
+        _throw_periodic_endpoint_error(y1, yn)
     end
     return nothing
+end
+
+@noinline function _throw_periodic_endpoint_error(y1, yn)
+    throw(ArgumentError(
+        "PeriodicBC (inclusive endpoint) requires y[1] ≈ y[end], " *
+        "got y[1]=$y1, y[end]=$yn (diff=$(yn - y1)). " *
+        "If your data does not repeat the first point, use " *
+        "PeriodicBC(endpoint=:exclusive) instead."
+    ))
+end
+
+@noinline function _throw_periodic_series_error(k, y_first, y_last)
+    throw(ArgumentError(
+        "PeriodicBC (inclusive endpoint) requires y[1] ≈ y[end] for all series, " *
+        "but series $k has y[1]=$y_first, y[end]=$y_last (diff=$(y_last - y_first)). " *
+        "If your data does not repeat the first point, use " *
+        "PeriodicBC(endpoint=:exclusive) instead."
+    ))
+end
+
+@noinline function _throw_periodic_nd_error(d, v_first, v_last)
+    throw(ArgumentError(
+        "Periodic BC on dim $d requires data to match at first/last indices, " *
+        "but found diff=$(v_last - v_first)"
+    ))
 end
 
 # ========================================

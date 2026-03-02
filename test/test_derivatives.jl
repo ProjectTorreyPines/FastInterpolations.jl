@@ -2018,7 +2018,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 101))
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         # Scalar queries with deriv=DerivOp(0),1,2,3
         vals0 = sitp(0.5; deriv=DerivOp(0))
@@ -2041,7 +2041,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 101))
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         x_query = [0.1, 0.5, 0.9]
 
@@ -2066,7 +2066,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 101))
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         # Scalar in-place
         out_scalar = similar([0.0, 0.0])
@@ -2087,7 +2087,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 11))
         y1 = 2.0 .* x
         y2 = 3.0 .* x
-        sitp = linear_interp(x, [y1, y2])
+        sitp = linear_interp(x, Series(y1, y2))
 
         # deriv=DerivOp(0): values
         vals0 = sitp(0.5; deriv=DerivOp(0))
@@ -2110,7 +2110,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 11))
         y1 = x.^3
         y2 = x.^2
-        sitp = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
+        sitp = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
 
         # Outside domain with deriv=3
         vals_below = sitp(-0.5; deriv=DerivOp(3))
@@ -2126,7 +2126,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 101))
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         # Factory functions should work
         d1 = deriv1(sitp)
@@ -2151,7 +2151,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 101))
         y1 = x.^2
         y2 = x.^3
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         d1 = deriv1(sitp)
         x_query = [0.25, 0.5, 0.75]
@@ -2173,7 +2173,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 101))
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         d1 = deriv1(sitp)
         x_query = [0.25, 0.5, 0.75]
@@ -2190,7 +2190,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 101))
         y1 = x.^2
         y2 = x.^3
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         d1 = deriv1(sitp)
         d2 = deriv2(sitp)
@@ -2210,7 +2210,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 101))
         y1 = x.^2
         y2 = x.^3
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         d1 = deriv1(sitp)
         x_query = [0.25, 0.5, 0.75]
@@ -2228,7 +2228,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 101))
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         @test @inferred(sitp(0.5; deriv=DerivOp(1))) isa Vector{Float64}
         @test @inferred(sitp([0.1, 0.5]; deriv=DerivOp(1))) isa Vector{Vector{Float64}}
@@ -2238,7 +2238,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 101))
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         # Warmup
         out = sitp(0.5; deriv=DerivOp(1))
@@ -2396,7 +2396,7 @@ end # DerivativeView single-series in-place vector
 @testset "DerivativeView SeriesInterpolant search/hint keywords" begin
     # Shared test data for series interpolant
     x = collect(range(0.0, 1.0, 51))
-    sitp = cubic_interp(x, [x.^2, x.^3])
+    sitp = cubic_interp(x, Series(x.^2, x.^3))
     xq = [0.25, 0.5, 0.75]
 
     @testset "SeriesInterpolant scalar with search and hint" begin
@@ -2499,7 +2499,7 @@ end # DerivativeView SeriesInterpolant search/hint keywords
     end
 
     @testset "Type stability - SeriesInterpolant" begin
-        sitp = cubic_interp(x_cubic, [x_cubic.^2, x_cubic.^3])
+        sitp = cubic_interp(x_cubic, Series(x_cubic.^2, x_cubic.^3))
         d1 = deriv1(sitp)
 
         # Scalar returns Vector

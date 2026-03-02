@@ -82,7 +82,7 @@
     end
 
     @testset "LinearSeriesInterpolant show" begin
-        sitp = linear_interp(x, y_matrix)
+        sitp = linear_interp(x, Series(y_matrix))
 
         # Compact show
         compact_str = sprint(show, sitp)
@@ -101,7 +101,7 @@
     @testset "LinearSeriesInterpolant Complex show (Tg/Tv display)" begin
         # Complex values: should show both type parameters
         y_complex = [exp.(2im .* π .* collect(x)) for _ in 1:2]
-        sitp_complex = linear_interp(x, y_complex)
+        sitp_complex = linear_interp(x, Series(y_complex))
 
         # Compact show: should display {Float64, ComplexF64}
         compact_str = sprint(show, sitp_complex)
@@ -117,14 +117,14 @@
         @test occursin("with 2 series", verbose_str)
 
         # Real values: should only show single type parameter (backward compatible)
-        sitp_real = linear_interp(x, y_matrix)
+        sitp_real = linear_interp(x, Series(y_matrix))
         compact_real = sprint(show, sitp_real)
         @test occursin("Float64", compact_real)
         @test !occursin("Float64, Float64", compact_real)  # Should NOT duplicate
     end
 
     @testset "ConstantSeriesInterpolant show" begin
-        sitp = constant_interp(x, y_matrix)
+        sitp = constant_interp(x, Series(y_matrix))
 
         # Compact show
         compact_str = sprint(show, sitp)
@@ -139,7 +139,7 @@
     end
 
     @testset "QuadraticSeriesInterpolant show" begin
-        sitp = quadratic_interp(x, y_matrix)
+        sitp = quadratic_interp(x, Series(y_matrix))
 
         # Compact show
         compact_str = sprint(show, sitp)
@@ -153,7 +153,7 @@
     end
 
     @testset "CubicSeriesInterpolant show" begin
-        sitp = cubic_interp(x, y_matrix)
+        sitp = cubic_interp(x, Series(y_matrix))
 
         # Compact show
         compact_str = sprint(show, sitp)
@@ -407,23 +407,23 @@
         @test occursin("Search:", verbose_cubic)
 
         # CubicSeriesInterpolant with Vector grid
-        sitp_cubic = cubic_interp(x_vec, y_matrix_short; search=BinarySearch())
+        sitp_cubic = cubic_interp(x_vec, Series(y_matrix_short); search=BinarySearch())
         verbose_sitp = sprint(show, MIME("text/plain"), sitp_cubic)
         @test occursin("Search:", verbose_sitp)
 
         # LinearSeriesInterpolant with Vector grid
-        sitp_linear = linear_interp(x_vec, y_matrix_short; search=BinarySearch())
+        sitp_linear = linear_interp(x_vec, Series(y_matrix_short); search=BinarySearch())
         verbose_sitp_linear = sprint(show, MIME("text/plain"), sitp_linear)
         @test occursin("Search:", verbose_sitp_linear)
         @test occursin("BinarySearch", verbose_sitp_linear)
 
         # ConstantSeriesInterpolant with Vector grid
-        sitp_const = constant_interp(x_vec, y_matrix_short; search=BinarySearch())
+        sitp_const = constant_interp(x_vec, Series(y_matrix_short); search=BinarySearch())
         verbose_sitp_const = sprint(show, MIME("text/plain"), sitp_const)
         @test occursin("Search:", verbose_sitp_const)
 
         # QuadraticSeriesInterpolant with Vector grid
-        sitp_quad = quadratic_interp(x_vec, y_matrix_short; search=BinarySearch())
+        sitp_quad = quadratic_interp(x_vec, Series(y_matrix_short); search=BinarySearch())
         verbose_sitp_quad = sprint(show, MIME("text/plain"), sitp_quad)
         @test occursin("Search:", verbose_sitp_quad)
     end

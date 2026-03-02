@@ -14,7 +14,7 @@ FastInterpolations.jl offers several API styles optimized for different **data d
     - Use when `x` and `y` are constant, but you query at many different points over time.
     - Pre-computes coefficients once for faster reuse.
 
-- **SeriesInterpolant** (e.g., `sitp = cubic_interp(x, [y1, y2])`):
+- **SeriesInterpolant** (e.g., `sitp = cubic_interp(x, Series(y1, y2))`):
     - **Best for:** Multiple Series with shared x-grid.
     - Uses unified matrix storage with **SIMD-optimized** point-contiguous layout.
     - **10-120× faster** for scalar queries due to cache locality.

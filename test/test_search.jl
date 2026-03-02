@@ -828,7 +828,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         y2 = cos.(2π .* x)
 
         @testset "LinearSeriesInterpolant stored policy" begin
-            sitp = linear_interp(x, [y1, y2]; search=LinearBinarySearch())
+            sitp = linear_interp(x, Series(y1, y2); search=LinearBinarySearch())
             @test sitp.search_policy isa LinearBinarySearch{8}
 
             # Scalar call uses stored policy
@@ -842,7 +842,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "CubicSeriesInterpolant stored policy" begin
-            sitp = cubic_interp(x, [y1, y2]; search=LinearBinarySearch(linear_window=0))
+            sitp = cubic_interp(x, Series(y1, y2); search=LinearBinarySearch(linear_window=0))
             @test sitp.search_policy isa LinearBinarySearch{0}
 
             hint = Ref(600)
@@ -851,7 +851,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "Series vector call with baked-in policy and hint" begin
-            sitp = linear_interp(x, [y1, y2]; search=LinearBinarySearch())
+            sitp = linear_interp(x, Series(y1, y2); search=LinearBinarySearch())
             hint = Ref(1)
 
             # Vector call with sorted queries
@@ -865,7 +865,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "Series override with BinarySearch + hint auto-upgrades" begin
-            sitp = linear_interp(x, [y1, y2]; search=LinearBinarySearch())
+            sitp = linear_interp(x, Series(y1, y2); search=LinearBinarySearch())
             hint = Ref(250)
 
             # Override with BinarySearch + hint → auto-upgrades to LinearBinarySearch{2}
@@ -1015,7 +1015,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         y2 = sin.(π .* x)
 
         @testset "LinearSeriesInterpolant" begin
-            sitp = linear_interp(x, [y1, y2])
+            sitp = linear_interp(x, Series(y1, y2))
             hint = Ref(1)
 
             # Scalar query evaluates all series, returns first by default
@@ -1033,7 +1033,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
         end
 
         @testset "CubicSeriesInterpolant" begin
-            sitp = cubic_interp(x, [y1, y2])
+            sitp = cubic_interp(x, Series(y1, y2))
             hint = Ref(50)
 
             yi = sitp(0.55; search=LinearBinarySearch(linear_window=0), hint=hint)
@@ -1273,7 +1273,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             y2 = cos.(2π .* x)
 
             @testset "LinearSeries" begin
-                sitp = linear_interp(x, [y1, y2])
+                sitp = linear_interp(x, Series(y1, y2))
                 @test sitp.search_policy isa AutoSearch
 
                 # Scalar call → AutoSearch → BinarySearch
@@ -1292,7 +1292,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             end
 
             @testset "CubicSeries" begin
-                sitp = cubic_interp(x, [y1, y2])
+                sitp = cubic_interp(x, Series(y1, y2))
                 @test sitp.search_policy isa AutoSearch
 
                 vals = sitp(0.25)
@@ -1308,7 +1308,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             end
 
             @testset "QuadraticSeries" begin
-                sitp = quadratic_interp(x, [y1, y2])
+                sitp = quadratic_interp(x, Series(y1, y2))
                 @test sitp.search_policy isa AutoSearch
 
                 vals = sitp(0.25)
@@ -1321,7 +1321,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             end
 
             @testset "ConstantSeries" begin
-                sitp = constant_interp(x, [y1, y2])
+                sitp = constant_interp(x, Series(y1, y2))
                 @test sitp.search_policy isa AutoSearch
 
                 vals = sitp(0.25)
@@ -1335,7 +1335,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             end
 
             @testset "Series hint tracking (vector → LinearBinarySearch)" begin
-                sitp = linear_interp(x, [y1, y2])
+                sitp = linear_interp(x, Series(y1, y2))
                 hint = Ref(1)
                 xq_sorted = collect(range(0.1, 0.9, 100))
 
@@ -1407,7 +1407,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             end
 
             @testset "Series: explicit policy" begin
-                sitp = linear_interp(x, [y1, y2]; search=BinarySearch())
+                sitp = linear_interp(x, Series(y1, y2); search=BinarySearch())
                 @test sitp.search_policy isa BinarySearch
 
                 # Scalar call
@@ -1422,7 +1422,7 @@ using FastInterpolations: search_interval, _search_binary, _search_direct, _sear
             end
 
             @testset "Series: call-site override" begin
-                sitp = linear_interp(x, [y1, y2])  # AutoSearch
+                sitp = linear_interp(x, Series(y1, y2))  # AutoSearch
                 @test sitp.search_policy isa AutoSearch
 
                 # Override at call-site

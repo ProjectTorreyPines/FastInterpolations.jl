@@ -344,25 +344,25 @@ end
 function init_series_interp(::Val{:constant}, psi_grid, data::Array{Float64,3})
     _, mpert, _ = size(data)
     # Create vector of y-series in COLUMN-MAJOR order (m1 varies fastest)
-    ys = [data[:, m1, m2] for m2 in 1:mpert for m1 in 1:mpert]
+    ys = Series([data[:, m1, m2] for m2 in 1:mpert for m1 in 1:mpert])
     return FastInterpolations.constant_interp(psi_grid, ys)
 end
 
 function init_series_interp(::Val{:linear}, psi_grid, data::Array{Float64,3})
     _, mpert, _ = size(data)
-    ys = [data[:, m1, m2] for m2 in 1:mpert for m1 in 1:mpert]
+    ys = Series([data[:, m1, m2] for m2 in 1:mpert for m1 in 1:mpert])
     return FastInterpolations.linear_interp(psi_grid, ys)
 end
 
 function init_series_interp(::Val{:quadratic}, psi_grid, data::Array{Float64,3})
     _, mpert, _ = size(data)
-    ys = [data[:, m1, m2] for m2 in 1:mpert for m1 in 1:mpert]
+    ys = Series([data[:, m1, m2] for m2 in 1:mpert for m1 in 1:mpert])
     return FastInterpolations.quadratic_interp(psi_grid, ys)
 end
 
 function init_series_interp(::Val{:cubic}, psi_grid, data::Array{Float64,3})
     _, mpert, _ = size(data)
-    ys = [data[:, m1, m2] for m2 in 1:mpert for m1 in 1:mpert]
+    ys = Series([data[:, m1, m2] for m2 in 1:mpert for m1 in 1:mpert])
     return FastInterpolations.cubic_interp(psi_grid, ys)
 end
 

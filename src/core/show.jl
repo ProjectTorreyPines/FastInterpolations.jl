@@ -436,6 +436,15 @@ function Base.show(io::IO, ::MIME"text/plain", sitp::CubicSeriesInterpolant{Tg, 
 end
 
 # ========================================
+# Show Methods: Series Input Wrapper
+# ========================================
+
+function Base.show(io::IO, s::Series)
+    _show_print(io, "Series", :cyan; bold=true)
+    print(io, "($(n_series(s)) series)")
+end
+
+# ========================================
 # Show Methods: DerivativeView
 # ========================================
 

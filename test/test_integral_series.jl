@@ -8,7 +8,7 @@ using FastInterpolations
     y3 = @. x^2 - x
 
     @testset "CubicSeriesInterpolant" begin
-        sitp = cubic_interp(x, [y1, y2, y3])
+        sitp = cubic_interp(x, Series(y1, y2, y3))
         itp1 = cubic_interp(x, y1)
         itp2 = cubic_interp(x, y2)
         itp3 = cubic_interp(x, y3)
@@ -43,7 +43,7 @@ using FastInterpolations
     end
 
     @testset "LinearSeriesInterpolant" begin
-        sitp = linear_interp(x, [y1, y2])
+        sitp = linear_interp(x, Series(y1, y2))
         itp1 = linear_interp(x, y1)
         itp2 = linear_interp(x, y2)
 
@@ -65,7 +65,7 @@ using FastInterpolations
     end
 
     @testset "QuadraticSeriesInterpolant" begin
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
         itp1 = quadratic_interp(x, y1)
         itp2 = quadratic_interp(x, y2)
 
@@ -89,7 +89,7 @@ using FastInterpolations
     @testset "ConstantSeriesInterpolant" begin
         for side in (LeftSide(), RightSide(), NearestSide())
             @testset "side=$side" begin
-                sitp = constant_interp(x, [y1, y2]; side=side)
+                sitp = constant_interp(x, Series(y1, y2); side=side)
                 itp1 = constant_interp(x, y1; side=side)
                 itp2 = constant_interp(x, y2; side=side)
 
@@ -114,13 +114,13 @@ using FastInterpolations
         y2 = cos.(x)
 
         @testset "extrap=NoExtrap() throws DomainError" begin
-            sitp = cubic_interp(x, [y1, y2]; extrap=NoExtrap())
+            sitp = cubic_interp(x, Series(y1, y2); extrap=NoExtrap())
             @test_throws DomainError integrate(sitp, -0.1, 0.5)
             @test_throws DomainError integrate(sitp, 0.5, 1.1)
         end
 
         @testset "extrap=ConstExtrap()" begin
-            sitp = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
+            sitp = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
             itp1 = cubic_interp(x, y1; extrap=ConstExtrap())
             itp2 = cubic_interp(x, y2; extrap=ConstExtrap())
             result = integrate(sitp, -0.5, 1.5)
@@ -129,7 +129,7 @@ using FastInterpolations
         end
 
         @testset "extrap=ExtendExtrap()" begin
-            sitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+            sitp = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
             itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
             itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
             result = integrate(sitp, -0.1, 1.1)
@@ -138,7 +138,7 @@ using FastInterpolations
         end
 
         @testset "extrap=WrapExtrap()" begin
-            sitp = cubic_interp(x, [y1, y2]; extrap=WrapExtrap())
+            sitp = cubic_interp(x, Series(y1, y2); extrap=WrapExtrap())
             itp1 = cubic_interp(x, y1; extrap=WrapExtrap())
             itp2 = cubic_interp(x, y2; extrap=WrapExtrap())
             result = integrate(sitp, -0.5, 2.5)
@@ -147,7 +147,7 @@ using FastInterpolations
         end
 
         @testset "linear extrap=ConstExtrap()" begin
-            sitp = linear_interp(x, [y1, y2]; extrap=ConstExtrap())
+            sitp = linear_interp(x, Series(y1, y2); extrap=ConstExtrap())
             itp1 = linear_interp(x, y1; extrap=ConstExtrap())
             itp2 = linear_interp(x, y2; extrap=ConstExtrap())
             result = integrate(sitp, -0.5, 1.5)

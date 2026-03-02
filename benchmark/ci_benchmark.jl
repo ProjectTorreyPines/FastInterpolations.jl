@@ -169,15 +169,15 @@ for ns in MULTI_SERIES
 
     # Construction benchmark
     clear_cubic_cache!()
-    cubic_interp(x, ys)  # prime cache
-    let b = @benchmarkable cubic_interp($x, $ys) setup=(GC.gc())
+    cubic_interp(x, Series(ys))  # prime cache
+    let b = @benchmarkable cubic_interp($x, Series($ys)) setup=(GC.gc())
         b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
         suite["8_cubic_multi"]["construct_s$(slabel)_q$(qlabel)"] = b
     end
 
     # Vector evaluation benchmark (batch query) - in-place for zero-alloc measurement
     clear_cubic_cache!()
-    mitp = cubic_interp(x, ys)
+    mitp = cubic_interp(x, Series(ys))
     xq_multi = collect(range(0.1, 9.9, N_QUERY_MULTI))
     # Pre-allocate outputs: one vector per series, each of length N_QUERY_MULTI
     outputs_multi = [Vector{Float64}(undef, N_QUERY_MULTI) for _ in 1:ns]

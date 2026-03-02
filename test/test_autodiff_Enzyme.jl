@@ -106,7 +106,7 @@ else
         @testset "Series Interpolant (broken - array mutation)" begin
             y1 = sin.(x)
             y2 = cos.(x)
-            sitp = linear_interp(x, [y1, y2]; extrap=ExtendExtrap())
+            sitp = linear_interp(x, Series(y1, y2); extrap=ExtendExtrap())
 
             @test_broken begin
                 f(xq) = sum(sitp(xq))

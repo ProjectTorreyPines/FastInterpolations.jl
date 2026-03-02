@@ -18,7 +18,7 @@ using FastInterpolations
         y1 = exp.(2im .* π .* x)
         y2 = (1.0 + 2.0im) .* collect(x)
 
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         # Type checks
         @test sitp isa CubicSeriesInterpolant{Float64, ComplexF64}
@@ -46,7 +46,7 @@ using FastInterpolations
         y1 = Complex{Float32}.(exp.(2im .* π .* Float32.(x)))
         y2 = Complex{Float32}.((1.0f0 + 2.0f0im) .* collect(x))
 
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         @test sitp isa CubicSeriesInterpolant{Float32, ComplexF32}
         @test grid_type(sitp) == Float32
@@ -65,7 +65,7 @@ using FastInterpolations
         y1 = Complex{Int}[i + 2im*i for i in 0:10]  # Linear: (1+2i)*x
         y2 = Complex{Int}[2i + 1im*i for i in 0:10]  # Linear: (2+i)*x
 
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         # x promoted to Float64, y promoted to ComplexF64
         @test sitp isa CubicSeriesInterpolant{Float64, ComplexF64}
@@ -85,10 +85,11 @@ using FastInterpolations
         y1 = ComplexF64.(exp.(2im .* π .* x))  # ComplexF64
         y2 = ComplexF64.((1.0 + 2.0im) .* x)
 
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
-        # Grid stays Float32, values are ComplexF64
-        @test sitp isa CubicSeriesInterpolant{Float32, ComplexF64}
+        # Grid widens to Float64 to preserve ComplexF64 value precision
+        # (_value_type(ComplexF64, Tg) = Complex{Tg}, so grid must be ≥ Float64)
+        @test sitp isa CubicSeriesInterpolant{Float64, ComplexF64}
 
         vals = sitp(0.5)
         @test vals isa Vector{ComplexF64}
@@ -103,7 +104,7 @@ using FastInterpolations
         y2 = (2.0 - 1.0im) .* collect(x)  # Linear
         Y = hcat(y1, y2)  # 11×2 matrix
 
-        sitp = cubic_interp(x, Y)
+        sitp = cubic_interp(x, Series(Y))
 
         @test sitp isa CubicSeriesInterpolant{Float64, ComplexF64}
         @test length(sitp(0.5)) == 2  # Two series
@@ -121,7 +122,7 @@ using FastInterpolations
         y1 = (1.0 + 2.0im) .* collect(x)  # Linear complex function
         y2 = (2.0 - 1.0im) .* collect(x)
 
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         # Vector query
         xq = [0.25, 0.5, 0.75]
@@ -145,7 +146,7 @@ using FastInterpolations
         y1 = (1.0 + 2.0im) .* collect(x)
         y2 = (2.0 - 1.0im) .* collect(x)
 
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         output = Vector{ComplexF64}(undef, 2)
         sitp(output, 0.5)
@@ -160,7 +161,7 @@ using FastInterpolations
         y1 = (1.0 + 2.0im) .* collect(x)
         y2 = (2.0 - 1.0im) .* collect(x)
 
-        sitp = cubic_interp(collect(x), [y1, y2])
+        sitp = cubic_interp(collect(x), Series(y1, y2))
 
         xq = collect(range(0.1, 0.9, 5))
         outputs = [Vector{ComplexF64}(undef, 5) for _ in 1:2]
@@ -180,14 +181,14 @@ using FastInterpolations
         y2 = (2.0 - 1.0im) .* collect(x)
 
         # Extension mode
-        sitp_ext = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+        sitp_ext = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
         vals_ext = sitp_ext(1.5)  # Beyond domain
         @test vals_ext isa Vector{ComplexF64}
         # Linear function extended by cubic spline
         @test isapprox(vals_ext[1], (1.0 + 2.0im) * 1.5, rtol=1e-10)
 
         # Constant mode
-        sitp_const = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
+        sitp_const = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
         vals_const = sitp_const(1.5)  # Beyond domain
         @test vals_const isa Vector{ComplexF64}
         @test isapprox(vals_const[1], y1[end], rtol=1e-10)
@@ -201,7 +202,7 @@ using FastInterpolations
         y1 = rand(ComplexF64, 11)
         y2 = rand(ComplexF64, 11)
 
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         # Scalar evaluation should be type-stable
         @test @inferred(sitp(0.5)) isa Vector{ComplexF64}
@@ -215,7 +216,7 @@ using FastInterpolations
         y1 = rand(ComplexF64, 101)
         y2 = rand(ComplexF64, 101)
 
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
         output = Vector{ComplexF64}(undef, 2)
 
         # Warmup
@@ -239,7 +240,7 @@ using FastInterpolations
         d = 2.0 + 2.0im   # constant
         y = [a*xi^3 + b*xi^2 + c*xi + d for xi in x]
 
-        sitp = cubic_interp(x, [y])
+        sitp = cubic_interp(x, Series(y))
 
         # First derivative: 3ax^2 + 2bx + c
         xq = 0.5
@@ -263,11 +264,11 @@ using FastInterpolations
         y = exp.(2im .* π .* x)  # Complex exponential
 
         # Zero-Curvature BC (default)
-        sitp_natural = cubic_interp(x, [y]; bc=ZeroCurvBC())
+        sitp_natural = cubic_interp(x, Series(y); bc=ZeroCurvBC())
         @test sitp_natural isa CubicSeriesInterpolant{Float64, ComplexF64}
 
         # Zero-Slope BC
-        sitp_clamped = cubic_interp(x, [y]; bc=ZeroSlopeBC())
+        sitp_clamped = cubic_interp(x, Series(y); bc=ZeroSlopeBC())
         @test sitp_clamped isa CubicSeriesInterpolant{Float64, ComplexF64}
 
         # Both should produce valid interpolations
@@ -284,7 +285,7 @@ using FastInterpolations
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
 
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         # Type checks for backward compatibility
         @test sitp isa CubicSeriesInterpolant{Float64, Float64}
@@ -305,7 +306,7 @@ using FastInterpolations
         y1 = sin.(x32)
         y2 = cos.(x32)
 
-        sitp = cubic_interp(x32, [y1, y2])
+        sitp = cubic_interp(x32, Series(y1, y2))
         @test sitp isa CubicSeriesInterpolant{Float32, Float32}
 
         # Float64 query promotes output to Float64 (lossless - wider type)
@@ -324,7 +325,7 @@ using FastInterpolations
         a, b, c, d = 1.0+1.0im, -2.0-3.0im, 1.0-1.0im, 2.0+2.0im
         y = [a*xi^3 + b*xi^2 + c*xi + d for xi in x]
 
-        sitp = cubic_interp(x, [y])
+        sitp = cubic_interp(x, Series(y))
 
         # Test at several points (not on grid)
         for xq in [0.15, 0.35, 0.65, 0.85]
@@ -346,7 +347,7 @@ using FastInterpolations
         # exp(0) = 1, exp(2im*π) = 1 ✓
         @test isapprox(y[1], y[end], atol=1e-10)
 
-        sitp = cubic_interp(x, [y]; bc=PeriodicBC())
+        sitp = cubic_interp(x, Series(y); bc=PeriodicBC())
         @test sitp isa CubicSeriesInterpolant{Float64, ComplexF64}
 
         # Values should be smooth across the boundary
@@ -363,7 +364,7 @@ using FastInterpolations
         x = range(0.0, 1.0, 11)
         y = exp.(2im .* π .* x)
 
-        sitp = cubic_interp(x, [y])
+        sitp = cubic_interp(x, Series(y))
 
         # Should display type info correctly
         str = sprint(show, sitp)

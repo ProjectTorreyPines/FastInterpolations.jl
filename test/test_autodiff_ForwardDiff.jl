@@ -108,7 +108,7 @@ const FI = FastInterpolations
         x = collect(range(0.0, 2π, 21))
         y1 = sin.(x)
         y2 = cos.(x)
-        sitp = linear_interp(x, [y1, y2]; extrap=ExtendExtrap())
+        sitp = linear_interp(x, Series(y1, y2); extrap=ExtendExtrap())
 
         @testset "derivative matches analytical (interior points)" begin
             # Test at interior points only (not at grid points)
@@ -147,7 +147,7 @@ const FI = FastInterpolations
             x_lin = collect(0.0:0.5:5.0)
             y1_lin = 2.0 .* x_lin
             y2_lin = -x_lin .+ 5.0
-            sitp_lin = linear_interp(x_lin, [y1_lin, y2_lin]; extrap=ExtendExtrap())
+            sitp_lin = linear_interp(x_lin, Series(y1_lin, y2_lin); extrap=ExtendExtrap())
 
             xq = 2.25
             fd_derivs = ForwardDiff.derivative(sitp_lin, xq)
@@ -326,7 +326,7 @@ const FI = FastInterpolations
         x = collect(0.0:1.0:5.0)
         y1 = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0]
         y2 = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
-        sitp = constant_interp(x, [y1, y2]; side=LeftSide(), extrap=ExtendExtrap())
+        sitp = constant_interp(x, Series(y1, y2); side=LeftSide(), extrap=ExtendExtrap())
 
         @testset "series derivative is zero" begin
             # ForwardDiff.derivative on series returns vector of derivatives
@@ -690,7 +690,7 @@ const FI = FastInterpolations
         x = collect(range(0.0, 2π, 21))
         y1 = sin.(x)
         y2 = cos.(x)
-        sitp = quadratic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+        sitp = quadratic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
 
         @testset "derivative matches analytical (interior points)" begin
             # Test at interior points only (not at grid points)
@@ -729,7 +729,7 @@ const FI = FastInterpolations
             x_quad = collect(0.0:0.5:5.0)
             y1_quad = x_quad .^ 2
             y2_quad = 2.0 .* x_quad .^ 2
-            sitp_quad = quadratic_interp(x_quad, [y1_quad, y2_quad]; extrap=ExtendExtrap())
+            sitp_quad = quadratic_interp(x_quad, Series(y1_quad, y2_quad); extrap=ExtendExtrap())
 
             xq = 2.25
             fd_derivs = ForwardDiff.derivative(sitp_quad, xq)
@@ -744,7 +744,7 @@ const FI = FastInterpolations
             x32 = Float32.(collect(range(0.0, 2π, 21)))
             y1_32 = sin.(x32)
             y2_32 = cos.(x32)
-            sitp32 = quadratic_interp(x32, [y1_32, y2_32]; extrap=ExtendExtrap())
+            sitp32 = quadratic_interp(x32, Series(y1_32, y2_32); extrap=ExtendExtrap())
 
             xq = 1.5f0
             fd_derivs = ForwardDiff.derivative(sitp32, xq)
@@ -779,7 +779,7 @@ const FI = FastInterpolations
         # Complex series
         y1_complex = (1.0 + 1.0im) .* sin.(x)
         y2_complex = (2.0 - 1.0im) .* cos.(x)
-        sitp = quadratic_interp(x, [y1_complex, y2_complex]; extrap=ExtendExtrap())
+        sitp = quadratic_interp(x, Series(y1_complex, y2_complex); extrap=ExtendExtrap())
 
         @testset "complex derivative" begin
             xq = 1.5
@@ -808,7 +808,7 @@ const FI = FastInterpolations
         x = collect(range(0.0, 2π, 21))
         y1 = sin.(x)
         y2 = cos.(x)
-        sitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+        sitp = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
 
         @testset "derivative matches analytical (interior points)" begin
             # Test at interior points only (not at grid points)
@@ -847,7 +847,7 @@ const FI = FastInterpolations
             x_cub = collect(0.0:0.5:5.0)
             y1_cub = x_cub .^ 3
             y2_cub = 2.0 .* x_cub .^ 3
-            sitp_cub = cubic_interp(x_cub, [y1_cub, y2_cub]; extrap=ExtendExtrap(), bc=CubicFit())
+            sitp_cub = cubic_interp(x_cub, Series(y1_cub, y2_cub); extrap=ExtendExtrap(), bc=CubicFit())
 
             xq = 2.25
             fd_derivs = ForwardDiff.derivative(sitp_cub, xq)
@@ -862,7 +862,7 @@ const FI = FastInterpolations
             x32 = Float32.(collect(range(0.0, 2π, 21)))
             y1_32 = sin.(x32)
             y2_32 = cos.(x32)
-            sitp32 = cubic_interp(x32, [y1_32, y2_32]; extrap=ExtendExtrap())
+            sitp32 = cubic_interp(x32, Series(y1_32, y2_32); extrap=ExtendExtrap())
 
             xq = 1.5f0
             fd_derivs = ForwardDiff.derivative(sitp32, xq)
@@ -897,7 +897,7 @@ const FI = FastInterpolations
         # Complex series
         y1_complex = (1.0 + 1.0im) .* sin.(x)
         y2_complex = (2.0 - 1.0im) .* cos.(x)
-        sitp = cubic_interp(x, [y1_complex, y2_complex]; extrap=ExtendExtrap())
+        sitp = cubic_interp(x, Series(y1_complex, y2_complex); extrap=ExtendExtrap())
 
         @testset "complex derivative" begin
             xq = 1.5

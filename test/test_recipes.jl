@@ -115,31 +115,31 @@ using RecipesBase
     # ========================================
     @testset "Multi-Series Interpolants" begin
         @testset "LinearSeriesInterpolant" begin
-            sitp = linear_interp(x, y_matrix)
+            sitp = linear_interp(x, Series(y_matrix))
             recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), sitp)
             @test !isempty(recipes)
         end
 
         @testset "ConstantSeriesInterpolant" begin
-            sitp = constant_interp(x, y_matrix)
+            sitp = constant_interp(x, Series(y_matrix))
             recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), sitp)
             @test !isempty(recipes)
         end
 
         @testset "QuadraticSeriesInterpolant" begin
-            sitp = quadratic_interp(x, y_matrix)
+            sitp = quadratic_interp(x, Series(y_matrix))
             recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), sitp)
             @test !isempty(recipes)
         end
 
         @testset "CubicSeriesInterpolant" begin
-            sitp = cubic_interp(x, y_matrix)
+            sitp = cubic_interp(x, Series(y_matrix))
             recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), sitp)
             @test !isempty(recipes)
         end
 
         @testset "series_idx options" begin
-            sitp = cubic_interp(x, y_matrix)
+            sitp = cubic_interp(x, Series(y_matrix))
 
             # First series only
             recipes = RecipesBase.apply_recipe(

@@ -348,87 +348,67 @@ end
 # Constructors
 # ========================================
 
+# ========================================
+# Series Constructor (canonical entry point)
+# ========================================
+
 """
-    quadratic_interp(x, ys::AbstractVector{<:AbstractVector}; bc=Left(QuadraticFit()), extrap=NoExtrap())
+    quadratic_interp(x, Series(y1, y2, ...); bc=Left(QuadraticFit()), extrap=NoExtrap(), search=AutoSearch())
+    quadratic_interp(x, Series([y1, y2, ...]); ...)
+    quadratic_interp(x, Series(Y::AbstractMatrix); ...)
 
 Create a multi-Y quadratic series interpolant for multiple y-data series sharing the same x-grid.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
-- `ys`: Vector of y-value vectors (all same length as x)
+- `s::Series`: Wrapped series data (varargs, vector-of-vectors, or matrix)
 - `bc`: Boundary condition (Left/Right with QuadraticFit, Deriv1, Deriv2, MinCurvFit)
 - `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, or `ExtendExtrap()`
-
-# Returns
-`QuadraticSeriesInterpolant` object with unified matrix storage.
+- `search::AbstractSearchPolicy`: Search policy for interval lookup
 
 # Example
 ```julia
 x = collect(range(0.0, 1.0, 101))
-y1 = sin.(2π .* x)
-y2 = cos.(2π .* x)
-y3 = exp.(-x)
-
-sitp = quadratic_interp(x, [y1, y2, y3])
-vals = sitp(0.5)  # Returns [val1, val2, val3]
+sitp = quadratic_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
 ```
 """
-# Hot path: x is AbstractFloat, ys elements can be Tg or Complex{Tg}
 function quadratic_interp(
     x::AbstractVector{Tg},
-    ys::AbstractVector{<:AbstractVector{Tv}};
+    s::Series;
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
-    search::P=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
-    # Check if Tv's float base requires grid widening (not for Int types)
-    # Int-based types (Complex{Int}) are handled by internal _value_type conversion
+    search::AbstractSearchPolicy=AutoSearch()
+) where {Tg<:AbstractFloat}
+    # Type promotion: widen grid if y's float base is wider than Tg
+    Tv = _series_eltype(s)
     Tv_real = _real_eltype(Tv)
-    if Tv_real !== Tg && Tv_real <: AbstractFloat
-        Tg_new = promote_type(Tg, Tv_real)
-        x_promoted = _to_float(x, Tg_new)
-        bc_typed = _promote_bc(bc, Tg_new)
-        return quadratic_interp(x_promoted, ys; bc=bc_typed, extrap, search)
+    Tg_new = Tv_real <: AbstractFloat ? promote_type(Tg, Tv_real) : Tg
+    if Tg_new !== Tg
+        return quadratic_interp(_to_float(x, Tg_new), s; bc=_promote_bc(bc, Tg_new), extrap, search)
     end
 
-    _validate_series_inputs(x, ys)
-
     n_pts = length(x)
-    n_ser = length(ys)
-
-    # Promote Tv to appropriate type based on Tg
     Tv_out = _value_type(Tv, Tg)
+    y_mat, n_ser = _build_series_mat(s, n_pts, Tv_out)
 
-    # Allocate matrices (n_points × n_series)
-    y_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
-    a_mat = Matrix{Tv_out}(undef, n_pts, n_ser)  # Padded to n_pts for uniform size
+    # Allocate coefficient matrices
+    a_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
     d_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
-
-    # Shared grid spacing (computed once, always real)
     h = Vector{Tg}(undef, n_pts - 1)
 
-    # Compute coefficients for each series
-    for (k, y_k) in enumerate(ys)
-        # Convert y values to output type
-        y_typed = Tv_out.(y_k)
-        @inbounds for i in 1:n_pts
-            y_mat[i, k] = y_typed[i]
-        end
+    # Compute coefficients for each series from y_mat columns
+    for k in 1:n_ser
+        y_col = @view y_mat[:, k]
+        h_k, d_k, a_k = _compute_quadratic_coeffs(x, y_col, bc)
 
-        # Compute coefficients (h, d, a) for this series
-        h_k, d_k, a_k = _compute_quadratic_coeffs(x, y_typed, bc)
-
-        # Store in matrices
         @inbounds for i in 1:n_pts
             d_mat[i, k] = d_k[i]
         end
         @inbounds for i in 1:(n_pts-1)
             a_mat[i, k] = a_k[i]
         end
-        # Pad last row of a_mat with zero
         a_mat[n_pts, k] = zero(Tv_out)
 
-        # Copy h (same for all series, but computed fresh - just use the last one)
         if k == 1
             copyto!(h, h_k)
         end
@@ -437,68 +417,16 @@ function quadratic_interp(
     return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, h, extrap, search)
 end
 
-# Matrix input: columns as y-series
-"""
-    quadratic_interp(x, Y::AbstractMatrix; bc=Left(QuadraticFit()), extrap=NoExtrap())
-
-Create a multi-Y quadratic series interpolant from a matrix where each column is a y-series.
-
-# Arguments
-- `x::AbstractVector`: x-coordinates (length n)
-- `Y::AbstractMatrix`: n×m matrix, each column is a y-series
-- `bc`, `extrap`: Same as vector form
-
-# Example
-```julia
-x = collect(range(0.0, 1.0, 101))
-Y = hcat(sin.(2π .* x), cos.(2π .* x))  # 101×2 matrix
-
-sitp = quadratic_interp(x, Y)
-```
-"""
+# Real grid promotion (Int, etc.) → convert to float and delegate
 function quadratic_interp(
     x::AbstractVector{Tg},
-    Y::AbstractMatrix{Tv};
+    s::Series;
     bc::QuadraticBC=Left(QuadraticFit()),
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
-    ys = [Y[:, k] for k in axes(Y, 2)]
-    return quadratic_interp(x, ys; bc=bc, extrap=extrap, search=search)
-end
-
-# ========================================
-# Type Promotion Wrappers (Int, mixed types)
-# ========================================
-# POLICY: Tg is computed from x and real part of y element types
-
-# Vector-of-vectors wrapper for non-AbstractFloat x
-function quadratic_interp(
-    x::AbstractVector{Tg},
-    ys::AbstractVector{<:AbstractVector{Tv}};
-    bc=Left(QuadraticFit()),
-    extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv}
-    # Compute promoted grid type (Tg may be Int, promotes to Float)
-    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
-    x_typed = _to_float(x, Tg_float)
-    bc_typed = _promote_bc(bc, Tg_float)
-    return quadratic_interp(x_typed, ys; bc=bc_typed, extrap, search)
-end
-
-# Matrix wrapper for non-AbstractFloat x
-function quadratic_interp(
-    x::AbstractVector{Tg},
-    Y::AbstractMatrix{Tv};
-    bc=Left(QuadraticFit()),
-    extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv}
-    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
-    x_typed = _to_float(x, Tg_float)
-    bc_typed = _promote_bc(bc, Tg_float)
-    return quadratic_interp(x_typed, Y; bc=bc_typed, extrap, search)
+) where {Tg<:Real}
+    Tg_float = float(promote_type(Tg, _real_eltype(_series_eltype(s))))
+    return quadratic_interp(_to_float(x, Tg_float), s; bc=_promote_bc(bc, Tg_float), extrap, search)
 end
 
 # ========================================

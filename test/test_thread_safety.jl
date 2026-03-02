@@ -479,7 +479,7 @@ end
 
         x = collect(range(0.0, 1.0, 101))
         y1, y2 = sin.(2π .* x), cos.(2π .* x)
-        mitp = cubic_interp(x, [y1, y2])  # No precompute_transpose
+        mitp = cubic_interp(x, Series(y1, y2))  # No precompute_transpose
 
         # Pre-compute expected values with deterministic query points
         itp1 = cubic_interp(x, y1)
@@ -511,7 +511,7 @@ end
 
         x = collect(range(0.0, 1.0, 101))
         y1, y2, y3 = sin.(2π .* x), cos.(2π .* x), exp.(-3 .* x)
-        mitp = cubic_interp(x, [y1, y2, y3]; precompute_transpose=true)
+        mitp = cubic_interp(x, Series(y1, y2, y3); precompute_transpose=true)
 
         # Pre-compute expected values with deterministic query points
         itp1 = cubic_interp(x, y1)
@@ -543,7 +543,7 @@ end
 
         x = collect(range(0.0, 1.0, 101))
         y1, y2 = sin.(2π .* x), cos.(2π .* x)
-        mitp = cubic_interp(x, [y1, y2]; precompute_transpose=true)
+        mitp = cubic_interp(x, Series(y1, y2); precompute_transpose=true)
 
         # Pre-compute expected values with deterministic query points
         itp1 = cubic_interp(x, y1)
@@ -575,7 +575,7 @@ end
 
         x = collect(range(0.0, 1.0, 101))
         y1, y2 = sin.(2π .* x), cos.(2π .* x)
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
 
         # Pre-compute expected values
         itp1 = cubic_interp(x, y1)
@@ -612,7 +612,7 @@ end
             try
                 y1 = sin.(2π .* x .+ i * 0.01)
                 y2 = cos.(2π .* x .+ i * 0.01)
-                mitp = cubic_interp(x, [y1, y2]; autocache=true)
+                mitp = cubic_interp(x, Series(y1, y2); autocache=true)
                 result = mitp(0.5)
                 @assert length(result) == 2
             catch

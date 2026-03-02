@@ -57,7 +57,7 @@ nothing #hide
 ```@example ad
 # Series interpolant support
 y1, y2 = sin.(x), cos.(x)
-sitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+sitp = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
 grad_series = ForwardDiff.derivative(q -> sum(sitp(q)), 1.5)
 nothing #hide
 ```

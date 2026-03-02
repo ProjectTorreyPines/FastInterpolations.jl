@@ -503,7 +503,7 @@ const ATOL = 1e-14
         Y = [sin.(π .* x) cos.(π .* x) x.^2]
 
         # Series interpolant with Deriv3 BC
-        itp = cubic_interp(x, Y; bc=Deriv3(0.0))
+        itp = cubic_interp(x, Series(Y); bc=Deriv3(0.0))
         @test itp isa CubicSeriesInterpolant
 
         # Should work for all series
@@ -511,7 +511,7 @@ const ATOL = 1e-14
         @test all(isfinite, itp(0.5))
 
         # With mixed BC
-        itp_mixed = cubic_interp(x, Y; bc=BCPair(Deriv3(0.0), Deriv1(0.0)))
+        itp_mixed = cubic_interp(x, Series(Y); bc=BCPair(Deriv3(0.0), Deriv1(0.0)))
         @test itp_mixed isa CubicSeriesInterpolant
         @test all(isfinite, itp_mixed(0.5))
     end

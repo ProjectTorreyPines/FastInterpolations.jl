@@ -44,7 +44,7 @@ end
         FI = FastInterpolations
 
         x = collect(0.0:0.1:1.0)
-        sitp = cubic_interp(x, [sin.(2π .* x), cos.(2π .* x)])
+        sitp = cubic_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
 
         @test FI.n_series(sitp) == 2
         @test FI._get_grid(sitp) ≈ x
@@ -61,7 +61,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3])
+    mitp = cubic_interp(x, Series(y1, y2, y3))
 
     @testset "Has matrix storage fields (not itps)" begin
         # After unification: has matrix storage
@@ -105,10 +105,10 @@ end
     end
 
     @testset "Extrap is AbstractExtrap type" begin
-        mitp_ext = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+        mitp_ext = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
         @test mitp_ext.extrap === ExtendExtrap()
 
-        mitp_const = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
+        mitp_const = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
         @test mitp_const.extrap === ConstExtrap()
     end
 end
@@ -122,16 +122,16 @@ end
     y3 = exp.(-3 .* x)
 
     @testset "n_series and n_points helpers" begin
-        mitp = cubic_interp(x, [y1, y2, y3])
+        mitp = cubic_interp(x, Series(y1, y2, y3))
         @test FI.n_series(mitp) == 3
         @test FI.n_points(mitp) == 101
     end
 
     @testset "n_series with different counts" begin
-        mitp1 = cubic_interp(x, [y1])
+        mitp1 = cubic_interp(x, Series(y1))
         @test FI.n_series(mitp1) == 1
 
-        mitp5 = cubic_interp(x, [y1, y2, y3, y1, y2])
+        mitp5 = cubic_interp(x, Series(y1, y2, y3, y1, y2))
         @test FI.n_series(mitp5) == 5
     end
 end
@@ -144,7 +144,7 @@ end
         y1_64 = sin.(2π .* x64)
         y2_64 = cos.(2π .* x64)
 
-        mitp64 = cubic_interp(x64, [y1_64, y2_64])
+        mitp64 = cubic_interp(x64, Series(y1_64, y2_64))
         @test mitp64 isa FI.CubicSeriesInterpolant{Float64}
     end
 
@@ -153,7 +153,7 @@ end
         y1_32 = sin.(2f0 * Float32(π) .* x32)
         y2_32 = cos.(2f0 * Float32(π) .* x32)
 
-        mitp32 = cubic_interp(x32, [y1_32, y2_32])
+        mitp32 = cubic_interp(x32, Series(y1_32, y2_32))
         @test mitp32 isa FI.CubicSeriesInterpolant{Float32}
     end
 end
@@ -170,7 +170,7 @@ end
     y2 = cos.(2π .* x)
 
     @testset "precompute_transpose option" begin
-        mitp = cubic_interp(x, [y1, y2]; precompute_transpose=true)
+        mitp = cubic_interp(x, Series(y1, y2); precompute_transpose=true)
 
         # _transpose should be populated immediately
         snap = FI._get_snapshot(mitp._transpose)
@@ -181,7 +181,7 @@ end
     end
 
     @testset "Lazy transpose (precompute_transpose=false)" begin
-        mitp = cubic_interp(x, [y1, y2])  # default precompute_transpose=false
+        mitp = cubic_interp(x, Series(y1, y2))  # default precompute_transpose=false
 
         # Initially empty
         snap = FI._get_snapshot(mitp._transpose)
@@ -193,7 +193,7 @@ end
         y1_r = sin.(2π .* collect(x_range))
         y2_r = cos.(2π .* collect(x_range))
 
-        mitp = cubic_interp(x_range, [y1_r, y2_r])
+        mitp = cubic_interp(x_range, Series(y1_r, y2_r))
         @test mitp.cache.x isa AbstractRange
     end
 
@@ -201,11 +201,11 @@ end
         # Create periodic data (endpoints match)
         y_periodic = sin.(2π .* x)  # sin(0) = sin(2π) = 0
 
-        mitp = cubic_interp(x, [y_periodic]; bc=PeriodicBC(), extrap=NoExtrap())
+        mitp = cubic_interp(x, Series(y_periodic); bc=PeriodicBC(), extrap=NoExtrap())
         @test mitp.extrap === WrapExtrap()
 
         # Even if user requests :extension, periodic BC should override to :wrap
-        mitp2 = cubic_interp(x, [y_periodic]; bc=PeriodicBC(), extrap=ExtendExtrap())
+        mitp2 = cubic_interp(x, Series(y_periodic); bc=PeriodicBC(), extrap=ExtendExtrap())
         @test mitp2.extrap === WrapExtrap()
     end
 end
@@ -222,7 +222,7 @@ end
     y2 = cos.(2π .* x)
 
     @testset "Grid knot exactness" begin
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
         for (i, xi) in enumerate(x)
             vals = mitp(xi)
             @test vals[1] ≈ y1[i] atol=1e-14
@@ -231,7 +231,7 @@ end
     end
 
     @testset "Lazy point-layout triggered by scalar eval" begin
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
 
         # Initially empty
         snap = FI._get_snapshot(mitp._transpose)
@@ -245,7 +245,7 @@ end
     end
 
     @testset "_ensure_point_layout! idempotency" begin
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
         y_pt1, z_pt1 = _ensure_point_layout!(mitp)
         y_pt2, z_pt2 = _ensure_point_layout!(mitp)
         @test y_pt1 === y_pt2  # Same reference (idempotent)
@@ -253,13 +253,13 @@ end
     end
 
     @testset "DimensionMismatch for wrong output size" begin
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
         out_wrong = zeros(5)  # Wrong size (should be 2)
         @test_throws DimensionMismatch mitp(out_wrong, 0.5)
     end
 
     @testset "Scalar zero-alloc after precompute" begin
-        mitp = cubic_interp(x, [y1, y2]; precompute_transpose=true)
+        mitp = cubic_interp(x, Series(y1, y2); precompute_transpose=true)
         out = zeros(2)
         mitp(out, 0.5)  # Warmup
 
@@ -268,7 +268,7 @@ end
     end
 
     @testset "Invalid deriv=4 throws" begin
-        mitp = cubic_interp(x, [y1])
+        mitp = cubic_interp(x, Series(y1))
         @test_throws TypeError mitp(0.5; deriv=4)
     end
 end
@@ -285,7 +285,7 @@ end
     y2 = cos.(2π .* x)
 
     @testset "Output layout series-first" begin
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
         xq_vec = [0.2, 0.4, 0.6]
         outputs = mitp(xq_vec)
 
@@ -297,7 +297,7 @@ end
     end
 
     @testset "DimensionMismatch for wrong container size" begin
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
         xq_vec = [0.1, 0.3, 0.5]
 
         outputs_wrong = [zeros(3)]  # Only 1 series (should be 2)
@@ -305,7 +305,7 @@ end
     end
 
     @testset "Anchor reuse produces identical results" begin
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
         xq_vec = [0.2, 0.5, 0.8]
         aq_vec = FI._anchor_query(x, xq_vec, Val(:cubic))
 
@@ -321,7 +321,7 @@ end
 
     @testset "Finite difference derivative verification" begin
         y_poly = x .^ 3 .- 2 .* x .^ 2 .+ x
-        mitp = cubic_interp(x, [y_poly])
+        mitp = cubic_interp(x, Series(y_poly))
         xq = 0.4
         h = 1e-6
 
@@ -332,7 +332,7 @@ end
 
     @testset "Derivatives with all BC types" begin
         for bc in [ZeroCurvBC(), ZeroSlopeBC()]
-            mitp = cubic_interp(x, [y1, y2]; bc=bc)
+            mitp = cubic_interp(x, Series(y1, y2); bc=bc)
             itp1 = cubic_interp(x, y1; bc=bc)
 
             d1_multi = mitp(0.5; deriv=DerivOp(1))
@@ -342,7 +342,7 @@ end
         # PeriodicBC requires matching endpoints
         y1_periodic = sin.(2π .* x)
         y2_periodic = cos.(2π .* x)
-        mitp_periodic = cubic_interp(x, [y1_periodic, y2_periodic]; bc=PeriodicBC())
+        mitp_periodic = cubic_interp(x, Series(y1_periodic, y2_periodic); bc=PeriodicBC())
         itp1_periodic = cubic_interp(x, y1_periodic; bc=PeriodicBC())
 
         d1_multi = mitp_periodic(0.5; deriv=DerivOp(1))
@@ -363,7 +363,7 @@ end
 
     @testset "Memory footprint - lazy transpose" begin
         ys = [rand(101) for _ in 1:10]
-        mitp = cubic_interp(x, ys)
+        mitp = cubic_interp(x, Series(ys))
 
         size_before = Base.summarysize(mitp)
         _ = mitp(0.5)  # Triggers lazy layout creation
@@ -374,7 +374,7 @@ end
     end
 
     @testset "_ensure_point_layout! allocates only once" begin
-        mitp = cubic_interp(x, [y1])
+        mitp = cubic_interp(x, Series(y1))
         _ensure_point_layout!(mitp)  # First call (warmup)
 
         # Use direct import to ensure proper escape analysis
@@ -383,7 +383,7 @@ end
     end
 
     @testset "Scalar deriv=DerivOp(1) zero-alloc" begin
-        mitp = cubic_interp(x, [y1, y2]; precompute_transpose=true)
+        mitp = cubic_interp(x, Series(y1, y2); precompute_transpose=true)
         out = zeros(2)
         mitp(out, 0.5; deriv=DerivOp(1))  # Warmup
 
@@ -392,7 +392,7 @@ end
     end
 
     @testset "Vector deriv=DerivOp(1) zero-alloc with pool" begin
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
         xq = collect(range(0.1, 0.9, 100))
         outputs = [zeros(100) for _ in 1:2]
 
@@ -416,7 +416,7 @@ end
     y2 = cos.(2π .* x)
 
     @testset "precompute_transpose! function" begin
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
 
         # Initially empty
         snap = FI._get_snapshot(mitp._transpose)
@@ -437,7 +437,7 @@ end
         y_periodic2 = cos.(2π .* x)  # cos(0) = cos(2π) = 1
         y_periodic2[end] = y_periodic2[1]  # Ensure exact match
 
-        mitp = cubic_interp(x, [y_periodic, y_periodic2]; bc=PeriodicBC())
+        mitp = cubic_interp(x, Series(y_periodic, y_periodic2); bc=PeriodicBC())
 
         # Query outside domain triggers WrapExtrap() extrapolation
         out = zeros(2)
@@ -452,12 +452,12 @@ end
         y_bad = sin.(2π .* x)
         y_bad[end] = 999.0  # Force mismatch
 
-        @test_throws ArgumentError cubic_interp(x, [y_bad]; bc=PeriodicBC())
+        @test_throws ArgumentError cubic_interp(x, Series(y_bad); bc=PeriodicBC())
     end
 
     @testset "precompute_transpose with periodic BC" begin
         y_periodic = sin.(2π .* x)
-        mitp = cubic_interp(x, [y_periodic]; bc=PeriodicBC(), precompute_transpose=true)
+        mitp = cubic_interp(x, Series(y_periodic); bc=PeriodicBC(), precompute_transpose=true)
 
         # Should have point layout immediately
         snap = FI._get_snapshot(mitp._transpose)
@@ -466,27 +466,27 @@ end
 
     @testset "Matrix input with row dimension mismatch" begin
         Y_wrong = rand(50, 3)  # 50 rows but x has 101 points
-        @test_throws DimensionMismatch cubic_interp(x, Y_wrong)
+        @test_throws DimensionMismatch cubic_interp(x, Series(Y_wrong))
     end
 
     @testset "Matrix input with periodic BC" begin
         Y_periodic = hcat(sin.(2π .* x), cos.(2π .* x))
         Y_periodic[end, 2] = Y_periodic[1, 2]  # Fix endpoint
 
-        mitp = cubic_interp(x, Y_periodic; bc=PeriodicBC())
+        mitp = cubic_interp(x, Series(Y_periodic); bc=PeriodicBC())
         @test mitp.extrap === WrapExtrap()
     end
 
     @testset "Matrix input with precompute_transpose" begin
         Y = hcat(y1, y2)
-        mitp = cubic_interp(x, Y; precompute_transpose=true)
+        mitp = cubic_interp(x, Series(Y); precompute_transpose=true)
 
         snap = FI._get_snapshot(mitp._transpose)
         @test snap !== nothing
     end
 
     @testset "Anchored query path dimension errors" begin
-        mitp = cubic_interp(x, [y1, y2, sin.(x)])
+        mitp = cubic_interp(x, Series(y1, y2, sin.(x)))
         xq_vec = [0.1, 0.3, 0.5]
         aq_vec = FI._anchor_query(x, xq_vec, Val(:cubic))
 
@@ -500,7 +500,7 @@ end
     end
 
     @testset "Vector extrapolation ExtendExtrap() mode" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
@@ -511,7 +511,7 @@ end
     end
 
     @testset "Vector extrapolation ConstExtrap() mode" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
@@ -527,7 +527,7 @@ end
         y_periodic2 = cos.(2π .* x)
         y_periodic2[end] = y_periodic2[1]
 
-        mitp = cubic_interp(x, [y_periodic, y_periodic2]; bc=PeriodicBC())
+        mitp = cubic_interp(x, Series(y_periodic, y_periodic2); bc=PeriodicBC())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
@@ -538,7 +538,7 @@ end
     end
 
     @testset "Scalar extrapolation ConstExtrap() with derivative" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
 
         # First derivative outside domain should be zero
         out1 = zeros(2)
@@ -568,7 +568,7 @@ end
     end
 
     @testset "Vector extrapolation ConstExtrap() with derivative" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
@@ -580,7 +580,7 @@ end
     end
 
     @testset "DomainError message includes bounds" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=NoExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap=NoExtrap())
 
         # Scalar path
         err = try
@@ -618,7 +618,7 @@ end
 
     @testset "Construction from Vector of y-series" begin
         # 2-arg form returns CubicSeriesInterpolant
-        mitp = cubic_interp(x, [y1, y2, y3])
+        mitp = cubic_interp(x, Series(y1, y2, y3))
         @test mitp isa FI.CubicSeriesInterpolant
 
         # Unified structure: has matrix storage
@@ -628,19 +628,19 @@ end
 
     @testset "Construction from Matrix (columns as series)" begin
         Y = hcat(y1, y2, y3)  # 101×3 matrix
-        mitp = cubic_interp(x, Y)
+        mitp = cubic_interp(x, Series(Y))
         @test mitp isa FI.CubicSeriesInterpolant
         @test FI.n_series(mitp) == 3
     end
 
     @testset "Single series works" begin
-        mitp = cubic_interp(x, [y1])
+        mitp = cubic_interp(x, Series(y1))
         @test mitp isa FI.CubicSeriesInterpolant
         @test FI.n_series(mitp) == 1
     end
 
     @testset "Type inference - Float64" begin
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
         @test mitp isa FI.CubicSeriesInterpolant{Float64}
     end
 
@@ -648,7 +648,7 @@ end
         x32 = Float32.(x)
         y1_32 = Float32.(y1)
         y2_32 = Float32.(y2)
-        mitp = cubic_interp(x32, [y1_32, y2_32])
+        mitp = cubic_interp(x32, Series(y1_32, y2_32))
         @test mitp isa FI.CubicSeriesInterpolant{Float32}
     end
 end
@@ -662,7 +662,7 @@ end
     y3 = exp.(-3 .* x)
 
     @testset "Single shared cache (unified struct)" begin
-        mitp = cubic_interp(x, [y1, y2, y3])
+        mitp = cubic_interp(x, Series(y1, y2, y3))
 
         # Unified struct has a single cache field (not itps)
         @test mitp.cache isa FI.CubicSplineCache
@@ -671,14 +671,14 @@ end
 
     @testset "Cache sharing with different BC types" begin
         # CubicFit (default)
-        mitp_natural = cubic_interp(x, [y1, y2])
+        mitp_natural = cubic_interp(x, Series(y1, y2))
         @test mitp_natural.cache isa FI.CubicSplineCache
         @test mitp_natural.cache.bc_config isa BCPair
 
         # PeriodicBC
         y1_periodic = copy(y1); y1_periodic[end] = y1_periodic[1]
         y2_periodic = copy(y2); y2_periodic[end] = y2_periodic[1]
-        mitp_periodic = cubic_interp(x, [y1_periodic, y2_periodic]; bc=PeriodicBC())
+        mitp_periodic = cubic_interp(x, Series(y1_periodic, y2_periodic); bc=PeriodicBC())
         @test mitp_periodic.cache isa FI.CubicSplineCache
         @test mitp_periodic.cache.bc_config isa FI.PeriodicData
     end
@@ -692,29 +692,29 @@ end
     y2 = cos.(2π .* x)
 
     @testset "Empty ys throws error" begin
-        @test_throws Union{ArgumentError, AssertionError} cubic_interp(x, Vector{Float64}[])
+        @test_throws ArgumentError cubic_interp(x, Series(Vector{Float64}[]))
     end
 
     @testset "Mismatched lengths throws error" begin
         y_short = y1[1:50]
-        @test_throws Union{DimensionMismatch, ArgumentError, AssertionError} cubic_interp(x, [y1, y_short])
+        @test_throws Union{DimensionMismatch, ArgumentError, AssertionError} cubic_interp(x, Series(y1, y_short))
     end
 
     @testset "BC propagation" begin
         # CubicFit (default) - check bc_config field (unified struct)
-        mitp_natural = cubic_interp(x, [y1, y2])
+        mitp_natural = cubic_interp(x, Series(y1, y2))
         @test mitp_natural.cache.bc_config isa BCPair
 
         # PeriodicBC - check bc_config is PeriodicData
         y1_periodic = copy(y1); y1_periodic[end] = y1_periodic[1]
         y2_periodic = copy(y2); y2_periodic[end] = y2_periodic[1]
-        mitp_periodic = cubic_interp(x, [y1_periodic, y2_periodic]; bc=PeriodicBC())
+        mitp_periodic = cubic_interp(x, Series(y1_periodic, y2_periodic); bc=PeriodicBC())
         @test mitp_periodic.cache.bc_config isa FastInterpolations.PeriodicData
     end
 
     @testset "Extrap propagation" begin
         for extrap_mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
-            mitp = cubic_interp(x, [y1, y2]; extrap=extrap_mode)
+            mitp = cubic_interp(x, Series(y1, y2); extrap=extrap_mode)
             @test mitp.extrap === extrap_mode
         end
     end
@@ -732,7 +732,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
 
     @testset "Returns Vector with correct values" begin
         result = mitp(0.35)
@@ -783,7 +783,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
 
     @testset "Fills output correctly" begin
         output = Vector{Float64}(undef, 3)
@@ -822,7 +822,7 @@ end
     y2 = cos.(2π .* x)
 
     @testset "extrap=NoExtrap() - throws DomainError" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=NoExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap=NoExtrap())
 
         # Inside domain works
         @test isfinite(mitp(0.5)[1])
@@ -833,7 +833,7 @@ end
     end
 
     @testset "extrap=ConstExtrap() - boundary values" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=ConstExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
 
         below = mitp(-0.5)
         @test below[1] ≈ y1[1]
@@ -845,7 +845,7 @@ end
     end
 
     @testset "extrap=ExtendExtrap() - boundary polynomial" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
         itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
         itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
 
@@ -859,7 +859,7 @@ end
     end
 
     @testset "extrap=WrapExtrap() - wrapped coordinates" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=WrapExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap=WrapExtrap())
 
         # Query outside domain should wrap
         result = mitp(1.35)  # wraps to 0.35
@@ -883,7 +883,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
     xq = [0.15, 0.35, 0.5, 0.75]
 
     @testset "Returns container of Vector{T}" begin
@@ -910,7 +910,7 @@ end
         itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
         itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
 
-        mitp2 = cubic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+        mitp2 = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
 
         d1 = mitp2(xq; deriv=DerivOp(1))
         @test d1[1] ≈ itp1(xq; deriv=DerivOp(1)) atol=1e-14
@@ -930,7 +930,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
     xq = collect(range(0.1, 0.9, 50))
 
     @testset "Fills all buffers correctly" begin
@@ -1007,7 +1007,7 @@ end
     y2 = cos.(2π .* x)
 
     @testset "extrap=NoExtrap() - throws on out-of-domain" begin
-        mitp = cubic_interp(x, [y1, y2]; extrap=NoExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap=NoExtrap())
         xq_bad = [-0.1, 0.5, 1.1]
 
         @test_throws DomainError mitp(xq_bad)
@@ -1015,7 +1015,7 @@ end
 
     @testset "All extrap modes work with vector" begin
         for mode in (ConstExtrap(), ExtendExtrap(), WrapExtrap())
-            mitp = cubic_interp(x, [y1, y2]; extrap=mode)
+            mitp = cubic_interp(x, Series(y1, y2); extrap=mode)
             xq = [0.15, 0.5, 0.85]
             result = mitp(xq)
             @test length(result) == 2
@@ -1038,7 +1038,7 @@ end
     x_original = copy(x)
     y1_original = copy(y1)
 
-    mitp = cubic_interp(x, [y1, y2])
+    mitp = cubic_interp(x, Series(y1, y2))
 
     @testset "External x modification has no effect" begin
         result_before = mitp(0.5)
@@ -1049,7 +1049,7 @@ end
 
     @testset "External y modification has no effect" begin
         x .= x_original  # Restore
-        mitp2 = cubic_interp(x, [copy(y1), copy(y2)])
+        mitp2 = cubic_interp(x, Series(copy(y1), copy(y2)))
         result_before = mitp2(0.5)
         y1[1] = 999.0  # Mutate external y
         result_after = mitp2(0.5)
@@ -1064,7 +1064,7 @@ end
     y1_32 = sin.(Float32(2π) .* x32)
     y2_32 = cos.(Float32(2π) .* x32)
 
-    mitp32 = cubic_interp(x32, [y1_32, y2_32])
+    mitp32 = cubic_interp(x32, Series(y1_32, y2_32))
 
     @testset "Float32 inputs produce Float32 outputs" begin
         result = mitp32(Float32(0.5))
@@ -1075,7 +1075,7 @@ end
         x64 = Float64.(x32)
         y1_64 = Float64.(y1_32)
         y2_64 = Float64.(y2_32)
-        mitp64 = cubic_interp(x64, [y1_64, y2_64])
+        mitp64 = cubic_interp(x64, Series(y1_64, y2_64))
 
         result32 = mitp32(Float32(0.35))
         result64 = mitp64(0.35)
@@ -1094,7 +1094,7 @@ end
 
     @testset "Large number of series (10+)" begin
         ys = [sin.(k .* x) for k in 1:12]
-        mitp = cubic_interp(x, ys)
+        mitp = cubic_interp(x, Series(ys))
         @test FI.n_series(mitp) == 12
 
         result = mitp(0.5)
@@ -1106,13 +1106,13 @@ end
         y1_nu = sin.(2π .* x_nu)
         y2_nu = cos.(2π .* x_nu)
 
-        mitp = cubic_interp(x_nu, [y1_nu, y2_nu])
+        mitp = cubic_interp(x_nu, Series(y1_nu, y2_nu))
         result = mitp(0.3)
         @test length(result) == 2
     end
 
     @testset "Query at grid points" begin
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
         for xi in [0.0, 0.5, 1.0]
             result = mitp(xi)
             @test length(result) == 2
@@ -1120,7 +1120,7 @@ end
     end
 
     @testset "Integer query auto-promoted" begin
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
         result = mitp(0)  # Int
         @test result isa AbstractVector{Float64}
     end
@@ -1142,7 +1142,7 @@ end
         y1 = sin.(Float64.(x_int))
         y2 = cos.(Float64.(x_int))
 
-        mitp = cubic_interp(x_int, [y1, y2])
+        mitp = cubic_interp(x_int, Series(y1, y2))
         @test mitp isa FI.CubicSeriesInterpolant{Float64}
 
         result = mitp(5.5)
@@ -1154,7 +1154,7 @@ end
         x_int = collect(1:10)  # Integer vector
         Y_int = [i * j for i in 1:10, j in 1:3]  # Integer matrix
 
-        mitp = cubic_interp(x_int, Y_int)
+        mitp = cubic_interp(x_int, Series(Y_int))
         @test mitp isa FI.CubicSeriesInterpolant{Float64}
         @test FI.n_series(mitp) == 3
 
@@ -1168,7 +1168,7 @@ end
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
 
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
 
         # Float32 query points with Float64 interpolant
         xq_f32 = Float32[0.1, 0.3, 0.5, 0.7, 0.9]
@@ -1193,7 +1193,7 @@ end
         y1_int = collect(1:20)
         y2_int = collect(20:-1:1)
 
-        mitp = cubic_interp(x_int, [y1_int, y2_int])
+        mitp = cubic_interp(x_int, Series(y1_int, y2_int))
         @test mitp isa FI.CubicSeriesInterpolant{Float64}
 
         result = mitp(10.5)
@@ -1217,7 +1217,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
 
     @testset "zero allocation after warmup (same size)" begin
         xq = collect(range(0.1, 0.9, 100))
@@ -1316,7 +1316,7 @@ end
     y2 = cos.(2π .* x)
     y3 = x .^ 3 .- 2 .* x .^ 2 .+ x  # polynomial for easy derivative verification
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
 
     # Create individual interpolants for reference comparison
     itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
@@ -1467,7 +1467,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
     xq = collect(range(0.1, 0.9, 50))
 
     @testset "Container in-place with derivatives - zero allocation (deriv=DerivOp(1))" begin
@@ -1550,7 +1550,7 @@ end
         y3 = 3.0 .* x      # slope = 3
 
         # Each series uses its actual slope as BC
-        sitp = cubic_interp(x, [y1, y2, y3]; bc=[
+        sitp = cubic_interp(x, Series(y1, y2, y3); bc=[
             BCPair(Deriv1(1.0), Deriv1(1.0)),
             BCPair(Deriv1(2.0), Deriv1(2.0)),
             BCPair(Deriv1(3.0), Deriv1(3.0)),
@@ -1575,7 +1575,7 @@ end
         y3 = x.^2
 
         # Different BC types for each series
-        sitp = cubic_interp(x, [y1, y2, y3]; bc=[
+        sitp = cubic_interp(x, Series(y1, y2, y3); bc=[
             ZeroCurvBC(),                          # Zero-Curvature BC
             BCPair(Deriv1(0.0), Deriv1(0.0)),      # Zero-Slope BC
             BCPair(Deriv2(2.0), Deriv2(2.0)),      # Constant curvature = 2
@@ -1604,7 +1604,7 @@ end
         y2 = 2.0 .* x
         Y = hcat(y1, y2)  # 11×2 matrix
 
-        sitp = cubic_interp(x, Y; bc=[
+        sitp = cubic_interp(x, Series(Y); bc=[
             BCPair(Deriv1(1.0), Deriv1(1.0)),
             BCPair(Deriv1(2.0), Deriv1(2.0)),
         ])
@@ -1621,7 +1621,7 @@ end
         # Cubic: y = x^3, y''' = 6
         y_cubic = x.^3
 
-        sitp = cubic_interp(x, [y_quad, y_cubic]; bc=[
+        sitp = cubic_interp(x, Series(y_quad, y_cubic); bc=[
             BCPair(Deriv2(2.0), Deriv2(2.0)),      # Quadratic's curvature
             BCPair(Deriv3(6.0), Deriv3(6.0)),      # Cubic's third derivative
         ])
@@ -1642,8 +1642,8 @@ end
         y1, y2 = sin.(x), cos.(x)
 
         # Length mismatch → DimensionMismatch
-        @test_throws DimensionMismatch cubic_interp(x, [y1, y2]; bc=[ZeroCurvBC()])
-        @test_throws DimensionMismatch cubic_interp(x, [y1, y2]; bc=[ZeroCurvBC(), ZeroCurvBC(), ZeroCurvBC()])
+        @test_throws DimensionMismatch cubic_interp(x, Series(y1, y2); bc=[ZeroCurvBC()])
+        @test_throws DimensionMismatch cubic_interp(x, Series(y1, y2); bc=[ZeroCurvBC(), ZeroCurvBC(), ZeroCurvBC()])
     end
 
     @testset "PeriodicBC in array - not supported" begin
@@ -1652,7 +1652,7 @@ end
         y2 = cos.(2π .* x)
 
         # PeriodicBC not supported in arrays
-        @test_throws ArgumentError cubic_interp(x, [y1, y2]; bc=[
+        @test_throws ArgumentError cubic_interp(x, Series(y1, y2); bc=[
             PeriodicBC(),
             ZeroCurvBC(),
         ])
@@ -1663,7 +1663,7 @@ end
         y1 = 1.0 .* x      # slope = 1
         y2 = 2.0 .* x      # slope = 2
 
-        sitp = cubic_interp(x, [y1, y2]; bc=[
+        sitp = cubic_interp(x, Series(y1, y2); bc=[
             BCPair(Deriv1(1.0), Deriv1(1.0)),
             BCPair(Deriv1(2.0), Deriv1(2.0)),
         ])
@@ -1692,7 +1692,7 @@ end
         y3 = exp.(-3 .* x)
 
         # Create with per-series BC (mixed types)
-        sitp = cubic_interp(x, [y1, y2, y3]; bc=[
+        sitp = cubic_interp(x, Series(y1, y2, y3); bc=[
             ZeroCurvBC(),
             BCPair(Deriv1(0.0), Deriv1(0.0)),
             BCPair(Deriv2(0.0), Deriv2(0.0)),
@@ -1715,7 +1715,7 @@ end
         y2 = cos.(2π .* x)
 
         # Create with same BC type, different values
-        sitp = cubic_interp(x, [y1, y2]; bc=[
+        sitp = cubic_interp(x, Series(y1, y2); bc=[
             BCPair(Deriv1(1.0), Deriv1(-1.0)),
             BCPair(Deriv1(0.5), Deriv1(-0.5)),
         ])
@@ -1740,7 +1740,7 @@ end
         y2 = cos.(2π .* x)
 
         # Create with mixed BC types
-        sitp = cubic_interp(x, [y1, y2]; bc=[
+        sitp = cubic_interp(x, Series(y1, y2); bc=[
             ZeroCurvBC(),
             BCPair(Deriv1(0.0), Deriv1(0.0)),
         ], precompute_transpose=true)
@@ -1821,7 +1821,7 @@ end
         y2 = x .^ 3       # d³/dx³ = 6
         y3 = sin.(2π .* x)  # d³/dx³ = -8π³cos(2πx)
 
-        mitp = cubic_interp(x, [y1, y2, y3])
+        mitp = cubic_interp(x, Series(y1, y2, y3))
         xq = [0.2, 0.4, 0.6, 0.8]
 
         # Pre-build anchors
@@ -1844,7 +1844,7 @@ end
         y1 = x .^ 4
         y2 = x .^ 3
 
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
         xq = collect(range(0.1, 0.9, 20))
 
         # Pre-build anchors
@@ -1864,7 +1864,7 @@ end
         y1 = exp.(-x)
         y2 = x .^ 5
 
-        mitp = cubic_interp(x, [y1, y2])
+        mitp = cubic_interp(x, Series(y1, y2))
         itp1 = cubic_interp(x, y1)
         itp2 = cubic_interp(x, y2)
 
@@ -1896,7 +1896,7 @@ end
     xq_out = [-0.15, -0.05, 0.5, 1.05, 1.15]
 
     @testset ":extension mode with pre-built anchors" begin
-        mitp = cubic_interp(x, [y1, y2, y3]; extrap=ExtendExtrap())
+        mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
 
         # Pre-build anchors (will have side != 0x00 for out-of-domain points)
         aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
@@ -1926,7 +1926,7 @@ end
     end
 
     @testset ":constant mode with pre-built anchors" begin
-        mitp = cubic_interp(x, [y1, y2, y3]; extrap=ConstExtrap())
+        mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ConstExtrap())
 
         aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
         outputs = [similar(xq_out) for _ in 1:3]
@@ -1958,7 +1958,7 @@ end
     end
 
     @testset ":none mode with pre-built anchors throws DomainError" begin
-        mitp = cubic_interp(x, [y1, y2, y3]; extrap=NoExtrap())
+        mitp = cubic_interp(x, Series(y1, y2, y3); extrap=NoExtrap())
 
         aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
         outputs = [similar(xq_out) for _ in 1:3]
@@ -1972,7 +1972,7 @@ end
         y1_per = sin.(x_per)
         y2_per = cos.(x_per)
 
-        mitp = cubic_interp(x_per, [y1_per, y2_per]; bc=PeriodicBC())
+        mitp = cubic_interp(x_per, Series(y1_per, y2_per); bc=PeriodicBC())
 
         # Query points outside domain should wrap
         xq_wrap = [-0.5, 0.5, 2π + 0.5, 4π + 0.5]

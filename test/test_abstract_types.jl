@@ -69,7 +69,7 @@ using FastInterpolations
     @testset "CubicSeriesInterpolant subtypes AbstractSeriesInterpolant" begin
         x = collect(range(0.0, 1.0, 11))
         y1, y2 = sin.(x), cos.(x)
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
 
         @test sitp isa FastInterpolations.AbstractSeriesInterpolant
         @test sitp isa FastInterpolations.AbstractSeriesInterpolant{Float64}
@@ -79,7 +79,7 @@ using FastInterpolations
     @testset "LinearSeriesInterpolant subtypes AbstractSeriesInterpolant" begin
         x = collect(range(0.0, 1.0, 11))
         y1, y2 = sin.(x), cos.(x)
-        sitp = linear_interp(x, [y1, y2])
+        sitp = linear_interp(x, Series(y1, y2))
 
         @test sitp isa FastInterpolations.AbstractSeriesInterpolant
         @test sitp isa FastInterpolations.AbstractSeriesInterpolant{Float64}
@@ -89,7 +89,7 @@ using FastInterpolations
     @testset "ConstantSeriesInterpolant subtypes AbstractSeriesInterpolant" begin
         x = collect(range(0.0, 1.0, 11))
         y1, y2 = sin.(x), cos.(x)
-        sitp = constant_interp(x, [y1, y2])
+        sitp = constant_interp(x, Series(y1, y2))
 
         @test sitp isa FastInterpolations.AbstractSeriesInterpolant
         @test sitp isa FastInterpolations.AbstractSeriesInterpolant{Float64}
@@ -99,7 +99,7 @@ using FastInterpolations
     @testset "QuadraticSeriesInterpolant subtypes AbstractSeriesInterpolant" begin
         x = collect(range(0.0, 1.0, 11))
         y1, y2 = sin.(x), cos.(x)
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
 
         @test sitp isa FastInterpolations.AbstractSeriesInterpolant
         @test sitp isa FastInterpolations.AbstractSeriesInterpolant{Float64}
@@ -126,7 +126,7 @@ using FastInterpolations
         @test itp_cubic isa FastInterpolations.AbstractInterpolant{Float32}
 
         y1, y2 = sin.(x), cos.(x)
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
         @test sitp isa FastInterpolations.AbstractSeriesInterpolant{Float32}
     end
 

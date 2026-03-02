@@ -81,7 +81,7 @@ end
     y3 = exp.(-x)
     ys = [y1, y2, y3]
 
-    sitp = cubic_interp(x, ys)
+    sitp = cubic_interp(x, Series(ys))
 
     @testset "scalar evaluation unchanged" begin
         result = sitp(0.5)

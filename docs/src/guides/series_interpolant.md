@@ -17,7 +17,11 @@ Instead of creating N separate interpolants and querying them in a loop, SeriesI
 
 ---
 
-## Creating a SeriesInterpolant
+## The [`Series`](@ref) Wrapper
+
+Multi-series data must be wrapped with [`Series`](@ref) to distinguish it from vector-valued interpolation data (e.g., `Vector{SVector}`). `Series` is a **zero-cost input tag** — it is consumed at construction time and never stored in the interpolant.
+
+Three input forms are supported:
 
 ```julia
 using FastInterpolations
@@ -25,22 +29,26 @@ using FastInterpolations
 x = range(0, 10, 100)
 y1, y2, y3, y4 = sin.(x), cos.(x), tan.(x), exp.(-x)
 
-# From Vector of Vectors
-sitp = cubic_interp(x, [y1, y2, y3, y4])
+# Varargs — most readable for a few series
+sitp = cubic_interp(x, Series(y1, y2, y3, y4))
 
-# From Matrix (columns = series)
-Y_matrix = hcat(y1, y2, y3, y4)  # 100×4 matrix
-sitp = cubic_interp(x, Y_matrix)
+# Vector of vectors — convenient when series are computed dynamically
+ys = [sin.(x .+ i) for i in 1:10]
+sitp = cubic_interp(x, Series(ys))
+
+# Matrix (columns = series) — for columnar data
+Y = hcat(y1, y2, y3, y4)   # 100×4 matrix
+sitp = cubic_interp(x, Series(Y))
 ```
 
-!!! note "Flexible Input"
-    Any `AbstractMatrix` works — reshape your data as `(n_points × n_series)` and pass it directly.
+All interpolation methods support `Series`:
 
-All interpolation methods support SeriesInterpolant:
-- `constant_interp(x, y_series)`
-- `linear_interp(x, y_series)`
-- `quadratic_interp(x, y_series)`
-- `cubic_interp(x, y_series)`
+| Method | Example |
+|:-------|:--------|
+| `constant_interp` | `constant_interp(x, Series(y1, y2))` |
+| `linear_interp` | `linear_interp(x, Series(y1, y2))` |
+| `quadratic_interp` | `quadratic_interp(x, Series(y1, y2))` |
+| `cubic_interp` | `cubic_interp(x, Series(y1, y2))` |
 
 ---
 
@@ -124,7 +132,7 @@ y_series = [n * x.^3 for n in 1:100]
 itps = [cubic_interp(x, y) for y in y_series]
 
 # SeriesInterpolant
-sitp = cubic_interp(x, y_series)
+sitp = cubic_interp(x, Series(y_series))
 
 # Scalar query comparison (in-place, zero allocation)
 out = zeros(length(y_series))

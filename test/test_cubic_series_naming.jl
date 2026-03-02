@@ -14,13 +14,13 @@ using FastInterpolations
     end
 
     @testset "CubicSeriesInterpolant constructor works" begin
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
         @test sitp isa CubicSeriesInterpolant
     end
 
     @testset "AbstractSeriesInterpolant supertype" begin
         @test isdefined(FastInterpolations, :AbstractSeriesInterpolant)
-        sitp = cubic_interp(x, [y1, y2])
+        sitp = cubic_interp(x, Series(y1, y2))
         @test sitp isa AbstractSeriesInterpolant
     end
 end

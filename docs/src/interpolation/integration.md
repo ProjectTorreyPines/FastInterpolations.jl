@@ -65,7 +65,7 @@ x = range(0.0, 1.0, 30)
 # Data with 2 channels
 Y = hcat(sin.(π .* x), cos.(π .* x))
 
-sitp = cubic_interp(x, Y)
+sitp = cubic_interp(x, Series(Y))
 
 # Returns [∫ sin, ∫ cos]
 integrate(sitp, 0.0, 1.0)

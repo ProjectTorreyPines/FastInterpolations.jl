@@ -34,8 +34,8 @@ const FI = FastInterpolations
     # ========================================
 
     @testset "LinearSeriesInterpolant" begin
-        sitp_range = linear_interp(x_range, ys)
-        sitp_vector = linear_interp(x_vector, ys)
+        sitp_range = linear_interp(x_range, Series(ys))
+        sitp_vector = linear_interp(x_vector, Series(ys))
 
         @testset "grid type preservation" begin
             @test sitp_range.x isa StepRangeLen
@@ -75,8 +75,8 @@ const FI = FastInterpolations
     # ========================================
 
     @testset "ConstantSeriesInterpolant" begin
-        sitp_range = constant_interp(x_range, ys)
-        sitp_vector = constant_interp(x_vector, ys)
+        sitp_range = constant_interp(x_range, Series(ys))
+        sitp_vector = constant_interp(x_vector, Series(ys))
 
         @testset "grid type preservation" begin
             @test sitp_range.x isa StepRangeLen
@@ -109,8 +109,8 @@ const FI = FastInterpolations
     # ========================================
 
     @testset "QuadraticSeriesInterpolant" begin
-        sitp_range = quadratic_interp(x_range, ys)
-        sitp_vector = quadratic_interp(x_vector, ys)
+        sitp_range = quadratic_interp(x_range, Series(ys))
+        sitp_vector = quadratic_interp(x_vector, Series(ys))
 
         @testset "grid type preservation" begin
             @test sitp_range.x isa StepRangeLen
@@ -152,7 +152,7 @@ const FI = FastInterpolations
     @testset "extrapolation modes" begin
         for extrap in [ConstExtrap(), ExtendExtrap()]
             @testset "LinearSeriesInterpolant extrap=$extrap" begin
-                sitp = linear_interp(x_range, ys; extrap=extrap)
+                sitp = linear_interp(x_range, Series(ys); extrap=extrap)
 
                 # Query outside domain
                 @test_nowarn sitp(-0.1)

@@ -302,154 +302,62 @@ end
 # Constructors
 # ========================================
 
-"""
-    constant_interp(x, ys::AbstractVector{<:AbstractVector}; side=NearestSide(), extrap=NoExtrap())
+# ========================================
+# Series Constructor (canonical entry point)
+# ========================================
 
-Create a multi-Y constant interpolant for multiple y-data series sharing the same x-grid.
+"""
+    constant_interp(x, Series(y1, y2, ...); side=NearestSide(), extrap=NoExtrap(), search=AutoSearch())
+    constant_interp(x, Series([y1, y2, ...]); ...)
+    constant_interp(x, Series(Y::AbstractMatrix); ...)
+
+Create a multi-Y constant (step) interpolant for multiple y-data series sharing the same x-grid.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
-- `ys`: Vector of y-value vectors (all same length as x)
-- `side`: Side for discontinuities (LeftSide(), RightSide(), NearestSide())
+- `s::Series`: Wrapped series data (varargs, vector-of-vectors, or matrix)
+- `side::AbstractSide`: `NearestSide()`, `LeftSide()`, or `RightSide()`
 - `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
-
-# Returns
-`ConstantSeriesInterpolant` object with matrix storage.
+- `search::AbstractSearchPolicy`: Search policy for interval lookup
 
 # Example
 ```julia
 x = collect(range(0.0, 1.0, 101))
-y1 = sin.(2π .* x)
-y2 = cos.(2π .* x)
-y3 = exp.(-x)
-
-sitp = constant_interp(x, [y1, y2, y3])
-vals = sitp(0.5)
-```
-"""
-# Hot path: x is AbstractFloat, ys elements can be Tg or Complex{Tg}
-function constant_interp(
-    x::AbstractVector{Tg},
-    ys::AbstractVector{<:AbstractVector{Tv}};
-    side::AbstractSide=NearestSide(),
-    extrap::AbstractExtrap=NoExtrap(),
-    search::P=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
-    # Check if Tv's float base requires grid widening (not for Int types)
-    # Int-based types (Complex{Int}) are handled by internal _value_type conversion
-    Tv_real = _real_eltype(Tv)
-    if Tv_real !== Tg && Tv_real <: AbstractFloat
-        Tg_new = promote_type(Tg, Tv_real)
-        x_promoted = _to_float(x, Tg_new)
-        return constant_interp(x_promoted, ys; side, extrap, search)
-    end
-
-    # Validate input
-    @assert !isempty(ys) "ys must not be empty"
-
-    n_pts = length(x)
-    n_series_count = length(ys)
-
-    # Validate all y-series have same length as x
-    for (k, y) in enumerate(ys)
-        if length(y) != n_pts
-            throw(DimensionMismatch(
-                "y-series $k has length $(length(y)), expected $n_pts (length of x)"
-            ))
-        end
-    end
-
-    # Build y matrix (n_points × n_series) series-contiguous
-    # Promote Tv to appropriate type based on Tg
-    Tv_out = _value_type(Tv, Tg)
-    y_mat = Matrix{Tv_out}(undef, n_pts, n_series_count)
-    @inbounds for k in 1:n_series_count
-        y_mat[:, k] .= Tv_out.(ys[k])
-    end
-
-    return ConstantSeriesInterpolant(x, y_mat, extrap, side, search)
-end
-
-# Matrix input: columns as y-series
-"""
-    constant_interp(x, Y::AbstractMatrix; side=NearestSide(), extrap=NoExtrap())
-
-Create a multi-Y constant interpolant from a matrix where each column is a y-series.
-
-# Arguments
-- `x::AbstractVector`: x-coordinates (length n)
-- `Y::AbstractMatrix`: n×m matrix, each column is a y-series
-- `side`, `extrap`: Same as vector form
-
-# Example
-```julia
-x = collect(range(0.0, 1.0, 101))
-Y = hcat(sin.(2π .* x), cos.(2π .* x))  # 101×2 matrix
-
-sitp = constant_interp(x, Y)
+sitp = constant_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
 ```
 """
 function constant_interp(
     x::AbstractVector{Tg},
-    Y::AbstractMatrix{Tv};
+    s::Series;
     side::AbstractSide=NearestSide(),
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
-    # Check if Tv's float base requires grid widening
+) where {Tg<:AbstractFloat}
+    # Type promotion: widen grid if y's float base is wider than Tg
+    Tv = _series_eltype(s)
     Tv_real = _real_eltype(Tv)
-    if Tv_real !== Tg && Tv_real <: AbstractFloat
-        Tg_new = promote_type(Tg, Tv_real)
-        x_promoted = _to_float(x, Tg_new)
-        return constant_interp(x_promoted, Y; side, extrap, search)
+    Tg_new = Tv_real <: AbstractFloat ? promote_type(Tg, Tv_real) : Tg
+    if Tg_new !== Tg
+        return constant_interp(_to_float(x, Tg_new), s; side, extrap, search)
     end
 
     n_pts = length(x)
-
-    # Validate dimensions
-    if size(Y, 1) != n_pts
-        throw(DimensionMismatch(
-            "Y has $(size(Y, 1)) rows but x has $n_pts points (expected n_points × n_series matrix)"
-        ))
-    end
-
-    # Promote Tv to appropriate type based on Tg
     Tv_out = _value_type(Tv, Tg)
-    y_mat = Tv_out === Tv ? copy(Y) : Tv_out.(Y)
+    y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
 
     return ConstantSeriesInterpolant(x, y_mat, extrap, side, search)
 end
 
-# ========================================
-# Type Promotion Wrappers (Int, mixed types)
-# ========================================
-# POLICY: Tg is computed from x and real part of y element types
-
-# Vector-of-vectors wrapper for non-AbstractFloat x
+# Real grid promotion (Int, etc.) → convert to float and delegate
 function constant_interp(
     x::AbstractVector{Tg},
-    ys::AbstractVector{<:AbstractVector{Tv}};
+    s::Series;
     side::AbstractSide=NearestSide(),
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv}
-    # Compute promoted grid type (Tg may be Int, promotes to Float)
-    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
-    x_typed = _to_float(x, Tg_float)
-    return constant_interp(x_typed, ys; side, extrap, search)
-end
-
-# Matrix wrapper for non-AbstractFloat x
-function constant_interp(
-    x::AbstractVector{Tg},
-    Y::AbstractMatrix{Tv};
-    side::AbstractSide=NearestSide(),
-    extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv}
-    Tg_float = float(promote_type(Tg, _real_eltype(Tv)))
-    x_typed = _to_float(x, Tg_float)
-    return constant_interp(x_typed, Y; side, extrap, search)
+) where {Tg<:Real}
+    Tg_float = float(promote_type(Tg, _real_eltype(_series_eltype(s))))
+    return constant_interp(_to_float(x, Tg_float), s; side, extrap, search)
 end
 
 # ========================================

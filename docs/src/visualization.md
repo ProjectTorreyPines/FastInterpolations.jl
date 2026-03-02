@@ -42,7 +42,7 @@ plot(
 x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
 Y = [sin.(x) cos.(x) sin.(x .+ 1)]  # 3 series
 
-sitp = cubic_interp(x, Y; extrap=ExtendExtrap())
+sitp = cubic_interp(x, Series(Y); extrap=ExtendExtrap())
 plot(sitp, title="Multi-Series")
 ```
 
@@ -153,7 +153,7 @@ plot!(p; title="Method Comparison", legend=:outertopright, xlims=(-1.5, 6.5), yl
 ```@example viz
 x = range(0, 2π, 10)
 Y = [sin.(x) cos.(x) tan.(x) ./ 5]
-sitp = cubic_interp(collect(x), Y; extrap=ExtendExtrap())
+sitp = cubic_interp(collect(x), Series(Y); extrap=ExtendExtrap())
 
 plot(
     plot(sitp; series_idx=:all, title="All series"),

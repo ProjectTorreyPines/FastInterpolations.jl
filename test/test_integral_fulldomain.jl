@@ -41,9 +41,9 @@ using FastInterpolations
         y2 = cos.(x)
 
         for (name, mk_scalar, mk_series) in [
-            ("cubic",     (x, y) -> cubic_interp(x, y),     (x, ys) -> cubic_interp(x, ys)),
-            ("linear",    (x, y) -> linear_interp(x, y),    (x, ys) -> linear_interp(x, ys)),
-            ("quadratic", (x, y) -> quadratic_interp(x, y), (x, ys) -> quadratic_interp(x, ys)),
+            ("cubic",     (x, y) -> cubic_interp(x, y),     (x, ys) -> cubic_interp(x, Series(ys))),
+            ("linear",    (x, y) -> linear_interp(x, y),    (x, ys) -> linear_interp(x, Series(ys))),
+            ("quadratic", (x, y) -> quadratic_interp(x, y), (x, ys) -> quadratic_interp(x, Series(ys))),
         ]
             @testset "$name" begin
                 sitp = mk_series(x, [y1, y2])
@@ -60,7 +60,7 @@ using FastInterpolations
         @testset "constant series" begin
             y_c = hcat(collect(1.0:length(x)), collect(length(x):-1.0:1.0))
             for side in (LeftSide(), RightSide(), NearestSide())
-                sitp = constant_interp(x, [y_c[:, 1], y_c[:, 2]]; side=side)
+                sitp = constant_interp(x, Series(y_c[:, 1], y_c[:, 2]); side=side)
                 itp1 = constant_interp(x, y_c[:, 1]; side=side)
                 itp2 = constant_interp(x, y_c[:, 2]; side=side)
                 result = integrate(sitp)

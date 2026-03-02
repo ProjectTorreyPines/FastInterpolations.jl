@@ -818,17 +818,17 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         xq_vec = [0.5, 1.0, 1.5]
 
         @testset "CubicSeriesInterpolant" begin
-            sitp = cubic_interp(xs, ys)
+            sitp = cubic_interp(xs, Series(ys))
 
             # Construction
-            @test @inferred(cubic_interp(xs, ys)) isa CubicSeriesInterpolant
-            @test @inferred(cubic_interp(xs, ys; bc=LinearFit())) isa CubicSeriesInterpolant
-            @test @inferred(cubic_interp(xs, ys; bc=QuadraticFit())) isa CubicSeriesInterpolant
-            @test @inferred(cubic_interp(xs, ys; bc=CubicFit())) isa CubicSeriesInterpolant
-            @test @inferred(cubic_interp(xs, ys; bc=PolyFit{4}())) isa CubicSeriesInterpolant
-            @test @inferred(cubic_interp(xs, ys; bc=BCPair(CubicFit(), Deriv2(0.0)))) isa CubicSeriesInterpolant
-            @test @inferred(cubic_interp(xs, ys; bc=CubicFit(), autocache=true)) isa CubicSeriesInterpolant
-            @test @inferred(cubic_interp(xs, ys; bc=CubicFit(), autocache=false)) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, Series(ys))) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, Series(ys); bc=LinearFit())) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, Series(ys); bc=QuadraticFit())) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, Series(ys); bc=CubicFit())) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, Series(ys); bc=PolyFit{4}())) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, Series(ys); bc=BCPair(CubicFit(), Deriv2(0.0)))) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, Series(ys); bc=CubicFit(), autocache=true)) isa CubicSeriesInterpolant
+            @test @inferred(cubic_interp(xs, Series(ys); bc=CubicFit(), autocache=false)) isa CubicSeriesInterpolant
 
             # Scalar eval → Vector{Float64}
             @test @inferred(sitp(0.5)) isa Vector{Float64}
@@ -846,15 +846,15 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
             @test @inferred(sitp(xq_vec; deriv=DerivOp(1))) isa Vector{Vector{Float64}}
 
             # Extrap variants
-            sitp_ext = cubic_interp(xs, ys; extrap=ExtendExtrap())
+            sitp_ext = cubic_interp(xs, Series(ys); extrap=ExtendExtrap())
             @test @inferred(sitp_ext(0.5)) isa Vector{Float64}
         end
 
         @testset "LinearSeriesInterpolant" begin
-            sitp = linear_interp(xs, ys)
+            sitp = linear_interp(xs, Series(ys))
 
             # Construction
-            @test @inferred(linear_interp(xs, ys)) isa LinearSeriesInterpolant
+            @test @inferred(linear_interp(xs, Series(ys))) isa LinearSeriesInterpolant
 
             # Scalar eval
             @test @inferred(sitp(0.5)) isa Vector{Float64}
@@ -871,10 +871,10 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         end
 
         @testset "QuadraticSeriesInterpolant" begin
-            sitp = quadratic_interp(xs, ys)
+            sitp = quadratic_interp(xs, Series(ys))
 
             # Construction
-            @test @inferred(quadratic_interp(xs, ys)) isa QuadraticSeriesInterpolant
+            @test @inferred(quadratic_interp(xs, Series(ys))) isa QuadraticSeriesInterpolant
 
             # Scalar eval
             @test @inferred(sitp(0.5)) isa Vector{Float64}
@@ -892,10 +892,10 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         end
 
         @testset "ConstantSeriesInterpolant" begin
-            sitp = constant_interp(xs, ys)
+            sitp = constant_interp(xs, Series(ys))
 
             # Construction
-            @test @inferred(constant_interp(xs, ys)) isa ConstantSeriesInterpolant
+            @test @inferred(constant_interp(xs, Series(ys))) isa ConstantSeriesInterpolant
 
             # Scalar eval
             @test @inferred(sitp(0.5)) isa Vector{Float64}
@@ -923,7 +923,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
                 ("quadratic", quadratic_interp),
                 ("constant", constant_interp),
             ]
-                sitp32 = builder(xs32, ys32)
+                sitp32 = builder(xs32, Series(ys32))
                 @test @inferred(sitp32(Float32(0.5))) isa Vector{Float32}
             end
         end
@@ -984,7 +984,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
                 ("quadratic", quadratic_interp),
                 ("constant", constant_interp),
             ]
-                sitp = builder(xi, ys)
+                sitp = builder(xi, Series(ys))
 
                 # Full-domain
                 @test @inferred(integrate(sitp)) isa Vector{Float64}

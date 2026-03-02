@@ -345,6 +345,8 @@ Handles conversion of Real BC values to Complex when needed.
 @inline _promote_bc(::ZeroSlopeBC, ::Type{Tv}) where {Tv} = ZeroSlopeBC()
 @inline _promote_bc(bc::PeriodicBC, ::Type{Tv}) where {Tv} = bc
 @inline _promote_bc(bc::PointBC, ::Type{Tv}) where {Tv} = _promote_pointbc(bc, Tv)
+@inline _promote_bc(bcs::AbstractVector{<:AbstractBC}, ::Type{Tv}) where {Tv} =
+    [_promote_bc(bc, Tv) for bc in bcs]
 
 # ========================================
 # 2-Argument Form: Return CubicInterpolant

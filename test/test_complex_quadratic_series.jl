@@ -18,7 +18,7 @@ using FastInterpolations
         y1 = exp.(2im .* π .* x)
         y2 = (1.0 + 2.0im) .* collect(x)
 
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
 
         # Type checks
         @test sitp isa QuadraticSeriesInterpolant{Float64, ComplexF64}
@@ -44,7 +44,7 @@ using FastInterpolations
         y1 = Complex{Float32}.(exp.(2im .* π .* Float32.(x)))
         y2 = Complex{Float32}.((1.0f0 + 2.0f0im) .* collect(x))
 
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
 
         @test sitp isa QuadraticSeriesInterpolant{Float32, ComplexF32}
         @test grid_type(sitp) == Float32
@@ -63,7 +63,7 @@ using FastInterpolations
         y1 = Complex{Int}[i + 2im*i for i in 0:10]  # Linear: (1+2i)*x
         y2 = Complex{Int}[2i + 1im*i for i in 0:10]  # Linear: (2+i)*x
 
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
 
         # x promoted to Float64, y promoted to ComplexF64
         @test sitp isa QuadraticSeriesInterpolant{Float64, ComplexF64}
@@ -83,7 +83,7 @@ using FastInterpolations
         y1 = ComplexF64.(exp.(2im .* π .* x))  # ComplexF64
         y2 = ComplexF64.((1.0 + 2.0im) .* x)
 
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
 
         # Grid promoted to Float64 to match Complex{Float64}
         @test sitp isa QuadraticSeriesInterpolant{Float64, ComplexF64}
@@ -101,7 +101,7 @@ using FastInterpolations
         y2 = (2.0 - 1.0im) .* collect(x)  # Linear
         Y = hcat(y1, y2)  # 11×2 matrix
 
-        sitp = quadratic_interp(x, Y)
+        sitp = quadratic_interp(x, Series(Y))
 
         @test sitp isa QuadraticSeriesInterpolant{Float64, ComplexF64}
         @test length(sitp(0.5)) == 2  # Two series
@@ -119,7 +119,7 @@ using FastInterpolations
         y1 = (1.0 + 2.0im) .* collect(x)  # Linear complex function
         y2 = (2.0 - 1.0im) .* collect(x)
 
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
 
         # Vector query
         xq = [0.25, 0.5, 0.75]
@@ -143,7 +143,7 @@ using FastInterpolations
         y1 = (1.0 + 2.0im) .* collect(x)
         y2 = (2.0 - 1.0im) .* collect(x)
 
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
 
         output = Vector{ComplexF64}(undef, 2)
         sitp(output, 0.5)
@@ -158,7 +158,7 @@ using FastInterpolations
         y1 = (1.0 + 2.0im) .* collect(x)
         y2 = (2.0 - 1.0im) .* collect(x)
 
-        sitp = quadratic_interp(collect(x), [y1, y2])
+        sitp = quadratic_interp(collect(x), Series(y1, y2))
 
         xq = collect(range(0.1, 0.9, 5))
         outputs = [Vector{ComplexF64}(undef, 5) for _ in 1:2]
@@ -178,14 +178,14 @@ using FastInterpolations
         y2 = (2.0 - 1.0im) .* collect(x)
 
         # Extension mode
-        sitp_ext = quadratic_interp(x, [y1, y2]; extrap=ExtendExtrap())
+        sitp_ext = quadratic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
         vals_ext = sitp_ext(1.5)  # Beyond domain
         @test vals_ext isa Vector{ComplexF64}
         # Linear function extended quadratically
         @test isapprox(vals_ext[1], (1.0 + 2.0im) * 1.5, rtol=1e-10)
 
         # Constant mode
-        sitp_const = quadratic_interp(x, [y1, y2]; extrap=ConstExtrap())
+        sitp_const = quadratic_interp(x, Series(y1, y2); extrap=ConstExtrap())
         vals_const = sitp_const(1.5)  # Beyond domain
         @test vals_const isa Vector{ComplexF64}
         @test isapprox(vals_const[1], y1[end], rtol=1e-10)
@@ -199,7 +199,7 @@ using FastInterpolations
         y1 = rand(ComplexF64, 11)
         y2 = rand(ComplexF64, 11)
 
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
 
         # Scalar evaluation should be type-stable
         @test @inferred(sitp(0.5)) isa Vector{ComplexF64}
@@ -213,7 +213,7 @@ using FastInterpolations
         y1 = rand(ComplexF64, 101)
         y2 = rand(ComplexF64, 101)
 
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
         output = Vector{ComplexF64}(undef, 2)
 
         # Warmup
@@ -236,7 +236,7 @@ using FastInterpolations
         c = 3.0 + 1.0im  # constant
         y = a .* collect(x).^2 .+ b .* collect(x) .+ c
 
-        sitp = quadratic_interp(x, [y])
+        sitp = quadratic_interp(x, Series(y))
 
         # First derivative: 2ax + b
         xq = 0.5
@@ -261,7 +261,7 @@ using FastInterpolations
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
 
-        sitp = quadratic_interp(x, [y1, y2])
+        sitp = quadratic_interp(x, Series(y1, y2))
 
         # Type checks for backward compatibility
         @test sitp isa QuadraticSeriesInterpolant{Float64, Float64}
@@ -282,7 +282,7 @@ using FastInterpolations
         y1 = sin.(x32)
         y2 = cos.(x32)
 
-        sitp = quadratic_interp(x32, [y1, y2])
+        sitp = quadratic_interp(x32, Series(y1, y2))
         @test sitp isa QuadraticSeriesInterpolant{Float32, Float32}
 
         # Float64 query promotes output to Float64 (lossless - wider type)
@@ -301,7 +301,7 @@ using FastInterpolations
         coeffs = (1.0 + 1.0im, -2.0 - 3.0im, 1.0 - 1.0im)
         y = [coeffs[1]*xi^2 + coeffs[2]*xi + coeffs[3] for xi in x]
 
-        sitp = quadratic_interp(x, [y])
+        sitp = quadratic_interp(x, Series(y))
 
         # Test at several points
         for xq in [0.15, 0.35, 0.65, 0.85]

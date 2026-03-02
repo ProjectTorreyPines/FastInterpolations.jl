@@ -737,7 +737,7 @@ end
         x = range(0.0, 1.0, 21)
         Y = [sin.(π .* x) cos.(π .* x) x.^2]  # 3 series
 
-        itp = cubic_interp(x, Y; bc=CubicFit())
+        itp = cubic_interp(x, Series(Y); bc=CubicFit())
         @test itp isa CubicSeriesInterpolant
 
         result = itp(0.5)

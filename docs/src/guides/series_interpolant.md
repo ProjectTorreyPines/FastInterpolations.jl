@@ -25,22 +25,22 @@ using FastInterpolations
 x = range(0, 10, 100)
 y1, y2, y3, y4 = sin.(x), cos.(x), tan.(x), exp.(-x)
 
-# From Vector of Vectors
-sitp = cubic_interp(x, [y1, y2, y3, y4])
+# From varargs
+sitp = cubic_interp(x, Series(y1, y2, y3, y4))
 
 # From Matrix (columns = series)
 Y_matrix = hcat(y1, y2, y3, y4)  # 100×4 matrix
-sitp = cubic_interp(x, Y_matrix)
+sitp = cubic_interp(x, Series(Y_matrix))
 ```
 
 !!! note "Flexible Input"
-    Any `AbstractMatrix` works — reshape your data as `(n_points × n_series)` and pass it directly.
+    Wrap your multi-series data with `Series(...)`. Accepts varargs, `Vector{Vector}`, or `AbstractMatrix` (columns = series).
 
 All interpolation methods support SeriesInterpolant:
-- `constant_interp(x, y_series)`
-- `linear_interp(x, y_series)`
-- `quadratic_interp(x, y_series)`
-- `cubic_interp(x, y_series)`
+- `constant_interp(x, Series(y_series))`
+- `linear_interp(x, Series(y_series))`
+- `quadratic_interp(x, Series(y_series))`
+- `cubic_interp(x, Series(y_series))`
 
 ---
 
@@ -124,7 +124,7 @@ y_series = [n * x.^3 for n in 1:100]
 itps = [cubic_interp(x, y) for y in y_series]
 
 # SeriesInterpolant
-sitp = cubic_interp(x, y_series)
+sitp = cubic_interp(x, Series(y_series))
 
 # Scalar query comparison (in-place, zero allocation)
 out = zeros(length(y_series))

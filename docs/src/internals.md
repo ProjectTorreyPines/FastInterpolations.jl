@@ -53,7 +53,7 @@ end
 SeriesInterpolant uses a **unified matrix storage** with point-contiguous layout, enabling SIMD-optimized scalar queries (10-120× faster than looping over individual interpolants).
 
 ```julia
-sitp = cubic_interp(x, [y1, y2, y3])
+sitp = cubic_interp(x, Series(y1, y2, y3))
 outputs = [similar(xq) for _ in 1:3]
 
 # Pre-compute anchors

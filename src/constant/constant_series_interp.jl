@@ -356,7 +356,8 @@ function constant_interp(
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real}
-    Tg_float = float(promote_type(Tg, _real_eltype(_series_eltype(s))))
+    Tv_base = _real_eltype(_series_eltype(s))
+    Tg_float = Tv_base <: Real ? float(promote_type(Tg, Tv_base)) : float(Tg)
     return constant_interp(_to_float(x, Tg_float), s; side, extrap, search)
 end
 

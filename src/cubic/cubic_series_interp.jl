@@ -636,7 +636,8 @@ function cubic_interp(
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real}
-    Tg_float = float(promote_type(Tg, _real_eltype(_series_eltype(s))))
+    Tv_base = _real_eltype(_series_eltype(s))
+    Tg_float = Tv_base <: Real ? float(promote_type(Tg, Tv_base)) : float(Tg)
     return cubic_interp(_to_float(x, Tg_float), s;
         bc=_promote_bc(bc, Tg_float), extrap, autocache, precompute_transpose, search)
 end

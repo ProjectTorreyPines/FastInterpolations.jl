@@ -9,6 +9,13 @@
 #   - _search_interval: dispatcher that routes to the appropriate implementation
 
 # ========================================
+# Promotable Value Type (for convenience dispatch)
+# ========================================
+
+"""Standard Julia numeric types that should be auto-promoted in convenience wrappers."""
+const _PromotableValue = Union{Integer, AbstractFloat, Complex}
+
+# ========================================
 # Type Conversion Helpers
 # ========================================
 
@@ -60,6 +67,8 @@ This is TYPE-BASED (works with eltype(y) in wrappers).
 """
 @inline _real_eltype(::Type{T}) where {T<:Real} = T
 @inline _real_eltype(::Type{Complex{T}}) where {T<:Real} = T
+# Duck-typing fallback: custom types return themselves (no float base extraction)
+@inline _real_eltype(::Type{T}) where {T} = T
 
 """
     _value_type(::Type{Ty}, ::Type{Tg}) -> Type
@@ -70,6 +79,8 @@ Determine the output value type from y element type and grid type.
 """
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T<:Real, Tg<:AbstractFloat} = Tg
 @inline _value_type(::Type{Complex{T}}, ::Type{Tg}) where {T<:Real, Tg<:AbstractFloat} = Complex{Tg}
+# Duck-typing fallback: custom types preserved as-is (no promotion to grid type)
+@inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg<:AbstractFloat} = T
 
 
 """
@@ -115,39 +126,52 @@ end
 """
     _promote_itp_inputs(x, y) -> (x_typed, y_typed)
 
-Promote grid (x) and values (y) to compatible Float types for interpolation.
+Promote grid (x) and values (y) to compatible types for interpolation.
 
 # Behavior
+- Grid (x) is always converted to AbstractFloat via `_to_float`
+- Values (y) handling depends on element type:
+  - Standard numerics (`<: _PromotableValue`): promoted to match grid float type
+  - Custom/duck types: preserved as-is (zero-copy)
+
+# Standard Path (Real, AbstractFloat, Complex)
 - Computes target grid type: `Tg = float(promote_type(TX, _real_eltype(TY)))`
-- Converts x via `_to_float` (no-copy if already matching type, Range preserved)
-- Converts y via `_promote_value_type` (handles Real/Complex, no-copy if matching)
+- Converts x via `_to_float` (Range structure preserved)
+- Promotes y via `_promote_value_type` (handles Real/Complex widening)
+
+# Duck-Typing Path (custom number types)
+- Grid type: `Tg = float(TX)` (no y influence)
+- y returned unchanged — custom types preserved for generic kernel arithmetic
 
 # Zero-Overhead Guarantee
-- `@inline` enables compiler branch elimination
+- `@inline` + compile-time `TY <: _PromotableValue` check → dead branch eliminated
 - Returns inputs unchanged when types already match (zero allocation)
 
 # Examples
 ```julia
-x = [0.0, 1.0, 2.0]           # Float64 grid
-y_int = [1, 2, 3]             # Int64 values
-y_cplx = Complex{Int}[1+2im]  # Complex{Int} values
+x = [0.0, 1.0, 2.0]; y_int = [1, 2, 3]
+x_p, y_p = _promote_itp_inputs(x, y_int)    # y_p is Float64[] (promoted)
 
-x_p, y_p = _promote_itp_inputs(x, y_int)   # y_p is Float64[]
-x_p, y_p = _promote_itp_inputs(x, y_cplx)  # y_p is ComplexF64[]
-
-# Integer grid also supported
-x_int = [0, 1, 2, 3]
-x_p, y_p = _promote_itp_inputs(x_int, y_cplx)  # x_p is Float64[], y_p is ComplexF64[]
+# Custom types preserved
+x_p, y_p = _promote_itp_inputs(x, custom_y)  # y_p stays custom type
 ```
 """
 @inline function _promote_itp_inputs(
     x::AbstractVector{TX},
     y::AbstractVector{TY}
 ) where {TX<:Real, TY}
-    Tg = float(promote_type(TX, _real_eltype(TY)))
-    x_typed = _to_float(x, Tg)
-    _, y_typed = _promote_value_type(y, Tg)
-    return x_typed, y_typed
+    if TY <: _PromotableValue
+        # Standard numerics: widen grid to accommodate y precision, promote y
+        Tg = float(promote_type(TX, _real_eltype(TY)))
+        x_typed = _to_float(x, Tg)
+        _, y_typed = _promote_value_type(y, Tg)
+        return x_typed, y_typed
+    else
+        # Custom/duck types: only convert grid to float, preserve y as-is
+        Tg = float(TX)
+        x_typed = _to_float(x, Tg)
+        return x_typed, y
+    end
 end
 
 """

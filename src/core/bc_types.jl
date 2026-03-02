@@ -85,7 +85,8 @@ Deriv1(1.0+2.0im)     # Complex slope (ComplexF64)
 struct Deriv1{Tv} <: PointBC
     val::Tv
 end
-# Outer constructors for backward compatibility
+# Outer constructors: standard numerics auto-promote to float
+# Custom types fall through to Julia's auto-generated Deriv1(v) = Deriv1{typeof(v)}(v)
 Deriv1(v::Real) = Deriv1{typeof(float(v))}(float(v))
 Deriv1(v::Complex{T}) where {T<:AbstractFloat} = Deriv1{Complex{T}}(v)
 Deriv1{Tv}(bc::Deriv1) where {Tv} = Deriv1{Tv}(convert(Tv, bc.val))
@@ -107,7 +108,8 @@ Deriv2(0.0+0.0im)     # Complex curvature
 struct Deriv2{Tv} <: PointBC
     val::Tv
 end
-# Outer constructors for backward compatibility
+# Outer constructors: standard numerics auto-promote to float
+# Custom types fall through to Julia's auto-generated Deriv2(v) = Deriv2{typeof(v)}(v)
 Deriv2(v::Real) = Deriv2{typeof(float(v))}(float(v))
 Deriv2(v::Complex{T}) where {T<:AbstractFloat} = Deriv2{Complex{T}}(v)
 Deriv2{Tv}(bc::Deriv2) where {Tv} = Deriv2{Tv}(convert(Tv, bc.val))
@@ -133,7 +135,8 @@ Deriv3(0.0+0.0im)     # Complex third derivative
 struct Deriv3{Tv} <: PointBC
     val::Tv
 end
-# Outer constructors for backward compatibility
+# Outer constructors: standard numerics auto-promote to float
+# Custom types fall through to Julia's auto-generated Deriv3(v) = Deriv3{typeof(v)}(v)
 Deriv3(v::Real) = Deriv3{typeof(float(v))}(float(v))
 Deriv3(v::Complex{T}) where {T<:AbstractFloat} = Deriv3{Complex{T}}(v)
 Deriv3{Tv}(bc::Deriv3) where {Tv} = Deriv3{Tv}(convert(Tv, bc.val))

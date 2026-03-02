@@ -20,15 +20,21 @@ Base.zero(::Type{ScaledFloat}) = ScaledFloat(0.0)
 Base.zero(::ScaledFloat) = ScaledFloat(0.0)
 Base.:+(a::ScaledFloat, b::ScaledFloat) = ScaledFloat(a.val + b.val)
 Base.:-(a::ScaledFloat, b::ScaledFloat) = ScaledFloat(a.val - b.val)
+Base.:-(a::ScaledFloat) = ScaledFloat(-a.val)
 Base.:*(a::Float64, b::ScaledFloat) = ScaledFloat(a * b.val)
 Base.:*(a::ScaledFloat, b::Float64) = ScaledFloat(a.val * b)
 Base.:*(a::ScaledFloat, b::ScaledFloat) = ScaledFloat(a.val * b.val)
 Base.:/(a::ScaledFloat, b::ScaledFloat) = ScaledFloat(a.val / b.val)
 Base.:/(a::ScaledFloat, b::Float64) = ScaledFloat(a.val / b)
 Base.muladd(a::Float64, b::ScaledFloat, c::ScaledFloat) = ScaledFloat(muladd(a, b.val, c.val))
+Base.muladd(a::ScaledFloat, b::Float64, c::ScaledFloat) = ScaledFloat(muladd(a.val, b, c.val))
 Base.convert(::Type{ScaledFloat}, x::Real) = ScaledFloat(Float64(x))
 Base.convert(::Type{ScaledFloat}, x::ScaledFloat) = x
 Base.isapprox(a::ScaledFloat, b::ScaledFloat; kwargs...) = isapprox(a.val, b.val; kwargs...)
+
+# Integer arithmetic (needed by spline coefficient solvers that use 2*s, 6*d, etc.)
+Base.:*(a::Integer, b::ScaledFloat) = ScaledFloat(a * b.val)
+Base.:*(a::ScaledFloat, b::Integer) = ScaledFloat(a.val * b)
 
 # Comparison ops needed for domain checks / extrapolation
 Base.:<(a::ScaledFloat, b::ScaledFloat) = a.val < b.val
@@ -107,6 +113,26 @@ Base.:>(a::ScaledFloat, b::ScaledFloat) = a.val > b.val
         itp = linear_interp(Float32[0, 1, 2, 3, 4], [1.0, 4.0, 2.0, 5.0, 3.0])
         @test eltype(itp.x) === Float64
         @test eltype(itp.y) === Float64
+    end
+
+    # ────────────────────────────────────────────
+    # Quadratic interpolation with custom Tv
+    # ────────────────────────────────────────────
+    @testset "Quadratic - custom Tv preserved" begin
+        itp = quadratic_interp(x, y_custom)
+        @test eltype(itp.y) === ScaledFloat
+        result = itp(xq)
+        @test result isa ScaledFloat
+    end
+
+    # ────────────────────────────────────────────
+    # Cubic interpolation with custom Tv
+    # ────────────────────────────────────────────
+    @testset "Cubic - custom Tv preserved" begin
+        itp = cubic_interp(x, y_custom)
+        @test eltype(itp.y) === ScaledFloat
+        result = itp(xq)
+        @test result isa ScaledFloat
     end
 
     # ────────────────────────────────────────────

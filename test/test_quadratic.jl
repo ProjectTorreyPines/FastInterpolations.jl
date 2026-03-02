@@ -891,31 +891,31 @@ end
 # Group 7: Type Conversion Tests (Real → Float wrappers)
 # ============================================================================
 @testset "Quadratic Interpolation - Type Conversion" begin
-    using FastInterpolations: _promote_bc
+    using FastInterpolations: _normalize_bc
 
-    @testset "_promote_bc same-type passthrough" begin
+    @testset "_normalize_bc same-type passthrough" begin
         # Same-type should return the same object (zero-cost)
         bc_left = Left(Deriv1(1.0))
         bc_right = Right(Deriv2(0.0))
 
-        @test _promote_bc(bc_left, Float64) === bc_left
-        @test _promote_bc(bc_right, Float64) === bc_right
+        @test _normalize_bc(bc_left, Float64) === bc_left
+        @test _normalize_bc(bc_right, Float64) === bc_right
 
         # Float32 same-type passthrough
         bc_left32 = Left(Deriv1(1.0f0))
         bc_right32 = Right(Deriv2(0.0f0))
 
-        @test _promote_bc(bc_left32, Float32) === bc_left32
-        @test _promote_bc(bc_right32, Float32) === bc_right32
+        @test _normalize_bc(bc_left32, Float32) === bc_left32
+        @test _normalize_bc(bc_right32, Float32) === bc_right32
     end
 
-    @testset "_promote_bc type conversion" begin
+    @testset "_normalize_bc type conversion" begin
         # Float32 → Float64 conversion
         bc_left32 = Left(Deriv1(1.0f0))
         bc_right32 = Right(Deriv2(0.0f0))
 
-        bc_left64 = _promote_bc(bc_left32, Float64)
-        bc_right64 = _promote_bc(bc_right32, Float64)
+        bc_left64 = _normalize_bc(bc_left32, Float64)
+        bc_right64 = _normalize_bc(bc_right32, Float64)
 
         # Left/Right now only have B parameter (the inner BC type)
         @test bc_left64 isa Left{Deriv1{Float64}}
@@ -927,14 +927,14 @@ end
         bc_left_f64 = Left(Deriv2(2.0))
         bc_right_f64 = Right(Deriv1(3.0))
 
-        bc_left_f32 = _promote_bc(bc_left_f64, Float32)
-        bc_right_f32 = _promote_bc(bc_right_f64, Float32)
+        bc_left_f32 = _normalize_bc(bc_left_f64, Float32)
+        bc_right_f32 = _normalize_bc(bc_right_f64, Float32)
 
         @test bc_left_f32 isa Left{Deriv2{Float32}}
         @test bc_right_f32 isa Right{Deriv1{Float32}}
     end
 
-    @testset "_promote_bc for QuadraticFit" begin
+    @testset "_normalize_bc for QuadraticFit" begin
         using FastInterpolations: _promote_pointbc
 
         # QuadraticFit is now a non-parametric singleton (PolyFit{2})
@@ -950,24 +950,24 @@ end
 
         # Left(QuadraticFit) promotion - Left only has B parameter
         bc_left = Left(QuadraticFit())
-        bc_left32 = _promote_bc(bc_left, Float32)
+        bc_left32 = _normalize_bc(bc_left, Float32)
         @test bc_left32 isa Left{QuadraticFit}
 
         # Right(QuadraticFit) promotion
         bc_right = Right(QuadraticFit())
-        bc_right32 = _promote_bc(bc_right, Float32)
+        bc_right32 = _normalize_bc(bc_right, Float32)
         @test bc_right32 isa Right{QuadraticFit}
     end
 
-    @testset "_promote_bc for MinCurvFit" begin
+    @testset "_normalize_bc for MinCurvFit" begin
         # MinCurvFit is now a non-parametric singleton
-        # _promote_bc returns the same type
+        # _normalize_bc returns the same type
         mc = MinCurvFit()
-        mc_promoted = _promote_bc(mc, Float64)
+        mc_promoted = _normalize_bc(mc, Float64)
         @test mc_promoted isa MinCurvFit
         @test mc_promoted === mc  # Same singleton instance
 
-        mc32 = _promote_bc(mc, Float32)
+        mc32 = _normalize_bc(mc, Float32)
         @test mc32 isa MinCurvFit
         @test mc32 === mc  # Same singleton instance
     end

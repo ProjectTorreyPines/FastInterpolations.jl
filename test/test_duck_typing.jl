@@ -219,6 +219,23 @@ Base.:/(a::BareMinFloat, b::Float64) = BareMinFloat(a.val / b)
             end
         end
 
+        @testset "2D ND Quadratic ZeroCurvBC (core 7 only)" begin
+            xg = [0.0, 1.0, 2.0, 3.0]
+            yg = [0.0, 1.0, 2.0, 3.0]
+            data = [BareMinFloat(xi + 2yj) for xi in xg, yj in yg]
+            itp = quadratic_interp((xg, yg), data; bc=ZeroCurvBC())
+            @test itp((0.5, 1.5)) isa BareMinFloat
+        end
+
+        @testset "2D ND Cubic PeriodicBC path (no /(Tv, Int) needed)" begin
+            xp = collect(range(0.0, 1.0, 5))
+            yp = collect(range(0.0, 3.0, 4))
+            # Periodic in x: first/last slice are exactly equal for every y.
+            data_p = [BareMinFloat(2yj + 1.0) for xi in xp, yj in yp]
+            itp = cubic_interp((xp, yp), data_p; bc=(PeriodicBC(), ZeroCurvBC()))
+            @test itp((0.2, 1.5)) isa BareMinFloat
+        end
+
         @testset "Series" begin
             y1 = BareMinFloat.([1.0, 4.0, 2.0, 5.0, 3.0])
             y2 = BareMinFloat.([2.0, 1.0, 5.0, 3.0, 4.0])
@@ -339,6 +356,14 @@ Base.:/(a::BareMinFloat, b::Float64) = BareMinFloat(a.val / b)
                     x_per, y_approx; bc=PeriodicBC(endpoint=:inclusive))
             end
         end
+    end
+
+    @testset "Standard numerics stay on promotion path" begin
+        x_rat = [0.0, 1.0, 2.0, 3.0]
+        y_rat = Rational{Int}.([1, 2, 3, 4])
+        itp_rat = linear_interp(x_rat, y_rat)
+        @test eltype(itp_rat.y) === Float64
+        @test itp_rat(1.5) === 2.5
     end
 
     # ================================================================

@@ -379,44 +379,55 @@ import FastInterpolations:
     # ========================================
     # QuadraticND API Coverage
     # ========================================
-    @testset "quadratic_nd_interpolant.jl" begin
-        import FastInterpolations:
-            _resolve_bcs_nd_quadratic,
-            _to_quadratic_bc
+    @testset "quadratic_nd_interpolant.jl — lazy BC normalization" begin
+        # Quadratic ND now uses _resolve_bcs_nd (shared with cubic) for BC broadcasting.
+        # AbstractBC flows through lazily — normalization happens in _slope_1d_quadratic!.
 
-        @testset "_resolve_bcs_nd_quadratic" begin
-            # Single QuadraticBC → broadcast
-            bcs = _resolve_bcs_nd_quadratic(Right(QuadraticFit()), Val(2))
+        @testset "_resolve_bcs_nd with quadratic-compatible BCs" begin
+            # Single QuadraticBC → broadcast (same as cubic)
+            bcs = _resolve_bcs_nd(Right(QuadraticFit()), Val(2))
             @test length(bcs) == 2
             @test all(b -> b isa Right, bcs)
 
             # NTuple pass-through
             bcs_tuple = (Left(QuadraticFit()), Right(QuadraticFit()))
-            @test _resolve_bcs_nd_quadratic(bcs_tuple, Val(2)) === bcs_tuple
+            @test _resolve_bcs_nd(bcs_tuple, Val(2)) === bcs_tuple
 
-            # ZeroCurvBC conversion
-            bcs_nat = _resolve_bcs_nd_quadratic(ZeroCurvBC(), Val(2))
+            # ZeroCurvBC stays raw (lazy normalization — NOT eagerly converted)
+            bcs_nat = _resolve_bcs_nd(ZeroCurvBC(), Val(2))
             @test length(bcs_nat) == 2
-            @test all(b -> b isa Right, bcs_nat)
+            @test all(b -> b isa ZeroCurvBC, bcs_nat)
 
-            # PolyFit conversion
-            bcs_poly = _resolve_bcs_nd_quadratic(CubicFit(), Val(2))
+            # PolyFit stays raw
+            bcs_poly = _resolve_bcs_nd(CubicFit(), Val(2))
             @test length(bcs_poly) == 2
+            @test all(b -> b isa CubicFit, bcs_poly)
 
             # Heterogeneous AbstractBC tuple
-            bcs_hetero = _resolve_bcs_nd_quadratic((ZeroCurvBC(), CubicFit()), Val(2))
+            bcs_hetero = _resolve_bcs_nd((ZeroCurvBC(), CubicFit()), Val(2))
             @test length(bcs_hetero) == 2
+            @test bcs_hetero[1] isa ZeroCurvBC
+            @test bcs_hetero[2] isa CubicFit
         end
 
-        @testset "_to_quadratic_bc" begin
-            @test _to_quadratic_bc(Right(QuadraticFit())) isa Right
-            @test _to_quadratic_bc(MinCurvFit()) isa MinCurvFit
-            @test _to_quadratic_bc(ZeroCurvBC()) isa Right
-            @test _to_quadratic_bc(CubicFit()) isa Right
+        @testset "_normalize_bc for quadratic BC types" begin
+            import FastInterpolations: _normalize_bc
+            # Left/Right promote inner PointBC values to Tv
+            bc_l = _normalize_bc(Left(Deriv2(5)), Float64)
+            @test bc_l isa Left
+            @test bc_l.bc.val === 5.0
 
-            # Unsupported BC
-            @test_throws ArgumentError _to_quadratic_bc(PeriodicBC())
-            @test_throws ArgumentError _to_quadratic_bc(ZeroSlopeBC())
+            bc_r = _normalize_bc(Right(Deriv1(3)), Float32)
+            @test bc_r isa Right
+            @test bc_r.bc.val === 3.0f0
+
+            # MinCurvFit is passthrough
+            @test _normalize_bc(MinCurvFit(), Float64) === MinCurvFit()
+
+            # PolyFit inside Left/Right is passthrough (no value to promote)
+            bc_p = _normalize_bc(Right(QuadraticFit()), Float64)
+            @test bc_p isa Right
+            @test bc_p.bc isa QuadraticFit
         end
     end
 

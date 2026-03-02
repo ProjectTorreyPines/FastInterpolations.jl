@@ -442,22 +442,22 @@ end
         x = collect(range(0.0, 1.0, 51))
 
         # Deriv1 PointBC - applies symmetrically to both ends
-        # Note: LU factorization depends only on BC TYPE, not values.
-        # Cache stores values from first caller, but values are applied at solve time.
+        # Note: LU factorization depends only on BC TYPE (Deriv1 vs Deriv2), not values.
+        # Cache stores structural zeros — solver uses caller's original BC values at solve time.
         cache_d1 = _get_cubic_cache(x, Deriv1(0.5))
         @test cache_d1 isa CubicSplineCache{Float64}
         @test cache_d1.bc_config isa BCPair{Deriv1{Float64}, Deriv1{Float64}}
-        # On cache miss, actual BC values from request are stored
-        @test cache_d1.bc_config.left.val == 0.5
-        @test cache_d1.bc_config.right.val == 0.5
+        # Pool caches store structural zeros (values are irrelevant to LU factorization)
+        @test cache_d1.bc_config.left.val == 0.0
+        @test cache_d1.bc_config.right.val == 0.0
 
         # Deriv2 PointBC - applies symmetrically to both ends
         cache_d2 = _get_cubic_cache(x, Deriv2(1.0))
         @test cache_d2 isa CubicSplineCache{Float64}
         @test cache_d2.bc_config isa BCPair{Deriv2{Float64}, Deriv2{Float64}}
-        # On cache miss, actual BC values from request are stored
-        @test cache_d2.bc_config.left.val == 1.0
-        @test cache_d2.bc_config.right.val == 1.0
+        # Pool caches store structural zeros (values are irrelevant to LU factorization)
+        @test cache_d2.bc_config.left.val == 0.0
+        @test cache_d2.bc_config.right.val == 0.0
 
         # Float32 with PointBC
         x32 = Float32.(x)

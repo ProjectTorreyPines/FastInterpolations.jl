@@ -111,7 +111,11 @@ function _build_series_mat(s::Series, n_pts::Int, ::Type{Tv_out}) where {Tv_out}
     @inbounds for (k, v) in enumerate(vecs)
         length(v) == n_pts || throw(DimensionMismatch(
             "Series vector $k has length $(length(v)), expected $n_pts (length of x)"))
-        y_mat[:, k] .= Tv_out.(v)
+        if eltype(v) === Tv_out
+            y_mat[:, k] .= v
+        else
+            y_mat[:, k] .= Tv_out.(v)
+        end
     end
     return y_mat, n_ser
 end

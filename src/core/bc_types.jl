@@ -529,17 +529,20 @@ end
 """
     _cache_pointbc(bc::PointBC, ::Type{T}) -> PointBC
 
-Convert a PointBC to cache-compatible form with value type T.
+Convert a PointBC to cache-compatible structural form with grid type T.
 
-For lazy types like PolyFit{D}, this converts to Deriv1{T}(zero(T)) since
-PolyFit uses the same matrix structure as Deriv1 (first-derivative BC).
-This enables cache sharing across different PolyFit degrees.
+The cubic cache (LU factorization) depends only on BC *structure* (Deriv1 vs Deriv2
+vs Deriv3), not BC *values*. The matrix rows are set by `_set_first_row!`/`_set_last_row!`
+which dispatch on type, never reading `.val`. BC values are used only during RHS
+computation (`_solve_system!`), which receives the original BC from the caller.
 
-For concrete types (Deriv1, Deriv2, Deriv3), promotes value to type T.
+All BC types → Deriv{N}{T}(zero(T)): preserves the structural type for bank
+selection while discarding values that are irrelevant to the cache key.
+PolyFit → Deriv1{T}(zero(T)): same matrix structure as Deriv1.
 """
-@inline _cache_pointbc(bc::Deriv1, ::Type{T}) where {T} = Deriv1{T}(convert(T, bc.val))
-@inline _cache_pointbc(bc::Deriv2, ::Type{T}) where {T} = Deriv2{T}(convert(T, bc.val))
-@inline _cache_pointbc(bc::Deriv3, ::Type{T}) where {T} = Deriv3{T}(convert(T, bc.val))
+@inline _cache_pointbc(::Deriv1, ::Type{T}) where {T} = Deriv1{T}(zero(T))
+@inline _cache_pointbc(::Deriv2, ::Type{T}) where {T} = Deriv2{T}(zero(T))
+@inline _cache_pointbc(::Deriv3, ::Type{T}) where {T} = Deriv3{T}(zero(T))
 # PolyFit → Deriv1 (same matrix structure, zero value for cache key)
 @inline _cache_pointbc(::PolyFit, ::Type{T}) where {T} = Deriv1{T}(zero(T))
 

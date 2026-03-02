@@ -1,98 +1,97 @@
 # Tests for duck-typing support: custom value types (non-Real, non-Complex)
-# Verifies that _promote_itp_inputs preserves custom types while still
-# promoting standard numerics (Real, Complex) as before.
+# Verifies that arbitrary types work with ONLY the documented minimum operations.
 #
-# Three custom types tested:
-# 1. ScaledFloat (<: Number, explicit muladd) — mimics Unitful quantities
-# 2. MeasuredFloat (<: Number, value ± error) — mimics Measurements.jl
-# 3. SVector (∉ Number, generic muladd fallback) — StaticArrays.jl
+# Key design: custom types are NOT <: Number. This is intentional:
+# Julia's muladd(::Number, ::Number, ::Number) tries promotion → fails without promote_rule.
+# By staying outside Number, the generic muladd(x,y,z) = x*y+z fires automatically.
+#
+# Four custom types tested:
+# 1. BareMinFloat (bare struct, wraps Float64) — TRUE minimum: 7 core ops only
+# 2. ScaledFloat (bare struct, wraps Float64) — 7 core + convert + isapprox
+# 3. MeasuredFloat (bare struct, val ± err) — 7 core + convert + isapprox
+# 4. SVector (from StaticArrays.jl) — real-world non-Number type
 
 using Test
 using FastInterpolations
 using StaticArrays
 
 # ================================================================
-# Custom Type 1: ScaledFloat (<: Number)
+# Custom Type 1: ScaledFloat (NOT <: Number)
 # ================================================================
-# Minimal "ring" type that wraps Float64.
-# <: Number means muladd MUST be defined explicitly (Julia's promotion-based
-# muladd(::Number, ::Number, ::Number) shadows the generic x*y+z fallback).
+# Minimal ring type wrapping Float64 — defines ONLY the documented operations.
+# NOT <: Number: Julia's muladd(::Number, ::Number, ::Number) tries promotion,
+# which fails without promote_rule. Outside Number, the generic muladd(x,y,z) = x*y+z
+# fallback fires automatically. No muladd, no ordering, no Tv×Tv needed.
 
-struct ScaledFloat <: Number
+struct ScaledFloat
     val::Float64
 end
 
-# Identity constructor — resolves ambiguity between field ctor and (T)(x::T) for Number
-ScaledFloat(x::ScaledFloat) = x
-
+# Constant: zero(::Type{Tv})
 Base.zero(::Type{ScaledFloat}) = ScaledFloat(0.0)
-Base.zero(::ScaledFloat) = ScaledFloat(0.0)
+
+# Linear: +(Tv,Tv), -(Tv,Tv), *(Tg,Tv)
 Base.:+(a::ScaledFloat, b::ScaledFloat) = ScaledFloat(a.val + b.val)
 Base.:-(a::ScaledFloat, b::ScaledFloat) = ScaledFloat(a.val - b.val)
-Base.:-(a::ScaledFloat) = ScaledFloat(-a.val)
 Base.:*(a::Float64, b::ScaledFloat) = ScaledFloat(a * b.val)
+
+# Quadratic/Cubic + ND: *(Tv,Tg), *(Int,Tv), /(Tv,Tg)
 Base.:*(a::ScaledFloat, b::Float64) = ScaledFloat(a.val * b)
-Base.:*(a::ScaledFloat, b::ScaledFloat) = ScaledFloat(a.val * b.val)
-Base.:/(a::ScaledFloat, b::ScaledFloat) = ScaledFloat(a.val / b.val)
-Base.:/(a::ScaledFloat, b::Float64) = ScaledFloat(a.val / b)
-Base.muladd(a::Float64, b::ScaledFloat, c::ScaledFloat) = ScaledFloat(muladd(a, b.val, c.val))
-Base.muladd(a::ScaledFloat, b::Float64, c::ScaledFloat) = ScaledFloat(muladd(a.val, b, c.val))
-Base.muladd(a::ScaledFloat, b::ScaledFloat, c::ScaledFloat) = ScaledFloat(muladd(a.val, b.val, c.val))
-Base.convert(::Type{ScaledFloat}, x::Real) = ScaledFloat(Float64(x))
-Base.convert(::Type{ScaledFloat}, x::ScaledFloat) = x
-Base.isapprox(a::ScaledFloat, b::ScaledFloat; kwargs...) = isapprox(a.val, b.val; kwargs...)
 Base.:*(a::Integer, b::ScaledFloat) = ScaledFloat(a * b.val)
-Base.:*(a::ScaledFloat, b::Integer) = ScaledFloat(a.val * b)
-Base.:<(a::ScaledFloat, b::ScaledFloat) = a.val < b.val
-Base.:>(a::ScaledFloat, b::ScaledFloat) = a.val > b.val
+Base.:/(a::ScaledFloat, b::Float64) = ScaledFloat(a.val / b)
+
+# Extra (not in core 7): BC convenience for Deriv(Real_literal), test ≈ assertions
+Base.convert(::Type{ScaledFloat}, x::Real) = ScaledFloat(Float64(x))
+Base.isapprox(a::ScaledFloat, b::ScaledFloat; kwargs...) = isapprox(a.val, b.val; kwargs...)
 
 # ================================================================
-# Custom Type 2: MeasuredFloat (<: Number)
+# Custom Type 2: MeasuredFloat (NOT <: Number)
 # ================================================================
-# Value with uncertainty — simplified error propagation.
-# Mimics Measurements.jl without the dependency.
-# Key difference from ScaledFloat: carries TWO fields (val, err).
+# Value with uncertainty — simplified error propagation (mimics Measurements.jl).
+# Two fields (val, err) — same minimal operations as ScaledFloat.
 
-struct MeasuredFloat <: Number
+struct MeasuredFloat
     val::Float64
     err::Float64
 end
 
-# Single-arg constructors for Tv(scalar) calls in solver/ND paths
-MeasuredFloat(x::Real) = MeasuredFloat(Float64(x), 0.0)
-MeasuredFloat(x::MeasuredFloat) = x
-
-# Ring operations (quadrature error propagation for additive ops)
+# Constant: zero(::Type{Tv})
 Base.zero(::Type{MeasuredFloat}) = MeasuredFloat(0.0, 0.0)
-Base.zero(::MeasuredFloat) = MeasuredFloat(0.0, 0.0)
+
+# Linear: +(Tv,Tv), -(Tv,Tv), *(Tg,Tv)
 Base.:+(a::MeasuredFloat, b::MeasuredFloat) = MeasuredFloat(a.val + b.val, hypot(a.err, b.err))
 Base.:-(a::MeasuredFloat, b::MeasuredFloat) = MeasuredFloat(a.val - b.val, hypot(a.err, b.err))
-Base.:-(a::MeasuredFloat) = MeasuredFloat(-a.val, a.err)
-
-# Scalar multiplication (error scales linearly)
 Base.:*(a::Float64, b::MeasuredFloat) = MeasuredFloat(a * b.val, abs(a) * b.err)
+
+# Quadratic/Cubic + ND: *(Tv,Tg), *(Int,Tv), /(Tv,Tg)
 Base.:*(a::MeasuredFloat, b::Float64) = MeasuredFloat(a.val * b, a.err * abs(b))
+Base.:*(a::Integer, b::MeasuredFloat) = MeasuredFloat(a * b.val, abs(a) * b.err)
 Base.:/(a::MeasuredFloat, b::Float64) = MeasuredFloat(a.val / b, a.err / abs(b))
 
-# Integer multiplication (for spline solvers: 2*s, 6*d)
-Base.:*(a::Integer, b::MeasuredFloat) = MeasuredFloat(a * b.val, abs(a) * b.err)
-Base.:*(a::MeasuredFloat, b::Integer) = MeasuredFloat(a.val * b, a.err * abs(b))
-
-# Self-arithmetic (for coefficient computation and ND solver Tv(scalar) paths)
-Base.:*(a::MeasuredFloat, b::MeasuredFloat) = MeasuredFloat(a.val * b.val, hypot(a.val * b.err, b.val * a.err))
-Base.:/(a::MeasuredFloat, b::MeasuredFloat) = MeasuredFloat(a.val / b.val, hypot(a.err / b.val, a.val * b.err / b.val^2))
-
-# muladd — REQUIRED for <: Number (promotion fallback fails without promote_rule)
-Base.muladd(a::Float64, b::MeasuredFloat, c::MeasuredFloat) = a * b + c
-Base.muladd(a::MeasuredFloat, b::Float64, c::MeasuredFloat) = a * b + c
-Base.muladd(a::MeasuredFloat, b::MeasuredFloat, c::MeasuredFloat) = a * b + c
-
-# Type conversion and comparison
+# Extra (not in core 7): BC convenience for Deriv(Real_literal), test ≈ assertions
 Base.convert(::Type{MeasuredFloat}, x::Real) = MeasuredFloat(Float64(x), 0.0)
-Base.convert(::Type{MeasuredFloat}, x::MeasuredFloat) = x
 Base.isapprox(a::MeasuredFloat, b::MeasuredFloat; kwargs...) = isapprox(a.val, b.val; kwargs...)
-Base.:<(a::MeasuredFloat, b::MeasuredFloat) = a.val < b.val
-Base.:>(a::MeasuredFloat, b::MeasuredFloat) = a.val > b.val
+
+# ================================================================
+# Core Minimum Type: BareMinFloat (NOT <: Number)
+# ================================================================
+# TRUE minimum: ONLY 7 arithmetic operations — no convert, no isapprox,
+# no /(Tv,Int), no ==. Proves the core operations are sufficient for
+# ALL interpolation methods with default boundary conditions.
+
+struct BareMinFloat
+    val::Float64
+end
+
+# Core 7 operations:
+Base.zero(::Type{BareMinFloat}) = BareMinFloat(0.0)
+Base.:+(a::BareMinFloat, b::BareMinFloat) = BareMinFloat(a.val + b.val)
+Base.:-(a::BareMinFloat, b::BareMinFloat) = BareMinFloat(a.val - b.val)
+Base.:*(a::Float64, b::BareMinFloat) = BareMinFloat(a * b.val)
+Base.:*(a::BareMinFloat, b::Float64) = BareMinFloat(a.val * b)
+Base.:*(a::Integer, b::BareMinFloat) = BareMinFloat(a * b.val)
+Base.:/(a::BareMinFloat, b::Float64) = BareMinFloat(a.val / b)
+# That's it. Nothing else. This is the documented minimum.
 
 
 @testset "Duck Typing" begin
@@ -105,6 +104,186 @@ Base.:>(a::MeasuredFloat, b::MeasuredFloat) = a.val > b.val
     y_measured = [MeasuredFloat(v, 0.1) for v in [1.0, 4.0, 2.0, 5.0, 3.0]]
     y_svec = [SVector(v, 2v, 3v) for v in [1.0, 4.0, 2.0, 5.0, 3.0]]
     xq = 1.5
+
+    # ================================================================
+    # CORE MINIMUM: 7 operations only (BareMinFloat)
+    # Proves sufficiency for ALL methods with default BCs.
+    # Uses .val for assertions since isapprox is not defined.
+    # ================================================================
+    @testset "Core Minimum (7 ops)" begin
+        y_bare = BareMinFloat.([1.0, 4.0, 2.0, 5.0, 3.0])
+
+        @testset "1D" begin
+            @testset "Constant" begin
+                itp = constant_interp(x, y_bare)
+                @test itp(xq) isa BareMinFloat
+            end
+            @testset "Linear" begin
+                itp = linear_interp(x, y_bare)
+                result = itp(xq)
+                @test result isa BareMinFloat
+                @test result.val ≈ 3.0
+            end
+            @testset "Quadratic (default BC=QuadraticFit)" begin
+                itp = quadratic_interp(x, y_bare)
+                @test itp(xq) isa BareMinFloat
+            end
+            @testset "Cubic (default BC=CubicFit)" begin
+                itp = cubic_interp(x, y_bare)
+                @test itp(xq) isa BareMinFloat
+            end
+        end
+
+        @testset "2D ND" begin
+            xg = [0.0, 1.0, 2.0, 3.0]
+            yg = [0.0, 1.0, 2.0, 3.0]
+            data = [BareMinFloat(xi + 2yj) for xi in xg, yj in yg]
+            @testset "Constant" begin
+                itp = constant_interp((xg, yg), data)
+                @test itp((0.5, 1.5)) isa BareMinFloat
+            end
+            @testset "Linear" begin
+                itp = linear_interp((xg, yg), data)
+                result = itp((0.5, 1.5))
+                @test result isa BareMinFloat
+                @test result.val ≈ 0.5 + 2 * 1.5
+            end
+            @testset "Quadratic" begin
+                itp = quadratic_interp((xg, yg), data)
+                @test itp((0.5, 1.5)) isa BareMinFloat
+            end
+            @testset "Cubic" begin
+                itp = cubic_interp((xg, yg), data)
+                @test itp((0.5, 1.5)) isa BareMinFloat
+            end
+        end
+
+        @testset "Series" begin
+            y1 = BareMinFloat.([1.0, 4.0, 2.0, 5.0, 3.0])
+            y2 = BareMinFloat.([2.0, 1.0, 5.0, 3.0, 4.0])
+            for (name, fn) in [("Constant", constant_interp), ("Linear", linear_interp),
+                               ("Quadratic", quadratic_interp), ("Cubic", cubic_interp)]
+                @testset "$name" begin
+                    sitp = fn(x, Series(y1, y2))
+                    result = sitp(xq)
+                    @test length(result) == 2
+                    @test eltype(result) === BareMinFloat
+                end
+            end
+        end
+
+        @testset "Explicit Deriv BCs with Tv values" begin
+            # Deriv(Tv_value): convert(Tv, Tv) is identity (Julia built-in) → works.
+            # Both quadratic and cubic promote BC to Tv, so identity convert applies.
+            @testset "quadratic Deriv1(Tv_value)" begin
+                itp = quadratic_interp(x, y_bare; bc=Left(Deriv1(BareMinFloat(0.0))))
+                @test itp(xq) isa BareMinFloat
+            end
+
+            # Cubic: ZeroCurvBC/ZeroSlopeBC use zero(Tv) in normalize, cache uses zero(Tg)
+            @testset "cubic ZeroCurvBC" begin
+                itp = cubic_interp(x, y_bare; bc=ZeroCurvBC())
+                @test itp(xq) isa BareMinFloat
+            end
+            @testset "cubic ZeroSlopeBC" begin
+                itp = cubic_interp(x, y_bare; bc=ZeroSlopeBC())
+                @test itp(xq) isa BareMinFloat
+            end
+
+            # Cubic: explicit Deriv(Tv_value) via BCPair
+            @testset "cubic BCPair(Deriv1(Tv_value))" begin
+                bc = BCPair(Deriv1(BareMinFloat(0.0)), Deriv1(BareMinFloat(0.0)))
+                itp = cubic_interp(x, y_bare; bc=bc)
+                @test itp(xq) isa BareMinFloat
+            end
+
+            # Cubic: Deriv1(Tv_value) (single → symmetric BCPair)
+            @testset "cubic Deriv1(Tv_value)" begin
+                itp = cubic_interp(x, y_bare; bc=Deriv1(BareMinFloat(0.0)))
+                @test itp(xq) isa BareMinFloat
+            end
+
+            # PolyFit BCs (CubicFit, QuadraticFit) carry no values → always work
+            @test quadratic_interp(x, y_bare; bc=Left(QuadraticFit())).y[1] isa BareMinFloat
+            @test cubic_interp(x, y_bare).y[1] isa BareMinFloat  # default = CubicFit()
+        end
+    end
+
+    # ================================================================
+    # CONDITIONAL REQUIREMENTS
+    # Each test proves exactly when an extra operation is needed
+    # beyond the core 7.
+    # ================================================================
+    @testset "Conditional Requirements" begin
+
+        @testset "convert(Tv, Real) — only for Deriv BCs with Real literals" begin
+            y_bare = BareMinFloat.([1.0, 4.0, 2.0, 5.0, 3.0])
+
+            # Deriv1(0.0) → _promote_pointbc does convert(Tv, 0.0) → MethodError
+            # BareMinFloat lacks convert(BareMinFloat, Real)
+            @testset "quadratic Deriv1(0.0) fails without convert" begin
+                @test_throws MethodError quadratic_interp(x, y_bare; bc=Left(Deriv1(0.0)))
+            end
+            @testset "cubic Deriv1(0.0) fails without convert" begin
+                @test_throws MethodError cubic_interp(x, y_bare; bc=Deriv1(0.0))
+            end
+
+            # ScaledFloat defines convert(ScaledFloat, Real) → Deriv1(0.0) works
+            @testset "quadratic Deriv1(0.0) works with convert" begin
+                y_sf = ScaledFloat.([1.0, 4.0, 2.0, 5.0, 3.0])
+                itp = quadratic_interp(x, y_sf; bc=Left(Deriv1(0.0)))
+                @test itp(xq) isa ScaledFloat
+            end
+            @testset "cubic Deriv1(0.0) works with convert" begin
+                y_sf = ScaledFloat.([1.0, 4.0, 2.0, 5.0, 3.0])
+                itp = cubic_interp(x, y_sf; bc=Deriv1(0.0))
+                @test itp(xq) isa ScaledFloat
+            end
+        end
+
+        @testset "/(Tv, Int) — only for quadratic Deriv2 BC" begin
+            y_bare = BareMinFloat.([1.0, 4.0, 2.0, 5.0, 3.0])
+
+            # Default BC (QuadraticFit) doesn't use /(Tv, Int) → works
+            @testset "QuadraticFit BC works without /(Tv,Int)" begin
+                itp = quadratic_interp(x, y_bare)
+                @test itp(xq) isa BareMinFloat
+            end
+
+            # Explicit Deriv2 BC → _fill_slopes! does κ/2 → /(Tv, Int) → fails
+            @testset "Deriv2 BC fails without /(Tv,Int)" begin
+                bc = Left(Deriv2(BareMinFloat(0.0)))
+                @test_throws MethodError quadratic_interp(x, y_bare; bc=bc)
+            end
+        end
+
+        @testset "isapprox — only for PeriodicBC(endpoint=:inclusive)" begin
+            # endpoint=:exclusive skips endpoint validation → no isapprox needed
+            # Use Range grid (required for :exclusive without explicit period kwarg)
+            @testset "PeriodicBC(:exclusive) works without isapprox" begin
+                x_per = range(0.0, 3.0, 4)
+                y_per = BareMinFloat.([1.0, 2.0, 3.0, 2.0])
+                itp = cubic_interp(x_per, y_per; bc=PeriodicBC(endpoint=:exclusive))
+                @test itp(0.5) isa BareMinFloat
+            end
+
+            # endpoint=:inclusive with exact match → == (bitwise for immutable structs) passes
+            @testset "PeriodicBC(:inclusive) exact match works" begin
+                x_per = range(0.0, 4.0, 5)
+                y_per = BareMinFloat.([1.0, 3.0, 2.0, 3.0, 1.0])
+                itp = cubic_interp(x_per, y_per; bc=PeriodicBC(endpoint=:inclusive))
+                @test itp(0.5) isa BareMinFloat
+            end
+
+            # endpoint=:inclusive with approximate match → == fails, isapprox → MethodError
+            @testset "PeriodicBC(:inclusive) approx match fails without isapprox" begin
+                x_per = range(0.0, 4.0, 5)
+                y_approx = BareMinFloat.([1.0, 3.0, 2.0, 3.0, 1.0 + 1e-14])
+                @test_throws MethodError cubic_interp(
+                    x_per, y_approx; bc=PeriodicBC(endpoint=:inclusive))
+            end
+        end
+    end
 
     # ================================================================
     # ScaledFloat — 1D (all 4 types)

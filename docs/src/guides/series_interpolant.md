@@ -17,13 +17,11 @@ Instead of creating N separate interpolants and querying them in a loop, SeriesI
 
 ---
 
-## API Reference
+## The [`Series`](@ref) Wrapper
 
-```@docs
-Series
-```
+Multi-series data must be wrapped with [`Series`](@ref) to distinguish it from vector-valued interpolation data (e.g., `Vector{SVector}`). `Series` is a **zero-cost input tag** — it is consumed at construction time and never stored in the interpolant.
 
-## Creating a SeriesInterpolant
+Three input forms are supported:
 
 ```julia
 using FastInterpolations
@@ -31,22 +29,26 @@ using FastInterpolations
 x = range(0, 10, 100)
 y1, y2, y3, y4 = sin.(x), cos.(x), tan.(x), exp.(-x)
 
-# From varargs
+# Varargs — most readable for a few series
 sitp = cubic_interp(x, Series(y1, y2, y3, y4))
 
-# From Matrix (columns = series)
-Y_matrix = hcat(y1, y2, y3, y4)  # 100×4 matrix
-sitp = cubic_interp(x, Series(Y_matrix))
+# Vector of vectors — convenient when series are computed dynamically
+ys = [sin.(x .+ i) for i in 1:10]
+sitp = cubic_interp(x, Series(ys))
+
+# Matrix (columns = series) — for columnar data
+Y = hcat(y1, y2, y3, y4)   # 100×4 matrix
+sitp = cubic_interp(x, Series(Y))
 ```
 
-!!! note "Flexible Input"
-    Wrap your multi-series data with `Series(...)`. Accepts varargs, `Vector{Vector}`, or `AbstractMatrix` (columns = series).
+All interpolation methods support `Series`:
 
-All interpolation methods support SeriesInterpolant:
-- `constant_interp(x, Series(y_series))`
-- `linear_interp(x, Series(y_series))`
-- `quadratic_interp(x, Series(y_series))`
-- `cubic_interp(x, Series(y_series))`
+| Method | Example |
+|:-------|:--------|
+| `constant_interp` | `constant_interp(x, Series(y1, y2))` |
+| `linear_interp` | `linear_interp(x, Series(y1, y2))` |
+| `quadratic_interp` | `quadratic_interp(x, Series(y1, y2))` |
+| `cubic_interp` | `cubic_interp(x, Series(y1, y2))` |
 
 ---
 

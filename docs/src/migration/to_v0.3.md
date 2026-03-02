@@ -45,6 +45,18 @@ Also removed: `ParabolaFit()` → use `QuadraticFit()`.
 
 The old alias names (`EvalValue`, `EvalDeriv1`, `EvalDeriv2`, `EvalDeriv3`) remain exported and work unchanged.
 
+### Series Interpolants (Series Wrapper)
+
+Multi-series input now requires the `Series(...)` wrapper. Bare `Matrix` and `Vector{Vector}` dispatch has been removed to avoid ambiguity with future vector-valued data support.
+
+| v0.2 (removed) | v0.3 |
+|:----------------|:------|
+| `cubic_interp(x, [y1, y2])` | `cubic_interp(x, Series(y1, y2))` |
+| `cubic_interp(x, Y_matrix)` | `cubic_interp(x, Series(Y_matrix))` |
+| `linear_interp(x, [y1, y2])` | `linear_interp(x, Series(y1, y2))` |
+
+All forms are supported: `Series(y1, y2, ...)` (varargs), `Series([y1, y2])` (vector of vectors), `Series(Y)` (matrix, columns = series).
+
 ### Boundary Conditions (Renames)
 
 | v0.2 (removed) | v0.3 |

@@ -151,7 +151,7 @@ function _create_spacing(x::AbstractVector{T}) where {T<:AbstractFloat}
 
     @inbounds for i in 1:(n-1)
         h[i] = x[i+1] - x[i]
-        inv_h[i] = one(T) / h[i]
+        inv_h[i] = inv(h[i])
     end
 
     return VectorSpacing{T}(h, inv_h)

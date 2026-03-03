@@ -280,9 +280,9 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
 
     # Compute geometry
     h = xR - xL
-    inv_h = one(Tg) / h
+    inv_h = inv(h)
     # alpha preserves Dual type when xq is Dual
-    alpha = (xq - xL) / h
+    alpha = (xq - xL) * inv_h
 
     return _LinearAnchoredQuery{Tg, Tq}(idx, xq, side, h, inv_h, alpha)
 end

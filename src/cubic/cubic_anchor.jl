@@ -354,7 +354,7 @@ while preserving the full Dual value for weight computation.
     # h and inv_h are Tg (grid type)
     # dL and dR are Tq (preserves Dual type for AD)
     h = xR - xL
-    inv_h = one(Tg) / h
+    inv_h = inv(h)
     dL = xq - xL  # distance from Left endpoint (Tq type)
     dR = xR - xq  # distance from Right endpoint (Tq type)
 

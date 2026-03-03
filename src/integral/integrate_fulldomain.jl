@@ -146,6 +146,12 @@ end
     return _integrate_constant_nd_cell(itp.data, idx, hs, ulos, hs, itp.sides)
 end
 
+# Sample Tv value for duck-typing safe zero initialization
+@inline _nd_sample_value(itp::LinearInterpolantND) = @inbounds itp.data[1]
+@inline _nd_sample_value(itp::ConstantInterpolantND) = @inbounds itp.data[1]
+@inline _nd_sample_value(itp::CubicInterpolantND) = @inbounds itp.nodal_derivs.partials[1]
+@inline _nd_sample_value(itp::QuadraticInterpolantND) = @inbounds itp.nodal_derivs.partials[1]
+
 # Generic ND full-domain: catches all ND types
 @inline function integrate(
     itp::AbstractInterpolantND{Tg,Tv,N};
@@ -153,7 +159,7 @@ end
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     Tout = promote_type(Tv, Tg)
-    total = zero(Tout)
+    total = Tout <: Number ? zero(Tout) : 0 * _nd_sample_value(itp)
     cell_ranges = ntuple(d -> 1:(length(itp.grids[d]) - 1), Val(N))
     for I in CartesianIndices(cell_ranges)
         idx = ntuple(d -> I[d], Val(N))

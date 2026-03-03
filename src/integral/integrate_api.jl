@@ -284,9 +284,10 @@ end
         itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
     Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    sign == 0 && return zero(Tout)
+    _zero = Tout <: Number ? zero(Tout) : 0 * itp.nodal_derivs.partials[1]
+    sign == 0 && return _zero
 
-    total = zero(Tout)
+    total = _zero
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
@@ -312,9 +313,10 @@ end
         itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
     Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    sign == 0 && return zero(Tout)
+    _zero = Tout <: Number ? zero(Tout) : 0 * itp.data[1]
+    sign == 0 && return _zero
 
-    total = zero(Tout)
+    total = _zero
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
@@ -339,9 +341,10 @@ end
         itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
     Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    sign == 0 && return zero(Tout)
+    _zero = Tout <: Number ? zero(Tout) : 0 * itp.nodal_derivs.partials[1]
+    sign == 0 && return _zero
 
-    total = zero(Tout)
+    total = _zero
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
@@ -367,9 +370,10 @@ end
         itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
     Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
-    sign == 0 && return zero(Tout)
+    _zero = Tout <: Number ? zero(Tout) : 0 * itp.data[1]
+    sign == 0 && return _zero
 
-    total = zero(Tout)
+    total = _zero
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)

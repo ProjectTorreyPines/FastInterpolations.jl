@@ -428,7 +428,7 @@ Tg = grid type, Tv = value type (can be Complex)
     n = length(y) - 1
 
     # Periodic workspaces need n elements (NOT length(y)!)
-    # Use pool allocation for zero-allocation hot path (supports Real and Complex Tv)
+    # Use pool allocation for zero-allocation hot path
     y_temp = acquire!(pool, Tv, n)
 
     _solve_cubic_system_periodic!(out_z, y_temp, cache, y)

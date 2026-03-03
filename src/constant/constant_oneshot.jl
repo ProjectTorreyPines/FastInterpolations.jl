@@ -27,7 +27,7 @@ Note: NoExtrap and WrapExtrap modes never reach this function.
 
 Type parameters:
 - Tg: Grid type (AbstractFloat) for xi, x_min, x_max
-- Tv: Value type for y (can be Tg, Complex{Tg}, etc.)
+- Tv: Value type (unconstrained)
 """
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
@@ -84,7 +84,7 @@ Evaluation flow:
 
 Type parameters:
 - Tg: Grid type (AbstractFloat) for x
-- Tv: Value type for y (can be Tg, Complex{Tg}, etc.)
+- Tv: Value type (unconstrained)
 
 AD Support:
 - xi can be any Real (including ForwardDiff.Dual)
@@ -299,7 +299,7 @@ end
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
 # ========================================
-# Scalar Real/Complex → typed wrappers
+# Scalar → typed wrappers
 # ========================================
 # Unified wrapper for non-AbstractFloat inputs (Int, mixed types, Complex, etc.)
 # POLICY: Tg is computed from x/y ONLY, not from xq
@@ -321,7 +321,7 @@ end
 end
 
 # ========================================
-# Vector Real/Complex → typed wrappers (allocating)
+# Vector → typed wrappers (allocating)
 # ========================================
 # POLICY: Tg is computed from x/y ONLY, not from x_targets
 
@@ -342,7 +342,7 @@ function constant_interp(
 end
 
 # ========================================
-# Vector Real/Complex → typed wrappers (in-place)
+# Vector → typed wrappers (in-place)
 # ========================================
 
 function constant_interp!(

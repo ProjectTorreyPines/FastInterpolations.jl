@@ -35,7 +35,7 @@ Create an N-dimensional cubic Hermite interpolant from grid vectors and data arr
 
 # Type Inference
 - Grid type `Tg`: Promoted from all grid element types (always AbstractFloat)
-- Value type `Tv`: Element type of data (can be real, complex, or AD types)
+- Value type `Tv`: Element type of data (unconstrained)
 
 # Examples
 ```julia

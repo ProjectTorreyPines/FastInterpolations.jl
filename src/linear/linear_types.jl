@@ -12,7 +12,7 @@ Returned by `linear_interp(x, y)` (2-argument form).
 
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type (Float32/Float64) - coordinates and geometry
-- `Tv`: Value type - element type of y (can be Tg, Complex{Tg}, or other Number)
+- `Tv`: Value type (unconstrained)
 - `X<:AbstractVector{Tg}`: Grid vector type (preserves Range for O(1) lookup)
 - `Y<:AbstractVector{Tv}`: Values vector type
 - `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)

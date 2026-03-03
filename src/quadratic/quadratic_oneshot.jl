@@ -26,7 +26,7 @@ Uses interval clamping for extension extrapolation (matches cubic pattern).
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type for x
 - `Tq`: Query type (can be Tg or ForwardDiff.Dual for AD)
-- `Tv`: Value type for y, a, d (can be Tg or Complex{Tg})
+- `Tv`: Value type for y, a, d (unconstrained)
 """
 @inline function _quadratic_eval_core(
     x::AbstractVector{Tg},
@@ -121,7 +121,7 @@ Note: `h` parameter kept for API compatibility but not used (interval info from 
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type for x, h
 - `Tq`: Query type (can be Tg or ForwardDiff.Dual for AD)
-- `Tv`: Value type for y, a, d (can be Tg or Complex{Tg})
+- `Tv`: Value type for y, a, d (unconstrained)
 """
 @inline function _quadratic_eval_at_point(
     x::AbstractVector{Tg},
@@ -320,7 +320,7 @@ end
 # BC promotion uses _normalize_bc(Left/Right/MinCurvFit, Tv) from core/bc_types.jl
 
 # ========================================
-# Scalar Real/Complex → typed wrappers
+# Scalar → typed wrappers
 # ========================================
 # Unified wrapper for non-AbstractFloat inputs (Int, mixed types, Complex, etc.)
 # POLICY: Tg is computed from x/y ONLY, not from xq
@@ -344,7 +344,7 @@ end
 end
 
 # ========================================
-# Vector Real/Complex → typed wrappers (allocating)
+# Vector → typed wrappers (allocating)
 # ========================================
 # POLICY: Tg is computed from x/y ONLY, not from x_targets
 
@@ -366,7 +366,7 @@ function quadratic_interp(
 end
 
 # ========================================
-# Vector Real/Complex → typed wrappers (in-place)
+# Vector → typed wrappers (in-place)
 # ========================================
 
 function quadratic_interp!(

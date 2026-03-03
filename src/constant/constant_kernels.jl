@@ -12,7 +12,7 @@
 #
 # Type parameters:
 # - Tg<:AbstractFloat: Grid type (geometry)
-# - Tv: Value type (can be Tg, Complex{Tg}, or other Number)
+# - Tv: Value type (unconstrained)
 #
 # AD Support:
 # - dL can be ForwardDiff.Dual for automatic differentiation

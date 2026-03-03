@@ -15,7 +15,7 @@
 #
 # Type parameters:
 # - Td<:Real: Offset type for dL (can be Tg or ForwardDiff.Dual for AD)
-# - Tv: Value type (can be Tg, Complex{Tg}, or other Number) for a, d, y
+# - Tv: Value type (unconstrained) for a, d, y
 
 """
     _quadratic_kernel(::EvalValue, a, d, y, dL) -> value

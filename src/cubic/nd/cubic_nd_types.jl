@@ -89,7 +89,7 @@ ultra-fast O(1) evaluation via tensor-product Hermite polynomials.
 
 # Type Parameters
 - `Tg`: Grid/coordinate type (Float32 or Float64)
-- `Tv`: Value type (can be Tg, Complex{Tg}, or other Number)
+- `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
 - `NP1`: N + 1 (partials array dimensionality)
 - `G`: Tuple type for grids, `NTuple{N, <:AbstractVector{Tg}}`

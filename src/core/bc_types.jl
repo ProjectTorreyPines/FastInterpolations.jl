@@ -73,13 +73,14 @@ abstract type PointBC <: AbstractBC end
 
 First derivative (slope) boundary condition: S'(endpoint) = val
 
-The type parameter `Tv` is the value type, supporting both Real and Complex.
+The type parameter `Tv` is the value type (unconstrained — supports any type with +, -, scalar *).
 
 # Example
 ```julia
 Deriv1(0.5)           # Slope of 0.5 at endpoint (Float64)
 Deriv1(0)             # Zero slope (horizontal tangent)
 Deriv1(1.0+2.0im)     # Complex slope (ComplexF64)
+Deriv1(MyValue(0.0))  # Custom type (duck typing)
 ```
 """
 struct Deriv1{Tv} <: PointBC
@@ -96,7 +97,7 @@ Deriv1{Tv}(bc::Deriv1) where {Tv} = Deriv1{Tv}(convert(Tv, bc.val))
 
 Second derivative (curvature) boundary condition: S''(endpoint) = val
 
-The type parameter `Tv` is the value type, supporting both Real and Complex.
+The type parameter `Tv` is the value type (unconstrained — supports any type with +, -, scalar *).
 
 # Example
 ```julia
@@ -123,7 +124,7 @@ For cubic splines, the third derivative is constant within each interval:
 S'''(x) = (z[i+1] - z[i]) / h[i]. This BC specifies the third derivative
 value at the first (or last) interval.
 
-The type parameter `Tv` is the value type, supporting both Real and Complex.
+The type parameter `Tv` is the value type (unconstrained — supports any type with +, -, scalar *).
 
 # Example
 ```julia
@@ -488,7 +489,7 @@ Extensible: add methods for new PointBC subtypes.
     _normalize_bc(bc::AbstractBC, ::Type{Tv}) -> BCPair
 
 Convert BC specification to normalized BCPair form for solver construction.
-The type parameter Tv is the **value type** (Float64, ComplexF64, etc.).
+The type parameter Tv is the **value type** (unconstrained).
 
 Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 `_normalize_bc` is called. This function only handles derivative BCs.
@@ -592,7 +593,7 @@ Normalize an array of BCs to BCPair for per-series boundary conditions.
 
 # Arguments
 - `bcs`: Array of AbstractBC (length must equal n_series)
-- `Tv`: Target value type (Float64, ComplexF64, etc.)
+- `Tv`: Target value type (unconstrained)
 - `n_series`: Expected number of series
 
 # Returns

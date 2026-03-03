@@ -23,7 +23,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 
 # Type Parameters
 - `Tg`: Grid coordinate type (Float32 or Float64) - always real
-- `Tv`: Value type (real or Complex{Tg})
+- `Tv`: Value type (unconstrained)
 - `C`: Cache type (`CubicSplineCache{Tg}`)
 - `B`: Boundary condition config type (BCPair or PeriodicData)
 

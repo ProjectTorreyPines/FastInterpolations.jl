@@ -20,7 +20,7 @@ The interpolation is exact at grid points and linearly blended between them.
 
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid/coordinate type (Float32 or Float64)
-- `Tv`: Value type (can be Tg, Complex{Tg}, or other Number)
+- `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
 - `G<:Tuple{Vararg{AbstractVector,N}}`: Grid tuple type (supports heterogeneous grids)
 - `S<:Tuple{Vararg{AbstractGridSpacing,N}}`: Spacing tuple type

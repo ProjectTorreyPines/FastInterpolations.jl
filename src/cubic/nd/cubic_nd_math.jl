@@ -7,7 +7,7 @@
 # - 1D Hermite kernel for value and derivatives
 # - Moment-to-derivative conversion (1D)
 #
-# Type-generic: Works with Float32, Float64, Complex, and ForwardDiff.Dual
+# Type-generic: Works with any value type (duck typing) and ForwardDiff.Dual queries
 #
 # Note: These functions use the OUTPUT type (Tv or promoted type) for
 # intermediate calculations to support complex values and AD.
@@ -358,7 +358,7 @@ KEY OPTIMIZATION: Outer loop = system step, inner loop = axis 1 (contiguous).
 This enables @simd vectorization over the contiguous dimension.
 
 # Type Parameters
-- `Tv`: Value type (Real, Complex, or AD type)
+- `Tv`: Value type (unconstrained)
 - `Tg`: Grid type (AbstractFloat) for ThomasFactorization
 
 # Arguments
@@ -419,7 +419,7 @@ Optimized for memory locality and SIMD execution.
 - For axis 1: Use `_solve_system!` in a loop (per-column approach is faster)
 
 # Type Parameters
-- `Tv`: Value type (Real, Complex, or AD type)
+- `Tv`: Value type (unconstrained)
 - `Tg`: Grid type (AbstractFloat) for cache and spacing
 
 # Arguments

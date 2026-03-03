@@ -21,7 +21,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 
 # Type Parameters
 - `Tg`: Grid type (Float32 or Float64)
-- `Tv`: Value type (Tg for real, Complex{Tg} for complex)
+- `Tv`: Value type (unconstrained)
 - `P`: Search policy type
 - `X`: Grid container type (Vector or Range)
 

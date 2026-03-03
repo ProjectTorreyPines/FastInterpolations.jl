@@ -75,7 +75,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
-- `y::AbstractVector`: y-values (can be Real or Complex)
+- `y::AbstractVector`: y-values
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `side::AbstractSide`: Side selection (NearestSide(), LeftSide(), RightSide())
 - `search::AbstractSearchPolicy`: Default search policy (default: `AutoSearch()`)
@@ -83,7 +83,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 # Returns
 `ConstantInterpolant{Tg, Tv}` object for scalar/broadcast evaluation.
 - `Tg`: Grid type (Float32/Float64)
-- `Tv`: Value type (Tg for real values, Complex{Tg} for complex values)
+- `Tv`: Value type (unconstrained)
 
 # Example
 ```julia

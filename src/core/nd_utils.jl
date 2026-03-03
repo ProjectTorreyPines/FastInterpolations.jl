@@ -491,7 +491,7 @@ This structure stores the function value f and all mixed partial derivatives
 via tensor-product interpolation (Hermite for cubic, quadratic kernel for quadratic).
 
 # Type Parameters
-- `Tv`: Value type (Float64, ComplexF64, etc.)
+- `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
 - `NP1`: N + 1 (array dimensionality, Julia can't compute N+1 in type definition)
 

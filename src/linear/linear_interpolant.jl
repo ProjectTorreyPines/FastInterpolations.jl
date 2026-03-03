@@ -13,7 +13,7 @@
 #
 # TYPE PARAMETERS:
 # - Tg: Grid type (Float32/Float64)
-# - Tv: Value type (Tg, Complex{Tg}, etc.)
+# - Tv: Value type (unconstrained)
 # - Tq: Query type (Tg or any Real, including Dual for AD)
 
 # Primary scalar call - accepts any query type (Tg, Real, or Dual for AD)
@@ -84,7 +84,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (must be sorted)
-- `y::AbstractVector`: y-values (can be real or complex)
+- `y::AbstractVector`: y-values
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `search::AbstractSearchPolicy`: Default search policy for interval lookup (default: `AutoSearch()`)
 
@@ -98,7 +98,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 # Returns
 `LinearInterpolant{Tg, Tv}` object where:
 - `Tg`: Grid type (Float32 or Float64)
-- `Tv`: Value type (Tg for real, Complex{Tg} for complex)
+- `Tv`: Value type (unconstrained)
 
 Can be:
 - Called with scalar: `itp(0.5)` (uses stored search policy)

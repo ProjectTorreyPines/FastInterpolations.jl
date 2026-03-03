@@ -362,7 +362,7 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (must be sorted)
-- `y::AbstractVector`: y-values (can be Real or Complex)
+- `y::AbstractVector`: y-values
 - `bc::AbstractBC`: Boundary condition (default: `CubicFit()`)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache::Bool`: Enable automatic caching (default: `true`)
@@ -406,7 +406,7 @@ val = itp(0.5)  # returns ComplexF64
     end
 end
 
-# Hot path: x is AbstractFloat, y can be Tg or Complex{Tg}
+# Hot path: x is AbstractFloat, Tv unconstrained
 function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv};

@@ -37,7 +37,7 @@ This approach is truly N-D generic because:
 
 # Type Parameters
 - `Tg`: Grid type (AbstractFloat) for coordinates
-- `Tv`: Value type for data (can be Real, Complex, or AD types)
+- `Tv`: Value type for data (unconstrained)
 
 # Arguments
 - `out::AbstractArray{Tv,N}`: Output array (same shape as data), stores ∂f/∂xₐ
@@ -123,7 +123,7 @@ slices simultaneously using the batch solver from 2D implementation.
 
 # Type Parameters
 - `Tg`: Grid type (AbstractFloat) for coordinates
-- `Tv`: Value type for data (can be Real, Complex, or AD types)
+- `Tv`: Value type for data (unconstrained)
 
 # Performance Characteristics
 - **d=1** (`shape_before=1`): Falls back to per-slice approach (no batch benefit)
@@ -443,7 +443,7 @@ Uses the **bit-encoding build-up algorithm**:
 
 # Type Parameters
 - `Tg`: Grid type (AbstractFloat) for coordinates
-- `Tv`: Value type for data (can be Real, Complex, or AD types)
+- `Tv`: Value type for data (unconstrained)
 
 # Algorithm
 ```
@@ -517,7 +517,7 @@ Compute all partial derivatives for N-dimensional Hermite interpolation.
 
 # Type Parameters
 - `Tg`: Grid type (AbstractFloat) for coordinates
-- `Tv`: Value type for data (can be Real, Complex, or AD types)
+- `Tv`: Value type for data (unconstrained)
 
 # Arguments
 - `grids::NTuple{N, AbstractVector{Tg}}`: Grid points for each dimension

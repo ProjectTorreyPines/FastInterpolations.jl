@@ -13,7 +13,7 @@ Returned by `constant_interp(x, y)` (2-argument form).
 
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type (Float32, Float64) for x-coordinates
-- `Tv`: Value type for y-values (can be Tg, Complex{Tg}, or other Number)
+- `Tv`: Value type (unconstrained)
 - `X<:AbstractVector{Tg}`: Type of x-coordinates
 - `Y<:AbstractVector{Tv}`: Type of y-values
 - `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)

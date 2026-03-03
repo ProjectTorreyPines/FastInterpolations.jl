@@ -182,7 +182,7 @@ Promote grid (x) and values (y) to compatible types for interpolation.
 # Standard Path (Real, AbstractFloat, Complex)
 - Computes target grid type: `Tg = float(promote_type(TX, _real_eltype(TY)))`
 - Converts x via `_to_float` (Range structure preserved)
-- Promotes y via `_promote_value_type` (handles Real/Complex widening)
+- Promotes y via `_promote_value_type` (handles numeric widening)
 
 # Duck-Typing Path (custom number types)
 - Grid type: `Tg = float(TX)` (no y influence)
@@ -222,7 +222,7 @@ Promote grid (x), values (y), and vector query (xq) to compatible Float types.
 
 # Arguments
 - `x`: Grid coordinates (any Real type)
-- `y`: Values at grid points (Real or Complex)
+- `y`: Values at grid points
 - `xq`: Query points (AbstractVector or AbstractRange)
 
 # Returns

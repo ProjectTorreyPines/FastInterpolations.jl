@@ -30,7 +30,7 @@ Returns: yL * (1 - α) + yR * α where α = dL * inv_h
 
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type (for inv_h)
-- `Tv`: Value type (for yL, yR) - can be Complex{Tg}, Tg, etc.
+- `Tv`: Value type (unconstrained)
 - `dL`: Unconstrained - can be Tg or Dual{Tg} for AD support
 
 # Return Type

@@ -12,7 +12,7 @@ N-dimensional constant (step) interpolation with per-axis configuration.
 
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid coordinate type
-- `Tv`: Value type (can be Real or Complex)
+- `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
 - `G<:NTuple{N, AbstractVector{Tg}}`: Grid tuple type
 - `S<:NTuple{N, AbstractGridSpacing{Tg}}`: Spacing tuple type

@@ -24,7 +24,7 @@ Used by Linear, Constant, and Quadratic series interpolants that store only y va
 The transpose is computed on first scalar query and cached for subsequent calls.
 
 # Type Parameter
-- `Tv`: Value type (can be Real or Complex)
+- `Tv`: Value type (unconstrained)
 
 # Thread Safety
 Uses atomic acquire/release semantics (RCU pattern) for safe concurrent access.
@@ -86,7 +86,7 @@ Used by CubicSeriesInterpolant which stores both y values and z (second derivati
 Both transposes are computed together on first scalar query.
 
 # Type Parameter
-- `Tv`: Value type (can be Real or Complex)
+- `Tv`: Value type (unconstrained)
 
 # Thread Safety
 Same RCU pattern as LazyTranspose.
@@ -150,7 +150,7 @@ Used by QuadraticSeriesInterpolant which stores y values plus a and d coefficien
 All three transposes are computed together on first scalar query.
 
 # Type Parameter
-- `Tv`: Value type (can be Real or Complex)
+- `Tv`: Value type (unconstrained)
 
 # Thread Safety
 Same RCU pattern as LazyTranspose.

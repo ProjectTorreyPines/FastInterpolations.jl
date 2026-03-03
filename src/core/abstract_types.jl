@@ -9,8 +9,8 @@
 #
 # TYPE PARAMETERS:
 # - Tg: Grid/coordinate type (AbstractFloat) - used for x-coordinates, spacing, search
-# - Tv: Value type - used for y-values, coefficients, return values
-#       Can be AbstractFloat (same as Tg), Complex{Tg}, or other Number types
+# - Tv: Value type (unconstrained) - used for y-values, coefficients, return values
+#       Any type supporting +, -, scalar * (see Custom Value Types guide)
 #
 # Include order: FIRST - before all other interp files
 #
@@ -23,8 +23,8 @@ Abstract supertype for all interpolant objects.
 
 # Type Parameters
 - `Tg`: Grid/coordinate type (Float32 or Float64) - used for x-coordinates, spacing, search
-- `Tv`: Value type - used for y-values, coefficients, return values.
-        Can be `Tg` (real-valued), `Complex{Tg}` (complex-valued), or other Number types.
+- `Tv`: Value type (unconstrained) - used for y-values, coefficients, return values.
+        Any type supporting the 5 core operations (+, -, Tg*Tv, Tv*Tg, Int*Tv).
 
 # Design Invariant
 - Grid operations (search, spacing) always use Tg
@@ -52,7 +52,7 @@ Series interpolants handle multiple y-series sharing the same x-grid.
 
 # Type Parameters
 - `Tg`: Grid/coordinate type (Float32 or Float64)
-- `Tv`: Value type - can be real or complex
+- `Tv`: Value type (unconstrained)
 
 # Subtypes
 - `LinearSeriesInterpolant{Tg, Tv}`: Multiple linear interpolants sharing x-grid
@@ -89,7 +89,7 @@ Abstract supertype for N-dimensional interpolant objects.
 
 # Type Parameters
 - `Tg`: Grid/coordinate type (Float32 or Float64)
-- `Tv`: Value type - can be real, complex, or other Number types
+- `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
 
 # API Differences from 1D Interpolants
@@ -135,7 +135,7 @@ Get the value type of an interpolant.
     eval_type(::AbstractInterpolant{Tg, Tv}, ::Type{Tq}) -> Type
 
 Compute the output type when evaluating an interpolant with query type `Tq`.
-This is `promote_type(Tv, Tq)`, accounting for value type (real or complex)
+This is `promote_type(Tv, Tq)`, accounting for value type
 and query type (standard float or ForwardDiff.Dual).
 
 # Examples

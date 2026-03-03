@@ -170,9 +170,8 @@ slices simultaneously using the batch solver from 2D implementation.
 
     if can_batch
         # Batch SIMD path: use 2D batch solver along axis 2
-        # Grid type Tg for cache, value type Tv for computation
-        bc_cache = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, Tg)
-        cache = _get_cubic_cache(grid, bc_cache, true)
+        # Cache construction: _get_cubic_cache internally uses _cache_pointbc (duck-safe).
+        cache = _get_cubic_cache(grid, bc, true)
         actual_bc = cache.bc_config isa PeriodicData ? cache.bc_config : _normalize_bc(bc, first(data_3d))
 
         # Acquire workspace for moments matrix

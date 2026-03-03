@@ -299,11 +299,11 @@ Differentiate 1D vector using cubic splines. BC type determines the method:
     grid::AbstractVector{Tg}, bc::AbstractBC
 ) where {Tg<:AbstractFloat, Tv}
     n = length(values)
-    # Cache uses grid type Tg for matrix structure (factorization)
-    # Computation uses value type Tv for actual BC values
-    bc_cache = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, Tg)
+    # Cache construction: _get_cubic_cache internally uses _cache_pointbc (duck-safe,
+    # converts BC to structural form with zero(Tg) — no convert(Tg, bc.val) needed).
+    # Computation: normalize BC values to Tv via value-based _normalize_bc.
     bc_compute = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, first(values))
-    cache = _get_cubic_cache(grid, bc_cache, true)
+    cache = _get_cubic_cache(grid, bc, true)
     actual_bc = cache.bc_config isa PeriodicData ? cache.bc_config : bc_compute
     m = acquire!(pool, Tv, n)
     _solve_system!(m, cache, values, actual_bc)

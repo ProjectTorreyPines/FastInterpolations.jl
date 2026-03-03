@@ -1018,11 +1018,6 @@ _val(d::DuckFloat5) = d.v
             @test itp(q2d) isa DuckFloat5
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
-        # NOTE: Explicit Deriv1(val)/Deriv2(val) BCs for cubic ND require convert()
-        # between the BC value type and Tv (the Thomas solver normalizes BCs).
-        # This violates the 5-op duck-typing contract, so we skip those tests.
-        # ZeroSlopeBC/ZeroCurvBC work because they normalize inside the solver
-        # using 0*sample (duck-safe).
         @testset "CubicFit per-axis symmetric" begin
             itp = cubic_interp((xg, yg), data_2d; bc=CubicFit())
             itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=CubicFit())
@@ -1405,6 +1400,191 @@ _val(d::DuckFloat5) = d.v
             @test @inferred(linear_interp(x_vec, y_linear, xq; deriv=DerivOp(1))) isa DuckFloat5
             @test @inferred(cubic_interp(x_vec, y_generic, xq; deriv=DerivOp(1))) isa DuckFloat5
             @test @inferred(quadratic_interp(x_vec, y_generic, xq; deriv=DerivOp(1))) isa DuckFloat5
+        end
+    end
+
+    # ================================================================
+    # SECTION 25: EXPLICIT DERIV BCs — expanded combos
+    # Tests Deriv3, nonzero BC values, BCPair exotic mixes, ND per-axis
+    # explicit Deriv, and 3D. These exercise the same-type Deriv BC path
+    # (Deriv1(Tv(val)) where val has the same type as data values).
+    # ================================================================
+    @testset "31. Deriv BC — expanded combos" begin
+        # --- Cubic 1D: new Deriv types + nonzero ---
+        @testset "Deriv3(Tv) 1D" begin
+            itp = cubic_interp(x_vec, y_generic; bc=Deriv3(DuckFloat5(0.0)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv3(0.0))
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "Deriv1(Tv(1.5)) nonzero" begin
+            itp = cubic_interp(x_vec, y_generic; bc=Deriv1(DuckFloat5(1.5)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv1(1.5))
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "Deriv2(Tv(-2.0)) nonzero" begin
+            itp = cubic_interp(x_vec, y_generic; bc=Deriv2(DuckFloat5(-2.0)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv2(-2.0))
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+
+        # --- BCPair exotic combos ---
+        @testset "BCPair(Deriv1, Deriv3)" begin
+            bc = BCPair(Deriv1(DuckFloat5(0.0)), Deriv3(DuckFloat5(0.0)))
+            bc_ref = BCPair(Deriv1(0.0), Deriv3(0.0))
+            itp = cubic_interp(x_vec, y_generic; bc=bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "BCPair(Deriv3(0.5), Deriv1(-0.5)) nonzero" begin
+            bc = BCPair(Deriv3(DuckFloat5(0.5)), Deriv1(DuckFloat5(-0.5)))
+            bc_ref = BCPair(Deriv3(0.5), Deriv1(-0.5))
+            itp = cubic_interp(x_vec, y_generic; bc=bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "BCPair(Deriv2, CubicFit)" begin
+            bc = BCPair(Deriv2(DuckFloat5(0.0)), CubicFit())
+            bc_ref = BCPair(Deriv2(0.0), CubicFit())
+            itp = cubic_interp(x_vec, y_generic; bc=bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+
+        # --- Quadratic 1D: missing direction+type ---
+        @testset "Right(Deriv2(Tv(0.5))) nonzero" begin
+            itp = quadratic_interp(x_vec, y_generic; bc=Right(Deriv2(DuckFloat5(0.5))))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Right(Deriv2(0.5)))
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+
+        # --- Cubic ND: explicit Deriv per-axis (was skipped before fix) ---
+        @testset "ND broadcast Deriv1(Tv)" begin
+            itp = cubic_interp((xg, yg), data_2d; bc=Deriv1(DuckFloat5(0.0)))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=Deriv1(0.0))
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "ND per-axis (Deriv1, Deriv2)" begin
+            itp = cubic_interp((xg, yg), data_2d;
+                bc=(Deriv1(DuckFloat5(0.0)), Deriv2(DuckFloat5(0.0))))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat;
+                bc=(Deriv1(0.0), Deriv2(0.0)))
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "ND mixed (Deriv1, ZeroCurvBC)" begin
+            itp = cubic_interp((xg, yg), data_2d;
+                bc=(Deriv1(DuckFloat5(0.0)), ZeroCurvBC()))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat;
+                bc=(Deriv1(0.0), ZeroCurvBC()))
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "ND per-axis BCPair + ZeroCurvBC" begin
+            bc_x = BCPair(Deriv1(DuckFloat5(0.0)), Deriv2(DuckFloat5(0.0)))
+            bc_ref_x = BCPair(Deriv1(0.0), Deriv2(0.0))
+            itp = cubic_interp((xg, yg), data_2d; bc=(bc_x, ZeroCurvBC()))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=(bc_ref_x, ZeroCurvBC()))
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+
+        # --- 3D: all-different Deriv BCs ---
+        @testset "3D (Deriv1, Deriv2, Deriv3)" begin
+            zg = [0.0, 1.0, 2.0, 3.0]
+            data_3d = [DuckFloat5(xi + yj + zk) for xi in xg, yj in yg, zk in zg]
+            data_3d_flat = _val.(data_3d)
+            bc = (Deriv1(DuckFloat5(0.0)), Deriv2(DuckFloat5(0.0)), Deriv3(DuckFloat5(0.0)))
+            bc_ref = (Deriv1(0.0), Deriv2(0.0), Deriv3(0.0))
+            itp = cubic_interp((xg, yg, zg), data_3d; bc=bc)
+            itp_ref = cubic_interp((xg, yg, zg), data_3d_flat; bc=bc_ref)
+            @test _val(itp((1.5, 1.5, 1.5))) ≈ itp_ref((1.5, 1.5, 1.5))
+        end
+
+        # --- Quadratic ND: mixed direction ---
+        @testset "ND quadratic (Left(Deriv1), Right(Deriv2))" begin
+            itp = quadratic_interp((xg, yg), data_2d;
+                bc=(Left(Deriv1(DuckFloat5(0.0))), Right(Deriv2(DuckFloat5(0.0)))))
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat;
+                bc=(Left(Deriv1(0.0)), Right(Deriv2(0.0))))
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+
+        # --- PeriodicBC + Deriv mixed ND ---
+        @testset "ND mixed (Periodic + Deriv1)" begin
+            xp_r = range(0.0, 3.0, 4)
+            data_m = [DuckFloat5(sin(2π*xi/3) + yj) for xi in xp_r, yj in yg]
+            data_m_flat = _val.(data_m)
+            itp = cubic_interp((xp_r, yg), data_m;
+                bc=(PeriodicBC(endpoint=:exclusive), Deriv1(DuckFloat5(0.0))))
+            itp_ref = cubic_interp((xp_r, yg), data_m_flat;
+                bc=(PeriodicBC(endpoint=:exclusive), Deriv1(0.0)))
+            @test _val(itp((0.5, 1.5))) ≈ itp_ref((0.5, 1.5))
+        end
+    end
+
+    # ================================================================
+    # SECTION 26: CONSTRUCTION TYPE STABILITY (@inferred)
+    # Tests that interpolant construction is type-stable when BCs
+    # carry duck-typed values through normalization/cache/solver.
+    # ================================================================
+    @testset "32. Construction @inferred" begin
+        @testset "1D cubic Deriv1(Tv)" begin
+            @inferred cubic_interp(x_vec, y_generic; bc=Deriv1(DuckFloat5(0.0)))
+        end
+        @testset "1D cubic Deriv3(Tv)" begin
+            @inferred cubic_interp(x_vec, y_generic; bc=Deriv3(DuckFloat5(0.0)))
+        end
+        @testset "1D cubic BCPair(Deriv1,Deriv2)" begin
+            @inferred cubic_interp(x_vec, y_generic;
+                bc=BCPair(Deriv1(DuckFloat5(0.0)), Deriv2(DuckFloat5(0.0))))
+        end
+        @testset "1D quadratic Left(Deriv1(Tv))" begin
+            @inferred quadratic_interp(x_vec, y_generic;
+                bc=Left(Deriv1(DuckFloat5(0.0))))
+        end
+        @testset "ND cubic Deriv1(Tv) broadcast" begin
+            @inferred cubic_interp((xg, yg), data_2d;
+                bc=Deriv1(DuckFloat5(0.0)))
+        end
+        @testset "ND cubic per-axis (Deriv1, Deriv2)" begin
+            @inferred cubic_interp((xg, yg), data_2d;
+                bc=(Deriv1(DuckFloat5(0.0)), Deriv2(DuckFloat5(0.0))))
+        end
+        @testset "ND quadratic Left(Deriv1(Tv))" begin
+            @inferred quadratic_interp((xg, yg), data_2d;
+                bc=Left(Deriv1(DuckFloat5(0.0))))
+        end
+    end
+
+    # ================================================================
+    # SECTION 27: CONTRACT BOUNDARIES — negative tests & promotion
+    # Proves that cross-type Deriv BCs correctly fail, and that
+    # standard numeric promotion is unaffected by duck-typing paths.
+    # ================================================================
+    @testset "33. Contract boundaries" begin
+        # DuckFloat5 has no convert(DuckFloat5, Float64) → cross-type Deriv must fail
+        @testset "cubic Deriv1(0.0) fails without convert" begin
+            @test_throws MethodError cubic_interp(x_vec, y_generic; bc=Deriv1(0.0))
+        end
+        @testset "quadratic Left(Deriv1(0.0)) fails without convert" begin
+            @test_throws MethodError quadratic_interp(x_vec, y_generic;
+                bc=Left(Deriv1(0.0)))
+        end
+
+        # PeriodicBC :inclusive with approximate (but not exact) match
+        @testset "PeriodicBC(:inclusive) approx mismatch → ArgumentError" begin
+            xp = range(0.0, 6.0, 7)
+            yp = DuckFloat5.([1.0, 3.0, 2.0, 4.0, 2.0, 3.0, 1.0 + 1e-14])
+            @test_throws ArgumentError cubic_interp(xp, yp;
+                bc=PeriodicBC(endpoint=:inclusive))
+        end
+
+        # Standard promotion unchanged by duck-typing infrastructure
+        @testset "Int → Float64 promotion" begin
+            @test eltype(linear_interp([0.0, 1.0, 2.0], [10, 20, 30]).y) === Float64
+        end
+        @testset "Float32 → Float64 widening" begin
+            @test eltype(linear_interp([0.0, 1.0, 2.0], Float32[1, 2, 3]).y) === Float64
+        end
+        @testset "ComplexF64 preserved" begin
+            @test eltype(linear_interp([0.0, 1.0, 2.0], ComplexF64[1, 2, 3]).y) === ComplexF64
         end
     end
 

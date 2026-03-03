@@ -32,7 +32,7 @@ The grid includes the repeated start point at the end: `y[1] == y[end]` (exact e
 ```julia
 # Grid covers [0, 2π], with repeated endpoint
 x = range(0, 2π, 65)  # 65 points, last point is 2π
-y = sin.(x)           # y[1] ≈ y[end]
+y = cos.(x)           # y[1] == y[end] (cos(0) == cos(2π) == 1.0)
 
 itp = cubic_interp(x, y; bc=PeriodicBC())
 ```

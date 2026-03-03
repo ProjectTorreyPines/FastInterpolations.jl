@@ -80,7 +80,7 @@ The type parameter `Tv` is the value type (unconstrained — supports any type w
 Deriv1(0.5)           # Slope of 0.5 at endpoint (Float64)
 Deriv1(0)             # Zero slope (horizontal tangent)
 Deriv1(1.0+2.0im)     # Complex slope (ComplexF64)
-Deriv1(MyValue(0.0))  # Custom type (duck typing)
+Deriv1(MyStruct(0.0))  # Custom type (duck typing)
 ```
 """
 struct Deriv1{Tv} <: PointBC

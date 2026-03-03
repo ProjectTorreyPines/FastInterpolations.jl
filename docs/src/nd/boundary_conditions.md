@@ -17,11 +17,8 @@ using FastInterpolations
 x = range(1, 10, length = 10)
 y = range(0, 2pi, length = 5) 
 z = [0, 1, 3, 5, 10]
-data2d = [cos(xi)*sin(yi) for xi in x, yi in y] # Real 2D data
-data3d = [cos(xi)*sin(yi)+ zi*1im for xi in x, yi in y, zi in z] # Complex 3D data
-# Enforce exact periodicity along y (dim 2) — sin(2π) ≈ -2.4e-16, not 0.0
-data2d[:, end] .= data2d[:, 1]
-data3d[:, end, :] .= data3d[:, 1, :]
+data2d = [cos(xi)*cos(yi) for xi in x, yi in y] # Real 2D data
+data3d = [cos(xi)*cos(yi)+ zi*1im for xi in x, yi in y, zi in z] # Complex 3D data
 nothing #hide
 ```
 

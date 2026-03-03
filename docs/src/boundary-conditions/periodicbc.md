@@ -12,7 +12,7 @@ These two features sound similar but solve fundamentally different problems:
 |---|---|---|
 | **What it does** | Solves a cyclic tridiagonal system (Sherman-Morrison) so the spline is **C² continuous** at the period boundary | Maps out-of-domain queries back into `[x₁, xₙ]` via modular arithmetic |
 | **Smoothness** | ``S, S', S''`` all match at the wrap point | No smoothness guarantee — may have jumps in value, slope, or curvature |
-| **Data requirement** | `y[1] ≈ y[end]` (inclusive) or `endpoint=:exclusive` | None |
+| **Data requirement** | `y[1] == y[end]` (inclusive) or `endpoint=:exclusive` | None |
 | **Works with** | Cubic splines only | Any interpolation method |
 | **Use case** | Physically periodic signals (angles, phases, Fourier-sampled data) | Quick "repeat" behavior without physical periodicity |
 
@@ -27,7 +27,7 @@ These two features sound similar but solve fundamentally different problems:
 
 ### Inclusive Mode (Default)
 
-The grid includes the repeated start point at the end: `y[1] ≈ y[end]`. This is the standard definition in most spline libraries.
+The grid includes the repeated start point at the end: `y[1] == y[end]` (exact equality required). This is the standard definition in most spline libraries.
 
 ```julia
 # Grid covers [0, 2π], with repeated endpoint

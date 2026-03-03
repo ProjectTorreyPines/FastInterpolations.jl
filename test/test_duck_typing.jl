@@ -368,11 +368,11 @@ Base.:/(a::NoZeroFloat, b::Float64) = NoZeroFloat(a.val / b)
                 @test itp(0.5) isa BareMinFloat
             end
 
-            # endpoint=:inclusive with approximate match → == fails, isapprox → MethodError
-            @testset "PeriodicBC(:inclusive) approx match fails without isapprox" begin
+            # endpoint=:inclusive with approximate match → strict == fails → ArgumentError
+            @testset "PeriodicBC(:inclusive) approx match fails (strict ==)" begin
                 x_per = range(0.0, 4.0, 5)
                 y_approx = BareMinFloat.([1.0, 3.0, 2.0, 3.0, 1.0 + 1e-14])
-                @test_throws MethodError cubic_interp(
+                @test_throws ArgumentError cubic_interp(
                     x_per, y_approx; bc=PeriodicBC(endpoint=:inclusive))
             end
         end

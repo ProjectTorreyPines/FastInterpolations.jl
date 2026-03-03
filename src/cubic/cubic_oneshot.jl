@@ -163,7 +163,7 @@ manages their lifetime. Follows the `_create_spacing_pooled(pool, ...)` pattern.
     end
 
     # ── Solve periodic tridiagonal system ──
-    _check_periodic_endpoints(y_p, Tg)
+    _check_periodic_endpoints(y_p)
     cache = _get_cubic_cache(x_p, PeriodicBC(), autocache)
     z = acquire!(pool, Tv, length(y_p))
     _solve_system!(z, cache, y_p, cache.bc_config)

@@ -157,6 +157,7 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
 
             x_incl = range(0.0, step=dx, length=N + 1)
             y_incl = sin.(x_incl)
+            y_incl[end] = y_incl[1]
 
             itp_excl = cubic_interp(x_excl, y_excl; bc=PeriodicBC(endpoint=:exclusive))
             itp_incl = cubic_interp(x_incl, y_incl; bc=PeriodicBC())
@@ -184,6 +185,7 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         @testset "Vector grid with period" begin
             x_incl = [0.0, 0.5, 1.5, 3.0, 5.0, 2π]
             y_incl = sin.(x_incl)
+            y_incl[end] = y_incl[1]
 
             x_excl = x_incl[1:end-1]  # remove last point
             y_excl = y_incl[1:end-1]
@@ -234,6 +236,7 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         # Build inclusive reference from a non-uniform grid
         x_incl = [0.0, 0.5, 1.5, 3.0, 5.0, 2π]
         y_incl = sin.(x_incl)
+        y_incl[end] = y_incl[1]
         x_excl = x_incl[1:end-1]
         y_excl = y_incl[1:end-1]
         bc_excl = PeriodicBC(endpoint=:exclusive, period=2π)
@@ -317,6 +320,7 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         # Inclusive data for baseline
         x_incl = range(0.0, step=dx, length=N + 1)
         y_incl = sin.(x_incl)
+        y_incl[end] = y_incl[1]
         @test @inferred(cubic_interp(x_incl, y_incl; bc=PeriodicBC())) isa CubicInterpolant
 
         # For exclusive, construction may have Union return (Range vs Vector grid branch),
@@ -344,7 +348,10 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         dx = 2π / N
         x_incl = range(0.0, step=dx, length=N + 1)
         y_incl = sin.(x_incl)
-        sitp = cubic_interp(x_incl, Series(y_incl, cos.(x_incl)); bc=PeriodicBC())
+        y_incl[end] = y_incl[1]
+        y_cos = cos.(x_incl)
+        y_cos[end] = y_cos[1]
+        sitp = cubic_interp(x_incl, Series(y_incl, y_cos); bc=PeriodicBC())
         buf = IOBuffer()
         show(buf, sitp)
         @test occursin("Periodic", String(take!(buf)))
@@ -378,6 +385,7 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
             # Inclusive — period should also be resolved from grid
             x_incl_bc = range(0.0, step=dx_bc, length=N_bc + 1)
             y_incl_bc = sin.(x_incl_bc)
+            y_incl_bc[end] = y_incl_bc[1]
             itp_incl = cubic_interp(collect(x_incl_bc), y_incl_bc; bc=PeriodicBC())
             @test itp_incl.bc isa PeriodicBC{:inclusive}
             @test itp_incl.bc.period ≈ 2π
@@ -562,6 +570,9 @@ end
             x_incl = range(0.0, step=dx, length=Nx + 1)
             y_incl = range(0.0, step=dy, length=Ny + 1)
             data_incl = [sin(xi) * cos(yj) for xi in x_incl, yj in y_incl]
+            # Enforce exact periodicity on both axes
+            data_incl[end, :] .= data_incl[1, :]
+            data_incl[:, end] .= data_incl[:, 1]
 
             itp_excl = cubic_interp(
                 (x_excl, y_excl), data_excl;
@@ -584,6 +595,8 @@ end
 
             x_incl = range(0.0, step=dx, length=Nx + 1)
             data_incl = [sin(xi) * yj for xi in x_incl, yj in y]
+            # Enforce exact periodicity on dim 1
+            data_incl[end, :] .= data_incl[1, :]
 
             itp_excl = cubic_interp(
                 (x_excl, y), data_excl;
@@ -601,6 +614,8 @@ end
             x_incl = [0.0, 0.5, 1.5, 3.0, 5.0, 2π]
             y = range(0.0, 1.0, 6)
             data_incl = [sin(xi) * yj for xi in x_incl, yj in y]
+            # Enforce exact periodicity on dim 1
+            data_incl[end, :] .= data_incl[1, :]
 
             x_excl = x_incl[1:end-1]
             data_excl = data_incl[1:end-1, :]

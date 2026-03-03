@@ -272,6 +272,7 @@ const BankType = FI.CacheBank{EntryType}
 
             x = collect(range(0.0, 2π, 51))
             y = sin.(x)
+            y[end] = y[1]
             FI.cubic_interp(x, y, π; bc=FI.PeriodicBC(), autocache=true)
 
             bank = FI._get_periodic_bank(x)
@@ -413,6 +414,7 @@ end  # RCU Bank
             # Periodic BC
             x2 = collect(range(0.0, 2π, 51))
             y2 = sin.(x2)
+            y2[end] = y2[1]
             FI.cubic_interp(x2, y2, π; bc=FI.PeriodicBC(), autocache=true)
 
             deriv_snap = @atomic :acquire FI._DERIVATIVE_REGISTRY.snapshot
@@ -434,6 +436,7 @@ end  # RCU Bank
 
             x2 = collect(range(0.0, 2π, 51))
             y2 = sin.(x2)
+            y2[end] = y2[1]
             FI.cubic_interp(x2, y2, π; bc=FI.PeriodicBC(), autocache=true)
 
             @test !isempty(@atomic :acquire FI._DERIVATIVE_REGISTRY.snapshot)

@@ -199,7 +199,8 @@ end
 
     @testset "PeriodicBC forces WrapExtrap() extrap" begin
         # Create periodic data (endpoints match)
-        y_periodic = sin.(2π .* x)  # sin(0) = sin(2π) = 0
+        y_periodic = sin.(2π .* x)
+        y_periodic[end] = y_periodic[1]  # Ensure exact periodicity
 
         mitp = cubic_interp(x, Series(y_periodic); bc=PeriodicBC(), extrap=NoExtrap())
         @test mitp.extrap === WrapExtrap()
@@ -342,6 +343,8 @@ end
         # PeriodicBC requires matching endpoints
         y1_periodic = sin.(2π .* x)
         y2_periodic = cos.(2π .* x)
+        y1_periodic[end] = y1_periodic[1]
+        y2_periodic[end] = y2_periodic[1]
         mitp_periodic = cubic_interp(x, Series(y1_periodic, y2_periodic); bc=PeriodicBC())
         itp1_periodic = cubic_interp(x, y1_periodic; bc=PeriodicBC())
 
@@ -433,9 +436,10 @@ end
 
     @testset "WrapExtrap() extrapolation scalar SIMD path" begin
         # Create periodic data (endpoints match)
-        y_periodic = sin.(2π .* x)  # sin(0) = sin(2π) = 0
-        y_periodic2 = cos.(2π .* x)  # cos(0) = cos(2π) = 1
-        y_periodic2[end] = y_periodic2[1]  # Ensure exact match
+        y_periodic = sin.(2π .* x)
+        y_periodic[end] = y_periodic[1]  # Ensure exact periodicity
+        y_periodic2 = cos.(2π .* x)
+        y_periodic2[end] = y_periodic2[1]
 
         mitp = cubic_interp(x, Series(y_periodic, y_periodic2); bc=PeriodicBC())
 
@@ -457,6 +461,7 @@ end
 
     @testset "precompute_transpose with periodic BC" begin
         y_periodic = sin.(2π .* x)
+        y_periodic[end] = y_periodic[1]
         mitp = cubic_interp(x, Series(y_periodic); bc=PeriodicBC(), precompute_transpose=true)
 
         # Should have point layout immediately
@@ -471,7 +476,8 @@ end
 
     @testset "Matrix input with periodic BC" begin
         Y_periodic = hcat(sin.(2π .* x), cos.(2π .* x))
-        Y_periodic[end, 2] = Y_periodic[1, 2]  # Fix endpoint
+        Y_periodic[end, 1] = Y_periodic[1, 1]  # Fix endpoint
+        Y_periodic[end, 2] = Y_periodic[1, 2]
 
         mitp = cubic_interp(x, Series(Y_periodic); bc=PeriodicBC())
         @test mitp.extrap === WrapExtrap()
@@ -524,6 +530,7 @@ end
 
     @testset "Vector extrapolation WrapExtrap() mode (periodic)" begin
         y_periodic = sin.(2π .* x)
+        y_periodic[end] = y_periodic[1]  # Ensure exact periodicity
         y_periodic2 = cos.(2π .* x)
         y_periodic2[end] = y_periodic2[1]
 
@@ -1971,6 +1978,8 @@ end
         x_per = collect(range(0.0, 2π, 21))
         y1_per = sin.(x_per)
         y2_per = cos.(x_per)
+        y1_per[end] = y1_per[1]
+        y2_per[end] = y2_per[1]
 
         mitp = cubic_interp(x_per, Series(y1_per, y2_per); bc=PeriodicBC())
 

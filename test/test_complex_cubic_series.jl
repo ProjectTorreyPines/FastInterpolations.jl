@@ -343,9 +343,9 @@ using FastInterpolations
         x = range(0.0, 1.0, 11)
         y = exp.(2im .* π .* x)
 
-        # Note: For periodic BC, first and last y values should match
-        # exp(0) = 1, exp(2im*π) = 1 ✓
-        @test isapprox(y[1], y[end], atol=1e-10)
+        # Note: For periodic BC, first and last y values must match exactly
+        # exp(2im*π) ≈ 1 but not exactly due to floating-point sin(2π) ≠ 0
+        y[end] = y[1]
 
         sitp = cubic_interp(x, Series(y); bc=PeriodicBC())
         @test sitp isa CubicSeriesInterpolant{Float64, ComplexF64}

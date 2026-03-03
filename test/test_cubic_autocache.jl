@@ -491,6 +491,7 @@ end
         # Create first grid and cache
         x1 = collect(range(0.0, 2π, 51))
         y = sin.(x1)
+        y[end] = y[1]  # Ensure exact periodicity
         result1 = cubic_interp(x1, y, 0.5; bc=PeriodicBC())
 
         # Create equal but different object (different objectid)
@@ -565,6 +566,7 @@ end
         clear_cubic_cache!()
         xp = collect(range(0.0, 2π, 9))
         yp = sin.(xp)
+        yp[end] = yp[1]  # Ensure exact periodicity
         before = cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=true)
         xp[5] += 0.1
         after = cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=true)
@@ -736,6 +738,7 @@ end
 
         x = collect(range(0.0, 2π, 17))
         y = sin.(x)
+        y[end] = y[1]  # Ensure exact periodicity
         xq = [π/4, π/2, π, 3π/2]
 
         itp = cubic_interp(x, y; bc=PeriodicBC())
@@ -886,6 +889,7 @@ end
 
         x = collect(range(0.0, 2π, 33))  # Dense grid for accuracy
         y = sin.(x)
+        y[end] = y[1]  # Ensure exact periodicity
         xq = [π/6, π/3, π/2, 2π/3, π, 4π/3, 3π/2, 5π/3]
 
         result1 = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=true)
@@ -900,6 +904,7 @@ end
         x[10] = x[10] + 0.02
         x[20] = x[20] - 0.02
         y .= sin.(x)
+        y[end] = y[1]  # Re-ensure exact periodicity after mutation
 
         result2 = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=true)
         # After mutation, still interpolating sin, should be close to expected

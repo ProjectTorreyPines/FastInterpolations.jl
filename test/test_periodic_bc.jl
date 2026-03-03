@@ -79,6 +79,7 @@ using FastInterpolations
         N = 101
         x = range(0.0, 2π, N)
         y_sin = sin.(x)
+        y_sin[end] = y_sin[1]  # Ensure exact periodicity for PeriodicBC tests below
 
         @testset "Basic wrapping with ZeroCurv BC" begin
             # Interior point
@@ -193,6 +194,7 @@ using FastInterpolations
         N = 101
         x = range(0.0, 2π, N)
         y = sin.(x)
+        y[end] = y[1]  # Ensure exact periodicity (strict == check)
 
         @testset "Basic cache construction" begin
             cache = CubicSplineCache(x; bc=PeriodicBC())
@@ -246,6 +248,7 @@ using FastInterpolations
             N_dense = 201
             x_dense = range(0.0, 2π, N_dense)
             y_dense = sin.(x_dense)
+            y_dense[end] = y_dense[1]  # Ensure exact periodicity
             cache = CubicSplineCache(x_dense; bc=PeriodicBC())
 
             # Finite difference parameters
@@ -331,6 +334,7 @@ using FastInterpolations
         N = 51
         x = range(0.0, 2π, N)
         y = sin.(x)
+        y[end] = y[1]  # Ensure exact periodicity
 
         cache_natural = CubicSplineCache(x; bc=ZeroCurvBC())
         cache_periodic = CubicSplineCache(x; bc=PeriodicBC())
@@ -351,6 +355,7 @@ using FastInterpolations
         # Non-uniform but valid periodic grid
         x_base = sort([0.0, 0.3, 0.7, 1.2, 1.8, 2π])  # Non-uniform
         y_base = sin.(x_base)
+        y_base[end] = y_base[1]  # Ensure exact periodicity
 
         # Linear wrap should still work
         @test linear_interp(x_base, y_base, 2π + 0.5; extrap=WrapExtrap()) ≈ linear_interp(x_base, y_base, 0.5; extrap=WrapExtrap()) atol=1e-10
@@ -364,89 +369,61 @@ using FastInterpolations
 
     @testset "_check_periodic_endpoints validation (Cubic only)" begin
         # NOTE: Linear interpolation with extrap=WrapExtrap() does NOT check endpoints!
-        # Only cubic bc=PeriodicBC() checks that y[1] ≈ y[end]
+        # Only cubic bc=PeriodicBC() checks that y[1] == y[end] (strict equality)
         x = range(0.0, 2π, 101)
 
-        @testset "Valid periodic data (Float64)" begin
-            # sin(0) = sin(2π) = 0 (within tolerance)
-            y_sin = sin.(x)
-            @test y_sin[1] ≈ y_sin[end] atol=1e-12  # Confirm endpoints match
+        @testset "Valid periodic data — exact endpoints (Float64)" begin
+            # Periodic data must have y[end] = y[1] set explicitly
+            y_sin = collect(sin.(x))
+            y_sin[end] = y_sin[1]  # Ensure exact equality
+            @test y_sin[1] == y_sin[end]
 
-            # Linear wrap works regardless of endpoint matching
             @test linear_interp(x, y_sin, 0.5; extrap=WrapExtrap()) isa Float64
-
-            # Cubic bc=PeriodicBC() should not throw for valid periodic data
             @test cubic_interp(x, y_sin, 0.5; bc=PeriodicBC()) isa Float64
 
-            # cos(0) = cos(2π) = 1
-            y_cos = cos.(x)
-            @test linear_interp(x, y_cos, 0.5; extrap=WrapExtrap()) isa Float64
-
-            # Exactly equal endpoints
-            y_exact = collect(sin.(x))
-            y_exact[end] = y_exact[1]  # Force exact equality
-            @test linear_interp(x, y_exact, 0.5; extrap=WrapExtrap()) isa Float64
+            # cos(0) = cos(2π) = 1.0 exactly in Float64
+            y_cos = collect(cos.(x))
+            y_cos[end] = y_cos[1]
+            @test cubic_interp(x, y_cos, 0.5; bc=PeriodicBC()) isa Float64
         end
 
-        @testset "Valid periodic data (Float32)" begin
+        @testset "Valid periodic data — exact endpoints (Float32)" begin
             x_f32 = range(0.0f0, 2f0*Float32(π), 101)
-            y_f32 = sin.(x_f32)
+            y_f32 = collect(sin.(x_f32))
+            y_f32[end] = y_f32[1]  # Ensure exact equality
+            @test y_f32[1] == y_f32[end]
 
-            # Float32 tolerance is 1e-6
-            @test abs(y_f32[1] - y_f32[end]) < 1f-6
-
-            # Should not throw
             @test linear_interp(x_f32, y_f32, 0.5f0; extrap=WrapExtrap()) isa Float32
             @test cubic_interp(x_f32, y_f32, 0.5f0; bc=PeriodicBC()) isa Float32
         end
 
-        @testset "Non-matching endpoints - Cubic bc=PeriodicBC() throws, Linear wrap works" begin
+        @testset "Approximate endpoints now rejected (strict ==)" begin
+            # sin(0) vs sin(2π) are NOT bit-identical — strict == rejects this
+            y_approx = sin.(x)
+            @test y_approx[1] != y_approx[end]  # Different due to floating-point
+            @test_throws ArgumentError cubic_interp(x, y_approx, 0.5; bc=PeriodicBC())
+
+            # Even tiny differences are rejected
+            y_tiny = collect(sin.(x))
+            y_tiny[end] = y_tiny[1] + eps(Float64)
+            @test_throws ArgumentError cubic_interp(x, y_tiny, 0.5; bc=PeriodicBC())
+        end
+
+        @testset "Non-matching endpoints — Cubic throws, Linear wrap works" begin
             # Non-periodic data: y[1] != y[end] (sawtooth wave use case)
             y_invalid = collect(x)  # Linear function: y[1] = 0, y[end] = 2π
+            @test y_invalid[1] != y_invalid[end]
 
-            @test abs(y_invalid[1] - y_invalid[end]) > 1e-12  # Confirm mismatch
-
-            # Linear wrap does NOT check endpoints - works fine (sawtooth pattern)
+            # Linear wrap does NOT check endpoints — works fine (sawtooth pattern)
             @test linear_interp(x, y_invalid, 0.5; extrap=WrapExtrap()) isa Float64
             @test LinearInterpolant(collect(x), y_invalid; extrap=WrapExtrap()) isa LinearInterpolant
 
-            # Cubic bc=PeriodicBC() DOES check endpoints - throws ArgumentError
+            # Cubic bc=PeriodicBC() DOES check endpoints — throws ArgumentError
             @test_throws ArgumentError cubic_interp(x, y_invalid, 0.5; bc=PeriodicBC())
             @test_throws ArgumentError cubic_interp(collect(x), y_invalid; bc=PeriodicBC())
         end
 
-        @testset "Cubic bc=PeriodicBC() edge cases" begin
-            # Create data where endpoints differ by more than 1e-12
-            y_edge = sin.(x) |> collect
-            y_edge[end] = y_edge[1] + 1e-11  # Just outside 1e-12 tolerance
-
-            @test abs(y_edge[1] - y_edge[end]) > 1e-12
-            @test_throws ArgumentError cubic_interp(x, y_edge, 0.5; bc=PeriodicBC())
-
-            # Just within tolerance
-            y_edge2 = sin.(x) |> collect
-            y_edge2[end] = y_edge2[1] + 1e-13  # Within 1e-12 tolerance
-            @test abs(y_edge2[1] - y_edge2[end]) < 1e-12
-            @test cubic_interp(x, y_edge2, 0.5; bc=PeriodicBC()) isa Float64
-        end
-
-        @testset "Cubic bc=PeriodicBC() Float32 tolerance boundary" begin
-            x_f32 = range(0.0f0, 2f0*Float32(π), 101)
-
-            # Just outside Float32 tolerance (1e-6)
-            y_outside = sin.(x_f32) |> collect
-            y_outside[end] = y_outside[1] + 1f-5  # > 1e-6
-
-            @test_throws ArgumentError cubic_interp(x_f32, y_outside, 0.5f0; bc=PeriodicBC())
-
-            # Just within Float32 tolerance
-            y_within = sin.(x_f32) |> collect
-            y_within[end] = y_within[1] + 1f-7  # < 1e-6
-
-            @test cubic_interp(x_f32, y_within, 0.5f0; bc=PeriodicBC()) isa Float32
-        end
-
-        @testset "Cubic bc=PeriodicBC() error message contains useful info" begin
+        @testset "Error message contains useful info and tip" begin
             y_invalid = collect(x)
 
             try
@@ -458,7 +435,7 @@ using FastInterpolations
                 @test occursin("PeriodicBC", msg)
                 @test occursin("y[1]", msg)
                 @test occursin("y[end]", msg)
-                @test occursin("diff", msg)
+                @test occursin("y[end] = y[1]", msg)  # Helpful tip
             end
         end
     end

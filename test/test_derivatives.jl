@@ -1715,7 +1715,8 @@ end # Derivative Comprehensive Coverage
         # PeriodicBC requires y[1] ≈ y[end], use full period of sin
         @testset "BC=PeriodicBC" begin
             x_periodic = collect(range(0.0, 2π, 51))
-            y_periodic = sin.(x_periodic)  # sin(0) = sin(2π) = 0
+            y_periodic = sin.(x_periodic)
+            y_periodic[end] = y_periodic[1]  # Ensure exact periodicity
 
             itp = cubic_interp(x_periodic, y_periodic; bc=PeriodicBC())
             d1 = deriv1(itp)

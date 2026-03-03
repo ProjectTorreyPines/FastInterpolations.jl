@@ -246,13 +246,11 @@ the index expressions into the method body at specialization time.
     first_idx = [d == D ? 1    : idx_vars[d] for d in 1:N]
     last_idx  = [d == D ? :n_D : idx_vars[d] for d in 1:N]
 
-    # Inner comparison body: direct indexing, no intermediary objects
+    # Inner comparison body: strict == equality, no tolerance parameters
     check = quote
         v1 = @inbounds data[$(first_idx...)]
         vn = @inbounds data[$(last_idx...)]
-        if !_periodic_match(v1, vn, atol, rtol)
-            _throw_periodic_nd_error($D, v1, vn)
-        end
+        v1 == vn || _throw_periodic_nd_error($D, v1, vn)
     end
 
     # Wrap in nested loops over all dims except D (outermost = N, innermost = 1)
@@ -268,8 +266,6 @@ the index expressions into the method body at specialization time.
 
     return quote
         n_D  = size(data, $D)
-        atol = _periodic_atol(Tg)
-        rtol = _periodic_rtol(Tg)
         $body
         return nothing
     end

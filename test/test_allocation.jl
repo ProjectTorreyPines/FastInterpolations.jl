@@ -536,9 +536,9 @@ import FastInterpolations: _get_cubic_cache
     # Periodic BC now uses autocache for zero-allocation repeated interpolation.
 
     @testset "Periodic BC: CubicInterpolant callable is zero-allocation" begin
-        # Periodic data (y[1] ≈ y[end])
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
+        y[end] = y[1]  # Ensure exact periodicity
 
         # Create callable via cubic_interp (computes z coefficients)
         itp = cubic_interp(x, y; bc=PeriodicBC(), autocache=false)
@@ -563,6 +563,7 @@ import FastInterpolations: _get_cubic_cache
     @testset "Periodic BC: cubic_interp with explicit cache is zero-allocation" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
+        y[end] = y[1]  # Ensure exact periodicity
         x_query = [0.5, 1.0, 1.5]
         output = similar(x_query)
 
@@ -584,6 +585,7 @@ import FastInterpolations: _get_cubic_cache
         # Use in-place version for accurate measurement (excludes output allocation)
         x_periodic = collect(range(0.0, 2π, 101))
         y_periodic = sin.(x_periodic)
+        y_periodic[end] = y_periodic[1]  # Ensure exact periodicity
         x_query = [1.0]
         output = similar(x_query)
 
@@ -1086,6 +1088,7 @@ import FastInterpolations: _get_cubic_cache
 
             x = range(0.0, 2π, 51)
             y = sin.(collect(x))
+            y[end] = y[1]  # Ensure exact periodicity
 
             # Prime periodic cache
             cubic_interp(x, y, 1.0; bc=PeriodicBC())

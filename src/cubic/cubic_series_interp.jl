@@ -663,15 +663,11 @@ function _build_series_periodic(
     x, y_mat = _prepare_periodic(x, y_mat, bc)
     n_pts = size(y_mat, 1)
 
-    # Validate periodic endpoints for all series
-    atol = _periodic_atol(Tg)
-    rtol = _periodic_rtol(Tg)
+    # Validate periodic endpoints for all series (strict == equality)
     @inbounds for k in 1:n_series_count
         y_first = y_mat[1, k]
         y_last = y_mat[n_pts, k]
-        if !_periodic_match(y_first, y_last, atol, rtol)
-            _throw_periodic_series_error(k, y_first, y_last)
-        end
+        y_first == y_last || _throw_periodic_series_error(k, y_first, y_last)
     end
 
     # Get periodic cache

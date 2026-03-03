@@ -48,64 +48,49 @@ end
 # Endpoint Validation
 # ========================================
 
-# ── Periodic endpoint tolerance ──
-# eps^(3/4): tight enough to catch real mismatches, loose enough for floating-point noise.
-# Constant-folded by LLVM when Tg is concrete (ret double <literal>).
-@inline _periodic_atol(::Type{Tg}) where {Tg<:AbstractFloat} = eps(Tg)^(3/4)
-@inline _periodic_rtol(::Type{Tg}) where {Tg<:AbstractFloat} = sqrt(eps(Tg))
-
 """
-    _periodic_match(a, b, atol, rtol) -> Bool
+    _check_periodic_endpoints(y::AbstractVector)
 
-Check if two values match for periodic endpoint validation.
-Uses `==` first (covers exact match and duck-typed values without `isapprox`),
-then falls back to `isapprox` with both absolute and relative tolerance.
-"""
-@inline _periodic_match(a, b, atol, rtol) = a == b || isapprox(a, b; atol=atol, rtol=rtol)
-
-"""
-    _check_periodic_endpoints(y::AbstractVector, ::Type{Tg})
-
-Validate that y[1] ≈ y[end] for periodic boundary conditions.
+Validate that `y[1] == y[end]` for periodic boundary conditions (inclusive endpoint).
 Called once at construction time (zero runtime overhead).
 
-Supports arbitrary value types via `_periodic_match`: types that define `isapprox`
-get approximate comparison; types with only `==` get exact equality check.
+Uses strict `==` equality — no approximate comparison. This is universal for all
+value types (scalars, vectors, duck-typed custom types) without requiring `norm`,
+`isapprox`, or any tolerance parameters.
 
-Throws `ArgumentError` if endpoints differ significantly.
+If your data is computed (e.g., `sin.(range(0, 2π, n))`), set `y[end] = y[1]`
+explicitly to ensure exact periodicity.
+
+Throws `ArgumentError` if endpoints differ.
 """
-@inline function _check_periodic_endpoints(y::AbstractVector, ::Type{Tg}) where {Tg<:AbstractFloat}
-    y1, yn = first(y), last(y)
-    atol = _periodic_atol(Tg)
-    rtol = _periodic_rtol(Tg)
-    if !_periodic_match(y1, yn, atol, rtol)
-        _throw_periodic_endpoint_error(y1, yn)
-    end
+@inline function _check_periodic_endpoints(y::AbstractVector)
+    first(y) == last(y) || _throw_periodic_endpoint_error(first(y), last(y))
     return nothing
 end
 
 @noinline function _throw_periodic_endpoint_error(y1, yn)
     throw(ArgumentError(
-        "PeriodicBC (inclusive endpoint) requires y[1] ≈ y[end], " *
-        "got y[1]=$y1, y[end]=$yn (diff=$(yn - y1)). " *
-        "If your data does not repeat the first point, use " *
-        "PeriodicBC(endpoint=:exclusive) instead."
+        "PeriodicBC (inclusive endpoint) requires y[1] == y[end], " *
+        "got y[1]=$y1, y[end]=$yn. " *
+        "Tip: set y[end] = y[1] to ensure exact periodicity, or use " *
+        "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point."
     ))
 end
 
 @noinline function _throw_periodic_series_error(k, y_first, y_last)
     throw(ArgumentError(
-        "PeriodicBC (inclusive endpoint) requires y[1] ≈ y[end] for all series, " *
-        "but series $k has y[1]=$y_first, y[end]=$y_last (diff=$(y_last - y_first)). " *
-        "If your data does not repeat the first point, use " *
-        "PeriodicBC(endpoint=:exclusive) instead."
+        "PeriodicBC (inclusive endpoint) requires y[1] == y[end] for all series, " *
+        "but series $k has y[1]=$y_first, y[end]=$y_last. " *
+        "Tip: set y[end] = y[1] for each series, or use " *
+        "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point."
     ))
 end
 
 @noinline function _throw_periodic_nd_error(d, v_first, v_last)
     throw(ArgumentError(
-        "Periodic BC on dim $d requires data to match at first/last indices, " *
-        "but found diff=$(v_last - v_first)"
+        "Periodic BC on dim $d requires data[1,...] == data[end,...], " *
+        "but found data[1,...]=$v_first, data[end,...]=$v_last. " *
+        "Tip: set the last slice equal to the first along dim $d."
     ))
 end
 

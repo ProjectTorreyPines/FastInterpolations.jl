@@ -80,6 +80,7 @@ else
 
     # Duck typing (custom value types)
     include("test_duck_typing.jl")
+    include("test_duck_typing_comprehensive.jl")
 
     # Coefficients API
     include("test_coeffs.jl")

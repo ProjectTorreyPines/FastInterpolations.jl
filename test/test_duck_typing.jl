@@ -6,9 +6,9 @@
 # By staying outside Number, the generic muladd(x,y,z) = x*y+z fires automatically.
 #
 # Four custom types tested:
-# 1. BareMinFloat (bare struct, wraps Float64) — TRUE minimum: 7 core ops only
-# 2. ScaledFloat (bare struct, wraps Float64) — 7 core + convert + isapprox
-# 3. MeasuredFloat (bare struct, val ± err) — 7 core + convert + isapprox
+# 1. BareMinFloat (bare struct, wraps Float64) — TRUE minimum: 5 core ops only
+# 2. ScaledFloat (bare struct, wraps Float64) — 5 core + zero + / + convert + isapprox
+# 3. MeasuredFloat (bare struct, val ± err) — 5 core + zero + / + convert + isapprox
 # 4. SVector (from StaticArrays.jl) — real-world non-Number type
 
 using Test
@@ -75,43 +75,50 @@ Base.isapprox(a::MeasuredFloat, b::MeasuredFloat; kwargs...) = isapprox(a.val, b
 # ================================================================
 # Core Minimum Type: BareMinFloat (NOT <: Number)
 # ================================================================
-# TRUE minimum: ONLY 7 arithmetic operations — no convert, no isapprox,
-# no /(Tv,Int), no ==. Proves the core operations are sufficient for
-# ALL interpolation methods with default boundary conditions.
+# TRUE minimum: ONLY 5 arithmetic operations — no zero(::Type), no /(Tv,Tg),
+# no convert, no isapprox, no ==. Proves the 5 core vector-space ops are
+# sufficient for ALL interpolation methods with default boundary conditions.
+#
+# The 5 ops form a bimodule over Tg:
+#   +(Tv,Tv), -(Tv,Tv)           — abelian group
+#   *(Tg,Tv), *(Tv,Tg)           — left/right scalar multiplication
+#   *(Int,Tv)                     — integer scaling (gives 0*y, (-1)*y, 2*y, …)
+#
+# NOT needed:
+#   zero(::Type{Tv})  → replaced by 0 * y  (via *(Int,Tv))
+#   /(Tv, Tg)         → replaced by Tv * inv(Tg)  (inv stays in Tg-space)
 
 struct BareMinFloat
     val::Float64
 end
 
-# Core 7 operations:
-Base.zero(::Type{BareMinFloat}) = BareMinFloat(0.0)
+# Core 5 operations — sufficient for ALL methods and ALL boundary conditions:
 Base.:+(a::BareMinFloat, b::BareMinFloat) = BareMinFloat(a.val + b.val)
 Base.:-(a::BareMinFloat, b::BareMinFloat) = BareMinFloat(a.val - b.val)
 Base.:*(a::Float64, b::BareMinFloat) = BareMinFloat(a * b.val)
 Base.:*(a::BareMinFloat, b::Float64) = BareMinFloat(a.val * b)
 Base.:*(a::Integer, b::BareMinFloat) = BareMinFloat(a * b.val)
-Base.:/(a::BareMinFloat, b::Float64) = BareMinFloat(a.val / b)
-# That's it. Nothing else. This is the documented minimum.
+# That's it. 5 ops. Nothing else. This is the documented minimum.
 
 # ================================================================
-# Custom Type 5: NoZeroFloat (NO zero(::Type) — only 6 core ops)
+# Custom Type 5: NoZeroFloat (same 5 core ops as BareMinFloat)
 # ================================================================
-# Identical to BareMinFloat but WITHOUT zero(::Type{NoZeroFloat}).
-# Proves that ZeroCurvBC/ZeroSlopeBC work via value-based _normalize_bc
-# (0 * sample) without requiring zero(::Type). Mimics Vector{Float64}
-# where zero(::Type) is impossible (dimension unknown from type alone).
+# Separate type from BareMinFloat — used ONLY in the "No zero(::Type)"
+# testset to prove that ZeroCurvBC/ZeroSlopeBC work via value-based
+# _normalize_bc (0 * sample) without requiring zero(::Type).
+# Mimics Vector{Float64} where zero(::Type) is impossible.
+# Has the same 5 core ops — distinct type proves independence.
 
 struct NoZeroFloat
     val::Float64
 end
 
-# 6 core ops (no zero):
+# Same 5 core ops (separate type for test isolation):
 Base.:+(a::NoZeroFloat, b::NoZeroFloat) = NoZeroFloat(a.val + b.val)
 Base.:-(a::NoZeroFloat, b::NoZeroFloat) = NoZeroFloat(a.val - b.val)
 Base.:*(a::Float64, b::NoZeroFloat) = NoZeroFloat(a * b.val)
 Base.:*(a::NoZeroFloat, b::Float64) = NoZeroFloat(a.val * b)
 Base.:*(a::Integer, b::NoZeroFloat) = NoZeroFloat(a * b.val)
-Base.:/(a::NoZeroFloat, b::Float64) = NoZeroFloat(a.val / b)
 
 
 @testset "Duck Typing" begin
@@ -126,11 +133,11 @@ Base.:/(a::NoZeroFloat, b::Float64) = NoZeroFloat(a.val / b)
     xq = 1.5
 
     # ================================================================
-    # CORE MINIMUM: 7 operations only (BareMinFloat)
+    # CORE MINIMUM: 5 operations only (BareMinFloat)
     # Proves sufficiency for ALL methods with default BCs.
     # Uses .val for assertions since isapprox is not defined.
     # ================================================================
-    @testset "Core Minimum (7 ops)" begin
+    @testset "Core Minimum (5 ops)" begin
         y_bare = BareMinFloat.([1.0, 4.0, 2.0, 5.0, 3.0])
 
         @testset "1D" begin

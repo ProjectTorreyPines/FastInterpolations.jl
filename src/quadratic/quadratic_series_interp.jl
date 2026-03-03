@@ -397,6 +397,7 @@ function quadratic_interp(
 
     # Promote BC values to Tv_out for convert(Tv, bc.val) compatibility
     bc_promoted = _normalize_bc(bc, first(y_mat))
+    _typed_zero = 0 * y_mat[1]
 
     # Compute coefficients for each series from y_mat columns
     for k in 1:n_ser
@@ -409,7 +410,7 @@ function quadratic_interp(
         @inbounds for i in 1:(n_pts-1)
             a_mat[i, k] = a_k[i]
         end
-        a_mat[n_pts, k] = zero(Tv_out)
+        a_mat[n_pts, k] = _typed_zero
 
         if k == 1
             copyto!(h, h_k)

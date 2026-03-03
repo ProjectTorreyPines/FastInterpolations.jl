@@ -93,6 +93,26 @@ Base.:*(a::Integer, b::BareMinFloat) = BareMinFloat(a * b.val)
 Base.:/(a::BareMinFloat, b::Float64) = BareMinFloat(a.val / b)
 # That's it. Nothing else. This is the documented minimum.
 
+# ================================================================
+# Custom Type 5: NoZeroFloat (NO zero(::Type) — only 6 core ops)
+# ================================================================
+# Identical to BareMinFloat but WITHOUT zero(::Type{NoZeroFloat}).
+# Proves that ZeroCurvBC/ZeroSlopeBC work via value-based _normalize_bc
+# (0 * sample) without requiring zero(::Type). Mimics Vector{Float64}
+# where zero(::Type) is impossible (dimension unknown from type alone).
+
+struct NoZeroFloat
+    val::Float64
+end
+
+# 6 core ops (no zero):
+Base.:+(a::NoZeroFloat, b::NoZeroFloat) = NoZeroFloat(a.val + b.val)
+Base.:-(a::NoZeroFloat, b::NoZeroFloat) = NoZeroFloat(a.val - b.val)
+Base.:*(a::Float64, b::NoZeroFloat) = NoZeroFloat(a * b.val)
+Base.:*(a::NoZeroFloat, b::Float64) = NoZeroFloat(a.val * b)
+Base.:*(a::Integer, b::NoZeroFloat) = NoZeroFloat(a * b.val)
+Base.:/(a::NoZeroFloat, b::Float64) = NoZeroFloat(a.val / b)
+
 
 @testset "Duck Typing" begin
 
@@ -686,6 +706,48 @@ Base.:/(a::BareMinFloat, b::Float64) = BareMinFloat(a.val / b)
             result = sitp(1.5)
             @test all(r -> r isa MeasuredFloat, result)
             @test all(r -> r.err > 0, result)
+        end
+    end
+
+    # ================================================================
+    # NO zero(::Type) — proves value-based _normalize_bc works
+    # ================================================================
+    # NoZeroFloat is identical to BareMinFloat but WITHOUT zero(::Type).
+    # This proves ZeroCurvBC/ZeroSlopeBC paths work via 0 * sample_value,
+    # not via zero(Tv). Motivating use case: Vector{Float64} as Tv.
+    @testset "No zero(::Type) — value-based BC normalization" begin
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y_nz = NoZeroFloat.([1.0, 4.0, 2.0, 5.0, 3.0])
+
+        @testset "1D cubic ZeroCurvBC" begin
+            itp = cubic_interp(x, y_nz; bc=ZeroCurvBC())
+            @test itp(1.5) isa NoZeroFloat
+        end
+
+        @testset "1D cubic ZeroSlopeBC" begin
+            itp = cubic_interp(x, y_nz; bc=ZeroSlopeBC())
+            @test itp(1.5) isa NoZeroFloat
+        end
+
+        @testset "1D quadratic default BC (no zero(::Type) needed)" begin
+            itp = quadratic_interp(x, y_nz)
+            @test itp(1.5) isa NoZeroFloat
+        end
+
+        @testset "2D ND cubic ZeroCurvBC" begin
+            xg = [0.0, 1.0, 2.0, 3.0]
+            yg = [0.0, 1.0, 2.0, 3.0]
+            data = [NoZeroFloat(xi + 2yj) for xi in xg, yj in yg]
+            itp = cubic_interp((xg, yg), data; bc=ZeroCurvBC())
+            @test itp((0.5, 1.5)) isa NoZeroFloat
+        end
+
+        @testset "2D ND quadratic ZeroCurvBC" begin
+            xg = [0.0, 1.0, 2.0, 3.0]
+            yg = [0.0, 1.0, 2.0, 3.0]
+            data = [NoZeroFloat(xi + 2yj) for xi in xg, yj in yg]
+            itp = quadratic_interp((xg, yg), data; bc=ZeroCurvBC())
+            @test itp((0.5, 1.5)) isa NoZeroFloat
         end
     end
 

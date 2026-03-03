@@ -429,6 +429,35 @@ import FastInterpolations:
             @test bc_p isa Right
             @test bc_p.bc isa QuadraticFit
         end
+
+        @testset "_normalize_bc value-based overloads" begin
+            import FastInterpolations: _normalize_bc
+
+            # ZeroCurvBC: value-based uses 0 * sample instead of zero(Tv)
+            bc_zc = _normalize_bc(ZeroCurvBC(), 1.0)
+            @test bc_zc isa BCPair
+            @test bc_zc.left isa Deriv2
+            @test bc_zc.left.val === 0.0
+            @test bc_zc.right.val === 0.0
+
+            # ZeroSlopeBC: same pattern
+            bc_zs = _normalize_bc(ZeroSlopeBC(), 1.0f0)
+            @test bc_zs isa BCPair
+            @test bc_zs.left isa Deriv1
+            @test bc_zs.left.val === 0.0f0
+
+            # Generic fallback: value → typeof(value) → type-based method
+            bc_left = _normalize_bc(Left(Deriv2(5)), 1.0)
+            @test bc_left isa Left
+            @test bc_left.bc.val === 5.0
+
+            # SVector: 0 * SVector produces correct zero vector
+            using StaticArrays
+            sv = SVector(1.0, 2.0, 3.0)
+            bc_sv = _normalize_bc(ZeroCurvBC(), sv)
+            @test bc_sv.left.val === SVector(0.0, 0.0, 0.0)
+            @test bc_sv.right.val === SVector(0.0, 0.0, 0.0)
+        end
     end
 
     # ========================================

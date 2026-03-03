@@ -44,21 +44,21 @@ end
     y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
     ::ConstExtrap, ::AbstractSide, ::EvalDeriv1
 ) where {Tg<:AbstractFloat, Tv}
-    return zero(Tv)
+    return 0 * first(y)
 end
 
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
     ::ConstExtrap, ::AbstractSide, ::EvalDeriv2
 ) where {Tg<:AbstractFloat, Tv}
-    return zero(Tv)
+    return 0 * first(y)
 end
 
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
     ::ConstExtrap, ::AbstractSide, ::EvalDeriv3
 ) where {Tg<:AbstractFloat, Tv}
-    return zero(Tv)
+    return 0 * first(y)
 end
 
 # ExtendExtrap delegates to ConstExtrap (slope=0 for constant function)
@@ -123,7 +123,7 @@ AD Support:
     # Boundary special case: xi == x[end] → y[end] directly
     # (avoids _search_interval returning idx=n-1, dL=h)
     if xi_typed == x_max
-        return op isa EvalValue ? (@inbounds y[end]) : zero(Tv)
+        return op isa EvalValue ? (@inbounds y[end]) : 0 * first(y)
     end
 
     # Extrapolation handling (ConstExtrap, ExtendExtrap)

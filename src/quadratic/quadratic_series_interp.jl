@@ -330,7 +330,7 @@ end
     idx::Int,
     op::EvalDeriv1
 ) where {Tv}
-    fill!(output, zero(Tv))
+    fill!(output, 0 * first(y_point))
     return output
 end
 
@@ -340,7 +340,7 @@ end
     idx::Int,
     op::EvalDeriv2
 ) where {Tv}
-    fill!(output, zero(Tv))
+    fill!(output, 0 * first(y_point))
     return output
 end
 
@@ -645,7 +645,7 @@ end
     op::Union{EvalDeriv1, EvalDeriv2}
 ) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
     if aq.side != 0x00  # outside domain
-        return zero(Tv)
+        return 0 * first(y)
     else
         return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)
     end

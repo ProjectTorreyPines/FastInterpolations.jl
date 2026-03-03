@@ -64,11 +64,10 @@ end
 
 First derivative of constant interpolation.
 Always returns zero (constant function has no slope).
-Returns `zero(Tv)` to preserve Complex type when applicable.
-dL can be any Real (including ForwardDiff.Dual for AD).
+Uses `0 * y_left` for duck-typing support and NaN propagation.
 """
 @inline function _constant_kernel(::EvalDeriv1, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg<:AbstractFloat, Td<:Real}
-    return zero(Tv)
+    return 0 * y_left
 end
 
 """
@@ -76,21 +75,16 @@ end
 
 Second derivative of constant interpolation.
 Always returns zero (constant function has no curvature).
-Returns `zero(Tv)` to preserve Complex type when applicable.
-dL can be any Real (including ForwardDiff.Dual for AD).
 """
 @inline function _constant_kernel(::EvalDeriv2, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg<:AbstractFloat, Td<:Real}
-    return zero(Tv)
+    return 0 * y_left
 end
 
 """
-    _constant_kernel(::EvalDeriv3, y_left, y_right, h, dL, side) -> zero(Tv)
+    _constant_kernel(::EvalDeriv3, y_left, y_right, h, dL, side)
 
 Third derivative of constant interpolation is always zero.
-Constant functions have all derivatives equal to zero.
-Returns `zero(Tv)` to preserve Complex type when applicable.
-dL can be any Real (including ForwardDiff.Dual for AD).
 """
 @inline function _constant_kernel(::EvalDeriv3, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg<:AbstractFloat, Td<:Real}
-    return zero(Tv)
+    return 0 * y_left
 end

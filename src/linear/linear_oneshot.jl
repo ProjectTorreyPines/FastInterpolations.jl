@@ -269,27 +269,27 @@ Works with any value type Tv (real or complex).
 end
 
 @inline function _linear_eval_constant_extrap(
-    ::AbstractVector{Tv},
+    y::AbstractVector{Tv},
     ::Bool,
     ::EvalDeriv1
 ) where {Tv}
-    return zero(Tv)
+    return 0 * first(y)
 end
 
 @inline function _linear_eval_constant_extrap(
-    ::AbstractVector{Tv},
+    y::AbstractVector{Tv},
     ::Bool,
     ::EvalDeriv2
 ) where {Tv}
-    return zero(Tv)
+    return 0 * first(y)
 end
 
 @inline function _linear_eval_constant_extrap(
-    ::AbstractVector{Tv},
+    y::AbstractVector{Tv},
     ::Bool,
     ::EvalDeriv3
 ) where {Tv}
-    return zero(Tv)
+    return 0 * first(y)
 end
 
 """

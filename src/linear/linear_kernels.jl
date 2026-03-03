@@ -64,9 +64,7 @@ Note: Mathematically, the second derivative is a Dirac delta at knots,
 but we return zero everywhere as a practical approximation.
 """
 @inline function _linear_kernel(::EvalDeriv2, yL::Tv, ::Tv, h::Tg, dL) where {Tg<:AbstractFloat, Tv}
-    # Return zero in the appropriate output type
-    # For Complex values, zero(Complex{Tg}) = 0.0 + 0.0im
-    return zero(Tv)
+    return 0 * yL
 end
 
 """
@@ -76,6 +74,6 @@ Third derivative of linear interpolation is always zero.
 Linear functions have constant first derivative (slope), zero second and third derivatives.
 """
 @inline function _linear_kernel(::EvalDeriv3, yL::Tv, ::Tv, h::Tg, dL) where {Tg<:AbstractFloat, Tv}
-    return zero(Tv)
+    return 0 * yL
 end
 

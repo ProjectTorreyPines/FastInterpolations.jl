@@ -210,8 +210,9 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
                 output[k] = y_point[k, n_pts]
             end
         else
+            z = 0 * first(y_point)
             @inbounds @simd for k in axes(output, 1)
-                output[k] = zero(Tv)
+                output[k] = z
             end
         end
         return output
@@ -551,7 +552,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
         if op isa EvalValue
             @inbounds return y[n_pts, k]
         else
-            return zero(Tv)  # Derivatives of step function are zero
+            return 0 * first(y)  # Derivatives of step function are zero
         end
     end
 
@@ -582,7 +583,7 @@ Internal: Core constant evaluation for series k at anchored query point.
 ) where {Tg<:AbstractFloat, Tv}
     # Derivatives of constant (step) function are zero
     if !(op isa EvalValue)
-        return zero(Tv)
+        return 0 * first(y)
     end
 
     idx = aq.idx

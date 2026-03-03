@@ -88,12 +88,12 @@ end
 
 """Second derivative of linear is always zero."""
 @inline function _linear_kernel(::EvalDeriv2, yL::Tv, ::Tv, ::_LinearAnchoredQuery{Tg}) where {Tg<:AbstractFloat, Tv}
-    return zero(Tv)
+    return 0 * yL
 end
 
 """Third derivative of linear is always zero."""
 @inline function _linear_kernel(::EvalDeriv3, yL::Tv, ::Tv, ::_LinearAnchoredQuery{Tg}) where {Tg<:AbstractFloat, Tv}
-    return zero(Tv)
+    return 0 * yL
 end
 
 # ========================================

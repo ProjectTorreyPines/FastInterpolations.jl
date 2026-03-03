@@ -203,8 +203,8 @@ O(n) time, O(1) extra space (on-the-fly β computation).
     # d[1] = [Σ α[i]*(s[i] - β[i])/h[i]] / [Σ 1/h[i]]
 
     inv_h_sum = zero(Tg)
-    numerator = zero(Tv)
-    β = zero(Tv)
+    numerator = 0 * first(s)
+    β = 0 * first(s)
     sign = one(Tg)  # α[1] = (-1)^(1+1) = +1
 
     @inbounds for i in 1:n_intervals

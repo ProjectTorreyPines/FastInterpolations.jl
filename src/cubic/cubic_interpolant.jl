@@ -162,17 +162,17 @@ end
     return aq.side == 0x01 ? @inbounds(itp.y[1]) : @inbounds(itp.y[end])
 end
 
-# ConstExtrap for derivatives - return zero (preserves Tv type for Complex)
-@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv1) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    return zero(Tv)
+# ConstExtrap for derivatives - return zero via 0 * y (duck-typing compatible)
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv1) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+    return 0 * first(itp.y)
 end
 
-@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv2) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    return zero(Tv)
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv2) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+    return 0 * first(itp.y)
 end
 
-@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv3) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    return zero(Tv)
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv3) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+    return 0 * first(itp.y)
 end
 
 # ExtendExtrap - use precomputed weights (boundary polynomial extrapolation)

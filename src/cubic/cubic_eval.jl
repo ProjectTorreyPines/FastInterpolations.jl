@@ -106,9 +106,9 @@ end
 # For derivatives: return zero (constant function has no slope/curvature)
 # Tv can be Real or Complex
 @inline _constant_extrap_result(::EvalValue, y_boundary::Tv) where {Tv} = y_boundary
-@inline _constant_extrap_result(::EvalDeriv1, y_boundary::Tv) where {Tv} = zero(Tv)
-@inline _constant_extrap_result(::EvalDeriv2, y_boundary::Tv) where {Tv} = zero(Tv)
-@inline _constant_extrap_result(::EvalDeriv3, y_boundary::Tv) where {Tv} = zero(Tv)
+@inline _constant_extrap_result(::EvalDeriv1, y_boundary::Tv) where {Tv} = 0 * y_boundary
+@inline _constant_extrap_result(::EvalDeriv2, y_boundary::Tv) where {Tv} = 0 * y_boundary
+@inline _constant_extrap_result(::EvalDeriv3, y_boundary::Tv) where {Tv} = 0 * y_boundary
 
 # --- Searcher-aware versions ---
 

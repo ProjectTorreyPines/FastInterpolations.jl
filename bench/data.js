@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1772560925305,
+  "lastUpdate": 1772579450089,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -23326,6 +23326,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 3397.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a72d3d2bb225fcb2d0e8ee57c641266f15112fb1",
+          "message": "(feat): Support custom value types (Duck-typing) (#54)\n\n* Add duck-typing support for custom value types\n\nEnable custom number types (e.g., Unitful, Measurements) as interpolation\nvalues by making _promote_itp_inputs branch internally on _PromotableValue:\n- Standard numerics (Real/Complex): promoted as before (zero behavioral change)\n- Custom types: grid converted to Float, y preserved as-is\n\nChanges:\n- utils.jl: Add _PromotableValue union, _real_eltype/_value_type fallbacks,\n  refactor _promote_itp_inputs with internal type branching\n- bc_types.jl: Document that auto-generated Deriv constructors handle duck types\n- 4 Series files: Guard _real_eltype in Real fallback methods\n- test_series_wrapper.jl: Update Vec{Vec} rejection test for new error path\n\n* Add duck-typing tests for custom value types\n\nVerify that custom Number types (non-Real, non-Complex) are preserved\nthrough interpolation construction and evaluation. Tests cover:\n- ScaledFloat custom type with minimal ring operations\n- Constant and linear interpolation with custom Tv\n- Integer grid + custom Tv\n- Standard promotion regression (Int→Float64, Float32 widening, Complex)\n- Deriv BC accepting custom types via auto-generated constructor\n- _promote_itp_inputs zero-copy for custom types\n\n* Extend duck-typing tests to quadratic and cubic interpolation\n\nAdd ScaledFloat operations needed by spline solvers (Integer*Tv,\nmuladd(Tv,Tg,Tv), unary minus) and test all 4 interpolation types\nwith custom value types.\n\n* Remove Tv(scalar) conversions from cubic ND math for duck-typing support\n\nReplace Tv(scalar) casts with Tg(scalar) or bare scalar literals in\ncubic_nd_math.jl. The Tv(scalar) pattern fails for array-valued types\n(e.g. SVector{2}(2) → DimensionMismatch) and is unnecessary since the\narithmetic already follows the muladd(Tg, Tv, Tv) pattern used by 1D\nkernels. For standard types (Float64, ComplexF64), this is neutral-to-\npositive: Float64×ComplexF64 (2 FP ops) vs ComplexF64×ComplexF64 (6).\n\nAffected functions:\n- _moments_to_derivatives_1d!: inv_6, h/inv_h, moment_sum\n- _apply_derivative_bc!: Deriv1 val assignment, PeriodicData average\n- _deriv_1d! CubicFit: BCPair construction\n- _ldiv_along_dim_vectorized!: Thomas solver factor/inv_d\n\n* Add comprehensive duck-typing tests with SVector, MeasuredFloat, and ND coverage\n\nExtend test_duck_typing.jl with three custom value types exercising\ndifferent duck-typing paths:\n- ScaledFloat (<: Number): explicit muladd, identity constructor\n- MeasuredFloat (<: Number): val+err fields, mimics Measurements.jl\n- SVector{2,Float64} (∉ Number): array-valued via StaticArrays\n\nCoverage includes 1D interpolation (all 4 types × 3 custom types),\n2D ND interpolation (constant/linear/quadratic/cubic × SVector and\nScaledFloat), MeasuredFloat error propagation sanity checks, and\n_promote_itp_inputs internal API verification.\n\nAdd StaticArrays as test dependency.\n\n* Add _value_type promotion to Quadratic/Cubic ND constructors\n\nAlign Quadratic ND and Cubic ND constructors with Constant/Linear ND\nby replacing bare `eltype(data)` with `_value_type(Tv_raw, Tg)` +\nconditional conversion. This ensures standard numeric types (Int, Float32,\nComplex) are promoted to match grid precision, avoiding mixed-type\narithmetic overhead in ND solvers (e.g. muladd(Float64, Int, Int)).\n\nCustom duck-typing types are preserved via the _value_type fallback.\n\n* Fix Series and ND duck-typing: BC promotion, output type, cross-type ops\n\n- Add _series_output_type helper: falls back to Tv when promote_type\n  yields non-concrete type (custom types without promote_rule)\n- Quadratic series: add _promote_bc(bc, Tv_out) before coefficient loop\n- Quadratic series: replace Tg(2)*a_k with a_k+a_k (same-type op)\n- Quadratic ND: Deriv2(0.0) → Deriv2(0) for lazy type promotion\n- Cubic series: dual BC normalization (Tg for cache, Tv for solver RHS)\n- Replace promote_type with _series_output_type across all 7 series\n  callable sites (constant, linear, quadratic, cubic)\n- Add Series duck-typing tests for ScaledFloat and MeasuredFloat\n\n* Refactor periodic endpoint validation for duck-typing support\n\nReplace hardcoded tolerance constants with parametric functions that\nderive tolerance from grid type Tg (always AbstractFloat) instead of\nvalue type Tv, enabling custom value types with PeriodicBC.\n\n- Add _periodic_atol(Tg), _periodic_rtol(Tg) using eps(Tg)^(3/4) and sqrt(eps(Tg))\n- Add _periodic_match(a,b,atol,rtol) with == gate for duck-typed values\n- Pass both atol and rtol to isapprox (fixes bug where atol-only disabled rtol)\n- Extract error messages into @noinline helpers (cold path optimization)\n- Update all 4 validation sites: 1D, oneshot, series, ND (@generated)\n- Remove dead _check_periodic_data_nd runtime function and its tests\n\n* Fix cubic cache and quadratic BC promotion for duck-typing support\n\n- _cache_pointbc: use zero(T) instead of convert(T, bc.val) — cache\n  depends only on BC structure (Deriv1 vs Deriv2), not values. Solver\n  receives original Tv-valued BCs from caller via _solve_system!.\n- quadratic_interpolant: promote BC to eltype(y_p) not eltype(x_p),\n  consistent with cubic — BC values live in Tv space, not Tg.\n- series_wrapper: skip Tv_out.(v) when eltype(v) === Tv_out already.\n- Tests: rewrite with BareMinFloat (7 ops, NOT <: Number) proving true\n  minimum; add conditional requirements tests (convert, /(Tv,Int),\n  isapprox); update autocache expectations for structural zeros.\n- Docs: custom_value_types.md guide + pr_duck_typing.md release notes.\n\n* Eliminate promote_type(Tv,Tg) and /(Tv,Int) from duck-typing requirements\n\nReplace zero(promote_type(Tv,Tg)) with zero(Tv) in linear kernels,\nlinear ND eval, linear anchor, and ND integration API (16 sites).\nRewrite quadratic solver (κ/2)*h as κ*(h/2) to avoid /(Tv,Int).\n\nCore 7 ops now sufficient for ALL methods, ALL BCs — no conditionals\nexcept isapprox for PeriodicBC(endpoint=:inclusive).\n\n* Add documentation and tests for custom value types (duck typing) support\n\n* Update example in custom value types documentation to include 2D path interpolation with SVector\n\n* Add StaticArrays dependency to Project.toml\n\n* Fix PR #54 Copilot review issues: Rational promotion, PeriodicData division, ND integrate output type\n\n- Add Rational to _PromotableValue union for standard promotion path (utils.jl)\n- Change /(Tv, Int) to /(Tv, Tg) in PeriodicData averaging to avoid duck-typing requirement (cubic_nd_math.jl)\n- Introduce _integrate_nd_output_type helper with isconcretetype fallback for correct\n  output type promotion across all 4 ND integrate methods (integrate_api.jl)\n- Add ND integrate output type promotion tests (test_integral_nd.jl)\n\n* Unify quadratic BC handling with cubic's lazy normalization pattern\n\nReplace eager BC conversion (_resolve_bcs_nd_quadratic, _to_quadratic_bc,\n_promote_bc) with cubic's lazy pattern: keep raw AbstractBC flowing through\nthe ND build chain, normalize only when Tv is known.\n\n- Add _normalize_bc methods for Left/Right/MinCurvFit in bc_types.jl\n- Add lazy normalize step + dispatch wrappers in _slope_1d_quadratic!\n  (ZeroCurvBC, PolyFit → QuadraticBC conversion at Tv-aware call site)\n- Add fallback _slope_1d_quadratic! for unsupported BCs (clear ArgumentError)\n- Widen all NTuple{N, QuadraticBC} → NTuple{N, AbstractBC} signatures\n- Replace _resolve_bcs_nd_quadratic → shared _resolve_bcs_nd (4 call sites)\n- Replace _promote_bc → _normalize_bc in 1D paths (9 call sites)\n- Delete _resolve_bcs_nd_quadratic (6 methods), _to_quadratic_bc (4 methods),\n  _promote_bc (3 methods) — ~60 lines removed, ~15 added\n\n* Update tests for Copilot review fixes and quadratic BC unification\n\n- Add ND quadratic ZeroCurvBC + ND cubic PeriodicBC duck-typing tests\n- Add Rational promotion path test (test_duck_typing.jl)\n- Replace _resolve_bcs_nd_quadratic tests with _resolve_bcs_nd + _normalize_bc\n  tests (test_nd_coverage.jl)\n- Rename _promote_bc → _normalize_bc in type conversion tests (test_quadratic.jl)\n\n* Eliminate zero(::Type{Tv}) requirement from BC normalization\n\nAdd value-based _normalize_bc overloads that use 0 * sample instead of\nzero(Tv), enabling Tv types where zero(::Type) is undefined (e.g.\nVector{Float64} where dimension is unknown from type alone).\n\n- ZeroCurvBC/ZeroSlopeBC: new value-based methods using 0 * sample\n- Generic AbstractBC fallback: delegates to type-based via typeof(sample)\n- 15 Tv call sites updated: pass first(y) instead of Tv/eltype(y)\n- 7 Tg call sites unchanged: always AbstractFloat, zero(Tg) works fine\n\n* Add tests for value-based BC normalization (no zero(::Type) needed)\n\n- NoZeroFloat type: 6 core ops without zero(::Type), proves ZeroCurvBC/\n  ZeroSlopeBC work via 0 * sample (mimics Vector{Float64} as Tv)\n- End-to-end: 1D cubic/quadratic + 2D ND with NoZeroFloat and ZeroCurvBC\n- Unit tests: value-based _normalize_bc with scalar, Float32, SVector\n\n* Remove redundant type-check branch in _build_series_mat\n\nBroadcasting .= into Matrix{Tv_out} already converts elements via\nsetindex!, making the explicit eltype check and Tv_out.(v) branch\nunnecessary. For the Matrix path, Tv_out.(Y) already returns a\nMatrix{Tv_out} without the extra Matrix{Tv_out}() wrapper.\n\n* Replace tolerance-based periodic endpoint check with strict ==\n\nRemove _periodic_atol, _periodic_rtol, _periodic_match and simplify\n_check_periodic_endpoints to use strict == equality. This eliminates\nisapprox/norm/abs requirements from duck-typing contracts — only ==\nis needed, which all Julia types support.\n\nUsers computing periodic data (e.g. sin.(range(0, 2π, n))) must now\nset y[end] = y[1] explicitly. Error messages include this guidance.\n\nAddresses stevengj review comment #1-3 on PR #54 regarding\nscale-dependent _periodic_atol.\n\n* Absorb sign into coeff to eliminate (-1)*f[3] in PolyFit{2} LeftSide\n\nFactor out overall negative from muladd coefficients (-3,4,-1) → -(3,-4,1),\nabsorbing the sign into coeff = -inv_h/2. Removes the awkward (-1)*f[3]\nmultiplication without needing unary minus.\n\n* Remove redundant T(...) wrapping from integer literals in muladd stencils\n\nLLVM constant-folds Int→Float promotion identically to explicit T(n),\nso bare integer literals produce the same machine code with less noise.\nSame-type and mixed-type versions now share identical muladd structure.\n\n* Unify grid promotion with _promote_grid_float and enable y-direction AD\n\nAdd _promote_grid_float(Tg, Tv) helper to centralize the duck-typing guard\nfor grid type computation: promotable types (Integer, AbstractFloat, Rational,\nComplex) widen the grid, while duck types (Dual, Measurement) are ignored.\n\nReplace 8 scattered ternary patterns across Series constructors (4 Real-grid\n+ 4 AbstractFloat-grid paths) with single-line _promote_grid_float calls.\nFix _value_type dispatch to use _PromotableValue instead of Real, preventing\nDual values from being stripped to Float64 during Series matrix construction.\n\nAdd comprehensive y-direction AD tests: scalar gradients (partition of unity,\ngrid point exactness, wider stencil verification) and series Jacobians for\nall four interpolation methods (Linear, Constant, Cubic, Quadratic).\n\n* Replace zero(Tv) with 0 * y for duck-typing and NaN propagation\n\nzero(::Type{T}) requires the type to define a zero constructor,\nwhich fails for duck types. 0 * y only needs *(::Int, ::T) and\ncorrectly propagates NaN from input values.\n\n* Replace h with inv_h in linear kernel to eliminate Tv/Tg division\n\nLinear kernel now takes inv_h instead of h, converting the only\nremaining Tv/Tg division ((yR-yL)/h) into multiplication ((yR-yL)*inv_h).\nCall sites compute inv_h = inv(xR - xL) directly (Tg/Tg only).\n\n* Eliminate Tv division to reduce duck-typing requirement from 7 to 5 ops\n\nReplace all /(::Tv, ::Tg) and /(::Tv, ::Int) with inv()-based\nmultiplication in integrate_kernels.jl and coeffs.jl. Non-power-of-2\nTg-space divisions use inv(Tg(N)) for compile-time fmul instead of\nruntime fdiv. Update custom_value_types.md to document the minimal\n5-operation set: +, -, *(Tg,Tv), *(Tv,Tg), *(Int,Tv).\n\n* Replace one(T) / h with inv(h) for idiomatic inverse computation\n\n* Replace Tv/Tg division with Tg-space inv() in cubic solver and ND math\n\nCubic solver RHS: (y[i+1] - y[i]) / h → * _get_inv_h(spacing, i)\nCubic ND periodic BC avg: / Tg(2) → inv(Tg(2)) *\nPeriodic factor: vTy / denom → vTy * inv(denom)\n\nKeeps all division in Tg-space (Float64), eliminating the /(Tv, Tg)\nrequirement from the duck-typing contract.\n\n* Replace zero(Tout) with 0*sample for duck-typing safe integration init\n\nND partial-domain: zero(Tout) → conditional on Tout <: Number, else\n0 * itp.data[1] or 0 * itp.nodal_derivs.partials[1].\nND full-domain: same pattern via _nd_sample_value() helpers.\n\nEliminates zero(::Type{Tv}) requirement for non-Number value types in\nall ND integration paths (cubic, quadratic, linear, constant).\n\n* Replace zero(Tv_out) with 0*y_mat[1] in quadratic series padding\n\nEliminates zero(::Type{Tv}) call in the last-row padding of quadratic\nseries coefficient matrix, using value-based 0*y idiom instead.\n\n* Update linear kernel tests for inv_h parameter convention\n\n_linear_kernel now takes inv_h (precomputed inverse) instead of h.\nUpdate all test calls: h → inv(h), rename variables to inv_h.\n\n* Update duck-typing tests for 5-op minimum and add comprehensive suite\n\nBareMinFloat/NoZeroFloat: remove zero(::Type) and /(Tv,Tg) — now only\n5 core ops: +(Tv,Tv), -(Tv,Tv), *(Tg,Tv), *(Tv,Tg), *(Int,Tv).\n\nAdd test_duck_typing_comprehensive.jl: exhaustive method × kwarg × deriv\n× integrate coverage using strict 5-op DuckFloat5 type.\n\n* Update comments to indicate the unconstrained Tv (duck-typing)\n\n* Update `test_duck_typing_comprehensive.jl`\n\n* Add _output_eltype for duck-safe ND output type promotion\n\nReplace direct promote_type(Tv, Tg, ...) calls in linear/quadratic/cubic\nND one-shot paths with _output_eltype, which falls back to Tv when\npromote_type yields a non-concrete type (e.g. Any for custom duck types).\n\nAlso fix quadratic solver to use inv(inv_h_sum)*numerator instead of\nnumerator/inv_h_sum (avoids /(Tv,Tg) outside 5-op contract), add missing\nZeroSlopeBC dispatch for quadratic ND build, and expand duck-typing tests\nwith @inferred type stability checks and ZeroSlopeBC/MinCurvFit coverage.\n\n* Fix explicit Deriv BCs for duck-typed values in cubic ND paths\n\nThe ND paths (_deriv_1d!, _differentiate_nd_along_dim_batch!) called\n_normalize_bc(bc, Tg) before passing BCs to _get_cubic_cache, which\ntriggered convert(Float64, DuckFloat5) — impossible for 5-op-only types.\nThe 1D path never had this issue because it only calls _normalize_bc\nwith value-based sample (identity convert).\n\nFix: remove the unnecessary _normalize_bc(bc, Tg) pre-normalization in\nboth ND paths, and change _get_cubic_cache(x, ::PointBC) to use\n_cache_pointbc (structural BC with zero(Tg)) instead of _promote_pointbc\n(which requires convert on the BC value).\n\nAlso consolidate duck-typing tests into a single comprehensive file:\n- Merge explicit Deriv BC tests (Deriv3, nonzero values, BCPair combos,\n  ND per-axis, 3D) and @inferred construction checks\n- Add contract boundary tests (@test_throws for cross-type Deriv,\n  PeriodicBC :inclusive mismatch, standard promotion regression)\n- Delete test_duck_typing.jl (multi-type tests redundant — if 5-op\n  minimum passes, types with more ops are guaranteed) and temp\n  test_duck_deriv_bc.jl\n- Remove StaticArrays test dependency, saving compile time\n\n* Rewrite custom_value_types.md: clean 5-op vector space framing\n\n- Lead with the 5 required operations as vector space axioms\n- Use AbstractFloat/Integer instead of abstract Tg/Int notation\n- Remove eliminated-ops details, per-method tables, isapprox conditional\n- Remove Known Limitations and PeriodicBC isapprox section (now strict ==)\n- Clarify grid type accepts integers (auto-promoted internally)\n\n* Update custom_value_types.md: correct operation count and refine examples for duck-typed values\n\n* Fix boundary condition descriptions and enforce exact periodicity in ND examples\n\n* Update periodic boundary condition examples to use cosine function for consistency",
+          "timestamp": "2026-03-03T15:07:12-08:00",
+          "tree_id": "5a63cb7b12beec05ed33948b17d7dea1d9a99407",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/a72d3d2bb225fcb2d0e8ee57c641266f15112fb1"
+        },
+        "date": 1772579444283,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 58900,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83816\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 1786.34,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 431627,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515224\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 4316.68,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1781.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 31.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 26.96,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3946.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=240\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 56.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 31.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4527.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4510.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 10459.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3327.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 544.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 64942.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1480.58,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 14744.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 38.18,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 510.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 45367.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 44.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 39657.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 14.43,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 15.12,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 21.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 427.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 38615.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 26.45,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 16.53,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 1378.38,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 6512,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 50344.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 2065.68,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 3454.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 3652.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 17276.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 5081.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 40990.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 1696.38,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 377106.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 3285.1,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

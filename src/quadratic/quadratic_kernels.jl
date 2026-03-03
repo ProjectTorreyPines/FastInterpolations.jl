@@ -15,7 +15,7 @@
 #
 # Type parameters:
 # - Td<:Real: Offset type for dL (can be Tg or ForwardDiff.Dual for AD)
-# - Tv: Value type (can be Tg, Complex{Tg}, or other Number) for a, d, y
+# - Tv: Value type (unconstrained) for a, d, y
 
 """
     _quadratic_kernel(::EvalValue, a, d, y, dL) -> value
@@ -39,7 +39,6 @@ end
 Evaluate first derivative of quadratic polynomial.
 
 Formula: S'(x) = 2*a*dL + d = muladd(2*a, dL, d)
-Returns Tv (preserves Complex type when applicable).
 """
 @inline function _quadratic_kernel(::EvalDeriv1, a::Tv, d::Tv, ::Tv, dL::Td) where {Tv, Td<:Real}
     return muladd(2 * a, dL, d)  # 2*a*dL + d, returns Tv (2 promotes naturally)
@@ -51,19 +50,17 @@ end
 Evaluate second derivative of quadratic polynomial.
 
 Formula: S''(x) = 2*a (constant within interval)
-Returns Tv (preserves Complex type when applicable).
 """
 @inline function _quadratic_kernel(::EvalDeriv2, a::Tv, ::Tv, ::Tv, ::Td) where {Tv, Td<:Real}
     return a + a  # 2*a, returns Tv (avoids type conversion issues)
 end
 
 """
-    _quadratic_kernel(::EvalDeriv3, a, d, y, dL) -> zero(Tv)
+    _quadratic_kernel(::EvalDeriv3, a, d, y, dL)
 
 Third derivative of quadratic spline is always zero.
-Quadratic polynomials have constant second derivative, zero third derivative.
-Returns `zero(Tv)` to preserve Complex type when applicable.
+Uses `0 * a` for duck-typing support and NaN propagation.
 """
 @inline function _quadratic_kernel(::EvalDeriv3, a::Tv, ::Tv, ::Tv, ::Td) where {Tv, Td<:Real}
-    return zero(Tv)
+    return 0 * a
 end

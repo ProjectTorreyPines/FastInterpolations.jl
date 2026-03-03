@@ -340,6 +340,8 @@ end
         x = range(0.0, 2π, 21)
         y = range(0.0, 2π, 21)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        data[end, :] .= data[1, :]
+        data[:, end] .= data[:, 1]
         query = (1.5, 0.8)
         cubic_interp((x, y), data, query; bc=PeriodicBC(), extrap=WrapExtrap())
         cubic_interp((x, y), data, query; bc=PeriodicBC(), extrap=WrapExtrap())

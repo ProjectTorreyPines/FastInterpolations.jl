@@ -77,7 +77,7 @@ PeriodicBC(endpoint=:exclusive, period=2π)   # any grid → explicit period
 using FastInterpolations
 
 x = range(0.0, 2π, 15)
-y = sin.(x)
+y = cos.(x)
 
 # One-shot evaluation (default: CubicFit)
 cubic_interp(x, y, 1.0)
@@ -85,7 +85,7 @@ cubic_interp(x, y, 1.0; bc=ZeroCurvBC())             # zero curvature at endpoin
 cubic_interp(x, y, 1.0; bc=ZeroSlopeBC())            # flat endpoints
 cubic_interp(x, y, 1.0; bc=BCPair(Deriv1(1), Deriv2(0)))  # custom
 
-# Periodic (closed curve) - requires y[1] ≈ y[end]
+# Periodic (closed curve) - requires y[1] == y[end]
 cubic_interp(x, y, 1.0; bc=PeriodicBC())
 
 # In-place evaluation (zero allocation)

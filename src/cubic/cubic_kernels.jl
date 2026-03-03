@@ -20,7 +20,7 @@ Evaluate cubic spline value using moment (z) formulation.
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type for h, inv_h (always real)
 - `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
-- `Tv`: Value type for zL, zR, yL, yR (can be Real or Complex)
+- `Tv`: Value type for zL, zR, yL, yR (unconstrained)
 
 # Formula
     S(x) = zL*(dR³)/(6h) + zR*(dL³)/(6h)
@@ -62,7 +62,7 @@ Evaluate first derivative of cubic spline.
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type for h, inv_h (always real)
 - `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
-- `Tv`: Value type for zL, zR, yL, yR (can be Real or Complex)
+- `Tv`: Value type for zL, zR, yL, yR (unconstrained)
 
 Formula:
     S'(x) = (-zL*dR² + zR*dL²)/(2h)
@@ -83,7 +83,7 @@ Formula:
     dR_sq = dR * dR
 
     # zR*dL^2 - zL*dR^2
-    z_mix   = muladd(zR, dL_sq, -zL * dR_sq)
+    z_mix   = muladd(zR, dL_sq, (-dR_sq) * zL)
 
     # z_term = (z_mix)/(2h) + (zL - zR)*(h/6)
     z_term  = muladd(inv_2h, z_mix, (zL - zR) * h_div6)
@@ -101,7 +101,7 @@ This is simply a linear interpolation of the z (moment) values.
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type for h, inv_h (always real)
 - `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
-- `Tv`: Value type for zL, zR, yL, yR (can be Real or Complex)
+- `Tv`: Value type for zL, zR, yL, yR (unconstrained)
 
 Formula:
     S''(x) = (zL*dR + zR*dL) / h
@@ -122,7 +122,7 @@ Third derivative of cubic spline (constant within each interval).
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type for h, inv_h (always real)
 - `Td<:Real`: Offset type for dL, dR (can be Tg or ForwardDiff.Dual for AD)
-- `Tv`: Value type for zL, zR, yL, yR (can be Real or Complex)
+- `Tv`: Value type for zL, zR, yL, yR (unconstrained)
 
 # Formula
     S'''(x) = (zR - zL) / h

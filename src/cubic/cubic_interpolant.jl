@@ -162,17 +162,17 @@ end
     return aq.side == 0x01 ? @inbounds(itp.y[1]) : @inbounds(itp.y[end])
 end
 
-# ConstExtrap for derivatives - return zero (preserves Tv type for Complex)
-@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv1) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    return zero(Tv)
+# ConstExtrap for derivatives - return zero via 0 * y (duck-typing compatible)
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv1) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+    return 0 * first(itp.y)
 end
 
-@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv2) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    return zero(Tv)
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv2) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+    return 0 * first(itp.y)
 end
 
-@inline function _eval_anchored_extrap(::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv3) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    return zero(Tv)
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv3) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+    return 0 * first(itp.y)
 end
 
 # ExtendExtrap - use precomputed weights (boundary polynomial extrapolation)
@@ -362,7 +362,7 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 
 # Arguments
 - `x::AbstractVector`: x-coordinates (must be sorted)
-- `y::AbstractVector`: y-values (can be Real or Complex)
+- `y::AbstractVector`: y-values
 - `bc::AbstractBC`: Boundary condition (default: `CubicFit()`)
 - `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache::Bool`: Enable automatic caching (default: `true`)
@@ -401,12 +401,12 @@ val = itp(0.5)  # returns ComplexF64
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x, y, bc, autocache, search)
     else
-        bc_pair = _normalize_bc(bc, Tv)
+        bc_pair = _normalize_bc(bc, first(y))
         return _build_interpolant_bcpair(x, y, bc_pair, extrap, autocache, search)
     end
 end
 
-# Hot path: x is AbstractFloat, y can be Tg or Complex{Tg}
+# Hot path: x is AbstractFloat, Tv unconstrained
 function cubic_interp(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv};

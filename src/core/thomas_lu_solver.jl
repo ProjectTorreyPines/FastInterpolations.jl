@@ -144,7 +144,7 @@ Solves `Ax = b` in-place where `A = L*U` is the pre-computed factorization.
 
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type (Thomas factorization type)
-- `Tv`: Value type for RHS (can be Real or Complex)
+- `Tv`: Value type for RHS (unconstrained)
 
 # Arguments
 - `b::AbstractVector{Tv}`: RHS vector (modified in-place to hold solution)

@@ -51,10 +51,10 @@ linear_interp!(output, x_vec, y_vec, sorted_queries; search=LinearBinarySearch(l
 """
 function linear_interp! end
 
-# Unified method for AbstractVector - supports both real and complex y
+# Unified method for AbstractVector
 # TYPE PARAMETERS:
 # - Tg: Grid type (AbstractFloat) - for x coordinates and x_targets
-# - Tv: Value type - for y and output (can be Tg, Complex{Tg}, etc.)
+# - Tv: Value type (unconstrained) - for y and output
 function linear_interp!(
     output::AbstractVector{Tv},
     x::AbstractVector{Tg},
@@ -147,7 +147,7 @@ end
 end
 
 # Specific method for AbstractRange{Tg} - resolves ambiguity with Real wrappers
-# Supports both real and complex y (unified via Tv parameter)
+# Unified via Tv parameter
 @inline function linear_interp!(
     output::AbstractVector{Tv},
     x::AbstractRange{Tg},
@@ -213,13 +213,12 @@ value = linear_interp(x_int, y_int, 5.5)  # Returns Float64 (not Int)
 #
 # TYPE PARAMETERS:
 # - Tg: Grid type (AbstractFloat) - for x coordinates
-# - Tv: Value type - for y values (can be Tg, Complex{Tg}, etc.)
+# - Tv: Value type (unconstrained) - for y values
 # - Tq: Query type - typically Tg but can be left unconstrained for AD support
 #
 # These functions form the core evaluation logic that supports:
-# - Real-valued interpolation (Tv = Tg)
-# - Complex-valued interpolation (Tv = Complex{Tg})
-# - Future: AD support (xq can be Dual{Tg})
+# - Any value type Tv via duck typing (+, -, scalar *)
+# - AD support (xq can be Dual{Tg})
 
 """
     _linear_eval_at_point(x, y, xq, extrap, op, searcher)
@@ -229,7 +228,7 @@ Supports value (EvalValue), first derivative (EvalDeriv1), and second derivative
 
 # Type Parameters
 - `Tg`: Grid type (AbstractFloat)
-- `Tv`: Value type (can be Tg, Complex{Tg}, etc.)
+- `Tv`: Value type (unconstrained)
 - `Tq`: Query type (can be Tg or Dual{Tg} for AD support)
 
 # AD Support
@@ -248,9 +247,9 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, xR = search_interval(searcher, x, xq)
     # Use original xq for interpolation (preserves Dual for AD)
-    h = xR - xL
+    inv_h = inv(xR - xL)
     dL = xq - xL  # xq can be Dual here
-    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], h, dL)
+    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], inv_h, dL)
 end
 
 
@@ -258,7 +257,7 @@ end
     _linear_eval_constant_extrap(y, is_left, op) -> Tv
 
 Handle constant extrapolation: returns boundary value for EvalValue, zero for derivatives.
-Works with any value type Tv (real or complex).
+Works with any value type Tv (duck typing).
 """
 @inline function _linear_eval_constant_extrap(
     y::AbstractVector{Tv},
@@ -269,34 +268,34 @@ Works with any value type Tv (real or complex).
 end
 
 @inline function _linear_eval_constant_extrap(
-    ::AbstractVector{Tv},
+    y::AbstractVector{Tv},
     ::Bool,
     ::EvalDeriv1
 ) where {Tv}
-    return zero(Tv)
+    return 0 * first(y)
 end
 
 @inline function _linear_eval_constant_extrap(
-    ::AbstractVector{Tv},
+    y::AbstractVector{Tv},
     ::Bool,
     ::EvalDeriv2
 ) where {Tv}
-    return zero(Tv)
+    return 0 * first(y)
 end
 
 @inline function _linear_eval_constant_extrap(
-    ::AbstractVector{Tv},
+    y::AbstractVector{Tv},
     ::Bool,
     ::EvalDeriv3
 ) where {Tv}
-    return zero(Tv)
+    return 0 * first(y)
 end
 
 """
     _linear_with_extrap(x, y, xq, extrap, op, searcher)
 
 Linear interpolation with extrapolation handling, op parameter, and search policy.
-Supports real and complex value types, plus AD via Dual types.
+Supports any value type via duck typing, plus AD via Dual types.
 
 # AD Support
 Query type `Tq` is unconstrained to support ForwardDiff.Dual:
@@ -376,7 +375,7 @@ end
 end
 
 # Public API - AbstractExtrap dispatch
-# Unified for real and complex y via Tv parameter
+# Unified via Tv parameter (duck typing)
 # AD Support: Tq can be Tg or Dual{Tg} (both are <:Real)
 # Note: Tq<:Real constraint resolves method ambiguity with the generic Real wrapper
 @inline function linear_interp(
@@ -403,7 +402,7 @@ end
 # ========================================
 # Vector interpolation - Allocating hot path
 # ========================================
-# Unified for real and complex y via Tv parameter
+# Unified via Tv parameter (duck typing)
 # Works with both AbstractVector and AbstractRange x
 
 function linear_interp(

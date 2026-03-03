@@ -146,7 +146,7 @@ end
 
         @threads for i in 1:n_iter
             amplitude = Float64(mod1(i, 10))
-            y = amplitude .* sin.(x)
+            y = amplitude .* cos.(x)
 
             result_cached = cubic_interp(x, y, π; bc=PeriodicBC(), autocache=true)
             result_nocache = cubic_interp(x, y, π; bc=PeriodicBC(), autocache=false)
@@ -452,7 +452,7 @@ end
         for _ in 1:5000
             FastInterpolations.clear_cubic_cache!()
             x = collect(range(0.0, 2π, 51))
-            y = sin.(x)
+            y = cos.(x)
 
             @threads for _ in 1:2
                 try

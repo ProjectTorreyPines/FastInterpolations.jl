@@ -516,7 +516,7 @@ end
         # Lines 424-427: bc=PeriodicBC() in Real wrapper 2-arg form
         x_int = 0:20
         y_int = [sin(2π * i / 20) for i in x_int]
-        # y_int[end] ≈ y_int[1] (both ≈ 0)
+        y_int[end] = y_int[1]  # Ensure exact periodicity
 
         itp = cubic_interp(x_int, y_int; bc=PeriodicBC())
         @test itp isa CubicInterpolant

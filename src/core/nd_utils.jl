@@ -491,7 +491,7 @@ This structure stores the function value f and all mixed partial derivatives
 via tensor-product interpolation (Hermite for cubic, quadratic kernel for quadratic).
 
 # Type Parameters
-- `Tv`: Value type (Float64, ComplexF64, etc.)
+- `Tv`: Value type (unconstrained)
 - `N`: Number of dimensions
 - `NP1`: N + 1 (array dimensionality, Julia can't compute N+1 in type definition)
 
@@ -693,7 +693,7 @@ automatically when the enclosing `@with_pool` scope exits.
 
     @inbounds for i in 1:(n-1)
         h[i] = x[i+1] - x[i]
-        inv_h[i] = one(T) / h[i]
+        inv_h[i] = inv(h[i])
     end
 
     return VectorSpacing{T}(h, inv_h)

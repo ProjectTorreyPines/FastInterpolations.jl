@@ -21,7 +21,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 
 # Type Parameters
 - `Tg`: Grid type (Float32 or Float64)
-- `Tv`: Value type (Tg for real, Complex{Tg} for complex)
+- `Tv`: Value type (unconstrained)
 - `P`: Search policy type
 - `X`: Grid container type (Vector or Range)
 
@@ -220,13 +220,13 @@ end
         xL = x[idx]
         xR = x[idx1]
     end
-    h = xR - xL
+    inv_h = inv(xR - xL)
     dL = aq.xq - xL
 
     @inbounds @simd for k in axes(out, 1)
         yL = y_point[k, idx]
         yR = y_point[k, idx1]
-        out[k] = _linear_kernel(op, yL, yR, h, dL)
+        out[k] = _linear_kernel(op, yL, yR, inv_h, dL)
     end
     return out
 end
@@ -273,13 +273,13 @@ while `xq` is used directly in arithmetic to preserve derivative information.
         xL = sitp.x[idx]
         xR = sitp.x[idx1]
     end
-    h = xR - xL
+    inv_h = inv(xR - xL)
     dL = xq - xL  # Original xq preserves Dual for AD
 
     @inbounds @simd for k in axes(output, 1)
         yL = y_point[k, idx]
         yR = y_point[k, idx1]
-        output[k] = _linear_kernel(op, yL, yR, h, dL)
+        output[k] = _linear_kernel(op, yL, yR, inv_h, dL)
     end
     return output
 end
@@ -334,8 +334,7 @@ function linear_interp(
 ) where {Tg<:AbstractFloat}
     # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
-    Tv_real = _real_eltype(Tv)
-    Tg_new = Tv_real <: AbstractFloat ? promote_type(Tg, Tv_real) : Tg
+    Tg_new = _promote_grid_float(Tg, Tv)
     if Tg_new !== Tg
         return linear_interp(_to_float(x, Tg_new), s; extrap, search)
     end
@@ -354,7 +353,7 @@ function linear_interp(
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real}
-    Tg_float = float(promote_type(Tg, _real_eltype(_series_eltype(s))))
+    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
     return linear_interp(_to_float(x, Tg_float), s; extrap, search)
 end
 
@@ -376,7 +375,7 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
     search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
-    T_out = promote_type(Tv, Tq)  # Dual input → Dual output
+    T_out = _series_output_type(Tv, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
@@ -434,7 +433,7 @@ function (sitp::LinearSeriesInterpolant{Tg,Tv,P})(
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
+    T_out = _series_output_type(Tv, Tq)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)

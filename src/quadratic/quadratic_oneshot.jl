@@ -26,7 +26,7 @@ Uses interval clamping for extension extrapolation (matches cubic pattern).
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type for x
 - `Tq`: Query type (can be Tg or ForwardDiff.Dual for AD)
-- `Tv`: Value type for y, a, d (can be Tg or Complex{Tg})
+- `Tv`: Value type for y, a, d (unconstrained)
 """
 @inline function _quadratic_eval_core(
     x::AbstractVector{Tg},
@@ -121,7 +121,7 @@ Note: `h` parameter kept for API compatibility but not used (interval info from 
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type for x, h
 - `Tq`: Query type (can be Tg or ForwardDiff.Dual for AD)
-- `Tv`: Value type for y, a, d (can be Tg or Complex{Tg})
+- `Tv`: Value type for y, a, d (unconstrained)
 """
 @inline function _quadratic_eval_at_point(
     x::AbstractVector{Tg},
@@ -214,7 +214,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     h = acquire!(pool, Tg, nx-1)
     d = acquire!(pool, Tv, nx)
     a = acquire!(pool, Tv, nx-1)
-    bc_promoted = _promote_bc(bc, Tv)
+    bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _resolve_search(x, xq, search, hint)
@@ -268,7 +268,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     h = acquire!(pool, Tg, nx-1)
     d = acquire!(pool, Tv, nx)
     a = acquire!(pool, Tv, nx-1)
-    bc_promoted = _promote_bc(bc, Tv)
+    bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _resolve_search(x, x_targets, search, nothing)
@@ -317,35 +317,10 @@ end
 # ║              Auto-promote Real types to Float (type conversion)           ║
 # ╚═══════════════════════════════════════════════════════════════════════════╝
 
-# ========================================
-# BC Type Promotion Helper
-# ========================================
-
-"""
-    _promote_bc(bc::Left/Right, ::Type{Tv}) -> Left/Right
-
-Promote Left/Right BC wrapper to target value type Tv.
-Uses _promote_pointbc from bc_types.jl for inner BC promotion.
-
-Type-Free design: PointBC has no type parameter, so we always delegate
-to _promote_pointbc which handles both passthrough (lazy types) and
-actual conversion (concrete types like Deriv1{Tv}).
-"""
-@inline function _promote_bc(bc::Left, ::Type{Tv}) where {Tv}
-    Left(_promote_pointbc(bc.bc, Tv))
-end
-
-@inline function _promote_bc(bc::Right, ::Type{Tv}) where {Tv}
-    Right(_promote_pointbc(bc.bc, Tv))
-end
-
-# MinCurvFit is a singleton - no promotion needed
-@inline _promote_bc(::MinCurvFit, ::Type{Tv}) where {Tv} = MinCurvFit()
-
-# Note: QuadraticFit <: PointBC, handled by generic _promote_pointbc in bc_types.jl
+# BC promotion uses _normalize_bc(Left/Right/MinCurvFit, Tv) from core/bc_types.jl
 
 # ========================================
-# Scalar Real/Complex → typed wrappers
+# Scalar → typed wrappers
 # ========================================
 # Unified wrapper for non-AbstractFloat inputs (Int, mixed types, Complex, etc.)
 # POLICY: Tg is computed from x/y ONLY, not from xq
@@ -363,14 +338,13 @@ end
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
-    Tv_float = eltype(y_typed)
-    bc_promoted = _promote_bc(bc, Tv_float)
+    bc_promoted = _normalize_bc(bc, first(y_typed))
     # Pass xq directly to preserve Dual type for AD
     return quadratic_interp(x_typed, y_typed, xq; bc=bc_promoted, extrap, deriv, search, hint)
 end
 
 # ========================================
-# Vector Real/Complex → typed wrappers (allocating)
+# Vector → typed wrappers (allocating)
 # ========================================
 # POLICY: Tg is computed from x/y ONLY, not from x_targets
 
@@ -386,13 +360,13 @@ function quadratic_interp(
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
     Tv_float = eltype(y_typed)
     output = Vector{Tv_float}(undef, length(x_targets))
-    bc_promoted = _promote_bc(bc, Tv_float)
+    bc_promoted = _normalize_bc(bc, first(y_typed))
     quadratic_interp!(output, x_typed, y_typed, xq_typed; bc=bc_promoted, extrap, deriv, search)
     return output
 end
 
 # ========================================
-# Vector Real/Complex → typed wrappers (in-place)
+# Vector → typed wrappers (in-place)
 # ========================================
 
 function quadratic_interp!(
@@ -420,6 +394,6 @@ function quadratic_interp!(
         ))
     end
 
-    bc_promoted = _promote_bc(bc, Tv_float)
+    bc_promoted = _normalize_bc(bc, first(y_typed))
     quadratic_interp!(output, x_typed, y_typed, xq_typed; bc=bc_promoted, extrap, deriv, search)
 end

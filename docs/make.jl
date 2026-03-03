@@ -188,6 +188,7 @@ makedocs(
             ],
             "Series Interpolant" => "guides/series_interpolant.md",
             "Memory & Allocation" => "guides/memory_allocation.md",
+            "Custom Value Types (Duck Typing)" => "guides/custom_value_types.md",
         ],
         "Architecture" => [
             "Overview" => "architecture/overview.md",

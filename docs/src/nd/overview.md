@@ -122,7 +122,7 @@ data = [f(xi, yj) for xi in xs, yj in ys]
 itp_const = constant_interp((xs, ys), data)
 itp_linear   = linear_interp((xs, ys), data)
 itp_quad  = quadratic_interp((xs, ys), data; bc=MinCurvFit())
-itp_cubic = cubic_interp((xs, ys), data; bc=PeriodicBC())
+itp_cubic = cubic_interp((xs, ys), data)
 
 kw = (c=:RdBu, clims=(-1,1), ratio=:equal, xlims=(0,1), ylims=(0,1))
 

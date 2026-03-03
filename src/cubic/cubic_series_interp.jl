@@ -23,7 +23,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 
 # Type Parameters
 - `Tg`: Grid coordinate type (Float32 or Float64) - always real
-- `Tv`: Value type (real or Complex{Tg})
+- `Tv`: Value type (unconstrained)
 - `C`: Cache type (`CubicSplineCache{Tg}`)
 - `B`: Boundary condition config type (BCPair or PeriodicData)
 
@@ -479,7 +479,7 @@ Solve cubic spline systems for all series using shared LU factorization.
 end
 
 """
-    _solve_series_with_bc_array!(z_mat, y_mat, x, bc_array, autocache)
+    _solve_series_with_bc_array!(z_mat, y_mat, x, bc_cache_array, bc_solve_array, autocache)
 
 Solve cubic spline systems for series with per-series boundary conditions.
 Groups series by BC type for cache efficiency.
@@ -488,24 +488,26 @@ Groups series by BC type for cache efficiency.
 - `z_mat`: Output matrix for second derivatives (n_points × n_series)
 - `y_mat`: Input y-values matrix (n_points × n_series)
 - `x`: x-grid vector
-- `bc_array`: Vector of BCPair, one per series
+- `bc_cache_array`: Vector of BCPair (Tg-typed), used for cache matrix construction
+- `bc_solve_array`: Vector of BCPair (Tv-typed), used for RHS computation
 - `autocache`: Whether to use cache pool
 """
 @with_pool pool function _solve_series_with_bc_array!(
     z_mat::Matrix{Tv},
     y_mat::Matrix{Tv},
     x::AbstractVector{Tg},
-    bc_array::AbstractVector{<:BCPair},
+    bc_cache_array::AbstractVector{<:BCPair},
+    bc_solve_array::AbstractVector{<:BCPair},
     autocache::Bool
 ) where {Tg<:AbstractFloat, Tv}
     n_series = size(y_mat, 2)
 
-    # Group series by BC type for cache reuse
+    # Group series by BC type for cache reuse (using Tg-typed BCs for matrix structure)
     # Dict: typeof(bc) => (cache, indices)
     type_groups = Dict{DataType, Tuple{CubicSplineCache{Tg}, Vector{Int}}}()
 
     for k in 1:n_series
-        bc = bc_array[k]
+        bc = bc_cache_array[k]
         bc_type = typeof(bc)
 
         if haskey(type_groups, bc_type)
@@ -518,10 +520,10 @@ Groups series by BC type for cache efficiency.
         end
     end
 
-    # Solve each group using its cache
+    # Solve each group using its cache (using Tv-typed BCs for RHS computation)
     for (_, (cache, indices)) in type_groups
         for k in indices
-            _solve_system!(@view(z_mat[:, k]), cache, @view(y_mat[:, k]), bc_array[k])
+            _solve_system!(@view(z_mat[:, k]), cache, @view(y_mat[:, k]), bc_solve_array[k])
         end
     end
 
@@ -584,8 +586,7 @@ function cubic_interp(
 ) where {Tg<:AbstractFloat}
     # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
-    Tv_real = _real_eltype(Tv)
-    Tg_new = Tv_real <: AbstractFloat ? promote_type(Tg, Tv_real) : Tg
+    Tg_new = _promote_grid_float(Tg, Tv)
     if Tg_new !== Tg
         return cubic_interp(_to_float(x, Tg_new), s;
             bc=_promote_bc(bc, Tg_new), extrap, autocache, precompute_transpose, search)
@@ -604,17 +605,19 @@ function cubic_interp(
     z_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
 
     if bc isa AbstractVector
-        # Per-series BC array
-        bc_array = _normalize_bc_array(bc, Tg, n_ser)
-        _solve_series_with_bc_array!(z_mat, y_mat, x, bc_array, autocache)
-        bc_representative = bc_array[1]
+        # Per-series BC array: Tg-typed for cache matrix, Tv-typed for RHS
+        bc_cache_array = _normalize_bc_array(bc, Tg, n_ser)
+        bc_solve_array = _normalize_bc_array(bc, Tv_out, n_ser)
+        _solve_series_with_bc_array!(z_mat, y_mat, x, bc_cache_array, bc_solve_array, autocache)
+        bc_representative = bc_cache_array[1]
         cache = _get_cubic_cache(x, bc_representative, autocache)
     else
-        # Uniform BC (original path)
-        bc_pair = _normalize_bc(bc, Tg)
-        cache = _get_cubic_cache(x, bc_pair, autocache)
-        _solve_series_coefficients!(z_mat, y_mat, cache, bc_pair)
-        bc_representative = bc_pair
+        # Uniform BC: Tg-typed for cache matrix, Tv-typed for RHS
+        bc_for_cache = _normalize_bc(bc, Tg)
+        bc_for_solve = _normalize_bc(bc, first(y_mat))
+        cache = _get_cubic_cache(x, bc_for_cache, autocache)
+        _solve_series_coefficients!(z_mat, y_mat, cache, bc_for_solve)
+        bc_representative = bc_for_cache
     end
 
     sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap, search)
@@ -636,7 +639,7 @@ function cubic_interp(
     precompute_transpose::Bool=false,
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real}
-    Tg_float = float(promote_type(Tg, _real_eltype(_series_eltype(s))))
+    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
     return cubic_interp(_to_float(x, Tg_float), s;
         bc=_promote_bc(bc, Tg_float), extrap, autocache, precompute_transpose, search)
 end
@@ -658,19 +661,11 @@ function _build_series_periodic(
     x, y_mat = _prepare_periodic(x, y_mat, bc)
     n_pts = size(y_mat, 1)
 
-    # Validate periodic endpoints for all series
-    atol = Tg === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
+    # Validate periodic endpoints for all series (strict == equality)
     @inbounds for k in 1:n_series_count
         y_first = y_mat[1, k]
         y_last = y_mat[n_pts, k]
-        if !isapprox(y_first, y_last; atol=atol)
-            throw(ArgumentError(
-                "PeriodicBC (inclusive endpoint) requires y[1] ≈ y[end] for series $k, " *
-                "got y[1]=$y_first, y[end]=$y_last (diff=$(abs(y_last-y_first))). " *
-                "If your data does not repeat the first point, use " *
-                "PeriodicBC(endpoint=:exclusive) instead."
-            ))
-        end
+        y_first == y_last || _throw_periodic_series_error(k, y_first, y_last)
     end
 
     # Get periodic cache
@@ -713,7 +708,7 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
-    T_out = promote_type(Tv, typeof(xq_promoted))
+    T_out = _series_output_type(Tv, typeof(xq_promoted))
     output = Vector{T_out}(undef, n_series(sitp))
 
     # Build anchor preserving Dual type in xq
@@ -773,7 +768,7 @@ function (sitp::CubicSeriesInterpolant{Tg,Tv})(
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
+    T_out = _series_output_type(Tv, Tq)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)

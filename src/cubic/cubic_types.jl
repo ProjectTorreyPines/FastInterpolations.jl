@@ -90,7 +90,7 @@ Returned by `cubic_interp(x, y)` (2-argument form).
 
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type (Float32 or Float64) for x-coordinates
-- `Tv`: Value type for y-values (can be Tg, Complex{Tg}, or other Number)
+- `Tv`: Value type (unconstrained)
 - `C`: CubicSplineCache type (preserves grid type info for O(1) vs O(log n) lookup)
 - `E`: Extrapolation mode type (compile-time specialized)
 - `P`: Search policy type (AutoSearch, BinarySearch, LinearBinarySearch, etc.)
@@ -167,7 +167,7 @@ Used for atomic swap in multi-series cubic interpolants to ensure thread-safe
 lazy initialization of point-contiguous layout.
 
 # Type Parameters
-- `Tv`: Value type (can be Real or Complex)
+- `Tv`: Value type (unconstrained)
 
 # Fields
 - `y_point::Union{Nothing, Matrix{Tv}}`: Point-contiguous y values (n_series × n_points)

@@ -21,7 +21,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 
 # Type Parameters
 - `Tg`: Grid type (Float32 or Float64)
-- `Tv`: Value type (Tg for real, Complex{Tg} for complex)
+- `Tv`: Value type (unconstrained)
 - `P`: Search policy type
 - `X`: Grid container type (Vector or Range)
 
@@ -210,8 +210,9 @@ Outside-domain delegates to `_eval_series_at_anchor!` for extrapolation.
                 output[k] = y_point[k, n_pts]
             end
         else
+            z = 0 * first(y_point)
             @inbounds @simd for k in axes(output, 1)
-                output[k] = zero(Tv)
+                output[k] = z
             end
         end
         return output
@@ -335,8 +336,7 @@ function constant_interp(
 ) where {Tg<:AbstractFloat}
     # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
-    Tv_real = _real_eltype(Tv)
-    Tg_new = Tv_real <: AbstractFloat ? promote_type(Tg, Tv_real) : Tg
+    Tg_new = _promote_grid_float(Tg, Tv)
     if Tg_new !== Tg
         return constant_interp(_to_float(x, Tg_new), s; side, extrap, search)
     end
@@ -356,7 +356,7 @@ function constant_interp(
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real}
-    Tg_float = float(promote_type(Tg, _real_eltype(_series_eltype(s))))
+    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
     return constant_interp(_to_float(x, Tg_float), s; side, extrap, search)
 end
 
@@ -385,7 +385,7 @@ function (sitp::ConstantSeriesInterpolant{Tg,Tv,P})(
     search::AbstractSearchPolicy=sitp.search_policy,
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
-    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
+    T_out = _series_output_type(Tv, Tq)
     out = Vector{T_out}(undef, n_series(sitp))
     return sitp(out, xq; deriv=deriv, search=search, hint=hint)
 end
@@ -552,7 +552,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
         if op isa EvalValue
             @inbounds return y[n_pts, k]
         else
-            return zero(Tv)  # Derivatives of step function are zero
+            return 0 * first(y)  # Derivatives of step function are zero
         end
     end
 
@@ -583,7 +583,7 @@ Internal: Core constant evaluation for series k at anchored query point.
 ) where {Tg<:AbstractFloat, Tv}
     # Derivatives of constant (step) function are zero
     if !(op isa EvalValue)
-        return zero(Tv)
+        return 0 * first(y)
     end
 
     idx = aq.idx

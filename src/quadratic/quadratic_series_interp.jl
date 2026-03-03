@@ -21,7 +21,7 @@ Shares a single x-grid across N y-series for efficient batch evaluation.
 
 # Type Parameters
 - `Tg`: Grid type (Float32 or Float64)
-- `Tv`: Value type (Tg for real, Complex{Tg} for complex)
+- `Tv`: Value type (unconstrained)
 - `E`: Extrapolation mode type (compile-time specialized)
 - `P`: Search policy type
 - `X`: Grid container type (Vector or Range)
@@ -284,7 +284,7 @@ end
         a_k = a_point[k, idx]
         d_k = d_point[k, idx]
         # First derivative: 2*a*dL + d
-        output[k] = muladd(Tg(2)*a_k, dL, d_k)
+        output[k] = muladd(a_k + a_k, dL, d_k)
     end
     return output
 end
@@ -302,7 +302,7 @@ end
     @inbounds @simd for k in eachindex(output)
         a_k = a_point[k, idx]
         # Second derivative: 2*a (constant within interval)
-        output[k] = Tg(2) * a_k
+        output[k] = a_k + a_k
     end
     return output
 end
@@ -330,7 +330,7 @@ end
     idx::Int,
     op::EvalDeriv1
 ) where {Tv}
-    fill!(output, zero(Tv))
+    fill!(output, 0 * first(y_point))
     return output
 end
 
@@ -340,7 +340,7 @@ end
     idx::Int,
     op::EvalDeriv2
 ) where {Tv}
-    fill!(output, zero(Tv))
+    fill!(output, 0 * first(y_point))
     return output
 end
 
@@ -381,10 +381,9 @@ function quadratic_interp(
 ) where {Tg<:AbstractFloat}
     # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
-    Tv_real = _real_eltype(Tv)
-    Tg_new = Tv_real <: AbstractFloat ? promote_type(Tg, Tv_real) : Tg
+    Tg_new = _promote_grid_float(Tg, Tv)
     if Tg_new !== Tg
-        return quadratic_interp(_to_float(x, Tg_new), s; bc=_promote_bc(bc, Tg_new), extrap, search)
+        return quadratic_interp(_to_float(x, Tg_new), s; bc=_normalize_bc(bc, Tg_new), extrap, search)
     end
 
     n_pts = length(x)
@@ -396,10 +395,14 @@ function quadratic_interp(
     d_mat = Matrix{Tv_out}(undef, n_pts, n_ser)
     h = Vector{Tg}(undef, n_pts - 1)
 
+    # Promote BC values to Tv_out for convert(Tv, bc.val) compatibility
+    bc_promoted = _normalize_bc(bc, first(y_mat))
+    _typed_zero = 0 * y_mat[1]
+
     # Compute coefficients for each series from y_mat columns
     for k in 1:n_ser
         y_col = @view y_mat[:, k]
-        h_k, d_k, a_k = _compute_quadratic_coeffs(x, y_col, bc)
+        h_k, d_k, a_k = _compute_quadratic_coeffs(x, y_col, bc_promoted)
 
         @inbounds for i in 1:n_pts
             d_mat[i, k] = d_k[i]
@@ -407,7 +410,7 @@ function quadratic_interp(
         @inbounds for i in 1:(n_pts-1)
             a_mat[i, k] = a_k[i]
         end
-        a_mat[n_pts, k] = zero(Tv_out)
+        a_mat[n_pts, k] = _typed_zero
 
         if k == 1
             copyto!(h, h_k)
@@ -425,8 +428,8 @@ function quadratic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real}
-    Tg_float = float(promote_type(Tg, _real_eltype(_series_eltype(s))))
-    return quadratic_interp(_to_float(x, Tg_float), s; bc=_promote_bc(bc, Tg_float), extrap, search)
+    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
+    return quadratic_interp(_to_float(x, Tg_float), s; bc=_normalize_bc(bc, Tg_float), extrap, search)
 end
 
 # ========================================
@@ -451,7 +454,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
-    T_out = promote_type(Tv, typeof(xq_promoted))
+    T_out = _series_output_type(Tv, typeof(xq_promoted))
     aq = _make_anchor(sitp, xq_promoted, _resolve_search(sitp.x, xq, search, hint))
 
     output = Vector{T_out}(undef, n_series(sitp))
@@ -505,7 +508,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
 ) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
-    T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss
+    T_out = _series_output_type(Tv, Tq)
 
     # Explicit Vector{Vector{T_out}} for type stability on Julia LTS
     outputs = Vector{Vector{T_out}}(undef, n_ser)
@@ -643,7 +646,7 @@ end
     op::Union{EvalDeriv1, EvalDeriv2}
 ) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
     if aq.side != 0x00  # outside domain
-        return zero(Tv)
+        return 0 * first(y)
     else
         return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)
     end

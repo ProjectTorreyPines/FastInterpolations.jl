@@ -171,7 +171,7 @@ function constant_interp(
 ) where {Tv, N}
     # Any derivative of constant interpolation is zero
     if _is_any_deriv(deriv)
-        return zero(Tv)
+        return 0 * first(data)
     end
 
     Tg = _promote_grid_eltype(grids)
@@ -277,7 +277,7 @@ function constant_interp!(
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     if _is_any_deriv(deriv)
-        fill!(output, zero(Tv))
+        fill!(output, 0 * first(data))
         return output
     end
 
@@ -312,7 +312,7 @@ function constant_interp!(
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
     if _is_any_deriv(deriv)
-        fill!(output, zero(Tv))
+        fill!(output, 0 * first(data))
         return output
     end
 

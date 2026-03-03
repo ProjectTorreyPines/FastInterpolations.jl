@@ -48,37 +48,50 @@ end
 # Endpoint Validation
 # ========================================
 
-# Tolerance for periodic endpoint check
-# Use sqrt(eps) which is ~1e-8 for Float64, allowing for typical floating point errors
-# (e.g., sin(2π) ≈ 2.45e-16 should pass)
-const _PERIODIC_ATOL_F64 = 1e-12
-const _PERIODIC_ATOL_F32 = 1f-6
-
 """
     _check_periodic_endpoints(y::AbstractVector)
 
-Validate that y[1] ≈ y[end] for periodic boundary conditions.
+Validate that `y[1] == y[end]` for periodic boundary conditions (inclusive endpoint).
 Called once at construction time (zero runtime overhead).
 
-Supports both Real and Complex value types.
-For Complex, uses the underlying real type to determine tolerance.
+Uses strict `==` equality — no approximate comparison. This is universal for all
+value types (scalars, vectors, duck-typed custom types) without requiring `norm`,
+`isapprox`, or any tolerance parameters.
 
-Throws `ArgumentError` if endpoints differ significantly.
+If your data is computed (e.g., `sin.(range(0, 2π, n))`), set `y[end] = y[1]`
+explicitly to ensure exact periodicity.
+
+Throws `ArgumentError` if endpoints differ.
 """
-@inline function _check_periodic_endpoints(y::AbstractVector{Tv}) where {Tv}
-    y1, yn = first(y), last(y)
-    # Use _real_eltype to extract Float32/Float64 from Complex{T} or Real
-    Tr = _real_eltype(Tv)
-    atol = Tr === Float32 ? _PERIODIC_ATOL_F32 : _PERIODIC_ATOL_F64
-    if !isapprox(y1, yn; atol=atol)
-        throw(ArgumentError(
-            "PeriodicBC (inclusive endpoint) requires y[1] ≈ y[end], " *
-            "got y[1]=$y1, y[end]=$yn (diff=$(abs(yn-y1))). " *
-            "If your data does not repeat the first point, use " *
-            "PeriodicBC(endpoint=:exclusive) instead."
-        ))
-    end
+@inline function _check_periodic_endpoints(y::AbstractVector)
+    first(y) == last(y) || _throw_periodic_endpoint_error(first(y), last(y))
     return nothing
+end
+
+@noinline function _throw_periodic_endpoint_error(y1, yn)
+    throw(ArgumentError(
+        "PeriodicBC (inclusive endpoint) requires y[1] == y[end], " *
+        "got y[1]=$y1, y[end]=$yn. " *
+        "Tip: set y[end] = y[1] to ensure exact periodicity, or use " *
+        "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point."
+    ))
+end
+
+@noinline function _throw_periodic_series_error(k, y_first, y_last)
+    throw(ArgumentError(
+        "PeriodicBC (inclusive endpoint) requires y[1] == y[end] for all series, " *
+        "but series $k has y[1]=$y_first, y[end]=$y_last. " *
+        "Tip: set y[end] = y[1] for each series, or use " *
+        "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point."
+    ))
+end
+
+@noinline function _throw_periodic_nd_error(d, v_first, v_last)
+    throw(ArgumentError(
+        "Periodic BC on dim $d requires data[1,...] == data[end,...], " *
+        "but found data[1,...]=$v_first, data[end,...]=$v_last. " *
+        "Tip: set the last slice equal to the first along dim $d."
+    ))
 end
 
 # ========================================

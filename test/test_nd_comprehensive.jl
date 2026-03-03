@@ -272,6 +272,8 @@ using FastInterpolations
 
             # sin and cos are periodic
             data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            data[end, :] .= data[1, :]
+            data[:, end] .= data[:, 1]
 
             itp = cubic_interp((x, y), data; bc=PeriodicBC(), extrap=WrapExtrap())
 

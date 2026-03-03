@@ -95,7 +95,7 @@ end
 Get the boundary value for constant extrapolation in vector evaluation path.
 
 For `EvalValue`, returns the boundary y-value. For derivatives (`EvalDeriv1`,
-`EvalDeriv2`, `EvalDeriv3`), returns `zero(T)` since constant extrapolation has zero slope.
+`EvalDeriv2`, `EvalDeriv3`), returns zero via `0 * y` (duck-typing compatible).
 
 # Arguments
 - `y::Matrix{T}`: y-values matrix (n_points × n_series)
@@ -106,7 +106,7 @@ For `EvalValue`, returns the boundary y-value. For derivatives (`EvalDeriv1`,
 
 # Returns
 - Boundary value for `EvalValue`
-- `zero(Tv)` for `EvalDeriv1` or `EvalDeriv2`
+- Zero (via `0 * y`) for `EvalDeriv1`, `EvalDeriv2`, or `EvalDeriv3`
 """
 @inline function _constant_extrap_boundary_value(
     y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue
@@ -115,9 +115,9 @@ For `EvalValue`, returns the boundary y-value. For derivatives (`EvalDeriv1`,
 end
 
 @inline function _constant_extrap_boundary_value(
-    ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
+    y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
 ) where {Tv}
-    return zero(Tv)
+    return 0 * first(y)
 end
 
 """
@@ -153,10 +153,11 @@ to match the transposed SIMD layout used across all series interpolants.
 end
 
 @inline function _fill_constant_extrap_simd!(
-    out::AbstractVector{Tv}, ::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
+    out::AbstractVector{Tv}, y::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
 ) where {Tv}
+    z = 0 * first(y)
     @inbounds @simd for k in axes(out, 1)
-        out[k] = zero(Tv)
+        out[k] = z
     end
     return out
 end

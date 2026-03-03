@@ -1,0 +1,1591 @@
+# Comprehensive duck typing tests: exhaustive method × kwarg × deriv × integrate coverage.
+# Uses a 5-op-only type (DuckFloat5) — the documented minimum from custom_value_types.md.
+#
+# Tests ALL public API paths that should work with just:
+#   +(Tv,Tv), -(Tv,Tv), *(Tg,Tv), *(Tv,Tg), *(Int,Tv)
+#
+# NO: zero(::Type), /(Tv,Tg), convert, isapprox, ==, <, >, muladd(Tv,Tv,Tv)
+#
+# CORRECTNESS: Each test builds a reference Float64 interpolant with identical
+# parameters and verifies numerical equality: _val(duck_result) ≈ ref_result.
+# Note: LLVM may apply FMA contraction for native Float64 but not for the
+# opaque DuckFloat5 wrapper, causing expected 1-3 ULP differences. We use ≈
+# (rtol=sqrt(eps)) which catches real algorithmic bugs while allowing FMA diffs.
+
+using Test
+using FastInterpolations
+
+# ================================================================
+# DuckFloat5 — strict 5-op type for comprehensive testing
+# ================================================================
+struct DuckFloat5
+    v::Float64
+end
+
+Base.:+(a::DuckFloat5, b::DuckFloat5) = DuckFloat5(a.v + b.v)
+Base.:-(a::DuckFloat5, b::DuckFloat5) = DuckFloat5(a.v - b.v)
+Base.:*(a::AbstractFloat, b::DuckFloat5) = DuckFloat5(a * b.v)
+Base.:*(a::DuckFloat5, b::AbstractFloat) = DuckFloat5(a.v * b)
+Base.:*(a::Integer, b::DuckFloat5) = DuckFloat5(a * b.v)
+
+# Helper: extract raw value for assertions (since isapprox is NOT defined)
+_val(d::DuckFloat5) = d.v
+
+@testset "Duck Typing — Comprehensive" begin
+
+    # ================================================================
+    # SHARED TEST DATA
+    # ================================================================
+    # 1D grids
+    x_vec = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    x_rng = range(0.0, 6.0, 7)
+    xq = 2.7  # interior query point
+    xq_vec = [1.5, 2.7, 4.3]
+
+    # Polynomial data for exact-result testing:
+    #   f(x) = 2x + 1  (linear — exact for linear and higher)
+    y_linear = DuckFloat5.(2 .* collect(x_vec) .+ 1)
+
+    #   f(x) = x² - x + 1  (quadratic — exact for quadratic and higher)
+    y_quad = DuckFloat5.(collect(x_vec) .^ 2 .- collect(x_vec) .+ 1)
+
+    #   f(x) = x³/6 - x/2 + 1  (cubic — exact for cubic)
+    y_cubic = DuckFloat5.(collect(x_vec) .^ 3 ./ 6 .- collect(x_vec) ./ 2 .+ 1)
+
+    # Generic non-polynomial data
+    y_generic = DuckFloat5.([1.0, 4.0, 2.0, 5.0, 3.0, 6.0, 2.5])
+
+    # --- Flat (Float64) reference copies for correctness checks ---
+    y_linear_flat  = _val.(y_linear)
+    y_quad_flat    = _val.(y_quad)
+    y_cubic_flat   = _val.(y_cubic)
+    y_generic_flat = _val.(y_generic)
+
+    # 2D grids
+    xg = [0.0, 1.0, 2.0, 3.0]
+    yg = [0.0, 1.0, 2.0, 3.0]
+    xg_r = range(0.0, 3.0, 4)
+    yg_r = range(0.0, 3.0, 4)
+    data_2d = [DuckFloat5(xi + 2yj) for xi in xg, yj in yg]  # linear in x,y
+    data_2d_flat = _val.(data_2d)
+    q2d = (1.5, 1.5)
+
+    # ================================================================
+    # SECTION 1: INTERPOLANT CONSTRUCTION — all methods × grid types
+    # ================================================================
+    @testset "1. Construction — 1D" begin
+        for (name, x) in [("Vector", x_vec), ("Range", x_rng)]
+            @testset "$name grid" begin
+                @testset "constant" begin
+                    itp = constant_interp(x, y_generic)
+                    itp_ref = constant_interp(x, y_generic_flat)
+                    @test itp(xq) isa DuckFloat5
+                    @test _val(itp(xq)) ≈ itp_ref(xq)
+                end
+                @testset "linear" begin
+                    itp = linear_interp(x, y_linear)
+                    itp_ref = linear_interp(x, y_linear_flat)
+                    r = itp(xq)
+                    @test r isa DuckFloat5
+                    @test _val(r) ≈ 2 * xq + 1  # exact for linear data
+                    @test _val(r) ≈ itp_ref(xq)
+                end
+                @testset "quadratic (default BC)" begin
+                    itp = quadratic_interp(x, y_generic)
+                    itp_ref = quadratic_interp(x, y_generic_flat)
+                    @test itp(xq) isa DuckFloat5
+                    @test _val(itp(xq)) ≈ itp_ref(xq)
+                end
+                @testset "cubic (default BC)" begin
+                    itp = cubic_interp(x, y_generic)
+                    itp_ref = cubic_interp(x, y_generic_flat)
+                    @test itp(xq) isa DuckFloat5
+                    @test _val(itp(xq)) ≈ itp_ref(xq)
+                end
+            end
+        end
+    end
+
+    @testset "2. Construction — 2D ND" begin
+        for (name, grids) in [("Vector", (xg, yg)), ("Range", (xg_r, yg_r))]
+            @testset "$name grid" begin
+                @testset "constant" begin
+                    itp = constant_interp(grids, data_2d)
+                    itp_ref = constant_interp(grids, data_2d_flat)
+                    @test itp(q2d) isa DuckFloat5
+                    @test _val(itp(q2d)) ≈ itp_ref(q2d)
+                end
+                @testset "linear" begin
+                    itp = linear_interp(grids, data_2d)
+                    itp_ref = linear_interp(grids, data_2d_flat)
+                    r = itp(q2d)
+                    @test r isa DuckFloat5
+                    @test _val(r) ≈ 1.5 + 2 * 1.5
+                    @test _val(r) ≈ itp_ref(q2d)
+                end
+                @testset "quadratic" begin
+                    itp = quadratic_interp(grids, data_2d)
+                    itp_ref = quadratic_interp(grids, data_2d_flat)
+                    @test itp(q2d) isa DuckFloat5
+                    @test _val(itp(q2d)) ≈ itp_ref(q2d)
+                end
+                @testset "cubic" begin
+                    itp = cubic_interp(grids, data_2d)
+                    itp_ref = cubic_interp(grids, data_2d_flat)
+                    @test itp(q2d) isa DuckFloat5
+                    @test _val(itp(q2d)) ≈ itp_ref(q2d)
+                end
+            end
+        end
+    end
+
+    # ================================================================
+    # SECTION 2: BOUNDARY CONDITIONS — all BCs × {quadratic, cubic}
+    # ================================================================
+    @testset "3. Quadratic BCs" begin
+        @testset "Left(QuadraticFit())" begin
+            itp = quadratic_interp(x_vec, y_generic; bc=Left(QuadraticFit()))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Left(QuadraticFit()))
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "Left(Deriv1(Tv))" begin
+            itp = quadratic_interp(x_vec, y_generic; bc=Left(Deriv1(DuckFloat5(0.0))))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Left(Deriv1(0.0)))
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "Left(Deriv2(Tv))" begin
+            itp = quadratic_interp(x_vec, y_generic; bc=Left(Deriv2(DuckFloat5(0.0))))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Left(Deriv2(0.0)))
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "Right(QuadraticFit())" begin
+            itp = quadratic_interp(x_vec, y_generic; bc=Right(QuadraticFit()))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Right(QuadraticFit()))
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "Right(Deriv1(Tv))" begin
+            itp = quadratic_interp(x_vec, y_generic; bc=Right(Deriv1(DuckFloat5(0.0))))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Right(Deriv1(0.0)))
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "Left(LinearFit())" begin
+            itp = quadratic_interp(x_vec, y_generic; bc=Left(LinearFit()))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Left(LinearFit()))
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+    end
+
+    @testset "4. Cubic BCs" begin
+        @testset "CubicFit() (default)" begin
+            itp = cubic_interp(x_vec, y_generic)
+            itp_ref = cubic_interp(x_vec, y_generic_flat)
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "Deriv1(Tv) symmetric" begin
+            itp = cubic_interp(x_vec, y_generic; bc=Deriv1(DuckFloat5(0.0)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv1(0.0))
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "Deriv2(Tv) symmetric" begin
+            itp = cubic_interp(x_vec, y_generic; bc=Deriv2(DuckFloat5(0.0)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv2(0.0))
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "ZeroCurvBC()" begin
+            itp = cubic_interp(x_vec, y_generic; bc=ZeroCurvBC())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=ZeroCurvBC())
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "ZeroSlopeBC()" begin
+            itp = cubic_interp(x_vec, y_generic; bc=ZeroSlopeBC())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=ZeroSlopeBC())
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "BCPair(Deriv1, Deriv2)" begin
+            bc = BCPair(Deriv1(DuckFloat5(0.0)), Deriv2(DuckFloat5(0.0)))
+            bc_ref = BCPair(Deriv1(0.0), Deriv2(0.0))
+            itp = cubic_interp(x_vec, y_generic; bc=bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "BCPair(CubicFit, Deriv1)" begin
+            bc = BCPair(CubicFit(), Deriv1(DuckFloat5(0.0)))
+            bc_ref = BCPair(CubicFit(), Deriv1(0.0))
+            itp = cubic_interp(x_vec, y_generic; bc=bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            @test itp(xq) isa DuckFloat5
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "PeriodicBC(:exclusive)" begin
+            xp = range(0.0, 6.0, 7)
+            yp = DuckFloat5.([1.0, 3.0, 2.0, 4.0, 2.0, 3.0, 1.5])
+            yp_flat = _val.(yp)
+            itp = cubic_interp(xp, yp; bc=PeriodicBC(endpoint=:exclusive))
+            itp_ref = cubic_interp(xp, yp_flat; bc=PeriodicBC(endpoint=:exclusive))
+            @test itp(1.5) isa DuckFloat5
+            @test _val(itp(1.5)) ≈ itp_ref(1.5)
+        end
+        @testset "PeriodicBC(:inclusive) exact match" begin
+            xp = range(0.0, 6.0, 7)
+            yp = DuckFloat5.([1.0, 3.0, 2.0, 4.0, 2.0, 3.0, 1.0])  # y[1]==y[end]
+            yp_flat = _val.(yp)
+            itp = cubic_interp(xp, yp; bc=PeriodicBC(endpoint=:inclusive))
+            itp_ref = cubic_interp(xp, yp_flat; bc=PeriodicBC(endpoint=:inclusive))
+            @test itp(1.5) isa DuckFloat5
+            @test _val(itp(1.5)) ≈ itp_ref(1.5)
+        end
+    end
+
+    @testset "5. ND BCs" begin
+        @testset "2D per-axis BCs" begin
+            bc_pair = (ZeroCurvBC(), ZeroCurvBC())
+            itp = cubic_interp((xg, yg), data_2d; bc=bc_pair)
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=bc_pair)
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "2D mixed BC (Periodic + ZeroCurv)" begin
+            xp = collect(range(0.0, 3.0, 4))
+            # Periodic in x: y[1,:] == y[end,:] exactly
+            data_p = [DuckFloat5(2yj + 1.0) for xi in xp, yj in yg]
+            data_p_flat = _val.(data_p)
+            itp = cubic_interp((xp, yg), data_p; bc=(PeriodicBC(), ZeroCurvBC()))
+            itp_ref = cubic_interp((xp, yg), data_p_flat; bc=(PeriodicBC(), ZeroCurvBC()))
+            @test itp((0.5, 1.5)) isa DuckFloat5
+            @test _val(itp((0.5, 1.5))) ≈ itp_ref((0.5, 1.5))
+        end
+        @testset "2D quadratic ZeroCurvBC" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=ZeroCurvBC())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroCurvBC())
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+    end
+
+    # ================================================================
+    # SECTION 3: DERIVATIVES — all orders × {linear, quadratic, cubic}
+    # ================================================================
+    @testset "6. Derivatives — 1D" begin
+        @testset "linear deriv1" begin
+            itp = linear_interp(x_vec, y_linear)
+            itp_ref = linear_interp(x_vec, y_linear_flat)
+            r = itp(xq; deriv=DerivOp(1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ 2.0  # d/dx(2x+1) = 2
+            @test _val(r) ≈ itp_ref(xq; deriv=DerivOp(1))
+        end
+
+        @testset "quadratic deriv1" begin
+            itp = quadratic_interp(x_vec, y_quad)
+            itp_ref = quadratic_interp(x_vec, y_quad_flat)
+            r = itp(xq; deriv=DerivOp(1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ 2 * xq - 1 atol = 0.1  # d/dx(x²-x+1) = 2x-1
+            @test _val(r) ≈ itp_ref(xq; deriv=DerivOp(1))
+        end
+        @testset "quadratic deriv2" begin
+            itp = quadratic_interp(x_vec, y_quad)
+            itp_ref = quadratic_interp(x_vec, y_quad_flat)
+            r = itp(xq; deriv=DerivOp(2))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(xq; deriv=DerivOp(2))
+        end
+
+        @testset "cubic deriv1" begin
+            itp = cubic_interp(x_vec, y_cubic)
+            itp_ref = cubic_interp(x_vec, y_cubic_flat)
+            r = itp(xq; deriv=DerivOp(1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(xq; deriv=DerivOp(1))
+        end
+        @testset "cubic deriv2" begin
+            itp = cubic_interp(x_vec, y_cubic)
+            itp_ref = cubic_interp(x_vec, y_cubic_flat)
+            r = itp(xq; deriv=DerivOp(2))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(xq; deriv=DerivOp(2))
+        end
+        @testset "cubic deriv3" begin
+            itp = cubic_interp(x_vec, y_cubic)
+            itp_ref = cubic_interp(x_vec, y_cubic_flat)
+            r = itp(xq; deriv=DerivOp(3))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(xq; deriv=DerivOp(3))
+        end
+    end
+
+    @testset "7. DerivativeView — 1D" begin
+        @testset "linear" begin
+            itp = linear_interp(x_vec, y_linear)
+            itp_ref = linear_interp(x_vec, y_linear_flat)
+            d1 = deriv1(itp)
+            d1_ref = deriv1(itp_ref)
+            r = d1(xq)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ 2.0
+            @test _val(r) ≈ d1_ref(xq)
+        end
+
+        @testset "cubic" begin
+            itp = cubic_interp(x_vec, y_generic)
+            itp_ref = cubic_interp(x_vec, y_generic_flat)
+            d1 = deriv1(itp)
+            d1_ref = deriv1(itp_ref)
+            @test d1(xq) isa DuckFloat5
+            @test _val(d1(xq)) ≈ d1_ref(xq)
+            d2 = deriv2(itp)
+            d2_ref = deriv2(itp_ref)
+            @test d2(xq) isa DuckFloat5
+            @test _val(d2(xq)) ≈ d2_ref(xq)
+            d3 = deriv3(itp)
+            d3_ref = deriv3(itp_ref)
+            @test d3(xq) isa DuckFloat5
+            @test _val(d3(xq)) ≈ d3_ref(xq)
+        end
+
+        @testset "quadratic" begin
+            itp = quadratic_interp(x_vec, y_generic)
+            itp_ref = quadratic_interp(x_vec, y_generic_flat)
+            d1 = deriv1(itp)
+            d1_ref = deriv1(itp_ref)
+            @test d1(xq) isa DuckFloat5
+            @test _val(d1(xq)) ≈ d1_ref(xq)
+            d2 = deriv2(itp)
+            d2_ref = deriv2(itp_ref)
+            @test d2(xq) isa DuckFloat5
+            @test _val(d2(xq)) ≈ d2_ref(xq)
+        end
+    end
+
+    # ================================================================
+    # SECTION 4: INTEGRATION — 1D all methods
+    # ================================================================
+    @testset "8. Integration — 1D" begin
+        @testset "linear" begin
+            itp = linear_interp(x_vec, y_linear)
+            itp_ref = linear_interp(x_vec, y_linear_flat)
+            r = integrate(itp, 1.0, 4.0)
+            @test r isa DuckFloat5
+            # ∫₁⁴ (2x+1)dx = [x²+x]₁⁴ = 20-2 = 18
+            @test _val(r) ≈ 18.0
+            @test _val(r) ≈ integrate(itp_ref, 1.0, 4.0)
+        end
+
+        @testset "quadratic" begin
+            itp = quadratic_interp(x_vec, y_generic)
+            itp_ref = quadratic_interp(x_vec, y_generic_flat)
+            r = integrate(itp, 1.0, 4.0)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ integrate(itp_ref, 1.0, 4.0)
+        end
+
+        @testset "cubic" begin
+            itp = cubic_interp(x_vec, y_generic)
+            itp_ref = cubic_interp(x_vec, y_generic_flat)
+            r = integrate(itp, 1.0, 4.0)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ integrate(itp_ref, 1.0, 4.0)
+        end
+
+        @testset "constant (left side)" begin
+            itp = constant_interp(x_vec, y_generic; side=LeftSide())
+            itp_ref = constant_interp(x_vec, y_generic_flat; side=LeftSide())
+            r = integrate(itp, 1.0, 4.0)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ integrate(itp_ref, 1.0, 4.0)
+        end
+
+        @testset "constant (right side)" begin
+            itp = constant_interp(x_vec, y_generic; side=RightSide())
+            itp_ref = constant_interp(x_vec, y_generic_flat; side=RightSide())
+            r = integrate(itp, 1.0, 4.0)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ integrate(itp_ref, 1.0, 4.0)
+        end
+
+        @testset "constant (nearest side)" begin
+            itp = constant_interp(x_vec, y_generic)
+            itp_ref = constant_interp(x_vec, y_generic_flat)
+            r = integrate(itp, 1.0, 4.0)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ integrate(itp_ref, 1.0, 4.0)
+        end
+
+        @testset "partial cell (non-grid-aligned bounds)" begin
+            itp = cubic_interp(x_vec, y_generic)
+            itp_ref = cubic_interp(x_vec, y_generic_flat)
+            r = integrate(itp, 0.3, 5.7)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ integrate(itp_ref, 0.3, 5.7)
+        end
+    end
+
+    # ================================================================
+    # SECTION 5: ONE-SHOT API (with targets)
+    # ================================================================
+    @testset "9. One-shot API — scalar target" begin
+        @testset "constant" begin
+            r = constant_interp(x_vec, y_generic, xq)
+            r_ref = constant_interp(x_vec, y_generic_flat, xq)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ r_ref
+        end
+        @testset "linear" begin
+            r = linear_interp(x_vec, y_linear, xq)
+            r_ref = linear_interp(x_vec, y_linear_flat, xq)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ 2 * xq + 1
+            @test _val(r) ≈ r_ref
+        end
+        @testset "quadratic" begin
+            r = quadratic_interp(x_vec, y_generic, xq)
+            r_ref = quadratic_interp(x_vec, y_generic_flat, xq)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ r_ref
+        end
+        @testset "cubic" begin
+            r = cubic_interp(x_vec, y_generic, xq)
+            r_ref = cubic_interp(x_vec, y_generic_flat, xq)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ r_ref
+        end
+    end
+
+    @testset "10. One-shot API — vector target" begin
+        @testset "constant" begin
+            r = constant_interp(x_vec, y_generic, xq_vec)
+            r_ref = constant_interp(x_vec, y_generic_flat, xq_vec)
+            @test eltype(r) === DuckFloat5
+            @test length(r) == 3
+            @test _val.(r) ≈ r_ref
+        end
+        @testset "linear" begin
+            r = linear_interp(x_vec, y_linear, xq_vec)
+            r_ref = linear_interp(x_vec, y_linear_flat, xq_vec)
+            @test eltype(r) === DuckFloat5
+            for (i, q) in enumerate(xq_vec)
+                @test _val(r[i]) ≈ 2q + 1
+            end
+            @test _val.(r) ≈ r_ref
+        end
+        @testset "quadratic" begin
+            r = quadratic_interp(x_vec, y_generic, xq_vec)
+            r_ref = quadratic_interp(x_vec, y_generic_flat, xq_vec)
+            @test eltype(r) === DuckFloat5
+            @test _val.(r) ≈ r_ref
+        end
+        @testset "cubic" begin
+            r = cubic_interp(x_vec, y_generic, xq_vec)
+            r_ref = cubic_interp(x_vec, y_generic_flat, xq_vec)
+            @test eltype(r) === DuckFloat5
+            @test _val.(r) ≈ r_ref
+        end
+    end
+
+    @testset "11. One-shot API — with deriv kwarg" begin
+        @testset "linear deriv1" begin
+            r = linear_interp(x_vec, y_linear, xq; deriv=DerivOp(1))
+            r_ref = linear_interp(x_vec, y_linear_flat, xq; deriv=DerivOp(1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ 2.0
+            @test _val(r) ≈ r_ref
+        end
+        @testset "cubic deriv1" begin
+            r = cubic_interp(x_vec, y_generic, xq; deriv=DerivOp(1))
+            r_ref = cubic_interp(x_vec, y_generic_flat, xq; deriv=DerivOp(1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ r_ref
+        end
+        @testset "cubic deriv2" begin
+            r = cubic_interp(x_vec, y_generic, xq; deriv=DerivOp(2))
+            r_ref = cubic_interp(x_vec, y_generic_flat, xq; deriv=DerivOp(2))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ r_ref
+        end
+        @testset "quadratic deriv1" begin
+            r = quadratic_interp(x_vec, y_generic, xq; deriv=DerivOp(1))
+            r_ref = quadratic_interp(x_vec, y_generic_flat, xq; deriv=DerivOp(1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ r_ref
+        end
+    end
+
+    # ================================================================
+    # SECTION 6: EXTRAPOLATION MODES
+    # ================================================================
+    @testset "12. Extrapolation modes" begin
+        xq_left = -0.5
+        xq_right = 6.5
+
+        @testset "NoExtrap throws" begin
+            itp = linear_interp(x_vec, y_generic; extrap=NoExtrap())
+            @test_throws DomainError itp(xq_left)
+            @test_throws DomainError itp(xq_right)
+        end
+
+        @testset "ConstExtrap" begin
+            itp = linear_interp(x_vec, y_generic; extrap=ConstExtrap())
+            itp_ref = linear_interp(x_vec, y_generic_flat; extrap=ConstExtrap())
+            @test itp(xq_left) isa DuckFloat5
+            @test itp(xq_right) isa DuckFloat5
+            @test _val(itp(xq_left)) == _val(y_generic[1])
+            @test _val(itp(xq_right)) == _val(y_generic[end])
+            @test _val(itp(xq_left)) ≈ itp_ref(xq_left)
+            @test _val(itp(xq_right)) ≈ itp_ref(xq_right)
+        end
+
+        @testset "ExtendExtrap" begin
+            itp = linear_interp(x_vec, y_generic; extrap=ExtendExtrap())
+            itp_ref = linear_interp(x_vec, y_generic_flat; extrap=ExtendExtrap())
+            @test itp(xq_left) isa DuckFloat5
+            @test itp(xq_right) isa DuckFloat5
+            @test _val(itp(xq_left)) ≈ itp_ref(xq_left)
+            @test _val(itp(xq_right)) ≈ itp_ref(xq_right)
+        end
+
+        @testset "ExtendExtrap cubic" begin
+            itp = cubic_interp(x_vec, y_generic; extrap=ExtendExtrap())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ExtendExtrap())
+            @test itp(xq_left) isa DuckFloat5
+            @test itp(xq_right) isa DuckFloat5
+            @test _val(itp(xq_left)) ≈ itp_ref(xq_left)
+            @test _val(itp(xq_right)) ≈ itp_ref(xq_right)
+        end
+
+        @testset "ConstExtrap quadratic" begin
+            itp = quadratic_interp(x_vec, y_generic; extrap=ConstExtrap())
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; extrap=ConstExtrap())
+            @test itp(xq_left) isa DuckFloat5
+            @test itp(xq_right) isa DuckFloat5
+            @test _val(itp(xq_left)) ≈ itp_ref(xq_left)
+            @test _val(itp(xq_right)) ≈ itp_ref(xq_right)
+        end
+    end
+
+    # ================================================================
+    # SECTION 7: SERIES
+    # ================================================================
+    @testset "13. Series — all methods" begin
+        y1 = DuckFloat5.([1.0, 4.0, 2.0, 5.0, 3.0, 6.0, 2.5])
+        y2 = DuckFloat5.([2.0, 1.0, 5.0, 3.0, 4.0, 1.0, 3.5])
+        y3 = DuckFloat5.([3.0, 2.0, 1.0, 4.0, 5.0, 2.0, 4.5])
+        s = Series(y1, y2, y3)
+        y1_flat = _val.(y1)
+        y2_flat = _val.(y2)
+        y3_flat = _val.(y3)
+        s_flat = Series(y1_flat, y2_flat, y3_flat)
+
+        for (name, fn) in [("constant", constant_interp), ("linear", linear_interp),
+                           ("quadratic", quadratic_interp), ("cubic", cubic_interp)]
+            @testset "$name" begin
+                sitp = fn(x_vec, s)
+                sitp_ref = fn(x_vec, s_flat)
+                result = sitp(xq)
+                result_ref = sitp_ref(xq)
+                @test length(result) == 3
+                @test eltype(result) === DuckFloat5
+                @test _val.(result) ≈ result_ref
+            end
+        end
+
+        @testset "cubic Series with ZeroCurvBC" begin
+            sitp = cubic_interp(x_vec, s; bc=ZeroCurvBC())
+            sitp_ref = cubic_interp(x_vec, s_flat; bc=ZeroCurvBC())
+            result = sitp(xq)
+            result_ref = sitp_ref(xq)
+            @test length(result) == 3
+            @test eltype(result) === DuckFloat5
+            @test _val.(result) ≈ result_ref
+        end
+
+        @testset "quadratic Series with Deriv1(Tv)" begin
+            sitp = quadratic_interp(x_vec, s; bc=Left(Deriv1(DuckFloat5(0.0))))
+            sitp_ref = quadratic_interp(x_vec, s_flat; bc=Left(Deriv1(0.0)))
+            result = sitp(xq)
+            result_ref = sitp_ref(xq)
+            @test eltype(result) === DuckFloat5
+            @test _val.(result) ≈ result_ref
+        end
+    end
+
+    # ================================================================
+    # SECTION 8: SEARCH POLICIES
+    # ================================================================
+    @testset "14. Search policies" begin
+        for sp in [BinarySearch(), LinearBinarySearch(), AutoSearch()]
+            @testset "$(typeof(sp))" begin
+                itp = linear_interp(x_vec, y_linear; search=sp)
+                itp_ref = linear_interp(x_vec, y_linear_flat; search=sp)
+                @test itp(xq) isa DuckFloat5
+                @test _val(itp(xq)) ≈ itp_ref(xq)
+            end
+        end
+    end
+
+    # ================================================================
+    # SECTION 9: GRID POINT EXACTNESS
+    # ================================================================
+    @testset "15. Grid point exactness" begin
+        @testset "linear" begin
+            itp = linear_interp(x_vec, y_linear)
+            itp_ref = linear_interp(x_vec, y_linear_flat)
+            for i in eachindex(x_vec)
+                @test _val(itp(x_vec[i])) ≈ _val(y_linear[i])
+                @test _val(itp(x_vec[i])) ≈ itp_ref(x_vec[i])
+            end
+        end
+        @testset "quadratic" begin
+            itp = quadratic_interp(x_vec, y_generic)
+            itp_ref = quadratic_interp(x_vec, y_generic_flat)
+            for i in eachindex(x_vec)
+                @test _val(itp(x_vec[i])) ≈ _val(y_generic[i])
+                @test _val(itp(x_vec[i])) ≈ itp_ref(x_vec[i])
+            end
+        end
+        @testset "cubic" begin
+            itp = cubic_interp(x_vec, y_generic)
+            itp_ref = cubic_interp(x_vec, y_generic_flat)
+            for i in eachindex(x_vec)
+                @test _val(itp(x_vec[i])) ≈ _val(y_generic[i])
+                @test _val(itp(x_vec[i])) ≈ itp_ref(x_vec[i])
+            end
+        end
+    end
+
+    # ================================================================
+    # SECTION 10: ND DERIVATIVES
+    # ================================================================
+    @testset "16. ND derivatives" begin
+        @testset "2D linear deriv" begin
+            itp = linear_interp((xg, yg), data_2d)
+            itp_ref = linear_interp((xg, yg), data_2d_flat)
+            # ∂f/∂x at (1.5,1.5): f = x + 2y → ∂f/∂x = 1
+            r = itp(q2d; deriv=DerivOp(1, 0))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ 1.0
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+            # ∂f/∂y: f = x + 2y → ∂f/∂y = 2
+            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ 2.0
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+        end
+
+        @testset "2D cubic deriv" begin
+            itp = cubic_interp((xg, yg), data_2d)
+            itp_ref = cubic_interp((xg, yg), data_2d_flat)
+            r = itp(q2d; deriv=DerivOp(1, 0))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+        end
+
+        @testset "2D quadratic deriv" begin
+            itp = quadratic_interp((xg, yg), data_2d)
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat)
+            r = itp(q2d; deriv=DerivOp(1, 0))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+        end
+    end
+
+    # ================================================================
+    # SECTION 11: ND INTEGRATION
+    # ================================================================
+    @testset "17. ND Integration" begin
+        @testset "2D linear" begin
+            itp = linear_interp((xg, yg), data_2d)
+            itp_ref = linear_interp((xg, yg), data_2d_flat)
+            r = integrate(itp, (0.5, 0.5), (2.5, 2.5))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ integrate(itp_ref, (0.5, 0.5), (2.5, 2.5))
+        end
+
+        @testset "2D cubic" begin
+            itp = cubic_interp((xg, yg), data_2d)
+            itp_ref = cubic_interp((xg, yg), data_2d_flat)
+            r = integrate(itp, (0.5, 0.5), (2.5, 2.5))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ integrate(itp_ref, (0.5, 0.5), (2.5, 2.5))
+        end
+
+        @testset "2D quadratic" begin
+            itp = quadratic_interp((xg, yg), data_2d)
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat)
+            r = integrate(itp, (0.5, 0.5), (2.5, 2.5))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ integrate(itp_ref, (0.5, 0.5), (2.5, 2.5))
+        end
+    end
+
+    # ================================================================
+    # SECTION 12: SIDE SELECTION (constant only)
+    # ================================================================
+    @testset "18. Constant side selection" begin
+        for side in [LeftSide(), RightSide(), NearestSide()]
+            @testset "$(typeof(side))" begin
+                itp = constant_interp(x_vec, y_generic; side=side)
+                itp_ref = constant_interp(x_vec, y_generic_flat; side=side)
+                @test itp(xq) isa DuckFloat5
+                @test _val(itp(xq)) ≈ itp_ref(xq)
+            end
+        end
+    end
+
+    # ================================================================
+    # SECTION 13: IN-PLACE ONE-SHOT API
+    # ================================================================
+    @testset "19. In-place one-shot" begin
+        out = Vector{DuckFloat5}(undef, length(xq_vec))
+        out_ref = Vector{Float64}(undef, length(xq_vec))
+
+        @testset "linear!" begin
+            linear_interp!(out, x_vec, y_linear, xq_vec)
+            linear_interp!(out_ref, x_vec, y_linear_flat, xq_vec)
+            @test eltype(out) === DuckFloat5
+            for (i, q) in enumerate(xq_vec)
+                @test _val(out[i]) ≈ 2q + 1
+            end
+            @test _val.(out) ≈ out_ref
+        end
+
+        @testset "cubic!" begin
+            cubic_interp!(out, x_vec, y_generic, xq_vec)
+            cubic_interp!(out_ref, x_vec, y_generic_flat, xq_vec)
+            @test eltype(out) === DuckFloat5
+            @test _val.(out) ≈ out_ref
+        end
+
+        @testset "quadratic!" begin
+            quadratic_interp!(out, x_vec, y_generic, xq_vec)
+            quadratic_interp!(out_ref, x_vec, y_generic_flat, xq_vec)
+            @test eltype(out) === DuckFloat5
+            @test _val.(out) ≈ out_ref
+        end
+
+        @testset "constant!" begin
+            constant_interp!(out, x_vec, y_generic, xq_vec)
+            constant_interp!(out_ref, x_vec, y_generic_flat, xq_vec)
+            @test eltype(out) === DuckFloat5
+            @test _val.(out) ≈ out_ref
+        end
+    end
+
+    # ================================================================
+    # SECTION 14: DERIV + EXTRAP COMBINATIONS
+    # ================================================================
+    @testset "20. Deriv + Extrap combos" begin
+        @testset "cubic deriv1 + ExtendExtrap" begin
+            itp = cubic_interp(x_vec, y_generic; extrap=ExtendExtrap())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ExtendExtrap())
+            r = itp(-0.5; deriv=DerivOp(1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(-0.5; deriv=DerivOp(1))
+            r = itp(6.5; deriv=DerivOp(1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(6.5; deriv=DerivOp(1))
+        end
+
+        @testset "cubic deriv2 + ConstExtrap" begin
+            itp = cubic_interp(x_vec, y_generic; extrap=ConstExtrap())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ConstExtrap())
+            # ConstExtrap with deriv → 0 (derivative of constant is 0)
+            r = itp(-0.5; deriv=DerivOp(1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(-0.5; deriv=DerivOp(1))
+        end
+
+        @testset "linear deriv1 + ExtendExtrap" begin
+            itp = linear_interp(x_vec, y_linear; extrap=ExtendExtrap())
+            itp_ref = linear_interp(x_vec, y_linear_flat; extrap=ExtendExtrap())
+            r = itp(-0.5; deriv=DerivOp(1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ 2.0
+            @test _val(r) ≈ itp_ref(-0.5; deriv=DerivOp(1))
+        end
+    end
+
+    # ================================================================
+    # SECTION 15: DERIV + BC COMBINATIONS
+    # ================================================================
+    @testset "21. Deriv + BC combos" begin
+        @testset "cubic ZeroCurvBC + deriv1" begin
+            itp = cubic_interp(x_vec, y_generic; bc=ZeroCurvBC())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=ZeroCurvBC())
+            @test itp(xq; deriv=DerivOp(1)) isa DuckFloat5
+            @test _val(itp(xq; deriv=DerivOp(1))) ≈ itp_ref(xq; deriv=DerivOp(1))
+        end
+        @testset "cubic ZeroSlopeBC + deriv1" begin
+            itp = cubic_interp(x_vec, y_generic; bc=ZeroSlopeBC())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=ZeroSlopeBC())
+            @test itp(xq; deriv=DerivOp(1)) isa DuckFloat5
+            @test _val(itp(xq; deriv=DerivOp(1))) ≈ itp_ref(xq; deriv=DerivOp(1))
+        end
+        @testset "cubic Deriv1(Tv) + deriv2" begin
+            itp = cubic_interp(x_vec, y_generic; bc=Deriv1(DuckFloat5(0.0)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv1(0.0))
+            @test itp(xq; deriv=DerivOp(2)) isa DuckFloat5
+            @test _val(itp(xq; deriv=DerivOp(2))) ≈ itp_ref(xq; deriv=DerivOp(2))
+        end
+        @testset "quadratic Deriv1(Tv) + deriv1" begin
+            itp = quadratic_interp(x_vec, y_generic; bc=Left(Deriv1(DuckFloat5(0.0))))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Left(Deriv1(0.0)))
+            @test itp(xq; deriv=DerivOp(1)) isa DuckFloat5
+            @test _val(itp(xq; deriv=DerivOp(1))) ≈ itp_ref(xq; deriv=DerivOp(1))
+        end
+    end
+
+    # ================================================================
+    # SECTION 16: EDGE CASES
+    # ================================================================
+    @testset "22. Edge cases" begin
+        @testset "query at left boundary" begin
+            itp = cubic_interp(x_vec, y_generic)
+            itp_ref = cubic_interp(x_vec, y_generic_flat)
+            @test _val(itp(x_vec[1])) ≈ _val(y_generic[1])
+            @test _val(itp(x_vec[1])) ≈ itp_ref(x_vec[1])
+        end
+        @testset "query at right boundary" begin
+            itp = cubic_interp(x_vec, y_generic)
+            itp_ref = cubic_interp(x_vec, y_generic_flat)
+            @test _val(itp(x_vec[end])) ≈ _val(y_generic[end])
+            @test _val(itp(x_vec[end])) ≈ itp_ref(x_vec[end])
+        end
+        @testset "minimum grid (3 points) — quadratic" begin
+            x3 = [0.0, 1.0, 2.0]
+            y3 = DuckFloat5.([1.0, 3.0, 2.0])
+            y3_flat = _val.(y3)
+            itp = quadratic_interp(x3, y3)
+            itp_ref = quadratic_interp(x3, y3_flat)
+            @test itp(0.5) isa DuckFloat5
+            @test _val(itp(0.5)) ≈ itp_ref(0.5)
+        end
+        @testset "minimum grid (4 points) — cubic" begin
+            x4 = [0.0, 1.0, 2.0, 3.0]
+            y4 = DuckFloat5.([1.0, 3.0, 2.0, 4.0])
+            y4_flat = _val.(y4)
+            itp = cubic_interp(x4, y4)
+            itp_ref = cubic_interp(x4, y4_flat)
+            @test itp(1.5) isa DuckFloat5
+            @test _val(itp(1.5)) ≈ itp_ref(1.5)
+        end
+        @testset "minimum grid (2 points) — linear" begin
+            x2 = [0.0, 1.0]
+            y2 = DuckFloat5.([1.0, 3.0])
+            y2_flat = _val.(y2)
+            itp = linear_interp(x2, y2)
+            itp_ref = linear_interp(x2, y2_flat)
+            r = itp(0.5)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ 2.0
+            @test _val(r) ≈ itp_ref(0.5)
+        end
+    end
+
+    # ================================================================
+    # SECTION 17: ND ONE-SHOT API — scalar, SoA batch, AoS batch
+    # ================================================================
+    @testset "23. ND One-shot API" begin
+        qx_nd = [0.5, 1.5, 2.5]
+        qy_nd = [0.5, 1.5, 2.5]
+        queries_aos = [(0.5, 0.5), (1.5, 1.5), (2.5, 2.5)]
+
+        @testset "scalar query" begin
+            for (name, fn) in [("constant", constant_interp), ("linear", linear_interp),
+                               ("quadratic", quadratic_interp), ("cubic", cubic_interp)]
+                @testset "$name" begin
+                    r = fn((xg, yg), data_2d, q2d)
+                    r_ref = fn((xg, yg), data_2d_flat, q2d)
+                    @test r isa DuckFloat5
+                    @test _val(r) ≈ r_ref
+                end
+            end
+        end
+
+        @testset "scalar with BCs" begin
+            @testset "cubic ZeroCurvBC" begin
+                r = cubic_interp((xg, yg), data_2d, q2d; bc=ZeroCurvBC())
+                r_ref = cubic_interp((xg, yg), data_2d_flat, q2d; bc=ZeroCurvBC())
+                @test r isa DuckFloat5
+                @test _val(r) ≈ r_ref
+            end
+            @testset "cubic ZeroSlopeBC" begin
+                r = cubic_interp((xg, yg), data_2d, q2d; bc=ZeroSlopeBC())
+                r_ref = cubic_interp((xg, yg), data_2d_flat, q2d; bc=ZeroSlopeBC())
+                @test r isa DuckFloat5
+                @test _val(r) ≈ r_ref
+            end
+            @testset "quadratic ZeroCurvBC" begin
+                r = quadratic_interp((xg, yg), data_2d, q2d; bc=ZeroCurvBC())
+                r_ref = quadratic_interp((xg, yg), data_2d_flat, q2d; bc=ZeroCurvBC())
+                @test r isa DuckFloat5
+                @test _val(r) ≈ r_ref
+            end
+        end
+
+        @testset "SoA batch" begin
+            for (name, fn) in [("constant", constant_interp), ("linear", linear_interp),
+                               ("quadratic", quadratic_interp), ("cubic", cubic_interp)]
+                @testset "$name" begin
+                    r = fn((xg, yg), data_2d, (qx_nd, qy_nd))
+                    r_ref = fn((xg, yg), data_2d_flat, (qx_nd, qy_nd))
+                    @test eltype(r) === DuckFloat5
+                    @test length(r) == 3
+                    @test _val.(r) ≈ r_ref
+                end
+            end
+        end
+
+        @testset "AoS batch" begin
+            for (name, fn) in [("constant", constant_interp), ("linear", linear_interp),
+                               ("quadratic", quadratic_interp), ("cubic", cubic_interp)]
+                @testset "$name" begin
+                    r = fn((xg, yg), data_2d, queries_aos)
+                    r_ref = fn((xg, yg), data_2d_flat, queries_aos)
+                    @test eltype(r) === DuckFloat5
+                    @test length(r) == 3
+                    @test _val.(r) ≈ r_ref
+                end
+            end
+        end
+    end
+
+    # ================================================================
+    # SECTION 18: ND IN-PLACE ONE-SHOT
+    # ================================================================
+    @testset "24. ND In-place one-shot" begin
+        qx_nd = [0.5, 1.5, 2.5]
+        qy_nd = [0.5, 1.5, 2.5]
+        queries_aos = [(0.5, 0.5), (1.5, 1.5), (2.5, 2.5)]
+        out_nd = Vector{DuckFloat5}(undef, 3)
+        out_nd_ref = Vector{Float64}(undef, 3)
+
+        @testset "SoA batch" begin
+            for (name, fn!) in [("linear!", linear_interp!), ("cubic!", cubic_interp!),
+                                ("quadratic!", quadratic_interp!), ("constant!", constant_interp!)]
+                @testset "$name" begin
+                    fn!(out_nd, (xg, yg), data_2d, (qx_nd, qy_nd))
+                    fn!(out_nd_ref, (xg, yg), data_2d_flat, (qx_nd, qy_nd))
+                    @test eltype(out_nd) === DuckFloat5
+                    @test _val.(out_nd) ≈ out_nd_ref
+                end
+            end
+        end
+
+        @testset "AoS batch" begin
+            for (name, fn!) in [("linear!", linear_interp!), ("cubic!", cubic_interp!),
+                                ("quadratic!", quadratic_interp!), ("constant!", constant_interp!)]
+                @testset "$name" begin
+                    fn!(out_nd, (xg, yg), data_2d, queries_aos)
+                    fn!(out_nd_ref, (xg, yg), data_2d_flat, queries_aos)
+                    @test eltype(out_nd) === DuckFloat5
+                    @test _val.(out_nd) ≈ out_nd_ref
+                end
+            end
+        end
+    end
+
+    # ================================================================
+    # SECTION 19: ND BCs EXPANDED — cubic
+    # ================================================================
+    @testset "25. ND BCs — Cubic expanded" begin
+        @testset "ZeroSlopeBC symmetric" begin
+            itp = cubic_interp((xg, yg), data_2d; bc=ZeroSlopeBC())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=ZeroSlopeBC())
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "ZeroSlopeBC + ZeroCurvBC mixed per-axis" begin
+            itp = cubic_interp((xg, yg), data_2d; bc=(ZeroSlopeBC(), ZeroCurvBC()))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=(ZeroSlopeBC(), ZeroCurvBC()))
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "CubicFit per-axis symmetric" begin
+            itp = cubic_interp((xg, yg), data_2d; bc=CubicFit())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=CubicFit())
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "CubicFit + ZeroSlopeBC mixed" begin
+            itp = cubic_interp((xg, yg), data_2d; bc=(CubicFit(), ZeroSlopeBC()))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=(CubicFit(), ZeroSlopeBC()))
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "PeriodicBC(:exclusive) in dim 1" begin
+            xp = range(0.0, 3.0, 4)   # must be Range (not collected) for PeriodicBC auto-period
+            data_pe = [DuckFloat5(2yj + 1.0) for xi in xp, yj in yg_r]
+            data_pe_flat = _val.(data_pe)
+            itp = cubic_interp((xp, yg_r), data_pe; bc=(PeriodicBC(endpoint=:exclusive), CubicFit()))
+            itp_ref = cubic_interp((xp, yg_r), data_pe_flat; bc=(PeriodicBC(endpoint=:exclusive), CubicFit()))
+            @test itp((0.5, 1.5)) isa DuckFloat5
+            @test _val(itp((0.5, 1.5))) ≈ itp_ref((0.5, 1.5))
+        end
+        @testset "PeriodicBC(:exclusive) in both dims" begin
+            xp = range(0.0, 3.0, 4)
+            yp = range(0.0, 3.0, 4)
+            data_pp = [DuckFloat5(1.0 + 0.5 * (xi + yj)) for xi in xp, yj in yp]
+            data_pp_flat = _val.(data_pp)
+            itp = cubic_interp((xp, yp), data_pp; bc=(PeriodicBC(endpoint=:exclusive), PeriodicBC(endpoint=:exclusive)))
+            itp_ref = cubic_interp((xp, yp), data_pp_flat; bc=(PeriodicBC(endpoint=:exclusive), PeriodicBC(endpoint=:exclusive)))
+            @test itp((0.5, 0.5)) isa DuckFloat5
+            @test _val(itp((0.5, 0.5))) ≈ itp_ref((0.5, 0.5))
+        end
+        @testset "ZeroSlopeBC + deriv" begin
+            itp = cubic_interp((xg, yg), data_2d; bc=ZeroSlopeBC())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=ZeroSlopeBC())
+            r = itp(q2d; deriv=DerivOp(1, 0))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+        end
+    end
+
+    # ================================================================
+    # SECTION 20: ND BCs EXPANDED — quadratic
+    # ================================================================
+    @testset "26. ND BCs — Quadratic expanded" begin
+        @testset "ZeroSlopeBC symmetric" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=ZeroSlopeBC())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroSlopeBC())
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "MinCurvFit symmetric" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=MinCurvFit())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=MinCurvFit())
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "ZeroCurvBC symmetric" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=ZeroCurvBC())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroCurvBC())
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "Left(QuadraticFit()) per-axis" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=(Left(QuadraticFit()), Left(QuadraticFit())))
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=(Left(QuadraticFit()), Left(QuadraticFit())))
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "Right(QuadraticFit()) per-axis" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=(Right(QuadraticFit()), Right(QuadraticFit())))
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=(Right(QuadraticFit()), Right(QuadraticFit())))
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "Left(Deriv1(Tv)) per-axis" begin
+            bc = (Left(Deriv1(DuckFloat5(0.0))), Left(Deriv1(DuckFloat5(0.0))))
+            bc_ref = (Left(Deriv1(0.0)), Left(Deriv1(0.0)))
+            itp = quadratic_interp((xg, yg), data_2d; bc=bc)
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=bc_ref)
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "mixed: Left(Deriv1) + ZeroCurvBC" begin
+            bc = (Left(Deriv1(DuckFloat5(0.0))), ZeroCurvBC())
+            bc_ref = (Left(Deriv1(0.0)), ZeroCurvBC())
+            itp = quadratic_interp((xg, yg), data_2d; bc=bc)
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=bc_ref)
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "ZeroCurvBC + deriv" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=ZeroCurvBC())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroCurvBC())
+            r = itp(q2d; deriv=DerivOp(1, 0))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+        end
+        @testset "ZeroCurvBC + Left(QuadraticFit()) mixed + deriv" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=(ZeroCurvBC(), Left(QuadraticFit())))
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=(ZeroCurvBC(), Left(QuadraticFit())))
+            r = itp(q2d; deriv=DerivOp(1, 0))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+        end
+        @testset "ZeroSlopeBC + deriv" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=ZeroSlopeBC())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroSlopeBC())
+            r = itp(q2d; deriv=DerivOp(1, 0))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+        end
+        @testset "MinCurvFit + deriv" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=MinCurvFit())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=MinCurvFit())
+            r = itp(q2d; deriv=DerivOp(1, 0))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+        end
+        @testset "ZeroSlopeBC + MinCurvFit mixed" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=(ZeroSlopeBC(), MinCurvFit()))
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=(ZeroSlopeBC(), MinCurvFit()))
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+    end
+
+    # ================================================================
+    # SECTION 21: VECTOR CALCULUS — gradient, hessian, laplacian
+    # ================================================================
+    @testset "27. Vector Calculus" begin
+        @testset "gradient — cubic" begin
+            itp = cubic_interp((xg, yg), data_2d)
+            itp_ref = cubic_interp((xg, yg), data_2d_flat)
+            g = gradient(itp, q2d)
+            g_ref = gradient(itp_ref, q2d)
+            @test length(g) == 2
+            @test g[1] isa DuckFloat5
+            @test g[2] isa DuckFloat5
+            @test _val(g[1]) ≈ g_ref[1]
+            @test _val(g[2]) ≈ g_ref[2]
+        end
+        @testset "gradient — quadratic" begin
+            itp = quadratic_interp((xg, yg), data_2d)
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat)
+            g = gradient(itp, q2d)
+            g_ref = gradient(itp_ref, q2d)
+            @test g[1] isa DuckFloat5
+            @test _val(g[1]) ≈ g_ref[1]
+            @test _val(g[2]) ≈ g_ref[2]
+        end
+        @testset "gradient — linear" begin
+            itp = linear_interp((xg, yg), data_2d)
+            itp_ref = linear_interp((xg, yg), data_2d_flat)
+            g = gradient(itp, q2d)
+            g_ref = gradient(itp_ref, q2d)
+            @test g[1] isa DuckFloat5
+            # f = x + 2y → ∂f/∂x = 1, ∂f/∂y = 2
+            @test _val(g[1]) ≈ 1.0
+            @test _val(g[2]) ≈ 2.0
+            @test _val(g[1]) ≈ g_ref[1]
+            @test _val(g[2]) ≈ g_ref[2]
+        end
+        @testset "gradient! — cubic" begin
+            itp = cubic_interp((xg, yg), data_2d)
+            itp_ref = cubic_interp((xg, yg), data_2d_flat)
+            G = Vector{DuckFloat5}(undef, 2)
+            G_ref = zeros(2)
+            gradient!(G, itp, q2d)
+            gradient!(G_ref, itp_ref, q2d)
+            @test G[1] isa DuckFloat5
+            @test _val(G[1]) ≈ G_ref[1]
+            @test _val(G[2]) ≈ G_ref[2]
+        end
+        @testset "hessian — cubic" begin
+            itp = cubic_interp((xg, yg), data_2d)
+            itp_ref = cubic_interp((xg, yg), data_2d_flat)
+            H = hessian(itp, q2d)
+            H_ref = hessian(itp_ref, q2d)
+            @test size(H) == (2, 2)
+            @test H[1,1] isa DuckFloat5
+            @test _val(H[1,1]) ≈ H_ref[1,1]
+            # Off-diagonal: data is linear (xi+2yj) so ∂²f/∂x∂y ≈ 0.
+            # FMA contraction produces different near-zero rounding artifacts; use atol.
+            @test isapprox(_val(H[1,2]), H_ref[1,2]; atol=1e-14)
+            @test _val(H[2,2]) ≈ H_ref[2,2]
+        end
+        @testset "hessian! — cubic" begin
+            itp = cubic_interp((xg, yg), data_2d)
+            itp_ref = cubic_interp((xg, yg), data_2d_flat)
+            H = Matrix{DuckFloat5}(undef, 2, 2)
+            H_ref = zeros(2, 2)
+            hessian!(H, itp, q2d)
+            hessian!(H_ref, itp_ref, q2d)
+            @test H[1,1] isa DuckFloat5
+            @test _val(H[1,1]) ≈ H_ref[1,1]
+            @test isapprox(_val(H[2,1]), H_ref[2,1]; atol=1e-14)
+        end
+        @testset "laplacian — cubic" begin
+            itp = cubic_interp((xg, yg), data_2d)
+            itp_ref = cubic_interp((xg, yg), data_2d_flat)
+            lap = laplacian(itp, q2d)
+            lap_ref = laplacian(itp_ref, q2d)
+            @test lap isa DuckFloat5
+            @test _val(lap) ≈ lap_ref
+        end
+        @testset "laplacian — quadratic" begin
+            itp = quadratic_interp((xg, yg), data_2d)
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat)
+            lap = laplacian(itp, q2d)
+            lap_ref = laplacian(itp_ref, q2d)
+            @test lap isa DuckFloat5
+            @test _val(lap) ≈ lap_ref
+        end
+        @testset "laplacian — linear" begin
+            itp = linear_interp((xg, yg), data_2d)
+            itp_ref = linear_interp((xg, yg), data_2d_flat)
+            lap = laplacian(itp, q2d)
+            lap_ref = laplacian(itp_ref, q2d)
+            @test lap isa DuckFloat5
+            @test _val(lap) ≈ lap_ref
+        end
+        @testset "gradient with ZeroSlopeBC" begin
+            itp = cubic_interp((xg, yg), data_2d; bc=ZeroSlopeBC())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=ZeroSlopeBC())
+            g = gradient(itp, q2d)
+            g_ref = gradient(itp_ref, q2d)
+            @test g[1] isa DuckFloat5
+            @test _val(g[1]) ≈ g_ref[1]
+            @test _val(g[2]) ≈ g_ref[2]
+        end
+    end
+
+    # ================================================================
+    # SECTION 22: FULL-DOMAIN INTEGRATION — ND
+    # ================================================================
+    @testset "28. Full-domain integration — ND" begin
+        @testset "2D linear" begin
+            itp = linear_interp((xg, yg), data_2d)
+            itp_ref = linear_interp((xg, yg), data_2d_flat)
+            r = integrate(itp)
+            r_ref = integrate(itp_ref)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ r_ref
+        end
+        @testset "2D cubic" begin
+            itp = cubic_interp((xg, yg), data_2d)
+            itp_ref = cubic_interp((xg, yg), data_2d_flat)
+            r = integrate(itp)
+            r_ref = integrate(itp_ref)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ r_ref
+        end
+        @testset "2D quadratic" begin
+            itp = quadratic_interp((xg, yg), data_2d)
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat)
+            r = integrate(itp)
+            r_ref = integrate(itp_ref)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ r_ref
+        end
+        @testset "2D constant" begin
+            itp = constant_interp((xg, yg), data_2d)
+            itp_ref = constant_interp((xg, yg), data_2d_flat)
+            r = integrate(itp)
+            r_ref = integrate(itp_ref)
+            @test r isa DuckFloat5
+            @test _val(r) ≈ r_ref
+        end
+    end
+
+    # ================================================================
+    # SECTION 23: ND EXTRAPOLATION — per-axis modes
+    # ================================================================
+    @testset "29. ND Extrapolation" begin
+        @testset "2D cubic ConstExtrap" begin
+            itp = cubic_interp((xg, yg), data_2d; extrap=ConstExtrap())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap=ConstExtrap())
+            r = itp((-0.5, 1.5))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref((-0.5, 1.5))
+            r = itp((1.5, 3.5))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref((1.5, 3.5))
+        end
+        @testset "2D linear ConstExtrap" begin
+            itp = linear_interp((xg, yg), data_2d; extrap=ConstExtrap())
+            itp_ref = linear_interp((xg, yg), data_2d_flat; extrap=ConstExtrap())
+            r = itp((-0.5, 1.5))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref((-0.5, 1.5))
+        end
+        @testset "2D cubic ExtendExtrap" begin
+            itp = cubic_interp((xg, yg), data_2d; extrap=ExtendExtrap())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap=ExtendExtrap())
+            r = itp((-0.5, 1.5))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref((-0.5, 1.5))
+        end
+        @testset "2D quadratic ConstExtrap" begin
+            itp = quadratic_interp((xg, yg), data_2d; extrap=ConstExtrap())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; extrap=ConstExtrap())
+            r = itp((-0.5, 1.5))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref((-0.5, 1.5))
+        end
+        @testset "2D per-axis extrap (ConstExtrap, ExtendExtrap)" begin
+            itp = cubic_interp((xg, yg), data_2d; extrap=(ConstExtrap(), ExtendExtrap()))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap=(ConstExtrap(), ExtendExtrap()))
+            r = itp((-0.5, 3.5))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref((-0.5, 3.5))
+        end
+    end
+
+    # ================================================================
+    # SECTION 24: TYPE STABILITY — @inferred checks
+    # ================================================================
+    # @inferred requires direct function calls (not loop variables) because
+    # Julia cannot infer return types through runtime-dispatched callables.
+    @testset "30. Type Stability (@inferred)" begin
+        @testset "1D scalar one-shot" begin
+            @test @inferred(constant_interp(x_vec, y_generic, xq)) isa DuckFloat5
+            @test @inferred(linear_interp(x_vec, y_linear, xq)) isa DuckFloat5
+            @test @inferred(quadratic_interp(x_vec, y_generic, xq)) isa DuckFloat5
+            @test @inferred(cubic_interp(x_vec, y_generic, xq)) isa DuckFloat5
+        end
+
+        @testset "1D vector one-shot" begin
+            @test eltype(@inferred(constant_interp(x_vec, y_generic, xq_vec))) === DuckFloat5
+            @test eltype(@inferred(linear_interp(x_vec, y_linear, xq_vec))) === DuckFloat5
+            @test eltype(@inferred(quadratic_interp(x_vec, y_generic, xq_vec))) === DuckFloat5
+            @test eltype(@inferred(cubic_interp(x_vec, y_generic, xq_vec))) === DuckFloat5
+        end
+
+        @testset "ND scalar one-shot" begin
+            @test @inferred(constant_interp((xg, yg), data_2d, q2d)) isa DuckFloat5
+            @test @inferred(linear_interp((xg, yg), data_2d, q2d)) isa DuckFloat5
+            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d)) isa DuckFloat5
+            @test @inferred(cubic_interp((xg, yg), data_2d, q2d)) isa DuckFloat5
+        end
+
+        @testset "ND SoA batch" begin
+            qx_ts = [0.5, 1.5, 2.5]
+            qy_ts = [0.5, 1.5, 2.5]
+            @test eltype(@inferred(constant_interp((xg, yg), data_2d, (qx_ts, qy_ts)))) === DuckFloat5
+            @test eltype(@inferred(linear_interp((xg, yg), data_2d, (qx_ts, qy_ts)))) === DuckFloat5
+            @test eltype(@inferred(quadratic_interp((xg, yg), data_2d, (qx_ts, qy_ts)))) === DuckFloat5
+            @test eltype(@inferred(cubic_interp((xg, yg), data_2d, (qx_ts, qy_ts)))) === DuckFloat5
+        end
+
+        @testset "ND AoS batch" begin
+            q_aos_ts = [(0.5, 0.5), (1.5, 1.5), (2.5, 2.5)]
+            @test eltype(@inferred(constant_interp((xg, yg), data_2d, q_aos_ts))) === DuckFloat5
+            @test eltype(@inferred(linear_interp((xg, yg), data_2d, q_aos_ts))) === DuckFloat5
+            @test eltype(@inferred(quadratic_interp((xg, yg), data_2d, q_aos_ts))) === DuckFloat5
+            @test eltype(@inferred(cubic_interp((xg, yg), data_2d, q_aos_ts))) === DuckFloat5
+        end
+
+        @testset "scalar with BCs" begin
+            @test @inferred(cubic_interp((xg, yg), data_2d, q2d; bc=ZeroCurvBC())) isa DuckFloat5
+            @test @inferred(cubic_interp((xg, yg), data_2d, q2d; bc=ZeroSlopeBC())) isa DuckFloat5
+            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d; bc=ZeroCurvBC())) isa DuckFloat5
+            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d; bc=ZeroSlopeBC())) isa DuckFloat5
+            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d; bc=MinCurvFit())) isa DuckFloat5
+        end
+
+        @testset "scalar with deriv" begin
+            @test @inferred(linear_interp(x_vec, y_linear, xq; deriv=DerivOp(1))) isa DuckFloat5
+            @test @inferred(cubic_interp(x_vec, y_generic, xq; deriv=DerivOp(1))) isa DuckFloat5
+            @test @inferred(quadratic_interp(x_vec, y_generic, xq; deriv=DerivOp(1))) isa DuckFloat5
+        end
+    end
+
+    # ================================================================
+    # SECTION 25: EXPLICIT DERIV BCs — expanded combos
+    # Tests Deriv3, nonzero BC values, BCPair exotic mixes, ND per-axis
+    # explicit Deriv, and 3D. These exercise the same-type Deriv BC path
+    # (Deriv1(Tv(val)) where val has the same type as data values).
+    # ================================================================
+    @testset "31. Deriv BC — expanded combos" begin
+        # --- Cubic 1D: new Deriv types + nonzero ---
+        @testset "Deriv3(Tv) 1D" begin
+            itp = cubic_interp(x_vec, y_generic; bc=Deriv3(DuckFloat5(0.0)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv3(0.0))
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "Deriv1(Tv(1.5)) nonzero" begin
+            itp = cubic_interp(x_vec, y_generic; bc=Deriv1(DuckFloat5(1.5)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv1(1.5))
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "Deriv2(Tv(-2.0)) nonzero" begin
+            itp = cubic_interp(x_vec, y_generic; bc=Deriv2(DuckFloat5(-2.0)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv2(-2.0))
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+
+        # --- BCPair exotic combos ---
+        @testset "BCPair(Deriv1, Deriv3)" begin
+            bc = BCPair(Deriv1(DuckFloat5(0.0)), Deriv3(DuckFloat5(0.0)))
+            bc_ref = BCPair(Deriv1(0.0), Deriv3(0.0))
+            itp = cubic_interp(x_vec, y_generic; bc=bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "BCPair(Deriv3(0.5), Deriv1(-0.5)) nonzero" begin
+            bc = BCPair(Deriv3(DuckFloat5(0.5)), Deriv1(DuckFloat5(-0.5)))
+            bc_ref = BCPair(Deriv3(0.5), Deriv1(-0.5))
+            itp = cubic_interp(x_vec, y_generic; bc=bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+        @testset "BCPair(Deriv2, CubicFit)" begin
+            bc = BCPair(Deriv2(DuckFloat5(0.0)), CubicFit())
+            bc_ref = BCPair(Deriv2(0.0), CubicFit())
+            itp = cubic_interp(x_vec, y_generic; bc=bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+
+        # --- Quadratic 1D: missing direction+type ---
+        @testset "Right(Deriv2(Tv(0.5))) nonzero" begin
+            itp = quadratic_interp(x_vec, y_generic; bc=Right(Deriv2(DuckFloat5(0.5))))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Right(Deriv2(0.5)))
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+
+        # --- Cubic ND: explicit Deriv per-axis (was skipped before fix) ---
+        @testset "ND broadcast Deriv1(Tv)" begin
+            itp = cubic_interp((xg, yg), data_2d; bc=Deriv1(DuckFloat5(0.0)))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=Deriv1(0.0))
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "ND per-axis (Deriv1, Deriv2)" begin
+            itp = cubic_interp((xg, yg), data_2d;
+                bc=(Deriv1(DuckFloat5(0.0)), Deriv2(DuckFloat5(0.0))))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat;
+                bc=(Deriv1(0.0), Deriv2(0.0)))
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "ND mixed (Deriv1, ZeroCurvBC)" begin
+            itp = cubic_interp((xg, yg), data_2d;
+                bc=(Deriv1(DuckFloat5(0.0)), ZeroCurvBC()))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat;
+                bc=(Deriv1(0.0), ZeroCurvBC()))
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "ND per-axis BCPair + ZeroCurvBC" begin
+            bc_x = BCPair(Deriv1(DuckFloat5(0.0)), Deriv2(DuckFloat5(0.0)))
+            bc_ref_x = BCPair(Deriv1(0.0), Deriv2(0.0))
+            itp = cubic_interp((xg, yg), data_2d; bc=(bc_x, ZeroCurvBC()))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=(bc_ref_x, ZeroCurvBC()))
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+
+        # --- 3D: all-different Deriv BCs ---
+        @testset "3D (Deriv1, Deriv2, Deriv3)" begin
+            zg = [0.0, 1.0, 2.0, 3.0]
+            data_3d = [DuckFloat5(xi + yj + zk) for xi in xg, yj in yg, zk in zg]
+            data_3d_flat = _val.(data_3d)
+            bc = (Deriv1(DuckFloat5(0.0)), Deriv2(DuckFloat5(0.0)), Deriv3(DuckFloat5(0.0)))
+            bc_ref = (Deriv1(0.0), Deriv2(0.0), Deriv3(0.0))
+            itp = cubic_interp((xg, yg, zg), data_3d; bc=bc)
+            itp_ref = cubic_interp((xg, yg, zg), data_3d_flat; bc=bc_ref)
+            @test _val(itp((1.5, 1.5, 1.5))) ≈ itp_ref((1.5, 1.5, 1.5))
+        end
+
+        # --- Quadratic ND: mixed direction ---
+        @testset "ND quadratic (Left(Deriv1), Right(Deriv2))" begin
+            itp = quadratic_interp((xg, yg), data_2d;
+                bc=(Left(Deriv1(DuckFloat5(0.0))), Right(Deriv2(DuckFloat5(0.0)))))
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat;
+                bc=(Left(Deriv1(0.0)), Right(Deriv2(0.0))))
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+
+        # --- PeriodicBC + Deriv mixed ND ---
+        @testset "ND mixed (Periodic + Deriv1)" begin
+            xp_r = range(0.0, 3.0, 4)
+            data_m = [DuckFloat5(sin(2π*xi/3) + yj) for xi in xp_r, yj in yg]
+            data_m_flat = _val.(data_m)
+            itp = cubic_interp((xp_r, yg), data_m;
+                bc=(PeriodicBC(endpoint=:exclusive), Deriv1(DuckFloat5(0.0))))
+            itp_ref = cubic_interp((xp_r, yg), data_m_flat;
+                bc=(PeriodicBC(endpoint=:exclusive), Deriv1(0.0)))
+            @test _val(itp((0.5, 1.5))) ≈ itp_ref((0.5, 1.5))
+        end
+    end
+
+    # ================================================================
+    # SECTION 26: CONSTRUCTION TYPE STABILITY (@inferred)
+    # Tests that interpolant construction is type-stable when BCs
+    # carry duck-typed values through normalization/cache/solver.
+    # ================================================================
+    @testset "32. Construction @inferred" begin
+        @testset "1D cubic Deriv1(Tv)" begin
+            @inferred cubic_interp(x_vec, y_generic; bc=Deriv1(DuckFloat5(0.0)))
+        end
+        @testset "1D cubic Deriv3(Tv)" begin
+            @inferred cubic_interp(x_vec, y_generic; bc=Deriv3(DuckFloat5(0.0)))
+        end
+        @testset "1D cubic BCPair(Deriv1,Deriv2)" begin
+            @inferred cubic_interp(x_vec, y_generic;
+                bc=BCPair(Deriv1(DuckFloat5(0.0)), Deriv2(DuckFloat5(0.0))))
+        end
+        @testset "1D quadratic Left(Deriv1(Tv))" begin
+            @inferred quadratic_interp(x_vec, y_generic;
+                bc=Left(Deriv1(DuckFloat5(0.0))))
+        end
+        @testset "ND cubic Deriv1(Tv) broadcast" begin
+            @inferred cubic_interp((xg, yg), data_2d;
+                bc=Deriv1(DuckFloat5(0.0)))
+        end
+        @testset "ND cubic per-axis (Deriv1, Deriv2)" begin
+            @inferred cubic_interp((xg, yg), data_2d;
+                bc=(Deriv1(DuckFloat5(0.0)), Deriv2(DuckFloat5(0.0))))
+        end
+        @testset "ND quadratic Left(Deriv1(Tv))" begin
+            @inferred quadratic_interp((xg, yg), data_2d;
+                bc=Left(Deriv1(DuckFloat5(0.0))))
+        end
+    end
+
+    # ================================================================
+    # SECTION 27: CONTRACT BOUNDARIES — negative tests & promotion
+    # Proves that cross-type Deriv BCs correctly fail, and that
+    # standard numeric promotion is unaffected by duck-typing paths.
+    # ================================================================
+    @testset "33. Contract boundaries" begin
+        # DuckFloat5 has no convert(DuckFloat5, Float64) → cross-type Deriv must fail
+        @testset "cubic Deriv1(0.0) fails without convert" begin
+            @test_throws MethodError cubic_interp(x_vec, y_generic; bc=Deriv1(0.0))
+        end
+        @testset "quadratic Left(Deriv1(0.0)) fails without convert" begin
+            @test_throws MethodError quadratic_interp(x_vec, y_generic;
+                bc=Left(Deriv1(0.0)))
+        end
+
+        # PeriodicBC :inclusive with approximate (but not exact) match
+        @testset "PeriodicBC(:inclusive) approx mismatch → ArgumentError" begin
+            xp = range(0.0, 6.0, 7)
+            yp = DuckFloat5.([1.0, 3.0, 2.0, 4.0, 2.0, 3.0, 1.0 + 1e-14])
+            @test_throws ArgumentError cubic_interp(xp, yp;
+                bc=PeriodicBC(endpoint=:inclusive))
+        end
+
+        # Standard promotion unchanged by duck-typing infrastructure
+        @testset "Int → Float64 promotion" begin
+            @test eltype(linear_interp([0.0, 1.0, 2.0], [10, 20, 30]).y) === Float64
+        end
+        @testset "Float32 → Float64 widening" begin
+            @test eltype(linear_interp([0.0, 1.0, 2.0], Float32[1, 2, 3]).y) === Float64
+        end
+        @testset "ComplexF64 preserved" begin
+            @test eltype(linear_interp([0.0, 1.0, 2.0], ComplexF64[1, 2, 3]).y) === ComplexF64
+        end
+    end
+
+end

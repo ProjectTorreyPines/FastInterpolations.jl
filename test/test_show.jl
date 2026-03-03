@@ -440,7 +440,8 @@
 
     @testset "Coverage: _format_bc" begin
         x = collect(range(0.0, 2π, 11))
-        y = sin.(x)    
+        y = sin.(x)
+        y_periodic = copy(y); y_periodic[end] = y_periodic[1]
         
         # Custom BC with Deriv3
         itp = cubic_interp(x, y; bc=Deriv3(0.0))
@@ -458,7 +459,7 @@
         itp = cubic_interp(x, y; bc=ZeroSlopeBC())
         @test occursin("ZeroSlope (S'=0 at ends)", sprint(show, MIME("text/plain"), itp))
 
-        itp = cubic_interp(x, y; bc=PeriodicBC())
+        itp = cubic_interp(x, y_periodic; bc=PeriodicBC())
         @test occursin("Periodic", sprint(show, MIME("text/plain"), itp))
     end
 

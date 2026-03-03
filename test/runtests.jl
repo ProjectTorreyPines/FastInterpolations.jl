@@ -78,6 +78,9 @@ else
     include("test_nd_batch_inplace.jl")
     include("test_gradient_hessian.jl")
 
+    # Duck typing (custom value types)
+    include("test_duck_typing_comprehensive.jl")
+
     # Coefficients API
     include("test_coeffs.jl")
 

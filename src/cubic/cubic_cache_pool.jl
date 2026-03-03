@@ -573,12 +573,13 @@ end
 end
 
 # PointBC convenience - convert to symmetric BCPair
+# Uses _cache_pointbc (not _promote_pointbc) to avoid convert(Tg, bc.val)
+# which fails for duck-typed Tv values. Cache only needs structural BC type.
 @inline function _get_cubic_cache(x, bc::PointBC)
     T = eltype(x)
     FT = T <: AbstractFloat ? T : Float64
-    bc_t = _promote_pointbc(bc, FT)
-    bc_cache = _cache_bc_pair(BCPair(bc_t, bc_t), FT)
-    return _get_derivative_cache_impl(x, bc_cache)
+    bc_c = _cache_pointbc(bc, FT)
+    return _get_derivative_cache_impl(x, BCPair(bc_c, bc_c))
 end
 
 # BCPair + autocache API.

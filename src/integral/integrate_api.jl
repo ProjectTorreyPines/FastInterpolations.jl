@@ -262,6 +262,15 @@ function integrate(
     throw(ArgumentError("integrate(itp_nd, lo, hi) is not implemented for $(typeof(itp)) yet"))
 end
 
+@inline function _integrate_nd_output_type(
+    ::Type{Tv}, ::Type{Tg},
+    lo2::Tuple{Vararg{Any, N}},
+    hi2::Tuple{Vararg{Any, N}}
+) where {Tv, Tg, N}
+    Tout = promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...)
+    return isconcretetype(Tout) ? Tout : Tv
+end
+
 # ── CubicInterpolantND bounded ──
 
 @inline function integrate(
@@ -274,14 +283,16 @@ end
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
-    sign == 0 && return zero(promote_type(Tv, Tg))
+    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
+    _zero = Tout <: Number ? zero(Tout) : 0 * itp.nodal_derivs.partials[1]
+    sign == 0 && return _zero
 
-    total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
+    total = _zero
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
             inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.spacings[d], idx[d])), Val(N))
-            total += _integrate_nd_cubic_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, uhis)
+            total += convert(Tout, _integrate_nd_cubic_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, uhis))
         end
     end
     return sign * total
@@ -301,13 +312,15 @@ end
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
-    sign == 0 && return zero(promote_type(Tv, Tg))
+    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
+    _zero = Tout <: Number ? zero(Tout) : 0 * itp.data[1]
+    sign == 0 && return _zero
 
-    total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
+    total = _zero
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
-            total += _integrate_linear_nd_cell(itp.data, idx, hs, ulos, uhis)
+            total += convert(Tout, _integrate_linear_nd_cell(itp.data, idx, hs, ulos, uhis))
         end
     end
     return sign * total
@@ -327,14 +340,16 @@ end
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
-    sign == 0 && return zero(promote_type(Tv, Tg))
+    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
+    _zero = Tout <: Number ? zero(Tout) : 0 * itp.nodal_derivs.partials[1]
+    sign == 0 && return _zero
 
-    total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
+    total = _zero
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
             inv_hs = ntuple(d -> @inbounds(_get_inv_h(itp.spacings[d], idx[d])), Val(N))
-            total += _integrate_nd_quad_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, uhis)
+            total += convert(Tout, _integrate_nd_quad_cell(itp.nodal_derivs.partials, idx, hs, inv_hs, ulos, uhis))
         end
     end
     return sign * total
@@ -354,13 +369,15 @@ end
     sign, lo2, hi2, idx_lo, idx_hi = _integrate_nd_preamble(
         itp.grids, itp.spacings, itp.extraps, lo, hi, search, hint
     )
-    sign == 0 && return zero(promote_type(Tv, Tg))
+    Tout = _integrate_nd_output_type(Tv, Tg, lo2, hi2)
+    _zero = Tout <: Number ? zero(Tout) : 0 * itp.data[1]
+    sign == 0 && return _zero
 
-    total = zero(promote_type(Tv, Tg, map(typeof, lo2)..., map(typeof, hi2)...))
+    total = _zero
     for I in CartesianIndices(ntuple(d -> idx_lo[d]:idx_hi[d], Val(N)))
         idx, hs, ulos, uhis = _nd_cell_geom(itp.grids, itp.spacings, lo2, hi2, I, Val(N))
         if all(d -> uhis[d] > ulos[d], 1:N)
-            total += _integrate_constant_nd_cell(itp.data, idx, hs, ulos, uhis, itp.sides)
+            total += convert(Tout, _integrate_constant_nd_cell(itp.data, idx, hs, ulos, uhis, itp.sides))
         end
     end
     return sign * total

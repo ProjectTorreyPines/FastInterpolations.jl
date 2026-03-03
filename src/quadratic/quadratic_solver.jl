@@ -40,7 +40,7 @@ Compute secant slopes: s[i] = (y[i+1] - y[i]) * inv_h[i]
 - `inv_h::Vector{Tg}`: Inverse grid spacing (length n-1, grid-derived)
 
 # Type Parameters
-- `Tv`: Value type (can be Tg or Complex{Tg})
+- `Tv`: Value type (unconstrained)
 - `Tg<:AbstractFloat`: Grid type
 """
 @inline function _compute_quadratic_secants!(s::AbstractVector{Tv}, y::AbstractVector{Tv}, inv_h::AbstractVector{Tg}) where {Tv, Tg<:AbstractFloat}
@@ -67,7 +67,7 @@ d[i+1] = 2*s[i] - d[i]
 - `d1::Tv`: Initial slope d[1]
 
 # Type Parameters
-- `Tv`: Value type (can be AbstractFloat or Complex{AbstractFloat})
+- `Tv`: Value type (unconstrained)
 """
 @inline function _forward_recurrence!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, d1::Tv) where {Tv}
     d[1] = d1
@@ -90,7 +90,7 @@ d[i] = 2*s[i] - d[i+1]
 - `dn::Tv`: Final slope d[n]
 
 # Type Parameters
-- `Tv`: Value type (can be AbstractFloat or Complex{AbstractFloat})
+- `Tv`: Value type (unconstrained)
 """
 @inline function _backward_recurrence!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, dn::Tv) where {Tv}
     n = length(d)
@@ -117,7 +117,7 @@ The `x` and `y` parameters are needed for PolyFit{D} BCs which estimate
 derivatives from data. For other BC types, they are ignored.
 
 # Type Parameters
-- `Tv`: Value type for d, s (can be AbstractFloat or Complex{AbstractFloat})
+- `Tv`: Value type for d, s (unconstrained)
 - `Tg<:AbstractFloat`: Grid type for h, x
 """
 # Left(Deriv1): d[1] given directly, forward recurrence
@@ -132,7 +132,7 @@ end
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
                                bc::Left{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
     κ = convert(Tv, bc.bc.val)
-    d1 = s[1] - (κ / 2) * h[1]  # Tv - Tv*Tg → Tv
+    d1 = s[1] - κ * (h[1] / 2)  # Tv - Tv*Tg → Tv (no /(Tv,Int) needed)
     _forward_recurrence!(d, s, d1)
 end
 
@@ -148,7 +148,7 @@ end
 @inline function _fill_slopes!(d::AbstractVector{Tv}, s::AbstractVector{Tv}, h::AbstractVector{Tg},
                                bc::Right{<:Deriv2}, ::AbstractVector{Tg}, ::AbstractVector{Tv}) where {Tv, Tg<:AbstractFloat}
     κ = convert(Tv, bc.bc.val)
-    dn = s[end] + (κ / 2) * h[end]  # Tv + Tv*Tg → Tv
+    dn = s[end] + κ * (h[end] / 2)  # Tv + Tv*Tg → Tv (no /(Tv,Int) needed)
     _backward_recurrence!(d, s, dn)
 end
 
@@ -203,8 +203,8 @@ O(n) time, O(1) extra space (on-the-fly β computation).
     # d[1] = [Σ α[i]*(s[i] - β[i])/h[i]] / [Σ 1/h[i]]
 
     inv_h_sum = zero(Tg)
-    numerator = zero(Tv)
-    β = zero(Tv)
+    numerator = 0 * first(s)
+    β = 0 * first(s)
     sign = one(Tg)  # α[1] = (-1)^(1+1) = +1
 
     @inbounds for i in 1:n_intervals
@@ -215,7 +215,7 @@ O(n) time, O(1) extra space (on-the-fly β computation).
         sign = -sign  # alternate: +1, -1, +1, ...
     end
 
-    d1_optimal = numerator / inv_h_sum  # Tv / Tg → Tv
+    d1_optimal = inv(inv_h_sum) * numerator  # Tg * Tv → Tv (duck-safe: no /(Tv,Tg))
     _forward_recurrence!(d, s, d1_optimal)
 end
 
@@ -274,7 +274,7 @@ Compute quadratic coefficients: a[i] = (s[i] - d[i]) * inv_h[i]
 - `inv_h::Vector{Tg}`: Inverse grid spacing (length n-1, grid-derived)
 
 # Type Parameters
-- `Tv`: Value type (can be Tg or Complex{Tg})
+- `Tv`: Value type (unconstrained)
 - `Tg<:AbstractFloat`: Grid type
 """
 @inline function _compute_quadratic_coefficients!(a::AbstractVector{Tv}, d::AbstractVector{Tv}, s::AbstractVector{Tv}, inv_h::AbstractVector{Tg}) where {Tv, Tg<:AbstractFloat}
@@ -330,7 +330,7 @@ Uses AdaptiveArrayPools internally for temporary arrays (`inv_h`, `secant`).
 
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type
-- `Tv`: Value type (can be Tg or Complex{Tg})
+- `Tv`: Value type (unconstrained)
 
 # Note
 Intermediate arrays (`inv_h`, `secant`) are acquired from thread-local pool
@@ -376,7 +376,7 @@ Returns only the arrays needed for evaluation: `h`, `d`, `a`.
 
 # Type Parameters
 - `Tg<:AbstractFloat`: Grid type for x and h
-- `Tv`: Value type for y, d, a (can be Tg or Complex{Tg})
+- `Tv`: Value type for y, d, a (unconstrained)
 
 # Returns
 - `h::Vector{Tg}`: Grid spacing (geometry)

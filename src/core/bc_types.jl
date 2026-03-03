@@ -73,19 +73,21 @@ abstract type PointBC <: AbstractBC end
 
 First derivative (slope) boundary condition: S'(endpoint) = val
 
-The type parameter `Tv` is the value type, supporting both Real and Complex.
+The type parameter `Tv` is the value type (unconstrained — supports any type with +, -, scalar *).
 
 # Example
 ```julia
 Deriv1(0.5)           # Slope of 0.5 at endpoint (Float64)
 Deriv1(0)             # Zero slope (horizontal tangent)
 Deriv1(1.0+2.0im)     # Complex slope (ComplexF64)
+Deriv1(MyStruct(0.0))  # Custom type (duck typing)
 ```
 """
 struct Deriv1{Tv} <: PointBC
     val::Tv
 end
-# Outer constructors for backward compatibility
+# Outer constructors: standard numerics auto-promote to float
+# Custom types fall through to Julia's auto-generated Deriv1(v) = Deriv1{typeof(v)}(v)
 Deriv1(v::Real) = Deriv1{typeof(float(v))}(float(v))
 Deriv1(v::Complex{T}) where {T<:AbstractFloat} = Deriv1{Complex{T}}(v)
 Deriv1{Tv}(bc::Deriv1) where {Tv} = Deriv1{Tv}(convert(Tv, bc.val))
@@ -95,7 +97,7 @@ Deriv1{Tv}(bc::Deriv1) where {Tv} = Deriv1{Tv}(convert(Tv, bc.val))
 
 Second derivative (curvature) boundary condition: S''(endpoint) = val
 
-The type parameter `Tv` is the value type, supporting both Real and Complex.
+The type parameter `Tv` is the value type (unconstrained — supports any type with +, -, scalar *).
 
 # Example
 ```julia
@@ -107,7 +109,8 @@ Deriv2(0.0+0.0im)     # Complex curvature
 struct Deriv2{Tv} <: PointBC
     val::Tv
 end
-# Outer constructors for backward compatibility
+# Outer constructors: standard numerics auto-promote to float
+# Custom types fall through to Julia's auto-generated Deriv2(v) = Deriv2{typeof(v)}(v)
 Deriv2(v::Real) = Deriv2{typeof(float(v))}(float(v))
 Deriv2(v::Complex{T}) where {T<:AbstractFloat} = Deriv2{Complex{T}}(v)
 Deriv2{Tv}(bc::Deriv2) where {Tv} = Deriv2{Tv}(convert(Tv, bc.val))
@@ -121,7 +124,7 @@ For cubic splines, the third derivative is constant within each interval:
 S'''(x) = (z[i+1] - z[i]) / h[i]. This BC specifies the third derivative
 value at the first (or last) interval.
 
-The type parameter `Tv` is the value type, supporting both Real and Complex.
+The type parameter `Tv` is the value type (unconstrained — supports any type with +, -, scalar *).
 
 # Example
 ```julia
@@ -133,7 +136,8 @@ Deriv3(0.0+0.0im)     # Complex third derivative
 struct Deriv3{Tv} <: PointBC
     val::Tv
 end
-# Outer constructors for backward compatibility
+# Outer constructors: standard numerics auto-promote to float
+# Custom types fall through to Julia's auto-generated Deriv3(v) = Deriv3{typeof(v)}(v)
 Deriv3(v::Real) = Deriv3{typeof(float(v))}(float(v))
 Deriv3(v::Complex{T}) where {T<:AbstractFloat} = Deriv3{Complex{T}}(v)
 Deriv3{Tv}(bc::Deriv3) where {Tv} = Deriv3{Tv}(convert(Tv, bc.val))
@@ -485,7 +489,7 @@ Extensible: add methods for new PointBC subtypes.
     _normalize_bc(bc::AbstractBC, ::Type{Tv}) -> BCPair
 
 Convert BC specification to normalized BCPair form for solver construction.
-The type parameter Tv is the **value type** (Float64, ComplexF64, etc.).
+The type parameter Tv is the **value type** (unconstrained).
 
 Note: PeriodicBC is handled separately via `_is_periodic_bc()` check before
 `_normalize_bc` is called. This function only handles derivative BCs.
@@ -518,6 +522,19 @@ end
     return BCPair(bc_t, bc_t)
 end
 
+# Value-based overloads: use 0 * sample instead of zero(Tv).
+# Enables Tv types where zero(::Type) is undefined (e.g. Vector{Float64}).
+# Julia dispatch: ::Type{Tv} is more specific than untyped `sample`, so type-based
+# methods are still selected when a Type is passed (Tg cache paths).
+@inline _normalize_bc(::ZeroCurvBC, sample) = (z = 0 * sample; BCPair(Deriv2(z), Deriv2(z)))
+@inline _normalize_bc(::ZeroSlopeBC, sample) = (z = 0 * sample; BCPair(Deriv1(z), Deriv1(z)))
+
+# Generic value→type fallback: extract type from sample, delegate to type-based methods.
+# Covers BCPair, PointBC, Left, Right, MinCurvFit — none of which need zero().
+@inline _normalize_bc(bc::AbstractBC, sample) = _normalize_bc(bc, typeof(sample))
+
+# NOTE: _normalize_bc methods for Left/Right/MinCurvFit are defined after Left/Right structs below.
+
 
 # ========================================
 # Cache-Compatible BC Conversion
@@ -526,17 +543,20 @@ end
 """
     _cache_pointbc(bc::PointBC, ::Type{T}) -> PointBC
 
-Convert a PointBC to cache-compatible form with value type T.
+Convert a PointBC to cache-compatible structural form with grid type T.
 
-For lazy types like PolyFit{D}, this converts to Deriv1{T}(zero(T)) since
-PolyFit uses the same matrix structure as Deriv1 (first-derivative BC).
-This enables cache sharing across different PolyFit degrees.
+The cubic cache (LU factorization) depends only on BC *structure* (Deriv1 vs Deriv2
+vs Deriv3), not BC *values*. The matrix rows are set by `_set_first_row!`/`_set_last_row!`
+which dispatch on type, never reading `.val`. BC values are used only during RHS
+computation (`_solve_system!`), which receives the original BC from the caller.
 
-For concrete types (Deriv1, Deriv2, Deriv3), promotes value to type T.
+All BC types → Deriv{N}{T}(zero(T)): preserves the structural type for bank
+selection while discarding values that are irrelevant to the cache key.
+PolyFit → Deriv1{T}(zero(T)): same matrix structure as Deriv1.
 """
-@inline _cache_pointbc(bc::Deriv1, ::Type{T}) where {T} = Deriv1{T}(convert(T, bc.val))
-@inline _cache_pointbc(bc::Deriv2, ::Type{T}) where {T} = Deriv2{T}(convert(T, bc.val))
-@inline _cache_pointbc(bc::Deriv3, ::Type{T}) where {T} = Deriv3{T}(convert(T, bc.val))
+@inline _cache_pointbc(::Deriv1, ::Type{T}) where {T} = Deriv1{T}(zero(T))
+@inline _cache_pointbc(::Deriv2, ::Type{T}) where {T} = Deriv2{T}(zero(T))
+@inline _cache_pointbc(::Deriv3, ::Type{T}) where {T} = Deriv3{T}(zero(T))
 # PolyFit → Deriv1 (same matrix structure, zero value for cache key)
 @inline _cache_pointbc(::PolyFit, ::Type{T}) where {T} = Deriv1{T}(zero(T))
 
@@ -573,7 +593,7 @@ Normalize an array of BCs to BCPair for per-series boundary conditions.
 
 # Arguments
 - `bcs`: Array of AbstractBC (length must equal n_series)
-- `Tv`: Target value type (Float64, ComplexF64, etc.)
+- `Tv`: Target value type (unconstrained)
 - `n_series`: Expected number of series
 
 # Returns
@@ -715,6 +735,12 @@ end
 # bc_structure for Left/Right (must be after type definitions)
 @inline bc_structure(bc::Left) = bc_structure(bc.bc)
 @inline bc_structure(bc::Right) = bc_structure(bc.bc)
+
+# Quadratic BC normalization (Left/Right/MinCurvFit → same type with Tv-promoted values)
+# Used by both 1D quadratic (interpolant construction) and ND quadratic (lazy normalization)
+@inline _normalize_bc(bc::Left, ::Type{Tv}) where {Tv} = Left(_promote_pointbc(bc.bc, Tv))
+@inline _normalize_bc(bc::Right, ::Type{Tv}) where {Tv} = Right(_promote_pointbc(bc.bc, Tv))
+@inline _normalize_bc(::MinCurvFit, ::Type{Tv}) where {Tv} = MinCurvFit()
 
 
 # ========================================

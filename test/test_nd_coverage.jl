@@ -22,7 +22,6 @@ import FastInterpolations:
     # nd_build.jl
     _differentiate_nd_along_dim!,
     _differentiate_nd_along_dim_batch!,
-    _check_periodic_data_nd,
     _get_effective_bc,
     _compute_nd_partials!,
     _build_nd_coeffs,
@@ -123,32 +122,6 @@ import FastInterpolations:
             # Grid length mismatch
             wrong_grid = collect(range(0.0, 1.0, 6))  # 6 points but dim 1 has 5
             @test_throws DimensionMismatch _differentiate_nd_along_dim!(out, data, wrong_grid, ZeroCurvBC(), 1)
-        end
-
-        @testset "_check_periodic_data_nd error path" begin
-            # Test with data that violates periodicity
-            x = collect(range(0.0, 2π, 11))
-            y = collect(range(0.0, π, 9))
-
-            # Data where first and last slices don't match along dimension 1
-            data_non_periodic = zeros(11, 9)
-            data_non_periodic[1, :] .= 1.0   # First slice
-            data_non_periodic[end, :] .= 0.0  # Last slice (different!)
-
-            @test_throws ArgumentError _check_periodic_data_nd(data_non_periodic, 1)
-
-            # Data where first and last slices don't match along dimension 2
-            data_non_periodic2 = zeros(11, 9)
-            data_non_periodic2[:, 1] .= 1.0
-            data_non_periodic2[:, end] .= 0.0
-
-            @test_throws ArgumentError _check_periodic_data_nd(data_non_periodic2, 2)
-
-            # Valid periodic data should not throw
-            data_periodic = zeros(11, 9)
-            data_periodic[1, :] .= 1.0
-            data_periodic[end, :] .= 1.0  # Matches!
-            @test _check_periodic_data_nd(data_periodic, 1) === nothing
         end
 
         @testset "_get_effective_bc edge cases" begin
@@ -406,44 +379,84 @@ import FastInterpolations:
     # ========================================
     # QuadraticND API Coverage
     # ========================================
-    @testset "quadratic_nd_interpolant.jl" begin
-        import FastInterpolations:
-            _resolve_bcs_nd_quadratic,
-            _to_quadratic_bc
+    @testset "quadratic_nd_interpolant.jl — lazy BC normalization" begin
+        # Quadratic ND now uses _resolve_bcs_nd (shared with cubic) for BC broadcasting.
+        # AbstractBC flows through lazily — normalization happens in _slope_1d_quadratic!.
 
-        @testset "_resolve_bcs_nd_quadratic" begin
-            # Single QuadraticBC → broadcast
-            bcs = _resolve_bcs_nd_quadratic(Right(QuadraticFit()), Val(2))
+        @testset "_resolve_bcs_nd with quadratic-compatible BCs" begin
+            # Single QuadraticBC → broadcast (same as cubic)
+            bcs = _resolve_bcs_nd(Right(QuadraticFit()), Val(2))
             @test length(bcs) == 2
             @test all(b -> b isa Right, bcs)
 
             # NTuple pass-through
             bcs_tuple = (Left(QuadraticFit()), Right(QuadraticFit()))
-            @test _resolve_bcs_nd_quadratic(bcs_tuple, Val(2)) === bcs_tuple
+            @test _resolve_bcs_nd(bcs_tuple, Val(2)) === bcs_tuple
 
-            # ZeroCurvBC conversion
-            bcs_nat = _resolve_bcs_nd_quadratic(ZeroCurvBC(), Val(2))
+            # ZeroCurvBC stays raw (lazy normalization — NOT eagerly converted)
+            bcs_nat = _resolve_bcs_nd(ZeroCurvBC(), Val(2))
             @test length(bcs_nat) == 2
-            @test all(b -> b isa Right, bcs_nat)
+            @test all(b -> b isa ZeroCurvBC, bcs_nat)
 
-            # PolyFit conversion
-            bcs_poly = _resolve_bcs_nd_quadratic(CubicFit(), Val(2))
+            # PolyFit stays raw
+            bcs_poly = _resolve_bcs_nd(CubicFit(), Val(2))
             @test length(bcs_poly) == 2
+            @test all(b -> b isa CubicFit, bcs_poly)
 
             # Heterogeneous AbstractBC tuple
-            bcs_hetero = _resolve_bcs_nd_quadratic((ZeroCurvBC(), CubicFit()), Val(2))
+            bcs_hetero = _resolve_bcs_nd((ZeroCurvBC(), CubicFit()), Val(2))
             @test length(bcs_hetero) == 2
+            @test bcs_hetero[1] isa ZeroCurvBC
+            @test bcs_hetero[2] isa CubicFit
         end
 
-        @testset "_to_quadratic_bc" begin
-            @test _to_quadratic_bc(Right(QuadraticFit())) isa Right
-            @test _to_quadratic_bc(MinCurvFit()) isa MinCurvFit
-            @test _to_quadratic_bc(ZeroCurvBC()) isa Right
-            @test _to_quadratic_bc(CubicFit()) isa Right
+        @testset "_normalize_bc for quadratic BC types" begin
+            import FastInterpolations: _normalize_bc
+            # Left/Right promote inner PointBC values to Tv
+            bc_l = _normalize_bc(Left(Deriv2(5)), Float64)
+            @test bc_l isa Left
+            @test bc_l.bc.val === 5.0
 
-            # Unsupported BC
-            @test_throws ArgumentError _to_quadratic_bc(PeriodicBC())
-            @test_throws ArgumentError _to_quadratic_bc(ZeroSlopeBC())
+            bc_r = _normalize_bc(Right(Deriv1(3)), Float32)
+            @test bc_r isa Right
+            @test bc_r.bc.val === 3.0f0
+
+            # MinCurvFit is passthrough
+            @test _normalize_bc(MinCurvFit(), Float64) === MinCurvFit()
+
+            # PolyFit inside Left/Right is passthrough (no value to promote)
+            bc_p = _normalize_bc(Right(QuadraticFit()), Float64)
+            @test bc_p isa Right
+            @test bc_p.bc isa QuadraticFit
+        end
+
+        @testset "_normalize_bc value-based overloads" begin
+            import FastInterpolations: _normalize_bc
+
+            # ZeroCurvBC: value-based uses 0 * sample instead of zero(Tv)
+            bc_zc = _normalize_bc(ZeroCurvBC(), 1.0)
+            @test bc_zc isa BCPair
+            @test bc_zc.left isa Deriv2
+            @test bc_zc.left.val === 0.0
+            @test bc_zc.right.val === 0.0
+
+            # ZeroSlopeBC: same pattern
+            bc_zs = _normalize_bc(ZeroSlopeBC(), 1.0f0)
+            @test bc_zs isa BCPair
+            @test bc_zs.left isa Deriv1
+            @test bc_zs.left.val === 0.0f0
+
+            # Generic fallback: value → typeof(value) → type-based method
+            bc_left = _normalize_bc(Left(Deriv2(5)), 1.0)
+            @test bc_left isa Left
+            @test bc_left.bc.val === 5.0
+
+            # SVector: 0 * SVector produces correct zero vector
+            using StaticArrays
+            sv = SVector(1.0, 2.0, 3.0)
+            bc_sv = _normalize_bc(ZeroCurvBC(), sv)
+            @test bc_sv.left.val === SVector(0.0, 0.0, 0.0)
+            @test bc_sv.right.val === SVector(0.0, 0.0, 0.0)
         end
     end
 

@@ -7,6 +7,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
 @testset "Type Stability" begin
     x = collect(range(0.0, 2π, 10))
     y = sin.(x)
+    y_periodic = copy(y); y_periodic[end] = y_periodic[1]
     x_query = [0.25, 0.5, 0.75]
 
     # =========================================================================
@@ -17,7 +18,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         @test @inferred(cubic_interp(x, y)) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=ZeroCurvBC())) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=ZeroSlopeBC())) isa CubicInterpolant
-        @test @inferred(cubic_interp(x, y; bc=PeriodicBC())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x, y_periodic; bc=PeriodicBC())) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=BCPair(Deriv1(0.0), Deriv2(0.0)))) isa CubicInterpolant
         @test @inferred(cubic_interp(x, y; bc=Deriv2(0.0))) isa CubicInterpolant  # PointBC
     end
@@ -58,7 +59,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         @test @inferred(cubic_interp(x, y; bc=BCPair(Deriv1(0.5), Deriv2(-0.5)), extrap=WrapExtrap())) isa CubicInterpolant
 
         # Periodic BC always uses WrapExtrap internally
-        itp_periodic = @inferred cubic_interp(x, y; bc=PeriodicBC())
+        itp_periodic = @inferred cubic_interp(x, y_periodic; bc=PeriodicBC())
         @test itp_periodic.extrap === WrapExtrap()
     end
 
@@ -68,7 +69,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
     @testset "cubic_interp 4-arg Typed BC" begin
         @test @inferred(cubic_interp(x, y, x_query; bc=ZeroCurvBC())) isa Vector{Float64}
         @test @inferred(cubic_interp(x, y, x_query; bc=ZeroSlopeBC())) isa Vector{Float64}
-        @test @inferred(cubic_interp(x, y, x_query; bc=PeriodicBC())) isa Vector{Float64}
+        @test @inferred(cubic_interp(x, y_periodic, x_query; bc=PeriodicBC())) isa Vector{Float64}
         @test @inferred(cubic_interp(x, y, x_query; bc=BCPair(Deriv1(0.0), Deriv2(0.0)))) isa Vector{Float64}
 
         # Scalar query
@@ -393,6 +394,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         x_periodic = range(0.0, 2π, 20)
         y_periodic = range(0.0, 2π, 15)
         data_p = [sin(xi) * cos(yj) for xi in x_periodic, yj in y_periodic]
+        data_p[:, end] .= data_p[:, 1]  # exact periodicity on dim 2
 
         itp_mixed_bc = cubic_interp((x_periodic, y_periodic), data_p;
             bc=(ZeroCurvBC(), PeriodicBC()), extrap=(ExtendExtrap(), WrapExtrap()))
@@ -530,6 +532,7 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         x_p = range(0.0, 2π, 20)
         y_p = range(0.0, 2π, 15)
         data_p = [sin(xi) * cos(yj) for xi in x_p, yj in y_p]
+        data_p[:, end] .= data_p[:, 1]  # exact periodicity on dim 2
 
         # PeriodicBC + NoExtrap → axis auto-overridden to WrapExtrap()
         itp = cubic_interp((x_p, y_p), data_p;
@@ -675,6 +678,8 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         x_p = range(0.0, 2π, 21)
         y_p = range(0.0, 2π, 21)
         data_p = [sin(xi) * cos(yj) for xi in x_p, yj in y_p]
+        data_p[end, :] .= data_p[1, :]  # exact periodicity on dim 1
+        data_p[:, end] .= data_p[:, 1]  # exact periodicity on dim 2
 
         # Both axes periodic + NoExtrap (auto-overrides to wrap)
         itp = @inferred cubic_interp((x_p, y_p), data_p;
@@ -724,6 +729,8 @@ using FastInterpolations: PolyFit, LinearFit, QuadraticFit, CubicFit
         x_p = range(0.0, 2π, 21)
         y_p = range(0.0, 2π, 21)
         data_p = [sin(xi) * cos(yj) for xi in x_p, yj in y_p]
+        data_p[end, :] .= data_p[1, :]
+        data_p[:, end] .= data_p[:, 1]
         q = (1.5, 0.8)
 
         # Cubic: PeriodicBC + WrapExtrap oneshot

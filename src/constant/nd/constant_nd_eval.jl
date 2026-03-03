@@ -94,7 +94,7 @@ end
 Evaluate ConstantInterpolantND at a single point.
 
 For constant interpolation:
-- If any derivative order > 0, return zero(Tv)
+- If any derivative order > 0, return zero via `0 * y` (duck-typing compatible)
 - Otherwise, find interval and select corner based on side mode
 """
 # Generic N-dimensional version (uses _locate_cell + _eval_at_cell)
@@ -106,7 +106,7 @@ For constant interpolation:
     hints=nothing
 ) where {Tg, Tv, N}
     if _has_any_derivative(ops, Val(N))
-        return zero(Tv)
+        return 0 * first(itp.data)
     end
     cell = _locate_cell(itp, query, search_tuple, hints)
     return _eval_at_cell(itp, cell, ops)
@@ -123,7 +123,7 @@ end
     op_x, op_y = ops
     if op_x isa EvalDeriv1 || op_x isa EvalDeriv2 || op_x isa EvalDeriv3 ||
        op_y isa EvalDeriv1 || op_y isa EvalDeriv2 || op_y isa EvalDeriv3
-        return zero(Tv)
+        return 0 * first(itp.data)
     end
     cell = _locate_cell(itp, query, search_tuple, hints)
     return _eval_at_cell(itp, cell, ops)
@@ -165,7 +165,7 @@ end
     ops::NTuple{N, AbstractEvalOp}
 ) where {Tg, Tv, N}
     if _has_any_derivative(ops, Val(N))
-        return zero(Tv)
+        return 0 * first(itp.data)
     end
     data, spacings, sides, indices, q_eval, Ls = cell
     return _constant_nd_kernel(data, spacings, sides, indices, q_eval, Ls)

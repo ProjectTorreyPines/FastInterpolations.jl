@@ -109,7 +109,7 @@ PeriodicBC()     # S(x) = S(x + τ) with C² continuity
 | `ZeroCurvBC()` | S''=0 at both ends | Zero-curvature assumption |
 | `ZeroSlopeBC()` | S'=0 at both ends | Flat endpoints |
 | `BCPair(...)` | Custom at each end | Known derivatives |
-| `PeriodicBC()` | True periodicity (inclusive) | Cyclic data with `y[1] ≈ y[end]` |
+| `PeriodicBC()` | True periodicity (inclusive) | Cyclic data with `y[1] == y[end]` |
 | `PeriodicBC(endpoint=:exclusive)` | True periodicity (exclusive) | FFT grids, `[0, 2π)` data |
 | `CubicFit()` | 4-point polynomial fit | Exact for cubic polynomials |
 

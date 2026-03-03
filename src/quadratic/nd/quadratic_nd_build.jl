@@ -58,10 +58,50 @@ spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
     # 2. Compute secant slopes
     _compute_quadratic_secants!(secant, values, inv_h)
 
-    # 3. Fill slopes via BC-dispatched recurrence
-    _fill_slopes!(d_out, secant, h, bc, grid, values)
+    # 3. Normalize BC values to Tv (lazy normalization — Tv is known here)
+    # This ensures _fill_slopes! always receives Tv-typed values,
+    # making convert(Tv, bc.val) an identity operation.
+    bc_typed = _normalize_bc(bc, first(values))
+
+    # 4. Fill slopes via BC-dispatched recurrence
+    _fill_slopes!(d_out, secant, h, bc_typed, grid, values)
 
     return d_out
+end
+
+# Dispatch wrappers for non-QuadraticBC types (lazy normalization pattern).
+# Convert AbstractBC → QuadraticBC at the point where Tv is known, then delegate
+# to the core @with_pool method. Matches cubic's pattern in _deriv_1d!.
+@inline function _slope_1d_quadratic!(
+    d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
+    grid::AbstractVector{Tg}, ::ZeroCurvBC
+) where {Tv, Tg<:AbstractFloat}
+    _slope_1d_quadratic!(d_out, values, grid, Right(Deriv2(0 * first(values))))
+end
+
+@inline function _slope_1d_quadratic!(
+    d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
+    grid::AbstractVector{Tg}, ::ZeroSlopeBC
+) where {Tv, Tg<:AbstractFloat}
+    _slope_1d_quadratic!(d_out, values, grid, Left(Deriv1(0 * first(values))))
+end
+
+@inline function _slope_1d_quadratic!(
+    d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
+    grid::AbstractVector{Tg}, bc::PolyFit
+) where {Tv, Tg<:AbstractFloat}
+    _slope_1d_quadratic!(d_out, values, grid, Right(bc))
+end
+
+# Fallback: reject unsupported BC types with a clear error message
+function _slope_1d_quadratic!(
+    ::AbstractVector, ::AbstractVector,
+    ::AbstractVector, bc::AbstractBC
+)
+    throw(ArgumentError(
+        "Unsupported boundary condition for quadratic interpolation: $(typeof(bc)). " *
+        "Supported: Left(...), Right(...), MinCurvFit, ZeroCurvBC, ZeroSlopeBC, or PolyFit variants."
+    ))
 end
 
 # ========================================
@@ -88,7 +128,7 @@ Uses the same "reshape to 3D" trick as the cubic version:
     out::AbstractArray{Tv,N},
     data::AbstractArray{Tv,N},
     grid::AbstractVector{Tg},
-    bc::QuadraticBC,
+    bc::AbstractBC,
     d::Int
 ) where {Tv, Tg<:AbstractFloat, N}
     @boundscheck begin
@@ -154,10 +194,10 @@ Select the effective boundary condition for computing a quadratic mixed partial.
 3. With enough grid points (≥3): Use Right(QuadraticFit()) for mixed partials
 4. Fallback: Right(ZeroCurvBC()) → Right(Deriv2(0))
 """
-@inline function _get_effective_bc_quadratic(bc::QuadraticBC, p_src::Int, grid::AbstractVector)
-    p_src == 1 && return bc
+@inline function _get_effective_bc_quadratic(bc::AbstractBC, p_src::Int, grid::AbstractVector)
+    p_src == 1 && return bc                       # raw AbstractBC preserved (lazy normalization)
     length(grid) >= 3 && return Right(QuadraticFit())
-    return Right(Deriv2(zero(eltype(grid))))
+    return MinCurvFit()                           # 2-point grid: min curvature ≡ zero curvature
 end
 
 # ========================================
@@ -167,7 +207,7 @@ end
 @inline _build_nd_partials_dim_quadratic!(
     partials::AbstractArray{Tv, NP1},
     grids::NTuple{N, AbstractVector{Tg}},
-    bcs::NTuple{N, QuadraticBC},
+    bcs::NTuple{N, AbstractBC},
     ::Val{N}
 ) where {Tv, Tg<:AbstractFloat, N, NP1} =
     _build_nd_partials_dim_quadratic!(partials, grids, bcs, Val(1), Val(N))
@@ -175,7 +215,7 @@ end
 @inline function _build_nd_partials_dim_quadratic!(
     partials::AbstractArray{Tv, NP1},
     grids::NTuple{N, AbstractVector{Tg}},
-    bcs::NTuple{N, QuadraticBC},
+    bcs::NTuple{N, AbstractBC},
     ::Val{D},
     ::Val{N}
 ) where {Tv, Tg<:AbstractFloat, D, N, NP1}
@@ -205,7 +245,7 @@ function _compute_nd_partials_quadratic!(
     partials::AbstractArray{Tv, NP1},
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
-    bcs::NTuple{N, QuadraticBC}
+    bcs::NTuple{N, AbstractBC}
 ) where {Tv, Tg<:AbstractFloat, N, NP1}
     # Validate dimensions
     @boundscheck begin
@@ -241,7 +281,7 @@ Compute all partial derivatives for N-dimensional quadratic interpolation.
 function _build_nd_coeffs_quadratic(
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
-    bcs::NTuple{N, QuadraticBC}
+    bcs::NTuple{N, AbstractBC}
 ) where {Tg<:AbstractFloat, Tv, N}
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
     n_partials = 1 << N

@@ -146,10 +146,11 @@ using FastInterpolations
         @test_throws MethodError quadratic_interp(x, Y)
         @test_throws MethodError constant_interp(x, Y)
 
-        @test_throws MethodError linear_interp(x, [y1, y2])
-        @test_throws MethodError cubic_interp(x, [y1, y2])
-        @test_throws MethodError quadratic_interp(x, [y1, y2])
-        @test_throws MethodError constant_interp(x, [y1, y2])
+        # Vec{Vec} now passes through duck-typing path but fails on length validation
+        @test_throws Exception linear_interp(x, [y1, y2])
+        @test_throws Exception cubic_interp(x, [y1, y2])
+        @test_throws Exception quadratic_interp(x, [y1, y2])
+        @test_throws Exception constant_interp(x, [y1, y2])
     end
 
     # ────────────────────────────────────────────

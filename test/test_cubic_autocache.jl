@@ -442,22 +442,22 @@ end
         x = collect(range(0.0, 1.0, 51))
 
         # Deriv1 PointBC - applies symmetrically to both ends
-        # Note: LU factorization depends only on BC TYPE, not values.
-        # Cache stores values from first caller, but values are applied at solve time.
+        # Note: LU factorization depends only on BC TYPE (Deriv1 vs Deriv2), not values.
+        # Cache stores structural zeros — solver uses caller's original BC values at solve time.
         cache_d1 = _get_cubic_cache(x, Deriv1(0.5))
         @test cache_d1 isa CubicSplineCache{Float64}
         @test cache_d1.bc_config isa BCPair{Deriv1{Float64}, Deriv1{Float64}}
-        # On cache miss, actual BC values from request are stored
-        @test cache_d1.bc_config.left.val == 0.5
-        @test cache_d1.bc_config.right.val == 0.5
+        # Pool caches store structural zeros (values are irrelevant to LU factorization)
+        @test cache_d1.bc_config.left.val == 0.0
+        @test cache_d1.bc_config.right.val == 0.0
 
         # Deriv2 PointBC - applies symmetrically to both ends
         cache_d2 = _get_cubic_cache(x, Deriv2(1.0))
         @test cache_d2 isa CubicSplineCache{Float64}
         @test cache_d2.bc_config isa BCPair{Deriv2{Float64}, Deriv2{Float64}}
-        # On cache miss, actual BC values from request are stored
-        @test cache_d2.bc_config.left.val == 1.0
-        @test cache_d2.bc_config.right.val == 1.0
+        # Pool caches store structural zeros (values are irrelevant to LU factorization)
+        @test cache_d2.bc_config.left.val == 0.0
+        @test cache_d2.bc_config.right.val == 0.0
 
         # Float32 with PointBC
         x32 = Float32.(x)
@@ -491,6 +491,7 @@ end
         # Create first grid and cache
         x1 = collect(range(0.0, 2π, 51))
         y = sin.(x1)
+        y[end] = y[1]  # Ensure exact periodicity
         result1 = cubic_interp(x1, y, 0.5; bc=PeriodicBC())
 
         # Create equal but different object (different objectid)
@@ -565,6 +566,7 @@ end
         clear_cubic_cache!()
         xp = collect(range(0.0, 2π, 9))
         yp = sin.(xp)
+        yp[end] = yp[1]  # Ensure exact periodicity
         before = cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=true)
         xp[5] += 0.1
         after = cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=true)
@@ -736,6 +738,7 @@ end
 
         x = collect(range(0.0, 2π, 17))
         y = sin.(x)
+        y[end] = y[1]  # Ensure exact periodicity
         xq = [π/4, π/2, π, 3π/2]
 
         itp = cubic_interp(x, y; bc=PeriodicBC())
@@ -886,6 +889,7 @@ end
 
         x = collect(range(0.0, 2π, 33))  # Dense grid for accuracy
         y = sin.(x)
+        y[end] = y[1]  # Ensure exact periodicity
         xq = [π/6, π/3, π/2, 2π/3, π, 4π/3, 3π/2, 5π/3]
 
         result1 = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=true)
@@ -900,6 +904,7 @@ end
         x[10] = x[10] + 0.02
         x[20] = x[20] - 0.02
         y .= sin.(x)
+        y[end] = y[1]  # Re-ensure exact periodicity after mutation
 
         result2 = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=true)
         # After mutation, still interpolating sin, should be close to expected

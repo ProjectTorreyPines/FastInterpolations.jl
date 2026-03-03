@@ -88,12 +88,12 @@ end
 
 """Second derivative of linear is always zero."""
 @inline function _linear_kernel(::EvalDeriv2, yL::Tv, ::Tv, ::_LinearAnchoredQuery{Tg}) where {Tg<:AbstractFloat, Tv}
-    return zero(promote_type(Tv, Tg))
+    return 0 * yL
 end
 
 """Third derivative of linear is always zero."""
 @inline function _linear_kernel(::EvalDeriv3, yL::Tv, ::Tv, ::_LinearAnchoredQuery{Tg}) where {Tg<:AbstractFloat, Tv}
-    return zero(promote_type(Tv, Tg))
+    return 0 * yL
 end
 
 # ========================================
@@ -280,9 +280,9 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
 
     # Compute geometry
     h = xR - xL
-    inv_h = one(Tg) / h
+    inv_h = inv(h)
     # alpha preserves Dual type when xq is Dual
-    alpha = (xq - xL) / h
+    alpha = (xq - xL) * inv_h
 
     return _LinearAnchoredQuery{Tg, Tq}(idx, xq, side, h, inv_h, alpha)
 end

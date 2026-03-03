@@ -16,9 +16,9 @@
     h::Tg, u0::Td, u1::Td
 ) where {Tv, Tg<:AbstractFloat, Td<:Real}
     inv_h = inv(h)
-    a4 = (zR - zL) * inv_h / 24            # a/4 = (zR-zL)/(6h·4)
-    b3 = zL / 6                              # b/3 = (zL/2)/3
-    c2 = (yR - yL) * inv_h / 2 - h * (2zL + zR) / 12  # c/2
+    a4 = (zR - zL) * (inv_h * inv(Tg(24)))   # a/4 = (zR-zL)/(24h)
+    b3 = inv(Tg(6)) * zL                     # b/3 = zL/6
+    c2 = (yR - yL) * (inv_h / 2) - (h * inv(Tg(12))) * (2zL + zR)  # c/2
     d  = yL
     return u1 * @evalpoly(u1, d, c2, b3, a4) -
            u0 * @evalpoly(u0, d, c2, b3, a4)
@@ -30,7 +30,7 @@ end
     zL::Tv, zR::Tv, yL::Tv, yR::Tv, h::Tg
 ) where {Tv, Tg<:AbstractFloat}
     h2 = h * h
-    return h * muladd(-h2, (zL + zR) / 24, (yL + yR) / 2)
+    return (h / 2) * muladd(-(h2 * inv(Tg(12))), zL + zR, yL + yR)
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -46,7 +46,7 @@ end
     yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td
 ) where {Tv, Tg<:AbstractFloat, Td<:Real}
     du = u1 - u0
-    half_slope = (yR - yL) / (2h)
+    half_slope = (yR - yL) * inv(2h)
     return du * muladd(half_slope, u1 + u0, yL)
 end
 
@@ -55,7 +55,7 @@ end
     ::_EvalIntegralCell,
     yL::Tv, yR::Tv, h::Tg
 ) where {Tv, Tg<:AbstractFloat}
-    return h * (yL + yR) / 2
+    return (h / 2) * (yL + yR)
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -71,8 +71,8 @@ end
     ::_EvalIntegralPartial,
     a::Tv, d::Tv, y0::Tv, u0::Td, u1::Td
 ) where {Tv, Td<:Real}
-    a_3 = a / 3
-    d_2 = d / 2
+    a_3 = inv(Td(3)) * a
+    d_2 = inv(Td(2)) * d
     return u1 * @evalpoly(u1, y0, d_2, a_3) -
            u0 * @evalpoly(u0, y0, d_2, a_3)
 end
@@ -82,7 +82,7 @@ end
     ::_EvalIntegralCell,
     a::Tv, d::Tv, y0::Tv, h::Tg
 ) where {Tv, Tg<:AbstractFloat}
-    return h * @evalpoly(h, y0, d / 2, a / 3)
+    return h * @evalpoly(h, y0, inv(Tg(2)) * d, inv(Tg(3)) * a)
 end
 
 # ═══════════════════════════════════════════════════════════════
@@ -290,8 +290,8 @@ end
 # Horner form: F(u) = u · @evalpoly(u, fL, dfL/2, a/3)
 @inline function _quadratic_integral_kernel_nd(fL, fR, dfL, h, inv_h, u0, u1)
     s = (fR - fL) * inv_h
-    a_3 = (s - dfL) * inv_h / 3   # a/3
-    d_2 = dfL / 2                   # dfL/2
+    a_3 = (s - dfL) * (inv_h * inv(oftype(h, 3)))  # a/3
+    d_2 = inv(oftype(h, 2)) * dfL   # Tg * Tv
     return u1 * @evalpoly(u1, fL, d_2, a_3) -
            u0 * @evalpoly(u0, fL, d_2, a_3)
 end

@@ -234,7 +234,7 @@ end
 @inline function _compute_rhs_first!(
     d::AbstractVector{Tv}, bc::Deriv1, y::AbstractVector{Tv}, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
 ) where {Tg<:AbstractFloat, Tv}
-    d[1] = 6 * ((y[2] - y[1]) / _get_h(spacing, 1) - convert(Tv, bc.val))
+    d[1] = 6 * ((y[2] - y[1]) * _get_inv_h(spacing, 1) - convert(Tv, bc.val))
     return nothing
 end
 
@@ -251,7 +251,7 @@ end
     d::AbstractVector{Tv}, bc::Deriv1, y::AbstractVector{Tv}, ::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}
 ) where {Tg<:AbstractFloat, Tv}
     n = length(y) - 1
-    d[end] = 6 * (convert(Tv, bc.val) - (y[end] - y[end-1]) / _get_h(spacing, n))
+    d[end] = 6 * (convert(Tv, bc.val) - (y[end] - y[end-1]) * _get_inv_h(spacing, n))
     return nothing
 end
 
@@ -313,7 +313,7 @@ Tg = grid type (x, spacing), Tv = value type (y, d)
     _compute_rhs_first!(d, bc_config.left, y, x, spacing)
     # Use spacing accessors
     @inbounds for i in 2:n
-        d[i] = 6 * ((y[i+1] - y[i]) / _get_h(spacing, i) - (y[i] - y[i-1]) / _get_h(spacing, i-1))
+        d[i] = 6 * ((y[i+1] - y[i]) * _get_inv_h(spacing, i) - (y[i] - y[i-1]) * _get_inv_h(spacing, i-1))
     end
     _compute_rhs_last!(d, bc_config.right, y, x, spacing)
     return nothing
@@ -328,13 +328,13 @@ end
     n = length(y) - 1
 
     # Use spacing accessors
-    @inbounds d[1] = 6 * (y[2] - y[1]) / _get_h(spacing, 1) - 6 * (y[1] - y[end-1]) / _get_h(spacing, n)
+    @inbounds d[1] = 6 * (y[2] - y[1]) * _get_inv_h(spacing, 1) - 6 * (y[1] - y[end-1]) * _get_inv_h(spacing, n)
 
     @inbounds for i in 2:n-1
-        d[i] = 6 * (y[i+1] - y[i]) / _get_h(spacing, i) - 6 * (y[i] - y[i-1]) / _get_h(spacing, i-1)
+        d[i] = 6 * (y[i+1] - y[i]) * _get_inv_h(spacing, i) - 6 * (y[i] - y[i-1]) * _get_inv_h(spacing, i-1)
     end
 
-    @inbounds d[n] = 6 * (y[end] - y[end-1]) / _get_h(spacing, n) - 6 * (y[end-1] - y[end-2]) / _get_h(spacing, n-1)
+    @inbounds d[n] = 6 * (y[end] - y[end-1]) * _get_inv_h(spacing, n) - 6 * (y[end-1] - y[end-2]) * _get_inv_h(spacing, n-1)
 
     return nothing
 end
@@ -374,7 +374,7 @@ end
             "  denom = $denom (tol = $tol), α = $α, q[1] = $(q[1]), q[n] = $(q[n])\n" *
             "  This usually indicates corrupted input data (NaN/Inf) or degenerate grid."))
     end
-    factor = vTy / denom
+    factor = vTy * inv(denom)
 
     @inbounds for i in 1:n
         z_workspace[i] = y_temp[i] - factor * q[i]
@@ -428,7 +428,7 @@ Tg = grid type, Tv = value type (can be Complex)
     n = length(y) - 1
 
     # Periodic workspaces need n elements (NOT length(y)!)
-    # Use pool allocation for zero-allocation hot path (supports Real and Complex Tv)
+    # Use pool allocation for zero-allocation hot path
     y_temp = acquire!(pool, Tv, n)
 
     _solve_cubic_system_periodic!(out_z, y_temp, cache, y)

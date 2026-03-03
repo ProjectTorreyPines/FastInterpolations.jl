@@ -89,45 +89,48 @@ end # Derivative Core
         # Test case: L(x) = 1 + 2x on [0, 1]
         # yL = L(0) = 1, yR = L(1) = 3
         # L(0.5) = 2, L'(x) = 2, L''(x) = 0
-        h, yL, yR = 1.0, 1.0, 3.0
+        # Kernel API: _linear_kernel(op, yL, yR, inv_h, dL)
+        h = 1.0
+        inv_h = inv(h)
+        yL, yR = 1.0, 3.0
         dL = 0.5  # x = 0.5
 
         @testset "EvalValue" begin
-            @test _linear_kernel(EvalValue(), yL, yR, h, dL) ≈ 2.0
+            @test _linear_kernel(EvalValue(), yL, yR, inv_h, dL) ≈ 2.0
             # Edge cases
-            @test _linear_kernel(EvalValue(), yL, yR, h, 0.0) ≈ yL  # left boundary
-            @test _linear_kernel(EvalValue(), yL, yR, h, h) ≈ yR    # right boundary
+            @test _linear_kernel(EvalValue(), yL, yR, inv_h, 0.0) ≈ yL  # left boundary
+            @test _linear_kernel(EvalValue(), yL, yR, inv_h, h) ≈ yR    # right boundary
         end
 
         @testset "EvalDeriv1" begin
-            @test _linear_kernel(EvalDeriv1(), yL, yR, h, dL) ≈ 2.0
+            @test _linear_kernel(EvalDeriv1(), yL, yR, inv_h, dL) ≈ 2.0
             # Slope is constant everywhere
-            @test _linear_kernel(EvalDeriv1(), yL, yR, h, 0.0) ≈ 2.0
-            @test _linear_kernel(EvalDeriv1(), yL, yR, h, 0.9) ≈ 2.0
+            @test _linear_kernel(EvalDeriv1(), yL, yR, inv_h, 0.0) ≈ 2.0
+            @test _linear_kernel(EvalDeriv1(), yL, yR, inv_h, 0.9) ≈ 2.0
         end
 
         @testset "EvalDeriv2" begin
-            @test _linear_kernel(EvalDeriv2(), yL, yR, h, dL) ≈ 0.0
+            @test _linear_kernel(EvalDeriv2(), yL, yR, inv_h, dL) ≈ 0.0
             # Second derivative is always zero
-            @test _linear_kernel(EvalDeriv2(), yL, yR, h, 0.0) === 0.0
-            @test _linear_kernel(EvalDeriv2(), yL, yR, h, h) === 0.0
+            @test _linear_kernel(EvalDeriv2(), yL, yR, inv_h, 0.0) === 0.0
+            @test _linear_kernel(EvalDeriv2(), yL, yR, inv_h, h) === 0.0
         end
 
         @testset "Type stability" begin
-            @test @inferred(_linear_kernel(EvalValue(), yL, yR, h, dL)) isa Float64
-            @test @inferred(_linear_kernel(EvalDeriv1(), yL, yR, h, dL)) isa Float64
-            @test @inferred(_linear_kernel(EvalDeriv2(), yL, yR, h, dL)) isa Float64
+            @test @inferred(_linear_kernel(EvalValue(), yL, yR, inv_h, dL)) isa Float64
+            @test @inferred(_linear_kernel(EvalDeriv1(), yL, yR, inv_h, dL)) isa Float64
+            @test @inferred(_linear_kernel(EvalDeriv2(), yL, yR, inv_h, dL)) isa Float64
 
             # Float32 preservation
-            yL_f32, yR_f32, h_f32, dL_f32 = 1.0f0, 3.0f0, 1.0f0, 0.5f0
-            @test @inferred(_linear_kernel(EvalValue(), yL_f32, yR_f32, h_f32, dL_f32)) isa Float32
+            yL_f32, yR_f32, inv_h_f32, dL_f32 = 1.0f0, 3.0f0, 1.0f0, 0.5f0
+            @test @inferred(_linear_kernel(EvalValue(), yL_f32, yR_f32, inv_h_f32, dL_f32)) isa Float32
         end
 
         @testset "Different slopes" begin
-            # Negative slope: L(x) = 5 - 3x on [0, 2]
-            @test _linear_kernel(EvalDeriv1(), 5.0, -1.0, 2.0, 1.0) ≈ -3.0
+            # Negative slope: L(x) = 5 - 3x on [0, 2], inv_h = inv(2) = 0.5
+            @test _linear_kernel(EvalDeriv1(), 5.0, -1.0, inv(2.0), 1.0) ≈ -3.0
             # Zero slope: constant function
-            @test _linear_kernel(EvalDeriv1(), 4.0, 4.0, 2.0, 1.0) ≈ 0.0
+            @test _linear_kernel(EvalDeriv1(), 4.0, 4.0, inv(2.0), 1.0) ≈ 0.0
         end
     end
 
@@ -221,9 +224,11 @@ end # Derivative Kernels
         y = x .^ 2  # [0, 0.25, 1, 2.25, 4]
 
         # Use Deriv2 BC with f''(x) = 2 for exact quadratic representation
-        cache = _get_cubic_cache(x, BCPair(Deriv2(2.0), Deriv2(2.0)))
+        bc = BCPair(Deriv2(2.0), Deriv2(2.0))
+        cache = _get_cubic_cache(x, bc)
         z = similar(y)
-        _solve_system!(z, cache, y, cache.bc_config)
+        # Pass original BC to solver (cache stores structural zeros for bank selection)
+        _solve_system!(z, cache, y, bc)
 
         @testset "_eval_cubic_at_point with op" begin
             # Value at midpoint x=1.0: f(1) = 1.0
@@ -1713,7 +1718,8 @@ end # Derivative Comprehensive Coverage
         # PeriodicBC requires y[1] ≈ y[end], use full period of sin
         @testset "BC=PeriodicBC" begin
             x_periodic = collect(range(0.0, 2π, 51))
-            y_periodic = sin.(x_periodic)  # sin(0) = sin(2π) = 0
+            y_periodic = sin.(x_periodic)
+            y_periodic[end] = y_periodic[1]  # Ensure exact periodicity
 
             itp = cubic_interp(x_periodic, y_periodic; bc=PeriodicBC())
             d1 = deriv1(itp)
@@ -1766,9 +1772,9 @@ end # DerivativeView Wrapper
     end
 
     @testset "Lower-order kernels return zero" begin
-        # Linear kernel (h=0.5, dL=0.2)
+        # Linear kernel (inv_h=2.0, dL=0.2)
         @test FastInterpolations._linear_kernel(
-            FastInterpolations.EvalDeriv3(), 1.0, 5.0, 0.5, 0.2
+            FastInterpolations.EvalDeriv3(), 1.0, 5.0, inv(0.5), 0.2
         ) === zero(Float64)
 
         # Quadratic kernel

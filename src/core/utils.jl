@@ -129,6 +129,23 @@ In that case, falls back to Tv since the kernel always returns Tv.
 end
 
 """
+    _output_eltype(::Type{Tv}, types...) -> Type
+
+Compute output element type for ND one-shot batch evaluation.
+
+Uses `promote_type(Tv, types...)` for standard numerics. For custom/duck
+types where `promote_type` falls back to a non-concrete type (e.g., `Any`),
+returns `Tv` directly since the interpolation kernel always returns `Tv`.
+
+Same logic as `_series_output_type` but accepts varargs for ND promotion
+chains like `promote_type(Tv, Tg, Tq)`.
+"""
+@inline function _output_eltype(::Type{Tv}, types::Type...) where {Tv}
+    Tr = promote_type(Tv, types...)
+    return isconcretetype(Tr) ? Tr : Tv
+end
+
+"""
     _promote_value_type(y, ::Type{Tg}) -> (Tv, y_converted)
 
 Promote y-values to appropriate type based on grid type Tg.

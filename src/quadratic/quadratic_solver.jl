@@ -215,7 +215,7 @@ O(n) time, O(1) extra space (on-the-fly β computation).
         sign = -sign  # alternate: +1, -1, +1, ...
     end
 
-    d1_optimal = numerator / inv_h_sum  # Tv / Tg → Tv
+    d1_optimal = inv(inv_h_sum) * numerator  # Tg * Tv → Tv (duck-safe: no /(Tv,Tg))
     _forward_recurrence!(d, s, d1_optimal)
 end
 

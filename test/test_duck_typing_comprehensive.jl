@@ -946,7 +946,7 @@ _val(d::DuckFloat5) = d.v
                 @testset "$name" begin
                     r = fn((xg, yg), data_2d, (qx_nd, qy_nd))
                     r_ref = fn((xg, yg), data_2d_flat, (qx_nd, qy_nd))
-                    @test all(x -> x isa DuckFloat5, r)
+                    @test eltype(r) === DuckFloat5
                     @test length(r) == 3
                     @test _val.(r) ≈ r_ref
                 end
@@ -959,7 +959,7 @@ _val(d::DuckFloat5) = d.v
                 @testset "$name" begin
                     r = fn((xg, yg), data_2d, queries_aos)
                     r_ref = fn((xg, yg), data_2d_flat, queries_aos)
-                    @test all(x -> x isa DuckFloat5, r)
+                    @test eltype(r) === DuckFloat5
                     @test length(r) == 3
                     @test _val.(r) ≈ r_ref
                 end
@@ -1070,10 +1070,18 @@ _val(d::DuckFloat5) = d.v
     # SECTION 20: ND BCs EXPANDED — quadratic
     # ================================================================
     @testset "26. ND BCs — Quadratic expanded" begin
-        # NOTE: ZeroSlopeBC is NOT dispatched in the quadratic path
-        # (no _slope_1d_quadratic! method for ZeroSlopeBC).
-        # MinCurvFit requires division (/(Tv,Tg)) which violates the 5-op contract.
-        # Use Left/Right with explicit values, or ZeroCurvBC instead.
+        @testset "ZeroSlopeBC symmetric" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=ZeroSlopeBC())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroSlopeBC())
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
+        @testset "MinCurvFit symmetric" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=MinCurvFit())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=MinCurvFit())
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
+        end
         @testset "ZeroCurvBC symmetric" begin
             itp = quadratic_interp((xg, yg), data_2d; bc=ZeroCurvBC())
             itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroCurvBC())
@@ -1124,6 +1132,32 @@ _val(d::DuckFloat5) = d.v
             r = itp(q2d; deriv=DerivOp(1, 0))
             @test r isa DuckFloat5
             @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+        end
+        @testset "ZeroSlopeBC + deriv" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=ZeroSlopeBC())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroSlopeBC())
+            r = itp(q2d; deriv=DerivOp(1, 0))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+        end
+        @testset "MinCurvFit + deriv" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=MinCurvFit())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=MinCurvFit())
+            r = itp(q2d; deriv=DerivOp(1, 0))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test r isa DuckFloat5
+            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+        end
+        @testset "ZeroSlopeBC + MinCurvFit mixed" begin
+            itp = quadratic_interp((xg, yg), data_2d; bc=(ZeroSlopeBC(), MinCurvFit()))
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=(ZeroSlopeBC(), MinCurvFit()))
+            @test itp(q2d) isa DuckFloat5
+            @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
     end
 
@@ -1312,6 +1346,65 @@ _val(d::DuckFloat5) = d.v
             r = itp((-0.5, 3.5))
             @test r isa DuckFloat5
             @test _val(r) ≈ itp_ref((-0.5, 3.5))
+        end
+    end
+
+    # ================================================================
+    # SECTION 24: TYPE STABILITY — @inferred checks
+    # ================================================================
+    # @inferred requires direct function calls (not loop variables) because
+    # Julia cannot infer return types through runtime-dispatched callables.
+    @testset "30. Type Stability (@inferred)" begin
+        @testset "1D scalar one-shot" begin
+            @test @inferred(constant_interp(x_vec, y_generic, xq)) isa DuckFloat5
+            @test @inferred(linear_interp(x_vec, y_linear, xq)) isa DuckFloat5
+            @test @inferred(quadratic_interp(x_vec, y_generic, xq)) isa DuckFloat5
+            @test @inferred(cubic_interp(x_vec, y_generic, xq)) isa DuckFloat5
+        end
+
+        @testset "1D vector one-shot" begin
+            @test eltype(@inferred(constant_interp(x_vec, y_generic, xq_vec))) === DuckFloat5
+            @test eltype(@inferred(linear_interp(x_vec, y_linear, xq_vec))) === DuckFloat5
+            @test eltype(@inferred(quadratic_interp(x_vec, y_generic, xq_vec))) === DuckFloat5
+            @test eltype(@inferred(cubic_interp(x_vec, y_generic, xq_vec))) === DuckFloat5
+        end
+
+        @testset "ND scalar one-shot" begin
+            @test @inferred(constant_interp((xg, yg), data_2d, q2d)) isa DuckFloat5
+            @test @inferred(linear_interp((xg, yg), data_2d, q2d)) isa DuckFloat5
+            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d)) isa DuckFloat5
+            @test @inferred(cubic_interp((xg, yg), data_2d, q2d)) isa DuckFloat5
+        end
+
+        @testset "ND SoA batch" begin
+            qx_ts = [0.5, 1.5, 2.5]
+            qy_ts = [0.5, 1.5, 2.5]
+            @test eltype(@inferred(constant_interp((xg, yg), data_2d, (qx_ts, qy_ts)))) === DuckFloat5
+            @test eltype(@inferred(linear_interp((xg, yg), data_2d, (qx_ts, qy_ts)))) === DuckFloat5
+            @test eltype(@inferred(quadratic_interp((xg, yg), data_2d, (qx_ts, qy_ts)))) === DuckFloat5
+            @test eltype(@inferred(cubic_interp((xg, yg), data_2d, (qx_ts, qy_ts)))) === DuckFloat5
+        end
+
+        @testset "ND AoS batch" begin
+            q_aos_ts = [(0.5, 0.5), (1.5, 1.5), (2.5, 2.5)]
+            @test eltype(@inferred(constant_interp((xg, yg), data_2d, q_aos_ts))) === DuckFloat5
+            @test eltype(@inferred(linear_interp((xg, yg), data_2d, q_aos_ts))) === DuckFloat5
+            @test eltype(@inferred(quadratic_interp((xg, yg), data_2d, q_aos_ts))) === DuckFloat5
+            @test eltype(@inferred(cubic_interp((xg, yg), data_2d, q_aos_ts))) === DuckFloat5
+        end
+
+        @testset "scalar with BCs" begin
+            @test @inferred(cubic_interp((xg, yg), data_2d, q2d; bc=ZeroCurvBC())) isa DuckFloat5
+            @test @inferred(cubic_interp((xg, yg), data_2d, q2d; bc=ZeroSlopeBC())) isa DuckFloat5
+            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d; bc=ZeroCurvBC())) isa DuckFloat5
+            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d; bc=ZeroSlopeBC())) isa DuckFloat5
+            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d; bc=MinCurvFit())) isa DuckFloat5
+        end
+
+        @testset "scalar with deriv" begin
+            @test @inferred(linear_interp(x_vec, y_linear, xq; deriv=DerivOp(1))) isa DuckFloat5
+            @test @inferred(cubic_interp(x_vec, y_generic, xq; deriv=DerivOp(1))) isa DuckFloat5
+            @test @inferred(quadratic_interp(x_vec, y_generic, xq; deriv=DerivOp(1))) isa DuckFloat5
         end
     end
 

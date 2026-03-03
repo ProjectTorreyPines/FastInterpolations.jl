@@ -81,6 +81,13 @@ end
 
 @inline function _slope_1d_quadratic!(
     d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
+    grid::AbstractVector{Tg}, ::ZeroSlopeBC
+) where {Tv, Tg<:AbstractFloat}
+    _slope_1d_quadratic!(d_out, values, grid, Left(Deriv1(0 * first(values))))
+end
+
+@inline function _slope_1d_quadratic!(
+    d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
     grid::AbstractVector{Tg}, bc::PolyFit
 ) where {Tv, Tg<:AbstractFloat}
     _slope_1d_quadratic!(d_out, values, grid, Right(bc))

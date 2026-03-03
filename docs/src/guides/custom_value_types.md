@@ -5,25 +5,37 @@ FastInterpolations supports interpolation with arbitrary value types — not jus
 Internally, every interpolant separates two type roles:
 
 * **Grid type**: Internally `<: AbstractFloat` (`Float64`, `Float32`). Integer grids are automatically promoted. Used for grid coordinates, spacings, and search.
-* **Value type (`Tv`)**: Unconstrained. Can be any type supporting the 5 operations below.
+* **Value type (`Tv`)**: Unconstrained. Can be any type supporting the 4 operations below.
 
 ## Required Operations — Vector Space Axioms
 
-Only 5 operations are needed. These are sufficient for **every** interpolation method, boundary condition, derivative, integration, ND, Series, and vector calculus operation in the library.
+Only 4 operations are needed. These are sufficient for **every** interpolation method, boundary condition, derivative, integration, ND, Series, and vector calculus operation in the library.
 
 ```julia
 +(::Tv, ::Tv) → Tv                    # value addition
 -(::Tv, ::Tv) → Tv                    # value subtraction
-*(::AbstractFloat, ::Tv) → Tv         # left scalar multiplication
-*(::Tv, ::AbstractFloat) → Tv         # right scalar multiplication
-*(::Integer, ::Tv) → Tv               # integer scaling (0*y for zero, 2*a in recurrence)
+*(::Real, ::Tv) → Tv                  # left scalar multiplication
+*(::Tv, ::Real) → Tv                  # right scalar multiplication
 ```
 
-These are the standard **vector space axioms** — addition, subtraction, and scalar multiplication. Nothing else is required.
+These are the standard **vector space axioms** — addition, subtraction, and scalar multiplication over `Real` scalars. Nothing else is required. Using `Real` (rather than separate `AbstractFloat` + `Integer` methods) is simpler and also covers `Rational`, `ForwardDiff.Dual`, and other `Real` subtypes automatically.
+
+## Conditional: `muladd`
+
+The library uses `muladd` extensively in hot evaluation kernels for FMA (fused multiply-add).
+
+- **`Tv <: Number`** (or `<: Real`): You **must** define `muladd`. Julia's `muladd(::Number, ::Number, ::Number)` tries type promotion, which fails without `promote_rule`.
+- **`Tv` is not `<: Number`**: Not required — Julia's generic fallback `muladd(x,y,z) = x*y+z` fires automatically. However, if your inner type supports `muladd`, defining it enables FMA and improves performance.
+
+```julia
+# Signatures used in hot paths:
+Base.muladd(::Real, ::Tv, ::Tv) → Tv
+Base.muladd(::Tv, ::Real, ::Tv) → Tv
+```
 
 ## Example: Path Interpolation with `SVector`
 
-`SVector` already satisfies the 5 operations, so it works out of the box.
+`SVector` already satisfies the 4 operations, so it works out of the box.
 
 ```@example duck_typing
 using FastInterpolations
@@ -60,32 +72,34 @@ scatter!(p, pts_x, pts_y; label="control points", ms=6, color=:black);
 ## Defining a Custom Type
 
 ```@example duck_typing
-struct MyValue
+struct MyStruct
     val::Float64
 end
 
-# The 5 required operations — nothing else needed
-Base.:+(a::MyValue, b::MyValue) = MyValue(a.val + b.val)
-Base.:-(a::MyValue, b::MyValue) = MyValue(a.val - b.val)
-Base.:*(a::AbstractFloat, b::MyValue) = MyValue(a * b.val)
-Base.:*(a::MyValue, b::AbstractFloat) = MyValue(a.val * b)
-Base.:*(a::Integer, b::MyValue) = MyValue(a * b.val)
+# The 4 required operations — nothing else needed
+Base.:+(a::MyStruct, b::MyStruct) = MyStruct(a.val + b.val)
+Base.:-(a::MyStruct, b::MyStruct) = MyStruct(a.val - b.val)
+Base.:*(a::Real, b::MyStruct) = MyStruct(a * b.val)
+Base.:*(a::MyStruct, b::Real) = MyStruct(a.val * b)
+
+# Optional: muladd for FMA performance (works without this, but faster with it)
+Base.muladd(a::Real, b::MyStruct, c::MyStruct) = MyStruct(muladd(a, b.val, c.val))
+Base.muladd(a::MyStruct, b::Real, c::MyStruct) = MyStruct(muladd(a.val, b, c.val))
 
 # Everything works
 x = range(0.0, 1.0, 10)
-y = [MyValue(sin(xi)) for xi in x]
+y = [MyStruct(sin(xi)) for xi in x]
 
-constant_interp(x, y, 0.5)                                     # → MyValue(...)
-linear_interp(x, y, 0.5)                                       # → MyValue(...)
-quadratic_interp(x, y, 0.5)                                    # → MyValue(...)
-quadratic_interp(x, y, 0.5; bc=Left(Deriv1(MyValue(0.0))))     # → MyValue(...)
-cubic_interp(x, y, 0.5)                                        # → MyValue(...)
-cubic_interp(x, y, 0.5; bc=Deriv1(MyValue(0.0)))               # → MyValue(...)
-cubic_interp(x, y, 0.5; bc=ZeroCurvBC())                       # → MyValue(...)
+constant_interp(x, y, 0.5)                                     # → MyStruct(...)
+linear_interp(x, y, 0.5)                                       # → MyStruct(...)
+quadratic_interp(x, y, 0.5)                                    # → MyStruct(...)
+quadratic_interp(x, y, 0.5; bc=Left(Deriv1(MyStruct(0.0))))     # → MyStruct(...)
+cubic_interp(x, y, 0.5)                                        # → MyStruct(...)
+cubic_interp(x, y, 0.5; bc=Deriv1(MyStruct(0.0)))               # → MyStruct(...)
+cubic_interp(x, y, 0.5; bc=ZeroCurvBC())                       # → MyStruct(...)
 nothing #hide
 ```
 
 ### Tips
 
-- **Explicit Deriv BCs**: Pass `Deriv1(MyValue(val))` — not `Deriv1(val)`. No `convert` is needed; cross-type BCs throw `MethodError`.
-- **Avoid `<: Number`**: Julia's `muladd(::Number, ::Number, ::Number)` tries type promotion, which fails without `promote_rule`. Outside `Number`, the generic `muladd(x,y,z) = x*y+z` fires automatically.
+- **Explicit Deriv BCs**: Pass `Deriv1(MyStruct(val))` — not `Deriv1(val)`.

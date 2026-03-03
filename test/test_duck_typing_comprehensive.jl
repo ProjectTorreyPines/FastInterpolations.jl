@@ -24,8 +24,8 @@ end
 
 Base.:+(a::DuckFloat5, b::DuckFloat5) = DuckFloat5(a.v + b.v)
 Base.:-(a::DuckFloat5, b::DuckFloat5) = DuckFloat5(a.v - b.v)
-Base.:*(a::Float64, b::DuckFloat5) = DuckFloat5(a * b.v)
-Base.:*(a::DuckFloat5, b::Float64) = DuckFloat5(a.v * b)
+Base.:*(a::AbstractFloat, b::DuckFloat5) = DuckFloat5(a * b.v)
+Base.:*(a::DuckFloat5, b::AbstractFloat) = DuckFloat5(a.v * b)
 Base.:*(a::Integer, b::DuckFloat5) = DuckFloat5(a * b.v)
 
 # Helper: extract raw value for assertions (since isapprox is NOT defined)

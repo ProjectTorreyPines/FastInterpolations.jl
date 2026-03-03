@@ -126,9 +126,9 @@ end
 
 # PolyFit{2} (QuadraticFit) - 3 points, O(h²)
 @inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3,T}, inv_h::T) where {T<:AbstractFloat}
-    # Coefficients: (-3, 4, -1) / 2
-    coeff = inv_h / 2
-    return muladd(T(-3), f[1], muladd(T(4), f[2], -f[3])) * coeff
+    # Coefficients: -(3, -4, 1) / 2
+    coeff = -inv_h / 2
+    return muladd(T(3), f[1], muladd(T(-4), f[2], f[3])) * coeff
 end
 
 @inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3,T}, inv_h::T) where {T<:AbstractFloat}
@@ -168,9 +168,9 @@ end
 
 # PolyFit{2} (QuadraticFit) - 3 points, O(h²) - Mixed type
 @inline function _compute_deriv1(::PolyFit{2}, ::LeftSide, f::NTuple{3,Tv}, inv_h::Tg) where {Tv, Tg<:AbstractFloat}
-    # Coefficients: (-3, 4, -1) / 2
-    coeff = inv_h / 2
-    return muladd(-3, f[1], muladd(4, f[2], (-1) * f[3])) * coeff  # Int * Tv → Tv, Tv * Tg → Tv
+    # Coefficients: -(3, -4, 1) / 2
+    coeff = -inv_h / 2
+    return muladd(3, f[1], muladd(-4, f[2], f[3])) * coeff
 end
 
 @inline function _compute_deriv1(::PolyFit{2}, ::RightSide, f::NTuple{3,Tv}, inv_h::Tg) where {Tv, Tg<:AbstractFloat}
@@ -398,7 +398,7 @@ end
 # Julia dispatch prefers the more specific D=1,2,3 methods above.
 
 """
-    _compute_deriv1_coeffs!(coeffs, β, ::PolyFit{D}, side::Val{S}, x::NTuple{N,T}) -> coeffs          
+    _compute_deriv1_coeffs!(coeffs, β, ::PolyFit{D}, side::Val{S}, x::NTuple{N,T}) -> coeffs
 
 In-place computation of derivative coefficients for generic polynomial degree D.
 

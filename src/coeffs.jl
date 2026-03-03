@@ -147,7 +147,7 @@ end
     i, xL, xR = search_interval(searcher, itp.x, xq)
     h = xR - xL
     @inbounds begin
-        slope = (itp.y[i+1] - itp.y[i]) / h
+        slope = (itp.y[i+1] - itp.y[i]) * inv(h)
         return CellPoly{2, Tv, Tg}((itp.y[i], slope), xL, xR)
     end
 end

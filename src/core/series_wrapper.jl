@@ -99,7 +99,7 @@ function _build_series_mat(s::Series{<:AbstractMatrix}, n_pts::Int, ::Type{Tv_ou
         "Matrix has $(size(Y, 1)) rows but grid has $n_pts points (expected n_points × n_series)"))
     n_ser = size(Y, 2)
     n_ser > 0 || throw(ArgumentError("Series data must contain at least one series"))
-    y_mat = eltype(Y) === Tv_out ? copy(Y) : Matrix{Tv_out}(Tv_out.(Y))
+    y_mat = eltype(Y) === Tv_out ? copy(Y) : Tv_out.(Y)
     return y_mat, n_ser
 end
 
@@ -111,11 +111,7 @@ function _build_series_mat(s::Series, n_pts::Int, ::Type{Tv_out}) where {Tv_out}
     @inbounds for (k, v) in enumerate(vecs)
         length(v) == n_pts || throw(DimensionMismatch(
             "Series vector $k has length $(length(v)), expected $n_pts (length of x)"))
-        if eltype(v) === Tv_out
-            y_mat[:, k] .= v
-        else
-            y_mat[:, k] .= Tv_out.(v)
-        end
+        y_mat[:, k] .= v
     end
     return y_mat, n_ser
 end

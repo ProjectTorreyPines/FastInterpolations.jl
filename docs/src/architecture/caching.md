@@ -26,7 +26,7 @@ Steps 1-2 depend **only on the x-grid**, not on y-values. By caching the LU fact
                      └─────────────────────────────────────┘
                             │                    │
                        Cache Hit              Cache Miss
-                       (~10 ns)               (acquire lock)
+                     (lock-free)             (acquire lock)
                             │                    │
                             ▼                    ▼
                      ┌──────────┐      ┌──────────────────┐
@@ -44,7 +44,7 @@ Steps 1-2 depend **only on the x-grid**, not on y-values. By caching the LU fact
 
 ## Multi-Grid Caching
 
-The cache stores multiple x-grid entries (default: 16), enabling zero-allocation across different grids:
+The cache stores multiple x-grid entries (default: 8), enabling zero-allocation across different grids:
 
 ```@example cache
 using FastInterpolations
@@ -79,12 +79,12 @@ The cache is keyed by:
 3. **Boundary condition type** (not values!)
 
 ```julia
-# These share the same cache entry (same BC type)
-cubic_interp(x, y; bc=CubicFit())
-cubic_interp(x, y; bc=CubicFit())  # cache hit
+# These share the same cache entry (same x-grid, same BC type)
+cubic_interp(x, y1, xq; bc=CubicFit())
+cubic_interp(x, y2, xq; bc=CubicFit())  # cache hit (different y, same grid)
 
 # Different BC type → different cache entry
-cubic_interp(x, y; bc=ZeroSlopeBC())  # new cache entry
+cubic_interp(x, y1, xq; bc=ZeroSlopeBC())  # new cache entry
 ```
 
 !!! note "BC Values vs Types"
@@ -127,9 +127,9 @@ set_cubic_cache_size!(4)
 When the cache is full, entries are evicted using a **ring buffer (FIFO)** policy:
 
 ```
-Cache slots: [1] [2] [3] [4] ... [16]
-                              ↑
-                         next eviction
+Cache slots: [1] [2] [3] [4] ... [8]
+                             ↑
+                        next eviction
 ```
 
 This provides:

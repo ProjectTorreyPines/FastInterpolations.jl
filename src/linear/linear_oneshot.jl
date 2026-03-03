@@ -248,9 +248,9 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, xR = search_interval(searcher, x, xq)
     # Use original xq for interpolation (preserves Dual for AD)
-    h = xR - xL
+    inv_h = inv(xR - xL)
     dL = xq - xL  # xq can be Dual here
-    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], h, dL)
+    @inbounds return _linear_kernel(op, y[idx], y[idx + 1], inv_h, dL)
 end
 
 

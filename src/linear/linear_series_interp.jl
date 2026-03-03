@@ -220,13 +220,13 @@ end
         xL = x[idx]
         xR = x[idx1]
     end
-    h = xR - xL
+    inv_h = inv(xR - xL)
     dL = aq.xq - xL
 
     @inbounds @simd for k in axes(out, 1)
         yL = y_point[k, idx]
         yR = y_point[k, idx1]
-        out[k] = _linear_kernel(op, yL, yR, h, dL)
+        out[k] = _linear_kernel(op, yL, yR, inv_h, dL)
     end
     return out
 end
@@ -273,13 +273,13 @@ while `xq` is used directly in arithmetic to preserve derivative information.
         xL = sitp.x[idx]
         xR = sitp.x[idx1]
     end
-    h = xR - xL
+    inv_h = inv(xR - xL)
     dL = xq - xL  # Original xq preserves Dual for AD
 
     @inbounds @simd for k in axes(output, 1)
         yL = y_point[k, idx]
         yR = y_point[k, idx1]
-        output[k] = _linear_kernel(op, yL, yR, h, dL)
+        output[k] = _linear_kernel(op, yL, yR, inv_h, dL)
     end
     return output
 end

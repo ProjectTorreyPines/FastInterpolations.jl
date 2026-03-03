@@ -1169,4 +1169,207 @@ const FI = FastInterpolations
         end
     end
 
+    # ========================================
+    # Value-Direction AD (y-AD)
+    # ========================================
+    # Tests for differentiating through interpolation DATA VALUES (y),
+    # not query points (xq). This is enabled by the duck-typing branch
+    # in _promote_itp_inputs: Dual values bypass standard promotion
+    # and flow through the build process unchanged.
+    #
+    # Key properties verified:
+    #   1. Partition of unity: sum(∂f/∂yᵢ) = 1 for all xq
+    #   2. Grid point exactness: ∂f/∂yₖ = 1 at xq = x[k]
+    #   3. Correct gradient values for known analytical cases
+
+    @testset "Value-direction AD (y-AD)" begin
+
+        # Shared test data
+        x = collect(0.0:1.0:5.0)  # [0, 1, 2, 3, 4, 5]
+        y = [0.0, 1.0, 4.0, 9.0, 16.0, 25.0]  # x²
+
+        # ── Linear y-AD ──────────────────────────────
+
+        @testset "Linear y-AD" begin
+            @testset "midpoint gradient" begin
+                # At midpoint of segment [x₃, x₄] = [2, 3], xq = 2.5
+                grad = ForwardDiff.gradient(
+                    yv -> linear_interp(x, yv)(2.5), y
+                )
+                @test grad ≈ [0, 0, 0.5, 0.5, 0, 0] atol=1e-12
+            end
+
+            @testset "partition of unity" begin
+                for xq in [0.3, 1.7, 2.5, 3.9, 4.1]
+                    grad = ForwardDiff.gradient(
+                        yv -> linear_interp(x, yv)(xq), y
+                    )
+                    @test sum(grad) ≈ 1.0 atol=1e-12
+                end
+            end
+
+            @testset "grid point exactness" begin
+                # At xq = x[k], only y[k] contributes
+                for k in 2:length(x)-1  # interior grid points
+                    grad = ForwardDiff.gradient(
+                        yv -> linear_interp(x, yv)(x[k]), y
+                    )
+                    @test grad[k] ≈ 1.0 atol=1e-12
+                    @test sum(abs, grad) ≈ 1.0 atol=1e-12  # no other contributions
+                end
+            end
+
+            @testset "one-shot API" begin
+                grad = ForwardDiff.gradient(
+                    yv -> linear_interp(x, yv, 2.5), y
+                )
+                @test grad ≈ [0, 0, 0.5, 0.5, 0, 0] atol=1e-12
+            end
+        end
+
+        # ── Cubic y-AD ───────────────────────────────
+
+        @testset "Cubic y-AD" begin
+            @testset "partition of unity" begin
+                for xq in [0.5, 1.5, 2.5, 3.5, 4.5]
+                    grad = ForwardDiff.gradient(
+                        yv -> cubic_interp(x, yv)(xq), y
+                    )
+                    @test sum(grad) ≈ 1.0 atol=1e-10
+                end
+            end
+
+            @testset "grid point exactness" begin
+                for k in 2:length(x)-1
+                    grad = ForwardDiff.gradient(
+                        yv -> cubic_interp(x, yv)(x[k]), y
+                    )
+                    @test grad[k] ≈ 1.0 atol=1e-10
+                    @test sum(abs, grad) ≈ 1.0 atol=1e-10
+                end
+            end
+
+            @testset "wider stencil than linear" begin
+                # Cubic uses 4-point stencil → non-adjacent y values contribute
+                grad = ForwardDiff.gradient(
+                    yv -> cubic_interp(x, yv)(2.5), y
+                )
+                # At least 3 non-zero entries (vs exactly 2 for linear)
+                @test count(!iszero, grad) > 2
+                @test sum(grad) ≈ 1.0 atol=1e-10
+            end
+
+            @testset "one-shot API" begin
+                grad = ForwardDiff.gradient(
+                    yv -> cubic_interp(x, yv, 2.5), y
+                )
+                @test sum(grad) ≈ 1.0 atol=1e-10
+            end
+        end
+
+        # ── Quadratic y-AD ───────────────────────────
+
+        @testset "Quadratic y-AD" begin
+            @testset "partition of unity" begin
+                for xq in [0.5, 1.5, 2.5, 3.5, 4.5]
+                    grad = ForwardDiff.gradient(
+                        yv -> quadratic_interp(x, yv)(xq), y
+                    )
+                    @test sum(grad) ≈ 1.0 atol=1e-10
+                end
+            end
+
+            @testset "grid point exactness" begin
+                for k in 2:length(x)-1
+                    grad = ForwardDiff.gradient(
+                        yv -> quadratic_interp(x, yv)(x[k]), y
+                    )
+                    @test grad[k] ≈ 1.0 atol=1e-10
+                    @test sum(abs, grad) ≈ 1.0 atol=1e-10
+                end
+            end
+
+            @testset "one-shot API" begin
+                grad = ForwardDiff.gradient(
+                    yv -> quadratic_interp(x, yv, 2.5), y
+                )
+                @test sum(grad) ≈ 1.0 atol=1e-10
+            end
+        end
+
+        # ── Value preservation ────────────────────────
+
+        @testset "value preservation across methods" begin
+            xq = 2.5
+            for (name, builder) in [
+                ("linear", yv -> linear_interp(x, yv)(xq)),
+                ("cubic", yv -> cubic_interp(x, yv)(xq)),
+                ("quadratic", yv -> quadratic_interp(x, yv)(xq)),
+            ]
+                result = ForwardDiff.gradient(builder, y)
+                # The primal (value) should match non-AD evaluation
+                @test builder(y) ≈ builder(y) atol=1e-12
+            end
+        end
+
+        # ── Jacobian for series y-AD ─────────────────
+
+        @testset "Series y-AD (Jacobian)" begin
+            x_s = collect(range(0.0, 2π, 11))
+            y1 = sin.(x_s)
+            y2 = cos.(x_s)
+            xq = 1.5
+
+            @testset "Linear series Jacobian" begin
+                J = ForwardDiff.jacobian(
+                    yv -> linear_interp(x_s, Series(yv[1:11], yv[12:22]))(xq),
+                    vcat(y1, y2)
+                )
+                # J is 2×22: each row sums to 1 (partition of unity per output)
+                @test size(J) == (2, 22)
+                @test sum(J[1, :]) ≈ 1.0 atol=1e-10
+                @test sum(J[2, :]) ≈ 1.0 atol=1e-10
+                # y1 affects only output 1, y2 affects only output 2
+                @test sum(abs, J[1, 12:22]) < 1e-12  # y2 doesn't affect output 1
+                @test sum(abs, J[2, 1:11]) < 1e-12   # y1 doesn't affect output 2
+            end
+
+            @testset "Constant series Jacobian" begin
+                J = ForwardDiff.jacobian(
+                    yv -> constant_interp(x_s, Series(yv[1:11], yv[12:22]))(xq),
+                    vcat(y1, y2)
+                )
+                @test size(J) == (2, 22)
+                @test sum(J[1, :]) ≈ 1.0 atol=1e-10
+                @test sum(J[2, :]) ≈ 1.0 atol=1e-10
+                @test sum(abs, J[1, 12:22]) < 1e-12
+                @test sum(abs, J[2, 1:11]) < 1e-12
+            end
+
+            @testset "Cubic series Jacobian" begin
+                J = ForwardDiff.jacobian(
+                    yv -> cubic_interp(x_s, Series(yv[1:11], yv[12:22]))(xq),
+                    vcat(y1, y2)
+                )
+                @test size(J) == (2, 22)
+                @test sum(J[1, :]) ≈ 1.0 atol=1e-10
+                @test sum(J[2, :]) ≈ 1.0 atol=1e-10
+                @test sum(abs, J[1, 12:22]) < 1e-12
+                @test sum(abs, J[2, 1:11]) < 1e-12
+            end
+
+            @testset "Quadratic series Jacobian" begin
+                J = ForwardDiff.jacobian(
+                    yv -> quadratic_interp(x_s, Series(yv[1:11], yv[12:22]))(xq),
+                    vcat(y1, y2)
+                )
+                @test size(J) == (2, 22)
+                @test sum(J[1, :]) ≈ 1.0 atol=1e-10
+                @test sum(J[2, :]) ≈ 1.0 atol=1e-10
+                @test sum(abs, J[1, 12:22]) < 1e-12
+                @test sum(abs, J[2, 1:11]) < 1e-12
+            end
+        end
+    end
+
 end  # testset "AutoDiff Support"

@@ -381,8 +381,7 @@ function quadratic_interp(
 ) where {Tg<:AbstractFloat}
     # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
-    Tv_real = _real_eltype(Tv)
-    Tg_new = Tv_real <: AbstractFloat ? promote_type(Tg, Tv_real) : Tg
+    Tg_new = _promote_grid_float(Tg, Tv)
     if Tg_new !== Tg
         return quadratic_interp(_to_float(x, Tg_new), s; bc=_normalize_bc(bc, Tg_new), extrap, search)
     end
@@ -428,8 +427,7 @@ function quadratic_interp(
     extrap::AbstractExtrap=NoExtrap(),
     search::AbstractSearchPolicy=AutoSearch()
 ) where {Tg<:Real}
-    Tv_base = _real_eltype(_series_eltype(s))
-    Tg_float = Tv_base <: Real ? float(promote_type(Tg, Tv_base)) : float(Tg)
+    Tg_float = _promote_grid_float(Tg, _series_eltype(s))
     return quadratic_interp(_to_float(x, Tg_float), s; bc=_normalize_bc(bc, Tg_float), extrap, search)
 end
 

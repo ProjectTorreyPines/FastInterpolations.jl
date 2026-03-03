@@ -71,13 +71,42 @@ This is TYPE-BASED (works with eltype(y) in wrappers).
 @inline _real_eltype(::Type{T}) where {T} = T
 
 """
+    _promote_grid_float(::Type{Tg}, ::Type{Tv}) -> Type{<:AbstractFloat}
+
+Compute the grid float type, optionally widened by value precision.
+
+- **Promotable values** (`_PromotableValue`): grid widens to accommodate value precision.
+  Example: `Float32` grid + `Float64` values → `Float64` grid.
+  This prevents per-element conversion overhead in hot evaluation paths.
+- **Duck types** (Dual, Measurement, etc.): grid uses only its own type.
+  Value type must NOT contaminate the grid (e.g., grid coordinates should never
+  carry derivative partials from `ForwardDiff.Dual`).
+
+# Examples
+```julia
+_promote_grid_float(Int, Float64)    # → Float64 (standard widening)
+_promote_grid_float(Float32, Int)    # → Float32 (Int doesn't widen Float32)
+_promote_grid_float(Float32, Float64)# → Float64 (value precision wins)
+_promote_grid_float(Float64, Dual)   # → Float64 (duck: grid ignores Dual)
+_promote_grid_float(Int, Dual)       # → Float64 (duck: float(Int) only)
+```
+"""
+@inline function _promote_grid_float(::Type{Tg}, ::Type{Tv}) where {Tg, Tv}
+    if Tv <: _PromotableValue
+        return float(promote_type(Tg, _real_eltype(Tv)))
+    else
+        return float(Tg)
+    end
+end
+
+"""
     _value_type(::Type{Ty}, ::Type{Tg}) -> Type
 
 Determine the output value type from y element type and grid type.
-- Real y → Tg (promotes to grid float type)
-- Complex y → Complex{Tg}
+- Standard numerics (Integer, AbstractFloat, Rational, Complex) → Tg or Complex{Tg}
+- Duck types (Dual, Measurement, etc.) → preserved as-is
 """
-@inline _value_type(::Type{T}, ::Type{Tg}) where {T<:Real, Tg<:AbstractFloat} = Tg
+@inline _value_type(::Type{T}, ::Type{Tg}) where {T<:_PromotableValue, Tg<:AbstractFloat} = Tg
 @inline _value_type(::Type{Complex{T}}, ::Type{Tg}) where {T<:Real, Tg<:AbstractFloat} = Complex{Tg}
 # Duck-typing fallback: custom types preserved as-is (no promotion to grid type)
 @inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg<:AbstractFloat} = T
@@ -176,16 +205,12 @@ x_p, y_p = _promote_itp_inputs(x, custom_y)  # y_p stays custom type
     x::AbstractVector{TX},
     y::AbstractVector{TY}
 ) where {TX<:Real, TY}
+    Tg = _promote_grid_float(TX, TY)
+    x_typed = _to_float(x, Tg)
     if TY <: _PromotableValue
-        # Standard numerics: widen grid to accommodate y precision, promote y
-        Tg = float(promote_type(TX, _real_eltype(TY)))
-        x_typed = _to_float(x, Tg)
         _, y_typed = _promote_value_type(y, Tg)
         return x_typed, y_typed
     else
-        # Custom/duck types: only convert grid to float, preserve y as-is
-        Tg = float(TX)
-        x_typed = _to_float(x, Tg)
         return x_typed, y
     end
 end

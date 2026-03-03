@@ -270,7 +270,7 @@ end
 
 function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::PeriodicData{Tg}, args...) where {Tv, Tg<:AbstractFloat}
     # Enforce periodic: dydx[1] == dydx[end]
-    avg = (dydx[1] + dydx[end]) / Tg(2)
+    avg = inv(Tg(2)) * (dydx[1] + dydx[end])
     @inbounds dydx[1] = avg
     @inbounds dydx[end] = avg
     return nothing

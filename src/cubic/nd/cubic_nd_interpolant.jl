@@ -122,7 +122,7 @@ function _build_nd_interpolant(
             period = last(grid) - first(grid)
             _with_resolved_period(bc, period)
         else
-            _normalize_bc(bc, Tv)
+            _normalize_bc(bc, first(data))
         end
     end
 

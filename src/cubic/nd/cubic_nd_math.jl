@@ -302,7 +302,7 @@ Differentiate 1D vector using cubic splines. BC type determines the method:
     # Cache uses grid type Tg for matrix structure (factorization)
     # Computation uses value type Tv for actual BC values
     bc_cache = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, Tg)
-    bc_compute = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, Tv)
+    bc_compute = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, first(values))
     cache = _get_cubic_cache(grid, bc_cache, true)
     actual_bc = cache.bc_config isa PeriodicData ? cache.bc_config : bc_compute
     m = acquire!(pool, Tv, n)

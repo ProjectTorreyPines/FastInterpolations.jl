@@ -521,6 +521,17 @@ end
     return BCPair(bc_t, bc_t)
 end
 
+# Value-based overloads: use 0 * sample instead of zero(Tv).
+# Enables Tv types where zero(::Type) is undefined (e.g. Vector{Float64}).
+# Julia dispatch: ::Type{Tv} is more specific than untyped `sample`, so type-based
+# methods are still selected when a Type is passed (Tg cache paths).
+@inline _normalize_bc(::ZeroCurvBC, sample) = (z = 0 * sample; BCPair(Deriv2(z), Deriv2(z)))
+@inline _normalize_bc(::ZeroSlopeBC, sample) = (z = 0 * sample; BCPair(Deriv1(z), Deriv1(z)))
+
+# Generic value→type fallback: extract type from sample, delegate to type-based methods.
+# Covers BCPair, PointBC, Left, Right, MinCurvFit — none of which need zero().
+@inline _normalize_bc(bc::AbstractBC, sample) = _normalize_bc(bc, typeof(sample))
+
 # NOTE: _normalize_bc methods for Left/Right/MinCurvFit are defined after Left/Right structs below.
 
 

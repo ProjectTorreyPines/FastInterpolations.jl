@@ -615,7 +615,7 @@ function cubic_interp(
     else
         # Uniform BC: Tg-typed for cache matrix, Tv-typed for RHS
         bc_for_cache = _normalize_bc(bc, Tg)
-        bc_for_solve = _normalize_bc(bc, Tv_out)
+        bc_for_solve = _normalize_bc(bc, first(y_mat))
         cache = _get_cubic_cache(x, bc_for_cache, autocache)
         _solve_series_coefficients!(z_mat, y_mat, cache, bc_for_solve)
         bc_representative = bc_for_cache

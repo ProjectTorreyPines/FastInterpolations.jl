@@ -61,7 +61,7 @@ spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
     # 3. Normalize BC values to Tv (lazy normalization — Tv is known here)
     # This ensures _fill_slopes! always receives Tv-typed values,
     # making convert(Tv, bc.val) an identity operation.
-    bc_typed = _normalize_bc(bc, Tv)
+    bc_typed = _normalize_bc(bc, first(values))
 
     # 4. Fill slopes via BC-dispatched recurrence
     _fill_slopes!(d_out, secant, h, bc_typed, grid, values)
@@ -76,7 +76,7 @@ end
     d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
     grid::AbstractVector{Tg}, ::ZeroCurvBC
 ) where {Tv, Tg<:AbstractFloat}
-    _slope_1d_quadratic!(d_out, values, grid, Right(Deriv2(zero(Tv))))
+    _slope_1d_quadratic!(d_out, values, grid, Right(Deriv2(0 * first(values))))
 end
 
 @inline function _slope_1d_quadratic!(

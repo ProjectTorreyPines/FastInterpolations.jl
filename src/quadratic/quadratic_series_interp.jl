@@ -397,7 +397,7 @@ function quadratic_interp(
     h = Vector{Tg}(undef, n_pts - 1)
 
     # Promote BC values to Tv_out for convert(Tv, bc.val) compatibility
-    bc_promoted = _normalize_bc(bc, Tv_out)
+    bc_promoted = _normalize_bc(bc, first(y_mat))
 
     # Compute coefficients for each series from y_mat columns
     for k in 1:n_ser

@@ -173,7 +173,7 @@ slices simultaneously using the batch solver from 2D implementation.
         # Grid type Tg for cache, value type Tv for computation
         bc_cache = _is_periodic_bc(bc) ? PeriodicBC() : _normalize_bc(bc, Tg)
         cache = _get_cubic_cache(grid, bc_cache, true)
-        actual_bc = cache.bc_config isa PeriodicData ? cache.bc_config : _normalize_bc(bc, Tv)
+        actual_bc = cache.bc_config isa PeriodicData ? cache.bc_config : _normalize_bc(bc, first(data_3d))
 
         # Acquire workspace for moments matrix
         M = acquire!(pool, Tv, (shape_before, n_d))

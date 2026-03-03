@@ -214,7 +214,7 @@ vals = quadratic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_w
     h = acquire!(pool, Tg, nx-1)
     d = acquire!(pool, Tv, nx)
     a = acquire!(pool, Tv, nx-1)
-    bc_promoted = _normalize_bc(bc, Tv)
+    bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _resolve_search(x, xq, search, hint)
@@ -268,7 +268,7 @@ quadratic_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear
     h = acquire!(pool, Tg, nx-1)
     d = acquire!(pool, Tv, nx)
     a = acquire!(pool, Tv, nx-1)
-    bc_promoted = _normalize_bc(bc, Tv)
+    bc_promoted = _normalize_bc(bc, first(y))
     _compute_quadratic_coeffs!(h, d, a, x, y, bc_promoted)
 
     searcher = _resolve_search(x, x_targets, search, nothing)
@@ -338,8 +338,7 @@ end
     hint::Union{Nothing,Base.RefValue{Int}}=nothing
 ) where {Tg<:Real, Tv, Tq<:Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
-    Tv_float = eltype(y_typed)
-    bc_promoted = _normalize_bc(bc, Tv_float)
+    bc_promoted = _normalize_bc(bc, first(y_typed))
     # Pass xq directly to preserve Dual type for AD
     return quadratic_interp(x_typed, y_typed, xq; bc=bc_promoted, extrap, deriv, search, hint)
 end
@@ -361,7 +360,7 @@ function quadratic_interp(
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
     Tv_float = eltype(y_typed)
     output = Vector{Tv_float}(undef, length(x_targets))
-    bc_promoted = _normalize_bc(bc, Tv_float)
+    bc_promoted = _normalize_bc(bc, first(y_typed))
     quadratic_interp!(output, x_typed, y_typed, xq_typed; bc=bc_promoted, extrap, deriv, search)
     return output
 end
@@ -395,6 +394,6 @@ function quadratic_interp!(
         ))
     end
 
-    bc_promoted = _normalize_bc(bc, Tv_float)
+    bc_promoted = _normalize_bc(bc, first(y_typed))
     quadratic_interp!(output, x_typed, y_typed, xq_typed; bc=bc_promoted, extrap, deriv, search)
 end

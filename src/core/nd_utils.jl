@@ -29,22 +29,42 @@
 # - `nothing` for constant/linear (no BCs)
 # - NTuple{N, AbstractBC} for quadratic/cubic
 
+# ── Fill-value ConstExtrap guard for ND ────────────────────────────────
+@noinline _throw_fill_value_nd() = throw(ArgumentError(
+    "ConstExtrap with a fill value is not supported for ND interpolation; " *
+    "use ConstExtrap() (boundary clamp) instead"))
+
+@inline _reject_fill_value_nd(::AbstractExtrap) = nothing
+@inline _reject_fill_value_nd(::ConstExtrap{Nothing}) = nothing
+@inline _reject_fill_value_nd(::ConstExtrap) = _throw_fill_value_nd()
+
+@inline function _reject_fill_value_nd(extraps::Tuple{Vararg{AbstractExtrap}})
+    for e in extraps
+        _reject_fill_value_nd(e)
+    end
+    return nothing
+end
+
 # ── Mode → Mode tuple (fast path) ────────────────────────────────────
 
 @inline function _resolve_extrap_nd(extrap::AbstractExtrap, ::Nothing, ::Val{N}) where {N}
+    _reject_fill_value_nd(extrap)
     ntuple(_ -> extrap, Val(N))
 end
 
 @inline function _resolve_extrap_nd(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+    _reject_fill_value_nd(extrap)
     _check_mode_periodic_compat(extrap, bcs, Val(N))
     return _mode_to_modes_with_periodic(extrap, bcs)
 end
 
 @inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap,N}}, ::Nothing, ::Val{N}) where {N}
+    _reject_fill_value_nd(extrap)
     extrap
 end
 
 @inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+    _reject_fill_value_nd(extrap)
     _check_modes_periodic_compat(extrap, bcs, Val(N))
     return _modes_to_modes_with_periodic(extrap, bcs)
 end

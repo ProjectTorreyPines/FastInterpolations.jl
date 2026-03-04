@@ -164,5 +164,6 @@ function linear_interp end
     search::AbstractSearchPolicy=AutoSearch()
 ) where {TX<:Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
-    return LinearInterpolant(x_p, y_p; extrap, search)
+    extrap_p = _promote_extrap(extrap, eltype(y_p))
+    return LinearInterpolant(x_p, y_p; extrap=extrap_p, search)
 end

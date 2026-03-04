@@ -146,5 +146,6 @@ end
     # Compute coefficients (h::Tg, d::Tv, a::Tv)
     h, d, a = _compute_quadratic_coeffs(x_p, y_p, bc_p)
 
-    return QuadraticInterpolant(x_p, y_p, h, a, d; extrap, search)
+    extrap_p = _promote_extrap(extrap, eltype(y_p))
+    return QuadraticInterpolant(x_p, y_p, h, a, d; extrap=extrap_p, search)
 end

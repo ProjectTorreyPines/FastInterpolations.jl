@@ -261,12 +261,12 @@ end
     ::Tg,
     ::Tg,
     ::_ConstantAnchoredQuery{Tg},
-    ::ConstExtrap,
+    extrap::ConstExtrap,
     ::AbstractSide,
     op::AbstractEvalOp,
     side::UInt8
 ) where {Tg<:AbstractFloat, Tv}
-    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
+    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap)
 end
 
 # ExtendExtrap - extend using same constant value at boundary interval
@@ -344,8 +344,9 @@ function constant_interp(
     n_pts = length(x)
     Tv_out = _value_type(Tv, Tg)
     y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
+    extrap_p = _promote_extrap(extrap, Tv_out)
 
-    return ConstantSeriesInterpolant(x, y_mat, extrap, side, search)
+    return ConstantSeriesInterpolant(x, y_mat, extrap_p, side, search)
 end
 
 # Real grid promotion (Int, etc.) → convert to float and delegate
@@ -565,7 +566,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
     if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_constant_series_anchored(y, k, aq, side_val, op)
     elseif extrap isa ConstExtrap
-        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op)
+        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op, extrap)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end

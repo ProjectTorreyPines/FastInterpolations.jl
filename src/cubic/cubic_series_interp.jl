@@ -342,11 +342,11 @@ end
     ::Tg,
     ::Tg,
     ::_CubicAnchoredQuery{Tg,Tq},
-    ::ConstExtrap,
+    extrap::ConstExtrap,
     op::AbstractEvalOp,
     side::UInt8
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
+    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap)
 end
 
 # ExtendExtrap - extend polynomial (EvalValue)
@@ -620,7 +620,8 @@ function cubic_interp(
         bc_representative = bc_for_cache
     end
 
-    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap, search)
+    extrap_p = _promote_extrap(extrap, eltype(y_mat))
+    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap_p, search)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)
@@ -949,7 +950,7 @@ Takes matrices as arguments for optimal performance.
     if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_series_anchored(y, z, k, aq, op)
     elseif extrap isa ConstExtrap
-        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op)
+        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op, extrap)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end

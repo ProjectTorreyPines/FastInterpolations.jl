@@ -97,4 +97,41 @@ using FastInterpolations
         allocs = @allocated integrate(itp, a, b)
         @test allocs <= ALLOC_THRESHOLD
     end
+
+    # ═══════════════════════════════════════════════════════════════
+    # ConstExtrap fill value — integration path zero allocation
+    # ═══════════════════════════════════════════════════════════════
+
+    @testset "ConstExtrap fill value: integrate zero allocation" begin
+        x = collect(range(0.0, 1.0, length=21))
+        y = @. 3x - 1
+
+        itp_clamp = linear_interp(x, y; extrap=ConstExtrap())
+        itp_zero = linear_interp(x, y; extrap=ConstExtrap(0.0))
+        itp_42 = linear_interp(x, y; extrap=ConstExtrap(42.0))
+
+        function integrate_fill(itp, a, b)
+            integrate(itp, a, b)
+        end
+
+        # Warmup
+        for itp in (itp_clamp, itp_zero, itp_42)
+            integrate_fill(itp, 0.15, 0.85)   # in-domain
+            integrate_fill(itp, -0.5, 1.5)     # spans outside
+            integrate_fill(itp, 0.15, 0.85)
+            integrate_fill(itp, -0.5, 1.5)
+        end
+
+        # In-domain integration
+        for itp in (itp_clamp, itp_zero, itp_42)
+            allocs = @allocated integrate_fill(itp, 0.15, 0.85)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Cross-boundary integration (exercises fill value arithmetic)
+        for itp in (itp_clamp, itp_zero, itp_42)
+            allocs = @allocated integrate_fill(itp, -0.5, 1.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
 end

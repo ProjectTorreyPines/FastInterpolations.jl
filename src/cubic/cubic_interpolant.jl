@@ -157,22 +157,10 @@ end
     throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
 end
 
-# ConstExtrap for value - return boundary y value
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalValue) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    return aq.side == 0x01 ? @inbounds(itp.y[1]) : @inbounds(itp.y[end])
-end
-
-# ConstExtrap for derivatives - return zero via 0 * y (duck-typing compatible)
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv1) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    return 0 * first(itp.y)
-end
-
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv2) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    return 0 * first(itp.y)
-end
-
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, ::_CubicAnchoredQuery{Tg,Tq}, ::ConstExtrap, ::EvalDeriv3) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    return 0 * first(itp.y)
+# ConstExtrap - return fill value (EvalValue) or zero (derivatives)
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, extrap::ConstExtrap, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+    y_bnd = aq.side == 0x01 ? @inbounds(itp.y[1]) : @inbounds(itp.y[end])
+    return _constant_extrap_result(op, y_bnd, extrap)
 end
 
 # ExtendExtrap - use precomputed weights (boundary polynomial extrapolation)
@@ -300,7 +288,8 @@ so the pool memory can be safely reused after this function returns.
     tmp_z = similar!(pool, y)
     # Solve uses original BC for proper RHS materialization
     _solve_system!(tmp_z, cache, y, bc_pair)
-    return CubicInterpolant(cache, y, tmp_z, bc_pair, extrap, search)
+    extrap_p = _promote_extrap(extrap, Tv)
+    return CubicInterpolant(cache, y, tmp_z, bc_pair, extrap_p, search)
 end
 
 """

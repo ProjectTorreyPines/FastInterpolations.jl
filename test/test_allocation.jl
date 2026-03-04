@@ -796,6 +796,151 @@ import FastInterpolations: _get_cubic_cache
         @test allocs_periodic <= 128   # Periodic BC cache hit
     end
 
+    # =========================================================================
+    # ConstExtrap Fill Value — Zero Allocation Tests
+    # =========================================================================
+    # Verifies that ConstExtrap(value) fill-value paths are zero-allocation,
+    # matching the zero-allocation guarantee of ConstExtrap() (boundary clamp).
+
+    @testset "ConstExtrap fill value: linear oneshot scalar" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        function linear_constextrap_fill(xq, mode::ConstExtrap)
+            linear_interp(x, y, xq; extrap=mode)
+        end
+
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            linear_constextrap_fill(0.5, mode)
+            linear_constextrap_fill(-0.5, mode)  # out-of-domain
+            linear_constextrap_fill(0.5, mode)
+            linear_constextrap_fill(-0.5, mode)
+        end
+
+        # In-domain: should match boundary clamp allocation
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            allocs = @allocated linear_constextrap_fill(0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain: fill value path must also be zero-alloc
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            allocs = @allocated linear_constextrap_fill(-0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ConstExtrap fill value: cubic oneshot scalar" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        clear_cubic_cache!()
+        cubic_interp(x, y, 0.5)  # prime cache
+
+        function cubic_constextrap_fill(xq, mode::ConstExtrap)
+            cubic_interp(x, y, xq; extrap=mode)
+        end
+
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            cubic_constextrap_fill(0.5, mode)
+            cubic_constextrap_fill(-0.5, mode)
+            cubic_constextrap_fill(0.5, mode)
+            cubic_constextrap_fill(-0.5, mode)
+        end
+
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            allocs = @allocated cubic_constextrap_fill(0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+            allocs = @allocated cubic_constextrap_fill(-0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ConstExtrap fill value: interpolant eval" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        itp_clamp = linear_interp(x, y; extrap=ConstExtrap())
+        itp_zero = linear_interp(x, y; extrap=ConstExtrap(0.0))
+        itp_nan = linear_interp(x, y; extrap=ConstExtrap(NaN))
+
+        function eval_itp_fill(itp, xq)
+            itp(xq)
+        end
+
+        # Warmup all
+        for itp in (itp_clamp, itp_zero, itp_nan)
+            eval_itp_fill(itp, 0.5)
+            eval_itp_fill(itp, -0.5)
+            eval_itp_fill(itp, 0.5)
+            eval_itp_fill(itp, -0.5)
+        end
+
+        # In-domain
+        for itp in (itp_clamp, itp_zero, itp_nan)
+            allocs = @allocated eval_itp_fill(itp, 0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain (fill value path)
+        for itp in (itp_clamp, itp_zero, itp_nan)
+            allocs = @allocated eval_itp_fill(itp, -0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ConstExtrap fill value: deriv zero-alloc" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        itp_nan = linear_interp(x, y; extrap=ConstExtrap(NaN))
+
+        function eval_deriv_fill(itp, xq)
+            itp(xq; deriv=DerivOp(1))
+        end
+
+        eval_deriv_fill(itp_nan, -0.5)
+        eval_deriv_fill(itp_nan, -0.5)
+
+        allocs = @allocated eval_deriv_fill(itp_nan, -0.5)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "ConstExtrap fill value: series zero-alloc" begin
+        x = collect(range(0.0, 1.0, 51))
+        y_mat = hcat(sin.(2π .* x), cos.(2π .* x))
+        s = Series(y_mat)
+        out = Vector{Float64}(undef, 2)
+
+        sitp_clamp = linear_interp(x, s; extrap=ConstExtrap())
+        sitp_fill = linear_interp(x, s; extrap=ConstExtrap(0.0))
+        sitp_nan = linear_interp(x, s; extrap=ConstExtrap(NaN))
+
+        function eval_series_fill!(out, sitp, xq)
+            sitp(out, xq)
+        end
+
+        # Warmup
+        for sitp in (sitp_clamp, sitp_fill, sitp_nan)
+            eval_series_fill!(out, sitp, 0.5)
+            eval_series_fill!(out, sitp, -0.5)
+            eval_series_fill!(out, sitp, 0.5)
+            eval_series_fill!(out, sitp, -0.5)
+        end
+
+        # In-domain
+        for sitp in (sitp_clamp, sitp_fill, sitp_nan)
+            allocs = @allocated eval_series_fill!(out, sitp, 0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain (fill/SIMD path)
+        for sitp in (sitp_clamp, sitp_fill, sitp_nan)
+            allocs = @allocated eval_series_fill!(out, sitp, -0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
     @testset "Typed extrap: LinearInterpolant construction" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)

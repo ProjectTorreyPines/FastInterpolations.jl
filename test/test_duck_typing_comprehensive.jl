@@ -1587,4 +1587,148 @@ _val(d::MyDuck) = d.v
         end
     end
 
+    # ================================================================
+    # SECTION 28: CONSTEXTRAP FILL VALUE — duck type support
+    # Verifies that ConstExtrap(Tv(val)) works with the bare-minimum
+    # 5-op duck type: construction, _promote_extrap, all 4 interp
+    # types (scalar + series), derivatives, ND guard, and integration.
+    # ================================================================
+    @testset "34. ConstExtrap fill value — duck type" begin
+        using FastInterpolations: _promote_extrap
+
+        fill_val = MyDuck(999.0)
+        xq_left = -0.5
+        xq_right = 6.5
+
+        # --- Construction ---
+        @testset "construction with duck type" begin
+            e = ConstExtrap(fill_val)
+            @test e isa ConstExtrap{MyDuck}
+            @test e.value === fill_val
+        end
+
+        @testset "_promote_extrap identity for matching Tv" begin
+            e = ConstExtrap(fill_val)
+            ep = _promote_extrap(e, MyDuck)
+            @test ep isa ConstExtrap{MyDuck}
+            @test ep.value === fill_val
+        end
+
+        @testset "_promote_extrap with Float64 fill → MethodError for duck Tv" begin
+            # ConstExtrap(0.0) has Float64 fill; promoting to MyDuck requires
+            # convert(MyDuck, 0.0) which isn't defined → must fail at construction
+            @test_throws MethodError _promote_extrap(ConstExtrap(0.0), MyDuck)
+        end
+
+        # --- 1D scalar eval: all 4 interp types ---
+        @testset "cubic fill value" begin
+            itp = cubic_interp(x_vec, y_generic; extrap=ConstExtrap(fill_val))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ConstExtrap(999.0))
+            # Out-of-domain → fill value
+            @test itp(xq_left) isa MyDuck
+            @test _val(itp(xq_left)) == 999.0
+            @test _val(itp(xq_right)) == 999.0
+            # In-domain → normal interpolation (unchanged by fill)
+            @test _val(itp(xq)) ≈ itp_ref(xq)
+        end
+
+        @testset "linear fill value" begin
+            itp = linear_interp(x_vec, y_generic; extrap=ConstExtrap(fill_val))
+            @test itp(xq_left) isa MyDuck
+            @test _val(itp(xq_left)) == 999.0
+            @test _val(itp(xq_right)) == 999.0
+        end
+
+        @testset "quadratic fill value" begin
+            itp = quadratic_interp(x_vec, y_generic; extrap=ConstExtrap(fill_val))
+            @test itp(xq_left) isa MyDuck
+            @test _val(itp(xq_left)) == 999.0
+            @test _val(itp(xq_right)) == 999.0
+        end
+
+        @testset "constant fill value" begin
+            itp = constant_interp(x_vec, y_generic; extrap=ConstExtrap(fill_val))
+            @test itp(xq_left) isa MyDuck
+            @test _val(itp(xq_left)) == 999.0
+            @test _val(itp(xq_right)) == 999.0
+        end
+
+        # --- Derivatives with fill → 0 * y_bnd (uses Int*Tv path) ---
+        @testset "derivatives return zero (not fill)" begin
+            itp = cubic_interp(x_vec, y_generic; extrap=ConstExtrap(fill_val))
+            r1 = itp(xq_left; deriv=DerivOp(1))
+            @test r1 isa MyDuck
+            @test _val(r1) == 0.0   # 0 * y_bnd, not 0 * fill_val
+            r2 = itp(xq_left; deriv=DerivOp(2))
+            @test r2 isa MyDuck
+            @test _val(r2) == 0.0
+
+            # Linear deriv
+            itp_l = linear_interp(x_vec, y_generic; extrap=ConstExtrap(fill_val))
+            rl = itp_l(xq_right; deriv=DerivOp(1))
+            @test rl isa MyDuck
+            @test _val(rl) == 0.0
+
+            # Quadratic deriv
+            itp_q = quadratic_interp(x_vec, y_generic; extrap=ConstExtrap(fill_val))
+            rq = itp_q(xq_right; deriv=DerivOp(1))
+            @test rq isa MyDuck
+            @test _val(rq) == 0.0
+        end
+
+        # --- Series with fill value ---
+        @testset "series fill value" begin
+            y1 = MyDuck.([1.0, 4.0, 2.0, 5.0, 3.0, 6.0, 2.5])
+            y2 = MyDuck.([2.0, 1.0, 5.0, 3.0, 4.0, 1.0, 3.5])
+            s = Series(y1, y2)
+
+            for (name, fn) in [("cubic", cubic_interp), ("linear", linear_interp),
+                               ("quadratic", quadratic_interp), ("constant", constant_interp)]
+                @testset "$name series" begin
+                    sitp = fn(x_vec, s; extrap=ConstExtrap(fill_val))
+                    result = sitp(xq_left)
+                    @test length(result) == 2
+                    @test eltype(result) === MyDuck
+                    @test all(r -> _val(r) == 999.0, result)
+
+                    # In-domain: unchanged
+                    result_in = sitp(xq)
+                    @test eltype(result_in) === MyDuck
+                    @test all(r -> _val(r) != 999.0, result_in)
+                end
+            end
+        end
+
+        # --- ND guard: fill value rejected for ND duck data ---
+        @testset "ND fill value guard" begin
+            @test_throws ArgumentError cubic_interp(
+                (xg, yg), data_2d; extrap=ConstExtrap(fill_val))
+            @test_throws ArgumentError linear_interp(
+                (xg, yg), data_2d; extrap=ConstExtrap(fill_val))
+        end
+
+        # --- Type stability ---
+        @testset "construction @inferred" begin
+            @inferred cubic_interp(x_vec, y_generic; extrap=ConstExtrap(fill_val))
+            @inferred linear_interp(x_vec, y_generic; extrap=ConstExtrap(fill_val))
+            @inferred quadratic_interp(x_vec, y_generic; extrap=ConstExtrap(fill_val))
+            @inferred constant_interp(x_vec, y_generic; extrap=ConstExtrap(fill_val))
+        end
+
+        @testset "eval @inferred" begin
+            itp = cubic_interp(x_vec, y_generic; extrap=ConstExtrap(fill_val))
+            @test @inferred(itp(xq_left)) isa MyDuck
+            @test @inferred(itp(xq)) isa MyDuck
+        end
+
+        # --- Boundary clamp (ConstExtrap()) still works with duck types ---
+        @testset "boundary clamp unchanged" begin
+            itp = cubic_interp(x_vec, y_generic; extrap=ConstExtrap())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ConstExtrap())
+            @test itp(xq_left) isa MyDuck
+            @test _val(itp(xq_left)) ≈ itp_ref(xq_left)    # y[1]
+            @test _val(itp(xq_right)) ≈ itp_ref(xq_right)  # y[end]
+        end
+    end
+
 end

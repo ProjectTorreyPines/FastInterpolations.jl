@@ -131,9 +131,9 @@ Extrap(:none)        # → NoExtrap()
 Extrap(NoExtrap())   # → NoExtrap()
 ```
 """
-function Extrap(sym::Symbol)
+function Extrap(sym::Symbol; value=nothing)
     sym === :none     && return NoExtrap()
-    sym === :constant && return ConstExtrap()
+    sym === :constant && return ConstExtrap(; value)
     sym === :extend   && return ExtendExtrap()
     sym === :wrap     && return WrapExtrap()
     _extrap_unknown_error(sym)

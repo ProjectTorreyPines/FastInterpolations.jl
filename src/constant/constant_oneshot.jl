@@ -31,34 +31,10 @@ Type parameters:
 """
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
-    ::ConstExtrap, ::AbstractSide, ::EvalValue
+    extrap::ConstExtrap, ::AbstractSide, op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
-    if xi < x_min
-        return @inbounds y[1]
-    else  # xi > x_max
-        return @inbounds y[end]
-    end
-end
-
-@inline function _constant_eval_extrap(
-    y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
-    ::ConstExtrap, ::AbstractSide, ::EvalDeriv1
-) where {Tg<:AbstractFloat, Tv}
-    return 0 * first(y)
-end
-
-@inline function _constant_eval_extrap(
-    y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
-    ::ConstExtrap, ::AbstractSide, ::EvalDeriv2
-) where {Tg<:AbstractFloat, Tv}
-    return 0 * first(y)
-end
-
-@inline function _constant_eval_extrap(
-    y::AbstractVector{Tv}, ::Tg, ::Tg, ::Tg,
-    ::ConstExtrap, ::AbstractSide, ::EvalDeriv3
-) where {Tg<:AbstractFloat, Tv}
-    return 0 * first(y)
+    y_bnd = xi < x_min ? @inbounds(y[1]) : @inbounds(y[end])
+    return _constant_extrap_result(op, y_bnd, extrap)
 end
 
 # ExtendExtrap delegates to ConstExtrap (slope=0 for constant function)

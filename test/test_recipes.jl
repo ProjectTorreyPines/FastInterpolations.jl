@@ -58,6 +58,85 @@ using RecipesBase
     end
 
     # ========================================
+    # ConstExtrap Fill Value Recipes
+    # ========================================
+    @testset "ConstExtrap Fill Value" begin
+        @testset "finite fill (0.0): produces fill lines" begin
+            itp = cubic_interp(x, y; extrap=ConstExtrap(0.0))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            @test !isempty(recipes)
+            # Should have: 2 shading + 1 boundary + 1 scatter + 1 curve + 2 fill lines = 7
+            @test length(recipes) == 7
+            # Last two series should be dashed fill lines
+            for r in recipes[end-1:end]
+                @test r.plotattributes[:seriestype] == :path
+                @test r.plotattributes[:linestyle] == :dash
+            end
+        end
+
+        @testset "NaN fill: no fill lines, no crash" begin
+            itp = cubic_interp(x, y; extrap=ConstExtrap(NaN))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            @test !isempty(recipes)
+            # Should have: 2 shading + 1 boundary + 1 scatter + 1 curve = 5
+            @test length(recipes) == 5
+            # Curve yq should not contain NaN (domain-only evaluation)
+            curve_data = recipes[end]
+            yq = curve_data.args[2]
+            @test !any(isnan, yq)
+        end
+
+        @testset "boundary clamp unchanged" begin
+            itp = cubic_interp(x, y; extrap=ConstExtrap())
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            # Should have: 2 shading + 1 boundary + 1 scatter + 1 curve = 5 (no fill lines)
+            @test length(recipes) == 5
+        end
+
+        @testset "finite fill: shade label contains fill value" begin
+            itp = linear_interp(x, y; extrap=ConstExtrap(42.0))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            # Second shade series should have fill label
+            shade_labels = [r.plotattributes[:label] for r in recipes if
+                get(r.plotattributes, :seriestype, nothing) == :shape &&
+                r.plotattributes[:label] !== nothing]
+            @test any(l -> occursin("42.0", l), shade_labels)
+        end
+
+        @testset "series interpolant with fill value" begin
+            sitp = linear_interp(x, Series(y_matrix); extrap=ConstExtrap(0.0))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), sitp)
+            @test !isempty(recipes)
+            # Check fill lines are produced (dashed)
+            dashed = [r for r in recipes if get(r.plotattributes, :linestyle, nothing) == :dash]
+            @test length(dashed) >= 2  # at least one pair of fill lines per series
+        end
+
+        @testset "derivative view with fill value" begin
+            itp = cubic_interp(x, y; extrap=ConstExtrap(NaN))
+            dv = deriv1(itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), dv)
+            @test !isempty(recipes)
+            # Derivative curve should not have NaN (0 * y_bnd, not 0 * NaN)
+            curve_data = recipes[end]
+            yq = curve_data.args[2]
+            @test !any(isnan, yq)
+        end
+
+        @testset "all 4 interp types with fill" begin
+            for (name, fn) in [("cubic", cubic_interp), ("linear", linear_interp),
+                               ("quadratic", quadratic_interp), ("constant", constant_interp)]
+                @testset "$name" begin
+                    itp = fn(x, y; extrap=ConstExtrap(0.0))
+                    recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+                    @test !isempty(recipes)
+                    @test length(recipes) == 7  # 2 shade + 1 bound + 1 scatter + 1 curve + 2 fill
+                end
+            end
+        end
+    end
+
+    # ========================================
     # Recipe Options
     # ========================================
     @testset "Recipe Options" begin

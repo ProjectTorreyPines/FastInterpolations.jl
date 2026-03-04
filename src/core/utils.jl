@@ -317,8 +317,7 @@ ForwardDiff support is added via:
 @inline _extract_primal(xq::ForwardDiff.Dual) = ForwardDiff.value(xq)
 ```
 """
-@inline _extract_primal(xq::T) where {T<:AbstractFloat} = xq
-@inline _extract_primal(xq::Real) = xq  # return as-is, let _to_grid_type handle conversion
+@inline _extract_primal(x) = x  # identity fallback; ForwardDiff ext specializes for Dual
 
 """
     _promote_for_anchor(xq::Tq, ::Type{Tg}) -> promoted_xq

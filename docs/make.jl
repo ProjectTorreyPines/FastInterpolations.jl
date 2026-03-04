@@ -179,6 +179,7 @@ makedocs(
             "Autodiff (AD)" => [
                 "1D Interpolants" => "guides/autodiff_support.md",
                 "ND Interpolants" => "guides/autodiff_nd.md",
+                "Adjoint via AD (∂f/∂y)" => "guides/adjoint_ad.md",
             ],
             "Optimization (Optim.jl)" => "guides/optimization.md",
             "Search & Hints" => [

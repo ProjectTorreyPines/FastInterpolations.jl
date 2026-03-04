@@ -208,6 +208,7 @@ makedocs(
             "Benchmarks" => "guides/performance.md",
         ],
         "Migration Guides" => [
+            "v0.3 → v0.4" => "migration/to_v0.4.md",
             "v0.2 → v0.3" => "migration/to_v0.3.md",
         ],
     ],

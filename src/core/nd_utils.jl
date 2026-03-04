@@ -49,7 +49,7 @@ end
     return _modes_to_modes_with_periodic(extrap, bcs)
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap}}, ::Any, ::Val{N}) where {N}
+@noinline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap}}, ::Any, ::Val{N}) where {N}
     throw(ArgumentError("extrap tuple must have $N elements to match grid dimensions, got $(length(extrap))"))
 end
 
@@ -129,7 +129,7 @@ Broadcast + resolve AutoSearch in one step. Pass the query container directly â€
 
 @inline _resolve_search_nd(s::NTuple{N,AbstractSearchPolicy}, ::Val{N}) where {N} = s
 
-@inline function _resolve_search_nd(s::Tuple{Vararg{AbstractSearchPolicy}}, ::Val{N}) where {N}
+@noinline function _resolve_search_nd(s::Tuple{Vararg{AbstractSearchPolicy}}, ::Val{N}) where {N}
     throw(ArgumentError("search tuple must have $N elements to match grid dimensions, got $(length(s))"))
 end
 
@@ -214,7 +214,7 @@ Resolve boundary condition input to canonical N-tuple.
 
 @inline _resolve_bcs_nd(bc::NTuple{N,AbstractBC}, ::Val{N}) where {N} = bc
 
-@inline function _resolve_bcs_nd(bc::Tuple{Vararg{AbstractBC}}, ::Val{N}) where {N}
+@noinline function _resolve_bcs_nd(bc::Tuple{Vararg{AbstractBC}}, ::Val{N}) where {N}
     throw(ArgumentError("bc tuple must have $N elements to match grid dimensions, got $(length(bc))"))
 end
 
@@ -233,7 +233,7 @@ Resolve side selection to canonical N-tuple.
 
 @inline _resolve_side_nd(side::NTuple{N,AbstractSide}, ::Val{N}) where {N} = side
 
-@inline function _resolve_side_nd(side::Tuple{Vararg{AbstractSide}}, ::Val{N}) where {N}
+@noinline function _resolve_side_nd(side::Tuple{Vararg{AbstractSide}}, ::Val{N}) where {N}
     throw(ArgumentError("side tuple must have $N elements to match grid dimensions, got $(length(side))"))
 end
 
@@ -258,7 +258,7 @@ _resolve_deriv_nd(DerivOp(1, 0), Val(2))     # â†’ (DerivOp{1}(), DerivOp{0}()) 
 
 @inline _resolve_deriv_nd(ops::Tuple{Vararg{DerivOp, N}}, ::Val{N}) where {N} = ops
 
-@inline function _resolve_deriv_nd(ops::Tuple{Vararg{DerivOp}}, ::Val{N}) where {N}
+@noinline function _resolve_deriv_nd(ops::Tuple{Vararg{DerivOp}}, ::Val{N}) where {N}
     throw(ArgumentError("deriv tuple must have $N elements to match grid dimensions, got $(length(ops))"))
 end
 

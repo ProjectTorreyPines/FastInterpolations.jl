@@ -243,7 +243,7 @@ end
 @inline _order_label(order::Tuple) = "mixed $(order)"
 
 @inline _check_no_deriv_override(::Val, ::Nothing) = nothing
-@inline _check_no_deriv_override(::Val{Order}, ::Any) where {Order} = throw(ArgumentError(
+@noinline _check_no_deriv_override(::Val{Order}, ::Any) where {Order} = throw(ArgumentError(
     "This DerivativeView already evaluates the $(_order_label(Order)) derivative (deriv=$(Order)). " *
     "The `deriv` keyword argument is not accepted. " *
     "To evaluate a different derivative order, create a new view: deriv1/deriv2/deriv3 for 1D, " *

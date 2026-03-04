@@ -45,12 +45,11 @@ import FastInterpolations:
     _resolve_extrap_nd,
     _resolve_search_nd,
     _resolve_bcs_nd,
-    _get_polyfit_bc,
-    _make_polyfit,
     _validate_nd_grids,
     _promote_grid_eltype,
     _convert_grids_typed,
     _create_spacings_typed,
+    _throw_ndims_mismatch,
     # BC types
     ZeroCurvBC,
     PeriodicBC,
@@ -270,30 +269,15 @@ import FastInterpolations:
             @test deriv_order(DerivOp{3}()) == 3
         end
 
-        @testset "PolyFit BC helpers" begin
-            # _get_polyfit_bc returns the PolyFit BC or constructs one
-            @test _get_polyfit_bc(PolyFit{3}(), 2) isa PolyFit{3}  # Already PolyFit, return as-is
-            @test _get_polyfit_bc(ZeroCurvBC(), 3) isa PolyFit{3}   # Construct from degree
-
-            # BCPair with PolyFit on one side (BCPair requires PointBC subtypes)
-            # PolyFit is a PointBC, so we can use BCPair(PolyFit, PolyFit)
-            # or BCPair(PolyFit, Deriv1/Deriv2/Deriv3)
-            Deriv1 = FastInterpolations.Deriv1
-            bc_pair_left = BCPair(PolyFit{2}(), Deriv1(0.0))
-            bc_pair_right = BCPair(Deriv1(0.0), PolyFit{3}())
-            @test _get_polyfit_bc(bc_pair_left, 1) isa PolyFit{2}
-            @test _get_polyfit_bc(bc_pair_right, 1) isa PolyFit{3}
-
-            # _make_polyfit for various degrees
-            @test _make_polyfit(Val(1)) isa PolyFit{1}
-            @test _make_polyfit(Val(2)) isa PolyFit{2}
-            @test _make_polyfit(Val(3)) isa PolyFit{3}
-            @test _make_polyfit(Val(4)) isa PolyFit{4}
-            @test _make_polyfit(Val(5)) isa PolyFit{5}
-
-            # Higher degrees use @generated fallback
-            @test _make_polyfit(Val(6)) isa PolyFit{6}
-            @test _make_polyfit(Val(10)) isa PolyFit{10}
+        @testset "_throw_ndims_mismatch" begin
+            @test_throws DimensionMismatch _throw_ndims_mismatch("query vectors", 2, 3)
+            # Verify message content
+            try
+                _throw_ndims_mismatch("derivative orders", 3, 1)
+            catch e
+                @test e isa DimensionMismatch
+                @test occursin("expected 3 derivative orders, got 1", e.msg)
+            end
         end
 
         @testset "_validate_nd_grids" begin

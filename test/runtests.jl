@@ -19,6 +19,7 @@ if !isempty(ARGS)
     end
 else
     # Default behavior: run all tests
+    include("test_aqua.jl")
     include("test_grid_spacing.jl")
     include("test_search.jl")
     include("test_factory.jl")

@@ -13,6 +13,13 @@
 
 
 # ========================================
+# Dimension Mismatch (non-empty Vararg guard)
+# ========================================
+
+@noinline _throw_ndims_mismatch(label::String, expected::Int, got::Int) =
+    throw(DimensionMismatch("expected $expected $label, got $got"))
+
+# ========================================
 # Extrapolation Resolution
 # ========================================
 #
@@ -42,7 +49,7 @@ end
     return _modes_to_modes_with_periodic(extrap, bcs)
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap}}, ::Any, ::Val{N}) where {N}
+@noinline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap}}, ::Any, ::Val{N}) where {N}
     throw(ArgumentError("extrap tuple must have $N elements to match grid dimensions, got $(length(extrap))"))
 end
 
@@ -122,7 +129,7 @@ Broadcast + resolve AutoSearch in one step. Pass the query container directly â€
 
 @inline _resolve_search_nd(s::NTuple{N,AbstractSearchPolicy}, ::Val{N}) where {N} = s
 
-@inline function _resolve_search_nd(s::Tuple{Vararg{AbstractSearchPolicy}}, ::Val{N}) where {N}
+@noinline function _resolve_search_nd(s::Tuple{Vararg{AbstractSearchPolicy}}, ::Val{N}) where {N}
     throw(ArgumentError("search tuple must have $N elements to match grid dimensions, got $(length(s))"))
 end
 
@@ -207,7 +214,7 @@ Resolve boundary condition input to canonical N-tuple.
 
 @inline _resolve_bcs_nd(bc::NTuple{N,AbstractBC}, ::Val{N}) where {N} = bc
 
-@inline function _resolve_bcs_nd(bc::Tuple{Vararg{AbstractBC}}, ::Val{N}) where {N}
+@noinline function _resolve_bcs_nd(bc::Tuple{Vararg{AbstractBC}}, ::Val{N}) where {N}
     throw(ArgumentError("bc tuple must have $N elements to match grid dimensions, got $(length(bc))"))
 end
 
@@ -226,7 +233,7 @@ Resolve side selection to canonical N-tuple.
 
 @inline _resolve_side_nd(side::NTuple{N,AbstractSide}, ::Val{N}) where {N} = side
 
-@inline function _resolve_side_nd(side::Tuple{Vararg{AbstractSide}}, ::Val{N}) where {N}
+@noinline function _resolve_side_nd(side::Tuple{Vararg{AbstractSide}}, ::Val{N}) where {N}
     throw(ArgumentError("side tuple must have $N elements to match grid dimensions, got $(length(side))"))
 end
 
@@ -251,33 +258,8 @@ _resolve_deriv_nd(DerivOp(1, 0), Val(2))     # â†’ (DerivOp{1}(), DerivOp{0}()) 
 
 @inline _resolve_deriv_nd(ops::Tuple{Vararg{DerivOp, N}}, ::Val{N}) where {N} = ops
 
-@inline function _resolve_deriv_nd(ops::Tuple{Vararg{DerivOp}}, ::Val{N}) where {N}
+@noinline function _resolve_deriv_nd(ops::Tuple{Vararg{DerivOp}}, ::Val{N}) where {N}
     throw(ArgumentError("deriv tuple must have $N elements to match grid dimensions, got $(length(ops))"))
-end
-
-# ========================================
-# PolyFit BC Helpers
-# ========================================
-
-"""
-    _get_polyfit_bc(bc::AbstractBC, deg::Int) -> PolyFit{D}
-
-Get a PolyFit BC for use in derivative estimation.
-If bc is already a PolyFit, returns it. Otherwise constructs PolyFit{deg}.
-"""
-_get_polyfit_bc(bc::PolyFit{D}, ::Int) where {D} = bc
-_get_polyfit_bc(bc::BCPair{L,R}, deg::Int) where {L<:PolyFit,R} = bc.left
-_get_polyfit_bc(bc::BCPair{L,R}, deg::Int) where {L,R<:PolyFit} = bc.right
-_get_polyfit_bc(::AbstractBC, deg::Int) = _make_polyfit(Val(deg))
-
-# Construct PolyFit at runtime from degree (common cases are type-stable)
-_make_polyfit(::Val{1}) = PolyFit{1}()
-_make_polyfit(::Val{2}) = PolyFit{2}()
-_make_polyfit(::Val{3}) = PolyFit{3}()
-_make_polyfit(::Val{4}) = PolyFit{4}()
-_make_polyfit(::Val{5}) = PolyFit{5}()
-@generated function _make_polyfit(::Val{D}) where {D}
-    :(PolyFit{$D}())
 end
 
 # ========================================
@@ -785,11 +767,12 @@ end
 
 # SoA batch: allocate output + delegate to in-place
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
+    queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
+    length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     Tq = _query_eltype(queries)
     output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries[1]))
     return itp(output, queries; deriv=deriv, search=search, hint=hint)

@@ -136,13 +136,15 @@ makedocs(
     sitename = "FastInterpolations.jl",
     authors = "Min-Gu Yoo",
     modules = [FastInterpolations],
-    # Disable git remote detection — servedocs() runs from docs/ which breaks
-    # git root detection. Source links are handled by deploydocs() in CI.
-    remotes = nothing,
+    # servedocs() sets root to docs/ which conflicts with project-root remotes.
+    # Enable GitHub source links only in CI where makedocs root matches git root.
+    remotes = get(ENV, "CI", nothing) == "true" ?
+        Dict(dirname(@__DIR__) => (Documenter.Remotes.GitHub("ProjectTorreyPines", "FastInterpolations.jl"), "master")) :
+        nothing,
     format = Documenter.HTML(
         prettyurls = get(ENV, "CI", nothing) == "true",
         canonical = "https://projecttorreypines.github.io/FastInterpolations.jl",
-        edit_link = "master",
+        edit_link = :commit,
         assets = String[],
     ),
     pages = [

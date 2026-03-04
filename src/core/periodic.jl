@@ -64,7 +64,7 @@ explicitly to ensure exact periodicity.
 Throws `ArgumentError` if endpoints differ.
 """
 @inline function _check_periodic_endpoints(y::AbstractVector)
-    first(y) == last(y) || _throw_periodic_endpoint_error(first(y), last(y))
+    _extract_primal(first(y)) == _extract_primal(last(y)) || _throw_periodic_endpoint_error(first(y), last(y))
     return nothing
 end
 

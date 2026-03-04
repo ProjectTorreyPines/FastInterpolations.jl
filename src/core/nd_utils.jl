@@ -13,6 +13,13 @@
 
 
 # ========================================
+# Dimension Mismatch (non-empty Vararg guard)
+# ========================================
+
+@noinline _throw_ndims_mismatch(label::String, expected::Int, got::Int) =
+    throw(DimensionMismatch("expected $expected $label, got $got"))
+
+# ========================================
 # Extrapolation Resolution
 # ========================================
 #
@@ -266,6 +273,7 @@ Get a PolyFit BC for use in derivative estimation.
 If bc is already a PolyFit, returns it. Otherwise constructs PolyFit{deg}.
 """
 _get_polyfit_bc(bc::PolyFit{D}, ::Int) where {D} = bc
+_get_polyfit_bc(bc::BCPair{L,R}, ::Int) where {L<:PolyFit,R<:PolyFit} = bc.left
 _get_polyfit_bc(bc::BCPair{L,R}, deg::Int) where {L<:PolyFit,R} = bc.left
 _get_polyfit_bc(bc::BCPair{L,R}, deg::Int) where {L,R<:PolyFit} = bc.right
 _get_polyfit_bc(::AbstractBC, deg::Int) = _make_polyfit(Val(deg))
@@ -785,11 +793,12 @@ end
 
 # SoA batch: allocate output + delegate to in-place
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
+    queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tg, Tv, N}
+    length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     Tq = _query_eltype(queries)
     output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries[1]))
     return itp(output, queries; deriv=deriv, search=search, hint=hint)

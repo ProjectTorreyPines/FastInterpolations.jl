@@ -196,13 +196,14 @@ Only allocates the output vector.
 function constant_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
-    queries::NTuple{N, AbstractVector{<:Real}};
+    queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
     side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
     extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
+    length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     if _is_any_deriv(deriv)
         n_queries = length(queries[1])
         return zeros(Tv, n_queries)

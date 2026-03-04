@@ -200,16 +200,18 @@ end
 
 @inline function deriv_view(
     itp::AbstractInterpolantND{Tg, Tv, N},
-    order::NTuple{N, Int}
+    order::Tuple{Int, Vararg{Int}}
 ) where {Tg, Tv, N}
+    length(order) == N || _throw_ndims_mismatch("derivative orders", N, length(order))
     foreach(_make_derivop, order)  # validate each order ∈ [0,3]
     return DerivativeView{order, typeof(itp)}(itp)
 end
 
 @inline function deriv_view(
     itp::AbstractInterpolantND{Tg, Tv, N},
-    ops::Tuple{Vararg{DerivOp, N}}
+    ops::Tuple{DerivOp, Vararg{DerivOp}}
 ) where {Tg, Tv, N}
+    length(ops) == N || _throw_ndims_mismatch("DerivOps", N, length(ops))
     order = ntuple(i -> deriv_order(ops[i]), Val(N))
     return DerivativeView{order, typeof(itp)}(itp)
 end
@@ -254,6 +256,14 @@ end
 @inline function (d::DerivativeView{Order, ITP})(
     xq::Union{Real, AbstractArray{<:Real}}; deriv=nothing, kwargs...
 ) where {Order, ITP}
+    _check_no_deriv_override(Val(Order), deriv)
+    d.parent(xq; deriv=_deriv_kw(Val(Order)), kwargs...)
+end
+
+# ND queries with Real/AbstractArray (tie-breaker for 1D-vs-ND dispatch)
+@inline function (d::DerivativeView{Order, ITP})(
+    xq::Union{Real, AbstractArray{<:Real}}; deriv=nothing, kwargs...
+) where {Order, ITP<:AbstractInterpolantND}
     _check_no_deriv_override(Val(Order), deriv)
     d.parent(xq; deriv=_deriv_kw(Val(Order)), kwargs...)
 end

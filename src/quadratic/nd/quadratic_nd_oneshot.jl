@@ -181,13 +181,14 @@ Only allocates the output vector.
 function quadratic_interp(
     grids::NTuple{N, AbstractVector},
     data::AbstractArray{Tv, N},
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
+    queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
     deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
     bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
     extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
     search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
 ) where {Tv, N}
+    length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     Tr = _output_eltype(Tv, Tg, _promote_grid_eltype(queries))

@@ -263,32 +263,6 @@ _resolve_deriv_nd(DerivOp(1, 0), Val(2))     # → (DerivOp{1}(), DerivOp{0}()) 
 end
 
 # ========================================
-# PolyFit BC Helpers
-# ========================================
-
-"""
-    _get_polyfit_bc(bc::AbstractBC, deg::Int) -> PolyFit{D}
-
-Get a PolyFit BC for use in derivative estimation.
-If bc is already a PolyFit, returns it. Otherwise constructs PolyFit{deg}.
-"""
-_get_polyfit_bc(bc::PolyFit{D}, ::Int) where {D} = bc
-_get_polyfit_bc(bc::BCPair{L,R}, ::Int) where {L<:PolyFit,R<:PolyFit} = bc.left
-_get_polyfit_bc(bc::BCPair{L,R}, deg::Int) where {L<:PolyFit,R} = bc.left
-_get_polyfit_bc(bc::BCPair{L,R}, deg::Int) where {L,R<:PolyFit} = bc.right
-_get_polyfit_bc(::AbstractBC, deg::Int) = _make_polyfit(Val(deg))
-
-# Construct PolyFit at runtime from degree (common cases are type-stable)
-_make_polyfit(::Val{1}) = PolyFit{1}()
-_make_polyfit(::Val{2}) = PolyFit{2}()
-_make_polyfit(::Val{3}) = PolyFit{3}()
-_make_polyfit(::Val{4}) = PolyFit{4}()
-_make_polyfit(::Val{5}) = PolyFit{5}()
-@generated function _make_polyfit(::Val{D}) where {D}
-    :(PolyFit{$D}())
-end
-
-# ========================================
 # Grid Validation Helpers
 # ========================================
 

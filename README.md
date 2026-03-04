@@ -71,13 +71,13 @@ result = itp(xq)               # evaluate at multiple points
 ```
 
 ### 2.1 SeriesInterpolant (Multiple Series)
-When multiple y-series share the same x-grid, use SeriesInterpolant. It leverages **SIMD** and **cache locality** for **>10× faster** evaluation compared to looping over individual interpolants.
+When multiple y-series share the same x-grid, wrap them with `Series(...)` to create a SeriesInterpolant. It leverages **SIMD** and **cache locality** for **>10× faster** evaluation compared to looping over individual interpolants.
 
 ```julia
 x = range(0, 10, 100)
-y1, y2, y3, y4 = sin.(x), cos.(x), tan.(x), exp.(-x)  # 4 series, same grid
+y_series = Series( sin.(x), cos.(x), tan.(x), exp.(-x) ) # 4 series, on the same grid
 
-sitp = cubic_interp(x, [y1, y2, y3, y4])   # create SeriesInterpolant
+sitp = cubic_interp(x, y_series)   # create SeriesInterpolant
 sitp(0.5)  # → 4-element Vector: [≈sin(0.5), ≈cos(0.5), ≈tan(0.5), ≈exp(-0.5)]
 ```
 

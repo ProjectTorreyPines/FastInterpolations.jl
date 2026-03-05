@@ -152,7 +152,7 @@ using FastInterpolations
         @test isapprox(val_ext, (1.0 + 2.0im) * 1.5, rtol=1e-10)
 
         # Constant mode
-        itp_const = linear_interp(x, y; extrap=ConstExtrap())
+        itp_const = linear_interp(x, y; extrap=ClampedExtrap())
         val_const = itp_const(1.5)  # Beyond domain
         @test val_const isa ComplexF64
         @test isapprox(val_const, y[end], rtol=1e-10)

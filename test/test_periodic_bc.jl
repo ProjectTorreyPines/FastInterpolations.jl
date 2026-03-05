@@ -177,7 +177,7 @@ using FastInterpolations
 
             # All extrap values should give the same result
             itp_none = cubic_interp(cache, collect(y_sin); extrap=NoExtrap())
-            itp_const = cubic_interp(cache, collect(y_sin); extrap=ConstExtrap())
+            itp_const = cubic_interp(cache, collect(y_sin); extrap=ClampedExtrap())
             itp_ext = cubic_interp(cache, collect(y_sin); extrap=ExtendExtrap())
             itp_wrap = cubic_interp(cache, collect(y_sin); extrap=WrapExtrap())
 

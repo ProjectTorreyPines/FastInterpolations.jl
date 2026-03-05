@@ -23,7 +23,7 @@ Returned by `constant_interp(x, y)` (2-argument form).
 # Fields
 - `x::X`: x-coordinates (sorted)
 - `y::Y`: y-values
-- `extrap::E`: Extrapolation mode (NoExtrap(), ExtendExtrap(), ConstExtrap(), or WrapExtrap())
+- `extrap::E`: Extrapolation mode (NoExtrap(), ExtendExtrap(), ClampedExtrap(), or WrapExtrap())
 - `side::SD`: Side selection (NearestSide(), LeftSide(), RightSide())
 - `search_policy::P`: Default search policy for interval lookup
 

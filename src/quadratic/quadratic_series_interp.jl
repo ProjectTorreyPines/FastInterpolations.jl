@@ -362,7 +362,7 @@ Create a multi-Y quadratic series interpolant for multiple y-data series sharing
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `s::Series`: Wrapped series data (varargs, vector-of-vectors, or matrix)
 - `bc`: Boundary condition (Left/Right with QuadraticFit, Deriv1, Deriv2, MinCurvFit)
-- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, or `ExtendExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ClampedExtrap()`, or `ExtendExtrap()`
 - `search::AbstractSearchPolicy`: Search policy for interval lookup
 
 # Example

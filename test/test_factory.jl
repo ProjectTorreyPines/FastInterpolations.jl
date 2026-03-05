@@ -79,7 +79,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
 
         @testset "Passthrough" begin
             @test Extrap(NoExtrap()) === NoExtrap()
-            @test Extrap(ConstExtrap()) === ConstExtrap()
+            @test Extrap(ClampedExtrap()) === ClampedExtrap()
             @test Extrap(ExtendExtrap()) === ExtendExtrap()
             @test Extrap(WrapExtrap()) === WrapExtrap()
         end

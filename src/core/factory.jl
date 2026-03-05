@@ -114,7 +114,7 @@ creates a Tuple for ND per-axis configuration (same pattern as `DerivOp(1, 0)`).
 
 # Options
 - `:none` → [`NoExtrap`](@ref): throw `DomainError` for out-of-domain queries
-- `:constant` → [`ConstExtrap`](@ref): clamp to nearest boundary value
+- `:constant` → [`ClampedExtrap`](@ref): clamp to nearest boundary value
 - `:extend` → [`ExtendExtrap`](@ref): extend interpolation polynomial beyond domain
 - `:wrap` → [`WrapExtrap`](@ref): wrap queries into domain (periodic)
 

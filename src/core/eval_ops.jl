@@ -102,7 +102,7 @@ Use concrete subtypes at the API boundary for compile-time dispatch.
     ND heterogeneous tuples with all 5 types in one tuple may see dynamic dispatch.
     In practice, interpolants store concrete type parameters so this rarely matters.
 
-See also: [`ConstExtrap`](@ref) factory function for backward-compatible construction.
+See also: `ConstExtrap()` (deprecated factory, forwards to `ClampedExtrap()`).
 """
 abstract type AbstractExtrap end
 
@@ -130,7 +130,7 @@ at the clamped boundary point.
 # Example
 ```julia
 itp = cubic_interp(x, y; extrap=ClampedExtrap())  # clamp to boundary values
-itp = cubic_interp(x, y; extrap=ConstExtrap())     # same thing (factory)
+itp = cubic_interp(x, y; extrap=ClampedExtrap())    # equivalent
 ```
 """
 struct ClampedExtrap <: AbstractExtrap end
@@ -165,23 +165,21 @@ FillExtrap(; value) = FillExtrap(value)
 # (e.g., 1D OOB check + return constant, _handle_axis_extrap coordinate clamping).
 const _ClampOrFill = Union{ClampedExtrap, FillExtrap}
 
-# ConstExtrap backward-compatible factory (no longer a type)
+# ConstExtrap backward-compatible factory (deprecated)
 """
-    ConstExtrap(; value=nothing)
-    ConstExtrap(v)
+    ConstExtrap()
 
-Factory function for backward compatibility. Returns `ClampedExtrap()` (no argument)
-or `FillExtrap(v)` (with value). Not a type — use `ClampedExtrap` or `FillExtrap` directly.
+Deprecated factory function. Use `ClampedExtrap()` directly instead.
 
 # Examples
 ```julia
-ConstExtrap()     # → ClampedExtrap()
-ConstExtrap(NaN)  # → FillExtrap(NaN)
-ConstExtrap(0.0)  # → FillExtrap(0.0)
+ConstExtrap()  # → ClampedExtrap() (with deprecation warning)
 ```
 """
-ConstExtrap(; value=nothing) = value === nothing ? ClampedExtrap() : FillExtrap(value)
-ConstExtrap(v) = FillExtrap(v)
+function ConstExtrap()
+    Base.depwarn("`ConstExtrap()` is deprecated, use `ClampedExtrap()` instead.", :ConstExtrap)
+    return ClampedExtrap()
+end
 
 """
     _promote_extrap(e::AbstractExtrap, ::Type{Tv}) -> AbstractExtrap

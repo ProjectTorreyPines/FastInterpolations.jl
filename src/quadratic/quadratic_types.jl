@@ -29,7 +29,7 @@ Returned by `quadratic_interp(x, y)` (2-argument form).
 - `h::Vector{Tg}`: Grid spacing (precomputed, geometry)
 - `a::Vector{Tv}`: Quadratic coefficients (value-derived)
 - `d::Vector{Tv}`: Slope coefficients (value-derived)
-- `extrap::E`: Extrapolation mode (NoExtrap(), ExtendExtrap(), ConstExtrap(), or WrapExtrap())
+- `extrap::E`: Extrapolation mode (NoExtrap(), ExtendExtrap(), ClampedExtrap(), or WrapExtrap())
 - `search_policy::P`: Default search policy for interval lookup
 
 # Usage

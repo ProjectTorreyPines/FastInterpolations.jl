@@ -37,12 +37,12 @@ Type parameters:
     return _constant_extrap_result(op, y_bnd, extrap)
 end
 
-# ExtendExtrap delegates to ConstExtrap (slope=0 for constant function)
+# ExtendExtrap delegates to ClampedExtrap (slope=0 for constant function)
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
     ::ExtendExtrap, side::AbstractSide, op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
-    return _constant_eval_extrap(y, xi, x_min, x_max, ConstExtrap(), side, op)
+    return _constant_eval_extrap(y, xi, x_min, x_max, ClampedExtrap(), side, op)
 end
 
 
@@ -102,7 +102,7 @@ AD Support:
         return op isa EvalValue ? (@inbounds y[end]) : 0 * first(y)
     end
 
-    # Extrapolation handling (ConstExtrap, ExtendExtrap)
+    # Extrapolation handling (ClampedExtrap, ExtendExtrap)
     if xi_typed < x_min || xi_typed > x_max
         return _constant_eval_extrap(y, xi_typed, x_min, x_max, extrap, side, op)
     end
@@ -135,8 +135,8 @@ Constant (step/piecewise constant) interpolation at a single point.
 - `xi::Real`: Query point
 - `extrap::AbstractExtrap`: Extrapolation mode
   - `NoExtrap()` (default): throws DomainError if outside domain
-  - `ConstExtrap()`: clamp to boundary values
-  - `ExtendExtrap()`: same as ConstExtrap (slope=0)
+  - `ClampedExtrap()`: clamp to boundary values
+  - `ExtendExtrap()`: same as ClampedExtrap (slope=0)
   - `WrapExtrap()`: wrap to [x_min, x_max)
 - `side::AbstractSide`: Side selection
   - `NearestSide()` (default): nearest neighbor (left tie-breaking at midpoint)
@@ -160,7 +160,7 @@ constant_interp(x, y, 0.5)                    # 10.0 (nearest to left)
 constant_interp(x, y, 0.5; side=LeftSide())    # 10.0
 constant_interp(x, y, 0.5; side=RightSide())  # 20.0
 constant_interp(x, y, 1.0)                    # 20.0 (grid point)
-constant_interp(x, y, -1.0; extrap=ConstExtrap()) # 10.0 (clamped)
+constant_interp(x, y, -1.0; extrap=ClampedExtrap()) # 10.0 (clamped)
 
 # Optimized for sorted queries
 sorted_queries = sort(rand(1000))

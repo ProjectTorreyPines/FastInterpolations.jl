@@ -157,7 +157,7 @@ end
     throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
 end
 
-# ConstExtrap - return fill value (EvalValue) or zero (derivatives)
+# ClampedExtrap - return fill value (EvalValue) or zero (derivatives)
 @inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, extrap::_ClampOrFill, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     y_bnd = aq.side == 0x01 ? @inbounds(itp.y[1]) : @inbounds(itp.y[end])
     return _constant_extrap_result(op, y_bnd, extrap)
@@ -214,7 +214,7 @@ Evaluate cubic spline at multiple anchored query points (allocating).
 
 # Extrapolation Behavior
 - `NoExtrap()`: Throws `DomainError` on **first** out-of-domain anchor
-- `ConstExtrap()`: Returns boundary value (or zero for derivatives)
+- `ClampedExtrap()`: Returns boundary value (or zero for derivatives)
 - `ExtendExtrap()`: Uses boundary polynomial extrapolation
 - `WrapExtrap()`: Uses pre-wrapped coordinates from anchor construction
 
@@ -353,7 +353,7 @@ enabling true zero-allocation scalar evaluations in broadcast operations.
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values
 - `bc::AbstractBC`: Boundary condition (default: `CubicFit()`)
-- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ClampedExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache::Bool`: Enable automatic caching (default: `true`)
 - `search::AbstractSearchPolicy`: Default search policy (default: `AutoSearch()`)
 

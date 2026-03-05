@@ -6,7 +6,7 @@
 #
 # Usage:
 #   using FastInterpolations, Plots
-#   itp = cubic_interp(x, y; extrap=ConstExtrap())
+#   itp = cubic_interp(x, y; extrap=ClampedExtrap())
 #   plot(itp)  # automatic documentation-style visualization
 
 module FastInterpolationsRecipesBaseExt
@@ -23,7 +23,7 @@ import FastInterpolations:
     LinearInterpolant, ConstantInterpolant, QuadraticInterpolant, CubicInterpolant,
     LinearSeriesInterpolant, ConstantSeriesInterpolant,
     QuadraticSeriesInterpolant, CubicSeriesInterpolant,
-    DerivativeView, NoExtrap, ConstExtrap, ClampedExtrap, FillExtrap
+    DerivativeView, NoExtrap, ClampedExtrap, FillExtrap
 
 # ========================================
 # Helper Functions
@@ -118,7 +118,7 @@ _default_margin(x::AbstractVector{T}) where {T} = T(0.25) * (last(x) - first(x))
 """
     _has_fill_value(extrap) -> Bool
 
-Check if extrap is a ConstExtrap with a non-nothing fill value.
+Check if extrap is a FillExtrap.
 """
 _has_fill_value(::FillExtrap) = true
 _has_fill_value(::Any) = false
@@ -214,7 +214,7 @@ Generates multiple series:
     # Small visual margin for edge point visibility (2% of domain)
     visual_margin = T(0.02) * (x_max - x_min)
 
-    # Determine if fill-value ConstExtrap with finite value
+    # Determine if FillExtrap with finite value
     has_fill = _has_fill_value(extrap)
     fill_finite = _fill_is_finite(extrap)
 
@@ -357,7 +357,7 @@ Generates multiple series:
         collect(xq), yq
     end
 
-    # Series 6: Fill value horizontal lines (only for finite ConstExtrap fill)
+    # Series 6: Fill value horizontal lines (only for finite FillExtrap)
     if has_fill && fill_finite
         fill_v = T(extrap.value)
         # Left fill line: from plot edge to domain start
@@ -436,7 +436,7 @@ end
         series_idx
     end
 
-    # Determine if fill-value ConstExtrap with finite value
+    # Determine if FillExtrap with finite value
     has_fill = _has_fill_value(extrap)
     fill_finite = _fill_is_finite(extrap)
 
@@ -660,14 +660,14 @@ end
 
     x_min, x_max = first(x_vec), last(x_vec)
 
-    # Determine if fill-value ConstExtrap
+    # Determine if FillExtrap
     has_fill = _has_fill_value(extrap)
 
     # Small visual margin for edge point visibility (2% of domain)
     visual_margin = ElType(0.02) * (x_max - x_min)
 
     # Compute curve evaluation range (xq) and display range (xlims) separately
-    # For derivatives, ConstExtrap fill always produces 0 outside domain,
+    # For derivatives, FillExtrap always produces 0 outside domain,
     # so we can safely extend the curve (no NaN issue from derivatives)
     if extrap isa NoExtrap
         xq_min, xq_max = x_min, x_max

@@ -216,8 +216,8 @@ end
             @test_throws DomainError itp((0.5, 2.1))
         end
 
-        @testset "extrap=ConstExtrap()" begin
-            itp = constant_interp((x, y), data; extrap=ConstExtrap(), side=LeftSide())
+        @testset "extrap=ClampedExtrap()" begin
+            itp = constant_interp((x, y), data; extrap=ClampedExtrap(), side=LeftSide())
 
             # In domain
             @test itp((0.5, 0.5)) == 1.0
@@ -245,8 +245,8 @@ end
         end
 
         @testset "per-axis extrap configuration" begin
-            # extrap=(NoExtrap(), ConstExtrap()) → strict on x, clamp on y
-            itp = constant_interp((x, y), data; extrap=(NoExtrap(), ConstExtrap()), side=LeftSide())
+            # extrap=(NoExtrap(), ClampedExtrap()) → strict on x, clamp on y
+            itp = constant_interp((x, y), data; extrap=(NoExtrap(), ClampedExtrap()), side=LeftSide())
 
             # y clamped to 2.0 → data[1, 2] = 2.0
             @test itp((0.5, 2.5)) == 2.0  # y clamped to last interval
@@ -429,9 +429,9 @@ end
         y = range(0.0, 1.0, 6)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        constant_interp((x, y), data, query; extrap=ConstExtrap())
-        constant_interp((x, y), data, query; extrap=ConstExtrap())
-        @allocated constant_interp((x, y), data, query; extrap=ConstExtrap())
+        constant_interp((x, y), data, query; extrap=ClampedExtrap())
+        constant_interp((x, y), data, query; extrap=ClampedExtrap())
+        @allocated constant_interp((x, y), data, query; extrap=ClampedExtrap())
     end
 
     function _alloc_test_constant_extrap_wrap()
@@ -449,9 +449,9 @@ end
         y = range(0.0, 1.0, 6)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        constant_interp((x, y), data, query; extrap=(NoExtrap(), ConstExtrap()))
-        constant_interp((x, y), data, query; extrap=(NoExtrap(), ConstExtrap()))
-        @allocated constant_interp((x, y), data, query; extrap=(NoExtrap(), ConstExtrap()))
+        constant_interp((x, y), data, query; extrap=(NoExtrap(), ClampedExtrap()))
+        constant_interp((x, y), data, query; extrap=(NoExtrap(), ClampedExtrap()))
+        @allocated constant_interp((x, y), data, query; extrap=(NoExtrap(), ClampedExtrap()))
     end
 
     function _alloc_test_constant_3d()
@@ -478,7 +478,7 @@ end
             @test _alloc_test_constant_right() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, extrap=ConstExtrap())" begin
+        @testset "zero-alloc scalar (Range grids, extrap=ClampedExtrap())" begin
             @test _alloc_test_constant_extrap_constant() <= ND_ALLOC_THRESHOLD
         end
 

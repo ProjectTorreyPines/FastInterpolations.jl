@@ -155,7 +155,7 @@ const LINEAR = TestPolynomial{Float64}(
 
         @testset "constant" begin
             xi_extrap = [x_min - 1.0, x_max + 1.0]
-            result = linear_interp(x, y, xi_extrap; extrap=ConstExtrap())
+            result = linear_interp(x, y, xi_extrap; extrap=ClampedExtrap())
             @test result[1] ≈ y[1]
             @test result[2] ≈ y[end]
         end

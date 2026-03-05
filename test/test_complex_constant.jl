@@ -134,7 +134,7 @@ using FastInterpolations
         y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
 
         # :constant mode
-        itp_const = constant_interp(x, y; extrap=ConstExtrap())
+        itp_const = constant_interp(x, y; extrap=ClampedExtrap())
         @test itp_const(-1.0) == 1.0+1.0im  # Clamped to first
         @test itp_const(5.0) == 4.0+4.0im   # Clamped to last
 

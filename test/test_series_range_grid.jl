@@ -150,7 +150,7 @@ const FI = FastInterpolations
     # ========================================
 
     @testset "extrapolation modes" begin
-        for extrap in [ConstExtrap(), ExtendExtrap()]
+        for extrap in [ClampedExtrap(), ExtendExtrap()]
             @testset "LinearSeriesInterpolant extrap=$extrap" begin
                 sitp = linear_interp(x_range, Series(ys); extrap=extrap)
 

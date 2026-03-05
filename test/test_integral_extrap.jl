@@ -15,7 +15,7 @@ using FastInterpolations
 
     @testset ":constant tails (linear)" begin
         y = @. x^2 + 1.0  # y[1] = 1.0, y[end] = 2.0
-        itp = linear_interp(x, y; extrap=ConstExtrap())
+        itp = linear_interp(x, y; extrap=ClampedExtrap())
         # pure left tail
         @test integrate(itp, -0.4, 0.0) ≈ y[1] * 0.4 atol=1e-12
         # pure right tail
@@ -27,16 +27,16 @@ using FastInterpolations
 
     @testset ":constant tails (cubic)" begin
         y = @. x^2 + 1.0
-        itp = cubic_interp(x, y; extrap=ConstExtrap())
+        itp = cubic_interp(x, y; extrap=ClampedExtrap())
         @test integrate(itp, -0.5, 0.0) ≈ y[1] * 0.5 atol=1e-12
         @test integrate(itp, 1.0, 1.3) ≈ y[end] * 0.3 atol=1e-12
     end
 
     @testset ":constant tails (constant interp, side=LeftSide())" begin
         # y[1]=1.0, y[2]≈1.001, y[end-1]≈1.999, y[end]=2.0
-        # With side=LeftSide(), extrap=ConstExtrap() must use y[1] (left) and y[end] (right)
+        # With side=LeftSide(), extrap=ClampedExtrap() must use y[1] (left) and y[end] (right)
         y = @. x^2 + 1.0
-        itp = constant_interp(x, y; side=LeftSide(), extrap=ConstExtrap())
+        itp = constant_interp(x, y; side=LeftSide(), extrap=ClampedExtrap())
         # pure left tail
         @test integrate(itp, -0.4, 0.0) ≈ y[1] * 0.4 atol=1e-12
         # pure right tail
@@ -48,7 +48,7 @@ using FastInterpolations
 
     @testset ":constant tails (constant interp, side=RightSide())" begin
         y = @. x^2 + 1.0
-        itp = constant_interp(x, y; side=RightSide(), extrap=ConstExtrap())
+        itp = constant_interp(x, y; side=RightSide(), extrap=ClampedExtrap())
         # pure left tail — must use y[1], NOT y[2]
         @test integrate(itp, -0.4, 0.0) ≈ y[1] * 0.4 atol=1e-12
         # pure right tail — must use y[end], NOT y[end-1]
@@ -60,7 +60,7 @@ using FastInterpolations
 
     @testset ":constant signed orientation" begin
         y = @. x^2 + 1.0
-        itp = linear_interp(x, y; extrap=ConstExtrap())
+        itp = linear_interp(x, y; extrap=ClampedExtrap())
         @test integrate(itp, 0.0, -0.4) ≈ -(y[1] * 0.4) atol=1e-12
     end
 

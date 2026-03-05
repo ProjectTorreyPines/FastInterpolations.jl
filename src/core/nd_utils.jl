@@ -31,7 +31,7 @@
 
 # ── Fill-value FillExtrap validation for ND ────────────────────────────
 # All fill-value axes must have the same value (prevents ambiguity).
-# ConstExtrap (boundary clamp) is always OK and not counted.
+# ClampedExtrap (boundary clamp) is always OK and not counted.
 @noinline _throw_conflicting_fill_values() = throw(ArgumentError(
     "All FillExtrap fill values in ND must be identical; " *
     "got conflicting fill values on different axes"))

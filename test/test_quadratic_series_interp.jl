@@ -154,8 +154,8 @@ const FI = FastInterpolations
             @test occursin("outside domain", string(err))
         end
 
-        @testset "extrap=ConstExtrap() returns boundary" begin
-            sitp = quadratic_interp(x, Series(ys); extrap=ConstExtrap())
+        @testset "extrap=ClampedExtrap() returns boundary" begin
+            sitp = quadratic_interp(x, Series(ys); extrap=ClampedExtrap())
             @test sitp(-0.1)[1] ≈ sin(0.0) atol=1e-6
             @test sitp(1.1)[1] ≈ sin(2π) atol=1e-6
         end
@@ -401,8 +401,8 @@ const FI = FastInterpolations
             @test_throws DomainError sitp(xq)
         end
 
-        @testset "vector ConstExtrap() extrapolation" begin
-            sitp = quadratic_interp(x, Series(y1, y2); extrap=ConstExtrap())
+        @testset "vector ClampedExtrap() extrapolation" begin
+            sitp = quadratic_interp(x, Series(y1, y2); extrap=ClampedExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             outputs = [zeros(3), zeros(3)]
@@ -424,8 +424,8 @@ const FI = FastInterpolations
             @test !any(isnan, outputs[2])
         end
 
-        @testset "vector ConstExtrap() extrapolation with derivatives" begin
-            sitp = quadratic_interp(x, Series(y1, y2); extrap=ConstExtrap())
+        @testset "vector ClampedExtrap() extrapolation with derivatives" begin
+            sitp = quadratic_interp(x, Series(y1, y2); extrap=ClampedExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             # deriv=DerivOp(1) outside domain should be zero for constant extrap
@@ -447,11 +447,11 @@ const FI = FastInterpolations
     # ========================================
 
     @testset "scalar constant extrap inside domain" begin
-        # Test that ConstExtrap() extrap still works correctly inside domain
+        # Test that ClampedExtrap() extrap still works correctly inside domain
         x = collect(0.0:0.1:1.0)
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp_const = quadratic_interp(x, Series(y1, y2); extrap=ConstExtrap())
+        sitp_const = quadratic_interp(x, Series(y1, y2); extrap=ClampedExtrap())
         sitp_none = quadratic_interp(x, Series(y1, y2); extrap=NoExtrap())
 
         @testset "value inside domain same as NoExtrap() extrap" begin
@@ -471,7 +471,7 @@ const FI = FastInterpolations
         x = collect(0.0:0.1:1.0)
         y1 = sin.(2π .* x)
         y2 = cos.(2π .* x)
-        sitp = quadratic_interp(x, Series(y1, y2); extrap=ConstExtrap())
+        sitp = quadratic_interp(x, Series(y1, y2); extrap=ClampedExtrap())
 
         @testset "deriv=DerivOp(1) outside domain returns zero" begin
             result_below = sitp(-0.1; deriv=DerivOp(1))

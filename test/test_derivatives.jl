@@ -250,17 +250,17 @@ end # Derivative Kernels
             searcher = _to_searcher(BinarySearch())
 
             # Outside left boundary: should return 0 for derivatives
-            left_val = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, ConstExtrap(), EvalValue(), searcher)
+            left_val = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, ClampedExtrap(), EvalValue(), searcher)
             @test left_val ≈ y[1]  # y[1] = 0.0
 
-            left_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, ConstExtrap(), EvalDeriv1(), searcher)
+            left_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, ClampedExtrap(), EvalDeriv1(), searcher)
             @test left_deriv1 === 0.0  # Constant extrap → derivative = 0
 
-            left_deriv2 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, ConstExtrap(), EvalDeriv2(), searcher  )
+            left_deriv2 = _eval_cubic_with_extrap(x, y, cache.spacing, z, -0.5, ClampedExtrap(), EvalDeriv2(), searcher  )
             @test left_deriv2 === 0.0
 
             # Inside domain: should use normal evaluation
-            mid_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, 1.0, ConstExtrap(), EvalDeriv1(), searcher)
+            mid_deriv1 = _eval_cubic_with_extrap(x, y, cache.spacing, z, 1.0, ClampedExtrap(), EvalDeriv1(), searcher)
             @test mid_deriv1 ≈ 2.0 atol=0.1
 
             # Extension extrapolation: use boundary polynomial
@@ -379,14 +379,14 @@ end # Derivative Kernels
 
         @testset "Constant extrapolation" begin
             # Left boundary constant extrap: returns y[1] for value, 0 for derivatives
-            @test cubic_interp(x, y, -0.5; bc=bc, extrap=ConstExtrap(), deriv=DerivOp(0)) ≈ 0.0
-            @test cubic_interp(x, y, -0.5; bc=bc, extrap=ConstExtrap(), deriv=DerivOp(1)) ≈ 0.0
-            @test cubic_interp(x, y, -0.5; bc=bc, extrap=ConstExtrap(), deriv=DerivOp(2)) ≈ 0.0
+            @test cubic_interp(x, y, -0.5; bc=bc, extrap=ClampedExtrap(), deriv=DerivOp(0)) ≈ 0.0
+            @test cubic_interp(x, y, -0.5; bc=bc, extrap=ClampedExtrap(), deriv=DerivOp(1)) ≈ 0.0
+            @test cubic_interp(x, y, -0.5; bc=bc, extrap=ClampedExtrap(), deriv=DerivOp(2)) ≈ 0.0
 
             # Right boundary
-            @test cubic_interp(x, y, 1.5; bc=bc, extrap=ConstExtrap(), deriv=DerivOp(0)) ≈ 1.0
-            @test cubic_interp(x, y, 1.5; bc=bc, extrap=ConstExtrap(), deriv=DerivOp(1)) ≈ 0.0
-            @test cubic_interp(x, y, 1.5; bc=bc, extrap=ConstExtrap(), deriv=DerivOp(2)) ≈ 0.0
+            @test cubic_interp(x, y, 1.5; bc=bc, extrap=ClampedExtrap(), deriv=DerivOp(0)) ≈ 1.0
+            @test cubic_interp(x, y, 1.5; bc=bc, extrap=ClampedExtrap(), deriv=DerivOp(1)) ≈ 0.0
+            @test cubic_interp(x, y, 1.5; bc=bc, extrap=ClampedExtrap(), deriv=DerivOp(2)) ≈ 0.0
         end
 
         @testset "Extension extrapolation" begin
@@ -640,14 +640,14 @@ end # Cubic Derivatives
 
         @testset "Constant extrapolation" begin
             # Left boundary: returns y[1], derivatives = 0
-            @test linear_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=DerivOp(0)) ≈ 0.0
-            @test linear_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=DerivOp(1)) ≈ 0.0
-            @test linear_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=DerivOp(2)) ≈ 0.0
+            @test linear_interp(x, y, -0.5; extrap=ClampedExtrap(), deriv=DerivOp(0)) ≈ 0.0
+            @test linear_interp(x, y, -0.5; extrap=ClampedExtrap(), deriv=DerivOp(1)) ≈ 0.0
+            @test linear_interp(x, y, -0.5; extrap=ClampedExtrap(), deriv=DerivOp(2)) ≈ 0.0
 
             # Right boundary: returns y[end], derivatives = 0
-            @test linear_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=DerivOp(0)) ≈ 6.0
-            @test linear_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=DerivOp(1)) ≈ 0.0
-            @test linear_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=DerivOp(2)) ≈ 0.0
+            @test linear_interp(x, y, 2.5; extrap=ClampedExtrap(), deriv=DerivOp(0)) ≈ 6.0
+            @test linear_interp(x, y, 2.5; extrap=ClampedExtrap(), deriv=DerivOp(1)) ≈ 0.0
+            @test linear_interp(x, y, 2.5; extrap=ClampedExtrap(), deriv=DerivOp(2)) ≈ 0.0
         end
 
         @testset "Extension extrapolation" begin
@@ -800,7 +800,7 @@ end # Cubic Derivatives
         x = [0.0, 1.0, 2.0]
         y = [0.0, 2.0, 6.0]  # slopes: 2.0, 4.0
 
-        extrap_modes = [NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap()]
+        extrap_modes = [NoExtrap(), ClampedExtrap(), ExtendExtrap(), WrapExtrap()]
 
         for mode in extrap_modes
             mode isa NoExtrap && continue  # Skip NoExtrap for out-of-domain test
@@ -1361,7 +1361,7 @@ end # Derivative Edge Cases
         x = collect(range(0.0, 1.0, 51))
         y = x .^ 2
 
-        for extrap in [NoExtrap(), ConstExtrap(), ExtendExtrap()]
+        for extrap in [NoExtrap(), ClampedExtrap(), ExtendExtrap()]
             itp = cubic_interp(x, y; extrap=extrap)
 
             # Warmup
@@ -1424,7 +1424,7 @@ end # Derivative Allocations
             (BCPair(Deriv1(0.5), Deriv2(2.0)), "Deriv1-Deriv2"),
         ]
 
-        extrap_modes = [NoExtrap(), ConstExtrap(), ExtendExtrap()]
+        extrap_modes = [NoExtrap(), ClampedExtrap(), ExtendExtrap()]
 
         for (bc, bc_name) in bc_types
             for extrap in extrap_modes
@@ -1468,7 +1468,7 @@ end # Derivative Allocations
         x = collect(range(0.0, 1.0, 51))
         y = x .^ 2
 
-        extrap_modes = [NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap()]
+        extrap_modes = [NoExtrap(), ClampedExtrap(), ExtendExtrap(), WrapExtrap()]
 
         for extrap in extrap_modes
             itp = linear_interp(x, y; extrap=extrap)
@@ -1884,7 +1884,7 @@ end # DerivativeView Wrapper
         y = x.^3
 
         # Constant extrapolation
-        itp_const = cubic_interp(x, y; extrap=ConstExtrap())
+        itp_const = cubic_interp(x, y; extrap=ClampedExtrap())
         @test itp_const(-0.5; deriv=DerivOp(3)) === 0.0
         @test itp_const(1.5; deriv=DerivOp(3)) === 0.0
 
@@ -1906,13 +1906,13 @@ end # DerivativeView Wrapper
         y_linear = 2.0 .* x
         y_const = fill(5.0, length(x))
 
-        # Linear interpolation: deriv=DerivOp(3) with ConstExtrap() extrap outside domain
-        @test linear_interp(x, y_linear, -0.5; extrap=ConstExtrap(), deriv=DerivOp(3)) === 0.0
-        @test linear_interp(x, y_linear, 1.5; extrap=ConstExtrap(), deriv=DerivOp(3)) === 0.0
+        # Linear interpolation: deriv=DerivOp(3) with ClampedExtrap() extrap outside domain
+        @test linear_interp(x, y_linear, -0.5; extrap=ClampedExtrap(), deriv=DerivOp(3)) === 0.0
+        @test linear_interp(x, y_linear, 1.5; extrap=ClampedExtrap(), deriv=DerivOp(3)) === 0.0
 
-        # Constant interpolation: deriv=DerivOp(3) with ConstExtrap() extrap outside domain
-        @test constant_interp(x, y_const, -0.5; extrap=ConstExtrap(), deriv=DerivOp(3)) === 0.0
-        @test constant_interp(x, y_const, 1.5; extrap=ConstExtrap(), deriv=DerivOp(3)) === 0.0
+        # Constant interpolation: deriv=DerivOp(3) with ClampedExtrap() extrap outside domain
+        @test constant_interp(x, y_const, -0.5; extrap=ClampedExtrap(), deriv=DerivOp(3)) === 0.0
+        @test constant_interp(x, y_const, 1.5; extrap=ClampedExtrap(), deriv=DerivOp(3)) === 0.0
     end
 
     @testset "Type stability for deriv=DerivOp(3)" begin
@@ -2116,7 +2116,7 @@ end # DerivativeView Vector Queries
         x = collect(range(0.0, 1.0, 11))
         y1 = x.^3
         y2 = x.^2
-        sitp = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
+        sitp = cubic_interp(x, Series(y1, y2); extrap=ClampedExtrap())
 
         # Outside domain with deriv=3
         vals_below = sitp(-0.5; deriv=DerivOp(3))

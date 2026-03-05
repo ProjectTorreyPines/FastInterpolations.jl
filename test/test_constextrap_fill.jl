@@ -1,44 +1,44 @@
 using Test
 using FastInterpolations
 
-@testset "ConstExtrap Fill Value" begin
+@testset "FillExtrap Fill Value" begin
     # ────────────────────────────────────────────
     # Construction & Type Hierarchy
     # ────────────────────────────────────────────
-    @testset "ConstExtrap type hierarchy" begin
-        # ConstExtrap is a factory function, not a type
+    @testset "FillExtrap type hierarchy" begin
+        # FillExtrap is a concrete type under AbstractExtrap
         @test ClampedExtrap <: AbstractExtrap
         @test FillExtrap <: AbstractExtrap
         @test !(ClampedExtrap <: FillExtrap)
         @test !(FillExtrap <: ClampedExtrap)
 
         # No-arg factory: boundary clamp
-        e0 = ConstExtrap()
+        e0 = ClampedExtrap()
         @test e0 isa ClampedExtrap
 
         # Float value: auto-promote Int → Float64
-        e1 = ConstExtrap(0)
+        e1 = FillExtrap(0)
         @test e1.value === 0.0
         @test e1 isa FillExtrap{Float64}
 
         # Float64
-        e2 = ConstExtrap(NaN)
+        e2 = FillExtrap(NaN)
         @test isnan(e2.value)
         @test e2 isa FillExtrap{Float64}
 
         # Float32
-        e3 = ConstExtrap(0.0f0)
+        e3 = FillExtrap(0.0f0)
         @test e3.value === 0.0f0
         @test e3 isa FillExtrap{Float32}
 
         # Kwarg form
-        e4 = ConstExtrap(; value=NaN)
+        e4 = FillExtrap(; value=NaN)
         @test isnan(e4.value)
         @test e4 isa FillExtrap{Float64}
 
-        # Kwarg no-arg → boundary clamp
-        e5 = ConstExtrap(; value=nothing)
-        @test e5 isa ClampedExtrap
+        # Kwarg with nothing → FillExtrap{Nothing}
+        e5 = FillExtrap(; value=nothing)
+        @test e5 isa FillExtrap{Nothing}
 
         # Direct construction
         @test ClampedExtrap() isa ClampedExtrap
@@ -49,7 +49,7 @@ using FastInterpolations
     @testset "_promote_extrap" begin
         using FastInterpolations: _promote_extrap
 
-        # Non-ConstExtrap passes through
+        # Non-FillExtrap passes through
         @test _promote_extrap(NoExtrap(), Float64) === NoExtrap()
         @test _promote_extrap(ExtendExtrap(), Float64) === ExtendExtrap()
 
@@ -81,19 +81,19 @@ using FastInterpolations
 
     @testset "Cubic with fill value" begin
         # NaN fill
-        itp_nan = cubic_interp(x, y; extrap=ConstExtrap(NaN))
+        itp_nan = cubic_interp(x, y; extrap=FillExtrap(NaN))
         @test isnan(itp_nan(x_below))
         @test isnan(itp_nan(x_above))
         # In-domain should work normally
-        @test itp_nan(2.5) ≈ cubic_interp(x, y; extrap=ConstExtrap())(2.5)
+        @test itp_nan(2.5) ≈ cubic_interp(x, y; extrap=ClampedExtrap())(2.5)
 
         # Zero fill
-        itp_zero = cubic_interp(x, y; extrap=ConstExtrap(0.0))
+        itp_zero = cubic_interp(x, y; extrap=FillExtrap(0.0))
         @test itp_zero(x_below) === 0.0
         @test itp_zero(x_above) === 0.0
 
         # Custom fill
-        itp_42 = cubic_interp(x, y; extrap=ConstExtrap(42.0))
+        itp_42 = cubic_interp(x, y; extrap=FillExtrap(42.0))
         @test itp_42(x_below) === 42.0
         @test itp_42(x_above) === 42.0
 
@@ -106,40 +106,40 @@ using FastInterpolations
     end
 
     @testset "Linear with fill value" begin
-        itp = linear_interp(x, y; extrap=ConstExtrap(NaN))
+        itp = linear_interp(x, y; extrap=FillExtrap(NaN))
         @test isnan(itp(x_below))
         @test isnan(itp(x_above))
-        @test itp(2.5) ≈ linear_interp(x, y; extrap=ConstExtrap())(2.5)
+        @test itp(2.5) ≈ linear_interp(x, y; extrap=ClampedExtrap())(2.5)
 
         # Derivative = 0
         @test iszero(itp(x_below; deriv=DerivOp(1)))
     end
 
     @testset "Quadratic with fill value" begin
-        itp = quadratic_interp(x, y; extrap=ConstExtrap(-1.0))
+        itp = quadratic_interp(x, y; extrap=FillExtrap(-1.0))
         @test itp(x_below) === -1.0
         @test itp(x_above) === -1.0
-        @test itp(2.5) ≈ quadratic_interp(x, y; extrap=ConstExtrap())(2.5)
+        @test itp(2.5) ≈ quadratic_interp(x, y; extrap=ClampedExtrap())(2.5)
 
         # Derivative = 0
         @test iszero(itp(x_below; deriv=DerivOp(1)))
     end
 
     @testset "Constant with fill value" begin
-        itp = constant_interp(x, y; extrap=ConstExtrap(99.0))
+        itp = constant_interp(x, y; extrap=FillExtrap(99.0))
         @test itp(x_below) === 99.0
         @test itp(x_above) === 99.0
-        @test itp(2.5) ≈ constant_interp(x, y; extrap=ConstExtrap())(2.5)
+        @test itp(2.5) ≈ constant_interp(x, y; extrap=ClampedExtrap())(2.5)
     end
 
     # ────────────────────────────────────────────
     # Oneshot paths
     # ────────────────────────────────────────────
     @testset "Oneshot paths" begin
-        @test cubic_interp(x, y, x_below; extrap=ConstExtrap(NaN)) |> isnan
-        @test linear_interp(x, y, x_below; extrap=ConstExtrap(NaN)) |> isnan
-        @test quadratic_interp(x, y, x_below; extrap=ConstExtrap(NaN)) |> isnan
-        @test constant_interp(x, y, x_below; extrap=ConstExtrap(NaN)) |> isnan
+        @test cubic_interp(x, y, x_below; extrap=FillExtrap(NaN)) |> isnan
+        @test linear_interp(x, y, x_below; extrap=FillExtrap(NaN)) |> isnan
+        @test quadratic_interp(x, y, x_below; extrap=FillExtrap(NaN)) |> isnan
+        @test constant_interp(x, y, x_below; extrap=FillExtrap(NaN)) |> isnan
     end
 
     # ────────────────────────────────────────────
@@ -151,7 +151,7 @@ using FastInterpolations
         out = Vector{Float64}(undef, 2)
 
         # Cubic series
-        sitp = cubic_interp(x, s; extrap=ConstExtrap(NaN))
+        sitp = cubic_interp(x, s; extrap=FillExtrap(NaN))
         sitp(out, x_below)
         @test all(isnan, out)
         sitp(out, x_above)
@@ -161,17 +161,17 @@ using FastInterpolations
         @test !any(isnan, out)
 
         # Linear series
-        sitp_l = linear_interp(x, s; extrap=ConstExtrap(0.0))
+        sitp_l = linear_interp(x, s; extrap=FillExtrap(0.0))
         sitp_l(out, x_below)
         @test all(==(0.0), out)
 
         # Quadratic series
-        sitp_q = quadratic_interp(x, s; extrap=ConstExtrap(-1.0))
+        sitp_q = quadratic_interp(x, s; extrap=FillExtrap(-1.0))
         sitp_q(out, x_below)
         @test all(==(-1.0), out)
 
         # Constant series
-        sitp_c = constant_interp(x, s; extrap=ConstExtrap(42.0))
+        sitp_c = constant_interp(x, s; extrap=FillExtrap(42.0))
         sitp_c(out, x_below)
         @test all(==(42.0), out)
     end
@@ -180,7 +180,7 @@ using FastInterpolations
     # Boundary clamp backward compat
     # ────────────────────────────────────────────
     @testset "Boundary clamp unchanged" begin
-        itp_clamp = cubic_interp(x, y; extrap=ConstExtrap())
+        itp_clamp = cubic_interp(x, y; extrap=ClampedExtrap())
         # Below domain → y[1]
         @test itp_clamp(x_below) ≈ y[1]
         # Above domain → y[end]
@@ -197,10 +197,10 @@ using FastInterpolations
 
         # -- All 4 types with NaN fill --
         @testset "All types 2D with NaN fill" begin
-            itp_c = cubic_interp((xg, yg), data2d; extrap=ConstExtrap(NaN))
-            itp_l = linear_interp((xg, yg), data2d; extrap=ConstExtrap(NaN))
-            itp_q = quadratic_interp((xg, yg), data2d; extrap=ConstExtrap(NaN))
-            itp_k = constant_interp((xg, yg), data2d; extrap=ConstExtrap(NaN))
+            itp_c = cubic_interp((xg, yg), data2d; extrap=FillExtrap(NaN))
+            itp_l = linear_interp((xg, yg), data2d; extrap=FillExtrap(NaN))
+            itp_q = quadratic_interp((xg, yg), data2d; extrap=FillExtrap(NaN))
+            itp_k = constant_interp((xg, yg), data2d; extrap=FillExtrap(NaN))
 
             # In-domain: unchanged behavior
             in_pt = (0.5, 1.0)
@@ -227,17 +227,17 @@ using FastInterpolations
 
         # -- Zero fill --
         @testset "Zero fill 2D" begin
-            itp = cubic_interp((xg, yg), data2d; extrap=ConstExtrap(0.0))
+            itp = cubic_interp((xg, yg), data2d; extrap=FillExtrap(0.0))
             @test itp((-0.1, 1.0)) === 0.0
             @test itp((0.5, 2.5)) === 0.0
             # In-domain unchanged
-            ref = cubic_interp((xg, yg), data2d; extrap=ConstExtrap())
+            ref = cubic_interp((xg, yg), data2d; extrap=ClampedExtrap())
             @test itp((0.5, 1.0)) ≈ ref((0.5, 1.0))
         end
 
         # -- Derivatives return zero (not fill value) --
         @testset "ND derivatives return zero" begin
-            itp = cubic_interp((xg, yg), data2d; extrap=ConstExtrap(NaN))
+            itp = cubic_interp((xg, yg), data2d; extrap=FillExtrap(NaN))
             @test iszero(itp((-0.1, 1.0); deriv=DerivOp(1)))
             @test iszero(itp((0.5, 2.5); deriv=(DerivOp(1), EvalValue())))
             @test iszero(itp((-0.1, 1.0); deriv=(EvalValue(), DerivOp(1))))
@@ -247,7 +247,7 @@ using FastInterpolations
         @testset "Per-axis mixed extrap" begin
             # Fill on x, clamp on y
             itp = cubic_interp((xg, yg), data2d;
-                extrap=(ConstExtrap(NaN), ConstExtrap()))
+                extrap=(FillExtrap(NaN), ClampedExtrap()))
             # OOB on x → fill
             @test isnan(itp((-0.1, 1.0)))
             # OOB on y → clamp (not fill)
@@ -259,12 +259,12 @@ using FastInterpolations
         # -- Conflicting fill values → ArgumentError --
         @testset "Conflicting fill values" begin
             @test_throws ArgumentError cubic_interp((xg, yg), data2d;
-                extrap=(ConstExtrap(NaN), ConstExtrap(0.0)))
+                extrap=(FillExtrap(NaN), FillExtrap(0.0)))
         end
 
         # -- Boundary clamp backward compat --
         @testset "ND boundary clamp unchanged" begin
-            itp = cubic_interp((xg, yg), data2d; extrap=ConstExtrap())
+            itp = cubic_interp((xg, yg), data2d; extrap=ClampedExtrap())
             @test itp((0.5, 0.5)) isa Float64
             # Clamp behavior: OOB queries get clamped to boundary
             @test !isnan(itp((-0.1, 1.0)))
@@ -279,13 +279,13 @@ using FastInterpolations
         yg = range(0.0, 2.0, length=8)
         data2d = [xi^2 + yj for xi in xg, yj in yg]
 
-        @test isnan(cubic_interp((xg, yg), data2d, (-0.1, 1.0); extrap=ConstExtrap(NaN)))
-        @test isnan(linear_interp((xg, yg), data2d, (-0.1, 1.0); extrap=ConstExtrap(NaN)))
-        @test isnan(quadratic_interp((xg, yg), data2d, (-0.1, 1.0); extrap=ConstExtrap(NaN)))
-        @test isnan(constant_interp((xg, yg), data2d, (-0.1, 1.0); extrap=ConstExtrap(NaN)))
+        @test isnan(cubic_interp((xg, yg), data2d, (-0.1, 1.0); extrap=FillExtrap(NaN)))
+        @test isnan(linear_interp((xg, yg), data2d, (-0.1, 1.0); extrap=FillExtrap(NaN)))
+        @test isnan(quadratic_interp((xg, yg), data2d, (-0.1, 1.0); extrap=FillExtrap(NaN)))
+        @test isnan(constant_interp((xg, yg), data2d, (-0.1, 1.0); extrap=FillExtrap(NaN)))
 
         # In-domain oneshot
-        @test !isnan(cubic_interp((xg, yg), data2d, (0.5, 1.0); extrap=ConstExtrap(NaN)))
+        @test !isnan(cubic_interp((xg, yg), data2d, (0.5, 1.0); extrap=FillExtrap(NaN)))
     end
 
     # ────────────────────────────────────────────
@@ -296,7 +296,7 @@ using FastInterpolations
         yg = range(0.0, 2.0, length=8)
         data2d = [xi^2 + yj for xi in xg, yj in yg]
 
-        itp = cubic_interp((xg, yg), data2d; extrap=ConstExtrap(NaN))
+        itp = cubic_interp((xg, yg), data2d; extrap=FillExtrap(NaN))
         out = Vector{Float64}(undef, 3)
 
         # SoA batch: mix of in-domain and OOB
@@ -324,7 +324,7 @@ using FastInterpolations
         zg = range(0.0, 1.0, length=4)
         data3d = [xi + yj + zk for xi in xg, yj in yg, zk in zg]
 
-        itp = linear_interp((xg, yg, zg), data3d; extrap=ConstExtrap(NaN))
+        itp = linear_interp((xg, yg, zg), data3d; extrap=FillExtrap(NaN))
         @test !isnan(itp((0.5, 0.5, 0.5)))
         @test isnan(itp((-0.1, 0.5, 0.5)))
         @test isnan(itp((0.5, -0.1, 0.5)))
@@ -340,7 +340,7 @@ using FastInterpolations
         data = Float32[xi + yj for xi in xg, yj in yg]
 
         # Float64 fill → promoted to Float32
-        itp = linear_interp((xg, yg), data; extrap=ConstExtrap(0.0))
+        itp = linear_interp((xg, yg), data; extrap=FillExtrap(0.0))
         val = itp((-0.1f0, 0.5f0))
         @test val === 0.0f0
         @test val isa Float32
@@ -350,9 +350,9 @@ using FastInterpolations
     # Integral path
     # ────────────────────────────────────────────
     @testset "Integral with fill value" begin
-        itp_nan = cubic_interp(x, y; extrap=ConstExtrap(NaN))
-        itp_zero = cubic_interp(x, y; extrap=ConstExtrap(0.0))
-        itp_clamp = cubic_interp(x, y; extrap=ConstExtrap())
+        itp_nan = cubic_interp(x, y; extrap=FillExtrap(NaN))
+        itp_zero = cubic_interp(x, y; extrap=FillExtrap(0.0))
+        itp_clamp = cubic_interp(x, y; extrap=ClampedExtrap())
 
         # NaN fill → NaN integral when bounds extend outside domain
         @test isnan(integrate(itp_nan, -1.0, 1.0))
@@ -371,17 +371,17 @@ using FastInterpolations
     # Display
     # ────────────────────────────────────────────
     @testset "show formatting" begin
-        itp_clamp = cubic_interp(x, y; extrap=ConstExtrap())
-        itp_nan = cubic_interp(x, y; extrap=ConstExtrap(NaN))
-        itp_zero = cubic_interp(x, y; extrap=ConstExtrap(0.0))
+        itp_clamp = cubic_interp(x, y; extrap=ClampedExtrap())
+        itp_nan = cubic_interp(x, y; extrap=FillExtrap(NaN))
+        itp_zero = cubic_interp(x, y; extrap=FillExtrap(0.0))
 
         # Use text/plain MIME for full multiline display (compact show omits extrap)
         s_clamp = sprint(show, MIME("text/plain"), itp_clamp)
         s_nan = sprint(show, MIME("text/plain"), itp_nan)
         s_zero = sprint(show, MIME("text/plain"), itp_zero)
 
-        @test occursin("ConstExtrap", s_clamp)
-        @test !occursin("ConstExtrap(", s_clamp)  # no parens for boundary clamp
+        @test occursin("ClampedExtrap", s_clamp)
+        @test !occursin("FillExtrap(", s_clamp)  # no parens for boundary clamp
         @test occursin("FillExtrap(NaN)", s_nan)
         @test occursin("FillExtrap(0.0)", s_zero)
     end
@@ -407,14 +407,14 @@ using FastInterpolations
     # ────────────────────────────────────────────
     @testset "Fill value type promotion at construction" begin
         # Int fill with Float64 data → fill promoted to Float64
-        itp = cubic_interp(x, y; extrap=ConstExtrap(0))
+        itp = cubic_interp(x, y; extrap=FillExtrap(0))
         @test itp(x_below) === 0.0
         @test itp(x_below) isa Float64
 
         # Float32 grid/data with Float64 fill → fill promoted to match Tv
         x32 = collect(range(0.0f0, 5.0f0, length=11))
         y32 = sin.(x32)
-        itp32 = cubic_interp(x32, y32; extrap=ConstExtrap(0.0))
+        itp32 = cubic_interp(x32, y32; extrap=FillExtrap(0.0))
         @test itp32(-1.0f0) isa Float32
         @test itp32(-1.0f0) === 0.0f0
     end

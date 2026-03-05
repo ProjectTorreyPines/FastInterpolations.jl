@@ -946,8 +946,8 @@ const FI = FastInterpolations
                 @test fd_out ≈ an_out atol=1e-10
             end
 
-            @testset "extrap=ConstExtrap()" begin
-                itp = linear_interp(x, y_quad; extrap=ConstExtrap())
+            @testset "extrap=ClampedExtrap()" begin
+                itp = linear_interp(x, y_quad; extrap=ClampedExtrap())
 
                 # In-domain
                 fd = ForwardDiff.derivative(itp, 2.25)
@@ -1007,8 +1007,8 @@ const FI = FastInterpolations
                 @test fd_out ≈ an_out atol=1e-10
             end
 
-            @testset "extrap=ConstExtrap()" begin
-                itp = cubic_interp(x, y_cubic; extrap=ConstExtrap())
+            @testset "extrap=ClampedExtrap()" begin
+                itp = cubic_interp(x, y_cubic; extrap=ClampedExtrap())
 
                 fd = ForwardDiff.derivative(itp, 2.25)
                 an = itp(2.25; deriv=DerivOp(1))
@@ -1057,8 +1057,8 @@ const FI = FastInterpolations
                 @test fd_out ≈ an_out atol=1e-10
             end
 
-            @testset "extrap=ConstExtrap()" begin
-                itp = quadratic_interp(x, y_quad; extrap=ConstExtrap())
+            @testset "extrap=ClampedExtrap()" begin
+                itp = quadratic_interp(x, y_quad; extrap=ClampedExtrap())
 
                 fd = ForwardDiff.derivative(itp, 2.25)
                 an = itp(2.25; deriv=DerivOp(1))
@@ -1098,7 +1098,7 @@ const FI = FastInterpolations
             x = collect(0.0:1.0:10.0)
             y = 2.0 .* x .+ 1.0  # y = 2x + 1
 
-            for ext in (ExtendExtrap(), ConstExtrap(), WrapExtrap())
+            for ext in (ExtendExtrap(), ClampedExtrap(), WrapExtrap())
                 itp = linear_interp(x, y; extrap=ext)
 
                 # In-domain value test

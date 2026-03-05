@@ -99,16 +99,16 @@ using FastInterpolations
     end
 
     # ═══════════════════════════════════════════════════════════════
-    # ConstExtrap fill value — integration path zero allocation
+    # FillExtrap fill value — integration path zero allocation
     # ═══════════════════════════════════════════════════════════════
 
-    @testset "ConstExtrap fill value: integrate zero allocation" begin
+    @testset "FillExtrap fill value: integrate zero allocation" begin
         x = collect(range(0.0, 1.0, length=21))
         y = @. 3x - 1
 
-        itp_clamp = linear_interp(x, y; extrap=ConstExtrap())
-        itp_zero = linear_interp(x, y; extrap=ConstExtrap(0.0))
-        itp_42 = linear_interp(x, y; extrap=ConstExtrap(42.0))
+        itp_clamp = linear_interp(x, y; extrap=ClampedExtrap())
+        itp_zero = linear_interp(x, y; extrap=FillExtrap(0.0))
+        itp_42 = linear_interp(x, y; extrap=FillExtrap(42.0))
 
         function integrate_fill(itp, a, b)
             integrate(itp, a, b)

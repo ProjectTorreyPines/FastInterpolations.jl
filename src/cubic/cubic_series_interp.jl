@@ -333,7 +333,7 @@ end
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
-# ConstExtrap - clamp to boundary (value only, derivatives are zero)
+# ClampedExtrap - clamp to boundary (value only, derivatives are zero)
 @inline function _eval_series_point_extrap!(
     out::AbstractVector,
     y_point::Matrix{Tv},
@@ -545,7 +545,7 @@ Create a multi-Y cubic spline interpolant for multiple y-data series sharing the
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `s::Series`: Wrapped series data (varargs, vector-of-vectors, or matrix)
 - `bc`: Boundary condition (CubicFit, ZeroCurvBC, ZeroSlopeBC, PeriodicBC, or Vector of BC for per-series)
-- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ClampedExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache`: If true, reuse cached LU factorization (default: true)
 - `precompute_transpose`: If true, build point-contiguous layout immediately
 - `search::AbstractSearchPolicy`: Search policy for interval lookup

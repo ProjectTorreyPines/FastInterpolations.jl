@@ -188,7 +188,7 @@ using FastInterpolations
         @test isapprox(vals_ext[1], (1.0 + 2.0im) * 1.5, rtol=1e-10)
 
         # Constant mode
-        sitp_const = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
+        sitp_const = cubic_interp(x, Series(y1, y2); extrap=ClampedExtrap())
         vals_const = sitp_const(1.5)  # Beyond domain
         @test vals_const isa Vector{ComplexF64}
         @test isapprox(vals_const[1], y1[end], rtol=1e-10)

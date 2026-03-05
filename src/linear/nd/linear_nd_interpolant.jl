@@ -22,7 +22,7 @@ The interpolation is exact at grid points and linearly blended between them.
 - `data`: N-dimensional data array where `size(data, d) == length(grids[d])`
 
 # Keyword Arguments
-- `extrap=NoExtrap()`: Extrapolation mode (`NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, `WrapExtrap()`) or per-axis tuple
+- `extrap=NoExtrap()`: Extrapolation mode (`NoExtrap()`, `ClampedExtrap()`, `ExtendExtrap()`, `WrapExtrap()`) or per-axis tuple
 - `search=AutoSearch()`: Search policy or per-axis tuple
 
 # Returns

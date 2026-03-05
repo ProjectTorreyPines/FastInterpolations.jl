@@ -94,7 +94,7 @@ end
 
 Get the boundary value for constant/fill extrapolation in scalar series evaluation path.
 
-For `EvalValue` + `ConstExtrap`, returns the boundary y-value.
+For `EvalValue` + `ClampedExtrap`, returns the boundary y-value.
 For `EvalValue` + `FillExtrap`, returns the fill value.
 For derivatives, returns zero via `0 * y` (duck-typing compatible).
 """
@@ -121,7 +121,7 @@ end
 
 Fill output vector with boundary/fill values for constant/fill extrapolation (SIMD path).
 
-For `EvalValue` + `ConstExtrap`, fills with boundary y-values.
+For `EvalValue` + `ClampedExtrap`, fills with boundary y-values.
 For `EvalValue` + `FillExtrap`, fills with the fill value.
 For derivatives, fills with zeros.
 """

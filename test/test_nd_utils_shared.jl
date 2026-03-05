@@ -239,7 +239,7 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
     @testset "Typed Extrap resolution" begin
         @testset "single mode → Mode tuple, no BCs" begin
             @test _resolve_extrap_nd(NoExtrap(), nothing, Val(2), Float64) === (NoExtrap(), NoExtrap())
-            @test _resolve_extrap_nd(ConstExtrap(), nothing, Val(3), Float64) === (ClampedExtrap(), ClampedExtrap(), ClampedExtrap())
+            @test _resolve_extrap_nd(ClampedExtrap(), nothing, Val(3), Float64) === (ClampedExtrap(), ClampedExtrap(), ClampedExtrap())
             @test _resolve_extrap_nd(ExtendExtrap(), nothing, Val(1), Float64) === (ExtendExtrap(),)
             @test _resolve_extrap_nd(WrapExtrap(), nothing, Val(2), Float64) === (WrapExtrap(), WrapExtrap())
         end
@@ -265,7 +265,7 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
 
         @testset "single mode + periodic BC rejection" begin
             bcs = (ZeroCurvBC(), PeriodicBC())
-            @test_throws ArgumentError _resolve_extrap_nd(ConstExtrap(), bcs, Val(2), Float64)
+            @test_throws ArgumentError _resolve_extrap_nd(ClampedExtrap(), bcs, Val(2), Float64)
             @test_throws ArgumentError _resolve_extrap_nd(ExtendExtrap(), bcs, Val(2), Float64)
         end
 
@@ -273,8 +273,8 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
             bcs = (ZeroCurvBC(), PeriodicBC())
             # ExtendExtrap on non-periodic axis is OK; periodic axis gets wrap
             @test _resolve_extrap_nd((ExtendExtrap(), WrapExtrap()), bcs, Val(2), Float64) === (ExtendExtrap(), WrapExtrap())
-            # ConstExtrap on periodic axis → error
-            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(), ConstExtrap()), bcs, Val(2), Float64)
+            # ClampedExtrap on periodic axis → error
+            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(), ClampedExtrap()), bcs, Val(2), Float64)
         end
 
         # Symbol-based extrap was fully removed in v0.3.0.
@@ -284,19 +284,19 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
             bcs = (ZeroCurvBC(), PeriodicBC(), ZeroCurvBC())
             @test _check_mode_periodic_compat(NoExtrap(), bcs, Val(3)) === nothing
             @test _check_mode_periodic_compat(WrapExtrap(), bcs, Val(3)) === nothing
-            @test_throws ArgumentError _check_mode_periodic_compat(ConstExtrap(), bcs, Val(3))
+            @test_throws ArgumentError _check_mode_periodic_compat(ClampedExtrap(), bcs, Val(3))
             @test_throws ArgumentError _check_mode_periodic_compat(ExtendExtrap(), bcs, Val(3))
 
             # No periodic BCs — all modes are compatible
             bcs_none = (ZeroCurvBC(), ZeroCurvBC())
-            @test _check_mode_periodic_compat(ConstExtrap(), bcs_none, Val(2)) === nothing
+            @test _check_mode_periodic_compat(ClampedExtrap(), bcs_none, Val(2)) === nothing
         end
 
         @testset "_check_modes_periodic_compat" begin
             bcs = (ZeroCurvBC(), PeriodicBC())
             @test _check_modes_periodic_compat((NoExtrap(), WrapExtrap()), bcs, Val(2)) === nothing
-            @test _check_modes_periodic_compat((ConstExtrap(), WrapExtrap()), bcs, Val(2)) === nothing
-            @test_throws ArgumentError _check_modes_periodic_compat((NoExtrap(), ConstExtrap()), bcs, Val(2))
+            @test _check_modes_periodic_compat((ClampedExtrap(), WrapExtrap()), bcs, Val(2)) === nothing
+            @test_throws ArgumentError _check_modes_periodic_compat((NoExtrap(), ClampedExtrap()), bcs, Val(2))
         end
 
         @testset "@generated periodic override" begin
@@ -306,8 +306,8 @@ import FastInterpolations: _resolve_extrap_nd, _resolve_search_nd, _resolve_bcs_
             @test _mode_to_modes_with_periodic(WrapExtrap(), bcs) === (WrapExtrap(), WrapExtrap(), WrapExtrap())
 
             # Per-axis mode tuple: periodic axis → WrapExtrap()
-            modes = (ExtendExtrap(), WrapExtrap(), ConstExtrap())
-            @test _modes_to_modes_with_periodic(modes, bcs) === (ExtendExtrap(), WrapExtrap(), ConstExtrap())
+            modes = (ExtendExtrap(), WrapExtrap(), ClampedExtrap())
+            @test _modes_to_modes_with_periodic(modes, bcs) === (ExtendExtrap(), WrapExtrap(), ClampedExtrap())
         end
     end
 end

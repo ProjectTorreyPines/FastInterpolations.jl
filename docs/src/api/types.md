@@ -93,7 +93,7 @@ Right
 ```@docs
 AbstractExtrap
 NoExtrap
-ConstExtrap
+ClampedExtrap
 ExtendExtrap
 WrapExtrap
 ```

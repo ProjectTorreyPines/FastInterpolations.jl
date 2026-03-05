@@ -28,6 +28,12 @@ Evaluates directly from grids + data without constructing a LinearInterpolantND.
     ops::NTuple{N, AbstractEvalOp},
     hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
+    # Fill-value short-circuit
+    if _has_any_fill_value(extraps_val)
+        _check_nd_oob(query, grids, extraps_val) &&
+            return _nd_fill_result(extraps_val, ops, @inbounds first(data))
+    end
+
     spacings = _create_spacings_pooled(pool, grids)
     q_eval = _handle_all_extraps(query, grids, extraps_val)
     indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
@@ -60,8 +66,13 @@ Writes results into `output`. No heap allocation beyond spacings.
     length(output) == n_queries || throw(DimensionMismatch(
         "output length ($(length(output))) must match query length ($n_queries)"))
     spacings = _create_spacings_pooled(pool, grids)
+    has_fill = _has_any_fill_value(extraps_val)
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
+        if has_fill && _check_nd_oob(query_k, grids, extraps_val)
+            output[k] = _nd_fill_result(extraps_val, ops, first(data))
+            continue
+        end
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
         hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
@@ -90,8 +101,13 @@ Writes results into `output`. No heap allocation beyond spacings.
     length(output) == n_queries || throw(DimensionMismatch(
         "output length ($(length(output))) must match query length ($n_queries)"))
     spacings = _create_spacings_pooled(pool, grids)
+    has_fill = _has_any_fill_value(extraps_val)
     @inbounds for k in 1:n_queries
         query_k = queries[k]
+        if has_fill && _check_nd_oob(query_k, grids, extraps_val)
+            output[k] = _nd_fill_result(extraps_val, ops, first(data))
+            continue
+        end
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
         hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
@@ -135,6 +151,7 @@ function linear_interp(
     searches = _resolve_search_nd(search, Val(N), query)  # scalar: type-based (no monotonicity check)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
+    extraps_val = _promote_extraps_nd(extraps_val, Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _linear_interp_nd_oneshot(grids_typed, data, query, extraps_val, searches, ops, hint)::Tr
 end
@@ -214,6 +231,7 @@ function linear_interp!(
     searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)  # all-or-nothing adaptive for zero-alloc
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
+    extraps_val = _promote_extraps_nd(extraps_val, Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _linear_nd_soa_dispatch!(output, grids_typed, data, queries, extraps_val, searches, ops, hint)
 end
@@ -242,6 +260,7 @@ function linear_interp!(
     searches = _resolve_search_nd(search, Val(N), queries)  # AoS: type-based (no per-axis SoA check)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
+    extraps_val = _promote_extraps_nd(extraps_val, Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _linear_interp_nd_oneshot_aos!(output, grids_typed, data, queries, extraps_val, searches, ops, hint)
 end

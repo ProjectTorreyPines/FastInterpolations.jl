@@ -140,6 +140,9 @@ end
 # Core Evaluation Logic
 # ========================================
 
+# Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
+@inline _zero_ref(itp::LinearInterpolantND) = @inbounds first(itp.data)
+
 # Generic N-dimensional version (uses _locate_cell + _eval_at_cell)
 @inline function _eval_linear_nd(
     itp::LinearInterpolantND{Tg,Tv,N},
@@ -148,6 +151,10 @@ end
     search_tuple::NTuple{N, AbstractSearchPolicy},
     hints=nothing
 ) where {Tg, Tv, N}
+    if _has_any_fill_value(itp.extraps)
+        _check_nd_oob(query, itp.grids, itp.extraps) &&
+            return _nd_fill_result(itp.extraps, ops, _zero_ref(itp))
+    end
     if _has_second_or_higher_derivative(ops, Val(N))
         return 0 * first(itp.data)
     end
@@ -163,6 +170,10 @@ end
     search_tuple::NTuple{2, AbstractSearchPolicy},
     hints=nothing
 ) where {Tg, Tv}
+    if _has_any_fill_value(itp.extraps)
+        _check_nd_oob(query, itp.grids, itp.extraps) &&
+            return _nd_fill_result(itp.extraps, ops, _zero_ref(itp))
+    end
     op_x, op_y = ops
     if op_x isa EvalDeriv2 || op_x isa EvalDeriv3 || op_y isa EvalDeriv2 || op_y isa EvalDeriv3
         return 0 * first(itp.data)

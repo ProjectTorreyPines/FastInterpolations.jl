@@ -29,44 +29,140 @@
 # - `nothing` for constant/linear (no BCs)
 # - NTuple{N, AbstractBC} for quadratic/cubic
 
-# ── Fill-value ConstExtrap guard for ND ────────────────────────────────
-@noinline _throw_fill_value_nd() = throw(ArgumentError(
-    "ConstExtrap with a fill value is not supported for ND interpolation; " *
-    "use ConstExtrap() (boundary clamp) instead"))
+# ── Fill-value ConstExtrap validation for ND ───────────────────────────
+# All fill-value axes must have the same value (prevents ambiguity).
+# ConstExtrap{Nothing} (boundary clamp) is always OK and not counted.
+@noinline _throw_conflicting_fill_values() = throw(ArgumentError(
+    "All ConstExtrap fill values in ND must be identical; " *
+    "got conflicting fill values on different axes"))
 
-@inline _reject_fill_value_nd(::AbstractExtrap) = nothing
-@inline _reject_fill_value_nd(::ConstExtrap{Nothing}) = nothing
-@inline _reject_fill_value_nd(::ConstExtrap) = _throw_fill_value_nd()
-
-@inline function _reject_fill_value_nd(extraps::Tuple{Vararg{AbstractExtrap}})
-    for e in extraps
-        _reject_fill_value_nd(e)
+@generated function _validate_fill_values_nd(extraps::E) where {E<:Tuple{Vararg{AbstractExtrap}}}
+    N = fieldcount(E)
+    fill_dims = [d for d in 1:N if fieldtype(E, d) <: ConstExtrap && !(fieldtype(E, d) <: ConstExtrap{Nothing})]
+    length(fill_dims) <= 1 && return :(nothing)
+    first_d = fill_dims[1]
+    checks = [:(extraps[$first_d].value === extraps[$d].value || _throw_conflicting_fill_values()) for d in fill_dims[2:end]]
+    quote
+        $(checks...)
+        nothing
     end
-    return nothing
+end
+
+# ── Fill-value compile-time helpers for ND ─────────────────────────────
+
+"""
+    _has_any_fill_value(extraps) -> Bool
+
+Compile-time check: does any axis have ConstExtrap{T} where T ≠ Nothing?
+Returns a constant `true`/`false` so the fill-value branch is dead-code-eliminated
+when no fill values exist.
+"""
+@generated function _has_any_fill_value(::E) where {E<:Tuple{Vararg{AbstractExtrap}}}
+    for d in 1:fieldcount(E)
+        Fd = fieldtype(E, d)
+        Fd <: ConstExtrap && !(Fd <: ConstExtrap{Nothing}) && return :(true)
+    end
+    return :(false)
+end
+
+"""
+    _get_fill_value(extraps) -> fill_value
+
+Extract the fill value from the first ConstExtrap{T≠Nothing} axis.
+Only called when `_has_any_fill_value` is true.
+"""
+@generated function _get_fill_value(extraps::E) where {E<:Tuple{Vararg{AbstractExtrap}}}
+    for d in 1:fieldcount(E)
+        Fd = fieldtype(E, d)
+        Fd <: ConstExtrap && !(Fd <: ConstExtrap{Nothing}) && return :(extraps[$d].value)
+    end
+    :(error("_get_fill_value called with no fill-value axis"))
+end
+
+"""
+    _check_nd_oob(query, grids, extraps) -> Bool
+
+Check only fill-value axes for out-of-domain. Non-fill axes are skipped at compile time.
+"""
+@generated function _check_nd_oob(
+    query::Tuple{Vararg{Real,N}},
+    grids::Tuple{Vararg{AbstractVector,N}},
+    extraps::E
+) where {N, E<:Tuple{Vararg{AbstractExtrap,N}}}
+    checks = Expr[]
+    for d in 1:N
+        Fd = fieldtype(E, d)
+        if Fd <: ConstExtrap && !(Fd <: ConstExtrap{Nothing})
+            push!(checks, quote
+                let q_primal = _extract_primal(query[$d])
+                    (q_primal < first(grids[$d]) || q_primal > last(grids[$d])) && return true
+                end
+            end)
+        end
+    end
+    push!(checks, :(return false))
+    quote
+        Base.@_inline_meta
+        @inbounds begin
+            $(checks...)
+        end
+    end
+end
+
+"""
+    _nd_fill_result(extraps, ops, zero_ref)
+
+Return the fill value (for EvalValue) or `0 * zero_ref` (for any derivative).
+`zero_ref` is a data element used for duck-typed zero computation.
+"""
+@inline function _nd_fill_result(
+    extraps::Tuple{Vararg{AbstractExtrap, N}},
+    ops::NTuple{N, AbstractEvalOp},
+    zero_ref
+) where {N}
+    # Constant fill → all derivatives are zero
+    for d in 1:N
+        @inbounds (ops[d] isa EvalDeriv1 || ops[d] isa EvalDeriv2 || ops[d] isa EvalDeriv3) && return 0 * zero_ref
+    end
+    return _get_fill_value(extraps)
+end
+
+"""
+    _promote_extraps_nd(extraps, Tv) -> promoted_extraps_tuple
+
+Per-axis type promotion: converts fill values to match Tv.
+"""
+@generated function _promote_extraps_nd(extraps::E, ::Type{Tv}) where {E<:Tuple{Vararg{AbstractExtrap}}, Tv}
+    N = fieldcount(E)
+    exprs = [:(FastInterpolations._promote_extrap(extraps[$d], Tv)) for d in 1:N]
+    :(($(exprs...),))
 end
 
 # ── Mode → Mode tuple (fast path) ────────────────────────────────────
 
 @inline function _resolve_extrap_nd(extrap::AbstractExtrap, ::Nothing, ::Val{N}) where {N}
-    _reject_fill_value_nd(extrap)
-    ntuple(_ -> extrap, Val(N))
+    result = ntuple(_ -> extrap, Val(N))
+    _validate_fill_values_nd(result)
+    return result
 end
 
 @inline function _resolve_extrap_nd(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
-    _reject_fill_value_nd(extrap)
     _check_mode_periodic_compat(extrap, bcs, Val(N))
-    return _mode_to_modes_with_periodic(extrap, bcs)
+    result = _mode_to_modes_with_periodic(extrap, bcs)
+    _validate_fill_values_nd(result)
+    return result
 end
 
 @inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap,N}}, ::Nothing, ::Val{N}) where {N}
-    _reject_fill_value_nd(extrap)
+    _validate_fill_values_nd(extrap)
     extrap
 end
 
 @inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
-    _reject_fill_value_nd(extrap)
     _check_modes_periodic_compat(extrap, bcs, Val(N))
-    return _modes_to_modes_with_periodic(extrap, bcs)
+    result = _modes_to_modes_with_periodic(extrap, bcs)
+    _validate_fill_values_nd(result)
+    return result
 end
 
 @noinline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap}}, ::Any, ::Val{N}) where {N}
@@ -735,10 +831,15 @@ In-place SoA batch evaluation. Writes results into `output`.
     search::Tuple{Vararg{AbstractSearchPolicy, N}},
     hints=nothing
 ) where {Tg, Tv, N}
+    has_fill = _has_any_fill_value(itp.extraps)
     @inbounds for k in 1:length(queries[1])
         query_k = ntuple(d -> queries[d][k], Val(N))
-        cell = _locate_cell(itp, query_k, search, hints)
-        output[k] = _eval_at_cell(itp, cell, ops)
+        if has_fill && _check_nd_oob(query_k, itp.grids, itp.extraps)
+            output[k] = _nd_fill_result(itp.extraps, ops, _zero_ref(itp))
+        else
+            cell = _locate_cell(itp, query_k, search, hints)
+            output[k] = _eval_at_cell(itp, cell, ops)
+        end
     end
     return output
 end
@@ -756,9 +857,14 @@ In-place AoS batch evaluation. Writes results into `output`.
     search::Tuple{Vararg{AbstractSearchPolicy, N}},
     hints=nothing
 ) where {Tg, Tv, N}
+    has_fill = _has_any_fill_value(itp.extraps)
     @inbounds for k in 1:length(queries)
-        cell = _locate_cell(itp, queries[k], search, hints)
-        output[k] = _eval_at_cell(itp, cell, ops)
+        if has_fill && _check_nd_oob(queries[k], itp.grids, itp.extraps)
+            output[k] = _nd_fill_result(itp.extraps, ops, _zero_ref(itp))
+        else
+            cell = _locate_cell(itp, queries[k], search, hints)
+            output[k] = _eval_at_cell(itp, cell, ops)
+        end
     end
     return output
 end

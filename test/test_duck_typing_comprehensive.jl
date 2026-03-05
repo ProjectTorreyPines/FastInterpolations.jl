@@ -1699,12 +1699,17 @@ _val(d::MyDuck) = d.v
             end
         end
 
-        # --- ND guard: fill value rejected for ND duck data ---
-        @testset "ND fill value guard" begin
-            @test_throws ArgumentError cubic_interp(
+        # --- ND fill value works with duck types ---
+        @testset "ND fill value with duck type" begin
+            itp_c = cubic_interp(
                 (xg, yg), data_2d; extrap=ConstExtrap(fill_val))
-            @test_throws ArgumentError linear_interp(
+            @test itp_c((-0.1, 0.5)) === fill_val  # OOB → fill
+            @test itp_c((0.5, 0.5)) isa MyDuck      # in-domain → normal
+
+            itp_l = linear_interp(
                 (xg, yg), data_2d; extrap=ConstExtrap(fill_val))
+            @test itp_l((-0.1, 0.5)) === fill_val
+            @test itp_l((0.5, 0.5)) isa MyDuck
         end
 
         # --- Type stability ---

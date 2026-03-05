@@ -179,23 +179,162 @@ using FastInterpolations
     end
 
     # ────────────────────────────────────────────
-    # ND guard
+    # ND fill-value evaluation
     # ────────────────────────────────────────────
-    @testset "ND fill-value guard" begin
-        xg = range(0.0, 1.0, length=5)
-        yg = range(0.0, 1.0, length=5)
-        data = rand(5, 5)
+    @testset "ND fill-value evaluation" begin
+        xg = range(0.0, 1.0, length=6)
+        yg = range(0.0, 2.0, length=8)
+        data2d = [xi^2 + yj for xi in xg, yj in yg]
 
-        # Boundary clamp should work fine in ND
-        itp_nd = cubic_interp((xg, yg), data; extrap=ConstExtrap())
-        @test itp_nd((0.5, 0.5)) isa Float64
+        # -- All 4 types with NaN fill --
+        @testset "All types 2D with NaN fill" begin
+            itp_c = cubic_interp((xg, yg), data2d; extrap=ConstExtrap(NaN))
+            itp_l = linear_interp((xg, yg), data2d; extrap=ConstExtrap(NaN))
+            itp_q = quadratic_interp((xg, yg), data2d; extrap=ConstExtrap(NaN))
+            itp_k = constant_interp((xg, yg), data2d; extrap=ConstExtrap(NaN))
 
-        # Fill value should throw
-        @test_throws ArgumentError cubic_interp((xg, yg), data; extrap=ConstExtrap(NaN))
-        @test_throws ArgumentError linear_interp((xg, yg), data; extrap=ConstExtrap(0.0))
+            # In-domain: unchanged behavior
+            in_pt = (0.5, 1.0)
+            @test itp_c(in_pt) isa Float64
+            @test !isnan(itp_c(in_pt))
+            @test !isnan(itp_l(in_pt))
+            @test !isnan(itp_q(in_pt))
+            @test !isnan(itp_k(in_pt))
 
-        # Per-axis tuple with fill value should also throw
-        @test_throws ArgumentError cubic_interp((xg, yg), data; extrap=(ConstExtrap(NaN), ConstExtrap()))
+            # OOB x only
+            @test isnan(itp_c((-0.1, 1.0)))
+            @test isnan(itp_l((-0.1, 1.0)))
+            @test isnan(itp_q((-0.1, 1.0)))
+            @test isnan(itp_k((-0.1, 1.0)))
+
+            # OOB y only
+            @test isnan(itp_c((0.5, 2.5)))
+            @test isnan(itp_l((0.5, 2.5)))
+
+            # OOB both
+            @test isnan(itp_c((-0.1, 2.5)))
+            @test isnan(itp_l((1.5, -0.5)))
+        end
+
+        # -- Zero fill --
+        @testset "Zero fill 2D" begin
+            itp = cubic_interp((xg, yg), data2d; extrap=ConstExtrap(0.0))
+            @test itp((-0.1, 1.0)) === 0.0
+            @test itp((0.5, 2.5)) === 0.0
+            # In-domain unchanged
+            ref = cubic_interp((xg, yg), data2d; extrap=ConstExtrap())
+            @test itp((0.5, 1.0)) ≈ ref((0.5, 1.0))
+        end
+
+        # -- Derivatives return zero (not fill value) --
+        @testset "ND derivatives return zero" begin
+            itp = cubic_interp((xg, yg), data2d; extrap=ConstExtrap(NaN))
+            @test iszero(itp((-0.1, 1.0); deriv=DerivOp(1)))
+            @test iszero(itp((0.5, 2.5); deriv=(DerivOp(1), EvalValue())))
+            @test iszero(itp((-0.1, 1.0); deriv=(EvalValue(), DerivOp(1))))
+        end
+
+        # -- Per-axis heterogeneous extrap --
+        @testset "Per-axis mixed extrap" begin
+            # Fill on x, clamp on y
+            itp = cubic_interp((xg, yg), data2d;
+                extrap=(ConstExtrap(NaN), ConstExtrap()))
+            # OOB on x → fill
+            @test isnan(itp((-0.1, 1.0)))
+            # OOB on y → clamp (not fill)
+            @test !isnan(itp((0.5, 2.5)))
+            # In-domain → normal
+            @test !isnan(itp((0.5, 1.0)))
+        end
+
+        # -- Conflicting fill values → ArgumentError --
+        @testset "Conflicting fill values" begin
+            @test_throws ArgumentError cubic_interp((xg, yg), data2d;
+                extrap=(ConstExtrap(NaN), ConstExtrap(0.0)))
+        end
+
+        # -- Boundary clamp backward compat --
+        @testset "ND boundary clamp unchanged" begin
+            itp = cubic_interp((xg, yg), data2d; extrap=ConstExtrap())
+            @test itp((0.5, 0.5)) isa Float64
+            # Clamp behavior: OOB queries get clamped to boundary
+            @test !isnan(itp((-0.1, 1.0)))
+        end
+    end
+
+    # ────────────────────────────────────────────
+    # ND oneshot fill value
+    # ────────────────────────────────────────────
+    @testset "ND oneshot fill value" begin
+        xg = range(0.0, 1.0, length=6)
+        yg = range(0.0, 2.0, length=8)
+        data2d = [xi^2 + yj for xi in xg, yj in yg]
+
+        @test isnan(cubic_interp((xg, yg), data2d, (-0.1, 1.0); extrap=ConstExtrap(NaN)))
+        @test isnan(linear_interp((xg, yg), data2d, (-0.1, 1.0); extrap=ConstExtrap(NaN)))
+        @test isnan(quadratic_interp((xg, yg), data2d, (-0.1, 1.0); extrap=ConstExtrap(NaN)))
+        @test isnan(constant_interp((xg, yg), data2d, (-0.1, 1.0); extrap=ConstExtrap(NaN)))
+
+        # In-domain oneshot
+        @test !isnan(cubic_interp((xg, yg), data2d, (0.5, 1.0); extrap=ConstExtrap(NaN)))
+    end
+
+    # ────────────────────────────────────────────
+    # ND batch fill value
+    # ────────────────────────────────────────────
+    @testset "ND batch fill value" begin
+        xg = range(0.0, 1.0, length=6)
+        yg = range(0.0, 2.0, length=8)
+        data2d = [xi^2 + yj for xi in xg, yj in yg]
+
+        itp = cubic_interp((xg, yg), data2d; extrap=ConstExtrap(NaN))
+        out = Vector{Float64}(undef, 3)
+
+        # SoA batch: mix of in-domain and OOB
+        xs = [0.5, -0.1, 0.8]
+        ys = [1.0, 1.0, 2.5]
+        itp(out, (xs, ys))
+        @test !isnan(out[1])  # in-domain
+        @test isnan(out[2])   # OOB x
+        @test isnan(out[3])   # OOB y
+
+        # AoS batch
+        pts = [(0.5, 1.0), (-0.1, 1.0), (0.8, 2.5)]
+        itp(out, pts)
+        @test !isnan(out[1])
+        @test isnan(out[2])
+        @test isnan(out[3])
+    end
+
+    # ────────────────────────────────────────────
+    # ND 3D fill value
+    # ────────────────────────────────────────────
+    @testset "3D fill value" begin
+        xg = range(0.0, 1.0, length=4)
+        yg = range(0.0, 1.0, length=4)
+        zg = range(0.0, 1.0, length=4)
+        data3d = [xi + yj + zk for xi in xg, yj in yg, zk in zg]
+
+        itp = linear_interp((xg, yg, zg), data3d; extrap=ConstExtrap(NaN))
+        @test !isnan(itp((0.5, 0.5, 0.5)))
+        @test isnan(itp((-0.1, 0.5, 0.5)))
+        @test isnan(itp((0.5, -0.1, 0.5)))
+        @test isnan(itp((0.5, 0.5, 1.5)))
+    end
+
+    # ────────────────────────────────────────────
+    # ND type promotion
+    # ────────────────────────────────────────────
+    @testset "ND fill type promotion" begin
+        xg = range(0.0f0, 1.0f0, length=5)
+        yg = range(0.0f0, 1.0f0, length=5)
+        data = Float32[xi + yj for xi in xg, yj in yg]
+
+        # Float64 fill → promoted to Float32
+        itp = linear_interp((xg, yg), data; extrap=ConstExtrap(0.0))
+        val = itp((-0.1f0, 0.5f0))
+        @test val === 0.0f0
+        @test val isa Float32
     end
 
     # ────────────────────────────────────────────

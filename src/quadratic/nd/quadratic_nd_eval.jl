@@ -175,6 +175,9 @@ end
 # CORE QUADRATIC EVALUATION
 # ========================================
 
+# Zero-ref for fill-value derivative computation (duck-typed zero via 0 * data_element)
+@inline _zero_ref(itp::QuadraticInterpolantND) = @inbounds first(itp.nodal_derivs.partials)
+
 # Generic N-dimensional (uses _locate_cell + _eval_at_cell)
 @inline function _eval_nd_quadratic(
     itp::QuadraticInterpolantND{Tg, Tv, N},
@@ -183,6 +186,10 @@ end
     search::SEARCH,
     hints=nothing
 ) where {Tg, Tv, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
+    if _has_any_fill_value(itp.extraps)
+        _check_nd_oob(query, itp.grids, itp.extraps) &&
+            return _nd_fill_result(itp.extraps, ops, _zero_ref(itp))
+    end
     cell = _locate_cell(itp, query, search, hints)
     return _eval_at_cell(itp, cell, ops)
 end
@@ -195,6 +202,10 @@ end
     search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
     hints=nothing
 ) where {Tg, Tv}
+    if _has_any_fill_value(itp.extraps)
+        _check_nd_oob(query, itp.grids, itp.extraps) &&
+            return _nd_fill_result(itp.extraps, ops, _zero_ref(itp))
+    end
     cell = _locate_cell(itp, query, search, hints)
     return _eval_at_cell(itp, cell, ops)
 end

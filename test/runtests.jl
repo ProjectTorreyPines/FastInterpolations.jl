@@ -24,6 +24,7 @@ else
     include("test_search.jl")
     include("test_factory.jl")
     include("test_constant.jl")
+    include("test_constextrap_fill.jl")
     include("test_complex_constant.jl")
     include("test_linear.jl")
     include("test_quadratic.jl")

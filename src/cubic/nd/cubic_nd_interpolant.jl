@@ -84,6 +84,7 @@ function cubic_interp(
     searches = _resolve_search_nd(search, Val(N))
 
     extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+    extraps_val = _promote_extraps_nd(extraps_val, Tv)
     return _build_nd_interpolant(grids_typed, data_typed, bcs, extraps_val, searches, coeffs)
 end
 

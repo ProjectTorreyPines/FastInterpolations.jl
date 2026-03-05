@@ -941,6 +941,187 @@ import FastInterpolations: _get_cubic_cache
         end
     end
 
+    # =========================================================================
+    # ConstExtrap Fill Value — ND Zero Allocation Tests
+    # =========================================================================
+    # Verifies that ND ConstExtrap(value) fill-value paths are zero-allocation,
+    # for both oneshot and interpolant eval. The compile-time check
+    # _has_any_fill_value() ensures zero overhead for ConstExtrap() (no fill).
+
+    @testset "ND ConstExtrap fill value: linear oneshot scalar 2D" begin
+        xg = collect(range(0.0, 1.0, 21))
+        yg = collect(range(0.0, 1.0, 21))
+        data = [sin(2π * x + y) for x in xg, y in yg]
+
+        function linear_nd_fill(xq, yq, mode::ConstExtrap)
+            linear_interp((xg, yg), data, (xq, yq); extrap=mode)
+        end
+
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            linear_nd_fill(0.5, 0.5, mode)
+            linear_nd_fill(-0.5, 0.5, mode)
+            linear_nd_fill(0.5, 0.5, mode)
+            linear_nd_fill(-0.5, 0.5, mode)
+        end
+
+        # In-domain
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            allocs = @allocated linear_nd_fill(0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain (fill value short-circuit)
+        for mode in (ConstExtrap(0.0), ConstExtrap(NaN))
+            allocs = @allocated linear_nd_fill(-0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND ConstExtrap fill value: linear interpolant 2D" begin
+        xg = collect(range(0.0, 1.0, 21))
+        yg = collect(range(0.0, 1.0, 21))
+        data = [sin(2π * x + y) for x in xg, y in yg]
+
+        itp_clamp = linear_interp((xg, yg), data; extrap=ConstExtrap())
+        itp_zero = linear_interp((xg, yg), data; extrap=ConstExtrap(0.0))
+        itp_nan = linear_interp((xg, yg), data; extrap=ConstExtrap(NaN))
+
+        function eval_nd_itp(itp, xq, yq)
+            itp((xq, yq))
+        end
+
+        for itp in (itp_clamp, itp_zero, itp_nan)
+            eval_nd_itp(itp, 0.5, 0.5)
+            eval_nd_itp(itp, -0.5, 0.5)
+            eval_nd_itp(itp, 0.5, 0.5)
+            eval_nd_itp(itp, -0.5, 0.5)
+        end
+
+        # In-domain
+        for itp in (itp_clamp, itp_zero, itp_nan)
+            allocs = @allocated eval_nd_itp(itp, 0.5, 0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain
+        for itp in (itp_clamp, itp_zero, itp_nan)
+            allocs = @allocated eval_nd_itp(itp, -0.5, 0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND ConstExtrap fill value: cubic oneshot scalar 2D" begin
+        xg = collect(range(0.0, 1.0, 21))
+        yg = collect(range(0.0, 1.0, 21))
+        data = [sin(2π * x + y) for x in xg, y in yg]
+
+        function cubic_nd_fill(xq, yq, mode::ConstExtrap)
+            cubic_interp((xg, yg), data, (xq, yq); extrap=mode)
+        end
+
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            cubic_nd_fill(0.5, 0.5, mode)
+            cubic_nd_fill(-0.5, 0.5, mode)
+            cubic_nd_fill(0.5, 0.5, mode)
+            cubic_nd_fill(-0.5, 0.5, mode)
+        end
+
+        # In-domain
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            allocs = @allocated cubic_nd_fill(0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain (fill value short-circuit, before partials computation)
+        for mode in (ConstExtrap(0.0), ConstExtrap(NaN))
+            allocs = @allocated cubic_nd_fill(-0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND ConstExtrap fill value: quadratic oneshot scalar 2D" begin
+        xg = collect(range(0.0, 1.0, 21))
+        yg = collect(range(0.0, 1.0, 21))
+        data = [sin(2π * x + y) for x in xg, y in yg]
+
+        function quadratic_nd_fill(xq, yq, mode::ConstExtrap)
+            quadratic_interp((xg, yg), data, (xq, yq); extrap=mode)
+        end
+
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            quadratic_nd_fill(0.5, 0.5, mode)
+            quadratic_nd_fill(-0.5, 0.5, mode)
+            quadratic_nd_fill(0.5, 0.5, mode)
+            quadratic_nd_fill(-0.5, 0.5, mode)
+        end
+
+        # In-domain
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            allocs = @allocated quadratic_nd_fill(0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain (fill value short-circuit, before partials computation)
+        for mode in (ConstExtrap(0.0), ConstExtrap(NaN))
+            allocs = @allocated quadratic_nd_fill(-0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND ConstExtrap fill value: constant oneshot scalar 2D" begin
+        xg = collect(range(0.0, 1.0, 21))
+        yg = collect(range(0.0, 1.0, 21))
+        data = [sin(2π * x + y) for x in xg, y in yg]
+
+        function constant_nd_fill(xq, yq, mode::ConstExtrap)
+            constant_interp((xg, yg), data, (xq, yq); extrap=mode)
+        end
+
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            constant_nd_fill(0.5, 0.5, mode)
+            constant_nd_fill(-0.5, 0.5, mode)
+            constant_nd_fill(0.5, 0.5, mode)
+            constant_nd_fill(-0.5, 0.5, mode)
+        end
+
+        # In-domain
+        for mode in (ConstExtrap(), ConstExtrap(0.0), ConstExtrap(NaN))
+            allocs = @allocated constant_nd_fill(0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain (fill value short-circuit)
+        for mode in (ConstExtrap(0.0), ConstExtrap(NaN))
+            allocs = @allocated constant_nd_fill(-0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND ConstExtrap fill value: mixed per-axis extrap 2D" begin
+        xg = collect(range(0.0, 1.0, 21))
+        yg = collect(range(0.0, 1.0, 21))
+        data = [sin(2π * x + y) for x in xg, y in yg]
+
+        # Fill on x-axis, clamp on y-axis
+        function linear_nd_mixed(xq, yq)
+            linear_interp((xg, yg), data, (xq, yq);
+                          extrap=(ConstExtrap(NaN), ConstExtrap()))
+        end
+
+        linear_nd_mixed(0.5, 0.5)
+        linear_nd_mixed(-0.5, 0.5)
+        linear_nd_mixed(0.5, 0.5)
+        linear_nd_mixed(-0.5, 0.5)
+
+        # In-domain
+        allocs = @allocated linear_nd_mixed(0.5, 0.5)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # OOB on fill axis → fill value
+        allocs = @allocated linear_nd_mixed(-0.5, 0.5)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
     @testset "Typed extrap: LinearInterpolant construction" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)

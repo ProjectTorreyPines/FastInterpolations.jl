@@ -214,12 +214,12 @@ import FastInterpolations:
 
         @testset "_resolve_extrap_nd wrong-sized tuple error" begin
             # Correct size should work (3-arg form: extrap, bcs, Val(N))
-            @test _resolve_extrap_nd(NoExtrap(), nothing, Val(2)) == (NoExtrap(), NoExtrap())
-            @test _resolve_extrap_nd((NoExtrap(), ConstExtrap()), nothing, Val(2)) == (NoExtrap(), ConstExtrap())
+            @test _resolve_extrap_nd(NoExtrap(), nothing, Val(2), Float64) == (NoExtrap(), NoExtrap())
+            @test _resolve_extrap_nd((NoExtrap(), ClampedExtrap()), nothing, Val(2), Float64) == (NoExtrap(), ClampedExtrap())
 
             # Wrong size should throw
-            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(),), nothing, Val(2))  # 1 element for 2D
-            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(), NoExtrap(), NoExtrap()), nothing, Val(2))  # 3 for 2D
+            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(),), nothing, Val(2), Float64)  # 1 element for 2D
+            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(), NoExtrap(), NoExtrap()), nothing, Val(2), Float64)  # 3 for 2D
         end
 
         @testset "_resolve_search_nd wrong-sized tuple error" begin

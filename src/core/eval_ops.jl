@@ -128,8 +128,7 @@ abstract type ConstExtrap <: AbstractExtrap end
 # Factory constructors — preserve existing API
 # Kwarg form: ConstExtrap(; value=NaN), no-arg: ConstExtrap() → ClampedExtrap()
 ConstExtrap(; value=nothing) = value === nothing ? ClampedExtrap() : FillExtrap(value)
-ConstExtrap(v::Real) = FillExtrap(v)
-ConstExtrap(v::Complex{T}) where {T<:AbstractFloat} = FillExtrap(v)
+ConstExtrap(v) = FillExtrap(v)
 
 """
     ClampedExtrap <: ConstExtrap

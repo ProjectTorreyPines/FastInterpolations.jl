@@ -1603,14 +1603,14 @@ _val(d::MyDuck) = d.v
         # --- Construction ---
         @testset "construction with duck type" begin
             e = ConstExtrap(fill_val)
-            @test e isa ConstExtrap{MyDuck}
+            @test e isa FillExtrap{MyDuck}
             @test e.value === fill_val
         end
 
         @testset "_promote_extrap identity for matching Tv" begin
             e = ConstExtrap(fill_val)
             ep = _promote_extrap(e, MyDuck)
-            @test ep isa ConstExtrap{MyDuck}
+            @test ep isa FillExtrap{MyDuck}
             @test ep.value === fill_val
         end
 

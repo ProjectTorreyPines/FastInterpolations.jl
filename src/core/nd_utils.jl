@@ -29,16 +29,16 @@
 # - `nothing` for constant/linear (no BCs)
 # - NTuple{N, AbstractBC} for quadratic/cubic
 
-# ── Fill-value ConstExtrap validation for ND ───────────────────────────
+# ── Fill-value FillExtrap validation for ND ────────────────────────────
 # All fill-value axes must have the same value (prevents ambiguity).
-# ConstExtrap{Nothing} (boundary clamp) is always OK and not counted.
+# ConstExtrap (boundary clamp) is always OK and not counted.
 @noinline _throw_conflicting_fill_values() = throw(ArgumentError(
-    "All ConstExtrap fill values in ND must be identical; " *
+    "All FillExtrap fill values in ND must be identical; " *
     "got conflicting fill values on different axes"))
 
 @generated function _validate_fill_values_nd(extraps::E) where {E<:Tuple{Vararg{AbstractExtrap}}}
     N = fieldcount(E)
-    fill_dims = [d for d in 1:N if fieldtype(E, d) <: ConstExtrap && !(fieldtype(E, d) <: ConstExtrap{Nothing})]
+    fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
     length(fill_dims) <= 1 && return :(nothing)
     first_d = fill_dims[1]
     checks = [:(extraps[$first_d].value === extraps[$d].value || _throw_conflicting_fill_values()) for d in fill_dims[2:end]]
@@ -53,14 +53,13 @@ end
 """
     _has_any_fill_value(extraps) -> Bool
 
-Compile-time check: does any axis have ConstExtrap{T} where T ≠ Nothing?
+Compile-time check: does any axis have FillExtrap?
 Returns a constant `true`/`false` so the fill-value branch is dead-code-eliminated
 when no fill values exist.
 """
 @generated function _has_any_fill_value(::E) where {E<:Tuple{Vararg{AbstractExtrap}}}
     for d in 1:fieldcount(E)
-        Fd = fieldtype(E, d)
-        Fd <: ConstExtrap && !(Fd <: ConstExtrap{Nothing}) && return :(true)
+        fieldtype(E, d) <: FillExtrap && return :(true)
     end
     return :(false)
 end
@@ -68,13 +67,12 @@ end
 """
     _get_fill_value(extraps) -> fill_value
 
-Extract the fill value from the first ConstExtrap{T≠Nothing} axis.
+Extract the fill value from the first FillExtrap axis.
 Only called when `_has_any_fill_value` is true.
 """
 @generated function _get_fill_value(extraps::E) where {E<:Tuple{Vararg{AbstractExtrap}}}
     for d in 1:fieldcount(E)
-        Fd = fieldtype(E, d)
-        Fd <: ConstExtrap && !(Fd <: ConstExtrap{Nothing}) && return :(extraps[$d].value)
+        fieldtype(E, d) <: FillExtrap && return :(extraps[$d].value)
     end
     :(error("_get_fill_value called with no fill-value axis"))
 end
@@ -92,7 +90,7 @@ Check only fill-value axes for out-of-domain. Non-fill axes are skipped at compi
     checks = Expr[]
     for d in 1:N
         Fd = fieldtype(E, d)
-        if Fd <: ConstExtrap && !(Fd <: ConstExtrap{Nothing})
+        if Fd <: FillExtrap
             push!(checks, quote
                 let q_primal = _extract_primal(query[$d])
                     (q_primal < first(grids[$d]) || q_primal > last(grids[$d])) && return true
@@ -120,7 +118,7 @@ Return the fill value (for EvalValue) or `0 * zero_ref` (for any derivative).
     ops::NTuple{N, AbstractEvalOp},
     zero_ref
 ) where {N}
-    # Constant fill → all derivatives are zero
+    # Fill extrap → all derivatives are zero
     for d in 1:N
         @inbounds (ops[d] isa EvalDeriv1 || ops[d] isa EvalDeriv2 || ops[d] isa EvalDeriv3) && return 0 * zero_ref
     end

@@ -88,9 +88,9 @@ Use concrete subtypes at the API boundary for compile-time dispatch.
 - [`WrapExtrap`](@ref): Wrap queries into domain (periodic)
 
 !!! warning "Union-splitting invariant"
-    Keep exactly 4 concrete subtypes. Julia's compiler union-splits up to 4 types
-    on hot paths; adding a 5th subtype would cause dynamic dispatch and allocation
-    in all oneshot/eval code paths.
+    Keep exactly 5 concrete subtypes. Julia's compiler union-splits up to 4 types;
+    ND heterogeneous tuples with all 5 types in one tuple may see dynamic dispatch.
+    In practice, interpolants store concrete type parameters so this rarely matters.
 """
 abstract type AbstractExtrap end
 
@@ -107,49 +107,83 @@ itp = cubic_interp((x, y), data; extrap=NoExtrap())
 struct NoExtrap <: AbstractExtrap end
 
 """
-    ConstExtrap{T} <: AbstractExtrap
+    ConstExtrap <: AbstractExtrap
 
-Constant extrapolation — returns a fixed value for out-of-domain queries.
+Abstract type for constant extrapolation modes. Both boundary clamp and fill-value
+extrapolation share the same OOB-check-then-return-constant logic, differing only
+in which constant is returned.
 
-- `ConstExtrap()`: clamp to nearest boundary value (`y[1]` / `y[end]`)
-- `ConstExtrap(value)`: return `value` for all out-of-domain queries
+# Concrete subtypes
+- [`ClampedExtrap`](@ref): Clamp to nearest boundary value
+- [`FillExtrap`](@ref): Return a user-specified fill value
 
-The type parameter `T` is the value type (`Nothing` for boundary clamp, concrete type for fill value).
-Follows the same pattern as `Deriv1{Tv}` — standard numerics auto-promote to float,
-duck types (SVector, etc.) are stored as-is.
+# Factory constructors (backward-compatible API)
+```julia
+ConstExtrap()     # → ClampedExtrap()
+ConstExtrap(NaN)  # → FillExtrap(NaN)
+```
+"""
+abstract type ConstExtrap <: AbstractExtrap end
+
+# Factory constructors — preserve existing API
+# Kwarg form: ConstExtrap(; value=NaN), no-arg: ConstExtrap() → ClampedExtrap()
+ConstExtrap(; value=nothing) = value === nothing ? ClampedExtrap() : FillExtrap(value)
+ConstExtrap(v::Real) = FillExtrap(v)
+ConstExtrap(v::Complex{T}) where {T<:AbstractFloat} = FillExtrap(v)
+
+"""
+    ClampedExtrap <: ConstExtrap
+
+Constant extrapolation — clamps to nearest boundary value for out-of-domain queries.
+
+Returns `y[1]` for queries below domain, `y[end]` for queries above domain.
+
+# Example
+```julia
+itp = cubic_interp(x, y; extrap=ClampedExtrap())  # clamp to boundary values
+itp = cubic_interp(x, y; extrap=ConstExtrap())     # same thing (factory)
+```
+"""
+struct ClampedExtrap <: ConstExtrap end
+
+"""
+    FillExtrap{T} <: ConstExtrap
+
+Fill extrapolation — returns a user-specified constant value for out-of-domain queries.
+
+Standard numerics auto-promote to float; duck types (SVector, etc.) are stored as-is.
+Follows the same pattern as `Deriv1{Tv}`.
 
 # Examples
 ```julia
-itp = cubic_interp(x, y; extrap=ConstExtrap())        # clamp to boundary
-itp = cubic_interp(x, y; extrap=ConstExtrap(NaN))      # NaN outside domain
-itp = cubic_interp(x, y; extrap=ConstExtrap(0.0))      # zero outside domain
-itp = cubic_interp(x, y; extrap=ConstExtrap(; value=NaN))  # kwarg form
+itp = cubic_interp(x, y; extrap=FillExtrap(NaN))      # NaN outside domain
+itp = cubic_interp(x, y; extrap=FillExtrap(0.0))       # zero outside domain
+itp = cubic_interp(x, y; extrap=FillExtrap(; value=0))  # kwarg form
 ```
 """
-struct ConstExtrap{T} <: AbstractExtrap
+struct FillExtrap{T} <: ConstExtrap
     value::T
 end
 # Outer constructors: standard numerics auto-promote to float
-# Custom types fall through to Julia's auto-generated ConstExtrap(v) = ConstExtrap{typeof(v)}(v)
-ConstExtrap(v::Real) = ConstExtrap{typeof(float(v))}(float(v))
-ConstExtrap(v::Complex{T}) where {T<:AbstractFloat} = ConstExtrap{Complex{T}}(v)
-# Kwarg convenience (also handles no-arg: ConstExtrap() → value=nothing → ConstExtrap{Nothing})
-ConstExtrap(; value=nothing) = ConstExtrap(value)
+# Custom types fall through to Julia's auto-generated FillExtrap(v) = FillExtrap{typeof(v)}(v)
+FillExtrap(v::Real) = FillExtrap{typeof(float(v))}(float(v))
+FillExtrap(v::Complex{T}) where {T<:AbstractFloat} = FillExtrap{Complex{T}}(v)
+# Kwarg convenience
+FillExtrap(; value) = FillExtrap(value)
 # Conversion constructor (for _promote_extrap, mirrors Deriv1{Tv}(bc::Deriv1))
-ConstExtrap{T}(e::ConstExtrap) where {T} = ConstExtrap{T}(convert(T, e.value))
+FillExtrap{T}(e::FillExtrap) where {T} = FillExtrap{T}(convert(T, e.value))
 
 """
     _promote_extrap(e::AbstractExtrap, ::Type{Tv}) -> AbstractExtrap
 
-Promote a `ConstExtrap` fill value to match the interpolant's value type `Tv`.
+Promote a `FillExtrap` fill value to match the interpolant's value type `Tv`.
 Mirrors `_promote_pointbc` — converts fill value via `convert(Tv, e.value)` at
 construction time so eval returns the correct type with zero overhead.
 
-Non-ConstExtrap types and `ConstExtrap{Nothing}` (boundary clamp) pass through unchanged.
+Non-FillExtrap types pass through unchanged.
 Raises `InexactError`/`MethodError` at construction time if `Tv` cannot represent `e.value`.
 """
-@inline _promote_extrap(e::ConstExtrap{Nothing}, ::Type) = e
-@inline _promote_extrap(e::ConstExtrap, ::Type{Tv}) where {Tv} = ConstExtrap{Tv}(convert(Tv, e.value))
+@inline _promote_extrap(e::FillExtrap, ::Type{Tv}) where {Tv} = FillExtrap{Tv}(convert(Tv, e.value))
 @inline _promote_extrap(e::AbstractExtrap, ::Type) = e
 
 """

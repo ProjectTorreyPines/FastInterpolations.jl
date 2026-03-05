@@ -183,7 +183,7 @@ end
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
-# ConstExtrap - clamp to boundary (value only, derivatives are zero)
+# ConstExtrap/FillExtrap - clamp to boundary or fill (value only, derivatives are zero)
 @inline function _eval_linear_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},

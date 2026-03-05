@@ -23,7 +23,7 @@ import FastInterpolations:
     LinearInterpolant, ConstantInterpolant, QuadraticInterpolant, CubicInterpolant,
     LinearSeriesInterpolant, ConstantSeriesInterpolant,
     QuadraticSeriesInterpolant, CubicSeriesInterpolant,
-    DerivativeView, NoExtrap, ConstExtrap
+    DerivativeView, NoExtrap, ConstExtrap, ClampedExtrap, FillExtrap
 
 # ========================================
 # Helper Functions
@@ -120,8 +120,7 @@ _default_margin(x::AbstractVector{T}) where {T} = T(0.25) * (last(x) - first(x))
 
 Check if extrap is a ConstExtrap with a non-nothing fill value.
 """
-_has_fill_value(::ConstExtrap{Nothing}) = false
-_has_fill_value(::ConstExtrap) = true
+_has_fill_value(::FillExtrap) = true
 _has_fill_value(::Any) = false
 
 """
@@ -129,7 +128,7 @@ _has_fill_value(::Any) = false
 
 Check if the fill value is finite (not NaN, not Inf).
 """
-_fill_is_finite(e::ConstExtrap) = e.value !== nothing && isfinite(e.value)
+_fill_is_finite(e::FillExtrap) = isfinite(e.value)
 _fill_is_finite(::Any) = false
 
 """
@@ -137,7 +136,7 @@ _fill_is_finite(::Any) = false
 
 Format fill value for legend label.
 """
-_format_fill_label(e::ConstExtrap) = "fill = $(e.value)"
+_format_fill_label(e::FillExtrap) = "fill = $(e.value)"
 _format_fill_label(::Any) = ""
 
 # ========================================

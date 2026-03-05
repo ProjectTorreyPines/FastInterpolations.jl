@@ -21,7 +21,7 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-    ::ConstExtrap{Nothing}, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+    ::ClampedExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
 ) where Tout
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)
@@ -42,7 +42,7 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-    e::ConstExtrap, in_domain_fn, x, _y_left, _y_right, x0::Real, x1::Real, ::Type{Tout}
+    e::FillExtrap, in_domain_fn, x, _y_left, _y_right, x0::Real, x1::Real, ::Type{Tout}
 ) where Tout
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)

@@ -105,10 +105,8 @@ end
 """Format extrapolation mode from AbstractExtrap."""
 function _format_extrap(mode)
     mode isa NoExtrap && return "NoExtrap"
-    if mode isa ConstExtrap
-        mode.value === nothing && return "ConstExtrap"
-        return "ConstExtrap($(mode.value))"
-    end
+    mode isa ClampedExtrap && return "ConstExtrap"
+    mode isa FillExtrap && return "FillExtrap($(mode.value))"
     mode isa ExtendExtrap && return "ExtendExtrap"
     mode isa WrapExtrap && return "WrapExtrap"
     return "unknown"

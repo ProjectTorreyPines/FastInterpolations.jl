@@ -133,7 +133,7 @@ Extrap(NoExtrap())   # → NoExtrap()
 """
 function Extrap(sym::Symbol; value=nothing)
     sym === :none     && return NoExtrap()
-    sym === :constant && return ConstExtrap(; value)
+    sym === :constant && return value === nothing ? ClampedExtrap() : FillExtrap(value)
     sym === :extend   && return ExtendExtrap()
     sym === :wrap     && return WrapExtrap()
     _extrap_unknown_error(sym)

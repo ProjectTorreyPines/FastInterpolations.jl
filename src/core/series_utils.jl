@@ -92,20 +92,20 @@ end
 """
     _constant_extrap_boundary_value(y, side, n_pts, k, op, extrap) -> T
 
-Get the boundary value for constant extrapolation in scalar series evaluation path.
+Get the boundary value for constant/fill extrapolation in scalar series evaluation path.
 
-For `EvalValue` + `ConstExtrap{Nothing}`, returns the boundary y-value.
-For `EvalValue` + `ConstExtrap{T}`, returns the fill value.
+For `EvalValue` + `ConstExtrap`, returns the boundary y-value.
+For `EvalValue` + `FillExtrap`, returns the fill value.
 For derivatives, returns zero via `0 * y` (duck-typing compatible).
 """
 @inline function _constant_extrap_boundary_value(
-    y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ConstExtrap{Nothing}
+    y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampedExtrap
 ) where {Tv}
     @inbounds return y[_boundary_point_index(side, n_pts), k]
 end
 
 @inline function _constant_extrap_boundary_value(
-    ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::EvalValue, e::ConstExtrap
+    ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::EvalValue, e::FillExtrap
 ) where {Tv}
     return e.value
 end
@@ -119,14 +119,14 @@ end
 """
     _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap) -> out
 
-Fill output vector with boundary/fill values for constant extrapolation (SIMD path).
+Fill output vector with boundary/fill values for constant/fill extrapolation (SIMD path).
 
-For `EvalValue` + `ConstExtrap{Nothing}`, fills with boundary y-values.
-For `EvalValue` + `ConstExtrap{T}`, fills with the fill value.
+For `EvalValue` + `ConstExtrap`, fills with boundary y-values.
+For `EvalValue` + `FillExtrap`, fills with the fill value.
 For derivatives, fills with zeros.
 """
 @inline function _fill_constant_extrap_simd!(
-    out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::EvalValue, ::ConstExtrap{Nothing}
+    out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::EvalValue, ::ClampedExtrap
 ) where {Tv}
     idx = _boundary_point_index(side, n_pts)
     @inbounds @simd for k in axes(out, 1)
@@ -136,7 +136,7 @@ For derivatives, fills with zeros.
 end
 
 @inline function _fill_constant_extrap_simd!(
-    out::AbstractVector{Tv}, ::Matrix{Tv}, ::UInt8, ::Int, ::EvalValue, e::ConstExtrap
+    out::AbstractVector{Tv}, ::Matrix{Tv}, ::UInt8, ::Int, ::EvalValue, e::FillExtrap
 ) where {Tv}
     @inbounds @simd for k in axes(out, 1)
         out[k] = e.value

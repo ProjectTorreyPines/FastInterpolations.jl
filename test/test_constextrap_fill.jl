@@ -3,38 +3,47 @@ using FastInterpolations
 
 @testset "ConstExtrap Fill Value" begin
     # ────────────────────────────────────────────
-    # Construction & Type Promotion
+    # Construction & Type Hierarchy
     # ────────────────────────────────────────────
-    @testset "ConstExtrap construction" begin
-        # No-arg: boundary clamp (Nothing)
+    @testset "ConstExtrap type hierarchy" begin
+        # ConstExtrap is abstract
+        @test isabstracttype(ConstExtrap)
+        @test ClampedExtrap <: ConstExtrap
+        @test FillExtrap <: ConstExtrap
+        @test ConstExtrap <: AbstractExtrap
+
+        # No-arg factory: boundary clamp
         e0 = ConstExtrap()
-        @test e0.value === nothing
-        @test e0 isa ConstExtrap{Nothing}
+        @test e0 isa ClampedExtrap
 
         # Float value: auto-promote Int → Float64
         e1 = ConstExtrap(0)
         @test e1.value === 0.0
-        @test e1 isa ConstExtrap{Float64}
+        @test e1 isa FillExtrap{Float64}
 
         # Float64
         e2 = ConstExtrap(NaN)
         @test isnan(e2.value)
-        @test e2 isa ConstExtrap{Float64}
+        @test e2 isa FillExtrap{Float64}
 
         # Float32
         e3 = ConstExtrap(0.0f0)
         @test e3.value === 0.0f0
-        @test e3 isa ConstExtrap{Float32}
+        @test e3 isa FillExtrap{Float32}
 
         # Kwarg form
         e4 = ConstExtrap(; value=NaN)
         @test isnan(e4.value)
-        @test e4 isa ConstExtrap{Float64}
+        @test e4 isa FillExtrap{Float64}
 
         # Kwarg no-arg → boundary clamp
         e5 = ConstExtrap(; value=nothing)
-        @test e5.value === nothing
-        @test e5 isa ConstExtrap{Nothing}
+        @test e5 isa ClampedExtrap
+
+        # Direct construction
+        @test ClampedExtrap() isa ClampedExtrap
+        @test FillExtrap(NaN) isa FillExtrap{Float64}
+        @test FillExtrap(0.0f0) isa FillExtrap{Float32}
     end
 
     @testset "_promote_extrap" begin
@@ -44,21 +53,21 @@ using FastInterpolations
         @test _promote_extrap(NoExtrap(), Float64) === NoExtrap()
         @test _promote_extrap(ExtendExtrap(), Float64) === ExtendExtrap()
 
-        # ConstExtrap{Nothing} passes through regardless of Tv
-        e_nothing = ConstExtrap()
-        @test _promote_extrap(e_nothing, Float64) === e_nothing
-        @test _promote_extrap(e_nothing, Float32) === e_nothing
+        # ClampedExtrap passes through regardless of Tv
+        e_clamp = ClampedExtrap()
+        @test _promote_extrap(e_clamp, Float64) === e_clamp
+        @test _promote_extrap(e_clamp, Float32) === e_clamp
 
         # Fill value gets converted to Tv
-        e_f64 = ConstExtrap(0.0)
+        e_f64 = FillExtrap(0.0)
         e_promoted = _promote_extrap(e_f64, Float32)
-        @test e_promoted isa ConstExtrap{Float32}
+        @test e_promoted isa FillExtrap{Float32}
         @test e_promoted.value === 0.0f0
 
         # NaN promotion
-        e_nan = ConstExtrap(NaN)
+        e_nan = FillExtrap(NaN)
         e_nan32 = _promote_extrap(e_nan, Float32)
-        @test e_nan32 isa ConstExtrap{Float32}
+        @test e_nan32 isa FillExtrap{Float32}
         @test isnan(e_nan32.value)
     end
 
@@ -373,8 +382,8 @@ using FastInterpolations
 
         @test occursin("ConstExtrap", s_clamp)
         @test !occursin("ConstExtrap(", s_clamp)  # no parens for boundary clamp
-        @test occursin("ConstExtrap(NaN)", s_nan)
-        @test occursin("ConstExtrap(0.0)", s_zero)
+        @test occursin("FillExtrap(NaN)", s_nan)
+        @test occursin("FillExtrap(0.0)", s_zero)
     end
 
     # ────────────────────────────────────────────
@@ -382,14 +391,14 @@ using FastInterpolations
     # ────────────────────────────────────────────
     @testset "Extrap factory with value" begin
         e1 = Extrap(:constant)
-        @test e1 isa ConstExtrap{Nothing}
+        @test e1 isa ClampedExtrap
 
         e2 = Extrap(:constant; value=NaN)
-        @test e2 isa ConstExtrap{Float64}
+        @test e2 isa FillExtrap{Float64}
         @test isnan(e2.value)
 
         e3 = Extrap(:constant; value=0.0)
-        @test e3 isa ConstExtrap{Float64}
+        @test e3 isa FillExtrap{Float64}
         @test e3.value === 0.0
     end
 

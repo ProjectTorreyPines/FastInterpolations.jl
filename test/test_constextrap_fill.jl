@@ -489,10 +489,13 @@ using FastInterpolations
     # ────────────────────────────────────────────
     # ClampedExtrap ND derivative correctness
     # ────────────────────────────────────────────
+    # ClampedExtrap clamps the query to the domain boundary and evaluates normally.
+    # Derivatives at the clamped point are the REAL derivatives at the boundary,
+    # not zeroed out. For f(x,y) = x² + y²: at boundary x=0, ∂f/∂x = 0, ∂²f/∂x² = 2.
     @testset "ClampedExtrap ND derivative correctness" begin
         xg = range(0.0, 1.0, length=11)
         yg = range(0.0, 1.0, length=11)
-        # f(x,y) = x² + y² → ∂f/∂x = 2x, ∂f/∂y = 2y
+        # f(x,y) = x² + y² → ∂f/∂x = 2x, ∂f/∂y = 2y, ∂²f/∂x² = ∂²f/∂y² = 2
         data = [xi^2 + yj^2 for xi in xg, yj in yg]
         itp = cubic_interp((xg, yg), data; extrap=ClampedExtrap())
 
@@ -501,46 +504,47 @@ using FastInterpolations
         @test g_in[1] ≈ 1.0 atol=0.05   # ∂f/∂x ≈ 2*0.5
         @test g_in[2] ≈ 1.0 atol=0.05   # ∂f/∂y ≈ 2*0.5
 
-        # OOB on x-axis only → ∂f/∂x = 0, ∂f/∂y computed at clamped boundary
+        # OOB on x-axis → clamped to x=0: ∂f/∂x = 2*0 ≈ 0, ∂f/∂y = 2*0.5 ≈ 1
         g_oob_x = gradient(itp, (-0.2, 0.5))
-        @test g_oob_x[1] == 0.0  # OOB axis → zero derivative
-        @test g_oob_x[2] ≈ 1.0 atol=0.05  # in-domain axis → normal ∂f/∂y at (0,0.5)
+        @test g_oob_x[1] ≈ 0.0 atol=0.05  # ∂f/∂x at x=0
+        @test g_oob_x[2] ≈ 1.0 atol=0.05  # ∂f/∂y at y=0.5
 
-        # OOB on y-axis only → ∂f/∂x computed at clamped boundary, ∂f/∂y = 0
+        # OOB on y-axis → clamped to y=1: ∂f/∂x = 2*0.5 ≈ 1, ∂f/∂y = 2*1 ≈ 2
         g_oob_y = gradient(itp, (0.5, 1.5))
-        @test g_oob_y[1] ≈ 1.0 atol=0.05  # in-domain axis → normal ∂f/∂x at (0.5,1)
-        @test g_oob_y[2] == 0.0  # OOB axis → zero derivative
+        @test g_oob_y[1] ≈ 1.0 atol=0.05  # ∂f/∂x at x=0.5
+        @test g_oob_y[2] ≈ 2.0 atol=0.05  # ∂f/∂y at y=1
 
-        # Both axes OOB → all derivatives zero
+        # Both axes OOB → clamped to (0, 1): ∂f/∂x = 0, ∂f/∂y = 2
         g_oob_both = gradient(itp, (-0.2, 1.5))
-        @test all(iszero, g_oob_both)
+        @test g_oob_both[1] ≈ 0.0 atol=0.05
+        @test g_oob_both[2] ≈ 2.0 atol=0.05
 
         # gradient! same behavior
         G = zeros(2)
         gradient!(G, itp, (-0.2, 0.5))
-        @test G[1] == 0.0
+        @test G[1] ≈ 0.0 atol=0.05
         @test G[2] ≈ 1.0 atol=0.05
 
-        # Hessian: OOB axis rows/columns should be zero
+        # Hessian at clamped boundary: ∂²f/∂x² = 2, ∂²f/∂y² = 2, mixed ≈ 0
         H = hessian(itp, (-0.2, 0.5))
-        @test H[1, 1] == 0.0   # ∂²f/∂x² on OOB axis
-        @test H[1, 2] == 0.0   # mixed partial involving OOB axis
-        @test H[2, 1] == 0.0   # symmetric
-        @test H[2, 2] ≈ 2.0 atol=0.1  # ∂²f/∂y² on in-domain axis
+        @test H[1, 1] ≈ 2.0 atol=0.1   # ∂²f/∂x² at x=0
+        @test H[1, 2] ≈ 0.0 atol=0.1   # mixed partial ≈ 0
+        @test H[2, 1] ≈ 0.0 atol=0.1   # symmetric
+        @test H[2, 2] ≈ 2.0 atol=0.1   # ∂²f/∂y² at y=0.5
 
         # hessian! same behavior
         H2 = ones(2, 2)
         hessian!(H2, itp, (-0.2, 0.5))
-        @test H2[1, 1] == 0.0
-        @test H2[1, 2] == 0.0
+        @test H2[1, 1] ≈ 2.0 atol=0.1
+        @test H2[1, 2] ≈ 0.0 atol=0.1
         @test H2[2, 2] ≈ 2.0 atol=0.1
 
-        # Laplacian: only in-domain axes contribute
+        # Laplacian: sum of all second derivatives (both contribute)
         lap = laplacian(itp, (-0.2, 0.5))
-        @test lap ≈ 2.0 atol=0.1  # only ∂²f/∂y² contributes
+        @test lap ≈ 4.0 atol=0.2  # ∂²f/∂x² + ∂²f/∂y² = 2 + 2
 
         lap_both_oob = laplacian(itp, (-0.2, 1.5))
-        @test lap_both_oob == 0.0
+        @test lap_both_oob ≈ 4.0 atol=0.2  # clamped to (0,1): still 2 + 2
     end
 
     # ────────────────────────────────────────────
@@ -560,11 +564,11 @@ using FastInterpolations
         g_in = gradient(itp, (0.5, 0.5))
         @test all(isfinite, g_in)
 
-        # OOB on axis 1 (Clamped) → clamp value, derivatives masked
+        # OOB on axis 1 (Clamped) → clamp value, derivatives at boundary
         val_oob_x = itp((-0.2, 0.5))
         @test isfinite(val_oob_x)  # clamped, not NaN
         g_oob_x = gradient(itp, (-0.2, 0.5))
-        @test g_oob_x[1] == 0.0  # ClampedExtrap OOB axis → zero
+        @test g_oob_x[1] ≈ 0.0 atol=0.05  # ∂f/∂x at x=0 boundary
         @test isfinite(g_oob_x[2])  # in-domain axis
 
         # OOB on axis 2 (Fill) → NaN value, all derivatives zero
@@ -577,11 +581,11 @@ using FastInterpolations
         H = hessian(itp, (0.5, 1.5))
         @test all(iszero, H)
 
-        # Hessian: OOB on Clamp axis only → row/col 1 zero, H[2,2] nonzero
+        # Hessian: OOB on Clamp axis only → real derivatives at boundary
         H2 = hessian(itp, (-0.2, 0.5))
-        @test H2[1, 1] == 0.0
-        @test H2[1, 2] == 0.0
-        @test H2[2, 1] == 0.0
-        @test H2[2, 2] ≈ 2.0 atol=0.1
+        @test H2[1, 1] ≈ 2.0 atol=0.1  # ∂²f/∂x² at x=0
+        @test H2[1, 2] ≈ 0.0 atol=0.1  # mixed partial ≈ 0
+        @test H2[2, 1] ≈ 0.0 atol=0.1  # symmetric
+        @test H2[2, 2] ≈ 2.0 atol=0.1  # ∂²f/∂y² at y=0.5
     end
 end

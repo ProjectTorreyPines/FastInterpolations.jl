@@ -49,19 +49,12 @@ See also: [`gradient!`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
         :(_eval_at_cell(itp, cell, $ops))
     end for i in 1:N]
     zero_tuple = [:(0 * zref) for _ in 1:N]
-    oob_deriv_calls = [:(oob[$i] ? 0 * zref : $(deriv_calls[i])) for i in 1:N]
 
     return quote
         search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _needs_oob_check(itp.extraps)
-            oob = _compute_oob_mask(query, itp.grids, itp.extraps)
-            if _any_fill_oob(itp.extraps, oob)
-                zref = _zero_ref(itp)
-                return tuple($(zero_tuple...))
-            end
-            cell = _locate_cell(itp, query, search, hint)
+        if _is_fill_oob(query, itp.grids, itp.extraps)
             zref = _zero_ref(itp)
-            return tuple($(oob_deriv_calls...))
+            return tuple($(zero_tuple...))
         end
         cell = _locate_cell(itp, query, search, hint)
         return tuple($(deriv_calls...))
@@ -112,28 +105,15 @@ See also: [`gradient`](@ref), [`hessian!`](@ref)
         ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
         :(G[$i] = _eval_at_cell(itp, cell, $ops))
     end for i in 1:N]
-    oob_stmts = [begin
-        ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
-        :(G[$i] = oob[$i] ? 0 * zref : _eval_at_cell(itp, cell, $ops))
-    end for i in 1:N]
 
     return quote
         @boundscheck length(G) >= $N || throw(DimensionMismatch(
             "gradient output vector must have at least $($N) elements, got $(length(G))"
         ))
         search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _needs_oob_check(itp.extraps)
-            oob = _compute_oob_mask(query, itp.grids, itp.extraps)
-            if _any_fill_oob(itp.extraps, oob)
-                zref = _zero_ref(itp)
-                @inbounds for i in 1:$N; G[i] = 0 * zref; end
-                return G
-            end
-            cell = _locate_cell(itp, query, search, hint)
+        if _is_fill_oob(query, itp.grids, itp.extraps)
             zref = _zero_ref(itp)
-            @inbounds begin
-                $(oob_stmts...)
-            end
+            @inbounds for i in 1:$N; G[i] = 0 * zref; end
             return G
         end
         cell = _locate_cell(itp, query, search, hint)
@@ -190,13 +170,11 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     stmts = Expr[]
-    oob_stmts = Expr[]
 
     # Diagonal: ∂²f/∂xᵢ²
     for i in 1:N
         ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
         push!(stmts, :(H[$i, $i] = _eval_at_cell(itp, cell, $ops)))
-        push!(oob_stmts, :(H[$i, $i] = oob[$i] ? zero(Tq) : _eval_at_cell(itp, cell, $ops)))
     end
 
     # Off-diagonal (exploit symmetry): ∂²f/∂xᵢ∂xⱼ
@@ -207,32 +185,14 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
             H[$i, $j] = val
             H[$j, $i] = val
         end)
-        push!(oob_stmts, quote
-            if oob[$i] || oob[$j]
-                H[$i, $j] = zero(Tq)
-                H[$j, $i] = zero(Tq)
-            else
-                val = _eval_at_cell(itp, cell, $ops)
-                H[$i, $j] = val
-                H[$j, $i] = val
-            end
-        end)
     end
 
     return quote
         Tq = promote_type(eltype(query), $Tg, $Tv)
         H = Matrix{Tq}(undef, $N, $N)
         search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _needs_oob_check(itp.extraps)
-            oob = _compute_oob_mask(query, itp.grids, itp.extraps)
-            if _any_fill_oob(itp.extraps, oob)
-                fill!(H, zero(Tq))
-                return H
-            end
-            cell = _locate_cell(itp, query, search, hint)
-            @inbounds begin
-                $(oob_stmts...)
-            end
+        if _is_fill_oob(query, itp.grids, itp.extraps)
+            fill!(H, zero(Tq))
             return H
         end
         cell = _locate_cell(itp, query, search, hint)
@@ -284,13 +244,11 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
     hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
 ) where {Tg, Tv, N}
     stmts = Expr[]
-    oob_stmts = Expr[]
 
     # Diagonal: ∂²f/∂xᵢ²
     for i in 1:N
         ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
         push!(stmts, :(H[$i, $i] = _eval_at_cell(itp, cell, $ops)))
-        push!(oob_stmts, :(H[$i, $i] = oob[$i] ? zero(eltype(H)) : _eval_at_cell(itp, cell, $ops)))
     end
 
     # Off-diagonal (exploit symmetry): ∂²f/∂xᵢ∂xⱼ
@@ -301,16 +259,6 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
             H[$i, $j] = val
             H[$j, $i] = val
         end)
-        push!(oob_stmts, quote
-            if oob[$i] || oob[$j]
-                H[$i, $j] = zero(eltype(H))
-                H[$j, $i] = zero(eltype(H))
-            else
-                val = _eval_at_cell(itp, cell, $ops)
-                H[$i, $j] = val
-                H[$j, $i] = val
-            end
-        end)
     end
 
     return quote
@@ -318,16 +266,8 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
             "Hessian output matrix must be $($N)×$($N), got $(size(H))"
         ))
         search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _needs_oob_check(itp.extraps)
-            oob = _compute_oob_mask(query, itp.grids, itp.extraps)
-            if _any_fill_oob(itp.extraps, oob)
-                fill!(H, zero(eltype(H)))
-                return H
-            end
-            cell = _locate_cell(itp, query, search, hint)
-            @inbounds begin
-                $(oob_stmts...)
-            end
+        if _is_fill_oob(query, itp.grids, itp.extraps)
+            fill!(H, zero(eltype(H)))
             return H
         end
         cell = _locate_cell(itp, query, search, hint)
@@ -392,18 +332,11 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
         ops = ntuple(j -> j == i ? DerivOp{2}() : DerivOp{0}(), N)
         :(_eval_at_cell(itp, cell, $ops))
     end for i in 1:N]
-    oob_deriv_calls = [:(oob[$i] ? 0 * zref : $(deriv_calls[i])) for i in 1:N]
 
     return quote
         search = _resolve_search_nd(itp.searches, Val($N), query)
-        if _needs_oob_check(itp.extraps)
-            oob = _compute_oob_mask(query, itp.grids, itp.extraps)
-            if _any_fill_oob(itp.extraps, oob)
-                return 0 * _zero_ref(itp)
-            end
-            cell = _locate_cell(itp, query, search, hint)
-            zref = _zero_ref(itp)
-            return +($(oob_deriv_calls...))
+        if _is_fill_oob(query, itp.grids, itp.extraps)
+            return 0 * _zero_ref(itp)
         end
         cell = _locate_cell(itp, query, search, hint)
         return +($(deriv_calls...))

@@ -168,10 +168,8 @@ end
     search::SEARCH,
     hints=nothing
 ) where {Tg, Tv, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
-    if _needs_oob_check(itp.extraps)
-        oob_result = _try_oob_shortcircuit(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
-        oob_result !== nothing && return oob_result
-    end
+    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
+    oob_result !== nothing && return oob_result
     cell = _locate_cell(itp, query, search, hints)
     return _eval_at_cell(itp, cell, ops)
 end
@@ -184,10 +182,8 @@ end
     search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
     hints=nothing
 ) where {Tg, Tv}
-    if _needs_oob_check(itp.extraps)
-        oob_result = _try_oob_shortcircuit(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
-        oob_result !== nothing && return oob_result
-    end
+    oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
+    oob_result !== nothing && return oob_result
     cell = _locate_cell(itp, query, search, hints)
     return _eval_at_cell(itp, cell, ops)
 end

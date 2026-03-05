@@ -137,10 +137,8 @@ Zero-allocation after warmup (pool reuse).
     hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
     # 0. OOB short-circuit (before expensive partials computation)
-    if _needs_oob_check(extraps_val)
-        oob_result = _try_oob_shortcircuit(query, grids, extraps_val, ops, @inbounds first(data))
-        oob_result !== nothing && return oob_result
-    end
+    oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
+    oob_result !== nothing && return oob_result
 
     # 1. Extend exclusive periodic axes (pool-based, zero heap alloc)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
@@ -202,13 +200,10 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     spacings = _create_spacings_pooled(pool, grids_p)
 
     # Eval loop: search + kernel per query point
-    needs_check = _needs_oob_check(extraps_val)
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
-        if needs_check
-            oob_val = _try_oob_shortcircuit(query_k, grids_p, extraps_val, ops, first(data_p))
-            if oob_val !== nothing; output[k] = oob_val; continue; end
-        end
+        oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
+        if oob_val !== nothing; output[k] = oob_val; continue; end
         q_evals = _handle_all_extraps(query_k, grids_p, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_evals, grids_p, spacings, searches, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
@@ -248,13 +243,10 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     spacings = _create_spacings_pooled(pool, grids_p)
 
     # Eval loop: search + kernel per query point
-    needs_check = _needs_oob_check(extraps_val)
     @inbounds for k in 1:n_queries
         query_k = queries[k]
-        if needs_check
-            oob_val = _try_oob_shortcircuit(query_k, grids_p, extraps_val, ops, first(data_p))
-            if oob_val !== nothing; output[k] = oob_val; continue; end
-        end
+        oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
+        if oob_val !== nothing; output[k] = oob_val; continue; end
         q_eval = _handle_all_extraps(query_k, grids_p, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)

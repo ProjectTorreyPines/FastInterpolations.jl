@@ -197,6 +197,7 @@ makedocs(
             "Overview" => "architecture/overview.md",
             "Auto-Cache" => "architecture/caching.md",
             "Thread Safety" => "architecture/thread_safety.md",
+            "Type Promotion Rules" => "architecture/type_promotion_rules.md",
         ],
         "API Reference" => [
             "Constant" => "api/constant.md",

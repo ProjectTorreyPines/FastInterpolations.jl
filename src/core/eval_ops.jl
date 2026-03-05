@@ -68,6 +68,15 @@ Base.show(io::IO, ::DerivOp{N}) where {N} = print(io, "DerivOp{", N, "}()")
 # ========================================
 # Typed Extrapolation Mode Tags
 # ========================================
+# Promotable Value Type
+# ========================================
+# Defined here (loaded early) so that eval_ops.jl and all subsequent files
+# (utils.jl, nd_utils.jl, etc.) can reference it.
+
+"""Standard Julia numeric types that should be auto-promoted in convenience wrappers."""
+const _PromotableValue = Union{Integer, AbstractFloat, Rational, Complex}
+
+# ========================================
 #
 # Compile-time type tags for extrapolation mode selection.
 # Zero-cost type dispatch at the API boundary.
@@ -151,8 +160,6 @@ FillExtrap(v::Real) = FillExtrap{typeof(float(v))}(float(v))
 FillExtrap(v::Complex{T}) where {T<:AbstractFloat} = FillExtrap{Complex{T}}(v)
 # Kwarg convenience
 FillExtrap(; value) = FillExtrap(value)
-# Conversion constructor (for _promote_extrap, mirrors Deriv1{Tv}(bc::Deriv1))
-FillExtrap{T}(e::FillExtrap) where {T} = FillExtrap{T}(convert(T, e.value))
 
 # Internal union for dispatch where ClampedExtrap and FillExtrap share a code path
 # (e.g., 1D OOB check + return constant, _handle_axis_extrap coordinate clamping).
@@ -180,13 +187,17 @@ ConstExtrap(v) = FillExtrap(v)
     _promote_extrap(e::AbstractExtrap, ::Type{Tv}) -> AbstractExtrap
 
 Promote a `FillExtrap` fill value to match the interpolant's value type `Tv`.
-Mirrors `_promote_pointbc` — converts fill value via `convert(Tv, e.value)` at
-construction time so eval returns the correct type with zero overhead.
+Mirrors the `_PromotableValue` two-tier pattern used for grid/value promotion:
 
-Non-FillExtrap types pass through unchanged.
-Raises `InexactError`/`MethodError` at construction time if `Tv` cannot represent `e.value`.
+- `_PromotableValue` fill values (Integer, AbstractFloat, Rational, Complex): auto-converted
+  via `convert(Tv, e.value)` at construction time — always safe for standard numerics.
+- Duck-type fill values (SVector, Dual, etc.): passed through unchanged. The caller is
+  responsible for providing a fill value whose type is already compatible with `Tv`.
+- All non-FillExtrap types (ClampedExtrap, NoExtrap, etc.): passed through unchanged.
 """
-@inline _promote_extrap(e::FillExtrap, ::Type{Tv}) where {Tv} = FillExtrap{Tv}(convert(Tv, e.value))
+@inline _promote_extrap(e::FillExtrap{<:_PromotableValue}, ::Type{Tv}) where {Tv} =
+    FillExtrap{Tv}(convert(Tv, e.value))
+@inline _promote_extrap(e::FillExtrap, ::Type) = e
 @inline _promote_extrap(e::AbstractExtrap, ::Type) = e
 
 """

@@ -198,8 +198,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
-    extraps_val = _promote_extraps_nd(extraps_val, Tv)
+    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return _constant_interp_nd_oneshot(
         grids_typed, data, query, extraps_val, sides, searches, hint)::Tv
 end
@@ -234,8 +233,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)  # all-or-nothing adaptive for zero-alloc
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
-    extraps_val = _promote_extraps_nd(extraps_val, Tv)
+    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return _constant_nd_soa_dispatch(
         grids_typed, data, queries, extraps_val, sides, searches, hint)::Vector{Tv}
 end
@@ -269,8 +267,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N), queries)  # AoS: type-based (no per-axis SoA check)
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
-    extraps_val = _promote_extraps_nd(extraps_val, Tv)
+    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return _constant_interp_nd_oneshot_aos(
         grids_typed, data, queries, extraps_val, sides, searches, hint)::Vector{Tv}
 end
@@ -309,8 +306,7 @@ function constant_interp!(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)  # all-or-nothing adaptive for zero-alloc
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
-    extraps_val = _promote_extraps_nd(extraps_val, Tv)
+    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return _constant_nd_soa_dispatch!(
         output, grids_typed, data, queries, extraps_val, sides, searches, hint)
 end
@@ -345,8 +341,7 @@ function constant_interp!(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N), queries)  # AoS: type-based (no per-axis SoA check)
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
-    extraps_val = _promote_extraps_nd(extraps_val, Tv)
+    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return _constant_interp_nd_oneshot_aos!(
         output, grids_typed, data, queries, extraps_val, sides, searches, hint)
 end

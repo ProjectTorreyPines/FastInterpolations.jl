@@ -84,8 +84,7 @@ function linear_interp(
     # Resolve per-axis configuration
     searches = _resolve_search_nd(search, Val(N))
 
-    extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N))
-    extrap_vals = _promote_extraps_nd(extrap_vals, Tv)
+    extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return LinearInterpolantND{Tg, Tv, N,
         typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches)}(
         grids_typed, spacings, Array(data_typed), extrap_vals, searches

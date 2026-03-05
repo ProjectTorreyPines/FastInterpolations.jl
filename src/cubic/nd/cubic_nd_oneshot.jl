@@ -49,8 +49,7 @@ function cubic_interp(
     # Validate BC requirements (once, before dispatch).
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    extraps_val = _promote_extraps_nd(extraps_val, Tv)
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
@@ -303,8 +302,7 @@ function cubic_interp!(
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    extraps_val = _promote_extraps_nd(extraps_val, Tv)
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _cubic_nd_soa_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops, hint)
 end
@@ -337,8 +335,7 @@ function cubic_interp!(
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    extraps_val = _promote_extraps_nd(extraps_val, Tv)
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _cubic_interp_nd_oneshot_aos!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops, hint)
 end

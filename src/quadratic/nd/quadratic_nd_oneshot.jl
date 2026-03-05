@@ -182,8 +182,7 @@ function quadratic_interp(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    extraps_val = _promote_extraps_nd(extraps_val, Tv)
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _quadratic_interp_nd_oneshot(
         grids_typed, data, query, bcs, extraps_val, searches, ops, hint)::Tr
@@ -267,8 +266,7 @@ function quadratic_interp!(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)  # all-or-nothing adaptive for zero-alloc
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    extraps_val = _promote_extraps_nd(extraps_val, Tv)
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _quadratic_nd_soa_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops, hint)
 end
@@ -298,8 +296,7 @@ function quadratic_interp!(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N), queries)  # AoS: type-based (no per-axis SoA check)
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
-    extraps_val = _promote_extraps_nd(extraps_val, Tv)
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _quadratic_interp_nd_oneshot_aos!(
         output, grids_typed, data, queries, bcs, extraps_val, searches, ops, hint)

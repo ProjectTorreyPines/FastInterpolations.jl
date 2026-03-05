@@ -263,7 +263,7 @@ Works with any value type Tv (duck typing).
     y::AbstractVector{Tv},
     is_left::Bool,
     op::AbstractEvalOp,
-    extrap::ConstExtrap
+    extrap::_ClampOrFill
 ) where {Tv}
     y_bnd = @inbounds is_left ? y[1] : y[end]
     return _constant_extrap_result(op, y_bnd, extrap)
@@ -306,7 +306,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq,
-    extrap::ConstExtrap,
+    extrap::_ClampOrFill,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}

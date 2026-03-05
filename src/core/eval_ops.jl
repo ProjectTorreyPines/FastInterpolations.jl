@@ -83,7 +83,8 @@ Use concrete subtypes at the API boundary for compile-time dispatch.
 
 # Concrete subtypes
 - [`NoExtrap`](@ref): Throw `DomainError` for out-of-domain queries
-- [`ConstExtrap`](@ref): Clamp to nearest boundary value, or return a user-specified fill value
+- [`ClampedExtrap`](@ref): Clamp to nearest boundary value
+- [`FillExtrap`](@ref): Return a user-specified constant for out-of-domain queries
 - [`ExtendExtrap`](@ref): Extend interpolation polynomial beyond domain
 - [`WrapExtrap`](@ref): Wrap queries into domain (periodic)
 
@@ -91,6 +92,8 @@ Use concrete subtypes at the API boundary for compile-time dispatch.
     Keep exactly 5 concrete subtypes. Julia's compiler union-splits up to 4 types;
     ND heterogeneous tuples with all 5 types in one tuple may see dynamic dispatch.
     In practice, interpolants store concrete type parameters so this rarely matters.
+
+See also: [`ConstExtrap`](@ref) factory function for backward-compatible construction.
 """
 abstract type AbstractExtrap end
 
@@ -107,35 +110,13 @@ itp = cubic_interp((x, y), data; extrap=NoExtrap())
 struct NoExtrap <: AbstractExtrap end
 
 """
-    ConstExtrap <: AbstractExtrap
-
-Abstract type for constant extrapolation modes. Both boundary clamp and fill-value
-extrapolation share the same OOB-check-then-return-constant logic, differing only
-in which constant is returned.
-
-# Concrete subtypes
-- [`ClampedExtrap`](@ref): Clamp to nearest boundary value
-- [`FillExtrap`](@ref): Return a user-specified fill value
-
-# Factory constructors (backward-compatible API)
-```julia
-ConstExtrap()     # → ClampedExtrap()
-ConstExtrap(NaN)  # → FillExtrap(NaN)
-```
-"""
-abstract type ConstExtrap <: AbstractExtrap end
-
-# Factory constructors — preserve existing API
-# Kwarg form: ConstExtrap(; value=NaN), no-arg: ConstExtrap() → ClampedExtrap()
-ConstExtrap(; value=nothing) = value === nothing ? ClampedExtrap() : FillExtrap(value)
-ConstExtrap(v) = FillExtrap(v)
-
-"""
-    ClampedExtrap <: ConstExtrap
+    ClampedExtrap <: AbstractExtrap
 
 Constant extrapolation — clamps to nearest boundary value for out-of-domain queries.
 
 Returns `y[1]` for queries below domain, `y[end]` for queries above domain.
+In ND, derivatives along OOB axes are zero; orthogonal derivatives are computed
+at the clamped boundary point.
 
 # Example
 ```julia
@@ -143,12 +124,13 @@ itp = cubic_interp(x, y; extrap=ClampedExtrap())  # clamp to boundary values
 itp = cubic_interp(x, y; extrap=ConstExtrap())     # same thing (factory)
 ```
 """
-struct ClampedExtrap <: ConstExtrap end
+struct ClampedExtrap <: AbstractExtrap end
 
 """
-    FillExtrap{T} <: ConstExtrap
+    FillExtrap{T} <: AbstractExtrap
 
 Fill extrapolation — returns a user-specified constant value for out-of-domain queries.
+All derivatives are zero when out-of-domain (constant function).
 
 Standard numerics auto-promote to float; duck types (SVector, etc.) are stored as-is.
 Follows the same pattern as `Deriv1{Tv}`.
@@ -160,7 +142,7 @@ itp = cubic_interp(x, y; extrap=FillExtrap(0.0))       # zero outside domain
 itp = cubic_interp(x, y; extrap=FillExtrap(; value=0))  # kwarg form
 ```
 """
-struct FillExtrap{T} <: ConstExtrap
+struct FillExtrap{T} <: AbstractExtrap
     value::T
 end
 # Outer constructors: standard numerics auto-promote to float
@@ -171,6 +153,28 @@ FillExtrap(v::Complex{T}) where {T<:AbstractFloat} = FillExtrap{Complex{T}}(v)
 FillExtrap(; value) = FillExtrap(value)
 # Conversion constructor (for _promote_extrap, mirrors Deriv1{Tv}(bc::Deriv1))
 FillExtrap{T}(e::FillExtrap) where {T} = FillExtrap{T}(convert(T, e.value))
+
+# Internal union for dispatch where ClampedExtrap and FillExtrap share a code path
+# (e.g., 1D OOB check + return constant, _handle_axis_extrap coordinate clamping).
+const _ClampOrFill = Union{ClampedExtrap, FillExtrap}
+
+# ConstExtrap backward-compatible factory (no longer a type)
+"""
+    ConstExtrap(; value=nothing)
+    ConstExtrap(v)
+
+Factory function for backward compatibility. Returns `ClampedExtrap()` (no argument)
+or `FillExtrap(v)` (with value). Not a type — use `ClampedExtrap` or `FillExtrap` directly.
+
+# Examples
+```julia
+ConstExtrap()     # → ClampedExtrap()
+ConstExtrap(NaN)  # → FillExtrap(NaN)
+ConstExtrap(0.0)  # → FillExtrap(0.0)
+```
+"""
+ConstExtrap(; value=nothing) = value === nothing ? ClampedExtrap() : FillExtrap(value)
+ConstExtrap(v) = FillExtrap(v)
 
 """
     _promote_extrap(e::AbstractExtrap, ::Type{Tv}) -> AbstractExtrap

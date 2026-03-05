@@ -70,7 +70,7 @@ end
     a::AbstractVector{Tv},
     d::AbstractVector{Tv},
     xq::Tq,
-    extrap::ConstExtrap,
+    extrap::_ClampOrFill,
     op::AbstractEvalOp,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}

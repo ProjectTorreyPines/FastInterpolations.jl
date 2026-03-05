@@ -313,7 +313,7 @@ end
     itp::ConstantInterpolant{T},
     aq::_ConstantAnchoredQuery{T},
     op::O,
-    extrap::ConstExtrap
+    extrap::_ClampOrFill
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     if aq.side == 0x01  # below domain
         return _constant_extrap_result(op, @inbounds(itp.y[1]), extrap)

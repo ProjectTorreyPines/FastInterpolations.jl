@@ -28,10 +28,10 @@ Evaluates directly from grids + data without constructing a LinearInterpolantND.
     ops::NTuple{N, AbstractEvalOp},
     hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
-    # Fill-value short-circuit
-    if _has_any_fill_value(extraps_val)
-        _check_nd_oob(query, grids, extraps_val) &&
-            return _nd_fill_result(extraps_val, ops, @inbounds first(data))
+    # OOB short-circuit
+    if _needs_oob_check(extraps_val)
+        oob_result = _try_oob_shortcircuit(query, grids, extraps_val, ops, @inbounds first(data))
+        oob_result !== nothing && return oob_result
     end
 
     spacings = _create_spacings_pooled(pool, grids)
@@ -66,12 +66,12 @@ Writes results into `output`. No heap allocation beyond spacings.
     length(output) == n_queries || throw(DimensionMismatch(
         "output length ($(length(output))) must match query length ($n_queries)"))
     spacings = _create_spacings_pooled(pool, grids)
-    has_fill = _has_any_fill_value(extraps_val)
+    needs_check = _needs_oob_check(extraps_val)
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
-        if has_fill && _check_nd_oob(query_k, grids, extraps_val)
-            output[k] = _nd_fill_result(extraps_val, ops, first(data))
-            continue
+        if needs_check
+            oob_val = _try_oob_shortcircuit(query_k, grids, extraps_val, ops, first(data))
+            if oob_val !== nothing; output[k] = oob_val; continue; end
         end
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
@@ -101,12 +101,12 @@ Writes results into `output`. No heap allocation beyond spacings.
     length(output) == n_queries || throw(DimensionMismatch(
         "output length ($(length(output))) must match query length ($n_queries)"))
     spacings = _create_spacings_pooled(pool, grids)
-    has_fill = _has_any_fill_value(extraps_val)
+    needs_check = _needs_oob_check(extraps_val)
     @inbounds for k in 1:n_queries
         query_k = queries[k]
-        if has_fill && _check_nd_oob(query_k, grids, extraps_val)
-            output[k] = _nd_fill_result(extraps_val, ops, first(data))
-            continue
+        if needs_check
+            oob_val = _try_oob_shortcircuit(query_k, grids, extraps_val, ops, first(data))
+            if oob_val !== nothing; output[k] = oob_val; continue; end
         end
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)

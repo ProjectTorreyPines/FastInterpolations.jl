@@ -48,18 +48,25 @@
     end
 end
 
-# ── Fill-value compile-time helpers for ND ─────────────────────────────
+# ── Unified OOB infrastructure for ND ──────────────────────────────────
+#
+# Handles both ClampedExtrap and FillExtrap out-of-domain queries:
+#   - FillExtrap: any FillExtrap axis OOB → total short-circuit (fill value or zero)
+#   - ClampedExtrap: any OOB axis with derivative op → zero (∂F/∂q_i = 0 for clamped axis)
+#
+# All helpers are @generated for compile-time dead-code elimination.
 
 """
-    _has_any_fill_value(extraps) -> Bool
+    _needs_oob_check(extraps) -> Bool
 
-Compile-time check: does any axis have FillExtrap?
-Returns a constant `true`/`false` so the fill-value branch is dead-code-eliminated
-when no fill values exist.
+Compile-time check: does any axis have ClampedExtrap or FillExtrap?
+Returns a constant `true`/`false` so the OOB branch is dead-code-eliminated
+when all axes are NoExtrap/ExtendExtrap/WrapExtrap.
 """
-@generated function _has_any_fill_value(::E) where {E<:Tuple{Vararg{AbstractExtrap}}}
+@generated function _needs_oob_check(::E) where {E<:Tuple{Vararg{AbstractExtrap}}}
     for d in 1:fieldcount(E)
-        fieldtype(E, d) <: FillExtrap && return :(true)
+        Fd = fieldtype(E, d)
+        (Fd <: ClampedExtrap || Fd <: FillExtrap) && return :(true)
     end
     return :(false)
 end
@@ -68,7 +75,7 @@ end
     _get_fill_value(extraps) -> fill_value
 
 Extract the fill value from the first FillExtrap axis.
-Only called when `_has_any_fill_value` is true.
+Only called when at least one axis has FillExtrap.
 """
 @generated function _get_fill_value(extraps::E) where {E<:Tuple{Vararg{AbstractExtrap}}}
     for d in 1:fieldcount(E)
@@ -78,40 +85,11 @@ Only called when `_has_any_fill_value` is true.
 end
 
 """
-    _check_nd_oob(query, grids, extraps) -> Bool
-
-Check only fill-value axes for out-of-domain. Non-fill axes are skipped at compile time.
-"""
-@generated function _check_nd_oob(
-    query::Tuple{Vararg{Real,N}},
-    grids::Tuple{Vararg{AbstractVector,N}},
-    extraps::E
-) where {N, E<:Tuple{Vararg{AbstractExtrap,N}}}
-    checks = Expr[]
-    for d in 1:N
-        Fd = fieldtype(E, d)
-        if Fd <: FillExtrap
-            push!(checks, quote
-                let q_primal = _extract_primal(query[$d])
-                    (q_primal < first(grids[$d]) || q_primal > last(grids[$d])) && return true
-                end
-            end)
-        end
-    end
-    push!(checks, :(return false))
-    quote
-        Base.@_inline_meta
-        @inbounds begin
-            $(checks...)
-        end
-    end
-end
-
-"""
     _nd_fill_result(extraps, ops, zero_ref)
 
 Return the fill value (for EvalValue) or `0 * zero_ref` (for any derivative).
 `zero_ref` is a data element used for duck-typed zero computation.
+Used by `_try_oob_shortcircuit` for FillExtrap short-circuit.
 """
 @inline function _nd_fill_result(
     extraps::Tuple{Vararg{AbstractExtrap, N}},
@@ -123,6 +101,164 @@ Return the fill value (for EvalValue) or `0 * zero_ref` (for any derivative).
         @inbounds (ops[d] isa EvalDeriv1 || ops[d] isa EvalDeriv2 || ops[d] isa EvalDeriv3) && return 0 * zero_ref
     end
     return _get_fill_value(extraps)
+end
+
+# Trait: is this a derivative operation?
+@inline _is_deriv_op(::EvalValue) = false
+@inline _is_deriv_op(::AbstractEvalOp) = true
+
+"""
+    _try_oob_shortcircuit(query, grids, extraps, ops, zero_ref) -> Union{Nothing, result}
+
+Unified OOB handler for scalar ND evaluation. Returns `nothing` to proceed normally,
+or the OOB result value to short-circuit.
+
+Logic:
+1. Check per-axis OOB for ClampedExtrap/FillExtrap axes (compile-time selective)
+2. FillExtrap axis OOB → return fill value or zero (via `_nd_fill_result`)
+3. ClampedExtrap axis OOB + has derivative on that axis → return `0 * zero_ref`
+4. Otherwise → return `nothing` (evaluate at clamped point normally)
+"""
+@generated function _try_oob_shortcircuit(
+    query::Tuple{Vararg{Real,N}},
+    grids::Tuple{Vararg{AbstractVector,N}},
+    extraps::E,
+    ops::Tuple{Vararg{AbstractEvalOp,N}},
+    zero_ref
+) where {N, E<:Tuple{Vararg{AbstractExtrap,N}}}
+    fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
+    clamp_dims = [d for d in 1:N if fieldtype(E, d) <: ClampedExtrap]
+
+    isempty(fill_dims) && isempty(clamp_dims) && return :(nothing)
+
+    stmts = Expr[]
+
+    # Compute per-axis OOB flags for relevant axes
+    for d in vcat(fill_dims, clamp_dims)
+        sym = Symbol("oob_", d)
+        push!(stmts, :(
+            $sym = let qp = _extract_primal(query[$d])
+                qp < first(grids[$d]) || qp > last(grids[$d])
+            end
+        ))
+    end
+
+    # FillExtrap: ANY FillExtrap axis OOB → total short-circuit
+    if !isempty(fill_dims)
+        fill_check = length(fill_dims) == 1 ? Symbol("oob_", fill_dims[1]) :
+            foldl((a,b) -> :($a || $b), [Symbol("oob_", d) for d in fill_dims])
+        push!(stmts, :($fill_check && return _nd_fill_result(extraps, ops, zero_ref)))
+    end
+
+    # ClampedExtrap: ANY OOB ClampedExtrap axis with nonzero deriv → return zero
+    if !isempty(clamp_dims)
+        clamp_checks = [:($(Symbol("oob_", d)) && _is_deriv_op(ops[$d])) for d in clamp_dims]
+        clamp_check = length(clamp_checks) == 1 ? clamp_checks[1] :
+            foldl((a,b) -> :($a || $b), clamp_checks)
+        push!(stmts, :($clamp_check && return 0 * zero_ref))
+    end
+
+    push!(stmts, :(return nothing))
+
+    quote
+        Base.@_inline_meta
+        @inbounds begin $(stmts...) end
+    end
+end
+
+# Scalar-op overload for oneshot paths (e.g., constant_interp oneshot passes EvalValue() not tuple)
+@generated function _try_oob_shortcircuit(
+    query::Tuple{Vararg{Real,N}},
+    grids::Tuple{Vararg{AbstractVector,N}},
+    extraps::E,
+    op::AbstractEvalOp,
+    zero_ref
+) where {N, E<:Tuple{Vararg{AbstractExtrap,N}}}
+    fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
+    clamp_dims = [d for d in 1:N if fieldtype(E, d) <: ClampedExtrap]
+
+    isempty(fill_dims) && isempty(clamp_dims) && return :(nothing)
+
+    stmts = Expr[]
+
+    for d in vcat(fill_dims, clamp_dims)
+        sym = Symbol("oob_", d)
+        push!(stmts, :(
+            $sym = let qp = _extract_primal(query[$d])
+                qp < first(grids[$d]) || qp > last(grids[$d])
+            end
+        ))
+    end
+
+    # FillExtrap: any OOB → return fill result (scalar op version)
+    if !isempty(fill_dims)
+        fill_check = length(fill_dims) == 1 ? Symbol("oob_", fill_dims[1]) :
+            foldl((a,b) -> :($a || $b), [Symbol("oob_", d) for d in fill_dims])
+        # For scalar op, use _get_fill_value directly
+        push!(stmts, :($fill_check && return _is_deriv_op(op) ? 0 * zero_ref : _get_fill_value(extraps)))
+    end
+
+    # ClampedExtrap: for scalar op with derivative, return zero if any ClampedExtrap axis is OOB
+    if !isempty(clamp_dims)
+        clamp_check = length(clamp_dims) == 1 ? Symbol("oob_", clamp_dims[1]) :
+            foldl((a,b) -> :($a || $b), [Symbol("oob_", d) for d in clamp_dims])
+        push!(stmts, :($clamp_check && _is_deriv_op(op) && return 0 * zero_ref))
+    end
+
+    push!(stmts, :(return nothing))
+
+    quote
+        Base.@_inline_meta
+        @inbounds begin $(stmts...) end
+    end
+end
+
+"""
+    _compute_oob_mask(query, grids, extraps) -> NTuple{N, Bool}
+
+Compute per-axis OOB flags for vector-calculus functions that need per-component masking.
+Only checks ClampedExtrap/FillExtrap axes; others are always `false`.
+"""
+@generated function _compute_oob_mask(
+    query::Tuple{Vararg{Real,N}},
+    grids::Tuple{Vararg{AbstractVector,N}},
+    extraps::E
+) where {N, E<:Tuple{Vararg{AbstractExtrap,N}}}
+    stmts = Expr[]
+    oob_exprs = Any[]
+    for d in 1:N
+        Fd = fieldtype(E, d)
+        if Fd <: ClampedExtrap || Fd <: FillExtrap
+            sym = Symbol("oob_", d)
+            push!(stmts, :(
+                $sym = let qp = _extract_primal(query[$d])
+                    qp < first(grids[$d]) || qp > last(grids[$d])
+                end
+            ))
+            push!(oob_exprs, sym)
+        else
+            push!(oob_exprs, false)
+        end
+    end
+    tuple_expr = Expr(:tuple, oob_exprs...)
+    quote
+        Base.@_inline_meta
+        @inbounds begin $(stmts...) end
+        $tuple_expr
+    end
+end
+
+"""
+    _any_fill_oob(extraps, oob_mask) -> Bool
+
+Check if any FillExtrap axis is OOB (compile-time selective).
+Used by vector-calculus functions after `_compute_oob_mask`.
+"""
+@generated function _any_fill_oob(::E, oob::NTuple{N,Bool}) where {N, E<:Tuple{Vararg{AbstractExtrap,N}}}
+    fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
+    isempty(fill_dims) && return :(false)
+    checks = [:(oob[$d]) for d in fill_dims]
+    length(checks) == 1 ? checks[1] : foldl((a,b) -> :($a || $b), checks)
 end
 
 """
@@ -438,7 +574,7 @@ end
     return q
 end
 
-@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::ConstExtrap) where {Tg}
+@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::_ClampOrFill) where {Tg}
     q_primal = _extract_primal(q)
     lo, hi = first(axis), last(axis)
     q_primal < lo && return oftype(q, lo)
@@ -829,15 +965,19 @@ In-place SoA batch evaluation. Writes results into `output`.
     search::Tuple{Vararg{AbstractSearchPolicy, N}},
     hints=nothing
 ) where {Tg, Tv, N}
-    has_fill = _has_any_fill_value(itp.extraps)
+    needs_check = _needs_oob_check(itp.extraps)
+    zref = _zero_ref(itp)
     @inbounds for k in 1:length(queries[1])
         query_k = ntuple(d -> queries[d][k], Val(N))
-        if has_fill && _check_nd_oob(query_k, itp.grids, itp.extraps)
-            output[k] = _nd_fill_result(itp.extraps, ops, _zero_ref(itp))
-        else
-            cell = _locate_cell(itp, query_k, search, hints)
-            output[k] = _eval_at_cell(itp, cell, ops)
+        if needs_check
+            oob_val = _try_oob_shortcircuit(query_k, itp.grids, itp.extraps, ops, zref)
+            if oob_val !== nothing
+                output[k] = oob_val
+                continue
+            end
         end
+        cell = _locate_cell(itp, query_k, search, hints)
+        output[k] = _eval_at_cell(itp, cell, ops)
     end
     return output
 end
@@ -855,14 +995,18 @@ In-place AoS batch evaluation. Writes results into `output`.
     search::Tuple{Vararg{AbstractSearchPolicy, N}},
     hints=nothing
 ) where {Tg, Tv, N}
-    has_fill = _has_any_fill_value(itp.extraps)
+    needs_check = _needs_oob_check(itp.extraps)
+    zref = _zero_ref(itp)
     @inbounds for k in 1:length(queries)
-        if has_fill && _check_nd_oob(queries[k], itp.grids, itp.extraps)
-            output[k] = _nd_fill_result(itp.extraps, ops, _zero_ref(itp))
-        else
-            cell = _locate_cell(itp, queries[k], search, hints)
-            output[k] = _eval_at_cell(itp, cell, ops)
+        if needs_check
+            oob_val = _try_oob_shortcircuit(queries[k], itp.grids, itp.extraps, ops, zref)
+            if oob_val !== nothing
+                output[k] = oob_val
+                continue
+            end
         end
+        cell = _locate_cell(itp, queries[k], search, hints)
+        output[k] = _eval_at_cell(itp, cell, ops)
     end
     return output
 end

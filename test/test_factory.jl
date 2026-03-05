@@ -72,7 +72,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
     @testset "Extrap" begin
         @testset "Symbol → Concrete Type" begin
             @test Extrap(:none) isa NoExtrap
-            @test Extrap(:constant) isa ConstExtrap
+            @test Extrap(:constant) isa ClampedExtrap
             @test Extrap(:extend) isa ExtendExtrap
             @test Extrap(:wrap) isa WrapExtrap
         end
@@ -156,7 +156,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
             @test result == (ExtendExtrap(), NoExtrap(), WrapExtrap())
 
             result2 = Extrap(:constant, :extend)
-            @test result2 isa Tuple{ConstExtrap, ExtendExtrap}
+            @test result2 isa Tuple{ClampedExtrap, ExtendExtrap}
         end
 
         @testset "Side variadic" begin

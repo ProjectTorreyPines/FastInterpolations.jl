@@ -209,7 +209,7 @@ end
     x_min::Tg,
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Tq},
-    extrap::ConstExtrap,
+    extrap::_ClampOrFill,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     if aq.side != 0x00  # outside domain
@@ -622,7 +622,7 @@ end
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Taq},
     dL::Tq,
-    extrap::ConstExtrap,
+    extrap::_ClampOrFill,
     op::EvalValue
 ) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
     if aq.side != 0x00  # outside domain
@@ -642,7 +642,7 @@ end
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Taq},
     dL::Tq,
-    extrap::ConstExtrap,
+    extrap::_ClampOrFill,
     op::Union{EvalDeriv1, EvalDeriv2}
 ) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
     if aq.side != 0x00  # outside domain

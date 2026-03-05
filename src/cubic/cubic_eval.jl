@@ -107,9 +107,9 @@ end
 # Uses y_bnd (not fill value) for derivatives to avoid 0 * NaN = NaN
 @inline _constant_extrap_result(::EvalValue, y_bnd, ::ClampedExtrap) = y_bnd
 @inline _constant_extrap_result(::EvalValue, _, e::FillExtrap) = e.value
-@inline _constant_extrap_result(::EvalDeriv1, y_bnd, ::ConstExtrap) = 0 * y_bnd  # abstract catches both
-@inline _constant_extrap_result(::EvalDeriv2, y_bnd, ::ConstExtrap) = 0 * y_bnd
-@inline _constant_extrap_result(::EvalDeriv3, y_bnd, ::ConstExtrap) = 0 * y_bnd
+@inline _constant_extrap_result(::EvalDeriv1, y_bnd, ::_ClampOrFill) = 0 * y_bnd  # abstract catches both
+@inline _constant_extrap_result(::EvalDeriv2, y_bnd, ::_ClampOrFill) = 0 * y_bnd
+@inline _constant_extrap_result(::EvalDeriv3, y_bnd, ::_ClampOrFill) = 0 * y_bnd
 
 # --- Searcher-aware versions ---
 
@@ -134,7 +134,7 @@ end
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
     xq::Tq,
-    extrap::ConstExtrap,
+    extrap::_ClampOrFill,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}

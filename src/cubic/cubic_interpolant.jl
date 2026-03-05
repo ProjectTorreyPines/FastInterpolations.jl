@@ -158,7 +158,7 @@ end
 end
 
 # ConstExtrap - return fill value (EvalValue) or zero (derivatives)
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, extrap::ConstExtrap, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, extrap::_ClampOrFill, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     y_bnd = aq.side == 0x01 ? @inbounds(itp.y[1]) : @inbounds(itp.y[end])
     return _constant_extrap_result(op, y_bnd, extrap)
 end
@@ -444,7 +444,8 @@ so the pool memory can be safely reused after this function returns.
     end
 
     # cache.bc_config is BCPair - use it directly
-    return CubicInterpolant(cache, y, tmp_z, cache.bc_config, extrap, search)
+    extrap_p = _promote_extrap(extrap, Tv)
+    return CubicInterpolant(cache, y, tmp_z, cache.bc_config, extrap_p, search)
 end
 
 # Generic Real wrapper for 2-argument form (handles Integer grids, etc.)

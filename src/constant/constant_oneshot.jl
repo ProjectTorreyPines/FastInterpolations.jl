@@ -31,7 +31,7 @@ Type parameters:
 """
 @inline function _constant_eval_extrap(
     y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
-    extrap::ConstExtrap, ::AbstractSide, op::AbstractEvalOp
+    extrap::_ClampOrFill, ::AbstractSide, op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv}
     y_bnd = xi < x_min ? @inbounds(y[1]) : @inbounds(y[end])
     return _constant_extrap_result(op, y_bnd, extrap)

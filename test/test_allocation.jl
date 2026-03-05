@@ -806,7 +806,7 @@ import FastInterpolations: _get_cubic_cache
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
 
-        function linear_constextrap_fill(xq, mode::ConstExtrap)
+        function linear_constextrap_fill(xq, mode::AbstractExtrap)
             linear_interp(x, y, xq; extrap=mode)
         end
 
@@ -837,7 +837,7 @@ import FastInterpolations: _get_cubic_cache
         clear_cubic_cache!()
         cubic_interp(x, y, 0.5)  # prime cache
 
-        function cubic_constextrap_fill(xq, mode::ConstExtrap)
+        function cubic_constextrap_fill(xq, mode::AbstractExtrap)
             cubic_interp(x, y, xq; extrap=mode)
         end
 
@@ -953,7 +953,7 @@ import FastInterpolations: _get_cubic_cache
         yg = collect(range(0.0, 1.0, 21))
         data = [sin(2π * x + y) for x in xg, y in yg]
 
-        function linear_nd_fill(xq, yq, mode::ConstExtrap)
+        function linear_nd_fill(xq, yq, mode::AbstractExtrap)
             linear_interp((xg, yg), data, (xq, yq); extrap=mode)
         end
 
@@ -1015,7 +1015,7 @@ import FastInterpolations: _get_cubic_cache
         yg = collect(range(0.0, 1.0, 21))
         data = [sin(2π * x + y) for x in xg, y in yg]
 
-        function cubic_nd_fill(xq, yq, mode::ConstExtrap)
+        function cubic_nd_fill(xq, yq, mode::AbstractExtrap)
             cubic_interp((xg, yg), data, (xq, yq); extrap=mode)
         end
 
@@ -1044,7 +1044,7 @@ import FastInterpolations: _get_cubic_cache
         yg = collect(range(0.0, 1.0, 21))
         data = [sin(2π * x + y) for x in xg, y in yg]
 
-        function quadratic_nd_fill(xq, yq, mode::ConstExtrap)
+        function quadratic_nd_fill(xq, yq, mode::AbstractExtrap)
             quadratic_interp((xg, yg), data, (xq, yq); extrap=mode)
         end
 
@@ -1073,7 +1073,7 @@ import FastInterpolations: _get_cubic_cache
         yg = collect(range(0.0, 1.0, 21))
         data = [sin(2π * x + y) for x in xg, y in yg]
 
-        function constant_nd_fill(xq, yq, mode::ConstExtrap)
+        function constant_nd_fill(xq, yq, mode::AbstractExtrap)
             constant_interp((xg, yg), data, (xq, yq); extrap=mode)
         end
 

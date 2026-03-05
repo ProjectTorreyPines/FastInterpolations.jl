@@ -312,7 +312,7 @@ end
     itp::QuadraticInterpolant{T},
     aq::_QuadraticAnchoredQuery{T,Tq},
     op::O,
-    extrap::ConstExtrap
+    extrap::_ClampOrFill
 ) where {T<:AbstractFloat, Tq<:Real, O<:AbstractEvalOp}
     if aq.side == 0x01  # below domain
         return _constant_extrap_result(op, @inbounds(itp.y[1]), extrap)

@@ -111,7 +111,7 @@ end
 end
 
 @inline function _constant_extrap_boundary_value(
-    y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::ConstExtrap
+    y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
 ) where {Tv}
     return 0 * first(y)
 end
@@ -145,7 +145,7 @@ end
 end
 
 @inline function _fill_constant_extrap_simd!(
-    out::AbstractVector{Tv}, y::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::ConstExtrap
+    out::AbstractVector{Tv}, y::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
 ) where {Tv}
     z = 0 * first(y)
     @inbounds @simd for k in axes(out, 1)

@@ -6,11 +6,11 @@ using FastInterpolations
     # Construction & Type Hierarchy
     # ────────────────────────────────────────────
     @testset "ConstExtrap type hierarchy" begin
-        # ConstExtrap is abstract
-        @test isabstracttype(ConstExtrap)
-        @test ClampedExtrap <: ConstExtrap
-        @test FillExtrap <: ConstExtrap
-        @test ConstExtrap <: AbstractExtrap
+        # ConstExtrap is a factory function, not a type
+        @test ClampedExtrap <: AbstractExtrap
+        @test FillExtrap <: AbstractExtrap
+        @test !(ClampedExtrap <: FillExtrap)
+        @test !(FillExtrap <: ClampedExtrap)
 
         # No-arg factory: boundary clamp
         e0 = ConstExtrap()
@@ -417,5 +417,171 @@ using FastInterpolations
         itp32 = cubic_interp(x32, y32; extrap=ConstExtrap(0.0))
         @test itp32(-1.0f0) isa Float32
         @test itp32(-1.0f0) === 0.0f0
+    end
+
+    # ────────────────────────────────────────────
+    # P2: Cache constructor promotes fill extrap
+    # ────────────────────────────────────────────
+    @testset "Cache constructor promotes FillExtrap to Tv" begin
+        x32 = collect(range(0.0f0, 5.0f0, length=11))
+        y32 = sin.(x32)
+        cache = CubicSplineCache(x32)
+
+        # Full API path: promotes Float64 fill → Float32
+        itp_full = cubic_interp(x32, y32; extrap=FillExtrap(0.0))
+        @test itp_full.extrap isa FillExtrap{Float32}
+        @test itp_full(-1.0f0) === 0.0f0
+
+        # Cache path: should also promote
+        itp_cache = cubic_interp(cache, y32; extrap=FillExtrap(0.0))
+        @test itp_cache.extrap isa FillExtrap{Float32}
+        @test itp_cache(-1.0f0) === 0.0f0
+    end
+
+    # ────────────────────────────────────────────
+    # P1: Vector-calculus OOB guard for FillExtrap
+    # ────────────────────────────────────────────
+    @testset "Vector-calculus OOB guard with FillExtrap" begin
+        # 2D cubic interpolant with NaN fill
+        xg = range(0.0, 1.0, length=6)
+        yg = range(0.0, 1.0, length=6)
+        data = [sin(x + y) for x in xg, y in yg]
+        itp = cubic_interp((xg, yg), data; extrap=FillExtrap(NaN))
+
+        # In-domain query: derivatives should be nonzero
+        q_in = (0.5, 0.5)
+        g_in = gradient(itp, q_in)
+        @test all(isfinite, g_in)
+        @test !all(iszero, g_in)
+
+        # OOB query: all derivatives should be zero
+        q_oob = (-0.2, 0.5)
+        g_oob = gradient(itp, q_oob)
+        @test all(iszero, g_oob)
+
+        # gradient! OOB
+        G = zeros(2)
+        gradient!(G, itp, q_oob)
+        @test all(iszero, G)
+
+        # hessian OOB
+        H = hessian(itp, q_oob)
+        @test all(iszero, H)
+
+        # hessian! OOB
+        H2 = ones(2, 2)
+        hessian!(H2, itp, q_oob)
+        @test all(iszero, H2)
+
+        # laplacian OOB
+        @test laplacian(itp, q_oob) == 0.0
+
+        # Both axes OOB
+        q_oob2 = (-0.1, 1.5)
+        @test all(iszero, gradient(itp, q_oob2))
+        @test laplacian(itp, q_oob2) == 0.0
+
+        # Vector API passes through correctly
+        g_vec = gradient(itp, [-0.2, 0.5])
+        @test all(iszero, g_vec)
+    end
+
+    # ────────────────────────────────────────────
+    # ClampedExtrap ND derivative correctness
+    # ────────────────────────────────────────────
+    @testset "ClampedExtrap ND derivative correctness" begin
+        xg = range(0.0, 1.0, length=11)
+        yg = range(0.0, 1.0, length=11)
+        # f(x,y) = x² + y² → ∂f/∂x = 2x, ∂f/∂y = 2y
+        data = [xi^2 + yj^2 for xi in xg, yj in yg]
+        itp = cubic_interp((xg, yg), data; extrap=ClampedExtrap())
+
+        # In-domain: gradient should be correct
+        g_in = gradient(itp, (0.5, 0.5))
+        @test g_in[1] ≈ 1.0 atol=0.05   # ∂f/∂x ≈ 2*0.5
+        @test g_in[2] ≈ 1.0 atol=0.05   # ∂f/∂y ≈ 2*0.5
+
+        # OOB on x-axis only → ∂f/∂x = 0, ∂f/∂y computed at clamped boundary
+        g_oob_x = gradient(itp, (-0.2, 0.5))
+        @test g_oob_x[1] == 0.0  # OOB axis → zero derivative
+        @test g_oob_x[2] ≈ 1.0 atol=0.05  # in-domain axis → normal ∂f/∂y at (0,0.5)
+
+        # OOB on y-axis only → ∂f/∂x computed at clamped boundary, ∂f/∂y = 0
+        g_oob_y = gradient(itp, (0.5, 1.5))
+        @test g_oob_y[1] ≈ 1.0 atol=0.05  # in-domain axis → normal ∂f/∂x at (0.5,1)
+        @test g_oob_y[2] == 0.0  # OOB axis → zero derivative
+
+        # Both axes OOB → all derivatives zero
+        g_oob_both = gradient(itp, (-0.2, 1.5))
+        @test all(iszero, g_oob_both)
+
+        # gradient! same behavior
+        G = zeros(2)
+        gradient!(G, itp, (-0.2, 0.5))
+        @test G[1] == 0.0
+        @test G[2] ≈ 1.0 atol=0.05
+
+        # Hessian: OOB axis rows/columns should be zero
+        H = hessian(itp, (-0.2, 0.5))
+        @test H[1, 1] == 0.0   # ∂²f/∂x² on OOB axis
+        @test H[1, 2] == 0.0   # mixed partial involving OOB axis
+        @test H[2, 1] == 0.0   # symmetric
+        @test H[2, 2] ≈ 2.0 atol=0.1  # ∂²f/∂y² on in-domain axis
+
+        # hessian! same behavior
+        H2 = ones(2, 2)
+        hessian!(H2, itp, (-0.2, 0.5))
+        @test H2[1, 1] == 0.0
+        @test H2[1, 2] == 0.0
+        @test H2[2, 2] ≈ 2.0 atol=0.1
+
+        # Laplacian: only in-domain axes contribute
+        lap = laplacian(itp, (-0.2, 0.5))
+        @test lap ≈ 2.0 atol=0.1  # only ∂²f/∂y² contributes
+
+        lap_both_oob = laplacian(itp, (-0.2, 1.5))
+        @test lap_both_oob == 0.0
+    end
+
+    # ────────────────────────────────────────────
+    # Mixed ClampedExtrap/FillExtrap per-axis
+    # ────────────────────────────────────────────
+    @testset "Mixed ClampedExtrap/FillExtrap per-axis derivatives" begin
+        xg = range(0.0, 1.0, length=11)
+        yg = range(0.0, 1.0, length=11)
+        data = [xi^2 + yj^2 for xi in xg, yj in yg]
+
+        # axis 1: ClampedExtrap, axis 2: FillExtrap(NaN)
+        itp = cubic_interp((xg, yg), data;
+            extrap=(ClampedExtrap(), FillExtrap(NaN)))
+
+        # In-domain → normal
+        @test isfinite(itp((0.5, 0.5)))
+        g_in = gradient(itp, (0.5, 0.5))
+        @test all(isfinite, g_in)
+
+        # OOB on axis 1 (Clamped) → clamp value, derivatives masked
+        val_oob_x = itp((-0.2, 0.5))
+        @test isfinite(val_oob_x)  # clamped, not NaN
+        g_oob_x = gradient(itp, (-0.2, 0.5))
+        @test g_oob_x[1] == 0.0  # ClampedExtrap OOB axis → zero
+        @test isfinite(g_oob_x[2])  # in-domain axis
+
+        # OOB on axis 2 (Fill) → NaN value, all derivatives zero
+        val_oob_y = itp((0.5, 1.5))
+        @test isnan(val_oob_y)  # FillExtrap → NaN
+        g_oob_y = gradient(itp, (0.5, 1.5))
+        @test all(iszero, g_oob_y)  # FillExtrap total short-circuit
+
+        # Hessian: OOB on Fill axis → all zero
+        H = hessian(itp, (0.5, 1.5))
+        @test all(iszero, H)
+
+        # Hessian: OOB on Clamp axis only → row/col 1 zero, H[2,2] nonzero
+        H2 = hessian(itp, (-0.2, 0.5))
+        @test H2[1, 1] == 0.0
+        @test H2[1, 2] == 0.0
+        @test H2[2, 1] == 0.0
+        @test H2[2, 2] ≈ 2.0 atol=0.1
     end
 end

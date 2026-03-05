@@ -261,7 +261,7 @@ end
     ::Tg,
     ::Tg,
     ::_ConstantAnchoredQuery{Tg},
-    extrap::ConstExtrap,
+    extrap::_ClampOrFill,
     ::AbstractSide,
     op::AbstractEvalOp,
     side::UInt8
@@ -565,7 +565,7 @@ Internal: Evaluate single series at single query point with extrapolation handli
     # Outside domain: dispatch on extrap mode
     if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_constant_series_anchored(y, k, aq, side_val, op)
-    elseif extrap isa ConstExtrap
+    elseif extrap isa _ClampOrFill
         return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op, extrap)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)

@@ -151,9 +151,9 @@ end
     search_tuple::NTuple{N, AbstractSearchPolicy},
     hints=nothing
 ) where {Tg, Tv, N}
-    if _has_any_fill_value(itp.extraps)
-        _check_nd_oob(query, itp.grids, itp.extraps) &&
-            return _nd_fill_result(itp.extraps, ops, _zero_ref(itp))
+    if _needs_oob_check(itp.extraps)
+        oob_result = _try_oob_shortcircuit(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
+        oob_result !== nothing && return oob_result
     end
     if _has_second_or_higher_derivative(ops, Val(N))
         return 0 * first(itp.data)
@@ -170,9 +170,9 @@ end
     search_tuple::NTuple{2, AbstractSearchPolicy},
     hints=nothing
 ) where {Tg, Tv}
-    if _has_any_fill_value(itp.extraps)
-        _check_nd_oob(query, itp.grids, itp.extraps) &&
-            return _nd_fill_result(itp.extraps, ops, _zero_ref(itp))
+    if _needs_oob_check(itp.extraps)
+        oob_result = _try_oob_shortcircuit(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
+        oob_result !== nothing && return oob_result
     end
     op_x, op_y = ops
     if op_x isa EvalDeriv2 || op_x isa EvalDeriv3 || op_y isa EvalDeriv2 || op_y isa EvalDeriv3

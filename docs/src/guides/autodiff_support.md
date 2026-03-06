@@ -2,13 +2,30 @@
 
 FastInterpolations.jl supports multiple AD (Automatic Differentiation) backends, enabling seamless integration with optimization and machine learning workflows.
 
+!!! tip "Consider Built-in Analytical Derivatives First"
+    For **derivatives with respect to query coordinates** (`df/dx`, `d2f/dx2`, etc.),
+    FastInterpolations provides analytical derivatives that are much faster and zero-allocation:
+
+    ```julia
+    itp(x; deriv=DerivOp(1))   # 1st derivative, zero-allocation
+    itp(x; deriv=DerivOp(2))   # 2nd derivative, zero-allocation
+    ```
+
+    AD (ForwardDiff, Zygote, Enzyme) is useful for:
+    - **Adjoint computation** (`df/dy`): differentiating w.r.t. *data values*, not query points.
+      A built-in analytical adjoint operator is on the roadmap.
+    - **Composite pipelines**: when the interpolant is embedded inside a larger differentiable function.
+
+    For query-coordinate derivatives, the `deriv` keyword is the recommended approach.
+    See [Derivatives](../interpolation/derivatives.md) for the full API.
+
 ## When to Use AD vs Built-in Derivatives
 
-For **simple derivatives** of the interpolant itself, use the built-in `deriv` keyword—it's faster and zero-allocation. See [Derivatives](../interpolation/derivatives.md) for details.
+For **simple derivatives** of the interpolant itself, use the built-in `deriv` keyword -- it's faster and zero-allocation. See [Derivatives](../interpolation/derivatives.md) for details.
 
 **Use AD when** the interpolant is part of a larger differentiable pipeline:
-- Optimization: `minimize(p -> loss(itp, p), params)`
-- Composed functions: `gradient(x -> sin(itp(x)) + exp(itp(x)), x0)`
+- Adjoint / data sensitivity: `ForwardDiff.gradient(y -> cubic_interp(x, y, xq), y_data)`
+- Composed functions: `ForwardDiff.derivative(x -> sin(itp(x)) + exp(itp(x)), x0)`
 - Neural network integration (Flux.jl, Lux.jl)
 - Sensitivity analysis in differential equations
 

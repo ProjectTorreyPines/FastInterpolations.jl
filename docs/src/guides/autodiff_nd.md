@@ -4,9 +4,24 @@ This page covers automatic differentiation for `CubicInterpolantND` (2D, 3D, and
 
 For 1D interpolants, see [Automatic Differentiation Support](autodiff_support.md).
 
-## Quick Start
+!!! tip "Consider Built-in Analytical Derivatives First"
+    For **derivatives with respect to query coordinates** (gradient, Hessian, mixed partials),
+    FastInterpolations provides analytical functions that are much faster and mostly zero-allocation:
 
-```julia
+    ```julia
+    itp(pt; deriv=DerivOp(1, 0))              # partial df/dx, zero-allocation
+    FastInterpolations.gradient(itp, pt)       # full gradient, zero-allocation
+    FastInterpolations.hessian(itp, pt)        # Hessian matrix
+    ```
+
+    AD (ForwardDiff, Zygote) is useful for:
+    - **Adjoint computation** (`df/dy`): differentiating w.r.t. *data values*, not query points.
+      A built-in analytical adjoint operator is on the roadmap.
+    - **Composite pipelines**: when the interpolant is embedded inside a larger differentiable function.
+
+    For query-coordinate derivatives, the built-in analytical functions are the recommended approach.
+
+```@setup autodiff_nd
 using FastInterpolations, ForwardDiff
 
 # 2D interpolant
@@ -14,29 +29,35 @@ x = range(0.0, 1.0, 20)
 y = range(0.0, 1.0, 20)
 data = [sin(xi) * cos(yj) for xi in x, yj in y]
 itp = cubic_interp((x, y), data)
+```
+
+## Quick Start
+
+```@example autodiff_nd
+using FastInterpolations, ForwardDiff  # hide
 
 # Vector API for AD
 itp([0.5, 0.5])                           # evaluation
 ForwardDiff.gradient(itp, [0.5, 0.5])     # gradient
 ForwardDiff.hessian(itp, [0.5, 0.5])      # hessian
 
-# Fast analytical derivatives (9x faster!)
-gradient(itp, (0.5, 0.5))                 # analytical gradient
-hessian(itp, (0.5, 0.5))                  # analytical hessian
+# Fast analytical derivatives (much faster, zero-allocation!)
+FastInterpolations.gradient(itp, (0.5, 0.5))   # analytical gradient
+FastInterpolations.hessian(itp, (0.5, 0.5))    # analytical hessian
 ```
 
 ## Supported APIs
 
 ### Tuple API (Original)
 
-```julia
+```@example autodiff_nd
 itp((0.5, 0.5))                                    # evaluation
 ForwardDiff.derivative(q -> itp((q, 0.5)), 0.5)   # partial derivative
 ```
 
 ### Vector API (AD-friendly)
 
-```julia
+```@example autodiff_nd
 itp([0.5, 0.5])                           # evaluation
 ForwardDiff.gradient(itp, [0.5, 0.5])     # full gradient
 ForwardDiff.hessian(itp, [0.5, 0.5])      # hessian matrix
@@ -44,46 +65,52 @@ ForwardDiff.hessian(itp, [0.5, 0.5])      # hessian matrix
 
 ## Performance Comparison
 
-| Method | Time (2D) | Memory | Notes |
-|--------|-----------|--------|-------|
-| `gradient(itp, x)` | **~50ns** | 0 B | Analytical, tuple output |
-| `hessian(itp, x)` | **~100ns** | 32 B | Analytical, symmetric matrix |
-| `deriv` keyword | ~47ns | 80 B | Analytical, single partial |
-| ForwardDiff.gradient | 414ns | 592 B | Dual number propagation |
-| ForwardDiff.hessian | ~1.5μs | ~2 KiB | Dual number propagation |
-| Zygote (w/ rrule) | 1.6μs | 6 KiB | Uses ChainRulesCore |
-| Zygote (w/o rrule) | 289μs | 1.49 MiB | Source transformation |
+| Method | Allocation | Notes |
+|--------|-----------|-------|
+| `FastInterpolations.gradient(itp, x)` | **0 B** | Analytical, tuple output |
+| `FastInterpolations.hessian(itp, x)` | minimal | Analytical, symmetric matrix |
+| `deriv` keyword | minimal | Analytical, single partial |
+| ForwardDiff.gradient | moderate | Dual number propagation |
+| ForwardDiff.hessian | moderate | Dual number propagation |
+| Zygote (w/ rrule) | moderate | Uses ChainRulesCore |
+| Zygote (w/o rrule) | **heavy** | Source transformation fallback |
+
+Built-in analytical methods are **much faster** than any AD backend for query-coordinate derivatives.
 
 !!! tip "ChainRulesCore Extension"
     When `ChainRulesCore` is loaded (automatically with Zygote), the extension provides
-    **~160x speedup** for reverse-mode AD by using analytical derivatives internally.
+    a **significant speedup** for reverse-mode AD by using analytical derivatives internally.
 
 ## Analytical Gradient & Hessian (Recommended)
 
 FastInterpolations provides built-in `gradient` and `hessian` functions that use analytical
-derivatives internally. These are **~9x faster** than ForwardDiff equivalents.
+derivatives internally. These are **much faster** than ForwardDiff equivalents and mostly zero-allocation.
 
-```julia
-using FastInterpolations
+!!! note "Qualified names"
+    `gradient` and `hessian` are exported by FastInterpolations, so `gradient(itp, x)` works
+    when using FastInterpolations alone. However, since many AD packages (ForwardDiff, Zygote)
+    also provide functions with the same name, we use the qualified form
+    `FastInterpolations.gradient` throughout this guide to avoid ambiguity.
 
-itp = cubic_interp((x, y), data)
+```@example autodiff_nd
+# Gradient: returns (df/dx, df/dy)
+grad = FastInterpolations.gradient(itp, (0.5, 0.5))   # Tuple input -> Tuple output
+grad = FastInterpolations.gradient(itp, [0.5, 0.5])   # Vector input -> Vector output
+```
 
-# Gradient: returns (∂f/∂x, ∂f/∂y)
-grad = gradient(itp, (0.5, 0.5))   # Tuple input → Tuple output
-grad = gradient(itp, [0.5, 0.5])   # Vector input → Vector output
-
-# Hessian: returns N×N symmetric matrix
-H = hessian(itp, (0.5, 0.5))
-# H = [∂²f/∂x²    ∂²f/∂x∂y]
-#     [∂²f/∂x∂y   ∂²f/∂y² ]
+```@example autodiff_nd
+# Hessian: returns NxN symmetric matrix
+H = FastInterpolations.hessian(itp, (0.5, 0.5))
+# H = [d2f/dx2    d2f/dxdy]
+#     [d2f/dxdy   d2f/dy2 ]
 ```
 
 ### When to Use
 
 | Use Case | Recommended Method |
 |----------|-------------------|
-| Performance-critical code | `gradient(itp, x)`, `hessian(itp, x)` |
-| Optimization with Optim.jl | `gradient(itp, x)` for custom gradient |
+| Performance-critical code | `FastInterpolations.gradient(itp, x)`, `FastInterpolations.hessian(itp, x)` |
+| Optimization with Optim.jl | `FastInterpolations.gradient(itp, x)` for custom gradient |
 | General AD compatibility | `ForwardDiff.gradient` |
 | Reverse-mode AD (Zygote) | Zygote with ChainRulesCore extension |
 
@@ -91,19 +118,19 @@ H = hessian(itp, (0.5, 0.5))
 
 Works for any dimension:
 
-```julia
+```@example autodiff_nd
+z = range(0.0, 1.0, 20)
+data3d = [xi + yj + zk for xi in x, yj in y, zk in z]
 itp3d = cubic_interp((x, y, z), data3d)
-gradient(itp3d, (0.5, 0.5, 0.5))   # → (∂f/∂x, ∂f/∂y, ∂f/∂z)
-hessian(itp3d, (0.5, 0.5, 0.5))    # → 3×3 symmetric matrix
+FastInterpolations.gradient(itp3d, (0.5, 0.5, 0.5))   # -> (df/dx, df/dy, df/dz)
+FastInterpolations.hessian(itp3d, (0.5, 0.5, 0.5))    # -> 3x3 symmetric matrix
 ```
 
 ## ForwardDiff Integration
 
 ForwardDiff works seamlessly with both Tuple and Vector APIs:
 
-```julia
-using ForwardDiff
-
+```@example autodiff_nd
 # Gradient (Vector API)
 grad = ForwardDiff.gradient(itp, [0.5, 0.5])
 
@@ -111,8 +138,9 @@ grad = ForwardDiff.gradient(itp, [0.5, 0.5])
 H = ForwardDiff.hessian(itp, [0.5, 0.5])
 
 # Partial derivatives (Tuple API)
-∂f_∂x = ForwardDiff.derivative(q -> itp((q, 0.5)), 0.5)
-∂f_∂y = ForwardDiff.derivative(q -> itp((0.5, q)), 0.5)
+df_dx = ForwardDiff.derivative(q -> itp((q, 0.5)), 0.5)
+df_dy = ForwardDiff.derivative(q -> itp((0.5, q)), 0.5)
+nothing  # hide
 ```
 
 ## Zygote Integration
@@ -126,7 +154,7 @@ grad = Zygote.gradient(itp, [0.5, 0.5])[1]
 ```
 
 Without the ChainRulesCore extension, Zygote falls back to source transformation,
-which is ~160x slower and uses ~250x more memory.
+which is significantly slower and uses much more memory.
 
 ## Optimization with Optim.jl
 
@@ -141,12 +169,12 @@ result = optimize(itp, [0.3, 0.3], LBFGS(); autodiff=:forward)
 
 ### Maximum Performance (Analytical Gradient)
 
-For hot loops or performance-critical code, use the built-in `gradient` function:
+For hot loops or performance-critical code, use the built-in analytical gradient:
 
 ```julia
-# Simple: use gradient() directly
+# Simple: use FastInterpolations.gradient() directly
 function g!(G, x)
-    grad = gradient(itp, x)
+    grad = FastInterpolations.gradient(itp, x)
     G .= grad
 end
 
@@ -159,46 +187,43 @@ Or for maximum control with the `deriv` keyword:
 ```julia
 function g!(G, x)
     pt = (x[1], x[2])
-    G[1] = itp(pt; deriv=(1, 0))
-    G[2] = itp(pt; deriv=(0, 1))
+    G[1] = itp(pt; deriv=DerivOp(1, 0))
+    G[2] = itp(pt; deriv=DerivOp(0, 1))
 end
 ```
 
-Both approaches are ~9x faster than ForwardDiff for gradient computation.
+Both approaches are much faster than ForwardDiff for gradient computation.
 
 ## Complex-valued Interpolants
 
-For complex data, `gradient` requires scalar output:
+For complex data, `ForwardDiff.gradient` requires scalar output:
 
-```julia
+```@example autodiff_nd
 data_c = [sin(xi) + im*cos(yj) for xi in x, yj in y]
 itp_c = cubic_interp((x, y), data_c)
 
-# ❌ This fails (gradient expects Real output)
-# ForwardDiff.gradient(itp_c, [0.5, 0.5])
+# ForwardDiff.gradient(itp_c, [0.5, 0.5])  # fails (gradient expects Real output)
 
-# ✅ Option 1: Use jacobian
+# Option 1: Use jacobian
 jac = ForwardDiff.jacobian(
     v -> [real(itp_c(v)), imag(itp_c(v))],
     [0.5, 0.5]
 )
+```
 
-# ✅ Option 2: Separate real/imag gradients
+```@example autodiff_nd
+# Option 2: Separate real/imag gradients
 grad_re = ForwardDiff.gradient(v -> real(itp_c(v)), [0.5, 0.5])
 grad_im = ForwardDiff.gradient(v -> imag(itp_c(v)), [0.5, 0.5])
+nothing  # hide
 ```
 
 ## 3D and Higher Dimensions
 
 All features work for any dimension:
 
-```julia
-# 3D interpolant
-z = range(0.0, 1.0, 20)
-data3d = [xi + yj + zk for xi in x, yj in y, zk in z]
-itp3d = cubic_interp((x, y, z), data3d)
-
-# AD works the same way
+```@example autodiff_nd
+# 3D interpolant (reusing itp3d from above)
 itp3d([0.5, 0.5, 0.5])
 ForwardDiff.gradient(itp3d, [0.5, 0.5, 0.5])  # Returns [1, 1, 1]
 ```

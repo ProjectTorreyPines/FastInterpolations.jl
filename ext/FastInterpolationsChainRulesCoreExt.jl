@@ -1,127 +1,157 @@
 # ========================================
 # ChainRulesCore Extension for FastInterpolations.jl
 # ========================================
-# This extension provides analytical differentiation rules (frule/rrule)
-# for CubicInterpolantND, enabling ~15x faster AD compared to Dual number
-# propagation through arithmetic operations.
+# Provides analytical differentiation rules (frule/rrule) for:
+#   - All 1D interpolants (CubicInterpolant, LinearInterpolant, etc.)
+#   - All ND interpolants (CubicInterpolantND, LinearInterpolantND, etc.)
+#
+# These rules use built-in analytical derivatives (DerivOp) instead of
+# propagating Dual numbers, yielding ~10-100x speedup.
 #
 # Usage:
-#   using FastInterpolations, ForwardDiff, ChainRulesCore
-#   itp = cubic_interp((x, y), data)
-#   ForwardDiff.gradient(itp, [0.5, 0.5])  # Uses frule automatically!
+#   using FastInterpolations, ChainRulesCore
+#   # ForwardDiff uses frule, Zygote uses rrule — both pick up these rules.
 
 module FastInterpolationsChainRulesCoreExt
 
 using FastInterpolations
 using ChainRulesCore
 
-# ========================================
-# Forward-mode AD rule for CubicInterpolantND
-# ========================================
+# ════════════════════════════════════════
+# 1D Interpolants (scalar query → scalar output)
+# ════════════════════════════════════════
+# Excludes AbstractSeriesInterpolant (Vector output needs different pullback)
+# and AbstractInterpolantND (dispatch on Real query already excludes them).
 
 """
-    frule for CubicInterpolantND with Tuple input
+Forward-mode rule for 1D scalar interpolants.
 
-Provides analytical forward-mode differentiation using the built-in
-`deriv` keyword instead of propagating Dual numbers.
+Enables `ForwardDiff.derivative(itp, x)` to use analytical derivatives
+instead of Dual number propagation.
+"""
+function ChainRulesCore.frule(
+    (_, Δx),
+    itp::FastInterpolations.AbstractInterpolant{Tg, Tv},
+    x::Real
+) where {Tg, Tv}
+    # Series interpolants have Vector output — skip (frule would work but
+    # keep consistent with rrule exclusion)
+    itp isa FastInterpolations.AbstractSeriesInterpolant && return nothing
 
-Performance: ~15x faster than Dual number propagation (27ns vs 415ns for 2D).
+    y = itp(x)
+    Δx isa AbstractZero && return y, zero(y)
+    ∂y = Δx * itp(x; deriv=DerivOp(1))
+    return y, ∂y
+end
+
+"""
+Reverse-mode rule for 1D scalar interpolants.
+
+Enables `Zygote.gradient(itp, x)` to use analytical derivatives.
+"""
+function ChainRulesCore.rrule(
+    itp::FastInterpolations.AbstractInterpolant{Tg, Tv},
+    x::Real
+) where {Tg, Tv}
+    itp isa FastInterpolations.AbstractSeriesInterpolant && return nothing
+
+    y = itp(x)
+
+    function itp_1d_pullback(Δy)
+        Δy isa AbstractZero && return NoTangent(), ZeroTangent()
+        return NoTangent(), Δy * itp(x; deriv=DerivOp(1))
+    end
+
+    return y, itp_1d_pullback
+end
+
+# ════════════════════════════════════════
+# ND Interpolants — Tuple query
+# ════════════════════════════════════════
+
+"""
+Forward-mode rule for all ND interpolants with Tuple input.
+
+Enables `ForwardDiff.derivative(q -> itp((q, 0.5)), 0.5)` to use
+analytical partial derivatives.
 """
 function ChainRulesCore.frule(
     (_, Δquery),
-    itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
+    itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
     query::Tuple{Vararg{Real, N}}
 ) where {Tg, Tv, N}
-    # Primal value
     y = itp(query)
-
-    # If the query tangent is zero/none, the directional derivative is zero.
     Δquery isa AbstractZero && return y, zero(y)
 
-    # Tangent: directional derivative = ∑ᵢ (∂f/∂xᵢ) * Δxᵢ
-    # Use analytical derivatives via deriv keyword
+    # Directional derivative: ∑ᵢ (∂f/∂xᵢ) * Δxᵢ
     ∂y = sum(
         Δquery[i] * itp(query; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N)))
         for i in 1:N
     )
-
     return y, ∂y
 end
 
 """
-    frule for CubicInterpolantND with Vector input
+Forward-mode rule for all ND interpolants with Vector input.
 
-Enables ForwardDiff.gradient(itp, [x, y, z]) to use analytical derivatives.
+Enables `ForwardDiff.gradient(itp, [0.5, 0.5])` to use analytical derivatives.
 """
 function ChainRulesCore.frule(
     (_, Δquery),
-    itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
+    itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
     query::AbstractVector{<:Real}
 ) where {Tg, Tv, N}
-    # Convert to tuple for internal processing
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-
-    # Primal value
     y = itp(query_tuple)
-
-    # If the query tangent is zero/none, the directional derivative is zero.
     Δquery isa AbstractZero && return y, zero(y)
 
-    # Tangent: directional derivative
     ∂y = sum(
         Δquery[i] * itp(query_tuple; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N)))
         for i in 1:N
     )
-
     return y, ∂y
 end
 
-# ========================================
-# Reverse-mode AD rule for CubicInterpolantND
-# ========================================
+# ════════════════════════════════════════
+# ND Interpolants — Reverse-mode (rrule)
+# ════════════════════════════════════════
 
 """
-    rrule for CubicInterpolantND with Tuple input
+Reverse-mode rule for all ND interpolants with Tuple input.
 
-Provides analytical reverse-mode differentiation for packages like Zygote.
+Enables `Zygote.gradient(x -> itp((x[1], x[2])), ...)` to use
+analytical derivatives via pullback.
 """
 function ChainRulesCore.rrule(
-    itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
+    itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
     query::Tuple{Vararg{Real, N}}
 ) where {Tg, Tv, N}
-    # Primal value
     y = itp(query)
 
-    # Pullback: given ∂L/∂y (scalar), return ∂L/∂query (tuple)
-    function itp_pullback(Δy)
+    function itp_nd_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), ZeroTangent()
-        # ∂L/∂xᵢ = ∂L/∂y * ∂y/∂xᵢ
         ∂query = ntuple(Val(N)) do i
             Δy * itp(query; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N)))
         end
         return NoTangent(), ∂query
     end
 
-    return y, itp_pullback
+    return y, itp_nd_pullback
 end
 
 """
-    rrule for CubicInterpolantND with Vector input
+Reverse-mode rule for all ND interpolants with Vector input.
 
-Enables Zygote.gradient(itp, [x, y, z]) to use analytical derivatives.
+Enables `Zygote.gradient(itp, [0.5, 0.5])` to use analytical derivatives.
 """
 function ChainRulesCore.rrule(
-    itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
+    itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
     query::AbstractVector{<:Real}
 ) where {Tg, Tv, N}
-    # Convert to tuple
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-
-    # Primal value
     y = itp(query_tuple)
 
-    # Pullback
-    function itp_pullback(Δy)
+    function itp_nd_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), ZeroTangent()
         ∂query = [
             Δy * itp(query_tuple; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N)))
@@ -130,7 +160,7 @@ function ChainRulesCore.rrule(
         return NoTangent(), ∂query
     end
 
-    return y, itp_pullback
+    return y, itp_nd_pullback
 end
 
 end # module

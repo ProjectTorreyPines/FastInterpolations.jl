@@ -370,6 +370,38 @@ end
     end
 
     # ════════════════════════════════════════════════════════════════════════
+    # withgradient — 1D query-coordinate derivatives
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "withgradient - 1D query" begin
+        x = collect(0.0:0.5:5.0)
+
+        @testset "Linear" begin
+            itp = linear_interp(x, 2.0 .* x .+ 1.0; extrap=ExtendExtrap())
+            xq = 2.25
+            result = Zygote.withgradient(itp, xq)
+            @test result.val ≈ itp(xq) atol=1e-12
+            @test result.grad[1] ≈ ForwardDiff.derivative(itp, xq) atol=1e-10
+        end
+
+        @testset "Quadratic" begin
+            itp = quadratic_interp(x, x .^ 2; extrap=ExtendExtrap())
+            xq = 2.25
+            result = Zygote.withgradient(itp, xq)
+            @test result.val ≈ itp(xq) atol=1e-12
+            @test result.grad[1] ≈ 2.0 * xq atol=1e-10
+        end
+
+        @testset "Cubic" begin
+            itp = cubic_interp(x, sin.(x); extrap=ExtendExtrap())
+            xq = 1.5
+            result = Zygote.withgradient(itp, xq)
+            @test result.val ≈ itp(xq) atol=1e-12
+            @test result.grad[1] ≈ ForwardDiff.derivative(itp, xq) atol=1e-10
+        end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
     # GRADIENT COMPOSITION (Loss functions)
     # ════════════════════════════════════════════════════════════════════════
 

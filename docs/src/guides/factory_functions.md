@@ -55,10 +55,11 @@ See [Search & Hints](@ref search_hints) for detailed policy descriptions and ben
 Controls behavior when query points fall outside the data domain.
 
 ```julia
-Extrap(:none)      # NoExtrap() — throw DomainError (default)
-Extrap(:constant)  # ClampedExtrap() — clamp to boundary values
-Extrap(:extend)    # ExtendExtrap() — extend boundary polynomial
-Extrap(:wrap)      # WrapExtrap() — periodic coordinate wrapping
+Extrap(:none)              # NoExtrap() — throw DomainError (default)
+Extrap(:clamped)           # ClampedExtrap() — clamp to boundary values
+Extrap(:fill; value=NaN)   # FillExtrap(NaN) — fill with constant value
+Extrap(:extend)            # ExtendExtrap() — extend boundary polynomial
+Extrap(:wrap)              # WrapExtrap() — periodic coordinate wrapping
 ```
 
 See [Extrapolation](../extrapolation.md) for visual comparisons and detailed behavior.

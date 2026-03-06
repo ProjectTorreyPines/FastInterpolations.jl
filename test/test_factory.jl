@@ -72,9 +72,20 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
     @testset "Extrap" begin
         @testset "Symbol → Concrete Type" begin
             @test Extrap(:none) isa NoExtrap
-            @test Extrap(:constant) isa ClampedExtrap
+            @test Extrap(:clamped) isa ClampedExtrap
+            @test Extrap(:fill; value=NaN) isa FillExtrap{Float64}
+            @test Extrap(:fill; value=0.0).value === 0.0
             @test Extrap(:extend) isa ExtendExtrap
             @test Extrap(:wrap) isa WrapExtrap
+        end
+
+        @testset ":constant deprecated → ClampedExtrap" begin
+            e = @test_deprecated Extrap(:constant)
+            @test e isa ClampedExtrap
+        end
+
+        @testset ":fill requires value keyword" begin
+            @test_throws ArgumentError Extrap(:fill)
         end
 
         @testset "Passthrough" begin
@@ -87,7 +98,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
         @testset "Error handling" begin
             @test_throws ArgumentError Extrap(:unknown)
             @test_throws ArgumentError Extrap(:no)        # must be :none
-            @test_throws ArgumentError Extrap(:const)      # must be :constant
+            @test_throws ArgumentError Extrap(:const)      # partial match not accepted
             @test_throws ArgumentError Extrap(:periodic)   # not an extrap mode
         end
 
@@ -155,7 +166,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
             @test result isa Tuple{ExtendExtrap, NoExtrap, WrapExtrap}
             @test result == (ExtendExtrap(), NoExtrap(), WrapExtrap())
 
-            result2 = Extrap(:constant, :extend)
+            result2 = Extrap(:clamped, :extend)
             @test result2 isa Tuple{ClampedExtrap, ExtendExtrap}
         end
 
@@ -196,10 +207,10 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
 
         function _test_extrap_alloc()
             _ = Extrap(:none)
-            _ = Extrap(:constant)
+            _ = Extrap(:clamped)
             _ = Extrap(:extend, :none)
             a1 = @allocated Extrap(:none)
-            a2 = @allocated Extrap(:constant)
+            a2 = @allocated Extrap(:clamped)
             a3 = @allocated Extrap(:extend)
             a4 = @allocated Extrap(:wrap)
             a5 = @allocated Extrap(NoExtrap())
@@ -253,7 +264,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
             itp_s = cubic_interp(x, y; search=Search(:binary), extrap=Extrap(:extend))
             @test itp_s(0.5) isa Float64
 
-            itp_e = linear_interp(x, y; extrap=Extrap(:constant))
+            itp_e = linear_interp(x, y; extrap=Extrap(:clamped))
             @test itp_e(-0.1) == itp_e(0.0)  # clamped
 
             itp_c = constant_interp(x, y; side=Side(:left))

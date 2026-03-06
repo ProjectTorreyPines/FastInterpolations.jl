@@ -103,7 +103,7 @@ end
 # ────────────────────────────────────────
 
 """
-    Extrap(mode::Symbol)
+    Extrap(mode::Symbol; value=nothing)
     Extrap(s1::Symbol, s2::Symbol, rest::Symbol...)
     Extrap(mode::AbstractExtrap)
 
@@ -114,14 +114,17 @@ creates a Tuple for ND per-axis configuration (same pattern as `DerivOp(1, 0)`).
 
 # Options
 - `:none` → [`NoExtrap`](@ref): throw `DomainError` for out-of-domain queries
-- `:constant` → [`ClampedExtrap`](@ref): clamp to nearest boundary value
+- `:clamped` → [`ClampedExtrap`](@ref): clamp to nearest boundary value
+- `:fill` → [`FillExtrap`](@ref): fill with a constant value (requires `value` keyword)
 - `:extend` → [`ExtendExtrap`](@ref): extend interpolation polynomial beyond domain
 - `:wrap` → [`WrapExtrap`](@ref): wrap queries into domain (periodic)
+- `:constant` → *(deprecated)* alias for `:clamped`
 
 # Examples
 ```julia
 # 1D
-itp = cubic_interp(x, y; extrap=Extrap(:extend))
+itp = cubic_interp(x, y; extrap=Extrap(:clamped))
+itp = cubic_interp(x, y; extrap=Extrap(:fill; value=NaN))
 
 # ND per-axis (multi-arg form)
 itp = cubic_interp((x, y, z), data; extrap=Extrap(:extend, :none, :wrap))
@@ -133,9 +136,16 @@ Extrap(NoExtrap())   # → NoExtrap()
 """
 function Extrap(sym::Symbol; value=nothing)
     sym === :none     && return NoExtrap()
-    sym === :constant && return value === nothing ? ClampedExtrap() : FillExtrap(value)
+    sym === :clamped  && return ClampedExtrap()
+    sym === :fill     && return value === nothing ? _extrap_fill_missing_value_error() : FillExtrap(value)
     sym === :extend   && return ExtendExtrap()
     sym === :wrap     && return WrapExtrap()
+    if sym === :constant
+        Base.depwarn(
+            "Extrap(:constant) is deprecated, use Extrap(:clamped) instead.",
+            :Extrap)
+        return ClampedExtrap()
+    end
     _extrap_unknown_error(sym)
 end
 
@@ -146,7 +156,12 @@ Extrap(e::AbstractExtrap) = e
 
 @noinline function _extrap_unknown_error(sym::Symbol)
     throw(ArgumentError(
-        "unknown extrapolation mode :$sym; valid options are :none, :constant, :extend, :wrap"))
+        "unknown extrapolation mode :$sym; valid options are :none, :clamped, :fill, :constant (deprecated), :extend, :wrap"))
+end
+
+@noinline function _extrap_fill_missing_value_error()
+    throw(ArgumentError(
+        "Extrap(:fill) requires a `value` keyword argument, e.g. Extrap(:fill; value=NaN)"))
 end
 
 # ────────────────────────────────────────

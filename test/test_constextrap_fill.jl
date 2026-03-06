@@ -389,17 +389,24 @@ using FastInterpolations
     # ────────────────────────────────────────────
     # Factory
     # ────────────────────────────────────────────
-    @testset "Extrap factory with value" begin
-        e1 = Extrap(:constant)
+    @testset "Extrap factory :clamped and :fill" begin
+        e1 = Extrap(:clamped)
         @test e1 isa ClampedExtrap
 
-        e2 = Extrap(:constant; value=NaN)
+        e2 = Extrap(:fill; value=NaN)
         @test e2 isa FillExtrap{Float64}
         @test isnan(e2.value)
 
-        e3 = Extrap(:constant; value=0.0)
+        e3 = Extrap(:fill; value=0.0)
         @test e3 isa FillExtrap{Float64}
         @test e3.value === 0.0
+
+        # :fill without value → ArgumentError
+        @test_throws ArgumentError Extrap(:fill)
+
+        # :constant deprecated but still works
+        e4 = @test_deprecated Extrap(:constant)
+        @test e4 isa ClampedExtrap
     end
 
     # ────────────────────────────────────────────

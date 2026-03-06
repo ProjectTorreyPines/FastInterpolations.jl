@@ -73,8 +73,8 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
         @testset "Symbol → Concrete Type" begin
             @test Extrap(:none) isa NoExtrap
             @test Extrap(:clamp) isa ClampExtrap
-            @test Extrap(:fill; value=NaN) isa FillExtrap{Float64}
-            @test Extrap(:fill; value=0.0).value === 0.0
+            @test Extrap(:fill; fill_value=NaN) isa FillExtrap{Float64}
+            @test Extrap(:fill; fill_value=0.0).fill_value === 0.0
             @test Extrap(:extend) isa ExtendExtrap
             @test Extrap(:wrap) isa WrapExtrap
         end

@@ -18,26 +18,26 @@ using FastInterpolations
 
         # Float value: auto-promote Int → Float64
         e1 = FillExtrap(0)
-        @test e1.value === 0.0
+        @test e1.fill_value === 0.0
         @test e1 isa FillExtrap{Float64}
 
         # Float64
         e2 = FillExtrap(NaN)
-        @test isnan(e2.value)
+        @test isnan(e2.fill_value)
         @test e2 isa FillExtrap{Float64}
 
         # Float32
         e3 = FillExtrap(0.0f0)
-        @test e3.value === 0.0f0
+        @test e3.fill_value === 0.0f0
         @test e3 isa FillExtrap{Float32}
 
         # Kwarg form
-        e4 = FillExtrap(; value=NaN)
-        @test isnan(e4.value)
+        e4 = FillExtrap(; fill_value=NaN)
+        @test isnan(e4.fill_value)
         @test e4 isa FillExtrap{Float64}
 
         # Kwarg with nothing → FillExtrap{Nothing}
-        e5 = FillExtrap(; value=nothing)
+        e5 = FillExtrap(; fill_value=nothing)
         @test e5 isa FillExtrap{Nothing}
 
         # Direct construction
@@ -62,13 +62,13 @@ using FastInterpolations
         e_f64 = FillExtrap(0.0)
         e_promoted = _promote_extrap(e_f64, Float32)
         @test e_promoted isa FillExtrap{Float32}
-        @test e_promoted.value === 0.0f0
+        @test e_promoted.fill_value === 0.0f0
 
         # NaN promotion
         e_nan = FillExtrap(NaN)
         e_nan32 = _promote_extrap(e_nan, Float32)
         @test e_nan32 isa FillExtrap{Float32}
-        @test isnan(e_nan32.value)
+        @test isnan(e_nan32.fill_value)
     end
 
     # ────────────────────────────────────────────
@@ -393,13 +393,13 @@ using FastInterpolations
         e1 = Extrap(:clamp)
         @test e1 isa ClampExtrap
 
-        e2 = Extrap(:fill; value=NaN)
+        e2 = Extrap(:fill; fill_value=NaN)
         @test e2 isa FillExtrap{Float64}
-        @test isnan(e2.value)
+        @test isnan(e2.fill_value)
 
-        e3 = Extrap(:fill; value=0.0)
+        e3 = Extrap(:fill; fill_value=0.0)
         @test e3 isa FillExtrap{Float64}
-        @test e3.value === 0.0
+        @test e3.fill_value === 0.0
 
         # :fill without value → ArgumentError
         @test_throws ArgumentError Extrap(:fill)

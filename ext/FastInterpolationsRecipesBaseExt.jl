@@ -128,7 +128,7 @@ _has_fill_value(::Any) = false
 
 Check if the fill value is finite (not NaN, not Inf).
 """
-_fill_is_finite(e::FillExtrap) = isfinite(e.value)
+_fill_is_finite(e::FillExtrap) = isfinite(e.fill_value)
 _fill_is_finite(::Any) = false
 
 """
@@ -136,7 +136,7 @@ _fill_is_finite(::Any) = false
 
 Format fill value for legend label.
 """
-_format_fill_label(e::FillExtrap) = "fill = $(e.value)"
+_format_fill_label(e::FillExtrap) = "fill = $(e.fill_value)"
 _format_fill_label(::Any) = ""
 
 # ========================================
@@ -278,7 +278,7 @@ Generates multiple series:
             y_for_lims = y_vec
         elseif has_fill
             if fill_finite
-                y_for_lims = vcat(y_vec, T[extrap.value])
+                y_for_lims = vcat(y_vec, T[extrap.fill_value])
             else
                 y_for_lims = y_vec  # NaN/Inf: use data only
             end
@@ -463,7 +463,7 @@ end
             y_for_lims = vec(Y)
         elseif has_fill
             if fill_finite
-                y_for_lims = vcat(vec(Y), T[extrap.value])
+                y_for_lims = vcat(vec(Y), T[extrap.fill_value])
             else
                 y_for_lims = vec(Y)
             end
@@ -650,7 +650,7 @@ end
     base_label = _interpolant_label(parent)
     final_label = "$(base_label) ($(deriv_notation))"
     if has_fill
-        final_label *= " [$(extrap.value)]"
+        final_label *= " [$(extrap.fill_value)]"
     end
 
     legend --> :best

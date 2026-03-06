@@ -103,7 +103,7 @@ end
 # ────────────────────────────────────────
 
 """
-    Extrap(mode::Symbol; value=nothing)
+    Extrap(mode::Symbol; fill_value=nothing)
     Extrap(s1::Symbol, s2::Symbol, rest::Symbol...)
     Extrap(mode::AbstractExtrap)
 
@@ -115,7 +115,7 @@ creates a Tuple for ND per-axis configuration (same pattern as `DerivOp(1, 0)`).
 # Options
 - `:none` → [`NoExtrap`](@ref): throw `DomainError` for out-of-domain queries
 - `:clamp` → [`ClampExtrap`](@ref): clamp to nearest boundary value
-- `:fill` → [`FillExtrap`](@ref): fill with a constant value (requires `value` keyword)
+- `:fill` → [`FillExtrap`](@ref): fill with a constant value (requires `fill_value` keyword)
 - `:extend` → [`ExtendExtrap`](@ref): extend interpolation polynomial beyond domain
 - `:wrap` → [`WrapExtrap`](@ref): wrap queries into domain (periodic)
 - `:constant` → *(deprecated)* alias for `:clamp`
@@ -124,20 +124,24 @@ creates a Tuple for ND per-axis configuration (same pattern as `DerivOp(1, 0)`).
 ```julia
 # 1D
 itp = cubic_interp(x, y; extrap=Extrap(:clamp))
-itp = cubic_interp(x, y; extrap=Extrap(:fill; value=NaN))
+itp = cubic_interp(x, y; extrap=Extrap(:fill; fill_value=NaN))
 
 # ND per-axis (multi-arg form)
 itp = cubic_interp((x, y, z), data; extrap=Extrap(:extend, :none, :wrap))
+itp = cubic_interp((x, y), data; extrap=Extrap(:clamp, :fill; fill_value=0.0))
 
 # Passthrough
 Extrap(:none)        # → NoExtrap()
 Extrap(NoExtrap())   # → NoExtrap()
 ```
 """
-function Extrap(sym::Symbol; value=nothing)
+function Extrap(sym::Symbol; fill_value=nothing)
+    if fill_value !== nothing && sym !== :fill
+        @warn "fill_value keyword is ignored because :$sym extrapolation does not use it; only :fill does"
+    end
     sym === :none     && return NoExtrap()
     sym === :clamp  && return ClampExtrap()
-    sym === :fill     && return value === nothing ? _extrap_fill_missing_value_error() : FillExtrap(value)
+    sym === :fill     && return fill_value === nothing ? _extrap_fill_missing_value_error() : FillExtrap(fill_value)
     sym === :extend   && return ExtendExtrap()
     sym === :wrap     && return WrapExtrap()
     if sym === :constant
@@ -150,7 +154,17 @@ function Extrap(sym::Symbol; value=nothing)
 end
 
 # ND variadic: Extrap(:extend, :none, :wrap) → tuple of extrap modes
-Extrap(s1::Symbol, s2::Symbol, rest::Symbol...) = map(Extrap, (s1, s2, rest...))
+# Forward `fill_value` kwarg only to :fill axes; warn once if no axis uses :fill
+function Extrap(s1::Symbol, s2::Symbol, rest::Symbol...; fill_value=nothing)
+    syms = (s1, s2, rest...)
+    has_fill_axis = any(==(:fill), syms)
+    if fill_value !== nothing && !has_fill_axis
+        @warn "fill_value keyword is ignored because no axis uses :fill extrapolation"
+    end
+    # Only forward fill_value to :fill axes; use nothing for others to suppress per-axis warnings
+    fv = has_fill_axis ? fill_value : nothing
+    map(s -> Extrap(s; fill_value = (s === :fill ? fv : nothing)), syms)
+end
 
 Extrap(e::AbstractExtrap) = e
 
@@ -161,7 +175,7 @@ end
 
 @noinline function _extrap_fill_missing_value_error()
     throw(ArgumentError(
-        "Extrap(:fill) requires a `value` keyword argument, e.g. Extrap(:fill; value=NaN)"))
+        "Extrap(:fill) requires a `fill_value` keyword argument, e.g. Extrap(:fill; fill_value=NaN)"))
 end
 
 # ────────────────────────────────────────

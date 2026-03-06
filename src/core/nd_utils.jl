@@ -41,7 +41,7 @@
     fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
     length(fill_dims) <= 1 && return :(nothing)
     first_d = fill_dims[1]
-    checks = [:(extraps[$first_d].value === extraps[$d].value || _throw_conflicting_fill_values()) for d in fill_dims[2:end]]
+    checks = [:(extraps[$first_d].fill_value === extraps[$d].fill_value || _throw_conflicting_fill_values()) for d in fill_dims[2:end]]
     quote
         $(checks...)
         nothing
@@ -110,7 +110,7 @@ Accepts both scalar `ops::AbstractEvalOp` and tuple `ops::Tuple{Vararg{AbstractE
     quote
         Base.@_inline_meta
         @inbounds if $oob_expr
-            return _fill_extrap_result(ops, extraps[$fill_d].value, zero_ref)
+            return _fill_extrap_result(ops, extraps[$fill_d].fill_value, zero_ref)
         end
         return nothing
     end

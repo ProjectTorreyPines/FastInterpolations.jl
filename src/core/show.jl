@@ -106,7 +106,7 @@ end
 function _format_extrap(mode)
     mode isa NoExtrap && return "NoExtrap"
     mode isa ClampExtrap && return "ClampExtrap"
-    mode isa FillExtrap && return "FillExtrap($(mode.value))"
+    mode isa FillExtrap && return "FillExtrap($(mode.fill_value))"
     mode isa ExtendExtrap && return "ExtendExtrap"
     mode isa WrapExtrap && return "WrapExtrap"
     return "unknown"

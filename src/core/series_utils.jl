@@ -107,7 +107,7 @@ end
 @inline function _constant_extrap_boundary_value(
     ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::EvalValue, e::FillExtrap
 ) where {Tv}
-    return e.value
+    return e.fill_value
 end
 
 @inline function _constant_extrap_boundary_value(
@@ -139,7 +139,7 @@ end
     out::AbstractVector{Tv}, ::Matrix{Tv}, ::UInt8, ::Int, ::EvalValue, e::FillExtrap
 ) where {Tv}
     @inbounds @simd for k in axes(out, 1)
-        out[k] = e.value
+        out[k] = e.fill_value
     end
     return out
 end

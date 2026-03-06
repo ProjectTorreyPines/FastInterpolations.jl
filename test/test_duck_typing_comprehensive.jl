@@ -1604,14 +1604,14 @@ _val(d::MyDuck) = d.v
         @testset "construction with duck type" begin
             e = FillExtrap(fill_val)
             @test e isa FillExtrap{MyDuck}
-            @test e.value === fill_val
+            @test e.fill_value === fill_val
         end
 
         @testset "_promote_extrap identity for matching Tv" begin
             e = FillExtrap(fill_val)
             ep = _promote_extrap(e, MyDuck)
             @test ep isa FillExtrap{MyDuck}
-            @test ep.value === fill_val
+            @test ep.fill_value === fill_val
         end
 
         @testset "_promote_extrap with Float64 fill → MethodError for duck Tv" begin

@@ -117,9 +117,9 @@ preserve the complex structure while adapting only the float precision.
 
 ### Why `FillExtrap` is parametric
 
-`FillExtrap{T}` stores `value::T`. The `{T}` parameter is required for **eval-path type
-stability**: `_constant_extrap_result` returns `e.value` directly, and the compiler must
-know its type at compile time to avoid heap allocation. Without `{T}`, `value::Any` would
+`FillExtrap{T}` stores `fill_value::T`. The `{T}` parameter is required for **eval-path type
+stability**: `_constant_extrap_result` returns `e.fill_value` directly, and the compiler must
+know its type at compile time to avoid heap allocation. Without `{T}`, `fill_value::Any` would
 cause boxing on every out-of-domain query.
 
 !!! note "Historical context"
@@ -148,7 +148,7 @@ same `_PromotableValue` pattern:
 ```julia
 # _PromotableValue: auto-convert (always safe, convert is well-defined)
 _promote_extrap(e::FillExtrap{<:_PromotableValue}, ::Type{Tv}) =
-    FillExtrap{Tv}(convert(Tv, e.value))
+    FillExtrap{Tv}(convert(Tv, e.fill_value))
 
 # Duck types: pass through unchanged (user is responsible for correct type)
 _promote_extrap(e::FillExtrap, ::Type) = e

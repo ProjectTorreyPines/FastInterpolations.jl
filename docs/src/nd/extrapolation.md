@@ -12,6 +12,10 @@ Extrapolation in ND works per-axis, using the same modes as [1D extrapolation](.
 | `ClampExtrap()` | Clamp to boundary value |
 | `ExtendExtrap()` | Extend boundary polynomial |
 | `WrapExtrap()` | Wrap coordinates periodically |
+| `FillExtrap(v)` | Return constant fill value `v` |
+
+!!! warning "FillExtrap in ND: homogeneous fill value required"
+    All axes that use `FillExtrap` must share the **same fill value**. The OOB check is applied per-axis and returns a single scalar, so mixed fill values (e.g. `(FillExtrap(0.0), FillExtrap(NaN))`) are not supported.
 
 ---
 
@@ -79,6 +83,15 @@ plot(itp; kw...)
     first derivative, and second derivative across the period — producing a seamless, smooth result.
 
     When `bc=PeriodicBC()` is set on an axis, `WrapExtrap()` is automatically applied for that axis.
+
+### `FillExtrap(0.0)`
+
+Out-of-domain queries return the fill value (`0.0` here) — the interior interpolant drops to zero at the boundary:
+
+```@example nd_extrap
+itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=FillExtrap(0.0))
+plot(itp; kw...)
+```
 
 ---
 

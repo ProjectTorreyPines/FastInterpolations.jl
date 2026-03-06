@@ -48,7 +48,7 @@ end
     sign == 0 && return zero(Tout)
     xmin, xmax = first(x), last(x)
     total = zero(Tout)
-    v = e.value
+    v = e.fill_value
     if lo < xmin
         total += v * (min(hi, xmin) - lo)
     end

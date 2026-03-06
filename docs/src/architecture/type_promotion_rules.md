@@ -210,6 +210,6 @@ Phase 2: _promote_extraps_nd(extrap_vals, Tv)
 
 | File | Contents |
 |------|----------|
-| `src/core/utils.jl` | `_PromotableValue`, `_promote_grid_float`, `_value_type`, `_promote_value_type`, `_promote_xy_types` |
-| `src/core/eval_ops.jl` | `FillExtrap{T}`, `_promote_extrap` |
+| `src/core/utils.jl` | `_promote_grid_float`, `_value_type`, `_promote_value_type`, `_promote_xy_types` |
+| `src/core/eval_ops.jl` | `_PromotableValue`, `FillExtrap{T}`, `_promote_extrap` |
 | `src/core/nd_utils.jl` | `_resolve_extrap_nd`, `_promote_extraps_nd`, `_validate_fill_values_nd` |

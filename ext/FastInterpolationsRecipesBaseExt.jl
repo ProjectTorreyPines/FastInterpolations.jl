@@ -128,7 +128,7 @@ _has_fill_value(::Any) = false
 
 Check if the fill value is finite (not NaN, not Inf).
 """
-_fill_is_finite(e::FillExtrap) = isfinite(e.fill_value)
+_fill_is_finite(e::FillExtrap) = e.fill_value isa Number ? isfinite(e.fill_value) : false
 _fill_is_finite(::Any) = false
 
 """

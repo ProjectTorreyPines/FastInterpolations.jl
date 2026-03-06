@@ -94,8 +94,10 @@ Right
 AbstractExtrap
 NoExtrap
 ClampExtrap
+FillExtrap
 ExtendExtrap
 WrapExtrap
+ConstExtrap
 ```
 
 ## Search Policies

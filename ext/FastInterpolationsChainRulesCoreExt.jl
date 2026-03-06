@@ -10,7 +10,6 @@
 #
 # Usage:
 #   using FastInterpolations, ChainRulesCore
-#   # ForwardDiff uses frule, Zygote uses rrule — both pick up these rules.
 
 module FastInterpolationsChainRulesCoreExt
 
@@ -26,8 +25,6 @@ using ChainRulesCore
 """
 Forward-mode rule for 1D scalar interpolants.
 
-Enables `ForwardDiff.derivative(itp, x)` to use analytical derivatives
-instead of Dual number propagation.
 """
 function ChainRulesCore.frule(
     (_, Δx),
@@ -76,8 +73,6 @@ end
 """
 Forward-mode rule for all ND interpolants with Tuple input.
 
-Enables `ForwardDiff.derivative(q -> itp((q, 0.5)), 0.5)` to use
-analytical partial derivatives.
 """
 function ChainRulesCore.frule(
     (_, Δquery),
@@ -96,7 +91,6 @@ end
 """
 Forward-mode rule for all ND interpolants with Vector input.
 
-Enables `ForwardDiff.gradient(itp, [0.5, 0.5])` to use analytical derivatives.
 """
 function ChainRulesCore.frule(
     (_, Δquery),

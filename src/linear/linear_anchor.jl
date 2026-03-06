@@ -359,10 +359,10 @@ end
     itp::LinearInterpolant{Tg},
     aq::_LinearAnchoredQuery{Tg, Tq},
     op::AbstractEvalOp,
-    ::ConstExtrap
+    extrap::_ClampOrFill
 ) where {Tg<:AbstractFloat, Tq<:Real}
     if aq.side != 0x00  # outside domain
-        return _linear_eval_constant_extrap(itp.y, aq.side == 0x01, op)
+        return _linear_eval_constant_extrap(itp.y, aq.side == 0x01, op, extrap)
     end
     @inbounds begin
         yL = itp.y[aq.idx]

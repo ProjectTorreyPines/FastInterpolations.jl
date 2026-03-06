@@ -183,7 +183,7 @@ end
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
-# ConstExtrap - clamp to boundary (value only, derivatives are zero)
+# ClampExtrap/FillExtrap - clamp to boundary or fill (value only, derivatives are zero)
 @inline function _eval_linear_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -192,11 +192,11 @@ end
     ::Tg,
     ::Tg,
     ::_LinearAnchoredQuery{Tg},
-    ::ConstExtrap,
+    extrap::_ClampOrFill,
     op::AbstractEvalOp,
     side::UInt8
 ) where {Tg<:AbstractFloat, Tv}
-    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
+    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap)
 end
 
 # ExtendExtrap - extend linear polynomial
@@ -302,7 +302,7 @@ Create a multi-Y linear interpolant for multiple y-data series sharing the same 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `s::Series`: Wrapped series data (varargs, vector-of-vectors, or matrix)
-- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `search::AbstractSearchPolicy`: Search policy for interval lookup
 
 # Returns
@@ -342,8 +342,9 @@ function linear_interp(
     n_pts = length(x)
     Tv_out = _value_type(Tv, Tg)
     y_mat, _ = _build_series_mat(s, n_pts, Tv_out)
+    extrap_p = _promote_extrap(extrap, Tv_out)
 
-    return LinearSeriesInterpolant(x, y_mat, extrap, search)
+    return LinearSeriesInterpolant(x, y_mat, extrap_p, search)
 end
 
 # Real grid promotion (Int, etc.) → convert to float and delegate
@@ -548,8 +549,8 @@ Uses anchor's `xq` for domain error messages.
     # Outside domain: dispatch on extrap mode
     if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_linear_series_anchored(y, x, k, aq, op)
-    elseif extrap isa ConstExtrap
-        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op)
+    elseif extrap isa _ClampOrFill
+        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op, extrap)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end

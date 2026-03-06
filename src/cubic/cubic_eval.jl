@@ -101,14 +101,15 @@ end
 # Extrapolation-aware Evaluation
 # ========================================
 
-# Helper: result for constant extrapolation outside domain
-# For value: return boundary y
-# For derivatives: return zero (constant function has no slope/curvature)
-# Tv is unconstrained (duck typing)
-@inline _constant_extrap_result(::EvalValue, y_boundary::Tv) where {Tv} = y_boundary
-@inline _constant_extrap_result(::EvalDeriv1, y_boundary::Tv) where {Tv} = 0 * y_boundary
-@inline _constant_extrap_result(::EvalDeriv2, y_boundary::Tv) where {Tv} = 0 * y_boundary
-@inline _constant_extrap_result(::EvalDeriv3, y_boundary::Tv) where {Tv} = 0 * y_boundary
+# Helper: result for constant/fill extrapolation outside domain
+# For value: return boundary y (ClampExtrap) or fill value (FillExtrap)
+# For derivatives: always return zero from y_bnd (constant function has no slope/curvature)
+# Uses y_bnd (not fill value) for derivatives to avoid 0 * NaN = NaN
+@inline _constant_extrap_result(::EvalValue, y_bnd, ::ClampExtrap) = y_bnd
+@inline _constant_extrap_result(::EvalValue, _, e::FillExtrap) = e.fill_value
+@inline _constant_extrap_result(::EvalDeriv1, y_bnd, ::_ClampOrFill) = 0 * y_bnd  # abstract catches both
+@inline _constant_extrap_result(::EvalDeriv2, y_bnd, ::_ClampOrFill) = 0 * y_bnd
+@inline _constant_extrap_result(::EvalDeriv3, y_bnd, ::_ClampOrFill) = 0 * y_bnd
 
 # --- Searcher-aware versions ---
 
@@ -126,21 +127,21 @@ end
     return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
 end
 
-"Evaluate with constant extrapolation and search policy."
+"Evaluate with constant/fill extrapolation and search policy."
 @inline function _eval_cubic_with_extrap(
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     spacing::AbstractGridSpacing{Tg},
     z::AbstractVector{Tv},
     xq::Tq,
-    ::ConstExtrap,
+    extrap::_ClampOrFill,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
     # Use primal for boundary comparisons (Dual needs real value for comparison)
     xq_primal = _extract_primal(xq)
-    xq_primal < first(x) && return _constant_extrap_result(op, @inbounds y[1])
-    xq_primal > last(x) && return _constant_extrap_result(op, @inbounds y[end])
+    xq_primal < first(x) && return _constant_extrap_result(op, @inbounds(y[1]), extrap)
+    xq_primal > last(x) && return _constant_extrap_result(op, @inbounds(y[end]), extrap)
     return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
 end
 

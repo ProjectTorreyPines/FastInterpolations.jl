@@ -214,12 +214,12 @@ import FastInterpolations:
 
         @testset "_resolve_extrap_nd wrong-sized tuple error" begin
             # Correct size should work (3-arg form: extrap, bcs, Val(N))
-            @test _resolve_extrap_nd(NoExtrap(), nothing, Val(2)) == (NoExtrap(), NoExtrap())
-            @test _resolve_extrap_nd((NoExtrap(), ConstExtrap()), nothing, Val(2)) == (NoExtrap(), ConstExtrap())
+            @test _resolve_extrap_nd(NoExtrap(), nothing, Val(2), Float64) == (NoExtrap(), NoExtrap())
+            @test _resolve_extrap_nd((NoExtrap(), ClampExtrap()), nothing, Val(2), Float64) == (NoExtrap(), ClampExtrap())
 
             # Wrong size should throw
-            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(),), nothing, Val(2))  # 1 element for 2D
-            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(), NoExtrap(), NoExtrap()), nothing, Val(2))  # 3 for 2D
+            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(),), nothing, Val(2), Float64)  # 1 element for 2D
+            @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(), NoExtrap(), NoExtrap()), nothing, Val(2), Float64)  # 3 for 2D
         end
 
         @testset "_resolve_search_nd wrong-sized tuple error" begin
@@ -843,7 +843,7 @@ end
 
     @testset "fallback: non-uniform extraps with bcs=nothing (linear oneshot)" begin
         # Mixed extrap types per dim — exercises per-dim extrap dispatch fallback
-        result = linear_interp(grids, data, (0.5, 0.5); extrap=(NoExtrap(), ConstExtrap()))
+        result = linear_interp(grids, data, (0.5, 0.5); extrap=(NoExtrap(), ClampExtrap()))
         @test result ≈ 1.0 atol=1e-10
     end
 
@@ -862,7 +862,7 @@ end
     end
 
     @testset "fallback: non-uniform extraps with mixed BCs (cubic oneshot)" begin
-        # bc=(PeriodicBC(), ZeroCurvBC()) + extrap=(NoExtrap(),ConstExtrap())
+        # bc=(PeriodicBC(), ZeroCurvBC()) + extrap=(NoExtrap(),ClampExtrap())
         # Mixed extrap types per dim — exercises per-dim extrap dispatch fallback
         x = collect(range(0.0, 2π, 9))
         y = collect(range(0.0, 1.0, 9))
@@ -871,7 +871,7 @@ end
 
         # Query is interior: cos(π/2) + 0.5 ≈ 0.5 (extrap mode doesn't affect interior)
         result = cubic_interp((x, y), data_p, (π/2, 0.5);
-            bc=(PeriodicBC(), ZeroCurvBC()), extrap=(NoExtrap(), ConstExtrap()))
+            bc=(PeriodicBC(), ZeroCurvBC()), extrap=(NoExtrap(), ClampExtrap()))
         @test result ≈ 0.5 atol=0.01
     end
 end

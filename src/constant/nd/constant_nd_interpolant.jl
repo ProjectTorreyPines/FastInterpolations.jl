@@ -20,7 +20,7 @@ Create an N-dimensional constant interpolant with tuple-grid API.
 
 # Keyword Arguments
 - `side=NearestSide()`: Side selection mode (`NearestSide()`, `LeftSide()`, `RightSide()`) or per-axis tuple
-- `extrap=NoExtrap()`: Extrapolation mode (`NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, `WrapExtrap()`) or per-axis tuple
+- `extrap=NoExtrap()`: Extrapolation mode (`NoExtrap()`, `ClampExtrap()`, `ExtendExtrap()`, `WrapExtrap()`) or per-axis tuple
 - `search=AutoSearch()`: Search policy or per-axis tuple
 
 # Returns
@@ -74,7 +74,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N))
+    extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return ConstantInterpolantND{Tg, Tv, N,
         typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(sides), typeof(searches)}(
         grids_typed, spacings, Array(data_typed), extrap_vals, sides, searches

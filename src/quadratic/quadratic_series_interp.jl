@@ -209,12 +209,11 @@ end
     x_min::Tg,
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Tq},
-    extrap::ConstExtrap,
+    extrap::_ClampOrFill,
     op::AbstractEvalOp
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
     if aq.side != 0x00  # outside domain
-        idx = _boundary_point_index(aq.side, n_pts)
-        _fill_boundary_values!(output, y_point, idx, op)
+        _fill_constant_extrap_simd!(output, y_point, aq.side, n_pts, op, extrap)
     else
         _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
     end
@@ -363,7 +362,7 @@ Create a multi-Y quadratic series interpolant for multiple y-data series sharing
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `s::Series`: Wrapped series data (varargs, vector-of-vectors, or matrix)
 - `bc`: Boundary condition (Left/Right with QuadraticFit, Deriv1, Deriv2, MinCurvFit)
-- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, or `ExtendExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ClampExtrap()`, or `ExtendExtrap()`
 - `search::AbstractSearchPolicy`: Search policy for interval lookup
 
 # Example
@@ -417,7 +416,8 @@ function quadratic_interp(
         end
     end
 
-    return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, h, extrap, search)
+    extrap_p = _promote_extrap(extrap, eltype(y_mat))
+    return QuadraticSeriesInterpolant(x, y_mat, a_mat, d_mat, h, extrap_p, search)
 end
 
 # Real grid promotion (Int, etc.) → convert to float and delegate
@@ -622,12 +622,12 @@ end
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Taq},
     dL::Tq,
-    extrap::ConstExtrap,
+    extrap::_ClampOrFill,
     op::EvalValue
 ) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
     if aq.side != 0x00  # outside domain
-        idx = _boundary_point_index(aq.side, n_pts)
-        return @inbounds y[idx]
+        y_bnd = @inbounds y[_boundary_point_index(aq.side, n_pts)]
+        return _constant_extrap_result(op, y_bnd, extrap)
     else
         return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)
     end
@@ -642,11 +642,11 @@ end
     x_max::Tg,
     aq::_QuadraticAnchoredQuery{Tg, Taq},
     dL::Tq,
-    extrap::ConstExtrap,
+    extrap::_ClampOrFill,
     op::Union{EvalDeriv1, EvalDeriv2}
 ) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
     if aq.side != 0x00  # outside domain
-        return 0 * first(y)
+        return _constant_extrap_result(op, first(y), extrap)
     else
         return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)
     end

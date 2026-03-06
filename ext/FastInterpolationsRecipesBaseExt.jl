@@ -6,7 +6,7 @@
 #
 # Usage:
 #   using FastInterpolations, Plots
-#   itp = cubic_interp(x, y; extrap=ConstExtrap())
+#   itp = cubic_interp(x, y; extrap=ClampExtrap())
 #   plot(itp)  # automatic documentation-style visualization
 
 module FastInterpolationsRecipesBaseExt
@@ -23,7 +23,7 @@ import FastInterpolations:
     LinearInterpolant, ConstantInterpolant, QuadraticInterpolant, CubicInterpolant,
     LinearSeriesInterpolant, ConstantSeriesInterpolant,
     QuadraticSeriesInterpolant, CubicSeriesInterpolant,
-    DerivativeView, NoExtrap
+    DerivativeView, NoExtrap, ClampExtrap, FillExtrap
 
 # ========================================
 # Helper Functions
@@ -115,6 +115,30 @@ Compute default domain margin: 0.25 * (x[end] - x[1])
 """
 _default_margin(x::AbstractVector{T}) where {T} = T(0.25) * (last(x) - first(x))
 
+"""
+    _has_fill_value(extrap) -> Bool
+
+Check if extrap is a FillExtrap.
+"""
+_has_fill_value(::FillExtrap) = true
+_has_fill_value(::Any) = false
+
+"""
+    _fill_is_finite(extrap) -> Bool
+
+Check if the fill value is finite (not NaN, not Inf).
+"""
+_fill_is_finite(e::FillExtrap) = e.fill_value isa Number ? isfinite(e.fill_value) : false
+_fill_is_finite(::Any) = false
+
+"""
+    _format_fill_label(extrap) -> String
+
+Format fill value for legend label.
+"""
+_format_fill_label(e::FillExtrap) = "fill = $(e.fill_value)"
+_format_fill_label(::Any) = ""
+
 # ========================================
 # HelpPlots Integration (recipe_dispatch)
 # ========================================
@@ -190,31 +214,45 @@ Generates multiple series:
     # Small visual margin for edge point visibility (2% of domain)
     visual_margin = T(0.02) * (x_max - x_min)
 
+    # Determine if FillExtrap with finite value
+    has_fill = _has_fill_value(extrap)
+    fill_finite = _fill_is_finite(extrap)
+
     # Compute curve evaluation range (xq) and display range (xlims) separately
     if extrap isa NoExtrap
-        # Curve stays within domain, but xlims has small margin for visibility
+        # NoExtrap: curve stays within domain
         xq_min, xq_max = x_min, x_max
         default_xlim_min = x_min - visual_margin
         default_xlim_max = x_max + visual_margin
+    elseif has_fill && !fill_finite
+        # NaN/Inf fill: curve stays within domain, but extend xlims for shading
+        xq_min, xq_max = x_min, x_max
+        default_xlim_min = x_min - margin
+        default_xlim_max = x_max + margin
     else
-        # Curve extends beyond domain
+        # ClampExtrap, ExtendExtrap, WrapExtrap, FillExtrap(finite):
+        # curve extends beyond domain (itp returns fill/clamped/extended value)
         xq_min, xq_max = x_min - margin, x_max + margin
         default_xlim_min, default_xlim_max = xq_min, xq_max
     end
 
     # If user provides xlims and extrap is enabled, use wider range for curve evaluation
     if !isnothing(user_xlims) && !(extrap isa NoExtrap)
-        xq_min = min(T(first(user_xlims)), xq_min)
-        xq_max = max(T(last(user_xlims)), xq_max)
+        if !(has_fill && !fill_finite)
+            xq_min = min(T(first(user_xlims)), xq_min)
+            xq_max = max(T(last(user_xlims)), xq_max)
+        end
+        default_xlim_min = min(T(first(user_xlims)), default_xlim_min)
+        default_xlim_max = max(T(last(user_xlims)), default_xlim_max)
     end
 
-    # Generate query range
+    # Generate query range (in-domain for fill-value, full range otherwise)
     xq = range(xq_min, xq_max; length=n_samples)
 
     # Final xlims for plot (user override or default)
     final_xlims = isnothing(user_xlims) ? (default_xlim_min, default_xlim_max) : user_xlims
 
-    # Evaluate interpolant
+    # Evaluate interpolant (in-domain only for fill-value modes)
     yq = itp.(collect(xq))
 
     # Set plot defaults
@@ -231,12 +269,19 @@ Generates multiple series:
     # Compute ylims based on extrapolation mode:
     # - extrap=NoExtrap() → use only original data (y_vec)
     # - extrap enabled → use both data and extrapolated curve (yq) for balanced view
+    # - fill value → include fill value in ylims (if finite)
     # User-provided ylims override auto-computed limits
     if !isnothing(user_ylims)
         y_lim_min, y_lim_max = T(first(user_ylims)), T(last(user_ylims))
     else
         if extrap isa NoExtrap
             y_for_lims = y_vec
+        elseif has_fill
+            if fill_finite
+                y_for_lims = vcat(y_vec, T[extrap.fill_value])
+            else
+                y_for_lims = y_vec  # NaN/Inf: use data only
+            end
         else
             y_for_lims = vcat(y_vec, yq)
         end
@@ -247,26 +292,28 @@ Generates multiple series:
     end
 
     # Series 1 & 2: Out-of-domain shading (only when extrapolation is enabled)
-    # Use large values so shading auto-clips to actual xlims/ylims
-    shade_min, shade_max = T(-1e10), T(1e10)
+    # Shade rectangles use final plot bounds (not 1e10) to avoid blowing up axis range
     if show_outside && !(extrap isa NoExtrap)
+        shade_label = has_fill ? _format_fill_label(extrap) : "out of domain"
+        shade_x_lo, shade_x_hi = T(first(final_xlims)), T(last(final_xlims))
+        shade_y_lo, shade_y_hi = y_lim_min, y_lim_max
         @series begin
             seriestype := :shape
             fillcolor --> :gray
             fillalpha --> 0.1
             linewidth := 0
             label := nothing
-            [shade_min, x_min, x_min, shade_min],
-            [shade_min, shade_min, shade_max, shade_max]
+            [shade_x_lo, x_min, x_min, shade_x_lo],
+            [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
         end
         @series begin
             seriestype := :shape
             fillcolor --> :gray
             fillalpha --> 0.1
             linewidth := 0
-            label --> "out of domain"
-            [x_max, shade_max, shade_max, x_max],
-            [shade_min, shade_min, shade_max, shade_max]
+            label --> shade_label
+            [x_max, shade_x_hi, shade_x_hi, x_max],
+            [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
         end
     end
 
@@ -306,6 +353,7 @@ Generates multiple series:
         ylims --> (y_lim_min, y_lim_max)
         collect(xq), yq
     end
+
 end
 
 # ========================================
@@ -361,25 +409,38 @@ end
         series_idx
     end
 
+    # Determine if FillExtrap with finite value
+    has_fill = _has_fill_value(extrap)
+    fill_finite = _fill_is_finite(extrap)
+
     # Small visual margin for edge point visibility (2% of domain)
     visual_margin = T(0.02) * (x_max - x_min)
 
     # Compute curve evaluation range (xq) and display range (xlims) separately
     if extrap isa NoExtrap
-        # Curve stays within domain, but xlims has small margin for visibility
         xq_min, xq_max = x_min, x_max
         default_xlim_min = x_min - visual_margin
         default_xlim_max = x_max + visual_margin
+    elseif has_fill && !fill_finite
+        # NaN/Inf fill: curve stays within domain, but extend xlims for shading
+        xq_min, xq_max = x_min, x_max
+        default_xlim_min = x_min - margin
+        default_xlim_max = x_max + margin
     else
-        # Curve extends beyond domain
+        # ClampExtrap, ExtendExtrap, WrapExtrap, FillExtrap(finite):
+        # curve extends beyond domain
         xq_min, xq_max = x_min - margin, x_max + margin
         default_xlim_min, default_xlim_max = xq_min, xq_max
     end
 
     # If user provides xlims and extrap is enabled, use wider range for curve evaluation
     if !isnothing(user_xlims) && !(extrap isa NoExtrap)
-        xq_min = min(T(first(user_xlims)), xq_min)
-        xq_max = max(T(last(user_xlims)), xq_max)
+        if !(has_fill && !fill_finite)
+            xq_min = min(T(first(user_xlims)), xq_min)
+            xq_max = max(T(last(user_xlims)), xq_max)
+        end
+        default_xlim_min = min(T(first(user_xlims)), default_xlim_min)
+        default_xlim_max = max(T(last(user_xlims)), default_xlim_max)
     end
 
     # Generate query range
@@ -393,15 +454,19 @@ end
     yq_all = [sitp(xi) for xi in xq_vec]
     yq_matrix = reduce(hcat, yq_all)'  # n_samples x n_series
 
-    # Compute ylims based on extrapolation mode:
-    # - extrap=NoExtrap() → use only original data (Y)
-    # - extrap enabled → use both data and extrapolated curve for balanced view
-    # User-provided ylims override auto-computed limits
+    # Compute ylims:
+    # - fill value → include fill value (if finite), exclude NaN/Inf from yq
     if !isnothing(user_ylims)
         y_lim_min, y_lim_max = T(first(user_ylims)), T(last(user_ylims))
     else
         if extrap isa NoExtrap
             y_for_lims = vec(Y)
+        elseif has_fill
+            if fill_finite
+                y_for_lims = vcat(vec(Y), T[extrap.fill_value])
+            else
+                y_for_lims = vec(Y)
+            end
         else
             y_for_lims = vcat(vec(Y), vec(yq_matrix))
         end
@@ -422,27 +487,29 @@ end
     tickfontsize --> 12
 
     # Out-of-domain shading (once, internal series - use := for type, --> for colors)
-    # Use large values so shading auto-clips to actual xlims/ylims
-    shade_min, shade_max = T(-1e10), T(1e10)
+    # Shade rectangles use final plot bounds to avoid blowing up axis range
     if show_outside && length(series_indices) > 0
         if !(extrap isa NoExtrap)
+            shade_label = has_fill ? _format_fill_label(extrap) : "out of domain"
+            shade_x_lo, shade_x_hi = T(first(final_xlims)), T(last(final_xlims))
+            shade_y_lo, shade_y_hi = y_lim_min, y_lim_max
             @series begin
                 seriestype := :shape
                 fillcolor --> :gray
                 fillalpha --> 0.1
                 linewidth := 0
                 label := nothing
-                [shade_min, x_min, x_min, shade_min],
-                [shade_min, shade_min, shade_max, shade_max]
+                [shade_x_lo, x_min, x_min, shade_x_lo],
+                [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
             end
             @series begin
                 seriestype := :shape
                 fillcolor --> :gray
                 fillalpha --> 0.1
                 linewidth := 0
-                label --> "out of domain"
-                [x_max, shade_max, shade_max, x_max],
-                [shade_min, shade_min, shade_max, shade_max]
+                label --> shade_label
+                [x_max, shade_x_hi, shade_x_hi, x_max],
+                [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
             end
         end
     end
@@ -489,6 +556,7 @@ end
             ylims --> (y_lim_min, y_lim_max)
             xq_vec, yq_matrix[:, k]
         end
+
     end
 end
 
@@ -543,17 +611,20 @@ end
 
     x_min, x_max = first(x_vec), last(x_vec)
 
+    # Determine if FillExtrap
+    has_fill = _has_fill_value(extrap)
+
     # Small visual margin for edge point visibility (2% of domain)
     visual_margin = ElType(0.02) * (x_max - x_min)
 
     # Compute curve evaluation range (xq) and display range (xlims) separately
+    # For derivatives, FillExtrap always produces 0 outside domain,
+    # so we can safely extend the curve (no NaN issue from derivatives)
     if extrap isa NoExtrap
-        # Curve stays within domain, but xlims has small margin for visibility
         xq_min, xq_max = x_min, x_max
         default_xlim_min = x_min - visual_margin
         default_xlim_max = x_max + visual_margin
     else
-        # Curve extends beyond domain
         xq_min, xq_max = x_min - margin, x_max + margin
         default_xlim_min, default_xlim_max = xq_min, xq_max
     end
@@ -578,42 +649,51 @@ end
     deriv_notation = Order == 1 ? "S'" : Order == 2 ? "S''" : "S'''"
     base_label = _interpolant_label(parent)
     final_label = "$(base_label) ($(deriv_notation))"
+    if has_fill
+        final_label *= " [$(extrap.fill_value)]"
+    end
 
     legend --> :best
     legendfontsize --> 11
     tickfontsize --> 12
 
-    # Compute ylims from evaluated derivative (yq already respects extrap mode via xq range)
-    # User-provided ylims override auto-computed limits
+    # Compute ylims from evaluated derivative
+    # Filter NaN/Inf for safety (shouldn't happen for derivatives, but defensive)
     if !isnothing(user_ylims)
         y_lim_min, y_lim_max = ElType(first(user_ylims)), ElType(last(user_ylims))
     else
-        y_range = maximum(yq) - minimum(yq)
+        yq_finite = filter(isfinite, yq)
+        if isempty(yq_finite)
+            yq_finite = ElType[0]
+        end
+        y_range = maximum(yq_finite) - minimum(yq_finite)
         y_margin = max(y_range * 0.05, eps(ElType))  # 5% margin
-        y_lim_min = minimum(yq) - y_margin
-        y_lim_max = maximum(yq) + y_margin
+        y_lim_min = minimum(yq_finite) - y_margin
+        y_lim_max = maximum(yq_finite) + y_margin
     end
 
-    # Out-of-domain shading - use large values so shading auto-clips to actual xlims/ylims
-    shade_min, shade_max = ElType(-1e10), ElType(1e10)
+    # Out-of-domain shading - use final plot bounds to avoid blowing up axis range
     if show_outside && !(extrap isa NoExtrap)
+        shade_label = has_fill ? "deriv = 0" : "out of domain"
+        shade_x_lo, shade_x_hi = ElType(first(final_xlims)), ElType(last(final_xlims))
+        shade_y_lo, shade_y_hi = y_lim_min, y_lim_max
         @series begin
             seriestype := :shape
             fillcolor --> :gray
             fillalpha --> 0.1
             linewidth := 0
             label := nothing
-            [shade_min, x_min, x_min, shade_min],
-            [shade_min, shade_min, shade_max, shade_max]
+            [shade_x_lo, x_min, x_min, shade_x_lo],
+            [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
         end
         @series begin
             seriestype := :shape
             fillcolor --> :gray
             fillalpha --> 0.1
             linewidth := 0
-            label --> "out of domain"
-            [x_max, shade_max, shade_max, x_max],
-            [shade_min, shade_min, shade_max, shade_max]
+            label --> shade_label
+            [x_max, shade_x_hi, shade_x_hi, x_max],
+            [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
         end
     end
 

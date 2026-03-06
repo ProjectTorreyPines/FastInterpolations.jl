@@ -72,14 +72,25 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
     @testset "Extrap" begin
         @testset "Symbol → Concrete Type" begin
             @test Extrap(:none) isa NoExtrap
-            @test Extrap(:constant) isa ConstExtrap
+            @test Extrap(:clamp) isa ClampExtrap
+            @test Extrap(:fill; fill_value=NaN) isa FillExtrap{Float64}
+            @test Extrap(:fill; fill_value=0.0).fill_value === 0.0
             @test Extrap(:extend) isa ExtendExtrap
             @test Extrap(:wrap) isa WrapExtrap
         end
 
+        @testset ":constant deprecated → ClampExtrap" begin
+            e = @test_deprecated Extrap(:constant)
+            @test e isa ClampExtrap
+        end
+
+        @testset ":fill requires value keyword" begin
+            @test_throws ArgumentError Extrap(:fill)
+        end
+
         @testset "Passthrough" begin
             @test Extrap(NoExtrap()) === NoExtrap()
-            @test Extrap(ConstExtrap()) === ConstExtrap()
+            @test Extrap(ClampExtrap()) === ClampExtrap()
             @test Extrap(ExtendExtrap()) === ExtendExtrap()
             @test Extrap(WrapExtrap()) === WrapExtrap()
         end
@@ -87,7 +98,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
         @testset "Error handling" begin
             @test_throws ArgumentError Extrap(:unknown)
             @test_throws ArgumentError Extrap(:no)        # must be :none
-            @test_throws ArgumentError Extrap(:const)      # must be :constant
+            @test_throws ArgumentError Extrap(:const)      # partial match not accepted
             @test_throws ArgumentError Extrap(:periodic)   # not an extrap mode
         end
 
@@ -99,6 +110,24 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
                 @test occursin("valid options", e.msg)
                 @test occursin(":none", e.msg)
             end
+        end
+
+        @testset "fill_value ignored warning (1D)" begin
+            # fill_value kwarg on non-:fill symbol → warning
+            @test_logs (:warn, r"fill_value.*ignored.*:clamp") Extrap(:clamp; fill_value=42)
+            @test_logs (:warn, r"fill_value.*ignored.*:none") Extrap(:none; fill_value=0.0)
+            @test_logs (:warn, r"fill_value.*ignored.*:extend") Extrap(:extend; fill_value=NaN)
+            # :fill with fill_value → no warning
+            @test_logs Extrap(:fill; fill_value=NaN)
+        end
+
+        @testset "fill_value ignored warning (ND)" begin
+            # fill_value kwarg but no :fill axis → warning
+            @test_logs (:warn, r"fill_value.*ignored.*no axis") Extrap(:clamp, :extend; fill_value=42)
+            # :fill axis present with fill_value → no warning
+            @test_logs Extrap(:clamp, :fill; fill_value=0.0)
+            # no fill_value kwarg at all → no warning
+            @test_logs Extrap(:clamp, :extend)
         end
     end
 
@@ -155,8 +184,8 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
             @test result isa Tuple{ExtendExtrap, NoExtrap, WrapExtrap}
             @test result == (ExtendExtrap(), NoExtrap(), WrapExtrap())
 
-            result2 = Extrap(:constant, :extend)
-            @test result2 isa Tuple{ConstExtrap, ExtendExtrap}
+            result2 = Extrap(:clamp, :extend)
+            @test result2 isa Tuple{ClampExtrap, ExtendExtrap}
         end
 
         @testset "Side variadic" begin
@@ -196,10 +225,10 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
 
         function _test_extrap_alloc()
             _ = Extrap(:none)
-            _ = Extrap(:constant)
+            _ = Extrap(:clamp)
             _ = Extrap(:extend, :none)
             a1 = @allocated Extrap(:none)
-            a2 = @allocated Extrap(:constant)
+            a2 = @allocated Extrap(:clamp)
             a3 = @allocated Extrap(:extend)
             a4 = @allocated Extrap(:wrap)
             a5 = @allocated Extrap(NoExtrap())
@@ -253,7 +282,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
             itp_s = cubic_interp(x, y; search=Search(:binary), extrap=Extrap(:extend))
             @test itp_s(0.5) isa Float64
 
-            itp_e = linear_interp(x, y; extrap=Extrap(:constant))
+            itp_e = linear_interp(x, y; extrap=Extrap(:clamp))
             @test itp_e(-0.1) == itp_e(0.0)  # clamped
 
             itp_c = constant_interp(x, y; side=Side(:left))

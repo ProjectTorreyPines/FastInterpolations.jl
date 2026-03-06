@@ -93,9 +93,11 @@ Right
 ```@docs
 AbstractExtrap
 NoExtrap
-ConstExtrap
+ClampExtrap
+FillExtrap
 ExtendExtrap
 WrapExtrap
+ConstExtrap
 ```
 
 ## Search Policies

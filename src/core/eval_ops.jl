@@ -68,6 +68,15 @@ Base.show(io::IO, ::DerivOp{N}) where {N} = print(io, "DerivOp{", N, "}()")
 # ========================================
 # Typed Extrapolation Mode Tags
 # ========================================
+# Promotable Value Type
+# ========================================
+# Defined here (loaded early) so that eval_ops.jl and all subsequent files
+# (utils.jl, nd_utils.jl, etc.) can reference it.
+
+"""Standard Julia numeric types that should be auto-promoted in convenience wrappers."""
+const _PromotableValue = Union{Integer, AbstractFloat, Rational, Complex}
+
+# ========================================
 #
 # Compile-time type tags for extrapolation mode selection.
 # Zero-cost type dispatch at the API boundary.
@@ -83,14 +92,17 @@ Use concrete subtypes at the API boundary for compile-time dispatch.
 
 # Concrete subtypes
 - [`NoExtrap`](@ref): Throw `DomainError` for out-of-domain queries
-- [`ConstExtrap`](@ref): Clamp to nearest boundary value
+- [`ClampExtrap`](@ref): Clamp to nearest boundary value
+- [`FillExtrap`](@ref): Return a user-specified constant for out-of-domain queries
 - [`ExtendExtrap`](@ref): Extend interpolation polynomial beyond domain
 - [`WrapExtrap`](@ref): Wrap queries into domain (periodic)
 
 !!! warning "Union-splitting invariant"
-    Keep exactly 4 concrete subtypes. Julia's compiler union-splits up to 4 types
-    on hot paths; adding a 5th subtype would cause dynamic dispatch and allocation
-    in all oneshot/eval code paths.
+    Keep exactly 5 concrete subtypes. Julia's compiler union-splits up to 4 types;
+    ND heterogeneous tuples with all 5 types in one tuple may see dynamic dispatch.
+    In practice, interpolants store concrete type parameters so this rarely matters.
+
+See also: `ConstExtrap()` (deprecated factory, forwards to `ClampExtrap()`).
 """
 abstract type AbstractExtrap end
 
@@ -107,16 +119,84 @@ itp = cubic_interp((x, y), data; extrap=NoExtrap())
 struct NoExtrap <: AbstractExtrap end
 
 """
-    ConstExtrap <: AbstractExtrap
+    ClampExtrap <: AbstractExtrap
 
-Constant extrapolation — clamps queries to the nearest boundary value.
+Constant extrapolation — clamps to nearest boundary value for out-of-domain queries.
+
+Returns `y[1]` for queries below domain, `y[end]` for queries above domain.
+In ND, derivatives along OOB axes are zero; orthogonal derivatives are computed
+at the clamped boundary point.
 
 # Example
 ```julia
-itp = cubic_interp((x, y), data; extrap=ConstExtrap())
+itp = cubic_interp(x, y; extrap=ClampExtrap())  # clamp to boundary values
+itp = cubic_interp(x, y; extrap=ClampExtrap())    # equivalent
 ```
 """
-struct ConstExtrap <: AbstractExtrap end
+struct ClampExtrap <: AbstractExtrap end
+
+"""
+    FillExtrap{T} <: AbstractExtrap
+
+Fill extrapolation — returns a user-specified constant value for out-of-domain queries.
+All derivatives are zero when out-of-domain (constant function).
+
+Standard numerics auto-promote to float; duck types (SVector, etc.) are stored as-is.
+Follows the same pattern as `Deriv1{Tv}`.
+
+# Examples
+```julia
+itp = cubic_interp(x, y; extrap=FillExtrap(NaN))      # NaN outside domain
+itp = cubic_interp(x, y; extrap=FillExtrap(0.0))       # zero outside domain
+itp = cubic_interp(x, y; extrap=FillExtrap(; fill_value=0))  # kwarg form
+```
+"""
+struct FillExtrap{T} <: AbstractExtrap
+    fill_value::T
+end
+# Outer constructors: standard numerics auto-promote to float
+# Custom types fall through to Julia's auto-generated FillExtrap(v) = FillExtrap{typeof(v)}(v)
+FillExtrap(v::Real) = FillExtrap{typeof(float(v))}(float(v))
+FillExtrap(v::Complex{T}) where {T<:AbstractFloat} = FillExtrap{Complex{T}}(v)
+# Kwarg convenience
+FillExtrap(; fill_value) = FillExtrap(fill_value)
+
+# Internal union for dispatch where ClampExtrap and FillExtrap share a code path
+# (e.g., 1D OOB check + return constant, _handle_axis_extrap coordinate clamping).
+const _ClampOrFill = Union{ClampExtrap, FillExtrap}
+
+# ConstExtrap backward-compatible factory (deprecated)
+"""
+    ConstExtrap()
+
+Deprecated factory function. Use `ClampExtrap()` directly instead.
+
+# Examples
+```julia
+ConstExtrap()  # → ClampExtrap() (with deprecation warning)
+```
+"""
+function ConstExtrap()
+    Base.depwarn("`ConstExtrap()` is deprecated, use `ClampExtrap()` instead.", :ConstExtrap)
+    return ClampExtrap()
+end
+
+"""
+    _promote_extrap(e::AbstractExtrap, ::Type{Tv}) -> AbstractExtrap
+
+Promote a `FillExtrap` fill value to match the interpolant's value type `Tv`.
+Mirrors the `_PromotableValue` two-tier pattern used for grid/value promotion:
+
+- `_PromotableValue` fill values (Integer, AbstractFloat, Rational, Complex): auto-converted
+  via `convert(Tv, e.fill_value)` at construction time — always safe for standard numerics.
+- Duck-type fill values (SVector, Dual, etc.): passed through unchanged. The caller is
+  responsible for providing a fill value whose type is already compatible with `Tv`.
+- All non-FillExtrap types (ClampExtrap, NoExtrap, etc.): passed through unchanged.
+"""
+@inline _promote_extrap(e::FillExtrap{<:_PromotableValue}, ::Type{Tv}) where {Tv} =
+    FillExtrap{Tv}(convert(Tv, e.fill_value))
+@inline _promote_extrap(e::FillExtrap, ::Type) = e
+@inline _promote_extrap(e::AbstractExtrap, ::Type) = e
 
 """
     ExtendExtrap <: AbstractExtrap

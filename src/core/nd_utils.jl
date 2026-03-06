@@ -29,28 +29,139 @@
 # - `nothing` for constant/linear (no BCs)
 # - NTuple{N, AbstractBC} for quadratic/cubic
 
-# ── Mode → Mode tuple (fast path) ────────────────────────────────────
+# ── Fill-value FillExtrap validation for ND ────────────────────────────
+# All fill-value axes must have the same value (prevents ambiguity).
+# ClampExtrap (boundary clamp) is always OK and not counted.
+@noinline _throw_conflicting_fill_values() = throw(ArgumentError(
+    "All FillExtrap fill values in ND must be identical; " *
+    "got conflicting fill values on different axes"))
 
-@inline function _resolve_extrap_nd(extrap::AbstractExtrap, ::Nothing, ::Val{N}) where {N}
-    ntuple(_ -> extrap, Val(N))
+@generated function _validate_fill_values_nd(extraps::E) where {E<:Tuple{Vararg{AbstractExtrap}}}
+    N = fieldcount(E)
+    fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
+    length(fill_dims) <= 1 && return :(nothing)
+    first_d = fill_dims[1]
+    checks = [:(extraps[$first_d].fill_value === extraps[$d].fill_value || _throw_conflicting_fill_values()) for d in fill_dims[2:end]]
+    quote
+        $(checks...)
+        nothing
+    end
 end
 
-@inline function _resolve_extrap_nd(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+# ── FillExtrap OOB short-circuit for ND ────────────────────────────────
+#
+# When any FillExtrap axis is OOB, the interpolant returns its fill value
+# (for EvalValue) or zero (for any derivative op).
+# ClampExtrap just clamps via _handle_axis_extrap — no special OOB logic.
+# All helpers are @generated for compile-time dead-code elimination.
+
+"""
+    _is_fill_oob(query, grids, extraps) -> Bool
+
+Compile-time selective OOB check for FillExtrap axes only.
+Returns `false` at compile time when no axis has FillExtrap (dead-code eliminated).
+"""
+@generated function _is_fill_oob(
+    query::Tuple{Vararg{Real,N}},
+    grids::Tuple{Vararg{AbstractVector,N}},
+    extraps::E
+) where {N, E<:Tuple{Vararg{AbstractExtrap,N}}}
+    fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
+    isempty(fill_dims) && return :(false)
+
+    oob_checks = [:(let qp = _extract_primal(query[$d])
+        qp < first(grids[$d]) || qp > last(grids[$d])
+    end) for d in fill_dims]
+    oob_expr = length(oob_checks) == 1 ? oob_checks[1] :
+        foldl((a,b) -> :($a || $b), oob_checks)
+
+    quote
+        Base.@_inline_meta
+        @inbounds $oob_expr
+    end
+end
+
+"""
+    _try_fill_oob(query, grids, extraps, ops, zero_ref) -> Union{Nothing, result}
+
+FillExtrap OOB short-circuit for ND evaluation. Returns `nothing` to proceed
+normally, or the fill/zero result to short-circuit.
+
+Compile-time eliminated when no axis has FillExtrap.
+Accepts both scalar `ops::AbstractEvalOp` and tuple `ops::Tuple{Vararg{AbstractEvalOp}}`.
+"""
+@generated function _try_fill_oob(
+    query::Tuple{Vararg{Real,N}},
+    grids::Tuple{Vararg{AbstractVector,N}},
+    extraps::E,
+    ops,
+    zero_ref
+) where {N, E<:Tuple{Vararg{AbstractExtrap,N}}}
+    fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
+    isempty(fill_dims) && return :(nothing)
+
+    oob_checks = [:(let qp = _extract_primal(query[$d])
+        qp < first(grids[$d]) || qp > last(grids[$d])
+    end) for d in fill_dims]
+    oob_expr = length(oob_checks) == 1 ? oob_checks[1] :
+        foldl((a,b) -> :($a || $b), oob_checks)
+
+    fill_d = fill_dims[1]
+    quote
+        Base.@_inline_meta
+        @inbounds if $oob_expr
+            return _fill_extrap_result(ops, extraps[$fill_d].fill_value, zero_ref)
+        end
+        return nothing
+    end
+end
+
+# FillExtrap result dispatch: value for EvalValue, zero for any derivative.
+# Uses `0 * zero_ref` (not `0 * fill_val`) to handle NaN fill values correctly.
+@inline _fill_extrap_result(::EvalValue, fill_val, _) = fill_val
+@inline _fill_extrap_result(::AbstractEvalOp, _, zero_ref) = 0 * zero_ref
+@inline function _fill_extrap_result(ops::Tuple{Vararg{AbstractEvalOp}}, fill_val, zero_ref)
+    for i in 1:length(ops)
+        @inbounds ops[i] isa EvalValue || return 0 * zero_ref
+    end
+    return fill_val
+end
+
+# ── Mode → Mode tuple, then promote fill values ───────────────────────
+
+@inline function _resolve_extrap_nd(extrap::AbstractExtrap, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}
+    result = ntuple(_ -> extrap, Val(N))
+    _validate_fill_values_nd(result)
+    return _promote_extraps_nd(result, Tv)
+end
+
+@inline function _resolve_extrap_nd(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
     _check_mode_periodic_compat(extrap, bcs, Val(N))
-    return _mode_to_modes_with_periodic(extrap, bcs)
+    result = _mode_to_modes_with_periodic(extrap, bcs)
+    _validate_fill_values_nd(result)
+    return _promote_extraps_nd(result, Tv)
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap,N}}, ::Nothing, ::Val{N}) where {N}
-    extrap
+@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap,N}}, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}
+    _validate_fill_values_nd(extrap)
+    return _promote_extraps_nd(extrap, Tv)
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
     _check_modes_periodic_compat(extrap, bcs, Val(N))
-    return _modes_to_modes_with_periodic(extrap, bcs)
+    result = _modes_to_modes_with_periodic(extrap, bcs)
+    _validate_fill_values_nd(result)
+    return _promote_extraps_nd(result, Tv)
 end
 
-@noinline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap}}, ::Any, ::Val{N}) where {N}
+@noinline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap}}, ::Any, ::Val{N}, ::Type) where {N}
     throw(ArgumentError("extrap tuple must have $N elements to match grid dimensions, got $(length(extrap))"))
+end
+
+@generated function _promote_extraps_nd(extraps::E, ::Type{Tv}) where {E<:Tuple{Vararg{AbstractExtrap}}, Tv}
+    N = fieldcount(E)
+    exprs = [:(FastInterpolations._promote_extrap(extraps[$d], Tv)) for d in 1:N]
+    :(($(exprs...),))
 end
 
 # ── Periodic BC compatibility checks for Mode types ──────────────────
@@ -324,7 +435,7 @@ end
     return q
 end
 
-@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::ConstExtrap) where {Tg}
+@inline function _handle_axis_extrap(q, axis::AbstractVector{Tg}, ::_ClampOrFill) where {Tg}
     q_primal = _extract_primal(q)
     lo, hi = first(axis), last(axis)
     q_primal < lo && return oftype(q, lo)
@@ -715,8 +826,14 @@ In-place SoA batch evaluation. Writes results into `output`.
     search::Tuple{Vararg{AbstractSearchPolicy, N}},
     hints=nothing
 ) where {Tg, Tv, N}
+    zref = _zero_ref(itp)
     @inbounds for k in 1:length(queries[1])
         query_k = ntuple(d -> queries[d][k], Val(N))
+        oob_val = _try_fill_oob(query_k, itp.grids, itp.extraps, ops, zref)
+        if oob_val !== nothing
+            output[k] = oob_val
+            continue
+        end
         cell = _locate_cell(itp, query_k, search, hints)
         output[k] = _eval_at_cell(itp, cell, ops)
     end
@@ -736,7 +853,13 @@ In-place AoS batch evaluation. Writes results into `output`.
     search::Tuple{Vararg{AbstractSearchPolicy, N}},
     hints=nothing
 ) where {Tg, Tv, N}
+    zref = _zero_ref(itp)
     @inbounds for k in 1:length(queries)
+        oob_val = _try_fill_oob(queries[k], itp.grids, itp.extraps, ops, zref)
+        if oob_val !== nothing
+            output[k] = oob_val
+            continue
+        end
         cell = _locate_cell(itp, queries[k], search, hints)
         output[k] = _eval_at_cell(itp, cell, ops)
     end

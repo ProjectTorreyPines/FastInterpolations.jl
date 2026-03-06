@@ -313,12 +313,12 @@ end
     itp::ConstantInterpolant{T},
     aq::_ConstantAnchoredQuery{T},
     op::O,
-    ::ConstExtrap
+    extrap::_ClampOrFill
 ) where {T<:AbstractFloat, O<:AbstractEvalOp}
     if aq.side == 0x01  # below domain
-        return op isa EvalValue ? (@inbounds itp.y[1]) : zero(T)
+        return _constant_extrap_result(op, @inbounds(itp.y[1]), extrap)
     elseif aq.side == 0x02  # above domain
-        return op isa EvalValue ? (@inbounds itp.y[end]) : zero(T)
+        return _constant_extrap_result(op, @inbounds(itp.y[end]), extrap)
     else
         # Inside domain
         if aq.xq == last(itp.x)

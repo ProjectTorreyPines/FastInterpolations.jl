@@ -240,8 +240,8 @@ using FastInterpolations
         y = range(0.0, 1.0, 6)
         data = [xi + yj for xi in x, yj in y]  # Simple linear function
 
-        @testset "ConstExtrap() extrapolation" begin
-            itp = cubic_interp((x, y), data; extrap=ConstExtrap())
+        @testset "ClampExtrap() extrapolation" begin
+            itp = cubic_interp((x, y), data; extrap=ClampExtrap())
 
             # Left boundary clamp
             @test itp((-0.5, 0.5)) ≈ itp((0.0, 0.5))
@@ -257,7 +257,7 @@ using FastInterpolations
 
         @testset "Per-axis extrapolation" begin
             # :constant on x, :none on y
-            itp = cubic_interp((x, y), data; extrap=(ConstExtrap(), NoExtrap()))
+            itp = cubic_interp((x, y), data; extrap=(ClampExtrap(), NoExtrap()))
 
             # x outside domain should clamp
             @test itp((-0.5, 0.5)) ≈ itp((0.0, 0.5))

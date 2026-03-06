@@ -39,7 +39,7 @@ itp = constant_interp((x, y), data)  # Default: side=NearestSide(), extrap=NoExt
 val = itp((0.5, 1.5))                # Single query
 
 # With configuration
-itp = constant_interp((x, y), data; side=LeftSide(), extrap=ConstExtrap())
+itp = constant_interp((x, y), data; side=LeftSide(), extrap=ClampExtrap())
 
 # Per-axis configuration
 itp = constant_interp((x, y), data; side=(LeftSide(), RightSide()), extrap=(NoExtrap(), WrapExtrap()))

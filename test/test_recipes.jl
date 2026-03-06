@@ -48,11 +48,93 @@ using RecipesBase
     # Extrapolation Modes
     # ========================================
     @testset "Extrapolation Modes" begin
-        for extrap in [NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap()]
+        for extrap in [NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap()]
             @testset "extrap=:$extrap" begin
                 itp = cubic_interp(x, y; extrap=extrap)
                 recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
                 @test !isempty(recipes)
+            end
+        end
+    end
+
+    # ========================================
+    # FillExtrap Fill Value Recipes
+    # ========================================
+    @testset "FillExtrap Fill Value" begin
+        @testset "finite fill (0.0): curve extends OOB with fill value" begin
+            itp = cubic_interp(x, y; extrap=FillExtrap(0.0))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            @test !isempty(recipes)
+            # Should have: 2 shading + 1 boundary + 1 scatter + 1 curve = 5
+            @test length(recipes) == 5
+            # Curve extends beyond domain, OOB values should be fill_value (0.0)
+            curve = recipes[end]
+            xq = curve.args[1]
+            yq = curve.args[2]
+            @test first(xq) < first(x)  # extends left
+            @test last(xq) > last(x)    # extends right
+            @test yq[1] ≈ 0.0 atol=1e-12  # OOB left = fill value
+            @test yq[end] ≈ 0.0 atol=1e-12  # OOB right = fill value
+        end
+
+        @testset "NaN fill: no fill lines, no crash" begin
+            itp = cubic_interp(x, y; extrap=FillExtrap(NaN))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            @test !isempty(recipes)
+            # Should have: 2 shading + 1 boundary + 1 scatter + 1 curve = 5
+            @test length(recipes) == 5
+            # Curve yq should not contain NaN (domain-only evaluation)
+            curve_data = recipes[end]
+            yq = curve_data.args[2]
+            @test !any(isnan, yq)
+        end
+
+        @testset "boundary clamp unchanged" begin
+            itp = cubic_interp(x, y; extrap=ClampExtrap())
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            # Should have: 2 shading + 1 boundary + 1 scatter + 1 curve = 5 (no fill lines)
+            @test length(recipes) == 5
+        end
+
+        @testset "finite fill: shade label contains fill value" begin
+            itp = linear_interp(x, y; extrap=FillExtrap(42.0))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            # Second shade series should have fill label
+            shade_labels = [r.plotattributes[:label] for r in recipes if
+                get(r.plotattributes, :seriestype, nothing) == :shape &&
+                r.plotattributes[:label] !== nothing]
+            @test any(l -> occursin("42.0", l), shade_labels)
+        end
+
+        @testset "series interpolant with fill value" begin
+            sitp = linear_interp(x, Series(y_matrix); extrap=FillExtrap(0.0))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), sitp)
+            @test !isempty(recipes)
+            # Curve extends OOB; no separate dashed fill lines
+            paths = [r for r in recipes if get(r.plotattributes, :seriestype, nothing) == :path]
+            @test length(paths) >= 2  # at least one curve per series
+        end
+
+        @testset "derivative view with fill value" begin
+            itp = cubic_interp(x, y; extrap=FillExtrap(NaN))
+            dv = deriv1(itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), dv)
+            @test !isempty(recipes)
+            # Derivative curve should not have NaN (0 * y_bnd, not 0 * NaN)
+            curve_data = recipes[end]
+            yq = curve_data.args[2]
+            @test !any(isnan, yq)
+        end
+
+        @testset "all 4 interp types with fill" begin
+            for (name, fn) in [("cubic", cubic_interp), ("linear", linear_interp),
+                               ("quadratic", quadratic_interp), ("constant", constant_interp)]
+                @testset "$name" begin
+                    itp = fn(x, y; extrap=FillExtrap(0.0))
+                    recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+                    @test !isempty(recipes)
+                    @test length(recipes) == 5  # 2 shade + 1 bound + 1 scatter + 1 curve
+                end
             end
         end
     end
@@ -346,7 +428,7 @@ using RecipesBase
         end
 
         @testset "ND extrap with CubicInterpolantND" begin
-            itp_ext = cubic_interp((x1, x2), data_2d; extrap=ConstExtrap())
+            itp_ext = cubic_interp((x1, x2), data_2d; extrap=ClampExtrap())
             recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp_ext)
             @test !isempty(recipes)
             boundary_series = filter(recipes) do r

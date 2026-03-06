@@ -23,7 +23,7 @@ Create an N-dimensional cubic Hermite interpolant from grid vectors and data arr
   - Single `AbstractBC`: Applied to all axes
   - `NTuple{N,AbstractBC}`: Per-axis BCs
 - `extrap=NoExtrap()`: Extrapolation mode(s). Can be:
-  - Single `AbstractExtrap`: Applied to all axes (`NoExtrap()`, `ConstExtrap()`, `WrapExtrap()`)
+  - Single `AbstractExtrap`: Applied to all axes (`NoExtrap()`, `ClampExtrap()`, `WrapExtrap()`)
   - `NTuple{N,AbstractExtrap}`: Per-axis modes
 - `search=AutoSearch()`: Search policy(s). Can be:
   - Single `AbstractSearchPolicy`: Applied to all axes
@@ -50,7 +50,7 @@ itp((1.0, 0.5, 0.3))  # Evaluate at (1.0, 0.5, 0.3)
 # With per-axis options
 itp = cubic_interp((x, y, z), data;
     bc=(CubicFit(), PeriodicBC(), CubicFit()),
-    extrap=(NoExtrap(), WrapExtrap(), ConstExtrap()))
+    extrap=(NoExtrap(), WrapExtrap(), ClampExtrap()))
 
 # Complex-valued data
 data_c = [sin(xi) * cos(yj) * zk + im * cos(xi) for xi in x, yj in y, zk in z]
@@ -83,7 +83,7 @@ function cubic_interp(
     bcs = _resolve_bcs_nd(bc, Val(N))
     searches = _resolve_search_nd(search, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     return _build_nd_interpolant(grids_typed, data_typed, bcs, extraps_val, searches, coeffs)
 end
 

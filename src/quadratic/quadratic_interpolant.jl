@@ -82,7 +82,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values
 - `bc`: Boundary condition (Left, Right, MinCurvFit, or Left/Right with QuadraticFit)
-- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `search::AbstractSearchPolicy`: Default search policy (default: `AutoSearch()`)
 
 # Returns
@@ -146,5 +146,6 @@ end
     # Compute coefficients (h::Tg, d::Tv, a::Tv)
     h, d, a = _compute_quadratic_coeffs(x_p, y_p, bc_p)
 
-    return QuadraticInterpolant(x_p, y_p, h, a, d; extrap, search)
+    extrap_p = _promote_extrap(extrap, eltype(y_p))
+    return QuadraticInterpolant(x_p, y_p, h, a, d; extrap=extrap_p, search)
 end

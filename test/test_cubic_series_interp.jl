@@ -108,8 +108,8 @@ end
         mitp_ext = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
         @test mitp_ext.extrap === ExtendExtrap()
 
-        mitp_const = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
-        @test mitp_const.extrap === ConstExtrap()
+        mitp_const = cubic_interp(x, Series(y1, y2); extrap=ClampExtrap())
+        @test mitp_const.extrap === ClampExtrap()
     end
 end
 
@@ -516,8 +516,8 @@ end
         @test !any(isnan, outputs[2])
     end
 
-    @testset "Vector extrapolation ConstExtrap() mode" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
+    @testset "Vector extrapolation ClampExtrap() mode" begin
+        mitp = cubic_interp(x, Series(y1, y2); extrap=ClampExtrap())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
@@ -544,8 +544,8 @@ end
         @test !any(isnan, outputs[2])
     end
 
-    @testset "Scalar extrapolation ConstExtrap() with derivative" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
+    @testset "Scalar extrapolation ClampExtrap() with derivative" begin
+        mitp = cubic_interp(x, Series(y1, y2); extrap=ClampExtrap())
 
         # First derivative outside domain should be zero
         out1 = zeros(2)
@@ -574,8 +574,8 @@ end
         @test out_val[2] ≈ y2[1] atol=1e-10
     end
 
-    @testset "Vector extrapolation ConstExtrap() with derivative" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
+    @testset "Vector extrapolation ClampExtrap() with derivative" begin
+        mitp = cubic_interp(x, Series(y1, y2); extrap=ClampExtrap())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
@@ -720,7 +720,7 @@ end
     end
 
     @testset "Extrap propagation" begin
-        for extrap_mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+        for extrap_mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             mitp = cubic_interp(x, Series(y1, y2); extrap=extrap_mode)
             @test mitp.extrap === extrap_mode
         end
@@ -839,8 +839,8 @@ end
         @test_throws DomainError mitp(1.1)
     end
 
-    @testset "extrap=ConstExtrap() - boundary values" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=ConstExtrap())
+    @testset "extrap=ClampExtrap() - boundary values" begin
+        mitp = cubic_interp(x, Series(y1, y2); extrap=ClampExtrap())
 
         below = mitp(-0.5)
         @test below[1] ≈ y1[1]
@@ -1021,7 +1021,7 @@ end
     end
 
     @testset "All extrap modes work with vector" begin
-        for mode in (ConstExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (ClampExtrap(), ExtendExtrap(), WrapExtrap())
             mitp = cubic_interp(x, Series(y1, y2); extrap=mode)
             xq = [0.15, 0.5, 0.85]
             result = mitp(xq)
@@ -1933,7 +1933,7 @@ end
     end
 
     @testset ":constant mode with pre-built anchors" begin
-        mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ConstExtrap())
+        mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ClampExtrap())
 
         aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
         outputs = [similar(xq_out) for _ in 1:3]

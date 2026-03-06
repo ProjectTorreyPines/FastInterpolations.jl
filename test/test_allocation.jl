@@ -678,12 +678,12 @@ import FastInterpolations: _get_cubic_cache
         end
 
         # Warmup all modes
-        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             linear_typed_extrap(mode)
             linear_typed_extrap(mode)
         end
 
-        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             allocs = @allocated linear_typed_extrap(mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -699,12 +699,12 @@ import FastInterpolations: _get_cubic_cache
             linear_interp!(out, x, y, x_query; extrap=mode)
         end
 
-        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             linear_typed_extrap!(output, mode)
             linear_typed_extrap!(output, mode)
         end
 
-        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             allocs = @allocated linear_typed_extrap!(output, mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -721,12 +721,12 @@ import FastInterpolations: _get_cubic_cache
             cubic_interp(x, y, 0.5; extrap=mode)
         end
 
-        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             cubic_typed_extrap(mode)
             cubic_typed_extrap(mode)
         end
 
-        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             allocs = @allocated cubic_typed_extrap(mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -744,12 +744,12 @@ import FastInterpolations: _get_cubic_cache
             cubic_interp!(out, x, y, x_query; extrap=mode)
         end
 
-        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             cubic_typed_extrap!(output, mode)
             cubic_typed_extrap!(output, mode)
         end
 
-        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             allocs = @allocated cubic_typed_extrap!(output, mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -796,6 +796,332 @@ import FastInterpolations: _get_cubic_cache
         @test allocs_periodic <= 128   # Periodic BC cache hit
     end
 
+    # =========================================================================
+    # FillExtrap Fill Value — Zero Allocation Tests
+    # =========================================================================
+    # Verifies that FillExtrap(value) fill-value paths are zero-allocation,
+    # matching the zero-allocation guarantee of ClampExtrap() (boundary clamp).
+
+    @testset "FillExtrap fill value: linear oneshot scalar" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        function linear_constextrap_fill(xq, mode::AbstractExtrap)
+            linear_interp(x, y, xq; extrap=mode)
+        end
+
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            linear_constextrap_fill(0.5, mode)
+            linear_constextrap_fill(-0.5, mode)  # out-of-domain
+            linear_constextrap_fill(0.5, mode)
+            linear_constextrap_fill(-0.5, mode)
+        end
+
+        # In-domain: should match boundary clamp allocation
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            allocs = @allocated linear_constextrap_fill(0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain: fill value path must also be zero-alloc
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            allocs = @allocated linear_constextrap_fill(-0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "FillExtrap fill value: cubic oneshot scalar" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        clear_cubic_cache!()
+        cubic_interp(x, y, 0.5)  # prime cache
+
+        function cubic_constextrap_fill(xq, mode::AbstractExtrap)
+            cubic_interp(x, y, xq; extrap=mode)
+        end
+
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            cubic_constextrap_fill(0.5, mode)
+            cubic_constextrap_fill(-0.5, mode)
+            cubic_constextrap_fill(0.5, mode)
+            cubic_constextrap_fill(-0.5, mode)
+        end
+
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            allocs = @allocated cubic_constextrap_fill(0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+            allocs = @allocated cubic_constextrap_fill(-0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "FillExtrap fill value: interpolant eval" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        itp_clamp = linear_interp(x, y; extrap=ClampExtrap())
+        itp_zero = linear_interp(x, y; extrap=FillExtrap(0.0))
+        itp_nan = linear_interp(x, y; extrap=FillExtrap(NaN))
+
+        function eval_itp_fill(itp, xq)
+            itp(xq)
+        end
+
+        # Warmup all
+        for itp in (itp_clamp, itp_zero, itp_nan)
+            eval_itp_fill(itp, 0.5)
+            eval_itp_fill(itp, -0.5)
+            eval_itp_fill(itp, 0.5)
+            eval_itp_fill(itp, -0.5)
+        end
+
+        # In-domain
+        for itp in (itp_clamp, itp_zero, itp_nan)
+            allocs = @allocated eval_itp_fill(itp, 0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain (fill value path)
+        for itp in (itp_clamp, itp_zero, itp_nan)
+            allocs = @allocated eval_itp_fill(itp, -0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "FillExtrap fill value: deriv zero-alloc" begin
+        x = collect(range(0.0, 1.0, 51))
+        y = sin.(2π .* x)
+
+        itp_nan = linear_interp(x, y; extrap=FillExtrap(NaN))
+
+        function eval_deriv_fill(itp, xq)
+            itp(xq; deriv=DerivOp(1))
+        end
+
+        eval_deriv_fill(itp_nan, -0.5)
+        eval_deriv_fill(itp_nan, -0.5)
+
+        allocs = @allocated eval_deriv_fill(itp_nan, -0.5)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "FillExtrap fill value: series zero-alloc" begin
+        x = collect(range(0.0, 1.0, 51))
+        y_mat = hcat(sin.(2π .* x), cos.(2π .* x))
+        s = Series(y_mat)
+        out = Vector{Float64}(undef, 2)
+
+        sitp_clamp = linear_interp(x, s; extrap=ClampExtrap())
+        sitp_fill = linear_interp(x, s; extrap=FillExtrap(0.0))
+        sitp_nan = linear_interp(x, s; extrap=FillExtrap(NaN))
+
+        function eval_series_fill!(out, sitp, xq)
+            sitp(out, xq)
+        end
+
+        # Warmup
+        for sitp in (sitp_clamp, sitp_fill, sitp_nan)
+            eval_series_fill!(out, sitp, 0.5)
+            eval_series_fill!(out, sitp, -0.5)
+            eval_series_fill!(out, sitp, 0.5)
+            eval_series_fill!(out, sitp, -0.5)
+        end
+
+        # In-domain
+        for sitp in (sitp_clamp, sitp_fill, sitp_nan)
+            allocs = @allocated eval_series_fill!(out, sitp, 0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain (fill/SIMD path)
+        for sitp in (sitp_clamp, sitp_fill, sitp_nan)
+            allocs = @allocated eval_series_fill!(out, sitp, -0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    # =========================================================================
+    # FillExtrap Fill Value — ND Zero Allocation Tests
+    # =========================================================================
+    # Verifies that ND FillExtrap(value) fill-value paths are zero-allocation,
+    # for both oneshot and interpolant eval. The compile-time check
+    # _has_any_fill_value() ensures zero overhead for ClampExtrap() (no fill).
+
+    @testset "ND FillExtrap fill value: linear oneshot scalar 2D" begin
+        xg = collect(range(0.0, 1.0, 21))
+        yg = collect(range(0.0, 1.0, 21))
+        data = [sin(2π * x + y) for x in xg, y in yg]
+
+        function linear_nd_fill(xq, yq, mode::AbstractExtrap)
+            linear_interp((xg, yg), data, (xq, yq); extrap=mode)
+        end
+
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            linear_nd_fill(0.5, 0.5, mode)
+            linear_nd_fill(-0.5, 0.5, mode)
+            linear_nd_fill(0.5, 0.5, mode)
+            linear_nd_fill(-0.5, 0.5, mode)
+        end
+
+        # In-domain
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            allocs = @allocated linear_nd_fill(0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain (fill value short-circuit)
+        for mode in (FillExtrap(0.0), FillExtrap(NaN))
+            allocs = @allocated linear_nd_fill(-0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND FillExtrap fill value: linear interpolant 2D" begin
+        xg = collect(range(0.0, 1.0, 21))
+        yg = collect(range(0.0, 1.0, 21))
+        data = [sin(2π * x + y) for x in xg, y in yg]
+
+        itp_clamp = linear_interp((xg, yg), data; extrap=ClampExtrap())
+        itp_zero = linear_interp((xg, yg), data; extrap=FillExtrap(0.0))
+        itp_nan = linear_interp((xg, yg), data; extrap=FillExtrap(NaN))
+
+        function eval_nd_itp(itp, xq, yq)
+            itp((xq, yq))
+        end
+
+        for itp in (itp_clamp, itp_zero, itp_nan)
+            eval_nd_itp(itp, 0.5, 0.5)
+            eval_nd_itp(itp, -0.5, 0.5)
+            eval_nd_itp(itp, 0.5, 0.5)
+            eval_nd_itp(itp, -0.5, 0.5)
+        end
+
+        # In-domain
+        for itp in (itp_clamp, itp_zero, itp_nan)
+            allocs = @allocated eval_nd_itp(itp, 0.5, 0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain
+        for itp in (itp_clamp, itp_zero, itp_nan)
+            allocs = @allocated eval_nd_itp(itp, -0.5, 0.5)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND FillExtrap fill value: cubic oneshot scalar 2D" begin
+        xg = collect(range(0.0, 1.0, 21))
+        yg = collect(range(0.0, 1.0, 21))
+        data = [sin(2π * x + y) for x in xg, y in yg]
+
+        function cubic_nd_fill(xq, yq, mode::AbstractExtrap)
+            cubic_interp((xg, yg), data, (xq, yq); extrap=mode)
+        end
+
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            cubic_nd_fill(0.5, 0.5, mode)
+            cubic_nd_fill(-0.5, 0.5, mode)
+            cubic_nd_fill(0.5, 0.5, mode)
+            cubic_nd_fill(-0.5, 0.5, mode)
+        end
+
+        # In-domain
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            allocs = @allocated cubic_nd_fill(0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain (fill value short-circuit, before partials computation)
+        for mode in (FillExtrap(0.0), FillExtrap(NaN))
+            allocs = @allocated cubic_nd_fill(-0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND FillExtrap fill value: quadratic oneshot scalar 2D" begin
+        xg = collect(range(0.0, 1.0, 21))
+        yg = collect(range(0.0, 1.0, 21))
+        data = [sin(2π * x + y) for x in xg, y in yg]
+
+        function quadratic_nd_fill(xq, yq, mode::AbstractExtrap)
+            quadratic_interp((xg, yg), data, (xq, yq); extrap=mode)
+        end
+
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            quadratic_nd_fill(0.5, 0.5, mode)
+            quadratic_nd_fill(-0.5, 0.5, mode)
+            quadratic_nd_fill(0.5, 0.5, mode)
+            quadratic_nd_fill(-0.5, 0.5, mode)
+        end
+
+        # In-domain
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            allocs = @allocated quadratic_nd_fill(0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain (fill value short-circuit, before partials computation)
+        for mode in (FillExtrap(0.0), FillExtrap(NaN))
+            allocs = @allocated quadratic_nd_fill(-0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND FillExtrap fill value: constant oneshot scalar 2D" begin
+        xg = collect(range(0.0, 1.0, 21))
+        yg = collect(range(0.0, 1.0, 21))
+        data = [sin(2π * x + y) for x in xg, y in yg]
+
+        function constant_nd_fill(xq, yq, mode::AbstractExtrap)
+            constant_interp((xg, yg), data, (xq, yq); extrap=mode)
+        end
+
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            constant_nd_fill(0.5, 0.5, mode)
+            constant_nd_fill(-0.5, 0.5, mode)
+            constant_nd_fill(0.5, 0.5, mode)
+            constant_nd_fill(-0.5, 0.5, mode)
+        end
+
+        # In-domain
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+            allocs = @allocated constant_nd_fill(0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+
+        # Out-of-domain (fill value short-circuit)
+        for mode in (FillExtrap(0.0), FillExtrap(NaN))
+            allocs = @allocated constant_nd_fill(-0.5, 0.5, mode)
+            @test allocs <= ALLOC_THRESHOLD
+        end
+    end
+
+    @testset "ND FillExtrap fill value: mixed per-axis extrap 2D" begin
+        xg = collect(range(0.0, 1.0, 21))
+        yg = collect(range(0.0, 1.0, 21))
+        data = [sin(2π * x + y) for x in xg, y in yg]
+
+        # Fill on x-axis, clamp on y-axis
+        function linear_nd_mixed(xq, yq)
+            linear_interp((xg, yg), data, (xq, yq);
+                          extrap=(FillExtrap(NaN), ClampExtrap()))
+        end
+
+        linear_nd_mixed(0.5, 0.5)
+        linear_nd_mixed(-0.5, 0.5)
+        linear_nd_mixed(0.5, 0.5)
+        linear_nd_mixed(-0.5, 0.5)
+
+        # In-domain
+        allocs = @allocated linear_nd_mixed(0.5, 0.5)
+        @test allocs <= ALLOC_THRESHOLD
+
+        # OOB on fill axis → fill value
+        allocs = @allocated linear_nd_mixed(-0.5, 0.5)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
     @testset "Typed extrap: LinearInterpolant construction" begin
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
@@ -804,14 +1130,14 @@ import FastInterpolations: _get_cubic_cache
             LinearInterpolant(x, y; extrap=mode)
         end
 
-        for mode in (NoExtrap(), ConstExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             itp_typed_extrap(mode)
             itp_typed_extrap(mode)
         end
 
         # Construction allocates the struct itself, but no extra from mode dispatch
         allocs_ext = @allocated itp_typed_extrap(ExtendExtrap())
-        allocs_const = @allocated itp_typed_extrap(ConstExtrap())
+        allocs_const = @allocated itp_typed_extrap(ClampExtrap())
         allocs_wrap = @allocated itp_typed_extrap(WrapExtrap())
 
         # All modes should have same allocation

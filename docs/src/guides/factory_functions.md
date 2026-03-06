@@ -10,7 +10,7 @@ Factory functions provide a **single entry point** for configuring search polici
 | Factory | Keyword | Options | Purpose |
 |:--------|:--------|:--------|:--------|
 | [`Search`](@ref) | `search=` | `:auto`, `:binary`, `:linear`, `:linear_binary` | Interval lookup strategy |
-| [`Extrap`](@ref) | `extrap=` | `:none`, `:constant`, `:extend`, `:wrap` | Out-of-domain behavior |
+| [`Extrap`](@ref) | `extrap=` | `:none`, `:clamp`, `:fill`, `:extend`, `:wrap` | Out-of-domain behavior |
 | [`Side`](@ref) | `side=` | `:nearest`, `:left`, `:right` | Constant interpolation side |
 
 Each factory also supports a **passthrough** method — if you pass an already-constructed type, it's returned unchanged:
@@ -55,10 +55,11 @@ See [Search & Hints](@ref search_hints) for detailed policy descriptions and ben
 Controls behavior when query points fall outside the data domain.
 
 ```julia
-Extrap(:none)      # NoExtrap() — throw DomainError (default)
-Extrap(:constant)  # ConstExtrap() — clamp to boundary values
-Extrap(:extend)    # ExtendExtrap() — extend boundary polynomial
-Extrap(:wrap)      # WrapExtrap() — periodic coordinate wrapping
+Extrap(:none)              # NoExtrap() — throw DomainError (default)
+Extrap(:clamp)           # ClampExtrap() — clamp to boundary values
+Extrap(:fill; fill_value=NaN) # FillExtrap(NaN) — fill with constant value
+Extrap(:extend)            # ExtendExtrap() — extend boundary polynomial
+Extrap(:wrap)              # WrapExtrap() — periodic coordinate wrapping
 ```
 
 See [Extrapolation](../extrapolation.md) for visual comparisons and detailed behavior.
@@ -79,12 +80,12 @@ For N-dimensional interpolation, pass multiple symbols to create a **per-axis tu
 
 ```julia
 # Instead of writing:
-extrap = (ExtendExtrap(), ConstExtrap(), NoExtrap())
+extrap = (ExtendExtrap(), ClampExtrap(), NoExtrap())
 
 # Write:
-extrap = Extrap(:extend, :constant, :none)
+extrap = Extrap(:extend, :clamp, :none)
 
-# Both produce the same Tuple{ExtendExtrap, ConstExtrap, NoExtrap}
+# Both produce the same Tuple{ExtendExtrap, ClampExtrap, NoExtrap}
 ```
 
 All three factories support this:
@@ -93,7 +94,7 @@ All three factories support this:
 # 3D example — different policy per axis
 itp = cubic_interp((x, y, z), data;
     search = Search(:binary, :linear_binary, :auto),
-    extrap = Extrap(:extend, :constant, :none))
+    extrap = Extrap(:extend, :clamp, :none))
 
 # 2D constant interpolation
 itp = constant_interp((x, y), data;
@@ -126,7 +127,7 @@ julia> Search(:bianry)
 ERROR: ArgumentError: unknown search policy :bianry; valid options are :auto, :binary, :linear, :linear_binary
 
 julia> Extrap(:const)
-ERROR: ArgumentError: unknown extrapolation mode :const; valid options are :none, :constant, :extend, :wrap
+ERROR: ArgumentError: unknown extrapolation mode :const; valid options are :none, :clamp, :fill, :extend, :wrap
 ```
 
 ## API Reference

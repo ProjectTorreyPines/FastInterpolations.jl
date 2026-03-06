@@ -146,25 +146,25 @@
         y = sin.(2π .* x)
 
         # Left boundary - returns y[1]
-        result_left = cubic_interp(x, y, -0.5; extrap=ConstExtrap())
+        result_left = cubic_interp(x, y, -0.5; extrap=ClampExtrap())
         @test result_left ≈ y[1]
 
         # Right boundary - returns y[end]
-        result_right = cubic_interp(x, y, 1.5; extrap=ConstExtrap())
+        result_right = cubic_interp(x, y, 1.5; extrap=ClampExtrap())
         @test result_right ≈ y[end]
 
         # Vector query
-        result = cubic_interp(x, y, [-0.5, 0.5, 1.5]; extrap=ConstExtrap())
+        result = cubic_interp(x, y, [-0.5, 0.5, 1.5]; extrap=ClampExtrap())
         @test result[1] ≈ y[1]
         @test result[3] ≈ y[end]
 
         # With cache
         cache = CubicSplineCache(x)
-        @test cubic_interp(cache, y, -0.5; extrap=ConstExtrap()) ≈ y[1]
-        @test cubic_interp(cache, y, 1.5; extrap=ConstExtrap()) ≈ y[end]
+        @test cubic_interp(cache, y, -0.5; extrap=ClampExtrap()) ≈ y[1]
+        @test cubic_interp(cache, y, 1.5; extrap=ClampExtrap()) ≈ y[end]
 
         # Callable interpolant with :constant
-        itp = cubic_interp(x, y; extrap=ConstExtrap())
+        itp = cubic_interp(x, y; extrap=ClampExtrap())
         @test itp(-0.5) ≈ y[1]
         @test itp(1.5) ≈ y[end]
     end
@@ -463,7 +463,7 @@ end
         cubic_interp!(output, cache, y, 0.25; extrap=NoExtrap())
         @test isfinite(output[1])
 
-        cubic_interp!(output, cache, y, -0.1; extrap=ConstExtrap())
+        cubic_interp!(output, cache, y, -0.1; extrap=ClampExtrap())
         @test output[1] ≈ y[1]
 
         cubic_interp!(output, cache, y, 1.1; extrap=ExtendExtrap())

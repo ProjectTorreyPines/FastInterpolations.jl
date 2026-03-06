@@ -48,9 +48,14 @@ See also: [`gradient!`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
         ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
         :(_eval_at_cell(itp, cell, $ops))
     end for i in 1:N]
+    zero_tuple = [:(0 * zref) for _ in 1:N]
 
     return quote
-        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
+        search = _resolve_search_nd(itp.searches, Val($N), query)
+        if _is_fill_oob(query, itp.grids, itp.extraps)
+            zref = _zero_ref(itp)
+            return tuple($(zero_tuple...))
+        end
         cell = _locate_cell(itp, query, search, hint)
         return tuple($(deriv_calls...))
     end
@@ -105,7 +110,12 @@ See also: [`gradient`](@ref), [`hessian!`](@ref)
         @boundscheck length(G) >= $N || throw(DimensionMismatch(
             "gradient output vector must have at least $($N) elements, got $(length(G))"
         ))
-        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
+        search = _resolve_search_nd(itp.searches, Val($N), query)
+        if _is_fill_oob(query, itp.grids, itp.extraps)
+            zref = _zero_ref(itp)
+            @inbounds for i in 1:$N; G[i] = 0 * zref; end
+            return G
+        end
         cell = _locate_cell(itp, query, search, hint)
         @inbounds begin
             $(stmts...)
@@ -180,7 +190,11 @@ See also: [`gradient`](@ref), [`hessian!`](@ref), [`laplacian`](@ref)
     return quote
         Tq = promote_type(eltype(query), $Tg, $Tv)
         H = Matrix{Tq}(undef, $N, $N)
-        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
+        search = _resolve_search_nd(itp.searches, Val($N), query)
+        if _is_fill_oob(query, itp.grids, itp.extraps)
+            fill!(H, zero(Tq))
+            return H
+        end
         cell = _locate_cell(itp, query, search, hint)
         @inbounds begin
             $(stmts...)
@@ -251,7 +265,11 @@ See also: [`hessian`](@ref), [`gradient!`](@ref)
         @boundscheck size(H) == ($N, $N) || throw(DimensionMismatch(
             "Hessian output matrix must be $($N)×$($N), got $(size(H))"
         ))
-        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
+        search = _resolve_search_nd(itp.searches, Val($N), query)
+        if _is_fill_oob(query, itp.grids, itp.extraps)
+            fill!(H, zero(eltype(H)))
+            return H
+        end
         cell = _locate_cell(itp, query, search, hint)
         @inbounds begin
             $(stmts...)
@@ -316,7 +334,10 @@ See also: [`gradient`](@ref), [`hessian`](@ref)
     end for i in 1:N]
 
     return quote
-        search = _resolve_search_nd(itp.searches, Val($N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
+        search = _resolve_search_nd(itp.searches, Val($N), query)
+        if _is_fill_oob(query, itp.grids, itp.extraps)
+            return 0 * _zero_ref(itp)
+        end
         cell = _locate_cell(itp, query, search, hint)
         return +($(deriv_calls...))
     end

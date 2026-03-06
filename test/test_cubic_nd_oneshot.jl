@@ -133,11 +133,11 @@ end
         x = range(0.0, 2.0, 15)
         y = range(0.0, 1.0, 10)
         data = [xi + yj for xi in x, yj in y]
-        itp_const = cubic_interp((x, y), data; extrap=ConstExtrap())
+        itp_const = cubic_interp((x, y), data; extrap=ClampExtrap())
         itp_ext = cubic_interp((x, y), data; extrap=ExtendExtrap())
 
         # Constant extrap
-        @test cubic_interp((x, y), data, (1.0, 0.5); extrap=ConstExtrap()) ≈
+        @test cubic_interp((x, y), data, (1.0, 0.5); extrap=ClampExtrap()) ≈
               itp_const((1.0, 0.5)) atol=1e-14
 
         # Extension extrap

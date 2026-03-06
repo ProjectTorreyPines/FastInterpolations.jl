@@ -137,7 +137,7 @@ using FastInterpolations
         @test itp_ext(aq_above) ≈ itp_ext(1.5)
 
         # Constant mode
-        itp_const = quadratic_interp(x, y; extrap=ConstExtrap())
+        itp_const = quadratic_interp(x, y; extrap=ClampExtrap())
         @test itp_const(aq_below) ≈ itp_const(-0.5)
         @test itp_const(aq_above) ≈ itp_const(1.5)
     end
@@ -296,12 +296,12 @@ using FastInterpolations
     end
 
     # ========================================
-    # extrap=ConstExtrap() Tests
+    # extrap=ClampExtrap() Tests
     # ========================================
-    @testset "extrap=ConstExtrap() via anchor" begin
+    @testset "extrap=ClampExtrap() via anchor" begin
         x = collect(range(0.0, 1.0, 11))
         y = x .^ 2
-        itp = quadratic_interp(x, y; extrap=ConstExtrap())
+        itp = quadratic_interp(x, y; extrap=ClampExtrap())
 
         # Below domain returns first y
         aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:quadratic))
@@ -323,7 +323,7 @@ using FastInterpolations
         x = collect(range(0.0, 1.0, 11))
         y = x .^ 2
 
-        for extrap in [ExtendExtrap(), ConstExtrap()]
+        for extrap in [ExtendExtrap(), ClampExtrap()]
             itp = quadratic_interp(x, y; extrap=extrap)
             xq_vec = [-0.2, 0.3, 0.7, 1.2]  # Mix of inside/outside
             aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:quadratic))

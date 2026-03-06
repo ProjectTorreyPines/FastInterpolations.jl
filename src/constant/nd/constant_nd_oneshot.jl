@@ -27,6 +27,10 @@ Evaluates directly from grids + data without constructing a ConstantInterpolantN
     searches::NTuple{N, AbstractSearchPolicy},
     hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
+    # OOB short-circuit
+    oob_result = _try_fill_oob(query, grids, extraps_val, EvalValue(), @inbounds first(data))
+    oob_result !== nothing && return oob_result
+
     spacings = _create_spacings_pooled(pool, grids)
     q_eval = _handle_all_extraps(query, grids, extraps_val)
     indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
@@ -60,6 +64,8 @@ Writes results into `output`. No heap allocation beyond spacings.
     spacings = _create_spacings_pooled(pool, grids)
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
+        oob_val = _try_fill_oob(query_k, grids, extraps_val, EvalValue(), first(data))
+        if oob_val !== nothing; output[k] = oob_val; continue; end
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
         output[k] = _constant_nd_kernel(data, spacings, side_vals, indices, q_eval, Ls)
@@ -107,6 +113,8 @@ Writes results into `output`. No heap allocation beyond spacings.
     spacings = _create_spacings_pooled(pool, grids)
     @inbounds for k in 1:n_queries
         query_k = queries[k]
+        oob_val = _try_fill_oob(query_k, grids, extraps_val, EvalValue(), first(data))
+        if oob_val !== nothing; output[k] = oob_val; continue; end
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
         output[k] = _constant_nd_kernel(data, spacings, side_vals, indices, q_eval, Ls)
@@ -182,7 +190,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
+    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return _constant_interp_nd_oneshot(
         grids_typed, data, query, extraps_val, sides, searches, hint)::Tv
 end
@@ -217,7 +225,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)  # all-or-nothing adaptive for zero-alloc
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
+    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return _constant_nd_soa_dispatch(
         grids_typed, data, queries, extraps_val, sides, searches, hint)::Vector{Tv}
 end
@@ -251,7 +259,7 @@ function constant_interp(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N), queries)  # AoS: type-based (no per-axis SoA check)
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
+    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return _constant_interp_nd_oneshot_aos(
         grids_typed, data, queries, extraps_val, sides, searches, hint)::Vector{Tv}
 end
@@ -290,7 +298,7 @@ function constant_interp!(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)  # all-or-nothing adaptive for zero-alloc
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
+    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return _constant_nd_soa_dispatch!(
         output, grids_typed, data, queries, extraps_val, sides, searches, hint)
 end
@@ -325,7 +333,7 @@ function constant_interp!(
     sides = _resolve_side_nd(side, Val(N))
     searches = _resolve_search_nd(search, Val(N), queries)  # AoS: type-based (no per-axis SoA check)
 
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N))
+    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
     return _constant_interp_nd_oneshot_aos!(
         output, grids_typed, data, queries, extraps_val, sides, searches, hint)
 end

@@ -85,7 +85,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 # Arguments
 - `x::AbstractVector`: x-coordinates (must be sorted)
 - `y::AbstractVector`: y-values
-- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `search::AbstractSearchPolicy`: Default search policy for interval lookup (default: `AutoSearch()`)
 
 # Type Handling
@@ -164,5 +164,6 @@ function linear_interp end
     search::AbstractSearchPolicy=AutoSearch()
 ) where {TX<:Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
-    return LinearInterpolant(x_p, y_p; extrap, search)
+    extrap_p = _promote_extrap(extrap, eltype(y_p))
+    return LinearInterpolant(x_p, y_p; extrap=extrap_p, search)
 end

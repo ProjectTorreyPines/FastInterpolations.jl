@@ -49,7 +49,7 @@ function cubic_interp(
     # Validate BC requirements (once, before dispatch).
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _cubic_interp_nd_oneshot(grids_typed, data, query, bcs, extraps_val, searches, ops, hint)::Tr
 end
@@ -124,7 +124,7 @@ Computes 2^N partial derivatives in a pool buffer and evaluates at a single poin
 Zero-allocation after warmup (pool reuse).
 
 `extraps_val` must be a pre-resolved tuple of concrete `AbstractExtrap` instances
-(e.g., `(NoExtrap(), ConstExtrap())`), computed via `_resolve_extrap_nd` in the API layer.
+(e.g., `(NoExtrap(), ClampExtrap())`), computed via `_resolve_extrap_nd` in the API layer.
 """
 @with_pool pool function _cubic_interp_nd_oneshot(
     grids::NTuple{N, AbstractVector{Tg}},
@@ -136,6 +136,10 @@ Zero-allocation after warmup (pool reuse).
     ops::NTuple{N, AbstractEvalOp},
     hints=nothing
 ) where {Tg<:AbstractFloat, Tv, N}
+    # 0. OOB short-circuit (before expensive partials computation)
+    oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
+    oob_result !== nothing && return oob_result
+
     # 1. Extend exclusive periodic axes (pool-based, zero heap alloc)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
 
@@ -198,6 +202,8 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     # Eval loop: search + kernel per query point
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
+        oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
+        if oob_val !== nothing; output[k] = oob_val; continue; end
         q_evals = _handle_all_extraps(query_k, grids_p, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_evals, grids_p, spacings, searches, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
@@ -239,6 +245,8 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     # Eval loop: search + kernel per query point
     @inbounds for k in 1:n_queries
         query_k = queries[k]
+        oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
+        if oob_val !== nothing; output[k] = oob_val; continue; end
         q_eval = _handle_all_extraps(query_k, grids_p, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
@@ -286,7 +294,7 @@ function cubic_interp!(
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _cubic_nd_soa_dispatch!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops, hint)
 end
@@ -319,7 +327,7 @@ function cubic_interp!(
 
     _validate_nd_bcs!(grids_typed, bcs, data, Val(N))
 
-    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N))
+    extraps_val = _resolve_extrap_nd(extrap, bcs, Val(N), Tv)
     ops = _resolve_deriv_nd(deriv, Val(N))
     return _cubic_interp_nd_oneshot_aos!(output, grids_typed, data, queries, bcs, extraps_val, searches, ops, hint)
 end

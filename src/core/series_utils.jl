@@ -90,60 +90,43 @@ code size in the hot interpolation loops.
 end
 
 """
-    _constant_extrap_boundary_value(y, side, n_pts, k, op) -> T
+    _constant_extrap_boundary_value(y, side, n_pts, k, op, extrap) -> T
 
-Get the boundary value for constant extrapolation in vector evaluation path.
+Get the boundary value for constant/fill extrapolation in scalar series evaluation path.
 
-For `EvalValue`, returns the boundary y-value. For derivatives (`EvalDeriv1`,
-`EvalDeriv2`, `EvalDeriv3`), returns zero via `0 * y` (duck-typing compatible).
-
-# Arguments
-- `y::Matrix{T}`: y-values matrix (n_points × n_series)
-- `side::UInt8`: `0x01` for left, `0x02` for right boundary
-- `n_pts::Int`: Number of grid points
-- `k::Int`: Series index
-- `op::AbstractEvalOp`: Evaluation operation type
-
-# Returns
-- Boundary value for `EvalValue`
-- Zero (via `0 * y`) for `EvalDeriv1`, `EvalDeriv2`, or `EvalDeriv3`
+For `EvalValue` + `ClampExtrap`, returns the boundary y-value.
+For `EvalValue` + `FillExtrap`, returns the fill value.
+For derivatives, returns zero via `0 * y` (duck-typing compatible).
 """
 @inline function _constant_extrap_boundary_value(
-    y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue
+    y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampExtrap
 ) where {Tv}
     @inbounds return y[_boundary_point_index(side, n_pts), k]
 end
 
 @inline function _constant_extrap_boundary_value(
-    y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
+    ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::EvalValue, e::FillExtrap
+) where {Tv}
+    return e.fill_value
+end
+
+@inline function _constant_extrap_boundary_value(
+    y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
 ) where {Tv}
     return 0 * first(y)
 end
 
 """
-    _fill_constant_extrap_simd!(out, y_point, side, n_pts, op) -> out
+    _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap) -> out
 
-Fill output vector with boundary values for constant extrapolation (SIMD path).
+Fill output vector with boundary/fill values for constant/fill extrapolation (SIMD path).
 
-For `EvalValue`, fills with boundary y-values. For derivatives, fills with zeros.
-Uses `@simd` for vectorization of the fill loop.
-
-# Arguments
-- `out::AbstractVector{T}`: Output vector to fill
-- `y_point::Matrix{T}`: y-values in SIMD layout (n_series × n_points), accessed as `y_point[series, point]`
-- `side::UInt8`: `0x01` for left, `0x02` for right boundary
-- `n_pts::Int`: Number of grid points
-- `op::AbstractEvalOp`: Evaluation operation type
-
-# Returns
-- `out` (modified in-place)
-
-# Note
-Matrix layout uses `y_point[k, idx]` convention (series first, point second)
-to match the transposed SIMD layout used across all series interpolants.
+For `EvalValue` + `ClampExtrap`, fills with boundary y-values.
+For `EvalValue` + `FillExtrap`, fills with the fill value.
+For derivatives, fills with zeros.
 """
 @inline function _fill_constant_extrap_simd!(
-    out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::EvalValue
+    out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::EvalValue, ::ClampExtrap
 ) where {Tv}
     idx = _boundary_point_index(side, n_pts)
     @inbounds @simd for k in axes(out, 1)
@@ -153,7 +136,16 @@ to match the transposed SIMD layout used across all series interpolants.
 end
 
 @inline function _fill_constant_extrap_simd!(
-    out::AbstractVector{Tv}, y::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}
+    out::AbstractVector{Tv}, ::Matrix{Tv}, ::UInt8, ::Int, ::EvalValue, e::FillExtrap
+) where {Tv}
+    @inbounds @simd for k in axes(out, 1)
+        out[k] = e.fill_value
+    end
+    return out
+end
+
+@inline function _fill_constant_extrap_simd!(
+    out::AbstractVector{Tv}, y::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
 ) where {Tv}
     z = 0 * first(y)
     @inbounds @simd for k in axes(out, 1)

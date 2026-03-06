@@ -21,7 +21,7 @@ Returned by `linear_interp(x, y)` (2-argument form).
 # Fields
 - `x::X`: x-coordinates (sorted)
 - `y::Y`: y-values
-- `extrap::E`: Extrapolation mode (NoExtrap(), ExtendExtrap(), ConstExtrap(), or WrapExtrap())
+- `extrap::E`: Extrapolation mode (NoExtrap(), ExtendExtrap(), ClampExtrap(), or WrapExtrap())
 - `search_policy::P`: Default search policy for interval lookup
 
 # Usage
@@ -45,7 +45,7 @@ vals2 = @. compute(itp(query_points2))
 
 # Extrapolation options
 itp_ext = linear_interp(x, y; extrap=ExtendExtrap())  # linear extrap
-itp_const = linear_interp(x, y; extrap=ConstExtrap())  # clamp to boundary values
+itp_const = linear_interp(x, y; extrap=ClampExtrap())  # clamp to boundary values
 itp_wrap = linear_interp(x, y; extrap=WrapExtrap())  # wrap to domain
 val = itp_wrap(2.5)  # wraps to domain
 

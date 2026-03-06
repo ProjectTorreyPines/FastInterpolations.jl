@@ -333,7 +333,7 @@ end
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
-# ConstExtrap - clamp to boundary (value only, derivatives are zero)
+# ClampExtrap - clamp to boundary (value only, derivatives are zero)
 @inline function _eval_series_point_extrap!(
     out::AbstractVector,
     y_point::Matrix{Tv},
@@ -342,11 +342,11 @@ end
     ::Tg,
     ::Tg,
     ::_CubicAnchoredQuery{Tg,Tq},
-    ::ConstExtrap,
+    extrap::_ClampOrFill,
     op::AbstractEvalOp,
     side::UInt8
 ) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op)
+    return _fill_constant_extrap_simd!(out, y_point, side, n_pts, op, extrap)
 end
 
 # ExtendExtrap - extend polynomial (EvalValue)
@@ -545,7 +545,7 @@ Create a multi-Y cubic spline interpolant for multiple y-data series sharing the
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `s::Series`: Wrapped series data (varargs, vector-of-vectors, or matrix)
 - `bc`: Boundary condition (CubicFit, ZeroCurvBC, ZeroSlopeBC, PeriodicBC, or Vector of BC for per-series)
-- `extrap::AbstractExtrap`: `NoExtrap()`, `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `autocache`: If true, reuse cached LU factorization (default: true)
 - `precompute_transpose`: If true, build point-contiguous layout immediately
 - `search::AbstractSearchPolicy`: Search policy for interval lookup
@@ -620,7 +620,8 @@ function cubic_interp(
         bc_representative = bc_for_cache
     end
 
-    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap, search)
+    extrap_p = _promote_extrap(extrap, eltype(y_mat))
+    sitp = CubicSeriesInterpolant(cache, bc_representative, y_mat, z_mat, extrap_p, search)
 
     if precompute_transpose
         _ensure_point_layout!(sitp)
@@ -948,8 +949,8 @@ Takes matrices as arguments for optimal performance.
     # Outside domain: dispatch on extrap mode
     if extrap isa ExtendExtrap || extrap isa WrapExtrap
         return _eval_series_anchored(y, z, k, aq, op)
-    elseif extrap isa ConstExtrap
-        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op)
+    elseif extrap isa _ClampOrFill
+        return _constant_extrap_boundary_value(y, aq.side, n_pts, k, op, extrap)
     else
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end

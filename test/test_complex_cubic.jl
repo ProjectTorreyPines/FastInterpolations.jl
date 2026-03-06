@@ -152,8 +152,8 @@ using FastInterpolations
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
         y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
 
-        # ConstExtrap() extrapolation
-        itp_const = cubic_interp(x, y; extrap=ConstExtrap())
+        # ClampExtrap() extrapolation
+        itp_const = cubic_interp(x, y; extrap=ClampExtrap())
         @test itp_const(-0.5) == y[1]
         @test itp_const(4.5) == y[end]
 

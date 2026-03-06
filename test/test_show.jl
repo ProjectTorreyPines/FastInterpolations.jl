@@ -224,12 +224,12 @@
 
     @testset "Extrapolation mode display" begin
         itp_none = linear_interp(x, y; extrap=NoExtrap())
-        itp_const = linear_interp(x, y; extrap=ConstExtrap())
+        itp_const = linear_interp(x, y; extrap=ClampExtrap())
         itp_ext = linear_interp(x, y; extrap=ExtendExtrap())
         itp_wrap = linear_interp(x, y; extrap=WrapExtrap())
 
         @test occursin("NoExtrap", sprint(show, MIME("text/plain"), itp_none))
-        @test occursin("ConstExtrap", sprint(show, MIME("text/plain"), itp_const))
+        @test occursin("ClampExtrap", sprint(show, MIME("text/plain"), itp_const))
         @test occursin("ExtendExtrap", sprint(show, MIME("text/plain"), itp_ext))
         @test occursin("WrapExtrap", sprint(show, MIME("text/plain"), itp_wrap))
     end
@@ -631,13 +631,13 @@
         f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
 
         # Different extrapolation modes per axis
-        itp_mixed_extrap = cubic_interp((x1, x2), f; extrap=(NoExtrap(), ConstExtrap()))
+        itp_mixed_extrap = cubic_interp((x1, x2), f; extrap=(NoExtrap(), ClampExtrap()))
 
         # Verbose show should display tuple format for extrapolation
         verbose_str = sprint(show, MIME("text/plain"), itp_mixed_extrap)
         @test occursin("Extrap:", verbose_str)
         @test occursin("NoExtrap", verbose_str)
-        @test occursin("ConstExtrap", verbose_str)
+        @test occursin("ClampExtrap", verbose_str)
     end
 
     @testset "CubicInterpolantND show with heterogeneous search policies" begin
@@ -762,14 +762,14 @@
 
         # Test with heterogeneous tuple (different values per axis)
         io = IOBuffer()
-        configs = (NoExtrap(), ConstExtrap(), ExtendExtrap())
+        configs = (NoExtrap(), ClampExtrap(), ExtendExtrap())
         FI._show_nd_config_row(io, false, "Extrap:", configs, FI._format_extrap)
         output = String(take!(io))
 
         # Should show tuple format since values differ
         @test occursin("(", output)
         @test occursin("NoExtrap", output)
-        @test occursin("ConstExtrap", output)
+        @test occursin("ClampExtrap", output)
         @test occursin("ExtendExtrap", output)
 
         # Test with homogeneous tuple (same values)
@@ -872,12 +872,12 @@
         x2 = range(0.0, 2.0, 15)
         data = [Float64(i + j) for i in 1:11, j in 1:15]
 
-        itp = constant_interp((x1, x2), data; extrap=(NoExtrap(), ConstExtrap()))
+        itp = constant_interp((x1, x2), data; extrap=(NoExtrap(), ClampExtrap()))
 
         verbose_str = sprint(show, MIME("text/plain"), itp)
         @test occursin("Extrap:", verbose_str)
         @test occursin("NoExtrap", verbose_str)
-        @test occursin("ConstExtrap", verbose_str)
+        @test occursin("ClampExtrap", verbose_str)
     end
 
     @testset "ConstantInterpolantND show with complex values (Tv ≠ Tg)" begin

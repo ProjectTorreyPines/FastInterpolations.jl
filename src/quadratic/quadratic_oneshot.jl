@@ -70,14 +70,14 @@ end
     a::AbstractVector{Tv},
     d::AbstractVector{Tv},
     xq::Tq,
-    ::ConstExtrap,
+    extrap::_ClampOrFill,
     op::AbstractEvalOp,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, S<:Searcher}
     # Use primal for boundary comparisons (Dual needs real value for comparison)
     xq_primal = _extract_primal(xq)
-    xq_primal < first(x) && return _constant_extrap_result(op, @inbounds y[1])
-    xq_primal > last(x) && return _constant_extrap_result(op, @inbounds y[end])
+    xq_primal < first(x) && return _constant_extrap_result(op, @inbounds(y[1]), extrap)
+    xq_primal > last(x) && return _constant_extrap_result(op, @inbounds(y[end]), extrap)
     return _quadratic_eval_core(x, y, a, d, xq, op, searcher)
 end
 
@@ -167,7 +167,7 @@ C1 piecewise quadratic spline interpolation at a single point.
   - `MinCurvFit()`: Minimize total curvature (globally smooth)
 - `extrap::AbstractExtrap`: Extrapolation mode
   - `NoExtrap()` (default): throws DomainError if outside domain
-  - `ConstExtrap()`: clamp to boundary values
+  - `ClampExtrap()`: clamp to boundary values
   - `ExtendExtrap()`: extend the boundary polynomial
 - `deriv::DerivOp`: Derivative order -- use `EvalValue()` (default), `DerivOp(1)`, or `DerivOp(2)`
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding

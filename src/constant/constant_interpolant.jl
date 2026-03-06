@@ -76,7 +76,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values
-- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `side::AbstractSide`: Side selection (NearestSide(), LeftSide(), RightSide())
 - `search::AbstractSearchPolicy`: Default search policy (default: `AutoSearch()`)
 
@@ -131,5 +131,6 @@ end
     search::AbstractSearchPolicy=AutoSearch()
 ) where {TX<:Real, TY}
     x_p, y_p = _promote_itp_inputs(x, y)
-    return ConstantInterpolant(x_p, y_p; extrap, side, search)
+    extrap_p = _promote_extrap(extrap, eltype(y_p))
+    return ConstantInterpolant(x_p, y_p; extrap=extrap_p, side, search)
 end

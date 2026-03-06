@@ -24,7 +24,7 @@ Zero-allocation linear interpolation with automatic dispatch:
 
 # Arguments
 - `output`: Pre-allocated output vector (must be floating-point type)
-- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative, `DerivOp(2)` second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `BinarySearch()` (default): O(log n) binary search, stateless
@@ -178,7 +178,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 
 # Arguments
 - `xq::Real`: Single interpolation query point
-- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ConstExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `BinarySearch()` (default): O(log n) binary search, stateless
@@ -254,41 +254,19 @@ end
 
 
 """
-    _linear_eval_constant_extrap(y, is_left, op) -> Tv
+    _linear_eval_constant_extrap(y, is_left, op, extrap) -> Tv
 
-Handle constant extrapolation: returns boundary value for EvalValue, zero for derivatives.
+Handle constant extrapolation: returns boundary/fill value for EvalValue, zero for derivatives.
 Works with any value type Tv (duck typing).
 """
 @inline function _linear_eval_constant_extrap(
     y::AbstractVector{Tv},
     is_left::Bool,
-    ::EvalValue
+    op::AbstractEvalOp,
+    extrap::_ClampOrFill
 ) where {Tv}
-    @inbounds return is_left ? y[1] : y[end]
-end
-
-@inline function _linear_eval_constant_extrap(
-    y::AbstractVector{Tv},
-    ::Bool,
-    ::EvalDeriv1
-) where {Tv}
-    return 0 * first(y)
-end
-
-@inline function _linear_eval_constant_extrap(
-    y::AbstractVector{Tv},
-    ::Bool,
-    ::EvalDeriv2
-) where {Tv}
-    return 0 * first(y)
-end
-
-@inline function _linear_eval_constant_extrap(
-    y::AbstractVector{Tv},
-    ::Bool,
-    ::EvalDeriv3
-) where {Tv}
-    return 0 * first(y)
+    y_bnd = @inbounds is_left ? y[1] : y[end]
+    return _constant_extrap_result(op, y_bnd, extrap)
 end
 
 """
@@ -328,7 +306,7 @@ end
     x::AbstractVector{Tg},
     y::AbstractVector{Tv},
     xq::Tq,
-    ::ConstExtrap,
+    extrap::_ClampOrFill,
     op::O,
     searcher::S
 ) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
@@ -336,9 +314,9 @@ end
     # Use primal for comparisons (AD types need Float comparison)
     xq_primal = _extract_primal(xq)
     if xq_primal < x_min
-        return _linear_eval_constant_extrap(y, true, op)
+        return _linear_eval_constant_extrap(y, true, op, extrap)
     elseif xq_primal > x_max
-        return _linear_eval_constant_extrap(y, false, op)
+        return _linear_eval_constant_extrap(y, false, op, extrap)
     else
         return _linear_eval_at_point(x, y, xq, ExtendExtrap(), op, searcher)
     end

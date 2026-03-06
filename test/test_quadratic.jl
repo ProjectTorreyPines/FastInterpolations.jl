@@ -576,17 +576,17 @@ end
         @test_throws DomainError quadratic_interp(x, y, 2.5)
 
         # :constant - clamp to boundary values (outside domain)
-        @test quadratic_interp(x, y, -0.5; extrap=ConstExtrap()) ≈ 0.0
-        @test quadratic_interp(x, y, 2.5; extrap=ConstExtrap()) ≈ 4.0
+        @test quadratic_interp(x, y, -0.5; extrap=ClampExtrap()) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap=ClampExtrap()) ≈ 4.0
 
         # :constant - inside domain should work normally (coverage for eval_core path)
-        @test quadratic_interp(x, y, 1.0; extrap=ConstExtrap()) ≈ 1.0
+        @test quadratic_interp(x, y, 1.0; extrap=ClampExtrap()) ≈ 1.0
 
         # :constant - derivatives return zero outside domain
-        @test quadratic_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=DerivOp(1)) ≈ 0.0
-        @test quadratic_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=DerivOp(1)) ≈ 0.0
-        @test quadratic_interp(x, y, -0.5; extrap=ConstExtrap(), deriv=DerivOp(2)) ≈ 0.0
-        @test quadratic_interp(x, y, 2.5; extrap=ConstExtrap(), deriv=DerivOp(2)) ≈ 0.0
+        @test quadratic_interp(x, y, -0.5; extrap=ClampExtrap(), deriv=DerivOp(1)) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap=ClampExtrap(), deriv=DerivOp(1)) ≈ 0.0
+        @test quadratic_interp(x, y, -0.5; extrap=ClampExtrap(), deriv=DerivOp(2)) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap=ClampExtrap(), deriv=DerivOp(2)) ≈ 0.0
 
         # :extension - extend the polynomial (right side)
         v_ext_right = quadratic_interp(x, y, 2.5; extrap=ExtendExtrap())
@@ -1546,7 +1546,7 @@ end
         @test isfinite(itp_ext(3.5))   # outside right
 
         # :constant mode
-        itp_const = quadratic_interp(x, y; bc=MinCurvFit(), extrap=ConstExtrap())
+        itp_const = quadratic_interp(x, y; bc=MinCurvFit(), extrap=ClampExtrap())
         @test itp_const(-0.5) ≈ 0.0    # clamps to y[1]
         @test itp_const(3.5) ≈ 9.0     # clamps to y[end]
     end

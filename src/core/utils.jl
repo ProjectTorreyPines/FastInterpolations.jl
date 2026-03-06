@@ -9,13 +9,6 @@
 #   - _search_interval: dispatcher that routes to the appropriate implementation
 
 # ========================================
-# Promotable Value Type (for convenience dispatch)
-# ========================================
-
-"""Standard Julia numeric types that should be auto-promoted in convenience wrappers."""
-const _PromotableValue = Union{Integer, AbstractFloat, Rational, Complex}
-
-# ========================================
 # Type Conversion Helpers
 # ========================================
 

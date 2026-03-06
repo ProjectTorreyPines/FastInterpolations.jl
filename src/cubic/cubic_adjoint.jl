@@ -23,11 +23,28 @@
 # Deriv2 produces (1, 0) / (0, 1) and Deriv3 produces (-1, 1) / (-1, 1),
 # which break symmetry.
 
-@inline _is_symmetric_thomas(::Deriv1) = true
-@inline _is_symmetric_thomas(::PolyFit) = true
-@inline _is_symmetric_thomas(::Deriv2) = false
-@inline _is_symmetric_thomas(::Deriv3) = false
-@inline _is_symmetric_thomas(bc::BCPair) = _is_symmetric_thomas(bc.left) && _is_symmetric_thomas(bc.right)
+"""
+    MatrixSymmetry
+
+Abstract trait for compile-time tridiagonal matrix A symmetry dispatch.
+Subtypes control whether the adjoint uses forward solve (symmetric) or transpose solve.
+"""
+abstract type MatrixSymmetry end
+
+"""Symmetric A — forward Thomas solve reusable as transpose solve."""
+struct SymmetricA <: MatrixSymmetry end
+
+"""Asymmetric A — requires dedicated transpose Thomas solve."""
+struct AsymmetricA <: MatrixSymmetry end
+
+@inline _thomas_symmetry(::Deriv1) = SymmetricA()
+@inline _thomas_symmetry(::PolyFit) = SymmetricA()
+@inline _thomas_symmetry(::Deriv2) = AsymmetricA()
+@inline _thomas_symmetry(::Deriv3) = AsymmetricA()
+@inline function _thomas_symmetry(bc::BCPair)
+    l, r = _thomas_symmetry(bc.left), _thomas_symmetry(bc.right)
+    (l isa SymmetricA && r isa SymmetricA) ? SymmetricA() : AsymmetricA()
+end
 
 # ========================================
 # PolyFit Precomputed Data
@@ -82,7 +99,7 @@ The same adjoint can be applied to any `ȳ` vector regardless of value type.
 - `Tg`: Grid float type (Float32 or Float64)
 - `C`: `CubicSplineCache` type (reused from forward interpolation)
 - `BC`: `BCPair` type (normalized boundary condition)
-- `Sym`: `Val{true}` or `Val{false}` — compile-time tridiagonal symmetry flag
+- `Sym`: `SymmetricA` or `AsymmetricA` — compile-time tridiagonal symmetry trait
 - `PF`: `_AdjointPolyfitData` type (precomputed PolyFit stencil coefficients)
 
 # Usage
@@ -106,7 +123,7 @@ Adjoint: `f̄ = Wᵀȳ = Eᵧᵀȳ + Rᵀ·A⁻ᵀ·E_zᵀȳ`
 Here `A` is the tridiagonal moment matrix, `R` the finite-difference RHS operator,
 `Eᵧ` and `E_z` the evaluation weight matrices for y-values and z-moments respectively.
 """
-struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: BCPair, Sym, PF <: _AdjointPolyfitData}
+struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: BCPair, Sym <: MatrixSymmetry, PF <: _AdjointPolyfitData}
     cache::C
     anchors::Vector{_CubicAnchoredQuery{Tg, Tg}}
     bc::BC
@@ -118,7 +135,7 @@ struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: BCPair
             bc::BC,
             polyfit_data::PF,
             ::Sym
-        ) where {Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: BCPair, Sym <: Val, PF <: _AdjointPolyfitData}
+        ) where {Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: BCPair, Sym <: MatrixSymmetry, PF <: _AdjointPolyfitData}
         return new{Tg, C, BC, Sym, PF}(cache, anchors, bc, polyfit_data)
     end
 end
@@ -212,11 +229,11 @@ end
 # ========================================
 
 # Symmetric A (Deriv1, PolyFit): forward solve = transpose solve
-@inline _adjoint_thomas_solve!(z_bar, thomas, ::Val{true}) =
+@inline _adjoint_thomas_solve!(z_bar, thomas, ::SymmetricA) =
     _ldiv_tridiagonal_nopiv!(z_bar, thomas)
 
-# Asymmetric A (Deriv2, Deriv3): use transpose solve
-@inline _adjoint_thomas_solve!(z_bar, thomas, ::Val{false}) =
+# Asymmetric A (Deriv2, Deriv3): requires dedicated transpose solve
+@inline _adjoint_thomas_solve!(z_bar, thomas, ::AsymmetricA) =
     _ldiv_tridiagonal_transpose!(z_bar, thomas)
 
 # ========================================
@@ -392,8 +409,8 @@ function cubic_adjoint(
     # Build anchored queries (reuses existing anchor builder)
     anchors = _anchor_query(cache.x, xq_p, Val(:cubic))
 
-    # Compile-time symmetry flag
-    sym = Val(_is_symmetric_thomas(bc_pair))
+    # Compile-time symmetry trait
+    sym = _thomas_symmetry(bc_pair)
 
     # Precompute PolyFit stencil coefficients (grid-only, computed once)
     pf = _build_polyfit_data(bc_pair, cache.x)

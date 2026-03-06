@@ -298,6 +298,31 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         @test vals[2] ≈ cos(1.0) atol = 1.0e-4
     end
 
+    @testset "CubicSeriesInterpolant — Exclusive endpoint (Vector grid)" begin
+        # Build inclusive reference from non-uniform grid
+        x_incl = [0.0, 0.5, 1.5, 3.0, 5.0, 2π]
+        y1_incl = sin.(x_incl)
+        y2_incl = cos.(x_incl)
+        y1_incl[end] = y1_incl[1]
+        y2_incl[end] = y2_incl[1]
+
+        x_excl = x_incl[1:(end - 1)]
+        y1_excl = y1_incl[1:(end - 1)]
+        y2_excl = y2_incl[1:(end - 1)]
+
+        bc_excl = PeriodicBC(endpoint = :exclusive, period = 2π)
+
+        mitp_incl = cubic_interp(x_incl, Series(y1_incl, y2_incl); bc = PeriodicBC())
+        mitp_excl = cubic_interp(x_excl, Series(y1_excl, y2_excl); bc = bc_excl)
+
+        for xq in [0.1, 1.0, π, 5.5]
+            v_incl = mitp_incl(xq)
+            v_excl = mitp_excl(xq)
+            @test v_excl[1] ≈ v_incl[1] atol = 1.0e-14
+            @test v_excl[2] ≈ v_incl[2] atol = 1.0e-14
+        end
+    end
+
     # ========================================
     # Derivative Tests
     # ========================================

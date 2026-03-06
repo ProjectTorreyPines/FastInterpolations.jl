@@ -199,7 +199,7 @@ function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     x_ext = if x isa AbstractRange
         range(first(x), step = step(x), length = length(x) + 1)
     else
-        vcat(x, [x_end])
+        vcat(x, x_end)
     end
     y_ext = _extend_values(y)
     return x_ext, y_ext
@@ -221,14 +221,14 @@ function _extend_exclusive(x::AbstractVector, y_mat::AbstractMatrix, bc::Periodi
     x_ext = if x isa AbstractRange
         range(first(x), step = step(x), length = length(x) + 1)
     else
-        vcat(x, [x_end])
+        vcat(x, x_end)
     end
     y_ext = vcat(y_mat, y_mat[1:1, :])
     return x_ext, y_ext
 end
 
 # Value extension: append first element
-_extend_values(y::AbstractVector) = vcat(y, [first(y)])
+_extend_values(y::AbstractVector) = vcat(y, first(y))
 
 # ========================================
 # ND Exclusive Endpoint Extension
@@ -286,7 +286,7 @@ function _prepare_periodic_nd(
         grid_ext = if grid_d isa AbstractRange
             range(first(grid_d), step = step(grid_d), length = length(grid_d) + 1)
         else
-            vcat(grid_d, [x_end])
+            vcat(grid_d, x_end)
         end
         bc_ext = _with_resolved_period(bc_d, period)
         return (grid_ext, bc_ext)

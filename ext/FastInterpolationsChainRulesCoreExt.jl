@@ -59,7 +59,9 @@ function ChainRulesCore.rrule(
 
     function itp_1d_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), ZeroTangent()
-        return NoTangent(), Δy * itp(x; deriv=DerivOp(1))
+        # real(conj(Δy) * f'(x)) is the correct pullback for f: ℝ → ℂ
+        # For all-real case this is a no-op: real(conj(r) * r') = r * r'
+        return NoTangent(), real(conj(Δy) * itp(x; deriv=DerivOp(1)))
     end
 
     return y, itp_1d_pullback
@@ -131,7 +133,7 @@ function ChainRulesCore.rrule(
     function itp_nd_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), ZeroTangent()
         ∂query = ntuple(Val(N)) do i
-            Δy * itp(query; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N)))
+            real(conj(Δy) * itp(query; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N))))
         end
         return NoTangent(), ∂query
     end
@@ -154,7 +156,7 @@ function ChainRulesCore.rrule(
     function itp_nd_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), ZeroTangent()
         ∂query = [
-            Δy * itp(query_tuple; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N)))
+            real(conj(Δy) * itp(query_tuple; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N))))
             for i in 1:N
         ]
         return NoTangent(), ∂query

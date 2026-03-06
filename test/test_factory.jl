@@ -111,6 +111,24 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
                 @test occursin(":none", e.msg)
             end
         end
+
+        @testset "fill_value ignored warning (1D)" begin
+            # fill_value kwarg on non-:fill symbol → warning
+            @test_logs (:warn, r"fill_value.*ignored.*:clamp") Extrap(:clamp; fill_value=42)
+            @test_logs (:warn, r"fill_value.*ignored.*:none") Extrap(:none; fill_value=0.0)
+            @test_logs (:warn, r"fill_value.*ignored.*:extend") Extrap(:extend; fill_value=NaN)
+            # :fill with fill_value → no warning
+            @test_logs Extrap(:fill; fill_value=NaN)
+        end
+
+        @testset "fill_value ignored warning (ND)" begin
+            # fill_value kwarg but no :fill axis → warning
+            @test_logs (:warn, r"fill_value.*ignored.*no axis") Extrap(:clamp, :extend; fill_value=42)
+            # :fill axis present with fill_value → no warning
+            @test_logs Extrap(:clamp, :fill; fill_value=0.0)
+            # no fill_value kwarg at all → no warning
+            @test_logs Extrap(:clamp, :extend)
+        end
     end
 
     # ========================================

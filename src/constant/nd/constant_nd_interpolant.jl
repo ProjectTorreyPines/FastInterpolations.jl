@@ -20,7 +20,7 @@ Create an N-dimensional constant interpolant with tuple-grid API.
 
 # Keyword Arguments
 - `side=NearestSide()`: Side selection mode (`NearestSide()`, `LeftSide()`, `RightSide()`) or per-axis tuple
-- `extrap=NoExtrap()`: Extrapolation mode (`NoExtrap()`, `ClampedExtrap()`, `ExtendExtrap()`, `WrapExtrap()`) or per-axis tuple
+- `extrap=NoExtrap()`: Extrapolation mode (`NoExtrap()`, `ClampExtrap()`, `ExtendExtrap()`, `WrapExtrap()`) or per-axis tuple
 - `search=AutoSearch()`: Search policy or per-axis tuple
 
 # Returns

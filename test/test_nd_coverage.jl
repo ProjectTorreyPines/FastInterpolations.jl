@@ -215,7 +215,7 @@ import FastInterpolations:
         @testset "_resolve_extrap_nd wrong-sized tuple error" begin
             # Correct size should work (3-arg form: extrap, bcs, Val(N))
             @test _resolve_extrap_nd(NoExtrap(), nothing, Val(2), Float64) == (NoExtrap(), NoExtrap())
-            @test _resolve_extrap_nd((NoExtrap(), ClampedExtrap()), nothing, Val(2), Float64) == (NoExtrap(), ClampedExtrap())
+            @test _resolve_extrap_nd((NoExtrap(), ClampExtrap()), nothing, Val(2), Float64) == (NoExtrap(), ClampExtrap())
 
             # Wrong size should throw
             @test_throws ArgumentError _resolve_extrap_nd((NoExtrap(),), nothing, Val(2), Float64)  # 1 element for 2D
@@ -843,7 +843,7 @@ end
 
     @testset "fallback: non-uniform extraps with bcs=nothing (linear oneshot)" begin
         # Mixed extrap types per dim — exercises per-dim extrap dispatch fallback
-        result = linear_interp(grids, data, (0.5, 0.5); extrap=(NoExtrap(), ClampedExtrap()))
+        result = linear_interp(grids, data, (0.5, 0.5); extrap=(NoExtrap(), ClampExtrap()))
         @test result ≈ 1.0 atol=1e-10
     end
 
@@ -862,7 +862,7 @@ end
     end
 
     @testset "fallback: non-uniform extraps with mixed BCs (cubic oneshot)" begin
-        # bc=(PeriodicBC(), ZeroCurvBC()) + extrap=(NoExtrap(),ClampedExtrap())
+        # bc=(PeriodicBC(), ZeroCurvBC()) + extrap=(NoExtrap(),ClampExtrap())
         # Mixed extrap types per dim — exercises per-dim extrap dispatch fallback
         x = collect(range(0.0, 2π, 9))
         y = collect(range(0.0, 1.0, 9))
@@ -871,7 +871,7 @@ end
 
         # Query is interior: cos(π/2) + 0.5 ≈ 0.5 (extrap mode doesn't affect interior)
         result = cubic_interp((x, y), data_p, (π/2, 0.5);
-            bc=(PeriodicBC(), ZeroCurvBC()), extrap=(NoExtrap(), ClampedExtrap()))
+            bc=(PeriodicBC(), ZeroCurvBC()), extrap=(NoExtrap(), ClampExtrap()))
         @test result ≈ 0.5 atol=0.01
     end
 end

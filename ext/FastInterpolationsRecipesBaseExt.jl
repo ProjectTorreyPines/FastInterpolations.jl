@@ -6,7 +6,7 @@
 #
 # Usage:
 #   using FastInterpolations, Plots
-#   itp = cubic_interp(x, y; extrap=ClampedExtrap())
+#   itp = cubic_interp(x, y; extrap=ClampExtrap())
 #   plot(itp)  # automatic documentation-style visualization
 
 module FastInterpolationsRecipesBaseExt
@@ -23,7 +23,7 @@ import FastInterpolations:
     LinearInterpolant, ConstantInterpolant, QuadraticInterpolant, CubicInterpolant,
     LinearSeriesInterpolant, ConstantSeriesInterpolant,
     QuadraticSeriesInterpolant, CubicSeriesInterpolant,
-    DerivativeView, NoExtrap, ClampedExtrap, FillExtrap
+    DerivativeView, NoExtrap, ClampExtrap, FillExtrap
 
 # ========================================
 # Helper Functions
@@ -230,7 +230,7 @@ Generates multiple series:
         default_xlim_min = x_min - margin
         default_xlim_max = x_max + margin
     else
-        # ClampedExtrap, ExtendExtrap, WrapExtrap, FillExtrap(finite):
+        # ClampExtrap, ExtendExtrap, WrapExtrap, FillExtrap(finite):
         # curve extends beyond domain (itp returns fill/clamped/extended value)
         xq_min, xq_max = x_min - margin, x_max + margin
         default_xlim_min, default_xlim_max = xq_min, xq_max
@@ -427,7 +427,7 @@ end
         default_xlim_min = x_min - margin
         default_xlim_max = x_max + margin
     else
-        # ClampedExtrap, ExtendExtrap, WrapExtrap, FillExtrap(finite):
+        # ClampExtrap, ExtendExtrap, WrapExtrap, FillExtrap(finite):
         # curve extends beyond domain
         xq_min, xq_max = x_min - margin, x_max + margin
         default_xlim_min, default_xlim_max = xq_min, xq_max

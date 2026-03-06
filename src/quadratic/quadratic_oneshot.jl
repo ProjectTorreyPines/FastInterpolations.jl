@@ -167,7 +167,7 @@ C1 piecewise quadratic spline interpolation at a single point.
   - `MinCurvFit()`: Minimize total curvature (globally smooth)
 - `extrap::AbstractExtrap`: Extrapolation mode
   - `NoExtrap()` (default): throws DomainError if outside domain
-  - `ClampedExtrap()`: clamp to boundary values
+  - `ClampExtrap()`: clamp to boundary values
   - `ExtendExtrap()`: extend the boundary polynomial
 - `deriv::DerivOp`: Derivative order -- use `EvalValue()` (default), `DerivOp(1)`, or `DerivOp(2)`
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding

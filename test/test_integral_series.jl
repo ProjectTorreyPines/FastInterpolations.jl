@@ -119,10 +119,10 @@ using FastInterpolations
             @test_throws DomainError integrate(sitp, 0.5, 1.1)
         end
 
-        @testset "extrap=ClampedExtrap()" begin
-            sitp = cubic_interp(x, Series(y1, y2); extrap=ClampedExtrap())
-            itp1 = cubic_interp(x, y1; extrap=ClampedExtrap())
-            itp2 = cubic_interp(x, y2; extrap=ClampedExtrap())
+        @testset "extrap=ClampExtrap()" begin
+            sitp = cubic_interp(x, Series(y1, y2); extrap=ClampExtrap())
+            itp1 = cubic_interp(x, y1; extrap=ClampExtrap())
+            itp2 = cubic_interp(x, y2; extrap=ClampExtrap())
             result = integrate(sitp, -0.5, 1.5)
             @test result[1] ≈ integrate(itp1, -0.5, 1.5)
             @test result[2] ≈ integrate(itp2, -0.5, 1.5)
@@ -146,10 +146,10 @@ using FastInterpolations
             @test result[2] ≈ integrate(itp2, -0.5, 2.5)
         end
 
-        @testset "linear extrap=ClampedExtrap()" begin
-            sitp = linear_interp(x, Series(y1, y2); extrap=ClampedExtrap())
-            itp1 = linear_interp(x, y1; extrap=ClampedExtrap())
-            itp2 = linear_interp(x, y2; extrap=ClampedExtrap())
+        @testset "linear extrap=ClampExtrap()" begin
+            sitp = linear_interp(x, Series(y1, y2); extrap=ClampExtrap())
+            itp1 = linear_interp(x, y1; extrap=ClampExtrap())
+            itp2 = linear_interp(x, y2; extrap=ClampExtrap())
             result = integrate(sitp, -0.5, 1.5)
             @test result[1] ≈ integrate(itp1, -0.5, 1.5)
             @test result[2] ≈ integrate(itp2, -0.5, 1.5)

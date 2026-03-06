@@ -151,7 +151,7 @@ end
         @test_throws DomainError itp_none((0.5, -0.1))
 
         # :constant - clamp to boundary
-        itp_const = cubic_interp((x, y), data; extrap=ClampedExtrap())
+        itp_const = cubic_interp((x, y), data; extrap=ClampExtrap())
         @test itp_const((-0.1, 0.5)) ≈ itp_const((0.0, 0.5))
         @test itp_const((2.1, 0.5)) ≈ itp_const((2.0, 0.5))
     end
@@ -321,9 +321,9 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi^2 + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        cubic_interp((x, y), data, query; extrap=ClampedExtrap())
-        cubic_interp((x, y), data, query; extrap=ClampedExtrap())
-        @allocated cubic_interp((x, y), data, query; extrap=ClampedExtrap())
+        cubic_interp((x, y), data, query; extrap=ClampExtrap())
+        cubic_interp((x, y), data, query; extrap=ClampExtrap())
+        @allocated cubic_interp((x, y), data, query; extrap=ClampExtrap())
     end
 
     function _alloc_test_cubic_extrap_extend()
@@ -353,9 +353,9 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi^2 + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        cubic_interp((x, y), data, query; extrap=(NoExtrap(), ClampedExtrap()))
-        cubic_interp((x, y), data, query; extrap=(NoExtrap(), ClampedExtrap()))
-        @allocated cubic_interp((x, y), data, query; extrap=(NoExtrap(), ClampedExtrap()))
+        cubic_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
+        cubic_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
+        @allocated cubic_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
     end
 
     function _alloc_test_cubic_periodic_exclusive()
@@ -393,7 +393,7 @@ end
             @test _alloc_test_cubic_deriv_val() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, extrap=ClampedExtrap)" begin
+        @testset "zero-alloc scalar (Range grids, extrap=ClampExtrap)" begin
             @test _alloc_test_cubic_extrap_const() <= ND_ALLOC_THRESHOLD
         end
 

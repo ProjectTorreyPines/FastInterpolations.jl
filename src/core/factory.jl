@@ -114,7 +114,7 @@ creates a Tuple for ND per-axis configuration (same pattern as `DerivOp(1, 0)`).
 
 # Options
 - `:none` → [`NoExtrap`](@ref): throw `DomainError` for out-of-domain queries
-- `:clamped` → [`ClampedExtrap`](@ref): clamp to nearest boundary value
+- `:clamped` → [`ClampExtrap`](@ref): clamp to nearest boundary value
 - `:fill` → [`FillExtrap`](@ref): fill with a constant value (requires `value` keyword)
 - `:extend` → [`ExtendExtrap`](@ref): extend interpolation polynomial beyond domain
 - `:wrap` → [`WrapExtrap`](@ref): wrap queries into domain (periodic)
@@ -136,7 +136,7 @@ Extrap(NoExtrap())   # → NoExtrap()
 """
 function Extrap(sym::Symbol; value=nothing)
     sym === :none     && return NoExtrap()
-    sym === :clamped  && return ClampedExtrap()
+    sym === :clamped  && return ClampExtrap()
     sym === :fill     && return value === nothing ? _extrap_fill_missing_value_error() : FillExtrap(value)
     sym === :extend   && return ExtendExtrap()
     sym === :wrap     && return WrapExtrap()
@@ -144,7 +144,7 @@ function Extrap(sym::Symbol; value=nothing)
         Base.depwarn(
             "Extrap(:constant) is deprecated, use Extrap(:clamped) instead.",
             :Extrap)
-        return ClampedExtrap()
+        return ClampExtrap()
     end
     _extrap_unknown_error(sym)
 end

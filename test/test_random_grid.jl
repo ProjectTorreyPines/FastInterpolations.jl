@@ -47,7 +47,7 @@
             @test all(isfinite, result_ext)
 
             # Constant extrapolation
-            result_const = linear_interp(x_random, y, x_extrap; extrap=ClampedExtrap())
+            result_const = linear_interp(x_random, y, x_extrap; extrap=ClampExtrap())
             @test result_const[1] ≈ y[1]
             @test result_const[2] ≈ y[end]
         end

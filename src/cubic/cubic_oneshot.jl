@@ -24,7 +24,7 @@ Thread-safe: workspaces allocated from task-local pool.
 - `cache::CubicSplineCache{T}`: Pre-computed cache with LU factorization
 - `y::AbstractVector{T}`: Function values at grid points
 - `x_query::AbstractVector{T}`: Query points
-- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ClampedExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp=EvalValue()`: Derivative order (0=value, 1=first derivative, 2=second derivative)
 - `search::AbstractSearchPolicy=AutoSearch()`: Search algorithm for interval finding
 """
@@ -323,7 +323,7 @@ Cubic spline interpolation with optional automatic caching.
 
 # Extrapolation Modes
 - `NoExtrap()` (default): Throws DomainError if query point is outside domain
-- `ClampedExtrap()`: Returns boundary values outside domain (0 for derivatives)
+- `ClampExtrap()`: Returns boundary values outside domain (0 for derivatives)
 - `ExtendExtrap()`: Extends boundary polynomial outside domain
 - `WrapExtrap()`: Wraps coordinates to domain (for sawtooth/triangle patterns)
 - For `bc=PeriodicBC()`: extrapolation is ignored (coordinates are always wrapped)

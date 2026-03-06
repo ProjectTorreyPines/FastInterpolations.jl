@@ -124,7 +124,7 @@ Computes 2^N partial derivatives in a pool buffer and evaluates at a single poin
 Zero-allocation after warmup (pool reuse).
 
 `extraps_val` must be a pre-resolved tuple of concrete `AbstractExtrap` instances
-(e.g., `(NoExtrap(), ClampedExtrap())`), computed via `_resolve_extrap_nd` in the API layer.
+(e.g., `(NoExtrap(), ClampExtrap())`), computed via `_resolve_extrap_nd` in the API layer.
 """
 @with_pool pool function _cubic_interp_nd_oneshot(
     grids::NTuple{N, AbstractVector{Tg}},

@@ -252,7 +252,7 @@ end
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
-# ClampedExtrap - clamp to boundary
+# ClampExtrap - clamp to boundary
 @inline function _eval_constant_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -318,7 +318,7 @@ Create a multi-Y constant (step) interpolant for multiple y-data series sharing 
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `s::Series`: Wrapped series data (varargs, vector-of-vectors, or matrix)
 - `side::AbstractSide`: `NearestSide()`, `LeftSide()`, or `RightSide()`
-- `extrap::AbstractExtrap`: `NoExtrap()`, `ClampedExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `search::AbstractSearchPolicy`: Search policy for interval lookup
 
 # Example

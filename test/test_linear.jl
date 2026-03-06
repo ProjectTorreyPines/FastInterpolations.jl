@@ -39,7 +39,7 @@
         y = sin.(x)
         x_targets = [-0.2, -0.1, 1.1, 1.2]
 
-        result = linear_interp(x, y, x_targets; extrap=ClampedExtrap())
+        result = linear_interp(x, y, x_targets; extrap=ClampExtrap())
 
         # For constant extrapolation, values outside bounds should match boundary values
         @test result[1] == y[1]
@@ -86,7 +86,7 @@
         y = [1.0, 3.0, 5.0]
         x_targets = [-0.25, 1.5]
 
-        result = linear_interp(x, y, x_targets; extrap=ClampedExtrap())
+        result = linear_interp(x, y, x_targets; extrap=ClampExtrap())
 
         # Constant extrapolation
         @test result[1] == y[1]
@@ -362,13 +362,13 @@ end
         y = [1.0, 3.0, 5.0]
         x_targets = [-0.25, 1.5]
 
-        itp = linear_interp(x, y; extrap=ClampedExtrap())
+        itp = linear_interp(x, y; extrap=ClampExtrap())
 
         result = itp.(x_targets)
         @test result[1] == y[1]
         @test result[2] == y[end]
 
-        expected = linear_interp(x, y, x_targets; extrap=ClampedExtrap())
+        expected = linear_interp(x, y, x_targets; extrap=ClampExtrap())
         @test result == expected
     end
 
@@ -509,7 +509,7 @@ end
         @test result_ext[1] ≈ 2.0 * (-1.0) + 1.0
         @test result_ext[2] ≈ 2.0 * 6.0 + 1.0
 
-        result_const = linear_interp(x_int, y_int, x_targets; extrap=ClampedExtrap())
+        result_const = linear_interp(x_int, y_int, x_targets; extrap=ClampExtrap())
         @test result_const[1] ≈ y_int[1]
         @test result_const[2] ≈ y_int[end]
     end
@@ -600,7 +600,7 @@ end
         @test output[2] ≈ 5.5^2 atol=1
 
         # Test with constant extrapolation
-        linear_interp!(output, x, y, x_query; extrap=ClampedExtrap())
+        linear_interp!(output, x, y, x_query; extrap=ClampExtrap())
         @test length(output) == 3
     end
 

@@ -276,12 +276,12 @@ using FastInterpolations
     end
 
     # ========================================
-    # extrap=ClampedExtrap() Tests
+    # extrap=ClampExtrap() Tests
     # ========================================
-    @testset "extrap=ClampedExtrap() via anchor" begin
+    @testset "extrap=ClampExtrap() via anchor" begin
         x = collect(range(0.0, 1.0, 11))
         y = sin.(2π .* x)
-        itp = linear_interp(x, y; extrap=ClampedExtrap())
+        itp = linear_interp(x, y; extrap=ClampExtrap())
 
         # Below domain returns first y
         aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:linear))
@@ -305,7 +305,7 @@ using FastInterpolations
         x = collect(range(0.0, 1.0, 11))
         y = sin.(2π .* x)
 
-        for extrap in [ExtendExtrap(), ClampedExtrap()]
+        for extrap in [ExtendExtrap(), ClampExtrap()]
             itp = linear_interp(x, y; extrap=extrap)
             xq_vec = [-0.2, 0.3, 0.7, 1.2]  # Mix of inside/outside
             aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:linear))

@@ -56,7 +56,7 @@ Controls behavior when query points fall outside the data domain.
 
 ```julia
 Extrap(:none)              # NoExtrap() — throw DomainError (default)
-Extrap(:clamped)           # ClampedExtrap() — clamp to boundary values
+Extrap(:clamped)           # ClampExtrap() — clamp to boundary values
 Extrap(:fill; value=NaN)   # FillExtrap(NaN) — fill with constant value
 Extrap(:extend)            # ExtendExtrap() — extend boundary polynomial
 Extrap(:wrap)              # WrapExtrap() — periodic coordinate wrapping
@@ -80,12 +80,12 @@ For N-dimensional interpolation, pass multiple symbols to create a **per-axis tu
 
 ```julia
 # Instead of writing:
-extrap = (ExtendExtrap(), ClampedExtrap(), NoExtrap())
+extrap = (ExtendExtrap(), ClampExtrap(), NoExtrap())
 
 # Write:
 extrap = Extrap(:extend, :constant, :none)
 
-# Both produce the same Tuple{ExtendExtrap, ClampedExtrap, NoExtrap}
+# Both produce the same Tuple{ExtendExtrap, ClampExtrap, NoExtrap}
 ```
 
 All three factories support this:

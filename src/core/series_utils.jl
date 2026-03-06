@@ -94,12 +94,12 @@ end
 
 Get the boundary value for constant/fill extrapolation in scalar series evaluation path.
 
-For `EvalValue` + `ClampedExtrap`, returns the boundary y-value.
+For `EvalValue` + `ClampExtrap`, returns the boundary y-value.
 For `EvalValue` + `FillExtrap`, returns the fill value.
 For derivatives, returns zero via `0 * y` (duck-typing compatible).
 """
 @inline function _constant_extrap_boundary_value(
-    y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampedExtrap
+    y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampExtrap
 ) where {Tv}
     @inbounds return y[_boundary_point_index(side, n_pts), k]
 end
@@ -121,12 +121,12 @@ end
 
 Fill output vector with boundary/fill values for constant/fill extrapolation (SIMD path).
 
-For `EvalValue` + `ClampedExtrap`, fills with boundary y-values.
+For `EvalValue` + `ClampExtrap`, fills with boundary y-values.
 For `EvalValue` + `FillExtrap`, fills with the fill value.
 For derivatives, fills with zeros.
 """
 @inline function _fill_constant_extrap_simd!(
-    out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::EvalValue, ::ClampedExtrap
+    out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::EvalValue, ::ClampExtrap
 ) where {Tv}
     idx = _boundary_point_index(side, n_pts)
     @inbounds @simd for k in axes(out, 1)

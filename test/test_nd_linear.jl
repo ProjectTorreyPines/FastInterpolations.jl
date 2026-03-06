@@ -200,8 +200,8 @@ end
             @test_throws DomainError itp((-0.1, -0.1))
         end
 
-        @testset "extrap=ClampedExtrap()" begin
-            itp = linear_interp((x, y), data; extrap=ClampedExtrap())
+        @testset "extrap=ClampExtrap()" begin
+            itp = linear_interp((x, y), data; extrap=ClampExtrap())
             # Query beyond domain should clamp to boundary
             @test itp((-0.5, 0.5)) ≈ itp((0.0, 0.5))
             @test itp((2.5, 0.5)) ≈ itp((2.0, 0.5))
@@ -223,7 +223,7 @@ end
         end
 
         @testset "per-axis extrap configuration" begin
-            itp = linear_interp((x, y), data; extrap=(NoExtrap(), ClampedExtrap()))
+            itp = linear_interp((x, y), data; extrap=(NoExtrap(), ClampExtrap()))
             # x has :none, y has :constant
             @test itp((0.5, 2.5)) == itp((0.5, 2.0))  # y clamped
             @test_throws DomainError itp((2.5, 0.5))   # x throws
@@ -458,9 +458,9 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        linear_interp((x, y), data, query; extrap=ClampedExtrap())
-        linear_interp((x, y), data, query; extrap=ClampedExtrap())
-        @allocated linear_interp((x, y), data, query; extrap=ClampedExtrap())
+        linear_interp((x, y), data, query; extrap=ClampExtrap())
+        linear_interp((x, y), data, query; extrap=ClampExtrap())
+        @allocated linear_interp((x, y), data, query; extrap=ClampExtrap())
     end
 
     function _alloc_test_linear_extrap_extension()
@@ -488,9 +488,9 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        linear_interp((x, y), data, query; extrap=(NoExtrap(), ClampedExtrap()))
-        linear_interp((x, y), data, query; extrap=(NoExtrap(), ClampedExtrap()))
-        @allocated linear_interp((x, y), data, query; extrap=(NoExtrap(), ClampedExtrap()))
+        linear_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
+        linear_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
+        @allocated linear_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
     end
 
     function _alloc_test_linear_3d()
@@ -517,7 +517,7 @@ end
             @test _alloc_test_linear_deriv_val() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, extrap=ClampedExtrap())" begin
+        @testset "zero-alloc scalar (Range grids, extrap=ClampExtrap())" begin
             @test _alloc_test_linear_extrap_constant() <= ND_ALLOC_THRESHOLD
         end
 

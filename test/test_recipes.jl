@@ -48,7 +48,7 @@ using RecipesBase
     # Extrapolation Modes
     # ========================================
     @testset "Extrapolation Modes" begin
-        for extrap in [NoExtrap(), ClampedExtrap(), ExtendExtrap(), WrapExtrap()]
+        for extrap in [NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap()]
             @testset "extrap=:$extrap" begin
                 itp = cubic_interp(x, y; extrap=extrap)
                 recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
@@ -90,7 +90,7 @@ using RecipesBase
         end
 
         @testset "boundary clamp unchanged" begin
-            itp = cubic_interp(x, y; extrap=ClampedExtrap())
+            itp = cubic_interp(x, y; extrap=ClampExtrap())
             recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
             # Should have: 2 shading + 1 boundary + 1 scatter + 1 curve = 5 (no fill lines)
             @test length(recipes) == 5
@@ -428,7 +428,7 @@ using RecipesBase
         end
 
         @testset "ND extrap with CubicInterpolantND" begin
-            itp_ext = cubic_interp((x1, x2), data_2d; extrap=ClampedExtrap())
+            itp_ext = cubic_interp((x1, x2), data_2d; extrap=ClampExtrap())
             recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp_ext)
             @test !isempty(recipes)
             boundary_series = filter(recipes) do r

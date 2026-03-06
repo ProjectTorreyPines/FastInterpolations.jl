@@ -102,10 +102,10 @@ end
 # ========================================
 
 # Helper: result for constant/fill extrapolation outside domain
-# For value: return boundary y (ClampedExtrap) or fill value (FillExtrap)
+# For value: return boundary y (ClampExtrap) or fill value (FillExtrap)
 # For derivatives: always return zero from y_bnd (constant function has no slope/curvature)
 # Uses y_bnd (not fill value) for derivatives to avoid 0 * NaN = NaN
-@inline _constant_extrap_result(::EvalValue, y_bnd, ::ClampedExtrap) = y_bnd
+@inline _constant_extrap_result(::EvalValue, y_bnd, ::ClampExtrap) = y_bnd
 @inline _constant_extrap_result(::EvalValue, _, e::FillExtrap) = e.value
 @inline _constant_extrap_result(::EvalDeriv1, y_bnd, ::_ClampOrFill) = 0 * y_bnd  # abstract catches both
 @inline _constant_extrap_result(::EvalDeriv2, y_bnd, ::_ClampOrFill) = 0 * y_bnd

@@ -183,7 +183,7 @@ end
     _throw_extrap_domain_error(aq.xq, x_min, x_max)
 end
 
-# ClampedExtrap/FillExtrap - clamp to boundary or fill (value only, derivatives are zero)
+# ClampExtrap/FillExtrap - clamp to boundary or fill (value only, derivatives are zero)
 @inline function _eval_linear_series_point_extrap!(
     out::AbstractVector{Tv},
     y_point::Matrix{Tv},
@@ -302,7 +302,7 @@ Create a multi-Y linear interpolant for multiple y-data series sharing the same 
 # Arguments
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `s::Series`: Wrapped series data (varargs, vector-of-vectors, or matrix)
-- `extrap::AbstractExtrap`: `NoExtrap()`, `ClampedExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()`, `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `search::AbstractSearchPolicy`: Search policy for interval lookup
 
 # Returns

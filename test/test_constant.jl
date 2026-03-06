@@ -149,8 +149,8 @@ end
         @test_throws DomainError constant_interp(x, y, -1.0; extrap=NoExtrap())
         @test_throws DomainError constant_interp(x, y, 5.0; extrap=NoExtrap())
 
-        @test constant_interp(x, y, -1.0; extrap=ClampedExtrap()) == 10.0
-        @test constant_interp(x, y, 5.0; extrap=ClampedExtrap()) == 50.0
+        @test constant_interp(x, y, -1.0; extrap=ClampExtrap()) == 10.0
+        @test constant_interp(x, y, 5.0; extrap=ClampExtrap()) == 50.0
 
         @test constant_interp(x, y, -1.0; extrap=ExtendExtrap()) == 10.0
         @test constant_interp(x, y, 5.0; extrap=ExtendExtrap()) == 50.0
@@ -158,7 +158,7 @@ end
         @test constant_interp(x, y, 4.0; extrap=WrapExtrap()) == 10.0
         @test constant_interp(x, y, 4.5; extrap=WrapExtrap()) == 10.0
 
-        @test constant_interp(x, y, -1.0; extrap=ClampedExtrap(), deriv=DerivOp(1)) == 0.0
+        @test constant_interp(x, y, -1.0; extrap=ClampExtrap(), deriv=DerivOp(1)) == 0.0
     end
 
     @testset "Real type wrapper (Integer input)" begin
@@ -210,12 +210,12 @@ end
         # Test options pass through the wrappers correctly
         @test constant_interp(x_int, y_int, 0; side=RightSide()) == 10.0
         @test constant_interp(x_int, y_int, 0; side=LeftSide()) == 10.0
-        @test constant_interp(x_int, y_int, -1; extrap=ClampedExtrap()) == 10.0
-        @test constant_interp(x_int, y_int, 5; extrap=ClampedExtrap()) == 50.0
+        @test constant_interp(x_int, y_int, -1; extrap=ClampExtrap()) == 10.0
+        @test constant_interp(x_int, y_int, 5; extrap=ClampExtrap()) == 50.0
 
         # Test in-place wrapper with options
         out3 = zeros(2)
-        constant_interp!(out3, x_int, y_int, [-1, 5]; extrap=ClampedExtrap())
+        constant_interp!(out3, x_int, y_int, [-1, 5]; extrap=ClampExtrap())
         @test out3 ≈ [10.0, 50.0]
 
         # Test 2-arg callable with options
@@ -260,7 +260,7 @@ end
         itp_wrap = constant_interp(x, y; extrap=WrapExtrap())
         @test itp_wrap(4.0) == 10.0
 
-        itp_const = constant_interp(x, y; extrap=ClampedExtrap())
+        itp_const = constant_interp(x, y; extrap=ClampExtrap())
         @test itp_const(-1.0) == 10.0
         @test itp_const(5.0) == 50.0
 
@@ -276,7 +276,7 @@ end
         @test @inferred(itp(0.5)) isa Float64
         @test @inferred(constant_interp(x, y, 0.5)) isa Float64
         @test @inferred(constant_interp(x, y, 0.5; side=LeftSide())) isa Float64
-        @test @inferred(constant_interp(x, y, 0.5; extrap=ClampedExtrap())) isa Float64
+        @test @inferred(constant_interp(x, y, 0.5; extrap=ClampExtrap())) isa Float64
         @test @inferred(constant_interp(x, y, 0.5; deriv=DerivOp(1))) isa Float64
     end
 
@@ -316,8 +316,8 @@ end
     @testset "constant_interp! with extrap option" begin
         out = zeros(5)
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
-        constant_interp!(out, x, y, xq; extrap=ClampedExtrap())
-        allocs = @allocated constant_interp!(out, x, y, xq; extrap=ClampedExtrap())
+        constant_interp!(out, x, y, xq; extrap=ClampExtrap())
+        allocs = @allocated constant_interp!(out, x, y, xq; extrap=ClampExtrap())
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -450,7 +450,7 @@ end
     end
 
     @testset "DerivativeView - with options" begin
-        itp_const = constant_interp(x, y; extrap=ClampedExtrap())
+        itp_const = constant_interp(x, y; extrap=ClampExtrap())
         d1 = deriv1(itp_const)
         @test d1(-1.0) == 0.0
         @test d1(5.0) == 0.0
@@ -478,7 +478,7 @@ end
 
     @testset "Edge: xi == x[end] with extrap modes" begin
         @test constant_interp(x, y, 4.0; extrap=NoExtrap()) == 50.0
-        @test constant_interp(x, y, 4.0; extrap=ClampedExtrap()) == 50.0
+        @test constant_interp(x, y, 4.0; extrap=ClampExtrap()) == 50.0
         @test constant_interp(x, y, 4.0; extrap=ExtendExtrap()) == 50.0
         @test constant_interp(x, y, 4.0; extrap=WrapExtrap()) == 10.0
     end
@@ -492,8 +492,8 @@ end
     end
 
     @testset "Edge: Extrapolation + deriv" begin
-        @test constant_interp(x, y, -1.0; extrap=ClampedExtrap(), deriv=DerivOp(1)) == 0.0
-        @test constant_interp(x, y, 5.0; extrap=ClampedExtrap(), deriv=DerivOp(2)) == 0.0
+        @test constant_interp(x, y, -1.0; extrap=ClampExtrap(), deriv=DerivOp(1)) == 0.0
+        @test constant_interp(x, y, 5.0; extrap=ClampExtrap(), deriv=DerivOp(2)) == 0.0
         @test constant_interp(x, y, -1.0; extrap=ExtendExtrap(), deriv=DerivOp(1)) == 0.0
         @test constant_interp(x, y, 5.0; extrap=ExtendExtrap(), deriv=DerivOp(2)) == 0.0
         @test constant_interp(x, y, 4.5; extrap=WrapExtrap(), deriv=DerivOp(1)) == 0.0

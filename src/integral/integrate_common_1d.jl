@@ -21,7 +21,7 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-    ::ClampedExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+    ::ClampExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
 ) where Tout
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)

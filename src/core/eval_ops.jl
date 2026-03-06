@@ -92,7 +92,7 @@ Use concrete subtypes at the API boundary for compile-time dispatch.
 
 # Concrete subtypes
 - [`NoExtrap`](@ref): Throw `DomainError` for out-of-domain queries
-- [`ClampedExtrap`](@ref): Clamp to nearest boundary value
+- [`ClampExtrap`](@ref): Clamp to nearest boundary value
 - [`FillExtrap`](@ref): Return a user-specified constant for out-of-domain queries
 - [`ExtendExtrap`](@ref): Extend interpolation polynomial beyond domain
 - [`WrapExtrap`](@ref): Wrap queries into domain (periodic)
@@ -102,7 +102,7 @@ Use concrete subtypes at the API boundary for compile-time dispatch.
     ND heterogeneous tuples with all 5 types in one tuple may see dynamic dispatch.
     In practice, interpolants store concrete type parameters so this rarely matters.
 
-See also: `ConstExtrap()` (deprecated factory, forwards to `ClampedExtrap()`).
+See also: `ConstExtrap()` (deprecated factory, forwards to `ClampExtrap()`).
 """
 abstract type AbstractExtrap end
 
@@ -119,7 +119,7 @@ itp = cubic_interp((x, y), data; extrap=NoExtrap())
 struct NoExtrap <: AbstractExtrap end
 
 """
-    ClampedExtrap <: AbstractExtrap
+    ClampExtrap <: AbstractExtrap
 
 Constant extrapolation — clamps to nearest boundary value for out-of-domain queries.
 
@@ -129,11 +129,11 @@ at the clamped boundary point.
 
 # Example
 ```julia
-itp = cubic_interp(x, y; extrap=ClampedExtrap())  # clamp to boundary values
-itp = cubic_interp(x, y; extrap=ClampedExtrap())    # equivalent
+itp = cubic_interp(x, y; extrap=ClampExtrap())  # clamp to boundary values
+itp = cubic_interp(x, y; extrap=ClampExtrap())    # equivalent
 ```
 """
-struct ClampedExtrap <: AbstractExtrap end
+struct ClampExtrap <: AbstractExtrap end
 
 """
     FillExtrap{T} <: AbstractExtrap
@@ -161,24 +161,24 @@ FillExtrap(v::Complex{T}) where {T<:AbstractFloat} = FillExtrap{Complex{T}}(v)
 # Kwarg convenience
 FillExtrap(; value) = FillExtrap(value)
 
-# Internal union for dispatch where ClampedExtrap and FillExtrap share a code path
+# Internal union for dispatch where ClampExtrap and FillExtrap share a code path
 # (e.g., 1D OOB check + return constant, _handle_axis_extrap coordinate clamping).
-const _ClampOrFill = Union{ClampedExtrap, FillExtrap}
+const _ClampOrFill = Union{ClampExtrap, FillExtrap}
 
 # ConstExtrap backward-compatible factory (deprecated)
 """
     ConstExtrap()
 
-Deprecated factory function. Use `ClampedExtrap()` directly instead.
+Deprecated factory function. Use `ClampExtrap()` directly instead.
 
 # Examples
 ```julia
-ConstExtrap()  # → ClampedExtrap() (with deprecation warning)
+ConstExtrap()  # → ClampExtrap() (with deprecation warning)
 ```
 """
 function ConstExtrap()
-    Base.depwarn("`ConstExtrap()` is deprecated, use `ClampedExtrap()` instead.", :ConstExtrap)
-    return ClampedExtrap()
+    Base.depwarn("`ConstExtrap()` is deprecated, use `ClampExtrap()` instead.", :ConstExtrap)
+    return ClampExtrap()
 end
 
 """
@@ -191,7 +191,7 @@ Mirrors the `_PromotableValue` two-tier pattern used for grid/value promotion:
   via `convert(Tv, e.value)` at construction time — always safe for standard numerics.
 - Duck-type fill values (SVector, Dual, etc.): passed through unchanged. The caller is
   responsible for providing a fill value whose type is already compatible with `Tv`.
-- All non-FillExtrap types (ClampedExtrap, NoExtrap, etc.): passed through unchanged.
+- All non-FillExtrap types (ClampExtrap, NoExtrap, etc.): passed through unchanged.
 """
 @inline _promote_extrap(e::FillExtrap{<:_PromotableValue}, ::Type{Tv}) where {Tv} =
     FillExtrap{Tv}(convert(Tv, e.value))

@@ -188,9 +188,9 @@ end
             @test_throws DomainError itp((0.5, 1.1))
         end
 
-        @testset "extrap=ClampedExtrap()" begin
+        @testset "extrap=ClampExtrap()" begin
             itp = quadratic_interp((x, y), data;
-                bc=Right(QuadraticFit()), extrap=ClampedExtrap())
+                bc=Right(QuadraticFit()), extrap=ClampExtrap())
             @test itp((-0.1, 0.5)) ≈ itp((0.0, 0.5))
             @test itp((2.1, 0.5)) ≈ itp((2.0, 0.5))
             @test itp((0.5, 1.1)) ≈ itp((0.5, 1.0))
@@ -207,7 +207,7 @@ end
         @testset "per-axis extrap" begin
             itp = quadratic_interp((x, y), data;
                 bc=Right(QuadraticFit()),
-                extrap=(ClampedExtrap(), ExtendExtrap()))
+                extrap=(ClampExtrap(), ExtendExtrap()))
             @test itp((-0.1, 0.5)) ≈ itp((0.0, 0.5)) rtol=1e-10
             @test isfinite(itp((1.0, 1.5)))
         end
@@ -533,9 +533,9 @@ end
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; extrap=ClampedExtrap())
-        quadratic_interp((x, y), data, query; extrap=ClampedExtrap())
-        @allocated quadratic_interp((x, y), data, query; extrap=ClampedExtrap())
+        quadratic_interp((x, y), data, query; extrap=ClampExtrap())
+        quadratic_interp((x, y), data, query; extrap=ClampExtrap())
+        @allocated quadratic_interp((x, y), data, query; extrap=ClampExtrap())
     end
 
     function _alloc_test_quadratic_extrap_wrap_periodic()
@@ -553,9 +553,9 @@ end
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; extrap=(NoExtrap(), ClampedExtrap()))
-        quadratic_interp((x, y), data, query; extrap=(NoExtrap(), ClampedExtrap()))
-        @allocated quadratic_interp((x, y), data, query; extrap=(NoExtrap(), ClampedExtrap()))
+        quadratic_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
+        quadratic_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
+        @allocated quadratic_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
     end
 
     function _alloc_test_quadratic_3d()
@@ -586,7 +586,7 @@ end
             @test _alloc_test_quadratic_natural_bc() <= ND_ALLOC_THRESHOLD
         end
 
-        @testset "zero-alloc scalar (Range grids, extrap=ClampedExtrap())" begin
+        @testset "zero-alloc scalar (Range grids, extrap=ClampExtrap())" begin
             @test _alloc_test_quadratic_extrap_constant() <= ND_ALLOC_THRESHOLD
         end
 

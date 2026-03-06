@@ -134,8 +134,8 @@ const FI = FastInterpolations
             @test_throws DomainError sitp(1.1)
         end
 
-        @testset "extrap=ClampedExtrap() returns boundary" begin
-            sitp = linear_interp(x, Series(ys); extrap=ClampedExtrap())
+        @testset "extrap=ClampExtrap() returns boundary" begin
+            sitp = linear_interp(x, Series(ys); extrap=ClampExtrap())
             @test sitp(-0.1)[1] ≈ sin(0.0) atol=1e-6
             @test sitp(1.1)[1] ≈ sin(2π) atol=1e-6
         end
@@ -375,8 +375,8 @@ const FI = FastInterpolations
             @test_throws DomainError sitp(xq)
         end
 
-        @testset "vector ClampedExtrap() extrapolation" begin
-            sitp = linear_interp(x, Series(y1, y2); extrap=ClampedExtrap())
+        @testset "vector ClampExtrap() extrapolation" begin
+            sitp = linear_interp(x, Series(y1, y2); extrap=ClampExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             outputs = [zeros(3), zeros(3)]
@@ -398,8 +398,8 @@ const FI = FastInterpolations
             @test !any(isnan, outputs[2])
         end
 
-        @testset "vector ClampedExtrap() extrapolation with derivatives" begin
-            sitp = linear_interp(x, Series(y1, y2); extrap=ClampedExtrap())
+        @testset "vector ClampExtrap() extrapolation with derivatives" begin
+            sitp = linear_interp(x, Series(y1, y2); extrap=ClampExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             # deriv=DerivOp(1) outside domain should be zero for constant extrap

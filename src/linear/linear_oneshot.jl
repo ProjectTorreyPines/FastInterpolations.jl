@@ -24,7 +24,7 @@ Zero-allocation linear interpolation with automatic dispatch:
 
 # Arguments
 - `output`: Pre-allocated output vector (must be floating-point type)
-- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ClampedExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative, `DerivOp(2)` second derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `BinarySearch()` (default): O(log n) binary search, stateless
@@ -178,7 +178,7 @@ Zero-allocation scalar linear interpolation with automatic dispatch:
 
 # Arguments
 - `xq::Real`: Single interpolation query point
-- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ClampedExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()` (default, throws DomainError), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `deriv::DerivOp`: Derivative order (`EvalValue()` default, `DerivOp(1)` first derivative)
 - `search::AbstractSearchPolicy`: Search algorithm for interval finding
   - `BinarySearch()` (default): O(log n) binary search, stateless

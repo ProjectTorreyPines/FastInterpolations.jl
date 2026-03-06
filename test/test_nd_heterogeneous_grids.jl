@@ -332,7 +332,7 @@ using FastInterpolations
 
         itp = quadratic_interp((x_range, y_vec), data;
                                bc=Right(QuadraticFit()),
-                               extrap=(ClampedExtrap(), ExtendExtrap()))
+                               extrap=(ClampExtrap(), ExtendExtrap()))
         @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) atol=1e-8
         @test itp((-0.1, 0.5)) ≈ itp((0.0, 0.5)) rtol=1e-10
         @test isfinite(itp((1.0, 1.5)))
@@ -371,10 +371,10 @@ using FastInterpolations
         y_vec   = [0.0, 0.3, 0.6, 0.8, 1.0]
         data = [f(xi, yj) for xi in x_range, yj in y_vec]
 
-        # Per-axis extrapolation: ClampedExtrap() on x, ExtendExtrap() on y
+        # Per-axis extrapolation: ClampExtrap() on x, ExtendExtrap() on y
         itp = cubic_interp((x_range, y_vec), data;
                            bc=CubicFit(),
-                           extrap=(ClampedExtrap(), ExtendExtrap()))
+                           extrap=(ClampExtrap(), ExtendExtrap()))
 
         # Interior should work normally
         @test itp((1.0, 0.5); deriv=DerivOp(1, 0)) ≈ 0.5 atol=1e-6

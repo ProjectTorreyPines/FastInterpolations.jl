@@ -82,7 +82,7 @@ Create a callable interpolant for broadcast fusion and reuse.
 - `x::AbstractVector`: x-coordinates (sorted, length ≥ 2)
 - `y::AbstractVector`: y-values
 - `bc`: Boundary condition (Left, Right, MinCurvFit, or Left/Right with QuadraticFit)
-- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ClampedExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
+- `extrap::AbstractExtrap`: `NoExtrap()` (default), `ClampExtrap()`, `ExtendExtrap()`, or `WrapExtrap()`
 - `search::AbstractSearchPolicy`: Default search policy (default: `AutoSearch()`)
 
 # Returns

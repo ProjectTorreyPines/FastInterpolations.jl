@@ -9,7 +9,7 @@ Extrapolation in ND works per-axis, using the same modes as [1D extrapolation](.
 | Mode | Behavior |
 |:-----|:---------|
 | `NoExtrap()` | `DomainError` (default) |
-| `ClampedExtrap()` | Clamp to boundary value |
+| `ClampExtrap()` | Clamp to boundary value |
 | `ExtendExtrap()` | Extend boundary polynomial |
 | `WrapExtrap()` | Wrap coordinates periodically |
 
@@ -43,12 +43,12 @@ itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=NoExtrap())
 plot(itp; kw...)
 ```
 
-### `ClampedExtrap()`
+### `ClampExtrap()`
 
 Boundary values are held constant — flat color bands extend from each edge:
 
 ```@example nd_extrap
-itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=ClampedExtrap())
+itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=ClampExtrap())
 plot(itp; kw...)
 ```
 
@@ -87,7 +87,7 @@ plot(itp; kw...)
 Different extrapolation modes can be assigned independently to each axis via a tuple:
 
 ```julia
-itp = cubic_interp((x, y), data; extrap=(ClampedExtrap(), ExtendExtrap()))
+itp = cubic_interp((x, y), data; extrap=(ClampExtrap(), ExtendExtrap()))
 ```
 
 ### Constant × None
@@ -95,7 +95,7 @@ itp = cubic_interp((x, y), data; extrap=(ClampedExtrap(), ExtendExtrap()))
 Constant extrapolation on x₁, strict domain on x₂ — the heatmap extends **only horizontally**:
 
 ```@example nd_extrap
-itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=(ClampedExtrap(), NoExtrap()))
+itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=(ClampExtrap(), NoExtrap()))
 plot(itp; kw...)
 ```
 
@@ -104,7 +104,7 @@ plot(itp; kw...)
 Constant extrapolation on x₁, wrap periodically on x₂:
 
 ```@example nd_extrap
-itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=(ClampedExtrap(), WrapExtrap()))
+itp = cubic_interp((xs, ys), data; bc=CubicFit(), extrap=(ClampExtrap(), WrapExtrap()))
 plot(itp; kw...)
 ```
 

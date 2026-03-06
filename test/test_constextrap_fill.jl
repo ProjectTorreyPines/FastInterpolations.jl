@@ -7,14 +7,14 @@ using FastInterpolations
     # ────────────────────────────────────────────
     @testset "FillExtrap type hierarchy" begin
         # FillExtrap is a concrete type under AbstractExtrap
-        @test ClampedExtrap <: AbstractExtrap
+        @test ClampExtrap <: AbstractExtrap
         @test FillExtrap <: AbstractExtrap
-        @test !(ClampedExtrap <: FillExtrap)
-        @test !(FillExtrap <: ClampedExtrap)
+        @test !(ClampExtrap <: FillExtrap)
+        @test !(FillExtrap <: ClampExtrap)
 
         # No-arg factory: boundary clamp
-        e0 = ClampedExtrap()
-        @test e0 isa ClampedExtrap
+        e0 = ClampExtrap()
+        @test e0 isa ClampExtrap
 
         # Float value: auto-promote Int → Float64
         e1 = FillExtrap(0)
@@ -41,7 +41,7 @@ using FastInterpolations
         @test e5 isa FillExtrap{Nothing}
 
         # Direct construction
-        @test ClampedExtrap() isa ClampedExtrap
+        @test ClampExtrap() isa ClampExtrap
         @test FillExtrap(NaN) isa FillExtrap{Float64}
         @test FillExtrap(0.0f0) isa FillExtrap{Float32}
     end
@@ -53,8 +53,8 @@ using FastInterpolations
         @test _promote_extrap(NoExtrap(), Float64) === NoExtrap()
         @test _promote_extrap(ExtendExtrap(), Float64) === ExtendExtrap()
 
-        # ClampedExtrap passes through regardless of Tv
-        e_clamp = ClampedExtrap()
+        # ClampExtrap passes through regardless of Tv
+        e_clamp = ClampExtrap()
         @test _promote_extrap(e_clamp, Float64) === e_clamp
         @test _promote_extrap(e_clamp, Float32) === e_clamp
 
@@ -85,7 +85,7 @@ using FastInterpolations
         @test isnan(itp_nan(x_below))
         @test isnan(itp_nan(x_above))
         # In-domain should work normally
-        @test itp_nan(2.5) ≈ cubic_interp(x, y; extrap=ClampedExtrap())(2.5)
+        @test itp_nan(2.5) ≈ cubic_interp(x, y; extrap=ClampExtrap())(2.5)
 
         # Zero fill
         itp_zero = cubic_interp(x, y; extrap=FillExtrap(0.0))
@@ -109,7 +109,7 @@ using FastInterpolations
         itp = linear_interp(x, y; extrap=FillExtrap(NaN))
         @test isnan(itp(x_below))
         @test isnan(itp(x_above))
-        @test itp(2.5) ≈ linear_interp(x, y; extrap=ClampedExtrap())(2.5)
+        @test itp(2.5) ≈ linear_interp(x, y; extrap=ClampExtrap())(2.5)
 
         # Derivative = 0
         @test iszero(itp(x_below; deriv=DerivOp(1)))
@@ -119,7 +119,7 @@ using FastInterpolations
         itp = quadratic_interp(x, y; extrap=FillExtrap(-1.0))
         @test itp(x_below) === -1.0
         @test itp(x_above) === -1.0
-        @test itp(2.5) ≈ quadratic_interp(x, y; extrap=ClampedExtrap())(2.5)
+        @test itp(2.5) ≈ quadratic_interp(x, y; extrap=ClampExtrap())(2.5)
 
         # Derivative = 0
         @test iszero(itp(x_below; deriv=DerivOp(1)))
@@ -129,7 +129,7 @@ using FastInterpolations
         itp = constant_interp(x, y; extrap=FillExtrap(99.0))
         @test itp(x_below) === 99.0
         @test itp(x_above) === 99.0
-        @test itp(2.5) ≈ constant_interp(x, y; extrap=ClampedExtrap())(2.5)
+        @test itp(2.5) ≈ constant_interp(x, y; extrap=ClampExtrap())(2.5)
     end
 
     # ────────────────────────────────────────────
@@ -180,7 +180,7 @@ using FastInterpolations
     # Boundary clamp backward compat
     # ────────────────────────────────────────────
     @testset "Boundary clamp unchanged" begin
-        itp_clamp = cubic_interp(x, y; extrap=ClampedExtrap())
+        itp_clamp = cubic_interp(x, y; extrap=ClampExtrap())
         # Below domain → y[1]
         @test itp_clamp(x_below) ≈ y[1]
         # Above domain → y[end]
@@ -231,7 +231,7 @@ using FastInterpolations
             @test itp((-0.1, 1.0)) === 0.0
             @test itp((0.5, 2.5)) === 0.0
             # In-domain unchanged
-            ref = cubic_interp((xg, yg), data2d; extrap=ClampedExtrap())
+            ref = cubic_interp((xg, yg), data2d; extrap=ClampExtrap())
             @test itp((0.5, 1.0)) ≈ ref((0.5, 1.0))
         end
 
@@ -247,7 +247,7 @@ using FastInterpolations
         @testset "Per-axis mixed extrap" begin
             # Fill on x, clamp on y
             itp = cubic_interp((xg, yg), data2d;
-                extrap=(FillExtrap(NaN), ClampedExtrap()))
+                extrap=(FillExtrap(NaN), ClampExtrap()))
             # OOB on x → fill
             @test isnan(itp((-0.1, 1.0)))
             # OOB on y → clamp (not fill)
@@ -264,7 +264,7 @@ using FastInterpolations
 
         # -- Boundary clamp backward compat --
         @testset "ND boundary clamp unchanged" begin
-            itp = cubic_interp((xg, yg), data2d; extrap=ClampedExtrap())
+            itp = cubic_interp((xg, yg), data2d; extrap=ClampExtrap())
             @test itp((0.5, 0.5)) isa Float64
             # Clamp behavior: OOB queries get clamped to boundary
             @test !isnan(itp((-0.1, 1.0)))
@@ -352,7 +352,7 @@ using FastInterpolations
     @testset "Integral with fill value" begin
         itp_nan = cubic_interp(x, y; extrap=FillExtrap(NaN))
         itp_zero = cubic_interp(x, y; extrap=FillExtrap(0.0))
-        itp_clamp = cubic_interp(x, y; extrap=ClampedExtrap())
+        itp_clamp = cubic_interp(x, y; extrap=ClampExtrap())
 
         # NaN fill → NaN integral when bounds extend outside domain
         @test isnan(integrate(itp_nan, -1.0, 1.0))
@@ -371,7 +371,7 @@ using FastInterpolations
     # Display
     # ────────────────────────────────────────────
     @testset "show formatting" begin
-        itp_clamp = cubic_interp(x, y; extrap=ClampedExtrap())
+        itp_clamp = cubic_interp(x, y; extrap=ClampExtrap())
         itp_nan = cubic_interp(x, y; extrap=FillExtrap(NaN))
         itp_zero = cubic_interp(x, y; extrap=FillExtrap(0.0))
 
@@ -380,7 +380,7 @@ using FastInterpolations
         s_nan = sprint(show, MIME("text/plain"), itp_nan)
         s_zero = sprint(show, MIME("text/plain"), itp_zero)
 
-        @test occursin("ClampedExtrap", s_clamp)
+        @test occursin("ClampExtrap", s_clamp)
         @test !occursin("FillExtrap(", s_clamp)  # no parens for boundary clamp
         @test occursin("FillExtrap(NaN)", s_nan)
         @test occursin("FillExtrap(0.0)", s_zero)
@@ -391,7 +391,7 @@ using FastInterpolations
     # ────────────────────────────────────────────
     @testset "Extrap factory :clamped and :fill" begin
         e1 = Extrap(:clamped)
-        @test e1 isa ClampedExtrap
+        @test e1 isa ClampExtrap
 
         e2 = Extrap(:fill; value=NaN)
         @test e2 isa FillExtrap{Float64}
@@ -406,7 +406,7 @@ using FastInterpolations
 
         # :constant deprecated but still works
         e4 = @test_deprecated Extrap(:constant)
-        @test e4 isa ClampedExtrap
+        @test e4 isa ClampExtrap
     end
 
     # ────────────────────────────────────────────
@@ -494,17 +494,17 @@ using FastInterpolations
     end
 
     # ────────────────────────────────────────────
-    # ClampedExtrap ND derivative correctness
+    # ClampExtrap ND derivative correctness
     # ────────────────────────────────────────────
-    # ClampedExtrap clamps the query to the domain boundary and evaluates normally.
+    # ClampExtrap clamps the query to the domain boundary and evaluates normally.
     # Derivatives at the clamped point are the REAL derivatives at the boundary,
     # not zeroed out. For f(x,y) = x² + y²: at boundary x=0, ∂f/∂x = 0, ∂²f/∂x² = 2.
-    @testset "ClampedExtrap ND derivative correctness" begin
+    @testset "ClampExtrap ND derivative correctness" begin
         xg = range(0.0, 1.0, length=11)
         yg = range(0.0, 1.0, length=11)
         # f(x,y) = x² + y² → ∂f/∂x = 2x, ∂f/∂y = 2y, ∂²f/∂x² = ∂²f/∂y² = 2
         data = [xi^2 + yj^2 for xi in xg, yj in yg]
-        itp = cubic_interp((xg, yg), data; extrap=ClampedExtrap())
+        itp = cubic_interp((xg, yg), data; extrap=ClampExtrap())
 
         # In-domain: gradient should be correct
         g_in = gradient(itp, (0.5, 0.5))
@@ -555,16 +555,16 @@ using FastInterpolations
     end
 
     # ────────────────────────────────────────────
-    # Mixed ClampedExtrap/FillExtrap per-axis
+    # Mixed ClampExtrap/FillExtrap per-axis
     # ────────────────────────────────────────────
-    @testset "Mixed ClampedExtrap/FillExtrap per-axis derivatives" begin
+    @testset "Mixed ClampExtrap/FillExtrap per-axis derivatives" begin
         xg = range(0.0, 1.0, length=11)
         yg = range(0.0, 1.0, length=11)
         data = [xi^2 + yj^2 for xi in xg, yj in yg]
 
-        # axis 1: ClampedExtrap, axis 2: FillExtrap(NaN)
+        # axis 1: ClampExtrap, axis 2: FillExtrap(NaN)
         itp = cubic_interp((xg, yg), data;
-            extrap=(ClampedExtrap(), FillExtrap(NaN)))
+            extrap=(ClampExtrap(), FillExtrap(NaN)))
 
         # In-domain → normal
         @test isfinite(itp((0.5, 0.5)))

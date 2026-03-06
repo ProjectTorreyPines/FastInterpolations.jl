@@ -72,16 +72,16 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
     @testset "Extrap" begin
         @testset "Symbol → Concrete Type" begin
             @test Extrap(:none) isa NoExtrap
-            @test Extrap(:clamped) isa ClampedExtrap
+            @test Extrap(:clamped) isa ClampExtrap
             @test Extrap(:fill; value=NaN) isa FillExtrap{Float64}
             @test Extrap(:fill; value=0.0).value === 0.0
             @test Extrap(:extend) isa ExtendExtrap
             @test Extrap(:wrap) isa WrapExtrap
         end
 
-        @testset ":constant deprecated → ClampedExtrap" begin
+        @testset ":constant deprecated → ClampExtrap" begin
             e = @test_deprecated Extrap(:constant)
-            @test e isa ClampedExtrap
+            @test e isa ClampExtrap
         end
 
         @testset ":fill requires value keyword" begin
@@ -90,7 +90,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
 
         @testset "Passthrough" begin
             @test Extrap(NoExtrap()) === NoExtrap()
-            @test Extrap(ClampedExtrap()) === ClampedExtrap()
+            @test Extrap(ClampExtrap()) === ClampExtrap()
             @test Extrap(ExtendExtrap()) === ExtendExtrap()
             @test Extrap(WrapExtrap()) === WrapExtrap()
         end
@@ -167,7 +167,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
             @test result == (ExtendExtrap(), NoExtrap(), WrapExtrap())
 
             result2 = Extrap(:clamped, :extend)
-            @test result2 isa Tuple{ClampedExtrap, ExtendExtrap}
+            @test result2 isa Tuple{ClampExtrap, ExtendExtrap}
         end
 
         @testset "Side variadic" begin

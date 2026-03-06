@@ -534,9 +534,9 @@ _val(d::MyDuck) = d.v
             @test_throws DomainError itp(xq_right)
         end
 
-        @testset "ClampedExtrap" begin
-            itp = linear_interp(x_vec, y_generic; extrap=ClampedExtrap())
-            itp_ref = linear_interp(x_vec, y_generic_flat; extrap=ClampedExtrap())
+        @testset "ClampExtrap" begin
+            itp = linear_interp(x_vec, y_generic; extrap=ClampExtrap())
+            itp_ref = linear_interp(x_vec, y_generic_flat; extrap=ClampExtrap())
             @test itp(xq_left) isa MyDuck
             @test itp(xq_right) isa MyDuck
             @test _val(itp(xq_left)) == _val(y_generic[1])
@@ -563,9 +563,9 @@ _val(d::MyDuck) = d.v
             @test _val(itp(xq_right)) ≈ itp_ref(xq_right)
         end
 
-        @testset "ClampedExtrap quadratic" begin
-            itp = quadratic_interp(x_vec, y_generic; extrap=ClampedExtrap())
-            itp_ref = quadratic_interp(x_vec, y_generic_flat; extrap=ClampedExtrap())
+        @testset "ClampExtrap quadratic" begin
+            itp = quadratic_interp(x_vec, y_generic; extrap=ClampExtrap())
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; extrap=ClampExtrap())
             @test itp(xq_left) isa MyDuck
             @test itp(xq_right) isa MyDuck
             @test _val(itp(xq_left)) ≈ itp_ref(xq_left)
@@ -802,10 +802,10 @@ _val(d::MyDuck) = d.v
             @test _val(r) ≈ itp_ref(6.5; deriv=DerivOp(1))
         end
 
-        @testset "cubic deriv2 + ClampedExtrap" begin
-            itp = cubic_interp(x_vec, y_generic; extrap=ClampedExtrap())
-            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ClampedExtrap())
-            # ClampedExtrap with deriv → 0 (derivative of constant is 0)
+        @testset "cubic deriv2 + ClampExtrap" begin
+            itp = cubic_interp(x_vec, y_generic; extrap=ClampExtrap())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ClampExtrap())
+            # ClampExtrap with deriv → 0 (derivative of constant is 0)
             r = itp(-0.5; deriv=DerivOp(1))
             @test r isa MyDuck
             @test _val(r) ≈ itp_ref(-0.5; deriv=DerivOp(1))
@@ -1303,9 +1303,9 @@ _val(d::MyDuck) = d.v
     # SECTION 23: ND EXTRAPOLATION — per-axis modes
     # ================================================================
     @testset "29. ND Extrapolation" begin
-        @testset "2D cubic ClampedExtrap" begin
-            itp = cubic_interp((xg, yg), data_2d; extrap=ClampedExtrap())
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap=ClampedExtrap())
+        @testset "2D cubic ClampExtrap" begin
+            itp = cubic_interp((xg, yg), data_2d; extrap=ClampExtrap())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap=ClampExtrap())
             r = itp((-0.5, 1.5))
             @test r isa MyDuck
             @test _val(r) ≈ itp_ref((-0.5, 1.5))
@@ -1313,9 +1313,9 @@ _val(d::MyDuck) = d.v
             @test r isa MyDuck
             @test _val(r) ≈ itp_ref((1.5, 3.5))
         end
-        @testset "2D linear ClampedExtrap" begin
-            itp = linear_interp((xg, yg), data_2d; extrap=ClampedExtrap())
-            itp_ref = linear_interp((xg, yg), data_2d_flat; extrap=ClampedExtrap())
+        @testset "2D linear ClampExtrap" begin
+            itp = linear_interp((xg, yg), data_2d; extrap=ClampExtrap())
+            itp_ref = linear_interp((xg, yg), data_2d_flat; extrap=ClampExtrap())
             r = itp((-0.5, 1.5))
             @test r isa MyDuck
             @test _val(r) ≈ itp_ref((-0.5, 1.5))
@@ -1327,16 +1327,16 @@ _val(d::MyDuck) = d.v
             @test r isa MyDuck
             @test _val(r) ≈ itp_ref((-0.5, 1.5))
         end
-        @testset "2D quadratic ClampedExtrap" begin
-            itp = quadratic_interp((xg, yg), data_2d; extrap=ClampedExtrap())
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; extrap=ClampedExtrap())
+        @testset "2D quadratic ClampExtrap" begin
+            itp = quadratic_interp((xg, yg), data_2d; extrap=ClampExtrap())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; extrap=ClampExtrap())
             r = itp((-0.5, 1.5))
             @test r isa MyDuck
             @test _val(r) ≈ itp_ref((-0.5, 1.5))
         end
-        @testset "2D per-axis extrap (ClampedExtrap, ExtendExtrap)" begin
-            itp = cubic_interp((xg, yg), data_2d; extrap=(ClampedExtrap(), ExtendExtrap()))
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap=(ClampedExtrap(), ExtendExtrap()))
+        @testset "2D per-axis extrap (ClampExtrap, ExtendExtrap)" begin
+            itp = cubic_interp((xg, yg), data_2d; extrap=(ClampExtrap(), ExtendExtrap()))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap=(ClampExtrap(), ExtendExtrap()))
             r = itp((-0.5, 3.5))
             @test r isa MyDuck
             @test _val(r) ≈ itp_ref((-0.5, 3.5))
@@ -1726,10 +1726,10 @@ _val(d::MyDuck) = d.v
             @test @inferred(itp(xq)) isa MyDuck
         end
 
-        # --- Boundary clamp (ClampedExtrap()) still works with duck types ---
+        # --- Boundary clamp (ClampExtrap()) still works with duck types ---
         @testset "boundary clamp unchanged" begin
-            itp = cubic_interp(x_vec, y_generic; extrap=ClampedExtrap())
-            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ClampedExtrap())
+            itp = cubic_interp(x_vec, y_generic; extrap=ClampExtrap())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ClampExtrap())
             @test itp(xq_left) isa MyDuck
             @test _val(itp(xq_left)) ≈ itp_ref(xq_left)    # y[1]
             @test _val(itp(xq_right)) ≈ itp_ref(xq_right)  # y[end]

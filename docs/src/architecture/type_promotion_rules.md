@@ -125,7 +125,7 @@ cause boxing on every out-of-domain query.
 !!! note "Historical context"
     `{T}` was originally introduced to distinguish `ConstExtrap{Nothing}` (clamped) from
     `ConstExtrap{Tv}` (fill). Since the refactor split these into separate types
-    (`ClampedExtrap` and `FillExtrap`), the `{T}` parameter now serves only the
+    (`ClampExtrap` and `FillExtrap`), the `{T}` parameter now serves only the
     type-stability purpose.
 
 ### Outer constructors
@@ -153,7 +153,7 @@ _promote_extrap(e::FillExtrap{<:_PromotableValue}, ::Type{Tv}) =
 # Duck types: pass through unchanged (user is responsible for correct type)
 _promote_extrap(e::FillExtrap, ::Type) = e
 
-# All other AbstractExtrap (ClampedExtrap, NoExtrap, etc.): pass through
+# All other AbstractExtrap (ClampExtrap, NoExtrap, etc.): pass through
 _promote_extrap(e::AbstractExtrap, ::Type) = e
 ```
 

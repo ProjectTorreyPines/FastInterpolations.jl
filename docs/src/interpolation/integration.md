@@ -98,7 +98,7 @@ x = range(0.0, 2π, 50)
 y = sin.(x)
 
 # Constant extrapolation means f(x) = f(x₁) for x < x₁
-itp_flat = cubic_interp(x, y; extrap=ClampedExtrap())
+itp_flat = cubic_interp(x, y; extrap=ClampExtrap())
 
 # Integrates the constant value outside the domain
 integrate(itp_flat, -1.0, 10.0)
@@ -108,7 +108,7 @@ nothing #hide
 | Mode | Effect on Integration |
 |------|-----------------------|
 | `NoExtrap()` | Error if bounds are outside domain. |
-| `ClampedExtrap()` | Linearly adds area (value × distance). |
+| `ClampExtrap()` | Linearly adds area (value × distance). |
 | `ExtendExtrap()` | Evaluation continues using the polynomial of the boundary cell. |
 | `WrapExtrap()` | Periodic integration. |
 

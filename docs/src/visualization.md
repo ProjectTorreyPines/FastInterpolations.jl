@@ -13,7 +13,7 @@ x = [0.0, 0.7, 1.5, 2.3, 3.0, 4.2, 5.0, 6.0]
 y = [0.2, 1.1, 0.6, 1.8, 1.2, 0.4, 1.5, 0.8]
 
 # Create interpolant and plot
-itp = cubic_interp(x, y; extrap=ClampedExtrap())
+itp = cubic_interp(x, y; extrap=ClampExtrap())
 plot(itp)
 ```
 
@@ -69,7 +69,7 @@ y = sin.(x)
 
 plot(
     plot(cubic_interp(x, y; extrap=NoExtrap()), title="extrap=NoExtrap()"),
-    plot(cubic_interp(x, y; extrap=ClampedExtrap()), title="extrap=ClampedExtrap()"),
+    plot(cubic_interp(x, y; extrap=ClampExtrap()), title="extrap=ClampExtrap()"),
     plot(cubic_interp(x, y; extrap=ExtendExtrap()), title="extrap=ExtendExtrap()"),
     plot(cubic_interp(x, y; extrap=WrapExtrap()), title="extrap=WrapExtrap()"),
     layout=(2, 2), size=(900, 600)
@@ -85,7 +85,7 @@ All standard Plots.jl attributes work alongside our custom recipe options.
 ```@example viz
 x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
 y = [0.0, 0.8, 0.9, 0.4, 0.2, 0.6]
-itp = cubic_interp(x, y; extrap=ClampedExtrap())
+itp = cubic_interp(x, y; extrap=ClampExtrap())
 
 plot(itp;
     title="Styled Interpolant",

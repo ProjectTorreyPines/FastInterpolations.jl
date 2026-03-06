@@ -678,12 +678,12 @@ import FastInterpolations: _get_cubic_cache
         end
 
         # Warmup all modes
-        for mode in (NoExtrap(), ClampedExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             linear_typed_extrap(mode)
             linear_typed_extrap(mode)
         end
 
-        for mode in (NoExtrap(), ClampedExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             allocs = @allocated linear_typed_extrap(mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -699,12 +699,12 @@ import FastInterpolations: _get_cubic_cache
             linear_interp!(out, x, y, x_query; extrap=mode)
         end
 
-        for mode in (NoExtrap(), ClampedExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             linear_typed_extrap!(output, mode)
             linear_typed_extrap!(output, mode)
         end
 
-        for mode in (NoExtrap(), ClampedExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             allocs = @allocated linear_typed_extrap!(output, mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -721,12 +721,12 @@ import FastInterpolations: _get_cubic_cache
             cubic_interp(x, y, 0.5; extrap=mode)
         end
 
-        for mode in (NoExtrap(), ClampedExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             cubic_typed_extrap(mode)
             cubic_typed_extrap(mode)
         end
 
-        for mode in (NoExtrap(), ClampedExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             allocs = @allocated cubic_typed_extrap(mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -744,12 +744,12 @@ import FastInterpolations: _get_cubic_cache
             cubic_interp!(out, x, y, x_query; extrap=mode)
         end
 
-        for mode in (NoExtrap(), ClampedExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             cubic_typed_extrap!(output, mode)
             cubic_typed_extrap!(output, mode)
         end
 
-        for mode in (NoExtrap(), ClampedExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             allocs = @allocated cubic_typed_extrap!(output, mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -800,7 +800,7 @@ import FastInterpolations: _get_cubic_cache
     # FillExtrap Fill Value — Zero Allocation Tests
     # =========================================================================
     # Verifies that FillExtrap(value) fill-value paths are zero-allocation,
-    # matching the zero-allocation guarantee of ClampedExtrap() (boundary clamp).
+    # matching the zero-allocation guarantee of ClampExtrap() (boundary clamp).
 
     @testset "FillExtrap fill value: linear oneshot scalar" begin
         x = collect(range(0.0, 1.0, 51))
@@ -810,7 +810,7 @@ import FastInterpolations: _get_cubic_cache
             linear_interp(x, y, xq; extrap=mode)
         end
 
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             linear_constextrap_fill(0.5, mode)
             linear_constextrap_fill(-0.5, mode)  # out-of-domain
             linear_constextrap_fill(0.5, mode)
@@ -818,13 +818,13 @@ import FastInterpolations: _get_cubic_cache
         end
 
         # In-domain: should match boundary clamp allocation
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             allocs = @allocated linear_constextrap_fill(0.5, mode)
             @test allocs <= ALLOC_THRESHOLD
         end
 
         # Out-of-domain: fill value path must also be zero-alloc
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             allocs = @allocated linear_constextrap_fill(-0.5, mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -841,14 +841,14 @@ import FastInterpolations: _get_cubic_cache
             cubic_interp(x, y, xq; extrap=mode)
         end
 
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             cubic_constextrap_fill(0.5, mode)
             cubic_constextrap_fill(-0.5, mode)
             cubic_constextrap_fill(0.5, mode)
             cubic_constextrap_fill(-0.5, mode)
         end
 
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             allocs = @allocated cubic_constextrap_fill(0.5, mode)
             @test allocs <= ALLOC_THRESHOLD
             allocs = @allocated cubic_constextrap_fill(-0.5, mode)
@@ -860,7 +860,7 @@ import FastInterpolations: _get_cubic_cache
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
 
-        itp_clamp = linear_interp(x, y; extrap=ClampedExtrap())
+        itp_clamp = linear_interp(x, y; extrap=ClampExtrap())
         itp_zero = linear_interp(x, y; extrap=FillExtrap(0.0))
         itp_nan = linear_interp(x, y; extrap=FillExtrap(NaN))
 
@@ -912,7 +912,7 @@ import FastInterpolations: _get_cubic_cache
         s = Series(y_mat)
         out = Vector{Float64}(undef, 2)
 
-        sitp_clamp = linear_interp(x, s; extrap=ClampedExtrap())
+        sitp_clamp = linear_interp(x, s; extrap=ClampExtrap())
         sitp_fill = linear_interp(x, s; extrap=FillExtrap(0.0))
         sitp_nan = linear_interp(x, s; extrap=FillExtrap(NaN))
 
@@ -946,7 +946,7 @@ import FastInterpolations: _get_cubic_cache
     # =========================================================================
     # Verifies that ND FillExtrap(value) fill-value paths are zero-allocation,
     # for both oneshot and interpolant eval. The compile-time check
-    # _has_any_fill_value() ensures zero overhead for ClampedExtrap() (no fill).
+    # _has_any_fill_value() ensures zero overhead for ClampExtrap() (no fill).
 
     @testset "ND FillExtrap fill value: linear oneshot scalar 2D" begin
         xg = collect(range(0.0, 1.0, 21))
@@ -957,7 +957,7 @@ import FastInterpolations: _get_cubic_cache
             linear_interp((xg, yg), data, (xq, yq); extrap=mode)
         end
 
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             linear_nd_fill(0.5, 0.5, mode)
             linear_nd_fill(-0.5, 0.5, mode)
             linear_nd_fill(0.5, 0.5, mode)
@@ -965,7 +965,7 @@ import FastInterpolations: _get_cubic_cache
         end
 
         # In-domain
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             allocs = @allocated linear_nd_fill(0.5, 0.5, mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -982,7 +982,7 @@ import FastInterpolations: _get_cubic_cache
         yg = collect(range(0.0, 1.0, 21))
         data = [sin(2π * x + y) for x in xg, y in yg]
 
-        itp_clamp = linear_interp((xg, yg), data; extrap=ClampedExtrap())
+        itp_clamp = linear_interp((xg, yg), data; extrap=ClampExtrap())
         itp_zero = linear_interp((xg, yg), data; extrap=FillExtrap(0.0))
         itp_nan = linear_interp((xg, yg), data; extrap=FillExtrap(NaN))
 
@@ -1019,7 +1019,7 @@ import FastInterpolations: _get_cubic_cache
             cubic_interp((xg, yg), data, (xq, yq); extrap=mode)
         end
 
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             cubic_nd_fill(0.5, 0.5, mode)
             cubic_nd_fill(-0.5, 0.5, mode)
             cubic_nd_fill(0.5, 0.5, mode)
@@ -1027,7 +1027,7 @@ import FastInterpolations: _get_cubic_cache
         end
 
         # In-domain
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             allocs = @allocated cubic_nd_fill(0.5, 0.5, mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -1048,7 +1048,7 @@ import FastInterpolations: _get_cubic_cache
             quadratic_interp((xg, yg), data, (xq, yq); extrap=mode)
         end
 
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             quadratic_nd_fill(0.5, 0.5, mode)
             quadratic_nd_fill(-0.5, 0.5, mode)
             quadratic_nd_fill(0.5, 0.5, mode)
@@ -1056,7 +1056,7 @@ import FastInterpolations: _get_cubic_cache
         end
 
         # In-domain
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             allocs = @allocated quadratic_nd_fill(0.5, 0.5, mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -1077,7 +1077,7 @@ import FastInterpolations: _get_cubic_cache
             constant_interp((xg, yg), data, (xq, yq); extrap=mode)
         end
 
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             constant_nd_fill(0.5, 0.5, mode)
             constant_nd_fill(-0.5, 0.5, mode)
             constant_nd_fill(0.5, 0.5, mode)
@@ -1085,7 +1085,7 @@ import FastInterpolations: _get_cubic_cache
         end
 
         # In-domain
-        for mode in (ClampedExtrap(), FillExtrap(0.0), FillExtrap(NaN))
+        for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
             allocs = @allocated constant_nd_fill(0.5, 0.5, mode)
             @test allocs <= ALLOC_THRESHOLD
         end
@@ -1105,7 +1105,7 @@ import FastInterpolations: _get_cubic_cache
         # Fill on x-axis, clamp on y-axis
         function linear_nd_mixed(xq, yq)
             linear_interp((xg, yg), data, (xq, yq);
-                          extrap=(FillExtrap(NaN), ClampedExtrap()))
+                          extrap=(FillExtrap(NaN), ClampExtrap()))
         end
 
         linear_nd_mixed(0.5, 0.5)
@@ -1130,14 +1130,14 @@ import FastInterpolations: _get_cubic_cache
             LinearInterpolant(x, y; extrap=mode)
         end
 
-        for mode in (NoExtrap(), ClampedExtrap(), ExtendExtrap(), WrapExtrap())
+        for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
             itp_typed_extrap(mode)
             itp_typed_extrap(mode)
         end
 
         # Construction allocates the struct itself, but no extra from mode dispatch
         allocs_ext = @allocated itp_typed_extrap(ExtendExtrap())
-        allocs_const = @allocated itp_typed_extrap(ClampedExtrap())
+        allocs_const = @allocated itp_typed_extrap(ClampExtrap())
         allocs_wrap = @allocated itp_typed_extrap(WrapExtrap())
 
         # All modes should have same allocation

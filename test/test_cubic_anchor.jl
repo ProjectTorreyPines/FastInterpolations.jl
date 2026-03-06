@@ -53,10 +53,10 @@
         @test_throws DomainError itp(aq_above)
     end
 
-    @testset "Anchored evaluation - extrap ClampedExtrap()" begin
+    @testset "Anchored evaluation - extrap ClampExtrap()" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=ClampedExtrap())
+        itp = cubic_interp(x, y; extrap=ClampExtrap())
 
         # Below domain returns y[1]
         aq_below = FI._anchor_query(x, -0.5, Val(:cubic))
@@ -343,10 +343,10 @@
         @test_throws DomainError itp(aq_vec)
     end
 
-    @testset "Vector evaluation - extrap ClampedExtrap()" begin
+    @testset "Vector evaluation - extrap ClampExtrap()" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=ClampedExtrap())
+        itp = cubic_interp(x, y; extrap=ClampExtrap())
 
         xq = [-0.5, 0.5, 1.5]
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
@@ -414,10 +414,10 @@
         @test_throws AssertionError itp(output, aq_vec)
     end
 
-    @testset "Vector evaluation - extrap ClampedExtrap() derivatives" begin
+    @testset "Vector evaluation - extrap ClampExtrap() derivatives" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=ClampedExtrap())
+        itp = cubic_interp(x, y; extrap=ClampExtrap())
 
         xq = [-0.5, 0.5, 1.5]
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
@@ -710,7 +710,7 @@
             @test itp_ext(aq_above; deriv=DerivOp(3)) ≈ itp_ext(1.1; deriv=DerivOp(3)) atol=1e-12
 
             # Test :constant mode (derivatives should be zero outside domain)
-            itp_const = cubic_interp(x, y; extrap=ClampedExtrap())
+            itp_const = cubic_interp(x, y; extrap=ClampExtrap())
             @test itp_const(aq_below; deriv=DerivOp(2)) == 0.0
             @test itp_const(aq_above; deriv=DerivOp(3)) == 0.0
         end

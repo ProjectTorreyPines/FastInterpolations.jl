@@ -31,7 +31,7 @@
 
 # ── Fill-value FillExtrap validation for ND ────────────────────────────
 # All fill-value axes must have the same value (prevents ambiguity).
-# ClampedExtrap (boundary clamp) is always OK and not counted.
+# ClampExtrap (boundary clamp) is always OK and not counted.
 @noinline _throw_conflicting_fill_values() = throw(ArgumentError(
     "All FillExtrap fill values in ND must be identical; " *
     "got conflicting fill values on different axes"))
@@ -52,7 +52,7 @@ end
 #
 # When any FillExtrap axis is OOB, the interpolant returns its fill value
 # (for EvalValue) or zero (for any derivative op).
-# ClampedExtrap just clamps via _handle_axis_extrap — no special OOB logic.
+# ClampExtrap just clamps via _handle_axis_extrap — no special OOB logic.
 # All helpers are @generated for compile-time dead-code elimination.
 
 """

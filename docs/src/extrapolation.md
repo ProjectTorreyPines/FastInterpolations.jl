@@ -12,7 +12,7 @@ cubic_interp(x, y, xq; extrap=Extrap(:clamped))
 linear_interp(x, y, xq; extrap=Extrap(:extend))
 
 # Using direct types (also supported)
-cubic_interp(x, y, xq; extrap=ClampedExtrap())
+cubic_interp(x, y, xq; extrap=ClampExtrap())
 linear_interp(x, y, xq; extrap=ExtendExtrap())
 
 # Interpolant: extrap is fixed at creation
@@ -28,14 +28,14 @@ All interpolation methods (`linear_interp`, `quadratic_interp`, `cubic_interp`, 
 | Type | Behavior |
 |------|----------|
 | [`NoExtrap()`](@ref NoExtrap) | Throws `DomainError` (default) |
-| [`ClampedExtrap()`](@ref ClampedExtrap) | Returns boundary values |
+| [`ClampExtrap()`](@ref ClampExtrap) | Returns boundary values |
 | [`ExtendExtrap()`](@ref ExtendExtrap) | Extends boundary polynomial |
 | [`WrapExtrap()`](@ref WrapExtrap) | Wraps coordinates periodically (no smoothness enforced) |
 
 ```
 AbstractExtrap
 ├── NoExtrap       # DomainError on out-of-domain (default)
-├── ClampedExtrap    # clamp to y[1] / y[end]
+├── ClampExtrap    # clamp to y[1] / y[end]
 ├── ExtendExtrap   # continue boundary polynomial
 └── WrapExtrap     # modular coordinate mapping
 ```
@@ -82,14 +82,14 @@ scatter!(x, y, label="data", markersize=7, color=:black) # hide
 vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # hide
 ```
 
-## `ClampedExtrap()`
+## `ClampExtrap()`
 
 Returns boundary values: `y[1]` for left, `y[end]` for right.
 
 ```@example extrap
-yq = cubic_interp(x, y, xq; extrap=ClampedExtrap())
+yq = cubic_interp(x, y, xq; extrap=ClampExtrap())
 
-plot(title="ClampedExtrap()", xlabel="x", ylabel="y", legend=:topright) # hide
+plot(title="ClampExtrap()", xlabel="x", ylabel="y", legend=:topright) # hide
 vspan!([x[1] - 1.5, x[1]], alpha=0.1, color=:gray, label="out of domain") # hide
 vspan!([x[end], x[end] + 1.5], alpha=0.1, color=:gray, label=nothing) # hide
 plot!(xq, yq, label="spline", linewidth=2) # hide
@@ -140,14 +140,14 @@ vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # 
 
 ```@example extrap
 # All three modes on same plot
-y_const = cubic_interp(x, y, xq; extrap=ClampedExtrap())
+y_const = cubic_interp(x, y, xq; extrap=ClampExtrap())
 y_ext   = cubic_interp(x, y, xq; extrap=ExtendExtrap())
 y_wrap  = cubic_interp(x, y, xq; extrap=WrapExtrap())
 
 plot(title="Extrapolation Comparison", xlabel="x", ylabel="y", legend=:topright, size=(700, 400)) # hide
 vspan!([x[1] - 1.5, x[1]], alpha=0.1, color=:gray, label=nothing) # hide
 vspan!([x[end], x[end] + 1.5], alpha=0.1, color=:gray, label=nothing) # hide
-plot!(xq, y_const, label="ClampedExtrap", linewidth=2) # hide
+plot!(xq, y_const, label="ClampExtrap", linewidth=2) # hide
 plot!(xq, y_ext, label="ExtendExtrap", linewidth=2, linestyle=:dash) # hide
 plot!(xq, y_wrap, label="WrapExtrap", linewidth=2, linestyle=:dashdot) # hide
 scatter!(x, y, label="data", markersize=7, color=:black) # hide
@@ -159,7 +159,7 @@ vline!([x[1], x[end]], color=:gray, linestyle=:dot, alpha=0.5, label=nothing) # 
 | Mode | Behavior | Use Case |
 |------|----------|----------|
 | `NoExtrap()` | `DomainError` | Strict domain enforcement (default) |
-| `ClampedExtrap()` | Returns boundary values | Physical constraints |
+| `ClampExtrap()` | Returns boundary values | Physical constraints |
 | `ExtendExtrap()` | Continues boundary polynomial | Smooth continuation |
 | `WrapExtrap()` | Wraps coordinates (no smoothness) | Cyclic data (see [`PeriodicBC`](interpolation/cubic.md) for C² continuity) |
 

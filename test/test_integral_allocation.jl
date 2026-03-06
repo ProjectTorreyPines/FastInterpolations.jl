@@ -106,7 +106,7 @@ using FastInterpolations
         x = collect(range(0.0, 1.0, length=21))
         y = @. 3x - 1
 
-        itp_clamp = linear_interp(x, y; extrap=ClampedExtrap())
+        itp_clamp = linear_interp(x, y; extrap=ClampExtrap())
         itp_zero = linear_interp(x, y; extrap=FillExtrap(0.0))
         itp_42 = linear_interp(x, y; extrap=FillExtrap(42.0))
 

@@ -119,10 +119,96 @@ end
     end
 
     # ========================================
-    # PeriodicBC rejection
+    # PeriodicBC adjoint
     # ========================================
-    @testset "PeriodicBC throws" begin
-        @test_throws ArgumentError cubic_adjoint(x_uniform, xq; bc = PeriodicBC())
+    @testset "PeriodicBC" begin
+        # Periodic data: f must satisfy f[end]=f[1] for inclusive grids
+        n_p = 40
+        n_pq = 25
+
+        # Inclusive uniform grid on [0, 2π]
+        x_incl = collect(range(0.0, 2π, n_p + 1))       # n_p+1 points, x[end]=x[1]+period
+        f_incl = sin.(x_incl)
+        f_incl[end] = f_incl[1]                           # enforce exact periodicity
+        xq_p = sort(rand(n_pq)) .* 2π
+        yb_p = randn(n_pq)
+
+        # Inclusive non-uniform grid on [0, 2π]
+        # Build n_p interior-style points in (0, 2π), then bracket with 0 and 2π
+        x_nu_inner = cumsum(0.5 .+ rand(n_p - 1))
+        x_nu_inner .= x_nu_inner ./ x_nu_inner[end] .* 2π .* ((n_p - 1) / n_p)  # scale to (0, ~2π)
+        x_nu = vcat(0.0, x_nu_inner, 2π)   # n_p+1 points: 0, ..., 2π
+        f_nu = sin.(x_nu)
+        f_nu[end] = f_nu[1]
+
+        # Exclusive uniform grid on [0, 2π)
+        x_excl = range(0.0, step = 2π / n_p, length = n_p)  # Range, n_p points
+        f_excl = sin.(collect(x_excl))
+
+        @testset "Dot-product — inclusive uniform" begin
+            lhs, rhs, ok = dot_product_test(x_incl, xq_p, f_incl, yb_p; bc = PeriodicBC())
+            @test ok
+        end
+
+        @testset "Dot-product — inclusive non-uniform" begin
+            lhs, rhs, ok = dot_product_test(x_nu, xq_p, f_nu, yb_p; bc = PeriodicBC())
+            @test ok
+        end
+
+        @testset "Dot-product — exclusive Range" begin
+            lhs, rhs, ok = dot_product_test(x_excl, xq_p, f_excl, yb_p;
+                bc = PeriodicBC(endpoint = :exclusive))
+            @test ok
+        end
+
+        @testset "In-place == allocating — periodic" begin
+            adj = cubic_adjoint(x_incl, xq_p; bc = PeriodicBC())
+            fb_oop = adj(yb_p)
+            fb_ip = zeros(n_p + 1)
+            adj(fb_ip, yb_p)
+            @test fb_oop ≈ fb_ip
+        end
+
+        @testset "In-place == allocating — exclusive" begin
+            adj = cubic_adjoint(x_excl, xq_p; bc = PeriodicBC(endpoint = :exclusive))
+            fb_oop = adj(yb_p)
+            fb_ip = zeros(n_p)
+            adj(fb_ip, yb_p)
+            @test fb_oop ≈ fb_ip
+        end
+
+        @testset "size — inclusive" begin
+            adj = cubic_adjoint(x_incl, xq_p; bc = PeriodicBC())
+            @test size(adj) == (n_p + 1, n_pq)
+            @test size(adj, 1) == n_p + 1
+        end
+
+        @testset "size — exclusive" begin
+            adj = cubic_adjoint(x_excl, xq_p; bc = PeriodicBC(endpoint = :exclusive))
+            @test size(adj) == (n_p, n_pq)
+            @test size(adj, 1) == n_p
+        end
+
+        @testset "Float32 — periodic" begin
+            x32 = Float32.(x_incl)
+            xq32 = Float32.(xq_p)
+            f32 = sin.(Float32.(x_incl))
+            f32[end] = f32[1]
+            yb32 = randn(Float32, n_pq)
+            lhs, rhs, ok = dot_product_test(x32, xq32, f32, yb32;
+                bc = PeriodicBC(), rtol = sqrt(eps(Float32)))
+            @test ok
+        end
+
+        @testset "Minimum grid — periodic (4 points)" begin
+            x4 = collect(range(0.0, 2π, 4))   # 3 intervals
+            xq4 = [1.0, 3.0, 5.0]
+            f4 = sin.(x4)
+            f4[end] = f4[1]
+            yb4 = randn(3)
+            lhs, rhs, ok = dot_product_test(x4, xq4, f4, yb4; bc = PeriodicBC())
+            @test ok
+        end
     end
 
     # ========================================

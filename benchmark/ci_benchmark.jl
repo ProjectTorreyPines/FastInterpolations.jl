@@ -74,8 +74,7 @@ for nq in (1, 10_000)  # scalar + large batch (skip q100)
     clear_cubic_cache!()
     cubic_interp(x, y, xi)  # prime cache
     label = lpad(nq, 5, '0')  # 00001, 00100, 10000
-    b = @benchmarkable cubic_interp($x, $y, $xi) setup = (GC.gc())
-    b.params.evals = nq >= 10_000 ? EVALS_SLOW : EVALS_MED
+    b = @benchmarkable cubic_interp($x, $y, $xi)    b.params.evals = nq >= 10_000 ? EVALS_SLOW : EVALS_MED
     suite["1_cubic_oneshot"]["q$label"] = b
 end
 
@@ -85,8 +84,7 @@ for ng in (100, 1000)  # medium + large (skip trivial g=10)
     y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
     clear_cubic_cache!()
     label = lpad(ng, 4, '0')  # 0010, 0100, 1000
-    b = @benchmarkable cubic_interp($x_grid, $y_grid; autocache = false) setup = (GC.gc())
-    b.params.evals = ng >= 1000 ? EVALS_SLOW : EVALS_MED
+    b = @benchmarkable cubic_interp($x_grid, $y_grid; autocache = false)    b.params.evals = ng >= 1000 ? EVALS_SLOW : EVALS_MED
     suite["2_cubic_construct"]["g$label"] = b
 end
 
@@ -97,8 +95,7 @@ for nq in QUERY_SIZES
     label = lpad(nq, 5, '0')
     # In-place: pre-allocate output to measure pure computation
     out = Vector{Float64}(undef, nq)
-    b = @benchmarkable $itp_cubic($out, $xi) setup = (GC.gc())
-    b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
+    b = @benchmarkable $itp_cubic($out, $xi)    b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
     suite["3_cubic_eval"]["q$label"] = b
 end
 
@@ -112,8 +109,7 @@ println("Setting up linear benchmarks...")
 for nq in (1, 10_000)  # scalar + large batch (skip q100)
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
     label = lpad(nq, 5, '0')
-    b = @benchmarkable linear_interp($x, $y, $xi) setup = (GC.gc())
-    b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
+    b = @benchmarkable linear_interp($x, $y, $xi)    b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
     suite["4_linear_oneshot"]["q$label"] = b
 end
 
@@ -122,8 +118,7 @@ for ng in (100, 1000)  # medium + large (skip trivial g=10)
     x_grid = range(0.0, 10.0, ng)
     y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
     label = lpad(ng, 4, '0')
-    b = @benchmarkable linear_interp($x_grid, $y_grid) setup = (GC.gc())
-    b.params.evals = EVALS_FAST
+    b = @benchmarkable linear_interp($x_grid, $y_grid)    b.params.evals = EVALS_FAST
     suite["5_linear_construct"]["g$label"] = b
 end
 
@@ -134,8 +129,7 @@ for nq in QUERY_SIZES
     label = lpad(nq, 5, '0')
     # In-place: pre-allocate output to measure pure computation
     out = Vector{Float64}(undef, nq)
-    b = @benchmarkable $itp_linear($out, $xi) setup = (GC.gc())
-    b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
+    b = @benchmarkable $itp_linear($out, $xi)    b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
     suite["6_linear_eval"]["q$label"] = b
 end
 
@@ -146,13 +140,11 @@ end
 println("Setting up cubic scalar dispatch benchmarks...")
 
 # 7. Cubic: Range grid vs Vector grid scalar dispatch
-let b = @benchmarkable $itp_cubic($xq_scalar) setup = (GC.gc())
-    b.params.evals = EVALS_FAST
+let b = @benchmarkable $itp_cubic($xq_scalar)    b.params.evals = EVALS_FAST
     suite["7_cubic_range"]["scalar_query"] = b
 end
 
-let b = @benchmarkable $itp_cubic_vec($xq_scalar) setup = (GC.gc())
-    b.params.evals = EVALS_FAST
+let b = @benchmarkable $itp_cubic_vec($xq_scalar)    b.params.evals = EVALS_FAST
     suite["7_cubic_vec"]["scalar_query"] = b
 end
 
@@ -173,8 +165,7 @@ for ns in MULTI_SERIES
     # Construction benchmark
     clear_cubic_cache!()
     cubic_interp(x, Series(ys))  # prime cache
-    let b = @benchmarkable cubic_interp($x, Series($ys)) setup = (GC.gc())
-        b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
+    let b = @benchmarkable cubic_interp($x, Series($ys))        b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
         suite["8_cubic_multi"]["construct_s$(slabel)_q$(qlabel)"] = b
     end
 
@@ -184,8 +175,7 @@ for ns in MULTI_SERIES
     xq_multi = collect(range(0.1, 9.9, N_QUERY_MULTI))
     # Pre-allocate outputs: one vector per series, each of length N_QUERY_MULTI
     outputs_multi = [Vector{Float64}(undef, N_QUERY_MULTI) for _ in 1:ns]
-    let b = @benchmarkable $mitp($outputs_multi, $xq_multi) setup = (GC.gc())
-        b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
+    let b = @benchmarkable $mitp($outputs_multi, $xq_multi)        b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
         suite["8_cubic_multi"]["eval_s$(slabel)_q$(qlabel)"] = b
     end
 
@@ -197,8 +187,7 @@ for ns in MULTI_SERIES
                 for xq in $xq_multi
                     $mitp($out_scalar, xq)
                 end
-            end setup = (GC.gc())
-            b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
+            end            b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
             suite["8_cubic_multi"]["eval_s$(slabel)_q$(qlabel)_scalar_loop"] = b
         end
     end
@@ -241,81 +230,69 @@ const pt_3d = (5.0, 3.0, 2.0)
 const out_nd = Vector{Float64}(undef, N_ND_QUERY)
 
 # 9. ND One-Shot (construct + evaluate, separate code path)
-let b = @benchmarkable linear_interp(($x2d, $y2d), $data2d, ($xqs_2d, $yqs_2d)) setup = (GC.gc())
-    b.params.evals = EVALS_MED
+let b = @benchmarkable linear_interp(($x2d, $y2d), $data2d, ($xqs_2d, $yqs_2d))    b.params.evals = EVALS_MED
     suite["9_nd_oneshot"]["bilinear_2d"] = b
 end
 
-let b = @benchmarkable linear_interp(($x3d, $y3d, $z3d), $data3d, ($xqs_3d, $yqs_3d, $zqs_3d)) setup = (GC.gc())
-    b.params.evals = EVALS_SLOW
+let b = @benchmarkable linear_interp(($x3d, $y3d, $z3d), $data3d, ($xqs_3d, $yqs_3d, $zqs_3d))    b.params.evals = EVALS_SLOW
     suite["9_nd_oneshot"]["trilinear_3d"] = b
 end
 
 clear_cubic_cache!()
 cubic_interp((x2d, y2d), data2d, (xqs_2d, yqs_2d))  # prime cache
-let b = @benchmarkable cubic_interp(($x2d, $y2d), $data2d, ($xqs_2d, $yqs_2d)) setup = (GC.gc())
-    b.params.evals = EVALS_SLOW
+let b = @benchmarkable cubic_interp(($x2d, $y2d), $data2d, ($xqs_2d, $yqs_2d))    b.params.evals = EVALS_SLOW
     suite["9_nd_oneshot"]["bicubic_2d"] = b
 end
 
 clear_cubic_cache!()
 cubic_interp((x3d, y3d, z3d), data3d, (xqs_3d, yqs_3d, zqs_3d))  # prime cache
-let b = @benchmarkable cubic_interp(($x3d, $y3d, $z3d), $data3d, ($xqs_3d, $yqs_3d, $zqs_3d)) setup = (GC.gc())
-    b.params.evals = EVALS_SLOW
+let b = @benchmarkable cubic_interp(($x3d, $y3d, $z3d), $data3d, ($xqs_3d, $yqs_3d, $zqs_3d))    b.params.evals = EVALS_SLOW
     suite["9_nd_oneshot"]["tricubic_3d"] = b
 end
 
 # 10. ND Construction (varying dimensionality and method)
-let b = @benchmarkable linear_interp(($x2d, $y2d), $data2d) setup = (GC.gc())
-    b.params.evals = EVALS_MED
+let b = @benchmarkable linear_interp(($x2d, $y2d), $data2d)    b.params.evals = EVALS_MED
     suite["10_nd_construct"]["bilinear_2d"] = b
 end
 
-let b = @benchmarkable linear_interp(($x3d, $y3d, $z3d), $data3d) setup = (GC.gc())
-    b.params.evals = EVALS_MED
+let b = @benchmarkable linear_interp(($x3d, $y3d, $z3d), $data3d)    b.params.evals = EVALS_MED
     suite["10_nd_construct"]["trilinear_3d"] = b
 end
 
 # Cubic ND construction: clear cache in setup + evals=1 to measure full construction
 # (ND API lacks autocache=false, so we emulate it with per-sample cache clearing)
-let b = @benchmarkable cubic_interp(($x2d, $y2d), $data2d) setup = (clear_cubic_cache!(); GC.gc())
+let b = @benchmarkable cubic_interp(($x2d, $y2d), $data2d) setup = (clear_cubic_cache!())
     b.params.evals = 1
     suite["10_nd_construct"]["bicubic_2d"] = b
 end
 
-let b = @benchmarkable cubic_interp(($x3d, $y3d, $z3d), $data3d) setup = (clear_cubic_cache!(); GC.gc())
+let b = @benchmarkable cubic_interp(($x3d, $y3d, $z3d), $data3d) setup = (clear_cubic_cache!())
     b.params.evals = 1
     suite["10_nd_construct"]["tricubic_3d"] = b
 end
 
 # 11. ND Evaluation (scalar = hot-loop, batch = vectorized SoA in-place)
-let b = @benchmarkable $itp_linear_2d($pt_2d) setup = (GC.gc())
-    b.params.evals = EVALS_FAST
+let b = @benchmarkable $itp_linear_2d($pt_2d)    b.params.evals = EVALS_FAST
     suite["11_nd_eval"]["bilinear_2d_scalar"] = b
 end
 
-let b = @benchmarkable $itp_linear_3d($pt_3d) setup = (GC.gc())
-    b.params.evals = EVALS_FAST
+let b = @benchmarkable $itp_linear_3d($pt_3d)    b.params.evals = EVALS_FAST
     suite["11_nd_eval"]["trilinear_3d_scalar"] = b
 end
 
-let b = @benchmarkable $itp_cubic_2d($pt_2d) setup = (GC.gc())
-    b.params.evals = EVALS_FAST
+let b = @benchmarkable $itp_cubic_2d($pt_2d)    b.params.evals = EVALS_FAST
     suite["11_nd_eval"]["bicubic_2d_scalar"] = b
 end
 
-let b = @benchmarkable $itp_cubic_3d($pt_3d) setup = (GC.gc())
-    b.params.evals = EVALS_FAST
+let b = @benchmarkable $itp_cubic_3d($pt_3d)    b.params.evals = EVALS_FAST
     suite["11_nd_eval"]["tricubic_3d_scalar"] = b
 end
 
-let b = @benchmarkable $itp_cubic_2d($out_nd, ($xqs_2d, $yqs_2d)) setup = (GC.gc())
-    b.params.evals = EVALS_SLOW
+let b = @benchmarkable $itp_cubic_2d($out_nd, ($xqs_2d, $yqs_2d))    b.params.evals = EVALS_SLOW
     suite["11_nd_eval"]["bicubic_2d_batch"] = b
 end
 
-let b = @benchmarkable $itp_cubic_3d($out_nd, ($xqs_3d, $yqs_3d, $zqs_3d)) setup = (GC.gc())
-    b.params.evals = EVALS_SLOW
+let b = @benchmarkable $itp_cubic_3d($out_nd, ($xqs_3d, $yqs_3d, $zqs_3d))    b.params.evals = EVALS_SLOW
     suite["11_nd_eval"]["tricubic_3d_batch"] = b
 end
 
@@ -337,8 +314,7 @@ const out_gq = Vector{Float64}(undef, N_QUERY_GQ)
 
 for (glabel, itp) in [("range", itp_cubic), ("vec", itp_cubic_vec)]
     for (qlbl, xq) in [("sorted", xq_sorted_gq), ("random", xq_random_gq)]
-        let b = @benchmarkable $itp($out_gq, $xq) setup = (GC.gc())
-            b.params.evals = EVALS_MED
+        let b = @benchmarkable $itp($out_gq, $xq)            b.params.evals = EVALS_MED
             suite["12_cubic_eval_gridquery"]["$(glabel)_$(qlbl)"] = b
         end
     end
@@ -412,8 +388,15 @@ end
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Skip tuning - we set evals manually for consistent CI results
+# Run each group separately with GC.gc() between groups (not per-sample)
+# to avoid GC overhead consuming the time budget (~100ms/sample → only ~30 samples)
 println("\nRunning benchmarks (evals preset, no tuning)...")
-results = run(suite, verbose = true)
+results = BenchmarkGroup()
+for group_key in sort(collect(keys(suite)))
+    GC.gc()
+    println("  Running [$group_key]...")
+    results[group_key] = run(suite[group_key], verbose = true)
+end
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Regression Verification (when --baseline is provided)

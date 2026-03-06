@@ -114,16 +114,16 @@ creates a Tuple for ND per-axis configuration (same pattern as `DerivOp(1, 0)`).
 
 # Options
 - `:none` → [`NoExtrap`](@ref): throw `DomainError` for out-of-domain queries
-- `:clamped` → [`ClampExtrap`](@ref): clamp to nearest boundary value
+- `:clamp` → [`ClampExtrap`](@ref): clamp to nearest boundary value
 - `:fill` → [`FillExtrap`](@ref): fill with a constant value (requires `value` keyword)
 - `:extend` → [`ExtendExtrap`](@ref): extend interpolation polynomial beyond domain
 - `:wrap` → [`WrapExtrap`](@ref): wrap queries into domain (periodic)
-- `:constant` → *(deprecated)* alias for `:clamped`
+- `:constant` → *(deprecated)* alias for `:clamp`
 
 # Examples
 ```julia
 # 1D
-itp = cubic_interp(x, y; extrap=Extrap(:clamped))
+itp = cubic_interp(x, y; extrap=Extrap(:clamp))
 itp = cubic_interp(x, y; extrap=Extrap(:fill; value=NaN))
 
 # ND per-axis (multi-arg form)
@@ -136,13 +136,13 @@ Extrap(NoExtrap())   # → NoExtrap()
 """
 function Extrap(sym::Symbol; value=nothing)
     sym === :none     && return NoExtrap()
-    sym === :clamped  && return ClampExtrap()
+    sym === :clamp  && return ClampExtrap()
     sym === :fill     && return value === nothing ? _extrap_fill_missing_value_error() : FillExtrap(value)
     sym === :extend   && return ExtendExtrap()
     sym === :wrap     && return WrapExtrap()
     if sym === :constant
         Base.depwarn(
-            "Extrap(:constant) is deprecated, use Extrap(:clamped) instead.",
+            "Extrap(:constant) is deprecated, use Extrap(:clamp) instead.",
             :Extrap)
         return ClampExtrap()
     end
@@ -156,7 +156,7 @@ Extrap(e::AbstractExtrap) = e
 
 @noinline function _extrap_unknown_error(sym::Symbol)
     throw(ArgumentError(
-        "unknown extrapolation mode :$sym; valid options are :none, :clamped, :fill, :constant (deprecated), :extend, :wrap"))
+        "unknown extrapolation mode :$sym; valid options are :none, :clamp, :fill, :constant (deprecated), :extend, :wrap"))
 end
 
 @noinline function _extrap_fill_missing_value_error()

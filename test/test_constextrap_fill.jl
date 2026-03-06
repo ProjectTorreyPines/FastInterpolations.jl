@@ -389,8 +389,8 @@ using FastInterpolations
     # ────────────────────────────────────────────
     # Factory
     # ────────────────────────────────────────────
-    @testset "Extrap factory :clamped and :fill" begin
-        e1 = Extrap(:clamped)
+    @testset "Extrap factory :clamp and :fill" begin
+        e1 = Extrap(:clamp)
         @test e1 isa ClampExtrap
 
         e2 = Extrap(:fill; value=NaN)

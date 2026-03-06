@@ -56,7 +56,7 @@ Controls behavior when query points fall outside the data domain.
 
 ```julia
 Extrap(:none)              # NoExtrap() — throw DomainError (default)
-Extrap(:clamped)           # ClampExtrap() — clamp to boundary values
+Extrap(:clamp)           # ClampExtrap() — clamp to boundary values
 Extrap(:fill; value=NaN)   # FillExtrap(NaN) — fill with constant value
 Extrap(:extend)            # ExtendExtrap() — extend boundary polynomial
 Extrap(:wrap)              # WrapExtrap() — periodic coordinate wrapping

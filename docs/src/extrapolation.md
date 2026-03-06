@@ -8,7 +8,7 @@ All extrapolation modes are concrete subtypes of [`AbstractExtrap`](@ref). Pass 
 
 ```julia-repl
 # Using Extrap() factory (recommended)
-cubic_interp(x, y, xq; extrap=Extrap(:clamped))
+cubic_interp(x, y, xq; extrap=Extrap(:clamp))
 linear_interp(x, y, xq; extrap=Extrap(:extend))
 
 # Using direct types (also supported)
@@ -21,7 +21,7 @@ itp(xq)  # uses ExtendExtrap
 ```
 
 !!! tip "Factory Functions"
-    The [`Extrap()`](@ref factory_functions) factory provides a single discoverable entry point. For ND per-axis configuration, use the multi-arg form: `Extrap(:extend, :clamped, :none)`. See [Factory Functions](@ref factory_functions) for details.
+    The [`Extrap()`](@ref factory_functions) factory provides a single discoverable entry point. For ND per-axis configuration, use the multi-arg form: `Extrap(:extend, :clamp, :none)`. See [Factory Functions](@ref factory_functions) for details.
 
 All interpolation methods (`linear_interp`, `quadratic_interp`, `cubic_interp`, `constant_interp`) support the same extrapolation modes.
 

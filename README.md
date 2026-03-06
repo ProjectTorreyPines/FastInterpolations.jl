@@ -175,9 +175,9 @@ cubic_interp(x, y, xq; bc=BCPair(Deriv1(2.0), Deriv2(0.0)))  # mixed: slope left
 ### Extrapolation
 Queries outside the data domain throw `DomainError` by default. Use `Extrap()` to allow them:
 ```julia
-cubic_interp(x, y; extrap=Extrap(:clamped))             # clamp to boundary value
-cubic_interp(x, y; extrap=Extrap(:fill; value=NaN))     # fill with constant value
-cubic_interp(x, y; extrap=Extrap(:extend))               # extend boundary polynomial
+cubic_interp(x, y; extrap=Extrap(:clamp))             # clamp to boundary value
+cubic_interp(x, y; extrap=Extrap(:fill; value=NaN))   # fill with constant value
+cubic_interp(x, y; extrap=Extrap(:extend))            # extend boundary polynomial
 # also :wrap (periodic) and :none (default, throws DomainError)
 ```
 → [Extrapolation Guide](https://projecttorreypines.github.io/FastInterpolations.jl/dev/extrapolation/) · 

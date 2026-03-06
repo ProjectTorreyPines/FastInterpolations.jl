@@ -72,7 +72,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
     @testset "Extrap" begin
         @testset "Symbol → Concrete Type" begin
             @test Extrap(:none) isa NoExtrap
-            @test Extrap(:clamped) isa ClampExtrap
+            @test Extrap(:clamp) isa ClampExtrap
             @test Extrap(:fill; value=NaN) isa FillExtrap{Float64}
             @test Extrap(:fill; value=0.0).value === 0.0
             @test Extrap(:extend) isa ExtendExtrap
@@ -166,7 +166,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
             @test result isa Tuple{ExtendExtrap, NoExtrap, WrapExtrap}
             @test result == (ExtendExtrap(), NoExtrap(), WrapExtrap())
 
-            result2 = Extrap(:clamped, :extend)
+            result2 = Extrap(:clamp, :extend)
             @test result2 isa Tuple{ClampExtrap, ExtendExtrap}
         end
 
@@ -207,10 +207,10 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
 
         function _test_extrap_alloc()
             _ = Extrap(:none)
-            _ = Extrap(:clamped)
+            _ = Extrap(:clamp)
             _ = Extrap(:extend, :none)
             a1 = @allocated Extrap(:none)
-            a2 = @allocated Extrap(:clamped)
+            a2 = @allocated Extrap(:clamp)
             a3 = @allocated Extrap(:extend)
             a4 = @allocated Extrap(:wrap)
             a5 = @allocated Extrap(NoExtrap())
@@ -264,7 +264,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
             itp_s = cubic_interp(x, y; search=Search(:binary), extrap=Extrap(:extend))
             @test itp_s(0.5) isa Float64
 
-            itp_e = linear_interp(x, y; extrap=Extrap(:clamped))
+            itp_e = linear_interp(x, y; extrap=Extrap(:clamp))
             @test itp_e(-0.1) == itp_e(0.0)  # clamped
 
             itp_c = constant_interp(x, y; side=Side(:left))

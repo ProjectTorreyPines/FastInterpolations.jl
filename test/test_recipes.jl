@@ -61,17 +61,20 @@ using RecipesBase
     # FillExtrap Fill Value Recipes
     # ========================================
     @testset "FillExtrap Fill Value" begin
-        @testset "finite fill (0.0): produces fill lines" begin
+        @testset "finite fill (0.0): curve extends OOB with fill value" begin
             itp = cubic_interp(x, y; extrap=FillExtrap(0.0))
             recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
             @test !isempty(recipes)
-            # Should have: 2 shading + 1 boundary + 1 scatter + 1 curve + 2 fill lines = 7
-            @test length(recipes) == 7
-            # Last two series should be dashed fill lines
-            for r in recipes[end-1:end]
-                @test r.plotattributes[:seriestype] == :path
-                @test r.plotattributes[:linestyle] == :dash
-            end
+            # Should have: 2 shading + 1 boundary + 1 scatter + 1 curve = 5
+            @test length(recipes) == 5
+            # Curve extends beyond domain, OOB values should be fill_value (0.0)
+            curve = recipes[end]
+            xq = curve.args[1]
+            yq = curve.args[2]
+            @test first(xq) < first(x)  # extends left
+            @test last(xq) > last(x)    # extends right
+            @test yq[1] ≈ 0.0 atol=1e-12  # OOB left = fill value
+            @test yq[end] ≈ 0.0 atol=1e-12  # OOB right = fill value
         end
 
         @testset "NaN fill: no fill lines, no crash" begin
@@ -107,9 +110,9 @@ using RecipesBase
             sitp = linear_interp(x, Series(y_matrix); extrap=FillExtrap(0.0))
             recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), sitp)
             @test !isempty(recipes)
-            # Check fill lines are produced (dashed)
-            dashed = [r for r in recipes if get(r.plotattributes, :linestyle, nothing) == :dash]
-            @test length(dashed) >= 2  # at least one pair of fill lines per series
+            # Curve extends OOB; no separate dashed fill lines
+            paths = [r for r in recipes if get(r.plotattributes, :seriestype, nothing) == :path]
+            @test length(paths) >= 2  # at least one curve per series
         end
 
         @testset "derivative view with fill value" begin
@@ -130,7 +133,7 @@ using RecipesBase
                     itp = fn(x, y; extrap=FillExtrap(0.0))
                     recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
                     @test !isempty(recipes)
-                    @test length(recipes) == 7  # 2 shade + 1 bound + 1 scatter + 1 curve + 2 fill
+                    @test length(recipes) == 5  # 2 shade + 1 bound + 1 scatter + 1 curve
                 end
             end
         end

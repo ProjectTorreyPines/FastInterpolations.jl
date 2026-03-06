@@ -219,30 +219,26 @@ Generates multiple series:
     fill_finite = _fill_is_finite(extrap)
 
     # Compute curve evaluation range (xq) and display range (xlims) separately
-    if extrap isa NoExtrap || (has_fill && !fill_finite)
-        # NoExtrap or NaN/Inf fill: curve stays within domain
+    if extrap isa NoExtrap
+        # NoExtrap: curve stays within domain
         xq_min, xq_max = x_min, x_max
         default_xlim_min = x_min - visual_margin
         default_xlim_max = x_max + visual_margin
-        # For fill value extrap, still extend xlims to show shading/fill line region
-        if has_fill
-            default_xlim_min = x_min - margin
-            default_xlim_max = x_max + margin
-        end
-    elseif has_fill && fill_finite
-        # Finite fill: curve within domain, but extend xlims for fill line
+    elseif has_fill && !fill_finite
+        # NaN/Inf fill: curve stays within domain, but extend xlims for shading
         xq_min, xq_max = x_min, x_max
         default_xlim_min = x_min - margin
         default_xlim_max = x_max + margin
     else
-        # Other extrap modes: curve extends beyond domain
+        # ClampedExtrap, ExtendExtrap, WrapExtrap, FillExtrap(finite):
+        # curve extends beyond domain (itp returns fill/clamped/extended value)
         xq_min, xq_max = x_min - margin, x_max + margin
         default_xlim_min, default_xlim_max = xq_min, xq_max
     end
 
     # If user provides xlims and extrap is enabled, use wider range for curve evaluation
     if !isnothing(user_xlims) && !(extrap isa NoExtrap)
-        if !has_fill || !fill_finite
+        if !(has_fill && !fill_finite)
             xq_min = min(T(first(user_xlims)), xq_min)
             xq_max = max(T(last(user_xlims)), xq_max)
         end
@@ -296,18 +292,19 @@ Generates multiple series:
     end
 
     # Series 1 & 2: Out-of-domain shading (only when extrapolation is enabled)
-    # Use large values so shading auto-clips to actual xlims/ylims
-    shade_min, shade_max = T(-1e10), T(1e10)
+    # Shade rectangles use final plot bounds (not 1e10) to avoid blowing up axis range
     if show_outside && !(extrap isa NoExtrap)
         shade_label = has_fill ? _format_fill_label(extrap) : "out of domain"
+        shade_x_lo, shade_x_hi = T(first(final_xlims)), T(last(final_xlims))
+        shade_y_lo, shade_y_hi = y_lim_min, y_lim_max
         @series begin
             seriestype := :shape
             fillcolor --> :gray
             fillalpha --> 0.1
             linewidth := 0
             label := nothing
-            [shade_min, x_min, x_min, shade_min],
-            [shade_min, shade_min, shade_max, shade_max]
+            [shade_x_lo, x_min, x_min, shade_x_lo],
+            [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
         end
         @series begin
             seriestype := :shape
@@ -315,8 +312,8 @@ Generates multiple series:
             fillalpha --> 0.1
             linewidth := 0
             label --> shade_label
-            [x_max, shade_max, shade_max, x_max],
-            [shade_min, shade_min, shade_max, shade_max]
+            [x_max, shade_x_hi, shade_x_hi, x_max],
+            [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
         end
     end
 
@@ -357,30 +354,6 @@ Generates multiple series:
         collect(xq), yq
     end
 
-    # Series 6: Fill value horizontal lines (only for finite FillExtrap)
-    if has_fill && fill_finite
-        fill_v = T(extrap.value)
-        # Left fill line: from plot edge to domain start
-        @series begin
-            seriestype := :path
-            color --> :blue
-            linewidth --> 2
-            linestyle --> :dash
-            alpha --> 0.6
-            label := nothing
-            [default_xlim_min, x_min], [fill_v, fill_v]
-        end
-        # Right fill line: from domain end to plot edge
-        @series begin
-            seriestype := :path
-            color --> :blue
-            linewidth --> 2
-            linestyle --> :dash
-            alpha --> 0.6
-            label --> _format_fill_label(extrap)
-            [x_max, default_xlim_max], [fill_v, fill_v]
-        end
-    end
 end
 
 # ========================================
@@ -444,26 +417,25 @@ end
     visual_margin = T(0.02) * (x_max - x_min)
 
     # Compute curve evaluation range (xq) and display range (xlims) separately
-    if extrap isa NoExtrap || (has_fill && !fill_finite)
+    if extrap isa NoExtrap
         xq_min, xq_max = x_min, x_max
         default_xlim_min = x_min - visual_margin
         default_xlim_max = x_max + visual_margin
-        if has_fill
-            default_xlim_min = x_min - margin
-            default_xlim_max = x_max + margin
-        end
-    elseif has_fill && fill_finite
+    elseif has_fill && !fill_finite
+        # NaN/Inf fill: curve stays within domain, but extend xlims for shading
         xq_min, xq_max = x_min, x_max
         default_xlim_min = x_min - margin
         default_xlim_max = x_max + margin
     else
+        # ClampedExtrap, ExtendExtrap, WrapExtrap, FillExtrap(finite):
+        # curve extends beyond domain
         xq_min, xq_max = x_min - margin, x_max + margin
         default_xlim_min, default_xlim_max = xq_min, xq_max
     end
 
     # If user provides xlims and extrap is enabled, use wider range for curve evaluation
     if !isnothing(user_xlims) && !(extrap isa NoExtrap)
-        if !has_fill || !fill_finite
+        if !(has_fill && !fill_finite)
             xq_min = min(T(first(user_xlims)), xq_min)
             xq_max = max(T(last(user_xlims)), xq_max)
         end
@@ -478,7 +450,7 @@ end
     # Final xlims for plot (user override or default)
     final_xlims = isnothing(user_xlims) ? (default_xlim_min, default_xlim_max) : user_xlims
 
-    # Evaluate all series (in-domain only for fill-value modes)
+    # Evaluate all series
     yq_all = [sitp(xi) for xi in xq_vec]
     yq_matrix = reduce(hcat, yq_all)'  # n_samples x n_series
 
@@ -515,19 +487,20 @@ end
     tickfontsize --> 12
 
     # Out-of-domain shading (once, internal series - use := for type, --> for colors)
-    # Use large values so shading auto-clips to actual xlims/ylims
-    shade_min, shade_max = T(-1e10), T(1e10)
+    # Shade rectangles use final plot bounds to avoid blowing up axis range
     if show_outside && length(series_indices) > 0
         if !(extrap isa NoExtrap)
             shade_label = has_fill ? _format_fill_label(extrap) : "out of domain"
+            shade_x_lo, shade_x_hi = T(first(final_xlims)), T(last(final_xlims))
+            shade_y_lo, shade_y_hi = y_lim_min, y_lim_max
             @series begin
                 seriestype := :shape
                 fillcolor --> :gray
                 fillalpha --> 0.1
                 linewidth := 0
                 label := nothing
-                [shade_min, x_min, x_min, shade_min],
-                [shade_min, shade_min, shade_max, shade_max]
+                [shade_x_lo, x_min, x_min, shade_x_lo],
+                [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
             end
             @series begin
                 seriestype := :shape
@@ -535,8 +508,8 @@ end
                 fillalpha --> 0.1
                 linewidth := 0
                 label --> shade_label
-                [x_max, shade_max, shade_max, x_max],
-                [shade_min, shade_min, shade_max, shade_max]
+                [x_max, shade_x_hi, shade_x_hi, x_max],
+                [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
             end
         end
     end
@@ -584,28 +557,6 @@ end
             xq_vec, yq_matrix[:, k]
         end
 
-        # Fill value horizontal lines for this series
-        if has_fill && fill_finite
-            fill_v = T(extrap.value)
-            @series begin
-                seriestype := :path
-                color --> series_color
-                linewidth --> 2
-                linestyle --> :dash
-                alpha --> 0.6
-                label := nothing
-                [default_xlim_min, x_min], [fill_v, fill_v]
-            end
-            @series begin
-                seriestype := :path
-                color --> series_color
-                linewidth --> 2
-                linestyle --> :dash
-                alpha --> 0.6
-                label --> (plot_idx == 1 ? _format_fill_label(extrap) : nothing)
-                [x_max, default_xlim_max], [fill_v, fill_v]
-            end
-        end
     end
 end
 
@@ -721,18 +672,19 @@ end
         y_lim_max = maximum(yq_finite) + y_margin
     end
 
-    # Out-of-domain shading - use large values so shading auto-clips to actual xlims/ylims
-    shade_min, shade_max = ElType(-1e10), ElType(1e10)
+    # Out-of-domain shading - use final plot bounds to avoid blowing up axis range
     if show_outside && !(extrap isa NoExtrap)
         shade_label = has_fill ? "deriv = 0" : "out of domain"
+        shade_x_lo, shade_x_hi = ElType(first(final_xlims)), ElType(last(final_xlims))
+        shade_y_lo, shade_y_hi = y_lim_min, y_lim_max
         @series begin
             seriestype := :shape
             fillcolor --> :gray
             fillalpha --> 0.1
             linewidth := 0
             label := nothing
-            [shade_min, x_min, x_min, shade_min],
-            [shade_min, shade_min, shade_max, shade_max]
+            [shade_x_lo, x_min, x_min, shade_x_lo],
+            [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
         end
         @series begin
             seriestype := :shape
@@ -740,8 +692,8 @@ end
             fillalpha --> 0.1
             linewidth := 0
             label --> shade_label
-            [x_max, shade_max, shade_max, x_max],
-            [shade_min, shade_min, shade_max, shade_max]
+            [x_max, shade_x_hi, shade_x_hi, x_max],
+            [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
         end
     end
 

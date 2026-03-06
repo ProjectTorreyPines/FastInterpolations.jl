@@ -21,10 +21,10 @@ function run_integral_bench()
     print("  sub-range:    "); @btime integrate($itp_quad, 0.13, 0.87)
 
     println("\n=== Extrap modes (cubic, sub-range) ===")
-    itp_const = cubic_interp(x, y; extrap=ConstExtrap())
+    itp_const = cubic_interp(x, y; extrap=ClampedExtrap())
     itp_wrap = cubic_interp(x, y; extrap=WrapExtrap())
     print("  NoExtrap   "); @btime integrate($itp_cub, 0.13, 0.87)
-    print("  ConstExtrap"); @btime integrate($itp_const, -0.2, 1.2)
+    print("  ClampedExtrap"); @btime integrate($itp_const, -0.2, 1.2)
     print("  WrapExtrap "); @btime integrate($itp_wrap, -0.2, 2.8)
 
     println("\n=== 2D Cubic Integration ===")

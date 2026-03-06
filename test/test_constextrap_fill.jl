@@ -595,4 +595,100 @@ using FastInterpolations
         @test H2[2, 1] ≈ 0.0 atol=0.1  # symmetric
         @test H2[2, 2] ≈ 2.0 atol=0.1  # ∂²f/∂y² at y=0.5
     end
+
+    # ────────────────────────────────────────────
+    # 1D derivative correctness with FillExtrap
+    # ────────────────────────────────────────────
+    # OOB derivatives must be exactly zero for FillExtrap (constant flat region).
+    # NaN fill must NOT leak into derivative results (0 * y_bnd, not 0 * fill_value).
+    @testset "1D derivative correctness: FillExtrap OOB" begin
+        x = collect(range(0.0, 1.0, length=21))
+        y = @. sin(2π * x)
+
+        for (label, fill_val) in [("NaN", NaN), ("zero", 0.0), ("42", 42.0)]
+            @testset "$label fill ($fill_val)" begin
+                itp_c = cubic_interp(x, y; extrap=FillExtrap(fill_val))
+                itp_l = linear_interp(x, y; extrap=FillExtrap(fill_val))
+                itp_q = quadratic_interp(x, y; extrap=FillExtrap(fill_val))
+
+                for itp in (itp_c, itp_l, itp_q)
+                    for xq_oob in (-0.5, 1.5)
+                        # 1st derivative: OOB → zero (0 * y_bnd may produce -0.0)
+                        d1 = itp(xq_oob; deriv=DerivOp(1))
+                        @test d1 == 0.0
+                    end
+
+                    # In-domain at x=0.1: sin'(2π*0.1) = 2π*cos(0.2π) ≈ 5.08
+                    d1_in = itp(0.1; deriv=DerivOp(1))
+                    @test abs(d1_in) > 1.0
+                end
+
+                # 2nd and 3rd order derivatives (cubic only)
+                for xq_oob in (-0.5, 1.5)
+                    @test itp_c(xq_oob; deriv=DerivOp(2)) == 0.0
+                    @test itp_c(xq_oob; deriv=DerivOp(3)) == 0.0
+                end
+            end
+        end
+    end
+
+    # ────────────────────────────────────────────
+    # integrate correctness with FillExtrap
+    # ────────────────────────────────────────────
+    # OOB region integral = fill_value × interval_length
+    @testset "integrate correctness: FillExtrap tails" begin
+        x = collect(range(0.0, 1.0, length=31))
+        y = @. x^2 + 1.0  # y[1] = 1.0, y[end] = 2.0
+
+        @testset "FillExtrap(0.0) — zero tails" begin
+            itp = linear_interp(x, y; extrap=FillExtrap(0.0))
+            # Pure left tail: integral of 0 over [-0.4, 0]
+            @test integrate(itp, -0.4, 0.0) ≈ 0.0 atol=1e-14
+            # Pure right tail: integral of 0 over [1, 1.6]
+            @test integrate(itp, 1.0, 1.6) ≈ 0.0 atol=1e-14
+            # Mixed: left tail (zero) + in-domain part
+            in_part = integrate(linear_interp(x, y; extrap=NoExtrap()), 0.0, 0.5)
+            @test integrate(itp, -0.3, 0.5) ≈ 0.0 * 0.3 + in_part atol=1e-12
+        end
+
+        @testset "FillExtrap(42.0) — nonzero tails" begin
+            itp = linear_interp(x, y; extrap=FillExtrap(42.0))
+            # Pure left tail: 42 × 0.4
+            @test integrate(itp, -0.4, 0.0) ≈ 42.0 * 0.4 atol=1e-12
+            # Pure right tail: 42 × 0.6
+            @test integrate(itp, 1.0, 1.6) ≈ 42.0 * 0.6 atol=1e-12
+            # Spanning both tails + in-domain
+            in_part = integrate(linear_interp(x, y; extrap=NoExtrap()), 0.0, 1.0)
+            @test integrate(itp, -0.5, 1.5) ≈ 42.0 * 0.5 + in_part + 42.0 * 0.5 atol=1e-12
+        end
+
+        @testset "FillExtrap(NaN) — NaN tails" begin
+            itp = cubic_interp(x, y; extrap=FillExtrap(NaN))
+            # Pure OOB → NaN × length = NaN
+            @test isnan(integrate(itp, -0.5, -0.1))
+            @test isnan(integrate(itp, 1.1, 1.5))
+            # Mixed: in-domain + NaN tail → NaN
+            @test isnan(integrate(itp, 0.5, 1.5))
+            # Fully in-domain → finite (NaN doesn't leak)
+            @test isfinite(integrate(itp, 0.1, 0.9))
+        end
+
+        @testset "FillExtrap signed orientation" begin
+            itp = linear_interp(x, y; extrap=FillExtrap(42.0))
+            # Reversed bounds → negated result
+            @test integrate(itp, 0.0, -0.4) ≈ -(42.0 * 0.4) atol=1e-12
+        end
+
+        @testset "FillExtrap cubic tails" begin
+            itp = cubic_interp(x, y; extrap=FillExtrap(5.0))
+            @test integrate(itp, -0.5, 0.0) ≈ 5.0 * 0.5 atol=1e-12
+            @test integrate(itp, 1.0, 1.3) ≈ 5.0 * 0.3 atol=1e-12
+        end
+
+        @testset "FillExtrap constant interp tails" begin
+            itp = constant_interp(x, y; extrap=FillExtrap(7.0))
+            @test integrate(itp, -0.4, 0.0) ≈ 7.0 * 0.4 atol=1e-12
+            @test integrate(itp, 1.0, 1.6) ≈ 7.0 * 0.6 atol=1e-12
+        end
+    end
 end

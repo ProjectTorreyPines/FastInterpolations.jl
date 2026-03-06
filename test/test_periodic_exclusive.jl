@@ -1,7 +1,7 @@
 using Test
 using FastInterpolations
 using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
-    _resolve_exclusive_period, _extend_exclusive,
+    _resolve_exclusive_period,
     _can_infer_period, _is_periodic_bc, endpoint
 
 @testset "PeriodicBC Exclusive Endpoint" begin
@@ -323,13 +323,44 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         y_incl[end] = y_incl[1]
         @test @inferred(cubic_interp(x_incl, y_incl; bc = PeriodicBC())) isa CubicInterpolant
 
-        # For exclusive, construction may have Union return (Range vs Vector grid branch),
-        # but evaluation is always type-stable
+        # Exclusive: isa-based grid extension → construction and evaluation are type-stable
         x_excl = range(0.0, step = dx, length = N)
         y_excl = sin.(x_excl)
         itp = cubic_interp(x_excl, y_excl; bc = PeriodicBC(endpoint = :exclusive))
         @test itp isa CubicInterpolant
         @test @inferred(itp(1.0)) isa Float64
+    end
+
+    @testset "_prepare_periodic type stability (isa branch)" begin
+        N = 16
+        dx = 2π / N
+
+        # Range grid + exclusive: should return Range (compile-time isa narrowing)
+        x_range = range(0.0, step = dx, length = N)
+        y_range = sin.(x_range)
+        bc_excl = PeriodicBC(endpoint = :exclusive)
+        result_range = @inferred _prepare_periodic(x_range, y_range, bc_excl)
+        x_ext, y_ext = result_range
+        @test x_ext isa AbstractRange
+        @test length(x_ext) == N + 1
+        @test last(x_ext) ≈ first(x_range) + dx * N
+        @test y_ext[end] ≈ y_ext[1]
+
+        # Vector grid + exclusive: should return Vector (compile-time isa narrowing)
+        x_vec = [0.0, 0.5, 1.5, 3.0, 5.0]
+        y_vec = sin.(x_vec)
+        bc_vec = PeriodicBC(endpoint = :exclusive, period = 2π)
+        result_vec = @inferred _prepare_periodic(x_vec, y_vec, bc_vec)
+        x_ext_v, y_ext_v = result_vec
+        @test x_ext_v isa Vector
+        @test length(x_ext_v) == 6
+        @test last(x_ext_v) ≈ 2π
+        @test y_ext_v[end] ≈ y_ext_v[1]
+
+        # Inclusive: no-op passthrough (trivially type-stable)
+        bc_incl = PeriodicBC()
+        result_incl = @inferred _prepare_periodic(x_range, y_range, bc_incl)
+        @test result_incl === (x_range, y_range)
     end
 
     # ========================================

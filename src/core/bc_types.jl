@@ -639,14 +639,7 @@ function _normalize_bc_array(
 
     # Check for PeriodicBC (not supported in arrays)
     for (i, bc) in enumerate(bcs)
-        if _is_periodic_bc(bc)
-            throw(
-                ArgumentError(
-                    "PeriodicBC at index $i is not supported in BC arrays. " *
-                        "Use uniform PeriodicBC for all series instead."
-                )
-            )
-        end
+        _is_periodic_bc(bc) && _throw_periodic_in_bc_array(i)
     end
 
     # Create new Vector with normalized BCs (type inferred from Tv)
@@ -665,6 +658,37 @@ Check if a boundary condition is periodic.
 """
 @inline _is_periodic_bc(::AbstractBC) = false  # default for all BC types
 @inline _is_periodic_bc(::PeriodicBC) = true   # only PeriodicBC is periodic
+
+# ── @noinline throw helpers (keep cold error paths out of hot code) ──
+
+@noinline function _throw_periodic_in_bc_array(i::Int)
+    throw(ArgumentError(
+        "PeriodicBC at index $i is not supported in BC arrays. " *
+            "Use uniform PeriodicBC for all series instead."
+    ))
+end
+
+@noinline function _throw_periodic_unsupported(feature::String)
+    throw(ArgumentError(
+        "PeriodicBC is not yet supported by $feature. " *
+            "Use BCPair-based boundary conditions (CubicFit, ZeroCurvBC, Deriv1, etc.)."
+    ))
+end
+
+@noinline function _throw_periodic_extrap_mismatch(d::Int, extrap)
+    throw(ArgumentError(
+        "Periodic BC on dim $d only supports NoExtrap() or WrapExtrap(), got $(typeof(extrap))()"
+    ))
+end
+
+@noinline function _throw_periodic_exclusive_cache()
+    throw(ArgumentError(
+        "CubicSplineCache does not support PeriodicBC(endpoint=:exclusive) because " *
+            "the cache is grid-only and cannot extend data values. " *
+            "Use cubic_interp(x, y, xq; bc=PeriodicBC(endpoint=:exclusive)) or " *
+            "CubicInterpolant(x, y; bc=PeriodicBC(endpoint=:exclusive)) instead."
+    ))
+end
 
 
 # ========================================

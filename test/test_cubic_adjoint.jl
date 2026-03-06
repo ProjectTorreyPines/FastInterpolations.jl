@@ -88,16 +88,24 @@ end
     # ========================================
     # Type stability
     # ========================================
-    @testset "Type stability" begin
+    @testset "Type stability — Float64" begin
         adj = cubic_adjoint(x_uniform, xq; bc = CubicFit())
         @test @inferred(adj(y_bar)) isa Vector{Float64}
     end
 
+    @testset "Type stability — Float32" begin
+        x32 = Float32.(x_uniform)
+        xq32 = Float32.(xq)
+        yb32 = randn(Float32, n_query)
+        adj32 = cubic_adjoint(x32, xq32; bc = CubicFit())
+        @test @inferred(adj32(yb32)) isa Vector{Float32}
+    end
+
     # ========================================
-    # Symmetric T sanity check
+    # Symmetric A sanity check
     # ========================================
-    @testset "Transpose solve == forward solve for symmetric T" begin
-        # For Deriv1/PolyFit BCs, T is symmetric → both solves give same result
+    @testset "Transpose solve == forward solve for symmetric A" begin
+        # For Deriv1/PolyFit BCs, A is symmetric → both solves give same result
         adj = cubic_adjoint(x_uniform, xq; bc = CubicFit())
         thomas = adj.cache.thomas
 

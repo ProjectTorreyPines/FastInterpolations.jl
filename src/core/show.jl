@@ -309,6 +309,31 @@ function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolant{Tg, Tv}) wh
     return _show_row(io, true, "BC:    ", _format_bc(itp.bc))
 end
 
+# --- CubicAdjoint ---
+
+function Base.show(io::IO, adj::CubicAdjoint{Tg}) where {Tg}
+    n, nq = size(adj)
+    bc_name = _short_bc_name(adj.bc)
+    _show_print(io, "CubicAdjoint", :cyan; bold = true)
+    _show_print(io, "{", :light_black)
+    _show_print(io, string(Tg), :light_blue)
+    _show_print(io, "}", :light_black)
+    return print(io, "($n → $nq pts, $bc_name)")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", adj::CubicAdjoint{Tg}) where {Tg}
+    _show_print(io, "CubicAdjoint", :cyan; bold = true)
+    _show_print(io, "{", :light_black)
+    _show_print(io, string(Tg), :light_blue)
+    _show_print(io, "}", :light_black)
+    println(io)
+    _show_grid_row(io, false, adj.cache.x)
+    println(io)
+    _show_row(io, false, "Query: ", "$(length(adj.anchors)) points")
+    println(io)
+    return _show_row(io, true, "BC:    ", _format_bc(adj.bc))
+end
+
 # Short BC name for compact display
 _short_bc_name(::PeriodicBC{:inclusive}) = "Periodic"
 _short_bc_name(::PeriodicBC{:exclusive}) = "Periodic(excl)"

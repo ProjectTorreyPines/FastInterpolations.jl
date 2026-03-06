@@ -163,7 +163,7 @@ end
 # Core Apply Function
 # ========================================
 
-function _cubic_adjoint_apply!(
+@with_pool pool function _cubic_adjoint_apply!(
         f_bar::AbstractVector{Tv},
         adj::CubicAdjoint{Tg, C, BC, Sym, PF},
         y_bar::AbstractVector
@@ -171,7 +171,7 @@ function _cubic_adjoint_apply!(
     n = length(adj.cache.x)
 
     # Step 1: Evaluation adjoint scatter — Eᵧᵀȳ → f̄, E_zᵀȳ → z̄
-    z_bar = zeros(Tv, n)
+    z_bar = zeros!(pool, Tv, n)
     _scatter_eval_adjoint!(f_bar, z_bar, adj.anchors, y_bar)
 
     # Step 2: Transpose solve — A⁻ᵀz̄ → r̄ (result in z_bar)
@@ -376,12 +376,7 @@ function cubic_adjoint(
         autocache::Bool = true
     )
     # Reject PeriodicBC (deferred to v2)
-    if _is_periodic_bc(bc)
-        throw(ArgumentError(
-            "PeriodicBC is not yet supported by cubic_adjoint. " *
-                "Use BCPair-based boundary conditions (CubicFit, ZeroCurvBC, Deriv1, etc.)."
-        ))
-    end
+    _is_periodic_bc(bc) && _throw_periodic_unsupported("cubic_adjoint")
 
     # Promote grid and query to AbstractFloat (handles Integer, Rational, etc.)
     Tg = _promote_grid_float(eltype(x), eltype(x_query))

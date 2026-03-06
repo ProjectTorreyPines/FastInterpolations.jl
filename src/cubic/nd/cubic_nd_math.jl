@@ -97,10 +97,10 @@ Evaluate cubic Hermite interpolation value at a point within interval.
 Returns interpolated function value.
 """
 @inline function _hermite_kernel_1d(
-    ::EvalValue,
-    yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
-    h::Tg, inv_h::Tg, dL::Tq
-) where {Tv, Tg, Tq}
+        ::EvalValue,
+        yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
+        h::Tg, inv_h::Tg, dL::Tq
+    ) where {Tv, Tg, Tq}
     # Promote to output type for intermediate calculations
     t = dL * inv_h
 
@@ -121,10 +121,10 @@ end
 Evaluate first derivative: dP/dx = (dP/dt) / h
 """
 @inline function _hermite_kernel_1d(
-    ::EvalDeriv1,
-    yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
-    h::Tg, inv_h::Tg, dL::Tq
-) where {Tv, Tg, Tq}
+        ::EvalDeriv1,
+        yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
+        h::Tg, inv_h::Tg, dL::Tq
+    ) where {Tv, Tg, Tq}
     # Let t remain in coordinate type - basis derivatives stay real
     t = dL * inv_h
     t_sq = t * t
@@ -149,10 +149,10 @@ end
 Evaluate second derivative: d²P/dx² = (d²P/dt²) / h²
 """
 @inline function _hermite_kernel_1d(
-    ::EvalDeriv2,
-    yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
-    h::Tg, inv_h::Tg, dL::Tq
-) where {Tv, Tg, Tq}
+        ::EvalDeriv2,
+        yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
+        h::Tg, inv_h::Tg, dL::Tq
+    ) where {Tv, Tg, Tq}
     # Let t remain in coordinate type - basis derivatives stay real
     t = dL * inv_h
 
@@ -177,10 +177,10 @@ end
 Evaluate third derivative: d³P/dx³ = (d³P/dt³) / h³ (constant within interval)
 """
 @inline function _hermite_kernel_1d(
-    ::EvalDeriv3,
-    yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
-    h::Tg, inv_h::Tg, dL::Tq
-) where {Tv, Tg, Tq}
+        ::EvalDeriv3,
+        yL::Tv, yR::Tv, dyL::Tv, dyR::Tv,
+        h::Tg, inv_h::Tg, dL::Tq
+    ) where {Tv, Tg, Tq}
     # Third derivatives are constants: d³h00/dt³=12, d³h10/dt³=6, d³h01/dt³=-12, d³h11/dt³=6
     # Auto-promote naturally through arithmetic with value types
     value_contrib = 12 * (yL - yR)
@@ -217,11 +217,11 @@ In-place version that modifies `dydx`.
 - `spacing::AbstractGridSpacing{Tg}`: Grid spacing information
 """
 function _moments_to_derivatives_1d!(
-    dydx::AbstractVector{Tv},
-    m::AbstractVector{Tv},
-    y::AbstractVector{Tv},
-    spacing::AbstractGridSpacing{Tg}
-) where {Tv, Tg}
+        dydx::AbstractVector{Tv},
+        m::AbstractVector{Tv},
+        y::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg}
+    ) where {Tv, Tg}
     n = length(y)
     @assert length(dydx) == n "dydx length mismatch"
     @assert length(m) == n "m length mismatch"
@@ -240,13 +240,13 @@ function _moments_to_derivatives_1d!(
     end
 
     # Interior and last points (using left derivative from each interval)
-    @inbounds for i in 1:(n-1)
+    @inbounds for i in 1:(n - 1)
         h = _get_h(spacing, i)
         inv_h = _get_inv_h(spacing, i)
         h_over_6 = h * inv_6
-        linear_slope = (y[i+1] - y[i]) * inv_h
-        moment_sum = muladd(Tg(2), m[i+1], m[i])
-        dydx[i+1] = muladd(h_over_6, moment_sum, linear_slope)
+        linear_slope = (y[i + 1] - y[i]) * inv_h
+        moment_sum = muladd(Tg(2), m[i + 1], m[i])
+        dydx[i + 1] = muladd(h_over_6, moment_sum, linear_slope)
     end
 
     return dydx
@@ -268,7 +268,7 @@ function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::BCPair, args...) wh
     return nothing
 end
 
-function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::PeriodicData{Tg}, args...) where {Tv, Tg<:AbstractFloat}
+function _apply_derivative_bc!(dydx::AbstractVector{Tv}, bc::PeriodicData{Tg}, args...) where {Tv, Tg <: AbstractFloat}
     # Enforce periodic: dydx[1] == dydx[end]
     avg = inv(Tg(2)) * (dydx[1] + dydx[end])
     @inbounds dydx[1] = avg
@@ -295,9 +295,9 @@ Differentiate 1D vector using cubic splines. BC type determines the method:
 - `CubicFit`: Estimate endpoint derivatives via polynomial fitting
 """
 @with_pool pool function _deriv_1d!(
-    deriv::AbstractVector{Tv}, values::AbstractVector{Tv},
-    grid::AbstractVector{Tg}, bc::AbstractBC
-) where {Tg<:AbstractFloat, Tv}
+        deriv::AbstractVector{Tv}, values::AbstractVector{Tv},
+        grid::AbstractVector{Tg}, bc::AbstractBC
+    ) where {Tg <: AbstractFloat, Tv}
     n = length(values)
     # Cache construction: _get_cubic_cache internally uses _cache_pointbc (duck-safe,
     # converts BC to structural form with zero(Tg) — no convert(Tg, bc.val) needed).
@@ -313,9 +313,9 @@ Differentiate 1D vector using cubic splines. BC type determines the method:
 end
 
 @with_pool pool function _deriv_1d!(
-    deriv::AbstractVector{Tv}, values::AbstractVector{Tv},
-    grid::AbstractVector{Tg}, ::CubicFit
-) where {Tg<:AbstractFloat, Tv}
+        deriv::AbstractVector{Tv}, values::AbstractVector{Tv},
+        grid::AbstractVector{Tg}, ::CubicFit
+    ) where {Tg <: AbstractFloat, Tv}
     n = length(values)
     @assert n >= 4 "Need at least 4 points for CubicFit"
 
@@ -366,9 +366,9 @@ This enables @simd vectorization over the contiguous dimension.
 - `thomas::ThomasFactorization{Tg}`: Thomas factorization with dl, du, inv_d
 """
 @inline function _ldiv_along_dim_vectorized!(
-    z::AbstractMatrix{Tv},
-    thomas::ThomasFactorization{Tg,V}
-) where {Tv, Tg<:AbstractFloat, V<:AbstractVector{Tg}}
+        z::AbstractMatrix{Tv},
+        thomas::ThomasFactorization{Tg, V}
+    ) where {Tv, Tg <: AbstractFloat, V <: AbstractVector{Tg}}
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d
@@ -377,9 +377,9 @@ This enables @simd vectorization over the contiguous dimension.
 
     # Forward substitution: transposed loop order for contiguous access
     @inbounds for k in 2:n_sys
-        factor = -dl[k-1]
+        factor = -dl[k - 1]
         @simd for i in 1:n_batch
-            z[i, k] = muladd(factor, z[i, k-1], z[i, k])
+            z[i, k] = muladd(factor, z[i, k - 1], z[i, k])
         end
     end
 
@@ -390,11 +390,11 @@ This enables @simd vectorization over the contiguous dimension.
     end
 
     # Backward substitution: remaining columns
-    @inbounds for k in (n_sys-1):-1:1
+    @inbounds for k in (n_sys - 1):-1:1
         u_factor = -du[k]
         d_factor = inv_d[k]
         @simd for i in 1:n_batch
-            z[i, k] = muladd(u_factor, z[i, k+1], z[i, k]) * d_factor
+            z[i, k] = muladd(u_factor, z[i, k + 1], z[i, k]) * d_factor
         end
     end
     return z
@@ -430,12 +430,12 @@ Optimized for memory locality and SIMD execution.
 - `::Val{D}`: Dimension along which to solve (D ≥ 2 only)
 """
 function solve_along_dim!(
-    out_z::AbstractMatrix{Tv},
-    cache::CubicSplineCache{Tg,X,F,BC_cache,S},
-    data::AbstractMatrix{Tv},
-    bc::BCPair,
-    dim::Val{D}
-) where {Tv, Tg<:AbstractFloat, X, F, BC_cache, S<:AbstractGridSpacing{Tg}, D}
+        out_z::AbstractMatrix{Tv},
+        cache::CubicSplineCache{Tg, X, F, BC_cache, S},
+        data::AbstractMatrix{Tv},
+        bc::BCPair,
+        dim::Val{D}
+    ) where {Tv, Tg <: AbstractFloat, X, F, BC_cache, S <: AbstractGridSpacing{Tg}, D}
     # Step 1: Compute RHS for all systems
     # Note: bc can have different value type than cache.bc_config (e.g., ComplexF64 vs Float64)
     compute_rhs_along_dim!(out_z, data, cache.x, cache.spacing, bc, dim)
@@ -466,13 +466,13 @@ Compute RHS for batch systems along dimension `D`.
 Note: Val(1) error method is at the end of this file.
 """
 function compute_rhs_along_dim!(
-    D::AbstractMatrix{Tv},
-    data::AbstractMatrix{Tv},
-    x::AbstractVector{Tg},
-    spacing::AbstractGridSpacing{Tg},
-    bc::BCPair,
-    ::Val{2}
-) where {Tv, Tg<:AbstractFloat}
+        D::AbstractMatrix{Tv},
+        data::AbstractMatrix{Tv},
+        x::AbstractVector{Tg},
+        spacing::AbstractGridSpacing{Tg},
+        bc::BCPair,
+        ::Val{2}
+    ) where {Tv, Tg <: AbstractFloat}
     n_batch = size(data, 1)
     @inbounds for i in 1:n_batch
         compute_rhs!(view(D, i, :), view(data, i, :), x, spacing, bc)
@@ -500,13 +500,13 @@ Convert moments to derivatives for batch systems along dimension D.
 Note: Val(1) error method is at the end of this file.
 """
 function moments_to_derivatives_along_dim!(
-    out::AbstractMatrix{Tv},
-    M::AbstractMatrix{Tv},
-    data::AbstractMatrix{Tv},
-    spacing::AbstractGridSpacing{Tg},
-    bc,
-    ::Val{2}
-) where {Tv, Tg<:AbstractFloat}
+        out::AbstractMatrix{Tv},
+        M::AbstractMatrix{Tv},
+        data::AbstractMatrix{Tv},
+        spacing::AbstractGridSpacing{Tg},
+        bc,
+        ::Val{2}
+    ) where {Tv, Tg <: AbstractFloat}
     n_batch = size(data, 1)
     @inbounds for i in 1:n_batch
         _moments_to_derivatives_1d!(
@@ -535,11 +535,13 @@ Benchmarking showed per-column approach is faster due to view creation overhead.
 Use `_solve_system!` in a loop for axis 1, or use `Val(2)` for SIMD-optimized batch solving.
 """
 @noinline function _ldiv_along_dim!(z, thomas, ::Val{1})
-    throw(ArgumentError(
-        "Batch solving along axis 1 (Val(1)) is not supported.\n" *
-        "Reason: Per-column approach is faster due to view creation overhead.\n" *
-        "Use _solve_system! in a loop for axis 1, or use Val(2) for SIMD-optimized batch solving."
-    ))
+    throw(
+        ArgumentError(
+            "Batch solving along axis 1 (Val(1)) is not supported.\n" *
+                "Reason: Per-column approach is faster due to view creation overhead.\n" *
+                "Use _solve_system! in a loop for axis 1, or use Val(2) for SIMD-optimized batch solving."
+        )
+    )
 end
 
 """
@@ -549,17 +551,19 @@ Batch RHS computation along axis 1 is explicitly unsupported.
 Use `compute_rhs!` in a loop for axis 1, or use `Val(2)` for batch computation.
 """
 @noinline function compute_rhs_along_dim!(
-    D::AbstractMatrix{Tv},
-    data::AbstractMatrix{Tv},
-    x::AbstractVector{Tg},
-    spacing::AbstractGridSpacing{Tg},
-    bc::BCPair,
-    ::Val{1}
-) where {Tv, Tg<:AbstractFloat}
-    throw(ArgumentError(
-        "Batch RHS computation along axis 1 (Val(1)) is not supported.\n" *
-        "Use compute_rhs! in a loop for axis 1, or use Val(2) for batch computation."
-    ))
+        D::AbstractMatrix{Tv},
+        data::AbstractMatrix{Tv},
+        x::AbstractVector{Tg},
+        spacing::AbstractGridSpacing{Tg},
+        bc::BCPair,
+        ::Val{1}
+    ) where {Tv, Tg <: AbstractFloat}
+    throw(
+        ArgumentError(
+            "Batch RHS computation along axis 1 (Val(1)) is not supported.\n" *
+                "Use compute_rhs! in a loop for axis 1, or use Val(2) for batch computation."
+        )
+    )
 end
 
 """
@@ -569,15 +573,17 @@ Batch moment-to-derivative conversion along axis 1 is explicitly unsupported.
 Use `_moments_to_derivatives_1d!` in a loop for axis 1, or use `Val(2)` for batch conversion.
 """
 @noinline function moments_to_derivatives_along_dim!(
-    out::AbstractMatrix{Tv},
-    M::AbstractMatrix{Tv},
-    data::AbstractMatrix{Tv},
-    spacing,
-    bc,
-    ::Val{1}
-) where {Tv}
-    throw(ArgumentError(
-        "Batch moment-to-derivative along axis 1 (Val(1)) is not supported.\n" *
-        "Use _moments_to_derivatives_1d! in a loop for axis 1, or use Val(2) for batch conversion."
-    ))
+        out::AbstractMatrix{Tv},
+        M::AbstractMatrix{Tv},
+        data::AbstractMatrix{Tv},
+        spacing,
+        bc,
+        ::Val{1}
+    ) where {Tv}
+    throw(
+        ArgumentError(
+            "Batch moment-to-derivative along axis 1 (Val(1)) is not supported.\n" *
+                "Use _moments_to_derivatives_1d! in a loop for axis 1, or use Val(2) for batch conversion."
+        )
+    )
 end

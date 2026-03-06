@@ -33,7 +33,7 @@ using FastInterpolations
 
         # Check approximate correctness (quadratic interpolation through points)
         # y2 at x=0.5: (1+2im)*0.5 = 0.5+1.0im (linear function, quadratic fits exactly)
-        @test isapprox(vals[2], 0.5 + 1.0im, atol=1e-10)
+        @test isapprox(vals[2], 0.5 + 1.0im, atol = 1.0e-10)
     end
 
     # ========================================
@@ -60,8 +60,8 @@ using FastInterpolations
     # ========================================
     @testset "Integer grid + Complex values" begin
         x = 0:10  # Range{Int}
-        y1 = Complex{Int}[i + 2im*i for i in 0:10]  # Linear: (1+2i)*x
-        y2 = Complex{Int}[2i + 1im*i for i in 0:10]  # Linear: (2+i)*x
+        y1 = Complex{Int}[i + 2im * i for i in 0:10]  # Linear: (1+2i)*x
+        y2 = Complex{Int}[2i + 1im * i for i in 0:10]  # Linear: (2+i)*x
 
         sitp = quadratic_interp(x, Series(y1, y2))
 
@@ -72,7 +72,7 @@ using FastInterpolations
         @test vals isa Vector{ComplexF64}
 
         # For linear function, quadratic interpolation should be exact
-        @test isapprox(vals[1], (1.0 + 2.0im) * 5.5, rtol=1e-10)
+        @test isapprox(vals[1], (1.0 + 2.0im) * 5.5, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -107,8 +107,8 @@ using FastInterpolations
         @test length(sitp(0.5)) == 2  # Two series
 
         vals = sitp(0.5)
-        @test isapprox(vals[1], 0.5 + 1.0im, atol=1e-10)
-        @test isapprox(vals[2], 1.0 - 0.5im, atol=1e-10)
+        @test isapprox(vals[1], 0.5 + 1.0im, atol = 1.0e-10)
+        @test isapprox(vals[2], 1.0 - 0.5im, atol = 1.0e-10)
     end
 
     # ========================================
@@ -130,9 +130,9 @@ using FastInterpolations
         @test all(r -> length(r) == 3, results)
 
         # Check values (linear function interpolated exactly by quadratic)
-        @test isapprox(results[1][1], (1.0 + 2.0im) * 0.25, rtol=1e-10)
-        @test isapprox(results[1][2], (1.0 + 2.0im) * 0.5, rtol=1e-10)
-        @test isapprox(results[2][3], (2.0 - 1.0im) * 0.75, rtol=1e-10)
+        @test isapprox(results[1][1], (1.0 + 2.0im) * 0.25, rtol = 1.0e-10)
+        @test isapprox(results[1][2], (1.0 + 2.0im) * 0.5, rtol = 1.0e-10)
+        @test isapprox(results[2][3], (2.0 - 1.0im) * 0.75, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -149,8 +149,8 @@ using FastInterpolations
         sitp(output, 0.5)
 
         @test output[1] isa ComplexF64
-        @test isapprox(output[1], (1.0 + 2.0im) * 0.5, rtol=1e-10)
-        @test isapprox(output[2], (2.0 - 1.0im) * 0.5, rtol=1e-10)
+        @test isapprox(output[1], (1.0 + 2.0im) * 0.5, rtol = 1.0e-10)
+        @test isapprox(output[2], (2.0 - 1.0im) * 0.5, rtol = 1.0e-10)
     end
 
     @testset "In-place vector evaluation" begin
@@ -166,7 +166,7 @@ using FastInterpolations
         sitp(outputs, xq)
 
         @test outputs[1][3] isa ComplexF64
-        @test isapprox(outputs[1][3], (1.0 + 2.0im) * 0.5, rtol=1e-10)
+        @test isapprox(outputs[1][3], (1.0 + 2.0im) * 0.5, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -178,17 +178,17 @@ using FastInterpolations
         y2 = (2.0 - 1.0im) .* collect(x)
 
         # Extension mode
-        sitp_ext = quadratic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
+        sitp_ext = quadratic_interp(x, Series(y1, y2); extrap = ExtendExtrap())
         vals_ext = sitp_ext(1.5)  # Beyond domain
         @test vals_ext isa Vector{ComplexF64}
         # Linear function extended quadratically
-        @test isapprox(vals_ext[1], (1.0 + 2.0im) * 1.5, rtol=1e-10)
+        @test isapprox(vals_ext[1], (1.0 + 2.0im) * 1.5, rtol = 1.0e-10)
 
         # Constant mode
-        sitp_const = quadratic_interp(x, Series(y1, y2); extrap=ClampExtrap())
+        sitp_const = quadratic_interp(x, Series(y1, y2); extrap = ClampExtrap())
         vals_const = sitp_const(1.5)  # Beyond domain
         @test vals_const isa Vector{ComplexF64}
-        @test isapprox(vals_const[1], y1[end], rtol=1e-10)
+        @test isapprox(vals_const[1], y1[end], rtol = 1.0e-10)
     end
 
     # ========================================
@@ -234,22 +234,22 @@ using FastInterpolations
         a = 1.0 + 2.0im  # x^2 coefficient
         b = 2.0 - 1.0im  # x coefficient
         c = 3.0 + 1.0im  # constant
-        y = a .* collect(x).^2 .+ b .* collect(x) .+ c
+        y = a .* collect(x) .^ 2 .+ b .* collect(x) .+ c
 
         sitp = quadratic_interp(x, Series(y))
 
         # First derivative: 2ax + b
         xq = 0.5
-        d1 = sitp(xq; deriv=DerivOp(1))
+        d1 = sitp(xq; deriv = DerivOp(1))
         expected_d1 = 2 * a * xq + b
         @test d1 isa Vector{ComplexF64}
-        @test isapprox(d1[1], expected_d1, rtol=1e-6)
+        @test isapprox(d1[1], expected_d1, rtol = 1.0e-6)
 
         # Second derivative: 2a (constant)
-        d2 = sitp(xq; deriv=DerivOp(2))
+        d2 = sitp(xq; deriv = DerivOp(2))
         expected_d2 = 2 * a
         @test d2 isa Vector{ComplexF64}
-        @test isapprox(d2[1], expected_d2, rtol=1e-6)
+        @test isapprox(d2[1], expected_d2, rtol = 1.0e-6)
     end
 
     # ========================================
@@ -299,15 +299,15 @@ using FastInterpolations
 
         # Complex quadratic: y = (1+i)x^2 - (2+3i)x + (1-i)
         coeffs = (1.0 + 1.0im, -2.0 - 3.0im, 1.0 - 1.0im)
-        y = [coeffs[1]*xi^2 + coeffs[2]*xi + coeffs[3] for xi in x]
+        y = [coeffs[1] * xi^2 + coeffs[2] * xi + coeffs[3] for xi in x]
 
         sitp = quadratic_interp(x, Series(y))
 
         # Test at several points
         for xq in [0.15, 0.35, 0.65, 0.85]
-            expected = coeffs[1]*xq^2 + coeffs[2]*xq + coeffs[3]
+            expected = coeffs[1] * xq^2 + coeffs[2] * xq + coeffs[3]
             result = sitp(xq)[1]
-            @test isapprox(result, expected, rtol=1e-6)
+            @test isapprox(result, expected, rtol = 1.0e-6)
         end
     end
 

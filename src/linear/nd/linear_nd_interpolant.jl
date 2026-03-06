@@ -59,11 +59,11 @@ itp = linear_interp((x, y), data;
 ```
 """
 function linear_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv_raw, N};
-    extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch()
-) where {N, Tv_raw}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv_raw, N};
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch()
+    ) where {N, Tv_raw}
     # Validate grid dimensions
     _validate_nd_grids(grids, data)
 
@@ -85,8 +85,10 @@ function linear_interp(
     searches = _resolve_search_nd(search, Val(N))
 
     extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
-    return LinearInterpolantND{Tg, Tv, N,
-        typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches)}(
+    return LinearInterpolantND{
+        Tg, Tv, N,
+        typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches),
+    }(
         grids_typed, spacings, Array(data_typed), extrap_vals, searches
     )
 end

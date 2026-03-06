@@ -39,7 +39,7 @@ using DataFrames
 const DEFAULT_BENCH_SECONDS = 0.5
 
 function _setup_benchmark()
-    BenchmarkTools.DEFAULT_PARAMETERS.seconds = DEFAULT_BENCH_SECONDS
+    return BenchmarkTools.DEFAULT_PARAMETERS.seconds = DEFAULT_BENCH_SECONDS
 end
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -47,7 +47,7 @@ end
 # ═══════════════════════════════════════════════════════════════════════════════
 
 """Generate test data for benchmarks."""
-function _generate_data(n_grid::Int, n_query::Int; use_range::Bool=false)
+function _generate_data(n_grid::Int, n_query::Int; use_range::Bool = false)
     if use_range
         x = range(0.0, 10.0, n_grid)
     else
@@ -79,7 +79,7 @@ Benchmark interpolant construction time.
 # Returns
 NamedTuple with median times in nanoseconds
 """
-function benchmark_construction(; n_grid::Int=100, use_range::Bool=false, interp_type::Symbol=:cubic)
+function benchmark_construction(; n_grid::Int = 100, use_range::Bool = false, interp_type::Symbol = :cubic)
     _setup_benchmark()
     data = _generate_data(n_grid, 100; use_range)
     x, y = data.x, data.y
@@ -88,7 +88,7 @@ function benchmark_construction(; n_grid::Int=100, use_range::Bool=false, interp
 
     if interp_type == :cubic
         clear_cubic_cache!()
-        b = @benchmark cubic_interp($x, $y; autocache=false)
+        b = @benchmark cubic_interp($x, $y; autocache = false)
         results[:FastInterp] = median(b.times)
 
         if use_range
@@ -118,7 +118,7 @@ function benchmark_construction(; n_grid::Int=100, use_range::Bool=false, interp
     return (
         FastInterp = results[:FastInterp],
         Interpolations = results[:Interpolations],
-        DataInterp = results[:DataInterp]
+        DataInterp = results[:DataInterp],
     )
 end
 
@@ -140,8 +140,10 @@ Benchmark interpolation evaluation time (reusing pre-built interpolant).
 # Returns
 NamedTuple with median times in nanoseconds (for n_query points)
 """
-function benchmark_evaluation(; n_grid::Int=100, n_query::Int=1000, use_range::Bool=false,
-                               interp_type::Symbol=:cubic)
+function benchmark_evaluation(;
+        n_grid::Int = 100, n_query::Int = 1000, use_range::Bool = false,
+        interp_type::Symbol = :cubic
+    )
     _setup_benchmark()
     data = _generate_data(n_grid, n_query; use_range)
     x, y, xi_vec = data.x, data.y, data.xi_vec
@@ -150,7 +152,7 @@ function benchmark_evaluation(; n_grid::Int=100, n_query::Int=1000, use_range::B
 
     if interp_type == :cubic
         clear_cubic_cache!()
-        itp_fast = cubic_interp(x, y; autocache=false)
+        itp_fast = cubic_interp(x, y; autocache = false)
         itp_data = DataInterpolations.CubicSpline(y, x)
 
         b = @benchmark $itp_fast($xi_vec)
@@ -189,7 +191,7 @@ function benchmark_evaluation(; n_grid::Int=100, n_query::Int=1000, use_range::B
     return (
         FastInterp = results[:FastInterp],
         Interpolations = results[:Interpolations],
-        DataInterp = results[:DataInterp]
+        DataInterp = results[:DataInterp],
     )
 end
 
@@ -212,7 +214,7 @@ This is the typical use case for users who interpolate once per dataset.
 # Returns
 NamedTuple with (time_ns, alloc_bytes) for each package
 """
-function benchmark_oneshot(; n_grid::Int=100, n_query::Int=1000, use_range::Bool=false, interp_type::Symbol=:cubic)
+function benchmark_oneshot(; n_grid::Int = 100, n_query::Int = 1000, use_range::Bool = false, interp_type::Symbol = :cubic)
     _setup_benchmark()
     data = _generate_data(n_grid, n_query; use_range)
     x, y, xi_vec = data.x, data.y, data.xi_vec
@@ -223,36 +225,36 @@ function benchmark_oneshot(; n_grid::Int=100, n_query::Int=1000, use_range::Bool
         clear_cubic_cache!()
         cubic_interp(x, y, xi_vec)  # warmup to populate cache
         b = @benchmark cubic_interp($x, $y, $xi_vec)
-        results[:FastInterp] = (time_ns=median(b.times), alloc_bytes=b.allocs > 0 ? Int(b.memory) : 0)
+        results[:FastInterp] = (time_ns = median(b.times), alloc_bytes = b.allocs > 0 ? Int(b.memory) : 0)
 
         if use_range
             b = @benchmark Interpolations.cubic_spline_interpolation($x, $y)($xi_vec)
-            results[:Interpolations] = (time_ns=median(b.times), alloc_bytes=Int(b.memory))
+            results[:Interpolations] = (time_ns = median(b.times), alloc_bytes = Int(b.memory))
         else
-            results[:Interpolations] = (time_ns=NaN, alloc_bytes=0)
+            results[:Interpolations] = (time_ns = NaN, alloc_bytes = 0)
         end
 
         b = @benchmark DataInterpolations.CubicSpline($y, $x)($xi_vec)
-        results[:DataInterp] = (time_ns=median(b.times), alloc_bytes=Int(b.memory))
+        results[:DataInterp] = (time_ns = median(b.times), alloc_bytes = Int(b.memory))
     else
         b = @benchmark linear_interp($x, $y, $xi_vec)
-        results[:FastInterp] = (time_ns=median(b.times), alloc_bytes=b.allocs > 0 ? Int(b.memory) : 0)
+        results[:FastInterp] = (time_ns = median(b.times), alloc_bytes = b.allocs > 0 ? Int(b.memory) : 0)
 
         if use_range
             b = @benchmark Interpolations.linear_interpolation($x, $y)($xi_vec)
         else
             b = @benchmark Interpolations.LinearInterpolation(($x,), $y)($xi_vec)
         end
-        results[:Interpolations] = (time_ns=median(b.times), alloc_bytes=Int(b.memory))
+        results[:Interpolations] = (time_ns = median(b.times), alloc_bytes = Int(b.memory))
 
         b = @benchmark DataInterpolations.LinearInterpolation($y, $x)($xi_vec)
-        results[:DataInterp] = (time_ns=median(b.times), alloc_bytes=Int(b.memory))
+        results[:DataInterp] = (time_ns = median(b.times), alloc_bytes = Int(b.memory))
     end
 
     return (
         FastInterp = results[:FastInterp],
         Interpolations = results[:Interpolations],
-        DataInterp = results[:DataInterp]
+        DataInterp = results[:DataInterp],
     )
 end
 
@@ -268,13 +270,13 @@ Measure memory allocations for different evaluation methods.
 # Returns
 NamedTuple with allocation in bytes for each method
 """
-function benchmark_allocation(; n_grid::Int=100, use_range::Bool=false)
+function benchmark_allocation(; n_grid::Int = 100, use_range::Bool = false)
     data = _generate_data(n_grid, 100; use_range)
     x, y, xi_vec, xi_scalar = data.x, data.y, data.xi_vec, data.xi_scalar
 
     # FastInterpolations - Callable
     clear_cubic_cache!()
-    itp = cubic_interp(x, y; autocache=false)
+    itp = cubic_interp(x, y; autocache = false)
     itp(xi_scalar)  # warmup
     alloc_callable_scalar = @allocated itp(xi_scalar)
     itp(xi_vec)  # warmup
@@ -319,7 +321,7 @@ function benchmark_allocation(; n_grid::Int=100, use_range::Bool=false)
         Interpolations_scalar = alloc_interp_scalar,
         Interpolations_vector = alloc_interp_vector,
         DataInterp_scalar = alloc_data_scalar,
-        DataInterp_vector = alloc_data_vector
+        DataInterp_vector = alloc_data_vector,
     )
 end
 
@@ -335,7 +337,7 @@ Run benchmarks suitable for README figure generation.
 # Returns
 NamedTuple with all benchmark results
 """
-function benchmark_for_readme(; n_grid::Int=100, n_query::Int=1000, use_range::Bool=true)
+function benchmark_for_readme(; n_grid::Int = 100, n_query::Int = 1000, use_range::Bool = true)
     println("Running benchmarks for README (n_grid=$n_grid, n_query=$n_query, use_range=$use_range)")
     println("This may take a few minutes...")
 
@@ -360,19 +362,19 @@ function benchmark_for_readme(; n_grid::Int=100, n_query::Int=1000, use_range::B
     println("="^60)
 
     println("\nConstruction:")
-    println("  FastInterp:     $(round(constr.FastInterp/1000, digits=1)) μs")
-    println("  Interpolations: $(isnan(constr.Interpolations) ? "N/A" : "$(round(constr.Interpolations/1000, digits=1)) μs")")
-    println("  DataInterp:     $(round(constr.DataInterp/1000, digits=1)) μs")
+    println("  FastInterp:     $(round(constr.FastInterp / 1000, digits = 1)) μs")
+    println("  Interpolations: $(isnan(constr.Interpolations) ? "N/A" : "$(round(constr.Interpolations / 1000, digits = 1)) μs")")
+    println("  DataInterp:     $(round(constr.DataInterp / 1000, digits = 1)) μs")
 
     println("\nEvaluation (reuse interpolant, $n_query points):")
-    println("  FastInterp:     $(round(eval_result.FastInterp/1000, digits=1)) μs")
-    println("  Interpolations: $(isnan(eval_result.Interpolations) ? "N/A" : "$(round(eval_result.Interpolations/1000, digits=1)) μs")")
-    println("  DataInterp:     $(round(eval_result.DataInterp/1000, digits=1)) μs")
+    println("  FastInterp:     $(round(eval_result.FastInterp / 1000, digits = 1)) μs")
+    println("  Interpolations: $(isnan(eval_result.Interpolations) ? "N/A" : "$(round(eval_result.Interpolations / 1000, digits = 1)) μs")")
+    println("  DataInterp:     $(round(eval_result.DataInterp / 1000, digits = 1)) μs")
 
     println("\nOne-shot (construct + eval, $n_query points):")
-    println("  FastInterp:     $(round(oneshot.FastInterp.time_ns/1000, digits=1)) μs ($(oneshot.FastInterp.alloc_bytes) bytes)")
-    println("  Interpolations: $(isnan(oneshot.Interpolations.time_ns) ? "N/A" : "$(round(oneshot.Interpolations.time_ns/1000, digits=1)) μs ($(oneshot.Interpolations.alloc_bytes) bytes)")")
-    println("  DataInterp:     $(round(oneshot.DataInterp.time_ns/1000, digits=1)) μs ($(oneshot.DataInterp.alloc_bytes) bytes)")
+    println("  FastInterp:     $(round(oneshot.FastInterp.time_ns / 1000, digits = 1)) μs ($(oneshot.FastInterp.alloc_bytes) bytes)")
+    println("  Interpolations: $(isnan(oneshot.Interpolations.time_ns) ? "N/A" : "$(round(oneshot.Interpolations.time_ns / 1000, digits = 1)) μs ($(oneshot.Interpolations.alloc_bytes) bytes)")")
+    println("  DataInterp:     $(round(oneshot.DataInterp.time_ns / 1000, digits = 1)) μs ($(oneshot.DataInterp.alloc_bytes) bytes)")
 
     println("\nAllocations (scalar eval with cache hit):")
     println("  FastInterp callable: $(allocs.FastInterp_callable_scalar) bytes")
@@ -385,7 +387,7 @@ function benchmark_for_readme(; n_grid::Int=100, n_query::Int=1000, use_range::B
         evaluation = eval_result,
         oneshot = oneshot,
         allocations = allocs,
-        params = (n_grid=n_grid, n_query=n_query, use_range=use_range)
+        params = (n_grid = n_grid, n_query = n_query, use_range = use_range),
     )
 end
 
@@ -401,18 +403,18 @@ Convert benchmark result to format suitable for bar charts.
 # Returns
 Vector of (label, value) pairs
 """
-function to_bar_data(result::NamedTuple; divide_by::Float64=1000.0)
+function to_bar_data(result::NamedTuple; divide_by::Float64 = 1000.0)
     labels = ["FastInterp", "Interpolations", "DataInterp"]
     values = [
         result.FastInterp / divide_by,
         isnan(result.Interpolations) ? 0.0 : result.Interpolations / divide_by,
-        result.DataInterp / divide_by
+        result.DataInterp / divide_by,
     ]
     return collect(zip(labels, values))
 end
 
 """Print a simple ASCII bar chart."""
-function print_bar_chart(title::String, data::Vector{Tuple{String, Float64}}; unit::String="μs", width::Int=40)
+function print_bar_chart(title::String, data::Vector{Tuple{String, Float64}}; unit::String = "μs", width::Int = 40)
     println("\n$title")
     println("-"^60)
 
@@ -424,9 +426,10 @@ function print_bar_chart(title::String, data::Vector{Tuple{String, Float64}}; un
         else
             bar_len = round(Int, (val / max_val) * width)
             bar = "█"^bar_len
-            println("  $(rpad(label, 15)) $bar $(round(val, digits=1)) $unit")
+            println("  $(rpad(label, 15)) $bar $(round(val, digits = 1)) $unit")
         end
     end
+    return
 end
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -453,7 +456,7 @@ result.evaluation    # DataFrame with evaluation scaling
 result.oneshot       # DataFrame with one-shot scaling
 ```
 """
-function benchmark_scaling(; verbose::Bool=true)
+function benchmark_scaling(; verbose::Bool = true)
     _setup_benchmark()
 
     # Grid sizes for construction: 10, 20, 50, 100, ..., 10000
@@ -464,7 +467,7 @@ function benchmark_scaling(; verbose::Bool=true)
     # Query sizes for evaluation/oneshot: log scale from 1 to 100000
     query_sizes = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
 
-    ns_to_sec(ns) = ns / 1e9
+    ns_to_sec(ns) = ns / 1.0e9
 
     # ─────────────────────────────────────────────────────────────────────────
     # Construction Benchmark (varying n_grid)
@@ -480,7 +483,7 @@ function benchmark_scaling(; verbose::Bool=true)
 
         # FastInterpolations
         clear_cubic_cache!()
-        b = @benchmark cubic_interp($x, $y; autocache=false)
+        b = @benchmark cubic_interp($x, $y; autocache = false)
         t_fast = ns_to_sec(median(b.times))
         alloc_fast = Int(b.memory)
 
@@ -494,15 +497,17 @@ function benchmark_scaling(; verbose::Bool=true)
         t_di = ns_to_sec(median(b.times))
         alloc_di = Int(b.memory)
 
-        push!(constr_rows, (
-            n=n,
-            FastInterp=t_fast,
-            Interpolations=t_itp,
-            DataInterp=t_di,
-            alloc_FastInterp=alloc_fast,
-            alloc_Interpolations=alloc_itp,
-            alloc_DataInterp=alloc_di
-        ))
+        push!(
+            constr_rows, (
+                n = n,
+                FastInterp = t_fast,
+                Interpolations = t_itp,
+                DataInterp = t_di,
+                alloc_FastInterp = alloc_fast,
+                alloc_Interpolations = alloc_itp,
+                alloc_DataInterp = alloc_di,
+            )
+        )
         verbose && println("done")
     end
     df_construction = DataFrame(constr_rows)
@@ -518,7 +523,7 @@ function benchmark_scaling(; verbose::Bool=true)
 
     # Pre-build interpolants
     clear_cubic_cache!()
-    itp_fast = cubic_interp(x, y; autocache=false)
+    itp_fast = cubic_interp(x, y; autocache = false)
     itp_itp = Interpolations.cubic_spline_interpolation(x, y)
     itp_di = DataInterpolations.CubicSpline(y, x)
 
@@ -537,7 +542,7 @@ function benchmark_scaling(; verbose::Bool=true)
         b = @benchmark $itp_di($xi)
         t_di = ns_to_sec(median(b.times))
 
-        push!(eval_rows, (n=nq, FastInterp=t_fast, Interpolations=t_itp, DataInterp=t_di))
+        push!(eval_rows, (n = nq, FastInterp = t_fast, Interpolations = t_itp, DataInterp = t_di))
         verbose && println("done")
     end
     df_evaluation = DataFrame(eval_rows)
@@ -554,7 +559,7 @@ function benchmark_scaling(; verbose::Bool=true)
         xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
 
         # FastInterpolations - autocache OFF (fresh construction each time)
-        b = @benchmark cubic_interp($x, $y, $xi; autocache=false)
+        b = @benchmark cubic_interp($x, $y, $xi; autocache = false)
         t_fast_nocache = ns_to_sec(median(b.times))
         alloc_fast_nocache = Int(b.memory)
 
@@ -575,22 +580,24 @@ function benchmark_scaling(; verbose::Bool=true)
         t_di = ns_to_sec(median(b.times))
         alloc_di = Int(b.memory)
 
-        push!(oneshot_rows, (
-            n=nq,
-            FastInterp_nocache=t_fast_nocache,
-            FastInterp_cached=t_fast_cache,
-            Interpolations=t_itp,
-            DataInterp=t_di,
-            alloc_FastInterp_nocache=alloc_fast_nocache,
-            alloc_FastInterp_cached=alloc_fast_cache,
-            alloc_Interpolations=alloc_itp,
-            alloc_DataInterp=alloc_di
-        ))
+        push!(
+            oneshot_rows, (
+                n = nq,
+                FastInterp_nocache = t_fast_nocache,
+                FastInterp_cached = t_fast_cache,
+                Interpolations = t_itp,
+                DataInterp = t_di,
+                alloc_FastInterp_nocache = alloc_fast_nocache,
+                alloc_FastInterp_cached = alloc_fast_cache,
+                alloc_Interpolations = alloc_itp,
+                alloc_DataInterp = alloc_di,
+            )
+        )
         verbose && println("done")
     end
     df_oneshot = DataFrame(oneshot_rows)
 
     verbose && println("\nDone! Results returned as (construction=DataFrame, evaluation=DataFrame, oneshot=DataFrame)")
 
-    return (construction=df_construction, evaluation=df_evaluation, oneshot=df_oneshot)
+    return (construction = df_construction, evaluation = df_evaluation, oneshot = df_oneshot)
 end

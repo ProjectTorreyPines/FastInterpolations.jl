@@ -56,8 +56,8 @@ using FastInterpolations
     # ========================================
     @testset "Integer grid + Complex values" begin
         x = 0:10  # Range{Int}
-        y1 = Complex{Int}[i + 2im*i for i in 0:10]
-        y2 = Complex{Int}[2i + 1im*i for i in 0:10]
+        y1 = Complex{Int}[i + 2im * i for i in 0:10]
+        y2 = Complex{Int}[2i + 1im * i for i in 0:10]
 
         sitp = constant_interp(x, Series(y1, y2))
 
@@ -69,7 +69,7 @@ using FastInterpolations
 
         # Constant interpolation returns step value (nearest by default)
         # At 5.5 with NearestSide(), rounds to index 6 (x=5) → value 5+10i
-        @test isapprox(vals[1], 5.0 + 10.0im, rtol=1e-10)
+        @test isapprox(vals[1], 5.0 + 10.0im, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -109,19 +109,19 @@ using FastInterpolations
     # ========================================
     @testset "Side options with Complex values" begin
         x = collect(0.0:1.0:5.0)  # [0, 1, 2, 3, 4, 5]
-        y1 = ComplexF64[1+1im, 2+2im, 3+3im, 4+4im, 5+5im, 6+6im]
+        y1 = ComplexF64[1 + 1im, 2 + 2im, 3 + 3im, 4 + 4im, 5 + 5im, 6 + 6im]
 
         # Test LeftSide()
-        sitp_left = constant_interp(x, Series(y1); side=LeftSide())
+        sitp_left = constant_interp(x, Series(y1); side = LeftSide())
         @test sitp_left isa ConstantSeriesInterpolant{Float64, ComplexF64}
         vals_left = sitp_left(2.5)  # Between 2 and 3
         @test vals_left isa Vector{ComplexF64}
-        @test isapprox(vals_left[1], 3.0 + 3.0im, rtol=1e-10)  # Left value at x=2
+        @test isapprox(vals_left[1], 3.0 + 3.0im, rtol = 1.0e-10)  # Left value at x=2
 
         # Test RightSide()
-        sitp_right = constant_interp(x, Series(y1); side=RightSide())
+        sitp_right = constant_interp(x, Series(y1); side = RightSide())
         vals_right = sitp_right(2.5)
-        @test isapprox(vals_right[1], 4.0 + 4.0im, rtol=1e-10)  # Right value at x=3
+        @test isapprox(vals_right[1], 4.0 + 4.0im, rtol = 1.0e-10)  # Right value at x=3
     end
 
     # ========================================
@@ -183,15 +183,15 @@ using FastInterpolations
         y2 = (2.0 - 1.0im) .* collect(x)
 
         # Extension mode
-        sitp_ext = constant_interp(x, Series(y1, y2); extrap=ExtendExtrap())
+        sitp_ext = constant_interp(x, Series(y1, y2); extrap = ExtendExtrap())
         vals_ext = sitp_ext(1.5)  # Beyond domain
         @test vals_ext isa Vector{ComplexF64}
 
         # Constant mode
-        sitp_const = constant_interp(x, Series(y1, y2); extrap=ClampExtrap())
+        sitp_const = constant_interp(x, Series(y1, y2); extrap = ClampExtrap())
         vals_const = sitp_const(1.5)  # Beyond domain
         @test vals_const isa Vector{ComplexF64}
-        @test isapprox(vals_const[1], y1[end], rtol=1e-10)
+        @test isapprox(vals_const[1], y1[end], rtol = 1.0e-10)
     end
 
     # ========================================
@@ -238,12 +238,12 @@ using FastInterpolations
         sitp = constant_interp(x, Series(y1))
 
         # First derivative should be zero (step function)
-        d1 = sitp(0.5; deriv=DerivOp(1))
+        d1 = sitp(0.5; deriv = DerivOp(1))
         @test d1 isa Vector{ComplexF64}
         @test d1[1] == zero(ComplexF64)
 
         # Second derivative should be zero
-        d2 = sitp(0.5; deriv=DerivOp(2))
+        d2 = sitp(0.5; deriv = DerivOp(2))
         @test d2 isa Vector{ComplexF64}
         @test d2[1] == zero(ComplexF64)
     end

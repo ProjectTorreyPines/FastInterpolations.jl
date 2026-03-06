@@ -17,11 +17,11 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
         end
 
         @testset "LinearBinarySearch kwargs forwarding" begin
-            @test Search(:linear_binary; linear_window=4) isa LinearBinarySearch{4}
-            @test Search(:linear_binary; linear_window=2) isa LinearBinarySearch{2}
-            @test Search(:linear_binary; linear_window=16) isa LinearBinarySearch{16}
-            @test Search(:linear_binary; linear_window=0) isa LinearBinarySearch{0}
-            @test Search(:linear_binary; linear_window=128) isa LinearBinarySearch{128}
+            @test Search(:linear_binary; linear_window = 4) isa LinearBinarySearch{4}
+            @test Search(:linear_binary; linear_window = 2) isa LinearBinarySearch{2}
+            @test Search(:linear_binary; linear_window = 16) isa LinearBinarySearch{16}
+            @test Search(:linear_binary; linear_window = 0) isa LinearBinarySearch{0}
+            @test Search(:linear_binary; linear_window = 128) isa LinearBinarySearch{128}
         end
 
         @testset "Passthrough" begin
@@ -38,13 +38,13 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
             @test_throws ArgumentError Search(:bianry)  # typo
 
             # Invalid kwargs for non-:linear_binary
-            @test_throws ArgumentError Search(:binary; linear_window=8)
-            @test_throws ArgumentError Search(:auto; linear_window=4)
-            @test_throws ArgumentError Search(:linear; linear_window=2)
+            @test_throws ArgumentError Search(:binary; linear_window = 8)
+            @test_throws ArgumentError Search(:auto; linear_window = 4)
+            @test_throws ArgumentError Search(:linear; linear_window = 2)
 
             # Invalid linear_window value (forwarded to LinearBinarySearch)
-            @test_throws ArgumentError Search(:linear_binary; linear_window=3)
-            @test_throws ArgumentError Search(:linear_binary; linear_window=256)
+            @test_throws ArgumentError Search(:linear_binary; linear_window = 3)
+            @test_throws ArgumentError Search(:linear_binary; linear_window = 256)
         end
 
         @testset "Error messages are informative" begin
@@ -57,7 +57,7 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
             end
 
             try
-                Search(:binary; linear_window=8)
+                Search(:binary; linear_window = 8)
             catch e
                 @test e isa ArgumentError
                 @test occursin(":linear_binary", e.msg)
@@ -73,8 +73,8 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
         @testset "Symbol → Concrete Type" begin
             @test Extrap(:none) isa NoExtrap
             @test Extrap(:clamp) isa ClampExtrap
-            @test Extrap(:fill; fill_value=NaN) isa FillExtrap{Float64}
-            @test Extrap(:fill; fill_value=0.0).fill_value === 0.0
+            @test Extrap(:fill; fill_value = NaN) isa FillExtrap{Float64}
+            @test Extrap(:fill; fill_value = 0.0).fill_value === 0.0
             @test Extrap(:extend) isa ExtendExtrap
             @test Extrap(:wrap) isa WrapExtrap
         end
@@ -114,18 +114,18 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
 
         @testset "fill_value ignored warning (1D)" begin
             # fill_value kwarg on non-:fill symbol → warning
-            @test_logs (:warn, r"fill_value.*ignored.*:clamp") Extrap(:clamp; fill_value=42)
-            @test_logs (:warn, r"fill_value.*ignored.*:none") Extrap(:none; fill_value=0.0)
-            @test_logs (:warn, r"fill_value.*ignored.*:extend") Extrap(:extend; fill_value=NaN)
+            @test_logs (:warn, r"fill_value.*ignored.*:clamp") Extrap(:clamp; fill_value = 42)
+            @test_logs (:warn, r"fill_value.*ignored.*:none") Extrap(:none; fill_value = 0.0)
+            @test_logs (:warn, r"fill_value.*ignored.*:extend") Extrap(:extend; fill_value = NaN)
             # :fill with fill_value → no warning
-            @test_logs Extrap(:fill; fill_value=NaN)
+            @test_logs Extrap(:fill; fill_value = NaN)
         end
 
         @testset "fill_value ignored warning (ND)" begin
             # fill_value kwarg but no :fill axis → warning
-            @test_logs (:warn, r"fill_value.*ignored.*no axis") Extrap(:clamp, :extend; fill_value=42)
+            @test_logs (:warn, r"fill_value.*ignored.*no axis") Extrap(:clamp, :extend; fill_value = 42)
             # :fill axis present with fill_value → no warning
-            @test_logs Extrap(:clamp, :fill; fill_value=0.0)
+            @test_logs Extrap(:clamp, :fill; fill_value = 0.0)
             # no fill_value kwarg at all → no warning
             @test_logs Extrap(:clamp, :extend)
         end
@@ -279,19 +279,19 @@ using FastInterpolations: AbstractSearchPolicy, AbstractExtrap, AbstractSide
         y = sin.(x)
 
         @testset "Factories work in interpolant construction" begin
-            itp_s = cubic_interp(x, y; search=Search(:binary), extrap=Extrap(:extend))
+            itp_s = cubic_interp(x, y; search = Search(:binary), extrap = Extrap(:extend))
             @test itp_s(0.5) isa Float64
 
-            itp_e = linear_interp(x, y; extrap=Extrap(:clamp))
+            itp_e = linear_interp(x, y; extrap = Extrap(:clamp))
             @test itp_e(-0.1) == itp_e(0.0)  # clamped
 
-            itp_c = constant_interp(x, y; side=Side(:left))
+            itp_c = constant_interp(x, y; side = Side(:left))
             @test itp_c(0.05) isa Float64
         end
 
         @testset "Factories produce identical results to direct types" begin
-            itp_factory = cubic_interp(x, y; search=Search(:binary), extrap=Extrap(:extend))
-            itp_direct  = cubic_interp(x, y; search=BinarySearch(), extrap=ExtendExtrap())
+            itp_factory = cubic_interp(x, y; search = Search(:binary), extrap = Extrap(:extend))
+            itp_direct = cubic_interp(x, y; search = BinarySearch(), extrap = ExtendExtrap())
 
             for xq in [0.0, 0.25, 0.5, 0.75, 1.0, 1.1, -0.1]
                 @test itp_factory(xq) == itp_direct(xq)

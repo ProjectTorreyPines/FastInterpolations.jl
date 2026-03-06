@@ -76,7 +76,7 @@ sitp_complex = quadratic_interp(x, y_complex)
 This type uses `mutable struct` with all `const` fields (Julia 1.8+) instead of
 plain `struct` for performance reasons. See CubicSeriesInterpolant for details.
 """
-mutable struct QuadraticSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
+mutable struct QuadraticSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}} <: AbstractSeriesInterpolant{Tg, Tv}
     const x::X                                # Grid points (Range or Vector)
     const y::Matrix{Tv}                       # Series-contiguous y (n_points × n_series)
     const a::Matrix{Tv}                       # Series-contiguous a (n_points × n_series)
@@ -87,15 +87,15 @@ mutable struct QuadraticSeriesInterpolant{Tg<:AbstractFloat, Tv, E<:AbstractExtr
     const search_policy::P                    # Default search policy
 
     function QuadraticSeriesInterpolant(
-        x::X,
-        y::Matrix{Tv},
-        a::Matrix{Tv},
-        d::Matrix{Tv},
-        h::Vector{Tg},
-        extrap::E,
-        search::P=AutoSearch()
-    ) where {Tg<:AbstractFloat, Tv, E<:AbstractExtrap, P<:AbstractSearchPolicy, X<:AbstractVector{Tg}}
-        new{Tg,Tv,E,P,X}(x, y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
+            x::X,
+            y::Matrix{Tv},
+            a::Matrix{Tv},
+            d::Matrix{Tv},
+            h::Vector{Tg},
+            extrap::E,
+            search::P = AutoSearch()
+        ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}}
+        return new{Tg, Tv, E, P, X}(x, y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
     end
 end
 
@@ -129,7 +129,7 @@ Build anchor for a query point. Required trait for AbstractSeriesInterpolant.
 # AD Support
 When `xq` is a ForwardDiff.Dual, the returned anchor preserves the Dual type.
 """
-@inline function _make_anchor(sitp::QuadraticSeriesInterpolant{Tg}, xq::Tq, searcher::P=DEFAULT_SEARCHER) where {Tg, Tq<:Real, P<:Searcher}
+@inline function _make_anchor(sitp::QuadraticSeriesInterpolant{Tg}, xq::Tq, searcher::P = DEFAULT_SEARCHER) where {Tg, Tq <: Real, P <: Searcher}
     return _anchor_query(sitp.x, xq, Val(:quadratic), _should_wrap(sitp), searcher)
 end
 
@@ -147,11 +147,11 @@ Uses point-contiguous layout for SIMD optimization.
 Anchor can contain ForwardDiff.Dual in `xq` and `dL` fields for AD propagation.
 """
 @inline function _eval_series_at_anchor!(
-    output::AbstractVector,
-    sitp::QuadraticSeriesInterpolant{Tg, Tv},
-    aq::_QuadraticAnchoredQuery{Tg, Tq},
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+        output::AbstractVector,
+        sitp::QuadraticSeriesInterpolant{Tg, Tv},
+        aq::_QuadraticAnchoredQuery{Tg, Tq},
+        op::AbstractEvalOp
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     y_point, a_point, d_point = _ensure_point_layout!(sitp)
     n_pts = n_points(sitp)
     x_min, x_max = Tg(first(sitp.x)), Tg(last(sitp.x))
@@ -169,7 +169,7 @@ end
 
 Ensure point-contiguous layout exists. Delegates to shared LazyTransposeTriple infrastructure.
 """
-@inline function _ensure_point_layout!(sitp::QuadraticSeriesInterpolant{T}) where T
+@inline function _ensure_point_layout!(sitp::QuadraticSeriesInterpolant{T}) where {T}
     return _ensure_transpose_triple!(sitp._transpose, sitp.y, sitp.a, sitp.d)
 end
 
@@ -183,36 +183,36 @@ end
 SIMD kernel for evaluating all series at a single anchor point with extrapolation handling.
 """
 @inline function _eval_quadratic_series_point_with_extrap!(
-    output::AbstractVector,
-    y_point::Matrix{Tv},
-    a_point::Matrix{Tv},
-    d_point::Matrix{Tv},
-    n_pts::Int,
-    x_min::Tg,
-    x_max::Tg,
-    aq::_QuadraticAnchoredQuery{Tg, Tq},
-    extrap::NoExtrap,
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+        output::AbstractVector,
+        y_point::Matrix{Tv},
+        a_point::Matrix{Tv},
+        d_point::Matrix{Tv},
+        n_pts::Int,
+        x_min::Tg,
+        x_max::Tg,
+        aq::_QuadraticAnchoredQuery{Tg, Tq},
+        extrap::NoExtrap,
+        op::AbstractEvalOp
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     if aq.side != 0x00
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
-    _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
+    return _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
 end
 
 @inline function _eval_quadratic_series_point_with_extrap!(
-    output::AbstractVector,
-    y_point::Matrix{Tv},
-    a_point::Matrix{Tv},
-    d_point::Matrix{Tv},
-    n_pts::Int,
-    x_min::Tg,
-    x_max::Tg,
-    aq::_QuadraticAnchoredQuery{Tg, Tq},
-    extrap::_ClampOrFill,
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    if aq.side != 0x00  # outside domain
+        output::AbstractVector,
+        y_point::Matrix{Tv},
+        a_point::Matrix{Tv},
+        d_point::Matrix{Tv},
+        n_pts::Int,
+        x_min::Tg,
+        x_max::Tg,
+        aq::_QuadraticAnchoredQuery{Tg, Tq},
+        extrap::_ClampOrFill,
+        op::AbstractEvalOp
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    return if aq.side != 0x00  # outside domain
         _fill_constant_extrap_simd!(output, y_point, aq.side, n_pts, op, extrap)
     else
         _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
@@ -220,18 +220,18 @@ end
 end
 
 @inline function _eval_quadratic_series_point_with_extrap!(
-    output::AbstractVector,
-    y_point::Matrix{Tv},
-    a_point::Matrix{Tv},
-    d_point::Matrix{Tv},
-    n_pts::Int,
-    x_min::Tg,
-    x_max::Tg,
-    aq::_QuadraticAnchoredQuery{Tg, Tq},
-    extrap::AbstractExtrap,  # ExtendExtrap, WrapExtrap, or anything else
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
-    _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
+        output::AbstractVector,
+        y_point::Matrix{Tv},
+        a_point::Matrix{Tv},
+        d_point::Matrix{Tv},
+        n_pts::Int,
+        x_min::Tg,
+        x_max::Tg,
+        aq::_QuadraticAnchoredQuery{Tg, Tq},
+        extrap::AbstractExtrap,  # ExtendExtrap, WrapExtrap, or anything else
+        op::AbstractEvalOp
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
+    return _eval_quadratic_series_point_kernel!(output, y_point, a_point, d_point, aq, op)
 end
 
 # ========================================
@@ -248,13 +248,13 @@ Uses point-contiguous layout: y_point[:, idx] gives all series values at point i
 When `aq.dL` is a ForwardDiff.Dual, the output will also be Dual.
 """
 @inline function _eval_quadratic_series_point_kernel!(
-    output::AbstractVector,
-    y_point::Matrix{Tv},
-    a_point::Matrix{Tv},
-    d_point::Matrix{Tv},
-    aq::_QuadraticAnchoredQuery{Tg, Tq},
-    op::EvalValue
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+        output::AbstractVector,
+        y_point::Matrix{Tv},
+        a_point::Matrix{Tv},
+        d_point::Matrix{Tv},
+        aq::_QuadraticAnchoredQuery{Tg, Tq},
+        op::EvalValue
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     idx = aq.idx
     dL = aq.dL
 
@@ -269,13 +269,13 @@ When `aq.dL` is a ForwardDiff.Dual, the output will also be Dual.
 end
 
 @inline function _eval_quadratic_series_point_kernel!(
-    output::AbstractVector,
-    y_point::Matrix{Tv},
-    a_point::Matrix{Tv},
-    d_point::Matrix{Tv},
-    aq::_QuadraticAnchoredQuery{Tg, Tq},
-    op::EvalDeriv1
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+        output::AbstractVector,
+        y_point::Matrix{Tv},
+        a_point::Matrix{Tv},
+        d_point::Matrix{Tv},
+        aq::_QuadraticAnchoredQuery{Tg, Tq},
+        op::EvalDeriv1
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     idx = aq.idx
     dL = aq.dL
 
@@ -289,13 +289,13 @@ end
 end
 
 @inline function _eval_quadratic_series_point_kernel!(
-    output::AbstractVector,
-    y_point::Matrix{Tv},
-    a_point::Matrix{Tv},
-    d_point::Matrix{Tv},
-    aq::_QuadraticAnchoredQuery{Tg, Tq},
-    op::EvalDeriv2
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+        output::AbstractVector,
+        y_point::Matrix{Tv},
+        a_point::Matrix{Tv},
+        d_point::Matrix{Tv},
+        aq::_QuadraticAnchoredQuery{Tg, Tq},
+        op::EvalDeriv2
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     idx = aq.idx
 
     @inbounds @simd for k in eachindex(output)
@@ -312,11 +312,11 @@ end
 
 """Fill output with boundary values for constant extrapolation."""
 @inline function _fill_boundary_values!(
-    output::AbstractVector{Tv},
-    y_point::Matrix{Tv},
-    idx::Int,
-    op::EvalValue
-) where {Tv}
+        output::AbstractVector{Tv},
+        y_point::Matrix{Tv},
+        idx::Int,
+        op::EvalValue
+    ) where {Tv}
     @inbounds @simd for k in eachindex(output)
         output[k] = y_point[k, idx]
     end
@@ -324,21 +324,21 @@ end
 end
 
 @inline function _fill_boundary_values!(
-    output::AbstractVector{Tv},
-    y_point::Matrix{Tv},
-    idx::Int,
-    op::EvalDeriv1
-) where {Tv}
+        output::AbstractVector{Tv},
+        y_point::Matrix{Tv},
+        idx::Int,
+        op::EvalDeriv1
+    ) where {Tv}
     fill!(output, 0 * first(y_point))
     return output
 end
 
 @inline function _fill_boundary_values!(
-    output::AbstractVector{Tv},
-    y_point::Matrix{Tv},
-    idx::Int,
-    op::EvalDeriv2
-) where {Tv}
+        output::AbstractVector{Tv},
+        y_point::Matrix{Tv},
+        idx::Int,
+        op::EvalDeriv2
+    ) where {Tv}
     fill!(output, 0 * first(y_point))
     return output
 end
@@ -372,17 +372,17 @@ sitp = quadratic_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
 ```
 """
 function quadratic_interp(
-    x::AbstractVector{Tg},
-    s::Series;
-    bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat}
+        x::AbstractVector{Tg},
+        s::Series;
+        bc::QuadraticBC = Left(QuadraticFit()),
+        extrap::AbstractExtrap = NoExtrap(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat}
     # Type promotion: widen grid if y's float base is wider than Tg
     Tv = _series_eltype(s)
     Tg_new = _promote_grid_float(Tg, Tv)
     if Tg_new !== Tg
-        return quadratic_interp(_to_float(x, Tg_new), s; bc=_normalize_bc(bc, Tg_new), extrap, search)
+        return quadratic_interp(_to_float(x, Tg_new), s; bc = _normalize_bc(bc, Tg_new), extrap, search)
     end
 
     n_pts = length(x)
@@ -406,7 +406,7 @@ function quadratic_interp(
         @inbounds for i in 1:n_pts
             d_mat[i, k] = d_k[i]
         end
-        @inbounds for i in 1:(n_pts-1)
+        @inbounds for i in 1:(n_pts - 1)
             a_mat[i, k] = a_k[i]
         end
         a_mat[n_pts, k] = _typed_zero
@@ -422,14 +422,14 @@ end
 
 # Real grid promotion (Int, etc.) → convert to float and delegate
 function quadratic_interp(
-    x::AbstractVector{Tg},
-    s::Series;
-    bc::QuadraticBC=Left(QuadraticFit()),
-    extrap::AbstractExtrap=NoExtrap(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real}
+        x::AbstractVector{Tg},
+        s::Series;
+        bc::QuadraticBC = Left(QuadraticFit()),
+        extrap::AbstractExtrap = NoExtrap(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: Real}
     Tg_float = _promote_grid_float(Tg, _series_eltype(s))
-    return quadratic_interp(_to_float(x, Tg_float), s; bc=_normalize_bc(bc, Tg_float), extrap, search)
+    return quadratic_interp(_to_float(x, Tg_float), s; bc = _normalize_bc(bc, Tg_float), extrap, search)
 end
 
 # ========================================
@@ -446,12 +446,12 @@ Evaluate all series at scalar query point (out-of-place).
 Supports ForwardDiff.Dual input: output type is promoted to include Dual.
 The anchor preserves the Dual type in `xq` and `dL` fields for AD propagation.
 """
-function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
-    xq::Tq;
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=sitp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
+function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
+        xq::Tq;
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = sitp.search_policy,
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: AbstractFloat, Tv, P, Tq <: Real}
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual (no-op for Float/Float-backed Dual)
     xq_promoted = _promote_for_anchor(xq, Tg)
     T_out = _series_output_type(Tv, typeof(xq_promoted))
@@ -471,13 +471,13 @@ Evaluate all series at scalar query point (in-place, zero allocation).
 Supports ForwardDiff.Dual input for automatic differentiation.
 The anchor preserves the Dual type in `xq` and `dL` fields for AD propagation.
 """
-function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
-    output::AbstractVector,  # Relaxed: allows Dual vector
-    xq::Tq;
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=sitp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
+function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
+        output::AbstractVector,  # Relaxed: allows Dual vector
+        xq::Tq;
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = sitp.search_policy,
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: AbstractFloat, Tv, P, Tq <: Real}
     _validate_scalar_output(output, n_series(sitp))
 
     # Promote for anchor: Int→Float, Int-backed Dual→Float-backed Dual
@@ -500,12 +500,12 @@ Evaluate all series at multiple query points (out-of-place).
 Returns a vector of vectors: one vector per y-series.
 Output type is promoted to wider type for precision preservation.
 """
-function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
-    xq::AbstractVector{Tq};
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=sitp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
+function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
+        xq::AbstractVector{Tq};
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = sitp.search_policy,
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: AbstractFloat, Tv, P, Tq <: Real}
     n_query = length(xq)
     n_ser = n_series(sitp)
     T_out = _series_output_type(Tv, Tq)
@@ -517,7 +517,7 @@ function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
     end
 
     # Delegate to in-place (unified path handles precision preservation)
-    sitp(outputs, xq; deriv=deriv, search=search, hint=hint)
+    sitp(outputs, xq; deriv = deriv, search = search, hint = hint)
     return outputs
 end
 
@@ -530,13 +530,13 @@ Evaluate all series at multiple query points (in-place, zero allocation when typ
 Uses pooled anchors with promoted type `promote_type(Tq, Tg)` to preserve precision.
 Pool handles both same-type and mixed-type cases efficiently.
 """
-@with_pool pool function (sitp::QuadraticSeriesInterpolant{Tg,Tv,P})(
-    outputs::AbstractVector{<:AbstractVector},
-    xq::AbstractVector{Tq};
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=sitp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, P, Tq<:Real}
+@with_pool pool function (sitp::QuadraticSeriesInterpolant{Tg, Tv, P})(
+        outputs::AbstractVector{<:AbstractVector},
+        xq::AbstractVector{Tq};
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = sitp.search_policy,
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: AbstractFloat, Tv, P, Tq <: Real}
     n_query = length(xq)
     _validate_series_outputs(outputs, n_series(sitp), n_query)
 
@@ -563,11 +563,11 @@ Evaluate all series using pre-built anchors.
 The anchor's `dL` field already has the correct precision (via `_promote_for_anchor`).
 """
 function _eval_series_anchored!(
-    outputs::AbstractVector{<:AbstractVector},
-    sitp::QuadraticSeriesInterpolant{Tg,Tv},
-    aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{Tg}},
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv}
+        outputs::AbstractVector{<:AbstractVector},
+        sitp::QuadraticSeriesInterpolant{Tg, Tv},
+        aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{Tg}},
+        op::AbstractEvalOp
+    ) where {Tg <: AbstractFloat, Tv}
     x_grid = sitp.x
     n_pts = length(x_grid)
     x_min, x_max = Tg(first(x_grid)), Tg(last(x_grid))
@@ -596,17 +596,17 @@ Evaluate single series at anchor with extrapolation handling.
 Takes `dL` as a parameter to allow caller to compute with original xq precision.
 """
 @inline function _eval_single_quadratic_with_extrap(
-    y::AbstractVector{Tv},
-    a::AbstractVector{Tv},
-    d::AbstractVector{Tv},
-    n_pts::Int,
-    x_min::Tg,
-    x_max::Tg,
-    aq::_QuadraticAnchoredQuery{Tg, Taq},
-    dL::Tq,  # Passed by caller for precision control
-    extrap::NoExtrap,
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
+        y::AbstractVector{Tv},
+        a::AbstractVector{Tv},
+        d::AbstractVector{Tv},
+        n_pts::Int,
+        x_min::Tg,
+        x_max::Tg,
+        aq::_QuadraticAnchoredQuery{Tg, Taq},
+        dL::Tq,  # Passed by caller for precision control
+        extrap::NoExtrap,
+        op::AbstractEvalOp
+    ) where {Tg <: AbstractFloat, Tv, Taq <: Real, Tq <: Real}
     if aq.side != 0x00
         _throw_extrap_domain_error(aq.xq, x_min, x_max)
     end
@@ -614,17 +614,17 @@ Takes `dL` as a parameter to allow caller to compute with original xq precision.
 end
 
 @inline function _eval_single_quadratic_with_extrap(
-    y::AbstractVector{Tv},
-    a::AbstractVector{Tv},
-    d::AbstractVector{Tv},
-    n_pts::Int,
-    x_min::Tg,
-    x_max::Tg,
-    aq::_QuadraticAnchoredQuery{Tg, Taq},
-    dL::Tq,
-    extrap::_ClampOrFill,
-    op::EvalValue
-) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
+        y::AbstractVector{Tv},
+        a::AbstractVector{Tv},
+        d::AbstractVector{Tv},
+        n_pts::Int,
+        x_min::Tg,
+        x_max::Tg,
+        aq::_QuadraticAnchoredQuery{Tg, Taq},
+        dL::Tq,
+        extrap::_ClampOrFill,
+        op::EvalValue
+    ) where {Tg <: AbstractFloat, Tv, Taq <: Real, Tq <: Real}
     if aq.side != 0x00  # outside domain
         y_bnd = @inbounds y[_boundary_point_index(aq.side, n_pts)]
         return _constant_extrap_result(op, y_bnd, extrap)
@@ -634,17 +634,17 @@ end
 end
 
 @inline function _eval_single_quadratic_with_extrap(
-    y::AbstractVector{Tv},
-    a::AbstractVector{Tv},
-    d::AbstractVector{Tv},
-    n_pts::Int,
-    x_min::Tg,
-    x_max::Tg,
-    aq::_QuadraticAnchoredQuery{Tg, Taq},
-    dL::Tq,
-    extrap::_ClampOrFill,
-    op::Union{EvalDeriv1, EvalDeriv2}
-) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
+        y::AbstractVector{Tv},
+        a::AbstractVector{Tv},
+        d::AbstractVector{Tv},
+        n_pts::Int,
+        x_min::Tg,
+        x_max::Tg,
+        aq::_QuadraticAnchoredQuery{Tg, Taq},
+        dL::Tq,
+        extrap::_ClampOrFill,
+        op::Union{EvalDeriv1, EvalDeriv2}
+    ) where {Tg <: AbstractFloat, Tv, Taq <: Real, Tq <: Real}
     if aq.side != 0x00  # outside domain
         return _constant_extrap_result(op, first(y), extrap)
     else
@@ -653,17 +653,17 @@ end
 end
 
 @inline function _eval_single_quadratic_with_extrap(
-    y::AbstractVector{Tv},
-    a::AbstractVector{Tv},
-    d::AbstractVector{Tv},
-    n_pts::Int,
-    x_min::Tg,
-    x_max::Tg,
-    aq::_QuadraticAnchoredQuery{Tg, Taq},
-    dL::Tq,
-    extrap::AbstractExtrap,  # ExtendExtrap, WrapExtrap, etc.
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv, Taq<:Real, Tq<:Real}
+        y::AbstractVector{Tv},
+        a::AbstractVector{Tv},
+        d::AbstractVector{Tv},
+        n_pts::Int,
+        x_min::Tg,
+        x_max::Tg,
+        aq::_QuadraticAnchoredQuery{Tg, Taq},
+        dL::Tq,
+        extrap::AbstractExtrap,  # ExtendExtrap, WrapExtrap, etc.
+        op::AbstractEvalOp
+    ) where {Tg <: AbstractFloat, Tv, Taq <: Real, Tq <: Real}
     return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)
 end
 
@@ -676,11 +676,11 @@ end
 
 Evaluate with pre-built anchors (TRUE zero-allocation).
 """
-function (sitp::QuadraticSeriesInterpolant{Tg,Tv})(
-    outputs::AbstractVector{<:AbstractVector{Tv}},
-    aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{Tg, Tq}};
-    deriv::DerivOp=EvalValue()
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+function (sitp::QuadraticSeriesInterpolant{Tg, Tv})(
+        outputs::AbstractVector{<:AbstractVector{Tv}},
+        aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{Tg, Tq}};
+        deriv::DerivOp = EvalValue()
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     _validate_series_outputs(outputs, n_series(sitp), length(aq_vec))
 
     _eval_series_anchored!(outputs, sitp, aq_vec, deriv)

@@ -14,7 +14,7 @@ using FastInterpolations
     # ========================================
     @testset "ComplexF64 values" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im, 9.0 + 10.0im]
 
         itp = cubic_interp(x, y)
 
@@ -34,7 +34,7 @@ using FastInterpolations
     # ========================================
     @testset "ComplexF32 values" begin
         x = Float32[0, 1, 2, 3, 4]
-        y = ComplexF32[1+2im, 3+4im, 5+6im, 7+8im, 9+10im]
+        y = ComplexF32[1 + 2im, 3 + 4im, 5 + 6im, 7 + 8im, 9 + 10im]
 
         itp = cubic_interp(x, y)
 
@@ -52,7 +52,7 @@ using FastInterpolations
     # ========================================
     @testset "Integer grid + Complex values" begin
         x = 0:4  # Range{Int}
-        y = Complex{Int}[1+2im, 3+4im, 5+6im, 7+8im, 9+10im]
+        y = Complex{Int}[1 + 2im, 3 + 4im, 5 + 6im, 7 + 8im, 9 + 10im]
 
         itp = cubic_interp(x, y)
 
@@ -68,7 +68,7 @@ using FastInterpolations
     # ========================================
     @testset "Float32 grid + ComplexF64 values" begin
         x = Float32[0, 1, 2, 3, 4]
-        y = ComplexF64[1+2im, 3+4im, 5+6im, 7+8im, 9+10im]
+        y = ComplexF64[1 + 2im, 3 + 4im, 5 + 6im, 7 + 8im, 9 + 10im]
 
         itp = cubic_interp(x, y)
 
@@ -90,17 +90,17 @@ using FastInterpolations
         b = 2.0 - 1.0im
         c = 3.0 + 2.0im
         d = 4.0 - 1.0im
-        f(t) = a*t^3 + b*t^2 + c*t + d
+        f(t) = a * t^3 + b * t^2 + c * t + d
         y = f.(x)
 
         # CubicFit BC should reproduce cubic polynomials
-        itp = cubic_interp(x, y; bc=CubicFit())
+        itp = cubic_interp(x, y; bc = CubicFit())
 
         # Test interpolation at various points
-        @test itp(0.5) ≈ f(0.5) atol=1e-10
-        @test itp(1.5) ≈ f(1.5) atol=1e-10
-        @test itp(2.5) ≈ f(2.5) atol=1e-10
-        @test itp(3.5) ≈ f(3.5) atol=1e-10
+        @test itp(0.5) ≈ f(0.5) atol = 1.0e-10
+        @test itp(1.5) ≈ f(1.5) atol = 1.0e-10
+        @test itp(2.5) ≈ f(2.5) atol = 1.0e-10
+        @test itp(3.5) ≈ f(3.5) atol = 1.0e-10
     end
 
     # ========================================
@@ -108,15 +108,15 @@ using FastInterpolations
     # ========================================
     @testset "Derivatives return Complex" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im, 9.0 + 10.0im]
 
         itp = cubic_interp(x, y)
 
         # All derivatives return ComplexF64
-        @test itp(0.5; deriv=DerivOp(0)) isa ComplexF64
-        @test itp(0.5; deriv=DerivOp(1)) isa ComplexF64
-        @test itp(0.5; deriv=DerivOp(2)) isa ComplexF64
-        @test itp(0.5; deriv=DerivOp(3)) isa ComplexF64
+        @test itp(0.5; deriv = DerivOp(0)) isa ComplexF64
+        @test itp(0.5; deriv = DerivOp(1)) isa ComplexF64
+        @test itp(0.5; deriv = DerivOp(2)) isa ComplexF64
+        @test itp(0.5; deriv = DerivOp(3)) isa ComplexF64
     end
 
     # ========================================
@@ -129,20 +129,20 @@ using FastInterpolations
         b = 2.0 - 1.0im
         c = 3.0 + 2.0im
         d = 1.0 - 0.5im
-        f(t) = a*t^3 + b*t^2 + c*t + d
-        f1(t) = 3*a*t^2 + 2*b*t + c  # First derivative
-        f2(t) = 6*a*t + 2*b           # Second derivative
-        f3(t) = 6*a                    # Third derivative
+        f(t) = a * t^3 + b * t^2 + c * t + d
+        f1(t) = 3 * a * t^2 + 2 * b * t + c  # First derivative
+        f2(t) = 6 * a * t + 2 * b           # Second derivative
+        f3(t) = 6 * a                    # Third derivative
         y = f.(x)
 
-        itp = cubic_interp(x, y; bc=CubicFit())
+        itp = cubic_interp(x, y; bc = CubicFit())
 
         # Test at interior point
         t = 1.5
-        @test itp(t; deriv=DerivOp(0)) ≈ f(t) atol=1e-10
-        @test itp(t; deriv=DerivOp(1)) ≈ f1(t) atol=1e-10
-        @test itp(t; deriv=DerivOp(2)) ≈ f2(t) atol=1e-10
-        @test itp(t; deriv=DerivOp(3)) ≈ f3(t) atol=1e-10
+        @test itp(t; deriv = DerivOp(0)) ≈ f(t) atol = 1.0e-10
+        @test itp(t; deriv = DerivOp(1)) ≈ f1(t) atol = 1.0e-10
+        @test itp(t; deriv = DerivOp(2)) ≈ f2(t) atol = 1.0e-10
+        @test itp(t; deriv = DerivOp(3)) ≈ f3(t) atol = 1.0e-10
     end
 
     # ========================================
@@ -150,15 +150,15 @@ using FastInterpolations
     # ========================================
     @testset "Extrapolation with Complex" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im, 9.0 + 10.0im]
 
         # ClampExtrap() extrapolation
-        itp_const = cubic_interp(x, y; extrap=ClampExtrap())
+        itp_const = cubic_interp(x, y; extrap = ClampExtrap())
         @test itp_const(-0.5) == y[1]
         @test itp_const(4.5) == y[end]
 
         # ExtendExtrap() extrapolation
-        itp_ext = cubic_interp(x, y; extrap=ExtendExtrap())
+        itp_ext = cubic_interp(x, y; extrap = ExtendExtrap())
         @test itp_ext(-0.5) isa ComplexF64
         @test itp_ext(4.5) isa ComplexF64
     end
@@ -168,7 +168,7 @@ using FastInterpolations
     # ========================================
     @testset "Vector evaluation" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im, 9.0 + 10.0im]
 
         itp = cubic_interp(x, y)
 
@@ -184,7 +184,7 @@ using FastInterpolations
     # ========================================
     @testset "Broadcast evaluation" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im, 9.0 + 10.0im]
 
         itp = cubic_interp(x, y)
 
@@ -200,13 +200,13 @@ using FastInterpolations
     # ========================================
     @testset "Type stability" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im, 9.0 + 10.0im]
 
         itp = cubic_interp(x, y)
 
         # Type-stable scalar evaluation
         @test (@inferred itp(0.5)) isa ComplexF64
-        @test (@inferred itp(0.5; deriv=DerivOp(1))) isa ComplexF64
+        @test (@inferred itp(0.5; deriv = DerivOp(1))) isa ComplexF64
     end
 
     # ========================================
@@ -214,13 +214,13 @@ using FastInterpolations
     # ========================================
     @testset "Grid point reproduction" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im, 9.0 + 10.0im]
 
         itp = cubic_interp(x, y)
 
         # Interpolant should reproduce exact values at grid points
         for i in eachindex(x)
-            @test itp(x[i]) ≈ y[i] atol=1e-14
+            @test itp(x[i]) ≈ y[i] atol = 1.0e-14
         end
     end
 
@@ -243,22 +243,22 @@ using FastInterpolations
     # ========================================
     @testset "Boundary condition modes" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im, 9.0 + 10.0im]
 
         # ZeroCurvBC
-        itp_natural = cubic_interp(x, y; bc=ZeroCurvBC())
+        itp_natural = cubic_interp(x, y; bc = ZeroCurvBC())
         @test value_type(itp_natural) == ComplexF64
 
         # ZeroSlopeBC
-        itp_clamped = cubic_interp(x, y; bc=ZeroSlopeBC())
+        itp_clamped = cubic_interp(x, y; bc = ZeroSlopeBC())
         @test value_type(itp_clamped) == ComplexF64
 
         # CubicFit
-        itp_cubicfit = cubic_interp(x, y; bc=CubicFit())
+        itp_cubicfit = cubic_interp(x, y; bc = CubicFit())
         @test value_type(itp_cubicfit) == ComplexF64
 
         # QuadraticFit
-        itp_quadfit = cubic_interp(x, y; bc=QuadraticFit())
+        itp_quadfit = cubic_interp(x, y; bc = QuadraticFit())
         @test value_type(itp_quadfit) == ComplexF64
     end
 
@@ -267,11 +267,11 @@ using FastInterpolations
     # ========================================
     @testset "BC type promotion" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y_complex = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im, 5.0+5.0im]
+        y_complex = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im, 5.0 + 5.0im]
 
         # Real BC with Complex y - should promote BC values
         bc = BCPair(Deriv1(1.0), Deriv2(0.0))
-        itp = cubic_interp(x, y_complex; bc=bc)
+        itp = cubic_interp(x, y_complex; bc = bc)
         @test value_type(itp) == ComplexF64
         @test itp(0.5) isa ComplexF64
     end
@@ -285,13 +285,13 @@ using FastInterpolations
         y = exp.(im .* x)  # Complex exponential
         y[end] = y[1]  # Ensure periodicity
 
-        itp = cubic_interp(x, y; bc=PeriodicBC())
+        itp = cubic_interp(x, y; bc = PeriodicBC())
 
         @test value_type(itp) == ComplexF64
         @test itp(0.5) isa ComplexF64
 
         # Test periodicity
-        @test itp(0.0) ≈ itp(2π) atol=1e-12
+        @test itp(0.0) ≈ itp(2π) atol = 1.0e-12
     end
 
     # ========================================
@@ -316,7 +316,7 @@ using FastInterpolations
     # ========================================
     @testset "In-place vector evaluation" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im, 9.0+10.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im, 9.0 + 10.0im]
 
         itp = cubic_interp(x, y)
 

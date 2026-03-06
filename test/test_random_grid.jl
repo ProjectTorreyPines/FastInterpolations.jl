@@ -43,11 +43,11 @@
             x_extrap = [x_min - 1.0, x_max + 1.0]
 
             # Extension extrapolation (explicit mode)
-            result_ext = linear_interp(x_random, y, x_extrap; extrap=ExtendExtrap())
+            result_ext = linear_interp(x_random, y, x_extrap; extrap = ExtendExtrap())
             @test all(isfinite, result_ext)
 
             # Constant extrapolation
-            result_const = linear_interp(x_random, y, x_extrap; extrap=ClampExtrap())
+            result_const = linear_interp(x_random, y, x_extrap; extrap = ClampExtrap())
             @test result_const[1] ≈ y[1]
             @test result_const[2] ≈ y[end]
         end
@@ -112,7 +112,7 @@
         end
 
         @testset "Callable interface" begin
-            itp = cubic_interp(x_random, y; autocache=false)
+            itp = cubic_interp(x_random, y; autocache = false)
 
             @test itp isa CubicInterpolant
             @test itp.cache.x isa Vector{Float64}  # Random grid stored as Vector
@@ -126,7 +126,7 @@
         end
 
         @testset "Zero-allocation (scalar)" begin
-            itp = cubic_interp(x_random, y; autocache=false)
+            itp = cubic_interp(x_random, y; autocache = false)
             x_min, x_max = extrema(x_random)
             xi = (x_min + x_max) / 2
 
@@ -183,7 +183,7 @@
             # Verify knot passage (CubicFit → tiny boundary offset)
             cache = CubicSplineCache(x_clustered)
             for (xi, yi) in zip(x_clustered, y)
-                @test cubic_interp(cache, y, xi) ≈ yi atol=1e-14
+                @test cubic_interp(cache, y, xi) ≈ yi atol = 1.0e-14
             end
         end
     end
@@ -211,8 +211,8 @@
         result_random = linear_interp(x_random, y_random, xi)
 
         # Both should approximate sin(5.0)
-        @test result_uniform ≈ sin(5.0) atol=0.1
-        @test result_random ≈ sin(5.0) atol=0.1
+        @test result_uniform ≈ sin(5.0) atol = 0.1
+        @test result_random ≈ sin(5.0) atol = 0.1
     end
 
     @testset "Edge Cases - Very Small Grid" begin
@@ -231,11 +231,11 @@
         end
 
         @testset "Cubic interpolation" begin
-            result = cubic_interp(x_small, y_small, 0.35; bc=ZeroCurvBC())
+            result = cubic_interp(x_small, y_small, 0.35; bc = ZeroCurvBC())
             @test isfinite(result)
 
             # Verify knot passage (3-point grid needs ZeroCurvBC; CubicFit requires 4+)
-            cache = CubicSplineCache(x_small; bc=ZeroCurvBC())
+            cache = CubicSplineCache(x_small; bc = ZeroCurvBC())
             for (xi, yi) in zip(x_small, y_small)
                 @test cubic_interp(cache, y_small, xi) ≈ yi
             end

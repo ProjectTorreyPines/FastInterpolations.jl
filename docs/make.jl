@@ -15,7 +15,7 @@ function write_if_changed(path::String, content::String)
     if isfile(path) && read(path, String) == content
         return  # Do nothing if the contents are the same
     end
-    write(path, content)
+    return write(path, content)
 end
 
 """
@@ -25,7 +25,7 @@ function cp_if_changed(src::String, dst::String)
     if isfile(dst) && read(src) == read(dst)
         return  # Do nothing if the contents are the same
     end
-    cp(src, dst; force=true)
+    return cp(src, dst; force = true)
 end
 
 # ============================================
@@ -38,7 +38,7 @@ Rewrite relative paths in README.md for Documenter structure.
 - `../docs/images/` → `../images/` (for guides/performance.md)
 - `benchmark/` → GitHub absolute URL
 """
-function rewrite_readme_paths(content::String; from_root::Bool=true)
+function rewrite_readme_paths(content::String; from_root::Bool = true)
     repo_url = "https://github.com/ProjectTorreyPines/FastInterpolations.jl/blob/master"
 
     if from_root
@@ -80,12 +80,12 @@ function inject_google_site_verification!(build_dir::String)
             occursin("google-site-verification", html) && continue
             occursin("</head>", html) || continue
 
-            write_if_changed(path, replace(html, "</head>" => "$(meta_tag)\n</head>"; count=1))
+            write_if_changed(path, replace(html, "</head>" => "$(meta_tag)\n</head>"; count = 1))
             injected += 1
         end
     end
 
-    @info "Injected google-site-verification meta tag" files=injected build_dir=build_dir
+    return @info "Injected google-site-verification meta tag" files = injected build_dir = build_dir
 end
 
 # ============================================
@@ -118,14 +118,16 @@ end
 
 # Copy README.md → index.md (with path rewriting, conditional write)
 readme_content = read(joinpath(@__DIR__, "../README.md"), String)
-write_if_changed(joinpath(DOCS_SRC, "index.md"), rewrite_readme_paths(readme_content; from_root=true))
+write_if_changed(joinpath(DOCS_SRC, "index.md"), rewrite_readme_paths(readme_content; from_root = true))
 
 # Copy benchmark/README.md → guides/performance.md (with path rewriting, conditional write)
 bench_readme = joinpath(@__DIR__, "../benchmark/README.md")
 if isfile(bench_readme)
     bench_content = read(bench_readme, String)
-    write_if_changed(joinpath(DOCS_SRC, "guides/performance.md"),
-                     rewrite_readme_paths(bench_content; from_root=false))
+    write_if_changed(
+        joinpath(DOCS_SRC, "guides/performance.md"),
+        rewrite_readme_paths(bench_content; from_root = false)
+    )
 end
 
 # ============================================

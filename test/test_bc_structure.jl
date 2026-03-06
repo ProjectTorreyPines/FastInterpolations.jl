@@ -196,11 +196,11 @@ using FastInterpolations: bc_structure
 
         # BCPair: Float64 vs ComplexF64
         @test bc_structure(BCPair(Deriv1{Float64}(0.5), Deriv2{Float64}(0.0))) ===
-              bc_structure(BCPair(Deriv1{ComplexF64}(0.5im), Deriv2{ComplexF64}(0.0im)))
+            bc_structure(BCPair(Deriv1{ComplexF64}(0.5im), Deriv2{ComplexF64}(0.0im)))
 
         # Left/Right: Float64 vs ComplexF64
         @test bc_structure(Left(Deriv1{Float64}(0.0))) ===
-              bc_structure(Left(Deriv1{ComplexF64}(0.0im)))
+            bc_structure(Left(Deriv1{ComplexF64}(0.0im)))
     end
 
     # ========================================

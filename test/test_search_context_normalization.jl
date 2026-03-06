@@ -21,10 +21,10 @@ using FastInterpolations: search_interval, Searcher, BinarySearch, LinearSearch,
 
     @testset "_resolve_searcher_for_grid (grid adaptation)" begin
         searchers = [
-            Searcher{BinarySearch,NoHint}(NoHint()),
-            Searcher{LinearBinarySearch{8},RefHint}(RefHint()),
-            Searcher{LinearSearch,RefHint}(RefHint()),
-            Searcher{DirectSearch,NoHint}(NoHint()),
+            Searcher{BinarySearch, NoHint}(NoHint()),
+            Searcher{LinearBinarySearch{8}, RefHint}(RefHint()),
+            Searcher{LinearSearch, RefHint}(RefHint()),
+            Searcher{DirectSearch, NoHint}(NoHint()),
         ]
 
         for s in searchers
@@ -40,9 +40,9 @@ using FastInterpolations: search_interval, Searcher, BinarySearch, LinearSearch,
 
         @testset "RefHint preservation on Range" begin
             hint_ref = Ref(42)
-            s = Searcher{LinearBinarySearch{8},RefHint}(RefHint(hint_ref))
+            s = Searcher{LinearBinarySearch{8}, RefHint}(RefHint(hint_ref))
             result = _resolve_searcher_for_grid(x_range, s)
-            @test result isa Searcher{DirectSearch,RefHint}
+            @test result isa Searcher{DirectSearch, RefHint}
             @test result.hint.idx === hint_ref
         end
     end
@@ -81,22 +81,22 @@ using FastInterpolations: search_interval, Searcher, BinarySearch, LinearSearch,
 
         @testset "Vector grid + explicit BinarySearch + no hint → BinarySearch" begin
             s = _resolve_search(x_vec, xq_scalar, BinarySearch(), nothing)
-            @test s isa Searcher{BinarySearch,NoHint}
+            @test s isa Searcher{BinarySearch, NoHint}
         end
 
         @testset "Vector grid + explicit BinarySearch + hint → auto-upgrade to LinearBinarySearch" begin
             s = _resolve_search(x_vec, xq_scalar, BinarySearch(), Ref(1))
-            @test s isa Searcher{LinearBinarySearch{8},RefHint}
+            @test s isa Searcher{LinearBinarySearch{8}, RefHint}
         end
 
         @testset "Vector grid + AutoSearch + scalar → BinarySearch" begin
             s = _resolve_search(x_vec, xq_scalar, AutoSearch(), nothing)
-            @test s isa Searcher{BinarySearch,NoHint}
+            @test s isa Searcher{BinarySearch, NoHint}
         end
 
         @testset "Vector grid + AutoSearch + sorted vec → LinearBinarySearch" begin
             s = _resolve_search(x_vec, xq_sorted, AutoSearch(), nothing)
-            @test s isa Searcher{LinearBinarySearch{8},RefHint}
+            @test s isa Searcher{LinearBinarySearch{8}, RefHint}
         end
     end
 
@@ -141,14 +141,14 @@ using FastInterpolations: search_interval, Searcher, BinarySearch, LinearSearch,
     @testset "Type inference" begin
         @testset "_resolve_search is inferrable" begin
             # Range: always DirectSearch (no Union)
-            @test @inferred(_resolve_search(x_range, 0.5, BinarySearch(), nothing)) isa Searcher{DirectSearch,NoHint}
-            @test @inferred(_resolve_search(x_range, 0.5, AutoSearch(), nothing)) isa Searcher{DirectSearch,NoHint}
-            @test @inferred(_resolve_search(x_range, 0.5, LinearBinarySearch(), Ref(1))) isa Searcher{DirectSearch,RefHint}
+            @test @inferred(_resolve_search(x_range, 0.5, BinarySearch(), nothing)) isa Searcher{DirectSearch, NoHint}
+            @test @inferred(_resolve_search(x_range, 0.5, AutoSearch(), nothing)) isa Searcher{DirectSearch, NoHint}
+            @test @inferred(_resolve_search(x_range, 0.5, LinearBinarySearch(), Ref(1))) isa Searcher{DirectSearch, RefHint}
 
             # Vector + explicit policy: concrete type
-            @test @inferred(_resolve_search(x_vec, 0.5, BinarySearch(), nothing)) isa Searcher{BinarySearch,NoHint}
-            @test @inferred(_resolve_search(x_vec, 0.5, LinearBinarySearch(), nothing)) isa Searcher{LinearBinarySearch{8},RefHint}
-            @test @inferred(_resolve_search(x_vec, 0.5, LinearSearch(), Ref(1))) isa Searcher{LinearSearch,RefHint}
+            @test @inferred(_resolve_search(x_vec, 0.5, BinarySearch(), nothing)) isa Searcher{BinarySearch, NoHint}
+            @test @inferred(_resolve_search(x_vec, 0.5, LinearBinarySearch(), nothing)) isa Searcher{LinearBinarySearch{8}, RefHint}
+            @test @inferred(_resolve_search(x_vec, 0.5, LinearSearch(), Ref(1))) isa Searcher{LinearSearch, RefHint}
         end
 
         @testset "_resolve_search_policy is inferrable" begin

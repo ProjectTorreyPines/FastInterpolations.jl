@@ -33,7 +33,7 @@ Plot benchmark scaling results on log-log scale.
 # Returns
 Combined plot with 3 subplots
 """
-function plot_scaling_results(result; save_path::Union{String,Nothing}=nothing, dpi::Int=300, shared_ylim::Bool=true)
+function plot_scaling_results(result; save_path::Union{String, Nothing} = nothing, dpi::Int = 300, shared_ylim::Bool = true)
     df_constr = result.construction
     df_eval = result.evaluation
     df_oneshot = result.oneshot
@@ -57,24 +57,24 @@ function plot_scaling_results(result; save_path::Union{String,Nothing}=nothing, 
     # ─────────────────────────────────────────────────────────────────────────
     p1 = plot(
         df_constr.n, [df_constr.Interpolations df_constr.DataInterp df_constr.FastInterp],
-        label=labels,
-        xlabel="Grid size (n)",
-        ylabel="Time (s)",
-        title="Construction Time",
-        xscale=:log10,
-        yscale=:log10,
-        ylims=ylims_shared,
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topleft,
-        grid=true,
-        minorgrid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10
+        label = labels,
+        xlabel = "Grid size (n)",
+        ylabel = "Time (s)",
+        title = "Construction Time",
+        xscale = :log10,
+        yscale = :log10,
+        ylims = ylims_shared,
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topleft,
+        grid = true,
+        minorgrid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10
     )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -82,24 +82,24 @@ function plot_scaling_results(result; save_path::Union{String,Nothing}=nothing, 
     # ─────────────────────────────────────────────────────────────────────────
     p2 = plot(
         df_eval.n, [df_eval.Interpolations df_eval.DataInterp df_eval.FastInterp],
-        label=labels,
-        xlabel="Query points (n)",
-        ylabel="Time (s)",
-        title="Evaluation Time (n_grid=100, reuse interpolant)",
-        xscale=:log10,
-        yscale=:log10,
-        ylims=ylims_shared,
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topleft,
-        grid=true,
-        minorgrid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10
+        label = labels,
+        xlabel = "Query points (n)",
+        ylabel = "Time (s)",
+        title = "Evaluation Time (n_grid=100, reuse interpolant)",
+        xscale = :log10,
+        yscale = :log10,
+        ylims = ylims_shared,
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topleft,
+        grid = true,
+        minorgrid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10
     )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -107,32 +107,32 @@ function plot_scaling_results(result; save_path::Union{String,Nothing}=nothing, 
     # ─────────────────────────────────────────────────────────────────────────
     p3 = plot(
         df_oneshot.n, [df_oneshot.Interpolations df_oneshot.DataInterp df_oneshot.FastInterp_cached],
-        label=labels,
-        xlabel="Query points (n)",
-        ylabel="Time (s)",
-        title="One-Shot Time (n_grid=100, construct+eval)",
-        xscale=:log10,
-        yscale=:log10,
-        ylims=ylims_shared,
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topleft,
-        grid=true,
-        minorgrid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10
+        label = labels,
+        xlabel = "Query points (n)",
+        ylabel = "Time (s)",
+        title = "One-Shot Time (n_grid=100, construct+eval)",
+        xscale = :log10,
+        yscale = :log10,
+        ylims = ylims_shared,
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topleft,
+        grid = true,
+        minorgrid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10
     )
 
     # Combine plots
-    combined = plot(p1, p2, p3, layout=(1, 3), size=(1600, 400), margin=5Plots.mm)
+    combined = plot(p1, p2, p3, layout = (1, 3), size = (1600, 400), margin = 5Plots.mm)
 
     # Save if path provided
     if save_path !== nothing
-        savefig(combined, save_path, dpi=dpi)
+        savefig(combined, save_path, dpi = dpi)
         println("Saved plot to: $save_path (dpi=$dpi)")
     end
 
@@ -149,7 +149,7 @@ Save each plot as a separate file.
 - `save_dir`: Directory to save plots (default: ../docs/images for Documenter.jl compatibility)
 - `dpi`: Resolution for saved figures (default: 250)
 """
-function plot_scaling_separate(result; save_dir::String="../docs/images", prefix::String="benchmark", dpi::Int=250)
+function plot_scaling_separate(result; save_dir::String = "../docs/images", prefix::String = "benchmark", dpi::Int = 250)
     # Create directory if it doesn't exist
     mkpath(save_dir)
 
@@ -164,158 +164,159 @@ function plot_scaling_separate(result; save_dir::String="../docs/images", prefix
     # Construction plot
     p1 = plot(
         df_constr.n, [df_constr.Interpolations df_constr.DataInterp df_constr.FastInterp],
-        label=labels,
-        xlabel="Grid size",
-        ylabel="Time (s)",
-        title="Construction",
-        xscale=:log10,
-        yscale=:log10,
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topleft,
-        grid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10,
-        minorgrid=true,
-        size=(600, 450),
-        dpi=dpi
+        label = labels,
+        xlabel = "Grid size",
+        ylabel = "Time (s)",
+        title = "Construction",
+        xscale = :log10,
+        yscale = :log10,
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topleft,
+        grid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10,
+        minorgrid = true,
+        size = (600, 450),
+        dpi = dpi
     )
     savefig(p1, joinpath(save_dir, "$(prefix)_construction.png"))
 
     # Evaluation plot
     p2 = plot(
         df_eval.n, [df_eval.Interpolations df_eval.DataInterp df_eval.FastInterp],
-        label=labels,
-        xlabel="Query points",
-        ylabel="Time (s)",
-        title="Evaluation",
-        xscale=:log10,
-        yscale=:log10,
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topleft,
-        grid=true,
-        minorgrid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10,
-        size=(600, 450),
-        dpi=dpi
+        label = labels,
+        xlabel = "Query points",
+        ylabel = "Time (s)",
+        title = "Evaluation",
+        xscale = :log10,
+        yscale = :log10,
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topleft,
+        grid = true,
+        minorgrid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10,
+        size = (600, 450),
+        dpi = dpi
     )
     savefig(p2, joinpath(save_dir, "$(prefix)_evaluation.png"))
 
     # One-shot plot
     p3 = plot(
         df_oneshot.n, [df_oneshot.Interpolations df_oneshot.DataInterp df_oneshot.FastInterp_cached],
-        label=labels,
-        xlabel="Query points",
-        ylabel="Time (s)",
-        title="One-Shot (Construction + Evaluation)",
-        xscale=:log10,
-        yscale=:log10,
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topleft,
-        grid=true,
-        minorgrid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10,
-        size=(600, 450),
-        dpi=dpi
+        label = labels,
+        xlabel = "Query points",
+        ylabel = "Time (s)",
+        title = "One-Shot (Construction + Evaluation)",
+        xscale = :log10,
+        yscale = :log10,
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topleft,
+        grid = true,
+        minorgrid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10,
+        size = (600, 450),
+        dpi = dpi
     )
     savefig(p3, joinpath(save_dir, "$(prefix)_oneshot.png"))
 
     # One-shot detailed plot (with cached vs uncached FastInterpolations)
     p3_detail = plot(
         df_oneshot.n, [df_oneshot.Interpolations df_oneshot.DataInterp df_oneshot.FastInterp_cached],
-        label=["Interpolations.jl" "DataInterpolations.jl" "FastInterpolations.jl (cache-hit)"],
-        xlabel="Query points",
-        ylabel="Time (s)",
-        title="One-Shot (Construction + Evaluation)",
-        xscale=:log10,
-        yscale=:log10,
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topleft,
-        grid=true,
-        minorgrid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10,
-        size=(600, 450),
-        dpi=dpi
+        label = ["Interpolations.jl" "DataInterpolations.jl" "FastInterpolations.jl (cache-hit)"],
+        xlabel = "Query points",
+        ylabel = "Time (s)",
+        title = "One-Shot (Construction + Evaluation)",
+        xscale = :log10,
+        yscale = :log10,
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topleft,
+        grid = true,
+        minorgrid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10,
+        size = (600, 450),
+        dpi = dpi
     )
     # Add uncached FastInterpolations as dashed line (same blue color)
-    plot!(p3_detail, df_oneshot.n, df_oneshot.FastInterp_nocache,
-        label="FastInterpolations.jl (cache-miss)",
-        linestyle=:dash,
-        linewidth=2,
-        color=:blue,
-        marker=:none
+    plot!(
+        p3_detail, df_oneshot.n, df_oneshot.FastInterp_nocache,
+        label = "FastInterpolations.jl (cache-miss)",
+        linestyle = :dash,
+        linewidth = 2,
+        color = :blue,
+        marker = :none
     )
     savefig(p3_detail, joinpath(save_dir, "$(prefix)_oneshot_detail.png"))
 
     # One-shot allocation plot
     p4 = plot(
         df_oneshot.n, [df_oneshot.alloc_Interpolations df_oneshot.alloc_DataInterp df_oneshot.alloc_FastInterp_cached],
-        label=labels,
-        xlabel="Query points",
-        ylabel="Allocation (bytes)",
-        title="One-Shot Allocation",
-        xscale=:log10,
-        yscale=:log10,
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topleft,
-        grid=true,
-        minorgrid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10,
-        size=(600, 450),
-        dpi=dpi
+        label = labels,
+        xlabel = "Query points",
+        ylabel = "Allocation (bytes)",
+        title = "One-Shot Allocation",
+        xscale = :log10,
+        yscale = :log10,
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topleft,
+        grid = true,
+        minorgrid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10,
+        size = (600, 450),
+        dpi = dpi
     )
     savefig(p4, joinpath(save_dir, "$(prefix)_oneshot_allocation.png"))
 
     # Construction allocation plot
     p5 = plot(
         df_constr.n, [df_constr.alloc_Interpolations df_constr.alloc_DataInterp df_constr.alloc_FastInterp],
-        label=labels,
-        xlabel="Grid size",
-        ylabel="Allocation (bytes)",
-        title="Construction Allocation",
-        xscale=:log10,
-        yscale=:log10,
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topleft,
-        grid=true,
-        minorgrid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10,
-        size=(600, 450),
-        dpi=dpi
+        label = labels,
+        xlabel = "Grid size",
+        ylabel = "Allocation (bytes)",
+        title = "Construction Allocation",
+        xscale = :log10,
+        yscale = :log10,
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topleft,
+        grid = true,
+        minorgrid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10,
+        size = (600, 450),
+        dpi = dpi
     )
     savefig(p5, joinpath(save_dir, "$(prefix)_construction_allocation.png"))
 
@@ -327,7 +328,7 @@ function plot_scaling_separate(result; save_dir::String="../docs/images", prefix
     println("  - $(joinpath(save_dir, "$(prefix)_oneshot_allocation.png"))")
     println("  - $(joinpath(save_dir, "$(prefix)_construction_allocation.png"))")
 
-    return (construction=p1, evaluation=p2, oneshot=p3, oneshot_detail=p3_detail, oneshot_allocation=p4, construction_allocation=p5)
+    return (construction = p1, evaluation = p2, oneshot = p3, oneshot_detail = p3_detail, oneshot_allocation = p4, construction_allocation = p5)
 end
 
 """
@@ -336,7 +337,7 @@ end
 Plot speedup ratio (competitor time / FastInterp time) on log scale.
 Shows how much faster FastInterp is compared to other packages.
 """
-function plot_speedup(result; save_path::Union{String,Nothing}=nothing)
+function plot_speedup(result; save_path::Union{String, Nothing} = nothing)
     df_constr = result.construction
     df_eval = result.evaluation
     df_oneshot = result.oneshot
@@ -350,23 +351,23 @@ function plot_speedup(result; save_path::Union{String,Nothing}=nothing)
 
     p1 = plot(
         df_constr.n, [speedup_itp_constr speedup_di_constr],
-        label=labels,
-        xlabel="Grid size (n)",
-        ylabel="Speedup (x times faster)",
-        title="Construction Speedup",
-        xscale=:log10,
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topright,
-        grid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10
+        label = labels,
+        xlabel = "Grid size (n)",
+        ylabel = "Speedup (x times faster)",
+        title = "Construction Speedup",
+        xscale = :log10,
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topright,
+        grid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10
     )
-    hline!(p1, [1.0], linestyle=:dash, color=:gray, label="")
+    hline!(p1, [1.0], linestyle = :dash, color = :gray, label = "")
 
     # Evaluation speedup
     speedup_itp_eval = df_eval.Interpolations ./ df_eval.FastInterp
@@ -374,23 +375,23 @@ function plot_speedup(result; save_path::Union{String,Nothing}=nothing)
 
     p2 = plot(
         df_eval.n, [speedup_itp_eval speedup_di_eval],
-        label=labels,
-        xlabel="Query points (n)",
-        ylabel="Speedup (x times faster)",
-        title="Evaluation Speedup",
-        xscale=:log10,
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topright,
-        grid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10
+        label = labels,
+        xlabel = "Query points (n)",
+        ylabel = "Speedup (x times faster)",
+        title = "Evaluation Speedup",
+        xscale = :log10,
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topright,
+        grid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10
     )
-    hline!(p2, [1.0], linestyle=:dash, color=:gray, label="")
+    hline!(p2, [1.0], linestyle = :dash, color = :gray, label = "")
 
     # One-shot speedup (vs cached FastInterp)
     speedup_itp_oneshot = df_oneshot.Interpolations ./ df_oneshot.FastInterp_cached
@@ -398,25 +399,25 @@ function plot_speedup(result; save_path::Union{String,Nothing}=nothing)
 
     p3 = plot(
         df_oneshot.n, [speedup_itp_oneshot speedup_di_oneshot],
-        label=labels,
-        xlabel="Query points (n)",
-        ylabel="Speedup (x times faster)",
-        title="One-Shot Speedup",
-        xscale=:log10,
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topright,
-        grid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10
+        label = labels,
+        xlabel = "Query points (n)",
+        ylabel = "Speedup (x times faster)",
+        title = "One-Shot Speedup",
+        xscale = :log10,
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topright,
+        grid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10
     )
-    hline!(p3, [1.0], linestyle=:dash, color=:gray, label="")
+    hline!(p3, [1.0], linestyle = :dash, color = :gray, label = "")
 
-    combined = plot(p1, p2, p3, layout=(1, 3), size=(1500, 400), margin=5Plots.mm)
+    combined = plot(p1, p2, p3, layout = (1, 3), size = (1500, 400), margin = 5Plots.mm)
 
     if save_path !== nothing
         savefig(combined, save_path)

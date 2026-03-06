@@ -82,7 +82,7 @@ const BankType = FI.CacheBank{EntryType}
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
+            FI.cubic_interp(x, y, 0.5; bc = ZeroCurvBC(), autocache = true)
 
             x2 = collect(range(0.0, 2.0, 51))
             bc = FI.BCPair(FI.Deriv2(0.0), FI.Deriv2(0.0))
@@ -98,7 +98,7 @@ const BankType = FI.CacheBank{EntryType}
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
+            FI.cubic_interp(x, y, 0.5; bc = ZeroCurvBC(), autocache = true)
 
             bc = FI.BCPair(FI.Deriv2(0.0), FI.Deriv2(0.0))
             bank = FI._get_derivative_bank(x, bc)
@@ -113,7 +113,7 @@ const BankType = FI.CacheBank{EntryType}
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
+            FI.cubic_interp(x, y, 0.5; bc = ZeroCurvBC(), autocache = true)
 
             x_copy = collect(range(0.0, 1.0, 51))
             @test x_copy !== x  # Different object
@@ -143,7 +143,7 @@ const BankType = FI.CacheBank{EntryType}
             snap_before = @atomic :acquire bank.snapshot
             @test snap_before.count == 0
 
-            FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
+            FI.cubic_interp(x, y, 0.5; bc = ZeroCurvBC(), autocache = true)
 
             snap_after = @atomic :acquire bank.snapshot
             @test snap_after.count == 1
@@ -157,7 +157,7 @@ const BankType = FI.CacheBank{EntryType}
             y = sin.(2π .* grids[1])
 
             for x in grids
-                FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
+                FI.cubic_interp(x, y, 0.5; bc = ZeroCurvBC(), autocache = true)
             end
 
             bc = FI.BCPair(FI.Deriv2(0.0), FI.Deriv2(0.0))
@@ -175,7 +175,7 @@ const BankType = FI.CacheBank{EntryType}
             y = sin.(2π .* grids[1])
 
             for x in grids
-                FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
+                FI.cubic_interp(x, y, 0.5; bc = ZeroCurvBC(), autocache = true)
             end
 
             bc = FI.BCPair(FI.Deriv2(0.0), FI.Deriv2(0.0))
@@ -196,14 +196,14 @@ const BankType = FI.CacheBank{EntryType}
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; autocache=true)
+            FI.cubic_interp(x, y, 0.5; autocache = true)
 
             # Warm up
             for _ in 1:100
-                FI.cubic_interp(x, y, 0.5; autocache=true)
+                FI.cubic_interp(x, y, 0.5; autocache = true)
             end
 
-            allocs = @allocated FI.cubic_interp(x, y, 0.5; autocache=true)
+            allocs = @allocated FI.cubic_interp(x, y, 0.5; autocache = true)
             @test allocs <= 256
             @info "Bank: Full interp cache hit allocation: $allocs bytes (threshold: 256 bytes)"
         end
@@ -219,15 +219,15 @@ const BankType = FI.CacheBank{EntryType}
 
                 x = collect(range(0.0, 1.0, 51))
                 y = sin.(2π .* x)
-                FI.cubic_interp(x, y, 0.5; autocache=true)
+                FI.cubic_interp(x, y, 0.5; autocache = true)
 
                 errors = Threads.Atomic{Int}(0)
                 reads = Threads.Atomic{Int}(0)
 
                 Threads.@threads for _ in 1:1000
                     try
-                        result = FI.cubic_interp(x, y, 0.5; autocache=true)
-                        @assert isapprox(result, 0.0; atol=1e-10)
+                        result = FI.cubic_interp(x, y, 0.5; autocache = true)
+                        @assert isapprox(result, 0.0; atol = 1.0e-10)
                         Threads.atomic_add!(reads, 1)
                     catch
                         Threads.atomic_add!(errors, 1)
@@ -248,7 +248,7 @@ const BankType = FI.CacheBank{EntryType}
                 Threads.@threads for i in 1:1000
                     try
                         grid_idx = mod1(i, length(grids))
-                        FI.cubic_interp(grids[grid_idx], y, 0.5; autocache=true)
+                        FI.cubic_interp(grids[grid_idx], y, 0.5; autocache = true)
                     catch
                         Threads.atomic_add!(errors, 1)
                     end
@@ -273,7 +273,7 @@ const BankType = FI.CacheBank{EntryType}
             x = collect(range(0.0, 2π, 51))
             y = sin.(x)
             y[end] = y[1]
-            FI.cubic_interp(x, y, π; bc=FI.PeriodicBC(), autocache=true)
+            FI.cubic_interp(x, y, π; bc = FI.PeriodicBC(), autocache = true)
 
             bank = FI._get_periodic_bank(x)
             snap = @atomic :acquire bank.snapshot
@@ -345,7 +345,7 @@ end  # RCU Bank
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
+            FI.cubic_interp(x, y, 0.5; bc = ZeroCurvBC(), autocache = true)
 
             result = FI._registry_lookup(FI._DERIVATIVE_REGISTRY, BankType)
             @test result !== nothing
@@ -357,7 +357,7 @@ end  # RCU Bank
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; bc=ZeroCurvBC(), autocache=true)
+            FI.cubic_interp(x, y, 0.5; bc = ZeroCurvBC(), autocache = true)
 
             snap = @atomic :acquire FI._DERIVATIVE_REGISTRY.snapshot
 
@@ -378,7 +378,7 @@ end  # RCU Bank
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; autocache=true)
+            FI.cubic_interp(x, y, 0.5; autocache = true)
 
             snap_after = @atomic :acquire FI._DERIVATIVE_REGISTRY.snapshot
             @test length(snap_after) == 1
@@ -391,13 +391,13 @@ end  # RCU Bank
             # ZeroCurvBC (Deriv2)
             x1 = collect(range(0.0, 1.0, 51))
             y1 = sin.(2π .* x1)
-            FI.cubic_interp(x1, y1, 0.5; bc=ZeroCurvBC(), autocache=true)
+            FI.cubic_interp(x1, y1, 0.5; bc = ZeroCurvBC(), autocache = true)
 
             # Custom Deriv1 BC
             x2 = collect(range(0.0, 1.0, 51))
             y2 = cos.(2π .* x2)
             bc_pair = FI.BCPair(FI.Deriv1(1.0), FI.Deriv1(-1.0))
-            FI.cubic_interp(x2, y2, 0.5; bc=bc_pair, autocache=true)
+            FI.cubic_interp(x2, y2, 0.5; bc = bc_pair, autocache = true)
 
             snap = @atomic :acquire FI._DERIVATIVE_REGISTRY.snapshot
             @test length(snap) == 2
@@ -409,13 +409,13 @@ end  # RCU Bank
             # Derivative BC (explicit ZeroCurvBC)
             x1 = collect(range(0.0, 1.0, 51))
             y1 = sin.(2π .* x1)
-            FI.cubic_interp(x1, y1, 0.5; bc=ZeroCurvBC(), autocache=true)
+            FI.cubic_interp(x1, y1, 0.5; bc = ZeroCurvBC(), autocache = true)
 
             # Periodic BC
             x2 = collect(range(0.0, 2π, 51))
             y2 = sin.(x2)
             y2[end] = y2[1]
-            FI.cubic_interp(x2, y2, π; bc=FI.PeriodicBC(), autocache=true)
+            FI.cubic_interp(x2, y2, π; bc = FI.PeriodicBC(), autocache = true)
 
             deriv_snap = @atomic :acquire FI._DERIVATIVE_REGISTRY.snapshot
             periodic_snap = @atomic :acquire FI._PERIODIC_REGISTRY.snapshot
@@ -432,12 +432,12 @@ end  # RCU Bank
         @testset "Clear empties both registries" begin
             x1 = collect(range(0.0, 1.0, 51))
             y1 = sin.(2π .* x1)
-            FI.cubic_interp(x1, y1, 0.5; autocache=true)
+            FI.cubic_interp(x1, y1, 0.5; autocache = true)
 
             x2 = collect(range(0.0, 2π, 51))
             y2 = sin.(x2)
             y2[end] = y2[1]
-            FI.cubic_interp(x2, y2, π; bc=FI.PeriodicBC(), autocache=true)
+            FI.cubic_interp(x2, y2, π; bc = FI.PeriodicBC(), autocache = true)
 
             @test !isempty(@atomic :acquire FI._DERIVATIVE_REGISTRY.snapshot)
             @test !isempty(@atomic :acquire FI._PERIODIC_REGISTRY.snapshot)
@@ -451,7 +451,7 @@ end  # RCU Bank
         @testset "Clear atomically replaces snapshot" begin
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; autocache=true)
+            FI.cubic_interp(x, y, 0.5; autocache = true)
 
             snap_before = @atomic :acquire FI._DERIVATIVE_REGISTRY.snapshot
 
@@ -474,7 +474,7 @@ end  # RCU Bank
 
             x = collect(range(0.0, 1.0, 51))
             y = sin.(2π .* x)
-            FI.cubic_interp(x, y, 0.5; autocache=true)
+            FI.cubic_interp(x, y, 0.5; autocache = true)
 
             # Warm up
             for _ in 1:100
@@ -503,7 +503,7 @@ end  # RCU Bank
 
                     Threads.@threads for i in 1:4
                         try
-                            FI.cubic_interp(grids[mod1(i, 4)], y, 0.5; autocache=true)
+                            FI.cubic_interp(grids[mod1(i, 4)], y, 0.5; autocache = true)
                         catch
                             Threads.atomic_add!(errors, 1)
                         end
@@ -523,7 +523,7 @@ end  # RCU Bank
                 Threads.@threads for i in 1:1000
                     try
                         grid_idx = mod1(i, length(grids))
-                        FI.cubic_interp(grids[grid_idx], y, 0.5; autocache=true)
+                        FI.cubic_interp(grids[grid_idx], y, 0.5; autocache = true)
                     catch
                         Threads.atomic_add!(errors, 1)
                     end
@@ -544,7 +544,7 @@ end  # RCU Bank
                             if i == 1
                                 FI.clear_cubic_cache!()
                             else
-                                FI.cubic_interp(x, y, 0.5; autocache=true)
+                                FI.cubic_interp(x, y, 0.5; autocache = true)
                             end
                         catch
                             Threads.atomic_add!(errors, 1)

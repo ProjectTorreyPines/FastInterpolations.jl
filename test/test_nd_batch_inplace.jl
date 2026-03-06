@@ -33,18 +33,26 @@ using FastInterpolations
     #              zero_deriv  = deriv order where output must be all zeros, or nothing)
 
     configs = [
-        ("CubicInterpolantND", cubic_interp,
-         [(queries_soa, DerivOp(1, 0)), (queries_soa, DerivOp(1, 0)), (queries_aos, DerivOp(1, 0))],
-         nothing),
-        ("QuadraticInterpolantND", quadratic_interp,
-         [(queries_soa, DerivOp(1, 0)), (queries_soa, DerivOp(1, 0)), (queries_aos, DerivOp(1, 0))],
-         nothing),
-        ("LinearInterpolantND", linear_interp,
-         [(queries_soa, DerivOp(1, 0)), (queries_aos, DerivOp(1, 0))],
-         DerivOp(2, 0)),
-        ("ConstantInterpolantND", constant_interp,
-         [],
-         DerivOp(1, 0)),
+        (
+            "CubicInterpolantND", cubic_interp,
+            [(queries_soa, DerivOp(1, 0)), (queries_soa, DerivOp(1, 0)), (queries_aos, DerivOp(1, 0))],
+            nothing,
+        ),
+        (
+            "QuadraticInterpolantND", quadratic_interp,
+            [(queries_soa, DerivOp(1, 0)), (queries_soa, DerivOp(1, 0)), (queries_aos, DerivOp(1, 0))],
+            nothing,
+        ),
+        (
+            "LinearInterpolantND", linear_interp,
+            [(queries_soa, DerivOp(1, 0)), (queries_aos, DerivOp(1, 0))],
+            DerivOp(2, 0),
+        ),
+        (
+            "ConstantInterpolantND", constant_interp,
+            [],
+            DerivOp(1, 0),
+        ),
     ]
 
     @testset "$name" for (name, interp_fn, deriv_cases, zero_deriv) in configs
@@ -69,9 +77,9 @@ using FastInterpolations
         if !isempty(deriv_cases)
             @testset "deriv keyword" begin
                 for (qs, d) in deriv_cases
-                    expected = itp(qs; deriv=d)
+                    expected = itp(qs; deriv = d)
                     output = zeros(n)
-                    itp(output, qs; deriv=d)
+                    itp(output, qs; deriv = d)
                     @test output ≈ expected
                 end
             end
@@ -80,11 +88,11 @@ using FastInterpolations
         if zero_deriv !== nothing
             @testset "deriv=$zero_deriv early-return (zeros)" begin
                 output = ones(n)
-                itp(output, queries_soa; deriv=zero_deriv)
+                itp(output, queries_soa; deriv = zero_deriv)
                 @test all(iszero, output)
 
                 output = ones(n)
-                itp(output, queries_aos; deriv=zero_deriv)
+                itp(output, queries_aos; deriv = zero_deriv)
                 @test all(iszero, output)
             end
         end
@@ -93,7 +101,7 @@ using FastInterpolations
             hints = (Ref(1), Ref(1))
             expected = itp(queries_soa)
             output = zeros(n)
-            itp(output, queries_soa; hint=hints)
+            itp(output, queries_soa; hint = hints)
             @test output ≈ expected
         end
 

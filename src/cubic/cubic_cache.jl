@@ -38,18 +38,21 @@ result1 = cubic_interp(cache, y1, [0.25, 0.75])
 result2 = cubic_interp(cache, y2, [0.25, 0.75])
 ```
 """
-function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC=CubicFit()) where {T<:AbstractFloat}
+function CubicSplineCache(x::AbstractVector{T}; bc::AbstractBC = CubicFit()) where {T <: AbstractFloat}
     # Validate PolyFit{D} point requirements (e.g., CubicFit needs 4+ points)
     validate_polyfit_points(bc, length(x))
 
     # Periodic BC
     if _is_periodic_bc(bc)
         if bc isa PeriodicBC{:exclusive}
-            throw(ArgumentError(
-                "CubicSplineCache does not support PeriodicBC(endpoint=:exclusive) because " *
-                "the cache is grid-only and cannot extend data values. " *
-                "Use cubic_interp(x, y, xq; bc=PeriodicBC(endpoint=:exclusive)) or " *
-                "CubicInterpolant(x, y; bc=PeriodicBC(endpoint=:exclusive)) instead."))
+            throw(
+                ArgumentError(
+                    "CubicSplineCache does not support PeriodicBC(endpoint=:exclusive) because " *
+                        "the cache is grid-only and cannot extend data values. " *
+                        "Use cubic_interp(x, y, xq; bc=PeriodicBC(endpoint=:exclusive)) or " *
+                        "CubicInterpolant(x, y; bc=PeriodicBC(endpoint=:exclusive)) instead."
+                )
+            )
         end
         return _build_periodic_cache(x)
     end

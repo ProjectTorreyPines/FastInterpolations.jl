@@ -40,7 +40,7 @@ cell.p                       # raw coefficients for custom operations
 cell.xL, cell.xR             # cell boundaries
 ```
 """
-struct CellPoly{N, Tv, Tg<:AbstractFloat}
+struct CellPoly{N, Tv, Tg <: AbstractFloat}
     p::NTuple{N, Tv}
     xL::Tg
     xR::Tg
@@ -54,7 +54,7 @@ end
 
 function Base.show(io::IO, c::CellPoly{N, Tv, Tg}) where {N, Tv, Tg}
     deg = N - 1
-    print(io, "CellPoly{deg=$deg, $Tv}(x ∈ [$(c.xL), $(c.xR)])")
+    return print(io, "CellPoly{deg=$deg, $Tv}(x ∈ [$(c.xL), $(c.xR)])")
 end
 
 # ========================================
@@ -99,10 +99,10 @@ function coeffs end
 # ── CubicInterpolant ──
 
 @inline function coeffs(
-    itp::CubicInterpolant{Tg,Tv}, xq::Real;
-    search::AbstractSearchPolicy=itp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg,Tv}
+        itp::CubicInterpolant{Tg, Tv}, xq::Real;
+        search::AbstractSearchPolicy = itp.search_policy,
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg, Tv}
     x = itp.cache.x
     spacing = itp.cache.spacing
     searcher = _resolve_search(x, xq, search, hint)
@@ -113,8 +113,8 @@ function coeffs end
     inv_6h = inv_h * inv6 # 1/(6h), shared factor         fmul
     h_inv6 = h * inv6     # h/6                           fmul
     @inbounds begin
-        zL, zR = itp.z[i], itp.z[i+1]
-        yL, yR = itp.y[i], itp.y[i+1]
+        zL, zR = itp.z[i], itp.z[i + 1]
+        yL, yR = itp.y[i], itp.y[i + 1]
     end
     z_sum = muladd(Tg(2), zL, zR)                       # 2zL + zR       fmadd
     a = (zR - zL) * inv_6h                               # (zR-zL)/(6h)   fsub, fmul
@@ -127,10 +127,10 @@ end
 # ── QuadraticInterpolant ──
 
 @inline function coeffs(
-    itp::QuadraticInterpolant{Tg,Tv}, xq::Real;
-    search::AbstractSearchPolicy=itp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg,Tv}
+        itp::QuadraticInterpolant{Tg, Tv}, xq::Real;
+        search::AbstractSearchPolicy = itp.search_policy,
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg, Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)
     i, xL, xR = search_interval(searcher, itp.x, xq)
     @inbounds return CellPoly{3, Tv, Tg}((itp.y[i], itp.d[i], itp.a[i]), xL, xR)
@@ -139,15 +139,15 @@ end
 # ── LinearInterpolant ──
 
 @inline function coeffs(
-    itp::LinearInterpolant{Tg,Tv}, xq::Real;
-    search::AbstractSearchPolicy=itp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg,Tv}
+        itp::LinearInterpolant{Tg, Tv}, xq::Real;
+        search::AbstractSearchPolicy = itp.search_policy,
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg, Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)
     i, xL, xR = search_interval(searcher, itp.x, xq)
     h = xR - xL
     @inbounds begin
-        slope = (itp.y[i+1] - itp.y[i]) * inv(h)
+        slope = (itp.y[i + 1] - itp.y[i]) * inv(h)
         return CellPoly{2, Tv, Tg}((itp.y[i], slope), xL, xR)
     end
 end
@@ -155,13 +155,13 @@ end
 # ── ConstantInterpolant ──
 
 @inline function coeffs(
-    itp::ConstantInterpolant{Tg,Tv}, xq::Real;
-    search::AbstractSearchPolicy=itp.search_policy,
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg,Tv}
+        itp::ConstantInterpolant{Tg, Tv}, xq::Real;
+        search::AbstractSearchPolicy = itp.search_policy,
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg, Tv}
     searcher = _resolve_search(itp.x, xq, search, hint)
     i, xL, xR = search_interval(searcher, itp.x, xq)
     # Reuse the constant kernel directly for correct side/grid-point behavior
-    @inbounds y0 = _constant_kernel(EvalValue(), itp.y[i], itp.y[i+1], xR - xL, xq - xL, itp.side)
+    @inbounds y0 = _constant_kernel(EvalValue(), itp.y[i], itp.y[i + 1], xR - xL, xq - xL, itp.side)
     return CellPoly{1, Tv, Tg}((y0,), xL, xR)
 end

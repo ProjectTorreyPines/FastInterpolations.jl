@@ -20,14 +20,14 @@ Zero-allocation scalar one-shot ND multilinear evaluation.
 Evaluates directly from grids + data without constructing a LinearInterpolantND.
 """
 @with_pool pool function _linear_interp_nd_oneshot(
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    query::Tuple{Vararg{Real, N}},
-    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp},
-    hints=nothing
-) where {Tg<:AbstractFloat, Tv, N}
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        query::Tuple{Vararg{Real, N}},
+        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
+        searches::NTuple{N, AbstractSearchPolicy},
+        ops::NTuple{N, AbstractEvalOp},
+        hints = nothing
+    ) where {Tg <: AbstractFloat, Tv, N}
     # OOB short-circuit
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
@@ -46,28 +46,35 @@ In-place SoA batch one-shot ND multilinear evaluation.
 Writes results into `output`. No heap allocation beyond spacings.
 """
 @with_pool pool function _linear_interp_nd_oneshot_soa!(
-    output::AbstractVector,
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp},
-    hints=nothing
-) where {Tg<:AbstractFloat, Tv, N}
+        output::AbstractVector,
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
+        searches::NTuple{N, AbstractSearchPolicy},
+        ops::NTuple{N, AbstractEvalOp},
+        hints = nothing
+    ) where {Tg <: AbstractFloat, Tv, N}
     n_queries = length(queries[1])
     for d in 2:N
-        length(queries[d]) == n_queries || throw(DimensionMismatch(
-            "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
-        ))
+        length(queries[d]) == n_queries || throw(
+            DimensionMismatch(
+                "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
+            )
+        )
     end
-    length(output) == n_queries || throw(DimensionMismatch(
-        "output length ($(length(output))) must match query length ($n_queries)"))
+    length(output) == n_queries || throw(
+        DimensionMismatch(
+            "output length ($(length(output))) must match query length ($n_queries)"
+        )
+    )
     spacings = _create_spacings_pooled(pool, grids)
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
         oob_val = _try_fill_oob(query_k, grids, extraps_val, ops, first(data))
-        if oob_val !== nothing; output[k] = oob_val; continue; end
+        if oob_val !== nothing
+            output[k] = oob_val; continue
+        end
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
         hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
@@ -83,23 +90,28 @@ In-place AoS batch one-shot ND multilinear evaluation.
 Writes results into `output`. No heap allocation beyond spacings.
 """
 @with_pool pool function _linear_interp_nd_oneshot_aos!(
-    output::AbstractVector,
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp},
-    hints=nothing
-) where {Tg<:AbstractFloat, Tv, N}
+        output::AbstractVector,
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
+        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
+        searches::NTuple{N, AbstractSearchPolicy},
+        ops::NTuple{N, AbstractEvalOp},
+        hints = nothing
+    ) where {Tg <: AbstractFloat, Tv, N}
     n_queries = length(queries)
-    length(output) == n_queries || throw(DimensionMismatch(
-        "output length ($(length(output))) must match query length ($n_queries)"))
+    length(output) == n_queries || throw(
+        DimensionMismatch(
+            "output length ($(length(output))) must match query length ($n_queries)"
+        )
+    )
     spacings = _create_spacings_pooled(pool, grids)
     @inbounds for k in 1:n_queries
         query_k = queries[k]
         oob_val = _try_fill_oob(query_k, grids, extraps_val, ops, first(data))
-        if oob_val !== nothing; output[k] = oob_val; continue; end
+        if oob_val !== nothing
+            output[k] = oob_val; continue
+        end
         q_eval = _handle_all_extraps(query_k, grids, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
         hs, αs = _compute_linear_params(q_eval, spacings, indices, Ls, Val(N))
@@ -112,7 +124,7 @@ end
 # searches tuple type, resolving per-element Union{BinarySearch,LinearBinarySearch} before
 # entering the @with_pool boundary. NOT @inline — specialization requires real call.
 function _linear_nd_soa_dispatch!(output, grids, data, queries, extraps, searches, ops, hints)
-    _linear_interp_nd_oneshot_soa!(output, grids, data, queries, extraps, searches, ops, hints)
+    return _linear_interp_nd_oneshot_soa!(output, grids, data, queries, extraps, searches, ops, hints)
 end
 
 # ========================================
@@ -126,14 +138,14 @@ One-shot N-dimensional linear interpolation (scalar query).
 Zero-allocation after warmup.
 """
 function linear_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv, N},
-    query::Tuple{Vararg{Real, N}};
-    extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tv, N}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
@@ -154,14 +166,14 @@ One-shot N-dimensional linear interpolation (batch SoA query).
 Only allocates the output vector.
 """
 function linear_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv, N},
-    queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
-    extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tv, N}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tv, N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -178,14 +190,14 @@ One-shot N-dimensional linear interpolation (batch AoS query).
 Only allocates the output vector.
 """
 function linear_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv, N},
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tv, N}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     Tr = _output_eltype(Tv, Tg)
@@ -205,15 +217,15 @@ In-place one-shot N-dimensional linear interpolation (batch SoA query).
 Writes results into pre-allocated `output` vector.
 """
 function linear_interp!(
-    output::AbstractVector,
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv, N},
-    queries::NTuple{N, AbstractVector{<:Real}};
-    extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tv, N}
+        output::AbstractVector,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries::NTuple{N, AbstractVector{<:Real}};
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
@@ -233,15 +245,15 @@ In-place one-shot N-dimensional linear interpolation (batch AoS query).
 Writes results into pre-allocated `output` vector.
 """
 function linear_interp!(
-    output::AbstractVector,
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv, N},
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tv, N}
+        output::AbstractVector,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)

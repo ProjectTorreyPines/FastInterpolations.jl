@@ -27,17 +27,17 @@ Forward-mode rule for 1D scalar interpolants.
 
 """
 function ChainRulesCore.frule(
-    (_, Δx),
-    itp::FastInterpolations.AbstractInterpolant{Tg, Tv},
-    x::Real
-) where {Tg, Tv}
+        (_, Δx),
+        itp::FastInterpolations.AbstractInterpolant{Tg, Tv},
+        x::Real
+    ) where {Tg, Tv}
     # Series interpolants have Vector output — skip (frule would work but
     # keep consistent with rrule exclusion)
     itp isa FastInterpolations.AbstractSeriesInterpolant && return nothing
 
     y = itp(x)
     Δx isa AbstractZero && return y, zero(y)
-    ∂y = Δx * itp(x; deriv=DerivOp(1))
+    ∂y = Δx * itp(x; deriv = DerivOp(1))
     return y, ∂y
 end
 
@@ -47,9 +47,9 @@ Reverse-mode rule for 1D scalar interpolants.
 Enables `Zygote.gradient(itp, x)` to use analytical derivatives.
 """
 function ChainRulesCore.rrule(
-    itp::FastInterpolations.AbstractInterpolant{Tg, Tv},
-    x::Real
-) where {Tg, Tv}
+        itp::FastInterpolations.AbstractInterpolant{Tg, Tv},
+        x::Real
+    ) where {Tg, Tv}
     itp isa FastInterpolations.AbstractSeriesInterpolant && return nothing
 
     y = itp(x)
@@ -58,7 +58,7 @@ function ChainRulesCore.rrule(
         Δy isa AbstractZero && return NoTangent(), ZeroTangent()
         # real(conj(Δy) * f'(x)) is the correct pullback for f: ℝ → ℂ
         # For all-real case this is a no-op: real(conj(r) * r') = r * r'
-        return NoTangent(), real(conj(Δy) * itp(x; deriv=DerivOp(1)))
+        return NoTangent(), real(conj(Δy) * itp(x; deriv = DerivOp(1)))
     end
 
     return y, itp_1d_pullback
@@ -75,10 +75,10 @@ Forward-mode rule for all ND interpolants with Tuple input.
 
 """
 function ChainRulesCore.frule(
-    (_, Δquery),
-    itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
-    query::Tuple{Vararg{Real, N}}
-) where {Tg, Tv, N}
+        (_, Δquery),
+        itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}}
+    ) where {Tg, Tv, N}
     y = itp(query)
     Δquery isa AbstractZero && return y, zero(y)
 
@@ -93,13 +93,15 @@ Forward-mode rule for all ND interpolants with Vector input.
 
 """
 function ChainRulesCore.frule(
-    (_, Δquery),
-    itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
-    query::AbstractVector{<:Real}
-) where {Tg, Tv, N}
-    length(query) == N || throw(DimensionMismatch(
-        "query length $(length(query)) does not match interpolant dimension $N"
-    ))
+        (_, Δquery),
+        itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
+        query::AbstractVector{<:Real}
+    ) where {Tg, Tv, N}
+    length(query) == N || throw(
+        DimensionMismatch(
+            "query length $(length(query)) does not match interpolant dimension $N"
+        )
+    )
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
     y = itp(query_tuple)
     Δquery isa AbstractZero && return y, zero(y)
@@ -120,9 +122,9 @@ Enables `Zygote.gradient(x -> itp((x[1], x[2])), ...)` to use
 analytical derivatives via pullback.
 """
 function ChainRulesCore.rrule(
-    itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
-    query::Tuple{Vararg{Real, N}}
-) where {Tg, Tv, N}
+        itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}}
+    ) where {Tg, Tv, N}
     y = itp(query)
 
     function itp_nd_pullback(Δy)
@@ -142,12 +144,14 @@ Reverse-mode rule for all ND interpolants with Vector input.
 Enables `Zygote.gradient(itp, [0.5, 0.5])` to use analytical derivatives.
 """
 function ChainRulesCore.rrule(
-    itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
-    query::AbstractVector{<:Real}
-) where {Tg, Tv, N}
-    length(query) == N || throw(DimensionMismatch(
-        "query length $(length(query)) does not match interpolant dimension $N"
-    ))
+        itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
+        query::AbstractVector{<:Real}
+    ) where {Tg, Tv, N}
+    length(query) == N || throw(
+        DimensionMismatch(
+            "query length $(length(query)) does not match interpolant dimension $N"
+        )
+    )
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
     y = itp(query_tuple)
 

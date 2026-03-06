@@ -38,11 +38,11 @@ spline recurrence. This is the quadratic analog of the cubic `_deriv_1d!`.
 - `bc::QuadraticBC`: Boundary condition (Left, Right, or MinCurvFit)
 """
 @with_pool pool function _slope_1d_quadratic!(
-    d_out::AbstractVector{Tv},
-    values::AbstractVector{Tv},
-    grid::AbstractVector{Tg},
-    bc::QuadraticBC
-) where {Tv, Tg<:AbstractFloat}
+        d_out::AbstractVector{Tv},
+        values::AbstractVector{Tv},
+        grid::AbstractVector{Tg},
+        bc::QuadraticBC
+    ) where {Tv, Tg <: AbstractFloat}
     n = length(values)
     @assert n == length(grid) "values and grid must have same length"
     @assert n >= 2 "Need at least 2 points"
@@ -73,35 +73,37 @@ end
 # Convert AbstractBC → QuadraticBC at the point where Tv is known, then delegate
 # to the core @with_pool method. Matches cubic's pattern in _deriv_1d!.
 @inline function _slope_1d_quadratic!(
-    d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
-    grid::AbstractVector{Tg}, ::ZeroCurvBC
-) where {Tv, Tg<:AbstractFloat}
-    _slope_1d_quadratic!(d_out, values, grid, Right(Deriv2(0 * first(values))))
+        d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
+        grid::AbstractVector{Tg}, ::ZeroCurvBC
+    ) where {Tv, Tg <: AbstractFloat}
+    return _slope_1d_quadratic!(d_out, values, grid, Right(Deriv2(0 * first(values))))
 end
 
 @inline function _slope_1d_quadratic!(
-    d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
-    grid::AbstractVector{Tg}, ::ZeroSlopeBC
-) where {Tv, Tg<:AbstractFloat}
-    _slope_1d_quadratic!(d_out, values, grid, Left(Deriv1(0 * first(values))))
+        d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
+        grid::AbstractVector{Tg}, ::ZeroSlopeBC
+    ) where {Tv, Tg <: AbstractFloat}
+    return _slope_1d_quadratic!(d_out, values, grid, Left(Deriv1(0 * first(values))))
 end
 
 @inline function _slope_1d_quadratic!(
-    d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
-    grid::AbstractVector{Tg}, bc::PolyFit
-) where {Tv, Tg<:AbstractFloat}
-    _slope_1d_quadratic!(d_out, values, grid, Right(bc))
+        d_out::AbstractVector{Tv}, values::AbstractVector{Tv},
+        grid::AbstractVector{Tg}, bc::PolyFit
+    ) where {Tv, Tg <: AbstractFloat}
+    return _slope_1d_quadratic!(d_out, values, grid, Right(bc))
 end
 
 # Fallback: reject unsupported BC types with a clear error message
 function _slope_1d_quadratic!(
-    ::AbstractVector, ::AbstractVector,
-    ::AbstractVector, bc::AbstractBC
-)
-    throw(ArgumentError(
-        "Unsupported boundary condition for quadratic interpolation: $(typeof(bc)). " *
-        "Supported: Left(...), Right(...), MinCurvFit, ZeroCurvBC, ZeroSlopeBC, or PolyFit variants."
-    ))
+        ::AbstractVector, ::AbstractVector,
+        ::AbstractVector, bc::AbstractBC
+    )
+    throw(
+        ArgumentError(
+            "Unsupported boundary condition for quadratic interpolation: $(typeof(bc)). " *
+                "Supported: Left(...), Right(...), MinCurvFit, ZeroCurvBC, ZeroSlopeBC, or PolyFit variants."
+        )
+    )
 end
 
 # ========================================
@@ -125,28 +127,31 @@ Uses the same "reshape to 3D" trick as the cubic version:
 - `d::Int`: Dimension to differentiate along (1 ≤ d ≤ N)
 """
 @with_pool pool function _differentiate_nd_along_dim_quadratic!(
-    out::AbstractArray{Tv,N},
-    data::AbstractArray{Tv,N},
-    grid::AbstractVector{Tg},
-    bc::AbstractBC,
-    d::Int
-) where {Tv, Tg<:AbstractFloat, N}
+        out::AbstractArray{Tv, N},
+        data::AbstractArray{Tv, N},
+        grid::AbstractVector{Tg},
+        bc::AbstractBC,
+        d::Int
+    ) where {Tv, Tg <: AbstractFloat, N}
     @boundscheck begin
         1 ≤ d ≤ N || throw(ArgumentError("dimension d=$d out of range 1:$N"))
         size(out) == size(data) || throw(DimensionMismatch("out and data must have same size"))
-        size(data, d) == length(grid) || throw(DimensionMismatch(
-            "size(data, $d)=$(size(data,d)) must match length(grid)=$(length(grid))"))
+        size(data, d) == length(grid) || throw(
+            DimensionMismatch(
+                "size(data, $d)=$(size(data, d)) must match length(grid)=$(length(grid))"
+            )
+        )
     end
 
     n_d = size(data, d)
 
     # Compute reshape dimensions
     shape_before = 1
-    @inbounds for i in 1:(d-1)
+    @inbounds for i in 1:(d - 1)
         shape_before *= size(data, i)
     end
     shape_after = 1
-    @inbounds for i in (d+1):N
+    @inbounds for i in (d + 1):N
         shape_after *= size(data, i)
     end
 
@@ -209,16 +214,16 @@ end
     grids::NTuple{N, AbstractVector{Tg}},
     bcs::NTuple{N, AbstractBC},
     ::Val{N}
-) where {Tv, Tg<:AbstractFloat, N, NP1} =
+) where {Tv, Tg <: AbstractFloat, N, NP1} =
     _build_nd_partials_dim_quadratic!(partials, grids, bcs, Val(1), Val(N))
 
 @inline function _build_nd_partials_dim_quadratic!(
-    partials::AbstractArray{Tv, NP1},
-    grids::NTuple{N, AbstractVector{Tg}},
-    bcs::NTuple{N, AbstractBC},
-    ::Val{D},
-    ::Val{N}
-) where {Tv, Tg<:AbstractFloat, D, N, NP1}
+        partials::AbstractArray{Tv, NP1},
+        grids::NTuple{N, AbstractVector{Tg}},
+        bcs::NTuple{N, AbstractBC},
+        ::Val{D},
+        ::Val{N}
+    ) where {Tv, Tg <: AbstractFloat, D, N, NP1}
     bit_d = 1 << (D - 1)
     @inbounds for p_src in 1:bit_d
         p_dst = p_src + bit_d
@@ -242,18 +247,20 @@ Uses the same bit-encoding build-up algorithm as cubic, but with quadratic
 recurrence for 1D differentiation instead of Thomas tridiagonal.
 """
 function _compute_nd_partials_quadratic!(
-    partials::AbstractArray{Tv, NP1},
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    bcs::NTuple{N, AbstractBC}
-) where {Tv, Tg<:AbstractFloat, N, NP1}
+        partials::AbstractArray{Tv, NP1},
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        bcs::NTuple{N, AbstractBC}
+    ) where {Tv, Tg <: AbstractFloat, N, NP1}
     # Validate dimensions
     @boundscheck begin
         NP1 == N + 1 || throw(DimensionMismatch("partials must have N+1 dimensions"))
         n_partials = 1 << N
-        size(partials, 1) == n_partials || throw(DimensionMismatch(
-            "partials first dimension must be 2^N=$(n_partials), got $(size(partials, 1))"
-        ))
+        size(partials, 1) == n_partials || throw(
+            DimensionMismatch(
+                "partials first dimension must be 2^N=$(n_partials), got $(size(partials, 1))"
+            )
+        )
     end
 
     # Stage 0: Copy f (the function values) into partials[1, ...]
@@ -279,17 +286,17 @@ Compute all partial derivatives for N-dimensional quadratic interpolation.
 - `NodalDerivativesND{Tv, N, N+1}` containing the partials array
 """
 function _build_nd_coeffs_quadratic(
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    bcs::NTuple{N, AbstractBC}
-) where {Tg<:AbstractFloat, Tv, N}
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        bcs::NTuple{N, AbstractBC}
+    ) where {Tg <: AbstractFloat, Tv, N}
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
     n_partials = 1 << N
     partials_shape = (n_partials, size(data)...)
-    partials = Array{Tv, N+1}(undef, partials_shape)
+    partials = Array{Tv, N + 1}(undef, partials_shape)
 
     # Compute all partial derivatives
     _compute_nd_partials_quadratic!(partials, grids, data, bcs)
 
-    return NodalDerivativesND{Tv, N, N+1}(partials)
+    return NodalDerivativesND{Tv, N, N + 1}(partials)
 end

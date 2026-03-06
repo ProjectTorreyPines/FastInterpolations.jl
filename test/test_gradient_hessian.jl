@@ -20,14 +20,14 @@ using FastInterpolations
         expected_dy = -sin(xq) * sin(yq)
 
         @test grad isa NTuple{2}
-        @test grad[1] ≈ expected_dx atol=1e-3
-        @test grad[2] ≈ expected_dy atol=1e-3
+        @test grad[1] ≈ expected_dx atol = 1.0e-3
+        @test grad[2] ≈ expected_dy atol = 1.0e-3
 
         # Test vector API
         grad_vec = gradient(itp, [xq, yq])
         @test grad_vec isa Vector
-        @test grad_vec[1] ≈ expected_dx atol=1e-3
-        @test grad_vec[2] ≈ expected_dy atol=1e-3
+        @test grad_vec[1] ≈ expected_dx atol = 1.0e-3
+        @test grad_vec[2] ≈ expected_dy atol = 1.0e-3
     end
 
     @testset "2D Hessian" begin
@@ -49,10 +49,10 @@ using FastInterpolations
 
         @test H isa Matrix
         @test size(H) == (2, 2)
-        @test H[1, 1] ≈ expected_dxx atol=1e-2
-        @test H[2, 2] ≈ expected_dyy atol=1e-2
-        @test H[1, 2] ≈ expected_dxy atol=1e-2
-        @test H[2, 1] ≈ expected_dxy atol=1e-2  # Symmetry
+        @test H[1, 1] ≈ expected_dxx atol = 1.0e-2
+        @test H[2, 2] ≈ expected_dyy atol = 1.0e-2
+        @test H[1, 2] ≈ expected_dxy atol = 1.0e-2
+        @test H[2, 1] ≈ expected_dxy atol = 1.0e-2  # Symmetry
 
         # Test vector API
         H_vec = hessian(itp, [xq, yq])
@@ -72,9 +72,9 @@ using FastInterpolations
         grad = gradient(itp, (xq, yq, zq))
 
         @test grad isa NTuple{3}
-        @test grad[1] ≈ 2xq atol=1e-3
-        @test grad[2] ≈ 2yq atol=1e-3
-        @test grad[3] ≈ 2zq atol=1e-3
+        @test grad[1] ≈ 2xq atol = 1.0e-3
+        @test grad[2] ≈ 2yq atol = 1.0e-3
+        @test grad[3] ≈ 2zq atol = 1.0e-3
     end
 
     @testset "3D Hessian" begin
@@ -91,13 +91,13 @@ using FastInterpolations
 
         @test size(H) == (3, 3)
         # Diagonal elements
-        @test H[1, 1] ≈ 2.0 atol=1e-2
-        @test H[2, 2] ≈ 2.0 atol=1e-2
-        @test H[3, 3] ≈ 2.0 atol=1e-2
+        @test H[1, 1] ≈ 2.0 atol = 1.0e-2
+        @test H[2, 2] ≈ 2.0 atol = 1.0e-2
+        @test H[3, 3] ≈ 2.0 atol = 1.0e-2
         # Off-diagonal elements (should be zero for x² + y² + z²)
-        @test abs(H[1, 2]) < 1e-2
-        @test abs(H[1, 3]) < 1e-2
-        @test abs(H[2, 3]) < 1e-2
+        @test abs(H[1, 2]) < 1.0e-2
+        @test abs(H[1, 3]) < 1.0e-2
+        @test abs(H[2, 3]) < 1.0e-2
         # Symmetry
         @test H[1, 2] ≈ H[2, 1]
         @test H[1, 3] ≈ H[3, 1]
@@ -128,8 +128,8 @@ using FastInterpolations
         grad = gradient(itp, (xq, yq))
 
         # ∂f/∂x = cos(x), ∂f/∂y = -i*sin(y)
-        @test grad[1] ≈ cos(xq) atol=1e-2
-        @test grad[2] ≈ -im * sin(yq) atol=1e-2
+        @test grad[1] ≈ cos(xq) atol = 1.0e-2
+        @test grad[2] ≈ -im * sin(yq) atol = 1.0e-2
     end
 
     @testset "2D Laplacian" begin
@@ -143,11 +143,11 @@ using FastInterpolations
         xq, yq = 0.3, -0.4
         lap = laplacian(itp, (xq, yq))
 
-        @test lap ≈ 4.0 atol=1e-2
+        @test lap ≈ 4.0 atol = 1.0e-2
 
         # Vector API
         lap_vec = laplacian(itp, [xq, yq])
-        @test lap_vec ≈ 4.0 atol=1e-2
+        @test lap_vec ≈ 4.0 atol = 1.0e-2
     end
 
     @testset "3D Laplacian" begin
@@ -162,7 +162,7 @@ using FastInterpolations
         xq, yq, zq = 0.3, -0.4, 0.5
         lap = laplacian(itp, (xq, yq, zq))
 
-        @test lap ≈ 6.0 atol=1e-2
+        @test lap ≈ 6.0 atol = 1.0e-2
     end
 
     @testset "Laplacian vs Hessian trace" begin
@@ -177,7 +177,7 @@ using FastInterpolations
         H = hessian(itp, (xq, yq))
 
         # trace = sum of diagonal elements
-        @test lap ≈ H[1,1] + H[2,2] atol=1e-10
+        @test lap ≈ H[1, 1] + H[2, 2] atol = 1.0e-10
     end
 
     # ========================================
@@ -239,8 +239,8 @@ using FastInterpolations
         grad_range = gradient(itp_range, (xq, yq))
         grad_vec = gradient(itp_vec, (xq, yq))
 
-        @test grad_range[1] ≈ grad_vec[1] atol=1e-12
-        @test grad_range[2] ≈ grad_vec[2] atol=1e-12
+        @test grad_range[1] ≈ grad_vec[1] atol = 1.0e-12
+        @test grad_range[2] ≈ grad_vec[2] atol = 1.0e-12
     end
 
     @testset "Vector grid - hessian matches range grid" begin
@@ -255,7 +255,7 @@ using FastInterpolations
         H_range = hessian(itp_range, (xq, yq))
         H_vec = hessian(itp_vec, (xq, yq))
 
-        @test H_range ≈ H_vec atol=1e-12
+        @test H_range ≈ H_vec atol = 1.0e-12
     end
 
     # ========================================
@@ -338,8 +338,8 @@ using FastInterpolations
         itp = linear_interp((x, y), data)
 
         grad = gradient(itp, (0.5, 0.5))
-        @test grad[1] ≈ 3.0 atol=1e-10
-        @test grad[2] ≈ 2.0 atol=1e-10
+        @test grad[1] ≈ 3.0 atol = 1.0e-10
+        @test grad[2] ≈ 2.0 atol = 1.0e-10
     end
 
     @testset "Quadratic interpolant - gradient" begin
@@ -351,8 +351,8 @@ using FastInterpolations
 
         xq, yq = 0.3, -0.4
         grad = gradient(itp, (xq, yq))
-        @test grad[1] ≈ 2xq atol=1e-2
-        @test grad[2] ≈ 2yq atol=1e-2
+        @test grad[1] ≈ 2xq atol = 1.0e-2
+        @test grad[2] ≈ 2yq atol = 1.0e-2
     end
 
     @testset "Constant interpolant - gradient is zero" begin
@@ -362,8 +362,8 @@ using FastInterpolations
         itp = constant_interp((x, y), data)
 
         grad = gradient(itp, (0.5, 0.5))
-        @test grad[1] ≈ 0.0 atol=1e-15
-        @test grad[2] ≈ 0.0 atol=1e-15
+        @test grad[1] ≈ 0.0 atol = 1.0e-15
+        @test grad[2] ≈ 0.0 atol = 1.0e-15
     end
 
     @testset "Linear interpolant - hessian" begin
@@ -374,7 +374,7 @@ using FastInterpolations
         itp = linear_interp((x, y), data)
 
         H = hessian(itp, (0.5, 0.5))
-        @test all(abs.(H) .< 1e-10)
+        @test all(abs.(H) .< 1.0e-10)
     end
 
     @testset "Quadratic interpolant - laplacian" begin
@@ -385,7 +385,7 @@ using FastInterpolations
         itp = quadratic_interp((x, y), data)
 
         lap = laplacian(itp, (0.3, -0.4))
-        @test lap ≈ 4.0 atol=1e-1
+        @test lap ≈ 4.0 atol = 1.0e-1
     end
 
 end

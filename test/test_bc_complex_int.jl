@@ -13,7 +13,7 @@ using FastInterpolations
 @testset "Complex{Int} Type Promotion" begin
     # Common test data
     x = [0.0, 1.0, 2.0, 3.0, 4.0]
-    y_cint = Complex{Int}[1+2im, 3+4im, 5+6im, 7+8im, 9+10im]
+    y_cint = Complex{Int}[1 + 2im, 3 + 4im, 5 + 6im, 7 + 8im, 9 + 10im]
     y_cf64 = ComplexF64.(y_cint)
 
     # ========================================
@@ -21,24 +21,26 @@ using FastInterpolations
     # ========================================
     @testset "cubic_interp" begin
         # Core BC types (representative selection)
-        @testset "BC=$bc" for bc in [ZeroCurvBC(), Deriv1(0.0), Deriv2(0.5),
-                                      ZeroSlopeBC(), LinearFit(), QuadraticFit()]
-            itp = cubic_interp(x, y_cint; bc=bc)
+        @testset "BC=$bc" for bc in [
+                ZeroCurvBC(), Deriv1(0.0), Deriv2(0.5),
+                ZeroSlopeBC(), LinearFit(), QuadraticFit(),
+            ]
+            itp = cubic_interp(x, y_cint; bc = bc)
             @test itp isa CubicInterpolant{Float64, ComplexF64}
             @test itp(1.5) isa ComplexF64
         end
 
         # BCPair (asymmetric)
         @testset "BCPair" begin
-            itp = cubic_interp(x, y_cint; bc=BCPair(Deriv1(0.0), Deriv2(0.0)))
+            itp = cubic_interp(x, y_cint; bc = BCPair(Deriv1(0.0), Deriv2(0.0)))
             @test itp isa CubicInterpolant{Float64, ComplexF64}
         end
 
         # Accuracy check: Complex{Int} vs ComplexF64 should match
         @testset "accuracy" begin
-            itp_int = cubic_interp(x, y_cint; bc=Deriv1(0.0))
-            itp_f64 = cubic_interp(x, y_cf64; bc=Deriv1(0.0))
-            @test isapprox(itp_int(1.5), itp_f64(1.5); rtol=1e-10)
+            itp_int = cubic_interp(x, y_cint; bc = Deriv1(0.0))
+            itp_f64 = cubic_interp(x, y_cf64; bc = Deriv1(0.0))
+            @test isapprox(itp_int(1.5), itp_f64(1.5); rtol = 1.0e-10)
         end
     end
 
@@ -69,20 +71,20 @@ using FastInterpolations
     @testset "edge cases" begin
         # Integer range grid
         @testset "Int range grid" begin
-            itp = cubic_interp(0:4, y_cint; bc=Deriv1(0.0))
+            itp = cubic_interp(0:4, y_cint; bc = Deriv1(0.0))
             @test itp isa CubicInterpolant{Float64, ComplexF64}
         end
 
         # Complex{Int32}
         @testset "Complex{Int32}" begin
             y_int32 = Complex{Int32}.(y_cint)
-            itp = cubic_interp(x, y_int32; bc=Deriv1(0.0))
+            itp = cubic_interp(x, y_int32; bc = Deriv1(0.0))
             @test itp isa CubicInterpolant{Float64, ComplexF64}
         end
 
         # Non-integer BC values
         @testset "non-integer BC" begin
-            itp = cubic_interp(x, y_cint; bc=Deriv1(1.5))
+            itp = cubic_interp(x, y_cint; bc = Deriv1(1.5))
             @test itp isa CubicInterpolant{Float64, ComplexF64}
         end
 

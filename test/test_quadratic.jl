@@ -212,8 +212,8 @@ end
 # ============================================================================
 @testset "Quadratic Interpolation - Coefficient Computation" begin
     using FastInterpolations: _compute_quadratic_secants!, _fill_slopes!,
-                               _forward_recurrence!, _backward_recurrence!,
-                               _compute_quadratic_coefficients!
+        _forward_recurrence!, _backward_recurrence!,
+        _compute_quadratic_coefficients!
 
     @testset "secant computation" begin
         y = [0.0, 1.0, 4.0, 9.0]  # x²
@@ -383,7 +383,7 @@ end
 
             # Verify recurrence relation is satisfied: d[i+1] = 2*s[i] - d[i]
             for i in 1:3
-                @test d[i+1] ≈ 2*s[i] - d[i] rtol=1e-12
+                @test d[i + 1] ≈ 2 * s[i] - d[i] rtol = 1.0e-12
             end
 
             # Verify all values are finite
@@ -391,7 +391,7 @@ end
 
             # Verify d[1] is optimal: 1/3 for this case
             # (minimizes Σ(s[i] - d[i])²/h[i])
-            @test d[1] ≈ 1/3 rtol=1e-12
+            @test d[1] ≈ 1 / 3 rtol = 1.0e-12
         end
 
         @testset "non-uniform grid - produces finite values" begin
@@ -408,7 +408,7 @@ end
             @test all(isfinite, d)
             # Verify recurrence relation: d[i+1] = 2*s[i] - d[i]
             for i in 1:3
-                @test d[i+1] ≈ 2*s[i] - d[i] rtol=1e-12
+                @test d[i + 1] ≈ 2 * s[i] - d[i] rtol = 1.0e-12
             end
         end
 
@@ -425,9 +425,9 @@ end
 
             # For single segment, minimizing curvature means a = 0
             # a = (s - d[1]) / h => d[1] = s[1] for a = 0
-            @test d[1] ≈ s[1] rtol=1e-12
+            @test d[1] ≈ s[1] rtol = 1.0e-12
             # d[2] = 2*s[1] - d[1] = 2*2 - 2 = 2
-            @test d[2] ≈ 2*s[1] - d[1] rtol=1e-12
+            @test d[2] ≈ 2 * s[1] - d[1] rtol = 1.0e-12
         end
 
         @testset "Float32 support" begin
@@ -443,7 +443,7 @@ end
             # Verify finite values and recurrence
             @test all(isfinite, d)
             for i in 1:3
-                @test d[i+1] ≈ 2*s[i] - d[i] rtol=1e-5
+                @test d[i + 1] ≈ 2 * s[i] - d[i] rtol = 1.0e-5
             end
         end
 
@@ -467,7 +467,7 @@ end
             curvature_left = sum((s[i] - d_left[i])^2 / h[i] for i in 1:3)
 
             # MinCurvFit should have lower or equal curvature (it's the optimum)
-            @test curvature_smooth <= curvature_left + 1e-10
+            @test curvature_smooth <= curvature_left + 1.0e-10
         end
     end
 
@@ -497,9 +497,9 @@ end
         y = [0.0, 1.0, 4.0, 9.0]
 
         # With Right(Deriv1(6)), quadratic spline exactly interpolates x²
-        @test quadratic_interp(x, y, 0.5; bc=Right(Deriv1(6.0))) ≈ 0.25 rtol=1e-10
-        @test quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0))) ≈ 2.25 rtol=1e-10
-        @test quadratic_interp(x, y, 2.5; bc=Right(Deriv1(6.0))) ≈ 6.25 rtol=1e-10
+        @test quadratic_interp(x, y, 0.5; bc = Right(Deriv1(6.0))) ≈ 0.25 rtol = 1.0e-10
+        @test quadratic_interp(x, y, 1.5; bc = Right(Deriv1(6.0))) ≈ 2.25 rtol = 1.0e-10
+        @test quadratic_interp(x, y, 2.5; bc = Right(Deriv1(6.0))) ≈ 6.25 rtol = 1.0e-10
     end
 
     @testset "quadratic_interp BC variants" begin
@@ -507,21 +507,21 @@ end
         y = [0.0, 1.0, 4.0, 9.0]
 
         # Left(Deriv2(0)) - zero curvature at left (default)
-        v1 = quadratic_interp(x, y, 0.5; bc=Left(Deriv2(0.0)))
+        v1 = quadratic_interp(x, y, 0.5; bc = Left(Deriv2(0.0)))
         @test isfinite(v1)
         @test 0.0 < v1 < 1.0  # between y[1] and y[2]
 
         # Left(Deriv1(0)) - zero slope at left
-        v2 = quadratic_interp(x, y, 0.5; bc=Left(Deriv1(0.0)))
+        v2 = quadratic_interp(x, y, 0.5; bc = Left(Deriv1(0.0)))
         @test isfinite(v2)
 
         # Right(Deriv2(0)) - zero curvature at right
-        v3 = quadratic_interp(x, y, 0.5; bc=Right(Deriv2(0.0)))
+        v3 = quadratic_interp(x, y, 0.5; bc = Right(Deriv2(0.0)))
         @test isfinite(v3)
 
         # Right(Deriv1(6)) - specified slope at right (S'(3) = 6 for x²)
-        v4 = quadratic_interp(x, y, 0.5; bc=Right(Deriv1(6.0)))
-        @test v4 ≈ 0.25 rtol=1e-10
+        v4 = quadratic_interp(x, y, 0.5; bc = Right(Deriv1(6.0)))
+        @test v4 ≈ 0.25 rtol = 1.0e-10
     end
 
     @testset "quadratic_interp! in-place" begin
@@ -531,11 +531,11 @@ end
         out = zeros(3)
 
         # Use correct BC for exact x² interpolation
-        quadratic_interp!(out, x, y, xq; bc=Right(Deriv1(6.0)))
+        quadratic_interp!(out, x, y, xq; bc = Right(Deriv1(6.0)))
 
-        @test out[1] ≈ 0.25 rtol=1e-10
-        @test out[2] ≈ 2.25 rtol=1e-10
-        @test out[3] ≈ 6.25 rtol=1e-10
+        @test out[1] ≈ 0.25 rtol = 1.0e-10
+        @test out[2] ≈ 2.25 rtol = 1.0e-10
+        @test out[3] ≈ 6.25 rtol = 1.0e-10
     end
 
     @testset "quadratic_interp vector (allocating)" begin
@@ -544,13 +544,13 @@ end
         xq = [0.5, 1.5, 2.5]
 
         # Use correct BC for exact x² interpolation
-        result = quadratic_interp(x, y, xq; bc=Right(Deriv1(6.0)))
+        result = quadratic_interp(x, y, xq; bc = Right(Deriv1(6.0)))
 
         @test result isa Vector{Float64}
         @test length(result) == 3
-        @test result[1] ≈ 0.25 rtol=1e-10
-        @test result[2] ≈ 2.25 rtol=1e-10
-        @test result[3] ≈ 6.25 rtol=1e-10
+        @test result[1] ≈ 0.25 rtol = 1.0e-10
+        @test result[2] ≈ 2.25 rtol = 1.0e-10
+        @test result[3] ≈ 6.25 rtol = 1.0e-10
     end
 
     @testset "quadratic_interp derivatives" begin
@@ -559,12 +559,12 @@ end
         y = [0.0, 1.0, 4.0, 9.0]
 
         # deriv=DerivOp(1): S'(1.5) = 3.0 (for f(x)=x², f'(x)=2x)
-        d1 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)), deriv=DerivOp(1))
-        @test d1 ≈ 3.0 rtol=1e-10
+        d1 = quadratic_interp(x, y, 1.5; bc = Right(Deriv1(6.0)), deriv = DerivOp(1))
+        @test d1 ≈ 3.0 rtol = 1.0e-10
 
         # deriv=DerivOp(2): S''(x) = 2 for f(x)=x²
-        d2 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)), deriv=DerivOp(2))
-        @test d2 ≈ 2.0 rtol=1e-10
+        d2 = quadratic_interp(x, y, 1.5; bc = Right(Deriv1(6.0)), deriv = DerivOp(2))
+        @test d2 ≈ 2.0 rtol = 1.0e-10
     end
 
     @testset "quadratic_interp extrapolation" begin
@@ -576,29 +576,29 @@ end
         @test_throws DomainError quadratic_interp(x, y, 2.5)
 
         # :constant - clamp to boundary values (outside domain)
-        @test quadratic_interp(x, y, -0.5; extrap=ClampExtrap()) ≈ 0.0
-        @test quadratic_interp(x, y, 2.5; extrap=ClampExtrap()) ≈ 4.0
+        @test quadratic_interp(x, y, -0.5; extrap = ClampExtrap()) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap = ClampExtrap()) ≈ 4.0
 
         # :constant - inside domain should work normally (coverage for eval_core path)
-        @test quadratic_interp(x, y, 1.0; extrap=ClampExtrap()) ≈ 1.0
+        @test quadratic_interp(x, y, 1.0; extrap = ClampExtrap()) ≈ 1.0
 
         # :constant - derivatives return zero outside domain
-        @test quadratic_interp(x, y, -0.5; extrap=ClampExtrap(), deriv=DerivOp(1)) ≈ 0.0
-        @test quadratic_interp(x, y, 2.5; extrap=ClampExtrap(), deriv=DerivOp(1)) ≈ 0.0
-        @test quadratic_interp(x, y, -0.5; extrap=ClampExtrap(), deriv=DerivOp(2)) ≈ 0.0
-        @test quadratic_interp(x, y, 2.5; extrap=ClampExtrap(), deriv=DerivOp(2)) ≈ 0.0
+        @test quadratic_interp(x, y, -0.5; extrap = ClampExtrap(), deriv = DerivOp(1)) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap = ClampExtrap(), deriv = DerivOp(1)) ≈ 0.0
+        @test quadratic_interp(x, y, -0.5; extrap = ClampExtrap(), deriv = DerivOp(2)) ≈ 0.0
+        @test quadratic_interp(x, y, 2.5; extrap = ClampExtrap(), deriv = DerivOp(2)) ≈ 0.0
 
         # :extension - extend the polynomial (right side)
-        v_ext_right = quadratic_interp(x, y, 2.5; extrap=ExtendExtrap())
+        v_ext_right = quadratic_interp(x, y, 2.5; extrap = ExtendExtrap())
         @test isfinite(v_ext_right)
 
         # :extension - extend the polynomial (left side)
-        v_ext_left = quadratic_interp(x, y, -0.5; extrap=ExtendExtrap())
+        v_ext_left = quadratic_interp(x, y, -0.5; extrap = ExtendExtrap())
         @test isfinite(v_ext_left)
 
         # :extension derivatives
-        d1_left = quadratic_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=DerivOp(1))
-        d2_left = quadratic_interp(x, y, -0.5; extrap=ExtendExtrap(), deriv=DerivOp(2))
+        d1_left = quadratic_interp(x, y, -0.5; extrap = ExtendExtrap(), deriv = DerivOp(1))
+        d2_left = quadratic_interp(x, y, -0.5; extrap = ExtendExtrap(), deriv = DerivOp(2))
         @test isfinite(d1_left)
         @test isfinite(d2_left)
     end
@@ -608,9 +608,9 @@ end
         y32 = Float32[0.0, 1.0, 4.0, 9.0]
 
         # Use correct BC for exact x² interpolation
-        result = quadratic_interp(x32, y32, 1.5f0; bc=Right(Deriv1(6.0f0)))
+        result = quadratic_interp(x32, y32, 1.5f0; bc = Right(Deriv1(6.0f0)))
         @test result isa Float32
-        @test result ≈ 2.25f0 rtol=1e-5
+        @test result ≈ 2.25f0 rtol = 1.0e-5
     end
 
     @testset "quadratic_interp type stability" begin
@@ -618,13 +618,13 @@ end
         y = [0.0, 1.0, 4.0, 9.0]
 
         @test @inferred(quadratic_interp(x, y, 0.5)) isa Float64
-        @test @inferred(quadratic_interp(x, y, 0.5; deriv=DerivOp(1))) isa Float64
-        @test @inferred(quadratic_interp(x, y, 0.5; deriv=DerivOp(2))) isa Float64
+        @test @inferred(quadratic_interp(x, y, 0.5; deriv = DerivOp(1))) isa Float64
+        @test @inferred(quadratic_interp(x, y, 0.5; deriv = DerivOp(2))) isa Float64
     end
 
     @testset "quadratic_interp non-uniform grid" begin
         x = [0.0, 0.5, 1.5, 3.0]
-        y = x.^2  # [0, 0.25, 2.25, 9]
+        y = x .^ 2  # [0, 0.25, 2.25, 9]
 
         # At grid points (always exact)
         @test quadratic_interp(x, y, 0.0) ≈ 0.0
@@ -633,8 +633,8 @@ end
         @test quadratic_interp(x, y, 3.0) ≈ 9.0
 
         # Midpoints with correct BC (f'(3) = 6 for x²)
-        @test quadratic_interp(x, y, 0.25; bc=Right(Deriv1(6.0))) ≈ 0.0625 rtol=1e-10
-        @test quadratic_interp(x, y, 2.0; bc=Right(Deriv1(6.0))) ≈ 4.0 rtol=1e-10
+        @test quadratic_interp(x, y, 0.25; bc = Right(Deriv1(6.0))) ≈ 0.0625 rtol = 1.0e-10
+        @test quadratic_interp(x, y, 2.0; bc = Right(Deriv1(6.0))) ≈ 4.0 rtol = 1.0e-10
     end
 
 end
@@ -646,22 +646,22 @@ end
 
     @testset "QuadraticInterpolant construction" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
         # 2-argument form returns QuadraticInterpolant
         itp = quadratic_interp(x, y)
         @test itp isa QuadraticInterpolant
 
         # With BC option
-        itp2 = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        itp2 = quadratic_interp(x, y; bc = Right(Deriv1(6.0)))
         @test itp2 isa QuadraticInterpolant
     end
 
     @testset "QuadraticInterpolant scalar call" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(6.0)))
 
         # Grid points
         @test itp(0.0) ≈ 0.0
@@ -670,69 +670,69 @@ end
         @test itp(3.0) ≈ 9.0
 
         # Midpoints (exact with correct BC)
-        @test itp(0.5) ≈ 0.25 rtol=1e-10
-        @test itp(1.5) ≈ 2.25 rtol=1e-10
-        @test itp(2.5) ≈ 6.25 rtol=1e-10
+        @test itp(0.5) ≈ 0.25 rtol = 1.0e-10
+        @test itp(1.5) ≈ 2.25 rtol = 1.0e-10
+        @test itp(2.5) ≈ 6.25 rtol = 1.0e-10
     end
 
     @testset "QuadraticInterpolant broadcast" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(6.0)))
 
         # Broadcast
         result = itp.([0.5, 1.5, 2.5])
-        @test result ≈ [0.25, 2.25, 6.25] rtol=1e-10
+        @test result ≈ [0.25, 2.25, 6.25] rtol = 1.0e-10
     end
 
     @testset "QuadraticInterpolant vector call" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(6.0)))
 
         # Vector call
         result = itp([0.5, 1.5, 2.5])
         @test result isa Vector{Float64}
-        @test result ≈ [0.25, 2.25, 6.25] rtol=1e-10
+        @test result ≈ [0.25, 2.25, 6.25] rtol = 1.0e-10
     end
 
     @testset "QuadraticInterpolant in-place call" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(6.0)))
 
         out = zeros(3)
         itp(out, [0.5, 1.5, 2.5])
-        @test out ≈ [0.25, 2.25, 6.25] rtol=1e-10
+        @test out ≈ [0.25, 2.25, 6.25] rtol = 1.0e-10
     end
 
     @testset "QuadraticInterpolant derivative call" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(6.0)))
 
         # deriv keyword
-        @test itp(1.5; deriv=DerivOp(1)) ≈ 3.0 rtol=1e-10
-        @test itp(1.5; deriv=DerivOp(2)) ≈ 2.0 rtol=1e-10
+        @test itp(1.5; deriv = DerivOp(1)) ≈ 3.0 rtol = 1.0e-10
+        @test itp(1.5; deriv = DerivOp(2)) ≈ 2.0 rtol = 1.0e-10
     end
 
     @testset "QuadraticInterpolant Float32" begin
         x32 = Float32[0.0, 1.0, 2.0, 3.0]
-        y32 = x32.^2
+        y32 = x32 .^ 2
 
-        itp = quadratic_interp(x32, y32; bc=Right(Deriv1(6.0f0)))
+        itp = quadratic_interp(x32, y32; bc = Right(Deriv1(6.0f0)))
         @test itp isa QuadraticInterpolant{Float32}
         @test itp(1.5f0) isa Float32
-        @test itp(1.5f0) ≈ 2.25f0 rtol=1e-5
+        @test itp(1.5f0) ≈ 2.25f0 rtol = 1.0e-5
     end
 
     @testset "QuadraticInterpolant type stability" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
         itp = quadratic_interp(x, y)
         @test @inferred(itp(0.5)) isa Float64
@@ -749,10 +749,10 @@ end
 
     @testset "interpolant scalar zero-allocation" begin
         x = collect(range(0.0, 1.0, 51))
-        y = x.^2
+        y = x .^ 2
 
         # Create interpolant (precomputes coefficients)
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(2.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(2.0)))
 
         # Prime JIT
         for _ in 1:10
@@ -765,22 +765,22 @@ end
 
         # Derivative calls should also be zero-allocation
         for _ in 1:10
-            itp(0.5; deriv=DerivOp(1))
-            itp(0.5; deriv=DerivOp(2))
+            itp(0.5; deriv = DerivOp(1))
+            itp(0.5; deriv = DerivOp(2))
         end
-        allocs_d1 = @allocated itp(0.5; deriv=DerivOp(1))
-        allocs_d2 = @allocated itp(0.5; deriv=DerivOp(2))
+        allocs_d1 = @allocated itp(0.5; deriv = DerivOp(1))
+        allocs_d2 = @allocated itp(0.5; deriv = DerivOp(2))
         @test allocs_d1 <= ALLOC_THRESHOLD
         @test allocs_d2 <= ALLOC_THRESHOLD
     end
 
     @testset "interpolant in-place vector zero-allocation" begin
         x = collect(range(0.0, 1.0, 51))
-        y = x.^2
+        y = x .^ 2
         xq = collect(range(0.1, 0.9, 100))
         out = zeros(100)
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(2.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(2.0)))
 
         # Prime JIT
         for _ in 1:10
@@ -794,9 +794,9 @@ end
 
     @testset "DerivativeView zero-allocation" begin
         x = collect(range(0.0, 1.0, 51))
-        y = x.^2
+        y = x .^ 2
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(2.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(2.0)))
         d1 = deriv1(itp)
         d2 = deriv2(itp)
 
@@ -817,12 +817,12 @@ end
     # ========================================
     @testset "one-shot scalar zero-allocation" begin
         x = collect(range(0.0, 1.0, 51))
-        y = x.^2
+        y = x .^ 2
 
         # warm-up all code paths (deriv=DerivOp(0), 1, 2)
         quadratic_interp(x, y, 0.5)
-        quadratic_interp(x, y, 0.5; deriv=DerivOp(1))
-        quadratic_interp(x, y, 0.5; deriv=DerivOp(2))
+        quadratic_interp(x, y, 0.5; deriv = DerivOp(1))
+        quadratic_interp(x, y, 0.5; deriv = DerivOp(2))
 
         # Measure allocation for scalar one-shot
         allocs = @allocated quadratic_interp(x, y, 0.5)
@@ -833,15 +833,15 @@ end
         @test allocs_other <= ALLOC_THRESHOLD
 
         # Derivative calls should also be zero-allocation
-        allocs_d1 = @allocated quadratic_interp(x, y, 0.5; deriv=DerivOp(1))
-        allocs_d2 = @allocated quadratic_interp(x, y, 0.5; deriv=DerivOp(2))
+        allocs_d1 = @allocated quadratic_interp(x, y, 0.5; deriv = DerivOp(1))
+        allocs_d2 = @allocated quadratic_interp(x, y, 0.5; deriv = DerivOp(2))
         @test allocs_d1 <= ALLOC_THRESHOLD
         @test allocs_d2 <= ALLOC_THRESHOLD
     end
 
     @testset "one-shot vector in-place zero-allocation" begin
         x = collect(range(0.0, 1.0, 51))
-        y = x.^2
+        y = x .^ 2
         xq = collect(range(0.1, 0.9, 100))
         out = similar(xq)
 
@@ -851,8 +851,8 @@ end
         quadratic_interp!(out, x, y, xq; bc = Left(Deriv2(1.0)))
         quadratic_interp!(out, x, y, xq; bc = Right(Deriv1(2.0)))
         quadratic_interp!(out, x, y, xq; bc = Right(Deriv2(1.0)))
-        quadratic_interp!(out, x, y, xq; deriv=DerivOp(1))
-        quadratic_interp!(out, x, y, xq; deriv=DerivOp(2))
+        quadratic_interp!(out, x, y, xq; deriv = DerivOp(1))
+        quadratic_interp!(out, x, y, xq; deriv = DerivOp(2))
 
         # In-place version - all BC types
         alloc1 = @allocated quadratic_interp!(out, x, y, xq)
@@ -879,8 +879,8 @@ end
         @test alloc5 <= ALLOC_THRESHOLD
 
         # Derivative evaluations
-        alloc_d1 = @allocated quadratic_interp!(out, x, y, xq; deriv=DerivOp(1))
-        alloc_d2 = @allocated quadratic_interp!(out, x, y, xq; deriv=DerivOp(2))
+        alloc_d1 = @allocated quadratic_interp!(out, x, y, xq; deriv = DerivOp(1))
+        alloc_d2 = @allocated quadratic_interp!(out, x, y, xq; deriv = DerivOp(2))
 
         @test alloc_d1 <= ALLOC_THRESHOLD
         @test alloc_d2 <= ALLOC_THRESHOLD
@@ -983,16 +983,16 @@ end
         @test isfinite(result)
 
         # With explicit BC
-        result2 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)))
-        @test result2 ≈ 2.25 rtol=1e-10
+        result2 = quadratic_interp(x, y, 1.5; bc = Right(Deriv1(6.0)))
+        @test result2 ≈ 2.25 rtol = 1.0e-10
 
         # Scalar with Int query point
         result3 = quadratic_interp(x, y, 2)
         @test result3 ≈ 4.0
 
         # Derivatives with Int data
-        d1 = quadratic_interp(x, y, 1.5; bc=Right(Deriv1(6.0)), deriv=DerivOp(1))
-        @test d1 ≈ 3.0 rtol=1e-10
+        d1 = quadratic_interp(x, y, 1.5; bc = Right(Deriv1(6.0)), deriv = DerivOp(1))
+        @test d1 ≈ 3.0 rtol = 1.0e-10
     end
 
     @testset "quadratic_interp vector with Integer arrays" begin
@@ -1001,9 +1001,9 @@ end
         xq = [0.5, 1.5, 2.5]
 
         # Allocating version
-        result = quadratic_interp(x, y, xq; bc=Right(Deriv1(6.0)))
+        result = quadratic_interp(x, y, xq; bc = Right(Deriv1(6.0)))
         @test result isa Vector{Float64}
-        @test result ≈ [0.25, 2.25, 6.25] rtol=1e-10
+        @test result ≈ [0.25, 2.25, 6.25] rtol = 1.0e-10
 
         # With Integer query points
         xq_int = [1, 2]
@@ -1017,8 +1017,8 @@ end
         xq = [0.5, 1.5, 2.5]
         out = zeros(3)
 
-        quadratic_interp!(out, x, y, xq; bc=Right(Deriv1(6.0)))
-        @test out ≈ [0.25, 2.25, 6.25] rtol=1e-10
+        quadratic_interp!(out, x, y, xq; bc = Right(Deriv1(6.0)))
+        @test out ≈ [0.25, 2.25, 6.25] rtol = 1.0e-10
 
         # Integer query points
         xq_int = [1, 2]
@@ -1029,9 +1029,9 @@ end
 
     @testset "QuadraticInterpolant Real scalar wrapper" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(6.0)))
 
         # Call with Int (triggers Real wrapper, not the T method)
         result = itp(2)  # Int64, not Float64
@@ -1039,15 +1039,15 @@ end
         @test result ≈ 4.0
 
         # Derivative with Int query
-        d1 = itp(2; deriv=DerivOp(1))
-        @test d1 ≈ 4.0 rtol=1e-10
+        d1 = itp(2; deriv = DerivOp(1))
+        @test d1 ≈ 4.0 rtol = 1.0e-10
     end
 
     @testset "QuadraticInterpolant in-place with type conversion" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(6.0)))
 
         # In-place with Integer query points (triggers type conversion path)
         out = zeros(3)
@@ -1057,8 +1057,8 @@ end
 
         # Derivative with type conversion
         out2 = zeros(2)
-        itp(out2, [1, 2]; deriv=DerivOp(1))
-        @test out2 ≈ [2.0, 4.0] rtol=1e-10
+        itp(out2, [1, 2]; deriv = DerivOp(1))
+        @test out2 ≈ [2.0, 4.0] rtol = 1.0e-10
     end
 
     @testset "QuadraticInterpolant from Integer arrays (2-arg Real wrapper)" begin
@@ -1066,11 +1066,11 @@ end
         x = [0, 1, 2, 3]  # Int64
         y = [0, 1, 4, 9]  # Int64
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(6.0)))
         @test itp isa QuadraticInterpolant{Float64}
 
-        @test itp(1.5) ≈ 2.25 rtol=1e-10
-        @test itp(0.5) ≈ 0.25 rtol=1e-10
+        @test itp(1.5) ≈ 2.25 rtol = 1.0e-10
+        @test itp(0.5) ≈ 0.25 rtol = 1.0e-10
     end
 
     @testset "BC type promotion with Real data" begin
@@ -1079,13 +1079,13 @@ end
         y_int = [0, 1, 4, 9]
 
         # BC with Int value triggers promotion
-        result = quadratic_interp(x_int, y_int, 1.5; bc=Left(Deriv2(0)))
+        result = quadratic_interp(x_int, y_int, 1.5; bc = Left(Deriv2(0)))
         @test result isa Float64
         @test isfinite(result)
 
         # BC with Float64 value for Int data
-        result2 = quadratic_interp(x_int, y_int, 1.5; bc=Right(Deriv1(6.0)))
-        @test result2 ≈ 2.25 rtol=1e-10
+        result2 = quadratic_interp(x_int, y_int, 1.5; bc = Right(Deriv1(6.0)))
+        @test result2 ≈ 2.25 rtol = 1.0e-10
     end
 
 end
@@ -1094,41 +1094,41 @@ end
 
     @testset "deriv1 view" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(6.0)))
         d1 = deriv1(itp)
 
         # d1(x) = S'(x) = 2x for f(x)=x²
-        @test d1(0.0) ≈ 0.0 rtol=1e-10
-        @test d1(1.0) ≈ 2.0 rtol=1e-10
-        @test d1(1.5) ≈ 3.0 rtol=1e-10
-        @test d1(2.0) ≈ 4.0 rtol=1e-10
-        @test d1(3.0) ≈ 6.0 rtol=1e-10
+        @test d1(0.0) ≈ 0.0 rtol = 1.0e-10
+        @test d1(1.0) ≈ 2.0 rtol = 1.0e-10
+        @test d1(1.5) ≈ 3.0 rtol = 1.0e-10
+        @test d1(2.0) ≈ 4.0 rtol = 1.0e-10
+        @test d1(3.0) ≈ 6.0 rtol = 1.0e-10
     end
 
     @testset "deriv2 view" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(6.0)))
         d2 = deriv2(itp)
 
         # d2(x) = S''(x) = 2 (constant) for f(x)=x²
-        @test d2(0.5) ≈ 2.0 rtol=1e-10
-        @test d2(1.5) ≈ 2.0 rtol=1e-10
-        @test d2(2.5) ≈ 2.0 rtol=1e-10
+        @test d2(0.5) ≈ 2.0 rtol = 1.0e-10
+        @test d2(1.5) ≈ 2.0 rtol = 1.0e-10
+        @test d2(2.5) ≈ 2.0 rtol = 1.0e-10
     end
 
     @testset "deriv1 broadcast" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
-        itp = quadratic_interp(x, y; bc=Right(Deriv1(6.0)))
+        itp = quadratic_interp(x, y; bc = Right(Deriv1(6.0)))
         d1 = deriv1(itp)
 
         result = d1.([0.5, 1.5, 2.5])
-        @test result ≈ [1.0, 3.0, 5.0] rtol=1e-10
+        @test result ≈ [1.0, 3.0, 5.0] rtol = 1.0e-10
     end
 
 end
@@ -1147,9 +1147,9 @@ end
 
         # f(x) = 2x² - 3x + 1
         a, b, c = 2.0, -3.0, 1.0
-        f(t) = a*t^2 + b*t + c
-        f_d1(t) = 2*a*t + b  # f'(x) = 4x - 3
-        f_d2 = 2*a           # f''(x) = 4 (constant)
+        f(t) = a * t^2 + b * t + c
+        f_d1(t) = 2 * a * t + b  # f'(x) = 4x - 3
+        f_d2 = 2 * a           # f''(x) = 4 (constant)
 
         y = f.(x)
 
@@ -1173,23 +1173,23 @@ end
 
         # Test all BC variants produce exact results
         for (name, bc) in [
-            ("Left(Deriv1)", bc_left_d1),
-            ("Left(Deriv2)", bc_left_d2),
-            ("Right(Deriv1)", bc_right_d1),
-            ("Right(Deriv2)", bc_right_d2)
-        ]
+                ("Left(Deriv1)", bc_left_d1),
+                ("Left(Deriv2)", bc_left_d2),
+                ("Right(Deriv1)", bc_right_d1),
+                ("Right(Deriv2)", bc_right_d2),
+            ]
             @testset "$name" begin
                 # Value interpolation
-                result = quadratic_interp(x, y, xq; bc=bc)
-                @test result ≈ expected rtol=1e-12 atol=1e-14
+                result = quadratic_interp(x, y, xq; bc = bc)
+                @test result ≈ expected rtol = 1.0e-12 atol = 1.0e-14
 
                 # First derivative
-                result_d1 = quadratic_interp(x, y, xq; bc=bc, deriv=DerivOp(1))
-                @test result_d1 ≈ expected_d1 rtol=1e-12 atol=1e-14
+                result_d1 = quadratic_interp(x, y, xq; bc = bc, deriv = DerivOp(1))
+                @test result_d1 ≈ expected_d1 rtol = 1.0e-12 atol = 1.0e-14
 
                 # Second derivative
-                result_d2 = quadratic_interp(x, y, xq; bc=bc, deriv=DerivOp(2))
-                @test result_d2 ≈ expected_d2 rtol=1e-12 atol=1e-14
+                result_d2 = quadratic_interp(x, y, xq; bc = bc, deriv = DerivOp(2))
+                @test result_d2 ≈ expected_d2 rtol = 1.0e-12 atol = 1.0e-14
             end
         end
     end
@@ -1199,7 +1199,7 @@ end
         x = [0.0, 0.1, 0.5, 2.0, 2.1, 5.0]
 
         # f(x) = x² (simpler case)
-        y = x.^2
+        y = x .^ 2
 
         # True derivatives
         d1_left = 2 * first(x)   # 0
@@ -1207,10 +1207,10 @@ end
         d2_val = 2.0             # constant
 
         # Create interpolants with all BC variants
-        itp_left_d1 = quadratic_interp(x, y; bc=Left(Deriv1(d1_left)))
-        itp_left_d2 = quadratic_interp(x, y; bc=Left(Deriv2(d2_val)))
-        itp_right_d1 = quadratic_interp(x, y; bc=Right(Deriv1(d1_right)))
-        itp_right_d2 = quadratic_interp(x, y; bc=Right(Deriv2(d2_val)))
+        itp_left_d1 = quadratic_interp(x, y; bc = Left(Deriv1(d1_left)))
+        itp_left_d2 = quadratic_interp(x, y; bc = Left(Deriv2(d2_val)))
+        itp_right_d1 = quadratic_interp(x, y; bc = Right(Deriv1(d1_right)))
+        itp_right_d2 = quadratic_interp(x, y; bc = Right(Deriv2(d2_val)))
 
         # Query at many points
         xq = range(0.0, 5.0, 50)
@@ -1221,13 +1221,13 @@ end
         result_rd1 = itp_right_d1.(xq)
         result_rd2 = itp_right_d2.(xq)
 
-        @test result_ld1 ≈ result_ld2 rtol=1e-12
-        @test result_ld1 ≈ result_rd1 rtol=1e-12
-        @test result_ld1 ≈ result_rd2 rtol=1e-12
+        @test result_ld1 ≈ result_ld2 rtol = 1.0e-12
+        @test result_ld1 ≈ result_rd1 rtol = 1.0e-12
+        @test result_ld1 ≈ result_rd2 rtol = 1.0e-12
 
         # All should match x²
-        expected = collect(xq).^2
-        @test result_ld1 ≈ expected rtol=1e-12
+        expected = collect(xq) .^ 2
+        @test result_ld1 ≈ expected rtol = 1.0e-12
     end
 
     @testset "edge cases: boundary evaluation" begin
@@ -1235,8 +1235,8 @@ end
         x = [0.0, 0.01, 1.0, 1.01, 10.0]  # tiny + large intervals
 
         # f(x) = -x² + 5x
-        f(t) = -t^2 + 5*t
-        f_d1(t) = -2*t + 5
+        f(t) = -t^2 + 5 * t
+        f_d1(t) = -2 * t + 5
         f_d2 = -2.0
 
         y = f.(x)
@@ -1244,51 +1244,51 @@ end
         bc = Right(Deriv1(f_d1(last(x))))  # f'(10) = -15
 
         # Test exact boundary points
-        @test quadratic_interp(x, y, 0.0; bc=bc) ≈ f(0.0) rtol=1e-12
-        @test quadratic_interp(x, y, 10.0; bc=bc) ≈ f(10.0) rtol=1e-12
+        @test quadratic_interp(x, y, 0.0; bc = bc) ≈ f(0.0) rtol = 1.0e-12
+        @test quadratic_interp(x, y, 10.0; bc = bc) ≈ f(10.0) rtol = 1.0e-12
 
         # Test points very close to boundaries
-        @test quadratic_interp(x, y, 1e-10; bc=bc) ≈ f(1e-10) rtol=1e-10
-        @test quadratic_interp(x, y, 10.0 - 1e-10; bc=bc) ≈ f(10.0 - 1e-10) rtol=1e-10
+        @test quadratic_interp(x, y, 1.0e-10; bc = bc) ≈ f(1.0e-10) rtol = 1.0e-10
+        @test quadratic_interp(x, y, 10.0 - 1.0e-10; bc = bc) ≈ f(10.0 - 1.0e-10) rtol = 1.0e-10
 
         # Test mid-interval points
-        @test quadratic_interp(x, y, 0.005; bc=bc) ≈ f(0.005) rtol=1e-12
-        @test quadratic_interp(x, y, 5.0; bc=bc) ≈ f(5.0) atol=1e-14  # f(5)=0, need atol
+        @test quadratic_interp(x, y, 0.005; bc = bc) ≈ f(0.005) rtol = 1.0e-12
+        @test quadratic_interp(x, y, 5.0; bc = bc) ≈ f(5.0) atol = 1.0e-14  # f(5)=0, need atol
     end
 
     @testset "Float32 precision on non-uniform grid" begin
         x32 = Float32[0.0, 0.5, 1.5, 3.0]
-        y32 = x32.^2
+        y32 = x32 .^ 2
 
         d1_right = 2 * last(x32)  # 6.0f0
 
-        itp = quadratic_interp(x32, y32; bc=Right(Deriv1(d1_right)))
+        itp = quadratic_interp(x32, y32; bc = Right(Deriv1(d1_right)))
 
         # Should be exact within Float32 precision
-        @test itp(1.0f0) ≈ 1.0f0 rtol=1e-6
-        @test itp(2.0f0) ≈ 4.0f0 rtol=1e-6
-        @test itp(0.25f0) ≈ 0.0625f0 rtol=1e-6
+        @test itp(1.0f0) ≈ 1.0f0 rtol = 1.0e-6
+        @test itp(2.0f0) ≈ 4.0f0 rtol = 1.0e-6
+        @test itp(0.25f0) ≈ 0.0625f0 rtol = 1.0e-6
     end
 
     @testset "consistency: scalar vs vector API" begin
         x = [0.0, 0.4, 1.1, 2.0, 3.3]
-        y = x.^2
+        y = x .^ 2
 
         bc = Left(Deriv2(2.0))
         xq = [0.2, 0.8, 1.5, 2.5, 3.0]
 
         # Scalar API
-        results_scalar = [quadratic_interp(x, y, xi; bc=bc) for xi in xq]
+        results_scalar = [quadratic_interp(x, y, xi; bc = bc) for xi in xq]
 
         # Vector API (allocating)
-        results_vector = quadratic_interp(x, y, xq; bc=bc)
+        results_vector = quadratic_interp(x, y, xq; bc = bc)
 
         # In-place API
         results_inplace = zeros(length(xq))
-        quadratic_interp!(results_inplace, x, y, xq; bc=bc)
+        quadratic_interp!(results_inplace, x, y, xq; bc = bc)
 
         # Interpolant API
-        itp = quadratic_interp(x, y; bc=bc)
+        itp = quadratic_interp(x, y; bc = bc)
         results_itp = itp.(xq)
 
         # All should be identical (not just approximately equal)
@@ -1312,9 +1312,9 @@ end
 
         # f(x) = 2x² - 3x + 1
         a, b, c = 2.0, -3.0, 1.0
-        f(t) = a*t^2 + b*t + c
-        f_d1(t) = 2*a*t + b  # f'(x) = 4x - 3
-        f_d2 = 2*a           # f''(x) = 4 (constant)
+        f(t) = a * t^2 + b * t + c
+        f_d1(t) = 2 * a * t + b  # f'(x) = 4x - 3
+        f_d2 = 2 * a           # f''(x) = 4 (constant)
 
         y = f.(x)
 
@@ -1329,7 +1329,7 @@ end
             ("Left(Deriv1)", Left(Deriv1(d1_left))),
             ("Left(Deriv2)", Left(Deriv2(d2_val))),
             ("Right(Deriv1)", Right(Deriv1(d1_right))),
-            ("Right(Deriv2)", Right(Deriv2(d2_val)))
+            ("Right(Deriv2)", Right(Deriv2(d2_val))),
         ]
 
         # Extrapolation query points (outside domain)
@@ -1340,50 +1340,50 @@ end
             @testset "$name - one-shot API" begin
                 # Left extrapolation - value
                 for xi in xq_left
-                    result = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap())
-                    @test result ≈ f(xi) rtol=1e-12 atol=1e-14
+                    result = quadratic_interp(x, y, xi; bc = bc, extrap = ExtendExtrap())
+                    @test result ≈ f(xi) rtol = 1.0e-12 atol = 1.0e-14
                 end
 
                 # Right extrapolation - value
                 for xi in xq_right
-                    result = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap())
-                    @test result ≈ f(xi) rtol=1e-12 atol=1e-14
+                    result = quadratic_interp(x, y, xi; bc = bc, extrap = ExtendExtrap())
+                    @test result ≈ f(xi) rtol = 1.0e-12 atol = 1.0e-14
                 end
 
                 # Left extrapolation - derivatives
                 for xi in xq_left
-                    d1 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=DerivOp(1))
-                    d2 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=DerivOp(2))
-                    @test d1 ≈ f_d1(xi) rtol=1e-12 atol=1e-14
-                    @test d2 ≈ f_d2 rtol=1e-12 atol=1e-14
+                    d1 = quadratic_interp(x, y, xi; bc = bc, extrap = ExtendExtrap(), deriv = DerivOp(1))
+                    d2 = quadratic_interp(x, y, xi; bc = bc, extrap = ExtendExtrap(), deriv = DerivOp(2))
+                    @test d1 ≈ f_d1(xi) rtol = 1.0e-12 atol = 1.0e-14
+                    @test d2 ≈ f_d2 rtol = 1.0e-12 atol = 1.0e-14
                 end
 
                 # Right extrapolation - derivatives
                 for xi in xq_right
-                    d1 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=DerivOp(1))
-                    d2 = quadratic_interp(x, y, xi; bc=bc, extrap=ExtendExtrap(), deriv=DerivOp(2))
-                    @test d1 ≈ f_d1(xi) rtol=1e-12 atol=1e-14
-                    @test d2 ≈ f_d2 rtol=1e-12 atol=1e-14
+                    d1 = quadratic_interp(x, y, xi; bc = bc, extrap = ExtendExtrap(), deriv = DerivOp(1))
+                    d2 = quadratic_interp(x, y, xi; bc = bc, extrap = ExtendExtrap(), deriv = DerivOp(2))
+                    @test d1 ≈ f_d1(xi) rtol = 1.0e-12 atol = 1.0e-14
+                    @test d2 ≈ f_d2 rtol = 1.0e-12 atol = 1.0e-14
                 end
             end
 
             @testset "$name - interpolant API" begin
-                itp = quadratic_interp(x, y; bc=bc, extrap=ExtendExtrap())
+                itp = quadratic_interp(x, y; bc = bc, extrap = ExtendExtrap())
                 d1_view = deriv1(itp)
                 d2_view = deriv2(itp)
 
                 # Left extrapolation
                 for xi in xq_left
-                    @test itp(xi) ≈ f(xi) rtol=1e-12 atol=1e-14
-                    @test d1_view(xi) ≈ f_d1(xi) rtol=1e-12 atol=1e-14
-                    @test d2_view(xi) ≈ f_d2 rtol=1e-12 atol=1e-14
+                    @test itp(xi) ≈ f(xi) rtol = 1.0e-12 atol = 1.0e-14
+                    @test d1_view(xi) ≈ f_d1(xi) rtol = 1.0e-12 atol = 1.0e-14
+                    @test d2_view(xi) ≈ f_d2 rtol = 1.0e-12 atol = 1.0e-14
                 end
 
                 # Right extrapolation
                 for xi in xq_right
-                    @test itp(xi) ≈ f(xi) rtol=1e-12 atol=1e-14
-                    @test d1_view(xi) ≈ f_d1(xi) rtol=1e-12 atol=1e-14
-                    @test d2_view(xi) ≈ f_d2 rtol=1e-12 atol=1e-14
+                    @test itp(xi) ≈ f(xi) rtol = 1.0e-12 atol = 1.0e-14
+                    @test d1_view(xi) ≈ f_d1(xi) rtol = 1.0e-12 atol = 1.0e-14
+                    @test d2_view(xi) ≈ f_d2 rtol = 1.0e-12 atol = 1.0e-14
                 end
             end
         end
@@ -1392,19 +1392,19 @@ end
     @testset "extension C0 continuity at boundary" begin
         # The extension polynomial must match exactly at the boundary
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2  # f(x) = x²
+        y = x .^ 2  # f(x) = x²
 
         bc = Right(Deriv1(6.0))  # f'(3) = 6
 
         # Value at boundary should match from both sides
-        val_inside = quadratic_interp(x, y, 3.0; bc=bc)
-        val_outside = quadratic_interp(x, y, 3.0 + 1e-10; bc=bc, extrap=ExtendExtrap())
-        @test val_inside ≈ val_outside rtol=1e-8
+        val_inside = quadratic_interp(x, y, 3.0; bc = bc)
+        val_outside = quadratic_interp(x, y, 3.0 + 1.0e-10; bc = bc, extrap = ExtendExtrap())
+        @test val_inside ≈ val_outside rtol = 1.0e-8
 
         # Left boundary (value is 0.0, so use atol instead of rtol)
-        val_inside_left = quadratic_interp(x, y, 0.0; bc=bc)
-        val_outside_left = quadratic_interp(x, y, -1e-10; bc=bc, extrap=ExtendExtrap())
-        @test val_inside_left ≈ val_outside_left atol=1e-8
+        val_inside_left = quadratic_interp(x, y, 0.0; bc = bc)
+        val_outside_left = quadratic_interp(x, y, -1.0e-10; bc = bc, extrap = ExtendExtrap())
+        @test val_inside_left ≈ val_outside_left atol = 1.0e-8
     end
 
     @testset "extension vector API" begin
@@ -1419,17 +1419,17 @@ end
         expected = f.(xq)
 
         # One-shot vector API
-        result = quadratic_interp(x, y, xq; bc=bc, extrap=ExtendExtrap())
-        @test result ≈ expected rtol=1e-12
+        result = quadratic_interp(x, y, xq; bc = bc, extrap = ExtendExtrap())
+        @test result ≈ expected rtol = 1.0e-12
 
         # In-place API
         out = zeros(length(xq))
-        quadratic_interp!(out, x, y, xq; bc=bc, extrap=ExtendExtrap())
-        @test out ≈ expected rtol=1e-12
+        quadratic_interp!(out, x, y, xq; bc = bc, extrap = ExtendExtrap())
+        @test out ≈ expected rtol = 1.0e-12
 
         # Interpolant vector call
-        itp = quadratic_interp(x, y; bc=bc, extrap=ExtendExtrap())
-        @test itp(xq) ≈ expected rtol=1e-12
+        itp = quadratic_interp(x, y; bc = bc, extrap = ExtendExtrap())
+        @test itp(xq) ≈ expected rtol = 1.0e-12
     end
 
 end
@@ -1441,45 +1441,45 @@ end
 
     @testset "quadratic_interp scalar with MinCurvFit" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
         # Grid points should be exact
-        @test quadratic_interp(x, y, 0.0; bc=MinCurvFit()) ≈ 0.0
-        @test quadratic_interp(x, y, 1.0; bc=MinCurvFit()) ≈ 1.0
-        @test quadratic_interp(x, y, 2.0; bc=MinCurvFit()) ≈ 4.0
-        @test quadratic_interp(x, y, 3.0; bc=MinCurvFit()) ≈ 9.0
+        @test quadratic_interp(x, y, 0.0; bc = MinCurvFit()) ≈ 0.0
+        @test quadratic_interp(x, y, 1.0; bc = MinCurvFit()) ≈ 1.0
+        @test quadratic_interp(x, y, 2.0; bc = MinCurvFit()) ≈ 4.0
+        @test quadratic_interp(x, y, 3.0; bc = MinCurvFit()) ≈ 9.0
 
         # Interior points
-        @test isfinite(quadratic_interp(x, y, 0.5; bc=MinCurvFit()))
-        @test isfinite(quadratic_interp(x, y, 1.5; bc=MinCurvFit()))
-        @test isfinite(quadratic_interp(x, y, 2.5; bc=MinCurvFit()))
+        @test isfinite(quadratic_interp(x, y, 0.5; bc = MinCurvFit()))
+        @test isfinite(quadratic_interp(x, y, 1.5; bc = MinCurvFit()))
+        @test isfinite(quadratic_interp(x, y, 2.5; bc = MinCurvFit()))
     end
 
     @testset "quadratic_interp vector with MinCurvFit" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
         xq = [0.5, 1.5, 2.5]
 
-        result = quadratic_interp(x, y, xq; bc=MinCurvFit())
+        result = quadratic_interp(x, y, xq; bc = MinCurvFit())
         @test length(result) == 3
         @test all(isfinite, result)
     end
 
     @testset "quadratic_interp! with MinCurvFit" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
         xq = [0.5, 1.5, 2.5]
         out = zeros(3)
 
-        quadratic_interp!(out, x, y, xq; bc=MinCurvFit())
+        quadratic_interp!(out, x, y, xq; bc = MinCurvFit())
         @test all(isfinite, out)
     end
 
     @testset "QuadraticInterpolant with MinCurvFit" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
-        itp = quadratic_interp(x, y; bc=MinCurvFit())
+        itp = quadratic_interp(x, y; bc = MinCurvFit())
         @test itp isa QuadraticInterpolant
 
         # Scalar evaluation
@@ -1494,20 +1494,20 @@ end
 
     @testset "MinCurvFit derivatives" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
         # First derivative (should be finite)
-        d1 = quadratic_interp(x, y, 1.5; bc=MinCurvFit(), deriv=DerivOp(1))
+        d1 = quadratic_interp(x, y, 1.5; bc = MinCurvFit(), deriv = DerivOp(1))
         @test isfinite(d1)
 
         # Second derivative (should be finite)
-        d2 = quadratic_interp(x, y, 1.5; bc=MinCurvFit(), deriv=DerivOp(2))
+        d2 = quadratic_interp(x, y, 1.5; bc = MinCurvFit(), deriv = DerivOp(2))
         @test isfinite(d2)
 
         # Interpolant derivatives
-        itp = quadratic_interp(x, y; bc=MinCurvFit())
-        @test isfinite(itp(1.5; deriv=DerivOp(1)))
-        @test isfinite(itp(1.5; deriv=DerivOp(2)))
+        itp = quadratic_interp(x, y; bc = MinCurvFit())
+        @test isfinite(itp(1.5; deriv = DerivOp(1)))
+        @test isfinite(itp(1.5; deriv = DerivOp(2)))
     end
 
     @testset "MinCurvFit type promotion (Real → Float)" begin
@@ -1515,38 +1515,38 @@ end
         x = [0, 1, 2, 3]
         y = [0, 1, 4, 9]
 
-        result = quadratic_interp(x, y, 1.5; bc=MinCurvFit())
+        result = quadratic_interp(x, y, 1.5; bc = MinCurvFit())
         @test isfinite(result)
         @test result isa Float64
 
         # Interpolant with Int arrays
-        itp = quadratic_interp(x, y; bc=MinCurvFit())
+        itp = quadratic_interp(x, y; bc = MinCurvFit())
         @test itp isa QuadraticInterpolant{Float64}
     end
 
     @testset "MinCurvFit Float32 support" begin
         x = Float32[0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
-        result = quadratic_interp(x, y, 1.5f0; bc=MinCurvFit())
+        result = quadratic_interp(x, y, 1.5f0; bc = MinCurvFit())
         @test result isa Float32
         @test isfinite(result)
 
-        itp = quadratic_interp(x, y; bc=MinCurvFit())
+        itp = quadratic_interp(x, y; bc = MinCurvFit())
         @test itp isa QuadraticInterpolant{Float32}
     end
 
     @testset "MinCurvFit extrapolation modes" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = x.^2
+        y = x .^ 2
 
         # :extension mode
-        itp_ext = quadratic_interp(x, y; bc=MinCurvFit(), extrap=ExtendExtrap())
+        itp_ext = quadratic_interp(x, y; bc = MinCurvFit(), extrap = ExtendExtrap())
         @test isfinite(itp_ext(-0.5))  # outside left
         @test isfinite(itp_ext(3.5))   # outside right
 
         # :constant mode
-        itp_const = quadratic_interp(x, y; bc=MinCurvFit(), extrap=ClampExtrap())
+        itp_const = quadratic_interp(x, y; bc = MinCurvFit(), extrap = ClampExtrap())
         @test itp_const(-0.5) ≈ 0.0    # clamps to y[1]
         @test itp_const(3.5) ≈ 9.0     # clamps to y[end]
     end
@@ -1572,7 +1572,7 @@ end
             h = [1.0, 1.0, 1.0]
             d_opt = zeros(4)
             x_dummy = [0.0, 1.0, 2.0, 3.0]
-            y_dummy = x_dummy.^2
+            y_dummy = x_dummy .^ 2
 
             _fill_slopes!(d_opt, s, h, MinCurvFit(), x_dummy, y_dummy)
 
@@ -1585,12 +1585,12 @@ end
                 # Forward recurrence with perturbed d[1]
                 d_perturbed[1] = d_opt[1] + δ
                 for i in 1:3
-                    d_perturbed[i+1] = 2*s[i] - d_perturbed[i]
+                    d_perturbed[i + 1] = 2 * s[i] - d_perturbed[i]
                 end
 
                 curvature_perturbed = sum((s[i] - d_perturbed[i])^2 / h[i] for i in 1:3)
 
-                @test curvature_perturbed >= curvature_opt - 1e-12  # allow tiny numerical error
+                @test curvature_perturbed >= curvature_opt - 1.0e-12  # allow tiny numerical error
             end
         end
 
@@ -1612,12 +1612,12 @@ end
                 d_perturbed = zeros(n)
                 d_perturbed[1] = d_opt[1] + δ
                 for i in 1:length(s)
-                    d_perturbed[i+1] = 2*s[i] - d_perturbed[i]
+                    d_perturbed[i + 1] = 2 * s[i] - d_perturbed[i]
                 end
 
                 curvature_perturbed = sum((s[i] - d_perturbed[i])^2 / h[i] for i in 1:length(s))
 
-                @test curvature_perturbed >= curvature_opt - 1e-12
+                @test curvature_perturbed >= curvature_opt - 1.0e-12
             end
         end
 
@@ -1642,7 +1642,7 @@ end
             end
             gradient *= -2
 
-            @test abs(gradient) < 1e-12  # gradient should be (near) zero
+            @test abs(gradient) < 1.0e-12  # gradient should be (near) zero
         end
     end
 
@@ -1657,18 +1657,18 @@ end
 
         @testset "f(x) = x² - MinCurvFit trades exactness for smoothness" begin
             x = [0.0, 1.0, 2.0, 3.0, 4.0]
-            y = x.^2
+            y = x .^ 2
 
             # MinCurvFit does NOT give exact x² - it optimizes curvature instead
             xq = [0.5, 1.5, 2.5, 3.5]
 
-            result = quadratic_interp(x, y, xq; bc=MinCurvFit())
+            result = quadratic_interp(x, y, xq; bc = MinCurvFit())
 
             # Should be finite and reasonable
             @test all(isfinite, result)
             # Grid points are always exact
-            @test quadratic_interp(x, y, 1.0; bc=MinCurvFit()) ≈ 1.0
-            @test quadratic_interp(x, y, 2.0; bc=MinCurvFit()) ≈ 4.0
+            @test quadratic_interp(x, y, 1.0; bc = MinCurvFit()) ≈ 1.0
+            @test quadratic_interp(x, y, 2.0; bc = MinCurvFit()) ≈ 4.0
         end
 
         @testset "MinCurvFit has lower curvature than exact BC for quadratic data" begin
@@ -1676,9 +1676,9 @@ end
             # which means it does NOT reproduce exact quadratic polynomials
             x = [0.0, 0.3, 0.8, 1.5, 2.5, 3.0]  # non-uniform
             a, b, c = 2.0, -3.0, 1.0
-            f(t) = a*t^2 + b*t + c
-            f_d1(t) = 2*a*t + b
-            f_d2 = 2*a
+            f(t) = a * t^2 + b * t + c
+            f_d1(t) = 2 * a * t + b
+            f_d2 = 2 * a
 
             y = f.(x)
 
@@ -1699,7 +1699,7 @@ end
             curvature_exact = sum((s[i] - d_exact[i])^2 / h[i] for i in 1:length(s))
 
             # MinCurvFit should have lower or equal curvature
-            @test curvature_smooth <= curvature_exact + 1e-10
+            @test curvature_smooth <= curvature_exact + 1.0e-10
         end
 
         @testset "linear function f(x) = 2x + 1 (exact, zero curvature)" begin
@@ -1711,12 +1711,12 @@ end
             xq = [0.5, 1.5, 2.5]
             expected = 2.0 .* xq .+ 1.0
 
-            result = quadratic_interp(x, y, xq; bc=MinCurvFit())
-            @test result ≈ expected rtol=1e-12
+            result = quadratic_interp(x, y, xq; bc = MinCurvFit())
+            @test result ≈ expected rtol = 1.0e-12
 
             # Second derivative should be zero (linear function)
-            d2 = quadratic_interp(x, y, xq; bc=MinCurvFit(), deriv=DerivOp(2))
-            @test all(abs.(d2) .< 1e-12)
+            d2 = quadratic_interp(x, y, xq; bc = MinCurvFit(), deriv = DerivOp(2))
+            @test all(abs.(d2) .< 1.0e-12)
         end
 
         @testset "constant function f(x) = 5 (exact, zero curvature)" begin
@@ -1727,14 +1727,14 @@ end
             xq = [0.5, 1.5, 2.5]
             expected = fill(5.0, 3)
 
-            result = quadratic_interp(x, y, xq; bc=MinCurvFit())
-            @test result ≈ expected rtol=1e-12
+            result = quadratic_interp(x, y, xq; bc = MinCurvFit())
+            @test result ≈ expected rtol = 1.0e-12
 
             # All derivatives should be zero
-            d1 = quadratic_interp(x, y, xq; bc=MinCurvFit(), deriv=DerivOp(1))
-            d2 = quadratic_interp(x, y, xq; bc=MinCurvFit(), deriv=DerivOp(2))
-            @test all(abs.(d1) .< 1e-12)
-            @test all(abs.(d2) .< 1e-12)
+            d1 = quadratic_interp(x, y, xq; bc = MinCurvFit(), deriv = DerivOp(1))
+            d2 = quadratic_interp(x, y, xq; bc = MinCurvFit(), deriv = DerivOp(2))
+            @test all(abs.(d1) .< 1.0e-12)
+            @test all(abs.(d2) .< 1.0e-12)
         end
     end
 
@@ -1748,9 +1748,9 @@ end
 
         # f(x) = 2x² - 3x + 1
         a, b, c = 2.0, -3.0, 1.0
-        f(t) = a*t^2 + b*t + c
-        f_d1(t) = 2*a*t + b
-        f_d2 = 2*a
+        f(t) = a * t^2 + b * t + c
+        f_d1(t) = 2 * a * t + b
+        f_d2 = 2 * a
 
         y = f.(x)
 
@@ -1769,12 +1769,12 @@ end
 
         # Explicit BCs with correct values produce exact results
         for bc in [bc_left_d1, bc_left_d2, bc_right_d1, bc_right_d2]
-            result = quadratic_interp(x, y, collect(xq); bc=bc)
-            @test result ≈ expected rtol=1e-12
+            result = quadratic_interp(x, y, collect(xq); bc = bc)
+            @test result ≈ expected rtol = 1.0e-12
         end
 
         # MinCurvFit produces finite, reasonable results (but not exact)
-        result_smooth = quadratic_interp(x, y, collect(xq); bc=MinCurvFit())
+        result_smooth = quadratic_interp(x, y, collect(xq); bc = MinCurvFit())
         @test all(isfinite, result_smooth)
     end
 
@@ -1787,10 +1787,10 @@ end
         y = [0.0, 0.8, 1.2, 0.9, 0.3, 0.6, 1.0]  # curved data
 
         # Default BC: Left(Deriv2(0)) forces first interval to be linear
-        val_default = quadratic_interp(x, y, 0.15; bc=Left(Deriv2(0.0)))
+        val_default = quadratic_interp(x, y, 0.15; bc = Left(Deriv2(0.0)))
 
         # MinCurvFit: globally smooth, doesn't force linearity
-        val_smooth = quadratic_interp(x, y, 0.15; bc=MinCurvFit())
+        val_smooth = quadratic_interp(x, y, 0.15; bc = MinCurvFit())
 
         # They should be different for non-quadratic data
         @test val_default != val_smooth
@@ -1810,38 +1810,38 @@ end
             y = [0.0, 1.0]
 
             # Should not error
-            result = quadratic_interp(x, y, 0.5; bc=MinCurvFit())
+            result = quadratic_interp(x, y, 0.5; bc = MinCurvFit())
             @test isfinite(result)
             @test result ≈ 0.5  # linear interpolation (zero curvature optimal)
 
             # Create interpolant
-            itp = quadratic_interp(x, y; bc=MinCurvFit())
+            itp = quadratic_interp(x, y; bc = MinCurvFit())
             @test itp(0.5) ≈ 0.5
         end
 
         @testset "extreme spacing variation" begin
             # Tiny + large intervals
             x = [0.0, 0.001, 1.0, 1.001, 10.0]
-            y = x.^2  # f(x) = x²
+            y = x .^ 2  # f(x) = x²
 
             # Should handle extreme spacing without numerical issues
-            result = quadratic_interp(x, y, 5.0; bc=MinCurvFit())
+            result = quadratic_interp(x, y, 5.0; bc = MinCurvFit())
             @test isfinite(result)
             # MinCurvFit optimizes curvature, not exact x² reproduction
             # Just verify it's in a reasonable range
             @test 20.0 < result < 30.0
 
             # Query near tiny intervals - should be finite and reasonable
-            result_tiny = quadratic_interp(x, y, 0.0005; bc=MinCurvFit())
+            result_tiny = quadratic_interp(x, y, 0.0005; bc = MinCurvFit())
             @test isfinite(result_tiny)
             @test result_tiny >= 0.0  # should be non-negative for x² data
         end
 
         @testset "Float32 precision" begin
             x32 = Float32[0.0, 1.0, 2.0, 3.0]
-            y32 = x32.^2
+            y32 = x32 .^ 2
 
-            itp = quadratic_interp(x32, y32; bc=MinCurvFit())
+            itp = quadratic_interp(x32, y32; bc = MinCurvFit())
             @test itp isa QuadraticInterpolant{Float32}
 
             # MinCurvFit doesn't give exact x², but should be finite and reasonable
@@ -1854,18 +1854,18 @@ end
 
         @testset "many points (large n)" begin
             x = collect(range(0.0, 10.0, 101))  # n = 101 points
-            y = x.^2
+            y = x .^ 2
 
             # With many points, MinCurvFit should be reasonably accurate
             # (curvature optimization converges toward exact for dense grids)
             xq = [2.5, 5.0, 7.5]
-            expected = xq.^2
+            expected = xq .^ 2
 
-            result = quadratic_interp(x, y, xq; bc=MinCurvFit())
+            result = quadratic_interp(x, y, xq; bc = MinCurvFit())
             # Allow some tolerance since MinCurvFit trades exactness for smoothness
             @test all(isfinite, result)
             # With dense grid, should be quite close to exact
-            @test result ≈ expected rtol=0.01  # 1% tolerance
+            @test result ≈ expected rtol = 0.01  # 1% tolerance
         end
     end
 
@@ -1902,8 +1902,8 @@ end
         curvature_right = sum((s[i] - d_right[i])^2 / h[i] for i in 1:length(s))
 
         # MinCurvFit should have minimal curvature
-        @test curvature_smooth <= curvature_left + 1e-10
-        @test curvature_smooth <= curvature_right + 1e-10
+        @test curvature_smooth <= curvature_left + 1.0e-10
+        @test curvature_smooth <= curvature_right + 1.0e-10
     end
 
 end
@@ -1958,68 +1958,68 @@ end
         # f(x) = x² on uniform grid
         @testset "f(x) = x² reproduction" begin
             x = [0.0, 1.0, 2.0, 3.0, 4.0]
-            y = x.^2
-            itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
+            y = x .^ 2
+            itp = quadratic_interp(x, y; bc = Left(QuadraticFit()))
 
             # Should reproduce exactly at midpoints
-            @test itp(0.5) ≈ 0.5^2 atol=1e-12
-            @test itp(1.5) ≈ 1.5^2 atol=1e-12
-            @test itp(2.5) ≈ 2.5^2 atol=1e-12
-            @test itp(3.5) ≈ 3.5^2 atol=1e-12
+            @test itp(0.5) ≈ 0.5^2 atol = 1.0e-12
+            @test itp(1.5) ≈ 1.5^2 atol = 1.0e-12
+            @test itp(2.5) ≈ 2.5^2 atol = 1.0e-12
+            @test itp(3.5) ≈ 3.5^2 atol = 1.0e-12
 
             # And at arbitrary points
-            @test itp(0.25) ≈ 0.25^2 atol=1e-12
-            @test itp(2.7) ≈ 2.7^2 atol=1e-12
+            @test itp(0.25) ≈ 0.25^2 atol = 1.0e-12
+            @test itp(2.7) ≈ 2.7^2 atol = 1.0e-12
         end
 
         # General quadratic: f(x) = 2x² - 3x + 1
         @testset "f(x) = 2x² - 3x + 1 reproduction" begin
             x = [0.0, 1.0, 2.0, 3.0, 4.0]
-            y = @. 2*x^2 - 3*x + 1
-            itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
+            y = @. 2 * x^2 - 3 * x + 1
+            itp = quadratic_interp(x, y; bc = Left(QuadraticFit()))
 
-            f(t) = 2*t^2 - 3*t + 1
-            @test itp(0.5) ≈ f(0.5) atol=1e-12
-            @test itp(1.5) ≈ f(1.5) atol=1e-12
-            @test itp(2.5) ≈ f(2.5) atol=1e-12
+            f(t) = 2 * t^2 - 3 * t + 1
+            @test itp(0.5) ≈ f(0.5) atol = 1.0e-12
+            @test itp(1.5) ≈ f(1.5) atol = 1.0e-12
+            @test itp(2.5) ≈ f(2.5) atol = 1.0e-12
         end
     end
 
     @testset "Right(QuadraticFit()) uniform grid" begin
         @testset "f(x) = x² reproduction" begin
             x = [0.0, 1.0, 2.0, 3.0, 4.0]
-            y = x.^2
-            itp = quadratic_interp(x, y; bc=Right(QuadraticFit()))
+            y = x .^ 2
+            itp = quadratic_interp(x, y; bc = Right(QuadraticFit()))
 
-            @test itp(0.5) ≈ 0.5^2 atol=1e-12
-            @test itp(1.5) ≈ 1.5^2 atol=1e-12
-            @test itp(2.5) ≈ 2.5^2 atol=1e-12
-            @test itp(3.5) ≈ 3.5^2 atol=1e-12
+            @test itp(0.5) ≈ 0.5^2 atol = 1.0e-12
+            @test itp(1.5) ≈ 1.5^2 atol = 1.0e-12
+            @test itp(2.5) ≈ 2.5^2 atol = 1.0e-12
+            @test itp(3.5) ≈ 3.5^2 atol = 1.0e-12
         end
     end
 
     @testset "Non-uniform grid polynomial reproduction" begin
         @testset "f(x) = x² on non-uniform grid" begin
             x = [0.0, 0.5, 1.5, 3.0, 5.0]
-            y = x.^2
-            itp_left = quadratic_interp(x, y; bc=Left(QuadraticFit()))
-            itp_right = quadratic_interp(x, y; bc=Right(QuadraticFit()))
+            y = x .^ 2
+            itp_left = quadratic_interp(x, y; bc = Left(QuadraticFit()))
+            itp_right = quadratic_interp(x, y; bc = Right(QuadraticFit()))
 
             # Test at various points
             for t in [0.25, 0.75, 1.0, 2.0, 4.0]
-                @test itp_left(t) ≈ t^2 atol=1e-11
-                @test itp_right(t) ≈ t^2 atol=1e-11
+                @test itp_left(t) ≈ t^2 atol = 1.0e-11
+                @test itp_right(t) ≈ t^2 atol = 1.0e-11
             end
         end
 
         @testset "f(x) = -x² + 4x on non-uniform grid" begin
             x = [0.0, 1.0, 2.5, 4.0, 5.5, 7.0]
-            f(t) = -t^2 + 4*t
+            f(t) = -t^2 + 4 * t
             y = f.(x)
-            itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
+            itp = quadratic_interp(x, y; bc = Left(QuadraticFit()))
 
             for t in [0.5, 1.5, 3.0, 5.0, 6.5]
-                @test itp(t) ≈ f(t) atol=1e-11
+                @test itp(t) ≈ f(t) atol = 1.0e-11
             end
         end
     end
@@ -2027,53 +2027,53 @@ end
     @testset "Edge cases" begin
         @testset "n=3 (minimum for QuadraticFit)" begin
             x = [0.0, 1.0, 2.0]
-            y = x.^2
-            itp_left = quadratic_interp(x, y; bc=Left(QuadraticFit()))
-            itp_right = quadratic_interp(x, y; bc=Right(QuadraticFit()))
+            y = x .^ 2
+            itp_left = quadratic_interp(x, y; bc = Left(QuadraticFit()))
+            itp_right = quadratic_interp(x, y; bc = Right(QuadraticFit()))
 
-            @test itp_left(0.5) ≈ 0.5^2 atol=1e-12
-            @test itp_left(1.5) ≈ 1.5^2 atol=1e-12
-            @test itp_right(0.5) ≈ 0.5^2 atol=1e-12
-            @test itp_right(1.5) ≈ 1.5^2 atol=1e-12
+            @test itp_left(0.5) ≈ 0.5^2 atol = 1.0e-12
+            @test itp_left(1.5) ≈ 1.5^2 atol = 1.0e-12
+            @test itp_right(0.5) ≈ 0.5^2 atol = 1.0e-12
+            @test itp_right(1.5) ≈ 1.5^2 atol = 1.0e-12
         end
 
         @testset "n=2 requires Deriv1/Deriv2 (QuadraticFit needs 3+ points)" begin
             x = [0.0, 1.0]
             y = [0.0, 1.0]
             # QuadraticFit (PolyFit{2}) requires 3 points to estimate derivative
-            @test_throws ArgumentError quadratic_interp(x, y; bc=Left(QuadraticFit()))
-            @test_throws ArgumentError quadratic_interp(x, y; bc=Right(QuadraticFit()))
+            @test_throws ArgumentError quadratic_interp(x, y; bc = Left(QuadraticFit()))
+            @test_throws ArgumentError quadratic_interp(x, y; bc = Right(QuadraticFit()))
 
             # With explicit Deriv1 BC, n=2 works fine (linear interpolation)
-            itp_left = quadratic_interp(x, y; bc=Left(Deriv1(1.0)))  # slope 1
-            itp_right = quadratic_interp(x, y; bc=Right(Deriv1(1.0)))
-            @test itp_left(0.5) ≈ 0.5 atol=1e-12
-            @test itp_right(0.5) ≈ 0.5 atol=1e-12
+            itp_left = quadratic_interp(x, y; bc = Left(Deriv1(1.0)))  # slope 1
+            itp_right = quadratic_interp(x, y; bc = Right(Deriv1(1.0)))
+            @test itp_left(0.5) ≈ 0.5 atol = 1.0e-12
+            @test itp_right(0.5) ≈ 0.5 atol = 1.0e-12
         end
     end
 
     @testset "Derivatives on polynomial data" begin
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = x.^2  # f(x) = x², f'(x) = 2x, f''(x) = 2
+        y = x .^ 2  # f(x) = x², f'(x) = 2x, f''(x) = 2
 
-        itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
+        itp = quadratic_interp(x, y; bc = Left(QuadraticFit()))
 
         # First derivative should match 2x
-        @test itp(1.5; deriv=DerivOp(1)) ≈ 2*1.5 atol=1e-11
-        @test itp(2.5; deriv=DerivOp(1)) ≈ 2*2.5 atol=1e-11
+        @test itp(1.5; deriv = DerivOp(1)) ≈ 2 * 1.5 atol = 1.0e-11
+        @test itp(2.5; deriv = DerivOp(1)) ≈ 2 * 2.5 atol = 1.0e-11
 
         # Second derivative should be constant = 2
-        @test itp(1.5; deriv=DerivOp(2)) ≈ 2.0 atol=1e-11
-        @test itp(2.5; deriv=DerivOp(2)) ≈ 2.0 atol=1e-11
+        @test itp(1.5; deriv = DerivOp(2)) ≈ 2.0 atol = 1.0e-11
+        @test itp(2.5; deriv = DerivOp(2)) ≈ 2.0 atol = 1.0e-11
     end
 
     @testset "Float32 support" begin
         x = Float32[0.0, 1.0, 2.0, 3.0, 4.0]
-        y = x.^2
-        itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
+        y = x .^ 2
+        itp = quadratic_interp(x, y; bc = Left(QuadraticFit()))
 
         @test itp(1.5f0) isa Float32
-        @test itp(1.5f0) ≈ 1.5f0^2 atol=1e-5
+        @test itp(1.5f0) ≈ 1.5f0^2 atol = 1.0e-5
     end
 end
 
@@ -2088,7 +2088,7 @@ end
         # For f(x) = x² on uniform grid [0,1,2,3,4]
         # f'(0) = 0, so d[1] should be 0
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = x.^2
+        y = x .^ 2
         h = diff(x)
         s = diff(y) ./ h  # [1, 3, 5, 7]
         d = zeros(5)
@@ -2096,21 +2096,21 @@ end
         _fill_slopes!(d, s, h, Left(QuadraticFit()), x, y)
 
         # For x², the derivative at x=0 is 0
-        @test d[1] ≈ 0.0 atol=1e-12
+        @test d[1] ≈ 0.0 atol = 1.0e-12
 
         # Forward recurrence: d[i+1] = 2*s[i] - d[i]
         # So: d[2] = 2*1 - 0 = 2, d[3] = 2*3 - 2 = 4, etc.
-        @test d[2] ≈ 2.0 atol=1e-12
-        @test d[3] ≈ 4.0 atol=1e-12
-        @test d[4] ≈ 6.0 atol=1e-12
-        @test d[5] ≈ 8.0 atol=1e-12
+        @test d[2] ≈ 2.0 atol = 1.0e-12
+        @test d[3] ≈ 4.0 atol = 1.0e-12
+        @test d[4] ≈ 6.0 atol = 1.0e-12
+        @test d[5] ≈ 8.0 atol = 1.0e-12
     end
 
     @testset "Right(QuadraticFit) slope computation" begin
         # For f(x) = x² on uniform grid [0,1,2,3,4]
         # f'(4) = 8, so d[5] should be 8
         x = [0.0, 1.0, 2.0, 3.0, 4.0]
-        y = x.^2
+        y = x .^ 2
         h = diff(x)
         s = diff(y) ./ h  # [1, 3, 5, 7]
         d = zeros(5)
@@ -2118,32 +2118,32 @@ end
         _fill_slopes!(d, s, h, Right(QuadraticFit()), x, y)
 
         # For x², the derivative at x=4 is 8
-        @test d[5] ≈ 8.0 atol=1e-12
+        @test d[5] ≈ 8.0 atol = 1.0e-12
 
         # Backward recurrence from d[5]=8
         # d[4] = 2*s[4] - d[5] = 2*7 - 8 = 6
         # d[3] = 2*s[3] - d[4] = 2*5 - 6 = 4, etc.
-        @test d[4] ≈ 6.0 atol=1e-12
-        @test d[3] ≈ 4.0 atol=1e-12
-        @test d[2] ≈ 2.0 atol=1e-12
-        @test d[1] ≈ 0.0 atol=1e-12
+        @test d[4] ≈ 6.0 atol = 1.0e-12
+        @test d[3] ≈ 4.0 atol = 1.0e-12
+        @test d[2] ≈ 2.0 atol = 1.0e-12
+        @test d[1] ≈ 0.0 atol = 1.0e-12
     end
 
     @testset "Non-uniform grid 3-point formula" begin
         # For f(x) = x² on non-uniform grid [0, 0.5, 1.5]
         # f'(0) = 0, f'(1.5) = 3
         x = [0.0, 0.5, 1.5]
-        y = x.^2  # [0, 0.25, 2.25]
+        y = x .^ 2  # [0, 0.25, 2.25]
         h = diff(x)  # [0.5, 1.0]
         s = diff(y) ./ h  # [0.5, 2.0]
         d = zeros(3)
 
         _fill_slopes!(d, s, h, Left(QuadraticFit()), x, y)
-        @test d[1] ≈ 0.0 atol=1e-12
+        @test d[1] ≈ 0.0 atol = 1.0e-12
 
         # Test Right as well
         d_right = zeros(3)
         _fill_slopes!(d_right, s, h, Right(QuadraticFit()), x, y)
-        @test d_right[3] ≈ 3.0 atol=1e-12
+        @test d_right[3] ≈ 3.0 atol = 1.0e-12
     end
 end

@@ -34,10 +34,10 @@ for FMA (Fused Multiply-Add) hardware instructions, reducing total FP operations
     0 fdiv + 9 fmul + 4 fmadd + 1 fmsub = 14 FP ops
 """
 @inline function _cubic_kernel(
-    ::EvalValue,
-    zL::Tv, zR::Tv, yL::Tv, yR::Tv,
-    h::Tg, inv_h::Tg, dL::Td, dR::Td
-) where {Tg<:AbstractFloat, Tv, Td<:Real}
+        ::EvalValue,
+        zL::Tv, zR::Tv, yL::Tv, yR::Tv,
+        h::Tg, inv_h::Tg, dL::Td, dR::Td
+    ) where {Tg <: AbstractFloat, Tv, Td <: Real}
     # Native (ARM64) instruction breakdown:
     div6 = inv(Tg(6))                                   # (const-folded)
     # inv_h passed as parameter (fdiv eliminated)
@@ -70,23 +70,23 @@ Formula:
           + h*(zL - zR)/6
 """
 @inline function _cubic_kernel(
-    ::EvalDeriv1,
-    zL::Tv, zR::Tv, yL::Tv, yR::Tv,
-    h::Tg, inv_h::Tg, dL::Td, dR::Td
-) where {Tg<:AbstractFloat, Tv, Td<:Real}
+        ::EvalDeriv1,
+        zL::Tv, zR::Tv, yL::Tv, yR::Tv,
+        h::Tg, inv_h::Tg, dL::Td, dR::Td
+    ) where {Tg <: AbstractFloat, Tv, Td <: Real}
     # inv_h passed as parameter (fdiv eliminated)
 
-    inv_2h  = inv_h * inv(Tg(2))
+    inv_2h = inv_h * inv(Tg(2))
     h_div6 = h * inv(Tg(6))
 
     dL_sq = dL * dL
     dR_sq = dR * dR
 
     # zR*dL^2 - zL*dR^2
-    z_mix   = muladd(zR, dL_sq, (-dR_sq) * zL)
+    z_mix = muladd(zR, dL_sq, (-dR_sq) * zL)
 
     # z_term = (z_mix)/(2h) + (zL - zR)*(h/6)
-    z_term  = muladd(inv_2h, z_mix, (zL - zR) * h_div6)
+    z_term = muladd(inv_2h, z_mix, (zL - zR) * h_div6)
 
     # (yR-yL)/h + z_term
     return muladd(inv_h, yR - yL, z_term)
@@ -107,10 +107,10 @@ Formula:
     S''(x) = (zL*dR + zR*dL) / h
 """
 @inline function _cubic_kernel(
-    ::EvalDeriv2,
-    zL::Tv, zR::Tv, ::Tv, ::Tv,
-    ::Tg, inv_h::Tg, dL::Td, dR::Td
-) where {Tg<:AbstractFloat, Tv, Td<:Real}
+        ::EvalDeriv2,
+        zL::Tv, zR::Tv, ::Tv, ::Tv,
+        ::Tg, inv_h::Tg, dL::Td, dR::Td
+    ) where {Tg <: AbstractFloat, Tv, Td <: Real}
     return muladd(zL, dR, zR * dL) * inv_h
 end
 
@@ -138,9 +138,9 @@ Third derivative (constant, independent of x within interval):
     0 fdiv + 1 fmul + 1 fsub = 2 FP ops
 """
 @inline function _cubic_kernel(
-    ::EvalDeriv3,
-    zL::Tv, zR::Tv, ::Tv, ::Tv,
-    ::Tg, inv_h::Tg, ::Td, ::Td
-) where {Tg<:AbstractFloat, Tv, Td<:Real}
+        ::EvalDeriv3,
+        zL::Tv, zR::Tv, ::Tv, ::Tv,
+        ::Tg, inv_h::Tg, ::Td, ::Td
+    ) where {Tg <: AbstractFloat, Tv, Td <: Real}
     return (zR - zL) * inv_h
 end

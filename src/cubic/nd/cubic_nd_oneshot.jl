@@ -26,16 +26,16 @@ Zero-allocation after warmup: uses pool-based partials instead of constructing a
     instead of `selectdim` (which would heap-allocate a `SubArray`).
 """
 function cubic_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv, N},
-    query::Tuple{Vararg{Real, N}};
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
-    extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    coeffs::AbstractCoeffStrategy=PreCompute(),
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tv, N}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = PreCompute(),
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tv, N}
     # Type promotion + validation (same as constructor path)
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -61,16 +61,16 @@ One-shot ND cubic interpolation at multiple points (SoA batch).
 Zero-allocation for workspace after warmup; output vector is heap-allocated.
 """
 function cubic_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv, N},
-    queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
-    extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    coeffs::AbstractCoeffStrategy=PreCompute(),
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tv, N}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = PreCompute(),
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tv, N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -87,16 +87,16 @@ One-shot ND cubic interpolation at multiple points (AoS batch).
 Zero-allocation for workspace after warmup; output vector is heap-allocated.
 """
 function cubic_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv, N},
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
-    extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    coeffs::AbstractCoeffStrategy=PreCompute(),
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tv, N}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = PreCompute(),
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     Tr = _output_eltype(Tv, Tg)
@@ -127,15 +127,15 @@ Zero-allocation after warmup (pool reuse).
 (e.g., `(NoExtrap(), ClampExtrap())`), computed via `_resolve_extrap_nd` in the API layer.
 """
 @with_pool pool function _cubic_interp_nd_oneshot(
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    query::Tuple{Vararg{Real, N}},
-    bcs::NTuple{N, AbstractBC},
-    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp},
-    hints=nothing
-) where {Tg<:AbstractFloat, Tv, N}
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        query::Tuple{Vararg{Real, N}},
+        bcs::NTuple{N, AbstractBC},
+        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
+        searches::NTuple{N, AbstractSearchPolicy},
+        ops::NTuple{N, AbstractEvalOp},
+        hints = nothing
+    ) where {Tg <: AbstractFloat, Tv, N}
     # 0. OOB short-circuit (before expensive partials computation)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
@@ -172,25 +172,30 @@ Computes partials ONCE, then evaluates at all query points into `output`.
 `extraps_val` must be a pre-resolved tuple of concrete `AbstractExtrap` instances.
 """
 @with_pool pool function _cubic_interp_nd_oneshot_soa!(
-    output::AbstractVector,
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    bcs::NTuple{N, AbstractBC},
-    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp},
-    hints=nothing
-) where {Tg<:AbstractFloat, Tv, N}
+        output::AbstractVector,
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+        bcs::NTuple{N, AbstractBC},
+        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
+        searches::NTuple{N, AbstractSearchPolicy},
+        ops::NTuple{N, AbstractEvalOp},
+        hints = nothing
+    ) where {Tg <: AbstractFloat, Tv, N}
     # Validate query lengths
     n_queries = length(queries[1])
     for d in 2:N
-        length(queries[d]) == n_queries || throw(DimensionMismatch(
-            "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
-        ))
+        length(queries[d]) == n_queries || throw(
+            DimensionMismatch(
+                "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
+            )
+        )
     end
-    length(output) == n_queries || throw(DimensionMismatch(
-        "output length ($(length(output))) must match query length ($n_queries)"))
+    length(output) == n_queries || throw(
+        DimensionMismatch(
+            "output length ($(length(output))) must match query length ($n_queries)"
+        )
+    )
 
     # Build phase (same as scalar, done once)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
@@ -203,7 +208,9 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     @inbounds for k in 1:n_queries
         query_k = ntuple(d -> queries[d][k], Val(N))
         oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
-        if oob_val !== nothing; output[k] = oob_val; continue; end
+        if oob_val !== nothing
+            output[k] = oob_val; continue
+        end
         q_evals = _handle_all_extraps(query_k, grids_p, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_evals, grids_p, spacings, searches, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_evals, spacings, indices, Ls)
@@ -221,19 +228,22 @@ Computes partials ONCE, then evaluates at all query points into `output`.
 `extraps_val` must be a pre-resolved tuple of concrete `AbstractExtrap` instances.
 """
 @with_pool pool function _cubic_interp_nd_oneshot_aos!(
-    output::AbstractVector,
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-    bcs::NTuple{N, AbstractBC},
-    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ops::NTuple{N, AbstractEvalOp},
-    hints=nothing
-) where {Tg<:AbstractFloat, Tv, N}
+        output::AbstractVector,
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
+        bcs::NTuple{N, AbstractBC},
+        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
+        searches::NTuple{N, AbstractSearchPolicy},
+        ops::NTuple{N, AbstractEvalOp},
+        hints = nothing
+    ) where {Tg <: AbstractFloat, Tv, N}
     n_queries = length(queries)
-    length(output) == n_queries || throw(DimensionMismatch(
-        "output length ($(length(output))) must match query length ($n_queries)"))
+    length(output) == n_queries || throw(
+        DimensionMismatch(
+            "output length ($(length(output))) must match query length ($n_queries)"
+        )
+    )
 
     # Build phase (same as scalar, done once)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
@@ -246,7 +256,9 @@ Computes partials ONCE, then evaluates at all query points into `output`.
     @inbounds for k in 1:n_queries
         query_k = queries[k]
         oob_val = _try_fill_oob(query_k, grids_p, extraps_val, ops, first(data_p))
-        if oob_val !== nothing; output[k] = oob_val; continue; end
+        if oob_val !== nothing
+            output[k] = oob_val; continue
+        end
         q_eval = _handle_all_extraps(query_k, grids_p, extraps_val)
         indices, Ls, _ = _search_all_intervals(q_eval, grids_p, spacings, searches, hints)
         hs, inv_hs, dLs = _compute_all_local_params(q_eval, spacings, indices, Ls)
@@ -259,7 +271,7 @@ end
 # searches tuple type, resolving per-element Union{BinarySearch,LinearBinarySearch} before
 # entering the @with_pool boundary. NOT @inline — specialization requires real call.
 function _cubic_nd_soa_dispatch!(output, grids, data, queries, bcs, extraps, searches, ops, hints)
-    _cubic_interp_nd_oneshot_soa!(output, grids, data, queries, bcs, extraps, searches, ops, hints)
+    return _cubic_interp_nd_oneshot_soa!(output, grids, data, queries, bcs, extraps, searches, ops, hints)
 end
 
 # ========================================
@@ -273,17 +285,17 @@ In-place one-shot ND cubic interpolation at multiple points (SoA batch).
 Writes results into pre-allocated `output` vector.
 """
 function cubic_interp!(
-    output::AbstractVector,
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv, N},
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
-    extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    coeffs::AbstractCoeffStrategy=PreCompute(),
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tv, N}
+        output::AbstractVector,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = PreCompute(),
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
@@ -306,17 +318,17 @@ In-place one-shot ND cubic interpolation at multiple points (AoS batch).
 Writes results into pre-allocated `output` vector.
 """
 function cubic_interp!(
-    output::AbstractVector,
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv, N},
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
-    extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    coeffs::AbstractCoeffStrategy=PreCompute(),
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tv, N}
+        output::AbstractVector,
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = PreCompute(),
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tv, N}
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)

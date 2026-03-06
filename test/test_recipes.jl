@@ -20,26 +20,26 @@ using RecipesBase
     @testset "Single-Series Interpolants" begin
         @testset "LinearInterpolant" begin
             itp = linear_interp(x, y)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
             @test all(r -> r isa RecipesBase.RecipeData, recipes)
         end
 
         @testset "ConstantInterpolant" begin
             itp = constant_interp(x, y)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
         end
 
         @testset "QuadraticInterpolant" begin
             itp = quadratic_interp(x, y)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
         end
 
         @testset "CubicInterpolant" begin
             itp = cubic_interp(x, y)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
         end
     end
@@ -50,8 +50,8 @@ using RecipesBase
     @testset "Extrapolation Modes" begin
         for extrap in [NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap()]
             @testset "extrap=:$extrap" begin
-                itp = cubic_interp(x, y; extrap=extrap)
-                recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+                itp = cubic_interp(x, y; extrap = extrap)
+                recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
                 @test !isempty(recipes)
             end
         end
@@ -62,8 +62,8 @@ using RecipesBase
     # ========================================
     @testset "FillExtrap Fill Value" begin
         @testset "finite fill (0.0): curve extends OOB with fill value" begin
-            itp = cubic_interp(x, y; extrap=FillExtrap(0.0))
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            itp = cubic_interp(x, y; extrap = FillExtrap(0.0))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
             # Should have: 2 shading + 1 boundary + 1 scatter + 1 curve = 5
             @test length(recipes) == 5
@@ -73,13 +73,13 @@ using RecipesBase
             yq = curve.args[2]
             @test first(xq) < first(x)  # extends left
             @test last(xq) > last(x)    # extends right
-            @test yq[1] ≈ 0.0 atol=1e-12  # OOB left = fill value
-            @test yq[end] ≈ 0.0 atol=1e-12  # OOB right = fill value
+            @test yq[1] ≈ 0.0 atol = 1.0e-12  # OOB left = fill value
+            @test yq[end] ≈ 0.0 atol = 1.0e-12  # OOB right = fill value
         end
 
         @testset "NaN fill: no fill lines, no crash" begin
-            itp = cubic_interp(x, y; extrap=FillExtrap(NaN))
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            itp = cubic_interp(x, y; extrap = FillExtrap(NaN))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
             # Should have: 2 shading + 1 boundary + 1 scatter + 1 curve = 5
             @test length(recipes) == 5
@@ -90,25 +90,27 @@ using RecipesBase
         end
 
         @testset "boundary clamp unchanged" begin
-            itp = cubic_interp(x, y; extrap=ClampExtrap())
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            itp = cubic_interp(x, y; extrap = ClampExtrap())
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             # Should have: 2 shading + 1 boundary + 1 scatter + 1 curve = 5 (no fill lines)
             @test length(recipes) == 5
         end
 
         @testset "finite fill: shade label contains fill value" begin
-            itp = linear_interp(x, y; extrap=FillExtrap(42.0))
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            itp = linear_interp(x, y; extrap = FillExtrap(42.0))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             # Second shade series should have fill label
-            shade_labels = [r.plotattributes[:label] for r in recipes if
-                get(r.plotattributes, :seriestype, nothing) == :shape &&
-                r.plotattributes[:label] !== nothing]
+            shade_labels = [
+                r.plotattributes[:label] for r in recipes if
+                    get(r.plotattributes, :seriestype, nothing) == :shape &&
+                    r.plotattributes[:label] !== nothing
+            ]
             @test any(l -> occursin("42.0", l), shade_labels)
         end
 
         @testset "series interpolant with fill value" begin
-            sitp = linear_interp(x, Series(y_matrix); extrap=FillExtrap(0.0))
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), sitp)
+            sitp = linear_interp(x, Series(y_matrix); extrap = FillExtrap(0.0))
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), sitp)
             @test !isempty(recipes)
             # Curve extends OOB; no separate dashed fill lines
             paths = [r for r in recipes if get(r.plotattributes, :seriestype, nothing) == :path]
@@ -116,9 +118,9 @@ using RecipesBase
         end
 
         @testset "derivative view with fill value" begin
-            itp = cubic_interp(x, y; extrap=FillExtrap(NaN))
+            itp = cubic_interp(x, y; extrap = FillExtrap(NaN))
             dv = deriv1(itp)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), dv)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), dv)
             @test !isempty(recipes)
             # Derivative curve should not have NaN (0 * y_bnd, not 0 * NaN)
             curve_data = recipes[end]
@@ -127,11 +129,13 @@ using RecipesBase
         end
 
         @testset "all 4 interp types with fill" begin
-            for (name, fn) in [("cubic", cubic_interp), ("linear", linear_interp),
-                               ("quadratic", quadratic_interp), ("constant", constant_interp)]
+            for (name, fn) in [
+                    ("cubic", cubic_interp), ("linear", linear_interp),
+                    ("quadratic", quadratic_interp), ("constant", constant_interp),
+                ]
                 @testset "$name" begin
-                    itp = fn(x, y; extrap=FillExtrap(0.0))
-                    recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+                    itp = fn(x, y; extrap = FillExtrap(0.0))
+                    recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
                     @test !isempty(recipes)
                     @test length(recipes) == 5  # 2 shade + 1 bound + 1 scatter + 1 curve
                 end
@@ -147,42 +151,42 @@ using RecipesBase
 
         @testset "show_data=false" begin
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:show_data => false), itp
+                Dict{Symbol, Any}(:show_data => false), itp
             )
             @test !isempty(recipes)
         end
 
         @testset "show_bounds=false" begin
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:show_bounds => false), itp
+                Dict{Symbol, Any}(:show_bounds => false), itp
             )
             @test !isempty(recipes)
         end
 
         @testset "show_outside=false" begin
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:show_outside => false), itp
+                Dict{Symbol, Any}(:show_outside => false), itp
             )
             @test !isempty(recipes)
         end
 
         @testset "custom samples" begin
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:samples => 100), itp
+                Dict{Symbol, Any}(:samples => 100), itp
             )
             @test !isempty(recipes)
         end
 
         @testset "custom domain_margin" begin
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:domain_margin => 0.5), itp
+                Dict{Symbol, Any}(:domain_margin => 0.5), itp
             )
             @test !isempty(recipes)
         end
 
         @testset "all options disabled" begin
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(
+                Dict{Symbol, Any}(
                     :show_data => false,
                     :show_bounds => false,
                     :show_outside => false
@@ -198,25 +202,25 @@ using RecipesBase
     @testset "Multi-Series Interpolants" begin
         @testset "LinearSeriesInterpolant" begin
             sitp = linear_interp(x, Series(y_matrix))
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), sitp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), sitp)
             @test !isempty(recipes)
         end
 
         @testset "ConstantSeriesInterpolant" begin
             sitp = constant_interp(x, Series(y_matrix))
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), sitp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), sitp)
             @test !isempty(recipes)
         end
 
         @testset "QuadraticSeriesInterpolant" begin
             sitp = quadratic_interp(x, Series(y_matrix))
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), sitp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), sitp)
             @test !isempty(recipes)
         end
 
         @testset "CubicSeriesInterpolant" begin
             sitp = cubic_interp(x, Series(y_matrix))
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), sitp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), sitp)
             @test !isempty(recipes)
         end
 
@@ -225,25 +229,25 @@ using RecipesBase
 
             # First series only
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:series_idx => :first), sitp
+                Dict{Symbol, Any}(:series_idx => :first), sitp
             )
             @test !isempty(recipes)
 
             # All series (default)
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:series_idx => :all), sitp
+                Dict{Symbol, Any}(:series_idx => :all), sitp
             )
             @test !isempty(recipes)
 
             # Specific series by index
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:series_idx => 2), sitp
+                Dict{Symbol, Any}(:series_idx => 2), sitp
             )
             @test !isempty(recipes)
 
             # Multiple specific series
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:series_idx => [1, 2]), sitp
+                Dict{Symbol, Any}(:series_idx => [1, 2]), sitp
             )
             @test !isempty(recipes)
         end
@@ -257,26 +261,26 @@ using RecipesBase
 
         @testset "deriv1" begin
             d1 = deriv1(itp)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), d1)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), d1)
             @test !isempty(recipes)
         end
 
         @testset "deriv2" begin
             d2 = deriv2(itp)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), d2)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), d2)
             @test !isempty(recipes)
         end
 
         @testset "deriv3" begin
             d3 = deriv3(itp)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), d3)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), d3)
             @test !isempty(recipes)
         end
 
         @testset "deriv with options" begin
             d1 = deriv1(itp)
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:show_bounds => false, :samples => 100), d1
+                Dict{Symbol, Any}(:show_bounds => false, :samples => 100), d1
             )
             @test !isempty(recipes)
         end
@@ -290,12 +294,12 @@ using RecipesBase
         y32 = Float32.(y)
 
         itp = cubic_interp(x32, y32)
-        recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+        recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
         @test !isempty(recipes)
 
         # With custom margin (should convert to Float32)
         recipes = RecipesBase.apply_recipe(
-            Dict{Symbol,Any}(:domain_margin => 0.5), itp
+            Dict{Symbol, Any}(:domain_margin => 0.5), itp
         )
         @test !isempty(recipes)
     end
@@ -311,21 +315,21 @@ using RecipesBase
 
         @testset "LinearInterpolantND" begin
             itp = linear_interp((x1, x2), data_2d)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
             @test all(r -> r isa RecipesBase.RecipeData, recipes)
         end
 
         @testset "ConstantInterpolantND" begin
             itp = constant_interp((x1, x2), data_2d)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
             @test all(r -> r isa RecipesBase.RecipeData, recipes)
         end
 
         @testset "CubicInterpolantND" begin
             itp = cubic_interp((x1, x2), data_2d)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
             @test all(r -> r isa RecipesBase.RecipeData, recipes)
         end
@@ -335,33 +339,33 @@ using RecipesBase
 
             # Test show_nodes option
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:show_nodes => true), itp
+                Dict{Symbol, Any}(:show_nodes => true), itp
             )
             @test !isempty(recipes)
 
             # Test show_gridlines option
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:show_gridlines => false), itp
+                Dict{Symbol, Any}(:show_gridlines => false), itp
             )
             @test !isempty(recipes)
 
             # Test custom resolution
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:resolution => (20, 20)), itp
+                Dict{Symbol, Any}(:resolution => (20, 20)), itp
             )
             @test !isempty(recipes)
 
             # Test equal_aspect
             recipes = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:equal_aspect => true), itp
+                Dict{Symbol, Any}(:equal_aspect => true), itp
             )
             @test !isempty(recipes)
         end
 
         @testset "ND extrapolation extension" begin
             # extrap on both axes — should produce boundary rectangle series
-            itp_ext = linear_interp((x1, x2), data_2d; extrap=ExtendExtrap())
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp_ext)
+            itp_ext = linear_interp((x1, x2), data_2d; extrap = ExtendExtrap())
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp_ext)
             @test !isempty(recipes)
 
             # Find boundary series: path with 5-point closed rectangle
@@ -389,8 +393,8 @@ using RecipesBase
             @test last(hm_x) > last(x1)    # extended right
 
             # extrap=NoExtrap() — should NOT produce boundary series
-            itp_none = linear_interp((x1, x2), data_2d; extrap=NoExtrap())
-            recipes_none = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp_none)
+            itp_none = linear_interp((x1, x2), data_2d; extrap = NoExtrap())
+            recipes_none = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp_none)
             boundary_none = filter(recipes_none) do r
                 get(r.plotattributes, :seriestype, nothing) === :path &&
                     get(r.plotattributes, :label, nothing) == "domain"
@@ -407,7 +411,7 @@ using RecipesBase
 
             # show_boundary=false — should suppress boundary even with extrap
             recipes_no_bd = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:show_boundary => false), itp_ext
+                Dict{Symbol, Any}(:show_boundary => false), itp_ext
             )
             boundary_off = filter(recipes_no_bd) do r
                 get(r.plotattributes, :seriestype, nothing) === :path &&
@@ -417,7 +421,7 @@ using RecipesBase
 
             # Custom domain_margin
             recipes_margin = RecipesBase.apply_recipe(
-                Dict{Symbol,Any}(:domain_margin => 0.5), itp_ext
+                Dict{Symbol, Any}(:domain_margin => 0.5), itp_ext
             )
             hm_margin = filter(recipes_margin) do r
                 get(r.plotattributes, :seriestype, nothing) === :heatmap
@@ -428,8 +432,8 @@ using RecipesBase
         end
 
         @testset "ND extrap with CubicInterpolantND" begin
-            itp_ext = cubic_interp((x1, x2), data_2d; extrap=ClampExtrap())
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp_ext)
+            itp_ext = cubic_interp((x1, x2), data_2d; extrap = ClampExtrap())
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp_ext)
             @test !isempty(recipes)
             boundary_series = filter(recipes) do r
                 get(r.plotattributes, :seriestype, nothing) === :path &&
@@ -445,7 +449,7 @@ using RecipesBase
             data_mixed = [xi + yj for xi in x1_vec, yj in x2_range]
 
             itp = linear_interp((x1_vec, x2_range), data_mixed)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
         end
     end
@@ -458,7 +462,7 @@ using RecipesBase
             x_min = [0.0, 1.0]
             y_min = [0.0, 1.0]
             itp = linear_interp(x_min, y_min)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
         end
 
@@ -466,14 +470,14 @@ using RecipesBase
             x_range = range(0.0, 1.0, 11)
             y_range = sin.(2π .* collect(x_range))
             itp = linear_interp(x_range, y_range)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
         end
 
         @testset "Negative values" begin
             y_neg = y .- 0.5  # Values cross zero
             itp = cubic_interp(x, y_neg)
-            recipes = RecipesBase.apply_recipe(Dict{Symbol,Any}(), itp)
+            recipes = RecipesBase.apply_recipe(Dict{Symbol, Any}(), itp)
             @test !isempty(recipes)
         end
     end

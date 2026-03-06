@@ -63,16 +63,16 @@ itp((1.0, 0.5); deriv=(1, 0))   # dfdx
 ```
 """
 struct QuadraticInterpolantND{
-    Tg<:AbstractFloat,
-    Tv,
-    N,
-    NP1,
-    G<:Tuple{Vararg{AbstractVector, N}},
-    S<:Tuple{Vararg{AbstractGridSpacing, N}},
-    B<:Tuple{Vararg{AbstractBC, N}},
-    E<:Tuple{Vararg{AbstractExtrap, N}},
-    P<:Tuple{Vararg{AbstractSearchPolicy, N}},
-} <: AbstractInterpolantND{Tg, Tv, N}
+        Tg <: AbstractFloat,
+        Tv,
+        N,
+        NP1,
+        G <: Tuple{Vararg{AbstractVector, N}},
+        S <: Tuple{Vararg{AbstractGridSpacing, N}},
+        B <: Tuple{Vararg{AbstractBC, N}},
+        E <: Tuple{Vararg{AbstractExtrap, N}},
+        P <: Tuple{Vararg{AbstractSearchPolicy, N}},
+    } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
     spacings::S
     nodal_derivs::NodalDerivativesND{Tv, N, NP1}
@@ -81,11 +81,11 @@ struct QuadraticInterpolantND{
     searches::P
 
     function QuadraticInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}(
-        grids::G, spacings::S, nodal_derivs::NodalDerivativesND{Tv, N, NP1},
-        bcs::B, extraps::E, searches::P
-    ) where {Tg, Tv, N, NP1, G, S, B, E, P}
+            grids::G, spacings::S, nodal_derivs::NodalDerivativesND{Tv, N, NP1},
+            bcs::B, extraps::E, searches::P
+        ) where {Tg, Tv, N, NP1, G, S, B, E, P}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
-        new{Tg, Tv, N, NP1, G, S, B, E, P}(grids, spacings, nodal_derivs, bcs, extraps, searches)
+        return new{Tg, Tv, N, NP1, G, S, B, E, P}(grids, spacings, nodal_derivs, bcs, extraps, searches)
     end
 end
 
@@ -117,4 +117,3 @@ Get extrapolation mode for dimension `d`.
 """
 @inline _extrap(itp::QuadraticInterpolantND, ::Val{D}) where {D} = itp.extraps[D]
 @inline _search(itp::QuadraticInterpolantND, ::Val{D}) where {D} = itp.searches[D]
-

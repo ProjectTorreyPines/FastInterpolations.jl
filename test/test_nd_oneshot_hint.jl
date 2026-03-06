@@ -16,7 +16,7 @@ using FastInterpolations
         data = [Float64(x + y) for x in xs, y in ys]
         hints = (Ref(1), Ref(1))
 
-        linear_interp((xs, ys), data, (3.5, 4.5); hint=hints)
+        linear_interp((xs, ys), data, (3.5, 4.5); hint = hints)
         @test hints[1][] == 4
         @test hints[2][] == 5
     end
@@ -27,7 +27,7 @@ using FastInterpolations
         data = [Float64(x + y) for x in xs, y in ys]
         hints = (Ref(1), Ref(1))
 
-        constant_interp((xs, ys), data, (3.5, 4.5); hint=hints)
+        constant_interp((xs, ys), data, (3.5, 4.5); hint = hints)
         @test hints[1][] == 4
         @test hints[2][] == 5
     end
@@ -43,7 +43,7 @@ using FastInterpolations
         # Actually, grid[8] = 3.5, so 3.5 at the boundary: search_direct gives floor((3.5-0.0)/0.5)+1 = 8
         # But clamped to n-1=20 if at endpoint. For 3.5 which is grid[8], it's x[8]≤3.5<x[9]? x[8]=3.5, x[9]=4.0 → yes, ix=8
         # For 4.5: floor(4.5/0.5)+1 = 10, grid[10]=4.5, grid[11]=5.0 → ix=10
-        cubic_interp((xs, ys), data, (3.5, 4.5); hint=hints)
+        cubic_interp((xs, ys), data, (3.5, 4.5); hint = hints)
         @test hints[1][] == 8
         @test hints[2][] == 10
     end
@@ -54,7 +54,7 @@ using FastInterpolations
         data = [sin(x) * cos(y) for x in xs, y in ys]
         hints = (Ref(1), Ref(1))
 
-        quadratic_interp((xs, ys), data, (3.5, 4.5); hint=hints)
+        quadratic_interp((xs, ys), data, (3.5, 4.5); hint = hints)
         @test hints[1][] == 8
         @test hints[2][] == 10
     end
@@ -68,7 +68,7 @@ using FastInterpolations
 
         # query x=4.0: xs[4]=3.0 ≤ 4.0 < 5.0=xs[5] → ix=4
         # query y=6.5: ys[7]=6.0 ≤ 6.5 < 7.0=ys[8] → iy=7
-        linear_interp((xs, ys), data, (4.0, 6.5); hint=hints)
+        linear_interp((xs, ys), data, (4.0, 6.5); hint = hints)
         @test hints[1][] == 4
         @test hints[2][] == 7
     end
@@ -90,8 +90,8 @@ using FastInterpolations
         expected_iy = [2, 4, 6, 8, 10]
 
         for (k, (qx, qy)) in enumerate(positions)
-            val = linear_interp((xs, ys), data, (qx, qy); hint=hints)
-            @test val ≈ qx + qy atol=1e-12
+            val = linear_interp((xs, ys), data, (qx, qy); hint = hints)
+            @test val ≈ qx + qy atol = 1.0e-12
             @test hints[1][] == expected_ix[k]
             @test hints[2][] == expected_iy[k]
         end
@@ -107,8 +107,8 @@ using FastInterpolations
         expected_ix = [10, 8, 6, 4, 2]
 
         for (k, (qx, qy)) in enumerate(positions)
-            val = linear_interp((xs, ys), data, (qx, qy); hint=hints)
-            @test val ≈ qx + qy atol=1e-12
+            val = linear_interp((xs, ys), data, (qx, qy); hint = hints)
+            @test val ≈ qx + qy atol = 1.0e-12
             @test hints[1][] == expected_ix[k]
             @test hints[2][] == expected_ix[k]
         end
@@ -129,7 +129,7 @@ using FastInterpolations
         out = Vector{Float64}(undef, length(xqs))
         hints = (Ref(1), Ref(1))
 
-        linear_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
+        linear_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
         # Last query: (9.5, 9.5) → interval 10
         @test hints[1][] == 10
         @test hints[2][] == 10
@@ -145,7 +145,7 @@ using FastInterpolations
         out = Vector{Float64}(undef, length(xqs))
         hints = (Ref(1), Ref(1))
 
-        constant_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
+        constant_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
         @test hints[1][] == 10
         @test hints[2][] == 10
     end
@@ -160,7 +160,7 @@ using FastInterpolations
         out = Vector{Float64}(undef, length(xqs))
         hints = (Ref(1), Ref(1))
 
-        cubic_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
+        cubic_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
         # Last query 9.5: floor(9.5/0.5)+1 = 20, clamped to 20 (n-1=20)
         @test hints[1][] == 20
         @test hints[2][] == 20
@@ -176,7 +176,7 @@ using FastInterpolations
         out = Vector{Float64}(undef, length(xqs))
         hints = (Ref(1), Ref(1))
 
-        quadratic_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
+        quadratic_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
         @test hints[1][] == 20
         @test hints[2][] == 20
     end
@@ -194,7 +194,7 @@ using FastInterpolations
         out = Vector{Float64}(undef, length(points))
         hints = (Ref(1), Ref(1))
 
-        linear_interp!(out, (xs, ys), data, points; hint=hints)
+        linear_interp!(out, (xs, ys), data, points; hint = hints)
         # Last query: (7.5, 8.5) → ix=8, iy=9
         @test hints[1][] == 8
         @test hints[2][] == 9
@@ -212,9 +212,9 @@ using FastInterpolations
         hints = (Ref(1), Ref(1), Ref(1))
 
         val_no = linear_interp((xs, ys, zs), data, (2.5, 3.5, 1.5))
-        val_yes = linear_interp((xs, ys, zs), data, (2.5, 3.5, 1.5); hint=hints)
+        val_yes = linear_interp((xs, ys, zs), data, (2.5, 3.5, 1.5); hint = hints)
         @test val_no ≈ val_yes
-        @test val_no ≈ 7.5 atol=1e-12
+        @test val_no ≈ 7.5 atol = 1.0e-12
         @test hints[1][] == 3
         @test hints[2][] == 4
         @test hints[3][] == 2
@@ -224,12 +224,12 @@ using FastInterpolations
         xs = collect(range(0.0, 5.0, 11))
         ys = collect(range(0.0, 5.0, 11))
         zs = collect(range(0.0, 5.0, 11))
-        data = [sin(x) * cos(y) * exp(-z/5) for x in xs, y in ys, z in zs]
+        data = [sin(x) * cos(y) * exp(-z / 5) for x in xs, y in ys, z in zs]
         hints = (Ref(1), Ref(1), Ref(1))
 
         val_no = cubic_interp((xs, ys, zs), data, (2.5, 3.5, 1.5))
-        val_yes = cubic_interp((xs, ys, zs), data, (2.5, 3.5, 1.5); hint=hints)
-        @test val_no ≈ val_yes atol=1e-12
+        val_yes = cubic_interp((xs, ys, zs), data, (2.5, 3.5, 1.5); hint = hints)
+        @test val_no ≈ val_yes atol = 1.0e-12
     end
 
     @testset "3D SoA batch with hints — linear" begin
@@ -248,7 +248,7 @@ using FastInterpolations
 
         hints = (Ref(1), Ref(1), Ref(1))
         out2 = Vector{Float64}(undef, n)
-        linear_interp!(out2, (xs, ys, zs), data, (xqs, yqs, zqs); hint=hints)
+        linear_interp!(out2, (xs, ys, zs), data, (xqs, yqs, zqs); hint = hints)
 
         @test out1 ≈ out2
         # Last query (4.5, 4.5, 4.5) → interval 5 on each axis
@@ -267,9 +267,11 @@ using FastInterpolations
         data = [Float64(x + y) for x in xs, y in ys]
         hints = (Ref(1), Ref(1))
 
-        val = linear_interp((xs, ys), data, (5.5, 6.5);
-            search=FastInterpolations.LinearBinarySearch(), hint=hints)
-        @test val ≈ 12.0 atol=1e-12
+        val = linear_interp(
+            (xs, ys), data, (5.5, 6.5);
+            search = FastInterpolations.LinearBinarySearch(), hint = hints
+        )
+        @test val ≈ 12.0 atol = 1.0e-12
         @test hints[1][] == 6
         @test hints[2][] == 7
     end
@@ -287,9 +289,9 @@ using FastInterpolations
         ys = 0.0:1.0:10.0
         data = [Float64(x + y) for x in xs, y in ys]
         hints = (Ref(1), Ref(1))
-        linear_interp((xs, ys), data, (3.5, 4.5); hint=hints)
-        linear_interp((xs, ys), data, (5.5, 6.5); hint=hints)
-        @allocated linear_interp((xs, ys), data, (7.5, 8.5); hint=hints)
+        linear_interp((xs, ys), data, (3.5, 4.5); hint = hints)
+        linear_interp((xs, ys), data, (5.5, 6.5); hint = hints)
+        @allocated linear_interp((xs, ys), data, (7.5, 8.5); hint = hints)
     end
 
     function _alloc_scalar_constant_hint()
@@ -297,9 +299,9 @@ using FastInterpolations
         ys = 0.0:1.0:10.0
         data = [Float64(x + y) for x in xs, y in ys]
         hints = (Ref(1), Ref(1))
-        constant_interp((xs, ys), data, (3.5, 4.5); hint=hints)
-        constant_interp((xs, ys), data, (5.5, 6.5); hint=hints)
-        @allocated constant_interp((xs, ys), data, (7.5, 8.5); hint=hints)
+        constant_interp((xs, ys), data, (3.5, 4.5); hint = hints)
+        constant_interp((xs, ys), data, (5.5, 6.5); hint = hints)
+        @allocated constant_interp((xs, ys), data, (7.5, 8.5); hint = hints)
     end
 
     function _alloc_scalar_cubic_hint()
@@ -307,9 +309,9 @@ using FastInterpolations
         ys = collect(range(0.0, 10.0, 21))
         data = [sin(x) * cos(y) for x in xs, y in ys]
         hints = (Ref(1), Ref(1))
-        cubic_interp((xs, ys), data, (3.5, 4.5); hint=hints)
-        cubic_interp((xs, ys), data, (5.5, 6.5); hint=hints)
-        @allocated cubic_interp((xs, ys), data, (7.5, 8.5); hint=hints)
+        cubic_interp((xs, ys), data, (3.5, 4.5); hint = hints)
+        cubic_interp((xs, ys), data, (5.5, 6.5); hint = hints)
+        @allocated cubic_interp((xs, ys), data, (7.5, 8.5); hint = hints)
     end
 
     function _alloc_scalar_quadratic_hint()
@@ -317,9 +319,9 @@ using FastInterpolations
         ys = collect(range(0.0, 10.0, 21))
         data = [sin(x) * cos(y) for x in xs, y in ys]
         hints = (Ref(1), Ref(1))
-        quadratic_interp((xs, ys), data, (3.5, 4.5); hint=hints)
-        quadratic_interp((xs, ys), data, (5.5, 6.5); hint=hints)
-        @allocated quadratic_interp((xs, ys), data, (7.5, 8.5); hint=hints)
+        quadratic_interp((xs, ys), data, (3.5, 4.5); hint = hints)
+        quadratic_interp((xs, ys), data, (5.5, 6.5); hint = hints)
+        @allocated quadratic_interp((xs, ys), data, (7.5, 8.5); hint = hints)
     end
 
     @testset "Zero-alloc: scalar with hint" begin
@@ -347,9 +349,9 @@ using FastInterpolations
         yqs = collect(0.5:0.5:9.5)
         out = Vector{Float64}(undef, length(xqs))
         hints = (Ref(1), Ref(1))
-        linear_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
-        linear_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
-        @allocated linear_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
+        linear_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
+        linear_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
+        @allocated linear_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
     end
 
     function _alloc_soa_constant_hint()
@@ -360,9 +362,9 @@ using FastInterpolations
         yqs = collect(0.5:0.5:9.5)
         out = Vector{Float64}(undef, length(xqs))
         hints = (Ref(1), Ref(1))
-        constant_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
-        constant_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
-        @allocated constant_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
+        constant_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
+        constant_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
+        @allocated constant_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
     end
 
     function _alloc_soa_cubic_hint()
@@ -373,9 +375,9 @@ using FastInterpolations
         yqs = collect(range(0.5, 9.5, 19))
         out = Vector{Float64}(undef, length(xqs))
         hints = (Ref(1), Ref(1))
-        cubic_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
-        cubic_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
-        @allocated cubic_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
+        cubic_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
+        cubic_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
+        @allocated cubic_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
     end
 
     function _alloc_soa_quadratic_hint()
@@ -386,9 +388,9 @@ using FastInterpolations
         yqs = collect(range(0.5, 9.5, 19))
         out = Vector{Float64}(undef, length(xqs))
         hints = (Ref(1), Ref(1))
-        quadratic_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
-        quadratic_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
-        @allocated quadratic_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
+        quadratic_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
+        quadratic_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
+        @allocated quadratic_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
     end
 
     @testset "Zero-alloc: SoA batch with hint" begin
@@ -415,9 +417,9 @@ using FastInterpolations
         points = [(0.5, 0.5), (3.5, 4.5), (7.5, 8.5)]
         out = Vector{Float64}(undef, length(points))
         hints = (Ref(1), Ref(1))
-        linear_interp!(out, (xs, ys), data, points; hint=hints)
-        linear_interp!(out, (xs, ys), data, points; hint=hints)
-        @allocated linear_interp!(out, (xs, ys), data, points; hint=hints)
+        linear_interp!(out, (xs, ys), data, points; hint = hints)
+        linear_interp!(out, (xs, ys), data, points; hint = hints)
+        @allocated linear_interp!(out, (xs, ys), data, points; hint = hints)
     end
 
     function _alloc_aos_cubic_hint()
@@ -427,9 +429,9 @@ using FastInterpolations
         points = [(1.5, 1.5), (3.5, 4.5), (7.5, 8.5)]
         out = Vector{Float64}(undef, length(points))
         hints = (Ref(1), Ref(1))
-        cubic_interp!(out, (xs, ys), data, points; hint=hints)
-        cubic_interp!(out, (xs, ys), data, points; hint=hints)
-        @allocated cubic_interp!(out, (xs, ys), data, points; hint=hints)
+        cubic_interp!(out, (xs, ys), data, points; hint = hints)
+        cubic_interp!(out, (xs, ys), data, points; hint = hints)
+        @allocated cubic_interp!(out, (xs, ys), data, points; hint = hints)
     end
 
     @testset "Zero-alloc: AoS batch with hint" begin

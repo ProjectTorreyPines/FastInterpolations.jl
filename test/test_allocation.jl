@@ -121,7 +121,7 @@ import FastInterpolations: _get_cubic_cache
         y = sin.(2π .* x)
 
         # Create callable interpolant (pre-computes z coefficients)
-        itp = cubic_interp(x, y; autocache=false)
+        itp = cubic_interp(x, y; autocache = false)
 
         # Warmup
         itp(0.5)
@@ -289,10 +289,10 @@ import FastInterpolations: _get_cubic_cache
 
         # Callable creation (with autocache=false creates new cache)
         # Warmup
-        _ = cubic_interp(x, y; autocache=false)
+        _ = cubic_interp(x, y; autocache = false)
 
         # Measure
-        allocs = @allocated cubic_interp(x, y; autocache=false)
+        allocs = @allocated cubic_interp(x, y; autocache = false)
 
         # Should include: cache creation + z copy
         @test allocs < 15_000  # 15 KB budget
@@ -330,7 +330,7 @@ import FastInterpolations: _get_cubic_cache
         y = sin.(2π .* x)
 
         # Create callable
-        itp = cubic_interp(x, y; autocache=false)
+        itp = cubic_interp(x, y; autocache = false)
 
         # Single element broadcast
         query_points = [0.25, 0.5, 0.75]
@@ -350,7 +350,7 @@ import FastInterpolations: _get_cubic_cache
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
 
-        itp = cubic_interp(x, y; autocache=false)
+        itp = cubic_interp(x, y; autocache = false)
 
         query_points = [0.25, 0.5, 0.75]
         coef = 2.5
@@ -480,14 +480,14 @@ import FastInterpolations: _get_cubic_cache
         cubic_interp(x, y, 0.5)
 
         # Warmup with extrapolation (typed AbstractExtrap)
-        cubic_interp(x, y, -0.1; extrap=ExtendExtrap())
-        cubic_interp(x, y, 1.1; extrap=ExtendExtrap())
+        cubic_interp(x, y, -0.1; extrap = ExtendExtrap())
+        cubic_interp(x, y, 1.1; extrap = ExtendExtrap())
 
         # Extrapolation should still be zero-allocation on 1.12+
-        allocs = @allocated cubic_interp(x, y, -0.1; extrap=ExtendExtrap())
+        allocs = @allocated cubic_interp(x, y, -0.1; extrap = ExtendExtrap())
         @test allocs <= ALLOC_THRESHOLD
 
-        allocs = @allocated cubic_interp(x, y, 1.1; extrap=ExtendExtrap())
+        allocs = @allocated cubic_interp(x, y, 1.1; extrap = ExtendExtrap())
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -541,7 +541,7 @@ import FastInterpolations: _get_cubic_cache
         y[end] = y[1]  # Ensure exact periodicity
 
         # Create callable via cubic_interp (computes z coefficients)
-        itp = cubic_interp(x, y; bc=PeriodicBC(), autocache=false)
+        itp = cubic_interp(x, y; bc = PeriodicBC(), autocache = false)
 
         # Warmup
         itp(1.0)
@@ -568,7 +568,7 @@ import FastInterpolations: _get_cubic_cache
         output = similar(x_query)
 
         # Create explicit periodic cache
-        cache = CubicSplineCache(x; bc=PeriodicBC())
+        cache = CubicSplineCache(x; bc = PeriodicBC())
 
         # Warmup
         cubic_interp!(output, cache, y, x_query)
@@ -592,20 +592,20 @@ import FastInterpolations: _get_cubic_cache
         clear_cubic_cache!()
 
         # Prime periodic autocache (using typed BC API)
-        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
-        cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
+        cubic_interp!(output, x_periodic, y_periodic, x_query; bc = PeriodicBC())
+        cubic_interp!(output, x_periodic, y_periodic, x_query; bc = PeriodicBC())
 
         # Zero-Curvature BC with autocache for comparison (in-place)
         x_natural = collect(range(0.0, 1.0, 101))
         y_natural = sin.(2π .* x_natural)
         x_query_nat = [0.5]
         output_nat = similar(x_query_nat)
-        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=ZeroCurvBC())  # Prime autocache
-        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=ZeroCurvBC())  # Warmup
-        natural_allocs = @allocated cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc=ZeroCurvBC())
+        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc = ZeroCurvBC())  # Prime autocache
+        cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc = ZeroCurvBC())  # Warmup
+        natural_allocs = @allocated cubic_interp!(output_nat, x_natural, y_natural, x_query_nat; bc = ZeroCurvBC())
 
         # Periodic BC with autocache (cache hit - zero allocation)
-        periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc=PeriodicBC())
+        periodic_allocs = @allocated cubic_interp!(output, x_periodic, y_periodic, x_query; bc = PeriodicBC())
 
         # Both ZeroCurv and periodic BC should be zero-allocation with autocache
         @test natural_allocs <= ALLOC_THRESHOLD
@@ -616,7 +616,7 @@ import FastInterpolations: _get_cubic_cache
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
 
-        itp = LinearInterpolant(x, y; extrap=WrapExtrap())
+        itp = LinearInterpolant(x, y; extrap = WrapExtrap())
 
         # Warmup
         itp(1.0)
@@ -636,15 +636,15 @@ import FastInterpolations: _get_cubic_cache
         y = sin.(x)
 
         # Warmup
-        linear_interp(x, y, 1.0; extrap=WrapExtrap())
-        linear_interp(x, y, 1.0; extrap=WrapExtrap())
+        linear_interp(x, y, 1.0; extrap = WrapExtrap())
+        linear_interp(x, y, 1.0; extrap = WrapExtrap())
 
         # Linear interpolation is simple - should be zero-allocation
-        allocs = @allocated linear_interp(x, y, 1.0; extrap=WrapExtrap())
+        allocs = @allocated linear_interp(x, y, 1.0; extrap = WrapExtrap())
         @test allocs <= ALLOC_THRESHOLD
 
         # Outside domain
-        allocs = @allocated linear_interp(x, y, 7.0; extrap=WrapExtrap())
+        allocs = @allocated linear_interp(x, y, 7.0; extrap = WrapExtrap())
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -655,11 +655,11 @@ import FastInterpolations: _get_cubic_cache
         output = similar(x_query)
 
         # Warmup
-        linear_interp!(output, x, y, x_query; extrap=WrapExtrap())
-        linear_interp!(output, x, y, x_query; extrap=WrapExtrap())
+        linear_interp!(output, x, y, x_query; extrap = WrapExtrap())
+        linear_interp!(output, x, y, x_query; extrap = WrapExtrap())
 
         # In-place linear wrap - MUST be zero allocation
-        allocs = @allocated linear_interp!(output, x, y, x_query; extrap=WrapExtrap())
+        allocs = @allocated linear_interp!(output, x, y, x_query; extrap = WrapExtrap())
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -674,7 +674,7 @@ import FastInterpolations: _get_cubic_cache
         y = sin.(2π .* x)
 
         function linear_typed_extrap(mode::AbstractExtrap)
-            linear_interp(x, y, 0.5; extrap=mode)
+            linear_interp(x, y, 0.5; extrap = mode)
         end
 
         # Warmup all modes
@@ -696,7 +696,7 @@ import FastInterpolations: _get_cubic_cache
         output = similar(x_query)
 
         function linear_typed_extrap!(out, mode::AbstractExtrap)
-            linear_interp!(out, x, y, x_query; extrap=mode)
+            linear_interp!(out, x, y, x_query; extrap = mode)
         end
 
         for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
@@ -718,7 +718,7 @@ import FastInterpolations: _get_cubic_cache
         cubic_interp(x, y, 0.5)
 
         function cubic_typed_extrap(mode::AbstractExtrap)
-            cubic_interp(x, y, 0.5; extrap=mode)
+            cubic_interp(x, y, 0.5; extrap = mode)
         end
 
         for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
@@ -741,7 +741,7 @@ import FastInterpolations: _get_cubic_cache
         clear_cubic_cache!()
 
         function cubic_typed_extrap!(out, mode::AbstractExtrap)
-            cubic_interp!(out, x, y, x_query; extrap=mode)
+            cubic_interp!(out, x, y, x_query; extrap = mode)
         end
 
         for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
@@ -807,7 +807,7 @@ import FastInterpolations: _get_cubic_cache
         y = sin.(2π .* x)
 
         function linear_constextrap_fill(xq, mode::AbstractExtrap)
-            linear_interp(x, y, xq; extrap=mode)
+            linear_interp(x, y, xq; extrap = mode)
         end
 
         for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
@@ -838,7 +838,7 @@ import FastInterpolations: _get_cubic_cache
         cubic_interp(x, y, 0.5)  # prime cache
 
         function cubic_constextrap_fill(xq, mode::AbstractExtrap)
-            cubic_interp(x, y, xq; extrap=mode)
+            cubic_interp(x, y, xq; extrap = mode)
         end
 
         for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
@@ -860,9 +860,9 @@ import FastInterpolations: _get_cubic_cache
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
 
-        itp_clamp = linear_interp(x, y; extrap=ClampExtrap())
-        itp_zero = linear_interp(x, y; extrap=FillExtrap(0.0))
-        itp_nan = linear_interp(x, y; extrap=FillExtrap(NaN))
+        itp_clamp = linear_interp(x, y; extrap = ClampExtrap())
+        itp_zero = linear_interp(x, y; extrap = FillExtrap(0.0))
+        itp_nan = linear_interp(x, y; extrap = FillExtrap(NaN))
 
         function eval_itp_fill(itp, xq)
             itp(xq)
@@ -893,10 +893,10 @@ import FastInterpolations: _get_cubic_cache
         x = collect(range(0.0, 1.0, 51))
         y = sin.(2π .* x)
 
-        itp_nan = linear_interp(x, y; extrap=FillExtrap(NaN))
+        itp_nan = linear_interp(x, y; extrap = FillExtrap(NaN))
 
         function eval_deriv_fill(itp, xq)
-            itp(xq; deriv=DerivOp(1))
+            itp(xq; deriv = DerivOp(1))
         end
 
         eval_deriv_fill(itp_nan, -0.5)
@@ -912,9 +912,9 @@ import FastInterpolations: _get_cubic_cache
         s = Series(y_mat)
         out = Vector{Float64}(undef, 2)
 
-        sitp_clamp = linear_interp(x, s; extrap=ClampExtrap())
-        sitp_fill = linear_interp(x, s; extrap=FillExtrap(0.0))
-        sitp_nan = linear_interp(x, s; extrap=FillExtrap(NaN))
+        sitp_clamp = linear_interp(x, s; extrap = ClampExtrap())
+        sitp_fill = linear_interp(x, s; extrap = FillExtrap(0.0))
+        sitp_nan = linear_interp(x, s; extrap = FillExtrap(NaN))
 
         function eval_series_fill!(out, sitp, xq)
             sitp(out, xq)
@@ -954,7 +954,7 @@ import FastInterpolations: _get_cubic_cache
         data = [sin(2π * x + y) for x in xg, y in yg]
 
         function linear_nd_fill(xq, yq, mode::AbstractExtrap)
-            linear_interp((xg, yg), data, (xq, yq); extrap=mode)
+            linear_interp((xg, yg), data, (xq, yq); extrap = mode)
         end
 
         for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
@@ -982,9 +982,9 @@ import FastInterpolations: _get_cubic_cache
         yg = collect(range(0.0, 1.0, 21))
         data = [sin(2π * x + y) for x in xg, y in yg]
 
-        itp_clamp = linear_interp((xg, yg), data; extrap=ClampExtrap())
-        itp_zero = linear_interp((xg, yg), data; extrap=FillExtrap(0.0))
-        itp_nan = linear_interp((xg, yg), data; extrap=FillExtrap(NaN))
+        itp_clamp = linear_interp((xg, yg), data; extrap = ClampExtrap())
+        itp_zero = linear_interp((xg, yg), data; extrap = FillExtrap(0.0))
+        itp_nan = linear_interp((xg, yg), data; extrap = FillExtrap(NaN))
 
         function eval_nd_itp(itp, xq, yq)
             itp((xq, yq))
@@ -1016,7 +1016,7 @@ import FastInterpolations: _get_cubic_cache
         data = [sin(2π * x + y) for x in xg, y in yg]
 
         function cubic_nd_fill(xq, yq, mode::AbstractExtrap)
-            cubic_interp((xg, yg), data, (xq, yq); extrap=mode)
+            cubic_interp((xg, yg), data, (xq, yq); extrap = mode)
         end
 
         for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
@@ -1045,7 +1045,7 @@ import FastInterpolations: _get_cubic_cache
         data = [sin(2π * x + y) for x in xg, y in yg]
 
         function quadratic_nd_fill(xq, yq, mode::AbstractExtrap)
-            quadratic_interp((xg, yg), data, (xq, yq); extrap=mode)
+            quadratic_interp((xg, yg), data, (xq, yq); extrap = mode)
         end
 
         for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
@@ -1074,7 +1074,7 @@ import FastInterpolations: _get_cubic_cache
         data = [sin(2π * x + y) for x in xg, y in yg]
 
         function constant_nd_fill(xq, yq, mode::AbstractExtrap)
-            constant_interp((xg, yg), data, (xq, yq); extrap=mode)
+            constant_interp((xg, yg), data, (xq, yq); extrap = mode)
         end
 
         for mode in (ClampExtrap(), FillExtrap(0.0), FillExtrap(NaN))
@@ -1104,8 +1104,10 @@ import FastInterpolations: _get_cubic_cache
 
         # Fill on x-axis, clamp on y-axis
         function linear_nd_mixed(xq, yq)
-            linear_interp((xg, yg), data, (xq, yq);
-                          extrap=(FillExtrap(NaN), ClampExtrap()))
+            linear_interp(
+                (xg, yg), data, (xq, yq);
+                extrap = (FillExtrap(NaN), ClampExtrap())
+            )
         end
 
         linear_nd_mixed(0.5, 0.5)
@@ -1127,7 +1129,7 @@ import FastInterpolations: _get_cubic_cache
         y = sin.(2π .* x)
 
         function itp_typed_extrap(mode::AbstractExtrap)
-            LinearInterpolant(x, y; extrap=mode)
+            LinearInterpolant(x, y; extrap = mode)
         end
 
         for mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
@@ -1162,7 +1164,7 @@ import FastInterpolations: _get_cubic_cache
 
         # Function simulating dynamic BC values in a loop
         function interp_with_dynamic_bc(left_curv::Float64, right_slope::Float64)
-            cubic_interp(x, y, xi; bc=BCPair(Deriv2(left_curv), Deriv1(right_slope)))
+            cubic_interp(x, y, xi; bc = BCPair(Deriv2(left_curv), Deriv1(right_slope)))
         end
 
         # Prime cache (first call creates cache entry for Deriv2-Deriv1 type combination)
@@ -1194,7 +1196,7 @@ import FastInterpolations: _get_cubic_cache
 
         # Function simulating dynamic BC values in a loop (in-place version)
         function interp_inplace_dynamic_bc!(out, left_curv::Float64, right_slope::Float64)
-            cubic_interp!(out, x, y, x_query; bc=BCPair(Deriv2(left_curv), Deriv1(right_slope)))
+            cubic_interp!(out, x, y, x_query; bc = BCPair(Deriv2(left_curv), Deriv1(right_slope)))
         end
 
         # Prime cache
@@ -1226,7 +1228,7 @@ import FastInterpolations: _get_cubic_cache
             for i in 1:n
                 left_curv = sin(Float64(i) * 0.1)
                 right_slope = cos(Float64(i) * 0.1)
-                result += cubic_interp(x, y, xi; bc=BCPair(Deriv2(left_curv), Deriv1(right_slope)))
+                result += cubic_interp(x, y, xi; bc = BCPair(Deriv2(left_curv), Deriv1(right_slope)))
             end
             return result
         end
@@ -1251,7 +1253,7 @@ import FastInterpolations: _get_cubic_cache
 
         # Symmetric BC: Deriv2 at both ends with different values
         function interp_symmetric_d2(left_curv::Float64, right_curv::Float64)
-            cubic_interp(x, y, xi; bc=BCPair(Deriv2(left_curv), Deriv2(right_curv)))
+            cubic_interp(x, y, xi; bc = BCPair(Deriv2(left_curv), Deriv2(right_curv)))
         end
 
         # Prime cache
@@ -1279,7 +1281,7 @@ import FastInterpolations: _get_cubic_cache
 
         # Symmetric BC: Deriv1 at both ends with different values
         function interp_symmetric_d1(left_slope::Float64, right_slope::Float64)
-            cubic_interp(x, y, xi; bc=BCPair(Deriv1(left_slope), Deriv1(right_slope)))
+            cubic_interp(x, y, xi; bc = BCPair(Deriv1(left_slope), Deriv1(right_slope)))
         end
 
         # Prime cache
@@ -1306,7 +1308,7 @@ import FastInterpolations: _get_cubic_cache
         clear_cubic_cache!()
 
         function interp_f32_dynamic_bc(left_curv::Float32, right_slope::Float32)
-            cubic_interp(x, y, xi; bc=BCPair(Deriv2(left_curv), Deriv1(right_slope)))
+            cubic_interp(x, y, xi; bc = BCPair(Deriv2(left_curv), Deriv1(right_slope)))
         end
 
         # Prime cache
@@ -1417,14 +1419,14 @@ import FastInterpolations: _get_cubic_cache
             y[end] = y[1]  # Ensure exact periodicity
 
             # Prime periodic cache
-            cubic_interp(x, y, 1.0; bc=PeriodicBC())
+            cubic_interp(x, y, 1.0; bc = PeriodicBC())
 
             # Warmup
-            cubic_interp(x, y, 1.0; bc=PeriodicBC())
-            cubic_interp(x, y, 1.0; bc=PeriodicBC())
+            cubic_interp(x, y, 1.0; bc = PeriodicBC())
+            cubic_interp(x, y, 1.0; bc = PeriodicBC())
 
             # Periodic BC Range cache hit
-            allocs = @allocated cubic_interp(x, y, 1.0; bc=PeriodicBC())
+            allocs = @allocated cubic_interp(x, y, 1.0; bc = PeriodicBC())
             @test allocs <= ALLOC_THRESHOLD
         end
 

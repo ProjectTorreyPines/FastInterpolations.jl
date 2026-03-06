@@ -9,8 +9,8 @@ using FastInterpolations
 # Tolerance constants for numerical comparisons
 # rtol: relative tolerance (scale-independent, good for most cases)
 # atol: absolute tolerance (needed when values can be near zero)
-const RTOL = 1e-14
-const ATOL = 1e-14
+const RTOL = 1.0e-14
+const ATOL = 1.0e-14
 
 @testset "Generic Boundary Conditions" begin
 
@@ -198,23 +198,23 @@ const ATOL = 1e-14
         xi = 0.5
 
         # ZeroCurvBC() == Deriv2(0), Deriv2(0)
-        r_natural = cubic_interp(x, y, xi; bc=ZeroCurvBC())
-        r_d2_zero = cubic_interp(x, y, xi; bc=BCPair(Deriv2(0.0), Deriv2(0.0)))
-        @test r_natural ≈ r_d2_zero rtol=RTOL atol=ATOL
+        r_natural = cubic_interp(x, y, xi; bc = ZeroCurvBC())
+        r_d2_zero = cubic_interp(x, y, xi; bc = BCPair(Deriv2(0.0), Deriv2(0.0)))
+        @test r_natural ≈ r_d2_zero rtol = RTOL atol = ATOL
 
         # ZeroSlopeBC() == Deriv1(0), Deriv1(0)
-        r_clamped = cubic_interp(x, y, xi; bc=ZeroSlopeBC())
-        r_d1_zero = cubic_interp(x, y, xi; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
-        @test r_clamped ≈ r_d1_zero rtol=RTOL atol=ATOL
+        r_clamped = cubic_interp(x, y, xi; bc = ZeroSlopeBC())
+        r_d1_zero = cubic_interp(x, y, xi; bc = BCPair(Deriv1(0.0), Deriv1(0.0)))
+        @test r_clamped ≈ r_d1_zero rtol = RTOL atol = ATOL
 
         # Single Deriv1/Deriv2 should apply to both ends
-        r_single_d1 = cubic_interp(x, y, xi; bc=Deriv1(0.5))
-        r_bcpair_d1 = cubic_interp(x, y, xi; bc=BCPair(Deriv1(0.5), Deriv1(0.5)))
-        @test r_single_d1 ≈ r_bcpair_d1 rtol=RTOL atol=ATOL
+        r_single_d1 = cubic_interp(x, y, xi; bc = Deriv1(0.5))
+        r_bcpair_d1 = cubic_interp(x, y, xi; bc = BCPair(Deriv1(0.5), Deriv1(0.5)))
+        @test r_single_d1 ≈ r_bcpair_d1 rtol = RTOL atol = ATOL
 
-        r_single_d2 = cubic_interp(x, y, xi; bc=Deriv2(1.0))
-        r_bcpair_d2 = cubic_interp(x, y, xi; bc=BCPair(Deriv2(1.0), Deriv2(1.0)))
-        @test r_single_d2 ≈ r_bcpair_d2 rtol=RTOL atol=ATOL
+        r_single_d2 = cubic_interp(x, y, xi; bc = Deriv2(1.0))
+        r_bcpair_d2 = cubic_interp(x, y, xi; bc = BCPair(Deriv2(1.0), Deriv2(1.0)))
+        @test r_single_d2 ≈ r_bcpair_d2 rtol = RTOL atol = ATOL
     end
 
     @testset "Different BC Values Give Different Results" begin
@@ -224,18 +224,18 @@ const ATOL = 1e-14
         xi = 0.15
 
         # Deriv1 with different values
-        r1 = cubic_interp(x, y, xi; bc=Deriv1(0.0))
-        r2 = cubic_interp(x, y, xi; bc=Deriv1(5.0))
+        r1 = cubic_interp(x, y, xi; bc = Deriv1(0.0))
+        r2 = cubic_interp(x, y, xi; bc = Deriv1(5.0))
         @test r1 != r2
 
         # Deriv2 with different values
-        r3 = cubic_interp(x, y, xi; bc=Deriv2(0.0))
-        r4 = cubic_interp(x, y, xi; bc=Deriv2(-20.0))
+        r3 = cubic_interp(x, y, xi; bc = Deriv2(0.0))
+        r4 = cubic_interp(x, y, xi; bc = Deriv2(-20.0))
         @test r3 != r4
 
         # Mixed BC
-        r5 = cubic_interp(x, y, xi; bc=BCPair(Deriv1(0.0), Deriv2(0.0)))
-        r6 = cubic_interp(x, y, xi; bc=BCPair(Deriv1(5.0), Deriv2(0.0)))
+        r5 = cubic_interp(x, y, xi; bc = BCPair(Deriv1(0.0), Deriv2(0.0)))
+        r6 = cubic_interp(x, y, xi; bc = BCPair(Deriv1(5.0), Deriv2(0.0)))
         @test r5 != r6
     end
 
@@ -249,8 +249,8 @@ const ATOL = 1e-14
         # f'(x) = 4x - 3
         # f''(x) = 4
         a, b, c = 2.0, -3.0, 1.0
-        f(x) = a*x^2 + b*x + c
-        f_prime(x) = 2a*x + b
+        f(x) = a * x^2 + b * x + c
+        f_prime(x) = 2a * x + b
         f_double_prime = 2a
 
         x = range(0.0, 2.0, 21)
@@ -262,34 +262,34 @@ const ATOL = 1e-14
         @testset "Deriv2, Deriv2 (second derivative BC)" begin
             # Provide exact second derivatives at both ends
             bc = BCPair(Deriv2(f_double_prime), Deriv2(f_double_prime))
-            result = cubic_interp(x, y, xi; bc=bc)
+            result = cubic_interp(x, y, xi; bc = bc)
             expected = f.(xi)
-            @test result ≈ expected rtol=RTOL atol=ATOL
+            @test result ≈ expected rtol = RTOL atol = ATOL
         end
 
         @testset "Deriv1, Deriv1 (first derivative BC)" begin
             # Provide exact first derivatives at endpoints
             x0, xn = first(x), last(x)
             bc = BCPair(Deriv1(f_prime(x0)), Deriv1(f_prime(xn)))
-            result = cubic_interp(x, y, xi; bc=bc)
+            result = cubic_interp(x, y, xi; bc = bc)
             expected = f.(xi)
-            @test result ≈ expected rtol=RTOL atol=ATOL
+            @test result ≈ expected rtol = RTOL atol = ATOL
         end
 
         @testset "Deriv1, Deriv2 (mixed BC)" begin
             x0, xn = first(x), last(x)
             bc = BCPair(Deriv1(f_prime(x0)), Deriv2(f_double_prime))
-            result = cubic_interp(x, y, xi; bc=bc)
+            result = cubic_interp(x, y, xi; bc = bc)
             expected = f.(xi)
-            @test result ≈ expected rtol=RTOL atol=ATOL
+            @test result ≈ expected rtol = RTOL atol = ATOL
         end
 
         @testset "Deriv2, Deriv1 (mixed BC reversed)" begin
             x0, xn = first(x), last(x)
             bc = BCPair(Deriv2(f_double_prime), Deriv1(f_prime(xn)))
-            result = cubic_interp(x, y, xi; bc=bc)
+            result = cubic_interp(x, y, xi; bc = bc)
             expected = f.(xi)
-            @test result ≈ expected rtol=RTOL atol=ATOL
+            @test result ≈ expected rtol = RTOL atol = ATOL
         end
     end
 
@@ -298,9 +298,9 @@ const ATOL = 1e-14
         # f'(x) = 3x² - 4x + 1
         # f''(x) = 6x - 4
         a, b, c, d = 1.0, -2.0, 1.0, -1.0
-        f(x) = a*x^3 + b*x^2 + c*x + d
-        f_prime(x) = 3a*x^2 + 2b*x + c
-        f_double_prime(x) = 6a*x + 2b
+        f(x) = a * x^3 + b * x^2 + c * x + d
+        f_prime(x) = 3a * x^2 + 2b * x + c
+        f_double_prime(x) = 6a * x + 2b
 
         x = range(-1.0, 2.0, 31)
         y = f.(x)
@@ -310,23 +310,23 @@ const ATOL = 1e-14
 
         @testset "Deriv1, Deriv1 (first derivative BC)" begin
             bc = BCPair(Deriv1(f_prime(x0)), Deriv1(f_prime(xn)))
-            result = cubic_interp(x, y, xi; bc=bc)
+            result = cubic_interp(x, y, xi; bc = bc)
             expected = f.(xi)
-            @test result ≈ expected rtol=RTOL atol=ATOL
+            @test result ≈ expected rtol = RTOL atol = ATOL
         end
 
         @testset "Deriv2, Deriv2 (second derivative BC)" begin
             bc = BCPair(Deriv2(f_double_prime(x0)), Deriv2(f_double_prime(xn)))
-            result = cubic_interp(x, y, xi; bc=bc)
+            result = cubic_interp(x, y, xi; bc = bc)
             expected = f.(xi)
-            @test result ≈ expected rtol=RTOL atol=ATOL
+            @test result ≈ expected rtol = RTOL atol = ATOL
         end
 
         @testset "Deriv1, Deriv2 (mixed BC)" begin
             bc = BCPair(Deriv1(f_prime(x0)), Deriv2(f_double_prime(xn)))
-            result = cubic_interp(x, y, xi; bc=bc)
+            result = cubic_interp(x, y, xi; bc = bc)
             expected = f.(xi)
-            @test result ≈ expected rtol=RTOL atol=ATOL
+            @test result ≈ expected rtol = RTOL atol = ATOL
         end
 
         # Deriv3 tests: f'''(x) = 6a (constant for cubic polynomial)
@@ -335,44 +335,44 @@ const ATOL = 1e-14
         @testset "Deriv3, Deriv3 (third derivative BC)" begin
             # Third derivative is constant for cubic polynomial
             bc = BCPair(Deriv3(f_triple_prime), Deriv3(f_triple_prime))
-            result = cubic_interp(x, y, xi; bc=bc)
+            result = cubic_interp(x, y, xi; bc = bc)
             expected = f.(xi)
-            @test result ≈ expected rtol=RTOL atol=ATOL
+            @test result ≈ expected rtol = RTOL atol = ATOL
         end
 
         @testset "Deriv3, Deriv1 (mixed BC)" begin
             bc = BCPair(Deriv3(f_triple_prime), Deriv1(f_prime(xn)))
-            result = cubic_interp(x, y, xi; bc=bc)
+            result = cubic_interp(x, y, xi; bc = bc)
             expected = f.(xi)
-            @test result ≈ expected rtol=RTOL atol=ATOL
+            @test result ≈ expected rtol = RTOL atol = ATOL
         end
 
         @testset "Deriv1, Deriv3 (mixed BC)" begin
             bc = BCPair(Deriv1(f_prime(x0)), Deriv3(f_triple_prime))
-            result = cubic_interp(x, y, xi; bc=bc)
+            result = cubic_interp(x, y, xi; bc = bc)
             expected = f.(xi)
-            @test result ≈ expected rtol=RTOL atol=ATOL
+            @test result ≈ expected rtol = RTOL atol = ATOL
         end
 
         @testset "Deriv3, Deriv2 (mixed BC)" begin
             bc = BCPair(Deriv3(f_triple_prime), Deriv2(f_double_prime(xn)))
-            result = cubic_interp(x, y, xi; bc=bc)
+            result = cubic_interp(x, y, xi; bc = bc)
             expected = f.(xi)
-            @test result ≈ expected rtol=RTOL atol=ATOL
+            @test result ≈ expected rtol = RTOL atol = ATOL
         end
 
         @testset "Deriv2, Deriv3 (mixed BC)" begin
             bc = BCPair(Deriv2(f_double_prime(x0)), Deriv3(f_triple_prime))
-            result = cubic_interp(x, y, xi; bc=bc)
+            result = cubic_interp(x, y, xi; bc = bc)
             expected = f.(xi)
-            @test result ≈ expected rtol=RTOL atol=ATOL
+            @test result ≈ expected rtol = RTOL atol = ATOL
         end
     end
 
     @testset "Linear Function: y = mx + b" begin
         # Linear functions should be exact with any BC
         slope, intercept = 2.5, -1.0
-        g(x) = slope*x + intercept
+        g(x) = slope * x + intercept
 
         x = range(0.0, 3.0, 11)
         y = g.(x)
@@ -380,14 +380,14 @@ const ATOL = 1e-14
         xi = [0.3, 1.5, 2.7]
         expected = g.(xi)
 
-        @test cubic_interp(x, y, xi; bc=ZeroCurvBC()) ≈ expected rtol=RTOL atol=ATOL
-        @test cubic_interp(x, y, xi; bc=ZeroSlopeBC()) ≈ expected rtol=RTOL atol=ATOL
-        @test cubic_interp(x, y, xi; bc=BCPair(Deriv1(slope), Deriv1(slope))) ≈ expected rtol=RTOL atol=ATOL
-        @test cubic_interp(x, y, xi; bc=BCPair(Deriv2(0.0), Deriv2(0.0))) ≈ expected rtol=RTOL atol=ATOL
-        @test cubic_interp(x, y, xi; bc=BCPair(Deriv1(slope), Deriv2(0.0))) ≈ expected rtol=RTOL atol=ATOL
+        @test cubic_interp(x, y, xi; bc = ZeroCurvBC()) ≈ expected rtol = RTOL atol = ATOL
+        @test cubic_interp(x, y, xi; bc = ZeroSlopeBC()) ≈ expected rtol = RTOL atol = ATOL
+        @test cubic_interp(x, y, xi; bc = BCPair(Deriv1(slope), Deriv1(slope))) ≈ expected rtol = RTOL atol = ATOL
+        @test cubic_interp(x, y, xi; bc = BCPair(Deriv2(0.0), Deriv2(0.0))) ≈ expected rtol = RTOL atol = ATOL
+        @test cubic_interp(x, y, xi; bc = BCPair(Deriv1(slope), Deriv2(0.0))) ≈ expected rtol = RTOL atol = ATOL
         # Deriv3(0) for linear: f'''(x) = 0
-        @test cubic_interp(x, y, xi; bc=Deriv3(0.0)) ≈ expected rtol=RTOL atol=ATOL
-        @test cubic_interp(x, y, xi; bc=BCPair(Deriv3(0.0), Deriv1(slope))) ≈ expected rtol=RTOL atol=ATOL
+        @test cubic_interp(x, y, xi; bc = Deriv3(0.0)) ≈ expected rtol = RTOL atol = ATOL
+        @test cubic_interp(x, y, xi; bc = BCPair(Deriv3(0.0), Deriv1(slope))) ≈ expected rtol = RTOL atol = ATOL
     end
 
     # ========================================
@@ -398,13 +398,13 @@ const ATOL = 1e-14
         y = sin.(π .* x)
 
         # Create cache with Deriv1 BC
-        cache_d1 = CubicSplineCache(x; bc=Deriv1(0.5))
+        cache_d1 = CubicSplineCache(x; bc = Deriv1(0.5))
         @test cache_d1 isa CubicSplineCache
         result_d1 = cubic_interp(cache_d1, y, 0.5)
         @test isfinite(result_d1)
 
         # Create cache with BCPair
-        cache_mixed = CubicSplineCache(x; bc=BCPair(Deriv1(1.0), Deriv2(0.0)))
+        cache_mixed = CubicSplineCache(x; bc = BCPair(Deriv1(1.0), Deriv2(0.0)))
         @test cache_mixed isa CubicSplineCache
         result_mixed = cubic_interp(cache_mixed, y, 0.5)
         @test isfinite(result_mixed)
@@ -416,13 +416,13 @@ const ATOL = 1e-14
         @test result1 != result2  # Different y should give different results
 
         # Create cache with Deriv3 BC
-        cache_d3 = CubicSplineCache(x; bc=Deriv3(0.0))
+        cache_d3 = CubicSplineCache(x; bc = Deriv3(0.0))
         @test cache_d3 isa CubicSplineCache
         result_d3 = cubic_interp(cache_d3, y, 0.5)
         @test isfinite(result_d3)
 
         # Create cache with mixed Deriv3 BC
-        cache_d3_mixed = CubicSplineCache(x; bc=BCPair(Deriv3(1.0), Deriv2(0.0)))
+        cache_d3_mixed = CubicSplineCache(x; bc = BCPair(Deriv3(1.0), Deriv2(0.0)))
         @test cache_d3_mixed isa CubicSplineCache
 
         # In-place API with Deriv3 cache
@@ -440,12 +440,12 @@ const ATOL = 1e-14
         y = sin.(π .* x)
 
         # Create interpolant with Deriv1 BC
-        itp_d1 = cubic_interp(x, y; bc=Deriv1(0.0))
+        itp_d1 = cubic_interp(x, y; bc = Deriv1(0.0))
         @test itp_d1 isa CubicInterpolant
         @test isfinite(itp_d1(0.5))
 
         # Create interpolant with mixed BC
-        itp_mixed = cubic_interp(x, y; bc=BCPair(Deriv1(π), Deriv2(0.0)))
+        itp_mixed = cubic_interp(x, y; bc = BCPair(Deriv1(π), Deriv2(0.0)))
         @test itp_mixed isa CubicInterpolant
         @test isfinite(itp_mixed(0.5))
 
@@ -464,12 +464,12 @@ const ATOL = 1e-14
         y = sin.(π .* x)
 
         # Deriv1/Deriv2 with Float32
-        result = cubic_interp(x, y, 0.5f0; bc=BCPair(Deriv1(0.0f0), Deriv2(0.0f0)))
+        result = cubic_interp(x, y, 0.5f0; bc = BCPair(Deriv1(0.0f0), Deriv2(0.0f0)))
         @test result isa Float32
         @test isfinite(result)
 
         # Cache with Float32
-        cache = CubicSplineCache(x; bc=Deriv1(0.5f0))
+        cache = CubicSplineCache(x; bc = Deriv1(0.5f0))
         @test eltype(cache.x) == Float32
     end
 
@@ -481,17 +481,17 @@ const ATOL = 1e-14
         y = sin.(π .* x)
 
         # Query at grid points should be exact
-        @test cubic_interp(x, y, 0.0; bc=Deriv1(0.0)) ≈ y[1] rtol=RTOL atol=ATOL
-        @test cubic_interp(x, y, 1.0; bc=Deriv1(0.0)) ≈ y[end] rtol=RTOL atol=ATOL
+        @test cubic_interp(x, y, 0.0; bc = Deriv1(0.0)) ≈ y[1] rtol = RTOL atol = ATOL
+        @test cubic_interp(x, y, 1.0; bc = Deriv1(0.0)) ≈ y[end] rtol = RTOL atol = ATOL
 
         # Vector query
-        result = cubic_interp(x, y, [0.25, 0.5, 0.75]; bc=BCPair(Deriv1(0.5), Deriv2(-1.0)))
+        result = cubic_interp(x, y, [0.25, 0.5, 0.75]; bc = BCPair(Deriv1(0.5), Deriv2(-1.0)))
         @test length(result) == 3
         @test all(isfinite, result)
 
         # In-place version
         output = zeros(3)
-        cubic_interp!(output, collect(x), collect(y), [0.25, 0.5, 0.75]; bc=Deriv1(0.0))
+        cubic_interp!(output, collect(x), collect(y), [0.25, 0.5, 0.75]; bc = Deriv1(0.0))
         @test all(isfinite, output)
     end
 
@@ -500,10 +500,10 @@ const ATOL = 1e-14
     # ========================================
     @testset "CubicSeriesInterpolant with Deriv3" begin
         x = 0.0:0.25:1.0
-        Y = [sin.(π .* x) cos.(π .* x) x.^2]
+        Y = [sin.(π .* x) cos.(π .* x) x .^ 2]
 
         # Series interpolant with Deriv3 BC
-        itp = cubic_interp(x, Series(Y); bc=Deriv3(0.0))
+        itp = cubic_interp(x, Series(Y); bc = Deriv3(0.0))
         @test itp isa CubicSeriesInterpolant
 
         # Should work for all series
@@ -511,7 +511,7 @@ const ATOL = 1e-14
         @test all(isfinite, itp(0.5))
 
         # With mixed BC
-        itp_mixed = cubic_interp(x, Series(Y); bc=BCPair(Deriv3(0.0), Deriv1(0.0)))
+        itp_mixed = cubic_interp(x, Series(Y); bc = BCPair(Deriv3(0.0), Deriv1(0.0)))
         @test itp_mixed isa CubicSeriesInterpolant
         @test all(isfinite, itp_mixed(0.5))
     end

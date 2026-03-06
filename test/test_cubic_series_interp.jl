@@ -41,16 +41,16 @@ using FastInterpolations: _ensure_point_layout!
 end
 
 @testset "CubicSeriesInterpolant - trait implementations" begin
-        FI = FastInterpolations
+    FI = FastInterpolations
 
-        x = collect(0.0:0.1:1.0)
-        sitp = cubic_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
+    x = collect(0.0:0.1:1.0)
+    sitp = cubic_interp(x, Series(sin.(2π .* x), cos.(2π .* x)))
 
-        @test FI.n_series(sitp) == 2
-        @test FI._get_grid(sitp) ≈ x
-        @test FI._get_extrap(sitp) isa FI.AbstractExtrap
-        @test FI._should_wrap(sitp) == false
-        @test FI._method_kind(typeof(sitp)) === Val(:cubic)
+    @test FI.n_series(sitp) == 2
+    @test FI._get_grid(sitp) ≈ x
+    @test FI._get_extrap(sitp) isa FI.AbstractExtrap
+    @test FI._should_wrap(sitp) == false
+    @test FI._method_kind(typeof(sitp)) === Val(:cubic)
 end
 
 @testset "CubicSeriesInterpolant - Unified Struct Fields" begin
@@ -95,9 +95,9 @@ end
         itp2 = cubic_interp(x, y2)
         itp3 = cubic_interp(x, y3)
 
-        @test mitp.z[:, 1] ≈ itp1.z rtol=1e-12
-        @test mitp.z[:, 2] ≈ itp2.z rtol=1e-12
-        @test mitp.z[:, 3] ≈ itp3.z rtol=1e-12
+        @test mitp.z[:, 1] ≈ itp1.z rtol = 1.0e-12
+        @test mitp.z[:, 2] ≈ itp2.z rtol = 1.0e-12
+        @test mitp.z[:, 3] ≈ itp3.z rtol = 1.0e-12
     end
 
     @testset "Cache is CubicSplineCache" begin
@@ -105,10 +105,10 @@ end
     end
 
     @testset "Extrap is AbstractExtrap type" begin
-        mitp_ext = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
+        mitp_ext = cubic_interp(x, Series(y1, y2); extrap = ExtendExtrap())
         @test mitp_ext.extrap === ExtendExtrap()
 
-        mitp_const = cubic_interp(x, Series(y1, y2); extrap=ClampExtrap())
+        mitp_const = cubic_interp(x, Series(y1, y2); extrap = ClampExtrap())
         @test mitp_const.extrap === ClampExtrap()
     end
 end
@@ -150,8 +150,8 @@ end
 
     @testset "Float32 type parameter" begin
         x32 = Float32.(collect(range(0.0f0, 1.0f0, 101)))
-        y1_32 = sin.(2f0 * Float32(π) .* x32)
-        y2_32 = cos.(2f0 * Float32(π) .* x32)
+        y1_32 = sin.(2.0f0 * Float32(π) .* x32)
+        y2_32 = cos.(2.0f0 * Float32(π) .* x32)
 
         mitp32 = cubic_interp(x32, Series(y1_32, y2_32))
         @test mitp32 isa FI.CubicSeriesInterpolant{Float32}
@@ -170,7 +170,7 @@ end
     y2 = cos.(2π .* x)
 
     @testset "precompute_transpose option" begin
-        mitp = cubic_interp(x, Series(y1, y2); precompute_transpose=true)
+        mitp = cubic_interp(x, Series(y1, y2); precompute_transpose = true)
 
         # _transpose should be populated immediately
         snap = FI._get_snapshot(mitp._transpose)
@@ -202,11 +202,11 @@ end
         y_periodic = sin.(2π .* x)
         y_periodic[end] = y_periodic[1]  # Ensure exact periodicity
 
-        mitp = cubic_interp(x, Series(y_periodic); bc=PeriodicBC(), extrap=NoExtrap())
+        mitp = cubic_interp(x, Series(y_periodic); bc = PeriodicBC(), extrap = NoExtrap())
         @test mitp.extrap === WrapExtrap()
 
         # Even if user requests :extension, periodic BC should override to :wrap
-        mitp2 = cubic_interp(x, Series(y_periodic); bc=PeriodicBC(), extrap=ExtendExtrap())
+        mitp2 = cubic_interp(x, Series(y_periodic); bc = PeriodicBC(), extrap = ExtendExtrap())
         @test mitp2.extrap === WrapExtrap()
     end
 end
@@ -226,8 +226,8 @@ end
         mitp = cubic_interp(x, Series(y1, y2))
         for (i, xi) in enumerate(x)
             vals = mitp(xi)
-            @test vals[1] ≈ y1[i] atol=1e-14
-            @test vals[2] ≈ y2[i] atol=1e-14
+            @test vals[1] ≈ y1[i] atol = 1.0e-14
+            @test vals[2] ≈ y2[i] atol = 1.0e-14
         end
     end
 
@@ -260,7 +260,7 @@ end
     end
 
     @testset "Scalar zero-alloc after precompute" begin
-        mitp = cubic_interp(x, Series(y1, y2); precompute_transpose=true)
+        mitp = cubic_interp(x, Series(y1, y2); precompute_transpose = true)
         out = zeros(2)
         mitp(out, 0.5)  # Warmup
 
@@ -270,7 +270,7 @@ end
 
     @testset "Invalid deriv=4 throws" begin
         mitp = cubic_interp(x, Series(y1))
-        @test_throws TypeError mitp(0.5; deriv=4)
+        @test_throws TypeError mitp(0.5; deriv = 4)
     end
 end
 
@@ -292,8 +292,8 @@ end
 
         for (j, xq) in enumerate(xq_vec)
             scalar_result = mitp(xq)
-            @test outputs[1][j] ≈ scalar_result[1] atol=1e-14
-            @test outputs[2][j] ≈ scalar_result[2] atol=1e-14
+            @test outputs[1][j] ≈ scalar_result[1] atol = 1.0e-14
+            @test outputs[2][j] ≈ scalar_result[2] atol = 1.0e-14
         end
     end
 
@@ -316,28 +316,28 @@ end
         mitp(outputs1, aq_vec)
         mitp(outputs2, aq_vec)
 
-        @test outputs1[1] ≈ outputs2[1] atol=1e-14
-        @test outputs1[2] ≈ outputs2[2] atol=1e-14
+        @test outputs1[1] ≈ outputs2[1] atol = 1.0e-14
+        @test outputs1[2] ≈ outputs2[2] atol = 1.0e-14
     end
 
     @testset "Finite difference derivative verification" begin
         y_poly = x .^ 3 .- 2 .* x .^ 2 .+ x
         mitp = cubic_interp(x, Series(y_poly))
         xq = 0.4
-        h = 1e-6
+        h = 1.0e-6
 
         fd1 = (mitp(xq + h) .- mitp(xq - h)) ./ (2h)
-        d1 = mitp(xq; deriv=DerivOp(1))
-        @test d1 ≈ fd1 atol=1e-5
+        d1 = mitp(xq; deriv = DerivOp(1))
+        @test d1 ≈ fd1 atol = 1.0e-5
     end
 
     @testset "Derivatives with all BC types" begin
         for bc in [ZeroCurvBC(), ZeroSlopeBC()]
-            mitp = cubic_interp(x, Series(y1, y2); bc=bc)
-            itp1 = cubic_interp(x, y1; bc=bc)
+            mitp = cubic_interp(x, Series(y1, y2); bc = bc)
+            itp1 = cubic_interp(x, y1; bc = bc)
 
-            d1_multi = mitp(0.5; deriv=DerivOp(1))
-            @test d1_multi[1] ≈ itp1(0.5; deriv=DerivOp(1)) atol=1e-14
+            d1_multi = mitp(0.5; deriv = DerivOp(1))
+            @test d1_multi[1] ≈ itp1(0.5; deriv = DerivOp(1)) atol = 1.0e-14
         end
 
         # PeriodicBC requires matching endpoints
@@ -345,11 +345,11 @@ end
         y2_periodic = cos.(2π .* x)
         y1_periodic[end] = y1_periodic[1]
         y2_periodic[end] = y2_periodic[1]
-        mitp_periodic = cubic_interp(x, Series(y1_periodic, y2_periodic); bc=PeriodicBC())
-        itp1_periodic = cubic_interp(x, y1_periodic; bc=PeriodicBC())
+        mitp_periodic = cubic_interp(x, Series(y1_periodic, y2_periodic); bc = PeriodicBC())
+        itp1_periodic = cubic_interp(x, y1_periodic; bc = PeriodicBC())
 
-        d1_multi = mitp_periodic(0.5; deriv=DerivOp(1))
-        @test d1_multi[1] ≈ itp1_periodic(0.5; deriv=DerivOp(1)) atol=1e-14
+        d1_multi = mitp_periodic(0.5; deriv = DerivOp(1))
+        @test d1_multi[1] ≈ itp1_periodic(0.5; deriv = DerivOp(1)) atol = 1.0e-14
     end
 end
 
@@ -386,11 +386,11 @@ end
     end
 
     @testset "Scalar deriv=DerivOp(1) zero-alloc" begin
-        mitp = cubic_interp(x, Series(y1, y2); precompute_transpose=true)
+        mitp = cubic_interp(x, Series(y1, y2); precompute_transpose = true)
         out = zeros(2)
-        mitp(out, 0.5; deriv=DerivOp(1))  # Warmup
+        mitp(out, 0.5; deriv = DerivOp(1))  # Warmup
 
-        allocs = @allocated mitp(out, 0.5; deriv=DerivOp(1))
+        allocs = @allocated mitp(out, 0.5; deriv = DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -399,10 +399,10 @@ end
         xq = collect(range(0.1, 0.9, 100))
         outputs = [zeros(100) for _ in 1:2]
 
-        mitp(outputs, xq; deriv=DerivOp(1))  # Warmup × 2
-        mitp(outputs, xq; deriv=DerivOp(1))
+        mitp(outputs, xq; deriv = DerivOp(1))  # Warmup × 2
+        mitp(outputs, xq; deriv = DerivOp(1))
 
-        allocs = @allocated mitp(outputs, xq; deriv=DerivOp(1))
+        allocs = @allocated mitp(outputs, xq; deriv = DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 end
@@ -441,7 +441,7 @@ end
         y_periodic2 = cos.(2π .* x)
         y_periodic2[end] = y_periodic2[1]
 
-        mitp = cubic_interp(x, Series(y_periodic, y_periodic2); bc=PeriodicBC())
+        mitp = cubic_interp(x, Series(y_periodic, y_periodic2); bc = PeriodicBC())
 
         # Query outside domain triggers WrapExtrap() extrapolation
         out = zeros(2)
@@ -456,13 +456,13 @@ end
         y_bad = sin.(2π .* x)
         y_bad[end] = 999.0  # Force mismatch
 
-        @test_throws ArgumentError cubic_interp(x, Series(y_bad); bc=PeriodicBC())
+        @test_throws ArgumentError cubic_interp(x, Series(y_bad); bc = PeriodicBC())
     end
 
     @testset "precompute_transpose with periodic BC" begin
         y_periodic = sin.(2π .* x)
         y_periodic[end] = y_periodic[1]
-        mitp = cubic_interp(x, Series(y_periodic); bc=PeriodicBC(), precompute_transpose=true)
+        mitp = cubic_interp(x, Series(y_periodic); bc = PeriodicBC(), precompute_transpose = true)
 
         # Should have point layout immediately
         snap = FI._get_snapshot(mitp._transpose)
@@ -479,13 +479,13 @@ end
         Y_periodic[end, 1] = Y_periodic[1, 1]  # Fix endpoint
         Y_periodic[end, 2] = Y_periodic[1, 2]
 
-        mitp = cubic_interp(x, Series(Y_periodic); bc=PeriodicBC())
+        mitp = cubic_interp(x, Series(Y_periodic); bc = PeriodicBC())
         @test mitp.extrap === WrapExtrap()
     end
 
     @testset "Matrix input with precompute_transpose" begin
         Y = hcat(y1, y2)
-        mitp = cubic_interp(x, Series(Y); precompute_transpose=true)
+        mitp = cubic_interp(x, Series(Y); precompute_transpose = true)
 
         snap = FI._get_snapshot(mitp._transpose)
         @test snap !== nothing
@@ -506,7 +506,7 @@ end
     end
 
     @testset "Vector extrapolation ExtendExtrap() mode" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap = ExtendExtrap())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
@@ -517,15 +517,15 @@ end
     end
 
     @testset "Vector extrapolation ClampExtrap() mode" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=ClampExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap = ClampExtrap())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
         mitp(outputs, xq)
 
         # Out-of-domain should clamp to boundary values
-        @test outputs[1][1] ≈ y1[1] atol=1e-10  # Below domain → first value
-        @test outputs[1][3] ≈ y1[end] atol=1e-10  # Above domain → last value
+        @test outputs[1][1] ≈ y1[1] atol = 1.0e-10  # Below domain → first value
+        @test outputs[1][3] ≈ y1[end] atol = 1.0e-10  # Above domain → last value
     end
 
     @testset "Vector extrapolation WrapExtrap() mode (periodic)" begin
@@ -534,7 +534,7 @@ end
         y_periodic2 = cos.(2π .* x)
         y_periodic2[end] = y_periodic2[1]
 
-        mitp = cubic_interp(x, Series(y_periodic, y_periodic2); bc=PeriodicBC())
+        mitp = cubic_interp(x, Series(y_periodic, y_periodic2); bc = PeriodicBC())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
@@ -545,49 +545,49 @@ end
     end
 
     @testset "Scalar extrapolation ClampExtrap() with derivative" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=ClampExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap = ClampExtrap())
 
         # First derivative outside domain should be zero
         out1 = zeros(2)
-        mitp(out1, -0.1; deriv=DerivOp(1))
-        @test out1[1] ≈ 0.0 atol=1e-10
-        @test out1[2] ≈ 0.0 atol=1e-10
+        mitp(out1, -0.1; deriv = DerivOp(1))
+        @test out1[1] ≈ 0.0 atol = 1.0e-10
+        @test out1[2] ≈ 0.0 atol = 1.0e-10
 
-        mitp(out1, 1.1; deriv=DerivOp(1))
-        @test out1[1] ≈ 0.0 atol=1e-10
-        @test out1[2] ≈ 0.0 atol=1e-10
+        mitp(out1, 1.1; deriv = DerivOp(1))
+        @test out1[1] ≈ 0.0 atol = 1.0e-10
+        @test out1[2] ≈ 0.0 atol = 1.0e-10
 
         # Second derivative outside domain should be zero
         out2 = zeros(2)
-        mitp(out2, -0.1; deriv=DerivOp(2))
-        @test out2[1] ≈ 0.0 atol=1e-10
-        @test out2[2] ≈ 0.0 atol=1e-10
+        mitp(out2, -0.1; deriv = DerivOp(2))
+        @test out2[1] ≈ 0.0 atol = 1.0e-10
+        @test out2[2] ≈ 0.0 atol = 1.0e-10
 
-        mitp(out2, 1.1; deriv=DerivOp(2))
-        @test out2[1] ≈ 0.0 atol=1e-10
-        @test out2[2] ≈ 0.0 atol=1e-10
+        mitp(out2, 1.1; deriv = DerivOp(2))
+        @test out2[1] ≈ 0.0 atol = 1.0e-10
+        @test out2[2] ≈ 0.0 atol = 1.0e-10
 
         # Value should still return boundary value
         out_val = zeros(2)
         mitp(out_val, -0.1)
-        @test out_val[1] ≈ y1[1] atol=1e-10
-        @test out_val[2] ≈ y2[1] atol=1e-10
+        @test out_val[1] ≈ y1[1] atol = 1.0e-10
+        @test out_val[2] ≈ y2[1] atol = 1.0e-10
     end
 
     @testset "Vector extrapolation ClampExtrap() with derivative" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=ClampExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap = ClampExtrap())
         xq = [-0.1, 0.5, 1.1]  # Include out-of-domain points
 
         outputs = [zeros(3), zeros(3)]
-        mitp(outputs, xq; deriv=DerivOp(1))
+        mitp(outputs, xq; deriv = DerivOp(1))
 
         # Derivatives outside domain should be zero for :constant
-        @test outputs[1][1] ≈ 0.0 atol=1e-10
-        @test outputs[1][3] ≈ 0.0 atol=1e-10
+        @test outputs[1][1] ≈ 0.0 atol = 1.0e-10
+        @test outputs[1][3] ≈ 0.0 atol = 1.0e-10
     end
 
     @testset "DomainError message includes bounds" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=NoExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap = NoExtrap())
 
         # Scalar path
         err = try
@@ -685,7 +685,7 @@ end
         # PeriodicBC
         y1_periodic = copy(y1); y1_periodic[end] = y1_periodic[1]
         y2_periodic = copy(y2); y2_periodic[end] = y2_periodic[1]
-        mitp_periodic = cubic_interp(x, Series(y1_periodic, y2_periodic); bc=PeriodicBC())
+        mitp_periodic = cubic_interp(x, Series(y1_periodic, y2_periodic); bc = PeriodicBC())
         @test mitp_periodic.cache isa FI.CubicSplineCache
         @test mitp_periodic.cache.bc_config isa FI.PeriodicData
     end
@@ -715,13 +715,13 @@ end
         # PeriodicBC - check bc_config is PeriodicData
         y1_periodic = copy(y1); y1_periodic[end] = y1_periodic[1]
         y2_periodic = copy(y2); y2_periodic[end] = y2_periodic[1]
-        mitp_periodic = cubic_interp(x, Series(y1_periodic, y2_periodic); bc=PeriodicBC())
+        mitp_periodic = cubic_interp(x, Series(y1_periodic, y2_periodic); bc = PeriodicBC())
         @test mitp_periodic.cache.bc_config isa FastInterpolations.PeriodicData
     end
 
     @testset "Extrap propagation" begin
         for extrap_mode in (NoExtrap(), ClampExtrap(), ExtendExtrap(), WrapExtrap())
-            mitp = cubic_interp(x, Series(y1, y2); extrap=extrap_mode)
+            mitp = cubic_interp(x, Series(y1, y2); extrap = extrap_mode)
             @test mitp.extrap === extrap_mode
         end
     end
@@ -739,7 +739,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap = ExtendExtrap())
 
     @testset "Returns Vector with correct values" begin
         result = mitp(0.35)
@@ -747,31 +747,31 @@ end
         @test length(result) == 3
 
         # Individual results match standalone interpolants
-        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
-        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
-        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
+        itp1 = cubic_interp(x, y1; extrap = ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap = ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap = ExtendExtrap())
 
-        @test result[1] ≈ itp1(0.35) atol=1e-14
-        @test result[2] ≈ itp2(0.35) atol=1e-14
-        @test result[3] ≈ itp3(0.35) atol=1e-14
+        @test result[1] ≈ itp1(0.35) atol = 1.0e-14
+        @test result[2] ≈ itp2(0.35) atol = 1.0e-14
+        @test result[3] ≈ itp3(0.35) atol = 1.0e-14
     end
 
     @testset "Derivatives via deriv keyword" begin
-        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
-        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
-        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
+        itp1 = cubic_interp(x, y1; extrap = ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap = ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap = ExtendExtrap())
 
         # First derivative
-        d1 = mitp(0.5; deriv=DerivOp(1))
-        @test d1[1] ≈ itp1(0.5; deriv=DerivOp(1)) atol=1e-14
-        @test d1[2] ≈ itp2(0.5; deriv=DerivOp(1)) atol=1e-14
-        @test d1[3] ≈ itp3(0.5; deriv=DerivOp(1)) atol=1e-14
+        d1 = mitp(0.5; deriv = DerivOp(1))
+        @test d1[1] ≈ itp1(0.5; deriv = DerivOp(1)) atol = 1.0e-14
+        @test d1[2] ≈ itp2(0.5; deriv = DerivOp(1)) atol = 1.0e-14
+        @test d1[3] ≈ itp3(0.5; deriv = DerivOp(1)) atol = 1.0e-14
 
         # Second derivative
-        d2 = mitp(0.5; deriv=DerivOp(2))
-        @test d2[1] ≈ itp1(0.5; deriv=DerivOp(2)) atol=1e-14
-        @test d2[2] ≈ itp2(0.5; deriv=DerivOp(2)) atol=1e-14
-        @test d2[3] ≈ itp3(0.5; deriv=DerivOp(2)) atol=1e-14
+        d2 = mitp(0.5; deriv = DerivOp(2))
+        @test d2[1] ≈ itp1(0.5; deriv = DerivOp(2)) atol = 1.0e-14
+        @test d2[2] ≈ itp2(0.5; deriv = DerivOp(2)) atol = 1.0e-14
+        @test d2[3] ≈ itp3(0.5; deriv = DerivOp(2)) atol = 1.0e-14
     end
 
     @testset "Multiple query points" begin
@@ -790,7 +790,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap = ExtendExtrap())
 
     @testset "Fills output correctly" begin
         output = Vector{Float64}(undef, 3)
@@ -798,13 +798,13 @@ end
 
         @test result === output  # Returns same reference
 
-        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
-        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
-        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
+        itp1 = cubic_interp(x, y1; extrap = ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap = ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap = ExtendExtrap())
 
-        @test output[1] ≈ itp1(0.35) atol=1e-14
-        @test output[2] ≈ itp2(0.35) atol=1e-14
-        @test output[3] ≈ itp3(0.35) atol=1e-14
+        @test output[1] ≈ itp1(0.35) atol = 1.0e-14
+        @test output[2] ≈ itp2(0.35) atol = 1.0e-14
+        @test output[3] ≈ itp3(0.35) atol = 1.0e-14
     end
 
     @testset "Size assertion on output mismatch" begin
@@ -814,10 +814,10 @@ end
 
     @testset "In-place with derivatives" begin
         output = Vector{Float64}(undef, 3)
-        mitp(output, 0.5; deriv=DerivOp(1))
+        mitp(output, 0.5; deriv = DerivOp(1))
 
-        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
-        @test output[1] ≈ itp1(0.5; deriv=DerivOp(1)) atol=1e-14
+        itp1 = cubic_interp(x, y1; extrap = ExtendExtrap())
+        @test output[1] ≈ itp1(0.5; deriv = DerivOp(1)) atol = 1.0e-14
     end
 end
 
@@ -829,7 +829,7 @@ end
     y2 = cos.(2π .* x)
 
     @testset "extrap=NoExtrap() - throws DomainError" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=NoExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap = NoExtrap())
 
         # Inside domain works
         @test isfinite(mitp(0.5)[1])
@@ -840,7 +840,7 @@ end
     end
 
     @testset "extrap=ClampExtrap() - boundary values" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=ClampExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap = ClampExtrap())
 
         below = mitp(-0.5)
         @test below[1] ≈ y1[1]
@@ -852,29 +852,29 @@ end
     end
 
     @testset "extrap=ExtendExtrap() - boundary polynomial" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
-        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
-        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap = ExtendExtrap())
+        itp1 = cubic_interp(x, y1; extrap = ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap = ExtendExtrap())
 
         below = mitp(-0.1)
-        @test below[1] ≈ itp1(-0.1) atol=1e-14
-        @test below[2] ≈ itp2(-0.1) atol=1e-14
+        @test below[1] ≈ itp1(-0.1) atol = 1.0e-14
+        @test below[2] ≈ itp2(-0.1) atol = 1.0e-14
 
         above = mitp(1.1)
-        @test above[1] ≈ itp1(1.1) atol=1e-14
-        @test above[2] ≈ itp2(1.1) atol=1e-14
+        @test above[1] ≈ itp1(1.1) atol = 1.0e-14
+        @test above[2] ≈ itp2(1.1) atol = 1.0e-14
     end
 
     @testset "extrap=WrapExtrap() - wrapped coordinates" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=WrapExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap = WrapExtrap())
 
         # Query outside domain should wrap
         result = mitp(1.35)  # wraps to 0.35
-        expected1 = cubic_interp(x, y1; extrap=WrapExtrap())(1.35)
-        expected2 = cubic_interp(x, y2; extrap=WrapExtrap())(1.35)
+        expected1 = cubic_interp(x, y1; extrap = WrapExtrap())(1.35)
+        expected2 = cubic_interp(x, y2; extrap = WrapExtrap())(1.35)
 
-        @test result[1] ≈ expected1 atol=1e-14
-        @test result[2] ≈ expected2 atol=1e-14
+        @test result[1] ≈ expected1 atol = 1.0e-14
+        @test result[2] ≈ expected2 atol = 1.0e-14
     end
 end
 
@@ -890,7 +890,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap = ExtendExtrap())
     xq = [0.15, 0.35, 0.5, 0.75]
 
     @testset "Returns container of Vector{T}" begin
@@ -904,28 +904,28 @@ end
     @testset "Results match individual interpolants" begin
         result = mitp(xq)
 
-        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
-        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
-        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
+        itp1 = cubic_interp(x, y1; extrap = ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap = ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap = ExtendExtrap())
 
-        @test result[1] ≈ itp1(xq) atol=1e-14
-        @test result[2] ≈ itp2(xq) atol=1e-14
-        @test result[3] ≈ itp3(xq) atol=1e-14
+        @test result[1] ≈ itp1(xq) atol = 1.0e-14
+        @test result[2] ≈ itp2(xq) atol = 1.0e-14
+        @test result[3] ≈ itp3(xq) atol = 1.0e-14
     end
 
     @testset "Derivatives with vector queries" begin
-        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
-        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
+        itp1 = cubic_interp(x, y1; extrap = ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap = ExtendExtrap())
 
-        mitp2 = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
+        mitp2 = cubic_interp(x, Series(y1, y2); extrap = ExtendExtrap())
 
-        d1 = mitp2(xq; deriv=DerivOp(1))
-        @test d1[1] ≈ itp1(xq; deriv=DerivOp(1)) atol=1e-14
-        @test d1[2] ≈ itp2(xq; deriv=DerivOp(1)) atol=1e-14
+        d1 = mitp2(xq; deriv = DerivOp(1))
+        @test d1[1] ≈ itp1(xq; deriv = DerivOp(1)) atol = 1.0e-14
+        @test d1[2] ≈ itp2(xq; deriv = DerivOp(1)) atol = 1.0e-14
 
-        d2 = mitp2(xq; deriv=DerivOp(2))
-        @test d2[1] ≈ itp1(xq; deriv=DerivOp(2)) atol=1e-14
-        @test d2[2] ≈ itp2(xq; deriv=DerivOp(2)) atol=1e-14
+        d2 = mitp2(xq; deriv = DerivOp(2))
+        @test d2[1] ≈ itp1(xq; deriv = DerivOp(2)) atol = 1.0e-14
+        @test d2[2] ≈ itp2(xq; deriv = DerivOp(2)) atol = 1.0e-14
     end
 end
 
@@ -937,7 +937,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap = ExtendExtrap())
     xq = collect(range(0.1, 0.9, 50))
 
     @testset "Fills all buffers correctly" begin
@@ -950,13 +950,13 @@ end
 
         @test result === outputs  # Returns same reference
 
-        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
-        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
-        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
+        itp1 = cubic_interp(x, y1; extrap = ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap = ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap = ExtendExtrap())
 
-        @test out1 ≈ itp1(xq) atol=1e-14
-        @test out2 ≈ itp2(xq) atol=1e-14
-        @test out3 ≈ itp3(xq) atol=1e-14
+        @test out1 ≈ itp1(xq) atol = 1.0e-14
+        @test out2 ≈ itp2(xq) atol = 1.0e-14
+        @test out3 ≈ itp3(xq) atol = 1.0e-14
     end
 
     @testset "Size assertion on container mismatch" begin
@@ -996,13 +996,13 @@ end
 
         # Pre-build anchors
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
-        mitp(outputs, aq_vec; deriv=DerivOp(1))
+        mitp(outputs, aq_vec; deriv = DerivOp(1))
 
-        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
+        itp1 = cubic_interp(x, y1; extrap = ExtendExtrap())
         # Use same anchored path for comparison
         expected = Vector{Float64}(undef, 50)
-        itp1(expected, aq_vec; deriv=DerivOp(1))
-        @test out1 ≈ expected atol=1e-14
+        itp1(expected, aq_vec; deriv = DerivOp(1))
+        @test out1 ≈ expected atol = 1.0e-14
     end
 end
 
@@ -1014,7 +1014,7 @@ end
     y2 = cos.(2π .* x)
 
     @testset "extrap=NoExtrap() - throws on out-of-domain" begin
-        mitp = cubic_interp(x, Series(y1, y2); extrap=NoExtrap())
+        mitp = cubic_interp(x, Series(y1, y2); extrap = NoExtrap())
         xq_bad = [-0.1, 0.5, 1.1]
 
         @test_throws DomainError mitp(xq_bad)
@@ -1022,7 +1022,7 @@ end
 
     @testset "All extrap modes work with vector" begin
         for mode in (ClampExtrap(), ExtendExtrap(), WrapExtrap())
-            mitp = cubic_interp(x, Series(y1, y2); extrap=mode)
+            mitp = cubic_interp(x, Series(y1, y2); extrap = mode)
             xq = [0.15, 0.5, 0.85]
             result = mitp(xq)
             @test length(result) == 2
@@ -1087,8 +1087,8 @@ end
         result32 = mitp32(Float32(0.35))
         result64 = mitp64(0.35)
 
-        @test result32[1] ≈ Float32(result64[1]) atol=1f-5
-        @test result32[2] ≈ Float32(result64[2]) atol=1f-5
+        @test result32[1] ≈ Float32(result64[1]) atol = 1.0f-5
+        @test result32[2] ≈ Float32(result64[2]) atol = 1.0f-5
     end
 end
 
@@ -1191,8 +1191,8 @@ end
         # Verify values match same-type allocating path (precision preservation)
         # Float32 in-place should match Float32 allocating, not Float64 allocating
         ref = mitp(xq_f32)
-        @test out1 ≈ ref[1] atol=1e-10
-        @test out2 ≈ ref[2] atol=1e-10
+        @test out1 ≈ ref[1] atol = 1.0e-10
+        @test out2 ≈ ref[2] atol = 1.0e-10
     end
 
     @testset "Mixed Integer x and y vectors" begin
@@ -1224,7 +1224,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap = ExtendExtrap())
 
     @testset "zero allocation after warmup (same size)" begin
         xq = collect(range(0.1, 0.9, 100))
@@ -1287,10 +1287,10 @@ end
         outputs = [out1, out2, out3]
 
         # Warmup
-        mitp(outputs, xq; deriv=DerivOp(1))
-        mitp(outputs, xq; deriv=DerivOp(1))
+        mitp(outputs, xq; deriv = DerivOp(1))
+        mitp(outputs, xq; deriv = DerivOp(1))
 
-        allocs = @allocated mitp(outputs, xq; deriv=DerivOp(1))
+        allocs = @allocated mitp(outputs, xq; deriv = DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -1302,10 +1302,10 @@ end
         outputs = [out1, out2, out3]
 
         # Warmup
-        mitp(outputs, xq; deriv=DerivOp(2))
-        mitp(outputs, xq; deriv=DerivOp(2))
+        mitp(outputs, xq; deriv = DerivOp(2))
+        mitp(outputs, xq; deriv = DerivOp(2))
 
-        allocs = @allocated mitp(outputs, xq; deriv=DerivOp(2))
+        allocs = @allocated mitp(outputs, xq; deriv = DerivOp(2))
         @test allocs <= ALLOC_THRESHOLD
     end
 end
@@ -1323,23 +1323,23 @@ end
     y2 = cos.(2π .* x)
     y3 = x .^ 3 .- 2 .* x .^ 2 .+ x  # polynomial for easy derivative verification
 
-    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap = ExtendExtrap())
 
     # Create individual interpolants for reference comparison
-    itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
-    itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
-    itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
+    itp1 = cubic_interp(x, y1; extrap = ExtendExtrap())
+    itp2 = cubic_interp(x, y2; extrap = ExtendExtrap())
+    itp3 = cubic_interp(x, y3; extrap = ExtendExtrap())
 
     @testset "deriv=DerivOp(1) outside domain (left side, xq < 0)" begin
         xq = -0.15  # Outside domain on left
 
         out = zeros(3)
-        mitp(out, xq; deriv=DerivOp(1))
+        mitp(out, xq; deriv = DerivOp(1))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv=DerivOp(1)) atol=1e-12
-        @test out[2] ≈ itp2(xq; deriv=DerivOp(1)) atol=1e-12
-        @test out[3] ≈ itp3(xq; deriv=DerivOp(1)) atol=1e-12
+        @test out[1] ≈ itp1(xq; deriv = DerivOp(1)) atol = 1.0e-12
+        @test out[2] ≈ itp2(xq; deriv = DerivOp(1)) atol = 1.0e-12
+        @test out[3] ≈ itp3(xq; deriv = DerivOp(1)) atol = 1.0e-12
 
         # Verify values are finite and non-zero (extension continues the slope)
         @test all(isfinite, out)
@@ -1349,12 +1349,12 @@ end
         xq = 1.15  # Outside domain on right
 
         out = zeros(3)
-        mitp(out, xq; deriv=DerivOp(1))
+        mitp(out, xq; deriv = DerivOp(1))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv=DerivOp(1)) atol=1e-12
-        @test out[2] ≈ itp2(xq; deriv=DerivOp(1)) atol=1e-12
-        @test out[3] ≈ itp3(xq; deriv=DerivOp(1)) atol=1e-12
+        @test out[1] ≈ itp1(xq; deriv = DerivOp(1)) atol = 1.0e-12
+        @test out[2] ≈ itp2(xq; deriv = DerivOp(1)) atol = 1.0e-12
+        @test out[3] ≈ itp3(xq; deriv = DerivOp(1)) atol = 1.0e-12
 
         @test all(isfinite, out)
     end
@@ -1363,12 +1363,12 @@ end
         xq = -0.2
 
         out = zeros(3)
-        mitp(out, xq; deriv=DerivOp(2))
+        mitp(out, xq; deriv = DerivOp(2))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv=DerivOp(2)) atol=1e-12
-        @test out[2] ≈ itp2(xq; deriv=DerivOp(2)) atol=1e-12
-        @test out[3] ≈ itp3(xq; deriv=DerivOp(2)) atol=1e-12
+        @test out[1] ≈ itp1(xq; deriv = DerivOp(2)) atol = 1.0e-12
+        @test out[2] ≈ itp2(xq; deriv = DerivOp(2)) atol = 1.0e-12
+        @test out[3] ≈ itp3(xq; deriv = DerivOp(2)) atol = 1.0e-12
 
         @test all(isfinite, out)
     end
@@ -1377,12 +1377,12 @@ end
         xq = 1.2
 
         out = zeros(3)
-        mitp(out, xq; deriv=DerivOp(2))
+        mitp(out, xq; deriv = DerivOp(2))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv=DerivOp(2)) atol=1e-12
-        @test out[2] ≈ itp2(xq; deriv=DerivOp(2)) atol=1e-12
-        @test out[3] ≈ itp3(xq; deriv=DerivOp(2)) atol=1e-12
+        @test out[1] ≈ itp1(xq; deriv = DerivOp(2)) atol = 1.0e-12
+        @test out[2] ≈ itp2(xq; deriv = DerivOp(2)) atol = 1.0e-12
+        @test out[3] ≈ itp3(xq; deriv = DerivOp(2)) atol = 1.0e-12
 
         @test all(isfinite, out)
     end
@@ -1391,12 +1391,12 @@ end
         xq = -0.1
 
         out = zeros(3)
-        mitp(out, xq; deriv=DerivOp(3))
+        mitp(out, xq; deriv = DerivOp(3))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv=DerivOp(3)) atol=1e-12
-        @test out[2] ≈ itp2(xq; deriv=DerivOp(3)) atol=1e-12
-        @test out[3] ≈ itp3(xq; deriv=DerivOp(3)) atol=1e-12
+        @test out[1] ≈ itp1(xq; deriv = DerivOp(3)) atol = 1.0e-12
+        @test out[2] ≈ itp2(xq; deriv = DerivOp(3)) atol = 1.0e-12
+        @test out[3] ≈ itp3(xq; deriv = DerivOp(3)) atol = 1.0e-12
 
         @test all(isfinite, out)
     end
@@ -1405,12 +1405,12 @@ end
         xq = 1.1
 
         out = zeros(3)
-        mitp(out, xq; deriv=DerivOp(3))
+        mitp(out, xq; deriv = DerivOp(3))
 
         # Verify against individual interpolants
-        @test out[1] ≈ itp1(xq; deriv=DerivOp(3)) atol=1e-12
-        @test out[2] ≈ itp2(xq; deriv=DerivOp(3)) atol=1e-12
-        @test out[3] ≈ itp3(xq; deriv=DerivOp(3)) atol=1e-12
+        @test out[1] ≈ itp1(xq; deriv = DerivOp(3)) atol = 1.0e-12
+        @test out[2] ≈ itp2(xq; deriv = DerivOp(3)) atol = 1.0e-12
+        @test out[3] ≈ itp3(xq; deriv = DerivOp(3)) atol = 1.0e-12
 
         @test all(isfinite, out)
     end
@@ -1421,23 +1421,23 @@ end
         xq_right = 1.1
 
         # deriv=1
-        d1_left = mitp(xq_left; deriv=DerivOp(1))
-        d1_right = mitp(xq_right; deriv=DerivOp(1))
+        d1_left = mitp(xq_left; deriv = DerivOp(1))
+        d1_right = mitp(xq_right; deriv = DerivOp(1))
         @test length(d1_left) == 3
         @test length(d1_right) == 3
-        @test d1_left[1] ≈ itp1(xq_left; deriv=DerivOp(1)) atol=1e-12
+        @test d1_left[1] ≈ itp1(xq_left; deriv = DerivOp(1)) atol = 1.0e-12
 
         # deriv=2
-        d2_left = mitp(xq_left; deriv=DerivOp(2))
-        d2_right = mitp(xq_right; deriv=DerivOp(2))
+        d2_left = mitp(xq_left; deriv = DerivOp(2))
+        d2_right = mitp(xq_right; deriv = DerivOp(2))
         @test length(d2_left) == 3
-        @test d2_left[2] ≈ itp2(xq_left; deriv=DerivOp(2)) atol=1e-12
+        @test d2_left[2] ≈ itp2(xq_left; deriv = DerivOp(2)) atol = 1.0e-12
 
         # deriv=3
-        d3_left = mitp(xq_left; deriv=DerivOp(3))
-        d3_right = mitp(xq_right; deriv=DerivOp(3))
+        d3_left = mitp(xq_left; deriv = DerivOp(3))
+        d3_right = mitp(xq_right; deriv = DerivOp(3))
         @test length(d3_left) == 3
-        @test d3_right[3] ≈ itp3(xq_right; deriv=DerivOp(3)) atol=1e-12
+        @test d3_right[3] ≈ itp3(xq_right; deriv = DerivOp(3)) atol = 1.0e-12
     end
 
     @testset "Polynomial accuracy check (extension preserves cubic)" begin
@@ -1451,18 +1451,18 @@ end
 
         # At interior point for sanity check
         xq_interior = 0.5
-        d1_interior = mitp(xq_interior; deriv=DerivOp(1))[3]
-        d2_interior = mitp(xq_interior; deriv=DerivOp(2))[3]
-        d3_interior = mitp(xq_interior; deriv=DerivOp(3))[3]
+        d1_interior = mitp(xq_interior; deriv = DerivOp(1))[3]
+        d2_interior = mitp(xq_interior; deriv = DerivOp(2))[3]
+        d3_interior = mitp(xq_interior; deriv = DerivOp(3))[3]
 
         exact_d1 = 3 * xq_interior^2 - 4 * xq_interior + 1
         exact_d2 = 6 * xq_interior - 4
         exact_d3 = 6.0
 
         # Interior should be very accurate
-        @test d1_interior ≈ exact_d1 atol=1e-10
-        @test d2_interior ≈ exact_d2 atol=1e-10
-        @test d3_interior ≈ exact_d3 atol=1e-8  # Third derivative has larger error
+        @test d1_interior ≈ exact_d1 atol = 1.0e-10
+        @test d2_interior ≈ exact_d2 atol = 1.0e-10
+        @test d3_interior ≈ exact_d3 atol = 1.0e-8  # Third derivative has larger error
     end
 end
 
@@ -1474,7 +1474,7 @@ end
     y2 = cos.(2π .* x)
     y3 = exp.(-3 .* x)
 
-    mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
+    mitp = cubic_interp(x, Series(y1, y2, y3); extrap = ExtendExtrap())
     xq = collect(range(0.1, 0.9, 50))
 
     @testset "Container in-place with derivatives - zero allocation (deriv=DerivOp(1))" begin
@@ -1487,10 +1487,10 @@ end
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Warmup
-        mitp(outputs, aq_vec; deriv=DerivOp(1))
-        mitp(outputs, aq_vec; deriv=DerivOp(1))
+        mitp(outputs, aq_vec; deriv = DerivOp(1))
+        mitp(outputs, aq_vec; deriv = DerivOp(1))
 
-        allocs = @allocated mitp(outputs, aq_vec; deriv=DerivOp(1))
+        allocs = @allocated mitp(outputs, aq_vec; deriv = DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -1504,10 +1504,10 @@ end
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Warmup
-        mitp(outputs, aq_vec; deriv=DerivOp(2))
-        mitp(outputs, aq_vec; deriv=DerivOp(2))
+        mitp(outputs, aq_vec; deriv = DerivOp(2))
+        mitp(outputs, aq_vec; deriv = DerivOp(2))
 
-        allocs = @allocated mitp(outputs, aq_vec; deriv=DerivOp(2))
+        allocs = @allocated mitp(outputs, aq_vec; deriv = DerivOp(2))
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -1520,24 +1520,24 @@ end
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         # Get derivatives via anchored path
-        mitp(outputs, aq_vec; deriv=DerivOp(1))
+        mitp(outputs, aq_vec; deriv = DerivOp(1))
 
         # Compare with individual interpolants
-        itp1 = cubic_interp(x, y1; extrap=ExtendExtrap())
-        itp2 = cubic_interp(x, y2; extrap=ExtendExtrap())
-        itp3 = cubic_interp(x, y3; extrap=ExtendExtrap())
+        itp1 = cubic_interp(x, y1; extrap = ExtendExtrap())
+        itp2 = cubic_interp(x, y2; extrap = ExtendExtrap())
+        itp3 = cubic_interp(x, y3; extrap = ExtendExtrap())
 
         expected1 = Vector{Float64}(undef, 50)
         expected2 = Vector{Float64}(undef, 50)
         expected3 = Vector{Float64}(undef, 50)
 
-        itp1(expected1, aq_vec; deriv=DerivOp(1))
-        itp2(expected2, aq_vec; deriv=DerivOp(1))
-        itp3(expected3, aq_vec; deriv=DerivOp(1))
+        itp1(expected1, aq_vec; deriv = DerivOp(1))
+        itp2(expected2, aq_vec; deriv = DerivOp(1))
+        itp3(expected3, aq_vec; deriv = DerivOp(1))
 
-        @test out1 ≈ expected1 atol=1e-14
-        @test out2 ≈ expected2 atol=1e-14
-        @test out3 ≈ expected3 atol=1e-14
+        @test out1 ≈ expected1 atol = 1.0e-14
+        @test out2 ≈ expected2 atol = 1.0e-14
+        @test out3 ≈ expected3 atol = 1.0e-14
     end
 end
 
@@ -1557,21 +1557,23 @@ end
         y3 = 3.0 .* x      # slope = 3
 
         # Each series uses its actual slope as BC
-        sitp = cubic_interp(x, Series(y1, y2, y3); bc=[
-            BCPair(Deriv1(1.0), Deriv1(1.0)),
-            BCPair(Deriv1(2.0), Deriv1(2.0)),
-            BCPair(Deriv1(3.0), Deriv1(3.0)),
-        ])
+        sitp = cubic_interp(
+            x, Series(y1, y2, y3); bc = [
+                BCPair(Deriv1(1.0), Deriv1(1.0)),
+                BCPair(Deriv1(2.0), Deriv1(2.0)),
+                BCPair(Deriv1(3.0), Deriv1(3.0)),
+            ]
+        )
 
         # Linear functions should be exactly reproduced
-        @test sitp(0.5) ≈ [0.5, 1.0, 1.5] atol=1e-14
+        @test sitp(0.5) ≈ [0.5, 1.0, 1.5] atol = 1.0e-14
 
         # Test at multiple points
         for xq in [0.0, 0.25, 0.5, 0.75, 1.0]
             result = sitp(xq)
-            @test result[1] ≈ 1.0 * xq atol=1e-14
-            @test result[2] ≈ 2.0 * xq atol=1e-14
-            @test result[3] ≈ 3.0 * xq atol=1e-14
+            @test result[1] ≈ 1.0 * xq atol = 1.0e-14
+            @test result[2] ≈ 2.0 * xq atol = 1.0e-14
+            @test result[3] ≈ 3.0 * xq atol = 1.0e-14
         end
     end
 
@@ -1579,29 +1581,31 @@ end
         x = collect(range(0.0, 1.0, 21))
         y1 = sin.(π .* x)
         y2 = cos.(π .* x)
-        y3 = x.^2
+        y3 = x .^ 2
 
         # Different BC types for each series
-        sitp = cubic_interp(x, Series(y1, y2, y3); bc=[
-            ZeroCurvBC(),                          # Zero-Curvature BC
-            BCPair(Deriv1(0.0), Deriv1(0.0)),      # Zero-Slope BC
-            BCPair(Deriv2(2.0), Deriv2(2.0)),      # Constant curvature = 2
-        ])
+        sitp = cubic_interp(
+            x, Series(y1, y2, y3); bc = [
+                ZeroCurvBC(),                          # Zero-Curvature BC
+                BCPair(Deriv1(0.0), Deriv1(0.0)),      # Zero-Slope BC
+                BCPair(Deriv2(2.0), Deriv2(2.0)),      # Constant curvature = 2
+            ]
+        )
 
         # Each series should be computed correctly
         @test sitp(0.5) isa Vector{Float64}
         @test length(sitp(0.5)) == 3
 
         # Compare with individual interpolants using same BC
-        itp1 = cubic_interp(x, y1; bc=ZeroCurvBC())
-        itp2 = cubic_interp(x, y2; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
-        itp3 = cubic_interp(x, y3; bc=BCPair(Deriv2(2.0), Deriv2(2.0)))
+        itp1 = cubic_interp(x, y1; bc = ZeroCurvBC())
+        itp2 = cubic_interp(x, y2; bc = BCPair(Deriv1(0.0), Deriv1(0.0)))
+        itp3 = cubic_interp(x, y3; bc = BCPair(Deriv2(2.0), Deriv2(2.0)))
 
         for xq in [0.1, 0.3, 0.5, 0.7, 0.9]
             result = sitp(xq)
-            @test result[1] ≈ itp1(xq) atol=1e-14
-            @test result[2] ≈ itp2(xq) atol=1e-14
-            @test result[3] ≈ itp3(xq) atol=1e-14
+            @test result[1] ≈ itp1(xq) atol = 1.0e-14
+            @test result[2] ≈ itp2(xq) atol = 1.0e-14
+            @test result[3] ≈ itp3(xq) atol = 1.0e-14
         end
     end
 
@@ -1611,36 +1615,40 @@ end
         y2 = 2.0 .* x
         Y = hcat(y1, y2)  # 11×2 matrix
 
-        sitp = cubic_interp(x, Series(Y); bc=[
-            BCPair(Deriv1(1.0), Deriv1(1.0)),
-            BCPair(Deriv1(2.0), Deriv1(2.0)),
-        ])
+        sitp = cubic_interp(
+            x, Series(Y); bc = [
+                BCPair(Deriv1(1.0), Deriv1(1.0)),
+                BCPair(Deriv1(2.0), Deriv1(2.0)),
+            ]
+        )
 
-        @test sitp(0.5) ≈ [0.5, 1.0] atol=1e-14
+        @test sitp(0.5) ≈ [0.5, 1.0] atol = 1.0e-14
     end
 
     @testset "BC array with Deriv2 and Deriv3" begin
         x = collect(range(0.0, 1.0, 21))
 
         # Quadratic: y = x^2, y'' = 2
-        y_quad = x.^2
+        y_quad = x .^ 2
 
         # Cubic: y = x^3, y''' = 6
-        y_cubic = x.^3
+        y_cubic = x .^ 3
 
-        sitp = cubic_interp(x, Series(y_quad, y_cubic); bc=[
-            BCPair(Deriv2(2.0), Deriv2(2.0)),      # Quadratic's curvature
-            BCPair(Deriv3(6.0), Deriv3(6.0)),      # Cubic's third derivative
-        ])
+        sitp = cubic_interp(
+            x, Series(y_quad, y_cubic); bc = [
+                BCPair(Deriv2(2.0), Deriv2(2.0)),      # Quadratic's curvature
+                BCPair(Deriv3(6.0), Deriv3(6.0)),      # Cubic's third derivative
+            ]
+        )
 
         # Verify results match individual interpolants
-        itp_quad = cubic_interp(x, y_quad; bc=BCPair(Deriv2(2.0), Deriv2(2.0)))
-        itp_cubic = cubic_interp(x, y_cubic; bc=BCPair(Deriv3(6.0), Deriv3(6.0)))
+        itp_quad = cubic_interp(x, y_quad; bc = BCPair(Deriv2(2.0), Deriv2(2.0)))
+        itp_cubic = cubic_interp(x, y_cubic; bc = BCPair(Deriv3(6.0), Deriv3(6.0)))
 
         for xq in [0.2, 0.5, 0.8]
             result = sitp(xq)
-            @test result[1] ≈ itp_quad(xq) atol=1e-13
-            @test result[2] ≈ itp_cubic(xq) atol=1e-13
+            @test result[1] ≈ itp_quad(xq) atol = 1.0e-13
+            @test result[2] ≈ itp_cubic(xq) atol = 1.0e-13
         end
     end
 
@@ -1649,8 +1657,8 @@ end
         y1, y2 = sin.(x), cos.(x)
 
         # Length mismatch → DimensionMismatch
-        @test_throws DimensionMismatch cubic_interp(x, Series(y1, y2); bc=[ZeroCurvBC()])
-        @test_throws DimensionMismatch cubic_interp(x, Series(y1, y2); bc=[ZeroCurvBC(), ZeroCurvBC(), ZeroCurvBC()])
+        @test_throws DimensionMismatch cubic_interp(x, Series(y1, y2); bc = [ZeroCurvBC()])
+        @test_throws DimensionMismatch cubic_interp(x, Series(y1, y2); bc = [ZeroCurvBC(), ZeroCurvBC(), ZeroCurvBC()])
     end
 
     @testset "PeriodicBC in array - not supported" begin
@@ -1659,10 +1667,12 @@ end
         y2 = cos.(2π .* x)
 
         # PeriodicBC not supported in arrays
-        @test_throws ArgumentError cubic_interp(x, Series(y1, y2); bc=[
-            PeriodicBC(),
-            ZeroCurvBC(),
-        ])
+        @test_throws ArgumentError cubic_interp(
+            x, Series(y1, y2); bc = [
+                PeriodicBC(),
+                ZeroCurvBC(),
+            ]
+        )
     end
 
     @testset "Derivatives with per-series BC" begin
@@ -1670,20 +1680,22 @@ end
         y1 = 1.0 .* x      # slope = 1
         y2 = 2.0 .* x      # slope = 2
 
-        sitp = cubic_interp(x, Series(y1, y2); bc=[
-            BCPair(Deriv1(1.0), Deriv1(1.0)),
-            BCPair(Deriv1(2.0), Deriv1(2.0)),
-        ])
+        sitp = cubic_interp(
+            x, Series(y1, y2); bc = [
+                BCPair(Deriv1(1.0), Deriv1(1.0)),
+                BCPair(Deriv1(2.0), Deriv1(2.0)),
+            ]
+        )
 
         # First derivative of linear function = slope
-        d1 = sitp(0.5; deriv=DerivOp(1))
-        @test d1[1] ≈ 1.0 atol=1e-12
-        @test d1[2] ≈ 2.0 atol=1e-12
+        d1 = sitp(0.5; deriv = DerivOp(1))
+        @test d1[1] ≈ 1.0 atol = 1.0e-12
+        @test d1[2] ≈ 2.0 atol = 1.0e-12
 
         # Second derivative of linear function = 0
-        d2 = sitp(0.5; deriv=DerivOp(2))
-        @test d2[1] ≈ 0.0 atol=1e-10
-        @test d2[2] ≈ 0.0 atol=1e-10
+        d2 = sitp(0.5; deriv = DerivOp(2))
+        @test d2[1] ≈ 0.0 atol = 1.0e-10
+        @test d2[2] ≈ 0.0 atol = 1.0e-10
     end
 
     # =========================================================================
@@ -1699,11 +1711,13 @@ end
         y3 = exp.(-3 .* x)
 
         # Create with per-series BC (mixed types)
-        sitp = cubic_interp(x, Series(y1, y2, y3); bc=[
-            ZeroCurvBC(),
-            BCPair(Deriv1(0.0), Deriv1(0.0)),
-            BCPair(Deriv2(0.0), Deriv2(0.0)),
-        ], precompute_transpose=true)
+        sitp = cubic_interp(
+            x, Series(y1, y2, y3); bc = [
+                ZeroCurvBC(),
+                BCPair(Deriv1(0.0), Deriv1(0.0)),
+                BCPair(Deriv2(0.0), Deriv2(0.0)),
+            ], precompute_transpose = true
+        )
 
         out = zeros(3)
 
@@ -1722,10 +1736,12 @@ end
         y2 = cos.(2π .* x)
 
         # Create with same BC type, different values
-        sitp = cubic_interp(x, Series(y1, y2); bc=[
-            BCPair(Deriv1(1.0), Deriv1(-1.0)),
-            BCPair(Deriv1(0.5), Deriv1(-0.5)),
-        ])
+        sitp = cubic_interp(
+            x, Series(y1, y2); bc = [
+                BCPair(Deriv1(1.0), Deriv1(-1.0)),
+                BCPair(Deriv1(0.5), Deriv1(-0.5)),
+            ]
+        )
 
         xq = collect(range(0.1, 0.9, 50))
         out1 = Vector{Float64}(undef, 50)
@@ -1747,25 +1763,27 @@ end
         y2 = cos.(2π .* x)
 
         # Create with mixed BC types
-        sitp = cubic_interp(x, Series(y1, y2); bc=[
-            ZeroCurvBC(),
-            BCPair(Deriv1(0.0), Deriv1(0.0)),
-        ], precompute_transpose=true)
+        sitp = cubic_interp(
+            x, Series(y1, y2); bc = [
+                ZeroCurvBC(),
+                BCPair(Deriv1(0.0), Deriv1(0.0)),
+            ], precompute_transpose = true
+        )
 
         out = zeros(2)
 
         # Warmup deriv=1
-        sitp(out, 0.5; deriv=DerivOp(1))
-        sitp(out, 0.5; deriv=DerivOp(1))
+        sitp(out, 0.5; deriv = DerivOp(1))
+        sitp(out, 0.5; deriv = DerivOp(1))
 
-        allocs = @allocated sitp(out, 0.5; deriv=DerivOp(1))
+        allocs = @allocated sitp(out, 0.5; deriv = DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
 
         # Warmup deriv=2
-        sitp(out, 0.5; deriv=DerivOp(2))
-        sitp(out, 0.5; deriv=DerivOp(2))
+        sitp(out, 0.5; deriv = DerivOp(2))
+        sitp(out, 0.5; deriv = DerivOp(2))
 
-        allocs = @allocated sitp(out, 0.5; deriv=DerivOp(2))
+        allocs = @allocated sitp(out, 0.5; deriv = DerivOp(2))
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -1798,7 +1816,7 @@ end
         mixed_bcs = [
             ZeroCurvBC(),
             BCPair(Deriv1(0.0), Deriv2(3.0)),
-            ZeroSlopeBC()
+            ZeroSlopeBC(),
         ]
 
         result = FastInterpolations._normalize_bc_array(mixed_bcs, Float64, 3)
@@ -1835,14 +1853,14 @@ end
         aq_vec = FI._anchor_query(x, xq, Val(:cubic))
 
         outputs = [similar(xq) for _ in 1:3]
-        mitp(outputs, aq_vec; deriv=DerivOp(3))
+        mitp(outputs, aq_vec; deriv = DerivOp(3))
 
         # Compare with scalar evaluation
         for (j, q) in enumerate(xq)
-            scalar_result = mitp(q; deriv=DerivOp(3))
-            @test outputs[1][j] ≈ scalar_result[1] atol=1e-10
-            @test outputs[2][j] ≈ scalar_result[2] atol=1e-10
-            @test outputs[3][j] ≈ scalar_result[3] atol=1e-10
+            scalar_result = mitp(q; deriv = DerivOp(3))
+            @test outputs[1][j] ≈ scalar_result[1] atol = 1.0e-10
+            @test outputs[2][j] ≈ scalar_result[2] atol = 1.0e-10
+            @test outputs[3][j] ≈ scalar_result[3] atol = 1.0e-10
         end
     end
 
@@ -1859,10 +1877,10 @@ end
         outputs = [similar(xq) for _ in 1:2]
 
         # Warmup
-        mitp(outputs, aq_vec; deriv=DerivOp(3))
-        mitp(outputs, aq_vec; deriv=DerivOp(3))
+        mitp(outputs, aq_vec; deriv = DerivOp(3))
+        mitp(outputs, aq_vec; deriv = DerivOp(3))
 
-        allocs = @allocated mitp(outputs, aq_vec; deriv=DerivOp(3))
+        allocs = @allocated mitp(outputs, aq_vec; deriv = DerivOp(3))
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -1882,12 +1900,12 @@ end
         expected1 = similar(xq)
         expected2 = similar(xq)
 
-        mitp(outputs, aq_vec; deriv=DerivOp(3))
-        itp1(expected1, aq_vec; deriv=DerivOp(3))
-        itp2(expected2, aq_vec; deriv=DerivOp(3))
+        mitp(outputs, aq_vec; deriv = DerivOp(3))
+        itp1(expected1, aq_vec; deriv = DerivOp(3))
+        itp2(expected2, aq_vec; deriv = DerivOp(3))
 
-        @test outputs[1] ≈ expected1 atol=1e-14
-        @test outputs[2] ≈ expected2 atol=1e-14
+        @test outputs[1] ≈ expected1 atol = 1.0e-14
+        @test outputs[2] ≈ expected2 atol = 1.0e-14
     end
 end
 
@@ -1903,7 +1921,7 @@ end
     xq_out = [-0.15, -0.05, 0.5, 1.05, 1.15]
 
     @testset ":extension mode with pre-built anchors" begin
-        mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ExtendExtrap())
+        mitp = cubic_interp(x, Series(y1, y2, y3); extrap = ExtendExtrap())
 
         # Pre-build anchors (will have side != 0x00 for out-of-domain points)
         aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
@@ -1915,25 +1933,25 @@ end
         # Compare with scalar evaluation
         for (j, q) in enumerate(xq_out)
             scalar_result = mitp(q)
-            @test outputs[1][j] ≈ scalar_result[1] atol=1e-10
-            @test outputs[2][j] ≈ scalar_result[2] atol=1e-10
-            @test outputs[3][j] ≈ scalar_result[3] atol=1e-10
+            @test outputs[1][j] ≈ scalar_result[1] atol = 1.0e-10
+            @test outputs[2][j] ≈ scalar_result[2] atol = 1.0e-10
+            @test outputs[3][j] ≈ scalar_result[3] atol = 1.0e-10
         end
 
         # Test derivatives with extension
         for deriv in [DerivOp(1), DerivOp(2), DerivOp(3)]
-            mitp(outputs, aq_vec; deriv=deriv)
+            mitp(outputs, aq_vec; deriv = deriv)
             for (j, q) in enumerate(xq_out)
-                scalar_result = mitp(q; deriv=deriv)
-                @test outputs[1][j] ≈ scalar_result[1] atol=1e-10
-                @test outputs[2][j] ≈ scalar_result[2] atol=1e-10
-                @test outputs[3][j] ≈ scalar_result[3] atol=1e-10
+                scalar_result = mitp(q; deriv = deriv)
+                @test outputs[1][j] ≈ scalar_result[1] atol = 1.0e-10
+                @test outputs[2][j] ≈ scalar_result[2] atol = 1.0e-10
+                @test outputs[3][j] ≈ scalar_result[3] atol = 1.0e-10
             end
         end
     end
 
     @testset ":constant mode with pre-built anchors" begin
-        mitp = cubic_interp(x, Series(y1, y2, y3); extrap=ClampExtrap())
+        mitp = cubic_interp(x, Series(y1, y2, y3); extrap = ClampExtrap())
 
         aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
         outputs = [similar(xq_out) for _ in 1:3]
@@ -1942,30 +1960,30 @@ end
 
         # Out-of-domain points should be clamped to boundary values
         # Left boundary (indices 1, 2 are < 0.0)
-        @test outputs[1][1] ≈ y1[1] atol=1e-10
-        @test outputs[1][2] ≈ y1[1] atol=1e-10
-        @test outputs[2][1] ≈ y2[1] atol=1e-10
-        @test outputs[2][2] ≈ y2[1] atol=1e-10
-        @test outputs[3][1] ≈ y3[1] atol=1e-10
-        @test outputs[3][2] ≈ y3[1] atol=1e-10
+        @test outputs[1][1] ≈ y1[1] atol = 1.0e-10
+        @test outputs[1][2] ≈ y1[1] atol = 1.0e-10
+        @test outputs[2][1] ≈ y2[1] atol = 1.0e-10
+        @test outputs[2][2] ≈ y2[1] atol = 1.0e-10
+        @test outputs[3][1] ≈ y3[1] atol = 1.0e-10
+        @test outputs[3][2] ≈ y3[1] atol = 1.0e-10
 
         # Right boundary (indices 4, 5 are > 1.0)
-        @test outputs[1][4] ≈ y1[end] atol=1e-10
-        @test outputs[1][5] ≈ y1[end] atol=1e-10
-        @test outputs[2][4] ≈ y2[end] atol=1e-10
-        @test outputs[2][5] ≈ y2[end] atol=1e-10
-        @test outputs[3][4] ≈ y3[end] atol=1e-10
-        @test outputs[3][5] ≈ y3[end] atol=1e-10
+        @test outputs[1][4] ≈ y1[end] atol = 1.0e-10
+        @test outputs[1][5] ≈ y1[end] atol = 1.0e-10
+        @test outputs[2][4] ≈ y2[end] atol = 1.0e-10
+        @test outputs[2][5] ≈ y2[end] atol = 1.0e-10
+        @test outputs[3][4] ≈ y3[end] atol = 1.0e-10
+        @test outputs[3][5] ≈ y3[end] atol = 1.0e-10
 
         # Inside domain should be normal interpolation
         inside_result = mitp(0.5)
-        @test outputs[1][3] ≈ inside_result[1] atol=1e-10
-        @test outputs[2][3] ≈ inside_result[2] atol=1e-10
-        @test outputs[3][3] ≈ inside_result[3] atol=1e-10
+        @test outputs[1][3] ≈ inside_result[1] atol = 1.0e-10
+        @test outputs[2][3] ≈ inside_result[2] atol = 1.0e-10
+        @test outputs[3][3] ≈ inside_result[3] atol = 1.0e-10
     end
 
     @testset ":none mode with pre-built anchors throws DomainError" begin
-        mitp = cubic_interp(x, Series(y1, y2, y3); extrap=NoExtrap())
+        mitp = cubic_interp(x, Series(y1, y2, y3); extrap = NoExtrap())
 
         aq_vec = FI._anchor_query(x, xq_out, Val(:cubic))
         outputs = [similar(xq_out) for _ in 1:3]
@@ -1981,7 +1999,7 @@ end
         y1_per[end] = y1_per[1]
         y2_per[end] = y2_per[1]
 
-        mitp = cubic_interp(x_per, Series(y1_per, y2_per); bc=PeriodicBC())
+        mitp = cubic_interp(x_per, Series(y1_per, y2_per); bc = PeriodicBC())
 
         # Query points outside domain should wrap
         xq_wrap = [-0.5, 0.5, 2π + 0.5, 4π + 0.5]
@@ -1993,8 +2011,8 @@ end
         # Wrapped queries should match equivalent in-domain queries
         for (j, q) in enumerate(xq_wrap)
             scalar_result = mitp(q)
-            @test outputs[1][j] ≈ scalar_result[1] atol=1e-10
-            @test outputs[2][j] ≈ scalar_result[2] atol=1e-10
+            @test outputs[1][j] ≈ scalar_result[1] atol = 1.0e-10
+            @test outputs[2][j] ≈ scalar_result[2] atol = 1.0e-10
         end
     end
 end

@@ -56,33 +56,33 @@ function linear_interp! end
 # - Tg: Grid type (AbstractFloat) - for x coordinates and x_targets
 # - Tv: Value type (unconstrained) - for y and output
 function linear_interp!(
-    output::AbstractVector{Tv},
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_targets::AbstractVector{Tg};
-    extrap::AbstractExtrap=NoExtrap(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
+        output::AbstractVector{Tv},
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_targets::AbstractVector{Tg};
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _resolve_search(x, x_targets, search, nothing)
     @boundscheck _check_domain(x, x_targets, extrap)
-    _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
+    return _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
 end
 
 # Internal loop with AbstractExtrap dispatch and Searcher (type-stable)
 # Supports mixed types: Tg for grid, Tv for values
 @inline function _linear_interp_loop!(
-    output::AbstractVector{Tv},
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_targets::AbstractVector{Tg},
-    extrap_val::AbstractExtrap,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
+        output::AbstractVector{Tv},
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_targets::AbstractVector{Tg},
+        extrap_val::AbstractExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, S <: Searcher}
     @inbounds for i in eachindex(x_targets, output)
         output[i] = linear_interp(x, y, x_targets[i], extrap_val, op, searcher)
     end
@@ -94,14 +94,14 @@ end
 # Stage 1: Check if ALL queries are inside domain (cheap: ~150ns for 1000 elements)
 # Stage 2: If all inside, use extension path (no wrap needed); otherwise per-element wrap
 @inline function _linear_interp_loop!(
-    output::AbstractVector{Tv},
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_targets::AbstractVector{Tg},
-    ::WrapExtrap,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
+        output::AbstractVector{Tv},
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_targets::AbstractVector{Tg},
+        ::WrapExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, S <: Searcher}
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
@@ -122,14 +122,14 @@ end
 
 # Same optimization for AbstractRange (O(1) indexing path)
 @inline function _linear_interp_loop!(
-    output::AbstractVector{Tv},
-    x::AbstractRange{Tg},
-    y::AbstractVector{Tv},
-    x_targets::AbstractVector{Tg},
-    ::WrapExtrap,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
+        output::AbstractVector{Tv},
+        x::AbstractRange{Tg},
+        y::AbstractVector{Tv},
+        x_targets::AbstractVector{Tg},
+        ::WrapExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, S <: Searcher}
     x_min, x_max = first(x), last(x)
     qmin, qmax = minimum(x_targets), maximum(x_targets)
 
@@ -149,20 +149,20 @@ end
 # Specific method for AbstractRange{Tg} - resolves ambiguity with Real wrappers
 # Unified via Tv parameter
 @inline function linear_interp!(
-    output::AbstractVector{Tv},
-    x::AbstractRange{Tg},
-    y::AbstractVector{Tv},
-    x_targets::AbstractVector{Tg};
-    extrap::AbstractExtrap=NoExtrap(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
+        output::AbstractVector{Tv},
+        x::AbstractRange{Tg},
+        y::AbstractVector{Tv},
+        x_targets::AbstractVector{Tg};
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _resolve_search(x, x_targets, search, nothing)
     @boundscheck _check_domain(x, x_targets, extrap)
-    _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
+    return _linear_interp_loop!(output, x, y, x_targets, extrap, deriv, searcher)
 end
 
 # ========================================
@@ -237,13 +237,13 @@ For ForwardDiff compatibility, `xq` can be a Dual type:
 - Interpolation arithmetic uses original `xq` to propagate derivatives
 """
 @inline function _linear_eval_at_point(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xq::Tq,
-    extrap::AbstractExtrap,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq,
+        extrap::AbstractExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     @boundscheck _check_domain(x, xq, extrap)
     idx, xL, xR = search_interval(searcher, x, xq)
     # Use original xq for interpolation (preserves Dual for AD)
@@ -260,11 +260,11 @@ Handle constant extrapolation: returns boundary/fill value for EvalValue, zero f
 Works with any value type Tv (duck typing).
 """
 @inline function _linear_eval_constant_extrap(
-    y::AbstractVector{Tv},
-    is_left::Bool,
-    op::AbstractEvalOp,
-    extrap::_ClampOrFill
-) where {Tv}
+        y::AbstractVector{Tv},
+        is_left::Bool,
+        op::AbstractEvalOp,
+        extrap::_ClampOrFill
+    ) where {Tv}
     y_bnd = @inbounds is_left ? y[1] : y[end]
     return _constant_extrap_result(op, y_bnd, extrap)
 end
@@ -281,35 +281,35 @@ Query type `Tq` is unconstrained to support ForwardDiff.Dual:
 - Arithmetic uses original `xq` to preserve derivative propagation
 """
 @inline function _linear_with_extrap(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xq::Tq,
-    ::NoExtrap,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
-    _linear_eval_at_point(x, y, xq, NoExtrap(), op, searcher)
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq,
+        ::NoExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    return _linear_eval_at_point(x, y, xq, NoExtrap(), op, searcher)
 end
 
 @inline function _linear_with_extrap(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xq::Tq,
-    ::ExtendExtrap,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
-    _linear_eval_at_point(x, y, xq, ExtendExtrap(), op, searcher)
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq,
+        ::ExtendExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    return _linear_eval_at_point(x, y, xq, ExtendExtrap(), op, searcher)
 end
 
 @inline function _linear_with_extrap(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xq::Tq,
-    extrap::_ClampOrFill,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq,
+        extrap::_ClampOrFill,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     x_min, x_max = first(x), last(x)
     # Use primal for comparisons (AD types need Float comparison)
     xq_primal = _extract_primal(xq)
@@ -323,15 +323,15 @@ end
 end
 
 @inline function _linear_with_extrap(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xq::Tq,
-    ::WrapExtrap,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq,
+        ::WrapExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xi_wrapped = _wrap_to_domain(xq, first(x), last(x))
-    _linear_eval_at_point(x, y, xi_wrapped, ExtendExtrap(), op, searcher)
+    return _linear_eval_at_point(x, y, xi_wrapped, ExtendExtrap(), op, searcher)
 end
 
 
@@ -342,14 +342,14 @@ end
 # Core implementation with AbstractExtrap + op + searcher dispatch
 # Supports mixed types: Tg for grid, Tv for values, Tq for query (including Dual)
 @inline function linear_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xq::Tq,
-    extrap::AbstractExtrap,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
-    _linear_with_extrap(x, y, xq, extrap, op, searcher)
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq,
+        extrap::AbstractExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
+    return _linear_with_extrap(x, y, xq, extrap, op, searcher)
 end
 
 # Public API - AbstractExtrap dispatch
@@ -357,18 +357,18 @@ end
 # AD Support: Tq can be Tg or Dual{Tg} (both are <:Real)
 # Note: Tq<:Real constraint resolves method ambiguity with the generic Real wrapper
 @inline function linear_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xq::Tq;
-    extrap::AbstractExtrap=NoExtrap(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch(),
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq;
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _resolve_search(x, xq, search, hint)
-    linear_interp(x, y, xq, extrap, deriv, searcher)
+    return linear_interp(x, y, xq, extrap, deriv, searcher)
 end
 
 # ╔═══════════════════════════════════════════════════════════════════════════╗
@@ -384,13 +384,13 @@ end
 # Works with both AbstractVector and AbstractRange x
 
 function linear_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_targets::AbstractVector{Tg};
-    extrap::AbstractExtrap=NoExtrap(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_targets::AbstractVector{Tg};
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_targets))
     linear_interp!(output, x, y, x_targets; extrap, deriv, search)
     return output
@@ -404,14 +404,14 @@ end
 # POLICY: Tg is computed from x/y ONLY, not from x_targets
 
 function linear_interp!(
-    output::AbstractVector,
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_targets::AbstractVector{Tq};
-    extrap::AbstractExtrap=NoExtrap(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv, Tq<:Real}
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_targets::AbstractVector{Tq};
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: Real, Tv, Tq <: Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
@@ -421,13 +421,15 @@ function linear_interp!(
     # Validate output can hold result type
     Tout = eltype(output)
     if promote_type(Tout, Tv_float) !== Tout
-        throw(ArgumentError(
-            "output eltype $Tout cannot hold interpolation result type $Tv_float. " *
-            "Use Vector{$Tv_float} or a wider type."
-        ))
+        throw(
+            ArgumentError(
+                "output eltype $Tout cannot hold interpolation result type $Tv_float. " *
+                    "Use Vector{$Tv_float} or a wider type."
+            )
+        )
     end
 
-    linear_interp!(output, x_typed, y_typed, xq_typed; extrap, deriv, search)
+    return linear_interp!(output, x_typed, y_typed, xq_typed; extrap, deriv, search)
 end
 
 # ========================================
@@ -437,14 +439,14 @@ end
 # POLICY: Tg is computed from x/y ONLY, not from xq
 
 @inline function linear_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xq::Tq;
-    extrap::AbstractExtrap=NoExtrap(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch(),
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:Real, Tv, Tq<:Real}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq;
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
     # Pass xq directly (not converted) to preserve ForwardDiff.Dual for AD
     return linear_interp(x_typed, y_typed, xq; extrap, deriv, search, hint)
@@ -455,13 +457,13 @@ end
 # ========================================
 
 function linear_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_targets::AbstractVector{Tq};
-    extrap::AbstractExtrap=NoExtrap(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv, Tq<:Real}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_targets::AbstractVector{Tq};
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
     Tv_float = eltype(y_typed)
     output = Vector{Tv_float}(undef, length(x_targets))

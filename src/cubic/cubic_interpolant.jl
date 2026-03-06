@@ -25,17 +25,17 @@
 # Default search is now the stored policy in itp.search_policy
 # Tg = grid type, Tv = value type (can be Complex)
 # Unified method: accepts any query type (Tg, Real, or Dual for AD)
-@inline function (itp::CubicInterpolant{Tg,Tv})(xq; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv}
+@inline function (itp::CubicInterpolant{Tg, Tv})(xq; deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = itp.search_policy, hint::Union{Nothing, Base.RefValue{Int}} = nothing) where {Tg <: AbstractFloat, Tv}
     @boundscheck _check_domain(itp.cache.x, xq, itp.extrap)
     searcher = _resolve_search(itp.cache.x, xq, search, hint)
     # Pass original xq to preserve Dual type for AD
-    _eval_with_bc(itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)
+    return _eval_with_bc(itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)
 end
 
 # Vector call with deriv keyword support
 # Now supports hint for ODE/streaming patterns - hint is updated during loop
 # Output type is promoted to wider type for precision preservation.
-function (itp::CubicInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+function (itp::CubicInterpolant{Tg, Tv})(xq::AbstractVector{Tq}; deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = itp.search_policy, hint::Union{Nothing, Base.RefValue{Int}} = nothing) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
     output = Vector{T_out}(undef, length(xq))
     searcher = _resolve_search(itp.cache.x, xq, search, hint)
@@ -44,7 +44,7 @@ function (itp::CubicInterpolant{Tg,Tv})(xq::AbstractVector{Tq}; deriv::DerivOp=E
 end
 
 # In-place vector call with deriv keyword support
-function (itp::CubicInterpolant{Tg,Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=itp.search_policy, hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+function (itp::CubicInterpolant{Tg, Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = itp.search_policy, hint::Union{Nothing, Base.RefValue{Int}} = nothing) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     @assert length(output) == length(xq) "output length must match xq length"
     searcher = _resolve_search(itp.cache.x, xq, search, hint)
     _cubic_vector_loop!(output, itp.cache, itp.y, itp.z, xq, itp.extrap, deriv, searcher)
@@ -80,7 +80,7 @@ aq = _anchor_query(x, 0.35, Val(:cubic))
 itp(aq)  # Ultra-fast evaluation
 ```
 """
-@inline function (itp::CubicInterpolant{Tg,Tv})(aq::_CubicAnchoredQuery{Tg,Tq}; deriv::DerivOp=EvalValue()) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+@inline function (itp::CubicInterpolant{Tg, Tv})(aq::_CubicAnchoredQuery{Tg, Tq}; deriv::DerivOp = EvalValue()) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     # Fast path: inside domain (most common case)
     if aq.side == 0x00
         return _eval_anchored_kernel(itp, aq, deriv)
@@ -100,7 +100,7 @@ Core anchored evaluation kernel. Dispatches on concrete EvalOp type for optimal 
 - EvalDeriv2, EvalDeriv3: 2-term dot product (wzL*zL + wzR*zR) - optimized, no y-loads
 """
 # EvalValue: Full 4-term evaluation with y and z
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::EvalValue) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::EvalValue) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     @inbounds begin
         yL = itp.y[aq.idx]
         yR = itp.y[aq.idx + 1]
@@ -113,7 +113,7 @@ Core anchored evaluation kernel. Dispatches on concrete EvalOp type for optimal 
 end
 
 # EvalDeriv1: Full 4-term evaluation with y and z
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::EvalDeriv1) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::EvalDeriv1) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     @inbounds begin
         yL = itp.y[aq.idx]
         yR = itp.y[aq.idx + 1]
@@ -126,7 +126,7 @@ end
 end
 
 # EvalDeriv2: Optimized 2-term evaluation with only z (no y-loads)
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::EvalDeriv2) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::EvalDeriv2) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     @inbounds begin
         zL = itp.z[aq.idx]
         zR = itp.z[aq.idx + 1]
@@ -137,7 +137,7 @@ end
 end
 
 # EvalDeriv3: Optimized 2-term evaluation with only z (no y-loads)
-@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::EvalDeriv3) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+@inline function _eval_anchored_kernel(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::EvalDeriv3) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     @inbounds begin
         zL = itp.z[aq.idx]
         zR = itp.z[aq.idx + 1]
@@ -152,24 +152,24 @@ end
 # ========================================
 
 # NoExtrap - throw DomainError
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::NoExtrap, ::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::NoExtrap, ::AbstractEvalOp) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     x_min, x_max = first(itp.cache.x), last(itp.cache.x)
     throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
 end
 
 # ClampExtrap - return fill value (EvalValue) or zero (derivatives)
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, extrap::_ClampOrFill, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, extrap::_ClampOrFill, op::AbstractEvalOp) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     y_bnd = aq.side == 0x01 ? @inbounds(itp.y[1]) : @inbounds(itp.y[end])
     return _constant_extrap_result(op, y_bnd, extrap)
 end
 
 # ExtendExtrap - use precomputed weights (boundary polynomial extrapolation)
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::ExtendExtrap, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::ExtendExtrap, op::AbstractEvalOp) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     return _eval_anchored_kernel(itp, aq, op)
 end
 
 # WrapExtrap - use precomputed weights (already wrapped at anchor construction if needed)
-@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg,Tv}, aq::_CubicAnchoredQuery{Tg,Tq}, ::WrapExtrap, op::AbstractEvalOp) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+@inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, ::WrapExtrap, op::AbstractEvalOp) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     return _eval_anchored_kernel(itp, aq, op)
 end
 
@@ -189,11 +189,11 @@ Iterates through anchor vector, dispatching each to existing scalar kernels:
 For extrap=NoExtrap(), throws DomainError on first out-of-domain anchor.
 """
 @inline function _eval_anchored_vector_loop!(
-    output::AbstractVector{Tv},
-    itp::CubicInterpolant{Tg,Tv},
-    aq::AbstractVector{<:_CubicAnchoredQuery{Tg}},
-    op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv}
+        output::AbstractVector{Tv},
+        itp::CubicInterpolant{Tg, Tv},
+        aq::AbstractVector{<:_CubicAnchoredQuery{Tg}},
+        op::AbstractEvalOp
+    ) where {Tg <: AbstractFloat, Tv}
     @inbounds for k in eachindex(aq, output)
         aq_k = aq[k]
         if aq_k.side == 0x00
@@ -228,10 +228,10 @@ vals = itp(aq_vec)            # Value
 derivs = itp(aq_vec; deriv=DerivOp(1)) # First derivative
 ```
 """
-function (itp::CubicInterpolant{Tg,Tv})(
-    aq::AbstractVector{<:_CubicAnchoredQuery{Tg, Tq}};
-    deriv::DerivOp=EvalValue()
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+function (itp::CubicInterpolant{Tg, Tv})(
+        aq::AbstractVector{<:_CubicAnchoredQuery{Tg, Tq}};
+        deriv::DerivOp = EvalValue()
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     T_out = promote_type(Tv, Tq)  # Lossless: wider type to avoid precision loss from anchor
     output = Vector{T_out}(undef, length(aq))
     _eval_anchored_vector_loop!(output, itp, aq, deriv)
@@ -249,11 +249,11 @@ output = Vector{Float64}(undef, length(aq_vec))
 itp(output, aq_vec; deriv=DerivOp(1))  # Zero allocation after warmup
 ```
 """
-function (itp::CubicInterpolant{Tg,Tv})(
-    output::AbstractVector{Tv},
-    aq::AbstractVector{<:_CubicAnchoredQuery{Tg}};
-    deriv::DerivOp=EvalValue()
-) where {Tg<:AbstractFloat, Tv}
+function (itp::CubicInterpolant{Tg, Tv})(
+        output::AbstractVector{Tv},
+        aq::AbstractVector{<:_CubicAnchoredQuery{Tg}};
+        deriv::DerivOp = EvalValue()
+    ) where {Tg <: AbstractFloat, Tv}
     @assert length(output) == length(aq) "output length ($(length(output))) must match aq length ($(length(aq)))"
     _eval_anchored_vector_loop!(output, itp, aq, deriv)
     return output
@@ -276,13 +276,13 @@ Pool-allocated `tmp_z` is copied by the CubicInterpolant constructor,
 so the pool memory can be safely reused after this function returns.
 """
 @inline @with_pool pool function _build_interpolant_bcpair(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    bc_pair::BCPair{L,R},
-    extrap::AbstractExtrap,
-    autocache::Bool,
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, L<:PointBC, R<:PointBC}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        bc_pair::BCPair{L, R},
+        extrap::AbstractExtrap,
+        autocache::Bool,
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv, L <: PointBC, R <: PointBC}
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc_pair, autocache)
     tmp_z = similar!(pool, y)
@@ -304,12 +304,12 @@ Pool-allocated `tmp_z` is copied by the CubicInterpolant constructor,
 so the pool memory can be safely reused after this function returns.
 """
 @inline @with_pool pool function _build_interpolant_periodic(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    bc::PeriodicBC,
-    autocache::Bool,
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        bc::PeriodicBC,
+        autocache::Bool,
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv}
     x, y = _prepare_periodic(x, y, bc)
     _check_periodic_endpoints(y)
     cache = _get_cubic_cache(x, PeriodicBC(), autocache)
@@ -380,13 +380,13 @@ val = itp(0.5)  # returns ComplexF64
 # Internal implementation - takes AbstractBC only (type-stable)
 # Tg = grid type, Tv = value type (can be Complex)
 @inline function _cubic_interp_impl(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    bc::AbstractBC,
-    extrap::AbstractExtrap,
-    autocache::Bool,
-    search::P=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        bc::AbstractBC,
+        extrap::AbstractExtrap,
+        autocache::Bool,
+        search::P = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv, P <: AbstractSearchPolicy}
     if _is_periodic_bc(bc)
         return _build_interpolant_periodic(x, y, bc, autocache, search)
     else
@@ -397,13 +397,13 @@ end
 
 # Hot path: x is AbstractFloat, Tv unconstrained
 function cubic_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv};
-    bc::AbstractBC=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    search::P=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv};
+        bc::AbstractBC = CubicFit(),
+        extrap::AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        search::P = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv, P <: AbstractSearchPolicy}
     # Auto-promote x/y types (zero allocation if already compatible)
     x_p, y_p = _promote_itp_inputs(x, y)
     bc_promoted = _promote_bc(bc, eltype(y_p))
@@ -430,11 +430,11 @@ Pool-allocated `tmp_z` is copied by the CubicInterpolant constructor,
 so the pool memory can be safely reused after this function returns.
 """
 @with_pool pool function cubic_interp(
-    cache::CubicSplineCache{Tg},
-    y::AbstractVector{Tv};
-    extrap::AbstractExtrap=NoExtrap(),
-    search::P=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, P<:AbstractSearchPolicy}
+        cache::CubicSplineCache{Tg},
+        y::AbstractVector{Tv};
+        extrap::AbstractExtrap = NoExtrap(),
+        search::P = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv, P <: AbstractSearchPolicy}
     tmp_z = similar!(pool, y)
     _solve_system!(tmp_z, cache, y, cache.bc_config)
 
@@ -450,13 +450,13 @@ end
 
 # Generic Real wrapper for 2-argument form (handles Integer grids, etc.)
 function cubic_interp(
-    x::AbstractVector{TX},
-    y::AbstractVector{TY};
-    bc::AbstractBC=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    search::P=AutoSearch()
-) where {TX<:Real, TY, P<:AbstractSearchPolicy}
+        x::AbstractVector{TX},
+        y::AbstractVector{TY};
+        bc::AbstractBC = CubicFit(),
+        extrap::AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        search::P = AutoSearch()
+    ) where {TX <: Real, TY, P <: AbstractSearchPolicy}
     x_p, y_p = _promote_itp_inputs(x, y)
     bc_promoted = _promote_bc(bc, eltype(y_p))
     return _cubic_interp_impl(x_p, y_p, bc_promoted, extrap, autocache, search)

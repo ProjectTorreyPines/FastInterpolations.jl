@@ -11,24 +11,24 @@
 # Horner form of antiderivative: F(u) = u·@evalpoly(u, d, c2, b3, a4)
 # with pre-absorbed coefficients a4=a/4, b3=b/3, c2=c/2.
 @inline function _cubic_integral_kernel(
-    ::_EvalIntegralPartial,
-    zL::Tv, zR::Tv, yL::Tv, yR::Tv,
-    h::Tg, u0::Td, u1::Td
-) where {Tv, Tg<:AbstractFloat, Td<:Real}
+        ::_EvalIntegralPartial,
+        zL::Tv, zR::Tv, yL::Tv, yR::Tv,
+        h::Tg, u0::Td, u1::Td
+    ) where {Tv, Tg <: AbstractFloat, Td <: Real}
     inv_h = inv(h)
     a4 = (zR - zL) * (inv_h * inv(Tg(24)))   # a/4 = (zR-zL)/(24h)
     b3 = inv(Tg(6)) * zL                     # b/3 = zL/6
     c2 = (yR - yL) * (inv_h / 2) - (h * inv(Tg(12))) * (2zL + zR)  # c/2
-    d  = yL
+    d = yL
     return u1 * @evalpoly(u1, d, c2, b3, a4) -
-           u0 * @evalpoly(u0, d, c2, b3, a4)
+        u0 * @evalpoly(u0, d, c2, b3, a4)
 end
 
 # --- Full-cell integral: ∫_0^h S(u) du = h/2·(yL+yR) - h³/24·(zL+zR) ---
 @inline function _cubic_integral_kernel(
-    ::_EvalIntegralCell,
-    zL::Tv, zR::Tv, yL::Tv, yR::Tv, h::Tg
-) where {Tv, Tg<:AbstractFloat}
+        ::_EvalIntegralCell,
+        zL::Tv, zR::Tv, yL::Tv, yR::Tv, h::Tg
+    ) where {Tv, Tg <: AbstractFloat}
     h2 = h * h
     return (h / 2) * muladd(-(h2 * inv(Tg(12))), zL + zR, yL + yR)
 end
@@ -42,9 +42,9 @@ end
 # --- Partial-cell integral: ∫_{u0}^{u1} S(u) du ---
 # Uses u1²-u0² = (u1-u0)(u1+u0) factorization + muladd.
 @inline function _linear_integral_kernel(
-    ::_EvalIntegralPartial,
-    yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td
-) where {Tv, Tg<:AbstractFloat, Td<:Real}
+        ::_EvalIntegralPartial,
+        yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td
+    ) where {Tv, Tg <: AbstractFloat, Td <: Real}
     du = u1 - u0
     half_slope = (yR - yL) * inv(2h)
     return du * muladd(half_slope, u1 + u0, yL)
@@ -52,9 +52,9 @@ end
 
 # --- Full-cell integral: ∫_0^h S(u) du = h/2·(yL + yR) ---
 @inline function _linear_integral_kernel(
-    ::_EvalIntegralCell,
-    yL::Tv, yR::Tv, h::Tg
-) where {Tv, Tg<:AbstractFloat}
+        ::_EvalIntegralCell,
+        yL::Tv, yR::Tv, h::Tg
+    ) where {Tv, Tg <: AbstractFloat}
     return (h / 2) * (yL + yR)
 end
 
@@ -68,20 +68,20 @@ end
 # --- Partial-cell integral: ∫_{u0}^{u1} S(u) du ---
 # Horner form: F(u) = u·@evalpoly(u, y0, d/2, a/3)
 @inline function _quadratic_integral_kernel(
-    ::_EvalIntegralPartial,
-    a::Tv, d::Tv, y0::Tv, u0::Td, u1::Td
-) where {Tv, Td<:Real}
+        ::_EvalIntegralPartial,
+        a::Tv, d::Tv, y0::Tv, u0::Td, u1::Td
+    ) where {Tv, Td <: Real}
     a_3 = inv(Td(3)) * a
     d_2 = inv(Td(2)) * d
     return u1 * @evalpoly(u1, y0, d_2, a_3) -
-           u0 * @evalpoly(u0, y0, d_2, a_3)
+        u0 * @evalpoly(u0, y0, d_2, a_3)
 end
 
 # --- Full-cell integral: ∫_0^h S(u) du = a/3·h³ + d/2·h² + y₀·h ---
 @inline function _quadratic_integral_kernel(
-    ::_EvalIntegralCell,
-    a::Tv, d::Tv, y0::Tv, h::Tg
-) where {Tv, Tg<:AbstractFloat}
+        ::_EvalIntegralCell,
+        a::Tv, d::Tv, y0::Tv, h::Tg
+    ) where {Tv, Tg <: AbstractFloat}
     return h * @evalpoly(h, y0, inv(Tg(2)) * d, inv(Tg(3)) * a)
 end
 
@@ -92,25 +92,25 @@ end
 
 # --- LeftSide — always use left value yL ---
 @inline function _constant_integral_kernel(
-    ::_EvalIntegralPartial,
-    yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::LeftSide
-) where {Tv, Tg<:AbstractFloat, Td<:Real}
+        ::_EvalIntegralPartial,
+        yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::LeftSide
+    ) where {Tv, Tg <: AbstractFloat, Td <: Real}
     return yL * (u1 - u0)
 end
 
 # --- RightSide — always use right value yR ---
 @inline function _constant_integral_kernel(
-    ::_EvalIntegralPartial,
-    yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::RightSide
-) where {Tv, Tg<:AbstractFloat, Td<:Real}
+        ::_EvalIntegralPartial,
+        yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::RightSide
+    ) where {Tv, Tg <: AbstractFloat, Td <: Real}
     return yR * (u1 - u0)
 end
 
 # --- NearestSide — split at midpoint h/2 ---
 @inline function _constant_integral_kernel(
-    ::_EvalIntegralPartial,
-    yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::NearestSide
-) where {Tv, Tg<:AbstractFloat, Td<:Real}
+        ::_EvalIntegralPartial,
+        yL::Tv, yR::Tv, h::Tg, u0::Td, u1::Td, ::NearestSide
+    ) where {Tv, Tg <: AbstractFloat, Td <: Real}
     mid = h / 2
     if u1 <= mid
         return yL * (u1 - u0)
@@ -144,10 +144,10 @@ end
 #   P(t) = fL·H₀₀(t) + fR·H₀₁(t) + h·(dfL·H₁₀(t) + dfR·H₁₁(t))
 # with t = u/h, dx = h dt
 @inline function _hermite_integral_kernel_1d(
-    fL, fR, dfL, dfR,
-    h::Tg, inv_h::Tg,
-    u0::Real, u1::Real
-) where {Tg<:AbstractFloat}
+        fL, fR, dfL, dfR,
+        h::Tg, inv_h::Tg,
+        u0::Real, u1::Real
+    ) where {Tg <: AbstractFloat}
     t0 = u0 * inv_h
     t1 = u1 * inv_h
     dH00 = _IH00(t1) - _IH00(t0)
@@ -163,20 +163,22 @@ end
 # Mirrors _eval_nd_cell but replaces _hermite_kernel_1d with
 # _hermite_integral_kernel_1d for each dimension collapse stage.
 @inline @generated function _integrate_nd_cubic_cell(
-    partials::Array{Tv, NP1},
-    indices::NTuple{N, Int},
-    hs::NTuple{N, Tg},
-    inv_hs::NTuple{N, Tg},
-    ulos::NTuple{N, <:Real},
-    uhis::NTuple{N, <:Real}
-) where {Tv, Tg, N, NP1}
+        partials::Array{Tv, NP1},
+        indices::NTuple{N, Int},
+        hs::NTuple{N, Tg},
+        inv_hs::NTuple{N, Tg},
+        ulos::NTuple{N, <:Real},
+        uhis::NTuple{N, <:Real}
+    ) where {Tv, Tg, N, NP1}
     NP1 == N + 1 || error("NP1 must equal N+1")
 
     stmts = Expr[]
 
     # Unpack tuples
-    for (prefix, source) in [("idx_", :indices), ("h_", :hs), ("inv_h_", :inv_hs),
-                              ("ulo_", :ulos), ("uhi_", :uhis)]
+    for (prefix, source) in [
+            ("idx_", :indices), ("h_", :hs), ("inv_h_", :inv_hs),
+            ("ulo_", :ulos), ("uhi_", :uhis),
+        ]
         syms = ntuple(d -> Symbol(prefix, d), N)
         lhs = Expr(:tuple, syms...)
         push!(stmts, :($lhs = $source))
@@ -255,25 +257,27 @@ end
 end
 
 @inline @generated function _integrate_linear_nd_cell(
-    data::Array{Tv, N},
-    idx::NTuple{N, Int},
-    hs::NTuple{N},
-    ulo::NTuple{N},
-    uhi::NTuple{N}
-) where {Tv, N}
+        data::Array{Tv, N},
+        idx::NTuple{N, Int},
+        hs::NTuple{N},
+        ulo::NTuple{N},
+        uhi::NTuple{N}
+    ) where {Tv, N}
     nc = 1 << N
     terms = Expr[]
     for c in 0:(nc - 1)
         bits = ntuple(d -> (c >> (d - 1)) & 1, N)
         idx_parts = [:(idx[$d] + $(bits[d])) for d in 1:N]
-        ws = [bits[d] == 0 ?
-              :(_w0_int(ulo[$d], uhi[$d], hs[$d])) :
-              :(_w1_int(ulo[$d], uhi[$d], hs[$d])) for d in 1:N]
+        ws = [
+            bits[d] == 0 ?
+                :(_w0_int(ulo[$d], uhi[$d], hs[$d])) :
+                :(_w1_int(ulo[$d], uhi[$d], hs[$d])) for d in 1:N
+        ]
         w = foldl((a, b) -> :($a * $b), ws)
         push!(terms, :(@inbounds data[$(idx_parts...)] * $w))
     end
     sum_expr = foldl((a, b) -> :($a + $b), terms)
-    quote
+    return quote
         Base.@_inline_meta
         @inbounds $sum_expr
     end
@@ -293,26 +297,28 @@ end
     a_3 = (s - dfL) * (inv_h * inv(oftype(h, 3)))  # a/3
     d_2 = inv(oftype(h, 2)) * dfL   # Tg * Tv
     return u1 * @evalpoly(u1, fL, d_2, a_3) -
-           u0 * @evalpoly(u0, fL, d_2, a_3)
+        u0 * @evalpoly(u0, fL, d_2, a_3)
 end
 
 # @generated tensor-product cell integral for quadratic ND
 # Mirrors _eval_nd_quad_cell but replaces point-eval with integral kernel.
 # Reads 3 values per dimension (fL, fR, dfL — no dfR).
 @inline @generated function _integrate_nd_quad_cell(
-    partials::Array{Tv, NP1},
-    indices::NTuple{N, Int},
-    hs::NTuple{N, Tg},
-    inv_hs::NTuple{N, Tg},
-    ulos::NTuple{N, <:Real},
-    uhis::NTuple{N, <:Real}
-) where {Tv, Tg, N, NP1}
+        partials::Array{Tv, NP1},
+        indices::NTuple{N, Int},
+        hs::NTuple{N, Tg},
+        inv_hs::NTuple{N, Tg},
+        ulos::NTuple{N, <:Real},
+        uhis::NTuple{N, <:Real}
+    ) where {Tv, Tg, N, NP1}
     NP1 == N + 1 || error("NP1 must equal N+1")
 
     stmts = Expr[]
 
-    for (prefix, source) in [("idx_", :indices), ("h_", :hs), ("inv_h_", :inv_hs),
-                              ("ulo_", :ulos), ("uhi_", :uhis)]
+    for (prefix, source) in [
+            ("idx_", :indices), ("h_", :hs), ("inv_h_", :inv_hs),
+            ("ulo_", :ulos), ("uhi_", :uhis),
+        ]
         syms = ntuple(d -> Symbol(prefix, d), N)
         lhs = Expr(:tuple, syms...)
         push!(stmts, :($lhs = $source))
@@ -385,26 +391,28 @@ end
 @inline _cw1(u0, u1, h, ::NearestSide) = max(zero(u0), u1 - max(u0, h / 2))
 
 @inline @generated function _integrate_constant_nd_cell(
-    data::Array{Tv, N},
-    idx::NTuple{N, Int},
-    hs::NTuple{N},
-    ulo::NTuple{N},
-    uhi::NTuple{N},
-    sides::Tuple{Vararg{AbstractSide, N}}
-) where {Tv, N}
+        data::Array{Tv, N},
+        idx::NTuple{N, Int},
+        hs::NTuple{N},
+        ulo::NTuple{N},
+        uhi::NTuple{N},
+        sides::Tuple{Vararg{AbstractSide, N}}
+    ) where {Tv, N}
     nc = 1 << N
     terms = Expr[]
     for c in 0:(nc - 1)
         bits = ntuple(d -> (c >> (d - 1)) & 1, N)
         idx_parts = [:(idx[$d] + $(bits[d])) for d in 1:N]
-        ws = [bits[d] == 0 ?
-              :(_cw0(ulo[$d], uhi[$d], hs[$d], sides[$d])) :
-              :(_cw1(ulo[$d], uhi[$d], hs[$d], sides[$d])) for d in 1:N]
+        ws = [
+            bits[d] == 0 ?
+                :(_cw0(ulo[$d], uhi[$d], hs[$d], sides[$d])) :
+                :(_cw1(ulo[$d], uhi[$d], hs[$d], sides[$d])) for d in 1:N
+        ]
         w = foldl((a, b) -> :($a * $b), ws)
         push!(terms, :(@inbounds data[$(idx_parts...)] * $w))
     end
     sum_expr = foldl((a, b) -> :($a + $b), terms)
-    quote
+    return quote
         Base.@_inline_meta
         @inbounds $sum_expr
     end

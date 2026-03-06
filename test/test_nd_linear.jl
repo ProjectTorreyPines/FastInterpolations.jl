@@ -26,7 +26,7 @@ end
 
         # Linear function: f(x,y) = 2x + 3y + 1
         # Bilinear should reproduce this exactly
-        data = [2.0*xi + 3.0*yj + 1.0 for xi in x, yj in y]
+        data = [2.0 * xi + 3.0 * yj + 1.0 for xi in x, yj in y]
 
         itp = linear_interp((x, y), data)
 
@@ -38,12 +38,12 @@ end
         @test itp((2.0, 3.0)) ≈ 14.0
 
         # Test at midpoints (should be exact for linear function)
-        @test itp((0.5, 0.5)) ≈ 2.0*0.5 + 3.0*0.5 + 1.0
-        @test itp((1.5, 2.5)) ≈ 2.0*1.5 + 3.0*2.5 + 1.0
+        @test itp((0.5, 0.5)) ≈ 2.0 * 0.5 + 3.0 * 0.5 + 1.0
+        @test itp((1.5, 2.5)) ≈ 2.0 * 1.5 + 3.0 * 2.5 + 1.0
 
         # Test random interior points
-        @test itp((0.3, 0.7)) ≈ 2.0*0.3 + 3.0*0.7 + 1.0 atol=1e-14
-        @test itp((1.8, 2.2)) ≈ 2.0*1.8 + 3.0*2.2 + 1.0 atol=1e-14
+        @test itp((0.3, 0.7)) ≈ 2.0 * 0.3 + 3.0 * 0.7 + 1.0 atol = 1.0e-14
+        @test itp((1.8, 2.2)) ≈ 2.0 * 1.8 + 3.0 * 2.2 + 1.0 atol = 1.0e-14
     end
 
     @testset "2D bilinear with product function" begin
@@ -61,8 +61,8 @@ end
 
         # The product function x*y is exactly representable by bilinear interpolation
         # within each cell, so test at cell midpoints
-        @test itp((0.25, 0.25)) ≈ 0.25 * 0.25 atol=1e-14
-        @test itp((0.75, 1.25)) ≈ 0.75 * 1.25 atol=1e-14
+        @test itp((0.25, 0.25)) ≈ 0.25 * 0.25 atol = 1.0e-14
+        @test itp((0.75, 1.25)) ≈ 0.75 * 1.25 atol = 1.0e-14
     end
 
     # ========================================
@@ -74,7 +74,7 @@ end
         z = [0.0, 1.0, 2.0]
 
         # Linear function: f(x,y,z) = x + 2y + 3z
-        data = [xi + 2.0*yj + 3.0*zk for xi in x, yj in y, zk in z]
+        data = [xi + 2.0 * yj + 3.0 * zk for xi in x, yj in y, zk in z]
 
         itp = linear_interp((x, y, z), data)
 
@@ -86,8 +86,8 @@ end
         @test itp((2.0, 1.0, 2.0)) ≈ 2.0 + 2.0 + 6.0
 
         # Interior points
-        @test itp((0.5, 0.5, 0.5)) ≈ 0.5 + 1.0 + 1.5 atol=1e-14
-        @test itp((1.5, 0.3, 1.7)) ≈ 1.5 + 0.6 + 5.1 atol=1e-14
+        @test itp((0.5, 0.5, 0.5)) ≈ 0.5 + 1.0 + 1.5 atol = 1.0e-14
+        @test itp((1.5, 0.3, 1.7)) ≈ 1.5 + 0.6 + 5.1 atol = 1.0e-14
     end
 
     # ========================================
@@ -99,20 +99,20 @@ end
 
         # f(x,y) = 2x + 3y + 1
         # ∂f/∂x = 2, ∂f/∂y = 3
-        data = [2.0*xi + 3.0*yj + 1.0 for xi in x, yj in y]
+        data = [2.0 * xi + 3.0 * yj + 1.0 for xi in x, yj in y]
         itp = linear_interp((x, y), data)
 
         # Test ∂f/∂x at various points
-        @test itp((0.5, 0.5); deriv=DerivOp(1,0)) ≈ 2.0 atol=1e-12
-        @test itp((1.3, 2.1); deriv=DerivOp(1,0)) ≈ 2.0 atol=1e-12
+        @test itp((0.5, 0.5); deriv = DerivOp(1, 0)) ≈ 2.0 atol = 1.0e-12
+        @test itp((1.3, 2.1); deriv = DerivOp(1, 0)) ≈ 2.0 atol = 1.0e-12
 
         # Test ∂f/∂y at various points
-        @test itp((0.5, 0.5); deriv=DerivOp(0,1)) ≈ 3.0 atol=1e-12
-        @test itp((1.3, 2.1); deriv=DerivOp(0,1)) ≈ 3.0 atol=1e-12
+        @test itp((0.5, 0.5); deriv = DerivOp(0, 1)) ≈ 3.0 atol = 1.0e-12
+        @test itp((1.3, 2.1); deriv = DerivOp(0, 1)) ≈ 3.0 atol = 1.0e-12
 
         # Test that ∂²f/∂x² = 0 (linear has no second derivative)
-        @test itp((0.5, 0.5); deriv=DerivOp(2,0)) ≈ 0.0 atol=1e-14
-        @test itp((0.5, 0.5); deriv=DerivOp(0,2)) ≈ 0.0 atol=1e-14
+        @test itp((0.5, 0.5); deriv = DerivOp(2, 0)) ≈ 0.0 atol = 1.0e-14
+        @test itp((0.5, 0.5); deriv = DerivOp(0, 2)) ≈ 0.0 atol = 1.0e-14
     end
 
     @testset "3D first derivatives" begin
@@ -121,13 +121,13 @@ end
         z = range(0.0, 1.0, 6)
 
         # f(x,y,z) = x + 2y + 3z
-        data = [xi + 2.0*yj + 3.0*zk for xi in x, yj in y, zk in z]
+        data = [xi + 2.0 * yj + 3.0 * zk for xi in x, yj in y, zk in z]
         itp = linear_interp((x, y, z), data)
 
         # ∂f/∂x = 1, ∂f/∂y = 2, ∂f/∂z = 3
-        @test itp((0.5, 0.5, 0.5); deriv=DerivOp(1,0,0)) ≈ 1.0 atol=1e-12
-        @test itp((0.5, 0.5, 0.5); deriv=DerivOp(0,1,0)) ≈ 2.0 atol=1e-12
-        @test itp((0.5, 0.5, 0.5); deriv=DerivOp(0,0,1)) ≈ 3.0 atol=1e-12
+        @test itp((0.5, 0.5, 0.5); deriv = DerivOp(1, 0, 0)) ≈ 1.0 atol = 1.0e-12
+        @test itp((0.5, 0.5, 0.5); deriv = DerivOp(0, 1, 0)) ≈ 2.0 atol = 1.0e-12
+        @test itp((0.5, 0.5, 0.5); deriv = DerivOp(0, 0, 1)) ≈ 3.0 atol = 1.0e-12
     end
 
     @testset "second+ derivatives return zero" begin
@@ -138,9 +138,9 @@ end
 
         # Same-axis second derivatives should be zero for linear
         # (linear interpolation has constant slope per axis)
-        @test itp((0.5, 0.5); deriv=DerivOp(2,0)) == 0.0
-        @test itp((0.5, 0.5); deriv=DerivOp(0,2)) == 0.0
-        @test itp((0.5, 0.5); deriv=DerivOp(2, 2)) == 0.0
+        @test itp((0.5, 0.5); deriv = DerivOp(2, 0)) == 0.0
+        @test itp((0.5, 0.5); deriv = DerivOp(0, 2)) == 0.0
+        @test itp((0.5, 0.5); deriv = DerivOp(2, 2)) == 0.0
 
         # Note: Mixed cross-derivatives Val((1,1)) are NOT zero for bilinear!
         # ∂²f/∂x∂y = (f₁₁ - f₁₀ - f₀₁ + f₀₀)/(h·k) which is non-zero in general
@@ -194,14 +194,14 @@ end
         data = [xi + yj for xi in x, yj in y]
 
         @testset "extrap=NoExtrap() (domain error)" begin
-            itp = linear_interp((x, y), data; extrap=NoExtrap())
+            itp = linear_interp((x, y), data; extrap = NoExtrap())
             @test_throws DomainError itp((-0.1, 0.5))
             @test_throws DomainError itp((0.5, 2.1))
             @test_throws DomainError itp((-0.1, -0.1))
         end
 
         @testset "extrap=ClampExtrap()" begin
-            itp = linear_interp((x, y), data; extrap=ClampExtrap())
+            itp = linear_interp((x, y), data; extrap = ClampExtrap())
             # Query beyond domain should clamp to boundary
             @test itp((-0.5, 0.5)) ≈ itp((0.0, 0.5))
             @test itp((2.5, 0.5)) ≈ itp((2.0, 0.5))
@@ -210,20 +210,20 @@ end
         end
 
         @testset "extrap=ExtendExtrap()" begin
-            itp = linear_interp((x, y), data; extrap=ExtendExtrap())
+            itp = linear_interp((x, y), data; extrap = ExtendExtrap())
             # Linear extension beyond domain
             @test itp((-0.5, 0.5)) ≈ -0.5 + 0.5  # Linear extrapolation
             @test itp((2.5, 0.5)) ≈ 2.5 + 0.5
         end
 
         @testset "extrap=WrapExtrap()" begin
-            itp = linear_interp((x, y), data; extrap=WrapExtrap())
+            itp = linear_interp((x, y), data; extrap = WrapExtrap())
             # Wrapping should work
             @test itp((2.5, 0.5)) ≈ itp((0.5, 0.5))  # 2.5 wraps to 0.5
         end
 
         @testset "per-axis extrap configuration" begin
-            itp = linear_interp((x, y), data; extrap=(NoExtrap(), ClampExtrap()))
+            itp = linear_interp((x, y), data; extrap = (NoExtrap(), ClampExtrap()))
             # x has :none, y has :constant
             @test itp((0.5, 2.5)) == itp((0.5, 2.0))  # y clamped
             @test_throws DomainError itp((2.5, 0.5))   # x throws
@@ -239,7 +239,7 @@ end
         data = [xi * yj for xi in x, yj in y]
 
         itp = linear_interp((x, y), data)
-        @test itp((0.5, 1.0)) ≈ 0.5 atol=1e-12
+        @test itp((0.5, 1.0)) ≈ 0.5 atol = 1.0e-12
     end
 
     @testset "mixed grid types" begin
@@ -248,7 +248,7 @@ end
         data = [xi + yj for xi in x, yj in y]
 
         itp = linear_interp((x, y), data)
-        @test itp((0.5, 0.5)) ≈ 1.0 atol=1e-10
+        @test itp((0.5, 0.5)) ≈ 1.0 atol = 1.0e-10
     end
 
     @testset "search policy" begin
@@ -261,7 +261,7 @@ end
         @test itp_default((0.5, 0.5)) ≈ 1.0
 
         # Mixed search policies
-        itp_mixed = linear_interp((x, y), data; search=(BinarySearch(), LinearBinarySearch{8}()))
+        itp_mixed = linear_interp((x, y), data; search = (BinarySearch(), LinearBinarySearch{8}()))
         @test itp_mixed((0.5, 0.5)) ≈ 1.0
     end
 
@@ -319,8 +319,8 @@ end
         @test itp((0.25, 0.75)) ≈ complex(0.25, 0.75)
 
         # Complex derivatives
-        @test itp((0.5, 0.5); deriv=DerivOp(1,0)) ≈ complex(1.0, 0.0)
-        @test itp((0.5, 0.5); deriv=DerivOp(0,1)) ≈ complex(0.0, 1.0)
+        @test itp((0.5, 0.5); deriv = DerivOp(1, 0)) ≈ complex(1.0, 0.0)
+        @test itp((0.5, 0.5); deriv = DerivOp(0, 1)) ≈ complex(0.0, 1.0)
     end
 
     # ========================================
@@ -438,9 +438,9 @@ end
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
         query = (1.5, 0.8)
-        linear_interp((x, y), data, query; deriv=DerivOp(1, 1))
-        linear_interp((x, y), data, query; deriv=DerivOp(1, 1))
-        @allocated linear_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        linear_interp((x, y), data, query; deriv = DerivOp(1, 1))
+        linear_interp((x, y), data, query; deriv = DerivOp(1, 1))
+        @allocated linear_interp((x, y), data, query; deriv = DerivOp(1, 1))
     end
 
     function _alloc_test_linear_deriv_val()
@@ -448,9 +448,9 @@ end
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
         query = (1.5, 0.8)
-        linear_interp((x, y), data, query; deriv=DerivOp(1, 0))
-        linear_interp((x, y), data, query; deriv=DerivOp(1, 0))
-        @allocated linear_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        linear_interp((x, y), data, query; deriv = DerivOp(1, 0))
+        linear_interp((x, y), data, query; deriv = DerivOp(1, 0))
+        @allocated linear_interp((x, y), data, query; deriv = DerivOp(1, 0))
     end
 
     function _alloc_test_linear_extrap_constant()
@@ -458,9 +458,9 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        linear_interp((x, y), data, query; extrap=ClampExtrap())
-        linear_interp((x, y), data, query; extrap=ClampExtrap())
-        @allocated linear_interp((x, y), data, query; extrap=ClampExtrap())
+        linear_interp((x, y), data, query; extrap = ClampExtrap())
+        linear_interp((x, y), data, query; extrap = ClampExtrap())
+        @allocated linear_interp((x, y), data, query; extrap = ClampExtrap())
     end
 
     function _alloc_test_linear_extrap_extension()
@@ -468,9 +468,9 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        linear_interp((x, y), data, query; extrap=ExtendExtrap())
-        linear_interp((x, y), data, query; extrap=ExtendExtrap())
-        @allocated linear_interp((x, y), data, query; extrap=ExtendExtrap())
+        linear_interp((x, y), data, query; extrap = ExtendExtrap())
+        linear_interp((x, y), data, query; extrap = ExtendExtrap())
+        @allocated linear_interp((x, y), data, query; extrap = ExtendExtrap())
     end
 
     function _alloc_test_linear_extrap_wrap()
@@ -478,9 +478,9 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        linear_interp((x, y), data, query; extrap=WrapExtrap())
-        linear_interp((x, y), data, query; extrap=WrapExtrap())
-        @allocated linear_interp((x, y), data, query; extrap=WrapExtrap())
+        linear_interp((x, y), data, query; extrap = WrapExtrap())
+        linear_interp((x, y), data, query; extrap = WrapExtrap())
+        @allocated linear_interp((x, y), data, query; extrap = WrapExtrap())
     end
 
     function _alloc_test_linear_mixed_mode()
@@ -488,9 +488,9 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        linear_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
-        linear_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
-        @allocated linear_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
+        linear_interp((x, y), data, query; extrap = (NoExtrap(), ClampExtrap()))
+        linear_interp((x, y), data, query; extrap = (NoExtrap(), ClampExtrap()))
+        @allocated linear_interp((x, y), data, query; extrap = (NoExtrap(), ClampExtrap()))
     end
 
     function _alloc_test_linear_3d()
@@ -559,9 +559,9 @@ end
         y = collect(range(0.0, 1.0, 15))
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        linear_interp((x, y), data, query; deriv=DerivOp(1, 0))
-        linear_interp((x, y), data, query; deriv=DerivOp(1, 0))
-        @allocated linear_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        linear_interp((x, y), data, query; deriv = DerivOp(1, 0))
+        linear_interp((x, y), data, query; deriv = DerivOp(1, 0))
+        @allocated linear_interp((x, y), data, query; deriv = DerivOp(1, 0))
     end
 
     function _alloc_test_linear_vector_3d()
@@ -698,7 +698,7 @@ end
             ref = linear_interp((x, y), data, (xqs, yqs))
             out = similar(ref)
             linear_interp!(out, (x, y), data, (xqs, yqs))
-            @test out ≈ ref atol=1e-14
+            @test out ≈ ref atol = 1.0e-14
         end
 
         @testset "AoS correctness" begin
@@ -709,7 +709,7 @@ end
             ref = linear_interp((x, y), data, points)
             out = similar(ref)
             linear_interp!(out, (x, y), data, points)
-            @test out ≈ ref atol=1e-14
+            @test out ≈ ref atol = 1.0e-14
         end
 
         @testset "SoA with deriv" begin
@@ -718,10 +718,10 @@ end
             data = [sin(xi) * cos(yj) for xi in x, yj in y]
             xqs = [0.5, 1.0, 1.5]
             yqs = [0.2, 0.4, 0.6]
-            ref = linear_interp((x, y), data, (xqs, yqs); deriv=DerivOp(1, 1))
+            ref = linear_interp((x, y), data, (xqs, yqs); deriv = DerivOp(1, 1))
             out = similar(ref)
-            linear_interp!(out, (x, y), data, (xqs, yqs); deriv=DerivOp(1, 1))
-            @test out ≈ ref atol=1e-14
+            linear_interp!(out, (x, y), data, (xqs, yqs); deriv = DerivOp(1, 1))
+            @test out ≈ ref atol = 1.0e-14
         end
 
         @testset "DimensionMismatch on wrong output length" begin

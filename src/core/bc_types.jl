@@ -89,7 +89,7 @@ end
 # Outer constructors: standard numerics auto-promote to float
 # Custom types fall through to Julia's auto-generated Deriv1(v) = Deriv1{typeof(v)}(v)
 Deriv1(v::Real) = Deriv1{typeof(float(v))}(float(v))
-Deriv1(v::Complex{T}) where {T<:AbstractFloat} = Deriv1{Complex{T}}(v)
+Deriv1(v::Complex{T}) where {T <: AbstractFloat} = Deriv1{Complex{T}}(v)
 Deriv1{Tv}(bc::Deriv1) where {Tv} = Deriv1{Tv}(convert(Tv, bc.val))
 
 """
@@ -112,7 +112,7 @@ end
 # Outer constructors: standard numerics auto-promote to float
 # Custom types fall through to Julia's auto-generated Deriv2(v) = Deriv2{typeof(v)}(v)
 Deriv2(v::Real) = Deriv2{typeof(float(v))}(float(v))
-Deriv2(v::Complex{T}) where {T<:AbstractFloat} = Deriv2{Complex{T}}(v)
+Deriv2(v::Complex{T}) where {T <: AbstractFloat} = Deriv2{Complex{T}}(v)
 Deriv2{Tv}(bc::Deriv2) where {Tv} = Deriv2{Tv}(convert(Tv, bc.val))
 
 """
@@ -139,7 +139,7 @@ end
 # Outer constructors: standard numerics auto-promote to float
 # Custom types fall through to Julia's auto-generated Deriv3(v) = Deriv3{typeof(v)}(v)
 Deriv3(v::Real) = Deriv3{typeof(float(v))}(float(v))
-Deriv3(v::Complex{T}) where {T<:AbstractFloat} = Deriv3{Complex{T}}(v)
+Deriv3(v::Complex{T}) where {T <: AbstractFloat} = Deriv3{Complex{T}}(v)
 Deriv3{Tv}(bc::Deriv3) where {Tv} = Deriv3{Tv}(convert(Tv, bc.val))
 
 """
@@ -162,14 +162,14 @@ bc = BCPair(Deriv1(1.0+0.0im), Deriv2(0.0im)) # Complex BC
 bc = BCPair(CubicFit(), Deriv2(0.0))          # Mixed: lazy left, concrete right
 ```
 """
-struct BCPair{L<:PointBC, R<:PointBC} <: AbstractBC
+struct BCPair{L <: PointBC, R <: PointBC} <: AbstractBC
     left::L
     right::R
 end
 
 # Convenience constructor from tuple
-BCPair(t::Tuple{L, R}) where {L<:PointBC, R<:PointBC} =
-    BCPair{L,R}(t[1], t[2])
+BCPair(t::Tuple{L, R}) where {L <: PointBC, R <: PointBC} =
+    BCPair{L, R}(t[1], t[2])
 
 
 """
@@ -207,7 +207,7 @@ struct PeriodicBC{E, P} <: AbstractBC
     function PeriodicBC{E, P}(period::P) where {E, P}
         E isa Symbol || error("PeriodicBC type parameter E must be a Symbol")
         E in (:inclusive, :exclusive) || error("PeriodicBC type parameter E must be :inclusive or :exclusive")
-        new{E, P}(period)
+        return new{E, P}(period)
     end
 end
 
@@ -215,12 +215,18 @@ end
 @inline endpoint(::PeriodicBC{E}) where {E} = E
 
 # Keyword constructor with validation (also serves as zero-arg constructor via defaults)
-function PeriodicBC(; endpoint::Symbol=:inclusive, period::Union{Real,Nothing}=nothing)
-    endpoint in (:inclusive, :exclusive) || throw(ArgumentError(
-        "endpoint must be :inclusive or :exclusive, got :$endpoint"))
+function PeriodicBC(; endpoint::Symbol = :inclusive, period::Union{Real, Nothing} = nothing)
+    endpoint in (:inclusive, :exclusive) || throw(
+        ArgumentError(
+            "endpoint must be :inclusive or :exclusive, got :$endpoint"
+        )
+    )
     if endpoint == :inclusive
-        period === nothing || throw(ArgumentError(
-            "period is not applicable for endpoint=:inclusive (y[1]≈y[end] convention)"))
+        period === nothing || throw(
+            ArgumentError(
+                "period is not applicable for endpoint=:inclusive (y[1]≈y[end] convention)"
+            )
+        )
         return PeriodicBC{:inclusive, Nothing}(nothing)
     else # :exclusive
         if period !== nothing
@@ -352,7 +358,7 @@ struct PolyFit{D} <: PointBC
     function PolyFit{D}() where {D}
         D isa Int || throw(ArgumentError("Polynomial degree D must be an integer"))
         D >= 1 || throw(ArgumentError("Polynomial degree must be ≥ 1, got $D"))
-        new{D}()
+        return new{D}()
     end
 end
 
@@ -398,7 +404,6 @@ itp = quadratic_interp(x, y; bc=Left(QuadraticFit()))
 ```
 """
 const QuadraticFit = PolyFit{2}
-
 
 
 """
@@ -608,33 +613,39 @@ function _normalize_bc_array end
 
 # Fast path: already BCPair - zero allocation, inline away
 @inline function _normalize_bc_array(
-    bcs::AbstractVector{<:BCPair},
-    ::Type{Tv},
-    n_series::Int
-) where {Tv}
-    length(bcs) == n_series || throw(DimensionMismatch(
-        "BC array length $(length(bcs)) does not match n_series $n_series"
-    ))
+        bcs::AbstractVector{<:BCPair},
+        ::Type{Tv},
+        n_series::Int
+    ) where {Tv}
+    length(bcs) == n_series || throw(
+        DimensionMismatch(
+            "BC array length $(length(bcs)) does not match n_series $n_series"
+        )
+    )
     return bcs  # No conversion needed
 end
 
 # General path: needs normalization to BCPair
 function _normalize_bc_array(
-    bcs::AbstractVector{<:AbstractBC},
-    ::Type{Tv},
-    n_series::Int
-) where {Tv}
-    length(bcs) == n_series || throw(DimensionMismatch(
-        "BC array length $(length(bcs)) does not match n_series $n_series"
-    ))
+        bcs::AbstractVector{<:AbstractBC},
+        ::Type{Tv},
+        n_series::Int
+    ) where {Tv}
+    length(bcs) == n_series || throw(
+        DimensionMismatch(
+            "BC array length $(length(bcs)) does not match n_series $n_series"
+        )
+    )
 
     # Check for PeriodicBC (not supported in arrays)
     for (i, bc) in enumerate(bcs)
         if _is_periodic_bc(bc)
-            throw(ArgumentError(
-                "PeriodicBC at index $i is not supported in BC arrays. " *
-                "Use uniform PeriodicBC for all series instead."
-            ))
+            throw(
+                ArgumentError(
+                    "PeriodicBC at index $i is not supported in BC arrays. " *
+                        "Use uniform PeriodicBC for all series instead."
+                )
+            )
         end
     end
 
@@ -706,7 +717,7 @@ bc = Left(Deriv1(1.0+2.0im))  # Complex slope
 bc = Left(QuadraticFit())     # Lazy polynomial fit
 ```
 """
-struct Left{B<:PointBC} <: AbstractBC
+struct Left{B <: PointBC} <: AbstractBC
     bc::B
 end
 
@@ -728,7 +739,7 @@ bc = Right(Deriv1(1.0+2.0im))  # Complex slope
 bc = Right(QuadraticFit())     # Lazy polynomial fit
 ```
 """
-struct Right{B<:PointBC} <: AbstractBC
+struct Right{B <: PointBC} <: AbstractBC
     bc::B
 end
 
@@ -777,8 +788,8 @@ concrete_bc = materialize_bc(bc, xs, y_complex, LeftSide())  # → Deriv1{Comple
 See also: [`PolyFit`](@ref), [`_estimate_endpoint_derivative`](@ref)
 """
 @inline function materialize_bc(
-    ::PolyFit{D}, xs::AbstractVector{Tg}, ys::AbstractVector{Tv}, endpoint::AbstractSide
-) where {D, Tg<:AbstractFloat, Tv}
+        ::PolyFit{D}, xs::AbstractVector{Tg}, ys::AbstractVector{Tv}, endpoint::AbstractSide
+    ) where {D, Tg <: AbstractFloat, Tv}
     val = _estimate_endpoint_derivative(xs, ys, endpoint, PolyFit{D}())
     return Deriv1{Tv}(val)  # Natural Deriv1{Tv} return - no workaround needed!
 end
@@ -852,10 +863,12 @@ function validate_polyfit_points(bc, n_points::Int)
     D = get_polyfit_degree(bc)
     if D > 0
         min_points = D + 1
-        n_points >= min_points || throw(ArgumentError(
-            "PolyFit{$D} requires at least $min_points data points (got $n_points). " *
-            "A degree-$D polynomial needs $(min_points) points to estimate endpoint derivatives."
-        ))
+        n_points >= min_points || throw(
+            ArgumentError(
+                "PolyFit{$D} requires at least $min_points data points (got $n_points). " *
+                    "A degree-$D polynomial needs $(min_points) points to estimate endpoint derivatives."
+            )
+        )
     end
     return nothing
 end

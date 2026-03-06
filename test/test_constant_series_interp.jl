@@ -37,7 +37,7 @@ const FI = FastInterpolations
         end
 
         @testset "validates input dimensions" begin
-            bad_y = [y1[1:end-1], y2]  # Wrong length
+            bad_y = [y1[1:(end - 1)], y2]  # Wrong length
             @test_throws Exception constant_interp(x, Series(bad_y))
         end
 
@@ -48,7 +48,7 @@ const FI = FastInterpolations
 
         @testset "side parameter preserved" begin
             for side_mode in (NearestSide(), LeftSide(), RightSide())
-                sitp = constant_interp(x, Series(ys); side=side_mode)
+                sitp = constant_interp(x, Series(ys); side = side_mode)
                 @test sitp.side === side_mode
             end
         end
@@ -78,10 +78,10 @@ const FI = FastInterpolations
         x = [0.0, 1.0, 2.0, 3.0]
         y1 = [1.0, 2.0, 3.0, 4.0]  # step function
         y2 = [5.0, 5.0, 5.0, 5.0]  # constant
-        sitp = constant_interp(x, Series(y1, y2); side=LeftSide())
+        sitp = constant_interp(x, Series(y1, y2); side = LeftSide())
 
         @testset "at grid points" begin
-            for i in 1:(length(x)-1)
+            for i in 1:(length(x) - 1)
                 result = sitp(x[i])
                 @test result[1] == y1[i]
                 @test result[2] == y2[i]
@@ -95,7 +95,7 @@ const FI = FastInterpolations
         end
 
         @testset "midpoints with side=NearestSide()" begin
-            sitp_nearest = constant_interp(x, Series(y1, y2); side=NearestSide())
+            sitp_nearest = constant_interp(x, Series(y1, y2); side = NearestSide())
             # At 0.4, closer to 0 -> y[1]=1.0
             result = sitp_nearest(0.4)
             @test result[1] == 1.0
@@ -144,19 +144,19 @@ const FI = FastInterpolations
         ys = [sin.(2π .* x)]
 
         @testset "extrap=NoExtrap() throws" begin
-            sitp = constant_interp(x, Series(ys); extrap=NoExtrap())
+            sitp = constant_interp(x, Series(ys); extrap = NoExtrap())
             @test_throws DomainError sitp(-0.1)
             @test_throws DomainError sitp(1.1)
         end
 
         @testset "extrap=ClampExtrap() returns boundary" begin
-            sitp = constant_interp(x, Series(ys); extrap=ClampExtrap())
-            @test sitp(-0.1)[1] ≈ sin(0.0) atol=1e-6
-            @test sitp(1.1)[1] ≈ sin(2π) atol=1e-6
+            sitp = constant_interp(x, Series(ys); extrap = ClampExtrap())
+            @test sitp(-0.1)[1] ≈ sin(0.0) atol = 1.0e-6
+            @test sitp(1.1)[1] ≈ sin(2π) atol = 1.0e-6
         end
 
         @testset "extrap=ExtendExtrap() extrapolates" begin
-            sitp = constant_interp(x, Series(ys); extrap=ExtendExtrap())
+            sitp = constant_interp(x, Series(ys); extrap = ExtendExtrap())
             @test sitp(-0.1) isa Vector{Float64}
             @test sitp(1.1) isa Vector{Float64}
         end
@@ -220,7 +220,7 @@ const FI = FastInterpolations
 
             # Verify values match non-precomputed path
             sitp_ref = constant_interp(x, Series(y1, y2))
-            @test result ≈ sitp_ref(0.5) atol=1e-10
+            @test result ≈ sitp_ref(0.5) atol = 1.0e-10
         end
 
         @testset "method chaining pattern" begin
@@ -276,7 +276,7 @@ const FI = FastInterpolations
         ys = [y1, y2]
 
         # Both should give same results
-        sitp = constant_interp(x, Series(ys); side=NearestSide())
+        sitp = constant_interp(x, Series(ys); side = NearestSide())
 
         # Compare at multiple points
         xq = [0.15, 0.35, 0.55, 0.75, 0.95]
@@ -286,10 +286,10 @@ const FI = FastInterpolations
             idx, xL, xR = FI._search_interval(x, xqi)
             h = xR - xL
             dL = xqi - xL
-            expected1 = dL <= h / 2 ? y1[idx] : y1[idx+1]
-            expected2 = dL <= h / 2 ? y2[idx] : y2[idx+1]
-            @test result[1] ≈ expected1 atol=1e-10
-            @test result[2] ≈ expected2 atol=1e-10
+            expected1 = dL <= h / 2 ? y1[idx] : y1[idx + 1]
+            expected2 = dL <= h / 2 ? y2[idx] : y2[idx + 1]
+            @test result[1] ≈ expected1 atol = 1.0e-10
+            @test result[2] ≈ expected2 atol = 1.0e-10
         end
     end
 
@@ -303,27 +303,27 @@ const FI = FastInterpolations
         sitp = constant_interp(x, Series(ys))
 
         @testset "deriv=DerivOp(0) returns values (existing behavior)" begin
-            @test sitp(0.5; deriv=DerivOp(0)) == sitp(0.5)
-            @test sitp(1.5; deriv=DerivOp(0)) == sitp(1.5)
+            @test sitp(0.5; deriv = DerivOp(0)) == sitp(0.5)
+            @test sitp(1.5; deriv = DerivOp(0)) == sitp(1.5)
         end
 
         @testset "deriv=DerivOp(1) returns zeros" begin
-            @test sitp(0.5; deriv=DerivOp(1)) == [0.0, 0.0]
-            @test sitp(1.5; deriv=DerivOp(1)) == [0.0, 0.0]
-            @test sitp(2.5; deriv=DerivOp(1)) == [0.0, 0.0]
+            @test sitp(0.5; deriv = DerivOp(1)) == [0.0, 0.0]
+            @test sitp(1.5; deriv = DerivOp(1)) == [0.0, 0.0]
+            @test sitp(2.5; deriv = DerivOp(1)) == [0.0, 0.0]
         end
 
         @testset "deriv=DerivOp(2) returns zeros" begin
-            @test sitp(0.5; deriv=DerivOp(2)) == [0.0, 0.0]
-            @test sitp(1.5; deriv=DerivOp(2)) == [0.0, 0.0]
+            @test sitp(0.5; deriv = DerivOp(2)) == [0.0, 0.0]
+            @test sitp(1.5; deriv = DerivOp(2)) == [0.0, 0.0]
         end
 
         @testset "vector evaluation with deriv" begin
             xq = [0.5, 1.5, 2.5]
-            results_d1 = sitp(xq; deriv=DerivOp(1))
+            results_d1 = sitp(xq; deriv = DerivOp(1))
             @test all(r -> r == zeros(3), results_d1)
 
-            results_d2 = sitp(xq; deriv=DerivOp(2))
+            results_d2 = sitp(xq; deriv = DerivOp(2))
             @test all(r -> r == zeros(3), results_d2)
         end
     end
@@ -331,13 +331,13 @@ const FI = FastInterpolations
     @testset "derivative with extrapolation" begin
         x = [0.0, 1.0, 2.0]
         ys = [[1.0, 2.0, 3.0]]
-        sitp = constant_interp(x, Series(ys); extrap=ClampExtrap())
+        sitp = constant_interp(x, Series(ys); extrap = ClampExtrap())
 
         @testset "outside boundaries derivative is zero" begin
-            @test sitp(-0.5; deriv=DerivOp(1)) == [0.0]
-            @test sitp(2.5; deriv=DerivOp(1)) == [0.0]
-            @test sitp(-0.5; deriv=DerivOp(2)) == [0.0]
-            @test sitp(2.5; deriv=DerivOp(2)) == [0.0]
+            @test sitp(-0.5; deriv = DerivOp(1)) == [0.0]
+            @test sitp(2.5; deriv = DerivOp(1)) == [0.0]
+            @test sitp(-0.5; deriv = DerivOp(2)) == [0.0]
+            @test sitp(2.5; deriv = DerivOp(2)) == [0.0]
         end
     end
 
@@ -349,16 +349,16 @@ const FI = FastInterpolations
         @testset "x_max returns last value (CRITICAL)" begin
             # CRITICAL: x_max should return last value, not second-to-last
             @test sitp(2.0) == [3.0]  # Must be 3.0, not 2.0
-            @test sitp(2.0; deriv=DerivOp(0)) == [3.0]
-            @test sitp(2.0; deriv=DerivOp(1)) == [0.0]
-            @test sitp(2.0; deriv=DerivOp(2)) == [0.0]
+            @test sitp(2.0; deriv = DerivOp(0)) == [3.0]
+            @test sitp(2.0; deriv = DerivOp(1)) == [0.0]
+            @test sitp(2.0; deriv = DerivOp(2)) == [0.0]
         end
 
         @testset "x_max derivative in vector query" begin
             xq = [1.5, 2.0]  # Include x_max in vector query
             outputs_d1 = [zeros(2)]
-            sitp(outputs_d1, xq; deriv=DerivOp(1))
-            @test outputs_d1[1][2] ≈ 0.0 atol=1e-10  # deriv at x_max should be 0
+            sitp(outputs_d1, xq; deriv = DerivOp(1))
+            @test outputs_d1[1][2] ≈ 0.0 atol = 1.0e-10  # deriv at x_max should be 0
         end
     end
 
@@ -426,8 +426,8 @@ const FI = FastInterpolations
             # Verify values match Float64 path
             xq_f64 = Float64.(xq_f32)
             ref = sitp(xq_f64)
-            @test out1 ≈ ref[1] atol=1e-10
-            @test out2 ≈ ref[2] atol=1e-10
+            @test out1 ≈ ref[1] atol = 1.0e-10
+            @test out2 ≈ ref[2] atol = 1.0e-10
         end
     end
 
@@ -454,26 +454,26 @@ const FI = FastInterpolations
         y2 = cos.(2π .* x)
 
         @testset "vector NoExtrap() extrapolation throws" begin
-            sitp = constant_interp(x, Series(y1, y2); extrap=NoExtrap())
+            sitp = constant_interp(x, Series(y1, y2); extrap = NoExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             @test_throws DomainError sitp(xq)
         end
 
         @testset "vector ClampExtrap() extrapolation" begin
-            sitp = constant_interp(x, Series(y1, y2); extrap=ClampExtrap())
+            sitp = constant_interp(x, Series(y1, y2); extrap = ClampExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             outputs = [zeros(3), zeros(3)]
             sitp(outputs, xq)
 
             # Out-of-domain should clamp to boundary values
-            @test outputs[1][1] ≈ y1[1] atol=1e-10
-            @test outputs[1][3] ≈ y1[end] atol=1e-10
+            @test outputs[1][1] ≈ y1[1] atol = 1.0e-10
+            @test outputs[1][3] ≈ y1[end] atol = 1.0e-10
         end
 
         @testset "vector ExtendExtrap() extrapolation" begin
-            sitp = constant_interp(x, Series(y1, y2); extrap=ExtendExtrap())
+            sitp = constant_interp(x, Series(y1, y2); extrap = ExtendExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             outputs = [zeros(3), zeros(3)]
@@ -484,20 +484,20 @@ const FI = FastInterpolations
         end
 
         @testset "vector ClampExtrap() extrapolation with derivatives" begin
-            sitp = constant_interp(x, Series(y1, y2); extrap=ClampExtrap())
+            sitp = constant_interp(x, Series(y1, y2); extrap = ClampExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             # deriv=DerivOp(1) outside domain should be zero for constant extrap
             outputs_d1 = [zeros(3), zeros(3)]
-            sitp(outputs_d1, xq; deriv=DerivOp(1))
-            @test outputs_d1[1][1] ≈ 0.0 atol=1e-10  # Left boundary
-            @test outputs_d1[1][3] ≈ 0.0 atol=1e-10  # Right boundary
+            sitp(outputs_d1, xq; deriv = DerivOp(1))
+            @test outputs_d1[1][1] ≈ 0.0 atol = 1.0e-10  # Left boundary
+            @test outputs_d1[1][3] ≈ 0.0 atol = 1.0e-10  # Right boundary
 
             # deriv=DerivOp(2) outside domain should be zero
             outputs_d2 = [zeros(3), zeros(3)]
-            sitp(outputs_d2, xq; deriv=DerivOp(2))
-            @test outputs_d2[1][1] ≈ 0.0 atol=1e-10
-            @test outputs_d2[1][3] ≈ 0.0 atol=1e-10
+            sitp(outputs_d2, xq; deriv = DerivOp(2))
+            @test outputs_d2[1][1] ≈ 0.0 atol = 1.0e-10
+            @test outputs_d2[1][3] ≈ 0.0 atol = 1.0e-10
         end
     end
 

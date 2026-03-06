@@ -42,7 +42,7 @@ Abstract supertype for all interpolant objects.
 This is a pure type hierarchy - no methods are defined on `AbstractInterpolant` itself.
 All functionality is implemented in concrete subtypes.
 """
-abstract type AbstractInterpolant{Tg<:AbstractFloat, Tv} end
+abstract type AbstractInterpolant{Tg <: AbstractFloat, Tv} end
 
 """
     AbstractSeriesInterpolant{Tg<:AbstractFloat, Tv}
@@ -80,7 +80,7 @@ sitp(output, 0.5)           # In-place evaluation
 This is a pure type hierarchy - no methods are defined on `AbstractSeriesInterpolant` itself.
 All functionality is implemented in concrete subtypes.
 """
-abstract type AbstractSeriesInterpolant{Tg<:AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv} end
+abstract type AbstractSeriesInterpolant{Tg <: AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv} end
 
 """
     AbstractInterpolantND{Tg<:AbstractFloat, Tv, N}
@@ -111,7 +111,7 @@ itp((0.5, 0.5); deriv=(1, 0))      # ∂f/∂x
 gradient(itp, (0.5, 0.5))          # (∂f/∂x, ∂f/∂y)
 ```
 """
-abstract type AbstractInterpolantND{Tg<:AbstractFloat, Tv, N} <: AbstractInterpolant{Tg, Tv} end
+abstract type AbstractInterpolantND{Tg <: AbstractFloat, Tv, N} <: AbstractInterpolant{Tg, Tv} end
 
 # ========================================
 # Type Helper Functions

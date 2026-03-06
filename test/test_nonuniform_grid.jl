@@ -26,43 +26,43 @@ using FastInterpolations: Deriv1, Deriv2, Deriv3, BCPair
 # Tolerances for different precision levels
 const POLY_RTOL = 100 * eps(Float64)   # Polynomial reproduction (~2.2e-14)
 const POLY_ATOL = 100 * eps(Float64)
-const FUNC_RTOL = 1e-6                  # General function approximation
-const FUNC_ATOL = 1e-10
+const FUNC_RTOL = 1.0e-6                  # General function approximation
+const FUNC_ATOL = 1.0e-10
 
 # Standard non-uniform grids for testing
 # These grids have deliberately different spacings at edges
 
 """Create grid with last interval much larger than previous."""
-function grid_large_last(::Type{T}=Float64) where T
+function grid_large_last(::Type{T} = Float64) where {T}
     # h = [1, 1, 1, 1, 10] → h[n]=10, h[n-1]=1
-    T[0, 1, 2, 3, 4, 14]
+    return T[0, 1, 2, 3, 4, 14]
 end
 
 """Create grid with last interval much smaller than previous."""
-function grid_small_last(::Type{T}=Float64) where T
+function grid_small_last(::Type{T} = Float64) where {T}
     # h = [1, 1, 1, 10, 1] → h[n]=1, h[n-1]=10
-    T[0, 1, 2, 3, 13, 14]
+    return T[0, 1, 2, 3, 13, 14]
 end
 
 """Create asymmetric grid with small-large-small pattern."""
-function grid_asymmetric(::Type{T}=Float64) where T
+function grid_asymmetric(::Type{T} = Float64) where {T}
     # h = [0.1, 5.0, 5.0, 0.2]
-    T[0, 0.1, 5.1, 10.1, 10.3]
+    return T[0, 0.1, 5.1, 10.1, 10.3]
 end
 
 """Create geometric progression grid (exponentially increasing h)."""
-function grid_geometric(::Type{T}=Float64; h1=T(0.1), ratio=T(1.5), n=8) where T
+function grid_geometric(::Type{T} = Float64; h1 = T(0.1), ratio = T(1.5), n = 8) where {T}
     x = Vector{T}(undef, n + 1)
     x[1] = zero(T)
     for i in 1:n
-        x[i+1] = x[i] + h1 * ratio^(i-1)
+        x[i + 1] = x[i] + h1 * ratio^(i - 1)
     end
-    x
+    return x
 end
 
 """Create clustered grid (dense at boundaries, sparse in middle)."""
-function grid_clustered(::Type{T}=Float64) where T
-    vcat(
+function grid_clustered(::Type{T} = Float64) where {T}
+    return vcat(
         range(T(0), T(0.5), 6),      # Dense at start
         range(T(1), T(9), 5),         # Sparse in middle
         range(T(9.5), T(10), 6)       # Dense at end
@@ -109,12 +109,12 @@ const LINEAR = TestPolynomial{Float64}(
 
     @testset "Basic interpolation accuracy" begin
         for (grid_name, grid_fn) in [
-            ("large_last", grid_large_last),
-            ("small_last", grid_small_last),
-            ("asymmetric", grid_asymmetric),
-            ("geometric", grid_geometric),
-            ("clustered", grid_clustered),
-        ]
+                ("large_last", grid_large_last),
+                ("small_last", grid_small_last),
+                ("asymmetric", grid_asymmetric),
+                ("geometric", grid_geometric),
+                ("clustered", grid_clustered),
+            ]
             @testset "Grid: $grid_name" begin
                 x = grid_fn()
                 y = LINEAR.f.(x)
@@ -127,7 +127,7 @@ const LINEAR = TestPolynomial{Float64}(
                 expected = LINEAR.f.(xi)
 
                 # Linear function should be exactly reproduced
-                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
             end
         end
     end
@@ -138,7 +138,7 @@ const LINEAR = TestPolynomial{Float64}(
 
         itp = linear_interp(x, y)
         for (xi, yi) in zip(x, y)
-            @test itp(xi) ≈ yi rtol=POLY_RTOL atol=POLY_ATOL
+            @test itp(xi) ≈ yi rtol = POLY_RTOL atol = POLY_ATOL
         end
     end
 
@@ -149,13 +149,13 @@ const LINEAR = TestPolynomial{Float64}(
 
         @testset "extension" begin
             xi_extrap = [x_min - 1.0, x_max + 1.0]
-            result = linear_interp(x, y, xi_extrap; extrap=ExtendExtrap())
+            result = linear_interp(x, y, xi_extrap; extrap = ExtendExtrap())
             @test all(isfinite, result)
         end
 
         @testset "constant" begin
             xi_extrap = [x_min - 1.0, x_max + 1.0]
-            result = linear_interp(x, y, xi_extrap; extrap=ClampExtrap())
+            result = linear_interp(x, y, xi_extrap; extrap = ClampExtrap())
             @test result[1] ≈ y[1]
             @test result[2] ≈ y[end]
         end
@@ -170,7 +170,7 @@ const LINEAR = TestPolynomial{Float64}(
         xi = range(x_min + 0.1, x_max - 0.1, 5) |> collect
 
         for t in xi
-            @test itp(t; deriv=DerivOp(1)) ≈ LINEAR.f_prime(t) rtol=POLY_RTOL atol=POLY_ATOL
+            @test itp(t; deriv = DerivOp(1)) ≈ LINEAR.f_prime(t) rtol = POLY_RTOL atol = POLY_ATOL
         end
     end
 
@@ -198,10 +198,10 @@ end
     @testset "Linear polynomial reproduction (exact)" begin
         # LINEAR has f''=0 everywhere, so ZeroCurvBC matches perfectly
         for (grid_name, grid_fn) in [
-            ("large_last", grid_large_last),
-            ("small_last", grid_small_last),
-            ("geometric", grid_geometric),
-        ]
+                ("large_last", grid_large_last),
+                ("small_last", grid_small_last),
+                ("geometric", grid_geometric),
+            ]
             @testset "Grid: $grid_name" begin
                 x = grid_fn()
                 y = LINEAR.f.(x)
@@ -209,11 +209,11 @@ end
                 x_min, x_max = extrema(x)
                 xi = range(x_min + 0.1, x_max - 0.1, 10) |> collect
 
-                result = cubic_interp(x, y, xi; bc=ZeroCurvBC())
+                result = cubic_interp(x, y, xi; bc = ZeroCurvBC())
                 expected = LINEAR.f.(xi)
 
                 # Should exactly reproduce (f''=0 matches ZeroCurvBC)
-                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
             end
         end
     end
@@ -225,10 +225,10 @@ end
         for poly in [QUADRATIC, CUBIC]
             @testset "$(poly.name) polynomial" begin
                 for (grid_name, grid_fn) in [
-                    ("large_last", grid_large_last),
-                    ("small_last", grid_small_last),
-                    ("geometric", grid_geometric),
-                ]
+                        ("large_last", grid_large_last),
+                        ("small_last", grid_small_last),
+                        ("geometric", grid_geometric),
+                    ]
                     @testset "Grid: $grid_name" begin
                         x = grid_fn()
                         y = poly.f.(x)
@@ -236,7 +236,7 @@ end
                         x_min, x_max = extrema(x)
                         xi = range(x_min + 0.1, x_max - 0.1, 10) |> collect
 
-                        result = cubic_interp(x, y, xi; bc=ZeroCurvBC())
+                        result = cubic_interp(x, y, xi; bc = ZeroCurvBC())
                         expected = poly.f.(xi)
 
                         # ZeroCurvBC is an approximation - only test basic sanity:
@@ -263,9 +263,9 @@ end
         x = grid_asymmetric()
         y = sin.(x)
 
-        cache = CubicSplineCache(x; bc=ZeroCurvBC())
+        cache = CubicSplineCache(x; bc = ZeroCurvBC())
         for (xi, yi) in zip(x, y)
-            @test cubic_interp(cache, y, xi) ≈ yi rtol=POLY_RTOL atol=POLY_ATOL
+            @test cubic_interp(cache, y, xi) ≈ yi rtol = POLY_RTOL atol = POLY_ATOL
         end
     end
 
@@ -273,15 +273,15 @@ end
         # Note: ZeroCurvBC with QUADRATIC won't give exact derivatives since f''≠0
         x = grid_geometric()
         y = QUADRATIC.f.(x)
-        itp = cubic_interp(x, y; bc=ZeroCurvBC())
+        itp = cubic_interp(x, y; bc = ZeroCurvBC())
 
         x_min, x_max = extrema(x)
         xi = range(x_min + 0.1, x_max - 0.1, 5) |> collect
 
         for t in xi
             # Looser tolerance since ZeroCurvBC is an approximation
-            @test itp(t; deriv=DerivOp(1)) ≈ QUADRATIC.f_prime(t) rtol=0.1 atol=0.5
-            @test isfinite(itp(t; deriv=DerivOp(2)))
+            @test itp(t; deriv = DerivOp(1)) ≈ QUADRATIC.f_prime(t) rtol = 0.1 atol = 0.5
+            @test isfinite(itp(t; deriv = DerivOp(2)))
         end
     end
 
@@ -289,14 +289,14 @@ end
         # LINEAR has f''=0, so ZeroCurvBC should give exact derivatives
         x = grid_geometric()
         y = LINEAR.f.(x)
-        itp = cubic_interp(x, y; bc=ZeroCurvBC())
+        itp = cubic_interp(x, y; bc = ZeroCurvBC())
 
         x_min, x_max = extrema(x)
         xi = range(x_min + 0.1, x_max - 0.1, 5) |> collect
 
         for t in xi
-            @test itp(t; deriv=DerivOp(1)) ≈ LINEAR.f_prime(t) rtol=POLY_RTOL atol=POLY_ATOL
-            @test itp(t; deriv=DerivOp(2)) ≈ LINEAR.f_double_prime(t) atol=POLY_ATOL  # f''=0
+            @test itp(t; deriv = DerivOp(1)) ≈ LINEAR.f_prime(t) rtol = POLY_RTOL atol = POLY_ATOL
+            @test itp(t; deriv = DerivOp(2)) ≈ LINEAR.f_double_prime(t) atol = POLY_ATOL  # f''=0
         end
     end
 
@@ -365,8 +365,8 @@ end
         end
 
         # Verify our construction: f''(0) = 0 and f''(13) = 0
-        @test natural_piecewise_deriv2(0.0) ≈ 0.0 atol=1e-15
-        @test natural_piecewise_deriv2(13.0) ≈ 0.0 atol=1e-15
+        @test natural_piecewise_deriv2(0.0) ≈ 0.0 atol = 1.0e-15
+        @test natural_piecewise_deriv2(13.0) ≈ 0.0 atol = 1.0e-15
 
         # Get y values at grid points
         y = natural_piecewise.(x)
@@ -374,16 +374,16 @@ end
         # ZeroCurvBC should exactly reproduce this piecewise cubic
         xi = [0.5, 1.5, 2.5, 5.0, 10.0, 12.5]
 
-        result = cubic_interp(x, y, xi; bc=ZeroCurvBC())
+        result = cubic_interp(x, y, xi; bc = ZeroCurvBC())
         expected = natural_piecewise.(xi)
 
-        @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+        @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
 
         # Test derivatives too
-        itp = cubic_interp(x, y; bc=ZeroCurvBC())
+        itp = cubic_interp(x, y; bc = ZeroCurvBC())
         for t in xi
-            @test itp(t; deriv=DerivOp(1)) ≈ natural_piecewise_deriv1(t) rtol=POLY_RTOL atol=POLY_ATOL
-            @test itp(t; deriv=DerivOp(2)) ≈ natural_piecewise_deriv2(t) rtol=POLY_RTOL atol=POLY_ATOL
+            @test itp(t; deriv = DerivOp(1)) ≈ natural_piecewise_deriv1(t) rtol = POLY_RTOL atol = POLY_ATOL
+            @test itp(t; deriv = DerivOp(2)) ≈ natural_piecewise_deriv2(t) rtol = POLY_RTOL atol = POLY_ATOL
         end
     end
 end
@@ -405,7 +405,7 @@ end
 
         xi = range(0.1, 2π - 0.1, 10) |> collect
 
-        result = cubic_interp(x_base, y, xi; bc=PeriodicBC())
+        result = cubic_interp(x_base, y, xi; bc = PeriodicBC())
 
         # Results should be finite and bounded by [-1, 1] (sin range)
         @test all(isfinite, result)
@@ -418,11 +418,11 @@ end
         y = sin.(x)
         y[end] = y[1]
 
-        cache = CubicSplineCache(x; bc=PeriodicBC())
+        cache = CubicSplineCache(x; bc = PeriodicBC())
 
         # Test interior knots (not boundary wrap-around point)
-        for i in 1:length(x)-1
-            @test cubic_interp(cache, y, x[i]) ≈ y[i] rtol=POLY_RTOL atol=POLY_ATOL
+        for i in 1:(length(x) - 1)
+            @test cubic_interp(cache, y, x[i]) ≈ y[i] rtol = POLY_RTOL atol = POLY_ATOL
         end
     end
 
@@ -435,19 +435,19 @@ end
         y = f.(x)
         y[end] = y[1]
 
-        itp = cubic_interp(x, y; bc=PeriodicBC())
+        itp = cubic_interp(x, y; bc = PeriodicBC())
 
         # Check continuity near boundaries
-        h = 1e-6
+        h = 1.0e-6
 
         # Value continuity - use absolute tolerance since values are near zero
         val_left = itp(x[1] + h)
         val_right = itp(x[end] - h)
-        @test abs(val_left - val_right) < 1e-3
+        @test abs(val_left - val_right) < 1.0e-3
 
         # First derivative continuity
-        deriv_left = itp(x[1] + h; deriv=DerivOp(1))
-        deriv_right = itp(x[end] - h; deriv=DerivOp(1))
+        deriv_left = itp(x[1] + h; deriv = DerivOp(1))
+        deriv_right = itp(x[end] - h; deriv = DerivOp(1))
         @test abs(deriv_left - deriv_right) < 0.1  # Relaxed for numerical precision
     end
 
@@ -456,12 +456,12 @@ end
         y = sin.(x)
         y[end] = y[1]
 
-        itp = cubic_interp(x, y; bc=PeriodicBC(), extrap=WrapExtrap())
+        itp = cubic_interp(x, y; bc = PeriodicBC(), extrap = WrapExtrap())
 
         # Query outside domain should wrap
         period = x[end] - x[1]
-        @test itp(0.5) ≈ itp(0.5 + period) rtol=1e-10
-        @test itp(1.5) ≈ itp(1.5 - period) rtol=1e-10
+        @test itp(0.5) ≈ itp(0.5 + period) rtol = 1.0e-10
+        @test itp(1.5) ≈ itp(1.5 - period) rtol = 1.0e-10
     end
 end
 
@@ -474,11 +474,11 @@ end
         for poly in [LINEAR, QUADRATIC, CUBIC]
             @testset "$(poly.name) polynomial" begin
                 for (grid_name, grid_fn) in [
-                    ("large_last", grid_large_last),
-                    ("small_last", grid_small_last),
-                    ("asymmetric", grid_asymmetric),
-                    ("geometric", grid_geometric),
-                ]
+                        ("large_last", grid_large_last),
+                        ("small_last", grid_small_last),
+                        ("asymmetric", grid_asymmetric),
+                        ("geometric", grid_geometric),
+                    ]
                     @testset "Grid: $grid_name" begin
                         x = grid_fn()
                         y = poly.f.(x)
@@ -489,11 +489,11 @@ end
 
                         xi = range(x0 + 0.1, xn - 0.1, 15) |> collect
 
-                        result = cubic_interp(x, y, xi; bc=bc)
+                        result = cubic_interp(x, y, xi; bc = bc)
                         expected = poly.f.(xi)
 
                         # Should exactly reproduce polynomial
-                        @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                        @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
                     end
                 end
             end
@@ -506,10 +506,10 @@ end
 
         xi = [2.0, 7.0, 12.0]
 
-        result_clamped = cubic_interp(x, y, xi; bc=ZeroSlopeBC())
-        result_d1_zero = cubic_interp(x, y, xi; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
+        result_clamped = cubic_interp(x, y, xi; bc = ZeroSlopeBC())
+        result_d1_zero = cubic_interp(x, y, xi; bc = BCPair(Deriv1(0.0), Deriv1(0.0)))
 
-        @test result_clamped ≈ result_d1_zero rtol=POLY_RTOL atol=POLY_ATOL
+        @test result_clamped ≈ result_d1_zero rtol = POLY_RTOL atol = POLY_ATOL
     end
 
     @testset "Boundary derivative accuracy" begin
@@ -518,12 +518,12 @@ end
         x0, xn = first(x), last(x)
 
         bc = BCPair(Deriv1(CUBIC.f_prime(x0)), Deriv1(CUBIC.f_prime(xn)))
-        itp = cubic_interp(x, y; bc=bc)
+        itp = cubic_interp(x, y; bc = bc)
 
         # Derivative at boundaries should match specified values
-        h = 1e-10
-        @test itp(x0 + h; deriv=DerivOp(1)) ≈ CUBIC.f_prime(x0) rtol=1e-6 atol=1e-8
-        @test itp(xn - h; deriv=DerivOp(1)) ≈ CUBIC.f_prime(xn) rtol=1e-6 atol=1e-8
+        h = 1.0e-10
+        @test itp(x0 + h; deriv = DerivOp(1)) ≈ CUBIC.f_prime(x0) rtol = 1.0e-6 atol = 1.0e-8
+        @test itp(xn - h; deriv = DerivOp(1)) ≈ CUBIC.f_prime(xn) rtol = 1.0e-6 atol = 1.0e-8
     end
 
     @testset "Single Deriv1 BC (symmetric)" begin
@@ -532,10 +532,10 @@ end
 
         # Single Deriv1 applies to both ends
         slope = 1.5
-        result_single = cubic_interp(x, y, [1.0, 2.0]; bc=Deriv1(slope))
-        result_pair = cubic_interp(x, y, [1.0, 2.0]; bc=BCPair(Deriv1(slope), Deriv1(slope)))
+        result_single = cubic_interp(x, y, [1.0, 2.0]; bc = Deriv1(slope))
+        result_pair = cubic_interp(x, y, [1.0, 2.0]; bc = BCPair(Deriv1(slope), Deriv1(slope)))
 
-        @test result_single ≈ result_pair rtol=POLY_RTOL atol=POLY_ATOL
+        @test result_single ≈ result_pair rtol = POLY_RTOL atol = POLY_ATOL
     end
 end
 
@@ -548,10 +548,10 @@ end
         for poly in [LINEAR, QUADRATIC]  # Cubic has varying f''
             @testset "$(poly.name) polynomial" begin
                 for (grid_name, grid_fn) in [
-                    ("large_last", grid_large_last),
-                    ("small_last", grid_small_last),
-                    ("geometric", grid_geometric),
-                ]
+                        ("large_last", grid_large_last),
+                        ("small_last", grid_small_last),
+                        ("geometric", grid_geometric),
+                    ]
                     @testset "Grid: $grid_name" begin
                         x = grid_fn()
                         y = poly.f.(x)
@@ -562,10 +562,10 @@ end
 
                         xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
 
-                        result = cubic_interp(x, y, xi; bc=bc)
+                        result = cubic_interp(x, y, xi; bc = bc)
                         expected = poly.f.(xi)
 
-                        @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                        @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
                     end
                 end
             end
@@ -578,10 +578,10 @@ end
 
         xi = [0.05, 5.0, 10.2]
 
-        result_natural = cubic_interp(x, y, xi; bc=ZeroCurvBC())
-        result_d2_zero = cubic_interp(x, y, xi; bc=BCPair(Deriv2(0.0), Deriv2(0.0)))
+        result_natural = cubic_interp(x, y, xi; bc = ZeroCurvBC())
+        result_d2_zero = cubic_interp(x, y, xi; bc = BCPair(Deriv2(0.0), Deriv2(0.0)))
 
-        @test result_natural ≈ result_d2_zero rtol=POLY_RTOL atol=POLY_ATOL
+        @test result_natural ≈ result_d2_zero rtol = POLY_RTOL atol = POLY_ATOL
     end
 
     @testset "Single Deriv2 BC (symmetric)" begin
@@ -589,10 +589,10 @@ end
         y = QUADRATIC.f.(x)
 
         curv = 4.0  # Quadratic has constant second derivative
-        result_single = cubic_interp(x, y, [2.0, 8.0]; bc=Deriv2(curv))
-        result_pair = cubic_interp(x, y, [2.0, 8.0]; bc=BCPair(Deriv2(curv), Deriv2(curv)))
+        result_single = cubic_interp(x, y, [2.0, 8.0]; bc = Deriv2(curv))
+        result_pair = cubic_interp(x, y, [2.0, 8.0]; bc = BCPair(Deriv2(curv), Deriv2(curv)))
 
-        @test result_single ≈ result_pair rtol=POLY_RTOL atol=POLY_ATOL
+        @test result_single ≈ result_pair rtol = POLY_RTOL atol = POLY_ATOL
     end
 end
 
@@ -608,11 +608,11 @@ end
     @testset "Cubic polynomial reproduction with exact third derivative" begin
         # CUBIC polynomial has constant f'''(x) = 6 - perfect for Deriv3 BC exactness test
         for (grid_name, grid_fn) in [
-            ("large_last", grid_large_last),
-            ("small_last", grid_small_last),
-            ("asymmetric", grid_asymmetric),
-            ("geometric", grid_geometric),
-        ]
+                ("large_last", grid_large_last),
+                ("small_last", grid_small_last),
+                ("asymmetric", grid_asymmetric),
+                ("geometric", grid_geometric),
+            ]
             @testset "Grid: $grid_name" begin
                 x = grid_fn()
                 y = CUBIC.f.(x)
@@ -623,11 +623,11 @@ end
 
                 xi = range(x0 + 0.1, xn - 0.1, 15) |> collect
 
-                result = cubic_interp(x, y, xi; bc=bc)
+                result = cubic_interp(x, y, xi; bc = bc)
                 expected = CUBIC.f.(xi)
 
                 # Should exactly reproduce polynomial
-                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
             end
         end
     end
@@ -637,9 +637,9 @@ end
         for poly in [LINEAR, QUADRATIC]
             @testset "$(poly.name) polynomial" begin
                 for (grid_name, grid_fn) in [
-                    ("large_last", grid_large_last),
-                    ("geometric", grid_geometric),
-                ]
+                        ("large_last", grid_large_last),
+                        ("geometric", grid_geometric),
+                    ]
                     @testset "Grid: $grid_name" begin
                         x = grid_fn()
                         y = poly.f.(x)
@@ -649,10 +649,10 @@ end
 
                         xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
 
-                        result = cubic_interp(x, y, xi; bc=bc)
+                        result = cubic_interp(x, y, xi; bc = bc)
                         expected = poly.f.(xi)
 
-                        @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                        @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
                     end
                 end
             end
@@ -664,10 +664,10 @@ end
         y = CUBIC.f.(x)
 
         third_deriv = 6.0  # CUBIC has constant f'''(x) = 6
-        result_single = cubic_interp(x, y, [2.0, 8.0]; bc=Deriv3(third_deriv))
-        result_pair = cubic_interp(x, y, [2.0, 8.0]; bc=BCPair(Deriv3(third_deriv), Deriv3(third_deriv)))
+        result_single = cubic_interp(x, y, [2.0, 8.0]; bc = Deriv3(third_deriv))
+        result_pair = cubic_interp(x, y, [2.0, 8.0]; bc = BCPair(Deriv3(third_deriv), Deriv3(third_deriv)))
 
-        @test result_single ≈ result_pair rtol=POLY_RTOL atol=POLY_ATOL
+        @test result_single ≈ result_pair rtol = POLY_RTOL atol = POLY_ATOL
     end
 
     @testset "Deriv3 boundary derivative accuracy" begin
@@ -677,12 +677,12 @@ end
         x0, xn = first(x), last(x)
 
         bc = BCPair(Deriv3(6.0), Deriv3(6.0))
-        itp = cubic_interp(x, y; bc=bc)
+        itp = cubic_interp(x, y; bc = bc)
 
         # Third derivative should be constant = 6 in first and last intervals
-        h = 1e-10
-        @test itp(x0 + h; deriv=DerivOp(3)) ≈ 6.0 rtol=1e-6 atol=1e-8
-        @test itp(xn - h; deriv=DerivOp(3)) ≈ 6.0 rtol=1e-6 atol=1e-8
+        h = 1.0e-10
+        @test itp(x0 + h; deriv = DerivOp(3)) ≈ 6.0 rtol = 1.0e-6 atol = 1.0e-8
+        @test itp(xn - h; deriv = DerivOp(3)) ≈ 6.0 rtol = 1.0e-6 atol = 1.0e-8
     end
 end
 
@@ -693,10 +693,10 @@ end
 
     @testset "BCPair(Deriv1, Deriv2)" begin
         for (grid_name, grid_fn) in [
-            ("large_last", grid_large_last),
-            ("small_last", grid_small_last),
-            ("asymmetric", grid_asymmetric),
-        ]
+                ("large_last", grid_large_last),
+                ("small_last", grid_small_last),
+                ("asymmetric", grid_asymmetric),
+            ]
             @testset "Grid: $grid_name" begin
                 x = grid_fn()
                 y = QUADRATIC.f.(x)
@@ -706,20 +706,20 @@ end
 
                 xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
 
-                result = cubic_interp(x, y, xi; bc=bc)
+                result = cubic_interp(x, y, xi; bc = bc)
                 expected = QUADRATIC.f.(xi)
 
-                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
             end
         end
     end
 
     @testset "BCPair(Deriv2, Deriv1)" begin
         for (grid_name, grid_fn) in [
-            ("large_last", grid_large_last),
-            ("small_last", grid_small_last),
-            ("geometric", grid_geometric),
-        ]
+                ("large_last", grid_large_last),
+                ("small_last", grid_small_last),
+                ("geometric", grid_geometric),
+            ]
             @testset "Grid: $grid_name" begin
                 x = grid_fn()
                 y = QUADRATIC.f.(x)
@@ -729,19 +729,19 @@ end
 
                 xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
 
-                result = cubic_interp(x, y, xi; bc=bc)
+                result = cubic_interp(x, y, xi; bc = bc)
                 expected = QUADRATIC.f.(xi)
 
-                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
             end
         end
     end
 
     @testset "BCPair(Deriv3, Deriv1) - cubic polynomial" begin
         for (grid_name, grid_fn) in [
-            ("large_last", grid_large_last),
-            ("asymmetric", grid_asymmetric),
-        ]
+                ("large_last", grid_large_last),
+                ("asymmetric", grid_asymmetric),
+            ]
             @testset "Grid: $grid_name" begin
                 x = grid_fn()
                 y = CUBIC.f.(x)
@@ -751,19 +751,19 @@ end
 
                 xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
 
-                result = cubic_interp(x, y, xi; bc=bc)
+                result = cubic_interp(x, y, xi; bc = bc)
                 expected = CUBIC.f.(xi)
 
-                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
             end
         end
     end
 
     @testset "BCPair(Deriv1, Deriv3) - cubic polynomial" begin
         for (grid_name, grid_fn) in [
-            ("small_last", grid_small_last),
-            ("geometric", grid_geometric),
-        ]
+                ("small_last", grid_small_last),
+                ("geometric", grid_geometric),
+            ]
             @testset "Grid: $grid_name" begin
                 x = grid_fn()
                 y = CUBIC.f.(x)
@@ -773,19 +773,19 @@ end
 
                 xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
 
-                result = cubic_interp(x, y, xi; bc=bc)
+                result = cubic_interp(x, y, xi; bc = bc)
                 expected = CUBIC.f.(xi)
 
-                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
             end
         end
     end
 
     @testset "BCPair(Deriv3, Deriv2) - cubic polynomial" begin
         for (grid_name, grid_fn) in [
-            ("large_last", grid_large_last),
-            ("geometric", grid_geometric),
-        ]
+                ("large_last", grid_large_last),
+                ("geometric", grid_geometric),
+            ]
             @testset "Grid: $grid_name" begin
                 x = grid_fn()
                 y = CUBIC.f.(x)
@@ -795,19 +795,19 @@ end
 
                 xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
 
-                result = cubic_interp(x, y, xi; bc=bc)
+                result = cubic_interp(x, y, xi; bc = bc)
                 expected = CUBIC.f.(xi)
 
-                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
             end
         end
     end
 
     @testset "BCPair(Deriv2, Deriv3) - cubic polynomial" begin
         for (grid_name, grid_fn) in [
-            ("small_last", grid_small_last),
-            ("asymmetric", grid_asymmetric),
-        ]
+                ("small_last", grid_small_last),
+                ("asymmetric", grid_asymmetric),
+            ]
             @testset "Grid: $grid_name" begin
                 x = grid_fn()
                 y = CUBIC.f.(x)
@@ -817,10 +817,10 @@ end
 
                 xi = range(x0 + 0.1, xn - 0.1, 10) |> collect
 
-                result = cubic_interp(x, y, xi; bc=bc)
+                result = cubic_interp(x, y, xi; bc = bc)
                 expected = CUBIC.f.(xi)
 
-                @test result ≈ expected rtol=POLY_RTOL atol=POLY_ATOL
+                @test result ≈ expected rtol = POLY_RTOL atol = POLY_ATOL
             end
         end
     end
@@ -833,26 +833,26 @@ end
         results = Dict{String, Float64}()
 
         for (name, bc) in [
-            ("ZeroCurv", ZeroCurvBC()),
-            ("ZeroSlope", ZeroSlopeBC()),
-            ("D1-D1", BCPair(Deriv1(1.0), Deriv1(0.5))),
-            ("D2-D2", BCPair(Deriv2(0.0), Deriv2(-1.0))),
-            ("D3-D3", BCPair(Deriv3(0.0), Deriv3(1.0))),
-            ("D1-D2", BCPair(Deriv1(1.0), Deriv2(0.0))),
-            ("D2-D1", BCPair(Deriv2(0.0), Deriv1(0.5))),
-            ("D3-D1", BCPair(Deriv3(0.0), Deriv1(0.5))),
-            ("D1-D3", BCPair(Deriv1(1.0), Deriv3(0.0))),
-            ("D3-D2", BCPair(Deriv3(0.0), Deriv2(-1.0))),
-            ("D2-D3", BCPair(Deriv2(0.0), Deriv3(1.0))),
-        ]
-            results[name] = cubic_interp(x, y, xi; bc=bc)[1]
+                ("ZeroCurv", ZeroCurvBC()),
+                ("ZeroSlope", ZeroSlopeBC()),
+                ("D1-D1", BCPair(Deriv1(1.0), Deriv1(0.5))),
+                ("D2-D2", BCPair(Deriv2(0.0), Deriv2(-1.0))),
+                ("D3-D3", BCPair(Deriv3(0.0), Deriv3(1.0))),
+                ("D1-D2", BCPair(Deriv1(1.0), Deriv2(0.0))),
+                ("D2-D1", BCPair(Deriv2(0.0), Deriv1(0.5))),
+                ("D3-D1", BCPair(Deriv3(0.0), Deriv1(0.5))),
+                ("D1-D3", BCPair(Deriv1(1.0), Deriv3(0.0))),
+                ("D3-D2", BCPair(Deriv3(0.0), Deriv2(-1.0))),
+                ("D2-D3", BCPair(Deriv2(0.0), Deriv3(1.0))),
+            ]
+            results[name] = cubic_interp(x, y, xi; bc = bc)[1]
         end
 
         # All should be finite
         @test all(isfinite, values(results))
 
         # Different BC should give different results (not all the same)
-        unique_vals = unique(round.(values(results), digits=10))
+        unique_vals = unique(round.(values(results), digits = 10))
         @test length(unique_vals) >= 5  # At least 5 meaningfully different (more combinations now)
     end
 end
@@ -870,14 +870,14 @@ end
         @test itp isa LinearInterpolant
 
         # Scalar evaluation
-        @test itp(1.0) ≈ LINEAR.f(1.0) rtol=POLY_RTOL
+        @test itp(1.0) ≈ LINEAR.f(1.0) rtol = POLY_RTOL
 
         # Broadcast
         xi = [0.5, 1.5, 2.5]
-        @test itp.(xi) ≈ LINEAR.f.(xi) rtol=POLY_RTOL
+        @test itp.(xi) ≈ LINEAR.f.(xi) rtol = POLY_RTOL
 
         # Derivative
-        @test itp(1.0; deriv=DerivOp(1)) ≈ LINEAR.f_prime(1.0) rtol=POLY_RTOL
+        @test itp(1.0; deriv = DerivOp(1)) ≈ LINEAR.f_prime(1.0) rtol = POLY_RTOL
     end
 
     @testset "CubicInterpolant with various BC" begin
@@ -886,13 +886,13 @@ end
         x0, xn = first(x), last(x)
 
         for (name, bc) in [
-            ("ZeroCurv", ZeroCurvBC()),
-            ("ZeroSlope", ZeroSlopeBC()),
-            ("Deriv1", BCPair(Deriv1(CUBIC.f_prime(x0)), Deriv1(CUBIC.f_prime(xn)))),
-            ("Deriv2", BCPair(Deriv2(CUBIC.f_double_prime(x0)), Deriv2(CUBIC.f_double_prime(xn)))),
-        ]
+                ("ZeroCurv", ZeroCurvBC()),
+                ("ZeroSlope", ZeroSlopeBC()),
+                ("Deriv1", BCPair(Deriv1(CUBIC.f_prime(x0)), Deriv1(CUBIC.f_prime(xn)))),
+                ("Deriv2", BCPair(Deriv2(CUBIC.f_double_prime(x0)), Deriv2(CUBIC.f_double_prime(xn)))),
+            ]
             @testset "BC: $name" begin
-                itp = cubic_interp(x, y; bc=bc)
+                itp = cubic_interp(x, y; bc = bc)
                 @test itp isa CubicInterpolant
 
                 # Scalar evaluation
@@ -904,15 +904,15 @@ end
                 @test all(isfinite, results)
 
                 # Derivatives
-                @test isfinite(itp(5.0; deriv=DerivOp(1)))
-                @test isfinite(itp(5.0; deriv=DerivOp(2)))
+                @test isfinite(itp(5.0; deriv = DerivOp(1)))
+                @test isfinite(itp(5.0; deriv = DerivOp(2)))
             end
         end
     end
 
     @testset "CubicSplineCache reuse" begin
         x = grid_small_last()
-        cache = CubicSplineCache(x; bc=ZeroCurvBC())
+        cache = CubicSplineCache(x; bc = ZeroCurvBC())
 
         # Multiple y vectors on same grid
         y1 = sin.(x)
@@ -943,12 +943,12 @@ end
         y = x .^ 2
 
         @test isfinite(linear_interp(x, y, 1.5))
-        @test isfinite(cubic_interp(x, y, 1.5; bc=ZeroCurvBC()))
-        @test isfinite(cubic_interp(x, y, 1.5; bc=ZeroSlopeBC()))
+        @test isfinite(cubic_interp(x, y, 1.5; bc = ZeroCurvBC()))
+        @test isfinite(cubic_interp(x, y, 1.5; bc = ZeroSlopeBC()))
     end
 
     @testset "Very small intervals" begin
-        x = [0.0, 1e-10, 1.0, 2.0]
+        x = [0.0, 1.0e-10, 1.0, 2.0]
         y = x .^ 2
 
         result = linear_interp(x, y, 0.5)
@@ -963,16 +963,16 @@ end
             if bc isa PeriodicBC
                 y_periodic = copy(y)
                 y_periodic[end] = y_periodic[1]
-                result = cubic_interp(x, y_periodic, x; bc=bc)
+                result = cubic_interp(x, y_periodic, x; bc = bc)
             else
-                result = cubic_interp(x, y, x; bc=bc)
+                result = cubic_interp(x, y, x; bc = bc)
             end
 
             for (i, xi) in enumerate(x)
                 if bc isa PeriodicBC && i == length(x)
-                    @test result[i] ≈ y[1] rtol=POLY_RTOL atol=POLY_ATOL
+                    @test result[i] ≈ y[1] rtol = POLY_RTOL atol = POLY_ATOL
                 else
-                    @test result[i] ≈ y[i] rtol=POLY_RTOL atol=POLY_ATOL
+                    @test result[i] ≈ y[i] rtol = POLY_RTOL atol = POLY_ATOL
                 end
             end
         end
@@ -983,13 +983,13 @@ end
         y = Float32.(sin.(x))
 
         for bc in [
-            ZeroCurvBC(),
-            ZeroSlopeBC(),
-            BCPair(Deriv1(Float32(0.5)), Deriv2(Float32(0.0))),
-            BCPair(Deriv3(Float32(0.0)), Deriv1(Float32(0.5))),
-            Deriv3(Float32(0.0)),
-        ]
-            result = cubic_interp(x, y, Float32(5.0); bc=bc)
+                ZeroCurvBC(),
+                ZeroSlopeBC(),
+                BCPair(Deriv1(Float32(0.5)), Deriv2(Float32(0.0))),
+                BCPair(Deriv3(Float32(0.0)), Deriv1(Float32(0.5))),
+                Deriv3(Float32(0.0)),
+            ]
+            result = cubic_interp(x, y, Float32(5.0); bc = bc)
             @test result isa Float32
             @test isfinite(result)
         end
@@ -1005,7 +1005,7 @@ end
         @test all(isfinite, output)
 
         output_cubic = zeros(3)
-        cubic_interp!(output_cubic, x, y, xi; bc=ZeroCurvBC())
+        cubic_interp!(output_cubic, x, y, xi; bc = ZeroCurvBC())
         @test all(isfinite, output_cubic)
     end
 
@@ -1017,10 +1017,10 @@ end
         xi_vec = [5.0]
 
         for bc in [ZeroCurvBC(), ZeroSlopeBC()]
-            result_scalar = cubic_interp(x, y, xi_scalar; bc=bc)
-            result_vec = cubic_interp(x, y, xi_vec; bc=bc)
+            result_scalar = cubic_interp(x, y, xi_scalar; bc = bc)
+            result_vec = cubic_interp(x, y, xi_vec; bc = bc)
 
-            @test result_scalar ≈ result_vec[1] rtol=POLY_RTOL atol=POLY_ATOL
+            @test result_scalar ≈ result_vec[1] rtol = POLY_RTOL atol = POLY_ATOL
         end
     end
 end

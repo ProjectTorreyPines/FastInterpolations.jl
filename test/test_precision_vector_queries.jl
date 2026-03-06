@@ -22,7 +22,7 @@ __diag(M::AbstractMatrix) = [M[i, i] for i in 1:min(size(M)...)]
 
 # Tolerance for numerical comparison
 # The bug causes errors on the order of Float32 epsilon (~1e-7) relative to Float64
-const PRECISION_RTOL = 1e-10  # Tight tolerance - should pass if no downcast
+const PRECISION_RTOL = 1.0e-10  # Tight tolerance - should pass if no downcast
 
 # ALLOC_THRESHOLD is defined in runtests.jl (0 for Julia 1.12+, 240 for older)
 # For standalone runs, define it here
@@ -58,7 +58,7 @@ end
         result_broadcast = itp.(xq)    # Uses scalar path
 
         @testset "Allocating vector call" begin
-            @test result_vec ≈ result_broadcast rtol=PRECISION_RTOL
+            @test result_vec ≈ result_broadcast rtol = PRECISION_RTOL
             @test eltype(result_vec) == Float64  # Output should be promoted
             # Note: broadcast may return Tv (value type) which is Float32 for constant
             # This is acceptable as constant interpolation returns y[idx] directly
@@ -67,7 +67,7 @@ end
         @testset "In-place vector call" begin
             output = Vector{Float64}(undef, length(xq))
             itp(output, xq)
-            @test output ≈ result_broadcast rtol=PRECISION_RTOL
+            @test output ≈ result_broadcast rtol = PRECISION_RTOL
         end
     end
 
@@ -80,24 +80,24 @@ end
 
         # Float64 query points at non-grid locations
         # These values are chosen to maximize the difference between Float32/Float64 arithmetic
-        xq = [0.123456789, 1.234567890, 2.345678901, 3.456789012]
+        xq = [0.123456789, 1.23456789, 2.345678901, 3.456789012]
 
         result_vec = itp(xq)
         result_broadcast = itp.(xq)
 
         @testset "Allocating vector call" begin
             # Compare actual values
-            @test result_vec ≈ result_broadcast rtol=PRECISION_RTOL
+            @test result_vec ≈ result_broadcast rtol = PRECISION_RTOL
 
             # Also verify against analytical solution (y = 2x + 1)
             expected = 2.0 .* xq .+ 1.0
-            @test result_broadcast ≈ expected rtol=PRECISION_RTOL
+            @test result_broadcast ≈ expected rtol = PRECISION_RTOL
         end
 
         @testset "In-place vector call" begin
             output = Vector{Float64}(undef, length(xq))
             itp(output, xq)
-            @test output ≈ result_broadcast rtol=PRECISION_RTOL
+            @test output ≈ result_broadcast rtol = PRECISION_RTOL
         end
     end
 
@@ -109,19 +109,19 @@ end
         itp = quadratic_interp(x, y)
 
         # Float64 query points
-        xq = [0.123456789, 1.234567890, 2.345678901, 3.456789012]
+        xq = [0.123456789, 1.23456789, 2.345678901, 3.456789012]
 
         result_vec = itp(xq)
         result_broadcast = itp.(xq)
 
         @testset "Allocating vector call" begin
-            @test result_vec ≈ result_broadcast rtol=PRECISION_RTOL
+            @test result_vec ≈ result_broadcast rtol = PRECISION_RTOL
         end
 
         @testset "In-place vector call" begin
             output = Vector{Float64}(undef, length(xq))
             itp(output, xq)
-            @test output ≈ result_broadcast rtol=PRECISION_RTOL
+            @test output ≈ result_broadcast rtol = PRECISION_RTOL
         end
     end
 
@@ -130,22 +130,22 @@ end
         x = Float32.(collect(range(0.0, 2π, 51)))
         y = Float32.(sin.(x))
 
-        itp = cubic_interp(x, y; autocache=false)
+        itp = cubic_interp(x, y; autocache = false)
 
         # Float64 query points
-        xq = [0.5, 1.0, π/2, 2.0, π, 4.0, 5.0, 2π - 0.1]
+        xq = [0.5, 1.0, π / 2, 2.0, π, 4.0, 5.0, 2π - 0.1]
 
         result_vec = itp(xq)
         result_broadcast = itp.(xq)
 
         @testset "Allocating vector call" begin
-            @test result_vec ≈ result_broadcast rtol=PRECISION_RTOL
+            @test result_vec ≈ result_broadcast rtol = PRECISION_RTOL
         end
 
         @testset "In-place vector call" begin
             output = Vector{Float64}(undef, length(xq))
             itp(output, xq)
-            @test output ≈ result_broadcast rtol=PRECISION_RTOL
+            @test output ≈ result_broadcast rtol = PRECISION_RTOL
         end
     end
 
@@ -165,7 +165,7 @@ end
         sitp = linear_interp(x, Series(y1, y2))
 
         # Float64 query points
-        xq = [0.123456789, 1.234567890, 2.345678901, 3.456789012]
+        xq = [0.123456789, 1.23456789, 2.345678901, 3.456789012]
 
         # Vector call
         result_vec = sitp(xq)  # Returns Vector of Vectors
@@ -177,7 +177,7 @@ end
             for k in 1:2
                 vec_series = [result_vec[k][i] for i in eachindex(xq)]
                 scalar_series = [result_scalar[i][k] for i in eachindex(xq)]
-                @test vec_series ≈ scalar_series rtol=PRECISION_RTOL
+                @test vec_series ≈ scalar_series rtol = PRECISION_RTOL
             end
         end
     end
@@ -198,7 +198,7 @@ end
             for k in 1:2
                 vec_series = [result_vec[k][i] for i in eachindex(xq)]
                 scalar_series = [result_scalar[i][k] for i in eachindex(xq)]
-                @test vec_series ≈ scalar_series rtol=PRECISION_RTOL
+                @test vec_series ≈ scalar_series rtol = PRECISION_RTOL
             end
         end
     end
@@ -210,7 +210,7 @@ end
 
         sitp = quadratic_interp(x, Series(y1, y2))
 
-        xq = [0.123456789, 1.234567890, 2.345678901, 3.456789012]
+        xq = [0.123456789, 1.23456789, 2.345678901, 3.456789012]
 
         result_vec = sitp(xq)
         result_scalar = [sitp(xi) for xi in xq]
@@ -219,7 +219,7 @@ end
             for k in 1:2
                 vec_series = [result_vec[k][i] for i in eachindex(xq)]
                 scalar_series = [result_scalar[i][k] for i in eachindex(xq)]
-                @test vec_series ≈ scalar_series rtol=PRECISION_RTOL
+                @test vec_series ≈ scalar_series rtol = PRECISION_RTOL
             end
         end
     end
@@ -231,7 +231,7 @@ end
 
         sitp = cubic_interp(x, Series(y1, y2))
 
-        xq = [0.5, 1.0, π/2, 2.0, π, 4.0, 5.0]
+        xq = [0.5, 1.0, π / 2, 2.0, π, 4.0, 5.0]
 
         result_vec = sitp(xq)
         result_scalar = [sitp(xi) for xi in xq]
@@ -240,7 +240,7 @@ end
             for k in 1:2
                 vec_series = [result_vec[k][i] for i in eachindex(xq)]
                 scalar_series = [result_scalar[i][k] for i in eachindex(xq)]
-                @test vec_series ≈ scalar_series rtol=PRECISION_RTOL
+                @test vec_series ≈ scalar_series rtol = PRECISION_RTOL
             end
         end
     end
@@ -262,7 +262,7 @@ end
         result_vec = itp(xq_range)
         result_broadcast = itp.(xq_range)
 
-        @test result_vec ≈ result_broadcast rtol=PRECISION_RTOL
+        @test result_vec ≈ result_broadcast rtol = PRECISION_RTOL
     end
 
     @testset "Extrapolation mode :none with domain check" begin
@@ -270,7 +270,7 @@ end
         x = Float32.(collect(range(0.0, 1.0, 11)))
         y = Float32.(x .^ 2)
 
-        itp = linear_interp(x, y; extrap=NoExtrap())
+        itp = linear_interp(x, y; extrap = NoExtrap())
 
         # Float64 query in domain
         xq_in = [0.1, 0.5, 0.9]
@@ -296,7 +296,7 @@ end
 
         # In this case, Float32 queries get promoted to Float64 in both paths
         # So they should match
-        @test result_vec ≈ result_broadcast rtol=PRECISION_RTOL
+        @test result_vec ≈ result_broadcast rtol = PRECISION_RTOL
     end
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -349,7 +349,7 @@ end
                 try
                     J_vec = Main.ForwardDiff.jacobian(f, xq_float)
                     # If it works, derivatives should match
-                    @test J_vec ≈ J_broadcast rtol=PRECISION_RTOL
+                    @test J_vec ≈ J_broadcast rtol = PRECISION_RTOL
                 catch e
                     # If it throws, should be an informative error
                     @test e isa Union{MethodError, ArgumentError}
@@ -427,7 +427,7 @@ end
         x = collect(range(0.0, 2π, 51))
         y = sin.(x)
 
-        itp = cubic_interp(x, y; autocache=false)
+        itp = cubic_interp(x, y; autocache = false)
 
         xq = [0.5, 1.0, 2.0, 3.0, 4.0, 5.0]
 
@@ -467,10 +467,10 @@ end
         diff = abs(result_scalar - result_vector)
 
         # For now, just record the difference (this test is informational)
-        @info "Precision loss test" scalar=result_scalar vector=result_vector diff=diff
+        @info "Precision loss test" scalar = result_scalar vector = result_vector diff = diff
 
         # After fix, this should pass (diff should be essentially zero)
-        @test result_scalar ≈ result_vector rtol=PRECISION_RTOL
+        @test result_scalar ≈ result_vector rtol = PRECISION_RTOL
     end
 
 end

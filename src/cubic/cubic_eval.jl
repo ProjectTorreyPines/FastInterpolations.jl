@@ -10,14 +10,14 @@
 
 "Evaluate cubic spline at a single point with operation dispatch and search policy."
 @inline function _eval_cubic_at_point(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    spacing::AbstractGridSpacing{Tg},
-    z::AbstractVector{Tv},
-    xq::Tq,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg},
+        z::AbstractVector{Tv},
+        xq::Tq,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     idx, xL, xR = search_interval(searcher, x, spacing, xq)
 
     # Use original xq for arithmetic to preserve AD
@@ -29,9 +29,9 @@
 
     @inbounds begin
         zL = z[idx]
-        zR = z[idx+1]
+        zR = z[idx + 1]
         yL = y[idx]
-        yR = y[idx+1]
+        yR = y[idx + 1]
     end
 
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
@@ -39,13 +39,13 @@ end
 
 # Backward-compatible without searcher (uses default _search_interval)
 @inline function _eval_cubic_at_point(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    spacing::AbstractGridSpacing{Tg},
-    z::AbstractVector{Tv},
-    xq::Tq,
-    op::O
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg},
+        z::AbstractVector{Tv},
+        xq::Tq,
+        op::O
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp}
     idx, xL, xR = _search_interval(x, spacing, xq)
 
     # Use original xq for arithmetic to preserve AD
@@ -57,9 +57,9 @@ end
 
     @inbounds begin
         zL = z[idx]
-        zR = z[idx+1]
+        zR = z[idx + 1]
         yL = y[idx]
-        yR = y[idx+1]
+        yR = y[idx + 1]
     end
 
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
@@ -67,15 +67,15 @@ end
 
 "Evaluate periodic cubic spline at a single point with operation dispatch and search policy."
 @inline function _eval_cubic_at_point_periodic(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    spacing::AbstractGridSpacing{Tg},
-    z::AbstractVector{Tv},
-    xq::Tq,
-    period::Tg,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg},
+        z::AbstractVector{Tv},
+        xq::Tq,
+        period::Tg,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), first(x) + period)
     idx, xL, xR = search_interval(searcher, x, spacing, xq_wrapped)
 
@@ -89,9 +89,9 @@ end
 
     @inbounds begin
         zL = z[idx]
-        zR = z[idx+1]
+        zR = z[idx + 1]
         yL = y[idx]
-        yR = y[idx+1]
+        yR = y[idx + 1]
     end
 
     return _cubic_kernel(op, zL, zR, yL, yR, h, inv_h, dL, dR)
@@ -115,29 +115,29 @@ end
 
 "Evaluate with no extrapolation and search policy."
 @inline function _eval_cubic_with_extrap(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    spacing::AbstractGridSpacing{Tg},
-    z::AbstractVector{Tv},
-    xq::Tq,
-    ::NoExtrap,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg},
+        z::AbstractVector{Tv},
+        xq::Tq,
+        ::NoExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
 end
 
 "Evaluate with constant/fill extrapolation and search policy."
 @inline function _eval_cubic_with_extrap(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    spacing::AbstractGridSpacing{Tg},
-    z::AbstractVector{Tv},
-    xq::Tq,
-    extrap::_ClampOrFill,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg},
+        z::AbstractVector{Tv},
+        xq::Tq,
+        extrap::_ClampOrFill,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     # Use primal for boundary comparisons (Dual needs real value for comparison)
     xq_primal = _extract_primal(xq)
     xq_primal < first(x) && return _constant_extrap_result(op, @inbounds(y[1]), extrap)
@@ -147,29 +147,29 @@ end
 
 "Evaluate with extension extrapolation and search policy."
 @inline function _eval_cubic_with_extrap(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    spacing::AbstractGridSpacing{Tg},
-    z::AbstractVector{Tv},
-    xq::Tq,
-    ::ExtendExtrap,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg},
+        z::AbstractVector{Tv},
+        xq::Tq,
+        ::ExtendExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     return _eval_cubic_at_point(x, y, spacing, z, xq, op, searcher)
 end
 
 "Evaluate with coordinate wrapping and search policy."
 @inline function _eval_cubic_with_extrap(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    spacing::AbstractGridSpacing{Tg},
-    z::AbstractVector{Tv},
-    xq::Tq,
-    ::WrapExtrap,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq, O<:AbstractEvalOp, S<:Searcher}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        spacing::AbstractGridSpacing{Tg},
+        z::AbstractVector{Tv},
+        xq::Tq,
+        ::WrapExtrap,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq, O <: AbstractEvalOp, S <: Searcher}
     xq_wrapped = _wrap_to_domain(xq, first(x), last(x))
     return _eval_cubic_at_point(x, y, spacing, z, xq_wrapped, op, searcher)
 end
@@ -183,28 +183,28 @@ end
 
 "Evaluate with BC-aware dispatch (Periodic BC) with search policy."
 @inline function _eval_with_bc(
-    cache::CubicSplineCache{Tg,X,F,PeriodicData{Tg},S},
-    y::AbstractVector{Tv},
-    z::AbstractVector{Tv},
-    xq::Tq,
-    ::AbstractExtrap,  # extrapolation ignored for periodic
-    op::O,
-    searcher::P
-) where {Tg<:AbstractFloat, Tv, Tq, X, F, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
-    _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, xq, cache.bc_config.period, op, searcher)
+        cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
+        y::AbstractVector{Tv},
+        z::AbstractVector{Tv},
+        xq::Tq,
+        ::AbstractExtrap,  # extrapolation ignored for periodic
+        op::O,
+        searcher::P
+    ) where {Tg <: AbstractFloat, Tv, Tq, X, F, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
+    return _eval_cubic_at_point_periodic(cache.x, y, cache.spacing, z, xq, cache.bc_config.period, op, searcher)
 end
 
 "Evaluate with BC-aware dispatch (Generic Derivative BC) with search policy."
 @inline function _eval_with_bc(
-    cache::CubicSplineCache{Tg,X,F,BCPair{L,R},S},
-    y::AbstractVector{Tv},
-    z::AbstractVector{Tv},
-    xq::Tq,
-    extrap::AbstractExtrap,
-    op::O,
-    searcher::P
-) where {Tg<:AbstractFloat, Tv, Tq, X, F, L<:PointBC, R<:PointBC, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
-    _eval_cubic_with_extrap(cache.x, y, cache.spacing, z, xq, extrap, op, searcher)
+        cache::CubicSplineCache{Tg, X, F, BCPair{L, R}, S},
+        y::AbstractVector{Tv},
+        z::AbstractVector{Tv},
+        xq::Tq,
+        extrap::AbstractExtrap,
+        op::O,
+        searcher::P
+    ) where {Tg <: AbstractFloat, Tv, Tq, X, F, L <: PointBC, R <: PointBC, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
+    return _eval_cubic_with_extrap(cache.x, y, cache.spacing, z, xq, extrap, op, searcher)
 end
 
 
@@ -214,37 +214,37 @@ end
 
 "Vector loop for non-periodic BC. Accepts any Real query type (AD-compatible)."
 @inline function _cubic_vector_loop!(
-    output::AbstractVector,
-    cache::CubicSplineCache{Tg,X,F,BC,S},
-    y::AbstractVector{Tv},
-    z::AbstractVector{Tv},
-    x_query::AbstractVector{<:Real},
-    ev::E,
-    op::O,
-    searcher::P
-) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}, E<:AbstractExtrap, O<:AbstractEvalOp, P<:Searcher}
+        output::AbstractVector,
+        cache::CubicSplineCache{Tg, X, F, BC, S},
+        y::AbstractVector{Tv},
+        z::AbstractVector{Tv},
+        x_query::AbstractVector{<:Real},
+        ev::E,
+        op::O,
+        searcher::P
+    ) where {Tg <: AbstractFloat, Tv, X, F, BC, S <: AbstractGridSpacing{Tg}, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
     @boundscheck _check_domain(cache.x, x_query, ev)
-    @inbounds for k in eachindex(x_query, output)
+    return @inbounds for k in eachindex(x_query, output)
         output[k] = _eval_with_bc(cache, y, z, x_query[k], ev, op, searcher)
     end
 end
 
 "Vector loop for Periodic BC with 2-stage optimization. Accepts any Real query type."
 @inline function _cubic_vector_loop!(
-    output::AbstractVector,
-    cache::CubicSplineCache{Tg,X,F,PeriodicData{Tg},S},
-    y::AbstractVector{Tv},
-    z::AbstractVector{Tv},
-    x_query::AbstractVector{<:Real},
-    ::AbstractExtrap,  # extrap ignored for periodic
-    op::O,
-    searcher::P
-) where {Tg<:AbstractFloat, Tv, X, F, S<:AbstractGridSpacing{Tg}, O<:AbstractEvalOp, P<:Searcher}
+        output::AbstractVector,
+        cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
+        y::AbstractVector{Tv},
+        z::AbstractVector{Tv},
+        x_query::AbstractVector{<:Real},
+        ::AbstractExtrap,  # extrap ignored for periodic
+        op::O,
+        searcher::P
+    ) where {Tg <: AbstractFloat, Tv, X, F, S <: AbstractGridSpacing{Tg}, O <: AbstractEvalOp, P <: Searcher}
     x_min = first(cache.x)
     x_max = x_min + cache.bc_config.period
     qmin, qmax = minimum(x_query), maximum(x_query)
 
-    if qmin >= x_min && qmax < x_max
+    return if qmin >= x_min && qmax < x_max
         # Fast path: all queries inside domain
         @inbounds for k in eachindex(x_query, output)
             output[k] = _eval_cubic_at_point(cache.x, y, cache.spacing, z, x_query[k], op, searcher)
@@ -269,14 +269,14 @@ Scalar cubic spline evaluation (solves system once, evaluates once).
 Uses task-local pool for workspace allocation.
 """
 @inline @with_pool pool function cubic_interp_scalar(
-    cache::CubicSplineCache{Tg,X,F,BC,S},
-    y::AbstractVector{Tv},
-    x_query::Tg;
-    extrap::AbstractExtrap=NoExtrap(),
-    deriv::DerivOp=EvalValue(),
-    search=AutoSearch(),
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, X, F, BC, S<:AbstractGridSpacing{Tg}}
+        cache::CubicSplineCache{Tg, X, F, BC, S},
+        y::AbstractVector{Tv},
+        x_query::Tg;
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: AbstractFloat, Tv, X, F, BC, S <: AbstractGridSpacing{Tg}}
     @assert length(y) == length(cache.x) "y length must match cache grid"
 
     z = similar!(pool, y)

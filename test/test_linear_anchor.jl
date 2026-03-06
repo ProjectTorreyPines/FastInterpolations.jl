@@ -88,7 +88,7 @@ using FastInterpolations
     @testset "itp(aq) evaluation matches itp(xq)" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
-        itp = linear_interp(x, y; extrap=ExtendExtrap())
+        itp = linear_interp(x, y; extrap = ExtendExtrap())
 
         xq_points = [0.5, 1.0, 2.0, 3.0, 5.5]
 
@@ -104,13 +104,13 @@ using FastInterpolations
     @testset "itp(aq; deriv=DerivOp(1)) derivative evaluation" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
-        itp = linear_interp(x, y; extrap=ExtendExtrap())
+        itp = linear_interp(x, y; extrap = ExtendExtrap())
 
         xq_points = [0.5, 1.0, 2.0, 3.0, 5.5]
 
         for xq in xq_points
             aq = FastInterpolations._anchor_query(x, xq, Val(:linear))
-            @test itp(aq; deriv=DerivOp(1)) ≈ itp(xq; deriv=DerivOp(1))
+            @test itp(aq; deriv = DerivOp(1)) ≈ itp(xq; deriv = DerivOp(1))
         end
     end
 
@@ -132,7 +132,7 @@ using FastInterpolations
 
         # Verify wrapped evaluation matches
         y = sin.(2π .* x)
-        itp = linear_interp(x, y; extrap=WrapExtrap())
+        itp = linear_interp(x, y; extrap = WrapExtrap())
         aq = FastInterpolations._anchor_query(x, 1.5, Val(:linear), true)
         @test itp(aq) ≈ itp(1.5)
     end
@@ -168,7 +168,7 @@ using FastInterpolations
         @test aq_int.xq ≈ 0.0
 
         # Rational query should be promoted
-        aq_rat = FastInterpolations._anchor_query(x, 1//2, Val(:linear))
+        aq_rat = FastInterpolations._anchor_query(x, 1 // 2, Val(:linear))
         @test aq_rat.xq isa Float64
         @test aq_rat.xq ≈ 0.5
     end
@@ -194,7 +194,7 @@ using FastInterpolations
     @testset "in-place vector evaluation with anchors" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
-        itp = linear_interp(x, y; extrap=ExtendExtrap())
+        itp = linear_interp(x, y; extrap = ExtendExtrap())
 
         xq_vec = [0.5, 1.0, 2.0, 3.0, 5.5]
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:linear))
@@ -217,7 +217,7 @@ using FastInterpolations
         # Non-uniform grid
         x = [0.0, 0.1, 0.3, 0.6, 1.0]
         y = x .^ 2
-        itp = linear_interp(x, y; extrap=ExtendExtrap())
+        itp = linear_interp(x, y; extrap = ExtendExtrap())
 
         xq = 0.45  # interval [0.3, 0.6]
         aq = FastInterpolations._anchor_query(x, xq, Val(:linear))
@@ -237,7 +237,7 @@ using FastInterpolations
     @testset "zero-allocation with pre-built anchors" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
-        itp = linear_interp(x, y; extrap=ExtendExtrap())
+        itp = linear_interp(x, y; extrap = ExtendExtrap())
 
         xq_vec = collect(range(0.1, 6.0, 100))
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:linear))
@@ -257,7 +257,7 @@ using FastInterpolations
     @testset "extrap=NoExtrap() throws DomainError via anchor" begin
         x = collect(range(0.0, 1.0, 11))
         y = sin.(2π .* x)
-        itp = linear_interp(x, y; extrap=NoExtrap())
+        itp = linear_interp(x, y; extrap = NoExtrap())
 
         # Inside domain works
         aq_inside = FastInterpolations._anchor_query(x, 0.5, Val(:linear))
@@ -271,8 +271,8 @@ using FastInterpolations
         @test_throws DomainError itp(aq_above)
 
         # Derivatives also throw
-        @test_throws DomainError itp(aq_below; deriv=DerivOp(1))
-        @test_throws DomainError itp(aq_above; deriv=DerivOp(1))
+        @test_throws DomainError itp(aq_below; deriv = DerivOp(1))
+        @test_throws DomainError itp(aq_above; deriv = DerivOp(1))
     end
 
     # ========================================
@@ -281,7 +281,7 @@ using FastInterpolations
     @testset "extrap=ClampExtrap() via anchor" begin
         x = collect(range(0.0, 1.0, 11))
         y = sin.(2π .* x)
-        itp = linear_interp(x, y; extrap=ClampExtrap())
+        itp = linear_interp(x, y; extrap = ClampExtrap())
 
         # Below domain returns first y
         aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:linear))
@@ -306,7 +306,7 @@ using FastInterpolations
         y = sin.(2π .* x)
 
         for extrap in [ExtendExtrap(), ClampExtrap()]
-            itp = linear_interp(x, y; extrap=extrap)
+            itp = linear_interp(x, y; extrap = extrap)
             xq_vec = [-0.2, 0.3, 0.7, 1.2]  # Mix of inside/outside
             aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:linear))
 
@@ -322,7 +322,7 @@ using FastInterpolations
     @testset "in-place output length assertion" begin
         x = collect(range(0.0, 1.0, 11))
         y = sin.(2π .* x)
-        itp = linear_interp(x, y; extrap=ExtendExtrap())
+        itp = linear_interp(x, y; extrap = ExtendExtrap())
 
         xq_vec = [0.2, 0.5, 0.8]
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:linear))
@@ -338,17 +338,17 @@ using FastInterpolations
     @testset "zero-allocation with deriv=DerivOp(1)" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
-        itp = linear_interp(x, y; extrap=ExtendExtrap())
+        itp = linear_interp(x, y; extrap = ExtendExtrap())
 
         xq_vec = collect(range(0.1, 6.0, 100))
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:linear))
         output = zeros(Float64, 100)
 
         # Warm-up call
-        itp(output, aq_vec; deriv=DerivOp(1))
+        itp(output, aq_vec; deriv = DerivOp(1))
 
         # Allocation test
-        allocs = @allocated itp(output, aq_vec; deriv=DerivOp(1))
+        allocs = @allocated itp(output, aq_vec; deriv = DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 

@@ -180,7 +180,7 @@ function LinearBinarySearch(linear_window::Integer)
     linear_window == 128 && return LinearBinarySearch{128}()
     throw(ArgumentError("`linear_window` must be one of (0, 1, 2, 4, 8, 16, 32, 64, 128), got $linear_window"))
 end
-LinearBinarySearch(; linear_window::Integer=8) = LinearBinarySearch(linear_window)
+LinearBinarySearch(; linear_window::Integer = 8) = LinearBinarySearch(linear_window)
 
 """
     AutoSearch <: AbstractSearchPolicy
@@ -229,18 +229,18 @@ Returns `false` for short vectors (length < K) since LinearBinarySearch offers n
 
 False positive rate: 1/K! ≈ 2.5e-5 for K=8 (random data appearing sorted in first K elements).
 """
-@inline function _is_likely_monotone(xq::AbstractVector{<:Real}, ::Val{K}=Val(8)) where {K}
+@inline function _is_likely_monotone(xq::AbstractVector{<:Real}, ::Val{K} = Val(8)) where {K}
     n = length(xq)
     n < K && return false
     @inbounds begin
         ascending = xq[2] >= xq[1]
         if ascending
             for i in 2:K
-                xq[i] < xq[i-1] && return false
+                xq[i] < xq[i - 1] && return false
             end
         else
             for i in 2:K
-                xq[i] > xq[i-1] && return false
+                xq[i] > xq[i - 1] && return false
             end
         end
     end
@@ -285,7 +285,7 @@ end
 @inline _resolve_search_policy(search, xq, hint) = _resolve_search_policy(search, xq)
 
 @inline function _resolve_search_policy(::AutoSearch, xq::AbstractVector{<:Real}, ::Nothing)
-    _is_likely_monotone(xq) ? LinearBinarySearch() : BinarySearch()
+    return _is_likely_monotone(xq) ? LinearBinarySearch() : BinarySearch()
 end
 
 # ----------------------------------------
@@ -359,7 +359,7 @@ Type parameters enable compile-time dispatch with zero runtime overhead.
 Users should not construct Searcher directly. Use the policy types (`BinarySearch()`,
 `LinearBinarySearch()`) with the `search` keyword argument instead.
 """
-struct Searcher{P<:AbstractSearchPolicy,H<:AbstractHint}
+struct Searcher{P <: AbstractSearchPolicy, H <: AbstractHint}
     hint::H
 end
 
@@ -369,7 +369,7 @@ end
 Default internal searcher: stateless binary search with no hint.
 Compiles to identical code as direct `_search_interval` call.
 """
-const DEFAULT_SEARCHER = Searcher{BinarySearch,NoHint}(NoHint())
+const DEFAULT_SEARCHER = Searcher{BinarySearch, NoHint}(NoHint())
 
 # ----------------------------------------
 # Policy → Searcher Conversion (Thread-Safe)
@@ -381,9 +381,9 @@ const DEFAULT_SEARCHER = Searcher{BinarySearch,NoHint}(NoHint())
 Convert user-facing policy to internal Searcher with fresh hint state.
 Creates a new RefHint for stateful policies, ensuring thread safety.
 """
-@inline _to_searcher(::BinarySearch) = Searcher{BinarySearch,NoHint}(NoHint())
-@inline _to_searcher(::LinearSearch) = Searcher{LinearSearch,RefHint}(RefHint())
-@inline _to_searcher(::LinearBinarySearch{MAX}) where {MAX} = Searcher{LinearBinarySearch{MAX},RefHint}(RefHint())
+@inline _to_searcher(::BinarySearch) = Searcher{BinarySearch, NoHint}(NoHint())
+@inline _to_searcher(::LinearSearch) = Searcher{LinearSearch, RefHint}(RefHint())
+@inline _to_searcher(::LinearBinarySearch{MAX}) where {MAX} = Searcher{LinearBinarySearch{MAX}, RefHint}(RefHint())
 
 # ----------------------------------------
 # 2-arg overloads: Policy + External Hint
@@ -392,24 +392,24 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 # When hint=nothing, behaves identically to 1-arg version.
 # When hint=Ref{Int}, stateful policies use the external Ref for persistence.
 
-@inline _to_searcher(::BinarySearch, ::Nothing) = Searcher{BinarySearch,NoHint}(NoHint())
+@inline _to_searcher(::BinarySearch, ::Nothing) = Searcher{BinarySearch, NoHint}(NoHint())
 @inline _to_searcher(::BinarySearch, hint::Base.RefValue{Int}) = _to_searcher(LinearBinarySearch(), hint)  # auto-upgrade to default LinearBinarySearch
-@inline _to_searcher(::LinearSearch, ::Nothing) = Searcher{LinearSearch,RefHint}(RefHint())
-@inline _to_searcher(::LinearSearch, hint::Base.RefValue{Int}) = Searcher{LinearSearch,RefHint}(RefHint(hint))
-@inline _to_searcher(::LinearBinarySearch{MAX}, ::Nothing) where {MAX} = Searcher{LinearBinarySearch{MAX},RefHint}(RefHint())
-@inline _to_searcher(::LinearBinarySearch{MAX}, hint::Base.RefValue{Int}) where {MAX} = Searcher{LinearBinarySearch{MAX},RefHint}(RefHint(hint))
+@inline _to_searcher(::LinearSearch, ::Nothing) = Searcher{LinearSearch, RefHint}(RefHint())
+@inline _to_searcher(::LinearSearch, hint::Base.RefValue{Int}) = Searcher{LinearSearch, RefHint}(RefHint(hint))
+@inline _to_searcher(::LinearBinarySearch{MAX}, ::Nothing) where {MAX} = Searcher{LinearBinarySearch{MAX}, RefHint}(RefHint())
+@inline _to_searcher(::LinearBinarySearch{MAX}, hint::Base.RefValue{Int}) where {MAX} = Searcher{LinearBinarySearch{MAX}, RefHint}(RefHint(hint))
 
 # AutoSearch fallbacks: _resolve_search_policy should be called first, but if any
 # code path misses resolution, fall back to BinarySearch (safe stateless default).
-@inline _to_searcher(::AutoSearch) = Searcher{BinarySearch,NoHint}(NoHint())
-@inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{BinarySearch,NoHint}(NoHint())
+@inline _to_searcher(::AutoSearch) = Searcher{BinarySearch, NoHint}(NoHint())
+@inline _to_searcher(::AutoSearch, ::Nothing) = Searcher{BinarySearch, NoHint}(NoHint())
 @inline _to_searcher(::AutoSearch, hint::Base.RefValue{Int}) = _to_searcher(LinearBinarySearch(), hint)  # auto-upgrade to default LinearBinarySearch
 
 # DirectSearch: Range grids only. Carries DirectSearch through to Searcher
 # so search_interval dispatches on policy type alone (no grid-type branching).
-@inline _to_searcher(::DirectSearch) = Searcher{DirectSearch,NoHint}(NoHint())
-@inline _to_searcher(::DirectSearch, ::Nothing) = Searcher{DirectSearch,NoHint}(NoHint())
-@inline _to_searcher(::DirectSearch, hint::Base.RefValue{Int}) = Searcher{DirectSearch,RefHint}(RefHint(hint))
+@inline _to_searcher(::DirectSearch) = Searcher{DirectSearch, NoHint}(NoHint())
+@inline _to_searcher(::DirectSearch, ::Nothing) = Searcher{DirectSearch, NoHint}(NoHint())
+@inline _to_searcher(::DirectSearch, hint::Base.RefValue{Int}) = Searcher{DirectSearch, RefHint}(RefHint(hint))
 
 # ----------------------------------------
 # Canonical resolver APIs
@@ -424,8 +424,8 @@ Creates a new RefHint for stateful policies, ensuring thread safety.
 # _resolve_searcher_for_grid: adapt pre-built Searcher to grid type.
 # Converts any Searcher to DirectSearch variant when grid is AbstractRange.
 # P<:AbstractSearchPolicy bound required to avoid method ambiguity with the catchall.
-@inline _resolve_searcher_for_grid(::AbstractRange, ::Searcher{P,NoHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,NoHint}(NoHint())
-@inline _resolve_searcher_for_grid(::AbstractRange, s::Searcher{P,RefHint}) where {P<:AbstractSearchPolicy} = Searcher{DirectSearch,RefHint}(s.hint)
+@inline _resolve_searcher_for_grid(::AbstractRange, ::Searcher{P, NoHint}) where {P <: AbstractSearchPolicy} = Searcher{DirectSearch, NoHint}(NoHint())
+@inline _resolve_searcher_for_grid(::AbstractRange, s::Searcher{P, RefHint}) where {P <: AbstractSearchPolicy} = Searcher{DirectSearch, RefHint}(s.hint)
 @inline _resolve_searcher_for_grid(_, s::Searcher) = s
 
 # _resolve_search: one-liner entry point for all eval paths.
@@ -469,7 +469,7 @@ Uses `unsafe_trunc` for ~40% faster index calculation.
 Unlike `_search_binary`, this function computes the interval index directly
 via arithmetic rather than iterative search, exploiting uniform grid spacing.
 """
-@inline function _search_direct(x::AbstractRange{T}, xq::T) where {T<:AbstractFloat}
+@inline function _search_direct(x::AbstractRange{T}, xq::T) where {T <: AbstractFloat}
     n = length(x)
     x_min = first(x)
     dx = Base.step(x)
@@ -488,7 +488,7 @@ Uses branchless `for` loop with precomputed iteration count via `leading_zeros`
 for predictable loop exit on modern CPUs. The inner comparison uses `ifelse` to
 compile to ARM64 `csel` / x86 `cmov` — fully branchless binary search body.
 """
-@inline function _search_binary(x::AbstractVector{T}, xq::T) where {T<:Real}
+@inline function _search_binary(x::AbstractVector{T}, xq::T) where {T <: Real}
     n = length(x)
     @inbounds begin
         if xq <= x[1]
@@ -521,8 +521,8 @@ Spacing-aware O(1) direct calculation for ScalarSpacing.
 Uses pre-computed `inv_h` for multiplication instead of division.
 """
 @inline function _search_direct(
-    x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::T
-) where {T<:AbstractFloat}
+        x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::T
+    ) where {T <: AbstractFloat}
     n = length(x)
     x_min = first(x)
     idx = clamp(unsafe_trunc(Int, (xq - x_min) * spacing.inv_h + 1), 1, n - 1)
@@ -537,8 +537,8 @@ end
 VectorSpacing delegates to non-spacing version.
 """
 @inline function _search_binary(
-    x::AbstractVector{T}, ::AbstractGridSpacing{T}, xq::T
-) where {T<:Real}
+        x::AbstractVector{T}, ::AbstractGridSpacing{T}, xq::T
+    ) where {T <: Real}
     return _search_binary(x, xq)
 end
 
@@ -559,7 +559,7 @@ end
 
 Generic wrapper: converts query to grid type, then calls optimized version.
 """
-@inline function _search_direct(x::AbstractRange{Tg}, xq::Tq) where {Tg<:AbstractFloat, Tq<:Real}
+@inline function _search_direct(x::AbstractRange{Tg}, xq::Tq) where {Tg <: AbstractFloat, Tq <: Real}
     return _search_direct(x, _to_grid_type(xq, Tg))
 end
 
@@ -568,7 +568,7 @@ end
 
 Generic wrapper: converts query to grid type, then calls optimized version.
 """
-@inline function _search_binary(x::AbstractVector{Tg}, xq::Tq) where {Tg<:Real, Tq<:Real}
+@inline function _search_binary(x::AbstractVector{Tg}, xq::Tq) where {Tg <: Real, Tq <: Real}
     return _search_binary(x, _to_grid_type(xq, Tg))
 end
 
@@ -577,7 +577,7 @@ end
 
 Generic wrapper with spacing: converts query to grid type, then calls optimized version.
 """
-@inline function _search_direct(x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Tq) where {Tg<:AbstractFloat, Tq<:Real}
+@inline function _search_direct(x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Tq) where {Tg <: AbstractFloat, Tq <: Real}
     return _search_direct(x, spacing, _to_grid_type(xq, Tg))
 end
 
@@ -586,7 +586,7 @@ end
 
 Generic wrapper with spacing: converts query to grid type, then calls optimized version.
 """
-@inline function _search_binary(x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Tq) where {Tg<:Real, Tq<:Real}
+@inline function _search_binary(x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Tq) where {Tg <: Real, Tq <: Real}
     return _search_binary(x, spacing, _to_grid_type(xq, Tg))
 end
 
@@ -612,10 +612,10 @@ No bounds checking (except initial clamp), no binary fallback.
 - Hint is clamped once at start, then trusted
 """
 @inline function _search_linear!(
-    x::AbstractVector{T},
-    xq::T,
-    hint_ref::Base.RefValue{Int},
-) where {T<:Real}
+        x::AbstractVector{T},
+        xq::T,
+        hint_ref::Base.RefValue{Int},
+    ) where {T <: Real}
     ix = hint_ref[]
     n = length(x)
     @inbounds begin
@@ -666,15 +666,17 @@ Walk left up to MAX steps. Returns `(ix, found)`.
 """
 @generated function _walk_left(x::AbstractVector, xq, ix::Int, ::Val{MAX}) where {MAX}
     MAX == 0 && return :(return (ix, false))
-    if MAX <= _WALK_UNROLL_THRESHOLD
+    return if MAX <= _WALK_UNROLL_THRESHOLD
         # Flat unroll: prevents LLVM loop peeling bloat
         stmts = Expr[]
         for _ in 1:MAX
-            push!(stmts, quote
-                ix <= 1 && return (ix, false)
-                ix -= 1
-                @inbounds x[ix] <= xq && return (ix, true)
-            end)
+            push!(
+                stmts, quote
+                    ix <= 1 && return (ix, false)
+                    ix -= 1
+                    @inbounds x[ix] <= xq && return (ix, true)
+                end
+            )
         end
         quote
             $(stmts...)
@@ -699,14 +701,16 @@ Same @generated strategy as `_walk_left`.
 """
 @generated function _walk_right(x::AbstractVector, xq, ix::Int, n::Int, ::Val{MAX}) where {MAX}
     MAX == 0 && return :(return (ix, false))
-    if MAX <= _WALK_UNROLL_THRESHOLD
+    return if MAX <= _WALK_UNROLL_THRESHOLD
         stmts = Expr[]
         for _ in 1:MAX
-            push!(stmts, quote
-                ix >= n - 1 && return (ix, false)
-                ix += 1
-                @inbounds xq < x[ix + 1] && return (ix, true)
-            end)
+            push!(
+                stmts, quote
+                    ix >= n - 1 && return (ix, false)
+                    ix += 1
+                    @inbounds xq < x[ix + 1] && return (ix, true)
+                end
+            )
         end
         quote
             $(stmts...)
@@ -739,15 +743,15 @@ Optimal for monotonic query sequences.
 - @generated walk helpers produce flat, loop-free code to avoid LLVM loop peeling bloat
 """
 @inline function _search_linear_binary!(
-    x::AbstractVector{T},
-    xq::T,
-    hint_ref::Base.RefValue{Int},
-    ::Val{MAX},
-) where {T<:Real,MAX}
+        x::AbstractVector{T},
+        xq::T,
+        hint_ref::Base.RefValue{Int},
+        ::Val{MAX},
+    ) where {T <: Real, MAX}
     ix = hint_ref[]
     n = length(x)
     ix = clamp(ix, 1, n - 1)  # guard against user-provided bad hints (e.g. Ref(0), stale)
-                               # Precondition: n >= 2 (enforced by all interpolant constructors)
+    # Precondition: n >= 2 (enforced by all interpolant constructors)
     @inbounds begin
         # Direct hit — most common for sorted/monotonic queries
         xL = x[ix]
@@ -782,8 +786,8 @@ The hint is not used for computation (Range arithmetic is already O(1)),
 but updated for correct state tracking in heterogeneous ND grids.
 """
 @inline function _search_direct!(
-    x::AbstractRange{T}, xq::T, hint_ref::Base.RefValue{Int}
-) where {T<:AbstractFloat}
+        x::AbstractRange{T}, xq::T, hint_ref::Base.RefValue{Int}
+    ) where {T <: AbstractFloat}
     idx, xL, xR = _search_direct(x, xq)
     hint_ref[] = idx
     return idx, xL, xR
@@ -795,8 +799,8 @@ end
 Spacing-aware mutating variant for ND paths: O(1) arithmetic + hint update.
 """
 @inline function _search_direct!(
-    x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::T, hint_ref::Base.RefValue{Int}
-) where {T<:AbstractFloat}
+        x::AbstractRange{T}, spacing::ScalarSpacing{T}, xq::T, hint_ref::Base.RefValue{Int}
+    ) where {T <: AbstractFloat}
     idx, xL, xR = _search_direct(x, spacing, xq)
     hint_ref[] = idx
     return idx, xL, xR
@@ -807,22 +811,22 @@ end
 # ----------------------------------------
 
 """Generic wrapper for mutating direct search."""
-@inline function _search_direct!(x::AbstractRange{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg<:AbstractFloat, Tq<:Real}
+@inline function _search_direct!(x::AbstractRange{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg <: AbstractFloat, Tq <: Real}
     return _search_direct!(x, _to_grid_type(xq, Tg), hint_ref)
 end
 
 """Generic wrapper for mutating direct search with spacing."""
-@inline function _search_direct!(x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg<:AbstractFloat, Tq<:Real}
+@inline function _search_direct!(x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg <: AbstractFloat, Tq <: Real}
     return _search_direct!(x, spacing, _to_grid_type(xq, Tg), hint_ref)
 end
 
 """Generic wrapper for linear search."""
-@inline function _search_linear!(x::AbstractVector{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg<:Real, Tq<:Real}
+@inline function _search_linear!(x::AbstractVector{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}) where {Tg <: Real, Tq <: Real}
     return _search_linear!(x, _to_grid_type(xq, Tg), hint_ref)
 end
 
 """Generic wrapper for linear-binary search."""
-@inline function _search_linear_binary!(x::AbstractVector{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}, v::Val{MAX}) where {Tg<:Real, Tq<:Real, MAX}
+@inline function _search_linear_binary!(x::AbstractVector{Tg}, xq::Tq, hint_ref::Base.RefValue{Int}, v::Val{MAX}) where {Tg <: Real, Tq <: Real, MAX}
     return _search_linear_binary!(x, _to_grid_type(xq, Tg), hint_ref, v)
 end
 
@@ -841,21 +845,21 @@ end
 
 # --- Default: BinarySearch + NoHint (zero-overhead) ---
 
-@inline search_interval(::Searcher{BinarySearch,NoHint}, x::AbstractVector, xq::Real) =
+@inline search_interval(::Searcher{BinarySearch, NoHint}, x::AbstractVector, xq::Real) =
     _search_binary(x, xq)
 
-@inline search_interval(::Searcher{BinarySearch,NoHint}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg} =
+@inline search_interval(::Searcher{BinarySearch, NoHint}, x::AbstractVector{Tg}, spacing::AbstractGridSpacing{Tg}, xq::Real) where {Tg} =
     _search_binary(x, spacing, xq)
 
 # --- LinearSearch + RefHint ---
 
-@inline function search_interval(p::Searcher{LinearSearch,RefHint}, x::AbstractVector, xq::Real)
+@inline function search_interval(p::Searcher{LinearSearch, RefHint}, x::AbstractVector, xq::Real)
     return _search_linear!(x, xq, p.hint.idx)
 end
 
 # --- LinearBinarySearch{MAX} + RefHint ---
 
-@inline function search_interval(p::Searcher{LinearBinarySearch{MAX},RefHint}, x::AbstractVector, xq::Real) where {MAX}
+@inline function search_interval(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, xq::Real) where {MAX}
     return _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 end
 
@@ -864,27 +868,27 @@ end
 # Range grids are handled by DirectSearch methods below.
 
 # LinearSearch + spacing
-@inline search_interval(p::Searcher{LinearSearch,RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) =
+@inline search_interval(p::Searcher{LinearSearch, RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) =
     _search_linear!(x, xq, p.hint.idx)
 
 # LinearBinarySearch + spacing
-@inline search_interval(p::Searcher{LinearBinarySearch{MAX},RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) where {MAX} =
+@inline search_interval(p::Searcher{LinearBinarySearch{MAX}, RefHint}, x::AbstractVector, ::AbstractGridSpacing, xq::Real) where {MAX} =
     _search_linear_binary!(x, xq, p.hint.idx, Val(MAX))
 
 # --- DirectSearch + NoHint (Range grids, zero-overhead) ---
-@inline search_interval(::Searcher{DirectSearch,NoHint}, x::AbstractRange, xq::Real) =
+@inline search_interval(::Searcher{DirectSearch, NoHint}, x::AbstractRange, xq::Real) =
     _search_direct(x, xq)
 
-@inline search_interval(::Searcher{DirectSearch,NoHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
+@inline search_interval(::Searcher{DirectSearch, NoHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
     _search_direct(x, spacing, xq)
 
 # --- DirectSearch + RefHint (Range grids with persistent hint) ---
 # DirectSearch is only created for Range grids, so only Range methods are needed.
 
-@inline search_interval(p::Searcher{DirectSearch,RefHint}, x::AbstractRange, xq::Real) =
+@inline search_interval(p::Searcher{DirectSearch, RefHint}, x::AbstractRange, xq::Real) =
     _search_direct!(x, xq, p.hint.idx)
 
-@inline search_interval(p::Searcher{DirectSearch,RefHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
+@inline search_interval(p::Searcher{DirectSearch, RefHint}, x::AbstractRange{Tg}, spacing::ScalarSpacing{Tg}, xq::Real) where {Tg} =
     _search_direct!(x, spacing, xq, p.hint.idx)
 
 # ========================================

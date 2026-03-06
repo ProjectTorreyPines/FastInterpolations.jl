@@ -34,7 +34,7 @@ import SymbolicUtils
 # Wrapper function for symbolic registration. Using a regular function
 # (not a callable struct) avoids method ambiguity with concrete interpolant types.
 _fast_interp_eval(itp::AbstractInterpolant, t) = itp(t)
-_derivative_symbolic(itp::AbstractInterpolant, t, order::Integer) = itp(t; deriv=DerivOp(order))
+_derivative_symbolic(itp::AbstractInterpolant, t, order::Integer) = itp(t; deriv = DerivOp(order))
 
 # Register the wrapper and derivative functions with Symbolics
 @register_symbolic _fast_interp_eval(itp::AbstractInterpolant, t)
@@ -44,22 +44,22 @@ Base.nameof(itp::AbstractInterpolant) = :FastInterpolation
 
 # Type/shape promotions for _derivative_symbolic
 function SymbolicUtils.promote_symtype(
-    ::typeof(_derivative_symbolic), Ti::SymbolicUtils.TypeT,
-    Tt::SymbolicUtils.TypeT,
-    To::SymbolicUtils.TypeT
-)
+        ::typeof(_derivative_symbolic), Ti::SymbolicUtils.TypeT,
+        Tt::SymbolicUtils.TypeT,
+        To::SymbolicUtils.TypeT
+    )
     @assert Ti <: AbstractInterpolant
     @assert Tt <: Real
     @assert To <: Integer
-    Real
+    return Real
 end
 
 function SymbolicUtils.promote_shape(
-    ::typeof(_derivative_symbolic),
-    @nospecialize(shi::SymbolicUtils.ShapeT),
-    @nospecialize(sht::SymbolicUtils.ShapeT),
-    @nospecialize(sho::SymbolicUtils.ShapeT)
-)
+        ::typeof(_derivative_symbolic),
+        @nospecialize(shi::SymbolicUtils.ShapeT),
+        @nospecialize(sht::SymbolicUtils.ShapeT),
+        @nospecialize(sho::SymbolicUtils.ShapeT)
+    )
     @assert !SymbolicUtils.is_array_shape(shi)
     @assert !SymbolicUtils.is_array_shape(sht)
     @assert !SymbolicUtils.is_array_shape(sho)
@@ -78,7 +78,7 @@ end
 for T in [LinearInterpolant, CubicInterpolant, QuadraticInterpolant, ConstantInterpolant]
     for symT in [Num, SymbolicUtils.BasicSymbolic{<:Real}]
         @eval function (itp::$T)(t::$symT; kwargs...)
-            _fast_interp_eval(itp, t)
+            return _fast_interp_eval(itp, t)
         end
     end
 end
@@ -89,14 +89,14 @@ end
 
 # Wrapper struct for tracking derivative orders of ND interpolants.
 # Enables higher-order symbolic differentiation by accumulating per-axis orders.
-struct DifferentiatedInterpolantND{N, I<:AbstractInterpolantND}
+struct DifferentiatedInterpolantND{N, I <: AbstractInterpolantND}
     interp::I
     derivative_orders::NTuple{N, Int}
 end
 
 function (d::DifferentiatedInterpolantND{N})(args::Vararg{Real, N}) where {N}
     deriv_ops = map(n -> DerivOp(n), d.derivative_orders)
-    d.interp(args; deriv=deriv_ops)
+    return d.interp(args; deriv = deriv_ops)
 end
 
 Base.nameof(::AbstractInterpolantND) = :FastInterpolationND
@@ -105,7 +105,7 @@ Base.nameof(::DifferentiatedInterpolantND) = :DifferentiatedFastInterpolationND
 # Helper for ND symbolic term construction
 function _symbolic_nd_call(itp, t_args, is_num::Bool)
     args = is_num ? unwrap.(t_args) : t_args
-    res = SymbolicUtils.term(itp, args...; type=Real)
+    res = SymbolicUtils.term(itp, args...; type = Real)
     return is_num ? Num(res) : res
 end
 
@@ -119,25 +119,25 @@ end
 for NDT in [CubicInterpolantND, LinearInterpolantND, QuadraticInterpolantND, ConstantInterpolantND]
     # Numeric varargs → tuple conversion for compiled symbolic code
     @eval function (itp::$NDT{Tg, Tv, N})(
-        args::Vararg{Real, N}; kwargs...
-    ) where {Tg, Tv, N}
-        itp(args; kwargs...)
+            args::Vararg{Real, N}; kwargs...
+        ) where {Tg, Tv, N}
+        return itp(args; kwargs...)
     end
 
     for symT in [Num, SymbolicUtils.BasicSymbolic{<:Real}]
         is_num = symT === Num
         # ND interpolant call via tuple: itp((sym_x, sym_y, ...))
         @eval function (itp::$NDT{Tg, Tv, N})(
-            t::NTuple{N, $symT}; kwargs...
-        ) where {Tg, Tv, N}
-            _symbolic_nd_call(itp, t, $is_num)
+                t::NTuple{N, $symT}; kwargs...
+            ) where {Tg, Tv, N}
+            return _symbolic_nd_call(itp, t, $is_num)
         end
 
         # Varargs form: itp(sym_x, sym_y, ...)
         @eval function (itp::$NDT{Tg, Tv, N})(
-            t::Vararg{$symT, N}; kwargs...
-        ) where {Tg, Tv, N}
-            _symbolic_nd_call(itp, t, $is_num)
+                t::Vararg{$symT, N}; kwargs...
+            ) where {Tg, Tv, N}
+            return _symbolic_nd_call(itp, t, $is_num)
         end
     end
 end
@@ -146,9 +146,9 @@ end
 for symT in [Num, SymbolicUtils.BasicSymbolic{<:Real}]
     is_num = symT === Num
     @eval function (d::DifferentiatedInterpolantND{N})(
-        t::Vararg{$symT, N}
-    ) where {N}
-        _symbolic_nd_call(d, t, $is_num)
+            t::Vararg{$symT, N}
+        ) where {N}
+        return _symbolic_nd_call(d, t, $is_num)
     end
 end
 
@@ -179,7 +179,7 @@ for NDT in [CubicInterpolantND, LinearInterpolantND, QuadraticInterpolantND, Con
     @eval @register_derivative (itp::$NDT)(args...) I begin
         orders = ntuple(j -> j == I ? 1 : 0, Val{Nargs}())
         dinterp = DifferentiatedInterpolantND{Nargs, typeof(itp)}(itp, orders)
-        SymbolicUtils.term(dinterp, args...; type=Real)
+        SymbolicUtils.term(dinterp, args...; type = Real)
     end
 end
 
@@ -188,7 +188,7 @@ end
     orders_offset = ntuple(j -> j == I ? 1 : 0, Val{Nargs}())
     orders = d.derivative_orders .+ orders_offset
     new_d = DifferentiatedInterpolantND{Nargs, typeof(d.interp)}(d.interp, orders)
-    SymbolicUtils.term(new_d, args...; type=Real)
+    SymbolicUtils.term(new_d, args...; type = Real)
 end
 
 end # module

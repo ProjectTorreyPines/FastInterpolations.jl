@@ -32,17 +32,20 @@
 # ── Fill-value FillExtrap validation for ND ────────────────────────────
 # All fill-value axes must have the same value (prevents ambiguity).
 # ClampExtrap (boundary clamp) is always OK and not counted.
-@noinline _throw_conflicting_fill_values() = throw(ArgumentError(
-    "All FillExtrap fill values in ND must be identical; " *
-    "got conflicting fill values on different axes"))
+@noinline _throw_conflicting_fill_values() = throw(
+    ArgumentError(
+        "All FillExtrap fill values in ND must be identical; " *
+            "got conflicting fill values on different axes"
+    )
+)
 
-@generated function _validate_fill_values_nd(extraps::E) where {E<:Tuple{Vararg{AbstractExtrap}}}
+@generated function _validate_fill_values_nd(extraps::E) where {E <: Tuple{Vararg{AbstractExtrap}}}
     N = fieldcount(E)
     fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
     length(fill_dims) <= 1 && return :(nothing)
     first_d = fill_dims[1]
     checks = [:(extraps[$first_d].fill_value === extraps[$d].fill_value || _throw_conflicting_fill_values()) for d in fill_dims[2:end]]
-    quote
+    return quote
         $(checks...)
         nothing
     end
@@ -62,20 +65,24 @@ Compile-time selective OOB check for FillExtrap axes only.
 Returns `false` at compile time when no axis has FillExtrap (dead-code eliminated).
 """
 @generated function _is_fill_oob(
-    query::Tuple{Vararg{Real,N}},
-    grids::Tuple{Vararg{AbstractVector,N}},
-    extraps::E
-) where {N, E<:Tuple{Vararg{AbstractExtrap,N}}}
+        query::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        extraps::E
+    ) where {N, E <: Tuple{Vararg{AbstractExtrap, N}}}
     fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
     isempty(fill_dims) && return :(false)
 
-    oob_checks = [:(let qp = _extract_primal(query[$d])
-        qp < first(grids[$d]) || qp > last(grids[$d])
-    end) for d in fill_dims]
+    oob_checks = [
+        :(
+                let qp = _extract_primal(query[$d])
+                    qp < first(grids[$d]) || qp > last(grids[$d])
+            end
+            ) for d in fill_dims
+    ]
     oob_expr = length(oob_checks) == 1 ? oob_checks[1] :
-        foldl((a,b) -> :($a || $b), oob_checks)
+        foldl((a, b) -> :($a || $b), oob_checks)
 
-    quote
+    return quote
         Base.@_inline_meta
         @inbounds $oob_expr
     end
@@ -91,23 +98,27 @@ Compile-time eliminated when no axis has FillExtrap.
 Accepts both scalar `ops::AbstractEvalOp` and tuple `ops::Tuple{Vararg{AbstractEvalOp}}`.
 """
 @generated function _try_fill_oob(
-    query::Tuple{Vararg{Real,N}},
-    grids::Tuple{Vararg{AbstractVector,N}},
-    extraps::E,
-    ops,
-    zero_ref
-) where {N, E<:Tuple{Vararg{AbstractExtrap,N}}}
+        query::Tuple{Vararg{Real, N}},
+        grids::Tuple{Vararg{AbstractVector, N}},
+        extraps::E,
+        ops,
+        zero_ref
+    ) where {N, E <: Tuple{Vararg{AbstractExtrap, N}}}
     fill_dims = [d for d in 1:N if fieldtype(E, d) <: FillExtrap]
     isempty(fill_dims) && return :(nothing)
 
-    oob_checks = [:(let qp = _extract_primal(query[$d])
-        qp < first(grids[$d]) || qp > last(grids[$d])
-    end) for d in fill_dims]
+    oob_checks = [
+        :(
+                let qp = _extract_primal(query[$d])
+                    qp < first(grids[$d]) || qp > last(grids[$d])
+            end
+            ) for d in fill_dims
+    ]
     oob_expr = length(oob_checks) == 1 ? oob_checks[1] :
-        foldl((a,b) -> :($a || $b), oob_checks)
+        foldl((a, b) -> :($a || $b), oob_checks)
 
     fill_d = fill_dims[1]
-    quote
+    return quote
         Base.@_inline_meta
         @inbounds if $oob_expr
             return _fill_extrap_result(ops, extraps[$fill_d].fill_value, zero_ref)
@@ -135,19 +146,19 @@ end
     return _promote_extraps_nd(result, Tv)
 end
 
-@inline function _resolve_extrap_nd(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
+@inline function _resolve_extrap_nd(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
     _check_mode_periodic_compat(extrap, bcs, Val(N))
     result = _mode_to_modes_with_periodic(extrap, bcs)
     _validate_fill_values_nd(result)
     return _promote_extraps_nd(result, Tv)
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap,N}}, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}
+@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap, N}}, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}
     _validate_fill_values_nd(extrap)
     return _promote_extraps_nd(extrap, Tv)
 end
 
-@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
+@inline function _resolve_extrap_nd(extrap::Tuple{Vararg{AbstractExtrap, N}}, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}, ::Type{Tv}) where {N, Tv}
     _check_modes_periodic_compat(extrap, bcs, Val(N))
     result = _modes_to_modes_with_periodic(extrap, bcs)
     _validate_fill_values_nd(result)
@@ -158,33 +169,37 @@ end
     throw(ArgumentError("extrap tuple must have $N elements to match grid dimensions, got $(length(extrap))"))
 end
 
-@generated function _promote_extraps_nd(extraps::E, ::Type{Tv}) where {E<:Tuple{Vararg{AbstractExtrap}}, Tv}
+@generated function _promote_extraps_nd(extraps::E, ::Type{Tv}) where {E <: Tuple{Vararg{AbstractExtrap}}, Tv}
     N = fieldcount(E)
     exprs = [:(FastInterpolations._promote_extrap(extraps[$d], Tv)) for d in 1:N]
-    :(($(exprs...),))
+    return :(($(exprs...),))
 end
 
 # ── Periodic BC compatibility checks for Mode types ──────────────────
 
-@inline function _check_mode_periodic_compat(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+@inline function _check_mode_periodic_compat(extrap::AbstractExtrap, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}) where {N}
     # NoExtrap and WrapExtrap are always compatible with PeriodicBC
     (extrap isa NoExtrap || extrap isa WrapExtrap) && return nothing
     for d in 1:N
         if _is_periodic_bc(bcs[d])
-            throw(ArgumentError(
-                "Periodic BC on dim $d only supports NoExtrap() or WrapExtrap(), got $(typeof(extrap))()"
-            ))
+            throw(
+                ArgumentError(
+                    "Periodic BC on dim $d only supports NoExtrap() or WrapExtrap(), got $(typeof(extrap))()"
+                )
+            )
         end
     end
     return nothing
 end
 
-@inline function _check_modes_periodic_compat(extraps::Tuple{Vararg{AbstractExtrap,N}}, bcs::Tuple{Vararg{AbstractBC,N}}, ::Val{N}) where {N}
+@inline function _check_modes_periodic_compat(extraps::Tuple{Vararg{AbstractExtrap, N}}, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}) where {N}
     for d in 1:N
         if _is_periodic_bc(bcs[d]) && !(extraps[d] isa NoExtrap || extraps[d] isa WrapExtrap)
-            throw(ArgumentError(
-                "Periodic BC on dim $d only supports NoExtrap() or WrapExtrap(), got $(typeof(extraps[d]))()"
-            ))
+            throw(
+                ArgumentError(
+                    "Periodic BC on dim $d only supports NoExtrap() or WrapExtrap(), got $(typeof(extraps[d]))()"
+                )
+            )
         end
     end
     return nothing
@@ -192,7 +207,7 @@ end
 
 # ── @generated periodic override (compile-time Mode tuple construction) ──
 
-@generated function _mode_to_modes_with_periodic(extrap::M, bcs::B) where {M<:AbstractExtrap, B<:Tuple{Vararg{AbstractBC}}}
+@generated function _mode_to_modes_with_periodic(extrap::M, bcs::B) where {M <: AbstractExtrap, B <: Tuple{Vararg{AbstractBC}}}
     N = fieldcount(B)
     exprs = map(1:N) do d
         if fieldtype(B, d) <: PeriodicBC
@@ -201,10 +216,10 @@ end
             :(extrap)
         end
     end
-    :(($(exprs...),))
+    return :(($(exprs...),))
 end
 
-@generated function _modes_to_modes_with_periodic(extraps::E, bcs::B) where {E<:Tuple{Vararg{AbstractExtrap}}, B<:Tuple{Vararg{AbstractBC}}}
+@generated function _modes_to_modes_with_periodic(extraps::E, bcs::B) where {E <: Tuple{Vararg{AbstractExtrap}}, B <: Tuple{Vararg{AbstractBC}}}
     N = fieldcount(E)
     exprs = map(1:N) do d
         if fieldtype(B, d) <: PeriodicBC
@@ -213,7 +228,7 @@ end
             :(extraps[$d])
         end
     end
-    :(($(exprs...),))
+    return :(($(exprs...),))
 end
 
 
@@ -238,7 +253,7 @@ Broadcast + resolve AutoSearch in one step. Pass the query container directly �
 """
 @inline _resolve_search_nd(s::AbstractSearchPolicy, ::Val{N}) where {N} = ntuple(_ -> s, Val(N))
 
-@inline _resolve_search_nd(s::NTuple{N,AbstractSearchPolicy}, ::Val{N}) where {N} = s
+@inline _resolve_search_nd(s::NTuple{N, AbstractSearchPolicy}, ::Val{N}) where {N} = s
 
 @noinline function _resolve_search_nd(s::Tuple{Vararg{AbstractSearchPolicy}}, ::Val{N}) where {N}
     throw(ArgumentError("search tuple must have $N elements to match grid dimensions, got $(length(s))"))
@@ -260,10 +275,10 @@ end
 #   Explicit policy axes → passthrough unchanged
 # Uses map (not ntuple closure) to avoid closure heap allocation.
 @inline function _resolve_search_nd(
-    s, ::Val{N},
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    ::Nothing
-) where {N}
+        s, ::Val{N},
+        queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+        ::Nothing
+    ) where {N}
     tuple = _resolve_search_nd(s, Val(N))
     return map(_resolve_search_nohint, tuple, queries)
 end
@@ -298,10 +313,10 @@ end
 
 # SoA Real vectors + no hint → all-or-nothing adaptive resolution.
 @inline function _resolve_search_nd_uniform(
-    s, ::Val{N},
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    ::Nothing
-) where {N}
+        s, ::Val{N},
+        queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+        ::Nothing
+    ) where {N}
     tuple = _resolve_search_nd(s, Val(N))  # broadcast only, no resolution
     all_mono = all(map(_check_axis_monotone, tuple, queries))
     return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
@@ -323,7 +338,7 @@ Resolve boundary condition input to canonical N-tuple.
 """
 @inline _resolve_bcs_nd(bc::AbstractBC, ::Val{N}) where {N} = ntuple(_ -> bc, Val(N))
 
-@inline _resolve_bcs_nd(bc::NTuple{N,AbstractBC}, ::Val{N}) where {N} = bc
+@inline _resolve_bcs_nd(bc::NTuple{N, AbstractBC}, ::Val{N}) where {N} = bc
 
 @noinline function _resolve_bcs_nd(bc::Tuple{Vararg{AbstractBC}}, ::Val{N}) where {N}
     throw(ArgumentError("bc tuple must have $N elements to match grid dimensions, got $(length(bc))"))
@@ -342,7 +357,7 @@ Resolve side selection to canonical N-tuple.
 """
 @inline _resolve_side_nd(side::AbstractSide, ::Val{N}) where {N} = ntuple(_ -> side, Val(N))
 
-@inline _resolve_side_nd(side::NTuple{N,AbstractSide}, ::Val{N}) where {N} = side
+@inline _resolve_side_nd(side::NTuple{N, AbstractSide}, ::Val{N}) where {N} = side
 
 @noinline function _resolve_side_nd(side::Tuple{Vararg{AbstractSide}}, ::Val{N}) where {N}
     throw(ArgumentError("side tuple must have $N elements to match grid dimensions, got $(length(side))"))
@@ -384,21 +399,25 @@ Validate that grid lengths match data dimensions.
 
 Uses @generated to avoid closure boxing when iterating over heterogeneous grid tuples.
 """
-@generated function _validate_nd_grids(grids::NTuple{N,AbstractVector}, data::AbstractArray{<:Any,N}) where {N}
-    checks = [quote
-        ng = length(grids[$i])
-        nd = size(data, $i)
-        if ng != nd
-            throw(DimensionMismatch(
-                "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
-            ))
-        end
-        if ng < 2
-            throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
-        end
-    end for i in 1:N]
+@generated function _validate_nd_grids(grids::NTuple{N, AbstractVector}, data::AbstractArray{<:Any, N}) where {N}
+    checks = [
+        quote
+                ng = length(grids[$i])
+                nd = size(data, $i)
+                if ng != nd
+                    throw(
+                        DimensionMismatch(
+                            "Grid $($i) has " * string(ng) * " points but data dimension $($i) has size " * string(nd)
+                        )
+                    )
+            end
+                if ng < 2
+                    throw(ArgumentError("Grid $($i) must have at least 2 points, got " * string(ng)))
+            end
+            end for i in 1:N
+    ]
 
-    quote
+    return quote
         $(checks...)
         nothing
     end
@@ -424,10 +443,10 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 @inline _extrap_axis(q, grid, extrap) = @inbounds _handle_axis_extrap(q, grid, extrap)
 
 @inline function _handle_all_extraps(
-    queries::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
-    extraps::Tuple{Vararg{AbstractExtrap,N}}
-) where {N}
-    map(_extrap_axis, queries, grids, extraps)
+        queries::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}}
+    ) where {N}
+    return map(_extrap_axis, queries, grids, extraps)
 end
 
 @inline function _handle_axis_extrap(q, axis::AbstractVector, ::NoExtrap)
@@ -477,13 +496,13 @@ avoiding ntuple-closure boxing on heterogeneous tuple inputs.
 @inline _search_axis_hint(q, grid, spacing, search, hint) =
     @inbounds search_interval(_resolve_search(grid, q, search, hint), grid, spacing, q)
 @inline _getidx(r) = r[1]
-@inline _getL(r)   = r[2]
-@inline _getR(r)   = r[3]
+@inline _getL(r) = r[2]
+@inline _getR(r) = r[3]
 
 @inline function _search_all_intervals(
-    q_evals::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
-    spacings::Tuple{Vararg{AbstractGridSpacing,N}}, searches::Tuple{Vararg{AbstractSearchPolicy,N}}
-) where {N}
+        q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
+        spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}}
+    ) where {N}
     results = map(_search_axis, q_evals, grids, spacings, searches)
     return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
@@ -503,19 +522,19 @@ Used by N=2 specializations that destructure manually.
 
 # Nothing hint → delegate to existing 4-arg (zero overhead)
 @inline function _search_all_intervals(
-    q_evals::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
-    spacings::Tuple{Vararg{AbstractGridSpacing,N}}, searches::Tuple{Vararg{AbstractSearchPolicy,N}},
-    ::Nothing
-) where {N}
+        q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
+        spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        ::Nothing
+    ) where {N}
     return _search_all_intervals(q_evals, grids, spacings, searches)
 end
 
 # Tuple hint → use 2-arg _to_searcher(policy, hint) per axis
 @inline function _search_all_intervals(
-    q_evals::Tuple{Vararg{Real,N}}, grids::Tuple{Vararg{AbstractVector,N}},
-    spacings::Tuple{Vararg{AbstractGridSpacing,N}}, searches::Tuple{Vararg{AbstractSearchPolicy,N}},
-    hints::Tuple{Vararg{Base.RefValue{Int},N}}
-) where {N}
+        q_evals::Tuple{Vararg{Real, N}}, grids::Tuple{Vararg{AbstractVector, N}},
+        spacings::Tuple{Vararg{AbstractGridSpacing, N}}, searches::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints::Tuple{Vararg{Base.RefValue{Int}, N}}
+    ) where {N}
     results = map(_search_axis_hint, q_evals, grids, spacings, searches, hints)
     return (map(_getidx, results), map(_getL, results), map(_getR, results))
 end
@@ -538,11 +557,11 @@ Returns `(x_eval, y_eval, ix, iy, xL, yL)` — the 6 raw values that each
 interpolant type then post-processes into its kernel-specific cell tuple.
 """
 @inline function _locate_cell_2d_preamble(
-    query::Tuple{Vararg{Real, 2}},
-    grids, spacings, extraps,
-    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-    hints
-)
+        query::Tuple{Vararg{Real, 2}},
+        grids, spacings, extraps,
+        search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+        hints
+    )
     xq, yq = query
     grid_x, grid_y = grids
     spacing_x, spacing_y = spacings
@@ -622,16 +641,18 @@ struct NodalDerivativesND{Tv, N, NP1}
 
     function NodalDerivativesND{Tv, N, NP1}(partials::Array{Tv, NP1}) where {Tv, N, NP1}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1, got NP1=$NP1, N=$N"))
-        size(partials, 1) == (1 << N) || throw(DimensionMismatch(
-            "First dimension must be 2^N=$(1 << N), got $(size(partials, 1))"
-        ))
-        new{Tv, N, NP1}(partials)
+        size(partials, 1) == (1 << N) || throw(
+            DimensionMismatch(
+                "First dimension must be 2^N=$(1 << N), got $(size(partials, 1))"
+            )
+        )
+        return new{Tv, N, NP1}(partials)
     end
 end
 
 # Convenience constructor that computes NP1 automatically
 function NodalDerivativesND{Tv, N}(partials::Array{Tv, NP1}) where {Tv, N, NP1}
-    NodalDerivativesND{Tv, N, NP1}(partials)
+    return NodalDerivativesND{Tv, N, NP1}(partials)
 end
 
 # ========================================
@@ -647,11 +668,11 @@ Returns tuples of: hs (cell widths), inv_hs (reciprocals), dLs (left deltas).
 Used by both CubicInterpolantND and QuadraticInterpolantND evaluation.
 """
 @inline function _compute_all_local_params(
-    q_evals::Tuple{Vararg{Real, N}},  # Allow heterogeneous/AD types (Dual)
-    spacings::Tuple{Vararg{AbstractGridSpacing, N}},  # Allow heterogeneous spacing types (VectorSpacing, ScalarSpacing)
-    indices::NTuple{N, Int},
-    Ls::Tuple{Vararg{Real, N}}  # Grid boundary (allow heterogeneous Real types)
-) where {N}
+        q_evals::Tuple{Vararg{Real, N}},  # Allow heterogeneous/AD types (Dual)
+        spacings::Tuple{Vararg{AbstractGridSpacing, N}},  # Allow heterogeneous spacing types (VectorSpacing, ScalarSpacing)
+        indices::NTuple{N, Int},
+        Ls::Tuple{Vararg{Real, N}}  # Grid boundary (allow heterogeneous Real types)
+    ) where {N}
     hs = ntuple(Val(N)) do d
         @inbounds _get_h(spacings[d], indices[d])
     end
@@ -695,7 +716,7 @@ Used to index into the 2^N corners of an N-dimensional cell.
 E.g., for N=3, corner_bits=5 (binary 101) → [1, 0, 1].
 """
 function _corner_offset_expr(corner_bits::Int, N::Int)
-    [((corner_bits >> (d-1)) & 1) for d in 1:N]
+    return [((corner_bits >> (d - 1)) & 1) for d in 1:N]
 end
 
 # ========================================
@@ -710,7 +731,7 @@ Generates unrolled `promote_type(eltype(grids[1]), eltype(grids[2]), ...)` at co
 """
 @generated function _promote_grid_eltype(grids::NTuple{N, AbstractVector}) where {N}
     types = [:(eltype(grids[$i])) for i in 1:N]
-    :(promote_type($(types...)))
+    return :(promote_type($(types...)))
 end
 
 """
@@ -737,7 +758,7 @@ Generates unrolled `(_convert_grid(grids[1], Tg), _convert_grid(grids[2], Tg), .
 """
 @generated function _convert_grids_typed(grids::NTuple{N, AbstractVector}, ::Type{Tg}) where {N, Tg}
     exprs = [:(FastInterpolations._convert_grid(grids[$i], Tg)) for i in 1:N]
-    :(($(exprs...),))
+    return :(($(exprs...),))
 end
 
 """
@@ -751,7 +772,7 @@ when grids is a heterogeneous tuple (e.g., mix of Range and Vector).
 """
 @generated function _create_spacings_typed(grids::NTuple{N, AbstractVector}) where {N}
     exprs = [:(FastInterpolations._create_spacing(grids[$i])) for i in 1:N]
-    :(($(exprs...),))
+    return :(($(exprs...),))
 end
 
 # ========================================
@@ -769,8 +790,8 @@ end
 Pool-aware spacing for Range grids. Delegates to `_create_spacing` since
 ScalarSpacing is already zero-allocation (two scalar values).
 """
-@inline _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractRange{T}) where {T<:AbstractFloat} = _create_spacing(x)
-@inline _create_spacing_pooled(pool::AbstractArrayPool, x::LinRange{T}) where {T<:AbstractFloat} = _create_spacing(x)
+@inline _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractRange{T}) where {T <: AbstractFloat} = _create_spacing(x)
+@inline _create_spacing_pooled(pool::AbstractArrayPool, x::LinRange{T}) where {T <: AbstractFloat} = _create_spacing(x)
 
 """
     _create_spacing_pooled(pool, x::AbstractVector{T}) -> VectorSpacing{T}
@@ -779,13 +800,13 @@ Pool-aware spacing for Vector grids. Acquires `h` and `inv_h` arrays
 from the pool instead of heap-allocating. The pool buffers are released
 automatically when the enclosing `@with_pool` scope exits.
 """
-@inline function _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractVector{T}) where {T<:AbstractFloat}
+@inline function _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractVector{T}) where {T <: AbstractFloat}
     n = length(x)
     h = unsafe_acquire!(pool, T, n - 1)
     inv_h = unsafe_acquire!(pool, T, n - 1)
 
-    @inbounds for i in 1:(n-1)
-        h[i] = x[i+1] - x[i]
+    @inbounds for i in 1:(n - 1)
+        h[i] = x[i + 1] - x[i]
         inv_h[i] = inv(h[i])
     end
 
@@ -802,7 +823,7 @@ For Vector grids, h/inv_h are acquired from pool (zero heap alloc).
 """
 @generated function _create_spacings_pooled(pool::AbstractArrayPool, grids::NTuple{N, AbstractVector}) where {N}
     exprs = [:(FastInterpolations._create_spacing_pooled(pool, grids[$i])) for i in 1:N]
-    :(($(exprs...),))
+    return :(($(exprs...),))
 end
 
 # ========================================
@@ -819,13 +840,13 @@ end
 In-place SoA batch evaluation. Writes results into `output`.
 """
 @inline function _batch_nd_soa!(
-    output::AbstractVector,
-    itp::AbstractInterpolantND{Tg, Tv, N},
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-    ops::NTuple{N, AbstractEvalOp},
-    search::Tuple{Vararg{AbstractSearchPolicy, N}},
-    hints=nothing
-) where {Tg, Tv, N}
+        output::AbstractVector,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+        ops::NTuple{N, AbstractEvalOp},
+        search::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints = nothing
+    ) where {Tg, Tv, N}
     zref = _zero_ref(itp)
     @inbounds for k in 1:length(queries[1])
         query_k = ntuple(d -> queries[d][k], Val(N))
@@ -846,13 +867,13 @@ end
 In-place AoS batch evaluation. Writes results into `output`.
 """
 @inline function _batch_nd_aos!(
-    output::AbstractVector,
-    itp::AbstractInterpolantND{Tg, Tv, N},
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-    ops::NTuple{N, AbstractEvalOp},
-    search::Tuple{Vararg{AbstractSearchPolicy, N}},
-    hints=nothing
-) where {Tg, Tv, N}
+        output::AbstractVector,
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
+        ops::NTuple{N, AbstractEvalOp},
+        search::Tuple{Vararg{AbstractSearchPolicy, N}},
+        hints = nothing
+    ) where {Tg, Tv, N}
     zref = _zero_ref(itp)
     @inbounds for k in 1:length(queries)
         oob_val = _try_fill_oob(queries[k], itp.grids, itp.extraps, ops, zref)
@@ -876,41 +897,43 @@ end
 
 # Vector query → tuple conversion for ForwardDiff/Optim compatibility
 @inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
-    query::AbstractVector{<:Real};
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tg, Tv, N}
-    length(query) == N || throw(DimensionMismatch(
-        "expected $N-element vector, got $(length(query))-element vector"
-    ))
+        query::AbstractVector{<:Real};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    length(query) == N || throw(
+        DimensionMismatch(
+            "expected $N-element vector, got $(length(query))-element vector"
+        )
+    )
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-    return itp(query_tuple; deriv=deriv, search=search, hint=hint)
+    return itp(query_tuple; deriv = deriv, search = search, hint = hint)
 end
 
 # SoA batch: allocate output + delegate to in-place
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
-    queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tg, Tv, N}
+        queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     Tq = _query_eltype(queries)
     output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries[1]))
-    return itp(output, queries; deriv=deriv, search=search, hint=hint)
+    return itp(output, queries; deriv = deriv, search = search, hint = hint)
 end
 
 # AoS batch: allocate output + delegate to in-place
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-) where {Tg, Tv, N}
+        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
     Tq = _query_eltype(queries)
     output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries))
-    return itp(output, queries; deriv=deriv, search=search, hint=hint)
+    return itp(output, queries; deriv = deriv, search = search, hint = hint)
 end
 
 # ========================================
@@ -920,5 +943,5 @@ end
 @inline _query_eltype(queries::Tuple{Vararg{AbstractVector}}) =
     promote_type(map(eltype, queries)...)
 
-@inline _query_eltype(::AbstractVector{T}) where {T<:Tuple} =
+@inline _query_eltype(::AbstractVector{T}) where {T <: Tuple} =
     promote_type(fieldtypes(T)...)

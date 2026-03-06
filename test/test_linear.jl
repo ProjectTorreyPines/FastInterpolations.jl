@@ -24,7 +24,7 @@
         y = 2.0 .* collect(x) .+ 1.0  # Linear function y = 2x + 1
         x_targets = [-0.2, -0.1, 1.1, 1.2]
 
-        result = linear_interp(x, y, x_targets; extrap=ExtendExtrap())
+        result = linear_interp(x, y, x_targets; extrap = ExtendExtrap())
 
         # Verify linear extrapolation works correctly
         # For y = 2x + 1, extrapolated values should follow the same line
@@ -39,7 +39,7 @@
         y = sin.(x)
         x_targets = [-0.2, -0.1, 1.1, 1.2]
 
-        result = linear_interp(x, y, x_targets; extrap=ClampExtrap())
+        result = linear_interp(x, y, x_targets; extrap = ClampExtrap())
 
         # For constant extrapolation, values outside bounds should match boundary values
         @test result[1] == y[1]
@@ -74,7 +74,7 @@
         y = 2x .+ 1
         x_targets = [-0.25, 1.5]
 
-        result = linear_interp(x, y, x_targets; extrap=ExtendExtrap())
+        result = linear_interp(x, y, x_targets; extrap = ExtendExtrap())
 
         # Verify linear extrapolation
         @test result[1] ≈ 2.0 * (-0.25) + 1.0
@@ -86,7 +86,7 @@
         y = [1.0, 3.0, 5.0]
         x_targets = [-0.25, 1.5]
 
-        result = linear_interp(x, y, x_targets; extrap=ClampExtrap())
+        result = linear_interp(x, y, x_targets; extrap = ClampExtrap())
 
         # Constant extrapolation
         @test result[1] == y[1]
@@ -102,8 +102,8 @@
         @test_throws DomainError linear_interp(x, y, 1.1)
 
         # Explicit :none also throws
-        @test_throws DomainError linear_interp(x, y, -0.5; extrap=NoExtrap())
-        @test_throws DomainError linear_interp(x, y, 1.5; extrap=NoExtrap())
+        @test_throws DomainError linear_interp(x, y, -0.5; extrap = NoExtrap())
+        @test_throws DomainError linear_interp(x, y, 1.5; extrap = NoExtrap())
 
         # Vector query - first out-of-domain point throws
         @test_throws DomainError linear_interp(x, y, [-0.1, 0.5])
@@ -131,11 +131,11 @@
 
     @testset "Edge cases - Exact matches at grid points" begin
         x = 0.0:0.1:1.0
-        y = collect(x).^2
+        y = collect(x) .^ 2
         x_targets = [0.0, 0.3, 0.5, 0.7, 1.0]
 
         # Use :extension to allow boundary evaluation (1.0 may need slight extension)
-        result = linear_interp(x, y, x_targets; extrap=ExtendExtrap())
+        result = linear_interp(x, y, x_targets; extrap = ExtendExtrap())
 
         # Exact matches should give exact values
         @test result[1] ≈ 0.0^2
@@ -327,7 +327,7 @@ end
         y = sin.(x)
 
         # Use :extension to handle floating point boundary issues
-        itp = linear_interp(x, y; extrap=ExtendExtrap())
+        itp = linear_interp(x, y; extrap = ExtendExtrap())
 
         rho1 = [0.25, 0.5]
         rho2 = [0.75, 0.85]
@@ -337,9 +337,9 @@ end
         result2 = itp.(rho2)
         result3 = itp(rho3)
 
-        @test result1 == linear_interp(x, y, rho1; extrap=ExtendExtrap())
-        @test result2 == linear_interp(x, y, rho2; extrap=ExtendExtrap())
-        @test result3 == linear_interp(x, y, rho3; extrap=ExtendExtrap())
+        @test result1 == linear_interp(x, y, rho1; extrap = ExtendExtrap())
+        @test result2 == linear_interp(x, y, rho2; extrap = ExtendExtrap())
+        @test result3 == linear_interp(x, y, rho3; extrap = ExtendExtrap())
     end
 
     @testset "Extrapolation :extension" begin
@@ -347,13 +347,13 @@ end
         y = 2.0 .* x .+ 1.0
         x_targets = [-0.25, 1.5]
 
-        itp = linear_interp(x, y; extrap=ExtendExtrap())
+        itp = linear_interp(x, y; extrap = ExtendExtrap())
 
         result = itp.(x_targets)
         @test result[1] ≈ 2.0 * (-0.25) + 1.0
         @test result[2] ≈ 2.0 * 1.5 + 1.0
 
-        expected = linear_interp(x, y, x_targets; extrap=ExtendExtrap())
+        expected = linear_interp(x, y, x_targets; extrap = ExtendExtrap())
         @test result == expected
     end
 
@@ -362,13 +362,13 @@ end
         y = [1.0, 3.0, 5.0]
         x_targets = [-0.25, 1.5]
 
-        itp = linear_interp(x, y; extrap=ClampExtrap())
+        itp = linear_interp(x, y; extrap = ClampExtrap())
 
         result = itp.(x_targets)
         @test result[1] == y[1]
         @test result[2] == y[end]
 
-        expected = linear_interp(x, y, x_targets; extrap=ClampExtrap())
+        expected = linear_interp(x, y, x_targets; extrap = ClampExtrap())
         @test result == expected
     end
 
@@ -395,7 +395,7 @@ end
         @test val_f64 isa Float64
 
         # Float32
-        x_f32 = range(Float32(0.0), Float32(1.0), length=11)
+        x_f32 = range(Float32(0.0), Float32(1.0), length = 11)
         y_f32 = sin.(x_f32)
         itp_f32 = @inferred linear_interp(x_f32, y_f32)
         @test itp_f32 isa LinearInterpolant{Float32}
@@ -464,7 +464,7 @@ end
     end
 
     @testset "Float32 support" begin
-        x_f32 = range(Float32(0.0), Float32(1.0), length=11)
+        x_f32 = range(Float32(0.0), Float32(1.0), length = 11)
         y_f32 = sin.(x_f32)
         x_targets_f32 = Float32[0.25, 0.5, 0.75]
 
@@ -472,12 +472,12 @@ end
         @test result isa Vector{Float32}
 
         # Compare to Float64 reference
-        x_f64 = range(0.0, 1.0, length=11)
+        x_f64 = range(0.0, 1.0, length = 11)
         y_f64 = sin.(x_f64)
         x_targets_f64 = [0.25, 0.5, 0.75]
         result_f64 = linear_interp(x_f64, y_f64, x_targets_f64)
 
-        @test Float64.(result) ≈ result_f64 rtol=1e-6
+        @test Float64.(result) ≈ result_f64 rtol = 1.0e-6
 
         # Test scalar version
         result_scalar = linear_interp(x_f32, y_f32, Float32(0.5))
@@ -501,15 +501,15 @@ end
 
     @testset "Extrapolation with Integer inputs" begin
         x_int = 0:5
-        y_int = [2*i + 1 for i in x_int]
+        y_int = [2 * i + 1 for i in x_int]
 
         x_targets = [-1.0, 6.0]
-        result_ext = linear_interp(x_int, y_int, x_targets; extrap=ExtendExtrap())
+        result_ext = linear_interp(x_int, y_int, x_targets; extrap = ExtendExtrap())
         @test result_ext isa Vector{Float64}
         @test result_ext[1] ≈ 2.0 * (-1.0) + 1.0
         @test result_ext[2] ≈ 2.0 * 6.0 + 1.0
 
-        result_const = linear_interp(x_int, y_int, x_targets; extrap=ClampExtrap())
+        result_const = linear_interp(x_int, y_int, x_targets; extrap = ClampExtrap())
         @test result_const[1] ≈ y_int[1]
         @test result_const[2] ≈ y_int[end]
     end
@@ -530,7 +530,7 @@ end
         @test itp.x isa StepRangeLen{Float64}
 
         # Verify correctness
-        @test itp(0.5) ≈ sin(0.5) atol=0.01
+        @test itp(0.5) ≈ sin(0.5) atol = 0.01
     end
 
     @testset "Vector input → Vector stored (O(log n) path)" begin
@@ -544,7 +544,7 @@ end
         @test !(itp.x isa AbstractRange)
 
         # Verify correctness
-        @test itp(0.5) ≈ sin(0.5) atol=0.01
+        @test itp(0.5) ≈ sin(0.5) atol = 0.01
     end
 
     @testset "Integer Range → Float64 Range preserved" begin
@@ -572,7 +572,7 @@ end
         @test eltype(itp.x) == Float32
 
         # Verify correctness
-        @test itp(Float32(0.5)) ≈ sin(Float32(0.5)) atol=0.01f0
+        @test itp(Float32(0.5)) ≈ sin(Float32(0.5)) atol = 0.01f0
     end
 
     @testset "Mixed types: Range x + Vector y → Range preserved" begin
@@ -585,31 +585,31 @@ end
         @test itp.x isa AbstractRange
 
         # Verify correctness
-        @test itp(0.5) ≈ sin(0.5) atol=0.01
+        @test itp(0.5) ≈ sin(0.5) atol = 0.01
     end
 
     @testset "linear_interp! AbstractVector Real wrappers" begin
         # Test with Integer Vector
         x = collect(0:10)
-        y = x.^2
+        y = x .^ 2
         x_query = [2.5, 5.5, 7.5]
         output = zeros(3)
 
         linear_interp!(output, x, y, x_query)
-        @test output[1] ≈ 2.5^2 atol=1
-        @test output[2] ≈ 5.5^2 atol=1
+        @test output[1] ≈ 2.5^2 atol = 1
+        @test output[2] ≈ 5.5^2 atol = 1
 
         # Test with constant extrapolation
-        linear_interp!(output, x, y, x_query; extrap=ClampExtrap())
+        linear_interp!(output, x, y, x_query; extrap = ClampExtrap())
         @test length(output) == 3
     end
 
     @testset "linear_interp scalar AbstractVector Real wrapper" begin
         x = collect(0:10)
-        y = x.^2
+        y = x .^ 2
 
         val = linear_interp(x, y, 5.5)
-        @test val ≈ 5.5^2 atol=1
+        @test val ≈ 5.5^2 atol = 1
     end
 
     @testset "LinearInterpolant in-place methods" begin

@@ -11,11 +11,11 @@ const LA = FI.LinearAlgebra
     # Helper functions for generating test grids
     # ─────────────────────────────────────────────────────────────────────────
 
-    function _x_uniform(::Type{T}, n::Int) where {T<:AbstractFloat}
+    function _x_uniform(::Type{T}, n::Int) where {T <: AbstractFloat}
         return collect(range(T(0), T(1), n))
     end
 
-    function _x_nonuniform(::Type{T}, n::Int; seed::Int=0) where {T<:AbstractFloat}
+    function _x_nonuniform(::Type{T}, n::Int; seed::Int = 0) where {T <: AbstractFloat}
         # Random positive steps, normalized to unit length, then cumulative sum.
         rng = Random.MersenneTwister(seed)
         steps = rand(rng, T, n - 1) .+ T(0.1)
@@ -29,14 +29,14 @@ const LA = FI.LinearAlgebra
         return x
     end
 
-    function _x_strongly_nonuniform(::Type{T}, n::Int; strength::Symbol=:strong) where {T<:AbstractFloat}
+    function _x_strongly_nonuniform(::Type{T}, n::Int; strength::Symbol = :strong) where {T <: AbstractFloat}
         # Construct strictly-increasing x with a large step ratio while keeping Float32 representable.
         n_steps = n - 1
         steps = Vector{T}(undef, n_steps)
         if T === Float32
             # Safe for Float32: split steps into tiny and large blocks (ratio ~ O(1e2-1e3)).
             k = n_steps ÷ 2
-            small = strength === :strong ? T(1e-4) : T(1e-3)
+            small = strength === :strong ? T(1.0e-4) : T(1.0e-3)
             @inbounds for i in 1:k
                 steps[i] = small
             end
@@ -68,7 +68,7 @@ const LA = FI.LinearAlgebra
     # Helper functions for building tridiagonal matrices
     # ─────────────────────────────────────────────────────────────────────────
 
-    function _build_tridiagonal_derivative_bc(x::AbstractVector{T}, bc_pair::FI.BCPair) where {T<:AbstractFloat}
+    function _build_tridiagonal_derivative_bc(x::AbstractVector{T}, bc_pair::FI.BCPair) where {T <: AbstractFloat}
         spacing = FI._create_spacing(x)
         n = length(x) - 1
         dl = Vector{T}(undef, n)
@@ -90,7 +90,7 @@ const LA = FI.LinearAlgebra
         return spacing, A
     end
 
-    function _build_tridiagonal_periodic_Aprime(x::AbstractVector{T}) where {T<:AbstractFloat}
+    function _build_tridiagonal_periodic_Aprime(x::AbstractVector{T}) where {T <: AbstractFloat}
         spacing = FI._create_spacing(x)
         n_sys = length(x) - 1
         dl = Vector{T}(undef, n_sys - 1)
@@ -127,10 +127,10 @@ const LA = FI.LinearAlgebra
 
         for T in (Float64, Float32)
             for (xname, x) in (
-                ("uniform", _x_uniform(T, 101)),
-                ("nonuniform", _x_nonuniform(T, 101; seed=1)),
-                ("strongly-nonuniform", _x_strongly_nonuniform(T, 101; strength=:strong)),
-            )
+                    ("uniform", _x_uniform(T, 101)),
+                    ("nonuniform", _x_nonuniform(T, 101; seed = 1)),
+                    ("strongly-nonuniform", _x_strongly_nonuniform(T, 101; strength = :strong)),
+                )
                 for bc_in in (ZeroCurvBC(), ZeroSlopeBC(), FI.BCPair(FI.Deriv1(T(0.25)), FI.Deriv2(T(0))))
                     bc = FI._normalize_bc(bc_in, T)
                     spacing, A = _build_tridiagonal_derivative_bc(x, bc)
@@ -168,10 +168,10 @@ const LA = FI.LinearAlgebra
 
         for T in (Float64, Float32)
             for (xname, x) in (
-                ("uniform", _x_uniform(T, 101)),
-                ("nonuniform", _x_nonuniform(T, 101; seed=2)),
-                ("strongly-nonuniform", _x_strongly_nonuniform(T, 101; strength=:strong)),
-            )
+                    ("uniform", _x_uniform(T, 101)),
+                    ("nonuniform", _x_nonuniform(T, 101; seed = 2)),
+                    ("strongly-nonuniform", _x_strongly_nonuniform(T, 101; strength = :strong)),
+                )
                 spacing, Aprime = _build_tridiagonal_periodic_Aprime(x)
 
                 y = rand(T, length(x))
@@ -207,10 +207,10 @@ const LA = FI.LinearAlgebra
 
         for T in (Float64, Float32)
             for (xname, x) in (
-                ("uniform", _x_uniform(T, 51)),
-                ("nonuniform", _x_nonuniform(T, 51; seed=3)),
-                ("strongly-nonuniform", _x_strongly_nonuniform(T, 51; strength=:strong)),
-            )
+                    ("uniform", _x_uniform(T, 51)),
+                    ("nonuniform", _x_nonuniform(T, 51; seed = 3)),
+                    ("strongly-nonuniform", _x_strongly_nonuniform(T, 51; strength = :strong)),
+                )
                 spacing, Aprime = _build_tridiagonal_periodic_Aprime(x)
                 n_sys = size(Aprime, 1)
 
@@ -252,7 +252,7 @@ const LA = FI.LinearAlgebra
     @testset "Batch _ldiv_along_dim!" begin
         @testset "Val(1) throws ArgumentError" begin
             x = collect(range(0.0, 1.0, 20))
-            cache = FI.CubicSplineCache(x; bc=ZeroCurvBC())
+            cache = FI.CubicSplineCache(x; bc = ZeroCurvBC())
             z = rand(20, 5)
 
             @test_throws ArgumentError FI._ldiv_along_dim!(z, cache.thomas, Val(1))
@@ -262,7 +262,7 @@ const LA = FI.LinearAlgebra
             for T in (Float64, Float32)
                 for n in (10, 50, 101)
                     x = collect(range(T(0), T(1), n))
-                    cache = FI.CubicSplineCache(x; bc=ZeroCurvBC())
+                    cache = FI.CubicSplineCache(x; bc = ZeroCurvBC())
 
                     n_batch = 20
                     z_batch = rand(T, n_batch, n)
@@ -275,14 +275,14 @@ const LA = FI.LinearAlgebra
 
                     FI._ldiv_along_dim!(z_batch, cache.thomas, Val(2))
 
-                    @test z_batch ≈ z_seq rtol=eps(T) * 200
+                    @test z_batch ≈ z_seq rtol = eps(T) * 200
                 end
             end
         end
 
         @testset "Periodic system size consistency" begin
             x = collect(range(0.0, 1.0, 51))
-            cache = FI.CubicSplineCache(x; bc=PeriodicBC())
+            cache = FI.CubicSplineCache(x; bc = PeriodicBC())
 
             n_sys = length(cache.thomas.inv_d) # = length(x)-1
             z = rand(8, n_sys)
@@ -293,7 +293,7 @@ const LA = FI.LinearAlgebra
             end
 
             FI._ldiv_along_dim!(z, cache.thomas, Val(2))
-            @test z ≈ z_ref rtol=1e-10
+            @test z ≈ z_ref rtol = 1.0e-10
         end
     end
 end

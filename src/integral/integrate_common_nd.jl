@@ -1,4 +1,4 @@
-@inline function _normalize_bounds_nd(lo::Tuple{Vararg{Real,N}}, hi::Tuple{Vararg{Real,N}}) where {N}
+@inline function _normalize_bounds_nd(lo::Tuple{Vararg{Real, N}}, hi::Tuple{Vararg{Real, N}}) where {N}
     nflips = 0
     @inbounds for d in 1:N
         nflips += (lo[d] > hi[d])
@@ -12,13 +12,13 @@ end
 
 # Locate cell index ranges for ND integration bounds
 @inline function _nd_cell_ranges(
-    grids::NTuple{N,AbstractVector},
-    spacings,
-    lo::Tuple{Vararg{Real,N}},
-    hi::Tuple{Vararg{Real,N}},
-    search_tuple,
-    hint
-) where {N}
+        grids::NTuple{N, AbstractVector},
+        spacings,
+        lo::Tuple{Vararg{Real, N}},
+        hi::Tuple{Vararg{Real, N}},
+        search_tuple,
+        hint
+    ) where {N}
     idx_lo = ntuple(Val(N)) do d
         s = _resolve_search(grids[d], lo[d], search_tuple[d], isnothing(hint) ? nothing : hint[d])
         i, _, _ = search_interval(s, grids[d], spacings[d], lo[d])
@@ -38,18 +38,20 @@ end
 
 @inline function _check_nd_integrate_domain(x::AbstractVector, xi::Real, ::AbstractExtrap)
     x_min, x_max = first(x), last(x)
-    (xi < x_min || xi > x_max) && throw(ArgumentError(
-        "ND integration only supports in-domain bounds (extrapolation is not yet implemented). " *
-        "Bound $xi is outside the grid domain [$x_min, $x_max]."
-    ))
+    (xi < x_min || xi > x_max) && throw(
+        ArgumentError(
+            "ND integration only supports in-domain bounds (extrapolation is not yet implemented). " *
+                "Bound $xi is outside the grid domain [$x_min, $x_max]."
+        )
+    )
     return nothing
 end
 
 # Shared ND preamble: normalize bounds, domain checks, cell range computation.
 @inline function _integrate_nd_preamble(
-    grids, spacings, extraps, lo::Tuple{Vararg{Real,N}}, hi::Tuple{Vararg{Real,N}},
-    search, hint
-) where {N}
+        grids, spacings, extraps, lo::Tuple{Vararg{Real, N}}, hi::Tuple{Vararg{Real, N}},
+        search, hint
+    ) where {N}
     sign, lo2, hi2 = _normalize_bounds_nd(lo, hi)
     @inbounds for d in 1:N
         _check_nd_integrate_domain(grids[d], lo2[d], extraps[d])
@@ -62,12 +64,12 @@ end
 
 # Per-cell geometry: indices, cell widths, and local integration bounds.
 @inline function _nd_cell_geom(
-    grids, spacings, lo2, hi2, I::CartesianIndex{N}, ::Val{N}
-) where {N}
-    idx  = ntuple(d -> I[d], Val(N))
-    hs   = ntuple(d -> @inbounds(_get_h(spacings[d], idx[d])), Val(N))
-    Ls   = ntuple(d -> @inbounds(grids[d][idx[d]]), Val(N))
-    Rs   = ntuple(d -> @inbounds(grids[d][idx[d] + 1]), Val(N))
+        grids, spacings, lo2, hi2, I::CartesianIndex{N}, ::Val{N}
+    ) where {N}
+    idx = ntuple(d -> I[d], Val(N))
+    hs = ntuple(d -> @inbounds(_get_h(spacings[d], idx[d])), Val(N))
+    Ls = ntuple(d -> @inbounds(grids[d][idx[d]]), Val(N))
+    Rs = ntuple(d -> @inbounds(grids[d][idx[d] + 1]), Val(N))
     ulos = ntuple(d -> max(lo2[d], Ls[d]) - Ls[d], Val(N))
     uhis = ntuple(d -> min(hi2[d], Rs[d]) - Ls[d], Val(N))
     return (idx, hs, ulos, uhis)

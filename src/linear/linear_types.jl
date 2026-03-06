@@ -54,24 +54,24 @@ itp(0.5; search=BinarySearch())  # override stored policy
 ```
 """
 struct LinearInterpolant{
-    Tg<:AbstractFloat,
-    Tv,
-    X<:AbstractVector{Tg},
-    Y<:AbstractVector{Tv},
-    E<:AbstractExtrap,
-    P<:AbstractSearchPolicy
-} <: AbstractInterpolant{Tg, Tv}
+        Tg <: AbstractFloat,
+        Tv,
+        X <: AbstractVector{Tg},
+        Y <: AbstractVector{Tv},
+        E <: AbstractExtrap,
+        P <: AbstractSearchPolicy,
+    } <: AbstractInterpolant{Tg, Tv}
     x::X
     y::Y
     extrap::E  # Extrapolation mode (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
 
     # Inner constructor: parametric, only calls new (handles validation only)
-    function LinearInterpolant{Tg,Tv,X,Y,E,P}(
-        x::X, y::Y, ev::E, search::P
-    ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, P<:AbstractSearchPolicy}
+    function LinearInterpolant{Tg, Tv, X, Y, E, P}(
+            x::X, y::Y, ev::E, search::P
+        ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
-        new{Tg,Tv,X,Y,E,P}(x, y, ev, search)
+        return new{Tg, Tv, X, Y, E, P}(x, y, ev, search)
     end
 end
 
@@ -82,13 +82,13 @@ end
 # PERFORMANCE: Typed signature + @inline enables compile-time specialization.
 # Use linear_interp() for automatic type promotion from Real inputs.
 @inline function LinearInterpolant(
-    x::X,
-    y::Y;
-    extrap::AbstractExtrap=NoExtrap(),
-    search::P=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
+        x::X,
+        y::Y;
+        extrap::AbstractExtrap = NoExtrap(),
+        search::P = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
     E = typeof(extrap)
-    return LinearInterpolant{Tg,Tv,X,Y,E,P}(x, y, extrap, search)
+    return LinearInterpolant{Tg, Tv, X, Y, E, P}(x, y, extrap, search)
 end
 
 # ========================================
@@ -96,7 +96,7 @@ end
 # ========================================
 
 """Real-valued linear interpolant (matches original behavior)."""
-const RealLinearInterpolant{T} = LinearInterpolant{T, T} where {T<:AbstractFloat}
+const RealLinearInterpolant{T} = LinearInterpolant{T, T} where {T <: AbstractFloat}
 
 """Complex-valued linear interpolant."""
-const ComplexLinearInterpolant{T} = LinearInterpolant{T, Complex{T}} where {T<:AbstractFloat}
+const ComplexLinearInterpolant{T} = LinearInterpolant{T, Complex{T}} where {T <: AbstractFloat}

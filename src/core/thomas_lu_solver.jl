@@ -52,7 +52,7 @@ thomas = thomas_factorize!(dl, d, du)
 _ldiv_tridiagonal_nopiv!(b, thomas)
 ```
 """
-struct ThomasFactorization{T<:AbstractFloat, V<:AbstractVector{T}}
+struct ThomasFactorization{T <: AbstractFloat, V <: AbstractVector{T}}
     dl::V     # Lower diagonal (L multipliers after factorization)
     du::V     # Upper diagonal (unchanged from input)
     inv_d::V  # Inverse of U diagonal (1/d[i])
@@ -104,8 +104,8 @@ thomas = thomas_factorize!(dl, d, du)
 ```
 """
 function thomas_factorize!(
-    dl::V, d::V, du::V
-) where {T<:AbstractFloat, V<:AbstractVector{T}}
+        dl::V, d::V, du::V
+    ) where {T <: AbstractFloat, V <: AbstractVector{T}}
     n = length(d)
 
     @inbounds begin
@@ -114,17 +114,17 @@ function thomas_factorize!(
         d[1] = inv_d_val
 
         # Forward elimination with simultaneous inverse computation
-        for i in 1:n-1
+        for i in 1:(n - 1)
             # L factor: l_i = dl[i] / d_i (use pre-computed inverse)
             l_val = dl[i] * inv_d_val
             dl[i] = l_val
 
             # U diagonal update: d_{i+1} = d_{i+1} - l_i * du[i]
-            d_next = d[i+1] - l_val * du[i]
+            d_next = d[i + 1] - l_val * du[i]
 
             # Compute inverse for next step and final storage
             inv_d_val = inv(d_next)
-            d[i+1] = inv_d_val
+            d[i + 1] = inv_d_val
         end
     end
 
@@ -160,9 +160,9 @@ Solves `Ax = b` in-place where `A = L*U` is the pre-computed factorization.
 - Uses `muladd` for fused multiply-add when available
 """
 @inline function _ldiv_tridiagonal_nopiv!(
-    b::AbstractVector{Tv},
-    thomas::ThomasFactorization{Tg,V},
-) where {Tg<:AbstractFloat, Tv, V<:AbstractVector{Tg}}
+        b::AbstractVector{Tv},
+        thomas::ThomasFactorization{Tg, V},
+    ) where {Tg <: AbstractFloat, Tv, V <: AbstractVector{Tg}}
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d
@@ -170,13 +170,13 @@ Solves `Ax = b` in-place where `A = L*U` is the pre-computed factorization.
     n = length(inv_d)
 
     # Forward elimination
-    @inbounds for i in 1:n-1
+    @inbounds for i in 1:(n - 1)
         b[i + 1] = muladd(-dl[i], b[i], b[i + 1])
     end
 
     # Backward substitution
     @inbounds b[n] *= inv_d[n]
-    @inbounds for i in n-1:-1:1
+    @inbounds for i in (n - 1):-1:1
         b[i] = muladd(-du[i], b[i + 1], b[i]) * inv_d[i]
     end
 
@@ -217,10 +217,10 @@ z[n_batch, n_sys] where:
 - Zero allocations
 """
 @inline function _ldiv_along_dim!(
-    z::AbstractMatrix{T},
-    thomas::ThomasFactorization{T,V},
-    ::Val{2},
-) where {T<:AbstractFloat, V<:AbstractVector{T}}
+        z::AbstractMatrix{T},
+        thomas::ThomasFactorization{T, V},
+        ::Val{2},
+    ) where {T <: AbstractFloat, V <: AbstractVector{T}}
     dl = thomas.dl
     du = thomas.du
     inv_d = thomas.inv_d
@@ -263,13 +263,15 @@ would require strided access defeating SIMD. Instead, use sequential calls
 to `_ldiv_tridiagonal_nopiv!` for each column.
 """
 @noinline function _ldiv_along_dim!(
-    ::AbstractMatrix, ::ThomasFactorization, ::Val{1}
-)
-    throw(ArgumentError(
-        "Batch solving along axis 1 (Val{1}) is not supported for matrices.\n" *
-        "Axis 1 is contiguous in column-major layout; solving along it defeats SIMD.\n" *
-        "Use per-column calls to _ldiv_tridiagonal_nopiv! instead."
-    ))
+        ::AbstractMatrix, ::ThomasFactorization, ::Val{1}
+    )
+    throw(
+        ArgumentError(
+            "Batch solving along axis 1 (Val{1}) is not supported for matrices.\n" *
+                "Axis 1 is contiguous in column-major layout; solving along it defeats SIMD.\n" *
+                "Use per-column calls to _ldiv_tridiagonal_nopiv! instead."
+        )
+    )
 end
 
 # ========================================

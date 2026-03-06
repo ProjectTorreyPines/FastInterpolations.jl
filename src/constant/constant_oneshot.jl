@@ -30,18 +30,18 @@ Type parameters:
 - Tv: Value type (unconstrained)
 """
 @inline function _constant_eval_extrap(
-    y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
-    extrap::_ClampOrFill, ::AbstractSide, op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv}
+        y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
+        extrap::_ClampOrFill, ::AbstractSide, op::AbstractEvalOp
+    ) where {Tg <: AbstractFloat, Tv}
     y_bnd = xi < x_min ? @inbounds(y[1]) : @inbounds(y[end])
     return _constant_extrap_result(op, y_bnd, extrap)
 end
 
 # ExtendExtrap delegates to ClampExtrap (slope=0 for constant function)
 @inline function _constant_eval_extrap(
-    y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
-    ::ExtendExtrap, side::AbstractSide, op::AbstractEvalOp
-) where {Tg<:AbstractFloat, Tv}
+        y::AbstractVector{Tv}, xi::Tg, x_min::Tg, x_max::Tg,
+        ::ExtendExtrap, side::AbstractSide, op::AbstractEvalOp
+    ) where {Tg <: AbstractFloat, Tv}
     return _constant_eval_extrap(y, xi, x_min, x_max, ClampExtrap(), side, op)
 end
 
@@ -68,14 +68,14 @@ AD Support:
 - Original xi is passed to kernel for AD compatibility
 """
 @inline function _constant_eval_at_point(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xi::Tq,
-    extrap::AbstractExtrap,
-    side::AbstractSide,
-    op::AbstractEvalOp,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq<:Real, S<:Searcher}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xi::Tq,
+        extrap::AbstractExtrap,
+        side::AbstractSide,
+        op::AbstractEvalOp,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real, S <: Searcher}
     # Extract primal for comparisons and search (supports ForwardDiff.Dual)
     xi_primal = _extract_primal(xi)
     xi_typed = Tg(xi_primal)
@@ -93,7 +93,7 @@ AD Support:
         idx, xL, xR = search_interval(searcher, x, xi_wrapped)
         h = xR - xL
         dL = xi_wrapped - xL  # Use wrapped position for correct interval calculation
-        @inbounds return _constant_kernel(op, y[idx], y[idx+1], h, dL, side)
+        @inbounds return _constant_kernel(op, y[idx], y[idx + 1], h, dL, side)
     end
 
     # Boundary special case: xi == x[end] → y[end] directly
@@ -111,7 +111,7 @@ AD Support:
     idx, xL, xR = search_interval(searcher, x, xi_typed)
     h = xR - xL
     dL = xi - xL  # Use original xi for AD
-    @inbounds return _constant_kernel(op, y[idx], y[idx+1], h, dL, side)
+    @inbounds return _constant_kernel(op, y[idx], y[idx + 1], h, dL, side)
 end
 
 
@@ -170,19 +170,19 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 # AD Support: xi can be any Real (including ForwardDiff.Dual)
 # Note: Tq<:Real constraint resolves method ambiguity with generic Real wrapper
 @inline function constant_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xi::Tq;
-    extrap::AbstractExtrap=NoExtrap(),
-    side::AbstractSide=NearestSide(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch(),
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xi::Tq;
+        extrap::AbstractExtrap = NoExtrap(),
+        side::AbstractSide = NearestSide(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     @boundscheck length(y) == length(x) || throw(ArgumentError("x and y must have same length"))
 
     searcher = _resolve_search(x, xi, search, hint)
-    _constant_eval_at_point(x, y, xi, extrap, side, deriv, searcher)
+    return _constant_eval_at_point(x, y, xi, extrap, side, deriv, searcher)
 end
 
 # ========================================
@@ -215,15 +215,15 @@ constant_interp!(output, x, y, sorted_queries; search=LinearBinarySearch(linear_
 ```
 """
 function constant_interp!(
-    output::AbstractVector{Tv},
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_targets::AbstractVector{Tg};
-    extrap::AbstractExtrap=NoExtrap(),
-    side::AbstractSide=NearestSide(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
+        output::AbstractVector{Tv},
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_targets::AbstractVector{Tg};
+        extrap::AbstractExtrap = NoExtrap(),
+        side::AbstractSide = NearestSide(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
@@ -255,14 +255,14 @@ vals = constant_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_wi
 ```
 """
 function constant_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_targets::AbstractVector{Tg};
-    extrap::AbstractExtrap=NoExtrap(),
-    side::AbstractSide=NearestSide(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_targets::AbstractVector{Tg};
+        extrap::AbstractExtrap = NoExtrap(),
+        side::AbstractSide = NearestSide(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_targets))
     constant_interp!(output, x, y, x_targets; extrap, side, deriv, search)
     return output
@@ -282,15 +282,15 @@ end
 # AD Support: Pass xi directly without Tg conversion to preserve Dual type
 
 @inline function constant_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xi::Tq;
-    extrap::AbstractExtrap=NoExtrap(),
-    side::AbstractSide=NearestSide(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch(),
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:Real, Tv, Tq<:Real}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xi::Tq;
+        extrap::AbstractExtrap = NoExtrap(),
+        side::AbstractSide = NearestSide(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
     # Pass xi directly (not converted) to preserve ForwardDiff.Dual for AD
     return constant_interp(x_typed, y_typed, xi; extrap, side, deriv, search, hint)
@@ -302,14 +302,14 @@ end
 # POLICY: Tg is computed from x/y ONLY, not from x_targets
 
 function constant_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_targets::AbstractVector{Tq};
-    extrap::AbstractExtrap=NoExtrap(),
-    side::AbstractSide=NearestSide(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv, Tq<:Real}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_targets::AbstractVector{Tq};
+        extrap::AbstractExtrap = NoExtrap(),
+        side::AbstractSide = NearestSide(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_targets)
     Tv_float = eltype(y_typed)
     output = Vector{Tv_float}(undef, length(x_targets))
@@ -322,15 +322,15 @@ end
 # ========================================
 
 function constant_interp!(
-    output::AbstractVector,
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_targets::AbstractVector{Tq};
-    extrap::AbstractExtrap=NoExtrap(),
-    side::AbstractSide=NearestSide(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv, Tq<:Real}
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_targets::AbstractVector{Tq};
+        extrap::AbstractExtrap = NoExtrap(),
+        side::AbstractSide = NearestSide(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: Real, Tv, Tq <: Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
@@ -340,11 +340,13 @@ function constant_interp!(
     # Validate output can hold result type
     Tout = eltype(output)
     if promote_type(Tout, Tv_float) !== Tout
-        throw(ArgumentError(
-            "output eltype $Tout cannot hold interpolation result type $Tv_float. " *
-            "Use Vector{$Tv_float} or a wider type."
-        ))
+        throw(
+            ArgumentError(
+                "output eltype $Tout cannot hold interpolation result type $Tv_float. " *
+                    "Use Vector{$Tv_float} or a wider type."
+            )
+        )
     end
 
-    constant_interp!(output, x_typed, y_typed, xq_typed; extrap, side, deriv, search)
+    return constant_interp!(output, x_typed, y_typed, xq_typed; extrap, side, deriv, search)
 end

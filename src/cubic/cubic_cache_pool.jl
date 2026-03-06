@@ -41,7 +41,7 @@ Abstract type for cache entries. Subtypes must have:
 - `x::X` - grid data for equality check
 - `cache` - CubicSplineCache instance
 """
-abstract type AbstractCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}} end
+abstract type AbstractCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}} end
 
 """
     CacheEntry{T, L, R, X, S}
@@ -65,10 +65,10 @@ The `x` field stores a snapshot (copy) for Vector inputs, preventing external
 mutation from corrupting the cache. Lookup verifies `isequal(entry.x, input_x)`
 even on objectid match to detect in-place mutation.
 """
-mutable struct CacheEntry{T<:AbstractFloat, L<:PointBC, R<:PointBC, X<:AbstractVector{T}, S<:AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
+mutable struct CacheEntry{T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}, S <: AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
-    cache::CubicSplineCache{T, X, ThomasFactorization{T, Vector{T}}, BCPair{L,R}, S}
+    cache::CubicSplineCache{T, X, ThomasFactorization{T, Vector{T}}, BCPair{L, R}, S}
 end
 
 """
@@ -89,7 +89,7 @@ Cache entry for periodic BC (uses PeriodicData).
 # Mutation Safety
 See `CacheEntry` documentation for details on mutation safety pattern.
 """
-mutable struct PeriodicCacheEntry{T<:AbstractFloat, X<:AbstractVector{T}, S<:AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
+mutable struct PeriodicCacheEntry{T <: AbstractFloat, X <: AbstractVector{T}, S <: AbstractGridSpacing{T}} <: AbstractCacheEntry{T, X}
     id::UInt
     x::X
     cache::CubicSplineCache{T, X, ThomasFactorization{T, Vector{T}}, PeriodicData{T}, S}
@@ -114,17 +114,17 @@ Used for RCU (Read-Copy-Update) pattern to enable lock-free reads.
 Readers atomically load a snapshot reference and can safely read it
 without locks since the snapshot content never changes after creation.
 """
-struct BankSnapshot{E<:AbstractCacheEntry}
+struct BankSnapshot{E <: AbstractCacheEntry}
     store::Vector{E}
     count::Int
     ring::Int  # 1-based next eviction index
 end
 
 # Empty snapshot constructor
-function BankSnapshot{E}() where {E<:AbstractCacheEntry}
+function BankSnapshot{E}() where {E <: AbstractCacheEntry}
     store = E[]
     sizehint!(store, _CACHE_SIZE)
-    BankSnapshot{E}(store, 0, 1)
+    return BankSnapshot{E}(store, 0, 1)
 end
 
 # ===============================================================
@@ -144,13 +144,13 @@ Uses RCU pattern with atomic snapshot for lock-free reads.
 - Read path: Lock-free via `@atomic :acquire` snapshot load
 - Write path: Lock + copy-on-write + `@atomic :release` publish
 """
-mutable struct CacheBank{E<:AbstractCacheEntry}
+mutable struct CacheBank{E <: AbstractCacheEntry}
     @atomic snapshot::BankSnapshot{E}
 end
 
 # Single constructor for all entry types
-function CacheBank{E}() where {E<:AbstractCacheEntry}
-    CacheBank{E}(BankSnapshot{E}())
+function CacheBank{E}() where {E <: AbstractCacheEntry}
+    return CacheBank{E}(BankSnapshot{E}())
 end
 
 # ===============================================================
@@ -304,7 +304,7 @@ RCU-style bank retrieval with copy-on-write for new bank creation.
 - Registry hit: ~10 ns (atomic load + linear scan)
 - Registry miss: Lock overhead + O(N) copy (N < 20)
 """
-@inline function _get_bank(registry::GlobalRegistry, ::Type{CacheBank{E}}) where {E<:AbstractCacheEntry}
+@inline function _get_bank(registry::GlobalRegistry, ::Type{CacheBank{E}}) where {E <: AbstractCacheEntry}
     BankType = CacheBank{E}
 
     # === RCU Read Path (Lock-Free) ===
@@ -334,25 +334,25 @@ RCU-style bank retrieval with copy-on-write for new bank creation.
 end
 
 # Helper to determine spacing type from grid type
-@inline _spacing_type(::Type{X}) where {T, X<:AbstractRange{T}} = ScalarSpacing{T}
-@inline _spacing_type(::Type{X}) where {T, X<:AbstractVector{T}} = VectorSpacing{T}
+@inline _spacing_type(::Type{X}) where {T, X <: AbstractRange{T}} = ScalarSpacing{T}
+@inline _spacing_type(::Type{X}) where {T, X <: AbstractVector{T}} = VectorSpacing{T}
 
 """
 Get or create a derivative BC cache bank for the given (T, L, R, X, S) combination.
 Type-Free design: L, R are PointBC subtypes without type parameter constraint.
 """
-@inline function _get_derivative_bank(::X, ::BCPair{L,R}) where {T<:AbstractFloat, L<:PointBC, R<:PointBC, X<:AbstractVector{T}}
+@inline function _get_derivative_bank(::X, ::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}}
     S = _spacing_type(X)
-    EntryType = CacheEntry{T,L,R,X,S}
+    EntryType = CacheEntry{T, L, R, X, S}
     return _get_bank(_DERIVATIVE_REGISTRY, CacheBank{EntryType})
 end
 
 """
 Get or create a periodic BC cache bank for the given (T, X, S) combination.
 """
-@inline function _get_periodic_bank(::X) where {T<:AbstractFloat, X<:AbstractVector{T}}
+@inline function _get_periodic_bank(::X) where {T <: AbstractFloat, X <: AbstractVector{T}}
     S = _spacing_type(X)
-    EntryType = PeriodicCacheEntry{T,X,S}
+    EntryType = PeriodicCacheEntry{T, X, S}
     return _get_bank(_PERIODIC_REGISTRY, CacheBank{EntryType})
 end
 
@@ -414,12 +414,12 @@ end
 
 # Build cache for derivative BC entry
 # Type-Free design: L, R are PointBC subtypes without type parameter constraint
-@inline function _build_cache(::Type{<:CacheEntry{T,L,R,X}}, x::X, bc::BCPair{L,R}) where {T<:AbstractFloat, L<:PointBC, R<:PointBC, X<:AbstractVector{T}}
+@inline function _build_cache(::Type{<:CacheEntry{T, L, R, X}}, x::X, bc::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}}
     return _build_derivative_bc_cache(x, bc.left, bc.right)
 end
 
 # Build cache for periodic BC entry
-@inline function _build_cache(::Type{<:PeriodicCacheEntry{T,X}}, x::X, ::Nothing) where {T<:AbstractFloat, X<:AbstractVector{T}}
+@inline function _build_cache(::Type{<:PeriodicCacheEntry{T, X}}, x::X, ::Nothing) where {T <: AbstractFloat, X <: AbstractVector{T}}
     return _build_periodic_cache(x)
 end
 
@@ -438,7 +438,7 @@ Core lookup/insert logic for CacheBank{E} using RCU pattern.
 - Cache hit: ~11 ns (atomic load + linear scan, no lock)
 - Cache miss: Lock overhead + O(N) copy (N ≤ 16, negligible)
 """
-@inline function _lookup_or_insert!(bank::CacheBank{E}, x::X, bc_config) where {E<:AbstractCacheEntry, X}
+@inline function _lookup_or_insert!(bank::CacheBank{E}, x::X, bc_config) where {E <: AbstractCacheEntry, X}
     id = objectid(x)
 
     # === RCU Read Path (Lock-Free) ===
@@ -512,7 +512,7 @@ because they have the same type signature.
 LU factorization depends only on matrix structure (x-grid + BC type),
 not RHS values (y-data + BC values).
 """
-@inline function _get_cubic_cache(x; bc::AbstractBC=CubicFit())
+@inline function _get_cubic_cache(x; bc::AbstractBC = CubicFit())
     # Handle periodic BC
     if _is_periodic_bc(bc)
         return _get_periodic_cache_impl(x)
@@ -554,7 +554,7 @@ end
 
 # BCPair API - converts to cache-compatible form via _cache_bc_pair
 # Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types
-@inline function _get_cubic_cache(x::AbstractVector{T}, bc::BCPair{L,R}) where {T<:AbstractFloat, L<:PointBC, R<:PointBC}
+@inline function _get_cubic_cache(x::AbstractVector{T}, bc::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
     # Convert to cache-compatible form (PolyFit → Deriv1 for same matrix structure)
     bc_cache = _cache_bc_pair(bc, T)
     return _get_derivative_cache_impl(x, bc_cache)
@@ -562,7 +562,7 @@ end
 
 # Fallback for non-float vectors (e.g., Int) - promotes to appropriate float type
 # NOTE: Convert x first to avoid redundant conversion in _get_derivative_cache_impl
-@inline function _get_cubic_cache(x::AbstractVector, bc::BCPair{L,R}) where {L<:PointBC, R<:PointBC}
+@inline function _get_cubic_cache(x::AbstractVector, bc::BCPair{L, R}) where {L <: PointBC, R <: PointBC}
     T = eltype(x)
     T <: AbstractFloat && error("Should dispatch to typed method")
     # Convert x once here, then call typed implementation directly
@@ -586,10 +586,10 @@ end
 # Keep cache representation structural (PolyFit → Deriv1) regardless of autocache.
 # Solve/eval still use original bc from caller via _solve_system!.
 @inline function _get_cubic_cache(
-    x::AbstractVector{T},
-    bc::BCPair{L,R},
-    autocache::Bool
-) where {T<:AbstractFloat, L<:PointBC, R<:PointBC}
+        x::AbstractVector{T},
+        bc::BCPair{L, R},
+        autocache::Bool
+    ) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
     bc_cache = _cache_bc_pair(bc, T)
     if autocache
         return _get_derivative_cache_impl(x, bc_cache)
@@ -599,14 +599,14 @@ end
 end
 
 @inline function _get_cubic_cache(
-    x::AbstractVector{T},
-    bc::AbstractBC,
-    autocache::Bool
-) where {T<:AbstractFloat}
+        x::AbstractVector{T},
+        bc::AbstractBC,
+        autocache::Bool
+    ) where {T <: AbstractFloat}
     if autocache
         cache = _get_cubic_cache(x, bc)
     else
-        cache = CubicSplineCache(x; bc=bc)
+        cache = CubicSplineCache(x; bc = bc)
     end
     return cache
 end
@@ -624,13 +624,13 @@ const _StepRangeLen_F32 = StepRangeLen{Float32, Float64, Float64, Int64}
 Internal implementation for derivative BC cache lookup.
 Type-Free design: bc_pair should already be cache-compatible (via _cache_bc_pair).
 """
-@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L,R}) where {T<:AbstractFloat, L<:PointBC, R<:PointBC}
+@inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
     x_normalized = x isa Vector ? x : collect(x)
     bank = _get_derivative_bank(x_normalized, bc_pair)
     return _lookup_or_insert!(bank, x_normalized, bc_pair)
 end
 
-@inline function _get_derivative_cache_impl(x::AbstractRange{T}, bc_pair::BCPair{L,R}) where {T<:AbstractFloat, L<:PointBC, R<:PointBC}
+@inline function _get_derivative_cache_impl(x::AbstractRange{T}, bc_pair::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
     # Normalize to StepRangeLen for consistent cache key type.
     # LinRange and other Range types are converted (minor overhead on first call).
     x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
@@ -644,25 +644,25 @@ end
 @inline function _get_derivative_cache_impl(x::AbstractVector{<:Real}, bc_pair::BCPair)
     x_float = float.(x)
     bc_cache = _cache_bc_pair(bc_pair, eltype(x_float))
-    _get_derivative_cache_impl(x_float, bc_cache)
+    return _get_derivative_cache_impl(x_float, bc_cache)
 end
 
 @inline function _get_derivative_cache_impl(x::AbstractRange{<:Real}, bc_pair::BCPair)
     x_float = range(float(first(x)), float(last(x)), length(x))
     bc_cache = _cache_bc_pair(bc_pair, eltype(x_float))
-    _get_derivative_cache_impl(x_float, bc_cache)
+    return _get_derivative_cache_impl(x_float, bc_cache)
 end
 
 """
 Internal implementation for periodic BC cache lookup.
 """
-@inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T<:AbstractFloat}
+@inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T <: AbstractFloat}
     x_normalized = x isa Vector ? x : collect(x)
     bank = _get_periodic_bank(x_normalized)
     return _lookup_or_insert!(bank, x_normalized, nothing)
 end
 
-@inline function _get_periodic_cache_impl(x::AbstractRange{T}) where {T<:AbstractFloat}
+@inline function _get_periodic_cache_impl(x::AbstractRange{T}) where {T <: AbstractFloat}
     # Normalize to StepRangeLen for consistent cache key type.
     # LinRange and other Range types are converted (minor overhead on first call).
     x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
@@ -673,9 +673,9 @@ end
 # Fallback: other Real types → convert to appropriate float type
 # float.(x) preserves Float32 precision; Int → Float64
 @inline function _get_periodic_cache_impl(x::AbstractVector{<:Real})
-    _get_periodic_cache_impl(float.(x))
+    return _get_periodic_cache_impl(float.(x))
 end
 
 @inline function _get_periodic_cache_impl(x::AbstractRange{<:Real})
-    _get_periodic_cache_impl(range(float(first(x)), float(last(x)), length(x)))
+    return _get_periodic_cache_impl(range(float(first(x)), float(last(x)), length(x)))
 end

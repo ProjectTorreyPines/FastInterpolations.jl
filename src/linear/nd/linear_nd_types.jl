@@ -68,14 +68,14 @@ itp((0.5, 1.0); deriv=Val((1,0)))   # ∂f/∂x at (0.5, 1.0)
 ```
 """
 struct LinearInterpolantND{
-    Tg<:AbstractFloat,
-    Tv,
-    N,
-    G<:Tuple{Vararg{AbstractVector,N}},
-    S<:Tuple{Vararg{AbstractGridSpacing,N}},
-    E<:Tuple{Vararg{AbstractExtrap,N}},
-    P<:Tuple{Vararg{AbstractSearchPolicy,N}},
-} <: AbstractInterpolantND{Tg, Tv, N}
+        Tg <: AbstractFloat,
+        Tv,
+        N,
+        G <: Tuple{Vararg{AbstractVector, N}},
+        S <: Tuple{Vararg{AbstractGridSpacing, N}},
+        E <: Tuple{Vararg{AbstractExtrap, N}},
+        P <: Tuple{Vararg{AbstractSearchPolicy, N}},
+    } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
     spacings::S
     data::Array{Tv, N}
@@ -83,9 +83,9 @@ struct LinearInterpolantND{
     searches::P
 
     function LinearInterpolantND{Tg, Tv, N, G, S, E, P}(
-        grids::G, spacings::S, data::Array{Tv, N}, extraps::E, searches::P
-    ) where {Tg, Tv, N, G, S, E, P}
-        new{Tg, Tv, N, G, S, E, P}(grids, spacings, data, extraps, searches)
+            grids::G, spacings::S, data::Array{Tv, N}, extraps::E, searches::P
+        ) where {Tg, Tv, N, G, S, E, P}
+        return new{Tg, Tv, N, G, S, E, P}(grids, spacings, data, extraps, searches)
     end
 end
 

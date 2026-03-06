@@ -25,17 +25,17 @@ end
         # Test grid point pass-through
         for i in 1:length(x)
             for j in 1:length(y)
-                @test itp((x[i], y[j])) ≈ data[i, j] atol=1e-12
+                @test itp((x[i], y[j])) ≈ data[i, j] atol = 1.0e-12
             end
         end
 
         # Test interpolation at interior points
         xq, yq = 1.5, 0.8
         expected = sin(xq) * cos(yq)
-        @test itp((xq, yq)) ≈ expected atol=1e-3  # Cubic interpolation accuracy
+        @test itp((xq, yq)) ≈ expected atol = 1.0e-3  # Cubic interpolation accuracy
 
         # Test tuple input (same as above)
-        @test itp((xq, yq)) ≈ expected atol=1e-3
+        @test itp((xq, yq)) ≈ expected atol = 1.0e-3
     end
 
     @testset "Complex Value Support" begin
@@ -52,14 +52,14 @@ end
         @test value_type(itp) == ComplexF64
 
         # Test grid point pass-through
-        @test itp((x[5], y[3])) ≈ data[5, 3] atol=1e-12
+        @test itp((x[5], y[3])) ≈ data[5, 3] atol = 1.0e-12
 
         # Test interpolation
         xq, yq = 1.5, 0.8
         expected = sin(xq) * cos(yq) + im * cos(xq) * sin(yq)
         result = itp((xq, yq))
         @test result isa ComplexF64
-        @test result ≈ expected atol=1e-3
+        @test result ≈ expected atol = 1.0e-3
     end
 
     @testset "Oneshot API" begin
@@ -71,7 +71,7 @@ end
         xq, yq = 1.5, 0.8
         val = cubic_interp((x, y), data, (xq, yq))
         expected = sin(xq) * cos(yq)
-        @test val ≈ expected atol=1e-3
+        @test val ≈ expected atol = 1.0e-3
 
         # Multiple points oneshot
         xqs = [0.5, 1.0, 1.5, 2.0]
@@ -80,7 +80,7 @@ end
         @test length(vals) == 4
         for k in 1:4
             expected_k = sin(xqs[k]) * cos(yqs[k])
-            @test vals[k] ≈ expected_k atol=2e-3
+            @test vals[k] ≈ expected_k atol = 2.0e-3
         end
     end
 
@@ -99,7 +99,7 @@ end
         @test length(vals) == 10
         for k in 1:10
             expected = sin(xqs[k]) * cos(yqs[k])
-            @test vals[k] ≈ expected atol=2e-3
+            @test vals[k] ≈ expected atol = 2.0e-3
         end
     end
 
@@ -109,20 +109,22 @@ end
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
         # ZeroCurvBC
-        itp_natural = cubic_interp((x, y), data; bc=ZeroCurvBC())
+        itp_natural = cubic_interp((x, y), data; bc = ZeroCurvBC())
         @test itp_natural((1.0, 0.5)) isa Float64
 
         # ZeroSlopeBC
-        itp_clamped = cubic_interp((x, y), data; bc=ZeroSlopeBC())
+        itp_clamped = cubic_interp((x, y), data; bc = ZeroSlopeBC())
         @test itp_clamped((1.0, 0.5)) isa Float64
 
         # Per-axis BC
-        itp_mixed = cubic_interp((x, y), data; bc=(ZeroCurvBC(), ZeroSlopeBC()))
+        itp_mixed = cubic_interp((x, y), data; bc = (ZeroCurvBC(), ZeroSlopeBC()))
         @test itp_mixed((1.0, 0.5)) isa Float64
 
         # BCPair with specific derivatives
-        itp_deriv = cubic_interp((x, y), data;
-            bc=(BCPair(Deriv1(0.0), Deriv1(0.0)), ZeroCurvBC()))
+        itp_deriv = cubic_interp(
+            (x, y), data;
+            bc = (BCPair(Deriv1(0.0), Deriv1(0.0)), ZeroCurvBC())
+        )
         @test itp_deriv((1.0, 0.5)) isa Float64
     end
 
@@ -131,13 +133,13 @@ end
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
-        itp = cubic_interp((x, y), data; bc=CubicFit())
+        itp = cubic_interp((x, y), data; bc = CubicFit())
         @test itp((1.0, 0.5)) isa Float64
 
         # Should give good accuracy at interior points
         xq, yq = 1.5, 0.8
         expected = sin(xq) * cos(yq)
-        @test itp((xq, yq)) ≈ expected atol=1e-3
+        @test itp((xq, yq)) ≈ expected atol = 1.0e-3
     end
 
     @testset "Extrapolation Modes" begin
@@ -146,12 +148,12 @@ end
         data = [xi * yj for xi in x, yj in y]
 
         # :none (default) - should throw outside domain
-        itp_none = cubic_interp((x, y), data; extrap=NoExtrap())
+        itp_none = cubic_interp((x, y), data; extrap = NoExtrap())
         @test_throws DomainError itp_none((-0.1, 0.5))
         @test_throws DomainError itp_none((0.5, -0.1))
 
         # :constant - clamp to boundary
-        itp_const = cubic_interp((x, y), data; extrap=ClampExtrap())
+        itp_const = cubic_interp((x, y), data; extrap = ClampExtrap())
         @test itp_const((-0.1, 0.5)) ≈ itp_const((0.0, 0.5))
         @test itp_const((2.1, 0.5)) ≈ itp_const((2.0, 0.5))
     end
@@ -167,19 +169,19 @@ end
         xq, yq = 1.0, 0.5
 
         # Value
-        @test itp((xq, yq); deriv=DerivOp(0, 0)) ≈ xq^2 * yq^2 atol=1e-4
+        @test itp((xq, yq); deriv = DerivOp(0, 0)) ≈ xq^2 * yq^2 atol = 1.0e-4
 
         # ∂f/∂x = 2xy²
         dfdx_expected = 2 * xq * yq^2
-        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ dfdx_expected atol=1e-3
+        @test itp((xq, yq); deriv = DerivOp(1, 0)) ≈ dfdx_expected atol = 1.0e-3
 
         # ∂f/∂y = 2x²y
         dfdy_expected = 2 * xq^2 * yq
-        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ dfdy_expected atol=1e-3
+        @test itp((xq, yq); deriv = DerivOp(0, 1)) ≈ dfdy_expected atol = 1.0e-3
 
         # ∂²f/∂x∂y = 4xy
         d2fdxdy_expected = 4 * xq * yq
-        @test itp((xq, yq); deriv=DerivOp(1, 1)) ≈ d2fdxdy_expected atol=1e-2
+        @test itp((xq, yq); deriv = DerivOp(1, 1)) ≈ d2fdxdy_expected atol = 1.0e-2
     end
 
     @testset "Non-uniform Grids" begin
@@ -191,12 +193,12 @@ end
         itp = cubic_interp((x, y), data)
 
         # Test grid point pass-through
-        @test itp((x[3], y[2])) ≈ data[3, 2] atol=1e-12
+        @test itp((x[3], y[2])) ≈ data[3, 2] atol = 1.0e-12
 
         # Test interpolation
         xq, yq = 0.5, 0.3
         expected = sin(xq) * cos(yq)
-        @test itp((xq, yq)) ≈ expected atol=1e-3
+        @test itp((xq, yq)) ≈ expected atol = 1.0e-3
     end
 
     @testset "Float32 Support" begin
@@ -211,7 +213,7 @@ end
 
         result = itp((1.0f0, 0.5f0))
         @test result isa Float32
-        @test result ≈ sin(1.0f0) * cos(0.5f0) atol=5e-4
+        @test result ≈ sin(1.0f0) * cos(0.5f0) atol = 5.0e-4
     end
 
     @testset "Type Introspection" begin
@@ -238,11 +240,11 @@ end
         data = rand(11, 11)
 
         # Explicit PreCompute
-        itp = cubic_interp((x, y), data; coeffs=PreCompute())
+        itp = cubic_interp((x, y), data; coeffs = PreCompute())
         @test itp isa CubicInterpolantND
 
         # OnTheFly should throw (not implemented)
-        @test_throws ArgumentError cubic_interp((x, y), data; coeffs=OnTheFly())
+        @test_throws ArgumentError cubic_interp((x, y), data; coeffs = OnTheFly())
     end
 
     @testset "Dimension Mismatch Errors" begin
@@ -264,18 +266,20 @@ end
         # Dim-1 too short (3 points < 4 required for CubicFit)
         x_short = range(0.0, 1.0, 3)
         data_short = [xi + yj for xi in x_short, yj in y]
-        @test_throws ArgumentError cubic_interp((x_short, y), data_short; bc=CubicFit())
+        @test_throws ArgumentError cubic_interp((x_short, y), data_short; bc = CubicFit())
 
         # Dim-2 too short (per-axis BC tuple)
         x = range(0.0, 1.0, 11)
         y_short = range(0.0, 1.0, 3)
         data_short2 = [xi + yj for xi in x, yj in y_short]
-        @test_throws ArgumentError cubic_interp((x, y_short), data_short2;
-            bc=(ZeroCurvBC(), CubicFit()))
+        @test_throws ArgumentError cubic_interp(
+            (x, y_short), data_short2;
+            bc = (ZeroCurvBC(), CubicFit())
+        )
 
         # Oneshot path also validates (triggers _validate_nd_bcs! in cubic_interp)
         @test_throws ArgumentError cubic_interp(
-            (x_short, y), data_short, (0.5, 0.5); bc=CubicFit()
+            (x_short, y), data_short, (0.5, 0.5); bc = CubicFit()
         )
     end
 
@@ -301,9 +305,9 @@ end
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
         query = (1.5, 0.8)
-        cubic_interp((x, y), data, query; deriv=DerivOp(1, 1))
-        cubic_interp((x, y), data, query; deriv=DerivOp(1, 1))
-        @allocated cubic_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        cubic_interp((x, y), data, query; deriv = DerivOp(1, 1))
+        cubic_interp((x, y), data, query; deriv = DerivOp(1, 1))
+        @allocated cubic_interp((x, y), data, query; deriv = DerivOp(1, 1))
     end
 
     function _alloc_test_cubic_deriv_val()
@@ -311,9 +315,9 @@ end
         y = range(0.0, π, 11)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
         query = (1.5, 0.8)
-        cubic_interp((x, y), data, query; deriv=DerivOp(1, 0))
-        cubic_interp((x, y), data, query; deriv=DerivOp(1, 0))
-        @allocated cubic_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        cubic_interp((x, y), data, query; deriv = DerivOp(1, 0))
+        cubic_interp((x, y), data, query; deriv = DerivOp(1, 0))
+        @allocated cubic_interp((x, y), data, query; deriv = DerivOp(1, 0))
     end
 
     function _alloc_test_cubic_extrap_const()
@@ -321,9 +325,9 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi^2 + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        cubic_interp((x, y), data, query; extrap=ClampExtrap())
-        cubic_interp((x, y), data, query; extrap=ClampExtrap())
-        @allocated cubic_interp((x, y), data, query; extrap=ClampExtrap())
+        cubic_interp((x, y), data, query; extrap = ClampExtrap())
+        cubic_interp((x, y), data, query; extrap = ClampExtrap())
+        @allocated cubic_interp((x, y), data, query; extrap = ClampExtrap())
     end
 
     function _alloc_test_cubic_extrap_extend()
@@ -331,9 +335,9 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi^2 + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        cubic_interp((x, y), data, query; extrap=ExtendExtrap())
-        cubic_interp((x, y), data, query; extrap=ExtendExtrap())
-        @allocated cubic_interp((x, y), data, query; extrap=ExtendExtrap())
+        cubic_interp((x, y), data, query; extrap = ExtendExtrap())
+        cubic_interp((x, y), data, query; extrap = ExtendExtrap())
+        @allocated cubic_interp((x, y), data, query; extrap = ExtendExtrap())
     end
 
     function _alloc_test_cubic_extrap_wrap_periodic()
@@ -343,9 +347,9 @@ end
         data[end, :] .= data[1, :]
         data[:, end] .= data[:, 1]
         query = (1.5, 0.8)
-        cubic_interp((x, y), data, query; bc=PeriodicBC(), extrap=WrapExtrap())
-        cubic_interp((x, y), data, query; bc=PeriodicBC(), extrap=WrapExtrap())
-        @allocated cubic_interp((x, y), data, query; bc=PeriodicBC(), extrap=WrapExtrap())
+        cubic_interp((x, y), data, query; bc = PeriodicBC(), extrap = WrapExtrap())
+        cubic_interp((x, y), data, query; bc = PeriodicBC(), extrap = WrapExtrap())
+        @allocated cubic_interp((x, y), data, query; bc = PeriodicBC(), extrap = WrapExtrap())
     end
 
     function _alloc_test_cubic_mixed_mode()
@@ -353,20 +357,20 @@ end
         y = range(0.0, 1.0, 10)
         data = [xi^2 + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        cubic_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
-        cubic_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
-        @allocated cubic_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
+        cubic_interp((x, y), data, query; extrap = (NoExtrap(), ClampExtrap()))
+        cubic_interp((x, y), data, query; extrap = (NoExtrap(), ClampExtrap()))
+        @allocated cubic_interp((x, y), data, query; extrap = (NoExtrap(), ClampExtrap()))
     end
 
     function _alloc_test_cubic_periodic_exclusive()
-        x = range(0.0, step=0.1, length=20)
-        y = range(0.0, step=0.2, length=10)
-        data = [sin(2π*xi) * cos(2π*yj) for xi in x, yj in y]
+        x = range(0.0, step = 0.1, length = 20)
+        y = range(0.0, step = 0.2, length = 10)
+        data = [sin(2π * xi) * cos(2π * yj) for xi in x, yj in y]
         query = (0.5, 0.5)
-        bc = PeriodicBC(; endpoint=:exclusive, period=2.0)
-        cubic_interp((x, y), data, query; bc=bc, extrap=WrapExtrap())
-        cubic_interp((x, y), data, query; bc=bc, extrap=WrapExtrap())
-        @allocated cubic_interp((x, y), data, query; bc=bc, extrap=WrapExtrap())
+        bc = PeriodicBC(; endpoint = :exclusive, period = 2.0)
+        cubic_interp((x, y), data, query; bc = bc, extrap = WrapExtrap())
+        cubic_interp((x, y), data, query; bc = bc, extrap = WrapExtrap())
+        @allocated cubic_interp((x, y), data, query; bc = bc, extrap = WrapExtrap())
     end
 
     function _alloc_test_cubic_3d()

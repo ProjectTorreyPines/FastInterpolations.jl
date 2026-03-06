@@ -14,8 +14,8 @@ using Test
 using FastInterpolations
 
 # Tolerance constants for numerical comparisons (local to this test file)
-const POLYFIT_RTOL = 1e-12
-const POLYFIT_ATOL = 1e-12
+const POLYFIT_RTOL = 1.0e-12
+const POLYFIT_ATOL = 1.0e-12
 
 # ========================================
 # PolyFit{D} Type System Tests
@@ -142,16 +142,16 @@ end
         y = f_cubic.(x)
         xi = [0.15, 0.5, 1.0, 1.5, 1.85]
 
-        result = cubic_interp(x, y, xi; bc=CubicFit())
+        result = cubic_interp(x, y, xi; bc = CubicFit())
         expected = f_cubic.(xi)
-        @test result ≈ expected rtol=POLYFIT_RTOL atol=POLYFIT_ATOL
+        @test result ≈ expected rtol = POLYFIT_RTOL atol = POLYFIT_ATOL
     end
 
     @testset "CubicFit with CubicInterpolant" begin
         x = range(0.0, 1.0, 21)
         y = sin.(π .* x)
 
-        itp = cubic_interp(x, y; bc=CubicFit())
+        itp = cubic_interp(x, y; bc = CubicFit())
         @test itp isa CubicInterpolant
         @test isfinite(itp(0.5))
     end
@@ -159,11 +159,11 @@ end
     @testset "CubicFit Requires 4 Points" begin
         x_short = range(0.0, 1.0, 3)
         y_short = sin.(x_short)
-        @test_throws ArgumentError cubic_interp(x_short, y_short, 0.5; bc=CubicFit())
+        @test_throws ArgumentError cubic_interp(x_short, y_short, 0.5; bc = CubicFit())
 
         x_ok = range(0.0, 1.0, 4)
         y_ok = sin.(x_ok)
-        @test isfinite(cubic_interp(x_ok, y_ok, 0.5; bc=CubicFit()))
+        @test isfinite(cubic_interp(x_ok, y_ok, 0.5; bc = CubicFit()))
     end
 
 end
@@ -292,7 +292,7 @@ end
         fvals = (f(0.0), f(0.1), f(0.2), f(0.3))
 
         d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), fvals, inv_h)
-        @test d_left ≈ 0.0 atol=1e-10  # f'(0) = 0
+        @test d_left ≈ 0.0 atol = 1.0e-10  # f'(0) = 0
     end
 
     @testset "Right Endpoint: f(x) = x³" begin
@@ -306,7 +306,7 @@ end
         fvals = (f(0.7), f(0.8), f(0.9), f(1.0))
 
         d_right = FastInterpolations._compute_deriv1(PolyFit{3}(), RightSide(), fvals, inv_h)
-        @test d_right ≈ 3.0 atol=1e-10  # f'(1) = 3
+        @test d_right ≈ 3.0 atol = 1.0e-10  # f'(1) = 3
     end
 
     @testset "Left Endpoint: f(x) = x² - 2x + 1" begin
@@ -318,7 +318,7 @@ end
 
         fvals = (f(0.0), f(0.25), f(0.5), f(0.75))
         d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), fvals, inv_h)
-        @test d_left ≈ -2.0 atol=1e-10
+        @test d_left ≈ -2.0 atol = 1.0e-10
     end
 
     @testset "Right Endpoint: f(x) = x² - 2x + 1" begin
@@ -329,7 +329,7 @@ end
 
         fvals = (f(1.25), f(1.5), f(1.75), f(2.0))
         d_right = FastInterpolations._compute_deriv1(PolyFit{3}(), RightSide(), fvals, inv_h)
-        @test d_right ≈ 2.0 atol=1e-10
+        @test d_right ≈ 2.0 atol = 1.0e-10
     end
 
     @testset "Linear Function (Exact)" begin
@@ -340,11 +340,11 @@ end
 
         fvals_left = (f(0.0), f(0.5), f(1.0), f(1.5))
         d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), fvals_left, inv_h)
-        @test d_left ≈ 3.0 atol=1e-14  # Exact for linear
+        @test d_left ≈ 3.0 atol = 1.0e-14  # Exact for linear
 
         fvals_right = (f(1.5), f(2.0), f(2.5), f(3.0))
         d_right = FastInterpolations._compute_deriv1(PolyFit{3}(), RightSide(), fvals_right, inv_h)
-        @test d_right ≈ 3.0 atol=1e-14
+        @test d_right ≈ 3.0 atol = 1.0e-14
     end
 
     @testset "Float32 Precision" begin
@@ -355,7 +355,7 @@ end
         fvals = NTuple{4, Float32}(Float32.(f.([0.0, 0.1, 0.2, 0.3])))
         d_left = FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), fvals, inv_h)
         @test d_left isa Float32
-        @test d_left ≈ Float32(0.0) atol=1e-5  # f'(0) = 0
+        @test d_left ≈ Float32(0.0) atol = 1.0e-5  # f'(0) = 0
     end
 
 end
@@ -378,7 +378,7 @@ end
         # f(x) = 1, f'(x) = 0
         fvals = (1.0, 1.0, 1.0, 1.0)
         deriv = FastInterpolations._weighted_sum(coeffs, fvals)
-        @test deriv ≈ 0.0 atol=1e-14
+        @test deriv ≈ 0.0 atol = 1.0e-14
     end
 
     @testset "Coefficient Precomputation: Right Endpoint" begin
@@ -392,7 +392,7 @@ end
         # Test: constant function f(x) = 5, f'(x) = 0
         fvals = (5.0, 5.0, 5.0, 5.0)
         deriv = FastInterpolations._weighted_sum(coeffs, fvals)
-        @test deriv ≈ 0.0 atol=1e-14
+        @test deriv ≈ 0.0 atol = 1.0e-14
     end
 
     @testset "Linear Function (Exact)" begin
@@ -406,13 +406,13 @@ end
         c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x_left)
         f_left = NTuple{4}(f_lin.(collect(x_left)))
         d_left = FastInterpolations._weighted_sum(c_left, f_left)
-        @test d_left ≈ 2.0 atol=1e-13
+        @test d_left ≈ 2.0 atol = 1.0e-13
 
         # Right endpoint
         c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), RightSide(), x_right)
         f_right = NTuple{4}(f_lin.(collect(x_right)))
         d_right = FastInterpolations._weighted_sum(c_right, f_right)
-        @test d_right ≈ 2.0 atol=1e-13
+        @test d_right ≈ 2.0 atol = 1.0e-13
     end
 
     @testset "Quadratic Function (Exact)" begin
@@ -426,13 +426,13 @@ end
         c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x_left)
         f_left = NTuple{4}(f_quad.(collect(x_left)))
         d_left = FastInterpolations._weighted_sum(c_left, f_left)
-        @test d_left ≈ -3.0 atol=1e-12
+        @test d_left ≈ -3.0 atol = 1.0e-12
 
         # Right endpoint: f'(1) = -1
         c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), RightSide(), x_right)
         f_right = NTuple{4}(f_quad.(collect(x_right)))
         d_right = FastInterpolations._weighted_sum(c_right, f_right)
-        @test d_right ≈ -1.0 atol=1e-12
+        @test d_right ≈ -1.0 atol = 1.0e-12
     end
 
     @testset "Cubic Function (Exact)" begin
@@ -446,13 +446,13 @@ end
         c_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), LeftSide(), x_left)
         f_left = NTuple{4}(f_cub.(collect(x_left)))
         d_left = FastInterpolations._weighted_sum(c_left, f_left)
-        @test d_left ≈ 0.0 atol=1e-12
+        @test d_left ≈ 0.0 atol = 1.0e-12
 
         # Right endpoint: f'(1) = 3
         c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), RightSide(), x_right)
         f_right = NTuple{4}(f_cub.(collect(x_right)))
         d_right = FastInterpolations._weighted_sum(c_right, f_right)
-        @test d_right ≈ 3.0 atol=1e-11
+        @test d_right ≈ 3.0 atol = 1.0e-11
     end
 
     @testset "Equivalence: Precomputed vs On-the-fly (Non-uniform)" begin
@@ -470,17 +470,17 @@ end
         # Left endpoint using unified API (4-arg with PolyFit{3})
         d_left_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, LeftSide(), PolyFit{3}())
 
-        @test d_left_precomp ≈ d_left_onfly rtol=1e-14
+        @test d_left_precomp ≈ d_left_onfly rtol = 1.0e-14
 
         # Right endpoint
         n = length(xs)
-        x_right = (xs[n-3], xs[n-2], xs[n-1], xs[n])
+        x_right = (xs[n - 3], xs[n - 2], xs[n - 1], xs[n])
         c_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{3}(), RightSide(), x_right)
-        f_right = (ys[n-3], ys[n-2], ys[n-1], ys[n])
+        f_right = (ys[n - 3], ys[n - 2], ys[n - 1], ys[n])
         d_right_precomp = FastInterpolations._weighted_sum(c_right, f_right)
         d_right_onfly = FastInterpolations._estimate_endpoint_derivative(xs, ys, RightSide(), PolyFit{3}())
 
-        @test d_right_precomp ≈ d_right_onfly rtol=1e-14
+        @test d_right_precomp ≈ d_right_onfly rtol = 1.0e-14
     end
 
     @testset "Equivalence: Uniform Grid - Precomputed vs Direct" begin
@@ -500,7 +500,7 @@ end
         inv_h = 1 / h
         d_direct = FastInterpolations._compute_deriv1(PolyFit{3}(), LeftSide(), f_left, inv_h)
 
-        @test d_precomp ≈ d_direct rtol=1e-13
+        @test d_precomp ≈ d_direct rtol = 1.0e-13
     end
 
     @testset "Float32 Precision" begin
@@ -512,10 +512,10 @@ end
         @test coeffs[3] isa Float32
         @test coeffs[4] isa Float32
 
-        fvals = NTuple{4, Float32}(Float32.([0.0, 0.1, 0.3, 0.6].^2))  # f(x) = x²
+        fvals = NTuple{4, Float32}(Float32.([0.0, 0.1, 0.3, 0.6] .^ 2))  # f(x) = x²
         deriv = FastInterpolations._weighted_sum(coeffs, fvals)
         @test deriv isa Float32
-        @test deriv ≈ Float32(0.0) atol=1e-5  # f'(0) = 0
+        @test deriv ≈ Float32(0.0) atol = 1.0e-5  # f'(0) = 0
     end
 
 end
@@ -537,9 +537,9 @@ end
         y_cubic = f_cubic.(x_cubic)
         xi_cubic = [0.15, 0.5, 1.0, 1.5, 1.85]
 
-        result = cubic_interp(x_cubic, y_cubic, xi_cubic; bc=CubicFit())
+        result = cubic_interp(x_cubic, y_cubic, xi_cubic; bc = CubicFit())
         expected = f_cubic.(xi_cubic)
-        @test result ≈ expected rtol=POLYFIT_RTOL atol=POLYFIT_ATOL
+        @test result ≈ expected rtol = POLYFIT_RTOL atol = POLYFIT_ATOL
     end
 
     @testset "Quadratic Polynomial Reproduction" begin
@@ -551,9 +551,9 @@ end
         y_quad = f_quad.(x_quad)
         xi_quad = [-0.7, 0.0, 0.5, 1.3, 1.9]
 
-        result = cubic_interp(x_quad, y_quad, xi_quad; bc=CubicFit())
+        result = cubic_interp(x_quad, y_quad, xi_quad; bc = CubicFit())
         expected = f_quad.(xi_quad)
-        @test result ≈ expected rtol=POLYFIT_RTOL atol=POLYFIT_ATOL
+        @test result ≈ expected rtol = POLYFIT_RTOL atol = POLYFIT_ATOL
     end
 
     @testset "Linear Function Reproduction" begin
@@ -564,9 +564,9 @@ end
         y_lin = f_lin.(x_lin)
         xi_lin = [0.5, 1.5, 2.5, 3.5, 4.5]
 
-        result = cubic_interp(x_lin, y_lin, xi_lin; bc=CubicFit())
+        result = cubic_interp(x_lin, y_lin, xi_lin; bc = CubicFit())
         expected = f_lin.(xi_lin)
-        @test result ≈ expected rtol=POLYFIT_RTOL atol=POLYFIT_ATOL
+        @test result ≈ expected rtol = POLYFIT_RTOL atol = POLYFIT_ATOL
     end
 
     @testset "Smooth Function (sin)" begin
@@ -575,11 +575,11 @@ end
         y_sin = sin.(x_sin)
         xi_sin = [0.5, 1.0, 2.0, 4.0, 5.5]
 
-        result = cubic_interp(x_sin, y_sin, xi_sin; bc=CubicFit())
+        result = cubic_interp(x_sin, y_sin, xi_sin; bc = CubicFit())
 
         # Should be close to sin (not exact, but reasonable)
         expected = sin.(xi_sin)
-        @test result ≈ expected rtol=1e-4  # Looser tolerance for non-polynomial
+        @test result ≈ expected rtol = 1.0e-4  # Looser tolerance for non-polynomial
     end
 
 end
@@ -592,7 +592,7 @@ end
         y_m1 = f_mixed1.(x_m1)
 
         bc = BCPair(CubicFit(), Deriv2(0.0))
-        result = cubic_interp(x_m1, y_m1, 0.5; bc=bc)
+        result = cubic_interp(x_m1, y_m1, 0.5; bc = bc)
         @test isfinite(result)
 
         # Compare with known approximate value
@@ -606,9 +606,9 @@ end
         y_m2 = f_mixed2.(x_m2)
 
         bc = BCPair(Deriv1(0.0), CubicFit())  # Exact left, estimated right
-        result = cubic_interp(x_m2, y_m2, [0.5, 1.0, 1.5]; bc=bc)
+        result = cubic_interp(x_m2, y_m2, [0.5, 1.0, 1.5]; bc = bc)
         expected = f_mixed2.([0.5, 1.0, 1.5])
-        @test result ≈ expected rtol=1e-10
+        @test result ≈ expected rtol = 1.0e-10
     end
 
     @testset "CubicFit Left, Deriv1(exact) Right" begin
@@ -618,9 +618,9 @@ end
         y_m3 = f_mixed3.(x_m3)
 
         bc = BCPair(CubicFit(), Deriv1(4.0))  # Estimated left, exact right
-        result = cubic_interp(x_m3, y_m3, [0.5, 1.0, 1.5]; bc=bc)
+        result = cubic_interp(x_m3, y_m3, [0.5, 1.0, 1.5]; bc = bc)
         expected = f_mixed3.([0.5, 1.0, 1.5])
-        @test result ≈ expected rtol=1e-10
+        @test result ≈ expected rtol = 1.0e-10
     end
 
     @testset "CubicFit Left, Deriv3(exact) Right" begin
@@ -630,8 +630,8 @@ end
         y_m4 = f_mixed4.(x_m4)
 
         bc = BCPair(CubicFit(), Deriv3(6.0))
-        result = cubic_interp(x_m4, y_m4, 0.5; bc=bc)
-        @test abs(result - f_mixed4(0.5)) < 1e-10
+        result = cubic_interp(x_m4, y_m4, 0.5; bc = bc)
+        @test abs(result - f_mixed4(0.5)) < 1.0e-10
     end
 
 end
@@ -643,14 +643,14 @@ end
         x_short = range(0.0, 1.0, 3)  # Only 3 points
         y_short = sin.(x_short)
 
-        @test_throws ArgumentError cubic_interp(x_short, y_short, 0.5; bc=CubicFit())
+        @test_throws ArgumentError cubic_interp(x_short, y_short, 0.5; bc = CubicFit())
     end
 
     @testset "Exactly 4 Points Should Work" begin
         x = range(0.0, 1.0, 4)  # Minimum: 4 points
         y = sin.(x)
 
-        result = cubic_interp(x, y, 0.5; bc=CubicFit())
+        result = cubic_interp(x, y, 0.5; bc = CubicFit())
         @test isfinite(result)
     end
 
@@ -661,14 +661,14 @@ end
     @testset "Cache Creation with CubicFit" begin
         # Use Range directly (not collect) - CubicFit requires uniform grid
         x = range(0.0, 1.0, 21)
-        cache = CubicSplineCache(x; bc=CubicFit())
+        cache = CubicSplineCache(x; bc = CubicFit())
         @test cache isa CubicSplineCache
     end
 
     @testset "Cache Reuse for Multiple y Vectors" begin
         # Use Range directly (not collect) - CubicFit requires uniform grid
         x = range(0.0, 2.0, 21)
-        cache = CubicSplineCache(x; bc=CubicFit())
+        cache = CubicSplineCache(x; bc = CubicFit())
 
         y1 = sin.(π .* collect(x))
         y2 = cos.(π .* collect(x))
@@ -685,7 +685,7 @@ end
         # Use Range directly (not collect) - CubicFit requires uniform grid
         x = range(0.0, 1.0, 21)
         y = sin.(π .* collect(x))
-        cache = CubicSplineCache(x; bc=CubicFit())
+        cache = CubicSplineCache(x; bc = CubicFit())
 
         xi = [0.1, 0.3, 0.5, 0.7, 0.9]
         output = zeros(5)
@@ -702,7 +702,7 @@ end
         x = range(0.0, 1.0, 21)
         y = sin.(π .* x)
 
-        itp = cubic_interp(x, y; bc=CubicFit())
+        itp = cubic_interp(x, y; bc = CubicFit())
         @test itp isa CubicInterpolant
     end
 
@@ -710,7 +710,7 @@ end
         x = range(0.0, 2.0, 21)
         y = sin.(π .* x)
 
-        itp = cubic_interp(x, y; bc=CubicFit())
+        itp = cubic_interp(x, y; bc = CubicFit())
 
         @test isfinite(itp(0.5))
         @test isfinite(itp(1.0))
@@ -721,7 +721,7 @@ end
         x = range(0.0, 1.0, 21)
         y = sin.(π .* x)
 
-        itp = cubic_interp(x, y; bc=CubicFit())
+        itp = cubic_interp(x, y; bc = CubicFit())
         xi = [0.2, 0.4, 0.6, 0.8]
 
         results = itp.(xi)
@@ -735,9 +735,9 @@ end
 
     @testset "Multiple Series" begin
         x = range(0.0, 1.0, 21)
-        Y = [sin.(π .* x) cos.(π .* x) x.^2]  # 3 series
+        Y = [sin.(π .* x) cos.(π .* x) x .^ 2]  # 3 series
 
-        itp = cubic_interp(x, Series(Y); bc=CubicFit())
+        itp = cubic_interp(x, Series(Y); bc = CubicFit())
         @test itp isa CubicSeriesInterpolant
 
         result = itp(0.5)
@@ -753,7 +753,7 @@ end
         x = range(0.0f0, 1.0f0, 21)
         y = Float32.(sin.(Float64.(x) .* π))
 
-        result = cubic_interp(x, y, 0.5f0; bc=CubicFit())
+        result = cubic_interp(x, y, 0.5f0; bc = CubicFit())
         @test result isa Float32
         @test isfinite(result)
     end
@@ -761,7 +761,7 @@ end
     @testset "Float32 Cache" begin
         # Use Range directly (not collect) - CubicFit requires uniform grid
         x = range(0.0f0, 1.0f0, 21)
-        cache = CubicSplineCache(x; bc=CubicFit())
+        cache = CubicSplineCache(x; bc = CubicFit())
 
         @test eltype(cache.x) == Float32
     end
@@ -787,12 +787,12 @@ end
         # Left endpoint: f'(0) = -2
         fvals_left = (y[1], y[2], y[3])
         d_left = FastInterpolations._compute_deriv1(PolyFit{2}(), LeftSide(), fvals_left, inv_h)
-        @test d_left ≈ df_quad(x[1]) rtol=1e-12
+        @test d_left ≈ df_quad(x[1]) rtol = 1.0e-12
 
         # Right endpoint: f'(2) = 2
-        fvals_right = (y[end-2], y[end-1], y[end])
+        fvals_right = (y[end - 2], y[end - 1], y[end])
         d_right = FastInterpolations._compute_deriv1(PolyFit{2}(), RightSide(), fvals_right, inv_h)
-        @test d_right ≈ df_quad(x[end]) rtol=1e-12
+        @test d_right ≈ df_quad(x[end]) rtol = 1.0e-12
     end
 
     @testset "Uniform Grid - Linear Function (Exact)" begin
@@ -805,12 +805,12 @@ end
         inv_h = inv(step(x))
 
         fvals_left = (y[1], y[2], y[3])
-        fvals_right = (y[end-2], y[end-1], y[end])
+        fvals_right = (y[end - 2], y[end - 1], y[end])
         d_left = FastInterpolations._compute_deriv1(PolyFit{2}(), LeftSide(), fvals_left, inv_h)
         d_right = FastInterpolations._compute_deriv1(PolyFit{2}(), RightSide(), fvals_right, inv_h)
 
-        @test d_left ≈ df_linear rtol=1e-12
-        @test d_right ≈ df_linear rtol=1e-12
+        @test d_left ≈ df_linear rtol = 1.0e-12
+        @test d_right ≈ df_linear rtol = 1.0e-12
     end
 
     @testset "Non-Uniform Grid - Quadratic Reproduction" begin
@@ -826,14 +826,14 @@ end
         f_left = (y[1], y[2], y[3])
         coeffs_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), LeftSide(), x_left)
         d_left = FastInterpolations._weighted_sum(coeffs_left, f_left)
-        @test d_left ≈ df_quad(x[1]) rtol=1e-12
+        @test d_left ≈ df_quad(x[1]) rtol = 1.0e-12
 
         # Right endpoint via coefficient kernels
-        x_right = (x[end-2], x[end-1], x[end])
-        f_right = (y[end-2], y[end-1], y[end])
+        x_right = (x[end - 2], x[end - 1], x[end])
+        f_right = (y[end - 2], y[end - 1], y[end])
         coeffs_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{2}(), RightSide(), x_right)
         d_right = FastInterpolations._weighted_sum(coeffs_right, f_right)
-        @test d_right ≈ df_quad(x[end]) rtol=1e-12
+        @test d_right ≈ df_quad(x[end]) rtol = 1.0e-12
     end
 
     @testset "Unified API - PolyFit{2} Dispatch" begin
@@ -847,8 +847,8 @@ end
         d_left_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, LeftSide(), PolyFit{2}())
         d_right_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, RightSide(), PolyFit{2}())
 
-        @test d_left_range ≈ df_quad(x_range[1]) rtol=1e-12
-        @test d_right_range ≈ df_quad(x_range[end]) rtol=1e-12
+        @test d_left_range ≈ df_quad(x_range[1]) rtol = 1.0e-12
+        @test d_right_range ≈ df_quad(x_range[end]) rtol = 1.0e-12
 
         # Non-uniform grid (Vector)
         x_vec = [0.0, 0.3, 0.8, 1.5, 2.0]
@@ -857,8 +857,8 @@ end
         d_left_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, LeftSide(), PolyFit{2}())
         d_right_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, RightSide(), PolyFit{2}())
 
-        @test d_left_vec ≈ df_quad(x_vec[1]) rtol=1e-12
-        @test d_right_vec ≈ df_quad(x_vec[end]) rtol=1e-12
+        @test d_left_vec ≈ df_quad(x_vec[1]) rtol = 1.0e-12
+        @test d_right_vec ≈ df_quad(x_vec[end]) rtol = 1.0e-12
     end
 
     @testset "Unified API - PolyFit{3} Dispatch (4-arg)" begin
@@ -872,8 +872,8 @@ end
         d_left = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, LeftSide(), PolyFit{3}())
         d_right = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, RightSide(), PolyFit{3}())
 
-        @test d_left ≈ df_cubic(x_range[1]) rtol=1e-10
-        @test d_right ≈ df_cubic(x_range[end]) rtol=1e-10
+        @test d_left ≈ df_cubic(x_range[1]) rtol = 1.0e-10
+        @test d_right ≈ df_cubic(x_range[end]) rtol = 1.0e-10
     end
 
     @testset "PolyFit{2} vs PolyFit{3} Accuracy Comparison" begin
@@ -890,7 +890,7 @@ end
         exact = df_cubic(x[1])  # = 0
 
         # PolyFit{3} should be nearly exact for cubic
-        @test abs(d3_left - exact) < 1e-12
+        @test abs(d3_left - exact) < 1.0e-12
 
         # PolyFit{2} will have O(h²) error (not exact for cubic)
         # For this test, we just verify it gives a finite result
@@ -934,12 +934,12 @@ end
         # Left endpoint: f'(0) = 3
         fvals_left = (y[1], y[2])
         d_left = FastInterpolations._compute_deriv1(PolyFit{1}(), LeftSide(), fvals_left, inv_h)
-        @test d_left ≈ df_linear rtol=1e-14
+        @test d_left ≈ df_linear rtol = 1.0e-14
 
         # Right endpoint: f'(2) = 3
-        fvals_right = (y[end-1], y[end])
+        fvals_right = (y[end - 1], y[end])
         d_right = FastInterpolations._compute_deriv1(PolyFit{1}(), RightSide(), fvals_right, inv_h)
-        @test d_right ≈ df_linear rtol=1e-14
+        @test d_right ≈ df_linear rtol = 1.0e-14
     end
 
     @testset "Uniform Grid - Quadratic Function (O(h) Error)" begin
@@ -957,13 +957,13 @@ end
         fvals_left = (y[1], y[2])
         d_left = FastInterpolations._compute_deriv1(PolyFit{1}(), LeftSide(), fvals_left, inv_h)
         # Forward difference: (f(h) - f(0)) / h = h ≈ 0.1
-        @test abs(d_left - df_quad(x[1])) ≈ h atol=1e-12
+        @test abs(d_left - df_quad(x[1])) ≈ h atol = 1.0e-12
 
         # Right endpoint: exact f'(1) = 2
-        fvals_right = (y[end-1], y[end])
+        fvals_right = (y[end - 1], y[end])
         d_right = FastInterpolations._compute_deriv1(PolyFit{1}(), RightSide(), fvals_right, inv_h)
         # Backward difference: (f(1) - f(1-h)) / h = (1 - (1-h)²) / h = 2 - h
-        @test d_right ≈ df_quad(x[end]) - h atol=1e-12
+        @test d_right ≈ df_quad(x[end]) - h atol = 1.0e-12
     end
 
     @testset "Non-Uniform Grid - Linear Function (Exact)" begin
@@ -980,14 +980,14 @@ end
         f_left = (y[1], y[2])
         coeffs_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), LeftSide(), x_left)
         d_left = FastInterpolations._weighted_sum(coeffs_left, f_left)
-        @test d_left ≈ df_linear rtol=1e-13
+        @test d_left ≈ df_linear rtol = 1.0e-13
 
         # Right endpoint via coefficient kernels
-        x_right = (x[end-1], x[end])
-        f_right = (y[end-1], y[end])
+        x_right = (x[end - 1], x[end])
+        f_right = (y[end - 1], y[end])
         coeffs_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), RightSide(), x_right)
         d_right = FastInterpolations._weighted_sum(coeffs_right, f_right)
-        @test d_right ≈ df_linear rtol=1e-13
+        @test d_right ≈ df_linear rtol = 1.0e-13
     end
 
     @testset "Non-Uniform Grid - Constant Function" begin
@@ -999,13 +999,13 @@ end
         f_left = (y[1], y[2])
         coeffs_left = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), LeftSide(), x_left)
         d_left = FastInterpolations._weighted_sum(coeffs_left, f_left)
-        @test d_left ≈ 0.0 atol=1e-14
+        @test d_left ≈ 0.0 atol = 1.0e-14
 
-        x_right = (x[end-1], x[end])
-        f_right = (y[end-1], y[end])
+        x_right = (x[end - 1], x[end])
+        f_right = (y[end - 1], y[end])
         coeffs_right = FastInterpolations._compute_deriv1_coeffs(PolyFit{1}(), RightSide(), x_right)
         d_right = FastInterpolations._weighted_sum(coeffs_right, f_right)
-        @test d_right ≈ 0.0 atol=1e-14
+        @test d_right ≈ 0.0 atol = 1.0e-14
     end
 
     @testset "Unified API - PolyFit{1} Dispatch" begin
@@ -1019,8 +1019,8 @@ end
         d_left_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, LeftSide(), PolyFit{1}())
         d_right_range = FastInterpolations._estimate_endpoint_derivative(x_range, y_range, RightSide(), PolyFit{1}())
 
-        @test d_left_range ≈ df_linear rtol=1e-14
-        @test d_right_range ≈ df_linear rtol=1e-14
+        @test d_left_range ≈ df_linear rtol = 1.0e-14
+        @test d_right_range ≈ df_linear rtol = 1.0e-14
 
         # Non-uniform grid (Vector)
         x_vec = [0.0, 0.3, 0.8, 1.5, 2.0]
@@ -1029,8 +1029,8 @@ end
         d_left_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, LeftSide(), PolyFit{1}())
         d_right_vec = FastInterpolations._estimate_endpoint_derivative(x_vec, y_vec, RightSide(), PolyFit{1}())
 
-        @test d_left_vec ≈ df_linear rtol=1e-13
-        @test d_right_vec ≈ df_linear rtol=1e-13
+        @test d_left_vec ≈ df_linear rtol = 1.0e-13
+        @test d_right_vec ≈ df_linear rtol = 1.0e-13
     end
 
     @testset "PolyFit{1} vs PolyFit{2} vs PolyFit{3} Accuracy" begin
@@ -1049,11 +1049,11 @@ end
         exact = df_quad(x[1])  # = 0
 
         # PolyFit{2} and PolyFit{3} should be exact for quadratic
-        @test abs(d2_left - exact) < 1e-12
-        @test abs(d3_left - exact) < 1e-12
+        @test abs(d2_left - exact) < 1.0e-12
+        @test abs(d3_left - exact) < 1.0e-12
 
         # PolyFit{1} has O(h) error
-        @test abs(d1_left - exact) ≈ h atol=1e-12
+        @test abs(d1_left - exact) ≈ h atol = 1.0e-12
     end
 
     @testset "Float32 Support" begin
@@ -1064,12 +1064,12 @@ end
         fvals = (y[1], y[2])
         d_left = FastInterpolations._compute_deriv1(PolyFit{1}(), LeftSide(), fvals, inv_h)
         @test d_left isa Float32
-        @test d_left ≈ 3.0f0 rtol=1e-6
+        @test d_left ≈ 3.0f0 rtol = 1.0e-6
 
         # Unified API
         d_api = FastInterpolations._estimate_endpoint_derivative(x, y, LeftSide(), PolyFit{1}())
         @test d_api isa Float32
-        @test d_api ≈ 3.0f0 rtol=1e-6
+        @test d_api ≈ 3.0f0 rtol = 1.0e-6
     end
 
 end
@@ -1092,12 +1092,12 @@ end
         xi = [0.25, 0.5, 1.0, 1.5, 1.75]
 
         # QuadraticFit should work with cubic_interp
-        result = cubic_interp(x, y, xi; bc=QuadraticFit())
-        @test result ≈ f_quad.(xi) rtol=1e-10
+        result = cubic_interp(x, y, xi; bc = QuadraticFit())
+        @test result ≈ f_quad.(xi) rtol = 1.0e-10
 
         # Test with interpolant form
-        itp = cubic_interp(x, y; bc=QuadraticFit())
-        @test itp.(xi) ≈ f_quad.(xi) rtol=1e-10
+        itp = cubic_interp(x, y; bc = QuadraticFit())
+        @test itp.(xi) ≈ f_quad.(xi) rtol = 1.0e-10
     end
 
     @testset "Mixed BCs: QuadraticFit + CubicFit" begin
@@ -1108,12 +1108,12 @@ end
         xi = [0.5, 1.0, 1.5]
 
         # QuadraticFit left, CubicFit right
-        result_pc = cubic_interp(x, y, xi; bc=BCPair(QuadraticFit(), CubicFit()))
-        @test result_pc ≈ f_quad.(xi) rtol=1e-10
+        result_pc = cubic_interp(x, y, xi; bc = BCPair(QuadraticFit(), CubicFit()))
+        @test result_pc ≈ f_quad.(xi) rtol = 1.0e-10
 
         # CubicFit left, QuadraticFit right
-        result_cp = cubic_interp(x, y, xi; bc=BCPair(CubicFit(), QuadraticFit()))
-        @test result_cp ≈ f_quad.(xi) rtol=1e-10
+        result_cp = cubic_interp(x, y, xi; bc = BCPair(CubicFit(), QuadraticFit()))
+        @test result_cp ≈ f_quad.(xi) rtol = 1.0e-10
     end
 
     @testset "Mixed BCs: QuadraticFit + Deriv1/Deriv2" begin
@@ -1125,12 +1125,12 @@ end
         xi = [0.5, 1.0, 1.5]
 
         # QuadraticFit left, ZeroCurv (Deriv2(0)) right
-        result_pn = cubic_interp(x, y, xi; bc=BCPair(QuadraticFit(), Deriv2(0.0)))
+        result_pn = cubic_interp(x, y, xi; bc = BCPair(QuadraticFit(), Deriv2(0.0)))
         @test all(isfinite.(result_pn))
 
         # Exact Deriv1 left, QuadraticFit right
-        result_dp = cubic_interp(x, y, xi; bc=BCPair(Deriv1(df_quad(x[1])), QuadraticFit()))
-        @test result_dp ≈ f_quad.(xi) rtol=1e-10
+        result_dp = cubic_interp(x, y, xi; bc = BCPair(Deriv1(df_quad(x[1])), QuadraticFit()))
+        @test result_dp ≈ f_quad.(xi) rtol = 1.0e-10
     end
 
     @testset "QuadraticFit Minimum Points (3)" begin
@@ -1138,7 +1138,7 @@ end
         y3 = [1.0, 2.0, 5.0]
 
         # QuadraticFit needs 3 points - should work
-        @test_nowarn cubic_interp(x3, y3; bc=QuadraticFit())
+        @test_nowarn cubic_interp(x3, y3; bc = QuadraticFit())
     end
 end
 
@@ -1153,12 +1153,12 @@ end
         xi = [0.25, 0.5, 1.0, 1.5, 1.75]
 
         # CubicFit should work with quadratic_interp (Left BC)
-        result_left = quadratic_interp(x, y, xi; bc=Left(CubicFit()))
-        @test result_left ≈ f_quad.(xi) rtol=1e-10
+        result_left = quadratic_interp(x, y, xi; bc = Left(CubicFit()))
+        @test result_left ≈ f_quad.(xi) rtol = 1.0e-10
 
         # CubicFit should work with quadratic_interp (Right BC)
-        result_right = quadratic_interp(x, y, xi; bc=Right(CubicFit()))
-        @test result_right ≈ f_quad.(xi) rtol=1e-10
+        result_right = quadratic_interp(x, y, xi; bc = Right(CubicFit()))
+        @test result_right ≈ f_quad.(xi) rtol = 1.0e-10
     end
 
     @testset "QuadraticFit vs CubicFit on Quadratic" begin
@@ -1169,12 +1169,12 @@ end
         y = collect(f_quad.(x))
         xi = [0.5, 1.0, 1.5]
 
-        result_p2 = quadratic_interp(x, y, xi; bc=Left(QuadraticFit()))
-        result_p3 = quadratic_interp(x, y, xi; bc=Left(CubicFit()))
+        result_p2 = quadratic_interp(x, y, xi; bc = Left(QuadraticFit()))
+        result_p3 = quadratic_interp(x, y, xi; bc = Left(CubicFit()))
 
-        @test result_p2 ≈ f_quad.(xi) rtol=1e-10
-        @test result_p3 ≈ f_quad.(xi) rtol=1e-10
-        @test result_p2 ≈ result_p3 rtol=1e-10
+        @test result_p2 ≈ f_quad.(xi) rtol = 1.0e-10
+        @test result_p3 ≈ f_quad.(xi) rtol = 1.0e-10
+        @test result_p2 ≈ result_p3 rtol = 1.0e-10
     end
 
     @testset "CubicFit with Interpolant Form" begin
@@ -1183,9 +1183,9 @@ end
         x = range(0.0, 2.0, 11)
         y = collect(f_quad.(x))
 
-        itp = quadratic_interp(x, y; bc=Left(CubicFit()))
-        @test itp(0.5) ≈ f_quad(0.5) rtol=1e-10
-        @test itp(1.5) ≈ f_quad(1.5) rtol=1e-10
+        itp = quadratic_interp(x, y; bc = Left(CubicFit()))
+        @test itp(0.5) ≈ f_quad(0.5) rtol = 1.0e-10
+        @test itp(1.5) ≈ f_quad(1.5) rtol = 1.0e-10
     end
 end
 
@@ -1200,12 +1200,12 @@ end
         xi = [0.25, 0.5, 1.0, 1.5, 1.75]
 
         # LinearFit should work with cubic_interp
-        result = cubic_interp(x, y, xi; bc=LinearFit())
-        @test result ≈ f_linear.(xi) rtol=1e-10
+        result = cubic_interp(x, y, xi; bc = LinearFit())
+        @test result ≈ f_linear.(xi) rtol = 1.0e-10
 
         # Test with interpolant form
-        itp = cubic_interp(x, y; bc=LinearFit())
-        @test itp.(xi) ≈ f_linear.(xi) rtol=1e-10
+        itp = cubic_interp(x, y; bc = LinearFit())
+        @test itp.(xi) ≈ f_linear.(xi) rtol = 1.0e-10
     end
 
     @testset "Quadratic Interpolation with LinearFit" begin
@@ -1216,12 +1216,12 @@ end
         xi = [0.25, 0.5, 1.0, 1.5, 1.75]
 
         # LinearFit with Left BC
-        result_left = quadratic_interp(x, y, xi; bc=Left(LinearFit()))
-        @test result_left ≈ f_linear.(xi) rtol=1e-10
+        result_left = quadratic_interp(x, y, xi; bc = Left(LinearFit()))
+        @test result_left ≈ f_linear.(xi) rtol = 1.0e-10
 
         # LinearFit with Right BC
-        result_right = quadratic_interp(x, y, xi; bc=Right(LinearFit()))
-        @test result_right ≈ f_linear.(xi) rtol=1e-10
+        result_right = quadratic_interp(x, y, xi; bc = Right(LinearFit()))
+        @test result_right ≈ f_linear.(xi) rtol = 1.0e-10
     end
 
     @testset "Mixed BCs: LinearFit + Others" begin
@@ -1233,16 +1233,16 @@ end
         xi = [0.5, 1.0, 1.5]
 
         # LinearFit left, QuadraticFit right
-        result_lp = cubic_interp(x, y, xi; bc=BCPair(LinearFit(), QuadraticFit()))
-        @test result_lp ≈ f_linear.(xi) rtol=1e-10
+        result_lp = cubic_interp(x, y, xi; bc = BCPair(LinearFit(), QuadraticFit()))
+        @test result_lp ≈ f_linear.(xi) rtol = 1.0e-10
 
         # CubicFit left, LinearFit right
-        result_cl = cubic_interp(x, y, xi; bc=BCPair(CubicFit(), LinearFit()))
-        @test result_cl ≈ f_linear.(xi) rtol=1e-10
+        result_cl = cubic_interp(x, y, xi; bc = BCPair(CubicFit(), LinearFit()))
+        @test result_cl ≈ f_linear.(xi) rtol = 1.0e-10
 
         # LinearFit left, exact Deriv1 right
-        result_ld = cubic_interp(x, y, xi; bc=BCPair(LinearFit(), Deriv1(df_linear)))
-        @test result_ld ≈ f_linear.(xi) rtol=1e-10
+        result_ld = cubic_interp(x, y, xi; bc = BCPair(LinearFit(), Deriv1(df_linear)))
+        @test result_ld ≈ f_linear.(xi) rtol = 1.0e-10
     end
 
     @testset "LinearFit Minimum Points (2)" begin
@@ -1250,8 +1250,8 @@ end
         y2 = [2.0, 5.0]
 
         # LinearFit needs 2 points - should work
-        @test_nowarn cubic_interp(x2, y2; bc=LinearFit())
-        @test_nowarn quadratic_interp(x2, y2; bc=Left(LinearFit()))
+        @test_nowarn cubic_interp(x2, y2; bc = LinearFit())
+        @test_nowarn quadratic_interp(x2, y2; bc = Left(LinearFit()))
     end
 
 end
@@ -1266,30 +1266,30 @@ end
 
     @testset "Quadratic Interpolation" begin
         # LinearFit (D=1) needs 2 points - should work
-        @test_nowarn quadratic_interp(x2, y2; bc=Left(LinearFit()))
+        @test_nowarn quadratic_interp(x2, y2; bc = Left(LinearFit()))
 
         # QuadraticFit (D=2) needs 3 points - should work
-        @test_nowarn quadratic_interp(x3, y3; bc=Left(QuadraticFit()))
+        @test_nowarn quadratic_interp(x3, y3; bc = Left(QuadraticFit()))
 
         # CubicFit (D=3) needs 4 points
-        @test_throws ArgumentError quadratic_interp(x3, y3; bc=Left(CubicFit()))
-        @test_nowarn quadratic_interp(x4, y4; bc=Left(CubicFit()))
+        @test_throws ArgumentError quadratic_interp(x3, y3; bc = Left(CubicFit()))
+        @test_nowarn quadratic_interp(x4, y4; bc = Left(CubicFit()))
 
         # Right BC validation
-        @test_throws ArgumentError quadratic_interp(x3, y3; bc=Right(CubicFit()))
-        @test_nowarn quadratic_interp(x4, y4; bc=Right(CubicFit()))
+        @test_throws ArgumentError quadratic_interp(x3, y3; bc = Right(CubicFit()))
+        @test_nowarn quadratic_interp(x4, y4; bc = Right(CubicFit()))
     end
 
     @testset "Cubic Interpolation" begin
         # LinearFit needs 2 points - should work
-        @test_nowarn cubic_interp(x2, y2; bc=LinearFit())
+        @test_nowarn cubic_interp(x2, y2; bc = LinearFit())
 
         # QuadraticFit needs 3 points - should work
-        @test_nowarn cubic_interp(x3, y3; bc=QuadraticFit())
+        @test_nowarn cubic_interp(x3, y3; bc = QuadraticFit())
 
         # CubicFit needs 4 points
-        @test_throws ArgumentError cubic_interp(x3, y3; bc=CubicFit())
-        @test_nowarn cubic_interp(x4, y4; bc=CubicFit())
+        @test_throws ArgumentError cubic_interp(x3, y3; bc = CubicFit())
+        @test_nowarn cubic_interp(x4, y4; bc = CubicFit())
     end
 end
 
@@ -1341,7 +1341,7 @@ end
         direct_left = FastInterpolations._estimate_endpoint_derivative(x, y, LeftSide(), PolyFit{2}())
         materialized = FastInterpolations.materialize_bc(QuadraticFit(), x, y, LeftSide())
 
-        @test materialized.val ≈ direct_left rtol=1e-14
+        @test materialized.val ≈ direct_left rtol = 1.0e-14
     end
 end
 
@@ -1360,13 +1360,13 @@ end
             # Should compute Σ i * 1 = 1+2+...+N = N*(N+1)/2
             expected = N * (N + 1) / 2
             result = FastInterpolations._weighted_sum(c, f)
-            @test result ≈ expected rtol=1e-14
+            @test result ≈ expected rtol = 1.0e-14
         end
 
         # Test with alternating signs
         c5 = (-1.0, 2.0, -3.0, 4.0, -5.0)
         f5 = (1.0, 1.0, 1.0, 1.0, 1.0)
-        @test FastInterpolations._weighted_sum(c5, f5) ≈ -1 + 2 - 3 + 4 - 5 rtol=1e-14
+        @test FastInterpolations._weighted_sum(c5, f5) ≈ -1 + 2 - 3 + 4 - 5 rtol = 1.0e-14
     end
 
     @testset "Barycentric Weights Computation" begin
@@ -1378,9 +1378,9 @@ end
         # β_0 = 1/((0-1)(0-2)) = 1/((-1)(-2)) = 0.5
         # β_1 = 1/((1-0)(1-2)) = 1/(1*(-1)) = -1
         # β_2 = 1/((2-0)(2-1)) = 1/(2*1) = 0.5
-        @test β3[1] ≈ 0.5 rtol=1e-14
-        @test β3[2] ≈ -1.0 rtol=1e-14
-        @test β3[3] ≈ 0.5 rtol=1e-14
+        @test β3[1] ≈ 0.5 rtol = 1.0e-14
+        @test β3[2] ≈ -1.0 rtol = 1.0e-14
+        @test β3[3] ≈ 0.5 rtol = 1.0e-14
 
         # Test on 5-point uniform grid [0, 1, 2, 3, 4]
         x5 = (0.0, 1.0, 2.0, 3.0, 4.0)
@@ -1408,7 +1408,7 @@ end
         FastInterpolations._compute_deriv1_coeffs!(c_left, β_left, PolyFit{4}(), LeftSide(), x)
 
         for i in 1:5
-            @test c_left[i] ≈ expected_left[i] rtol=1e-12
+            @test c_left[i] ≈ expected_left[i] rtol = 1.0e-12
         end
 
         # Right endpoint: (-3f_0 + 16f_1 - 36f_2 + 48f_3 - 25f_4) / (12h)
@@ -1419,7 +1419,7 @@ end
         FastInterpolations._compute_deriv1_coeffs!(c_right, β_right, PolyFit{4}(), RightSide(), x)
 
         for i in 1:5
-            @test c_right[i] ≈ expected_right[i] rtol=1e-12
+            @test c_right[i] ≈ expected_right[i] rtol = 1.0e-12
         end
     end
 
@@ -1436,7 +1436,7 @@ end
         FastInterpolations._compute_deriv1_coeffs!(c_left, β_left, PolyFit{5}(), LeftSide(), x)
 
         for i in 1:6
-            @test c_left[i] ≈ expected_left[i] rtol=1e-12
+            @test c_left[i] ≈ expected_left[i] rtol = 1.0e-12
         end
     end
 
@@ -1455,7 +1455,7 @@ end
             deriv_left = FastInterpolations._estimate_endpoint_derivative(
                 xs, ys, LeftSide(), PolyFit{D}()
             )
-            @test deriv_left ≈ 0.0 atol=1e-10
+            @test deriv_left ≈ 0.0 atol = 1.0e-10
 
             # Right endpoint: f'(x_end) = D * x_end^(D-1)
             x_end = xs[end]
@@ -1463,7 +1463,7 @@ end
             deriv_right = FastInterpolations._estimate_endpoint_derivative(
                 xs, ys, RightSide(), PolyFit{D}()
             )
-            @test deriv_right ≈ expected_right rtol=1e-10
+            @test deriv_right ≈ expected_right rtol = 1.0e-10
         end
     end
 
@@ -1471,14 +1471,14 @@ end
         # Non-uniform grid test using Vector instead of Range
         for D in [4, 5]
             # Non-uniform spacing
-            xs = [0.0, 0.1, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0][1:(D+1)]
+            xs = [0.0, 0.1, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0][1:(D + 1)]
             ys = xs .^ D
 
             # f'(0) = 0 for D > 1
             deriv_left = FastInterpolations._estimate_endpoint_derivative(
                 xs, ys, LeftSide(), PolyFit{D}()
             )
-            @test deriv_left ≈ 0.0 atol=1e-10
+            @test deriv_left ≈ 0.0 atol = 1.0e-10
 
             # f'(x_end) = D * x_end^(D-1)
             x_end = xs[end]
@@ -1486,7 +1486,7 @@ end
             deriv_right = FastInterpolations._estimate_endpoint_derivative(
                 xs, ys, RightSide(), PolyFit{D}()
             )
-            @test deriv_right ≈ expected_right rtol=1e-9
+            @test deriv_right ≈ expected_right rtol = 1.0e-9
         end
     end
 
@@ -1496,19 +1496,19 @@ end
         ys = sin.(xs)
 
         # QuarticFit should work (needs 5+ points, we have 11)
-        result_q4 = cubic_interp(xs, ys, 0.5; bc=PolyFit{4}())
+        result_q4 = cubic_interp(xs, ys, 0.5; bc = PolyFit{4}())
         @test isfinite(result_q4)
 
         # QuinticFit should work (needs 6+ points, we have 11)
-        result_q5 = cubic_interp(xs, ys, 0.5; bc=PolyFit{5}())
+        result_q5 = cubic_interp(xs, ys, 0.5; bc = PolyFit{5}())
         @test isfinite(result_q5)
 
         # Using Interpolant constructor
-        itp_q4 = cubic_interp(xs, ys; bc=PolyFit{4}())
-        @test itp_q4(0.5) ≈ result_q4 rtol=1e-14
+        itp_q4 = cubic_interp(xs, ys; bc = PolyFit{4}())
+        @test itp_q4(0.5) ≈ result_q4 rtol = 1.0e-14
 
-        itp_q5 = cubic_interp(xs, ys; bc=PolyFit{5}())
-        @test itp_q5(0.5) ≈ result_q5 rtol=1e-14
+        itp_q5 = cubic_interp(xs, ys; bc = PolyFit{5}())
+        @test itp_q5(0.5) ≈ result_q5 rtol = 1.0e-14
     end
 
     @testset "Regression: D=1,2,3 Unchanged" begin
@@ -1522,21 +1522,21 @@ end
         result_d1_left = FastInterpolations._estimate_endpoint_derivative(
             xs, ys, LeftSide(), PolyFit{1}()
         )
-        @test result_d1_left ≈ expected_d1_left rtol=1e-14
+        @test result_d1_left ≈ expected_d1_left rtol = 1.0e-14
 
         # D=2: (-3f₁ + 4f₂ - f₃) / (2h)
         expected_d2_left = (-3 * ys[1] + 4 * ys[2] - ys[3]) / (2 * 0.1)
         result_d2_left = FastInterpolations._estimate_endpoint_derivative(
             xs, ys, LeftSide(), PolyFit{2}()
         )
-        @test result_d2_left ≈ expected_d2_left rtol=1e-14
+        @test result_d2_left ≈ expected_d2_left rtol = 1.0e-14
 
         # D=3: (-11f₁ + 18f₂ - 9f₃ + 2f₄) / (6h)
         expected_d3_left = (-11 * ys[1] + 18 * ys[2] - 9 * ys[3] + 2 * ys[4]) / (6 * 0.1)
         result_d3_left = FastInterpolations._estimate_endpoint_derivative(
             xs, ys, LeftSide(), PolyFit{3}()
         )
-        @test result_d3_left ≈ expected_d3_left rtol=1e-14
+        @test result_d3_left ≈ expected_d3_left rtol = 1.0e-14
     end
 
     @testset "Barycentric vs Specialized Equivalence (D=1,2,3)" begin
@@ -1568,7 +1568,7 @@ end
 
                 # Compare element-wise (NTuple vs Vector)
                 for i in 1:N
-                    @test c_specialized[i] ≈ c_barycentric[i] rtol=1e-14
+                    @test c_specialized[i] ≈ c_barycentric[i] rtol = 1.0e-14
                 end
             end
         end
@@ -1795,24 +1795,24 @@ end
             result_d4 = FastInterpolations._estimate_endpoint_derivative(
                 xs_large, ys_large, RightSide(), PolyFit{4}()
             )
-            @test result_d4 ≈ 2.0 atol=1e-10  # f'(0) = 0
+            @test result_d4 ≈ 2.0 atol = 1.0e-10  # f'(0) = 0
 
             # D=5 uniform - verify correctness
             result_d5 = FastInterpolations._estimate_endpoint_derivative(
                 xs_large, ys_large, RightSide(), PolyFit{5}()
             )
-            @test result_d5 ≈ 2.0 atol=1e-10
+            @test result_d5 ≈ 2.0 atol = 1.0e-10
 
 
-            function alloc_est(xs, ys, side, pf) 
+            function alloc_est(xs, ys, side, pf)
                 @allocated FastInterpolations._estimate_endpoint_derivative(xs, ys, side, pf)
             end
 
             # Report allocations
-            alloc_d4 = alloc_est( xs_large, ys_large, RightSide(), PolyFit{4}())
-            alloc_d4 = alloc_est( xs_large, ys_large, RightSide(), PolyFit{4}())
-            alloc_d5 = alloc_est( xs_large, ys_large, RightSide(), PolyFit{5}())
-            alloc_d5 = alloc_est( xs_large, ys_large, RightSide(), PolyFit{5}())
+            alloc_d4 = alloc_est(xs_large, ys_large, RightSide(), PolyFit{4}())
+            alloc_d4 = alloc_est(xs_large, ys_large, RightSide(), PolyFit{4}())
+            alloc_d5 = alloc_est(xs_large, ys_large, RightSide(), PolyFit{5}())
+            alloc_d5 = alloc_est(xs_large, ys_large, RightSide(), PolyFit{5}())
 
             @test alloc_d4 <= ALLOC_THRESHOLD
             @test alloc_d5 <= ALLOC_THRESHOLD
@@ -1825,9 +1825,9 @@ end
             result_d4_nu = FastInterpolations._estimate_endpoint_derivative(
                 xs_nonuniform_large, ys_nonuniform_large, RightSide(), PolyFit{4}()
             )
-            @test result_d4_nu ≈ 2.0 atol=1e-10
+            @test result_d4_nu ≈ 2.0 atol = 1.0e-10
 
-            alloc_d4_nu = alloc_est( xs_nonuniform_large, ys_nonuniform_large, RightSide(), PolyFit{4}())
+            alloc_d4_nu = alloc_est(xs_nonuniform_large, ys_nonuniform_large, RightSide(), PolyFit{4}())
             @test alloc_d4_nu <= ALLOC_THRESHOLD
         end
 
@@ -1864,7 +1864,7 @@ end
 
     @testset "Check polyfit requirements" begin
         n = 10
-        
+
         # 1. Valid case: Sufficient points, low degree
         # D=3 requires 4 points, have 10. D <= 6 so no warning.
         @test FastInterpolations._check_polyfit_requirements(3, n) === nothing
@@ -1878,9 +1878,9 @@ end
         # 3. High degree warning (D > 6)
         # Reset global warning flag to ensure we catch the warning
         Threads.atomic_xchg!(FastInterpolations._polyfit_warning_issued, false)
-        
+
         D_high = 7 # > MAX_RECOMMENDED_POLYFIT_DEGREE (6)
-        
+
         @test_logs (:warn, r"numerical noise amplification") begin
             # Should warn exactly once
             FastInterpolations._check_polyfit_requirements(D_high, n)
@@ -1913,20 +1913,20 @@ end
     bc_d3 = Deriv3(1.0)
     # Should passthrough unchanged
     @test FastInterpolations.materialize_bc(bc_d3, x, y, LeftSide()) === bc_d3
-    
+
     # 5. Type promotion helpers
     @test FastInterpolations._promote_pointbc(Deriv1(1), Float64) isa Deriv1{Float64}
     @test FastInterpolations._promote_pointbc(Deriv2(1), Float64) isa Deriv2{Float64}
     @test FastInterpolations._promote_pointbc(Deriv3(1), Float64) isa Deriv3{Float64}
     @test FastInterpolations._promote_pointbc(PolyFit{3}(), Float64) isa PolyFit{3}
-    
+
     # 6. Normalize BC Array (single-series) - explicit code path test
     bcs_single = [Deriv1(0.0)]
     norm_bcs = FastInterpolations._normalize_bc_array(bcs_single, Float64, 1)
     @test norm_bcs isa Vector{<:FastInterpolations.BCPair}
     @test length(norm_bcs) == 1
     @test norm_bcs[1].left isa Deriv1{Float64}
-    
+
     # PeriodicBC in array check (Error path)
     bcs_periodic = [PeriodicBC()]
     @test_throws ArgumentError FastInterpolations._normalize_bc_array(bcs_periodic, Float64, 1)
@@ -2079,26 +2079,26 @@ end
                 xs, ys, LeftSide(), PolyFit{2}()
             )
             @test d2_left isa ComplexF64
-            @test d2_left ≈ f_deriv(xs[1]) rtol=1e-10
+            @test d2_left ≈ f_deriv(xs[1]) rtol = 1.0e-10
 
             d2_right = FastInterpolations._estimate_endpoint_derivative(
                 xs, ys, RightSide(), PolyFit{2}()
             )
             @test d2_right isa ComplexF64
-            @test d2_right ≈ f_deriv(xs[end]) rtol=1e-10
+            @test d2_right ≈ f_deriv(xs[end]) rtol = 1.0e-10
 
             # CubicFit (D=3) - uniform + Complex
             d3_left = FastInterpolations._estimate_endpoint_derivative(
                 xs, ys, LeftSide(), PolyFit{3}()
             )
             @test d3_left isa ComplexF64
-            @test d3_left ≈ f_deriv(xs[1]) rtol=1e-8
+            @test d3_left ≈ f_deriv(xs[1]) rtol = 1.0e-8
 
             d3_right = FastInterpolations._estimate_endpoint_derivative(
                 xs, ys, RightSide(), PolyFit{3}()
             )
             @test d3_right isa ComplexF64
-            @test d3_right ≈ f_deriv(xs[end]) rtol=1e-8
+            @test d3_right ≈ f_deriv(xs[end]) rtol = 1.0e-8
         end
 
         # Non-uniform grid (Vector) + Complex values
@@ -2121,20 +2121,20 @@ end
                 xs, ys, LeftSide(), PolyFit{2}()
             )
             @test d2_left isa ComplexF64
-            @test d2_left ≈ f_deriv(xs[1]) rtol=1e-10
+            @test d2_left ≈ f_deriv(xs[1]) rtol = 1.0e-10
 
             # CubicFit (D=3) - non-uniform + Complex (covers N=4 _weighted_sum)
             d3_left = FastInterpolations._estimate_endpoint_derivative(
                 xs, ys, LeftSide(), PolyFit{3}()
             )
             @test d3_left isa ComplexF64
-            @test d3_left ≈ f_deriv(xs[1]) rtol=1e-8
+            @test d3_left ≈ f_deriv(xs[1]) rtol = 1.0e-8
 
             d3_right = FastInterpolations._estimate_endpoint_derivative(
                 xs, ys, RightSide(), PolyFit{3}()
             )
             @test d3_right isa ComplexF64
-            @test d3_right ≈ f_deriv(xs[end]) rtol=1e-8
+            @test d3_right ≈ f_deriv(xs[end]) rtol = 1.0e-8
 
             # PolyFit{4} - non-uniform + Complex (covers N=5 _weighted_sum generic)
             d4_left = FastInterpolations._estimate_endpoint_derivative(

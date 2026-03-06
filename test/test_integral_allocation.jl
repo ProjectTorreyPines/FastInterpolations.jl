@@ -10,9 +10,9 @@ using FastInterpolations
     # ═══════════════════════════════════════════════════════════════
 
     @testset "linear 1D: zero allocation" begin
-        x = collect(range(0.0, 1.0, length=21))
+        x = collect(range(0.0, 1.0, length = 21))
         y = @. 3x - 1
-        itp = linear_interp(x, y; extrap=NoExtrap())
+        itp = linear_interp(x, y; extrap = NoExtrap())
         a, b = 0.15, 0.85
 
         # Warmup
@@ -28,9 +28,9 @@ using FastInterpolations
     # ═══════════════════════════════════════════════════════════════
 
     @testset "quadratic 1D: zero allocation" begin
-        x = collect(range(0.0, 1.0, length=21))
+        x = collect(range(0.0, 1.0, length = 21))
         y = @. 2x^2 - x + 4
-        itp = quadratic_interp(x, y; extrap=NoExtrap())
+        itp = quadratic_interp(x, y; extrap = NoExtrap())
         a, b = 0.1, 0.9
 
         # Warmup
@@ -46,14 +46,16 @@ using FastInterpolations
     # ═══════════════════════════════════════════════════════════════
 
     @testset "constant 1D: zero allocation" begin
-        x = collect(range(0.0, 1.0, length=21))
+        x = collect(range(0.0, 1.0, length = 21))
         y = collect(1.0:length(x))
         for side in (LeftSide(), RightSide(), NearestSide())
-            itp = constant_interp(x, y; side=side, extrap=NoExtrap())
+            itp = constant_interp(x, y; side = side, extrap = NoExtrap())
             a, b = 0.2, 0.7
 
             # Warmup
-            for _ in 1:3; integrate(itp, a, b); end
+            for _ in 1:3
+                integrate(itp, a, b)
+            end
 
             allocs = @allocated integrate(itp, a, b)
             @test allocs <= ALLOC_THRESHOLD
@@ -65,8 +67,8 @@ using FastInterpolations
     # ═══════════════════════════════════════════════════════════════
 
     @testset "cubic 2D: zero allocation (no hint)" begin
-        xg = collect(range(0.0, 1.0, length=11))
-        yg = collect(range(0.0, 1.0, length=11))
+        xg = collect(range(0.0, 1.0, length = 11))
+        yg = collect(range(0.0, 1.0, length = 11))
         data = [sin(x + y) for x in xg, y in yg]
         itp = cubic_interp((xg, yg), data)
         lo = (0.2, 0.2)
@@ -85,9 +87,9 @@ using FastInterpolations
     # ═══════════════════════════════════════════════════════════════
 
     @testset "cubic 1D: zero allocation (baseline)" begin
-        x = collect(range(0.0, 1.0, length=21))
+        x = collect(range(0.0, 1.0, length = 21))
         y = sin.(2π .* x)
-        itp = cubic_interp(x, y; extrap=NoExtrap())
+        itp = cubic_interp(x, y; extrap = NoExtrap())
         a, b = 0.15, 0.85
 
         # Warmup
@@ -103,12 +105,12 @@ using FastInterpolations
     # ═══════════════════════════════════════════════════════════════
 
     @testset "FillExtrap fill value: integrate zero allocation" begin
-        x = collect(range(0.0, 1.0, length=21))
+        x = collect(range(0.0, 1.0, length = 21))
         y = @. 3x - 1
 
-        itp_clamp = linear_interp(x, y; extrap=ClampExtrap())
-        itp_zero = linear_interp(x, y; extrap=FillExtrap(0.0))
-        itp_42 = linear_interp(x, y; extrap=FillExtrap(42.0))
+        itp_clamp = linear_interp(x, y; extrap = ClampExtrap())
+        itp_zero = linear_interp(x, y; extrap = FillExtrap(0.0))
+        itp_42 = linear_interp(x, y; extrap = FillExtrap(42.0))
 
         function integrate_fill(itp, a, b)
             integrate(itp, a, b)

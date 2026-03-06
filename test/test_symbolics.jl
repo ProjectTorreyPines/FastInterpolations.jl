@@ -13,18 +13,18 @@ using Symbolics
         @variables t
 
         for (name, itp) in [
-            ("linear", linear_interp(x, y; extrap=ExtendExtrap())),
-            ("cubic", cubic_interp(x, y; extrap=ExtendExtrap())),
-            ("constant", constant_interp(x, y; extrap=ExtendExtrap())),
-            ("quadratic", quadratic_interp(x, y; extrap=ExtendExtrap())),
-        ]
+                ("linear", linear_interp(x, y; extrap = ExtendExtrap())),
+                ("cubic", cubic_interp(x, y; extrap = ExtendExtrap())),
+                ("constant", constant_interp(x, y; extrap = ExtendExtrap())),
+                ("quadratic", quadratic_interp(x, y; extrap = ExtendExtrap())),
+            ]
             @testset "$name" begin
                 # Symbolic expression creation
                 expr = itp(t)
                 @test expr isa Num
 
                 # Compile to function and evaluate: symbolic roundtrip matches numeric
-                f = build_function(expr, t; expression=Val{false})
+                f = build_function(expr, t; expression = Val{false})
                 t_val = 0.3
                 numeric_val = itp(t_val)
                 compiled_val = f(t_val)
@@ -44,7 +44,7 @@ using Symbolics
         D = Differential(t)
 
         # Cubic spline (supports up to 3rd derivative)
-        itp = cubic_interp(x, y; extrap=ExtendExtrap())
+        itp = cubic_interp(x, y; extrap = ExtendExtrap())
 
         # First derivative: expand D(itp(t))
         expr = itp(t)
@@ -52,9 +52,9 @@ using Symbolics
         @test dexpr isa Num
 
         # Compile derivative and compare to numeric
-        df = build_function(dexpr, t; expression=Val{false})
+        df = build_function(dexpr, t; expression = Val{false})
         t_val = 0.3
-        numeric_deriv = itp(t_val; deriv=DerivOp(1))
+        numeric_deriv = itp(t_val; deriv = DerivOp(1))
         compiled_deriv = df(t_val)
         @test compiled_deriv ≈ numeric_deriv
 
@@ -62,8 +62,8 @@ using Symbolics
         d2expr = expand_derivatives(D(D(expr)))
         @test d2expr isa Num
 
-        d2f = build_function(d2expr, t; expression=Val{false})
-        numeric_d2 = itp(t_val; deriv=DerivOp(2))
+        d2f = build_function(d2expr, t; expression = Val{false})
+        numeric_d2 = itp(t_val; deriv = DerivOp(2))
         compiled_d2 = d2f(t_val)
         @test compiled_d2 ≈ numeric_d2
     end
@@ -77,14 +77,14 @@ using Symbolics
         data = [sin(xi) * cos(yj) for xi in xg, yj in yg]
 
         @variables u v
-        itp = cubic_interp((xg, yg), data; extrap=ExtendExtrap())
+        itp = cubic_interp((xg, yg), data; extrap = ExtendExtrap())
 
         # Symbolic expression via tuple of Num
         expr = itp((u, v))
         @test expr isa Num
 
         # Compile and evaluate
-        f = build_function(expr, [u, v]; expression=Val{false})
+        f = build_function(expr, [u, v]; expression = Val{false})
         u_val, v_val = 0.3, 0.7
         numeric_val = itp((u_val, v_val))
         compiled_val = f([u_val, v_val])
@@ -102,7 +102,7 @@ using Symbolics
         @variables u v
         Du = Differential(u)
         Dv = Differential(v)
-        itp = cubic_interp((xg, yg), data; extrap=ExtendExtrap())
+        itp = cubic_interp((xg, yg), data; extrap = ExtendExtrap())
 
         # Create symbolic expression
         expr = itp((u, v))
@@ -111,9 +111,9 @@ using Symbolics
         du_expr = expand_derivatives(Du(expr))
         @test du_expr isa Num
 
-        du_f = build_function(du_expr, [u, v]; expression=Val{false})
+        du_f = build_function(du_expr, [u, v]; expression = Val{false})
         u_val, v_val = 0.3, 0.7
-        numeric_du = itp((u_val, v_val); deriv=DerivOp(1, 0))
+        numeric_du = itp((u_val, v_val); deriv = DerivOp(1, 0))
         compiled_du = du_f([u_val, v_val])
         @test compiled_du ≈ numeric_du
 
@@ -121,8 +121,8 @@ using Symbolics
         dv_expr = expand_derivatives(Dv(expr))
         @test dv_expr isa Num
 
-        dv_f = build_function(dv_expr, [u, v]; expression=Val{false})
-        numeric_dv = itp((u_val, v_val); deriv=DerivOp(0, 1))
+        dv_f = build_function(dv_expr, [u, v]; expression = Val{false})
+        numeric_dv = itp((u_val, v_val); deriv = DerivOp(0, 1))
         compiled_dv = dv_f([u_val, v_val])
         @test compiled_dv ≈ numeric_dv
     end

@@ -57,14 +57,14 @@ When `xq` is a `ForwardDiff.Dual`, the anchor preserves the Dual type
 in both `xq` and weight fields, enabling automatic differentiation through
 series interpolant evaluation.
 """
-struct _CubicAnchoredQuery{Tg<:AbstractFloat, Tq<:Real}
+struct _CubicAnchoredQuery{Tg <: AbstractFloat, Tq <: Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), Float or Dual
     side::UInt8                # 0=inside, 1=below_min, 2=above_max
-    w0::NTuple{4,Tq}           # (wyL, wyR, wzL, wzR) for value
-    w1::NTuple{4,Tq}           # (wyL, wyR, wzL, wzR) for first deriv
-    w2::NTuple{2,Tq}           # (wzL, wzR) for second deriv - optimized
-    w3::NTuple{2,Tq}           # (wzL, wzR) for third deriv - optimized
+    w0::NTuple{4, Tq}           # (wyL, wyR, wzL, wzR) for value
+    w1::NTuple{4, Tq}           # (wyL, wyR, wzL, wzR) for first deriv
+    w2::NTuple{2, Tq}           # (wzL, wzR) for second deriv - optimized
+    w3::NTuple{2, Tq}           # (wzL, wzR) for third deriv - optimized
 end
 
 # ========================================
@@ -103,11 +103,11 @@ Weights satisfy: S'(xq) = wyL*yL + wyR*yR + wzL*zL + wzR*zR
 @inline function _compute_anchor_weights(::EvalDeriv1, h::Tg, inv_h::Tg, dL::Tq, dR::Tq) where {Tg, Tq}
     # Promote to Tq for AD support (zero-overhead when Tg === Tq)
     wyL = oftype(dL, -inv_h)
-    wyR = oftype(dL,  inv_h)
+    wyR = oftype(dL, inv_h)
     inv_2h = inv_h * inv(Tg(2))
     h_div6 = h * inv(Tg(6))
     wzL = -dR^2 * inv_2h + h_div6
-    wzR =  dL^2 * inv_2h - h_div6
+    wzR = dL^2 * inv_2h - h_div6
     return (wyL, wyR, wzL, wzR)
 end
 
@@ -147,7 +147,7 @@ don't carry AD derivative information.
 @inline function _compute_anchor_weights(::EvalDeriv3, ::Tg, inv_h::Tg, dL::Tq, ::Tq) where {Tg, Tq}
     # Promote to Tq for AD support (zero-overhead when Tg === Tq)
     wzL = oftype(dL, -inv_h)
-    wzR = oftype(dL,  inv_h)
+    wzR = oftype(dL, inv_h)
     return (wzL, wzR)
 end
 
@@ -191,12 +191,12 @@ When `xq` is a ForwardDiff.Dual, the anchor preserves the Dual type
 in `xq` and weight fields, enabling automatic differentiation.
 """
 @inline function _anchor_query(
-    x::AbstractVector{Tg},
-    xq::Tq,
-    ::Val{:cubic},
-    wrap::Bool=false,
-    searcher::P=DEFAULT_SEARCHER
-) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
+        x::AbstractVector{Tg},
+        xq::Tq,
+        ::Val{:cubic},
+        wrap::Bool = false,
+        searcher::P = DEFAULT_SEARCHER
+    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
     # Promote query for anchor: preserve Dual, promote Int/Rational to grid type
     # Cubic anchors store weight tuples with complex arithmetic that requires Float
     xq_promoted = _promote_for_anchor(xq, Tg)
@@ -235,14 +235,14 @@ For vector queries, `xq` elements are promoted to grid type `T` for pool compati
 AD is not supported for vector queries (use scalar queries for ForwardDiff).
 """
 function _anchor_query(
-    x::AbstractVector{T},
-    xq::AbstractVector{S},
-    ::Val{:cubic},
-    wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinarySearch())
-) where {T<:AbstractFloat, S<:Real, P<:Searcher}
+        x::AbstractVector{T},
+        xq::AbstractVector{S},
+        ::Val{:cubic},
+        wrap::Bool = false,
+        searcher::P = _to_searcher(LinearBinarySearch())
+    ) where {T <: AbstractFloat, S <: Real, P <: Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
-    output = Vector{_CubicAnchoredQuery{T,T}}(undef, length(xq))
+    output = Vector{_CubicAnchoredQuery{T, T}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
         output[k] = _anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
@@ -275,13 +275,13 @@ _fill_anchors!(buffer, x, xq, Val(:cubic))
 ```
 """
 @inline function _fill_anchors!(
-    buffer::AbstractVector{_CubicAnchoredQuery{Tg,Tq}},
-    x::AbstractVector{Tg},
-    xq::AbstractVector{Tq},
-    ::Val{:cubic},
-    wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinarySearch())
-) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
+        buffer::AbstractVector{_CubicAnchoredQuery{Tg, Tq}},
+        x::AbstractVector{Tg},
+        xq::AbstractVector{Tq},
+        ::Val{:cubic},
+        wrap::Bool = false,
+        searcher::P = _to_searcher(LinearBinarySearch())
+    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
@@ -309,11 +309,11 @@ in `xq` and weight fields. The interval search uses `_extract_primal(xq)` for co
 while preserving the full Dual value for weight computation.
 """
 @inline function _anchor_query_impl(
-    x::AbstractVector{Tg},
-    xq::Tq,
-    wrap::Bool,
-    policy::P=DEFAULT_SEARCHER
-) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
+        x::AbstractVector{Tg},
+        xq::Tq,
+        wrap::Bool,
+        policy::P = DEFAULT_SEARCHER
+    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
     x_min, x_max = first(x), last(x)
 
     # Use primal value for comparisons (supports ForwardDiff.Dual)
@@ -344,7 +344,7 @@ while preserving the full Dual value for weight computation.
     elseif xq_primal > x_max
         # Above domain: use last interval
         n = length(x)
-        @inbounds (n - 1, x[n-1], x[n])
+        @inbounds (n - 1, x[n - 1], x[n])
     else
         # Inside domain: use policy-based interval search
         search_interval(policy, x, xq_primal)
@@ -365,5 +365,5 @@ while preserving the full Dual value for weight computation.
     w2 = _compute_anchor_weights(EvalDeriv2(), h, inv_h, dL, dR)
     w3 = _compute_anchor_weights(EvalDeriv3(), h, inv_h, dL, dR)
 
-    return _CubicAnchoredQuery{Tg,Tq}(idx, xq, side, w0, w1, w2, w3)
+    return _CubicAnchoredQuery{Tg, Tq}(idx, xq, side, w0, w1, w2, w3)
 end

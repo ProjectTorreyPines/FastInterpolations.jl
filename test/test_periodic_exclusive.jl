@@ -23,25 +23,25 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         end
 
         @testset "Exclusive with explicit period" begin
-            pbc = PeriodicBC(endpoint=:exclusive, period=2π)
+            pbc = PeriodicBC(endpoint = :exclusive, period = 2π)
             @test pbc isa PeriodicBC{:exclusive, Float64}
             @test endpoint(pbc) === :exclusive
             @test pbc.period ≈ 2π
             @test _is_periodic_bc(pbc)
 
             # Float32 promotion
-            pbc32 = PeriodicBC(endpoint=:exclusive, period=1f0)
+            pbc32 = PeriodicBC(endpoint = :exclusive, period = 1.0f0)
             @test pbc32 isa PeriodicBC{:exclusive, Float32}
-            @test pbc32.period === 1f0
+            @test pbc32.period === 1.0f0
 
             # Integer promotion to Float64
-            pbc_int = PeriodicBC(endpoint=:exclusive, period=6)
+            pbc_int = PeriodicBC(endpoint = :exclusive, period = 6)
             @test pbc_int isa PeriodicBC{:exclusive, Float64}
             @test pbc_int.period === 6.0
         end
 
         @testset "Exclusive without period (infer from Range)" begin
-            pbc = PeriodicBC(endpoint=:exclusive)
+            pbc = PeriodicBC(endpoint = :exclusive)
             @test pbc isa PeriodicBC{:exclusive, Nothing}
             @test endpoint(pbc) === :exclusive
             @test pbc.period === nothing
@@ -49,16 +49,16 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
 
         @testset "Construction errors" begin
             # Invalid endpoint symbol
-            @test_throws ArgumentError PeriodicBC(endpoint=:bad)
-            @test_throws ArgumentError PeriodicBC(endpoint=:open)
+            @test_throws ArgumentError PeriodicBC(endpoint = :bad)
+            @test_throws ArgumentError PeriodicBC(endpoint = :open)
 
             # Inclusive with period → error
-            @test_throws ArgumentError PeriodicBC(endpoint=:inclusive, period=1.0)
-            @test_throws ArgumentError PeriodicBC(period=1.0)  # default is :inclusive
+            @test_throws ArgumentError PeriodicBC(endpoint = :inclusive, period = 1.0)
+            @test_throws ArgumentError PeriodicBC(period = 1.0)  # default is :inclusive
 
             # Exclusive with non-positive period
-            @test_throws ArgumentError PeriodicBC(endpoint=:exclusive, period=0.0)
-            @test_throws ArgumentError PeriodicBC(endpoint=:exclusive, period=-1.0)
+            @test_throws ArgumentError PeriodicBC(endpoint = :exclusive, period = 0.0)
+            @test_throws ArgumentError PeriodicBC(endpoint = :exclusive, period = -1.0)
         end
     end
 
@@ -67,32 +67,32 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
     # ========================================
     @testset "Period Resolution" begin
         @testset "Range grid auto-inference" begin
-            x = range(0.0, step=0.1, length=10)
-            bc = PeriodicBC(endpoint=:exclusive)
+            x = range(0.0, step = 0.1, length = 10)
+            bc = PeriodicBC(endpoint = :exclusive)
             period = _resolve_exclusive_period(x, bc)
             @test period ≈ 1.0  # step(x) * length(x) = 0.1 * 10
         end
 
         @testset "Range grid with matching explicit period" begin
-            x = range(0.0, step=0.1, length=10)
-            bc = PeriodicBC(endpoint=:exclusive, period=1.0)
+            x = range(0.0, step = 0.1, length = 10)
+            bc = PeriodicBC(endpoint = :exclusive, period = 1.0)
             period = _resolve_exclusive_period(x, bc)
             @test period ≈ 1.0
         end
 
         @testset "Range grid with conflicting period → error" begin
-            x = range(0.0, step=0.1, length=10)
-            bc = PeriodicBC(endpoint=:exclusive, period=2.0)  # doesn't match 0.1*10=1.0
+            x = range(0.0, step = 0.1, length = 10)
+            bc = PeriodicBC(endpoint = :exclusive, period = 2.0)  # doesn't match 0.1*10=1.0
             @test_throws ArgumentError _resolve_exclusive_period(x, bc)
         end
 
         @testset "Vector grid requires explicit period" begin
             x = [0.0, 0.3, 0.7, 1.5]
-            bc = PeriodicBC(endpoint=:exclusive)
+            bc = PeriodicBC(endpoint = :exclusive)
             @test_throws ArgumentError _resolve_exclusive_period(x, bc)
 
             # With period → OK
-            bc2 = PeriodicBC(endpoint=:exclusive, period=2π)
+            bc2 = PeriodicBC(endpoint = :exclusive, period = 2π)
             @test _resolve_exclusive_period(x, bc2) ≈ 2π
         end
 
@@ -116,9 +116,9 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         end
 
         @testset "Exclusive Range → Range preserved" begin
-            x = range(0.0, step=0.5, length=4)  # [0, 0.5, 1.0, 1.5]
+            x = range(0.0, step = 0.5, length = 4)  # [0, 0.5, 1.0, 1.5]
             y = sin.(x)
-            bc = PeriodicBC(endpoint=:exclusive)
+            bc = PeriodicBC(endpoint = :exclusive)
             x_ext, y_ext = _prepare_periodic(x, y, bc)
             @test x_ext isa AbstractRange
             @test length(x_ext) == 5
@@ -129,7 +129,7 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         @testset "Exclusive Vector" begin
             x = [0.0, 1.0, 3.0, 5.0]
             y = [1.0, 2.0, 3.0, 4.0]
-            bc = PeriodicBC(endpoint=:exclusive, period=2π)
+            bc = PeriodicBC(endpoint = :exclusive, period = 2π)
             x_ext, y_ext = _prepare_periodic(x, y, bc)
             @test length(x_ext) == 5
             @test last(x_ext) ≈ 2π
@@ -140,7 +140,7 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
             x = [0.0, 1.0, 3.0, 5.0]
             y = [1.0, 2.0, 3.0, 4.0]
             # period too small: virtual endpoint at 4.0 which is < x[end]=5.0
-            bc = PeriodicBC(endpoint=:exclusive, period=4.0)
+            bc = PeriodicBC(endpoint = :exclusive, period = 4.0)
             @test_throws ArgumentError _prepare_periodic(x, y, bc)
         end
     end
@@ -152,33 +152,33 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         @testset "Range grid (period inferred)" begin
             N = 64
             dx = 2π / N
-            x_excl = range(0.0, step=dx, length=N)
+            x_excl = range(0.0, step = dx, length = N)
             y_excl = sin.(x_excl)
 
-            x_incl = range(0.0, step=dx, length=N + 1)
+            x_incl = range(0.0, step = dx, length = N + 1)
             y_incl = sin.(x_incl)
             y_incl[end] = y_incl[1]
 
-            itp_excl = cubic_interp(x_excl, y_excl; bc=PeriodicBC(endpoint=:exclusive))
-            itp_incl = cubic_interp(x_incl, y_incl; bc=PeriodicBC())
+            itp_excl = cubic_interp(x_excl, y_excl; bc = PeriodicBC(endpoint = :exclusive))
+            itp_incl = cubic_interp(x_incl, y_incl; bc = PeriodicBC())
 
             # Values should match at multiple query points
             for xq in [0.1, 1.0, π, 2π - 0.01, 3.5]
-                @test itp_excl(xq) ≈ itp_incl(xq) atol=1e-14
+                @test itp_excl(xq) ≈ itp_incl(xq) atol = 1.0e-14
             end
         end
 
         @testset "Range grid with explicit period (redundant but valid)" begin
             N = 32
             dx = 2π / N
-            x = range(0.0, step=dx, length=N)
+            x = range(0.0, step = dx, length = N)
             y = cos.(x)
 
-            itp1 = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive))
-            itp2 = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive, period=2π))
+            itp1 = cubic_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
+            itp2 = cubic_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
 
             for xq in [0.5, 1.5, π]
-                @test itp1(xq) ≈ itp2(xq) atol=1e-14
+                @test itp1(xq) ≈ itp2(xq) atol = 1.0e-14
             end
         end
 
@@ -187,14 +187,14 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
             y_incl = sin.(x_incl)
             y_incl[end] = y_incl[1]
 
-            x_excl = x_incl[1:end-1]  # remove last point
-            y_excl = y_incl[1:end-1]
+            x_excl = x_incl[1:(end - 1)]  # remove last point
+            y_excl = y_incl[1:(end - 1)]
 
-            itp_incl = cubic_interp(x_incl, y_incl; bc=PeriodicBC())
-            itp_excl = cubic_interp(x_excl, y_excl; bc=PeriodicBC(endpoint=:exclusive, period=2π))
+            itp_incl = cubic_interp(x_incl, y_incl; bc = PeriodicBC())
+            itp_excl = cubic_interp(x_excl, y_excl; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
 
             for xq in [0.1, 1.0, π, 5.5]
-                @test itp_excl(xq) ≈ itp_incl(xq) atol=1e-14
+                @test itp_excl(xq) ≈ itp_incl(xq) atol = 1.0e-14
             end
         end
     end
@@ -205,29 +205,29 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
     @testset "Oneshot API — Exclusive endpoint" begin
         N = 32
         dx = 2π / N
-        x = range(0.0, step=dx, length=N)
+        x = range(0.0, step = dx, length = N)
         y = sin.(x)
 
         @testset "Scalar query" begin
-            val = cubic_interp(x, y, 1.0; bc=PeriodicBC(endpoint=:exclusive))
-            @test val ≈ sin(1.0) atol=1e-4
+            val = cubic_interp(x, y, 1.0; bc = PeriodicBC(endpoint = :exclusive))
+            @test val ≈ sin(1.0) atol = 1.0e-4
         end
 
         @testset "Vector query" begin
             xq = [0.5, 1.5, π]
-            vals = cubic_interp(x, y, xq; bc=PeriodicBC(endpoint=:exclusive))
+            vals = cubic_interp(x, y, xq; bc = PeriodicBC(endpoint = :exclusive))
             @test length(vals) == 3
             for i in eachindex(xq)
-                @test vals[i] ≈ sin(xq[i]) atol=1e-4
+                @test vals[i] ≈ sin(xq[i]) atol = 1.0e-4
             end
         end
 
         @testset "In-place vector query" begin
             xq = [0.5, 1.5, π]
             output = zeros(3)
-            cubic_interp!(output, x, y, xq; bc=PeriodicBC(endpoint=:exclusive))
+            cubic_interp!(output, x, y, xq; bc = PeriodicBC(endpoint = :exclusive))
             for i in eachindex(xq)
-                @test output[i] ≈ sin(xq[i]) atol=1e-4
+                @test output[i] ≈ sin(xq[i]) atol = 1.0e-4
             end
         end
     end
@@ -237,33 +237,33 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         x_incl = [0.0, 0.5, 1.5, 3.0, 5.0, 2π]
         y_incl = sin.(x_incl)
         y_incl[end] = y_incl[1]
-        x_excl = x_incl[1:end-1]
-        y_excl = y_incl[1:end-1]
-        bc_excl = PeriodicBC(endpoint=:exclusive, period=2π)
+        x_excl = x_incl[1:(end - 1)]
+        y_excl = y_incl[1:(end - 1)]
+        bc_excl = PeriodicBC(endpoint = :exclusive, period = 2π)
 
-        itp_ref = cubic_interp(x_incl, y_incl; bc=PeriodicBC())
+        itp_ref = cubic_interp(x_incl, y_incl; bc = PeriodicBC())
 
         @testset "Scalar query" begin
             for xq in [0.1, 1.0, π, 5.5]
-                val = cubic_interp(x_excl, y_excl, xq; bc=bc_excl)
-                @test val ≈ itp_ref(xq) atol=1e-14
+                val = cubic_interp(x_excl, y_excl, xq; bc = bc_excl)
+                @test val ≈ itp_ref(xq) atol = 1.0e-14
             end
         end
 
         @testset "Vector query" begin
             xq = [0.1, 1.0, π, 5.5]
-            vals = cubic_interp(x_excl, y_excl, xq; bc=bc_excl)
+            vals = cubic_interp(x_excl, y_excl, xq; bc = bc_excl)
             for i in eachindex(xq)
-                @test vals[i] ≈ itp_ref(xq[i]) atol=1e-14
+                @test vals[i] ≈ itp_ref(xq[i]) atol = 1.0e-14
             end
         end
 
         @testset "In-place vector query" begin
             xq = [0.1, 1.0, π, 5.5]
             output = zeros(4)
-            cubic_interp!(output, x_excl, y_excl, xq; bc=bc_excl)
+            cubic_interp!(output, x_excl, y_excl, xq; bc = bc_excl)
             for i in eachindex(xq)
-                @test output[i] ≈ itp_ref(xq[i]) atol=1e-14
+                @test output[i] ≈ itp_ref(xq[i]) atol = 1.0e-14
             end
         end
     end
@@ -274,15 +274,15 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
     @testset "CubicSeriesInterpolant — Exclusive endpoint" begin
         N = 32
         dx = 2π / N
-        x = range(0.0, step=dx, length=N)
+        x = range(0.0, step = dx, length = N)
         y1 = sin.(x)
         y2 = cos.(x)
 
-        mitp = cubic_interp(x, Series(y1, y2); bc=PeriodicBC(endpoint=:exclusive))
+        mitp = cubic_interp(x, Series(y1, y2); bc = PeriodicBC(endpoint = :exclusive))
 
         vals = mitp(1.0)
-        @test vals[1] ≈ sin(1.0) atol=1e-4
-        @test vals[2] ≈ cos(1.0) atol=1e-4
+        @test vals[1] ≈ sin(1.0) atol = 1.0e-4
+        @test vals[2] ≈ cos(1.0) atol = 1.0e-4
     end
 
     # ========================================
@@ -291,23 +291,23 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
     @testset "Derivatives — Exclusive endpoint" begin
         N = 64
         dx = 2π / N
-        x = range(0.0, step=dx, length=N)
+        x = range(0.0, step = dx, length = N)
         y = sin.(x)
 
-        itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive))
+        itp = cubic_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
 
         # C2 continuity at wrap point: derivatives should match across boundary
-        ε = 1e-6
-        d1_left = itp(ε; deriv=DerivOp(1))
-        d1_right = itp(2π - ε; deriv=DerivOp(1))
+        ε = 1.0e-6
+        d1_left = itp(ε; deriv = DerivOp(1))
+        d1_right = itp(2π - ε; deriv = DerivOp(1))
         # sin'(0) ≈ sin'(2π) ≈ cos(0) = 1.0
-        @test d1_left ≈ d1_right atol=1e-3
+        @test d1_left ≈ d1_right atol = 1.0e-3
 
         # First derivative accuracy
-        @test itp(π / 4; deriv=DerivOp(1)) ≈ cos(π / 4) atol=1e-3
+        @test itp(π / 4; deriv = DerivOp(1)) ≈ cos(π / 4) atol = 1.0e-3
 
         # Second derivative
-        @test itp(π / 2; deriv=DerivOp(2)) ≈ -sin(π / 2) atol=0.1
+        @test itp(π / 2; deriv = DerivOp(2)) ≈ -sin(π / 2) atol = 0.1
     end
 
     # ========================================
@@ -318,16 +318,16 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         dx = 2π / N
 
         # Inclusive data for baseline
-        x_incl = range(0.0, step=dx, length=N + 1)
+        x_incl = range(0.0, step = dx, length = N + 1)
         y_incl = sin.(x_incl)
         y_incl[end] = y_incl[1]
-        @test @inferred(cubic_interp(x_incl, y_incl; bc=PeriodicBC())) isa CubicInterpolant
+        @test @inferred(cubic_interp(x_incl, y_incl; bc = PeriodicBC())) isa CubicInterpolant
 
         # For exclusive, construction may have Union return (Range vs Vector grid branch),
         # but evaluation is always type-stable
-        x_excl = range(0.0, step=dx, length=N)
+        x_excl = range(0.0, step = dx, length = N)
         y_excl = sin.(x_excl)
-        itp = cubic_interp(x_excl, y_excl; bc=PeriodicBC(endpoint=:exclusive))
+        itp = cubic_interp(x_excl, y_excl; bc = PeriodicBC(endpoint = :exclusive))
         @test itp isa CubicInterpolant
         @test @inferred(itp(1.0)) isa Float64
     end
@@ -339,19 +339,19 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         @test FastInterpolations._format_bc(PeriodicBC()) == "Periodic"
         @test FastInterpolations._short_bc_name(PeriodicBC()) == "Periodic"
 
-        bc_excl = PeriodicBC(endpoint=:exclusive, period=2π)
+        bc_excl = PeriodicBC(endpoint = :exclusive, period = 2π)
         @test occursin("exclusive", FastInterpolations._format_bc(bc_excl))
         @test FastInterpolations._short_bc_name(bc_excl) == "Periodic(excl)"
 
         # Series interpolant show (bc_for_solve is PeriodicData, not PeriodicBC)
         N = 16
         dx = 2π / N
-        x_incl = range(0.0, step=dx, length=N + 1)
+        x_incl = range(0.0, step = dx, length = N + 1)
         y_incl = sin.(x_incl)
         y_incl[end] = y_incl[1]
         y_cos = cos.(x_incl)
         y_cos[end] = y_cos[1]
-        sitp = cubic_interp(x_incl, Series(y_incl, y_cos); bc=PeriodicBC())
+        sitp = cubic_interp(x_incl, Series(y_incl, y_cos); bc = PeriodicBC())
         buf = IOBuffer()
         show(buf, sitp)
         @test occursin("Periodic", String(take!(buf)))
@@ -364,14 +364,14 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
             dx_bc = 2π / N_bc
 
             # Exclusive with explicit period
-            x_bc = range(0.0, step=dx_bc, length=N_bc)
+            x_bc = range(0.0, step = dx_bc, length = N_bc)
             y_bc = sin.(x_bc)
-            itp_excl = cubic_interp(collect(x_bc), y_bc; bc=PeriodicBC(endpoint=:exclusive, period=2π))
+            itp_excl = cubic_interp(collect(x_bc), y_bc; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
             @test itp_excl.bc isa PeriodicBC{:exclusive}
             @test itp_excl.bc.period ≈ 2π
 
             # Exclusive without period (auto-inferred from Range) — period should still be resolved
-            itp_excl_auto = cubic_interp(x_bc, y_bc; bc=PeriodicBC(endpoint=:exclusive))
+            itp_excl_auto = cubic_interp(x_bc, y_bc; bc = PeriodicBC(endpoint = :exclusive))
             @test itp_excl_auto.bc isa PeriodicBC{:exclusive}
             @test itp_excl_auto.bc.period ≈ 2π
 
@@ -383,10 +383,10 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
             @test occursin("period≈", s)
 
             # Inclusive — period should also be resolved from grid
-            x_incl_bc = range(0.0, step=dx_bc, length=N_bc + 1)
+            x_incl_bc = range(0.0, step = dx_bc, length = N_bc + 1)
             y_incl_bc = sin.(x_incl_bc)
             y_incl_bc[end] = y_incl_bc[1]
-            itp_incl = cubic_interp(collect(x_incl_bc), y_incl_bc; bc=PeriodicBC())
+            itp_incl = cubic_interp(collect(x_incl_bc), y_incl_bc; bc = PeriodicBC())
             @test itp_incl.bc isa PeriodicBC{:inclusive}
             @test itp_incl.bc.period ≈ 2π
 
@@ -397,9 +397,9 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         end
 
         # Also test exclusive series interpolant show
-        x_excl = range(0.0, step=dx, length=N)
+        x_excl = range(0.0, step = dx, length = N)
         y_excl = sin.(x_excl)
-        sitp_excl = cubic_interp(x_excl, Series(y_excl, cos.(x_excl)); bc=PeriodicBC(endpoint=:exclusive))
+        sitp_excl = cubic_interp(x_excl, Series(y_excl, cos.(x_excl)); bc = PeriodicBC(endpoint = :exclusive))
         show(buf, sitp_excl)
         @test occursin("Periodic", String(take!(buf)))
         show(buf, MIME"text/plain"(), sitp_excl)
@@ -410,40 +410,40 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
     # Zero-Allocation Tests (One-Shot, Pool-Based)
     # ========================================
     @testset "One-shot exclusive zero-alloc" begin
-        x = range(0.0, step=2π/16, length=16)
+        x = range(0.0, step = 2π / 16, length = 16)
         y = sin.(x)
-        bc = PeriodicBC(endpoint=:exclusive)
+        bc = PeriodicBC(endpoint = :exclusive)
 
         @testset "scalar (Range grid)" begin
-            cubic_interp(x, y, 1.0; bc=bc)  # warmup
-            alloc = @allocated cubic_interp(x, y, 1.0; bc=bc)
+            cubic_interp(x, y, 1.0; bc = bc)  # warmup
+            alloc = @allocated cubic_interp(x, y, 1.0; bc = bc)
             @test alloc <= ALLOC_THRESHOLD
         end
 
         @testset "vector in-place (Range grid)" begin
             xq = [0.5, 1.0, 2.0]
             out = similar(xq)
-            cubic_interp!(out, x, y, xq; bc=bc)  # warmup
-            alloc = @allocated cubic_interp!(out, x, y, xq; bc=bc)
+            cubic_interp!(out, x, y, xq; bc = bc)  # warmup
+            alloc = @allocated cubic_interp!(out, x, y, xq; bc = bc)
             @test alloc <= ALLOC_THRESHOLD
         end
 
         # Vector grid path uses pool-based unsafe_acquire! + copyto!
         x_vec = [0.0, 0.5, 1.5, 3.0, 5.0]
         y_vec = sin.(x_vec)
-        bc_vec = PeriodicBC(endpoint=:exclusive, period=2π)
+        bc_vec = PeriodicBC(endpoint = :exclusive, period = 2π)
 
         @testset "scalar (Vector grid)" begin
-            cubic_interp(x_vec, y_vec, 1.0; bc=bc_vec)  # warmup
-            alloc = @allocated cubic_interp(x_vec, y_vec, 1.0; bc=bc_vec)
+            cubic_interp(x_vec, y_vec, 1.0; bc = bc_vec)  # warmup
+            alloc = @allocated cubic_interp(x_vec, y_vec, 1.0; bc = bc_vec)
             @test alloc <= ALLOC_THRESHOLD
         end
 
         @testset "vector in-place (Vector grid)" begin
             xq_v = [0.5, 1.0, 2.0]
             out_v = similar(xq_v)
-            cubic_interp!(out_v, x_vec, y_vec, xq_v; bc=bc_vec)  # warmup
-            alloc = @allocated cubic_interp!(out_v, x_vec, y_vec, xq_v; bc=bc_vec)
+            cubic_interp!(out_v, x_vec, y_vec, xq_v; bc = bc_vec)  # warmup
+            alloc = @allocated cubic_interp!(out_v, x_vec, y_vec, xq_v; bc = bc_vec)
             @test alloc <= ALLOC_THRESHOLD
         end
     end
@@ -455,33 +455,33 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
         @testset "Vector grid without period → error" begin
             x = [0.0, 1.0, 2.0, 3.0]
             y = sin.(x)
-            @test_throws ArgumentError cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive))
+            @test_throws ArgumentError cubic_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
         end
 
         @testset "Range grid + conflicting period → error" begin
-            x = range(0.0, step=0.1, length=10)
+            x = range(0.0, step = 0.1, length = 10)
             y = sin.(x)
             # 0.1 * 10 = 1.0, but user says period=2.0
-            @test_throws ArgumentError cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive, period=2.0))
+            @test_throws ArgumentError cubic_interp(x, y; bc = PeriodicBC(endpoint = :exclusive, period = 2.0))
         end
 
         @testset "Minimum points (4 for periodic)" begin
-            x = range(0.0, step=1.0, length=4)
+            x = range(0.0, step = 1.0, length = 4)
             y = [0.0, 1.0, 0.0, -1.0]
-            itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive))
+            itp = cubic_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
             @test itp(0.5) isa Float64
         end
 
         @testset "Float32 support" begin
-            x = range(0f0, step=Float32(2π / 16), length=16)
+            x = range(0.0f0, step = Float32(2π / 16), length = 16)
             y = sin.(x)
-            itp = cubic_interp(x, y; bc=PeriodicBC(endpoint=:exclusive))
-            @test itp(1f0) isa Float32
+            itp = cubic_interp(x, y; bc = PeriodicBC(endpoint = :exclusive))
+            @test itp(1.0f0) isa Float32
         end
 
         @testset "CubicSplineCache rejects exclusive PeriodicBC" begin
-            x = range(0.0, step=0.1, length=10)
-            @test_throws ArgumentError CubicSplineCache(x; bc=PeriodicBC(endpoint=:exclusive))
+            x = range(0.0, step = 0.1, length = 10)
+            @test_throws ArgumentError CubicSplineCache(x; bc = PeriodicBC(endpoint = :exclusive))
         end
     end
 
@@ -511,10 +511,10 @@ end
 
         @testset "Single exclusive axis extends correctly" begin
             N = 8
-            x = range(0.0, step=2π/N, length=N)
+            x = range(0.0, step = 2π / N, length = N)
             y = range(0.0, π, 5)
             data = [sin(xi) * cos(yj) for xi in x, yj in y]
-            bcs = (PeriodicBC(endpoint=:exclusive), ZeroCurvBC())
+            bcs = (PeriodicBC(endpoint = :exclusive), ZeroCurvBC())
 
             grids_out, data_out, bcs_out = _prepare_periodic_nd((x, y), data, bcs)
 
@@ -530,10 +530,10 @@ end
 
         @testset "Both axes exclusive" begin
             Nx, Ny = 8, 6
-            x = range(0.0, step=2π/Nx, length=Nx)
-            y = range(0.0, step=π/Ny, length=Ny)
+            x = range(0.0, step = 2π / Nx, length = Nx)
+            y = range(0.0, step = π / Ny, length = Ny)
             data = [sin(xi) * cos(yj) for xi in x, yj in y]
-            bcs = (PeriodicBC(endpoint=:exclusive), PeriodicBC(endpoint=:exclusive))
+            bcs = (PeriodicBC(endpoint = :exclusive), PeriodicBC(endpoint = :exclusive))
 
             grids_out, data_out, bcs_out = _prepare_periodic_nd((x, y), data, bcs)
 
@@ -546,10 +546,10 @@ end
         end
 
         @testset "Range preserved after extension" begin
-            x = range(0.0, step=0.5, length=4)
+            x = range(0.0, step = 0.5, length = 4)
             y = range(0.0, 1.0, 5)
             data = zeros(4, 5)
-            bcs = (PeriodicBC(endpoint=:exclusive), ZeroCurvBC())
+            bcs = (PeriodicBC(endpoint = :exclusive), ZeroCurvBC())
 
             grids_out, _, _ = _prepare_periodic_nd((x, y), data, bcs)
             @test grids_out[1] isa AbstractRange
@@ -563,12 +563,12 @@ end
         @testset "Both axes periodic (Range, period inferred)" begin
             Nx, Ny = 32, 24
             dx, dy = 2π / Nx, 2π / Ny
-            x_excl = range(0.0, step=dx, length=Nx)
-            y_excl = range(0.0, step=dy, length=Ny)
+            x_excl = range(0.0, step = dx, length = Nx)
+            y_excl = range(0.0, step = dy, length = Ny)
             data_excl = [sin(xi) * cos(yj) for xi in x_excl, yj in y_excl]
 
-            x_incl = range(0.0, step=dx, length=Nx + 1)
-            y_incl = range(0.0, step=dy, length=Ny + 1)
+            x_incl = range(0.0, step = dx, length = Nx + 1)
+            y_incl = range(0.0, step = dy, length = Ny + 1)
             data_incl = [sin(xi) * cos(yj) for xi in x_incl, yj in y_incl]
             # Enforce exact periodicity on both axes
             data_incl[end, :] .= data_incl[1, :]
@@ -576,37 +576,41 @@ end
 
             itp_excl = cubic_interp(
                 (x_excl, y_excl), data_excl;
-                bc=PeriodicBC(endpoint=:exclusive))
+                bc = PeriodicBC(endpoint = :exclusive)
+            )
             itp_incl = cubic_interp(
                 (x_incl, y_incl), data_incl;
-                bc=PeriodicBC())
+                bc = PeriodicBC()
+            )
 
             for (xq, yq) in [(0.5, 0.5), (π, 1.0), (1.0, π), (5.0, 5.0)]
-                @test itp_excl((xq, yq)) ≈ itp_incl((xq, yq)) atol=1e-12
+                @test itp_excl((xq, yq)) ≈ itp_incl((xq, yq)) atol = 1.0e-12
             end
         end
 
         @testset "One axis periodic, one ZeroCurvBC" begin
             Nx = 32
             dx = 2π / Nx
-            x_excl = range(0.0, step=dx, length=Nx)
+            x_excl = range(0.0, step = dx, length = Nx)
             y = range(0.0, 1.0, 10)
             data_excl = [sin(xi) * yj for xi in x_excl, yj in y]
 
-            x_incl = range(0.0, step=dx, length=Nx + 1)
+            x_incl = range(0.0, step = dx, length = Nx + 1)
             data_incl = [sin(xi) * yj for xi in x_incl, yj in y]
             # Enforce exact periodicity on dim 1
             data_incl[end, :] .= data_incl[1, :]
 
             itp_excl = cubic_interp(
                 (x_excl, y), data_excl;
-                bc=(PeriodicBC(endpoint=:exclusive), ZeroCurvBC()))
+                bc = (PeriodicBC(endpoint = :exclusive), ZeroCurvBC())
+            )
             itp_incl = cubic_interp(
                 (x_incl, y), data_incl;
-                bc=(PeriodicBC(), ZeroCurvBC()))
+                bc = (PeriodicBC(), ZeroCurvBC())
+            )
 
             for (xq, yq) in [(0.5, 0.3), (π, 0.5), (5.0, 0.8)]
-                @test itp_excl((xq, yq)) ≈ itp_incl((xq, yq)) atol=1e-12
+                @test itp_excl((xq, yq)) ≈ itp_incl((xq, yq)) atol = 1.0e-12
             end
         end
 
@@ -617,18 +621,20 @@ end
             # Enforce exact periodicity on dim 1
             data_incl[end, :] .= data_incl[1, :]
 
-            x_excl = x_incl[1:end-1]
-            data_excl = data_incl[1:end-1, :]
+            x_excl = x_incl[1:(end - 1)]
+            data_excl = data_incl[1:(end - 1), :]
 
             itp_incl = cubic_interp(
                 (x_incl, y), data_incl;
-                bc=(PeriodicBC(), ZeroCurvBC()))
+                bc = (PeriodicBC(), ZeroCurvBC())
+            )
             itp_excl = cubic_interp(
                 (x_excl, y), data_excl;
-                bc=(PeriodicBC(endpoint=:exclusive, period=2π), ZeroCurvBC()))
+                bc = (PeriodicBC(endpoint = :exclusive, period = 2π), ZeroCurvBC())
+            )
 
             for (xq, yq) in [(0.5, 0.3), (π, 0.5), (5.0, 0.8)]
-                @test itp_excl((xq, yq)) ≈ itp_incl((xq, yq)) atol=1e-12
+                @test itp_excl((xq, yq)) ≈ itp_incl((xq, yq)) atol = 1.0e-12
             end
         end
     end
@@ -639,17 +645,18 @@ end
     @testset "2D Accuracy" begin
         Nx, Ny = 64, 48
         dx, dy = 2π / Nx, 2π / Ny
-        x = range(0.0, step=dx, length=Nx)
-        y = range(0.0, step=dy, length=Ny)
+        x = range(0.0, step = dx, length = Nx)
+        y = range(0.0, step = dy, length = Ny)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
         itp = cubic_interp(
             (x, y), data;
-            bc=PeriodicBC(endpoint=:exclusive))
+            bc = PeriodicBC(endpoint = :exclusive)
+        )
 
         # Value accuracy
-        for (xq, yq) in [(0.3, 0.7), (π/2, π/3), (4.0, 3.0)]
-            @test itp((xq, yq)) ≈ sin(xq) * cos(yq) atol=1e-4
+        for (xq, yq) in [(0.3, 0.7), (π / 2, π / 3), (4.0, 3.0)]
+            @test itp((xq, yq)) ≈ sin(xq) * cos(yq) atol = 1.0e-4
         end
     end
 
@@ -659,21 +666,22 @@ end
     @testset "2D Derivatives" begin
         Nx, Ny = 64, 48
         dx, dy = 2π / Nx, 2π / Ny
-        x = range(0.0, step=dx, length=Nx)
-        y = range(0.0, step=dy, length=Ny)
+        x = range(0.0, step = dx, length = Nx)
+        y = range(0.0, step = dy, length = Ny)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
 
         itp = cubic_interp(
             (x, y), data;
-            bc=PeriodicBC(endpoint=:exclusive))
+            bc = PeriodicBC(endpoint = :exclusive)
+        )
 
-        xq, yq = π/4, π/3
+        xq, yq = π / 4, π / 3
 
         # ∂/∂x [sin(x)cos(y)] = cos(x)cos(y)
-        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ cos(xq) * cos(yq) atol=1e-3
+        @test itp((xq, yq); deriv = DerivOp(1, 0)) ≈ cos(xq) * cos(yq) atol = 1.0e-3
 
         # ∂/∂y [sin(x)cos(y)] = -sin(x)sin(y)
-        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ -sin(xq) * sin(yq) atol=1e-3
+        @test itp((xq, yq); deriv = DerivOp(0, 1)) ≈ -sin(xq) * sin(yq) atol = 1.0e-3
     end
 
     # ========================================
@@ -681,20 +689,23 @@ end
     # ========================================
     @testset "3D Exclusive endpoint" begin
         Nx, Ny, Nz = 16, 12, 10
-        x = range(0.0, step=2π/Nx, length=Nx)
-        y = range(0.0, step=2π/Ny, length=Ny)
+        x = range(0.0, step = 2π / Nx, length = Nx)
+        y = range(0.0, step = 2π / Ny, length = Ny)
         z = range(0.0, 1.0, Nz)
         data = [sin(xi) * cos(yj) * zk for xi in x, yj in y, zk in z]
 
         itp = cubic_interp(
             (x, y, z), data;
-            bc=(PeriodicBC(endpoint=:exclusive),
-                PeriodicBC(endpoint=:exclusive),
-                ZeroCurvBC()))
+            bc = (
+                PeriodicBC(endpoint = :exclusive),
+                PeriodicBC(endpoint = :exclusive),
+                ZeroCurvBC(),
+            )
+        )
 
         @test itp isa CubicInterpolantND
         xq, yq, zq = 1.0, 0.5, 0.3
-        @test itp((xq, yq, zq)) ≈ sin(xq) * cos(yq) * zq atol=1e-2
+        @test itp((xq, yq, zq)) ≈ sin(xq) * cos(yq) * zq atol = 1.0e-2
     end
 
     # ========================================
@@ -702,13 +713,14 @@ end
     # ========================================
     @testset "bcs_store preserves endpoint and period" begin
         Nx = 16
-        x = range(0.0, step=2π/Nx, length=Nx)
+        x = range(0.0, step = 2π / Nx, length = Nx)
         y = range(0.0, 1.0, 8)
         data = [sin(xi) * yj for xi in x, yj in y]
 
         itp = cubic_interp(
             (x, y), data;
-            bc=(PeriodicBC(endpoint=:exclusive), ZeroCurvBC()))
+            bc = (PeriodicBC(endpoint = :exclusive), ZeroCurvBC())
+        )
 
         # Exclusive axis preserves endpoint symbol and resolved period
         @test itp.bcs[1] isa PeriodicBC{:exclusive}
@@ -725,16 +737,18 @@ end
             data = zeros(4, 5)
             @test_throws ArgumentError cubic_interp(
                 (x, y), data;
-                bc=(PeriodicBC(endpoint=:exclusive), ZeroCurvBC()))
+                bc = (PeriodicBC(endpoint = :exclusive), ZeroCurvBC())
+            )
         end
 
         @testset "Range grid with conflicting period → error" begin
-            x = range(0.0, step=0.1, length=10)
+            x = range(0.0, step = 0.1, length = 10)
             y = range(0.0, 1.0, 5)
             data = zeros(10, 5)
             @test_throws ArgumentError cubic_interp(
                 (x, y), data;
-                bc=(PeriodicBC(endpoint=:exclusive, period=2.0), ZeroCurvBC()))
+                bc = (PeriodicBC(endpoint = :exclusive, period = 2.0), ZeroCurvBC())
+            )
         end
     end
 

@@ -93,20 +93,22 @@ using FastInterpolations
         y_short = [1.0, 2.0]
         n_pts = length(x)
         @test_throws DimensionMismatch FastInterpolations._build_series_mat(
-            Series(y1, y_short), n_pts, Float64)
+            Series(y1, y_short), n_pts, Float64
+        )
         @test_throws DimensionMismatch FastInterpolations._build_series_mat(
-            Series(hcat(y_short, y_short)), n_pts, Float64)
+            Series(hcat(y_short, y_short)), n_pts, Float64
+        )
     end
 
     # ────────────────────────────────────────────
     # All 4 *_interp with Series produce correct types
     # ────────────────────────────────────────────
     @testset "Series dispatch: $method" for (method, SType) in [
-        (linear_interp, LinearSeriesInterpolant),
-        (cubic_interp, CubicSeriesInterpolant),
-        (quadratic_interp, QuadraticSeriesInterpolant),
-        (constant_interp, ConstantSeriesInterpolant),
-    ]
+            (linear_interp, LinearSeriesInterpolant),
+            (cubic_interp, CubicSeriesInterpolant),
+            (quadratic_interp, QuadraticSeriesInterpolant),
+            (constant_interp, ConstantSeriesInterpolant),
+        ]
         s = Series(y1, y2, y3)
         sitp = method(x, s)
         @test sitp isa SType
@@ -117,11 +119,11 @@ using FastInterpolations
     # Numerical equivalence: Series(Matrix) vs Series(y1, y2)
     # ────────────────────────────────────────────
     @testset "Numerical equivalence: $method" for (method, kwargs) in [
-        (linear_interp, (;)),
-        (cubic_interp, (;)),
-        (quadratic_interp, (;)),
-        (constant_interp, (;)),
-    ]
+            (linear_interp, (;)),
+            (cubic_interp, (;)),
+            (quadratic_interp, (;)),
+            (constant_interp, (;)),
+        ]
         Y = hcat(y1, y2)
 
         sitp_mat = method(x, Series(Y); kwargs...)
@@ -228,11 +230,11 @@ using FastInterpolations
         y_sv = sin.(2π .* x_sv)
 
         for (method, SType) in [
-            (linear_interp, LinearSeriesInterpolant),
-            (cubic_interp, CubicSeriesInterpolant),
-            (quadratic_interp, QuadraticSeriesInterpolant),
-            (constant_interp, ConstantSeriesInterpolant),
-        ]
+                (linear_interp, LinearSeriesInterpolant),
+                (cubic_interp, CubicSeriesInterpolant),
+                (quadratic_interp, QuadraticSeriesInterpolant),
+                (constant_interp, ConstantSeriesInterpolant),
+            ]
             sitp = method(x_sv, Series(y_sv))
             @test sitp isa SType
             @test length(sitp(0.5)) == 1
@@ -294,7 +296,7 @@ using FastInterpolations
         y_b = Float64.(1:10) .^ 3
 
         bc_vec = [ZeroCurvBC(), CubicFit()]
-        sitp = cubic_interp(x_int, Series(y_a, y_b); bc=bc_vec)
+        sitp = cubic_interp(x_int, Series(y_a, y_b); bc = bc_vec)
         @test sitp isa CubicSeriesInterpolant
         @test length(sitp(5.5)) == 2
     end

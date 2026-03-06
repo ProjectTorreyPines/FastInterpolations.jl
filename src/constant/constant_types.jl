@@ -50,7 +50,7 @@ itp = constant_interp(x, y; search=LinearBinarySearch())  # explicit override
 val = itp(0.5; search=BinarySearch())  # per-call override
 ```
 """
-struct ConstantInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, SD<:AbstractSide, P<:AbstractSearchPolicy} <: AbstractInterpolant{Tg, Tv}
+struct ConstantInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy} <: AbstractInterpolant{Tg, Tv}
     x::X
     y::Y
     extrap::E        # Extrapolation mode (compile-time specialized)
@@ -58,12 +58,12 @@ struct ConstantInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:Abst
     search_policy::P  # Default search policy (immutable, thread-safe)
 
     # Inner constructor: parametric, only calls new (handles validation only)
-    function ConstantInterpolant{Tg,Tv,X,Y,E,SD,P}(
-        x::X, y::Y, ev::E, sv::SD, search::P
-    ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, SD<:AbstractSide, P<:AbstractSearchPolicy}
+    function ConstantInterpolant{Tg, Tv, X, Y, E, SD, P}(
+            x::X, y::Y, ev::E, sv::SD, search::P
+        ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         @assert length(x) >= 2 "x must have at least 2 elements"
-        new{Tg,Tv,X,Y,E,SD,P}(x, y, ev, sv, search)
+        return new{Tg, Tv, X, Y, E, SD, P}(x, y, ev, sv, search)
     end
 end
 
@@ -75,13 +75,13 @@ end
 # PERFORMANCE: Typed signature + @inline enables compile-time specialization.
 # Use constant_interp() for automatic type promotion from Real inputs.
 @inline function ConstantInterpolant(
-    x::X,
-    y::Y;
-    extrap::AbstractExtrap=NoExtrap(),
-    side::AbstractSide=NearestSide(),
-    search::P=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
+        x::X,
+        y::Y;
+        extrap::AbstractExtrap = NoExtrap(),
+        side::AbstractSide = NearestSide(),
+        search::P = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
     E = typeof(extrap)
     SD = typeof(side)
-    return ConstantInterpolant{Tg,Tv,X,Y,E,SD,P}(x, y, extrap, side, search)
+    return ConstantInterpolant{Tg, Tv, X, Y, E, SD, P}(x, y, extrap, side, search)
 end

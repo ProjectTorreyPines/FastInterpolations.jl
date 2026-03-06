@@ -18,7 +18,7 @@ Concrete subtypes:
 
 The type parameter `T` is the floating-point type (Float32 or Float64).
 """
-abstract type AbstractGridSpacing{T<:AbstractFloat} end
+abstract type AbstractGridSpacing{T <: AbstractFloat} end
 
 """
     ScalarSpacing{T} <: AbstractGridSpacing{T}
@@ -43,7 +43,7 @@ x = range(0.0, 1.0, 1001)  # 1000 intervals, uniform spacing
 spacing = _create_spacing(x)  # ScalarSpacing{Float64}(0.001, 1000.0)
 ```
 """
-struct ScalarSpacing{T<:AbstractFloat} <: AbstractGridSpacing{T}
+struct ScalarSpacing{T <: AbstractFloat} <: AbstractGridSpacing{T}
     h::T
     inv_h::T
 end
@@ -74,7 +74,7 @@ x = [0.0, 0.3, 0.7, 1.0]  # Non-uniform spacing
 spacing = _create_spacing(x)  # VectorSpacing with h=[0.3, 0.4, 0.3]
 ```
 """
-struct VectorSpacing{T<:AbstractFloat} <: AbstractGridSpacing{T}
+struct VectorSpacing{T <: AbstractFloat} <: AbstractGridSpacing{T}
     h::Vector{T}
     inv_h::Vector{T}
 end
@@ -122,7 +122,7 @@ Create scalar spacing for uniform grids (Range inputs).
 Extracts the constant step size and precomputes its reciprocal.
 For `LinRange`, computes the step explicitly since it's not stored.
 """
-function _create_spacing(x::AbstractRange{T}) where {T<:AbstractFloat}
+function _create_spacing(x::AbstractRange{T}) where {T <: AbstractFloat}
     # step(x) already returns T for AbstractRange{T}, avoid redundant conversion
     h = step(x)
     inv_h = inv(h)
@@ -130,7 +130,7 @@ function _create_spacing(x::AbstractRange{T}) where {T<:AbstractFloat}
 end
 
 # LinRange needs special handling - step() works but we compute explicitly for clarity
-function _create_spacing(x::LinRange{T}) where {T<:AbstractFloat}
+function _create_spacing(x::LinRange{T}) where {T <: AbstractFloat}
     n_intervals = length(x) - 1
     h = (last(x) - first(x)) / n_intervals
     inv_h = inv(h)
@@ -144,13 +144,13 @@ Create vector spacing for non-uniform grids (Vector inputs).
 
 Computes h[i] = x[i+1] - x[i] and inv_h[i] = 1/h[i] for each interval.
 """
-function _create_spacing(x::AbstractVector{T}) where {T<:AbstractFloat}
+function _create_spacing(x::AbstractVector{T}) where {T <: AbstractFloat}
     n = length(x)
     h = Vector{T}(undef, n - 1)
     inv_h = Vector{T}(undef, n - 1)
 
-    @inbounds for i in 1:(n-1)
-        h[i] = x[i+1] - x[i]
+    @inbounds for i in 1:(n - 1)
+        h[i] = x[i + 1] - x[i]
         inv_h[i] = inv(h[i])
     end
 

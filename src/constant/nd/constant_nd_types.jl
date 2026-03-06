@@ -46,15 +46,15 @@ itp = constant_interp((x, y), data; side=(LeftSide(), RightSide()), extrap=(NoEx
 ```
 """
 struct ConstantInterpolantND{
-    Tg<:AbstractFloat,
-    Tv,
-    N,
-    G<:NTuple{N, AbstractVector{Tg}},
-    S<:NTuple{N, AbstractGridSpacing{Tg}},
-    E<:Tuple{Vararg{AbstractExtrap, N}},
-    SD<:Tuple{Vararg{AbstractSide, N}},
-    P<:NTuple{N, AbstractSearchPolicy},
-} <: AbstractInterpolantND{Tg, Tv, N}
+        Tg <: AbstractFloat,
+        Tv,
+        N,
+        G <: NTuple{N, AbstractVector{Tg}},
+        S <: NTuple{N, AbstractGridSpacing{Tg}},
+        E <: Tuple{Vararg{AbstractExtrap, N}},
+        SD <: Tuple{Vararg{AbstractSide, N}},
+        P <: NTuple{N, AbstractSearchPolicy},
+    } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
     spacings::S
     data::Array{Tv, N}
@@ -62,15 +62,17 @@ struct ConstantInterpolantND{
     sides::SD
     searches::P
 
-    function ConstantInterpolantND{Tg,Tv,N,G,S,E,SD,P}(
-        grids::G, spacings::S, data::Array{Tv,N}, extraps::E, sides::SD, searches::P
-    ) where {Tg<:AbstractFloat, Tv, N, G<:NTuple{N,AbstractVector{Tg}},
-             S<:NTuple{N,AbstractGridSpacing{Tg}}, E,
-             SD<:Tuple{Vararg{AbstractSide, N}}, P<:NTuple{N,AbstractSearchPolicy}}
-        new{Tg,Tv,N,G,S,E,SD,P}(grids, spacings, data, extraps, sides, searches)
+    function ConstantInterpolantND{Tg, Tv, N, G, S, E, SD, P}(
+            grids::G, spacings::S, data::Array{Tv, N}, extraps::E, sides::SD, searches::P
+        ) where {
+            Tg <: AbstractFloat, Tv, N, G <: NTuple{N, AbstractVector{Tg}},
+            S <: NTuple{N, AbstractGridSpacing{Tg}}, E,
+            SD <: Tuple{Vararg{AbstractSide, N}}, P <: NTuple{N, AbstractSearchPolicy},
+        }
+        return new{Tg, Tv, N, G, S, E, SD, P}(grids, spacings, data, extraps, sides, searches)
     end
 end
 
 # Type introspection
 @inline grid_type(::ConstantInterpolantND{Tg}) where {Tg} = Tg
-@inline value_type(::ConstantInterpolantND{Tg,Tv}) where {Tg,Tv} = Tv
+@inline value_type(::ConstantInterpolantND{Tg, Tv}) where {Tg, Tv} = Tv

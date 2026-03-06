@@ -88,14 +88,20 @@ Search(s1::Symbol, s2::Symbol, rest::Symbol...) = map(Search, (s1, s2, rest...))
 Search(p::AbstractSearchPolicy) = p
 
 @noinline function _search_unknown_error(sym::Symbol)
-    throw(ArgumentError(
-        "unknown search policy :$sym; valid options are :auto, :binary, :linear, :linear_binary"))
+    throw(
+        ArgumentError(
+            "unknown search policy :$sym; valid options are :auto, :binary, :linear, :linear_binary"
+        )
+    )
 end
 
 @noinline function _search_invalid_kwargs_error(sym::Symbol, kwargs)
-    throw(ArgumentError(
-        "keyword arguments are only supported for :linear_binary, " *
-        "got Search(:$sym; $(join(keys(kwargs), ", ")))"))
+    throw(
+        ArgumentError(
+            "keyword arguments are only supported for :linear_binary, " *
+                "got Search(:$sym; $(join(keys(kwargs), ", ")))"
+        )
+    )
 end
 
 # ────────────────────────────────────────
@@ -135,7 +141,7 @@ Extrap(:none)        # → NoExtrap()
 Extrap(NoExtrap())   # → NoExtrap()
 ```
 """
-function Extrap(sym::Symbol; fill_value=nothing)
+function Extrap(sym::Symbol; fill_value = nothing)
     if fill_value !== nothing && sym !== :fill
         @warn "fill_value keyword is ignored because :$sym extrapolation does not use it; only :fill does"
     end
@@ -147,7 +153,8 @@ function Extrap(sym::Symbol; fill_value=nothing)
     if sym === :constant
         Base.depwarn(
             "Extrap(:constant) is deprecated, use Extrap(:clamp) instead.",
-            :Extrap)
+            :Extrap
+        )
         return ClampExtrap()
     end
     _extrap_unknown_error(sym)
@@ -155,7 +162,7 @@ end
 
 # ND variadic: Extrap(:extend, :none, :wrap) → tuple of extrap modes
 # Forward `fill_value` kwarg only to :fill axes; warn once if no axis uses :fill
-function Extrap(s1::Symbol, s2::Symbol, rest::Symbol...; fill_value=nothing)
+function Extrap(s1::Symbol, s2::Symbol, rest::Symbol...; fill_value = nothing)
     syms = (s1, s2, rest...)
     has_fill_axis = any(==(:fill), syms)
     if fill_value !== nothing && !has_fill_axis
@@ -163,19 +170,25 @@ function Extrap(s1::Symbol, s2::Symbol, rest::Symbol...; fill_value=nothing)
     end
     # Only forward fill_value to :fill axes; use nothing for others to suppress per-axis warnings
     fv = has_fill_axis ? fill_value : nothing
-    map(s -> Extrap(s; fill_value = (s === :fill ? fv : nothing)), syms)
+    return map(s -> Extrap(s; fill_value = (s === :fill ? fv : nothing)), syms)
 end
 
 Extrap(e::AbstractExtrap) = e
 
 @noinline function _extrap_unknown_error(sym::Symbol)
-    throw(ArgumentError(
-        "unknown extrapolation mode :$sym; valid options are :none, :clamp, :fill, :constant (deprecated), :extend, :wrap"))
+    throw(
+        ArgumentError(
+            "unknown extrapolation mode :$sym; valid options are :none, :clamp, :fill, :constant (deprecated), :extend, :wrap"
+        )
+    )
 end
 
 @noinline function _extrap_fill_missing_value_error()
-    throw(ArgumentError(
-        "Extrap(:fill) requires a `fill_value` keyword argument, e.g. Extrap(:fill; fill_value=NaN)"))
+    throw(
+        ArgumentError(
+            "Extrap(:fill) requires a `fill_value` keyword argument, e.g. Extrap(:fill; fill_value=NaN)"
+        )
+    )
 end
 
 # ────────────────────────────────────────
@@ -223,6 +236,9 @@ Side(s1::Symbol, s2::Symbol, rest::Symbol...) = map(Side, (s1, s2, rest...))
 Side(s::AbstractSide) = s
 
 @noinline function _side_unknown_error(sym::Symbol)
-    throw(ArgumentError(
-        "unknown side selection :$sym; valid options are :nearest, :left, :right"))
+    throw(
+        ArgumentError(
+            "unknown side selection :$sym; valid options are :nearest, :left, :right"
+        )
+    )
 end

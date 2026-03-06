@@ -43,9 +43,9 @@ using FastInterpolations
             @test length(g) == 2
 
             # ∂f/∂x = 2xy = 2 * 1.0 * 0.5 = 1.0
-            @test g[1] ≈ 2 * xq * yq atol=1e-3
+            @test g[1] ≈ 2 * xq * yq atol = 1.0e-3
             # ∂f/∂y = x² + 3y² = 1.0 + 0.75 = 1.75
-            @test g[2] ≈ xq^2 + 3*yq^2 atol=1e-3
+            @test g[2] ≈ xq^2 + 3 * yq^2 atol = 1.0e-3
         end
 
         @testset "gradient - vector API" begin
@@ -54,8 +54,8 @@ using FastInterpolations
 
             @test g isa Vector{Float64}
             @test length(g) == 2
-            @test g[1] ≈ 2 * xq * yq atol=1e-3
-            @test g[2] ≈ xq^2 + 3*yq^2 atol=1e-3
+            @test g[1] ≈ 2 * xq * yq atol = 1.0e-3
+            @test g[2] ≈ xq^2 + 3 * yq^2 atol = 1.0e-3
 
             # Wrong dimension should throw
             @test_throws DimensionMismatch gradient(itp, [1.0])
@@ -70,13 +70,13 @@ using FastInterpolations
             @test size(H) == (2, 2)
 
             # ∂²f/∂x² = 2y = 1.0
-            @test H[1, 1] ≈ 2 * yq atol=1e-2
+            @test H[1, 1] ≈ 2 * yq atol = 1.0e-2
             # ∂²f/∂y² = 6y = 3.0
-            @test H[2, 2] ≈ 6 * yq atol=1e-2
+            @test H[2, 2] ≈ 6 * yq atol = 1.0e-2
             # ∂²f/∂x∂y = 2x = 2.0
-            @test H[1, 2] ≈ 2 * xq atol=1e-2
+            @test H[1, 2] ≈ 2 * xq atol = 1.0e-2
             # Symmetric
-            @test H[1, 2] ≈ H[2, 1] atol=1e-12
+            @test H[1, 2] ≈ H[2, 1] atol = 1.0e-12
         end
 
         @testset "hessian - vector API" begin
@@ -85,7 +85,7 @@ using FastInterpolations
 
             @test H isa Matrix{Float64}
             @test size(H) == (2, 2)
-            @test H[1, 1] ≈ 2 * yq atol=1e-2
+            @test H[1, 1] ≈ 2 * yq atol = 1.0e-2
 
             # Wrong dimension should throw
             @test_throws DimensionMismatch hessian(itp, [1.0])
@@ -97,11 +97,11 @@ using FastInterpolations
 
             @test lap isa Float64
             # ∇²f = ∂²f/∂x² + ∂²f/∂y² = 2y + 6y = 8y
-            @test lap ≈ 8 * yq atol=1e-2
+            @test lap ≈ 8 * yq atol = 1.0e-2
 
             # Should equal trace of Hessian
             H = hessian(itp, (xq, yq))
-            @test lap ≈ H[1,1] + H[2,2] atol=1e-10
+            @test lap ≈ H[1, 1] + H[2, 2] atol = 1.0e-10
         end
 
         @testset "laplacian - vector API" begin
@@ -109,7 +109,7 @@ using FastInterpolations
             lap = laplacian(itp, [xq, yq])
 
             @test lap isa Float64
-            @test lap ≈ 8 * yq atol=1e-2
+            @test lap ≈ 8 * yq atol = 1.0e-2
 
             # Wrong dimension should throw
             @test_throws DimensionMismatch laplacian(itp, [1.0])
@@ -129,25 +129,25 @@ using FastInterpolations
             g = gradient(itp3d, (xq, yq, zq))
             @test length(g) == 3
             # ∂f/∂x = 2xy
-            @test g[1] ≈ 2 * xq * yq atol=1e-2
+            @test g[1] ≈ 2 * xq * yq atol = 1.0e-2
             # ∂f/∂y = x² + z²
-            @test g[2] ≈ xq^2 + zq^2 atol=1e-2
+            @test g[2] ≈ xq^2 + zq^2 atol = 1.0e-2
             # ∂f/∂z = 2yz
-            @test g[3] ≈ 2 * yq * zq atol=1e-2
+            @test g[3] ≈ 2 * yq * zq atol = 1.0e-2
 
             # hessian
             H = hessian(itp3d, (xq, yq, zq))
             @test size(H) == (3, 3)
             # Symmetric
-            @test H[1, 2] ≈ H[2, 1] atol=1e-10
-            @test H[1, 3] ≈ H[3, 1] atol=1e-10
-            @test H[2, 3] ≈ H[3, 2] atol=1e-10
+            @test H[1, 2] ≈ H[2, 1] atol = 1.0e-10
+            @test H[1, 3] ≈ H[3, 1] atol = 1.0e-10
+            @test H[2, 3] ≈ H[3, 2] atol = 1.0e-10
 
             # laplacian
             lap = laplacian(itp3d, (xq, yq, zq))
             @test lap isa Float64
             # Laplacian should equal H[1,1] + H[2,2] + H[3,3] (trace)
-            @test lap ≈ H[1,1] + H[2,2] + H[3,3] atol=1e-10
+            @test lap ≈ H[1, 1] + H[2, 2] + H[3, 3] atol = 1.0e-10
         end
     end
 
@@ -172,7 +172,7 @@ using FastInterpolations
             # Verify results match individual evaluations
             for k in 1:10
                 expected = itp((xqs[k], yqs[k]))
-                @test vals[k] ≈ expected atol=1e-12
+                @test vals[k] ≈ expected atol = 1.0e-12
             end
 
             # Wrong lengths should error
@@ -184,15 +184,15 @@ using FastInterpolations
             yqs = collect(range(0.2, 1.5, 5))
 
             # First derivative ∂f/∂x
-            vals_dx = itp((xqs, yqs); deriv=DerivOp(1, 0))
+            vals_dx = itp((xqs, yqs); deriv = DerivOp(1, 0))
             @test length(vals_dx) == 5
 
             # DerivOp derivative spec
-            vals_dx_val = itp((xqs, yqs); deriv=DerivOp(1, 0))
+            vals_dx_val = itp((xqs, yqs); deriv = DerivOp(1, 0))
             @test vals_dx ≈ vals_dx_val
 
             # Integer derivative (all axes same order)
-            vals_d1 = itp((xqs, yqs); deriv=DerivOp(1, 1))
+            vals_d1 = itp((xqs, yqs); deriv = DerivOp(1, 1))
             @test length(vals_d1) == 5
         end
 
@@ -206,17 +206,17 @@ using FastInterpolations
 
             # Verify results
             for (k, pt) in enumerate(points)
-                @test vals[k] ≈ itp(pt) atol=1e-12
+                @test vals[k] ≈ itp(pt) atol = 1.0e-12
             end
         end
 
         @testset "AoS with derivatives" begin
             points = [(0.5, 0.3), (1.0, 0.5), (1.5, 0.8)]
 
-            vals_dx = itp(points; deriv=DerivOp(1, 0))
+            vals_dx = itp(points; deriv = DerivOp(1, 0))
             @test length(vals_dx) == 3
 
-            vals_dx_val = itp(points; deriv=DerivOp(1, 0))
+            vals_dx_val = itp(points; deriv = DerivOp(1, 0))
             @test vals_dx ≈ vals_dx_val
         end
 
@@ -241,7 +241,7 @@ using FastInterpolations
         data = [xi + yj for xi in x, yj in y]  # Simple linear function
 
         @testset "ClampExtrap() extrapolation" begin
-            itp = cubic_interp((x, y), data; extrap=ClampExtrap())
+            itp = cubic_interp((x, y), data; extrap = ClampExtrap())
 
             # Left boundary clamp
             @test itp((-0.5, 0.5)) ≈ itp((0.0, 0.5))
@@ -257,7 +257,7 @@ using FastInterpolations
 
         @testset "Per-axis extrapolation" begin
             # :constant on x, :none on y
-            itp = cubic_interp((x, y), data; extrap=(ClampExtrap(), NoExtrap()))
+            itp = cubic_interp((x, y), data; extrap = (ClampExtrap(), NoExtrap()))
 
             # x outside domain should clamp
             @test itp((-0.5, 0.5)) ≈ itp((0.0, 0.5))
@@ -275,13 +275,13 @@ using FastInterpolations
             data[end, :] .= data[1, :]
             data[:, end] .= data[:, 1]
 
-            itp = cubic_interp((x, y), data; bc=PeriodicBC(), extrap=WrapExtrap())
+            itp = cubic_interp((x, y), data; bc = PeriodicBC(), extrap = WrapExtrap())
 
             # Should wrap around
             xq = 2π + 0.5  # Past domain
             result_wrapped = itp((xq, 0.5))
             result_base = itp((0.5, 0.5))  # Same as wrapped position
-            @test result_wrapped ≈ result_base atol=1e-2
+            @test result_wrapped ≈ result_base atol = 1.0e-2
         end
     end
 
@@ -295,30 +295,30 @@ using FastInterpolations
 
         @testset "NTuple BC resolution" begin
             # Per-axis BCs
-            itp = cubic_interp((x, y), data; bc=(ZeroCurvBC(), ZeroSlopeBC()))
+            itp = cubic_interp((x, y), data; bc = (ZeroCurvBC(), ZeroSlopeBC()))
             @test itp((1.0, 0.5)) isa Float64
 
             # Per-axis with different PolyFit
-            itp2 = cubic_interp((x, y), data; bc=(LinearFit(), CubicFit()))
+            itp2 = cubic_interp((x, y), data; bc = (LinearFit(), CubicFit()))
             @test itp2((1.0, 0.5)) isa Float64
         end
 
         @testset "BC resolution error paths" begin
             # Wrong number of BCs - rejected by keyword type assertion
-            @test_throws TypeError cubic_interp((x, y), data; bc=(ZeroCurvBC(),))
-            @test_throws TypeError cubic_interp((x, y), data; bc=(ZeroCurvBC(), ZeroCurvBC(), ZeroCurvBC()))
+            @test_throws TypeError cubic_interp((x, y), data; bc = (ZeroCurvBC(),))
+            @test_throws TypeError cubic_interp((x, y), data; bc = (ZeroCurvBC(), ZeroCurvBC(), ZeroCurvBC()))
         end
 
         @testset "Extrap resolution error paths" begin
             # Wrong number of extrap modes - rejected by keyword type assertion
-            @test_throws TypeError cubic_interp((x, y), data; extrap=(NoExtrap(),))
-            @test_throws TypeError cubic_interp((x, y), data; extrap=(NoExtrap(), NoExtrap(), NoExtrap()))
+            @test_throws TypeError cubic_interp((x, y), data; extrap = (NoExtrap(),))
+            @test_throws TypeError cubic_interp((x, y), data; extrap = (NoExtrap(), NoExtrap(), NoExtrap()))
         end
 
         @testset "Search resolution error paths" begin
             # Wrong number of search policies - rejected by keyword type assertion
-            @test_throws TypeError cubic_interp((x, y), data; search=(BinarySearch(),))
-            @test_throws TypeError cubic_interp((x, y), data; search=(BinarySearch(), BinarySearch(), BinarySearch()))
+            @test_throws TypeError cubic_interp((x, y), data; search = (BinarySearch(),))
+            @test_throws TypeError cubic_interp((x, y), data; search = (BinarySearch(), BinarySearch(), BinarySearch()))
         end
     end
 
@@ -335,19 +335,19 @@ using FastInterpolations
         xq, yq = 1.0, 0.5
 
         # ∂³f/∂x³ = 6y
-        d3x = itp((xq, yq); deriv=DerivOp(3, 0))
-        @test d3x ≈ 6 * yq atol=0.5  # Third derivative has lower accuracy
+        d3x = itp((xq, yq); deriv = DerivOp(3, 0))
+        @test d3x ≈ 6 * yq atol = 0.5  # Third derivative has lower accuracy
 
         # ∂³f/∂y³ = 6x
-        d3y = itp((xq, yq); deriv=DerivOp(0, 3))
-        @test d3y ≈ 6 * xq atol=0.5
+        d3y = itp((xq, yq); deriv = DerivOp(0, 3))
+        @test d3y ≈ 6 * xq atol = 0.5
 
         # Using Val
-        d3x_val = itp((xq, yq); deriv=DerivOp(3, 0))
-        @test d3x_val ≈ d3x atol=1e-12
+        d3x_val = itp((xq, yq); deriv = DerivOp(3, 0))
+        @test d3x_val ≈ d3x atol = 1.0e-12
 
         # All axes deriv=DerivOp(3) via Int
-        d3_all = itp((xq, yq); deriv=DerivOp(3, 3))
+        d3_all = itp((xq, yq); deriv = DerivOp(3, 3))
         @test d3_all isa Float64
     end
 
@@ -366,19 +366,19 @@ using FastInterpolations
             @test dx isa FastInterpolations.DerivativeView
 
             result = dx((1.0, 0.5))
-            expected = itp((1.0, 0.5); deriv=DerivOp(1, 0))
+            expected = itp((1.0, 0.5); deriv = DerivOp(1, 0))
             @test result ≈ expected
 
             # ∂f/∂y
             dy = deriv_view(itp, (0, 1))
             result_y = dy((1.0, 0.5))
-            expected_y = itp((1.0, 0.5); deriv=DerivOp(0, 1))
+            expected_y = itp((1.0, 0.5); deriv = DerivOp(0, 1))
             @test result_y ≈ expected_y
 
             # Mixed partial ∂²f/∂x∂y
             dxy = deriv_view(itp, (1, 1))
             result_xy = dxy((1.0, 0.5))
-            expected_xy = itp((1.0, 0.5); deriv=DerivOp(1, 1))
+            expected_xy = itp((1.0, 0.5); deriv = DerivOp(1, 1))
             @test result_xy ≈ expected_xy
         end
 
@@ -386,7 +386,7 @@ using FastInterpolations
             # order=1 for ND → (1, 1) all axes
             d_all = deriv_view(itp, 1)
             result = d_all((1.0, 0.5))
-            expected = itp((1.0, 0.5); deriv=DerivOp(1, 1))
+            expected = itp((1.0, 0.5); deriv = DerivOp(1, 1))
             @test result ≈ expected
         end
 
@@ -404,14 +404,14 @@ using FastInterpolations
             @test length(results) == 3
 
             for (k, pt) in enumerate(points)
-                @test results[k] ≈ dx(pt) atol=1e-12
+                @test results[k] ≈ dx(pt) atol = 1.0e-12
             end
         end
 
         @testset "DerivativeView deriv kwarg rejection" begin
             dx = deriv_view(itp, (1, 0))
             # Attempting to override deriv should throw
-            @test_throws ArgumentError dx((1.0, 0.5); deriv=DerivOp(0, 1))
+            @test_throws ArgumentError dx((1.0, 0.5); deriv = DerivOp(0, 1))
         end
     end
 
@@ -453,7 +453,7 @@ using FastInterpolations
         end
 
         @testset "Show with mixed BCs" begin
-            itp_mixed = cubic_interp((x, y), data; bc=(ZeroCurvBC(), ZeroSlopeBC()))
+            itp_mixed = cubic_interp((x, y), data; bc = (ZeroCurvBC(), ZeroSlopeBC()))
 
             buf = IOBuffer()
             show(buf, MIME("text/plain"), itp_mixed)
@@ -466,7 +466,7 @@ using FastInterpolations
             x_vec = [0.0, 0.1, 0.3, 0.6, 1.0]
             y_vec = [0.0, 0.5, 1.0]
             data_nu = [xi * yj for xi in x_vec, yj in y_vec]
-            itp_nu = cubic_interp((x_vec, y_vec), data_nu; bc=ZeroCurvBC())
+            itp_nu = cubic_interp((x_vec, y_vec), data_nu; bc = ZeroCurvBC())
 
             buf = IOBuffer()
             show(buf, MIME("text/plain"), itp_nu)
@@ -482,7 +482,7 @@ using FastInterpolations
             y = range(0.0, 1.0, 4)
             z = range(0.0, 1.0, 3)
             data3d = [xi + yj + zk for xi in x, yj in y, zk in z]
-            itp3d = cubic_interp((x, y, z), data3d; bc=ZeroCurvBC())
+            itp3d = cubic_interp((x, y, z), data3d; bc = ZeroCurvBC())
 
             buf = IOBuffer()
             show(buf, MIME("text/plain"), itp3d)
@@ -548,7 +548,7 @@ using FastInterpolations
             y3 = range(0.0, 1.0, 4)
             z3 = range(0.0, 1.0, 3)
             data3d = [xi + yj + zk for xi in x3, yj in y3, zk in z3]
-            itp3d = cubic_interp((x3, y3, z3), data3d; bc=ZeroCurvBC())
+            itp3d = cubic_interp((x3, y3, z3), data3d; bc = ZeroCurvBC())
             @test FastInterpolations.num_partials(itp3d) == 8  # 2^3
         end
 
@@ -632,7 +632,7 @@ using FastInterpolations
         x = range(0.0, 2.0, 11)
         y = range(0.0, 1.0, 6)
         data = [xi^2 + yj^2 for xi in x, yj in y]
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         @testset "compact show" begin
             str = sprint(show, itp)
@@ -656,7 +656,7 @@ using FastInterpolations
             x_vec = [0.0, 0.1, 0.3, 0.6, 1.0]
             y_vec = [0.0, 0.5, 1.0]
             data_nu = [xi^2 + yj^2 for xi in x_vec, yj in y_vec]
-            itp_nu = quadratic_interp((x_vec, y_vec), data_nu; bc=Right(QuadraticFit()))
+            itp_nu = quadratic_interp((x_vec, y_vec), data_nu; bc = Right(QuadraticFit()))
 
             buf = IOBuffer()
             show(buf, MIME("text/plain"), itp_nu)
@@ -669,18 +669,18 @@ using FastInterpolations
         x = range(0.0, 2.0, 15)
         y = range(0.0, 1.0, 11)
         data = [xi^2 + yi^2 for xi in x, yi in y]
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         @testset "deriv_view with tuple order" begin
             dx = deriv_view(itp, (1, 0))
             @test dx isa FastInterpolations.DerivativeView
 
             result = dx((1.0, 0.5))
-            expected = itp((1.0, 0.5); deriv=DerivOp(1, 0))
+            expected = itp((1.0, 0.5); deriv = DerivOp(1, 0))
             @test result ≈ expected
 
             dy = deriv_view(itp, (0, 1))
-            @test dy((1.0, 0.5)) ≈ itp((1.0, 0.5); deriv=DerivOp(0, 1))
+            @test dy((1.0, 0.5)) ≈ itp((1.0, 0.5); deriv = DerivOp(0, 1))
         end
 
         @testset "deriv_view broadcast" begin
@@ -689,7 +689,7 @@ using FastInterpolations
             results = dx.(points)
             @test length(results) == 3
             for (k, pt) in enumerate(points)
-                @test results[k] ≈ dx(pt) atol=1e-12
+                @test results[k] ≈ dx(pt) atol = 1.0e-12
             end
         end
 
@@ -705,7 +705,7 @@ using FastInterpolations
         y = range(0.0, 1.0, 11)
         f(xi, yi) = xi^2 + yi^2
         data = [f(xi, yi) for xi in x, yi in y]
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         @testset "SoA batch with derivatives" begin
             xqs = collect(range(0.2, 1.8, 5))
@@ -713,14 +713,14 @@ using FastInterpolations
 
             vals = itp((xqs, yqs))
             for k in eachindex(xqs)
-                @test vals[k] ≈ itp((xqs[k], yqs[k])) atol=1e-12
+                @test vals[k] ≈ itp((xqs[k], yqs[k])) atol = 1.0e-12
             end
 
-            vals_dx = itp((xqs, yqs); deriv=DerivOp(1, 0))
-            vals_dx_val = itp((xqs, yqs); deriv=DerivOp(1, 0))
+            vals_dx = itp((xqs, yqs); deriv = DerivOp(1, 0))
+            vals_dx_val = itp((xqs, yqs); deriv = DerivOp(1, 0))
             @test vals_dx ≈ vals_dx_val
 
-            vals_d1 = itp((xqs, yqs); deriv=DerivOp(1, 1))
+            vals_d1 = itp((xqs, yqs); deriv = DerivOp(1, 1))
             @test length(vals_d1) == 5
         end
 
@@ -729,8 +729,8 @@ using FastInterpolations
             vals = itp(points)
             @test length(vals) == 3
 
-            vals_dx = itp(points; deriv=DerivOp(1, 0))
-            vals_dx_val = itp(points; deriv=DerivOp(1, 0))
+            vals_dx = itp(points; deriv = DerivOp(1, 0))
+            vals_dx_val = itp(points; deriv = DerivOp(1, 0))
             @test vals_dx ≈ vals_dx_val
         end
 
@@ -745,7 +745,7 @@ using FastInterpolations
         x = 1:10
         y = 1:5
         data = Float64[Float64(xi^2 + yj^2) for xi in x, yj in y]
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
         @test grid_type(itp) == Float64
     end
 
@@ -783,13 +783,13 @@ using FastInterpolations
 
         @testset "Single point oneshot" begin
             val = cubic_interp((x, y), data, (1.0, 0.5))
-            @test val ≈ 1.0 * 0.5 atol=1e-3
+            @test val ≈ 1.0 * 0.5 atol = 1.0e-3
         end
 
         @testset "Single point oneshot with derivative" begin
             # ∂f/∂x = y
-            val_dx = cubic_interp((x, y), data, (1.0, 0.5); deriv=DerivOp(1, 0))
-            @test val_dx ≈ 0.5 atol=1e-3
+            val_dx = cubic_interp((x, y), data, (1.0, 0.5); deriv = DerivOp(1, 0))
+            @test val_dx ≈ 0.5 atol = 1.0e-3
         end
 
         @testset "Batch oneshot" begin
@@ -799,7 +799,7 @@ using FastInterpolations
 
             @test length(vals) == 3
             for k in 1:3
-                @test vals[k] ≈ xqs[k] * yqs[k] atol=1e-3
+                @test vals[k] ≈ xqs[k] * yqs[k] atol = 1.0e-3
             end
         end
     end
@@ -829,7 +829,7 @@ using FastInterpolations
         end
 
         @testset "OnTheFly strategy not implemented" begin
-            @test_throws ArgumentError cubic_interp((x, y), data; coeffs=OnTheFly())
+            @test_throws ArgumentError cubic_interp((x, y), data; coeffs = OnTheFly())
         end
     end
 

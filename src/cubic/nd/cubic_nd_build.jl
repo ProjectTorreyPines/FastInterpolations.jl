@@ -55,28 +55,31 @@ For a 4D array f(x₁,x₂,x₃,x₄) with shape (10, 20, 30, 40), computing ∂
 - Process 10 × 1200 = 12,000 independent 1D slices of length 20
 """
 @with_pool pool function _differentiate_nd_along_dim!(
-    out::AbstractArray{Tv,N},
-    data::AbstractArray{Tv,N},
-    grid::AbstractVector{Tg},
-    bc::AbstractBC,
-    d::Int
-) where {Tv, Tg<:AbstractFloat, N}
+        out::AbstractArray{Tv, N},
+        data::AbstractArray{Tv, N},
+        grid::AbstractVector{Tg},
+        bc::AbstractBC,
+        d::Int
+    ) where {Tv, Tg <: AbstractFloat, N}
     @boundscheck begin
         1 ≤ d ≤ N || throw(ArgumentError("dimension d=$d out of range 1:$N"))
         size(out) == size(data) || throw(DimensionMismatch("out and data must have same size"))
-        size(data, d) == length(grid) || throw(DimensionMismatch(
-            "size(data, $d)=$(size(data,d)) must match length(grid)=$(length(grid))"))
+        size(data, d) == length(grid) || throw(
+            DimensionMismatch(
+                "size(data, $d)=$(size(data, d)) must match length(grid)=$(length(grid))"
+            )
+        )
     end
 
     n_d = size(data, d)
 
     # Compute reshape dimensions
     shape_before = 1
-    @inbounds for i in 1:(d-1)
+    @inbounds for i in 1:(d - 1)
         shape_before *= size(data, i)
     end
     shape_after = 1
-    @inbounds for i in (d+1):N
+    @inbounds for i in (d + 1):N
         shape_after *= size(data, i)
     end
 
@@ -135,28 +138,31 @@ slices simultaneously using the batch solver from 2D implementation.
 - `solve_along_dim!`: 2D batch solver used internally
 """
 @with_pool pool function _differentiate_nd_along_dim_batch!(
-    out::AbstractArray{Tv,N},
-    data::AbstractArray{Tv,N},
-    grid::AbstractVector{Tg},
-    bc::AbstractBC,
-    d::Int
-) where {Tv, Tg<:AbstractFloat, N}
+        out::AbstractArray{Tv, N},
+        data::AbstractArray{Tv, N},
+        grid::AbstractVector{Tg},
+        bc::AbstractBC,
+        d::Int
+    ) where {Tv, Tg <: AbstractFloat, N}
     @boundscheck begin
         1 ≤ d ≤ N || throw(ArgumentError("dimension d=$d out of range 1:$N"))
         size(out) == size(data) || throw(DimensionMismatch("out and data must have same size"))
-        size(data, d) == length(grid) || throw(DimensionMismatch(
-            "size(data, $d)=$(size(data,d)) must match length(grid)=$(length(grid))"))
+        size(data, d) == length(grid) || throw(
+            DimensionMismatch(
+                "size(data, $d)=$(size(data, d)) must match length(grid)=$(length(grid))"
+            )
+        )
     end
 
     n_d = size(data, d)
 
     # Compute reshape dimensions
     shape_before = 1
-    @inbounds for i in 1:(d-1)
+    @inbounds for i in 1:(d - 1)
         shape_before *= size(data, i)
     end
     shape_after = 1
-    @inbounds for i in (d+1):N
+    @inbounds for i in (d + 1):N
         shape_after *= size(data, i)
     end
 
@@ -233,17 +239,17 @@ box for each captured runtime variable; `@generated` avoids this entirely by bak
 the index expressions into the method body at specialization time.
 """
 @generated function _check_periodic_data_noalloc!(
-    data::AbstractArray{Tv, N},
-    ::Val{D},
-    ::Type{Tg}
-) where {Tv, N, D, Tg<:AbstractFloat}
+        data::AbstractArray{Tv, N},
+        ::Val{D},
+        ::Type{Tg}
+    ) where {Tv, N, D, Tg <: AbstractFloat}
     # Symbolic loop variables: i1, i2, ..., iN
     idx_vars = [Symbol("i", d) for d in 1:N]
 
     # Direct indexing expressions for first and last slice along dim D.
     # D is a compile-time constant here, so the literal 1 / :n_D are baked in.
-    first_idx = [d == D ? 1    : idx_vars[d] for d in 1:N]
-    last_idx  = [d == D ? :n_D : idx_vars[d] for d in 1:N]
+    first_idx = [d == D ? 1 : idx_vars[d] for d in 1:N]
+    last_idx = [d == D ? :n_D : idx_vars[d] for d in 1:N]
 
     # Inner comparison body: strict == equality, no tolerance parameters
     check = quote
@@ -264,7 +270,7 @@ the index expressions into the method body at specialization time.
     end
 
     return quote
-        n_D  = size(data, $D)
+        n_D = size(data, $D)
         $body
         return nothing
     end
@@ -325,21 +331,25 @@ end
     grids::NTuple{N, AbstractVector{Tg}},
     data::AbstractArray{Tv, N},
     ::Val{N}
-) where {Tv, Tg<:AbstractFloat, N} = _validate_nd_partials_dims!(partials, grids, data, Val(1), Val(N))
+) where {Tv, Tg <: AbstractFloat, N} = _validate_nd_partials_dims!(partials, grids, data, Val(1), Val(N))
 
 @inline function _validate_nd_partials_dims!(
-    partials::AbstractArray,
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    ::Val{D},
-    ::Val{N}
-) where {Tv, Tg<:AbstractFloat, D, N}
-    size(partials, D + 1) == size(data, D) || throw(DimensionMismatch(
-        "partials dim $(D+1) must match data dim $D"
-    ))
-    size(data, D) == length(grids[D]) || throw(DimensionMismatch(
-        "data dim $D must match grid $D length"
-    ))
+        partials::AbstractArray,
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        ::Val{D},
+        ::Val{N}
+    ) where {Tv, Tg <: AbstractFloat, D, N}
+    size(partials, D + 1) == size(data, D) || throw(
+        DimensionMismatch(
+            "partials dim $(D + 1) must match data dim $D"
+        )
+    )
+    size(data, D) == length(grids[D]) || throw(
+        DimensionMismatch(
+            "data dim $D must match grid $D length"
+        )
+    )
     if D < N
         _validate_nd_partials_dims!(partials, grids, data, Val(D + 1), Val(N))
     end
@@ -351,15 +361,15 @@ end
     bcs::NTuple{N, AbstractBC},
     data::AbstractArray{Tv, N},
     ::Val{N}
-) where {Tv, Tg<:AbstractFloat, N} = _validate_nd_bcs!(grids, bcs, data, Val(1), Val(N))
+) where {Tv, Tg <: AbstractFloat, N} = _validate_nd_bcs!(grids, bcs, data, Val(1), Val(N))
 
 @inline function _validate_nd_bcs!(
-    grids::NTuple{N, AbstractVector{Tg}},
-    bcs::NTuple{N, AbstractBC},
-    data::AbstractArray{Tv, N},
-    ::Val{D},
-    ::Val{N}
-) where {Tv, Tg<:AbstractFloat, D, N}
+        grids::NTuple{N, AbstractVector{Tg}},
+        bcs::NTuple{N, AbstractBC},
+        data::AbstractArray{Tv, N},
+        ::Val{D},
+        ::Val{N}
+    ) where {Tv, Tg <: AbstractFloat, D, N}
     # Only validate inclusive PeriodicBC: for exclusive, the endpoint is not yet present
     # in the data (it is added by _prepare_periodic_nd/_prepare_periodic_nd_pooled after
     # this validation).  Checking data[1] ≈ data[end] on unextended exclusive data would
@@ -369,7 +379,7 @@ end
     end
     polyfit_deg = get_polyfit_degree(bcs[D])
     if polyfit_deg > 0 && length(grids[D]) < polyfit_deg + 1
-        throw(ArgumentError("PolyFit BC on dimension $D requires at least $(polyfit_deg+1) points"))
+        throw(ArgumentError("PolyFit BC on dimension $D requires at least $(polyfit_deg + 1) points"))
     end
     if D < N
         _validate_nd_bcs!(grids, bcs, data, Val(D + 1), Val(N))
@@ -387,14 +397,14 @@ end
 ) where {N} = _validate_polyfit_bcs(grids, bcs, Val(1), Val(N))
 
 @inline function _validate_polyfit_bcs(
-    grids::NTuple{N, AbstractVector},
-    bcs::NTuple{N, AbstractBC},
-    ::Val{D},
-    ::Val{N}
-) where {D, N}
+        grids::NTuple{N, AbstractVector},
+        bcs::NTuple{N, AbstractBC},
+        ::Val{D},
+        ::Val{N}
+    ) where {D, N}
     polyfit_deg = get_polyfit_degree(bcs[D])
     if polyfit_deg > 0 && length(grids[D]) < polyfit_deg + 1
-        throw(ArgumentError("PolyFit BC on dimension $D requires at least $(polyfit_deg+1) points"))
+        throw(ArgumentError("PolyFit BC on dimension $D requires at least $(polyfit_deg + 1) points"))
     end
     if D < N
         _validate_polyfit_bcs(grids, bcs, Val(D + 1), Val(N))
@@ -407,15 +417,15 @@ end
     grids::NTuple{N, AbstractVector{Tg}},
     bcs::NTuple{N, AbstractBC},
     ::Val{N}
-) where {Tv, Tg<:AbstractFloat, N, NP1} = _build_nd_partials_dim!(partials, grids, bcs, Val(1), Val(N))
+) where {Tv, Tg <: AbstractFloat, N, NP1} = _build_nd_partials_dim!(partials, grids, bcs, Val(1), Val(N))
 
 @inline function _build_nd_partials_dim!(
-    partials::AbstractArray{Tv, NP1},
-    grids::NTuple{N, AbstractVector{Tg}},
-    bcs::NTuple{N, AbstractBC},
-    ::Val{D},
-    ::Val{N}
-) where {Tv, Tg<:AbstractFloat, D, N, NP1}
+        partials::AbstractArray{Tv, NP1},
+        grids::NTuple{N, AbstractVector{Tg}},
+        bcs::NTuple{N, AbstractBC},
+        ::Val{D},
+        ::Val{N}
+    ) where {Tv, Tg <: AbstractFloat, D, N, NP1}
     bit_d = 1 << (D - 1)
     @inbounds for p_src in 1:bit_d
         p_dst = p_src + bit_d
@@ -480,18 +490,20 @@ For d = 1 to N:
 - Uses batch SIMD optimization for d≥2 with ZeroCurvBC
 """
 function _compute_nd_partials!(
-    partials::AbstractArray{Tv, NP1},
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    bcs::NTuple{N, AbstractBC}
-) where {Tv, Tg<:AbstractFloat, N, NP1}
+        partials::AbstractArray{Tv, NP1},
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        bcs::NTuple{N, AbstractBC}
+    ) where {Tv, Tg <: AbstractFloat, N, NP1}
     # Validate dimensions (fast, no allocation)
     @boundscheck begin
         NP1 == N + 1 || throw(DimensionMismatch("partials must have N+1 dimensions"))
         n_partials = 1 << N  # 2^N
-        size(partials, 1) == n_partials || throw(DimensionMismatch(
-            "partials first dimension must be 2^N=$(n_partials), got $(size(partials, 1))"
-        ))
+        size(partials, 1) == n_partials || throw(
+            DimensionMismatch(
+                "partials first dimension must be 2^N=$(n_partials), got $(size(partials, 1))"
+            )
+        )
         _validate_nd_partials_dims!(partials, grids, data, Val(N))
     end
 
@@ -527,20 +539,20 @@ Compute all partial derivatives for N-dimensional Hermite interpolation.
 - `NodalDerivativesND{Tv, N, N+1}` containing the partials array
 """
 function _build_nd_coeffs(
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    bcs::NTuple{N, AbstractBC}
-) where {Tg<:AbstractFloat, Tv, N}
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        bcs::NTuple{N, AbstractBC}
+    ) where {Tg <: AbstractFloat, Tv, N}
     # Validate periodic BCs and PolyFit requirements (runs once at construction time)
     _validate_nd_bcs!(grids, bcs, data, Val(N))
 
     # Allocate partials array: (2^N, n₁, n₂, ..., nₙ)
     n_partials = 1 << N
     partials_shape = (n_partials, size(data)...)
-    partials = Array{Tv, N+1}(undef, partials_shape)
+    partials = Array{Tv, N + 1}(undef, partials_shape)
 
     # Compute all partial derivatives
     _compute_nd_partials!(partials, grids, data, bcs)
 
-    return NodalDerivativesND{Tv, N, N+1}(partials)
+    return NodalDerivativesND{Tv, N, N + 1}(partials)
 end

@@ -8,9 +8,9 @@
 using FastInterpolations
 using BenchmarkTools
 
-println("=" ^ 60)
+println("="^60)
 println("Searcher Zero-Overhead Validation")
-println("=" ^ 60)
+println("="^60)
 println()
 
 # Test data
@@ -27,25 +27,25 @@ println()
 
 # Baseline: internal alias (should be identical to old _find_interval)
 t_baseline_vec = @belapsed FastInterpolations._search_interval($x_vec, $xi)
-println("  _search_interval(x_vec, xi):     $(round(t_baseline_vec * 1e9, digits=2)) ns")
+println("  _search_interval(x_vec, xi):     $(round(t_baseline_vec * 1.0e9, digits = 2)) ns")
 
 # Policy path: new dispatcher
 policy = FastInterpolations.DEFAULT_SEARCHER
 t_policy_vec = @belapsed FastInterpolations.search_interval($policy, $x_vec, $xi)
-println("  search_interval(policy, x_vec, xi): $(round(t_policy_vec * 1e9, digits=2)) ns")
+println("  search_interval(policy, x_vec, xi): $(round(t_policy_vec * 1.0e9, digits = 2)) ns")
 
 # Deprecated alias
 t_deprecated_vec = @belapsed FastInterpolations._find_interval($x_vec, $xi)
-println("  _find_interval(x_vec, xi):       $(round(t_deprecated_vec * 1e9, digits=2)) ns")
+println("  _find_interval(x_vec, xi):       $(round(t_deprecated_vec * 1.0e9, digits = 2)) ns")
 
 # Calculate overhead
 overhead_vec = (t_policy_vec - t_baseline_vec) / t_baseline_vec * 100
 println()
-println("  Overhead: $(round(overhead_vec, digits=2))%")
+println("  Overhead: $(round(overhead_vec, digits = 2))%")
 
 # Assertion: must be within ±5% (noise)
 if abs(overhead_vec) > 5.0
-    @error "VALIDATION FAILED: Vector path overhead $(round(overhead_vec, digits=2))% exceeds ±5% threshold"
+    @error "VALIDATION FAILED: Vector path overhead $(round(overhead_vec, digits = 2))% exceeds ±5% threshold"
     exit(1)
 else
     println("  ✅ PASS: Within ±5% noise threshold")
@@ -61,17 +61,17 @@ println("## Range Path (O(1) direct calculation)")
 println()
 
 t_baseline_range = @belapsed FastInterpolations._search_interval($x_range, $xi)
-println("  _search_interval(x_range, xi):     $(round(t_baseline_range * 1e9, digits=2)) ns")
+println("  _search_interval(x_range, xi):     $(round(t_baseline_range * 1.0e9, digits = 2)) ns")
 
 t_policy_range = @belapsed FastInterpolations.search_interval($policy, $x_range, $xi)
-println("  search_interval(policy, x_range, xi): $(round(t_policy_range * 1e9, digits=2)) ns")
+println("  search_interval(policy, x_range, xi): $(round(t_policy_range * 1.0e9, digits = 2)) ns")
 
 overhead_range = (t_policy_range - t_baseline_range) / t_baseline_range * 100
 println()
-println("  Overhead: $(round(overhead_range, digits=2))%")
+println("  Overhead: $(round(overhead_range, digits = 2))%")
 
 if abs(overhead_range) > 5.0
-    @error "VALIDATION FAILED: Range path overhead $(round(overhead_range, digits=2))% exceeds ±5% threshold"
+    @error "VALIDATION FAILED: Range path overhead $(round(overhead_range, digits = 2))% exceeds ±5% threshold"
     exit(1)
 else
     println("  ✅ PASS: Within ±5% noise threshold")
@@ -89,17 +89,17 @@ println()
 spacing = FastInterpolations._create_spacing(x_range)
 
 t_baseline_spacing = @belapsed FastInterpolations._search_interval($x_range, $spacing, $xi)
-println("  _search_interval(x, spacing, xi):     $(round(t_baseline_spacing * 1e9, digits=2)) ns")
+println("  _search_interval(x, spacing, xi):     $(round(t_baseline_spacing * 1.0e9, digits = 2)) ns")
 
 t_policy_spacing = @belapsed FastInterpolations.search_interval($policy, $x_range, $spacing, $xi)
-println("  search_interval(policy, x, spacing, xi): $(round(t_policy_spacing * 1e9, digits=2)) ns")
+println("  search_interval(policy, x, spacing, xi): $(round(t_policy_spacing * 1.0e9, digits = 2)) ns")
 
 overhead_spacing = (t_policy_spacing - t_baseline_spacing) / t_baseline_spacing * 100
 println()
-println("  Overhead: $(round(overhead_spacing, digits=2))%")
+println("  Overhead: $(round(overhead_spacing, digits = 2))%")
 
 if abs(overhead_spacing) > 5.0
-    @error "VALIDATION FAILED: Spacing path overhead $(round(overhead_spacing, digits=2))% exceeds ±5% threshold"
+    @error "VALIDATION FAILED: Spacing path overhead $(round(overhead_spacing, digits = 2))% exceeds ±5% threshold"
     exit(1)
 else
     println("  ✅ PASS: Within ±5% noise threshold")
@@ -176,9 +176,9 @@ println()
 # Summary
 # ========================================
 
-println("=" ^ 60)
+println("="^60)
 println("🎉 ALL VALIDATIONS PASSED")
-println("=" ^ 60)
+println("="^60)
 println()
 println("Zero-overhead confirmed for Searcher default path.")
 println("Safe to proceed to Phase 3.")

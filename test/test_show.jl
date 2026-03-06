@@ -75,7 +75,7 @@
         @test occursin("CubicFit", verbose_str)
 
         # Custom BC
-        itp_custom = cubic_interp(x, y; bc=BCPair(Deriv1(0.5), Deriv2(0.0)))
+        itp_custom = cubic_interp(x, y; bc = BCPair(Deriv1(0.5), Deriv2(0.0)))
         verbose_custom = sprint(show, MIME("text/plain"), itp_custom)
         @test occursin("Deriv1", verbose_custom)
         @test occursin("Deriv2", verbose_custom)
@@ -199,10 +199,10 @@
         x_vec = collect(x)
 
         # Test different search policies
-        itp_binary = linear_interp(x_vec, y; search=BinarySearch())
-        itp_hinted = linear_interp(x_vec, y; search=LinearBinarySearch(linear_window=0))
-        itp_linear_binary = linear_interp(x_vec, y; search=LinearBinarySearch())
-        itp_linear_binary_16 = linear_interp(x_vec, y; search=LinearBinarySearch(linear_window=16))
+        itp_binary = linear_interp(x_vec, y; search = BinarySearch())
+        itp_hinted = linear_interp(x_vec, y; search = LinearBinarySearch(linear_window = 0))
+        itp_linear_binary = linear_interp(x_vec, y; search = LinearBinarySearch())
+        itp_linear_binary_16 = linear_interp(x_vec, y; search = LinearBinarySearch(linear_window = 16))
 
         verbose_binary = sprint(show, MIME("text/plain"), itp_binary)
         @test occursin("BinarySearch", verbose_binary)
@@ -223,10 +223,10 @@
     end
 
     @testset "Extrapolation mode display" begin
-        itp_none = linear_interp(x, y; extrap=NoExtrap())
-        itp_const = linear_interp(x, y; extrap=ClampExtrap())
-        itp_ext = linear_interp(x, y; extrap=ExtendExtrap())
-        itp_wrap = linear_interp(x, y; extrap=WrapExtrap())
+        itp_none = linear_interp(x, y; extrap = NoExtrap())
+        itp_const = linear_interp(x, y; extrap = ClampExtrap())
+        itp_ext = linear_interp(x, y; extrap = ExtendExtrap())
+        itp_wrap = linear_interp(x, y; extrap = WrapExtrap())
 
         @test occursin("NoExtrap", sprint(show, MIME("text/plain"), itp_none))
         @test occursin("ClampExtrap", sprint(show, MIME("text/plain"), itp_const))
@@ -257,7 +257,7 @@
 
         # Vector grid → Search row shown (binary search needed)
         x_vector = collect(x_range)
-        itp_vector = linear_interp(x_vector, y; search=BinarySearch())
+        itp_vector = linear_interp(x_vector, y; search = BinarySearch())
         verbose_vector = sprint(show, MIME("text/plain"), itp_vector)
         @test occursin("Search:", verbose_vector)
         @test occursin("BinarySearch", verbose_vector)
@@ -293,8 +293,8 @@
         x_vec = collect(range(0.0, 1.0, 11))
         y_short = sin.(x_vec)
 
-        itp_left = constant_interp(x_vec, y_short; side=LeftSide())
-        itp_right = constant_interp(x_vec, y_short; side=RightSide())
+        itp_left = constant_interp(x_vec, y_short; side = LeftSide())
+        itp_right = constant_interp(x_vec, y_short; side = RightSide())
 
         verbose_left = sprint(show, MIME("text/plain"), itp_left)
         verbose_right = sprint(show, MIME("text/plain"), itp_right)
@@ -308,7 +308,7 @@
         y_short = sin.(x_vec)
 
         # LinearSearch search policy
-        itp_linear = linear_interp(x_vec, y_short; search=LinearSearch())
+        itp_linear = linear_interp(x_vec, y_short; search = LinearSearch())
         verbose_linear = sprint(show, MIME("text/plain"), itp_linear)
         @test occursin("LinearSearch", verbose_linear)
         @test !occursin("LinearBinarySearch", verbose_linear)  # Should be just "LinearSearch"
@@ -319,24 +319,24 @@
         y_short = sin.(x_vec)
 
         # Zero-Slope BC (Deriv1(0) at both ends)
-        itp_clamped = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
+        itp_clamped = cubic_interp(x_vec, y_short; bc = BCPair(Deriv1(0.0), Deriv1(0.0)))
         verbose_clamped = sprint(show, MIME("text/plain"), itp_clamped)
         @test occursin("ZeroSlope", verbose_clamped)
 
         # Periodic BC (use PeriodicBC() API, internally becomes PeriodicData)
         y_periodic = sin.(2π .* x_vec)
         y_periodic[end] = y_periodic[1]  # Ensure periodicity
-        itp_periodic = cubic_interp(x_vec, y_periodic; bc=PeriodicBC())
+        itp_periodic = cubic_interp(x_vec, y_periodic; bc = PeriodicBC())
         verbose_periodic = sprint(show, MIME("text/plain"), itp_periodic)
         @test occursin("Periodic", verbose_periodic)
 
         # Custom BC with Deriv3
-        itp_deriv3 = cubic_interp(x_vec, y_short; bc=BCPair(Deriv3(0.0), Deriv3(0.0)))
+        itp_deriv3 = cubic_interp(x_vec, y_short; bc = BCPair(Deriv3(0.0), Deriv3(0.0)))
         verbose_deriv3 = sprint(show, MIME("text/plain"), itp_deriv3)
         @test occursin("Deriv3", verbose_deriv3)
 
         # Mixed BC types (tests _format_bc_point fallback path)
-        itp_mixed = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(0.5), Deriv3(0.0)))
+        itp_mixed = cubic_interp(x_vec, y_short; bc = BCPair(Deriv1(0.5), Deriv3(0.0)))
         verbose_mixed = sprint(show, MIME("text/plain"), itp_mixed)
         @test occursin("Deriv1", verbose_mixed)
         @test occursin("Deriv3", verbose_mixed)
@@ -347,31 +347,31 @@
         y_short = sin.(x_vec)
 
         # Clamped (Deriv1)
-        itp_clamped = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(0.0), Deriv1(0.0)))
+        itp_clamped = cubic_interp(x_vec, y_short; bc = BCPair(Deriv1(0.0), Deriv1(0.0)))
         compact_clamped = sprint(show, itp_clamped)
         @test occursin("ZeroSlope", compact_clamped)
 
         # Periodic (use PeriodicBC() API)
         y_periodic = sin.(2π .* x_vec)
         y_periodic[end] = y_periodic[1]
-        itp_periodic = cubic_interp(x_vec, y_periodic; bc=PeriodicBC())
+        itp_periodic = cubic_interp(x_vec, y_periodic; bc = PeriodicBC())
         compact_periodic = sprint(show, itp_periodic)
         @test occursin("Periodic", compact_periodic)
 
         # Custom (non-standard BC with mixed types)
-        itp_custom = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(1.0), Deriv2(0.5)))
+        itp_custom = cubic_interp(x_vec, y_short; bc = BCPair(Deriv1(1.0), Deriv2(0.5)))
         compact_custom = sprint(show, itp_custom)
         @test occursin("Custom", compact_custom)
 
         # Note: autocache=false to avoid cache sharing with previous BC of same type
-        itp_deriv2_nonzero = cubic_interp(x_vec, y_short; bc=BCPair(Deriv2(1.0), Deriv2(0.0)))
+        itp_deriv2_nonzero = cubic_interp(x_vec, y_short; bc = BCPair(Deriv2(1.0), Deriv2(0.0)))
         compact_deriv2_nonzero = sprint(show, itp_deriv2_nonzero)
         @test occursin("Custom", compact_deriv2_nonzero)
         @test !occursin("ZeroCurv", compact_deriv2_nonzero)
 
         # Bug fix: Deriv1 type but non-zero values should show "Custom", not "ZeroSlope"
         # Note: autocache=false to avoid cache sharing with previous BC of same type
-        itp_deriv1_nonzero = cubic_interp(x_vec, y_short; bc=BCPair(Deriv1(0.5), Deriv1(1.0)))
+        itp_deriv1_nonzero = cubic_interp(x_vec, y_short; bc = BCPair(Deriv1(0.5), Deriv1(1.0)))
         compact_deriv1_nonzero = sprint(show, itp_deriv1_nonzero)
         @test occursin("Custom", compact_deriv1_nonzero)
         @test !occursin("ZeroSlope", compact_deriv1_nonzero)
@@ -391,39 +391,39 @@
         y_matrix_short = [sin.(x_vec) cos.(x_vec)]
 
         # ConstantInterpolant with Vector grid
-        itp_const = constant_interp(x_vec, y_short; search=BinarySearch())
+        itp_const = constant_interp(x_vec, y_short; search = BinarySearch())
         verbose_const = sprint(show, MIME("text/plain"), itp_const)
         @test occursin("Search:", verbose_const)
         @test occursin("BinarySearch", verbose_const)
 
         # QuadraticInterpolant with Vector grid
-        itp_quad = quadratic_interp(x_vec, y_short; search=BinarySearch())
+        itp_quad = quadratic_interp(x_vec, y_short; search = BinarySearch())
         verbose_quad = sprint(show, MIME("text/plain"), itp_quad)
         @test occursin("Search:", verbose_quad)
 
         # CubicInterpolant with Vector grid
-        itp_cubic = cubic_interp(x_vec, y_short; search=BinarySearch())
+        itp_cubic = cubic_interp(x_vec, y_short; search = BinarySearch())
         verbose_cubic = sprint(show, MIME("text/plain"), itp_cubic)
         @test occursin("Search:", verbose_cubic)
 
         # CubicSeriesInterpolant with Vector grid
-        sitp_cubic = cubic_interp(x_vec, Series(y_matrix_short); search=BinarySearch())
+        sitp_cubic = cubic_interp(x_vec, Series(y_matrix_short); search = BinarySearch())
         verbose_sitp = sprint(show, MIME("text/plain"), sitp_cubic)
         @test occursin("Search:", verbose_sitp)
 
         # LinearSeriesInterpolant with Vector grid
-        sitp_linear = linear_interp(x_vec, Series(y_matrix_short); search=BinarySearch())
+        sitp_linear = linear_interp(x_vec, Series(y_matrix_short); search = BinarySearch())
         verbose_sitp_linear = sprint(show, MIME("text/plain"), sitp_linear)
         @test occursin("Search:", verbose_sitp_linear)
         @test occursin("BinarySearch", verbose_sitp_linear)
 
         # ConstantSeriesInterpolant with Vector grid
-        sitp_const = constant_interp(x_vec, Series(y_matrix_short); search=BinarySearch())
+        sitp_const = constant_interp(x_vec, Series(y_matrix_short); search = BinarySearch())
         verbose_sitp_const = sprint(show, MIME("text/plain"), sitp_const)
         @test occursin("Search:", verbose_sitp_const)
 
         # QuadraticSeriesInterpolant with Vector grid
-        sitp_quad = quadratic_interp(x_vec, Series(y_matrix_short); search=BinarySearch())
+        sitp_quad = quadratic_interp(x_vec, Series(y_matrix_short); search = BinarySearch())
         verbose_sitp_quad = sprint(show, MIME("text/plain"), sitp_quad)
         @test occursin("Search:", verbose_sitp_quad)
     end
@@ -442,24 +442,24 @@
         x = collect(range(0.0, 2π, 11))
         y = sin.(x)
         y_periodic = copy(y); y_periodic[end] = y_periodic[1]
-        
+
         # Custom BC with Deriv3
-        itp = cubic_interp(x, y; bc=Deriv3(0.0))
+        itp = cubic_interp(x, y; bc = Deriv3(0.0))
         @test occursin("Deriv3(0.0) | Deriv3(0.0)", sprint(show, MIME("text/plain"), itp))
 
-        itp = cubic_interp(x, y; bc=BCPair(Deriv3(0.0), Deriv3(0.0)))
+        itp = cubic_interp(x, y; bc = BCPair(Deriv3(0.0), Deriv3(0.0)))
         @test occursin("Deriv3(0.0) | Deriv3(0.0)", sprint(show, MIME("text/plain"), itp))
 
-        itp = cubic_interp(x, y; bc=BCPair(Deriv2(1.0), Deriv3(-5.0)))
+        itp = cubic_interp(x, y; bc = BCPair(Deriv2(1.0), Deriv3(-5.0)))
         @test occursin("Deriv2(1.0) | Deriv3(-5.0)", sprint(show, MIME("text/plain"), itp))
 
-        itp = cubic_interp(x, y; bc=ZeroCurvBC())
+        itp = cubic_interp(x, y; bc = ZeroCurvBC())
         @test occursin("ZeroCurv (S''=0 at ends)", sprint(show, MIME("text/plain"), itp))
 
-        itp = cubic_interp(x, y; bc=ZeroSlopeBC())
+        itp = cubic_interp(x, y; bc = ZeroSlopeBC())
         @test occursin("ZeroSlope (S'=0 at ends)", sprint(show, MIME("text/plain"), itp))
 
-        itp = cubic_interp(x, y_periodic; bc=PeriodicBC())
+        itp = cubic_interp(x, y_periodic; bc = PeriodicBC())
         @test occursin("Periodic", sprint(show, MIME("text/plain"), itp))
     end
 
@@ -473,9 +473,9 @@
 
         @test FI._format_search(LinearSearch()) == "LinearSearch"
         @test FI._format_search(BinarySearch()) == "BinarySearch"
-        @test FI._format_search(LinearBinarySearch(linear_window=0)) == "LinearBinarySearch{0}"
+        @test FI._format_search(LinearBinarySearch(linear_window = 0)) == "LinearBinarySearch{0}"
         @test FI._format_search(LinearBinarySearch()) == "LinearBinarySearch{8}"
-        @test FI._format_search(LinearBinarySearch(linear_window=4)) == "LinearBinarySearch{4}"
+        @test FI._format_search(LinearBinarySearch(linear_window = 4)) == "LinearBinarySearch{4}"
         @test FI._format_search(AutoSearch()) == "AutoSearch (scalar→BinarySearch, vector→adaptive)"
 
         # DerivativeView with unknown parent type (no .x or .cache.x)
@@ -511,7 +511,7 @@
         @test FI._format_bc_point(QuadraticFit()) == "QuadraticFit"
         @test FI._format_bc_point(CubicFit()) == "CubicFit"
         @test FI._format_bc_point(PolyFit{4}()) == "PolyFit{4}"
-        
+
         # Test Left/Right wrappers with PolyFit (integration test)
         @test FI._format_bc(Left(LinearFit())) == "Left(LinearFit)"
         @test FI._format_bc(Right(CubicFit())) == "Right(CubicFit)"
@@ -608,7 +608,7 @@
         # Mixed BCs: ZeroCurv on axis 1, ZeroSlope on axis 2
         bc_natural = ZeroCurvBC()
         bc_clamped = BCPair(Deriv1(0.0), Deriv1(0.0))  # ZeroSlope
-        itp_mixed = cubic_interp((x1, x2), f; bc=(bc_natural, bc_clamped))
+        itp_mixed = cubic_interp((x1, x2), f; bc = (bc_natural, bc_clamped))
 
         # Compact show should say "Mixed"
         compact_str = sprint(show, itp_mixed)
@@ -631,7 +631,7 @@
         f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
 
         # Different extrapolation modes per axis
-        itp_mixed_extrap = cubic_interp((x1, x2), f; extrap=(NoExtrap(), ClampExtrap()))
+        itp_mixed_extrap = cubic_interp((x1, x2), f; extrap = (NoExtrap(), ClampExtrap()))
 
         # Verbose show should display tuple format for extrapolation
         verbose_str = sprint(show, MIME("text/plain"), itp_mixed_extrap)
@@ -647,7 +647,7 @@
         f = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
 
         # Different search policies per axis
-        itp_mixed_search = cubic_interp((x1, x2), f; search=(BinarySearch(), LinearSearch()))
+        itp_mixed_search = cubic_interp((x1, x2), f; search = (BinarySearch(), LinearSearch()))
 
         # Verbose show should display tuple format for search policies
         verbose_str = sprint(show, MIME("text/plain"), itp_mixed_search)
@@ -722,7 +722,7 @@
         x1 = range(0.0, 1.0, 8)
         x2 = range(0.0, 2.0, 10)
         x3 = range(0.0, 3.0, 12)
-        f = [sin(xi) * cos(xj) * exp(-xk/3) for xi in x1, xj in x2, xk in x3]
+        f = [sin(xi) * cos(xj) * exp(-xk / 3) for xi in x1, xj in x2, xk in x3]
 
         itp_3d = cubic_interp((x1, x2, x3), f)
 
@@ -842,7 +842,7 @@
         x2 = collect(range(0.0, 2.0, 15))
         data = [Float64(i + j) for i in 1:11, j in 1:15]
 
-        itp = constant_interp((x1, x2), data; search=BinarySearch())
+        itp = constant_interp((x1, x2), data; search = BinarySearch())
 
         verbose_str = sprint(show, MIME("text/plain"), itp)
         @test occursin("Search:", verbose_str)
@@ -855,7 +855,7 @@
         x2 = range(0.0, 2.0, 15)
         data = [Float64(i + j) for i in 1:11, j in 1:15]
 
-        itp = constant_interp((x1, x2), data; side=(LeftSide(), RightSide()))
+        itp = constant_interp((x1, x2), data; side = (LeftSide(), RightSide()))
 
         # Compact: heterogeneous sides shown as comma-separated
         compact_str = sprint(show, itp)
@@ -872,7 +872,7 @@
         x2 = range(0.0, 2.0, 15)
         data = [Float64(i + j) for i in 1:11, j in 1:15]
 
-        itp = constant_interp((x1, x2), data; extrap=(NoExtrap(), ClampExtrap()))
+        itp = constant_interp((x1, x2), data; extrap = (NoExtrap(), ClampExtrap()))
 
         verbose_str = sprint(show, MIME("text/plain"), itp)
         @test occursin("Extrap:", verbose_str)
@@ -943,7 +943,7 @@
         x2 = collect(range(0.0, 2.0, 15))
         data = [sin(2π * xi) * cos(π * xj) for xi in x1, xj in x2]
 
-        itp = linear_interp((x1, x2), data; search=BinarySearch())
+        itp = linear_interp((x1, x2), data; search = BinarySearch())
 
         verbose_str = sprint(show, MIME("text/plain"), itp)
         @test occursin("Search:", verbose_str)

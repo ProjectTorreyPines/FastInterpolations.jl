@@ -58,13 +58,13 @@ itp_c = cubic_interp((x, y, z), data_c)
 ```
 """
 function cubic_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv_raw, N};
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=CubicFit(),
-    extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch(),
-    coeffs::AbstractCoeffStrategy=PreCompute()
-) where {N, Tv_raw}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv_raw, N};
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
+        coeffs::AbstractCoeffStrategy = PreCompute()
+    ) where {N, Tv_raw}
     # Zero-allocation type promotion (uses @generated function)
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64  # Ensure AbstractFloat
@@ -97,13 +97,13 @@ end
 Build CubicInterpolantND with precomputed coefficients.
 """
 function _build_nd_interpolant(
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    bcs::NTuple{N, AbstractBC},
-    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ::PreCompute
-) where {Tg<:AbstractFloat, Tv, N}
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        bcs::NTuple{N, AbstractBC},
+        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
+        searches::NTuple{N, AbstractSearchPolicy},
+        ::PreCompute
+    ) where {Tg <: AbstractFloat, Tv, N}
     # Extend grids/data for exclusive periodic axes (build-time only)
     # After this, all periodic axes have inclusive-form data.
     grids, data, bcs = _prepare_periodic_nd(grids, data, bcs)
@@ -134,7 +134,7 @@ function _build_nd_interpolant(
     return CubicInterpolantND{
         Tg, Tv, N, NP1,
         typeof(grids), typeof(spacings), typeof(bcs_store),
-        typeof(extraps_val), typeof(searches)
+        typeof(extraps_val), typeof(searches),
     }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)
 end
 
@@ -145,12 +145,12 @@ Build CubicInterpolantND with on-the-fly coefficient computation.
 Not yet implemented.
 """
 function _build_nd_interpolant(
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    bcs::NTuple{N, AbstractBC},
-    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-    searches::NTuple{N, AbstractSearchPolicy},
-    ::OnTheFly
-) where {Tg<:AbstractFloat, Tv, N}
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        bcs::NTuple{N, AbstractBC},
+        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
+        searches::NTuple{N, AbstractSearchPolicy},
+        ::OnTheFly
+    ) where {Tg <: AbstractFloat, Tv, N}
     throw(ArgumentError("OnTheFly strategy is not yet implemented for ND. Use PreCompute() (default)."))
 end

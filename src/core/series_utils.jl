@@ -20,17 +20,21 @@ Validate output buffer dimensions for vector evaluation.
 - `DimensionMismatch` if any output buffer length != `n_query`
 """
 function _validate_series_outputs(
-    outputs::AbstractVector{<:AbstractVector},
-    n_series::Int,
-    n_query::Int
-)
-    length(outputs) != n_series && throw(DimensionMismatch(
-        "outputs length $(length(outputs)) must match n_series $n_series"
-    ))
+        outputs::AbstractVector{<:AbstractVector},
+        n_series::Int,
+        n_query::Int
+    )
+    length(outputs) != n_series && throw(
+        DimensionMismatch(
+            "outputs length $(length(outputs)) must match n_series $n_series"
+        )
+    )
     for (k, out) in enumerate(outputs)
-        length(out) != n_query && throw(DimensionMismatch(
-            "outputs[$k] length $(length(out)) must match n_query $n_query"
-        ))
+        length(out) != n_query && throw(
+            DimensionMismatch(
+                "outputs[$k] length $(length(out)) must match n_query $n_query"
+            )
+        )
     end
     return nothing
 end
@@ -44,12 +48,14 @@ Validate scalar output buffer dimension.
 - `DimensionMismatch` if `output` length != `n_series`
 """
 @inline function _validate_scalar_output(
-    output::AbstractVector,
-    n_series::Int
-)
-    length(output) == n_series || throw(DimensionMismatch(
-        "output length $(length(output)) must match n_series $n_series"
-    ))
+        output::AbstractVector,
+        n_series::Int
+    )
+    length(output) == n_series || throw(
+        DimensionMismatch(
+            "output length $(length(output)) must match n_series $n_series"
+        )
+    )
     return nothing
 end
 
@@ -85,7 +91,7 @@ code size in the hot interpolation loops.
 # Throws
 - `DomainError` with message indicating the query point and valid domain
 """
-@noinline function _throw_extrap_domain_error(xq::T, x_min::T, x_max::T) where {T<:AbstractFloat}
+@noinline function _throw_extrap_domain_error(xq::T, x_min::T, x_max::T) where {T <: AbstractFloat}
     throw(DomainError(xq, "query point outside domain [$x_min, $x_max]"))
 end
 
@@ -99,20 +105,20 @@ For `EvalValue` + `FillExtrap`, returns the fill value.
 For derivatives, returns zero via `0 * y` (duck-typing compatible).
 """
 @inline function _constant_extrap_boundary_value(
-    y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampExtrap
-) where {Tv}
+        y::Matrix{Tv}, side::UInt8, n_pts::Int, k::Int, ::EvalValue, ::ClampExtrap
+    ) where {Tv}
     @inbounds return y[_boundary_point_index(side, n_pts), k]
 end
 
 @inline function _constant_extrap_boundary_value(
-    ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::EvalValue, e::FillExtrap
-) where {Tv}
+        ::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::EvalValue, e::FillExtrap
+    ) where {Tv}
     return e.fill_value
 end
 
 @inline function _constant_extrap_boundary_value(
-    y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
-) where {Tv}
+        y::Matrix{Tv}, ::UInt8, ::Int, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
+    ) where {Tv}
     return 0 * first(y)
 end
 
@@ -126,8 +132,8 @@ For `EvalValue` + `FillExtrap`, fills with the fill value.
 For derivatives, fills with zeros.
 """
 @inline function _fill_constant_extrap_simd!(
-    out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::EvalValue, ::ClampExtrap
-) where {Tv}
+        out::AbstractVector{Tv}, y_point::Matrix{Tv}, side::UInt8, n_pts::Int, ::EvalValue, ::ClampExtrap
+    ) where {Tv}
     idx = _boundary_point_index(side, n_pts)
     @inbounds @simd for k in axes(out, 1)
         out[k] = y_point[k, idx]
@@ -136,8 +142,8 @@ For derivatives, fills with zeros.
 end
 
 @inline function _fill_constant_extrap_simd!(
-    out::AbstractVector{Tv}, ::Matrix{Tv}, ::UInt8, ::Int, ::EvalValue, e::FillExtrap
-) where {Tv}
+        out::AbstractVector{Tv}, ::Matrix{Tv}, ::UInt8, ::Int, ::EvalValue, e::FillExtrap
+    ) where {Tv}
     @inbounds @simd for k in axes(out, 1)
         out[k] = e.fill_value
     end
@@ -145,8 +151,8 @@ end
 end
 
 @inline function _fill_constant_extrap_simd!(
-    out::AbstractVector{Tv}, y::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
-) where {Tv}
+        out::AbstractVector{Tv}, y::Matrix{Tv}, ::UInt8, ::Int, ::Union{EvalDeriv1, EvalDeriv2, EvalDeriv3}, ::_ClampOrFill
+    ) where {Tv}
     z = 0 * first(y)
     @inbounds @simd for k in axes(out, 1)
         out[k] = z

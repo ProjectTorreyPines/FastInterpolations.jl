@@ -67,26 +67,26 @@ function get_bench_params(nq::Int)
 end
 
 function format_time(ns::Float64)
-    ns < 1000 && return "$(round(ns, digits=1)) ns"
-    ns < 1_000_000 && return "$(round(ns/1000, digits=2)) μs"
-    return "$(round(ns/1_000_000, digits=2)) ms"
+    ns < 1000 && return "$(round(ns, digits = 1)) ns"
+    ns < 1_000_000 && return "$(round(ns / 1000, digits = 2)) μs"
+    return "$(round(ns / 1_000_000, digits = 2)) ms"
 end
 
 function format_bench_stats(b)
     t_med = median(b.times)
     total_time = sum(b.times)
     total_gc = sum(b.gctimes)
-    gc_pct = total_time > 0 ? round(100 * total_gc / total_time, digits=1) : 0.0
-    elapsed_s = total_time * b.params.evals / 1e9
+    gc_pct = total_time > 0 ? round(100 * total_gc / total_time, digits = 1) : 0.0
+    elapsed_s = total_time * b.params.evals / 1.0e9
     n_samples = length(b.times)
     n_evals = b.params.evals
-    return "| med: $(format_time(t_med)) | gc: $(gc_pct)% | mem: $(b.memory)B | ($(round(elapsed_s, digits=1))s, $(n_samples) smp, $(n_evals) evl)"
+    return "| med: $(format_time(t_med)) | gc: $(gc_pct)% | mem: $(b.memory)B | ($(round(elapsed_s, digits = 1))s, $(n_samples) smp, $(n_evals) evl)"
 end
 
-function run_benchmark(; verbose::Bool=true)
+function run_benchmark(; verbose::Bool = true)
     x = range(0.0, 10.0, N_GRID)
     y = sin.(x) .+ 0.1 .* collect(x)
-    ns_to_sec(ns) = ns / 1e9
+    ns_to_sec(ns) = ns / 1.0e9
 
     n_benchmarks = length(QUERY_SIZES) * 5
     est_time_sec = sum(nq -> get_bench_params(nq)[2] * 4, QUERY_SIZES)
@@ -96,7 +96,7 @@ function run_benchmark(; verbose::Bool=true)
         println("Running one-shot benchmark (n_grid=$N_GRID)")
         println("  • $(length(QUERY_SIZES)) query sizes × 5 configs = $n_benchmarks benchmarks")
         println("  • Variable seconds: tiny=$(SECS_TINY)s, small=$(SECS_SMALL)s, med=$(SECS_MED)s, large=$(SECS_LARGE)s")
-        println("  • Estimated total: ~$(round(est_time_min, digits=1)) min")
+        println("  • Estimated total: ~$(round(est_time_min, digits = 1)) min")
         println("  • GC.gc() before each benchmark for fair comparison")
         println()
     end
@@ -115,7 +115,7 @@ function run_benchmark(; verbose::Bool=true)
         clear_cubic_cache!()
         cubic_interp!(out, x, y, xi)
         GC.gc()
-        bench = @benchmarkable cubic_interp!($out, $x, $y, $xi; autocache=true)
+        bench = @benchmarkable cubic_interp!($out, $x, $y, $xi; autocache = true)
         bench.params.evals = evals
         bench.params.seconds = secs
         b = run(bench)
@@ -127,7 +127,7 @@ function run_benchmark(; verbose::Bool=true)
         verbose && print("  [$bench_count/$n_benchmarks] FastInterp(autocache=false) n=$(lpad(nq, 6))... ")
         clear_cubic_cache!()
         GC.gc()
-        bench = @benchmarkable cubic_interp!($out, $x, $y, $xi; autocache=false)
+        bench = @benchmarkable cubic_interp!($out, $x, $y, $xi; autocache = false)
         bench.params.evals = evals
         bench.params.seconds = secs
         b = run(bench)
@@ -168,7 +168,7 @@ function run_benchmark(; verbose::Bool=true)
         x_vec = collect(x)
         GC.gc()
         bench = @benchmarkable begin
-            itp = Dierckx.Spline1D($x_vec, $y; k=3, s=0.0)
+            itp = Dierckx.Spline1D($x_vec, $y; k = 3, s = 0.0)
             @. $out = itp($xi)
         end
         bench.params.evals = evals
@@ -177,14 +177,16 @@ function run_benchmark(; verbose::Bool=true)
         t_dierckx = ns_to_sec(minimum(b.times))
         verbose && println("$(lpad(format_time(minimum(b.times)), 10)) $(format_bench_stats(b))")
 
-        push!(rows, (
-            n=nq,
-            FastInterp_nocache=t_fast_nocache,
-            FastInterp_cached=t_fast_cache,
-            Interpolations=t_itp,
-            DataInterp=t_di,
-            Dierckx=t_dierckx
-        ))
+        push!(
+            rows, (
+                n = nq,
+                FastInterp_nocache = t_fast_nocache,
+                FastInterp_cached = t_fast_cache,
+                Interpolations = t_itp,
+                DataInterp = t_di,
+                Dierckx = t_dierckx,
+            )
+        )
 
         if verbose
             speedup_itp = t_itp / t_fast_cache
@@ -193,8 +195,8 @@ function run_benchmark(; verbose::Bool=true)
             speedup_nocache_itp = t_itp / t_fast_nocache
             speedup_nocache_di = t_di / t_fast_nocache
             speedup_nocache_dierckx = t_dierckx / t_fast_nocache
-            println("       → FastInterp(autocache=true) speedup: $(round(speedup_itp, digits=1))× vs Interpolations, $(round(speedup_di, digits=1))× vs DataInterp, $(round(speedup_dierckx, digits=1))× vs Dierckx")
-            println("       → FastInterp(autocache=false) speedup: $(round(speedup_nocache_itp, digits=1))× vs Interpolations, $(round(speedup_nocache_di, digits=1))× vs DataInterp, $(round(speedup_nocache_dierckx, digits=1))× vs Dierckx")
+            println("       → FastInterp(autocache=true) speedup: $(round(speedup_itp, digits = 1))× vs Interpolations, $(round(speedup_di, digits = 1))× vs DataInterp, $(round(speedup_dierckx, digits = 1))× vs Dierckx")
+            println("       → FastInterp(autocache=false) speedup: $(round(speedup_nocache_itp, digits = 1))× vs Interpolations, $(round(speedup_nocache_di, digits = 1))× vs DataInterp, $(round(speedup_nocache_dierckx, digits = 1))× vs Dierckx")
             println()
         end
     end
@@ -214,7 +216,7 @@ function save_results(df)
     open(RESULTS_JSON, "w") do io
         JSON.print(io, results, 2)
     end
-    println("Saved: $RESULTS_JSON")
+    return println("Saved: $RESULTS_JSON")
 end
 
 function load_results()
@@ -237,9 +239,9 @@ end
 # ══════════════════════════════════════════════════════════════════════════════
 
 function print_summary_table(df)
-    println("=" ^ 110)
+    println("="^110)
     println("SPEEDUP SUMMARY (FastInterpolations.jl vs others)")
-    println("=" ^ 110)
+    println("="^110)
     println()
 
     println("┌─────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┐")
@@ -256,12 +258,12 @@ function print_summary_table(df)
         speedup_dierckx_nocache = row.Dierckx / row.FastInterp_nocache
 
         n_str = lpad(row.n, 6)
-        itp_cache_str = lpad("$(round(speedup_itp_cache, digits=1))×", 8)
-        itp_nocache_str = lpad("$(round(speedup_itp_nocache, digits=1))×", 8)
-        di_cache_str = lpad("$(round(speedup_di_cache, digits=1))×", 8)
-        di_nocache_str = lpad("$(round(speedup_di_nocache, digits=1))×", 8)
-        dierckx_cache_str = lpad("$(round(speedup_dierckx_cache, digits=1))×", 8)
-        dierckx_nocache_str = lpad("$(round(speedup_dierckx_nocache, digits=1))×", 8)
+        itp_cache_str = lpad("$(round(speedup_itp_cache, digits = 1))×", 8)
+        itp_nocache_str = lpad("$(round(speedup_itp_nocache, digits = 1))×", 8)
+        di_cache_str = lpad("$(round(speedup_di_cache, digits = 1))×", 8)
+        di_nocache_str = lpad("$(round(speedup_di_nocache, digits = 1))×", 8)
+        dierckx_cache_str = lpad("$(round(speedup_dierckx_cache, digits = 1))×", 8)
+        dierckx_nocache_str = lpad("$(round(speedup_dierckx_nocache, digits = 1))×", 8)
 
         println("│ $n_str  │    $itp_cache_str       $itp_nocache_str      │    $di_cache_str       $di_nocache_str      │    $dierckx_cache_str       $dierckx_nocache_str      │")
     end
@@ -278,9 +280,9 @@ function print_summary_table(df)
     geo_dierckx_cache = geo_mean(df.Dierckx ./ df.FastInterp_cached)
     geo_dierckx_nocache = geo_mean(df.Dierckx ./ df.FastInterp_nocache)
 
-    println("  vs Interpolations.jl:     $(round(geo_itp_cache, digits=1))× (autocache=true), $(round(geo_itp_nocache, digits=1))× (autocache=false)")
-    println("  vs DataInterpolations.jl: $(round(geo_di_cache, digits=1))× (autocache=true), $(round(geo_di_nocache, digits=1))× (autocache=false)")
-    println("  vs Dierckx.jl:            $(round(geo_dierckx_cache, digits=1))× (autocache=true), $(round(geo_dierckx_nocache, digits=1))× (autocache=false)")
+    println("  vs Interpolations.jl:     $(round(geo_itp_cache, digits = 1))× (autocache=true), $(round(geo_itp_nocache, digits = 1))× (autocache=false)")
+    println("  vs DataInterpolations.jl: $(round(geo_di_cache, digits = 1))× (autocache=true), $(round(geo_di_nocache, digits = 1))× (autocache=false)")
+    println("  vs Dierckx.jl:            $(round(geo_dierckx_cache, digits = 1))× (autocache=true), $(round(geo_dierckx_nocache, digits = 1))× (autocache=false)")
 
     # Calculate ranges and save summary
     s_itp = df.Interpolations ./ df.FastInterp_cached
@@ -298,50 +300,51 @@ function print_summary_table(df)
     open(SPEEDUP_JSON, "w") do io
         JSON.print(io, summary)
     end
-    println("\nSaved: $SPEEDUP_JSON")
+    return println("\nSaved: $SPEEDUP_JSON")
 end
 
-function save_plot(df; dpi::Int=150)
+function save_plot(df; dpi::Int = 150)
     colors = [:orange, :green, :magenta, :blue]
 
     all_times = vcat(df.Interpolations, df.DataInterp, df.Dierckx, df.FastInterp_cached, df.FastInterp_nocache)
-    ymin = min(1e-6, minimum(all_times) * 0.5)
+    ymin = min(1.0e-6, minimum(all_times) * 0.5)
 
     p = plot(
         df.n, [df.Interpolations df.DataInterp df.Dierckx df.FastInterp_cached],
-        label=["Interpolations.jl" "DataInterpolations.jl" "Dierckx.jl" "FastInterpolations.jl (cache-hit)"],
-        xlabel="Query points",
-        ylabel="Time (s)",
-        title="One-Shot (Construction + Evaluation)",
-        xscale=:log10,
-        yscale=:log10,
-        xlims=(0.8, 1.25e5),
-        ylims=(ymin, :auto),
-        xticks=10.0 .^ (0:5),
-        yticks=10.0 .^ (-7:-2),
-        marker=:circle,
-        markersize=6,
-        linewidth=2,
-        color=permutedims(colors),
-        legend=:topleft,
-        grid=true,
-        minorgrid=true,
-        tickfontsize=12,
-        guidefontsize=14,
-        titlefontsize=16,
-        legendfontsize=10,
-        size=(600, 450),
-        alpha=0.8,
-        dpi=dpi
+        label = ["Interpolations.jl" "DataInterpolations.jl" "Dierckx.jl" "FastInterpolations.jl (cache-hit)"],
+        xlabel = "Query points",
+        ylabel = "Time (s)",
+        title = "One-Shot (Construction + Evaluation)",
+        xscale = :log10,
+        yscale = :log10,
+        xlims = (0.8, 1.25e5),
+        ylims = (ymin, :auto),
+        xticks = 10.0 .^ (0:5),
+        yticks = 10.0 .^ (-7:-2),
+        marker = :circle,
+        markersize = 6,
+        linewidth = 2,
+        color = permutedims(colors),
+        legend = :topleft,
+        grid = true,
+        minorgrid = true,
+        tickfontsize = 12,
+        guidefontsize = 14,
+        titlefontsize = 16,
+        legendfontsize = 10,
+        size = (600, 450),
+        alpha = 0.8,
+        dpi = dpi
     )
 
-    plot!(p, df.n, df.FastInterp_nocache,
-        label="FastInterpolations.jl (cache-miss)",
-        linestyle=:dot,
-        linewidth=2,
-        color=:blue,
-        marker=:none,
-        alpha=0.8
+    plot!(
+        p, df.n, df.FastInterp_nocache,
+        label = "FastInterpolations.jl (cache-miss)",
+        linestyle = :dot,
+        linewidth = 2,
+        color = :blue,
+        marker = :none,
+        alpha = 0.8
     )
 
     mkpath(dirname(PLOT_PATH))
@@ -364,7 +367,7 @@ function get_pkg_version(name::String)
     return "?"
 end
 
-format_range(min_val, max_val) = "$(round(min_val, digits=1)) ~ $(round(max_val, digits=1))"
+format_range(min_val, max_val) = "$(round(min_val, digits = 1)) ~ $(round(max_val, digits = 1))"
 
 function get_local_env_info()
     os_name = Sys.isapple() ? "macOS" : Sys.islinux() ? "Linux" : Sys.iswindows() ? "Windows" : "Unknown"
@@ -404,11 +407,11 @@ function get_local_env_info()
     return "$os_name $os_detail · $cpu_info"
 end
 
-function update_readme(; dry_run::Bool=false)
+function update_readme(; dry_run::Bool = false)
     println()
-    println("=" ^ 60)
+    println("="^60)
     println("Updating README.md")
-    println("=" ^ 60)
+    println("="^60)
     println()
 
     if !isfile(SPEEDUP_JSON)
@@ -445,13 +448,13 @@ function update_readme(; dry_run::Bool=false)
     println()
 
     meta_content = """<!-- BENCHMARK_VERSIONS_START -->
-> **Env:** Local · $env_info · Julia $julia_ver<br>
-> **Pkg:** FastInterpolations (v$pkg_ver) · Interpolations (v$itp_ver) · DataInterpolations (v$di_ver) · Dierckx (v$dierckx_ver)
-<!-- BENCHMARK_VERSIONS_END -->"""
+    > **Env:** Local · $env_info · Julia $julia_ver<br>
+    > **Pkg:** FastInterpolations (v$pkg_ver) · Interpolations (v$itp_ver) · DataInterpolations (v$di_ver) · Dierckx (v$dierckx_ver)
+    <!-- BENCHMARK_VERSIONS_END -->"""
 
     speedup_content = """<!-- BENCHMARK_SPEEDUP_START -->
-**Speedup:** ($(s_itp))× vs `Interpolations.jl` · ($(s_di))× vs `DataInterpolations.jl` · ($(s_dierckx))× vs `Dierckx.jl`
-<!-- BENCHMARK_SPEEDUP_END -->"""
+    **Speedup:** ($(s_itp))× vs `Interpolations.jl` · ($(s_di))× vs `DataInterpolations.jl` · ($(s_dierckx))× vs `Dierckx.jl`
+    <!-- BENCHMARK_SPEEDUP_END -->"""
 
     readme = read(README_PATH, String)
 
@@ -466,7 +469,7 @@ function update_readme(; dry_run::Bool=false)
         return
     end
 
-    if dry_run
+    return if dry_run
         println("🔍 DRY RUN - Would update README.md")
         println("Run without --dry-run to apply changes")
     else
@@ -499,9 +502,9 @@ function main()
     println()
 
     if plot_only
-        println("=" ^ 60)
+        println("="^60)
         println("Regenerating Plot from Existing Results")
-        println("=" ^ 60)
+        println("="^60)
         println()
 
         df = load_results()
@@ -509,9 +512,9 @@ function main()
         print_summary_table(df)
         save_plot(df)
     elseif !skip_benchmark
-        println("=" ^ 60)
+        println("="^60)
         println("Running Benchmark")
-        println("=" ^ 60)
+        println("="^60)
         println()
 
         df = run_benchmark()
@@ -522,15 +525,15 @@ function main()
         println("⏭️  Skipping benchmark (using existing speedup_summary.json)")
     end
 
-    update_readme(; dry_run=dry_run)
+    update_readme(; dry_run = dry_run)
 
     println()
-    println("=" ^ 60)
+    println("="^60)
     println("Done! Updated files:")
     println("  • $README_PATH")
     println("  • $PLOT_PATH")
     println("  • $SPEEDUP_JSON")
-    println("=" ^ 60)
+    return println("="^60)
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

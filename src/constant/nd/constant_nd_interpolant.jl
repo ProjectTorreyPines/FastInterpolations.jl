@@ -47,12 +47,12 @@ itp = constant_interp((x, y), data;
 ```
 """
 function constant_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv_raw, N};
-    side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
-    extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch()
-) where {N, Tv_raw}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv_raw, N};
+        side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch()
+    ) where {N, Tv_raw}
     # Validate grid dimensions
     _validate_nd_grids(grids, data)
 
@@ -75,8 +75,10 @@ function constant_interp(
     searches = _resolve_search_nd(search, Val(N))
 
     extrap_vals = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
-    return ConstantInterpolantND{Tg, Tv, N,
-        typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(sides), typeof(searches)}(
+    return ConstantInterpolantND{
+        Tg, Tv, N,
+        typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(sides), typeof(searches),
+    }(
         grids_typed, spacings, Array(data_typed), extrap_vals, sides, searches
     )
 end

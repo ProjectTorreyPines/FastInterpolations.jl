@@ -84,10 +84,10 @@ import FastInterpolations:
 
             # Derivative of sin(x)*cos(y) w.r.t. x is cos(x)*cos(y)
             # Check at interior points
-            for j in 2:length(y)-1
-                for i in 2:length(x)-1
+            for j in 2:(length(y) - 1)
+                for i in 2:(length(x) - 1)
                     expected = cos(x[i]) * cos(y[j])
-                    @test out1[i, j] ≈ expected atol=0.1
+                    @test out1[i, j] ≈ expected atol = 0.1
                 end
             end
 
@@ -96,10 +96,10 @@ import FastInterpolations:
             _differentiate_nd_along_dim!(out2, data, y, ZeroCurvBC(), 2)
 
             # Derivative of sin(x)*cos(y) w.r.t. y is -sin(x)*sin(y)
-            for j in 2:length(y)-1
-                for i in 2:length(x)-1
+            for j in 2:(length(y) - 1)
+                for i in 2:(length(x) - 1)
                     expected = -sin(x[i]) * sin(y[j])
-                    @test out2[i, j] ≈ expected atol=0.1
+                    @test out2[i, j] ≈ expected atol = 0.1
                 end
             end
         end
@@ -333,7 +333,7 @@ import FastInterpolations:
 
         @testset "_get_effective_bc_quadratic edge cases" begin
             grid_short = collect(1.0:2.0)   # 2 points, not enough for QuadraticFit
-            grid_long  = collect(1.0:10.0)  # 10 points
+            grid_long = collect(1.0:10.0)  # 10 points
 
             # p_src == 1: always return original BC
             @test _get_effective_bc_quadratic(Right(QuadraticFit()), 1, grid_long) isa Right
@@ -487,7 +487,7 @@ import FastInterpolations:
             data[end, :] = data[1, :]
 
             # Should not throw
-            itp = cubic_interp((x, y), data, bc=(PeriodicBC(), ZeroCurvBC()))
+            itp = cubic_interp((x, y), data, bc = (PeriodicBC(), ZeroCurvBC()))
             @test itp isa FastInterpolations.CubicInterpolantND
         end
     end
@@ -591,7 +591,7 @@ import FastInterpolations:
 
             # Verify it works
             @test itp((0.5, 1.0)) isa Float64
-            @test itp((0.5, 1.0)) ≈ sin(0.5) * cos(1.0) atol=0.1
+            @test itp((0.5, 1.0)) ≈ sin(0.5) * cos(1.0) atol = 0.1
         end
     end
 
@@ -618,25 +618,25 @@ end
 
     @testset "SoA batch — Int(0) deriv" begin
         out = zeros(3)
-        itp(out, (xs, ys); deriv=DerivOp(0, 0))
+        itp(out, (xs, ys); deriv = DerivOp(0, 0))
         @test out ≈ ref
     end
 
     @testset "SoA batch — DerivOp(0,0) deriv" begin
         out = zeros(3)
-        itp(out, (xs, ys); deriv=DerivOp(0, 0))
+        itp(out, (xs, ys); deriv = DerivOp(0, 0))
         @test out ≈ ref
     end
 
     @testset "SoA batch — Int(1) deriv (zero for constant)" begin
         out = ones(3)
-        itp(out, (xs, ys); deriv=DerivOp(1, 1))
+        itp(out, (xs, ys); deriv = DerivOp(1, 1))
         @test all(iszero, out)
     end
 
     @testset "SoA batch — DerivOp(1,0) deriv (zero for constant)" begin
         out = ones(3)
-        itp(out, (xs, ys); deriv=DerivOp(1, 0))
+        itp(out, (xs, ys); deriv = DerivOp(1, 0))
         @test all(iszero, out)
     end
 
@@ -646,25 +646,25 @@ end
 
     @testset "AoS batch — Int(0) deriv" begin
         out = zeros(3)
-        itp(out, queries; deriv=DerivOp(0, 0))
+        itp(out, queries; deriv = DerivOp(0, 0))
         @test out ≈ ref_aos
     end
 
     @testset "AoS batch — DerivOp(0,0) deriv" begin
         out = zeros(3)
-        itp(out, queries; deriv=DerivOp(0, 0))
+        itp(out, queries; deriv = DerivOp(0, 0))
         @test out ≈ ref_aos
     end
 
     @testset "AoS batch — Int(1) deriv (zero for constant)" begin
         out = ones(3)
-        itp(out, queries; deriv=DerivOp(1, 1))
+        itp(out, queries; deriv = DerivOp(1, 1))
         @test all(iszero, out)
     end
 
     @testset "AoS batch — DerivOp(1,0) deriv (zero for constant)" begin
         out = ones(3)
-        itp(out, queries; deriv=DerivOp(1, 0))
+        itp(out, queries; deriv = DerivOp(1, 0))
         @test all(iszero, out)
     end
 end
@@ -682,25 +682,25 @@ end
 
     @testset "SoA batch — Int(0) deriv" begin
         out = zeros(3)
-        itp(out, (xs, ys); deriv=DerivOp(0, 0))
+        itp(out, (xs, ys); deriv = DerivOp(0, 0))
         @test out ≈ ref
     end
 
     @testset "SoA batch — DerivOp(0,0) deriv" begin
         out = zeros(3)
-        itp(out, (xs, ys); deriv=DerivOp(0, 0))
+        itp(out, (xs, ys); deriv = DerivOp(0, 0))
         @test out ≈ ref
     end
 
     @testset "SoA batch — Int(2) deriv (zero for linear)" begin
         out = ones(3)
-        itp(out, (xs, ys); deriv=DerivOp(2, 2))
+        itp(out, (xs, ys); deriv = DerivOp(2, 2))
         @test all(iszero, out)
     end
 
     @testset "SoA batch — DerivOp(2,0) deriv (zero for linear)" begin
         out = ones(3)
-        itp(out, (xs, ys); deriv=DerivOp(2, 0))
+        itp(out, (xs, ys); deriv = DerivOp(2, 0))
         @test all(iszero, out)
     end
 
@@ -710,25 +710,25 @@ end
 
     @testset "AoS batch — Int(0) deriv" begin
         out = zeros(3)
-        itp(out, queries; deriv=DerivOp(0, 0))
+        itp(out, queries; deriv = DerivOp(0, 0))
         @test out ≈ ref_aos
     end
 
     @testset "AoS batch — DerivOp(0,0) deriv" begin
         out = zeros(3)
-        itp(out, queries; deriv=DerivOp(0, 0))
+        itp(out, queries; deriv = DerivOp(0, 0))
         @test out ≈ ref_aos
     end
 
     @testset "AoS batch — DerivOp(1,0) deriv" begin
         out = zeros(3)
-        itp(out, queries; deriv=DerivOp(1, 0))
-        @test all(≈(2.0, atol=1e-10), out)  # ∂/∂x(2x+3y) = 2
+        itp(out, queries; deriv = DerivOp(1, 0))
+        @test all(≈(2.0, atol = 1.0e-10), out)  # ∂/∂x(2x+3y) = 2
     end
 
     @testset "AoS batch — DerivOp(2,0) deriv (zero for linear)" begin
         out = ones(3)
-        itp(out, queries; deriv=DerivOp(2, 0))
+        itp(out, queries; deriv = DerivOp(2, 0))
         @test all(iszero, out)
     end
 end
@@ -738,47 +738,47 @@ end
     data = [2xi + 3yj for xi in grids[1], yj in grids[2]]
 
     @testset "scalar — DerivOp(1,0) deriv (else branch)" begin
-        result = linear_interp(grids, data, (0.5, 0.5); deriv=DerivOp(1, 0))
-        @test result ≈ 2.0 atol=1e-10
+        result = linear_interp(grids, data, (0.5, 0.5); deriv = DerivOp(1, 0))
+        @test result ≈ 2.0 atol = 1.0e-10
     end
 
     @testset "scalar — NTuple (0,1) deriv (else branch)" begin
-        result = linear_interp(grids, data, (0.5, 0.5); deriv=DerivOp(0, 1))
-        @test result ≈ 3.0 atol=1e-10
+        result = linear_interp(grids, data, (0.5, 0.5); deriv = DerivOp(0, 1))
+        @test result ≈ 3.0 atol = 1.0e-10
     end
 
     @testset "linear_interp! SoA — Int(0) deriv (elseif branch)" begin
         xs = [0.25, 0.75]
         ys = [0.25, 0.75]
         out = zeros(2)
-        linear_interp!(out, grids, data, (xs, ys); deriv=DerivOp(0, 0))
+        linear_interp!(out, grids, data, (xs, ys); deriv = DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in zip(xs, ys)]
-        @test out ≈ ref atol=1e-10
+        @test out ≈ ref atol = 1.0e-10
     end
 
     @testset "linear_interp! SoA — DerivOp(0,0) deriv (else branch)" begin
         xs = [0.25, 0.75]
         ys = [0.25, 0.75]
         out = zeros(2)
-        linear_interp!(out, grids, data, (xs, ys); deriv=DerivOp(0, 0))
+        linear_interp!(out, grids, data, (xs, ys); deriv = DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in zip(xs, ys)]
-        @test out ≈ ref atol=1e-10
+        @test out ≈ ref atol = 1.0e-10
     end
 
     @testset "linear_interp! AoS — Int(0) deriv (elseif branch)" begin
         queries = [(0.25, 0.25), (0.75, 0.75)]
         out = zeros(2)
-        linear_interp!(out, grids, data, queries; deriv=DerivOp(0, 0))
+        linear_interp!(out, grids, data, queries; deriv = DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in queries]
-        @test out ≈ ref atol=1e-10
+        @test out ≈ ref atol = 1.0e-10
     end
 
     @testset "linear_interp! AoS — DerivOp(0,0) deriv (else branch)" begin
         queries = [(0.25, 0.25), (0.75, 0.75)]
         out = zeros(2)
-        linear_interp!(out, grids, data, queries; deriv=DerivOp(0, 0))
+        linear_interp!(out, grids, data, queries; deriv = DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in queries]
-        @test out ≈ ref atol=1e-10
+        @test out ≈ ref atol = 1.0e-10
     end
 end
 
@@ -787,47 +787,47 @@ end
     data = [2xi + 3yj for xi in grids[1], yj in grids[2]]
 
     @testset "scalar — DerivOp(1,0) deriv (else branch)" begin
-        result = quadratic_interp(grids, data, (0.5, 0.5); deriv=DerivOp(1, 0))
-        @test result ≈ 2.0 atol=1e-6
+        result = quadratic_interp(grids, data, (0.5, 0.5); deriv = DerivOp(1, 0))
+        @test result ≈ 2.0 atol = 1.0e-6
     end
 
     @testset "scalar — NTuple (0,1) deriv (else branch)" begin
-        result = quadratic_interp(grids, data, (0.5, 0.5); deriv=DerivOp(0, 1))
-        @test result ≈ 3.0 atol=1e-6
+        result = quadratic_interp(grids, data, (0.5, 0.5); deriv = DerivOp(0, 1))
+        @test result ≈ 3.0 atol = 1.0e-6
     end
 
     @testset "quadratic_interp! SoA — Int(0) deriv (elseif branch)" begin
         xs = [0.25, 0.75]
         ys = [0.25, 0.75]
         out = zeros(2)
-        quadratic_interp!(out, grids, data, (xs, ys); deriv=DerivOp(0, 0))
+        quadratic_interp!(out, grids, data, (xs, ys); deriv = DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in zip(xs, ys)]
-        @test out ≈ ref atol=1e-6
+        @test out ≈ ref atol = 1.0e-6
     end
 
     @testset "quadratic_interp! SoA — DerivOp(0,0) deriv (else branch)" begin
         xs = [0.25, 0.75]
         ys = [0.25, 0.75]
         out = zeros(2)
-        quadratic_interp!(out, grids, data, (xs, ys); deriv=DerivOp(0, 0))
+        quadratic_interp!(out, grids, data, (xs, ys); deriv = DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in zip(xs, ys)]
-        @test out ≈ ref atol=1e-6
+        @test out ≈ ref atol = 1.0e-6
     end
 
     @testset "quadratic_interp! AoS — Int(0) deriv (elseif branch)" begin
         queries = [(0.25, 0.25), (0.75, 0.75)]
         out = zeros(2)
-        quadratic_interp!(out, grids, data, queries; deriv=DerivOp(0, 0))
+        quadratic_interp!(out, grids, data, queries; deriv = DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in queries]
-        @test out ≈ ref atol=1e-6
+        @test out ≈ ref atol = 1.0e-6
     end
 
     @testset "quadratic_interp! AoS — DerivOp(0,0) deriv (else branch)" begin
         queries = [(0.25, 0.25), (0.75, 0.75)]
         out = zeros(2)
-        quadratic_interp!(out, grids, data, queries; deriv=DerivOp(0, 0))
+        quadratic_interp!(out, grids, data, queries; deriv = DerivOp(0, 0))
         ref = [2xi + 3yj for (xi, yj) in queries]
-        @test out ≈ ref atol=1e-6
+        @test out ≈ ref atol = 1.0e-6
     end
 end
 
@@ -837,14 +837,14 @@ end
 
     @testset "fast path 1: WrapExtrap() extrap with bcs=nothing (linear oneshot)" begin
         # Uniform WrapExtrap on all dims — exercises periodic wrap fast path
-        result = linear_interp(grids, data, (0.5, 0.5); extrap=WrapExtrap())
-        @test result ≈ 1.0 atol=1e-10
+        result = linear_interp(grids, data, (0.5, 0.5); extrap = WrapExtrap())
+        @test result ≈ 1.0 atol = 1.0e-10
     end
 
     @testset "fallback: non-uniform extraps with bcs=nothing (linear oneshot)" begin
         # Mixed extrap types per dim — exercises per-dim extrap dispatch fallback
-        result = linear_interp(grids, data, (0.5, 0.5); extrap=(NoExtrap(), ClampExtrap()))
-        @test result ≈ 1.0 atol=1e-10
+        result = linear_interp(grids, data, (0.5, 0.5); extrap = (NoExtrap(), ClampExtrap()))
+        @test result ≈ 1.0 atol = 1.0e-10
     end
 
     @testset "fast path 3: WrapExtrap() extrap with mixed BCs (cubic oneshot)" begin
@@ -856,9 +856,11 @@ end
         data_p[end, :] = data_p[1, :]  # ensure periodicity in x
 
         # Query is interior: cos(π/2) + 0.5 ≈ 0.5
-        result = cubic_interp((x, y), data_p, (π/2, 0.5);
-            bc=(PeriodicBC(), ZeroCurvBC()), extrap=WrapExtrap())
-        @test result ≈ 0.5 atol=0.01
+        result = cubic_interp(
+            (x, y), data_p, (π / 2, 0.5);
+            bc = (PeriodicBC(), ZeroCurvBC()), extrap = WrapExtrap()
+        )
+        @test result ≈ 0.5 atol = 0.01
     end
 
     @testset "fallback: non-uniform extraps with mixed BCs (cubic oneshot)" begin
@@ -870,20 +872,22 @@ end
         data_p[end, :] = data_p[1, :]
 
         # Query is interior: cos(π/2) + 0.5 ≈ 0.5 (extrap mode doesn't affect interior)
-        result = cubic_interp((x, y), data_p, (π/2, 0.5);
-            bc=(PeriodicBC(), ZeroCurvBC()), extrap=(NoExtrap(), ClampExtrap()))
-        @test result ≈ 0.5 atol=0.01
+        result = cubic_interp(
+            (x, y), data_p, (π / 2, 0.5);
+            bc = (PeriodicBC(), ZeroCurvBC()), extrap = (NoExtrap(), ClampExtrap())
+        )
+        @test result ≈ 0.5 atol = 0.01
     end
 end
 
 @testset "mixed-sides fallback" begin
-    # Mixed side=(LeftSide(), RightSide()) 
+    # Mixed side=(LeftSide(), RightSide())
     grids = (collect(range(0.0, 2.0, 4)), collect(range(0.0, 3.0, 5)))
     data = [Float64(10i + j) for i in 1:4, j in 1:5]
 
-    result_left  = constant_interp(grids, data, (0.5, 0.5); side=LeftSide())
-    result_right = constant_interp(grids, data, (0.5, 0.5); side=RightSide())
-    result_mixed = constant_interp(grids, data, (0.5, 0.5); side=(LeftSide(), RightSide()))
+    result_left = constant_interp(grids, data, (0.5, 0.5); side = LeftSide())
+    result_right = constant_interp(grids, data, (0.5, 0.5); side = RightSide())
+    result_mixed = constant_interp(grids, data, (0.5, 0.5); side = (LeftSide(), RightSide()))
 
     @test result_mixed isa Float64
     @test result_mixed != result_left   # x picks left, y picks right corner

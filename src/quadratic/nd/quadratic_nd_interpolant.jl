@@ -42,12 +42,12 @@ itp((1.0, 0.5); deriv=(1, 0))  # ∂f/∂x
 ```
 """
 function quadratic_interp(
-    grids::NTuple{N, AbstractVector},
-    data::AbstractArray{Tv_raw, N};
-    bc::Union{AbstractBC, NTuple{N,AbstractBC}}=Left(QuadraticFit()),
-    extrap::Union{AbstractExtrap, NTuple{N,AbstractExtrap}}=NoExtrap(),
-    search::Union{AbstractSearchPolicy, NTuple{N,AbstractSearchPolicy}}=AutoSearch()
-) where {N, Tv_raw}
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv_raw, N};
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = Left(QuadraticFit()),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch()
+    ) where {N, Tv_raw}
     # Zero-allocation type promotion
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
@@ -75,12 +75,12 @@ end
 # ========================================
 
 function _build_nd_quadratic_interpolant(
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    bcs::NTuple{N, AbstractBC},
-    extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-    searches::NTuple{N, AbstractSearchPolicy}
-) where {Tg<:AbstractFloat, Tv, N}
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        bcs::NTuple{N, AbstractBC},
+        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
+        searches::NTuple{N, AbstractSearchPolicy}
+    ) where {Tg <: AbstractFloat, Tv, N}
     # Build nodal derivatives using quadratic recurrence
     nodal_derivs = _build_nd_coeffs_quadratic(grids, data, bcs)
 
@@ -97,6 +97,6 @@ function _build_nd_quadratic_interpolant(
     return QuadraticInterpolantND{
         Tg, Tv, N, NP1,
         typeof(grids), typeof(spacings), typeof(bcs_store),
-        typeof(extraps_val), typeof(searches)
+        typeof(extraps_val), typeof(searches),
     }(grids, spacings, nodal_derivs, bcs_store, extraps_val, searches)
 end

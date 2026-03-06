@@ -49,7 +49,7 @@ itp(q; deriv=DerivOp(0, 2))     # ∂²f/∂y²
 struct DerivOp{N} <: AbstractEvalOp end
 
 # Backward-compatible const aliases (zero changes needed in kernel code)
-const EvalValue  = DerivOp{0}
+const EvalValue = DerivOp{0}
 const EvalDeriv1 = DerivOp{1}
 const EvalDeriv2 = DerivOp{2}
 const EvalDeriv3 = DerivOp{3}
@@ -157,7 +157,7 @@ end
 # Outer constructors: standard numerics auto-promote to float
 # Custom types fall through to Julia's auto-generated FillExtrap(v) = FillExtrap{typeof(v)}(v)
 FillExtrap(v::Real) = FillExtrap{typeof(float(v))}(float(v))
-FillExtrap(v::Complex{T}) where {T<:AbstractFloat} = FillExtrap{Complex{T}}(v)
+FillExtrap(v::Complex{T}) where {T <: AbstractFloat} = FillExtrap{Complex{T}}(v)
 # Kwarg convenience
 FillExtrap(; fill_value) = FillExtrap(fill_value)
 

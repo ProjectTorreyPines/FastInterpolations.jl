@@ -29,14 +29,14 @@ Thread-safe: workspaces allocated from task-local pool.
 - `search::AbstractSearchPolicy=AutoSearch()`: Search algorithm for interval finding
 """
 @inline @with_pool pool function cubic_interp!(
-    output::AbstractVector{Tv},
-    cache::CubicSplineCache{Tg,X,F,BC},
-    y::AbstractVector{Tv},
-    x_query::AbstractVector{Tg};
-    extrap::AbstractExtrap=NoExtrap(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, X, F, BC}
+        output::AbstractVector{Tv},
+        cache::CubicSplineCache{Tg, X, F, BC},
+        y::AbstractVector{Tv},
+        x_query::AbstractVector{Tg};
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv, X, F, BC}
     @assert length(y) == length(cache.x) "y length must match cache grid"
     @assert length(output) == length(x_query) "output length must match x_query"
 
@@ -69,16 +69,16 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
 - Solve uses original BC for proper RHS materialization (PolyFit materializes via compute_rhs!)
 """
 @inline @with_pool pool function _cubic_interp_bcpair!(
-    output::AbstractVector{Tv},
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_query::AbstractVector{Tg},
-    bc::BCPair{L,R},
-    extrap::AbstractExtrap,
-    autocache::Bool,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, L<:PointBC, R<:PointBC, O<:AbstractEvalOp, S<:Searcher}
+        output::AbstractVector{Tv},
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_query::AbstractVector{Tg},
+        bc::BCPair{L, R},
+        extrap::AbstractExtrap,
+        autocache::Bool,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, L <: PointBC, R <: PointBC, O <: AbstractEvalOp, S <: Searcher}
     @assert length(y) == length(x) "y length must match x"
     @assert length(output) == length(x_query) "output length must match x_query"
 
@@ -101,15 +101,15 @@ Type-Free design: handles both concrete (Deriv1{T}) and lazy (PolyFit{D}) types.
 AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
 """
 @inline @with_pool pool function _cubic_interp_bcpair_scalar(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xq::Tq,  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
-    bc::BCPair{L,R},
-    extrap::AbstractExtrap,
-    autocache::Bool,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq<:Real, L<:PointBC, R<:PointBC, O<:AbstractEvalOp, S<:Searcher}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq,  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
+        bc::BCPair{L, R},
+        extrap::AbstractExtrap,
+        autocache::Bool,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real, L <: PointBC, R <: PointBC, O <: AbstractEvalOp, S <: Searcher}
     tmp_z = similar!(pool, y)
     # Cache uses structural equivalent (PolyFit → Deriv1 via _cache_bc_pair internally)
     cache = _get_cubic_cache(x, bc, autocache)
@@ -128,28 +128,31 @@ Pool buffers (x_p, y_p, z) are acquired from `pool` — caller's @with_pool scop
 manages their lifetime. Follows the `_create_spacing_pooled(pool, ...)` pattern.
 """
 @inline function _cubic_periodic_solve!(
-    pool::AbstractArrayPool,
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    bc::PeriodicBC,
-    autocache::Bool
-) where {Tg<:AbstractFloat, Tv}
+        pool::AbstractArrayPool,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        bc::PeriodicBC,
+        autocache::Bool
+    ) where {Tg <: AbstractFloat, Tv}
     @assert length(x) == length(y) "x and y must have the same length"
 
     # ── Extend exclusive → inclusive (pool-based, zero-alloc after warmup) ──
     if bc isa PeriodicBC{:exclusive}
         period = _resolve_exclusive_period(x, bc)
-        x_end  = first(x) + Tg(period)
-        last(x) < x_end || throw(ArgumentError(
-            "period=$period places virtual endpoint at $x_end, " *
-            "not after last grid point x[end]=$(last(x))"))
+        x_end = first(x) + Tg(period)
+        last(x) < x_end || throw(
+            ArgumentError(
+                "period=$period places virtual endpoint at $x_end, " *
+                    "not after last grid point x[end]=$(last(x))"
+            )
+        )
 
         n = length(x)
         # Grid: Range → direct construction (type-stable, O(1)), Vector → pool
         # Note: _resolve_exclusive_period guarantees period = step(x) * length(x) for Range,
         # so x_end == last(x) + step(x) and direct Range extension is always valid.
         if x isa AbstractRange
-            x_p = range(first(x), step=step(x), length=n + 1)
+            x_p = range(first(x), step = step(x), length = n + 1)
         else
             x_p = unsafe_acquire!(pool, Tg, n + 1)
             @inbounds copyto!(x_p, 1, x, 1, n)
@@ -177,15 +180,15 @@ Thread-safe: uses _get_cubic_cache + @with_pool pattern.
 Pool-based exclusive extension: zero-alloc after warmup.
 """
 @inline @with_pool pool function _cubic_interp_periodic!(
-    output::AbstractVector{Tv},
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_query::AbstractVector{Tg},
-    bc::PeriodicBC,
-    autocache::Bool,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, O<:AbstractEvalOp, S<:Searcher}
+        output::AbstractVector{Tv},
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_query::AbstractVector{Tg},
+        bc::PeriodicBC,
+        autocache::Bool,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, O <: AbstractEvalOp, S <: Searcher}
     @assert length(output) == length(x_query) "output length must match x_query"
 
     cache, y_p, z = _cubic_periodic_solve!(pool, x, y, bc, autocache)
@@ -201,14 +204,14 @@ AD-compatible: xq is unconstrained to support ForwardDiff.Dual types.
 Pool-based exclusive extension: zero-alloc after warmup.
 """
 @inline @with_pool pool function _cubic_interp_periodic_scalar(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xq::Tq,  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
-    bc::PeriodicBC,
-    autocache::Bool,
-    op::O,
-    searcher::S
-) where {Tg<:AbstractFloat, Tv, Tq<:Real, O<:AbstractEvalOp, S<:Searcher}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq,  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
+        bc::PeriodicBC,
+        autocache::Bool,
+        op::O,
+        searcher::S
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real, O <: AbstractEvalOp, S <: Searcher}
     cache, y_p, z = _cubic_periodic_solve!(pool, x, y, bc, autocache)
 
     _check_domain(cache.x, xq, WrapExtrap())
@@ -221,16 +224,16 @@ end
 In-place cubic spline interpolation with optional automatic caching.
 """
 @inline function cubic_interp!(
-    output::AbstractVector{Tv},
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_query::AbstractVector{Tg};
-    bc::AbstractBC=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
+        output::AbstractVector{Tv},
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_query::AbstractVector{Tg};
+        bc::AbstractBC = CubicFit(),
+        extrap::AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv}
     searcher = _resolve_search(x, x_query, search, nothing)
     # Periodic BC
     if _is_periodic_bc(bc)
@@ -245,30 +248,30 @@ end
 
 # Scalar query - zero allocation
 @inline function cubic_interp!(
-    output::AbstractVector{Tv},
-    cache::CubicSplineCache{Tg,X,F,BC},
-    y::AbstractVector{Tv},
-    x_query::Tg;
-    extrap::AbstractExtrap=NoExtrap(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, X, F, BC}
+        output::AbstractVector{Tv},
+        cache::CubicSplineCache{Tg, X, F, BC},
+        y::AbstractVector{Tv},
+        x_query::Tg;
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv, X, F, BC}
     @assert length(output) >= 1 "output must have at least 1 element"
-    output[1] = cubic_interp_scalar(cache, y, x_query; extrap=extrap, deriv=deriv, search=search)
+    output[1] = cubic_interp_scalar(cache, y, x_query; extrap = extrap, deriv = deriv, search = search)
     return output
 end
 
 @inline function cubic_interp!(
-    output::AbstractVector{Tv},
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_query::Tg;
-    bc::AbstractBC=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
+        output::AbstractVector{Tv},
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_query::Tg;
+        bc::AbstractBC = CubicFit(),
+        extrap::AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv}
     @assert length(output) >= 1 "output must have at least 1 element"
     output[1] = cubic_interp(x, y, x_query; bc, extrap, autocache, deriv, search)
     return output
@@ -300,15 +303,15 @@ vals = cubic_interp(cache, y, sorted_queries; search=LinearBinarySearch(linear_w
 ```
 """
 function cubic_interp(
-    cache::CubicSplineCache{Tg},
-    y::AbstractVector{Tv},
-    x_query::AbstractVector{Tg};
-    extrap::AbstractExtrap=NoExtrap(),
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
+        cache::CubicSplineCache{Tg},
+        y::AbstractVector{Tv},
+        x_query::AbstractVector{Tg};
+        extrap::AbstractExtrap = NoExtrap(),
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_query))
-    cubic_interp!(output, cache, y, x_query; extrap=extrap, deriv=deriv, search=search)
+    cubic_interp!(output, cache, y, x_query; extrap = extrap, deriv = deriv, search = search)
     return output
 end
 
@@ -340,38 +343,40 @@ vals = cubic_interp(x, y, sorted_queries; search=LinearBinarySearch(linear_windo
 ```
 """
 function cubic_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_query::AbstractVector{Tg};
-    bc::AbstractBC=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:AbstractFloat, Tv}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_query::AbstractVector{Tg};
+        bc::AbstractBC = CubicFit(),
+        extrap::AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv}
     output = Vector{Tv}(undef, length(x_query))
     cubic_interp!(output, x, y, x_query; bc, extrap, autocache, deriv, search)
     return output
 end
 
 # Scalar query - zero allocation
-cubic_interp(cache::CubicSplineCache{Tg}, y::AbstractVector{Tv},
-             x_query::Tg; extrap::AbstractExtrap=NoExtrap(), deriv::DerivOp=EvalValue(), search::AbstractSearchPolicy=AutoSearch(), hint::Union{Nothing,Base.RefValue{Int}}=nothing) where {Tg<:AbstractFloat, Tv} =
-    cubic_interp_scalar(cache, y, x_query; extrap=extrap, deriv=deriv, search=search, hint=hint)
+cubic_interp(
+    cache::CubicSplineCache{Tg}, y::AbstractVector{Tv},
+    x_query::Tg; extrap::AbstractExtrap = NoExtrap(), deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = AutoSearch(), hint::Union{Nothing, Base.RefValue{Int}} = nothing
+) where {Tg <: AbstractFloat, Tv} =
+    cubic_interp_scalar(cache, y, x_query; extrap = extrap, deriv = deriv, search = search, hint = hint)
 
 # Primary scalar method - AD-compatible
 # xq accepts Real including ForwardDiff.Dual (Dual <: Real)
 function cubic_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
-    bc::AbstractBC=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch(),
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
+        bc::AbstractBC = CubicFit(),
+        extrap::AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     searcher = _resolve_search(x, xq, search, hint)
     if _is_periodic_bc(bc)
         return _cubic_interp_periodic_scalar(x, y, xq, bc, autocache, deriv, searcher)
@@ -391,15 +396,15 @@ end
 
 # Allocating - vector query
 function cubic_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_query::AbstractVector{Tq};
-    bc::AbstractBC=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv, Tq<:Real}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_query::AbstractVector{Tq};
+        bc::AbstractBC = CubicFit(),
+        extrap::AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed, xq_typed = _promote_itp_inputs(x, y, x_query)
     return cubic_interp(x_typed, y_typed, xq_typed; bc, extrap, autocache, deriv, search)
 end
@@ -407,16 +412,16 @@ end
 # Allocating - scalar query wrapper
 # Preserves original xq type for AD support (Dual types flow through)
 function cubic_interp(
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
-    bc::AbstractBC=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch(),
-    hint::Union{Nothing,Base.RefValue{Int}}=nothing
-) where {Tg<:Real, Tv, Tq<:Real}
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        xq::Tq;  # Accepts Tg, Real, or Dual for AD (Dual <: Real)
+        bc::AbstractBC = CubicFit(),
+        extrap::AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: Real, Tv, Tq <: Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
     # Pass xq directly to preserve Dual type for AD
     return cubic_interp(x_typed, y_typed, xq; bc, extrap, autocache, deriv, search, hint)
@@ -424,16 +429,16 @@ end
 
 # In-place - vector query
 function cubic_interp!(
-    output::AbstractVector,
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_query::AbstractVector{Tq};
-    bc::AbstractBC=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv, Tq<:Real}
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_query::AbstractVector{Tq};
+        bc::AbstractBC = CubicFit(),
+        extrap::AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: Real, Tv, Tq <: Real}
     @assert length(y) == length(x) "x and y must have same length"
     @assert length(output) == length(x_query) "output must match x_query length"
 
@@ -444,27 +449,29 @@ function cubic_interp!(
     # Validate output can hold result type
     Tout = eltype(output)
     if promote_type(Tout, Tv_float) !== Tout
-        throw(ArgumentError(
-            "output eltype $Tout cannot hold interpolation result type $Tv_float. " *
-            "Use Vector{$Tv_float} or a wider type (e.g., Vector{Complex{$Tg_float}} for complex y-values)."
-        ))
+        throw(
+            ArgumentError(
+                "output eltype $Tout cannot hold interpolation result type $Tv_float. " *
+                    "Use Vector{$Tv_float} or a wider type (e.g., Vector{Complex{$Tg_float}} for complex y-values)."
+            )
+        )
     end
 
-    cubic_interp!(output, x_typed, y_typed, xq_typed; bc, extrap, autocache, deriv, search)
+    return cubic_interp!(output, x_typed, y_typed, xq_typed; bc, extrap, autocache, deriv, search)
 end
 
 # In-place - scalar query
 function cubic_interp!(
-    output::AbstractVector,
-    x::AbstractVector{Tg},
-    y::AbstractVector{Tv},
-    x_query::Tq;
-    bc::AbstractBC=CubicFit(),
-    extrap::AbstractExtrap=NoExtrap(),
-    autocache::Bool=true,
-    deriv::DerivOp=EvalValue(),
-    search::AbstractSearchPolicy=AutoSearch()
-) where {Tg<:Real, Tv, Tq<:Real}
+        output::AbstractVector,
+        x::AbstractVector{Tg},
+        y::AbstractVector{Tv},
+        x_query::Tq;
+        bc::AbstractBC = CubicFit(),
+        extrap::AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        deriv::DerivOp = EvalValue(),
+        search::AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: Real, Tv, Tq <: Real}
     @assert length(output) >= 1 "output must have at least 1 element"
 
     x_typed, y_typed = _promote_itp_inputs(x, y)

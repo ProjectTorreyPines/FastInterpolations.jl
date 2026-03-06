@@ -2,7 +2,7 @@ using Test
 using FastInterpolations
 
 @testset "integrate scaffold api" begin
-    x = collect(range(0.0, 1.0, length=11))
+    x = collect(range(0.0, 1.0, length = 11))
     y = @. x^2
     itp_lin = linear_interp(x, y)
     itp_cub = cubic_interp(x, y)

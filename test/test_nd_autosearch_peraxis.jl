@@ -11,8 +11,10 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
     @testset "Scalar AutoSearch + SoA + no hint → per-axis check" begin
         sorted = collect(1.0:100.0)
-        random = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0,
-                  7.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0]
+        random = [
+            3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0,
+            7.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0,
+        ]
 
         @testset "both sorted → both LinearBinarySearch" begin
             result = _resolve_search_nd(AutoSearch(), Val(2), (sorted, sorted), nothing)
@@ -49,12 +51,16 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
     @testset "Tuple of AutoSearch + SoA + no hint → per-axis check" begin
         sorted = collect(1.0:100.0)
-        random = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0,
-                  7.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0]
+        random = [
+            3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0,
+            7.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0,
+        ]
 
         @testset "(AutoSearch, AutoSearch) per-axis independent" begin
-            result = _resolve_search_nd((AutoSearch(), AutoSearch()), Val(2),
-                                        (sorted, random), nothing)
+            result = _resolve_search_nd(
+                (AutoSearch(), AutoSearch()), Val(2),
+                (sorted, random), nothing
+            )
             @test result[1] isa LinearBinarySearch
             @test result[2] isa BinarySearch
         end
@@ -62,19 +68,25 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
     @testset "Mixed tuple (AutoSearch + explicit) + SoA + no hint" begin
         sorted = collect(1.0:100.0)
-        random = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0,
-                  7.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0]
+        random = [
+            3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0,
+            7.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0,
+        ]
 
         @testset "(AutoSearch, BinarySearch) → axis 1 checked, axis 2 passthrough" begin
-            result = _resolve_search_nd((AutoSearch(), BinarySearch()), Val(2),
-                                        (sorted, sorted), nothing)
+            result = _resolve_search_nd(
+                (AutoSearch(), BinarySearch()), Val(2),
+                (sorted, sorted), nothing
+            )
             @test result[1] isa LinearBinarySearch   # AutoSearch resolved via monotonicity
             @test result[2] isa BinarySearch         # explicit BinarySearch unchanged
         end
 
         @testset "(BinarySearch, AutoSearch) → axis 1 passthrough, axis 2 checked" begin
-            result = _resolve_search_nd((BinarySearch(), AutoSearch()), Val(2),
-                                        (random, sorted), nothing)
+            result = _resolve_search_nd(
+                (BinarySearch(), AutoSearch()), Val(2),
+                (random, sorted), nothing
+            )
             @test result[1] isa BinarySearch         # explicit BinarySearch unchanged
             @test result[2] isa LinearBinarySearch   # AutoSearch resolved via monotonicity
         end
@@ -109,7 +121,7 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
         linear_interp!(output, (xs, ys), data, (sorted_xq, sorted_yq))
         for i in 1:n
-            @test output[i] ≈ sorted_xq[i] + sorted_yq[i] atol=1e-12
+            @test output[i] ≈ sorted_xq[i] + sorted_yq[i] atol = 1.0e-12
         end
     end
 
@@ -126,7 +138,7 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
         linear_interp!(output, (xs, ys), data, (random_xq, random_yq))
         for i in 1:n
-            @test output[i] ≈ random_xq[i] + random_yq[i] atol=1e-12
+            @test output[i] ≈ random_xq[i] + random_yq[i] atol = 1.0e-12
         end
     end
 
@@ -142,7 +154,7 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
         linear_interp!(output, (xs, ys), data, (sorted_xq, random_yq))
         for i in 1:n
-            @test output[i] ≈ sorted_xq[i] + random_yq[i] atol=1e-12
+            @test output[i] ≈ sorted_xq[i] + random_yq[i] atol = 1.0e-12
         end
     end
 
@@ -154,8 +166,10 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
     @testset "All-or-nothing: _resolve_search_nd_uniform" begin
         sorted = collect(1.0:100.0)
-        random = [3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0,
-                  7.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0]
+        random = [
+            3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0, 6.0, 5.0, 3.0,
+            7.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0,
+        ]
 
         @testset "both sorted → both LinearBinarySearch" begin
             result = _resolve_search_nd_uniform(AutoSearch(), Val(2), (sorted, sorted), nothing)
@@ -219,10 +233,10 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
         # With hint
         hints = (Ref(1), Ref(1))
-        val_with_hint = linear_interp((xs, ys), data, (3.5, 4.5); hint=hints)
+        val_with_hint = linear_interp((xs, ys), data, (3.5, 4.5); hint = hints)
 
         @test val_no_hint ≈ val_with_hint
-        @test val_no_hint ≈ 8.0 atol=1e-12
+        @test val_no_hint ≈ 8.0 atol = 1.0e-12
     end
 
     @testset "Oneshot SoA with hints — correctness" begin
@@ -241,7 +255,7 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
         # With hint
         hints = (Ref(1), Ref(1))
         out2 = Vector{Float64}(undef, n)
-        linear_interp!(out2, (xs, ys), data, (xqs, yqs); hint=hints)
+        linear_interp!(out2, (xs, ys), data, (xqs, yqs); hint = hints)
 
         @test out1 ≈ out2
     end
@@ -259,7 +273,7 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
         hints = (Ref(1), Ref(1))
         out2 = Vector{Float64}(undef, n)
-        linear_interp!(out2, (xs, ys), data, points; hint=hints)
+        linear_interp!(out2, (xs, ys), data, points; hint = hints)
 
         @test out1 ≈ out2
     end
@@ -271,7 +285,7 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
         val_no = constant_interp((xs, ys), data, (3.5, 4.5))
         hints = (Ref(1), Ref(1))
-        val_yes = constant_interp((xs, ys), data, (3.5, 4.5); hint=hints)
+        val_yes = constant_interp((xs, ys), data, (3.5, 4.5); hint = hints)
         @test val_no == val_yes
     end
 
@@ -282,8 +296,8 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
         val_no = cubic_interp((xs, ys), data, (3.5, 4.5))
         hints = (Ref(1), Ref(1))
-        val_yes = cubic_interp((xs, ys), data, (3.5, 4.5); hint=hints)
-        @test val_no ≈ val_yes atol=1e-12
+        val_yes = cubic_interp((xs, ys), data, (3.5, 4.5); hint = hints)
+        @test val_no ≈ val_yes atol = 1.0e-12
     end
 
     @testset "Oneshot quadratic with hints — correctness" begin
@@ -293,8 +307,8 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
         val_no = quadratic_interp((xs, ys), data, (3.5, 4.5))
         hints = (Ref(1), Ref(1))
-        val_yes = quadratic_interp((xs, ys), data, (3.5, 4.5); hint=hints)
-        @test val_no ≈ val_yes atol=1e-12
+        val_yes = quadratic_interp((xs, ys), data, (3.5, 4.5); hint = hints)
+        @test val_no ≈ val_yes atol = 1.0e-12
     end
 
     # ========================================
@@ -336,9 +350,9 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
         yqs = collect(0.5:0.5:9.5)
         out = Vector{Float64}(undef, length(xqs))
         hints = (Ref(1), Ref(1))
-        linear_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
-        linear_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
-        @allocated linear_interp!(out, (xs, ys), data, (xqs, yqs); hint=hints)
+        linear_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
+        linear_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
+        @allocated linear_interp!(out, (xs, ys), data, (xqs, yqs); hint = hints)
     end
 
     function _alloc_test_constant_soa_sorted()

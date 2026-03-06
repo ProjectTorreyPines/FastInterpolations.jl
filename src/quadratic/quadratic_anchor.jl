@@ -49,7 +49,7 @@ When `xq` is a `ForwardDiff.Dual`, the anchor preserves the Dual type
 in both `xq` and `dL` fields, enabling automatic differentiation through
 series interpolant evaluation.
 """
-struct _QuadraticAnchoredQuery{Tg<:AbstractFloat, Tq<:Real}
+struct _QuadraticAnchoredQuery{Tg <: AbstractFloat, Tq <: Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), Float or Dual
     side::UInt8                # 0=inside, 1=below_min, 2=above_max
@@ -88,12 +88,12 @@ itp2(aq; deriv=DerivOp(1))  # Reuses same anchor for derivative
 ```
 """
 @inline function _anchor_query(
-    x::AbstractVector{Tg},
-    xq::Tq,
-    ::Val{:quadratic},
-    wrap::Bool=false,
-    searcher::P=DEFAULT_SEARCHER
-) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
+        x::AbstractVector{Tg},
+        xq::Tq,
+        ::Val{:quadratic},
+        wrap::Bool = false,
+        searcher::P = DEFAULT_SEARCHER
+    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
     return _quadratic_anchor_query_impl(x, xq, wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
@@ -128,14 +128,14 @@ For vector queries, `xq` elements are promoted to grid type `T` for pool compati
 AD is not supported for vector queries (use scalar queries for ForwardDiff).
 """
 function _anchor_query(
-    x::AbstractVector{T},
-    xq::AbstractVector{S},
-    ::Val{:quadratic},
-    wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinarySearch())
-) where {T<:AbstractFloat, S<:Real, P<:Searcher}
+        x::AbstractVector{T},
+        xq::AbstractVector{S},
+        ::Val{:quadratic},
+        wrap::Bool = false,
+        searcher::P = _to_searcher(LinearBinarySearch())
+    ) where {T <: AbstractFloat, S <: Real, P <: Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
-    output = Vector{_QuadraticAnchoredQuery{T,T}}(undef, length(xq))
+    output = Vector{_QuadraticAnchoredQuery{T, T}}(undef, length(xq))
 
     @inbounds for k in eachindex(xq)
         output[k] = _quadratic_anchor_query_impl(x, T(xq[k]), wrap, searcher_resolved)
@@ -165,13 +165,13 @@ When buffer element type is `{Tg, Tq}` and `xq` element type is `S`:
 - Otherwise: uses `_promote_for_anchor(xq[k], Tg)` for lossless promotion
 """
 @inline function _fill_anchors!(
-    buffer::AbstractVector{_QuadraticAnchoredQuery{Tg, Tq}},
-    x::AbstractVector{Tg},
-    xq::AbstractVector{S},
-    ::Val{:quadratic},
-    wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinarySearch())
-) where {Tg<:AbstractFloat, Tq<:Real, S<:Real, P<:Searcher}
+        buffer::AbstractVector{_QuadraticAnchoredQuery{Tg, Tq}},
+        x::AbstractVector{Tg},
+        xq::AbstractVector{S},
+        ::Val{:quadratic},
+        wrap::Bool = false,
+        searcher::P = _to_searcher(LinearBinarySearch())
+    ) where {Tg <: AbstractFloat, Tq <: Real, S <: Real, P <: Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
@@ -200,11 +200,11 @@ in `xq` and `dL` fields. The interval search uses `_extract_primal(xq)` for comp
 while preserving the full Dual value for `dL` computation.
 """
 @inline function _quadratic_anchor_query_impl(
-    x::AbstractVector{Tg},
-    xq::Tq,
-    wrap::Bool,
-    policy::P=DEFAULT_SEARCHER
-) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
+        x::AbstractVector{Tg},
+        xq::Tq,
+        wrap::Bool,
+        policy::P = DEFAULT_SEARCHER
+    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
     x_min, x_max = first(x), last(x)
 
     # Use primal value for comparisons (supports ForwardDiff.Dual)
@@ -234,7 +234,7 @@ while preserving the full Dual value for `dL` computation.
     elseif xq_primal > x_max
         # Above domain: use last interval
         n = length(x)
-        @inbounds (n - 1, x[n-1], x[n])
+        @inbounds (n - 1, x[n - 1], x[n])
     else
         # Inside domain: use policy-based interval search
         search_interval(policy, x, xq_primal)
@@ -244,7 +244,7 @@ while preserving the full Dual value for `dL` computation.
     # This preserves Dual type when xq is Dual
     dL = xq - xL
 
-    return _QuadraticAnchoredQuery{Tg,Tq}(idx, xq, side, dL)
+    return _QuadraticAnchoredQuery{Tg, Tq}(idx, xq, side, dL)
 end
 
 # ========================================
@@ -270,26 +270,26 @@ d1 = itp(aq; deriv=DerivOp(1))   # First derivative
 d2 = itp(aq; deriv=DerivOp(2))   # Second derivative
 ```
 """
-@inline function (itp::QuadraticInterpolant{T})(aq::_QuadraticAnchoredQuery{T,Tq}; deriv::DerivOp=EvalValue()) where {T<:AbstractFloat, Tq<:Real}
-    _quadratic_eval_with_anchor(itp, aq, deriv)
+@inline function (itp::QuadraticInterpolant{T})(aq::_QuadraticAnchoredQuery{T, Tq}; deriv::DerivOp = EvalValue()) where {T <: AbstractFloat, Tq <: Real}
+    return _quadratic_eval_with_anchor(itp, aq, deriv)
 end
 
 @inline function _quadratic_eval_with_anchor(
-    itp::QuadraticInterpolant{T},
-    aq::_QuadraticAnchoredQuery{T,Tq},
-    op::O
-) where {T<:AbstractFloat, Tq<:Real, O<:AbstractEvalOp}
+        itp::QuadraticInterpolant{T},
+        aq::_QuadraticAnchoredQuery{T, Tq},
+        op::O
+    ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
     # Handle extrapolation based on mode and side
     return _quadratic_anchor_dispatch(itp, aq, op, itp.extrap)
 end
 
 # No extrapolation: throw DomainError if outside domain
 @inline function _quadratic_anchor_dispatch(
-    itp::QuadraticInterpolant{T},
-    aq::_QuadraticAnchoredQuery{T,Tq},
-    op::O,
-    ::NoExtrap
-) where {T<:AbstractFloat, Tq<:Real, O<:AbstractEvalOp}
+        itp::QuadraticInterpolant{T},
+        aq::_QuadraticAnchoredQuery{T, Tq},
+        op::O,
+        ::NoExtrap
+    ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
     if aq.side != 0x00  # outside domain
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
@@ -299,21 +299,21 @@ end
 
 # Inside domain or extension mode: use interpolation
 @inline function _quadratic_anchor_dispatch(
-    itp::QuadraticInterpolant{T},
-    aq::_QuadraticAnchoredQuery{T,Tq},
-    op::O,
-    ::AbstractExtrap
-) where {T<:AbstractFloat, Tq<:Real, O<:AbstractEvalOp}
+        itp::QuadraticInterpolant{T},
+        aq::_QuadraticAnchoredQuery{T, Tq},
+        op::O,
+        ::AbstractExtrap
+    ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
     @inbounds return _quadratic_kernel(op, itp.a[aq.idx], itp.d[aq.idx], itp.y[aq.idx], aq.dL)
 end
 
 # Constant extrapolation: special handling for outside-domain
 @inline function _quadratic_anchor_dispatch(
-    itp::QuadraticInterpolant{T},
-    aq::_QuadraticAnchoredQuery{T,Tq},
-    op::O,
-    extrap::_ClampOrFill
-) where {T<:AbstractFloat, Tq<:Real, O<:AbstractEvalOp}
+        itp::QuadraticInterpolant{T},
+        aq::_QuadraticAnchoredQuery{T, Tq},
+        op::O,
+        extrap::_ClampOrFill
+    ) where {T <: AbstractFloat, Tq <: Real, O <: AbstractEvalOp}
     if aq.side == 0x01  # below domain
         return _constant_extrap_result(op, @inbounds(itp.y[1]), extrap)
     elseif aq.side == 0x02  # above domain
@@ -334,9 +334,9 @@ Evaluate quadratic interpolant at multiple anchored query points.
 Returns newly allocated vector.
 """
 function (itp::QuadraticInterpolant{T})(
-    aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}};
-    deriv::DerivOp=EvalValue()
-) where {T<:AbstractFloat}
+        aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}};
+        deriv::DerivOp = EvalValue()
+    ) where {T <: AbstractFloat}
     output = Vector{T}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
         output[i] = _quadratic_eval_with_anchor(itp, aq_vec[i], deriv)
@@ -350,10 +350,10 @@ end
 In-place evaluation at multiple anchored query points. Zero allocation.
 """
 function (itp::QuadraticInterpolant{T})(
-    output::AbstractVector{T},
-    aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}};
-    deriv::DerivOp=EvalValue()
-) where {T<:AbstractFloat}
+        output::AbstractVector{T},
+        aq_vec::AbstractVector{<:_QuadraticAnchoredQuery{T}};
+        deriv::DerivOp = EvalValue()
+    ) where {T <: AbstractFloat}
     @assert length(output) == length(aq_vec) "output length must match aq_vec length"
     @inbounds for i in eachindex(aq_vec)
         output[i] = _quadratic_eval_with_anchor(itp, aq_vec[i], deriv)

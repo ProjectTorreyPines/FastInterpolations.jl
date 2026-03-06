@@ -33,9 +33,9 @@ using FastInterpolations
 
         # Check approximate correctness
         # y1 at x=0.5: exp(2im*π*0.5) = exp(im*π) = -1
-        @test isapprox(vals[1], -1.0 + 0.0im, atol=1e-10)
+        @test isapprox(vals[1], -1.0 + 0.0im, atol = 1.0e-10)
         # y2 at x=0.5: (1+2im)*0.5 = 0.5+1.0im
-        @test isapprox(vals[2], 0.5 + 1.0im, atol=1e-10)
+        @test isapprox(vals[2], 0.5 + 1.0im, atol = 1.0e-10)
     end
 
     # ========================================
@@ -62,8 +62,8 @@ using FastInterpolations
     # ========================================
     @testset "Integer grid + Complex values" begin
         x = 0:10  # Range{Int}
-        y1 = Complex{Int}[i + 2im*i for i in 0:10]
-        y2 = Complex{Int}[2i + 1im*i for i in 0:10]
+        y1 = Complex{Int}[i + 2im * i for i in 0:10]
+        y2 = Complex{Int}[2i + 1im * i for i in 0:10]
 
         sitp = linear_interp(x, Series(y1, y2))
 
@@ -75,7 +75,7 @@ using FastInterpolations
 
         # Check interpolation: y1[6]=(5+10im), y1[7]=(6+12im)
         # At 5.5: (5+10im) + 0.5*(6+12im - 5-10im) = 5.5 + 11im
-        @test isapprox(vals[1], 5.5 + 11.0im, rtol=1e-10)
+        @test isapprox(vals[1], 5.5 + 11.0im, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -110,8 +110,8 @@ using FastInterpolations
         @test length(sitp(0.5)) == 2  # Two series
 
         vals = sitp(0.5)
-        @test isapprox(vals[1], -1.0 + 0.0im, atol=1e-10)
-        @test isapprox(vals[2], 0.5 + 1.0im, atol=1e-10)
+        @test isapprox(vals[1], -1.0 + 0.0im, atol = 1.0e-10)
+        @test isapprox(vals[2], 0.5 + 1.0im, atol = 1.0e-10)
     end
 
     # ========================================
@@ -133,9 +133,9 @@ using FastInterpolations
         @test all(r -> length(r) == 3, results)
 
         # Check values
-        @test isapprox(results[1][1], (1.0 + 2.0im) * 0.25, rtol=1e-10)
-        @test isapprox(results[1][2], (1.0 + 2.0im) * 0.5, rtol=1e-10)
-        @test isapprox(results[2][3], (2.0 - 1.0im) * 0.75, rtol=1e-10)
+        @test isapprox(results[1][1], (1.0 + 2.0im) * 0.25, rtol = 1.0e-10)
+        @test isapprox(results[1][2], (1.0 + 2.0im) * 0.5, rtol = 1.0e-10)
+        @test isapprox(results[2][3], (2.0 - 1.0im) * 0.75, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -152,8 +152,8 @@ using FastInterpolations
         sitp(output, 0.5)
 
         @test output[1] isa ComplexF64
-        @test isapprox(output[1], (1.0 + 2.0im) * 0.5, rtol=1e-10)
-        @test isapprox(output[2], (2.0 - 1.0im) * 0.5, rtol=1e-10)
+        @test isapprox(output[1], (1.0 + 2.0im) * 0.5, rtol = 1.0e-10)
+        @test isapprox(output[2], (2.0 - 1.0im) * 0.5, rtol = 1.0e-10)
     end
 
     @testset "In-place vector evaluation" begin
@@ -169,7 +169,7 @@ using FastInterpolations
         sitp(outputs, xq)
 
         @test outputs[1][3] isa ComplexF64
-        @test isapprox(outputs[1][3], (1.0 + 2.0im) * 0.5, rtol=1e-10)
+        @test isapprox(outputs[1][3], (1.0 + 2.0im) * 0.5, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -181,16 +181,16 @@ using FastInterpolations
         y2 = (2.0 - 1.0im) .* collect(x)
 
         # Extension mode
-        sitp_ext = linear_interp(x, Series(y1, y2); extrap=ExtendExtrap())
+        sitp_ext = linear_interp(x, Series(y1, y2); extrap = ExtendExtrap())
         vals_ext = sitp_ext(1.5)  # Beyond domain
         @test vals_ext isa Vector{ComplexF64}
-        @test isapprox(vals_ext[1], (1.0 + 2.0im) * 1.5, rtol=1e-10)
+        @test isapprox(vals_ext[1], (1.0 + 2.0im) * 1.5, rtol = 1.0e-10)
 
         # Constant mode
-        sitp_const = linear_interp(x, Series(y1, y2); extrap=ClampExtrap())
+        sitp_const = linear_interp(x, Series(y1, y2); extrap = ClampExtrap())
         vals_const = sitp_const(1.5)  # Beyond domain
         @test vals_const isa Vector{ComplexF64}
-        @test isapprox(vals_const[1], y1[end], rtol=1e-10)
+        @test isapprox(vals_const[1], y1[end], rtol = 1.0e-10)
     end
 
     # ========================================
@@ -240,12 +240,12 @@ using FastInterpolations
         sitp = linear_interp(x, Series(y))
 
         # First derivative should be the complex slope
-        d1 = sitp(0.5; deriv=DerivOp(1))
+        d1 = sitp(0.5; deriv = DerivOp(1))
         @test d1 isa Vector{ComplexF64}
-        @test isapprox(d1[1], slope, rtol=1e-10)
+        @test isapprox(d1[1], slope, rtol = 1.0e-10)
 
         # Second derivative should be zero
-        d2 = sitp(0.5; deriv=DerivOp(2))
+        d2 = sitp(0.5; deriv = DerivOp(2))
         @test d2 isa Vector{ComplexF64}
         @test d2[1] == zero(ComplexF64)
     end

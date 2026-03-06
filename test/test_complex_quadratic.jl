@@ -14,7 +14,7 @@ using FastInterpolations
     # ========================================
     @testset "ComplexF64 values" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im]
 
         itp = quadratic_interp(x, y)
 
@@ -34,7 +34,7 @@ using FastInterpolations
     # ========================================
     @testset "ComplexF32 values" begin
         x = Float32[0, 1, 2, 3]
-        y = ComplexF32[1+2im, 3+4im, 5+6im, 7+8im]
+        y = ComplexF32[1 + 2im, 3 + 4im, 5 + 6im, 7 + 8im]
 
         itp = quadratic_interp(x, y)
 
@@ -52,7 +52,7 @@ using FastInterpolations
     # ========================================
     @testset "Integer grid + Complex values" begin
         x = 0:3  # Range{Int}
-        y = Complex{Int}[1+2im, 3+4im, 5+6im, 7+8im]
+        y = Complex{Int}[1 + 2im, 3 + 4im, 5 + 6im, 7 + 8im]
 
         itp = quadratic_interp(x, y)
 
@@ -68,7 +68,7 @@ using FastInterpolations
     # ========================================
     @testset "Float32 grid + ComplexF64 values" begin
         x = Float32[0, 1, 2, 3]
-        y = ComplexF64[1+2im, 3+4im, 5+6im, 7+8im]
+        y = ComplexF64[1 + 2im, 3 + 4im, 5 + 6im, 7 + 8im]
 
         itp = quadratic_interp(x, y)
 
@@ -89,15 +89,15 @@ using FastInterpolations
         a_coef = 1.0 + 1.0im
         b_coef = 2.0 - 1.0im
         c_coef = 3.0 + 2.0im
-        f(t) = a_coef*t^2 + b_coef*t + c_coef
+        f(t) = a_coef * t^2 + b_coef * t + c_coef
         y = f.(x)
 
         itp = quadratic_interp(x, y)
 
         # Test interpolation at various points
-        @test itp(0.5) ≈ f(0.5) atol=1e-12
-        @test itp(1.5) ≈ f(1.5) atol=1e-12
-        @test itp(2.5) ≈ f(2.5) atol=1e-12
+        @test itp(0.5) ≈ f(0.5) atol = 1.0e-12
+        @test itp(1.5) ≈ f(1.5) atol = 1.0e-12
+        @test itp(2.5) ≈ f(2.5) atol = 1.0e-12
     end
 
     # ========================================
@@ -105,20 +105,20 @@ using FastInterpolations
     # ========================================
     @testset "Derivatives return Complex" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im]
 
         itp = quadratic_interp(x, y)
 
         # First derivative should return ComplexF64
-        d1 = itp(0.5; deriv=DerivOp(1))
+        d1 = itp(0.5; deriv = DerivOp(1))
         @test d1 isa ComplexF64
 
         # Second derivative should return ComplexF64
-        d2 = itp(0.5; deriv=DerivOp(2))
+        d2 = itp(0.5; deriv = DerivOp(2))
         @test d2 isa ComplexF64
 
         # Third derivative should be zero (quadratic)
-        d3 = itp(0.5; deriv=DerivOp(3))
+        d3 = itp(0.5; deriv = DerivOp(3))
         @test d3 isa ComplexF64
         @test d3 == zero(ComplexF64)
     end
@@ -134,20 +134,20 @@ using FastInterpolations
         a_coef = 1.0 + 1.0im
         b_coef = 2.0 - 1.0im
         c_coef = 3.0 + 2.0im
-        f(t) = a_coef*t^2 + b_coef*t + c_coef
-        df(t) = 2*a_coef*t + b_coef
-        d2f(t) = 2*a_coef
+        f(t) = a_coef * t^2 + b_coef * t + c_coef
+        df(t) = 2 * a_coef * t + b_coef
+        d2f(t) = 2 * a_coef
         y = f.(x)
 
         itp = quadratic_interp(x, y)
 
         # Check first derivative
-        @test itp(0.5; deriv=DerivOp(1)) ≈ df(0.5) atol=1e-12
-        @test itp(1.5; deriv=DerivOp(1)) ≈ df(1.5) atol=1e-12
+        @test itp(0.5; deriv = DerivOp(1)) ≈ df(0.5) atol = 1.0e-12
+        @test itp(1.5; deriv = DerivOp(1)) ≈ df(1.5) atol = 1.0e-12
 
         # Check second derivative
-        @test itp(0.5; deriv=DerivOp(2)) ≈ d2f(0.5) atol=1e-12
-        @test itp(1.5; deriv=DerivOp(2)) ≈ d2f(1.5) atol=1e-12
+        @test itp(0.5; deriv = DerivOp(2)) ≈ d2f(0.5) atol = 1.0e-12
+        @test itp(1.5; deriv = DerivOp(2)) ≈ d2f(1.5) atol = 1.0e-12
     end
 
     # ========================================
@@ -155,15 +155,15 @@ using FastInterpolations
     # ========================================
     @testset "Extrapolation modes" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
         # :constant mode
-        itp_const = quadratic_interp(x, y; extrap=ClampExtrap())
-        @test itp_const(-1.0) == 1.0+1.0im  # Clamped to first
-        @test itp_const(5.0) == 4.0+4.0im   # Clamped to last
+        itp_const = quadratic_interp(x, y; extrap = ClampExtrap())
+        @test itp_const(-1.0) == 1.0 + 1.0im  # Clamped to first
+        @test itp_const(5.0) == 4.0 + 4.0im   # Clamped to last
 
         # :extension mode
-        itp_ext = quadratic_interp(x, y; extrap=ExtendExtrap())
+        itp_ext = quadratic_interp(x, y; extrap = ExtendExtrap())
         val_ext = itp_ext(-1.0)
         @test val_ext isa ComplexF64
     end
@@ -173,7 +173,7 @@ using FastInterpolations
     # ========================================
     @testset "Vector evaluation" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
         itp = quadratic_interp(x, y)
 
@@ -189,7 +189,7 @@ using FastInterpolations
     # ========================================
     @testset "Broadcast evaluation" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
         itp = quadratic_interp(x, y)
 
@@ -204,7 +204,7 @@ using FastInterpolations
     # ========================================
     @testset "Type stability" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
         itp = quadratic_interp(x, y)
 
@@ -212,7 +212,7 @@ using FastInterpolations
         @test @inferred(itp(0.5)) isa ComplexF64
 
         # First derivative should be type-stable
-        @test @inferred(itp(0.5; deriv=DerivOp(1))) isa ComplexF64
+        @test @inferred(itp(0.5; deriv = DerivOp(1))) isa ComplexF64
     end
 
     # ========================================
@@ -237,7 +237,7 @@ using FastInterpolations
     # ========================================
     @testset "In-place vector evaluation" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
         itp = quadratic_interp(x, y)
 
@@ -255,15 +255,15 @@ using FastInterpolations
     # ========================================
     @testset "BC mode: QuadraticFit" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 5.0 + 5.0im, 10.0 + 10.0im]
 
         # Left QuadraticFit (default)
-        itp_left = quadratic_interp(x, y; bc=Left(QuadraticFit()))
+        itp_left = quadratic_interp(x, y; bc = Left(QuadraticFit()))
         val_left = itp_left(0.5)
         @test val_left isa ComplexF64
 
         # Right QuadraticFit
-        itp_right = quadratic_interp(x, y; bc=Right(QuadraticFit()))
+        itp_right = quadratic_interp(x, y; bc = Right(QuadraticFit()))
         val_right = itp_right(0.5)
         @test val_right isa ComplexF64
     end
@@ -273,14 +273,14 @@ using FastInterpolations
     # ========================================
     @testset "BC mode: MinCurvFit" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 5.0 + 5.0im, 10.0 + 10.0im]
 
-        itp = quadratic_interp(x, y; bc=MinCurvFit())
+        itp = quadratic_interp(x, y; bc = MinCurvFit())
 
         val = itp(0.5)
         @test val isa ComplexF64
 
-        d1 = itp(0.5; deriv=DerivOp(1))
+        d1 = itp(0.5; deriv = DerivOp(1))
         @test d1 isa ComplexF64
     end
 
@@ -289,15 +289,15 @@ using FastInterpolations
     # ========================================
     @testset "Grid point behavior" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
         itp = quadratic_interp(x, y)
 
         # At exact grid points, should return y values
-        @test itp(0.0) ≈ 1.0+1.0im atol=1e-14
-        @test itp(1.0) ≈ 2.0+2.0im atol=1e-14
-        @test itp(2.0) ≈ 3.0+3.0im atol=1e-14
-        @test itp(3.0) ≈ 4.0+4.0im atol=1e-14
+        @test itp(0.0) ≈ 1.0 + 1.0im atol = 1.0e-14
+        @test itp(1.0) ≈ 2.0 + 2.0im atol = 1.0e-14
+        @test itp(2.0) ≈ 3.0 + 3.0im atol = 1.0e-14
+        @test itp(3.0) ≈ 4.0 + 4.0im atol = 1.0e-14
     end
 
     # ========================================
@@ -318,7 +318,7 @@ using FastInterpolations
         val = itp(0.5)
         @test val isa Float64
 
-        d1 = itp(0.5; deriv=DerivOp(1))
+        d1 = itp(0.5; deriv = DerivOp(1))
         @test d1 isa Float64
     end
 
@@ -331,21 +331,21 @@ using FastInterpolations
 
         @testset "Complex y + Real BC (promotion)" begin
             # y is Complex, BC value is Real → should promote BC to Complex
-            y_complex = [1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
+            y_complex = [1.0 + 1.0im, 2.0 + 2.0im, 5.0 + 5.0im, 10.0 + 10.0im]
 
             # Real BC value (Float64) with Complex y
             bc = Left(Deriv1(2.0))  # Deriv1{Float64}
-            itp = quadratic_interp(x, y_complex; bc=bc)
+            itp = quadratic_interp(x, y_complex; bc = bc)
 
             @test value_type(itp) == ComplexF64
             val = itp(0.5)
             @test val isa ComplexF64
 
             # Derivative should be promoted to Complex (with zero imaginary)
-            d1 = itp(x[1]; deriv=DerivOp(1))
+            d1 = itp(x[1]; deriv = DerivOp(1))
             @test d1 isa ComplexF64
             @test real(d1) ≈ 2.0
-            @test imag(d1) ≈ 0.0 atol=1e-14
+            @test imag(d1) ≈ 0.0 atol = 1.0e-14
         end
 
         @testset "Real y + Complex BC (zero imaginary)" begin
@@ -354,14 +354,14 @@ using FastInterpolations
 
             # Complex BC with zero imaginary part
             bc = Left(Deriv1(2.0 + 0.0im))  # Deriv1{ComplexF64}
-            itp = quadratic_interp(x, y_real; bc=bc)
+            itp = quadratic_interp(x, y_real; bc = bc)
 
             @test value_type(itp) == Float64  # y determines value type
             val = itp(0.5)
             @test val isa Float64
 
             # Derivative should be Real (Complex BC converted)
-            d1 = itp(x[1]; deriv=DerivOp(1))
+            d1 = itp(x[1]; deriv = DerivOp(1))
             @test d1 isa Float64
             @test d1 ≈ 2.0
         end
@@ -374,63 +374,63 @@ using FastInterpolations
             bc = Left(Deriv1(2.0 + 1.0im))  # Deriv1{ComplexF64}
 
             # Should throw InexactError during construction
-            @test_throws InexactError quadratic_interp(x, y_real; bc=bc)
+            @test_throws InexactError quadratic_interp(x, y_real; bc = bc)
         end
 
         @testset "Explicit Complex BC with Complex y" begin
             # Both y and BC are Complex - exact type match path
-            y_complex = [1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
+            y_complex = [1.0 + 1.0im, 2.0 + 2.0im, 5.0 + 5.0im, 10.0 + 10.0im]
 
             # Deriv1 with explicit Complex value
             bc = Left(Deriv1(2.0 + 1.0im))  # Deriv1{ComplexF64}
-            itp = quadratic_interp(x, y_complex; bc=bc)
+            itp = quadratic_interp(x, y_complex; bc = bc)
 
             @test value_type(itp) == ComplexF64
-            d1 = itp(x[1]; deriv=DerivOp(1))
+            d1 = itp(x[1]; deriv = DerivOp(1))
             @test d1 ≈ 2.0 + 1.0im
 
             # Deriv2 with explicit Complex value
             bc2 = Left(Deriv2(0.5 + 0.5im))
-            itp2 = quadratic_interp(x, y_complex; bc=bc2)
+            itp2 = quadratic_interp(x, y_complex; bc = bc2)
             @test itp2(0.5) isa ComplexF64
         end
 
         @testset "Right endpoint BC type conversion" begin
-            y_complex = [1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
+            y_complex = [1.0 + 1.0im, 2.0 + 2.0im, 5.0 + 5.0im, 10.0 + 10.0im]
 
             # Real BC on Complex y (Right endpoint)
             bc = Right(Deriv1(3.0))  # Float64
-            itp = quadratic_interp(x, y_complex; bc=bc)
+            itp = quadratic_interp(x, y_complex; bc = bc)
 
-            d_end = itp(x[end]; deriv=DerivOp(1))
+            d_end = itp(x[end]; deriv = DerivOp(1))
             @test d_end isa ComplexF64
             @test real(d_end) ≈ 3.0
-            @test imag(d_end) ≈ 0.0 atol=1e-14
+            @test imag(d_end) ≈ 0.0 atol = 1.0e-14
         end
     end
 
     @testset "BC Dispatch Path Verification" begin
         # Verify that exact type match vs generic dispatch both work correctly
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 5.0 + 5.0im, 10.0 + 10.0im]
 
         @testset "Exact type match path" begin
             # BC type matches y type exactly → _fill_slopes!(d, s, h, bc::Left{Deriv1{Tv}}, ...)
             bc = Left(Deriv1(2.0 + 1.0im))  # Deriv1{ComplexF64} matches ComplexF64 y
-            itp = quadratic_interp(x, y; bc=bc)
+            itp = quadratic_interp(x, y; bc = bc)
             @test itp(0.5) isa ComplexF64
         end
 
         @testset "Generic dispatch with conversion" begin
             # BC type differs from y type → _fill_slopes!(d, s, h, bc::Left{<:Deriv1}, ...)
             bc = Left(Deriv1(2.0))  # Deriv1{Float64} needs convert to ComplexF64
-            itp = quadratic_interp(x, y; bc=bc)
+            itp = quadratic_interp(x, y; bc = bc)
             @test itp(0.5) isa ComplexF64
         end
 
         @testset "Evaluation is zero-allocation" begin
             bc = Left(Deriv1(2.0 + 1.0im))
-            itp = quadratic_interp(x, y; bc=bc)
+            itp = quadratic_interp(x, y; bc = bc)
 
             # Warm up
             _ = itp(0.5)
@@ -443,11 +443,11 @@ using FastInterpolations
 
     @testset "Float32 type preservation with BC" begin
         x32 = Float32[0.0, 1.0, 2.0, 3.0]
-        y32 = ComplexF32[1.0+1.0im, 2.0+2.0im, 5.0+5.0im, 10.0+10.0im]
+        y32 = ComplexF32[1.0 + 1.0im, 2.0 + 2.0im, 5.0 + 5.0im, 10.0 + 10.0im]
 
         @testset "Float32 BC promoted to ComplexF32" begin
             bc = Left(Deriv1(2.0f0))  # Deriv1{Float32}
-            itp = quadratic_interp(x32, y32; bc=bc)
+            itp = quadratic_interp(x32, y32; bc = bc)
 
             @test grid_type(itp) == Float32
             @test value_type(itp) == ComplexF32
@@ -458,10 +458,10 @@ using FastInterpolations
         @testset "Float64 BC with Float32 y" begin
             # Float64 BC should be demoted to Float32 to match y
             bc = Left(Deriv1(2.0))  # Deriv1{Float64}
-            itp = quadratic_interp(x32, y32; bc=bc)
+            itp = quadratic_interp(x32, y32; bc = bc)
 
             @test value_type(itp) == ComplexF32
-            d1 = itp(x32[1]; deriv=DerivOp(1))
+            d1 = itp(x32[1]; deriv = DerivOp(1))
             @test d1 isa ComplexF32
         end
     end

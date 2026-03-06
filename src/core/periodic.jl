@@ -19,7 +19,7 @@ Used for periodic boundary conditions and extrap=WrapExtrap().
 
 Optimized: skips expensive `mod()` when xi is already in domain.
 """
-@inline function _wrap_to_domain(xi::Tg, x_min::Tg, x_max::Tg) where {Tg<:AbstractFloat}
+@inline function _wrap_to_domain(xi::Tg, x_min::Tg, x_max::Tg) where {Tg <: AbstractFloat}
     # Single-branch check: outside domain → slow path
     if xi < x_min || xi >= x_max
         period = x_max - x_min
@@ -32,7 +32,7 @@ end
 # Generic wrapper: handles Dual, Int, Float32 on Float64 grid, etc.
 # IMPORTANT: Preserves AD Dual type through the entire operation.
 # mod() is compatible with ForwardDiff.Dual, so we use it directly on xi.
-@inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg<:AbstractFloat}
+@inline function _wrap_to_domain(xi::Real, x_min::Tg, x_max::Tg) where {Tg <: AbstractFloat}
     xi_primal = _extract_primal(xi)
     # Fast path: already in domain, return original xi (preserves Dual type for AD)
     if xi_primal >= x_min && xi_primal < x_max
@@ -69,29 +69,35 @@ Throws `ArgumentError` if endpoints differ.
 end
 
 @noinline function _throw_periodic_endpoint_error(y1, yn)
-    throw(ArgumentError(
-        "PeriodicBC (inclusive endpoint) requires y[1] == y[end], " *
-        "got y[1]=$y1, y[end]=$yn. " *
-        "Tip: set y[end] = y[1] to ensure exact periodicity, or use " *
-        "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point."
-    ))
+    throw(
+        ArgumentError(
+            "PeriodicBC (inclusive endpoint) requires y[1] == y[end], " *
+                "got y[1]=$y1, y[end]=$yn. " *
+                "Tip: set y[end] = y[1] to ensure exact periodicity, or use " *
+                "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point."
+        )
+    )
 end
 
 @noinline function _throw_periodic_series_error(k, y_first, y_last)
-    throw(ArgumentError(
-        "PeriodicBC (inclusive endpoint) requires y[1] == y[end] for all series, " *
-        "but series $k has y[1]=$y_first, y[end]=$y_last. " *
-        "Tip: set y[end] = y[1] for each series, or use " *
-        "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point."
-    ))
+    throw(
+        ArgumentError(
+            "PeriodicBC (inclusive endpoint) requires y[1] == y[end] for all series, " *
+                "but series $k has y[1]=$y_first, y[end]=$y_last. " *
+                "Tip: set y[end] = y[1] for each series, or use " *
+                "PeriodicBC(endpoint=:exclusive) if your data does not repeat the first point."
+        )
+    )
 end
 
 @noinline function _throw_periodic_nd_error(d, v_first, v_last)
-    throw(ArgumentError(
-        "Periodic BC on dim $d requires data[1,...] == data[end,...], " *
-        "but found data[1,...]=$v_first, data[end,...]=$v_last. " *
-        "Tip: set the last slice equal to the first along dim $d."
-    ))
+    throw(
+        ArgumentError(
+            "Periodic BC on dim $d requires data[1,...] == data[end,...], " *
+                "but found data[1,...]=$v_first, data[end,...]=$v_last. " *
+                "Tip: set the last slice equal to the first along dim $d."
+        )
+    )
 end
 
 # ========================================
@@ -133,17 +139,23 @@ function _resolve_exclusive_period(x, bc::PeriodicBC)
         # User provided period — cross-validate against Range inference
         if inferred !== nothing && !(bc.period ≈ inferred)
             x0 = first(x); x1 = x0 + inferred
-            throw(ArgumentError(
-                "PeriodicBC's period=$(bc.period) conflicts with Range-inferred period = $x1 - $x0 = $inferred. " *
-                "Either adjust `period` or omit it for auto-inference."))
+            throw(
+                ArgumentError(
+                    "PeriodicBC's period=$(bc.period) conflicts with Range-inferred period = $x1 - $x0 = $inferred. " *
+                        "Either adjust `period` or omit it for auto-inference."
+                )
+            )
         end
         return bc.period
     end
 
     # No user period — must infer from Range
-    inferred !== nothing || throw(ArgumentError(
-        "PeriodicBC(endpoint=:exclusive) requires `period` for non-uniform grids. " *
-        "Use PeriodicBC(endpoint=:exclusive, period=T)."))
+    inferred !== nothing || throw(
+        ArgumentError(
+            "PeriodicBC(endpoint=:exclusive) requires `period` for non-uniform grids. " *
+                "Use PeriodicBC(endpoint=:exclusive, period=T)."
+        )
+    )
     return inferred
 end
 
@@ -171,9 +183,12 @@ function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     x_end = first(x) + Tg(period)
 
     # Validate: virtual endpoint must be strictly after last grid point
-    last(x) < x_end || throw(ArgumentError(
-        "period=$period places virtual endpoint at $x_end, " *
-        "not after last grid point x[end]=$(last(x))"))
+    last(x) < x_end || throw(
+        ArgumentError(
+            "period=$period places virtual endpoint at $x_end, " *
+                "not after last grid point x[end]=$(last(x))"
+        )
+    )
 
     x_ext = _extend_grid(x, x_end)
     y_ext = _extend_values(y)
@@ -186,9 +201,12 @@ function _extend_exclusive(x::AbstractVector, y_mat::AbstractMatrix, bc::Periodi
     Tg = eltype(x)
     x_end = first(x) + Tg(period)
 
-    last(x) < x_end || throw(ArgumentError(
-        "period=$period places virtual endpoint at $x_end, " *
-        "not after last grid point x[end]=$(last(x))"))
+    last(x) < x_end || throw(
+        ArgumentError(
+            "period=$period places virtual endpoint at $x_end, " *
+                "not after last grid point x[end]=$(last(x))"
+        )
+    )
 
     x_ext = _extend_grid(x, x_end)
     y_ext = vcat(y_mat, y_mat[1:1, :])
@@ -199,7 +217,7 @@ end
 function _extend_grid(x::AbstractRange, x_end)
     expected_next = last(x) + step(x)
     if x_end ≈ expected_next
-        return range(first(x), step=step(x), length=length(x) + 1)
+        return range(first(x), step = step(x), length = length(x) + 1)
     else
         return vcat(collect(x), [x_end])
     end
@@ -230,10 +248,10 @@ Called once at build time before `_build_nd_coeffs`.
 - `bcs_resolved`: BCs with resolved period for exclusive axes (for display/introspection)
 """
 function _prepare_periodic_nd(
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    bcs::NTuple{N, AbstractBC}
-) where {Tg<:AbstractFloat, Tv, N}
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        bcs::NTuple{N, AbstractBC}
+    ) where {Tg <: AbstractFloat, Tv, N}
     # Fast path: no exclusive axes
     has_exclusive = false
     for d in 1:N
@@ -253,14 +271,17 @@ function _prepare_periodic_nd(
         x_end = first(grid_d) + Tg(period)
 
         # Validate: virtual endpoint must be strictly after last grid point
-        last(grid_d) < x_end || throw(ArgumentError(
-            "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
-            "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"))
+        last(grid_d) < x_end || throw(
+            ArgumentError(
+                "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
+                    "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"
+            )
+        )
 
         # Type-stable grid extension: branch explicitly to avoid Union return from _extend_grid
         # (Range → Range, Vector → Vector — concrete type preserved per element)
         grid_ext = if grid_d isa AbstractRange
-            range(first(grid_d), step=step(grid_d), length=length(grid_d) + 1)
+            range(first(grid_d), step = step(grid_d), length = length(grid_d) + 1)
         else
             vcat(grid_d, [x_end])
         end
@@ -295,7 +316,7 @@ function _prepare_periodic_nd(
             end
         end
         src_inds = ntuple(i -> i == d ? (1:1) : cur_ranges[i], Val(N))
-        dst_inds = ntuple(i -> i == d ? (nd+1:nd+1) : cur_ranges[i], Val(N))
+        dst_inds = ntuple(i -> i == d ? ((nd + 1):(nd + 1)) : cur_ranges[i], Val(N))
         copyto!(view(data_out, dst_inds...), view(data_out, src_inds...))
     end
 
@@ -320,11 +341,11 @@ via `unsafe_acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
 - Pool rewind in the outer `@with_pool` automatically releases all buffers
 """
 @inline function _prepare_periodic_nd_pooled(
-    pool::AbstractArrayPool,
-    grids::NTuple{N, AbstractVector{Tg}},
-    data::AbstractArray{Tv, N},
-    bcs::NTuple{N, AbstractBC}
-) where {Tg<:AbstractFloat, Tv, N}
+        pool::AbstractArrayPool,
+        grids::NTuple{N, AbstractVector{Tg}},
+        data::AbstractArray{Tv, N},
+        bcs::NTuple{N, AbstractBC}
+    ) where {Tg <: AbstractFloat, Tv, N}
     # Fast path: no exclusive axes
     has_exclusive = false
     for d in 1:N
@@ -346,16 +367,19 @@ via `unsafe_acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
         x_end = first(grid_d) + Tg(period)
 
         # Validate: virtual endpoint must be strictly after last grid point
-        last(grid_d) < x_end || throw(ArgumentError(
-            "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
-            "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"))
+        last(grid_d) < x_end || throw(
+            ArgumentError(
+                "PeriodicBC(endpoint=:exclusive) on dim $d: period=$period places " *
+                    "virtual endpoint at $x_end, not after last grid point x[end]=$(last(grid_d))"
+            )
+        )
 
         # Extend grid: Range → direct construction (O(1)), Vector → pool
         # IMPORTANT: Range branch returns Range unconditionally to prevent Union return type.
         # _resolve_exclusive_period already validates period ≈ step(x)*length(x) for Range grids,
         # so the extended Range always has the correct step and endpoint.
         if grid_d isa AbstractRange
-            return range(first(grid_d), step=step(grid_d), length=length(grid_d) + 1)
+            return range(first(grid_d), step = step(grid_d), length = length(grid_d) + 1)
         else
             n = length(grid_d)
             g_ext = unsafe_acquire!(pool, Tg, n + 1)
@@ -400,7 +424,7 @@ via `unsafe_acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
             end
         end
         src_inds = ntuple(i -> i == d ? (1:1) : cur_ranges[i], Val(N))
-        dst_inds = ntuple(i -> i == d ? (nd+1:nd+1) : cur_ranges[i], Val(N))
+        dst_inds = ntuple(i -> i == d ? ((nd + 1):(nd + 1)) : cur_ranges[i], Val(N))
         copyto!(view(data_out, dst_inds...), view(data_out, src_inds...))
     end
 

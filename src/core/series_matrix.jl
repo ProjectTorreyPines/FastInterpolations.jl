@@ -118,10 +118,10 @@ Ensure point-contiguous transpose pair exists. Thread-safe via atomic RCU patter
 Tuple of transposed matrices (y_point, z_point), each (n_series × n_points).
 """
 @inline function _ensure_transpose_pair!(
-    ltp::LazyTransposePair{Tv},
-    y::Matrix{Tv},
-    z::Matrix{Tv}
-) where {Tv}
+        ltp::LazyTransposePair{Tv},
+        y::Matrix{Tv},
+        z::Matrix{Tv}
+    ) where {Tv}
     # Fast path: check if already populated
     snap = @atomic :acquire ltp.snapshot
     snap !== nothing && return snap::Tuple{Matrix{Tv}, Matrix{Tv}}
@@ -183,11 +183,11 @@ Ensure point-contiguous transpose triple exists. Thread-safe via atomic RCU patt
 Tuple of transposed matrices (y_point, a_point, d_point), each (n_series × n_points).
 """
 @inline function _ensure_transpose_triple!(
-    ltt::LazyTransposeTriple{Tv},
-    y::Matrix{Tv},
-    a::Matrix{Tv},
-    d::Matrix{Tv}
-) where {Tv}
+        ltt::LazyTransposeTriple{Tv},
+        y::Matrix{Tv},
+        a::Matrix{Tv},
+        d::Matrix{Tv}
+    ) where {Tv}
     # Fast path: check if already populated
     snap = @atomic :acquire ltt.snapshot
     snap !== nothing && return snap::Tuple{Matrix{Tv}, Matrix{Tv}, Matrix{Tv}}

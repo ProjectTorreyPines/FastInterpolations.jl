@@ -19,11 +19,11 @@ Convert a Range to a float type while preserving Range structure for O(1) index 
 Using `FT.(x)` would convert Range to Vector, losing the O(1) optimization.
 """
 # General conversion: rebuild as StepRangeLen to preserve O(1) indexing
-_to_float(x::AbstractRange, ::Type{FT}) where {FT<:AbstractFloat} =
+_to_float(x::AbstractRange, ::Type{FT}) where {FT <: AbstractFloat} =
     range(FT(first(x)), FT(last(x)), length(x))
 
 # Fast-path: already Float Range (StepRangeLen, LinRange, etc.) - return as-is
-_to_float(x::AbstractRange{FT}, ::Type{FT}) where {FT<:AbstractFloat} = x
+_to_float(x::AbstractRange{FT}, ::Type{FT}) where {FT <: AbstractFloat} = x
 
 """
     _to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT<:AbstractFloat}
@@ -31,7 +31,7 @@ _to_float(x::AbstractRange{FT}, ::Type{FT}) where {FT<:AbstractFloat} = x
 Identity conversion - return as-is when element type already matches target type.
 This enables zero-allocation for Real→Float wrappers when types already match.
 """
-_to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT<:AbstractFloat} = x
+_to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT <: AbstractFloat} = x
 
 """
     _to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat}
@@ -39,9 +39,9 @@ _to_float(x::AbstractVector{FT}, ::Type{FT}) where {FT<:AbstractFloat} = x
 Convert a Vector to a float type (element-wise broadcast).
 Emits a one-time warning since this allocates a new vector.
 """
-function _to_float(x::AbstractVector, ::Type{FT}) where {FT<:AbstractFloat}
+function _to_float(x::AbstractVector, ::Type{FT}) where {FT <: AbstractFloat}
     @warn "Non-float vector input detected - allocating type conversion. " *
-          "For zero-allocation, pre-convert your data: `x_float = $FT.(x)`" maxlog=1
+        "For zero-allocation, pre-convert your data: `x_float = $FT.(x)`" maxlog = 1
     return FT.(x)
 end
 
@@ -58,8 +58,8 @@ For Complex{T}, returns T.
 
 This is TYPE-BASED (works with eltype(y) in wrappers).
 """
-@inline _real_eltype(::Type{T}) where {T<:Real} = T
-@inline _real_eltype(::Type{Complex{T}}) where {T<:Real} = T
+@inline _real_eltype(::Type{T}) where {T <: Real} = T
+@inline _real_eltype(::Type{Complex{T}}) where {T <: Real} = T
 # Duck-typing fallback: custom types return themselves (no float base extraction)
 @inline _real_eltype(::Type{T}) where {T} = T
 
@@ -99,10 +99,10 @@ Determine the output value type from y element type and grid type.
 - Standard numerics (Integer, AbstractFloat, Rational, Complex) → Tg or Complex{Tg}
 - Duck types (Dual, Measurement, etc.) → preserved as-is
 """
-@inline _value_type(::Type{T}, ::Type{Tg}) where {T<:_PromotableValue, Tg<:AbstractFloat} = Tg
-@inline _value_type(::Type{Complex{T}}, ::Type{Tg}) where {T<:Real, Tg<:AbstractFloat} = Complex{Tg}
+@inline _value_type(::Type{T}, ::Type{Tg}) where {T <: _PromotableValue, Tg <: AbstractFloat} = Tg
+@inline _value_type(::Type{Complex{T}}, ::Type{Tg}) where {T <: Real, Tg <: AbstractFloat} = Complex{Tg}
 # Duck-typing fallback: custom types preserved as-is (no promotion to grid type)
-@inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg<:AbstractFloat} = T
+@inline _value_type(::Type{T}, ::Type{Tg}) where {T, Tg <: AbstractFloat} = T
 
 """
     _series_output_type(::Type{Tv}, ::Type{Tq}) -> Type
@@ -152,7 +152,7 @@ Promote y-values to appropriate type based on grid type Tg.
 # Returns
 Tuple of (Tv::Type, y_converted::AbstractVector{Tv})
 """
-@inline function _promote_value_type(y::AbstractVector{Tv_raw}, ::Type{Tg}) where {Tv_raw, Tg<:AbstractFloat}
+@inline function _promote_value_type(y::AbstractVector{Tv_raw}, ::Type{Tg}) where {Tv_raw, Tg <: AbstractFloat}
     if Tv_raw === Tg
         # Already matching float type - no conversion
         return Tg, y
@@ -212,9 +212,9 @@ x_p, y_p = _promote_itp_inputs(x, custom_y)  # y_p stays custom type
 ```
 """
 @inline function _promote_itp_inputs(
-    x::AbstractVector{TX},
-    y::AbstractVector{TY}
-) where {TX<:Real, TY}
+        x::AbstractVector{TX},
+        y::AbstractVector{TY}
+    ) where {TX <: Real, TY}
     Tg = _promote_grid_float(TX, TY)
     x_typed = _to_float(x, Tg)
     if TY <: _PromotableValue
@@ -249,10 +249,10 @@ For scalar queries, use the 2-arg version and pass the query directly
 to preserve ForwardDiff.Dual types for automatic differentiation.
 """
 @inline function _promote_itp_inputs(
-    x::AbstractVector{TX},
-    y::AbstractVector{TY},
-    xq::AbstractVector{TQ}
-) where {TX<:Real, TY, TQ<:Real}
+        x::AbstractVector{TX},
+        y::AbstractVector{TY},
+        xq::AbstractVector{TQ}
+    ) where {TX <: Real, TY, TQ <: Real}
     x_typed, y_typed = _promote_itp_inputs(x, y)
     Tg = eltype(x_typed)
     xq_typed = _to_float(xq, Tg)
@@ -288,8 +288,8 @@ xq_conv = Tg(xq_primal)
 xq_conv = _to_grid_type(xq, Tg)
 ```
 """
-@inline _to_grid_type(xq::Tg, ::Type{Tg}) where {Tg<:Real} = xq  # identity: already correct type
-@inline _to_grid_type(xq::Real, ::Type{Tg}) where {Tg<:Real} = Tg(_extract_primal(xq))  # convert via primal extraction
+@inline _to_grid_type(xq::Tg, ::Type{Tg}) where {Tg <: Real} = xq  # identity: already correct type
+@inline _to_grid_type(xq::Real, ::Type{Tg}) where {Tg <: Real} = Tg(_extract_primal(xq))  # convert via primal extraction
 
 """
     _extract_primal(xq) -> AbstractFloat
@@ -338,9 +338,9 @@ _promote_for_anchor(dual, Float64)   # → dual (preserved Dual type)
 ```
 """
 # For AbstractFloat queries: preserve precision using wider type (lossless promotion)
-@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq<:AbstractFloat, Tg<:AbstractFloat} = convert(promote_type(Tq, Tg), xq)
+@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq <: AbstractFloat, Tg <: AbstractFloat} = convert(promote_type(Tq, Tg), xq)
 # For other Real (Int, Rational): convert to grid type (no precision loss for integers)
-@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq<:Real, Tg<:AbstractFloat} = Tg(xq)
+@inline _promote_for_anchor(xq::Tq, ::Type{Tg}) where {Tq <: Real, Tg <: AbstractFloat} = Tg(xq)
 
 
 # ========================================
@@ -361,13 +361,14 @@ end
 @inline function _check_domain(x::AbstractVector, xi::AbstractVector{<:Real}, ::NoExtrap)
     x_min, x_max = first(x), last(x)
     xq_min, xq_max = minimum(xi), maximum(xi)
-    (xq_min < x_min || xq_max > x_max) && throw(DomainError(
-        xq_min < x_min ? xq_min : xq_max,
-        "query point outside interpolation domain [$x_min, $x_max]"
-    ))
+    (xq_min < x_min || xq_max > x_max) && throw(
+        DomainError(
+            xq_min < x_min ? xq_min : xq_max,
+            "query point outside interpolation domain [$x_min, $x_max]"
+        )
+    )
     return nothing
 end
 
 "No-op vector domain check for non-NoExtrap modes."
 @inline _check_domain(::AbstractVector, ::AbstractVector{<:Real}, ::AbstractExtrap) = nothing
-

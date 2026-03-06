@@ -27,10 +27,10 @@ This is the quadratic analog of `_hermite_kernel_1d(op, yL, yR, dyL, dyR, h, inv
 Note: Unlike Hermite, quadratic works in physical coordinates so `h` is not needed.
 """
 @inline function _quadratic_kernel_nd(
-    op::AbstractEvalOp,
-    fL, fR, dfL,
-    inv_h, dL
-)
+        op::AbstractEvalOp,
+        fL, fR, dfL,
+        inv_h, dL
+    )
     s = (fR - fL) * inv_h    # secant slope
     a = (s - dfL) * inv_h     # quadratic coefficient
     return _quadratic_kernel(op, a, dfL, fL, dL)
@@ -60,11 +60,11 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))      # ∂f/∂x only
 """
 # Single-point evaluation
 @inline function (itp::QuadraticInterpolantND{Tg, Tv, N})(
-    query::Tuple{Vararg{Real, N}};
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg, Tv, N}
+        query::Tuple{Vararg{Real, N}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N), query)  # NTuple{N,Real} <: Tuple → BinarySearch/axis
     return _eval_nd_quadratic(itp, query, ops, search_tuple, hint)
@@ -81,20 +81,24 @@ In-place SoA batch evaluation. Writes results into pre-allocated `output`.
 Returns `output` for chaining.
 """
 function (itp::QuadraticInterpolantND{Tg, Tv, N})(
-    output::AbstractVector,
-    queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg, Tv, N}
+        output::AbstractVector,
+        queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
     n_queries = length(queries[1])
-    length(output) == n_queries || throw(DimensionMismatch(
-        "output length $(length(output)) must match query length $n_queries"
-    ))
+    length(output) == n_queries || throw(
+        DimensionMismatch(
+            "output length $(length(output)) must match query length $n_queries"
+        )
+    )
     for d in 2:N
-        length(queries[d]) == n_queries || throw(DimensionMismatch(
-            "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
-        ))
+        length(queries[d]) == n_queries || throw(
+            DimensionMismatch(
+                "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
+            )
+        )
     end
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N), queries, hint)  # adaptive: check monotonicity for AutoSearch+no hint
@@ -109,16 +113,18 @@ In-place AoS batch evaluation. Writes results into pre-allocated `output`.
 Returns `output` for chaining.
 """
 function (itp::QuadraticInterpolantND{Tg, Tv, N})(
-    output::AbstractVector,
-    queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-    deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-    search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}}=itp.searches,
-    hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}}=nothing
-) where {Tg, Tv, N}
+        output::AbstractVector,
+        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
     n_queries = length(queries)
-    length(output) == n_queries || throw(DimensionMismatch(
-        "output length $(length(output)) must match query length $n_queries"
-    ))
+    length(output) == n_queries || throw(
+        DimensionMismatch(
+            "output length $(length(output)) must match query length $n_queries"
+        )
+    )
     ops = _resolve_deriv_nd(deriv, Val(N))
     search_tuple = _resolve_search_nd(search, Val(N), queries, hint)  # AoS: falls through to _resolve_search_nd
     _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
@@ -132,11 +138,11 @@ end
 
 # Generic N-dimensional
 @inline function _locate_cell(
-    itp::QuadraticInterpolantND{Tg, Tv, N},
-    query::Tuple{Vararg{Real, N}},
-    search::SEARCH,
-    hints=nothing
-) where {Tg, Tv, N, SEARCH<:NTuple{N,AbstractSearchPolicy}}
+        itp::QuadraticInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}},
+        search::SEARCH,
+        hints = nothing
+    ) where {Tg, Tv, N, SEARCH <: NTuple{N, AbstractSearchPolicy}}
     q_evals = _handle_all_extraps(query, itp.grids, itp.extraps)
     indices, Ls, _ = _search_all_intervals(q_evals, itp.grids, itp.spacings, search, hints)
     hs, inv_hs, dLs = _compute_all_local_params(q_evals, itp.spacings, indices, Ls)
@@ -146,13 +152,14 @@ end
 
 # N=2 specialization: direct destructuring eliminates ntuple closure overhead
 @inline function _locate_cell(
-    itp::QuadraticInterpolantND{Tg, Tv, 2},
-    query::Tuple{Vararg{Real, 2}},
-    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-    hints=nothing
-) where {Tg, Tv}
+        itp::QuadraticInterpolantND{Tg, Tv, 2},
+        query::Tuple{Vararg{Real, 2}},
+        search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+        hints = nothing
+    ) where {Tg, Tv}
     x_eval, y_eval, ix, iy, xL, yL = _locate_cell_2d_preamble(
-        query, itp.grids, itp.spacings, itp.extraps, search, hints)
+        query, itp.grids, itp.spacings, itp.extraps, search, hints
+    )
 
     hx = _get_h(itp.spacings[1], ix);  hy = _get_h(itp.spacings[2], iy)
     inv_hx = _get_inv_h(itp.spacings[1], ix); inv_hy = _get_inv_h(itp.spacings[2], iy)
@@ -163,10 +170,10 @@ end
 
 # Evaluate kernel at a pre-located cell with given derivative ops
 @inline function _eval_at_cell(
-    ::QuadraticInterpolantND,
-    cell::Tuple,
-    ops::NTuple{N, AbstractEvalOp}
-) where {N}
+        ::QuadraticInterpolantND,
+        cell::Tuple,
+        ops::NTuple{N, AbstractEvalOp}
+    ) where {N}
     partials, indices, hs, inv_hs, dLs = cell
     return _eval_nd_quad_cell(partials, indices, hs, inv_hs, dLs, ops)
 end
@@ -180,12 +187,12 @@ end
 
 # Generic N-dimensional (uses _locate_cell + _eval_at_cell)
 @inline function _eval_nd_quadratic(
-    itp::QuadraticInterpolantND{Tg, Tv, N},
-    query::Tuple{Vararg{Real, N}},
-    ops::OPS,
-    search::SEARCH,
-    hints=nothing
-) where {Tg, Tv, N, OPS<:NTuple{N,AbstractEvalOp}, SEARCH<:NTuple{N,AbstractSearchPolicy}}
+        itp::QuadraticInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}},
+        ops::OPS,
+        search::SEARCH,
+        hints = nothing
+    ) where {Tg, Tv, N, OPS <: NTuple{N, AbstractEvalOp}, SEARCH <: NTuple{N, AbstractSearchPolicy}}
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
     cell = _locate_cell(itp, query, search, hints)
@@ -194,12 +201,12 @@ end
 
 # N=2 specialization: dispatches to N=2 _locate_cell via type
 @inline function _eval_nd_quadratic(
-    itp::QuadraticInterpolantND{Tg, Tv, 2},
-    query::Tuple{Vararg{Real, 2}},
-    ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp},
-    search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
-    hints=nothing
-) where {Tg, Tv}
+        itp::QuadraticInterpolantND{Tg, Tv, 2},
+        query::Tuple{Vararg{Real, 2}},
+        ops::Tuple{<:AbstractEvalOp, <:AbstractEvalOp},
+        search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
+        hints = nothing
+    ) where {Tg, Tv}
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
     cell = _locate_cell(itp, query, search, hints)
@@ -214,20 +221,22 @@ end
 # The quadratic coefficient `a` is computed on-the-fly in the kernel.
 
 @inline @generated function _eval_nd_quad_cell(
-    partials::AbstractArray{Tv, NP1},
-    indices::NTuple{N, Int},
-    hs::NTuple{N, Tg},
-    inv_hs::NTuple{N, Tg},
-    dLs::Tuple{Vararg{Real, N}},
-    ops::NTuple{N, AbstractEvalOp}
-) where {Tv, Tg, N, NP1}
+        partials::AbstractArray{Tv, NP1},
+        indices::NTuple{N, Int},
+        hs::NTuple{N, Tg},
+        inv_hs::NTuple{N, Tg},
+        dLs::Tuple{Vararg{Real, N}},
+        ops::NTuple{N, AbstractEvalOp}
+    ) where {Tv, Tg, N, NP1}
     NP1 == N + 1 || error("NP1 must equal N+1")
 
     stmts = Expr[]
 
     # Unpack tuples using destructuring
-    for (prefix, source) in [("idx_", :indices), ("h_", :hs), ("inv_h_", :inv_hs),
-                              ("dL_", :dLs), ("op_", :ops)]
+    for (prefix, source) in [
+            ("idx_", :indices), ("h_", :hs), ("inv_h_", :inv_hs),
+            ("dL_", :dLs), ("op_", :ops),
+        ]
         syms = ntuple(d -> Symbol(prefix, d), N)
         lhs = Expr(:tuple, syms...)
         push!(stmts, :($lhs = $source))

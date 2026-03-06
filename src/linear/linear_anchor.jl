@@ -50,7 +50,7 @@ as it eliminates O(log n) binary search.
 - `alpha` for EvalValue: `muladd(alpha, yR - yL, yL)` (no division)
 - `inv_h` for EvalDeriv1: `(yR - yL) * inv_h` (no division)
 """
-struct _LinearAnchoredQuery{Tg<:AbstractFloat, Tq<:Real}
+struct _LinearAnchoredQuery{Tg <: AbstractFloat, Tq <: Real}
     idx::Int                   # interval index
     xq::Tq                     # query point (possibly wrapped), original precision
     side::UInt8                # 0=inside, 1=below_min, 2=above_max
@@ -82,17 +82,17 @@ end
 Evaluate first derivative using anchor's precomputed inv_h.
 No division: uses (yR - yL) * inv_h.
 """
-@inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, aq::_LinearAnchoredQuery{Tg}) where {Tg<:AbstractFloat, Tv}
+@inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, aq::_LinearAnchoredQuery{Tg}) where {Tg <: AbstractFloat, Tv}
     return (yR - yL) * aq.inv_h
 end
 
 """Second derivative of linear is always zero."""
-@inline function _linear_kernel(::EvalDeriv2, yL::Tv, ::Tv, ::_LinearAnchoredQuery{Tg}) where {Tg<:AbstractFloat, Tv}
+@inline function _linear_kernel(::EvalDeriv2, yL::Tv, ::Tv, ::_LinearAnchoredQuery{Tg}) where {Tg <: AbstractFloat, Tv}
     return 0 * yL
 end
 
 """Third derivative of linear is always zero."""
-@inline function _linear_kernel(::EvalDeriv3, yL::Tv, ::Tv, ::_LinearAnchoredQuery{Tg}) where {Tg<:AbstractFloat, Tv}
+@inline function _linear_kernel(::EvalDeriv3, yL::Tv, ::Tv, ::_LinearAnchoredQuery{Tg}) where {Tg <: AbstractFloat, Tv}
     return 0 * yL
 end
 
@@ -128,23 +128,23 @@ itp2(aq; deriv=DerivOp(1))     # Reuses same anchor for derivative
 ```
 """
 @inline function _anchor_query(
-    x::AbstractVector{T},
-    xq::T,
-    ::Val{:linear},
-    wrap::Bool=false,
-    searcher::P=DEFAULT_SEARCHER
-) where {T<:AbstractFloat, P<:Searcher}
+        x::AbstractVector{T},
+        xq::T,
+        ::Val{:linear},
+        wrap::Bool = false,
+        searcher::P = DEFAULT_SEARCHER
+    ) where {T <: AbstractFloat, P <: Searcher}
     return _linear_anchor_query_impl(x, xq, wrap, _resolve_searcher_for_grid(x, searcher))
 end
 
 # Real wrapper for convenience (scalar) - preserves precision
 @inline function _anchor_query(
-    x::AbstractVector{Tg},
-    xq::Tq,
-    tag::Val{:linear},
-    wrap::Bool=false,
-    searcher::P=DEFAULT_SEARCHER
-) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
+        x::AbstractVector{Tg},
+        xq::Tq,
+        tag::Val{:linear},
+        wrap::Bool = false,
+        searcher::P = DEFAULT_SEARCHER
+    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
     xq_promoted = _promote_for_anchor(xq, Tg)
     return _linear_anchor_query_impl(x, xq_promoted, wrap, _resolve_searcher_for_grid(x, searcher))
 end
@@ -170,12 +170,12 @@ vals2 = itp2(aq_vec)  # Reuse same anchors
 ```
 """
 function _anchor_query(
-    x::AbstractVector{Tg},
-    xq::AbstractVector{Tq},
-    ::Val{:linear},
-    wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinarySearch())
-) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
+        x::AbstractVector{Tg},
+        xq::AbstractVector{Tq},
+        ::Val{:linear},
+        wrap::Bool = false,
+        searcher::P = _to_searcher(LinearBinarySearch())
+    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
     Tq_promoted = promote_type(Tq, Tg)
     output = Vector{_LinearAnchoredQuery{Tg, Tq_promoted}}(undef, length(xq))
@@ -204,13 +204,13 @@ In-place version of `_anchor_query(x, xq, Val(:linear))` for zero-allocation poo
 Uses `_promote_for_anchor` to preserve wider precision when `S` differs from `Tg`.
 """
 @inline function _fill_anchors!(
-    buffer::AbstractVector{_LinearAnchoredQuery{Tg, Tq}},
-    x::AbstractVector{Tg},
-    xq::AbstractVector{S},
-    ::Val{:linear},
-    wrap::Bool=false,
-    searcher::P=_to_searcher(LinearBinarySearch())
-) where {Tg<:AbstractFloat, Tq<:Real, S<:Real, P<:Searcher}
+        buffer::AbstractVector{_LinearAnchoredQuery{Tg, Tq}},
+        x::AbstractVector{Tg},
+        xq::AbstractVector{S},
+        ::Val{:linear},
+        wrap::Bool = false,
+        searcher::P = _to_searcher(LinearBinarySearch())
+    ) where {Tg <: AbstractFloat, Tq <: Real, S <: Real, P <: Searcher}
     @assert length(buffer) >= length(xq) "Buffer too small: $(length(buffer)) < $(length(xq))"
     searcher_resolved = _resolve_searcher_for_grid(x, searcher)
 
@@ -238,11 +238,11 @@ When `xq` is a ForwardDiff.Dual, the returned anchor preserves the Dual type
 in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for comparisons.
 """
 @inline function _linear_anchor_query_impl(
-    x::AbstractVector{Tg},
-    xq::Tq,
-    wrap::Bool,
-    policy::P=DEFAULT_SEARCHER
-) where {Tg<:AbstractFloat, Tq<:Real, P<:Searcher}
+        x::AbstractVector{Tg},
+        xq::Tq,
+        wrap::Bool,
+        policy::P = DEFAULT_SEARCHER
+    ) where {Tg <: AbstractFloat, Tq <: Real, P <: Searcher}
     x_min, x_max = first(x), last(x)
 
     # Use primal value for comparisons (supports ForwardDiff.Dual)
@@ -272,7 +272,7 @@ in `xq` and `alpha` fields. The interval search uses `_extract_primal(xq)` for c
     elseif xq_primal > x_max
         # Above domain: use last interval
         n = length(x)
-        @inbounds (n - 1, x[n-1], x[n])
+        @inbounds (n - 1, x[n - 1], x[n])
     else
         # Inside domain: use policy-based interval search
         search_interval(policy, x, xq_primal)
@@ -309,26 +309,26 @@ val = itp(aq)           # Value
 d1 = itp(aq; deriv=DerivOp(1))   # First derivative
 ```
 """
-@inline function (itp::LinearInterpolant{Tg})(aq::_LinearAnchoredQuery{Tg}; deriv::DerivOp=EvalValue()) where {Tg<:AbstractFloat}
-    _linear_eval_with_anchor(itp, aq, deriv)
+@inline function (itp::LinearInterpolant{Tg})(aq::_LinearAnchoredQuery{Tg}; deriv::DerivOp = EvalValue()) where {Tg <: AbstractFloat}
+    return _linear_eval_with_anchor(itp, aq, deriv)
 end
 
 @inline function _linear_eval_with_anchor(
-    itp::LinearInterpolant{Tg},
-    aq::_LinearAnchoredQuery{Tg},
-    op::O
-) where {Tg<:AbstractFloat, O<:AbstractEvalOp}
+        itp::LinearInterpolant{Tg},
+        aq::_LinearAnchoredQuery{Tg},
+        op::O
+    ) where {Tg <: AbstractFloat, O <: AbstractEvalOp}
     # Handle extrapolation based on mode and side
     return _linear_anchor_dispatch(itp, aq, op, itp.extrap)
 end
 
 # Default case (extension, wrap): direct anchored kernel evaluation
 @inline function _linear_anchor_dispatch(
-    itp::LinearInterpolant{Tg},
-    aq::_LinearAnchoredQuery{Tg, Tq},
-    op::AbstractEvalOp,
-    ::AbstractExtrap
-) where {Tg<:AbstractFloat, Tq<:Real}
+        itp::LinearInterpolant{Tg},
+        aq::_LinearAnchoredQuery{Tg, Tq},
+        op::AbstractEvalOp,
+        ::AbstractExtrap
+    ) where {Tg <: AbstractFloat, Tq <: Real}
     @inbounds begin
         yL = itp.y[aq.idx]
         yR = itp.y[aq.idx + 1]
@@ -338,11 +338,11 @@ end
 
 # No extrapolation: throw DomainError if outside domain
 @inline function _linear_anchor_dispatch(
-    itp::LinearInterpolant{Tg},
-    aq::_LinearAnchoredQuery{Tg, Tq},
-    op::AbstractEvalOp,
-    ::NoExtrap
-) where {Tg<:AbstractFloat, Tq<:Real}
+        itp::LinearInterpolant{Tg},
+        aq::_LinearAnchoredQuery{Tg, Tq},
+        op::AbstractEvalOp,
+        ::NoExtrap
+    ) where {Tg <: AbstractFloat, Tq <: Real}
     if aq.side != 0x00  # outside domain
         x_min, x_max = first(itp.x), last(itp.x)
         throw(DomainError(aq.xq, "query point outside domain [$x_min, $x_max]"))
@@ -356,11 +356,11 @@ end
 
 # Constant extrapolation: boundary handling
 @inline function _linear_anchor_dispatch(
-    itp::LinearInterpolant{Tg},
-    aq::_LinearAnchoredQuery{Tg, Tq},
-    op::AbstractEvalOp,
-    extrap::_ClampOrFill
-) where {Tg<:AbstractFloat, Tq<:Real}
+        itp::LinearInterpolant{Tg},
+        aq::_LinearAnchoredQuery{Tg, Tq},
+        op::AbstractEvalOp,
+        extrap::_ClampOrFill
+    ) where {Tg <: AbstractFloat, Tq <: Real}
     if aq.side != 0x00  # outside domain
         return _linear_eval_constant_extrap(itp.y, aq.side == 0x01, op, extrap)
     end
@@ -381,10 +381,10 @@ end
 Evaluate linear interpolant at multiple anchored query points.
 Returns newly allocated vector with output type promoted from Tv and Tq.
 """
-function (itp::LinearInterpolant{Tg,Tv})(
-    aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg,Tq}};
-    deriv::DerivOp=EvalValue()
-) where {Tg<:AbstractFloat, Tv, Tq<:Real}
+function (itp::LinearInterpolant{Tg, Tv})(
+        aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg, Tq}};
+        deriv::DerivOp = EvalValue()
+    ) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     T_out = promote_type(Tv, Tq)
     output = Vector{T_out}(undef, length(aq_vec))
     @inbounds for i in eachindex(aq_vec)
@@ -399,10 +399,10 @@ end
 In-place evaluation at multiple anchored query points. Zero allocation.
 """
 function (itp::LinearInterpolant{Tg})(
-    output::AbstractVector,
-    aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg}};
-    deriv::DerivOp=EvalValue()
-) where {Tg<:AbstractFloat}
+        output::AbstractVector,
+        aq_vec::AbstractVector{<:_LinearAnchoredQuery{Tg}};
+        deriv::DerivOp = EvalValue()
+    ) where {Tg <: AbstractFloat}
     @assert length(output) == length(aq_vec) "output length must match aq_vec length"
     @inbounds for i in eachindex(aq_vec)
         output[i] = _linear_eval_with_anchor(itp, aq_vec[i], deriv)

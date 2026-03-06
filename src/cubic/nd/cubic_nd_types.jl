@@ -126,16 +126,16 @@ itp((1.0, 0.5, 0.3))                  # Evaluate at (1.0, 0.5, 0.3)
 ```
 """
 struct CubicInterpolantND{
-    Tg<:AbstractFloat,
-    Tv,
-    N,
-    NP1,
-    G<:NTuple{N, AbstractVector{Tg}},
-    S<:NTuple{N, AbstractGridSpacing{Tg}},
-    B<:NTuple{N, AbstractBC},
-    E<:Tuple{Vararg{AbstractExtrap, N}},
-    P<:NTuple{N, AbstractSearchPolicy},
-} <: AbstractInterpolantND{Tg, Tv, N}
+        Tg <: AbstractFloat,
+        Tv,
+        N,
+        NP1,
+        G <: NTuple{N, AbstractVector{Tg}},
+        S <: NTuple{N, AbstractGridSpacing{Tg}},
+        B <: NTuple{N, AbstractBC},
+        E <: Tuple{Vararg{AbstractExtrap, N}},
+        P <: NTuple{N, AbstractSearchPolicy},
+    } <: AbstractInterpolantND{Tg, Tv, N}
     grids::G
     spacings::S
     nodal_derivs::NodalDerivativesND{Tv, N, NP1}
@@ -144,11 +144,11 @@ struct CubicInterpolantND{
     searches::P
 
     function CubicInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}(
-        grids::G, spacings::S, nodal_derivs::NodalDerivativesND{Tv, N, NP1},
-        bcs::B, extraps::E, searches::P
-    ) where {Tg, Tv, N, NP1, G, S, B, E, P}
+            grids::G, spacings::S, nodal_derivs::NodalDerivativesND{Tv, N, NP1},
+            bcs::B, extraps::E, searches::P
+        ) where {Tg, Tv, N, NP1, G, S, B, E, P}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
-        new{Tg, Tv, N, NP1, G, S, B, E, P}(grids, spacings, nodal_derivs, bcs, extraps, searches)
+        return new{Tg, Tv, N, NP1, G, S, B, E, P}(grids, spacings, nodal_derivs, bcs, extraps, searches)
     end
 end
 

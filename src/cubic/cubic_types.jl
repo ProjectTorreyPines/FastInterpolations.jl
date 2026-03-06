@@ -25,7 +25,7 @@ where q = A'^{-1} * u is pre-computed and reused for different y vectors.
 Workspaces for the periodic solver are allocated from task-local pools via `@with_pool`,
 not stored in this struct. This eliminates shared mutable state.
 """
-struct PeriodicData{T<:AbstractFloat}
+struct PeriodicData{T <: AbstractFloat}
     q::Vector{T}  # Pre-computed A'^{-1} * u
     period::T     # x[end] - x[1]
 end
@@ -73,7 +73,7 @@ to ~4 cycles (fmul) — a 2.5× speedup in the inner loop.
 - `bc=ZeroCurvBC()`: Zero-curvature spline with z[1] = z[n+1] = 0
 - `bc=PeriodicBC()`: Periodic spline with C2 continuity at boundaries
 """
-struct CubicSplineCache{T<:AbstractFloat,X<:AbstractVector{T},F,BC,S<:AbstractGridSpacing{T}}
+struct CubicSplineCache{T <: AbstractFloat, X <: AbstractVector{T}, F, BC, S <: AbstractGridSpacing{T}}
     x::X
     spacing::S
     thomas::F
@@ -129,7 +129,7 @@ val = itp(0.5)  # returns ComplexF64
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Extrapolation mode uses type-parametrized dispatch for zero overhead
 """
-struct CubicInterpolant{Tg<:AbstractFloat,Tv,C<:CubicSplineCache{Tg},E<:AbstractExtrap,P<:AbstractSearchPolicy,BC<:CubicBC} <: AbstractInterpolant{Tg, Tv}
+struct CubicInterpolant{Tg <: AbstractFloat, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC} <: AbstractInterpolant{Tg, Tv}
     cache::C
     y::Vector{Tv}
     z::Vector{Tv}  # Pre-computed second derivative coefficients (value type)
@@ -137,20 +137,20 @@ struct CubicInterpolant{Tg<:AbstractFloat,Tv,C<:CubicSplineCache{Tg},E<:Abstract
     extrap::E  # Extrapolation mode (compile-time specialized via type parameter)
     search_policy::P  # Default search policy (immutable, thread-safe)
     function CubicInterpolant(
-        cache::C,
-        y::AbstractVector{Tv},
-        z::AbstractVector{Tv},
-        bc::BC,
-        extrap::E,
-        search::P=AutoSearch()
-    ) where {Tg<:AbstractFloat, Tv, C<:CubicSplineCache{Tg}, E<:AbstractExtrap, P<:AbstractSearchPolicy, BC<:CubicBC}
+            cache::C,
+            y::AbstractVector{Tv},
+            z::AbstractVector{Tv},
+            bc::BC,
+            extrap::E,
+            search::P = AutoSearch()
+        ) where {Tg <: AbstractFloat, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC}
         @assert length(cache.x) == length(y) "cache grid and y must have same length"
         @assert length(cache.x) == length(z) "z coefficients must match grid length"
         # Always copy to ensure immutability: once constructed, the interpolant
         # owns its data and always returns identical results for the same query.
         # Without copying, external modifications to y or cache reuse could
         # silently corrupt results.
-        new{Tg,Tv,C,E,P,BC}(cache, Vector{Tv}(y), Vector{Tv}(z), bc, extrap, search)
+        return new{Tg, Tv, C, E, P, BC}(cache, Vector{Tv}(y), Vector{Tv}(z), bc, extrap, search)
     end
 end
 

@@ -55,9 +55,9 @@ _val(d::MyDuck) = d.v
     y_generic = MyDuck.([1.0, 4.0, 2.0, 5.0, 3.0, 6.0, 2.5])
 
     # --- Flat (Float64) reference copies for correctness checks ---
-    y_linear_flat  = _val.(y_linear)
-    y_quad_flat    = _val.(y_quad)
-    y_cubic_flat   = _val.(y_cubic)
+    y_linear_flat = _val.(y_linear)
+    y_quad_flat = _val.(y_quad)
+    y_cubic_flat = _val.(y_cubic)
     y_generic_flat = _val.(y_generic)
 
     # 2D grids
@@ -143,38 +143,38 @@ _val(d::MyDuck) = d.v
     # ================================================================
     @testset "3. Quadratic BCs" begin
         @testset "Left(QuadraticFit())" begin
-            itp = quadratic_interp(x_vec, y_generic; bc=Left(QuadraticFit()))
-            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Left(QuadraticFit()))
+            itp = quadratic_interp(x_vec, y_generic; bc = Left(QuadraticFit()))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc = Left(QuadraticFit()))
             @test itp(xq) isa MyDuck
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "Left(Deriv1(Tv))" begin
-            itp = quadratic_interp(x_vec, y_generic; bc=Left(Deriv1(MyDuck(0.0))))
-            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Left(Deriv1(0.0)))
+            itp = quadratic_interp(x_vec, y_generic; bc = Left(Deriv1(MyDuck(0.0))))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc = Left(Deriv1(0.0)))
             @test itp(xq) isa MyDuck
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "Left(Deriv2(Tv))" begin
-            itp = quadratic_interp(x_vec, y_generic; bc=Left(Deriv2(MyDuck(0.0))))
-            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Left(Deriv2(0.0)))
+            itp = quadratic_interp(x_vec, y_generic; bc = Left(Deriv2(MyDuck(0.0))))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc = Left(Deriv2(0.0)))
             @test itp(xq) isa MyDuck
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "Right(QuadraticFit())" begin
-            itp = quadratic_interp(x_vec, y_generic; bc=Right(QuadraticFit()))
-            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Right(QuadraticFit()))
+            itp = quadratic_interp(x_vec, y_generic; bc = Right(QuadraticFit()))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc = Right(QuadraticFit()))
             @test itp(xq) isa MyDuck
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "Right(Deriv1(Tv))" begin
-            itp = quadratic_interp(x_vec, y_generic; bc=Right(Deriv1(MyDuck(0.0))))
-            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Right(Deriv1(0.0)))
+            itp = quadratic_interp(x_vec, y_generic; bc = Right(Deriv1(MyDuck(0.0))))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc = Right(Deriv1(0.0)))
             @test itp(xq) isa MyDuck
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "Left(LinearFit())" begin
-            itp = quadratic_interp(x_vec, y_generic; bc=Left(LinearFit()))
-            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Left(LinearFit()))
+            itp = quadratic_interp(x_vec, y_generic; bc = Left(LinearFit()))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc = Left(LinearFit()))
             @test itp(xq) isa MyDuck
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
@@ -188,42 +188,42 @@ _val(d::MyDuck) = d.v
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "Deriv1(Tv) symmetric" begin
-            itp = cubic_interp(x_vec, y_generic; bc=Deriv1(MyDuck(0.0)))
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv1(0.0))
+            itp = cubic_interp(x_vec, y_generic; bc = Deriv1(MyDuck(0.0)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = Deriv1(0.0))
             @test itp(xq) isa MyDuck
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "Deriv2(Tv) symmetric" begin
-            itp = cubic_interp(x_vec, y_generic; bc=Deriv2(MyDuck(0.0)))
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv2(0.0))
+            itp = cubic_interp(x_vec, y_generic; bc = Deriv2(MyDuck(0.0)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = Deriv2(0.0))
             @test itp(xq) isa MyDuck
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "ZeroCurvBC()" begin
-            itp = cubic_interp(x_vec, y_generic; bc=ZeroCurvBC())
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=ZeroCurvBC())
+            itp = cubic_interp(x_vec, y_generic; bc = ZeroCurvBC())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = ZeroCurvBC())
             @test itp(xq) isa MyDuck
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "ZeroSlopeBC()" begin
-            itp = cubic_interp(x_vec, y_generic; bc=ZeroSlopeBC())
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=ZeroSlopeBC())
+            itp = cubic_interp(x_vec, y_generic; bc = ZeroSlopeBC())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = ZeroSlopeBC())
             @test itp(xq) isa MyDuck
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "BCPair(Deriv1, Deriv2)" begin
             bc = BCPair(Deriv1(MyDuck(0.0)), Deriv2(MyDuck(0.0)))
             bc_ref = BCPair(Deriv1(0.0), Deriv2(0.0))
-            itp = cubic_interp(x_vec, y_generic; bc=bc)
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            itp = cubic_interp(x_vec, y_generic; bc = bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = bc_ref)
             @test itp(xq) isa MyDuck
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "BCPair(CubicFit, Deriv1)" begin
             bc = BCPair(CubicFit(), Deriv1(MyDuck(0.0)))
             bc_ref = BCPair(CubicFit(), Deriv1(0.0))
-            itp = cubic_interp(x_vec, y_generic; bc=bc)
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            itp = cubic_interp(x_vec, y_generic; bc = bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = bc_ref)
             @test itp(xq) isa MyDuck
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
@@ -231,8 +231,8 @@ _val(d::MyDuck) = d.v
             xp = range(0.0, 6.0, 7)
             yp = MyDuck.([1.0, 3.0, 2.0, 4.0, 2.0, 3.0, 1.5])
             yp_flat = _val.(yp)
-            itp = cubic_interp(xp, yp; bc=PeriodicBC(endpoint=:exclusive))
-            itp_ref = cubic_interp(xp, yp_flat; bc=PeriodicBC(endpoint=:exclusive))
+            itp = cubic_interp(xp, yp; bc = PeriodicBC(endpoint = :exclusive))
+            itp_ref = cubic_interp(xp, yp_flat; bc = PeriodicBC(endpoint = :exclusive))
             @test itp(1.5) isa MyDuck
             @test _val(itp(1.5)) ≈ itp_ref(1.5)
         end
@@ -240,8 +240,8 @@ _val(d::MyDuck) = d.v
             xp = range(0.0, 6.0, 7)
             yp = MyDuck.([1.0, 3.0, 2.0, 4.0, 2.0, 3.0, 1.0])  # y[1]==y[end]
             yp_flat = _val.(yp)
-            itp = cubic_interp(xp, yp; bc=PeriodicBC(endpoint=:inclusive))
-            itp_ref = cubic_interp(xp, yp_flat; bc=PeriodicBC(endpoint=:inclusive))
+            itp = cubic_interp(xp, yp; bc = PeriodicBC(endpoint = :inclusive))
+            itp_ref = cubic_interp(xp, yp_flat; bc = PeriodicBC(endpoint = :inclusive))
             @test itp(1.5) isa MyDuck
             @test _val(itp(1.5)) ≈ itp_ref(1.5)
         end
@@ -250,8 +250,8 @@ _val(d::MyDuck) = d.v
     @testset "5. ND BCs" begin
         @testset "2D per-axis BCs" begin
             bc_pair = (ZeroCurvBC(), ZeroCurvBC())
-            itp = cubic_interp((xg, yg), data_2d; bc=bc_pair)
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=bc_pair)
+            itp = cubic_interp((xg, yg), data_2d; bc = bc_pair)
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc = bc_pair)
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
@@ -260,14 +260,14 @@ _val(d::MyDuck) = d.v
             # Periodic in x: y[1,:] == y[end,:] exactly
             data_p = [MyDuck(2yj + 1.0) for xi in xp, yj in yg]
             data_p_flat = _val.(data_p)
-            itp = cubic_interp((xp, yg), data_p; bc=(PeriodicBC(), ZeroCurvBC()))
-            itp_ref = cubic_interp((xp, yg), data_p_flat; bc=(PeriodicBC(), ZeroCurvBC()))
+            itp = cubic_interp((xp, yg), data_p; bc = (PeriodicBC(), ZeroCurvBC()))
+            itp_ref = cubic_interp((xp, yg), data_p_flat; bc = (PeriodicBC(), ZeroCurvBC()))
             @test itp((0.5, 1.5)) isa MyDuck
             @test _val(itp((0.5, 1.5))) ≈ itp_ref((0.5, 1.5))
         end
         @testset "2D quadratic ZeroCurvBC" begin
-            itp = quadratic_interp((xg, yg), data_2d; bc=ZeroCurvBC())
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroCurvBC())
+            itp = quadratic_interp((xg, yg), data_2d; bc = ZeroCurvBC())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = ZeroCurvBC())
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
@@ -280,48 +280,48 @@ _val(d::MyDuck) = d.v
         @testset "linear deriv1" begin
             itp = linear_interp(x_vec, y_linear)
             itp_ref = linear_interp(x_vec, y_linear_flat)
-            r = itp(xq; deriv=DerivOp(1))
+            r = itp(xq; deriv = DerivOp(1))
             @test r isa MyDuck
             @test _val(r) ≈ 2.0  # d/dx(2x+1) = 2
-            @test _val(r) ≈ itp_ref(xq; deriv=DerivOp(1))
+            @test _val(r) ≈ itp_ref(xq; deriv = DerivOp(1))
         end
 
         @testset "quadratic deriv1" begin
             itp = quadratic_interp(x_vec, y_quad)
             itp_ref = quadratic_interp(x_vec, y_quad_flat)
-            r = itp(xq; deriv=DerivOp(1))
+            r = itp(xq; deriv = DerivOp(1))
             @test r isa MyDuck
             @test _val(r) ≈ 2 * xq - 1 atol = 0.1  # d/dx(x²-x+1) = 2x-1
-            @test _val(r) ≈ itp_ref(xq; deriv=DerivOp(1))
+            @test _val(r) ≈ itp_ref(xq; deriv = DerivOp(1))
         end
         @testset "quadratic deriv2" begin
             itp = quadratic_interp(x_vec, y_quad)
             itp_ref = quadratic_interp(x_vec, y_quad_flat)
-            r = itp(xq; deriv=DerivOp(2))
+            r = itp(xq; deriv = DerivOp(2))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(xq; deriv=DerivOp(2))
+            @test _val(r) ≈ itp_ref(xq; deriv = DerivOp(2))
         end
 
         @testset "cubic deriv1" begin
             itp = cubic_interp(x_vec, y_cubic)
             itp_ref = cubic_interp(x_vec, y_cubic_flat)
-            r = itp(xq; deriv=DerivOp(1))
+            r = itp(xq; deriv = DerivOp(1))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(xq; deriv=DerivOp(1))
+            @test _val(r) ≈ itp_ref(xq; deriv = DerivOp(1))
         end
         @testset "cubic deriv2" begin
             itp = cubic_interp(x_vec, y_cubic)
             itp_ref = cubic_interp(x_vec, y_cubic_flat)
-            r = itp(xq; deriv=DerivOp(2))
+            r = itp(xq; deriv = DerivOp(2))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(xq; deriv=DerivOp(2))
+            @test _val(r) ≈ itp_ref(xq; deriv = DerivOp(2))
         end
         @testset "cubic deriv3" begin
             itp = cubic_interp(x_vec, y_cubic)
             itp_ref = cubic_interp(x_vec, y_cubic_flat)
-            r = itp(xq; deriv=DerivOp(3))
+            r = itp(xq; deriv = DerivOp(3))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(xq; deriv=DerivOp(3))
+            @test _val(r) ≈ itp_ref(xq; deriv = DerivOp(3))
         end
     end
 
@@ -399,16 +399,16 @@ _val(d::MyDuck) = d.v
         end
 
         @testset "constant (left side)" begin
-            itp = constant_interp(x_vec, y_generic; side=LeftSide())
-            itp_ref = constant_interp(x_vec, y_generic_flat; side=LeftSide())
+            itp = constant_interp(x_vec, y_generic; side = LeftSide())
+            itp_ref = constant_interp(x_vec, y_generic_flat; side = LeftSide())
             r = integrate(itp, 1.0, 4.0)
             @test r isa MyDuck
             @test _val(r) ≈ integrate(itp_ref, 1.0, 4.0)
         end
 
         @testset "constant (right side)" begin
-            itp = constant_interp(x_vec, y_generic; side=RightSide())
-            itp_ref = constant_interp(x_vec, y_generic_flat; side=RightSide())
+            itp = constant_interp(x_vec, y_generic; side = RightSide())
+            itp_ref = constant_interp(x_vec, y_generic_flat; side = RightSide())
             r = integrate(itp, 1.0, 4.0)
             @test r isa MyDuck
             @test _val(r) ≈ integrate(itp_ref, 1.0, 4.0)
@@ -495,27 +495,27 @@ _val(d::MyDuck) = d.v
 
     @testset "11. One-shot API — with deriv kwarg" begin
         @testset "linear deriv1" begin
-            r = linear_interp(x_vec, y_linear, xq; deriv=DerivOp(1))
-            r_ref = linear_interp(x_vec, y_linear_flat, xq; deriv=DerivOp(1))
+            r = linear_interp(x_vec, y_linear, xq; deriv = DerivOp(1))
+            r_ref = linear_interp(x_vec, y_linear_flat, xq; deriv = DerivOp(1))
             @test r isa MyDuck
             @test _val(r) ≈ 2.0
             @test _val(r) ≈ r_ref
         end
         @testset "cubic deriv1" begin
-            r = cubic_interp(x_vec, y_generic, xq; deriv=DerivOp(1))
-            r_ref = cubic_interp(x_vec, y_generic_flat, xq; deriv=DerivOp(1))
+            r = cubic_interp(x_vec, y_generic, xq; deriv = DerivOp(1))
+            r_ref = cubic_interp(x_vec, y_generic_flat, xq; deriv = DerivOp(1))
             @test r isa MyDuck
             @test _val(r) ≈ r_ref
         end
         @testset "cubic deriv2" begin
-            r = cubic_interp(x_vec, y_generic, xq; deriv=DerivOp(2))
-            r_ref = cubic_interp(x_vec, y_generic_flat, xq; deriv=DerivOp(2))
+            r = cubic_interp(x_vec, y_generic, xq; deriv = DerivOp(2))
+            r_ref = cubic_interp(x_vec, y_generic_flat, xq; deriv = DerivOp(2))
             @test r isa MyDuck
             @test _val(r) ≈ r_ref
         end
         @testset "quadratic deriv1" begin
-            r = quadratic_interp(x_vec, y_generic, xq; deriv=DerivOp(1))
-            r_ref = quadratic_interp(x_vec, y_generic_flat, xq; deriv=DerivOp(1))
+            r = quadratic_interp(x_vec, y_generic, xq; deriv = DerivOp(1))
+            r_ref = quadratic_interp(x_vec, y_generic_flat, xq; deriv = DerivOp(1))
             @test r isa MyDuck
             @test _val(r) ≈ r_ref
         end
@@ -529,14 +529,14 @@ _val(d::MyDuck) = d.v
         xq_right = 6.5
 
         @testset "NoExtrap throws" begin
-            itp = linear_interp(x_vec, y_generic; extrap=NoExtrap())
+            itp = linear_interp(x_vec, y_generic; extrap = NoExtrap())
             @test_throws DomainError itp(xq_left)
             @test_throws DomainError itp(xq_right)
         end
 
         @testset "ClampExtrap" begin
-            itp = linear_interp(x_vec, y_generic; extrap=ClampExtrap())
-            itp_ref = linear_interp(x_vec, y_generic_flat; extrap=ClampExtrap())
+            itp = linear_interp(x_vec, y_generic; extrap = ClampExtrap())
+            itp_ref = linear_interp(x_vec, y_generic_flat; extrap = ClampExtrap())
             @test itp(xq_left) isa MyDuck
             @test itp(xq_right) isa MyDuck
             @test _val(itp(xq_left)) == _val(y_generic[1])
@@ -546,8 +546,8 @@ _val(d::MyDuck) = d.v
         end
 
         @testset "ExtendExtrap" begin
-            itp = linear_interp(x_vec, y_generic; extrap=ExtendExtrap())
-            itp_ref = linear_interp(x_vec, y_generic_flat; extrap=ExtendExtrap())
+            itp = linear_interp(x_vec, y_generic; extrap = ExtendExtrap())
+            itp_ref = linear_interp(x_vec, y_generic_flat; extrap = ExtendExtrap())
             @test itp(xq_left) isa MyDuck
             @test itp(xq_right) isa MyDuck
             @test _val(itp(xq_left)) ≈ itp_ref(xq_left)
@@ -555,8 +555,8 @@ _val(d::MyDuck) = d.v
         end
 
         @testset "ExtendExtrap cubic" begin
-            itp = cubic_interp(x_vec, y_generic; extrap=ExtendExtrap())
-            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ExtendExtrap())
+            itp = cubic_interp(x_vec, y_generic; extrap = ExtendExtrap())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap = ExtendExtrap())
             @test itp(xq_left) isa MyDuck
             @test itp(xq_right) isa MyDuck
             @test _val(itp(xq_left)) ≈ itp_ref(xq_left)
@@ -564,8 +564,8 @@ _val(d::MyDuck) = d.v
         end
 
         @testset "ClampExtrap quadratic" begin
-            itp = quadratic_interp(x_vec, y_generic; extrap=ClampExtrap())
-            itp_ref = quadratic_interp(x_vec, y_generic_flat; extrap=ClampExtrap())
+            itp = quadratic_interp(x_vec, y_generic; extrap = ClampExtrap())
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; extrap = ClampExtrap())
             @test itp(xq_left) isa MyDuck
             @test itp(xq_right) isa MyDuck
             @test _val(itp(xq_left)) ≈ itp_ref(xq_left)
@@ -586,8 +586,10 @@ _val(d::MyDuck) = d.v
         y3_flat = _val.(y3)
         s_flat = Series(y1_flat, y2_flat, y3_flat)
 
-        for (name, fn) in [("constant", constant_interp), ("linear", linear_interp),
-                           ("quadratic", quadratic_interp), ("cubic", cubic_interp)]
+        for (name, fn) in [
+                ("constant", constant_interp), ("linear", linear_interp),
+                ("quadratic", quadratic_interp), ("cubic", cubic_interp),
+            ]
             @testset "$name" begin
                 sitp = fn(x_vec, s)
                 sitp_ref = fn(x_vec, s_flat)
@@ -600,8 +602,8 @@ _val(d::MyDuck) = d.v
         end
 
         @testset "cubic Series with ZeroCurvBC" begin
-            sitp = cubic_interp(x_vec, s; bc=ZeroCurvBC())
-            sitp_ref = cubic_interp(x_vec, s_flat; bc=ZeroCurvBC())
+            sitp = cubic_interp(x_vec, s; bc = ZeroCurvBC())
+            sitp_ref = cubic_interp(x_vec, s_flat; bc = ZeroCurvBC())
             result = sitp(xq)
             result_ref = sitp_ref(xq)
             @test length(result) == 3
@@ -610,8 +612,8 @@ _val(d::MyDuck) = d.v
         end
 
         @testset "quadratic Series with Deriv1(Tv)" begin
-            sitp = quadratic_interp(x_vec, s; bc=Left(Deriv1(MyDuck(0.0))))
-            sitp_ref = quadratic_interp(x_vec, s_flat; bc=Left(Deriv1(0.0)))
+            sitp = quadratic_interp(x_vec, s; bc = Left(Deriv1(MyDuck(0.0))))
+            sitp_ref = quadratic_interp(x_vec, s_flat; bc = Left(Deriv1(0.0)))
             result = sitp(xq)
             result_ref = sitp_ref(xq)
             @test eltype(result) === MyDuck
@@ -625,8 +627,8 @@ _val(d::MyDuck) = d.v
     @testset "14. Search policies" begin
         for sp in [BinarySearch(), LinearBinarySearch(), AutoSearch()]
             @testset "$(typeof(sp))" begin
-                itp = linear_interp(x_vec, y_linear; search=sp)
-                itp_ref = linear_interp(x_vec, y_linear_flat; search=sp)
+                itp = linear_interp(x_vec, y_linear; search = sp)
+                itp_ref = linear_interp(x_vec, y_linear_flat; search = sp)
                 @test itp(xq) isa MyDuck
                 @test _val(itp(xq)) ≈ itp_ref(xq)
             end
@@ -671,37 +673,37 @@ _val(d::MyDuck) = d.v
             itp = linear_interp((xg, yg), data_2d)
             itp_ref = linear_interp((xg, yg), data_2d_flat)
             # ∂f/∂x at (1.5,1.5): f = x + 2y → ∂f/∂x = 1
-            r = itp(q2d; deriv=DerivOp(1, 0))
+            r = itp(q2d; deriv = DerivOp(1, 0))
             @test r isa MyDuck
             @test _val(r) ≈ 1.0
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(1, 0))
             # ∂f/∂y: f = x + 2y → ∂f/∂y = 2
-            r = itp(q2d; deriv=DerivOp(0, 1))
+            r = itp(q2d; deriv = DerivOp(0, 1))
             @test r isa MyDuck
             @test _val(r) ≈ 2.0
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(0, 1))
         end
 
         @testset "2D cubic deriv" begin
             itp = cubic_interp((xg, yg), data_2d)
             itp_ref = cubic_interp((xg, yg), data_2d_flat)
-            r = itp(q2d; deriv=DerivOp(1, 0))
+            r = itp(q2d; deriv = DerivOp(1, 0))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
-            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(1, 0))
+            r = itp(q2d; deriv = DerivOp(0, 1))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(0, 1))
         end
 
         @testset "2D quadratic deriv" begin
             itp = quadratic_interp((xg, yg), data_2d)
             itp_ref = quadratic_interp((xg, yg), data_2d_flat)
-            r = itp(q2d; deriv=DerivOp(1, 0))
+            r = itp(q2d; deriv = DerivOp(1, 0))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
-            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(1, 0))
+            r = itp(q2d; deriv = DerivOp(0, 1))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(0, 1))
         end
     end
 
@@ -740,8 +742,8 @@ _val(d::MyDuck) = d.v
     @testset "18. Constant side selection" begin
         for side in [LeftSide(), RightSide(), NearestSide()]
             @testset "$(typeof(side))" begin
-                itp = constant_interp(x_vec, y_generic; side=side)
-                itp_ref = constant_interp(x_vec, y_generic_flat; side=side)
+                itp = constant_interp(x_vec, y_generic; side = side)
+                itp_ref = constant_interp(x_vec, y_generic_flat; side = side)
                 @test itp(xq) isa MyDuck
                 @test _val(itp(xq)) ≈ itp_ref(xq)
             end
@@ -792,32 +794,32 @@ _val(d::MyDuck) = d.v
     # ================================================================
     @testset "20. Deriv + Extrap combos" begin
         @testset "cubic deriv1 + ExtendExtrap" begin
-            itp = cubic_interp(x_vec, y_generic; extrap=ExtendExtrap())
-            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ExtendExtrap())
-            r = itp(-0.5; deriv=DerivOp(1))
+            itp = cubic_interp(x_vec, y_generic; extrap = ExtendExtrap())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap = ExtendExtrap())
+            r = itp(-0.5; deriv = DerivOp(1))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(-0.5; deriv=DerivOp(1))
-            r = itp(6.5; deriv=DerivOp(1))
+            @test _val(r) ≈ itp_ref(-0.5; deriv = DerivOp(1))
+            r = itp(6.5; deriv = DerivOp(1))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(6.5; deriv=DerivOp(1))
+            @test _val(r) ≈ itp_ref(6.5; deriv = DerivOp(1))
         end
 
         @testset "cubic deriv2 + ClampExtrap" begin
-            itp = cubic_interp(x_vec, y_generic; extrap=ClampExtrap())
-            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ClampExtrap())
+            itp = cubic_interp(x_vec, y_generic; extrap = ClampExtrap())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap = ClampExtrap())
             # ClampExtrap with deriv → 0 (derivative of constant is 0)
-            r = itp(-0.5; deriv=DerivOp(1))
+            r = itp(-0.5; deriv = DerivOp(1))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(-0.5; deriv=DerivOp(1))
+            @test _val(r) ≈ itp_ref(-0.5; deriv = DerivOp(1))
         end
 
         @testset "linear deriv1 + ExtendExtrap" begin
-            itp = linear_interp(x_vec, y_linear; extrap=ExtendExtrap())
-            itp_ref = linear_interp(x_vec, y_linear_flat; extrap=ExtendExtrap())
-            r = itp(-0.5; deriv=DerivOp(1))
+            itp = linear_interp(x_vec, y_linear; extrap = ExtendExtrap())
+            itp_ref = linear_interp(x_vec, y_linear_flat; extrap = ExtendExtrap())
+            r = itp(-0.5; deriv = DerivOp(1))
             @test r isa MyDuck
             @test _val(r) ≈ 2.0
-            @test _val(r) ≈ itp_ref(-0.5; deriv=DerivOp(1))
+            @test _val(r) ≈ itp_ref(-0.5; deriv = DerivOp(1))
         end
     end
 
@@ -826,28 +828,28 @@ _val(d::MyDuck) = d.v
     # ================================================================
     @testset "21. Deriv + BC combos" begin
         @testset "cubic ZeroCurvBC + deriv1" begin
-            itp = cubic_interp(x_vec, y_generic; bc=ZeroCurvBC())
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=ZeroCurvBC())
-            @test itp(xq; deriv=DerivOp(1)) isa MyDuck
-            @test _val(itp(xq; deriv=DerivOp(1))) ≈ itp_ref(xq; deriv=DerivOp(1))
+            itp = cubic_interp(x_vec, y_generic; bc = ZeroCurvBC())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = ZeroCurvBC())
+            @test itp(xq; deriv = DerivOp(1)) isa MyDuck
+            @test _val(itp(xq; deriv = DerivOp(1))) ≈ itp_ref(xq; deriv = DerivOp(1))
         end
         @testset "cubic ZeroSlopeBC + deriv1" begin
-            itp = cubic_interp(x_vec, y_generic; bc=ZeroSlopeBC())
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=ZeroSlopeBC())
-            @test itp(xq; deriv=DerivOp(1)) isa MyDuck
-            @test _val(itp(xq; deriv=DerivOp(1))) ≈ itp_ref(xq; deriv=DerivOp(1))
+            itp = cubic_interp(x_vec, y_generic; bc = ZeroSlopeBC())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = ZeroSlopeBC())
+            @test itp(xq; deriv = DerivOp(1)) isa MyDuck
+            @test _val(itp(xq; deriv = DerivOp(1))) ≈ itp_ref(xq; deriv = DerivOp(1))
         end
         @testset "cubic Deriv1(Tv) + deriv2" begin
-            itp = cubic_interp(x_vec, y_generic; bc=Deriv1(MyDuck(0.0)))
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv1(0.0))
-            @test itp(xq; deriv=DerivOp(2)) isa MyDuck
-            @test _val(itp(xq; deriv=DerivOp(2))) ≈ itp_ref(xq; deriv=DerivOp(2))
+            itp = cubic_interp(x_vec, y_generic; bc = Deriv1(MyDuck(0.0)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = Deriv1(0.0))
+            @test itp(xq; deriv = DerivOp(2)) isa MyDuck
+            @test _val(itp(xq; deriv = DerivOp(2))) ≈ itp_ref(xq; deriv = DerivOp(2))
         end
         @testset "quadratic Deriv1(Tv) + deriv1" begin
-            itp = quadratic_interp(x_vec, y_generic; bc=Left(Deriv1(MyDuck(0.0))))
-            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Left(Deriv1(0.0)))
-            @test itp(xq; deriv=DerivOp(1)) isa MyDuck
-            @test _val(itp(xq; deriv=DerivOp(1))) ≈ itp_ref(xq; deriv=DerivOp(1))
+            itp = quadratic_interp(x_vec, y_generic; bc = Left(Deriv1(MyDuck(0.0))))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc = Left(Deriv1(0.0)))
+            @test itp(xq; deriv = DerivOp(1)) isa MyDuck
+            @test _val(itp(xq; deriv = DerivOp(1))) ≈ itp_ref(xq; deriv = DerivOp(1))
         end
     end
 
@@ -907,8 +909,10 @@ _val(d::MyDuck) = d.v
         queries_aos = [(0.5, 0.5), (1.5, 1.5), (2.5, 2.5)]
 
         @testset "scalar query" begin
-            for (name, fn) in [("constant", constant_interp), ("linear", linear_interp),
-                               ("quadratic", quadratic_interp), ("cubic", cubic_interp)]
+            for (name, fn) in [
+                    ("constant", constant_interp), ("linear", linear_interp),
+                    ("quadratic", quadratic_interp), ("cubic", cubic_interp),
+                ]
                 @testset "$name" begin
                     r = fn((xg, yg), data_2d, q2d)
                     r_ref = fn((xg, yg), data_2d_flat, q2d)
@@ -920,28 +924,30 @@ _val(d::MyDuck) = d.v
 
         @testset "scalar with BCs" begin
             @testset "cubic ZeroCurvBC" begin
-                r = cubic_interp((xg, yg), data_2d, q2d; bc=ZeroCurvBC())
-                r_ref = cubic_interp((xg, yg), data_2d_flat, q2d; bc=ZeroCurvBC())
+                r = cubic_interp((xg, yg), data_2d, q2d; bc = ZeroCurvBC())
+                r_ref = cubic_interp((xg, yg), data_2d_flat, q2d; bc = ZeroCurvBC())
                 @test r isa MyDuck
                 @test _val(r) ≈ r_ref
             end
             @testset "cubic ZeroSlopeBC" begin
-                r = cubic_interp((xg, yg), data_2d, q2d; bc=ZeroSlopeBC())
-                r_ref = cubic_interp((xg, yg), data_2d_flat, q2d; bc=ZeroSlopeBC())
+                r = cubic_interp((xg, yg), data_2d, q2d; bc = ZeroSlopeBC())
+                r_ref = cubic_interp((xg, yg), data_2d_flat, q2d; bc = ZeroSlopeBC())
                 @test r isa MyDuck
                 @test _val(r) ≈ r_ref
             end
             @testset "quadratic ZeroCurvBC" begin
-                r = quadratic_interp((xg, yg), data_2d, q2d; bc=ZeroCurvBC())
-                r_ref = quadratic_interp((xg, yg), data_2d_flat, q2d; bc=ZeroCurvBC())
+                r = quadratic_interp((xg, yg), data_2d, q2d; bc = ZeroCurvBC())
+                r_ref = quadratic_interp((xg, yg), data_2d_flat, q2d; bc = ZeroCurvBC())
                 @test r isa MyDuck
                 @test _val(r) ≈ r_ref
             end
         end
 
         @testset "SoA batch" begin
-            for (name, fn) in [("constant", constant_interp), ("linear", linear_interp),
-                               ("quadratic", quadratic_interp), ("cubic", cubic_interp)]
+            for (name, fn) in [
+                    ("constant", constant_interp), ("linear", linear_interp),
+                    ("quadratic", quadratic_interp), ("cubic", cubic_interp),
+                ]
                 @testset "$name" begin
                     r = fn((xg, yg), data_2d, (qx_nd, qy_nd))
                     r_ref = fn((xg, yg), data_2d_flat, (qx_nd, qy_nd))
@@ -953,8 +959,10 @@ _val(d::MyDuck) = d.v
         end
 
         @testset "AoS batch" begin
-            for (name, fn) in [("constant", constant_interp), ("linear", linear_interp),
-                               ("quadratic", quadratic_interp), ("cubic", cubic_interp)]
+            for (name, fn) in [
+                    ("constant", constant_interp), ("linear", linear_interp),
+                    ("quadratic", quadratic_interp), ("cubic", cubic_interp),
+                ]
                 @testset "$name" begin
                     r = fn((xg, yg), data_2d, queries_aos)
                     r_ref = fn((xg, yg), data_2d_flat, queries_aos)
@@ -977,8 +985,10 @@ _val(d::MyDuck) = d.v
         out_nd_ref = Vector{Float64}(undef, 3)
 
         @testset "SoA batch" begin
-            for (name, fn!) in [("linear!", linear_interp!), ("cubic!", cubic_interp!),
-                                ("quadratic!", quadratic_interp!), ("constant!", constant_interp!)]
+            for (name, fn!) in [
+                    ("linear!", linear_interp!), ("cubic!", cubic_interp!),
+                    ("quadratic!", quadratic_interp!), ("constant!", constant_interp!),
+                ]
                 @testset "$name" begin
                     fn!(out_nd, (xg, yg), data_2d, (qx_nd, qy_nd))
                     fn!(out_nd_ref, (xg, yg), data_2d_flat, (qx_nd, qy_nd))
@@ -989,8 +999,10 @@ _val(d::MyDuck) = d.v
         end
 
         @testset "AoS batch" begin
-            for (name, fn!) in [("linear!", linear_interp!), ("cubic!", cubic_interp!),
-                                ("quadratic!", quadratic_interp!), ("constant!", constant_interp!)]
+            for (name, fn!) in [
+                    ("linear!", linear_interp!), ("cubic!", cubic_interp!),
+                    ("quadratic!", quadratic_interp!), ("constant!", constant_interp!),
+                ]
                 @testset "$name" begin
                     fn!(out_nd, (xg, yg), data_2d, queries_aos)
                     fn!(out_nd_ref, (xg, yg), data_2d_flat, queries_aos)
@@ -1006,26 +1018,26 @@ _val(d::MyDuck) = d.v
     # ================================================================
     @testset "25. ND BCs — Cubic expanded" begin
         @testset "ZeroSlopeBC symmetric" begin
-            itp = cubic_interp((xg, yg), data_2d; bc=ZeroSlopeBC())
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=ZeroSlopeBC())
+            itp = cubic_interp((xg, yg), data_2d; bc = ZeroSlopeBC())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc = ZeroSlopeBC())
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "ZeroSlopeBC + ZeroCurvBC mixed per-axis" begin
-            itp = cubic_interp((xg, yg), data_2d; bc=(ZeroSlopeBC(), ZeroCurvBC()))
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=(ZeroSlopeBC(), ZeroCurvBC()))
+            itp = cubic_interp((xg, yg), data_2d; bc = (ZeroSlopeBC(), ZeroCurvBC()))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc = (ZeroSlopeBC(), ZeroCurvBC()))
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "CubicFit per-axis symmetric" begin
-            itp = cubic_interp((xg, yg), data_2d; bc=CubicFit())
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=CubicFit())
+            itp = cubic_interp((xg, yg), data_2d; bc = CubicFit())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc = CubicFit())
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "CubicFit + ZeroSlopeBC mixed" begin
-            itp = cubic_interp((xg, yg), data_2d; bc=(CubicFit(), ZeroSlopeBC()))
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=(CubicFit(), ZeroSlopeBC()))
+            itp = cubic_interp((xg, yg), data_2d; bc = (CubicFit(), ZeroSlopeBC()))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc = (CubicFit(), ZeroSlopeBC()))
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
@@ -1033,8 +1045,8 @@ _val(d::MyDuck) = d.v
             xp = range(0.0, 3.0, 4)   # must be Range (not collected) for PeriodicBC auto-period
             data_pe = [MyDuck(2yj + 1.0) for xi in xp, yj in yg_r]
             data_pe_flat = _val.(data_pe)
-            itp = cubic_interp((xp, yg_r), data_pe; bc=(PeriodicBC(endpoint=:exclusive), CubicFit()))
-            itp_ref = cubic_interp((xp, yg_r), data_pe_flat; bc=(PeriodicBC(endpoint=:exclusive), CubicFit()))
+            itp = cubic_interp((xp, yg_r), data_pe; bc = (PeriodicBC(endpoint = :exclusive), CubicFit()))
+            itp_ref = cubic_interp((xp, yg_r), data_pe_flat; bc = (PeriodicBC(endpoint = :exclusive), CubicFit()))
             @test itp((0.5, 1.5)) isa MyDuck
             @test _val(itp((0.5, 1.5))) ≈ itp_ref((0.5, 1.5))
         end
@@ -1043,20 +1055,20 @@ _val(d::MyDuck) = d.v
             yp = range(0.0, 3.0, 4)
             data_pp = [MyDuck(1.0 + 0.5 * (xi + yj)) for xi in xp, yj in yp]
             data_pp_flat = _val.(data_pp)
-            itp = cubic_interp((xp, yp), data_pp; bc=(PeriodicBC(endpoint=:exclusive), PeriodicBC(endpoint=:exclusive)))
-            itp_ref = cubic_interp((xp, yp), data_pp_flat; bc=(PeriodicBC(endpoint=:exclusive), PeriodicBC(endpoint=:exclusive)))
+            itp = cubic_interp((xp, yp), data_pp; bc = (PeriodicBC(endpoint = :exclusive), PeriodicBC(endpoint = :exclusive)))
+            itp_ref = cubic_interp((xp, yp), data_pp_flat; bc = (PeriodicBC(endpoint = :exclusive), PeriodicBC(endpoint = :exclusive)))
             @test itp((0.5, 0.5)) isa MyDuck
             @test _val(itp((0.5, 0.5))) ≈ itp_ref((0.5, 0.5))
         end
         @testset "ZeroSlopeBC + deriv" begin
-            itp = cubic_interp((xg, yg), data_2d; bc=ZeroSlopeBC())
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=ZeroSlopeBC())
-            r = itp(q2d; deriv=DerivOp(1, 0))
+            itp = cubic_interp((xg, yg), data_2d; bc = ZeroSlopeBC())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc = ZeroSlopeBC())
+            r = itp(q2d; deriv = DerivOp(1, 0))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
-            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(1, 0))
+            r = itp(q2d; deriv = DerivOp(0, 1))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(0, 1))
         end
     end
 
@@ -1065,91 +1077,91 @@ _val(d::MyDuck) = d.v
     # ================================================================
     @testset "26. ND BCs — Quadratic expanded" begin
         @testset "ZeroSlopeBC symmetric" begin
-            itp = quadratic_interp((xg, yg), data_2d; bc=ZeroSlopeBC())
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroSlopeBC())
+            itp = quadratic_interp((xg, yg), data_2d; bc = ZeroSlopeBC())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = ZeroSlopeBC())
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "MinCurvFit symmetric" begin
-            itp = quadratic_interp((xg, yg), data_2d; bc=MinCurvFit())
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=MinCurvFit())
+            itp = quadratic_interp((xg, yg), data_2d; bc = MinCurvFit())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = MinCurvFit())
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "ZeroCurvBC symmetric" begin
-            itp = quadratic_interp((xg, yg), data_2d; bc=ZeroCurvBC())
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroCurvBC())
+            itp = quadratic_interp((xg, yg), data_2d; bc = ZeroCurvBC())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = ZeroCurvBC())
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "Left(QuadraticFit()) per-axis" begin
-            itp = quadratic_interp((xg, yg), data_2d; bc=(Left(QuadraticFit()), Left(QuadraticFit())))
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=(Left(QuadraticFit()), Left(QuadraticFit())))
+            itp = quadratic_interp((xg, yg), data_2d; bc = (Left(QuadraticFit()), Left(QuadraticFit())))
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = (Left(QuadraticFit()), Left(QuadraticFit())))
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "Right(QuadraticFit()) per-axis" begin
-            itp = quadratic_interp((xg, yg), data_2d; bc=(Right(QuadraticFit()), Right(QuadraticFit())))
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=(Right(QuadraticFit()), Right(QuadraticFit())))
+            itp = quadratic_interp((xg, yg), data_2d; bc = (Right(QuadraticFit()), Right(QuadraticFit())))
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = (Right(QuadraticFit()), Right(QuadraticFit())))
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "Left(Deriv1(Tv)) per-axis" begin
             bc = (Left(Deriv1(MyDuck(0.0))), Left(Deriv1(MyDuck(0.0))))
             bc_ref = (Left(Deriv1(0.0)), Left(Deriv1(0.0)))
-            itp = quadratic_interp((xg, yg), data_2d; bc=bc)
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=bc_ref)
+            itp = quadratic_interp((xg, yg), data_2d; bc = bc)
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = bc_ref)
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "mixed: Left(Deriv1) + ZeroCurvBC" begin
             bc = (Left(Deriv1(MyDuck(0.0))), ZeroCurvBC())
             bc_ref = (Left(Deriv1(0.0)), ZeroCurvBC())
-            itp = quadratic_interp((xg, yg), data_2d; bc=bc)
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=bc_ref)
+            itp = quadratic_interp((xg, yg), data_2d; bc = bc)
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = bc_ref)
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "ZeroCurvBC + deriv" begin
-            itp = quadratic_interp((xg, yg), data_2d; bc=ZeroCurvBC())
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroCurvBC())
-            r = itp(q2d; deriv=DerivOp(1, 0))
+            itp = quadratic_interp((xg, yg), data_2d; bc = ZeroCurvBC())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = ZeroCurvBC())
+            r = itp(q2d; deriv = DerivOp(1, 0))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
-            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(1, 0))
+            r = itp(q2d; deriv = DerivOp(0, 1))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(0, 1))
         end
         @testset "ZeroCurvBC + Left(QuadraticFit()) mixed + deriv" begin
-            itp = quadratic_interp((xg, yg), data_2d; bc=(ZeroCurvBC(), Left(QuadraticFit())))
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=(ZeroCurvBC(), Left(QuadraticFit())))
-            r = itp(q2d; deriv=DerivOp(1, 0))
+            itp = quadratic_interp((xg, yg), data_2d; bc = (ZeroCurvBC(), Left(QuadraticFit())))
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = (ZeroCurvBC(), Left(QuadraticFit())))
+            r = itp(q2d; deriv = DerivOp(1, 0))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(1, 0))
         end
         @testset "ZeroSlopeBC + deriv" begin
-            itp = quadratic_interp((xg, yg), data_2d; bc=ZeroSlopeBC())
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=ZeroSlopeBC())
-            r = itp(q2d; deriv=DerivOp(1, 0))
+            itp = quadratic_interp((xg, yg), data_2d; bc = ZeroSlopeBC())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = ZeroSlopeBC())
+            r = itp(q2d; deriv = DerivOp(1, 0))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
-            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(1, 0))
+            r = itp(q2d; deriv = DerivOp(0, 1))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(0, 1))
         end
         @testset "MinCurvFit + deriv" begin
-            itp = quadratic_interp((xg, yg), data_2d; bc=MinCurvFit())
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=MinCurvFit())
-            r = itp(q2d; deriv=DerivOp(1, 0))
+            itp = quadratic_interp((xg, yg), data_2d; bc = MinCurvFit())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = MinCurvFit())
+            r = itp(q2d; deriv = DerivOp(1, 0))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(1, 0))
-            r = itp(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(1, 0))
+            r = itp(q2d; deriv = DerivOp(0, 1))
             @test r isa MyDuck
-            @test _val(r) ≈ itp_ref(q2d; deriv=DerivOp(0, 1))
+            @test _val(r) ≈ itp_ref(q2d; deriv = DerivOp(0, 1))
         end
         @testset "ZeroSlopeBC + MinCurvFit mixed" begin
-            itp = quadratic_interp((xg, yg), data_2d; bc=(ZeroSlopeBC(), MinCurvFit()))
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc=(ZeroSlopeBC(), MinCurvFit()))
+            itp = quadratic_interp((xg, yg), data_2d; bc = (ZeroSlopeBC(), MinCurvFit()))
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; bc = (ZeroSlopeBC(), MinCurvFit()))
             @test itp(q2d) isa MyDuck
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
@@ -1208,12 +1220,12 @@ _val(d::MyDuck) = d.v
             H = hessian(itp, q2d)
             H_ref = hessian(itp_ref, q2d)
             @test size(H) == (2, 2)
-            @test H[1,1] isa MyDuck
-            @test _val(H[1,1]) ≈ H_ref[1,1]
+            @test H[1, 1] isa MyDuck
+            @test _val(H[1, 1]) ≈ H_ref[1, 1]
             # Off-diagonal: data is linear (xi+2yj) so ∂²f/∂x∂y ≈ 0.
             # FMA contraction produces different near-zero rounding artifacts; use atol.
-            @test isapprox(_val(H[1,2]), H_ref[1,2]; atol=1e-14)
-            @test _val(H[2,2]) ≈ H_ref[2,2]
+            @test isapprox(_val(H[1, 2]), H_ref[1, 2]; atol = 1.0e-14)
+            @test _val(H[2, 2]) ≈ H_ref[2, 2]
         end
         @testset "hessian! — cubic" begin
             itp = cubic_interp((xg, yg), data_2d)
@@ -1222,9 +1234,9 @@ _val(d::MyDuck) = d.v
             H_ref = zeros(2, 2)
             hessian!(H, itp, q2d)
             hessian!(H_ref, itp_ref, q2d)
-            @test H[1,1] isa MyDuck
-            @test _val(H[1,1]) ≈ H_ref[1,1]
-            @test isapprox(_val(H[2,1]), H_ref[2,1]; atol=1e-14)
+            @test H[1, 1] isa MyDuck
+            @test _val(H[1, 1]) ≈ H_ref[1, 1]
+            @test isapprox(_val(H[2, 1]), H_ref[2, 1]; atol = 1.0e-14)
         end
         @testset "laplacian — cubic" begin
             itp = cubic_interp((xg, yg), data_2d)
@@ -1251,8 +1263,8 @@ _val(d::MyDuck) = d.v
             @test _val(lap) ≈ lap_ref
         end
         @testset "gradient with ZeroSlopeBC" begin
-            itp = cubic_interp((xg, yg), data_2d; bc=ZeroSlopeBC())
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=ZeroSlopeBC())
+            itp = cubic_interp((xg, yg), data_2d; bc = ZeroSlopeBC())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc = ZeroSlopeBC())
             g = gradient(itp, q2d)
             g_ref = gradient(itp_ref, q2d)
             @test g[1] isa MyDuck
@@ -1304,8 +1316,8 @@ _val(d::MyDuck) = d.v
     # ================================================================
     @testset "29. ND Extrapolation" begin
         @testset "2D cubic ClampExtrap" begin
-            itp = cubic_interp((xg, yg), data_2d; extrap=ClampExtrap())
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap=ClampExtrap())
+            itp = cubic_interp((xg, yg), data_2d; extrap = ClampExtrap())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap = ClampExtrap())
             r = itp((-0.5, 1.5))
             @test r isa MyDuck
             @test _val(r) ≈ itp_ref((-0.5, 1.5))
@@ -1314,29 +1326,29 @@ _val(d::MyDuck) = d.v
             @test _val(r) ≈ itp_ref((1.5, 3.5))
         end
         @testset "2D linear ClampExtrap" begin
-            itp = linear_interp((xg, yg), data_2d; extrap=ClampExtrap())
-            itp_ref = linear_interp((xg, yg), data_2d_flat; extrap=ClampExtrap())
+            itp = linear_interp((xg, yg), data_2d; extrap = ClampExtrap())
+            itp_ref = linear_interp((xg, yg), data_2d_flat; extrap = ClampExtrap())
             r = itp((-0.5, 1.5))
             @test r isa MyDuck
             @test _val(r) ≈ itp_ref((-0.5, 1.5))
         end
         @testset "2D cubic ExtendExtrap" begin
-            itp = cubic_interp((xg, yg), data_2d; extrap=ExtendExtrap())
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap=ExtendExtrap())
+            itp = cubic_interp((xg, yg), data_2d; extrap = ExtendExtrap())
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap = ExtendExtrap())
             r = itp((-0.5, 1.5))
             @test r isa MyDuck
             @test _val(r) ≈ itp_ref((-0.5, 1.5))
         end
         @testset "2D quadratic ClampExtrap" begin
-            itp = quadratic_interp((xg, yg), data_2d; extrap=ClampExtrap())
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat; extrap=ClampExtrap())
+            itp = quadratic_interp((xg, yg), data_2d; extrap = ClampExtrap())
+            itp_ref = quadratic_interp((xg, yg), data_2d_flat; extrap = ClampExtrap())
             r = itp((-0.5, 1.5))
             @test r isa MyDuck
             @test _val(r) ≈ itp_ref((-0.5, 1.5))
         end
         @testset "2D per-axis extrap (ClampExtrap, ExtendExtrap)" begin
-            itp = cubic_interp((xg, yg), data_2d; extrap=(ClampExtrap(), ExtendExtrap()))
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap=(ClampExtrap(), ExtendExtrap()))
+            itp = cubic_interp((xg, yg), data_2d; extrap = (ClampExtrap(), ExtendExtrap()))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; extrap = (ClampExtrap(), ExtendExtrap()))
             r = itp((-0.5, 3.5))
             @test r isa MyDuck
             @test _val(r) ≈ itp_ref((-0.5, 3.5))
@@ -1388,17 +1400,17 @@ _val(d::MyDuck) = d.v
         end
 
         @testset "scalar with BCs" begin
-            @test @inferred(cubic_interp((xg, yg), data_2d, q2d; bc=ZeroCurvBC())) isa MyDuck
-            @test @inferred(cubic_interp((xg, yg), data_2d, q2d; bc=ZeroSlopeBC())) isa MyDuck
-            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d; bc=ZeroCurvBC())) isa MyDuck
-            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d; bc=ZeroSlopeBC())) isa MyDuck
-            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d; bc=MinCurvFit())) isa MyDuck
+            @test @inferred(cubic_interp((xg, yg), data_2d, q2d; bc = ZeroCurvBC())) isa MyDuck
+            @test @inferred(cubic_interp((xg, yg), data_2d, q2d; bc = ZeroSlopeBC())) isa MyDuck
+            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d; bc = ZeroCurvBC())) isa MyDuck
+            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d; bc = ZeroSlopeBC())) isa MyDuck
+            @test @inferred(quadratic_interp((xg, yg), data_2d, q2d; bc = MinCurvFit())) isa MyDuck
         end
 
         @testset "scalar with deriv" begin
-            @test @inferred(linear_interp(x_vec, y_linear, xq; deriv=DerivOp(1))) isa MyDuck
-            @test @inferred(cubic_interp(x_vec, y_generic, xq; deriv=DerivOp(1))) isa MyDuck
-            @test @inferred(quadratic_interp(x_vec, y_generic, xq; deriv=DerivOp(1))) isa MyDuck
+            @test @inferred(linear_interp(x_vec, y_linear, xq; deriv = DerivOp(1))) isa MyDuck
+            @test @inferred(cubic_interp(x_vec, y_generic, xq; deriv = DerivOp(1))) isa MyDuck
+            @test @inferred(quadratic_interp(x_vec, y_generic, xq; deriv = DerivOp(1))) isa MyDuck
         end
     end
 
@@ -1411,18 +1423,18 @@ _val(d::MyDuck) = d.v
     @testset "31. Deriv BC — expanded combos" begin
         # --- Cubic 1D: new Deriv types + nonzero ---
         @testset "Deriv3(Tv) 1D" begin
-            itp = cubic_interp(x_vec, y_generic; bc=Deriv3(MyDuck(0.0)))
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv3(0.0))
+            itp = cubic_interp(x_vec, y_generic; bc = Deriv3(MyDuck(0.0)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = Deriv3(0.0))
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "Deriv1(Tv(1.5)) nonzero" begin
-            itp = cubic_interp(x_vec, y_generic; bc=Deriv1(MyDuck(1.5)))
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv1(1.5))
+            itp = cubic_interp(x_vec, y_generic; bc = Deriv1(MyDuck(1.5)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = Deriv1(1.5))
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "Deriv2(Tv(-2.0)) nonzero" begin
-            itp = cubic_interp(x_vec, y_generic; bc=Deriv2(MyDuck(-2.0)))
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=Deriv2(-2.0))
+            itp = cubic_interp(x_vec, y_generic; bc = Deriv2(MyDuck(-2.0)))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = Deriv2(-2.0))
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
 
@@ -1430,57 +1442,65 @@ _val(d::MyDuck) = d.v
         @testset "BCPair(Deriv1, Deriv3)" begin
             bc = BCPair(Deriv1(MyDuck(0.0)), Deriv3(MyDuck(0.0)))
             bc_ref = BCPair(Deriv1(0.0), Deriv3(0.0))
-            itp = cubic_interp(x_vec, y_generic; bc=bc)
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            itp = cubic_interp(x_vec, y_generic; bc = bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = bc_ref)
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "BCPair(Deriv3(0.5), Deriv1(-0.5)) nonzero" begin
             bc = BCPair(Deriv3(MyDuck(0.5)), Deriv1(MyDuck(-0.5)))
             bc_ref = BCPair(Deriv3(0.5), Deriv1(-0.5))
-            itp = cubic_interp(x_vec, y_generic; bc=bc)
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            itp = cubic_interp(x_vec, y_generic; bc = bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = bc_ref)
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
         @testset "BCPair(Deriv2, CubicFit)" begin
             bc = BCPair(Deriv2(MyDuck(0.0)), CubicFit())
             bc_ref = BCPair(Deriv2(0.0), CubicFit())
-            itp = cubic_interp(x_vec, y_generic; bc=bc)
-            itp_ref = cubic_interp(x_vec, y_generic_flat; bc=bc_ref)
+            itp = cubic_interp(x_vec, y_generic; bc = bc)
+            itp_ref = cubic_interp(x_vec, y_generic_flat; bc = bc_ref)
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
 
         # --- Quadratic 1D: missing direction+type ---
         @testset "Right(Deriv2(Tv(0.5))) nonzero" begin
-            itp = quadratic_interp(x_vec, y_generic; bc=Right(Deriv2(MyDuck(0.5))))
-            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc=Right(Deriv2(0.5)))
+            itp = quadratic_interp(x_vec, y_generic; bc = Right(Deriv2(MyDuck(0.5))))
+            itp_ref = quadratic_interp(x_vec, y_generic_flat; bc = Right(Deriv2(0.5)))
             @test _val(itp(xq)) ≈ itp_ref(xq)
         end
 
         # --- Cubic ND: explicit Deriv per-axis (was skipped before fix) ---
         @testset "ND broadcast Deriv1(Tv)" begin
-            itp = cubic_interp((xg, yg), data_2d; bc=Deriv1(MyDuck(0.0)))
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=Deriv1(0.0))
+            itp = cubic_interp((xg, yg), data_2d; bc = Deriv1(MyDuck(0.0)))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc = Deriv1(0.0))
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "ND per-axis (Deriv1, Deriv2)" begin
-            itp = cubic_interp((xg, yg), data_2d;
-                bc=(Deriv1(MyDuck(0.0)), Deriv2(MyDuck(0.0))))
-            itp_ref = cubic_interp((xg, yg), data_2d_flat;
-                bc=(Deriv1(0.0), Deriv2(0.0)))
+            itp = cubic_interp(
+                (xg, yg), data_2d;
+                bc = (Deriv1(MyDuck(0.0)), Deriv2(MyDuck(0.0)))
+            )
+            itp_ref = cubic_interp(
+                (xg, yg), data_2d_flat;
+                bc = (Deriv1(0.0), Deriv2(0.0))
+            )
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "ND mixed (Deriv1, ZeroCurvBC)" begin
-            itp = cubic_interp((xg, yg), data_2d;
-                bc=(Deriv1(MyDuck(0.0)), ZeroCurvBC()))
-            itp_ref = cubic_interp((xg, yg), data_2d_flat;
-                bc=(Deriv1(0.0), ZeroCurvBC()))
+            itp = cubic_interp(
+                (xg, yg), data_2d;
+                bc = (Deriv1(MyDuck(0.0)), ZeroCurvBC())
+            )
+            itp_ref = cubic_interp(
+                (xg, yg), data_2d_flat;
+                bc = (Deriv1(0.0), ZeroCurvBC())
+            )
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
         @testset "ND per-axis BCPair + ZeroCurvBC" begin
             bc_x = BCPair(Deriv1(MyDuck(0.0)), Deriv2(MyDuck(0.0)))
             bc_ref_x = BCPair(Deriv1(0.0), Deriv2(0.0))
-            itp = cubic_interp((xg, yg), data_2d; bc=(bc_x, ZeroCurvBC()))
-            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc=(bc_ref_x, ZeroCurvBC()))
+            itp = cubic_interp((xg, yg), data_2d; bc = (bc_x, ZeroCurvBC()))
+            itp_ref = cubic_interp((xg, yg), data_2d_flat; bc = (bc_ref_x, ZeroCurvBC()))
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
 
@@ -1491,29 +1511,37 @@ _val(d::MyDuck) = d.v
             data_3d_flat = _val.(data_3d)
             bc = (Deriv1(MyDuck(0.0)), Deriv2(MyDuck(0.0)), Deriv3(MyDuck(0.0)))
             bc_ref = (Deriv1(0.0), Deriv2(0.0), Deriv3(0.0))
-            itp = cubic_interp((xg, yg, zg), data_3d; bc=bc)
-            itp_ref = cubic_interp((xg, yg, zg), data_3d_flat; bc=bc_ref)
+            itp = cubic_interp((xg, yg, zg), data_3d; bc = bc)
+            itp_ref = cubic_interp((xg, yg, zg), data_3d_flat; bc = bc_ref)
             @test _val(itp((1.5, 1.5, 1.5))) ≈ itp_ref((1.5, 1.5, 1.5))
         end
 
         # --- Quadratic ND: mixed direction ---
         @testset "ND quadratic (Left(Deriv1), Right(Deriv2))" begin
-            itp = quadratic_interp((xg, yg), data_2d;
-                bc=(Left(Deriv1(MyDuck(0.0))), Right(Deriv2(MyDuck(0.0)))))
-            itp_ref = quadratic_interp((xg, yg), data_2d_flat;
-                bc=(Left(Deriv1(0.0)), Right(Deriv2(0.0))))
+            itp = quadratic_interp(
+                (xg, yg), data_2d;
+                bc = (Left(Deriv1(MyDuck(0.0))), Right(Deriv2(MyDuck(0.0))))
+            )
+            itp_ref = quadratic_interp(
+                (xg, yg), data_2d_flat;
+                bc = (Left(Deriv1(0.0)), Right(Deriv2(0.0)))
+            )
             @test _val(itp(q2d)) ≈ itp_ref(q2d)
         end
 
         # --- PeriodicBC + Deriv mixed ND ---
         @testset "ND mixed (Periodic + Deriv1)" begin
             xp_r = range(0.0, 3.0, 4)
-            data_m = [MyDuck(sin(2π*xi/3) + yj) for xi in xp_r, yj in yg]
+            data_m = [MyDuck(sin(2π * xi / 3) + yj) for xi in xp_r, yj in yg]
             data_m_flat = _val.(data_m)
-            itp = cubic_interp((xp_r, yg), data_m;
-                bc=(PeriodicBC(endpoint=:exclusive), Deriv1(MyDuck(0.0))))
-            itp_ref = cubic_interp((xp_r, yg), data_m_flat;
-                bc=(PeriodicBC(endpoint=:exclusive), Deriv1(0.0)))
+            itp = cubic_interp(
+                (xp_r, yg), data_m;
+                bc = (PeriodicBC(endpoint = :exclusive), Deriv1(MyDuck(0.0)))
+            )
+            itp_ref = cubic_interp(
+                (xp_r, yg), data_m_flat;
+                bc = (PeriodicBC(endpoint = :exclusive), Deriv1(0.0))
+            )
             @test _val(itp((0.5, 1.5))) ≈ itp_ref((0.5, 1.5))
         end
     end
@@ -1525,30 +1553,40 @@ _val(d::MyDuck) = d.v
     # ================================================================
     @testset "32. Construction @inferred" begin
         @testset "1D cubic Deriv1(Tv)" begin
-            @inferred cubic_interp(x_vec, y_generic; bc=Deriv1(MyDuck(0.0)))
+            @inferred cubic_interp(x_vec, y_generic; bc = Deriv1(MyDuck(0.0)))
         end
         @testset "1D cubic Deriv3(Tv)" begin
-            @inferred cubic_interp(x_vec, y_generic; bc=Deriv3(MyDuck(0.0)))
+            @inferred cubic_interp(x_vec, y_generic; bc = Deriv3(MyDuck(0.0)))
         end
         @testset "1D cubic BCPair(Deriv1,Deriv2)" begin
-            @inferred cubic_interp(x_vec, y_generic;
-                bc=BCPair(Deriv1(MyDuck(0.0)), Deriv2(MyDuck(0.0))))
+            @inferred cubic_interp(
+                x_vec, y_generic;
+                bc = BCPair(Deriv1(MyDuck(0.0)), Deriv2(MyDuck(0.0)))
+            )
         end
         @testset "1D quadratic Left(Deriv1(Tv))" begin
-            @inferred quadratic_interp(x_vec, y_generic;
-                bc=Left(Deriv1(MyDuck(0.0))))
+            @inferred quadratic_interp(
+                x_vec, y_generic;
+                bc = Left(Deriv1(MyDuck(0.0)))
+            )
         end
         @testset "ND cubic Deriv1(Tv) broadcast" begin
-            @inferred cubic_interp((xg, yg), data_2d;
-                bc=Deriv1(MyDuck(0.0)))
+            @inferred cubic_interp(
+                (xg, yg), data_2d;
+                bc = Deriv1(MyDuck(0.0))
+            )
         end
         @testset "ND cubic per-axis (Deriv1, Deriv2)" begin
-            @inferred cubic_interp((xg, yg), data_2d;
-                bc=(Deriv1(MyDuck(0.0)), Deriv2(MyDuck(0.0))))
+            @inferred cubic_interp(
+                (xg, yg), data_2d;
+                bc = (Deriv1(MyDuck(0.0)), Deriv2(MyDuck(0.0)))
+            )
         end
         @testset "ND quadratic Left(Deriv1(Tv))" begin
-            @inferred quadratic_interp((xg, yg), data_2d;
-                bc=Left(Deriv1(MyDuck(0.0))))
+            @inferred quadratic_interp(
+                (xg, yg), data_2d;
+                bc = Left(Deriv1(MyDuck(0.0)))
+            )
         end
     end
 
@@ -1560,19 +1598,23 @@ _val(d::MyDuck) = d.v
     @testset "33. Contract boundaries" begin
         # DuckFloat5 has no convert(DuckFloat5, Float64) → cross-type Deriv must fail
         @testset "cubic Deriv1(0.0) fails without convert" begin
-            @test_throws MethodError cubic_interp(x_vec, y_generic; bc=Deriv1(0.0))
+            @test_throws MethodError cubic_interp(x_vec, y_generic; bc = Deriv1(0.0))
         end
         @testset "quadratic Left(Deriv1(0.0)) fails without convert" begin
-            @test_throws MethodError quadratic_interp(x_vec, y_generic;
-                bc=Left(Deriv1(0.0)))
+            @test_throws MethodError quadratic_interp(
+                x_vec, y_generic;
+                bc = Left(Deriv1(0.0))
+            )
         end
 
         # PeriodicBC :inclusive with approximate (but not exact) match
         @testset "PeriodicBC(:inclusive) approx mismatch → ArgumentError" begin
             xp = range(0.0, 6.0, 7)
-            yp = MyDuck.([1.0, 3.0, 2.0, 4.0, 2.0, 3.0, 1.0 + 1e-14])
-            @test_throws ArgumentError cubic_interp(xp, yp;
-                bc=PeriodicBC(endpoint=:inclusive))
+            yp = MyDuck.([1.0, 3.0, 2.0, 4.0, 2.0, 3.0, 1.0 + 1.0e-14])
+            @test_throws ArgumentError cubic_interp(
+                xp, yp;
+                bc = PeriodicBC(endpoint = :inclusive)
+            )
         end
 
         # Standard promotion unchanged by duck-typing infrastructure
@@ -1622,8 +1664,8 @@ _val(d::MyDuck) = d.v
 
         # --- 1D scalar eval: all 4 interp types ---
         @testset "cubic fill value" begin
-            itp = cubic_interp(x_vec, y_generic; extrap=FillExtrap(fill_val))
-            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=FillExtrap(999.0))
+            itp = cubic_interp(x_vec, y_generic; extrap = FillExtrap(fill_val))
+            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap = FillExtrap(999.0))
             # Out-of-domain → fill value
             @test itp(xq_left) isa MyDuck
             @test _val(itp(xq_left)) == 999.0
@@ -1633,21 +1675,21 @@ _val(d::MyDuck) = d.v
         end
 
         @testset "linear fill value" begin
-            itp = linear_interp(x_vec, y_generic; extrap=FillExtrap(fill_val))
+            itp = linear_interp(x_vec, y_generic; extrap = FillExtrap(fill_val))
             @test itp(xq_left) isa MyDuck
             @test _val(itp(xq_left)) == 999.0
             @test _val(itp(xq_right)) == 999.0
         end
 
         @testset "quadratic fill value" begin
-            itp = quadratic_interp(x_vec, y_generic; extrap=FillExtrap(fill_val))
+            itp = quadratic_interp(x_vec, y_generic; extrap = FillExtrap(fill_val))
             @test itp(xq_left) isa MyDuck
             @test _val(itp(xq_left)) == 999.0
             @test _val(itp(xq_right)) == 999.0
         end
 
         @testset "constant fill value" begin
-            itp = constant_interp(x_vec, y_generic; extrap=FillExtrap(fill_val))
+            itp = constant_interp(x_vec, y_generic; extrap = FillExtrap(fill_val))
             @test itp(xq_left) isa MyDuck
             @test _val(itp(xq_left)) == 999.0
             @test _val(itp(xq_right)) == 999.0
@@ -1655,23 +1697,23 @@ _val(d::MyDuck) = d.v
 
         # --- Derivatives with fill → 0 * y_bnd (uses Int*Tv path) ---
         @testset "derivatives return zero (not fill)" begin
-            itp = cubic_interp(x_vec, y_generic; extrap=FillExtrap(fill_val))
-            r1 = itp(xq_left; deriv=DerivOp(1))
+            itp = cubic_interp(x_vec, y_generic; extrap = FillExtrap(fill_val))
+            r1 = itp(xq_left; deriv = DerivOp(1))
             @test r1 isa MyDuck
             @test _val(r1) == 0.0   # 0 * y_bnd, not 0 * fill_val
-            r2 = itp(xq_left; deriv=DerivOp(2))
+            r2 = itp(xq_left; deriv = DerivOp(2))
             @test r2 isa MyDuck
             @test _val(r2) == 0.0
 
             # Linear deriv
-            itp_l = linear_interp(x_vec, y_generic; extrap=FillExtrap(fill_val))
-            rl = itp_l(xq_right; deriv=DerivOp(1))
+            itp_l = linear_interp(x_vec, y_generic; extrap = FillExtrap(fill_val))
+            rl = itp_l(xq_right; deriv = DerivOp(1))
             @test rl isa MyDuck
             @test _val(rl) == 0.0
 
             # Quadratic deriv
-            itp_q = quadratic_interp(x_vec, y_generic; extrap=FillExtrap(fill_val))
-            rq = itp_q(xq_right; deriv=DerivOp(1))
+            itp_q = quadratic_interp(x_vec, y_generic; extrap = FillExtrap(fill_val))
+            rq = itp_q(xq_right; deriv = DerivOp(1))
             @test rq isa MyDuck
             @test _val(rq) == 0.0
         end
@@ -1682,10 +1724,12 @@ _val(d::MyDuck) = d.v
             y2 = MyDuck.([2.0, 1.0, 5.0, 3.0, 4.0, 1.0, 3.5])
             s = Series(y1, y2)
 
-            for (name, fn) in [("cubic", cubic_interp), ("linear", linear_interp),
-                               ("quadratic", quadratic_interp), ("constant", constant_interp)]
+            for (name, fn) in [
+                    ("cubic", cubic_interp), ("linear", linear_interp),
+                    ("quadratic", quadratic_interp), ("constant", constant_interp),
+                ]
                 @testset "$name series" begin
-                    sitp = fn(x_vec, s; extrap=FillExtrap(fill_val))
+                    sitp = fn(x_vec, s; extrap = FillExtrap(fill_val))
                     result = sitp(xq_left)
                     @test length(result) == 2
                     @test eltype(result) === MyDuck
@@ -1702,34 +1746,36 @@ _val(d::MyDuck) = d.v
         # --- ND fill value works with duck types ---
         @testset "ND fill value with duck type" begin
             itp_c = cubic_interp(
-                (xg, yg), data_2d; extrap=FillExtrap(fill_val))
+                (xg, yg), data_2d; extrap = FillExtrap(fill_val)
+            )
             @test itp_c((-0.1, 0.5)) === fill_val  # OOB → fill
             @test itp_c((0.5, 0.5)) isa MyDuck      # in-domain → normal
 
             itp_l = linear_interp(
-                (xg, yg), data_2d; extrap=FillExtrap(fill_val))
+                (xg, yg), data_2d; extrap = FillExtrap(fill_val)
+            )
             @test itp_l((-0.1, 0.5)) === fill_val
             @test itp_l((0.5, 0.5)) isa MyDuck
         end
 
         # --- Type stability ---
         @testset "construction @inferred" begin
-            @inferred cubic_interp(x_vec, y_generic; extrap=FillExtrap(fill_val))
-            @inferred linear_interp(x_vec, y_generic; extrap=FillExtrap(fill_val))
-            @inferred quadratic_interp(x_vec, y_generic; extrap=FillExtrap(fill_val))
-            @inferred constant_interp(x_vec, y_generic; extrap=FillExtrap(fill_val))
+            @inferred cubic_interp(x_vec, y_generic; extrap = FillExtrap(fill_val))
+            @inferred linear_interp(x_vec, y_generic; extrap = FillExtrap(fill_val))
+            @inferred quadratic_interp(x_vec, y_generic; extrap = FillExtrap(fill_val))
+            @inferred constant_interp(x_vec, y_generic; extrap = FillExtrap(fill_val))
         end
 
         @testset "eval @inferred" begin
-            itp = cubic_interp(x_vec, y_generic; extrap=FillExtrap(fill_val))
+            itp = cubic_interp(x_vec, y_generic; extrap = FillExtrap(fill_val))
             @test @inferred(itp(xq_left)) isa MyDuck
             @test @inferred(itp(xq)) isa MyDuck
         end
 
         # --- Boundary clamp (ClampExtrap()) still works with duck types ---
         @testset "boundary clamp unchanged" begin
-            itp = cubic_interp(x_vec, y_generic; extrap=ClampExtrap())
-            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap=ClampExtrap())
+            itp = cubic_interp(x_vec, y_generic; extrap = ClampExtrap())
+            itp_ref = cubic_interp(x_vec, y_generic_flat; extrap = ClampExtrap())
             @test itp(xq_left) isa MyDuck
             @test _val(itp(xq_left)) ≈ itp_ref(xq_left)    # y[1]
             @test _val(itp(xq_right)) ≈ itp_ref(xq_right)  # y[end]

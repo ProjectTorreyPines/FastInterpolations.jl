@@ -31,15 +31,15 @@ using FastInterpolations
 
         # Check approximate correctness (linear interpolation of complex values)
         # At x=0.5, we expect interpolation between y[6] and y[7]
-        @test isapprox(real(val), real(exp(2im * π * 0.5)), rtol=0.1)
-        @test isapprox(imag(val), imag(exp(2im * π * 0.5)), rtol=0.1)
+        @test isapprox(real(val), real(exp(2im * π * 0.5)), rtol = 0.1)
+        @test isapprox(imag(val), imag(exp(2im * π * 0.5)), rtol = 0.1)
 
         # First derivative also returns ComplexF64
-        d1 = itp(0.5; deriv=DerivOp(1))
+        d1 = itp(0.5; deriv = DerivOp(1))
         @test d1 isa ComplexF64
 
         # Second derivative returns zero (linear interpolation)
-        d2 = itp(0.5; deriv=DerivOp(2))
+        d2 = itp(0.5; deriv = DerivOp(2))
         @test d2 isa ComplexF64
         @test d2 == zero(ComplexF64)
     end
@@ -67,7 +67,7 @@ using FastInterpolations
     # ========================================
     @testset "Integer grid + Complex values" begin
         x = 0:10  # Range{Int}
-        y = Complex{Int}[i + 2im*i for i in 0:10]
+        y = Complex{Int}[i + 2im * i for i in 0:10]
 
         itp = linear_interp(x, y)
 
@@ -79,7 +79,7 @@ using FastInterpolations
 
         # Check interpolation: between y[6]=(5+10im) and y[7]=(6+12im)
         # At 5.5: (5+10im) + 0.5*(6+12im - 5-10im) = 5.5 + 11im
-        @test isapprox(val, 5.5 + 11.0im, rtol=1e-10)
+        @test isapprox(val, 5.5 + 11.0im, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -115,9 +115,9 @@ using FastInterpolations
         @test length(vals) == 3
 
         # Check values
-        @test isapprox(vals[1], (1.0 + 2.0im) * 0.25, rtol=1e-10)
-        @test isapprox(vals[2], (1.0 + 2.0im) * 0.5, rtol=1e-10)
-        @test isapprox(vals[3], (1.0 + 2.0im) * 0.75, rtol=1e-10)
+        @test isapprox(vals[1], (1.0 + 2.0im) * 0.25, rtol = 1.0e-10)
+        @test isapprox(vals[2], (1.0 + 2.0im) * 0.5, rtol = 1.0e-10)
+        @test isapprox(vals[3], (1.0 + 2.0im) * 0.75, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -135,7 +135,7 @@ using FastInterpolations
 
         @test vals isa Vector{ComplexF64}
         @test length(vals) == 3
-        @test isapprox(vals[2], (1.0 + 2.0im) * 0.5, rtol=1e-10)
+        @test isapprox(vals[2], (1.0 + 2.0im) * 0.5, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -146,19 +146,19 @@ using FastInterpolations
         y = (1.0 + 2.0im) .* x
 
         # Extension mode
-        itp_ext = linear_interp(x, y; extrap=ExtendExtrap())
+        itp_ext = linear_interp(x, y; extrap = ExtendExtrap())
         val_ext = itp_ext(1.5)  # Beyond domain
         @test val_ext isa ComplexF64
-        @test isapprox(val_ext, (1.0 + 2.0im) * 1.5, rtol=1e-10)
+        @test isapprox(val_ext, (1.0 + 2.0im) * 1.5, rtol = 1.0e-10)
 
         # Constant mode
-        itp_const = linear_interp(x, y; extrap=ClampExtrap())
+        itp_const = linear_interp(x, y; extrap = ClampExtrap())
         val_const = itp_const(1.5)  # Beyond domain
         @test val_const isa ComplexF64
-        @test isapprox(val_const, y[end], rtol=1e-10)
+        @test isapprox(val_const, y[end], rtol = 1.0e-10)
 
         # Wrap mode
-        itp_wrap = linear_interp(x, y; extrap=WrapExtrap())
+        itp_wrap = linear_interp(x, y; extrap = WrapExtrap())
         val_wrap = itp_wrap(1.5)  # Should wrap to 0.5
         @test val_wrap isa ComplexF64
     end
@@ -175,7 +175,7 @@ using FastInterpolations
         @test @inferred(itp(0.5)) isa ComplexF64
 
         # First derivative should be type-stable
-        @test @inferred(itp(0.5; deriv=DerivOp(1))) isa ComplexF64
+        @test @inferred(itp(0.5; deriv = DerivOp(1))) isa ComplexF64
     end
 
     # ========================================
@@ -210,7 +210,7 @@ using FastInterpolations
         itp(output, xq)
 
         @test output[1] isa ComplexF64
-        @test isapprox(output[3], (1.0 + 2.0im) * 0.5, rtol=1e-10)
+        @test isapprox(output[3], (1.0 + 2.0im) * 0.5, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -223,16 +223,16 @@ using FastInterpolations
         itp = linear_interp(x, y)
 
         # Query at grid points
-        @test isapprox(itp(0.0), y[1], rtol=1e-10)
-        @test isapprox(itp(0.5), y[2], rtol=1e-10)
-        @test isapprox(itp(1.0), y[3], rtol=1e-10)
+        @test isapprox(itp(0.0), y[1], rtol = 1.0e-10)
+        @test isapprox(itp(0.5), y[2], rtol = 1.0e-10)
+        @test isapprox(itp(1.0), y[3], rtol = 1.0e-10)
 
         # Query at midpoints
         mid1 = itp(0.25)
-        @test isapprox(mid1, 0.5 + 0.5im, rtol=1e-10)
+        @test isapprox(mid1, 0.5 + 0.5im, rtol = 1.0e-10)
 
         mid2 = itp(0.75)
-        @test isapprox(mid2, -0.5 + 0.5im, rtol=1e-10)
+        @test isapprox(mid2, -0.5 + 0.5im, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -248,11 +248,11 @@ using FastInterpolations
         itp = linear_interp(x, y)
 
         # First derivative should be the complex slope
-        d1 = itp(0.5; deriv=DerivOp(1))
-        @test isapprox(d1, slope, rtol=1e-10)
+        d1 = itp(0.5; deriv = DerivOp(1))
+        @test isapprox(d1, slope, rtol = 1.0e-10)
 
         # Second derivative should be zero
-        d2 = itp(0.5; deriv=DerivOp(2))
+        d2 = itp(0.5; deriv = DerivOp(2))
         @test d2 == zero(ComplexF64)
     end
 
@@ -275,7 +275,7 @@ using FastInterpolations
         val = itp(0.5)
         @test val isa Float64
 
-        d1 = itp(0.5; deriv=DerivOp(1))
+        d1 = itp(0.5; deriv = DerivOp(1))
         @test d1 isa Float64
     end
 
@@ -301,7 +301,7 @@ using FastInterpolations
             # Scalar query with Float32 - output should still be Float64
             result = itp(Float32(5.5))
             @test result isa Float64  # NOT Float32
-            @test isapprox(result, 5.5^2, rtol=0.1)  # Approximate quadratic
+            @test isapprox(result, 5.5^2, rtol = 0.1)  # Approximate quadratic
 
             # 3-arg oneshot scalar
             result_oneshot = linear_interp(x_int, y_int, Float32(5.5))
@@ -340,7 +340,7 @@ using FastInterpolations
         # Complex values should also respect the x/y policy
         @testset "Int grid + Complex values → ComplexF64" begin
             x_int = 0:10
-            y_complex = Complex{Int}[i + 2im*i for i in 0:10]
+            y_complex = Complex{Int}[i + 2im * i for i in 0:10]
 
             itp = linear_interp(x_int, y_complex)
             @test itp isa LinearInterpolant{Float64, ComplexF64}
@@ -364,7 +364,7 @@ using FastInterpolations
             linear_interp!(output, x_int, y_int, xq)
 
             @test eltype(output) === Float64
-            @test isapprox(output[2], 5.5^2, rtol=0.1)
+            @test isapprox(output[2], 5.5^2, rtol = 0.1)
         end
 
         # -----------------------------------------

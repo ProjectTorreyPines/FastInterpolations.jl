@@ -78,8 +78,8 @@
         y_small = [1.0, 2.0, 1.5]
         x_query_small = [-0.5, 0.25, 0.75, 1.5]
 
-        cache_small = CubicSplineCache(x_small; bc=ZeroCurvBC())
-        result = cubic_interp(cache_small, y_small, x_query_small; extrap=ExtendExtrap())
+        cache_small = CubicSplineCache(x_small; bc = ZeroCurvBC())
+        result = cubic_interp(cache_small, y_small, x_query_small; extrap = ExtendExtrap())
         @test all(isfinite, result)
 
         # Query at grid points (should return close to exact values)
@@ -88,12 +88,12 @@
         cache = CubicSplineCache(x)
 
         result = cubic_interp(cache, y, x)
-        @test result ≈ y atol=1e-14
+        @test result ≈ y atol = 1.0e-14
 
         # Query at boundaries (CubicFit materializes slopes → tiny numerical offset)
         x_boundary = [x[1], x[end]]
         result_boundary = cubic_interp(cache, y, x_boundary)
-        @test result_boundary ≈ [y[1], y[end]] atol=1e-14
+        @test result_boundary ≈ [y[1], y[end]] atol = 1.0e-14
     end
 
     @testset "Extrapolation :none - DomainError" begin
@@ -105,8 +105,8 @@
         @test_throws DomainError cubic_interp(x, y, 1.1)
 
         # Explicit :none also throws
-        @test_throws DomainError cubic_interp(x, y, -0.5; extrap=NoExtrap())
-        @test_throws DomainError cubic_interp(x, y, 1.5; extrap=NoExtrap())
+        @test_throws DomainError cubic_interp(x, y, -0.5; extrap = NoExtrap())
+        @test_throws DomainError cubic_interp(x, y, 1.5; extrap = NoExtrap())
 
         # Vector query - first out-of-domain point throws
         @test_throws DomainError cubic_interp(x, y, [-0.1, 0.5])
@@ -136,8 +136,8 @@
         @test isfinite(cubic_interp(x, y, 0.75))
 
         # Boundary points should work (CubicFit materializes slopes → tiny numerical offset)
-        @test cubic_interp(x, y, 0.0) ≈ y[1] atol=1e-14
-        @test cubic_interp(x, y, 1.0) ≈ y[end] atol=1e-14
+        @test cubic_interp(x, y, 0.0) ≈ y[1] atol = 1.0e-14
+        @test cubic_interp(x, y, 1.0) ≈ y[end] atol = 1.0e-14
     end
 
 
@@ -146,25 +146,25 @@
         y = sin.(2π .* x)
 
         # Left boundary - returns y[1]
-        result_left = cubic_interp(x, y, -0.5; extrap=ClampExtrap())
+        result_left = cubic_interp(x, y, -0.5; extrap = ClampExtrap())
         @test result_left ≈ y[1]
 
         # Right boundary - returns y[end]
-        result_right = cubic_interp(x, y, 1.5; extrap=ClampExtrap())
+        result_right = cubic_interp(x, y, 1.5; extrap = ClampExtrap())
         @test result_right ≈ y[end]
 
         # Vector query
-        result = cubic_interp(x, y, [-0.5, 0.5, 1.5]; extrap=ClampExtrap())
+        result = cubic_interp(x, y, [-0.5, 0.5, 1.5]; extrap = ClampExtrap())
         @test result[1] ≈ y[1]
         @test result[3] ≈ y[end]
 
         # With cache
         cache = CubicSplineCache(x)
-        @test cubic_interp(cache, y, -0.5; extrap=ClampExtrap()) ≈ y[1]
-        @test cubic_interp(cache, y, 1.5; extrap=ClampExtrap()) ≈ y[end]
+        @test cubic_interp(cache, y, -0.5; extrap = ClampExtrap()) ≈ y[1]
+        @test cubic_interp(cache, y, 1.5; extrap = ClampExtrap()) ≈ y[end]
 
         # Callable interpolant with :constant
-        itp = cubic_interp(x, y; extrap=ClampExtrap())
+        itp = cubic_interp(x, y; extrap = ClampExtrap())
         @test itp(-0.5) ≈ y[1]
         @test itp(1.5) ≈ y[end]
     end
@@ -280,7 +280,7 @@
         cache = CubicSplineCache(x)
 
         for (xi, yi) in zip(x, y)
-            @test cubic_interp(cache, y, xi) ≈ yi atol=1e-14
+            @test cubic_interp(cache, y, xi) ≈ yi atol = 1.0e-14
         end
     end
 
@@ -346,7 +346,7 @@ end
     end
 
     @testset "Float32 support" begin
-        x_f32 = range(Float32(0.0), Float32(1.0), length=11)
+        x_f32 = range(Float32(0.0), Float32(1.0), length = 11)
         y_f32 = sin.(Float32(2π) .* x_f32)
         x_query_f32 = Float32[0.25, 0.5, 0.75]
 
@@ -355,12 +355,12 @@ end
         @test all(isfinite, result)
 
         # Compare with Float64 reference (relaxed tolerance)
-        x_f64 = range(0.0, 1.0, length=11)
+        x_f64 = range(0.0, 1.0, length = 11)
         y_f64 = sin.(2π .* x_f64)
         x_query_f64 = [0.25, 0.5, 0.75]
         result_f64 = cubic_interp(x_f64, y_f64, x_query_f64)
 
-        @test Float64.(result) ≈ result_f64 rtol=1e-6
+        @test Float64.(result) ≈ result_f64 rtol = 1.0e-6
     end
 
     @testset "Mixed Real types (Int x/y, Float query)" begin
@@ -382,14 +382,14 @@ end
         y_int = [sin(2π * i / 10) for i in x_int]
         x_extrap = [-1.0, 11.0]
 
-        result = cubic_interp(x_int, y_int, x_extrap; extrap=ExtendExtrap())
+        result = cubic_interp(x_int, y_int, x_extrap; extrap = ExtendExtrap())
         @test result isa Vector{Float64}
         @test all(isfinite, result)
 
         x_float = collect(Float64.(x_int))
         y_float = Float64.(y_int)
 
-        result_ref = cubic_interp(x_float, y_float, x_extrap; extrap=ExtendExtrap())
+        result_ref = cubic_interp(x_float, y_float, x_extrap; extrap = ExtendExtrap())
         @test result ≈ result_ref
     end
 
@@ -403,23 +403,23 @@ end
 
         # Test autocache=true path (default)
         cubic_interp!(output, x, y, x_query)
-        @test output ≈ sin.(2π .* x_query) atol=1e-6
+        @test output ≈ sin.(2π .* x_query) atol = 1.0e-6
 
         # Test autocache=false path
-        cubic_interp!(output, x, y, x_query; autocache=false)
-        @test output ≈ sin.(2π .* x_query) atol=1e-6
+        cubic_interp!(output, x, y, x_query; autocache = false)
+        @test output ≈ sin.(2π .* x_query) atol = 1.0e-6
 
         # Test with Range
         x_range = range(0.0, 1.0, 51)
         y_range = sin.(2π .* x_range)
         cubic_interp!(output, x_range, y_range, x_query)
-        @test output ≈ sin.(2π .* x_query) atol=1e-6
+        @test output ≈ sin.(2π .* x_query) atol = 1.0e-6
     end
 
     @testset "cubic_interp! Real type wrappers" begin
         # Integer inputs
         x = 0:10
-        y = collect(x).^2
+        y = collect(x) .^ 2
         x_query = [2.5, 5.5, 7.5]
         output = zeros(3)
 
@@ -436,14 +436,14 @@ end
     @testset "_to_float Vector path" begin
         # This tests _to_float for Vector conversion
         x_int = collect(0:10)
-        y_int = x_int.^2
+        y_int = x_int .^ 2
 
         # This should use _to_float for Vector conversion
         itp = cubic_interp(x_int, y_int)
-        @test itp(5.0) ≈ 25.0 atol=1
+        @test itp(5.0) ≈ 25.0 atol = 1
 
         itp_lin = linear_interp(x_int, y_int)
-        @test itp_lin(5.0) ≈ 25.0 atol=1
+        @test itp_lin(5.0) ≈ 25.0 atol = 1
     end
 end
 
@@ -457,16 +457,16 @@ end
         output = zeros(1)
 
         cubic_interp!(output, cache, y, 0.5)
-        @test output[1] ≈ sin(π) atol=1e-6
+        @test output[1] ≈ sin(π) atol = 1.0e-6
 
         # Test with different extrap modes
-        cubic_interp!(output, cache, y, 0.25; extrap=NoExtrap())
+        cubic_interp!(output, cache, y, 0.25; extrap = NoExtrap())
         @test isfinite(output[1])
 
-        cubic_interp!(output, cache, y, -0.1; extrap=ClampExtrap())
+        cubic_interp!(output, cache, y, -0.1; extrap = ClampExtrap())
         @test output[1] ≈ y[1]
 
-        cubic_interp!(output, cache, y, 1.1; extrap=ExtendExtrap())
+        cubic_interp!(output, cache, y, 1.1; extrap = ExtendExtrap())
         @test isfinite(output[1])
     end
 
@@ -477,12 +477,12 @@ end
         y[end] = y[1]  # Ensure periodic
         output = zeros(1)
 
-        cubic_interp!(output, x, y, π; bc=PeriodicBC())
-        @test output[1] ≈ 0.0 atol=0.1
+        cubic_interp!(output, x, y, π; bc = PeriodicBC())
+        @test output[1] ≈ 0.0 atol = 0.1
 
         # Test with autocache=false
-        cubic_interp!(output, x, y, π; bc=PeriodicBC(), autocache=false)
-        @test output[1] ≈ 0.0 atol=0.1
+        cubic_interp!(output, x, y, π; bc = PeriodicBC(), autocache = false)
+        @test output[1] ≈ 0.0 atol = 0.1
     end
 
     @testset "cubic_interp! with x,y,scalar and autocache=false" begin
@@ -491,8 +491,8 @@ end
         y = sin.(2π .* x)
         output = zeros(1)
 
-        cubic_interp!(output, x, y, 0.5; autocache=false)
-        @test output[1] ≈ sin(π) atol=1e-6
+        cubic_interp!(output, x, y, 0.5; autocache = false)
+        @test output[1] ≈ sin(π) atol = 1.0e-6
     end
 
     @testset "cubic_interp with vector query and bc=PeriodicBC()" begin
@@ -500,15 +500,15 @@ end
         x = collect(range(0.0, 2π, 31))
         y = sin.(x)
         y[end] = y[1]  # Ensure periodic
-        x_query = [π/2, π, 3π/2]
+        x_query = [π / 2, π, 3π / 2]
 
-        result = cubic_interp(x, y, x_query; bc=PeriodicBC())
-        @test result[1] ≈ 1.0 atol=0.1  # sin(π/2) ≈ 1
-        @test result[2] ≈ 0.0 atol=0.1  # sin(π) ≈ 0
-        @test result[3] ≈ -1.0 atol=0.1  # sin(3π/2) ≈ -1
+        result = cubic_interp(x, y, x_query; bc = PeriodicBC())
+        @test result[1] ≈ 1.0 atol = 0.1  # sin(π/2) ≈ 1
+        @test result[2] ≈ 0.0 atol = 0.1  # sin(π) ≈ 0
+        @test result[3] ≈ -1.0 atol = 0.1  # sin(3π/2) ≈ -1
 
         # Test with autocache=false
-        result2 = cubic_interp(x, y, x_query; bc=PeriodicBC(), autocache=false)
+        result2 = cubic_interp(x, y, x_query; bc = PeriodicBC(), autocache = false)
         @test result2 ≈ result
     end
 
@@ -518,12 +518,12 @@ end
         y_int = [sin(2π * i / 20) for i in x_int]
         y_int[end] = y_int[1]  # Ensure exact periodicity
 
-        itp = cubic_interp(x_int, y_int; bc=PeriodicBC())
+        itp = cubic_interp(x_int, y_int; bc = PeriodicBC())
         @test itp isa CubicInterpolant
-        @test itp(5.0) ≈ sin(π/2) atol=0.1  # sin(2π*5/20) = sin(π/2)
+        @test itp(5.0) ≈ sin(π / 2) atol = 0.1  # sin(2π*5/20) = sin(π/2)
 
         # Also test autocache=false path
-        itp2 = cubic_interp(x_int, y_int; bc=PeriodicBC(), autocache=false)
-        @test itp2(5.0) ≈ itp(5.0) atol=1e-10
+        itp2 = cubic_interp(x_int, y_int; bc = PeriodicBC(), autocache = false)
+        @test itp2(5.0) ≈ itp(5.0) atol = 1.0e-10
     end
 end

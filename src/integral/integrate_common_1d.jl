@@ -13,16 +13,16 @@ end
 # ═══════════════════════════════════════════════════════════════
 
 @inline function _dispatch_extrap_integrate_1d(
-    ::NoExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
-) where Tout
+        ::NoExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+    ) where {Tout}
     _check_domain(x, min(x0, x1), NoExtrap())
     _check_domain(x, max(x0, x1), NoExtrap())
     return in_domain_fn(x0, x1)
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-    ::ClampExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
-) where Tout
+        ::ClampExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+    ) where {Tout}
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)
     xmin, xmax = first(x), last(x)
@@ -42,8 +42,8 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-    e::FillExtrap, in_domain_fn, x, _y_left, _y_right, x0::Real, x1::Real, ::Type{Tout}
-) where Tout
+        e::FillExtrap, in_domain_fn, x, _y_left, _y_right, x0::Real, x1::Real, ::Type{Tout}
+    ) where {Tout}
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)
     xmin, xmax = first(x), last(x)
@@ -64,8 +64,8 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-    ::WrapExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
-) where Tout
+        ::WrapExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+    ) where {Tout}
     sign, lo, hi = _normalize_bounds_1d(x0, x1)
     sign == 0 && return zero(Tout)
     xmin, xmax = first(x), last(x)
@@ -92,8 +92,8 @@ end
 end
 
 @inline function _dispatch_extrap_integrate_1d(
-    ::ExtendExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
-) where Tout
+        ::ExtendExtrap, in_domain_fn, x, y_left, y_right, x0::Real, x1::Real, ::Type{Tout}
+    ) where {Tout}
     return in_domain_fn(x0, x1)
 end
 
@@ -102,9 +102,9 @@ end
 # `full_fn(i, h)` — integrate full cell i with cell width h
 # Uses no-spacing search_interval variant (avoids VectorSpacing allocation).
 @inline function _integrate_1d_cellwise(
-    x::AbstractVector, a::Real, b::Real,
-    searcher::S, partial_fn::PF, full_fn::FF, ::Type{Tout}
-) where {S<:Searcher, PF, FF, Tout}
+        x::AbstractVector, a::Real, b::Real,
+        searcher::S, partial_fn::PF, full_fn::FF, ::Type{Tout}
+    ) where {S <: Searcher, PF, FF, Tout}
     sign, lo, hi = _normalize_bounds_1d(a, b)
     sign == 0 && return zero(Tout)
 
@@ -134,8 +134,8 @@ end
 # Scalar accumulator: ∫ over entire grid using full-cell kernel only.
 # `full_fn(i, h)` — same closure signature as _integrate_1d_cellwise.
 @inline function _integrate_1d_fulldomain(
-    x::AbstractVector, full_fn::F, ::Type{Tout}
-) where {F, Tout}
+        x::AbstractVector, full_fn::F, ::Type{Tout}
+    ) where {F, Tout}
     n = length(x)
     total = zero(Tout)
     @inbounds for i in 1:(n - 1)
@@ -147,8 +147,8 @@ end
 # Prefix-sum (in-place): write cumulative integral into pre-allocated buffer.
 # `out` must have length ≥ length(x). Works with Vector or @view(matrix[:, k]).
 function _cumulative_integrate_1d!(
-    out::AbstractVector, x::AbstractVector, full_fn::F
-) where {F}
+        out::AbstractVector, x::AbstractVector, full_fn::F
+    ) where {F}
     n = length(x)
     out[1] = zero(eltype(out))
     @inbounds for i in 1:(n - 1)
@@ -159,8 +159,8 @@ end
 
 # Allocating wrapper: creates a fresh Vector and fills it.
 function _cumulative_integrate_1d(
-    x::AbstractVector, full_fn::F, ::Type{Tout}
-) where {F, Tout}
+        x::AbstractVector, full_fn::F, ::Type{Tout}
+    ) where {F, Tout}
     result = Vector{Tout}(undef, length(x))
     return _cumulative_integrate_1d!(result, x, full_fn)
 end

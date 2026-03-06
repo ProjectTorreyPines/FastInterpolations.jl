@@ -46,7 +46,7 @@ _get_recipe_data(itp::CubicInterpolant) = (itp.cache.x, itp.y, itp.extrap)
 Compute marker size based on number of data points.
 More points → smaller markers to avoid visual clutter.
 """
-function compute_marker_size(n::Integer; max_size::Float64=7.0, min_size::Float64=3.0, max_n::Integer=100)
+function compute_marker_size(n::Integer; max_size::Float64 = 7.0, min_size::Float64 = 3.0, max_n::Integer = 100)
     s = max_size - (max_size - min_size) / max_n * n
     return clamp(s, min_size, max_size)
 end
@@ -57,7 +57,7 @@ end
 Compute marker alpha (opacity) based on number of data points.
 More points → more transparent markers to reduce visual density.
 """
-function compute_marker_alpha(n::Integer; max_α::Float64=0.75, min_α::Float64=0.3, max_n::Integer=100)
+function compute_marker_alpha(n::Integer; max_α::Float64 = 0.75, min_α::Float64 = 0.3, max_n::Integer = 100)
     a = max_α - (max_α - min_α) / max_n * n
     return clamp(a, min_α, max_α)
 end
@@ -75,16 +75,16 @@ const SCATTER_THRESHOLD = 200
 Extract data from multi-series interpolants.
 """
 function _get_series_recipe_data(sitp::LinearSeriesInterpolant)
-    (sitp.x, sitp.y, sitp.extrap, size(sitp.y, 2))
+    return (sitp.x, sitp.y, sitp.extrap, size(sitp.y, 2))
 end
 function _get_series_recipe_data(sitp::ConstantSeriesInterpolant)
-    (sitp.x, sitp.y, sitp.extrap, size(sitp.y, 2))
+    return (sitp.x, sitp.y, sitp.extrap, size(sitp.y, 2))
 end
 function _get_series_recipe_data(sitp::QuadraticSeriesInterpolant)
-    (sitp.x, sitp.y, sitp.extrap, size(sitp.y, 2))
+    return (sitp.x, sitp.y, sitp.extrap, size(sitp.y, 2))
 end
 function _get_series_recipe_data(sitp::CubicSeriesInterpolant)
-    (sitp.cache.x, sitp.y, sitp.extrap, size(sitp.y, 2))
+    return (sitp.cache.x, sitp.y, sitp.extrap, size(sitp.y, 2))
 end
 
 """
@@ -188,16 +188,26 @@ Generates multiple series:
 
     # Record arguments for help_plot discovery
     dispatch_name = recipe_dispatch(itp)
-    assert_type_and_record_argument(dispatch_name, Union{Bool,Nothing},
-        "Show original data points (default: auto, hidden when n ≥ $(SCATTER_THRESHOLD))"; show_data=show_data_opt)
-    assert_type_and_record_argument(dispatch_name, Bool,
-        "Show domain boundary lines (default: true)"; show_bounds)
-    assert_type_and_record_argument(dispatch_name, Bool,
-        "Show out-of-domain shading (default: true)"; show_outside)
-    assert_type_and_record_argument(dispatch_name, Union{Integer,Nothing},
-        "Number of curve samples (nothing = auto-computed from grid size)"; samples)
-    assert_type_and_record_argument(dispatch_name, Union{Real,Nothing},
-        "Domain extension for extrapolation visualization (nothing = 25% of domain)"; domain_margin)
+    assert_type_and_record_argument(
+        dispatch_name, Union{Bool, Nothing},
+        "Show original data points (default: auto, hidden when n ≥ $(SCATTER_THRESHOLD))"; show_data = show_data_opt
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Bool,
+        "Show domain boundary lines (default: true)"; show_bounds
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Bool,
+        "Show out-of-domain shading (default: true)"; show_outside
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Integer, Nothing},
+        "Number of curve samples (nothing = auto-computed from grid size)"; samples
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Real, Nothing},
+        "Domain extension for extrapolation visualization (nothing = 25% of domain)"; domain_margin
+    )
 
     # Extract data
     x, y, extrap = _get_recipe_data(itp)
@@ -247,7 +257,7 @@ Generates multiple series:
     end
 
     # Generate query range (in-domain for fill-value, full range otherwise)
-    xq = range(xq_min, xq_max; length=n_samples)
+    xq = range(xq_min, xq_max; length = n_samples)
 
     # Final xlims for plot (user override or default)
     final_xlims = isnothing(user_xlims) ? (default_xlim_min, default_xlim_max) : user_xlims
@@ -304,7 +314,7 @@ Generates multiple series:
             linewidth := 0
             label := nothing
             [shade_x_lo, x_min, x_min, shade_x_lo],
-            [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
+                [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
         end
         @series begin
             seriestype := :shape
@@ -313,7 +323,7 @@ Generates multiple series:
             linewidth := 0
             label --> shade_label
             [x_max, shade_x_hi, shade_x_hi, x_max],
-            [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
+                [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
         end
     end
 
@@ -374,18 +384,30 @@ end
 
     # Record arguments for help_plot discovery
     dispatch_name = recipe_dispatch(sitp)
-    assert_type_and_record_argument(dispatch_name, Union{Bool,Nothing},
-        "Show original data points (default: auto, hidden when n ≥ $(SCATTER_THRESHOLD))"; show_data=show_data_opt)
-    assert_type_and_record_argument(dispatch_name, Bool,
-        "Show domain boundary lines (default: true)"; show_bounds)
-    assert_type_and_record_argument(dispatch_name, Bool,
-        "Show out-of-domain shading (default: true)"; show_outside)
-    assert_type_and_record_argument(dispatch_name, Union{Integer,Nothing},
-        "Number of curve samples (nothing = auto-computed from grid size)"; samples)
-    assert_type_and_record_argument(dispatch_name, Union{Real,Nothing},
-        "Domain extension for extrapolation visualization (nothing = 25% of domain)"; domain_margin)
-    assert_type_and_record_argument(dispatch_name, Union{Symbol,Integer,AbstractRange,AbstractVector{<:Integer}},
-        "Which series to plot: :all, :first, Int, range, or vector of indices (default: :all)"; series_idx)
+    assert_type_and_record_argument(
+        dispatch_name, Union{Bool, Nothing},
+        "Show original data points (default: auto, hidden when n ≥ $(SCATTER_THRESHOLD))"; show_data = show_data_opt
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Bool,
+        "Show domain boundary lines (default: true)"; show_bounds
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Bool,
+        "Show out-of-domain shading (default: true)"; show_outside
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Integer, Nothing},
+        "Number of curve samples (nothing = auto-computed from grid size)"; samples
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Real, Nothing},
+        "Domain extension for extrapolation visualization (nothing = 25% of domain)"; domain_margin
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Symbol, Integer, AbstractRange, AbstractVector{<:Integer}},
+        "Which series to plot: :all, :first, Int, range, or vector of indices (default: :all)"; series_idx
+    )
 
     # Extract data
     x, Y, extrap, n_ser = _get_series_recipe_data(sitp)
@@ -444,7 +466,7 @@ end
     end
 
     # Generate query range
-    xq = range(xq_min, xq_max; length=n_samples)
+    xq = range(xq_min, xq_max; length = n_samples)
     xq_vec = collect(xq)
 
     # Final xlims for plot (user override or default)
@@ -500,7 +522,7 @@ end
                 linewidth := 0
                 label := nothing
                 [shade_x_lo, x_min, x_min, shade_x_lo],
-                [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
+                    [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
             end
             @series begin
                 seriestype := :shape
@@ -509,7 +531,7 @@ end
                 linewidth := 0
                 label --> shade_label
                 [x_max, shade_x_hi, shade_x_hi, x_max],
-                [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
+                    [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
             end
         end
     end
@@ -582,16 +604,26 @@ end
 
     # Record arguments for help_plot discovery
     dispatch_name = recipe_dispatch(dv)
-    assert_type_and_record_argument(dispatch_name, Bool,
-        "Show original data points (default: false for derivatives)"; show_data)
-    assert_type_and_record_argument(dispatch_name, Bool,
-        "Show domain boundary lines (default: true)"; show_bounds)
-    assert_type_and_record_argument(dispatch_name, Bool,
-        "Show out-of-domain shading (default: true)"; show_outside)
-    assert_type_and_record_argument(dispatch_name, Union{Integer,Nothing},
-        "Number of curve samples (nothing = auto-computed from grid size)"; samples)
-    assert_type_and_record_argument(dispatch_name, Union{Real,Nothing},
-        "Domain extension for extrapolation visualization (nothing = 25% of domain)"; domain_margin)
+    assert_type_and_record_argument(
+        dispatch_name, Bool,
+        "Show original data points (default: false for derivatives)"; show_data
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Bool,
+        "Show domain boundary lines (default: true)"; show_bounds
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Bool,
+        "Show out-of-domain shading (default: true)"; show_outside
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Integer, Nothing},
+        "Number of curve samples (nothing = auto-computed from grid size)"; samples
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Real, Nothing},
+        "Domain extension for extrapolation visualization (nothing = 25% of domain)"; domain_margin
+    )
 
     parent = dv.parent
 
@@ -636,7 +668,7 @@ end
     end
 
     # Generate query range
-    xq = range(xq_min, xq_max; length=n_samples)
+    xq = range(xq_min, xq_max; length = n_samples)
     xq_vec = collect(xq)
 
     # Final xlims for plot (user override or default)
@@ -684,7 +716,7 @@ end
             linewidth := 0
             label := nothing
             [shade_x_lo, x_min, x_min, shade_x_lo],
-            [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
+                [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
         end
         @series begin
             seriestype := :shape
@@ -693,7 +725,7 @@ end
             linewidth := 0
             label --> shade_label
             [x_max, shade_x_hi, shade_x_hi, x_max],
-            [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
+                [shade_y_lo, shade_y_lo, shade_y_hi, shade_y_hi]
         end
     end
 
@@ -739,7 +771,7 @@ _interpolant_label(::CubicInterpolantND) = "cubic"
 # Helper: default high-resolution samples for 2D visualization
 _default_2d_samples(nx::Integer, ny::Integer) = (
     clamp(10 * nx, 100, 500),
-    clamp(10 * ny, 100, 500)
+    clamp(10 * ny, 100, 500),
 )
 
 """
@@ -755,7 +787,7 @@ const SCATTER_THRESHOLD_2D = 400  # 20×20 grid
 Compute marker size for 2D plots based on total node count.
 More nodes → smaller markers to avoid visual clutter.
 """
-function compute_marker_size_2d(n::Integer; max_size::Float64=6.0, min_size::Float64=2.0, max_n::Integer=400)
+function compute_marker_size_2d(n::Integer; max_size::Float64 = 6.0, min_size::Float64 = 2.0, max_n::Integer = 400)
     s = max_size - (max_size - min_size) / max_n * n
     return clamp(s, min_size, max_size)
 end
@@ -766,7 +798,7 @@ end
 Compute marker alpha (opacity) for 2D plots based on total node count.
 More nodes → more transparent markers to reduce visual density.
 """
-function compute_marker_alpha_2d(n::Integer; max_α::Float64=0.85, min_α::Float64=0.4, max_n::Integer=400)
+function compute_marker_alpha_2d(n::Integer; max_α::Float64 = 0.85, min_α::Float64 = 0.4, max_n::Integer = 400)
     a = max_α - (max_α - min_α) / max_n * n
     return clamp(a, min_α, max_α)
 end
@@ -777,7 +809,7 @@ end
 Compute gridline alpha based on number of grid lines.
 More lines → more transparent to reduce visual clutter.
 """
-function compute_gridline_alpha_2d(n_lines::Integer; max_α::Float64=0.4, min_α::Float64=0.1, max_n::Integer=50)
+function compute_gridline_alpha_2d(n_lines::Integer; max_α::Float64 = 0.4, min_α::Float64 = 0.1, max_n::Integer = 50)
     a = max_α - (max_α - min_α) / max_n * n_lines
     return clamp(a, min_α, max_α)
 end
@@ -861,40 +893,74 @@ Generates a visualization with:
 
     # Record arguments for help_plot discovery
     dispatch_name = recipe_dispatch(itp)
-    assert_type_and_record_argument(dispatch_name, Union{Bool, Nothing},
-        "Show grid node markers (default: auto, hidden when nx×ny ≥ $(SCATTER_THRESHOLD_2D))"; show_nodes=show_nodes_opt)
-    assert_type_and_record_argument(dispatch_name, Union{Bool, Nothing},
-        "Show grid lines (default: auto, hidden when nx×ny ≥ $(SCATTER_THRESHOLD_2D))"; show_gridlines=show_gridlines_opt)
-    assert_type_and_record_argument(dispatch_name, Bool,
-        "Show domain boundary when extrapolation enabled (default: true)"; show_boundary=show_boundary_opt)
-    assert_type_and_record_argument(dispatch_name, Union{Real, Nothing},
-        "Extension margin for extrapolation visualization (nothing = 15% of axis span)"; domain_margin=domain_margin_opt)
-    assert_type_and_record_argument(dispatch_name, Union{Tuple{Int,Int}, Nothing},
-        "Heatmap resolution (nx, ny), nothing for auto"; resolution)
-    assert_type_and_record_argument(dispatch_name, Bool,
-        "Use equal aspect ratio (default: false)"; equal_aspect)
-    assert_type_and_record_argument(dispatch_name, Real,
-        "Padding for color limits as fraction of data range (default: 0.02)"; clims_padding)
-    assert_type_and_record_argument(dispatch_name, Any,
-        "Color for grid node markers (default: :white)"; node_color)
-    assert_type_and_record_argument(dispatch_name, Union{Real, Nothing},
-        "Marker size (nothing = auto based on grid size)"; node_size=node_size_opt)
-    assert_type_and_record_argument(dispatch_name, Union{Real, Nothing},
-        "Marker transparency (nothing = auto based on grid size)"; node_alpha=node_alpha_opt)
-    assert_type_and_record_argument(dispatch_name, Any,
-        "Color for grid lines (default: :white)"; gridline_color)
-    assert_type_and_record_argument(dispatch_name, Union{Real, Nothing},
-        "Grid line transparency (nothing = auto based on grid size)"; gridline_alpha=gridline_alpha_opt)
-    assert_type_and_record_argument(dispatch_name, Symbol,
-        "Line style for grid lines: :dash, :dot, :solid (default: :dash)"; gridline_style)
-    assert_type_and_record_argument(dispatch_name, Any,
-        "Color for domain boundary lines (default: :white)"; boundary_color)
-    assert_type_and_record_argument(dispatch_name, Real,
-        "Line width for domain boundary (default: 2.5)"; boundary_width)
-    assert_type_and_record_argument(dispatch_name, Symbol,
-        "Line style for domain boundary: :solid, :dash, :dot (default: :solid)"; boundary_style)
-    assert_type_and_record_argument(dispatch_name, Real,
-        "Alpha for domain boundary lines (default: 0.9)"; boundary_alpha)
+    assert_type_and_record_argument(
+        dispatch_name, Union{Bool, Nothing},
+        "Show grid node markers (default: auto, hidden when nx×ny ≥ $(SCATTER_THRESHOLD_2D))"; show_nodes = show_nodes_opt
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Bool, Nothing},
+        "Show grid lines (default: auto, hidden when nx×ny ≥ $(SCATTER_THRESHOLD_2D))"; show_gridlines = show_gridlines_opt
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Bool,
+        "Show domain boundary when extrapolation enabled (default: true)"; show_boundary = show_boundary_opt
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Real, Nothing},
+        "Extension margin for extrapolation visualization (nothing = 15% of axis span)"; domain_margin = domain_margin_opt
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Tuple{Int, Int}, Nothing},
+        "Heatmap resolution (nx, ny), nothing for auto"; resolution
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Bool,
+        "Use equal aspect ratio (default: false)"; equal_aspect
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Real,
+        "Padding for color limits as fraction of data range (default: 0.02)"; clims_padding
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Any,
+        "Color for grid node markers (default: :white)"; node_color
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Real, Nothing},
+        "Marker size (nothing = auto based on grid size)"; node_size = node_size_opt
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Real, Nothing},
+        "Marker transparency (nothing = auto based on grid size)"; node_alpha = node_alpha_opt
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Any,
+        "Color for grid lines (default: :white)"; gridline_color
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Union{Real, Nothing},
+        "Grid line transparency (nothing = auto based on grid size)"; gridline_alpha = gridline_alpha_opt
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Symbol,
+        "Line style for grid lines: :dash, :dot, :solid (default: :dash)"; gridline_style
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Any,
+        "Color for domain boundary lines (default: :white)"; boundary_color
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Real,
+        "Line width for domain boundary (default: 2.5)"; boundary_width
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Symbol,
+        "Line style for domain boundary: :solid, :dash, :dot (default: :solid)"; boundary_style
+    )
+    assert_type_and_record_argument(
+        dispatch_name, Real,
+        "Alpha for domain boundary lines (default: 0.9)"; boundary_alpha
+    )
 
     # Extract grids from interpolant
     x_grid = collect(itp.grids[1])
@@ -944,8 +1010,8 @@ Generates a visualization with:
 
     # Compute high-resolution sampling grid (extended if extrapolation enabled)
     nx_hr, ny_hr = isnothing(resolution) ? _default_2d_samples(nx, ny) : resolution
-    x_hr = range(eval_x_min, eval_x_max; length=nx_hr)
-    y_hr = range(eval_y_min, eval_y_max; length=ny_hr)
+    x_hr = range(eval_x_min, eval_x_max; length = nx_hr)
+    y_hr = range(eval_y_min, eval_y_max; length = ny_hr)
 
     # Evaluate on high-resolution grid (use _evaluator if set by DerivativeView recipe)
     # Use real() for complex values to make heatmap work
@@ -998,7 +1064,7 @@ Generates a visualization with:
             label --> "domain"
             # Closed rectangle: bottom → right → top → left → close
             Tg[x_min, x_max, x_max, x_min, x_min],
-            Tg[y_min, y_min, y_max, y_max, y_min]
+                Tg[y_min, y_min, y_max, y_max, y_min]
         end
     end
 

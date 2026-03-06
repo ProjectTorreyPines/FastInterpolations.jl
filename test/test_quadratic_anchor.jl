@@ -79,7 +79,7 @@ using FastInterpolations
     @testset "itp(aq) evaluation matches itp(xq)" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
-        itp = quadratic_interp(x, y; extrap=ExtendExtrap())
+        itp = quadratic_interp(x, y; extrap = ExtendExtrap())
 
         xq_points = [0.5, 1.0, 2.0, 3.0, 5.5]
 
@@ -95,13 +95,13 @@ using FastInterpolations
     @testset "itp(aq; deriv=DerivOp(1)) derivative evaluation" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
-        itp = quadratic_interp(x, y; extrap=ExtendExtrap())
+        itp = quadratic_interp(x, y; extrap = ExtendExtrap())
 
         xq_points = [0.5, 1.0, 2.0, 3.0, 5.5]
 
         for xq in xq_points
             aq = FastInterpolations._anchor_query(x, xq, Val(:quadratic))
-            @test itp(aq; deriv=DerivOp(1)) ≈ itp(xq; deriv=DerivOp(1))
+            @test itp(aq; deriv = DerivOp(1)) ≈ itp(xq; deriv = DerivOp(1))
         end
     end
 
@@ -111,13 +111,13 @@ using FastInterpolations
     @testset "itp(aq; deriv=DerivOp(2)) derivative evaluation" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
-        itp = quadratic_interp(x, y; extrap=ExtendExtrap())
+        itp = quadratic_interp(x, y; extrap = ExtendExtrap())
 
         xq_points = [0.5, 1.0, 2.0, 3.0, 5.5]
 
         for xq in xq_points
             aq = FastInterpolations._anchor_query(x, xq, Val(:quadratic))
-            @test itp(aq; deriv=DerivOp(2)) ≈ itp(xq; deriv=DerivOp(2))
+            @test itp(aq; deriv = DerivOp(2)) ≈ itp(xq; deriv = DerivOp(2))
         end
     end
 
@@ -129,7 +129,7 @@ using FastInterpolations
         y = x .^ 2
 
         # Extension mode
-        itp_ext = quadratic_interp(x, y; extrap=ExtendExtrap())
+        itp_ext = quadratic_interp(x, y; extrap = ExtendExtrap())
         aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:quadratic))
         aq_above = FastInterpolations._anchor_query(x, 1.5, Val(:quadratic))
 
@@ -137,7 +137,7 @@ using FastInterpolations
         @test itp_ext(aq_above) ≈ itp_ext(1.5)
 
         # Constant mode
-        itp_const = quadratic_interp(x, y; extrap=ClampExtrap())
+        itp_const = quadratic_interp(x, y; extrap = ClampExtrap())
         @test itp_const(aq_below) ≈ itp_const(-0.5)
         @test itp_const(aq_above) ≈ itp_const(1.5)
     end
@@ -174,9 +174,9 @@ using FastInterpolations
         @test aq_int isa FastInterpolations._QuadraticAnchoredQuery{Float64, Int}
 
         # Rational query type is preserved (for AD compatibility)
-        aq_rat = FastInterpolations._anchor_query(x, 1//2, Val(:quadratic))
+        aq_rat = FastInterpolations._anchor_query(x, 1 // 2, Val(:quadratic))
         @test aq_rat.xq isa Rational
-        @test aq_rat.xq == 1//2
+        @test aq_rat.xq == 1 // 2
         @test aq_rat isa FastInterpolations._QuadraticAnchoredQuery{Float64, Rational{Int}}
     end
 
@@ -199,7 +199,7 @@ using FastInterpolations
     @testset "in-place vector evaluation with anchors" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
-        itp = quadratic_interp(x, y; extrap=ExtendExtrap())
+        itp = quadratic_interp(x, y; extrap = ExtendExtrap())
 
         xq_vec = [0.5, 1.0, 2.0, 3.0, 5.5]
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:quadratic))
@@ -222,7 +222,7 @@ using FastInterpolations
         # Non-uniform grid
         x = [0.0, 0.1, 0.3, 0.6, 1.0]
         y = x .^ 2
-        itp = quadratic_interp(x, y; extrap=ExtendExtrap())
+        itp = quadratic_interp(x, y; extrap = ExtendExtrap())
 
         xq = 0.45  # interval [0.3, 0.6]
         aq = FastInterpolations._anchor_query(x, xq, Val(:quadratic))
@@ -241,7 +241,7 @@ using FastInterpolations
     @testset "zero-allocation with pre-built anchors" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
-        itp = quadratic_interp(x, y; extrap=ExtendExtrap())
+        itp = quadratic_interp(x, y; extrap = ExtendExtrap())
 
         xq_vec = collect(range(0.1, 6.0, 100))
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:quadratic))
@@ -264,7 +264,7 @@ using FastInterpolations
 
         # Test with different BCs
         for bc in [Left(QuadraticFit()), Right(QuadraticFit()), MinCurvFit()]
-            itp = quadratic_interp(x, y; bc=bc, extrap=ExtendExtrap())
+            itp = quadratic_interp(x, y; bc = bc, extrap = ExtendExtrap())
             xq = 0.35
             aq = FastInterpolations._anchor_query(x, xq, Val(:quadratic))
             @test itp(aq) ≈ itp(xq)
@@ -277,7 +277,7 @@ using FastInterpolations
     @testset "extrap=NoExtrap() throws DomainError via anchor" begin
         x = collect(range(0.0, 1.0, 11))
         y = x .^ 2
-        itp = quadratic_interp(x, y; extrap=NoExtrap())
+        itp = quadratic_interp(x, y; extrap = NoExtrap())
 
         # Inside domain works
         aq_inside = FastInterpolations._anchor_query(x, 0.5, Val(:quadratic))
@@ -291,8 +291,8 @@ using FastInterpolations
         @test_throws DomainError itp(aq_above)
 
         # Derivatives also throw
-        @test_throws DomainError itp(aq_below; deriv=DerivOp(1))
-        @test_throws DomainError itp(aq_above; deriv=DerivOp(2))
+        @test_throws DomainError itp(aq_below; deriv = DerivOp(1))
+        @test_throws DomainError itp(aq_above; deriv = DerivOp(2))
     end
 
     # ========================================
@@ -301,7 +301,7 @@ using FastInterpolations
     @testset "extrap=ClampExtrap() via anchor" begin
         x = collect(range(0.0, 1.0, 11))
         y = x .^ 2
-        itp = quadratic_interp(x, y; extrap=ClampExtrap())
+        itp = quadratic_interp(x, y; extrap = ClampExtrap())
 
         # Below domain returns first y
         aq_below = FastInterpolations._anchor_query(x, -0.5, Val(:quadratic))
@@ -324,7 +324,7 @@ using FastInterpolations
         y = x .^ 2
 
         for extrap in [ExtendExtrap(), ClampExtrap()]
-            itp = quadratic_interp(x, y; extrap=extrap)
+            itp = quadratic_interp(x, y; extrap = extrap)
             xq_vec = [-0.2, 0.3, 0.7, 1.2]  # Mix of inside/outside
             aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:quadratic))
 
@@ -340,7 +340,7 @@ using FastInterpolations
     @testset "in-place output length assertion" begin
         x = collect(range(0.0, 1.0, 11))
         y = x .^ 2
-        itp = quadratic_interp(x, y; extrap=ExtendExtrap())
+        itp = quadratic_interp(x, y; extrap = ExtendExtrap())
 
         xq_vec = [0.2, 0.5, 0.8]
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:quadratic))
@@ -356,34 +356,34 @@ using FastInterpolations
     @testset "zero-allocation with deriv=DerivOp(1)" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
-        itp = quadratic_interp(x, y; extrap=ExtendExtrap())
+        itp = quadratic_interp(x, y; extrap = ExtendExtrap())
 
         xq_vec = collect(range(0.1, 6.0, 100))
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:quadratic))
         output = zeros(Float64, 100)
 
         # Warm-up call
-        itp(output, aq_vec; deriv=DerivOp(1))
+        itp(output, aq_vec; deriv = DerivOp(1))
 
         # Allocation test
-        allocs = @allocated itp(output, aq_vec; deriv=DerivOp(1))
+        allocs = @allocated itp(output, aq_vec; deriv = DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "zero-allocation with deriv=DerivOp(2)" begin
         x = collect(range(0.0, 2π, 101))
         y = sin.(x)
-        itp = quadratic_interp(x, y; extrap=ExtendExtrap())
+        itp = quadratic_interp(x, y; extrap = ExtendExtrap())
 
         xq_vec = collect(range(0.1, 6.0, 100))
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:quadratic))
         output = zeros(Float64, 100)
 
         # Warm-up call
-        itp(output, aq_vec; deriv=DerivOp(2))
+        itp(output, aq_vec; deriv = DerivOp(2))
 
         # Allocation test
-        allocs = @allocated itp(output, aq_vec; deriv=DerivOp(2))
+        allocs = @allocated itp(output, aq_vec; deriv = DerivOp(2))
         @test allocs <= ALLOC_THRESHOLD
     end
 

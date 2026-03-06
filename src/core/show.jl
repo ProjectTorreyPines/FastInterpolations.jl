@@ -26,9 +26,9 @@
 
 Print text with color if supported, otherwise plain text.
 """
-@inline function _show_print(io::IO, text, color::Symbol; bold::Bool=false)
-    if _show_has_color(io)
-        printstyled(io, text; color=color, bold=bold)
+@inline function _show_print(io::IO, text, color::Symbol; bold::Bool = false)
+    return if _show_has_color(io)
+        printstyled(io, text; color = color, bold = bold)
     else
         print(io, text)
     end
@@ -41,8 +41,8 @@ Print type name with two type parameters for {Tg, Tv} interpolants.
 Shows `LinearInterpolant{Float64, ComplexF64}` for complex values,
 or `LinearInterpolant{Float64}` if Tv == Tg (backward compatible display).
 """
-function _show_type_header_2params(io::IO, typename::String, ::Type{Tg}, ::Type{Tv}; suffix::String="") where {Tg, Tv}
-    _show_print(io, typename, :cyan; bold=true)
+function _show_type_header_2params(io::IO, typename::String, ::Type{Tg}, ::Type{Tv}; suffix::String = "") where {Tg, Tv}
+    _show_print(io, typename, :cyan; bold = true)
     _show_print(io, "{", :light_black)
     _show_print(io, string(Tg), :light_blue)
     # Only show Tv if different from Tg (Complex case)
@@ -51,7 +51,7 @@ function _show_type_header_2params(io::IO, typename::String, ::Type{Tg}, ::Type{
         _show_print(io, string(Tv), :light_blue)
     end
     _show_print(io, "}", :light_black)
-    if !isempty(suffix)
+    return if !isempty(suffix)
         _show_print(io, suffix, :cyan)
     end
 end
@@ -62,12 +62,12 @@ end
 Print a box-drawing row with label and value.
 Default value_color is :normal (terminal default text color).
 """
-function _show_row(io::IO, is_last::Bool, label::String, value::String; value_color::Symbol=:normal)
+function _show_row(io::IO, is_last::Bool, label::String, value::String; value_color::Symbol = :normal)
     prefix = is_last ? "└─ " : "├─ "
     _show_print(io, prefix, :light_black)
     _show_print(io, label, :light_black)
     print(io, " ")
-    if value_color === :normal
+    return if value_color === :normal
         print(io, value)
     else
         _show_print(io, value, value_color)
@@ -99,7 +99,7 @@ function _show_grid_row(io::IO, is_last::Bool, x::AbstractVector)
     _show_print(io, prefix, :light_black)
     _show_print(io, "Grid:  ", :light_black)
     _show_print(io, grid_type, :magenta)
-    print(io, ", $n points ∈ [$x_min_str, $x_max_str]")
+    return print(io, ", $n points ∈ [$x_min_str, $x_max_str]")
 end
 
 """Format extrapolation mode from AbstractExtrap."""
@@ -225,7 +225,7 @@ end
 function Base.show(io::IO, itp::LinearInterpolant{Tg, Tv}) where {Tg, Tv}
     n = length(itp.x)
     _show_type_header_2params(io, "LinearInterpolant", Tg, Tv)
-    print(io, "($n pts)")
+    return print(io, "($n pts)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolant{Tg, Tv}) where {Tg, Tv}
@@ -235,7 +235,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolant{Tg, Tv}) w
     _show_grid_row(io, false, itp.x)
     println(io)
     _show_row(io, is_range, "Extrap:", _format_extrap(itp.extrap))
-    if !is_range
+    return if !is_range
         println(io)
         _show_row(io, true, "Search:", _format_search(itp.search_policy))
     end
@@ -246,7 +246,7 @@ end
 function Base.show(io::IO, itp::ConstantInterpolant{Tg, Tv}) where {Tg, Tv}
     n = length(itp.x)
     _show_type_header_2params(io, "ConstantInterpolant", Tg, Tv)
-    print(io, "($n pts)")
+    return print(io, "($n pts)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", itp::ConstantInterpolant{Tg, Tv}) where {Tg, Tv}
@@ -257,8 +257,8 @@ function Base.show(io::IO, ::MIME"text/plain", itp::ConstantInterpolant{Tg, Tv})
     println(io)
     _show_row(io, false, "Extrap:", _format_extrap(itp.extrap))
     println(io)
-    _show_row(io, is_range, "Side:  ", _format_side(itp.side); value_color=:magenta)
-    if !is_range
+    _show_row(io, is_range, "Side:  ", _format_side(itp.side); value_color = :magenta)
+    return if !is_range
         println(io)
         _show_row(io, true, "Search:", _format_search(itp.search_policy))
     end
@@ -269,7 +269,7 @@ end
 function Base.show(io::IO, itp::QuadraticInterpolant{Tg, Tv}) where {Tg, Tv}
     n = length(itp.x)
     _show_type_header_2params(io, "QuadraticInterpolant", Tg, Tv)
-    print(io, "($n pts)")
+    return print(io, "($n pts)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolant{Tg, Tv}) where {Tg, Tv}
@@ -279,7 +279,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolant{Tg, Tv}
     _show_grid_row(io, false, itp.x)
     println(io)
     _show_row(io, is_range, "Extrap:", _format_extrap(itp.extrap))
-    if !is_range
+    return if !is_range
         println(io)
         _show_row(io, true, "Search:", _format_search(itp.search_policy))
     end
@@ -291,7 +291,7 @@ function Base.show(io::IO, itp::CubicInterpolant{Tg, Tv}) where {Tg, Tv}
     n = length(itp.cache.x)
     bc_name = _short_bc_name(itp.bc)
     _show_type_header_2params(io, "CubicInterpolant", Tg, Tv)
-    print(io, "($n pts, $bc_name)")
+    return print(io, "($n pts, $bc_name)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolant{Tg, Tv}) where {Tg, Tv}
@@ -306,7 +306,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolant{Tg, Tv}) wh
         _show_row(io, false, "Search:", _format_search(itp.search_policy))
     end
     println(io)
-    _show_row(io, true, "BC:    ", _format_bc(itp.bc))
+    return _show_row(io, true, "BC:    ", _format_bc(itp.bc))
 end
 
 # Short BC name for compact display
@@ -320,10 +320,10 @@ function _short_bc_name(bc::BCPair)
     # Check for ZeroCurv: both ends have Deriv2 with val=0
     if bc.left isa Deriv2 && bc.right isa Deriv2 && bc.left.val == 0 && bc.right.val == 0
         return "ZeroCurv"
-    # Check for ZeroSlope: both ends have Deriv1 with val=0
+        # Check for ZeroSlope: both ends have Deriv1 with val=0
     elseif bc.left isa Deriv1 && bc.right isa Deriv1 && bc.left.val == 0 && bc.right.val == 0
         return "ZeroSlope"
-    # Check for symmetric PolyFit (e.g., CubicFit, QuadraticFit)
+        # Check for symmetric PolyFit (e.g., CubicFit, QuadraticFit)
     elseif bc.left isa PolyFit && bc.right isa PolyFit && typeof(bc.left) === typeof(bc.right)
         return _format_bc_point(bc.left)
     else
@@ -340,20 +340,20 @@ end
 function Base.show(io::IO, sitp::LinearSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     _show_type_header_2params(io, "LinearSeriesInterpolant", Tg, Tv)
-    print(io, "($np × $ns)")
+    return print(io, "($np × $ns)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", sitp::LinearSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     is_range = sitp.x isa AbstractRange
-    _show_type_header_2params(io, "LinearSeriesInterpolant", Tg, Tv; suffix=" with $ns series")
+    _show_type_header_2params(io, "LinearSeriesInterpolant", Tg, Tv; suffix = " with $ns series")
     println(io)
     _show_grid_row(io, false, sitp.x)
     println(io)
     _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)")
     println(io)
     _show_row(io, is_range, "Extrap:", _format_extrap(sitp.extrap))
-    if !is_range
+    return if !is_range
         println(io)
         _show_row(io, true, "Search:", _format_search(sitp.search_policy))
     end
@@ -364,13 +364,13 @@ end
 function Base.show(io::IO, sitp::ConstantSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     _show_type_header_2params(io, "ConstantSeriesInterpolant", Tg, Tv)
-    print(io, "($np × $ns)")
+    return print(io, "($np × $ns)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", sitp::ConstantSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     is_range = sitp.x isa AbstractRange
-    _show_type_header_2params(io, "ConstantSeriesInterpolant", Tg, Tv; suffix=" with $ns series")
+    _show_type_header_2params(io, "ConstantSeriesInterpolant", Tg, Tv; suffix = " with $ns series")
     println(io)
     _show_grid_row(io, false, sitp.x)
     println(io)
@@ -378,8 +378,8 @@ function Base.show(io::IO, ::MIME"text/plain", sitp::ConstantSeriesInterpolant{T
     println(io)
     _show_row(io, false, "Extrap:", _format_extrap(sitp.extrap))
     println(io)
-    _show_row(io, is_range, "Side:  ", _format_side(sitp.side); value_color=:magenta)
-    if !is_range
+    _show_row(io, is_range, "Side:  ", _format_side(sitp.side); value_color = :magenta)
+    return if !is_range
         println(io)
         _show_row(io, true, "Search:", _format_search(sitp.search_policy))
     end
@@ -390,20 +390,20 @@ end
 function Base.show(io::IO, sitp::QuadraticSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     _show_type_header_2params(io, "QuadraticSeriesInterpolant", Tg, Tv)
-    print(io, "($np × $ns)")
+    return print(io, "($np × $ns)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", sitp::QuadraticSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     is_range = sitp.x isa AbstractRange
-    _show_type_header_2params(io, "QuadraticSeriesInterpolant", Tg, Tv; suffix=" with $ns series")
+    _show_type_header_2params(io, "QuadraticSeriesInterpolant", Tg, Tv; suffix = " with $ns series")
     println(io)
     _show_grid_row(io, false, sitp.x)
     println(io)
     _show_row(io, false, "Matrix:", "$np × $ns (n_points × n_series)")
     println(io)
     _show_row(io, is_range, "Extrap:", _format_extrap(sitp.extrap))
-    if !is_range
+    return if !is_range
         println(io)
         _show_row(io, true, "Search:", _format_search(sitp.search_policy))
     end
@@ -415,13 +415,13 @@ function Base.show(io::IO, sitp::CubicSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     bc_name = _short_bc_name(sitp.bc_for_solve)
     _show_type_header_2params(io, "CubicSeriesInterpolant", Tg, Tv)
-    print(io, "($np × $ns, $bc_name)")
+    return print(io, "($np × $ns, $bc_name)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", sitp::CubicSeriesInterpolant{Tg, Tv}) where {Tg, Tv}
     np, ns = size(sitp.y)
     is_range = sitp.cache.x isa AbstractRange
-    _show_type_header_2params(io, "CubicSeriesInterpolant", Tg, Tv; suffix=" with $ns series")
+    _show_type_header_2params(io, "CubicSeriesInterpolant", Tg, Tv; suffix = " with $ns series")
     println(io)
     _show_grid_row(io, false, sitp.cache.x)
     println(io)
@@ -433,7 +433,7 @@ function Base.show(io::IO, ::MIME"text/plain", sitp::CubicSeriesInterpolant{Tg, 
         _show_row(io, false, "Search:", _format_search(sitp.search_policy))
     end
     println(io)
-    _show_row(io, true, "BC:    ", _format_bc(sitp.bc_for_solve))
+    return _show_row(io, true, "BC:    ", _format_bc(sitp.bc_for_solve))
 end
 
 # ========================================
@@ -441,8 +441,8 @@ end
 # ========================================
 
 function Base.show(io::IO, s::Series)
-    _show_print(io, "Series", :cyan; bold=true)
-    print(io, "($(n_series(s)) series)")
+    _show_print(io, "Series", :cyan; bold = true)
+    return print(io, "($(n_series(s)) series)")
 end
 
 # ========================================
@@ -450,12 +450,12 @@ end
 # ========================================
 
 function Base.show(io::IO, d::DerivativeView{Order, ITP}) where {Order, ITP}
-    _show_print(io, "DerivativeView", :cyan; bold=true)
+    _show_print(io, "DerivativeView", :cyan; bold = true)
     _show_print(io, "{$Order}", :light_blue)
     print(io, "(")
     # Compact parent display
     show(io, d.parent)
-    print(io, ")")
+    return print(io, ")")
 end
 
 """Extract grid type Tg from AbstractInterpolant{Tg, Tv}."""
@@ -463,7 +463,7 @@ _interpolant_float_type(::AbstractInterpolant{Tg, Tv}) where {Tg, Tv} = Tg
 
 function Base.show(io::IO, ::MIME"text/plain", d::DerivativeView{Order, ITP}) where {Order, ITP}
     ord_str = _format_deriv_order(Order)
-    _show_print(io, "DerivativeView", :cyan; bold=true)
+    _show_print(io, "DerivativeView", :cyan; bold = true)
     if Order isa Tuple
         _show_print(io, " $ord_str", :light_black)
     else
@@ -476,7 +476,7 @@ function Base.show(io::IO, ::MIME"text/plain", d::DerivativeView{Order, ITP}) wh
     parent_type = nameof(typeof(parent))
     T = _interpolant_float_type(parent)
 
-    if parent isa AbstractInterpolantND
+    return if parent isa AbstractInterpolantND
         # ND interpolants: show dimensionality and grid sizes
         N = ndims(parent)
         sizes = if hasproperty(parent, :grids)
@@ -512,9 +512,9 @@ Print type name with ND type parameters: `CubicInterpolantND{Float64, Float64, 3
 If Tv == Tg, shows only Tg for cleaner display: `CubicInterpolantND{Float64, 3}`.
 """
 function _show_type_header_nd(
-    io::IO, typename::String, ::Type{Tg}, ::Type{Tv}, N::Int; suffix::String=""
-) where {Tg, Tv}
-    _show_print(io, typename, :cyan; bold=true)
+        io::IO, typename::String, ::Type{Tg}, ::Type{Tv}, N::Int; suffix::String = ""
+    ) where {Tg, Tv}
+    _show_print(io, typename, :cyan; bold = true)
     _show_print(io, "{", :light_black)
     _show_print(io, string(Tg), :light_blue)
     # Only show Tv if different from Tg (Complex case)
@@ -525,7 +525,7 @@ function _show_type_header_nd(
     _show_print(io, ", ", :light_black)
     _show_print(io, string(N), :light_blue)
     _show_print(io, "}", :light_black)
-    if !isempty(suffix)
+    return if !isempty(suffix)
         _show_print(io, suffix, :cyan)
     end
 end
@@ -573,6 +573,7 @@ function _show_nd_grids_summary(io::IO, is_last::Bool, grids::Tuple)
             println(io)
         end
     end
+    return
 end
 
 """Convert digit to Unicode subscript for axis labels (x₁, x₂, etc.)."""
@@ -598,9 +599,9 @@ Otherwise show tuple format.
 Note: configs may be heterogeneous Tuple (not NTuple) when configs differ per axis.
 """
 function _show_nd_config_row(
-    io::IO, is_last::Bool, label::String, configs::Tuple, format_fn::Function;
-    value_color::Symbol=:normal
-)
+        io::IO, is_last::Bool, label::String, configs::Tuple, format_fn::Function;
+        value_color::Symbol = :normal
+    )
     N = length(configs)
     formatted = ntuple(d -> format_fn(configs[d]), Val(N))
     prefix = is_last ? "└─ " : "├─ "
@@ -610,7 +611,7 @@ function _show_nd_config_row(
     print(io, " ")
 
     # Check if all configs are the same
-    if all(f -> f == formatted[1], formatted)
+    return if all(f -> f == formatted[1], formatted)
         # All same: show single value
         if value_color === :normal
             print(io, formatted[1])
@@ -653,7 +654,7 @@ function Base.show(io::IO, itp::CubicInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
     sizes = join([string(length(g)) for g in itp.grids], "×")
     bc_name = _short_bc_name_nd(itp.bcs)
     _show_type_header_nd(io, "CubicInterpolantND", Tg, Tv, N)
-    print(io, "($sizes, $bc_name)")
+    return print(io, "($sizes, $bc_name)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
@@ -676,7 +677,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::CubicInterpolantND{Tg, Tv, N
     end
 
     # Boundary conditions (per-axis hierarchical display)
-    _show_nd_bc_summary(io, true, itp.bcs)
+    return _show_nd_bc_summary(io, true, itp.bcs)
 end
 
 """
@@ -701,7 +702,7 @@ function _show_nd_bc_summary(io::IO, is_last::Bool, bcs::Tuple)
     formatted = ntuple(d -> _format_bc(bcs[d]), Val(N))
     all_same = all(f -> f == formatted[1], formatted)
 
-    if all_same
+    return if all_same
         # Single line display
         _show_print(io, prefix, :light_black)
         _show_print(io, "BC:", :light_black)
@@ -738,7 +739,7 @@ function Base.show(io::IO, itp::ConstantInterpolantND{Tg, Tv, N}) where {Tg, Tv,
     sizes = join([string(length(g)) for g in itp.grids], "×")
     side_str = _short_side_name_nd(itp.sides)
     _show_type_header_nd(io, "ConstantInterpolantND", Tg, Tv, N)
-    print(io, "($sizes, $side_str)")
+    return print(io, "($sizes, $side_str)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", itp::ConstantInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
@@ -754,12 +755,12 @@ function Base.show(io::IO, ::MIME"text/plain", itp::ConstantInterpolantND{Tg, Tv
     println(io)
 
     # Side selection
-    _show_nd_config_row(io, false, "Side:  ", itp.sides, _format_side; value_color=:magenta)
+    _show_nd_config_row(io, false, "Side:  ", itp.sides, _format_side; value_color = :magenta)
     println(io)
 
     # Search policies (only if any axis has non-Range grid)
     has_vector_grid = any(g -> !(g isa AbstractRange), itp.grids)
-    if has_vector_grid
+    return if has_vector_grid
         _show_nd_config_row(io, true, "Search:", itp.searches, _format_search)
     end
 end
@@ -787,7 +788,7 @@ end
 function Base.show(io::IO, itp::LinearInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
     sizes = join([string(length(g)) for g in itp.grids], "×")
     _show_type_header_nd(io, "LinearInterpolantND", Tg, Tv, N)
-    print(io, "($sizes)")
+    return print(io, "($sizes)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
@@ -804,7 +805,7 @@ function Base.show(io::IO, ::MIME"text/plain", itp::LinearInterpolantND{Tg, Tv, 
 
     # Search policies (only if any axis has non-Range grid)
     has_vector_grid = any(g -> !(g isa AbstractRange), itp.grids)
-    if has_vector_grid
+    return if has_vector_grid
         _show_nd_config_row(io, true, "Search:", itp.searches, _format_search)
     end
 end
@@ -817,7 +818,7 @@ function Base.show(io::IO, itp::QuadraticInterpolantND{Tg, Tv, N}) where {Tg, Tv
     sizes = join([string(length(g)) for g in itp.grids], "×")
     bc_name = _short_bc_name_nd(itp.bcs)
     _show_type_header_nd(io, "QuadraticInterpolantND", Tg, Tv, N)
-    print(io, "($sizes, $bc_name)")
+    return print(io, "($sizes, $bc_name)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolantND{Tg, Tv, N}) where {Tg, Tv, N}
@@ -840,5 +841,5 @@ function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolantND{Tg, T
     end
 
     # Boundary conditions
-    _show_nd_bc_summary(io, true, itp.bcs)
+    return _show_nd_bc_summary(io, true, itp.bcs)
 end

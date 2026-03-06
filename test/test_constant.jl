@@ -115,27 +115,27 @@ end
         @test constant_interp(x, y, 1.5) == 20.0
         @test constant_interp(x, y, 2.5) == 30.0
 
-        @test constant_interp(x, y, 0.9; side=LeftSide()) == 10.0
-        @test constant_interp(x, y, 1.1; side=LeftSide()) == 20.0
+        @test constant_interp(x, y, 0.9; side = LeftSide()) == 10.0
+        @test constant_interp(x, y, 1.1; side = LeftSide()) == 20.0
 
-        @test constant_interp(x, y, 0.0; side=RightSide()) == 10.0
-        @test constant_interp(x, y, 0.1; side=RightSide()) == 20.0
+        @test constant_interp(x, y, 0.0; side = RightSide()) == 10.0
+        @test constant_interp(x, y, 0.1; side = RightSide()) == 20.0
 
-        @test constant_interp(x, y, 1.0; side=NearestSide()) == 20.0
-        @test constant_interp(x, y, 1.0; side=LeftSide()) == 20.0
-        @test constant_interp(x, y, 1.0; side=RightSide()) == 20.0
+        @test constant_interp(x, y, 1.0; side = NearestSide()) == 20.0
+        @test constant_interp(x, y, 1.0; side = LeftSide()) == 20.0
+        @test constant_interp(x, y, 1.0; side = RightSide()) == 20.0
 
         @test constant_interp(x, y, 4.0) == 50.0
 
-        @test constant_interp(x, y, 1.5; deriv=DerivOp(1)) == 0.0
-        @test constant_interp(x, y, 2.5; deriv=DerivOp(2)) == 0.0
+        @test constant_interp(x, y, 1.5; deriv = DerivOp(1)) == 0.0
+        @test constant_interp(x, y, 2.5; deriv = DerivOp(2)) == 0.0
     end
 
     @testset "Vector API (allocating)" begin
         result = constant_interp(x, y, [0.5, 1.5, 2.5])
         @test result ≈ [10.0, 20.0, 30.0]
 
-        result_left = constant_interp(x, y, [0.5, 1.5]; side=LeftSide())
+        result_left = constant_interp(x, y, [0.5, 1.5]; side = LeftSide())
         @test result_left ≈ [10.0, 20.0]
     end
 
@@ -146,19 +146,19 @@ end
     end
 
     @testset "Extrapolation modes" begin
-        @test_throws DomainError constant_interp(x, y, -1.0; extrap=NoExtrap())
-        @test_throws DomainError constant_interp(x, y, 5.0; extrap=NoExtrap())
+        @test_throws DomainError constant_interp(x, y, -1.0; extrap = NoExtrap())
+        @test_throws DomainError constant_interp(x, y, 5.0; extrap = NoExtrap())
 
-        @test constant_interp(x, y, -1.0; extrap=ClampExtrap()) == 10.0
-        @test constant_interp(x, y, 5.0; extrap=ClampExtrap()) == 50.0
+        @test constant_interp(x, y, -1.0; extrap = ClampExtrap()) == 10.0
+        @test constant_interp(x, y, 5.0; extrap = ClampExtrap()) == 50.0
 
-        @test constant_interp(x, y, -1.0; extrap=ExtendExtrap()) == 10.0
-        @test constant_interp(x, y, 5.0; extrap=ExtendExtrap()) == 50.0
+        @test constant_interp(x, y, -1.0; extrap = ExtendExtrap()) == 10.0
+        @test constant_interp(x, y, 5.0; extrap = ExtendExtrap()) == 50.0
 
-        @test constant_interp(x, y, 4.0; extrap=WrapExtrap()) == 10.0
-        @test constant_interp(x, y, 4.5; extrap=WrapExtrap()) == 10.0
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap()) == 10.0
+        @test constant_interp(x, y, 4.5; extrap = WrapExtrap()) == 10.0
 
-        @test constant_interp(x, y, -1.0; extrap=ClampExtrap(), deriv=DerivOp(1)) == 0.0
+        @test constant_interp(x, y, -1.0; extrap = ClampExtrap(), deriv = DerivOp(1)) == 0.0
     end
 
     @testset "Real type wrapper (Integer input)" begin
@@ -208,20 +208,20 @@ end
         @test itp_int(1.5) == 20.0
 
         # Test options pass through the wrappers correctly
-        @test constant_interp(x_int, y_int, 0; side=RightSide()) == 10.0
-        @test constant_interp(x_int, y_int, 0; side=LeftSide()) == 10.0
-        @test constant_interp(x_int, y_int, -1; extrap=ClampExtrap()) == 10.0
-        @test constant_interp(x_int, y_int, 5; extrap=ClampExtrap()) == 50.0
+        @test constant_interp(x_int, y_int, 0; side = RightSide()) == 10.0
+        @test constant_interp(x_int, y_int, 0; side = LeftSide()) == 10.0
+        @test constant_interp(x_int, y_int, -1; extrap = ClampExtrap()) == 10.0
+        @test constant_interp(x_int, y_int, 5; extrap = ClampExtrap()) == 50.0
 
         # Test in-place wrapper with options
         out3 = zeros(2)
-        constant_interp!(out3, x_int, y_int, [-1, 5]; extrap=ClampExtrap())
+        constant_interp!(out3, x_int, y_int, [-1, 5]; extrap = ClampExtrap())
         @test out3 ≈ [10.0, 50.0]
 
         # Test 2-arg callable with options
-        itp_left = constant_interp(x_int, y_int; side=LeftSide())
+        itp_left = constant_interp(x_int, y_int; side = LeftSide())
         @test itp_left(0.9) == 10.0
-        itp_wrap = constant_interp(x_int, y_int; extrap=WrapExtrap())
+        itp_wrap = constant_interp(x_int, y_int; extrap = WrapExtrap())
         @test itp_wrap(4.0) == 10.0
     end
 
@@ -235,8 +235,8 @@ end
         @test itp(0.5) == 10.0
         @test itp(1.5) == 20.0
         @test itp(4.0) == 50.0
-        @test itp(1.5; deriv=DerivOp(1)) == 0.0
-        @test itp(2.5; deriv=DerivOp(2)) == 0.0
+        @test itp(1.5; deriv = DerivOp(1)) == 0.0
+        @test itp(2.5; deriv = DerivOp(2)) == 0.0
     end
 
     @testset "ConstantInterpolant - Vector call" begin
@@ -257,17 +257,17 @@ end
     end
 
     @testset "ConstantInterpolant - Options" begin
-        itp_wrap = constant_interp(x, y; extrap=WrapExtrap())
+        itp_wrap = constant_interp(x, y; extrap = WrapExtrap())
         @test itp_wrap(4.0) == 10.0
 
-        itp_const = constant_interp(x, y; extrap=ClampExtrap())
+        itp_const = constant_interp(x, y; extrap = ClampExtrap())
         @test itp_const(-1.0) == 10.0
         @test itp_const(5.0) == 50.0
 
-        itp_left = constant_interp(x, y; side=LeftSide())
+        itp_left = constant_interp(x, y; side = LeftSide())
         @test itp_left(0.9) == 10.0
 
-        itp_right = constant_interp(x, y; side=RightSide())
+        itp_right = constant_interp(x, y; side = RightSide())
         @test itp_right(0.1) == 20.0
     end
 
@@ -275,16 +275,16 @@ end
         itp = constant_interp(x, y)
         @test @inferred(itp(0.5)) isa Float64
         @test @inferred(constant_interp(x, y, 0.5)) isa Float64
-        @test @inferred(constant_interp(x, y, 0.5; side=LeftSide())) isa Float64
-        @test @inferred(constant_interp(x, y, 0.5; extrap=ClampExtrap())) isa Float64
-        @test @inferred(constant_interp(x, y, 0.5; deriv=DerivOp(1))) isa Float64
+        @test @inferred(constant_interp(x, y, 0.5; side = LeftSide())) isa Float64
+        @test @inferred(constant_interp(x, y, 0.5; extrap = ClampExtrap())) isa Float64
+        @test @inferred(constant_interp(x, y, 0.5; deriv = DerivOp(1))) isa Float64
     end
 
     @testset "Invalid side argument throws TypeError" begin
-        @test_throws TypeError constant_interp(x, y, 0.5; side=:invalid)
-        @test_throws TypeError constant_interp(x, y, [0.5, 1.5]; side=:foo)
+        @test_throws TypeError constant_interp(x, y, 0.5; side = :invalid)
+        @test_throws TypeError constant_interp(x, y, [0.5, 1.5]; side = :foo)
         out = zeros(2)
-        @test_throws TypeError constant_interp!(out, x, y, [0.5, 1.5]; side=:bar)
+        @test_throws TypeError constant_interp!(out, x, y, [0.5, 1.5]; side = :bar)
     end
 
 end
@@ -308,16 +308,16 @@ end
     @testset "constant_interp! with side option" begin
         out = zeros(5)
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
-        constant_interp!(out, x, y, xq; side=LeftSide())
-        allocs = @allocated constant_interp!(out, x, y, xq; side=LeftSide())
+        constant_interp!(out, x, y, xq; side = LeftSide())
+        allocs = @allocated constant_interp!(out, x, y, xq; side = LeftSide())
         @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "constant_interp! with extrap option" begin
         out = zeros(5)
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
-        constant_interp!(out, x, y, xq; extrap=ClampExtrap())
-        allocs = @allocated constant_interp!(out, x, y, xq; extrap=ClampExtrap())
+        constant_interp!(out, x, y, xq; extrap = ClampExtrap())
+        allocs = @allocated constant_interp!(out, x, y, xq; extrap = ClampExtrap())
         @test allocs <= ALLOC_THRESHOLD
     end
 
@@ -341,13 +341,13 @@ end
         itp = constant_interp(x, y)
         out = zeros(5)
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
-        itp(out, xq; deriv=DerivOp(1))
-        allocs = @allocated itp(out, xq; deriv=DerivOp(1))
+        itp(out, xq; deriv = DerivOp(1))
+        allocs = @allocated itp(out, xq; deriv = DerivOp(1))
         @test allocs <= ALLOC_THRESHOLD
     end
 
     @testset "ConstantInterpolant with extrap=WrapExtrap() in-place" begin
-        itp = constant_interp(x, y; extrap=WrapExtrap())
+        itp = constant_interp(x, y; extrap = WrapExtrap())
         out = zeros(5)
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
         itp(out, xq)
@@ -356,7 +356,7 @@ end
     end
 
     @testset "ConstantInterpolant with side=LeftSide() in-place" begin
-        itp = constant_interp(x, y; side=LeftSide())
+        itp = constant_interp(x, y; side = LeftSide())
         out = zeros(5)
         xq = [0.1, 0.3, 0.5, 0.7, 0.9]
         itp(out, xq)
@@ -450,67 +450,67 @@ end
     end
 
     @testset "DerivativeView - with options" begin
-        itp_const = constant_interp(x, y; extrap=ClampExtrap())
+        itp_const = constant_interp(x, y; extrap = ClampExtrap())
         d1 = deriv1(itp_const)
         @test d1(-1.0) == 0.0
         @test d1(5.0) == 0.0
 
-        itp_wrap = constant_interp(x, y; extrap=WrapExtrap())
+        itp_wrap = constant_interp(x, y; extrap = WrapExtrap())
         d2 = deriv2(itp_wrap)
         @test d2(4.5) == 0.0
 
-        itp_left = constant_interp(x, y; side=LeftSide())
+        itp_left = constant_interp(x, y; side = LeftSide())
         @test deriv1(itp_left)(0.5) == 0.0
 
-        itp_right = constant_interp(x, y; side=RightSide())
+        itp_right = constant_interp(x, y; side = RightSide())
         @test deriv2(itp_right)(0.5) == 0.0
     end
 
     @testset "Edge: Grid point behavior" begin
         for side in (NearestSide(), LeftSide(), RightSide())
-            @test constant_interp(x, y, 0.0; side=side) == 10.0
-            @test constant_interp(x, y, 1.0; side=side) == 20.0
-            @test constant_interp(x, y, 2.0; side=side) == 30.0
-            @test constant_interp(x, y, 3.0; side=side) == 40.0
-            @test constant_interp(x, y, 4.0; side=side) == 50.0
+            @test constant_interp(x, y, 0.0; side = side) == 10.0
+            @test constant_interp(x, y, 1.0; side = side) == 20.0
+            @test constant_interp(x, y, 2.0; side = side) == 30.0
+            @test constant_interp(x, y, 3.0; side = side) == 40.0
+            @test constant_interp(x, y, 4.0; side = side) == 50.0
         end
     end
 
     @testset "Edge: xi == x[end] with extrap modes" begin
-        @test constant_interp(x, y, 4.0; extrap=NoExtrap()) == 50.0
-        @test constant_interp(x, y, 4.0; extrap=ClampExtrap()) == 50.0
-        @test constant_interp(x, y, 4.0; extrap=ExtendExtrap()) == 50.0
-        @test constant_interp(x, y, 4.0; extrap=WrapExtrap()) == 10.0
+        @test constant_interp(x, y, 4.0; extrap = NoExtrap()) == 50.0
+        @test constant_interp(x, y, 4.0; extrap = ClampExtrap()) == 50.0
+        @test constant_interp(x, y, 4.0; extrap = ExtendExtrap()) == 50.0
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap()) == 10.0
     end
 
     @testset "Edge: Wrap boundary cases" begin
-        @test constant_interp(x, y, 4.0; extrap=WrapExtrap(), side=LeftSide()) == 10.0
-        @test constant_interp(x, y, 4.0; extrap=WrapExtrap(), side=RightSide()) == 10.0
-        @test constant_interp(x, y, 4.0; extrap=WrapExtrap(), side=NearestSide()) == 10.0
-        @test constant_interp(x, y, 4.5; extrap=WrapExtrap(), side=NearestSide()) == 10.0
-        @test constant_interp(x, y, 5.0; extrap=WrapExtrap(), side=NearestSide()) == 20.0
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = LeftSide()) == 10.0
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = RightSide()) == 10.0
+        @test constant_interp(x, y, 4.0; extrap = WrapExtrap(), side = NearestSide()) == 10.0
+        @test constant_interp(x, y, 4.5; extrap = WrapExtrap(), side = NearestSide()) == 10.0
+        @test constant_interp(x, y, 5.0; extrap = WrapExtrap(), side = NearestSide()) == 20.0
     end
 
     @testset "Edge: Extrapolation + deriv" begin
-        @test constant_interp(x, y, -1.0; extrap=ClampExtrap(), deriv=DerivOp(1)) == 0.0
-        @test constant_interp(x, y, 5.0; extrap=ClampExtrap(), deriv=DerivOp(2)) == 0.0
-        @test constant_interp(x, y, -1.0; extrap=ExtendExtrap(), deriv=DerivOp(1)) == 0.0
-        @test constant_interp(x, y, 5.0; extrap=ExtendExtrap(), deriv=DerivOp(2)) == 0.0
-        @test constant_interp(x, y, 4.5; extrap=WrapExtrap(), deriv=DerivOp(1)) == 0.0
+        @test constant_interp(x, y, -1.0; extrap = ClampExtrap(), deriv = DerivOp(1)) == 0.0
+        @test constant_interp(x, y, 5.0; extrap = ClampExtrap(), deriv = DerivOp(2)) == 0.0
+        @test constant_interp(x, y, -1.0; extrap = ExtendExtrap(), deriv = DerivOp(1)) == 0.0
+        @test constant_interp(x, y, 5.0; extrap = ExtendExtrap(), deriv = DerivOp(2)) == 0.0
+        @test constant_interp(x, y, 4.5; extrap = WrapExtrap(), deriv = DerivOp(1)) == 0.0
     end
 
     @testset "Edge: Midpoint tie-breaking" begin
-        @test constant_interp(x, y, 0.5; side=NearestSide()) == 10.0
-        @test constant_interp(x, y, 1.5; side=NearestSide()) == 20.0
-        @test constant_interp(x, y, 2.5; side=NearestSide()) == 30.0
+        @test constant_interp(x, y, 0.5; side = NearestSide()) == 10.0
+        @test constant_interp(x, y, 1.5; side = NearestSide()) == 20.0
+        @test constant_interp(x, y, 2.5; side = NearestSide()) == 30.0
     end
 
     @testset "Edge: Non-uniform grid" begin
         x_nu = [0.0, 0.5, 2.0, 2.5, 4.0]
         y_nu = [10.0, 20.0, 30.0, 40.0, 50.0]
-        @test constant_interp(x_nu, y_nu, 0.25; side=NearestSide()) == 10.0
-        @test constant_interp(x_nu, y_nu, 1.0; side=NearestSide()) == 20.0
-        @test constant_interp(x_nu, y_nu, 1.5; side=NearestSide()) == 30.0
+        @test constant_interp(x_nu, y_nu, 0.25; side = NearestSide()) == 10.0
+        @test constant_interp(x_nu, y_nu, 1.0; side = NearestSide()) == 20.0
+        @test constant_interp(x_nu, y_nu, 1.5; side = NearestSide()) == 30.0
     end
 
     @testset "Edge: Float32 type preservation" begin
@@ -529,9 +529,9 @@ end
     @testset "Edge: Minimum grid size (2 points)" begin
         x_min = [0.0, 1.0]
         y_min = [10.0, 20.0]
-        @test constant_interp(x_min, y_min, 0.5; side=NearestSide()) == 10.0
-        @test constant_interp(x_min, y_min, 0.5; side=LeftSide()) == 10.0
-        @test constant_interp(x_min, y_min, 0.5; side=RightSide()) == 20.0
+        @test constant_interp(x_min, y_min, 0.5; side = NearestSide()) == 10.0
+        @test constant_interp(x_min, y_min, 0.5; side = LeftSide()) == 10.0
+        @test constant_interp(x_min, y_min, 0.5; side = RightSide()) == 20.0
         @test constant_interp(x_min, y_min, 0.0) == 10.0
         @test constant_interp(x_min, y_min, 1.0) == 20.0
     end
@@ -539,12 +539,11 @@ end
     @testset "Edge: Range input (O(1) path)" begin
         x_range = 0.0:0.5:4.0
         y_range = collect(10.0:10.0:90.0)
-        @test constant_interp(x_range, y_range, 0.25; side=NearestSide()) == 10.0
-        @test constant_interp(x_range, y_range, 0.75; side=NearestSide()) == 20.0
+        @test constant_interp(x_range, y_range, 0.25; side = NearestSide()) == 10.0
+        @test constant_interp(x_range, y_range, 0.75; side = NearestSide()) == 20.0
 
         itp_range = constant_interp(x_range, y_range)
         @test itp_range(0.25) == 10.0
     end
 
 end
-

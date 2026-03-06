@@ -15,9 +15,9 @@ const _compute_deriv1_coeffs = FastInterpolations._compute_deriv1_coeffs
 const _weighted_sum = FastInterpolations._weighted_sum
 const _estimate_endpoint_derivative = FastInterpolations._estimate_endpoint_derivative
 
-println("=" ^ 70)
+println("="^70)
 println("Lagrange Endpoint Derivative Kernel Benchmark")
-println("=" ^ 70)
+println("="^70)
 println()
 
 # ========================================
@@ -47,13 +47,13 @@ println()
 # Benchmark 1: Non-Uniform Grid
 # ========================================
 
-println("-" ^ 70)
+println("-"^70)
 println("NON-UNIFORM GRID")
-println("-" ^ 70)
+println("-"^70)
 
 # Precompute coefficients using new API
 x_left_tuple = (xs_nonuniform[1], xs_nonuniform[2], xs_nonuniform[3], xs_nonuniform[4])
-x_right_tuple = (xs_nonuniform[end-3], xs_nonuniform[end-2], xs_nonuniform[end-1], xs_nonuniform[end])
+x_right_tuple = (xs_nonuniform[end - 3], xs_nonuniform[end - 2], xs_nonuniform[end - 1], xs_nonuniform[end])
 c_left = _compute_deriv1_coeffs(PolyFit{3}(), Val(:left), x_left_tuple)
 c_right = _compute_deriv1_coeffs(PolyFit{3}(), Val(:right), x_right_tuple)
 
@@ -74,7 +74,7 @@ function bench_precomputed_nonuniform(c_left, c_right, ys_batch)
         f_left = (ys[1], ys[2], ys[3], ys[4])
         results[1, j] = _weighted_sum(c_left, f_left)
         n = length(ys)
-        f_right = (ys[n-3], ys[n-2], ys[n-1], ys[n])
+        f_right = (ys[n - 3], ys[n - 2], ys[n - 1], ys[n])
         results[2, j] = _weighted_sum(c_right, f_right)
     end
     return results
@@ -86,11 +86,11 @@ bench_precomputed_nonuniform(c_left, c_right, ys_batch[1:10])
 
 # Benchmark
 println("\n[1] On-the-fly (computing coeffs each call):")
-t_onfly = @benchmark bench_onfly_nonuniform($xs_nonuniform, $ys_batch) samples=20 evals=1
+t_onfly = @benchmark bench_onfly_nonuniform($xs_nonuniform, $ys_batch) samples = 20 evals = 1
 display(t_onfly)
 
 println("\n[2] Precomputed coefficients:")
-t_precomp = @benchmark bench_precomputed_nonuniform($c_left, $c_right, $ys_batch) samples=20 evals=1
+t_precomp = @benchmark bench_precomputed_nonuniform($c_left, $c_right, $ys_batch) samples = 20 evals = 1
 display(t_precomp)
 
 # Verify correctness
@@ -106,9 +106,9 @@ speedup_nonuniform = median(t_onfly).time / median(t_precomp).time
 # ========================================
 
 println()
-println("-" ^ 70)
+println("-"^70)
 println("UNIFORM GRID")
-println("-" ^ 70)
+println("-"^70)
 
 inv_h = 1 / step(xs_uniform)
 
@@ -129,7 +129,7 @@ function bench_direct_uniform(inv_h, ys_batch)
         f_left = (ys[1], ys[2], ys[3], ys[4])
         results[1, j] = _compute_deriv1(PolyFit{3}(), Val(:left), f_left, inv_h)
         n = length(ys)
-        f_right = (ys[n-3], ys[n-2], ys[n-1], ys[n])
+        f_right = (ys[n - 3], ys[n - 2], ys[n - 1], ys[n])
         results[2, j] = _compute_deriv1(PolyFit{3}(), Val(:right), f_right, inv_h)
     end
     return results
@@ -140,11 +140,11 @@ bench_onfly_uniform(xs_uniform, ys_batch_uniform[1:10])
 bench_direct_uniform(inv_h, ys_batch_uniform[1:10])
 
 println("\n[1] On-the-fly (via _estimate_endpoint_derivative):")
-t_onfly_u = @benchmark bench_onfly_uniform($xs_uniform, $ys_batch_uniform) samples=20 evals=1
+t_onfly_u = @benchmark bench_onfly_uniform($xs_uniform, $ys_batch_uniform) samples = 20 evals = 1
 display(t_onfly_u)
 
 println("\n[2] Direct kernel call (precomputed inv_h):")
-t_direct_u = @benchmark bench_direct_uniform($inv_h, $ys_batch_uniform) samples=20 evals=1
+t_direct_u = @benchmark bench_direct_uniform($inv_h, $ys_batch_uniform) samples = 20 evals = 1
 display(t_direct_u)
 
 # Verify correctness
@@ -160,18 +160,18 @@ speedup_uniform = median(t_onfly_u).time / median(t_direct_u).time
 # ========================================
 
 println()
-println("=" ^ 70)
+println("="^70)
 println("SUMMARY")
-println("=" ^ 70)
+println("="^70)
 println()
 @printf("Non-uniform grid:\n")
-@printf("  On-the-fly:  %8.3f ms\n", median(t_onfly).time / 1e6)
-@printf("  Precomputed: %8.3f ms\n", median(t_precomp).time / 1e6)
+@printf("  On-the-fly:  %8.3f ms\n", median(t_onfly).time / 1.0e6)
+@printf("  Precomputed: %8.3f ms\n", median(t_precomp).time / 1.0e6)
 @printf("  Speedup:     %8.2fx\n", speedup_nonuniform)
 println()
 @printf("Uniform grid:\n")
-@printf("  On-the-fly:  %8.3f ms\n", median(t_onfly_u).time / 1e6)
-@printf("  Direct:      %8.3f ms\n", median(t_direct_u).time / 1e6)
+@printf("  On-the-fly:  %8.3f ms\n", median(t_onfly_u).time / 1.0e6)
+@printf("  Direct:      %8.3f ms\n", median(t_direct_u).time / 1.0e6)
 @printf("  Speedup:     %8.2fx\n", speedup_uniform)
 println()
 @printf("Per-vector cost (non-uniform):\n")

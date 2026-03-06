@@ -9,7 +9,7 @@ using Random
 # between Julia versions (e.g., 1.10 LTS vs latest) that cause last-bit variations.
 # Note: FMA is numerically more accurate (single rounding vs two), but produces
 # slightly different results than separate multiply-then-add operations.
-const APPROX_REL_TOLERANCCE = 1e-14
+const APPROX_REL_TOLERANCCE = 1.0e-14
 
 @testset "Package Comparison Tests" begin
 
@@ -17,7 +17,7 @@ const APPROX_REL_TOLERANCCE = 1e-14
     target_f(x) = sin(2π * x) + 0.5 * cos(4π * x)
 
     # Grid configurations
-    function make_grids(n=51)
+    function make_grids(n = 51)
         range_grid = range(0.0, 1.0, n)
         steprangelen_grid = 0.0:0.02:1.0  # StepRangeLen
         vector_grid = collect(range(0.0, 1.0, n))
@@ -31,7 +31,7 @@ const APPROX_REL_TOLERANCCE = 1e-14
             range = range_grid,
             steprangelen = steprangelen_grid,
             vector = vector_grid,
-            random = random_grid
+            random = random_grid,
         )
     end
 
@@ -41,7 +41,7 @@ const APPROX_REL_TOLERANCCE = 1e-14
     uniform_grids = (
         range = grids.range,
         steprangelen = grids.steprangelen,
-        vector = grids.vector
+        vector = grids.vector,
     )
 
     # Interior query points - includes on-grid points (0.0, 0.5, 1.0)
@@ -66,13 +66,13 @@ const APPROX_REL_TOLERANCCE = 1e-14
                     itp = Itp.linear_interpolation(x, y)
                     result_interp = itp(xq_interior)
 
-                    @test isapprox(result_fast, result_interp; rtol=APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_interp; rtol = APPROX_REL_TOLERANCCE)
                 end
             end
         end
 
         @testset "vs Interpolations.jl (Range input directly)" begin
-            for (grid_name, x) in pairs((range=grids.range, steprangelen=grids.steprangelen))
+            for (grid_name, x) in pairs((range = grids.range, steprangelen = grids.steprangelen))
                 @testset "Grid: $grid_name" begin
                     y = target_f.(x)
 
@@ -83,7 +83,7 @@ const APPROX_REL_TOLERANCCE = 1e-14
                     itp = Itp.linear_interpolation(x, y)
                     result_interp = itp(xq_interior)
 
-                    @test isapprox(result_fast, result_interp; rtol=APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_interp; rtol = APPROX_REL_TOLERANCCE)
                 end
             end
         end
@@ -100,8 +100,8 @@ const APPROX_REL_TOLERANCCE = 1e-14
                     itp = DI.LinearInterpolation(y, x)
                     result_data = itp(xq_interior)
 
-                    @test isapprox(result_fast, result_data; rtol=APPROX_REL_TOLERANCCE)
-                    
+                    @test isapprox(result_fast, result_data; rtol = APPROX_REL_TOLERANCCE)
+
                 end
             end
         end
@@ -113,13 +113,13 @@ const APPROX_REL_TOLERANCCE = 1e-14
                     y = target_f.(x)
 
                     # FastInterpolations (explicit extrap=ExtendExtrap())
-                    result_fast = linear_interp(x, y, xq_with_extrap; extrap=ExtendExtrap())
+                    result_fast = linear_interp(x, y, xq_with_extrap; extrap = ExtendExtrap())
 
                     # DataInterpolations.jl with extrapolation
-                    itp = DI.LinearInterpolation(y, x; extrapolation=DI.ExtrapolationType.Extension)
+                    itp = DI.LinearInterpolation(y, x; extrapolation = DI.ExtrapolationType.Extension)
                     result_data = itp(xq_with_extrap)
 
-                    @test isapprox(result_fast, result_data; rtol=APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_data; rtol = APPROX_REL_TOLERANCCE)
                 end
             end
         end
@@ -134,7 +134,7 @@ const APPROX_REL_TOLERANCCE = 1e-14
                     y = target_f.(x)
 
                     # FastInterpolations — explicit ZeroCurvBC to match natural BC
-                    result_fast = cubic_interp(x, y, xq_interior; bc=ZeroCurvBC())
+                    result_fast = cubic_interp(x, y, xq_interior; bc = ZeroCurvBC())
 
                     # Interpolations.jl - Cubic spline with natural BC
                     x_vec = collect(x)
@@ -146,7 +146,7 @@ const APPROX_REL_TOLERANCCE = 1e-14
                     result_interp = scaled_itp(xq_interior)
                     # Cubic splines may have slight differences due to boundary conditions
                     # Use looser tolerance
-                    @test isapprox(result_fast, result_interp; rtol=APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_interp; rtol = APPROX_REL_TOLERANCCE)
                 end
             end
         end
@@ -157,14 +157,14 @@ const APPROX_REL_TOLERANCCE = 1e-14
                     y = target_f.(x)
 
                     # FastInterpolations — explicit ZeroCurvBC to match natural BC
-                    result_fast = cubic_interp(x, y, xq_interior; bc=ZeroCurvBC())
+                    result_fast = cubic_interp(x, y, xq_interior; bc = ZeroCurvBC())
 
                     # DataInterpolations.jl - CubicSpline (natural BC)
                     itp = DI.CubicSpline(y, x)
                     result_data = itp(xq_interior)
 
                     # ZeroCurv cubic spline should match closely
-                    @test isapprox(result_fast, result_data; rtol=APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_data; rtol = APPROX_REL_TOLERANCCE)
                 end
             end
         end
@@ -175,13 +175,13 @@ const APPROX_REL_TOLERANCCE = 1e-14
                     y = target_f.(x)
 
                     # FastInterpolations — explicit ZeroCurvBC to match natural BC
-                    result_fast = cubic_interp(x, y, xq_with_extrap; bc=ZeroCurvBC(), extrap=ExtendExtrap())
+                    result_fast = cubic_interp(x, y, xq_with_extrap; bc = ZeroCurvBC(), extrap = ExtendExtrap())
 
                     # DataInterpolations.jl with extrapolation
-                    itp = DI.CubicSpline(y, x; extrapolation=DI.ExtrapolationType.Extension)
+                    itp = DI.CubicSpline(y, x; extrapolation = DI.ExtrapolationType.Extension)
                     result_data = itp(xq_with_extrap)
 
-                    @test isapprox(result_fast, result_data; rtol=APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_data; rtol = APPROX_REL_TOLERANCCE)
                 end
             end
         end
@@ -208,12 +208,12 @@ const APPROX_REL_TOLERANCCE = 1e-14
                     # Dierckx.jl — FITPACK not-a-knot cubic spline
                     x_vec = collect(x)
                     y_vec = collect(y)
-                    itp = Dierckx.Spline1D(x_vec, y_vec; k=3, s=0.0)
+                    itp = Dierckx.Spline1D(x_vec, y_vec; k = 3, s = 0.0)
                     result_dierckx = [itp(xi) for xi in xq_deep_interior]
 
                     # Different BCs → interior values converge but residual BC influence
                     # decays exponentially from boundaries (~1e-9 at 10% from edge)
-                    @test isapprox(result_fast, result_dierckx; rtol=1e-8)
+                    @test isapprox(result_fast, result_dierckx; rtol = 1.0e-8)
                 end
             end
         end
@@ -242,11 +242,11 @@ const APPROX_REL_TOLERANCCE = 1e-14
                     # Dierckx.jl — FITPACK not-a-knot
                     x_vec = collect(x)
                     y_vec = collect(y)
-                    itp = Dierckx.Spline1D(x_vec, y_vec; k=3, s=0.0)
+                    itp = Dierckx.Spline1D(x_vec, y_vec; k = 3, s = 0.0)
                     result_dierckx = [itp(xi) for xi in xq_interior]
 
                     # Both reproduce cubic polynomials exactly → machine precision match
-                    @test isapprox(result_fast, result_dierckx; rtol=APPROX_REL_TOLERANCCE)
+                    @test isapprox(result_fast, result_dierckx; rtol = APPROX_REL_TOLERANCCE)
                 end
             end
         end

@@ -36,7 +36,7 @@ Returns: yL * (1 - α) + yR * α where α = dL * inv_h
 # Return Type
 promote_type(Tv, typeof(α)) - handles Complex*Float and Dual*Float correctly
 """
-@inline function _linear_kernel(::EvalValue, yL::Tv, yR::Tv, inv_h::Tg, dL) where {Tg<:AbstractFloat, Tv}
+@inline function _linear_kernel(::EvalValue, yL::Tv, yR::Tv, inv_h::Tg, dL) where {Tg <: AbstractFloat, Tv}
     α = dL * inv_h
     return muladd(α, yR - yL, yL)  # yL + α*(yR-yL)
 end
@@ -47,7 +47,7 @@ end
 Evaluate first derivative (slope) of linear interpolation.
 Returns constant slope: (yR - yL) * inv_h
 """
-@inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, inv_h::Tg, dL) where {Tg<:AbstractFloat, Tv}
+@inline function _linear_kernel(::EvalDeriv1, yL::Tv, yR::Tv, inv_h::Tg, dL) where {Tg <: AbstractFloat, Tv}
     return (yR - yL) * inv_h
 end
 
@@ -60,7 +60,7 @@ Always returns zero (linear function has no curvature).
 Note: Mathematically, the second derivative is a Dirac delta at knots,
 but we return zero everywhere as a practical approximation.
 """
-@inline function _linear_kernel(::EvalDeriv2, yL::Tv, ::Tv, inv_h::Tg, dL) where {Tg<:AbstractFloat, Tv}
+@inline function _linear_kernel(::EvalDeriv2, yL::Tv, ::Tv, inv_h::Tg, dL) where {Tg <: AbstractFloat, Tv}
     return 0 * yL
 end
 
@@ -70,7 +70,6 @@ end
 Third derivative of linear interpolation is always zero.
 Linear functions have constant first derivative (slope), zero second and third derivatives.
 """
-@inline function _linear_kernel(::EvalDeriv3, yL::Tv, ::Tv, inv_h::Tg, dL) where {Tg<:AbstractFloat, Tv}
+@inline function _linear_kernel(::EvalDeriv3, yL::Tv, ::Tv, inv_h::Tg, dL) where {Tg <: AbstractFloat, Tv}
     return 0 * yL
 end
-

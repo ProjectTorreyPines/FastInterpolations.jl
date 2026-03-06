@@ -27,12 +27,14 @@ end
         x = [0.0, 1.0, 2.0]
         y = [0.0, 1.0, 2.0, 3.0]
         # data[i,j] = 10*i + j (unique per cell)
-        data = [11.0 12.0 13.0 14.0;
-                21.0 22.0 23.0 24.0;
-                31.0 32.0 33.0 34.0]
+        data = [
+            11.0 12.0 13.0 14.0;
+            21.0 22.0 23.0 24.0;
+            31.0 32.0 33.0 34.0
+        ]
 
         @testset "side=LeftSide() (default)" begin
-            itp = constant_interp((x, y), data; side=LeftSide())
+            itp = constant_interp((x, y), data; side = LeftSide())
 
             # At grid points, returns left value of the interval containing the point
             # At (0,0): interval idx=(1,1), data[1,1]=11
@@ -50,7 +52,7 @@ end
         end
 
         @testset "side=RightSide()" begin
-            itp = constant_interp((x, y), data; side=RightSide())
+            itp = constant_interp((x, y), data; side = RightSide())
 
             # At grid points, still returns left value (dL == 0)
             @test itp((0.0, 0.0)) == 11.0
@@ -63,7 +65,7 @@ end
         end
 
         @testset "side=NearestSide()" begin
-            itp = constant_interp((x, y), data; side=NearestSide())
+            itp = constant_interp((x, y), data; side = NearestSide())
 
             # At grid points
             @test itp((0.0, 0.0)) == 11.0
@@ -80,7 +82,7 @@ end
 
         @testset "per-axis side configuration" begin
             # side=(LeftSide(), RightSide()) → left on x-axis, right on y-axis
-            itp = constant_interp((x, y), data; side=(LeftSide(), RightSide()))
+            itp = constant_interp((x, y), data; side = (LeftSide(), RightSide()))
 
             @test itp((0.5, 0.5)) == 12.0  # x: left (idx=1), y: right (idx=2) → data[1,2]
             @test itp((1.5, 0.5)) == 22.0  # x: left (idx=2), y: right (idx=2) → data[2,2]
@@ -100,7 +102,7 @@ end
             data[i, j, k] = 100.0 * i + 10.0 * j + k
         end
 
-        itp = constant_interp((x, y, z), data; side=LeftSide())
+        itp = constant_interp((x, y, z), data; side = LeftSide())
 
         # At origin: all indices = 1
         @test itp((0.0, 0.0, 0.0)) == 111.0  # data[1,1,1]
@@ -123,20 +125,20 @@ end
         itp = constant_interp((x, y), data)
 
         # First derivative (any direction)
-        @test itp((0.5, 0.5); deriv=DerivOp(1, 1)) == 0.0
-        @test itp((0.5, 0.5); deriv=DerivOp(1, 1)) == 0.0
+        @test itp((0.5, 0.5); deriv = DerivOp(1, 1)) == 0.0
+        @test itp((0.5, 0.5); deriv = DerivOp(1, 1)) == 0.0
 
         # Mixed partials
-        @test itp((0.5, 0.5); deriv=DerivOp(1, 0)) == 0.0  # ∂f/∂x
-        @test itp((0.5, 0.5); deriv=DerivOp(0, 1)) == 0.0  # ∂f/∂y
-        @test itp((0.5, 0.5); deriv=DerivOp(1, 1)) == 0.0  # ∂²f/∂x∂y
+        @test itp((0.5, 0.5); deriv = DerivOp(1, 0)) == 0.0  # ∂f/∂x
+        @test itp((0.5, 0.5); deriv = DerivOp(0, 1)) == 0.0  # ∂f/∂y
+        @test itp((0.5, 0.5); deriv = DerivOp(1, 1)) == 0.0  # ∂²f/∂x∂y
 
         # Second derivatives
-        @test itp((0.5, 0.5); deriv=DerivOp(2, 2)) == 0.0
-        @test itp((0.5, 0.5); deriv=DerivOp(2, 0)) == 0.0
+        @test itp((0.5, 0.5); deriv = DerivOp(2, 2)) == 0.0
+        @test itp((0.5, 0.5); deriv = DerivOp(2, 0)) == 0.0
 
         # Third derivatives
-        @test itp((0.5, 0.5); deriv=DerivOp(3, 3)) == 0.0
+        @test itp((0.5, 0.5); deriv = DerivOp(3, 3)) == 0.0
     end
 
     # ========================================
@@ -147,7 +149,7 @@ end
         y = [0.0, 1.0, 2.0]
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
-        itp = constant_interp((x, y), data; side=LeftSide())
+        itp = constant_interp((x, y), data; side = LeftSide())
 
         # Query with vector instead of tuple
         @test itp([0.5, 0.5]) == itp((0.5, 0.5))
@@ -162,7 +164,7 @@ end
         y = [0.0, 1.0, 2.0]
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
-        itp = constant_interp((x, y), data; side=LeftSide())
+        itp = constant_interp((x, y), data; side = LeftSide())
 
         # Batch query: tuple of vectors
         xs = [0.5, 1.5, 0.5]
@@ -183,7 +185,7 @@ end
         y = [0.0, 1.0, 2.0]
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
-        itp = constant_interp((x, y), data; side=LeftSide())
+        itp = constant_interp((x, y), data; side = LeftSide())
 
         # Batch query: vector of tuples
         points = [(0.5, 0.5), (1.5, 0.5), (0.5, 1.5)]
@@ -204,7 +206,7 @@ end
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
         @testset "extrap=NoExtrap() (domain error)" begin
-            itp = constant_interp((x, y), data; extrap=NoExtrap())
+            itp = constant_interp((x, y), data; extrap = NoExtrap())
 
             # In domain - OK
             @test itp((0.5, 0.5)) == 1.0
@@ -217,7 +219,7 @@ end
         end
 
         @testset "extrap=ClampExtrap()" begin
-            itp = constant_interp((x, y), data; extrap=ClampExtrap(), side=LeftSide())
+            itp = constant_interp((x, y), data; extrap = ClampExtrap(), side = LeftSide())
 
             # In domain
             @test itp((0.5, 0.5)) == 1.0
@@ -234,7 +236,7 @@ end
         end
 
         @testset "extrap=WrapExtrap()" begin
-            itp = constant_interp((x, y), data; extrap=WrapExtrap(), side=LeftSide())
+            itp = constant_interp((x, y), data; extrap = WrapExtrap(), side = LeftSide())
 
             # In domain
             @test itp((0.5, 0.5)) == 1.0
@@ -246,7 +248,7 @@ end
 
         @testset "per-axis extrap configuration" begin
             # extrap=(NoExtrap(), ClampExtrap()) → strict on x, clamp on y
-            itp = constant_interp((x, y), data; extrap=(NoExtrap(), ClampExtrap()), side=LeftSide())
+            itp = constant_interp((x, y), data; extrap = (NoExtrap(), ClampExtrap()), side = LeftSide())
 
             # y clamped to 2.0 → data[1, 2] = 2.0
             @test itp((0.5, 2.5)) == 2.0  # y clamped to last interval
@@ -262,7 +264,7 @@ end
         y = range(0.0, 2.0, 3)  # [0, 1, 2]
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
-        itp = constant_interp((x, y), data; side=LeftSide())
+        itp = constant_interp((x, y), data; side = LeftSide())
 
         @test itp((0.5, 0.5)) == 1.0
         @test itp((1.5, 0.5)) == 4.0
@@ -276,7 +278,7 @@ end
         y = [0.0, 0.5, 2.0]     # Non-uniform Vector
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
-        itp = constant_interp((x, y), data; side=LeftSide())
+        itp = constant_interp((x, y), data; side = LeftSide())
 
         @test itp((0.5, 0.3)) == 1.0  # First cell
         @test itp((1.5, 1.0)) == 5.0  # y in [0.5, 2.0) → idx 2
@@ -295,11 +297,11 @@ end
         @test itp((0.5, 0.5)) == 1.0
 
         # LinearBinarySearch
-        itp_lb = constant_interp((x, y), data; search=LinearBinarySearch())
+        itp_lb = constant_interp((x, y), data; search = LinearBinarySearch())
         @test itp_lb((0.5, 0.5)) == 1.0
 
         # Per-axis search
-        itp_mixed = constant_interp((x, y), data; search=(BinarySearch(), LinearBinarySearch()))
+        itp_mixed = constant_interp((x, y), data; search = (BinarySearch(), LinearBinarySearch()))
         @test itp_mixed((0.5, 0.5)) == 1.0
     end
 
@@ -312,13 +314,13 @@ end
         data = [1.0 2.0 3.0; 4.0 5.0 6.0; 7.0 8.0 9.0]
 
         # Scalar one-shot
-        result = constant_interp((x, y), data, (0.5, 0.5); side=LeftSide())
+        result = constant_interp((x, y), data, (0.5, 0.5); side = LeftSide())
         @test result == 1.0
 
         # Batch one-shot (SoA)
         xs = [0.5, 1.5]
         ys = [0.5, 0.5]
-        results = constant_interp((x, y), data, (xs, ys); side=LeftSide())
+        results = constant_interp((x, y), data, (xs, ys); side = LeftSide())
         @test results[1] == 1.0
         @test results[2] == 4.0
     end
@@ -344,15 +346,15 @@ end
     @testset "complex values" begin
         x = [0.0, 1.0, 2.0]
         y = [0.0, 1.0, 2.0]
-        data = ComplexF64[1+1im 2+2im 3+3im; 4+4im 5+5im 6+6im; 7+7im 8+8im 9+9im]
+        data = ComplexF64[1 + 1im 2 + 2im 3 + 3im; 4 + 4im 5 + 5im 6 + 6im; 7 + 7im 8 + 8im 9 + 9im]
 
-        itp = constant_interp((x, y), data; side=LeftSide())
+        itp = constant_interp((x, y), data; side = LeftSide())
 
         @test itp((0.5, 0.5)) == 1.0 + 1.0im
         @test itp((1.5, 1.5)) == 5.0 + 5.0im
 
         # Derivatives still zero
-        @test itp((0.5, 0.5); deriv=DerivOp(1, 1)) == 0.0 + 0.0im
+        @test itp((0.5, 0.5); deriv = DerivOp(1, 1)) == 0.0 + 0.0im
     end
 
     # ========================================
@@ -409,9 +411,9 @@ end
         y = range(0.0, 1.0, 6)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        constant_interp((x, y), data, query; side=LeftSide())
-        constant_interp((x, y), data, query; side=LeftSide())
-        @allocated constant_interp((x, y), data, query; side=LeftSide())
+        constant_interp((x, y), data, query; side = LeftSide())
+        constant_interp((x, y), data, query; side = LeftSide())
+        @allocated constant_interp((x, y), data, query; side = LeftSide())
     end
 
     function _alloc_test_constant_right()
@@ -419,9 +421,9 @@ end
         y = range(0.0, 1.0, 6)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        constant_interp((x, y), data, query; side=RightSide())
-        constant_interp((x, y), data, query; side=RightSide())
-        @allocated constant_interp((x, y), data, query; side=RightSide())
+        constant_interp((x, y), data, query; side = RightSide())
+        constant_interp((x, y), data, query; side = RightSide())
+        @allocated constant_interp((x, y), data, query; side = RightSide())
     end
 
     function _alloc_test_constant_extrap_constant()
@@ -429,9 +431,9 @@ end
         y = range(0.0, 1.0, 6)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        constant_interp((x, y), data, query; extrap=ClampExtrap())
-        constant_interp((x, y), data, query; extrap=ClampExtrap())
-        @allocated constant_interp((x, y), data, query; extrap=ClampExtrap())
+        constant_interp((x, y), data, query; extrap = ClampExtrap())
+        constant_interp((x, y), data, query; extrap = ClampExtrap())
+        @allocated constant_interp((x, y), data, query; extrap = ClampExtrap())
     end
 
     function _alloc_test_constant_extrap_wrap()
@@ -439,9 +441,9 @@ end
         y = range(0.0, 1.0, 6)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        constant_interp((x, y), data, query; extrap=WrapExtrap())
-        constant_interp((x, y), data, query; extrap=WrapExtrap())
-        @allocated constant_interp((x, y), data, query; extrap=WrapExtrap())
+        constant_interp((x, y), data, query; extrap = WrapExtrap())
+        constant_interp((x, y), data, query; extrap = WrapExtrap())
+        @allocated constant_interp((x, y), data, query; extrap = WrapExtrap())
     end
 
     function _alloc_test_constant_mixed_mode()
@@ -449,9 +451,9 @@ end
         y = range(0.0, 1.0, 6)
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        constant_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
-        constant_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
-        @allocated constant_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
+        constant_interp((x, y), data, query; extrap = (NoExtrap(), ClampExtrap()))
+        constant_interp((x, y), data, query; extrap = (NoExtrap(), ClampExtrap()))
+        @allocated constant_interp((x, y), data, query; extrap = (NoExtrap(), ClampExtrap()))
     end
 
     function _alloc_test_constant_3d()
@@ -554,9 +556,9 @@ end
         y = collect(range(0.0, 1.0, 15))
         data = [xi + yj for xi in x, yj in y]
         query = (1.0, 0.5)
-        constant_interp((x, y), data, query; side=LeftSide())
-        constant_interp((x, y), data, query; side=LeftSide())
-        @allocated constant_interp((x, y), data, query; side=LeftSide())
+        constant_interp((x, y), data, query; side = LeftSide())
+        constant_interp((x, y), data, query; side = LeftSide())
+        @allocated constant_interp((x, y), data, query; side = LeftSide())
     end
 
     function _alloc_test_constant_vector_3d()
@@ -640,7 +642,7 @@ end
             ref = constant_interp((x, y), data, (xqs, yqs))
             out = similar(ref)
             constant_interp!(out, (x, y), data, (xqs, yqs))
-            @test out ≈ ref atol=1e-14
+            @test out ≈ ref atol = 1.0e-14
         end
 
         @testset "AoS correctness" begin
@@ -651,7 +653,7 @@ end
             ref = constant_interp((x, y), data, points)
             out = similar(ref)
             constant_interp!(out, (x, y), data, points)
-            @test out ≈ ref atol=1e-14
+            @test out ≈ ref atol = 1.0e-14
         end
 
         @testset "Deriv fills zeros in-place" begin
@@ -661,7 +663,7 @@ end
             xqs = [0.5, 0.6, 0.7]
             yqs = [0.5, 0.6, 0.7]
             out = ones(3)  # non-zero before call
-            constant_interp!(out, (x, y), data, (xqs, yqs); deriv=DerivOp(1, 1))
+            constant_interp!(out, (x, y), data, (xqs, yqs); deriv = DerivOp(1, 1))
             @test all(out .== 0.0)
         end
 

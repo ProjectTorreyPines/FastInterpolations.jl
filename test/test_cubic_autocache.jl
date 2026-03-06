@@ -90,10 +90,10 @@ import FastInterpolations: _get_cubic_cache
         result1 = cubic_interp(x, y, x_query)
 
         # Another call with autocache=true - should hit cache
-        result2 = cubic_interp(x, y, x_query; autocache=true)
+        result2 = cubic_interp(x, y, x_query; autocache = true)
 
         # With autocache=false - creates fresh cache each time
-        result3 = cubic_interp(x, y, x_query; autocache=false)
+        result3 = cubic_interp(x, y, x_query; autocache = false)
 
         # Results should be identical
         @test result1 ≈ result2
@@ -133,7 +133,7 @@ end
 
         # Create many similar grids to increase collision probability
         n_grids = 50
-        grids = [collect(range(0.0, 1.0, 51)) .+ (i * 1e-10) for i in 1:n_grids]
+        grids = [collect(range(0.0, 1.0, 51)) .+ (i * 1.0e-10) for i in 1:n_grids]
         y = ones(51)
         x_query = [0.5]
 
@@ -155,7 +155,7 @@ end
         result2 = cubic_interp(x, y, 0.75)
 
         # Disable autocache for scalar query
-        result3 = cubic_interp(x, y, 0.25; autocache=false)
+        result3 = cubic_interp(x, y, 0.25; autocache = false)
 
         @test isa(result1, Float64)
         @test isa(result2, Float64)
@@ -214,7 +214,7 @@ end
         y_int = [sin(2π * i / 10) for i in x_int]
         x_query_float = [2.5, 5.5, 7.3]
 
-        result = cubic_interp(x_int, y_int, x_query_float; autocache=false)
+        result = cubic_interp(x_int, y_int, x_query_float; autocache = false)
         @test result isa Vector{Float64}
         @test all(isfinite, result)
     end
@@ -373,8 +373,8 @@ end
 
         # Keyword API should work
         cache1 = _get_cubic_cache(x)  # default bc=CubicFit()
-        cache2 = _get_cubic_cache(x; bc=CubicFit())
-        cache3 = _get_cubic_cache(x; bc=PeriodicBC())
+        cache2 = _get_cubic_cache(x; bc = CubicFit())
+        cache3 = _get_cubic_cache(x; bc = PeriodicBC())
 
         @test cache1 isa CubicSplineCache
         @test cache2 isa CubicSplineCache
@@ -492,7 +492,7 @@ end
         x1 = collect(range(0.0, 2π, 51))
         y = sin.(x1)
         y[end] = y[1]  # Ensure exact periodicity
-        result1 = cubic_interp(x1, y, 0.5; bc=PeriodicBC())
+        result1 = cubic_interp(x1, y, 0.5; bc = PeriodicBC())
 
         # Create equal but different object (different objectid)
         x2 = collect(range(0.0, 2π, 51))
@@ -500,13 +500,13 @@ end
         @test objectid(x1) != objectid(x2)
 
         # This should trigger Pass 2 (equality check) and self-healing
-        result2 = cubic_interp(x2, y, 0.5; bc=PeriodicBC())
+        result2 = cubic_interp(x2, y, 0.5; bc = PeriodicBC())
 
         # Results should be the same
         @test result1 ≈ result2
 
         # Now x2 should trigger Pass 1 (identity check) due to self-healing
-        result3 = cubic_interp(x2, y, 0.5; bc=PeriodicBC())
+        result3 = cubic_interp(x2, y, 0.5; bc = PeriodicBC())
         @test result2 ≈ result3
     end
 end
@@ -525,28 +525,28 @@ end
         xq = [1.5, 4.5, 7.5]
 
         # Before mutation
-        before = cubic_interp(x, y, xq; autocache=true)
+        before = cubic_interp(x, y, xq; autocache = true)
 
         # Mutation 1: middle position
         x[6] = 5.5
-        after = cubic_interp(x, y, xq; autocache=true)
-        fresh = cubic_interp(x, y, xq; autocache=false)
+        after = cubic_interp(x, y, xq; autocache = true)
+        fresh = cubic_interp(x, y, xq; autocache = false)
         @test before != after  # Result must change after mutation
         @test after == fresh   # Autocache must match fresh build
 
         # Mutation 2: another position (sequential)
         before = after
         x[3] = 2.2
-        after = cubic_interp(x, y, xq; autocache=true)
-        fresh = cubic_interp(x, y, xq; autocache=false)
+        after = cubic_interp(x, y, xq; autocache = true)
+        fresh = cubic_interp(x, y, xq; autocache = false)
         @test before != after
         @test after == fresh
 
         # Mutation 3: end position
         before = after
         x[11] = 11.0
-        after = cubic_interp(x, y, xq; autocache=true)
-        fresh = cubic_interp(x, y, xq; autocache=false)
+        after = cubic_interp(x, y, xq; autocache = true)
+        fresh = cubic_interp(x, y, xq; autocache = false)
         @test before != after
         @test after == fresh
     end
@@ -556,10 +556,10 @@ end
         clear_cubic_cache!()
         x32 = Float32.(collect(range(0.0, 4.0, 9)))
         y32 = Float32.(sin.(x32))
-        before = cubic_interp(x32, y32, Float32(2.0); autocache=true)
+        before = cubic_interp(x32, y32, Float32(2.0); autocache = true)
         x32[5] = Float32(2.2)
-        after = cubic_interp(x32, y32, Float32(2.0); autocache=true)
-        fresh = cubic_interp(x32, y32, Float32(2.0); autocache=false)
+        after = cubic_interp(x32, y32, Float32(2.0); autocache = true)
+        fresh = cubic_interp(x32, y32, Float32(2.0); autocache = false)
         @test before != after && after == fresh
 
         # PeriodicBC
@@ -567,10 +567,10 @@ end
         xp = collect(range(0.0, 2π, 9))
         yp = sin.(xp)
         yp[end] = yp[1]  # Ensure exact periodicity
-        before = cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=true)
+        before = cubic_interp(xp, yp, 1.0; bc = PeriodicBC(), autocache = true)
         xp[5] += 0.1
-        after = cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=true)
-        fresh = cubic_interp(xp, yp, 1.0; bc=PeriodicBC(), autocache=false)
+        after = cubic_interp(xp, yp, 1.0; bc = PeriodicBC(), autocache = true)
+        fresh = cubic_interp(xp, yp, 1.0; bc = PeriodicBC(), autocache = false)
         @test before != after && after == fresh
     end
 
@@ -586,12 +586,12 @@ end
             xq = 2.0
 
             # Prime cache
-            result1 = cubic_interp(x, y, xq; autocache=true)
+            result1 = cubic_interp(x, y, xq; autocache = true)
 
             # Ranges are immutable - creating a new range with same values
             # should hit cache via isequal check
             x2 = range(0.0, 4.0, 5)
-            result2 = cubic_interp(x2, y, xq; autocache=true)
+            result2 = cubic_interp(x2, y, xq; autocache = true)
 
             # Both should produce consistent results
             @test result1 ≈ result2
@@ -605,10 +605,10 @@ end
             xq = [1.0, 2.0, 3.0]
 
             # Prime cache
-            result1 = cubic_interp(x, y, xq; autocache=true)
+            result1 = cubic_interp(x, y, xq; autocache = true)
 
             # Fresh computation should match
-            fresh = cubic_interp(x, y, xq; autocache=false)
+            fresh = cubic_interp(x, y, xq; autocache = false)
 
             @test result1 ≈ fresh
         end
@@ -624,8 +624,8 @@ end
             xq = 5.0
 
             # Both should produce same result
-            result1 = cubic_interp(x1, y, xq; autocache=true)
-            result2 = cubic_interp(x2, y, xq; autocache=true)
+            result1 = cubic_interp(x1, y, xq; autocache = true)
+            result2 = cubic_interp(x2, y, xq; autocache = true)
 
             @test result1 ≈ result2
         end
@@ -637,8 +637,8 @@ end
             y = Float32.(sin.(collect(x)))
             xq = Float32(2.0)
 
-            result1 = cubic_interp(x, y, xq; autocache=true)
-            result2 = cubic_interp(x, y, xq; autocache=true)
+            result1 = cubic_interp(x, y, xq; autocache = true)
+            result2 = cubic_interp(x, y, xq; autocache = true)
 
             @test result1 ≈ result2
         end
@@ -739,9 +739,9 @@ end
         x = collect(range(0.0, 2π, 17))
         y = sin.(x)
         y[end] = y[1]  # Ensure exact periodicity
-        xq = [π/4, π/2, π, 3π/2]
+        xq = [π / 4, π / 2, π, 3π / 2]
 
-        itp = cubic_interp(x, y; bc=PeriodicBC())
+        itp = cubic_interp(x, y; bc = PeriodicBC())
         result_before = itp.(xq)
 
         x[9] = 100.0  # Mutate middle point
@@ -778,11 +778,11 @@ end
         bc = BCPair(Deriv1(df(x[1])), Deriv1(df(x[end])))
 
         # Prime cache
-        result1 = cubic_interp(x, y, xq; bc=bc, autocache=true)
+        result1 = cubic_interp(x, y, xq; bc = bc, autocache = true)
 
         # Verify initial result is exact (cubic spline reproduces cubics with exact-derivative BC)
         expected1 = f.(xq)
-        @test result1 ≈ expected1 atol=1e-12
+        @test result1 ≈ expected1 atol = 1.0e-12
 
         # MUTATE x to create a different grid (non-uniform spacing)
         x[3] = 0.8   # was 1.0
@@ -794,14 +794,14 @@ end
         bc_new = BCPair(Deriv1(df(x[1])), Deriv1(df(x[end])))
 
         # After mutation, autocache should rebuild and give CORRECT results
-        result2 = cubic_interp(x, y, xq; bc=bc_new, autocache=true)
+        result2 = cubic_interp(x, y, xq; bc = bc_new, autocache = true)
         expected2 = f.(xq)  # Same expected values (polynomial is exact)
 
-        @test result2 ≈ expected2 atol=1e-12
+        @test result2 ≈ expected2 atol = 1.0e-12
 
         # Cross-check: fresh computation should match
-        fresh = cubic_interp(x, y, xq; bc=bc_new, autocache=false)
-        @test result2 ≈ fresh atol=1e-14
+        fresh = cubic_interp(x, y, xq; bc = bc_new, autocache = false)
+        @test result2 ≈ fresh atol = 1.0e-14
     end
 
     @testset "Analytic correctness: quadratic polynomial with ZeroSlopeBC" begin
@@ -820,9 +820,9 @@ end
         # Use Deriv1 BC with exact derivatives
         bc = BCPair(Deriv1(df(x[1])), Deriv1(df(x[end])))
 
-        result1 = cubic_interp(x, y, xq; bc=bc, autocache=true)
+        result1 = cubic_interp(x, y, xq; bc = bc, autocache = true)
         expected = f.(xq)
-        @test result1 ≈ expected atol=1e-12
+        @test result1 ≈ expected atol = 1.0e-12
 
         # Mutate grid
         x[4] = 0.3  # was 0.0
@@ -830,8 +830,8 @@ end
         y .= f.(x)
 
         # Update BC for new endpoints (endpoints unchanged, so BC same)
-        result2 = cubic_interp(x, y, xq; bc=bc, autocache=true)
-        @test result2 ≈ expected atol=1e-12
+        result2 = cubic_interp(x, y, xq; bc = bc, autocache = true)
+        @test result2 ≈ expected atol = 1.0e-12
     end
 
     @testset "Analytic correctness: linear function with ZeroCurvBC" begin
@@ -846,8 +846,8 @@ end
         y = f.(x)
         xq = [0.5, 3.33, 7.77, 9.5]
 
-        result1 = cubic_interp(x, y, xq; autocache=true)
-        @test result1 ≈ f.(xq) atol=1e-13
+        result1 = cubic_interp(x, y, xq; autocache = true)
+        @test result1 ≈ f.(xq) atol = 1.0e-13
 
         # Mutate to non-uniform grid
         x[2] = 0.5
@@ -855,11 +855,11 @@ end
         x[8] = 7.2
         y .= f.(x)
 
-        result2 = cubic_interp(x, y, xq; autocache=true)
-        @test result2 ≈ f.(xq) atol=1e-13
+        result2 = cubic_interp(x, y, xq; autocache = true)
+        @test result2 ≈ f.(xq) atol = 1.0e-13
 
         # Verify autocache matches fresh
-        @test result2 ≈ cubic_interp(x, y, xq; autocache=false) atol=1e-14
+        @test result2 ≈ cubic_interp(x, y, xq; autocache = false) atol = 1.0e-14
     end
 
     @testset "Analytic correctness: Float32 with mutation" begin
@@ -871,14 +871,14 @@ end
         y = f.(x)
         xq = Float32.([0.5, 1.5, 2.5, 3.5])
 
-        result1 = cubic_interp(x, y, xq; autocache=true)
-        @test result1 ≈ f.(xq) atol=1e-5  # Float32 precision
+        result1 = cubic_interp(x, y, xq; autocache = true)
+        @test result1 ≈ f.(xq) atol = 1.0e-5  # Float32 precision
 
         x[5] = Float32(2.1)
         y .= f.(x)
 
-        result2 = cubic_interp(x, y, xq; autocache=true)
-        @test result2 ≈ f.(xq) atol=1e-5
+        result2 = cubic_interp(x, y, xq; autocache = true)
+        @test result2 ≈ f.(xq) atol = 1.0e-5
     end
 
     @testset "Analytic correctness: PeriodicBC with sine function" begin
@@ -890,15 +890,15 @@ end
         x = collect(range(0.0, 2π, 33))  # Dense grid for accuracy
         y = sin.(x)
         y[end] = y[1]  # Ensure exact periodicity
-        xq = [π/6, π/3, π/2, 2π/3, π, 4π/3, 3π/2, 5π/3]
+        xq = [π / 6, π / 3, π / 2, 2π / 3, π, 4π / 3, 3π / 2, 5π / 3]
 
-        result1 = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=true)
+        result1 = cubic_interp(x, y, xq; bc = PeriodicBC(), autocache = true)
         expected = sin.(xq)
-        @test result1 ≈ expected atol=1e-5  # Cubic spline approximation error
+        @test result1 ≈ expected atol = 1.0e-5  # Cubic spline approximation error
 
         # Key correctness check: autocache matches fresh for initial grid
-        fresh1 = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=false)
-        @test result1 ≈ fresh1 atol=1e-14
+        fresh1 = cubic_interp(x, y, xq; bc = PeriodicBC(), autocache = false)
+        @test result1 ≈ fresh1 atol = 1.0e-14
 
         # Mutate interior points (keep endpoints for periodicity)
         x[10] = x[10] + 0.02
@@ -906,13 +906,13 @@ end
         y .= sin.(x)
         y[end] = y[1]  # Re-ensure exact periodicity after mutation
 
-        result2 = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=true)
+        result2 = cubic_interp(x, y, xq; bc = PeriodicBC(), autocache = true)
         # After mutation, still interpolating sin, should be close to expected
-        @test result2 ≈ expected atol=1e-4  # Slightly looser due to grid perturbation
+        @test result2 ≈ expected atol = 1.0e-4  # Slightly looser due to grid perturbation
 
         # CRITICAL: autocache must match fresh computation EXACTLY after mutation
         # This is the key test - if stale cache was used, this would fail
-        fresh2 = cubic_interp(x, y, xq; bc=PeriodicBC(), autocache=false)
-        @test result2 ≈ fresh2 atol=1e-14
+        fresh2 = cubic_interp(x, y, xq; bc = PeriodicBC(), autocache = false)
+        @test result2 ≈ fresh2 atol = 1.0e-14
     end
 end

@@ -27,7 +27,7 @@ end
         f(xi, yi) = xi^2 + yi^2
         data = [f(xi, yi) for xi in x, yi in y]
 
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         # Type checks
         @test itp isa QuadraticInterpolantND
@@ -37,24 +37,24 @@ end
         # Grid point pass-through
         for i in 1:length(x)
             for j in 1:length(y)
-                @test itp((x[i], y[j])) ≈ data[i, j] atol=1e-12
+                @test itp((x[i], y[j])) ≈ data[i, j] atol = 1.0e-12
             end
         end
 
         # Interior point — exact for degree 2
         xq, yq = 1.23, 0.67
-        @test itp((xq, yq)) ≈ f(xq, yq) rtol=1e-10
+        @test itp((xq, yq)) ≈ f(xq, yq) rtol = 1.0e-10
     end
 
     @testset "2D polynomial reproduction with cross term (x²+xy+y²)" begin
         x = range(0.0, 2.0, 15)
         y = range(0.0, 1.0, 11)
-        f(xi, yi) = xi^2 + xi*yi + yi^2
+        f(xi, yi) = xi^2 + xi * yi + yi^2
         data = [f(xi, yi) for xi in x, yi in y]
 
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
         xq, yq = 1.0, 0.5
-        @test itp((xq, yq)) ≈ f(xq, yq) rtol=1e-8
+        @test itp((xq, yq)) ≈ f(xq, yq) rtol = 1.0e-8
     end
 
     # ========================================
@@ -65,45 +65,45 @@ end
         y = range(0.0, 1.0, 11)
         f(xi, yi) = xi^2 + yi^2
         data = [f(xi, yi) for xi in x, yi in y]
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         xq, yq = 1.23, 0.67
 
         # Value
-        @test itp((xq, yq); deriv=DerivOp(0, 0)) ≈ f(xq, yq) rtol=1e-10
+        @test itp((xq, yq); deriv = DerivOp(0, 0)) ≈ f(xq, yq) rtol = 1.0e-10
 
         # First derivatives: df/dx = 2x, df/dy = 2y
-        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ 2xq rtol=1e-10
-        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ 2yq rtol=1e-10
+        @test itp((xq, yq); deriv = DerivOp(1, 0)) ≈ 2xq rtol = 1.0e-10
+        @test itp((xq, yq); deriv = DerivOp(0, 1)) ≈ 2yq rtol = 1.0e-10
 
         # Second derivatives: d²f/dx² = 2, d²f/dy² = 2
-        @test itp((xq, yq); deriv=DerivOp(2, 0)) ≈ 2.0 rtol=1e-6
-        @test itp((xq, yq); deriv=DerivOp(0, 2)) ≈ 2.0 rtol=1e-6
+        @test itp((xq, yq); deriv = DerivOp(2, 0)) ≈ 2.0 rtol = 1.0e-6
+        @test itp((xq, yq); deriv = DerivOp(0, 2)) ≈ 2.0 rtol = 1.0e-6
 
         # Mixed derivative: d²f/dxdy = 0 for x²+y²
-        @test abs(itp((xq, yq); deriv=DerivOp(1, 1))) < 1e-10
+        @test abs(itp((xq, yq); deriv = DerivOp(1, 1))) < 1.0e-10
 
         # DerivOp derivative spec (compile-time)
-        @test itp((xq, yq); deriv=DerivOp(1, 0)) ≈ 2xq rtol=1e-10
-        @test itp((xq, yq); deriv=DerivOp(0, 1)) ≈ 2yq rtol=1e-10
-        @test itp((xq, yq); deriv=DerivOp(2, 0)) ≈ 2.0 rtol=1e-6
+        @test itp((xq, yq); deriv = DerivOp(1, 0)) ≈ 2xq rtol = 1.0e-10
+        @test itp((xq, yq); deriv = DerivOp(0, 1)) ≈ 2yq rtol = 1.0e-10
+        @test itp((xq, yq); deriv = DerivOp(2, 0)) ≈ 2.0 rtol = 1.0e-6
 
         # Integer derivative (all axes same order)
-        @test itp((xq, yq); deriv=DerivOp(1, 1)) isa Float64
-        @test itp((xq, yq); deriv=DerivOp(2, 2)) isa Float64
+        @test itp((xq, yq); deriv = DerivOp(1, 1)) isa Float64
+        @test itp((xq, yq); deriv = DerivOp(2, 2)) isa Float64
     end
 
     @testset "2D non-zero mixed derivative" begin
         x = range(0.0, 2.0, 15)
         y = range(0.0, 1.0, 11)
-        f(xi, yi) = xi^2 + xi*yi + yi^2
+        f(xi, yi) = xi^2 + xi * yi + yi^2
         data = [f(xi, yi) for xi in x, yi in y]
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         xq, yq = 1.0, 0.5
 
         # d²f/dxdy = 1 for x² + xy + y²
-        @test itp((xq, yq); deriv=DerivOp(1, 1)) ≈ 1.0 atol=1e-6
+        @test itp((xq, yq); deriv = DerivOp(1, 1)) ≈ 1.0 atol = 1.0e-6
     end
 
     # ========================================
@@ -116,34 +116,36 @@ end
         data = [f(xi, yi) for xi in x, yi in y]
 
         @testset "Left(QuadraticFit())" begin
-            itp = quadratic_interp((x, y), data; bc=Left(QuadraticFit()))
-            @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol=1e-8
+            itp = quadratic_interp((x, y), data; bc = Left(QuadraticFit()))
+            @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol = 1.0e-8
         end
 
         @testset "Right(QuadraticFit())" begin
-            itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
-            @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol=1e-10
+            itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
+            @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol = 1.0e-10
         end
 
         @testset "ZeroCurvBC()" begin
             data_sin = [sin(xi) * cos(yi) for xi in x, yi in y]
-            itp = quadratic_interp((x, y), data_sin; bc=ZeroCurvBC())
-            @test isapprox(itp((1.0, 0.5)), sin(1.0) * cos(0.5); atol=2e-3)
+            itp = quadratic_interp((x, y), data_sin; bc = ZeroCurvBC())
+            @test isapprox(itp((1.0, 0.5)), sin(1.0) * cos(0.5); atol = 2.0e-3)
         end
 
         @testset "MinCurvFit()" begin
-            itp = quadratic_interp((x, y), data; bc=MinCurvFit())
-            @test isapprox(itp((1.0, 0.5)), f(1.0, 0.5); rtol=1e-4)
+            itp = quadratic_interp((x, y), data; bc = MinCurvFit())
+            @test isapprox(itp((1.0, 0.5)), f(1.0, 0.5); rtol = 1.0e-4)
         end
 
         @testset "Per-axis BC (Left + Right)" begin
-            itp = quadratic_interp((x, y), data;
-                bc=(Left(QuadraticFit()), Right(QuadraticFit())))
-            @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol=1e-8
+            itp = quadratic_interp(
+                (x, y), data;
+                bc = (Left(QuadraticFit()), Right(QuadraticFit()))
+            )
+            @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol = 1.0e-8
         end
 
         @testset "PolyFit BC conversion" begin
-            itp = quadratic_interp((x, y), data; bc=CubicFit())
+            itp = quadratic_interp((x, y), data; bc = CubicFit())
             @test itp((1.0, 0.5)) isa Float64
         end
     end
@@ -158,16 +160,20 @@ end
         data = [f(xi, yi) for xi in x, yi in y]
 
         @testset "uniform search" begin
-            itp = quadratic_interp((x, y), data;
-                bc=Right(QuadraticFit()), search=BinarySearch())
-            @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol=1e-10
+            itp = quadratic_interp(
+                (x, y), data;
+                bc = Right(QuadraticFit()), search = BinarySearch()
+            )
+            @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol = 1.0e-10
         end
 
         @testset "mixed search policies" begin
-            itp = quadratic_interp((x, y), data;
-                bc=Right(QuadraticFit()),
-                search=(BinarySearch(), LinearBinarySearch{4}()))
-            @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol=1e-10
+            itp = quadratic_interp(
+                (x, y), data;
+                bc = Right(QuadraticFit()),
+                search = (BinarySearch(), LinearBinarySearch{4}())
+            )
+            @test itp((1.0, 0.5)) ≈ f(1.0, 0.5) rtol = 1.0e-10
         end
     end
 
@@ -181,7 +187,7 @@ end
         data = [f(xi, yi) for xi in x, yi in y]
 
         @testset "extrap=NoExtrap() (default)" begin
-            itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+            itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
             @test_throws DomainError itp((-0.1, 0.5))
             @test_throws DomainError itp((0.5, -0.1))
             @test_throws DomainError itp((2.1, 0.5))
@@ -189,8 +195,10 @@ end
         end
 
         @testset "extrap=ClampExtrap()" begin
-            itp = quadratic_interp((x, y), data;
-                bc=Right(QuadraticFit()), extrap=ClampExtrap())
+            itp = quadratic_interp(
+                (x, y), data;
+                bc = Right(QuadraticFit()), extrap = ClampExtrap()
+            )
             @test itp((-0.1, 0.5)) ≈ itp((0.0, 0.5))
             @test itp((2.1, 0.5)) ≈ itp((2.0, 0.5))
             @test itp((0.5, 1.1)) ≈ itp((0.5, 1.0))
@@ -198,17 +206,21 @@ end
         end
 
         @testset "extrap=ExtendExtrap()" begin
-            itp = quadratic_interp((x, y), data;
-                bc=Right(QuadraticFit()), extrap=ExtendExtrap())
+            itp = quadratic_interp(
+                (x, y), data;
+                bc = Right(QuadraticFit()), extrap = ExtendExtrap()
+            )
             @test isfinite(itp((-0.1, 0.5)))
             @test isfinite(itp((2.5, 1.5)))
         end
 
         @testset "per-axis extrap" begin
-            itp = quadratic_interp((x, y), data;
-                bc=Right(QuadraticFit()),
-                extrap=(ClampExtrap(), ExtendExtrap()))
-            @test itp((-0.1, 0.5)) ≈ itp((0.0, 0.5)) rtol=1e-10
+            itp = quadratic_interp(
+                (x, y), data;
+                bc = Right(QuadraticFit()),
+                extrap = (ClampExtrap(), ExtendExtrap())
+            )
+            @test itp((-0.1, 0.5)) ≈ itp((0.0, 0.5)) rtol = 1.0e-10
             @test isfinite(itp((1.0, 1.5)))
         end
     end
@@ -221,7 +233,7 @@ end
         y = range(0.0, 1.0, 11)
         f(xi, yi) = xi^2 + yi^2
         data = [f(xi, yi) for xi in x, yi in y]
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         @testset "SoA (Tuple of Vectors)" begin
             xs = [0.5, 1.0, 1.5]
@@ -231,16 +243,16 @@ end
             @test results isa Vector{Float64}
             @test length(results) == 3
             for i in 1:3
-                @test results[i] ≈ f(xs[i], ys[i]) rtol=1e-10
+                @test results[i] ≈ f(xs[i], ys[i]) rtol = 1.0e-10
             end
         end
 
         @testset "SoA with derivatives" begin
             xs = [0.5, 1.0, 1.5]
             ys = [0.2, 0.5, 0.8]
-            dvals = itp((xs, ys); deriv=DerivOp(1, 0))
+            dvals = itp((xs, ys); deriv = DerivOp(1, 0))
             for i in 1:3
-                @test dvals[i] ≈ 2xs[i] rtol=1e-10
+                @test dvals[i] ≈ 2xs[i] rtol = 1.0e-10
             end
         end
 
@@ -251,19 +263,19 @@ end
             @test results isa Vector{Float64}
             @test length(results) == 3
             for i in 1:3
-                @test results[i] ≈ f(queries[i]...) rtol=1e-10
+                @test results[i] ≈ f(queries[i]...) rtol = 1.0e-10
             end
         end
 
         @testset "AoS with derivatives" begin
             queries = [(0.5, 0.2), (1.0, 0.5)]
-            dvals = itp(queries; deriv=DerivOp(1, 0))
-            @test dvals[1] ≈ 2 * 0.5 rtol=1e-10
-            @test dvals[2] ≈ 2 * 1.0 rtol=1e-10
+            dvals = itp(queries; deriv = DerivOp(1, 0))
+            @test dvals[1] ≈ 2 * 0.5 rtol = 1.0e-10
+            @test dvals[2] ≈ 2 * 1.0 rtol = 1.0e-10
         end
 
         @testset "Vector input (ForwardDiff compat)" begin
-            @test itp([1.0, 0.5]) ≈ f(1.0, 0.5) rtol=1e-10
+            @test itp([1.0, 0.5]) ≈ f(1.0, 0.5) rtol = 1.0e-10
             @test_throws DimensionMismatch itp([1.0])
             @test_throws DimensionMismatch itp([1.0, 0.5, 0.3])
         end
@@ -279,24 +291,30 @@ end
         data = [f(xi, yi) for xi in x, yi in y]
 
         @testset "single point" begin
-            val = quadratic_interp((x, y), data, (1.0, 0.5);
-                bc=Right(QuadraticFit()))
-            @test val ≈ f(1.0, 0.5) rtol=1e-10
+            val = quadratic_interp(
+                (x, y), data, (1.0, 0.5);
+                bc = Right(QuadraticFit())
+            )
+            @test val ≈ f(1.0, 0.5) rtol = 1.0e-10
         end
 
         @testset "single point with derivative" begin
-            val = quadratic_interp((x, y), data, (1.0, 0.5);
-                bc=Right(QuadraticFit()), deriv=DerivOp(1, 0))
-            @test val ≈ 2.0 rtol=1e-10  # df/dx = 2x = 2
+            val = quadratic_interp(
+                (x, y), data, (1.0, 0.5);
+                bc = Right(QuadraticFit()), deriv = DerivOp(1, 0)
+            )
+            @test val ≈ 2.0 rtol = 1.0e-10  # df/dx = 2x = 2
         end
 
         @testset "batch one-shot" begin
             xqs = [0.5, 1.0, 1.5]
             yqs = [0.2, 0.5, 0.8]
-            vals = quadratic_interp((x, y), data, (xqs, yqs);
-                bc=Right(QuadraticFit()))
+            vals = quadratic_interp(
+                (x, y), data, (xqs, yqs);
+                bc = Right(QuadraticFit())
+            )
             for k in 1:3
-                @test vals[k] ≈ f(xqs[k], yqs[k]) rtol=1e-10
+                @test vals[k] ≈ f(xqs[k], yqs[k]) rtol = 1.0e-10
             end
         end
     end
@@ -310,7 +328,7 @@ end
         z = range(0.0, 1.0, 8)
         f(xi, yi, zi) = xi^2 + yi^2 + zi^2
         data = [f(xi, yi, zi) for xi in x, yi in y, zi in z]
-        itp = quadratic_interp((x, y, z), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y, z), data; bc = Right(QuadraticFit()))
 
         @test ndims(itp) == 3
         @test size(itp) == (8, 8, 8)
@@ -318,17 +336,17 @@ end
         xq, yq, zq = 0.5, 0.3, 0.7
 
         # Value
-        @test itp((xq, yq, zq)) ≈ f(xq, yq, zq) rtol=1e-8
+        @test itp((xq, yq, zq)) ≈ f(xq, yq, zq) rtol = 1.0e-8
 
         # First derivatives
-        @test itp((xq, yq, zq); deriv=DerivOp(1, 0, 0)) ≈ 2xq rtol=1e-6
-        @test itp((xq, yq, zq); deriv=DerivOp(0, 1, 0)) ≈ 2yq rtol=1e-6
-        @test itp((xq, yq, zq); deriv=DerivOp(0, 0, 1)) ≈ 2zq rtol=1e-6
+        @test itp((xq, yq, zq); deriv = DerivOp(1, 0, 0)) ≈ 2xq rtol = 1.0e-6
+        @test itp((xq, yq, zq); deriv = DerivOp(0, 1, 0)) ≈ 2yq rtol = 1.0e-6
+        @test itp((xq, yq, zq); deriv = DerivOp(0, 0, 1)) ≈ 2zq rtol = 1.0e-6
 
         # Second derivatives
-        @test itp((xq, yq, zq); deriv=DerivOp(2, 0, 0)) ≈ 2.0 rtol=1e-4
-        @test itp((xq, yq, zq); deriv=DerivOp(0, 2, 0)) ≈ 2.0 rtol=1e-4
-        @test itp((xq, yq, zq); deriv=DerivOp(0, 0, 2)) ≈ 2.0 rtol=1e-4
+        @test itp((xq, yq, zq); deriv = DerivOp(2, 0, 0)) ≈ 2.0 rtol = 1.0e-4
+        @test itp((xq, yq, zq); deriv = DerivOp(0, 2, 0)) ≈ 2.0 rtol = 1.0e-4
+        @test itp((xq, yq, zq); deriv = DerivOp(0, 0, 2)) ≈ 2.0 rtol = 1.0e-4
     end
 
     # ========================================
@@ -340,14 +358,14 @@ end
         f(xi, yi) = xi^2 + yi^2
         data = [f(xi, yi) for xi in x, yi in y]
 
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         # Grid point pass-through
-        @test itp((x[3], y[2])) ≈ data[3, 2] atol=1e-12
+        @test itp((x[3], y[2])) ≈ data[3, 2] atol = 1.0e-12
 
         # Interior point — exact for degree 2
         xq, yq = 0.5, 0.3
-        @test itp((xq, yq)) ≈ f(xq, yq) rtol=1e-6
+        @test itp((xq, yq)) ≈ f(xq, yq) rtol = 1.0e-6
     end
 
     # ========================================
@@ -358,14 +376,14 @@ end
         y = range(0.0f0, 1.0f0, 6)
         data = Float32[xi^2 + yj^2 for xi in x, yj in y]
 
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         @test grid_type(itp) == Float32
         @test value_type(itp) == Float32
 
         result = itp((1.0f0, 0.5f0))
         @test result isa Float32
-        @test result ≈ 1.0f0 + 0.25f0 atol=1e-4
+        @test result ≈ 1.0f0 + 0.25f0 atol = 1.0e-4
     end
 
     # ========================================
@@ -376,13 +394,13 @@ end
         y = range(0.0, 1.0, 6)
         data = [complex(xi^2, yj^2) for xi in x, yj in y]
 
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         @test value_type(itp) == ComplexF64
 
         result = itp((1.0, 0.5))
         @test result isa ComplexF64
-        @test result ≈ complex(1.0, 0.25) atol=1e-6
+        @test result ≈ complex(1.0, 0.25) atol = 1.0e-6
     end
 
     # ========================================
@@ -392,7 +410,7 @@ end
         x = range(0.0, 1.0, 11)
         y = range(0.0, 1.0, 11)
         data = rand(11, 11)
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         @test grid_type(itp) == Float64
         @test value_type(itp) == Float64
@@ -412,18 +430,24 @@ end
 
         @testset "dimension mismatch in construction" begin
             bad_data = rand(10, 6)  # Wrong x dimension
-            @test_throws DimensionMismatch quadratic_interp((x, y), bad_data;
-                bc=Right(QuadraticFit()))
+            @test_throws DimensionMismatch quadratic_interp(
+                (x, y), bad_data;
+                bc = Right(QuadraticFit())
+            )
 
             bad_data2 = rand(11, 5)  # Wrong y dimension
-            @test_throws DimensionMismatch quadratic_interp((x, y), bad_data2;
-                bc=Right(QuadraticFit()))
+            @test_throws DimensionMismatch quadratic_interp(
+                (x, y), bad_data2;
+                bc = Right(QuadraticFit())
+            )
         end
 
         @testset "unsupported BC" begin
             data = rand(11, 6)
-            @test_throws ArgumentError quadratic_interp((x, y), data;
-                bc=PeriodicBC())
+            @test_throws ArgumentError quadratic_interp(
+                (x, y), data;
+                bc = PeriodicBC()
+            )
         end
     end
 
@@ -434,7 +458,7 @@ end
         x = range(0.0, 2.0, 11)
         y = range(0.0, 1.0, 6)
         data = [xi * yj for xi in x, yj in y]
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         @testset "compact show" begin
             str = sprint(show, itp)
@@ -454,7 +478,7 @@ end
         x = range(0.0, 1.0, 10)
         y = range(0.0, 2.0, 15)
         data = rand(10, 15)
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         @test FastInterpolations._grid(itp, Val(1)) === itp.grids[1]
         @test FastInterpolations._grid(itp, Val(2)) === itp.grids[2]
@@ -471,7 +495,7 @@ end
         x = range(0.0, 1.0, 10)
         y = range(0.0, 2.0, 15)
         data = rand(10, 15)
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
 
         @test itp.grids isa Tuple
         @test length(itp.grids) == 2
@@ -503,9 +527,9 @@ end
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 1))
-        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 1))
-        @allocated quadratic_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        quadratic_interp((x, y), data, query; deriv = DerivOp(1, 1))
+        quadratic_interp((x, y), data, query; deriv = DerivOp(1, 1))
+        @allocated quadratic_interp((x, y), data, query; deriv = DerivOp(1, 1))
     end
 
     function _alloc_test_quadratic_deriv_val()
@@ -513,9 +537,9 @@ end
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 0))
-        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 0))
-        @allocated quadratic_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        quadratic_interp((x, y), data, query; deriv = DerivOp(1, 0))
+        quadratic_interp((x, y), data, query; deriv = DerivOp(1, 0))
+        @allocated quadratic_interp((x, y), data, query; deriv = DerivOp(1, 0))
     end
 
     function _alloc_test_quadratic_natural_bc()
@@ -523,9 +547,9 @@ end
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; bc=ZeroCurvBC())
-        quadratic_interp((x, y), data, query; bc=ZeroCurvBC())
-        @allocated quadratic_interp((x, y), data, query; bc=ZeroCurvBC())
+        quadratic_interp((x, y), data, query; bc = ZeroCurvBC())
+        quadratic_interp((x, y), data, query; bc = ZeroCurvBC())
+        @allocated quadratic_interp((x, y), data, query; bc = ZeroCurvBC())
     end
 
     function _alloc_test_quadratic_extrap_constant()
@@ -533,9 +557,9 @@ end
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; extrap=ClampExtrap())
-        quadratic_interp((x, y), data, query; extrap=ClampExtrap())
-        @allocated quadratic_interp((x, y), data, query; extrap=ClampExtrap())
+        quadratic_interp((x, y), data, query; extrap = ClampExtrap())
+        quadratic_interp((x, y), data, query; extrap = ClampExtrap())
+        @allocated quadratic_interp((x, y), data, query; extrap = ClampExtrap())
     end
 
     function _alloc_test_quadratic_extrap_wrap_periodic()
@@ -543,9 +567,9 @@ end
         y = range(0.0, 2π, 21)
         data = [sin(xi) * cos(yj) for xi in x, yj in y]
         query = (1.5, 0.8)
-        quadratic_interp((x, y), data, query; bc=ZeroCurvBC(), extrap=WrapExtrap())
-        quadratic_interp((x, y), data, query; bc=ZeroCurvBC(), extrap=WrapExtrap())
-        @allocated quadratic_interp((x, y), data, query; bc=ZeroCurvBC(), extrap=WrapExtrap())
+        quadratic_interp((x, y), data, query; bc = ZeroCurvBC(), extrap = WrapExtrap())
+        quadratic_interp((x, y), data, query; bc = ZeroCurvBC(), extrap = WrapExtrap())
+        @allocated quadratic_interp((x, y), data, query; bc = ZeroCurvBC(), extrap = WrapExtrap())
     end
 
     function _alloc_test_quadratic_mixed_mode()
@@ -553,9 +577,9 @@ end
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
-        quadratic_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
-        @allocated quadratic_interp((x, y), data, query; extrap=(NoExtrap(), ClampExtrap()))
+        quadratic_interp((x, y), data, query; extrap = (NoExtrap(), ClampExtrap()))
+        quadratic_interp((x, y), data, query; extrap = (NoExtrap(), ClampExtrap()))
+        @allocated quadratic_interp((x, y), data, query; extrap = (NoExtrap(), ClampExtrap()))
     end
 
     function _alloc_test_quadratic_3d()
@@ -663,9 +687,9 @@ end
         y = collect(range(0.0, 1.0, 15))
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 0))
-        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 0))
-        @allocated quadratic_interp((x, y), data, query; deriv=DerivOp(1, 0))
+        quadratic_interp((x, y), data, query; deriv = DerivOp(1, 0))
+        quadratic_interp((x, y), data, query; deriv = DerivOp(1, 0))
+        @allocated quadratic_interp((x, y), data, query; deriv = DerivOp(1, 0))
     end
 
     function _alloc_test_quadratic_vector_deriv_int()
@@ -673,9 +697,9 @@ end
         y = collect(range(0.0, 1.0, 15))
         data = [xi^2 + yj^2 for xi in x, yj in y]
         query = (1.0, 0.5)
-        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 1))
-        quadratic_interp((x, y), data, query; deriv=DerivOp(1, 1))
-        @allocated quadratic_interp((x, y), data, query; deriv=DerivOp(1, 1))
+        quadratic_interp((x, y), data, query; deriv = DerivOp(1, 1))
+        quadratic_interp((x, y), data, query; deriv = DerivOp(1, 1))
+        @allocated quadratic_interp((x, y), data, query; deriv = DerivOp(1, 1))
     end
 
     function _alloc_test_quadratic_vector_3d()
@@ -718,7 +742,7 @@ end
         x = range(0.0, 2.0, 20)
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
         xqs = [0.5, 1.0, 1.5]
         yqs = [0.2, 0.5, 0.8]
         out = Vector{Float64}(undef, 3)
@@ -731,7 +755,7 @@ end
         x = range(0.0, 2.0, 20)
         y = range(0.0, 1.0, 15)
         data = [xi^2 + yj^2 for xi in x, yj in y]
-        itp = quadratic_interp((x, y), data; bc=Right(QuadraticFit()))
+        itp = quadratic_interp((x, y), data; bc = Right(QuadraticFit()))
         points = [(0.5, 0.2), (1.0, 0.5), (1.5, 0.8)]
         out = Vector{Float64}(undef, 3)
         itp(out, points)
@@ -763,7 +787,7 @@ end
             ref = quadratic_interp((x, y), data, (xqs, yqs))
             out = similar(ref)
             quadratic_interp!(out, (x, y), data, (xqs, yqs))
-            @test out ≈ ref atol=1e-14
+            @test out ≈ ref atol = 1.0e-14
         end
 
         @testset "AoS correctness" begin
@@ -774,7 +798,7 @@ end
             ref = quadratic_interp((x, y), data, points)
             out = similar(ref)
             quadratic_interp!(out, (x, y), data, points)
-            @test out ≈ ref atol=1e-14
+            @test out ≈ ref atol = 1.0e-14
         end
 
         @testset "SoA with deriv" begin
@@ -783,10 +807,10 @@ end
             data = [xi^2 + yj for xi in x, yj in y]
             xqs = [0.5, 1.0, 1.5]
             yqs = [0.2, 0.5, 0.8]
-            ref = quadratic_interp((x, y), data, (xqs, yqs); deriv=DerivOp(1, 1))
+            ref = quadratic_interp((x, y), data, (xqs, yqs); deriv = DerivOp(1, 1))
             out = similar(ref)
-            quadratic_interp!(out, (x, y), data, (xqs, yqs); deriv=DerivOp(1, 1))
-            @test out ≈ ref atol=1e-14
+            quadratic_interp!(out, (x, y), data, (xqs, yqs); deriv = DerivOp(1, 1))
+            @test out ≈ ref atol = 1.0e-14
         end
 
         @testset "DimensionMismatch on wrong output length" begin

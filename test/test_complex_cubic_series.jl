@@ -33,9 +33,9 @@ using FastInterpolations
 
         # Check approximate correctness
         # y1 at x=0.5: exp(2im*π*0.5) = exp(im*π) = -1 (spline may differ slightly)
-        @test isapprox(vals[1], -1.0 + 0.0im, rtol=0.1)
+        @test isapprox(vals[1], -1.0 + 0.0im, rtol = 0.1)
         # y2 at x=0.5: (1+2im)*0.5 = 0.5+1.0im (linear function fits exactly)
-        @test isapprox(vals[2], 0.5 + 1.0im, atol=1e-10)
+        @test isapprox(vals[2], 0.5 + 1.0im, atol = 1.0e-10)
     end
 
     # ========================================
@@ -62,8 +62,8 @@ using FastInterpolations
     # ========================================
     @testset "Integer grid + Complex values" begin
         x = 0:10  # Range{Int}
-        y1 = Complex{Int}[i + 2im*i for i in 0:10]  # Linear: (1+2i)*x
-        y2 = Complex{Int}[2i + 1im*i for i in 0:10]  # Linear: (2+i)*x
+        y1 = Complex{Int}[i + 2im * i for i in 0:10]  # Linear: (1+2i)*x
+        y2 = Complex{Int}[2i + 1im * i for i in 0:10]  # Linear: (2+i)*x
 
         sitp = cubic_interp(x, Series(y1, y2))
 
@@ -74,7 +74,7 @@ using FastInterpolations
         @test vals isa Vector{ComplexF64}
 
         # For linear function, cubic spline interpolation should be exact
-        @test isapprox(vals[1], (1.0 + 2.0im) * 5.5, rtol=1e-10)
+        @test isapprox(vals[1], (1.0 + 2.0im) * 5.5, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -110,8 +110,8 @@ using FastInterpolations
         @test length(sitp(0.5)) == 2  # Two series
 
         vals = sitp(0.5)
-        @test isapprox(vals[1], 0.5 + 1.0im, atol=1e-10)
-        @test isapprox(vals[2], 1.0 - 0.5im, atol=1e-10)
+        @test isapprox(vals[1], 0.5 + 1.0im, atol = 1.0e-10)
+        @test isapprox(vals[2], 1.0 - 0.5im, atol = 1.0e-10)
     end
 
     # ========================================
@@ -133,9 +133,9 @@ using FastInterpolations
         @test all(r -> length(r) == 3, results)
 
         # Check values (linear function interpolated exactly by cubic)
-        @test isapprox(results[1][1], (1.0 + 2.0im) * 0.25, rtol=1e-10)
-        @test isapprox(results[1][2], (1.0 + 2.0im) * 0.5, rtol=1e-10)
-        @test isapprox(results[2][3], (2.0 - 1.0im) * 0.75, rtol=1e-10)
+        @test isapprox(results[1][1], (1.0 + 2.0im) * 0.25, rtol = 1.0e-10)
+        @test isapprox(results[1][2], (1.0 + 2.0im) * 0.5, rtol = 1.0e-10)
+        @test isapprox(results[2][3], (2.0 - 1.0im) * 0.75, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -152,8 +152,8 @@ using FastInterpolations
         sitp(output, 0.5)
 
         @test output[1] isa ComplexF64
-        @test isapprox(output[1], (1.0 + 2.0im) * 0.5, rtol=1e-10)
-        @test isapprox(output[2], (2.0 - 1.0im) * 0.5, rtol=1e-10)
+        @test isapprox(output[1], (1.0 + 2.0im) * 0.5, rtol = 1.0e-10)
+        @test isapprox(output[2], (2.0 - 1.0im) * 0.5, rtol = 1.0e-10)
     end
 
     @testset "In-place vector evaluation" begin
@@ -169,7 +169,7 @@ using FastInterpolations
         sitp(outputs, xq)
 
         @test outputs[1][3] isa ComplexF64
-        @test isapprox(outputs[1][3], (1.0 + 2.0im) * 0.5, rtol=1e-10)
+        @test isapprox(outputs[1][3], (1.0 + 2.0im) * 0.5, rtol = 1.0e-10)
     end
 
     # ========================================
@@ -181,17 +181,17 @@ using FastInterpolations
         y2 = (2.0 - 1.0im) .* collect(x)
 
         # Extension mode
-        sitp_ext = cubic_interp(x, Series(y1, y2); extrap=ExtendExtrap())
+        sitp_ext = cubic_interp(x, Series(y1, y2); extrap = ExtendExtrap())
         vals_ext = sitp_ext(1.5)  # Beyond domain
         @test vals_ext isa Vector{ComplexF64}
         # Linear function extended by cubic spline
-        @test isapprox(vals_ext[1], (1.0 + 2.0im) * 1.5, rtol=1e-10)
+        @test isapprox(vals_ext[1], (1.0 + 2.0im) * 1.5, rtol = 1.0e-10)
 
         # Constant mode
-        sitp_const = cubic_interp(x, Series(y1, y2); extrap=ClampExtrap())
+        sitp_const = cubic_interp(x, Series(y1, y2); extrap = ClampExtrap())
         vals_const = sitp_const(1.5)  # Beyond domain
         @test vals_const isa Vector{ComplexF64}
-        @test isapprox(vals_const[1], y1[end], rtol=1e-10)
+        @test isapprox(vals_const[1], y1[end], rtol = 1.0e-10)
     end
 
     # ========================================
@@ -238,22 +238,22 @@ using FastInterpolations
         b = -2.0 - 3.0im  # x^2 coefficient
         c = 1.0 - 1.0im   # x coefficient
         d = 2.0 + 2.0im   # constant
-        y = [a*xi^3 + b*xi^2 + c*xi + d for xi in x]
+        y = [a * xi^3 + b * xi^2 + c * xi + d for xi in x]
 
         sitp = cubic_interp(x, Series(y))
 
         # First derivative: 3ax^2 + 2bx + c
         xq = 0.5
-        d1 = sitp(xq; deriv=DerivOp(1))
-        expected_d1 = 3*a*xq^2 + 2*b*xq + c
+        d1 = sitp(xq; deriv = DerivOp(1))
+        expected_d1 = 3 * a * xq^2 + 2 * b * xq + c
         @test d1 isa Vector{ComplexF64}
-        @test isapprox(d1[1], expected_d1, rtol=0.1)  # Spline approximation
+        @test isapprox(d1[1], expected_d1, rtol = 0.1)  # Spline approximation
 
         # Second derivative: 6ax + 2b
-        d2 = sitp(xq; deriv=DerivOp(2))
-        expected_d2 = 6*a*xq + 2*b
+        d2 = sitp(xq; deriv = DerivOp(2))
+        expected_d2 = 6 * a * xq + 2 * b
         @test d2 isa Vector{ComplexF64}
-        @test isapprox(d2[1], expected_d2, rtol=0.2)  # Spline approximation
+        @test isapprox(d2[1], expected_d2, rtol = 0.2)  # Spline approximation
     end
 
     # ========================================
@@ -264,11 +264,11 @@ using FastInterpolations
         y = exp.(2im .* π .* x)  # Complex exponential
 
         # Zero-Curvature BC (default)
-        sitp_natural = cubic_interp(x, Series(y); bc=ZeroCurvBC())
+        sitp_natural = cubic_interp(x, Series(y); bc = ZeroCurvBC())
         @test sitp_natural isa CubicSeriesInterpolant{Float64, ComplexF64}
 
         # Zero-Slope BC
-        sitp_clamped = cubic_interp(x, Series(y); bc=ZeroSlopeBC())
+        sitp_clamped = cubic_interp(x, Series(y); bc = ZeroSlopeBC())
         @test sitp_clamped isa CubicSeriesInterpolant{Float64, ComplexF64}
 
         # Both should produce valid interpolations
@@ -322,16 +322,16 @@ using FastInterpolations
         x = collect(0.0:0.05:1.0)  # Fine grid for better fit
 
         # Complex cubic: y = (1+i)x^3 - (2+3i)x^2 + (1-i)x + (2+2i)
-        a, b, c, d = 1.0+1.0im, -2.0-3.0im, 1.0-1.0im, 2.0+2.0im
-        y = [a*xi^3 + b*xi^2 + c*xi + d for xi in x]
+        a, b, c, d = 1.0 + 1.0im, -2.0 - 3.0im, 1.0 - 1.0im, 2.0 + 2.0im
+        y = [a * xi^3 + b * xi^2 + c * xi + d for xi in x]
 
         sitp = cubic_interp(x, Series(y))
 
         # Test at several points (not on grid)
         for xq in [0.15, 0.35, 0.65, 0.85]
-            expected = a*xq^3 + b*xq^2 + c*xq + d
+            expected = a * xq^3 + b * xq^2 + c * xq + d
             result = sitp(xq)[1]
-            @test isapprox(result, expected, rtol=1e-4)
+            @test isapprox(result, expected, rtol = 1.0e-4)
         end
     end
 
@@ -347,7 +347,7 @@ using FastInterpolations
         # exp(2im*π) ≈ 1 but not exactly due to floating-point sin(2π) ≠ 0
         y[end] = y[1]
 
-        sitp = cubic_interp(x, Series(y); bc=PeriodicBC())
+        sitp = cubic_interp(x, Series(y); bc = PeriodicBC())
         @test sitp isa CubicSeriesInterpolant{Float64, ComplexF64}
 
         # Values should be smooth across the boundary

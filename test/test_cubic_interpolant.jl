@@ -84,7 +84,7 @@
         @test result1 == result2  # Bit-exact
 
         # With autocache=false
-        itp3 = cubic_interp(x, y; autocache=false)
+        itp3 = cubic_interp(x, y; autocache = false)
         result3 = itp3(x_query)
         @test result3 == ref  # Bit-exact
     end
@@ -122,21 +122,21 @@
 
     @testset "Edge cases" begin
         # Create fresh interpolator to avoid cache interference
-        itp_fresh = cubic_interp(x, y; autocache=false)
+        itp_fresh = cubic_interp(x, y; autocache = false)
 
         # Query at grid points
         for xi in x
             val = itp_fresh(xi)
-            ref_val = cubic_interp(x, y, xi; autocache=false)
+            ref_val = cubic_interp(x, y, xi; autocache = false)
             @test val == ref_val
         end
 
         # Extrapolation (requires extrap=ExtendExtrap())
-        itp_extrap = cubic_interp(x, y; autocache=false, extrap=ExtendExtrap())
+        itp_extrap = cubic_interp(x, y; autocache = false, extrap = ExtendExtrap())
         val_left = itp_extrap(-0.1)
         val_right = itp_extrap(1.1)
-        ref_left = cubic_interp(x, y, -0.1; autocache=false, extrap=ExtendExtrap())
-        ref_right = cubic_interp(x, y, 1.1; autocache=false, extrap=ExtendExtrap())
+        ref_left = cubic_interp(x, y, -0.1; autocache = false, extrap = ExtendExtrap())
+        ref_right = cubic_interp(x, y, 1.1; autocache = false, extrap = ExtendExtrap())
         @test val_left == ref_left
         @test val_right == ref_right
         @test isfinite(val_left)
@@ -149,7 +149,7 @@
         xi = 0.55
 
         # Create callable (pre-computes z coefficients)
-        itp = cubic_interp(x, y; autocache=false)
+        itp = cubic_interp(x, y; autocache = false)
 
         # Warmup
         _ = itp(xi)
@@ -169,7 +169,7 @@
         x_query_test = collect(range(0.1, 0.9, 20))
 
         # Create callable (pre-computes z coefficients)
-        itp_test = cubic_interp(x_test, y_test; autocache=false)
+        itp_test = cubic_interp(x_test, y_test; autocache = false)
 
         # Warmup
         _ = itp_test(x_query_test)
@@ -225,7 +225,7 @@ end
 
         # Verify correctness
         result = cubic_interp(cache, y, [0.5])
-        @test result[1] ≈ sin(2π * 0.5) atol=0.01
+        @test result[1] ≈ sin(2π * 0.5) atol = 0.01
     end
 
     @testset "Range input via autocache → Range preserved for O(1) lookup" begin
@@ -235,16 +235,16 @@ end
 
         # Range-preserving cache: Range is kept as Range for O(1) index lookup!
         # This provides significant performance benefit over Vector (binary search)
-        itp = cubic_interp(x_range, y; autocache=true)
+        itp = cubic_interp(x_range, y; autocache = true)
         @test itp.cache.x isa StepRangeLen  # Range preserved for O(1) index calculation
 
         # Verify correctness
-        @test itp(0.5) ≈ sin(2π * 0.5) atol=0.01
+        @test itp(0.5) ≈ sin(2π * 0.5) atol = 0.01
 
         # Verify cache hit works with same Range (Julia interns Ranges)
         clear_cubic_cache!()
-        result1 = cubic_interp(x_range, y, 0.5; autocache=true)  # First call: miss
-        result2 = cubic_interp(range(0.0, 1.0, 11), y, 0.5; autocache=true)  # Same params → same objectid → hit!
+        result1 = cubic_interp(x_range, y, 0.5; autocache = true)  # First call: miss
+        result2 = cubic_interp(range(0.0, 1.0, 11), y, 0.5; autocache = true)  # Same params → same objectid → hit!
         @test result1 ≈ result2  # Same results from cache hit
     end
 
@@ -252,13 +252,13 @@ end
         x_vec = collect(range(0.0, 1.0, 11))  # Vector{Float64}
         y = sin.(2π .* x_vec)
 
-        itp = cubic_interp(x_vec, y; autocache=false)
+        itp = cubic_interp(x_vec, y; autocache = false)
 
         # Vector remains Vector
         @test itp.cache.x isa Vector{Float64}
 
         # Verify correctness
-        @test itp(0.5) ≈ sin(2π * 0.5) atol=0.01
+        @test itp(0.5) ≈ sin(2π * 0.5) atol = 0.01
     end
 
     @testset "Integer Range → Float64 Range conversion" begin
@@ -270,12 +270,12 @@ end
         @test cache.x isa AbstractRange
 
         # Via cubic_interp with autocache=false
-        itp = cubic_interp(x_int, y_int; autocache=false)
+        itp = cubic_interp(x_int, y_int; autocache = false)
         @test itp.cache.x isa AbstractRange  # Range preserved via _to_float
         @test eltype(itp.cache.x) == Float64
 
         # Verify correctness
-        @test itp(5.0) ≈ sin(2π * 0.5) atol=0.01
+        @test itp(5.0) ≈ sin(2π * 0.5) atol = 0.01
     end
 
     @testset "Float32 Range → Float32 Range conversion" begin
@@ -288,12 +288,12 @@ end
         @test eltype(cache.x) == Float32
 
         # Via cubic_interp with autocache=false
-        itp = cubic_interp(x_f32, y_f32; autocache=false)
+        itp = cubic_interp(x_f32, y_f32; autocache = false)
         @test itp.cache.x isa AbstractRange  # Range preserved
         @test eltype(itp.cache.x) == Float32
 
         # Verify correctness
-        @test itp(Float32(0.5)) ≈ sin(Float32(2π) * Float32(0.5)) atol=0.01f0
+        @test itp(Float32(0.5)) ≈ sin(Float32(2π) * Float32(0.5)) atol = 0.01f0
     end
 
     @testset "Range vs Vector produce nearly identical results" begin
@@ -302,15 +302,15 @@ end
         x_vec = collect(x_range)
         y = sin.(2π .* x_vec)
 
-        itp_range = cubic_interp(x_range, y; autocache=false)
-        itp_vec = cubic_interp(x_vec, y; autocache=false)
+        itp_range = cubic_interp(x_range, y; autocache = false)
+        itp_vec = cubic_interp(x_vec, y; autocache = false)
 
         # Query points
         xi_test = [0.1, 0.25, 0.5, 0.75, 0.9]
 
         # Results should be nearly identical (tiny FP differences due to O(1) vs O(log n) lookup)
         for xi in xi_test
-            @test itp_range(xi) ≈ itp_vec(xi) rtol=1e-14
+            @test itp_range(xi) ≈ itp_vec(xi) rtol = 1.0e-14
         end
 
         # Vectorized evaluation
@@ -343,11 +343,11 @@ end
 
         # Test with Int scalar (converts to Float64)
         val_int = itp(1)  # Int input
-        @test val_int ≈ sin(2π * 1.0) atol=1e-6
+        @test val_int ≈ sin(2π * 1.0) atol = 1.0e-6
 
         # Test with Float32 scalar
         val_f32 = itp(Float32(0.5))
-        @test val_f32 ≈ sin(2π * 0.5) atol=1e-6
+        @test val_f32 ≈ sin(2π * 0.5) atol = 1.0e-6
     end
 
     @testset "CubicInterpolant vector with type conversion" begin
@@ -358,7 +358,7 @@ end
         # Test with Float32 vector (type conversion)
         x_query_f32 = Float32[0.25, 0.5, 0.75]
         result = itp(x_query_f32)
-        @test result ≈ sin.(2π .* x_query_f32) atol=1e-5
+        @test result ≈ sin.(2π .* x_query_f32) atol = 1.0e-5
 
         # Test with Int vector
         x_query_int = [0, 1]  # Int inputs
@@ -376,12 +376,12 @@ end
 
         # Test in-place with matching types
         itp(output, x_query)
-        @test output ≈ sin.(2π .* x_query) atol=1e-6
+        @test output ≈ sin.(2π .* x_query) atol = 1.0e-6
 
         # Test in-place with type conversion (Float32 input)
         x_query_f32 = Float32[0.25, 0.5, 0.75]
         output2 = zeros(3)
         itp(output2, x_query_f32)
-        @test output2 ≈ sin.(2π .* x_query_f32) atol=1e-5
+        @test output2 ≈ sin.(2π .* x_query_f32) atol = 1.0e-5
     end
 end

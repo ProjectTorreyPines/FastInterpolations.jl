@@ -14,7 +14,7 @@ using FastInterpolations
     # ========================================
     @testset "ComplexF64 values" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im]
 
         itp = constant_interp(x, y)
 
@@ -29,7 +29,7 @@ using FastInterpolations
         @test val isa ComplexF64
 
         # Check value (nearest mode by default, 0.5 is exactly at midpoint → left)
-        @test val == 1.0+2.0im
+        @test val == 1.0 + 2.0im
     end
 
     # ========================================
@@ -37,7 +37,7 @@ using FastInterpolations
     # ========================================
     @testset "ComplexF32 values" begin
         x = Float32[0, 1, 2, 3]
-        y = ComplexF32[1+2im, 3+4im, 5+6im, 7+8im]
+        y = ComplexF32[1 + 2im, 3 + 4im, 5 + 6im, 7 + 8im]
 
         itp = constant_interp(x, y)
 
@@ -55,7 +55,7 @@ using FastInterpolations
     # ========================================
     @testset "Integer grid + Complex values" begin
         x = 0:3  # Range{Int}
-        y = Complex{Int}[1+2im, 3+4im, 5+6im, 7+8im]
+        y = Complex{Int}[1 + 2im, 3 + 4im, 5 + 6im, 7 + 8im]
 
         itp = constant_interp(x, y)
 
@@ -71,7 +71,7 @@ using FastInterpolations
     # ========================================
     @testset "Float32 grid + ComplexF64 values" begin
         x = Float32[0, 1, 2, 3]
-        y = ComplexF64[1+2im, 3+4im, 5+6im, 7+8im]
+        y = ComplexF64[1 + 2im, 3 + 4im, 5 + 6im, 7 + 8im]
 
         itp = constant_interp(x, y)
 
@@ -87,23 +87,23 @@ using FastInterpolations
     # ========================================
     @testset "Side modes" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
         # :left mode
-        itp_left = constant_interp(x, y; side=LeftSide())
-        @test itp_left(0.5) == 1.0+1.0im
-        @test itp_left(1.5) == 2.0+2.0im
+        itp_left = constant_interp(x, y; side = LeftSide())
+        @test itp_left(0.5) == 1.0 + 1.0im
+        @test itp_left(1.5) == 2.0 + 2.0im
 
         # :right mode
-        itp_right = constant_interp(x, y; side=RightSide())
-        @test itp_right(0.5) == 2.0+2.0im
-        @test itp_right(1.0) == 2.0+2.0im  # At grid point, still gets left value
+        itp_right = constant_interp(x, y; side = RightSide())
+        @test itp_right(0.5) == 2.0 + 2.0im
+        @test itp_right(1.0) == 2.0 + 2.0im  # At grid point, still gets left value
 
         # :nearest mode
-        itp_nearest = constant_interp(x, y; side=NearestSide())
-        @test itp_nearest(0.4) == 1.0+1.0im  # Closer to left
-        @test itp_nearest(0.6) == 2.0+2.0im  # Closer to right
-        @test itp_nearest(0.5) == 1.0+1.0im  # Midpoint → left (tie-breaking)
+        itp_nearest = constant_interp(x, y; side = NearestSide())
+        @test itp_nearest(0.4) == 1.0 + 1.0im  # Closer to left
+        @test itp_nearest(0.6) == 2.0 + 2.0im  # Closer to right
+        @test itp_nearest(0.5) == 1.0 + 1.0im  # Midpoint → left (tie-breaking)
     end
 
     # ========================================
@@ -111,17 +111,17 @@ using FastInterpolations
     # ========================================
     @testset "Derivatives return Complex zero" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+2.0im, 3.0+4.0im, 5.0+6.0im, 7.0+8.0im]
+        y = [1.0 + 2.0im, 3.0 + 4.0im, 5.0 + 6.0im, 7.0 + 8.0im]
 
         itp = constant_interp(x, y)
 
         # First derivative should be Complex zero
-        d1 = itp(0.5; deriv=DerivOp(1))
+        d1 = itp(0.5; deriv = DerivOp(1))
         @test d1 isa ComplexF64
         @test d1 == zero(ComplexF64)
 
         # Second derivative should be Complex zero
-        d2 = itp(0.5; deriv=DerivOp(2))
+        d2 = itp(0.5; deriv = DerivOp(2))
         @test d2 isa ComplexF64
         @test d2 == zero(ComplexF64)
     end
@@ -131,20 +131,20 @@ using FastInterpolations
     # ========================================
     @testset "Extrapolation modes" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
         # :constant mode
-        itp_const = constant_interp(x, y; extrap=ClampExtrap())
-        @test itp_const(-1.0) == 1.0+1.0im  # Clamped to first
-        @test itp_const(5.0) == 4.0+4.0im   # Clamped to last
+        itp_const = constant_interp(x, y; extrap = ClampExtrap())
+        @test itp_const(-1.0) == 1.0 + 1.0im  # Clamped to first
+        @test itp_const(5.0) == 4.0 + 4.0im   # Clamped to last
 
         # :extension mode (same as constant for step functions)
-        itp_ext = constant_interp(x, y; extrap=ExtendExtrap())
-        @test itp_ext(-1.0) == 1.0+1.0im
-        @test itp_ext(5.0) == 4.0+4.0im
+        itp_ext = constant_interp(x, y; extrap = ExtendExtrap())
+        @test itp_ext(-1.0) == 1.0 + 1.0im
+        @test itp_ext(5.0) == 4.0 + 4.0im
 
         # :wrap mode
-        itp_wrap = constant_interp(x, y; extrap=WrapExtrap())
+        itp_wrap = constant_interp(x, y; extrap = WrapExtrap())
         val_wrap = itp_wrap(4.5)
         @test val_wrap isa ComplexF64
     end
@@ -154,18 +154,18 @@ using FastInterpolations
     # ========================================
     @testset "Vector evaluation" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
-        itp = constant_interp(x, y; side=LeftSide())
+        itp = constant_interp(x, y; side = LeftSide())
 
         xq = [0.5, 1.5, 2.5]
         vals = itp(xq)
 
         @test vals isa Vector{ComplexF64}
         @test length(vals) == 3
-        @test vals[1] == 1.0+1.0im
-        @test vals[2] == 2.0+2.0im
-        @test vals[3] == 3.0+3.0im
+        @test vals[1] == 1.0 + 1.0im
+        @test vals[2] == 2.0 + 2.0im
+        @test vals[3] == 3.0 + 3.0im
     end
 
     # ========================================
@@ -173,15 +173,15 @@ using FastInterpolations
     # ========================================
     @testset "Broadcast evaluation" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
-        itp = constant_interp(x, y; side=LeftSide())
+        itp = constant_interp(x, y; side = LeftSide())
 
         xq = [0.5, 1.5, 2.5]
         vals = itp.(xq)
 
         @test vals isa Vector{ComplexF64}
-        @test vals[2] == 2.0+2.0im
+        @test vals[2] == 2.0 + 2.0im
     end
 
     # ========================================
@@ -189,7 +189,7 @@ using FastInterpolations
     # ========================================
     @testset "Type stability" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
         itp = constant_interp(x, y)
 
@@ -197,7 +197,7 @@ using FastInterpolations
         @test @inferred(itp(0.5)) isa ComplexF64
 
         # First derivative should be type-stable
-        @test @inferred(itp(0.5; deriv=DerivOp(1))) isa ComplexF64
+        @test @inferred(itp(0.5; deriv = DerivOp(1))) isa ComplexF64
     end
 
     # ========================================
@@ -222,18 +222,18 @@ using FastInterpolations
     # ========================================
     @testset "In-place vector evaluation" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
-        itp = constant_interp(x, y; side=LeftSide())
+        itp = constant_interp(x, y; side = LeftSide())
 
         xq = [0.5, 1.5, 2.5]
         output = Vector{ComplexF64}(undef, 3)
 
         itp(output, xq)
 
-        @test output[1] == 1.0+1.0im
-        @test output[2] == 2.0+2.0im
-        @test output[3] == 3.0+3.0im
+        @test output[1] == 1.0 + 1.0im
+        @test output[2] == 2.0 + 2.0im
+        @test output[3] == 3.0 + 3.0im
     end
 
     # ========================================
@@ -241,15 +241,15 @@ using FastInterpolations
     # ========================================
     @testset "Grid point behavior" begin
         x = [0.0, 1.0, 2.0, 3.0]
-        y = [1.0+1.0im, 2.0+2.0im, 3.0+3.0im, 4.0+4.0im]
+        y = [1.0 + 1.0im, 2.0 + 2.0im, 3.0 + 3.0im, 4.0 + 4.0im]
 
         itp = constant_interp(x, y)
 
         # At exact grid points
-        @test itp(0.0) == 1.0+1.0im
-        @test itp(1.0) == 2.0+2.0im
-        @test itp(2.0) == 3.0+3.0im
-        @test itp(3.0) == 4.0+4.0im
+        @test itp(0.0) == 1.0 + 1.0im
+        @test itp(1.0) == 2.0 + 2.0im
+        @test itp(2.0) == 3.0 + 3.0im
+        @test itp(3.0) == 4.0 + 4.0im
     end
 
     # ========================================
@@ -271,7 +271,7 @@ using FastInterpolations
         @test val isa Float64
         @test val == 10.0
 
-        d1 = itp(0.5; deriv=DerivOp(1))
+        d1 = itp(0.5; deriv = DerivOp(1))
         @test d1 isa Float64
         @test d1 == 0.0
     end

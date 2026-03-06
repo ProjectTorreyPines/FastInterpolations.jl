@@ -56,7 +56,7 @@ itp = quadratic_interp(x, y; search=LinearBinarySearch())  # explicit override
 val = itp(0.5; search=BinarySearch())  # per-call override
 ```
 """
-struct QuadraticInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, P<:AbstractSearchPolicy} <: AbstractInterpolant{Tg, Tv}
+struct QuadraticInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy} <: AbstractInterpolant{Tg, Tv}
     x::X
     y::Y
     h::Vector{Tg}   # Grid spacing (geometry, always Tg)
@@ -66,12 +66,12 @@ struct QuadraticInterpolant{Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:Abs
     search_policy::P  # Default search policy (immutable, thread-safe)
 
     # Inner constructor: parametric, only calls new (handles validation only)
-    function QuadraticInterpolant{Tg,Tv,X,Y,E,P}(
-        x::X, y::Y, h::Vector{Tg}, a::Vector{Tv}, d::Vector{Tv}, ev::E, search::P
-    ) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, E<:AbstractExtrap, P<:AbstractSearchPolicy}
+    function QuadraticInterpolant{Tg, Tv, X, Y, E, P}(
+            x::X, y::Y, h::Vector{Tg}, a::Vector{Tv}, d::Vector{Tv}, ev::E, search::P
+        ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         @assert length(x) >= 2 "x must have at least 2 elements"
-        new{Tg,Tv,X,Y,E,P}(x, y, h, a, d, ev, search)
+        return new{Tg, Tv, X, Y, E, P}(x, y, h, a, d, ev, search)
     end
 end
 
@@ -83,14 +83,14 @@ end
 # PERFORMANCE: Typed signature + @inline enables compile-time specialization.
 # Use quadratic_interp() for automatic type promotion and coefficient computation.
 @inline function QuadraticInterpolant(
-    x::X,
-    y::Y,
-    h::Vector{Tg},
-    a::Vector{Tv},
-    d::Vector{Tv};
-    extrap::AbstractExtrap=NoExtrap(),
-    search::P=AutoSearch()
-) where {Tg<:AbstractFloat, Tv, X<:AbstractVector{Tg}, Y<:AbstractVector{Tv}, P<:AbstractSearchPolicy}
+        x::X,
+        y::Y,
+        h::Vector{Tg},
+        a::Vector{Tv},
+        d::Vector{Tv};
+        extrap::AbstractExtrap = NoExtrap(),
+        search::P = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
     E = typeof(extrap)
-    return QuadraticInterpolant{Tg,Tv,X,Y,E,P}(x, y, h, a, d, extrap, search)
+    return QuadraticInterpolant{Tg, Tv, X, Y, E, P}(x, y, h, a, d, extrap, search)
 end

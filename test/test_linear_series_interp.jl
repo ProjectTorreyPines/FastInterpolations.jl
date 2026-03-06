@@ -37,7 +37,7 @@ const FI = FastInterpolations
         end
 
         @testset "validates input dimensions" begin
-            bad_y = [y1[1:end-1], y2]  # Wrong length
+            bad_y = [y1[1:(end - 1)], y2]  # Wrong length
             @test_throws Exception linear_interp(x, Series(bad_y))
         end
 
@@ -88,9 +88,9 @@ const FI = FastInterpolations
         end
 
         @testset "first derivative" begin
-            deriv = sitp(0.5; deriv=DerivOp(1))
+            deriv = sitp(0.5; deriv = DerivOp(1))
             @test deriv[1] ≈ 2.0  # Slope of y = 2x
-            @test deriv[2] ≈ 0.0 atol=1e-10  # Slope of constant
+            @test deriv[2] ≈ 0.0 atol = 1.0e-10  # Slope of constant
         end
     end
 
@@ -129,19 +129,19 @@ const FI = FastInterpolations
         ys = [sin.(2π .* x)]
 
         @testset "extrap=NoExtrap() throws" begin
-            sitp = linear_interp(x, Series(ys); extrap=NoExtrap())
+            sitp = linear_interp(x, Series(ys); extrap = NoExtrap())
             @test_throws DomainError sitp(-0.1)
             @test_throws DomainError sitp(1.1)
         end
 
         @testset "extrap=ClampExtrap() returns boundary" begin
-            sitp = linear_interp(x, Series(ys); extrap=ClampExtrap())
-            @test sitp(-0.1)[1] ≈ sin(0.0) atol=1e-6
-            @test sitp(1.1)[1] ≈ sin(2π) atol=1e-6
+            sitp = linear_interp(x, Series(ys); extrap = ClampExtrap())
+            @test sitp(-0.1)[1] ≈ sin(0.0) atol = 1.0e-6
+            @test sitp(1.1)[1] ≈ sin(2π) atol = 1.0e-6
         end
 
         @testset "extrap=ExtendExtrap() extrapolates" begin
-            sitp = linear_interp(x, Series(ys); extrap=ExtendExtrap())
+            sitp = linear_interp(x, Series(ys); extrap = ExtendExtrap())
             @test sitp(-0.1) isa Vector{Float64}
             @test sitp(1.1) isa Vector{Float64}
         end
@@ -205,7 +205,7 @@ const FI = FastInterpolations
 
             # Verify values match non-precomputed path
             sitp_ref = linear_interp(x, Series(y1, y2))
-            @test result ≈ sitp_ref(0.5) atol=1e-10
+            @test result ≈ sitp_ref(0.5) atol = 1.0e-10
         end
 
         @testset "method chaining pattern" begin
@@ -269,11 +269,11 @@ const FI = FastInterpolations
             result = sitp(xqi)
             # Linear interpolation of sin(2πx) at xqi
             idx, xL, xR = FI._search_interval(x, xqi)
-            t = (xqi - x[idx]) / (x[idx+1] - x[idx])
-            expected1 = y1[idx] * (1 - t) + y1[idx+1] * t
-            expected2 = y2[idx] * (1 - t) + y2[idx+1] * t
-            @test result[1] ≈ expected1 atol=1e-10
-            @test result[2] ≈ expected2 atol=1e-10
+            t = (xqi - x[idx]) / (x[idx + 1] - x[idx])
+            expected1 = y1[idx] * (1 - t) + y1[idx + 1] * t
+            expected2 = y2[idx] * (1 - t) + y2[idx + 1] * t
+            @test result[1] ≈ expected1 atol = 1.0e-10
+            @test result[2] ≈ expected2 atol = 1.0e-10
         end
     end
 
@@ -341,8 +341,8 @@ const FI = FastInterpolations
             # Verify values match Float64 path
             xq_f64 = Float64.(xq_f32)
             ref = sitp(xq_f64)
-            @test out1 ≈ ref[1] atol=1e-10
-            @test out2 ≈ ref[2] atol=1e-10
+            @test out1 ≈ ref[1] atol = 1.0e-10
+            @test out2 ≈ ref[2] atol = 1.0e-10
         end
     end
 
@@ -369,26 +369,26 @@ const FI = FastInterpolations
         y2 = cos.(2π .* x)
 
         @testset "vector NoExtrap() extrapolation throws" begin
-            sitp = linear_interp(x, Series(y1, y2); extrap=NoExtrap())
+            sitp = linear_interp(x, Series(y1, y2); extrap = NoExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             @test_throws DomainError sitp(xq)
         end
 
         @testset "vector ClampExtrap() extrapolation" begin
-            sitp = linear_interp(x, Series(y1, y2); extrap=ClampExtrap())
+            sitp = linear_interp(x, Series(y1, y2); extrap = ClampExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             outputs = [zeros(3), zeros(3)]
             sitp(outputs, xq)
 
             # Out-of-domain should clamp to boundary values
-            @test outputs[1][1] ≈ y1[1] atol=1e-10
-            @test outputs[1][3] ≈ y1[end] atol=1e-10
+            @test outputs[1][1] ≈ y1[1] atol = 1.0e-10
+            @test outputs[1][3] ≈ y1[end] atol = 1.0e-10
         end
 
         @testset "vector ExtendExtrap() extrapolation" begin
-            sitp = linear_interp(x, Series(y1, y2); extrap=ExtendExtrap())
+            sitp = linear_interp(x, Series(y1, y2); extrap = ExtendExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             outputs = [zeros(3), zeros(3)]
@@ -399,14 +399,14 @@ const FI = FastInterpolations
         end
 
         @testset "vector ClampExtrap() extrapolation with derivatives" begin
-            sitp = linear_interp(x, Series(y1, y2); extrap=ClampExtrap())
+            sitp = linear_interp(x, Series(y1, y2); extrap = ClampExtrap())
             xq = [-0.1, 0.5, 1.1]
 
             # deriv=DerivOp(1) outside domain should be zero for constant extrap
             outputs_d1 = [zeros(3), zeros(3)]
-            sitp(outputs_d1, xq; deriv=DerivOp(1))
-            @test outputs_d1[1][1] ≈ 0.0 atol=1e-10  # Left boundary
-            @test outputs_d1[1][3] ≈ 0.0 atol=1e-10  # Right boundary
+            sitp(outputs_d1, xq; deriv = DerivOp(1))
+            @test outputs_d1[1][1] ≈ 0.0 atol = 1.0e-10  # Left boundary
+            @test outputs_d1[1][3] ≈ 0.0 atol = 1.0e-10  # Right boundary
         end
     end
 
@@ -421,12 +421,12 @@ const FI = FastInterpolations
         sitp = linear_interp(x, Series(y1, y2))
 
         @testset "deriv=DerivOp(0) same as default" begin
-            @test sitp(0.5; deriv=DerivOp(0)) == sitp(0.5)
+            @test sitp(0.5; deriv = DerivOp(0)) == sitp(0.5)
         end
 
         @testset "deriv=DerivOp(1) with vector query" begin
             xq = [0.5, 1.5, 2.5]
-            result = sitp(xq; deriv=DerivOp(1))
+            result = sitp(xq; deriv = DerivOp(1))
             @test length(result) == 2
             @test all(d -> d ≈ 2.0, result[1])  # Slope of y = 2x
             @test all(d -> d ≈ 0.0, result[2])  # Slope of constant
@@ -435,7 +435,7 @@ const FI = FastInterpolations
         @testset "deriv=DerivOp(1) in-place vector" begin
             xq = [0.5, 1.5, 2.5]
             outputs = [zeros(3), zeros(3)]
-            sitp(outputs, xq; deriv=DerivOp(1))
+            sitp(outputs, xq; deriv = DerivOp(1))
             @test all(d -> d ≈ 2.0, outputs[1])
             @test all(d -> d ≈ 0.0, outputs[2])
         end

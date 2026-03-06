@@ -79,7 +79,7 @@ using FastInterpolations
     @testset "itp(aq) for NearestSide() mode" begin
         x = collect(range(0.0, 1.0, 11))
         y = collect(1.0:11.0)
-        itp = constant_interp(x, y; side=NearestSide(), extrap=ExtendExtrap())
+        itp = constant_interp(x, y; side = NearestSide(), extrap = ExtendExtrap())
 
         xq_points = [0.05, 0.15, 0.35, 0.65, 0.95]
 
@@ -95,7 +95,7 @@ using FastInterpolations
     @testset "itp(aq) for LeftSide() mode" begin
         x = collect(range(0.0, 1.0, 11))
         y = collect(1.0:11.0)
-        itp = constant_interp(x, y; side=LeftSide(), extrap=ExtendExtrap())
+        itp = constant_interp(x, y; side = LeftSide(), extrap = ExtendExtrap())
 
         xq_points = [0.05, 0.15, 0.35, 0.65, 0.95]
 
@@ -111,7 +111,7 @@ using FastInterpolations
     @testset "itp(aq) for RightSide() mode" begin
         x = collect(range(0.0, 1.0, 11))
         y = collect(1.0:11.0)
-        itp = constant_interp(x, y; side=RightSide(), extrap=ExtendExtrap())
+        itp = constant_interp(x, y; side = RightSide(), extrap = ExtendExtrap())
 
         xq_points = [0.05, 0.15, 0.35, 0.65, 0.95]
 
@@ -141,8 +141,8 @@ using FastInterpolations
 
         # Verify extrapolation works with anchors
         y = collect(1.0:11.0)
-        itp_ext = constant_interp(x, y; extrap=ExtendExtrap())
-        itp_const = constant_interp(x, y; extrap=ClampExtrap())
+        itp_ext = constant_interp(x, y; extrap = ExtendExtrap())
+        itp_const = constant_interp(x, y; extrap = ClampExtrap())
 
         @test itp_ext(aq_below) ≈ itp_ext(-0.5)
         @test itp_ext(aq_above) ≈ itp_ext(1.5)
@@ -156,7 +156,7 @@ using FastInterpolations
     @testset "wrap mode" begin
         x = collect(range(0.0, 1.0, 11))
         y = collect(1.0:11.0)
-        itp = constant_interp(x, y; extrap=WrapExtrap())
+        itp = constant_interp(x, y; extrap = WrapExtrap())
 
         # Query outside domain with wrap=true
         aq_wrap = FastInterpolations._anchor_query(x, 1.5, Val(:constant), true)
@@ -199,7 +199,7 @@ using FastInterpolations
     @testset "in-place vector evaluation with anchors" begin
         x = collect(range(0.0, 1.0, 11))
         y = collect(1.0:11.0)
-        itp = constant_interp(x, y; extrap=ExtendExtrap())
+        itp = constant_interp(x, y; extrap = ExtendExtrap())
 
         xq_vec = [0.05, 0.15, 0.35, 0.65, 0.95]
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:constant))
@@ -222,7 +222,7 @@ using FastInterpolations
         # Non-uniform grid
         x = [0.0, 0.1, 0.3, 0.6, 1.0]
         y = [10.0, 20.0, 30.0, 40.0, 50.0]
-        itp = constant_interp(x, y; extrap=ExtendExtrap())
+        itp = constant_interp(x, y; extrap = ExtendExtrap())
 
         xq = 0.45  # interval [0.3, 0.6]
         aq = FastInterpolations._anchor_query(x, xq, Val(:constant))
@@ -242,7 +242,7 @@ using FastInterpolations
     @testset "zero-allocation with pre-built anchors" begin
         x = collect(range(0.0, 1.0, 101))
         y = sin.(x)
-        itp = constant_interp(x, y; extrap=ExtendExtrap())
+        itp = constant_interp(x, y; extrap = ExtendExtrap())
 
         xq_vec = collect(range(0.01, 0.99, 100))
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:constant))
@@ -262,7 +262,7 @@ using FastInterpolations
     @testset "extrap=NoExtrap() throws DomainError via anchor" begin
         x = collect(range(0.0, 1.0, 11))
         y = collect(1.0:11.0)
-        itp = constant_interp(x, y; extrap=NoExtrap())
+        itp = constant_interp(x, y; extrap = NoExtrap())
 
         # Inside domain works
         aq_inside = FastInterpolations._anchor_query(x, 0.5, Val(:constant))
@@ -286,7 +286,7 @@ using FastInterpolations
     @testset "extrap=ClampExtrap() via anchor with boundary check" begin
         x = collect(range(0.0, 1.0, 11))
         y = collect(1.0:11.0)
-        itp = constant_interp(x, y; extrap=ClampExtrap())
+        itp = constant_interp(x, y; extrap = ClampExtrap())
 
         # At exact right boundary
         aq_right = FastInterpolations._anchor_query(x, 1.0, Val(:constant))
@@ -309,7 +309,7 @@ using FastInterpolations
         y = collect(1.0:11.0)
 
         for extrap in [ExtendExtrap(), ClampExtrap()]
-            itp = constant_interp(x, y; extrap=extrap)
+            itp = constant_interp(x, y; extrap = extrap)
             xq_vec = [-0.2, 0.3, 0.7, 1.2]  # Mix of inside/outside
             aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:constant))
 
@@ -325,7 +325,7 @@ using FastInterpolations
     @testset "in-place output length assertion" begin
         x = collect(range(0.0, 1.0, 11))
         y = collect(1.0:11.0)
-        itp = constant_interp(x, y; extrap=ExtendExtrap())
+        itp = constant_interp(x, y; extrap = ExtendExtrap())
 
         xq_vec = [0.2, 0.5, 0.8]
         aq_vec = FastInterpolations._anchor_query(x, xq_vec, Val(:constant))
@@ -344,7 +344,7 @@ using FastInterpolations
 
         # Test all modes at exact boundary
         for mode in [ExtendExtrap(), ClampExtrap()]
-            itp = constant_interp(x, y; extrap=mode)
+            itp = constant_interp(x, y; extrap = mode)
             aq = FastInterpolations._anchor_query(x, 1.0, Val(:constant))
             @test itp(aq) ≈ y[end]
         end

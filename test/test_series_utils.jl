@@ -78,11 +78,13 @@ end
 
     @testset "_constant_extrap_boundary_value" begin
         # Test matrix: 5 points × 3 series
-        y = [1.0 10.0 100.0;
-             2.0 20.0 200.0;
-             3.0 30.0 300.0;
-             4.0 40.0 400.0;
-             5.0 50.0 500.0]
+        y = [
+            1.0 10.0 100.0;
+            2.0 20.0 200.0;
+            3.0 30.0 300.0;
+            4.0 40.0 400.0;
+            5.0 50.0 500.0
+        ]
         n_pts = 5
 
         @testset "EvalValue returns boundary value" begin
@@ -111,9 +113,11 @@ end
     @testset "_fill_constant_extrap_simd!" begin
         # Test matrix: 3 series × 5 points (SIMD layout: y_point[series, point])
         # This matches the transposed layout used across all series interpolants
-        y_point = [1.0 2.0 3.0 4.0 5.0;     # Series 1 at points 1-5
-                   10.0 20.0 30.0 40.0 50.0; # Series 2 at points 1-5
-                   100.0 200.0 300.0 400.0 500.0]  # Series 3 at points 1-5
+        y_point = [
+            1.0 2.0 3.0 4.0 5.0;     # Series 1 at points 1-5
+            10.0 20.0 30.0 40.0 50.0; # Series 2 at points 1-5
+            100.0 200.0 300.0 400.0 500.0
+        ]  # Series 3 at points 1-5
         n_pts = 5
 
         @testset "EvalValue fills boundary values" begin

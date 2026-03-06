@@ -10,9 +10,11 @@ const FI = FastInterpolations
 
     @testset "LazyTranspose - single matrix" begin
         # Create a test matrix (n_points × n_series) = series-contiguous
-        y = Float64[1 4 7;
-                    2 5 8;
-                    3 6 9]  # 3 points × 3 series
+        y = Float64[
+            1 4 7;
+            2 5 8;
+            3 6 9
+        ]  # 3 points × 3 series
 
         @testset "creates transpose on first call" begin
             lt = FI.LazyTranspose{Float64}()
@@ -86,14 +88,14 @@ end
     @testset "scalar evaluation unchanged" begin
         result = sitp(0.5)
         @test length(result) == 3
-        @test result[1] ≈ sin(π) atol=1e-10
-        @test result[2] ≈ cos(π) atol=1e-10
+        @test result[1] ≈ sin(π) atol = 1.0e-10
+        @test result[2] ≈ cos(π) atol = 1.0e-10
     end
 
     @testset "scalar in-place unchanged" begin
         output = zeros(3)
         sitp(output, 0.5)
-        @test output[1] ≈ sin(π) atol=1e-10
+        @test output[1] ≈ sin(π) atol = 1.0e-10
     end
 
     @testset "vector evaluation unchanged" begin
@@ -105,9 +107,9 @@ end
 
     @testset "derivatives unchanged" begin
         # First derivative at x=0.5
-        deriv1 = sitp(0.5; deriv=DerivOp(1))
+        deriv1 = sitp(0.5; deriv = DerivOp(1))
         @test length(deriv1) == 3
-        @test deriv1[1] ≈ 2π * cos(π) atol=0.1  # d/dx sin(2πx) = 2π cos(2πx)
+        @test deriv1[1] ≈ 2π * cos(π) atol = 0.1  # d/dx sin(2πx) = 2π cos(2πx)
     end
 
     @testset "zero allocation preserved" begin

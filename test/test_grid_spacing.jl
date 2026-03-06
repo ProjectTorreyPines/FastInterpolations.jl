@@ -38,7 +38,7 @@ using FastInterpolations
         # Test 1.2: VectorSpacing type exists and constructs correctly
         @testset "Float64" begin
             h = [0.1, 0.2, 0.15]
-            inv_h = [10.0, 5.0, 1.0/0.15]
+            inv_h = [10.0, 5.0, 1.0 / 0.15]
             s = FastInterpolations.VectorSpacing(h, inv_h)
 
             @test s isa FastInterpolations.AbstractGridSpacing{Float64}
@@ -51,7 +51,7 @@ using FastInterpolations
 
         @testset "Float32" begin
             h = Float32[0.1, 0.2, 0.15]
-            inv_h = Float32[10.0, 5.0, 1.0/0.15]
+            inv_h = Float32[10.0, 5.0, 1.0 / 0.15]
             s = FastInterpolations.VectorSpacing(h, inv_h)
 
             @test s isa FastInterpolations.AbstractGridSpacing{Float32}
@@ -77,7 +77,7 @@ using FastInterpolations
 
         @testset "VectorSpacing accessors (indexed)" begin
             h = [0.1, 0.2, 0.3]
-            inv_h = [10.0, 5.0, 1.0/0.3]
+            inv_h = [10.0, 5.0, 1.0 / 0.3]
             s = FastInterpolations.VectorSpacing(h, inv_h)
 
             # VectorSpacing returns the indexed value
@@ -210,8 +210,8 @@ using FastInterpolations
                 idx_new, xL_new, xR_new = FastInterpolations._search_interval(x, spacing, xi)
 
                 @test idx_base == idx_new
-                @test xL_base ≈ xL_new atol=1e-14
-                @test xR_base ≈ xR_new atol=1e-14
+                @test xL_base ≈ xL_new atol = 1.0e-14
+                @test xR_base ≈ xR_new atol = 1.0e-14
             end
         end
 
@@ -226,8 +226,8 @@ using FastInterpolations
                 idx_new, xL_new, xR_new = FastInterpolations._search_interval(x, spacing, xi)
 
                 @test idx_base == idx_new
-                @test xL_base ≈ xL_new atol=1e-12
-                @test xR_base ≈ xR_new atol=1e-12
+                @test xL_base ≈ xL_new atol = 1.0e-12
+                @test xR_base ≈ xR_new atol = 1.0e-12
             end
         end
 

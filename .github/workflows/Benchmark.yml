@@ -7,6 +7,13 @@ on:
   pull_request:
     branches:
       - master
+    paths:
+      - "src/**"
+      - "ext/**"
+      - "benchmark/**"
+      - "Project.toml"
+      - ".github/workflows/Benchmark.yml"
+      - ".github/workflows/BenchmarkComment.yml"
   workflow_dispatch:
     inputs:
       push_results:
@@ -42,8 +49,22 @@ jobs:
       - name: Install dependencies
         run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
 
+      - name: Fetch baseline from gh-pages
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/contents/bench/data.js?ref=gh-pages" \
+            --header 'Accept: application/vnd.github.raw+json' \
+            > baseline_data.js 2>/dev/null || true
+
       - name: Run benchmarks
-        run: julia --project=benchmark benchmark/ci_benchmark.jl
+        run: |
+          BASELINE_ARG=""
+          if [ -s baseline_data.js ]; then
+            BASELINE_ARG="--baseline baseline_data.js"
+          fi
+          julia --project=benchmark benchmark/ci_benchmark.jl $BASELINE_ARG
 
       - name: Save PR metadata and flatten results
         if: github.event_name == 'pull_request'
@@ -72,6 +93,7 @@ jobs:
           path: |
             output.json
             benchmark_flat.json
+            regression_report.json
             pr_number
             pr_head_sha
 
@@ -84,7 +106,7 @@ jobs:
           output-file-path: output.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
-          alert-threshold: '120%'
+          alert-threshold: '115%'
           comment-always: true
           comment-on-alert: true
           fail-on-alert: false

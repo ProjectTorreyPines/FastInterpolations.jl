@@ -7,6 +7,13 @@ on:
   pull_request:
     branches:
       - master
+    paths:
+      - "src/**"
+      - "ext/**"
+      - "benchmark/**"
+      - "Project.toml"
+      - ".github/workflows/Benchmark.yml"
+      - ".github/workflows/BenchmarkComment.yml"
   workflow_dispatch:
     inputs:
       push_results:

@@ -8,6 +8,12 @@ on:
   pull_request:
     branches:
       - master
+    paths:
+      - "src/**"
+      - "ext/**"
+      - "docs/**"
+      - "Project.toml"
+      - ".github/workflows/Documentation.yml"
   repository_dispatch:
     types: [TagBot]
   workflow_dispatch:

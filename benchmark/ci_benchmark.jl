@@ -5,14 +5,17 @@ Benchmark script for GitHub Actions CI.
 Outputs JSON compatible with github-action-benchmark.
 
 Usage:
-    julia --project=benchmark benchmark/ci_benchmark.jl            # all groups (CI mode)
-    julia --project=benchmark benchmark/ci_benchmark.jl 12         # group 12 only
-    julia --project=benchmark benchmark/ci_benchmark.jl 3 12       # groups 3 and 12
-    julia --project=benchmark benchmark/ci_benchmark.jl --list     # show available groups
+    julia --project=benchmark benchmark/ci_benchmark.jl                              # all groups (CI mode)
+    julia --project=benchmark benchmark/ci_benchmark.jl 12                           # group 12 only
+    julia --project=benchmark benchmark/ci_benchmark.jl 3 12                         # groups 3 and 12
+    julia --project=benchmark benchmark/ci_benchmark.jl --list                       # show available groups
+    julia --project=benchmark benchmark/ci_benchmark.jl --baseline baseline_data.js  # CI mode with regression verification
 """
 
 using BenchmarkTools
 using FastInterpolations
+using JSON
+using OrderedCollections
 using Random
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -71,7 +74,7 @@ for nq in (1, 10_000)  # scalar + large batch (skip q100)
     clear_cubic_cache!()
     cubic_interp(x, y, xi)  # prime cache
     label = lpad(nq, 5, '0')  # 00001, 00100, 10000
-    b = @benchmarkable cubic_interp($x, $y, $xi) setup = (GC.gc())
+    b = @benchmarkable cubic_interp($x, $y, $xi)
     b.params.evals = nq >= 10_000 ? EVALS_SLOW : EVALS_MED
     suite["1_cubic_oneshot"]["q$label"] = b
 end
@@ -82,7 +85,7 @@ for ng in (100, 1000)  # medium + large (skip trivial g=10)
     y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
     clear_cubic_cache!()
     label = lpad(ng, 4, '0')  # 0010, 0100, 1000
-    b = @benchmarkable cubic_interp($x_grid, $y_grid; autocache = false) setup = (GC.gc())
+    b = @benchmarkable cubic_interp($x_grid, $y_grid; autocache = false)
     b.params.evals = ng >= 1000 ? EVALS_SLOW : EVALS_MED
     suite["2_cubic_construct"]["g$label"] = b
 end
@@ -94,7 +97,7 @@ for nq in QUERY_SIZES
     label = lpad(nq, 5, '0')
     # In-place: pre-allocate output to measure pure computation
     out = Vector{Float64}(undef, nq)
-    b = @benchmarkable $itp_cubic($out, $xi) setup = (GC.gc())
+    b = @benchmarkable $itp_cubic($out, $xi)
     b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
     suite["3_cubic_eval"]["q$label"] = b
 end
@@ -109,7 +112,7 @@ println("Setting up linear benchmarks...")
 for nq in (1, 10_000)  # scalar + large batch (skip q100)
     xi = nq == 1 ? [5.0] : collect(range(0.1, 9.9, nq))
     label = lpad(nq, 5, '0')
-    b = @benchmarkable linear_interp($x, $y, $xi) setup = (GC.gc())
+    b = @benchmarkable linear_interp($x, $y, $xi)
     b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
     suite["4_linear_oneshot"]["q$label"] = b
 end
@@ -119,7 +122,7 @@ for ng in (100, 1000)  # medium + large (skip trivial g=10)
     x_grid = range(0.0, 10.0, ng)
     y_grid = sin.(x_grid) .+ 0.1 .* collect(x_grid)
     label = lpad(ng, 4, '0')
-    b = @benchmarkable linear_interp($x_grid, $y_grid) setup = (GC.gc())
+    b = @benchmarkable linear_interp($x_grid, $y_grid)
     b.params.evals = EVALS_FAST
     suite["5_linear_construct"]["g$label"] = b
 end
@@ -131,7 +134,7 @@ for nq in QUERY_SIZES
     label = lpad(nq, 5, '0')
     # In-place: pre-allocate output to measure pure computation
     out = Vector{Float64}(undef, nq)
-    b = @benchmarkable $itp_linear($out, $xi) setup = (GC.gc())
+    b = @benchmarkable $itp_linear($out, $xi)
     b.params.evals = nq == 1 ? EVALS_FAST : nq == 100 ? EVALS_MED : EVALS_SLOW
     suite["6_linear_eval"]["q$label"] = b
 end
@@ -143,12 +146,12 @@ end
 println("Setting up cubic scalar dispatch benchmarks...")
 
 # 7. Cubic: Range grid vs Vector grid scalar dispatch
-let b = @benchmarkable $itp_cubic($xq_scalar) setup = (GC.gc())
+let b = @benchmarkable $itp_cubic($xq_scalar)
     b.params.evals = EVALS_FAST
     suite["7_cubic_range"]["scalar_query"] = b
 end
 
-let b = @benchmarkable $itp_cubic_vec($xq_scalar) setup = (GC.gc())
+let b = @benchmarkable $itp_cubic_vec($xq_scalar)
     b.params.evals = EVALS_FAST
     suite["7_cubic_vec"]["scalar_query"] = b
 end
@@ -170,7 +173,7 @@ for ns in MULTI_SERIES
     # Construction benchmark
     clear_cubic_cache!()
     cubic_interp(x, Series(ys))  # prime cache
-    let b = @benchmarkable cubic_interp($x, Series($ys)) setup = (GC.gc())
+    let b = @benchmarkable cubic_interp($x, Series($ys))
         b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
         suite["8_cubic_multi"]["construct_s$(slabel)_q$(qlabel)"] = b
     end
@@ -181,7 +184,7 @@ for ns in MULTI_SERIES
     xq_multi = collect(range(0.1, 9.9, N_QUERY_MULTI))
     # Pre-allocate outputs: one vector per series, each of length N_QUERY_MULTI
     outputs_multi = [Vector{Float64}(undef, N_QUERY_MULTI) for _ in 1:ns]
-    let b = @benchmarkable $mitp($outputs_multi, $xq_multi) setup = (GC.gc())
+    let b = @benchmarkable $mitp($outputs_multi, $xq_multi)
         b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
         suite["8_cubic_multi"]["eval_s$(slabel)_q$(qlabel)"] = b
     end
@@ -194,7 +197,7 @@ for ns in MULTI_SERIES
                 for xq in $xq_multi
                     $mitp($out_scalar, xq)
                 end
-            end setup = (GC.gc())
+            end
             b.params.evals = ns >= 50 ? EVALS_SLOW : EVALS_MED
             suite["8_cubic_multi"]["eval_s$(slabel)_q$(qlabel)_scalar_loop"] = b
         end
@@ -238,80 +241,80 @@ const pt_3d = (5.0, 3.0, 2.0)
 const out_nd = Vector{Float64}(undef, N_ND_QUERY)
 
 # 9. ND One-Shot (construct + evaluate, separate code path)
-let b = @benchmarkable linear_interp(($x2d, $y2d), $data2d, ($xqs_2d, $yqs_2d)) setup = (GC.gc())
+let b = @benchmarkable linear_interp(($x2d, $y2d), $data2d, ($xqs_2d, $yqs_2d))
     b.params.evals = EVALS_MED
     suite["9_nd_oneshot"]["bilinear_2d"] = b
 end
 
-let b = @benchmarkable linear_interp(($x3d, $y3d, $z3d), $data3d, ($xqs_3d, $yqs_3d, $zqs_3d)) setup = (GC.gc())
+let b = @benchmarkable linear_interp(($x3d, $y3d, $z3d), $data3d, ($xqs_3d, $yqs_3d, $zqs_3d))
     b.params.evals = EVALS_SLOW
     suite["9_nd_oneshot"]["trilinear_3d"] = b
 end
 
 clear_cubic_cache!()
 cubic_interp((x2d, y2d), data2d, (xqs_2d, yqs_2d))  # prime cache
-let b = @benchmarkable cubic_interp(($x2d, $y2d), $data2d, ($xqs_2d, $yqs_2d)) setup = (GC.gc())
+let b = @benchmarkable cubic_interp(($x2d, $y2d), $data2d, ($xqs_2d, $yqs_2d))
     b.params.evals = EVALS_SLOW
     suite["9_nd_oneshot"]["bicubic_2d"] = b
 end
 
 clear_cubic_cache!()
 cubic_interp((x3d, y3d, z3d), data3d, (xqs_3d, yqs_3d, zqs_3d))  # prime cache
-let b = @benchmarkable cubic_interp(($x3d, $y3d, $z3d), $data3d, ($xqs_3d, $yqs_3d, $zqs_3d)) setup = (GC.gc())
+let b = @benchmarkable cubic_interp(($x3d, $y3d, $z3d), $data3d, ($xqs_3d, $yqs_3d, $zqs_3d))
     b.params.evals = EVALS_SLOW
     suite["9_nd_oneshot"]["tricubic_3d"] = b
 end
 
 # 10. ND Construction (varying dimensionality and method)
-let b = @benchmarkable linear_interp(($x2d, $y2d), $data2d) setup = (GC.gc())
+let b = @benchmarkable linear_interp(($x2d, $y2d), $data2d)
     b.params.evals = EVALS_MED
     suite["10_nd_construct"]["bilinear_2d"] = b
 end
 
-let b = @benchmarkable linear_interp(($x3d, $y3d, $z3d), $data3d) setup = (GC.gc())
+let b = @benchmarkable linear_interp(($x3d, $y3d, $z3d), $data3d)
     b.params.evals = EVALS_MED
     suite["10_nd_construct"]["trilinear_3d"] = b
 end
 
 # Cubic ND construction: clear cache in setup + evals=1 to measure full construction
 # (ND API lacks autocache=false, so we emulate it with per-sample cache clearing)
-let b = @benchmarkable cubic_interp(($x2d, $y2d), $data2d) setup = (clear_cubic_cache!(); GC.gc())
+let b = @benchmarkable cubic_interp(($x2d, $y2d), $data2d) setup = (clear_cubic_cache!())
     b.params.evals = 1
     suite["10_nd_construct"]["bicubic_2d"] = b
 end
 
-let b = @benchmarkable cubic_interp(($x3d, $y3d, $z3d), $data3d) setup = (clear_cubic_cache!(); GC.gc())
+let b = @benchmarkable cubic_interp(($x3d, $y3d, $z3d), $data3d) setup = (clear_cubic_cache!())
     b.params.evals = 1
     suite["10_nd_construct"]["tricubic_3d"] = b
 end
 
 # 11. ND Evaluation (scalar = hot-loop, batch = vectorized SoA in-place)
-let b = @benchmarkable $itp_linear_2d($pt_2d) setup = (GC.gc())
+let b = @benchmarkable $itp_linear_2d($pt_2d)
     b.params.evals = EVALS_FAST
     suite["11_nd_eval"]["bilinear_2d_scalar"] = b
 end
 
-let b = @benchmarkable $itp_linear_3d($pt_3d) setup = (GC.gc())
+let b = @benchmarkable $itp_linear_3d($pt_3d)
     b.params.evals = EVALS_FAST
     suite["11_nd_eval"]["trilinear_3d_scalar"] = b
 end
 
-let b = @benchmarkable $itp_cubic_2d($pt_2d) setup = (GC.gc())
+let b = @benchmarkable $itp_cubic_2d($pt_2d)
     b.params.evals = EVALS_FAST
     suite["11_nd_eval"]["bicubic_2d_scalar"] = b
 end
 
-let b = @benchmarkable $itp_cubic_3d($pt_3d) setup = (GC.gc())
+let b = @benchmarkable $itp_cubic_3d($pt_3d)
     b.params.evals = EVALS_FAST
     suite["11_nd_eval"]["tricubic_3d_scalar"] = b
 end
 
-let b = @benchmarkable $itp_cubic_2d($out_nd, ($xqs_2d, $yqs_2d)) setup = (GC.gc())
+let b = @benchmarkable $itp_cubic_2d($out_nd, ($xqs_2d, $yqs_2d))
     b.params.evals = EVALS_SLOW
     suite["11_nd_eval"]["bicubic_2d_batch"] = b
 end
 
-let b = @benchmarkable $itp_cubic_3d($out_nd, ($xqs_3d, $yqs_3d, $zqs_3d)) setup = (GC.gc())
+let b = @benchmarkable $itp_cubic_3d($out_nd, ($xqs_3d, $yqs_3d, $zqs_3d))
     b.params.evals = EVALS_SLOW
     suite["11_nd_eval"]["tricubic_3d_batch"] = b
 end
@@ -334,7 +337,7 @@ const out_gq = Vector{Float64}(undef, N_QUERY_GQ)
 
 for (glabel, itp) in [("range", itp_cubic), ("vec", itp_cubic_vec)]
     for (qlbl, xq) in [("sorted", xq_sorted_gq), ("random", xq_random_gq)]
-        let b = @benchmarkable $itp($out_gq, $xq) setup = (GC.gc())
+        let b = @benchmarkable $itp($out_gq, $xq)
             b.params.evals = EVALS_MED
             suite["12_cubic_eval_gridquery"]["$(glabel)_$(qlbl)"] = b
         end
@@ -342,11 +345,38 @@ for (glabel, itp) in [("range", itp_cubic), ("vec", itp_cubic_vec)]
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Group Filtering (CLI argument support)
+# CLI Argument Parsing
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Extract --baseline <path> flag (consumed before group number parsing)
+const BASELINE_PATH = let path = ""
+    idx = findfirst(==("--baseline"), ARGS)
+    if !isnothing(idx)
+        idx < length(ARGS) || error("--baseline requires a file path argument")
+        path = ARGS[idx + 1]
+    end
+    path
+end
+
+# Strip --baseline <path> from ARGS for group parsing
+const _POSITIONAL_ARGS = let filtered = String[]
+    skip_next = false
+    for arg in ARGS
+        if skip_next
+            skip_next = false
+            continue
+        end
+        if arg == "--baseline"
+            skip_next = true
+            continue
+        end
+        push!(filtered, arg)
+    end
+    filtered
+end
+
 # --list: show available groups and exit
-if "--list" in ARGS
+if "--list" in _POSITIONAL_ARGS
     println("Available benchmark groups:")
     for key in sort(collect(keys(suite)))
         n = length(suite[key])
@@ -355,11 +385,12 @@ if "--list" in ARGS
     exit(0)
 end
 
-# Parse group numbers from ARGS to filter suite
+# Parse group numbers from positional args to filter suite
 const FILTER_GROUPS = let nums = Int[]
-    for arg in ARGS
+    for arg in _POSITIONAL_ARGS
+        arg == "--list" && continue
         n = tryparse(Int, arg)
-        isnothing(n) && error("Unknown argument: $arg (expected group number or --list)")
+        isnothing(n) && error("Unknown argument: $arg (expected group number, --list, or --baseline <path>)")
         push!(nums, n)
     end
     nums
@@ -381,32 +412,93 @@ end
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Skip tuning - we set evals manually for consistent CI results
+# Run each group separately with GC.gc() between groups (not per-sample)
+# to avoid GC overhead consuming the time budget (~100ms/sample → only ~30 samples)
 println("\nRunning benchmarks (evals preset, no tuning)...")
-results = run(suite, verbose = true)
+results = BenchmarkGroup()
+for group_key in sort(collect(keys(suite)))
+    GC.gc()
+    println("  Running [$group_key]...")
+    results[group_key] = run(suite[group_key], verbose = true)
+end
 
-# Save JSON only in CI mode (no filtering)
+# ══════════════════════════════════════════════════════════════════════════════
+# Regression Verification (when --baseline is provided)
+# ══════════════════════════════════════════════════════════════════════════════
+
+if !IS_FILTERED && !isempty(BASELINE_PATH) && isfile(BASELINE_PATH) && filesize(BASELINE_PATH) > 0
+    include(joinpath(@__DIR__, "regression_check.jl"))
+
+    println("\n" * "="^70)
+    println("REGRESSION VERIFICATION")
+    println("="^70)
+
+    latest, window_avg = load_baseline(BASELINE_PATH)
+
+    if !isempty(latest)
+        flagged = detect_regressions(results, latest, window_avg)
+
+        if !isempty(flagged)
+            println("Flagged $(length(flagged)) benchmark(s) for re-verification:")
+            for fb in flagged
+                tier_str = fb.tier == :both ? "immediate+gradual" : string(fb.tier)
+                r_imm = isnothing(fb.ratio_immediate) ? "-" : string(round(fb.ratio_immediate, digits = 3))
+                r_grad = isnothing(fb.ratio_gradual) ? "-" : string(round(fb.ratio_gradual, digits = 3))
+                println("  [$tier_str] $(fb.full_name)  imm=$(r_imm) grad=$(r_grad)")
+            end
+
+            println("\nRe-running flagged benchmarks $(RERUN_N) time(s)...")
+            rerun_and_merge!(suite, results, flagged, RERUN_N, latest, window_avg)
+
+            # Re-evaluate after merge
+            confirmed = detect_regressions(results, latest, window_avg)
+
+            if !isempty(confirmed)
+                println("\nConfirmed $(length(confirmed)) regression(s) after re-verification:")
+                for fb in confirmed
+                    r_imm = isnothing(fb.ratio_immediate) ? "-" : string(round(fb.ratio_immediate, digits = 3))
+                    r_grad = isnothing(fb.ratio_gradual) ? "-" : string(round(fb.ratio_gradual, digits = 3))
+                    println("  $(fb.full_name)  imm=$(r_imm) grad=$(r_grad)")
+                end
+            else
+                println("\nAll flagged benchmarks verified as noise after re-run")
+            end
+        else
+            println("No regressions detected")
+            flagged = FlaggedBench[]
+            confirmed = FlaggedBench[]
+        end
+
+        write_regression_report("regression_report.json", results, latest, window_avg, flagged, confirmed)
+        println("Wrote regression_report.json")
+    else
+        println("No baseline data available, skipping verification")
+    end
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Save Results (CI mode only)
+# ══════════════════════════════════════════════════════════════════════════════
+
+function sort_keys_recursive(obj)
+    if obj isa AbstractDict
+        sorted = OrderedDict{String, Any}()
+        for k in sort(collect(keys(obj)); by = string)
+            sorted[string(k)] = sort_keys_recursive(obj[k])
+        end
+        return sorted
+    elseif obj isa AbstractVector
+        return [sort_keys_recursive(item) for item in obj]
+    else
+        return obj
+    end
+end
+
 if !IS_FILTERED
     println("\nSaving results to output.json...")
     BenchmarkTools.save("output.json", minimum(results))
 
     println("Sorting JSON keys for dashboard display...")
-    using JSON
-    using OrderedCollections
-
-    function sort_keys_recursive(obj)
-        if obj isa AbstractDict
-            sorted = OrderedDict{String, Any}()
-            for k in sort(collect(keys(obj)); by = string)
-                sorted[string(k)] = sort_keys_recursive(obj[k])
-            end
-            return sorted
-        elseif obj isa AbstractVector
-            return [sort_keys_recursive(item) for item in obj]
-        else
-            return obj
-        end
-    end
-
     json_data = JSON.parsefile("output.json")
     sorted_data = sort_keys_recursive(json_data)
     open("output.json", "w") do io

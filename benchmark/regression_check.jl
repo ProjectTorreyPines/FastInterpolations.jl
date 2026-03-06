@@ -12,8 +12,8 @@ Tier 2 (Gradual):    current / mean(window around M commits ago) > GRADUAL_THRES
 # Configuration
 # ══════════════════════════════════════════════════════════════════════════════
 
-const IMMEDIATE_THRESHOLD = 1.10   # vs latest master commit
-const GRADUAL_THRESHOLD = 1.10     # vs M-ago window average
+const IMMEDIATE_THRESHOLD = 1.1   # vs latest master commit
+const GRADUAL_THRESHOLD = 1.1     # vs M-ago window average
 const LOOKBACK_M = 10              # how far back for gradual baseline
 const WINDOW_W = 5                 # averaging window size around M
 const RERUN_N = 3                  # re-run count for suspected regressions
@@ -99,10 +99,10 @@ end
 Two-tier comparison against baselines. Returns flagged benchmarks.
 """
 function detect_regressions(
-    results::BenchmarkGroup,
-    latest::Dict{String, Float64},
-    window_avg::Dict{String, Float64},
-)
+        results::BenchmarkGroup,
+        latest::Dict{String, Float64},
+        window_avg::Dict{String, Float64},
+    )
     flagged = FlaggedBench[]
 
     for group_name in keys(results)
@@ -131,8 +131,12 @@ function detect_regressions(
 
             if hit_imm || hit_grad
                 tier = (hit_imm && hit_grad) ? :both : hit_imm ? :immediate : :gradual
-                push!(flagged, FlaggedBench(group_name, bench_name, full_name,
-                    current_ns, r_imm, r_grad, tier))
+                push!(
+                    flagged, FlaggedBench(
+                        group_name, bench_name, full_name,
+                        current_ns, r_imm, r_grad, tier
+                    )
+                )
             end
         end
     end
@@ -151,11 +155,11 @@ Re-run each flagged benchmark n_reruns times.
 If a re-run produces a lower minimum time, replace the trial in results.
 """
 function rerun_and_merge!(
-    suite::BenchmarkGroup,
-    results::BenchmarkGroup,
-    flagged::Vector{FlaggedBench},
-    n_reruns::Int,
-)
+        suite::BenchmarkGroup,
+        results::BenchmarkGroup,
+        flagged::Vector{FlaggedBench},
+        n_reruns::Int,
+    )
     for i in 1:n_reruns
         println("  Re-run $i/$n_reruns ($(length(flagged)) benchmarks)...")
         for fb in flagged
@@ -166,6 +170,7 @@ function rerun_and_merge!(
             end
         end
     end
+    return
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -178,13 +183,13 @@ end
 Write regression_report.json containing per-benchmark details and summary.
 """
 function write_regression_report(
-    path::String,
-    results::BenchmarkGroup,
-    latest::Dict{String, Float64},
-    window_avg::Dict{String, Float64},
-    initially_flagged::Vector{FlaggedBench},
-    confirmed::Vector{FlaggedBench},
-)
+        path::String,
+        results::BenchmarkGroup,
+        latest::Dict{String, Float64},
+        window_avg::Dict{String, Float64},
+        initially_flagged::Vector{FlaggedBench},
+        confirmed::Vector{FlaggedBench},
+    )
     flagged_names = Set(fb.full_name for fb in initially_flagged)
     confirmed_names = Set(fb.full_name for fb in confirmed)
 
@@ -241,7 +246,7 @@ function write_regression_report(
         "benchmarks" => benchmarks,
     )
 
-    open(path, "w") do io
+    return open(path, "w") do io
         JSON.print(io, report, 2)
     end
 end

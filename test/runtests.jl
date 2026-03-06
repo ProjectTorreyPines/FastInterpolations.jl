@@ -32,6 +32,7 @@ else
     include("test_cubic_autocache.jl")
     include("test_cubic_interpolant.jl")
     include("test_cubic_anchor.jl")
+    include("test_cubic_adjoint.jl")
     include("test_linear_anchor.jl")
     include("test_constant_anchor.jl")
     include("test_quadratic_anchor.jl")

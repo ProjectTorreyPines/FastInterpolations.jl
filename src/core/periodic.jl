@@ -136,8 +136,11 @@ function _resolve_exclusive_period(x, bc::PeriodicBC)
     inferred = _can_infer_period(x) ? step(x) * length(x) : nothing
 
     if bc.period !== nothing
-        # User provided period — cross-validate against Range inference
-        if inferred !== nothing && !(bc.period ≈ inferred)
+        # User provided period — cross-validate against Range inference.
+        # Compare in grid precision (Tg) to avoid mixed-type ≈ using Float32's
+        # generous rtol (~3e-4) when a Float32 period is given on a Float64 grid.
+        Tg = eltype(x)
+        if inferred !== nothing && !isapprox(Tg(bc.period), Tg(inferred); rtol = sqrt(eps(Tg)))
             x0 = first(x); x1 = x0 + inferred
             throw(
                 ArgumentError(
@@ -175,7 +178,7 @@ Uses the inner constructor directly to bypass keyword-constructor validation
 
 Extend grid and values for exclusive endpoint periodic data.
 Appends a virtual endpoint at `x[1] + period` with value `y[1]`.
-Preserves Range type when the virtual endpoint matches the next range step.
+Preserves Range type for Range inputs (step consistency guaranteed by `_resolve_exclusive_period`).
 """
 function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     period = _resolve_exclusive_period(x, bc)

@@ -100,6 +100,19 @@ using FastInterpolations: _prepare_periodic, _prepare_periodic_nd,
             @test _can_infer_period(range(0, 1, 10)) == true
             @test _can_infer_period([0.0, 1.0, 2.0]) == false
         end
+
+        @testset "Mixed-precision period correctly rejected" begin
+            # Float32 period on Float64 Range: isapprox with Float32's generous rtol
+            # (~3e-4) would accept Float32(1.0002) ≈ 1.0, but grid-precision comparison
+            # correctly rejects it.
+            x = range(0.0, step = 0.1, length = 10)  # Float64, inferred period=1.0
+            bc = PeriodicBC(endpoint = :exclusive, period = Float32(1.0002))
+            @test_throws ArgumentError _resolve_exclusive_period(x, bc)
+
+            # Float32 period that genuinely matches → accepted
+            bc_ok = PeriodicBC(endpoint = :exclusive, period = Float32(1.0))
+            @test _resolve_exclusive_period(x, bc_ok) == Float32(1.0)
+        end
     end
 
     # ========================================
@@ -582,7 +595,8 @@ end
             data = zeros(4, 5)
             bcs = (PeriodicBC(endpoint = :exclusive), ZeroCurvBC())
 
-            grids_out, _, _ = _prepare_periodic_nd((x, y), data, bcs)
+            result = @inferred _prepare_periodic_nd((x, y), data, bcs)
+            grids_out, _, _ = result
             @test grids_out[1] isa AbstractRange
         end
     end

@@ -136,8 +136,11 @@ function _resolve_exclusive_period(x, bc::PeriodicBC)
     inferred = _can_infer_period(x) ? step(x) * length(x) : nothing
 
     if bc.period !== nothing
-        # User provided period — cross-validate against Range inference
-        if inferred !== nothing && !(bc.period ≈ inferred)
+        # User provided period — cross-validate against Range inference.
+        # Compare in grid precision (Tg) to avoid mixed-type ≈ using Float32's
+        # generous rtol (~3e-4) when a Float32 period is given on a Float64 grid.
+        Tg = eltype(x)
+        if inferred !== nothing && !isapprox(Tg(bc.period), Tg(inferred); rtol = sqrt(eps(Tg)))
             x0 = first(x); x1 = x0 + inferred
             throw(
                 ArgumentError(
@@ -175,7 +178,7 @@ Uses the inner constructor directly to bypass keyword-constructor validation
 
 Extend grid and values for exclusive endpoint periodic data.
 Appends a virtual endpoint at `x[1] + period` with value `y[1]`.
-Preserves Range type when the virtual endpoint matches the next range step.
+Preserves Range type for Range inputs (step consistency guaranteed by `_resolve_exclusive_period`).
 """
 function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
     period = _resolve_exclusive_period(x, bc)
@@ -190,7 +193,14 @@ function _extend_exclusive(x::AbstractVector, y::AbstractVector, bc::PeriodicBC)
         )
     )
 
-    x_ext = _extend_grid(x, x_end)
+    # Type-stable grid extension: isa branch (compile-time narrowing) instead of
+    # runtime ≈ check. _resolve_exclusive_period already validates period ≈ step(x)*length(x)
+    # for Range grids, so Range → Range extension is always safe.
+    x_ext = if x isa AbstractRange
+        range(first(x), step = step(x), length = length(x) + 1)
+    else
+        vcat(x, x_end)
+    end
     y_ext = _extend_values(y)
     return x_ext, y_ext
 end
@@ -208,24 +218,17 @@ function _extend_exclusive(x::AbstractVector, y_mat::AbstractMatrix, bc::Periodi
         )
     )
 
-    x_ext = _extend_grid(x, x_end)
+    x_ext = if x isa AbstractRange
+        range(first(x), step = step(x), length = length(x) + 1)
+    else
+        vcat(x, x_end)
+    end
     y_ext = vcat(y_mat, y_mat[1:1, :])
     return x_ext, y_ext
 end
 
-# Grid extension: preserve Range if step matches
-function _extend_grid(x::AbstractRange, x_end)
-    expected_next = last(x) + step(x)
-    if x_end ≈ expected_next
-        return range(first(x), step = step(x), length = length(x) + 1)
-    else
-        return vcat(collect(x), [x_end])
-    end
-end
-_extend_grid(x::AbstractVector, x_end) = vcat(x, [x_end])
-
 # Value extension: append first element
-_extend_values(y::AbstractVector) = vcat(y, [first(y)])
+_extend_values(y::AbstractVector) = vcat(y, first(y))
 
 # ========================================
 # ND Exclusive Endpoint Extension
@@ -278,12 +281,12 @@ function _prepare_periodic_nd(
             )
         )
 
-        # Type-stable grid extension: branch explicitly to avoid Union return from _extend_grid
+        # Type-stable grid extension: isa branch for compile-time type narrowing
         # (Range → Range, Vector → Vector — concrete type preserved per element)
         grid_ext = if grid_d isa AbstractRange
             range(first(grid_d), step = step(grid_d), length = length(grid_d) + 1)
         else
-            vcat(grid_d, [x_end])
+            vcat(grid_d, x_end)
         end
         bc_ext = _with_resolved_period(bc_d, period)
         return (grid_ext, bc_ext)

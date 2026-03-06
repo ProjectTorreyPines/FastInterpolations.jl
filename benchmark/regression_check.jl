@@ -12,7 +12,7 @@ Tier 2 (Gradual):    current / mean(window around M commits ago) > GRADUAL_THRES
 # Configuration
 # ══════════════════════════════════════════════════════════════════════════════
 
-const IMMEDIATE_THRESHOLD = 1.20   # vs latest master commit
+const IMMEDIATE_THRESHOLD = 1.10   # vs latest master commit
 const GRADUAL_THRESHOLD = 1.10     # vs M-ago window average
 const LOOKBACK_M = 10              # how far back for gradual baseline
 const WINDOW_W = 5                 # averaging window size around M

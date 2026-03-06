@@ -8,6 +8,8 @@ Tier 1 (Immediate):  current / latest_master > IMMEDIATE_THRESHOLD
 Tier 2 (Gradual):    current / mean(window around M commits ago) > GRADUAL_THRESHOLD
 """
 
+using Printf
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Configuration
 # ══════════════════════════════════════════════════════════════════════════════
@@ -16,7 +18,7 @@ const IMMEDIATE_THRESHOLD = 1.1   # vs latest master commit
 const GRADUAL_THRESHOLD = 1.1     # vs M-ago window average
 const LOOKBACK_M = 10              # how far back for gradual baseline
 const WINDOW_W = 5                 # averaging window size around M
-const RERUN_N = 3                  # re-run count for suspected regressions
+const RERUN_N = 10                 # re-run count for suspected regressions
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Baseline Loading
@@ -32,8 +34,8 @@ Parse gh-pages `data.js` and extract two baselines:
 function load_baseline(data_js_path::String)
     empty_result = (Dict{String, Float64}(), Dict{String, Float64}())
 
-    raw = read(data_js_path, String)
-    isempty(strip(raw)) && return empty_result
+    raw = strip(read(data_js_path, String))
+    isempty(raw) && return empty_result
 
     # Strip window.BENCHMARK_DATA = ...; wrapper
     json_str = replace(raw, r"^window\.BENCHMARK_DATA\s*=\s*" => "")
@@ -43,8 +45,9 @@ function load_baseline(data_js_path::String)
     entries_dict = get(data, "entries", Dict())
     isempty(entries_dict) && return empty_result
 
-    # Get benchmark suite entries (typically one key)
-    entries = first(values(entries_dict))
+    # Get benchmark suite entries (match name from github-action-benchmark config)
+    suite_name = "FastInterpolations.jl Benchmarks"
+    entries = get(entries_dict, suite_name, get(entries_dict, first(keys(entries_dict)), []))
     isempty(entries) && return empty_result
 
     # --- Latest commit baseline ---
@@ -149,25 +152,36 @@ end
 # ══════════════════════════════════════════════════════════════════════════════
 
 """
-    rerun_and_merge!(suite, results, flagged, n_reruns)
+    rerun_and_merge!(suite, results, flagged, n_reruns, latest, window_avg)
 
 Re-run each flagged benchmark n_reruns times.
 If a re-run produces a lower minimum time, replace the trial in results.
+Prints current min time and imm/grad ratios after each re-run.
 """
 function rerun_and_merge!(
         suite::BenchmarkGroup,
         results::BenchmarkGroup,
         flagged::Vector{FlaggedBench},
         n_reruns::Int,
+        latest::Dict{String, Float64},
+        window_avg::Dict{String, Float64},
     )
     for i in 1:n_reruns
         println("  Re-run $i/$n_reruns ($(length(flagged)) benchmarks)...")
         for fb in flagged
             GC.gc()
             rerun_trial = run(suite[fb.group_key][fb.bench_key])
-            if minimum(rerun_trial).time < minimum(results[fb.group_key][fb.bench_key]).time
+            old_min = minimum(results[fb.group_key][fb.bench_key]).time
+            new_min = minimum(rerun_trial).time
+            updated = new_min < old_min
+            if updated
                 results[fb.group_key][fb.bench_key] = rerun_trial
             end
+            cur = updated ? new_min : old_min
+            r_imm = haskey(latest, fb.full_name) ? @sprintf("%.3f", cur / latest[fb.full_name]) : "-"
+            r_grad = haskey(window_avg, fb.full_name) ? @sprintf("%.3f", cur / window_avg[fb.full_name]) : "-"
+            tag = updated ? "↓" : "="
+            @printf("    %s %-40s  min: %8.1f ns  imm: %s  grad: %s\n", tag, fb.full_name, cur, r_imm, r_grad)
         end
     end
     return

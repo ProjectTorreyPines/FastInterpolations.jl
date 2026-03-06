@@ -358,7 +358,7 @@ const BASELINE_PATH = let path = ""
     path
 end
 
-# Strip known flags (--baseline <path>, --list) from ARGS for group parsing
+# Strip --baseline <path> from ARGS for group parsing
 const _POSITIONAL_ARGS = let filtered = String[]
     skip_next = false
     for arg in ARGS
@@ -441,7 +441,7 @@ if !IS_FILTERED && !isempty(BASELINE_PATH) && isfile(BASELINE_PATH) && filesize(
             end
 
             println("\nRe-running flagged benchmarks $(RERUN_N) time(s)...")
-            rerun_and_merge!(suite, results, flagged, RERUN_N)
+            rerun_and_merge!(suite, results, flagged, RERUN_N, latest, window_avg)
 
             # Re-evaluate after merge
             confirmed = detect_regressions(results, latest, window_avg)

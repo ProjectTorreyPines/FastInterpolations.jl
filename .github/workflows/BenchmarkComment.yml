@@ -36,85 +36,86 @@ jobs:
             exit 1
           fi
 
-      - name: Fetch previous benchmark data
+      - name: Generate benchmark comment
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api "repos/${{ github.repository }}/contents/bench/data.js?ref=gh-pages" \
-            --header 'Accept: application/vnd.github.raw+json' \
-            > data.js 2>/dev/null || echo "" > data.js
-
-      - name: Generate and post benchmark comment
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ steps.pr-info.outputs.pr_number }}
           PR_SHA: ${{ steps.pr-info.outputs.pr_sha }}
         run: |
-          ALERT_THRESHOLD="1.20"
-
-          # Extract previous benchmark values from gh-pages data.js
-          if [ -s data.js ]; then
-            sed 's/^window\.BENCHMARK_DATA = //' data.js | sed 's/;$//' | \
-              jq '[.entries | to_entries[0].value[-1].benches[] | {(.name): .value}] | add // {}' \
-              > prev_map.json 2>/dev/null || echo "{}" > prev_map.json
-          else
-            echo "{}" > prev_map.json
-          fi
-
-          # Build table rows and collect alert rows
           PR_SHORT="${PR_SHA:0:8}"
-          ALL_ROWS=""
-          ALERT_ROWS=""
-          HAS_WARNING=false
 
-          while IFS=$'\t' read -r name value unit; do
-            prev_val=$(jq -r --arg n "$name" '.[$n] // empty' prev_map.json)
-            if [ -n "$prev_val" ] && [ "$prev_val" != "null" ]; then
-              ratio=$(echo "scale=2; $value / $prev_val" | bc 2>/dev/null || echo "-")
-              row="| \`${name}\` | \`${value}\` ${unit} | \`${prev_val}\` ${unit} | \`${ratio}\` |"
-              ALL_ROWS="${ALL_ROWS}${row}
-          "
-              if [ "$ratio" != "-" ] && [ "$(echo "$ratio > $ALERT_THRESHOLD" | bc -l 2>/dev/null)" = "1" ]; then
-                ALERT_ROWS="${ALERT_ROWS}${row}
-          "
-                HAS_WARNING=true
-              fi
-            else
-              ALL_ROWS="${ALL_ROWS}| \`${name}\` | \`${value}\` ${unit} | - | - |
-          "
-            fi
-          done < <(jq -r '.[] | "\(.name)\t\(.value)\t\(.unit)"' benchmark_flat.json)
-
-          # Build comment body
-          HEADER="| Benchmark suite | Current: ${PR_SHORT} | Previous | Ratio |
-          |-|-|-|-|"
           {
             echo "<!-- benchmark-comment -->"
             echo "# FastInterpolations.jl Benchmarks"
             echo ""
-            echo "<details>"
-            echo ""
-            echo "$HEADER"
-            printf '%s' "$ALL_ROWS"
-            echo ""
-            echo "</details>"
 
-            if [ "$HAS_WARNING" = true ]; then
+            if [ -f regression_report.json ]; then
+              # ── Rich report from regression verification ──
+              TOTAL=$(jq '.summary.total' regression_report.json)
+              FLAGGED=$(jq '.summary.initially_flagged' regression_report.json)
+              CONFIRMED=$(jq '.summary.confirmed_regressions' regression_report.json)
+              RERUN_N=$(jq '.thresholds.rerun_n' regression_report.json)
+              IMM_TH=$(jq '.thresholds.immediate' regression_report.json)
+              GRAD_TH=$(jq '.thresholds.gradual' regression_report.json)
+
+              # All benchmarks table (collapsed)
+              echo "<details>"
+              echo "<summary>All benchmarks (${TOTAL} total, click to expand)</summary>"
               echo ""
-              echo "# :warning: **Performance Alert** :warning:"
+              echo "| Benchmark | Current: ${PR_SHORT} | Previous | Imm. Ratio | Grad. Ratio |"
+              echo "|-----------|---------------------:|----------:|-----------:|------------:|"
+              jq -r '.benchmarks[] |
+                "| `\(.name)` | `\(.value)` ns | `\(.prev_value // "-")` ns | `\(.ratio_immediate // "-")` | `\(.ratio_gradual // "-")` |"
+              ' regression_report.json
               echo ""
-              echo "Possible performance regression was detected for benchmark **'FastInterpolations.jl Benchmarks'**."
-              echo "Benchmark result of this commit is worse than the previous benchmark result exceeding threshold \`${ALERT_THRESHOLD}\`."
+              echo "</details>"
+
+              # Verification summary
+              if [ "$CONFIRMED" -gt 0 ]; then
+                echo ""
+                echo "## :warning: **Performance Regression Confirmed** :warning:"
+                echo ""
+                echo "After re-running ${FLAGGED} flagged benchmark(s) ${RERUN_N} time(s), **${CONFIRMED} regression(s) confirmed**."
+                echo ""
+                echo "| Benchmark | Current | Previous | Imm. Ratio | Grad. Ratio | Tier |"
+                echo "|-----------|--------:|----------:|-----------:|------------:|------|"
+                jq -r '.benchmarks[] | select(.regression == true) |
+                  "| `\(.name)` | `\(.value)` ns | `\(.prev_value // "-")` ns | `\(.ratio_immediate // "-")` | `\(.ratio_gradual // "-")` | \(if .ratio_immediate != null and .ratio_immediate > '"$IMM_TH"' then (if .ratio_gradual != null and .ratio_gradual > '"$GRAD_TH"' then "both" else "immediate" end) else "gradual" end) |"
+                ' regression_report.json
+                echo ""
+                echo "> Thresholds: immediate > ${IMM_TH}x (vs latest master), gradual > ${GRAD_TH}x (vs sliding window)"
+              elif [ "$FLAGGED" -gt 0 ]; then
+                echo ""
+                echo "> :white_check_mark: **${FLAGGED} benchmark(s) were flagged but verified as CI noise after ${RERUN_N} re-run(s)**"
+              else
+                echo ""
+                echo "> :white_check_mark: No regressions detected"
+              fi
+
+            elif [ -f benchmark_flat.json ]; then
+              # ── Fallback: no regression report (no baseline available) ──
+              echo "<details>"
+              echo "<summary>All benchmarks (click to expand)</summary>"
               echo ""
-              echo "$HEADER"
-              printf '%s' "$ALERT_ROWS"
+              echo "| Benchmark | Current: ${PR_SHORT} |"
+              echo "|-----------|---------------------:|"
+              jq -r '.[] | "| `\(.name)` | `\(.value)` \(.unit) |"' benchmark_flat.json
+              echo ""
+              echo "</details>"
+              echo ""
+              echo "> No baseline data available for comparison (first benchmark run?)"
+
+            else
+              echo "> No benchmark data found in artifacts"
             fi
 
             echo ""
             echo "This comment was automatically generated by [Benchmark workflow](https://github.com/${{ github.repository }}/actions?query=workflow%3ABenchmark)."
           } > comment_body.md
 
-          # Post or update comment on PR
+      - name: Post or update PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.pr-info.outputs.pr_number }}
+        run: |
           COMMENT_TAG="<!-- benchmark-comment -->"
           EXISTING=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/comments" \
             --jq ".[] | select(.body | contains(\"${COMMENT_TAG}\")) | .id" | head -1)

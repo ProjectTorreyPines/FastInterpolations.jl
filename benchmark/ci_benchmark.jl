@@ -5,14 +5,17 @@ Benchmark script for GitHub Actions CI.
 Outputs JSON compatible with github-action-benchmark.
 
 Usage:
-    julia --project=benchmark benchmark/ci_benchmark.jl            # all groups (CI mode)
-    julia --project=benchmark benchmark/ci_benchmark.jl 12         # group 12 only
-    julia --project=benchmark benchmark/ci_benchmark.jl 3 12       # groups 3 and 12
-    julia --project=benchmark benchmark/ci_benchmark.jl --list     # show available groups
+    julia --project=benchmark benchmark/ci_benchmark.jl                              # all groups (CI mode)
+    julia --project=benchmark benchmark/ci_benchmark.jl 12                           # group 12 only
+    julia --project=benchmark benchmark/ci_benchmark.jl 3 12                         # groups 3 and 12
+    julia --project=benchmark benchmark/ci_benchmark.jl --list                       # show available groups
+    julia --project=benchmark benchmark/ci_benchmark.jl --baseline baseline_data.js  # CI mode with regression verification
 """
 
 using BenchmarkTools
 using FastInterpolations
+using JSON
+using OrderedCollections
 using Random
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -342,11 +345,38 @@ for (glabel, itp) in [("range", itp_cubic), ("vec", itp_cubic_vec)]
 end
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Group Filtering (CLI argument support)
+# CLI Argument Parsing
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Extract --baseline <path> flag (consumed before group number parsing)
+const BASELINE_PATH = let path = ""
+    idx = findfirst(==("--baseline"), ARGS)
+    if !isnothing(idx)
+        idx < length(ARGS) || error("--baseline requires a file path argument")
+        path = ARGS[idx + 1]
+    end
+    path
+end
+
+# Strip known flags (--baseline <path>, --list) from ARGS for group parsing
+const _POSITIONAL_ARGS = let filtered = String[]
+    skip_next = false
+    for arg in ARGS
+        if skip_next
+            skip_next = false
+            continue
+        end
+        if arg == "--baseline"
+            skip_next = true
+            continue
+        end
+        push!(filtered, arg)
+    end
+    filtered
+end
+
 # --list: show available groups and exit
-if "--list" in ARGS
+if "--list" in _POSITIONAL_ARGS
     println("Available benchmark groups:")
     for key in sort(collect(keys(suite)))
         n = length(suite[key])
@@ -355,11 +385,12 @@ if "--list" in ARGS
     exit(0)
 end
 
-# Parse group numbers from ARGS to filter suite
+# Parse group numbers from positional args to filter suite
 const FILTER_GROUPS = let nums = Int[]
-    for arg in ARGS
+    for arg in _POSITIONAL_ARGS
+        arg == "--list" && continue
         n = tryparse(Int, arg)
-        isnothing(n) && error("Unknown argument: $arg (expected group number or --list)")
+        isnothing(n) && error("Unknown argument: $arg (expected group number, --list, or --baseline <path>)")
         push!(nums, n)
     end
     nums
@@ -384,29 +415,83 @@ end
 println("\nRunning benchmarks (evals preset, no tuning)...")
 results = run(suite, verbose = true)
 
-# Save JSON only in CI mode (no filtering)
+# ══════════════════════════════════════════════════════════════════════════════
+# Regression Verification (when --baseline is provided)
+# ══════════════════════════════════════════════════════════════════════════════
+
+if !IS_FILTERED && !isempty(BASELINE_PATH) && isfile(BASELINE_PATH) && filesize(BASELINE_PATH) > 0
+    include(joinpath(@__DIR__, "regression_check.jl"))
+
+    println("\n" * "="^70)
+    println("REGRESSION VERIFICATION")
+    println("="^70)
+
+    latest, window_avg = load_baseline(BASELINE_PATH)
+
+    if !isempty(latest)
+        flagged = detect_regressions(results, latest, window_avg)
+
+        if !isempty(flagged)
+            println("Flagged $(length(flagged)) benchmark(s) for re-verification:")
+            for fb in flagged
+                tier_str = fb.tier == :both ? "immediate+gradual" : string(fb.tier)
+                r_imm = isnothing(fb.ratio_immediate) ? "-" : string(round(fb.ratio_immediate, digits = 3))
+                r_grad = isnothing(fb.ratio_gradual) ? "-" : string(round(fb.ratio_gradual, digits = 3))
+                println("  [$tier_str] $(fb.full_name)  imm=$(r_imm) grad=$(r_grad)")
+            end
+
+            println("\nRe-running flagged benchmarks $(RERUN_N) time(s)...")
+            rerun_and_merge!(suite, results, flagged, RERUN_N)
+
+            # Re-evaluate after merge
+            confirmed = detect_regressions(results, latest, window_avg)
+
+            if !isempty(confirmed)
+                println("\nConfirmed $(length(confirmed)) regression(s) after re-verification:")
+                for fb in confirmed
+                    r_imm = isnothing(fb.ratio_immediate) ? "-" : string(round(fb.ratio_immediate, digits = 3))
+                    r_grad = isnothing(fb.ratio_gradual) ? "-" : string(round(fb.ratio_gradual, digits = 3))
+                    println("  $(fb.full_name)  imm=$(r_imm) grad=$(r_grad)")
+                end
+            else
+                println("\nAll flagged benchmarks verified as noise after re-run")
+            end
+        else
+            println("No regressions detected")
+            flagged = FlaggedBench[]
+            confirmed = FlaggedBench[]
+        end
+
+        write_regression_report("regression_report.json", results, latest, window_avg, flagged, confirmed)
+        println("Wrote regression_report.json")
+    else
+        println("No baseline data available, skipping verification")
+    end
+end
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Save Results (CI mode only)
+# ══════════════════════════════════════════════════════════════════════════════
+
+function sort_keys_recursive(obj)
+    if obj isa AbstractDict
+        sorted = OrderedDict{String, Any}()
+        for k in sort(collect(keys(obj)); by = string)
+            sorted[string(k)] = sort_keys_recursive(obj[k])
+        end
+        return sorted
+    elseif obj isa AbstractVector
+        return [sort_keys_recursive(item) for item in obj]
+    else
+        return obj
+    end
+end
+
 if !IS_FILTERED
     println("\nSaving results to output.json...")
     BenchmarkTools.save("output.json", minimum(results))
 
     println("Sorting JSON keys for dashboard display...")
-    using JSON
-    using OrderedCollections
-
-    function sort_keys_recursive(obj)
-        if obj isa AbstractDict
-            sorted = OrderedDict{String, Any}()
-            for k in sort(collect(keys(obj)); by = string)
-                sorted[string(k)] = sort_keys_recursive(obj[k])
-            end
-            return sorted
-        elseif obj isa AbstractVector
-            return [sort_keys_recursive(item) for item in obj]
-        else
-            return obj
-        end
-    end
-
     json_data = JSON.parsefile("output.json")
     sorted_data = sort_keys_recursive(json_data)
     open("output.json", "w") do io

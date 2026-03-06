@@ -70,6 +70,8 @@ end
 # ════════════════════════════════════════
 # ND Interpolants — Tuple query
 # ════════════════════════════════════════
+# All ND rules use FastInterpolations.gradient() for locate-once optimization:
+# interval search is performed ONCE, then _eval_at_cell is called N times.
 
 """
 Forward-mode rule for all ND interpolants with Tuple input.
@@ -85,11 +87,9 @@ function ChainRulesCore.frule(
     y = itp(query)
     Δquery isa AbstractZero && return y, zero(y)
 
-    # Directional derivative: ∑ᵢ (∂f/∂xᵢ) * Δxᵢ
-    ∂y = sum(
-        Δquery[i] * itp(query; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N)))
-        for i in 1:N
-    )
+    # Locate once via gradient(), then dot product for directional derivative
+    grad = FastInterpolations.gradient(itp, query)
+    ∂y = sum(Δquery[i] * grad[i] for i in 1:N)
     return y, ∂y
 end
 
@@ -103,14 +103,15 @@ function ChainRulesCore.frule(
     itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
     query::AbstractVector{<:Real}
 ) where {Tg, Tv, N}
+    length(query) == N || throw(DimensionMismatch(
+        "query length $(length(query)) does not match interpolant dimension $N"
+    ))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
     y = itp(query_tuple)
     Δquery isa AbstractZero && return y, zero(y)
 
-    ∂y = sum(
-        Δquery[i] * itp(query_tuple; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N)))
-        for i in 1:N
-    )
+    grad = FastInterpolations.gradient(itp, query_tuple)
+    ∂y = sum(Δquery[i] * grad[i] for i in 1:N)
     return y, ∂y
 end
 
@@ -132,9 +133,9 @@ function ChainRulesCore.rrule(
 
     function itp_nd_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), ZeroTangent()
-        ∂query = ntuple(Val(N)) do i
-            real(conj(Δy) * itp(query; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N))))
-        end
+        # Locate once via gradient(), then scale by Δy
+        grad = FastInterpolations.gradient(itp, query)
+        ∂query = ntuple(i -> real(conj(Δy) * grad[i]), Val(N))
         return NoTangent(), ∂query
     end
 
@@ -150,15 +151,16 @@ function ChainRulesCore.rrule(
     itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
     query::AbstractVector{<:Real}
 ) where {Tg, Tv, N}
+    length(query) == N || throw(DimensionMismatch(
+        "query length $(length(query)) does not match interpolant dimension $N"
+    ))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
     y = itp(query_tuple)
 
     function itp_nd_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), ZeroTangent()
-        ∂query = [
-            real(conj(Δy) * itp(query_tuple; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N))))
-            for i in 1:N
-        ]
+        grad = FastInterpolations.gradient(itp, query_tuple)
+        ∂query = [real(conj(Δy) * grad[i]) for i in 1:N]
         return NoTangent(), ∂query
     end
 

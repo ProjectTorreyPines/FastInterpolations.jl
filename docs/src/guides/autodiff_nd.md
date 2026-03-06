@@ -6,11 +6,11 @@ For 1D interpolants, see [Automatic Differentiation Support](autodiff_support.md
 
 !!! tip "Consider Built-in Analytical Derivatives First"
     For **derivatives with respect to query coordinates** (gradient, Hessian, mixed partials),
-    FastInterpolations provides analytical functions that are much faster and mostly zero-allocation:
+    FastInterpolations provides analytical functions that are much faster than AD:
 
     ```julia
     itp(pt; deriv=DerivOp(1, 0))              # partial df/dx, zero-allocation
-    FastInterpolations.gradient(itp, pt)       # full gradient, zero-allocation
+    FastInterpolations.gradient(itp, pt)       # full gradient (tuple input → zero-alloc)
     FastInterpolations.hessian(itp, pt)        # Hessian matrix
     ```
 
@@ -41,7 +41,7 @@ itp([0.5, 0.5])                           # evaluation
 ForwardDiff.gradient(itp, [0.5, 0.5])     # gradient
 ForwardDiff.hessian(itp, [0.5, 0.5])      # hessian
 
-# Fast analytical derivatives (much faster, zero-allocation!)
+# Fast analytical derivatives (much faster; tuple form is zero-allocation)
 FastInterpolations.gradient(itp, (0.5, 0.5))   # analytical gradient
 FastInterpolations.hessian(itp, (0.5, 0.5))    # analytical hessian
 ```
@@ -67,7 +67,8 @@ ForwardDiff.hessian(itp, [0.5, 0.5])      # hessian matrix
 
 | Method | Allocation | Notes |
 |--------|-----------|-------|
-| `FastInterpolations.gradient(itp, x)` | **0 B** | Analytical, tuple output |
+| `FastInterpolations.gradient(itp, tuple)` | **0 B** | Analytical, tuple output |
+| `FastInterpolations.gradient(itp, vector)` | small | Analytical, allocates output vector |
 | `FastInterpolations.hessian(itp, x)` | minimal | Analytical, symmetric matrix |
 | `deriv` keyword | minimal | Analytical, single partial |
 | ForwardDiff.gradient | moderate | Dual number propagation |
@@ -84,7 +85,7 @@ Built-in analytical methods are **much faster** than any AD backend for query-co
 ## Analytical Gradient & Hessian (Recommended)
 
 FastInterpolations provides built-in `gradient` and `hessian` functions that use analytical
-derivatives internally. These are **much faster** than ForwardDiff equivalents and mostly zero-allocation.
+derivatives internally. These are **much faster** than ForwardDiff equivalents. The tuple-query form is zero-allocation; the vector-query form allocates the output vector.
 
 !!! note "Qualified names"
     `gradient` and `hessian` are exported by FastInterpolations, so `gradient(itp, x)` works

@@ -41,7 +41,7 @@ function ChainRulesCore.frule(
     # Tangent: directional derivative = ∑ᵢ (∂f/∂xᵢ) * Δxᵢ
     # Use analytical derivatives via deriv keyword
     ∂y = sum(
-        Δquery[i] * itp(query; deriv=ntuple(j -> j == i ? 1 : 0, Val(N)))
+        Δquery[i] * itp(query; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N)))
         for i in 1:N
     )
 
@@ -69,7 +69,7 @@ function ChainRulesCore.frule(
 
     # Tangent: directional derivative
     ∂y = sum(
-        Δquery[i] * itp(query_tuple; deriv=ntuple(j -> j == i ? 1 : 0, Val(N)))
+        Δquery[i] * itp(query_tuple; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N)))
         for i in 1:N
     )
 
@@ -97,7 +97,7 @@ function ChainRulesCore.rrule(
         Δy isa AbstractZero && return NoTangent(), ZeroTangent()
         # ∂L/∂xᵢ = ∂L/∂y * ∂y/∂xᵢ
         ∂query = ntuple(Val(N)) do i
-            Δy * itp(query; deriv=ntuple(j -> j == i ? 1 : 0, Val(N)))
+            Δy * itp(query; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N)))
         end
         return NoTangent(), ∂query
     end
@@ -124,7 +124,7 @@ function ChainRulesCore.rrule(
     function itp_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), ZeroTangent()
         ∂query = [
-            Δy * itp(query_tuple; deriv=ntuple(j -> j == i ? 1 : 0, Val(N)))
+            Δy * itp(query_tuple; deriv=ntuple(j -> DerivOp(j == i ? 1 : 0), Val(N)))
             for i in 1:N
         ]
         return NoTangent(), ∂query

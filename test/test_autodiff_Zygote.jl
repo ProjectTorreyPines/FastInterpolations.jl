@@ -312,6 +312,64 @@ end
     end
 
     # ════════════════════════════════════════════════════════════════════════
+    # CUBIC ND — Vector query gradient (issue #60: was broken by DerivOp API change)
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "Cubic ND - Zygote" begin
+        x = range(0.0, 1.0, 20)
+        y = range(0.0, 1.0, 20)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data; extrap=ExtendExtrap())
+
+        @testset "gradient via vector query" begin
+            q = [0.5, 0.5]
+            grad = Zygote.gradient(itp, q)[1]
+            fd_grad = ForwardDiff.gradient(itp, q)
+            @test grad ≈ fd_grad atol=1e-8
+        end
+
+        @testset "withgradient via vector query (issue #60)" begin
+            q = [0.5, 0.5]
+            result = Zygote.withgradient(itp, q)
+            @test result.val ≈ itp(q) atol=1e-12
+            @test result.grad[1] ≈ ForwardDiff.gradient(itp, q) atol=1e-8
+        end
+
+        @testset "gradient via lambda with vector query" begin
+            q = [0.5, 0.5]
+            grad = Zygote.gradient(x -> itp(x), q)[1]
+            fd_grad = ForwardDiff.gradient(itp, q)
+            @test grad ≈ fd_grad atol=1e-8
+        end
+
+        @testset "gradient via tuple query" begin
+            q = (0.5, 0.5)
+            grad = Zygote.gradient(x -> itp(x), q)[1]
+            @test grad isa Tuple
+            fd_grad = ForwardDiff.gradient(itp, [q...])
+            @test collect(grad) ≈ fd_grad atol=1e-8
+        end
+
+        @testset "gradient in loss function" begin
+            q = [0.5, 0.5]
+            loss(x) = itp(x)^2
+            zy_grad = Zygote.gradient(loss, q)[1]
+            fd_grad = ForwardDiff.gradient(loss, q)
+            @test zy_grad ≈ fd_grad atol=1e-8
+        end
+
+        @testset "3D gradient" begin
+            z = range(0.0, 1.0, 10)
+            data3 = [sin(xi) * cos(yj) * zk for xi in x, yj in y, zk in z]
+            itp3 = cubic_interp((x, y, z), data3; extrap=ExtendExtrap())
+            q = [0.4, 0.5, 0.6]
+            grad = Zygote.gradient(itp3, q)[1]
+            fd_grad = ForwardDiff.gradient(itp3, q)
+            @test grad ≈ fd_grad atol=1e-7
+        end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
     # GRADIENT COMPOSITION (Loss functions)
     # ════════════════════════════════════════════════════════════════════════
 

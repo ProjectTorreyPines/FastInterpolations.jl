@@ -23,7 +23,7 @@ Note: The result plots below were generated with `DEFAULT_BENCH_SECONDS = 5.0` o
 ## Usage
 
 ```julia
-using Pkg; Pkg.activate("benchmark")
+using Pkg; Pkg.activate(".") # assuming `benchmark` is working directory
 include("simple_benchmarks.jl")
 include("plot_scaling.jl")
 
@@ -31,6 +31,7 @@ include("plot_scaling.jl")
 result = benchmark_scaling()
 
 # Generate plots
+plot_scaling_results(result) # combined plot
 plot_scaling_separate(result; save_dir="../docs/images", dpi=250)
 ```
 

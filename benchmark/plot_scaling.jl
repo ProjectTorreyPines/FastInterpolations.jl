@@ -52,20 +52,16 @@ function plot_scaling_results(result; save_path::Union{String, Nothing} = nothin
     ymax = maximum(all_times) * 2.0
     ylims_shared = shared_ylim ? (ymin, ymax) : :auto
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Plot 1: Construction time vs n_grid
-    # ─────────────────────────────────────────────────────────────────────────
-    p1 = plot(
-        df_constr.n, [df_constr.Interpolations df_constr.DataInterp df_constr.FastInterp],
+    args = (;
+        # shared plot arguments
         label = labels,
-        xlabel = "Grid size (n)",
         ylabel = "Time (s)",
-        title = "Construction Time",
         xscale = :log10,
         yscale = :log10,
         ylims = ylims_shared,
         marker = :circle,
         markersize = 6,
+        markerstrokecolor = :auto,
         linewidth = 2,
         color = permutedims(colors),
         legend = :topleft,
@@ -73,62 +69,45 @@ function plot_scaling_results(result; save_path::Union{String, Nothing} = nothin
         minorgrid = true,
         tickfontsize = 12,
         guidefontsize = 14,
-        titlefontsize = 16,
-        legendfontsize = 10
+        titlefontsize = 14,
+        legendfontsize = 10,
+    )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Plot 1: Construction time vs n_grid
+    # ─────────────────────────────────────────────────────────────────────────
+    p1 = plot(
+        df_constr.n,
+        [df_constr.Interpolations df_constr.DataInterp df_constr.FastInterp];
+        title = "Construction Time",
+        xlabel = "Grid size (n)",
+        args...
     )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Plot 2: Evaluation time vs n_query
     # ─────────────────────────────────────────────────────────────────────────
     p2 = plot(
-        df_eval.n, [df_eval.Interpolations df_eval.DataInterp df_eval.FastInterp],
-        label = labels,
-        xlabel = "Query points (n)",
-        ylabel = "Time (s)",
+        df_eval.n,
+        [df_eval.Interpolations df_eval.DataInterp df_eval.FastInterp];
         title = "Evaluation Time (n_grid=100, reuse interpolant)",
-        xscale = :log10,
-        yscale = :log10,
-        ylims = ylims_shared,
-        marker = :circle,
-        markersize = 6,
-        linewidth = 2,
-        color = permutedims(colors),
-        legend = :topleft,
-        grid = true,
-        minorgrid = true,
-        tickfontsize = 12,
-        guidefontsize = 14,
-        titlefontsize = 16,
-        legendfontsize = 10
+        xlabel = "Query points (n)",
+        args...
     )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Plot 3: One-shot time vs n_query (cached only for consistency)
     # ─────────────────────────────────────────────────────────────────────────
     p3 = plot(
-        df_oneshot.n, [df_oneshot.Interpolations df_oneshot.DataInterp df_oneshot.FastInterp_cached],
-        label = labels,
-        xlabel = "Query points (n)",
-        ylabel = "Time (s)",
+        df_oneshot.n,
+        [df_oneshot.Interpolations df_oneshot.DataInterp df_oneshot.FastInterp_cached];
         title = "One-Shot Time (n_grid=100, construct+eval)",
-        xscale = :log10,
-        yscale = :log10,
-        ylims = ylims_shared,
-        marker = :circle,
-        markersize = 6,
-        linewidth = 2,
-        color = permutedims(colors),
-        legend = :topleft,
-        grid = true,
-        minorgrid = true,
-        tickfontsize = 12,
-        guidefontsize = 14,
-        titlefontsize = 16,
-        legendfontsize = 10
+        xlabel = "Query points (n)",
+        args...
     )
 
     # Combine plots
-    combined = plot(p1, p2, p3, layout = (1, 3), size = (1600, 400), margin = 5Plots.mm)
+    combined = plot(p1, p2, p3, layout = (1, 3), size = (1600, 400), margin = 10Plots.mm)
 
     # Save if path provided
     if save_path !== nothing
@@ -349,15 +328,13 @@ function plot_speedup(result; save_path::Union{String, Nothing} = nothing)
     speedup_itp_constr = df_constr.Interpolations ./ df_constr.FastInterp
     speedup_di_constr = df_constr.DataInterp ./ df_constr.FastInterp
 
-    p1 = plot(
-        df_constr.n, [speedup_itp_constr speedup_di_constr],
+    args = (;
         label = labels,
-        xlabel = "Grid size (n)",
         ylabel = "Speedup (x times faster)",
-        title = "Construction Speedup",
         xscale = :log10,
         marker = :circle,
         markersize = 6,
+        markerstrokecolor = :auto,
         linewidth = 2,
         color = permutedims(colors),
         legend = :topright,
@@ -365,7 +342,14 @@ function plot_speedup(result; save_path::Union{String, Nothing} = nothing)
         tickfontsize = 12,
         guidefontsize = 14,
         titlefontsize = 16,
-        legendfontsize = 10
+        legendfontsize = 10,
+    )
+
+    p1 = plot(
+        df_constr.n, [speedup_itp_constr speedup_di_constr];
+        xlabel = "Grid size (n)",
+        title = "Construction Speedup",
+        args...,
     )
     hline!(p1, [1.0], linestyle = :dash, color = :gray, label = "")
 
@@ -374,22 +358,10 @@ function plot_speedup(result; save_path::Union{String, Nothing} = nothing)
     speedup_di_eval = df_eval.DataInterp ./ df_eval.FastInterp
 
     p2 = plot(
-        df_eval.n, [speedup_itp_eval speedup_di_eval],
-        label = labels,
+        df_eval.n, [speedup_itp_eval speedup_di_eval];
         xlabel = "Query points (n)",
-        ylabel = "Speedup (x times faster)",
         title = "Evaluation Speedup",
-        xscale = :log10,
-        marker = :circle,
-        markersize = 6,
-        linewidth = 2,
-        color = permutedims(colors),
-        legend = :topright,
-        grid = true,
-        tickfontsize = 12,
-        guidefontsize = 14,
-        titlefontsize = 16,
-        legendfontsize = 10
+        args...,
     )
     hline!(p2, [1.0], linestyle = :dash, color = :gray, label = "")
 
@@ -398,26 +370,14 @@ function plot_speedup(result; save_path::Union{String, Nothing} = nothing)
     speedup_di_oneshot = df_oneshot.DataInterp ./ df_oneshot.FastInterp_cached
 
     p3 = plot(
-        df_oneshot.n, [speedup_itp_oneshot speedup_di_oneshot],
-        label = labels,
+        df_oneshot.n, [speedup_itp_oneshot speedup_di_oneshot];
         xlabel = "Query points (n)",
-        ylabel = "Speedup (x times faster)",
         title = "One-Shot Speedup",
-        xscale = :log10,
-        marker = :circle,
-        markersize = 6,
-        linewidth = 2,
-        color = permutedims(colors),
-        legend = :topright,
-        grid = true,
-        tickfontsize = 12,
-        guidefontsize = 14,
-        titlefontsize = 16,
-        legendfontsize = 10
+        args...,
     )
     hline!(p3, [1.0], linestyle = :dash, color = :gray, label = "")
 
-    combined = plot(p1, p2, p3, layout = (1, 3), size = (1500, 400), margin = 5Plots.mm)
+    combined = plot(p1, p2, p3, layout = (1, 3), size = (1500, 400), margin = 9Plots.mm)
 
     if save_path !== nothing
         savefig(combined, save_path)

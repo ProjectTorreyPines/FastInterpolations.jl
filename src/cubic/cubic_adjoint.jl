@@ -9,42 +9,10 @@
 # - CubicSplineCache, _CubicAnchoredQuery (cubic_types.jl, cubic_anchor.jl)
 # - _anchor_query, _fill_anchors! (cubic_anchor.jl)
 # - _get_cubic_cache (cubic_cache_pool.jl)
-# - _ldiv_tridiagonal_nopiv!, _ldiv_tridiagonal_transpose! (thomas_lu_solver.jl)
+# - _ldiv_tridiagonal_transpose! (thomas_lu_solver.jl)
 # - _compute_deriv1_coeffs, _extract_stencil_values (polyfit_kernels.jl)
 # - _normalize_bc, _is_periodic_bc (bc_types.jl)
 # - _get_h, _get_inv_h (grid_spacing.jl)
-
-# ========================================
-# Thomas Matrix Symmetry Trait
-# ========================================
-
-# Deriv1 and PolyFit produce boundary rows (2h₁, h₁) / (hₙ, 2hₙ)
-# that are symmetric with the interior tridiagonal pattern.
-# Deriv2 produces (1, 0) / (0, 1) and Deriv3 produces (-1, 1) / (-1, 1),
-# which break symmetry.
-
-"""
-    MatrixSymmetry
-
-Abstract trait for compile-time tridiagonal matrix A symmetry dispatch.
-Subtypes control whether the adjoint uses forward solve (symmetric) or transpose solve.
-"""
-abstract type MatrixSymmetry end
-
-"""Symmetric A — forward Thomas solve reusable as transpose solve."""
-struct SymmetricA <: MatrixSymmetry end
-
-"""Asymmetric A — requires dedicated transpose Thomas solve."""
-struct AsymmetricA <: MatrixSymmetry end
-
-@inline _thomas_symmetry(::Deriv1) = SymmetricA()
-@inline _thomas_symmetry(::PolyFit) = SymmetricA()
-@inline _thomas_symmetry(::Deriv2) = AsymmetricA()
-@inline _thomas_symmetry(::Deriv3) = AsymmetricA()
-@inline function _thomas_symmetry(bc::BCPair)
-    l, r = _thomas_symmetry(bc.left), _thomas_symmetry(bc.right)
-    (l isa SymmetricA && r isa SymmetricA) ? SymmetricA() : AsymmetricA()
-end
 
 # ========================================
 # PolyFit Precomputed Data
@@ -87,7 +55,7 @@ end
 # ========================================
 
 """
-    CubicAdjoint{Tg, C, BC, Sym, PF}
+    CubicAdjoint{Tg, C, BC, PF}
 
 Adjoint (transpose) operator for cubic spline interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward interpolation weight matrix.
@@ -99,7 +67,6 @@ The same adjoint can be applied to any `ȳ` vector regardless of value type.
 - `Tg`: Grid float type (Float32 or Float64)
 - `C`: `CubicSplineCache` type (reused from forward interpolation)
 - `BC`: `BCPair` or `PeriodicBC` (normalized boundary condition)
-- `Sym`: `SymmetricA` or `AsymmetricA` — compile-time tridiagonal symmetry trait
 - `PF`: `_AdjointPolyfitData` type (precomputed PolyFit stencil coefficients)
 
 # Usage
@@ -123,7 +90,7 @@ Adjoint: `f̄ = Wᵀȳ = Eᵧᵀȳ + Rᵀ·A⁻ᵀ·E_zᵀȳ`
 Here `A` is the tridiagonal moment matrix, `R` the finite-difference RHS operator,
 `Eᵧ` and `E_z` the evaluation weight matrices for y-values and z-moments respectively.
 """
-struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}, Sym <: MatrixSymmetry, PF <: _AdjointPolyfitData, QT}
+struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}, PF <: _AdjointPolyfitData, QT}
     cache::C
     anchors::Vector{_CubicAnchoredQuery{Tg, Tg}}
     bc::BC
@@ -134,11 +101,10 @@ struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{
             cache::C,
             anchors::Vector{_CubicAnchoredQuery{Tg, Tg}},
             bc::BC,
-            polyfit_data::PF,
-            ::Sym;
+            polyfit_data::PF;
             q_transpose::QT = nothing
-        ) where {Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}, Sym <: MatrixSymmetry, PF <: _AdjointPolyfitData, QT}
-        return new{Tg, C, BC, Sym, PF, QT}(cache, anchors, bc, polyfit_data, q_transpose)
+        ) where {Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}, PF <: _AdjointPolyfitData, QT}
+        return new{Tg, C, BC, PF, QT}(cache, anchors, bc, polyfit_data, q_transpose)
     end
 end
 
@@ -206,9 +172,9 @@ end
 
 @with_pool pool function _cubic_adjoint_apply!(
         f_bar::AbstractVector{Tv},
-        adj::CubicAdjoint{Tg, C, BC, Sym, PF},
+        adj::CubicAdjoint{Tg},
         y_bar::AbstractVector
-    ) where {Tv, Tg, C, BC, Sym, PF}
+    ) where {Tv, Tg}
     n = length(adj.cache.x)
 
     # Step 1: Evaluation adjoint scatter — Eᵧᵀȳ → f̄, E_zᵀȳ → z̄
@@ -216,7 +182,7 @@ end
     _scatter_eval_adjoint!(f_bar, z_bar, adj.anchors, y_bar)
 
     # Step 2: Transpose solve — A⁻ᵀz̄ → r̄ (result in z_bar)
-    _adjoint_thomas_solve!(z_bar, adj.cache.thomas, Sym())
+    _ldiv_tridiagonal_transpose!(z_bar, adj.cache.thomas)
 
     # Step 3: RHS adjoint — f̄ += Rᵀr̄
     _compute_rhs_adjoint!(f_bar, z_bar, adj.cache.spacing, adj.bc, adj.polyfit_data)
@@ -247,18 +213,6 @@ function _scatter_eval_adjoint!(
     end
     return nothing
 end
-
-# ========================================
-# Step 2: Transpose Solve Dispatch
-# ========================================
-
-# Symmetric A (Deriv1, PolyFit): forward solve = transpose solve
-@inline _adjoint_thomas_solve!(z_bar, thomas, ::SymmetricA) =
-    _ldiv_tridiagonal_nopiv!(z_bar, thomas)
-
-# Asymmetric A (Deriv2, Deriv3): requires dedicated transpose solve
-@inline _adjoint_thomas_solve!(z_bar, thomas, ::AsymmetricA) =
-    _ldiv_tridiagonal_transpose!(z_bar, thomas)
 
 # ========================================
 # Step 3: RHS Adjoint (Rᵀ)
@@ -436,13 +390,10 @@ function cubic_adjoint(
     # Build anchored queries (reuses existing anchor builder)
     anchors = _anchor_query(cache.x, xq_p, Val(:cubic))
 
-    # Compile-time symmetry trait
-    sym = _thomas_symmetry(bc_pair)
-
     # Precompute PolyFit stencil coefficients (grid-only, computed once)
     pf = _build_polyfit_data(bc_pair, cache.x)
 
-    return CubicAdjoint(cache, anchors, bc_pair, pf, sym)
+    return CubicAdjoint(cache, anchors, bc_pair, pf)
 end
 
 # ========================================
@@ -475,11 +426,6 @@ function _build_cubic_adjoint_periodic(
     # Build anchored queries with wrapping (queries outside domain → wrap to [x[1], x[end]))
     anchors = _anchor_query(cache.x, xq, Val(:cubic), true)
 
-    # Periodic tridiagonal A' is NOT symmetric for non-uniform grids
-    # (A'[i,i-1] = h[i-1] ≠ h[i] = A'[i,i+1]), so we always use AsymmetricA
-    # to force the transpose Thomas solve in the adjoint pipeline.
-    sym = AsymmetricA()
-
     # No PolyFit for periodic
     pf = _AdjointPolyfitData(nothing, nothing)
 
@@ -491,7 +437,7 @@ function _build_cubic_adjoint_periodic(
     # Store resolved period in BC for display/introspection
     bc_display = _with_resolved_period(bc, cache.bc_config.period)
 
-    return CubicAdjoint(cache, anchors, bc_display, pf, sym; q_transpose = u)
+    return CubicAdjoint(cache, anchors, bc_display, pf; q_transpose = u)
 end
 
 # ========================================
@@ -500,9 +446,9 @@ end
 
 @with_pool pool function _cubic_adjoint_apply!(
         f_bar::AbstractVector{Tv},
-        adj::CubicAdjoint{Tg, C, <:PeriodicBC, Sym, PF},
+        adj::CubicAdjoint{Tg, <:CubicSplineCache{Tg}, <:PeriodicBC},
         y_bar::AbstractVector
-    ) where {Tv, Tg, C, Sym, PF}
+    ) where {Tv, Tg}
     n = length(adj.cache.x) - 1  # n intervals, n+1 grid points
 
     # Step 1: Evaluation adjoint scatter — Eᵧᵀȳ → f̄[1..n+1], E_zᵀȳ → z̄[1..n+1]

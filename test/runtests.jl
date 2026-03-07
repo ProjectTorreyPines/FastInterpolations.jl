@@ -100,11 +100,15 @@ else
     include("test_integral_fulldomain.jl")
     include("test_cumulative_integrate.jl")
 
-    # # Auto-differentiation tests (ForwardDiff, Zygote, Enzyme)
-    include("test_autodiff_ForwardDiff.jl")
-    include("test_autodiff_Zygote.jl")
-    include("test_autodiff_Enzyme.jl")
-
-    # Symbolics registration
-    include("test_symbolics.jl")
+    # ── Extension tests (AD / Symbolics) ──────────────────────────────
+    # Heavy package loads (~5 min compile). Always in CI, skip locally by default.
+    # Run individually via ARGS: Pkg.test(test_args=["test_autodiff_Zygote.jl"])
+    if get(ENV, "CI", nothing) !== nothing
+        include("test_autodiff_ForwardDiff.jl")
+        include("test_autodiff_Zygote.jl")
+        include("test_autodiff_Enzyme.jl")
+        include("test_symbolics.jl")
+    else
+        @info "Skipping extension tests (run in CI, or use cc-julia-test-runner for individual files)"
+    end
 end

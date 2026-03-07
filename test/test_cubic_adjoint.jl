@@ -7,17 +7,18 @@ using FastInterpolations
 # ========================================
 # The gold standard: ⟨W·f, ȳ⟩ = ⟨f, W^T·ȳ⟩
 
-function dot_product_test(x, xq, f, y_bar; bc = CubicFit(), atol = 0, rtol = sqrt(eps(eltype(x))))
+function dot_product_test(x, xq, f, y_bar; bc = CubicFit(), deriv = EvalValue(),
+        atol = 0, rtol = sqrt(eps(eltype(x))))
     itp = cubic_interp(x, f; bc = bc)
     adj = cubic_adjoint(x, xq; bc = bc)
 
     # The forward is affine: y = W·f + c, where c comes from non-zero BC values.
-    # Subtract the constant offset to isolate the linear part W·f.
+    # Subtract the constant offset to isolate the linear part W_d·f.
     f_zero = zeros(eltype(f), length(f))
     itp_zero = cubic_interp(x, f_zero; bc = bc)
-    Wf = itp.(xq) .- itp_zero.(xq)  # linear part only
+    Wf = itp.(xq; deriv = deriv) .- itp_zero.(xq; deriv = deriv)  # linear part only
 
-    WTy = adj(y_bar)        # adjoint: ȳ → f̄
+    WTy = adj(y_bar; deriv = deriv)        # adjoint: ȳ → f̄
 
     lhs = dot(Wf, y_bar)
     rhs = dot(f, WTy)
@@ -242,6 +243,86 @@ end
         f_min = randn(2)
         yb_min = randn(1)
         lhs, rhs, ok = dot_product_test(x_min, xq_min, f_min, yb_min; bc = BCPair(Deriv2(0.0), Deriv2(0.0)))
+        @test ok
+    end
+
+    # ========================================
+    # Derivative adjoint: deriv keyword
+    # ========================================
+    @testset "Derivative adjoint — $d_name, $bc_name" for
+            (d_name, deriv_op) in [
+                ("deriv=1", EvalDeriv1()),
+                ("deriv=2", EvalDeriv2()),
+                ("deriv=3", EvalDeriv3()),
+            ],
+            (bc_name, bc) in [
+                ("CubicFit", CubicFit()),
+                ("ZeroCurvBC", ZeroCurvBC()),
+                ("Deriv1(0.5)", BCPair(Deriv1(0.5), Deriv1(-0.3))),
+                ("Mixed: CubicFit+Deriv2", BCPair(CubicFit(), Deriv2(0.0))),
+            ]
+        @testset "Uniform grid" begin
+            _, _, ok = dot_product_test(x_uniform, xq, f, y_bar; bc = bc, deriv = deriv_op)
+            @test ok
+        end
+        @testset "Non-uniform grid" begin
+            _, _, ok = dot_product_test(x_nonuniform, xq, f, y_bar; bc = bc, deriv = deriv_op)
+            @test ok
+        end
+    end
+
+    # ========================================
+    # Derivative adjoint: in-place == allocating
+    # ========================================
+    @testset "In-place == allocating — deriv=$d" for (d, op) in [
+            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3())]
+        adj = cubic_adjoint(x_uniform, xq; bc = CubicFit())
+        fb_oop = adj(y_bar; deriv = op)
+        fb_ip = zeros(n_grid)
+        adj(fb_ip, y_bar; deriv = op)
+        @test fb_oop ≈ fb_ip
+    end
+
+    # ========================================
+    # Derivative adjoint: periodic BC
+    # ========================================
+    @testset "Derivative adjoint — periodic" begin
+        n_p = 40
+        n_pq = 25
+        x_incl = collect(range(0.0, 2π, n_p + 1))
+        f_incl = sin.(x_incl)
+        f_incl[end] = f_incl[1]
+        xq_p = sort(rand(n_pq)) .* 2π
+        yb_p = randn(n_pq)
+
+        x_excl = range(0.0, step = 2π / n_p, length = n_p)
+        f_excl = sin.(collect(x_excl))
+
+        @testset "$d_name — inclusive" for (d_name, op) in [
+                ("deriv=1", EvalDeriv1()), ("deriv=2", EvalDeriv2()), ("deriv=3", EvalDeriv3())]
+            _, _, ok = dot_product_test(x_incl, xq_p, f_incl, yb_p;
+                bc = PeriodicBC(), deriv = op)
+            @test ok
+        end
+
+        @testset "$d_name — exclusive" for (d_name, op) in [
+                ("deriv=1", EvalDeriv1()), ("deriv=2", EvalDeriv2()), ("deriv=3", EvalDeriv3())]
+            _, _, ok = dot_product_test(x_excl, xq_p, f_excl, yb_p;
+                bc = PeriodicBC(endpoint = :exclusive), deriv = op)
+            @test ok
+        end
+    end
+
+    # ========================================
+    # Float32 derivative adjoint
+    # ========================================
+    @testset "Float32 — deriv=1" begin
+        x32 = Float32.(x_uniform)
+        xq32 = Float32.(xq)
+        f32 = randn(Float32, n_grid)
+        yb32 = randn(Float32, n_query)
+        _, _, ok = dot_product_test(x32, xq32, f32, yb32;
+            bc = CubicFit(), deriv = EvalDeriv1(), rtol = sqrt(eps(Float32)))
         @test ok
     end
 end

@@ -73,11 +73,15 @@ The same adjoint can be applied to any `ȳ` vector regardless of value type.
 ```julia
 adj = cubic_adjoint(x_grid, x_query; bc=CubicFit())
 
-# Allocating
+# Value adjoint (default)
 f_bar = adj(y_bar)
 
+# Derivative adjoint: adjoint of the d-th derivative operator
+f_bar = adj(y_bar; deriv=DerivOp(1))   # adjoint of first derivative
+f_bar = adj(y_bar; deriv=EvalDeriv2()) # adjoint of second derivative
+
 # In-place
-adj(f_bar, y_bar)
+adj(f_bar, y_bar; deriv=DerivOp(1))
 
 # Dimensions
 size(adj)    # (n_grid, n_query)
@@ -119,33 +123,39 @@ Base.size(adj::CubicAdjoint, d::Integer) = size(adj)[d]
 # ========================================
 
 """
-    (adj::CubicAdjoint)(y_bar) -> f_bar
+    (adj::CubicAdjoint)(y_bar; deriv=EvalValue()) -> f_bar
 
-Apply the adjoint operator: `f̄ = Wᵀȳ`. Allocating version.
+Apply the adjoint operator: `f̄ = W_dᵀȳ`. Allocating version.
+
+The `deriv` keyword selects which forward operator's adjoint to compute:
+- `EvalValue()` (default): adjoint of value interpolation
+- `EvalDeriv1()` / `DerivOp(1)`: adjoint of first derivative
+- `EvalDeriv2()` / `DerivOp(2)`: adjoint of second derivative
+- `EvalDeriv3()` / `DerivOp(3)`: adjoint of third derivative
 
 The output element type is `promote_type(eltype(y_bar), Tg)`.
 """
-function (adj::CubicAdjoint{Tg})(y_bar::AbstractVector) where {Tg}
+function (adj::CubicAdjoint{Tg})(y_bar::AbstractVector; deriv::DerivOp = EvalValue()) where {Tg}
     @assert length(y_bar) == length(adj.anchors) "y_bar length ($(length(y_bar))) must match n_query ($(length(adj.anchors)))"
     Tv = promote_type(eltype(y_bar), Tg)
     n_internal = length(adj.cache.x)
     f_bar = zeros(Tv, n_internal)
-    _cubic_adjoint_apply!(f_bar, adj, y_bar)
+    _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
     # Exclusive periodic: fold f̄[n+1] into f̄[1] and truncate
     if adj.bc isa PeriodicBC{:exclusive}
         @inbounds f_bar[1] += f_bar[n_internal]
-        return f_bar[1:n_internal - 1]
+        return f_bar[1:(n_internal - 1)]
     end
     return f_bar
 end
 
 """
-    (adj::CubicAdjoint)(f_bar, y_bar) -> f_bar
+    (adj::CubicAdjoint)(f_bar, y_bar; deriv=EvalValue()) -> f_bar
 
-Apply the adjoint operator in-place: `f̄ = Wᵀȳ`.
-Zeros `f_bar` before accumulating.
+Apply the adjoint operator in-place: `f̄ = W_dᵀȳ`.
+Zeros `f_bar` before accumulating. See allocating version for `deriv` options.
 """
-function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::AbstractVector) where {Tg}
+function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::AbstractVector; deriv::DerivOp = EvalValue()) where {Tg}
     n_out = _adjoint_output_length(adj)
     @assert length(f_bar) == n_out "f_bar length ($(length(f_bar))) must match output size ($n_out)"
     @assert length(y_bar) == length(adj.anchors) "y_bar length ($(length(y_bar))) must match n_query ($(length(adj.anchors)))"
@@ -154,14 +164,14 @@ function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::AbstractVector) w
         Tv = eltype(f_bar)
         n_internal = length(adj.cache.x)
         f_work = zeros(Tv, n_internal)
-        _cubic_adjoint_apply!(f_work, adj, y_bar)
+        _cubic_adjoint_apply!(f_work, adj, y_bar, deriv)
         @inbounds f_work[1] += f_work[n_internal]
         @inbounds for k in 1:n_out
             f_bar[k] = f_work[k]
         end
     else
         fill!(f_bar, zero(eltype(f_bar)))
-        _cubic_adjoint_apply!(f_bar, adj, y_bar)
+        _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
     end
     return f_bar
 end
@@ -173,13 +183,14 @@ end
 @with_pool pool function _cubic_adjoint_apply!(
         f_bar::AbstractVector{Tv},
         adj::CubicAdjoint{Tg},
-        y_bar::AbstractVector
+        y_bar::AbstractVector,
+        deriv::DerivOp = EvalValue()
     ) where {Tv, Tg}
     n = length(adj.cache.x)
 
-    # Step 1: Evaluation adjoint scatter — Eᵧᵀȳ → f̄, E_zᵀȳ → z̄
+    # Step 1: Evaluation adjoint scatter — E_dᵧᵀȳ → f̄, E_dzᵀȳ → z̄
     z_bar = zeros!(pool, Tv, n)
-    _scatter_eval_adjoint!(f_bar, z_bar, adj.anchors, y_bar)
+    _scatter_eval_adjoint!(f_bar, z_bar, adj.anchors, y_bar, deriv)
 
     # Step 2: Transpose solve — A⁻ᵀz̄ → r̄ (result in z_bar)
     _ldiv_tridiagonal_transpose!(z_bar, adj.cache.thomas)
@@ -196,11 +207,15 @@ end
 
 """
 Scatter query-space sensitivities to grid-space using precomputed anchor weights.
-Reuses the `w0 = (wyL, wyR, wzL, wzR)` field from `_CubicAnchoredQuery`.
+Dispatches on `DerivOp{N}` to select the appropriate weight field from `_CubicAnchoredQuery`.
+
+- `EvalValue`/`EvalDeriv1`: 4-weight scatter (wyL, wyR, wzL, wzR) → f_bar + z_bar
+- `EvalDeriv2`/`EvalDeriv3`: 2-weight scatter (wzL, wzR) → z_bar only (y-weights are zero)
 """
 function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar::AbstractVector
+        anchors::Vector{<:_CubicAnchoredQuery}, y_bar::AbstractVector,
+        ::EvalValue
     )
     @inbounds for q in eachindex(y_bar)
         aq = anchors[q]
@@ -208,6 +223,53 @@ function _scatter_eval_adjoint!(
         wyL, wyR, wzL, wzR = aq.w0
         f_bar[aq.idx] += wyL * yb
         f_bar[aq.idx + 1] += wyR * yb
+        z_bar[aq.idx] += wzL * yb
+        z_bar[aq.idx + 1] += wzR * yb
+    end
+    return nothing
+end
+
+function _scatter_eval_adjoint!(
+        f_bar::AbstractVector, z_bar::AbstractVector,
+        anchors::Vector{<:_CubicAnchoredQuery}, y_bar::AbstractVector,
+        ::EvalDeriv1
+    )
+    @inbounds for q in eachindex(y_bar)
+        aq = anchors[q]
+        yb = y_bar[q]
+        wyL, wyR, wzL, wzR = aq.w1
+        f_bar[aq.idx] += wyL * yb
+        f_bar[aq.idx + 1] += wyR * yb
+        z_bar[aq.idx] += wzL * yb
+        z_bar[aq.idx + 1] += wzR * yb
+    end
+    return nothing
+end
+
+function _scatter_eval_adjoint!(
+        f_bar::AbstractVector, z_bar::AbstractVector,
+        anchors::Vector{<:_CubicAnchoredQuery}, y_bar::AbstractVector,
+        ::EvalDeriv2
+    )
+    @inbounds for q in eachindex(y_bar)
+        aq = anchors[q]
+        yb = y_bar[q]
+        wzL, wzR = aq.w2
+        z_bar[aq.idx] += wzL * yb
+        z_bar[aq.idx + 1] += wzR * yb
+    end
+    return nothing
+end
+
+function _scatter_eval_adjoint!(
+        f_bar::AbstractVector, z_bar::AbstractVector,
+        anchors::Vector{<:_CubicAnchoredQuery}, y_bar::AbstractVector,
+        ::EvalDeriv3
+    )
+    @inbounds for q in eachindex(y_bar)
+        aq = anchors[q]
+        yb = y_bar[q]
+        wzL, wzR = aq.w3
         z_bar[aq.idx] += wzL * yb
         z_bar[aq.idx + 1] += wzR * yb
     end
@@ -351,10 +413,11 @@ itp = cubic_interp(x, f; bc=CubicFit())
 
 # Adjoint
 adj = cubic_adjoint(x, xq; bc=CubicFit())
-f_bar = adj(y_bar)       # allocating
-adj(f_bar, y_bar)         # in-place
+f_bar = adj(y_bar)                      # value adjoint
+f_bar = adj(y_bar; deriv=DerivOp(1))    # 1st derivative adjoint
+adj(f_bar, y_bar; deriv=DerivOp(1))     # in-place
 
-# Dot-product identity: ⟨W·f, ȳ⟩ = ⟨f, Wᵀȳ⟩
+# Dot-product identity: ⟨W_d·f, ȳ⟩ = ⟨f, W_dᵀȳ⟩
 @assert dot(itp.(xq), y_bar) ≈ dot(f, adj(y_bar))
 ```
 
@@ -447,14 +510,15 @@ end
 @with_pool pool function _cubic_adjoint_apply!(
         f_bar::AbstractVector{Tv},
         adj::CubicAdjoint{Tg, <:CubicSplineCache{Tg}, <:PeriodicBC},
-        y_bar::AbstractVector
+        y_bar::AbstractVector,
+        deriv::DerivOp = EvalValue()
     ) where {Tv, Tg}
     n = length(adj.cache.x) - 1  # n intervals, n+1 grid points
 
-    # Step 1: Evaluation adjoint scatter — Eᵧᵀȳ → f̄[1..n+1], E_zᵀȳ → z̄[1..n+1]
+    # Step 1: Evaluation adjoint scatter — E_dᵧᵀȳ → f̄[1..n+1], E_dzᵀȳ → z̄[1..n+1]
     # Reuse non-periodic scatter (n+1-element arrays, idx+1=n+1 is valid index)
     z_bar = zeros!(pool, Tv, n + 1)
-    _scatter_eval_adjoint!(f_bar, z_bar, adj.anchors, y_bar)
+    _scatter_eval_adjoint!(f_bar, z_bar, adj.anchors, y_bar, deriv)
 
     # Step 2: Fold z̄[n+1] → z̄[1] (forward has z[n+1]=z[1], adjoint sums contributions)
     @inbounds z_bar[1] += z_bar[n + 1]

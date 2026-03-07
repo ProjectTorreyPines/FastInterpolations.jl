@@ -312,6 +312,56 @@ end
     end
 
     # ════════════════════════════════════════════════════════════════════════
+    # CUBIC DATA-ADJOINT (∂f/∂y) via CubicAdjoint rrule
+    # ════════════════════════════════════════════════════════════════════════
+    # Tests the ChainRulesCore rrule for cubic_interp(x, f, xq) that uses
+    # CubicAdjoint for the pullback. This differentiates w.r.t. DATA (f),
+    # not w.r.t. query coordinates (xq).
+
+    @testset "Cubic data-adjoint (∂f/∂y) — Zygote via rrule" begin
+        x = collect(0.0:0.5:5.0)
+        f_data = sin.(x)
+        xq_vec = [0.75, 1.25, 2.75, 3.5, 4.25]
+        y_obs = cos.(xq_vec)
+
+        @testset "Scalar query — ∂f/∂y" begin
+            g_zy = Zygote.gradient(y -> cubic_interp(x, y, 1.25), f_data)[1]
+            g_fd = ForwardDiff.gradient(y -> cubic_interp(x, y, 1.25), f_data)
+            @test g_zy ≈ g_fd atol = 1e-10
+        end
+
+        @testset "Vector query — ∂f/∂y" begin
+            g_zy = Zygote.gradient(y -> sum(cubic_interp(x, y, xq_vec)), f_data)[1]
+            g_fd = ForwardDiff.gradient(y -> sum(cubic_interp(x, y, xq_vec)), f_data)
+            @test g_zy ≈ g_fd atol = 1e-10
+        end
+
+        @testset "L2 loss function" begin
+            loss(y) = sum(abs2, cubic_interp(x, y, xq_vec) .- y_obs)
+            g_zy = Zygote.gradient(loss, f_data)[1]
+            g_fd = ForwardDiff.gradient(loss, f_data)
+            @test g_zy ≈ g_fd atol = 1e-10
+        end
+
+        @testset "Different BC types" begin
+            for (name, bc) in [("ZeroCurvBC", ZeroCurvBC()), ("ZeroSlopeBC", ZeroSlopeBC())]
+                g_zy = Zygote.gradient(y -> sum(cubic_interp(x, y, xq_vec; bc = bc)), f_data)[1]
+                g_fd = ForwardDiff.gradient(y -> sum(cubic_interp(x, y, xq_vec; bc = bc)), f_data)
+                @test g_zy ≈ g_fd atol = 1e-10
+            end
+        end
+
+        @testset "Float32" begin
+            x32 = Float32.(x)
+            f32 = Float32.(f_data)
+            xq32 = Float32.(xq_vec)
+            g_zy = Zygote.gradient(y -> sum(cubic_interp(x32, y, xq32)), f32)[1]
+            g_fd = ForwardDiff.gradient(y -> sum(cubic_interp(x32, y, xq32)), f32)
+            @test g_zy ≈ g_fd atol = 1e-4
+        end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
     # CUBIC ND — Vector query gradient (issue #60: was broken by DerivOp API change)
     # ════════════════════════════════════════════════════════════════════════
 

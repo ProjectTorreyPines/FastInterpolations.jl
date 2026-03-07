@@ -610,3 +610,64 @@ function _compute_rhs_adjoint_periodic!(
 
     return nothing
 end
+
+# ========================================
+# Matrix Materialization (Debug/Verification)
+# ========================================
+
+"""
+    Matrix(adj::CubicAdjoint; deriv=EvalValue()) -> Matrix
+
+Materialize the adjoint operator as a dense matrix `Wᵀ` of size `(n_grid, n_query)`.
+
+Each column `q` of `Wᵀ` is computed by probing with a unit vector `eₑ`:
+`Wᵀ[:, q] = adj(eₑ)`, i.e., the grid-space sensitivity when only query point `q`
+has unit sensitivity.
+
+This is an O(n_grid × n_query) operation intended for debugging and verification,
+not for production use.
+
+# Example
+```julia
+adj = cubic_adjoint(x, xq; bc=CubicFit())
+Wᵀ = Matrix(adj)                          # (n_grid × n_query)
+W  = Matrix(adj)'                          # (n_query × n_grid)
+
+@assert Wᵀ * y_bar ≈ adj(y_bar)           # matrix-vector == operator
+@assert W * f ≈ itp.(xq)                  # forward matrix works too
+```
+"""
+function Base.Matrix(adj::CubicAdjoint{Tg}; deriv::DerivOp = EvalValue()) where {Tg}
+    n_out, n_query = size(adj)
+    W_T = zeros(Tg, n_out, n_query)
+    e_q = zeros(Tg, n_query)
+    @inbounds for q in 1:n_query
+        e_q[q] = one(Tg)
+        adj(view(W_T, :, q), e_q; deriv = deriv)
+        e_q[q] = zero(Tg)
+    end
+    return W_T
+end
+
+"""
+    Matrix(itp::CubicInterpolant, xq; deriv=EvalValue()) -> Matrix
+
+Materialize the forward interpolation operator as a dense matrix `W` of size
+`(n_query, n_grid)`, such that `W * f ≈ itp.(xq; deriv=deriv)` for the linear part.
+
+Internally constructs the adjoint and transposes: `W = Matrix(adj; deriv)'`.
+
+# Example
+```julia
+itp = cubic_interp(x, f; bc=CubicFit())
+W = Matrix(itp, xq)                       # (n_query × n_grid)
+@assert W * f ≈ itp.(xq)                  # for zero-valued BCs
+```
+"""
+function Base.Matrix(
+        itp::CubicInterpolant, xq::AbstractVector;
+        deriv::DerivOp = EvalValue()
+    )
+    adj = cubic_adjoint(itp.cache.x, xq; bc = itp.bc)
+    return Matrix(adj; deriv = deriv)'
+end

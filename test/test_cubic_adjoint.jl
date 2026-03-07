@@ -340,4 +340,80 @@ end
         )
         @test ok
     end
+
+    # ========================================
+    # Matrix materialization
+    # ========================================
+    @testset "Matrix(adj) — Wᵀ·ȳ == adj(ȳ)" begin
+        adj = cubic_adjoint(x_uniform, xq; bc = CubicFit())
+        W_T = Matrix(adj)
+        @test size(W_T) == (n_grid, n_query)
+        @test W_T * y_bar ≈ adj(y_bar)
+    end
+
+    @testset "Matrix(adj)' — W·f == itp.(xq)" begin
+        itp = cubic_interp(x_uniform, f; bc = CubicFit())
+        adj = cubic_adjoint(x_uniform, xq; bc = CubicFit())
+        W = Matrix(adj)'
+        @test W * f ≈ itp.(xq)
+    end
+
+    @testset "Matrix(itp, xq) — convenience forward matrix" begin
+        itp = cubic_interp(x_uniform, f; bc = CubicFit())
+        W = Matrix(itp, xq)
+        @test size(W) == (n_query, n_grid)
+        @test W * f ≈ itp.(xq)
+    end
+
+    @testset "Matrix — deriv keyword" begin
+        adj = cubic_adjoint(x_uniform, xq; bc = CubicFit())
+        itp = cubic_interp(x_uniform, f; bc = CubicFit())
+        for (name, op) in [("d1", EvalDeriv1()), ("d2", EvalDeriv2()), ("d3", EvalDeriv3())]
+            W_T = Matrix(adj; deriv = op)
+            @test W_T * y_bar ≈ adj(y_bar; deriv = op)
+            W = Matrix(itp, xq; deriv = op)
+            @test W * f ≈ itp.(xq; deriv = op)
+        end
+    end
+
+    @testset "Matrix — non-uniform grid" begin
+        adj = cubic_adjoint(x_nonuniform, xq; bc = CubicFit())
+        itp = cubic_interp(x_nonuniform, f; bc = CubicFit())
+        W_T = Matrix(adj)
+        @test W_T * y_bar ≈ adj(y_bar)
+        @test Matrix(adj)' * f ≈ itp.(xq)
+    end
+
+    @testset "Matrix — non-zero BC (affine)" begin
+        bc = BCPair(Deriv1(0.5), Deriv1(-0.3))
+        adj = cubic_adjoint(x_uniform, xq; bc = bc)
+        itp = cubic_interp(x_uniform, f; bc = bc)
+        # Affine: subtract constant to isolate linear part
+        itp_zero = cubic_interp(x_uniform, zeros(n_grid); bc = bc)
+        Wf = itp.(xq) .- itp_zero.(xq)
+        @test Matrix(adj)' * f ≈ Wf
+    end
+
+    @testset "Matrix — periodic" begin
+        n_p = 20
+        x_p = collect(range(0.0, 2π, n_p + 1))
+        f_p = sin.(x_p); f_p[end] = f_p[1]
+        xq_p = sort(rand(15)) .* 2π
+        yb_p = randn(15)
+
+        adj = cubic_adjoint(x_p, xq_p; bc = PeriodicBC())
+        @test Matrix(adj) * yb_p ≈ adj(yb_p)
+
+        itp = cubic_interp(x_p, f_p; bc = PeriodicBC())
+        @test Matrix(itp, xq_p; deriv = EvalValue()) * f_p ≈ itp.(xq_p)
+    end
+
+    @testset "Matrix — Float32" begin
+        x32 = Float32.(x_uniform)
+        xq32 = Float32.(xq)
+        adj32 = cubic_adjoint(x32, xq32; bc = CubicFit())
+        W_T = Matrix(adj32)
+        @test eltype(W_T) == Float32
+        @test size(W_T) == (n_grid, n_query)
+    end
 end

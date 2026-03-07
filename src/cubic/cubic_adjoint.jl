@@ -113,6 +113,7 @@ end
 
 Base.size(adj::CubicAdjoint) = (_adjoint_output_length(adj), length(adj.anchors))
 Base.size(adj::CubicAdjoint, d::Integer) = size(adj)[d]
+Base.eltype(::CubicAdjoint{Tg}) where {Tg} = Tg
 
 # ========================================
 # Callable Methods

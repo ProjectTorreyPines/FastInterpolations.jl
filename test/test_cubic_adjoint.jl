@@ -89,14 +89,46 @@ end
     end
 
     # ========================================
-    # Type stability
+    # Type stability — constructor @inferred
     # ========================================
-    @testset "Type stability — Float64" begin
+    @testset "Type stability — constructor @inferred" begin
+        # BC variations
+        @test @inferred(cubic_adjoint(x_uniform, xq)) isa CubicAdjoint
+        @test @inferred(cubic_adjoint(x_uniform, xq; bc = CubicFit())) isa CubicAdjoint
+        @test @inferred(cubic_adjoint(x_uniform, xq; bc = ZeroCurvBC())) isa CubicAdjoint
+        @test @inferred(cubic_adjoint(x_uniform, xq; bc = ZeroSlopeBC())) isa CubicAdjoint
+        @test @inferred(cubic_adjoint(x_uniform, xq; bc = LinearFit())) isa CubicAdjoint
+        @test @inferred(cubic_adjoint(x_uniform, xq; bc = QuadraticFit())) isa CubicAdjoint
+        @test @inferred(cubic_adjoint(x_uniform, xq; bc = BCPair(Deriv1(0.0), Deriv2(0.0)))) isa CubicAdjoint
+
+        # Periodic BC
+        x_per = collect(range(0.0, 2π, n_grid))
+        f_per = sin.(x_per)
+        f_per[end] = f_per[1]
+        @test @inferred(cubic_adjoint(x_per, xq; bc = PeriodicBC())) isa CubicAdjoint
+        @test @inferred(cubic_adjoint(x_per[1:(end - 1)], xq; bc = PeriodicBC(endpoint = :exclusive, period = 2π))) isa CubicAdjoint
+
+        # Extrap variations
+        @test @inferred(cubic_adjoint(x_uniform, xq; extrap = NoExtrap())) isa CubicAdjoint
+        @test @inferred(cubic_adjoint(x_uniform, xq; extrap = ExtendExtrap())) isa CubicAdjoint
+        @test @inferred(cubic_adjoint(x_uniform, xq; extrap = ClampExtrap())) isa CubicAdjoint
+        @test @inferred(cubic_adjoint(x_uniform, xq; extrap = WrapExtrap())) isa CubicAdjoint
+        @test @inferred(cubic_adjoint(x_uniform, xq; extrap = FillExtrap(0.0))) isa CubicAdjoint
+
+        # BC + extrap combinations
+        @test @inferred(cubic_adjoint(x_uniform, xq; bc = ZeroCurvBC(), extrap = ExtendExtrap())) isa CubicAdjoint
+        @test @inferred(cubic_adjoint(x_uniform, xq; bc = CubicFit(), extrap = WrapExtrap())) isa CubicAdjoint
+    end
+
+    # ========================================
+    # Type stability — apply @inferred
+    # ========================================
+    @testset "Type stability — apply Float64" begin
         adj = cubic_adjoint(x_uniform, xq; bc = CubicFit())
         @test @inferred(adj(y_bar)) isa Vector{Float64}
     end
 
-    @testset "Type stability — Float32" begin
+    @testset "Type stability — apply Float32" begin
         x32 = Float32.(x_uniform)
         xq32 = Float32.(xq)
         yb32 = randn(Float32, n_query)

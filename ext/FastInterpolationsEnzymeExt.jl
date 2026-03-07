@@ -13,6 +13,19 @@ using Enzyme
 using Enzyme.EnzymeRules
 
 # ════════════════════════════════════════
+# OOB masking for FillExtrap (same logic as ChainRulesCore ext)
+# ════════════════════════════════════════
+
+@inline _needs_oob_masking(::FastInterpolations.AbstractExtrap) = false
+@inline _needs_oob_masking(::FillExtrap) = true
+
+@inline function _mask_oob_tangent(Δy, x, xq, extrap)
+    _needs_oob_masking(extrap) || return Δy
+    lo, hi = first(x), last(x)
+    return [lo <= xq[i] <= hi ? Δy[i] : zero(Δy[i]) for i in eachindex(Δy)]
+end
+
+# ════════════════════════════════════════
 # Vector query: cubic_interp(x, f, xq_vec) → Vector
 # ════════════════════════════════════════
 
@@ -34,8 +47,8 @@ function EnzymeRules.augmented_primal(
     primal = EnzymeRules.needs_primal(config) ? y : nothing
     shadow = EnzymeRules.needs_shadow(config) ? zero(y) : nothing
 
-    adj = cubic_adjoint(x.val, xq.val; bc)
-    return EnzymeRules.AugmentedReturn(primal, shadow, (adj, deriv, shadow))
+    adj = cubic_adjoint(x.val, xq.val; bc, extrap)
+    return EnzymeRules.AugmentedReturn(primal, shadow, (adj, deriv, shadow, extrap, x.val, xq.val))
 end
 
 function EnzymeRules.reverse(
@@ -52,9 +65,10 @@ function EnzymeRules.reverse(
         deriv::DerivOp = EvalValue(),
         search::FastInterpolations.AbstractSearchPolicy = AutoSearch()
     ) where {Tg <: AbstractFloat, RT}
-    adj, deriv_op, dy = tape
+    adj, deriv_op, dy, extrap_t, x_val, xq_val = tape
     if dy !== nothing
-        f_bar = adj(dy; deriv = deriv_op)
+        dy_eff = _mask_oob_tangent(dy, x_val, xq_val, extrap_t)
+        f_bar = adj(dy_eff; deriv = deriv_op)
         f.dval .+= f_bar
         dy .= zero(eltype(dy))
     end
@@ -84,7 +98,7 @@ function EnzymeRules.augmented_primal(
     primal = EnzymeRules.needs_primal(config) ? y : nothing
     shadow = EnzymeRules.needs_shadow(config) ? zero(y) : nothing
 
-    adj = cubic_adjoint(x.val, Tg[xq.val]; bc)
+    adj = cubic_adjoint(x.val, Tg[xq.val]; bc, extrap)
     return EnzymeRules.AugmentedReturn(primal, shadow, (adj, deriv))
 end
 

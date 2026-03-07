@@ -17,6 +17,22 @@ using FastInterpolations
 using ChainRulesCore
 
 # ════════════════════════════════════════
+# Adjoint OOB masking for FillExtrap
+# ════════════════════════════════════════
+# FillExtrap returns a constant for out-of-domain queries → ∂fill/∂f = 0.
+# We zero out Δy entries for OOB queries so the adjoint doesn't accumulate
+# spurious gradients from those positions.
+
+@inline _needs_oob_masking(::FastInterpolations.AbstractExtrap) = false
+@inline _needs_oob_masking(::FillExtrap) = true
+
+@inline function _mask_oob_tangent(Δy, x, xq, extrap)
+    _needs_oob_masking(extrap) || return Δy
+    lo, hi = first(x), last(x)
+    return [lo <= xq[i] <= hi ? Δy[i] : zero(Δy[i]) for i in eachindex(Δy)]
+end
+
+# ════════════════════════════════════════
 # 1D Interpolants (scalar query → scalar output)
 # ════════════════════════════════════════
 # Excludes AbstractSeriesInterpolant (Vector output needs different pullback)
@@ -180,6 +196,10 @@ Reverse-mode rule for `cubic_interp(x, f, xq; ...)` — vector query.
 
 The pullback computes `∂L/∂f = Wᵀ · ∂L/∂y` via `CubicAdjoint`, where
 `W = Eᵧ + E_z · A⁻¹ · R` is the full interpolation operator.
+
+All extrap modes are supported. For `WrapExtrap`/`ClampExtrap`, queries
+are preprocessed before adjoint construction. For `FillExtrap`, OOB
+query sensitivities are zeroed (constant fill has zero gradient w.r.t. data).
 """
 function ChainRulesCore.rrule(
         ::typeof(cubic_interp),
@@ -194,11 +214,12 @@ function ChainRulesCore.rrule(
     ) where {Tg <: AbstractFloat, Tv}
     y = cubic_interp(x, f, xq; bc, extrap, autocache, deriv, search)
 
-    adj = cubic_adjoint(x, xq; bc)
+    adj = cubic_adjoint(x, xq; bc, extrap)
 
     function cubic_interp_vec_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        f_bar = adj(unthunk(Δy); deriv = deriv)
+        Δy_eff = _mask_oob_tangent(unthunk(Δy), x, xq, extrap)
+        f_bar = adj(Δy_eff; deriv = deriv)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 
@@ -210,6 +231,8 @@ Reverse-mode rule for `cubic_interp(x, f, xq; ...)` — scalar query.
 
 Wraps the scalar query into a 1-element vector for `CubicAdjoint`,
 then unwraps the scalar cotangent for the pullback.
+
+All extrap modes are supported.
 """
 function ChainRulesCore.rrule(
         ::typeof(cubic_interp),
@@ -225,11 +248,12 @@ function ChainRulesCore.rrule(
     ) where {Tg <: AbstractFloat, Tv}
     y = cubic_interp(x, f, xq; bc, extrap, autocache, deriv, search)
 
-    adj = cubic_adjoint(x, Tg[xq]; bc)
+    adj = cubic_adjoint(x, Tg[xq]; bc, extrap)
 
     function cubic_interp_scalar_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        f_bar = adj(Tg[unthunk(Δy)]; deriv = deriv)
+        Δy_eff = _mask_oob_tangent(Tg[unthunk(Δy)], x, Tg[xq], extrap)
+        f_bar = adj(Δy_eff; deriv = deriv)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 

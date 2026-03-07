@@ -147,8 +147,10 @@ Element type of an interpolant: the value type `Tv` produced by evaluation.
 """
     Base.eltype(::AbstractAdjoint{Tg}) -> Type{Tg}
 
-Element type of an adjoint operator: the grid type `Tg`.
-Adjoint operators are data-free, so output type matches the grid type.
+Weight/grid scalar type of an adjoint operator.
+This is the coordinate type used internally for weights, not necessarily the
+result type of applying the adjoint (which may promote with the sensitivity
+vector's element type, e.g., Complex sensitivities produce Complex output).
 """
 @inline Base.eltype(::AbstractAdjoint{Tg}) where {Tg} = Tg
 

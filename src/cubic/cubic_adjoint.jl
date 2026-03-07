@@ -411,6 +411,9 @@ Maps query-space sensitivities back to grid-space sensitivities.
 - `x::AbstractVector`: Grid points (must be sorted)
 - `x_query::AbstractVector`: Query points (baked into the operator)
 - `bc::AbstractBC`: Boundary condition (default: `CubicFit()`)
+- `extrap::AbstractExtrap`: Extrapolation mode (default: `NoExtrap()`).
+  For `WrapExtrap()`, queries are wrapped to the domain before anchoring.
+  For `ClampExtrap()`/`FillExtrap()`, queries are clamped to the boundary.
 - `autocache::Bool`: Enable automatic caching (default: `true`)
 
 # Example
@@ -444,6 +447,7 @@ function cubic_adjoint(
         x::AbstractVector,
         x_query::AbstractVector;
         bc::AbstractBC = CubicFit(),
+        extrap::AbstractExtrap = NoExtrap(),
         autocache::Bool = true
     )
     # Promote grid and query to AbstractFloat (handles Integer, Rational, etc.)
@@ -462,8 +466,9 @@ function cubic_adjoint(
     # Get/build cache (reuses existing infrastructure + autocache)
     cache = _get_cubic_cache(x_p, bc_pair, autocache)
 
-    # Build anchored queries (reuses existing anchor builder)
-    anchors = _anchor_query(cache.x, xq_p, Val(:cubic))
+    # Build anchored queries — wrap=true mirrors WrapExtrap forward behavior
+    wrap = extrap isa WrapExtrap
+    anchors = _anchor_query(cache.x, xq_p, Val(:cubic), wrap)
 
     # Precompute PolyFit stencil coefficients (grid-only, computed once)
     pf = _build_polyfit_data(bc_pair, cache.x)
@@ -680,6 +685,6 @@ function Base.Matrix(
         itp::CubicInterpolant, xq::AbstractVector;
         deriv::DerivOp = EvalValue()
     )
-    adj = cubic_adjoint(itp.cache.x, xq; bc = itp.bc)
+    adj = cubic_adjoint(itp.cache.x, xq; bc = itp.bc, extrap = itp.extrap)
     return Matrix(adj; deriv = deriv)'
 end

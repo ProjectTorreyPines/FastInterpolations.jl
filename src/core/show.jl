@@ -318,7 +318,7 @@ function Base.show(io::IO, adj::CubicAdjoint{Tg}) where {Tg}
     _show_print(io, "{", :light_black)
     _show_print(io, string(Tg), :light_blue)
     _show_print(io, "}", :light_black)
-    return print(io, "($n → $nq pts, $bc_name)")
+    return print(io, "($nq → $n pts, $bc_name)")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", adj::CubicAdjoint{Tg}) where {Tg}

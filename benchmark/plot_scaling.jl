@@ -52,7 +52,8 @@ function plot_scaling_results(result; save_path::Union{String, Nothing} = nothin
     ymax = maximum(all_times) * 2.0
     ylims_shared = shared_ylim ? (ymin, ymax) : :auto
 
-    args = (; # shared plot arguments
+    args = (;
+        # shared plot arguments
         label = labels,
         ylabel = "Time (s)",
         xscale = :log10,
@@ -341,7 +342,7 @@ function plot_speedup(result; save_path::Union{String, Nothing} = nothing)
         tickfontsize = 12,
         guidefontsize = 14,
         titlefontsize = 16,
-        legendfontsize = 10
+        legendfontsize = 10,
     )
 
     p1 = plot(

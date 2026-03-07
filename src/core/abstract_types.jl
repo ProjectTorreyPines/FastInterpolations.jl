@@ -4,8 +4,8 @@
 # Abstract types for interpolant type hierarchy.
 # Enables generic programming over different interpolation methods.
 #
-# DESIGN: Pure type hierarchy - NO methods defined here.
-# All concrete functionality is implemented in specific interpolant files.
+# DESIGN: Type hierarchy with minimal shared interface.
+# Only universally applicable methods (eltype, grid_type, value_type, eval_type) are defined here.
 #
 # TYPE PARAMETERS:
 # - Tg: Grid/coordinate type (AbstractFloat) - used for x-coordinates, spacing, search
@@ -113,9 +113,44 @@ gradient(itp, (0.5, 0.5))          # (∂f/∂x, ∂f/∂y)
 """
 abstract type AbstractInterpolantND{Tg <: AbstractFloat, Tv, N} <: AbstractInterpolant{Tg, Tv} end
 
+"""
+    AbstractAdjoint{Tg<:AbstractFloat}
+
+Abstract supertype for adjoint (transpose) operators of interpolation.
+
+These operators compute `f̄ = Wᵀȳ` where `W` is the forward interpolation weight matrix.
+They are **query-baked, data-free**: constructed from grid + query points, then applied
+to any value vector `ȳ` regardless of its element type.
+
+# Type Parameters
+- `Tg`: Grid/coordinate type (Float32 or Float64)
+
+Note: Only `Tg` is needed (no `Tv`) because adjoint operators are value-type independent.
+The same operator works for Float64, ComplexF64, or any custom value type.
+
+# Subtypes
+- `CubicAdjoint{Tg, ...}`: Adjoint of cubic spline interpolation
+"""
+abstract type AbstractAdjoint{Tg <: AbstractFloat} end
+
 # ========================================
 # Type Helper Functions
 # ========================================
+
+"""
+    Base.eltype(::AbstractInterpolant{Tg, Tv}) -> Type{Tv}
+
+Element type of an interpolant: the value type `Tv` produced by evaluation.
+"""
+@inline Base.eltype(::AbstractInterpolant{Tg, Tv}) where {Tg, Tv} = Tv
+
+"""
+    Base.eltype(::AbstractAdjoint{Tg}) -> Type{Tg}
+
+Element type of an adjoint operator: the grid type `Tg`.
+Adjoint operators are data-free, so output type matches the grid type.
+"""
+@inline Base.eltype(::AbstractAdjoint{Tg}) where {Tg} = Tg
 
 """
     grid_type(::AbstractInterpolant{Tg, Tv}) -> Type{Tg}
@@ -123,6 +158,13 @@ abstract type AbstractInterpolantND{Tg <: AbstractFloat, Tv, N} <: AbstractInter
 Get the grid/coordinate type of an interpolant.
 """
 @inline grid_type(::AbstractInterpolant{Tg, Tv}) where {Tg, Tv} = Tg
+
+"""
+    grid_type(::AbstractAdjoint{Tg}) -> Type{Tg}
+
+Get the grid/coordinate type of an adjoint operator.
+"""
+@inline grid_type(::AbstractAdjoint{Tg}) where {Tg} = Tg
 
 """
     value_type(::AbstractInterpolant{Tg, Tv}) -> Type{Tv}

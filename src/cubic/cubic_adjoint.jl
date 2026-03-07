@@ -90,7 +90,7 @@ Adjoint: `f̄ = Wᵀȳ = Eᵧᵀȳ + Rᵀ·A⁻ᵀ·E_zᵀȳ`
 Here `A` is the tridiagonal moment matrix, `R` the finite-difference RHS operator,
 `Eᵧ` and `E_z` the evaluation weight matrices for y-values and z-moments respectively.
 """
-struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}, PF <: _AdjointPolyfitData, QT}
+struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}, PF <: _AdjointPolyfitData, QT} <: AbstractAdjoint{Tg}
     cache::C
     anchors::Vector{_CubicAnchoredQuery{Tg, Tg}}
     bc::BC
@@ -113,7 +113,6 @@ end
 
 Base.size(adj::CubicAdjoint) = (_adjoint_output_length(adj), length(adj.anchors))
 Base.size(adj::CubicAdjoint, d::Integer) = size(adj)[d]
-Base.eltype(::CubicAdjoint{Tg}) where {Tg} = Tg
 
 # ========================================
 # Callable Methods

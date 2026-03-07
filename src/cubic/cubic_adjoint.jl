@@ -118,6 +118,11 @@ end
 Base.size(adj::CubicAdjoint) = (_adjoint_output_length(adj), length(adj.anchors))
 Base.size(adj::CubicAdjoint, d::Integer) = size(adj)[d]
 
+# ── @noinline throw helpers (keep cold error paths out of hot code) ──
+
+@noinline _throw_adjoint_dim_mismatch(label::String, got::Int, expected::Int) =
+    throw(DimensionMismatch("$label length ($got) must match expected ($expected)"))
+
 # ========================================
 # Callable Methods
 # ========================================
@@ -136,7 +141,7 @@ The `deriv` keyword selects which forward operator's adjoint to compute:
 The output element type is `promote_type(eltype(y_bar), Tg)`.
 """
 function (adj::CubicAdjoint{Tg})(y_bar::AbstractVector; deriv::DerivOp = EvalValue()) where {Tg}
-    @assert length(y_bar) == length(adj.anchors) "y_bar length ($(length(y_bar))) must match n_query ($(length(adj.anchors)))"
+    length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
     Tv = promote_type(eltype(y_bar), Tg)
     n_internal = length(adj.cache.x)
     f_bar = zeros(Tv, n_internal)
@@ -157,8 +162,8 @@ Zeros `f_bar` before accumulating. See allocating version for `deriv` options.
 """
 function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::AbstractVector; deriv::DerivOp = EvalValue()) where {Tg}
     n_out = _adjoint_output_length(adj)
-    @assert length(f_bar) == n_out "f_bar length ($(length(f_bar))) must match output size ($n_out)"
-    @assert length(y_bar) == length(adj.anchors) "y_bar length ($(length(y_bar))) must match n_query ($(length(adj.anchors)))"
+    length(f_bar) == n_out || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), n_out)
+    length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
     if adj.bc isa PeriodicBC{:exclusive}
         _adjoint_apply_exclusive_inplace!(f_bar, adj, y_bar, deriv)
     else

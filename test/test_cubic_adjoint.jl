@@ -7,8 +7,10 @@ using FastInterpolations
 # ========================================
 # The gold standard: ⟨W·f, ȳ⟩ = ⟨f, W^T·ȳ⟩
 
-function dot_product_test(x, xq, f, y_bar; bc = CubicFit(), deriv = EvalValue(),
-        atol = 0, rtol = sqrt(eps(eltype(x))))
+function dot_product_test(
+        x, xq, f, y_bar;
+        bc = CubicFit(), deriv = EvalValue(), atol = 0, rtol = sqrt(eps(eltype(x)))
+    )
     itp = cubic_interp(x, f; bc = bc)
     adj = cubic_adjoint(x, xq; bc = bc)
 
@@ -44,17 +46,17 @@ end
     # Dot-product tests: all BC types
     # ========================================
     @testset "Dot-product test — $bc_name" for (bc_name, bc) in [
-        ("CubicFit (default)", CubicFit()),
-        ("ZeroCurvBC", ZeroCurvBC()),
-        ("ZeroSlopeBC", ZeroSlopeBC()),
-        ("Deriv1(0.5)", BCPair(Deriv1(0.5), Deriv1(-0.3))),
-        ("Deriv2(0.0)", BCPair(Deriv2(0.0), Deriv2(0.0))),
-        ("Deriv3(0.0)", BCPair(Deriv3(0.0), Deriv3(0.0))),
-        ("LinearFit", LinearFit()),
-        ("QuadraticFit", QuadraticFit()),
-        ("Mixed: CubicFit+Deriv2", BCPair(CubicFit(), Deriv2(0.0))),
-        ("Mixed: Deriv1+Deriv3", BCPair(Deriv1(0.0), Deriv3(0.0))),
-    ]
+            ("CubicFit (default)", CubicFit()),
+            ("ZeroCurvBC", ZeroCurvBC()),
+            ("ZeroSlopeBC", ZeroSlopeBC()),
+            ("Deriv1(0.5)", BCPair(Deriv1(0.5), Deriv1(-0.3))),
+            ("Deriv2(0.0)", BCPair(Deriv2(0.0), Deriv2(0.0))),
+            ("Deriv3(0.0)", BCPair(Deriv3(0.0), Deriv3(0.0))),
+            ("LinearFit", LinearFit()),
+            ("QuadraticFit", QuadraticFit()),
+            ("Mixed: CubicFit+Deriv2", BCPair(CubicFit(), Deriv2(0.0))),
+            ("Mixed: Deriv1+Deriv3", BCPair(Deriv1(0.0), Deriv3(0.0))),
+        ]
         @testset "Uniform grid" begin
             lhs, rhs, ok = dot_product_test(x_uniform, xq, f, y_bar; bc = bc)
             @test ok
@@ -157,8 +159,10 @@ end
         end
 
         @testset "Dot-product — exclusive Range" begin
-            lhs, rhs, ok = dot_product_test(x_excl, xq_p, f_excl, yb_p;
-                bc = PeriodicBC(endpoint = :exclusive))
+            lhs, rhs, ok = dot_product_test(
+                x_excl, xq_p, f_excl, yb_p;
+                bc = PeriodicBC(endpoint = :exclusive)
+            )
             @test ok
         end
 
@@ -196,8 +200,10 @@ end
             f32 = sin.(Float32.(x_incl))
             f32[end] = f32[1]
             yb32 = randn(Float32, n_pq)
-            lhs, rhs, ok = dot_product_test(x32, xq32, f32, yb32;
-                bc = PeriodicBC(), rtol = sqrt(eps(Float32)))
+            lhs, rhs, ok = dot_product_test(
+                x32, xq32, f32, yb32;
+                bc = PeriodicBC(), rtol = sqrt(eps(Float32))
+            )
             @test ok
         end
 
@@ -250,7 +256,7 @@ end
     # Derivative adjoint: deriv keyword
     # ========================================
     @testset "Derivative adjoint — $d_name, $bc_name" for
-            (d_name, deriv_op) in [
+        (d_name, deriv_op) in [
                 ("deriv=1", EvalDeriv1()),
                 ("deriv=2", EvalDeriv2()),
                 ("deriv=3", EvalDeriv3()),
@@ -275,7 +281,8 @@ end
     # Derivative adjoint: in-place == allocating
     # ========================================
     @testset "In-place == allocating — deriv=$d" for (d, op) in [
-            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3())]
+            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+        ]
         adj = cubic_adjoint(x_uniform, xq; bc = CubicFit())
         fb_oop = adj(y_bar; deriv = op)
         fb_ip = zeros(n_grid)
@@ -299,16 +306,22 @@ end
         f_excl = sin.(collect(x_excl))
 
         @testset "$d_name — inclusive" for (d_name, op) in [
-                ("deriv=1", EvalDeriv1()), ("deriv=2", EvalDeriv2()), ("deriv=3", EvalDeriv3())]
-            _, _, ok = dot_product_test(x_incl, xq_p, f_incl, yb_p;
-                bc = PeriodicBC(), deriv = op)
+                ("deriv=1", EvalDeriv1()), ("deriv=2", EvalDeriv2()), ("deriv=3", EvalDeriv3()),
+            ]
+            _, _, ok = dot_product_test(
+                x_incl, xq_p, f_incl, yb_p;
+                bc = PeriodicBC(), deriv = op
+            )
             @test ok
         end
 
         @testset "$d_name — exclusive" for (d_name, op) in [
-                ("deriv=1", EvalDeriv1()), ("deriv=2", EvalDeriv2()), ("deriv=3", EvalDeriv3())]
-            _, _, ok = dot_product_test(x_excl, xq_p, f_excl, yb_p;
-                bc = PeriodicBC(endpoint = :exclusive), deriv = op)
+                ("deriv=1", EvalDeriv1()), ("deriv=2", EvalDeriv2()), ("deriv=3", EvalDeriv3()),
+            ]
+            _, _, ok = dot_product_test(
+                x_excl, xq_p, f_excl, yb_p;
+                bc = PeriodicBC(endpoint = :exclusive), deriv = op
+            )
             @test ok
         end
     end
@@ -321,8 +334,10 @@ end
         xq32 = Float32.(xq)
         f32 = randn(Float32, n_grid)
         yb32 = randn(Float32, n_query)
-        _, _, ok = dot_product_test(x32, xq32, f32, yb32;
-            bc = CubicFit(), deriv = EvalDeriv1(), rtol = sqrt(eps(Float32)))
+        _, _, ok = dot_product_test(
+            x32, xq32, f32, yb32;
+            bc = CubicFit(), deriv = EvalDeriv1(), rtol = sqrt(eps(Float32))
+        )
         @test ok
     end
 end

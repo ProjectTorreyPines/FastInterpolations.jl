@@ -662,32 +662,40 @@ Check if a boundary condition is periodic.
 # ── @noinline throw helpers (keep cold error paths out of hot code) ──
 
 @noinline function _throw_periodic_in_bc_array(i::Int)
-    throw(ArgumentError(
-        "PeriodicBC at index $i is not supported in BC arrays. " *
-            "Use uniform PeriodicBC for all series instead."
-    ))
+    throw(
+        ArgumentError(
+            "PeriodicBC at index $i is not supported in BC arrays. " *
+                "Use uniform PeriodicBC for all series instead."
+        )
+    )
 end
 
 @noinline function _throw_periodic_unsupported(feature::String)
-    throw(ArgumentError(
-        "PeriodicBC is not yet supported by $feature. " *
-            "Use BCPair-based boundary conditions (CubicFit, ZeroCurvBC, Deriv1, etc.)."
-    ))
+    throw(
+        ArgumentError(
+            "PeriodicBC is not yet supported by $feature. " *
+                "Use BCPair-based boundary conditions (CubicFit, ZeroCurvBC, Deriv1, etc.)."
+        )
+    )
 end
 
 @noinline function _throw_periodic_extrap_mismatch(d::Int, extrap)
-    throw(ArgumentError(
-        "Periodic BC on dim $d only supports NoExtrap() or WrapExtrap(), got $(typeof(extrap))()"
-    ))
+    throw(
+        ArgumentError(
+            "Periodic BC on dim $d only supports NoExtrap() or WrapExtrap(), got $(typeof(extrap))()"
+        )
+    )
 end
 
 @noinline function _throw_periodic_exclusive_cache()
-    throw(ArgumentError(
-        "CubicSplineCache does not support PeriodicBC(endpoint=:exclusive) because " *
-            "the cache is grid-only and cannot extend data values. " *
-            "Use cubic_interp(x, y, xq; bc=PeriodicBC(endpoint=:exclusive)) or " *
-            "CubicInterpolant(x, y; bc=PeriodicBC(endpoint=:exclusive)) instead."
-    ))
+    throw(
+        ArgumentError(
+            "CubicSplineCache does not support PeriodicBC(endpoint=:exclusive) because " *
+                "the cache is grid-only and cannot extend data values. " *
+                "Use cubic_interp(x, y, xq; bc=PeriodicBC(endpoint=:exclusive)) or " *
+                "CubicInterpolant(x, y; bc=PeriodicBC(endpoint=:exclusive)) instead."
+        )
+    )
 end
 
 

@@ -396,6 +396,42 @@ end
 @inline _rhs_adjoint_right!(::AbstractVector, _, ::AbstractGridSpacing, ::Deriv3, ::Nothing, ::Int) = nothing
 
 # ========================================
+# ClampExtrap / FillExtrap OOB Anchor Fixup
+# ========================================
+
+"""
+Fix anchor weights for OOB queries under ClampExtrap or FillExtrap.
+
+- **ClampExtrap**: forward returns `f[boundary]` for EvalValue, `0` for derivatives.
+  Keep w0 (clamped to boundary gives correct [1,0,0,0] or [0,1,0,0] weights),
+  zero out w1/w2/w3 (derivatives are zero for constant extrapolation).
+- **FillExtrap**: forward returns fill constant → gradient w.r.t. f is zero.
+  Zero out all weights (w0/w1/w2/w3).
+
+Modifies `anchors` in-place by replacing OOB entries with corrected structs.
+Only called at construction time; no runtime overhead.
+"""
+function _fixup_clampfill_anchors!(
+        anchors::Vector{_CubicAnchoredQuery{Tg, Tg}},
+        xq_original::AbstractVector{Tg},
+        x_lo::Tg, x_hi::Tg,
+        extrap::AbstractExtrap
+    ) where {Tg}
+    keep_w0 = extrap isa ClampExtrap
+    z = zero(Tg)
+    @inbounds for i in eachindex(anchors)
+        (x_lo <= xq_original[i] <= x_hi) && continue
+        aq = anchors[i]
+        w0_new = keep_w0 ? aq.w0 : (z, z, z, z)
+        anchors[i] = _CubicAnchoredQuery{Tg, Tg}(
+            aq.idx, aq.xq, 0x00,
+            w0_new, (z, z, z, z), (z, z), (z, z)
+        )
+    end
+    return nothing
+end
+
+# ========================================
 # Constructor
 # ========================================
 
@@ -466,9 +502,17 @@ function cubic_adjoint(
     # Get/build cache (reuses existing infrastructure + autocache)
     cache = _get_cubic_cache(x_p, bc_pair, autocache)
 
-    # Build anchored queries — wrap=true mirrors WrapExtrap forward behavior
+    # Build anchored queries with extrap-specific preprocessing
     wrap = extrap isa WrapExtrap
-    anchors = _anchor_query(cache.x, xq_p, Val(:cubic), wrap)
+    if extrap isa Union{ClampExtrap, FillExtrap}
+        # Clamp OOB queries to boundary for valid anchor indices, then fix weights
+        x_lo, x_hi = first(cache.x), last(cache.x)
+        xq_clamped = clamp.(xq_p, x_lo, x_hi)
+        anchors = _anchor_query(cache.x, xq_clamped, Val(:cubic), false)
+        _fixup_clampfill_anchors!(anchors, xq_p, x_lo, x_hi, extrap)
+    else
+        anchors = _anchor_query(cache.x, xq_p, Val(:cubic), wrap)
+    end
 
     # Precompute PolyFit stencil coefficients (grid-only, computed once)
     pf = _build_polyfit_data(bc_pair, cache.x)

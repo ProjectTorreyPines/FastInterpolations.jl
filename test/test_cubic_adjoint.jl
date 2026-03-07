@@ -9,15 +9,16 @@ using FastInterpolations
 
 function dot_product_test(
         x, xq, f, y_bar;
-        bc = CubicFit(), deriv = EvalValue(), atol = 0, rtol = sqrt(eps(eltype(x)))
+        bc = CubicFit(), extrap = NoExtrap(), deriv = EvalValue(),
+        atol = 0, rtol = sqrt(eps(eltype(x)))
     )
-    itp = cubic_interp(x, f; bc = bc)
-    adj = cubic_adjoint(x, xq; bc = bc)
+    itp = cubic_interp(x, f; bc = bc, extrap = extrap)
+    adj = cubic_adjoint(x, xq; bc = bc, extrap = extrap)
 
     # The forward is affine: y = W·f + c, where c comes from non-zero BC values.
     # Subtract the constant offset to isolate the linear part W_d·f.
     f_zero = zeros(eltype(f), length(f))
-    itp_zero = cubic_interp(x, f_zero; bc = bc)
+    itp_zero = cubic_interp(x, f_zero; bc = bc, extrap = extrap)
     Wf = itp.(xq; deriv = deriv) .- itp_zero.(xq; deriv = deriv)  # linear part only
 
     WTy = adj(y_bar; deriv = deriv)        # adjoint: ȳ → f̄
@@ -63,6 +64,56 @@ end
         end
         @testset "Non-uniform grid" begin
             lhs, rhs, ok = dot_product_test(x_nonuniform, xq, f, y_bar; bc = bc)
+            @test ok
+        end
+    end
+
+    # ========================================
+    # Dot-product tests: extrap modes with OOB queries
+    # ========================================
+    xq_oob = vcat(-0.3, -0.1, sort(rand(n_query)) .* 0.98 .+ 0.01, 1.1, 1.3)
+    y_bar_oob = randn(length(xq_oob))
+
+    @testset "Dot-product — OOB queries — ExtendExtrap" begin
+        @testset "Uniform" begin
+            _, _, ok = dot_product_test(x_uniform, xq_oob, f, y_bar_oob; extrap = ExtendExtrap())
+            @test ok
+        end
+        @testset "Non-uniform" begin
+            _, _, ok = dot_product_test(x_nonuniform, xq_oob, f, y_bar_oob; extrap = ExtendExtrap())
+            @test ok
+        end
+    end
+
+    @testset "Dot-product — OOB queries — ClampExtrap" begin
+        @testset "Uniform" begin
+            _, _, ok = dot_product_test(x_uniform, xq_oob, f, y_bar_oob; extrap = ClampExtrap())
+            @test ok
+        end
+        @testset "Non-uniform" begin
+            _, _, ok = dot_product_test(x_nonuniform, xq_oob, f, y_bar_oob; extrap = ClampExtrap())
+            @test ok
+        end
+    end
+
+    @testset "Dot-product — OOB queries — WrapExtrap" begin
+        @testset "Uniform" begin
+            _, _, ok = dot_product_test(x_uniform, xq_oob, f, y_bar_oob; extrap = WrapExtrap())
+            @test ok
+        end
+        @testset "Non-uniform" begin
+            _, _, ok = dot_product_test(x_nonuniform, xq_oob, f, y_bar_oob; extrap = WrapExtrap())
+            @test ok
+        end
+    end
+
+    @testset "Dot-product — OOB queries — FillExtrap" begin
+        @testset "Uniform" begin
+            _, _, ok = dot_product_test(x_uniform, xq_oob, f, y_bar_oob; extrap = FillExtrap(0.0))
+            @test ok
+        end
+        @testset "Non-uniform" begin
+            _, _, ok = dot_product_test(x_nonuniform, xq_oob, f, y_bar_oob; extrap = FillExtrap(0.0))
             @test ok
         end
     end

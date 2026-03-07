@@ -160,20 +160,27 @@ function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::AbstractVector; d
     @assert length(f_bar) == n_out "f_bar length ($(length(f_bar))) must match output size ($n_out)"
     @assert length(y_bar) == length(adj.anchors) "y_bar length ($(length(y_bar))) must match n_query ($(length(adj.anchors)))"
     if adj.bc isa PeriodicBC{:exclusive}
-        # Exclusive: internal n+1 buffer, fold back into user's n-element f_bar
-        Tv = eltype(f_bar)
-        n_internal = length(adj.cache.x)
-        f_work = zeros(Tv, n_internal)
-        _cubic_adjoint_apply!(f_work, adj, y_bar, deriv)
-        @inbounds f_work[1] += f_work[n_internal]
-        @inbounds for k in 1:n_out
-            f_bar[k] = f_work[k]
-        end
+        _adjoint_apply_exclusive_inplace!(f_bar, adj, y_bar, deriv)
     else
         fill!(f_bar, zero(eltype(f_bar)))
         _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
     end
     return f_bar
+end
+
+# Exclusive periodic in-place: pool-allocated work buffer for the n+1 internal grid.
+@with_pool pool function _adjoint_apply_exclusive_inplace!(
+        f_bar::AbstractVector{Tv}, adj::CubicAdjoint, y_bar::AbstractVector, deriv::DerivOp
+    ) where {Tv}
+    n_internal = length(adj.cache.x)
+    n_out = length(f_bar)
+    f_work = zeros!(pool, Tv, n_internal)
+    _cubic_adjoint_apply!(f_work, adj, y_bar, deriv)
+    @inbounds f_work[1] += f_work[n_internal]
+    @inbounds for k in 1:n_out
+        f_bar[k] = f_work[k]
+    end
+    return nothing
 end
 
 # ========================================

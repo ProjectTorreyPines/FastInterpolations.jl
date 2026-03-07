@@ -416,4 +416,83 @@ end
         @test eltype(W_T) == Float32
         @test size(W_T) == (n_grid, n_query)
     end
+
+    # ========================================
+    # Allocation tests (zero-alloc in-place)
+    # ========================================
+
+    # Function barriers: @testset wraps body in try/catch → type-unstable locals.
+    # All setup + warmup + @allocated must be inside ONE function for accurate results.
+
+    function _test_adjoint_alloc_inplace(x, xq, f_bar, y_bar; bc = CubicFit(), deriv = EvalValue())
+        adj = cubic_adjoint(x, xq; bc = bc)
+        adj(f_bar, y_bar; deriv = deriv)  # warmup
+        adj(f_bar, y_bar; deriv = deriv)  # warmup
+        return @allocated adj(f_bar, y_bar; deriv = deriv)
+    end
+
+    @testset "Zero-alloc: in-place non-periodic" begin
+        fb = zeros(n_grid)
+        allocs = _test_adjoint_alloc_inplace(x_uniform, xq, fb, y_bar; bc = CubicFit())
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place non-periodic (non-uniform)" begin
+        fb = zeros(n_grid)
+        allocs = _test_adjoint_alloc_inplace(x_nonuniform, xq, fb, y_bar; bc = CubicFit())
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place ZeroCurvBC" begin
+        fb = zeros(n_grid)
+        allocs = _test_adjoint_alloc_inplace(x_uniform, xq, fb, y_bar; bc = ZeroCurvBC())
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place Deriv1(0.5)" begin
+        fb = zeros(n_grid)
+        allocs = _test_adjoint_alloc_inplace(
+            x_uniform, xq, fb, y_bar; bc = BCPair(Deriv1(0.5), Deriv1(-0.3))
+        )
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place periodic (inclusive)" begin
+        n_p = 40
+        x_p = collect(range(0.0, 2π, n_p + 1))
+        xq_p = sort(rand(25)) .* 2π
+        fb_p = zeros(n_p + 1)
+        yb_p = randn(25)
+        allocs = _test_adjoint_alloc_inplace(x_p, xq_p, fb_p, yb_p; bc = PeriodicBC())
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place periodic (exclusive)" begin
+        n_p = 40
+        x_p = range(0.0, step = 2π / n_p, length = n_p)
+        xq_p = sort(rand(25)) .* 2π
+        fb_p = zeros(n_p)
+        yb_p = randn(25)
+        allocs = _test_adjoint_alloc_inplace(
+            x_p, xq_p, fb_p, yb_p; bc = PeriodicBC(endpoint = :exclusive)
+        )
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place deriv=$d" for (d, op) in [
+            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+        ]
+        fb = zeros(n_grid)
+        allocs = _test_adjoint_alloc_inplace(x_uniform, xq, fb, y_bar; deriv = op)
+        @test allocs <= ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place Float32" begin
+        x32 = Float32.(x_uniform)
+        xq32 = Float32.(xq)
+        fb32 = zeros(Float32, n_grid)
+        yb32 = randn(Float32, n_query)
+        allocs = _test_adjoint_alloc_inplace(x32, xq32, fb32, yb32; bc = CubicFit())
+        @test allocs <= ALLOC_THRESHOLD
+    end
 end

@@ -24,7 +24,7 @@ adj = cubic_adjoint(x, xq)
 
 ```@example adjoint1d
 # Apply to a sensitivity vector
-ȳ = ones(length(xq))
+ȳ = collect(1.0:length(xq))
 f̄ = adj(ȳ)
 ```
 
@@ -46,6 +46,8 @@ println("⟨f, Wᵀȳ⟩ = ", dot(f, WTy))
 
 ```@docs
 cubic_adjoint
+CubicAdjoint
+AbstractAdjoint
 ```
 
 **Signature:**

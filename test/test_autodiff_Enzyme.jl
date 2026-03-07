@@ -293,7 +293,7 @@ else
                     g_fd = ForwardDiff.gradient(
                         y -> sum(abs2, cubic_interp(x, y, xq_vec) .- y_obs), f_data
                     )
-                    @test df ≈ g_fd atol = 1e-10
+                    @test df ≈ g_fd atol = 1.0e-10
                 end
 
                 @testset "Scalar query" begin
@@ -305,7 +305,7 @@ else
                         Enzyme.Const(x), Enzyme.Const(1.25)
                     )
                     g_fd = ForwardDiff.gradient(y -> cubic_interp(x, y, 1.25), f_data)
-                    @test df ≈ g_fd atol = 1e-10
+                    @test df ≈ g_fd atol = 1.0e-10
                 end
 
                 @testset "Different BC — ZeroCurvBC" begin
@@ -319,7 +319,7 @@ else
                     g_fd = ForwardDiff.gradient(
                         y -> sum(cubic_interp(x, y, xq_vec; bc = ZeroCurvBC())), f_data
                     )
-                    @test df ≈ g_fd atol = 1e-10
+                    @test df ≈ g_fd atol = 1.0e-10
                 end
             end
 

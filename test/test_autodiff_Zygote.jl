@@ -327,27 +327,27 @@ end
         @testset "Scalar query — ∂f/∂y" begin
             g_zy = Zygote.gradient(y -> cubic_interp(x, y, 1.25), f_data)[1]
             g_fd = ForwardDiff.gradient(y -> cubic_interp(x, y, 1.25), f_data)
-            @test g_zy ≈ g_fd atol = 1e-10
+            @test g_zy ≈ g_fd atol = 1.0e-10
         end
 
         @testset "Vector query — ∂f/∂y" begin
             g_zy = Zygote.gradient(y -> sum(cubic_interp(x, y, xq_vec)), f_data)[1]
             g_fd = ForwardDiff.gradient(y -> sum(cubic_interp(x, y, xq_vec)), f_data)
-            @test g_zy ≈ g_fd atol = 1e-10
+            @test g_zy ≈ g_fd atol = 1.0e-10
         end
 
         @testset "L2 loss function" begin
             loss(y) = sum(abs2, cubic_interp(x, y, xq_vec) .- y_obs)
             g_zy = Zygote.gradient(loss, f_data)[1]
             g_fd = ForwardDiff.gradient(loss, f_data)
-            @test g_zy ≈ g_fd atol = 1e-10
+            @test g_zy ≈ g_fd atol = 1.0e-10
         end
 
         @testset "Different BC types" begin
             for (name, bc) in [("ZeroCurvBC", ZeroCurvBC()), ("ZeroSlopeBC", ZeroSlopeBC())]
                 g_zy = Zygote.gradient(y -> sum(cubic_interp(x, y, xq_vec; bc = bc)), f_data)[1]
                 g_fd = ForwardDiff.gradient(y -> sum(cubic_interp(x, y, xq_vec; bc = bc)), f_data)
-                @test g_zy ≈ g_fd atol = 1e-10
+                @test g_zy ≈ g_fd atol = 1.0e-10
             end
         end
 
@@ -357,7 +357,7 @@ end
             xq32 = Float32.(xq_vec)
             g_zy = Zygote.gradient(y -> sum(cubic_interp(x32, y, xq32)), f32)[1]
             g_fd = ForwardDiff.gradient(y -> sum(cubic_interp(x32, y, xq32)), f32)
-            @test g_zy ≈ g_fd atol = 1e-4
+            @test g_zy ≈ g_fd atol = 1.0e-4
         end
     end
 

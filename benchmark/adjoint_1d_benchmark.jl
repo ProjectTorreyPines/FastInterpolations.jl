@@ -38,32 +38,34 @@ using Random
 # =============================================================================
 
 const SIZE_PRESETS = Dict(
-    :small   => (20, 10),
+    :small => (20, 10),
     :default => (50, 30),
-    :medium  => (100, 50),
-    :large   => (200, 100),
-    :huge    => (500, 300),
+    :medium => (100, 50),
+    :large => (200, 100),
+    :huge => (500, 300),
 )
 
 function parse_args(args)
     if "--help" in args || "-h" in args
-        println("""
-        Cubic Spline Data-Adjoint Benchmark: Native API vs AD Backends
+        println(
+            """
+            Cubic Spline Data-Adjoint Benchmark: Native API vs AD Backends
 
-        Compares full ∂f/∂y gradient pipeline:
-          loss(f) = sum(|cubic_interp(x, f, xq) - y_obs|^2)
+            Compares full ∂f/∂y gradient pipeline:
+              loss(f) = sum(|cubic_interp(x, f, xq) - y_obs|^2)
 
-        Backends: Native (in-place/allocating), ForwardDiff, Zygote, Enzyme
+            Backends: Native (in-place/allocating), ForwardDiff, Zygote, Enzyme
 
-        SIZE OPTIONS:
-            --small    N=20,  Nq=10   (quick smoke test)
-            --default  N=50,  Nq=30   [DEFAULT]
-            --medium   N=100, Nq=50
-            --large    N=200, Nq=100
-            --huge     N=500, Nq=300
+            SIZE OPTIONS:
+                --small    N=20,  Nq=10   (quick smoke test)
+                --default  N=50,  Nq=30   [DEFAULT]
+                --medium   N=100, Nq=50
+                --large    N=200, Nq=100
+                --huge     N=500, Nq=300
 
-            --help, -h  Show this message
-        """)
+                --help, -h  Show this message
+            """
+        )
         exit(0)
     end
 
@@ -86,9 +88,9 @@ const (N_GRID, N_QUERY) = SIZE_PRESETS[SIZE_KEY]
 
 Random.seed!(42)
 
-const x     = collect(range(0.0, 1.0, N_GRID))
-const f     = sin.(range(0, 2π, N_GRID)) .+ 0.1 .* randn(N_GRID)
-const xq    = sort(rand(N_QUERY)) .* 0.98 .+ 0.01  # inside domain
+const x = collect(range(0.0, 1.0, N_GRID))
+const f = sin.(range(0, 2π, N_GRID)) .+ 0.1 .* randn(N_GRID)
+const xq = sort(rand(N_QUERY)) .* 0.98 .+ 0.01  # inside domain
 const y_obs = cos.(xq) .+ 0.05 .* randn(N_QUERY)
 
 # =============================================================================
@@ -110,7 +112,7 @@ function loss_enz(y, y_obs, x, xq)
 end
 
 # --- Native: allocating (forward + manual chain rule + adj) ---
-const adj = cubic_adjoint(x, xq; bc=CubicFit())
+const adj = cubic_adjoint(x, xq; bc = CubicFit())
 
 function native_alloc_grad(f)
     y = cubic_interp(x, f, xq)
@@ -131,11 +133,11 @@ end
 # =============================================================================
 
 function verify_correctness()
-    println("=" ^ 70)
+    println("="^70)
     println("  CORRECTNESS")
     println("  loss(f) = sum(|cubic_interp(x, f, xq) - y_obs|^2)")
     println("  Reference: ForwardDiff (full Dual propagation)")
-    println("=" ^ 70)
+    println("="^70)
 
     # ForwardDiff — ground truth
     g_fd = ForwardDiff.gradient(loss, f)
@@ -159,18 +161,18 @@ function verify_correctness()
 
     println()
     @printf("  %-22s  %12s  %12s  %s\n", "Backend", "max|err|", "rel err", "isapprox?")
-    println("  " * "-" ^ 58)
+    println("  " * "-"^58)
 
     all_ok = true
     for (name, g) in [
-        ("Native (alloc)",    g_native),
-        ("Native (in-place)", g_native_ip),
-        ("Zygote",            g_zy),
-        ("Enzyme",            g_enz),
-    ]
+            ("Native (alloc)", g_native),
+            ("Native (in-place)", g_native_ip),
+            ("Zygote", g_zy),
+            ("Enzyme", g_enz),
+        ]
         abs_err = maximum(abs, g .- g_fd)
         rel_err = norm(g .- g_fd) / norm(g_fd)
-        ok = isapprox(g, g_fd; rtol=sqrt(eps()))
+        ok = isapprox(g, g_fd; rtol = sqrt(eps()))
         all_ok &= ok
         @printf("  %-22s  %12.2e  %12.2e  %s\n", name, abs_err, rel_err, ok ? "YES" : "NO")
     end
@@ -188,15 +190,15 @@ end
 # =============================================================================
 
 function run_benchmark()
-    println("=" ^ 70)
+    println("="^70)
     println("  PERFORMANCE — full gradient pipeline")
     println("  N=$N_GRID grid points, Nq=$N_QUERY query points (size=$SIZE_KEY)")
-    println("=" ^ 70)
+    println("="^70)
 
     # Pre-allocate buffers
-    g_buf  = zeros(N_GRID)
-    y_buf  = zeros(N_QUERY)
-    ȳ_buf  = zeros(N_QUERY)
+    g_buf = zeros(N_GRID)
+    y_buf = zeros(N_QUERY)
+    ȳ_buf = zeros(N_QUERY)
 
     # Warmup all paths
     native_alloc_grad(f)
@@ -238,32 +240,36 @@ function run_benchmark()
     display(b_enz); println()
 
     # --- Summary ---
-    med_us(b)    = round(median(b).time / 1e3; digits=1)
+    med_us(b) = round(median(b).time / 1.0e3; digits = 1)
     med_alloc(b) = Int(median(b).allocs)
-    med_mem(b)   = Int(round(median(b).memory))
+    med_mem(b) = Int(round(median(b).memory))
 
     fd_t = median(b_fd).time
 
     println()
-    println("=" ^ 70)
+    println("="^70)
     println("  SUMMARY — ∇f of L2 loss (N=$N_GRID, Nq=$N_QUERY)")
-    println("=" ^ 70)
+    println("="^70)
     println()
-    @printf("  %-22s  %8s  %8s  %8s  %8s\n",
-            "Backend", "time(us)", "speedup", "allocs", "mem(B)")
-    println("  " * "-" ^ 56)
+    @printf(
+        "  %-22s  %8s  %8s  %8s  %8s\n",
+        "Backend", "time(us)", "speedup", "allocs", "mem(B)"
+    )
+    println("  " * "-"^56)
 
     for (name, b) in [
-        ("Native (alloc)",    b_nat),
-        ("Native (in-place)", b_nat_ip),
-        ("ForwardDiff",       b_fd),
-        ("Zygote",            b_zy),
-        ("Enzyme",            b_enz),
-    ]
+            ("Native (alloc)", b_nat),
+            ("Native (in-place)", b_nat_ip),
+            ("ForwardDiff", b_fd),
+            ("Zygote", b_zy),
+            ("Enzyme", b_enz),
+        ]
         t = med_us(b)
-        sp = round(fd_t / median(b).time; digits=1)
-        @printf("  %-22s  %8.1f  %7.1fx  %8d  %8d\n",
-                name, t, sp, med_alloc(b), med_mem(b))
+        sp = round(fd_t / median(b).time; digits = 1)
+        @printf(
+            "  %-22s  %8.1f  %7.1fx  %8d  %8d\n",
+            name, t, sp, med_alloc(b), med_mem(b)
+        )
     end
     println()
 
@@ -275,7 +281,7 @@ end
 # =============================================================================
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    @info "Adjoint benchmark" size=SIZE_KEY N=N_GRID Nq=N_QUERY
+    @info "Adjoint benchmark" size = SIZE_KEY N = N_GRID Nq = N_QUERY
 
     ok = verify_correctness()
     ok && run_benchmark()

@@ -232,6 +232,57 @@ end
     end
 
     # ========================================
+    # Complex data support
+    # ========================================
+    @testset "Complex — dot-product — $bc_name" for (bc_name, bc) in [
+            ("CubicFit", CubicFit()),
+            ("ZeroCurvBC", ZeroCurvBC()),
+            ("ZeroSlopeBC", ZeroSlopeBC()),
+            ("Deriv1(0.5)", BCPair(Deriv1(0.5), Deriv1(-0.3))),
+            ("PeriodicBC", PeriodicBC()),
+        ]
+        f_c = randn(ComplexF64, n_grid)
+        yb_c = randn(ComplexF64, n_query)
+
+        if bc isa PeriodicBC
+            x_p = collect(range(0.0, 2π, n_grid))
+            f_p = randn(ComplexF64, n_grid)
+            f_p[end] = f_p[1]
+            xq_p = sort(rand(n_query)) .* 2π
+            yb_p = randn(ComplexF64, n_query)
+            lhs, rhs, ok = dot_product_test(x_p, xq_p, f_p, yb_p; bc = bc)
+            @test ok
+        else
+            @testset "Uniform" begin
+                lhs, rhs, ok = dot_product_test(x_uniform, xq, f_c, yb_c; bc = bc)
+                @test ok
+            end
+            @testset "Non-uniform" begin
+                lhs, rhs, ok = dot_product_test(x_nonuniform, xq, f_c, yb_c; bc = bc)
+                @test ok
+            end
+        end
+    end
+
+    @testset "Complex — in-place == allocating" begin
+        adj = cubic_adjoint(x_uniform, xq; bc = CubicFit())
+        yb_c = randn(ComplexF64, n_query)
+        fb_oop = adj(yb_c)
+        fb_ip = zeros(ComplexF64, n_grid)
+        adj(fb_ip, yb_c)
+        @test fb_oop ≈ fb_ip
+    end
+
+    @testset "Complex — derivative adjoint — deriv=$d" for (d, op) in [
+            (1, EvalDeriv1()), (2, EvalDeriv2()), (3, EvalDeriv3()),
+        ]
+        f_c = randn(ComplexF64, n_grid)
+        yb_c = randn(ComplexF64, n_query)
+        _, _, ok = dot_product_test(x_uniform, xq, f_c, yb_c; bc = CubicFit(), deriv = op)
+        @test ok
+    end
+
+    # ========================================
     # Edge cases: minimum grid sizes
     # ========================================
     @testset "Minimum grid — CubicFit (4 points)" begin

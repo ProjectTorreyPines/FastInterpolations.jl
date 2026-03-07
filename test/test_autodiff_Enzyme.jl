@@ -197,6 +197,48 @@ else
                     result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(2.25))
                     @test abs(result[1][1] - 1.0) < 1.0e-10  # Imag part derivative
                 end
+
+                @testset "Quadratic Complex (via real)" begin
+                    y_qc = (1.0 + 1.0im) .* x .^ 2
+                    itp = quadratic_interp(x, y_qc; extrap = ExtendExtrap())
+                    xq = 2.25
+
+                    f(q) = real(itp(q))
+                    result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(xq))
+                    @test abs(result[1][1] - 2.0 * xq) < 1.0e-10
+                end
+
+                @testset "Quadratic Complex (via imag)" begin
+                    y_qc = (1.0 + 1.0im) .* x .^ 2
+                    itp = quadratic_interp(x, y_qc; extrap = ExtendExtrap())
+                    xq = 2.25
+
+                    f(q) = imag(itp(q))
+                    result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(xq))
+                    @test abs(result[1][1] - 2.0 * xq) < 1.0e-10
+                end
+
+                @testset "Cubic Complex (via real)" begin
+                    y_cc = (1.0 + 1.0im) .* x .^ 3
+                    itp = cubic_interp(x, y_cc; extrap = ExtendExtrap())
+                    xq = 2.25
+
+                    f(q) = real(itp(q))
+                    result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(xq))
+                    expected = 3.0 * xq^2
+                    @test abs(result[1][1] - expected) / expected < 0.05
+                end
+
+                @testset "Cubic Complex (via imag)" begin
+                    y_cc = (1.0 + 1.0im) .* x .^ 3
+                    itp = cubic_interp(x, y_cc; extrap = ExtendExtrap())
+                    xq = 2.25
+
+                    f(q) = imag(itp(q))
+                    result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(xq))
+                    expected = 3.0 * xq^2
+                    @test abs(result[1][1] - expected) / expected < 0.05
+                end
             end
 
             # ════════════════════════════════════════════════════════════════════════

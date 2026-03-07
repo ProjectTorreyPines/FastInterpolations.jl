@@ -165,4 +165,75 @@ function ChainRulesCore.rrule(
     return y, itp_nd_pullback
 end
 
+# ════════════════════════════════════════
+# Cubic one-shot — data adjoint (∂/∂f)
+# ════════════════════════════════════════
+# Enables Zygote.gradient(f -> ...(cubic_interp(x, f, xq; ...))..., f)
+# by using the pre-built CubicAdjoint operator for the pullback.
+#
+# ForwardDiff already works via Dual propagation; these rrules exist
+# solely to unblock reverse-mode backends (Zygote) that cannot trace
+# through the in-place tridiagonal solve in the one-shot path.
+
+"""
+Reverse-mode rule for `cubic_interp(x, f, xq; ...)` — vector query.
+
+The pullback computes `∂L/∂f = Wᵀ · ∂L/∂y` via `CubicAdjoint`, where
+`W = Eᵧ + E_z · A⁻¹ · R` is the full interpolation operator.
+"""
+function ChainRulesCore.rrule(
+        ::typeof(cubic_interp),
+        x::AbstractVector{Tg},
+        f::AbstractVector{Tv},
+        xq::AbstractVector{Tg};
+        bc::FastInterpolations.AbstractBC = CubicFit(),
+        extrap::FastInterpolations.AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        deriv::DerivOp = EvalValue(),
+        search::FastInterpolations.AbstractSearchPolicy = AutoSearch()
+    ) where {Tg <: AbstractFloat, Tv}
+    y = cubic_interp(x, f, xq; bc, extrap, autocache, deriv, search)
+
+    adj = cubic_adjoint(x, xq; bc)
+
+    function cubic_interp_vec_pullback(Δy)
+        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
+        f_bar = adj(Δy; deriv = deriv)
+        return NoTangent(), NoTangent(), f_bar, NoTangent()
+    end
+
+    return y, cubic_interp_vec_pullback
+end
+
+"""
+Reverse-mode rule for `cubic_interp(x, f, xq; ...)` — scalar query.
+
+Wraps the scalar query into a 1-element vector for `CubicAdjoint`,
+then unwraps the scalar cotangent for the pullback.
+"""
+function ChainRulesCore.rrule(
+        ::typeof(cubic_interp),
+        x::AbstractVector{Tg},
+        f::AbstractVector{Tv},
+        xq::Real;
+        bc::FastInterpolations.AbstractBC = CubicFit(),
+        extrap::FastInterpolations.AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        deriv::DerivOp = EvalValue(),
+        search::FastInterpolations.AbstractSearchPolicy = AutoSearch(),
+        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+    ) where {Tg <: AbstractFloat, Tv}
+    y = cubic_interp(x, f, xq; bc, extrap, autocache, deriv, search)
+
+    adj = cubic_adjoint(x, Tg[xq]; bc)
+
+    function cubic_interp_scalar_pullback(Δy)
+        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
+        f_bar = adj(Tg[Δy]; deriv = deriv)
+        return NoTangent(), NoTangent(), f_bar, NoTangent()
+    end
+
+    return y, cubic_interp_scalar_pullback
+end
+
 end # module

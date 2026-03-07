@@ -149,3 +149,8 @@ slope recurrence for quadratic), which limits backend compatibility:
 | **Use for** | Position optimization, sensitivity | Inverse problems, data fitting |
 | **Fastest method** | `deriv` keyword (analytical) | Cubic: `CubicAdjoint`; others: `ForwardDiff` |
 | **Docs** | [1D](autodiff_support.md), [ND](autodiff_nd.md) | This page |
+
+## See Also
+
+- **[Adjoint Operators](../adjoint/overview.md)**: Conceptual overview — what adjoints are, where they appear, and the mathematical formulation
+- **[Cubic Adjoint (1D)](../adjoint/cubic_1d_adjoint.md)**: Native `CubicAdjoint` API for zero-allocation, matrix-free adjoint computation

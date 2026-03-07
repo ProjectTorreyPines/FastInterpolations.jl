@@ -198,7 +198,7 @@ function ChainRulesCore.rrule(
 
     function cubic_interp_vec_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        f_bar = adj(Δy; deriv = deriv)
+        f_bar = adj(unthunk(Δy); deriv = deriv)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 
@@ -229,7 +229,7 @@ function ChainRulesCore.rrule(
 
     function cubic_interp_scalar_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        f_bar = adj(Tg[Δy]; deriv = deriv)
+        f_bar = adj(Tg[unthunk(Δy)]; deriv = deriv)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 

@@ -15,7 +15,7 @@ Interpolation is a **linear operation** on data values: the output is a weighted
 | **Adjoint** (scatter) | `∇y_data = Aᵀ * δ` | Distribute residuals back to data nodes |
 
 !!! tip "Zygote & Enzyme support for cubic splines (1D)"
-    `cubic_interp(x, y, xq; ...)` provides an analytical `rrule` via [`CubicAdjoint`](@ref),
+    `cubic_interp(x, y, xq; ...)` provides analytical adjoint rules via [`CubicAdjoint`](@ref),
     so **Zygote** and **Enzyme** can differentiate `∂f/∂y` for 1D cubic splines without
     tracing through the tridiagonal solve. See [Backend Support](@ref) below for details.
 
@@ -135,7 +135,7 @@ slope recurrence for quadratic), which limits backend compatibility:
 | **Enzyme** | ❌³ | ❌³ | ❌³ | ✅² |
 
 ¹ Quadratic one-shot mutates arrays during the spline solve, which Zygote's source-to-source transformation cannot differentiate through.
-² Cubic (1D) uses an analytical `rrule` via [`CubicAdjoint`](@ref) — the AD backend never traces through the tridiagonal solve. Enzyme support requires `using Enzyme, ChainRulesCore` to load the extension.
+² Cubic (1D) uses an analytical adjoint via [`CubicAdjoint`](@ref) — the AD backend never traces through the tridiagonal solve.
 ³ Enzyme encounters LLVM codegen errors on the one-shot construction path.
 
 ## How It Works
@@ -147,5 +147,5 @@ slope recurrence for quadratic), which limits backend compatibility:
 | | `∂f/∂xq` (coordinate) | `∂f/∂y` (data) |
 |---|---|---|
 | **Use for** | Position optimization, sensitivity | Inverse problems, data fitting |
-| **Fastest method** | `deriv` keyword (analytical) | Cubic: `CubicAdjoint` via `rrule`; others: `ForwardDiff` |
+| **Fastest method** | `deriv` keyword (analytical) | Cubic: `CubicAdjoint`; others: `ForwardDiff` |
 | **Docs** | [1D](autodiff_support.md), [ND](autodiff_nd.md) | This page |

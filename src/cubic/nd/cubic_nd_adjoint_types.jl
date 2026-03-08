@@ -42,7 +42,7 @@ end
 # ========================================
 
 """
-    CubicAdjointND{Tg, N, G, S, C, CE, BP, BPE, PF, PFE}
+    CubicAdjointND{Tg, N, G, S, C, CE, BP, BPE}
 
 Adjoint (transpose) operator for N-dimensional cubic Hermite interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward ND cubic interpolation weight matrix.
@@ -59,19 +59,16 @@ The same adjoint can be applied to any `ȳ` vector.
 - `CE`:  Cache tuple type for effective BC on mixed partials (p_src > 1)
 - `BP`:  User BC pairs, concrete `NTuple{N, BCPair}` (for p_src == 1)
 - `BPE`: Effective BC pairs, concrete `NTuple{N, BCPair}` (for p_src > 1)
-- `PF`:  Per-axis precomputed polyfit data for user BCs
-- `PFE`: Per-axis precomputed polyfit data for effective BCs
 
-# Architecture — Why Two Sets?
-Unlike `CubicInterpolantND` which discards Thomas LU caches after precomputing nodal
-derivatives, the adjoint **retains** per-axis LU caches for transpose solves at every
-`adj(ȳ)` call. For each axis d, the build adjoint processes `(d, p_src)` pairs:
-- `p_src == 1`: pure derivative → user's cache/BC/polyfit
-- `p_src > 1`:  mixed partial  → effective cache/BC/polyfit
+# Architecture
+The adjoint retains per-axis Thomas LU caches for transpose solves at every `adj(ȳ)`
+call. For each axis d, the build adjoint processes `(d, p_src)` pairs:
+- `p_src == 1`: pure derivative → user's cache + BC pair
+- `p_src > 1`:  mixed partial  → effective cache + BC pair
 
 All BC pairs are resolved to concrete `BCPair{L,R}` at construction time (following
-`CubicInterpolantND`'s `bcs_store` pattern). No runtime `_get_effective_bc` or
-`_normalize_bc` calls remain in the hot path.
+`CubicInterpolantND`'s `bcs_store` pattern). PolyFit stencil coefficients (O(D) per
+axis) are computed on the fly from `BCPair` + grid — same as the forward `compute_rhs!`.
 
 When all user BCs are CubicFit, the user and effective sets are identical at the type
 level, and Julia optimizes the branch away.
@@ -92,8 +89,6 @@ struct CubicAdjointND{
         CE <: NTuple{N, CubicSplineCache{Tg}},
         BP <: NTuple{N, BCPair},
         BPE <: NTuple{N, BCPair},
-        PF <: NTuple{N, _AdjointPolyfitData},
-        PFE <: NTuple{N, _AdjointPolyfitData},
     } <: AbstractAdjoint{Tg}
     grids::G
     spacings::S
@@ -101,8 +96,6 @@ struct CubicAdjointND{
     eff_caches::CE
     bc_pairs::BP
     eff_bc_pairs::BPE
-    pf_user::PF
-    pf_eff::PFE
     anchors::Vector{_NDAdjointAnchor{Tg, N}}
     grid_size::NTuple{N, Int}
 end

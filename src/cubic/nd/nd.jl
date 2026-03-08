@@ -35,3 +35,9 @@ include("cubic_nd_eval.jl")      # Generic ND evaluation (@generated tensor prod
 # ========================================
 include("cubic_nd_interpolant.jl")  # cubic_interp() constructor + internal builders
 include("cubic_nd_oneshot.jl")      # cubic_interp() one-shot + pool-based backends
+
+# ========================================
+# 6. ND Adjoint Operator
+# ========================================
+include("cubic_nd_adjoint_types.jl")  # _NDAdjointAnchor, CubicAdjointND
+include("cubic_nd_adjoint.jl")        # cubic_adjoint() ND constructor + apply pipeline

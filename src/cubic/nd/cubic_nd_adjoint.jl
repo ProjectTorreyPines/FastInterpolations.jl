@@ -136,55 +136,88 @@ function _bake_nd_anchors(
 end
 
 # ========================================
-# Eval Adjoint Scatter (N=2)
+# Eval Adjoint Scatter (@generated, any N)
 # ========================================
+#
+# Adjoint of `_eval_nd_cell` (cubic_nd_eval.jl). For each query, scatters
+# y_bar[q] into 2^N partials × 2^N corners = 4^N entries using tensor-product
+# Hermite weight products.
+#
+# Weight indexing per axis d:
+#   anchor.weights[d] = (w_fL, w_fR, w_dyL, w_dyR)
+#   index = 1 + corner_d + 2*deriv_d
+#   (corner=0,deriv=0) → 1=w_fL, (1,0) → 2=w_fR, (0,1) → 3=w_dyL, (1,1) → 4=w_dyR
 
 """
-    _scatter_nd_2d!(partials_bar, y_bar, anchors)
+    _scatter_nd!(partials_bar, yb, anchor)
 
-Scatter `y_bar` into `partials_bar` using tensor-product Hermite weights.
-This is the adjoint of the forward tensor-product Hermite evaluation.
+@generated tensor-product scatter for arbitrary N dimensions.
+Accumulates `yb * prod(per-axis weights)` into partials_bar at all
+(partial, corner) combinations. Produces straight-line code with no loops.
 
-For each query, scatters to 4 partials × 4 corners = 16 entries.
-Partial index encoding: p = 1 + dx + 2*dy where dx,dy ∈ {0,1}.
+Reuses `_partial_index` and `_corner_offset_expr` from `nd_utils.jl`.
 """
-function _scatter_nd_2d!(
-        partials_bar::AbstractArray{Tv, 3},
-        y_bar::AbstractVector,
-        anchors::Vector{_NDAdjointAnchor{Tg, 2}}
-    ) where {Tv, Tg}
-    @inbounds for q in eachindex(y_bar)
-        anchor = anchors[q]
-        yb = y_bar[q]
-        ix, iy = anchor.indices
-        wx_fL, wx_fR, wx_dyL, wx_dyR = anchor.weights[1]
-        wy_fL, wy_fR, wy_dyL, wy_dyR = anchor.weights[2]
+@inline @generated function _scatter_nd!(
+        partials_bar::AbstractArray{Tv, NP1},
+        yb::Tv,
+        anchor::_NDAdjointAnchor{Tg, N}
+    ) where {Tv, Tg, N, NP1}
+    NP1 == N + 1 || error("NP1 must equal N+1, got NP1=$NP1, N=$N")
 
-        # p=1 (f): dx=0, dy=0
-        partials_bar[1, ix, iy] += yb * wx_fL * wy_fL
-        partials_bar[1, ix + 1, iy] += yb * wx_fR * wy_fL
-        partials_bar[1, ix, iy + 1] += yb * wx_fL * wy_fR
-        partials_bar[1, ix + 1, iy + 1] += yb * wx_fR * wy_fR
+    stmts = Expr[]
+    NP = 1 << N  # 2^N partials
+    NC = 1 << N  # 2^N corners
 
-        # p=2 (df/dx): dx=1, dy=0
-        partials_bar[2, ix, iy] += yb * wx_dyL * wy_fL
-        partials_bar[2, ix + 1, iy] += yb * wx_dyR * wy_fL
-        partials_bar[2, ix, iy + 1] += yb * wx_dyL * wy_fR
-        partials_bar[2, ix + 1, iy + 1] += yb * wx_dyR * wy_fR
+    # Destructure anchor.indices: (idx_1, idx_2, ..., idx_N)
+    idx_syms = ntuple(d -> Symbol("idx_", d), N)
+    push!(stmts, :($(Expr(:tuple, idx_syms...)) = anchor.indices))
 
-        # p=3 (df/dy): dx=0, dy=1
-        partials_bar[3, ix, iy] += yb * wx_fL * wy_dyL
-        partials_bar[3, ix + 1, iy] += yb * wx_fR * wy_dyL
-        partials_bar[3, ix, iy + 1] += yb * wx_fL * wy_dyR
-        partials_bar[3, ix + 1, iy + 1] += yb * wx_fR * wy_dyR
-
-        # p=4 (d2f/dxdy): dx=1, dy=1
-        partials_bar[4, ix, iy] += yb * wx_dyL * wy_dyL
-        partials_bar[4, ix + 1, iy] += yb * wx_dyR * wy_dyL
-        partials_bar[4, ix, iy + 1] += yb * wx_dyL * wy_dyR
-        partials_bar[4, ix + 1, iy + 1] += yb * wx_dyR * wy_dyR
+    # Destructure anchor.weights per axis: (w_d_fL, w_d_fR, w_d_dyL, w_d_dyR)
+    w_syms = Matrix{Symbol}(undef, N, 4)
+    for d in 1:N
+        w_syms[d, 1] = Symbol("w_", d, "_fL")
+        w_syms[d, 2] = Symbol("w_", d, "_fR")
+        w_syms[d, 3] = Symbol("w_", d, "_dyL")
+        w_syms[d, 4] = Symbol("w_", d, "_dyR")
+        lhs = Expr(:tuple, w_syms[d, 1], w_syms[d, 2], w_syms[d, 3], w_syms[d, 4])
+        push!(stmts, :($lhs = anchor.weights[$d]))
     end
-    return nothing
+
+    # Generate one accumulation statement per (partial, corner) pair
+    for p in 0:(NP - 1)
+        for c in 0:(NC - 1)
+            # Build weight product: prod_d w_d[1 + corner_d + 2*deriv_d]
+            weight_factors = Symbol[]
+            for d in 1:N
+                corner_d = (c >> (d - 1)) & 1
+                deriv_d = (p >> (d - 1)) & 1
+                w_idx = 1 + corner_d + 2 * deriv_d
+                push!(weight_factors, w_syms[d, w_idx])
+            end
+
+            # Chain multiply: w1 * w2 * ... * wN
+            wp_expr = weight_factors[1]
+            for i in 2:length(weight_factors)
+                wp_expr = :($wp_expr * $(weight_factors[i]))
+            end
+
+            # Index expression: partials_bar[p+1, idx_1+off_1, ..., idx_N+off_N]
+            offsets = _corner_offset_expr(c, N)
+            idx_exprs = [:($(idx_syms[d]) + $(offsets[d])) for d in 1:N]
+            p_idx = _partial_index(p)
+
+            lhs = :(partials_bar[$p_idx, $(idx_exprs...)])
+            push!(stmts, :($lhs += yb * $wp_expr))
+        end
+    end
+
+    return quote
+        Base.@_inline_meta
+        @inbounds begin
+            $(stmts...)
+        end
+        return nothing
+    end
 end
 
 # ========================================
@@ -192,39 +225,48 @@ end
 # ========================================
 
 """
-    _build_adjoint_nd_2d!(partials_bar, caches, spacings, bcs, grids, grid_size)
+    _build_adjoint_nd!(partials_bar, caches, spacings, bcs, grids, grid_size)
 
-Apply the adjoint of the ND build pipeline (per-axis, reverse order d=2..1).
+Apply the adjoint of the ND build pipeline for arbitrary N dimensions.
+Processes axes in reverse order (d=N..1).
 
-For each axis d, reverses the chain:
+For each axis d, reverses the forward chain:
   partials[p_dst] = moments_to_deriv( A_d⁻¹ · R_d · partials[p_src] )
 
-Adjoint:
+Adjoint steps per (d, p_src) pair:
   a. moments_to_deriv_adjoint(partials_bar[p_dst]) → z_bar, f_contrib
   b. A_d⁻ᵀ · z_bar (transpose Thomas solve)
   c. f_contrib += Rᵀ · z_bar (RHS stencil adjoint)
   d. partials_bar[p_src] += f_contrib
-"""
-@with_pool pool function _build_adjoint_nd_2d!(
-        partials_bar::AbstractArray{Tv, 3},
-        caches::NTuple{2, CubicSplineCache{Tg}},
-        spacings::NTuple{2, AbstractGridSpacing{Tg}},
-        bcs::NTuple{2, AbstractBC},
-        grids::NTuple{2, AbstractVector{Tg}},
-        grid_size::NTuple{2, Int}
-    ) where {Tv, Tg}
-    nx, ny = grid_size
 
-    # Process axes in reverse order: d=2 (y-axis), then d=1 (x-axis)
-    for d in 2:-1:1
+Uses the reshape-to-3D trick: for axis d, reshape the N-dim data to
+`(shape_before, n_d, shape_after)` where shape_before = prod(n_1..n_{d-1}),
+shape_after = prod(n_{d+1}..n_N). This reduces all N-dim operations to 1D.
+"""
+@with_pool pool function _build_adjoint_nd!(
+        partials_bar::AbstractArray{Tv},
+        caches,
+        eff_caches,
+        spacings,
+        bcs,
+        grids::NTuple{N, AbstractVector{Tg}},
+        grid_size::NTuple{N, Int}
+    ) where {Tv, Tg <: AbstractFloat, N}
+    # Process axes in reverse order: d=N, N-1, ..., 1
+    for d in N:-1:1
         bit_d = 1 << (d - 1)
         n_d = grid_size[d]
         spacing_d = spacings[d]
-        cache_d = caches[d]
 
-        # Reshape dimensions for axis d
-        shape_before = d == 1 ? 1 : nx
-        shape_after = d == 2 ? 1 : ny
+        # Compute reshape dimensions for axis d
+        shape_before = 1
+        for k in 1:(d - 1)
+            shape_before *= grid_size[k]
+        end
+        shape_after = 1
+        for k in (d + 1):N
+            shape_after *= grid_size[k]
+        end
 
         # Per-axis work buffers (reused across all slices)
         z_bar = acquire!(pool, Tv, n_d)
@@ -239,9 +281,13 @@ Adjoint:
             effective_bc_pair = _normalize_bc(effective_bc, Tg)
             effective_pf = _build_polyfit_data(effective_bc_pair, grids[d])
 
-            # 3D views: (shape_before, n_d, shape_after)
-            src_3d = reshape(view(partials_bar, p_src, :, :), shape_before, n_d, shape_after)
-            dst_3d = reshape(view(partials_bar, p_dst, :, :), shape_before, n_d, shape_after)
+            # Select correct Thomas LU cache:
+            # p_src == 1 → user's BC cache, p_src > 1 → effective BC cache
+            cache_d = p_src == 1 ? caches[d] : eff_caches[d]
+
+            # N-dim views via selectdim, then reshape to 3D: (shape_before, n_d, shape_after)
+            src_3d = reshape(selectdim(partials_bar, 1, p_src), shape_before, n_d, shape_after)
+            dst_3d = reshape(selectdim(partials_bar, 1, p_dst), shape_before, n_d, shape_after)
 
             for j in 1:shape_after
                 for i in 1:shape_before
@@ -280,7 +326,7 @@ end
 
 Allocating adjoint apply: compute `f̄ = Wᵀȳ`.
 """
-function (adj::CubicAdjointND{Tg, 2})(y_bar::AbstractVector) where {Tg}
+function (adj::CubicAdjointND{Tg, N})(y_bar::AbstractVector) where {Tg, N}
     n_query = length(adj.anchors)
     length(y_bar) == n_query || throw(
         DimensionMismatch("y_bar length $(length(y_bar)) must match query count $n_query")
@@ -297,9 +343,9 @@ end
 In-place adjoint apply: compute `f̄ = Wᵀȳ` into pre-allocated `f_bar`.
 Zeros `f_bar` before accumulation.
 """
-function (adj::CubicAdjointND{Tg, 2})(
-        f_bar::AbstractArray{Tv, 2}, y_bar::AbstractVector
-    ) where {Tg, Tv}
+function (adj::CubicAdjointND{Tg, N})(
+        f_bar::AbstractArray{Tv, N}, y_bar::AbstractVector
+    ) where {Tg, Tv, N}
     size(f_bar) == adj.grid_size || throw(
         DimensionMismatch("f_bar size $(size(f_bar)) must match grid size $(adj.grid_size)")
     )
@@ -317,31 +363,32 @@ end
 # ========================================
 
 @with_pool pool function _cubic_adjoint_nd_apply!(
-        f_bar::AbstractArray{Tv, 2},
-        adj::CubicAdjointND{Tg, 2},
+        f_bar::AbstractArray{Tv, N},
+        adj::CubicAdjointND{Tg, N},
         y_bar::AbstractVector
-    ) where {Tv, Tg}
-    nx, ny = adj.grid_size
-    NP = 4  # 2^N for N=2
+    ) where {Tv, Tg, N}
+    NP = 1 << N
+    total = NP * prod(adj.grid_size)
 
-    # Pool-allocate partials_bar as 1D, reshape to 3D
-    pb_flat = acquire!(pool, Tv, NP * nx * ny)
+    # Pool-allocate partials_bar as 1D, reshape to (NP, n1, n2, ..., nN)
+    pb_flat = acquire!(pool, Tv, total)
     fill!(pb_flat, zero(Tv))
-    partials_bar = reshape(pb_flat, NP, nx, ny)
+    partials_bar = reshape(pb_flat, NP, adj.grid_size...)
 
-    # Step 0: Eval adjoint scatter
-    _scatter_nd_2d!(partials_bar, y_bar, adj.anchors)
+    # Step 0: Eval adjoint scatter (@generated tensor-product)
+    @inbounds for q in eachindex(y_bar)
+        _scatter_nd!(partials_bar, y_bar[q], adj.anchors[q])
+    end
 
     # Steps 1-3: Build adjoint (reverse axis order)
-    _build_adjoint_nd_2d!(
-        partials_bar, adj.caches, adj.spacings,
+    _build_adjoint_nd!(
+        partials_bar, adj.caches, adj.eff_caches, adj.spacings,
         adj.bcs, adj.grids, adj.grid_size
     )
 
-    # Extract f_bar = partials_bar[1, :, :]
-    @inbounds for j in 1:ny, i in 1:nx
-        f_bar[i, j] += partials_bar[1, i, j]
-    end
+    # Extract f_bar = partials_bar[1, ...]
+    src = selectdim(partials_bar, 1, 1)
+    f_bar .+= src
 
     return f_bar
 end
@@ -418,6 +465,15 @@ function _build_nd_adjoint(
         _get_cubic_cache(grid_d, bp_d, autocache)
     end
 
+    # Effective caches for mixed partials (p_src > 1).
+    # _get_effective_bc with p_src=2 returns the BC used for all mixed partials.
+    # For CubicFit, this returns the same cache; for other BCs it typically returns CubicFit.
+    eff_caches = map(grids, bcs) do grid_d, bc_d
+        eff_bc = _get_effective_bc(bc_d, 2, grid_d)
+        eff_bc_pair = _normalize_bc(eff_bc, Tg)
+        _get_cubic_cache(grid_d, eff_bc_pair, autocache)
+    end
+
     spacings = _create_spacings_typed(grids)
 
     # Bake per-query anchors
@@ -427,6 +483,6 @@ function _build_nd_adjoint(
 
     return CubicAdjointND{
         Tg, N,
-        typeof(grids), typeof(spacings), typeof(caches), typeof(bcs),
-    }(grids, spacings, caches, bcs, anchors, grid_size)
+        typeof(grids), typeof(spacings), typeof(caches), typeof(eff_caches), typeof(bcs),
+    }(grids, spacings, caches, eff_caches, bcs, anchors, grid_size)
 end

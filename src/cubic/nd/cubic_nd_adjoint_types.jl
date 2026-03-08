@@ -42,7 +42,7 @@ end
 # ========================================
 
 """
-    CubicAdjointND{Tg, N, G, S, C, B}
+    CubicAdjointND{Tg, N, G, S, C, CE, B}
 
 Adjoint (transpose) operator for N-dimensional cubic Hermite interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward ND cubic interpolation weight matrix.
@@ -55,13 +55,20 @@ The same adjoint can be applied to any `ȳ` vector.
 - `N`:  Number of dimensions
 - `G`:  Grid tuple type
 - `S`:  Spacing tuple type
-- `C`:  Cache tuple type (per-axis CubicSplineCache)
+- `C`:  Cache tuple type for user BC (per-axis CubicSplineCache)
+- `CE`: Cache tuple type for effective BC on mixed partials (p_src > 1)
 - `B`:  BC tuple type (per-axis boundary conditions)
 
 # Architecture
 Unlike `CubicInterpolantND` which precomputes all partial derivatives and discards
 the Thomas LU factorizations, the adjoint **retains per-axis LU caches** because
 it must solve transpose Thomas systems at every `adj(ȳ)` call.
+
+Two sets of caches are stored per axis:
+- `caches`: Thomas LU for the user's BC (used when `p_src == 1`, i.e., pure derivatives)
+- `eff_caches`: Thomas LU for the effective BC (used when `p_src > 1`, i.e., mixed partials)
+For CubicFit BC, both reference the same pool entry. For other BCs (e.g., ZeroCurvBC),
+mixed partials use CubicFit while pure derivatives use the user's BC.
 
 # Usage
 ```julia
@@ -85,11 +92,13 @@ struct CubicAdjointND{
         G <: NTuple{N, AbstractVector{Tg}},
         S <: NTuple{N, AbstractGridSpacing{Tg}},
         C <: NTuple{N, CubicSplineCache{Tg}},
+        CE <: NTuple{N, CubicSplineCache{Tg}},
         B <: NTuple{N, AbstractBC},
     } <: AbstractAdjoint{Tg}
     grids::G
     spacings::S
     caches::C
+    eff_caches::CE
     bcs::B
     anchors::Vector{_NDAdjointAnchor{Tg, N}}
     grid_size::NTuple{N, Int}

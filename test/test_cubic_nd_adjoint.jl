@@ -269,3 +269,184 @@ end
         @test allocs <= ND_ALLOC_THRESHOLD
     end
 end
+
+# ========================================
+# N=3 Tests
+# ========================================
+
+@testset "CubicAdjointND (N=3)" begin
+    nx, ny, nz = 10, 8, 6
+    n_query = 30
+
+    x_uniform = range(0.0, 1.0, nx)
+    y_uniform = range(0.0, 2.0, ny)
+    z_uniform = range(0.0, 1.5, nz)
+
+    x_nonuniform = cumsum(0.5 .+ rand(nx))
+    x_nonuniform .= (x_nonuniform .- x_nonuniform[1]) ./ (x_nonuniform[end] - x_nonuniform[1])
+
+    # Query points inside domain
+    xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+    yq = sort(rand(n_query)) .* 1.92 .+ 0.04
+    zq = sort(rand(n_query)) .* 1.44 .+ 0.03
+
+    f = randn(nx, ny, nz)
+    y_bar = randn(n_query)
+
+    # ========================================
+    # Dot-product identity
+    # ========================================
+    @testset "Dot-product — uniform grids" begin
+        _, _, ok = dot_product_test_nd(
+            (x_uniform, y_uniform, z_uniform), (xq, yq, zq), f, y_bar
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — non-uniform grids" begin
+        x_nu = cumsum(0.5 .+ rand(nx))
+        x_nu .= (x_nu .- x_nu[1]) ./ (x_nu[end] - x_nu[1])
+        y_nu = cumsum(0.5 .+ rand(ny))
+        y_nu .= (y_nu .- y_nu[1]) ./ (y_nu[end] - y_nu[1]) .* 2.0
+        z_nu = cumsum(0.5 .+ rand(nz))
+        z_nu .= (z_nu .- z_nu[1]) ./ (z_nu[end] - z_nu[1]) .* 1.5
+        f_nu = randn(nx, ny, nz)
+        _, _, ok = dot_product_test_nd(
+            (collect(x_nu), collect(y_nu), collect(z_nu)), (xq, yq, zq), f_nu, y_bar
+        )
+        @test ok
+    end
+
+    # ========================================
+    # In-place vs allocating
+    # ========================================
+    @testset "In-place vs allocating" begin
+        adj = cubic_adjoint((x_uniform, y_uniform, z_uniform), (xq, yq, zq))
+        f_bar_alloc = adj(y_bar)
+        f_bar_inplace = zeros(nx, ny, nz)
+        adj(f_bar_inplace, y_bar)
+        @test f_bar_alloc ≈ f_bar_inplace
+    end
+
+    # ========================================
+    # Matrix materialization (small grid)
+    # ========================================
+    @testset "Matrix materialization" begin
+        sx, sy, sz = 5, 4, 4
+        x_s = range(0.0, 1.0, sx)
+        y_s = range(0.0, 1.0, sy)
+        z_s = range(0.0, 1.0, sz)
+        n_q = 8
+        xq_s = sort(rand(n_q)) .* 0.96 .+ 0.02
+        yq_s = sort(rand(n_q)) .* 0.96 .+ 0.02
+        zq_s = sort(rand(n_q)) .* 0.96 .+ 0.02
+
+        adj = cubic_adjoint((x_s, y_s, z_s), (xq_s, yq_s, zq_s))
+        n_grid = sx * sy * sz
+
+        # Build Wᵀ by probing adjoint with unit vectors
+        WT = zeros(n_grid, n_q)
+        e_q = zeros(n_q)
+        for q in 1:n_q
+            e_q[q] = 1.0
+            WT[:, q] = vec(adj(e_q))
+            e_q[q] = 0.0
+        end
+
+        # Build W by probing forward with unit vectors
+        W = zeros(n_q, n_grid)
+        output = zeros(n_q)
+        for k in 1:n_grid
+            e_f = zeros(sx, sy, sz)
+            e_f[k] = 1.0
+            itp = cubic_interp((x_s, y_s, z_s), e_f)
+            itp(output, (xq_s, yq_s, zq_s))
+            W[:, k] = output
+        end
+
+        @test W' ≈ WT rtol = 1e-12
+    end
+
+    # ========================================
+    # Edge cases
+    # ========================================
+    @testset "Single query point" begin
+        adj = cubic_adjoint(
+            (x_uniform, y_uniform, z_uniform), ([0.5], [1.0], [0.75])
+        )
+        f_bar = adj([1.0])
+        @test size(f_bar) == (nx, ny, nz)
+    end
+
+    # ========================================
+    # Type stability
+    # ========================================
+    @testset "Type stability — constructor" begin
+        @test @inferred(cubic_adjoint(
+            (x_uniform, y_uniform, z_uniform), (xq, yq, zq)
+        )) isa CubicAdjointND
+    end
+
+    @testset "Type stability — apply" begin
+        adj = cubic_adjoint((x_uniform, y_uniform, z_uniform), (xq, yq, zq))
+        @test @inferred(adj(y_bar)) isa Array{Float64, 3}
+    end
+
+    # ========================================
+    # Zero-allocation (in-place)
+    # ========================================
+    function _test_nd_adjoint_alloc_3d(grids, queries, f_bar, y_bar)
+        adj = cubic_adjoint(grids, queries)
+        adj(f_bar, y_bar)  # warmup
+        adj(f_bar, y_bar)  # warmup
+        return @allocated adj(f_bar, y_bar)
+    end
+
+    @testset "Zero-alloc: in-place uniform" begin
+        fb = zeros(nx, ny, nz)
+        allocs = _test_nd_adjoint_alloc_3d(
+            (x_uniform, y_uniform, z_uniform), (xq, yq, zq), fb, y_bar
+        )
+        @test allocs <= ND_ALLOC_THRESHOLD
+    end
+end
+
+# ========================================
+# Boundary Condition Tests (N=2)
+# ========================================
+
+@testset "CubicAdjointND — Boundary Conditions" begin
+    nx, ny = 12, 10
+    n_query = 25
+
+    x = range(0.0, 1.0, nx)
+    y = range(0.0, 1.0, ny)
+    xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+    yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+    f = randn(nx, ny)
+    y_bar = randn(n_query)
+
+    @testset "BC: $bc_name" for (bc_name, bc) in [
+            ("Deriv2(0) / Natural", Deriv2(0.0)),
+            ("ZeroCurvBC", ZeroCurvBC()),
+            ("ZeroSlopeBC", ZeroSlopeBC()),
+            ("QuadraticFit", QuadraticFit()),
+        ]
+        _, _, ok = dot_product_test_nd((x, y), (xq, yq), f, y_bar; bc = bc)
+        @test ok
+    end
+
+    @testset "Mixed BCs (CubicFit × ZeroCurvBC)" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar; bc = (CubicFit(), ZeroCurvBC())
+        )
+        @test ok
+    end
+
+    @testset "Mixed BCs (ZeroSlopeBC × QuadraticFit)" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar; bc = (ZeroSlopeBC(), QuadraticFit())
+        )
+        @test ok
+    end
+end

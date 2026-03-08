@@ -271,8 +271,8 @@ on its type. This eliminates the Union that would arise from
 end
 
 """
-    _build_adjoint_nd!(partials_bar, caches, eff_caches, spacings, bcs,
-                       pf_user, pf_eff, grids, grid_size)
+    _build_adjoint_nd!(partials_bar, caches, eff_caches, spacings,
+                       bc_pairs, eff_bc_pairs, pf_user, pf_eff, grid_size)
 
 Apply the adjoint of the ND build pipeline for arbitrary N dimensions.
 Processes axes in reverse order (d=N..1).
@@ -280,22 +280,23 @@ Processes axes in reverse order (d=N..1).
 For each axis d, reverses the forward chain:
   partials[p_dst] = moments_to_deriv( A_d⁻¹ · R_d · partials[p_src] )
 
-Uses `if p_src == 1` branching with a function barrier (`_adjoint_axis_pair!`)
-to ensure the cache dispatch is type-stable: Julia specializes the barrier on
-the concrete cache type for each branch, avoiding the Union from a ternary.
+All inputs are precomputed at construction time (no runtime BC resolution):
+- `bc_pairs[d]` / `eff_bc_pairs[d]`: concrete `BCPair{L,R}` (from `_normalize_bc`)
+- `pf_user[d]` / `pf_eff[d]`: polyfit stencil coefficients (from `_build_polyfit_data`)
+- `caches[d]` / `eff_caches[d]`: Thomas LU factorizations
 
-Polyfit data (`pf_user`, `pf_eff`) is precomputed at construction time,
-matching the 1D `CubicAdjoint` pattern.
+Uses `if p_src == 1` branching with a function barrier (`_adjoint_axis_pair!`)
+to ensure cache dispatch is type-stable.
 """
 @with_pool pool function _build_adjoint_nd!(
         partials_bar::AbstractArray{Tv},
         caches::NTuple{N, CubicSplineCache{Tg}},
         eff_caches::NTuple{N, CubicSplineCache{Tg}},
         spacings::NTuple{N, AbstractGridSpacing{Tg}},
-        bcs::NTuple{N, AbstractBC},
+        bc_pairs::NTuple{N, BCPair},
+        eff_bc_pairs::NTuple{N, BCPair},
         pf_user::NTuple{N, _AdjointPolyfitData},
         pf_eff::NTuple{N, _AdjointPolyfitData},
-        grids::NTuple{N, AbstractVector{Tg}},
         grid_size::NTuple{N, Int}
     ) where {Tv, Tg <: AbstractFloat, N}
     # Process axes in reverse order: d=N, N-1, ..., 1
@@ -322,26 +323,22 @@ matching the 1D `CubicAdjoint` pattern.
         for p_src in 1:bit_d
             p_dst = p_src + bit_d
 
-            # Resolve BC pair for this (d, p_src) combination
-            effective_bc = _get_effective_bc(bcs[d], p_src, grids[d])
-            effective_bc_pair = _normalize_bc(effective_bc, Tg)
-
             # N-dim views via selectdim, then reshape to 3D: (shape_before, n_d, shape_after)
             src_3d = reshape(selectdim(partials_bar, 1, p_src), shape_before, n_d, shape_after)
             dst_3d = reshape(selectdim(partials_bar, 1, p_dst), shape_before, n_d, shape_after)
 
-            # Branch on p_src to select concrete cache type (function barrier avoids Union)
+            # Branch on p_src to select concrete (cache, bc_pair, pf) triple
             if p_src == 1
                 _adjoint_axis_pair!(
                     src_3d, dst_3d, caches[d], spacing_d,
-                    effective_bc_pair, pf_user[d],
+                    bc_pairs[d], pf_user[d],
                     shape_before, n_d, shape_after,
                     z_bar, f_contrib, dy_bar_slice
                 )
             else
                 _adjoint_axis_pair!(
                     src_3d, dst_3d, eff_caches[d], spacing_d,
-                    effective_bc_pair, pf_eff[d],
+                    eff_bc_pairs[d], pf_eff[d],
                     shape_before, n_d, shape_after,
                     z_bar, f_contrib, dy_bar_slice
                 )
@@ -418,7 +415,7 @@ end
     # Steps 1-3: Build adjoint (reverse axis order)
     _build_adjoint_nd!(
         partials_bar, adj.caches, adj.eff_caches, adj.spacings,
-        adj.bcs, adj.pf_user, adj.pf_eff, adj.grids, adj.grid_size
+        adj.bc_pairs, adj.eff_bc_pairs, adj.pf_user, adj.pf_eff, adj.grid_size
     )
 
     # Extract f_bar = partials_bar[1, ...]
@@ -538,7 +535,8 @@ function _build_nd_adjoint(
 
     return CubicAdjointND{
         Tg, N,
-        typeof(grids), typeof(spacings), typeof(caches), typeof(eff_caches), typeof(bcs),
-        typeof(pf_user), typeof(pf_eff),
-    }(grids, spacings, caches, eff_caches, bcs, pf_user, pf_eff, anchors, grid_size)
+        typeof(grids), typeof(spacings), typeof(caches), typeof(eff_caches),
+        typeof(bc_pairs), typeof(eff_bc_pairs), typeof(pf_user), typeof(pf_eff),
+    }(grids, spacings, caches, eff_caches, bc_pairs, eff_bc_pairs,
+      pf_user, pf_eff, anchors, grid_size)
 end

@@ -42,7 +42,7 @@ end
 # ========================================
 
 """
-    CubicAdjointND{Tg, N, G, S, C, CE, B, PF, PFE}
+    CubicAdjointND{Tg, N, G, S, C, CE, BP, BPE, PF, PFE}
 
 Adjoint (transpose) operator for N-dimensional cubic Hermite interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward ND cubic interpolation weight matrix.
@@ -57,21 +57,24 @@ The same adjoint can be applied to any `ȳ` vector.
 - `S`:   Spacing tuple type
 - `C`:   Cache tuple type for user BC (per-axis CubicSplineCache)
 - `CE`:  Cache tuple type for effective BC on mixed partials (p_src > 1)
-- `B`:   BC tuple type (per-axis boundary conditions)
+- `BP`:  User BC pairs, concrete `NTuple{N, BCPair}` (for p_src == 1)
+- `BPE`: Effective BC pairs, concrete `NTuple{N, BCPair}` (for p_src > 1)
 - `PF`:  Per-axis precomputed polyfit data for user BCs
 - `PFE`: Per-axis precomputed polyfit data for effective BCs
 
-# Architecture — Why Two Cache Sets?
-Unlike the forward `CubicInterpolantND` which creates fresh Thomas LU caches during
-build and discards them, the adjoint **retains** LU caches for transpose solves at
-every `adj(ȳ)` call. In 1D, only `p_src == 1` exists (no mixed partials), so a single
-cache suffices. In ND, the build adjoint processes `(d, p_src)` pairs where:
-- `p_src == 1`: pure derivative → user's BC → `caches[d]`
-- `p_src > 1`:  mixed partial → `_get_effective_bc` → typically CubicFit → `eff_caches[d]`
+# Architecture — Why Two Sets?
+Unlike `CubicInterpolantND` which discards Thomas LU caches after precomputing nodal
+derivatives, the adjoint **retains** per-axis LU caches for transpose solves at every
+`adj(ȳ)` call. For each axis d, the build adjoint processes `(d, p_src)` pairs:
+- `p_src == 1`: pure derivative → user's cache/BC/polyfit
+- `p_src > 1`:  mixed partial  → effective cache/BC/polyfit
 
-These require different Thomas LU factorizations when BC ≠ CubicFit (e.g., ZeroCurvBC),
-because the first/last rows of the tridiagonal system differ by BC type.
-When all BCs are CubicFit, `C == CE` at the type level and Julia optimizes the branch.
+All BC pairs are resolved to concrete `BCPair{L,R}` at construction time (following
+`CubicInterpolantND`'s `bcs_store` pattern). No runtime `_get_effective_bc` or
+`_normalize_bc` calls remain in the hot path.
+
+When all user BCs are CubicFit, the user and effective sets are identical at the type
+level, and Julia optimizes the branch away.
 
 # Usage
 ```julia
@@ -87,7 +90,8 @@ struct CubicAdjointND{
         S <: NTuple{N, AbstractGridSpacing{Tg}},
         C <: NTuple{N, CubicSplineCache{Tg}},
         CE <: NTuple{N, CubicSplineCache{Tg}},
-        B <: NTuple{N, AbstractBC},
+        BP <: NTuple{N, BCPair},
+        BPE <: NTuple{N, BCPair},
         PF <: NTuple{N, _AdjointPolyfitData},
         PFE <: NTuple{N, _AdjointPolyfitData},
     } <: AbstractAdjoint{Tg}
@@ -95,7 +99,8 @@ struct CubicAdjointND{
     spacings::S
     caches::C
     eff_caches::CE
-    bcs::B
+    bc_pairs::BP
+    eff_bc_pairs::BPE
     pf_user::PF
     pf_eff::PFE
     anchors::Vector{_NDAdjointAnchor{Tg, N}}

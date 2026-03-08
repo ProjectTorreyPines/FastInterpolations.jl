@@ -55,7 +55,7 @@ end
 # ========================================
 
 """
-    CubicAdjoint{Tg, C, BC, PF}
+    CubicAdjoint{Tg, C, BC}
 
 Adjoint (transpose) operator for cubic spline interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward interpolation weight matrix.
@@ -67,7 +67,6 @@ The same adjoint can be applied to any `ȳ` vector regardless of value type.
 - `Tg`: Grid float type (Float32 or Float64)
 - `C`: `CubicSplineCache` type (reused from forward interpolation)
 - `BC`: `BCPair` or `PeriodicBC` (normalized boundary condition)
-- `PF`: `_AdjointPolyfitData` type (precomputed PolyFit stencil coefficients)
 
 # Usage
 ```julia
@@ -93,23 +92,14 @@ Adjoint: `f̄ = Wᵀȳ = Eᵧᵀȳ + Rᵀ·A⁻ᵀ·E_zᵀȳ`
 
 Here `A` is the tridiagonal moment matrix, `R` the finite-difference RHS operator,
 `Eᵧ` and `E_z` the evaluation weight matrices for y-values and z-moments respectively.
+
+PolyFit stencil coefficients and periodic `q_transpose = A'^{-T}u` are computed on the
+fly at each `adj(ȳ)` call (O(D) and O(n) respectively, negligible vs overall pipeline).
 """
-struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}, PF <: _AdjointPolyfitData, QT} <: AbstractAdjoint{Tg}
+struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}} <: AbstractAdjoint{Tg}
     cache::C
     anchors::Vector{_CubicAnchoredQuery{Tg, Tg}}
     bc::BC
-    polyfit_data::PF
-    q_transpose::QT   # Nothing for non-periodic, Vector{Tg} for periodic (A'^{-T} u)
-
-    function CubicAdjoint(
-            cache::C,
-            anchors::Vector{_CubicAnchoredQuery{Tg, Tg}},
-            bc::BC,
-            polyfit_data::PF;
-            q_transpose::QT = nothing
-        ) where {Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}, PF <: _AdjointPolyfitData, QT}
-        return new{Tg, C, BC, PF, QT}(cache, anchors, bc, polyfit_data, q_transpose)
-    end
 end
 
 @inline _adjoint_output_length(adj::CubicAdjoint) =
@@ -208,7 +198,9 @@ end
     _ldiv_tridiagonal_transpose!(z_bar, adj.cache.thomas)
 
     # Step 3: RHS adjoint — f̄ += Rᵀr̄
-    _compute_rhs_adjoint!(f_bar, z_bar, adj.cache.spacing, adj.bc, adj.polyfit_data)
+    # Compute polyfit stencil coefficients on the fly (O(D), grid-only)
+    pf = _build_polyfit_data(adj.bc, adj.cache.x)
+    _compute_rhs_adjoint!(f_bar, z_bar, adj.cache.spacing, adj.bc, pf)
 
     return f_bar
 end
@@ -514,10 +506,7 @@ function cubic_adjoint(
         anchors = _anchor_query(cache.x, xq_p, Val(:cubic), wrap)
     end
 
-    # Precompute PolyFit stencil coefficients (grid-only, computed once)
-    pf = _build_polyfit_data(bc_pair, cache.x)
-
-    return CubicAdjoint(cache, anchors, bc_pair, pf)
+    return CubicAdjoint(cache, anchors, bc_pair)
 end
 
 # ========================================
@@ -550,18 +539,10 @@ function _build_cubic_adjoint_periodic(
     # Build anchored queries with wrapping (queries outside domain → wrap to [x[1], x[end]))
     anchors = _anchor_query(cache.x, xq, Val(:cubic), true)
 
-    # No PolyFit for periodic
-    pf = _AdjointPolyfitData(nothing, nothing)
-
-    # Precompute q_t = A'^{-T} u for the transpose Sherman-Morrison correction
-    n = length(cache.x) - 1
-    u = zeros(Tg, n); u[1] = one(Tg); u[n] = one(Tg)
-    _ldiv_tridiagonal_transpose!(u, cache.thomas)  # u is now q_t in-place
-
     # Store resolved period in BC for display/introspection
     bc_display = _with_resolved_period(bc, cache.bc_config.period)
 
-    return CubicAdjoint(cache, anchors, bc_display, pf; q_transpose = u)
+    return CubicAdjoint(cache, anchors, bc_display)
 end
 
 # ========================================
@@ -585,7 +566,14 @@ end
     @inbounds z_bar[1] += z_bar[n + 1]
 
     # Step 3: Sherman-Morrison adjoint solve — (A'+αuuᵀ)⁻ᵀz̄ → r̄
-    _adjoint_periodic_solve!(z_bar, adj.cache, adj.q_transpose, n)
+    # Compute q_t = A'^{-T} u on the fly (pool-allocated, zero-alloc)
+    q_t = acquire!(pool, Tg, n)
+    fill!(q_t, zero(Tg))
+    @inbounds q_t[1] = one(Tg)
+    @inbounds q_t[n] = one(Tg)
+    _ldiv_tridiagonal_transpose!(q_t, adj.cache.thomas)
+
+    _adjoint_periodic_solve!(z_bar, adj.cache, q_t, n)
 
     # Step 4: Rᵀ_circ r̄ → f̄ += Rᵀ·r̄ (accumulates into f_bar[1..n+1])
     _compute_rhs_adjoint_periodic!(f_bar, z_bar, adj.cache.spacing, n)
@@ -610,7 +598,7 @@ Operates in-place on `z_bar[1:n]`; `z_bar[n+1]` is not touched.
 function _adjoint_periodic_solve!(
         z_bar::AbstractVector{Tv},
         cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
-        q_t::Vector{Tg},
+        q_t::AbstractVector,
         n::Int
     ) where {Tv, Tg <: AbstractFloat, X, F, S <: AbstractGridSpacing{Tg}}
 

@@ -225,7 +225,54 @@ end
 # ========================================
 
 """
-    _build_adjoint_nd!(partials_bar, caches, spacings, bcs, grids, grid_size)
+    _adjoint_axis_pair!(src_3d, dst_3d, cache_d, spacing_d, bc_pair, pf,
+                        shape_before, n_d, shape_after, z_bar, f_contrib, dy_bar_slice)
+
+Function barrier for per-axis adjoint processing.
+
+Accepts `cache_d` as a concrete-typed argument, forcing Julia to specialize
+on its type. This eliminates the Union that would arise from
+`p_src == 1 ? caches[d] : eff_caches[d]` when `C ≠ CE`.
+"""
+@inline function _adjoint_axis_pair!(
+        src_3d, dst_3d,
+        cache_d::CubicSplineCache{Tg},
+        spacing_d::AbstractGridSpacing{Tg},
+        bc_pair::BCPair,
+        pf::_AdjointPolyfitData,
+        shape_before::Int, n_d::Int, shape_after::Int,
+        z_bar::AbstractVector{Tv},
+        f_contrib::AbstractVector{Tv},
+        dy_bar_slice::AbstractVector{Tv}
+    ) where {Tv, Tg}
+    for j in 1:shape_after
+        for i in 1:shape_before
+            # Extract 1D dy_bar slice from partials_bar[p_dst]
+            @inbounds for k in 1:n_d
+                dy_bar_slice[k] = dst_3d[i, k, j]
+            end
+
+            # Step a: moments_to_deriv adjoint
+            _moments_to_deriv_adjoint_1d!(z_bar, f_contrib, dy_bar_slice, spacing_d)
+
+            # Step b: transpose Thomas solve (A⁻ᵀ z_bar)
+            _ldiv_tridiagonal_transpose!(z_bar, cache_d.thomas)
+
+            # Step c: RHS stencil adjoint (f_contrib += Rᵀ z_bar)
+            _compute_rhs_adjoint!(f_contrib, z_bar, spacing_d, bc_pair, pf)
+
+            # Step d: accumulate into partials_bar[p_src]
+            @inbounds for k in 1:n_d
+                src_3d[i, k, j] += f_contrib[k]
+            end
+        end
+    end
+    return nothing
+end
+
+"""
+    _build_adjoint_nd!(partials_bar, caches, eff_caches, spacings, bcs,
+                       pf_user, pf_eff, grids, grid_size)
 
 Apply the adjoint of the ND build pipeline for arbitrary N dimensions.
 Processes axes in reverse order (d=N..1).
@@ -233,22 +280,21 @@ Processes axes in reverse order (d=N..1).
 For each axis d, reverses the forward chain:
   partials[p_dst] = moments_to_deriv( A_d⁻¹ · R_d · partials[p_src] )
 
-Adjoint steps per (d, p_src) pair:
-  a. moments_to_deriv_adjoint(partials_bar[p_dst]) → z_bar, f_contrib
-  b. A_d⁻ᵀ · z_bar (transpose Thomas solve)
-  c. f_contrib += Rᵀ · z_bar (RHS stencil adjoint)
-  d. partials_bar[p_src] += f_contrib
+Uses `if p_src == 1` branching with a function barrier (`_adjoint_axis_pair!`)
+to ensure the cache dispatch is type-stable: Julia specializes the barrier on
+the concrete cache type for each branch, avoiding the Union from a ternary.
 
-Uses the reshape-to-3D trick: for axis d, reshape the N-dim data to
-`(shape_before, n_d, shape_after)` where shape_before = prod(n_1..n_{d-1}),
-shape_after = prod(n_{d+1}..n_N). This reduces all N-dim operations to 1D.
+Polyfit data (`pf_user`, `pf_eff`) is precomputed at construction time,
+matching the 1D `CubicAdjoint` pattern.
 """
 @with_pool pool function _build_adjoint_nd!(
         partials_bar::AbstractArray{Tv},
-        caches,
-        eff_caches,
-        spacings,
-        bcs,
+        caches::NTuple{N, CubicSplineCache{Tg}},
+        eff_caches::NTuple{N, CubicSplineCache{Tg}},
+        spacings::NTuple{N, AbstractGridSpacing{Tg}},
+        bcs::NTuple{N, AbstractBC},
+        pf_user::NTuple{N, _AdjointPolyfitData},
+        pf_eff::NTuple{N, _AdjointPolyfitData},
         grids::NTuple{N, AbstractVector{Tg}},
         grid_size::NTuple{N, Int}
     ) where {Tv, Tg <: AbstractFloat, N}
@@ -276,40 +322,29 @@ shape_after = prod(n_{d+1}..n_N). This reduces all N-dim operations to 1D.
         for p_src in 1:bit_d
             p_dst = p_src + bit_d
 
-            # Get effective BC for this (d, p_src) pair
+            # Resolve BC pair for this (d, p_src) combination
             effective_bc = _get_effective_bc(bcs[d], p_src, grids[d])
             effective_bc_pair = _normalize_bc(effective_bc, Tg)
-            effective_pf = _build_polyfit_data(effective_bc_pair, grids[d])
-
-            # Select correct Thomas LU cache:
-            # p_src == 1 → user's BC cache, p_src > 1 → effective BC cache
-            cache_d = p_src == 1 ? caches[d] : eff_caches[d]
 
             # N-dim views via selectdim, then reshape to 3D: (shape_before, n_d, shape_after)
             src_3d = reshape(selectdim(partials_bar, 1, p_src), shape_before, n_d, shape_after)
             dst_3d = reshape(selectdim(partials_bar, 1, p_dst), shape_before, n_d, shape_after)
 
-            for j in 1:shape_after
-                for i in 1:shape_before
-                    # Extract 1D dy_bar slice from partials_bar[p_dst]
-                    @inbounds for k in 1:n_d
-                        dy_bar_slice[k] = dst_3d[i, k, j]
-                    end
-
-                    # Step a: moments_to_deriv adjoint
-                    _moments_to_deriv_adjoint_1d!(z_bar, f_contrib, dy_bar_slice, spacing_d)
-
-                    # Step b: transpose Thomas solve (A⁻ᵀ z_bar)
-                    _ldiv_tridiagonal_transpose!(z_bar, cache_d.thomas)
-
-                    # Step c: RHS stencil adjoint (f_contrib += Rᵀ z_bar)
-                    _compute_rhs_adjoint!(f_contrib, z_bar, spacing_d, effective_bc_pair, effective_pf)
-
-                    # Step d: accumulate into partials_bar[p_src]
-                    @inbounds for k in 1:n_d
-                        src_3d[i, k, j] += f_contrib[k]
-                    end
-                end
+            # Branch on p_src to select concrete cache type (function barrier avoids Union)
+            if p_src == 1
+                _adjoint_axis_pair!(
+                    src_3d, dst_3d, caches[d], spacing_d,
+                    effective_bc_pair, pf_user[d],
+                    shape_before, n_d, shape_after,
+                    z_bar, f_contrib, dy_bar_slice
+                )
+            else
+                _adjoint_axis_pair!(
+                    src_3d, dst_3d, eff_caches[d], spacing_d,
+                    effective_bc_pair, pf_eff[d],
+                    shape_before, n_d, shape_after,
+                    z_bar, f_contrib, dy_bar_slice
+                )
             end
         end
     end
@@ -383,7 +418,7 @@ end
     # Steps 1-3: Build adjoint (reverse axis order)
     _build_adjoint_nd!(
         partials_bar, adj.caches, adj.eff_caches, adj.spacings,
-        adj.bcs, adj.grids, adj.grid_size
+        adj.bcs, adj.pf_user, adj.pf_eff, adj.grids, adj.grid_size
     )
 
     # Extract f_bar = partials_bar[1, ...]
@@ -455,7 +490,17 @@ function _build_nd_adjoint(
         bcs::NTuple{N, AbstractBC},
         autocache::Bool
     ) where {N, Tg <: AbstractFloat}
-    # Per-axis: normalize BC temporarily for cache construction
+    # Validate: PeriodicBC not yet supported (Phase 3)
+    for d in 1:N
+        _is_periodic_bc(bcs[d]) && throw(
+            ArgumentError("PeriodicBC on axis $d is not yet supported by cubic_adjoint (planned for Phase 3)")
+        )
+    end
+
+    # Validate: PolyFit BCs have enough grid points
+    _validate_polyfit_bcs(grids, bcs, Val(N))
+
+    # Per-axis: normalize BC for cache + polyfit construction
     # map dispatches per-element → each call gets concrete types (no Union)
     bc_pairs = map(bcs) do bc_d
         _normalize_bc(bc_d, Tg)
@@ -465,13 +510,23 @@ function _build_nd_adjoint(
         _get_cubic_cache(grid_d, bp_d, autocache)
     end
 
-    # Effective caches for mixed partials (p_src > 1).
+    # Effective BC pairs for mixed partials (p_src > 1).
     # _get_effective_bc with p_src=2 returns the BC used for all mixed partials.
-    # For CubicFit, this returns the same cache; for other BCs it typically returns CubicFit.
-    eff_caches = map(grids, bcs) do grid_d, bc_d
+    eff_bc_pairs = map(grids, bcs) do grid_d, bc_d
         eff_bc = _get_effective_bc(bc_d, 2, grid_d)
-        eff_bc_pair = _normalize_bc(eff_bc, Tg)
-        _get_cubic_cache(grid_d, eff_bc_pair, autocache)
+        _normalize_bc(eff_bc, Tg)
+    end
+
+    eff_caches = map(grids, eff_bc_pairs) do grid_d, eff_bp_d
+        _get_cubic_cache(grid_d, eff_bp_d, autocache)
+    end
+
+    # Precompute polyfit stencil coefficients (grid-only, computed once at construction)
+    pf_user = map(bc_pairs, grids) do bp_d, grid_d
+        _build_polyfit_data(bp_d, grid_d)
+    end
+    pf_eff = map(eff_bc_pairs, grids) do eff_bp_d, grid_d
+        _build_polyfit_data(eff_bp_d, grid_d)
     end
 
     spacings = _create_spacings_typed(grids)
@@ -484,5 +539,6 @@ function _build_nd_adjoint(
     return CubicAdjointND{
         Tg, N,
         typeof(grids), typeof(spacings), typeof(caches), typeof(eff_caches), typeof(bcs),
-    }(grids, spacings, caches, eff_caches, bcs, anchors, grid_size)
+        typeof(pf_user), typeof(pf_eff),
+    }(grids, spacings, caches, eff_caches, bcs, pf_user, pf_eff, anchors, grid_size)
 end

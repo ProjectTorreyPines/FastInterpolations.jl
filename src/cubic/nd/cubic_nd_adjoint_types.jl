@@ -42,7 +42,7 @@ end
 # ========================================
 
 """
-    CubicAdjointND{Tg, N, G, S, C, CE, B}
+    CubicAdjointND{Tg, N, G, S, C, CE, B, PF, PFE}
 
 Adjoint (transpose) operator for N-dimensional cubic Hermite interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward ND cubic interpolation weight matrix.
@@ -51,24 +51,27 @@ Constructed from grids and query points (query-baked, data-free).
 The same adjoint can be applied to any `ȳ` vector.
 
 # Type Parameters
-- `Tg`: Grid float type (Float32 or Float64)
-- `N`:  Number of dimensions
-- `G`:  Grid tuple type
-- `S`:  Spacing tuple type
-- `C`:  Cache tuple type for user BC (per-axis CubicSplineCache)
-- `CE`: Cache tuple type for effective BC on mixed partials (p_src > 1)
-- `B`:  BC tuple type (per-axis boundary conditions)
+- `Tg`:  Grid float type (Float32 or Float64)
+- `N`:   Number of dimensions
+- `G`:   Grid tuple type
+- `S`:   Spacing tuple type
+- `C`:   Cache tuple type for user BC (per-axis CubicSplineCache)
+- `CE`:  Cache tuple type for effective BC on mixed partials (p_src > 1)
+- `B`:   BC tuple type (per-axis boundary conditions)
+- `PF`:  Per-axis precomputed polyfit data for user BCs
+- `PFE`: Per-axis precomputed polyfit data for effective BCs
 
-# Architecture
-Unlike `CubicInterpolantND` which precomputes all partial derivatives and discards
-the Thomas LU factorizations, the adjoint **retains per-axis LU caches** because
-it must solve transpose Thomas systems at every `adj(ȳ)` call.
+# Architecture — Why Two Cache Sets?
+Unlike the forward `CubicInterpolantND` which creates fresh Thomas LU caches during
+build and discards them, the adjoint **retains** LU caches for transpose solves at
+every `adj(ȳ)` call. In 1D, only `p_src == 1` exists (no mixed partials), so a single
+cache suffices. In ND, the build adjoint processes `(d, p_src)` pairs where:
+- `p_src == 1`: pure derivative → user's BC → `caches[d]`
+- `p_src > 1`:  mixed partial → `_get_effective_bc` → typically CubicFit → `eff_caches[d]`
 
-Two sets of caches are stored per axis:
-- `caches`: Thomas LU for the user's BC (used when `p_src == 1`, i.e., pure derivatives)
-- `eff_caches`: Thomas LU for the effective BC (used when `p_src > 1`, i.e., mixed partials)
-For CubicFit BC, both reference the same pool entry. For other BCs (e.g., ZeroCurvBC),
-mixed partials use CubicFit while pure derivatives use the user's BC.
+These require different Thomas LU factorizations when BC ≠ CubicFit (e.g., ZeroCurvBC),
+because the first/last rows of the tridiagonal system differ by BC type.
+When all BCs are CubicFit, `C == CE` at the type level and Julia optimizes the branch.
 
 # Usage
 ```julia
@@ -76,15 +79,6 @@ adj = cubic_adjoint((x, y), (xq, yq); bc=CubicFit())
 f_bar = adj(y_bar)              # allocating
 adj(f_bar, y_bar)               # in-place (zero-allocation)
 ```
-
-# Mathematical Background
-Forward: `y = W·f` where `W = Eval ∘ Build`
-  - Build: per-axis `f → moments → derivatives` (involves A⁻¹·R per axis)
-  - Eval: tensor-product Hermite collapse
-
-Adjoint: `f̄ = Wᵀȳ = Buildᵀ · Evalᵀ · ȳ`
-  - Evalᵀ: scatter ȳ to partials_bar via Hermite weight products
-  - Buildᵀ: per-axis (reverse order) moments-to-deriv adjoint + Aᵀ\\ solve + Rᵀ scatter
 """
 struct CubicAdjointND{
         Tg <: AbstractFloat,
@@ -94,12 +88,16 @@ struct CubicAdjointND{
         C <: NTuple{N, CubicSplineCache{Tg}},
         CE <: NTuple{N, CubicSplineCache{Tg}},
         B <: NTuple{N, AbstractBC},
+        PF <: NTuple{N, _AdjointPolyfitData},
+        PFE <: NTuple{N, _AdjointPolyfitData},
     } <: AbstractAdjoint{Tg}
     grids::G
     spacings::S
     caches::C
     eff_caches::CE
     bcs::B
+    pf_user::PF
+    pf_eff::PFE
     anchors::Vector{_NDAdjointAnchor{Tg, N}}
     grid_size::NTuple{N, Int}
 end

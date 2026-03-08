@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1772906977116,
+  "lastUpdate": 1772930818855,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -27466,6 +27466,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1570.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fd34abb55e9850f91cdf5c3a4f50ebd90acf6254",
+          "message": "(feat): `CubicAdjoint` operator for 1D cubic spline interpolation (#69)\n\n* (refactor): Replace _extend_grid runtime ≈ check with isa branch for type stability\n\n_extend_grid used `x_end ≈ expected_next` (runtime value comparison) to decide\nbetween Range and Vector return, creating Union{StepRangeLen, Vector} return type.\n\nSince _resolve_exclusive_period already validates period ≈ step(x)*length(x) for\nRange grids, the ≈ fallback was unreachable. Replace with `x isa AbstractRange`\ncompile-time type check (same pattern already used in ND code paths).\n\n- Inline isa branching in both _extend_exclusive overloads (Vector/Matrix)\n- Remove dead _extend_grid functions\n- Add @inferred tests for _prepare_periodic with Range and Vector grids\n\n* (fix): Use grid-precision rtol in exclusive period cross-validation\n\nThe default `≈` used Float32's generous rtol (~3e-4) for mixed-precision\ncomparisons, silently accepting mismatched periods like Float32(1.0002)\non a Float64 grid. Fix: promote to grid eltype and use explicit\n`isapprox(...; rtol=sqrt(eps(Tg)))` for strict validation.\n\nAlso: update _extend_exclusive docstring, add mixed-precision regression\ntest, and add @inferred coverage for _prepare_periodic_nd.\n\n* (fix): Remove unnecessary temp array in vcat calls and add Series Vector grid test\n\nDrop redundant [scalar] wrapper in 4 vcat call sites — vcat handles\nscalars directly, avoiding a temporary 1-element Vector allocation.\nAdd missing test for CubicSeriesInterpolant with non-uniform Vector\ngrid + exclusive endpoint (covers Matrix overload else branch).\n\n* (feat): Add cubic_adjoint operator for explicit Wᵀȳ computation\n\nHand-written adjoint of cubic_interp w.r.t. y-data, replacing AD for\nf̄ = Wᵀȳ. Three-step pipeline: eval scatter (Eᵧᵀ/E_zᵀ), transpose\nThomas solve (A⁻ᵀ), and RHS adjoint (Rᵀ). Supports all BCPair types\nwith compile-time symmetric/asymmetric dispatch. PeriodicBC deferred to v2.\n\n* (refactor): Extract periodic BC throws into @noinline helpers and polish cubic_adjoint\n\n* (refactor): Replace Val{bool} symmetry tag with MatrixSymmetry trait types\n\n* (feat): Add PeriodicBC support to cubic_adjoint operator\n\nSupport both inclusive and exclusive periodic boundary conditions in the\nadjoint operator using transpose Sherman-Morrison decomposition.\n\nKey insight: the periodic tridiagonal A' is asymmetric for non-uniform\ngrids (A'[i,i-1]=h[i-1] ≠ h[i]=A'[i,i+1]), requiring a dedicated\ntranspose Thomas solve with precomputed q_t = A'^{-T}u rather than\nreusing the forward solve.\n\n- Add periodic constructor with exclusive→inclusive grid extension\n- Add transpose SM solve (_adjoint_periodic_solve!) with q_t correction\n- Add circulant Rᵀ operator with wrapping stencil at rows 1 and n\n- Use n+1-element internal arrays to reuse existing scatter function\n- Handle exclusive output folding (f̄[1] += f̄[n+1], truncate)\n- Add q_transpose field to CubicAdjoint for precomputed A'^{-T}u\n- Replace PeriodicBC rejection test with 11 positive periodic tests\n\n* (refactor): Remove MatrixSymmetry trait; always use transpose Thomas solve in adjoint\n\nBenchmarking confirmed _ldiv_tridiagonal_nopiv! and _ldiv_tridiagonal_transpose!\nhave identical performance (ratio 0.989–1.055 across n=50..5000, noise level).\n\nRemove SymmetricA/AsymmetricA dispatch and always call _ldiv_tridiagonal_transpose!\ndirectly in the adjoint pipeline. This eliminates:\n- MatrixSymmetry abstract type + 2 subtypes\n- 5 _thomas_symmetry dispatch methods\n- 2 _adjoint_thomas_solve! dispatch methods\n- Sym type parameter from CubicAdjoint (6 → 5 type params)\n\n* (feat): Add Base.eltype for CubicAdjoint\n\n* (feat): Add AbstractAdjoint{Tg} type hierarchy and Base.eltype for all abstract types\n\n- Add AbstractAdjoint{Tg} as abstract supertype for adjoint operators\n- Add Base.eltype on AbstractInterpolant (→ Tv) and AbstractAdjoint (→ Tg)\n- Add grid_type for AbstractAdjoint\n- CubicAdjoint now subtypes AbstractAdjoint{Tg}\n- Remove redundant per-type Base.eltype from CubicAdjoint (inherited)\n- Export AbstractAdjoint\n\n* (feat): Add deriv keyword to CubicAdjoint for derivative operator adjoints\n\nSupport computing adjoint of derivative interpolation operators W_dᵀ·ȳ\nvia deriv keyword: adj(y_bar; deriv=DerivOp(1)). Only the scatter step\nchanges — transpose solve and RHS adjoint are invariant. Dispatches on\nDerivOp{N} to select anchor weights (w0..w3), with 2-weight z-only\nscatter for DerivOp{2}/DerivOp{3} where y-weights are zero.\n\n* style: Improve code formatting and readability in boundary condition tests\n\n* (feat): Add Base.Matrix materialization for CubicAdjoint and CubicInterpolant\n\nMatrix(adj; deriv) materializes Wᵀ via unit-vector probing.\nMatrix(itp, xq; deriv) delegates to adjoint transpose for W.\nBoth support all BC types, periodic, Float32, and deriv keywords.\n\n* (perf): Fix exclusive periodic in-place allocation; add zero-alloc tests\n\nReplace heap-allocated work buffer with pool in exclusive periodic\nin-place path via _adjoint_apply_exclusive_inplace!(@with_pool).\nAdd 10 zero-alloc tests covering all BC types, periodic, deriv, Float32.\n\n* (feat): Add ChainRulesCore rrule and Enzyme extension for cubic_interp ∂f/∂y\n\nEnable Zygote and Enzyme to differentiate cubic_interp w.r.t. data values\nusing CubicAdjoint operator in the pullback, bypassing in-place tridiagonal solve.\n\n* (feat): Native EnzymeRules for cubic_interp; fix unthunk in ChainRulesCore rrule\n\n- Rewrite Enzyme extension from @import_rrule to native\n  EnzymeRules.augmented_primal/reverse for both vector and scalar queries.\n  Enzyme no longer requires ChainRulesCore as a co-dependency.\n- Fix bug in ChainRulesCore rrule pullbacks: add unthunk() before passing\n  cotangent to CubicAdjoint, preventing MethodError when upstream rules\n  (e.g. sum) pass InplaceableThunk instead of plain arrays.\n- Update docs to reflect standalone Enzyme support.\n\n* (bench): Add 1D cubic adjoint benchmark — Native vs ForwardDiff vs Zygote vs Enzyme\n\nBenchmark script for full ∂f/∂y gradient pipeline on an L2 loss.\nVerifies correctness (isapprox vs ForwardDiff) then benchmarks all backends.\n\nTypical results (N=50, Nq=30, Apple M-series):\n\n  Backend                 time(us)   speedup    allocs    mem(B)\n  --------------------------------------------------------\n  Native (in-place)            0.8     12.3x         0         0\n  Native (alloc)               0.9     10.8x         6      1088\n  Zygote                       1.7      6.2x        15      5888\n  Enzyme                       2.1      4.9x        17      6064\n  ForwardDiff                 10.3      1.0x        36     37328\n\n* feat: Add noinline error handling for dimension mismatch in CubicAdjoint\n\n* feat: Add tests for CubicAdjoint in Enzyme and Zygote AD support\n\n* feat: Update CI configuration to include 'ext' directory in coverage and modify autodiff tests execution based on CI environment\n\n* feat: Add documentation for Cubic Adjoint, including overview, mathematical derivation, and usage examples\n\n* feat: Update example in Cubic Adjoint documentation for clarity and correctness\n\n* test: Add complex number tests for CubicAdjoint and Enzyme AD\n\n- CubicAdjoint: ComplexF64 dot-product tests across 5 BC types\n  (CubicFit, ZeroCurvBC, ZeroSlopeBC, Deriv1, PeriodicBC),\n  in-place vs allocating, and derivative adjoint (deriv=1,2,3)\n- Enzyme: Quadratic/Cubic complex via real()/imag() decomposition\n\n* Runic formatting\n\n* fix: Handle all extrap modes in CubicAdjoint AD rules\n\n- Pass `extrap` kwarg through cubic_adjoint constructor, using\n  `_anchor_query(wrap=true)` to mirror WrapExtrap forward behavior\n- Add OOB masking for FillExtrap in both ChainRulesCore and Enzyme\n  reverse rules (zero gradient for out-of-domain queries)\n- Fix compact show direction: adjoint maps query-space → grid-space\n- Fix eltype docstring for AbstractAdjoint (coordinate vs result type)\n- Add comprehensive @inferred tests for cubic_adjoint constructor\n  covering all BC and extrap combinations\n\n* fix: Correct CubicAdjoint for ClampExtrap/FillExtrap OOB queries\n\nClampExtrap forward returns boundary value (EvalValue) or zero\n(derivatives), but the adjoint was using extrapolated polynomial\nweights — giving wrong gradients for out-of-domain queries.\nFillExtrap had the same issue (constant fill → zero gradient, but\nadjoint scattered non-zero weights).\n\nFix: clamp OOB queries to boundary before anchoring, then fixup\nweights via _fixup_clampfill_anchors!:\n- ClampExtrap: keep w0 (correct boundary weights), zero w1/w2/w3\n- FillExtrap: zero all weights (gradient is zero)\n\nAdd dot-product tests with OOB queries for all extrap modes\n(ExtendExtrap, ClampExtrap, WrapExtrap, FillExtrap).",
+          "timestamp": "2026-03-07T16:44:36-08:00",
+          "tree_id": "9fdd6e6a89f270ef92f0702b6c6c0b51b2c44af0",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/fd34abb55e9850f91cdf5c3a4f50ebd90acf6254"
+        },
+        "date": 1772930814207,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 38983,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83816\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 633.98,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 349560,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515224\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1766.68,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1561.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 27.05,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 23.14,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3350.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=240\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 49.99,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 27.65,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4476.12,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4457.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9114.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3206.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 455.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 62034.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1273.56,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 12880,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 33.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 476.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 44989.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 35.07,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 36965.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 10.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 10.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 18.13,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 400.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 37861.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 22.64,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 12.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 618.14,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4623,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 41112.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 1377.98,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 2481.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 3628.74,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 13356.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 4583.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 36893.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 980.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 351813.7,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1581.9,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

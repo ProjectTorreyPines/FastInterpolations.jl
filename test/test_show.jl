@@ -81,6 +81,44 @@
         @test occursin("Deriv2", verbose_custom)
     end
 
+    @testset "CubicAdjoint show" begin
+        x_vec = collect(range(0.0, 1.0, 20))
+        xq = [0.2, 0.5, 0.8]
+
+        # Default BC (CubicFit)
+        adj = cubic_adjoint(x_vec, xq; bc = CubicFit())
+
+        # Compact show
+        compact_str = sprint(show, adj)
+        @test occursin("CubicAdjoint", compact_str)
+        @test occursin("Float64", compact_str)
+        @test occursin("20", compact_str)
+        @test occursin("3", compact_str)
+        @test occursin("CubicFit", compact_str)
+
+        # Verbose show
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("CubicAdjoint", verbose_str)
+        @test occursin("Grid:", verbose_str)
+        @test occursin("20 points", verbose_str)
+        @test occursin("Query:", verbose_str)
+        @test occursin("3 points", verbose_str)
+        @test occursin("BC:", verbose_str)
+        @test occursin("CubicFit", verbose_str)
+
+        # Periodic BC
+        x_per = collect(range(0.0, 2π, 21))
+        adj_per = cubic_adjoint(x_per, [1.0, 3.0, 5.0]; bc = PeriodicBC())
+        compact_per = sprint(show, adj_per)
+        @test occursin("Periodic", compact_per)
+
+        # Color output
+        io_color = IOContext(IOBuffer(), :color => true)
+        show(io_color, MIME("text/plain"), adj)
+        output = String(take!(io_color.io))
+        @test occursin("CubicAdjoint", output)
+    end
+
     @testset "LinearSeriesInterpolant show" begin
         sitp = linear_interp(x, Series(y_matrix))
 

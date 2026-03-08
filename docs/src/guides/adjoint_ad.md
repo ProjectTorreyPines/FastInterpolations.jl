@@ -14,11 +14,10 @@ Interpolation is a **linear operation** on data values: the output is a weighted
 | **Forward** (gather) | `y_interp = A * y_data` | Weighted sum of nearby data → interpolated value |
 | **Adjoint** (scatter) | `∇y_data = Aᵀ * δ` | Distribute residuals back to data nodes |
 
-!!! note "AD-based, not operator-based yet"
-    `FastInterpolations` does not currently provide an explicit adjoint operator object (`A'`).
-    Instead, you can compute `∂f/∂y` via `ForwardDiff`, which gives the same mathematical result
-    by propagating Dual numbers through the existing interpolation code.
-    A dedicated adjoint operator API is on the roadmap for a future release.
+!!! tip "Zygote & Enzyme support for cubic splines (1D)"
+    `cubic_interp(x, y, xq; ...)` provides analytical adjoint rules via [`CubicAdjoint`](@ref),
+    so **Zygote** and **Enzyme** can differentiate `∂f/∂y` for 1D cubic splines without
+    tracing through the tridiagonal solve. See [Backend Support](@ref) below for details.
 
 ## Quick Start
 
@@ -26,7 +25,7 @@ Interpolation is a **linear operation** on data values: the output is a weighted
 using FastInterpolations, ForwardDiff
 
 x = 0.0:1.0:5.0
-y = sin.(collect(x))
+y = cos.(collect(x))
 
 f(y) = linear_interp(x, y, 1.25)
 ∇y = ForwardDiff.gradient(f, y)
@@ -55,7 +54,7 @@ For **cubic** and **quadratic** splines, the gradient is non-local: the tridiago
 ```@example adjoint
 xg = range(0.0, 1.0, 5)
 yg = range(0.0, 1.0, 5)
-data = [sin(xi) * cos(yj) for xi in xg, yj in yg]
+data = [cos(xi) * cos(yj) for xi in xg, yj in yg]
 
 ∇data = ForwardDiff.gradient(d -> linear_interp((xg, yg), d, (0.3, 0.7)), data)
 ```
@@ -129,14 +128,15 @@ it must trace through the entire construction path: `f(y) = cubic_interp(x, y, x
 This construction path includes in-place array mutations (tridiagonal solve for cubic/quadratic,
 slope recurrence for quadratic), which limits backend compatibility:
 
-| Backend | constant | linear | quadratic | cubic |
-|---------|:--------:|:------:|:---------:|:-----:|
-| **ForwardDiff** | ✅ | ✅ | ✅ | ✅ |
-| **Zygote** | ✅ | ✅ | ❌¹ | ❌¹ |
-| **Enzyme** | ❌² | ❌² | ❌² | ❌² |
+| Backend | constant | linear | quadratic | cubic (1D) |
+|---------|:--------:|:------:|:---------:|:----------:|
+| **ForwardDiff** | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) |
+| **Zygote** | ✅ | ✅ | ❌¹ | ✅² |
+| **Enzyme** | ❌³ | ❌³ | ❌³ | ✅² |
 
-¹ Quadratic/cubic one-shot mutates arrays during the spline solve, which Zygote's source-to-source transformation cannot differentiate through.
-² Enzyme encounters LLVM codegen errors on the one-shot construction path.
+¹ Quadratic one-shot mutates arrays during the spline solve, which Zygote's source-to-source transformation cannot differentiate through.
+² Cubic (1D) uses an analytical adjoint via [`CubicAdjoint`](@ref) — the AD backend never traces through the tridiagonal solve.
+³ Enzyme encounters LLVM codegen errors on the one-shot construction path.
 
 ## How It Works
 
@@ -147,9 +147,10 @@ slope recurrence for quadratic), which limits backend compatibility:
 | | `∂f/∂xq` (coordinate) | `∂f/∂y` (data) |
 |---|---|---|
 | **Use for** | Position optimization, sensitivity | Inverse problems, data fitting |
-| **Fastest method** | `deriv` keyword (analytical) | `ForwardDiff` (automatic) |
+| **Fastest method** | `deriv` keyword (analytical) | Cubic: `CubicAdjoint`; others: `ForwardDiff` |
 | **Docs** | [1D](autodiff_support.md), [ND](autodiff_nd.md) | This page |
 
-## Roadmap
+## See Also
 
-For large-scale use cases, a future release may provide a native adjoint API that computes `∂f/∂y` directly without AD.
+- **[Adjoint Operators](../adjoint/overview.md)**: Conceptual overview — what adjoints are, where they appear, and the mathematical formulation
+- **[Cubic Adjoint (1D)](../adjoint/cubic_1d_adjoint.md)**: Native `CubicAdjoint` API for zero-allocation, matrix-free adjoint computation

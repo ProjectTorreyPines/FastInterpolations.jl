@@ -101,6 +101,7 @@ mkpath(joinpath(DOCS_SRC, "interpolation"))
 mkpath(joinpath(DOCS_SRC, "architecture"))
 mkpath(joinpath(DOCS_SRC, "boundary-conditions"))
 mkpath(joinpath(DOCS_SRC, "nd"))
+mkpath(joinpath(DOCS_SRC, "adjoint"))
 
 # Copy images directory
 const IMAGES_SRC = joinpath(@__DIR__, "images")
@@ -176,6 +177,10 @@ makedocs(
             "Integration" => "nd/integration.md",
             "Extrapolation" => "nd/extrapolation.md",
         ],
+        "Adjoint" => [
+            "Overview" => "adjoint/overview.md",
+            "Cubic (1D)" => "adjoint/cubic_1d_adjoint.md",
+        ],
         "Factory Functions" => "guides/factory_functions.md",
         "Advanced Usage" => [
             "Overview" => "guides/advanced_overview.md",
@@ -210,6 +215,7 @@ makedocs(
         ],
         "Internals" => [
             "Overview" => "internals.md",
+            "Cubic Adjoint Derivation" => "adjoint/cubic_adjoint_derivation.md",
             "Benchmarks" => "guides/performance.md",
         ],
         "Migration Guides" => [

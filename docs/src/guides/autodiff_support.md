@@ -13,7 +13,8 @@ FastInterpolations.jl supports multiple AD (Automatic Differentiation) backends,
 
     AD (ForwardDiff, Zygote, Enzyme) is useful for:
     - **Adjoint computation** (`df/dy`): differentiating w.r.t. *data values*, not query points.
-      A built-in analytical adjoint operator is on the roadmap.
+      For cubic splines, use the native [`CubicAdjoint`](@ref) operator for maximum performance
+      — see [Adjoint Operators](../adjoint/overview.md).
     - **Composite pipelines**: when the interpolant is embedded inside a larger differentiable function.
 
     For query-coordinate derivatives, the `deriv` keyword is the recommended approach.

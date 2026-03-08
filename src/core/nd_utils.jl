@@ -181,13 +181,7 @@ end
     # NoExtrap and WrapExtrap are always compatible with PeriodicBC
     (extrap isa NoExtrap || extrap isa WrapExtrap) && return nothing
     for d in 1:N
-        if _is_periodic_bc(bcs[d])
-            throw(
-                ArgumentError(
-                    "Periodic BC on dim $d only supports NoExtrap() or WrapExtrap(), got $(typeof(extrap))()"
-                )
-            )
-        end
+        _is_periodic_bc(bcs[d]) && _throw_periodic_extrap_mismatch(d, extrap)
     end
     return nothing
 end
@@ -195,11 +189,7 @@ end
 @inline function _check_modes_periodic_compat(extraps::Tuple{Vararg{AbstractExtrap, N}}, bcs::Tuple{Vararg{AbstractBC, N}}, ::Val{N}) where {N}
     for d in 1:N
         if _is_periodic_bc(bcs[d]) && !(extraps[d] isa NoExtrap || extraps[d] isa WrapExtrap)
-            throw(
-                ArgumentError(
-                    "Periodic BC on dim $d only supports NoExtrap() or WrapExtrap(), got $(typeof(extraps[d]))()"
-                )
-            )
+            _throw_periodic_extrap_mismatch(d, extraps[d])
         end
     end
     return nothing

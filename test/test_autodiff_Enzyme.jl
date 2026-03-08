@@ -197,6 +197,48 @@ else
                     result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(2.25))
                     @test abs(result[1][1] - 1.0) < 1.0e-10  # Imag part derivative
                 end
+
+                @testset "Quadratic Complex (via real)" begin
+                    y_qc = (1.0 + 1.0im) .* x .^ 2
+                    itp = quadratic_interp(x, y_qc; extrap = ExtendExtrap())
+                    xq = 2.25
+
+                    f(q) = real(itp(q))
+                    result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(xq))
+                    @test abs(result[1][1] - 2.0 * xq) < 1.0e-10
+                end
+
+                @testset "Quadratic Complex (via imag)" begin
+                    y_qc = (1.0 + 1.0im) .* x .^ 2
+                    itp = quadratic_interp(x, y_qc; extrap = ExtendExtrap())
+                    xq = 2.25
+
+                    f(q) = imag(itp(q))
+                    result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(xq))
+                    @test abs(result[1][1] - 2.0 * xq) < 1.0e-10
+                end
+
+                @testset "Cubic Complex (via real)" begin
+                    y_cc = (1.0 + 1.0im) .* x .^ 3
+                    itp = cubic_interp(x, y_cc; extrap = ExtendExtrap())
+                    xq = 2.25
+
+                    f(q) = real(itp(q))
+                    result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(xq))
+                    expected = 3.0 * xq^2
+                    @test abs(result[1][1] - expected) / expected < 0.05
+                end
+
+                @testset "Cubic Complex (via imag)" begin
+                    y_cc = (1.0 + 1.0im) .* x .^ 3
+                    itp = cubic_interp(x, y_cc; extrap = ExtendExtrap())
+                    xq = 2.25
+
+                    f(q) = imag(itp(q))
+                    result = Enzyme.autodiff(Enzyme.Reverse, f, Enzyme.Active, Enzyme.Active(xq))
+                    expected = 3.0 * xq^2
+                    @test abs(result[1][1] - expected) / expected < 0.05
+                end
             end
 
             # ════════════════════════════════════════════════════════════════════════
@@ -223,6 +265,61 @@ else
 
                         @test en_deriv ≈ fd_deriv atol = 1.0e-10
                     end
+                end
+            end
+
+            # ════════════════════════════════════════════════════════════════════════
+            # CUBIC DATA-ADJOINT (∂f/∂y) via EnzymeRules
+            # ════════════════════════════════════════════════════════════════════════
+            # Tests the native EnzymeRules for cubic_interp(x, f, xq) that use
+            # CubicAdjoint for the reverse pass. Differentiates w.r.t. DATA (f).
+
+            @testset "Cubic data-adjoint (∂f/∂y) — Enzyme via EnzymeRules" begin
+                using ForwardDiff
+
+                x = collect(0.0:0.5:5.0)
+                f_data = sin.(x)
+                xq_vec = [0.75, 1.25, 2.75, 3.5, 4.25]
+                y_obs = cos.(xq_vec)
+
+                @testset "Vector query — L2 loss" begin
+                    loss_enz(y, y_obs, x, xq) = sum(abs2, cubic_interp(x, y, xq) .- y_obs)
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_enz, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(y_obs), Enzyme.Const(x), Enzyme.Const(xq_vec)
+                    )
+                    g_fd = ForwardDiff.gradient(
+                        y -> sum(abs2, cubic_interp(x, y, xq_vec) .- y_obs), f_data
+                    )
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+
+                @testset "Scalar query" begin
+                    loss_scalar(y, x, xq) = cubic_interp(x, y, xq)
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_scalar, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(x), Enzyme.Const(1.25)
+                    )
+                    g_fd = ForwardDiff.gradient(y -> cubic_interp(x, y, 1.25), f_data)
+                    @test df ≈ g_fd atol = 1.0e-10
+                end
+
+                @testset "Different BC — ZeroCurvBC" begin
+                    loss_bc(y, x, xq) = sum(cubic_interp(x, y, xq; bc = ZeroCurvBC()))
+                    df = zeros(length(f_data))
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_bc, Enzyme.Active,
+                        Enzyme.Duplicated(copy(f_data), df),
+                        Enzyme.Const(x), Enzyme.Const(xq_vec)
+                    )
+                    g_fd = ForwardDiff.gradient(
+                        y -> sum(cubic_interp(x, y, xq_vec; bc = ZeroCurvBC())), f_data
+                    )
+                    @test df ≈ g_fd atol = 1.0e-10
                 end
             end
 

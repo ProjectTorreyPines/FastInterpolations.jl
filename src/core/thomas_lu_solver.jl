@@ -184,6 +184,49 @@ Solves `Ax = b` in-place where `A = L*U` is the pre-computed factorization.
 end
 
 # ========================================
+# Transpose Thomas Solver - ThomasFactorization
+# ========================================
+
+"""
+    _ldiv_tridiagonal_transpose!(b, thomas::ThomasFactorization) -> b
+
+Solve `Aᵀx = b` in-place using the same `ThomasFactorization` as the forward solve.
+
+Given `A = L·U` where L is unit lower bidiagonal (dl) and U is upper bidiagonal (du, inv_d),
+the transpose `Aᵀ = Uᵀ·Lᵀ` is solved in two steps:
+
+1. **Uᵀ forward sweep**: `b[1] *= inv_d[1]`; `b[i] = (b[i] - du[i-1]*b[i-1]) * inv_d[i]`
+2. **Lᵀ backward sweep**: `b[i] -= dl[i] * b[i+1]`
+
+When `A` is symmetric (e.g. Deriv1/PolyFit BCs), this produces identical results
+to `_ldiv_tridiagonal_nopiv!`. For asymmetric `A` (Deriv2/Deriv3 BCs), this is the
+correct transpose solve needed by the cubic adjoint operator.
+"""
+@inline function _ldiv_tridiagonal_transpose!(
+        b::AbstractVector{Tv},
+        thomas::ThomasFactorization{Tg, V},
+    ) where {Tg <: AbstractFloat, Tv, V <: AbstractVector{Tg}}
+    dl = thomas.dl
+    du = thomas.du
+    inv_d = thomas.inv_d
+
+    n = length(inv_d)
+
+    # Step 1: Uᵀ forward sweep (lower bidiagonal with du as sub-diagonal)
+    @inbounds b[1] *= inv_d[1]
+    @inbounds for i in 2:n
+        b[i] = muladd(-du[i - 1], b[i - 1], b[i]) * inv_d[i]
+    end
+
+    # Step 2: Lᵀ backward sweep (upper bidiagonal with dl as super-diagonal)
+    @inbounds for i in (n - 1):-1:1
+        b[i] = muladd(-dl[i], b[i + 1], b[i])
+    end
+
+    return b
+end
+
+# ========================================
 # Batch Thomas Solver - ThomasFactorization
 # ========================================
 #

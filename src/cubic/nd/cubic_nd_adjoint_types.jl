@@ -42,7 +42,7 @@ end
 # ========================================
 
 """
-    CubicAdjointND{Tg, N, G, S, C, CE, BP, BPE}
+    CubicAdjointND{Tg, N, G, S, C, MC, BP, MBP}
 
 Adjoint (transpose) operator for N-dimensional cubic Hermite interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward ND cubic interpolation weight matrix.
@@ -56,22 +56,26 @@ The same adjoint can be applied to any `ȳ` vector.
 - `G`:   Grid tuple type
 - `S`:   Spacing tuple type
 - `C`:   Cache tuple type for user BC (per-axis CubicSplineCache)
-- `CE`:  Cache tuple type for effective BC on mixed partials (p_src > 1)
-- `BP`:  User BC pairs, concrete `NTuple{N, BCPair}` (for p_src == 1)
-- `BPE`: Effective BC pairs, concrete `NTuple{N, BCPair}` (for p_src > 1)
+- `MC`:  Cache tuple type for mixed-partial BC (CubicFit internally)
+- `BP`:  User BC pairs, concrete `NTuple{N, BCPair}` (for pure derivatives)
+- `MBP`: Mixed-partial BC pairs, concrete `NTuple{N, BCPair}` (CubicFit internally)
 
-# Architecture
+# Architecture — Dual Cache/BC Structure
 The adjoint retains per-axis Thomas LU caches for transpose solves at every `adj(ȳ)`
-call. For each axis d, the build adjoint processes `(d, p_src)` pairs:
-- `p_src == 1`: pure derivative → user's cache + BC pair
-- `p_src > 1`:  mixed partial  → effective cache + BC pair
+call. The ND build pipeline processes `(d, p_src)` pairs, where the BC used depends
+on whether the partial is pure or mixed:
 
-All BC pairs are resolved to concrete `BCPair{L,R}` at construction time (following
-`CubicInterpolantND`'s `bcs_store` pattern). PolyFit stencil coefficients (O(D) per
-axis) are computed on the fly from `BCPair` + grid — same as the forward `compute_rhs!`.
+- **Pure derivatives** (`p_src == 1`): use the user's BC → `caches` + `bc_pairs`
+- **Mixed partials** (`p_src > 1`): internally always use CubicFit →
+  `mixed_caches` + `mixed_bc_pairs`
 
-When all user BCs are CubicFit, the user and effective sets are identical at the type
-level, and Julia optimizes the branch away.
+`CubicSplineCache` is parameterized on `BCPair{L,R}`, so `C` and `MC` are generally
+different types (e.g., `BCPair{Deriv2,Deriv2}` vs `BCPair{Deriv1,Deriv1}`).
+When the user's BC is already CubicFit, `C == MC` and `BP == MBP`, so Julia
+optimizes the branch away entirely.
+
+PolyFit stencil coefficients are computed on the fly from `BCPair` + grid (O(D) per
+axis, negligible), matching the forward `compute_rhs!` pattern.
 
 # Usage
 ```julia
@@ -86,16 +90,16 @@ struct CubicAdjointND{
         G <: NTuple{N, AbstractVector{Tg}},
         S <: NTuple{N, AbstractGridSpacing{Tg}},
         C <: NTuple{N, CubicSplineCache{Tg}},
-        CE <: NTuple{N, CubicSplineCache{Tg}},
+        MC <: NTuple{N, CubicSplineCache{Tg}},
         BP <: NTuple{N, BCPair},
-        BPE <: NTuple{N, BCPair},
+        MBP <: NTuple{N, BCPair},
     } <: AbstractAdjoint{Tg}
     grids::G
     spacings::S
     caches::C
-    eff_caches::CE
+    mixed_caches::MC
     bc_pairs::BP
-    eff_bc_pairs::BPE
+    mixed_bc_pairs::MBP
     anchors::Vector{_NDAdjointAnchor{Tg, N}}
     grid_size::NTuple{N, Int}
 end

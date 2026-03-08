@@ -232,7 +232,7 @@ Function barrier for per-axis adjoint processing.
 
 Accepts `cache_d` as a concrete-typed argument, forcing Julia to specialize
 on its type. This eliminates the Union that would arise from
-`p_src == 1 ? caches[d] : eff_caches[d]` when `C ≠ CE`.
+`p_src == 1 ? caches[d] : mixed_caches[d]` inside `_build_adjoint_nd!`.
 
 PolyFit stencil coefficients are computed on the fly from `bc_pair` + `grid_d`,
 matching the forward `compute_rhs!` pattern (O(D) per axis, negligible).
@@ -277,8 +277,8 @@ matching the forward `compute_rhs!` pattern (O(D) per axis, negligible).
 end
 
 """
-    _build_adjoint_nd!(partials_bar, caches, eff_caches, spacings,
-                       bc_pairs, eff_bc_pairs, grids, grid_size)
+    _build_adjoint_nd!(partials_bar, caches, mixed_caches, spacings,
+                       bc_pairs, mixed_bc_pairs, grids, grid_size)
 
 Apply the adjoint of the ND build pipeline for arbitrary N dimensions.
 Processes axes in reverse order (d=N..1).
@@ -286,23 +286,20 @@ Processes axes in reverse order (d=N..1).
 For each axis d, reverses the forward chain:
   partials[p_dst] = moments_to_deriv( A_d⁻¹ · R_d · partials[p_src] )
 
-Construction-time precomputed data:
-- `bc_pairs[d]` / `eff_bc_pairs[d]`: concrete `BCPair{L,R}` (from `_normalize_bc`)
-- `caches[d]` / `eff_caches[d]`: Thomas LU factorizations
+Cache/BC selection per (d, p_src) pair:
+- `p_src == 1` (pure derivative): `caches[d]` + `bc_pairs[d]` (user's BC)
+- `p_src > 1` (mixed partial):    `mixed_caches[d]` + `mixed_bc_pairs[d]` (CubicFit)
 
-PolyFit stencil coefficients are computed on the fly inside `_adjoint_axis_pair!`
-from `BCPair` + grid, matching the forward `compute_rhs!` pattern.
-
-Uses `if p_src == 1` branching with a function barrier (`_adjoint_axis_pair!`)
-to ensure cache dispatch is type-stable.
+Uses a function barrier (`_adjoint_axis_pair!`) so each branch dispatches
+on a concrete cache type — no Union boxing.
 """
 @with_pool pool function _build_adjoint_nd!(
         partials_bar::AbstractArray{Tv},
         caches::NTuple{N, CubicSplineCache{Tg}},
-        eff_caches::NTuple{N, CubicSplineCache{Tg}},
+        mixed_caches::NTuple{N, CubicSplineCache{Tg}},
         spacings::NTuple{N, AbstractGridSpacing{Tg}},
         bc_pairs::NTuple{N, BCPair},
-        eff_bc_pairs::NTuple{N, BCPair},
+        mixed_bc_pairs::NTuple{N, BCPair},
         grids::NTuple{N, AbstractVector{Tg}},
         grid_size::NTuple{N, Int}
     ) where {Tv, Tg <: AbstractFloat, N}
@@ -344,8 +341,8 @@ to ensure cache dispatch is type-stable.
                 )
             else
                 _adjoint_axis_pair!(
-                    src_3d, dst_3d, eff_caches[d], spacing_d,
-                    eff_bc_pairs[d], grids[d],
+                    src_3d, dst_3d, mixed_caches[d], spacing_d,
+                    mixed_bc_pairs[d], grids[d],
                     shape_before, n_d, shape_after,
                     z_bar, f_contrib, dy_bar_slice
                 )
@@ -421,8 +418,8 @@ end
 
     # Steps 1-3: Build adjoint (reverse axis order)
     _build_adjoint_nd!(
-        partials_bar, adj.caches, adj.eff_caches, adj.spacings,
-        adj.bc_pairs, adj.eff_bc_pairs, adj.grids, adj.grid_size
+        partials_bar, adj.caches, adj.mixed_caches, adj.spacings,
+        adj.bc_pairs, adj.mixed_bc_pairs, adj.grids, adj.grid_size
     )
 
     # Extract f_bar = partials_bar[1, ...]
@@ -514,15 +511,15 @@ function _build_nd_adjoint(
         _get_cubic_cache(grid_d, bp_d, autocache)
     end
 
-    # Effective BC pairs for mixed partials (p_src > 1).
-    # _get_effective_bc with p_src=2 returns the BC used for all mixed partials.
-    eff_bc_pairs = map(grids, bcs) do grid_d, bc_d
-        eff_bc = _get_effective_bc(bc_d, 2, grid_d)
-        _normalize_bc(eff_bc, Tg)
+    # Mixed-partial BC pairs (p_src > 1): internally always uses CubicFit.
+    # _get_effective_bc with p_src=2 returns the BC for all mixed partials.
+    mixed_bc_pairs = map(grids, bcs) do grid_d, bc_d
+        mixed_bc = _get_effective_bc(bc_d, 2, grid_d)
+        _normalize_bc(mixed_bc, Tg)
     end
 
-    eff_caches = map(grids, eff_bc_pairs) do grid_d, eff_bp_d
-        _get_cubic_cache(grid_d, eff_bp_d, autocache)
+    mixed_caches = map(grids, mixed_bc_pairs) do grid_d, mixed_bp_d
+        _get_cubic_cache(grid_d, mixed_bp_d, autocache)
     end
 
     spacings = _create_spacings_typed(grids)
@@ -534,8 +531,8 @@ function _build_nd_adjoint(
 
     return CubicAdjointND{
         Tg, N,
-        typeof(grids), typeof(spacings), typeof(caches), typeof(eff_caches),
-        typeof(bc_pairs), typeof(eff_bc_pairs),
-    }(grids, spacings, caches, eff_caches, bc_pairs, eff_bc_pairs,
+        typeof(grids), typeof(spacings), typeof(caches), typeof(mixed_caches),
+        typeof(bc_pairs), typeof(mixed_bc_pairs),
+    }(grids, spacings, caches, mixed_caches, bc_pairs, mixed_bc_pairs,
       anchors, grid_size)
 end

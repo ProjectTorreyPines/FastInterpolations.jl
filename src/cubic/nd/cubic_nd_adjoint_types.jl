@@ -57,8 +57,8 @@ The same adjoint can be applied to any `ȳ` vector.
 - `S`:   Spacing tuple type
 - `C`:   Cache tuple type for user BC (per-axis CubicSplineCache)
 - `MC`:  Cache tuple type for mixed-partial BC (CubicFit internally)
-- `BP`:  User BC pairs, concrete `NTuple{N, BCPair}` (for pure derivatives)
-- `MBP`: Mixed-partial BC pairs, concrete `NTuple{N, BCPair}` (CubicFit internally)
+- `BP`:  User BC pairs — `BCPair` for non-periodic, `PeriodicBC` for periodic axes
+- `MBP`: Mixed-partial BC pairs — same convention as `BP`
 
 # Architecture — Dual Cache/BC Structure
 The adjoint retains per-axis Thomas LU caches for transpose solves at every `adj(ȳ)`
@@ -69,8 +69,13 @@ on whether the partial is pure or mixed:
 - **Mixed partials** (`p_src > 1`): internally always use CubicFit →
   `mixed_caches` + `mixed_bc_pairs`
 
-`CubicSplineCache` is parameterized on `BCPair{L,R}`, so `C` and `MC` are generally
-different types (e.g., `BCPair{Deriv2,Deriv2}` vs `BCPair{Deriv1,Deriv1}`).
+For **periodic axes**, `_get_effective_bc(PeriodicBC(), p_src, grid)` returns `PeriodicBC()`
+for ALL `p_src`, so `caches[d] == mixed_caches[d]` (same pool entry) and both bc_pairs
+entries are `PeriodicBC`. The periodic build adjoint uses Sherman-Morrison transpose
+solves instead of standard Thomas.
+
+`CubicSplineCache` is parameterized on `BCPair{L,R}` or `PeriodicData{Tg}`, so `C` and
+`MC` are generally different types (e.g., `BCPair{Deriv2,Deriv2}` vs `BCPair{Deriv1,Deriv1}`).
 When the user's BC is already CubicFit, `C == MC` and `BP == MBP`, so Julia
 optimizes the branch away entirely.
 
@@ -82,6 +87,13 @@ axis, negligible), matching the forward `compute_rhs!` pattern.
 adj = cubic_adjoint((x, y), (xq, yq); bc=CubicFit())
 f_bar = adj(y_bar)              # allocating
 adj(f_bar, y_bar)               # in-place (zero-allocation)
+
+# Periodic
+adj = cubic_adjoint((x, y), (xq, yq); bc=PeriodicBC())
+f_bar = adj(y_bar)              # inclusive periodic
+
+# Mixed: periodic × non-periodic
+adj = cubic_adjoint((x, y), (xq, yq); bc=(PeriodicBC(), CubicFit()))
 ```
 """
 struct CubicAdjointND{
@@ -91,8 +103,8 @@ struct CubicAdjointND{
         S <: NTuple{N, AbstractGridSpacing{Tg}},
         C <: NTuple{N, CubicSplineCache{Tg}},
         MC <: NTuple{N, CubicSplineCache{Tg}},
-        BP <: NTuple{N, BCPair},
-        MBP <: NTuple{N, BCPair},
+        BP <: NTuple{N, Union{BCPair, PeriodicBC}},
+        MBP <: NTuple{N, Union{BCPair, PeriodicBC}},
     } <: AbstractAdjoint{Tg}
     grids::G
     spacings::S
@@ -109,5 +121,8 @@ end
 # ========================================
 
 Base.ndims(::CubicAdjointND{Tg, N}) where {Tg, N} = N
-Base.size(adj::CubicAdjointND) = (adj.grid_size, length(adj.anchors))
+function Base.size(adj::CubicAdjointND{Tg, N}) where {Tg, N}
+    out_size = _adjoint_output_size(adj.grid_size, adj.bc_pairs)
+    return (out_size, length(adj.anchors))
+end
 Base.size(adj::CubicAdjointND, d::Integer) = size(adj)[d]

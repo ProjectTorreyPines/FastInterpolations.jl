@@ -89,14 +89,16 @@ end
 # ========================================
 
 """
-    _bake_nd_anchors(grids, spacings, queries, ::Type{Tg}) -> Vector{_NDAdjointAnchor}
+    _bake_nd_anchors(grids, spacings, queries, bc_pairs) -> Vector{_NDAdjointAnchor}
 
 Precompute cell indices and Hermite basis weights for each query point.
+For periodic axes, queries are wrapped to the domain via `_wrap_to_domain` before search.
 """
 function _bake_nd_anchors(
         grids::NTuple{N, AbstractVector{Tg}},
         spacings::NTuple{N, AbstractGridSpacing{Tg}},
-        queries::NTuple{N, AbstractVector}
+        queries::NTuple{N, AbstractVector},
+        bc_pairs::NTuple{N, Union{BCPair, PeriodicBC}}
     ) where {N, Tg <: AbstractFloat}
     n_queries = length(queries[1])
     for d in 2:N
@@ -111,12 +113,19 @@ function _bake_nd_anchors(
     @inbounds for q in 1:n_queries
         indices = ntuple(Val(N)) do d
             xq_d = Tg(queries[d][q])
+            # Wrap periodic queries to [x_min, x_max)
+            if _is_periodic_bc(bc_pairs[d])
+                xq_d = _wrap_to_domain(xq_d, first(grids[d]), last(grids[d]))
+            end
             x_d = grids[d]
             idx, _, _ = search_interval(DEFAULT_SEARCHER, x_d, spacings[d], xq_d)
             return idx
         end
         weights = ntuple(Val(N)) do d
             xq_d = Tg(queries[d][q])
+            if _is_periodic_bc(bc_pairs[d])
+                xq_d = _wrap_to_domain(xq_d, first(grids[d]), last(grids[d]))
+            end
             x_d = grids[d]
             idx = indices[d]
             xL = x_d[idx]
@@ -277,6 +286,70 @@ matching the forward `compute_rhs!` pattern (O(D) per axis, negligible).
 end
 
 """
+    _adjoint_axis_pair_periodic!(src_3d, dst_3d, cache_d, spacing_d,
+                                  shape_before, n_d, shape_after,
+                                  z_bar, f_contrib, dy_bar_slice, q_t)
+
+Function barrier for per-axis **periodic** adjoint processing.
+
+Differences from non-periodic `_adjoint_axis_pair!`:
+- Step a: BC correction adjoint: avg(dy_bar[1], dy_bar[end]) (self-adjoint: Bᵀ=B)
+- Step c: fold periodic closure adjoint: `z_bar[1] += z_bar[n_d]` (adjoint of `z[n+1]=z[1]`)
+- Step d: Sherman-Morrison transpose solve instead of plain Thomas
+- Step e: circulant RHS adjoint instead of standard boundary-conditioned RHS
+
+`q_t = A'⁻ᵀu` is precomputed once per axis (not per slice) and passed in.
+"""
+@inline function _adjoint_axis_pair_periodic!(
+        src_3d, dst_3d,
+        cache_d::CubicSplineCache{Tg},
+        spacing_d::AbstractGridSpacing{Tg},
+        shape_before::Int, n_d::Int, shape_after::Int,
+        z_bar::AbstractVector{Tv},
+        f_contrib::AbstractVector{Tv},
+        dy_bar_slice::AbstractVector{Tv},
+        q_t::AbstractVector
+    ) where {Tv, Tg}
+    n = n_d - 1  # n intervals for periodic (n+1 grid points, z[n+1]=z[1])
+
+    for j in 1:shape_after
+        for i in 1:shape_before
+            # Extract 1D dy_bar slice from partials_bar[p_dst]
+            @inbounds for k in 1:n_d
+                dy_bar_slice[k] = dst_3d[i, k, j]
+            end
+
+            # Step a: BC correction adjoint (self-adjoint: averaging is symmetric)
+            # Forward: avg = 0.5*(dy[1]+dy[end]); dy[1]=avg; dy[end]=avg
+            # Adjoint: same operation (Bᵀ = B since the matrix is symmetric)
+            @inbounds begin
+                avg = inv(Tg(2)) * (dy_bar_slice[1] + dy_bar_slice[n_d])
+                dy_bar_slice[1] = avg
+                dy_bar_slice[n_d] = avg
+            end
+
+            # Step b: moments_to_deriv adjoint (SAME as non-periodic)
+            _moments_to_deriv_adjoint_1d!(z_bar, f_contrib, dy_bar_slice, spacing_d)
+
+            # Step c: fold periodic closure (adjoint of z[n+1]=z[1])
+            @inbounds z_bar[1] += z_bar[n_d]
+
+            # Step d: Sherman-Morrison transpose solve on z_bar[1:n]
+            _adjoint_periodic_solve!(z_bar, cache_d, q_t, n)
+
+            # Step e: circulant RHS adjoint → f_contrib[1:n+1]
+            _compute_rhs_adjoint_periodic!(f_contrib, z_bar, spacing_d, n)
+
+            # Step f: accumulate into partials_bar[p_src]
+            @inbounds for k in 1:n_d
+                src_3d[i, k, j] += f_contrib[k]
+            end
+        end
+    end
+    return nothing
+end
+
+"""
     _build_adjoint_nd!(partials_bar, caches, mixed_caches, spacings,
                        bc_pairs, mixed_bc_pairs, grids, grid_size)
 
@@ -287,19 +360,21 @@ For each axis d, reverses the forward chain:
   partials[p_dst] = moments_to_deriv( A_d⁻¹ · R_d · partials[p_src] )
 
 Cache/BC selection per (d, p_src) pair:
-- `p_src == 1` (pure derivative): `caches[d]` + `bc_pairs[d]` (user's BC)
-- `p_src > 1` (mixed partial):    `mixed_caches[d]` + `mixed_bc_pairs[d]` (CubicFit)
+- **Periodic axis**: `caches[d]` for all `p_src` (periodic propagates through `_get_effective_bc`).
+  Uses Sherman-Morrison transpose solve with `q_t = A'⁻ᵀu` precomputed once per axis.
+- **Non-periodic, `p_src == 1`** (pure derivative): `caches[d]` + `bc_pairs[d]` (user's BC)
+- **Non-periodic, `p_src > 1`** (mixed partial): `mixed_caches[d]` + `mixed_bc_pairs[d]` (CubicFit)
 
-Uses a function barrier (`_adjoint_axis_pair!`) so each branch dispatches
-on a concrete cache type — no Union boxing.
+Uses function barriers (`_adjoint_axis_pair!` / `_adjoint_axis_pair_periodic!`)
+so each branch dispatches on a concrete cache type — no Union boxing.
 """
 @with_pool pool function _build_adjoint_nd!(
         partials_bar::AbstractArray{Tv},
-        caches::NTuple{N, CubicSplineCache{Tg}},
-        mixed_caches::NTuple{N, CubicSplineCache{Tg}},
-        spacings::NTuple{N, AbstractGridSpacing{Tg}},
-        bc_pairs::NTuple{N, BCPair},
-        mixed_bc_pairs::NTuple{N, BCPair},
+        caches,
+        mixed_caches,
+        spacings,
+        bc_pairs,
+        mixed_bc_pairs,
         grids::NTuple{N, AbstractVector{Tg}},
         grid_size::NTuple{N, Int}
     ) where {Tv, Tg <: AbstractFloat, N}
@@ -308,6 +383,7 @@ on a concrete cache type — no Union boxing.
         bit_d = 1 << (d - 1)
         n_d = grid_size[d]
         spacing_d = spacings[d]
+        is_periodic_d = _is_periodic_bc(bc_pairs[d])
 
         # Compute reshape dimensions for axis d
         shape_before = 1
@@ -324,6 +400,17 @@ on a concrete cache type — no Union boxing.
         f_contrib = acquire!(pool, Tv, n_d)
         dy_bar_slice = acquire!(pool, Tv, n_d)
 
+        # Precompute q_t for periodic axis (once, reused across all p_src and slices)
+        # q_t = A'^{-T} u where u = [1, 0, ..., 0, 1]
+        if is_periodic_d
+            n_intervals = n_d - 1
+            q_t = acquire!(pool, Tg, n_intervals)
+            fill!(q_t, zero(Tg))
+            @inbounds q_t[1] = one(Tg)
+            @inbounds q_t[n_intervals] = one(Tg)
+            _ldiv_tridiagonal_transpose!(q_t, caches[d].thomas)
+        end
+
         for p_src in 1:bit_d
             p_dst = p_src + bit_d
 
@@ -331,8 +418,14 @@ on a concrete cache type — no Union boxing.
             src_3d = reshape(selectdim(partials_bar, 1, p_src), shape_before, n_d, shape_after)
             dst_3d = reshape(selectdim(partials_bar, 1, p_dst), shape_before, n_d, shape_after)
 
-            # Branch on p_src to select concrete (cache, bc_pair) pair
-            if p_src == 1
+            if is_periodic_d
+                # Periodic: same cache for all p_src (periodic propagates through _get_effective_bc)
+                _adjoint_axis_pair_periodic!(
+                    src_3d, dst_3d, caches[d], spacing_d,
+                    shape_before, n_d, shape_after,
+                    z_bar, f_contrib, dy_bar_slice, q_t
+                )
+            elseif p_src == 1
                 _adjoint_axis_pair!(
                     src_3d, dst_3d, caches[d], spacing_d,
                     bc_pairs[d], grids[d],
@@ -354,6 +447,19 @@ on a concrete cache type — no Union boxing.
 end
 
 # ========================================
+# Apply Helpers
+# ========================================
+
+# Output size: for exclusive periodic axes, output is grid_size[d]-1 (fold + truncate)
+@inline function _adjoint_output_size(grid_size::NTuple{N, Int}, bc_pairs) where {N}
+    ntuple(Val(N)) do d
+        bc_pairs[d] isa PeriodicBC{:exclusive} ? grid_size[d] - 1 : grid_size[d]
+    end
+end
+
+@inline _has_exclusive_periodic(bc_pairs::Tuple) = any(bp -> bp isa PeriodicBC{:exclusive}, bc_pairs)
+
+# ========================================
 # Apply Methods
 # ========================================
 
@@ -361,6 +467,9 @@ end
     (adj::CubicAdjointND)(y_bar) -> f_bar::Array{Tv, N}
 
 Allocating adjoint apply: compute `f̄ = Wᵀȳ`.
+
+For exclusive periodic axes, the internal computation uses the extended grid size,
+then folds `f̄[...,n+1,...] += f̄[...,1,...]` and truncates to output size.
 """
 function (adj::CubicAdjointND{Tg, N})(y_bar::AbstractVector) where {Tg, N}
     n_query = length(adj.anchors)
@@ -368,9 +477,22 @@ function (adj::CubicAdjointND{Tg, N})(y_bar::AbstractVector) where {Tg, N}
         DimensionMismatch("y_bar length $(length(y_bar)) must match query count $n_query")
     )
     Tv = promote_type(eltype(y_bar), Tg)
-    f_bar = zeros(Tv, adj.grid_size...)
-    _cubic_adjoint_nd_apply!(f_bar, adj, y_bar)
-    return f_bar
+    f_bar_internal = zeros(Tv, adj.grid_size...)
+    _cubic_adjoint_nd_apply!(f_bar_internal, adj, y_bar)
+
+    if _has_exclusive_periodic(adj.bc_pairs)
+        # Fold exclusive endpoints: f[...,1,...] += f[...,n_d,...]
+        for d in 1:N
+            if adj.bc_pairs[d] isa PeriodicBC{:exclusive}
+                selectdim(f_bar_internal, d, 1) .+= selectdim(f_bar_internal, d, adj.grid_size[d])
+            end
+        end
+        # Truncate to output size
+        out_size = _adjoint_output_size(adj.grid_size, adj.bc_pairs)
+        ranges = ntuple(d -> 1:out_size[d], Val(N))
+        return f_bar_internal[ranges...]
+    end
+    return f_bar_internal
 end
 
 """
@@ -378,20 +500,51 @@ end
 
 In-place adjoint apply: compute `f̄ = Wᵀȳ` into pre-allocated `f_bar`.
 Zeros `f_bar` before accumulation.
+
+For exclusive periodic, `f_bar` must have the output size (grid_size[d]-1 per exclusive axis).
 """
 function (adj::CubicAdjointND{Tg, N})(
         f_bar::AbstractArray{Tv, N}, y_bar::AbstractVector
     ) where {Tg, Tv, N}
-    size(f_bar) == adj.grid_size || throw(
-        DimensionMismatch("f_bar size $(size(f_bar)) must match grid size $(adj.grid_size)")
+    out_size = _adjoint_output_size(adj.grid_size, adj.bc_pairs)
+    size(f_bar) == out_size || throw(
+        DimensionMismatch("f_bar size $(size(f_bar)) must match output size $out_size")
     )
     n_query = length(adj.anchors)
     length(y_bar) == n_query || throw(
         DimensionMismatch("y_bar length $(length(y_bar)) must match query count $n_query")
     )
-    fill!(f_bar, zero(Tv))
-    _cubic_adjoint_nd_apply!(f_bar, adj, y_bar)
+    if _has_exclusive_periodic(adj.bc_pairs)
+        _adjoint_apply_exclusive_nd!(f_bar, adj, y_bar)
+    else
+        fill!(f_bar, zero(Tv))
+        _cubic_adjoint_nd_apply!(f_bar, adj, y_bar)
+    end
     return f_bar
+end
+
+# Exclusive periodic in-place: pool-allocated work buffer for the extended internal grid.
+@with_pool pool function _adjoint_apply_exclusive_nd!(
+        f_bar::AbstractArray{Tv, N},
+        adj::CubicAdjointND{Tg, N},
+        y_bar::AbstractVector
+    ) where {Tv, Tg, N}
+    f_work = zeros!(pool, Tv, adj.grid_size...)
+    _cubic_adjoint_nd_apply!(f_work, adj, y_bar)
+
+    # Fold exclusive endpoints
+    for d in 1:N
+        if adj.bc_pairs[d] isa PeriodicBC{:exclusive}
+            selectdim(f_work, d, 1) .+= selectdim(f_work, d, adj.grid_size[d])
+        end
+    end
+
+    # Copy to output (truncated to output size)
+    out_size = _adjoint_output_size(adj.grid_size, adj.bc_pairs)
+    ranges = ntuple(d -> 1:out_size[d], Val(N))
+    f_bar .= view(f_work, ranges...)
+
+    return nothing
 end
 
 # ========================================
@@ -484,6 +637,12 @@ making the return type fully inferrable.
 
 Uses `map` instead of `ntuple` for per-axis tuple construction to avoid
 Union return types from runtime tuple indexing in closures.
+
+# Periodic Handling
+- Exclusive grids are extended to inclusive form (grid-only, no data for adjoint)
+- Periodic BCs are stored as-is (`PeriodicBC`), not normalized to `BCPair`
+- Periodic caches route to the periodic cache pool (`_get_cubic_cache(x, PeriodicBC())`)
+- `_get_effective_bc(PeriodicBC(), p_src, grid) = PeriodicBC()` for all `p_src`
 """
 function _build_nd_adjoint(
         grids::NTuple{N, AbstractVector{Tg}},
@@ -491,48 +650,62 @@ function _build_nd_adjoint(
         bcs::NTuple{N, AbstractBC},
         autocache::Bool
     ) where {N, Tg <: AbstractFloat}
-    # Validate: PeriodicBC not yet supported (Phase 3)
-    for d in 1:N
-        _is_periodic_bc(bcs[d]) && throw(
-            ArgumentError("PeriodicBC on axis $d is not yet supported by cubic_adjoint (planned for Phase 3)")
-        )
-    end
-
-    # Validate: PolyFit BCs have enough grid points
+    # Validate: PolyFit BCs have enough grid points (periodic axes skip this)
     _validate_polyfit_bcs(grids, bcs, Val(N))
 
+    # Extend exclusive periodic grids → inclusive form (grid-only, no data needed for adjoint)
+    grids_ext = map(grids, bcs) do grid_d, bc_d
+        bc_d isa PeriodicBC{:exclusive} || return grid_d
+
+        period = _resolve_exclusive_period(grid_d, bc_d)
+        x_end = first(grid_d) + Tg(period)
+        if grid_d isa AbstractRange
+            range(first(grid_d); step = step(grid_d), length = length(grid_d) + 1)
+        else
+            vcat(grid_d, x_end)
+        end
+    end
+
     # Per-axis: normalize BC for cache + polyfit construction
-    # map dispatches per-element → each call gets concrete types (no Union)
+    # Periodic axes store PeriodicBC as-is; non-periodic normalize to BCPair
     bc_pairs = map(bcs) do bc_d
-        _normalize_bc(bc_d, Tg)
+        _is_periodic_bc(bc_d) ? bc_d : _normalize_bc(bc_d, Tg)
     end
 
-    caches = map(grids, bc_pairs) do grid_d, bp_d
-        _get_cubic_cache(grid_d, bp_d, autocache)
+    caches = map(grids_ext, bc_pairs) do grid_d, bp_d
+        if _is_periodic_bc(bp_d)
+            _get_cubic_cache(grid_d, PeriodicBC(), autocache)
+        else
+            _get_cubic_cache(grid_d, bp_d, autocache)
+        end
     end
 
-    # Mixed-partial BC pairs (p_src > 1): internally always uses CubicFit.
-    # _get_effective_bc with p_src=2 returns the BC for all mixed partials.
-    mixed_bc_pairs = map(grids, bcs) do grid_d, bc_d
+    # Mixed-partial BC pairs (p_src > 1): _get_effective_bc determines the BC.
+    # For periodic: returns PeriodicBC (propagates). For non-periodic: typically CubicFit.
+    mixed_bc_pairs = map(grids_ext, bcs) do grid_d, bc_d
         mixed_bc = _get_effective_bc(bc_d, 2, grid_d)
-        _normalize_bc(mixed_bc, Tg)
+        _is_periodic_bc(mixed_bc) ? mixed_bc : _normalize_bc(mixed_bc, Tg)
     end
 
-    mixed_caches = map(grids, mixed_bc_pairs) do grid_d, mixed_bp_d
-        _get_cubic_cache(grid_d, mixed_bp_d, autocache)
+    mixed_caches = map(grids_ext, mixed_bc_pairs) do grid_d, mbp_d
+        if _is_periodic_bc(mbp_d)
+            _get_cubic_cache(grid_d, PeriodicBC(), autocache)
+        else
+            _get_cubic_cache(grid_d, mbp_d, autocache)
+        end
     end
 
-    spacings = _create_spacings_typed(grids)
+    spacings = _create_spacings_typed(grids_ext)
 
-    # Bake per-query anchors
-    anchors = _bake_nd_anchors(grids, spacings, queries)
+    # Bake per-query anchors (periodic axes wrap queries to domain)
+    anchors = _bake_nd_anchors(grids_ext, spacings, queries, bc_pairs)
 
-    grid_size = ntuple(d -> length(grids[d]), Val(N))
+    grid_size = ntuple(d -> length(grids_ext[d]), Val(N))
 
     return CubicAdjointND{
         Tg, N,
-        typeof(grids), typeof(spacings), typeof(caches), typeof(mixed_caches),
+        typeof(grids_ext), typeof(spacings), typeof(caches), typeof(mixed_caches),
         typeof(bc_pairs), typeof(mixed_bc_pairs),
-    }(grids, spacings, caches, mixed_caches, bc_pairs, mixed_bc_pairs,
+    }(grids_ext, spacings, caches, mixed_caches, bc_pairs, mixed_bc_pairs,
       anchors, grid_size)
 end

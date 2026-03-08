@@ -450,3 +450,283 @@ end
         @test ok
     end
 end
+
+# ========================================
+# PeriodicBC Tests
+# ========================================
+
+# Helper: generate periodic-compatible data for inclusive grids.
+# Uses sin/cos basis functions, then explicitly enforces f[end,...] = f[1,...]
+# to avoid floating-point mismatch (sin(2π) ≈ -2.45e-16, not exactly 0).
+function _make_periodic_data_inclusive(grids)
+    N = length(grids)
+    sizes = ntuple(d -> length(grids[d]), Val(N))
+    f = zeros(sizes)
+    for I in CartesianIndices(f)
+        val = 0.0
+        for d in 1:N
+            x_d = grids[d][I[d]]
+            x_min = first(grids[d])
+            period = last(grids[d]) - first(grids[d])
+            val += sin(2π * (x_d - x_min) / period) + 0.5 * cos(4π * (x_d - x_min) / period)
+        end
+        f[I] = val
+    end
+    # Enforce strict periodicity: f[end,...] = f[1,...] for each axis
+    for d in 1:N
+        selectdim(f, d, sizes[d]) .= selectdim(f, d, 1)
+    end
+    return f
+end
+
+@testset "CubicAdjointND — PeriodicBC" begin
+    # ========================================
+    # Inclusive PeriodicBC — N=2
+    # ========================================
+    @testset "PeriodicBC (inclusive) — N=2" begin
+        nx, ny = 15, 12
+        n_query = 30
+
+        x = range(0.0, 1.0, nx)
+        y = range(0.0, 2.0, ny)
+        f = _make_periodic_data_inclusive((x, y))
+        xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        yq = sort(rand(n_query)) .* 1.92 .+ 0.04
+        y_bar = randn(n_query)
+
+        @testset "Dot-product — uniform" begin
+            _, _, ok = dot_product_test_nd(
+                (x, y), (xq, yq), f, y_bar; bc = PeriodicBC()
+            )
+            @test ok
+        end
+
+        @testset "Dot-product — non-uniform" begin
+            x_nu = cumsum(0.5 .+ rand(nx))
+            x_nu .= (x_nu .- x_nu[1]) ./ (x_nu[end] - x_nu[1])
+            y_nu = cumsum(0.5 .+ rand(ny))
+            y_nu .= (y_nu .- y_nu[1]) ./ (y_nu[end] - y_nu[1]) .* 2.0
+            grids_nu = (collect(x_nu), collect(y_nu))
+            f_nu = _make_periodic_data_inclusive(grids_nu)
+            _, _, ok = dot_product_test_nd(
+                grids_nu, (xq, yq), f_nu, y_bar; bc = PeriodicBC()
+            )
+            @test ok
+        end
+
+        @testset "In-place vs allocating" begin
+            adj = cubic_adjoint((x, y), (xq, yq); bc = PeriodicBC())
+            f_bar_alloc = adj(y_bar)
+            f_bar_inplace = zeros(nx, ny)
+            adj(f_bar_inplace, y_bar)
+            @test f_bar_alloc ≈ f_bar_inplace
+        end
+    end
+
+    # ========================================
+    # Exclusive PeriodicBC — N=2
+    # ========================================
+    @testset "PeriodicBC (exclusive) — N=2" begin
+        nx, ny = 14, 11  # exclusive: no repeated endpoint
+        n_query = 25
+
+        x = range(0.0, 1.0, nx + 1)[1:nx]  # [0, 1) with nx points
+        y = range(0.0, 2.0, ny + 1)[1:ny]  # [0, 2) with ny points
+        bc = PeriodicBC(; endpoint = :exclusive)
+
+        # Periodic function on exclusive grid
+        f = zeros(nx, ny)
+        for j in 1:ny, i in 1:nx
+            f[i, j] = sin(2π * x[i]) + cos(2π * y[j] / 2.0)
+        end
+
+        xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        yq = sort(rand(n_query)) .* 1.92 .+ 0.04
+        y_bar = randn(n_query)
+
+        @testset "Dot-product" begin
+            _, _, ok = dot_product_test_nd(
+                (x, y), (xq, yq), f, y_bar; bc = bc
+            )
+            @test ok
+        end
+
+        @testset "Output size" begin
+            adj = cubic_adjoint((x, y), (xq, yq); bc = bc)
+            f_bar = adj(y_bar)
+            @test size(f_bar) == (nx, ny)
+        end
+
+        @testset "In-place vs allocating" begin
+            adj = cubic_adjoint((x, y), (xq, yq); bc = bc)
+            f_bar_alloc = adj(y_bar)
+            f_bar_inplace = zeros(nx, ny)
+            adj(f_bar_inplace, y_bar)
+            @test f_bar_alloc ≈ f_bar_inplace
+        end
+    end
+
+    # ========================================
+    # Inclusive PeriodicBC — N=3
+    # ========================================
+    @testset "PeriodicBC (inclusive) — N=3" begin
+        nx, ny, nz = 10, 8, 6
+        n_query = 20
+
+        x = range(0.0, 1.0, nx)
+        y = range(0.0, 1.0, ny)
+        z = range(0.0, 1.0, nz)
+        f = _make_periodic_data_inclusive((x, y, z))
+        xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        zq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        y_bar = randn(n_query)
+
+        @testset "Dot-product" begin
+            _, _, ok = dot_product_test_nd(
+                (x, y, z), (xq, yq, zq), f, y_bar; bc = PeriodicBC()
+            )
+            @test ok
+        end
+    end
+
+    # ========================================
+    # Mixed BCs — PeriodicBC × non-periodic
+    # ========================================
+    @testset "Mixed BC (PeriodicBC × CubicFit) — N=2" begin
+        nx, ny = 12, 10
+        n_query = 25
+
+        x = range(0.0, 1.0, nx)
+        y = range(0.0, 1.0, ny)
+
+        # Only x-axis is periodic: f[1,j] == f[end,j] required
+        f = zeros(nx, ny)
+        for j in 1:ny, i in 1:nx
+            f[i, j] = sin(2π * x[i]) + y[j]^2
+        end
+        f[end, :] .= f[1, :]  # enforce strict periodicity on x-axis
+
+        xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        y_bar = randn(n_query)
+
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar; bc = (PeriodicBC(), CubicFit())
+        )
+        @test ok
+    end
+
+    @testset "Mixed BC (CubicFit × PeriodicBC) — N=2" begin
+        nx, ny = 12, 10
+        n_query = 25
+
+        x = range(0.0, 1.0, nx)
+        y = range(0.0, 1.0, ny)
+
+        # Only y-axis is periodic: f[i,1] == f[i,end] required
+        f = zeros(nx, ny)
+        for j in 1:ny, i in 1:nx
+            f[i, j] = x[i]^2 + cos(2π * y[j])
+        end
+        f[:, end] .= f[:, 1]  # enforce strict periodicity on y-axis
+
+        xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        y_bar = randn(n_query)
+
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar; bc = (CubicFit(), PeriodicBC())
+        )
+        @test ok
+    end
+
+    # ========================================
+    # Matrix materialization — periodic (small grid, exclusive)
+    # ========================================
+    # Uses exclusive periodic: n-point input space with no endpoint constraints,
+    # so unit vector probing works cleanly (no f[1]==f[end] requirement).
+    @testset "Matrix materialization — periodic exclusive" begin
+        sx, sy = 6, 5
+        bc_excl = PeriodicBC(; endpoint = :exclusive)
+        x_s = range(0.0, 1.0, sx + 1)[1:sx]
+        y_s = range(0.0, 1.0, sy + 1)[1:sy]
+        n_q = 8
+        xq_s = sort(rand(n_q)) .* 0.96 .+ 0.02
+        yq_s = sort(rand(n_q)) .* 0.96 .+ 0.02
+
+        adj = cubic_adjoint((x_s, y_s), (xq_s, yq_s); bc = bc_excl)
+        n_grid = sx * sy
+
+        # Build Wᵀ by probing adjoint
+        WT = zeros(n_grid, n_q)
+        e_q = zeros(n_q)
+        for q in 1:n_q
+            e_q[q] = 1.0
+            WT[:, q] = vec(adj(e_q))
+            e_q[q] = 0.0
+        end
+
+        # Build W by probing forward
+        W = zeros(n_q, n_grid)
+        output = zeros(n_q)
+        for k in 1:n_grid
+            e_f = zeros(sx, sy)
+            e_f[k] = 1.0
+            itp = cubic_interp((x_s, y_s), e_f; bc = bc_excl)
+            itp(output, (xq_s, yq_s))
+            W[:, k] = output
+        end
+
+        @test W' ≈ WT rtol = 1e-12
+    end
+
+    # ========================================
+    # Type stability — periodic
+    # ========================================
+    @testset "Type stability — constructor (periodic)" begin
+        x = range(0.0, 1.0, 10)
+        y = range(0.0, 1.0, 8)
+        xq = sort(rand(15)) .* 0.96 .+ 0.02
+        yq = sort(rand(15)) .* 0.96 .+ 0.02
+
+        @test @inferred(cubic_adjoint(
+            (x, y), (xq, yq); bc = PeriodicBC()
+        )) isa CubicAdjointND
+    end
+
+    @testset "Type stability — apply (periodic)" begin
+        x = range(0.0, 1.0, 10)
+        y = range(0.0, 1.0, 8)
+        xq = sort(rand(15)) .* 0.96 .+ 0.02
+        yq = sort(rand(15)) .* 0.96 .+ 0.02
+        adj = cubic_adjoint((x, y), (xq, yq); bc = PeriodicBC())
+        yb = randn(15)
+        @test @inferred(adj(yb)) isa Matrix{Float64}
+    end
+
+    # ========================================
+    # Zero-allocation — periodic inclusive in-place
+    # ========================================
+    function _test_nd_adjoint_alloc_periodic(grids, queries, f_bar, y_bar)
+        adj = cubic_adjoint(grids, queries; bc = PeriodicBC())
+        adj(f_bar, y_bar)  # warmup
+        adj(f_bar, y_bar)  # warmup
+        return @allocated adj(f_bar, y_bar)
+    end
+
+    @testset "Zero-alloc: periodic inclusive in-place" begin
+        nx, ny = 12, 10
+        n_query = 20
+        x = range(0.0, 1.0, nx)
+        y = range(0.0, 1.0, ny)
+        xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        fb = zeros(nx, ny)
+        yb = randn(n_query)
+        allocs = _test_nd_adjoint_alloc_periodic(
+            (x, y), (xq, yq), fb, yb
+        )
+        @test allocs <= ND_ALLOC_THRESHOLD
+    end
+end

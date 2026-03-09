@@ -17,22 +17,6 @@ using FastInterpolations
 using ChainRulesCore
 
 # ════════════════════════════════════════
-# Adjoint OOB masking for FillExtrap
-# ════════════════════════════════════════
-# FillExtrap returns a constant for out-of-domain queries → ∂fill/∂f = 0.
-# We zero out Δy entries for OOB queries so the adjoint doesn't accumulate
-# spurious gradients from those positions.
-
-@inline _needs_oob_masking(::FastInterpolations.AbstractExtrap) = false
-@inline _needs_oob_masking(::FillExtrap) = true
-
-@inline function _mask_oob_tangent(Δy, x, xq, extrap)
-    _needs_oob_masking(extrap) || return Δy
-    lo, hi = first(x), last(x)
-    return [lo <= xq[i] <= hi ? Δy[i] : zero(Δy[i]) for i in eachindex(Δy)]
-end
-
-# ════════════════════════════════════════
 # 1D Interpolants (scalar query → scalar output)
 # ════════════════════════════════════════
 # Excludes AbstractSeriesInterpolant (Vector output needs different pullback)
@@ -209,16 +193,11 @@ function ChainRulesCore.rrule(
         kwargs...
     ) where {Tg <: AbstractFloat, Tv}
     y = cubic_interp(x, f, xq; kwargs...)
-
-    bc = get(kwargs, :bc, CubicFit())
-    extrap = get(kwargs, :extrap, NoExtrap())
-    deriv = get(kwargs, :deriv, EvalValue())
-    adj = cubic_adjoint(x, xq; bc, extrap)
+    adj = cubic_adjoint(x, xq; kwargs...)
 
     function cubic_interp_vec_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        Δy_eff = _mask_oob_tangent(unthunk(Δy), x, xq, extrap)
-        f_bar = adj(Δy_eff; deriv = deriv)
+        f_bar = adj(unthunk(Δy); kwargs...)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 
@@ -241,16 +220,11 @@ function ChainRulesCore.rrule(
         kwargs...
     ) where {Tg <: AbstractFloat, Tv}
     y = cubic_interp(x, f, xq; kwargs...)
-
-    bc = get(kwargs, :bc, CubicFit())
-    extrap = get(kwargs, :extrap, NoExtrap())
-    deriv = get(kwargs, :deriv, EvalValue())
-    adj = cubic_adjoint(x, Tg[xq]; bc, extrap)
+    adj = cubic_adjoint(x, Tg[xq]; kwargs...)
 
     function cubic_interp_scalar_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        Δy_eff = _mask_oob_tangent(Tg[unthunk(Δy)], x, Tg[xq], extrap)
-        f_bar = adj(Δy_eff; deriv = deriv)
+        f_bar = adj(Tg[unthunk(Δy)]; kwargs...)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 
@@ -263,9 +237,8 @@ end
 # Enables Zygote.gradient(data -> ...(cubic_interp(grids, data, queries; ...))..., data)
 # by using the pre-built CubicAdjointND operator for the pullback.
 #
-# Currently supports NoExtrap (default) and PeriodicBC. Other extrap modes
-# (FillExtrap, ClampExtrap, WrapExtrap) will be added when the ND adjoint
-# gains native extrap support.
+# All extrap modes are supported — the ND adjoint handles OOB weight zeroing
+# internally via _bake_nd_anchors.
 
 """
 Reverse-mode rule for `cubic_interp(grids, data, queries; ...)` — SoA batch (ND).
@@ -281,14 +254,11 @@ function ChainRulesCore.rrule(
         kwargs...
     ) where {Tv, N}
     y = cubic_interp(grids, data, queries; kwargs...)
-
-    bc = get(kwargs, :bc, CubicFit())
-    deriv = get(kwargs, :deriv, EvalValue())
-    adj = cubic_adjoint(grids, queries; bc)
+    adj = cubic_adjoint(grids, queries; kwargs...)
 
     function cubic_interp_nd_soa_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        f_bar = adj(unthunk(Δy); deriv = deriv)
+        f_bar = adj(unthunk(Δy); kwargs...)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 
@@ -310,18 +280,15 @@ function ChainRulesCore.rrule(
     ) where {Tv, N}
     y = cubic_interp(grids, data, query; kwargs...)
 
-    bc = get(kwargs, :bc, CubicFit())
-    deriv = get(kwargs, :deriv, EvalValue())
-
     # Wrap scalar query into 1-element vectors for CubicAdjointND
     Tg = FastInterpolations._promote_grid_eltype(grids)
     Tg_f = Tg <: AbstractFloat ? Tg : Float64
     queries_vec = ntuple(d -> Tg_f[query[d]], Val(N))
-    adj = cubic_adjoint(grids, queries_vec; bc)
+    adj = cubic_adjoint(grids, queries_vec; kwargs...)
 
     function cubic_interp_nd_scalar_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        f_bar = adj(Tg_f[unthunk(Δy)]; deriv = deriv)
+        f_bar = adj(Tg_f[unthunk(Δy)]; kwargs...)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 

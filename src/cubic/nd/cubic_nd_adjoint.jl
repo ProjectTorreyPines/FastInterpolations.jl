@@ -126,16 +126,17 @@ the adjoint `adj(ȳ)` hot path does zero weight computation.
 end
 
 """
-    _bake_nd_anchors(grids, spacings, queries, bc_pairs) -> Vector{_NDAdjointAnchor}
+    _bake_nd_anchors(grids, spacings, queries, extraps) -> Vector{_NDAdjointAnchor}
 
 Precompute cell indices and all derivative-order Hermite weights for each query point.
-For periodic axes, queries are wrapped to the domain via `_wrap_to_domain` before search.
+Per-axis query preprocessing is handled by `_extrap_axis` (periodic wrapping, clamping, etc.).
+For OOB queries, weights are zeroed per-axis following the same logic as 1D `_fixup_clampfill_anchors!`.
 """
 function _bake_nd_anchors(
         grids::NTuple{N, AbstractVector{Tg}},
         spacings::NTuple{N, AbstractGridSpacing{Tg}},
         queries::NTuple{N, AbstractVector},
-        bc_pairs::NTuple{N, Union{BCPair, PeriodicBC}}
+        extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N, Tg <: AbstractFloat}
     n_queries = length(queries[1])
     for d in 2:N
@@ -150,21 +151,39 @@ function _bake_nd_anchors(
     @inbounds for q in 1:n_queries
         # Single pass: compute index + all 4 weight sets per axis together
         idx_and_weights = ntuple(Val(N)) do d
-            xq_d = Tg(queries[d][q])
-            if _is_periodic_bc(bc_pairs[d])
-                xq_d = _wrap_to_domain(xq_d, first(grids[d]), last(grids[d]))
-            end
+            xq_raw = Tg(queries[d][q])
+            xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
             idx, _, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
             h = _get_h(spacings[d], idx)
             inv_h = _get_inv_h(spacings[d], idx)
             t = (xq_d - grids[d][idx]) * inv_h
-            return (idx, _compute_nd_anchor_weights(t, h, inv_h))
+            is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])
+            return (idx, _compute_nd_anchor_weights(t, h, inv_h), is_oob)
         end
         indices = ntuple(d -> idx_and_weights[d][1], Val(N))
         w0 = ntuple(d -> idx_and_weights[d][2][1], Val(N))
         w1 = ntuple(d -> idx_and_weights[d][2][2], Val(N))
         w2 = ntuple(d -> idx_and_weights[d][2][3], Val(N))
         w3 = ntuple(d -> idx_and_weights[d][2][4], Val(N))
+
+        # Per-axis OOB weight fixup (same logic as 1D _fixup_clampfill_anchors!)
+        for d in 1:N
+            idx_and_weights[d][3] || continue   # skip in-bounds axes
+            ext_d = extraps[d]
+            if ext_d isa FillExtrap
+                zw = (zero(Tg), zero(Tg), zero(Tg), zero(Tg))
+                w0 = Base.setindex(w0, zw, d)
+                w1 = Base.setindex(w1, zw, d)
+                w2 = Base.setindex(w2, zw, d)
+                w3 = Base.setindex(w3, zw, d)
+            elseif ext_d isa ClampExtrap
+                zw = (zero(Tg), zero(Tg), zero(Tg), zero(Tg))
+                w1 = Base.setindex(w1, zw, d)
+                w2 = Base.setindex(w2, zw, d)
+                w3 = Base.setindex(w3, zw, d)
+            end
+        end
+
         anchors[q] = _NDAdjointAnchor{Tg, N}(indices, w0, w1, w2, w3)
     end
     return anchors
@@ -509,7 +528,8 @@ then folds `f̄[...,n+1,...] += f̄[...,1,...]` and truncates to output size.
 """
 function (adj::CubicAdjointND{Tg, N})(
         y_bar::AbstractVector;
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        _extra...
     ) where {Tg, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
     n_query = length(adj.anchors)
@@ -541,7 +561,8 @@ Zeros `f_bar` before accumulation. See allocating version for `deriv` options.
 """
 function (adj::CubicAdjointND{Tg, N})(
         f_bar::AbstractArray{Tv, N}, y_bar::AbstractVector;
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        _extra...
     ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
     out_size = _adjoint_output_size(adj.grid_size, adj.bc_pairs)
@@ -653,17 +674,20 @@ function cubic_adjoint(
         grids::NTuple{N, AbstractVector},
         queries::NTuple{N, AbstractVector};
         bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
-        autocache::Bool = true
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        autocache::Bool = true,
+        _extra...
     ) where {N}
     # Type promotion
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
 
-    # Resolve per-axis BCs
+    # Resolve per-axis BCs and extraps
     bcs = _resolve_bcs_nd(bc, Val(N))
+    extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tg)
 
-    return _build_nd_adjoint(grids_typed, queries, bcs, autocache)
+    return _build_nd_adjoint(grids_typed, queries, bcs, extraps, autocache)
 end
 
 """
@@ -686,6 +710,7 @@ function _build_nd_adjoint(
         grids::NTuple{N, AbstractVector{Tg}},
         queries::NTuple{N, AbstractVector},
         bcs::NTuple{N, AbstractBC},
+        extraps::Tuple{Vararg{AbstractExtrap, N}},
         autocache::Bool
     ) where {N, Tg <: AbstractFloat}
     # Validate: PolyFit BCs have enough grid points (periodic axes skip this)
@@ -735,8 +760,8 @@ function _build_nd_adjoint(
 
     spacings = _create_spacings_typed(grids_ext)
 
-    # Bake per-query anchors (periodic axes wrap queries to domain)
-    anchors = _bake_nd_anchors(grids_ext, spacings, queries, bc_pairs)
+    # Bake per-query anchors (extrap handles periodic wrapping + OOB weight fixup)
+    anchors = _bake_nd_anchors(grids_ext, spacings, queries, extraps)
 
     grid_size = ntuple(d -> length(grids_ext[d]), Val(N))
 

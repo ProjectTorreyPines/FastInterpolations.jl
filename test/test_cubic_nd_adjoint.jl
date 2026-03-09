@@ -10,17 +10,18 @@ using FastInterpolations
 function dot_product_test_nd(
         grids, xqs, f, y_bar;
         bc = CubicFit(),
+        extrap = NoExtrap(),
         deriv = EvalValue(),
         rtol = sqrt(eps(eltype(grids[1])))
     )
-    itp = cubic_interp(grids, f; bc = bc)
-    adj = cubic_adjoint(grids, xqs; bc = bc)
+    itp = cubic_interp(grids, f; bc = bc, extrap = extrap)
+    adj = cubic_adjoint(grids, xqs; bc = bc, extrap = extrap)
 
     n_queries = length(xqs[1])
 
     # Forward: W·f (subtract constant offset for affine BCs)
     f_zero = zeros(eltype(f), size(f))
-    itp_zero = cubic_interp(grids, f_zero; bc = bc)
+    itp_zero = cubic_interp(grids, f_zero; bc = bc, extrap = extrap)
     Wf = Vector{eltype(f)}(undef, n_queries)
     Wf_zero = Vector{eltype(f)}(undef, n_queries)
     itp(Wf, xqs; deriv = deriv)
@@ -105,6 +106,47 @@ end
                 @test ok
             end
         end
+    end
+
+    # ========================================
+    # OOB extrap dot-product tests
+    # ========================================
+    # OOB queries that extend beyond the grid domain in each axis.
+    xq_oob = vcat(-0.3 .+ 0.1 .* rand(10), xq, 1.0 .+ 0.1 .* rand(10))
+    yq_oob = vcat(-0.5 .+ 0.2 .* rand(10), yq, 2.0 .+ 0.2 .* rand(10))
+    y_bar_oob = randn(length(xq_oob))
+    f_oob = randn(nx, ny)
+
+    @testset "Dot-product — OOB queries — ExtendExtrap" begin
+        _, _, ok = dot_product_test_nd(
+            (x_uniform, y_uniform), (xq_oob, yq_oob), f_oob, y_bar_oob;
+            extrap = ExtendExtrap()
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — OOB queries — ClampExtrap" begin
+        _, _, ok = dot_product_test_nd(
+            (x_uniform, y_uniform), (xq_oob, yq_oob), f_oob, y_bar_oob;
+            extrap = ClampExtrap()
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — OOB queries — FillExtrap" begin
+        _, _, ok = dot_product_test_nd(
+            (x_uniform, y_uniform), (xq_oob, yq_oob), f_oob, y_bar_oob;
+            extrap = FillExtrap(0.0)
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — OOB queries — WrapExtrap" begin
+        _, _, ok = dot_product_test_nd(
+            (x_uniform, y_uniform), (xq_oob, yq_oob), f_oob, y_bar_oob;
+            extrap = WrapExtrap()
+        )
+        @test ok
     end
 
     # ========================================

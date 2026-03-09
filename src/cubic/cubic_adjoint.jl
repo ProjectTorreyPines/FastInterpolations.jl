@@ -130,7 +130,7 @@ The `deriv` keyword selects which forward operator's adjoint to compute:
 
 The output element type is `promote_type(eltype(y_bar), Tg)`.
 """
-function (adj::CubicAdjoint{Tg})(y_bar::AbstractVector; deriv::DerivOp = EvalValue()) where {Tg}
+function (adj::CubicAdjoint{Tg})(y_bar::AbstractVector; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
     length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
     Tv = promote_type(eltype(y_bar), Tg)
     n_internal = length(adj.cache.x)
@@ -150,7 +150,7 @@ end
 Apply the adjoint operator in-place: `f̄ = W_dᵀȳ`.
 Zeros `f_bar` before accumulating. See allocating version for `deriv` options.
 """
-function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::AbstractVector; deriv::DerivOp = EvalValue()) where {Tg}
+function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::AbstractVector; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
     n_out = _adjoint_output_length(adj)
     length(f_bar) == n_out || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), n_out)
     length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
@@ -476,7 +476,8 @@ function cubic_adjoint(
         x_query::AbstractVector;
         bc::AbstractBC = CubicFit(),
         extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true
+        autocache::Bool = true,
+        _extra...
     )
     # Promote grid and query to AbstractFloat (handles Integer, Rational, etc.)
     Tg = _promote_grid_float(eltype(x), eltype(x_query))

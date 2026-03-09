@@ -17,24 +17,31 @@
     _NDAdjointAnchor{Tg, N}
 
 Precomputed per-query data for ND cubic adjoint scatter.
-Stores cell location and per-axis Hermite basis weights.
+Stores cell location and per-axis Hermite basis weights for all derivative orders.
+
+All 4 weight sets are pre-baked at construction time, matching the 1D `_CubicAnchoredQuery`
+pattern. The adjoint is constructed once and called repeatedly with different `ȳ` vectors,
+so pre-computing is optimal (pay once, reuse many times).
 
 # Fields
 - `indices`: Per-axis cell index (left node of containing interval)
-- `weights`: Per-axis `(w_fL, w_fR, w_dyL, w_dyR)` Hermite weights
+- `w0`: EvalValue weights per axis — `(h00, h01, h10·h, h11·h)`
+- `w1`: EvalDeriv1 weights per axis — `(h00'·inv_h, h01'·inv_h, h10', h11')`
+- `w2`: EvalDeriv2 weights per axis — `(h00''·inv_h², h01''·inv_h², h10''·inv_h, h11''·inv_h)`
+- `w3`: EvalDeriv3 weights per axis — `(12·inv_h³, -12·inv_h³, 6·inv_h², 6·inv_h²)`
 
 # Weight Convention
-For normalized position `t = dL / h` on each axis:
-- `w_fL  = h00(t)`     — weight on function value at left node
-- `w_fR  = h01(t)`     — weight on function value at right node
-- `w_dyL = h10(t) * h` — weight on derivative at left node (h-scaled)
-- `w_dyR = h11(t) * h` — weight on derivative at right node (h-scaled)
-
-The h-scaling on derivative weights matches `_hermite_kernel_1d` (cubic_nd_math.jl).
+For each axis d with normalized position `t = dL / h`:
+- Each `wk[d]` is a 4-tuple `(w_fL, w_fR, w_dyL, w_dyR)` for the k-th derivative
+- Forward: `dᵏP/dxᵏ = Σ_j wk_j · (fL, fR, dyL, dyR)_j` (tensor-product per axis)
+- All 4 weights are non-zero for all k (ND Hermite form, unlike 1D moment form)
 """
 struct _NDAdjointAnchor{Tg <: AbstractFloat, N}
     indices::NTuple{N, Int}
-    weights::NTuple{N, NTuple{4, Tg}}
+    w0::NTuple{N, NTuple{4, Tg}}
+    w1::NTuple{N, NTuple{4, Tg}}
+    w2::NTuple{N, NTuple{4, Tg}}
+    w3::NTuple{N, NTuple{4, Tg}}
 end
 
 # ========================================

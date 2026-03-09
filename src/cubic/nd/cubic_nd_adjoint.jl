@@ -89,9 +89,46 @@ end
 # ========================================
 
 """
+    _compute_nd_anchor_weights(t, h, inv_h) -> (w0, w1, w2, w3)
+
+Compute all 4 derivative-order weight tuples for one axis at normalized position `t`.
+Each `wk` is `(w_fL, w_fR, w_dyL, w_dyR)` for DerivOp(k).
+
+Matches the 1D `_CubicAnchoredQuery` pattern: bake all weights at construction so
+the adjoint `adj(ȳ)` hot path does zero weight computation.
+"""
+@inline function _compute_nd_anchor_weights(t::Tg, h::Tg, inv_h::Tg) where {Tg}
+    t_sq = t * t
+
+    # k=0: EvalValue — P(t) = h00·fL + h01·fR + h10·h·dyL + h11·h·dyR
+    w0 = (_hermite_h00(t), _hermite_h01(t), _hermite_h10(t) * h, _hermite_h11(t) * h)
+
+    # k=1: EvalDeriv1 — dP/dx = (dP/dt) · inv_h
+    dh00 = muladd(Tg(6), t_sq, Tg(-6) * t)                     # 6t² - 6t
+    dh10 = muladd(Tg(3), t_sq, muladd(Tg(-4), t, one(Tg)))     # 3t² - 4t + 1
+    dh01 = muladd(Tg(-6), t_sq, Tg(6) * t)                     # -6t² + 6t
+    dh11 = muladd(Tg(3), t_sq, Tg(-2) * t)                     # 3t² - 2t
+    w1 = (dh00 * inv_h, dh01 * inv_h, dh10, dh11)
+
+    # k=2: EvalDeriv2 — d²P/dx² = (d²P/dt²) · inv_h²
+    inv_h2 = inv_h * inv_h
+    d2h00 = muladd(Tg(12), t, Tg(-6))    # 12t - 6
+    d2h10 = muladd(Tg(6), t, Tg(-4))     # 6t - 4
+    d2h01 = muladd(Tg(-12), t, Tg(6))    # -12t + 6
+    d2h11 = muladd(Tg(6), t, Tg(-2))     # 6t - 2
+    w2 = (d2h00 * inv_h2, d2h01 * inv_h2, d2h10 * inv_h, d2h11 * inv_h)
+
+    # k=3: EvalDeriv3 — d³P/dx³ = constants · inv_h³
+    inv_h3 = inv_h2 * inv_h
+    w3 = (Tg(12) * inv_h3, Tg(-12) * inv_h3, Tg(6) * inv_h2, Tg(6) * inv_h2)
+
+    return w0, w1, w2, w3
+end
+
+"""
     _bake_nd_anchors(grids, spacings, queries, bc_pairs) -> Vector{_NDAdjointAnchor}
 
-Precompute cell indices and Hermite basis weights for each query point.
+Precompute cell indices and all derivative-order Hermite weights for each query point.
 For periodic axes, queries are wrapped to the domain via `_wrap_to_domain` before search.
 """
 function _bake_nd_anchors(
@@ -113,7 +150,6 @@ function _bake_nd_anchors(
     @inbounds for q in 1:n_queries
         indices = ntuple(Val(N)) do d
             xq_d = Tg(queries[d][q])
-            # Wrap periodic queries to [x_min, x_max)
             if _is_periodic_bc(bc_pairs[d])
                 xq_d = _wrap_to_domain(xq_d, first(grids[d]), last(grids[d]))
             end
@@ -121,25 +157,23 @@ function _bake_nd_anchors(
             idx, _, _ = search_interval(DEFAULT_SEARCHER, x_d, spacings[d], xq_d)
             return idx
         end
-        weights = ntuple(Val(N)) do d
+        # Compute all 4 weight sets per axis
+        all_weights = ntuple(Val(N)) do d
             xq_d = Tg(queries[d][q])
             if _is_periodic_bc(bc_pairs[d])
                 xq_d = _wrap_to_domain(xq_d, first(grids[d]), last(grids[d]))
             end
-            x_d = grids[d]
             idx = indices[d]
-            xL = x_d[idx]
             h = _get_h(spacings[d], idx)
             inv_h = _get_inv_h(spacings[d], idx)
-            dL = xq_d - xL
-            t = dL * inv_h
-            w_fL = _hermite_h00(t)
-            w_fR = _hermite_h01(t)
-            w_dyL = _hermite_h10(t) * h
-            w_dyR = _hermite_h11(t) * h
-            return (w_fL, w_fR, w_dyL, w_dyR)
+            t = (xq_d - grids[d][idx]) * inv_h
+            return _compute_nd_anchor_weights(t, h, inv_h)
         end
-        anchors[q] = _NDAdjointAnchor{Tg, N}(indices, weights)
+        w0 = ntuple(d -> all_weights[d][1], Val(N))
+        w1 = ntuple(d -> all_weights[d][2], Val(N))
+        w2 = ntuple(d -> all_weights[d][3], Val(N))
+        w3 = ntuple(d -> all_weights[d][4], Val(N))
+        anchors[q] = _NDAdjointAnchor{Tg, N}(indices, w0, w1, w2, w3)
     end
     return anchors
 end
@@ -153,18 +187,45 @@ end
 # Hermite weight products.
 #
 # Weight indexing per axis d:
-#   anchor.weights[d] = (w_fL, w_fR, w_dyL, w_dyR)
+#   anchor.w0[d] = (w_fL, w_fR, w_dyL, w_dyR) for EvalValue
+#   anchor.w1[d], w2[d], w3[d] for DerivOp(1), (2), (3) respectively
 #   index = 1 + corner_d + 2*deriv_d
 #   (corner=0,deriv=0) → 1=w_fL, (1,0) → 2=w_fR, (0,1) → 3=w_dyL, (1,1) → 4=w_dyR
+
+# --- Codegen helper: emit 4^N scatter accumulations from weight symbols ---
+function _scatter_nd_codegen(N, idx_syms, w_syms)
+    stmts = Expr[]
+    NP = 1 << N
+    NC = 1 << N
+    for p in 0:(NP - 1)
+        for c in 0:(NC - 1)
+            weight_factors = Symbol[]
+            for d in 1:N
+                corner_d = (c >> (d - 1)) & 1
+                deriv_d = (p >> (d - 1)) & 1
+                w_idx = 1 + corner_d + 2 * deriv_d
+                push!(weight_factors, w_syms[d, w_idx])
+            end
+            wp_expr = weight_factors[1]
+            for i in 2:length(weight_factors)
+                wp_expr = :($wp_expr * $(weight_factors[i]))
+            end
+            offsets = _corner_offset_expr(c, N)
+            idx_exprs = [:($(idx_syms[d]) + $(offsets[d])) for d in 1:N]
+            p_idx = _partial_index(p)
+            lhs = :(partials_bar[$p_idx, $(idx_exprs...)])
+            push!(stmts, :($lhs += yb * $wp_expr))
+        end
+    end
+    return stmts
+end
 
 """
     _scatter_nd!(partials_bar, yb, anchor)
 
-@generated tensor-product scatter for arbitrary N dimensions.
-Accumulates `yb * prod(per-axis weights)` into partials_bar at all
+@generated tensor-product scatter for EvalValue (3-arg fast path).
+Accumulates `yb * prod(per-axis w0 weights)` into partials_bar at all
 (partial, corner) combinations. Produces straight-line code with no loops.
-
-Reuses `_partial_index` and `_corner_offset_expr` from `nd_utils.jl`.
 """
 @inline @generated function _scatter_nd!(
         partials_bar::AbstractArray{Tv, NP1},
@@ -174,14 +235,10 @@ Reuses `_partial_index` and `_corner_offset_expr` from `nd_utils.jl`.
     NP1 == N + 1 || error("NP1 must equal N+1, got NP1=$NP1, N=$N")
 
     stmts = Expr[]
-    NP = 1 << N  # 2^N partials
-    NC = 1 << N  # 2^N corners
 
-    # Destructure anchor.indices: (idx_1, idx_2, ..., idx_N)
     idx_syms = ntuple(d -> Symbol("idx_", d), N)
     push!(stmts, :($(Expr(:tuple, idx_syms...)) = anchor.indices))
 
-    # Destructure anchor.weights per axis: (w_d_fL, w_d_fR, w_d_dyL, w_d_dyR)
     w_syms = Matrix{Symbol}(undef, N, 4)
     for d in 1:N
         w_syms[d, 1] = Symbol("w_", d, "_fL")
@@ -189,36 +246,55 @@ Reuses `_partial_index` and `_corner_offset_expr` from `nd_utils.jl`.
         w_syms[d, 3] = Symbol("w_", d, "_dyL")
         w_syms[d, 4] = Symbol("w_", d, "_dyR")
         lhs = Expr(:tuple, w_syms[d, 1], w_syms[d, 2], w_syms[d, 3], w_syms[d, 4])
-        push!(stmts, :($lhs = anchor.weights[$d]))
+        push!(stmts, :($lhs = anchor.w0[$d]))
     end
 
-    # Generate one accumulation statement per (partial, corner) pair
-    for p in 0:(NP - 1)
-        for c in 0:(NC - 1)
-            # Build weight product: prod_d w_d[1 + corner_d + 2*deriv_d]
-            weight_factors = Symbol[]
-            for d in 1:N
-                corner_d = (c >> (d - 1)) & 1
-                deriv_d = (p >> (d - 1)) & 1
-                w_idx = 1 + corner_d + 2 * deriv_d
-                push!(weight_factors, w_syms[d, w_idx])
-            end
+    append!(stmts, _scatter_nd_codegen(N, idx_syms, w_syms))
 
-            # Chain multiply: w1 * w2 * ... * wN
-            wp_expr = weight_factors[1]
-            for i in 2:length(weight_factors)
-                wp_expr = :($wp_expr * $(weight_factors[i]))
-            end
-
-            # Index expression: partials_bar[p+1, idx_1+off_1, ..., idx_N+off_N]
-            offsets = _corner_offset_expr(c, N)
-            idx_exprs = [:($(idx_syms[d]) + $(offsets[d])) for d in 1:N]
-            p_idx = _partial_index(p)
-
-            lhs = :(partials_bar[$p_idx, $(idx_exprs...)])
-            push!(stmts, :($lhs += yb * $wp_expr))
+    return quote
+        Base.@_inline_meta
+        @inbounds begin
+            $(stmts...)
         end
+        return nothing
     end
+end
+
+"""
+    _scatter_nd!(partials_bar, yb, anchor, ops)
+
+@generated tensor-product scatter with per-axis DerivOp dispatch (4-arg version).
+Selects `anchor.w0[d]`, `w1[d]`, `w2[d]`, or `w3[d]` per axis at compile time
+based on the concrete DerivOp types in `ops`.
+"""
+@inline @generated function _scatter_nd!(
+        partials_bar::AbstractArray{Tv, NP1},
+        yb::Tv,
+        anchor::_NDAdjointAnchor{Tg, N},
+        ops::OPS
+    ) where {Tv, Tg, N, NP1, OPS <: NTuple{N, AbstractEvalOp}}
+    NP1 == N + 1 || error("NP1 must equal N+1, got NP1=$NP1, N=$N")
+
+    stmts = Expr[]
+
+    idx_syms = ntuple(d -> Symbol("idx_", d), N)
+    push!(stmts, :($(Expr(:tuple, idx_syms...)) = anchor.indices))
+
+    # Per-axis: select weight field based on DerivOp order from type parameter
+    w_field_names = [:w0, :w1, :w2, :w3]
+    w_syms = Matrix{Symbol}(undef, N, 4)
+    for d in 1:N
+        k_d = fieldtype(OPS, d).parameters[1]  # DerivOp{k} → k
+        wf = w_field_names[k_d + 1]
+        w_syms[d, 1] = Symbol("w_", d, "_fL")
+        w_syms[d, 2] = Symbol("w_", d, "_fR")
+        w_syms[d, 3] = Symbol("w_", d, "_dyL")
+        w_syms[d, 4] = Symbol("w_", d, "_dyR")
+        lhs = Expr(:tuple, w_syms[d, 1], w_syms[d, 2], w_syms[d, 3], w_syms[d, 4])
+        push!(stmts, :($lhs = anchor.$wf[$d]))
+    end
+
+    append!(stmts, _scatter_nd_codegen(N, idx_syms, w_syms))
 
     return quote
         Base.@_inline_meta
@@ -464,30 +540,37 @@ end
 # ========================================
 
 """
-    (adj::CubicAdjointND)(y_bar) -> f_bar::Array{Tv, N}
+    (adj::CubicAdjointND)(y_bar; deriv=EvalValue()) -> f_bar::Array{Tv, N}
 
-Allocating adjoint apply: compute `f̄ = Wᵀȳ`.
+Allocating adjoint apply: compute `f̄ = Wᵀ_d ȳ` where `d` is the derivative order.
+
+The `deriv` keyword selects which forward operator's adjoint to compute:
+- `EvalValue()` / `DerivOp(0)`: adjoint of value evaluation (default)
+- `DerivOp(1)`: adjoint of first derivative (broadcasts to all axes)
+- `(DerivOp(1), EvalValue())`: per-axis mixed derivative adjoint
 
 For exclusive periodic axes, the internal computation uses the extended grid size,
 then folds `f̄[...,n+1,...] += f̄[...,1,...]` and truncates to output size.
 """
-function (adj::CubicAdjointND{Tg, N})(y_bar::AbstractVector) where {Tg, N}
+function (adj::CubicAdjointND{Tg, N})(
+        y_bar::AbstractVector;
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
+    ) where {Tg, N}
+    ops = _resolve_deriv_nd(deriv, Val(N))
     n_query = length(adj.anchors)
     length(y_bar) == n_query || throw(
         DimensionMismatch("y_bar length $(length(y_bar)) must match query count $n_query")
     )
     Tv = promote_type(eltype(y_bar), Tg)
     f_bar_internal = zeros(Tv, adj.grid_size...)
-    _cubic_adjoint_nd_apply!(f_bar_internal, adj, y_bar)
+    _cubic_adjoint_nd_apply!(f_bar_internal, adj, y_bar, ops)
 
     if _has_exclusive_periodic(adj.bc_pairs)
-        # Fold exclusive endpoints: f[...,1,...] += f[...,n_d,...]
         for d in 1:N
             if adj.bc_pairs[d] isa PeriodicBC{:exclusive}
                 selectdim(f_bar_internal, d, 1) .+= selectdim(f_bar_internal, d, adj.grid_size[d])
             end
         end
-        # Truncate to output size
         out_size = _adjoint_output_size(adj.grid_size, adj.bc_pairs)
         ranges = ntuple(d -> 1:out_size[d], Val(N))
         return f_bar_internal[ranges...]
@@ -496,16 +579,16 @@ function (adj::CubicAdjointND{Tg, N})(y_bar::AbstractVector) where {Tg, N}
 end
 
 """
-    (adj::CubicAdjointND)(f_bar, y_bar) -> f_bar
+    (adj::CubicAdjointND)(f_bar, y_bar; deriv=EvalValue()) -> f_bar
 
-In-place adjoint apply: compute `f̄ = Wᵀȳ` into pre-allocated `f_bar`.
-Zeros `f_bar` before accumulation.
-
-For exclusive periodic, `f_bar` must have the output size (grid_size[d]-1 per exclusive axis).
+In-place adjoint apply: compute `f̄ = Wᵀ_d ȳ` into pre-allocated `f_bar`.
+Zeros `f_bar` before accumulation. See allocating version for `deriv` options.
 """
 function (adj::CubicAdjointND{Tg, N})(
-        f_bar::AbstractArray{Tv, N}, y_bar::AbstractVector
+        f_bar::AbstractArray{Tv, N}, y_bar::AbstractVector;
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
     ) where {Tg, Tv, N}
+    ops = _resolve_deriv_nd(deriv, Val(N))
     out_size = _adjoint_output_size(adj.grid_size, adj.bc_pairs)
     size(f_bar) == out_size || throw(
         DimensionMismatch("f_bar size $(size(f_bar)) must match output size $out_size")
@@ -515,10 +598,10 @@ function (adj::CubicAdjointND{Tg, N})(
         DimensionMismatch("y_bar length $(length(y_bar)) must match query count $n_query")
     )
     if _has_exclusive_periodic(adj.bc_pairs)
-        _adjoint_apply_exclusive_nd!(f_bar, adj, y_bar)
+        _adjoint_apply_exclusive_nd!(f_bar, adj, y_bar, ops)
     else
         fill!(f_bar, zero(Tv))
-        _cubic_adjoint_nd_apply!(f_bar, adj, y_bar)
+        _cubic_adjoint_nd_apply!(f_bar, adj, y_bar, ops)
     end
     return f_bar
 end
@@ -527,19 +610,18 @@ end
 @with_pool pool function _adjoint_apply_exclusive_nd!(
         f_bar::AbstractArray{Tv, N},
         adj::CubicAdjointND{Tg, N},
-        y_bar::AbstractVector
+        y_bar::AbstractVector,
+        ops::NTuple{N, AbstractEvalOp}
     ) where {Tv, Tg, N}
     f_work = zeros!(pool, Tv, adj.grid_size...)
-    _cubic_adjoint_nd_apply!(f_work, adj, y_bar)
+    _cubic_adjoint_nd_apply!(f_work, adj, y_bar, ops)
 
-    # Fold exclusive endpoints
     for d in 1:N
         if adj.bc_pairs[d] isa PeriodicBC{:exclusive}
             selectdim(f_work, d, 1) .+= selectdim(f_work, d, adj.grid_size[d])
         end
     end
 
-    # Copy to output (truncated to output size)
     out_size = _adjoint_output_size(adj.grid_size, adj.bc_pairs)
     ranges = ntuple(d -> 1:out_size[d], Val(N))
     f_bar .= view(f_work, ranges...)
@@ -554,7 +636,8 @@ end
 @with_pool pool function _cubic_adjoint_nd_apply!(
         f_bar::AbstractArray{Tv, N},
         adj::CubicAdjointND{Tg, N},
-        y_bar::AbstractVector
+        y_bar::AbstractVector,
+        ops::NTuple{N, AbstractEvalOp}
     ) where {Tv, Tg, N}
     NP = 1 << N
     total = NP * prod(adj.grid_size)
@@ -566,10 +649,10 @@ end
 
     # Step 0: Eval adjoint scatter (@generated tensor-product)
     @inbounds for q in eachindex(y_bar)
-        _scatter_nd!(partials_bar, y_bar[q], adj.anchors[q])
+        _scatter_nd!(partials_bar, y_bar[q], adj.anchors[q], ops)
     end
 
-    # Steps 1-3: Build adjoint (reverse axis order)
+    # Steps 1-3: Build adjoint (reverse axis order) — UNCHANGED by deriv
     _build_adjoint_nd!(
         partials_bar, adj.caches, adj.mixed_caches, adj.spacings,
         adj.bc_pairs, adj.mixed_bc_pairs, adj.grids, adj.grid_size

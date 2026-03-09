@@ -10,6 +10,7 @@ using FastInterpolations
 function dot_product_test_nd(
         grids, xqs, f, y_bar;
         bc = CubicFit(),
+        deriv = EvalValue(),
         rtol = sqrt(eps(eltype(grids[1])))
     )
     itp = cubic_interp(grids, f; bc = bc)
@@ -22,12 +23,12 @@ function dot_product_test_nd(
     itp_zero = cubic_interp(grids, f_zero; bc = bc)
     Wf = Vector{eltype(f)}(undef, n_queries)
     Wf_zero = Vector{eltype(f)}(undef, n_queries)
-    itp(Wf, xqs)
-    itp_zero(Wf_zero, xqs)
+    itp(Wf, xqs; deriv = deriv)
+    itp_zero(Wf_zero, xqs; deriv = deriv)
     Wf .-= Wf_zero  # linear part only
 
     # Adjoint: Wᵀ·ȳ
-    WTy = adj(y_bar)
+    WTy = adj(y_bar; deriv = deriv)
 
     lhs = dot(Wf, y_bar)
     rhs = dot(vec(f), vec(WTy))
@@ -728,5 +729,287 @@ end
             (x, y), (xq, yq), fb, yb
         )
         @test allocs <= ND_ALLOC_THRESHOLD
+    end
+end
+
+# ========================================
+# Derivative Adjoint Tests (Phase 4)
+# ========================================
+# Verifies adjoint of derivative evaluation: adj(ȳ; deriv=DerivOp(k))
+# Core identity: ⟨W_d·f, ȳ⟩ = ⟨f, W_dᵀ·ȳ⟩
+
+@testset "CubicAdjointND — Derivative Adjoint" begin
+    nx, ny = 12, 10
+    n_query = 25
+    x = range(0.0, 1.0, nx)
+    y = range(0.0, 1.0, ny)
+    xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+    yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+    f = randn(nx, ny)
+    y_bar = randn(n_query)
+
+    # ========================================
+    # Dot-product identity — N=2
+    # ========================================
+    @testset "Dot-product — ∂f/∂x" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar;
+            deriv = (DerivOp(1), EvalValue())
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — ∂f/∂y" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar;
+            deriv = (EvalValue(), DerivOp(1))
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — broadcast DerivOp(1)" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar;
+            deriv = DerivOp(1)
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — ∂²f/∂x²" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar;
+            deriv = (DerivOp(2), EvalValue())
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — ∂²f/∂x∂y" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar;
+            deriv = (DerivOp(1), DerivOp(1))
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — broadcast DerivOp(2)" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar;
+            deriv = DerivOp(2)
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — broadcast DerivOp(3)" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar;
+            deriv = DerivOp(3)
+        )
+        @test ok
+    end
+
+    # ========================================
+    # BCs × derivative adjoint
+    # ========================================
+    @testset "Dot-product — deriv=1 + $bc_name" for (bc_name, bc) in [
+            ("ZeroCurvBC", ZeroCurvBC()),
+            ("ZeroSlopeBC", ZeroSlopeBC()),
+            ("QuadraticFit", QuadraticFit()),
+        ]
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar;
+            bc = bc, deriv = DerivOp(1)
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — deriv=1 + mixed BCs (CubicFit × ZeroCurvBC)" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar;
+            bc = (CubicFit(), ZeroCurvBC()), deriv = DerivOp(1)
+        )
+        @test ok
+    end
+
+    # ========================================
+    # In-place vs allocating consistency
+    # ========================================
+    @testset "In-place vs allocating — deriv=1" begin
+        adj = cubic_adjoint((x, y), (xq, yq))
+        f_bar_alloc = adj(y_bar; deriv = DerivOp(1))
+        f_bar_inplace = zeros(nx, ny)
+        adj(f_bar_inplace, y_bar; deriv = DerivOp(1))
+        @test f_bar_alloc ≈ f_bar_inplace
+    end
+
+    @testset "In-place vs allocating — mixed deriv" begin
+        adj = cubic_adjoint((x, y), (xq, yq))
+        deriv_mixed = (DerivOp(1), EvalValue())
+        f_bar_alloc = adj(y_bar; deriv = deriv_mixed)
+        f_bar_inplace = zeros(nx, ny)
+        adj(f_bar_inplace, y_bar; deriv = deriv_mixed)
+        @test f_bar_alloc ≈ f_bar_inplace
+    end
+
+    # ========================================
+    # Matrix materialization with deriv
+    # ========================================
+    @testset "Matrix materialization — deriv=1" begin
+        sx, sy = 5, 4
+        x_s = range(0.0, 1.0, sx)
+        y_s = range(0.0, 1.0, sy)
+        n_q = 8
+        xq_s = sort(rand(n_q)) .* 0.96 .+ 0.02
+        yq_s = sort(rand(n_q)) .* 0.96 .+ 0.02
+        deriv_ops = (DerivOp(1), EvalValue())
+
+        adj = cubic_adjoint((x_s, y_s), (xq_s, yq_s))
+
+        # Build Wᵀ by probing adjoint with unit vectors
+        WT = zeros(sx * sy, n_q)
+        e_q = zeros(n_q)
+        for q in 1:n_q
+            e_q[q] = 1.0
+            WT[:, q] = vec(adj(e_q; deriv = deriv_ops))
+            e_q[q] = 0.0
+        end
+
+        # Build W by probing forward with unit vectors
+        W = zeros(n_q, sx * sy)
+        output = zeros(n_q)
+        for k in 1:(sx * sy)
+            e_f = zeros(sx, sy)
+            e_f[k] = 1.0
+            itp = cubic_interp((x_s, y_s), e_f)
+            itp(output, (xq_s, yq_s); deriv = deriv_ops)
+            W[:, k] = output
+        end
+
+        @test W' ≈ WT rtol = 1e-12
+    end
+
+    # ========================================
+    # Type stability
+    # ========================================
+    @testset "Type stability — deriv=1" begin
+        adj = cubic_adjoint((x, y), (xq, yq))
+        @test @inferred(adj(y_bar; deriv = DerivOp(1))) isa Matrix{Float64}
+    end
+
+    @testset "Type stability — mixed deriv" begin
+        adj = cubic_adjoint((x, y), (xq, yq))
+        @test @inferred(adj(y_bar; deriv = (DerivOp(1), EvalValue()))) isa Matrix{Float64}
+    end
+
+    # ========================================
+    # Zero-allocation (in-place)
+    # ========================================
+    function _test_nd_adjoint_alloc_deriv(grids, queries, f_bar, y_bar, deriv)
+        adj = cubic_adjoint(grids, queries)
+        adj(f_bar, y_bar; deriv = deriv)  # warmup
+        adj(f_bar, y_bar; deriv = deriv)  # warmup
+        return @allocated adj(f_bar, y_bar; deriv = deriv)
+    end
+
+    @testset "Zero-alloc: in-place deriv=1" begin
+        fb = zeros(nx, ny)
+        allocs = _test_nd_adjoint_alloc_deriv(
+            (x, y), (xq, yq), fb, y_bar, DerivOp(1)
+        )
+        @test allocs <= ND_ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place mixed deriv" begin
+        fb = zeros(nx, ny)
+        allocs = _test_nd_adjoint_alloc_deriv(
+            (x, y), (xq, yq), fb, y_bar, (DerivOp(1), EvalValue())
+        )
+        @test allocs <= ND_ALLOC_THRESHOLD
+    end
+end
+
+# ========================================
+# Derivative Adjoint — N=3
+# ========================================
+
+@testset "CubicAdjointND — Derivative Adjoint (N=3)" begin
+    nx, ny, nz = 8, 7, 6
+    n_query = 15
+    x = range(0.0, 1.0, nx)
+    y = range(0.0, 1.0, ny)
+    z = range(0.0, 1.0, nz)
+    xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+    yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+    zq = sort(rand(n_query)) .* 0.96 .+ 0.02
+    f = randn(nx, ny, nz)
+    y_bar = randn(n_query)
+
+    @testset "Dot-product — broadcast DerivOp(1)" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y, z), (xq, yq, zq), f, y_bar;
+            deriv = DerivOp(1)
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — mixed (DerivOp(1), EvalValue, DerivOp(2))" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y, z), (xq, yq, zq), f, y_bar;
+            deriv = (DerivOp(1), EvalValue(), DerivOp(2))
+        )
+        @test ok
+    end
+
+    @testset "Type stability — deriv=1" begin
+        adj = cubic_adjoint((x, y, z), (xq, yq, zq))
+        @test @inferred(adj(y_bar; deriv = DerivOp(1))) isa Array{Float64, 3}
+    end
+end
+
+# ========================================
+# Derivative Adjoint — Periodic BCs
+# ========================================
+
+@testset "CubicAdjointND — Derivative Adjoint + Periodic" begin
+    nx, ny = 12, 10
+    n_query = 20
+    x = range(0.0, 2π, nx)
+    y = range(0.0, 2π, ny)
+    xq = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+    yq = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+    f = _make_periodic_data_inclusive((x, y))
+    y_bar = randn(n_query)
+
+    @testset "Dot-product — ∂f/∂x + PeriodicBC" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar;
+            bc = PeriodicBC(), deriv = (DerivOp(1), EvalValue())
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — ∂f/∂y + PeriodicBC" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar;
+            bc = PeriodicBC(), deriv = (EvalValue(), DerivOp(1))
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — mixed deriv + mixed BC (PeriodicBC × CubicFit)" begin
+        x_cf = range(0.0, 1.0, nx)
+        y_cf = range(0.0, 1.0, ny)
+        xq_cf = sort(rand(n_query)) .* 0.96 .+ 0.02
+        yq_cf = sort(rand(n_query)) .* 0.96 .+ 0.02
+        f_mix = randn(nx, ny)
+        for j in 1:ny
+            f_mix[end, j] = f_mix[1, j]
+        end
+        y_bar_m = randn(n_query)
+        _, _, ok = dot_product_test_nd(
+            (x, y_cf), (xq, yq_cf), f_mix, y_bar_m;
+            bc = (PeriodicBC(), CubicFit()),
+            deriv = (DerivOp(1), EvalValue())
+        )
+        @test ok
     end
 end

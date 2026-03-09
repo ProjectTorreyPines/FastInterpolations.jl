@@ -148,31 +148,23 @@ function _bake_nd_anchors(
 
     anchors = Vector{_NDAdjointAnchor{Tg, N}}(undef, n_queries)
     @inbounds for q in 1:n_queries
-        indices = ntuple(Val(N)) do d
+        # Single pass: compute index + all 4 weight sets per axis together
+        idx_and_weights = ntuple(Val(N)) do d
             xq_d = Tg(queries[d][q])
             if _is_periodic_bc(bc_pairs[d])
                 xq_d = _wrap_to_domain(xq_d, first(grids[d]), last(grids[d]))
             end
-            x_d = grids[d]
-            idx, _, _ = search_interval(DEFAULT_SEARCHER, x_d, spacings[d], xq_d)
-            return idx
-        end
-        # Compute all 4 weight sets per axis
-        all_weights = ntuple(Val(N)) do d
-            xq_d = Tg(queries[d][q])
-            if _is_periodic_bc(bc_pairs[d])
-                xq_d = _wrap_to_domain(xq_d, first(grids[d]), last(grids[d]))
-            end
-            idx = indices[d]
+            idx, _, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
             h = _get_h(spacings[d], idx)
             inv_h = _get_inv_h(spacings[d], idx)
             t = (xq_d - grids[d][idx]) * inv_h
-            return _compute_nd_anchor_weights(t, h, inv_h)
+            return (idx, _compute_nd_anchor_weights(t, h, inv_h))
         end
-        w0 = ntuple(d -> all_weights[d][1], Val(N))
-        w1 = ntuple(d -> all_weights[d][2], Val(N))
-        w2 = ntuple(d -> all_weights[d][3], Val(N))
-        w3 = ntuple(d -> all_weights[d][4], Val(N))
+        indices = ntuple(d -> idx_and_weights[d][1], Val(N))
+        w0 = ntuple(d -> idx_and_weights[d][2][1], Val(N))
+        w1 = ntuple(d -> idx_and_weights[d][2][2], Val(N))
+        w2 = ntuple(d -> idx_and_weights[d][2][3], Val(N))
+        w3 = ntuple(d -> idx_and_weights[d][2][4], Val(N))
         anchors[q] = _NDAdjointAnchor{Tg, N}(indices, w0, w1, w2, w3)
     end
     return anchors
@@ -221,51 +213,14 @@ function _scatter_nd_codegen(N, idx_syms, w_syms)
 end
 
 """
-    _scatter_nd!(partials_bar, yb, anchor)
-
-@generated tensor-product scatter for EvalValue (3-arg fast path).
-Accumulates `yb * prod(per-axis w0 weights)` into partials_bar at all
-(partial, corner) combinations. Produces straight-line code with no loops.
-"""
-@inline @generated function _scatter_nd!(
-        partials_bar::AbstractArray{Tv, NP1},
-        yb::Tv,
-        anchor::_NDAdjointAnchor{Tg, N}
-    ) where {Tv, Tg, N, NP1}
-    NP1 == N + 1 || error("NP1 must equal N+1, got NP1=$NP1, N=$N")
-
-    stmts = Expr[]
-
-    idx_syms = ntuple(d -> Symbol("idx_", d), N)
-    push!(stmts, :($(Expr(:tuple, idx_syms...)) = anchor.indices))
-
-    w_syms = Matrix{Symbol}(undef, N, 4)
-    for d in 1:N
-        w_syms[d, 1] = Symbol("w_", d, "_fL")
-        w_syms[d, 2] = Symbol("w_", d, "_fR")
-        w_syms[d, 3] = Symbol("w_", d, "_dyL")
-        w_syms[d, 4] = Symbol("w_", d, "_dyR")
-        lhs = Expr(:tuple, w_syms[d, 1], w_syms[d, 2], w_syms[d, 3], w_syms[d, 4])
-        push!(stmts, :($lhs = anchor.w0[$d]))
-    end
-
-    append!(stmts, _scatter_nd_codegen(N, idx_syms, w_syms))
-
-    return quote
-        Base.@_inline_meta
-        @inbounds begin
-            $(stmts...)
-        end
-        return nothing
-    end
-end
-
-"""
     _scatter_nd!(partials_bar, yb, anchor, ops)
 
-@generated tensor-product scatter with per-axis DerivOp dispatch (4-arg version).
+@generated tensor-product scatter with per-axis DerivOp dispatch.
 Selects `anchor.w0[d]`, `w1[d]`, `w2[d]`, or `w3[d]` per axis at compile time
 based on the concrete DerivOp types in `ops`.
+
+When all ops are `EvalValue()`, the generated code reads `anchor.w0[d]` for every
+axis — identical to what a dedicated EvalValue-only method would produce.
 """
 @inline @generated function _scatter_nd!(
         partials_bar::AbstractArray{Tv, NP1},
@@ -284,7 +239,7 @@ based on the concrete DerivOp types in `ops`.
     w_field_names = [:w0, :w1, :w2, :w3]
     w_syms = Matrix{Symbol}(undef, N, 4)
     for d in 1:N
-        k_d = fieldtype(OPS, d).parameters[1]  # DerivOp{k} → k
+        k_d = deriv_order(fieldtype(OPS, d))
         wf = w_field_names[k_d + 1]
         w_syms[d, 1] = Symbol("w_", d, "_fL")
         w_syms[d, 2] = Symbol("w_", d, "_fR")

@@ -900,6 +900,32 @@ end
         @test @inferred(adj(y_bar; deriv = (DerivOp(1), EvalValue()))) isa Matrix{Float64}
     end
 
+    @testset "Type stability — deriv=1 Float32" begin
+        x32 = range(0.0f0, 1.0f0, nx)
+        y32 = range(0.0f0, 1.0f0, ny)
+        xq32 = Float32.(xq)
+        yq32 = Float32.(yq)
+        yb32 = randn(Float32, n_query)
+        adj32 = cubic_adjoint((x32, y32), (xq32, yq32))
+        @test @inferred(adj32(yb32; deriv = DerivOp(1))) isa Matrix{Float32}
+    end
+
+    # ========================================
+    # Dot-product — non-uniform grids + deriv
+    # ========================================
+    @testset "Dot-product — deriv=1 + non-uniform grids" begin
+        x_nu = cumsum(0.5 .+ rand(nx))
+        x_nu .= (x_nu .- x_nu[1]) ./ (x_nu[end] - x_nu[1])
+        y_nu = cumsum(0.5 .+ rand(ny))
+        y_nu .= (y_nu .- y_nu[1]) ./ (y_nu[end] - y_nu[1])
+        f_nu = randn(nx, ny)
+        _, _, ok = dot_product_test_nd(
+            (collect(x_nu), collect(y_nu)), (xq, yq), f_nu, y_bar;
+            deriv = DerivOp(1)
+        )
+        @test ok
+    end
+
     # ========================================
     # Zero-allocation (in-place)
     # ========================================
@@ -1011,5 +1037,45 @@ end
             deriv = (DerivOp(1), EvalValue())
         )
         @test ok
+    end
+
+    # ========================================
+    # Exclusive periodic + deriv
+    # ========================================
+    @testset "Dot-product — ∂f/∂x + PeriodicBC (exclusive)" begin
+        nx_e, ny_e = 14, 11
+        x_e = range(0.0, 2π, nx_e + 1)[1:nx_e]
+        y_e = range(0.0, 2π, ny_e + 1)[1:ny_e]
+        bc_excl = PeriodicBC(; endpoint = :exclusive)
+        f_e = zeros(nx_e, ny_e)
+        for j in 1:ny_e, i in 1:nx_e
+            f_e[i, j] = sin(x_e[i]) + cos(y_e[j])
+        end
+        xq_e = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+        yq_e = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+        yb_e = randn(n_query)
+        _, _, ok = dot_product_test_nd(
+            (x_e, y_e), (xq_e, yq_e), f_e, yb_e;
+            bc = bc_excl, deriv = (DerivOp(1), EvalValue())
+        )
+        @test ok
+    end
+
+    # ========================================
+    # Zero-allocation — periodic + deriv
+    # ========================================
+    function _test_nd_adjoint_alloc_periodic_deriv(grids, queries, f_bar, y_bar, deriv)
+        adj = cubic_adjoint(grids, queries; bc = PeriodicBC())
+        adj(f_bar, y_bar; deriv = deriv)  # warmup
+        adj(f_bar, y_bar; deriv = deriv)  # warmup
+        return @allocated adj(f_bar, y_bar; deriv = deriv)
+    end
+
+    @testset "Zero-alloc: periodic inclusive + deriv=1" begin
+        fb = zeros(nx, ny)
+        allocs = _test_nd_adjoint_alloc_periodic_deriv(
+            (x, y), (xq, yq), fb, y_bar, DerivOp(1)
+        )
+        @test allocs <= ND_ALLOC_THRESHOLD
     end
 end

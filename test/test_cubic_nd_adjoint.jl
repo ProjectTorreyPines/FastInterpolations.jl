@@ -274,6 +274,17 @@ end
         @test @inferred(adj32(yb32)) isa Matrix{Float32}
     end
 
+    @testset "Dot-product — Float32" begin
+        x32 = range(0.0f0, 1.0f0, nx)
+        y32 = range(0.0f0, 2.0f0, ny)
+        xq32 = Float32.(xq)
+        yq32 = Float32.(yq)
+        f32 = randn(Float32, nx, ny)
+        yb32 = randn(Float32, n_query)
+        _, _, ok = dot_product_test_nd((x32, y32), (xq32, yq32), f32, yb32)
+        @test ok
+    end
+
     # ========================================
     # Zero-allocation (in-place)
     # ========================================
@@ -356,6 +367,28 @@ end
         f_nu = randn(nx, ny, nz)
         _, _, ok = dot_product_test_nd(
             (collect(x_nu), collect(y_nu), collect(z_nu)), (xq, yq, zq), f_nu, y_bar
+        )
+        @test ok
+    end
+
+    # ========================================
+    # Non-CubicFit BCs (N=3)
+    # ========================================
+    @testset "Dot-product — N=3 $bc_name" for (bc_name, bc) in [
+            ("ZeroCurvBC", ZeroCurvBC()),
+            ("ZeroSlopeBC", ZeroSlopeBC()),
+            ("QuadraticFit", QuadraticFit()),
+        ]
+        _, _, ok = dot_product_test_nd(
+            (x_uniform, y_uniform, z_uniform), (xq, yq, zq), f, y_bar; bc = bc
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — N=3 mixed BCs (CubicFit × ZeroCurvBC × ZeroSlopeBC)" begin
+        _, _, ok = dot_product_test_nd(
+            (x_uniform, y_uniform, z_uniform), (xq, yq, zq), f, y_bar;
+            bc = (CubicFit(), ZeroCurvBC(), ZeroSlopeBC())
         )
         @test ok
     end
@@ -490,6 +523,17 @@ end
         _, _, ok = dot_product_test_nd(
             (x, y), (xq, yq), f, y_bar; bc = (ZeroSlopeBC(), QuadraticFit())
         )
+        @test ok
+    end
+
+    # Non-zero BC values — adjoint should be independent of the affine constant
+    @testset "BC: Deriv1(0.5)" begin
+        _, _, ok = dot_product_test_nd((x, y), (xq, yq), f, y_bar; bc = Deriv1(0.5))
+        @test ok
+    end
+
+    @testset "BC: Deriv3(1.0)" begin
+        _, _, ok = dot_product_test_nd((x, y), (xq, yq), f, y_bar; bc = Deriv3(1.0))
         @test ok
     end
 end
@@ -845,6 +889,14 @@ end
         _, _, ok = dot_product_test_nd(
             (x, y), (xq, yq), f, y_bar;
             deriv = DerivOp(3)
+        )
+        @test ok
+    end
+
+    @testset "Dot-product — per-axis (DerivOp(3), EvalValue())" begin
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar;
+            deriv = (DerivOp(3), EvalValue())
         )
         @test ok
     end

@@ -868,3 +868,35 @@ function Base.show(io::IO, ::MIME"text/plain", itp::QuadraticInterpolantND{Tg, T
     # Boundary conditions
     return _show_nd_bc_summary(io, true, itp.bcs)
 end
+
+# ========================================
+# CubicAdjointND Show Methods
+# ========================================
+
+function Base.show(io::IO, adj::CubicAdjointND{Tg, N}) where {Tg, N}
+    sizes = join([string(s) for s in adj.grid_size], "×")
+    nq = length(adj.anchors)
+    bc_name = _short_bc_name_nd(adj.bc_pairs)
+    _show_print(io, "CubicAdjointND", :cyan; bold = true)
+    _show_print(io, "{", :light_black)
+    _show_print(io, string(Tg), :light_blue)
+    _show_print(io, ", ", :light_black)
+    _show_print(io, string(N), :light_blue)
+    _show_print(io, "}", :light_black)
+    return print(io, "($nq → $sizes, $bc_name)")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", adj::CubicAdjointND{Tg, N}) where {Tg, N}
+    _show_print(io, "CubicAdjointND", :cyan; bold = true)
+    _show_print(io, "{", :light_black)
+    _show_print(io, string(Tg), :light_blue)
+    _show_print(io, ", ", :light_black)
+    _show_print(io, string(N), :light_blue)
+    _show_print(io, "}", :light_black)
+    println(io)
+    _show_nd_grids_summary(io, false, adj.grids)
+    println(io)
+    _show_row(io, false, "Query: ", "$(length(adj.anchors)) points")
+    println(io)
+    return _show_nd_bc_summary(io, true, adj.bc_pairs)
+end

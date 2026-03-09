@@ -401,6 +401,19 @@ else
                     g_adj = adj(ones(n_query))
                     @test df ≈ g_adj atol = 1.0e-10
                 end
+
+                @testset "SoA batch — deriv=DerivOp(1)" begin
+                    loss_d1(d, g, q) = sum(cubic_interp(g, d, q; deriv = DerivOp(1)))
+                    df = zeros(nx, ny)
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_d1, Enzyme.Active,
+                        Enzyme.Duplicated(copy(data_nd), df),
+                        Enzyme.Const((x, y)), Enzyme.Const((xq, yq))
+                    )
+                    adj = cubic_adjoint((x, y), (xq, yq))
+                    g_adj = adj(ones(n_query); deriv = DerivOp(1))
+                    @test df ≈ g_adj atol = 1.0e-10
+                end
             end
 
         end  # testset "Enzyme AD Support"

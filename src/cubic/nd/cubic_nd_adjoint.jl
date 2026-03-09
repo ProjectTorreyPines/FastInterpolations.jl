@@ -60,7 +60,7 @@ function _moments_to_deriv_adjoint_1d!(
         h1 = _get_h(spacing, 1)
         inv_h1 = _get_inv_h(spacing, 1)
         h_over_6 = h1 * inv_6
-        h_over_3 = h_over_6 * Tg(2)
+        h_over_3 = h_over_6 * 2
         db = dy_bar[1]
         f_contrib[1] -= db * inv_h1
         f_contrib[2] += db * inv_h1
@@ -73,7 +73,7 @@ function _moments_to_deriv_adjoint_1d!(
         h = _get_h(spacing, i)
         inv_h = _get_inv_h(spacing, i)
         h_over_6 = h * inv_6
-        h_over_3 = h_over_6 * Tg(2)
+        h_over_3 = h_over_6 * 2
         db = dy_bar[i + 1]
         f_contrib[i] -= db * inv_h
         f_contrib[i + 1] += db * inv_h
@@ -104,23 +104,23 @@ the adjoint `adj(ȳ)` hot path does zero weight computation.
     w0 = (_hermite_h00(t), _hermite_h01(t), _hermite_h10(t) * h, _hermite_h11(t) * h)
 
     # k=1: EvalDeriv1 — dP/dx = (dP/dt) · inv_h
-    dh00 = muladd(Tg(6), t_sq, Tg(-6) * t)                     # 6t² - 6t
-    dh10 = muladd(Tg(3), t_sq, muladd(Tg(-4), t, one(Tg)))     # 3t² - 4t + 1
-    dh01 = muladd(Tg(-6), t_sq, Tg(6) * t)                     # -6t² + 6t
-    dh11 = muladd(Tg(3), t_sq, Tg(-2) * t)                     # 3t² - 2t
+    dh00 = muladd(6, t_sq, -6 * t)                     # 6t² - 6t
+    dh10 = muladd(3, t_sq, muladd(-4, t, one(Tg)))     # 3t² - 4t + 1
+    dh01 = muladd(-6, t_sq, 6 * t)                     # -6t² + 6t
+    dh11 = muladd(3, t_sq, -2 * t)                     # 3t² - 2t
     w1 = (dh00 * inv_h, dh01 * inv_h, dh10, dh11)
 
     # k=2: EvalDeriv2 — d²P/dx² = (d²P/dt²) · inv_h²
     inv_h2 = inv_h * inv_h
-    d2h00 = muladd(Tg(12), t, Tg(-6))    # 12t - 6
-    d2h10 = muladd(Tg(6), t, Tg(-4))     # 6t - 4
-    d2h01 = muladd(Tg(-12), t, Tg(6))    # -12t + 6
-    d2h11 = muladd(Tg(6), t, Tg(-2))     # 6t - 2
+    d2h00 = muladd(12, t, -6)    # 12t - 6
+    d2h10 = muladd(6, t, -4)     # 6t - 4
+    d2h01 = muladd(-12, t, 6)    # -12t + 6
+    d2h11 = muladd(6, t, -2)     # 6t - 2
     w2 = (d2h00 * inv_h2, d2h01 * inv_h2, d2h10 * inv_h, d2h11 * inv_h)
 
     # k=3: EvalDeriv3 — d³P/dx³ = constants · inv_h³
     inv_h3 = inv_h2 * inv_h
-    w3 = (Tg(12) * inv_h3, Tg(-12) * inv_h3, Tg(6) * inv_h2, Tg(6) * inv_h2)
+    w3 = (12 * inv_h3, -12 * inv_h3, 6 * inv_h2, 6 * inv_h2)
 
     return w0, w1, w2, w3
 end

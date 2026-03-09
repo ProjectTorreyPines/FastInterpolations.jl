@@ -206,14 +206,13 @@ function ChainRulesCore.rrule(
         x::AbstractVector{Tg},
         f::AbstractVector{Tv},
         xq::AbstractVector{Tg};
-        bc::FastInterpolations.AbstractBC = CubicFit(),
-        extrap::FastInterpolations.AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::FastInterpolations.AbstractSearchPolicy = AutoSearch()
+        kwargs...
     ) where {Tg <: AbstractFloat, Tv}
-    y = cubic_interp(x, f, xq; bc, extrap, autocache, deriv, search)
+    y = cubic_interp(x, f, xq; kwargs...)
 
+    bc = get(kwargs, :bc, CubicFit())
+    extrap = get(kwargs, :extrap, NoExtrap())
+    deriv = get(kwargs, :deriv, EvalValue())
     adj = cubic_adjoint(x, xq; bc, extrap)
 
     function cubic_interp_vec_pullback(Δy)
@@ -239,15 +238,13 @@ function ChainRulesCore.rrule(
         x::AbstractVector{Tg},
         f::AbstractVector{Tv},
         xq::Real;
-        bc::FastInterpolations.AbstractBC = CubicFit(),
-        extrap::FastInterpolations.AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::FastInterpolations.AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        kwargs...
     ) where {Tg <: AbstractFloat, Tv}
-    y = cubic_interp(x, f, xq; bc, extrap, autocache, deriv, search)
+    y = cubic_interp(x, f, xq; kwargs...)
 
+    bc = get(kwargs, :bc, CubicFit())
+    extrap = get(kwargs, :extrap, NoExtrap())
+    deriv = get(kwargs, :deriv, EvalValue())
     adj = cubic_adjoint(x, Tg[xq]; bc, extrap)
 
     function cubic_interp_scalar_pullback(Δy)
@@ -281,15 +278,12 @@ function ChainRulesCore.rrule(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        bc::Union{FastInterpolations.AbstractBC, NTuple{N, FastInterpolations.AbstractBC}} = CubicFit(),
-        extrap::Union{FastInterpolations.AbstractExtrap, NTuple{N, FastInterpolations.AbstractExtrap}} = NoExtrap(),
-        search::Union{FastInterpolations.AbstractSearchPolicy, NTuple{N, FastInterpolations.AbstractSearchPolicy}} = AutoSearch(),
-        coeffs::AbstractCoeffStrategy = PreCompute(),
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        kwargs...
     ) where {Tv, N}
-    y = cubic_interp(grids, data, queries; deriv, bc, extrap, search, coeffs, hint)
+    y = cubic_interp(grids, data, queries; kwargs...)
 
+    bc = get(kwargs, :bc, CubicFit())
+    deriv = get(kwargs, :deriv, EvalValue())
     adj = cubic_adjoint(grids, queries; bc)
 
     function cubic_interp_nd_soa_pullback(Δy)
@@ -312,14 +306,12 @@ function ChainRulesCore.rrule(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
         query::Tuple{Vararg{Real, N}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        bc::Union{FastInterpolations.AbstractBC, NTuple{N, FastInterpolations.AbstractBC}} = CubicFit(),
-        extrap::Union{FastInterpolations.AbstractExtrap, NTuple{N, FastInterpolations.AbstractExtrap}} = NoExtrap(),
-        search::Union{FastInterpolations.AbstractSearchPolicy, NTuple{N, FastInterpolations.AbstractSearchPolicy}} = AutoSearch(),
-        coeffs::AbstractCoeffStrategy = PreCompute(),
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        kwargs...
     ) where {Tv, N}
-    y = cubic_interp(grids, data, query; deriv, bc, extrap, search, coeffs, hint)
+    y = cubic_interp(grids, data, query; kwargs...)
+
+    bc = get(kwargs, :bc, CubicFit())
+    deriv = get(kwargs, :deriv, EvalValue())
 
     # Wrap scalar query into 1-element vectors for CubicAdjointND
     Tg = FastInterpolations._promote_grid_eltype(grids)
@@ -358,12 +350,9 @@ function ChainRulesCore.rrule(
         ::typeof(cubic_interp),
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N};
-        bc::Union{FastInterpolations.AbstractBC, NTuple{N, FastInterpolations.AbstractBC}} = CubicFit(),
-        extrap::Union{FastInterpolations.AbstractExtrap, NTuple{N, FastInterpolations.AbstractExtrap}} = NoExtrap(),
-        search::Union{FastInterpolations.AbstractSearchPolicy, NTuple{N, FastInterpolations.AbstractSearchPolicy}} = AutoSearch(),
-        coeffs::AbstractCoeffStrategy = PreCompute()
+        kwargs...
     ) where {Tv, N}
-    itp = cubic_interp(grids, data; bc, extrap, search, coeffs)
+    itp = cubic_interp(grids, data; kwargs...)
 
     function cubic_interp_nd_ctor_pullback(Δitp)
         Δitp isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent()
@@ -436,9 +425,9 @@ function ChainRulesCore.rrule(
         ::typeof(FastInterpolations.gradient),
         itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        kwargs...
     ) where {Tg, Tv, N}
-    grad = FastInterpolations.gradient(itp, query; hint)
+    grad = FastInterpolations.gradient(itp, query; kwargs...)
 
     # Build adjoint once for ∂/∂data
     queries_vec = ntuple(d -> Tg[query[d]], Val(N))
@@ -485,9 +474,9 @@ function ChainRulesCore.rrule(
         ::typeof(FastInterpolations.hessian),
         itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        kwargs...
     ) where {Tg, Tv, N}
-    H = FastInterpolations.hessian(itp, query; hint)
+    H = FastInterpolations.hessian(itp, query; kwargs...)
 
     queries_vec = ntuple(d -> Tg[query[d]], Val(N))
     adj = cubic_adjoint(itp.grids, queries_vec; bc = itp.bcs)
@@ -538,9 +527,9 @@ function ChainRulesCore.rrule(
         ::typeof(FastInterpolations.laplacian),
         itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
         query::Tuple{Vararg{Real, N}};
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+        kwargs...
     ) where {Tg, Tv, N}
-    lap = FastInterpolations.laplacian(itp, query; hint)
+    lap = FastInterpolations.laplacian(itp, query; kwargs...)
 
     queries_vec = ntuple(d -> Tg[query[d]], Val(N))
     adj = cubic_adjoint(itp.grids, queries_vec; bc = itp.bcs)

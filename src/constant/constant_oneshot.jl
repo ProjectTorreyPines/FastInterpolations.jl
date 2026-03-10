@@ -34,7 +34,7 @@ Type parameters:
         extrap::_ClampOrFill, ::AbstractSide, op::AbstractEvalOp
     ) where {Tg <: AbstractFloat, Tv}
     y_bnd = xi < x_min ? @inbounds(y[1]) : @inbounds(y[end])
-    return _constant_extrap_result(op, y_bnd, extrap)
+    return _constant_extrap_result(op, y_bnd, extrap, xi)
 end
 
 # ExtendExtrap delegates to ClampExtrap (slope=0 for constant function)

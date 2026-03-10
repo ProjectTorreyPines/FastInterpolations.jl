@@ -627,7 +627,7 @@ end
     ) where {Tg <: AbstractFloat, Tv, Taq <: Real, Tq <: Real}
     if aq.side != 0x00  # outside domain
         y_bnd = @inbounds y[_boundary_point_index(aq.side, n_pts)]
-        return _constant_extrap_result(op, y_bnd, extrap)
+        return _constant_extrap_result(op, y_bnd, extrap, aq.xq)
     else
         return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)
     end
@@ -646,7 +646,7 @@ end
         op::Union{EvalDeriv1, EvalDeriv2}
     ) where {Tg <: AbstractFloat, Tv, Taq <: Real, Tq <: Real}
     if aq.side != 0x00  # outside domain
-        return _constant_extrap_result(op, first(y), extrap)
+        return _constant_extrap_result(op, first(y), extrap, aq.xq)
     else
         return _quadratic_kernel(op, a[aq.idx], d[aq.idx], y[aq.idx], dL)
     end

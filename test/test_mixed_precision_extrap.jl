@@ -6,7 +6,11 @@
 #
 # Bug: OOB path returned Float32 fill_value/y_bnd while in-domain kernel
 # promoted to Float64 via arithmetic → Union{Float32, Float64} return type.
-# Fix: _constant_extrap_result now promotes via zero(xq)*zero(val) idiom.
+# Fix: _constant_extrap_result now promotes via _promote_extrap_val idiom.
+#
+# Note: Constant interpolation is intentionally excluded — it converts query
+# to grid type (Tg) before evaluation, so both in-domain and OOB return Tv
+# without promotion. No type instability exists for constant interp.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 using Test
@@ -22,8 +26,8 @@ using FastInterpolations
     xq_lo = -1.0      # below domain
     xq_hi = 6.0       # above domain
 
-    # ── Cubic ────────────────────────────────────────────────────────────
-    @testset "Cubic" begin
+    # ── Cubic (oneshot) ──────────────────────────────────────────────────
+    @testset "Cubic oneshot" begin
         @testset "FillExtrap" begin
             itp = cubic_interp(x32, y32; extrap = FillExtrap(NaN32))
             # All paths should return Float64 when queried with Float64
@@ -67,8 +71,27 @@ using FastInterpolations
         end
     end
 
-    # ── Linear ───────────────────────────────────────────────────────────
-    @testset "Linear" begin
+    # ── Cubic (anchored / CubicInterpolant) ──────────────────────────────
+    @testset "Cubic anchored" begin
+        itp = cubic_interp(x32, y32; extrap = FillExtrap(NaN32))
+        aq_in = FastInterpolations._anchor_query(x32, xq_in, Val(:cubic))
+        aq_lo = FastInterpolations._anchor_query(x32, xq_lo, Val(:cubic))
+        aq_hi = FastInterpolations._anchor_query(x32, xq_hi, Val(:cubic))
+        @test @inferred(itp(aq_in)) isa Float64
+        @test @inferred(itp(aq_lo)) isa Float64
+        @test @inferred(itp(aq_hi)) isa Float64
+        @test isnan(itp(aq_lo))
+        @test isnan(itp(aq_hi))
+
+        # ClampExtrap anchored path
+        itp_c = cubic_interp(x32, y32; extrap = ClampExtrap())
+        aq_lo_c = FastInterpolations._anchor_query(x32, xq_lo, Val(:cubic))
+        @test @inferred(itp_c(aq_lo_c)) isa Float64
+        @test itp_c(aq_lo_c) ≈ Float64(y32[1])
+    end
+
+    # ── Linear (oneshot) ─────────────────────────────────────────────────
+    @testset "Linear oneshot" begin
         @testset "FillExtrap" begin
             itp = linear_interp(x32, y32; extrap = FillExtrap(NaN32))
             @test @inferred(itp(xq_in)) isa Float64
@@ -85,8 +108,18 @@ using FastInterpolations
         end
     end
 
-    # ── Quadratic ────────────────────────────────────────────────────────
-    @testset "Quadratic" begin
+    # ── Linear (anchored / LinearInterpolant) ────────────────────────────
+    @testset "Linear anchored" begin
+        itp = LinearInterpolant(x32, y32; extrap = FillExtrap(NaN32))
+        aq_lo = FastInterpolations._anchor_query(x32, xq_lo, Val(:linear))
+        aq_hi = FastInterpolations._anchor_query(x32, xq_hi, Val(:linear))
+        @test @inferred(itp(aq_lo)) isa Float64
+        @test @inferred(itp(aq_hi)) isa Float64
+        @test isnan(itp(aq_lo))
+    end
+
+    # ── Quadratic (oneshot) ──────────────────────────────────────────────
+    @testset "Quadratic oneshot" begin
         @testset "FillExtrap" begin
             itp = quadratic_interp(x32, y32; extrap = FillExtrap(NaN32))
             @test @inferred(itp(xq_in)) isa Float64
@@ -100,6 +133,48 @@ using FastInterpolations
             @test @inferred(itp(xq_in)) isa Float64
             @test @inferred(itp(xq_lo)) isa Float64
             @test @inferred(itp(xq_hi)) isa Float64
+        end
+    end
+
+    # ── Quadratic (anchored / QuadraticInterpolant) ──────────────────────
+    @testset "Quadratic anchored" begin
+        itp = quadratic_interp(x32, y32; extrap = FillExtrap(NaN32))
+        aq_lo = FastInterpolations._anchor_query(x32, xq_lo, Val(:quadratic))
+        aq_hi = FastInterpolations._anchor_query(x32, xq_hi, Val(:quadratic))
+        @test @inferred(itp(aq_lo)) isa Float64
+        @test @inferred(itp(aq_hi)) isa Float64
+        @test isnan(itp(aq_lo))
+    end
+
+    # ── Reverse precision: Float64 data + Float32 query ──────────────────
+    @testset "Reverse precision (Float64 data, Float32 query)" begin
+        x64 = collect(range(0.0, 5.0, length = 11))
+        y64 = sin.(x64)
+        xq_lo32 = -1.0f0
+        xq_hi32 = 6.0f0
+        xq_in32 = 2.5f0
+
+        @testset "Cubic" begin
+            itp = cubic_interp(x64, y64; extrap = FillExtrap(NaN))
+            # Float64 data + Float32 query → kernel promotes to Float64
+            @test @inferred(itp(xq_in32)) isa Float64
+            @test @inferred(itp(xq_lo32)) isa Float64
+            @test @inferred(itp(xq_hi32)) isa Float64
+            @test isnan(itp(xq_lo32))
+        end
+
+        @testset "Linear" begin
+            itp = linear_interp(x64, y64; extrap = ClampExtrap())
+            @test @inferred(itp(xq_in32)) isa Float64
+            @test @inferred(itp(xq_lo32)) isa Float64
+            @test @inferred(itp(xq_hi32)) isa Float64
+        end
+
+        @testset "Quadratic" begin
+            itp = quadratic_interp(x64, y64; extrap = FillExtrap(NaN))
+            @test @inferred(itp(xq_in32)) isa Float64
+            @test @inferred(itp(xq_lo32)) isa Float64
+            @test @inferred(itp(xq_hi32)) isa Float64
         end
     end
 

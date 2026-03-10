@@ -110,13 +110,17 @@ end
 # For Number types: zero(xq)*zero(val) promotes to promote_type(typeof(val), typeof(xq)).
 # For duck types (non-Number): fallback returns raw val/0*val, since the kernel also
 # returns the same Tv when data and query share the same arithmetic type.
-@inline _promote_extrap(val::Number, xq::Number) = val + zero(xq) * zero(val)
-@inline _promote_extrap(val, xq) = val
+# Named _promote_extrap_val (not _promote_extrap) to avoid collision with the struct
+# promoter in eval_ops.jl which promotes FillExtrap fill_value at construction time.
+# _promote_extrap_val:  promotes an extrap result value to match kernel return type.
+# _promote_extrap_zero: promotes a zero result (derivative of constant) to match kernel type.
+@inline _promote_extrap_val(val::Number, xq::Number) = val + zero(xq) * zero(val)
+@inline _promote_extrap_val(val, xq) = val
 @inline _promote_extrap_zero(val::Number, xq::Number) = zero(xq) * zero(val)
 @inline _promote_extrap_zero(val, xq) = 0 * val
 
-@inline _constant_extrap_result(::EvalValue, y_bnd, ::ClampExtrap, xq) = _promote_extrap(y_bnd, xq)
-@inline _constant_extrap_result(::EvalValue, _, e::FillExtrap, xq) = _promote_extrap(e.fill_value, xq)
+@inline _constant_extrap_result(::EvalValue, y_bnd, ::ClampExtrap, xq) = _promote_extrap_val(y_bnd, xq)
+@inline _constant_extrap_result(::EvalValue, _, e::FillExtrap, xq) = _promote_extrap_val(e.fill_value, xq)
 @inline _constant_extrap_result(::EvalDeriv1, y_bnd, ::_ClampOrFill, xq) = _promote_extrap_zero(y_bnd, xq)
 @inline _constant_extrap_result(::EvalDeriv2, y_bnd, ::_ClampOrFill, xq) = _promote_extrap_zero(y_bnd, xq)
 @inline _constant_extrap_result(::EvalDeriv3, y_bnd, ::_ClampOrFill, xq) = _promote_extrap_zero(y_bnd, xq)

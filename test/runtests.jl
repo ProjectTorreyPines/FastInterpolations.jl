@@ -57,6 +57,7 @@ else
     include("test_bc_structure.jl")
     include("test_bc_complex_int.jl")
     include("test_type_stability.jl")
+    include("test_mixed_precision_extrap.jl")
     include("test_derivatives.jl")
     include("test_packages_comparison.jl")
     include("test_thread_safety.jl")

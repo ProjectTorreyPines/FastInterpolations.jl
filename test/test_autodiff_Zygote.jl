@@ -493,7 +493,7 @@ end
             @test result.grad[1] !== nothing
 
             adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
-            @test result.grad[1] ≈ adj([1.0]) atol = 1e-10
+            @test result.grad[1] ≈ adj([1.0]) atol = 1.0e-10
         end
 
         @testset "f1: ∂/∂data of ‖∇f(x0)‖² — gradient-of-gradient" begin
@@ -514,8 +514,8 @@ end
             fy = cubic_interp((x, y), data, x0; deriv = (EvalValue(), DerivOp(1)))
             adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
             g_expected = adj([2fx]; deriv = (DerivOp(1), EvalValue())) .+
-                         adj([2fy]; deriv = (EvalValue(), DerivOp(1)))
-            @test result.grad[1] ≈ g_expected atol = 1e-10
+                adj([2fy]; deriv = (EvalValue(), DerivOp(1)))
+            @test result.grad[1] ≈ g_expected atol = 1.0e-10
         end
 
         @testset "f2: ∂/∂data of ‖H(f)(x0)‖²_F — gradient-of-hessian" begin
@@ -537,9 +537,9 @@ end
             fyy = cubic_interp((x, y), data, x0; deriv = (EvalValue(), DerivOp(2)))
             adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
             g_expected = adj([2fxx]; deriv = (DerivOp(2), EvalValue())) .+
-                         adj([4fxy]; deriv = (DerivOp(1), DerivOp(1))) .+
-                         adj([2fyy]; deriv = (EvalValue(), DerivOp(2)))
-            @test result.grad[1] ≈ g_expected atol = 1e-10
+                adj([4fxy]; deriv = (DerivOp(1), DerivOp(1))) .+
+                adj([2fyy]; deriv = (EvalValue(), DerivOp(2)))
+            @test result.grad[1] ≈ g_expected atol = 1.0e-10
         end
 
         @testset "batch: withgradient L2 loss over query grid" begin
@@ -556,7 +556,7 @@ end
 
             residual = cubic_interp((x, y), data, (xq, yq)) .- target
             adj = cubic_adjoint((x, y), (xq, yq))
-            @test result.grad[1] ≈ adj(2.0 .* residual) atol = 1e-10
+            @test result.grad[1] ≈ adj(2.0 .* residual) atol = 1.0e-10
         end
     end
 
@@ -753,7 +753,7 @@ end
             # Cross-validate: same as one-shot adjoint with Δy=1
             adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
             expected = adj([1.0])
-            @test result.grad[1] ≈ expected atol = 1e-10
+            @test result.grad[1] ≈ expected atol = 1.0e-10
         end
 
         # ── eval: ∂/∂data of L2 loss ──
@@ -770,7 +770,7 @@ end
             y_val = cubic_interp((x, y), data, x0)
             adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
             expected = adj([2.0 * (y_val - target_val)])
-            @test result.grad[1] ≈ expected atol = 1e-10
+            @test result.grad[1] ≈ expected atol = 1.0e-10
         end
 
         # ── gradient: ∂/∂data of ‖∇f(x0)‖² ──
@@ -788,8 +788,8 @@ end
             fy = cubic_interp((x, y), data, x0; deriv = (EvalValue(), DerivOp(1)))
             adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
             expected = adj([2fx]; deriv = (DerivOp(1), EvalValue())) .+
-                       adj([2fy]; deriv = (EvalValue(), DerivOp(1)))
-            @test result.grad[1] ≈ expected atol = 1e-10
+                adj([2fy]; deriv = (EvalValue(), DerivOp(1)))
+            @test result.grad[1] ≈ expected atol = 1.0e-10
         end
 
         # ── gradient: ∂/∂data of single partial ──
@@ -803,7 +803,7 @@ end
 
             adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
             expected = adj([1.0]; deriv = (DerivOp(1), EvalValue()))
-            @test result.grad[1] ≈ expected atol = 1e-10
+            @test result.grad[1] ≈ expected atol = 1.0e-10
         end
 
         # ── hessian: ∂/∂data of ‖H(f)(x0)‖²_F ──
@@ -826,7 +826,7 @@ end
             expected .+= adj([2H[2, 2]]; deriv = (EvalValue(), DerivOp(2)))
             # Off-diagonal (symmetry: H[1,2]=H[2,1], cotangent = 2H[1,2] + 2H[2,1] = 4H[1,2])
             expected .+= adj([4H[1, 2]]; deriv = (DerivOp(1), DerivOp(1)))
-            @test result.grad[1] ≈ expected atol = 1e-9
+            @test result.grad[1] ≈ expected atol = 1.0e-9
         end
 
         # ── hessian: ∂/∂data of single element ──
@@ -840,7 +840,7 @@ end
 
             adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
             expected = adj([1.0]; deriv = (DerivOp(2), EvalValue()))
-            @test result.grad[1] ≈ expected atol = 1e-10
+            @test result.grad[1] ≈ expected atol = 1.0e-10
         end
 
         # ── laplacian: ∂/∂data of ∇²f(x0) ──
@@ -855,8 +855,8 @@ end
             # ∇²f = ∂²f/∂x² + ∂²f/∂y², so ∂/∂data = adj(1; d²/dx²) + adj(1; d²/dy²)
             adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
             expected = adj([1.0]; deriv = (DerivOp(2), EvalValue())) .+
-                       adj([1.0]; deriv = (EvalValue(), DerivOp(2)))
-            @test result.grad[1] ≈ expected atol = 1e-10
+                adj([1.0]; deriv = (EvalValue(), DerivOp(2)))
+            @test result.grad[1] ≈ expected atol = 1.0e-10
         end
 
         # ── laplacian: ∂/∂data of L2 loss on ∇²f ──
@@ -872,8 +872,8 @@ end
             lap_val = FastInterpolations.laplacian(cubic_interp((x, y), data), x0)
             adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
             expected = adj([2lap_val]; deriv = (DerivOp(2), EvalValue())) .+
-                       adj([2lap_val]; deriv = (EvalValue(), DerivOp(2)))
-            @test result.grad[1] ≈ expected atol = 1e-9
+                adj([2lap_val]; deriv = (EvalValue(), DerivOp(2)))
+            @test result.grad[1] ≈ expected atol = 1.0e-9
         end
 
         # ── 3D test ──
@@ -891,7 +891,7 @@ end
 
             adj = cubic_adjoint((x, y, z), ([x0_3d[1]], [x0_3d[2]], [x0_3d[3]]))
             expected = adj([1.0])
-            @test result.grad[1] ≈ expected atol = 1e-10
+            @test result.grad[1] ≈ expected atol = 1.0e-10
         end
 
         # ── eval: also returns ∂/∂query ──
@@ -900,7 +900,7 @@ end
             q = (0.7, 0.9)
             grad = Zygote.gradient(x -> itp(x), q)[1]
             fd_grad = ForwardDiff.gradient(itp, [q...])
-            @test collect(grad) ≈ fd_grad atol = 1e-8
+            @test collect(grad) ≈ fd_grad atol = 1.0e-8
         end
     end
 

@@ -502,7 +502,7 @@ end
 
 # Output size: for exclusive periodic axes, output is grid_size[d]-1 (fold + truncate)
 @inline function _adjoint_output_size(grid_size::NTuple{N, Int}, bc_pairs) where {N}
-    ntuple(Val(N)) do d
+    return ntuple(Val(N)) do d
         bc_pairs[d] isa PeriodicBC{:exclusive} ? grid_size[d] - 1 : grid_size[d]
     end
 end
@@ -769,8 +769,10 @@ function _build_nd_adjoint(
         Tg, N,
         typeof(grids_ext), typeof(spacings), typeof(caches), typeof(mixed_caches),
         typeof(bc_pairs), typeof(mixed_bc_pairs),
-    }(grids_ext, spacings, caches, mixed_caches, bc_pairs, mixed_bc_pairs,
-      anchors, grid_size)
+    }(
+        grids_ext, spacings, caches, mixed_caches, bc_pairs, mixed_bc_pairs,
+        anchors, grid_size
+    )
 end
 
 # ========================================

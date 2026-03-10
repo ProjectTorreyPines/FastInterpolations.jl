@@ -195,7 +195,7 @@ end
             W[:, k] = output
         end
 
-        @test W' ≈ WT rtol = 1e-12
+        @test W' ≈ WT rtol = 1.0e-12
     end
 
     # ========================================
@@ -241,19 +241,25 @@ end
     # ========================================
     @testset "Type stability — constructor" begin
         @test @inferred(cubic_adjoint((x_uniform, y_uniform), (xq, yq))) isa CubicAdjointND
-        @test @inferred(cubic_adjoint(
-            (x_uniform, y_uniform), (xq, yq); bc = CubicFit()
-        )) isa CubicAdjointND
+        @test @inferred(
+            cubic_adjoint(
+                (x_uniform, y_uniform), (xq, yq); bc = CubicFit()
+            )
+        ) isa CubicAdjointND
 
         # Non-uniform grids
-        @test @inferred(cubic_adjoint(
-            (collect(x_nonuniform), collect(y_nonuniform)), (xq, yq)
-        )) isa CubicAdjointND
+        @test @inferred(
+            cubic_adjoint(
+                (collect(x_nonuniform), collect(y_nonuniform)), (xq, yq)
+            )
+        ) isa CubicAdjointND
 
         # Mixed grids (Range × Vector)
-        @test @inferred(cubic_adjoint(
-            (x_uniform, collect(y_nonuniform)), (xq, yq)
-        )) isa CubicAdjointND
+        @test @inferred(
+            cubic_adjoint(
+                (x_uniform, collect(y_nonuniform)), (xq, yq)
+            )
+        ) isa CubicAdjointND
     end
 
     # ========================================
@@ -440,7 +446,7 @@ end
             W[:, k] = output
         end
 
-        @test W' ≈ WT rtol = 1e-12
+        @test W' ≈ WT rtol = 1.0e-12
     end
 
     # ========================================
@@ -458,9 +464,11 @@ end
     # Type stability
     # ========================================
     @testset "Type stability — constructor" begin
-        @test @inferred(cubic_adjoint(
-            (x_uniform, y_uniform, z_uniform), (xq, yq, zq)
-        )) isa CubicAdjointND
+        @test @inferred(
+            cubic_adjoint(
+                (x_uniform, y_uniform, z_uniform), (xq, yq, zq)
+            )
+        ) isa CubicAdjointND
     end
 
     @testset "Type stability — apply" begin
@@ -765,7 +773,7 @@ end
             W[:, k] = output
         end
 
-        @test W' ≈ WT rtol = 1e-12
+        @test W' ≈ WT rtol = 1.0e-12
     end
 
     # ========================================
@@ -777,9 +785,11 @@ end
         xq = sort(rand(15)) .* 0.96 .+ 0.02
         yq = sort(rand(15)) .* 0.96 .+ 0.02
 
-        @test @inferred(cubic_adjoint(
-            (x, y), (xq, yq); bc = PeriodicBC()
-        )) isa CubicAdjointND
+        @test @inferred(
+            cubic_adjoint(
+                (x, y), (xq, yq); bc = PeriodicBC()
+            )
+        ) isa CubicAdjointND
     end
 
     @testset "Type stability — apply (periodic)" begin
@@ -978,7 +988,7 @@ end
             W[:, k] = output
         end
 
-        @test W' ≈ WT rtol = 1e-12
+        @test W' ≈ WT rtol = 1.0e-12
     end
 
     # ========================================

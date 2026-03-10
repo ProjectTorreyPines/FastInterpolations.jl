@@ -42,9 +42,9 @@ using Random
 # =============================================================================
 
 const SIZE_PRESETS = Dict(
-    :small   => (20, 10),       # 20×20 grid, 10×10 = 100 queries
+    :small => (20, 10),       # 20×20 grid, 10×10 = 100 queries
     :default => (100, 50),      # 100×100 grid, 50×50 = 2500 queries
-    :large   => (200, 100),     # 200×200 grid, 100×100 = 10000 queries
+    :large => (200, 100),     # 200×200 grid, 100×100 = 10000 queries
 )
 
 # ForwardDiff full @benchmark only below this grid element count
@@ -122,7 +122,7 @@ const data = [sin(x) * cos(y) for x in xg, y in yg] .+ 0.05 .* randn(NG, NG)
 
 # Scattered query points inside domain (2% margin from boundaries)
 const margin = 2π * 0.02
-const span   = 2π * 0.96
+const span = 2π * 0.96
 const xq = sort(rand(NQ)) .* span .+ margin
 const yq = sort(rand(NQ)) .* span .+ margin
 const queries = (xq, yq)
@@ -169,11 +169,11 @@ end
 # =============================================================================
 
 function verify_correctness()
-    println("=" ^ 70)
+    println("="^70)
     println("  CORRECTNESS")
     println("  loss(data) = sum(|cubic_interp(grids, data, queries) - y_obs|²)")
     println("  Grid: $(NG)×$(NG) = $N_DATA pts, Queries: $NQ pts")
-    println("=" ^ 70)
+    println("="^70)
 
     # --- Compute reference (ForwardDiff) ---
     # For large grids, use a reduced 20×20 problem for ForwardDiff reference
@@ -182,11 +182,11 @@ function verify_correctness()
         println()
         println("  ForwardDiff: SKIPPED (--no-fd), checking mutual consistency only:")
         g_nat_full = native_alloc_grad(data)
-        g_zy_full  = Zygote.gradient(loss, data)[1]
+        g_zy_full = Zygote.gradient(loss, data)[1]
         g_enz_full = Enzyme.gradient(set_runtime_activity(Reverse), loss, data)[1]
 
         @printf("  %-22s  %12s  %12s  %s\n", "Backend vs Native", "max|err|", "rel err", "isapprox?")
-        println("  " * "-" ^ 58)
+        println("  " * "-"^58)
         all_ok = true
         for (name, g) in [("Zygote", g_zy_full), ("Enzyme", g_enz_full)]
             abs_err = maximum(abs, g .- g_nat_full)
@@ -200,12 +200,12 @@ function verify_correctness()
         _rng = Random.MersenneTwister(99)
         _xg = collect(range(0.0, 2π, 20))
         _yg = collect(range(0.0, 2π, 20))
-        _g  = (_xg, _yg)
-        _d  = [sin(x) * cos(y) for x in _xg, y in _yg] .+ 0.05 .* randn(_rng, 20, 20)
+        _g = (_xg, _yg)
+        _d = [sin(x) * cos(y) for x in _xg, y in _yg] .+ 0.05 .* randn(_rng, 20, 20)
         _nq = min(NQ, 100)
         _xq = sort(rand(_rng, _nq)) .* span .+ margin
         _yq = sort(rand(_rng, _nq)) .* span .+ margin
-        _q  = (_xq, _yq)
+        _q = (_xq, _yq)
         _yo = sin.(_xq) .* cos.(_yq) .+ 0.05 .* randn(_rng, _nq)
         _loss(dd) = sum(abs2, cubic_interp(_g, dd, _q) .- _yo)
 
@@ -230,7 +230,7 @@ function verify_correctness()
         println()
         @printf("  Reference: ForwardDiff (20×20 reduced grid)\n")
         @printf("  %-22s  %12s  %12s  %s\n", "Backend", "max|err|", "rel err", "isapprox?")
-        println("  " * "-" ^ 58)
+        println("  " * "-"^58)
 
         all_ok = true
         for (name, g) in [
@@ -242,15 +242,17 @@ function verify_correctness()
             rel_err = norm(g .- g_ref_small) / max(norm(g_ref_small), eps())
             ok = isapprox(g, g_ref_small; rtol = sqrt(eps()))
             all_ok &= ok
-            @printf("  %-22s  %12.2e  %12.2e  %s\n",
-                    name, abs_err, rel_err, ok ? "YES" : "NO")
+            @printf(
+                "  %-22s  %12.2e  %12.2e  %s\n",
+                name, abs_err, rel_err, ok ? "YES" : "NO"
+            )
         end
 
         # Also verify mutual consistency on the full grid
         println()
         println("  Mutual consistency on full $(NG)×$(NG) grid:")
         g_nat_full = native_alloc_grad(data)
-        g_zy_full  = Zygote.gradient(loss, data)[1]
+        g_zy_full = Zygote.gradient(loss, data)[1]
         g_enz_full = zeros(NG, NG)
         Enzyme.autodiff(
             Enzyme.Reverse, loss_enz, Active,
@@ -258,14 +260,16 @@ function verify_correctness()
         )
 
         @printf("  %-22s  %12s  %12s  %s\n", "Backend", "max|err|", "rel err", "isapprox?")
-        println("  " * "-" ^ 58)
+        println("  " * "-"^58)
         for (name, g) in [("Zygote", g_zy_full), ("Enzyme", g_enz_full)]
             abs_err = maximum(abs, g .- g_nat_full)
             rel_err = norm(g .- g_nat_full) / max(norm(g_nat_full), eps())
             ok = isapprox(g, g_nat_full; rtol = sqrt(eps()))
             all_ok &= ok
-            @printf("  %-22s  %12.2e  %12.2e  %s\n",
-                    name, abs_err, rel_err, ok ? "YES" : "NO")
+            @printf(
+                "  %-22s  %12.2e  %12.2e  %s\n",
+                name, abs_err, rel_err, ok ? "YES" : "NO"
+            )
         end
     else
         # Small grid: ForwardDiff on full problem
@@ -273,10 +277,10 @@ function verify_correctness()
         g_ref = ForwardDiff.gradient(loss, data)
         println("done")
 
-        g_native    = native_alloc_grad(data)
+        g_native = native_alloc_grad(data)
         g_native_ip = zeros(NG, NG)
         native_inplace_grad!(g_native_ip, data, zeros(NQ), zeros(NQ))
-        g_zy  = Zygote.gradient(loss, data)[1]
+        g_zy = Zygote.gradient(loss, data)[1]
         g_enz = zeros(NG, NG)
         Enzyme.autodiff(
             Enzyme.Reverse, loss_enz, Active,
@@ -286,7 +290,7 @@ function verify_correctness()
         println()
         @printf("  Reference: ForwardDiff\n")
         @printf("  %-22s  %12s  %12s  %s\n", "Backend", "max|err|", "rel err", "isapprox?")
-        println("  " * "-" ^ 58)
+        println("  " * "-"^58)
 
         all_ok = true
         for (name, g) in [
@@ -299,8 +303,10 @@ function verify_correctness()
             rel_err = norm(g .- g_ref) / max(norm(g_ref), eps())
             ok = isapprox(g, g_ref; rtol = sqrt(eps()))
             all_ok &= ok
-            @printf("  %-22s  %12.2e  %12.2e  %s\n",
-                    name, abs_err, rel_err, ok ? "YES" : "NO")
+            @printf(
+                "  %-22s  %12.2e  %12.2e  %s\n",
+                name, abs_err, rel_err, ok ? "YES" : "NO"
+            )
         end
     end
 
@@ -316,10 +322,10 @@ end
 # =============================================================================
 
 function run_benchmark()
-    println("=" ^ 70)
+    println("="^70)
     println("  PERFORMANCE — full ∇data pipeline")
     println("  Grid: $(NG)×$(NG) = $N_DATA, Queries: $NQ (size=$SIZE_KEY)")
-    println("=" ^ 70)
+    println("="^70)
 
     # Pre-allocate buffers
     g_buf = zeros(NG, NG)
@@ -361,8 +367,10 @@ function run_benchmark()
     elseif FD_MODE == :single_eval
         println("  ForwardDiff (single eval — grid too large for full @benchmark):")
         n_chunks = cld(N_DATA, ForwardDiff.DEFAULT_CHUNK_THRESHOLD)
-        @printf("    %d parameters, chunk=%d → %d forward passes\n",
-                N_DATA, ForwardDiff.DEFAULT_CHUNK_THRESHOLD, n_chunks)
+        @printf(
+            "    %d parameters, chunk=%d → %d forward passes\n",
+            N_DATA, ForwardDiff.DEFAULT_CHUNK_THRESHOLD, n_chunks
+        )
         t_fd_single = @elapsed ForwardDiff.gradient(loss, data)
         @printf("    Time: %.3f s\n\n", t_fd_single)
     else
@@ -391,12 +399,12 @@ function run_benchmark()
     display(b_enz_simple); println()
 
     # ---- Summary Table ----
-    med_ms(b)     = round(median(b).time / 1.0e6; digits = 3)
-    med_alloc(b)  = Int(median(b).allocs)
+    med_ms(b) = round(median(b).time / 1.0e6; digits = 3)
+    med_alloc(b) = Int(median(b).allocs)
     med_mem_kb(b) = round(median(b).memory / 1024; digits = 1)
 
     println()
-    println("=" ^ 70)
+    println("="^70)
     println("  SUMMARY — ∇data of L2 loss")
     println("  Grid: $(NG)×$(NG) = $N_DATA, Queries: $NQ")
 
@@ -412,24 +420,30 @@ function run_benchmark()
         ref_name = "Native (alloc)"
     end
     println("  Speedup relative to $ref_name")
-    println("=" ^ 70)
+    println("="^70)
 
     println()
-    @printf("  %-28s  %12s  %8s  %8s  %10s\n",
-            "Backend", "time(ms)", "speedup", "allocs", "mem(KB)")
-    println("  " * "-" ^ 70)
+    @printf(
+        "  %-28s  %12s  %8s  %8s  %10s\n",
+        "Backend", "time(ms)", "speedup", "allocs", "mem(KB)"
+    )
+    println("  " * "-"^70)
 
     function print_row(name, b)
         t = med_ms(b)
         sp = round(ref_t / median(b).time; digits = 1)
-        @printf("  %-28s  %12.3f  %7.1fx  %8d  %10.1f\n",
-                name, t, sp, med_alloc(b), med_mem_kb(b))
+        return @printf(
+            "  %-28s  %12.3f  %7.1fx  %8d  %10.1f\n",
+            name, t, sp, med_alloc(b), med_mem_kb(b)
+        )
     end
 
     function print_single_row(name, t_sec)
-        sp = round(ref_t / (t_sec * 1e9); digits = 1)
-        @printf("  %-28s  %12.3f  %7.1fx  %8s  %10s\n",
-                name, t_sec * 1e3, sp, "N/A", "N/A")
+        sp = round(ref_t / (t_sec * 1.0e9); digits = 1)
+        return @printf(
+            "  %-28s  %12.3f  %7.1fx  %8s  %10s\n",
+            name, t_sec * 1.0e3, sp, "N/A", "N/A"
+        )
     end
 
     print_row("Native (alloc)", b_nat)
@@ -465,7 +479,7 @@ end
 
 if abspath(PROGRAM_FILE) == @__FILE__
     fd_str = FD_MODE == :benchmark ? "benchmark" :
-             FD_MODE == :single_eval ? "single eval" : "skipped"
+        FD_MODE == :single_eval ? "single eval" : "skipped"
     @info "2D Adjoint Benchmark" size = SIZE_KEY grid = "$(NG)×$(NG)" queries = NQ ForwardDiff = fd_str
 
     ok = verify_correctness()

@@ -37,7 +37,7 @@ gradient(itp, (0.5, 0.5))    # → (∂f/∂x, ∂f/∂y)
 gradient(itp, [0.5, 0.5])    # Vector input also supported
 ```
 
-See also: [`gradient!`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
+See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
 """
 @generated function gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
@@ -97,7 +97,7 @@ grad!(G, x) = gradient!(G, itp, x)
 result = optimize(f, grad!, x0, LBFGS())
 ```
 
-See also: [`gradient`](@ref), [`hessian!`](@ref)
+See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
 """
 @generated function gradient!(
         G::AbstractVector,

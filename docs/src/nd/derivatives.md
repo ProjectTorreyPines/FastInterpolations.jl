@@ -76,6 +76,15 @@ G = zeros(3)
 gradient!(G, itp, (0.5, 1.0, 0.3))  # writes into G
 ```
 
+### `value_gradient`
+
+Computes value and gradient in a single call, performing interval search only **once**. Faster than calling `itp(query)` and `gradient(itp, query)` separately. Ideal for [`Optim.jl`'s `fg!` pattern](../guides/optimization.md).
+
+```julia
+val, grad = value_gradient(itp, (0.5, 1.0, 0.3))  # → (f, (∂f/∂x, ∂f/∂y, ∂f/∂z))
+val, grad = value_gradient(itp, [0.5, 1.0, 0.3])   # Vector input → Vector gradient
+```
+
 ### `hessian`
 
 ```julia

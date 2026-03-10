@@ -57,6 +57,26 @@ result = optimize(itp, grad!, hess!, x0, NewtonTrustRegion())
 
 Method 1 requires zero setup — Optim.jl internally approximates derivatives via finite differences when no `autodiff` or gradient function is provided, but numerical approximation can be inaccurate or unstable depending on the surface. Methods 2 and 3 both provide exact derivatives of the interpolant (identical to machine precision); Method 3 is recommended for performance-critical loops.
 
+### `value_gradient` — locate-once `fg!` pattern
+
+For gradient-only optimizers like `LBFGS`, Optim.jl's `only_fg!` interface computes value and gradient in one call. [`value_gradient`](@ref) is the ideal match — it performs interval search only **once** per query point:
+
+```julia
+function fg!(F, G, x)
+    if G !== nothing && F !== nothing
+        val, grad = value_gradient(itp, Tuple(x))
+        G .= grad
+        return val
+    elseif G !== nothing
+        gradient!(G, itp, Tuple(x))
+        return nothing
+    else
+        return itp(Tuple(x))
+    end
+end
+result = optimize(Optim.only_fg!(fg!), x0, LBFGS())
+```
+
 !!! tip "In-place convention"
     [`gradient!`](@ref) and [`hessian!`](@ref) follow Optim.jl's `optimize(f, g!, h!, x0, method)` convention — they mutate the first argument in-place, avoiding allocations in the optimization loop.
 
@@ -71,5 +91,6 @@ The full runnable script is available at [`examples/rosenbrock_optim.jl`](https:
 ## See Also
 
 - [AD Support for ND Interpolants](autodiff_nd.md) — ForwardDiff, Zygote, Enzyme backend details
+- [`value_gradient`](@ref) — locate-once value + gradient (ideal for `fg!` pattern)
 - [`gradient`](@ref), [`gradient!`](@ref) — analytical gradient API
 - [`hessian`](@ref), [`hessian!`](@ref) — analytical Hessian API

@@ -51,6 +51,7 @@ CellPoly
 ```@docs
 gradient
 gradient!
+value_gradient
 hessian
 hessian!
 laplacian

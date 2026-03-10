@@ -377,6 +377,171 @@ using FastInterpolations
         @test all(abs.(H) .< 1.0e-10)
     end
 
+    # ========================================
+    # VALUE_GRADIENT
+    # ========================================
+
+    @testset "2D value_gradient - cubic" begin
+        x = range(0.0, 2π, 51)
+        y = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        xq, yq = 1.7, 0.9
+        val, grad = value_gradient(itp, (xq, yq))
+
+        @test val ≈ itp((xq, yq)) atol = 1.0e-14
+        @test grad isa NTuple{2}
+        @test grad[1] ≈ gradient(itp, (xq, yq))[1] atol = 1.0e-14
+        @test grad[2] ≈ gradient(itp, (xq, yq))[2] atol = 1.0e-14
+
+        # Vector API
+        val_v, grad_v = value_gradient(itp, [xq, yq])
+        @test val_v ≈ val atol = 1.0e-14
+        @test grad_v isa Vector
+        @test grad_v ≈ collect(grad) atol = 1.0e-14
+    end
+
+    @testset "3D value_gradient - cubic" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        z = range(0.0, 1.0, 11)
+        data = [xi^2 + yj^2 + zk^2 for xi in x, yj in y, zk in z]
+        itp = cubic_interp((x, y, z), data)
+
+        q = (0.3, 0.5, 0.7)
+        val, grad = value_gradient(itp, q)
+
+        @test val ≈ itp(q) atol = 1.0e-14
+        g_ref = gradient(itp, q)
+        @test grad[1] ≈ g_ref[1] atol = 1.0e-14
+        @test grad[2] ≈ g_ref[2] atol = 1.0e-14
+        @test grad[3] ≈ g_ref[3] atol = 1.0e-14
+    end
+
+    @testset "value_gradient - quadratic" begin
+        x = range(-1.0, 1.0, 21)
+        y = range(-1.0, 1.0, 21)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = quadratic_interp((x, y), data)
+
+        q = (0.3, -0.4)
+        val, grad = value_gradient(itp, q)
+        @test val ≈ itp(q) atol = 1.0e-14
+        @test collect(grad) ≈ collect(gradient(itp, q)) atol = 1.0e-14
+    end
+
+    @testset "value_gradient - linear" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [3xi + 2yj for xi in x, yj in y]
+        itp = linear_interp((x, y), data)
+
+        q = (0.5, 0.5)
+        val, grad = value_gradient(itp, q)
+        @test val ≈ itp(q) atol = 1.0e-14
+        @test collect(grad) ≈ collect(gradient(itp, q)) atol = 1.0e-14
+    end
+
+    @testset "value_gradient - DimensionMismatch" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [xi + yj for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        @test_throws DimensionMismatch value_gradient(itp, [0.5, 0.5, 0.5])
+        @test_throws DimensionMismatch value_gradient(itp, [0.5])
+    end
+
+    @testset "value_gradient - complex data" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [(1.0 + 2.0im) * xi + (3.0 - 1.0im) * yj for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        q = (0.5, 0.5)
+        val, grad = value_gradient(itp, q)
+        @test val ≈ itp(q) atol = 1.0e-14
+        @test collect(grad) ≈ collect(gradient(itp, q)) atol = 1.0e-14
+    end
+
+    @testset "value_gradient - OOB FillExtrap" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [xi + yj for xi in x, yj in y]
+
+        # Test with non-zero fill value to catch value vs zero bugs
+        fill_value = NaN
+        itp = cubic_interp((x, y), data; extrap = FillExtrap(fill_value))
+
+        val, grad = value_gradient(itp, (2.0, 0.5))
+        @test isnan(val)
+        @test all(g -> g == 0.0, grad)
+
+        # Also test with finite non-zero fill value
+        itp2 = cubic_interp((x, y), data; extrap = FillExtrap(-999.0))
+        val2, grad2 = value_gradient(itp2, (2.0, 0.5))
+        @test val2 == -999.0
+        @test all(g -> g == 0.0, grad2)
+    end
+
+    @testset "Zero allocation - value_gradient tuple query" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        query = (0.5, 0.5)
+
+        function _test_vg_alloc(itp, q)
+            value_gradient(itp, q)
+            return nothing
+        end
+        _test_vg_alloc(itp, query)  # warmup
+        allocs = @allocated _test_vg_alloc(itp, query)
+        @test allocs == 0
+    end
+
+    @testset "Type stability - value_gradient" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        result = @inferred value_gradient(itp, (0.5, 0.5))
+        @test result isa Tuple{Float64, NTuple{2, Float64}}
+    end
+
+    @testset "Vector grid - value_gradient matches range grid" begin
+        x_range = range(0.0, 2π, 51)
+        y_range = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x_range, yj in y_range]
+
+        itp_range = cubic_interp((x_range, y_range), data)
+        itp_vec = cubic_interp((collect(x_range), collect(y_range)), data)
+
+        xq, yq = 1.7, 0.9
+        val_r, grad_r = value_gradient(itp_range, (xq, yq))
+        val_v, grad_v = value_gradient(itp_vec, (xq, yq))
+
+        @test val_r ≈ val_v atol = 1.0e-12
+        @test grad_r[1] ≈ grad_v[1] atol = 1.0e-12
+        @test grad_r[2] ≈ grad_v[2] atol = 1.0e-12
+    end
+
+    @testset "PeriodicBC - value_gradient" begin
+        # Exclusive periodic: data does NOT repeat endpoint
+        nx, ny = 50, 50
+        x = range(0.0, 2π, nx + 1)[1:nx]  # exclude endpoint
+        y = range(0.0, 2π, ny + 1)[1:ny]
+        data = [cos(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
+
+        q = (1.5, 2.0)
+        val, grad = value_gradient(itp, q)
+        @test val ≈ itp(q) atol = 1.0e-14
+        @test collect(grad) ≈ collect(gradient(itp, q)) atol = 1.0e-14
+    end
+
     @testset "Quadratic interpolant - laplacian" begin
         # f(x,y) = x² + y² → ∇²f = 2 + 2 = 4
         x = range(-1.0, 1.0, 21)

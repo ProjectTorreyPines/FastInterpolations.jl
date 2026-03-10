@@ -37,7 +37,7 @@ gradient(itp, (0.5, 0.5))    # → (∂f/∂x, ∂f/∂y)
 gradient(itp, [0.5, 0.5])    # Vector input also supported
 ```
 
-See also: [`gradient!`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
+See also: [`gradient!`](@ref), [`value_gradient`](@ref), [`hessian`](@ref), [`laplacian`](@ref)
 """
 @generated function gradient(
         itp::AbstractInterpolantND{Tg, Tv, N},
@@ -97,7 +97,7 @@ grad!(G, x) = gradient!(G, itp, x)
 result = optimize(f, grad!, x0, LBFGS())
 ```
 
-See also: [`gradient`](@ref), [`hessian!`](@ref)
+See also: [`gradient`](@ref), [`value_gradient`](@ref), [`hessian!`](@ref)
 """
 @generated function gradient!(
         G::AbstractVector,
@@ -148,6 +148,91 @@ end
     )
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
     return gradient!(G, itp, query_tuple; hint = hint)
+end
+
+# ========================================
+# VALUE + GRADIENT (locate once)
+# ========================================
+
+"""
+    value_gradient(itp::AbstractInterpolantND, query)
+
+Compute the value and gradient simultaneously at `query`.
+
+Returns `(value, gradient)` where `gradient` is an `NTuple{N}` of partial derivatives.
+
+# Performance
+Faster than calling `itp(query)` and `gradient(itp, query)` separately:
+interval search is performed only **once** per query point.
+
+# Examples
+```julia
+itp = cubic_interp((x, y), data)
+val, grad = value_gradient(itp, (0.5, 0.5))   # → (f, (∂f/∂x, ∂f/∂y))
+val, grad = value_gradient(itp, [0.5, 0.5])    # Vector input also supported
+
+# Optim.jl fg! pattern:
+function fg!(F, G, x)
+    if G !== nothing && F !== nothing
+        val, grad = value_gradient(itp, Tuple(x))
+        G .= grad
+        return val
+    elseif G !== nothing
+        gradient!(G, itp, Tuple(x))
+        return nothing
+    else
+        return itp(Tuple(x))
+    end
+end
+result = optimize(Optim.only_fg!(fg!), x0, LBFGS())
+```
+
+See also: [`gradient`](@ref), [`gradient!`](@ref)
+"""
+@generated function value_gradient(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    value_ops = ntuple(_ -> EvalValue(), N)
+    value_call = :(_eval_at_cell(itp, cell, $value_ops))
+
+    deriv_calls = [
+        begin
+                ops = ntuple(j -> j == i ? DerivOp{1}() : DerivOp{0}(), N)
+                :(_eval_at_cell(itp, cell, $ops))
+            end for i in 1:N
+    ]
+    zero_tuple = [:(0 * zref) for _ in 1:N]
+
+    return quote
+        search = _resolve_search_nd(itp.searches, Val($N), query)
+        if _is_fill_oob(query, itp.grids, itp.extraps)
+            zref = _zero_ref(itp)
+            fill_val = _first_fill_value(itp.extraps)
+            return (fill_val, tuple($(zero_tuple...)))
+        end
+        cell = _locate_cell(itp, query, search, hint)
+        val = $value_call
+        grad = tuple($(deriv_calls...))
+        return (val, grad)
+    end
+end
+
+# Vector API
+@inline function value_gradient(
+        itp::AbstractInterpolantND{Tg, Tv, N},
+        query::AbstractVector{<:Real};
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    length(query) == N || throw(
+        DimensionMismatch(
+            "expected $N-element vector, got $(length(query))-element vector"
+        )
+    )
+    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
+    val, grad_tuple = value_gradient(itp, query_tuple; hint = hint)
+    return (val, collect(grad_tuple))
 end
 
 # ========================================

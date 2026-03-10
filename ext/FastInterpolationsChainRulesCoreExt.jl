@@ -520,4 +520,111 @@ function ChainRulesCore.rrule(
     return lap, laplacian_itp_nd_pullback
 end
 
+# ════════════════════════════════════════
+# AbstractInterpolantND — value_gradient rrule (∂/∂query only)
+# ════════════════════════════════════════
+
+"""
+rrule for `value_gradient(itp::AbstractInterpolantND, query)`.
+
+The pullback receives `(Δval, Δgrad)`:
+- `∂query` from value: `Δval * grad`
+- `∂query` from gradient: `H * Δgrad` (via Hessian)
+"""
+function ChainRulesCore.rrule(
+        ::typeof(FastInterpolations.value_gradient),
+        itp::FastInterpolations.AbstractInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    val, grad = FastInterpolations.value_gradient(itp, query; kwargs...)
+
+    function value_gradient_pullback(Δ_raw)
+        Δ_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
+        Δ = unthunk(Δ_raw)
+        Δval, Δgrad = Δ[1], Δ[2]
+
+        # ∂/∂query from value part: Δval * grad
+        ∂query_val = if Δval isa AbstractZero || iszero(Δval)
+            ntuple(_ -> zero(Tg), Val(N))
+        else
+            ntuple(i -> real(conj(Δval) * grad[i]), Val(N))
+        end
+
+        # ∂/∂query from gradient part: H * Δgrad
+        ∂query_grad = if Δgrad isa AbstractZero
+            ntuple(_ -> zero(Tg), Val(N))
+        else
+            H = FastInterpolations.hessian(itp, query)
+            ntuple(j -> sum(real(conj(Δgrad[i]) * H[i, j]) for i in 1:N), Val(N))
+        end
+
+        ∂query = ntuple(i -> ∂query_val[i] + ∂query_grad[i], Val(N))
+        return NoTangent(), ZeroTangent(), ∂query
+    end
+
+    return (val, grad), value_gradient_pullback
+end
+
+# ════════════════════════════════════════
+# CubicInterpolantND — value_gradient rrule with ∂/∂data
+# ════════════════════════════════════════
+
+"""
+rrule for `value_gradient(itp::CubicInterpolantND, query)` with ∂/∂data support.
+
+The pullback receives `(Δval, Δgrad)`:
+- `data_bar` from value: `adj(Δval)`
+- `data_bar` from gradient: `adj(Δgrad[i]; deriv=e_i)` for each axis
+- `∂query` from value: `Δval * grad`
+- `∂query` from gradient: `H * Δgrad`
+"""
+function ChainRulesCore.rrule(
+        ::typeof(FastInterpolations.value_gradient),
+        itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    val, grad = FastInterpolations.value_gradient(itp, query; kwargs...)
+
+    # Build adjoint once for ∂/∂data
+    queries_vec = ntuple(d -> Tg[query[d]], Val(N))
+    adj = cubic_adjoint(itp.grids, queries_vec; bc = itp.bcs)
+
+    function value_gradient_cubic_pullback(Δ_raw)
+        Δ_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
+        Δ = unthunk(Δ_raw)
+        Δval, Δgrad = Δ[1], Δ[2]
+
+        T_grad = Δgrad isa AbstractZero ? Tg : promote_type(map(typeof, Δgrad)...)
+        T_out = promote_type(Tg, Tv, typeof(Δval), T_grad)
+        data_bar = zeros(T_out, size(itp)...)
+        ∂query_val = ntuple(_ -> zero(Tg), Val(N))
+        ∂query_grad = ntuple(_ -> zero(Tg), Val(N))
+
+        # Value contribution
+        if !(Δval isa AbstractZero) && !iszero(Δval)
+            data_bar .+= adj([Δval]; deriv = EvalValue())
+            ∂query_val = ntuple(i -> real(conj(Δval) * grad[i]), Val(N))
+        end
+
+        # Gradient contribution
+        if !(Δgrad isa AbstractZero)
+            for i in 1:N
+                dg_i = Δgrad[i]
+                iszero(dg_i) && continue
+                ops_i = ntuple(j -> j == i ? DerivOp(1) : EvalValue(), Val(N))
+                data_bar .+= adj([dg_i]; deriv = ops_i)
+            end
+            H = FastInterpolations.hessian(itp, query)
+            ∂query_grad = ntuple(j -> sum(real(conj(Δgrad[i]) * H[i, j]) for i in 1:N), Val(N))
+        end
+
+        ∂query = ntuple(i -> ∂query_val[i] + ∂query_grad[i], Val(N))
+        return NoTangent(), data_bar, ∂query
+    end
+
+    return (val, grad), value_gradient_cubic_pullback
+end
+
 end # module

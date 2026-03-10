@@ -209,7 +209,8 @@ See also: [`gradient`](@ref), [`gradient!`](@ref)
         search = _resolve_search_nd(itp.searches, Val($N), query)
         if _is_fill_oob(query, itp.grids, itp.extraps)
             zref = _zero_ref(itp)
-            return (0 * zref, tuple($(zero_tuple...)))
+            fill_val = _first_fill_value(itp.extraps)
+            return (fill_val, tuple($(zero_tuple...)))
         end
         cell = _locate_cell(itp, query, search, hint)
         val = $value_call

@@ -469,11 +469,20 @@ using FastInterpolations
         x = range(0.0, 1.0, 11)
         y = range(0.0, 1.0, 11)
         data = [xi + yj for xi in x, yj in y]
-        itp = cubic_interp((x, y), data; extrap = FillExtrap(0.0))
+
+        # Test with non-zero fill value to catch value vs zero bugs
+        fill_value = NaN
+        itp = cubic_interp((x, y), data; extrap = FillExtrap(fill_value))
 
         val, grad = value_gradient(itp, (2.0, 0.5))
-        @test val == 0.0
+        @test isnan(val)
         @test all(g -> g == 0.0, grad)
+
+        # Also test with finite non-zero fill value
+        itp2 = cubic_interp((x, y), data; extrap = FillExtrap(-999.0))
+        val2, grad2 = value_gradient(itp2, (2.0, 0.5))
+        @test val2 == -999.0
+        @test all(g -> g == 0.0, grad2)
     end
 
     @testset "Zero allocation - value_gradient tuple query" begin

@@ -682,11 +682,11 @@ end
 # Vector/Tuple: loop over elements
 
 @inline function _adjoint_scatter_nd!(partials_bar, anchors, y_bar::Real, ops)
-    @inbounds _scatter_nd!(partials_bar, y_bar, anchors[1], ops)
+    return @inbounds _scatter_nd!(partials_bar, y_bar, anchors[1], ops)
 end
 
 @inline function _adjoint_scatter_nd!(partials_bar, anchors, y_bar, ops)
-    @inbounds for q in eachindex(y_bar)
+    return @inbounds for q in eachindex(y_bar)
         _scatter_nd!(partials_bar, y_bar[q], anchors[q], ops)
     end
 end

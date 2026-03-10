@@ -687,9 +687,9 @@ end
 
     @testset "Periodic BC — scalar/tuple y_bar" begin
         for (bc, x_per) in [
-            (PeriodicBC(), collect(range(0.0, 2π, 21))),
-            (PeriodicBC(endpoint = :exclusive, period = 2π), collect(range(0.0; step = 2π / 20, length = 20))),
-        ]
+                (PeriodicBC(), collect(range(0.0, 2π, 21))),
+                (PeriodicBC(endpoint = :exclusive, period = 2π), collect(range(0.0; step = 2π / 20, length = 20))),
+            ]
             xq = [1.0, 3.0, 5.0]
             adj = cubic_adjoint(x_per, xq; bc = bc)
             ref = adj([1.0, 2.0, 3.0])

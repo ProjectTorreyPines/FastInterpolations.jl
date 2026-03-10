@@ -1300,11 +1300,13 @@ end
 
 @testset "CubicAdjointND — Periodic BC scalar/tuple y_bar" begin
     for (bc, x1, x2) in [
-        (PeriodicBC(), collect(range(0.0, 2π, 11)), collect(range(0.0, 2π, 9))),
-        (PeriodicBC(endpoint = :exclusive, period = 2π),
-         collect(range(0.0; step = 2π / 10, length = 10)),
-         collect(range(0.0; step = 2π / 8, length = 8))),
-    ]
+            (PeriodicBC(), collect(range(0.0, 2π, 11)), collect(range(0.0, 2π, 9))),
+            (
+                PeriodicBC(endpoint = :exclusive, period = 2π),
+                collect(range(0.0; step = 2π / 10, length = 10)),
+                collect(range(0.0; step = 2π / 8, length = 8)),
+            ),
+        ]
         xq, yq = [1.0, 3.0, 5.0], [0.5, 2.0, 4.0]
         adj = cubic_adjoint((x1, x2), (xq, yq); bc = bc)
         ref = adj([1.0, 2.0, 3.0])

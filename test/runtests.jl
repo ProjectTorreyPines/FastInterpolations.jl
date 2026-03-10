@@ -71,6 +71,7 @@ else
     include("test_nd_linear.jl")        # Linear ND interpolation (phase 3)
     include("test_nd_quadratic.jl")     # Quadratic ND interpolation
     include("test_cubic_nd.jl")
+    include("test_cubic_nd_adjoint.jl")  # Cubic ND adjoint (W^T * y_bar)
     include("test_cubic_nd_oneshot.jl")  # Cubic ND one-shot (pool-based, zero-alloc)
     include("test_nd_comprehensive.jl")
     include("test_nd_coverage.jl")
@@ -103,10 +104,14 @@ else
     # ── Extension tests (AD / Symbolics) ──────────────────────────────
     # Heavy package loads (~5 min compile). Always in CI, skip locally by default.
     # Run individually via ARGS: Pkg.test(test_args=["test_autodiff_Zygote.jl"])
+    # NOTE: Enzyme MUST run before Zygote. Zygote loads ChainRulesCore, which
+    # triggers FastInterpolationsChainRulesCoreExt (rrule fallback). Enzyme then
+    # silently uses the rrule instead of our custom EnzymeRules, leaving the
+    # Enzyme extension with 0% body coverage.
     if get(ENV, "CI", nothing) !== nothing
+        include("test_autodiff_Enzyme.jl")
         include("test_autodiff_ForwardDiff.jl")
         include("test_autodiff_Zygote.jl")
-        include("test_autodiff_Enzyme.jl")
         include("test_symbolics.jl")
     else
         @info "Skipping extension tests (run in CI, or use cc-julia-test-runner for individual files)"

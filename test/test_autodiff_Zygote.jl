@@ -362,6 +362,205 @@ end
     end
 
     # ════════════════════════════════════════════════════════════════════════
+    # CUBIC ND DATA-ADJOINT (∂/∂data) via CubicAdjointND rrule
+    # ════════════════════════════════════════════════════════════════════════
+    # Tests the ChainRulesCore rrule for cubic_interp(grids, data, queries)
+    # that uses CubicAdjointND for the pullback. Differentiates w.r.t. DATA,
+    # not query coordinates. Cross-validates against CubicAdjointND directly.
+
+    @testset "Cubic ND data-adjoint (∂/∂data) — Zygote via rrule" begin
+        nx, ny = 15, 12
+        x = range(0.0, 1.0, nx)
+        y = range(0.0, 1.0, ny)
+        data = [sin(2π * xi) * cos(2π * yj) for xi in x, yj in y]
+        n_query = 20
+        xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+        yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+
+        @testset "SoA batch — CubicFit (default)" begin
+            g_zy = Zygote.gradient(d -> sum(cubic_interp((x, y), d, (xq, yq))), data)[1]
+            adj = cubic_adjoint((x, y), (xq, yq))
+            g_adj = adj(ones(n_query))
+            @test g_zy ≈ g_adj atol = 1.0e-10
+        end
+
+        @testset "SoA batch — ZeroCurvBC" begin
+            bc = ZeroCurvBC()
+            g_zy = Zygote.gradient(d -> sum(cubic_interp((x, y), d, (xq, yq); bc = bc)), data)[1]
+            adj = cubic_adjoint((x, y), (xq, yq); bc = bc)
+            g_adj = adj(ones(n_query))
+            @test g_zy ≈ g_adj atol = 1.0e-10
+        end
+
+        @testset "SoA batch — PeriodicBC (inclusive)" begin
+            x_p = range(0.0, 2π, nx)
+            y_p = range(0.0, 2π, ny)
+            data_p = [sin(xi) + cos(yj) for xi in x_p, yj in y_p]
+            # Enforce exact endpoint equality for inclusive periodic validation
+            data_p[end, :] .= data_p[1, :]
+            data_p[:, end] .= data_p[:, 1]
+            data_p[end, end] = data_p[1, 1]
+            bc = PeriodicBC()
+            xq_p = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+            yq_p = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+            g_zy = Zygote.gradient(d -> sum(cubic_interp((x_p, y_p), d, (xq_p, yq_p); bc = bc)), data_p)[1]
+            adj = cubic_adjoint((x_p, y_p), (xq_p, yq_p); bc = bc)
+            g_adj = adj(ones(n_query))
+            @test g_zy ≈ g_adj atol = 1.0e-10
+        end
+
+        @testset "SoA batch — deriv=DerivOp(1)" begin
+            g_zy = Zygote.gradient(
+                d -> sum(cubic_interp((x, y), d, (xq, yq); deriv = DerivOp(1))), data
+            )[1]
+            adj = cubic_adjoint((x, y), (xq, yq))
+            g_adj = adj(ones(n_query); deriv = DerivOp(1))
+            @test g_zy ≈ g_adj atol = 1.0e-10
+        end
+
+        @testset "SoA batch — per-axis deriv (DerivOp(1), EvalValue())" begin
+            g_zy = Zygote.gradient(
+                d -> sum(cubic_interp((x, y), d, (xq, yq); deriv = (DerivOp(1), EvalValue()))), data
+            )[1]
+            adj = cubic_adjoint((x, y), (xq, yq))
+            g_adj = adj(ones(n_query); deriv = (DerivOp(1), EvalValue()))
+            @test g_zy ≈ g_adj atol = 1.0e-10
+        end
+
+        @testset "Single point — default" begin
+            g_zy = Zygote.gradient(d -> cubic_interp((x, y), d, (0.5, 0.5)), data)[1]
+            adj = cubic_adjoint((x, y), ([0.5], [0.5]))
+            g_adj = adj([1.0])
+            @test g_zy ≈ g_adj atol = 1.0e-10
+        end
+
+        @testset "L2 loss function" begin
+            y_obs = randn(n_query)
+            loss(d) = sum(abs2, cubic_interp((x, y), d, (xq, yq)) .- y_obs)
+            g_zy = Zygote.gradient(loss, data)[1]
+            # Manual: ∂L/∂data = 2 * Wᵀ * (W*data - y_obs)
+            residual = cubic_interp((x, y), data, (xq, yq)) .- y_obs
+            adj = cubic_adjoint((x, y), (xq, yq))
+            g_adj = adj(2.0 .* residual)
+            @test g_zy ≈ g_adj atol = 1.0e-10
+        end
+
+        @testset "N=3" begin
+            nz = 8
+            z = range(0.0, 1.0, nz)
+            data3 = randn(nx, ny, nz)
+            zq = sort(rand(n_query)) .* 0.96 .+ 0.02
+            g_zy = Zygote.gradient(d -> sum(cubic_interp((x, y, z), d, (xq, yq, zq))), data3)[1]
+            adj = cubic_adjoint((x, y, z), (xq, yq, zq))
+            g_adj = adj(ones(n_query))
+            @test g_zy ≈ g_adj atol = 1.0e-10
+        end
+
+        @testset "Float32" begin
+            x32, y32 = Float32.(x), Float32.(y)
+            data32 = Float32.(data)
+            xq32, yq32 = Float32.(xq), Float32.(yq)
+            g_zy = Zygote.gradient(d -> sum(cubic_interp((x32, y32), d, (xq32, yq32))), data32)[1]
+            @test g_zy isa Matrix{Float32}
+            adj = cubic_adjoint((x32, y32), (xq32, yq32))
+            g_adj = adj(ones(Float32, n_query))
+            @test g_zy ≈ g_adj atol = 1.0f-4
+        end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # Issue #60 — topology optimization patterns (∂/∂data via one-shot)
+    # ════════════════════════════════════════════════════════════════════════
+    # GitHub issue #60 requests Zygote.withgradient(f, data, x0) support.
+    # The interpolant API (itp = cubic_interp(grids, data); itp(x0)) only
+    # provides ∂/∂x0 via rrule. For ∂/∂data, use the one-shot API:
+    #   cubic_interp(grids, data, query; deriv=...)
+    # which has an rrule backed by CubicAdjointND.
+
+    @testset "Issue #60 — topology optimization (∂/∂data via one-shot)" begin
+        Nx = Ny = 5
+        x = range(0, 1, length = Nx)
+        y = range(0, 1, length = Ny)
+        data = [0.1xi + 0.2yj + sin(xi) * cos(yj) for xi in x, yj in y]
+        x0 = (0.2, 0.3)
+
+        @testset "f0: withgradient — basic value + data gradient" begin
+            # Issue example 1: f0(data) = cubic_interp((x,y), data)(x0)
+            f0(d) = cubic_interp((x, y), d, x0)
+
+            result = Zygote.withgradient(f0, data)
+            @test result.val ≈ cubic_interp((x, y), data, x0)
+            @test result.grad[1] !== nothing
+
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            @test result.grad[1] ≈ adj([1.0]) atol = 1.0e-10
+        end
+
+        @testset "f1: ∂/∂data of ‖∇f(x0)‖² — gradient-of-gradient" begin
+            # Issue example 2: f1(data) = sum(abs2, gradient(itp, x0))
+            # One-shot equivalent with per-axis DerivOp:
+            function f1(d)
+                fx = cubic_interp((x, y), d, x0; deriv = (DerivOp(1), EvalValue()))
+                fy = cubic_interp((x, y), d, x0; deriv = (EvalValue(), DerivOp(1)))
+                return fx^2 + fy^2
+            end
+
+            result = Zygote.withgradient(f1, data)
+            @test isfinite(result.val)
+            @test size(result.grad[1]) == size(data)
+
+            # Manual: ∂L/∂data = 2fx·(∂fx/∂data) + 2fy·(∂fy/∂data)
+            fx = cubic_interp((x, y), data, x0; deriv = (DerivOp(1), EvalValue()))
+            fy = cubic_interp((x, y), data, x0; deriv = (EvalValue(), DerivOp(1)))
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            g_expected = adj([2fx]; deriv = (DerivOp(1), EvalValue())) .+
+                adj([2fy]; deriv = (EvalValue(), DerivOp(1)))
+            @test result.grad[1] ≈ g_expected atol = 1.0e-10
+        end
+
+        @testset "f2: ∂/∂data of ‖H(f)(x0)‖²_F — gradient-of-hessian" begin
+            # Issue example 3: f2(data) = sum(abs2, hessian(itp, x0))
+            # One-shot with 2nd-order per-axis DerivOp:
+            function f2(d)
+                fxx = cubic_interp((x, y), d, x0; deriv = (DerivOp(2), EvalValue()))
+                fxy = cubic_interp((x, y), d, x0; deriv = (DerivOp(1), DerivOp(1)))
+                fyy = cubic_interp((x, y), d, x0; deriv = (EvalValue(), DerivOp(2)))
+                return fxx^2 + 2 * fxy^2 + fyy^2  # ‖H‖²_F for symmetric H
+            end
+
+            result = Zygote.withgradient(f2, data)
+            @test isfinite(result.val)
+            @test size(result.grad[1]) == size(data)
+
+            fxx = cubic_interp((x, y), data, x0; deriv = (DerivOp(2), EvalValue()))
+            fxy = cubic_interp((x, y), data, x0; deriv = (DerivOp(1), DerivOp(1)))
+            fyy = cubic_interp((x, y), data, x0; deriv = (EvalValue(), DerivOp(2)))
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            g_expected = adj([2fxx]; deriv = (DerivOp(2), EvalValue())) .+
+                adj([4fxy]; deriv = (DerivOp(1), DerivOp(1))) .+
+                adj([2fyy]; deriv = (EvalValue(), DerivOp(2)))
+            @test result.grad[1] ≈ g_expected atol = 1.0e-10
+        end
+
+        @testset "batch: withgradient L2 loss over query grid" begin
+            # Typical topology optimization: minimize residual over many points
+            xq = [0.2, 0.4, 0.6, 0.8]
+            yq = [0.3, 0.5, 0.3, 0.7]
+            target = [0.5, -0.3, 0.1, 0.8]
+
+            loss(d) = sum(abs2, cubic_interp((x, y), d, (xq, yq)) .- target)
+
+            result = Zygote.withgradient(loss, data)
+            @test result.val ≈ loss(data)
+            @test isfinite(result.val)
+
+            residual = cubic_interp((x, y), data, (xq, yq)) .- target
+            adj = cubic_adjoint((x, y), (xq, yq))
+            @test result.grad[1] ≈ adj(2.0 .* residual) atol = 1.0e-10
+        end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
     # CUBIC ND — Vector query gradient (issue #60: was broken by DerivOp API change)
     # ════════════════════════════════════════════════════════════════════════
 
@@ -525,6 +724,183 @@ end
             expected = 3.0f0 * xq^2
             @test zy_grad ≈ expected rtol = 0.05
             @test zy_grad isa Float32
+        end
+    end
+
+    # ════════════════════════════════════════════════════════════════════════
+    # CUBIC ND — Interpolant API ∂/∂data (constructor + eval/gradient/hessian/laplacian rrules)
+    # ════════════════════════════════════════════════════════════════════════
+    # Tests the natural API pattern:
+    #   itp = cubic_interp(grids, data)
+    #   loss = f(itp(x0))
+    #   Zygote.gradient(data -> f(cubic_interp(grids, data)(x0)), data)
+
+    @testset "Cubic ND interpolant API — ∂/∂data via rrule chain" begin
+        x = range(0.0, 2.0, 15)
+        y = range(0.0, 2.0, 15)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        x0 = (0.7, 0.9)
+
+        # ── eval: ∂/∂data of itp(x0) ──
+        @testset "eval — sum loss" begin
+            function f_eval(d)
+                itp = cubic_interp((x, y), d)
+                return itp(x0)
+            end
+            result = Zygote.withgradient(f_eval, data)
+            @test result.val ≈ f_eval(data)
+
+            # Cross-validate: same as one-shot adjoint with Δy=1
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            expected = adj([1.0])
+            @test result.grad[1] ≈ expected atol = 1.0e-10
+        end
+
+        # ── eval: ∂/∂data of L2 loss ──
+        @testset "eval — L2 loss" begin
+            target_val = 0.5
+            function f_eval_l2(d)
+                itp = cubic_interp((x, y), d)
+                return (itp(x0) - target_val)^2
+            end
+            result = Zygote.withgradient(f_eval_l2, data)
+            @test result.val ≈ f_eval_l2(data)
+
+            # Manual: ∂L/∂data = 2(y - target) * Wᵀ [1]
+            y_val = cubic_interp((x, y), data, x0)
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            expected = adj([2.0 * (y_val - target_val)])
+            @test result.grad[1] ≈ expected atol = 1.0e-10
+        end
+
+        # ── gradient: ∂/∂data of ‖∇f(x0)‖² ──
+        @testset "gradient — ‖∇f‖² loss" begin
+            function f_grad_norm(d)
+                itp = cubic_interp((x, y), d)
+                g = FastInterpolations.gradient(itp, x0)
+                return g[1]^2 + g[2]^2
+            end
+            result = Zygote.withgradient(f_grad_norm, data)
+            @test result.val ≈ f_grad_norm(data)
+
+            # Cross-validate with one-shot adjoint
+            fx = cubic_interp((x, y), data, x0; deriv = (DerivOp(1), EvalValue()))
+            fy = cubic_interp((x, y), data, x0; deriv = (EvalValue(), DerivOp(1)))
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            expected = adj([2fx]; deriv = (DerivOp(1), EvalValue())) .+
+                adj([2fy]; deriv = (EvalValue(), DerivOp(1)))
+            @test result.grad[1] ≈ expected atol = 1.0e-10
+        end
+
+        # ── gradient: ∂/∂data of single partial ──
+        @testset "gradient — single partial ∂f/∂x" begin
+            function f_partial_x(d)
+                itp = cubic_interp((x, y), d)
+                g = FastInterpolations.gradient(itp, x0)
+                return g[1]  # ∂f/∂x only
+            end
+            result = Zygote.withgradient(f_partial_x, data)
+
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            expected = adj([1.0]; deriv = (DerivOp(1), EvalValue()))
+            @test result.grad[1] ≈ expected atol = 1.0e-10
+        end
+
+        # ── hessian: ∂/∂data of ‖H(f)(x0)‖²_F ──
+        @testset "hessian — Frobenius norm loss" begin
+            function f_hess_frob(d)
+                itp = cubic_interp((x, y), d)
+                H = FastInterpolations.hessian(itp, x0)
+                return sum(abs2, H)
+            end
+            result = Zygote.withgradient(f_hess_frob, data)
+            @test result.val ≈ f_hess_frob(data)
+
+            # Cross-validate with one-shot adjoint
+            H = FastInterpolations.hessian(cubic_interp((x, y), data), x0)
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            # ∂/∂data of sum(H.^2) = sum_ij 2*H[i,j] * adj(1; deriv=ops_ij)
+            expected = zeros(size(data))
+            # Diagonal
+            expected .+= adj([2H[1, 1]]; deriv = (DerivOp(2), EvalValue()))
+            expected .+= adj([2H[2, 2]]; deriv = (EvalValue(), DerivOp(2)))
+            # Off-diagonal (symmetry: H[1,2]=H[2,1], cotangent = 2H[1,2] + 2H[2,1] = 4H[1,2])
+            expected .+= adj([4H[1, 2]]; deriv = (DerivOp(1), DerivOp(1)))
+            @test result.grad[1] ≈ expected atol = 1.0e-9
+        end
+
+        # ── hessian: ∂/∂data of single element ──
+        @testset "hessian — single element ∂²f/∂x²" begin
+            function f_hess_xx(d)
+                itp = cubic_interp((x, y), d)
+                H = FastInterpolations.hessian(itp, x0)
+                return H[1, 1]
+            end
+            result = Zygote.withgradient(f_hess_xx, data)
+
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            expected = adj([1.0]; deriv = (DerivOp(2), EvalValue()))
+            @test result.grad[1] ≈ expected atol = 1.0e-10
+        end
+
+        # ── laplacian: ∂/∂data of ∇²f(x0) ──
+        @testset "laplacian — ∂/∂data of ∇²f" begin
+            function f_lap(d)
+                itp = cubic_interp((x, y), d)
+                return FastInterpolations.laplacian(itp, x0)
+            end
+            result = Zygote.withgradient(f_lap, data)
+            @test result.val ≈ f_lap(data)
+
+            # ∇²f = ∂²f/∂x² + ∂²f/∂y², so ∂/∂data = adj(1; d²/dx²) + adj(1; d²/dy²)
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            expected = adj([1.0]; deriv = (DerivOp(2), EvalValue())) .+
+                adj([1.0]; deriv = (EvalValue(), DerivOp(2)))
+            @test result.grad[1] ≈ expected atol = 1.0e-10
+        end
+
+        # ── laplacian: ∂/∂data of L2 loss on ∇²f ──
+        @testset "laplacian — (∇²f)² loss" begin
+            function f_lap_sq(d)
+                itp = cubic_interp((x, y), d)
+                lap = FastInterpolations.laplacian(itp, x0)
+                return lap^2
+            end
+            result = Zygote.withgradient(f_lap_sq, data)
+            @test result.val ≈ f_lap_sq(data)
+
+            lap_val = FastInterpolations.laplacian(cubic_interp((x, y), data), x0)
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            expected = adj([2lap_val]; deriv = (DerivOp(2), EvalValue())) .+
+                adj([2lap_val]; deriv = (EvalValue(), DerivOp(2)))
+            @test result.grad[1] ≈ expected atol = 1.0e-9
+        end
+
+        # ── 3D test ──
+        @testset "3D eval — ∂/∂data" begin
+            z = range(0.0, 2.0, 10)
+            data3 = [sin(xi) * cos(yj) * (1.0 + zk) for xi in x, yj in y, zk in z]
+            x0_3d = (0.7, 0.9, 0.5)
+
+            function f_3d(d)
+                itp = cubic_interp((x, y, z), d)
+                return itp(x0_3d)
+            end
+            result = Zygote.withgradient(f_3d, data3)
+            @test result.val ≈ f_3d(data3)
+
+            adj = cubic_adjoint((x, y, z), ([x0_3d[1]], [x0_3d[2]], [x0_3d[3]]))
+            expected = adj([1.0])
+            @test result.grad[1] ≈ expected atol = 1.0e-10
+        end
+
+        # ── eval: also returns ∂/∂query ──
+        @testset "eval — ∂/∂query still works" begin
+            itp = cubic_interp((x, y), data)
+            q = (0.7, 0.9)
+            grad = Zygote.gradient(x -> itp(x), q)[1]
+            fd_grad = ForwardDiff.gradient(itp, [q...])
+            @test collect(grad) ≈ fd_grad atol = 1.0e-8
         end
     end
 

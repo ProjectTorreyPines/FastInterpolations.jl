@@ -323,6 +323,99 @@ else
                 end
             end
 
+            # ════════════════════════════════════════════════════════════════════════
+            # CUBIC ND DATA-ADJOINT (∂/∂data) via EnzymeRules
+            # ════════════════════════════════════════════════════════════════════════
+            # Tests the native EnzymeRules for cubic_interp(grids, data, queries)
+            # that use CubicAdjointND for the reverse pass. Differentiates w.r.t. DATA.
+
+            @testset "Cubic ND data-adjoint (∂/∂data) — Enzyme via EnzymeRules" begin
+                nx, ny = 15, 12
+                x = range(0.0, 1.0, nx)
+                y = range(0.0, 1.0, ny)
+                data_nd = randn(nx, ny)
+                n_query = 20
+                xq = sort(rand(n_query)) .* 0.96 .+ 0.02
+                yq = sort(rand(n_query)) .* 0.96 .+ 0.02
+
+                @testset "SoA batch — L2 loss" begin
+                    y_obs = randn(n_query)
+                    loss_nd(d, y_obs, g, q) = sum(abs2, cubic_interp(g, d, q) .- y_obs)
+                    df = zeros(nx, ny)
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_nd, Enzyme.Active,
+                        Enzyme.Duplicated(copy(data_nd), df),
+                        Enzyme.Const(y_obs), Enzyme.Const((x, y)), Enzyme.Const((xq, yq))
+                    )
+                    # Cross-validate with CubicAdjointND
+                    residual = cubic_interp((x, y), data_nd, (xq, yq)) .- y_obs
+                    adj = cubic_adjoint((x, y), (xq, yq))
+                    g_adj = adj(2.0 .* residual)
+                    @test df ≈ g_adj atol = 1.0e-10
+                end
+
+                @testset "Single point" begin
+                    loss_pt(d, g, q) = cubic_interp(g, d, q)
+                    df = zeros(nx, ny)
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_pt, Enzyme.Active,
+                        Enzyme.Duplicated(copy(data_nd), df),
+                        Enzyme.Const((x, y)), Enzyme.Const((0.5, 0.5))
+                    )
+                    adj = cubic_adjoint((x, y), ([0.5], [0.5]))
+                    g_adj = adj([1.0])
+                    @test df ≈ g_adj atol = 1.0e-10
+                end
+
+                @testset "SoA batch — PeriodicBC" begin
+                    x_p = range(0.0, 2π, nx)
+                    y_p = range(0.0, 2π, ny)
+                    data_p = [sin(xi) + cos(yj) for xi in x_p, yj in y_p]
+                    data_p[end, :] .= data_p[1, :]
+                    data_p[:, end] .= data_p[:, 1]
+                    data_p[end, end] = data_p[1, 1]
+                    bc = PeriodicBC()
+                    xq_p = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+                    yq_p = sort(rand(n_query)) .* (2π * 0.96) .+ (2π * 0.02)
+                    loss_per(d, g, q) = sum(cubic_interp(g, d, q; bc = PeriodicBC()))
+                    df = zeros(nx, ny)
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_per, Enzyme.Active,
+                        Enzyme.Duplicated(copy(data_p), df),
+                        Enzyme.Const((x_p, y_p)), Enzyme.Const((xq_p, yq_p))
+                    )
+                    adj = cubic_adjoint((x_p, y_p), (xq_p, yq_p); bc = bc)
+                    g_adj = adj(ones(n_query))
+                    @test df ≈ g_adj atol = 1.0e-10
+                end
+
+                @testset "SoA batch — ZeroCurvBC" begin
+                    loss_bc(d, g, q) = sum(cubic_interp(g, d, q; bc = ZeroCurvBC()))
+                    df = zeros(nx, ny)
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_bc, Enzyme.Active,
+                        Enzyme.Duplicated(copy(data_nd), df),
+                        Enzyme.Const((x, y)), Enzyme.Const((xq, yq))
+                    )
+                    adj = cubic_adjoint((x, y), (xq, yq); bc = ZeroCurvBC())
+                    g_adj = adj(ones(n_query))
+                    @test df ≈ g_adj atol = 1.0e-10
+                end
+
+                @testset "SoA batch — deriv=DerivOp(1)" begin
+                    loss_d1(d, g, q) = sum(cubic_interp(g, d, q; deriv = DerivOp(1)))
+                    df = zeros(nx, ny)
+                    Enzyme.autodiff(
+                        Enzyme.Reverse, loss_d1, Enzyme.Active,
+                        Enzyme.Duplicated(copy(data_nd), df),
+                        Enzyme.Const((x, y)), Enzyme.Const((xq, yq))
+                    )
+                    adj = cubic_adjoint((x, y), (xq, yq))
+                    g_adj = adj(ones(n_query); deriv = DerivOp(1))
+                    @test df ≈ g_adj atol = 1.0e-10
+                end
+            end
+
         end  # testset "Enzyme AD Support"
 
     end  # if ENZYME_AVAILABLE

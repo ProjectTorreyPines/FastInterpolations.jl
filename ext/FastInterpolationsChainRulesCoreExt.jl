@@ -17,22 +17,6 @@ using FastInterpolations
 using ChainRulesCore
 
 # ════════════════════════════════════════
-# Adjoint OOB masking for FillExtrap
-# ════════════════════════════════════════
-# FillExtrap returns a constant for out-of-domain queries → ∂fill/∂f = 0.
-# We zero out Δy entries for OOB queries so the adjoint doesn't accumulate
-# spurious gradients from those positions.
-
-@inline _needs_oob_masking(::FastInterpolations.AbstractExtrap) = false
-@inline _needs_oob_masking(::FillExtrap) = true
-
-@inline function _mask_oob_tangent(Δy, x, xq, extrap)
-    _needs_oob_masking(extrap) || return Δy
-    lo, hi = first(x), last(x)
-    return [lo <= xq[i] <= hi ? Δy[i] : zero(Δy[i]) for i in eachindex(Δy)]
-end
-
-# ════════════════════════════════════════
 # 1D Interpolants (scalar query → scalar output)
 # ════════════════════════════════════════
 # Excludes AbstractSeriesInterpolant (Vector output needs different pullback)
@@ -206,20 +190,14 @@ function ChainRulesCore.rrule(
         x::AbstractVector{Tg},
         f::AbstractVector{Tv},
         xq::AbstractVector{Tg};
-        bc::FastInterpolations.AbstractBC = CubicFit(),
-        extrap::FastInterpolations.AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::FastInterpolations.AbstractSearchPolicy = AutoSearch()
+        kwargs...
     ) where {Tg <: AbstractFloat, Tv}
-    y = cubic_interp(x, f, xq; bc, extrap, autocache, deriv, search)
-
-    adj = cubic_adjoint(x, xq; bc, extrap)
+    y = cubic_interp(x, f, xq; kwargs...)
+    adj = cubic_adjoint(x, xq; kwargs...)
 
     function cubic_interp_vec_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        Δy_eff = _mask_oob_tangent(unthunk(Δy), x, xq, extrap)
-        f_bar = adj(Δy_eff; deriv = deriv)
+        f_bar = adj(unthunk(Δy); kwargs...)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 
@@ -239,25 +217,307 @@ function ChainRulesCore.rrule(
         x::AbstractVector{Tg},
         f::AbstractVector{Tv},
         xq::Real;
-        bc::FastInterpolations.AbstractBC = CubicFit(),
-        extrap::FastInterpolations.AbstractExtrap = NoExtrap(),
-        autocache::Bool = true,
-        deriv::DerivOp = EvalValue(),
-        search::FastInterpolations.AbstractSearchPolicy = AutoSearch(),
-        hint::Union{Nothing, Base.RefValue{Int}} = nothing
+        kwargs...
     ) where {Tg <: AbstractFloat, Tv}
-    y = cubic_interp(x, f, xq; bc, extrap, autocache, deriv, search)
-
-    adj = cubic_adjoint(x, Tg[xq]; bc, extrap)
+    y = cubic_interp(x, f, xq; kwargs...)
+    adj = cubic_adjoint(x, Tg[xq]; kwargs...)
 
     function cubic_interp_scalar_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        Δy_eff = _mask_oob_tangent(Tg[unthunk(Δy)], x, Tg[xq], extrap)
-        f_bar = adj(Δy_eff; deriv = deriv)
+        f_bar = adj(Tg[unthunk(Δy)]; kwargs...)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 
     return y, cubic_interp_scalar_pullback
+end
+
+# ════════════════════════════════════════
+# Cubic ND one-shot — data adjoint (∂/∂data)
+# ════════════════════════════════════════
+# Enables Zygote.gradient(data -> ...(cubic_interp(grids, data, queries; ...))..., data)
+# by using the pre-built CubicAdjointND operator for the pullback.
+#
+# All extrap modes are supported — the ND adjoint handles OOB weight zeroing
+# internally via _bake_nd_anchors.
+
+"""
+Reverse-mode rule for `cubic_interp(grids, data, queries; ...)` — SoA batch (ND).
+
+The pullback computes `∂L/∂data = Wᵀ · ∂L/∂y` via `CubicAdjointND`.
+Grids and queries are not differentiated.
+"""
+function ChainRulesCore.rrule(
+        ::typeof(cubic_interp),
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
+        kwargs...
+    ) where {Tv, N}
+    y = cubic_interp(grids, data, queries; kwargs...)
+    adj = cubic_adjoint(grids, queries; kwargs...)
+
+    function cubic_interp_nd_soa_pullback(Δy)
+        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
+        f_bar = adj(unthunk(Δy); kwargs...)
+        return NoTangent(), NoTangent(), f_bar, NoTangent()
+    end
+
+    return y, cubic_interp_nd_soa_pullback
+end
+
+"""
+Reverse-mode rule for `cubic_interp(grids, data, query; ...)` — single point (ND).
+
+Wraps the scalar query tuple into 1-element vectors for `CubicAdjointND`,
+then unwraps the scalar cotangent for the pullback.
+"""
+function ChainRulesCore.rrule(
+        ::typeof(cubic_interp),
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        kwargs...
+    ) where {Tv, N}
+    y = cubic_interp(grids, data, query; kwargs...)
+
+    # Wrap scalar query into 1-element vectors for CubicAdjointND
+    Tg = FastInterpolations._promote_grid_eltype(grids)
+    Tg_f = Tg <: AbstractFloat ? Tg : Float64
+    queries_vec = ntuple(d -> Tg_f[query[d]], Val(N))
+    adj = cubic_adjoint(grids, queries_vec; kwargs...)
+
+    function cubic_interp_nd_scalar_pullback(Δy)
+        Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
+        f_bar = adj([unthunk(Δy)]; kwargs...)
+        return NoTangent(), NoTangent(), f_bar, NoTangent()
+    end
+
+    return y, cubic_interp_nd_scalar_pullback
+end
+
+# ════════════════════════════════════════
+# CubicInterpolantND — constructor rrule (∂/∂data via interpolant API)
+# ════════════════════════════════════════
+# Enables the natural API pattern:
+#   itp = cubic_interp((x, y), data)
+#   loss = f(itp(x0))
+#   Zygote.gradient(data -> f(cubic_interp((x,y), data)(x0)), data)
+#
+# The constructor pullback simply passes through the incoming tangent
+# (computed by the eval/gradient/hessian/laplacian rrules below) as Δdata.
+# This works because ChainRulesCore allows non-structural tangents.
+
+"""
+Constructor rrule for `cubic_interp(grids, data; ...)` → `CubicInterpolantND`.
+
+The pullback receives the tangent accumulated from downstream eval/gradient/hessian
+rrules (an Array of same shape as `data`) and passes it through as `Δdata`.
+"""
+function ChainRulesCore.rrule(
+        ::typeof(cubic_interp),
+        grids::NTuple{N, AbstractVector},
+        data::AbstractArray{Tv, N};
+        kwargs...
+    ) where {Tv, N}
+    itp = cubic_interp(grids, data; kwargs...)
+
+    function cubic_interp_nd_ctor_pullback(Δitp)
+        Δitp isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent()
+        # Δitp is an Array (data_bar) computed by the eval/gradient/hessian rrules
+        return NoTangent(), NoTangent(), Δitp
+    end
+
+    return itp, cubic_interp_nd_ctor_pullback
+end
+
+# ════════════════════════════════════════
+# CubicInterpolantND — eval rrule with ∂/∂data
+# ════════════════════════════════════════
+# More specific than the generic AbstractInterpolantND rrule (lines 140-155),
+# so Julia dispatches here for CubicInterpolantND.
+# Returns both ∂/∂query AND ∂/∂data (as the itp tangent).
+
+"""
+Eval rrule for `itp::CubicInterpolantND(query)` with ∂/∂data support.
+
+The pullback computes:
+- `∂query`: via `gradient(itp, query)` (locate-once, analytical)
+- `data_bar`: via `CubicAdjointND(Δy)` — returned as the itp tangent,
+  which flows back through the constructor rrule to become `Δdata`.
+"""
+function ChainRulesCore.rrule(
+        itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}}
+    ) where {Tg, Tv, N}
+    y = itp(query)
+
+    # Build adjoint for ∂/∂data (single query point → wrap in 1-element vectors)
+    queries_vec = ntuple(d -> Tg[query[d]], Val(N))
+    adj = cubic_adjoint(itp.grids, queries_vec; bc = itp.bcs)
+
+    function cubic_itp_nd_eval_pullback(Δy)
+        Δy isa AbstractZero && return ZeroTangent(), ZeroTangent()
+        Δy_val = unthunk(Δy)
+
+        # ∂/∂query via analytical gradient (locate-once)
+        grad = FastInterpolations.gradient(itp, query)
+        ∂query = ntuple(i -> real(conj(Δy_val) * grad[i]), Val(N))
+
+        # ∂/∂data via adjoint operator
+        data_bar = adj([Δy_val]; deriv = EvalValue())
+
+        return data_bar, ∂query
+    end
+
+    return y, cubic_itp_nd_eval_pullback
+end
+
+# ════════════════════════════════════════
+# CubicInterpolantND — gradient rrule with ∂/∂data
+# ════════════════════════════════════════
+# For `FastInterpolations.gradient(itp, query)` → NTuple{N} of partials.
+# Single CubicAdjointND built once, applied N times with different deriv tuples.
+
+"""
+rrule for `gradient(itp::CubicInterpolantND, query)` with ∂/∂data support.
+
+The pullback receives `Δgrad::NTuple{N}` (cotangents for each partial derivative).
+For each axis `i` where `Δgrad[i] ≠ 0`:
+- `data_bar += adj(Δgrad[i]; deriv = e_i)` where `e_i` = DerivOp(1) on axis i
+- `∂query[j] += Δgrad[i] * H[i,j]` (Hessian row)
+
+Uses a single `CubicAdjointND` for all N data-adjoint applications.
+"""
+function ChainRulesCore.rrule(
+        ::typeof(FastInterpolations.gradient),
+        itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    grad = FastInterpolations.gradient(itp, query; kwargs...)
+
+    # Build adjoint once for ∂/∂data
+    queries_vec = ntuple(d -> Tg[query[d]], Val(N))
+    adj = cubic_adjoint(itp.grids, queries_vec; bc = itp.bcs)
+
+    function gradient_itp_nd_pullback(Δgrad_raw)
+        Δgrad_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
+        Δgrad = unthunk(Δgrad_raw)
+
+        # ∂/∂data: accumulate adjoint applications for each axis
+        T_out = promote_type(Tg, typeof(first(Δgrad)))
+        data_bar = zeros(T_out, size(itp)...)
+        for i in 1:N
+            dg_i = Δgrad[i]
+            iszero(dg_i) && continue
+            ops_i = ntuple(j -> j == i ? DerivOp(1) : EvalValue(), Val(N))
+            data_bar .+= adj([dg_i]; deriv = ops_i)
+        end
+
+        # ∂/∂query: Hessian × Δgrad
+        H = FastInterpolations.hessian(itp, query)
+        ∂query = ntuple(j -> sum(real(conj(Δgrad[i]) * H[i, j]) for i in 1:N), Val(N))
+
+        return NoTangent(), data_bar, ∂query
+    end
+
+    return grad, gradient_itp_nd_pullback
+end
+
+# ════════════════════════════════════════
+# CubicInterpolantND — hessian rrule with ∂/∂data
+# ════════════════════════════════════════
+# For `FastInterpolations.hessian(itp, query)` → N×N Matrix.
+# Builds one CubicAdjointND, applies N(N+1)/2 times (symmetry).
+
+"""
+rrule for `hessian(itp::CubicInterpolantND, query)` with ∂/∂data support.
+
+The pullback receives `ΔH::Matrix` (N×N cotangent matrix).
+For each unique (i,j) pair:
+- `data_bar += adj(ΔH[i,j]; deriv = ops_ij)` where `ops_ij` has DerivOp on axes i,j
+- `∂query` via third derivatives (not computed — returned as ZeroTangent for now)
+"""
+function ChainRulesCore.rrule(
+        ::typeof(FastInterpolations.hessian),
+        itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    H = FastInterpolations.hessian(itp, query; kwargs...)
+
+    queries_vec = ntuple(d -> Tg[query[d]], Val(N))
+    adj = cubic_adjoint(itp.grids, queries_vec; bc = itp.bcs)
+
+    function hessian_itp_nd_pullback(ΔH_raw)
+        ΔH_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
+        ΔH = unthunk(ΔH_raw)
+
+        T_out = promote_type(Tg, eltype(ΔH))
+        data_bar = zeros(T_out, size(itp)...)
+
+        # Diagonal: ∂²f/∂xᵢ²
+        for i in 1:N
+            dh_ii = ΔH[i, i]
+            iszero(dh_ii) && continue
+            ops = ntuple(j -> j == i ? DerivOp(2) : EvalValue(), Val(N))
+            data_bar .+= adj([dh_ii]; deriv = ops)
+        end
+
+        # Off-diagonal (symmetry: ΔH[i,j] + ΔH[j,i])
+        for i in 1:N, j in (i + 1):N
+            dh_ij = ΔH[i, j] + ΔH[j, i]
+            iszero(dh_ij) && continue
+            ops = ntuple(k -> (k == i || k == j) ? DerivOp(1) : EvalValue(), Val(N))
+            data_bar .+= adj([dh_ij]; deriv = ops)
+        end
+
+        # ∂/∂query requires third derivatives — omit for now
+        return NoTangent(), data_bar, ZeroTangent()
+    end
+
+    return H, hessian_itp_nd_pullback
+end
+
+# ════════════════════════════════════════
+# CubicInterpolantND — laplacian rrule with ∂/∂data
+# ════════════════════════════════════════
+# For `FastInterpolations.laplacian(itp, query)` → scalar.
+# Builds one CubicAdjointND, applies N times (diagonal only).
+
+"""
+rrule for `laplacian(itp::CubicInterpolantND, query)` with ∂/∂data support.
+
+The pullback receives scalar `Δlap`:
+- `data_bar += adj(Δlap; deriv = (EvalValue,...,DerivOp(2),...))` for each axis
+- `∂query` via third derivatives — omitted (ZeroTangent).
+"""
+function ChainRulesCore.rrule(
+        ::typeof(FastInterpolations.laplacian),
+        itp::FastInterpolations.CubicInterpolantND{Tg, Tv, N},
+        query::Tuple{Vararg{Real, N}};
+        kwargs...
+    ) where {Tg, Tv, N}
+    lap = FastInterpolations.laplacian(itp, query; kwargs...)
+
+    queries_vec = ntuple(d -> Tg[query[d]], Val(N))
+    adj = cubic_adjoint(itp.grids, queries_vec; bc = itp.bcs)
+
+    function laplacian_itp_nd_pullback(Δlap_raw)
+        Δlap_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
+        Δlap = unthunk(Δlap_raw)
+
+        T_out = promote_type(Tg, typeof(Δlap))
+        data_bar = zeros(T_out, size(itp)...)
+        for i in 1:N
+            ops = ntuple(j -> j == i ? DerivOp(2) : EvalValue(), Val(N))
+            data_bar .+= adj([Δlap]; deriv = ops)
+        end
+
+        return NoTangent(), data_bar, ZeroTangent()
+    end
+
+    return lap, laplacian_itp_nd_pullback
 end
 
 end # module

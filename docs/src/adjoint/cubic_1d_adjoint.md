@@ -44,13 +44,6 @@ println("⟨f, Wᵀȳ⟩ = ", dot(f, WTy))
 
 ## Constructor
 
-```@docs
-cubic_adjoint
-CubicAdjoint
-AbstractAdjoint
-```
-
-**Signature:**
 ```julia
 cubic_adjoint(x, x_query; bc=CubicFit()) -> CubicAdjoint
 ```
@@ -58,6 +51,8 @@ cubic_adjoint(x, x_query; bc=CubicFit()) -> CubicAdjoint
 - `x`: Grid points (sorted `AbstractVector`)
 - `x_query`: Query points (baked into the operator)
 - `bc`: Any [boundary condition](../boundary-conditions/overview.md) — all BC types are supported including `PeriodicBC`
+
+See [Adjoint API Reference](../api/adjoint.md) for full docstrings.
 
 ---
 

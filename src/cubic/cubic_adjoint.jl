@@ -55,7 +55,7 @@ end
 # ========================================
 
 """
-    CubicAdjoint{Tg, C, BC, PF}
+    CubicAdjoint{Tg, C, BC}
 
 Adjoint (transpose) operator for cubic spline interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward interpolation weight matrix.
@@ -67,7 +67,6 @@ The same adjoint can be applied to any `ȳ` vector regardless of value type.
 - `Tg`: Grid float type (Float32 or Float64)
 - `C`: `CubicSplineCache` type (reused from forward interpolation)
 - `BC`: `BCPair` or `PeriodicBC` (normalized boundary condition)
-- `PF`: `_AdjointPolyfitData` type (precomputed PolyFit stencil coefficients)
 
 # Usage
 ```julia
@@ -93,23 +92,14 @@ Adjoint: `f̄ = Wᵀȳ = Eᵧᵀȳ + Rᵀ·A⁻ᵀ·E_zᵀȳ`
 
 Here `A` is the tridiagonal moment matrix, `R` the finite-difference RHS operator,
 `Eᵧ` and `E_z` the evaluation weight matrices for y-values and z-moments respectively.
+
+PolyFit stencil coefficients and periodic `q_transpose = A'^{-T}u` are computed on the
+fly at each `adj(ȳ)` call (O(D) and O(n) respectively, negligible vs overall pipeline).
 """
-struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}, PF <: _AdjointPolyfitData, QT} <: AbstractAdjoint{Tg}
+struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}} <: AbstractAdjoint{Tg}
     cache::C
     anchors::Vector{_CubicAnchoredQuery{Tg, Tg}}
     bc::BC
-    polyfit_data::PF
-    q_transpose::QT   # Nothing for non-periodic, Vector{Tg} for periodic (A'^{-T} u)
-
-    function CubicAdjoint(
-            cache::C,
-            anchors::Vector{_CubicAnchoredQuery{Tg, Tg}},
-            bc::BC,
-            polyfit_data::PF;
-            q_transpose::QT = nothing
-        ) where {Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}, PF <: _AdjointPolyfitData, QT}
-        return new{Tg, C, BC, PF, QT}(cache, anchors, bc, polyfit_data, q_transpose)
-    end
 end
 
 @inline _adjoint_output_length(adj::CubicAdjoint) =
@@ -122,6 +112,18 @@ Base.size(adj::CubicAdjoint, d::Integer) = size(adj)[d]
 
 @noinline _throw_adjoint_dim_mismatch(label::String, got::Int, expected::Int) =
     throw(DimensionMismatch("$label length ($got) must match expected ($expected)"))
+
+@noinline _throw_adjoint_size_mismatch(got::Tuple, expected::Tuple) =
+    throw(DimensionMismatch("f_bar size $got must match output size $expected"))
+
+# Shared periodic finalization for 1D allocating callables
+function _adjoint_1d_finalize(f_bar::AbstractVector, bc, n_internal::Int)
+    if bc isa PeriodicBC{:exclusive}
+        @inbounds f_bar[1] += f_bar[n_internal]
+        return f_bar[1:(n_internal - 1)]
+    end
+    return f_bar
+end
 
 # ========================================
 # Callable Methods
@@ -140,18 +142,13 @@ The `deriv` keyword selects which forward operator's adjoint to compute:
 
 The output element type is `promote_type(eltype(y_bar), Tg)`.
 """
-function (adj::CubicAdjoint{Tg})(y_bar::AbstractVector; deriv::DerivOp = EvalValue()) where {Tg}
+function (adj::CubicAdjoint{Tg})(y_bar::AbstractVector; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
     length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
     Tv = promote_type(eltype(y_bar), Tg)
     n_internal = length(adj.cache.x)
     f_bar = zeros(Tv, n_internal)
     _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
-    # Exclusive periodic: fold f̄[n+1] into f̄[1] and truncate
-    if adj.bc isa PeriodicBC{:exclusive}
-        @inbounds f_bar[1] += f_bar[n_internal]
-        return f_bar[1:(n_internal - 1)]
-    end
-    return f_bar
+    return _adjoint_1d_finalize(f_bar, adj.bc, n_internal)
 end
 
 """
@@ -160,7 +157,56 @@ end
 Apply the adjoint operator in-place: `f̄ = W_dᵀȳ`.
 Zeros `f_bar` before accumulating. See allocating version for `deriv` options.
 """
-function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::AbstractVector; deriv::DerivOp = EvalValue()) where {Tg}
+function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::AbstractVector; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
+    n_out = _adjoint_output_length(adj)
+    length(f_bar) == n_out || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), n_out)
+    length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
+    if adj.bc isa PeriodicBC{:exclusive}
+        _adjoint_apply_exclusive_inplace!(f_bar, adj, y_bar, deriv)
+    else
+        fill!(f_bar, zero(eltype(f_bar)))
+        _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
+    end
+    return f_bar
+end
+
+# ── Scalar / Tuple callables ─────────────────────────────────────────────
+# adj(scalar)  → single query point, zero heap-alloc (scalar → 1-tuple on stack)
+# adj(tuple)   → few query points, zero heap-alloc (tuple is already stack-allocated)
+# adj(f_bar, scalar/tuple) → in-place variants
+
+function (adj::CubicAdjoint{Tg})(y_bar::Real; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
+    length(adj.anchors) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, length(adj.anchors))
+    Tv = promote_type(typeof(y_bar), Tg)
+    n_internal = length(adj.cache.x)
+    f_bar = zeros(Tv, n_internal)
+    _cubic_adjoint_apply!(f_bar, adj, (y_bar,), deriv)
+    return _adjoint_1d_finalize(f_bar, adj.bc, n_internal)
+end
+
+function (adj::CubicAdjoint{Tg})(y_bar::Tuple{Vararg{Real}}; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
+    length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
+    Tv = promote_type(eltype(y_bar), Tg)
+    n_internal = length(adj.cache.x)
+    f_bar = zeros(Tv, n_internal)
+    _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
+    return _adjoint_1d_finalize(f_bar, adj.bc, n_internal)
+end
+
+function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::Real; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
+    n_out = _adjoint_output_length(adj)
+    length(f_bar) == n_out || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), n_out)
+    length(adj.anchors) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, length(adj.anchors))
+    if adj.bc isa PeriodicBC{:exclusive}
+        _adjoint_apply_exclusive_inplace!(f_bar, adj, (y_bar,), deriv)
+    else
+        fill!(f_bar, zero(eltype(f_bar)))
+        _cubic_adjoint_apply!(f_bar, adj, (y_bar,), deriv)
+    end
+    return f_bar
+end
+
+function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::Tuple{Vararg{Real}}; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
     n_out = _adjoint_output_length(adj)
     length(f_bar) == n_out || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), n_out)
     length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
@@ -175,7 +221,7 @@ end
 
 # Exclusive periodic in-place: pool-allocated work buffer for the n+1 internal grid.
 @with_pool pool function _adjoint_apply_exclusive_inplace!(
-        f_bar::AbstractVector{Tv}, adj::CubicAdjoint, y_bar::AbstractVector, deriv::DerivOp
+        f_bar::AbstractVector{Tv}, adj::CubicAdjoint, y_bar, deriv::DerivOp
     ) where {Tv}
     n_internal = length(adj.cache.x)
     n_out = length(f_bar)
@@ -195,7 +241,7 @@ end
 @with_pool pool function _cubic_adjoint_apply!(
         f_bar::AbstractVector{Tv},
         adj::CubicAdjoint{Tg},
-        y_bar::AbstractVector,
+        y_bar,  # AbstractVector, Tuple, or scalar-in-tuple
         deriv::DerivOp = EvalValue()
     ) where {Tv, Tg}
     n = length(adj.cache.x)
@@ -208,7 +254,9 @@ end
     _ldiv_tridiagonal_transpose!(z_bar, adj.cache.thomas)
 
     # Step 3: RHS adjoint — f̄ += Rᵀr̄
-    _compute_rhs_adjoint!(f_bar, z_bar, adj.cache.spacing, adj.bc, adj.polyfit_data)
+    # Compute polyfit stencil coefficients on the fly (O(D), grid-only)
+    pf = _build_polyfit_data(adj.bc, adj.cache.x)
+    _compute_rhs_adjoint!(f_bar, z_bar, adj.cache.spacing, adj.bc, pf)
 
     return f_bar
 end
@@ -226,7 +274,7 @@ Dispatches on `DerivOp{N}` to select the appropriate weight field from `_CubicAn
 """
 function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar::AbstractVector,
+        anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
         ::EvalValue
     )
     @inbounds for q in eachindex(y_bar)
@@ -243,7 +291,7 @@ end
 
 function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar::AbstractVector,
+        anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
         ::EvalDeriv1
     )
     @inbounds for q in eachindex(y_bar)
@@ -260,7 +308,7 @@ end
 
 function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar::AbstractVector,
+        anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
         ::EvalDeriv2
     )
     @inbounds for q in eachindex(y_bar)
@@ -275,7 +323,7 @@ end
 
 function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
-        anchors::Vector{<:_CubicAnchoredQuery}, y_bar::AbstractVector,
+        anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
         ::EvalDeriv3
     )
     @inbounds for q in eachindex(y_bar)
@@ -484,7 +532,8 @@ function cubic_adjoint(
         x_query::AbstractVector;
         bc::AbstractBC = CubicFit(),
         extrap::AbstractExtrap = NoExtrap(),
-        autocache::Bool = true
+        autocache::Bool = true,
+        _extra...
     )
     # Promote grid and query to AbstractFloat (handles Integer, Rational, etc.)
     Tg = _promote_grid_float(eltype(x), eltype(x_query))
@@ -514,10 +563,19 @@ function cubic_adjoint(
         anchors = _anchor_query(cache.x, xq_p, Val(:cubic), wrap)
     end
 
-    # Precompute PolyFit stencil coefficients (grid-only, computed once)
-    pf = _build_polyfit_data(bc_pair, cache.x)
+    return CubicAdjoint(cache, anchors, bc_pair)
+end
 
-    return CubicAdjoint(cache, anchors, bc_pair, pf)
+# Scalar query convenience: cubic_adjoint(x, 0.5; ...) → wraps to vector
+function cubic_adjoint(
+        x::AbstractVector,
+        x_query::Real;
+        bc::AbstractBC = CubicFit(),
+        extrap::AbstractExtrap = NoExtrap(),
+        autocache::Bool = true,
+        _extra...
+    )
+    return cubic_adjoint(x, [x_query]; bc = bc, extrap = extrap, autocache = autocache)
 end
 
 # ========================================
@@ -550,18 +608,10 @@ function _build_cubic_adjoint_periodic(
     # Build anchored queries with wrapping (queries outside domain → wrap to [x[1], x[end]))
     anchors = _anchor_query(cache.x, xq, Val(:cubic), true)
 
-    # No PolyFit for periodic
-    pf = _AdjointPolyfitData(nothing, nothing)
-
-    # Precompute q_t = A'^{-T} u for the transpose Sherman-Morrison correction
-    n = length(cache.x) - 1
-    u = zeros(Tg, n); u[1] = one(Tg); u[n] = one(Tg)
-    _ldiv_tridiagonal_transpose!(u, cache.thomas)  # u is now q_t in-place
-
     # Store resolved period in BC for display/introspection
     bc_display = _with_resolved_period(bc, cache.bc_config.period)
 
-    return CubicAdjoint(cache, anchors, bc_display, pf; q_transpose = u)
+    return CubicAdjoint(cache, anchors, bc_display)
 end
 
 # ========================================
@@ -571,7 +621,7 @@ end
 @with_pool pool function _cubic_adjoint_apply!(
         f_bar::AbstractVector{Tv},
         adj::CubicAdjoint{Tg, <:CubicSplineCache{Tg}, <:PeriodicBC},
-        y_bar::AbstractVector,
+        y_bar,  # AbstractVector, Tuple, or scalar-in-tuple
         deriv::DerivOp = EvalValue()
     ) where {Tv, Tg}
     n = length(adj.cache.x) - 1  # n intervals, n+1 grid points
@@ -585,7 +635,14 @@ end
     @inbounds z_bar[1] += z_bar[n + 1]
 
     # Step 3: Sherman-Morrison adjoint solve — (A'+αuuᵀ)⁻ᵀz̄ → r̄
-    _adjoint_periodic_solve!(z_bar, adj.cache, adj.q_transpose, n)
+    # Compute q_t = A'^{-T} u on the fly (pool-allocated, zero-alloc)
+    q_t = acquire!(pool, Tg, n)
+    fill!(q_t, zero(Tg))
+    @inbounds q_t[1] = one(Tg)
+    @inbounds q_t[n] = one(Tg)
+    _ldiv_tridiagonal_transpose!(q_t, adj.cache.thomas)
+
+    _adjoint_periodic_solve!(z_bar, adj.cache, q_t, n)
 
     # Step 4: Rᵀ_circ r̄ → f̄ += Rᵀ·r̄ (accumulates into f_bar[1..n+1])
     _compute_rhs_adjoint_periodic!(f_bar, z_bar, adj.cache.spacing, n)
@@ -610,7 +667,7 @@ Operates in-place on `z_bar[1:n]`; `z_bar[n+1]` is not touched.
 function _adjoint_periodic_solve!(
         z_bar::AbstractVector{Tv},
         cache::CubicSplineCache{Tg, X, F, PeriodicData{Tg}, S},
-        q_t::Vector{Tg},
+        q_t::AbstractVector,
         n::Int
     ) where {Tv, Tg <: AbstractFloat, X, F, S <: AbstractGridSpacing{Tg}}
 

@@ -58,10 +58,13 @@ const EvalDeriv3 = DerivOp{3}
 
 """
     deriv_order(::DerivOp{N}) -> Int
+    deriv_order(::Type{DerivOp{N}}) -> Int
 
-Extract derivative order from a `DerivOp` instance.
+Extract derivative order from a `DerivOp` instance or type.
+The type-level method is used inside `@generated` functions where only types are available.
 """
 @inline deriv_order(::DerivOp{N}) where {N} = N
+@inline deriv_order(::Type{DerivOp{N}}) where {N} = N
 
 Base.show(io::IO, ::DerivOp{N}) where {N} = print(io, "DerivOp{", N, "}()")
 

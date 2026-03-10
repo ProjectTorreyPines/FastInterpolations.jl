@@ -988,4 +988,131 @@
         @test occursin("BinarySearch", verbose_str)
         @test occursin("Vector", verbose_str)
     end
+
+    # ========================================
+    # CubicAdjointND Show Methods
+    # ========================================
+
+    @testset "CubicAdjointND show (2D, CubicFit default)" begin
+        x1 = collect(range(0.0, 1.0, 11))
+        x2 = collect(range(0.0, 2.0, 15))
+        xq1 = [0.2, 0.5, 0.8]
+        xq2 = [0.5, 1.0, 1.5]
+
+        adj = cubic_adjoint((x1, x2), (xq1, xq2))
+
+        # Compact show: CubicAdjointND{Float64, 2}(3 → 11×15, CubicFit)
+        compact_str = sprint(show, adj)
+        @test occursin("CubicAdjointND", compact_str)
+        @test occursin("Float64", compact_str)
+        @test occursin("2", compact_str)
+        @test occursin("3", compact_str)       # nq = 3
+        @test occursin("11×15", compact_str)   # output grid sizes
+        @test occursin("CubicFit", compact_str)
+
+        # Verbose show
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("CubicAdjointND", verbose_str)
+        @test occursin("Float64", verbose_str)
+        @test occursin("Grids:", verbose_str)
+        @test occursin("Query:", verbose_str)
+        @test occursin("3 points", verbose_str)
+        @test occursin("BC:", verbose_str)
+        @test occursin("CubicFit", verbose_str)
+    end
+
+    @testset "CubicAdjointND show (2D, mixed BCs)" begin
+        x1 = collect(range(0.0, 1.0, 11))
+        x2 = collect(range(0.0, 2.0, 15))
+        xq1 = [0.3, 0.7]
+        xq2 = [0.5, 1.5]
+
+        adj = cubic_adjoint((x1, x2), (xq1, xq2); bc = (ZeroCurvBC(), ZeroSlopeBC()))
+
+        # Compact: should say "Mixed"
+        compact_str = sprint(show, adj)
+        @test occursin("Mixed", compact_str)
+
+        # Verbose: per-axis BC details
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("x₁", verbose_str)
+        @test occursin("x₂", verbose_str)
+        @test occursin("ZeroCurv", verbose_str)
+        @test occursin("ZeroSlope", verbose_str)
+    end
+
+    @testset "CubicAdjointND show (2D, Periodic BC inclusive)" begin
+        x1 = collect(range(0.0, 2π, 21))
+        x2 = collect(range(0.0, 2π, 21))
+        xq1 = [1.0, 3.0]
+        xq2 = [2.0, 5.0]
+
+        adj = cubic_adjoint((x1, x2), (xq1, xq2); bc = PeriodicBC())
+
+        compact_str = sprint(show, adj)
+        @test occursin("Periodic", compact_str)
+        @test occursin("21×21", compact_str)  # inclusive periodic → grid_size unchanged
+
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("Periodic", verbose_str)
+    end
+
+    @testset "CubicAdjointND show (2D, Periodic BC exclusive)" begin
+        # Exclusive: 20 pts per axis, no endpoint. Internally extended to 21.
+        x1 = range(0.0; step = 2π / 20, length = 20)
+        x2 = range(0.0; step = 2π / 15, length = 15)
+        xq1 = [1.0, 3.0]
+        xq2 = [2.0, 5.0]
+
+        adj = cubic_adjoint((x1, x2), (xq1, xq2); bc = PeriodicBC(; endpoint = :exclusive))
+
+        # Compact: output size is user's original grid (20×15), not internal extended (21×16)
+        compact_str = sprint(show, adj)
+        @test occursin("20×15", compact_str)
+        @test occursin("Periodic", compact_str)
+
+        # Verbose: grids summary shows internal extended size (21×16)
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("21×16", verbose_str)
+        @test occursin("Periodic", verbose_str)
+    end
+
+    @testset "CubicAdjointND show (3D)" begin
+        x1 = collect(range(0.0, 1.0, 8))
+        x2 = collect(range(0.0, 2.0, 10))
+        x3 = collect(range(0.0, 3.0, 12))
+        xq1 = [0.5]
+        xq2 = [1.0]
+        xq3 = [1.5]
+
+        adj = cubic_adjoint((x1, x2, x3), (xq1, xq2, xq3))
+
+        # Compact show
+        compact_str = sprint(show, adj)
+        @test occursin("CubicAdjointND", compact_str)
+        @test occursin("3", compact_str)       # N = 3
+        @test occursin("8×10×12", compact_str)
+
+        # Verbose show
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("x₁", verbose_str)
+        @test occursin("x₂", verbose_str)
+        @test occursin("x₃", verbose_str)
+        @test occursin("1 points", verbose_str)
+    end
+
+    @testset "CubicAdjointND show (color output)" begin
+        x1 = collect(range(0.0, 1.0, 11))
+        x2 = collect(range(0.0, 2.0, 15))
+        xq1 = [0.5]
+        xq2 = [1.0]
+
+        adj = cubic_adjoint((x1, x2), (xq1, xq2))
+
+        io_color = IOContext(IOBuffer(), :color => true)
+        show(io_color, MIME("text/plain"), adj)
+        output = String(take!(io_color.io))
+        @test occursin("CubicAdjointND", output)
+        @test occursin("Query:", output)
+    end
 end

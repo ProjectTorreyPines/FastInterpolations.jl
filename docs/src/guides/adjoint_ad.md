@@ -14,9 +14,10 @@ Interpolation is a **linear operation** on data values: the output is a weighted
 | **Forward** (gather) | `y_interp = A * y_data` | Weighted sum of nearby data → interpolated value |
 | **Adjoint** (scatter) | `∇y_data = Aᵀ * δ` | Distribute residuals back to data nodes |
 
-!!! tip "Zygote & Enzyme support for cubic splines (1D)"
-    `cubic_interp(x, y, xq; ...)` provides analytical adjoint rules via [`CubicAdjoint`](@ref),
-    so **Zygote** and **Enzyme** can differentiate `∂f/∂y` for 1D cubic splines without
+!!! tip "Zygote & Enzyme support for cubic splines (1D and ND)"
+    `cubic_interp(x, y, xq; ...)` and `cubic_interp(grids, data, queries; ...)` provide
+    analytical adjoint rules via [`CubicAdjoint`](@ref) / [`CubicAdjointND`](@ref),
+    so **Zygote** and **Enzyme** can differentiate `∂f/∂y` for cubic splines without
     tracing through the tridiagonal solve. See [Backend Support](@ref) below for details.
 
 ## Quick Start
@@ -128,14 +129,14 @@ it must trace through the entire construction path: `f(y) = cubic_interp(x, y, x
 This construction path includes in-place array mutations (tridiagonal solve for cubic/quadratic,
 slope recurrence for quadratic), which limits backend compatibility:
 
-| Backend | constant | linear | quadratic | cubic (1D) |
-|---------|:--------:|:------:|:---------:|:----------:|
-| **ForwardDiff** | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) |
-| **Zygote** | ✅ | ✅ | ❌¹ | ✅² |
-| **Enzyme** | ❌³ | ❌³ | ❌³ | ✅² |
+| Backend | constant | linear | quadratic | cubic (1D) | cubic (ND) |
+|---------|:--------:|:------:|:---------:|:----------:|:----------:|
+| **ForwardDiff** | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) | ✅ (1D/ND) | ✅ |
+| **Zygote** | ✅ | ✅ | ❌¹ | ✅² | ✅² |
+| **Enzyme** | ❌³ | ❌³ | ❌³ | ✅² | ✅² |
 
 ¹ Quadratic one-shot mutates arrays during the spline solve, which Zygote's source-to-source transformation cannot differentiate through.
-² Cubic (1D) uses an analytical adjoint via [`CubicAdjoint`](@ref) — the AD backend never traces through the tridiagonal solve.
+² Cubic uses an analytical adjoint via [`CubicAdjoint`](@ref) / [`CubicAdjointND`](@ref) — the AD backend never traces through the tridiagonal solve.
 ³ Enzyme encounters LLVM codegen errors on the one-shot construction path.
 
 ## How It Works
@@ -154,3 +155,4 @@ slope recurrence for quadratic), which limits backend compatibility:
 
 - **[Adjoint Operators](../adjoint/overview.md)**: Conceptual overview — what adjoints are, where they appear, and the mathematical formulation
 - **[Cubic Adjoint (1D)](../adjoint/cubic_1d_adjoint.md)**: Native `CubicAdjoint` API for zero-allocation, matrix-free adjoint computation
+- **[Cubic Adjoint (ND)](../adjoint/cubic_nd_adjoint.md)**: Native `CubicAdjointND` API for N-dimensional adjoint computation

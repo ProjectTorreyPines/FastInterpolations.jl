@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1772930818855,
+  "lastUpdate": 1773124138936,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -27742,6 +27742,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1581.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bd451888120d606428305df0c1631fcdfb1a2c15",
+          "message": "(feat): CubicAdjointND — N-Dimensional Cubic Adjoint Operator (#71)\n\n* feat: CubicAdjointND operator for N-dimensional cubic adjoint (Phase 1)\n\nImplements the ND extension of the 1D CubicAdjoint operator. Computes\nf̄ = Wᵀȳ for tensor-product cubic Hermite interpolation via per-axis\nHermite weight baking, eval-adjoint scatter, and reverse-order build\nadjoint with transpose Thomas solves.\n\nPhase 1 scope: N=2 specialization, CubicFit BC, EvalValue only.\n\n- CubicAdjointND struct matching CubicInterpolantND type-param pattern\n  (B <: NTuple{N, AbstractBC}, single bcs field, no polyfit_data)\n- _NDAdjointAnchor for per-query baked Hermite weights (4N tensor-product)\n- _build_nd_adjoint inner constructor for @inferred (map over tuples)\n- _scatter_nd_2d! eval-adjoint with 16-entry tensor-product scatter\n- _build_adjoint_nd_2d! reverse-order build adjoint (d=2..1)\n- _moments_to_deriv_adjoint_1d! (adjoint of _moments_to_derivatives_1d!)\n- Tests: dot-product identity, matrix materialization, @inferred,\n  zero-allocation in-place, edge cases, dimension validation\n\n* feat: Generalize CubicAdjointND to arbitrary N dimensions (Phase 2)\n\nReplace N=2-only scatter/build/apply with dimension-generic implementations:\n- @generated _scatter_nd! produces straight-line code for any N (4^N entries)\n- Generic _build_adjoint_nd! uses selectdim + reshape-to-3D trick\n- Dual caches (C/CE) for correct BC dispatch on mixed partials\n- Add N=3 tests, all non-periodic BC tests, and register in runtests.jl\n\n* refactor: Type-harden CubicAdjointND with function barrier and precomputed polyfit\n\n- Add _adjoint_axis_pair! function barrier to eliminate Union from cache dispatch\n- Precompute pf_user/pf_eff polyfit data at construction (match 1D CubicAdjoint)\n- Add PF/PFE type parameters to struct (9 params, matching CubicInterpolantND)\n- Fully annotate _build_adjoint_nd! signature with NTuple constraints\n- Add PeriodicBC validation (throws at construction, Phase 3 planned)\n- Add _validate_polyfit_bcs for PolyFit BC grid-point requirements\n\n* refactor: Replace abstract bcs with concrete BCPair storage in CubicAdjointND\n\nFollow CubicInterpolantND's bcs_store pattern: resolve all BCs to concrete\nBCPair{L,R} at construction time. Eliminates runtime _get_effective_bc and\n_normalize_bc calls from the hot path.\n\n- bcs::B (NTuple{N, AbstractBC}) → bc_pairs::BP + eff_bc_pairs::BPE (NTuple{N, BCPair})\n- Remove grids arg from _build_adjoint_nd! (no longer needed for BC resolution)\n- Type params: 9 → 10 {Tg, N, G, S, C, CE, BP, BPE, PF, PFE}\n\n* refactor: Remove precomputed polyfit from CubicAdjointND, compute on the fly\n\nPolyFit stencil coefficients are O(D)≈O(3) per axis — negligible vs the O(n)\nThomas solve. Compute them inside _adjoint_axis_pair! from BCPair + grid,\nmatching the forward compute_rhs! pattern. Struct drops from 10 to 8 type params.\n\n* refactor: Remove polyfit_data and q_transpose fields from CubicAdjoint\n\nStruct drops from 5 to 3 type params {Tg, C, BC}. PolyFit stencil\ncoefficients computed on the fly (O(D)). Periodic q_transpose computed\non the fly using pool allocation (O(n) Thomas solve, zero-alloc).\n\n* refactor: Rename eff_caches/eff_bc_pairs to mixed_caches/mixed_bc_pairs in CubicAdjointND\n\nClarify the dual cache/BC structure: pure derivatives (p_src==1) use user's\nBC, while mixed partials (p_src>1) internally use CubicFit. Type params\nCE/BPE renamed to MC/MBP to reflect this. Updated docstrings to explain the\narchitecture.\n\n* feat: Add PeriodicBC support to CubicAdjointND (Phase 3)\n\nSupport inclusive, exclusive, and mixed periodic boundary conditions\nin the N-dimensional cubic adjoint operator. Key changes:\n\n- Relax BP/MBP type constraints from BCPair to Union{BCPair, PeriodicBC}\n- Add _adjoint_axis_pair_periodic! function barrier with Sherman-Morrison\n  transpose solve, periodic BC correction adjoint, and circulant RHS adjoint\n- Extend exclusive grids to inclusive form at construction (grid-only)\n- Handle exclusive periodic output via fold + truncate pattern\n- Add query wrapping via _wrap_to_domain for periodic axes\n- Precompute q_t = A'^{-T}u once per periodic axis (not per slice)\n\nTests: dot-product identity (inclusive/exclusive/non-uniform/N=3),\nmixed BCs, matrix materialization, type stability, zero-allocation.\n\n* feat: Add derivative adjoint support to CubicAdjointND (Phase 4)\n\nPre-bake all 4 derivative weight sets (w0-w3) per axis in _NDAdjointAnchor,\nenabling adj(y_bar; deriv=DerivOp(k)) with zero-overhead compile-time dispatch\nvia @generated _scatter_nd! that selects weight fields from type parameters.\n\n* refactor: Simplify _scatter_nd! and _bake_nd_anchors, expand derivative tests\n\n- Unify 3-arg and 4-arg _scatter_nd! into single @generated method\n- Merge dual ntuple loops in _bake_nd_anchors into single pass\n- Use deriv_order() API instead of raw .parameters[1] type introspection\n- Add tests: Float32 deriv, non-uniform grids, periodic exclusive, zero-alloc\n\n* feat: Add ND reverse-mode AD rules for ∂/∂data (ChainRulesCore + Enzyme)\n\nAdd complete reverse-mode AD support for differentiating ND cubic\ninterpolation w.r.t. data, using CubicAdjointND in the pullback/reverse.\n\nChainRulesCore (Zygote):\n- ND one-shot rrules: SoA batch + single point for cubic_interp(grids, data, queries)\n- Interpolant-API rrules enabling natural pattern:\n  itp = cubic_interp(grids, data); loss = f(itp(x0))\n  - Constructor rrule: pass-through tangent routing\n  - CubicInterpolantND eval rrule: ∂/∂data via adjoint + ∂/∂query via gradient\n  - gradient(itp, query) rrule: N adjoint applications, ∂/∂query via hessian\n  - hessian(itp, query) rrule: N(N+1)/2 adjoint applications (symmetry)\n  - laplacian(itp, query) rrule: N adjoint applications (diagonal only)\n\nEnzyme:\n- ND one-shot rules: SoA batch (augmented_primal + reverse)\n- ND scalar query rules (Active return)\n\nTests: comprehensive cross-validation against CubicAdjointND for all\nrules, including issue #60 topology optimization patterns, PeriodicBC,\nderiv kwarg forwarding, Float32, N=3, and L2 loss functions.\n\n* refactor: Replace explicit kwargs with kwargs... in ChainRulesCore rrules\n\nSimplify all 8 rrule signatures by using kwargs... splatting instead of\nenumerating every keyword argument. Pullback-critical kwargs (bc, extrap,\nderiv) are extracted via get(). Forward compatibility: adding new kwargs\nto cubic_interp no longer requires updating the extension.\n\nAlso fixes a latent bug where the 1D scalar rrule accepted `hint` but\ndid not forward it to cubic_interp.\n\n* refactor: Unify kwargs propagation in rrule→adjoint chain, add ND extrap support\n\nMove OOB weight zeroing from rrule-level _mask_oob_tangent into adjoint\ninternals (_bake_nd_anchors), enabling pure kwargs... forwarding in CRC\nrrules and removing duplicate default values. ND cubic_adjoint now\nsupports all extrap modes via _extrap_axis reuse.\n\n- Add _extra... sink to 1D/ND adjoint constructors and callables\n- Add extrap kwarg to ND cubic_adjoint constructor\n- Replace _is_periodic_bc + _wrap_to_domain with _extrap_axis in _bake_nd_anchors\n- Add per-axis OOB weight fixup (FillExtrap→zero all, ClampExtrap→zero w1-w3)\n- Remove _mask_oob_tangent from both CRC and Enzyme extensions\n- Shrink Enzyme 1D vector tape (remove extrap/x/xq from tape)\n- Forward extrap to ND cubic_adjoint in Enzyme rules\n- Add OOB extrap dot-product tests for ND adjoint (4 modes)\n\n* Remove unnecessary Tg(Int) wrapping\n\n* feat: Add Base.show, Base.Matrix for CubicAdjointND, expand test coverage\n\n- Add compact and text/plain Base.show methods matching 1D CubicAdjoint pattern\n- Add Base.Matrix for operator materialization with deriv kwarg support\n- Add dot-product tests: Float32, Deriv1(nonzero), Deriv3(value), DerivOp(3) per-axis\n- Add N=3 dot-product tests with ZeroCurvBC, ZeroSlopeBC, QuadraticFit, mixed BCs\n- Add Enzyme ND deriv=DerivOp(1) cross-validation test\n\n* docs: Add CubicAdjointND documentation and update AD compatibility tables\n\n* feat: Add 2D Cubic Spline Data-Adjoint Benchmark for performance comparison across AD backends\n\n* feat: Add missing dependencies for benchmarking in Project.toml\n\n* Runic formatting\n\n* Reflect copilot's reviews\n\n* test: Fix Enzyme extension coverage and add Matrix(adj::CubicAdjointND) tests\n\n- Reorder AD test includes: Enzyme before Zygote to prevent ChainRulesCore\n  rrule from silently intercepting custom EnzymeRules (Zygote loads CRC,\n  which triggers the rrule fallback path, leaving EnzymeRules at 0% coverage)\n- Add direct Matrix(adj) calls in 4 existing ND adjoint matrix materialization\n  test blocks (N=2, N=3, periodic, deriv) to cover Base.Matrix(::CubicAdjointND)\n\n* feat: Add Adjoint API documentation and update references in existing docs\n\n* feat: Add show methods for CubicAdjointND in test suite\n\n* feat: Enhance CubicAdjointND show tests for 2D periodic boundary conditions\n\n* feat: Add scalar/tuple y_bar callables, AoS/single-tuple constructors, fix Aqua ambiguity\n\n- Add scalar (Real) and tuple (Tuple{Vararg{Real}}) y_bar dispatch for\n  CubicAdjoint and CubicAdjointND callables (allocating + in-place)\n- Add scalar query constructor for 1D: cubic_adjoint(x, 0.5; ...)\n- Add AoS and single-tuple query constructors for ND:\n  cubic_adjoint(grids, [(x1,y1),...]) and cubic_adjoint(grids, (x,y))\n- Fix Aqua ambiguity: use Tuple{AbstractVector, Vararg{AbstractVector}}\n  for SoA queries (requires ≥1 element, excludes Tuple{} match)\n- Extract @noinline throw helpers for ND dimension checks\n- Extract _adjoint_1d_finalize to DRY periodic fold+truncate logic\n- Add periodic BC tests for scalar/tuple y_bar (inclusive + exclusive)\n\n* Runic formatting",
+          "timestamp": "2026-03-09T23:21:00-07:00",
+          "tree_id": "0a7ae19a84ac7cab042e8800fac94f46d7d460ff",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/bd451888120d606428305df0c1631fcdfb1a2c15"
+        },
+        "date": 1773124132898,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 36488,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83816\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 567.66,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 351011,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515224\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1699.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1559.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 26.45,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 22.94,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3379.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=240\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 49.79,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 27.55,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4480.52,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4468.1,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9406.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3210.96,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 455.84,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 61962,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1262.14,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 11974.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 33.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 473.48,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 44968.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 35.06,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 37004.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 10.22,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 10.21,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 18.13,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 401.74,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 37856.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 22.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 11.92,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 582.68,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4339.66,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 39729.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 1384.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 2465.16,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 3632.94,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 13699.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 4612.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 36522.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 981.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 354209,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1576.9,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

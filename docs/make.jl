@@ -212,6 +212,7 @@ makedocs(
             "Linear" => "api/linear.md",
             "Quadratic" => "api/quadratic.md",
             "Cubic" => "api/cubic.md",
+            "Adjoint" => "api/adjoint.md",
             "Types" => "api/types.md",
         ],
         "Internals" => [

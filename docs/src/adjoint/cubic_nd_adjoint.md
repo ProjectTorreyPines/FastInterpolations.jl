@@ -47,17 +47,14 @@ println("⟨f, Wᵀȳ⟩ = ", dot(vec(data), vec(WTy)))
 
 ## Constructor
 
-```@docs
-CubicAdjointND
-```
-
-**Signature:**
 ```julia
 cubic_adjoint(grids, queries; bc=CubicFit(), extrap=NoExtrap()) -> CubicAdjointND
 ```
 
 The constructor accepts the same kwargs as `cubic_interp`.
 `bc` and `extrap` accept a single value (broadcast to all axes) or a per-axis N-tuple.
+
+See [Adjoint API Reference](../api/adjoint.md) for full docstrings.
 
 ---
 

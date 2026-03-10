@@ -149,6 +149,15 @@ end
     error("unreachable: _first_fill_value called without FillExtrap")
 end
 
+# Extract fill_value from the first FillExtrap in extraps tuple.
+# Only called on OOB cold path (guarded by _is_fill_oob).
+@inline function _first_fill_value(extraps::Tuple)
+    for e in extraps
+        e isa FillExtrap && return e.fill_value
+    end
+    error("unreachable: _first_fill_value called without FillExtrap")
+end
+
 # ── Mode → Mode tuple, then promote fill values ───────────────────────
 
 @inline function _resolve_extrap_nd(extrap::AbstractExtrap, ::Nothing, ::Val{N}, ::Type{Tv}) where {N, Tv}

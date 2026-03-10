@@ -904,4 +904,86 @@ end
         end
     end
 
+    # ════════════════════════════════════════════════════════════════════════
+    # value_gradient — Zygote rrule tests
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "value_gradient — Zygote rrule" begin
+        x = range(0.0, 2.0, 15)
+        y = range(0.0, 2.0, 15)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        x0 = (0.7, 0.9)
+
+        # ── ∂/∂query: extract value from value_gradient ──
+        @testset "∂/∂query — value part" begin
+            itp = cubic_interp((x, y), data)
+            grad = Zygote.gradient(q -> FastInterpolations.value_gradient(itp, q)[1], x0)[1]
+            fd_grad = ForwardDiff.gradient(itp, [x0...])
+            @test collect(grad) ≈ fd_grad atol = 1.0e-8
+        end
+
+        # ── ∂/∂query: extract gradient norm from value_gradient ──
+        @testset "∂/∂query — gradient norm" begin
+            itp = cubic_interp((x, y), data)
+            grad = Zygote.gradient(q -> sum(abs2, FastInterpolations.value_gradient(itp, q)[2]), x0)[1]
+            # Cross-validate: same as ∂/∂query of sum(abs2, gradient(itp, q))
+            grad_ref = Zygote.gradient(q -> sum(abs2, FastInterpolations.gradient(itp, q)), x0)[1]
+            @test collect(grad) ≈ collect(grad_ref) atol = 1.0e-8
+        end
+
+        # ── ∂/∂data: value part via CubicND rrule ──
+        @testset "∂/∂data — value" begin
+            function f_vg_val(d)
+                itp = cubic_interp((x, y), d)
+                val, _ = FastInterpolations.value_gradient(itp, x0)
+                return val
+            end
+            result = Zygote.withgradient(f_vg_val, data)
+            @test result.val ≈ f_vg_val(data)
+
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            expected = adj([1.0])
+            @test result.grad[1] ≈ expected atol = 1.0e-10
+        end
+
+        # ── ∂/∂data: gradient norm via CubicND rrule ──
+        @testset "∂/∂data — ‖∇f‖²" begin
+            function f_vg_gnorm(d)
+                itp = cubic_interp((x, y), d)
+                _, g = FastInterpolations.value_gradient(itp, x0)
+                return g[1]^2 + g[2]^2
+            end
+            result = Zygote.withgradient(f_vg_gnorm, data)
+
+            # Cross-validate with existing gradient rrule path
+            function f_g_gnorm(d)
+                itp = cubic_interp((x, y), d)
+                g = FastInterpolations.gradient(itp, x0)
+                return g[1]^2 + g[2]^2
+            end
+            result_ref = Zygote.withgradient(f_g_gnorm, data)
+            @test result.grad[1] ≈ result_ref.grad[1] atol = 1.0e-10
+        end
+
+        # ── ∂/∂data: combined loss v² + ‖∇f‖² ──
+        @testset "∂/∂data — combined v² + ‖∇f‖²" begin
+            function f_combined(d)
+                itp = cubic_interp((x, y), d)
+                val, g = FastInterpolations.value_gradient(itp, x0)
+                return val^2 + g[1]^2 + g[2]^2
+            end
+            result = Zygote.withgradient(f_combined, data)
+            @test isfinite(result.val)
+
+            # Manual: ∂L/∂data = 2v·adj(1) + 2gx·adj(1;dx) + 2gy·adj(1;dy)
+            itp = cubic_interp((x, y), data)
+            v, g = FastInterpolations.value_gradient(itp, x0)
+            adj = cubic_adjoint((x, y), ([x0[1]], [x0[2]]))
+            expected = adj([2v]) .+
+                adj([2g[1]]; deriv = (DerivOp(1), EvalValue())) .+
+                adj([2g[2]]; deriv = (EvalValue(), DerivOp(1)))
+            @test result.grad[1] ≈ expected atol = 1.0e-10
+        end
+    end
+
 end  # testset "Zygote AD Support"

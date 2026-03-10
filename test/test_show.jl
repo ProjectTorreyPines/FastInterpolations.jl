@@ -1041,7 +1041,7 @@
         @test occursin("ZeroSlope", verbose_str)
     end
 
-    @testset "CubicAdjointND show (2D, Periodic BC)" begin
+    @testset "CubicAdjointND show (2D, Periodic BC inclusive)" begin
         x1 = collect(range(0.0, 2π, 21))
         x2 = collect(range(0.0, 2π, 21))
         xq1 = [1.0, 3.0]
@@ -1051,9 +1051,29 @@
 
         compact_str = sprint(show, adj)
         @test occursin("Periodic", compact_str)
-        @test occursin("20×20", compact_str)  # exclusive periodic → grid_size - 1
+        @test occursin("21×21", compact_str)  # inclusive periodic → grid_size unchanged
 
         verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("Periodic", verbose_str)
+    end
+
+    @testset "CubicAdjointND show (2D, Periodic BC exclusive)" begin
+        # Exclusive: 20 pts per axis, no endpoint. Internally extended to 21.
+        x1 = range(0.0; step = 2π / 20, length = 20)
+        x2 = range(0.0; step = 2π / 15, length = 15)
+        xq1 = [1.0, 3.0]
+        xq2 = [2.0, 5.0]
+
+        adj = cubic_adjoint((x1, x2), (xq1, xq2); bc = PeriodicBC(; endpoint = :exclusive))
+
+        # Compact: output size is user's original grid (20×15), not internal extended (21×16)
+        compact_str = sprint(show, adj)
+        @test occursin("20×15", compact_str)
+        @test occursin("Periodic", compact_str)
+
+        # Verbose: grids summary shows internal extended size (21×16)
+        verbose_str = sprint(show, MIME("text/plain"), adj)
+        @test occursin("21×16", verbose_str)
         @test occursin("Periodic", verbose_str)
     end
 

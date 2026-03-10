@@ -76,7 +76,7 @@ The native operator exploits the cubic spline structure and is the recommended a
 for performance-critical code. **Zygote** and **Enzyme** use it internally via registered AD rules,
 so you get native performance through the standard AD interface.
 
-See [Cubic Adjoint (1D)](cubic_1d_adjoint.md) for the full API reference.
+See [Cubic Adjoint (1D)](cubic_1d_adjoint.md) and [Cubic Adjoint (ND)](cubic_nd_adjoint.md) for the full API reference.
 
 !!! tip "Mathematical Derivation"
     For the detailed mathematical formulation of how the cubic adjoint decomposes into
@@ -90,12 +90,14 @@ See [Cubic Adjoint (1D)](cubic_1d_adjoint.md) for the full API reference.
 | Method | Native Adjoint | AD-based $\partial f / \partial y$ |
 |--------|:--------------:|:------------------------------------:|
 | **Cubic (1D)** | [`CubicAdjoint`](@ref) | ForwardDiff, Zygote, Enzyme |
+| **Cubic (ND)** | [`CubicAdjointND`](@ref) | ForwardDiff, Zygote, Enzyme |
 | **Linear** | — (planned) | ForwardDiff, Zygote |
 | **Quadratic** | — (planned) | ForwardDiff |
 | **Constant** | — (planned) | ForwardDiff, Zygote |
 
 ## See Also
 
-- **[Cubic Adjoint (1D)](cubic_1d_adjoint.md)**: Full API reference and examples
+- **[Cubic Adjoint (1D)](cubic_1d_adjoint.md)**: 1D API reference and examples
+- **[Cubic Adjoint (ND)](cubic_nd_adjoint.md)**: ND API reference and examples
 - **[Adjoint via AD](../guides/adjoint_ad.md)**: Using AD backends for `∂f/∂y`
 - **[Cubic Adjoint Derivation](cubic_adjoint_derivation.md)**: Mathematical formulation (internals)

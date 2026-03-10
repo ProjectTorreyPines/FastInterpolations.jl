@@ -16,7 +16,8 @@ For 1D interpolants, see [Automatic Differentiation Support](autodiff_support.md
 
     AD (ForwardDiff, Zygote) is useful for:
     - **Adjoint computation** (`df/dy`): differentiating w.r.t. *data values*, not query points.
-      A built-in analytical adjoint operator is on the roadmap.
+      See [`CubicAdjointND`](@ref) for the native matrix-free adjoint operator, or use
+      Zygote/Enzyme which call it internally via registered AD rules.
     - **Composite pipelines**: when the interpolant is embedded inside a larger differentiable function.
 
     For query-coordinate derivatives, the built-in analytical functions are the recommended approach.

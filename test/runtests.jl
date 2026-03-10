@@ -104,10 +104,14 @@ else
     # ── Extension tests (AD / Symbolics) ──────────────────────────────
     # Heavy package loads (~5 min compile). Always in CI, skip locally by default.
     # Run individually via ARGS: Pkg.test(test_args=["test_autodiff_Zygote.jl"])
+    # NOTE: Enzyme MUST run before Zygote. Zygote loads ChainRulesCore, which
+    # triggers FastInterpolationsChainRulesCoreExt (rrule fallback). Enzyme then
+    # silently uses the rrule instead of our custom EnzymeRules, leaving the
+    # Enzyme extension with 0% body coverage.
     if get(ENV, "CI", nothing) !== nothing
+        include("test_autodiff_Enzyme.jl")
         include("test_autodiff_ForwardDiff.jl")
         include("test_autodiff_Zygote.jl")
-        include("test_autodiff_Enzyme.jl")
         include("test_symbolics.jl")
     else
         @info "Skipping extension tests (run in CI, or use cc-julia-test-runner for individual files)"

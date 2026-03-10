@@ -196,6 +196,10 @@ end
         end
 
         @test W' ≈ WT rtol = 1.0e-12
+
+        # Test Matrix() function directly
+        WT_mat = Matrix(adj)
+        @test WT_mat ≈ WT rtol = 1.0e-12
     end
 
     # ========================================
@@ -447,6 +451,10 @@ end
         end
 
         @test W' ≈ WT rtol = 1.0e-12
+
+        # Test Matrix() function directly
+        WT_mat = Matrix(adj)
+        @test WT_mat ≈ WT rtol = 1.0e-12
     end
 
     # ========================================
@@ -774,6 +782,10 @@ end
         end
 
         @test W' ≈ WT rtol = 1.0e-12
+
+        # Test Matrix() function directly
+        WT_mat = Matrix(adj)
+        @test WT_mat ≈ WT rtol = 1.0e-12
     end
 
     # ========================================
@@ -989,6 +1001,10 @@ end
         end
 
         @test W' ≈ WT rtol = 1.0e-12
+
+        # Test Matrix() function directly with deriv
+        WT_mat = Matrix(adj; deriv = deriv_ops)
+        @test WT_mat ≈ WT rtol = 1.0e-12
     end
 
     # ========================================

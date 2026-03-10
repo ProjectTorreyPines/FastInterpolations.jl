@@ -476,6 +476,22 @@ using FastInterpolations
         @test all(g -> g == 0.0, grad)
     end
 
+    @testset "Zero allocation - value_gradient tuple query" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+        query = (0.5, 0.5)
+
+        function _test_vg_alloc(itp, q)
+            value_gradient(itp, q)
+            return nothing
+        end
+        _test_vg_alloc(itp, query)  # warmup
+        allocs = @allocated _test_vg_alloc(itp, query)
+        @test allocs == 0
+    end
+
     @testset "Type stability - value_gradient" begin
         x = range(0.0, 1.0, 11)
         y = range(0.0, 1.0, 11)

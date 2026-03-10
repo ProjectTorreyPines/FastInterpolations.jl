@@ -1199,3 +1199,133 @@ end
         @test allocs <= ND_ALLOC_THRESHOLD
     end
 end
+
+# ========================================
+# Scalar / Tuple y_bar + AoS / single-tuple constructor
+# ========================================
+@testset "CubicAdjointND scalar/tuple y_bar" begin
+    nx, ny = 10, 8
+    x = range(0.0, 1.0, nx)
+    y = range(0.0, 2.0, ny)
+
+    @testset "Scalar y_bar (1 query point)" begin
+        xq, yq = [0.3], [0.7]
+        adj = cubic_adjoint((x, y), (xq, yq))
+        ref = adj([1.5])
+        @test adj(1.5) ≈ ref
+        @test adj((1.5,)) ≈ ref
+
+        # In-place
+        f_bar = zeros(nx, ny)
+        adj(f_bar, 1.5)
+        @test f_bar ≈ ref
+
+        fill!(f_bar, 0.0)
+        adj(f_bar, (1.5,))
+        @test f_bar ≈ ref
+    end
+
+    @testset "Tuple y_bar (multiple query points)" begin
+        xq = [0.2, 0.5, 0.8]
+        yq = [0.4, 1.0, 1.6]
+        adj = cubic_adjoint((x, y), (xq, yq))
+        ref = adj([1.0, 2.0, 3.0])
+        @test adj((1.0, 2.0, 3.0)) ≈ ref
+
+        # In-place
+        f_bar = zeros(nx, ny)
+        adj(f_bar, (1.0, 2.0, 3.0))
+        @test f_bar ≈ ref
+    end
+
+    @testset "Scalar y_bar with deriv" begin
+        xq, yq = [0.4], [1.0]
+        adj = cubic_adjoint((x, y), (xq, yq))
+        ref = adj([1.0]; deriv = DerivOp(1))
+        @test adj(1.0; deriv = DerivOp(1)) ≈ ref
+
+        ref_mixed = adj([1.0]; deriv = (DerivOp(1), EvalValue()))
+        @test adj(1.0; deriv = (DerivOp(1), EvalValue())) ≈ ref_mixed
+    end
+
+    @testset "Dimension mismatch errors" begin
+        adj = cubic_adjoint((x, y), ([0.2, 0.5], [0.4, 1.0]))  # 2 queries
+        @test_throws DimensionMismatch adj(1.5)         # scalar but 2 queries
+        @test_throws DimensionMismatch adj((1.0,))       # 1-tuple but 2 queries
+    end
+end
+
+@testset "CubicAdjointND AoS / single-tuple constructor" begin
+    nx, ny = 10, 8
+    x = range(0.0, 1.0, nx)
+    y = range(0.0, 2.0, ny)
+
+    @testset "AoS query constructor" begin
+        xq = [0.2, 0.5, 0.8]
+        yq = [0.4, 1.0, 1.6]
+        adj_soa = cubic_adjoint((x, y), (xq, yq))
+        adj_aos = cubic_adjoint((x, y), [(0.2, 0.4), (0.5, 1.0), (0.8, 1.6)])
+
+        y_bar = randn(3)
+        @test adj_soa(y_bar) ≈ adj_aos(y_bar)
+    end
+
+    @testset "Single-tuple query constructor" begin
+        adj_soa = cubic_adjoint((x, y), ([0.5], [1.0]))
+        adj_tup = cubic_adjoint((x, y), (0.5, 1.0))
+
+        @test adj_soa(1.0) ≈ adj_tup(1.0)
+        @test adj_soa([1.0]) ≈ adj_tup([1.0])
+    end
+
+    @testset "AoS dot-product correctness" begin
+        xq = rand(20) .* 0.9 .+ 0.05
+        yq = rand(20) .* 1.8 .+ 0.1
+        queries_aos = [(xq[i], yq[i]) for i in eachindex(xq)]
+
+        f = randn(nx, ny)
+        y_bar = randn(20)
+
+        _, _, ok = dot_product_test_nd(
+            (x, y), (xq, yq), f, y_bar; bc = CubicFit()
+        )
+        @test ok
+
+        # Same test via AoS constructor
+        adj_aos = cubic_adjoint((x, y), queries_aos; bc = CubicFit())
+        adj_soa = cubic_adjoint((x, y), (xq, yq); bc = CubicFit())
+        @test adj_aos(y_bar) ≈ adj_soa(y_bar)
+    end
+end
+
+@testset "CubicAdjointND — Periodic BC scalar/tuple y_bar" begin
+    for (bc, x1, x2) in [
+        (PeriodicBC(), collect(range(0.0, 2π, 11)), collect(range(0.0, 2π, 9))),
+        (PeriodicBC(endpoint = :exclusive, period = 2π),
+         collect(range(0.0; step = 2π / 10, length = 10)),
+         collect(range(0.0; step = 2π / 8, length = 8))),
+    ]
+        xq, yq = [1.0, 3.0, 5.0], [0.5, 2.0, 4.0]
+        adj = cubic_adjoint((x1, x2), (xq, yq); bc = bc)
+        ref = adj([1.0, 2.0, 3.0])
+
+        # Tuple y_bar
+        @test adj((1.0, 2.0, 3.0)) ≈ ref
+
+        # In-place tuple
+        f_bar = zeros(size(ref))
+        adj(f_bar, (1.0, 2.0, 3.0))
+        @test f_bar ≈ ref
+
+        # Scalar y_bar (single query)
+        adj1 = cubic_adjoint((x1, x2), ([2.0], [1.0]); bc = bc)
+        ref1 = adj1([1.5])
+        @test adj1(1.5) ≈ ref1
+        @test adj1((1.5,)) ≈ ref1
+
+        # In-place scalar
+        f_bar1 = zeros(size(ref1))
+        adj1(f_bar1, 1.5)
+        @test f_bar1 ≈ ref1
+    end
+end

@@ -630,3 +630,89 @@ end
         @test allocs <= ALLOC_THRESHOLD
     end
 end
+
+# ========================================
+# Scalar / Tuple y_bar + scalar query constructor
+# ========================================
+@testset "CubicAdjoint scalar/tuple y_bar" begin
+    x = range(0.0, 1.0, 20)
+
+    @testset "Scalar y_bar (1 query point)" begin
+        xq_single = [0.3]
+        adj = cubic_adjoint(x, xq_single)
+        ref = adj([1.5])
+        @test adj(1.5) ≈ ref
+        @test adj((1.5,)) ≈ ref
+
+        # In-place
+        f_bar = zeros(20)
+        adj(f_bar, 1.5)
+        @test f_bar ≈ ref
+
+        fill!(f_bar, 0.0)
+        adj(f_bar, (1.5,))
+        @test f_bar ≈ ref
+    end
+
+    @testset "Tuple y_bar (multiple query points)" begin
+        xq = [0.2, 0.5, 0.8]
+        adj = cubic_adjoint(x, xq)
+        ref = adj([1.0, 2.0, 3.0])
+        @test adj((1.0, 2.0, 3.0)) ≈ ref
+
+        # In-place
+        f_bar = zeros(20)
+        adj(f_bar, (1.0, 2.0, 3.0))
+        @test f_bar ≈ ref
+    end
+
+    @testset "Scalar y_bar with deriv" begin
+        xq_single = [0.4]
+        adj = cubic_adjoint(x, xq_single)
+        ref = adj([1.0]; deriv = DerivOp(1))
+        @test adj(1.0; deriv = DerivOp(1)) ≈ ref
+    end
+
+    @testset "Scalar query constructor" begin
+        adj_vec = cubic_adjoint(x, [0.5])
+        adj_scalar = cubic_adjoint(x, 0.5)
+        @test adj_vec(1.0) ≈ adj_scalar(1.0)
+    end
+
+    @testset "Dimension mismatch errors" begin
+        adj = cubic_adjoint(x, [0.2, 0.5])  # 2 queries
+        @test_throws DimensionMismatch adj(1.5)         # scalar but 2 queries
+        @test_throws DimensionMismatch adj((1.0,))       # 1-tuple but 2 queries
+    end
+
+    @testset "Periodic BC — scalar/tuple y_bar" begin
+        for (bc, x_per) in [
+            (PeriodicBC(), collect(range(0.0, 2π, 21))),
+            (PeriodicBC(endpoint = :exclusive, period = 2π), collect(range(0.0; step = 2π / 20, length = 20))),
+        ]
+            xq = [1.0, 3.0, 5.0]
+            adj = cubic_adjoint(x_per, xq; bc = bc)
+            ref = adj([1.0, 2.0, 3.0])
+
+            # Tuple y_bar
+            @test adj((1.0, 2.0, 3.0)) ≈ ref
+
+            # In-place tuple
+            n_out = length(ref)
+            f_bar = zeros(n_out)
+            adj(f_bar, (1.0, 2.0, 3.0))
+            @test f_bar ≈ ref
+
+            # Scalar y_bar (single query)
+            adj1 = cubic_adjoint(x_per, [2.0]; bc = bc)
+            ref1 = adj1([1.5])
+            @test adj1(1.5) ≈ ref1
+            @test adj1((1.5,)) ≈ ref1
+
+            # In-place scalar
+            f_bar1 = zeros(length(ref1))
+            adj1(f_bar1, 1.5)
+            @test f_bar1 ≈ ref1
+        end
+    end
+end

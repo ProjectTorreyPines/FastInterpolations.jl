@@ -254,19 +254,21 @@ end
 
 
 """
-    _linear_eval_constant_extrap(y, is_left, op, extrap) -> Tv
+    _linear_eval_constant_extrap(y, is_left, op, extrap, xq) -> promoted Tv
 
 Handle constant extrapolation: returns boundary/fill value for EvalValue, zero for derivatives.
-Works with any value type Tv (duck typing).
+Works with any value type Tv (duck typing). The `xq` argument ensures the result type
+is promoted to match the kernel's return type for mixed-precision queries.
 """
 @inline function _linear_eval_constant_extrap(
         y::AbstractVector{Tv},
         is_left::Bool,
         op::AbstractEvalOp,
-        extrap::_ClampOrFill
+        extrap::_ClampOrFill,
+        xq
     ) where {Tv}
     y_bnd = @inbounds is_left ? y[1] : y[end]
-    return _constant_extrap_result(op, y_bnd, extrap)
+    return _constant_extrap_result(op, y_bnd, extrap, xq)
 end
 
 """
@@ -314,9 +316,9 @@ end
     # Use primal for comparisons (AD types need Float comparison)
     xq_primal = _extract_primal(xq)
     if xq_primal < x_min
-        return _linear_eval_constant_extrap(y, true, op, extrap)
+        return _linear_eval_constant_extrap(y, true, op, extrap, xq)
     elseif xq_primal > x_max
-        return _linear_eval_constant_extrap(y, false, op, extrap)
+        return _linear_eval_constant_extrap(y, false, op, extrap, xq)
     else
         return _linear_eval_at_point(x, y, xq, ExtendExtrap(), op, searcher)
     end

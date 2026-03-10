@@ -160,7 +160,7 @@ end
 # ClampExtrap - return fill value (EvalValue) or zero (derivatives)
 @inline function _eval_anchored_extrap(itp::CubicInterpolant{Tg, Tv}, aq::_CubicAnchoredQuery{Tg, Tq}, extrap::_ClampOrFill, op::AbstractEvalOp) where {Tg <: AbstractFloat, Tv, Tq <: Real}
     y_bnd = aq.side == 0x01 ? @inbounds(itp.y[1]) : @inbounds(itp.y[end])
-    return _constant_extrap_result(op, y_bnd, extrap)
+    return _constant_extrap_result(op, y_bnd, extrap, aq.xq)
 end
 
 # ExtendExtrap - use precomputed weights (boundary polynomial extrapolation)

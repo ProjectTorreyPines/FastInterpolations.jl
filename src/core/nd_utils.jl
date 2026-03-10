@@ -121,7 +121,7 @@ Accepts both scalar `ops::AbstractEvalOp` and tuple `ops::Tuple{Vararg{AbstractE
     return quote
         Base.@_inline_meta
         @inbounds if $oob_expr
-            return _fill_extrap_result(ops, extraps[$fill_d].fill_value, zero_ref)
+            return _fill_extrap_result(ops, extraps[$fill_d].fill_value, zero_ref, query[1])
         end
         return nothing
     end
@@ -129,13 +129,15 @@ end
 
 # FillExtrap result dispatch: value for EvalValue, zero for any derivative.
 # Uses `0 * zero_ref` (not `0 * fill_val`) to handle NaN fill values correctly.
-@inline _fill_extrap_result(::EvalValue, fill_val, _) = fill_val
-@inline _fill_extrap_result(::AbstractEvalOp, _, zero_ref) = 0 * zero_ref
-@inline function _fill_extrap_result(ops::Tuple{Vararg{AbstractEvalOp}}, fill_val, zero_ref)
+# 4th arg `qe` (query element) promotes result to kernel return type for mixed-precision.
+# Uses _promote_extrap/_promote_extrap_zero from cubic_eval.jl (Number dispatch).
+@inline _fill_extrap_result(::EvalValue, fill_val, _, qe) = _promote_extrap(fill_val, qe)
+@inline _fill_extrap_result(::AbstractEvalOp, _, zero_ref, qe) = _promote_extrap_zero(zero_ref, qe)
+@inline function _fill_extrap_result(ops::Tuple{Vararg{AbstractEvalOp}}, fill_val, zero_ref, qe)
     for i in 1:length(ops)
-        @inbounds ops[i] isa EvalValue || return 0 * zero_ref
+        @inbounds ops[i] isa EvalValue || return _promote_extrap_zero(zero_ref, qe)
     end
-    return fill_val
+    return _promote_extrap(fill_val, qe)
 end
 
 # Extract fill_value from the first FillExtrap in extraps tuple.

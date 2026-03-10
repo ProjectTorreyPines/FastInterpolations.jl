@@ -986,4 +986,31 @@ end
         end
     end
 
+    # ════════════════════════════════════════════════════════════════════════
+    # value_gradient — non-Cubic (AbstractInterpolantND rrule path)
+    # ════════════════════════════════════════════════════════════════════════
+
+    @testset "value_gradient — non-Cubic ∂/∂query" begin
+        x = range(0.0, 2.0, 15)
+        y = range(0.0, 2.0, 15)
+        data = [sin(xi) * cos(yj) for xi in x, yj in y]
+        x0 = (0.7, 0.9)
+
+        # Linear: ∂/∂query via value part
+        @testset "LinearInterpolantND — value" begin
+            itp = linear_interp((x, y), data)
+            grad = Zygote.gradient(q -> FastInterpolations.value_gradient(itp, q)[1], x0)[1]
+            fd_grad = ForwardDiff.gradient(q -> itp(Tuple(q)), [x0...])
+            @test collect(grad) ≈ fd_grad atol = 1.0e-8
+        end
+
+        # Quadratic: ∂/∂query via gradient norm
+        @testset "QuadraticInterpolantND — gradient norm" begin
+            itp = quadratic_interp((x, y), data)
+            grad = Zygote.gradient(q -> sum(abs2, FastInterpolations.value_gradient(itp, q)[2]), x0)[1]
+            grad_ref = Zygote.gradient(q -> sum(abs2, FastInterpolations.gradient(itp, q)), x0)[1]
+            @test collect(grad) ≈ collect(grad_ref) atol = 1.0e-8
+        end
+    end
+
 end  # testset "Zygote AD Support"

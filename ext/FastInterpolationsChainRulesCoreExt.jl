@@ -596,7 +596,7 @@ function ChainRulesCore.rrule(
         Δ = unthunk(Δ_raw)
         Δval, Δgrad = Δ[1], Δ[2]
 
-        T_out = promote_type(Tg, Tv)
+        T_out = promote_type(Tg, Tv, typeof(Δval), eltype(Δgrad))
         data_bar = zeros(T_out, size(itp)...)
         ∂query_val = ntuple(_ -> zero(Tg), Val(N))
         ∂query_grad = ntuple(_ -> zero(Tg), Val(N))

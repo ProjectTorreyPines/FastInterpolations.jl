@@ -443,40 +443,6 @@ using FastInterpolations
         @test collect(grad) ≈ collect(gradient(itp, q)) atol = 1.0e-14
     end
 
-    @testset "Zero allocation - value_gradient!" begin
-        x = range(0.0, 1.0, 11)
-        y = range(0.0, 1.0, 11)
-        data = [xi^2 + yj^2 for xi in x, yj in y]
-        itp = cubic_interp((x, y), data)
-        G = zeros(2)
-        query = (0.5, 0.5)
-
-        # Warmup
-        val = value_gradient!(G, itp, query)
-
-        # Correctness
-        @test val ≈ itp(query) atol = 1.0e-14
-        g_ref = gradient(itp, query)
-        @test G[1] ≈ g_ref[1] atol = 1.0e-14
-        @test G[2] ≈ g_ref[2] atol = 1.0e-14
-        @test val isa Float64  # scalar return
-
-        allocs = @allocated value_gradient!(G, itp, query)
-        @test allocs == 0
-    end
-
-    @testset "value_gradient! - vector query" begin
-        x = range(0.0, 1.0, 11)
-        y = range(0.0, 1.0, 11)
-        data = [xi^2 + yj^2 for xi in x, yj in y]
-        itp = cubic_interp((x, y), data)
-        G = zeros(2)
-
-        val = value_gradient!(G, itp, [0.5, 0.5])
-        @test val ≈ itp((0.5, 0.5)) atol = 1.0e-14
-        @test G ≈ collect(gradient(itp, (0.5, 0.5))) atol = 1.0e-14
-    end
-
     @testset "value_gradient - DimensionMismatch" begin
         x = range(0.0, 1.0, 11)
         y = range(0.0, 1.0, 11)
@@ -485,9 +451,6 @@ using FastInterpolations
 
         @test_throws DimensionMismatch value_gradient(itp, [0.5, 0.5, 0.5])
         @test_throws DimensionMismatch value_gradient(itp, [0.5])
-
-        G = zeros(2)
-        @test_throws DimensionMismatch value_gradient!(G, itp, [0.5, 0.5, 0.5])
     end
 
     @testset "value_gradient - complex data" begin
@@ -511,11 +474,47 @@ using FastInterpolations
         val, grad = value_gradient(itp, (2.0, 0.5))
         @test val == 0.0
         @test all(g -> g == 0.0, grad)
+    end
 
-        G = zeros(2)
-        val_ip = value_gradient!(G, itp, (2.0, 0.5))
-        @test val_ip == 0.0
-        @test all(G .== 0.0)
+    @testset "Type stability - value_gradient" begin
+        x = range(0.0, 1.0, 11)
+        y = range(0.0, 1.0, 11)
+        data = [xi^2 + yj^2 for xi in x, yj in y]
+        itp = cubic_interp((x, y), data)
+
+        result = @inferred value_gradient(itp, (0.5, 0.5))
+        @test result isa Tuple{Float64, NTuple{2, Float64}}
+    end
+
+    @testset "Vector grid - value_gradient matches range grid" begin
+        x_range = range(0.0, 2π, 51)
+        y_range = range(0.0, π, 31)
+        data = [sin(xi) * cos(yj) for xi in x_range, yj in y_range]
+
+        itp_range = cubic_interp((x_range, y_range), data)
+        itp_vec = cubic_interp((collect(x_range), collect(y_range)), data)
+
+        xq, yq = 1.7, 0.9
+        val_r, grad_r = value_gradient(itp_range, (xq, yq))
+        val_v, grad_v = value_gradient(itp_vec, (xq, yq))
+
+        @test val_r ≈ val_v atol = 1.0e-12
+        @test grad_r[1] ≈ grad_v[1] atol = 1.0e-12
+        @test grad_r[2] ≈ grad_v[2] atol = 1.0e-12
+    end
+
+    @testset "PeriodicBC - value_gradient" begin
+        # Exclusive periodic: data does NOT repeat endpoint
+        nx, ny = 50, 50
+        x = range(0.0, 2π, nx + 1)[1:nx]  # exclude endpoint
+        y = range(0.0, 2π, ny + 1)[1:ny]
+        data = [cos(xi) * cos(yj) for xi in x, yj in y]
+        itp = cubic_interp((x, y), data; bc = PeriodicBC(endpoint = :exclusive, period = 2π))
+
+        q = (1.5, 2.0)
+        val, grad = value_gradient(itp, q)
+        @test val ≈ itp(q) atol = 1.0e-14
+        @test collect(grad) ≈ collect(gradient(itp, q)) atol = 1.0e-14
     end
 
     @testset "Quadratic interpolant - laplacian" begin

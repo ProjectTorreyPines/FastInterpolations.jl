@@ -39,7 +39,7 @@ export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticSerie
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, CubicSeriesInterpolant
 export cubic_adjoint, CubicAdjoint, CubicAdjointND  # Adjoint operators (W^T)
 export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly  # ND cubic types
-export gradient, gradient!, value_gradient, value_gradient!, hessian, hessian!, laplacian  # Analytical vector calculus for ND
+export gradient, gradient!, value_gradient, hessian, hessian!, laplacian  # Analytical vector calculus for ND
 export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar queries
 export set_cubic_cache_size!, get_cubic_cache_size, clear_cubic_cache!
 

@@ -29,12 +29,12 @@ using FastInterpolations
     # ── Cubic (oneshot) ──────────────────────────────────────────────────
     @testset "Cubic oneshot" begin
         @testset "FillExtrap" begin
-            itp = cubic_interp(x32, y32; extrap = FillExtrap(NaN32))
+            itp = cubic_interp(x32, y32; extrap = FillExtrap(Float32(NaN)))
             # All paths should return Float64 when queried with Float64
             @test @inferred(itp(xq_in)) isa Float64
             @test @inferred(itp(xq_lo)) isa Float64
             @test @inferred(itp(xq_hi)) isa Float64
-            # OOB values should be NaN (promoted from NaN32)
+            # OOB values should be NaN (promoted from Float32(NaN))
             @test isnan(itp(xq_lo))
             @test isnan(itp(xq_hi))
             # In-domain should match Float32 result
@@ -52,7 +52,7 @@ using FastInterpolations
         end
 
         @testset "FillExtrap derivatives" begin
-            itp = cubic_interp(x32, y32; extrap = FillExtrap(NaN32))
+            itp = cubic_interp(x32, y32; extrap = FillExtrap(Float32(NaN)))
             # Derivative of constant fill → zero, promoted to Float64
             @test @inferred(itp(xq_lo; deriv = DerivOp(1))) isa Float64
             @test itp(xq_lo; deriv = DerivOp(1)) == 0.0
@@ -73,7 +73,7 @@ using FastInterpolations
 
     # ── Cubic (anchored / CubicInterpolant) ──────────────────────────────
     @testset "Cubic anchored" begin
-        itp = cubic_interp(x32, y32; extrap = FillExtrap(NaN32))
+        itp = cubic_interp(x32, y32; extrap = FillExtrap(Float32(NaN)))
         aq_in = FastInterpolations._anchor_query(x32, xq_in, Val(:cubic))
         aq_lo = FastInterpolations._anchor_query(x32, xq_lo, Val(:cubic))
         aq_hi = FastInterpolations._anchor_query(x32, xq_hi, Val(:cubic))
@@ -93,7 +93,7 @@ using FastInterpolations
     # ── Linear (oneshot) ─────────────────────────────────────────────────
     @testset "Linear oneshot" begin
         @testset "FillExtrap" begin
-            itp = linear_interp(x32, y32; extrap = FillExtrap(NaN32))
+            itp = linear_interp(x32, y32; extrap = FillExtrap(Float32(NaN)))
             @test @inferred(itp(xq_in)) isa Float64
             @test @inferred(itp(xq_lo)) isa Float64
             @test @inferred(itp(xq_hi)) isa Float64
@@ -110,7 +110,7 @@ using FastInterpolations
 
     # ── Linear (anchored / LinearInterpolant) ────────────────────────────
     @testset "Linear anchored" begin
-        itp = LinearInterpolant(x32, y32; extrap = FillExtrap(NaN32))
+        itp = LinearInterpolant(x32, y32; extrap = FillExtrap(Float32(NaN)))
         aq_lo = FastInterpolations._anchor_query(x32, xq_lo, Val(:linear))
         aq_hi = FastInterpolations._anchor_query(x32, xq_hi, Val(:linear))
         @test @inferred(itp(aq_lo)) isa Float64
@@ -121,7 +121,7 @@ using FastInterpolations
     # ── Quadratic (oneshot) ──────────────────────────────────────────────
     @testset "Quadratic oneshot" begin
         @testset "FillExtrap" begin
-            itp = quadratic_interp(x32, y32; extrap = FillExtrap(NaN32))
+            itp = quadratic_interp(x32, y32; extrap = FillExtrap(Float32(NaN)))
             @test @inferred(itp(xq_in)) isa Float64
             @test @inferred(itp(xq_lo)) isa Float64
             @test @inferred(itp(xq_hi)) isa Float64
@@ -138,7 +138,7 @@ using FastInterpolations
 
     # ── Quadratic (anchored / QuadraticInterpolant) ──────────────────────
     @testset "Quadratic anchored" begin
-        itp = quadratic_interp(x32, y32; extrap = FillExtrap(NaN32))
+        itp = quadratic_interp(x32, y32; extrap = FillExtrap(Float32(NaN)))
         aq_lo = FastInterpolations._anchor_query(x32, xq_lo, Val(:quadratic))
         aq_hi = FastInterpolations._anchor_query(x32, xq_hi, Val(:quadratic))
         @test @inferred(itp(aq_lo)) isa Float64
@@ -183,7 +183,7 @@ using FastInterpolations
         x1_32 = collect(range(0.0f0, 4.0f0, length = 9))
         x2_32 = collect(range(0.0f0, 4.0f0, length = 9))
         data32 = Float32[sin(a + b) for a in x1_32, b in x2_32]
-        itp_nd = cubic_interp((x1_32, x2_32), data32; extrap = FillExtrap(NaN32))
+        itp_nd = cubic_interp((x1_32, x2_32), data32; extrap = FillExtrap(Float32(NaN)))
         # In-domain query with Float64 (ND takes tuple)
         @test @inferred(itp_nd((2.0, 2.0))) isa Float64
         # OOB query

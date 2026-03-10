@@ -288,7 +288,7 @@ function ChainRulesCore.rrule(
 
     function cubic_interp_nd_scalar_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        f_bar = adj(Tg_f[unthunk(Δy)]; kwargs...)
+        f_bar = adj([unthunk(Δy)]; kwargs...)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 
@@ -364,7 +364,7 @@ function ChainRulesCore.rrule(
         ∂query = ntuple(i -> real(conj(Δy_val) * grad[i]), Val(N))
 
         # ∂/∂data via adjoint operator
-        data_bar = adj(Tg[Δy_val]; deriv = EvalValue())
+        data_bar = adj([Δy_val]; deriv = EvalValue())
 
         return data_bar, ∂query
     end
@@ -405,12 +405,13 @@ function ChainRulesCore.rrule(
         Δgrad = unthunk(Δgrad_raw)
 
         # ∂/∂data: accumulate adjoint applications for each axis
-        data_bar = zeros(Tg, size(itp)...)
+        T_out = promote_type(Tg, typeof(first(Δgrad)))
+        data_bar = zeros(T_out, size(itp)...)
         for i in 1:N
             dg_i = Δgrad[i]
             iszero(dg_i) && continue
             ops_i = ntuple(j -> j == i ? DerivOp(1) : EvalValue(), Val(N))
-            data_bar .+= adj(Tg[dg_i]; deriv = ops_i)
+            data_bar .+= adj([dg_i]; deriv = ops_i)
         end
 
         # ∂/∂query: Hessian × Δgrad
@@ -452,14 +453,15 @@ function ChainRulesCore.rrule(
         ΔH_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
         ΔH = unthunk(ΔH_raw)
 
-        data_bar = zeros(Tg, size(itp)...)
+        T_out = promote_type(Tg, eltype(ΔH))
+        data_bar = zeros(T_out, size(itp)...)
 
         # Diagonal: ∂²f/∂xᵢ²
         for i in 1:N
             dh_ii = ΔH[i, i]
             iszero(dh_ii) && continue
             ops = ntuple(j -> j == i ? DerivOp(2) : EvalValue(), Val(N))
-            data_bar .+= adj(Tg[dh_ii]; deriv = ops)
+            data_bar .+= adj([dh_ii]; deriv = ops)
         end
 
         # Off-diagonal (symmetry: ΔH[i,j] + ΔH[j,i])
@@ -467,7 +469,7 @@ function ChainRulesCore.rrule(
             dh_ij = ΔH[i, j] + ΔH[j, i]
             iszero(dh_ij) && continue
             ops = ntuple(k -> (k == i || k == j) ? DerivOp(1) : EvalValue(), Val(N))
-            data_bar .+= adj(Tg[dh_ij]; deriv = ops)
+            data_bar .+= adj([dh_ij]; deriv = ops)
         end
 
         # ∂/∂query requires third derivatives — omit for now
@@ -505,10 +507,11 @@ function ChainRulesCore.rrule(
         Δlap_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
         Δlap = unthunk(Δlap_raw)
 
-        data_bar = zeros(Tg, size(itp)...)
+        T_out = promote_type(Tg, typeof(Δlap))
+        data_bar = zeros(T_out, size(itp)...)
         for i in 1:N
             ops = ntuple(j -> j == i ? DerivOp(2) : EvalValue(), Val(N))
-            data_bar .+= adj(Tg[Δlap]; deriv = ops)
+            data_bar .+= adj([Δlap]; deriv = ops)
         end
 
         return NoTangent(), data_bar, ZeroTangent()

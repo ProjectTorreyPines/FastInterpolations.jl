@@ -72,12 +72,12 @@ The adjoint retains per-axis Thomas LU caches for transpose solves at every `adj
 call. The ND build pipeline processes `(d, p_src)` pairs, where the BC used depends
 on whether the partial is pure or mixed:
 
-- **Pure derivatives** (`p_src == 1`): use the user's BC → `caches` + `bc_pairs`
+- **Pure derivatives** (`p_src == 1`): use the user's BC → `caches` + `bcs`
 - **Mixed partials** (`p_src > 1`): internally always use CubicFit →
-  `mixed_caches` + `mixed_bc_pairs`
+  `mixed_caches` + `mixed_bcs`
 
 For **periodic axes**, `_get_effective_bc(PeriodicBC(), p_src, grid)` returns `PeriodicBC()`
-for ALL `p_src`, so `caches[d] == mixed_caches[d]` (same pool entry) and both bc_pairs
+for ALL `p_src`, so `caches[d] == mixed_caches[d]` (same pool entry) and both bcs
 entries are `PeriodicBC`. The periodic build adjoint uses Sherman-Morrison transpose
 solves instead of standard Thomas.
 
@@ -117,8 +117,8 @@ struct CubicAdjointND{
     spacings::S
     caches::C
     mixed_caches::MC
-    bc_pairs::BP
-    mixed_bc_pairs::MBP
+    bcs::BP
+    mixed_bcs::MBP
     anchors::Vector{_NDAdjointAnchor{Tg, N}}
     grid_size::NTuple{N, Int}
 end
@@ -127,9 +127,9 @@ end
 # Type Introspection
 # ========================================
 
-Base.ndims(::CubicAdjointND{Tg, N}) where {Tg, N} = N
+Base.ndims(::CubicAdjointND{Tg, N}) where {Tg, N} = N + 1
 function Base.size(adj::CubicAdjointND{Tg, N}) where {Tg, N}
-    out_size = _adjoint_output_size(adj.grid_size, adj.bc_pairs)
-    return (out_size, length(adj.anchors))
+    out_size = _adjoint_output_size(adj.grid_size, adj.bcs)
+    return (out_size..., length(adj.anchors))
 end
 Base.size(adj::CubicAdjointND, d::Integer) = size(adj)[d]

@@ -874,9 +874,10 @@ end
 # ========================================
 
 function Base.show(io::IO, adj::CubicAdjointND{Tg, N}) where {Tg, N}
-    sizes = join([string(s) for s in adj.grid_size], "×")
+    out_size = _adjoint_output_size(adj.grid_size, adj.bcs)
+    sizes = join([string(s) for s in out_size], "×")
     nq = length(adj.anchors)
-    bc_name = _short_bc_name_nd(adj.bc_pairs)
+    bc_name = _short_bc_name_nd(adj.bcs)
     _show_print(io, "CubicAdjointND", :cyan; bold = true)
     _show_print(io, "{", :light_black)
     _show_print(io, string(Tg), :light_blue)
@@ -898,5 +899,5 @@ function Base.show(io::IO, ::MIME"text/plain", adj::CubicAdjointND{Tg, N}) where
     println(io)
     _show_row(io, false, "Query: ", "$(length(adj.anchors)) points")
     println(io)
-    return _show_nd_bc_summary(io, true, adj.bc_pairs)
+    return _show_nd_bc_summary(io, true, adj.bcs)
 end

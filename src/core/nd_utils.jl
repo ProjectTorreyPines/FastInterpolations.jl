@@ -267,10 +267,10 @@ end
 end
 
 # 4-arg form: adaptive ND resolution with hint awareness.
-# All non-SoA or hinted cases fall through to the 3-arg form above.
+# Hinted cases fall through to the 3-arg form above (no monotonicity check).
 @inline _resolve_search_nd(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
 
-# SoA Real vectors + no hint → per-axis adaptive resolution.
+# SoA Real vectors + no hint → per-axis adaptive resolution (cache-friendly).
 # Each axis independently checks monotonicity via 1D _resolve_search_policy(policy, vec, nothing):
 #   AutoSearch axes → _is_likely_monotone per axis → BinarySearch or LinearBinarySearch
 #   Explicit policy axes → passthrough unchanged
@@ -289,11 +289,60 @@ end
 # monotonicity check for AutoSearch axes.
 @inline _resolve_search_nohint(p, q) = _resolve_search_policy(p, q, nothing)
 
+# Generic queries + no hint → per-axis adaptive using query protocol.
+# Works for AoS (Vector{NTuple}), Vector{SVector}, or any protocol-implementing type.
+# Uses _is_axis_likely_monotone (protocol-based) instead of _is_likely_monotone (vector-based).
+@inline function _resolve_search_nd(s, vn::Val{N}, queries, ::Nothing) where {N}
+    tuple = _resolve_search_nd(s, vn)
+    any(p -> p isa AutoSearch, tuple) || return tuple
+    return ntuple(Val(N)) do d
+        p = tuple[d]
+        if p isa AutoSearch
+            _is_axis_likely_monotone(queries, d, vn) ? LinearBinarySearch() : BinarySearch()
+        else
+            p
+        end
+    end
+end
+
+# ── Protocol-based per-axis monotonicity check ──
+#
+# Uses _query_extract to check first K elements along axis d.
+# Works for any query type implementing the protocol (AoS, SVector, custom).
+# SoA has a more cache-friendly specialization via _is_likely_monotone(q[d]).
+
+@inline function _is_axis_likely_monotone(
+        queries, d::Int, ::Val{N}, ::Val{K} = Val(8)
+    ) where {N, K}
+    nq = _query_length(queries)
+    nq < K && return false
+    @inbounds begin
+        v1 = _query_extract(queries, 1, Val(N))[d]
+        v2 = _query_extract(queries, 2, Val(N))[d]
+        ascending = v2 >= v1
+        prev = v2
+        if ascending
+            for i in 3:K
+                curr = _query_extract(queries, i, Val(N))[d]
+                curr < prev && return false
+                prev = curr
+            end
+        else
+            for i in 3:K
+                curr = _query_extract(queries, i, Val(N))[d]
+                curr > prev && return false
+                prev = curr
+            end
+        end
+    end
+    return true
+end
+
 # ----------------------------------------
-# All-or-Nothing Adaptive Resolution (Oneshot SoA)
+# All-or-Nothing Adaptive Resolution (Oneshot)
 # ----------------------------------------
 #
-# For oneshot SoA paths, per-axis adaptive creates Tuple{Union{BinarySearch,LB}, ...}
+# For oneshot paths, per-axis adaptive creates Tuple{Union{BinarySearch,LB}, ...}
 # — per-element Union that Julia boxes during tuple construction (144+ bytes).
 #
 # Solution: all-or-nothing — check all AutoSearch axes, return uniform type.
@@ -323,7 +372,19 @@ end
     return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
 end
 
-# Non-SoA, hinted, or other → standard 3-arg type-based (already concrete).
+# Generic queries + no hint → protocol-based all-or-nothing adaptive resolution.
+# Uses _is_axis_likely_monotone (protocol-based) for any query type.
+@inline function _resolve_search_nd_uniform(s, vn::Val{N}, queries, ::Nothing) where {N}
+    tuple = _resolve_search_nd(s, vn)
+    any(p -> p isa AutoSearch, tuple) || return tuple
+    all_mono = all(ntuple(Val(N)) do d
+        p = tuple[d]
+        !isa(p, AutoSearch) || _is_axis_likely_monotone(queries, d, vn)
+    end)
+    return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
+end
+
+# Hinted → standard 3-arg type-based (already concrete, no monotonicity check).
 @inline _resolve_search_nd_uniform(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
 
 # ========================================

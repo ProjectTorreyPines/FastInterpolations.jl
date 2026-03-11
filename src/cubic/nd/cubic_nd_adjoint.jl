@@ -592,7 +592,7 @@ function cubic_adjoint(
 end
 
 # Single-tuple query: cubic_adjoint((x, y), (0.5, 0.5); ...)
-# Wraps as 1-element tuple-vector for _bake_nd_anchors protocol.
+# Wraps as 1-element tuple for _bake_nd_anchors protocol (zero-alloc).
 function cubic_adjoint(
         grids::NTuple{N, AbstractVector},
         query::Tuple{Vararg{Real, N}};
@@ -601,7 +601,24 @@ function cubic_adjoint(
         autocache::Bool = true,
         _extra...
     ) where {N}
-    return cubic_adjoint(grids, [query]; bc = bc, extrap = extrap, autocache = autocache)
+    return cubic_adjoint(grids, (query,); bc = bc, extrap = extrap, autocache = autocache)
+end
+
+# Single-vector query: cubic_adjoint((x, y), SVector(0.5, 0.5); ...)
+# Handles SVector, MVector, plain Vector — any AbstractVector{<:Real}.
+function cubic_adjoint(
+        grids::NTuple{N, AbstractVector},
+        query::AbstractVector{<:Real};
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        autocache::Bool = true,
+        _extra...
+    ) where {N}
+    length(query) == N || throw(
+        DimensionMismatch("expected $N-element vector, got $(length(query))-element vector")
+    )
+    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
+    return cubic_adjoint(grids, (query_tuple,); bc = bc, extrap = extrap, autocache = autocache)
 end
 
 # Generic query fallback: passes queries directly to _build_nd_adjoint.

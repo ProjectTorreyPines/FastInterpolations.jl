@@ -280,12 +280,12 @@ function ChainRulesCore.rrule(
     ) where {Tv, N}
     y = cubic_interp(grids, data, query; kwargs...)
 
-    # Wrap scalar query into 1-element AoS vector for CubicAdjointND
-    adj = cubic_adjoint(grids, [query]; kwargs...)
+    # Single query point → 1-element tuple (zero-alloc)
+    adj = cubic_adjoint(grids, (query,); kwargs...)
 
     function cubic_interp_nd_scalar_pullback(Δy)
         Δy isa AbstractZero && return NoTangent(), NoTangent(), ZeroTangent(), NoTangent()
-        f_bar = adj([unthunk(Δy)]; kwargs...)
+        f_bar = adj(unthunk(Δy); kwargs...)
         return NoTangent(), NoTangent(), f_bar, NoTangent()
     end
 
@@ -348,8 +348,8 @@ function ChainRulesCore.rrule(
     ) where {Tg, Tv, N}
     y = itp(query)
 
-    # Build adjoint for ∂/∂data (single query point → wrap in 1-element AoS vector)
-    adj = cubic_adjoint(itp.grids, [query]; bc = itp.bcs)
+    # Build adjoint for ∂/∂data (single query point → 1-element tuple, zero-alloc)
+    adj = cubic_adjoint(itp.grids, (query,); bc = itp.bcs)
 
     function cubic_itp_nd_eval_pullback(Δy)
         Δy isa AbstractZero && return ZeroTangent(), ZeroTangent()
@@ -360,7 +360,7 @@ function ChainRulesCore.rrule(
         ∂query = ntuple(i -> real(conj(Δy_val) * grad[i]), Val(N))
 
         # ∂/∂data via adjoint operator
-        data_bar = adj([Δy_val]; deriv = EvalValue())
+        data_bar = adj(Δy_val; deriv = EvalValue())
 
         return data_bar, ∂query
     end
@@ -393,7 +393,7 @@ function ChainRulesCore.rrule(
     grad = FastInterpolations.gradient(itp, query; kwargs...)
 
     # Build adjoint once for ∂/∂data
-    adj = cubic_adjoint(itp.grids, [query]; bc = itp.bcs)
+    adj = cubic_adjoint(itp.grids, (query,); bc = itp.bcs)
 
     function gradient_itp_nd_pullback(Δgrad_raw)
         Δgrad_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
@@ -406,7 +406,7 @@ function ChainRulesCore.rrule(
             dg_i = Δgrad[i]
             iszero(dg_i) && continue
             ops_i = ntuple(j -> j == i ? DerivOp(1) : EvalValue(), Val(N))
-            data_bar .+= adj([dg_i]; deriv = ops_i)
+            data_bar .+= adj(dg_i; deriv = ops_i)
         end
 
         # ∂/∂query: Hessian × Δgrad
@@ -441,7 +441,7 @@ function ChainRulesCore.rrule(
     ) where {Tg, Tv, N}
     H = FastInterpolations.hessian(itp, query; kwargs...)
 
-    adj = cubic_adjoint(itp.grids, [query]; bc = itp.bcs)
+    adj = cubic_adjoint(itp.grids, (query,); bc = itp.bcs)
 
     function hessian_itp_nd_pullback(ΔH_raw)
         ΔH_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
@@ -455,7 +455,7 @@ function ChainRulesCore.rrule(
             dh_ii = ΔH[i, i]
             iszero(dh_ii) && continue
             ops = ntuple(j -> j == i ? DerivOp(2) : EvalValue(), Val(N))
-            data_bar .+= adj([dh_ii]; deriv = ops)
+            data_bar .+= adj(dh_ii; deriv = ops)
         end
 
         # Off-diagonal (symmetry: ΔH[i,j] + ΔH[j,i])
@@ -463,7 +463,7 @@ function ChainRulesCore.rrule(
             dh_ij = ΔH[i, j] + ΔH[j, i]
             iszero(dh_ij) && continue
             ops = ntuple(k -> (k == i || k == j) ? DerivOp(1) : EvalValue(), Val(N))
-            data_bar .+= adj([dh_ij]; deriv = ops)
+            data_bar .+= adj(dh_ij; deriv = ops)
         end
 
         # ∂/∂query requires third derivatives — omit for now
@@ -494,7 +494,7 @@ function ChainRulesCore.rrule(
     ) where {Tg, Tv, N}
     lap = FastInterpolations.laplacian(itp, query; kwargs...)
 
-    adj = cubic_adjoint(itp.grids, [query]; bc = itp.bcs)
+    adj = cubic_adjoint(itp.grids, (query,); bc = itp.bcs)
 
     function laplacian_itp_nd_pullback(Δlap_raw)
         Δlap_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
@@ -504,7 +504,7 @@ function ChainRulesCore.rrule(
         data_bar = zeros(T_out, size(itp)...)
         for i in 1:N
             ops = ntuple(j -> j == i ? DerivOp(2) : EvalValue(), Val(N))
-            data_bar .+= adj([Δlap]; deriv = ops)
+            data_bar .+= adj(Δlap; deriv = ops)
         end
 
         return NoTangent(), data_bar, ZeroTangent()
@@ -581,7 +581,7 @@ function ChainRulesCore.rrule(
     val, grad = FastInterpolations.value_gradient(itp, query; kwargs...)
 
     # Build adjoint once for ∂/∂data
-    adj = cubic_adjoint(itp.grids, [query]; bc = itp.bcs)
+    adj = cubic_adjoint(itp.grids, (query,); bc = itp.bcs)
 
     function value_gradient_cubic_pullback(Δ_raw)
         Δ_raw isa AbstractZero && return NoTangent(), ZeroTangent(), ZeroTangent()
@@ -596,7 +596,7 @@ function ChainRulesCore.rrule(
 
         # Value contribution
         if !(Δval isa AbstractZero) && !iszero(Δval)
-            data_bar .+= adj([Δval]; deriv = EvalValue())
+            data_bar .+= adj(Δval; deriv = EvalValue())
             ∂query_val = ntuple(i -> real(conj(Δval) * grad[i]), Val(N))
         end
 
@@ -606,7 +606,7 @@ function ChainRulesCore.rrule(
                 dg_i = Δgrad[i]
                 iszero(dg_i) && continue
                 ops_i = ntuple(j -> j == i ? DerivOp(1) : EvalValue(), Val(N))
-                data_bar .+= adj([dg_i]; deriv = ops_i)
+                data_bar .+= adj(dg_i; deriv = ops_i)
             end
             H = FastInterpolations.hessian(itp, query)
             ∂query_grad = ntuple(j -> sum(real(conj(Δgrad[i]) * H[i, j]) for i in 1:N), Val(N))

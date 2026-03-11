@@ -858,14 +858,6 @@ end
 @inline _query_eltype(q::AbstractVector{T}) where {T <: Tuple} = promote_type(fieldtypes(T)...)
 @inline _query_eltype(q::AbstractVector{T}) where {T} = eltype(T)
 
-# ── Internal: query normalization (bridge for oneshot fallbacks) ──
-# NOT part of the protocol. Converts unknown query types to canonical form
-# so typed oneshot methods can dispatch. Will be removed when oneshot is unified.
-
-@inline _query_normalize(q, ::Val{N}) where {N} = q
-@inline _query_normalize(q::Tuple{Vararg{AbstractVector{<:Real}, N}}, ::Val{N}) where {N} = q
-@inline _query_normalize(q::AbstractVector{<:Tuple{Vararg{Real, N}}}, ::Val{N}) where {N} = q
-
 # ── Internal: SoA per-axis length check ──
 
 @inline function _check_soa_axes(queries::Tuple{Vararg{AbstractVector}})
@@ -947,7 +939,8 @@ end
 # ── In-place batch: unified ──
 #
 # Single entry point for all batch in-place evaluation.
-# _query_normalize converts unknown types to canonical form (identity for SoA/AoS).
+# Protocol functions (_query_length, _query_extract, _query_eltype) dispatch
+# directly on query container type — no normalization needed.
 # Scalar queries (Tuple{Vararg{Real,N}}, AbstractVector{<:Real}) dispatch to
 # more specific methods above, so this never intercepts scalar calls.
 
@@ -958,23 +951,22 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
-    canonical = _query_normalize(queries, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
-    nq = _query_length(canonical)
+    nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
-    canonical isa Tuple{Vararg{AbstractVector}} && _check_soa_axes(canonical)
-    search_tuple = _resolve_search_nd(search, Val(N), canonical, hint)
+    queries isa Tuple{Vararg{AbstractVector}} && _check_soa_axes(queries)
+    search_tuple = _resolve_search_nd(search, Val(N), queries, hint)
     if _deriv_zero_fill(itp, ops, Val(N))
         fill!(output, zero(eltype(output)))
         return output
     end
-    _batch_nd_unified!(output, itp, canonical, ops, search_tuple, hint)
+    _batch_nd_unified!(output, itp, queries, ops, search_tuple, hint)
     return output
 end
 
 # ── Allocating batch: unified ──
 #
-# Resolves queries, allocates output, delegates to in-place above.
+# Allocates output via protocol, delegates to in-place above.
 
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
         queries;
@@ -982,8 +974,7 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
-    canonical = _query_normalize(queries, Val(N))
-    Tq = _query_eltype(canonical)
-    output = Vector{promote_type(Tv, Tg, Tq)}(undef, _query_length(canonical))
-    return itp(output, canonical; deriv = deriv, search = search, hint = hint)
+    Tq = _query_eltype(queries)
+    output = Vector{promote_type(Tv, Tg, Tq)}(undef, _query_length(queries))
+    return itp(output, queries; deriv = deriv, search = search, hint = hint)
 end

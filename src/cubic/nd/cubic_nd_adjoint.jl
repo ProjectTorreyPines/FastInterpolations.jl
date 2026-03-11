@@ -799,6 +799,21 @@ function cubic_adjoint(
     return cubic_adjoint(grids, soa_queries; bc = bc, extrap = extrap, autocache = autocache)
 end
 
+# Generic query fallback: converts any query format to SoA using protocol functions.
+# Catches non-canonical types (e.g., Vector{SVector}) that don't match typed methods above.
+function cubic_adjoint(
+        grids::NTuple{N, AbstractVector},
+        queries;
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        autocache::Bool = true,
+        _extra...
+    ) where {N}
+    nq = _query_length(queries)
+    soa_queries = ntuple(d -> [_query_extract(queries, k, Val(N))[d] for k in 1:nq], Val(N))
+    return cubic_adjoint(grids, soa_queries; bc = bc, extrap = extrap, autocache = autocache)
+end
+
 """
     _build_nd_adjoint(grids, queries, bcs, autocache)
 

@@ -828,6 +828,52 @@ For Vector grids, h/inv_h are acquired from pool (zero heap alloc).
 end
 
 # ========================================
+# Query Resolution Protocol
+# ========================================
+#
+# Normalize arbitrary query containers to canonical SoA/AoS form.
+# Extensions (e.g., StaticArraysExt) implement _resolve_queries for new types.
+# The hot path (_batch_nd_soa! / _batch_nd_aos!) remains unchanged.
+
+"""Batch mode tag: Structure-of-Arrays (Tuple of Vectors)."""
+struct SoABatch end
+
+"""Batch mode tag: Array-of-Structures (Vector of Tuples)."""
+struct AoSBatch end
+
+"""
+    _resolve_queries(queries, Val(N)) -> (canonical_queries, batch_mode)
+
+Normalize query container to canonical form.
+Returns `(canonical, SoABatch())` or `(canonical, AoSBatch())`.
+
+Canonical SoA: `Tuple{Vararg{AbstractVector{<:Real}, N}}`
+Canonical AoS: `AbstractVector{<:Tuple{Vararg{Real, N}}}`
+
+Extensions add methods for new types (e.g., `Vector{SVector{N,T}}`).
+"""
+@inline _resolve_queries(q::Tuple{Vararg{AbstractVector{<:Real}, N}}, ::Val{N}) where {N} = (q, SoABatch())
+@inline _resolve_queries(q::AbstractVector{<:Tuple{Vararg{Real, N}}}, ::Val{N}) where {N} = (q, AoSBatch())
+
+# Dispatch to existing batch functions based on resolved mode
+@inline _batch_nd!(out, itp, q, ::SoABatch, ops, search, hint) =
+    _batch_nd_soa!(out, itp, q, ops, search, hint)
+@inline _batch_nd!(out, itp, q, ::AoSBatch, ops, search, hint) =
+    _batch_nd_aos!(out, itp, q, ops, search, hint)
+
+# Query length extraction
+@inline _query_length(::SoABatch, q::Tuple) = length(q[1])
+@inline _query_length(::AoSBatch, q::AbstractVector) = length(q)
+
+# Query element type extraction (for output allocation)
+@inline _query_eltype_resolved(::SoABatch, q::Tuple) = promote_type(map(eltype, q)...)
+@inline _query_eltype_resolved(::AoSBatch, q::AbstractVector{T}) where {T <: Tuple} =
+    promote_type(fieldtypes(T)...)
+@inline _query_eltype_resolved(::AoSBatch, q::AbstractVector{T}) where {T} =
+    eltype(T)  # fallback for reinterpreted views
+
+
+# ========================================
 # In-Place Batch Evaluation (Generic ND)
 # ========================================
 #
@@ -936,6 +982,49 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries))
     return itp(output, queries; deriv = deriv, search = search, hint = hint)
 end
+
+# ========================================
+# Generic Query Fallbacks (Query Protocol)
+# ========================================
+#
+# Catch-all entry points for query types not matching SoA/AoS signatures.
+# Uses _resolve_queries to normalize, then delegates to typed methods.
+# Less specific than per-type methods → existing dispatch unaffected.
+
+# In-place batch: generic fallback
+function (itp::AbstractInterpolantND{Tg, Tv, N})(
+        output::AbstractVector,
+        queries;  # untyped — lowest dispatch priority
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    canonical, mode = _resolve_queries(queries, Val(N))
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    n_queries = _query_length(mode, canonical)
+    length(output) == n_queries || throw(
+        DimensionMismatch(
+            "output length $(length(output)) must match query length $n_queries"
+        )
+    )
+    search_tuple = _resolve_search_nd(search, Val(N), canonical, hint)
+    _batch_nd!(output, itp, canonical, mode, ops, search_tuple, hint)
+    return output
+end
+
+# Allocating batch: generic fallback
+function (itp::AbstractInterpolantND{Tg, Tv, N})(
+        queries;  # untyped — lowest dispatch priority
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    canonical, mode = _resolve_queries(queries, Val(N))
+    Tq = _query_eltype_resolved(mode, canonical)
+    output = Vector{promote_type(Tv, Tg, Tq)}(undef, _query_length(mode, canonical))
+    return itp(output, canonical; deriv = deriv, search = search, hint = hint)
+end
+
 
 # ========================================
 # Query Element Type Extraction

@@ -14,6 +14,9 @@ include("constant/constant.jl")
 include("quadratic/quadratic.jl")
 include("cubic/cubic.jl")
 
+# Query protocol fallbacks (depends on all interpolant types)
+include("core/nd_query_fallbacks.jl")
+
 # Derivative view wrapper (depends on all interpolant types)
 include("derivative_view.jl")
 

@@ -600,20 +600,6 @@ function cubic_adjoint(
     return _build_nd_adjoint(grids_typed, queries, bcs, extraps, autocache)
 end
 
-# AoS query: cubic_adjoint((x, y), [(x1,y1), (x2,y2), ...]; ...)
-# Converts to SoA format and delegates to the primary constructor.
-function cubic_adjoint(
-        grids::NTuple{N, AbstractVector},
-        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
-        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        autocache::Bool = true,
-        _extra...
-    ) where {N}
-    soa_queries = ntuple(d -> map(q -> q[d], queries), Val(N))
-    return cubic_adjoint(grids, soa_queries; bc = bc, extrap = extrap, autocache = autocache)
-end
-
 # Single-tuple query: cubic_adjoint((x, y), (0.5, 0.5); ...)
 # Single query point specified as a coordinate tuple.
 function cubic_adjoint(
@@ -629,7 +615,8 @@ function cubic_adjoint(
 end
 
 # Generic query fallback: converts any query format to SoA using protocol functions.
-# Catches non-canonical types (e.g., Vector{SVector}) that don't match typed methods above.
+# Handles AoS (Vector{NTuple}), Vector{SVector}, or any protocol-implementing type.
+# SoA queries are caught by the more specific Tuple{AbstractVector, Vararg} overload above.
 function cubic_adjoint(
         grids::NTuple{N, AbstractVector},
         queries;

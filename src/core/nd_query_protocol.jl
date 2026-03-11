@@ -51,10 +51,12 @@
 @inline _scalar_eltype(::Type{Any}) = _throw_query_eltype_any()
 @inline _scalar_eltype(::Type{T}) where {T} = eltype(T)
 
-@noinline _throw_query_eltype_any() = throw(ArgumentError(
-    "cannot determine scalar element type from query container with eltype Any; " *
-    "override `FastInterpolations._query_eltype(q::YourType)` for your query type"
-))
+@noinline _throw_query_eltype_any() = throw(
+    ArgumentError(
+        "cannot determine scalar element type from query container with eltype Any; " *
+            "override `FastInterpolations._query_eltype(q::YourType)` for your query type"
+    )
+)
 
 # ── Protocol function 4: query consistency validation ──
 # Default: no-op (AoS, custom types — single container, no mismatch possible).

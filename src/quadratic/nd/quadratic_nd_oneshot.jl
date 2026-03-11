@@ -83,7 +83,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
 
     # Eval loop
     @inbounds for k in 1:nq
-        query_k = _query_extract(queries, k, Val(N))
+        query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, grids, extraps_val, ops, first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue

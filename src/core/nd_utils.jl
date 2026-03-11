@@ -317,19 +317,19 @@ end
     nq = _query_length(queries)
     nq < K && return false
     @inbounds begin
-        v1 = _query_extract(queries, 1, Val(N))[d]
-        v2 = _query_extract(queries, 2, Val(N))[d]
+        v1 = _query_extract(queries, 1)[d]
+        v2 = _query_extract(queries, 2)[d]
         ascending = v2 >= v1
         prev = v2
         if ascending
             for i in 3:K
-                curr = _query_extract(queries, i, Val(N))[d]
+                curr = _query_extract(queries, i)[d]
                 curr < prev && return false
                 prev = curr
             end
         else
             for i in 3:K
-                curr = _query_extract(queries, i, Val(N))[d]
+                curr = _query_extract(queries, i)[d]
                 curr > prev && return false
                 prev = curr
             end
@@ -893,31 +893,52 @@ end
 # ========================================
 #
 # Extensible 3-function protocol for ND query containers.
-# Extension types define: _query_length, _query_extract, _query_eltype.
-# Built-in support: SoA (Tuple of Vectors), AoS (Vector of Tuples).
 #
-# Example extension (in user code or package ext):
+# Generic defaults delegate to Base (length, getindex, eltype), so any type
+# with correct Base semantics works out of the box — no protocol to implement.
+# SoA (Tuple of Vectors) is the only built-in override (Base semantics differ).
+#
+# Override _query_* only when Base interfaces have wrong semantics for your type:
 #   import FastInterpolations: _query_length, _query_extract, _query_eltype
 #   _query_length(q::MyQueries) = ...
-#   _query_extract(q::MyQueries, k, ::Val{N}) where {N} = ...
+#   _query_extract(q::MyQueries, k) = ...       # return k-th point (any indexable)
 #   _query_eltype(q::MyQueries) = ...
 
 # ── Protocol function 1: query count ──
 
 @inline _query_length(q::Tuple{Vararg{AbstractVector}}) = length(q[1])
-@inline _query_length(q::AbstractVector) = length(q)
+@inline _query_length(q) = length(q)
 
 # ── Protocol function 2: k-th query point extraction ──
+# User-facing: simple getindex-like interface. No Val{N} needed.
+# Override this for custom query types — just return the k-th point (any indexable).
+# SoA returns NTuple directly (N known from tuple type parameter).
 
-@inline _query_extract(q::Tuple{Vararg{AbstractVector}}, k, ::Val{N}) where {N} =
+@inline _query_extract(q::Tuple{Vararg{AbstractVector, N}}, k) where {N} =
     ntuple(d -> @inbounds(q[d][k]), Val(N))
-@inline _query_extract(q::AbstractVector, k, ::Val{N}) where {N} = @inbounds q[k]
+@inline _query_extract(q, k) = @inbounds q[k]
 
-# ── Protocol function 3: element type for output allocation ──
+# ── Internal: NTuple-guaranteed extraction for kernel consumption ──
+# Wraps _query_extract with _as_ntuple — ensures NTuple{N, <:Real} for @generated kernels.
+# NOT part of the user protocol — users never override this.
+
+@inline _extract_query_point(q, k, ::Val{N}) where {N} =
+    _as_ntuple(_query_extract(q, k), Val(N))
+
+@inline _as_ntuple(x::NTuple{N, <:Real}, ::Val{N}) where {N} = x
+@inline _as_ntuple(x, ::Val{N}) where {N} = ntuple(d -> @inbounds(x[d]), Val(N))
+
+# ── Protocol function 3: scalar element type for output allocation ──
+# Extracts the scalar floating type from query elements (not the element type itself).
+# e.g. Vector{NTuple{2,Float64}} → Float64, not NTuple{2,Float64}.
 
 @inline _query_eltype(q::Tuple{Vararg{AbstractVector}}) = promote_type(map(eltype, q)...)
-@inline _query_eltype(q::AbstractVector{T}) where {T <: Tuple} = promote_type(fieldtypes(T)...)
-@inline _query_eltype(q::AbstractVector{T}) where {T} = eltype(T)
+@inline _query_eltype(q) = _scalar_eltype(eltype(q))
+
+# Scalar type extraction helpers — dispatch on element type
+@inline _scalar_eltype(::Type{T}) where {T <: Real} = T
+@inline _scalar_eltype(::Type{T}) where {T <: Tuple} = promote_type(fieldtypes(T)...)
+@inline _scalar_eltype(::Type{T}) where {T} = eltype(T)
 
 # ── Internal: SoA per-axis length check ──
 
@@ -960,7 +981,7 @@ end
     ) where {Tg, Tv, N}
     zref = _zero_ref(itp)
     @inbounds for k in 1:_query_length(queries)
-        query_k = _query_extract(queries, k, Val(N))
+        query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, itp.grids, itp.extraps, ops, zref)
         if oob_val !== nothing
             output[k] = oob_val

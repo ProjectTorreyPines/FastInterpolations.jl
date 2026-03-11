@@ -810,7 +810,7 @@ function cubic_adjoint(
         _extra...
     ) where {N}
     nq = _query_length(queries)
-    soa_queries = ntuple(d -> [_query_extract(queries, k, Val(N))[d] for k in 1:nq], Val(N))
+    soa_queries = ntuple(d -> [_query_extract(queries, k)[d] for k in 1:nq], Val(N))
     return cubic_adjoint(grids, soa_queries; bc = bc, extrap = extrap, autocache = autocache)
 end
 

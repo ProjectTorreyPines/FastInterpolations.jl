@@ -21,74 +21,13 @@
     return _eval_constant_nd(itp, query, ops, search_tuple, hint)
 end
 
-# ========================================
-# IN-PLACE BATCH EVALUATION
-# ========================================
+# In-place batch evaluation (SoA + AoS) is handled by the unified
+# AbstractInterpolantND callable in nd_utils.jl.
+# Zero-fill for any derivative is handled by _deriv_zero_fill trait below.
 
-"""
-    (itp::ConstantInterpolantND)(output, queries::NTuple{N,AbstractVector}; ...)
-
-In-place SoA batch evaluation. Writes results into pre-allocated `output`.
-Returns `output` for chaining.
-"""
-function (itp::ConstantInterpolantND{Tg, Tv, N})(
-        output::AbstractVector,
-        queries::NTuple{N, AbstractVector{<:Real}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
-    n_queries = length(queries[1])
-    length(output) == n_queries || throw(
-        DimensionMismatch(
-            "output length $(length(output)) must match query length $n_queries"
-        )
-    )
-    for d in 2:N
-        length(queries[d]) == n_queries || throw(
-            DimensionMismatch(
-                "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
-            )
-        )
-    end
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), queries, hint)  # adaptive: check monotonicity for AutoSearch+no hint
-    if _has_any_derivative(ops, Val(N))
-        fill!(output, zero(eltype(output)))
-        return output
-    end
-    _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
-    return output
-end
-
-"""
-    (itp::ConstantInterpolantND)(output, queries::AbstractVector{<:NTuple}; ...)
-
-In-place AoS batch evaluation. Writes results into pre-allocated `output`.
-Returns `output` for chaining.
-"""
-function (itp::ConstantInterpolantND{Tg, Tv, N})(
-        output::AbstractVector,
-        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
-    n_queries = length(queries)
-    length(output) == n_queries || throw(
-        DimensionMismatch(
-            "output length $(length(output)) must match query length $n_queries"
-        )
-    )
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), queries, hint)  # AoS: falls through to _resolve_search_nd
-    if _has_any_derivative(ops, Val(N))
-        fill!(output, zero(eltype(output)))
-        return output
-    end
-    _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
-    return output
-end
+# Derivative zero-fill trait: constant has zero derivative at all orders
+@inline _deriv_zero_fill(::ConstantInterpolantND, ops::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} =
+    _has_any_derivative(ops, Val(N))
 
 # ========================================
 # Core Evaluation Logic

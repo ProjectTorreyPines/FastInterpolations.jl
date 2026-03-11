@@ -831,15 +831,23 @@ end
 # Query Resolution Protocol
 # ========================================
 #
-# Normalize arbitrary query containers to canonical SoA/AoS form.
+# Extensible batch evaluation protocol for ND interpolation.
+#
+# AbstractBatchMode hierarchy defines how queries are stored and accessed:
+#   SoABatch — Structure-of-Arrays: Tuple{Vararg{AbstractVector{<:Real}, N}}
+#   AoSBatch — Array-of-Structures: AbstractVector{<:Tuple{Vararg{Real, N}}}
+#
 # Extensions (e.g., StaticArraysExt) implement _resolve_queries for new types.
-# The hot path (_batch_nd_soa! / _batch_nd_aos!) remains unchanged.
+# The protocol: _resolve_queries → _get_query / _num_queries → unified batch loop.
 
-"""Batch mode tag: Structure-of-Arrays (Tuple of Vectors)."""
-struct SoABatch end
+"""Abstract supertype for batch evaluation modes."""
+abstract type AbstractBatchMode end
 
-"""Batch mode tag: Array-of-Structures (Vector of Tuples)."""
-struct AoSBatch end
+"""Batch mode: Structure-of-Arrays (Tuple of Vectors)."""
+struct SoABatch <: AbstractBatchMode end
+
+"""Batch mode: Array-of-Structures (Vector of Tuples)."""
+struct AoSBatch <: AbstractBatchMode end
 
 """
     _resolve_queries(queries, Val(N)) -> (canonical_queries, batch_mode)
@@ -855,48 +863,89 @@ Extensions add methods for new types (e.g., `Vector{SVector{N,T}}`).
 @inline _resolve_queries(q::Tuple{Vararg{AbstractVector{<:Real}, N}}, ::Val{N}) where {N} = (q, SoABatch())
 @inline _resolve_queries(q::AbstractVector{<:Tuple{Vararg{Real, N}}}, ::Val{N}) where {N} = (q, AoSBatch())
 
-# Dispatch to existing batch functions based on resolved mode
-@inline _batch_nd!(out, itp, q, ::SoABatch, ops, search, hint) =
-    _batch_nd_soa!(out, itp, q, ops, search, hint)
-@inline _batch_nd!(out, itp, q, ::AoSBatch, ops, search, hint) =
-    _batch_nd_aos!(out, itp, q, ops, search, hint)
+# ── Query access protocol ──
+# _get_query: extract k-th query point as NTuple{N}
+# _num_queries: total number of query points
 
-# Query length extraction
-@inline _query_length(::SoABatch, q::Tuple) = length(q[1])
-@inline _query_length(::AoSBatch, q::AbstractVector) = length(q)
+@inline _get_query(::SoABatch, q, k, ::Val{N}) where {N} = ntuple(d -> @inbounds(q[d][k]), Val(N))
+@inline _get_query(::AoSBatch, q, k, ::Val{N}) where {N} = @inbounds q[k]
 
-# Query element type extraction (for output allocation)
+@inline _num_queries(::SoABatch, q::Tuple) = length(q[1])
+@inline _num_queries(::AoSBatch, q::AbstractVector) = length(q)
+
+# ── Query element type extraction (for output allocation) ──
+
 @inline _query_eltype_resolved(::SoABatch, q::Tuple) = promote_type(map(eltype, q)...)
 @inline _query_eltype_resolved(::AoSBatch, q::AbstractVector{T}) where {T <: Tuple} =
     promote_type(fieldtypes(T)...)
 @inline _query_eltype_resolved(::AoSBatch, q::AbstractVector{T}) where {T} =
     eltype(T)  # fallback for reinterpreted views
 
+# ── Query length validation ──
+
+@inline function _validate_query_length(::SoABatch, queries::Tuple, output::AbstractVector)
+    n = length(queries[1])
+    length(output) == n || throw(
+        DimensionMismatch("output length $(length(output)) must match query length $n")
+    )
+    for d in 2:length(queries)
+        length(queries[d]) == n || throw(
+            DimensionMismatch(
+                "query vectors must have same length: dim 1 has $n, dim $d has $(length(queries[d]))"
+            )
+        )
+    end
+    return nothing
+end
+
+@inline function _validate_query_length(::AoSBatch, queries::AbstractVector, output::AbstractVector)
+    n = length(queries)
+    length(output) == n || throw(
+        DimensionMismatch("output length $(length(output)) must match query length $n")
+    )
+    return nothing
+end
+
+# Generic fallback for custom AbstractBatchMode subtypes
+@inline function _validate_query_length(mode::AbstractBatchMode, queries, output::AbstractVector)
+    n = _num_queries(mode, queries)
+    length(output) == n || throw(
+        DimensionMismatch("output length $(length(output)) must match query length $n")
+    )
+    return nothing
+end
+
+# ── Derivative zero-fill trait ──
+# Linear: 2nd+ derivative → all zeros. Constant: any derivative → all zeros.
+# Default: no zero-fill (Cubic, Quadratic evaluate all derivative orders).
+
+@inline _deriv_zero_fill(::AbstractInterpolantND, ::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} = false
+
 
 # ========================================
-# In-Place Batch Evaluation (Generic ND)
+# Unified Batch Evaluation (Generic ND)
 # ========================================
 #
-# Generic inner loops for in-place batch evaluation.
-# Works for ALL AbstractInterpolantND subtypes via _locate_cell + _eval_at_cell dispatch.
-# Callables in each type's eval file handle deriv dispatch and call these.
+# Single batch loop for all AbstractInterpolantND subtypes and batch modes.
+# Mode-specific query extraction is handled by _get_query dispatch.
 
 """
-    _batch_nd_soa!(output, itp, queries, ops, search, hints=nothing)
+    _batch_nd_unified!(output, itp, queries, mode, ops, search, hints=nothing)
 
-In-place SoA batch evaluation. Writes results into `output`.
+Unified in-place batch evaluation. Dispatches query extraction via `_get_query(mode, ...)`.
 """
-@inline function _batch_nd_soa!(
+@inline function _batch_nd_unified!(
         output::AbstractVector,
         itp::AbstractInterpolantND{Tg, Tv, N},
-        queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+        queries,
+        mode::AbstractBatchMode,
         ops::NTuple{N, AbstractEvalOp},
         search::Tuple{Vararg{AbstractSearchPolicy, N}},
         hints = nothing
     ) where {Tg, Tv, N}
     zref = _zero_ref(itp)
-    @inbounds for k in 1:length(queries[1])
-        query_k = ntuple(d -> queries[d][k], Val(N))
+    @inbounds for k in 1:_num_queries(mode, queries)
+        query_k = _get_query(mode, queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, itp.grids, itp.extraps, ops, zref)
         if oob_val !== nothing
             output[k] = oob_val
@@ -908,41 +957,26 @@ In-place SoA batch evaluation. Writes results into `output`.
     return output
 end
 
-"""
-    _batch_nd_aos!(output, itp, queries, ops, search, hints=nothing)
+# Backward-compatible wrappers (used by one-shot internal loops)
+@inline _batch_nd_soa!(out, itp, q, ops, search, hint) =
+    _batch_nd_unified!(out, itp, q, SoABatch(), ops, search, hint)
+@inline _batch_nd_aos!(out, itp, q, ops, search, hint) =
+    _batch_nd_unified!(out, itp, q, AoSBatch(), ops, search, hint)
 
-In-place AoS batch evaluation. Writes results into `output`.
-"""
-@inline function _batch_nd_aos!(
-        output::AbstractVector,
-        itp::AbstractInterpolantND{Tg, Tv, N},
-        queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-        ops::NTuple{N, AbstractEvalOp},
-        search::Tuple{Vararg{AbstractSearchPolicy, N}},
-        hints = nothing
-    ) where {Tg, Tv, N}
-    zref = _zero_ref(itp)
-    @inbounds for k in 1:length(queries)
-        oob_val = _try_fill_oob(queries[k], itp.grids, itp.extraps, ops, zref)
-        if oob_val !== nothing
-            output[k] = oob_val
-            continue
-        end
-        cell = _locate_cell(itp, queries[k], search, hints)
-        output[k] = _eval_at_cell(itp, cell, ops)
-    end
-    return output
-end
+# Mode-dispatched entry (used by generic fallback callables)
+@inline _batch_nd!(out, itp, q, mode::AbstractBatchMode, ops, search, hint) =
+    _batch_nd_unified!(out, itp, q, mode, ops, search, hint)
 
 # ========================================
 # Shared ND Callable Interface
 # ========================================
 #
-# Vector query, SoA batch, and AoS batch callables are identical across all
-# ND interpolant types. Define once on AbstractInterpolantND.
-# Each concrete type only needs: scalar tuple callable + in-place batch callables.
+# All ND callables defined once on AbstractInterpolantND.
+# Scalar (tuple/vector), batch (SoA/AoS), and generic fallback paths.
+# Per-type eval files only need: scalar tuple callable.
 
-# Vector query → tuple conversion for ForwardDiff/Optim compatibility
+# ── Scalar: Vector query → tuple conversion (ForwardDiff/Optim compat) ──
+
 @inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
         query::AbstractVector{<:Real};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
@@ -958,7 +992,48 @@ end
     return itp(query_tuple; deriv = deriv, search = search, hint = hint)
 end
 
-# SoA batch: allocate output + delegate to in-place
+# ── In-place batch: SoA typed ──
+
+function (itp::AbstractInterpolantND{Tg, Tv, N})(
+        output::AbstractVector,
+        queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    _validate_query_length(SoABatch(), queries, output)
+    search_tuple = _resolve_search_nd(search, Val(N), queries, hint)
+    if _deriv_zero_fill(itp, ops, Val(N))
+        fill!(output, zero(eltype(output)))
+        return output
+    end
+    _batch_nd_unified!(output, itp, queries, SoABatch(), ops, search_tuple, hint)
+    return output
+end
+
+# ── In-place batch: AoS typed ──
+
+function (itp::AbstractInterpolantND{Tg, Tv, N})(
+        output::AbstractVector,
+        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
+        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
+        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
+        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
+    ) where {Tg, Tv, N}
+    ops = _resolve_deriv_nd(deriv, Val(N))
+    _validate_query_length(AoSBatch(), queries, output)
+    search_tuple = _resolve_search_nd(search, Val(N), queries, hint)
+    if _deriv_zero_fill(itp, ops, Val(N))
+        fill!(output, zero(eltype(output)))
+        return output
+    end
+    _batch_nd_unified!(output, itp, queries, AoSBatch(), ops, search_tuple, hint)
+    return output
+end
+
+# ── Allocating batch: SoA typed ──
+
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
         queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
@@ -966,32 +1041,26 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
-    Tq = _query_eltype(queries)
+    Tq = _query_eltype_resolved(SoABatch(), queries)
     output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries[1]))
     return itp(output, queries; deriv = deriv, search = search, hint = hint)
 end
 
-# AoS batch: allocate output + delegate to in-place
+# ── Allocating batch: AoS typed ──
+
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
         queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
-    Tq = _query_eltype(queries)
+    Tq = _query_eltype_resolved(AoSBatch(), queries)
     output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries))
     return itp(output, queries; deriv = deriv, search = search, hint = hint)
 end
 
-# ========================================
-# Generic Query Fallbacks (Query Protocol)
-# ========================================
-#
-# Catch-all entry points for query types not matching SoA/AoS signatures.
-# Uses _resolve_queries to normalize, then delegates to typed methods.
-# Less specific than per-type methods → existing dispatch unaffected.
+# ── Generic fallback: in-place (untyped queries → resolve → unified) ──
 
-# In-place batch: generic fallback
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
         output::AbstractVector,
         queries;  # untyped — lowest dispatch priority
@@ -1001,18 +1070,18 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     ) where {Tg, Tv, N}
     canonical, mode = _resolve_queries(queries, Val(N))
     ops = _resolve_deriv_nd(deriv, Val(N))
-    n_queries = _query_length(mode, canonical)
-    length(output) == n_queries || throw(
-        DimensionMismatch(
-            "output length $(length(output)) must match query length $n_queries"
-        )
-    )
+    _validate_query_length(mode, canonical, output)
     search_tuple = _resolve_search_nd(search, Val(N), canonical, hint)
-    _batch_nd!(output, itp, canonical, mode, ops, search_tuple, hint)
+    if _deriv_zero_fill(itp, ops, Val(N))
+        fill!(output, zero(eltype(output)))
+        return output
+    end
+    _batch_nd_unified!(output, itp, canonical, mode, ops, search_tuple, hint)
     return output
 end
 
-# Allocating batch: generic fallback
+# ── Generic fallback: allocating (untyped queries → resolve → unified) ──
+
 function (itp::AbstractInterpolantND{Tg, Tv, N})(
         queries;  # untyped — lowest dispatch priority
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
@@ -1021,17 +1090,6 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     ) where {Tg, Tv, N}
     canonical, mode = _resolve_queries(queries, Val(N))
     Tq = _query_eltype_resolved(mode, canonical)
-    output = Vector{promote_type(Tv, Tg, Tq)}(undef, _query_length(mode, canonical))
+    output = Vector{promote_type(Tv, Tg, Tq)}(undef, _num_queries(mode, canonical))
     return itp(output, canonical; deriv = deriv, search = search, hint = hint)
 end
-
-
-# ========================================
-# Query Element Type Extraction
-# ========================================
-
-@inline _query_eltype(queries::Tuple{Vararg{AbstractVector}}) =
-    promote_type(map(eltype, queries)...)
-
-@inline _query_eltype(::AbstractVector{T}) where {T <: Tuple} =
-    promote_type(fieldtypes(T)...)

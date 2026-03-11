@@ -135,23 +135,18 @@ For OOB queries, weights are zeroed per-axis following the same logic as 1D `_fi
 function _bake_nd_anchors(
         grids::NTuple{N, AbstractVector{Tg}},
         spacings::NTuple{N, AbstractGridSpacing{Tg}},
-        queries::NTuple{N, AbstractVector},
+        queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N, Tg <: AbstractFloat}
-    n_queries = length(queries[1])
-    for d in 2:N
-        length(queries[d]) == n_queries || throw(
-            DimensionMismatch(
-                "Query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
-            )
-        )
-    end
+    nq = _query_length(queries)
+    _query_validate(queries)
 
-    anchors = Vector{_NDAdjointAnchor{Tg, N}}(undef, n_queries)
-    @inbounds for q in 1:n_queries
+    anchors = Vector{_NDAdjointAnchor{Tg, N}}(undef, nq)
+    @inbounds for q in 1:nq
         # Single pass: compute index + all 4 weight sets per axis together
+        query_q = _extract_query_point(queries, q, Val(N))
         idx_and_weights = ntuple(Val(N)) do d
-            xq_raw = Tg(queries[d][q])
+            xq_raw = Tg(query_q[d])
             xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
             idx, _, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
             h = _get_h(spacings[d], idx)
@@ -588,20 +583,16 @@ function cubic_adjoint(
         _extra...
     ) where {N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
-    # Type promotion
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
-
-    # Resolve per-axis BCs and extraps
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tg)
-
     return _build_nd_adjoint(grids_typed, queries, bcs, extraps, autocache)
 end
 
 # Single-tuple query: cubic_adjoint((x, y), (0.5, 0.5); ...)
-# Single query point specified as a coordinate tuple.
+# Wraps as 1-element tuple-vector for _bake_nd_anchors protocol.
 function cubic_adjoint(
         grids::NTuple{N, AbstractVector},
         query::Tuple{Vararg{Real, N}};
@@ -610,13 +601,12 @@ function cubic_adjoint(
         autocache::Bool = true,
         _extra...
     ) where {N}
-    soa_queries = ntuple(d -> [query[d]], Val(N))
-    return cubic_adjoint(grids, soa_queries; bc = bc, extrap = extrap, autocache = autocache)
+    return cubic_adjoint(grids, [query]; bc = bc, extrap = extrap, autocache = autocache)
 end
 
-# Generic query fallback: converts any query format to SoA using protocol functions.
-# Handles AoS (Vector{NTuple}), Vector{SVector}, or any protocol-implementing type.
-# SoA queries are caught by the more specific Tuple{AbstractVector, Vararg} overload above.
+# Generic query fallback: passes queries directly to _build_nd_adjoint.
+# _bake_nd_anchors uses query protocol internally — no SoA conversion needed.
+# Handles AoS (Vector{NTuple}), Vector{SVector}, SoA, or any protocol-implementing type.
 function cubic_adjoint(
         grids::NTuple{N, AbstractVector},
         queries;
@@ -625,9 +615,12 @@ function cubic_adjoint(
         autocache::Bool = true,
         _extra...
     ) where {N}
-    nq = _query_length(queries)
-    soa_queries = ntuple(d -> [_query_extract(queries, k)[d] for k in 1:nq], Val(N))
-    return cubic_adjoint(grids, soa_queries; bc = bc, extrap = extrap, autocache = autocache)
+    Tg = _promote_grid_eltype(grids)
+    Tg = Tg <: AbstractFloat ? Tg : Float64
+    grids_typed = _convert_grids_typed(grids, Tg)
+    bcs = _resolve_bcs_nd(bc, Val(N))
+    extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tg)
+    return _build_nd_adjoint(grids_typed, queries, bcs, extraps, autocache)
 end
 
 """
@@ -648,7 +641,7 @@ Union return types from runtime tuple indexing in closures.
 """
 function _build_nd_adjoint(
         grids::NTuple{N, AbstractVector{Tg}},
-        queries::NTuple{N, AbstractVector},
+        queries,
         bcs::NTuple{N, AbstractBC},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         autocache::Bool

@@ -93,6 +93,34 @@ points = [(0.1, 0.2), (0.3, 0.4), (0.5, 0.6)]
 itp(points)  # returns Vector of length 3
 ```
 
+### Any Indexable Container (Query Protocol)
+
+ND batch evaluation accepts **any container type** whose elements are indexable points. Types with standard `length`, `getindex`, and `eltype` semantics work zero-config:
+
+```julia
+using StaticArrays
+
+# Vector{SVector} — works out of the box
+pts = [SVector(0.1, 0.2), SVector(0.3, 0.4)]
+itp(pts)  # returns Vector of length 2
+
+# AbstractVector query also works for scalar calls
+itp(SVector(0.5, 1.0))  # single-point evaluation
+```
+
+For custom containers where `Base` semantics differ (e.g., SoA-style wrappers), override three functions:
+
+```julia
+import FastInterpolations: _query_length, _query_extract, _query_eltype
+
+_query_length(q::MyQueries)      = ...   # number of query points
+_query_extract(q::MyQueries, k)  = ...   # k-th point (any indexable)
+_query_eltype(q::MyQueries)      = ...   # scalar floating type (e.g. Float64)
+```
+
+!!! note "Value types vs Query types"
+    This is orthogonal to [Custom Value Types (Duck Typing)](../guides/custom_value_types.md), which governs what types can be *interpolated* (`Tv`). The query protocol governs what container types can *hold query points*.
+
 ---
 
 ## Visualization (2D)

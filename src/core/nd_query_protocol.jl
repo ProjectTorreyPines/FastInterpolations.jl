@@ -2,17 +2,18 @@
 # ND Query Protocol
 # ========================================
 #
-# Extensible 3-function protocol for ND query containers.
+# Extensible protocol for ND query containers (3 core functions + optional validation).
 #
 # Generic defaults delegate to Base (length, getindex, eltype), so any type
 # with correct Base semantics works out of the box — no protocol to implement.
 # SoA (Tuple of Vectors) is the only built-in override (Base semantics differ).
 #
 # Override _query_* only when Base interfaces have wrong semantics for your type:
-#   import FastInterpolations: _query_length, _query_extract, _query_eltype
+#   import FastInterpolations: _query_length, _query_extract, _query_eltype, _query_validate
 #   _query_length(q::MyQueries) = ...
 #   _query_extract(q::MyQueries, k) = ...       # return k-th point (any indexable)
 #   _query_eltype(q::MyQueries) = ...
+#   _query_validate(q::MyQueries) = ...         # optional: cross-container consistency checks
 
 # ── Protocol function 1: query count ──
 
@@ -73,10 +74,17 @@
     return nothing
 end
 
-# ── Dimensionality validation (generic queries only) ──
-# SoA queries are validated by `length(queries) == N` in the caller.
-# For generic queries (AoS, SVector, etc.), check the first point's length
+# ── Dimensionality validation ──
+# SoA: ndims = tuple length (checked directly, no point extraction needed).
+# Generic (AoS, SVector, etc.): check the first point's length
 # to produce a clear error instead of an opaque BoundsError from _as_ntuple.
+
+# SoA: ndims is the tuple length (number of axes), not a point property.
+# Avoids BoundsError from _query_extract when axes have inconsistent lengths.
+function _query_check_ndims(queries::Tuple{Vararg{AbstractVector}}, ::Val{N}) where {N}
+    length(queries) == N || _throw_query_ndims_mismatch(N, length(queries))
+    return nothing
+end
 
 function _query_check_ndims(queries, ::Val{N}) where {N}
     nq = _query_length(queries)

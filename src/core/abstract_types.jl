@@ -138,7 +138,7 @@ abstract type AbstractAdjoint{Tg <: AbstractFloat} end
 
 Abstract supertype for N-dimensional adjoint operators.
 
-Subtypes automatically inherit shared callable dispatch from `nd_query_protocol.jl`
+Subtypes automatically inherit shared callable dispatch from `nd_adjoint_protocol.jl`
 (allocating, in-place, scalar, tuple) by implementing the required interface:
 
     _n_queries(adj)::Int                          — number of baked query points

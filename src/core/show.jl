@@ -874,7 +874,7 @@ end
 # ========================================
 
 function Base.show(io::IO, adj::CubicAdjointND{Tg, N}) where {Tg, N}
-    out_size = _adjoint_output_size(adj.grid_size, adj.bcs)
+    out_size = _adjoint_output_size(adj)
     sizes = join([string(s) for s in out_size], "×")
     nq = length(adj.anchors)
     bc_name = _short_bc_name_nd(adj.bcs)

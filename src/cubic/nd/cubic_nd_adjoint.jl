@@ -496,17 +496,6 @@ so each branch dispatches on a concrete cache type — no Union boxing.
     return nothing
 end
 
-# ========================================
-# Apply Helpers
-# ========================================
-
-# Output size: for exclusive periodic axes, output is grid_size[d]-1 (fold + truncate)
-@inline function _adjoint_output_size(grid_size::NTuple{N, Int}, bcs) where {N}
-    return ntuple(Val(N)) do d
-        bcs[d] isa PeriodicBC{:exclusive} ? grid_size[d] - 1 : grid_size[d]
-    end
-end
-
 # NOTE: _has_exclusive_periodic, _adjoint_output_size(adj), _adjoint_nd_finalize,
 # and all 6 callable methods (Vector/Real/Tuple × alloc/in-place) are now
 # shared on AbstractAdjointND in nd_query_protocol.jl.
@@ -529,7 +518,7 @@ end
         end
     end
 
-    out_size = _adjoint_output_size(adj.grid_size, adj.bcs)
+    out_size = _adjoint_output_size(adj)
     ranges = ntuple(d -> 1:out_size[d], Val(N))
     f_bar .= view(f_work, ranges...)
 
@@ -792,9 +781,9 @@ function Base.Matrix(
         adj::CubicAdjointND{Tg, N};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
     ) where {Tg, N}
-    out_size = _adjoint_output_size(adj.grid_size, adj.bcs)
+    out_size = _adjoint_output_size(adj)
     n_out = prod(out_size)
-    n_query = length(adj.anchors)
+    n_query = _n_queries(adj)
     W_T = zeros(Tg, n_out, n_query)
     e_q = zeros(Tg, n_query)
     f_bar = zeros(Tg, out_size...)

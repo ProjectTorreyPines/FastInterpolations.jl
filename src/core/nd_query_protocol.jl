@@ -48,7 +48,13 @@
 # Scalar type extraction helpers — dispatch on element type
 @inline _scalar_eltype(::Type{T}) where {T <: Real} = T
 @inline _scalar_eltype(::Type{T}) where {T <: Tuple} = promote_type(fieldtypes(T)...)
+@inline _scalar_eltype(::Type{Any}) = _throw_query_eltype_any()
 @inline _scalar_eltype(::Type{T}) where {T} = eltype(T)
+
+@noinline _throw_query_eltype_any() = throw(ArgumentError(
+    "cannot determine scalar element type from query container with eltype Any; " *
+    "override `FastInterpolations._query_eltype(q::YourType)` for your query type"
+))
 
 # ── Protocol function 4: query consistency validation ──
 # Default: no-op (AoS, custom types — single container, no mismatch possible).
@@ -71,7 +77,3 @@ end
     throw(DimensionMismatch("output length $no != query length $nq"))
 @noinline _throw_query_axis_mismatch(n1, d, nd) =
     throw(DimensionMismatch("query axis lengths differ: dim 1 has $n1, dim $d has $nd"))
-
-# ── Derivative zero-fill trait ──
-# Linear: 2nd+ derivative → all zeros. Constant: any derivative → all zeros.
-# Default: no zero-fill (Cubic, Quadratic evaluate all derivative orders).

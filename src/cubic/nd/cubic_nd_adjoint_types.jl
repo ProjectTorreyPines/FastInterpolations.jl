@@ -112,7 +112,7 @@ struct CubicAdjointND{
         MC <: NTuple{N, CubicSplineCache{Tg}},
         BP <: NTuple{N, Union{BCPair, PeriodicBC}},
         MBP <: NTuple{N, Union{BCPair, PeriodicBC}},
-    } <: AbstractAdjoint{Tg}
+    } <: AbstractAdjointND{Tg, N}
     grids::G
     spacings::S
     caches::C
@@ -124,12 +124,22 @@ struct CubicAdjointND{
 end
 
 # ========================================
+# AbstractAdjointND Interface
+# ========================================
+
+@inline _n_queries(adj::CubicAdjointND) = length(adj.anchors)
+@inline _grid_size(adj::CubicAdjointND) = adj.grid_size
+@inline _adjoint_bcs(adj::CubicAdjointND) = adj.bcs
+@inline _adjoint_nd_apply!(f_bar, adj::CubicAdjointND, y_bar, ops) =
+    _cubic_adjoint_nd_apply!(f_bar, adj, y_bar, ops)
+
+# ========================================
 # Type Introspection
 # ========================================
 
 Base.ndims(::CubicAdjointND{Tg, N}) where {Tg, N} = N + 1
 function Base.size(adj::CubicAdjointND{Tg, N}) where {Tg, N}
-    out_size = _adjoint_output_size(adj.grid_size, adj.bcs)
-    return (out_size..., length(adj.anchors))
+    out_size = _adjoint_output_size(adj)
+    return (out_size..., _n_queries(adj))
 end
 Base.size(adj::CubicAdjointND, d::Integer) = size(adj)[d]

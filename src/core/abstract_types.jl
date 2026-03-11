@@ -129,9 +129,27 @@ Note: Only `Tg` is needed (no `Tv`) because adjoint operators are value-type ind
 The same operator works for Float64, ComplexF64, or any custom value type.
 
 # Subtypes
-- `CubicAdjoint{Tg, ...}`: Adjoint of cubic spline interpolation
+- `CubicAdjoint{Tg, ...}`: Adjoint of cubic spline interpolation (1D)
 """
 abstract type AbstractAdjoint{Tg <: AbstractFloat} end
+
+"""
+    AbstractAdjointND{Tg<:AbstractFloat, N} <: AbstractAdjoint{Tg}
+
+Abstract supertype for N-dimensional adjoint operators.
+
+Subtypes automatically inherit shared callable dispatch from `nd_query_protocol.jl`
+(allocating, in-place, scalar, tuple) by implementing the required interface:
+
+    _n_queries(adj)::Int                          — number of baked query points
+    _grid_size(adj)::NTuple{N,Int}                — internal grid size
+    _adjoint_bcs(adj)                             — boundary conditions tuple
+    _adjoint_nd_apply!(f_bar, adj, y_bar, ops)    — scatter y_bar into f_bar (accumulate)
+
+# Subtypes
+- `CubicAdjointND{Tg, N, ...}`: Adjoint of cubic spline interpolation (ND)
+"""
+abstract type AbstractAdjointND{Tg <: AbstractFloat, N} <: AbstractAdjoint{Tg} end
 
 # ========================================
 # Type Helper Functions

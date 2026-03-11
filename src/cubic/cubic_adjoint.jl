@@ -108,13 +108,8 @@ end
 Base.size(adj::CubicAdjoint) = (_adjoint_output_length(adj), length(adj.anchors))
 Base.size(adj::CubicAdjoint, d::Integer) = size(adj)[d]
 
-# ── @noinline throw helpers (keep cold error paths out of hot code) ──
-
-@noinline _throw_adjoint_dim_mismatch(label::String, got::Int, expected::Int) =
-    throw(DimensionMismatch("$label length ($got) must match expected ($expected)"))
-
-@noinline _throw_adjoint_size_mismatch(got::Tuple, expected::Tuple) =
-    throw(DimensionMismatch("f_bar size $got must match output size $expected"))
+# NOTE: _throw_adjoint_dim_mismatch and _throw_adjoint_size_mismatch are now
+# shared across all adjoint types in nd_query_protocol.jl.
 
 # Shared periodic finalization for 1D allocating callables
 function _adjoint_1d_finalize(f_bar::AbstractVector, bc, n_internal::Int)

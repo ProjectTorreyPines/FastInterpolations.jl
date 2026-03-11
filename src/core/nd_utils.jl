@@ -377,10 +377,12 @@ end
 @inline function _resolve_search_nd_uniform(s, vn::Val{N}, queries, ::Nothing) where {N}
     tuple = _resolve_search_nd(s, vn)
     any(p -> p isa AutoSearch, tuple) || return tuple
-    all_mono = all(ntuple(Val(N)) do d
-        p = tuple[d]
-        !isa(p, AutoSearch) || _is_axis_likely_monotone(queries, d, vn)
-    end)
+    all_mono = all(
+        ntuple(Val(N)) do d
+            p = tuple[d]
+            !isa(p, AutoSearch) || _is_axis_likely_monotone(queries, d, vn)
+        end
+    )
     return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
 end
 

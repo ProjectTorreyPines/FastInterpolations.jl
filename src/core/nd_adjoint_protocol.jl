@@ -162,7 +162,8 @@ end
 # ── In-place scalar: adj(f_bar, y_bar::Real) ──
 
 function (adj::AbstractAdjointND{Tg, N})(
-        f_bar::AbstractArray{Tv, N}, y_bar::Real;
+        f_bar::AbstractArray{Tv, N},
+        y_bar::Real;
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         _extra...
     ) where {Tg, Tv, N}
@@ -182,7 +183,8 @@ end
 # ── In-place tuple: adj(f_bar, y_bar::Tuple{Vararg{Real}}) ──
 
 function (adj::AbstractAdjointND{Tg, N})(
-        f_bar::AbstractArray{Tv, N}, y_bar::Tuple{Vararg{Real}};
+        f_bar::AbstractArray{Tv, N},
+        y_bar::Tuple{Vararg{Real}};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         _extra...
     ) where {Tg, Tv, N}

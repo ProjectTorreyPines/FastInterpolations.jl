@@ -75,4 +75,3 @@ end
 # ── Derivative zero-fill trait ──
 # Linear: 2nd+ derivative → all zeros. Constant: any derivative → all zeros.
 # Default: no zero-fill (Cubic, Quadratic evaluate all derivative orders).
-

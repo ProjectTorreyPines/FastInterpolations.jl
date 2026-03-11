@@ -391,11 +391,13 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
     @testset "_is_axis_likely_monotone (protocol-based)" begin
         sorted_aos = [(Float64(i), Float64(i)) for i in 1:20]
-        random_aos = [(3.0, 8.0), (1.0, 2.0), (4.0, 5.0), (1.0, 9.0),
-                      (5.0, 0.0), (9.0, 6.0), (2.0, 3.0), (6.0, 7.0),
-                      (5.0, 1.0), (3.0, 4.0), (7.0, 8.0), (8.0, 10.0),
-                      (10.0, 11.0), (11.0, 12.0), (12.0, 13.0), (13.0, 14.0),
-                      (14.0, 15.0), (15.0, 16.0), (16.0, 17.0), (17.0, 18.0)]
+        random_aos = [
+            (3.0, 8.0), (1.0, 2.0), (4.0, 5.0), (1.0, 9.0),
+            (5.0, 0.0), (9.0, 6.0), (2.0, 3.0), (6.0, 7.0),
+            (5.0, 1.0), (3.0, 4.0), (7.0, 8.0), (8.0, 10.0),
+            (10.0, 11.0), (11.0, 12.0), (12.0, 13.0), (13.0, 14.0),
+            (14.0, 15.0), (15.0, 16.0), (16.0, 17.0), (17.0, 18.0),
+        ]
 
         @testset "sorted AoS → true for both axes" begin
             @test _is_axis_likely_monotone(sorted_aos, 1, Val(2)) == true
@@ -430,11 +432,13 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
     @testset "AoS AutoSearch: _resolve_search_nd per-axis adaptive" begin
         sorted_aos = [(Float64(i), Float64(i)) for i in 1:20]
-        random_aos = [(3.0, 8.0), (1.0, 2.0), (4.0, 5.0), (1.0, 9.0),
-                      (5.0, 0.0), (9.0, 6.0), (2.0, 3.0), (6.0, 7.0),
-                      (5.0, 1.0), (3.0, 4.0), (7.0, 8.0), (8.0, 10.0),
-                      (10.0, 11.0), (11.0, 12.0), (12.0, 13.0), (13.0, 14.0),
-                      (14.0, 15.0), (15.0, 16.0), (16.0, 17.0), (17.0, 18.0)]
+        random_aos = [
+            (3.0, 8.0), (1.0, 2.0), (4.0, 5.0), (1.0, 9.0),
+            (5.0, 0.0), (9.0, 6.0), (2.0, 3.0), (6.0, 7.0),
+            (5.0, 1.0), (3.0, 4.0), (7.0, 8.0), (8.0, 10.0),
+            (10.0, 11.0), (11.0, 12.0), (12.0, 13.0), (13.0, 14.0),
+            (14.0, 15.0), (15.0, 16.0), (16.0, 17.0), (17.0, 18.0),
+        ]
 
         @testset "both sorted → both LinearBinarySearch" begin
             result = _resolve_search_nd(AutoSearch(), Val(2), sorted_aos, nothing)
@@ -468,11 +472,13 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
 
     @testset "AoS AutoSearch: _resolve_search_nd_uniform all-or-nothing" begin
         sorted_aos = [(Float64(i), Float64(i)) for i in 1:20]
-        random_aos = [(3.0, 8.0), (1.0, 2.0), (4.0, 5.0), (1.0, 9.0),
-                      (5.0, 0.0), (9.0, 6.0), (2.0, 3.0), (6.0, 7.0),
-                      (5.0, 1.0), (3.0, 4.0), (7.0, 8.0), (8.0, 10.0),
-                      (10.0, 11.0), (11.0, 12.0), (12.0, 13.0), (13.0, 14.0),
-                      (14.0, 15.0), (15.0, 16.0), (16.0, 17.0), (17.0, 18.0)]
+        random_aos = [
+            (3.0, 8.0), (1.0, 2.0), (4.0, 5.0), (1.0, 9.0),
+            (5.0, 0.0), (9.0, 6.0), (2.0, 3.0), (6.0, 7.0),
+            (5.0, 1.0), (3.0, 4.0), (7.0, 8.0), (8.0, 10.0),
+            (10.0, 11.0), (11.0, 12.0), (12.0, 13.0), (13.0, 14.0),
+            (14.0, 15.0), (15.0, 16.0), (16.0, 17.0), (17.0, 18.0),
+        ]
 
         @testset "both sorted → both LinearBinarySearch" begin
             result = _resolve_search_nd_uniform(AutoSearch(), Val(2), sorted_aos, nothing)
@@ -524,9 +530,11 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
         ys = 0.0:1.0:10.0
         data = [Float64(x + y) for x in xs, y in ys]
 
-        random_points = [(3.2, 8.1), (1.5, 2.3), (7.8, 5.7), (0.3, 9.0),
-                         (9.1, 0.5), (4.6, 6.8), (6.0, 3.4), (2.4, 7.2),
-                         (8.7, 1.1), (5.5, 4.9)]
+        random_points = [
+            (3.2, 8.1), (1.5, 2.3), (7.8, 5.7), (0.3, 9.0),
+            (9.1, 0.5), (4.6, 6.8), (6.0, 3.4), (2.4, 7.2),
+            (8.7, 1.1), (5.5, 4.9),
+        ]
         n = length(random_points)
         output = Vector{Float64}(undef, n)
 

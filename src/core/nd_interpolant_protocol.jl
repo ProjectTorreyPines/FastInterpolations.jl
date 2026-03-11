@@ -50,11 +50,7 @@ end
         search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tg, Tv, N}
-    length(query) == N || throw(
-        DimensionMismatch(
-            "expected $N-element vector, got $(length(query))-element vector"
-        )
-    )
+    length(query) == N || _throw_ndims_mismatch("query elements", N, length(query))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
     return itp(query_tuple; deriv = deriv, search = search, hint = hint)
 end

@@ -614,9 +614,7 @@ function cubic_adjoint(
         autocache::Bool = true,
         _extra...
     ) where {N}
-    length(query) == N || throw(
-        DimensionMismatch("expected $N-element vector, got $(length(query))-element vector")
-    )
+    length(query) == N || _throw_ndims_mismatch("query elements", N, length(query))
     query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
     return cubic_adjoint(grids, (query_tuple,); bc = bc, extrap = extrap, autocache = autocache)
 end

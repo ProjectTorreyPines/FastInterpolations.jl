@@ -50,17 +50,16 @@ function _adjoint_nd_finalize(
     return f_bar
 end
 
-# ── Default exclusive periodic in-place (no pool; subtypes may override) ──
+# ── Exclusive periodic in-place (pool-allocated work buffer) ──
 
-function _adjoint_apply_exclusive_nd!(
-        f_bar::AbstractArray{<:Any, N},
+@with_pool pool function _adjoint_apply_exclusive_nd!(
+        f_bar::AbstractArray{Tv, N},
         adj::AbstractAdjointND{Tg, N},
         y_bar,
         ops::NTuple{N, AbstractEvalOp}
-    ) where {Tg, N}
-    Tv = promote_type(eltype(f_bar), Tg)
+    ) where {Tv, Tg, N}
     gs = _grid_size(adj)
-    f_work = zeros(Tv, gs...)
+    f_work = zeros!(pool, Tv, gs...)
     _adjoint_nd_apply!(f_work, adj, y_bar, ops)
     bcs = _adjoint_bcs(adj)
     for d in 1:N

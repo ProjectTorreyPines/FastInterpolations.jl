@@ -497,33 +497,10 @@ so each branch dispatches on a concrete cache type — no Union boxing.
 end
 
 # NOTE: _has_exclusive_periodic, _adjoint_output_size(adj), _adjoint_nd_finalize,
-# and all 6 callable methods (Vector/Real/Tuple × alloc/in-place) are now
-# shared on AbstractAdjointND in nd_query_protocol.jl.
+# _adjoint_apply_exclusive_nd!, and all 6 callable methods (Vector/Real/Tuple ×
+# alloc/in-place) are now shared on AbstractAdjointND in nd_adjoint_protocol.jl.
 # CubicAdjointND inherits them via _n_queries, _grid_size, _adjoint_bcs,
 # and _adjoint_nd_apply! defined in cubic_nd_adjoint_types.jl.
-
-# Exclusive periodic in-place: pool-allocated work buffer for the extended internal grid.
-@with_pool pool function _adjoint_apply_exclusive_nd!(
-        f_bar::AbstractArray{Tv, N},
-        adj::CubicAdjointND{Tg, N},
-        y_bar,  # AbstractVector, Tuple, or Real
-        ops::NTuple{N, AbstractEvalOp}
-    ) where {Tv, Tg, N}
-    f_work = zeros!(pool, Tv, adj.grid_size...)
-    _cubic_adjoint_nd_apply!(f_work, adj, y_bar, ops)
-
-    for d in 1:N
-        if adj.bcs[d] isa PeriodicBC{:exclusive}
-            selectdim(f_work, d, 1) .+= selectdim(f_work, d, adj.grid_size[d])
-        end
-    end
-
-    out_size = _adjoint_output_size(adj)
-    ranges = ntuple(d -> 1:out_size[d], Val(N))
-    f_bar .= view(f_work, ranges...)
-
-    return nothing
-end
 
 # ========================================
 # Core Apply Pipeline

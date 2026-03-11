@@ -940,12 +940,17 @@ end
 @inline _scalar_eltype(::Type{T}) where {T <: Tuple} = promote_type(fieldtypes(T)...)
 @inline _scalar_eltype(::Type{T}) where {T} = eltype(T)
 
-# ── Internal: SoA per-axis length check ──
+# ── Protocol function 4: query consistency validation ──
+# Default: no-op (AoS, custom types — single container, no mismatch possible).
+# SoA: per-axis length consistency check (axes are independent containers).
+# Override for custom multi-container query types that need validation.
 
-@inline function _check_soa_axes(queries::Tuple{Vararg{AbstractVector}})
-    n = length(queries[1])
-    for d in 2:length(queries)
-        length(queries[d]) == n || _throw_query_axis_mismatch(n, d, length(queries[d]))
+@inline _query_validate(q) = nothing
+
+@inline function _query_validate(q::Tuple{Vararg{AbstractVector}})
+    n = length(q[1])
+    for d in 2:length(q)
+        length(q[d]) == n || _throw_query_axis_mismatch(n, d, length(q[d]))
     end
     return nothing
 end
@@ -1036,7 +1041,7 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     ops = _resolve_deriv_nd(deriv, Val(N))
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
-    queries isa Tuple{Vararg{AbstractVector}} && _check_soa_axes(queries)
+    _query_validate(queries)
     search_tuple = _resolve_search_nd(search, Val(N), queries, hint)
     if _deriv_zero_fill(itp, ops, Val(N))
         fill!(output, zero(eltype(output)))

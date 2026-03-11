@@ -73,7 +73,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     ) where {Tg <: AbstractFloat, Tv, N}
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
-    queries isa Tuple{Vararg{AbstractVector}} && _check_soa_axes(queries)
+    _query_validate(queries)
 
     # Build phase (done once)
     n_partials = 1 << N

@@ -58,7 +58,7 @@ Writes results into `output`. No heap allocation beyond spacings.
     ) where {Tg <: AbstractFloat, Tv, N}
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
-    queries isa Tuple{Vararg{AbstractVector}} && _check_soa_axes(queries)
+    _query_validate(queries)
     spacings = _create_spacings_pooled(pool, grids)
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))

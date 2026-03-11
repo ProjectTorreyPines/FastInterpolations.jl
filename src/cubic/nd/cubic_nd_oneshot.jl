@@ -216,6 +216,7 @@ function cubic_interp!(
         coeffs::AbstractCoeffStrategy = PreCompute(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
+    _query_check_ndims(queries, Val(N))
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)

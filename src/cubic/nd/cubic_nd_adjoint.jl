@@ -630,6 +630,7 @@ function cubic_adjoint(
         autocache::Bool = true,
         _extra...
     ) where {N}
+    _query_check_ndims(queries, Val(N))
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)

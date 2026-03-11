@@ -201,6 +201,7 @@ function constant_interp!(
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
+    _query_check_ndims(queries, Val(N))
     if _is_any_deriv(deriv)
         fill!(output, 0 * first(data))
         return output

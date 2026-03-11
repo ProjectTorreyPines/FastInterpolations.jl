@@ -71,9 +71,25 @@
     return nothing
 end
 
+# ── Dimensionality validation (generic queries only) ──
+# SoA queries are validated by `length(queries) == N` in the caller.
+# For generic queries (AoS, SVector, etc.), check the first point's length
+# to produce a clear error instead of an opaque BoundsError from _as_ntuple.
+
+function _query_check_ndims(queries, ::Val{N}) where {N}
+    nq = _query_length(queries)
+    nq == 0 && return nothing
+    pt = _query_extract(queries, 1)
+    nd = length(pt)
+    nd == N || _throw_query_ndims_mismatch(N, nd)
+    return nothing
+end
+
 # ── Error helpers (@noinline cold path) ──
 
 @noinline _throw_query_output_mismatch(nq, no) =
     throw(DimensionMismatch("output length $no != query length $nq"))
 @noinline _throw_query_axis_mismatch(n1, d, nd) =
     throw(DimensionMismatch("query axis lengths differ: dim 1 has $n1, dim $d has $nd"))
+@noinline _throw_query_ndims_mismatch(expected, got) =
+    throw(DimensionMismatch("expected $expected-dimensional query points, got $got-dimensional"))

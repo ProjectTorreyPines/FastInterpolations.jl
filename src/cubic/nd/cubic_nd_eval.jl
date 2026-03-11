@@ -46,7 +46,7 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))  # ∂f/∂x only
 end
 
 # In-place batch evaluation (SoA + AoS) is handled by the unified
-# AbstractInterpolantND callable in nd_utils.jl.
+# AbstractInterpolantND callable in nd_interpolant_protocol.jl.
 # CubicInterpolantND has no special batch logic (no zero-fill trait).
 
 # ========================================

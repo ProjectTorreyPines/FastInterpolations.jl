@@ -109,7 +109,7 @@ Base.size(adj::CubicAdjoint) = (_adjoint_output_length(adj), length(adj.anchors)
 Base.size(adj::CubicAdjoint, d::Integer) = size(adj)[d]
 
 # NOTE: _throw_adjoint_dim_mismatch and _throw_adjoint_size_mismatch are now
-# shared across all adjoint types in nd_query_protocol.jl.
+# shared across all adjoint types in nd_adjoint_protocol.jl.
 
 # Shared periodic finalization for 1D allocating callables
 function _adjoint_1d_finalize(f_bar::AbstractVector, bc, n_internal::Int)

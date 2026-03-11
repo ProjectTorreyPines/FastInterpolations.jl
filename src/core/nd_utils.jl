@@ -290,7 +290,7 @@ end
 @inline _resolve_search_nohint(p, q) = _resolve_search_policy(p, q, nothing)
 
 # Generic queries + no hint → per-axis adaptive using query protocol.
-# Works for AoS (Vector{NTuple}), Vector{SVector}, or any protocol-implementing type.
+# Fallback for non-SoA queries — SoA has a more specific method above (line ~278).
 # Uses _is_axis_likely_monotone (protocol-based) instead of _is_likely_monotone (vector-based).
 @inline function _resolve_search_nd(s, vn::Val{N}, queries, ::Nothing) where {N}
     tuple = _resolve_search_nd(s, vn)
@@ -373,7 +373,7 @@ end
 end
 
 # Generic queries + no hint → protocol-based all-or-nothing adaptive resolution.
-# Uses _is_axis_likely_monotone (protocol-based) for any query type.
+# Fallback for non-SoA queries — SoA has a more specific method above (line ~365).
 @inline function _resolve_search_nd_uniform(s, vn::Val{N}, queries, ::Nothing) where {N}
     tuple = _resolve_search_nd(s, vn)
     any(p -> p isa AutoSearch, tuple) || return tuple

@@ -22,7 +22,7 @@
 end
 
 # In-place batch evaluation (SoA + AoS) is handled by the unified
-# AbstractInterpolantND callable in nd_utils.jl.
+# AbstractInterpolantND callable in nd_interpolant_protocol.jl.
 # Zero-fill for any derivative is handled by _deriv_zero_fill trait below.
 
 # Derivative zero-fill trait: constant has zero derivative at all orders

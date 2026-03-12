@@ -10,6 +10,12 @@ AbstractSeriesInterpolant
 AbstractInterpolantND
 ```
 
+### Adjoint Hierarchy
+
+```@docs
+AbstractAdjointND
+```
+
 ### ND Cubic Types
 
 ```@docs

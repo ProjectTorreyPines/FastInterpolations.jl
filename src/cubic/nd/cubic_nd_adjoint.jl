@@ -135,23 +135,18 @@ For OOB queries, weights are zeroed per-axis following the same logic as 1D `_fi
 function _bake_nd_anchors(
         grids::NTuple{N, AbstractVector{Tg}},
         spacings::NTuple{N, AbstractGridSpacing{Tg}},
-        queries::NTuple{N, AbstractVector},
+        queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N, Tg <: AbstractFloat}
-    n_queries = length(queries[1])
-    for d in 2:N
-        length(queries[d]) == n_queries || throw(
-            DimensionMismatch(
-                "Query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
-            )
-        )
-    end
+    nq = _query_length(queries)
+    _query_validate(queries)
 
-    anchors = Vector{_NDAdjointAnchor{Tg, N}}(undef, n_queries)
-    @inbounds for q in 1:n_queries
+    anchors = Vector{_NDAdjointAnchor{Tg, N}}(undef, nq)
+    @inbounds for q in 1:nq
         # Single pass: compute index + all 4 weight sets per axis together
+        query_q = _extract_query_point(queries, q, Val(N))
         idx_and_weights = ntuple(Val(N)) do d
-            xq_raw = Tg(queries[d][q])
+            xq_raw = Tg(query_q[d])
             xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
             idx, _, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
             h = _get_h(spacings[d], idx)
@@ -496,182 +491,11 @@ so each branch dispatches on a concrete cache type — no Union boxing.
     return nothing
 end
 
-# ========================================
-# Apply Helpers
-# ========================================
-
-# Output size: for exclusive periodic axes, output is grid_size[d]-1 (fold + truncate)
-@inline function _adjoint_output_size(grid_size::NTuple{N, Int}, bcs) where {N}
-    return ntuple(Val(N)) do d
-        bcs[d] isa PeriodicBC{:exclusive} ? grid_size[d] - 1 : grid_size[d]
-    end
-end
-
-@inline _has_exclusive_periodic(bcs::Tuple) = any(bp -> bp isa PeriodicBC{:exclusive}, bcs)
-
-# ========================================
-# Apply Methods
-# ========================================
-
-"""
-    (adj::CubicAdjointND)(y_bar; deriv=EvalValue()) -> f_bar::Array{Tv, N}
-
-Allocating adjoint apply: compute `f̄ = Wᵀ_d ȳ` where `d` is the derivative order.
-
-The `deriv` keyword selects which forward operator's adjoint to compute:
-- `EvalValue()` / `DerivOp(0)`: adjoint of value evaluation (default)
-- `DerivOp(1)`: adjoint of first derivative (broadcasts to all axes)
-- `(DerivOp(1), EvalValue())`: per-axis mixed derivative adjoint
-
-For exclusive periodic axes, the internal computation uses the extended grid size,
-then folds `f̄[...,n+1,...] += f̄[...,1,...]` and truncates to output size.
-"""
-function (adj::CubicAdjointND{Tg, N})(
-        y_bar::AbstractVector;
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        _extra...
-    ) where {Tg, N}
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    n_query = length(adj.anchors)
-    length(y_bar) == n_query || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), n_query)
-    Tv = promote_type(eltype(y_bar), Tg)
-    f_bar_internal = zeros(Tv, adj.grid_size...)
-    _cubic_adjoint_nd_apply!(f_bar_internal, adj, y_bar, ops)
-    return _adjoint_nd_finalize(f_bar_internal, adj.bcs, adj.grid_size)
-end
-
-"""
-    (adj::CubicAdjointND)(f_bar, y_bar; deriv=EvalValue()) -> f_bar
-
-In-place adjoint apply: compute `f̄ = Wᵀ_d ȳ` into pre-allocated `f_bar`.
-Zeros `f_bar` before accumulation. See allocating version for `deriv` options.
-"""
-function (adj::CubicAdjointND{Tg, N})(
-        f_bar::AbstractArray{Tv, N}, y_bar::AbstractVector;
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        _extra...
-    ) where {Tg, Tv, N}
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    out_size = _adjoint_output_size(adj.grid_size, adj.bcs)
-    size(f_bar) == out_size || _throw_adjoint_size_mismatch(size(f_bar), out_size)
-    n_query = length(adj.anchors)
-    length(y_bar) == n_query || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), n_query)
-    if _has_exclusive_periodic(adj.bcs)
-        _adjoint_apply_exclusive_nd!(f_bar, adj, y_bar, ops)
-    else
-        fill!(f_bar, zero(Tv))
-        _cubic_adjoint_nd_apply!(f_bar, adj, y_bar, ops)
-    end
-    return f_bar
-end
-
-# ── Scalar / Tuple callables ─────────────────────────────────────────────
-# adj(scalar)  → single query point, _scatter_nd! called directly (no loop)
-# adj(tuple)   → few query points, zero heap-alloc (tuple is stack-allocated)
-# adj(f_bar, scalar/tuple) → in-place variants
-# All share the same internal pipeline via _adjoint_scatter_nd! dispatch.
-
-# Shared periodic finalization for allocating callables
-function _adjoint_nd_finalize(f_bar::AbstractArray{<:Any, N}, bcs, grid_size) where {N}
-    if _has_exclusive_periodic(bcs)
-        for d in 1:N
-            if bcs[d] isa PeriodicBC{:exclusive}
-                selectdim(f_bar, d, 1) .+= selectdim(f_bar, d, grid_size[d])
-            end
-        end
-        out_size = _adjoint_output_size(grid_size, bcs)
-        ranges = ntuple(d -> 1:out_size[d], Val(N))
-        return f_bar[ranges...]
-    end
-    return f_bar
-end
-
-function (adj::CubicAdjointND{Tg, N})(
-        y_bar::Real;
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        _extra...
-    ) where {Tg, N}
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    length(adj.anchors) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, length(adj.anchors))
-    Tv = promote_type(typeof(y_bar), Tg)
-    f_bar_internal = zeros(Tv, adj.grid_size...)
-    _cubic_adjoint_nd_apply!(f_bar_internal, adj, y_bar, ops)
-    return _adjoint_nd_finalize(f_bar_internal, adj.bcs, adj.grid_size)
-end
-
-function (adj::CubicAdjointND{Tg, N})(
-        y_bar::Tuple{Vararg{Real}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        _extra...
-    ) where {Tg, N}
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    n_query = length(adj.anchors)
-    length(y_bar) == n_query || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), n_query)
-    Tv = promote_type(eltype(y_bar), Tg)
-    f_bar_internal = zeros(Tv, adj.grid_size...)
-    _cubic_adjoint_nd_apply!(f_bar_internal, adj, y_bar, ops)
-    return _adjoint_nd_finalize(f_bar_internal, adj.bcs, adj.grid_size)
-end
-
-function (adj::CubicAdjointND{Tg, N})(
-        f_bar::AbstractArray{Tv, N}, y_bar::Real;
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        _extra...
-    ) where {Tg, Tv, N}
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    out_size = _adjoint_output_size(adj.grid_size, adj.bcs)
-    size(f_bar) == out_size || _throw_adjoint_size_mismatch(size(f_bar), out_size)
-    length(adj.anchors) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, length(adj.anchors))
-    if _has_exclusive_periodic(adj.bcs)
-        _adjoint_apply_exclusive_nd!(f_bar, adj, y_bar, ops)
-    else
-        fill!(f_bar, zero(Tv))
-        _cubic_adjoint_nd_apply!(f_bar, adj, y_bar, ops)
-    end
-    return f_bar
-end
-
-function (adj::CubicAdjointND{Tg, N})(
-        f_bar::AbstractArray{Tv, N}, y_bar::Tuple{Vararg{Real}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        _extra...
-    ) where {Tg, Tv, N}
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    out_size = _adjoint_output_size(adj.grid_size, adj.bcs)
-    size(f_bar) == out_size || _throw_adjoint_size_mismatch(size(f_bar), out_size)
-    n_query = length(adj.anchors)
-    length(y_bar) == n_query || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), n_query)
-    if _has_exclusive_periodic(adj.bcs)
-        _adjoint_apply_exclusive_nd!(f_bar, adj, y_bar, ops)
-    else
-        fill!(f_bar, zero(Tv))
-        _cubic_adjoint_nd_apply!(f_bar, adj, y_bar, ops)
-    end
-    return f_bar
-end
-
-# Exclusive periodic in-place: pool-allocated work buffer for the extended internal grid.
-@with_pool pool function _adjoint_apply_exclusive_nd!(
-        f_bar::AbstractArray{Tv, N},
-        adj::CubicAdjointND{Tg, N},
-        y_bar,  # AbstractVector, Tuple, or Real
-        ops::NTuple{N, AbstractEvalOp}
-    ) where {Tv, Tg, N}
-    f_work = zeros!(pool, Tv, adj.grid_size...)
-    _cubic_adjoint_nd_apply!(f_work, adj, y_bar, ops)
-
-    for d in 1:N
-        if adj.bcs[d] isa PeriodicBC{:exclusive}
-            selectdim(f_work, d, 1) .+= selectdim(f_work, d, adj.grid_size[d])
-        end
-    end
-
-    out_size = _adjoint_output_size(adj.grid_size, adj.bcs)
-    ranges = ntuple(d -> 1:out_size[d], Val(N))
-    f_bar .= view(f_work, ranges...)
-
-    return nothing
-end
+# NOTE: _has_exclusive_periodic, _adjoint_output_size(adj), _adjoint_nd_finalize,
+# _adjoint_apply_exclusive_nd!, and all 6 callable methods (Vector/Real/Tuple ×
+# alloc/in-place) are now shared on AbstractAdjointND in nd_adjoint_protocol.jl.
+# CubicAdjointND inherits them via _n_queries, _grid_size, _adjoint_bcs,
+# and _adjoint_nd_apply! defined in cubic_nd_adjoint_types.jl.
 
 # ========================================
 # Core Apply Pipeline
@@ -759,34 +583,16 @@ function cubic_adjoint(
         _extra...
     ) where {N}
     length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
-    # Type promotion
     Tg = _promote_grid_eltype(grids)
     Tg = Tg <: AbstractFloat ? Tg : Float64
     grids_typed = _convert_grids_typed(grids, Tg)
-
-    # Resolve per-axis BCs and extraps
     bcs = _resolve_bcs_nd(bc, Val(N))
     extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tg)
-
     return _build_nd_adjoint(grids_typed, queries, bcs, extraps, autocache)
 end
 
-# AoS query: cubic_adjoint((x, y), [(x1,y1), (x2,y2), ...]; ...)
-# Converts to SoA format and delegates to the primary constructor.
-function cubic_adjoint(
-        grids::NTuple{N, AbstractVector},
-        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
-        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        autocache::Bool = true,
-        _extra...
-    ) where {N}
-    soa_queries = ntuple(d -> map(q -> q[d], queries), Val(N))
-    return cubic_adjoint(grids, soa_queries; bc = bc, extrap = extrap, autocache = autocache)
-end
-
 # Single-tuple query: cubic_adjoint((x, y), (0.5, 0.5); ...)
-# Single query point specified as a coordinate tuple.
+# Wraps as 1-element tuple for _bake_nd_anchors protocol (zero-alloc).
 function cubic_adjoint(
         grids::NTuple{N, AbstractVector},
         query::Tuple{Vararg{Real, N}};
@@ -795,8 +601,42 @@ function cubic_adjoint(
         autocache::Bool = true,
         _extra...
     ) where {N}
-    soa_queries = ntuple(d -> [query[d]], Val(N))
-    return cubic_adjoint(grids, soa_queries; bc = bc, extrap = extrap, autocache = autocache)
+    return cubic_adjoint(grids, (query,); bc = bc, extrap = extrap, autocache = autocache)
+end
+
+# Single-vector query: cubic_adjoint((x, y), SVector(0.5, 0.5); ...)
+# Handles SVector, MVector, plain Vector — any AbstractVector{<:Real}.
+function cubic_adjoint(
+        grids::NTuple{N, AbstractVector},
+        query::AbstractVector{<:Real};
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        autocache::Bool = true,
+        _extra...
+    ) where {N}
+    length(query) == N || _throw_ndims_mismatch("query elements", N, length(query))
+    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
+    return cubic_adjoint(grids, (query_tuple,); bc = bc, extrap = extrap, autocache = autocache)
+end
+
+# Generic query fallback: passes queries directly to _build_nd_adjoint.
+# _bake_nd_anchors uses query protocol internally — no SoA conversion needed.
+# Handles AoS (Vector{NTuple}), Vector{SVector}, SoA, or any protocol-implementing type.
+function cubic_adjoint(
+        grids::NTuple{N, AbstractVector},
+        queries;
+        bc::Union{AbstractBC, NTuple{N, AbstractBC}} = CubicFit(),
+        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
+        autocache::Bool = true,
+        _extra...
+    ) where {N}
+    _query_check_ndims(queries, Val(N))
+    Tg = _promote_grid_eltype(grids)
+    Tg = Tg <: AbstractFloat ? Tg : Float64
+    grids_typed = _convert_grids_typed(grids, Tg)
+    bcs = _resolve_bcs_nd(bc, Val(N))
+    extraps = _resolve_extrap_nd(extrap, bcs, Val(N), Tg)
+    return _build_nd_adjoint(grids_typed, queries, bcs, extraps, autocache)
 end
 
 """
@@ -817,7 +657,7 @@ Union return types from runtime tuple indexing in closures.
 """
 function _build_nd_adjoint(
         grids::NTuple{N, AbstractVector{Tg}},
-        queries::NTuple{N, AbstractVector},
+        queries,
         bcs::NTuple{N, AbstractBC},
         extraps::Tuple{Vararg{AbstractExtrap, N}},
         autocache::Bool
@@ -910,16 +750,16 @@ W  = Matrix(adj)'                          # (n_query × n_grid)
 @assert Wᵀ * y_bar ≈ vec(adj(y_bar))     # matrix-vector == operator
 ```
 """
-function Base.Matrix(
+@with_pool pool function Base.Matrix(
         adj::CubicAdjointND{Tg, N};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
     ) where {Tg, N}
-    out_size = _adjoint_output_size(adj.grid_size, adj.bcs)
+    out_size = _adjoint_output_size(adj)
     n_out = prod(out_size)
-    n_query = length(adj.anchors)
+    n_query = _n_queries(adj)
     W_T = zeros(Tg, n_out, n_query)
-    e_q = zeros(Tg, n_query)
-    f_bar = zeros(Tg, out_size...)
+    e_q = zeros!(pool, Tg, n_query)
+    f_bar = zeros!(pool, Tg, out_size...)
     @inbounds for q in 1:n_query
         e_q[q] = one(Tg)
         adj(f_bar, e_q; deriv = deriv)

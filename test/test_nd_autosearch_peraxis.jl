@@ -1,6 +1,7 @@
 using Test
 using FastInterpolations
 using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resolve_search_policy,
+    _is_axis_likely_monotone, _query_extract, _query_length,
     AutoSearch, BinarySearch, LinearBinarySearch
 
 @testset "ND Per-Axis Adaptive AutoSearch Resolution" begin
@@ -379,6 +380,167 @@ using FastInterpolations: _resolve_search_nd, _resolve_search_nd_uniform, _resol
         end
         @testset "constant sorted (→ LB)" begin
             @test _alloc_test_constant_soa_sorted() == 0
+        end
+    end
+
+    # ========================================
+    # Protocol-based monotonicity: _is_axis_likely_monotone
+    # ========================================
+    # Tests _is_axis_likely_monotone which uses _query_extract to check
+    # per-axis monotonicity for ANY query type (AoS, custom, etc.).
+
+    @testset "_is_axis_likely_monotone (protocol-based)" begin
+        sorted_aos = [(Float64(i), Float64(i)) for i in 1:20]
+        random_aos = [
+            (3.0, 8.0), (1.0, 2.0), (4.0, 5.0), (1.0, 9.0),
+            (5.0, 0.0), (9.0, 6.0), (2.0, 3.0), (6.0, 7.0),
+            (5.0, 1.0), (3.0, 4.0), (7.0, 8.0), (8.0, 10.0),
+            (10.0, 11.0), (11.0, 12.0), (12.0, 13.0), (13.0, 14.0),
+            (14.0, 15.0), (15.0, 16.0), (16.0, 17.0), (17.0, 18.0),
+        ]
+
+        @testset "sorted AoS → true for both axes" begin
+            @test _is_axis_likely_monotone(sorted_aos, 1, Val(2)) == true
+            @test _is_axis_likely_monotone(sorted_aos, 2, Val(2)) == true
+        end
+
+        @testset "random AoS → false for both axes" begin
+            @test _is_axis_likely_monotone(random_aos, 1, Val(2)) == false
+            @test _is_axis_likely_monotone(random_aos, 2, Val(2)) == false
+        end
+
+        @testset "mixed: axis 1 sorted, axis 2 random" begin
+            mixed = [(Float64(i), random_aos[i][2]) for i in 1:20]
+            @test _is_axis_likely_monotone(mixed, 1, Val(2)) == true
+            @test _is_axis_likely_monotone(mixed, 2, Val(2)) == false
+        end
+
+        @testset "too few points → false" begin
+            short = [(1.0, 2.0), (3.0, 4.0)]
+            @test _is_axis_likely_monotone(short, 1, Val(2)) == false
+        end
+
+        @testset "descending → true (monotone, not just ascending)" begin
+            desc = [(20.0 - i, Float64(i)) for i in 1:20]
+            @test _is_axis_likely_monotone(desc, 1, Val(2)) == true
+        end
+    end
+
+    # ========================================
+    # Generic (AoS) _resolve_search_nd: per-axis adaptive
+    # ========================================
+
+    @testset "AoS AutoSearch: _resolve_search_nd per-axis adaptive" begin
+        sorted_aos = [(Float64(i), Float64(i)) for i in 1:20]
+        random_aos = [
+            (3.0, 8.0), (1.0, 2.0), (4.0, 5.0), (1.0, 9.0),
+            (5.0, 0.0), (9.0, 6.0), (2.0, 3.0), (6.0, 7.0),
+            (5.0, 1.0), (3.0, 4.0), (7.0, 8.0), (8.0, 10.0),
+            (10.0, 11.0), (11.0, 12.0), (12.0, 13.0), (13.0, 14.0),
+            (14.0, 15.0), (15.0, 16.0), (16.0, 17.0), (17.0, 18.0),
+        ]
+
+        @testset "both sorted → both LinearBinarySearch" begin
+            result = _resolve_search_nd(AutoSearch(), Val(2), sorted_aos, nothing)
+            @test result[1] isa LinearBinarySearch
+            @test result[2] isa LinearBinarySearch
+        end
+
+        @testset "both random → both BinarySearch" begin
+            result = _resolve_search_nd(AutoSearch(), Val(2), random_aos, nothing)
+            @test result[1] isa BinarySearch
+            @test result[2] isa BinarySearch
+        end
+
+        @testset "mixed: axis 1 sorted, axis 2 random" begin
+            mixed = [(Float64(i), random_aos[i][2]) for i in 1:20]
+            result = _resolve_search_nd(AutoSearch(), Val(2), mixed, nothing)
+            @test result[1] isa LinearBinarySearch
+            @test result[2] isa BinarySearch
+        end
+
+        @testset "explicit policy passthrough" begin
+            result = _resolve_search_nd((BinarySearch(), AutoSearch()), Val(2), sorted_aos, nothing)
+            @test result[1] isa BinarySearch
+            @test result[2] isa LinearBinarySearch
+        end
+    end
+
+    # ========================================
+    # Generic (AoS) _resolve_search_nd_uniform: all-or-nothing
+    # ========================================
+
+    @testset "AoS AutoSearch: _resolve_search_nd_uniform all-or-nothing" begin
+        sorted_aos = [(Float64(i), Float64(i)) for i in 1:20]
+        random_aos = [
+            (3.0, 8.0), (1.0, 2.0), (4.0, 5.0), (1.0, 9.0),
+            (5.0, 0.0), (9.0, 6.0), (2.0, 3.0), (6.0, 7.0),
+            (5.0, 1.0), (3.0, 4.0), (7.0, 8.0), (8.0, 10.0),
+            (10.0, 11.0), (11.0, 12.0), (12.0, 13.0), (13.0, 14.0),
+            (14.0, 15.0), (15.0, 16.0), (16.0, 17.0), (17.0, 18.0),
+        ]
+
+        @testset "both sorted → both LinearBinarySearch" begin
+            result = _resolve_search_nd_uniform(AutoSearch(), Val(2), sorted_aos, nothing)
+            @test result[1] isa LinearBinarySearch
+            @test result[2] isa LinearBinarySearch
+        end
+
+        @testset "both random → both BinarySearch" begin
+            result = _resolve_search_nd_uniform(AutoSearch(), Val(2), random_aos, nothing)
+            @test result[1] isa BinarySearch
+            @test result[2] isa BinarySearch
+        end
+
+        @testset "mixed → ALL BinarySearch (all-or-nothing)" begin
+            mixed = [(Float64(i), random_aos[i][2]) for i in 1:20]
+            result = _resolve_search_nd_uniform(AutoSearch(), Val(2), mixed, nothing)
+            @test result[1] isa BinarySearch
+            @test result[2] isa BinarySearch
+        end
+
+        @testset "explicit policy passthrough" begin
+            result = _resolve_search_nd_uniform((BinarySearch(), AutoSearch()), Val(2), sorted_aos, nothing)
+            @test result[1] isa BinarySearch
+            @test result[2] isa LinearBinarySearch
+        end
+    end
+
+    # ========================================
+    # AoS correctness: oneshot with sorted AoS queries
+    # ========================================
+
+    @testset "Oneshot AoS correctness with sorted queries" begin
+        xs = 0.0:1.0:10.0
+        ys = 0.0:1.0:10.0
+        data = [Float64(x + y) for x in xs, y in ys]
+
+        sorted_points = [(Float64(i) * 0.5, Float64(i) * 0.5) for i in 1:19]
+        n = length(sorted_points)
+        output = Vector{Float64}(undef, n)
+
+        linear_interp!(output, (xs, ys), data, sorted_points)
+        for i in 1:n
+            @test output[i] ≈ sorted_points[i][1] + sorted_points[i][2] atol = 1.0e-12
+        end
+    end
+
+    @testset "Oneshot AoS correctness with random queries" begin
+        xs = 0.0:1.0:10.0
+        ys = 0.0:1.0:10.0
+        data = [Float64(x + y) for x in xs, y in ys]
+
+        random_points = [
+            (3.2, 8.1), (1.5, 2.3), (7.8, 5.7), (0.3, 9.0),
+            (9.1, 0.5), (4.6, 6.8), (6.0, 3.4), (2.4, 7.2),
+            (8.7, 1.1), (5.5, 4.9),
+        ]
+        n = length(random_points)
+        output = Vector{Float64}(undef, n)
+
+        linear_interp!(output, (xs, ys), data, random_points)
+        for i in 1:n
+            @test output[i] ≈ random_points[i][1] + random_points[i][2] atol = 1.0e-12
         end
     end
 end

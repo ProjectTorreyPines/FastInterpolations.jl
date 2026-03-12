@@ -267,10 +267,10 @@ end
 end
 
 # 4-arg form: adaptive ND resolution with hint awareness.
-# All non-SoA or hinted cases fall through to the 3-arg form above.
+# Hinted cases fall through to the 3-arg form above (no monotonicity check).
 @inline _resolve_search_nd(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
 
-# SoA Real vectors + no hint → per-axis adaptive resolution.
+# SoA Real vectors + no hint → per-axis adaptive resolution (cache-friendly).
 # Each axis independently checks monotonicity via 1D _resolve_search_policy(policy, vec, nothing):
 #   AutoSearch axes → _is_likely_monotone per axis → BinarySearch or LinearBinarySearch
 #   Explicit policy axes → passthrough unchanged
@@ -289,11 +289,60 @@ end
 # monotonicity check for AutoSearch axes.
 @inline _resolve_search_nohint(p, q) = _resolve_search_policy(p, q, nothing)
 
+# Generic queries + no hint → per-axis adaptive using query protocol.
+# Fallback for non-SoA queries — SoA has a more specific method above (line ~278).
+# Uses _is_axis_likely_monotone (protocol-based) instead of _is_likely_monotone (vector-based).
+@inline function _resolve_search_nd(s, vn::Val{N}, queries, ::Nothing) where {N}
+    tuple = _resolve_search_nd(s, vn)
+    any(p -> p isa AutoSearch, tuple) || return tuple
+    return ntuple(Val(N)) do d
+        p = tuple[d]
+        if p isa AutoSearch
+            _is_axis_likely_monotone(queries, d, vn) ? LinearBinarySearch() : BinarySearch()
+        else
+            p
+        end
+    end
+end
+
+# ── Protocol-based per-axis monotonicity check ──
+#
+# Uses _query_extract to check first K elements along axis d.
+# Works for any query type implementing the protocol (AoS, SVector, custom).
+# SoA has a more cache-friendly specialization via _is_likely_monotone(q[d]).
+
+@inline function _is_axis_likely_monotone(
+        queries, d::Int, ::Val{N}, ::Val{K} = Val(8)
+    ) where {N, K}
+    nq = _query_length(queries)
+    nq < K && return false
+    @inbounds begin
+        v1 = _query_extract(queries, 1)[d]
+        v2 = _query_extract(queries, 2)[d]
+        ascending = v2 >= v1
+        prev = v2
+        if ascending
+            for i in 3:K
+                curr = _query_extract(queries, i)[d]
+                curr < prev && return false
+                prev = curr
+            end
+        else
+            for i in 3:K
+                curr = _query_extract(queries, i)[d]
+                curr > prev && return false
+                prev = curr
+            end
+        end
+    end
+    return true
+end
+
 # ----------------------------------------
-# All-or-Nothing Adaptive Resolution (Oneshot SoA)
+# All-or-Nothing Adaptive Resolution (Oneshot)
 # ----------------------------------------
 #
-# For oneshot SoA paths, per-axis adaptive creates Tuple{Union{BinarySearch,LB}, ...}
+# For oneshot paths, per-axis adaptive creates Tuple{Union{BinarySearch,LB}, ...}
 # — per-element Union that Julia boxes during tuple construction (144+ bytes).
 #
 # Solution: all-or-nothing — check all AutoSearch axes, return uniform type.
@@ -323,7 +372,21 @@ end
     return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
 end
 
-# Non-SoA, hinted, or other → standard 3-arg type-based (already concrete).
+# Generic queries + no hint → protocol-based all-or-nothing adaptive resolution.
+# Fallback for non-SoA queries — SoA has a more specific method above (line ~365).
+@inline function _resolve_search_nd_uniform(s, vn::Val{N}, queries, ::Nothing) where {N}
+    tuple = _resolve_search_nd(s, vn)
+    any(p -> p isa AutoSearch, tuple) || return tuple
+    all_mono = all(
+        ntuple(Val(N)) do d
+            p = tuple[d]
+            !isa(p, AutoSearch) || _is_axis_likely_monotone(queries, d, vn)
+        end
+    )
+    return all_mono ? map(_autosearch_to_lb, tuple) : map(_autosearch_to_binary, tuple)
+end
+
+# Hinted → standard 3-arg type-based (already concrete, no monotonicity check).
 @inline _resolve_search_nd_uniform(s, vn, queries, hints) = _resolve_search_nd(s, vn, queries)
 
 # ========================================
@@ -826,123 +889,3 @@ For Vector grids, h/inv_h are acquired from pool (zero heap alloc).
     exprs = [:(FastInterpolations._create_spacing_pooled(pool, grids[$i])) for i in 1:N]
     return :(($(exprs...),))
 end
-
-# ========================================
-# In-Place Batch Evaluation (Generic ND)
-# ========================================
-#
-# Generic inner loops for in-place batch evaluation.
-# Works for ALL AbstractInterpolantND subtypes via _locate_cell + _eval_at_cell dispatch.
-# Callables in each type's eval file handle deriv dispatch and call these.
-
-"""
-    _batch_nd_soa!(output, itp, queries, ops, search, hints=nothing)
-
-In-place SoA batch evaluation. Writes results into `output`.
-"""
-@inline function _batch_nd_soa!(
-        output::AbstractVector,
-        itp::AbstractInterpolantND{Tg, Tv, N},
-        queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
-        ops::NTuple{N, AbstractEvalOp},
-        search::Tuple{Vararg{AbstractSearchPolicy, N}},
-        hints = nothing
-    ) where {Tg, Tv, N}
-    zref = _zero_ref(itp)
-    @inbounds for k in 1:length(queries[1])
-        query_k = ntuple(d -> queries[d][k], Val(N))
-        oob_val = _try_fill_oob(query_k, itp.grids, itp.extraps, ops, zref)
-        if oob_val !== nothing
-            output[k] = oob_val
-            continue
-        end
-        cell = _locate_cell(itp, query_k, search, hints)
-        output[k] = _eval_at_cell(itp, cell, ops)
-    end
-    return output
-end
-
-"""
-    _batch_nd_aos!(output, itp, queries, ops, search, hints=nothing)
-
-In-place AoS batch evaluation. Writes results into `output`.
-"""
-@inline function _batch_nd_aos!(
-        output::AbstractVector,
-        itp::AbstractInterpolantND{Tg, Tv, N},
-        queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-        ops::NTuple{N, AbstractEvalOp},
-        search::Tuple{Vararg{AbstractSearchPolicy, N}},
-        hints = nothing
-    ) where {Tg, Tv, N}
-    zref = _zero_ref(itp)
-    @inbounds for k in 1:length(queries)
-        oob_val = _try_fill_oob(queries[k], itp.grids, itp.extraps, ops, zref)
-        if oob_val !== nothing
-            output[k] = oob_val
-            continue
-        end
-        cell = _locate_cell(itp, queries[k], search, hints)
-        output[k] = _eval_at_cell(itp, cell, ops)
-    end
-    return output
-end
-
-# ========================================
-# Shared ND Callable Interface
-# ========================================
-#
-# Vector query, SoA batch, and AoS batch callables are identical across all
-# ND interpolant types. Define once on AbstractInterpolantND.
-# Each concrete type only needs: scalar tuple callable + in-place batch callables.
-
-# Vector query → tuple conversion for ForwardDiff/Optim compatibility
-@inline function (itp::AbstractInterpolantND{Tg, Tv, N})(
-        query::AbstractVector{<:Real};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
-    length(query) == N || throw(
-        DimensionMismatch(
-            "expected $N-element vector, got $(length(query))-element vector"
-        )
-    )
-    query_tuple = ntuple(i -> @inbounds(query[i]), Val(N))
-    return itp(query_tuple; deriv = deriv, search = search, hint = hint)
-end
-
-# SoA batch: allocate output + delegate to in-place
-function (itp::AbstractInterpolantND{Tg, Tv, N})(
-        queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
-    length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
-    Tq = _query_eltype(queries)
-    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries[1]))
-    return itp(output, queries; deriv = deriv, search = search, hint = hint)
-end
-
-# AoS batch: allocate output + delegate to in-place
-function (itp::AbstractInterpolantND{Tg, Tv, N})(
-        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
-    Tq = _query_eltype(queries)
-    output = Vector{promote_type(Tv, Tg, Tq)}(undef, length(queries))
-    return itp(output, queries; deriv = deriv, search = search, hint = hint)
-end
-
-# ========================================
-# Query Element Type Extraction
-# ========================================
-
-@inline _query_eltype(queries::Tuple{Vararg{AbstractVector}}) =
-    promote_type(map(eltype, queries)...)
-
-@inline _query_eltype(::AbstractVector{T}) where {T <: Tuple} =
-    promote_type(fieldtypes(T)...)

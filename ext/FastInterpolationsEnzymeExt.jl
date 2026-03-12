@@ -183,10 +183,7 @@ function EnzymeRules.augmented_primal(
     primal = EnzymeRules.needs_primal(config) ? y : nothing
     shadow = EnzymeRules.needs_shadow(config) ? zero(y) : nothing
 
-    Tg = FastInterpolations._promote_grid_eltype(grids.val)
-    Tg_f = Tg <: AbstractFloat ? Tg : Float64
-    queries_vec = ntuple(d -> Tg_f[query.val[d]], Val(N))
-    adj = cubic_adjoint(grids.val, queries_vec; bc, extrap)
+    adj = cubic_adjoint(grids.val, (query.val,); bc, extrap)
     return EnzymeRules.AugmentedReturn(primal, shadow, (adj, deriv))
 end
 
@@ -206,9 +203,7 @@ function EnzymeRules.reverse(
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {N}
     adj, deriv_op = tape
-    Tg = FastInterpolations._promote_grid_eltype(grids.val)
-    Tg_f = Tg <: AbstractFloat ? Tg : Float64
-    f_bar = adj(Tg_f[dret.val]; deriv = deriv_op)
+    f_bar = adj(dret.val; deriv = deriv_op)
     data.dval .+= f_bar
     return (nothing, nothing, nothing)
 end

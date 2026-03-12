@@ -38,37 +38,28 @@ Evaluates directly from grids + data without constructing a ConstantInterpolantN
 end
 
 """
-    _constant_interp_nd_oneshot_soa!(output, grids, data, queries, extraps_val, side_vals, searches, hints=nothing)
+    _constant_interp_nd_oneshot_batch!(output, grids, data, queries, extraps_val, side_vals, searches, hints=nothing)
 
-In-place SoA batch one-shot ND constant evaluation.
+In-place batch one-shot ND constant evaluation.
+Uses query protocol (`_query_length`, `_query_extract`) — works with any query format.
 Writes results into `output`. No heap allocation beyond spacings.
 """
-@with_pool pool function _constant_interp_nd_oneshot_soa!(
+@with_pool pool function _constant_interp_nd_oneshot_batch!(
         output::AbstractVector{Tv},
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
-        queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+        queries,
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         side_vals::Tuple{Vararg{AbstractSide, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         hints = nothing
     ) where {Tg <: AbstractFloat, Tv, N}
-    n_queries = length(queries[1])
-    for d in 2:N
-        length(queries[d]) == n_queries || throw(
-            DimensionMismatch(
-                "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
-            )
-        )
-    end
-    length(output) == n_queries || throw(
-        DimensionMismatch(
-            "output length ($(length(output))) must match query length ($n_queries)"
-        )
-    )
+    nq = _query_length(queries)
+    length(output) == nq || _throw_query_output_mismatch(nq, length(output))
+    _query_validate(queries)
     spacings = _create_spacings_pooled(pool, grids)
-    @inbounds for k in 1:n_queries
-        query_k = ntuple(d -> queries[d][k], Val(N))
+    @inbounds for k in 1:nq
+        query_k = _extract_query_point(queries, k, Val(N))
         oob_val = _try_fill_oob(query_k, grids, extraps_val, EvalValue(), first(data))
         if oob_val !== nothing
             output[k] = oob_val; continue
@@ -81,75 +72,21 @@ Writes results into `output`. No heap allocation beyond spacings.
 end
 
 """
-    _constant_interp_nd_oneshot_soa(grids, data, queries, extraps_val, side_vals, searches, hints=nothing)
+    _constant_interp_nd_oneshot_batch(grids, data, queries, extraps_val, side_vals, searches, hints=nothing)
 
-Allocating wrapper: creates output vector, delegates to in-place `_soa!`.
+Allocating wrapper: creates output vector, delegates to in-place batch.
 """
-function _constant_interp_nd_oneshot_soa(
+function _constant_interp_nd_oneshot_batch(
         grids::NTuple{N, AbstractVector{Tg}},
         data::AbstractArray{Tv, N},
-        queries::Tuple{Vararg{AbstractVector{<:Real}, N}},
+        queries,
         extraps_val::Tuple{Vararg{AbstractExtrap, N}},
         side_vals::Tuple{Vararg{AbstractSide, N}},
         searches::NTuple{N, AbstractSearchPolicy},
         hints = nothing
     ) where {Tg <: AbstractFloat, Tv, N}
-    output = Vector{Tv}(undef, length(queries[1]))
-    return _constant_interp_nd_oneshot_soa!(output, grids, data, queries, extraps_val, side_vals, searches, hints)
-end
-
-"""
-    _constant_interp_nd_oneshot_aos!(output, grids, data, queries, extraps_val, side_vals, searches, hints=nothing)
-
-In-place AoS batch one-shot ND constant evaluation.
-Writes results into `output`. No heap allocation beyond spacings.
-"""
-@with_pool pool function _constant_interp_nd_oneshot_aos!(
-        output::AbstractVector{Tv},
-        grids::NTuple{N, AbstractVector{Tg}},
-        data::AbstractArray{Tv, N},
-        queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        side_vals::Tuple{Vararg{AbstractSide, N}},
-        searches::NTuple{N, AbstractSearchPolicy},
-        hints = nothing
-    ) where {Tg <: AbstractFloat, Tv, N}
-    n_queries = length(queries)
-    length(output) == n_queries || throw(
-        DimensionMismatch(
-            "output length ($(length(output))) must match query length ($n_queries)"
-        )
-    )
-    spacings = _create_spacings_pooled(pool, grids)
-    @inbounds for k in 1:n_queries
-        query_k = queries[k]
-        oob_val = _try_fill_oob(query_k, grids, extraps_val, EvalValue(), first(data))
-        if oob_val !== nothing
-            output[k] = oob_val; continue
-        end
-        q_eval = _handle_all_extraps(query_k, grids, extraps_val)
-        indices, Ls, _ = _search_all_intervals(q_eval, grids, spacings, searches, hints)
-        output[k] = _constant_nd_kernel(data, spacings, side_vals, indices, q_eval, Ls)
-    end
-    return output
-end
-
-"""
-    _constant_interp_nd_oneshot_aos(grids, data, queries, extraps_val, side_vals, searches, hints=nothing)
-
-Allocating wrapper: creates output vector, delegates to in-place `_aos!`.
-"""
-function _constant_interp_nd_oneshot_aos(
-        grids::NTuple{N, AbstractVector{Tg}},
-        data::AbstractArray{Tv, N},
-        queries::AbstractVector{<:Tuple{Vararg{Real, N}}},
-        extraps_val::Tuple{Vararg{AbstractExtrap, N}},
-        side_vals::Tuple{Vararg{AbstractSide, N}},
-        searches::NTuple{N, AbstractSearchPolicy},
-        hints = nothing
-    ) where {Tg <: AbstractFloat, Tv, N}
-    output = Vector{Tv}(undef, length(queries))
-    return _constant_interp_nd_oneshot_aos!(output, grids, data, queries, extraps_val, side_vals, searches, hints)
+    output = Vector{Tv}(undef, _query_length(queries))
+    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, extraps_val, side_vals, searches, hints)
 end
 
 # ========================================
@@ -159,14 +96,13 @@ end
 @inline _is_any_deriv(op::DerivOp) = !(op isa DerivOp{0})
 @inline _is_any_deriv(ops::Tuple{Vararg{DerivOp}}) = any(op -> !(op isa DerivOp{0}), ops)
 
-# Function barrier for SoA paths: forces Julia to runtime-dispatch on the concrete
-# searches tuple type, resolving per-element Union{BinarySearch,LinearBinarySearch} before
-# entering the @with_pool boundary. NOT @inline — specialization requires real call.
-function _constant_nd_soa_dispatch!(output, grids, data, queries, extraps, sides, searches, hints)
-    return _constant_interp_nd_oneshot_soa!(output, grids, data, queries, extraps, sides, searches, hints)
+# Function barrier: forces Julia to runtime-dispatch on the concrete
+# searches tuple type before entering the @with_pool boundary.
+function _constant_nd_batch_dispatch!(output, grids, data, queries, extraps, sides, searches, hints)
+    return _constant_interp_nd_oneshot_batch!(output, grids, data, queries, extraps, sides, searches, hints)
 end
-function _constant_nd_soa_dispatch(grids, data, queries, extraps, sides, searches, hints)
-    return _constant_interp_nd_oneshot_soa(grids, data, queries, extraps, sides, searches, hints)
+function _constant_nd_batch_dispatch(grids, data, queries, extraps, sides, searches, hints)
+    return _constant_interp_nd_oneshot_batch(grids, data, queries, extraps, sides, searches, hints)
 end
 
 # ========================================
@@ -209,25 +145,24 @@ function constant_interp(
 end
 
 """
-    constant_interp(grids, data, queries::NTuple{N,AbstractVector}; kwargs...)
+    constant_interp(grids, data, queries; kwargs...)
 
-One-shot N-dimensional constant interpolation (batch SoA query).
+One-shot N-dimensional constant interpolation (batch query).
+Accepts any query format implementing the query protocol.
 Only allocates the output vector.
 """
 function constant_interp(
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        queries::Tuple{AbstractVector{<:Real}, Vararg{AbstractVector{<:Real}}};
+        queries;
         side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
-    length(queries) == N || _throw_ndims_mismatch("query vectors", N, length(queries))
     if _is_any_deriv(deriv)
-        n_queries = length(queries[1])
-        return zeros(Tv, n_queries)
+        return zeros(Tv, _query_length(queries))
     end
 
     Tg = _promote_grid_eltype(grids)
@@ -236,45 +171,10 @@ function constant_interp(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)  # all-or-nothing adaptive for zero-alloc
+    searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
-    return _constant_nd_soa_dispatch(
-        grids_typed, data, queries, extraps_val, sides, searches, hint
-    )::Vector{Tv}
-end
-
-"""
-    constant_interp(grids, data, queries::AbstractVector{<:NTuple}; kwargs...)
-
-One-shot N-dimensional constant interpolation (batch AoS query).
-Only allocates the output vector.
-"""
-function constant_interp(
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{Tv, N},
-        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-        side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
-        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tv, N}
-    if _is_any_deriv(deriv)
-        n_queries = length(queries)
-        return zeros(Tv, n_queries)
-    end
-
-    Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
-    grids_typed = _convert_grids_typed(grids, Tg)
-    _validate_nd_grids(grids_typed, data)
-
-    sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N), queries)  # AoS: type-based (no per-axis SoA check)
-
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
-    return _constant_interp_nd_oneshot_aos(
+    return _constant_nd_batch_dispatch(
         grids_typed, data, queries, extraps_val, sides, searches, hint
     )::Vector{Tv}
 end
@@ -284,22 +184,24 @@ end
 # ========================================
 
 """
-    constant_interp!(output, grids, data, queries::NTuple{N,AbstractVector}; kwargs...)
+    constant_interp!(output, grids, data, queries; kwargs...)
 
-In-place one-shot N-dimensional constant interpolation (batch SoA query).
+In-place one-shot N-dimensional constant interpolation (batch query).
+Accepts any query format implementing the query protocol.
 Writes results into pre-allocated `output` vector.
 """
 function constant_interp!(
         output::AbstractVector,
         grids::NTuple{N, AbstractVector},
         data::AbstractArray{Tv, N},
-        queries::NTuple{N, AbstractVector{<:Real}};
+        queries;
         side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
         extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
         search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
         hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
     ) where {Tv, N}
+    _query_check_ndims(queries, Val(N))
     if _is_any_deriv(deriv)
         fill!(output, 0 * first(data))
         return output
@@ -311,46 +213,10 @@ function constant_interp!(
     _validate_nd_grids(grids_typed, data)
 
     sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)  # all-or-nothing adaptive for zero-alloc
+    searches = _resolve_search_nd_uniform(search, Val(N), queries, hint)
 
     extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
-    return _constant_nd_soa_dispatch!(
-        output, grids_typed, data, queries, extraps_val, sides, searches, hint
-    )
-end
-
-"""
-    constant_interp!(output, grids, data, queries::AbstractVector{<:NTuple}; kwargs...)
-
-In-place one-shot N-dimensional constant interpolation (batch AoS query).
-Writes results into pre-allocated `output` vector.
-"""
-function constant_interp!(
-        output::AbstractVector,
-        grids::NTuple{N, AbstractVector},
-        data::AbstractArray{Tv, N},
-        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-        side::Union{AbstractSide, Tuple{Vararg{AbstractSide}}} = NearestSide(),
-        extrap::Union{AbstractExtrap, NTuple{N, AbstractExtrap}} = NoExtrap(),
-        search::Union{AbstractSearchPolicy, NTuple{N, AbstractSearchPolicy}} = AutoSearch(),
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tv, N}
-    if _is_any_deriv(deriv)
-        fill!(output, 0 * first(data))
-        return output
-    end
-
-    Tg = _promote_grid_eltype(grids)
-    Tg = Tg <: AbstractFloat ? Tg : Float64
-    grids_typed = _convert_grids_typed(grids, Tg)
-    _validate_nd_grids(grids_typed, data)
-
-    sides = _resolve_side_nd(side, Val(N))
-    searches = _resolve_search_nd(search, Val(N), queries)  # AoS: type-based (no per-axis SoA check)
-
-    extraps_val = _resolve_extrap_nd(extrap, nothing, Val(N), Tv)
-    return _constant_interp_nd_oneshot_aos!(
+    return _constant_nd_batch_dispatch!(
         output, grids_typed, data, queries, extraps_val, sides, searches, hint
     )
 end

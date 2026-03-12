@@ -70,67 +70,9 @@ itp((1.0, 0.5); deriv=(DerivOp(1), EvalValue()))      # ∂f/∂x only
     return _eval_nd_quadratic(itp, query, ops, search_tuple, hint)
 end
 
-# ========================================
-# IN-PLACE BATCH EVALUATION
-# ========================================
-
-"""
-    (itp::QuadraticInterpolantND)(output, queries::NTuple{N,AbstractVector}; ...)
-
-In-place SoA batch evaluation. Writes results into pre-allocated `output`.
-Returns `output` for chaining.
-"""
-function (itp::QuadraticInterpolantND{Tg, Tv, N})(
-        output::AbstractVector,
-        queries::Tuple{Vararg{AbstractVector{<:Real}, N}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
-    n_queries = length(queries[1])
-    length(output) == n_queries || throw(
-        DimensionMismatch(
-            "output length $(length(output)) must match query length $n_queries"
-        )
-    )
-    for d in 2:N
-        length(queries[d]) == n_queries || throw(
-            DimensionMismatch(
-                "query vectors must have same length: dim 1 has $n_queries, dim $d has $(length(queries[d]))"
-            )
-        )
-    end
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), queries, hint)  # adaptive: check monotonicity for AutoSearch+no hint
-    _batch_nd_soa!(output, itp, queries, ops, search_tuple, hint)
-    return output
-end
-
-"""
-    (itp::QuadraticInterpolantND)(output, queries::AbstractVector{<:Tuple}; ...)
-
-In-place AoS batch evaluation. Writes results into pre-allocated `output`.
-Returns `output` for chaining.
-"""
-function (itp::QuadraticInterpolantND{Tg, Tv, N})(
-        output::AbstractVector,
-        queries::AbstractVector{<:Tuple{Vararg{Real, N}}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue(),
-        search::Union{AbstractSearchPolicy, Tuple{Vararg{AbstractSearchPolicy, N}}} = itp.searches,
-        hint::Union{Nothing, NTuple{N, Base.RefValue{Int}}} = nothing
-    ) where {Tg, Tv, N}
-    n_queries = length(queries)
-    length(output) == n_queries || throw(
-        DimensionMismatch(
-            "output length $(length(output)) must match query length $n_queries"
-        )
-    )
-    ops = _resolve_deriv_nd(deriv, Val(N))
-    search_tuple = _resolve_search_nd(search, Val(N), queries, hint)  # AoS: falls through to _resolve_search_nd
-    _batch_nd_aos!(output, itp, queries, ops, search_tuple, hint)
-    return output
-end
-
+# In-place batch evaluation (SoA + AoS) is handled by the unified
+# AbstractInterpolantND callable in nd_utils.jl.
+# QuadraticInterpolantND has no special batch logic (no zero-fill trait).
 
 # ========================================
 # CELL LOCATION (locate once, evaluate many)

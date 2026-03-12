@@ -1,5 +1,6 @@
 using Test
 using LinearAlgebra: dot
+using StaticArrays: SVector
 using FastInterpolations
 
 # ========================================
@@ -1329,5 +1330,124 @@ end
         f_bar1 = zeros(size(ref1))
         adj1(f_bar1, 1.5)
         @test f_bar1 ≈ ref1
+    end
+end
+
+# ========================================
+# SVector query support (N=2 and N=3)
+# ========================================
+@testset "CubicAdjointND — SVector queries" begin
+    # ── N=2 setup ──
+    nx, ny = 12, 10
+    x = range(0.0, 1.0, nx)
+    y = range(0.0, 2.0, ny)
+    grids_2d = (x, y)
+    f_2d = randn(nx, ny)
+
+    # Query points inside domain
+    n_q = 20
+    xq = sort(rand(n_q)) .* 0.96 .+ 0.02
+    yq = sort(rand(n_q)) .* 1.92 .+ 0.04
+    y_bar_2d = randn(n_q)
+
+    # Reference: SoA queries (already tested elsewhere)
+    adj_soa = cubic_adjoint(grids_2d, (xq, yq))
+    ref_alloc = adj_soa(y_bar_2d)
+
+    @testset "Scalar SVector — single point (N=2)" begin
+        pt = SVector(0.5, 1.0)
+        adj_sv = cubic_adjoint(grids_2d, pt)
+        adj_tuple = cubic_adjoint(grids_2d, (0.5, 1.0))
+
+        # Allocating
+        @test adj_sv(1.0) ≈ adj_tuple(1.0)
+        @test adj_sv([1.0]) ≈ adj_tuple([1.0])
+
+        # In-place
+        fb_sv = zeros(nx, ny)
+        fb_tu = zeros(nx, ny)
+        adj_sv(fb_sv, 1.0)
+        adj_tuple(fb_tu, 1.0)
+        @test fb_sv ≈ fb_tu
+    end
+
+    @testset "Vector{SVector} — batch queries (N=2)" begin
+        queries_sv = [SVector(xq[k], yq[k]) for k in 1:n_q]
+
+        adj_aos = cubic_adjoint(grids_2d, queries_sv)
+
+        # Allocating — must match SoA reference
+        @test adj_aos(y_bar_2d) ≈ ref_alloc
+
+        # In-place
+        fb_aos = zeros(nx, ny)
+        fb_soa = zeros(nx, ny)
+        adj_aos(fb_aos, y_bar_2d)
+        adj_soa(fb_soa, y_bar_2d)
+        @test fb_aos ≈ fb_soa
+    end
+
+    @testset "Vector{SVector} — dot-product identity (N=2)" begin
+        queries_sv = [SVector(xq[k], yq[k]) for k in 1:n_q]
+        adj = cubic_adjoint(grids_2d, queries_sv)
+
+        itp = cubic_interp(grids_2d, f_2d)
+        itp_zero = cubic_interp(grids_2d, zeros(nx, ny))
+
+        Wf = Vector{Float64}(undef, n_q)
+        Wf_zero = Vector{Float64}(undef, n_q)
+        itp(Wf, (xq, yq))
+        itp_zero(Wf_zero, (xq, yq))
+        Wf .-= Wf_zero
+
+        WTy = adj(y_bar_2d)
+        @test dot(Wf, y_bar_2d) ≈ dot(vec(f_2d), vec(WTy)) rtol = sqrt(eps())
+    end
+
+    @testset "Scalar SVector with deriv (N=2)" begin
+        pt = SVector(0.5, 1.0)
+        adj_sv = cubic_adjoint(grids_2d, pt)
+        adj_tuple = cubic_adjoint(grids_2d, (0.5, 1.0))
+
+        for op in (DerivOp(1, 0), DerivOp(0, 1), DerivOp(1, 1))
+            @test adj_sv(1.0; deriv = op) ≈ adj_tuple(1.0; deriv = op)
+        end
+    end
+
+    # ── N=3 setup ──
+    @testset "SVector queries (N=3)" begin
+        nx3, ny3, nz3 = 8, 7, 6
+        x3 = range(0.0, 1.0, nx3)
+        y3 = range(0.0, 1.0, ny3)
+        z3 = range(0.0, 1.0, nz3)
+        grids_3d = (x3, y3, z3)
+
+        nq3 = 10
+        xq3 = sort(rand(nq3)) .* 0.9 .+ 0.05
+        yq3 = sort(rand(nq3)) .* 0.9 .+ 0.05
+        zq3 = sort(rand(nq3)) .* 0.9 .+ 0.05
+        ybar3 = randn(nq3)
+
+        adj_soa3 = cubic_adjoint(grids_3d, (xq3, yq3, zq3))
+
+        @testset "Scalar SVector (N=3)" begin
+            pt3 = SVector(0.5, 0.5, 0.5)
+            adj_sv3 = cubic_adjoint(grids_3d, pt3)
+            adj_tu3 = cubic_adjoint(grids_3d, (0.5, 0.5, 0.5))
+            @test adj_sv3(1.0) ≈ adj_tu3(1.0)
+        end
+
+        @testset "Vector{SVector} batch (N=3)" begin
+            queries_sv3 = [SVector(xq3[k], yq3[k], zq3[k]) for k in 1:nq3]
+            adj_aos3 = cubic_adjoint(grids_3d, queries_sv3)
+            @test adj_aos3(ybar3) ≈ adj_soa3(ybar3)
+
+            # In-place
+            fb_aos3 = zeros(nx3, ny3, nz3)
+            fb_soa3 = zeros(nx3, ny3, nz3)
+            adj_aos3(fb_aos3, ybar3)
+            adj_soa3(fb_soa3, ybar3)
+            @test fb_aos3 ≈ fb_soa3
+        end
     end
 end

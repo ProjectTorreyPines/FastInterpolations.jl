@@ -103,3 +103,58 @@ end
     throw(DimensionMismatch("query axis lengths differ: dim 1 has $n1, dim $d has $nd"))
 @noinline _throw_query_ndims_mismatch(expected, got) =
     throw(DimensionMismatch("expected $expected-dimensional query points, got $got-dimensional"))
+
+# ── Pre-loop NoExtrap domain validation ──
+#
+# Validates all queries against grid bounds BEFORE @inbounds eval loops.
+# This is the SOLE safety gate: _extrap_axis wraps _handle_axis_extrap in
+# @inbounds, so @boundscheck _check_domain(::NoExtrap) is ALWAYS elided
+# in production mode (--check-bounds=auto).
+#
+# Three dispatch methods:
+# 1. Scalar point: per-axis check via map (for oneshot single-point paths)
+# 2. SoA (tuple-of-vectors): efficient min/max per axis via vector _check_domain
+# 3. Generic (AoS): per-query per-axis scalar _check_domain fallback
+#
+# Non-NoExtrap axes are no-ops via _check_domain dispatch.
+
+# Scalar point: per-axis scalar check (for oneshot single-point paths)
+# Uses map (not for-loop) to dispatch per-element with concrete types,
+# avoiding Union boxing on heterogeneous extrap tuples.
+@inline function _validate_nd_domain(
+        grids::NTuple{N, AbstractVector},
+        query::Tuple{Vararg{Real, N}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}}
+    ) where {N}
+    map(_check_domain, grids, query, extraps)
+    return nothing
+end
+
+# SoA queries: O(nq) per axis via minimum/maximum reduction
+# Uses map for same reason as scalar (heterogeneous extrap safety).
+@inline function _validate_nd_domain(
+        grids::NTuple{N, AbstractVector},
+        queries::Tuple{AbstractVector, Vararg{AbstractVector}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}}
+    ) where {N}
+    map(_check_domain, grids, queries, extraps)
+    return nothing
+end
+
+# Generic queries: per-query per-axis scalar check
+function _validate_nd_domain(
+        grids::NTuple{N, AbstractVector},
+        queries,
+        extraps::Tuple{Vararg{AbstractExtrap, N}}
+    ) where {N}
+    any(e -> e isa NoExtrap, extraps) || return nothing
+    nq = _query_length(queries)
+    for q in 1:nq
+        query_q = _extract_query_point(queries, q, Val(N))
+        for d in 1:N
+            extraps[d] isa NoExtrap || continue
+            _check_domain(grids[d], query_q[d], NoExtrap())
+        end
+    end
+    return nothing
+end

@@ -35,7 +35,7 @@ function _bake_linear_nd_anchors(
     ) where {N, Tg <: AbstractFloat}
     nq = _query_length(queries)
     _query_validate(queries)
-    _validate_adjoint_noextrap(grids, queries, extraps)
+    _validate_nd_domain(grids, queries, extraps)
 
     anchors = Vector{_LinearNDAdjointAnchor{Tg, N}}(undef, nq)
     @inbounds for q in 1:nq

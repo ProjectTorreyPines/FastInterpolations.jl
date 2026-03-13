@@ -33,6 +33,7 @@ Zero-allocation after warmup (pool reuse).
     # 0. OOB short-circuit (before expensive partials computation)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
+    _validate_nd_domain(grids, query, extraps_val)
 
     # 1. Pool-allocate partials array (THE KEY: pool instead of heap)
     n_partials = 1 << N
@@ -74,6 +75,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
+    _validate_nd_domain(grids, queries, extraps_val)
 
     # Build phase (done once)
     n_partials = 1 << N

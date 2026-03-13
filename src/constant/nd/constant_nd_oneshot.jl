@@ -30,6 +30,7 @@ Evaluates directly from grids + data without constructing a ConstantInterpolantN
     # OOB short-circuit
     oob_result = _try_fill_oob(query, grids, extraps_val, EvalValue(), @inbounds first(data))
     oob_result !== nothing && return oob_result
+    _validate_nd_domain(grids, query, extraps_val)
 
     spacings = _create_spacings_pooled(pool, grids)
     q_eval = _handle_all_extraps(query, grids, extraps_val)
@@ -57,6 +58,7 @@ Writes results into `output`. No heap allocation beyond spacings.
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
+    _validate_nd_domain(grids, queries, extraps_val)
     spacings = _create_spacings_pooled(pool, grids)
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))

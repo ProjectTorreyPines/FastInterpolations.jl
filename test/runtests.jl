@@ -33,6 +33,7 @@ else
     include("test_cubic_interpolant.jl")
     include("test_cubic_anchor.jl")
     include("test_cubic_adjoint.jl")
+    include("test_linear_adjoint.jl")   # Linear 1D adjoint (W^T * y_bar)
     include("test_linear_anchor.jl")
     include("test_constant_anchor.jl")
     include("test_quadratic_anchor.jl")
@@ -73,6 +74,7 @@ else
     include("test_nd_quadratic.jl")     # Quadratic ND interpolation
     include("test_cubic_nd.jl")
     include("test_cubic_nd_adjoint.jl")  # Cubic ND adjoint (W^T * y_bar)
+    include("test_linear_nd_adjoint.jl") # Linear ND adjoint (W^T * y_bar)
     include("test_cubic_nd_oneshot.jl")  # Cubic ND one-shot (pool-based, zero-alloc)
     include("test_nd_comprehensive.jl")
     include("test_nd_coverage.jl")

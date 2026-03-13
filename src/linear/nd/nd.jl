@@ -26,3 +26,9 @@ include("linear_nd_eval.jl")     # Multilinear interpolation kernel
 # ========================================
 include("linear_nd_interpolant.jl")  # linear_interp() constructor + grid conversion
 include("linear_nd_oneshot.jl")      # linear_interp() one-shot + zero-alloc backends
+
+# ========================================
+# 4. Adjoint Operator
+# ========================================
+include("linear_nd_adjoint_types.jl")   # LinearAdjointND struct + anchor
+include("linear_nd_adjoint.jl")         # Scatter, baking, constructor

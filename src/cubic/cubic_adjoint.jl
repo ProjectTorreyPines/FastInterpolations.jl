@@ -96,137 +96,38 @@ Here `A` is the tridiagonal moment matrix, `R` the finite-difference RHS operato
 PolyFit stencil coefficients and periodic `q_transpose = A'^{-T}u` are computed on the
 fly at each `adj(ȳ)` call (O(D) and O(n) respectively, negligible vs overall pipeline).
 """
-struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}} <: AbstractAdjoint{Tg}
+struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}} <: AbstractAdjoint1D{Tg}
     cache::C
     anchors::Vector{_CubicAnchoredQuery{Tg, Tg}}
     bc::BC
 end
 
+# ========================================
+# 1D Adjoint Protocol Accessors
+# ========================================
+# Callables (6 overloads), Base.size, Base.Matrix, and exclusive periodic
+# in-place are inherited from AbstractAdjoint1D via src/core/adjoint_protocol.jl.
+
 @inline _adjoint_output_length(adj::CubicAdjoint) =
     adj.bc isa PeriodicBC{:exclusive} ? length(adj.cache.x) - 1 : length(adj.cache.x)
 
-Base.size(adj::CubicAdjoint) = (_adjoint_output_length(adj), length(adj.anchors))
-Base.size(adj::CubicAdjoint, d::Integer) = size(adj)[d]
+@inline _n_queries(adj::CubicAdjoint) = length(adj.anchors)
 
-# NOTE: _throw_adjoint_dim_mismatch and _throw_adjoint_size_mismatch are now
-# shared across all adjoint types in nd_adjoint_protocol.jl.
+@inline _adjoint_internal_length(adj::CubicAdjoint) = length(adj.cache.x)
 
-# Shared periodic finalization for 1D allocating callables
-function _adjoint_1d_finalize(f_bar::AbstractVector, bc, n_internal::Int)
-    if bc isa PeriodicBC{:exclusive}
+@inline _adjoint_1d_has_exclusive_periodic(adj::CubicAdjoint) =
+    adj.bc isa PeriodicBC{:exclusive}
+
+@inline _adjoint_1d_apply!(f_bar, adj::CubicAdjoint, y_bar, deriv) =
+    _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
+
+function _adjoint_1d_finalize(f_bar::AbstractVector, adj::CubicAdjoint)
+    n_internal = length(adj.cache.x)
+    if adj.bc isa PeriodicBC{:exclusive}
         @inbounds f_bar[1] += f_bar[n_internal]
         return f_bar[1:(n_internal - 1)]
     end
     return f_bar
-end
-
-# ========================================
-# Callable Methods
-# ========================================
-
-"""
-    (adj::CubicAdjoint)(y_bar; deriv=EvalValue()) -> f_bar
-
-Apply the adjoint operator: `f̄ = W_dᵀȳ`. Allocating version.
-
-The `deriv` keyword selects which forward operator's adjoint to compute:
-- `EvalValue()` (default): adjoint of value interpolation
-- `EvalDeriv1()` / `DerivOp(1)`: adjoint of first derivative
-- `EvalDeriv2()` / `DerivOp(2)`: adjoint of second derivative
-- `EvalDeriv3()` / `DerivOp(3)`: adjoint of third derivative
-
-The output element type is `promote_type(eltype(y_bar), Tg)`.
-"""
-function (adj::CubicAdjoint{Tg})(y_bar::AbstractVector; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
-    length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
-    Tv = promote_type(eltype(y_bar), Tg)
-    n_internal = length(adj.cache.x)
-    f_bar = zeros(Tv, n_internal)
-    _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
-    return _adjoint_1d_finalize(f_bar, adj.bc, n_internal)
-end
-
-"""
-    (adj::CubicAdjoint)(f_bar, y_bar; deriv=EvalValue()) -> f_bar
-
-Apply the adjoint operator in-place: `f̄ = W_dᵀȳ`.
-Zeros `f_bar` before accumulating. See allocating version for `deriv` options.
-"""
-function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::AbstractVector; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
-    n_out = _adjoint_output_length(adj)
-    length(f_bar) == n_out || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), n_out)
-    length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
-    if adj.bc isa PeriodicBC{:exclusive}
-        _adjoint_apply_exclusive_inplace!(f_bar, adj, y_bar, deriv)
-    else
-        fill!(f_bar, zero(eltype(f_bar)))
-        _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
-    end
-    return f_bar
-end
-
-# ── Scalar / Tuple callables ─────────────────────────────────────────────
-# adj(scalar)  → single query point, zero heap-alloc (scalar → 1-tuple on stack)
-# adj(tuple)   → few query points, zero heap-alloc (tuple is already stack-allocated)
-# adj(f_bar, scalar/tuple) → in-place variants
-
-function (adj::CubicAdjoint{Tg})(y_bar::Real; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
-    length(adj.anchors) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, length(adj.anchors))
-    Tv = promote_type(typeof(y_bar), Tg)
-    n_internal = length(adj.cache.x)
-    f_bar = zeros(Tv, n_internal)
-    _cubic_adjoint_apply!(f_bar, adj, (y_bar,), deriv)
-    return _adjoint_1d_finalize(f_bar, adj.bc, n_internal)
-end
-
-function (adj::CubicAdjoint{Tg})(y_bar::Tuple{Vararg{Real}}; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
-    length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
-    Tv = promote_type(eltype(y_bar), Tg)
-    n_internal = length(adj.cache.x)
-    f_bar = zeros(Tv, n_internal)
-    _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
-    return _adjoint_1d_finalize(f_bar, adj.bc, n_internal)
-end
-
-function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::Real; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
-    n_out = _adjoint_output_length(adj)
-    length(f_bar) == n_out || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), n_out)
-    length(adj.anchors) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, length(adj.anchors))
-    if adj.bc isa PeriodicBC{:exclusive}
-        _adjoint_apply_exclusive_inplace!(f_bar, adj, (y_bar,), deriv)
-    else
-        fill!(f_bar, zero(eltype(f_bar)))
-        _cubic_adjoint_apply!(f_bar, adj, (y_bar,), deriv)
-    end
-    return f_bar
-end
-
-function (adj::CubicAdjoint{Tg})(f_bar::AbstractVector, y_bar::Tuple{Vararg{Real}}; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
-    n_out = _adjoint_output_length(adj)
-    length(f_bar) == n_out || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), n_out)
-    length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
-    if adj.bc isa PeriodicBC{:exclusive}
-        _adjoint_apply_exclusive_inplace!(f_bar, adj, y_bar, deriv)
-    else
-        fill!(f_bar, zero(eltype(f_bar)))
-        _cubic_adjoint_apply!(f_bar, adj, y_bar, deriv)
-    end
-    return f_bar
-end
-
-# Exclusive periodic in-place: pool-allocated work buffer for the n+1 internal grid.
-@with_pool pool function _adjoint_apply_exclusive_inplace!(
-        f_bar::AbstractVector{Tv}, adj::CubicAdjoint, y_bar, deriv::DerivOp
-    ) where {Tv}
-    n_internal = length(adj.cache.x)
-    n_out = length(f_bar)
-    f_work = zeros!(pool, Tv, n_internal)
-    _cubic_adjoint_apply!(f_work, adj, y_bar, deriv)
-    @inbounds f_work[1] += f_work[n_internal]
-    @inbounds for k in 1:n_out
-        f_bar[k] = f_work[k]
-    end
-    return nothing
 end
 
 # ========================================
@@ -724,43 +625,7 @@ function _compute_rhs_adjoint_periodic!(
     return nothing
 end
 
-# ========================================
-# Matrix Materialization (Debug/Verification)
-# ========================================
-
-"""
-    Matrix(adj::CubicAdjoint; deriv=EvalValue()) -> Matrix
-
-Materialize the adjoint operator as a dense matrix `Wᵀ` of size `(n_grid, n_query)`.
-
-Each column `q` of `Wᵀ` is computed by probing with a unit vector `eₑ`:
-`Wᵀ[:, q] = adj(eₑ)`, i.e., the grid-space sensitivity when only query point `q`
-has unit sensitivity.
-
-This is an O(n_grid × n_query) operation intended for debugging and verification,
-not for production use.
-
-# Example
-```julia
-adj = cubic_adjoint(x, xq; bc=CubicFit())
-Wᵀ = Matrix(adj)                          # (n_grid × n_query)
-W  = Matrix(adj)'                          # (n_query × n_grid)
-
-@assert Wᵀ * y_bar ≈ adj(y_bar)           # matrix-vector == operator
-@assert W * f ≈ itp.(xq)                  # forward matrix works too
-```
-"""
-@with_pool pool function Base.Matrix(adj::CubicAdjoint{Tg}; deriv::DerivOp = EvalValue()) where {Tg}
-    n_out, n_query = size(adj)
-    W_T = zeros(Tg, n_out, n_query)
-    e_q = zeros!(pool, Tg, n_query)
-    @inbounds for q in 1:n_query
-        e_q[q] = one(Tg)
-        adj(view(W_T, :, q), e_q; deriv = deriv)
-        e_q[q] = zero(Tg)
-    end
-    return W_T
-end
+# Matrix(adj::CubicAdjoint) inherited from AbstractAdjoint (adjoint_protocol.jl)
 
 """
     Matrix(itp::CubicInterpolant, xq; deriv=EvalValue()) -> Matrix

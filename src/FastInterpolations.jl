@@ -30,14 +30,15 @@ include("integral/integral.jl")
 include("coeffs.jl")
 
 # Exports
-export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjointND
+export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjoint1D, AbstractAdjointND
 export Series
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
 export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant, LinearInterpolantND
 export constant_interp, constant_interp!, ConstantInterpolant, ConstantSeriesInterpolant, ConstantInterpolantND
 export quadratic_interp, quadratic_interp!, QuadraticInterpolant, QuadraticSeriesInterpolant, QuadraticInterpolantND
 export cubic_interp, cubic_interp!, CubicSplineCache, CubicInterpolant, CubicSeriesInterpolant
-export cubic_adjoint, CubicAdjoint, CubicAdjointND  # Adjoint operators (W^T)
+export linear_adjoint, LinearAdjoint, LinearAdjointND  # Linear adjoint operators (W^T)
+export cubic_adjoint, CubicAdjoint, CubicAdjointND  # Cubic adjoint operators (W^T)
 export CubicInterpolantND, AbstractCoeffStrategy, PreCompute, OnTheFly  # ND cubic types
 export gradient, gradient!, value_gradient, hessian, hessian!, laplacian  # Analytical vector calculus for ND
 export precompute_transpose!  # Pre-allocate point-contiguous layout for scalar queries

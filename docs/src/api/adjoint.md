@@ -6,6 +6,8 @@
 |----------|-------------|
 | `cubic_adjoint(x, xq)` | 1D adjoint operator $W^\top$ |
 | `cubic_adjoint(grids, queries)` | ND adjoint operator $W^\top$ |
+| `linear_adjoint(x, xq)` | 1D linear adjoint operator $W^\top$ |
+| `linear_adjoint(grids, queries)` | ND linear adjoint operator $W^\top$ |
 | `adj(ȳ)` | Allocating apply: $\bar{f} = W^\top \bar{y}$ |
 | `adj(f̄, ȳ)` | In-place apply (zero allocation) |
 | `adj(ȳ; deriv=DerivOp(1))` | Derivative adjoint |
@@ -24,8 +26,17 @@ cubic_adjoint
 
 ```@docs
 AbstractAdjoint
+AbstractAdjoint1D
 CubicAdjoint
 CubicAdjointND
+LinearAdjoint
+LinearAdjointND
+```
+
+## Linear Adjoint Constructor
+
+```@docs
+linear_adjoint
 ```
 
 ## Matrix Materialization

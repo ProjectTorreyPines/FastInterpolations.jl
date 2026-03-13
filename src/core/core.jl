@@ -13,7 +13,8 @@ include("periodic.jl")         # 8. Periodic BC helpers (wrapping, validation, e
 include("nd_utils.jl")            # 9. ND-specific utilities (shared by constant/linear/cubic ND)
 include("nd_query_protocol.jl")       # 9b. Query protocol (query_length, extract, eltype, validate)
 include("nd_interpolant_protocol.jl") # 9c. Interpolant batch eval + ND callable interface
-include("nd_adjoint_protocol.jl")     # 9d. Adjoint shared callable interface
+include("nd_adjoint_protocol.jl")     # 9d. Adjoint shared callable interface (ND)
+include("adjoint_protocol.jl")        # 9e. Adjoint shared callable interface (1D)
 include("thomas_lu_solver.jl") # 10. Thomas algorithm (TDMA) solvers for tridiagonal systems
 include("series_utils.jl")     # 11. Series validation helpers
 include("series_matrix.jl")    # 12. Lazy transpose infrastructure

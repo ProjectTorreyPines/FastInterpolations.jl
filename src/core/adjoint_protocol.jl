@@ -167,10 +167,10 @@ W  = Matrix(adj)'                          # (n_query × n_grid)
 @assert W * f ≈ itp.(xq)                  # forward matrix works too
 ```
 """
-function Base.Matrix(adj::AbstractAdjoint{Tg}; deriv::DerivOp = EvalValue()) where {Tg}
+@with_pool pool function Base.Matrix(adj::AbstractAdjoint{Tg}; deriv::DerivOp = EvalValue()) where {Tg}
     n_out, n_query = size(adj)
     W_T = zeros(Tg, n_out, n_query)
-    e_q = zeros(Tg, n_query)
+    e_q = zeros!(pool, Tg, n_query)
     @inbounds for q in 1:n_query
         e_q[q] = one(Tg)
         adj(view(W_T, :, q), e_q; deriv = deriv)

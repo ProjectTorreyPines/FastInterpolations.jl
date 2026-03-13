@@ -284,7 +284,7 @@ Materialize the ND adjoint operator as a dense matrix `Wᵀ` of size
 
 This is an O(n_grid × n_query) operation intended for debugging and verification.
 """
-function Base.Matrix(
+@with_pool pool function Base.Matrix(
         adj::AbstractAdjointND{Tg, N};
         deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
     ) where {Tg, N}
@@ -292,8 +292,8 @@ function Base.Matrix(
     n_out = prod(out_size)
     n_query = _n_queries(adj)
     W_T = zeros(Tg, n_out, n_query)
-    e_q = zeros(Tg, n_query)
-    f_bar = zeros(Tg, out_size...)
+    e_q = zeros!(pool, Tg, n_query)
+    f_bar = zeros!(pool, Tg, out_size...)
     @inbounds for q in 1:n_query
         e_q[q] = one(Tg)
         adj(f_bar, e_q; deriv = deriv)

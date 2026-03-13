@@ -414,4 +414,126 @@ end
         @test_throws DomainError linear_adjoint(x_uniform, [-0.1, 0.5])
         @test_throws DomainError linear_adjoint(x_uniform, [0.5, 1.1])
     end
+
+    # ========================================
+    # Singleton grid rejection
+    # ========================================
+    @testset "Singleton grid throws ArgumentError" begin
+        @test_throws ArgumentError linear_adjoint([0.0], [0.0])
+    end
+
+    # ========================================
+    # Analytical value tests (hand-computed expected values)
+    # ========================================
+    # Linear adjoint weights are trivial to compute by hand.
+    # These tests verify exact values, not just the dot-product identity.
+
+    @testset "Analytical — single midpoint query" begin
+        x = [0.0, 1.0, 2.0]
+        adj = linear_adjoint(x, [0.5])  # α = 0.5 in interval [0,1]
+        @test adj([1.0]) ≈ [0.5, 0.5, 0.0]
+        @test adj([1.0]; deriv = EvalDeriv1()) ≈ [-1.0, 1.0, 0.0]
+    end
+
+    @testset "Analytical — two queries, accumulation" begin
+        x = [0.0, 1.0, 2.0]
+        adj = linear_adjoint(x, [0.5, 1.5])
+        # q1: α=0.5 in [0,1] → f_bar[1]+=0.5*2, f_bar[2]+=0.5*2
+        # q2: α=0.5 in [1,2] → f_bar[2]+=0.5*3, f_bar[3]+=0.5*3
+        @test adj([2.0, 3.0]) ≈ [1.0, 2.5, 1.5]
+    end
+
+    @testset "Analytical — query at grid node" begin
+        x = [0.0, 1.0, 2.0]
+        adj = linear_adjoint(x, [1.0])
+        # At grid node x[2]: all weight on node 2 regardless of which interval
+        @test adj([1.0]) ≈ [0.0, 1.0, 0.0]
+    end
+
+    @testset "Analytical — non-uniform grid" begin
+        x = [0.0, 0.3, 1.0]  # h1=0.3, h2=0.7
+        adj = linear_adjoint(x, [0.15])  # α = 0.15/0.3 = 0.5
+        @test adj([1.0]) ≈ [0.5, 0.5, 0.0]
+        # Deriv: inv_h = 1/0.3
+        @test adj([1.0]; deriv = EvalDeriv1()) ≈ [-1.0 / 0.3, 1.0 / 0.3, 0.0]
+    end
+
+    @testset "Analytical — non-uniform deriv in second interval" begin
+        x = [0.0, 0.5, 2.0]  # h2 = 1.5, inv_h2 = 1/1.5
+        adj = linear_adjoint(x, [1.0])  # in interval [0.5, 2.0], α = 0.5/1.5 = 1/3
+        @test adj([1.0]) ≈ [0.0, 2 / 3, 1 / 3]
+        @test adj([1.0]; deriv = EvalDeriv1()) ≈ [0.0, -1.0 / 1.5, 1.0 / 1.5]
+    end
+
+    @testset "Analytical — EvalDeriv2/3 always zero" begin
+        x = [0.0, 1.0, 2.0]
+        adj = linear_adjoint(x, [0.5])
+        @test adj([1.0]; deriv = EvalDeriv2()) == [0.0, 0.0, 0.0]
+        @test adj([1.0]; deriv = EvalDeriv3()) == [0.0, 0.0, 0.0]
+    end
+
+    # ── Extrap-specific analytical tests ──
+
+    @testset "Analytical — ExtendExtrap (OOB below)" begin
+        x = [0.0, 1.0, 2.0]
+        adj = linear_adjoint(x, [-0.5]; extrap = ExtendExtrap())
+        # Uses first interval [0,1], α = (-0.5 - 0)/1 = -0.5
+        # f_bar[1] += (1-(-0.5))*1 = 1.5, f_bar[2] += (-0.5)*1 = -0.5
+        @test adj([1.0]) ≈ [1.5, -0.5, 0.0]
+    end
+
+    @testset "Analytical — ExtendExtrap (OOB above)" begin
+        x = [0.0, 1.0, 2.0]
+        adj = linear_adjoint(x, [2.7]; extrap = ExtendExtrap())
+        # Uses last interval [1,2], α = (2.7 - 1)/1 = 1.7
+        # f_bar[2] += (1-1.7)*1 = -0.7, f_bar[3] += 1.7*1 = 1.7
+        @test adj([1.0]) ≈ [0.0, -0.7, 1.7]
+    end
+
+    @testset "Analytical — FillExtrap (OOB queries contribute nothing)" begin
+        x = [0.0, 1.0, 2.0]
+        adj = linear_adjoint(x, [-0.5, 0.5, 2.5]; extrap = FillExtrap(0.0))
+        # Only q2 (0.5) contributes. q1 and q3 are OOB → skipped.
+        # q2: α=0.5 in [0,1], y_bar=2.0 → f_bar[1]+=1.0, f_bar[2]+=1.0
+        @test adj([1.0, 2.0, 3.0]) ≈ [1.0, 1.0, 0.0]
+    end
+
+    @testset "Analytical — FillExtrap deriv (OOB queries contribute nothing)" begin
+        x = [0.0, 1.0, 2.0]
+        adj = linear_adjoint(x, [-0.5, 0.5, 2.5]; extrap = FillExtrap(0.0))
+        # Only q2 contributes deriv. inv_h=1.
+        # f_bar[1] += -1*2 = -2, f_bar[2] += 1*2 = 2
+        @test adj([1.0, 2.0, 3.0]; deriv = EvalDeriv1()) ≈ [-2.0, 2.0, 0.0]
+    end
+
+    @testset "Analytical — ClampExtrap value (OOB at boundary)" begin
+        x = [0.0, 1.0, 2.0]
+        adj = linear_adjoint(x, [-0.5, 0.5, 2.5]; extrap = ClampExtrap())
+        # q1: clamped to 0.0, α=0 → f_bar[1] += 1*1.0 = 1.0
+        # q2: α=0.5 → f_bar[1] += 0.5*2 = 1.0, f_bar[2] += 0.5*2 = 1.0
+        # q3: clamped to 2.0, α=1 in [1,2] → f_bar[3] += 1*3.0 = 3.0
+        @test adj([1.0, 2.0, 3.0]) ≈ [2.0, 1.0, 3.0]
+    end
+
+    @testset "Analytical — ClampExtrap deriv (OOB → zero derivative)" begin
+        x = [0.0, 1.0, 2.0]
+        adj = linear_adjoint(x, [-0.5, 0.5, 2.5]; extrap = ClampExtrap())
+        # OOB deriv → skipped for ClampExtrap. Only q2 contributes.
+        # q2: inv_h=1, f_bar[1] += -1*2 = -2, f_bar[2] += 1*2 = 2
+        @test adj([1.0, 2.0, 3.0]; deriv = EvalDeriv1()) ≈ [-2.0, 2.0, 0.0]
+    end
+
+    @testset "Analytical — WrapExtrap (wraps to domain)" begin
+        x = [0.0, 1.0, 2.0]  # domain [0, 2], period = 2
+        adj = linear_adjoint(x, [2.5]; extrap = WrapExtrap())
+        # 2.5 wraps to 0.5 → α=0.5 in [0,1]
+        @test adj([1.0]) ≈ [0.5, 0.5, 0.0]
+    end
+
+    @testset "Analytical — WrapExtrap (negative wrap)" begin
+        x = [0.0, 1.0, 2.0]  # domain [0, 2], period = 2
+        adj = linear_adjoint(x, [-0.5]; extrap = WrapExtrap())
+        # -0.5 wraps to 1.5 → α=0.5 in [1,2]
+        @test adj([1.0]) ≈ [0.0, 0.5, 0.5]
+    end
 end

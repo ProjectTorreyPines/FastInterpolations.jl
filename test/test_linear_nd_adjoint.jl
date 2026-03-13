@@ -434,3 +434,159 @@ end
         @test allocs <= ND_ALLOC_THRESHOLD
     end
 end
+
+# ========================================
+# Analytical Value Tests (N=2, hand-computed)
+# ========================================
+# Linear ND adjoint weights are tensor products of 1D weights.
+# For query at (αx, αy), corner weights are products of per-axis weights.
+
+@testset "LinearAdjointND — Analytical (N=2)" begin
+    @testset "Single midpoint query — EvalValue" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([0.5], [0.5]))
+        # αx=0.5 in [0,1], αy=0.5 in [0,1]
+        # Corners: (1-αx)(1-αy)=0.25, αx(1-αy)=0.25, (1-αx)αy=0.25, αx·αy=0.25
+        expected = [0.25 0.25; 0.25 0.25; 0.0 0.0]
+        @test adj([1.0]) ≈ expected
+    end
+
+    @testset "Single midpoint query — deriv=(1,0)" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([0.5], [0.5]))
+        # x: deriv weights (-1, 1), y: value weights (0.5, 0.5)
+        expected = [-0.5 -0.5; 0.5 0.5; 0.0 0.0]
+        @test adj([1.0]; deriv = (EvalDeriv1(), EvalValue())) ≈ expected
+    end
+
+    @testset "Single midpoint query — deriv=(0,1)" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([0.5], [0.5]))
+        # x: value weights (0.5, 0.5), y: deriv weights (-1, 1)
+        expected = [-0.5 0.5; -0.5 0.5; 0.0 0.0]
+        @test adj([1.0]; deriv = (EvalValue(), EvalDeriv1())) ≈ expected
+    end
+
+    @testset "Single query — deriv=(1,1) mixed partial" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([0.5], [0.5]))
+        # x: deriv (-1, 1), y: deriv (-1, 1)
+        expected = [1.0 -1.0; -1.0 1.0; 0.0 0.0]
+        @test adj([1.0]; deriv = (EvalDeriv1(), EvalDeriv1())) ≈ expected
+    end
+
+    @testset "Query at grid node" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([1.0], [1.0]))
+        # All weight on node (2, 2) = grid indices [2, 2]
+        expected = zeros(3, 2)
+        expected[2, 2] = 1.0
+        @test adj([1.0]) ≈ expected
+    end
+
+    @testset "Two queries, accumulation" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([0.5, 1.5], [0.5, 0.5]))
+        # q1: αx=0.5 in [0,1], αy=0.5 in [0,1], y_bar=2.0
+        #   [1,1]+=0.25*2=0.5, [2,1]+=0.25*2=0.5, [1,2]+=0.25*2=0.5, [2,2]+=0.25*2=0.5
+        # q2: αx=0.5 in [1,2], αy=0.5 in [0,1], y_bar=3.0
+        #   [2,1]+=0.25*3=0.75, [3,1]+=0.25*3=0.75, [2,2]+=0.25*3=0.75, [3,2]+=0.25*3=0.75
+        expected = [0.5 0.5; 1.25 1.25; 0.75 0.75]
+        @test adj([2.0, 3.0]) ≈ expected
+    end
+
+    @testset "Non-uniform grid" begin
+        gx = [0.0, 0.5, 2.0]  # hx1=0.5, hx2=1.5
+        gy = [0.0, 0.4]       # hy=0.4
+        adj = linear_adjoint((gx, gy), ([0.25], [0.1]))
+        # x: in [0, 0.5], α = 0.25/0.5 = 0.5, weights (0.5, 0.5)
+        # y: in [0, 0.4], α = 0.1/0.4 = 0.25, weights (0.75, 0.25)
+        expected = [
+            0.5 * 0.75 0.5 * 0.25;
+            0.5 * 0.75 0.5 * 0.25;
+            0.0 0.0
+        ]
+        @test adj([1.0]) ≈ expected
+    end
+
+    # ── Extrap analytical tests ──
+
+    @testset "Analytical — FillExtrap (OOB axis zeros all weights)" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([-0.5], [0.5]); extrap = FillExtrap(0.0))
+        # x-axis OOB → FillExtrap zeros both value and deriv weights for that axis
+        # All corners get zero weight → f_bar = zeros
+        @test adj([1.0]) ≈ zeros(3, 2)
+        @test adj([1.0]; deriv = (EvalDeriv1(), EvalValue())) ≈ zeros(3, 2)
+    end
+
+    @testset "Analytical — ClampExtrap value (OOB axis clamped)" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([-0.5], [0.5]); extrap = ClampExtrap())
+        # x: clamped to 0.0, αx=0, w_value=(1,0). w_deriv is zeroed.
+        # y: αy=0.5, w_value=(0.5, 0.5)
+        # Value: [1,1]=1*0.5=0.5, [1,2]=1*0.5=0.5, rest=0
+        expected = [0.5 0.5; 0.0 0.0; 0.0 0.0]
+        @test adj([1.0]) ≈ expected
+    end
+
+    @testset "Analytical — ClampExtrap deriv (OOB axis → zero deriv)" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([-0.5], [0.5]); extrap = ClampExtrap())
+        # x is OOB → w_deriv_x = (0, 0). Any deriv involving x-axis → zero.
+        @test adj([1.0]; deriv = (EvalDeriv1(), EvalValue())) ≈ zeros(3, 2)
+        # y-axis deriv with OOB x: x w_value=(1,0), y w_deriv=(-1,1)
+        # [1,1]=1*(-1)=-1, [1,2]=1*1=1, rest=0
+        expected_dy = [0.0 0.0; 0.0 0.0; 0.0 0.0]
+        expected_dy[1, 1] = -1.0
+        expected_dy[1, 2] = 1.0
+        @test adj([1.0]; deriv = (EvalValue(), EvalDeriv1())) ≈ expected_dy
+    end
+
+    @testset "Analytical — ExtendExtrap (OOB below)" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([-0.5], [0.5]); extrap = ExtendExtrap())
+        # x: in first interval [0,1], α = -0.5/1 = -0.5, w_val=(1.5, -0.5)
+        # y: α=0.5, w_val=(0.5, 0.5)
+        expected = [
+            1.5 * 0.5 1.5 * 0.5;
+            -0.5 * 0.5 -0.5 * 0.5;
+            0.0 0.0
+        ]
+        @test adj([1.0]) ≈ expected
+    end
+
+    @testset "Analytical — WrapExtrap" begin
+        gx = [0.0, 1.0, 2.0]  # domain [0, 2], period = 2
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([2.5], [0.5]); extrap = WrapExtrap())
+        # x: 2.5 wraps to 0.5, α=0.5, w_val=(0.5, 0.5)
+        # y: α=0.5, w_val=(0.5, 0.5)
+        expected = [0.25 0.25; 0.25 0.25; 0.0 0.0]
+        @test adj([1.0]) ≈ expected
+    end
+
+    @testset "Analytical — 2nd+ derivative returns zero" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([0.5], [0.5]))
+        @test all(iszero, adj([1.0]; deriv = (EvalDeriv2(), EvalValue())))
+        @test all(iszero, adj([1.0]; deriv = (EvalValue(), EvalDeriv2())))
+        @test all(iszero, adj([1.0]; deriv = (EvalDeriv2(), EvalDeriv3())))
+    end
+
+    @testset "Singleton grid rejection" begin
+        @test_throws ArgumentError linear_adjoint(([0.0], [0.0, 1.0]), ([0.0], [0.5]))
+        @test_throws ArgumentError linear_adjoint(([0.0, 1.0], [0.0]), ([0.5], [0.0]))
+    end
+end

@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1773355189754,
+  "lastUpdate": 1773441009220,
   "repoUrl": "https://github.com/ProjectTorreyPines/FastInterpolations.jl",
   "entries": {
     "FastInterpolations.jl Benchmarks": [
@@ -29398,6 +29398,282 @@ window.BENCHMARK_DATA = {
           {
             "name": "9_nd_oneshot/trilinear_3d",
             "value": 1561.8,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "48294618+mgyoo86@users.noreply.github.com",
+            "name": "Min-Gu Yoo",
+            "username": "mgyoo86"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0d934c344e87ab46a71654099c054c5233984492",
+          "message": "(feat): Linear Adjoint Operator (1D + ND) (#77)\n\n* (feat): add linear adjoint operator for 1D and ND interpolation\n\nImplement LinearAdjoint (1D) and LinearAdjointND (N-dimensional) adjoint\noperators (f̄ = Wᵀȳ) for linear interpolation. Linear adjoint is a pure\nscatter operation (no tridiagonal solve), using 2-point stencil weights\nfor EvalValue (1-α, α) and EvalDeriv1 (-inv_h, inv_h).\n\n1D reuses _LinearAnchoredQuery directly (no new anchor struct). ND uses\na new _LinearNDAdjointAnchor with pre-baked weights and @generated 2^N\ncorner scatter. Both inherit shared protocol from nd_adjoint_protocol.jl.\n\nOOB handling: 1D clamp+fixup pattern (like cubic), ND bakes zero weights\nat construction. Full test coverage with dot-product identity validation.\n\n* (refactor): unify 1D adjoint callable protocol on AbstractAdjoint\n\nExtract shared 1D adjoint callables (6 overloads, size, Matrix) into\nsrc/core/adjoint_protocol.jl, mirroring the existing ND protocol.\nLinearAdjoint and CubicAdjoint now implement 3 required accessors\ninstead of duplicating ~100 lines of boilerplate each.\n\nAlso unifies ND Matrix materialization on AbstractAdjointND and adds\nN=1 disambiguators to resolve Aqua.jl method ambiguities between\nthe 1D and ND in-place callable signatures.\n\n* (fix): reject singleton grids in linear adjoint constructors\n\nAdd @noinline _throw_adjoint_grid_too_small helpers and validate\nlength >= 2 in both 1D and ND linear_adjoint constructors to prevent\nOOB scatter to idx+1 on degenerate grids.\n\n* (test): add analytical value tests for linear adjoint 1D and ND\n\nAdd hand-computed theoretical value tests alongside existing dot-product\nidentity tests. Covers midpoint/grid-node queries, accumulation, non-uniform\ngrids, derivative values, and all extrap modes (ExtendExtrap, FillExtrap,\nClampExtrap, WrapExtrap) with exact expected values. Also validates\nsingleton grid rejection.\n\n* (refactor): use pool allocation for temporaries in adjoint Matrix methods\n\nReplace heap-allocated e_q and f_bar with @with_pool/zeros! in both\n1D and ND Base.Matrix materialization, consistent with other adjoint\ncode paths.\n\n* (fix): add ND NoExtrap domain validation and relax scatter yb type constraint\n\nPre-loop _validate_adjoint_noextrap ensures OOB queries throw DomainError\nbefore @inbounds anchor baking. SoA queries use min/max reduction per axis;\ngeneric queries fall back to per-element scalar check. Also relax yb::Tv to\nduck-typed yb in _scatter_nd! and _scatter_linear_nd! for mixed-precision.\n\n* (test): add regression tests for ND NoExtrap validation and duck-typed y_bar\n\nTests ND NoExtrap OOB → DomainError for both SoA and SVector queries,\nmixed-precision y_bar (Float32 into Float64 adjoint), and integer y_bar\nfor both linear and cubic ND adjoints.\n\n* (fix): add scalar y_bar dispatch for ND linear adjoint and docs for missing exports\n\n- Add _linear_adjoint_nd_apply!(::Real) specialization to handle scalar y_bar\n  (eachindex(::Real) is undefined; ND protocol passes Real directly unlike 1D)\n- Add LinearAdjoint, LinearAdjointND, linear_adjoint to @docs blocks in api/adjoint.md\n- Update adjoint overview table: Linear adjoint no longer \"planned\"\n- Add comprehensive duck-typed tests: scalar/tuple y_bar, AoS/SVector queries (N=2/N=3),\n  dot-product identity, mixed-precision, integer y_bar promotion\n\n* (refactor): introduce AbstractAdjoint1D to eliminate N=1 disambiguators\n\nSplit AbstractAdjoint into AbstractAdjoint (root) and AbstractAdjoint1D\n(1D protocol) as sibling to AbstractAdjointND, removing the 3 N=1\ndisambiguator methods that were needed when both protocols shared a\nparent-child dispatch overlap.\n\n* docs: add AbstractAdjoint1D to Adjoint API documentation",
+          "timestamp": "2026-03-13T15:26:35-07:00",
+          "tree_id": "031b94f3cda4452f9ea8ad6b7f6d6236ba9fb2c5",
+          "url": "https://github.com/ProjectTorreyPines/FastInterpolations.jl/commit/0d934c344e87ab46a71654099c054c5233984492"
+        },
+        "date": 1773441004047,
+        "tool": "julia",
+        "benches": [
+          {
+            "name": "10_nd_construct/bicubic_2d",
+            "value": 35707,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=83816\nallocs=27\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/bilinear_2d",
+            "value": 522.78,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=20120\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/tricubic_3d",
+            "value": 344205,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=515224\nallocs=37\nparams={\"evals\":1,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "10_nd_construct/trilinear_3d",
+            "value": 1529.26,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64088\nallocs=3\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_batch",
+            "value": 1565.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bicubic_2d_scalar",
+            "value": 26.94,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/bilinear_2d_scalar",
+            "value": 23.14,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_batch",
+            "value": 3314.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=240\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/tricubic_3d_scalar",
+            "value": 48.99,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "11_nd_eval/trilinear_3d_scalar",
+            "value": 27.65,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_random",
+            "value": 4475.38,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/range_sorted",
+            "value": 4463.78,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_random",
+            "value": 9679.74,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "12_cubic_eval_gridquery/vec_sorted",
+            "value": 3223.24,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q00001",
+            "value": 441.42,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "1_cubic_oneshot/q10000",
+            "value": 61911,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g0100",
+            "value": 1251.34,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=4480\nallocs=10\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "2_cubic_construct/g1000",
+            "value": 11978.5,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=40360\nallocs=15\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00001",
+            "value": 33.86,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q00100",
+            "value": 476.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "3_cubic_eval/q10000",
+            "value": 44975.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q00001",
+            "value": 35.06,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=64\nallocs=2\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "4_linear_oneshot/q10000",
+            "value": 36970.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=80072\nallocs=3\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g0100",
+            "value": 9.51,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "5_linear_construct/g1000",
+            "value": 9.51,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00001",
+            "value": 18.13,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q00100",
+            "value": 403.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "6_linear_eval/q10000",
+            "value": 37977.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_range/scalar_query",
+            "value": 22.54,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "7_cubic_vec/scalar_query",
+            "value": 12.02,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":100,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s001_q100",
+            "value": 564.84,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=2048\nallocs=6\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s010_q100",
+            "value": 4318.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=16336\nallocs=8\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/construct_s100_q100",
+            "value": 39661.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=160336\nallocs=8\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s001_q100",
+            "value": 1389.62,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100",
+            "value": 2325.76,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s010_q100_scalar_loop",
+            "value": 3626.2,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100",
+            "value": 11991.4,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "8_cubic_multi/eval_s100_q100_scalar_loop",
+            "value": 4596.6,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=0\nallocs=0\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bicubic_2d",
+            "value": 35384.3,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/bilinear_2d",
+            "value": 977.44,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":50,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/tricubic_3d",
+            "value": 346264.9,
+            "unit": "ns",
+            "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
+          },
+          {
+            "name": "9_nd_oneshot/trilinear_3d",
+            "value": 1563.9,
             "unit": "ns",
             "extra": "gctime=0\nmemory=928\nallocs=2\nparams={\"evals\":10,\"evals_set\":false,\"gcsample\":false,\"gctrial\":true,\"memory_tolerance\":0.01,\"overhead\":0,\"samples\":10000,\"seconds\":3,\"time_tolerance\":0.05}"
           }

@@ -26,6 +26,7 @@ cubic_adjoint
 
 ```@docs
 AbstractAdjoint
+AbstractAdjoint1D
 CubicAdjoint
 CubicAdjointND
 LinearAdjoint

@@ -140,6 +140,7 @@ function _bake_nd_anchors(
     ) where {N, Tg <: AbstractFloat}
     nq = _query_length(queries)
     _query_validate(queries)
+    _validate_adjoint_noextrap(grids, queries, extraps)
 
     anchors = Vector{_NDAdjointAnchor{Tg, N}}(undef, nq)
     @inbounds for q in 1:nq
@@ -238,7 +239,7 @@ axis — identical to what a dedicated EvalValue-only method would produce.
 """
 @inline @generated function _scatter_nd!(
         partials_bar::AbstractArray{Tv, NP1},
-        yb::Tv,
+        yb,
         anchor::_NDAdjointAnchor{Tg, N},
         ops::OPS
     ) where {Tv, Tg, N, NP1, OPS <: NTuple{N, AbstractEvalOp}}

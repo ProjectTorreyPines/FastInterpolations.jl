@@ -20,6 +20,43 @@
 @noinline _throw_adjoint_grid_too_small(d::Int, n::Int) =
     throw(ArgumentError("linear_adjoint requires at least 2 grid points on axis $d, got $n"))
 
+# ── Pre-loop NoExtrap domain validation ──
+#
+# Validates all queries against grid bounds BEFORE @inbounds anchor baking.
+# SoA (tuple-of-vectors): efficient min/max per axis via _check_domain.
+# Generic (AoS, single-point): per-query scalar _check_domain fallback.
+# Non-NoExtrap axes are no-ops via _check_domain dispatch.
+
+# SoA queries: O(nq) per axis via minimum/maximum reduction
+function _validate_adjoint_noextrap(
+        grids::NTuple{N, AbstractVector},
+        queries::Tuple{AbstractVector, Vararg{AbstractVector}},
+        extraps::Tuple{Vararg{AbstractExtrap, N}}
+    ) where {N}
+    for d in 1:N
+        _check_domain(grids[d], queries[d], extraps[d])
+    end
+    return nothing
+end
+
+# Generic queries: per-query per-axis scalar check
+function _validate_adjoint_noextrap(
+        grids::NTuple{N, AbstractVector},
+        queries,
+        extraps::Tuple{Vararg{AbstractExtrap, N}}
+    ) where {N}
+    any(e -> e isa NoExtrap, extraps) || return nothing
+    nq = _query_length(queries)
+    for q in 1:nq
+        query_q = _extract_query_point(queries, q, Val(N))
+        for d in 1:N
+            extraps[d] isa NoExtrap || continue
+            _check_domain(grids[d], query_q[d], NoExtrap())
+        end
+    end
+    return nothing
+end
+
 # ── Output size (exclusive periodic axes shrink by 1) ──
 
 @inline function _adjoint_output_size(adj::AbstractAdjointND{<:Any, N}) where {N}

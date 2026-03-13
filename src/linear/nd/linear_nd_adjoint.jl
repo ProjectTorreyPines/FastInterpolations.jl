@@ -35,6 +35,7 @@ function _bake_linear_nd_anchors(
     ) where {N, Tg <: AbstractFloat}
     nq = _query_length(queries)
     _query_validate(queries)
+    _validate_adjoint_noextrap(grids, queries, extraps)
 
     anchors = Vector{_LinearNDAdjointAnchor{Tg, N}}(undef, nq)
     @inbounds for q in 1:nq
@@ -95,7 +96,7 @@ based on the concrete DerivOp types in `ops`.
 """
 @inline @generated function _scatter_linear_nd!(
         f_bar::AbstractArray{Tv, N},
-        yb::Tv,
+        yb,
         anchor::_LinearNDAdjointAnchor{Tg, N},
         ops::OPS
     ) where {Tv, Tg, N, OPS <: NTuple{N, AbstractEvalOp}}

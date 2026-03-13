@@ -107,4 +107,3 @@ function Base.size(adj::LinearAdjointND{Tg, N}) where {Tg, N}
     return (out_size..., _n_queries(adj))
 end
 Base.size(adj::LinearAdjointND, d::Integer) = size(adj)[d]
-

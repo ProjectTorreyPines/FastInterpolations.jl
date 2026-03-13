@@ -245,6 +245,8 @@ function linear_adjoint(
     x_p = _to_float(x, Tg)
     xq_p = _to_float(x_query, Tg)
 
+    length(x_p) >= 2 || _throw_adjoint_grid_too_small(length(x_p))
+
     # NoExtrap: validate all queries in-domain
     if extrap isa NoExtrap
         x_lo, x_hi = first(x_p), last(x_p)

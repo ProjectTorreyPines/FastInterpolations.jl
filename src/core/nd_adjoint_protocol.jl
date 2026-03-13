@@ -14,6 +14,12 @@
 @noinline _throw_adjoint_size_mismatch(got::Tuple, expected::Tuple) =
     throw(DimensionMismatch("f_bar size $got must match output size $expected"))
 
+@noinline _throw_adjoint_grid_too_small(n::Int) =
+    throw(ArgumentError("linear_adjoint requires at least 2 grid points, got $n"))
+
+@noinline _throw_adjoint_grid_too_small(d::Int, n::Int) =
+    throw(ArgumentError("linear_adjoint requires at least 2 grid points on axis $d, got $n"))
+
 # ── Output size (exclusive periodic axes shrink by 1) ──
 
 @inline function _adjoint_output_size(adj::AbstractAdjointND{<:Any, N}) where {N}

@@ -250,6 +250,11 @@ function _build_linear_nd_adjoint(
         queries,
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N, Tg <: AbstractFloat}
+    # Validate all axes have at least 2 points (scatter writes to idx and idx+1)
+    @inbounds for d in 1:N
+        length(grids[d]) >= 2 || _throw_adjoint_grid_too_small(d, length(grids[d]))
+    end
+
     spacings = _create_spacings_typed(grids)
     anchors = _bake_linear_nd_anchors(grids, spacings, queries, extraps)
     grid_size = ntuple(d -> length(grids[d]), Val(N))

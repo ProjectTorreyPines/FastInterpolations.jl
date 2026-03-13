@@ -146,6 +146,19 @@ end
 # Core Apply Pipeline
 # ========================================
 
+# Scalar y_bar: single query, direct scatter (no eachindex on Real)
+function _linear_adjoint_nd_apply!(
+        f_bar::AbstractArray{Tv, N},
+        adj::LinearAdjointND{Tg, N},
+        y_bar::Real,
+        ops::NTuple{N, AbstractEvalOp}
+    ) where {Tv, Tg, N}
+    _has_second_or_higher_derivative(ops, Val(N)) && return nothing
+    @inbounds _scatter_linear_nd!(f_bar, y_bar, adj.anchors[1], ops)
+    return nothing
+end
+
+# Vector/Tuple y_bar: loop over elements
 function _linear_adjoint_nd_apply!(
         f_bar::AbstractArray{Tv, N},
         adj::LinearAdjointND{Tg, N},

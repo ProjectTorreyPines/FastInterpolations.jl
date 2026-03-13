@@ -236,6 +236,16 @@ end
         adj = linear_adjoint((x_uniform, y_uniform), ([0.5], [1.0]))
         f_bar = adj([1.0])
         @test size(f_bar) == (nx, ny)
+
+        # Scalar y_bar path (Real, not vector)
+        f_bar_scalar = adj(1.0)
+        @test size(f_bar_scalar) == (nx, ny)
+        @test f_bar_scalar ≈ f_bar
+
+        # In-place scalar
+        f_bar_ip = zeros(nx, ny)
+        adj(f_bar_ip, 1.0)
+        @test f_bar_ip ≈ f_bar
     end
 
     @testset "Query at grid nodes" begin
@@ -631,5 +641,251 @@ end
         adj = linear_adjoint((gx, gy), ([0.5], [0.5]))
         fb = adj([1])  # Int y_bar
         @test fb ≈ [0.25 0.25; 0.25 0.25; 0.0 0.0]
+    end
+end
+
+# ========================================
+# Scalar / Tuple y_bar + AoS / single-tuple constructor
+# ========================================
+@testset "LinearAdjointND scalar/tuple y_bar" begin
+    nx, ny = 10, 8
+    x = range(0.0, 1.0, nx)
+    y = range(0.0, 2.0, ny)
+
+    @testset "Scalar y_bar (1 query point)" begin
+        xq, yq = [0.3], [0.7]
+        adj = linear_adjoint((x, y), (xq, yq))
+        ref = adj([1.5])
+        @test adj(1.5) ≈ ref
+        @test adj((1.5,)) ≈ ref
+
+        # In-place
+        f_bar = zeros(nx, ny)
+        adj(f_bar, 1.5)
+        @test f_bar ≈ ref
+
+        fill!(f_bar, 0.0)
+        adj(f_bar, (1.5,))
+        @test f_bar ≈ ref
+    end
+
+    @testset "Tuple y_bar (multiple query points)" begin
+        xq = [0.2, 0.5, 0.8]
+        yq = [0.4, 1.0, 1.6]
+        adj = linear_adjoint((x, y), (xq, yq))
+        ref = adj([1.0, 2.0, 3.0])
+        @test adj((1.0, 2.0, 3.0)) ≈ ref
+
+        # In-place
+        f_bar = zeros(nx, ny)
+        adj(f_bar, (1.0, 2.0, 3.0))
+        @test f_bar ≈ ref
+    end
+
+    @testset "Scalar y_bar with deriv" begin
+        xq, yq = [0.4], [1.0]
+        adj = linear_adjoint((x, y), (xq, yq))
+        ref = adj([1.0]; deriv = DerivOp(1))
+        @test adj(1.0; deriv = DerivOp(1)) ≈ ref
+
+        ref_mixed = adj([1.0]; deriv = (EvalDeriv1(), EvalValue()))
+        @test adj(1.0; deriv = (EvalDeriv1(), EvalValue())) ≈ ref_mixed
+    end
+
+    @testset "Dimension mismatch errors" begin
+        adj = linear_adjoint((x, y), ([0.2, 0.5], [0.4, 1.0]))  # 2 queries
+        @test_throws DimensionMismatch adj(1.5)         # scalar but 2 queries
+        @test_throws DimensionMismatch adj((1.0,))       # 1-tuple but 2 queries
+    end
+end
+
+@testset "LinearAdjointND AoS / single-tuple constructor" begin
+    nx, ny = 10, 8
+    x = range(0.0, 1.0, nx)
+    y = range(0.0, 2.0, ny)
+
+    @testset "AoS query constructor" begin
+        xq = [0.2, 0.5, 0.8]
+        yq = [0.4, 1.0, 1.6]
+        adj_soa = linear_adjoint((x, y), (xq, yq))
+        adj_aos = linear_adjoint((x, y), [(0.2, 0.4), (0.5, 1.0), (0.8, 1.6)])
+
+        y_bar = randn(3)
+        @test adj_soa(y_bar) ≈ adj_aos(y_bar)
+    end
+
+    @testset "Single-tuple query constructor" begin
+        adj_soa = linear_adjoint((x, y), ([0.5], [1.0]))
+        adj_tup = linear_adjoint((x, y), (0.5, 1.0))
+
+        @test adj_soa(1.0) ≈ adj_tup(1.0)
+        @test adj_soa([1.0]) ≈ adj_tup([1.0])
+    end
+
+    @testset "AoS dot-product correctness" begin
+        xq = rand(20) .* 0.9 .+ 0.05
+        yq = rand(20) .* 1.8 .+ 0.1
+        queries_aos = [(xq[i], yq[i]) for i in eachindex(xq)]
+
+        f = randn(nx, ny)
+        y_bar = randn(20)
+
+        _, _, ok = linear_nd_dot_product_test(
+            (x, y), (xq, yq), f, y_bar
+        )
+        @test ok
+
+        # Same test via AoS constructor
+        adj_aos = linear_adjoint((x, y), queries_aos)
+        adj_soa = linear_adjoint((x, y), (xq, yq))
+        @test adj_aos(y_bar) ≈ adj_soa(y_bar)
+    end
+end
+
+# ========================================
+# SVector query support (N=2 and N=3)
+# ========================================
+@testset "LinearAdjointND — SVector queries" begin
+    # ── N=2 setup ──
+    nx, ny = 12, 10
+    x = range(0.0, 1.0, nx)
+    y = range(0.0, 2.0, ny)
+    grids_2d = (x, y)
+    f_2d = randn(nx, ny)
+
+    # Query points inside domain
+    n_q = 20
+    xq = sort(rand(n_q)) .* 0.96 .+ 0.02
+    yq = sort(rand(n_q)) .* 1.92 .+ 0.04
+    y_bar_2d = randn(n_q)
+
+    # Reference: SoA queries
+    adj_soa = linear_adjoint(grids_2d, (xq, yq))
+    ref_alloc = adj_soa(y_bar_2d)
+
+    @testset "Scalar SVector — single point (N=2)" begin
+        pt = SVector(0.5, 1.0)
+        adj_sv = linear_adjoint(grids_2d, pt)
+        adj_tuple = linear_adjoint(grids_2d, (0.5, 1.0))
+
+        # Allocating
+        @test adj_sv(1.0) ≈ adj_tuple(1.0)
+        @test adj_sv([1.0]) ≈ adj_tuple([1.0])
+
+        # In-place
+        fb_sv = zeros(nx, ny)
+        fb_tu = zeros(nx, ny)
+        adj_sv(fb_sv, 1.0)
+        adj_tuple(fb_tu, 1.0)
+        @test fb_sv ≈ fb_tu
+    end
+
+    @testset "Vector{SVector} — batch queries (N=2)" begin
+        queries_sv = [SVector(xq[k], yq[k]) for k in 1:n_q]
+
+        adj_aos = linear_adjoint(grids_2d, queries_sv)
+
+        # Allocating — must match SoA reference
+        @test adj_aos(y_bar_2d) ≈ ref_alloc
+
+        # In-place
+        fb_aos = zeros(nx, ny)
+        fb_soa = zeros(nx, ny)
+        adj_aos(fb_aos, y_bar_2d)
+        adj_soa(fb_soa, y_bar_2d)
+        @test fb_aos ≈ fb_soa
+    end
+
+    @testset "Vector{SVector} — dot-product identity (N=2)" begin
+        queries_sv = [SVector(xq[k], yq[k]) for k in 1:n_q]
+        adj = linear_adjoint(grids_2d, queries_sv)
+
+        itp = linear_interp(grids_2d, f_2d)
+
+        Wf = Vector{Float64}(undef, n_q)
+        itp(Wf, (xq, yq))
+
+        WTy = adj(y_bar_2d)
+        @test dot(Wf, y_bar_2d) ≈ dot(vec(f_2d), vec(WTy)) rtol = sqrt(eps())
+    end
+
+    @testset "Scalar SVector with deriv (N=2)" begin
+        pt = SVector(0.5, 1.0)
+        adj_sv = linear_adjoint(grids_2d, pt)
+        adj_tuple = linear_adjoint(grids_2d, (0.5, 1.0))
+
+        for op in (DerivOp(1, 0), DerivOp(0, 1), DerivOp(1, 1))
+            @test adj_sv(1.0; deriv = op) ≈ adj_tuple(1.0; deriv = op)
+        end
+    end
+
+    # ── N=3 setup ──
+    @testset "SVector queries (N=3)" begin
+        nx3, ny3, nz3 = 8, 7, 6
+        x3 = range(0.0, 1.0, nx3)
+        y3 = range(0.0, 1.0, ny3)
+        z3 = range(0.0, 1.0, nz3)
+        grids_3d = (x3, y3, z3)
+
+        nq3 = 10
+        xq3 = sort(rand(nq3)) .* 0.9 .+ 0.05
+        yq3 = sort(rand(nq3)) .* 0.9 .+ 0.05
+        zq3 = sort(rand(nq3)) .* 0.9 .+ 0.05
+        ybar3 = randn(nq3)
+
+        adj_soa3 = linear_adjoint(grids_3d, (xq3, yq3, zq3))
+
+        @testset "Scalar SVector (N=3)" begin
+            pt3 = SVector(0.5, 0.5, 0.5)
+            adj_sv3 = linear_adjoint(grids_3d, pt3)
+            adj_tu3 = linear_adjoint(grids_3d, (0.5, 0.5, 0.5))
+            @test adj_sv3(1.0) ≈ adj_tu3(1.0)
+        end
+
+        @testset "Vector{SVector} batch (N=3)" begin
+            queries_sv3 = [SVector(xq3[k], yq3[k], zq3[k]) for k in 1:nq3]
+            adj_aos3 = linear_adjoint(grids_3d, queries_sv3)
+            @test adj_aos3(ybar3) ≈ adj_soa3(ybar3)
+
+            # In-place
+            fb_aos3 = zeros(nx3, ny3, nz3)
+            fb_soa3 = zeros(nx3, ny3, nz3)
+            adj_aos3(fb_aos3, ybar3)
+            adj_soa3(fb_soa3, ybar3)
+            @test fb_aos3 ≈ fb_soa3
+        end
+    end
+
+    @testset "SVector query OOB" begin
+        gx = range(0.0, 1.0, 5)
+        gy = range(0.0, 1.0, 5)
+        @test_throws DomainError linear_adjoint((gx, gy), SVector(-0.1, 0.5))
+        @test_throws DomainError linear_adjoint((gx, gy), SVector(1.0, 1.1))
+    end
+end
+
+# ========================================
+# Duck-typed y_bar (multi-query)
+# ========================================
+@testset "LinearAdjointND — duck-typed y_bar" begin
+    gx = collect(range(0.0, 2.0, 5))
+    gy = collect(range(0.0, 1.0, 5))
+    adj = linear_adjoint((gx, gy), ([0.5, 1.0], [0.3, 0.7]))
+
+    @testset "Mixed-precision (Float32 y_bar → Float64 adjoint)" begin
+        fb64 = adj(Float64[1.0, 2.0])
+        fb_mixed = adj(Float32[1.0f0, 2.0f0])
+        @test fb64 ≈ fb_mixed
+
+        # In-place
+        fb_ip = zeros(5, 5)
+        adj(fb_ip, Float32[1.0f0, 2.0f0])
+        @test fb_ip ≈ fb64
+    end
+
+    @testset "Integer y_bar (multi-query)" begin
+        fb_float = adj([1.0, 2.0])
+        fb_int = adj([1, 2])
+        @test fb_float ≈ fb_int
     end
 end

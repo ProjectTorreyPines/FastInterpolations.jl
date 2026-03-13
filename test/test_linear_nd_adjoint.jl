@@ -589,4 +589,47 @@ end
         @test_throws ArgumentError linear_adjoint(([0.0], [0.0, 1.0]), ([0.0], [0.5]))
         @test_throws ArgumentError linear_adjoint(([0.0, 1.0], [0.0]), ([0.5], [0.0]))
     end
+
+    # ── P1 fix: ND NoExtrap domain validation ──
+
+    @testset "NoExtrap — OOB throws DomainError (SoA queries)" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        # x-axis OOB below
+        @test_throws DomainError linear_adjoint((gx, gy), ([-0.1, 0.5], [0.5, 0.5]))
+        # x-axis OOB above
+        @test_throws DomainError linear_adjoint((gx, gy), ([0.5, 2.1], [0.5, 0.5]))
+        # y-axis OOB
+        @test_throws DomainError linear_adjoint((gx, gy), ([0.5, 1.0], [0.5, 1.1]))
+    end
+
+    @testset "NoExtrap — OOB throws DomainError (SVector query)" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        @test_throws DomainError linear_adjoint((gx, gy), SVector(-0.1, 0.5))
+        @test_throws DomainError linear_adjoint((gx, gy), SVector(0.5, 1.1))
+    end
+
+    # ── P2 fix: duck-typed yb in scatter ──
+
+    @testset "Mixed-precision y_bar (Float32 y_bar → Float64 adjoint)" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([0.5], [0.5]))
+        # Float32 y_bar into Float64 adjoint — should not error
+        fb = adj(Float32[1.0])
+        @test fb ≈ [0.25 0.25; 0.25 0.25; 0.0 0.0]
+        # In-place with Float64 buffer, Float32 y_bar
+        fb_ip = zeros(3, 2)
+        adj(fb_ip, Float32[1.0])
+        @test fb_ip ≈ [0.25 0.25; 0.25 0.25; 0.0 0.0]
+    end
+
+    @testset "Integer y_bar" begin
+        gx = [0.0, 1.0, 2.0]
+        gy = [0.0, 1.0]
+        adj = linear_adjoint((gx, gy), ([0.5], [0.5]))
+        fb = adj([1])  # Int y_bar
+        @test fb ≈ [0.25 0.25; 0.25 0.25; 0.0 0.0]
+    end
 end

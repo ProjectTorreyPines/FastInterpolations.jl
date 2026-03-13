@@ -1451,3 +1451,51 @@ end
         end
     end
 end
+
+# ========================================
+# P1/P2 fix regression tests
+# ========================================
+
+@testset "CubicAdjointND — NoExtrap OOB DomainError" begin
+    gx = collect(range(0.0, 2.0, 5))
+    gy = collect(range(0.0, 1.0, 5))
+
+    @testset "SoA queries — x OOB" begin
+        @test_throws DomainError cubic_adjoint((gx, gy), ([-0.1, 1.0], [0.5, 0.5]))
+        @test_throws DomainError cubic_adjoint((gx, gy), ([1.0, 2.1], [0.5, 0.5]))
+    end
+
+    @testset "SoA queries — y OOB" begin
+        @test_throws DomainError cubic_adjoint((gx, gy), ([1.0, 1.0], [-0.1, 0.5]))
+        @test_throws DomainError cubic_adjoint((gx, gy), ([1.0, 1.0], [0.5, 1.1]))
+    end
+
+    @testset "SVector query OOB" begin
+        @test_throws DomainError cubic_adjoint((gx, gy), SVector(-0.1, 0.5))
+        @test_throws DomainError cubic_adjoint((gx, gy), SVector(1.0, 1.1))
+    end
+end
+
+@testset "CubicAdjointND — duck-typed y_bar" begin
+    gx = collect(range(0.0, 2.0, 5))
+    gy = collect(range(0.0, 1.0, 5))
+    f = randn(5, 5)
+    adj = cubic_adjoint((gx, gy), ([0.5, 1.0], [0.3, 0.7]))
+
+    @testset "Mixed-precision (Float32 y_bar → Float64 adjoint)" begin
+        fb64 = adj(Float64[1.0, 2.0])
+        fb_mixed = adj(Float32[1.0f0, 2.0f0])
+        @test fb64 ≈ fb_mixed
+
+        # In-place
+        fb_ip = zeros(5, 5)
+        adj(fb_ip, Float32[1.0f0, 2.0f0])
+        @test fb_ip ≈ fb64
+    end
+
+    @testset "Integer y_bar" begin
+        fb_float = adj([1.0, 2.0])
+        fb_int = adj([1, 2])
+        @test fb_float ≈ fb_int
+    end
+end

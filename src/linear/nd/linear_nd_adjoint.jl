@@ -262,31 +262,4 @@ function _build_linear_nd_adjoint(
     )
 end
 
-# ========================================
-# Matrix Materialization
-# ========================================
-
-"""
-    Matrix(adj::LinearAdjointND{Tg, N}; deriv=EvalValue()) -> Matrix
-
-Materialize the ND adjoint operator as a dense matrix `Wᵀ` of size
-`(prod(grid_sizes), n_query)`.
-"""
-function Base.Matrix(
-        adj::LinearAdjointND{Tg, N};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
-    ) where {Tg, N}
-    out_size = _adjoint_output_size(adj)
-    n_out = prod(out_size)
-    n_query = _n_queries(adj)
-    W_T = zeros(Tg, n_out, n_query)
-    e_q = zeros(Tg, n_query)
-    f_bar = zeros(Tg, out_size...)
-    @inbounds for q in 1:n_query
-        e_q[q] = one(Tg)
-        adj(f_bar, e_q; deriv = deriv)
-        W_T[:, q] .= vec(f_bar)
-        e_q[q] = zero(Tg)
-    end
-    return W_T
-end
+# Matrix materialization inherited from AbstractAdjointND (nd_adjoint_protocol.jl)

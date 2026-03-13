@@ -58,81 +58,16 @@ struct LinearAdjoint{Tg <: AbstractFloat, EP <: AbstractExtrap} <: AbstractAdjoi
 end
 
 # ========================================
-# Size / Introspection
+# 1D Adjoint Protocol Accessors
 # ========================================
+# Callables (6 overloads), Base.size, and Base.Matrix are inherited
+# from AbstractAdjoint via src/core/adjoint_protocol.jl.
 
-Base.size(adj::LinearAdjoint) = (adj.grid_size, length(adj.anchors))
-Base.size(adj::LinearAdjoint, d::Integer) = size(adj)[d]
+@inline _n_queries(adj::LinearAdjoint) = length(adj.anchors)
+@inline _adjoint_output_length(adj::LinearAdjoint) = adj.grid_size
 
-# ========================================
-# Callable Methods
-# ========================================
-
-"""
-    (adj::LinearAdjoint)(y_bar; deriv=EvalValue()) -> f_bar
-
-Apply the adjoint operator: `f̄ = W_dᵀȳ`. Allocating version.
-
-The `deriv` keyword selects which forward operator's adjoint to compute:
-- `EvalValue()` (default): adjoint of value interpolation
-- `EvalDeriv1()` / `DerivOp(1)`: adjoint of first derivative
-- `EvalDeriv2()`/`EvalDeriv3()`: always returns zero vector (linear has no 2nd+ derivative)
-"""
-function (adj::LinearAdjoint{Tg})(y_bar::AbstractVector; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
-    length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
-    Tv = promote_type(eltype(y_bar), Tg)
-    f_bar = zeros(Tv, adj.grid_size)
+@inline _adjoint_1d_apply!(f_bar, adj::LinearAdjoint, y_bar, deriv) =
     _linear_adjoint_apply!(f_bar, adj, y_bar, deriv)
-    return f_bar
-end
-
-"""
-    (adj::LinearAdjoint)(f_bar, y_bar; deriv=EvalValue()) -> f_bar
-
-Apply the adjoint operator in-place: `f̄ = W_dᵀȳ`.
-Zeros `f_bar` before accumulating. See allocating version for `deriv` options.
-"""
-function (adj::LinearAdjoint{Tg})(f_bar::AbstractVector, y_bar::AbstractVector; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
-    length(f_bar) == adj.grid_size || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), adj.grid_size)
-    length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
-    fill!(f_bar, zero(eltype(f_bar)))
-    _linear_adjoint_apply!(f_bar, adj, y_bar, deriv)
-    return f_bar
-end
-
-# ── Scalar / Tuple callables ─────────────────────────────────────────────
-
-function (adj::LinearAdjoint{Tg})(y_bar::Real; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
-    length(adj.anchors) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, length(adj.anchors))
-    Tv = promote_type(typeof(y_bar), Tg)
-    f_bar = zeros(Tv, adj.grid_size)
-    _linear_adjoint_apply!(f_bar, adj, (y_bar,), deriv)
-    return f_bar
-end
-
-function (adj::LinearAdjoint{Tg})(y_bar::Tuple{Vararg{Real}}; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
-    length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
-    Tv = promote_type(eltype(y_bar), Tg)
-    f_bar = zeros(Tv, adj.grid_size)
-    _linear_adjoint_apply!(f_bar, adj, y_bar, deriv)
-    return f_bar
-end
-
-function (adj::LinearAdjoint{Tg})(f_bar::AbstractVector, y_bar::Real; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
-    length(f_bar) == adj.grid_size || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), adj.grid_size)
-    length(adj.anchors) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, length(adj.anchors))
-    fill!(f_bar, zero(eltype(f_bar)))
-    _linear_adjoint_apply!(f_bar, adj, (y_bar,), deriv)
-    return f_bar
-end
-
-function (adj::LinearAdjoint{Tg})(f_bar::AbstractVector, y_bar::Tuple{Vararg{Real}}; deriv::DerivOp = EvalValue(), _extra...) where {Tg}
-    length(f_bar) == adj.grid_size || _throw_adjoint_dim_mismatch("f_bar", length(f_bar), adj.grid_size)
-    length(y_bar) == length(adj.anchors) || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), length(adj.anchors))
-    fill!(f_bar, zero(eltype(f_bar)))
-    _linear_adjoint_apply!(f_bar, adj, y_bar, deriv)
-    return f_bar
-end
 
 # ========================================
 # Core Apply Function
@@ -350,33 +285,4 @@ function linear_adjoint(
     return linear_adjoint(x, [x_query]; extrap = extrap)
 end
 
-# ========================================
-# Matrix Materialization
-# ========================================
-
-"""
-    Matrix(adj::LinearAdjoint; deriv=EvalValue()) -> Matrix{Tg}
-
-Materialize the adjoint as a dense matrix `Wᵀ` of size `(n_grid, n_query)`.
-
-# Example
-```julia
-adj = linear_adjoint(x, xq)
-Wᵀ = Matrix(adj)                          # (n_grid × n_query)
-W  = Matrix(adj)'                          # (n_query × n_grid)
-
-@assert Wᵀ * y_bar ≈ adj(y_bar)           # matrix-vector == operator
-@assert W * f ≈ itp.(xq)                  # forward matrix works too
-```
-"""
-function Base.Matrix(adj::LinearAdjoint{Tg}; deriv::DerivOp = EvalValue()) where {Tg}
-    n_out, n_query = size(adj)
-    W_T = zeros(Tg, n_out, n_query)
-    e_q = zeros(Tg, n_query)
-    @inbounds for q in 1:n_query
-        e_q[q] = one(Tg)
-        adj(view(W_T, :, q), e_q; deriv = deriv)
-        e_q[q] = zero(Tg)
-    end
-    return W_T
-end
+# Matrix materialization inherited from AbstractAdjoint (adjoint_protocol.jl)

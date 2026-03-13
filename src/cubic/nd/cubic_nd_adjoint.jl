@@ -724,47 +724,4 @@ function _build_nd_adjoint(
     )
 end
 
-# ========================================
-# Matrix Materialization
-# ========================================
-
-"""
-    Matrix(adj::CubicAdjointND{Tg, N}; deriv=EvalValue()) -> Matrix
-
-Materialize the ND adjoint operator as a dense matrix `Wᵀ` of size
-`(prod(output_grid_sizes), n_query)`.
-
-Each column `q` of `Wᵀ` is computed by probing with a unit vector `eₑ`:
-`Wᵀ[:, q] = vec(adj(eₑ))`, i.e., the grid-space sensitivity when only query
-point `q` has unit sensitivity.
-
-This is an O(n_grid × n_query) operation intended for debugging and verification,
-not for production use.
-
-# Example
-```julia
-adj = cubic_adjoint((x, y), (xq, yq); bc=CubicFit())
-Wᵀ = Matrix(adj)                          # (n_grid × n_query)
-W  = Matrix(adj)'                          # (n_query × n_grid)
-
-@assert Wᵀ * y_bar ≈ vec(adj(y_bar))     # matrix-vector == operator
-```
-"""
-@with_pool pool function Base.Matrix(
-        adj::CubicAdjointND{Tg, N};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, N}}} = EvalValue()
-    ) where {Tg, N}
-    out_size = _adjoint_output_size(adj)
-    n_out = prod(out_size)
-    n_query = _n_queries(adj)
-    W_T = zeros(Tg, n_out, n_query)
-    e_q = zeros!(pool, Tg, n_query)
-    f_bar = zeros!(pool, Tg, out_size...)
-    @inbounds for q in 1:n_query
-        e_q[q] = one(Tg)
-        adj(f_bar, e_q; deriv = deriv)
-        W_T[:, q] .= vec(f_bar)
-        e_q[q] = zero(Tg)
-    end
-    return W_T
-end
+# Matrix materialization inherited from AbstractAdjointND (nd_adjoint_protocol.jl)

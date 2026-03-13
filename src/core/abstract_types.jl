@@ -128,8 +128,20 @@ to any value vector `ȳ` regardless of its element type.
 Note: Only `Tg` is needed (no `Tv`) because adjoint operators are value-type independent.
 The same operator works for Float64, ComplexF64, or any custom value type.
 
+# 1D Protocol (adjoint_protocol.jl)
+Subtypes automatically inherit 6 callable overloads (Vector/Real/Tuple × alloc/in-place),
+`Base.size`, `Base.Matrix`, and exclusive periodic in-place handling by implementing:
+
+    _n_queries(adj)::Int                    — number of baked query points (required)
+    _adjoint_output_length(adj)::Int        — user-facing output length (required)
+    _adjoint_1d_apply!(f_bar, adj, y_bar, deriv)  — core scatter/solve (required)
+    _adjoint_internal_length(adj)::Int      — alloc size (default: output length)
+    _adjoint_1d_has_exclusive_periodic(adj)::Bool  — (default: false)
+    _adjoint_1d_finalize(f_bar, adj)        — fold+truncate (default: identity)
+
 # Subtypes
-- `CubicAdjoint{Tg, ...}`: Adjoint of cubic spline interpolation (1D)
+- `LinearAdjoint{Tg, EP}`: Adjoint of linear interpolation (1D, pure scatter)
+- `CubicAdjoint{Tg, C, BC}`: Adjoint of cubic spline interpolation (1D)
 """
 abstract type AbstractAdjoint{Tg <: AbstractFloat} end
 

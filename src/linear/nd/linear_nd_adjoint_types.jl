@@ -88,8 +88,9 @@ end
 @inline _n_queries(adj::LinearAdjointND) = length(adj.anchors)
 @inline _grid_size(adj::LinearAdjointND) = adj.grid_size
 
-# Linear has no periodic BCs — return dummy non-periodic tuple
-# (protocol never hits periodic path for linear)
+# Linear has no periodic BCs — return non-periodic sentinel tuple.
+# The ND protocol checks `bcs[d] isa PeriodicBC{:exclusive}` for output sizing
+# and periodic finalization. NoExtrap() never matches, so all axes are non-periodic.
 @inline _adjoint_bcs(adj::LinearAdjointND{Tg, N}) where {Tg, N} =
     ntuple(_ -> NoExtrap(), Val(N))
 
@@ -107,10 +108,3 @@ function Base.size(adj::LinearAdjointND{Tg, N}) where {Tg, N}
 end
 Base.size(adj::LinearAdjointND, d::Integer) = size(adj)[d]
 
-# ========================================
-# Deriv zero-fill trait
-# ========================================
-
-# Linear has zero 2nd+ derivative — same check as forward eval
-@inline _deriv_zero_fill(::LinearAdjointND, ops::NTuple{N, AbstractEvalOp}, ::Val{N}) where {N} =
-    _has_second_or_higher_derivative(ops, Val(N))

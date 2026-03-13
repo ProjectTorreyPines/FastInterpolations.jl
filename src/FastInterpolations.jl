@@ -30,7 +30,7 @@ include("integral/integral.jl")
 include("coeffs.jl")
 
 # Exports
-export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjointND
+export AbstractInterpolant, AbstractSeriesInterpolant, AbstractInterpolantND, AbstractAdjoint, AbstractAdjoint1D, AbstractAdjointND
 export Series
 export grid_type, value_type, eval_type  # Type introspection for {Tg, Tv} system
 export linear_interp, linear_interp!, LinearInterpolant, LinearSeriesInterpolant, LinearInterpolantND

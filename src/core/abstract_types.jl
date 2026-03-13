@@ -140,10 +140,32 @@ Subtypes automatically inherit 6 callable overloads (Vector/Real/Tuple × alloc/
     _adjoint_1d_finalize(f_bar, adj)        — fold+truncate (default: identity)
 
 # Subtypes
+- [`AbstractAdjoint1D`](@ref): 1D adjoint operators
+- [`AbstractAdjointND`](@ref): N-dimensional adjoint operators
+"""
+abstract type AbstractAdjoint{Tg <: AbstractFloat} end
+
+"""
+    AbstractAdjoint1D{Tg<:AbstractFloat} <: AbstractAdjoint{Tg}
+
+Abstract supertype for 1-dimensional adjoint operators.
+
+Subtypes automatically inherit 6 callable overloads (Vector/Real/Tuple × alloc/in-place),
+`Base.size`, `Base.Matrix`, and exclusive periodic in-place handling from
+`adjoint_protocol.jl` by implementing the required interface:
+
+    _n_queries(adj)::Int                    — number of baked query points (required)
+    _adjoint_output_length(adj)::Int        — user-facing output length (required)
+    _adjoint_1d_apply!(f_bar, adj, y_bar, deriv)  — core scatter/solve (required)
+    _adjoint_internal_length(adj)::Int      — alloc size (default: output length)
+    _adjoint_1d_has_exclusive_periodic(adj)::Bool  — (default: false)
+    _adjoint_1d_finalize(f_bar, adj)        — fold+truncate (default: identity)
+
+# Subtypes
 - `LinearAdjoint{Tg, EP}`: Adjoint of linear interpolation (1D, pure scatter)
 - `CubicAdjoint{Tg, C, BC}`: Adjoint of cubic spline interpolation (1D)
 """
-abstract type AbstractAdjoint{Tg <: AbstractFloat} end
+abstract type AbstractAdjoint1D{Tg <: AbstractFloat} <: AbstractAdjoint{Tg} end
 
 """
     AbstractAdjointND{Tg<:AbstractFloat, N} <: AbstractAdjoint{Tg}
@@ -160,6 +182,7 @@ Subtypes automatically inherit shared callable dispatch from `nd_adjoint_protoco
 
 # Subtypes
 - `CubicAdjointND{Tg, N, ...}`: Adjoint of cubic spline interpolation (ND)
+- `LinearAdjointND{Tg, N, ...}`: Adjoint of linear interpolation (ND)
 """
 abstract type AbstractAdjointND{Tg <: AbstractFloat, N} <: AbstractAdjoint{Tg} end
 

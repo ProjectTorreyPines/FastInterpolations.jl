@@ -96,7 +96,7 @@ Here `A` is the tridiagonal moment matrix, `R` the finite-difference RHS operato
 PolyFit stencil coefficients and periodic `q_transpose = A'^{-T}u` are computed on the
 fly at each `adj(ȳ)` call (O(D) and O(n) respectively, negligible vs overall pipeline).
 """
-struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}} <: AbstractAdjoint{Tg}
+struct CubicAdjoint{Tg <: AbstractFloat, C <: CubicSplineCache{Tg}, BC <: Union{BCPair, PeriodicBC}} <: AbstractAdjoint1D{Tg}
     cache::C
     anchors::Vector{_CubicAnchoredQuery{Tg, Tg}}
     bc::BC
@@ -106,7 +106,7 @@ end
 # 1D Adjoint Protocol Accessors
 # ========================================
 # Callables (6 overloads), Base.size, Base.Matrix, and exclusive periodic
-# in-place are inherited from AbstractAdjoint via src/core/adjoint_protocol.jl.
+# in-place are inherited from AbstractAdjoint1D via src/core/adjoint_protocol.jl.
 
 @inline _adjoint_output_length(adj::CubicAdjoint) =
     adj.bc isa PeriodicBC{:exclusive} ? length(adj.cache.x) - 1 : length(adj.cache.x)

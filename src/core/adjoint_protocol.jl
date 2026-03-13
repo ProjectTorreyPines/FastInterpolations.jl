@@ -2,7 +2,7 @@
 # Shared 1D Adjoint Callable Interface
 # ========================================
 #
-# All 1D adjoint callables defined once on AbstractAdjoint.
+# All 1D adjoint callables defined once on AbstractAdjoint1D.
 # Per-type adjoint files only need: _adjoint_1d_apply! and accessors.
 #
 # Subtypes must implement:
@@ -20,20 +20,20 @@
 
 # ── Defaults (non-periodic types inherit these as-is) ──
 
-@inline _adjoint_internal_length(adj::AbstractAdjoint) = _adjoint_output_length(adj)
-@inline _adjoint_1d_has_exclusive_periodic(::AbstractAdjoint) = false
-@inline _adjoint_1d_finalize(f_bar::AbstractVector, ::AbstractAdjoint) = f_bar
+@inline _adjoint_internal_length(adj::AbstractAdjoint1D) = _adjoint_output_length(adj)
+@inline _adjoint_1d_has_exclusive_periodic(::AbstractAdjoint1D) = false
+@inline _adjoint_1d_finalize(f_bar::AbstractVector, ::AbstractAdjoint1D) = f_bar
 
 # ── Size / Introspection ──
 
-Base.size(adj::AbstractAdjoint) = (_adjoint_output_length(adj), _n_queries(adj))
-Base.size(adj::AbstractAdjoint, d::Integer) = size(adj)[d]
+Base.size(adj::AbstractAdjoint1D) = (_adjoint_output_length(adj), _n_queries(adj))
+Base.size(adj::AbstractAdjoint1D, d::Integer) = size(adj)[d]
 
 # ========================================
 # Allocating Callables
 # ========================================
 
-function (adj::AbstractAdjoint{Tg})(
+function (adj::AbstractAdjoint1D{Tg})(
         y_bar::AbstractVector; deriv::DerivOp = EvalValue(), _extra...
     ) where {Tg}
     nq = _n_queries(adj)
@@ -44,7 +44,7 @@ function (adj::AbstractAdjoint{Tg})(
     return _adjoint_1d_finalize(f_bar, adj)
 end
 
-function (adj::AbstractAdjoint{Tg})(
+function (adj::AbstractAdjoint1D{Tg})(
         y_bar::Real; deriv::DerivOp = EvalValue(), _extra...
     ) where {Tg}
     _n_queries(adj) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, _n_queries(adj))
@@ -54,7 +54,7 @@ function (adj::AbstractAdjoint{Tg})(
     return _adjoint_1d_finalize(f_bar, adj)
 end
 
-function (adj::AbstractAdjoint{Tg})(
+function (adj::AbstractAdjoint1D{Tg})(
         y_bar::Tuple{Vararg{Real}}; deriv::DerivOp = EvalValue(), _extra...
     ) where {Tg}
     nq = _n_queries(adj)
@@ -69,7 +69,7 @@ end
 # In-Place Callables
 # ========================================
 
-function (adj::AbstractAdjoint{Tg})(
+function (adj::AbstractAdjoint1D{Tg})(
         f_bar::AbstractVector, y_bar::AbstractVector;
         deriv::DerivOp = EvalValue(), _extra...
     ) where {Tg}
@@ -86,7 +86,7 @@ function (adj::AbstractAdjoint{Tg})(
     return f_bar
 end
 
-function (adj::AbstractAdjoint{Tg})(
+function (adj::AbstractAdjoint1D{Tg})(
         f_bar::AbstractVector, y_bar::Real;
         deriv::DerivOp = EvalValue(), _extra...
     ) where {Tg}
@@ -102,7 +102,7 @@ function (adj::AbstractAdjoint{Tg})(
     return f_bar
 end
 
-function (adj::AbstractAdjoint{Tg})(
+function (adj::AbstractAdjoint1D{Tg})(
         f_bar::AbstractVector, y_bar::Tuple{Vararg{Real}};
         deriv::DerivOp = EvalValue(), _extra...
     ) where {Tg}
@@ -125,10 +125,10 @@ end
 #
 # Generic default: allocates a pool work buffer at internal length,
 # runs core apply, folds endpoint, copies to user f_bar.
-# Works for any AbstractAdjoint with exclusive periodic BC.
+# Works for any AbstractAdjoint1D with exclusive periodic BC.
 
 @with_pool pool function _adjoint_1d_apply_exclusive_inplace!(
-        f_bar::AbstractVector{Tv}, adj::AbstractAdjoint, y_bar, deriv::DerivOp
+        f_bar::AbstractVector{Tv}, adj::AbstractAdjoint1D, y_bar, deriv::DerivOp
     ) where {Tv}
     n_internal = _adjoint_internal_length(adj)
     f_work = zeros!(pool, Tv, n_internal)
@@ -146,7 +146,7 @@ end
 # ========================================
 
 """
-    Matrix(adj::AbstractAdjoint; deriv=EvalValue()) -> Matrix
+    Matrix(adj::AbstractAdjoint1D; deriv=EvalValue()) -> Matrix
 
 Materialize the 1D adjoint as a dense matrix `Wᵀ` of size `(n_grid, n_query)`.
 
@@ -167,7 +167,7 @@ W  = Matrix(adj)'                          # (n_query × n_grid)
 @assert W * f ≈ itp.(xq)                  # forward matrix works too
 ```
 """
-@with_pool pool function Base.Matrix(adj::AbstractAdjoint{Tg}; deriv::DerivOp = EvalValue()) where {Tg}
+@with_pool pool function Base.Matrix(adj::AbstractAdjoint1D{Tg}; deriv::DerivOp = EvalValue()) where {Tg}
     n_out, n_query = size(adj)
     W_T = zeros(Tg, n_out, n_query)
     e_q = zeros!(pool, Tg, n_query)

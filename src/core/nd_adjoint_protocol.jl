@@ -122,6 +122,9 @@ end
 # ========================================
 #
 # All ND adjoint callables defined once on AbstractAdjointND.
+# No N=1 disambiguators needed: AbstractAdjoint1D and AbstractAdjointND are
+# sibling types under AbstractAdjoint, so their callables never overlap.
+#
 # Per-type adjoint files only need: _adjoint_nd_apply! and accessors.
 #
 # Subtypes must implement:
@@ -231,71 +234,6 @@ function (adj::AbstractAdjointND{Tg, N})(
         _extra...
     ) where {Tg, Tv, N}
     ops = _resolve_deriv_nd(deriv, Val(N))
-    out_size = _adjoint_output_size(adj)
-    size(f_bar) == out_size || _throw_adjoint_size_mismatch(size(f_bar), out_size)
-    nq = _n_queries(adj)
-    length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    if _has_exclusive_periodic(_adjoint_bcs(adj))
-        _adjoint_apply_exclusive_nd!(f_bar, adj, y_bar, ops)
-    else
-        fill!(f_bar, zero(Tv))
-        _adjoint_nd_apply!(f_bar, adj, y_bar, ops)
-    end
-    return f_bar
-end
-
-# ========================================
-# N=1 Disambiguators (AbstractAdjoint 1D ↔ AbstractAdjointND ND)
-# ========================================
-#
-# When N=1, AbstractAdjointND{Tg,1} <: AbstractAdjoint{Tg} and
-# AbstractVector ∩ AbstractArray{Tv,1} create method ambiguity
-# for the 3 in-place callables. These methods resolve it by
-# delegating to the ND protocol (correct for all ND types).
-
-function (adj::AbstractAdjointND{Tg, 1})(
-        f_bar::AbstractVector{Tv}, y_bar::AbstractVector;
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, 1}}} = EvalValue(),
-        _extra...
-    ) where {Tg, Tv}
-    ops = _resolve_deriv_nd(deriv, Val(1))
-    out_size = _adjoint_output_size(adj)
-    size(f_bar) == out_size || _throw_adjoint_size_mismatch(size(f_bar), out_size)
-    nq = _n_queries(adj)
-    length(y_bar) == nq || _throw_adjoint_dim_mismatch("y_bar", length(y_bar), nq)
-    if _has_exclusive_periodic(_adjoint_bcs(adj))
-        _adjoint_apply_exclusive_nd!(f_bar, adj, y_bar, ops)
-    else
-        fill!(f_bar, zero(Tv))
-        _adjoint_nd_apply!(f_bar, adj, y_bar, ops)
-    end
-    return f_bar
-end
-
-function (adj::AbstractAdjointND{Tg, 1})(
-        f_bar::AbstractVector{Tv}, y_bar::Real;
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, 1}}} = EvalValue(),
-        _extra...
-    ) where {Tg, Tv}
-    ops = _resolve_deriv_nd(deriv, Val(1))
-    out_size = _adjoint_output_size(adj)
-    size(f_bar) == out_size || _throw_adjoint_size_mismatch(size(f_bar), out_size)
-    _n_queries(adj) == 1 || _throw_adjoint_dim_mismatch("y_bar", 1, _n_queries(adj))
-    if _has_exclusive_periodic(_adjoint_bcs(adj))
-        _adjoint_apply_exclusive_nd!(f_bar, adj, y_bar, ops)
-    else
-        fill!(f_bar, zero(Tv))
-        _adjoint_nd_apply!(f_bar, adj, y_bar, ops)
-    end
-    return f_bar
-end
-
-function (adj::AbstractAdjointND{Tg, 1})(
-        f_bar::AbstractVector{Tv}, y_bar::Tuple{Vararg{Real}};
-        deriv::Union{DerivOp, Tuple{Vararg{DerivOp, 1}}} = EvalValue(),
-        _extra...
-    ) where {Tg, Tv}
-    ops = _resolve_deriv_nd(deriv, Val(1))
     out_size = _adjoint_output_size(adj)
     size(f_bar) == out_size || _throw_adjoint_size_mismatch(size(f_bar), out_size)
     nq = _n_queries(adj)

@@ -51,7 +51,7 @@ itp = linear_interp(x, f)
 @assert dot(itp.(xq), y_bar) ≈ dot(f, adj(y_bar))
 ```
 """
-struct LinearAdjoint{Tg <: AbstractFloat, EP <: AbstractExtrap} <: AbstractAdjoint{Tg}
+struct LinearAdjoint{Tg <: AbstractFloat, EP <: AbstractExtrap} <: AbstractAdjoint1D{Tg}
     anchors::Vector{_LinearAnchoredQuery{Tg, Tg}}
     grid_size::Int
     extrap::EP

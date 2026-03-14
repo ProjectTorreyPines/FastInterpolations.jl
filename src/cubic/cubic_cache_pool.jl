@@ -340,21 +340,27 @@ end
 """
 Get or create a derivative BC cache bank for the given (T, L, R, X, S) combination.
 Type-Free design: L, R are PointBC subtypes without type parameter constraint.
+Accepts Type{X} to avoid needing an instance (eliminates collect() for views).
 """
-@inline function _get_derivative_bank(::X, ::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}}
+@inline function _get_derivative_bank(::Type{X}, ::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}}
     S = _spacing_type(X)
     EntryType = CacheEntry{T, L, R, X, S}
     return _get_bank(_DERIVATIVE_REGISTRY, CacheBank{EntryType})
 end
+# Instance convenience: forward to Type dispatch (used by tests / external callers)
+@inline _get_derivative_bank(x::AbstractVector, bc::BCPair) = _get_derivative_bank(typeof(x), bc)
 
 """
 Get or create a periodic BC cache bank for the given (T, X, S) combination.
+Accepts Type{X} to avoid needing an instance (eliminates collect() for views).
 """
-@inline function _get_periodic_bank(::X) where {T <: AbstractFloat, X <: AbstractVector{T}}
+@inline function _get_periodic_bank(::Type{X}) where {T <: AbstractFloat, X <: AbstractVector{T}}
     S = _spacing_type(X)
     EntryType = PeriodicCacheEntry{T, X, S}
     return _get_bank(_PERIODIC_REGISTRY, CacheBank{EntryType})
 end
+# Instance convenience: forward to Type dispatch
+@inline _get_periodic_bank(x::AbstractVector) = _get_periodic_bank(typeof(x))
 
 # ===============================================================
 # Internal: RCU Lookup (Lock-Free Read Path)
@@ -413,13 +419,14 @@ end
 # ---------------------------------------------------------------
 
 # Build cache for derivative BC entry
-# Type-Free design: L, R are PointBC subtypes without type parameter constraint
-@inline function _build_cache(::Type{<:CacheEntry{T, L, R, X}}, x::X, bc::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC, X <: AbstractVector{T}}
+# Accepts AbstractVector (not x::X) so views can be passed directly;
+# CubicSplineCache inner constructor handles copy() → Vector.
+@inline function _build_cache(::Type{<:CacheEntry{T, L, R}}, x::AbstractVector{T}, bc::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
     return _build_derivative_bc_cache(x, bc.left, bc.right)
 end
 
 # Build cache for periodic BC entry
-@inline function _build_cache(::Type{<:PeriodicCacheEntry{T, X}}, x::X, ::Nothing) where {T <: AbstractFloat, X <: AbstractVector{T}}
+@inline function _build_cache(::Type{<:PeriodicCacheEntry{T}}, x::AbstractVector{T}, ::Nothing) where {T <: AbstractFloat}
     return _build_periodic_cache(x)
 end
 
@@ -454,14 +461,11 @@ Core lookup/insert logic for CacheBank{E} using RCU pattern.
         found = _rcu_lookup(snap, id, x)
         found !== nothing && return found
 
-        # Create snapshot of x to prevent external mutation from corrupting cache.
-        # - Vector: copy to break aliasing (user can mutate original, snapshot is safe)
-        # - AbstractRange: immutable in Julia, no copy needed (O(1) storage)
-        snapshot_x = x isa Vector ? copy(x) : x
-
-        # Build new cache using snapshot (ensures cache.x === snapshot_x)
-        new_cache = _build_cache(E, snapshot_x, bc_config)
-        new_entry = E(id, snapshot_x, new_cache)
+        # Build cache — CubicSplineCache inner constructor handles copy(x)
+        # for mutation safety, so no pre-copy needed here.
+        new_cache = _build_cache(E, x, bc_config)
+        # Use new_cache.x as entry snapshot: same owned copy, zero duplication.
+        new_entry = E(id, new_cache.x, new_cache)
 
         # Copy-on-write: create new snapshot with added entry
         new_store = copy(snap.store)
@@ -625,16 +629,18 @@ Internal implementation for derivative BC cache lookup.
 Type-Free design: bc_pair should already be cache-compatible (via _cache_bc_pair).
 """
 @inline function _get_derivative_cache_impl(x::AbstractVector{T}, bc_pair::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
-    x_normalized = x isa Vector ? x : collect(x)
-    bank = _get_derivative_bank(x_normalized, bc_pair)
-    return _lookup_or_insert!(bank, x_normalized, bc_pair)
+    # Bank always keyed on Vector{T} (views/SubArrays share the same bank).
+    # No collect() needed: isequal(::Vector, ::SubArray) compares element-wise,
+    # and CubicSplineCache inner constructor copies → Vector on miss.
+    bank = _get_derivative_bank(Vector{T}, bc_pair)
+    return _lookup_or_insert!(bank, x, bc_pair)
 end
 
 @inline function _get_derivative_cache_impl(x::AbstractRange{T}, bc_pair::BCPair{L, R}) where {T <: AbstractFloat, L <: PointBC, R <: PointBC}
     # Normalize to StepRangeLen for consistent cache key type.
     # LinRange and other Range types are converted (minor overhead on first call).
     x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
-    bank = _get_derivative_bank(x_normalized, bc_pair)
+    bank = _get_derivative_bank(typeof(x_normalized), bc_pair)
     return _lookup_or_insert!(bank, x_normalized, bc_pair)
 end
 
@@ -657,16 +663,15 @@ end
 Internal implementation for periodic BC cache lookup.
 """
 @inline function _get_periodic_cache_impl(x::AbstractVector{T}) where {T <: AbstractFloat}
-    x_normalized = x isa Vector ? x : collect(x)
-    bank = _get_periodic_bank(x_normalized)
-    return _lookup_or_insert!(bank, x_normalized, nothing)
+    bank = _get_periodic_bank(Vector{T})
+    return _lookup_or_insert!(bank, x, nothing)
 end
 
 @inline function _get_periodic_cache_impl(x::AbstractRange{T}) where {T <: AbstractFloat}
     # Normalize to StepRangeLen for consistent cache key type.
     # LinRange and other Range types are converted (minor overhead on first call).
     x_normalized = (x isa _StepRangeLen_F64 || x isa _StepRangeLen_F32) ? x : range(first(x), last(x), length(x))
-    bank = _get_periodic_bank(x_normalized)
+    bank = _get_periodic_bank(typeof(x_normalized))
     return _lookup_or_insert!(bank, x_normalized, nothing)
 end
 

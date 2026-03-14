@@ -17,7 +17,7 @@
 # ========================================
 # Protocol Trait Implementations
 # ========================================
-# Generic callables inherited from AbstractInterpolant1D (interpolant_1d_protocol.jl).
+# Generic callables inherited from AbstractInterpolant1D (interpolant_protocol.jl).
 # Cubic overrides _itp_grid because grid lives in itp.cache.x, not itp.x.
 
 @inline _itp_grid(itp::CubicInterpolant) = itp.cache.x

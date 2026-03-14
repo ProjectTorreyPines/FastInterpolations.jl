@@ -44,9 +44,9 @@ abstract type AbstractInterpolant{Tg <: AbstractFloat, Tv} end
 Abstract supertype for 1-dimensional interpolant objects.
 
 All four 1D interpolant types inherit from this, enabling shared callable
-dispatch via the `interpolant_1d_protocol.jl` interface.
+dispatch via the `interpolant_protocol.jl` interface.
 
-# Protocol (interpolant_1d_protocol.jl)
+# Protocol (interpolant_protocol.jl)
 Subtypes automatically inherit 3 callable overloads (scalar, vector-alloc, vector-inplace)
 by implementing the required interface:
 

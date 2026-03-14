@@ -9,7 +9,7 @@
 # ========================================
 # Protocol Trait Implementations
 # ========================================
-# Generic callables inherited from AbstractInterpolant1D (interpolant_1d_protocol.jl).
+# Generic callables inherited from AbstractInterpolant1D (interpolant_protocol.jl).
 # _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
 
 @inline function _itp_eval_scalar(itp::QuadraticInterpolant, xq, extrap, op, searcher)

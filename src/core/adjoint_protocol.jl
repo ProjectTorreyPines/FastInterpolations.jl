@@ -32,10 +32,27 @@
     throw(DimensionMismatch("f_bar size $got must match output size $expected"))
 
 @noinline _throw_adjoint_grid_too_small(n::Int) =
-    throw(ArgumentError("linear_adjoint requires at least 2 grid points, got $n"))
+    throw(ArgumentError("adjoint requires at least 2 grid points, got $n"))
 
 @noinline _throw_adjoint_grid_too_small(d::Int, n::Int) =
-    throw(ArgumentError("linear_adjoint requires at least 2 grid points on axis $d, got $n"))
+    throw(ArgumentError("adjoint requires at least 2 grid points on axis $d, got $n"))
+
+# ========================================
+# Shared OOB Skip Helpers (Compile-Time Dispatch)
+# ========================================
+#
+# Zero-cost OOB handling by dispatching on extrap type:
+# - FillExtrap: OOB → filled constant independent of f → zero gradient
+# - ClampExtrap: OOB → f[boundary], but derivative is zero for constant extrap
+# - NoExtrap/ExtendExtrap/WrapExtrap: no OOB skip (NoExtrap throws at construction)
+
+# EvalValue OOB skip: only FillExtrap needs skip (fill value not function of f)
+@inline _is_oob_skip(side::UInt8, ::FillExtrap) = side != 0x00
+@inline _is_oob_skip(::UInt8, ::AbstractExtrap) = false
+
+# EvalDeriv OOB skip: both Clamp and Fill have zero derivative outside domain
+@inline _is_oob_skip_deriv(side::UInt8, ::_ClampOrFill) = side != 0x00
+@inline _is_oob_skip_deriv(::UInt8, ::AbstractExtrap) = false
 
 # ╔══════════════════════════════════════╗
 # ║           1D Adjoint Protocol        ║

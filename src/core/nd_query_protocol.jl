@@ -137,6 +137,7 @@ end
         queries::Tuple{AbstractVector, Vararg{AbstractVector}},
         extraps::Tuple{Vararg{AbstractExtrap, N}}
     ) where {N}
+    isempty(first(queries)) && return nothing
     map(_check_domain, grids, queries, extraps)
     return nothing
 end

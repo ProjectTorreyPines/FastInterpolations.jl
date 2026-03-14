@@ -22,6 +22,12 @@
 using Test
 using FastInterpolations
 
+# LTS Julia may show small boxing allocations on ND eval paths.
+# Guarded for standalone execution (runtests.jl defines this globally).
+if !@isdefined(ALLOC_THRESHOLD)
+    const ALLOC_THRESHOLD = VERSION >= v"1.12" ? 0 : 240
+end
+
 @testset "ND NoExtrap OOB — DomainError" begin
     # ── Shared test data ──
     gx = [0.0, 1.0, 2.0]
@@ -332,9 +338,9 @@ using FastInterpolations
             @allocated itp(pt)
         end
 
-        @test _test_eval_alloc_linear() == 0
-        @test _test_eval_alloc_constant() == 0
-        @test _test_eval_alloc_cubic() == 0
-        @test _test_eval_alloc_quadratic() == 0
+        @test _test_eval_alloc_linear() <= ALLOC_THRESHOLD
+        @test _test_eval_alloc_constant() <= ALLOC_THRESHOLD
+        @test _test_eval_alloc_cubic() <= ALLOC_THRESHOLD
+        @test _test_eval_alloc_quadratic() <= ALLOC_THRESHOLD
     end
 end

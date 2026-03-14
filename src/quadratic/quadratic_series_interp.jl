@@ -95,7 +95,8 @@ mutable struct QuadraticSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: Abstract
             extrap::E,
             search::P = AutoSearch()
         ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}}
-        return new{Tg, Tv, E, P, X}(x, y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
+        # copy(x) for mutation safety; copy() on Range is identity (zero alloc)
+        return new{Tg, Tv, E, P, X}(copy(x), y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
     end
 end
 

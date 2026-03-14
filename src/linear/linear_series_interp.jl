@@ -80,7 +80,8 @@ mutable struct LinearSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExt
             extrap::E,
             search::P = AutoSearch()
         ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}}
-        return new{Tg, Tv, E, P, X}(x, y, LazyTranspose{Tv}(), extrap, search)
+        # copy(x) for mutation safety; copy() on Range is identity (zero alloc)
+        return new{Tg, Tv, E, P, X}(copy(x), y, LazyTranspose{Tv}(), extrap, search)
     end
 end
 

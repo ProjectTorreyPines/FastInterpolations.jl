@@ -225,6 +225,15 @@ end
             val_after = itp(Q2D)
             @test val_before == val_after
         end
+
+        @testset "ConstantInterpolantND" begin
+            grids, data = _make_2d_test_data()
+            itp = constant_interp(grids, data)
+            val_before = itp(Q2D)
+            data .= 0.0
+            val_after = itp(Q2D)
+            @test val_before == val_after
+        end
     end
 
     # ============================================================
@@ -244,6 +253,24 @@ end
         @testset "CubicInterpolantND" begin
             grids, data = _make_3d_test_data()
             itp = cubic_interp(grids, data)
+            val_before = itp(Q3D)
+            data .= 0.0
+            val_after = itp(Q3D)
+            @test val_before == val_after
+        end
+
+        @testset "ConstantInterpolantND" begin
+            grids, data = _make_3d_test_data()
+            itp = constant_interp(grids, data)
+            val_before = itp(Q3D)
+            data .= 0.0
+            val_after = itp(Q3D)
+            @test val_before == val_after
+        end
+
+        @testset "QuadraticInterpolantND" begin
+            grids, data = _make_3d_test_data()
+            itp = quadratic_interp(grids, data)
             val_before = itp(Q3D)
             data .= 0.0
             val_after = itp(Q3D)
@@ -280,6 +307,15 @@ end
         @testset "CubicInterpolantND" begin
             grids, data = _make_2d_test_data()
             itp = cubic_interp(grids, data)
+            val_before = itp(Q2D)
+            grids[1][3] = 100.0
+            val_after = itp(Q2D)
+            @test val_before == val_after
+        end
+
+        @testset "ConstantInterpolantND" begin
+            grids, data = _make_2d_test_data()
+            itp = constant_interp(grids, data)
             val_before = itp(Q2D)
             grids[1][3] = 100.0
             val_after = itp(Q2D)

@@ -79,7 +79,8 @@ mutable struct ConstantSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractE
             side::SD,
             search::P = AutoSearch()
         ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}}
-        return new{Tg, Tv, E, SD, P, X}(x, y, LazyTranspose{Tv}(), extrap, side, search)
+        # copy(x) for mutation safety; copy() on Range is identity (zero alloc)
+        return new{Tg, Tv, E, SD, P, X}(copy(x), y, LazyTranspose{Tv}(), extrap, side, search)
     end
 end
 

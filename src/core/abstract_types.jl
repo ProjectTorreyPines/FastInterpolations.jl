@@ -32,17 +32,37 @@ Abstract supertype for all interpolant objects.
 - Evaluation returns type based on promote_type(Tv, query_type)
 
 # Subtypes
+- `AbstractInterpolant1D{Tg, Tv}`: 1D interpolants (shared callable protocol)
 - `AbstractSeriesInterpolant{Tg, Tv}`: Multi-series interpolants
+- `AbstractInterpolantND{Tg, Tv, N}`: N-dimensional interpolants
+"""
+abstract type AbstractInterpolant{Tg <: AbstractFloat, Tv} end
+
+"""
+    AbstractInterpolant1D{Tg<:AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv}
+
+Abstract supertype for 1-dimensional interpolant objects.
+
+All four 1D interpolant types inherit from this, enabling shared callable
+dispatch via the `interpolant_1d_protocol.jl` interface.
+
+# Protocol (interpolant_1d_protocol.jl)
+Subtypes automatically inherit 3 callable overloads (scalar, vector-alloc, vector-inplace)
+by implementing the required interface:
+
+    _itp_eval_scalar(itp, xq, extrap, op, searcher)   — core scalar evaluation (required)
+    _itp_vector_loop!(out, itp, xq, extrap, op, searcher) — core vector loop (required)
+    _itp_grid(itp)                  — grid vector access (default: itp.x)
+    _itp_extrap(itp)                — extrapolation mode (default: itp.extrap)
+    _itp_search(itp)                — default search policy (default: itp.search_policy)
+
+# Subtypes
 - `LinearInterpolant{Tg, Tv}`: Piecewise linear interpolation
 - `ConstantInterpolant{Tg, Tv}`: Piecewise constant (step) interpolation
 - `QuadraticInterpolant{Tg, Tv}`: C1 piecewise quadratic spline
-- `CubicInterpolant{Tg, Tv}`: C2 zero-curvature/zero-slope/periodic cubic spline
-
-# Note
-This is a pure type hierarchy - no methods are defined on `AbstractInterpolant` itself.
-All functionality is implemented in concrete subtypes.
+- `CubicInterpolant{Tg, Tv}`: C2 cubic spline
 """
-abstract type AbstractInterpolant{Tg <: AbstractFloat, Tv} end
+abstract type AbstractInterpolant1D{Tg <: AbstractFloat, Tv} <: AbstractInterpolant{Tg, Tv} end
 
 """
     AbstractSeriesInterpolant{Tg<:AbstractFloat, Tv}

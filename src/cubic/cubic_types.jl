@@ -129,7 +129,7 @@ val = itp(0.5)  # returns ComplexF64
 - Broadcast operations are perfectly fused (no intermediate arrays)
 - Extrapolation mode uses type-parametrized dispatch for zero overhead
 """
-struct CubicInterpolant{Tg <: AbstractFloat, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC} <: AbstractInterpolant{Tg, Tv}
+struct CubicInterpolant{Tg <: AbstractFloat, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC} <: AbstractInterpolant1D{Tg, Tv}
     cache::C
     y::Vector{Tv}
     z::Vector{Tv}  # Pre-computed second derivative coefficients (value type)

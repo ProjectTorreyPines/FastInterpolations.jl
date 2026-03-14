@@ -30,7 +30,8 @@ Zero-allocation after warmup (pool reuse).
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
     ) where {Tg <: AbstractFloat, Tv, N}
-    # 0. OOB short-circuit (before expensive partials computation)
+    # 0. NoExtrap domain check must precede FillExtrap short-circuit
+    _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
 
@@ -74,6 +75,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
+    _validate_nd_domain(grids, queries, extraps_val)
 
     # Build phase (done once)
     n_partials = 1 << N

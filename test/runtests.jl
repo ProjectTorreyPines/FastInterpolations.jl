@@ -76,6 +76,7 @@ else
     include("test_cubic_nd_adjoint.jl")  # Cubic ND adjoint (W^T * y_bar)
     include("test_linear_nd_adjoint.jl") # Linear ND adjoint (W^T * y_bar)
     include("test_cubic_nd_oneshot.jl")  # Cubic ND one-shot (pool-based, zero-alloc)
+    include("test_nd_noextrap_oob.jl")  # ND NoExtrap domain validation (all paths)
     include("test_nd_comprehensive.jl")
     include("test_nd_coverage.jl")
     include("test_nd_heterogeneous_grids.jl")

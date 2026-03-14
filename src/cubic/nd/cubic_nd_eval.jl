@@ -117,6 +117,7 @@ end
         search::SEARCH,
         hints = nothing
     ) where {Tg, Tv, N, OPS <: NTuple{N, AbstractEvalOp}, SEARCH <: NTuple{N, AbstractSearchPolicy}}
+    _validate_nd_domain(itp.grids, query, itp.extraps)
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
     cell = _locate_cell(itp, query, search, hints)
@@ -131,6 +132,7 @@ end
         search::Tuple{<:AbstractSearchPolicy, <:AbstractSearchPolicy},
         hints = nothing
     ) where {Tg, Tv}
+    _validate_nd_domain(itp.grids, query, itp.extraps)
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
     cell = _locate_cell(itp, query, search, hints)

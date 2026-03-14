@@ -27,7 +27,8 @@ Evaluates directly from grids + data without constructing a ConstantInterpolantN
         searches::NTuple{N, AbstractSearchPolicy},
         hints = nothing
     ) where {Tg <: AbstractFloat, Tv, N}
-    # OOB short-circuit
+    # NoExtrap domain check must precede FillExtrap short-circuit
+    _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, EvalValue(), @inbounds first(data))
     oob_result !== nothing && return oob_result
 
@@ -57,6 +58,7 @@ Writes results into `output`. No heap allocation beyond spacings.
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
+    _validate_nd_domain(grids, queries, extraps_val)
     spacings = _create_spacings_pooled(pool, grids)
     @inbounds for k in 1:nq
         query_k = _extract_query_point(queries, k, Val(N))

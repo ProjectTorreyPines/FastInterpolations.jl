@@ -53,6 +53,7 @@ For constant interpolation:
         search_tuple::NTuple{N, AbstractSearchPolicy},
         hints = nothing
     ) where {Tg, Tv, N}
+    _validate_nd_domain(itp.grids, query, itp.extraps)
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
     if _has_any_derivative(ops, Val(N))
@@ -70,6 +71,7 @@ end
         search_tuple::NTuple{2, AbstractSearchPolicy},
         hints = nothing
     ) where {Tg, Tv}
+    _validate_nd_domain(itp.grids, query, itp.extraps)
     oob_result = _try_fill_oob(query, itp.grids, itp.extraps, ops, _zero_ref(itp))
     oob_result !== nothing && return oob_result
     op_x, op_y = ops

@@ -74,6 +74,7 @@ function (itp::AbstractInterpolantND{Tg, Tv, N})(
     nq = _query_length(queries)
     length(output) == nq || _throw_query_output_mismatch(nq, length(output))
     _query_validate(queries)
+    _validate_nd_domain(itp.grids, queries, itp.extraps)
     search_tuple = _resolve_search_nd(search, Val(N), queries, hint)
     if _deriv_zero_fill(itp, ops, Val(N))
         fill!(output, zero(eltype(output)))

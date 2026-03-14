@@ -228,7 +228,6 @@ function constant_interp!(
     @assert length(output) == length(x_targets) "output must match x_targets length"
 
     searcher = _resolve_search(x, x_targets, search, nothing)
-    @boundscheck _check_domain(x, x_targets, extrap)
     _constant_vector_loop!(output, x, y, x_targets, extrap, side, deriv, searcher)
     return output
 end

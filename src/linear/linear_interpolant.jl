@@ -6,26 +6,17 @@
 # Oneshot API (linear_interp!, linear_interp 3-arg) is in linear_oneshot.jl.
 
 # ========================================
-# Scalar Call - Hot Path
+# Protocol Trait Implementations
 # ========================================
-# Supports deriv, search, and hint keywords for derivative evaluation and search policy.
-# Default search is the stored policy in itp.search_policy.
-#
-# TYPE PARAMETERS:
-# - Tg: Grid type (Float32/Float64)
-# - Tv: Value type (unconstrained)
-# - Tq: Query type (Tg or any Real, including Dual for AD)
+# Generic callables inherited from AbstractInterpolant1D (interpolant_protocol.jl).
+# _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
 
-# Primary scalar call - accepts any query type (Tg, Real, or Dual for AD)
-# This unified method handles:
-# - Tg queries (hot path)
-# - Int/Float32 queries (type promotion)
-# - ForwardDiff.Dual queries (automatic differentiation)
-@inline function (itp::LinearInterpolant{Tg, Tv, X, Y, E, P})(xq; deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = itp.search_policy, hint::Union{Nothing, Base.RefValue{Int}} = nothing) where {Tg <: AbstractFloat, Tv, X, Y, E, P}
-    @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    searcher = _resolve_search(itp.x, xq, search, hint)
-    # Pass original xq to preserve Dual type for AD
-    return _linear_with_extrap(itp.x, itp.y, xq, itp.extrap, deriv, searcher)
+@inline function _itp_eval_scalar(itp::LinearInterpolant, xq, extrap, op, searcher)
+    return _linear_with_extrap(itp.x, itp.y, xq, extrap, op, searcher)
+end
+
+@inline function _itp_vector_loop!(output, itp::LinearInterpolant, xq, extrap, op, searcher)
+    return _linear_vector_loop!(output, itp.x, itp.y, xq, extrap, op, searcher)
 end
 
 # ========================================
@@ -44,33 +35,10 @@ end
         deriv::O,
         searcher::P
     ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, O <: AbstractEvalOp, P <: Searcher}
+    @boundscheck _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
         output[i] = _linear_with_extrap(x, y, xq[i], extrap, deriv, searcher)
     end
-end
-
-# ========================================
-# Vector Call - Allocating
-# ========================================
-# Output type is promoted to wider type for precision preservation.
-function (itp::LinearInterpolant{Tg, Tv, X, Y, E, P})(xq::AbstractVector{Tq}; deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = itp.search_policy, hint::Union{Nothing, Base.RefValue{Int}} = nothing) where {Tg <: AbstractFloat, Tv, X, Y, E, P, Tq <: Real}
-    @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
-    output = Vector{T_out}(undef, length(xq))
-    searcher = _resolve_search(itp.x, xq, search, hint)
-    _linear_vector_loop!(output, itp.x, itp.y, xq, itp.extrap, deriv, searcher)
-    return output
-end
-
-# ========================================
-# In-Place Vector Call
-# ========================================
-function (itp::LinearInterpolant{Tg, Tv, X, Y, E, P})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = itp.search_policy, hint::Union{Nothing, Base.RefValue{Int}} = nothing) where {Tg <: AbstractFloat, Tv, X, Y, E, P, Tq <: Real}
-    @assert length(output) == length(xq) "output length must match xq length"
-    @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    searcher = _resolve_search(itp.x, xq, search, hint)
-    _linear_vector_loop!(output, itp.x, itp.y, xq, itp.extrap, deriv, searcher)
-    return output
 end
 
 # ========================================

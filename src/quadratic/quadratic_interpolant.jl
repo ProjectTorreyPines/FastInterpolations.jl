@@ -6,17 +6,18 @@
 # Internal evaluation and oneshot API (quadratic_interp!, quadratic_interp 3-arg)
 # are in quadratic_oneshot.jl.
 
-# ─────────────────────────────────────────────────────────────
-# Scalar call - hot path (inlined for broadcast fusion)
-# Default search is now the stored policy in itp.search_policy
-# Type parameters: Tg = grid type, Tv = value type (can be Complex)
-# Unified method: accepts any query type (Tg, Real, or Dual for AD)
-# ─────────────────────────────────────────────────────────────
-@inline function (itp::QuadraticInterpolant{Tg, Tv})(xq; deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = itp.search_policy, hint::Union{Nothing, Base.RefValue{Int}} = nothing) where {Tg <: AbstractFloat, Tv}
-    @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    searcher = _resolve_search(itp.x, xq, search, hint)
-    # Pass original xq to preserve Dual type for AD
-    return _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xq, itp.extrap, deriv, searcher)
+# ========================================
+# Protocol Trait Implementations
+# ========================================
+# Generic callables inherited from AbstractInterpolant1D (interpolant_protocol.jl).
+# _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
+
+@inline function _itp_eval_scalar(itp::QuadraticInterpolant, xq, extrap, op, searcher)
+    return _quadratic_eval_at_point(itp.x, itp.y, itp.h, itp.a, itp.d, xq, extrap, op, searcher)
+end
+
+@inline function _itp_vector_loop!(output, itp::QuadraticInterpolant, xq, extrap, op, searcher)
+    return _quadratic_vector_loop!(output, itp.x, itp.y, itp.h, itp.a, itp.d, xq, extrap, op, searcher)
 end
 
 # ─────────────────────────────────────────────────────────────
@@ -43,31 +44,6 @@ end
         output[i] = _quadratic_eval_at_point(x, y, h, a, d, xq[i], extrap, deriv, searcher)
     end
 end
-
-# ─────────────────────────────────────────────────────────────
-# Vector call (allocating)
-# Now supports hint for ODE/streaming patterns
-# Output type is promoted to wider type for precision preservation
-# ─────────────────────────────────────────────────────────────
-function (itp::QuadraticInterpolant{Tg, Tv})(xi::AbstractVector{S}; deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = itp.search_policy, hint::Union{Nothing, Base.RefValue{Int}} = nothing) where {Tg <: AbstractFloat, Tv, S <: Real}
-    T_out = promote_type(Tv, S)    # Lossless: wider type to avoid precision loss
-    output = Vector{T_out}(undef, length(xi))
-    searcher = _resolve_search(itp.x, xi, search, hint)
-    _quadratic_vector_loop!(output, itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.extrap, deriv, searcher)
-    return output
-end
-
-# ─────────────────────────────────────────────────────────────
-# In-place vector call
-# Unified: accepts any Real query type (Tg, Float32, Dual, etc.)
-# ─────────────────────────────────────────────────────────────
-function (itp::QuadraticInterpolant{Tg, Tv})(output::AbstractVector, xi::AbstractVector{<:Real}; deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = itp.search_policy, hint::Union{Nothing, Base.RefValue{Int}} = nothing) where {Tg <: AbstractFloat, Tv}
-    @assert length(output) == length(xi) "output length must match xi length"
-    searcher = _resolve_search(itp.x, xi, search, hint)
-    _quadratic_vector_loop!(output, itp.x, itp.y, itp.h, itp.a, itp.d, xi, itp.extrap, deriv, searcher)
-    return output
-end
-
 
 # ========================================
 # 2-Argument Form: Return Callable

@@ -56,7 +56,7 @@ itp = quadratic_interp(x, y; search=LinearBinarySearch())  # explicit override
 val = itp(0.5; search=BinarySearch())  # per-call override
 ```
 """
-struct QuadraticInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy} <: AbstractInterpolant{Tg, Tv}
+struct QuadraticInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy} <: AbstractInterpolant1D{Tg, Tv}
     x::X
     y::Y
     h::Vector{Tg}   # Grid spacing (geometry, always Tg)

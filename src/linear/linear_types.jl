@@ -60,7 +60,7 @@ struct LinearInterpolant{
         Y <: AbstractVector{Tv},
         E <: AbstractExtrap,
         P <: AbstractSearchPolicy,
-    } <: AbstractInterpolant{Tg, Tv}
+    } <: AbstractInterpolant1D{Tg, Tv}
     x::X
     y::Y
     extrap::E  # Extrapolation mode (compile-time specialized)

@@ -6,14 +6,18 @@
 # Internal evaluation and oneshot API (constant_interp!, constant_interp 3-arg)
 # are in constant_oneshot.jl.
 
-# ─────────────────────────────────────────────────────────────
-# Scalar call - hot path (inlined for broadcast fusion)
-# AD Support: xq can be any Real (including ForwardDiff.Dual)
-# Type parameters: Tg = grid type, Tv = value type, Tq = query type
-# ─────────────────────────────────────────────────────────────
-@inline function (itp::ConstantInterpolant{Tg, Tv})(xq::Tq; deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = itp.search_policy, hint::Union{Nothing, Base.RefValue{Int}} = nothing) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    searcher = _resolve_search(itp.x, xq, search, hint)
-    return _constant_eval_at_point(itp.x, itp.y, xq, itp.extrap, itp.side, deriv, searcher)
+# ========================================
+# Protocol Trait Implementations
+# ========================================
+# Generic callables inherited from AbstractInterpolant1D (interpolant_protocol.jl).
+# _itp_grid, _itp_extrap, _itp_search use defaults (itp.x, itp.extrap, itp.search_policy).
+
+@inline function _itp_eval_scalar(itp::ConstantInterpolant, xq, extrap, op, searcher)
+    return _constant_eval_at_point(itp.x, itp.y, xq, extrap, itp.side, op, searcher)
+end
+
+@inline function _itp_vector_loop!(output, itp::ConstantInterpolant, xq, extrap, op, searcher)
+    return _constant_vector_loop!(output, itp.x, itp.y, xq, extrap, itp.side, op, searcher)
 end
 
 # ─────────────────────────────────────────────────────────────
@@ -33,36 +37,11 @@ end
         deriv::O,
         searcher::P
     ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, SD <: AbstractSide, O <: AbstractEvalOp, P <: Searcher}
+    @boundscheck _check_domain(x, xq, extrap)
     return @inbounds for i in eachindex(xq, output)
         output[i] = _constant_eval_at_point(x, y, xq[i], extrap, side, deriv, searcher)
     end
 end
-
-# ─────────────────────────────────────────────────────────────
-# Vector call (allocating)
-# Supports hint for ODE/streaming patterns
-# Output type is promoted to wider type for precision preservation
-# ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{Tg, Tv})(xq::AbstractVector{Tq}; deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = itp.search_policy, hint::Union{Nothing, Base.RefValue{Int}} = nothing) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    T_out = promote_type(Tv, Tq)   # Lossless: wider type to avoid precision loss
-    output = Vector{T_out}(undef, length(xq))
-    searcher = _resolve_search(itp.x, xq, search, hint)
-    @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    _constant_vector_loop!(output, itp.x, itp.y, xq, itp.extrap, itp.side, deriv, searcher)
-    return output
-end
-
-# ─────────────────────────────────────────────────────────────
-# In-place vector call
-# ─────────────────────────────────────────────────────────────
-function (itp::ConstantInterpolant{Tg, Tv})(output::AbstractVector, xq::AbstractVector{Tq}; deriv::DerivOp = EvalValue(), search::AbstractSearchPolicy = itp.search_policy, hint::Union{Nothing, Base.RefValue{Int}} = nothing) where {Tg <: AbstractFloat, Tv, Tq <: Real}
-    @assert length(output) == length(xq) "output length must match xq length"
-    searcher = _resolve_search(itp.x, xq, search, hint)
-    @boundscheck _check_domain(itp.x, xq, itp.extrap)
-    _constant_vector_loop!(output, itp.x, itp.y, xq, itp.extrap, itp.side, deriv, searcher)
-    return output
-end
-
 
 # ========================================
 # 2-Argument Form: Return Callable

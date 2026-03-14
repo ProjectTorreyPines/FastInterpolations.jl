@@ -1145,7 +1145,9 @@ import FastInterpolations: _get_cubic_cache
         # All modes should have same allocation
         @test allocs_ext == allocs_const
         @test allocs_ext == allocs_wrap
-        @test allocs_ext <= ALLOC_THRESHOLD + 64  # Struct (~48 bytes) + dispatch overhead
+        # Construction allocates: struct + defensive copy(x), copy(y) for mutation safety
+        n_copy_bytes = sizeof(eltype(x)) * (length(x) + length(y)) + 256  # data + headers + struct
+        @test allocs_ext <= ALLOC_THRESHOLD + n_copy_bytes
     end
 
     # =========================================================================

@@ -68,13 +68,15 @@ struct LinearInterpolant{
 
     # Inner constructor: parametric, only calls new (handles validation only)
     function LinearInterpolant{Tg, Tv, X, Y, E, P}(
-            x::X, y::Y, ev::E, search::P
+            x::AbstractVector{Tg}, y::AbstractVector{Tv}, ev::E, search::P
         ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         # Copy to ensure immutability: once constructed, the interpolant owns
         # its data and returns identical results regardless of external mutation.
         # copy() on immutable Range types is a no-op (zero allocation).
-        return new{Tg, Tv, X, Y, E, P}(copy(x), copy(y), ev, search)
+        # typeof() rebinds X/Y to the post-copy concrete type (e.g. SubArray → Vector).
+        xc, yc = copy(x), copy(y)
+        return new{Tg, Tv, typeof(xc), typeof(yc), E, P}(xc, yc, ev, search)
     end
 end
 

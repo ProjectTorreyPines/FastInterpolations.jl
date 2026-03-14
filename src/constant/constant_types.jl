@@ -59,14 +59,16 @@ struct ConstantInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <
 
     # Inner constructor: parametric, only calls new (handles validation only)
     function ConstantInterpolant{Tg, Tv, X, Y, E, SD, P}(
-            x::X, y::Y, ev::E, sv::SD, search::P
+            x::AbstractVector{Tg}, y::AbstractVector{Tv}, ev::E, sv::SD, search::P
         ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         @assert length(x) >= 2 "x must have at least 2 elements"
         # Copy to ensure immutability: once constructed, the interpolant owns
         # its data and returns identical results regardless of external mutation.
         # copy() on immutable Range types is a no-op (zero allocation).
-        return new{Tg, Tv, X, Y, E, SD, P}(copy(x), copy(y), ev, sv, search)
+        # typeof() rebinds X/Y to the post-copy concrete type (e.g. SubArray → Vector).
+        xc, yc = copy(x), copy(y)
+        return new{Tg, Tv, typeof(xc), typeof(yc), E, SD, P}(xc, yc, ev, sv, search)
     end
 end
 

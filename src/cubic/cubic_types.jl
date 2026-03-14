@@ -82,9 +82,11 @@ struct CubicSplineCache{T <: AbstractFloat, X <: AbstractVector{T}, F, BC, S <: 
     # Inner constructor: copy x to ensure mutation safety.
     # copy() on immutable Range types is a no-op (zero allocation).
     function CubicSplineCache{T, X, F, BC, S}(
-            x::X, spacing::S, thomas::F, bc_config::BC
+            x::AbstractVector{T}, spacing::S, thomas::F, bc_config::BC
         ) where {T <: AbstractFloat, X <: AbstractVector{T}, F, BC, S <: AbstractGridSpacing{T}}
-        return new{T, X, F, BC, S}(copy(x), spacing, thomas, bc_config)
+        # copy() for mutation safety; typeof() rebinds X after copy (SubArray → Vector).
+        xc = copy(x)
+        return new{T, typeof(xc), F, BC, S}(xc, spacing, thomas, bc_config)
     end
 end
 

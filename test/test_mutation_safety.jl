@@ -640,4 +640,92 @@ end
         end
     end
 
+    # ============================================================
+    # §18  View-backed input construction (regression guard)
+    # ============================================================
+    # copy() in inner constructors must not break when the input
+    # is a SubArray/view, since copy(view) → Vector while the
+    # struct's type parameter was bound to the original view type.
+
+    @testset "1D view-backed construction" begin
+        @testset "ConstantInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y = sin.(x)
+            itp = constant_interp(@view(x[:]), @view(y[:]))
+            @test itp(Q1D) ≈ constant_interp(x, y)(Q1D)
+        end
+
+        @testset "LinearInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y = sin.(x)
+            itp = linear_interp(@view(x[:]), @view(y[:]))
+            @test itp(Q1D) ≈ linear_interp(x, y)(Q1D)
+        end
+
+        @testset "QuadraticInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y = sin.(x)
+            itp = quadratic_interp(@view(x[:]), @view(y[:]))
+            @test itp(Q1D) ≈ quadratic_interp(x, y)(Q1D)
+        end
+
+        @testset "CubicInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y = sin.(x)
+            itp = cubic_interp(@view(x[:]), @view(y[:]))
+            @test itp(Q1D) ≈ cubic_interp(x, y)(Q1D)
+        end
+    end
+
+    @testset "ND view-backed construction (2D)" begin
+        @testset "LinearInterpolantND" begin
+            x = collect(range(0.0, 2π, 10))
+            y = collect(range(0.0, π, 12))
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            itp = linear_interp((@view(x[:]), @view(y[:])), @view(data[:, :]))
+            @test itp(Q2D) ≈ linear_interp((x, y), data)(Q2D)
+        end
+
+        @testset "ConstantInterpolantND" begin
+            x = collect(range(0.0, 2π, 10))
+            y = collect(range(0.0, π, 12))
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            itp = constant_interp((@view(x[:]), @view(y[:])), @view(data[:, :]))
+            @test itp(Q2D) ≈ constant_interp((x, y), data)(Q2D)
+        end
+
+        @testset "QuadraticInterpolantND" begin
+            x = collect(range(0.0, 2π, 10))
+            y = collect(range(0.0, π, 12))
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            itp = quadratic_interp((@view(x[:]), @view(y[:])), @view(data[:, :]))
+            @test itp(Q2D) ≈ quadratic_interp((x, y), data)(Q2D)
+        end
+
+        @testset "CubicInterpolantND" begin
+            x = collect(range(0.0, 2π, 10))
+            y = collect(range(0.0, π, 12))
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            itp = cubic_interp((@view(x[:]), @view(y[:])), @view(data[:, :]))
+            @test itp(Q2D) ≈ cubic_interp((x, y), data)(Q2D)
+        end
+    end
+
+    # ============================================================
+    # §19  View-backed input + mutation (copy must decouple)
+    # ============================================================
+
+    @testset "1D view mutation safety" begin
+        @testset "LinearInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y = sin.(x)
+            itp = linear_interp(@view(x[:]), @view(y[:]))
+            val_before = itp(Q1D)
+            y .= 0.0
+            x[12] = 100.0
+            val_after = itp(Q1D)
+            @test val_before == val_after
+        end
+    end
+
 end  # top-level @testset

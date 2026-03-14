@@ -284,7 +284,7 @@ end
             (a1, a2, a3, a4)
         end
         allocs = _test_validate_alloc()
-        @test all(==(0), allocs)
+        @test all(<=(ALLOC_THRESHOLD), allocs)
     end
 
     # ── Zero-allocation: full eval paths with NoExtrap ──

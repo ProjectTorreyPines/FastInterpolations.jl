@@ -144,11 +144,15 @@ struct CubicInterpolantND{
     searches::P
 
     function CubicInterpolantND{Tg, Tv, N, NP1, G, S, B, E, P}(
-            grids::G, spacings::S, nodal_derivs::NodalDerivativesND{Tv, N, NP1},
+            grids::Tuple{Vararg{AbstractVector, N}}, spacings::S, nodal_derivs::NodalDerivativesND{Tv, N, NP1},
             bcs::B, extraps::E, searches::P
         ) where {Tg, Tv, N, NP1, G, S, B, E, P}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
-        return new{Tg, Tv, N, NP1, G, S, B, E, P}(grids, spacings, nodal_derivs, bcs, extraps, searches)
+        # Copy grids to ensure mutation safety.
+        # copy() on immutable Range types is a no-op (zero allocation).
+        # typeof() rebinds G after copy (e.g. tuple-of-SubArrays → tuple-of-Vectors).
+        grids_c = map(copy, grids)
+        return new{Tg, Tv, N, NP1, typeof(grids_c), S, B, E, P}(grids_c, spacings, nodal_derivs, bcs, extraps, searches)
     end
 end
 

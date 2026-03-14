@@ -1,5 +1,13 @@
 # Internal utility functions for FastInterpolations.jl
 
+# ── @noinline throw helpers (keep cold error paths out of hot code) ──
+
+@noinline _throw_length_mismatch(na::Int, nb::Int, a::String = "x", b::String = "y") =
+    throw(ArgumentError("$a and $b must have same length, got $na and $nb"))
+
+@noinline _throw_grid_too_small(n::Int) =
+    throw(ArgumentError("x must have at least 2 elements, got $n"))
+
 # ========================================
 # Interval Search (IN search.jl)
 # ========================================

@@ -866,8 +866,8 @@ automatically when the enclosing `@with_pool` scope exits.
 """
 @inline function _create_spacing_pooled(pool::AbstractArrayPool, x::AbstractVector{T}) where {T <: AbstractFloat}
     n = length(x)
-    h = unsafe_acquire!(pool, T, n - 1)
-    inv_h = unsafe_acquire!(pool, T, n - 1)
+    h = acquire!(pool, T, n - 1)
+    inv_h = acquire!(pool, T, n - 1)
 
     @inbounds for i in 1:(n - 1)
         h[i] = x[i + 1] - x[i]

@@ -49,7 +49,7 @@ end
 # ========================================
 
 """
-    CubicAdjointND{Tg, N, G, S, C, MC, BP, MBP}
+    CubicAdjointND{Tg, N, S, C, MC, BP, MBP}
 
 Adjoint (transpose) operator for N-dimensional cubic Hermite interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward ND cubic interpolation weight matrix.
@@ -60,7 +60,6 @@ The same adjoint can be applied to any `ȳ` vector.
 # Type Parameters
 - `Tg`:  Grid float type (Float32 or Float64)
 - `N`:   Number of dimensions
-- `G`:   Grid tuple type
 - `S`:   Spacing tuple type
 - `C`:   Cache tuple type for user BC (per-axis CubicSplineCache)
 - `MC`:  Cache tuple type for mixed-partial BC (CubicFit internally)
@@ -86,8 +85,10 @@ solves instead of standard Thomas.
 When the user's BC is already CubicFit, `C == MC` and `BP == MBP`, so Julia
 optimizes the branch away entirely.
 
-PolyFit stencil coefficients are computed on the fly from `BCPair` + grid (O(D) per
-axis, negligible), matching the forward `compute_rhs!` pattern.
+PolyFit stencil coefficients are computed on the fly from `BCPair` + `caches[d].x` (O(D) per
+axis, negligible), matching the forward `compute_rhs!` pattern. Grids are NOT stored
+separately — each per-axis `CubicSplineCache` already owns a mutation-safe copy of its grid
+via `cache.x` (inner constructor `copy()` + `typeof(xc)` rebinding).
 
 # Usage
 ```julia
@@ -106,14 +107,12 @@ adj = cubic_adjoint((x, y), (xq, yq); bc=(PeriodicBC(), CubicFit()))
 struct CubicAdjointND{
         Tg <: AbstractFloat,
         N,
-        G <: NTuple{N, AbstractVector{Tg}},
         S <: NTuple{N, AbstractGridSpacing{Tg}},
         C <: NTuple{N, CubicSplineCache{Tg}},
         MC <: NTuple{N, CubicSplineCache{Tg}},
         BP <: NTuple{N, Union{BCPair, PeriodicBC}},
         MBP <: NTuple{N, Union{BCPair, PeriodicBC}},
     } <: AbstractAdjointND{Tg, N}
-    grids::G
     spacings::S
     caches::C
     mixed_caches::MC

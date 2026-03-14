@@ -73,13 +73,17 @@ mutable struct ConstantSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractE
     const search_policy::P                # Default search policy
 
     function ConstantSeriesInterpolant(
-            x::X,
+            x::AbstractVector{Tg},
             y::Matrix{Tv},
             extrap::E,
             side::SD,
             search::P = AutoSearch()
-        ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}}
-        return new{Tg, Tv, E, SD, P, X}(x, y, LazyTranspose{Tv}(), extrap, side, search)
+        ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
+        # copy(x) for mutation safety; copy() on Range is identity (zero alloc)
+        # typeof(xc) rebinds X after copy (view → Vector)
+        # y is NOT copied here — _build_series_mat() already provides an owned matrix.
+        xc = copy(x)
+        return new{Tg, Tv, E, SD, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), extrap, side, search)
     end
 end
 

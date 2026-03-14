@@ -336,7 +336,7 @@ end
 Pool-based variant of `_prepare_periodic_nd` for zero-allocation one-shot evaluation.
 
 All temporary arrays (extended grids, extended data) are acquired from the pool
-via `unsafe_acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
+via `acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
 
 # Safety
 - Extended data is consumed by `_compute_nd_partials!` within the same pool scope
@@ -385,7 +385,7 @@ via `unsafe_acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
             return range(first(grid_d), step = step(grid_d), length = length(grid_d) + 1)
         else
             n = length(grid_d)
-            g_ext = unsafe_acquire!(pool, Tg, n + 1)
+            g_ext = acquire!(pool, Tg, n + 1)
             @inbounds copyto!(g_ext, 1, grid_d, 1, n)
             @inbounds g_ext[n + 1] = x_end
             return g_ext
@@ -407,7 +407,7 @@ via `unsafe_acquire!`, so they must NOT escape the enclosing `@with_pool` scope.
     final_sizes = ntuple(Val(N)) do d
         bcs[d] isa PeriodicBC{:exclusive} ? size(data, d) + 1 : size(data, d)
     end
-    data_out = unsafe_acquire!(pool, Tv, final_sizes)
+    data_out = acquire!(pool, Tv, final_sizes)
 
     # Copy original data into the sub-array
     orig_inds = ntuple(d -> 1:size(data, d), Val(N))

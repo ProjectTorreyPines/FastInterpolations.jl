@@ -273,11 +273,14 @@ function _build_linear_nd_adjoint(
     anchors = _bake_linear_nd_anchors(grids, spacings, queries, extraps)
     grid_size = ntuple(d -> length(grids[d]), Val(N))
 
+    # copy() for mutation safety; typeof(grids_c) rebinds G after copy (view → Vector).
+    # copy() on immutable Range types is a no-op (zero allocation).
+    grids_c = map(copy, grids)
     return LinearAdjointND{
         Tg, N,
-        typeof(grids), typeof(spacings), typeof(extraps),
+        typeof(grids_c), typeof(spacings), typeof(extraps),
     }(
-        grids, spacings, extraps, anchors, grid_size
+        grids_c, spacings, extraps, anchors, grid_size
     )
 end
 

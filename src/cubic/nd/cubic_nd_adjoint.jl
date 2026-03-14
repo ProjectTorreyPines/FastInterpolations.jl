@@ -534,9 +534,10 @@ end
     _adjoint_scatter_nd!(partials_bar, adj.anchors, y_bar, ops)
 
     # Steps 1-3: Build adjoint (reverse axis order) — UNCHANGED by deriv
+    # Grids extracted from caches (each CubicSplineCache owns a mutation-safe copy via cache.x)
     _build_adjoint_nd!(
         partials_bar, adj.caches, adj.mixed_caches, adj.spacings,
-        adj.bcs, adj.mixed_bcs, adj.grids, adj.grid_size
+        adj.bcs, adj.mixed_bcs, map(c -> c.x, adj.caches), adj.grid_size
     )
 
     # Extract f_bar = partials_bar[1, ...]
@@ -715,12 +716,15 @@ function _build_nd_adjoint(
 
     grid_size = ntuple(d -> length(grids_ext[d]), Val(N))
 
+    # Grids are NOT stored in the struct — each CubicSplineCache already owns
+    # a mutation-safe copy via cache.x (inner constructor copy() + typeof(xc) rebinding).
+    # The apply function extracts grids on the fly: map(c -> c.x, adj.caches).
     return CubicAdjointND{
         Tg, N,
-        typeof(grids_ext), typeof(spacings), typeof(caches), typeof(mixed_caches),
+        typeof(spacings), typeof(caches), typeof(mixed_caches),
         typeof(norm_bcs), typeof(mixed_bcs),
     }(
-        grids_ext, spacings, caches, mixed_caches, norm_bcs, mixed_bcs,
+        spacings, caches, mixed_caches, norm_bcs, mixed_bcs,
         anchors, grid_size
     )
 end

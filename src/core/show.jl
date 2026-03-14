@@ -895,7 +895,7 @@ function Base.show(io::IO, ::MIME"text/plain", adj::CubicAdjointND{Tg, N}) where
     _show_print(io, string(N), :light_blue)
     _show_print(io, "}", :light_black)
     println(io)
-    _show_nd_grids_summary(io, false, adj.grids)
+    _show_nd_grids_summary(io, false, map(c -> c.x, adj.caches))
     println(io)
     _show_row(io, false, "Query: ", "$(length(adj.anchors)) points")
     println(io)

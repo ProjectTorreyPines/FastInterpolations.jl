@@ -83,9 +83,14 @@ struct LinearInterpolantND{
     searches::P
 
     function LinearInterpolantND{Tg, Tv, N, G, S, E, P}(
-            grids::G, spacings::S, data::Array{Tv, N}, extraps::E, searches::P
+            grids::Tuple{Vararg{AbstractVector, N}}, spacings::S, data::AbstractArray{Tv, N}, extraps::E, searches::P
         ) where {Tg, Tv, N, G, S, E, P}
-        return new{Tg, Tv, N, G, S, E, P}(grids, spacings, data, extraps, searches)
+        # Copy grids and data to ensure mutation safety.
+        # copy() on immutable Range types is a no-op (zero allocation).
+        # Array() converts AbstractArray→Array AND copies in one step.
+        # typeof() rebinds G after copy (e.g. tuple-of-SubArrays → tuple-of-Vectors).
+        grids_c = map(copy, grids)
+        return new{Tg, Tv, N, typeof(grids_c), S, E, P}(grids_c, spacings, Array(data), extraps, searches)
     end
 end
 

@@ -66,6 +66,7 @@ else
     include("test_nonuniform_grid.jl")
     include("test_show.jl")
     include("test_recipes.jl")
+    include("test_mutation_safety.jl")
 
     # ND Interpolation
     include("test_nd_utils_shared.jl")  # Shared ND utilities (phase 1)

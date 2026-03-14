@@ -101,6 +101,7 @@ mutable struct CubicSeriesInterpolant{
             extrap::E,
             search::P = AutoSearch()
         ) where {Tg <: AbstractFloat, Tv, C <: CubicSplineCache{Tg}, B, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+        # y/z are NOT copied here — factory function provides owned matrices.
         return new{Tg, Tv, C, B, E, P}(
             cache, bc_for_solve, y, z,
             LazyTransposePair{Tv}(),

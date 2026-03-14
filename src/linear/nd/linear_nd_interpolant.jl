@@ -89,6 +89,6 @@ function linear_interp(
         Tg, Tv, N,
         typeof(grids_typed), typeof(spacings), typeof(extrap_vals), typeof(searches),
     }(
-        grids_typed, spacings, Array(data_typed), extrap_vals, searches
+        grids_typed, spacings, data_typed, extrap_vals, searches
     )
 end

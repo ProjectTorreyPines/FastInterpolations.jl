@@ -78,6 +78,23 @@ struct CubicSplineCache{T <: AbstractFloat, X <: AbstractVector{T}, F, BC, S <: 
     spacing::S
     thomas::F
     bc_config::BC
+
+    # Inner constructor: copy x to ensure mutation safety.
+    # copy() on immutable Range types is a no-op (zero allocation).
+    function CubicSplineCache{T, X, F, BC, S}(
+            x::AbstractVector{T}, spacing::S, thomas::F, bc_config::BC
+        ) where {T <: AbstractFloat, X <: AbstractVector{T}, F, BC, S <: AbstractGridSpacing{T}}
+        # copy() for mutation safety; typeof() rebinds X after copy (SubArray → Vector).
+        xc = copy(x)
+        return new{T, typeof(xc), F, BC, S}(xc, spacing, thomas, bc_config)
+    end
+end
+
+# Outer constructor: infers type parameters for convenience.
+@inline function CubicSplineCache(
+        x::X, spacing::S, thomas::F, bc_config::BC
+    ) where {T <: AbstractFloat, X <: AbstractVector{T}, F, BC, S <: AbstractGridSpacing{T}}
+    return CubicSplineCache{T, X, F, BC, S}(x, spacing, thomas, bc_config)
 end
 
 # AbstractExtrap types are defined in eval_ops.jl (shared across all interpolants)
@@ -144,8 +161,8 @@ struct CubicInterpolant{Tg <: AbstractFloat, Tv, C <: CubicSplineCache{Tg}, E <:
             extrap::E,
             search::P = AutoSearch()
         ) where {Tg <: AbstractFloat, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC}
-        @assert length(cache.x) == length(y) "cache grid and y must have same length"
-        @assert length(cache.x) == length(z) "z coefficients must match grid length"
+        length(cache.x) == length(y) || _throw_length_mismatch(length(cache.x), length(y))
+        length(cache.x) == length(z) || _throw_length_mismatch(length(cache.x), length(z), "grid", "z")
         # Always copy to ensure immutability: once constructed, the interpolant
         # owns its data and always returns identical results for the same query.
         # Without copying, external modifications to y or cache reuse could

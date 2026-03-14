@@ -75,13 +75,15 @@ mutable struct LinearSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExt
     const search_policy::P                # Default search policy (immutable, thread-safe)
 
     function LinearSeriesInterpolant(
-            x::X,
+            x::AbstractVector{Tg},
             y::Matrix{Tv},
             extrap::E,
             search::P = AutoSearch()
-        ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}}
+        ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         # copy(x) for mutation safety; copy() on Range is identity (zero alloc)
-        return new{Tg, Tv, E, P, X}(copy(x), y, LazyTranspose{Tv}(), extrap, search)
+        # typeof(xc) rebinds X after copy (view → Vector)
+        xc = copy(x)
+        return new{Tg, Tv, E, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), extrap, search)
     end
 end
 

@@ -87,16 +87,18 @@ mutable struct QuadraticSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: Abstract
     const search_policy::P                    # Default search policy
 
     function QuadraticSeriesInterpolant(
-            x::X,
+            x::AbstractVector{Tg},
             y::Matrix{Tv},
             a::Matrix{Tv},
             d::Matrix{Tv},
             h::Vector{Tg},
             extrap::E,
             search::P = AutoSearch()
-        ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy, X <: AbstractVector{Tg}}
+        ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         # copy(x) for mutation safety; copy() on Range is identity (zero alloc)
-        return new{Tg, Tv, E, P, X}(copy(x), y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
+        # typeof(xc) rebinds X after copy (view → Vector)
+        xc = copy(x)
+        return new{Tg, Tv, E, P, typeof(xc)}(xc, y, a, d, h, LazyTransposeTriple{Tv}(), extrap, search)
     end
 end
 

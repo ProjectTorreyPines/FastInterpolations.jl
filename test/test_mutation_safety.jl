@@ -728,4 +728,57 @@ end
         end
     end
 
+    # ============================================================
+    # §20  Series view-backed construction (regression guard)
+    # ============================================================
+    # Series constructors must rebind X type after copy(x),
+    # same as the 1D/ND fix in c38cf043.
+
+    @testset "Series view-backed construction" begin
+        x = collect(range(0.0, 10.0, 50))
+        y1 = sin.(x)
+        y2 = cos.(x)
+
+        @testset "ConstantSeriesInterpolant" begin
+            sitp = constant_interp(@view(x[:]), Series(y1, y2))
+            ref = constant_interp(x, Series(y1, y2))
+            @test sitp(Q1D) ≈ ref(Q1D)
+        end
+
+        @testset "LinearSeriesInterpolant" begin
+            sitp = linear_interp(@view(x[:]), Series(y1, y2))
+            ref = linear_interp(x, Series(y1, y2))
+            @test sitp(Q1D) ≈ ref(Q1D)
+        end
+
+        @testset "QuadraticSeriesInterpolant" begin
+            sitp = quadratic_interp(@view(x[:]), Series(y1, y2))
+            ref = quadratic_interp(x, Series(y1, y2))
+            @test sitp(Q1D) ≈ ref(Q1D)
+        end
+
+        @testset "CubicSeriesInterpolant" begin
+            sitp = cubic_interp(@view(x[:]), Series(y1, y2))
+            ref = cubic_interp(x, Series(y1, y2))
+            @test sitp(Q1D) ≈ ref(Q1D)
+        end
+    end
+
+    # ============================================================
+    # §21  Series view-backed mutation safety
+    # ============================================================
+
+    @testset "Series view mutation safety" begin
+        @testset "LinearSeriesInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y1 = sin.(x)
+            y2 = cos.(x)
+            sitp = linear_interp(@view(x[:]), Series(y1, y2))
+            val_before = sitp(Q1D)
+            x[12] = 100.0
+            val_after = sitp(Q1D)
+            @test val_before == val_after
+        end
+    end
+
 end  # top-level @testset

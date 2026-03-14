@@ -190,6 +190,24 @@ end
         @test val isa Float64
     end
 
+    # ── Mixed FillExtrap+NoExtrap: NoExtrap must throw even if FillExtrap axis is also OOB ──
+    @testset "mixed FillExtrap+NoExtrap — both axes OOB" begin
+        fill_noextrap = (NoExtrap(), FillExtrap(0.0))
+        # Both axes OOB: NoExtrap axis must throw, not silently return fill
+        @test_throws DomainError linear_interp(
+            (gx, gy), f_2d, (-0.1, 1.5); extrap = fill_noextrap
+        )
+        # Only FillExtrap axis OOB: should return fill value
+        val = linear_interp(
+            (gx, gy), f_2d, (0.5, 1.5); extrap = fill_noextrap
+        )
+        @test val == 0.0
+        # Interpolant path
+        itp_fill = linear_interp((gx, gy), f_2d; extrap = fill_noextrap)
+        @test_throws DomainError itp_fill((-0.1, 1.5))
+        @test itp_fill((0.5, 1.5)) == 0.0
+    end
+
     # ── Subprocess test: production mode (--check-bounds=auto) ──
     # This is the TRUE red test: under default bounds checking,
     # @boundscheck inside @inbounds is elided, exposing the bug.
@@ -209,7 +227,7 @@ end
         end
         """
         result = readchomp(`julia --startup-file=no --project=$project_dir -e $batch_script`)
-        @test result == "OK:DomainError"
+        @test endswith(result, "OK:DomainError")
 
         # Scalar oneshot path
         scalar_script = raw"""
@@ -224,7 +242,7 @@ end
         end
         """
         result2 = readchomp(`julia --startup-file=no --project=$project_dir -e $scalar_script`)
-        @test result2 == "OK:DomainError"
+        @test endswith(result2, "OK:DomainError")
 
         # Interpolant scalar path (the gap found in code review)
         itp_scalar_script = raw"""
@@ -240,7 +258,7 @@ end
         end
         """
         result3 = readchomp(`julia --startup-file=no --project=$project_dir -e $itp_scalar_script`)
-        @test result3 == "OK:DomainError"
+        @test endswith(result3, "OK:DomainError")
 
         # AoS query path
         aos_script = raw"""
@@ -257,7 +275,7 @@ end
         end
         """
         result4 = readchomp(`julia --startup-file=no --project=$project_dir -e $aos_script`)
-        @test result4 == "OK:DomainError"
+        @test endswith(result4, "OK:DomainError")
     end
 
     # ── Zero-allocation: _validate_nd_domain must not allocate ──

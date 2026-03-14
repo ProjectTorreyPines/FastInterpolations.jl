@@ -113,10 +113,10 @@ Zero-allocation after warmup (pool reuse).
         ops::NTuple{N, AbstractEvalOp},
         hints = nothing
     ) where {Tg <: AbstractFloat, Tv, N}
-    # 0. OOB short-circuit (before expensive partials computation)
+    # 0. NoExtrap domain check must precede FillExtrap short-circuit
+    _validate_nd_domain(grids, query, extraps_val)
     oob_result = _try_fill_oob(query, grids, extraps_val, ops, @inbounds first(data))
     oob_result !== nothing && return oob_result
-    _validate_nd_domain(grids, query, extraps_val)
 
     # 1. Extend exclusive periodic axes (pool-based, zero heap alloc)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)

@@ -63,7 +63,10 @@ struct ConstantInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <
         ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, SD <: AbstractSide, P <: AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
         @assert length(x) >= 2 "x must have at least 2 elements"
-        return new{Tg, Tv, X, Y, E, SD, P}(x, y, ev, sv, search)
+        # Copy to ensure immutability: once constructed, the interpolant owns
+        # its data and returns identical results regardless of external mutation.
+        # copy() on immutable Range types is a no-op (zero allocation).
+        return new{Tg, Tv, X, Y, E, SD, P}(copy(x), copy(y), ev, sv, search)
     end
 end
 

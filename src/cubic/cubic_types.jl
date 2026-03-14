@@ -78,6 +78,21 @@ struct CubicSplineCache{T <: AbstractFloat, X <: AbstractVector{T}, F, BC, S <: 
     spacing::S
     thomas::F
     bc_config::BC
+
+    # Inner constructor: copy x to ensure mutation safety.
+    # copy() on immutable Range types is a no-op (zero allocation).
+    function CubicSplineCache{T, X, F, BC, S}(
+            x::X, spacing::S, thomas::F, bc_config::BC
+        ) where {T <: AbstractFloat, X <: AbstractVector{T}, F, BC, S <: AbstractGridSpacing{T}}
+        return new{T, X, F, BC, S}(copy(x), spacing, thomas, bc_config)
+    end
+end
+
+# Outer constructor: infers type parameters for convenience.
+@inline function CubicSplineCache(
+        x::X, spacing::S, thomas::F, bc_config::BC
+    ) where {T <: AbstractFloat, X <: AbstractVector{T}, F, BC, S <: AbstractGridSpacing{T}}
+    return CubicSplineCache{T, X, F, BC, S}(x, spacing, thomas, bc_config)
 end
 
 # AbstractExtrap types are defined in eval_ops.jl (shared across all interpolants)

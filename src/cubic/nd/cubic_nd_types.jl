@@ -148,7 +148,9 @@ struct CubicInterpolantND{
             bcs::B, extraps::E, searches::P
         ) where {Tg, Tv, N, NP1, G, S, B, E, P}
         NP1 == N + 1 || throw(ArgumentError("NP1 must equal N+1"))
-        return new{Tg, Tv, N, NP1, G, S, B, E, P}(grids, spacings, nodal_derivs, bcs, extraps, searches)
+        # Copy grids to ensure mutation safety.
+        # copy() on immutable Range types is a no-op (zero allocation).
+        return new{Tg, Tv, N, NP1, G, S, B, E, P}(map(copy, grids), spacings, nodal_derivs, bcs, extraps, searches)
     end
 end
 

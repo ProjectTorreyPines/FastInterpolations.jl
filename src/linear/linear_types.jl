@@ -71,7 +71,10 @@ struct LinearInterpolant{
             x::X, y::Y, ev::E, search::P
         ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         @assert length(x) == length(y) "x and y must have same length"
-        return new{Tg, Tv, X, Y, E, P}(x, y, ev, search)
+        # Copy to ensure immutability: once constructed, the interpolant owns
+        # its data and returns identical results regardless of external mutation.
+        # copy() on immutable Range types is a no-op (zero allocation).
+        return new{Tg, Tv, X, Y, E, P}(copy(x), copy(y), ev, search)
     end
 end
 

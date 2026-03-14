@@ -123,7 +123,7 @@ Zero-allocation after warmup (pool reuse).
 
     # 2. Pool-allocate partials array (THE KEY: pool instead of heap)
     n_partials = 1 << N
-    partials = unsafe_acquire!(pool, Tv, (n_partials, size(data_p)...))
+    partials = acquire!(pool, Tv, (n_partials, size(data_p)...))
 
     # 3. Compute all partial derivatives in-place
     #    (internally uses autocached 1D caches + nested @with_pool for temp buffers)
@@ -169,7 +169,7 @@ Uses query protocol (`_query_length`, `_query_extract`) — works with any query
     # Build phase (same as scalar, done once)
     grids_p, data_p, bcs_p = _prepare_periodic_nd_pooled(pool, grids, data, bcs)
     n_partials = 1 << N
-    partials = unsafe_acquire!(pool, Tv, (n_partials, size(data_p)...))
+    partials = acquire!(pool, Tv, (n_partials, size(data_p)...))
     _compute_nd_partials!(partials, grids_p, data_p, bcs_p)
     spacings = _create_spacings_pooled(pool, grids_p)
 

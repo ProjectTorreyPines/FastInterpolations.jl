@@ -154,7 +154,7 @@ manages their lifetime. Follows the `_create_spacing_pooled(pool, ...)` pattern.
         if x isa AbstractRange
             x_p = range(first(x), step = step(x), length = n + 1)
         else
-            x_p = unsafe_acquire!(pool, Tg, n + 1)
+            x_p = acquire!(pool, Tg, n + 1)
             @inbounds copyto!(x_p, 1, x, 1, n)
             @inbounds x_p[n + 1] = x_end
         end

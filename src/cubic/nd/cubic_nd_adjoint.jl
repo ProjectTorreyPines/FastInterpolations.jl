@@ -523,12 +523,9 @@ end
         ops::NTuple{N, AbstractEvalOp}
     ) where {Tv, Tg, N}
     NP = 1 << N
-    total = NP * prod(adj.grid_size)
 
-    # Pool-allocate partials_bar as 1D, reshape to (NP, n1, n2, ..., nN)
-    pb_flat = acquire!(pool, Tv, total)
-    fill!(pb_flat, zero(Tv))
-    partials_bar = reshape(pb_flat, NP, adj.grid_size...)
+    # Pool-allocate partials_bar directly as N+1 dimensional array
+    partials_bar = zeros!(pool, Tv, NP, adj.grid_size...)
 
     # Step 0: Eval adjoint scatter — dispatches on y_bar type
     _adjoint_scatter_nd!(partials_bar, adj.anchors, y_bar, ops)

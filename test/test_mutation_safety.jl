@@ -171,9 +171,9 @@ end
 
     @testset "1D y-data mutation (extrap modes)" begin
         for (name, extrap) in [
-            ("ExtendExtrap", ExtendExtrap()),
-            ("ClampExtrap", ClampExtrap()),
-        ]
+                ("ExtendExtrap", ExtendExtrap()),
+                ("ClampExtrap", ClampExtrap()),
+            ]
             @testset "LinearInterpolant $name" begin
                 x, y = _make_1d_test_data()
                 itp = linear_interp(x, y; extrap = extrap)
@@ -712,19 +712,90 @@ end
     end
 
     # ============================================================
+    # §18b  ND view-backed mutation safety (grids + data)
+    # ============================================================
+
+    @testset "ND view mutation safety (2D)" begin
+        @testset "ConstantInterpolantND" begin
+            x = collect(range(0.0, 2π, 10))
+            y = collect(range(0.0, π, 12))
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            itp = constant_interp((@view(x[:]), @view(y[:])), @view(data[:, :]))
+            val_before = itp(Q2D)
+            data .= 0.0; x[3] = 100.0; y[4] = 100.0
+            @test itp(Q2D) == val_before
+        end
+
+        @testset "LinearInterpolantND" begin
+            x = collect(range(0.0, 2π, 10))
+            y = collect(range(0.0, π, 12))
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            itp = linear_interp((@view(x[:]), @view(y[:])), @view(data[:, :]))
+            val_before = itp(Q2D)
+            data .= 0.0; x[3] = 100.0; y[4] = 100.0
+            @test itp(Q2D) == val_before
+        end
+
+        @testset "QuadraticInterpolantND" begin
+            x = collect(range(0.0, 2π, 10))
+            y = collect(range(0.0, π, 12))
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            itp = quadratic_interp((@view(x[:]), @view(y[:])), @view(data[:, :]))
+            val_before = itp(Q2D)
+            data .= 0.0; x[3] = 100.0; y[4] = 100.0
+            @test itp(Q2D) == val_before
+        end
+
+        @testset "CubicInterpolantND" begin
+            x = collect(range(0.0, 2π, 10))
+            y = collect(range(0.0, π, 12))
+            data = [sin(xi) * cos(yj) for xi in x, yj in y]
+            itp = cubic_interp((@view(x[:]), @view(y[:])), @view(data[:, :]))
+            val_before = itp(Q2D)
+            data .= 0.0; x[3] = 100.0; y[4] = 100.0
+            @test itp(Q2D) == val_before
+        end
+    end
+
+    # ============================================================
     # §19  View-backed input + mutation (copy must decouple)
     # ============================================================
 
     @testset "1D view mutation safety" begin
+        @testset "ConstantInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y = sin.(x)
+            itp = constant_interp(@view(x[:]), @view(y[:]))
+            val_before = itp(Q1D)
+            y .= 0.0; x[12] = 100.0
+            @test itp(Q1D) == val_before
+        end
+
         @testset "LinearInterpolant" begin
             x = collect(range(0.0, 10.0, 50))
             y = sin.(x)
             itp = linear_interp(@view(x[:]), @view(y[:]))
             val_before = itp(Q1D)
-            y .= 0.0
-            x[12] = 100.0
-            val_after = itp(Q1D)
-            @test val_before == val_after
+            y .= 0.0; x[12] = 100.0
+            @test itp(Q1D) == val_before
+        end
+
+        @testset "QuadraticInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y = sin.(x)
+            itp = quadratic_interp(@view(x[:]), @view(y[:]))
+            val_before = itp(Q1D)
+            y .= 0.0; x[12] = 100.0
+            @test itp(Q1D) == val_before
+        end
+
+        @testset "CubicInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y = sin.(x)
+            itp = cubic_interp(@view(x[:]), @view(y[:]))
+            val_before = itp(Q1D)
+            y .= 0.0; x[12] = 100.0
+            @test itp(Q1D) == val_before
         end
     end
 
@@ -769,15 +840,40 @@ end
     # ============================================================
 
     @testset "Series view mutation safety" begin
+        @testset "ConstantSeriesInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y1 = sin.(x); y2 = cos.(x)
+            sitp = constant_interp(@view(x[:]), Series(y1, y2))
+            val_before = sitp(Q1D)
+            x[12] = 100.0
+            @test sitp(Q1D) == val_before
+        end
+
         @testset "LinearSeriesInterpolant" begin
             x = collect(range(0.0, 10.0, 50))
-            y1 = sin.(x)
-            y2 = cos.(x)
+            y1 = sin.(x); y2 = cos.(x)
             sitp = linear_interp(@view(x[:]), Series(y1, y2))
             val_before = sitp(Q1D)
             x[12] = 100.0
-            val_after = sitp(Q1D)
-            @test val_before == val_after
+            @test sitp(Q1D) == val_before
+        end
+
+        @testset "QuadraticSeriesInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y1 = sin.(x); y2 = cos.(x)
+            sitp = quadratic_interp(@view(x[:]), Series(y1, y2))
+            val_before = sitp(Q1D)
+            x[12] = 100.0
+            @test sitp(Q1D) == val_before
+        end
+
+        @testset "CubicSeriesInterpolant" begin
+            x = collect(range(0.0, 10.0, 50))
+            y1 = sin.(x); y2 = cos.(x)
+            sitp = cubic_interp(@view(x[:]), Series(y1, y2))
+            val_before = sitp(Q1D)
+            x[12] = 100.0
+            @test sitp(Q1D) == val_before
         end
     end
 

@@ -161,8 +161,8 @@ struct CubicInterpolant{Tg <: AbstractFloat, Tv, C <: CubicSplineCache{Tg}, E <:
             extrap::E,
             search::P = AutoSearch()
         ) where {Tg <: AbstractFloat, Tv, C <: CubicSplineCache{Tg}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: CubicBC}
-        @assert length(cache.x) == length(y) "cache grid and y must have same length"
-        @assert length(cache.x) == length(z) "z coefficients must match grid length"
+        length(cache.x) == length(y) || _throw_length_mismatch(length(cache.x), length(y))
+        length(cache.x) == length(z) || _throw_length_mismatch(length(cache.x), length(z))
         # Always copy to ensure immutability: once constructed, the interpolant
         # owns its data and always returns identical results for the same query.
         # Without copying, external modifications to y or cache reuse could

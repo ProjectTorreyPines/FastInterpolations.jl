@@ -82,6 +82,7 @@ mutable struct LinearSeriesInterpolant{Tg <: AbstractFloat, Tv, E <: AbstractExt
         ) where {Tg <: AbstractFloat, Tv, E <: AbstractExtrap, P <: AbstractSearchPolicy}
         # copy(x) for mutation safety; copy() on Range is identity (zero alloc)
         # typeof(xc) rebinds X after copy (view → Vector)
+        # y is NOT copied here — _build_series_mat() already provides an owned matrix.
         xc = copy(x)
         return new{Tg, Tv, E, P, typeof(xc)}(xc, y, LazyTranspose{Tv}(), extrap, search)
     end

@@ -638,3 +638,30 @@ function quadratic_adjoint(
     )
     return quadratic_adjoint(x, [x_query]; bc = bc, extrap = extrap)
 end
+
+# ========================================
+# Matrix(itp, xq) convenience — forward matrix from interpolant
+# ========================================
+
+"""
+    Matrix(itp::QuadraticInterpolant, xq; deriv=EvalValue()) -> Matrix
+
+Materialize the forward interpolation operator as a dense matrix `W` of size
+`(n_query, n_grid)`, such that `W * f ≈ itp.(xq; deriv=deriv)` for the linear part.
+
+Internally constructs the adjoint and transposes: `W = Matrix(adj; deriv)'`.
+
+# Example
+```julia
+itp = quadratic_interp(x, f; bc=Left(QuadraticFit()))
+W = Matrix(itp, xq)                       # (n_query × n_grid)
+@assert W * f ≈ itp.(xq)                  # for zero-valued BCs
+```
+"""
+function Base.Matrix(
+        itp::QuadraticInterpolant, xq::AbstractVector;
+        deriv::DerivOp = EvalValue()
+    )
+    adj = quadratic_adjoint(itp.x, xq; bc = itp.bc, extrap = itp.extrap)
+    return Matrix(adj; deriv = deriv)'
+end

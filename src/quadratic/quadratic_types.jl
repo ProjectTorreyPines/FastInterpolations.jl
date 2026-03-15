@@ -10,7 +10,7 @@
 # from bc_types.jl (shared with cubic and other interpolators).
 
 """
-    QuadraticInterpolant{Tg,Tv,X,Y,E,P}
+    QuadraticInterpolant{Tg,Tv,X,Y,E,P,BC}
 
 Lightweight callable interpolant for quadratic spline interpolation.
 Returned by `quadratic_interp(x, y)` (2-argument form).
@@ -22,6 +22,7 @@ Returned by `quadratic_interp(x, y)` (2-argument form).
 - `Y<:AbstractVector{Tv}`: Type of y-values
 - `E<:AbstractExtrap`: Extrapolation mode type (compile-time specialized)
 - `P<:AbstractSearchPolicy`: Search policy type
+- `BC<:QuadraticBC`: Boundary condition type (retained for adjoint/matrix convenience)
 
 # Fields
 - `x::X`: x-coordinates (sorted)
@@ -31,6 +32,7 @@ Returned by `quadratic_interp(x, y)` (2-argument form).
 - `d::Vector{Tv}`: Slope coefficients (value-derived)
 - `extrap::E`: Extrapolation mode (NoExtrap(), ExtendExtrap(), ClampExtrap(), or WrapExtrap())
 - `search_policy::P`: Default search policy for interval lookup
+- `bc::BC`: Boundary condition used during construction (retained for `Matrix(itp, xq)` convenience)
 
 # Usage
 ```julia
@@ -56,7 +58,7 @@ itp = quadratic_interp(x, y; search=LinearBinarySearch())  # explicit override
 val = itp(0.5; search=BinarySearch())  # per-call override
 ```
 """
-struct QuadraticInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy} <: AbstractInterpolant1D{Tg, Tv}
+struct QuadraticInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC} <: AbstractInterpolant1D{Tg, Tv}
     x::X
     y::Y
     h::Vector{Tg}   # Grid spacing (geometry, always Tg)
@@ -64,11 +66,12 @@ struct QuadraticInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y 
     d::Vector{Tv}   # Slope coefficients (value-derived)
     extrap::E        # Extrapolation mode (compile-time specialized)
     search_policy::P  # Default search policy (immutable, thread-safe)
+    bc::BC           # Boundary condition (retained for Matrix(itp, xq) convenience)
 
     # Inner constructor: parametric, only calls new (handles validation only)
-    function QuadraticInterpolant{Tg, Tv, X, Y, E, P}(
-            x::AbstractVector{Tg}, y::AbstractVector{Tv}, h::Vector{Tg}, a::Vector{Tv}, d::Vector{Tv}, ev::E, search::P
-        ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy}
+    function QuadraticInterpolant{Tg, Tv, X, Y, E, P, BC}(
+            x::AbstractVector{Tg}, y::AbstractVector{Tv}, h::Vector{Tg}, a::Vector{Tv}, d::Vector{Tv}, ev::E, search::P, bc::BC
+        ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, E <: AbstractExtrap, P <: AbstractSearchPolicy, BC <: QuadraticBC}
         length(x) == length(y) || _throw_length_mismatch(length(x), length(y))
         length(x) >= 2 || _throw_grid_too_small(length(x))
         # Copy to ensure immutability: once constructed, the interpolant owns
@@ -76,7 +79,7 @@ struct QuadraticInterpolant{Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y 
         # copy() on immutable Range types is a no-op (zero allocation).
         # typeof() rebinds X/Y to the post-copy concrete type (e.g. SubArray → Vector).
         xc, yc = copy(x), copy(y)
-        return new{Tg, Tv, typeof(xc), typeof(yc), E, P}(xc, yc, h, a, d, ev, search)
+        return new{Tg, Tv, typeof(xc), typeof(yc), E, P, BC}(xc, yc, h, a, d, ev, search, bc)
     end
 end
 
@@ -93,9 +96,11 @@ end
         h::Vector{Tg},
         a::Vector{Tv},
         d::Vector{Tv};
+        bc::QuadraticBC = Left(QuadraticFit()),
         extrap::AbstractExtrap = NoExtrap(),
         search::P = AutoSearch()
     ) where {Tg <: AbstractFloat, Tv, X <: AbstractVector{Tg}, Y <: AbstractVector{Tv}, P <: AbstractSearchPolicy}
     E = typeof(extrap)
-    return QuadraticInterpolant{Tg, Tv, X, Y, E, P}(x, y, h, a, d, extrap, search)
+    BC = typeof(bc)
+    return QuadraticInterpolant{Tg, Tv, X, Y, E, P, BC}(x, y, h, a, d, extrap, search, bc)
 end

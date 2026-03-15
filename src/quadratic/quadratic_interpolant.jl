@@ -123,5 +123,5 @@ end
     h, d, a = _compute_quadratic_coeffs(x_p, y_p, bc_p)
 
     extrap_p = _promote_extrap(extrap, eltype(y_p))
-    return QuadraticInterpolant(x_p, y_p, h, a, d; extrap = extrap_p, search)
+    return QuadraticInterpolant(x_p, y_p, h, a, d; bc = bc_p, extrap = extrap_p, search)
 end

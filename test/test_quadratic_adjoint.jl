@@ -327,6 +327,37 @@ end
     end
 
     # ========================================
+    # Matrix(itp, xq) — convenience forward matrix
+    # ========================================
+    @testset "Matrix(itp, xq) — forward matrix" begin
+        itp = quadratic_interp(x_uniform, f; bc = Left(QuadraticFit()))
+        W = Matrix(itp, xq)
+        @test size(W) == (n_query, n_grid)
+        @test W * f ≈ itp.(xq)
+    end
+
+    @testset "Matrix(itp, xq) — deriv=1" begin
+        itp = quadratic_interp(x_uniform, f; bc = Left(QuadraticFit()))
+        W1 = Matrix(itp, xq; deriv = DerivOp(1))
+        @test W1 * f ≈ itp.(xq; deriv = DerivOp(1))
+    end
+
+    @testset "Matrix(itp, xq) — non-zero BC (Deriv1)" begin
+        bc = Left(Deriv1(0.5))
+        itp = quadratic_interp(x_uniform, f; bc = bc)
+        W = Matrix(itp, xq)
+        @test size(W) == (n_query, n_grid)
+        # For non-zero BC, W*f matches only the linear part; verify via itp.bc round-trip
+        @test itp.bc === bc
+    end
+
+    @testset "Matrix(itp, xq) — MinCurvFit" begin
+        itp = quadratic_interp(x_uniform, f; bc = MinCurvFit())
+        W = Matrix(itp, xq)
+        @test W * f ≈ itp.(xq)
+    end
+
+    # ========================================
     # Scalar query convenience
     # ========================================
     @testset "Scalar query" begin

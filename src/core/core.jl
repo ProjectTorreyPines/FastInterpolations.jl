@@ -14,6 +14,7 @@ include("nd_utils.jl")            # 9. ND-specific utilities (shared by constant
 include("query_protocol.jl")           # 9b. Query protocol (query_length, extract, eltype, validate)
 include("interpolant_protocol.jl")     # 9c. Interpolant callable interface (1D + ND)
 include("adjoint_protocol.jl")         # 9d. Adjoint callable interface (1D + ND)
+include("nd_adjoint_scatter.jl")       # 9e. Shared ND adjoint scatter (_NDAdjointAnchor, _scatter_nd!)
 include("thomas_lu_solver.jl") # 10. Thomas algorithm (TDMA) solvers for tridiagonal systems
 include("series_utils.jl")     # 11. Series validation helpers
 include("series_matrix.jl")    # 12. Lazy transpose infrastructure

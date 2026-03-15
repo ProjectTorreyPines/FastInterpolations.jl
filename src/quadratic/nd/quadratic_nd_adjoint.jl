@@ -30,6 +30,11 @@
 @inline _to_quadratic_bc_adjoint(::ZeroSlopeBC, ::Type{Tg}) where {Tg} = Left(Deriv1(zero(Tg)))
 @inline _to_quadratic_bc_adjoint(bc::PolyFit, ::Type{Tg}) where {Tg} = Right(bc)
 
+# ── Per-axis MinCurvFit constant (dispatch-based, used by map over bcs tuple) ──
+# Using dispatch instead of runtime `isa` avoids Union-type issues in tuple closures.
+@inline _mincurv_C_for_bc(::MinCurvFit, spacing::AbstractGridSpacing{Tg}, n::Int) where {Tg} = _compute_mincurv_C(spacing, n)
+@inline _mincurv_C_for_bc(::AbstractBC, spacing::AbstractGridSpacing{Tg}, ::Int) where {Tg} = zero(Tg)
+
 # ========================================
 # Anchor Baking (ND)
 # ========================================
@@ -364,8 +369,8 @@ function _build_nd_quadratic_adjoint(
     anchors = _bake_nd_quadratic_anchors(grids, spacings, queries, extraps)
     grid_size = ntuple(d -> length(grids[d]), Val(N))
 
-    # Precompute per-axis MinCurvFit constants (grid-only, used if BC is MinCurvFit)
-    mincurv_Cs = ntuple(d -> _compute_mincurv_C(spacings[d], grid_size[d]), Val(N))
+    # Precompute per-axis MinCurvFit constants (dispatch-based, no runtime isa check)
+    mincurv_Cs = map(_mincurv_C_for_bc, bcs, spacings, grid_size)
 
     # copy() for mutation safety; typeof(grids_c) rebinds G after copy (view → Vector).
     grids_c = map(copy, grids)

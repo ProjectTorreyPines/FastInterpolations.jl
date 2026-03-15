@@ -123,8 +123,6 @@ Pipeline per 1D slice:
         f_contrib::AbstractVector{Tv},
         C_d::Tg
     ) where {Tv, Tg}
-    nm1 = n_d - 1
-
     for j in 1:shape_after
         for i in 1:shape_before
             # Extract 1D d_bar slice from partials_bar[p_dst]
@@ -133,12 +131,8 @@ Pipeline per 1D slice:
             end
 
             # Zero f_contrib and s_bar
-            @inbounds for k in 1:n_d
-                f_contrib[k] = zero(Tv)
-            end
-            @inbounds for k in 1:nm1
-                s_bar[k] = zero(Tv)
-            end
+            fill!(f_contrib, zero(Tv))
+            fill!(s_bar, zero(Tv))
 
             # Step 1: Recurrence adjoint: d̄ → s̄ (+ BC endpoint → f̄)
             _call_recurrence_adjoint!(s_bar, d_bar_work, f_contrib, bc, spacing_d, grid_d, C_d)

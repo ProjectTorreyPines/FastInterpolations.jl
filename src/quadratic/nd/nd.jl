@@ -35,3 +35,9 @@ include("quadratic_nd_eval.jl")      # Callable interface + @generated tensor pr
 # ========================================
 include("quadratic_nd_interpolant.jl")  # quadratic_interp() constructor + BC resolution + builder
 include("quadratic_nd_oneshot.jl")      # quadratic_interp() one-shot + pool-based backends
+
+# ========================================
+# 5. Adjoint (Transpose) Operator
+# ========================================
+include("quadratic_nd_adjoint_types.jl")  # QuadraticAdjointND struct + protocol accessors
+include("quadratic_nd_adjoint.jl")        # Scatter, build adjoint, apply, constructor

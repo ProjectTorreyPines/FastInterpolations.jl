@@ -103,7 +103,7 @@ end
 # Forward: y_q = data[idx + offset]  (offset from side mode)
 # Adjoint: f̄[idx + offset] += ȳ_q
 
-function _scatter_constant_adjoint!(
+@inline function _scatter_constant_adjoint!(
         f_bar::AbstractVector,
         anchors::Vector{<:_ConstantAnchoredQuery},
         y_bar,
@@ -130,7 +130,7 @@ end
 # ── All derivative scatters ───────────────────────────────────────────────
 # Constant interpolation has zero derivative at all orders → no scatter needed
 
-function _scatter_constant_adjoint!(
+@inline function _scatter_constant_adjoint!(
         ::AbstractVector,
         ::Vector{<:_ConstantAnchoredQuery},
         ::Any,

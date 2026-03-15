@@ -168,7 +168,7 @@ Dispatches on `DerivOp{N}` to select the appropriate weight field from `_CubicAn
 - `EvalValue`/`EvalDeriv1`: 4-weight scatter (wyL, wyR, wzL, wzR) → f_bar + z_bar
 - `EvalDeriv2`/`EvalDeriv3`: 2-weight scatter (wzL, wzR) → z_bar only (y-weights are zero)
 """
-function _scatter_eval_adjoint!(
+@inline function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
         anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
         ::EvalValue
@@ -185,7 +185,7 @@ function _scatter_eval_adjoint!(
     return nothing
 end
 
-function _scatter_eval_adjoint!(
+@inline function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
         anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
         ::EvalDeriv1
@@ -202,7 +202,7 @@ function _scatter_eval_adjoint!(
     return nothing
 end
 
-function _scatter_eval_adjoint!(
+@inline function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
         anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
         ::EvalDeriv2
@@ -217,7 +217,7 @@ function _scatter_eval_adjoint!(
     return nothing
 end
 
-function _scatter_eval_adjoint!(
+@inline function _scatter_eval_adjoint!(
         f_bar::AbstractVector, z_bar::AbstractVector,
         anchors::Vector{<:_CubicAnchoredQuery}, y_bar,  # AbstractVector or Tuple
         ::EvalDeriv3
@@ -242,7 +242,7 @@ Apply Rᵀ to `r_bar` and accumulate into `f_bar`.
 The forward RHS operator `R` maps `f → r` via finite differences + BC rows.
 `Rᵀ` is its transpose: for each `r̄` entry, scatter to `f̄` using transposed stencil.
 """
-function _compute_rhs_adjoint!(
+@inline function _compute_rhs_adjoint!(
         f_bar::AbstractVector, r_bar::AbstractVector,
         spacing::AbstractGridSpacing{Tg},
         bc::BCPair{L, R}, pf::_AdjointPolyfitData
@@ -593,7 +593,7 @@ end
 Apply Rᵀ to `r_bar[1:n]` and accumulate into `f_bar[1:n+1]` for periodic BC.
 R is n×(n+1) with wrapping entries at rows 1 and n.
 """
-function _compute_rhs_adjoint_periodic!(
+@inline function _compute_rhs_adjoint_periodic!(
         f_bar::AbstractVector, r_bar::AbstractVector,
         spacing::AbstractGridSpacing{Tg}, n::Int
     ) where {Tg}

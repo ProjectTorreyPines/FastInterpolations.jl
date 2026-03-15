@@ -6,6 +6,8 @@
 |----------|-------------|
 | `cubic_adjoint(x, xq)` | 1D adjoint operator $W^\top$ |
 | `cubic_adjoint(grids, queries)` | ND adjoint operator $W^\top$ |
+| `quadratic_adjoint(x, xq)` | 1D quadratic adjoint operator $W^\top$ |
+| `quadratic_adjoint(grids, queries)` | ND quadratic adjoint operator $W^\top$ |
 | `linear_adjoint(x, xq)` | 1D linear adjoint operator $W^\top$ |
 | `linear_adjoint(grids, queries)` | ND linear adjoint operator $W^\top$ |
 | `constant_adjoint(x, xq)` | 1D constant adjoint operator $W^\top$ |
@@ -31,10 +33,18 @@ AbstractAdjoint
 AbstractAdjoint1D
 CubicAdjoint
 CubicAdjointND
+QuadraticAdjoint
+QuadraticAdjointND
 LinearAdjoint
 LinearAdjointND
 ConstantAdjoint
 ConstantAdjointND
+```
+
+## Quadratic Adjoint Constructor
+
+```@docs
+quadratic_adjoint
 ```
 
 ## Linear Adjoint Constructor

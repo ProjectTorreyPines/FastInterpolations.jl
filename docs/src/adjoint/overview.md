@@ -93,8 +93,10 @@ See [Cubic Adjoint (1D)](cubic_1d_adjoint.md) and [Cubic Adjoint (ND)](cubic_nd_
 | **Cubic (ND)** | [`CubicAdjointND`](@ref) | ForwardDiff, Zygote, Enzyme |
 | **Linear (1D)** | [`LinearAdjoint`](@ref) | ForwardDiff, Zygote |
 | **Linear (ND)** | [`LinearAdjointND`](@ref) | ForwardDiff, Zygote |
-| **Quadratic** | — (planned) | ForwardDiff |
-| **Constant** | — (planned) | ForwardDiff, Zygote |
+| **Quadratic (1D)** | [`QuadraticAdjoint`](@ref) | ForwardDiff |
+| **Quadratic (ND)** | [`QuadraticAdjointND`](@ref) | ForwardDiff |
+| **Constant (1D)** | [`ConstantAdjoint`](@ref) | ForwardDiff, Zygote |
+| **Constant (ND)** | [`ConstantAdjointND`](@ref) | ForwardDiff, Zygote |
 
 ## See Also
 

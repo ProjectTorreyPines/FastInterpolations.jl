@@ -372,6 +372,17 @@ end
             @test result_before == result_after
         end
 
+        @testset "ConstantAdjoint" begin
+            x = collect(range(0.0, 1.0, 50))
+            xq = [0.1, 0.3, 0.5, 0.7, 0.9]
+            y_bar = [1.0, 2.0, 3.0, 4.0, 5.0]
+            adj = constant_adjoint(x, xq)
+            result_before = adj(y_bar)
+            x[25] = 100.0
+            result_after = adj(y_bar)
+            @test result_before == result_after
+        end
+
         @testset "CubicAdjoint PeriodicBC" begin
             x = collect(range(0.0, 2π, 50))
             xq = [0.5, 1.0, 2.0, 3.0, 5.0]
@@ -409,6 +420,19 @@ end
             yq = [0.3, 1.0, 1.5]
             y_bar = [1.0, 2.0, 3.0]
             adj = cubic_adjoint((x, y), (xq, yq))
+            result_before = adj(y_bar)
+            x[5] = 100.0
+            result_after = adj(y_bar)
+            @test result_before == result_after
+        end
+
+        @testset "ConstantAdjointND" begin
+            x = collect(range(0.0, 1.0, 10))
+            y = collect(range(0.0, 2.0, 12))
+            xq = [0.2, 0.5, 0.8]
+            yq = [0.3, 1.0, 1.5]
+            y_bar = [1.0, 2.0, 3.0]
+            adj = constant_adjoint((x, y), (xq, yq))
             result_before = adj(y_bar)
             x[5] = 100.0
             result_after = adj(y_bar)

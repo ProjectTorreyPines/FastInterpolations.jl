@@ -103,6 +103,7 @@ end
                 ("ExtendExtrap", ExtendExtrap()),
                 ("ClampExtrap", ClampExtrap()),
                 ("FillExtrap", FillExtrap(0.0)),
+                ("WrapExtrap", WrapExtrap()),
             ],
             (side_name, side_mode) in [
                 ("NearestSide", NearestSide()),
@@ -481,5 +482,83 @@ end
     @testset "Singleton grid throws ArgumentError" begin
         @test_throws ArgumentError constant_adjoint(([0.0], [0.0, 1.0]), ([0.0], [0.5]))
         @test_throws ArgumentError constant_adjoint(([0.0, 1.0], [0.0]), ([0.5], [0.0]))
+    end
+
+    # ========================================
+    # Mutation safety — grid mutation after construction
+    # ========================================
+    @testset "Mutation safety — grid mutation" begin
+        x = collect(range(0.0, 1.0, nx))
+        y = collect(range(0.0, 2.0, ny))
+        adj = constant_adjoint((x, y), (xq, yq))
+        result_before = adj(y_bar)
+        x[5] = 100.0
+        y[4] = 100.0
+        result_after = adj(y_bar)
+        @test result_before == result_after
+    end
+end
+
+# ========================================
+# N=3 Tests (generic ntuple path)
+# ========================================
+@testset "ConstantAdjointND (N=3)" begin
+    nx3, ny3, nz3 = 8, 6, 5
+    nq3 = 20
+
+    x3 = range(0.0, 1.0, nx3)
+    y3 = range(0.0, 2.0, ny3)
+    z3 = range(0.0, 0.5, nz3)
+
+    xq3 = sort(rand(nq3)) .* 0.96 .+ 0.02
+    yq3 = sort(rand(nq3)) .* 1.92 .+ 0.04
+    zq3 = sort(rand(nq3)) .* 0.46 .+ 0.02
+
+    f3 = randn(nx3, ny3, nz3)
+    yb3 = randn(nq3)
+
+    @testset "Dot-product — $side_name" for (side_name, side_mode) in [
+            ("NearestSide", NearestSide()),
+            ("LeftSide", LeftSide()),
+            ("RightSide", RightSide()),
+        ]
+        itp = constant_interp((x3, y3, z3), f3; side = side_mode)
+        adj = constant_adjoint((x3, y3, z3), (xq3, yq3, zq3); side = side_mode)
+
+        Wf = Vector{Float64}(undef, nq3)
+        itp(Wf, (xq3, yq3, zq3))
+        WTy = adj(yb3)
+
+        @test dot(Wf, yb3) ≈ dot(vec(f3), vec(WTy))
+    end
+
+    @testset "In-place vs allocating" begin
+        adj = constant_adjoint((x3, y3, z3), (xq3, yq3, zq3))
+        fb_alloc = adj(yb3)
+        fb_ip = zeros(nx3, ny3, nz3)
+        adj(fb_ip, yb3)
+        @test fb_alloc ≈ fb_ip
+    end
+
+    @testset "Size" begin
+        adj = constant_adjoint((x3, y3, z3), (xq3, yq3, zq3))
+        @test size(adj) == (nx3, ny3, nz3, nq3)
+    end
+
+    @testset "Derivative → zero" begin
+        adj = constant_adjoint((x3, y3, z3), (xq3, yq3, zq3))
+        fb = adj(yb3; deriv = (EvalDeriv1(), EvalValue(), EvalValue()))
+        @test all(iszero, fb)
+    end
+
+    @testset "Mutation safety — grid mutation" begin
+        x = collect(range(0.0, 1.0, nx3))
+        y = collect(range(0.0, 2.0, ny3))
+        z = collect(range(0.0, 0.5, nz3))
+        adj = constant_adjoint((x, y, z), (xq3, yq3, zq3))
+        result_before = adj(yb3)
+        x[3] = 100.0; y[2] = 100.0; z[2] = 100.0
+        result_after = adj(yb3)
+        @test result_before == result_after
     end
 end

@@ -354,6 +354,63 @@ end
     end
 
     # ========================================
+    # DimensionMismatch error tests (T1)
+    # ========================================
+    @testset "DimensionMismatch errors" begin
+        adj = quadratic_adjoint(x_uniform, xq; bc = Left(QuadraticFit()))
+
+        # y_bar wrong length (allocating)
+        @test_throws DimensionMismatch adj(randn(n_query + 1))
+
+        # f_bar wrong length (in-place)
+        @test_throws DimensionMismatch adj(zeros(n_grid + 1), y_bar)
+
+        # Scalar y_bar when multiple queries
+        @test_throws DimensionMismatch adj(1.5)
+
+        # 1-tuple y_bar when multiple queries
+        @test_throws DimensionMismatch adj((1.0,))
+    end
+
+    # ========================================
+    # Scalar / Tuple y_bar (T2)
+    # ========================================
+    @testset "Scalar y_bar (1 query point)" begin
+        xq_single = [0.3]
+        adj = quadratic_adjoint(x_uniform, xq_single; bc = Left(QuadraticFit()))
+        ref = adj([1.5])
+
+        # Scalar y_bar
+        @test adj(1.5) ≈ ref
+
+        # In-place scalar
+        f_bar = zeros(n_grid)
+        adj(f_bar, 1.5)
+        @test f_bar ≈ ref
+    end
+
+    @testset "Scalar y_bar with deriv" begin
+        xq_single = [0.4]
+        adj = quadratic_adjoint(x_uniform, xq_single; bc = Left(QuadraticFit()))
+        ref = adj([1.0]; deriv = DerivOp(1))
+        @test adj(1.0; deriv = DerivOp(1)) ≈ ref
+    end
+
+    @testset "Tuple y_bar (multiple query points)" begin
+        xq_tup = [0.2, 0.5, 0.8]
+        adj = quadratic_adjoint(x_uniform, xq_tup; bc = Left(QuadraticFit()))
+        ref = adj([1.0, 2.0, 3.0])
+
+        # Tuple y_bar
+        @test adj((1.0, 2.0, 3.0)) ≈ ref
+
+        # In-place tuple
+        f_bar = zeros(n_grid)
+        adj(f_bar, (1.0, 2.0, 3.0))
+        @test f_bar ≈ ref
+    end
+
+    # ========================================
     # Mutation safety — grid mutation after construction
     # ========================================
     @testset "Mutation safety — grid mutation" begin

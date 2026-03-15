@@ -46,9 +46,13 @@ Computes `f̄ = Wᵀȳ` where `W` is the forward ND interpolation weight matrix.
 # Type Parameters
 - `Tg`: Grid float type (Float32 or Float64)
 - `N`: Number of dimensions
-- `G`: Grid tuple type
+- `G`: Grid tuple type (after copy for mutation safety)
 - `S`: Spacing tuple type
 - `BP`: Boundary condition tuple type
+
+# Fields
+- `mincurv_Cs`: Precomputed `inv(Σ inv_h)` per axis, avoiding O(n) recomputation
+  per slice for MinCurvFit BCs. Unused (but harmless) for other BC types.
 
 # Usage
 ```julia
@@ -73,6 +77,7 @@ struct QuadraticAdjointND{
     bcs::BP
     anchors::Vector{_NDAdjointAnchor{Tg, N}}
     grid_size::NTuple{N, Int}
+    mincurv_Cs::NTuple{N, Tg}  # Precomputed inv(Σ inv_h) per axis; only used for MinCurvFit BCs
 end
 
 # ========================================

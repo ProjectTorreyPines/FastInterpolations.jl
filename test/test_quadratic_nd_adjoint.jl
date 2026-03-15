@@ -342,6 +342,81 @@ end
     end
 
     # ========================================
+    # Matrix materialization — with deriv (T4)
+    # ========================================
+    @testset "Matrix materialization — deriv=(1,0)" begin
+        sx, sy = 5, 4
+        x_s = range(0.0, 1.0, sx)
+        y_s = range(0.0, 1.0, sy)
+        n_q = 8
+        xq_s = sort(rand(n_q)) .* 0.96 .+ 0.02
+        yq_s = sort(rand(n_q)) .* 0.96 .+ 0.02
+
+        adj = quadratic_adjoint((x_s, y_s), (xq_s, yq_s))
+        deriv_ops = (EvalDeriv1(), EvalValue())
+
+        # Build Wᵀ by probing adjoint with unit vectors
+        WT = zeros(sx * sy, n_q)
+        e_q = zeros(n_q)
+        for q in 1:n_q
+            e_q[q] = 1.0
+            WT[:, q] = vec(adj(e_q; deriv = deriv_ops))
+            e_q[q] = 0.0
+        end
+
+        WT_mat = Matrix(adj; deriv = deriv_ops)
+        @test WT_mat ≈ WT rtol = 1.0e-12
+    end
+
+    @testset "Matrix materialization — deriv=(0,2)" begin
+        sx, sy = 5, 4
+        x_s = range(0.0, 1.0, sx)
+        y_s = range(0.0, 1.0, sy)
+        n_q = 8
+        xq_s = sort(rand(n_q)) .* 0.96 .+ 0.02
+        yq_s = sort(rand(n_q)) .* 0.96 .+ 0.02
+
+        adj = quadratic_adjoint((x_s, y_s), (xq_s, yq_s))
+        deriv_ops = (EvalValue(), EvalDeriv2())
+
+        WT = zeros(sx * sy, n_q)
+        e_q = zeros(n_q)
+        for q in 1:n_q
+            e_q[q] = 1.0
+            WT[:, q] = vec(adj(e_q; deriv = deriv_ops))
+            e_q[q] = 0.0
+        end
+
+        WT_mat = Matrix(adj; deriv = deriv_ops)
+        @test WT_mat ≈ WT rtol = 1.0e-12
+    end
+
+    # ========================================
+    # Scalar / Tuple y_bar — ND (T2)
+    # ========================================
+    @testset "Scalar y_bar (single query)" begin
+        adj_1 = quadratic_adjoint((x_uniform, y_uniform), ([0.5], [1.0]))
+        ref = adj_1([1.0])
+        @test adj_1(1.0) ≈ ref
+
+        # In-place scalar
+        fb = zeros(nx, ny)
+        adj_1(fb, 1.0)
+        @test fb ≈ ref
+    end
+
+    @testset "DimensionMismatch — scalar y_bar with multiple queries" begin
+        adj = quadratic_adjoint((x_uniform, y_uniform), (xq, yq))
+        @test_throws DimensionMismatch adj(1.0)
+    end
+
+    @testset "Mismatched query-length constructor" begin
+        @test_throws DimensionMismatch quadratic_adjoint(
+            (x_uniform, y_uniform), (xq, randn(n_query + 1))
+        )
+    end
+
+    # ========================================
     # Edge cases
     # ========================================
     @testset "Single query point" begin
@@ -488,6 +563,32 @@ end
         fb = zeros(nx, ny)
         allocs = _test_quadratic_nd_adjoint_alloc_inplace(
             (x_uniform, y_uniform), (xq, yq), fb, y_bar; bc = bc
+        )
+        @test allocs <= ND_ALLOC_THRESHOLD
+    end
+
+    # ========================================
+    # Zero-alloc: derivative operations (T3)
+    # ========================================
+    function _test_quadratic_nd_adjoint_alloc_deriv(grids, queries, f_bar, y_bar, deriv)
+        adj = quadratic_adjoint(grids, queries)
+        adj(f_bar, y_bar; deriv = deriv)  # warmup
+        adj(f_bar, y_bar; deriv = deriv)  # warmup
+        return @allocated adj(f_bar, y_bar; deriv = deriv)
+    end
+
+    @testset "Zero-alloc: in-place deriv=1" begin
+        fb = zeros(nx, ny)
+        allocs = _test_quadratic_nd_adjoint_alloc_deriv(
+            (x_uniform, y_uniform), (xq, yq), fb, y_bar, DerivOp(1)
+        )
+        @test allocs <= ND_ALLOC_THRESHOLD
+    end
+
+    @testset "Zero-alloc: in-place mixed deriv" begin
+        fb = zeros(nx, ny)
+        allocs = _test_quadratic_nd_adjoint_alloc_deriv(
+            (x_uniform, y_uniform), (xq, yq), fb, y_bar, (DerivOp(1), EvalValue())
         )
         @test allocs <= ND_ALLOC_THRESHOLD
     end

@@ -145,7 +145,7 @@ end
 # ========================================
 
 """
-    QuadraticAdjoint{Tg, S, BC}
+    QuadraticAdjoint{Tg, S, BC, X}
 
 Adjoint (transpose) operator for quadratic spline interpolation.
 Computes `f̄ = Wᵀȳ` where `W` is the forward interpolation weight matrix.
@@ -155,6 +155,7 @@ Constructed from a grid and query points (query-baked, data-free).
 # Type Parameters
 - `Tg`: Grid float type (Float32 or Float64)
 - `S`: Grid spacing type (for fast inv_h access)
+- `X`: Grid vector type (after copy for mutation safety)
 - `BC`: Boundary condition type (Left, Right, or MinCurvFit)
 
 # Usage
@@ -192,6 +193,7 @@ struct QuadraticAdjoint{
     bc::BC
     grid_size::Int
     grid::X  # Needed for PolyFit BC adjoint
+    mincurv_C::Tg  # Precomputed inv(Σ inv_h); only used for MinCurvFit BC
 
     # Inner constructor: copy() for mutation safety.
     # copy() on immutable Range types is a no-op (zero allocation).
@@ -201,7 +203,8 @@ struct QuadraticAdjoint{
             bc::BC, grid_size::Int, grid::AbstractVector{Tg}
         ) where {Tg <: AbstractFloat, S <: AbstractGridSpacing{Tg}, BC <: QuadraticBC}
         gc = copy(grid)
-        return new{Tg, S, BC, typeof(gc)}(spacing, anchors, bc, grid_size, gc)
+        C = bc isa MinCurvFit ? _compute_mincurv_C(spacing, grid_size) : zero(Tg)
+        return new{Tg, S, BC, typeof(gc)}(spacing, anchors, bc, grid_size, gc, C)
     end
 end
 
@@ -292,6 +295,18 @@ end
 #
 # After this step, s_bar contains all secant sensitivities and
 # f_bar may be updated for PolyFit BC endpoints.
+
+# ── Precomputed MinCurvFit constant ───────────────────────────────────────
+# C = inv(Σ inv_h[i]) is a grid-only constant used in MinCurvFit endpoint adjoint.
+# Precomputed once at construction time, avoiding O(n) recomputation per call.
+
+@inline function _compute_mincurv_C(spacing::AbstractGridSpacing{Tg}, n::Int) where {Tg}
+    inv_h_sum = zero(Tg)
+    @inbounds for i in 1:(n - 1)
+        inv_h_sum += _get_inv_h(spacing, i)
+    end
+    return inv(inv_h_sum)
+end
 
 # ── Shared sweep helpers ──────────────────────────────────────────────────
 # Factor the hot loops that are common across all Left/Right BC variants.
@@ -422,6 +437,19 @@ end
     return nothing
 end
 
+# ── Dispatch wrapper ──────────────────────────────────────────────────────
+# Routes the precomputed C to MinCurvFit; other BCs ignore it.
+
+@inline function _call_recurrence_adjoint!(s_bar, d_bar, f_bar, bc, spacing, grid, _C)
+    _recurrence_adjoint!(s_bar, d_bar, f_bar, bc, spacing, grid)
+    return nothing
+end
+
+@inline function _call_recurrence_adjoint!(s_bar, d_bar, f_bar, bc::MinCurvFit, spacing, grid, C)
+    _recurrence_adjoint!(s_bar, d_bar, f_bar, bc, spacing, grid, C)
+    return nothing
+end
+
 # ── MinCurvFit BC ─────────────────────────────────────────────────────────
 # Forward: d[1] = [Σ αᵢ(sᵢ - βᵢ)·inv_hᵢ] · inv(Σ inv_hᵢ)
 #          then forward recurrence from d[1].
@@ -435,7 +463,8 @@ end
         f_bar::AbstractVector{Tv},
         ::MinCurvFit,
         spacing::AbstractGridSpacing{Tg},
-        grid::AbstractVector{Tg}
+        grid::AbstractVector{Tg},
+        C::Tg = _compute_mincurv_C(spacing, length(d_bar))
     ) where {Tv, Tg}
     n = length(d_bar)
     nm1 = n - 1
@@ -447,13 +476,6 @@ end
     # Forward: d[1] = numerator * C where C = inv(inv_h_sum)
     # numerator = Σ α[i] * (s[i] - β[i]) * inv_h[i]
     # β[1]=0, β[i+1] = 2*s[i] - β[i], α[i] = (-1)^(i+1)
-
-    # Compute C (grid-only constant)
-    inv_h_sum = zero(Tg)
-    @inbounds for i in 1:nm1
-        inv_h_sum += _get_inv_h(spacing, i)
-    end
-    C = inv(inv_h_sum)
 
     # numerator_bar = d̄[1] * C
     numerator_bar = @inbounds d_bar[1] * C
@@ -522,7 +544,7 @@ end
     _scatter_eval_adjoint_quadratic!(f_bar, d_bar, adj.anchors, y_bar, deriv)
 
     # Step 2: Recurrence adjoint → s̄ (+ BC endpoint contribution to f̄)
-    _recurrence_adjoint!(s_bar, d_bar, f_bar, adj.bc, adj.spacing, adj.grid)
+    _call_recurrence_adjoint!(s_bar, d_bar, f_bar, adj.bc, adj.spacing, adj.grid, adj.mincurv_C)
 
     # Step 3: Secant adjoint → f̄ update
     _secant_adjoint!(f_bar, s_bar, adj.spacing)

@@ -120,7 +120,8 @@ Pipeline per 1D slice:
         shape_before::Int, n_d::Int, shape_after::Int,
         s_bar::AbstractVector{Tv},
         d_bar_work::AbstractVector{Tv},
-        f_contrib::AbstractVector{Tv}
+        f_contrib::AbstractVector{Tv},
+        C_d::Tg
     ) where {Tv, Tg}
     nm1 = n_d - 1
 
@@ -140,7 +141,7 @@ Pipeline per 1D slice:
             end
 
             # Step 1: Recurrence adjoint: d̄ → s̄ (+ BC endpoint → f̄)
-            _recurrence_adjoint!(s_bar, d_bar_work, f_contrib, bc, spacing_d, grid_d)
+            _call_recurrence_adjoint!(s_bar, d_bar_work, f_contrib, bc, spacing_d, grid_d, C_d)
 
             # Step 2: Secant adjoint: s̄ → f̄
             _secant_adjoint!(f_contrib, s_bar, spacing_d)
@@ -159,7 +160,7 @@ end
 # ========================================
 
 """
-    _build_adjoint_nd_quadratic!(partials_bar, spacings, bcs, grids, grid_size)
+    _build_adjoint_nd_quadratic!(partials_bar, spacings, bcs, grids, grid_size, mincurv_Cs)
 
 Apply the adjoint of the ND quadratic build pipeline.
 Processes axes in reverse order (d=N..1).
@@ -169,6 +170,9 @@ For each axis d, each partial pair (p_src, p_dst):
 2. Normalize to QuadraticBC for dispatch
 3. Call function barrier `_adjoint_axis_pair_quadratic!`
 
+`mincurv_Cs[d]` is the precomputed `inv(Σ inv_h)` per axis, passed through
+to avoid O(n) recomputation per slice for MinCurvFit BCs.
+
 Simpler than cubic: no dual caches, no periodic handling.
 """
 @with_pool pool function _build_adjoint_nd_quadratic!(
@@ -176,7 +180,8 @@ Simpler than cubic: no dual caches, no periodic handling.
         spacings::NTuple{N, AbstractGridSpacing{Tg}},
         bcs::NTuple{N, AbstractBC},
         grids::NTuple{N, AbstractVector{Tg}},
-        grid_size::NTuple{N, Int}
+        grid_size::NTuple{N, Int},
+        mincurv_Cs::NTuple{N, Tg}
     ) where {Tv, Tg <: AbstractFloat, N}
     for d in N:-1:1
         bit_d = 1 << (d - 1)
@@ -211,7 +216,7 @@ Simpler than cubic: no dual caches, no periodic handling.
             _adjoint_axis_pair_quadratic!(
                 src_3d, dst_3d, spacing_d, bc_q, grids[d],
                 shape_before, n_d, shape_after,
-                s_bar, d_bar_work, f_contrib
+                s_bar, d_bar_work, f_contrib, mincurv_Cs[d]
             )
         end
     end
@@ -239,7 +244,7 @@ end
 
     # Step 1: Build adjoint (reverse axis order)
     _build_adjoint_nd_quadratic!(
-        partials_bar, adj.spacings, adj.bcs, adj.grids, adj.grid_size
+        partials_bar, adj.spacings, adj.bcs, adj.grids, adj.grid_size, adj.mincurv_Cs
     )
 
     # Extract f_bar = partials_bar[1, ...]
@@ -365,11 +370,14 @@ function _build_nd_quadratic_adjoint(
     anchors = _bake_nd_quadratic_anchors(grids, spacings, queries, extraps)
     grid_size = ntuple(d -> length(grids[d]), Val(N))
 
+    # Precompute per-axis MinCurvFit constants (grid-only, used if BC is MinCurvFit)
+    mincurv_Cs = ntuple(d -> _compute_mincurv_C(spacings[d], grid_size[d]), Val(N))
+
     # copy() for mutation safety; typeof(grids_c) rebinds G after copy (view → Vector).
     grids_c = map(copy, grids)
 
     return QuadraticAdjointND{
         Tg, N,
         typeof(grids_c), typeof(spacings), typeof(bcs),
-    }(grids_c, spacings, bcs, anchors, grid_size)
+    }(grids_c, spacings, bcs, anchors, grid_size, mincurv_Cs)
 end

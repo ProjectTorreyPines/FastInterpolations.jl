@@ -148,11 +148,6 @@ end
 
     @testset "Derivative dot-product — all zero" begin
         @testset "deriv=(1,0)" begin
-            _, _, ok = constant_nd_dot_product_test(
-                (x_uniform, y_uniform), (xq, yq), f, y_bar;
-                deriv = (EvalDeriv1(), EvalValue()), rtol = Inf
-            )
-            # Both sides should be ≈ 0
             adj = constant_adjoint((x_uniform, y_uniform), (xq, yq))
             @test all(iszero, adj(y_bar; deriv = (EvalDeriv1(), EvalValue())))
         end

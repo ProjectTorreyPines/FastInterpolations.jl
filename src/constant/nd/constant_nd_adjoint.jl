@@ -46,7 +46,7 @@ function _bake_constant_nd_anchors(
             xq_d = _extrap_axis(xq_raw, grids[d], extraps[d])
             idx, xL, _ = search_interval(DEFAULT_SEARCHER, grids[d], spacings[d], xq_d)
             h = _get_h(spacings[d], idx)
-            dL = xq_d - grids[d][idx]
+            dL = xq_d - xL
 
             # Determine OOB side flag
             is_oob = xq_raw < first(grids[d]) || xq_raw > last(grids[d])

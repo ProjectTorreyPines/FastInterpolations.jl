@@ -148,22 +148,8 @@ function _scatter_linear_adjoint!(
     return nothing
 end
 
-# ========================================
-# OOB Skip Helpers (Compile-Time Dispatch)
-# ========================================
-#
-# These provide zero-cost OOB handling by dispatching on extrap type:
-# - FillExtrap: OOB → filled constant independent of f → zero gradient
-# - ClampExtrap: OOB → f[boundary], but derivative is zero for constant extrap
-# - NoExtrap/ExtendExtrap/WrapExtrap: no OOB skip (NoExtrap throws at construction)
-
-# EvalValue OOB skip: only FillExtrap needs skip (fill value not function of f)
-@inline _is_oob_skip(side::UInt8, ::FillExtrap) = side != 0x00
-@inline _is_oob_skip(::UInt8, ::AbstractExtrap) = false
-
-# EvalDeriv1 OOB skip: both Clamp and Fill have zero derivative outside domain
-@inline _is_oob_skip_deriv(side::UInt8, ::_ClampOrFill) = side != 0x00
-@inline _is_oob_skip_deriv(::UInt8, ::AbstractExtrap) = false
+# OOB skip helpers (_is_oob_skip, _is_oob_skip_deriv) are defined in
+# src/core/adjoint_protocol.jl and shared by all adjoint types.
 
 # ========================================
 # ClampExtrap / FillExtrap OOB Side Fixup

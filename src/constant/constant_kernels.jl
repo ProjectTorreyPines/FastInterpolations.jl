@@ -88,3 +88,22 @@ Third derivative of constant interpolation is always zero.
 @inline function _constant_kernel(::EvalDeriv3, y_left::Tv, ::Tv, ::Tg, dL::Td, ::AbstractSide) where {Tv, Tg <: AbstractFloat, Td <: Real}
     return 0 * y_left
 end
+
+# ========================================
+# Side Offset Computation
+# ========================================
+# Given interval width h and distance from left boundary dL,
+# compute the offset (0 or 1) determining which endpoint is selected.
+# Used by both 1D adjoint scatter and ND kernel/adjoint.
+
+@inline _compute_single_offset(::LeftSide, h, dL) = 0
+
+@inline function _compute_single_offset(::RightSide, h, dL)
+    dL_primal = _extract_primal(dL)
+    return iszero(dL_primal) ? 0 : 1
+end
+
+@inline function _compute_single_offset(::NearestSide, h, dL)
+    dL_primal = _extract_primal(dL)
+    return dL_primal <= h / 2 ? 0 : 1
+end

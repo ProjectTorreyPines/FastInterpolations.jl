@@ -26,3 +26,9 @@ include("constant_nd_eval.jl")   # Scalar and batch evaluation
 # ========================================
 include("constant_nd_interpolant.jl")  # constant_interp() constructor + grid conversion
 include("constant_nd_oneshot.jl")      # constant_interp() one-shot + zero-alloc backends
+
+# ========================================
+# 4. Adjoint Operator
+# ========================================
+include("constant_nd_adjoint_types.jl")   # ConstantAdjointND struct
+include("constant_nd_adjoint.jl")         # Scatter, baking, constructor
